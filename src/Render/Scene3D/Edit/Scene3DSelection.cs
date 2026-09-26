@@ -37,6 +37,7 @@ public readonly record struct Scene3DHit(Scene3DItem Item, float Depth, Vector3 
 /// <summary>The snap radius. Brief 44's snapping owns it; brief 43's vertex highlight only reads it.</summary>
 public static class Scene3DSnap
 {
-    /// <summary>How near, in screen pixels (device-independent), a vertex must be to be a candidate.</summary>
-    public const float RadiusPixels = 8;
+    /// <summary>How near, in screen pixels (device-independent), a vertex must be to be a candidate — the
+    /// one snap distance every editor uses (brief-em3d-44 R-em3d44-1).</summary>
+    public const float RadiusPixels = GeometrySnap.RadiusPixels;
 }

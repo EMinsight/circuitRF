@@ -208,6 +208,19 @@
                                 </NativeMenu>
                             </NativeMenuItem.Menu>
                         </NativeMenuItem>
+                        <NativeMenuItem Header="Snap" ToolTip="Requires an active 3D document.">
+                            <NativeMenuItem.Menu>
+                                <NativeMenu>
+                                    <NativeMenuItem Header="Snap On / Off" ToolTip="Snapping as a whole. Hold Option to suspend geometry snap. Requires an active 3D document." Command="{Binding ThreeDSnapCommand}" CommandParameter="All"/>
+                                    <NativeMenuItemSeparator/>
+                                    <NativeMenuItem Header="Vertices" ToolTip="Requires an active 3D document."       Command="{Binding ThreeDSnapCommand}" CommandParameter="Vertex"/>
+                                    <NativeMenuItem Header="Edge Midpoints" ToolTip="Requires an active 3D document." Command="{Binding ThreeDSnapCommand}" CommandParameter="Midpoint"/>
+                                    <NativeMenuItem Header="Edges" ToolTip="Requires an active 3D document."          Command="{Binding ThreeDSnapCommand}" CommandParameter="Edge"/>
+                                    <NativeMenuItem Header="Face Centres" ToolTip="Requires an active 3D document."   Command="{Binding ThreeDSnapCommand}" CommandParameter="FaceCentre"/>
+                                    <NativeMenuItem Header="Grid" ToolTip="Requires an active 3D document."           Command="{Binding ThreeDSnapCommand}" CommandParameter="Grid"/>
+                                </NativeMenu>
+                            </NativeMenuItem.Menu>
+                        </NativeMenuItem>
                         <NativeMenuItemSeparator/>
                         <NativeMenuItem Header="Show All" ToolTip="Requires an active 3D document." Command="{Binding ThreeDShowAllCommand}"/>
                     </NativeMenu>
@@ -846,6 +859,33 @@
                               ToolTip.Tip="Toggle the clip plane. Requires an active 3D document."/>
                     <MenuItem Header="_Axis Indicator" Command="{Binding ThreeDAxisIndicatorCommand}" InputGesture="A"
                               ToolTip.Tip="Toggle the axis indicator. Requires an active 3D document."/>
+                </MenuItem>
+                <MenuItem Header="S_nap" ToolTip.Tip="Requires an active 3D document.">
+                    <MenuItem Header="_Snap On / Off" Command="{Binding ThreeDSnapCommand}" CommandParameter="All"
+                              ToolTip.Tip="Snapping as a whole. Hold Alt to suspend geometry snap; the grid still applies. Requires an active 3D document.">
+                        <MenuItem.Icon><mi:MaterialIcon Kind="Magnet" Width="16" Height="16"/></MenuItem.Icon>
+                    </MenuItem>
+                    <Separator/>
+                    <MenuItem Header="_Vertices" Command="{Binding ThreeDSnapCommand}" CommandParameter="Vertex"
+                              ToolTip.Tip="Toggle snapping to vertices. Requires an active 3D document.">
+                        <MenuItem.Icon><mi:MaterialIcon Kind="SquareOutline" Width="16" Height="16"/></MenuItem.Icon>
+                    </MenuItem>
+                    <MenuItem Header="Edge _Midpoints" Command="{Binding ThreeDSnapCommand}" CommandParameter="Midpoint"
+                              ToolTip.Tip="Toggle snapping to edge midpoints. Requires an active 3D document.">
+                        <MenuItem.Icon><mi:MaterialIcon Kind="TriangleOutline" Width="16" Height="16"/></MenuItem.Icon>
+                    </MenuItem>
+                    <MenuItem Header="_Edges" Command="{Binding ThreeDSnapCommand}" CommandParameter="Edge"
+                              ToolTip.Tip="Toggle snapping to the nearest point on an edge. Requires an active 3D document.">
+                        <MenuItem.Icon><mi:MaterialIcon Kind="Close" Width="16" Height="16"/></MenuItem.Icon>
+                    </MenuItem>
+                    <MenuItem Header="_Face Centres" Command="{Binding ThreeDSnapCommand}" CommandParameter="FaceCentre"
+                              ToolTip.Tip="Toggle snapping to face centres. Requires an active 3D document.">
+                        <MenuItem.Icon><mi:MaterialIcon Kind="CircleOutline" Width="16" Height="16"/></MenuItem.Icon>
+                    </MenuItem>
+                    <MenuItem Header="_Grid" Command="{Binding ThreeDSnapCommand}" CommandParameter="Grid"
+                              ToolTip.Tip="Toggle snapping to the drawing grid. Requires an active 3D document.">
+                        <MenuItem.Icon><mi:MaterialIcon Kind="Grid" Width="16" Height="16"/></MenuItem.Icon>
+                    </MenuItem>
                 </MenuItem>
                 <Separator/>
                 <MenuItem Header="Show _All" Command="{Binding ThreeDShowAllCommand}"

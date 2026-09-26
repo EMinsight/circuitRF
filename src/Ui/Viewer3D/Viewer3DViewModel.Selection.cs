@@ -51,6 +51,10 @@ public interface IViewer3DEditHost
 
     /// <summary>The Properties panel, shown (and its Name field focused when <paramref name="rename"/>).</summary>
     void ShowProperties(bool rename);
+
+    /// <summary>brief-em3d-44 R-em3d44-4 / -5 — a snapped point as the status line shows it, in the document's
+    /// display unit with <c>≈</c> when it is not an exact DBU point; null leaves it to the pane.</summary>
+    string? SnapPointText(Snap3DResult snap) => null;
 }
 
 /// <summary>One context-menu entry. <see cref="Run"/> null and no children is a heading or a disabled item.</summary>
@@ -206,9 +210,10 @@ public sealed partial class Viewer3DViewModel
     /// <summary>
     /// Frame loop → UI: the ID pass's (object, face) under the cursor. Sets what a click would select —
     /// in Vertex mode the nearest corner of that face on screen, within the snap radius (R-em3d43-3b) —
-    /// and the tooltip. Touches no geometry beyond that one face's corners.
+    /// and the tooltip. Touches no geometry beyond that one face's corners — and then resolves the snap from
+    /// the frame's pick <paramref name="patch"/> (brief-em3d-44; null renders one on the CPU).
     /// </summary>
-    internal void OnPicked(uint id, uint face, Vector3 point, bool hit)
+    internal void OnPicked(uint id, uint face, Vector3 point, bool hit, Scene3DIdPatch? patch = null)
     {
         int f = face == Scene3DVertex.NoFace ? -1 : (int)face;
         Scene3DItem? item = null;
@@ -230,6 +235,7 @@ public sealed partial class Viewer3DViewModel
             FrameRequested?.Invoke();
         }
         OnPicked(id, point, hit);
+        ResolveSnap(patch);
     }
 
     // ── keys (owner decision D3) ────────────────────────────────────────────────────────────

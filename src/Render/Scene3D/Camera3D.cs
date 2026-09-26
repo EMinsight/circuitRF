@@ -188,15 +188,18 @@ public struct Camera3D
     }
 
     /// <summary>View × projection, optionally narrowed so pixel (<paramref name="pickX"/>,
-    /// <paramref name="pickY"/>) fills the viewport — the 1 × 1 ID pass.</summary>
-    public readonly Matrix4x4 ViewProjectionMatrix(float width, float height, float pickX = -1, float pickY = -1)
+    /// <paramref name="pickY"/>) fills the viewport — the 1 × 1 ID pass — or, with an odd
+    /// <paramref name="pickSize"/> N, so the N × N pixels centred on it do (brief-em3d-44's pick patch: its
+    /// centre texel is still that pixel, so a 1 × 1 target given this matrix reads the same answer).</summary>
+    public readonly Matrix4x4 ViewProjectionMatrix(float width, float height, float pickX = -1, float pickY = -1, int pickSize = 1)
     {
         var vp = View() * ProjectionMatrix(width, height);
         if (pickX >= 0)
         {
             float nx = 2f * (pickX + 0.5f) / width - 1f, ny = 1f - 2f * (pickY + 0.5f) / height;
-            // x' = W (x − nx·w), y' = H (y − ny·w): the pixel's footprint scaled to the whole clip square.
-            var pk = new Matrix4x4(width, 0, 0, 0, 0, height, 0, 0, 0, 0, 1, 0, -width * nx, -height * ny, 0, 1);
+            // x' = (W/N)(x − nx·w), y' = (H/N)(y − ny·w): the window's footprint scaled to the whole clip square.
+            float sx = width / Math.Max(1, pickSize), sy = height / Math.Max(1, pickSize);
+            var pk = new Matrix4x4(sx, 0, 0, 0, 0, sy, 0, 0, 0, 0, 1, 0, -sx * nx, -sy * ny, 0, 1);
             vp *= pk;
         }
         return vp;
@@ -208,9 +211,9 @@ public struct Camera3D
     /// whose framebuffer y runs down (Vulkan).
     /// </summary>
     public readonly void WriteViewProjection(Span<float> dst, float width, float height, bool flipY = false,
-                                             float pickX = -1, float pickY = -1)
+                                             float pickX = -1, float pickY = -1, int pickSize = 1)
     {
-        var m = ViewProjectionMatrix(width, height, pickX, pickY);
+        var m = ViewProjectionMatrix(width, height, pickX, pickY, pickSize);
         float s = flipY ? -1 : 1;
         // Row-vector M stored row-major is the column-vector Mᵀ stored column-major.
         dst[0] = m.M11; dst[1] = m.M12 * s; dst[2] = m.M13; dst[3] = m.M14;
@@ -240,6 +243,10 @@ public struct Camera3D
         float nx = c.X / c.W, ny = c.Y / c.W;
         return ((nx + 1) * 0.5f * width, (1 - ny) * 0.5f * height, true);
     }
+
+    /// <summary>brief-em3d-44 — a point's depth along the view direction, what the pick patch compares:
+    /// the same measure in perspective and orthographic (never the eye distance, which differs off-axis).</summary>
+    public readonly float ViewDepth(Vector3 world) => Vector3.Dot(world - Eye, Forward);
 
     private static Matrix4x4 Invert(Matrix4x4 m)
         => Matrix4x4.Invert(m, out var inv) ? inv : Matrix4x4.Identity;

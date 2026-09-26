@@ -102,6 +102,12 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         };
         Viewer.SceneAdopted += OnSceneAdopted;
         Viewer.SelectionChanged += OnViewerSelectionChanged;
+        // brief-em3d-44 R-em3d44-5 — the editor snaps; its switches are the user's, stored per user.
+        var (snapOn, kinds) = Snap3DPreference.Preferred;
+        Viewer.SnapKinds = kinds;
+        Viewer.SnapEnabled = snapOn;
+        Viewer.SnapTogglesChanged += () => Snap3DPreference.Preferred = (Viewer.SnapEnabled, Viewer.SnapKinds);
+        ApplySnapGrid();
         Properties = new C3dPropertiesViewModel(this);
         UndoRedo.PropertyChanged += (_, e) =>
         {
@@ -153,14 +159,30 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
             notes.AddRange(e.Notes);
             return Scene3DBuilder.Build(problem, generation, e.Origins, e.Technology, inputs.Theme, inputs.Variant, notes,
                 new Scene3DBuildOptions(name => e.Provenance.TryGetValue(name, out var p) ? p.FaceNames : null,
-                                        _tessellations, DrawAirBox: false, Origin: _origin));
+                                        _tessellations, DrawAirBox: false, Origin: _origin,
+                                        FeatureShare: name => e.Provenance.TryGetValue(name, out var p) ? ShareOf(p) : null));
         }
+    }
+
+    /// <summary>
+    /// brief-em3d-44 R-em3d44-3b — objects of one child document under element transforms with the same
+    /// rotation are one mesh moved by a translation, so they share one feature table: the key is (file,
+    /// object, rotation), the translation is the element's. The document's own objects have their own.
+    /// </summary>
+    private static Scene3DFeatureShare? ShareOf(C3dProvenance p)
+    {
+        if (p.Element is not { } w) return null;
+        string key = string.Create(System.Globalization.CultureInfo.InvariantCulture,
+            $"{p.DocumentPath}|{p.ObjectName}|{w.M00:R},{w.M01:R},{w.M02:R},{w.M10:R},{w.M11:R},{w.M12:R},{w.M20:R},{w.M21:R},{w.M22:R}");
+        return new Scene3DFeatureShare(key, w.Tx, w.Ty, w.Tz);
     }
 
     private void OnSceneAdopted()
     {
         long gen = Viewer.Scene.Generation;
         if (_elaborations.TryGetValue(gen, out var e)) Elaboration = e;
+        ApplySnapGrid();
+        ApplySnapExclusion();
         foreach (long old in _elaborations.Keys.Where(k => k <= gen).ToList()) _elaborations.TryRemove(old, out _);
         ApplyHiddenFlags();
         RefreshTreeVisibility();
@@ -316,7 +338,19 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     /// ONE undo entry, pushed by <see cref="C3dGesture.Commit"/>. Each <see cref="C3dGesture.Update"/> re-elaborates
     /// the changed objects only, so a drag previews through the same path an edit takes.
     /// </summary>
-    public C3dGesture BeginGesture(string description, IReadOnlyList<int> indices) => new(this, description, indices);
+    /// <para>brief-em3d-44 R-snpf-4: what the gesture moves never attracts the snap, however the gesture started —
+    /// the objects themselves unless <paramref name="excludeObjects"/> is false (a face or vertex drag, which
+    /// names what it moves with <see cref="C3dGesture.ExcludeFace"/> / <see cref="C3dGesture.ExcludeVertex"/>).</para>
+    public C3dGesture BeginGesture(string description, IReadOnlyList<int> indices, bool excludeObjects = true)
+    {
+        var g = new C3dGesture(this, description, indices);
+        if (excludeObjects)
+        {
+            foreach (int i in indices) _snapExcludedObjects.Add(Document.Objects[i].Name);
+            ApplySnapExclusion();
+        }
+        return g;
+    }
 
     public sealed class C3dGesture
     {
@@ -332,6 +366,27 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
             _before = [.. indices.Distinct().OrderBy(i => i).Select(i => (i, C3dPersistence.SerializeObject(owner.Document.Objects[i])))];
         }
 
+        /// <summary>
+        /// A face drag: face <paramref name="face"/> of <paramref name="objectName"/> never attracts the snap while
+        /// the gesture lasts — its corners, edges and centre wherever the scene now has them, and its corners
+        /// where they are NOW (the old position, until the scene has caught up with the drag).
+        /// </summary>
+        public void ExcludeFace(string objectName, int face)
+        {
+            _owner._snapExcludedFaces.Add((objectName, face));
+            if (_owner.SceneObject(objectName) is { } o && _owner.Viewer.Scene.FeaturesOf(o.Id) is { Table: { } t } fr && face >= 0 && face < t.FaceCount)
+                for (int k = t.FaceVertexStart[face]; k < t.FaceVertexStart[face + 1]; k++)
+                    _owner._snapExcludedPoints.Add(fr.Vertex(t.FaceVertices[k]));
+            _owner.ApplySnapExclusion();
+        }
+
+        /// <summary>A vertex drag: the corner at <paramref name="world"/> (metres) never attracts the snap.</summary>
+        public void ExcludeVertex(Point3 world)
+        {
+            _owner._snapExcludedPoints.Add(world);
+            _owner.ApplySnapExclusion();
+        }
+
         /// <summary>One step of the gesture: the objects change in the document, no entry is pushed.</summary>
         public void Update(Action<C3dObject> mutate)
         {
@@ -345,6 +400,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         {
             if (_done) return;
             _done = true;
+            _owner.ClearSnapExclusion();
             var slots = _before.Select(b => new C3dEditSlot(false, b.Index, b.Before, C3dPersistence.SerializeObject(_owner.Document.Objects[b.Index])))
                                .Where(s => s.Before != s.After).ToList();
             if (slots.Count > 0) _owner.Push(new C3dEdit(_description, slots, _owner.ApplySlots, alreadyApplied: true));
@@ -355,9 +411,80 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         {
             if (_done) return;
             _done = true;
+            _owner.ClearSnapExclusion();
             foreach (var (i, before) in _before) _owner.Document.Objects[i] = C3dPersistence.DeserializeObject(before);
             _owner.DocumentChanged();
         }
+    }
+
+    // ── snapping (brief-em3d-44) ─────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// R-em3d44-3c — the grid the snap uses: the XY plane at z = 0 until brief 45's drawing plane replaces it,
+    /// at the document's snap step (its technology's default when the document states none).
+    /// </summary>
+    private void ApplySnapGrid()
+    {
+        long pitch = Document.SnapDbu > 0 ? Document.SnapDbu : Elaboration?.Technology?.DefaultSnapDbu ?? 0;
+        Viewer.SnapGrid = new Snap3DGrid(C3dPlane.XY, 0, pitch, Document.DbuPerMicron);
+    }
+
+    /// <summary>
+    /// R-em3d44-4 — a snapped point as a DBU point of this document, and whether it IS one exactly: the object's
+    /// placements up to this document are all integral at this document's DBU (the elaboration says so), and
+    /// the point converts to integers. Otherwise the point is metres and <see cref="C3dSnapPoint.Dbu"/> is it
+    /// rounded — which a tool uses only at the moment it commits.
+    /// </summary>
+    public C3dSnapPoint ToDocumentPoint(in Snap3DResult snap)
+    {
+        bool chain = snap.Kind == Snap3DKind.Grid
+                     || (Viewer.Scene.Object(snap.Object) is { } o && Elaboration?.Provenance.TryGetValue(o.Name, out var p) == true && p!.Exact);
+        double per = C3dLowering.Metres(1, Document.DbuPerMicron);
+        (long D, bool Whole) Of(double m)
+        {
+            double d = m / per, r = Math.Round(d);
+            return ((long)r, Math.Abs(d - r) <= 1e-6 + 1e-12 * Math.Abs(d));
+        }
+        var (x, wx) = Of(snap.World.X);
+        var (y, wy) = Of(snap.World.Y);
+        var (z, wz) = Of(snap.World.Z);
+        return new C3dSnapPoint(new C3dPoint3(x, y, z), snap.World, chain && wx && wy && wz);
+    }
+
+    /// <summary>R-em3d44-5 — <c>(x, y, z) µm</c> in the display unit, with <c>≈</c> when not exact.</summary>
+    public string? SnapPointText(Snap3DResult snap)
+    {
+        var p = ToDocumentPoint(snap);
+        string F(long dbu) => LayoutUnits.Format(dbu, Document.DisplayUnit, Document.DbuPerMicron);
+        return (p.Exact ? "" : "≈ ") + $"({F(p.Dbu.X)}, {F(p.Dbu.Y)}, {F(p.Dbu.Z)}) {LayoutUnits.Suffix(Document.DisplayUnit)}";
+    }
+
+    // R-snpf-4 — what a gesture moves, by NAME, so it survives every regeneration the gesture causes.
+    private readonly HashSet<string> _snapExcludedObjects = new(StringComparer.Ordinal);
+    private readonly List<(string Object, int Face)> _snapExcludedFaces = [];
+    private readonly List<Point3> _snapExcludedPoints = [];
+
+    /// <summary>The pane's exclusion, from the names, for the scene it now shows.</summary>
+    private void ApplySnapExclusion()
+    {
+        if (_snapExcludedObjects.Count == 0 && _snapExcludedFaces.Count == 0 && _snapExcludedPoints.Count == 0)
+        {
+            Viewer.SnapExclusion = null;
+            return;
+        }
+        var ex = new Snap3DExclusion();
+        foreach (string n in _snapExcludedObjects) if (SceneObject(n) is { } o) ex.Objects.Add(o.Id);
+        foreach (var (n, f) in _snapExcludedFaces) if (SceneObject(n) is { } o) ex.Faces.Add((o.Id, f));
+        ex.Points.AddRange(_snapExcludedPoints);
+        Viewer.SnapExclusion = ex;
+    }
+
+    private void ClearSnapExclusion()
+    {
+        _snapExcludedObjects.Clear();
+        _snapExcludedFaces.Clear();
+        _snapExcludedPoints.Clear();
+        Viewer.SnapExclusion = null;
     }
 
     // ── the display unit (owner decision D4: a preference, not geometry) ────────────────────
@@ -556,6 +683,10 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
 
     public void Dispose() => Viewer.Dispose();
 }
+
+/// <summary>brief-em3d-44 R-em3d44-4 — a snapped point in the document: <paramref name="Dbu"/> (rounded when
+/// not <paramref name="Exact"/>) and the metres it came from.</summary>
+public readonly record struct C3dSnapPoint(C3dPoint3 Dbu, Point3 Metres, bool Exact);
 
 /// <summary>A group of the editor's tree.</summary>
 public sealed class C3dTreeGroup(string header, IEnumerable<C3dTreeItem> items)

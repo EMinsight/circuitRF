@@ -106,6 +106,15 @@ public sealed class Scene3DModel
     /// <summary>brief-em3d-43 R-em3d43-5 — each object's feature edges (where two of its faces meet), in the
     /// line buffer after <see cref="LineBatches"/>' lines. Drawn only for what is selected.</summary>
     public Scene3DLineBatch[] EdgeBatches { get; init; } = [];
+    /// <summary>brief-em3d-44 R-em3d44-3 — each object's snap features, by ID − 1 (a port and the air box's
+    /// faces have none). Elements of one instance share a table and differ by an offset.</summary>
+    public Edit.Scene3DFeatureRef[] Features { get; init; } = [];
+
+    /// <summary>The distinct feature tables this scene holds — an array of 900 elements holds one.</summary>
+    public int FeatureTableCount => Features.Where(f => f.Table is not null).Select(f => f.Table).Distinct().Count();
+
+    /// <summary>Object <paramref name="id"/>'s features, or none.</summary>
+    public Edit.Scene3DFeatureRef FeaturesOf(uint id) => id >= 1 && id <= Features.Length ? Features[id - 1] : default;
     public required Vector3 BoundsMin { get; init; }
     public required Vector3 BoundsMax { get; init; }
     /// <summary>The bounds of what is not air, box or boundary — what Fit frames.</summary>

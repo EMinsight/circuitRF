@@ -183,6 +183,7 @@ public partial class WorkspaceViewModel
         ThreeDClipPlaneCommand.NotifyCanExecuteChanged();
         ThreeDAxisIndicatorCommand.NotifyCanExecuteChanged();
         ThreeDShowAllCommand.NotifyCanExecuteChanged();
+        ThreeDSnapCommand.NotifyCanExecuteChanged();
     }
 
     /// <summary>3D ▸ Select Mode ▸ Object / Face / Vertex.</summary>
@@ -209,6 +210,23 @@ public partial class WorkspaceViewModel
 
     [RelayCommand(CanExecute = nameof(HasActive3DPane))]
     private void ThreeDShowAll() => Active3DPane()?.ShowAll();
+
+    /// <summary>brief-em3d-44 R-em3d44-5 — 3D ▸ Snap: <c>All</c> is the master switch, any other a kind's toggle —
+    /// the same properties the editor's toolbar toggles bind to.</summary>
+    [RelayCommand(CanExecute = nameof(HasActive3DPane))]
+    private void ThreeDSnap(string kind)
+    {
+        if (Active3DPane() is not { } p) return;
+        switch (kind)
+        {
+            case "All":        p.SnapEnabled = !p.SnapEnabled; break;
+            case "Vertex":     p.SnapVertex = !p.SnapVertex; break;
+            case "Midpoint":   p.SnapMidpoint = !p.SnapMidpoint; break;
+            case "Edge":       p.SnapEdge = !p.SnapEdge; break;
+            case "FaceCentre": p.SnapFaceCentre = !p.SnapFaceCentre; break;
+            case "Grid":       p.SnapGridOn = !p.SnapGridOn; break;
+        }
+    }
 
     /// <summary>A workspace switch drops the dock tree without closing documents one by one.</summary>
     private void ReleaseC3dEditorsOfOutgoingWorkspace()

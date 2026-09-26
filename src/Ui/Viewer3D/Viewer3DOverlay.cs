@@ -7,6 +7,11 @@
 // selected vertex a larger one — because a dot that follows the cursor must cost a hover nothing on the
 // GPU (gate 5), and the vertices of every object at once would be noise. B's status readout sits top left.
 //
+// brief-em3d-44 R-em3d44-5: the SNAP MARKER, one glyph per kind — a square on a vertex, a triangle on a
+// midpoint, an × on an edge, a circle on a face centre and a small + on the grid — whenever a snap is in
+// force, because a snap the user cannot see is one they cannot trust. It is the snap's own screen point,
+// resolved from the frame's patch, so it costs a hover nothing either.
+//
 // It is drawn by Avalonia, in DIPs, from the camera alone — a redraw per presented frame is a handful of
 // lines and a few text runs, and it touches no geometry. It takes no input: the pane under it does.
 
@@ -75,8 +80,54 @@ public sealed class Viewer3DOverlay : Control
         }
         if (vm.CycleText.Length > 0) Text(ctx, vm.CycleText, new Point(10, 8), ink, 12, dark);
 
+        if (vm.Snap.IsSnap) SnapMarker(ctx, vm.Snap.Kind, new Point(vm.Snap.ScreenX, vm.Snap.ScreenY), dark);
+
         if (vm.HoverText.Length > 0 && vm.View.CursorX >= 0)
             Text(ctx, vm.HoverText, new Point(vm.View.CursorX + 14, vm.View.CursorY + 14), ink, 12, dark);
+    }
+
+    /// <summary>The snap marker's colour: an amber no material or selection uses, over a contrasting halo.</summary>
+    private static readonly IBrush SnapBrush = new SolidColorBrush(Color.FromRgb(255, 176, 0));
+
+    /// <summary>brief-em3d-44 R-em3d44-5 — one glyph per kind, drawn twice: a halo, then the amber stroke.</summary>
+    private static void SnapMarker(DrawingContext ctx, CircuitRF.Render.Scene3D.Edit.Snap3DKind kind, Point p, bool dark)
+    {
+        const double r = 6;
+        var halo = new Pen(dark ? Brushes.Black : Brushes.White, 4, lineCap: PenLineCap.Round);
+        var pen = new Pen(SnapBrush, 2, lineCap: PenLineCap.Round);
+        foreach (var stroke in new[] { halo, pen })
+        {
+            switch (kind)
+            {
+                case CircuitRF.Render.Scene3D.Edit.Snap3DKind.Vertex:
+                    ctx.DrawRectangle(null, stroke, new Rect(p.X - r, p.Y - r, 2 * r, 2 * r));
+                    break;
+                case CircuitRF.Render.Scene3D.Edit.Snap3DKind.Midpoint:
+                {
+                    var g = new StreamGeometry();
+                    using (var c = g.Open())
+                    {
+                        c.BeginFigure(new Point(p.X, p.Y - r * 1.1), false);
+                        c.LineTo(new Point(p.X + r, p.Y + r * 0.8));
+                        c.LineTo(new Point(p.X - r, p.Y + r * 0.8));
+                        c.EndFigure(true);
+                    }
+                    ctx.DrawGeometry(null, stroke, g);
+                    break;
+                }
+                case CircuitRF.Render.Scene3D.Edit.Snap3DKind.Edge:
+                    ctx.DrawLine(stroke, new Point(p.X - r, p.Y - r), new Point(p.X + r, p.Y + r));
+                    ctx.DrawLine(stroke, new Point(p.X - r, p.Y + r), new Point(p.X + r, p.Y - r));
+                    break;
+                case CircuitRF.Render.Scene3D.Edit.Snap3DKind.FaceCentre:
+                    ctx.DrawEllipse(null, stroke, p, r, r);
+                    break;
+                case CircuitRF.Render.Scene3D.Edit.Snap3DKind.Grid:
+                    ctx.DrawLine(stroke, new Point(p.X - r * 0.6, p.Y), new Point(p.X + r * 0.6, p.Y));
+                    ctx.DrawLine(stroke, new Point(p.X, p.Y - r * 0.6), new Point(p.X, p.Y + r * 0.6));
+                    break;
+            }
+        }
     }
 
     /// <summary>brief-em3d-29 R-em3d29-3c — the field's legend, top right: the quantity, a colour bar with the

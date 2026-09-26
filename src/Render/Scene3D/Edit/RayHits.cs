@@ -41,7 +41,7 @@ public static class RayHits
         var candidates = new List<int>();
         // Vertex mode widens each box by the snap radius at the box's far depth, so a vertex just off the
         // silhouette of an object the ray misses is still found.
-        tree.Query(o, d, q.Camera, q.Height, mode == Scene3DSelectMode.Vertex ? q.RadiusPixels : 0, candidates);
+        tree.Query(o, d, q.Camera, q.Height, mode == Scene3DSelectMode.Vertex ? q.RadiusPixels : 0, candidates, new Stack<int>());
 
         foreach (int k in candidates)
         {
@@ -68,6 +68,20 @@ public static class RayHits
     {
         var all = Collect(scene, q, mode, visible, clip);
         return all.Count > 0 ? all[0] : null;
+    }
+
+    /// <summary>
+    /// brief-em3d-44 — the batches (indices into <see cref="Scene3DModel.Batches"/>) whose object's box, widened
+    /// by <paramref name="radiusPx"/> pixels at its far depth, the ray crosses: what can be within that many
+    /// pixels of the cursor. Allocation-free once <paramref name="into"/> and <paramref name="stack"/> have grown;
+    /// the cost is the hierarchy's depth plus what is near the ray, never the scene's size.
+    /// </summary>
+    public static void BatchesNearRay(Scene3DModel scene, Vector3 o, Vector3 d, in Camera3D camera, float height, float radiusPx,
+                                      List<int> into, Stack<int> stack)
+    {
+        into.Clear();
+        var tree = Trees.GetValue(scene, s => { Interlocked.Increment(ref _bvhBuilds); return new Bvh(s); });
+        tree.Query(o, d, camera, height, radiusPx, into, stack);
     }
 
     private static void CollectTriangles(Scene3DModel scene, Scene3DBatch b, Vector3 o, Vector3 d, in ClipPlane3D clip,
@@ -175,10 +189,10 @@ public static class RayHits
             return at;
         }
 
-        public void Query(Vector3 o, Vector3 d, in Camera3D camera, float height, float radiusPx, List<int> into)
+        public void Query(Vector3 o, Vector3 d, in Camera3D camera, float height, float radiusPx, List<int> into, Stack<int> stack)
         {
             if (_nodes.Count == 0) return;
-            var stack = new Stack<int>();
+            stack.Clear();
             stack.Push(0);
             while (stack.Count > 0)
             {

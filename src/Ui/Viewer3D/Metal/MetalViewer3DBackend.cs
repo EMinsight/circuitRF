@@ -17,6 +17,7 @@ using Avalonia;
 using Avalonia.Platform;
 using Avalonia.Rendering.Composition;
 using CircuitRF.Render.Scene3D;
+using CircuitRF.Render.Scene3D.Edit;
 using CircuitRF.Render.Scene3D.Fields;
 using static CircuitRF.Ui.Viewer3D.Metal.ObjC;
 
@@ -50,6 +51,14 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
     private readonly nint[] _rb = new nint[Ring], _rbCmd = new nint[Ring];
     private readonly long[] _rbFrame = new long[Ring];
     private int _rbHead;
+    /// <summary>brief-em3d-44 — what each read-back slot's pick was planned with: the patch it becomes.</summary>
+    private readonly (int Size, float X, float Y, Camera3D Camera, float W, float H, long Generation, float PerDip)[] _rbMeta = new (int, float, float, Camera3D, float, float, long, float)[Ring];
+    private int _pickN = 1;
+    /// <summary>Where the positions start in a read-back slot: after the largest patch's (object, face) texels.</summary>
+    private const int PosOffset = Scene3DIdPatch.MaxSize * Scene3DIdPatch.MaxSize * 8;
+    private const int SlotBytes = PosOffset + Scene3DIdPatch.MaxSize * Scene3DIdPatch.MaxSize * 16;
+
+    public override int MaxPickSize => Scene3DIdPatch.MaxSize;
 
     private sealed class Image
     {
@@ -163,7 +172,7 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
         _dsNoWrite = Depth(false);
         _dsAlways = Depth(false, 7);
         for (int i = 0; i < Ring; i++)
-            _rb[i] = ((delegate* unmanaged<nint, nint, nuint, nuint, nint>)MsgSend)(_device, Sel("newBufferWithLength:options:"), 256, 0);
+            _rb[i] = ((delegate* unmanaged<nint, nint, nuint, nuint, nint>)MsgSend)(_device, Sel("newBufferWithLength:options:"), (nuint)SlotBytes, 0);
         _pickId = NewTexture(1, 1, FmtRG32Uint, 4, 0);
         _pickPos = NewTexture(1, 1, FmtRGBA32Float, 4, 0);
         _pickDepth = NewTexture(1, 1, FmtDepth32F, 4, 2);
@@ -418,6 +427,10 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
                 if (plan.Pick && plan.PickDrawCount > 0 && _vb != 0 && _rbCmd[_rbHead % Ring] == 0)
                 {
                     slot = _rbHead % Ring;
+                    int n = Math.Clamp(plan.PickSize | 1, 1, Scene3DIdPatch.MaxSize);
+                    EnsurePick(n);
+                    _rbMeta[slot] = (n, plan.PickCursorX, plan.PickCursorY, plan.PickCamera, plan.Width, plan.Height,
+                                     plan.SceneGeneration, plan.PickPixelsPerDip);
                     nint rp = Pass(_pickId, _pickDepth, 0, 0, 0, _pickPos);
                     nint enc = Send(cb, S.renderCommandEncoderWithDescriptor, rp);
                     Common(enc, pu);
@@ -427,8 +440,8 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
                     for (int i = 0; i < plan.PickDrawCount; i++) { DrawIndexed(enc, plan.PickDraws[i]); draws++; }
                     Send(enc, S.endEncoding);
                     nint blit = Send(cb, S.blitCommandEncoder);
-                    CopyTexel(blit, _pickId, _rb[slot], 0, 8);
-                    CopyTexel(blit, _pickPos, _rb[slot], 16, 16);
+                    CopyRegion(blit, _pickId, _rb[slot], 0, 8, n);
+                    CopyRegion(blit, _pickPos, _rb[slot], PosOffset, 16, n);
                     Send(blit, S.endEncoding);
                 }
 
@@ -499,9 +512,22 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
         => ((delegate* unmanaged<nint, nint, nuint, nuint, nuint, nint, nuint, void>)MsgSend)(
                enc, S.drawIndexed, PrimTriangle, (nuint)d.Count, IndexUInt32, _ib, (nuint)(d.First * 4L));
 
-    private static void CopyTexel(nint blit, nint tex, nint buf, nuint offset, nuint bytes)
+    /// <summary>An n × n texture into a buffer at <paramref name="offset"/>, rows of n texels.</summary>
+    private static void CopyRegion(nint blit, nint tex, nint buf, nuint offset, int texelBytes, int n)
         => ((delegate* unmanaged<nint, nint, nint, nuint, nuint, MtlOrigin, MtlSize, nint, nuint, nuint, nuint, void>)MsgSend)(
-               blit, S.copyFromTextureToBuffer, tex, 0, 0, default, new MtlSize { W = 1, H = 1, D = 1 }, buf, offset, bytes, bytes);
+               blit, S.copyFromTextureToBuffer, tex, 0, 0, default, new MtlSize { W = (nuint)n, H = (nuint)n, D = 1 }, buf, offset,
+               (nuint)(n * texelBytes), (nuint)(n * n * texelBytes));
+
+    /// <summary>brief-em3d-44 R-em3d44-2a — the ID pass's targets at the patch's size (made again only when it changes).</summary>
+    private void EnsurePick(int n)
+    {
+        if (n == _pickN && _pickId != 0) return;
+        Release(ref _pickId); Release(ref _pickPos); Release(ref _pickDepth);
+        _pickId = NewTexture(n, n, FmtRG32Uint, 4, 0);
+        _pickPos = NewTexture(n, n, FmtRGBA32Float, 4, 0);
+        _pickDepth = NewTexture(n, n, FmtDepth32F, 4, 2);
+        _pickN = n;
+    }
 
     private static nint Pass(nint color, nint depth, double r, double g, double b, nint color1)
     {
@@ -543,11 +569,23 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
             int slot = (_rbHead + k) % Ring;
             if (_rbCmd[slot] == 0 || SendU(_rbCmd[slot], S.status) < 4) continue;   // 4 = Completed
             byte* p = (byte*)Send(_rb[slot], S.contents);
-            PickedId = *(uint*)p;
-            PickedFace = *(uint*)(p + 4);
-            float* w = (float*)(p + 16);
-            PickedPoint = new Vector3(w[0], w[1], w[2]);
-            PickedSomething = w[3] > 0.5f;
+            var (n, cx, cy, cam, pw, ph, gen, perDip) = _rbMeta[slot];
+            // The centre texel is the cursor's pixel: what the 1 × 1 pass read before the patch.
+            int centre = (n / 2) * n + n / 2;
+            uint* ids = (uint*)p;
+            float* pos = (float*)(p + PosOffset);
+            PickedId = ids[2 * centre];
+            PickedFace = ids[2 * centre + 1];
+            PickedPoint = new Vector3(pos[4 * centre], pos[4 * centre + 1], pos[4 * centre + 2]);
+            PickedSomething = pos[4 * centre + 3] > 0.5f;
+            var patch = PickPatch ??= new Scene3DIdPatch();
+            patch.Begin(n, cx, cy, cam, pw, ph, gen, perDip);
+            for (int j = 0; j < n; j++)
+                for (int i = 0; i < n; i++)
+                {
+                    int t = j * n + i;
+                    patch.Set(i, j, ids[2 * t], ids[2 * t + 1], new Vector3(pos[4 * t], pos[4 * t + 1], pos[4 * t + 2]), pos[4 * t + 3] > 0.5f);
+                }
             Send(_rbCmd[slot], S.release);
             _rbCmd[slot] = 0;
             Counters.PickResolved(_rbFrame[slot]);

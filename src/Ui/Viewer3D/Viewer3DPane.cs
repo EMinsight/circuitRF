@@ -219,7 +219,7 @@ public sealed class Viewer3DPane : Control
             catch (Exception ex) { SetFault(ex.Message); }
             _done = false;
             _busy = false;
-            _vm.OnPicked(backend.PickedId, backend.PickedFace, backend.PickedPoint, backend.PickedSomething);
+            _vm.OnPicked(backend.PickedId, backend.PickedFace, backend.PickedPoint, backend.PickedSomething, backend.PickPatch);
             FramePresented?.Invoke();
         }
 
@@ -236,6 +236,9 @@ public sealed class Viewer3DPane : Control
                 // The cursor is in device pixels for the ID pass.
                 float cx = view.CursorX, cy = view.CursorY;
                 if (cx >= 0) { view.CursorX = (float)(cx * scale); view.CursorY = (float)(cy * scale); }
+                // brief-em3d-44: the ID pass reads the snap's patch around the cursor, in device pixels.
+                _plan.PickSize = _vm.PickSizeFor(scale, backend.MaxPickSize);
+                _plan.PickPixelsPerDip = (float)scale;
                 _plan.Plan(_vm.Scene, view, w, h, backend.FlipY, pick: view.CursorX >= 0,
                            _vm.MeshOverlay, _vm.SectionOverlay, _vm.GridOverlay, _vm.FieldGeometry);
                 _pField = _vm.FieldGeometry;
@@ -341,6 +344,7 @@ public sealed class Viewer3DPane : Control
             else _vm?.Pan((float)d.X, (float)d.Y, (float)Bounds.Height);
             _last = pos;
         }
+        _vm?.SetGeometrySnapSuspended(e.KeyModifiers.HasFlag(KeyModifiers.Alt));
         _vm?.Hover((float)pos.X, (float)pos.Y);
     }
 
@@ -400,6 +404,22 @@ public sealed class Viewer3DPane : Control
             e.Handled = true;
             return;
         }
+        if (e.Key is Key.LeftAlt or Key.RightAlt) _vm.SetGeometrySnapSuspended(true);
         if (_vm.HandleKey(e.Key, e.KeyModifiers, GestureInProgress)) e.Handled = true;
+    }
+
+    /// <summary>brief-em3d-44 — Alt / Option released: geometry snap resumes.</summary>
+    protected override void OnKeyUp(KeyEventArgs e)
+    {
+        base.OnKeyUp(e);
+        if (e.Key is Key.LeftAlt or Key.RightAlt) _vm?.SetGeometrySnapSuspended(false);
+    }
+
+    /// <summary>The latched-key lesson: a key-up delivered to another window never reaches this one, so every
+    /// held-key latch is cleared on losing focus — otherwise geometry snap would silently stay suspended.</summary>
+    protected override void OnLostFocus(FocusChangedEventArgs e)
+    {
+        base.OnLostFocus(e);
+        _vm?.ClearHeldKeys();
     }
 }

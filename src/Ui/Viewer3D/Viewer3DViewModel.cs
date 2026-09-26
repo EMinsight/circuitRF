@@ -443,6 +443,7 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
         View.HoveredFace = -1;
         if (View.Hovered != 0) { View.Hovered = 0; HoverText = ""; }
         CursorText = "";
+        ClearSnap();
         FrameRequested?.Invoke();
     }
 

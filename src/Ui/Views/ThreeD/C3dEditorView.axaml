@@ -94,6 +94,30 @@
 
                 <Border Width="1" Margin="2,3" Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
 
+                <!-- brief-em3d-44 R-em3d44-5 — snapping: the master switch, then one per kind (each glyph is the
+                     marker's), saved per user. Hold Alt / Option to suspend geometry snap; the grid remains. -->
+                <ToggleButton IsChecked="{Binding ViewModel.Viewer.SnapEnabled}"
+                              ToolTip.Tip="Snap to vertices, midpoints, edges, face centres and the grid. Hold Alt / Option to suspend geometry snap (the grid still applies).">
+                    <mi:MaterialIcon Kind="Magnet" Width="16" Height="16"/>
+                </ToggleButton>
+                <ToggleButton IsChecked="{Binding ViewModel.Viewer.SnapVertex}" IsEnabled="{Binding ViewModel.Viewer.SnapEnabled}" ToolTip.Tip="Snap to vertices">
+                    <mi:MaterialIcon Kind="SquareOutline" Width="16" Height="16"/>
+                </ToggleButton>
+                <ToggleButton IsChecked="{Binding ViewModel.Viewer.SnapMidpoint}" IsEnabled="{Binding ViewModel.Viewer.SnapEnabled}" ToolTip.Tip="Snap to edge midpoints">
+                    <mi:MaterialIcon Kind="TriangleOutline" Width="16" Height="16"/>
+                </ToggleButton>
+                <ToggleButton IsChecked="{Binding ViewModel.Viewer.SnapEdge}" IsEnabled="{Binding ViewModel.Viewer.SnapEnabled}" ToolTip.Tip="Snap to the nearest point on an edge">
+                    <mi:MaterialIcon Kind="Close" Width="16" Height="16"/>
+                </ToggleButton>
+                <ToggleButton IsChecked="{Binding ViewModel.Viewer.SnapFaceCentre}" IsEnabled="{Binding ViewModel.Viewer.SnapEnabled}" ToolTip.Tip="Snap to face centres">
+                    <mi:MaterialIcon Kind="CircleOutline" Width="16" Height="16"/>
+                </ToggleButton>
+                <ToggleButton IsChecked="{Binding ViewModel.Viewer.SnapGridOn}" IsEnabled="{Binding ViewModel.Viewer.SnapEnabled}" ToolTip.Tip="Snap to the drawing grid when no geometry is in range">
+                    <mi:MaterialIcon Kind="Grid" Width="16" Height="16"/>
+                </ToggleButton>
+
+                <Border Width="1" Margin="2,3" Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+
                 <ToggleButton IsChecked="{Binding ViewModel.ShowTree}" ToolTip.Tip="Object tree">
                     <mi:MaterialIcon Kind="FileTreeOutline" Width="16" Height="16"/>
                 </ToggleButton>
@@ -126,6 +150,9 @@
             <StackPanel Spacing="1">
                 <DockPanel>
                     <SelectableTextBlock DockPanel.Dock="Right" FontSize="11" Text="{Binding ViewModel.Viewer.CursorText}"/>
+                    <SelectableTextBlock DockPanel.Dock="Right" FontSize="11" Margin="0,0,16,0" Text="{Binding ViewModel.Viewer.SnapText}"
+                                         IsVisible="{Binding ViewModel.Viewer.SnapText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                         ToolTip.Tip="What the cursor snaps to, in the display unit. ≈ marks a point that is not an exact database-unit point (a rotated object, or another scale)."/>
                     <SelectableTextBlock FontSize="11" Text="{Binding ViewModel.Viewer.Status}" TextWrapping="Wrap"/>
                 </DockPanel>
                 <SelectableTextBlock FontSize="11" Text="{Binding ViewModel.Viewer.SelectionText}" TextWrapping="Wrap"

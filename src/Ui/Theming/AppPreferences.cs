@@ -266,6 +266,17 @@ public sealed class AppPreferences
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public int? EmMaxCores { get; set; }
 
+    // brief-em3d-44 R-em3d44-5: the 3D snap's switches — the master and one per kind. Per USER, not per
+    // document: how someone likes to snap is a working habit, and a .c3d from someone else must not change it.
+    // Null means the shipped default (on, every kind). See Snap3DPreference.
+    [JsonPropertyName("snap3d_enabled")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? Snap3DEnabled { get; set; }
+
+    [JsonPropertyName("snap3d_kinds")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? Snap3DKinds { get; set; }
+
     // R-h9r2-18a: what a BRAND NEW harmonicaRF document's tickle starts at. Null means the shipped
     // default (on, −50 dBm). Per USER, not per document — see HarmonicaTickleDefaults' own reasoning,
     // the same "a .charm from someone else must not change your own working habit" rule

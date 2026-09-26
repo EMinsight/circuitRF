@@ -97,6 +97,14 @@ public abstract class Viewer3DBackend : IDisposable
     public Vector3 PickedPoint { get; protected set; }
     public bool PickedSomething { get; protected set; }
 
+    /// <summary>brief-em3d-44 R-em3d44-2a — the largest pick patch this backend reads back (odd); 1 reads the
+    /// cursor's texel only, and the snap then renders its patch on the CPU (R-em3d44-2e).</summary>
+    public virtual int MaxPickSize => 1;
+
+    /// <summary>The last completed ID pass's patch, or null for a backend that reads one texel. Written on the
+    /// render thread and read on the UI thread only between frames, as <see cref="PickedId"/> is.</summary>
+    public CircuitRF.Render.Scene3D.Edit.Scene3DIdPatch? PickPatch { get; protected set; }
+
     /// <summary>Draw calls issued by the last frame (both passes) — the status line reports it.</summary>
     public int DrawCallsLastFrame { get; protected set; }
 

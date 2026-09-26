@@ -312,7 +312,7 @@ public sealed class LayoutCanvas : Control
     /// <see cref="SelectHitTolerancePixels"/>, converted to DBU HERE from the CURRENT zoom on every
     /// call, same discipline as <see cref="HitTolDbu"/>. Slightly larger than the plain hit-test
     /// tolerance so a marker is discoverable a little before the cursor is exactly on the feature.</summary>
-    private const double SnapHitTolerancePixels = 8.0;
+    private const double SnapHitTolerancePixels = CircuitRF.Render.GeometrySnap.RadiusPixels;   // shared with the 3D pane
 
     private long SnapTolDbu() => _zoom > 0 ? (long)Math.Round(SnapHitTolerancePixels / _zoom) : 0;
 

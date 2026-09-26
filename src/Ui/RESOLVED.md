@@ -35810,3 +35810,36 @@ pipelines and a partial upload.
   It is now `IFileBackedDocument` (Reveal shows its `.cem`) and named in `TabSave.cs` with no route.
 - **`FieldTests.Gate5` read the phase at uniform index 28**, a literal; the field block moved behind the
   selection list, so it reads `Scene3DFramePlan.FieldAt` now.
+
+## Snapping in the 3D editor — brief-em3d-44 (2026-09-26)
+
+Built: `Viewer3DViewModel.Snap.cs`, the Metal patch read-back, the marker glyphs in `Viewer3DOverlay`, the
+toolbar toggles and status text in `C3dEditorView`, `3D ▸ Snap` on both menu surfaces, `Snap3DPreference`,
+and the editor's grid, exactness and gesture exclusion. Gates: `tests/Ui.Tests/ThreeD/Snap3DGateTests.cs`.
+**No window was seen from the agent's session.**
+
+- **Alt / Option suspends geometry snap here, and the layout editor no longer does that.** R-dup-2
+  retired Alt-suspend in the layout (Alt arms a duplicate drag there; geometry snap is S / F3). Brief 44
+  asks for Alt-suspend explicitly and brief 45 relies on it, so it is built — but the two editors now
+  differ, and brief 46's duplicate must not reuse Alt in the 3D editor without deciding this first. The
+  held state comes from every pointer event's modifiers AND the key events, and LostFocus clears it.
+- **One snap radius for both editors**: `GeometrySnap.RadiusPixels` (8 DIPs) — the layout canvas's
+  `SnapHitTolerancePixels` reads it. The layout had no user setting for it; the brief's "snap-distance
+  setting" is the snap GRID in the layout, which is a different thing.
+- **The editor snaps; the read-only viewer does not by default** (its `SnapEnabled` starts false; the 3D
+  menu can turn it on for that pane, unsaved). The editor's switches are per user (`preferences.json`,
+  `snap3d_enabled` / `snap3d_kinds`), never in the `.c3d`.
+- **The grid is the XY plane at z = 0 at the document's snap step** (its technology's when the document
+  says 0) until brief 45's drawing plane replaces `Viewer.SnapGrid`.
+- **What a gesture moves never attracts the snap** (R-snpf-4): `BeginGesture` excludes its objects by
+  NAME (re-mapped to IDs on every regeneration the gesture causes); a face or vertex drag passes
+  `excludeObjects: false` and names the face (`ExcludeFace`, which also records the face's corners where
+  they are now) or the vertex (`ExcludeVertex`). Commit and Cancel clear it. Briefs 46/47 call these.
+- **Exactness** (`C3dEditorViewModel.ToDocumentPoint`): exact when the elaboration says the object's
+  placement chain is integral at the top document's DBU (`C3dProvenance.Exact`) AND each coordinate
+  converts to an integer. A layout instance's stack bottom can make z non-integral; that is flagged, not
+  hidden. The status line shows `≈` then.
+- **A snap is resolved when the frame arrives** (`OnPicked`), from the backend's patch when it matches the
+  scene's generation and is wide enough, else from a CPU patch. A toggle or Alt change answers at once when
+  the last snap came from the CPU, and asks for a frame otherwise — the render thread may be writing the
+  GPU patch at that moment.

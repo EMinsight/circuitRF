@@ -199,6 +199,18 @@ model circuitRF built, and after a run it also shows what the solver made.
   toward you — the status line says where you are (`Face zmin · "trace" · 2 of 5`). A face selected
   behind others is drawn through what is in front of it. Right-click opens the menu for what is selected:
   *Hide*, *Isolate*, *Show All*, and *Select Owning Object*. Nothing here changes the setup.
+- **Snapping** (the 3D editor). The cursor snaps to a **vertex** (a square marker), an edge's **midpoint**
+  (a triangle), the nearest point on an **edge** (an ×), a face's **centre** (a circle) and, when nothing is
+  within reach, the **grid** (a small +) — the document's snap step on the XY plane. A vertex wins over
+  anything else in reach, even a nearer midpoint. Snapping reaches into placed cells, so a die's pad corner
+  is a target in its package. Only what you can see is a target: a corner hidden behind a surface is not,
+  except inside a translucent object or with the clip plane on. The snap distance is the layout editor's,
+  in screen pixels, so it feels the same at every zoom. The magnet on the toolbar, and *3D ▸ Snap*, turn
+  snapping on and off, and the buttons beside it turn each kind on and off; these are your settings, not the
+  document's. Hold **Alt** (**Option** on a Mac) to suspend geometry snapping while it is held; the grid
+  still applies. The status line names what the cursor snapped to and where, in the document's unit. A
+  **≈** before the point means it is not exactly a point of the document's database-unit grid: a corner of
+  an object rotated by an angle that is not a multiple of 90°, or of a cell drawn at another scale.
 - **Clip plane** (**C**). A plane along an axis or the view direction, dragged through the model. It
   shows inside a package, under a lid, or through a via's clearance.
 - **Mesh.** After a Palace run, the mesh Gmsh made: the boundary triangles, and the tetrahedra the clip

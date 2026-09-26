@@ -33,6 +33,7 @@ using CircuitRF.Design.Layout;
 using CircuitRF.Design.Layout.Em3d;
 using CircuitRF.Design.Theming;
 using CircuitRF.Engine.Em3d;
+using CircuitRF.Render.Scene3D.Edit;
 
 namespace CircuitRF.Render.Scene3D;
 
@@ -41,11 +42,14 @@ namespace CircuitRF.Render.Scene3D;
 /// <param name="Cache">Tessellations kept from the last build; null tessellates everything.</param>
 /// <param name="DrawAirBox">False draws no air-box faces or edges — a document with no setup has none.</param>
 /// <param name="Origin">The scene-local origin to use, world metres; null takes the air box's centre.</param>
+/// <param name="FeatureShare">brief-em3d-44 R-em3d44-3b — an object's share key and translation when it is one
+/// element of an instance (objects under one key share ONE feature table), or null for its own table.</param>
 public sealed record Scene3DBuildOptions(
     Func<string, IReadOnlyList<string>?>? FaceNames = null,
     Scene3DTessellationCache? Cache = null,
     bool DrawAirBox = true,
-    (double X, double Y, double Z)? Origin = null);
+    (double X, double Y, double Z)? Origin = null,
+    Func<string, Scene3DFeatureShare?>? FeatureShare = null);
 
 /// <summary>
 /// brief-em3d-43 R-em3d43-1b — tessellations kept between builds, keyed by the primitive (a sheet by its
@@ -137,6 +141,17 @@ public static class Scene3DBuilder
             return make();
         }
         IReadOnlyList<string> FacesOf(string name) => options.FaceNames?.Invoke(name) ?? [];
+        // brief-em3d-44 R-em3d44-3 — each solid's and sheet's snap features, one table per shared key.
+        var shared = new Dictionary<object, (Scene3DFeatureTable Table, double X, double Y, double Z)>();
+        Scene3DFeatureRef Features(string name, Em3dTriangleMesh mesh, bool sheet)
+        {
+            if (options.FeatureShare?.Invoke(name) is not { } share) return new(Scene3DFeatureTable.Of(mesh, sheet), 0, 0, 0, false);
+            if (shared.TryGetValue(share.Key, out var t))
+                return new(t.Table, share.Tx - t.X, share.Ty - t.Y, share.Tz - t.Z, true);
+            var table = Scene3DFeatureTable.Of(mesh, sheet);
+            shared[share.Key] = (table, share.Tx, share.Ty, share.Tz);
+            return new(table, 0, 0, 0, true);
+        }
         Vector3 L(Point3 p) => new((float)(p.X - origin.Item1), (float)(p.Y - origin.Item2), (float)(p.Z - origin.Item3));
 
         var conductorColours = Em3dSectionRenderer.ObjectColours(problem, origins, tech, theme, variant);
@@ -185,7 +200,7 @@ public static class Scene3DBuilder
                 Rgba = rgba, Translucent = translucent,
                 InitiallyVisible = s.Role != Em3dRole.Air && s.Name != outermost,
                 FaceNames = FacesOf(s.Name),
-            }, mesh, faces: true);
+            }, mesh, faces: true, features: Features(s.Name, mesh, sheet: false));
         }
 
         // ── sheets ───────────────────────────────────────────────────────────────────────────
@@ -201,7 +216,7 @@ public static class Scene3DBuilder
                 Id = 0, Name = sh.Name, Kind = Scene3DKind.Sheet, Material = sh.Material, MaterialValues = m,
                 MaterialSlot = slot, Rgba = Scene3DVertex.Pack(c.Red, c.Green, c.Blue, 255),
                 FaceNames = names.Count > 0 ? names : SheetFaceNames,
-            }, mesh, faces: true, sheet: true);
+            }, mesh, faces: true, sheet: true, features: Features(sh.Name, mesh, sheet: true));
         }
 
         // ── ports: a named sheet and a direction arrow ───────────────────────────────────────
@@ -378,13 +393,15 @@ public static class Scene3DBuilder
         private readonly List<Scene3DVertex> _lines = [];
         private readonly List<Scene3DLineBatch> _lineBatches = [];
         private readonly List<(uint Id, List<Scene3DVertex> Lines)> _edges = [];
+        private readonly List<Scene3DFeatureRef> _features = [];
 
         /// <summary><paramref name="faces"/>: tag each vertex with its triangle's face (un-welding a vertex
         /// shared by two faces) and collect the feature edges. <paramref name="sheet"/>: the whole mesh is
         /// face 0.</summary>
         public void Object(Scene3DObject o, Em3dTriangleMesh? mesh, IEnumerable<(Point3 P, uint Rgba)>? lines = null,
-                           bool faces = false, bool sheet = false)
+                           bool faces = false, bool sheet = false, Scene3DFeatureRef features = default)
         {
+            _features.Add(features);
             uint id = (uint)(_objects.Count + 1);
             var obj = new Scene3DObject
             {
@@ -518,6 +535,7 @@ public static class Scene3DBuilder
                 Vertices = [.. _verts], Indices = indices, LineVertices = [.. _lines],
                 Objects = [.. _objects], Batches = [.. batches], LineBatches = [.. _lineBatches],
                 EdgeBatches = [.. edgeBatches],
+                Features = [.. _features],
                 BoundsMin = bmin, BoundsMax = bmax, ContentMin = cmin, ContentMax = cmax,
                 Problem = problem, Notes = notes ?? [],
             };

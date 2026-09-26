@@ -1004,7 +1004,10 @@ viewer must show: intersecting translucent solids, and fields on 10⁵–10⁶ e
    per face.
 2. **Picking is done by the GPU.** Object and face IDs are drawn into an offscreen buffer and the pixel
    under the cursor is read back, so hover and selection cost the same at 10 objects as at 10,000.
-   Hover highlighting is a shader state change, never a retessellation.
+   Hover highlighting is a shader state change, never a retessellation. *(Brief 44:)* the read-back is an
+   N × N **patch** around the cursor, one snap radius each way, with its depth: the faces in it are
+   everything a snap may examine, and its depths say which of their features are visible. A backend that
+   reads back one texel leaves the patch to the CPU, which renders it from the objects near the cursor's ray.
 3. **A drag is a preview.** Moving, rotating or resizing transforms what is already drawn; the kernel
    rebuild happens once, on release. The rules the PCell parameter handles already follow
    (`pcell-parameter-handles.md`) govern a drag on a dimension bound to an expression.

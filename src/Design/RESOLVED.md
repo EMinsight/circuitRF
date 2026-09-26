@@ -13441,3 +13441,15 @@ neutral problem gained `Em3dPolyhedron` and `Em3dSheet.Frame` (`src/Engine/Em3d/
   and Gate6, `PalaceBackendTests` Gate8, `PalaceStaticTests` Gate8, `PalaceEigenTests` Gate9 and
   `Em3dWireTests` Gate8 scan the repo's `.cem`/`.wBond` files and trip on series 2's 3D examples;
   `EmCoreCountTests` and `EmFrameworkFreeTests` scan `src/Ui` files this brief does not touch.
+
+## Provenance for snapping — brief-em3d-44 (2026-09-26)
+
+- **`C3dProvenance.Exact`**: every placement from the object up to the top document is integral in DBU
+  (translations and quarter turns, the object's own included) and every document on the way has the top's
+  `DbuPerMicron`. A layout instance compares its `.clay`'s `DbuPerMicron`, which the child-layout cache now
+  keeps. It says whether a snap to the object's corner may be an exact DBU point; the editor still checks
+  each coordinate, because a layout's stack bottom is metres.
+- **`C3dProvenance.Element`**: the instance element's transform (metres to world metres), null for the
+  document's own objects. Two objects of one child under elements with the same rotation are one mesh
+  moved by the difference of the translations — which is what lets 900 array elements share one snap
+  feature table.

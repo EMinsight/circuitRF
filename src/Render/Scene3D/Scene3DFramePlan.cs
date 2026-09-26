@@ -158,6 +158,14 @@ public sealed class Scene3DFramePlan
     /// <summary>Whether this frame carries an ID pass, and the pixel it reads.</summary>
     public bool Pick;
     public int PickX, PickY;
+    /// <summary>brief-em3d-44 R-em3d44-2a — the ID pass reads an N × N patch centred on (PickX, PickY): N odd,
+    /// set by the pane to what its backend reads back (1 for a backend that reads one texel).</summary>
+    public int PickSize = 1;
+    /// <summary>The viewport pixels per DIP the pane draws at — carried to the patch for the overlay.</summary>
+    public float PickPixelsPerDip = 1;
+    /// <summary>What the pick was planned with, handed back with its read-back (the patch's camera and cursor).</summary>
+    public Camera3D PickCamera;
+    public float PickCursorX, PickCursorY;
     public int Width, Height;
     public (float R, float G, float B) Clear;
     public long SceneGeneration = -1;
@@ -257,7 +265,9 @@ public sealed class Scene3DFramePlan
         if (Pick)
         {
             PickX = (int)view.CursorX; PickY = (int)view.CursorY;
-            Fill(PickUniforms, view, width, height, flipY, PickX, PickY, view.Clip.Enabled ? FlagClip : 0);
+            PickCamera = view.Camera;
+            PickCursorX = view.CursorX; PickCursorY = view.CursorY;
+            Fill(PickUniforms, view, width, height, flipY, PickX, PickY, view.Clip.Enabled ? FlagClip : 0, PickSize);
             foreach (var b in batches)
                 if (view.IsVisible(b.ObjectId) && scene.Objects[b.ObjectId - 1].Pickable)
                     Add(ref PickDraws, ref PickDrawCount, Scene3DPipeline.Pick, Scene3DBuffer.Scene, b.FirstIndex, b.IndexCount);
@@ -287,9 +297,9 @@ public sealed class Scene3DFramePlan
         list[count++] = new Scene3DDraw { Pipeline = p, Buffer = buf, First = first, Count = n };
     }
 
-    private static void Fill(float[] u, Viewer3DViewState view, int w, int h, bool flipY, float px, float py, uint flags)
+    private static void Fill(float[] u, Viewer3DViewState view, int w, int h, bool flipY, float px, float py, uint flags, int pickSize = 1)
     {
-        view.Camera.WriteViewProjection(u.AsSpan(0, 16), w, h, flipY, px, py);
+        view.Camera.WriteViewProjection(u.AsSpan(0, 16), w, h, flipY, px, py, pickSize);
         var eye = view.Camera.Eye;
         if (view.Camera.Projection == Projection3D.Orthographic)
         {

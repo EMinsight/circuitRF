@@ -51,7 +51,21 @@ public sealed record C3dElaborationOptions(double? FMaxHz = null, double TempC =
 /// <param name="DocumentPath">The file the object is in — the <c>.c3d</c>, or the placed <c>.clay</c>.</param>
 /// <param name="ObjectName">Its name in that file (a layout's solid name for a layout instance).</param>
 /// <param name="FaceNames">Its faces' names, indexed by the neutral primitive's face numbering.</param>
-public sealed record C3dProvenance(string InstancePath, string DocumentPath, string ObjectName, IReadOnlyList<string> FaceNames);
+public sealed record C3dProvenance(string InstancePath, string DocumentPath, string ObjectName, IReadOnlyList<string> FaceNames)
+{
+    /// <summary>
+    /// brief-em3d-44 R-em3d44-4 — whether an integer point of the object's own document lands on an integer DBU
+    /// point of the TOP document: every placement from it to the top is integral (translations and quarter
+    /// turns) and every document on the way has the top's DBU per µm. A snap to such an object's corner is an
+    /// exact DBU point; any other is metres, rounded only when used.
+    /// </summary>
+    public bool Exact { get; init; } = true;
+
+    /// <summary>brief-em3d-44 R-em3d44-3b — for an object inside an instance, the element's transform (its
+    /// document's metres to world metres); null for the document's own objects. Two objects of one child
+    /// under transforms with the same rotation are the same mesh moved by the difference of translations.</summary>
+    public C3dTransform? Element { get; init; }
+}
 
 /// <summary>One step of the walk <c>explain</c> reports (R-em3d42-6): what, and how it was decided.</summary>
 public sealed record C3dWalkStep(string Subject, string Detail);
@@ -167,7 +181,8 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null)
     private sealed record Child3D(C3dDocument Document, TechResolution Tech, string? Refusal);
 
     /// <summary>A child layout view: its solids through its own technology.</summary>
-    private sealed record ChildLayout(Em3dLayoutSolidsResult? Solids, TechResolution Tech, string TechName, string? Refusal);
+    private sealed record ChildLayout(Em3dLayoutSolidsResult? Solids, TechResolution Tech, string TechName, string? Refusal,
+                                      int DbuPerMicron = LayoutUnits.DefaultDbuPerMicron);
 
     private Child3D Child3DCached(string path, string? fallbackCws)
     {
@@ -218,7 +233,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null)
         {
             var solids = Em3dLayoutSolids.From(new EmLayoutSource(path, view, t, view.DbuPerMicron), t, null,
                                                new Em3dLayoutSolidsOptions(options.FMaxHz, options.TempC, Instance: true));
-            made = new ChildLayout(solids, tech, TechName(tech), solids.Refusal);
+            made = new ChildLayout(solids, tech, TechName(tech), solids.Refusal, view.DbuPerMicron);
         }
         _children[key] = made;
         _children["techstamp|" + key] = Stamp(tech.ResolvedPath);
@@ -245,6 +260,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null)
         private readonly List<C3dWalkStep> _walkInstances = [], _walkUnits = [], _walkLowering = [];
         private int _order;
         private int _polylines;
+        private int _topDbu;
         private readonly SortedSet<string> _ignored = new(StringComparer.Ordinal);
         private bool _anyLayoutInstance;
 
@@ -256,7 +272,8 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null)
         {
             var (tech, _) = TechnologyResolver.ResolveForDocument(doc.TechRef, path, workspaceCws, owner._tech);
             foreach (string d in tech.Diagnostics) _notes.Add(d);
-            Document(doc, path, tech, C3dTransform.Identity, "", [(CellOf(path), "", path)]);
+            _topDbu = doc.DbuPerMicron;
+            Document(doc, path, tech, C3dTransform.Identity, "", [(CellOf(path), "", path)], exact: true);
 
             if (_polylines > 0)
                 _notes.Add($"{_polylines} polyline(s) are construction geometry and are not in the 3D problem.");
@@ -297,7 +314,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null)
 
         /// <summary>A document's objects and instances under <paramref name="world"/> (metres).</summary>
         private void Document(C3dDocument doc, string path, TechResolution tech, C3dTransform world, string prefix,
-                              List<(string Cell, string Instance, string Path)> stack)
+                              List<(string Cell, string Instance, string Path)> stack, bool exact)
         {
             string techName = TechName(tech);
             string unit = LayoutUnits.AsciiSuffix(doc.DisplayUnit);
@@ -350,7 +367,11 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null)
                     _uses.Add((_solids.Count, false, techName, material.Name));
                     _solids.Add(new Em3dSolid(name, key, role, lowered.Solid!, ++_order));
                 }
-                _provenance[name] = new C3dProvenance(prefix.TrimEnd('/'), path, obj.Name, lowered.FaceNames);
+                _provenance[name] = new C3dProvenance(prefix.TrimEnd('/'), path, obj.Name, lowered.FaceNames)
+                {
+                    Exact = exact && obj.Placement.ToTransform().IsIntegral,
+                    Element = prefix.Length > 0 ? world : null,
+                };
                 _walkLowering.Add(new C3dWalkStep(name, lowered.Kind));
                 _origins[name] = new Em3dObjectOrigin(role switch
                 {
@@ -360,12 +381,12 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null)
             }
 
             string baseDir = Path.GetDirectoryName(path)!;
-            foreach (var inst in doc.Instances) Instance(doc, inst, baseDir, world, prefix, stack);
+            foreach (var inst in doc.Instances) Instance(doc, inst, baseDir, world, prefix, stack, exact);
         }
 
         /// <summary>One instance: resolved, then elaborated once per array element.</summary>
         private void Instance(C3dDocument doc, C3dInstance inst, string baseDir, C3dTransform world, string prefix,
-                              List<(string Cell, string Instance, string Path)> stack)
+                              List<(string Cell, string Instance, string Path)> stack, bool exact)
         {
             string instPath = prefix + inst.Name;
             var viewType = inst.View == C3dInstanceView.Layout ? ViewType.Layout : ViewType.ThreeD;
@@ -418,8 +439,9 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null)
                     return;
                 }
                 var next = new List<(string, string, string)>(stack) { (CellOf(viewPath), inst.Name, viewPath) };
-                foreach (var (ijk, w) in Elements(doc, inst, counts, pitch, world))
-                    Document(child.Document, viewPath, child.Tech, w, prefix + inst.Name + (isArray ? ijk : "") + "/", next);
+                foreach (var (ijk, w, integral) in Elements(doc, inst, counts, pitch, world))
+                    Document(child.Document, viewPath, child.Tech, w, prefix + inst.Name + (isArray ? ijk : "") + "/", next,
+                             exact && integral && child.Document.DbuPerMicron == _topDbu);
                 return;
             }
 
@@ -440,13 +462,14 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null)
                 foreach (string w in solids.Warnings) _warnings.Add($"{instPath}: {w}");
             }
             if (LayoutHasPortShapes(viewPath)) _ignored.Add("a layout's port shapes");
-            foreach (var (ijk, w) in Elements(doc, inst, counts, pitch, world))
-                Layout(solids, layout.TechName, viewPath, prefix + inst.Name + (isArray ? ijk : ""), w);
+            foreach (var (ijk, w, integral) in Elements(doc, inst, counts, pitch, world))
+                Layout(solids, layout.TechName, viewPath, prefix + inst.Name + (isArray ? ijk : ""), w,
+                       exact && integral && layout.DbuPerMicron == _topDbu);
         }
 
         /// <summary>Each array element's transform: the placement's rotation and mirror, and its origin moved
         /// by the pitch in the PARENT's frame (LayoutInstanceTransform.ArrayCellOrigin's rule), then the world.</summary>
-        private static IEnumerable<(string Ijk, C3dTransform World)> Elements(C3dDocument parent, C3dInstance inst,
+        private static IEnumerable<(string Ijk, C3dTransform World, bool Integral)> Elements(C3dDocument parent, C3dInstance inst,
                                                                                 IReadOnlyList<int> counts, C3dPoint3 pitch,
                                                                                 C3dTransform world)
         {
@@ -461,12 +484,13 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null)
                             Ty = placement.Ty + (double)j * pitch.Y,
                             Tz = placement.Tz + (double)k * pitch.Z,
                         };
-                        yield return ($"[{i},{j},{k}]", C3dLowering.InMetres(t, parent.DbuPerMicron).Then(world));
+                        yield return ($"[{i},{j},{k}]", C3dLowering.InMetres(t, parent.DbuPerMicron).Then(world), t.IsIntegral);
                     }
         }
 
         /// <summary>A layout instance's solids under <paramref name="world"/>, its stack's bottom at the instance's z.</summary>
-        private void Layout(Em3dLayoutSolidsResult solids, string techName, string viewPath, string instPath, C3dTransform world)
+        private void Layout(Em3dLayoutSolidsResult solids, string techName, string viewPath, string instPath, C3dTransform world,
+                            bool exact)
         {
             var t = C3dTransform.Identity with { Tz = -solids.StackBottomM };
             t = t.Then(world);
@@ -484,7 +508,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null)
                 _uses.Add((_solids.Count, false, techName, s.Material));
                 _solids.Add(new Em3dSolid(name, materialKey[s.Material], s.Role, lowered.Solid!, baseOrder + s.Order));
                 maxOrder = Math.Max(maxOrder, s.Order);
-                _provenance[name] = new C3dProvenance(instPath, viewPath, s.Name, lowered.FaceNames);
+                _provenance[name] = new C3dProvenance(instPath, viewPath, s.Name, lowered.FaceNames) { Exact = exact, Element = t };
                 _walkLowering.Add(new C3dWalkStep(name, $"{lowered.Kind} (from the layout)"));
             }
             foreach (var sh in solids.Sheets)
@@ -495,7 +519,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null)
                 _sheets.Add(new Em3dSheet(name, materialKey[sh.Material], g.Outline, g.Holes, g.Z, sh.ThicknessM, baseOrder + sh.Order)
                             { Frame = g.Frame });
                 maxOrder = Math.Max(maxOrder, sh.Order);
-                _provenance[name] = new C3dProvenance(instPath, viewPath, sh.Name, []);
+                _provenance[name] = new C3dProvenance(instPath, viewPath, sh.Name, []) { Exact = exact, Element = t };
                 _walkLowering.Add(new C3dWalkStep(name, $"{(g.Frame is null ? C3dLowering.KindSheet : C3dLowering.KindFramedSheet)} (from the layout)"));
             }
             _order = baseOrder + maxOrder;

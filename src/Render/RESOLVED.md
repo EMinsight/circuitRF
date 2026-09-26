@@ -3844,3 +3844,41 @@ are the port probes transformed with openEMS's own normalisation (2·Δt·Σ u e
   hit), and object IDs are construction order. Metal patches with a blit on the queue (ordered after
   every frame already committed); D3D11 with UpdateSubresource (scene buffers are DEFAULT now, not
   immutable); Vulkan waits idle and copies from staging, as a whole upload already did.
+
+## Snapping: the pick patch, feature tables, the query — brief-em3d-44 (2026-09-26)
+
+Built: `Scene3D/Edit/Scene3DFeatureTable.cs`, `Scene3DIdPatch.cs`, `SnapQuery3D.cs`, `GeometrySnap.cs` (the
+one snap radius), the pick size on `Camera3D.ViewProjectionMatrix` and `Scene3DFramePlan`, and
+`RayHits.BatchesNearRay`. Gates: `tests/Ui.Tests/ThreeD/Snap3DGateTests.cs`. **No pixel was seen**; the
+Metal patch was driven offscreen and agrees with the CPU patch texel for texel except on an edge.
+
+- **The patch is the 1 × 1 ID pass with a wider window.** The pick matrix maps the N × N pixels round the
+  cursor (N odd) onto the clip square, so its CENTRE texel is still the cursor's pixel: a backend with a
+  1 × 1 target given the same matrix reads exactly the old answer. That is why D3D11 and Vulkan were left
+  at 1 × 1 (they compile and have never run, and a blind read-back change there is unreviewable): their
+  `MaxPickSize` is 1 and the pane renders the patch on the CPU instead, from the objects near the ray.
+- **Depth is VIEW depth, taken from the pick pass's own point target** (`Camera3D.ViewDepth`), not the
+  depth buffer: the RGBA32Float target already carried the fragment's point, and view depth is one measure
+  in perspective and orthographic, where NDC z is not.
+- **The brief's visibility rule, read literally, is vacuous.** "Visible if it lies on a face in the patch"
+  — but every candidate COMES from a face in the patch. It is applied per PIXEL instead: a feature is
+  shown when, at its pixel or one of the eight round it, the patch holds nothing, one of the feature's OWN
+  faces (a corner's faces, an edge's two, a centre's one), or something no nearer than it within a pixel's
+  worth of depth. That keeps the brief's intent — an edge between a front face and a back face is visible
+  through the front one — and hides a corner of a big face that a small object in front covers.
+- **X-ray, defined**: on when the clip plane is on or the patch holds a translucent object. Then the
+  TRANSLUCENT objects the cursor's ray passes near (the B hierarchy, radius-padded) give every feature,
+  with no visibility test; opaque objects never X-ray. A dielectric's far corners are seen through it.
+- **A tie needs a tolerance.** Two corners one behind the other land on one screen point, but their float
+  distances differ in the last bits, so a strict "equal distance → smaller depth" never fired and the FAR
+  corner won half the time. `SnapQuery3D.TiePixels` (0.05 px) makes them a tie.
+- **Feature tables are doubles in world metres**, built from the tessellation's own `Point3`s (the
+  elaboration's metres unchanged), never from the scene's scene-local floats — a snapped corner must come
+  back as its DBU exactly. A sweep or sphere (no named faces) has none; a curved face (a cylinder's side)
+  has no centre, which would lie inside the solid.
+- **Instances share a table, not a tessellation.** The scene is still flattened (the per-batch transform
+  is brief 46/48's), so 900 array elements are 900 meshes; the builder keys their table by (file, object,
+  rotation) and gives each element its translation, and a hover offsets only the elements in the patch.
+  Tables are also kept per MESH (a ConditionalWeakTable), so an edit re-tables only the edited object.
+- **Zero allocations per hover** on the CPU path held once `RayHits`' BVH query took a caller's stack; it
+  allocated one per call before (B still passes a fresh one — B is a key press, not a hover).
