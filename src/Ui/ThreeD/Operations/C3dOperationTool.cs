@@ -41,6 +41,10 @@ public abstract class C3dOperationTool(IC3dDrawHost host, IReadOnlyList<C3dTarge
     /// <summary>The transform the commit writes: the one fixed by the finishing click or the typed field.</summary>
     public C3dOperationTransform? Committed { get; protected set; }
 
+    /// <summary>The transform is a translation, committed to the origin only, so a hand-written rotation list survives
+    /// verbatim (Move; brief-em3d-47's Align to Face).</summary>
+    public virtual bool TranslationOnly => false;
+
     /// <summary>A key while it runs (an axis lock); true when it took it.</summary>
     public virtual bool Key(Key key, KeyModifiers modifiers) => false;
 

@@ -185,7 +185,10 @@ public sealed class C3dElaborationTests(ITestOutputHelper output) : IDisposable
                                                                         Em3dRole.Conductor, lowered.Solid!, basis.Solids.Max(s => s.Order) + 1)] };
         }
         var pBox = With(drawnBox);
-        var pPoly = With(drawnPoly);
+        // brief-em3d-47 R-em3d47-1c — the lowering now recognises the drawn polyhedron AS a box; the writers' own
+        // polyhedron path is driven with the neutral polyhedron that box states, which is what this gate is about.
+        Assert.IsType<Em3dBox>(With(drawnPoly).Solids[^1].Primitive);
+        var pPoly = pBox with { Solids = [.. pBox.Solids.SkipLast(1), pBox.Solids[^1] with { Primitive = C3dLowering.BoxPolyhedron((Em3dBox)pBox.Solids[^1].Primitive) }] };
         Assert.IsType<Em3dBox>(pBox.Solids[^1].Primitive);
         var poly = Assert.IsType<Em3dPolyhedron>(pPoly.Solids[^1].Primitive);
 

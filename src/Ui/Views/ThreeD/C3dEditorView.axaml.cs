@@ -186,4 +186,12 @@ public partial class C3dEditorView : UserControl
     }
 
     private void OnRotateLostFocus(object? sender, RoutedEventArgs e) => _vm?.Properties.CommitRotate();
+
+    private void OnVertexKey(object? sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter) { _vm?.Properties.CommitVertex(); e.Handled = true; }
+        else if (e.Key == Key.Escape) { _vm?.Properties.Reload(); e.Handled = true; }
+    }
+
+    private void OnVertexLostFocus(object? sender, RoutedEventArgs e) => _vm?.Properties.CommitVertex();
 }

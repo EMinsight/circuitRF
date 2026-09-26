@@ -22,7 +22,12 @@ public sealed record C3dEditSlot(bool Instance, int Index, string? Before, strin
 public sealed class C3dEdit : IUiCommand
 {
     private readonly Action<IReadOnlyList<C3dEditSlot>, bool> _apply;
+    private readonly Action<string>? _setBoundaries;
     private bool _alreadyApplied;
+
+    /// <summary>brief-em3d-47 R-em3d47-3c — the document's <c>FaceBoundaries</c> before and after, as a JSON array, when a
+    /// fold renamed a face something was attached to; null when the entry leaves them alone.</summary>
+    public (string Before, string After)? FaceBoundaries { get; }
 
     public string Description { get; }
     public IReadOnlyList<C3dEditSlot> Slots { get; }
@@ -30,8 +35,10 @@ public sealed class C3dEdit : IUiCommand
     /// <param name="apply">Writes the slots into the document: forward (after) or back (before).</param>
     /// <param name="alreadyApplied">The document already holds the after state (a gesture committed on
     /// release, R-em3d43-1c): the stack's first Execute does nothing, and every Redo after it applies.</param>
+    /// <param name="faceBoundaries">The <c>FaceBoundaries</c> list before and after, written by <paramref name="setBoundaries"/>
+    /// ahead of the slots, forward and back.</param>
     public C3dEdit(string description, IReadOnlyList<C3dEditSlot> slots, Action<IReadOnlyList<C3dEditSlot>, bool> apply,
-                   bool alreadyApplied = false)
+                   bool alreadyApplied = false, (string Before, string After)? faceBoundaries = null, Action<string>? setBoundaries = null)
     {
         bool replace = slots.All(s => s.Before is not null && s.After is not null);
         bool remove = slots.All(s => s.Before is not null && s.After is null);
@@ -42,15 +49,22 @@ public sealed class C3dEdit : IUiCommand
         Slots = slots;
         _apply = apply;
         _alreadyApplied = alreadyApplied;
+        FaceBoundaries = faceBoundaries;
+        _setBoundaries = setBoundaries;
     }
 
     public void Execute()
     {
         if (_alreadyApplied) { _alreadyApplied = false; return; }
+        if (FaceBoundaries is { } b) _setBoundaries?.Invoke(b.After);
         _apply(Slots, true);
     }
 
-    public void Undo() => _apply(Slots, false);
+    public void Undo()
+    {
+        if (FaceBoundaries is { } b) _setBoundaries?.Invoke(b.Before);
+        _apply(Slots, false);
+    }
 
     /// <summary>Writes <paramref name="slots"/> into <paramref name="doc"/>, forward or back.</summary>
     public static void Apply(C3dDocument doc, IReadOnlyList<C3dEditSlot> slots, bool forward)

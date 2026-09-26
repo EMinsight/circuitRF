@@ -259,6 +259,31 @@ model circuitRF built, and after a run it also shows what the solver made.
   rotation keeps an object what it was — a rotated box is still a box — and the file stores it as at most
   three turns. A result that is not a whole number of database units is rounded and the status line says
   **≈**.
+- **Editing faces and vertices** (the 3D editor, Face and Vertex modes). Right-click a face, or use *3D ▸
+  Modify ▸ Face*. **N** (*Move Along Normal*) pushes or pulls the face: its plane moves and the faces around
+  it keep theirs, stretching to meet it — push a box's top up and it is still a box, only taller. It stops
+  just before a neighbour would shrink to nothing, and the status line names that neighbour (`'side2' would
+  vanish at 1.2 mil`); a typed distance past that point is refused rather than shortened. **G** moves the face
+  freely, base point to target point, with **X/Y/Z** and typed distances as for objects; the faces around it
+  tilt to follow. **E** (*Extrude to New Solid*) grows a new solid from the face along its normal — a bump
+  from a pad, a wall from a floor — in the toolbar's material, or the source's with **M**; the source is
+  unchanged. *Align to Face…* then a click on another face moves the object until the two are in one plane:
+  *Touching* (facing each other, a die on its substrate) or *Flush* (the same way), **T** switches, and the
+  result is shown before the click; faces that are not parallel are refused (rotate first). *Copy as Sheet*
+  makes a sheet exactly on the face. *Measure* puts the face's area, perimeter and outward normal in
+  Properties; Shift-click a second, parallel face for the distance between them. In Vertex mode **G** moves the
+  selected vertex, Properties' *Set coordinates* types where it goes, and *Measure From* starts a measurement
+  there. **Every edit keeps the solid closed**: no face is ever removed, so there is no Delete in Face mode. A
+  face that can no longer be flat is split into flat triangles, named after it (`top.0`, `top.1`), and anything
+  attached to the face goes to every piece. An edit that would make the solid pass through itself is drawn in
+  red and refused, naming the faces (`'top' would pass through 'bottom'`); nothing changes. A shape keeps its
+  kind for as long as it can say the result with its own dimensions — a pushed box stays a box, a prism's top
+  moved sideways is a slanted prism — and otherwise becomes a **polyhedron** with the same face names; the
+  status line says so, and Undo takes it back. A cylinder's ends move only along its axis and its side only
+  in radius, and in Vertex mode it offers just its two cap centres, which measure but do not move: *Convert to
+  Polyhedron* (Object mode; for a cylinder, choose how many flat sides) makes every vertex editable. While a
+  face or vertex is dragged only that object is redrawn, and the document changes once, as one undo step,
+  when you click.
 - **Measure** (**M**, the ruler button, *3D ▸ Measure*; in the editor and in this view). Click two points,
   snapped as drawing is; after the first a line follows the cursor. A card in the corner of the view gives
   both points' x, y and z, their differences (the second minus the first) and the distance, in the

@@ -20,7 +20,9 @@ namespace CircuitRF.Ui.ThreeD.Tools;
 
 /// <summary>The tools (owner decision D6 adds the cylinder), and Extrude — a gesture on an existing object (§5) — and
 /// brief 46's Move and Rotate, which are gestures on the selection (Duplicate is a Move that keeps the original).</summary>
-public enum C3dToolKind { Box, Sheet, Polygon, Polyline, Cylinder, Extrude, Move, Rotate }
+/// <para>brief-em3d-47 — the face and vertex gestures: Move Along Normal, a face's Move, a vertex's Move, Extrude to New
+/// Solid and Align to Face.</para>
+public enum C3dToolKind { Box, Sheet, Polygon, Polyline, Cylinder, Extrude, Move, Rotate, PushPull, FaceMove, VertexMove, ExtrudeFace, AlignFace }
 
 /// <summary>
 /// Where the cursor is, as a tool reads it: the snap in force (a DBU point, and whether it is exact and on geometry

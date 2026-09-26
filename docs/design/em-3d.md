@@ -1010,7 +1010,10 @@ viewer must show: intersecting translucent solids, and fields on 10⁵–10⁶ e
    reads back one texel leaves the patch to the CPU, which renders it from the objects near the cursor's ray.
 3. **A drag is a preview.** Moving, rotating or resizing transforms what is already drawn; the kernel
    rebuild happens once, on release. The rules the PCell parameter handles already follow
-   (`pcell-parameter-handles.md`) govern a drag on a dimension bound to an expression.
+   (`pcell-parameter-handles.md`) govern a drag on a dimension bound to an expression. *(Brief 47:)* a face
+   or vertex drag cannot be a rigid transform, because the neighbours change shape: each move runs the
+   managed kernel on that ONE object and re-tessellates and uploads it alone, from a snapshot in which the
+   edited object stands in for the document's; the document is written once, on release (§8.6's rev-6 gate).
 4. **Heavy work is off the drawing path.** The viewport always draws the last *finished* geometry; a
    rebuild in flight never blanks or stalls it.
 5. **Keyboard-first, no modal dialogs mid-gesture** — a value can be typed while dragging. *(Brief 45:)* a

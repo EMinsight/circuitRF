@@ -133,7 +133,22 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     // ── the scene: elaboration → problem → scene ─────────────────────────────────────────────
 
     private object Snapshot()
-        => new C3dSceneInputs(C3dPersistence.Serialize(Document), FilePath, _workspaceCws(), ThemeService.Active, ThemeService.CurrentVariant);
+        => new C3dSceneInputs(DocumentText(), FilePath, _workspaceCws(), ThemeService.Active, ThemeService.CurrentVariant);
+
+    /// <summary>
+    /// The document as its file would say it — with, while a face or vertex gesture runs, the gesture's edited object
+    /// standing in for the document's own (brief-em3d-47 R-em3d47-6). The document's list is swapped for a copy for the
+    /// length of one serialisation; its objects are never written.
+    /// </summary>
+    private string DocumentText()
+    {
+        if (_facePreview is not { } p || p.Index >= Document.Objects.Count) return C3dPersistence.Serialize(Document);
+        var objects = Document.Objects;
+        var shown = new List<C3dObject>(objects) { [p.Index] = p.Object };
+        Document.Objects = shown;
+        try { return C3dPersistence.Serialize(Document); }
+        finally { Document.Objects = objects; }
+    }
 
     /// <summary>The origin moves only when the content has moved further than its own size from it, so an
     /// ordinary edit leaves every other object's vertex bytes as they were (gate 6).</summary>
@@ -200,6 +215,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         RefreshGridText();
         Interlocked.Exchange(ref _adoptedGeneration, gen);
         ReleaseHeldPreview(gen);
+        ReselectFace();
     }
 
     /// <summary>A document object's <c>Hidden</c> is document state (brief 41 §2a): the pane follows it.</summary>
@@ -326,9 +342,13 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         StatusMessage = "";
     }
 
+    /// <summary>Times the document's objects were written — brief-em3d-47 gate 7 reads that a drag writes none.</summary>
+    public int DocumentWrites { get; private set; }
+
     /// <summary>The one place the document's objects change, for every entry, forward and back.</summary>
     private void ApplySlots(IReadOnlyList<C3dEditSlot> slots, bool forward)
     {
+        DocumentWrites++;
         C3dEdit.Apply(Document, slots, forward);
         DocumentChanged();
     }
@@ -401,6 +421,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         public void Update(Action<C3dObject> mutate)
         {
             if (_done) throw new InvalidOperationException("This gesture has ended.");
+            _owner.DocumentWrites++;
             foreach (var (i, _) in _before) mutate(_owner.Document.Objects[i]);
             _owner.DocumentChanged();
         }

@@ -35917,3 +35917,32 @@ session.** Owner check (brief §8) pending, including confirming G, R and M.
   the motion. A lost capture cancels the move (Esc semantics).
 - **`C3dEditorGateTests.AnInstancesFace_…` asserted the old disabled "Measure" placeholder**; it now accepts
   the live item, whose header is `Measure  (M)`.
+
+## Face and vertex editing in the 3D editor — brief-em3d-47 (2026-09-26)
+
+Built: `src/Ui/ThreeD/C3dEditorViewModel.FaceEdit.cs`, `src/Ui/ThreeD/Operations/FaceEditTools.cs` (PushPullTool,
+FaceMoveTool for a face or a vertex, ExtrudeFaceTool, AlignToFaceTool), Properties' Set Coordinates, perimeter and
+two-face distance, the 3D ▸ Modify ▸ Face / Vertex / Convert to Polyhedron items. Gate 7:
+`tests/Ui.Tests/ThreeD/KernelDragGateTests.cs`.
+
+- **A face drag does NOT use brief 43's `C3dGesture`**, which writes the document on every move. The gesture's
+  edited object stands in for the document's own in the scene's SNAPSHOT (`DocumentText` swaps the Objects list for
+  a copy for one serialisation), so each move lowers and tessellates one object, elaborates no child, and writes
+  nothing; `DocumentWrites` counts real writes and gate 7 holds it still across a drag. The commit is one entry; Esc
+  drops the stand-in and regenerates.
+- **The committed face is re-selected by NAME** (`ReselectFace`): a box that became a polyhedron numbers its faces
+  differently, and the pane carries a selection across a regeneration by face INDEX.
+- **Face Move is brief 46's MoveTool, composed** — base point, target, X/Y/Z and Shift+X/Y/Z locks, typed dx/dy/dz —
+  and only its translation is taken into the object's frame by the inverse placement. `C3dOperationTool` gained
+  `TranslationOnly` (Move, Align to Face) to replace the `op is MoveTool` test in `CommitOperation`.
+- **Keys**: N, E and G in Face mode, G in Vertex mode, routed through `OperationKey` before the object keys; Esc
+  cancels any face gesture outright (the drawing tools' "Esc resets, Esc again disarms" does not apply).
+- **Set Coordinates' fields are spelled losslessly** (`C3dDimension.Spell`), because they commit on lost focus: a
+  lossy spelling would move the vertex by a rounding the moment focus left an untouched field. The placement ORIGIN
+  fields beside them still use the display unit's default decimals (brief 43) and carry that risk at a coarse unit.
+- **Copy as Sheet on an instance's face stays disabled**: the face's exact geometry belongs to the child document.
+- **Tests failing on this tree that this brief does not reach** (run once, attributed by `git status`): 
+  `TechMaterialsTests.Gate5` names `C3dEditorViewModel.ThicknessUmFor` (brief 45) as a `StackupLayer.Material`
+  reader outside its allow-list; six Em3d "every .cem in the repo … no new key" gates and
+  `SettingsDialogHelpAndTooltipsTests.Em3dTab_EveryVisibleStringIsSelectable` fail on repository content this brief
+  did not touch.

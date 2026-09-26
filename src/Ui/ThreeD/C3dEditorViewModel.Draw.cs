@@ -230,6 +230,7 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
         CloseField();
         _crossing = null;
         if (_tool is C3dOperationTool && !ReferenceEquals(_tool, tool)) EndOperation();
+        if (_tool is C3dFaceEditTool && !ReferenceEquals(_tool, tool)) EndFaceEdit();
         _tool = tool;
         // brief-em3d-46 — one gesture at a time: arming a tool ends a measurement.
         if (tool is not null) Viewer.EndMeasure();
@@ -336,9 +337,11 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
         }
         else if (step.Advanced) StatusMessage = "";
         if (step.Finished && _tool is C3dOperationTool op) CommitOperation(op);
+        else if (step.Finished && _tool is C3dFaceEditTool ft) CommitFaceEdit(ft);
         if (step.Result is { } obj)
         {
             if (_tool is ExtrudeTool ex) CommitExtrude(ex, obj);
+            else if (_tool is ExtrudeFaceTool ef) CommitExtrudeFace(ef, obj);
             else
             {
                 Push(new C3dEdit($"Draw {C3dObject.KindOf(obj).ToLowerInvariant()} {obj.Name}",
@@ -383,11 +386,13 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
         if (_tool is not { InProgress: true } && OperationKey(key, modifiers)) return true;
         if (_tool is not { } tool) return false;
         if (tool is C3dOperationTool opTool && opTool.Key(key, modifiers)) { OperationChanged(); return true; }
+        if (tool is C3dFaceEditTool faceTool && faceTool.Key(key, modifiers)) { FaceToolChanged(); OnPropertyChanged(nameof(ToolPrompt)); return true; }
         bool plain = modifiers == KeyModifiers.None;
+        bool gesture = tool.Kind == C3dToolKind.Extrude || tool is C3dOperationTool || tool is C3dFaceEditTool;
         switch (key)
         {
             case Key.Escape:
-                if (tool.InProgress && tool.Kind != C3dToolKind.Extrude && tool is not C3dOperationTool)
+                if (tool.InProgress && !gesture)
                 {
                     tool.Reset();
                     _crossing = null;
@@ -397,7 +402,7 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
                 }
                 else
                 {
-                    StatusMessage = tool.Kind == C3dToolKind.Extrude || tool is C3dOperationTool ? $"{tool.Name} cancelled." : "";
+                    StatusMessage = gesture ? $"{tool.Name} cancelled." : "";
                     Disarm();
                 }
                 return true;
@@ -445,6 +450,7 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
             DrawGeometry.Chain(points, l.Closed, dbu, SelectedTreeItem?.Name == l.Name ? overlay.Selected : overlay.Construction);
         }
         if (_tool is { } tool) tool.Preview(CursorInput(), overlay.Rubber, overlay.Fixed);
+        FillFaceOverlay(overlay);
         if (_tool is C3dOperationTool { ShowsPivot: true } op) overlay.Pivots.Add(DrawGeometry.Metres(op.Pivot, dbu));
         if (_crossing is { } x) { overlay.Crossing.Add(x.A); overlay.Crossing.Add(x.B); }
     }
@@ -459,6 +465,7 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
     public IEnumerable<Viewer3DMenuItem> DrawMenuItems()
     {
         foreach (var item in OperationMenuItems()) yield return item;
+        foreach (var item in FaceMenuItems()) yield return item;
         if (Viewer.SelectMode == Scene3DSelectMode.Face && Viewer.Selection is [{ Face: >= 0 } f])
             yield return new Viewer3DMenuItem("Drawing Plane from Face", () => { if (PlaneFromFace(f.Object, f.Face) is { } why) StatusMessage = why; });
         if (ExtrudeSource() is { } src)
@@ -613,6 +620,17 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
         }
         ToolCommits++;
         StatusMessage = $"Extruded to {kind} \"{result.Name}\"; the source was " + (ex.Keep ? "kept." : "consumed.");
+        SetTool(null);
+    }
+
+    /// <summary>brief-em3d-47 — Extrude to New Solid's one undo entry: the new object inserted; the source unchanged.</summary>
+    private void CommitExtrudeFace(ExtrudeFaceTool ef, C3dObject result)
+    {
+        string kind = C3dObject.KindOf(result).ToLowerInvariant();
+        Push(new C3dEdit($"{ef.Describe}: {result.Name}",
+                         [new C3dEditSlot(false, Document.Objects.Count, null, C3dPersistence.SerializeObject(result))], ApplySlots));
+        FaceEdits++;
+        StatusMessage = $"Extruded {kind} \"{result.Name}\" from '{ef.Editor.Source.Name}'" + (result.Material is { } m ? $" in {m}." : ".");
         SetTool(null);
     }
 }

@@ -44,6 +44,7 @@ public sealed class MoveTool : C3dOperationTool
     public override C3dToolKind Kind => C3dToolKind.Move;
     public override string Name => _duplicate ? "Duplicate" : "Move";
     public override bool KeepsOriginal => _duplicate;
+    public override bool TranslationOnly => true;
 
     public C3dMoveLock Lock { get; private set; }
 

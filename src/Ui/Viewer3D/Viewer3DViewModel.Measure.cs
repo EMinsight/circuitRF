@@ -59,6 +59,17 @@ public sealed partial class Viewer3DViewModel
         FrameRequested?.Invoke();
     }
 
+    /// <summary>brief-em3d-47 — Vertex mode's Measure From: Measure armed with <paramref name="first"/> as its first point, so
+    /// the next click (or the cursor, live) is the second.</summary>
+    public void StartMeasureFrom(Viewer3DMeasurePoint first)
+    {
+        EndMeasure();
+        StartMeasure();
+        MeasureP1 = first;
+        RefreshMeasureReadout();
+        FrameRequested?.Invoke();
+    }
+
     /// <summary>Esc, another tool: the measurement goes away.</summary>
     public void EndMeasure()
     {

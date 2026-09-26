@@ -200,6 +200,7 @@ public static class Scene3DBuilder
                 Rgba = rgba, Translucent = translucent,
                 InitiallyVisible = s.Role != Em3dRole.Air && s.Name != outermost,
                 FaceNames = FacesOf(s.Name),
+                CapCentres = s.Primitive is Em3dCylinder cyl ? [cyl.AxisStart, cyl.AxisEnd] : null,
             }, mesh, faces: true, features: Features(s.Name, mesh, sheet: false));
         }
 
@@ -408,7 +409,7 @@ public static class Scene3DBuilder
                 Id = id, Name = o.Name, Kind = o.Kind, Material = o.Material, MaterialValues = o.MaterialValues,
                 MaterialSlot = o.MaterialSlot, Rgba = o.Rgba, Translucent = o.Translucent,
                 InitiallyVisible = o.InitiallyVisible, PortNumber = o.PortNumber, Boundary = o.Boundary,
-                FaceNames = o.FaceNames,
+                FaceNames = o.FaceNames, CapCentres = o.CapCentres,
             };
             var min = new Vector3(float.MaxValue);
             var max = new Vector3(float.MinValue);

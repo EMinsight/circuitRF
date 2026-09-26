@@ -307,6 +307,28 @@
                                     </NativeMenuItem>
                                     <NativeMenuItemSeparator/>
                                     <NativeMenuItem Header="Extrude" ToolTip="A selected sheet, or a polyline selected in the tree, into a prism. Requires an active 3D editor." Command="{Binding ThreeDExtrudeCommand}"/>
+                                    <NativeMenuItemSeparator/>
+                                    <NativeMenuItem Header="Face" ToolTip="Face mode (F): the selected face. Requires an active 3D editor.">
+                                        <NativeMenuItem.Menu>
+                                            <NativeMenu>
+                                                <NativeMenuItem Header="Move Along Normal  (N)" ToolTip="Push or pull the selected face; its neighbours keep their planes. Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="PushPull"/>
+                                                <NativeMenuItem Header="Move  (G)" ToolTip="The face's corners follow base point to target point; its neighbours tilt, or fold. Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="FaceMove"/>
+                                                <NativeMenuItem Header="Extrude to New Solid  (E)" ToolTip="A new solid grows from the face along its normal. Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="ExtrudeFace"/>
+                                                <NativeMenuItem Header="Align to Face…" ToolTip="Then click a parallel face: the object moves until they are coplanar. T toggles Touching and Flush. Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="AlignFace"/>
+                                                <NativeMenuItem Header="Copy as Sheet" ToolTip="A new sheet exactly on the face. Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="CopySheet"/>
+                                                <NativeMenuItem Header="Measure" ToolTip="Area, perimeter and normal in Properties; Shift-click a parallel face for the distance. Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="MeasureFace"/>
+                                            </NativeMenu>
+                                        </NativeMenuItem.Menu>
+                                    </NativeMenuItem>
+                                    <NativeMenuItem Header="Vertex" ToolTip="Vertex mode (V): the selected vertex. Requires an active 3D editor.">
+                                        <NativeMenuItem.Menu>
+                                            <NativeMenu>
+                                                <NativeMenuItem Header="Move  (G)" ToolTip="The vertex follows base point to target point; the faces on it tilt, or fold. Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="VertexMove"/>
+                                                <NativeMenuItem Header="Measure From" ToolTip="Measure, starting at the selected vertex. Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="MeasureFrom"/>
+                                            </NativeMenu>
+                                        </NativeMenuItem.Menu>
+                                    </NativeMenuItem>
+                                    <NativeMenuItem Header="Convert to Polyhedron" ToolTip="Object mode: the selected box, prism or cylinder, with every vertex editable and the face names kept. Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="ConvertPoly"/>
                                 </NativeMenu>
                             </NativeMenuItem.Menu>
                         </NativeMenuItem>
@@ -1052,6 +1074,20 @@
                     <Separator/>
                     <MenuItem Header="_Extrude" Command="{Binding ThreeDExtrudeCommand}"
                               ToolTip.Tip="A selected sheet, or a polyline selected in the tree, into a prism. Requires an active 3D editor."/>
+                    <Separator/>
+                    <MenuItem Header="_Face" ToolTip.Tip="Face mode (F): the selected face. Requires an active 3D editor.">
+                        <MenuItem Header="Move Along Normal  (N)" Command="{Binding ThreeDModifyCommand}" CommandParameter="PushPull" ToolTip.Tip="Push or pull the selected face; its neighbours keep their planes. Requires an active 3D editor."/>
+                        <MenuItem Header="Move  (G)" Command="{Binding ThreeDModifyCommand}" CommandParameter="FaceMove" ToolTip.Tip="The face's corners follow base point to target point; its neighbours tilt, or fold. Requires an active 3D editor."/>
+                        <MenuItem Header="Extrude to New Solid  (E)" Command="{Binding ThreeDModifyCommand}" CommandParameter="ExtrudeFace" ToolTip.Tip="A new solid grows from the face along its normal. Requires an active 3D editor."/>
+                        <MenuItem Header="Align to Face…" Command="{Binding ThreeDModifyCommand}" CommandParameter="AlignFace" ToolTip.Tip="Then click a parallel face: the object moves until they are coplanar. T toggles Touching and Flush. Requires an active 3D editor."/>
+                        <MenuItem Header="Copy as Sheet" Command="{Binding ThreeDModifyCommand}" CommandParameter="CopySheet" ToolTip.Tip="A new sheet exactly on the face. Requires an active 3D editor."/>
+                        <MenuItem Header="Measure" Command="{Binding ThreeDModifyCommand}" CommandParameter="MeasureFace" ToolTip.Tip="Area, perimeter and normal in Properties; Shift-click a parallel face for the distance. Requires an active 3D editor."/>
+                    </MenuItem>
+                    <MenuItem Header="_Vertex" ToolTip.Tip="Vertex mode (V): the selected vertex. Requires an active 3D editor.">
+                        <MenuItem Header="Move  (G)" Command="{Binding ThreeDModifyCommand}" CommandParameter="VertexMove" ToolTip.Tip="The vertex follows base point to target point; the faces on it tilt, or fold. Requires an active 3D editor."/>
+                        <MenuItem Header="Measure From" Command="{Binding ThreeDModifyCommand}" CommandParameter="MeasureFrom" ToolTip.Tip="Measure, starting at the selected vertex. Requires an active 3D editor."/>
+                    </MenuItem>
+                    <MenuItem Header="_Convert to Polyhedron" Command="{Binding ThreeDModifyCommand}" CommandParameter="ConvertPoly" ToolTip.Tip="Object mode: the selected box, prism or cylinder, with every vertex editable and the face names kept. Requires an active 3D editor."/>
                 </MenuItem>
                 <MenuItem Header="Mea_sure" Command="{Binding ThreeDMeasureCommand}"
                           ToolTip.Tip="Two snapped points: x, y, z, the deltas and the distance, every number copyable (M). Requires an active 3D document.">

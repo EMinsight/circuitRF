@@ -331,6 +331,16 @@
                             <CheckBox IsChecked="{Binding MirrorX}" Content="Mirror x"/>
                         </StackPanel>
 
+                        <!-- brief-em3d-47 R-em3d47-3e — Set Coordinates: the typed Vertex Move, world, in the display unit. -->
+                        <StackPanel Spacing="4" IsVisible="{Binding IsVertexEditable}">
+                            <TextBlock Text="Set coordinates (x, y, z)" FontSize="11" Opacity="0.7"/>
+                            <Grid ColumnDefinitions="*,4,*,4,*">
+                                <TextBox Grid.Column="0" Text="{Binding VertexX}" KeyDown="OnVertexKey" LostFocus="OnVertexLostFocus"/>
+                                <TextBox Grid.Column="2" Text="{Binding VertexY}" KeyDown="OnVertexKey" LostFocus="OnVertexLostFocus"/>
+                                <TextBox Grid.Column="4" Text="{Binding VertexZ}" KeyDown="OnVertexKey" LostFocus="OnVertexLostFocus"/>
+                            </Grid>
+                        </StackPanel>
+
                         <SelectableTextBlock Text="{Binding Error}" Foreground="IndianRed" TextWrapping="Wrap"
                                              IsVisible="{Binding Error, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
 

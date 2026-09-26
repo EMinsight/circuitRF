@@ -13492,3 +13492,55 @@ Built: `src/Design/ThreeD/C3dPlacement.cs` (`C3dPlacement` is now `partial`; `Th
 - **No throw for the impossible branch**: the quarter-turn search falls back to Euler rather than throwing,
   because `Firewall.Tests`' user-facing-text gate reads any exception message below the firewall as a
   user-facing sentence.
+
+## brief-em3d-47 — the managed face/vertex kernel (2026-09-26)
+
+Built: `src/Design/ThreeD/Kernel/` — `C3dBrep` (B-rep over a shared topology, Int128 Newell normals and volume),
+`C3dBrepBuild` (every solid primitive to a B-rep with its fixed face names, and back), `C3dKernel` (push/pull, free
+face move, vertex move, fold, the local self-intersection check), `C3dFaceBvh` + `C3dExact` (face-bounds tree, exact
+orientation predicates), `C3dFaceEdit` (`C3dFaceEditor` — what each primitive can state — and `C3dFaceCommands`:
+extrude, copy as sheet, align, boundaries following a fold), `C3dRecognition` (the lowering's box / z-prism
+recognition). Gates 1–6, 8, 9 in `tests/Ui.Tests/ThreeD/KernelGateTests.cs`; gate 7 in `KernelDragGateTests.cs`.
+
+- **"Can the primitive state it?" is answered by READING THE KERNEL'S RESULT BACK, not by a rule per operation.**
+  Every box, prism and polyhedron edit runs the kernel on the primitive's B-rep; `ReadBox`/`ReadPrism` then check,
+  by the vertex layout the B-rep was built with, whether the result is still that primitive. So the §2 table holds
+  (gate 2) and a few cells come out better than it says: a prism side moved *in its plane* by G stays a prism (its
+  Outline changes), and a box face moved by G straight along its own normal stays a box. Only what does not read
+  back becomes a Polyhedron.
+- **The table's "prism bottom, free move → Offset, Height and Shear" cannot be stated without Outline**: moving the
+  bottom sideways moves the outline. The readback changes Outline too; the brief's cell omitted it.
+- **An oblique prism's top/bottom push/pull scales Shear by H'/H** — that is what "the neighbours keep their planes"
+  means for a slanted side. It stays a prism because every top vertex is 3-valent on the SAME lateral edge
+  direction, so one t and one rounding apply to all of them.
+- **A 3-valent vertex moves along the one edge the pushed face does not own**, v + e·d·|N|/(N·e), with e that
+  edge's integer vector — not by solving three planes. Every point of that line is on both neighbours, and for an
+  axis-aligned face |N| is an integer, so the step is Int128 arithmetic rounded once (gate 3 holds the trapezoid's
+  neighbours to 1e-12, and in fact exactly).
+- **Gate 1's Euler formula needs a hole term.** V − E + F = 2 − 2g holds only for disc faces; a prism with a hole
+  has V − E + F = 2 and genus 1. The gate asserts V − E + F − H = 2 − 2g, H the number of hole rings.
+- **A face planar to 1 DBU is not planar to the neutral problem**, whose check is 1e-9 of the solid's size — far
+  under a DBU on any real part. `check` (C3dValidation, 1 DBU) and the kernel agree with the brief; the lowering now
+  splits a face that is not EXACTLY planar into triangles carrying its name (`ExactlyPlanarFaces`), so the solver
+  gets exact faces and the document is unchanged. Before this, a document polyhedron with a sub-DBU-tilted face
+  passed `check` and was refused by `Em3dProblem.Validate`.
+- **Recognition applies to document Polyhedra only**, so the lowering table's "prism on YZ → polyhedron" row is
+  unchanged. Brief 42's gate 4 drew a box AS a polyhedron to exercise the writers' polyhedron path; the lowering now
+  recognises it as a box, so that gate drives the writers with the neutral `BoxPolyhedron` instead.
+- **The self-intersection check is local by construction**: only the faces on a moved vertex (the TOUCHED faces)
+  are re-planed, folded and tested — against each other, and against the untouched faces through the SOURCE
+  B-rep's face-bounds tree (their bounds have not moved). Faces sharing a vertex are skipped (the brief's rule);
+  the predicates are exact Int128 orientations, and touching counts as meeting. Gate 6: a push/pull on a
+  10,004-face comb moves 4 vertices, touches 5 faces and tests a handful of pairs.
+- **The clamp is where an edge the push moves reaches zero length** — every moved vertex travels linearly in d, so
+  each edge's collapse point is closed form. The drag clamps strictly inside it; a TYPED distance past it is
+  refused, naming the neighbour, never silently shortened.
+- **Pushing a face through the opposite one is usually stopped by the clamp**; a free move or a typed value past it
+  is refused by the volume/turned-over test, and the message then names the antiparallel face whose plane the moved
+  face crossed (`'zmax' would pass through 'zmin'`).
+- **Boundaries follow a fold by REWRITING the `FaceBoundaries` entries** (`FollowFolds`: one entry per piece), in the
+  same undo entry as the object (the editor's `C3dEdit` carries the list before and after). A cylinder converted
+  to a polyhedron names its side's pieces `side.<k>`, a fold's naming, so the same rule carries `side`.
+- **Align's Touching/Flush toggle cannot choose between two translations** — the translation to coplanarity along
+  the target's normal is unique. It states which way the faces must face (touching: opposite normals; flush: the
+  same), and a pair that faces the other way is refused, saying T switches.

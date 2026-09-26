@@ -128,9 +128,11 @@ public sealed partial class C3dEditorViewModel
 
     // ── starting an operation (keys, menus, the gizmo) ───────────────────────────────────────
 
-    /// <summary>G, R, Ctrl/Cmd+D. True when the key was one of them (a refusal is still an answer).</summary>
+    /// <summary>G, R, Ctrl/Cmd+D — and brief-em3d-47's N, E and G on a face or a vertex. True when the key was one of them
+    /// (a refusal is still an answer).</summary>
     private bool OperationKey(Key key, KeyModifiers modifiers)
     {
+        if (FaceKey(key, modifiers)) return true;
         bool plain = modifiers == KeyModifiers.None;
         if (plain && key == Key.G) { StartMove(); return true; }
         if (plain && key == Key.R) { StartRotate(); return true; }
@@ -187,6 +189,7 @@ public sealed partial class C3dEditorViewModel
     private void OnCursorResolvedForOperation()
     {
         if (_tool is C3dOperationTool) OperationChanged();
+        else if (_tool is C3dFaceEditTool) FaceToolChanged();
     }
 
     /// <summary>The operation's state changed (the cursor, a key): its preview and its prompt follow.</summary>
@@ -299,7 +302,7 @@ public sealed partial class C3dEditorViewModel
         var targets = op.Targets;
         bool changed = op.KeepsOriginal
             ? InsertCopies(targets, [t.Transform], $"Duplicate {Describe(targets)}", t.Exact)
-            : ApplyTransform(targets, t.Transform, t.Exact, op is MoveTool, $"{op.Name} {Describe(targets)}");
+            : ApplyTransform(targets, t.Transform, t.Exact, op.TranslationOnly, $"{op.Name} {Describe(targets)}");
         if (changed) HoldPreviewForCommit();
         SetTool(null);
     }
@@ -773,8 +776,11 @@ public sealed partial class C3dEditorViewModel
     /// <summary>3D ▸ Modify's items, by name — the same functions the context menu and the keys call.</summary>
     public void RunModify(string which)
     {
+        if (RunFaceModify(which)) return;
         switch (which)
         {
+            case "Move" when Viewer.SelectMode == Scene3DSelectMode.Face: StartFaceMove(); break;
+            case "Move" when Viewer.SelectMode == Scene3DSelectMode.Vertex: StartVertexMove(); break;
             case "Move": StartMove(); break;
             case "MoveX": StartMove(C3dMoveLock.AxisX); break;
             case "MoveY": StartMove(C3dMoveLock.AxisY); break;

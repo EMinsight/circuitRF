@@ -3936,3 +3936,11 @@ Built: `Scene3DDraw.Transform`, `Scene3DPreview` and the plan's transform slots 
 - **The gizmo is laid out in screen pixels from the projected axis directions**, a constant size; an axis
   whose projected step is under 20 % (pointing at the viewer) offers no arrow and no squares that use it.
   Plane squares win a hit over arrows; they sit 16–30 px out along both arms, so the two never overlap.
+
+## Cylinder cap centres in Vertex mode — brief-em3d-47 (2026-09-26)
+
+`Scene3DObject.CapCentres` (world metres; set by `Scene3DBuilder` for an `Em3dCylinder`, copied by the builder's
+object copy) and `Scene3DFaces.NearestVertexOnScreen` offer ONLY those two points on a cylinder, whatever face the
+cursor is on: a cylinder's tessellation vertices are not design (R-em3d47-5). This applies in the read-only viewer
+too, so a via's rim points are no longer vertex candidates there either. Snapping is unchanged (a cap's centre was
+already its face centre).

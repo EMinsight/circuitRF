@@ -11,6 +11,9 @@
 // A sheet lies flat (Em3dSheet at Z) under the same condition a prism stays an extrusion, and otherwise
 // carries a frame (Em3dPlaneFrame). A polyline is construction geometry and lowers to nothing.
 //
+// brief-em3d-47 R-em3d47-1c: a Polyhedron that is exactly an axis-aligned box or a z-prism is recognised and
+// lowers by the Box or the XY-prism row (C3dRecognition) — the document keeps the polyhedron.
+//
 // The table is applied to the WHOLE transform an object ends up under — its own placement, then every
 // instance above it — so a box rotated by 30° inside an instance rotated by −30° is an Em3dBox again.
 //
@@ -99,9 +102,18 @@ public static class C3dLowering
             }
             case C3dPolyhedron ph:
             {
+                // brief-em3d-47 R-em3d47-1c — an edited solid that is exactly a box or a z-prism again lowers as one.
+                if (Kernel.C3dRecognition.Box(ph) is var (bMin, bMax, bNames))
+                    return Transform(Kernel.C3dRecognition.BoxMetres(bMin, bMax, dbuPerMicron), bNames, w, KindBox);
+                if (Kernel.C3dRecognition.ZPrism(ph) is var (rings, z0, z1, pNames))
+                {
+                    IReadOnlyList<Point2> Ring(List<C3dPoint2> r) => [.. r.Select(q => new Point2(M(q.U), M(q.V)))];
+                    return Transform(new Em3dExtrudedPolygon(Ring(rings[0]), [.. rings.Skip(1).Select(Ring)], M(z0), M(z1)), pNames, w, KindExtrusion);
+                }
+                var faces = Kernel.C3dRecognition.ExactlyPlanarFaces(ph) ?? ph.Faces;
                 var poly = new Em3dPolyhedron(
                     [.. ph.Vertices.Select(v => new Point3(M(v.X), M(v.Y), M(v.Z)))],
-                    [.. ph.Faces.Select(f => new Em3dFace(f.Outer, [.. f.Holes.Select(h => (IReadOnlyList<int>)h)], f.Name))]);
+                    [.. faces.Select(f => new Em3dFace(f.Outer, [.. f.Holes.Select(h => (IReadOnlyList<int>)h)], f.Name))]);
                 return Transform(poly, [], w, KindPolyhedron);
             }
             case C3dSheet s:

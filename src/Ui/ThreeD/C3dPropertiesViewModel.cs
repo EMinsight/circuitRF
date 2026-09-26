@@ -4,8 +4,9 @@
 //   * a face: its name, area and normal;
 //   * a vertex: its coordinates.
 //
-// This brief makes an object's NAME, MATERIAL, ROLE and PLACEMENT editable; brief 47 adds vertex coordinates
-// and face offsets. Each edit is a typed edit — validated, and ONE undo entry — committed on Enter or when
+// This brief makes an object's NAME, MATERIAL, ROLE and PLACEMENT editable; brief 47 adds a vertex's coordinates
+// (Set Coordinates — the typed Vertex Move, one undo entry) and a face's perimeter, and the distance between two
+// selected parallel faces (Face mode's Measure). Each edit is a typed edit — validated, and ONE undo entry — committed on Enter or when
 // the field loses focus, never per keystroke. Every length follows the display unit at once (gate 10): the
 // panel is reloaded when the unit changes, and it holds no length of its own.
 
@@ -50,6 +51,12 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
     [ObservableProperty] private bool _mirrorX;
     [ObservableProperty] private string _error = "";
 
+    /// <summary>brief-em3d-47 R-em3d47-3e — the selected vertex's world coordinates, editable (Set Coordinates).</summary>
+    [ObservableProperty] private bool _isVertexEditable;
+    [ObservableProperty] private string _vertexX = "";
+    [ObservableProperty] private string _vertexY = "";
+    [ObservableProperty] private string _vertexZ = "";
+
     /// <summary>Shows the current selection.</summary>
     public void Reload()
     {
@@ -65,9 +72,11 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         Error = "";
         ObjectIndex = -1;
         IsEditable = false;
+        IsVertexEditable = false;
         var viewer = editor.Viewer;
         var sel = viewer.Selection;
         if (sel.Count == 0) { Heading = "Nothing selected"; return; }
+        if (sel.Count == 2 && viewer.SelectMode == Scene3DSelectMode.Face && sel[0].Face >= 0 && sel[1].Face >= 0) { TwoFaces(sel[0], sel[1]); return; }
         if (sel.Count > 1) { Heading = $"{sel.Count} selected"; return; }
         var item = sel[0];
         if (viewer.Scene.Object(item.Object) is not { } o) { Heading = "Nothing selected"; return; }
@@ -78,12 +87,21 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
             var (area, normal) = Scene3DFaces.AreaAndNormal(viewer.Scene, o.Id, item.Face);
             Rows.Add(new C3dPropertyRow("Face", o.FaceName(item.Face)));
             Rows.Add(new C3dPropertyRow("Area", AreaText(area)));
+            if (Perimeter(o.Id, item.Face) is { } per) Rows.Add(new C3dPropertyRow("Perimeter", viewer.FormatLength(per)));
             Rows.Add(new C3dPropertyRow("Normal", normal is { } n ? $"({Num(n.X)}, {Num(n.Y)}, {Num(n.Z)})" : "varies (a curved face)"));
             Rows.Add(new C3dPropertyRow("Object", viewer.ObjectName(o)));
             return;
         }
         if (viewer.SelectMode == Scene3DSelectMode.Vertex)
         {
+            // Set Coordinates: the vertex of one of this document's own objects, exactly where the document has it.
+            if (editor.VertexSelection() is { Vertex: >= 0 } v)
+            {
+                IsVertexEditable = true;
+                // Spelled losslessly, so a field left alone parses back to the same DBU and its lost focus moves nothing.
+                string L(long dbu) => Tools.C3dDimension.Spell(dbu, editor.Document.DisplayUnit, editor.Document.DbuPerMicron);
+                VertexX = L(v.World.X); VertexY = L(v.World.Y); VertexZ = L(v.World.Z);
+            }
             var (x, y, z) = viewer.Scene.ToWorld(item.Point);
             Rows.Add(new C3dPropertyRow("x", viewer.FormatLength(x)));
             Rows.Add(new C3dPropertyRow("y", viewer.FormatLength(y)));
@@ -122,6 +140,63 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         Rows.Add(new C3dPropertyRow("Construction order",
             $"{index + 1} of {editor.Document.Objects.Count} — a later object wins where solids overlap (Modify ▸ Order)"));
         foreach (var row in Dimensions(obj)) Rows.Add(row);
+    }
+
+    /// <summary>A face's perimeter (metres): the scene's own feature edges around it, which are the solid's edges, not its
+    /// triangles'. Null when the face has none (a sweep names no faces).</summary>
+    private double? Perimeter(uint id, int face)
+    {
+        if (editor.Viewer.Scene.FeaturesOf(id) is not { Table: { } t } fr || face >= t.FaceCount) return null;
+        double p = 0;
+        for (int k = t.FaceEdgeStart[face]; k < t.FaceEdgeStart[face + 1]; k++)
+        {
+            int e = t.FaceEdges[k];
+            var a = fr.Vertex(t.EdgeA[e]);
+            var b = fr.Vertex(t.EdgeB[e]);
+            p += Math.Sqrt((b.X - a.X) * (b.X - a.X) + (b.Y - a.Y) * (b.Y - a.Y) + (b.Z - a.Z) * (b.Z - a.Z));
+        }
+        return p > 0 ? p : null;
+    }
+
+    /// <summary>brief-em3d-47 R-em3d47-4 — Measure's second face: the distance between two parallel faces, or that they are not.</summary>
+    private void TwoFaces(Scene3DItem a, Scene3DItem b)
+    {
+        var viewer = editor.Viewer;
+        var scene = viewer.Scene;
+        if (scene.Object(a.Object) is not { } oa || scene.Object(b.Object) is not { } ob) { Heading = "2 selected"; return; }
+        Heading = "2 faces";
+        Rows.Add(new C3dPropertyRow("First", viewer.Name(a)));
+        Rows.Add(new C3dPropertyRow("Second", viewer.Name(b)));
+        var (_, na) = Scene3DFaces.AreaAndNormal(scene, oa.Id, a.Face);
+        var (_, nb) = Scene3DFaces.AreaAndNormal(scene, ob.Id, b.Face);
+        if (na is not { } n1 || nb is not { } n2) { Rows.Add(new C3dPropertyRow("Distance", "A curved face has no single plane.")); return; }
+        var c = System.Numerics.Vector3.Cross(n1, n2);
+        if (c.Length() > 1e-5f) { Rows.Add(new C3dPropertyRow("Distance", "Not parallel.")); return; }
+        if (Corner(oa.Id, a.Face) is not { } pa || Corner(ob.Id, b.Face) is not { } pb) return;
+        double d = Math.Abs(n1.X * (pb.X - pa.X) + n1.Y * (pb.Y - pa.Y) + n1.Z * (pb.Z - pa.Z));
+        Rows.Add(new C3dPropertyRow("Distance", viewer.FormatLength(d)));
+        Rows.Add(new C3dPropertyRow("Facing", System.Numerics.Vector3.Dot(n1, n2) < 0 ? "each other" : "the same way"));
+    }
+
+    private Point3? Corner(uint id, int face)
+        => editor.Viewer.Scene.FeaturesOf(id) is { Table: { } t } fr && face < t.FaceCount && t.FaceVertexStart[face] < t.FaceVertexStart[face + 1]
+            ? fr.Vertex(t.FaceVertices[t.FaceVertexStart[face]]) : null;
+
+    /// <summary>brief-em3d-47 R-em3d47-3e — Set Coordinates' Enter or lost focus: three lengths in the display unit (a suffix
+    /// may name another), the vertex moved there as one undo entry — or the refusal, and the fields put back.</summary>
+    public void CommitVertex()
+    {
+        if (!IsVertexEditable) return;
+        var doc = editor.Document;
+        if (!LayoutUnits.TryParse(VertexX, doc.DisplayUnit, doc.DbuPerMicron, out long x) ||
+            !LayoutUnits.TryParse(VertexY, doc.DisplayUnit, doc.DbuPerMicron, out long y) ||
+            !LayoutUnits.TryParse(VertexZ, doc.DisplayUnit, doc.DbuPerMicron, out long z))
+        {
+            Error = $"A vertex is three lengths, in {LayoutUnits.Suffix(doc.DisplayUnit)} unless a unit is written.";
+            return;
+        }
+        if (editor.SetVertexCoordinates(new C3dPoint3(x, y, z)) is { } why) { Error = why; return; }
+        Error = "";
     }
 
     // ── read-only dimensions, per kind ──────────────────────────────────────────────────────

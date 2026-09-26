@@ -60,13 +60,18 @@ public static class Scene3DFaces
     /// <summary>
     /// R-em3d43-3b — Vertex mode picks THROUGH the face: of face <paramref name="face"/>'s corners, the one
     /// nearest the cursor on screen, when it is within <paramref name="radiusPx"/>; otherwise none.
+    /// brief-em3d-47 R-em3d47-5 — on a cylinder the candidates are its two cap centres, whatever the face: its
+    /// tessellation's vertices are not design.
     /// </summary>
     public static Vector3? NearestVertexOnScreen(Scene3DModel scene, uint id, int face, in Camera3D camera,
                                                  float px, float py, float width, float height, float radiusPx)
     {
         Vector3? best = null;
         float bestD2 = radiusPx * radiusPx;
-        foreach (var p in Vertices(scene, id, face))
+        IEnumerable<Vector3> candidates = scene.Object(id)?.CapCentres is { } caps
+            ? caps.Select(c => scene.ToLocal(c.X, c.Y, c.Z))
+            : Vertices(scene, id, face);
+        foreach (var p in candidates)
         {
             var (x, y, visible) = camera.Project(p, width, height);
             if (!visible) continue;

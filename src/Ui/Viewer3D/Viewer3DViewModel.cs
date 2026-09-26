@@ -427,6 +427,9 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
     private string _hoverField = "";
     private (double X, double Y, double Z)? _lastCursorWorld;
 
+    /// <summary>brief-em3d-47 — the surface point under the cursor, world metres, or null off every surface.</summary>
+    public (double X, double Y, double Z)? CursorWorld => _lastCursorWorld;
+
     public void Resized(float width, float height)
     {
         if (height > 0) _aspect = width / height;
