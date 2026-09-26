@@ -84,6 +84,10 @@ public static class C3dPersistence
     public static void SaveToFile(string path, C3dDocument doc)
         => AtomicFile.WriteAllText(path, Serialize(doc));
 
+    /// <summary>brief-em3d-42 R-em3d42-4 — one object as the file spells it: the elaborator's per-object cache
+    /// key, so an object is re-elaborated exactly when what the file would say about it changes.</summary>
+    public static string SerializeObject(C3dObject obj) => JsonSerializer.Serialize(obj, JsonOpts);
+
     /// <summary>R-em3d41-2-dims: a size component is positive; a negative one moves the corner. A
     /// prism's height and a cylinder's length keep their sign — each says which way it was pulled.</summary>
     public static void Normalize(C3dDocument doc)

@@ -25,7 +25,11 @@ namespace CircuitRF.Engine.Em3d;
 /// <summary>One triangle, as three indices into its mesh's vertices, tagged with the solid it
 /// belongs to. The tag travels with the triangle so meshes of several solids can be concatenated
 /// without losing which is which.</summary>
-public readonly record struct Em3dTriangle(int A, int B, int C, string Solid);
+/// <remarks>brief-em3d-42 R-em3d42-1c — <see cref="Face"/> is the index of the primitive's face the triangle
+/// lies on, which brief 43's face picking reads: a polyhedron's face in <see cref="Em3dPolyhedron.Faces"/>
+/// order; a box's in <see cref="Em3dTessellation.BoxFaces"/> order; an extrusion's bottom 0, top 1, then one
+/// per ring edge (outline, then each hole); a cylinder's bottom 0, top 1, side 2. −1 for everything else.</remarks>
+public readonly record struct Em3dTriangle(int A, int B, int C, string Solid, int Face = -1);
 
 /// <summary>A closed triangle mesh. Vertices are shared between the triangles that meet at them —
 /// a mesh welded by construction, which is what lets a consumer find an edge's two faces.</summary>
@@ -45,6 +49,9 @@ public static class Em3dTessellation
     /// a ring of vertices. A truncated sphere keeps the same number of bands between its two cuts.</summary>
     public const int SphereBands = 16;
 
+    /// <summary>A box's faces, in the order <see cref="Em3dTriangle.Face"/> numbers them.</summary>
+    public static readonly string[] BoxFaces = ["xmin", "xmax", "ymin", "ymax", "zmin", "zmax"];
+
     /// <summary>The triangles of <paramref name="solid"/>, every one tagged with its name.</summary>
     public static Em3dTriangleMesh Of(Em3dSolid solid)
     {
@@ -61,6 +68,7 @@ public static class Em3dTessellation
                          Math.Max(t.ZMin - t.Center.Z, -t.Radius), Math.Min(t.ZMax - t.Center.Z, t.Radius));
                 break;
             case Em3dExtrudedPolygon e:    b.Extrusion(e.Outline, e.Holes, e.ZBottom, e.ZTop); break;
+            case Em3dPolyhedron ph:        b.Polyhedron(ph); break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(solid), solid.Primitive.GetType().Name,
                                                       "unknown primitive");
@@ -78,7 +86,7 @@ public static class Em3dTessellation
     {
         ArgumentNullException.ThrowIfNull(sheet);
         var b = new Builder(sheet.Name);
-        b.Flat(sheet.Outline, sheet.Holes, sheet.Z);
+        b.Flat(sheet.Outline, sheet.Holes, sheet.Z, sheet.Frame);
         return new Em3dTriangleMesh(b.Vertices, b.Triangles);
     }
 
@@ -88,8 +96,10 @@ public static class Em3dTessellation
         public readonly List<Em3dTriangle> Triangles = [];
 
         private int V(Point3 p) { Vertices.Add(p); return Vertices.Count - 1; }
-        private void T(int a, int b, int c) => Triangles.Add(new Em3dTriangle(a, b, c, name));
+        private int _face = -1;
+        private void T(int a, int b, int c) => Triangles.Add(new Em3dTriangle(a, b, c, name, _face));
         private void Quad(int a, int b, int c, int d) { T(a, b, c); T(a, c, d); }
+        private void Face(int f) => _face = f;
 
         public void Box(Em3dBox box)
         {
@@ -98,12 +108,12 @@ public static class Em3dTessellation
             for (int k = 0; k < 8; k++)
                 v[k] = V(new Point3((k & 1) == 0 ? lo.X : hi.X, (k & 2) == 0 ? lo.Y : hi.Y, (k & 4) == 0 ? lo.Z : hi.Z));
             // Outward-facing, counter-clockwise seen from outside.
-            Quad(v[0], v[2], v[3], v[1]);   // z min
-            Quad(v[4], v[5], v[7], v[6]);   // z max
-            Quad(v[0], v[1], v[5], v[4]);   // y min
-            Quad(v[2], v[6], v[7], v[3]);   // y max
-            Quad(v[0], v[4], v[6], v[2]);   // x min
-            Quad(v[1], v[3], v[7], v[5]);   // x max
+            Face(4); Quad(v[0], v[2], v[3], v[1]);   // z min
+            Face(5); Quad(v[4], v[5], v[7], v[6]);   // z max
+            Face(2); Quad(v[0], v[1], v[5], v[4]);   // y min
+            Face(3); Quad(v[2], v[6], v[7], v[3]);   // y max
+            Face(0); Quad(v[0], v[4], v[6], v[2]);   // x min
+            Face(1); Quad(v[1], v[3], v[7], v[5]);   // x max
         }
 
         public void Cylinder(Em3dCylinder c)
@@ -120,10 +130,12 @@ public static class Em3dTessellation
                 bottom[k] = V(Add(c.AxisStart, off));
                 top[k]    = V(Add(c.AxisEnd, off));
             }
+            Face(2);
             for (int k = 0; k < n; k++)
                 Quad(bottom[k], bottom[(k + 1) % n], top[(k + 1) % n], top[k]);
-            Cap(bottom, c.AxisStart, reverse: true);
-            Cap(top, c.AxisEnd, reverse: false);
+            Face(0); Cap(bottom, c.AxisStart, reverse: true);
+            Face(1); Cap(top, c.AxisEnd, reverse: false);
+            Face(-1);
         }
 
         public void Sweep(Em3dSweep s)
@@ -213,8 +225,8 @@ public static class Em3dTessellation
 
             foreach (var t in Em3dPolygonTriangulation.Triangulate(outline, holes))
             {
-                T(top[t.A], top[t.B], top[t.C]);
-                T(bottom[t.A], bottom[t.C], bottom[t.B]);
+                Face(1); T(top[t.A], top[t.B], top[t.C]);
+                Face(0); T(bottom[t.A], bottom[t.C], bottom[t.B]);
             }
 
             // Walls: outward, so the outline is walked counter-clockwise and a hole clockwise.
@@ -229,17 +241,50 @@ public static class Em3dTessellation
                     int j = (i + 1) % n;
                     if (ring[i] == ring[j]) continue;
                     var (a, c) = forward ? (start + i, start + j) : (start + j, start + i);
+                    Face(2 + start + i);
                     Quad(bottom[a], bottom[c], top[c], top[a]);
                 }
                 start += n;
             }
+            Face(-1);
         }
 
-        public void Flat(IReadOnlyList<Point2> outline, IReadOnlyList<IReadOnlyList<Point2>> holes, double z)
+        /// <summary>brief-em3d-42 R-em3d42-1c — each face triangulated in its own plane by the ear clipper,
+        /// through a right-handed frame whose normal is the face's outward normal, so a counter-clockwise
+        /// triangle there faces out. The face's vertices are the polyhedron's own values, so neighbouring
+        /// faces share their corners exactly.</summary>
+        public void Polyhedron(Em3dPolyhedron ph)
+        {
+            for (int f = 0; f < ph.Faces.Count; f++)
+            {
+                var face = ph.Faces[f];
+                var n = ph.Normal(face);
+                var (u, w) = Frame(n);
+                var o = ph.Vertices[face.Outer[0]];
+                Point2 P(int i)
+                {
+                    var q = Sub(ph.Vertices[i], o);
+                    return new Point2(q.X * u.X + q.Y * u.Y + q.Z * u.Z, q.X * w.X + q.Y * w.Y + q.Z * w.Z);
+                }
+                var rings = new List<IReadOnlyList<int>>(1 + face.Holes.Count) { face.Outer };
+                rings.AddRange(face.Holes);
+                var index = new List<int>();
+                foreach (var r in rings) foreach (int i in r) index.Add(V(ph.Vertices[i]));
+                Face(f);
+                foreach (var t in Em3dPolygonTriangulation.Triangulate([.. face.Outer.Select(P)],
+                                                                      [.. face.Holes.Select(h => (IReadOnlyList<Point2>)[.. h.Select(P)])]))
+                    T(index[t.A], index[t.B], index[t.C]);
+            }
+            Face(-1);
+        }
+
+        public void Flat(IReadOnlyList<Point2> outline, IReadOnlyList<IReadOnlyList<Point2>> holes, double z,
+                         Em3dPlaneFrame? frame = null)
         {
             int first = Vertices.Count;
-            foreach (var p in outline) V(new Point3(p.X, p.Y, z));
-            foreach (var h in holes) foreach (var p in h) V(new Point3(p.X, p.Y, z));
+            Point3 W(Point2 p) => frame is { } f ? f.World(p.X, p.Y, z) : new Point3(p.X, p.Y, z);
+            foreach (var p in outline) V(W(p));
+            foreach (var h in holes) foreach (var p in h) V(W(p));
             foreach (var t in Em3dPolygonTriangulation.Triangulate(outline, holes))
                 T(first + t.A, first + t.B, first + t.C);
         }

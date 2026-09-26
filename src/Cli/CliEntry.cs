@@ -1322,7 +1322,7 @@ static string FormatOhms(double re, double im)
 /// </summary>
 static int RunEm(string[] args)
 {
-    string? input = null, output = null, workspace = null, solverName = null;
+    string? input = null, output = null, workspace = null, solverName = null, setupName = null;
     Em3dSolver? solver = null;
     bool force = false;
 
@@ -1355,6 +1355,10 @@ static int RunEm(string[] args)
             case "--force":
                 force = true;
                 break;
+            // brief-em3d-42 R-em3d42-6 — which of a .c3d's embedded setups to run (render --view's pattern).
+            case "--setup" when i + 1 < args.Length:
+                setupName = args[++i];
+                break;
             default:
                 if (args[i].StartsWith('-'))
                     return JsonRun.Fail(CliDiagnostics.RunUnknownOption("em", args[i]));
@@ -1366,7 +1370,7 @@ static int RunEm(string[] args)
     if (input is null)
     {
         int code = JsonRun.Fail(CliDiagnostics.InputRequired("em", ".cem"));
-        Console.Error.WriteLine("Usage: circuitrf em <setup.cem> [-o out.sNp] [--workspace <file.cws>] [--solver palace|openems|both] [--force]");
+        Console.Error.WriteLine("Usage: circuitrf em <setup.cem | view.c3d> [--setup <name>] [-o out.sNp] [--workspace <file.cws>] [--solver palace|openems|both] [--force]");
         return code;
     }
     JsonRun.InputPath = input;
@@ -1375,14 +1379,31 @@ static int RunEm(string[] args)
 
     string cemPath = Path.GetFullPath(input);
 
+    // brief-em3d-42 R-em3d42-6 — a .c3d runs one of its own embedded setups: the one there is, or --setup's.
+    CircuitRF.Design.ThreeD.C3dDocument? threeD = null;
+    string? threeDPath = null;
+    bool isC3d = DocumentKinds.Classify(cemPath) == DocumentKind.ThreeD;
     EmSetup setup;
-    try
+    if (isC3d)
     {
-        setup = EmSetupPersistence.LoadFromFile(cemPath);
+        try { threeD = CircuitRF.Design.ThreeD.C3dPersistence.LoadFromFile(cemPath); }
+        catch (Exception ex) { return JsonRun.Fail(CliDiagnostics.SetupUnreadable(cemPath, ex.Message)); }
+        var (embedded, why) = CircuitRF.Design.ThreeD.C3dSetups.Select(threeD, setupName);
+        if (embedded is null) return JsonRun.Fail(CliDiagnostics.EmThreeDSetup(cemPath, why!));
+        setup = CircuitRF.Design.ThreeD.C3dSetups.ForRun(embedded, cemPath);
+        threeDPath = cemPath;
     }
-    catch (Exception ex)
+    else
     {
-        return JsonRun.Fail(CliDiagnostics.SetupUnreadable(cemPath, ex.Message));
+        if (setupName is not null) return JsonRun.Fail(CliDiagnostics.EmSetupOnCem(Path.GetFileName(cemPath)));
+        try
+        {
+            setup = EmSetupPersistence.LoadFromFile(cemPath);
+        }
+        catch (Exception ex)
+        {
+            return JsonRun.Fail(CliDiagnostics.SetupUnreadable(cemPath, ex.Message));
+        }
     }
 
     // brief-em3d-21 R-em3d21-6a — --solver chooses between 3D solvers; it never makes a planar setup 3D.
@@ -1406,7 +1427,18 @@ static int RunEm(string[] args)
           "against its own directory"
         : $"[circuitRF] workspace: {cwsPath}");
 
-    var resolution = EmSetupResolver.Resolve(cemPath, setup.LayoutRef, cwsPath, new TechnologyCache());
+    // brief-em3d-42 R-em3d42-5b — a .cem whose LayoutRef names a .c3d elaborates that document.
+    if (!isC3d && CircuitRF.Design.ThreeD.C3dSetups.IsThreeDView(EmSetupResolver.ResolveLayoutPath(cemPath, setup.LayoutRef, cwsPath))
+        is true)
+    {
+        threeDPath = EmSetupResolver.ResolveLayoutPath(cemPath, setup.LayoutRef, cwsPath)!;
+        if (!File.Exists(threeDPath)) return JsonRun.Fail(CliDiagnostics.FileNotFound(threeDPath));
+        try { threeD = CircuitRF.Design.ThreeD.C3dPersistence.LoadFromFile(threeDPath); }
+        catch (Exception ex) { return JsonRun.Fail(CliDiagnostics.SetupUnreadable(threeDPath, ex.Message)); }
+    }
+    var resolution = threeD is null
+        ? EmSetupResolver.Resolve(cemPath, setup.LayoutRef, cwsPath, new TechnologyCache())
+        : new EmSetupResolution(null, threeDPath, null, []);
 
     // The resolver's diagnostics are warnings about the SETUP, not the run's own notes, and they go
     // out before anything long starts — "the technology did not resolve" is the sentence that
@@ -1417,7 +1449,7 @@ static int RunEm(string[] args)
         JsonRun.Note(CliDiagnostics.EmSetupWarning(d));
     }
 
-    if (resolution.LayoutPath is { } lp) Console.Error.WriteLine($"[circuitRF] layout: {lp}");
+    if (resolution.LayoutPath is { } lp) Console.Error.WriteLine(threeD is null ? $"[circuitRF] layout: {lp}" : $"[circuitRF] 3D view: {lp}");
     if (resolution.TechnologyPath is { } tp) Console.Error.WriteLine($"[circuitRF] technology: {tp}");
 
     // R-emcli-7 — with no -o the run writes where the GUI writes, and that is not a default this file
@@ -1441,8 +1473,12 @@ static int RunEm(string[] args)
     EmRunResult result;
     try
     {
-        result = EmRunService.Run(setup, resolution.Source, resultsRoot, RunHost.Cancellation, EmProgressToStderr(),
-                                  confirmMemory: force ? _ => true : null);
+        result = threeD is not null
+            ? EmRunService.RunThreeDView(setup, threeD, threeDPath!, DocumentKinds.AncestorCws(threeDPath!), resultsRoot,
+                                         RunHost.Cancellation, EmProgressToStderr(), confirmMemory: force ? _ => true : null,
+                                         fromCem: !isC3d)
+            : EmRunService.Run(setup, resolution.Source, resultsRoot, RunHost.Cancellation, EmProgressToStderr(),
+                               confirmMemory: force ? _ => true : null);
     }
     catch (Exception ex)
     {

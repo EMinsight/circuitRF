@@ -1,0 +1,5 @@
+refusal Port 1 is a wave port, and a wave port lies on the air box — but its line ends at x = 0 µm, short of the box's xmin face at -2000 µm, where other geometry (the board outline, a plane, another conductor) reaches. Run the line to the xmin edge of the layout, or make port 1 a lumped port.
+note Port 1 ('1') at (0, 0 mm) was taken to be on the conductor's low-x (left) end (the port's own direction), driving current in the +x direction, at 50 Ω.
+note Port 2 ('2') at (10, 0 mm) was taken to be on the conductor's high-x (right) end (the port's own direction), driving current in the −x direction, at 50 Ω.
+no-alpha 
+unknown-temperature 

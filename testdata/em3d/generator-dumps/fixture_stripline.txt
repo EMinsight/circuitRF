@@ -1,0 +1,26 @@
+refusal (none)
+note Port 1 ('1') at (0, 0 mm) was taken to be on the conductor's low-x (left) end (the port's own direction), driving current in the +x direction, at 50 Ω.
+note Port 2 ('2') at (5, 0 mm) was taken to be on the conductor's high-x (right) end (the port's own direction), driving current in the −x direction, at 50 Ω.
+note 1 conductor piece(s) are thinner than 3 skin depths at 4 GHz and than 0.1 of their own width, so they are sheets carrying their conductivity and thickness rather than meshed volumes. Both thresholds are provisional.
+note 'Strip' names no material, so its σ is a number of unknown temperature and is used as given at 20 °C. Name a material with an α₂₀ to have it evaluated at the operating temperature.
+note The air box's floor is 'Ground' as a PEC plane at 35 µm: it is the lowest ground-reference conductor, nothing is drawn on it and nothing is drawn below it.
+solid Lower Lower Dielectric 1 box (-0.005,-0.0054,3.5000000000000004E-05) (0.01,0.0054,0.000535)
+solid Upper Upper Dielectric 2 box (-0.005,-0.0054,0.000535) (0.01,0.0054,0.0010350000000000001)
+sheet Strip/1 Strip 3 0.000535 1.0000000000000243E-06 [0,-0.0004 0.005,-0.0004 0.005,0.0004 0,0.0004]
+material Strip 1 - 0 1 58000000
+material Lower 2.2 - 0 1 0
+material Upper 2.2 - 0 1 0
+port 1 port/1 Lumped Strip/1 airbox/zmin (0,-0.0004,3.5000000000000004E-05) (0,0.0004,0.000535) (0,0,1) 50 0 (0,0,0.000285) (1,0,0) 0 - -
+port 2 port/2 Lumped Strip/1 airbox/zmin (0.005,-0.0004,3.5000000000000004E-05) (0.005,0.0004,0.000535) (0,0,1) 50 0 (0.005,0,0.000285) (-1,0,0) 0 - -
+box (-0.005,-0.0054,3.5000000000000004E-05) (0.01,0.0054,0.0010350000000000001) Em3dFaces { XMin = Absorbing, XMax = Absorbing, YMin = Pec, YMax = Pec, ZMin = Pec, ZMax = Pec }
+freq 1000000000 4000000000 7 Linear 20
+type Driven eigen 3 1000000000
+ground 
+origin Lower Dielectric Lower - -
+origin Strip/1 Conductor Strip LayerKey { Layer = 1, Datatype = 0 } 1 µm is under 3 skin depths (3.13471 µm at 4 GHz) and under 0.1 of its width (689.655 µm)
+origin Upper Dielectric Upper - -
+material-source Lower stackup entry 'Lower' (its own numbers)
+material-source Strip stackup entry 'Strip' (its own numbers)
+material-source Upper stackup entry 'Upper' (its own numbers)
+no-alpha 
+unknown-temperature Strip

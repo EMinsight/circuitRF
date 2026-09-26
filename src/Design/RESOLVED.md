@@ -13371,3 +13371,73 @@ New ▸ 3D View, and every walker that follows a cell reference. Nothing draws o
 - **`render` and `explain --extents` use `DocumentKinds.DrawableViewTypes`**, not `AllViewTypes`: a
   cell whose only view is 3D says there is nothing to draw rather than handing a `.c3d` to the
   schematic renderer, until brief 42 draws its sections.
+
+## Elaborate and run a `.c3d`, headless — brief-em3d-42 (2026-09-26)
+
+A `.c3d` becomes an `Em3dProblem` (`src/Design/ThreeD/C3dElaborator.cs`, `C3dLowering.cs`,
+`C3dProblemAssembly.cs`), and `em`, `check`, `explain` and `render --section/--iso` accept one. The
+neutral problem gained `Em3dPolyhedron` and `Em3dSheet.Frame` (`src/Engine/Em3d/Em3dPolyhedron.cs`).
+
+- **The generator split is STAGED, and that is what kept it byte-identical.** Every repo `.cem` (a planar
+  one made 3D in memory) and every generator fixture was dumped as text BEFORE the split —
+  `testdata/em3d/generator-dumps/`, 31 cases, `Em3dGeneratorDumpTests` — and the split reproduces all 31.
+  A one-call "geometry, then the rest" could not have: the generator's notes and materials are ordered
+  lists, and its ports and air box fall BETWEEN the geometry's preparation and its solids (the sheet-count
+  note follows the port notes; a dielectric's material is added after the ports). So
+  `Em3dLayoutSolids.Builder` has three stages the generator drives (`Prepare`, `BuildSolids`,
+  `FinishNotes`), and `Em3dLayoutSolids.From` is the one-call form an instance uses. The air solid's slot
+  (index, order, material) is reserved by the builder and the solid itself is made by the generator, so
+  the layout's solids really do return no air solid. `Em3dGenerator.PaddedAirBox` and
+  `Em3dGenerator.Terminals` are shared with the `.c3d` assembly.
+- **openEMS's inline `<Polyhedron>` is read, and it leaves out grid nodes lying exactly ON its faces**
+  (measured with openEMS 67d3784 / CSXCAD dcdb62b, `--debug-PEC`, the microstrip golden's strip replaced
+  by an equal polyhedron): the 35 µm strip, both z faces on grid lines, gave 518 PEC edges as a Box and
+  78 as a polyhedron; thickened so only its bottom face is on a line, 1,890 against 978. A Box and a LinPoly
+  include their faces. The FDTD grid puts a line on every axis-aligned metal face, so a thin polyhedron
+  conductor would lose its surface. `CsxcadWriter` therefore writes a box-shaped polyhedron as `<Box>`
+  and a right prism along any axis as `<LinPoly>` with that `NormDir`, and names every other polyhedron
+  with an axis-aligned face in a note. The PLY file route (`PolyhedronReader`) was not tried: it builds
+  the same primitive.
+- **Gmsh 4.15.2's OCC factory takes a planar surface with a hole from a curve-loop list inside a closed
+  shell** (a square tube meshed after the fragment), provided the faces SHARE their lines: the writer
+  emits one Point per vertex, one Line per edge, signed references in each Curve Loop, then Surface Loop
+  and Volume — no sewing. A face bent by more than 1e-8 µm (a tenth of OCCT's tolerance) is written as
+  its triangles.
+- **An instance's undrawn floor plane becomes a bounded conductor.** Inside a `.c3d` there is no air box to
+  floor, so the plane a `.cem` would have made its PEC floor is metal over the outline or the drawn
+  extent — and, being on a ground-reference entry, it is a static problem's ground. With the air above
+  the stack now the background, those are three of gate 3's asserted differences; the fourth is the air
+  box's floor (absorbing, the setup's default, where the `.cem` had PEC).
+- **"Bounded by the drawn geometry's bounding box" makes the Package example's alumina a 7.8 mm × 0.2 mm
+  strip**, because its layout draws no outline and its metal is one line. That is the rule as briefed and
+  the note says so, but a package placed this way is not the package the `.cem` solves: give the layout a
+  board outline (an `Edge.Cuts`/`Profile` layer) and the slabs take it.
+- **Elaboration takes its physics as options** (`C3dElaborationOptions`: the top frequency for the sheet
+  rule, the temperature for σ(T)). The editor elaborates with none, and then a layout instance's
+  conductor with thickness is a solid; the problem assembly elaborates at the setup's own values, so
+  what is solved matches the `.cem` exactly (gate 3).
+- **A drawn conductor's net is its own name**, so a static setup's `Terminals3D` can name drawn metal
+  (gate 9 does). A layout instance's nets arrive UNPREFIXED, so two elements of an array share their nets
+  and a terminal on one takes both — brief 49's problem, left visible.
+- **A material is qualified by its technology's `.ctech` STEM** (`Gold@ceramic-package`): the display name
+  may hold spaces and commas.
+- **Composed rotations are snapped to 0/±1 within 1e-12 before the lowering table**, so 30° inside −30° is
+  an `Em3dBox` again. Only matrix entries move, by rounding error; translations are untouched.
+- **Every triangle carries a face index** (`Em3dTriangle.Face`): a polyhedron's by its faces, a box's in
+  `Em3dTessellation.BoxFaces` order, an extrusion's bottom 0 / top 1 / then its ring edges (the order
+  `C3dPrism.FaceNames` uses), a cylinder's bottom, top, side. The provenance map carries the names in the
+  same order, so a box rotated a quarter turn reports its own `ymax` as world `xmin`.
+- **Gates 9 and 10 are ELECTROSTATIC.** A driven comparison of |S21| needs ports, which are brief 49's (a
+  sub-cell's ports are ignored by design), so the small solve compares the capacitance matrix of the
+  shipped two-line fixture from a `.cem` against a `.c3d` built object for object from that `.cem`'s own
+  problem — within 0.2 % — and the CLI gate compares the static run's `.npy` byte for byte. Both are
+  under 5 s and stay routine. Their class joins `SkiaFontsTypefaceCollection`, as every Palace-running
+  class does: `RunBothTests` counts Palace starts process-wide and saw these runs when they ran beside it.
+- **An embedded setup's result is `<results>/<c3d stem> <setup name>.<solver>…`** — the run's setup is
+  renamed so `ResolveResultKey` gives exactly what a sibling `.cem` of that name would.
+- **`render x.c3d` with no single setup** draws the elaboration in a box at its own extent (a note says
+  so): there is no setup to pad by. With one embedded setup it draws the problem that setup would run.
+- **Failing before this brief, untouched by it** (targeted runs, 2026-09-26): `Em3dGeneratorTests` Gate5
+  and Gate6, `PalaceBackendTests` Gate8, `PalaceStaticTests` Gate8, `PalaceEigenTests` Gate9 and
+  `Em3dWireTests` Gate8 scan the repo's `.cem`/`.wBond` files and trip on series 2's 3D examples;
+  `EmCoreCountTests` and `EmFrameworkFreeTests` scan `src/Ui` files this brief does not touch.

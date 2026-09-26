@@ -143,6 +143,10 @@ public static class CsxcadWriter
                           "lumped port cannot state it.");
         }
         if (run.Problems() is { Count: > 0 } bad) return No(string.Join(" ", bad));
+        // brief-em3d-42 R-em3d42-1c — CSXCAD's sheet primitive is a polygon normal to one axis.
+        if (problem.Sheets.FirstOrDefault(sh => sh.Frame is { NormalAxis: null }) is { } oblique)
+            return No($"Sheet '{oblique.Name}' lies in a plane no axis is normal to, and openEMS's sheet is a polygon " +
+                      "normal to x, y or z on its grid. Solve it with Palace, or draw the sheet on XY, YZ or XZ.");
 
         var materials = problem.Materials.ToDictionary(m => m.Name, StringComparer.Ordinal);
         materials.TryAdd(GmshGeoWriter.FreeSpace.Name, GmshGeoWriter.FreeSpace);
@@ -157,6 +161,7 @@ public static class CsxcadWriter
         var notes = new List<string>();
         var pec = new List<string>();
         var thin = new List<string>();
+        var onFaces = new List<string>();
         var extended = new List<string>();
 
         var ctx = new Context(problem, grid, faceKinds, gridSettings.PmlCells);
@@ -173,7 +178,7 @@ public static class CsxcadWriter
             {
                 var m = materials[s.Material];
                 bool reached = false;
-                string prim = Primitive(s, ctx, thin, ref reached);
+                string prim = Primitive(s, ctx, thin, onFaces, ref reached);
                 if (reached) extended.Add(s.Name);
                 if (s.Role == Em3dRole.Conductor)
                 {
@@ -317,6 +322,11 @@ public static class CsxcadWriter
                       " written as openEMS's thin conductor on grid edges, whose effective radius is set by the cell, " +
                       "not the wire: expect too much inductance (F0 measured 26 % on a 1 mil wire at a 25 µm cell). " +
                       "A grid step of half the wire's radius around it reached Palace within 0.1 dB.");
+        if (onFaces.Count > 0)
+            notes.Add($"{Names(onFaces)} {(onFaces.Count == 1 ? "is a polyhedron" : "are polyhedra")} with faces on grid " +
+                      "lines, written as openEMS's polyhedron primitive — which, measured against an equal Box, leaves out " +
+                      "the grid edges lying exactly on its faces (518 of the Box's edges became 78 on a 35 µm strip). " +
+                      "Expect that metal to act a cell smaller on those faces; Palace meshes it exactly.");
         if (extended.Count > 0)
             notes.Add($"{Names(extended)} reach{(extended.Count == 1 ? "es" : "")} an absorbing face and " +
                       (extended.Count == 1 ? "is" : "are") + " continued through its PML, so the absorber terminates the " +
@@ -435,11 +445,32 @@ public static class CsxcadWriter
 
     // ── Primitives ──────────────────────────────────────────────────────────────────────────────
 
-    private static string Primitive(Em3dSolid s, Context ctx, List<string> thin, ref bool reached)
+    private static string Primitive(Em3dSolid s, Context ctx, List<string> thin, List<string> onFaces, ref bool reached)
     {
         int pr = s.Order;
         switch (s.Primitive)
         {
+            // brief-em3d-42 — openEMS's polyhedron leaves out grid nodes lying exactly on its faces, where a Box or
+            // a LinPoly includes them (measured, RESOLVED.md §brief-em3d-42), and the grid puts lines on every
+            // axis-aligned face. So a polyhedron that IS a box, or a right prism along an axis, is written as one.
+            case Em3dPolyhedron ph when AxisBox(ph) is var (lo, hi):
+                return Box(pr, ctx.Out(lo, ref reached), ctx.Out(hi, ref reached));
+            case Em3dPolyhedron ph when AxisPrism(ph) is { } prism:
+            {
+                var (axis, bottom, top, outline, holes) = prism;
+                int a1 = (axis + 1) % 3, a2 = (axis + 2) % 3;
+                double lo = ctx.OutAxis(bottom, axis, ref reached), hi = ctx.OutAxis(top, axis, ref reached);
+                var ring = Keyhole(outline, holes);
+                var sb = new StringBuilder();
+                sb.Append($"                    <LinPoly Priority=\"{pr}\" Elevation=\"{R(lo)}\" NormDir=\"{axis}\" QtyVertices=\"{ring.Count}\" Length=\"{R(hi - lo)}\">\n");
+                foreach (var q in ring)
+                    sb.Append($"                        <Vertex X1=\"{R(ctx.OutAxis(q.X, a1, ref reached))}\" X2=\"{R(ctx.OutAxis(q.Y, a2, ref reached))}\" />\n");
+                sb.Append("                    </LinPoly>\n");
+                return sb.ToString();
+            }
+            case Em3dPolyhedron ph when ph.Faces.Any(f => IsAxisNormal(ph.Normal(f))):
+                onFaces.Add(s.Name);
+                goto default;
             case Em3dBox b:
             {
                 var (lo, hi) = (ctx.Out(b.Min, ref reached), ctx.Out(b.Max, ref reached));
@@ -496,13 +527,72 @@ public static class CsxcadWriter
         }
     }
 
+    private static bool IsAxisNormal(Point3 n)
+        => (Math.Abs(n.X) > 1 - 1e-12 ? 1 : 0) + (Math.Abs(n.Y) > 1 - 1e-12 ? 1 : 0) + (Math.Abs(n.Z) > 1 - 1e-12 ? 1 : 0) == 1;
+
+    /// <summary>The corners of a polyhedron that is an axis-aligned box — six axis-normal faces over eight
+    /// vertices — or null.</summary>
+    private static (Point3 Lo, Point3 Hi)? AxisBox(Em3dPolyhedron ph)
+    {
+        if (ph.Faces.Count != 6 || ph.Vertices.Count != 8 || ph.Faces.Any(f => f.Holes.Count > 0 || !IsAxisNormal(ph.Normal(f))))
+            return null;
+        var lo = new Point3(ph.Vertices.Min(v => v.X), ph.Vertices.Min(v => v.Y), ph.Vertices.Min(v => v.Z));
+        var hi = new Point3(ph.Vertices.Max(v => v.X), ph.Vertices.Max(v => v.Y), ph.Vertices.Max(v => v.Z));
+        foreach (var v in ph.Vertices)
+            if ((v.X != lo.X && v.X != hi.X) || (v.Y != lo.Y && v.Y != hi.Y) || (v.Z != lo.Z && v.Z != hi.Z)) return null;
+        return (lo, hi);
+    }
+
+    /// <summary>
+    /// A polyhedron that is a right prism along a world axis: two faces normal to it at two coordinates, every
+    /// other face parallel to it, and every vertex on one of the two caps — its axis, the caps' coordinates, and
+    /// the lower cap's rings in CSXCAD's cyclic in-plane axes; or null.
+    /// </summary>
+    private static (int Axis, double Bottom, double Top, List<Point2> Outline, List<IReadOnlyList<Point2>> Holes)? AxisPrism(Em3dPolyhedron ph)
+    {
+        for (int axis = 0; axis < 3; axis++)
+        {
+            var caps = ph.Faces.Where(f => Math.Abs(Get(ph.Normal(f), axis)) > 1 - 1e-12).ToList();
+            if (caps.Count != 2) continue;
+            if (ph.Faces.Except(caps).Any(f => Math.Abs(Get(ph.Normal(f), axis)) > 1e-12)) return null;
+            double c0 = Get(ph.Vertices[caps[0].Outer[0]], axis), c1 = Get(ph.Vertices[caps[1].Outer[0]], axis);
+            if (ph.Vertices.Any(v => Get(v, axis) != c0 && Get(v, axis) != c1) || c0 == c1) return null;
+            var low = c0 < c1 ? caps[0] : caps[1];
+            int a1 = (axis + 1) % 3, a2 = (axis + 2) % 3;
+            Point2 P(int i) => new(Get(ph.Vertices[i], a1), Get(ph.Vertices[i], a2));
+            return (axis, Math.Min(c0, c1), Math.Max(c0, c1), [.. low.Outer.Select(P)],
+                    [.. low.Holes.Select(h => (IReadOnlyList<Point2>)[.. h.Select(P)])]);
+        }
+        return null;
+    }
+
     private static string SheetPolygon(Em3dSheet sh, Context ctx, ref bool reached)
     {
+        if (sh.Frame is not null) return FramedSheetPolygon(sh, ctx, ref reached);
         var ring = Keyhole(sh.Outline, sh.Holes);
         for (int i = 0; i < ring.Count; i++) ring[i] = ctx.Out2(ring[i], ref reached);
         var sb = new StringBuilder();
         sb.Append($"                    <Polygon Priority=\"{sh.Order}\" Elevation=\"{R(sh.Z)}\" NormDir=\"2\" QtyVertices=\"{ring.Count}\">\n");
         foreach (var q in ring) sb.Append($"                        <Vertex X1=\"{R(q.X)}\" X2=\"{R(q.Y)}\" />\n");
+        sb.Append("                    </Polygon>\n");
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// brief-em3d-42 — a sheet on YZ or XZ (or on XY through a frame): CSXCAD's Polygon normal to that axis, its
+    /// vertices in the two remaining axes in CSXCAD's cyclic order ((n+1) mod 3, (n+2) mod 3), at the
+    /// plane's coordinate. The keyhole is built in the sheet's own frame, then placed.
+    /// </summary>
+    private static string FramedSheetPolygon(Em3dSheet sh, Context ctx, ref bool reached)
+    {
+        int n = sh.Frame!.NormalAxis!.Value;
+        int a1 = (n + 1) % 3, a2 = (n + 2) % 3;
+        var ring = new List<Point3>();
+        foreach (var q in Keyhole(sh.Outline, sh.Holes)) ring.Add(ctx.Out(sh.World(q), ref reached));
+        double elevation = Get(sh.World(sh.Outline[0]), n);
+        var sb = new StringBuilder();
+        sb.Append($"                    <Polygon Priority=\"{sh.Order}\" Elevation=\"{R(elevation)}\" NormDir=\"{n}\" QtyVertices=\"{ring.Count}\">\n");
+        foreach (var q in ring) sb.Append($"                        <Vertex X1=\"{R(Get(q, a1))}\" X2=\"{R(Get(q, a2))}\" />\n");
         sb.Append("                    </Polygon>\n");
         return sb.ToString();
     }
@@ -647,6 +737,7 @@ public static class CsxcadWriter
             => new(Out(q.X, 0, ref reached), Out(q.Y, 1, ref reached), Out(q.Z, 2, ref reached));
         public Point2 Out2(Point2 q, ref bool reached) => new(Out(q.X, 0, ref reached), Out(q.Y, 1, ref reached));
         public double OutZ(double z, ref bool reached) => Out(z, 2, ref reached);
+        public double OutAxis(double v, int axis, ref bool reached) => Out(v, axis, ref reached);
 
         /// <summary>
         /// R-em3d9-2c: a wire is below the grid when its diameter is smaller than the coarsest side of

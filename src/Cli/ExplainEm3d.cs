@@ -68,11 +68,10 @@ internal static class ExplainEm3d
             })
             .Concat(p.Sheets.Select(sh =>
             {
-                double x0 = sh.Outline.Min(q => q.X), y0 = sh.Outline.Min(q => q.Y);
-                double x1 = sh.Outline.Max(q => q.X), y1 = sh.Outline.Max(q => q.Y);
+                var (x0, y0, z0, x1, y1, z1) = sh.WorldBounds();
                 string? reason = g.Origins.TryGetValue(sh.Name, out var o) ? o.SheetReason : null;
                 return (sh.Order, Row: new Em3dSolidJson(sh.Name, "sheet", "conductor", sh.Material, "sheet", sh.Order,
-                                                         x0, y0, sh.Z, x1, y1, sh.Z, reason, sh.ThicknessM));
+                                                         x0, y0, z0, x1, y1, z1, reason, sh.ThicknessM));
             }))
             .OrderBy(x => x.Order).Select(x => x.Row).ToList();
 
@@ -419,6 +418,7 @@ internal static class ExplainEm3d
         Em3dSweep           => "sweep",
         Em3dSphere          => "sphere",
         Em3dTruncatedSphere => "truncated-sphere",
+        Em3dPolyhedron      => "polyhedron",
         _                   => p.GetType().Name,
     };
 

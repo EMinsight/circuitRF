@@ -545,8 +545,20 @@ internal static class Check
         if (tech.Tech is { } t) known = name => t.FindMaterial(name) is not null;
         else f.Add(CliDiagnostics.CheckThreeDNoTechnology(path));
 
-        foreach (var finding in C3dValidation.Validate(doc, known))
+        var findings = C3dValidation.Validate(doc, known);
+        foreach (var finding in findings)
             f.Add(CliDiagnostics.CheckThreeDFinding(path, finding));
+
+        // brief-em3d-42 R-em3d42-6 — elaboration's refusals, through the elaborator the GUI will draw with, and
+        // every embedded setup read as a run would read it. Only once the document is sound: elaborating a
+        // document validation already refused would report its defects twice, in two voices.
+        if (findings.Any(d => d.Severity == DiagnosticSeverity.Error)) return;
+        var e = C3dElaborator.ElaborateOnce(doc, Path.GetFullPath(path), null);
+        foreach (string refusal in e.Refusals) f.Add(CliDiagnostics.CheckThreeDElaboration(path, refusal));
+        foreach (string warning in e.Warnings) f.Add(CliDiagnostics.CheckEmFinding(path, warning, true));
+        foreach (string note in e.Notes) f.Add(CliDiagnostics.CheckThreeDNote(path, note));
+        foreach (var setup in C3dSetups.Read(doc))
+            if (setup.Refusal is { } why) f.Add(CliDiagnostics.CheckThreeDSetup(path, why));
     }
 
     /// <summary>
@@ -639,6 +651,24 @@ internal static class Check
         // and no "currently open workspace": the `.cem`'s own ancestor is what its LayoutRef is
         // relative to.
         string? cws = DocumentKinds.AncestorCws(full);
+
+        // brief-em3d-42 R-em3d42-5b — a LayoutRef naming a .c3d: the document, elaborated and assembled with this
+        // setup exactly as the run assembles it.
+        if (C3dSetups.IsThreeDView(EmSetupResolver.ResolveLayoutPath(full, setup.LayoutRef, cws)))
+        {
+            var src = Em3dSetupSource.FromCemOnThreeDView(full, setup, cws);
+            foreach (string note in src.Generated?.Notes ?? []) f.Add(CliDiagnostics.CheckEmNote(path, note));
+            foreach (string warning in src.Generated?.Warnings ?? []) f.Add(CliDiagnostics.CheckEmFinding(path, warning, true));
+            if (src.Refusal is { } refused) { f.Add(CliDiagnostics.CheckEmRefused(path, refused)); return; }
+            var p3 = src.Generated!.Problem!;
+            var bad = p3.Validate();
+            foreach (string b in bad) f.Add(CliDiagnostics.CheckEmRefused(path, b));
+            if (bad.Count == 0)
+                f.Add(CliDiagnostics.CheckEmWouldRun(path,
+                    $"3D problem for {setup.Solver3D} from a 3D view: {p3.Solids.Count} solid(s), {p3.Sheets.Count} sheet(s), " +
+                    $"{p3.Ports.Count} port(s)", 0));
+            return;
+        }
 
         var resolution = EmSetupResolver.Resolve(full, setup.LayoutRef, cws, cache);
 

@@ -480,7 +480,8 @@ internal static class Render
         // brief-em3d-5. A `.cem` is drawn only as a 3D setup, and the two 3D options draw nothing else
         // — each is refused on the other's document rather than ignored.
         var kind = DocumentKinds.Classify(o.Path!);
-        if (kind == DocumentKind.EmSetup) return RenderEm3d.Draw(o.Path!, Em3dRequest(o));
+        // brief-em3d-42 R-em3d42-6 — a .c3d's one headless picture: brief 5's sections, of its elaboration.
+        if (kind is DocumentKind.EmSetup or DocumentKind.ThreeD) return RenderEm3d.Draw(o.Path!, Em3dRequest(o));
         if (o.Sections.Count > 0 || o.Iso)
             return JsonRun.Fail(CliDiagnostics.RenderEm3dNotA3dSetup(
                 o.Iso ? "--iso" : "--section", o.Path!, DocumentKinds.Name(kind)));

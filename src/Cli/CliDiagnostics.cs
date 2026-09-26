@@ -951,6 +951,27 @@ internal static class CliDiagnostics
         return new Diagnostic(finding.Id, finding.Severity, "{path}: " + finding.DefaultTemplate, args);
     }
 
+    /// <summary>brief-em3d-42 — a .c3d's embedded setup could not be chosen or read.</summary>
+    public static Diagnostic EmThreeDSetup(string path, string reason) => Diagnostic.Create(
+        "em.c3d.setup", DiagnosticSeverity.Error, "{path}: {reason}", ("path", path), ("reason", reason));
+
+    /// <summary>brief-em3d-42 — --setup names a .c3d's embedded setup; a .cem is its own setup.</summary>
+    public static Diagnostic EmSetupOnCem(string file) => Diagnostic.Create(
+        "em.setup.on-cem", DiagnosticSeverity.Error,
+        "--setup chooses one of a .c3d's embedded setups; '{file}' is a .cem, which is its own setup.", ("file", file));
+
+    /// <summary>brief-em3d-42 — what elaboration refused, through the elaborator the GUI will use.</summary>
+    public static Diagnostic CheckThreeDElaboration(string path, string reason) => Diagnostic.Create(
+        "check.c3d.elaboration", DiagnosticSeverity.Error, "{path}: {reason}", ("path", path), ("reason", reason));
+
+    /// <summary>brief-em3d-42 — an embedded setup that cannot be run.</summary>
+    public static Diagnostic CheckThreeDSetup(string path, string reason) => Diagnostic.Create(
+        "check.c3d.setup", DiagnosticSeverity.Error, "{path}: {reason}", ("path", path), ("reason", reason));
+
+    /// <summary>brief-em3d-42 — what elaboration noted.</summary>
+    public static Diagnostic CheckThreeDNote(string path, string note) => Diagnostic.Create(
+        "check.c3d.note", DiagnosticSeverity.Info, "{path}: {note}", ("path", path), ("note", note));
+
     public static Diagnostic CheckThreeDNoTechnology(string path) => Diagnostic.Create(
         "check.technology.none-3d", DiagnosticSeverity.Warning,
         "{path}: no technology resolves for this 3D view — its own reference names none and the "

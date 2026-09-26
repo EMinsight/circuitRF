@@ -51,8 +51,9 @@ public static class Em3dSolverGuidance
         var conductors = problem.Solids.Where(s => s.Role == Em3dRole.Conductor).ToList();
         int wires = conductors.Count(s => s.Primitive is Em3dSweep);
         int round = conductors.Count(s => s.Primitive is Em3dCylinder or Em3dSphere or Em3dTruncatedSphere);
-        int diagonal = conductors.Count(s => s.Primitive is Em3dExtrudedPolygon e && HasDiagonal(e.Outline, e.Holes))
-                     + problem.Sheets.Count(s => HasDiagonal(s.Outline, s.Holes));
+        int diagonal = conductors.Count(s => s.Primitive is Em3dExtrudedPolygon e && HasDiagonal(e.Outline, e.Holes)
+                                             || s.Primitive is Em3dPolyhedron ph && ph.Faces.Any(f => !AxisNormal(ph.Normal(f))))
+                     + problem.Sheets.Count(s => HasDiagonal(s.Outline, s.Holes) || s.Frame is { NormalAxis: null });
 
         // Row 4, and row 1 as its complement: Manhattan means none of what row 4 names.
         if (wires + round + diagonal > 0)
@@ -104,11 +105,16 @@ public static class Em3dSolverGuidance
                 Em3dSweep w           => w.Diameter,
                 Em3dSphere p          => 2 * p.Radius,
                 Em3dTruncatedSphere t => 2 * t.Radius,
+                Em3dPolyhedron ph     => Em3dProblem.Bounds(ph) is var (x0, y0, z0, x1, y1, z1)
+                                             ? Math.Min(x1 - x0, Math.Min(y1 - y0, z1 - z0)) : 0,
                 _                     => double.PositiveInfinity,
             });
         foreach (var sh in problem.Sheets) least = Math.Min(least, Width(sh.Outline, sh.Holes));
         return double.IsPositiveInfinity(least) ? 0 : least;
     }
+
+    private static bool AxisNormal(Point3 n)
+        => (Math.Abs(n.X) > 1 - 1e-12 ? 1 : 0) + (Math.Abs(n.Y) > 1 - 1e-12 ? 1 : 0) + (Math.Abs(n.Z) > 1 - 1e-12 ? 1 : 0) == 1;
 
     private static bool HasDiagonal(IReadOnlyList<Point2> outline, IReadOnlyList<IReadOnlyList<Point2>> holes)
         => Diagonal(outline) || holes.Any(Diagonal);

@@ -335,6 +335,7 @@ internal static class ExplainQueries
         switch (kind)
         {
             case DocumentKind.Layout:    return LayoutExtents(Path.GetFullPath(path));
+            case DocumentKind.ThreeD:    return ThreeDExtents(Path.GetFullPath(path));
             case DocumentKind.Schematic: return SchematicExtents(Path.GetFullPath(path));
             case DocumentKind.Symbol:    return SymbolExtents(Path.GetFullPath(path));
 
@@ -383,6 +384,35 @@ internal static class ExplainQueries
                 return (null, JsonRun.Fail(CliDiagnostics.ExplainOptionNotApplicable(
                     "--extents", DocumentKinds.Name(kind), "the geometry a drawable document holds")));
         }
+    }
+
+    /// <summary>
+    /// brief-em3d-42 R-em3d42-6 — a 3D view's ELABORATED bound: what the solver would get, instances and all,
+    /// in metres with the display unit's scale beside it, and spelled in the display unit. The elaboration
+    /// takes no setup, so a sheet inside a layout instance is a solid here as it is in the editor.
+    /// </summary>
+    private static (ExplainExtentsJson?, int) ThreeDExtents(string c3d)
+    {
+        CircuitRF.Design.ThreeD.C3dDocument doc;
+        try { doc = CircuitRF.Design.ThreeD.C3dPersistence.LoadFromFile(c3d); }
+        catch (Exception ex)
+        { return (null, JsonRun.Fail(CliDiagnostics.ExplainUnreadable(c3d, ex.Message))); }
+
+        var e = CircuitRF.Design.ThreeD.C3dElaborator.ElaborateOnce(doc, c3d, null);
+        double displayScale = MetresPerUnit(doc.DisplayUnit);
+        foreach (string refusal in e.Refusals) JsonRun.Report(CliDiagnostics.CheckThreeDElaboration(c3d, refusal));
+        if (e.Extent() is not { } x)
+            return (new ExplainExtentsJson(null, null, null, null, null, null, null, "m", displayScale, true, null,
+                                           e.Ok ? EmptyNote : "the 3D view does not elaborate; the refusals above say why"),
+                    e.Ok ? 0 : 1);
+        string One(double metres)
+            => LayoutUnits.Spell((long)Math.Round(metres * 1e6 * doc.DbuPerMicron), doc.DisplayUnit, doc.DbuPerMicron);
+        return (new ExplainExtentsJson(x.X0, x.Y0, x.X1, x.Y1, x.X1 - x.X0, x.Y1 - x.Y0, null, "m", displayScale, false, null,
+                                       e.Ok ? null : "part of the 3D view does not elaborate; the refusals above say why")
+                {
+                    Z0 = x.Z0, Z1 = x.Z1, Depth = x.Z1 - x.Z0,
+                    Bounds = string.Join(',', new[] { x.X0, x.Y0, x.Z0, x.X1, x.Y1, x.Z1 }.Select(One)),
+                }, e.Ok ? 0 : 1);
     }
 
     private static (ExplainExtentsJson?, int) LayoutExtents(string clay)

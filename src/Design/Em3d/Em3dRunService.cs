@@ -195,6 +195,18 @@ public static class Em3dRunService
     internal static EmRunResult Run(EmSetup setup, EmLayoutSource source, string resultsRoot,
                                     CancellationToken ct, RunControl? control, int? maxCores,
                                     Func<string, bool>? confirmMemory = null)
+        => Run(setup, s => Em3dGenerator.Generate(s, source, source.Technology!), resultsRoot, ct, control, maxCores,
+               confirmMemory);
+
+    /// <summary>
+    /// brief-em3d-42 — the run, from whatever builds the problem: a <c>.cem</c>'s layout through the generator,
+    /// or a <c>.c3d</c> through its elaboration and problem assembly. <paramref name="build"/> is called with
+    /// the setup the run uses (and again, with a smaller air box, by the memory check's remedy), so both
+    /// geometry routes get every step below — discovery, lowering, memory, execution — from ONE body.
+    /// </summary>
+    internal static EmRunResult Run(EmSetup setup, Func<EmSetup, Em3dGenerationResult> build, string resultsRoot,
+                                    CancellationToken ct, RunControl? control, int? maxCores,
+                                    Func<string, bool>? confirmMemory = null)
     {
         var log = new RunLog();
         var memory = new MemoryGate(confirmMemory);
@@ -289,7 +301,7 @@ public static class Em3dRunService
         // ── brief 3: the problem, once ────────────────────────────────────────────────────────
         control?.BeginStage("building the 3D problem");
         Interlocked.Increment(ref _problemsGenerated);
-        var generated = Em3dGenerator.Generate(setup, source, source.Technology!);
+        var generated = build(setup);
         log.Notes.AddRange(generated.Notes);
         log.Warnings.AddRange(generated.Warnings);
         if (!generated.Ok) return log.Result(EmRunStatus.Refused, EmDiagnostics.Forwarded("em3d-problem", generated.Refusal));
@@ -305,7 +317,7 @@ public static class Em3dRunService
                                        setup.RadiationPattern);
         // brief-em3d-21 R-em3d21-2 — will it fit? A warning, and past 150 % a confirmation; still no process.
         if (palacePlan is not null && palaceStop is null &&
-            memory.Admit(PalaceMemoryVerdict(problem, setup, source, palaceSettings!, palaceMemory?.Bytes ?? MachineMemory.PhysicalBytes,
+            memory.Admit(PalaceMemoryVerdict(problem, setup, build, palaceSettings!, palaceMemory?.Bytes ?? MachineMemory.PhysicalBytes,
                                              palaceMemory), log) is { } tooBig)
         {
             palaceStop = new(EmRunStatus.Refused, EmDiagnostics.Forwarded(MemoryRefusalSource, tooBig));
@@ -1432,6 +1444,15 @@ public static class Em3dRunService
     /// </summary>
     public static Em3dMemoryVerdict PalaceMemoryVerdict(Em3dProblem problem, EmSetup setup, EmLayoutSource source,
                                                         PalaceSettings settings, long physicalBytes, Em3dMemoryScope? scope = null)
+        => PalaceMemoryVerdict(problem, setup,
+                               source.Technology is { } tech ? s => Em3dGenerator.Generate(s, source, tech) : null,
+                               settings, physicalBytes, scope);
+
+    /// <summary>brief-em3d-42 — the same check, regenerating the half-padding remedy through
+    /// <paramref name="regenerate"/> (null: no such remedy is priced).</summary>
+    public static Em3dMemoryVerdict PalaceMemoryVerdict(Em3dProblem problem, EmSetup setup,
+                                                        Func<EmSetup, Em3dGenerationResult>? regenerate,
+                                                        PalaceSettings settings, long physicalBytes, Em3dMemoryScope? scope = null)
     {
         // brief-em3d-22 — the volume estimate prices elements per WAVELENGTH, which a static solve does
         // not have; its check is the one after meshing, on Gmsh's own count.
@@ -1452,7 +1473,7 @@ public static class Em3dRunService
         if (settings.AdaptiveMaxIterations > 0)
             remedies.Add(new("no refinement passes (Palace.AdaptiveMaxIterations: 0)",
                              EstimatePalace(problem, settings with { AdaptiveMaxIterations = 0 })?.MemoryBytes));
-        if (source.Technology is { } tech)
+        if (regenerate is not null)
         {
             double defaultPadUm = Em3dGenerator.DefaultPaddingFractionOfLongestWavelength * 299_792_458.0 /
                                   problem.Frequency.StartHz * 1e6;
@@ -1461,7 +1482,7 @@ public static class Em3dRunService
             var smaller = setup.Clone();
             smaller.AirBox = new EmAirBox(Half(box.XMin), Half(box.XMax), Half(box.YMin), Half(box.YMax),
                                           Half(box.ZMin), Half(box.ZMax));
-            var regenerated = Em3dGenerator.Generate(smaller, source, tech);
+            var regenerated = regenerate(smaller);
             if (regenerated.Ok && regenerated.Problem is { } q)
                 remedies.Add(new("an air box with half the padding on every side (AirBox)", EstimatePalace(q, settings)?.MemoryBytes));
         }

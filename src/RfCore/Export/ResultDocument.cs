@@ -1000,7 +1000,21 @@ namespace RfCore.Export
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         IReadOnlyList<ExplainLayerExtentJson>? PerLayer,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        string? Note = null);
+        string? Note = null)
+    {
+        /// <summary>brief-em3d-42 — a 3D view's z bound and depth, metres like the rest; null for a drawing.</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public double? Z0 { get; init; }
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public double? Z1 { get; init; }
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public double? Depth { get; init; }
+
+        /// <summary>brief-em3d-42 — a 3D view's bound spelled in its display unit, <c>x0,y0,z0,x1,y1,z1</c>, each
+        /// coordinate with its unit (LayoutUnits.Spell); null for a drawing, whose spelling is <see cref="Window"/>.</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? Bounds { get; init; }
+    }
 
     /// <summary>
     /// One component's footprint, as <c>explain --footprints</c> reports it

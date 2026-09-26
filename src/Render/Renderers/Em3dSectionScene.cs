@@ -159,7 +159,7 @@ public static class Em3dSectionScene
             Grow(a0, b0, c0, a1, b1, c1);
         }
         foreach (var sh in problem.Sheets)
-            foreach (var q in sh.Outline) Grow(q.X, q.Y, sh.Z, q.X, q.Y, sh.Z);
+            foreach (var q in sh.Outline) { var w = sh.World(q); Grow(w.X, w.Y, w.Z, w.X, w.Y, w.Z); }
         foreach (var p in problem.Ports) Grow(p.Min.X, p.Min.Y, p.Min.Z, p.Max.X, p.Max.Y, p.Max.Z);
 
         // The slabs' heights — a substrate's, not the air's above the stack, which reaches the box's lid.
@@ -258,6 +258,37 @@ public static class Em3dSectionScene
 
         foreach (var sh in problem.Sheets)
         {
+            // brief-em3d-42 — a sheet not lying flat: in the plane when its own plane is the section's, else the
+            // segments where the plane crosses its triangles.
+            if (sh.Frame is { } frame)
+            {
+                if (frame.NormalAxis == axis)
+                {
+                    double c = Coord(sh.World(sh.Outline[0]), axis);
+                    if (Math.Abs(c - at) <= tol)
+                        regions.Add(new Em3dSceneRegion(sh.Name, Em3dRole.Conductor, sh.Material, sh.Order, true,
+                                                        [.. sh.Holes.Prepend(sh.Outline).Select(r => (IReadOnlyList<Uv>)[.. r.Select(q => P(sh.World(q)))])]));
+                    continue;
+                }
+                var mesh = Em3dTessellation.OfSheet(sh);
+                foreach (var t in mesh.Triangles)
+                {
+                    var hits = new List<Point3>();
+                    var tri = new[] { mesh.Vertices[t.A], mesh.Vertices[t.B], mesh.Vertices[t.C] };
+                    for (int k = 0; k < 3; k++)
+                    {
+                        var a = tri[k]; var b = tri[(k + 1) % 3];
+                        double da = Coord(a, axis) - at, db = Coord(b, axis) - at;
+                        if ((da < 0) == (db < 0) || da == db) continue;
+                        double f = da / (da - db);
+                        hits.Add(new Point3(a.X + f * (b.X - a.X), a.Y + f * (b.Y - a.Y), a.Z + f * (b.Z - a.Z)));
+                    }
+                    if (hits.Count == 2)
+                        lines.Add(new Em3dSceneLine(sh.Name, Em3dRole.Conductor, sh.Material, sh.Order, true,
+                                                    P(hits[0]), P(hits[1]), sh.ThicknessM));
+                }
+                continue;
+            }
             if (axis == 2)
             {
                 if (Math.Abs(sh.Z - at) <= tol)
@@ -335,7 +366,8 @@ public static class Em3dSectionScene
         }
         foreach (var sh in problem.Sheets)
         {
-            if (axis == 2) Try(sh.Z);
+            if (sh.Frame is not null) foreach (var q in sh.Outline) Try(Coord(sh.World(q), axis));
+            else if (axis == 2) Try(sh.Z);
             else foreach (var q in sh.Outline) Try(axis == 0 ? q.X : q.Y);
         }
         return best;
@@ -344,6 +376,8 @@ public static class Em3dSectionScene
     private static double Beyond(double d, double tol) => d > tol ? d : 0;
 
     private static IReadOnlyList<Uv> Ring2(IReadOnlyList<Point2> ring) => [.. ring.Select(q => new Uv(q.X, q.Y))];
+
+    private static double Coord(Point3 q, int axis) => axis == 0 ? q.X : axis == 1 ? q.Y : q.Z;
 
     /// <summary>
     /// Where the line (coordinate <paramref name="axis"/> = <paramref name="at"/>, axis 0 = x, 1 = y)
@@ -470,8 +504,7 @@ public static class Em3dSectionScene
             foreach (var ring in new[] { sh.Outline }.Concat(sh.Holes))
                 for (int i = 0, j = ring.Count - 1; i < ring.Count; j = i++)
                     lines.Add(new Em3dSceneLine(sh.Name, Em3dRole.Conductor, sh.Material, sh.Order, true,
-                                                Project(new Point3(ring[j].X, ring[j].Y, sh.Z)),
-                                                Project(new Point3(ring[i].X, ring[i].Y, sh.Z)), sh.ThicknessM));
+                                                Project(sh.World(ring[j])), Project(sh.World(ring[i])), sh.ThicknessM));
 
         lines.Sort((a, b) => a.Order.CompareTo(b.Order));
 

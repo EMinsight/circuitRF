@@ -257,8 +257,10 @@ internal static class DocumentSchema
 
         Six things that are not obvious from the field list:
 
-          * LayoutRef is relative to the WORKSPACE folder (the one holding .cws), not to the .cem.
-            The technology is the layout's own, resolved from its workspace; a .cem names none.
+          * LayoutRef names the geometry document: a .clay or a .c3d. It is relative to the
+            WORKSPACE folder (the one holding .cws), not to the .cem. The technology is the
+            geometry's own, resolved from its workspace; a .cem names none. A .c3d is solved by the
+            3D solvers only (Solver3D Palace or OpenEms), and its own embedded Setups are not read.
           * SignalStackupLayerName is a STACKUP entry's Name ("Top Copper (1 oz)"), not a drawing
             layer's ("Top Copper"). The technology's Stackup lists them.
           * Frequency: StartExpr and StopExpr are expressions in StartUnit and StopUnit. Mode
@@ -330,8 +332,9 @@ internal static class DocumentSchema
         a named material, plus instances of other cells. It is JSON, at <cell>/3d/<name>.c3d — the 3d
         folder is made with a cell's first 3D view. `new cell <workspace> <name> --views 3d` writes an
         empty one whose units come from the cell's layout when it has one and from the technology
-        otherwise; start from that rather than a blank file. This build reads, writes, lists and
-        checks 3D views; it does not yet solve or draw them.
+        otherwise; start from that rather than a blank file. `em` solves one through an embedded setup
+        (or a .cem whose LayoutRef names it), `explain` reports how it elaborates, and `render
+        --section`/`--iso` draws it. Nothing draws or edits one in a window yet.
 
         A microstrip on the shipped pcb-2layer_RO4350B_20mil_1oz technology: a 5 mm square of 20 mil
         RO4350B with a 1.1 mm copper trace across its top. This is a whole file, and `check` passes it:
@@ -398,12 +401,25 @@ internal static class DocumentSchema
           * A Polyline is construction geometry. It has no Material and is never solved.
           * Material names a material of the technology — the one TechRef names, or the workspace's
             default when TechRef is omitted. Role (Conductor, Dielectric, Air) overrides what the
-            material implies.
+            material implies: a material with σ and no εr is a conductor, one with εr a dielectric,
+            one named Air is air, and one with both and no Role is refused. A Sheet must conduct.
           * An instance places another cell: CellRef is spelled as a layout instance's (relative to
-            this file, or ws://), and View picks its 3D view (the default) or its Layout.
-          * Variables, Ports, FaceBoundaries and Setups are reserved for later builds. This build
-            keeps what they hold and writes it back unread. So does any key it does not know, which
-            `check` reports as a warning.
+            this file, or ws://), and View picks its 3D view (the default) or its Layout. Its objects
+            are named <instance>/<object>, an array element's <instance>[i,j,k]/<object>; the array
+            pitch is in this document's frame. Only geometry comes in: a placed cell's ports, setups
+            and face boundaries are ignored. A placed LAYOUT is made 3D through its OWN technology,
+            the bottom of its stackup at the instance's z, its slabs and ground plane bounded by its
+            board outline (else by its drawn extent). Layout instancing's same-technology rule does
+            not apply here — it exists because layouts match layers by number, and a 3D view matches
+            nothing by layer: every instance is metres and named materials before it arrives. Two
+            technologies' same-named materials merge when equal and become <name>@<technology stem>
+            otherwise. A 3D view that reaches itself through its instances is refused.
+          * Setups hold EM setups in the .cem schema (see the em-setup topic) without LayoutRef, each
+            with a unique Name and Solver3D Palace or OpenEms. `em view.c3d` runs the one there is;
+            with several, `--setup <name>`. Its result is named "<file stem> <setup name>".
+          * Variables, Ports and FaceBoundaries are reserved for later builds. This build keeps what
+            they hold and writes it back unread. So does any key it does not know, which `check`
+            reports as a warning.
 
         Refused, with the reason named: a file that is not JSON; a FormatVersion newer than this
         build; an object whose "$type" this build does not know (every one is listed); and a string

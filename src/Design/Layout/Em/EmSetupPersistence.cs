@@ -697,6 +697,22 @@ public static class EmSetupPersistence
     public static EmSetup LoadFromFile(string path)
         => Deserialize(GzipTextFile.ReadAllTextAutoGzip(path));
 
+    /// <summary>
+    /// brief-em3d-42 R-em3d42-5a — a setup as a <c>.c3d</c> embeds it: the <c>.cem</c> schema through this
+    /// class's own serializer — ONE schema, two containers — less <c>LayoutRef</c>, because the geometry is
+    /// the document that holds it.
+    /// </summary>
+    public static JsonElement ToEmbedded(EmSetup setup)
+    {
+        var node = JsonSerializer.SerializeToNode(ToFileModel(setup), JsonOpts)!.AsObject();
+        node.Remove(nameof(CemFile.LayoutRef));
+        return JsonSerializer.SerializeToElement(node, JsonOpts);
+    }
+
+    /// <summary>The inverse of <see cref="ToEmbedded"/>: one of a <c>.c3d</c>'s embedded setups, read by the
+    /// <c>.cem</c> reader. Throws what that reader throws.</summary>
+    public static EmSetup FromEmbedded(JsonElement element) => Deserialize(element.GetRawText());
+
     // ── Convert ───────────────────────────────────────────────────────────────
 
     private static CemFile ToFileModel(EmSetup s) => new()

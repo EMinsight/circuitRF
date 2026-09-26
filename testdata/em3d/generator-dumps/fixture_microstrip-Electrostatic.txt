@@ -1,0 +1,3 @@
+refusal Terminal 'T' names net 'none', and no conductor in the 3D problem is on it. A terminal is the metal of one net: name a net the layout (or a .wBond wire array) carries.
+no-alpha 
+unknown-temperature 

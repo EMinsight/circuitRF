@@ -503,6 +503,47 @@ public static class EmRunService
         }
     }
 
+    /// <summary>
+    /// brief-em3d-42 R-em3d42-6 — a setup run on a <c>.c3d</c>: an embedded setup (named by
+    /// <see cref="CircuitRF.Design.ThreeD.C3dSetups.ForRun"/>), or a <c>.cem</c> whose LayoutRef names the
+    /// document (<paramref name="fromCem"/>). THIS door, beside <see cref="Run"/>, because a 3D run goes behind
+    /// one door only: the same discovery, lowering, memory check, execution and results as a layout's, from
+    /// the same body — only what builds the problem differs. A planar setup is refused: a <c>.c3d</c> has no
+    /// stackup for a planar kernel.
+    /// </summary>
+    public static EmRunResult RunThreeDView(
+        EmSetup            setup,
+        CircuitRF.Design.ThreeD.C3dDocument document,
+        string             documentPath,
+        string?            workspaceCws,
+        string             resultsRoot,
+        CancellationToken  ct = default,
+        RunControl?        control = null,
+        int?               maxCores = null,
+        Func<string, bool>? confirmMemory = null,
+        bool               fromCem = false)
+    {
+        if (control is { Token: var t } && t.CanBeCanceled) ct = t;
+        if (!setup.Is3D)
+        {
+            var d = EmDiagnostics.Forwarded("c3d-planar", $"This setup is a planar analysis, and {CircuitRF.Design.ThreeD.C3dSetups.PlanarRefusal}.");
+            return new EmRunResult(EmRunStatus.Refused, null, null, null, null, null, d.Render(), [], Diagnostic: d);
+        }
+        var elaborator = new CircuitRF.Design.ThreeD.C3dElaborator();
+        try
+        {
+            return CircuitRF.Design.Em3d.Em3dRunService.Run(setup,
+                s => CircuitRF.Design.ThreeD.C3dProblemAssembly.Assemble(s, document, documentPath, workspaceCws, elaborator, fromCem),
+                resultsRoot, ct, control, maxCores, confirmMemory);
+        }
+        catch (OperationCanceledException)
+        {
+            var cancelled = EmDiagnostics.Cancelled();
+            return new EmRunResult(EmRunStatus.Cancelled, null, null, null, null, null,
+                cancelled.Render(), [], Diagnostic: cancelled);
+        }
+    }
+
     private static EmRunResult RunCore(
         EmSetup            setup,
         EmLayoutSource?    source,

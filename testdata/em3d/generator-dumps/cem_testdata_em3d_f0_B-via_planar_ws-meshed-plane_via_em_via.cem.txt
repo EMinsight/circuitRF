@@ -1,0 +1,6 @@
+refusal Port 1 is on 'Top Copper', and technology 'F0 case B (via transition)' designates no ground-reference conductor above or below it for the port to return through. Mark the plane as a ground reference, or name it as this setup's return plane.
+note 4 overlapping conductor shape(s) were merged into 2 — copper that overlaps on one level is one conductor, in 3D as in the planar model.
+note Port 1 ('1') at (-5000, 0 µm) was taken to be on the conductor's low-x (left) end (the port's own direction) of level 2 ('Top Copper'), driving current in the +x direction, at 50 Ω.
+note Port 2 ('2') at (5000, 0 µm) was taken to be on the conductor's high-x (right) end (the port's own direction) of level 0 ('Bottom Copper'), driving current in the −x direction, at 50 Ω.
+no-alpha 
+unknown-temperature 

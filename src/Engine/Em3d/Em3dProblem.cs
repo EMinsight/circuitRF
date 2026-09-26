@@ -122,7 +122,32 @@ public sealed record Em3dSheet(
     IReadOnlyList<IReadOnlyList<Point2>>  Holes,
     double                                Z,
     double                                ThicknessM,
-    int                                   Order);
+    int                                   Order)
+{
+    /// <summary>
+    /// brief-em3d-42 R-em3d42-1b — the plane the sheet lies in, when it is not horizontal: the outline's
+    /// (x, y) at height <see cref="Z"/> are the frame's own coordinates (<see cref="Em3dPlaneFrame.World"/>).
+    /// Null — every sheet a layout makes — is today's horizontal sheet at <see cref="Z"/>, so every problem
+    /// written before the frame existed is unchanged.
+    /// </summary>
+    public Em3dPlaneFrame? Frame { get; init; }
+
+    /// <summary>A point of the outline, in the world.</summary>
+    public Point3 World(Point2 q) => Frame is { } f ? f.World(q.X, q.Y, Z) : new Point3(q.X, q.Y, Z);
+
+    /// <summary>The sheet's bound in the world, metres.</summary>
+    public (double X0, double Y0, double Z0, double X1, double Y1, double Z1) WorldBounds()
+    {
+        double x0 = double.PositiveInfinity, y0 = x0, z0 = x0, x1 = double.NegativeInfinity, y1 = x1, z1 = x1;
+        foreach (var q in Outline)
+        {
+            var w = World(q);
+            x0 = Math.Min(x0, w.X); y0 = Math.Min(y0, w.Y); z0 = Math.Min(z0, w.Z);
+            x1 = Math.Max(x1, w.X); y1 = Math.Max(y1, w.Y); z1 = Math.Max(z1, w.Z);
+        }
+        return (x0, y0, z0, x1, y1, z1);
+    }
+}
 
 /// <summary>
 /// A material, RESOLVED: the values in force at the problem's operating temperature, so a backend
@@ -343,7 +368,9 @@ public sealed record Em3dProblem(
             Name("solid", s.Name);
             Material(s.Name, s.Material);
 
-            if (Degenerate(s.Primitive) is { } why)
+            if (s.Primitive is Em3dPolyhedron poly && poly.Problems(s.Name) is { Count: > 0 } polyProblems)
+                problems.AddRange(polyProblems);
+            else if (Degenerate(s.Primitive) is { } why)
                 problems.Add($"Solid '{s.Name}' {why}. A conductor that thin belongs among the " +
                              "problem's sheets, and anything else that thin is not a solid.");
             else if (Bounds(s.Primitive) is var (x0, y0, z0, x1, y1, z1) &&
@@ -357,11 +384,13 @@ public sealed record Em3dProblem(
         {
             Name("sheet", sh.Name);
             Material(sh.Name, sh.Material);
-            var (x0, y0, x1, y1) = RingBounds(sh.Outline);
             if (sh.Outline.Count < 3)
                 problems.Add($"Sheet '{sh.Name}' has fewer than three vertices.");
-            else if (!Inside(x0, y0, sh.Z, x1, y1, sh.Z))
+            else if (sh.WorldBounds() is var (x0, y0, z0, x1, y1, z1) && !Inside(x0, y0, z0, x1, y1, z1))
                 problems.Add($"Sheet '{sh.Name}' extends outside the air box.");
+            if (sh.Frame is { } fr && (Math.Abs(Dot(fr.U, fr.U) - 1) > 1e-9 || Math.Abs(Dot(fr.V, fr.V) - 1) > 1e-9 ||
+                                       Math.Abs(Dot(fr.U, fr.V)) > 1e-9))
+                problems.Add($"Sheet '{sh.Name}''s plane is not stated by two perpendicular unit vectors.");
         }
 
         var objects = new HashSet<string>(Solids.Select(s => s.Name).Concat(Sheets.Select(s => s.Name)),
@@ -557,6 +586,17 @@ public sealed record Em3dProblem(
                     }
                 return (x0, y0, z0, x1, y1, z1);
             }
+            case Em3dPolyhedron ph:
+            {
+                double x0 = double.PositiveInfinity, y0 = x0, z0 = x0;
+                double x1 = double.NegativeInfinity, y1 = x1, z1 = x1;
+                foreach (var q in ph.Vertices)
+                {
+                    x0 = Math.Min(x0, q.X); y0 = Math.Min(y0, q.Y); z0 = Math.Min(z0, q.Z);
+                    x1 = Math.Max(x1, q.X); y1 = Math.Max(y1, q.Y); z1 = Math.Max(z1, q.Z);
+                }
+                return (x0, y0, z0, x1, y1, z1);
+            }
             case Em3dSphere s:
                 return (s.Center.X - s.Radius, s.Center.Y - s.Radius, s.Center.Z - s.Radius,
                         s.Center.X + s.Radius, s.Center.Y + s.Radius, s.Center.Z + s.Radius);
@@ -567,6 +607,8 @@ public sealed record Em3dProblem(
                 throw new ArgumentOutOfRangeException(nameof(p), p.GetType().Name, "unknown primitive");
         }
     }
+
+    private static double Dot(Point3 a, Point3 b) => a.X * b.X + a.Y * b.Y + a.Z * b.Z;
 
     private static (double X0, double Y0, double X1, double Y1) RingBounds(IReadOnlyList<Point2> ring)
     {

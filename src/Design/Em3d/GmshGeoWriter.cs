@@ -245,7 +245,7 @@ public static class GmshGeoWriter
         {
             var sh = problem.Sheets[k];
             L($"// sheet {Comment(sh.Name)}: {Comment(sh.Material)}, {Num(sh.ThicknessM * 1e6)} um thick");
-            EmitPlanar(g, $"h{k}", [sh.Outline, .. sh.Holes], sh.Z);
+            EmitPlanar(g, $"h{k}", [sh.Outline, .. sh.Holes], sh.World);
         }
         for (int k = 0; k < problem.Ports.Count; k++)
         {
@@ -320,11 +320,11 @@ public static class GmshGeoWriter
         for (int k = 0; k < problem.Sheets.Count; k++)
         {
             var sh = problem.Sheets[k];
-            var (x0, y0, x1, y1) = RingBounds(sh.Outline);
-            var holes = sh.Holes.Select(h => RingBounds(h))
-                               .Select(b => Query((b.X0, b.Y0, sh.Z, b.X1, b.Y1, sh.Z), 0)).ToList();
+            // brief-em3d-42 — a sheet in any plane is recovered by its WORLD bound; a horizontal one's is
+            // its plan bound at its height, exactly as before.
+            var holes = sh.Holes.Select(h => Query(WorldBounds(sh, h), 0)).ToList();
             L($"// sheet {Comment(sh.Name)}");
-            Claim(g, $"w{k}", [Query((x0, y0, sh.Z, x1, y1, sh.Z), 0)], holes);
+            Claim(g, $"w{k}", [Query(WorldBounds(sh, sh.Outline), 0)], holes);
         }
         // Conductors: only single-sided faces, smallest bounding box first.
         L("voids[] = single[];");
@@ -682,8 +682,11 @@ public static class GmshGeoWriter
                 L($"{list}[] = BooleanIntersection{{ Volume{{v}}; Delete; }}{{ Volume{{b}}; Delete; }};");
                 break;
             }
+            case Em3dPolyhedron ph:
+                EmitPolyhedron(g, list, ph);
+                break;
             case Em3dExtrudedPolygon e:
-                EmitPlanar(g, "bs", [e.Outline, .. e.Holes], e.ZBottom);
+                EmitPlanar(g, "bs", [e.Outline, .. e.Holes], q => new Point3(q.X, q.Y, e.ZBottom));
                 L($"ex[] = Extrude {{0, 0, {Um(e.ZTop - e.ZBottom)}}} {{ Surface{{bs[]}}; }};");
                 L($"{list}[] = {{ex[1]}};");
                 break;
@@ -723,9 +726,10 @@ public static class GmshGeoWriter
         }
     }
 
-    /// <summary>A planar region at height <paramref name="z"/>: the first ring is the outline, the
-    /// rest holes. Leaves its surface in <c>&lt;list&gt;[]</c>.</summary>
-    private static void EmitPlanar(StringBuilder g, string list, IReadOnlyList<IReadOnlyList<Point2>> rings, double z)
+    /// <summary>A planar region: the first ring is the outline, the rest holes, each point placed in the
+    /// world by <paramref name="world"/> (a horizontal region's is its height). Leaves its surface in
+    /// <c>&lt;list&gt;[]</c>.</summary>
+    private static void EmitPlanar(StringBuilder g, string list, IReadOnlyList<IReadOnlyList<Point2>> rings, Func<Point2, Point3> world)
     {
         void L(string line) => g.Append(line).Append('\n');
         L("cl[] = {};");
@@ -734,7 +738,10 @@ public static class GmshGeoWriter
             var ring = Clean(raw);
             L("p = newp;");
             for (int k = 0; k < ring.Count; k++)
-                L($"Point(p + {k}) = {{{Um(ring[k].X)}, {Um(ring[k].Y)}, {Um(z)}}};");
+            {
+                var w = world(ring[k]);
+                L($"Point(p + {k}) = {{{Um(w.X)}, {Um(w.Y)}, {Um(w.Z)}}};");
+            }
             L("l = newc;");
             for (int k = 0; k < ring.Count; k++)
                 L($"Line(l + {k}) = {{p + {k}, p + {(k + 1) % ring.Count}}};");
@@ -743,6 +750,88 @@ public static class GmshGeoWriter
         }
         L("s = news; Plane Surface(s) = {cl[]};");
         L($"{list}[] = {{s}};");
+    }
+
+    /// <summary>
+    /// brief-em3d-42 R-em3d42-1c — a polyhedron as the OCC factory builds one from its boundary: one Point per
+    /// vertex, one Line per edge SHARED by the two faces that meet there (so the shell closes with no sewing),
+    /// a Curve Loop per ring (holes as further loops), a Plane Surface per face, then a Surface Loop and a
+    /// Volume. A face that is not planar to within a tenth of OCCT's own tolerance once in micrometres is
+    /// written as its triangles instead, since a Plane Surface on it would be refused or silently bent.
+    /// </summary>
+    private static void EmitPolyhedron(StringBuilder g, string list, Em3dPolyhedron ph)
+    {
+        void L(string line) => g.Append(line).Append('\n');
+        L("p = newp;");
+        for (int k = 0; k < ph.Vertices.Count; k++)
+            L($"Point(p + {k}) = {{{Um(ph.Vertices[k].X)}, {Um(ph.Vertices[k].Y)}, {Um(ph.Vertices[k].Z)}}};");
+
+        // The loops, as vertex rings: a planar face's own rings, a bent face's triangles.
+        var faces = new List<List<IReadOnlyList<int>>>();
+        var mesh = Em3dTessellation.Of(new Em3dSolid("", "", Em3dRole.Conductor, ph, 0));
+        var meshVertex = new Dictionary<Point3, int>();
+        for (int k = 0; k < ph.Vertices.Count; k++) meshVertex.TryAdd(ph.Vertices[k], k);
+        for (int f = 0; f < ph.Faces.Count; f++)
+        {
+            var face = ph.Faces[f];
+            if (ph.IsPlanar(face, PlanarityToleranceUm * 1e-6))
+                faces.Add([face.Outer, .. face.Holes]);
+            else
+                foreach (var t in mesh.Triangles.Where(t => t.Face == f))
+                    faces.Add([new[] { meshVertex[mesh.Vertices[t.A]], meshVertex[mesh.Vertices[t.B]], meshVertex[mesh.Vertices[t.C]] }]);
+        }
+
+        var edge = new Dictionary<(int, int), int>();
+        foreach (var rings in faces)
+            foreach (var ring in rings)
+                for (int i = 0; i < ring.Count; i++)
+                {
+                    int a = ring[i], b = ring[(i + 1) % ring.Count];
+                    var key = a < b ? (a, b) : (b, a);
+                    if (!edge.ContainsKey(key)) edge[key] = edge.Count;
+                }
+        L("l = newc;");
+        foreach (var ((a, b), e) in edge.OrderBy(kv => kv.Value))
+            L($"Line(l + {e}) = {{p + {a}, p + {b}}};");
+        L("sf[] = {};");
+        foreach (var rings in faces)
+        {
+            L("cl[] = {};");
+            foreach (var ring in rings)
+            {
+                var curves = new List<string>();
+                for (int i = 0; i < ring.Count; i++)
+                {
+                    int a = ring[i], b = ring[(i + 1) % ring.Count];
+                    int e = edge[a < b ? (a, b) : (b, a)];
+                    curves.Add(a < b ? $"l + {e}" : $"-(l + {e})");
+                }
+                L($"c = newcl; Curve Loop(c) = {{{string.Join(", ", curves)}}};");
+                L("cl[] += {c};");
+            }
+            L("s = news; Plane Surface(s) = {cl[]};");
+            L("sf[] += {s};");
+        }
+        L("sl = newsl; Surface Loop(sl) = {sf[]};");
+        L("v = newv; Volume(v) = {sl};");
+        L($"{list}[] = {{v}};");
+    }
+
+    /// <summary>A polyhedron face bent by more than this, in micrometres, is written as triangles: a tenth of
+    /// OCCT's default tolerance (1e-7 in model units).</summary>
+    public const double PlanarityToleranceUm = 1e-8;
+
+    /// <summary>The world bound of one of a sheet's rings, zero-thickness along a horizontal sheet's z.</summary>
+    private static (double, double, double, double, double, double) WorldBounds(Em3dSheet sh, IReadOnlyList<Point2> ring)
+    {
+        double x0 = double.PositiveInfinity, y0 = x0, z0 = x0, x1 = double.NegativeInfinity, y1 = x1, z1 = x1;
+        foreach (var q in ring)
+        {
+            var w = sh.World(q);
+            x0 = Math.Min(x0, w.X); y0 = Math.Min(y0, w.Y); z0 = Math.Min(z0, w.Z);
+            x1 = Math.Max(x1, w.X); y1 = Math.Max(y1, w.Y); z1 = Math.Max(z1, w.Z);
+        }
+        return (x0, y0, z0, x1, y1, z1);
     }
 
     /// <summary>An axis-aligned rectangle with one zero axis — a port sheet.</summary>
@@ -816,9 +905,6 @@ public static class GmshGeoWriter
 
     private static double Volume((double X0, double Y0, double Z0, double X1, double Y1, double Z1) b)
         => (b.X1 - b.X0) * (b.Y1 - b.Y0) * (b.Z1 - b.Z0);
-
-    private static (double X0, double Y0, double X1, double Y1) RingBounds(IReadOnlyList<Point2> ring)
-        => (ring.Min(q => q.X), ring.Min(q => q.Y), ring.Max(q => q.X), ring.Max(q => q.Y));
 
     /// <summary>A ring with its closing duplicate and any repeated vertex removed.</summary>
     private static List<Point2> Clean(IReadOnlyList<Point2> ring)

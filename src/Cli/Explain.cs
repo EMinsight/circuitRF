@@ -7,6 +7,7 @@ using CircuitRF.Core.Netlist;
 using CircuitRF.Design.Cells;
 using CircuitRF.Design.Layout;
 using CircuitRF.Design.Layout.Em;
+using CircuitRF.Design.ThreeD;
 using CircuitRF.Design.Schematic;
 using CircuitRF.Design.Workspace;
 using CircuitRF.Engine.Mom;
@@ -166,6 +167,7 @@ internal static class Explain
         {
             case DocumentKind.Layout:   ExplainLayout(path, walks); break;
             case DocumentKind.EmSetup:  exit |= ExplainEmSetup(path, walks, out em3d); break;
+            case DocumentKind.ThreeD:   exit |= ExplainThreeD(path, walks, out em3d); break;
             case DocumentKind.Netlist:
             case DocumentKind.Schematic:
             case DocumentKind.Cell:
@@ -437,6 +439,18 @@ internal static class Explain
         try { setup = EmSetupPersistence.LoadFromFile(full); }
         catch (Exception ex) { return JsonRun.Fail(CliDiagnostics.ExplainUnreadable(path, ex.Message)); }
 
+        // brief-em3d-42 R-em3d42-5b — LayoutRef names the geometry document, a .clay or a .c3d.
+        if (C3dSetups.IsThreeDView(EmSetupResolver.ResolveLayoutPath(full, setup.LayoutRef, cws)))
+        {
+            var src = Em3dSetupSource.FromCemOnThreeDView(full, setup, cws);
+            walks.Add(new ResolutionStepJson("3D view", setup.LayoutRef, src.Resolution.LayoutPath,
+                cws is null ? "relative to the .cem's own directory — no ancestor workspace"
+                            : "relative to the .cem's ancestor workspace"));
+            if (src.Elaboration is { } elaborated) ThreeDWalk(elaborated, walks);
+            if (setup.Is3D) em3d = ExplainEm3d.Build(src);
+            return src.Refusal is null ? 0 : 1;
+        }
+
         var resolution = EmSetupResolver.Resolve(full, setup.LayoutRef, cws, new TechnologyCache());
 
         walks.Add(new ResolutionStepJson(
@@ -477,6 +491,43 @@ internal static class Explain
         }
 
         return resolution.Source is null ? 1 : 0;
+    }
+
+    /// <summary>
+    /// brief-em3d-42 R-em3d42-6 — <c>explain x.c3d</c>: the WALK — each instance's cell folder, view file and
+    /// technology and where each came from, each unit conversion, each material merge or qualification, and
+    /// the lowering table's choice per object — then, with exactly one embedded setup, the problem it makes.
+    /// </summary>
+    private static int ExplainThreeD(string path, List<ResolutionStepJson> walks, out ExplainEm3dJson? em3d)
+    {
+        em3d = null;
+        string full = Path.GetFullPath(path);
+        Workspace(path, walks);
+        Em3dSetupSource src;
+        try { src = Em3dSetupSource.ForThreeDView(full, null); }
+        catch (Exception ex) { return JsonRun.Fail(CliDiagnostics.ExplainUnreadable(path, ex.Message)); }
+        walks.Add(new ResolutionStepJson("technology", full, src.Elaboration?.TechnologyPath ?? src.Resolution.TechnologyPath,
+            "the 3D view's own TechRef, else its ancestor workspace's default — resolved from the view's own path"));
+        if (src.Elaboration is { } e) ThreeDWalk(e, walks);
+        em3d = ExplainEm3d.Build(src);
+        return src.Refusal is null ? 0 : 1;
+    }
+
+    private static void ThreeDWalk(C3dElaboration e, List<ResolutionStepJson> walks)
+    {
+        foreach (var s in e.WalkInstances)
+            walks.Add(new ResolutionStepJson($"instance {s.Subject}", null, s.Detail,
+                "the cell reference (ws:// through the workspace's alias; ExternalWorkspaceGate does not apply inside a " +
+                "3D view), the cell's primary view, and that view's own technology"));
+        foreach (var s in e.WalkUnits)
+            walks.Add(new ResolutionStepJson($"units {s.Subject}", null, s.Detail,
+                "each document in its own DbuPerMicron; nothing is rounded to a parent's DBU"));
+        foreach (var s in e.WalkMaterials)
+            walks.Add(new ResolutionStepJson($"material {s.Subject}", null, s.Detail,
+                "resolved in each object's own document's technology; equal values merge, different ones are qualified"));
+        foreach (var s in e.WalkLowering)
+            walks.Add(new ResolutionStepJson($"lowered {s.Subject}", null, s.Detail,
+                "the richest neutral primitive that states it exactly (box, extruded polygon, cylinder, else polyhedron)"));
     }
 
     /// <summary>
@@ -1124,10 +1175,16 @@ internal static class Explain
         {
             if (extents.Empty)
                 Console.WriteLine($"  extents      (empty)   unit {extents.Unit}, scale {extents.Scale:G6}");
+            else if (extents.Z0 is { } z0)
+                Console.WriteLine(
+                    $"  extents      {extents.X0:G6} {extents.Y0:G6} {z0:G6} .. {extents.X1:G6} {extents.Y1:G6} {extents.Z1:G6}"
+                    + $"  ({extents.Width:G6} x {extents.Height:G6} x {extents.Depth:G6} {extents.Unit}, scale {extents.Scale:G6})");
             else
                 Console.WriteLine(
                     $"  extents      {extents.X0:G6} {extents.Y0:G6} .. {extents.X1:G6} {extents.Y1:G6}"
                     + $"  ({extents.Width:G6} x {extents.Height:G6} {extents.Unit}, scale {extents.Scale:G6})");
+            if (extents.Bounds is { } bounds)
+                Console.WriteLine($"  {"",-12} in its display unit: {bounds}");
             // R-aut12-3: the same box in the spelling `render --window` takes, so the answer can be
             // pasted rather than converted. Printed on its own line and NAMED as the flag it feeds.
             if (extents.Window is { } win)

@@ -299,6 +299,15 @@ public static class FdtdGrid
         var x = Axis(FdtdAxis.X);
         var y = Axis(FdtdAxis.Y);
         var z = Axis(FdtdAxis.Z);
+        // brief-em3d-42 R-em3d42-1c — an oblique face has no line to lie on; the grid staircases it.
+        var oblique = problem.Solids.Where(s => s.Primitive is Em3dPolyhedron ph && ph.Faces.Any(f => !AxisNormal(ph.Normal(f))))
+                                    .Select(s => s.Name)
+                                    .Concat(problem.Sheets.Where(sh => sh.Frame is { NormalAxis: null }).Select(sh => sh.Name))
+                                    .ToList();
+        if (oblique.Count > 0)
+            warnings.Add($"{string.Join(", ", oblique.Select(n => $"'{n}'"))} {(oblique.Count == 1 ? "has" : "have")} faces " +
+                         "normal to no axis, which the grid staircases between the lines at their edges: the answer there " +
+                         "converges with the cell size, not with the geometry.");
 
         long cells = checked((long)x.Lines.Count * y.Lines.Count * z.Lines.Count);
         double dt = CourantTimeStep(x.SmallestCellM, y.SmallestCellM, z.SmallestCellM);
@@ -310,6 +319,9 @@ public static class FdtdGrid
         var result = new FdtdGridResult(x, y, z, ctx.MinCell, cells, dt, pulse, steps, memory, merges, warnings, null);
         return memory > limit ? result with { Refusal = MemoryRefusal(result, limit) } : result;
     }
+
+    private static bool AxisNormal(Point3 n)
+        => (Math.Abs(n.X) > 1 - 1e-12 ? 1 : 0) + (Math.Abs(n.Y) > 1 - 1e-12 ? 1 : 0) + (Math.Abs(n.Z) > 1 - 1e-12 ? 1 : 0) == 1;
 
     /// <summary>R-em3d8-5b: the refusal names the feature that set the smallest cell, and the setting
     /// that would relax it.</summary>
@@ -343,6 +355,27 @@ public static class FdtdGrid
 
         foreach (var shape in ctx.Shapes)
         {
+            // brief-em3d-42 R-em3d42-1c — a polyhedron, or a sheet not lying flat: a line on every coordinate
+            // of every axis-aligned edge, and on its extremes. What lies between on an oblique face is
+            // staircased, and Build warns naming it. A sheet's own plane is a fixed line, as a flat one's is.
+            if (shape.EdgeLines is { } edgeLines)
+            {
+                var kind = shape.Conductor ? FdtdLineKind.MetalEdge : FdtdLineKind.MaterialFace;
+                var extreme = shape.Conductor ? FdtdLineKind.MetalExtreme : FdtdLineKind.MaterialFace;
+                if (shape.IsSheet && shape.SheetAxis == axis)
+                {
+                    Add(A3Of(shape, axis), true, new FdtdLineSource(shape.Name, FdtdLineKind.SheetPlane, A3Of(shape, axis)));
+                    continue;
+                }
+                var (lo, hi) = shape.Range(axis);
+                var at = edgeLines[(int)axis];
+                foreach (double e in at) Add(e, false, new FdtdLineSource(shape.Name, kind, e));
+                foreach (double ex in new[] { lo, hi })
+                    if (!at.Any(e => Math.Abs(e - ex) <= ctx.Tol))
+                        Add(ex, false, new FdtdLineSource(shape.Name, extreme, ex));
+                continue;
+            }
+
             if (axis == FdtdAxis.Z)
             {
                 if (shape.IsSheet)
@@ -759,6 +792,31 @@ public static class FdtdGrid
              :              (m * 1e3).ToString("0.####", CultureInfo.InvariantCulture) + " mm";
     }
 
+    /// <summary>
+    /// brief-em3d-42 — per axis, the coordinates of the loops' axis-aligned edges on it: an edge parallel to a
+    /// world axis has a constant coordinate on each of the other two, and a face containing it that is normal
+    /// to one of them lies on that line. Distinct, in first-seen order.
+    /// </summary>
+    private static IReadOnlyList<double>[] AlignedEdgeLines(IEnumerable<IReadOnlyList<Point3>> loops)
+    {
+        var at = new[] { new List<double>(), new List<double>(), new List<double>() };
+        foreach (var r in loops)
+            for (int i = 0; i < r.Count; i++)
+            {
+                var p = r[i]; var q = r[(i + 1) % r.Count];
+                double[] a = [p.X, p.Y, p.Z], b = [q.X, q.Y, q.Z];
+                int moving = 0, along = -1;
+                for (int k = 0; k < 3; k++)
+                    if (Math.Abs(a[k] - b[k]) > 1e-15 * Math.Max(1, Math.Abs(a[k]))) { moving++; along = k; }
+                if (moving != 1) continue;
+                for (int k = 0; k < 3; k++)
+                    if (k != along && !at[k].Contains(a[k])) at[k].Add(a[k]);
+            }
+        return at;
+    }
+
+    private static double A3Of(Shape s, FdtdAxis a) => a switch { FdtdAxis.X => s.X0, FdtdAxis.Y => s.Y0, _ => s.Z0 };
+
     /// <summary>Two coordinates closer than this are the same coordinate, rounded.</summary>
     private static double CoincidenceTolerance(double span) => 1e-9 * Math.Max(span, 1e-6);
 
@@ -779,6 +837,11 @@ public static class FdtdGrid
         public required double Z0, Z1, X0, X1, Y0, Y1;
         public required IReadOnlyList<IReadOnlyList<Point2>>? Rings;   // outline first, then holes
         public double Index = 1;                                        // √(εr·μr), non-conductors
+        /// <summary>brief-em3d-42 — for a polyhedron or a sheet not lying flat: per axis (x, y, z), the
+        /// coordinates of its axis-aligned edges on that axis. Null for every other shape.</summary>
+        public IReadOnlyList<double>[]? EdgeLines;
+        /// <summary>A sheet not lying flat: the axis its plane is normal to, or null for an oblique plane.</summary>
+        public FdtdAxis? SheetAxis;
 
         public (double Lo, double Hi) Range(FdtdAxis a) => a switch
         {
@@ -828,6 +891,19 @@ public static class FdtdGrid
             foreach (var s in problem.Solids)
             {
                 var (x0, y0, z0, x1, y1, z1) = Em3dProblem.Bounds(s.Primitive);
+                if (s.Primitive is Em3dPolyhedron ph)
+                {
+                    bool metal = s.Role == Em3dRole.Conductor;
+                    var loops = ph.Faces.SelectMany(f => f.Holes.Prepend(f.Outer))
+                                        .Select(r => (IReadOnlyList<Point3>)[.. r.Select(i => ph.Vertices[i])]);
+                    Shapes.Add(new Shape
+                    {
+                        Name = s.Name, Conductor = metal, IsSheet = false, Thin = false,
+                        X0 = x0, X1 = x1, Y0 = y0, Y1 = y1, Z0 = z0, Z1 = z1, Rings = null,
+                        Index = metal ? 1 : Index(s.Material), EdgeLines = AlignedEdgeLines(loops),
+                    });
+                    continue;
+                }
                 IReadOnlyList<IReadOnlyList<Point2>>? rings = s.Primitive switch
                 {
                     Em3dExtrudedPolygon e => [e.Outline, .. e.Holes],
@@ -847,6 +923,20 @@ public static class FdtdGrid
                 });
             }
             foreach (var sh in problem.Sheets)
+            {
+                if (sh.Frame is { } frame)
+                {
+                    var (fx0, fy0, fz0, fx1, fy1, fz1) = sh.WorldBounds();
+                    Shapes.Add(new Shape
+                    {
+                        Name = sh.Name, Conductor = true, IsSheet = true, Thin = true,
+                        X0 = fx0, X1 = fx1, Y0 = fy0, Y1 = fy1, Z0 = fz0, Z1 = fz1, Rings = null,
+                        SheetAxis = frame.NormalAxis is { } n ? (FdtdAxis)n : null,
+                        EdgeLines = AlignedEdgeLines(sh.Holes.Prepend(sh.Outline)
+                                                       .Select(r => (IReadOnlyList<Point3>)[.. r.Select(sh.World)])),
+                    });
+                    continue;
+                }
                 Shapes.Add(new Shape
                 {
                     Name = sh.Name, Conductor = true, IsSheet = true, Thin = true,
@@ -854,6 +944,7 @@ public static class FdtdGrid
                     Y0 = sh.Outline.Min(q => q.Y), Y1 = sh.Outline.Max(q => q.Y),
                     Z0 = sh.Z, Z1 = sh.Z, Rings = [sh.Outline, .. sh.Holes],
                 });
+            }
 
             var box = problem.Boundary;
             double span = Math.Max(box.Max.X - box.Min.X, Math.Max(box.Max.Y - box.Min.Y, box.Max.Z - box.Min.Z));
