@@ -263,6 +263,49 @@ public static class LayoutPersistence
         return false;
     }
 
+    /// <summary>
+    /// The <c>.clay</c>'s <c>DbuPerMicron</c> and <c>DisplayUnit</c>, read by TOKENIZING the top level
+    /// and stopping as soon as both are seen — for a caller that wants a layout's units and nothing
+    /// else (a new 3D view takes them, brief-em3d-41). Both are written near the top of every file, so
+    /// on an imported board this is microseconds where a load is seconds. A key the file omits takes
+    /// <see cref="ClayFile"/>'s default, as a load would. Null when the file is missing or not JSON.
+    /// </summary>
+    public static (int DbuPerMicron, LayoutUnit DisplayUnit)? TryReadUnits(string path)
+    {
+        byte[] bytes;
+        try { bytes = GzipTextFile.ReadAllBytesAutoGzip(path); }
+        catch { return null; }
+
+        var json = new ReadOnlySpan<byte>(bytes);
+        if (json.StartsWith(Utf8Bom)) json = json[Utf8Bom.Length..];
+
+        var defaults = new ClayFile();
+        int? dbu = null;
+        LayoutUnit? unit = null;
+        try
+        {
+            var reader = new Utf8JsonReader(json, isFinalBlock: true, state: default);
+            if (!reader.Read() || reader.TokenType != JsonTokenType.StartObject) return null;
+            while (reader.Read() && (dbu is null || unit is null))
+            {
+                if (reader.TokenType != JsonTokenType.PropertyName || reader.CurrentDepth != 1) continue;
+                string name = reader.GetString() ?? "";
+                reader.Read();
+                if (string.Equals(name, nameof(ClayFile.DbuPerMicron), StringComparison.OrdinalIgnoreCase)
+                    && reader.TokenType == JsonTokenType.Number && reader.TryGetInt32(out int d))
+                    dbu = d;
+                else if (string.Equals(name, nameof(ClayFile.DisplayUnit), StringComparison.OrdinalIgnoreCase)
+                    && reader.TokenType == JsonTokenType.String
+                    && Enum.TryParse<LayoutUnit>(reader.GetString(), ignoreCase: true, out var u))
+                    unit = u;
+                reader.Skip();
+            }
+        }
+        catch (JsonException) { return null; }
+
+        return (dbu ?? defaults.DbuPerMicron, unit ?? defaults.DisplayUnit);
+    }
+
     private static ReadOnlySpan<byte> Utf8Bom => [0xEF, 0xBB, 0xBF];
 
     private static ReadOnlySpan<byte> PCellSnapshotsUtf8 =>

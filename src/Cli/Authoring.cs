@@ -222,8 +222,10 @@ public static class Authoring
         // the SAME walk-up `circuitrf em` and the GUI's New Layout do, so a headless cell and a
         // hand-made one agree. Resolved against the cell's own layout sub-folder, which is where the
         // file lands.
+        // A `.c3d` takes its display unit and snap from the same technology (brief-em3d-41 R-em3d41-4),
+        // and resolves it the same way, so one walk serves both.
         Technology? tech = null;
-        if (views.HasFlag(CellViews.Layout))
+        if (views.HasFlag(CellViews.Layout) || views.HasFlag(CellViews.ThreeD))
         {
             string clayPath = Path.Combine(
                 parentDir, cellName, CellFolder.SubFolderName(ViewType.Layout), cellName + ".clay");
@@ -243,6 +245,7 @@ public static class Authoring
             if (created.SchematicPath is { } sch) JsonRun.AddOutput("schematic", sch);
             if (created.SymbolPath    is { } sym) JsonRun.AddOutput("symbol", sym);
             if (created.LayoutPath    is { } lay) JsonRun.AddOutput("layout", lay);
+            if (created.ThreeDPath    is { } t3d) JsonRun.AddOutput("3d", t3d);
 
             // R-aut3-7: a cell the resolver then reports as broken is worse than nothing, so say what
             // it resolves to rather than leaving the caller to open the GUI and find out.
@@ -257,7 +260,7 @@ public static class Authoring
 
     /// <summary>
     /// <c>--views</c>, or <see cref="CellCreate.DefaultViews"/> when it is absent. Null on a name that
-    /// is not one of the three, having already refused — a misspelt view silently creating fewer files
+    /// is not one of the four, having already refused — a misspelt view silently creating fewer files
     /// than asked for is exactly the kind of quiet wrong answer these verbs exist to avoid.
     /// </summary>
     private static CellViews? ParseViews(string? text)
@@ -272,6 +275,7 @@ public static class Authoring
                 case "schematic": views |= CellViews.Schematic; break;
                 case "symbol":    views |= CellViews.Symbol;    break;
                 case "layout":    views |= CellViews.Layout;    break;
+                case "3d":        views |= CellViews.ThreeD;    break;
                 case "none":      break;
                 default:
                     JsonRun.Fail(CliDiagnostics.NewUnknownView(part));
@@ -285,15 +289,15 @@ public static class Authoring
     /// same five-branch rule the project tree reads (R-aut3-7).</summary>
     private static void ReportPrimacy(string cellDir)
     {
-        foreach (var type in (ReadOnlySpan<ViewType>)[ViewType.Schematic, ViewType.Symbol, ViewType.Layout])
+        foreach (var type in Enum.GetValues<ViewType>())
         {
             var res = CellFolder.ResolvePrimary(cellDir, type);
             if (res.State is PrimaryState.NoView) continue;
 
             string what = res.State switch
             {
-                PrimaryState.SoleFile or PrimaryState.NamedPresent => $"primary {type.ToString().ToLowerInvariant()}: {res.ResolvedName}",
-                _ => $"{type.ToString().ToLowerInvariant()}: {res.State}",
+                PrimaryState.SoleFile or PrimaryState.NamedPresent => $"primary {CellFolder.SubFolderName(type)}: {res.ResolvedName}",
+                _ => $"{CellFolder.SubFolderName(type)}: {res.State}",
             };
             Console.Error.WriteLine($"[circuitRF] {what}");
         }
@@ -591,7 +595,7 @@ public static class Authoring
     private static int NewUsage()
     {
         Console.Error.WriteLine("Usage: circuitrf new workspace <dir> [--name N] [--tech <id>|none]");
-        Console.Error.WriteLine("       circuitrf new cell <workspace-or-dir> <cellName> [--views schematic,symbol,layout]");
+        Console.Error.WriteLine("       circuitrf new cell <workspace-or-dir> <cellName> [--views schematic,symbol,layout,3d]");
         return 1;
     }
 

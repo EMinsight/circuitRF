@@ -70,7 +70,7 @@ public static class DocumentFileRefs
     /// only a hand-edited document whose artwork also sits outside the workspace.</para>
     /// </remarks>
     public static readonly string[] Extensions =
-        [".csch", ".csym", ".clay", ".cdd", ".ccell", ".cnl", ".crail"];
+        [".csch", ".csym", ".clay", ".cdd", ".ccell", ".cnl", ".crail", ".c3d"];
 
     public static bool IsDocument(string path) =>
         Array.Exists(Extensions, e => string.Equals(Path.GetExtension(path), e, StringComparison.OrdinalIgnoreCase));

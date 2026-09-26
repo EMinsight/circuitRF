@@ -100,6 +100,7 @@ public static class TreeMove
         string[] views =
         [
             CellFolder.SchematicSubFolder, CellFolder.SymbolSubFolder, CellFolder.LayoutSubFolder,
+            CellFolder.ThreeDSubFolder,
         ];
 
         while (dir is not null && !string.Equals(dir, root, StringComparison.OrdinalIgnoreCase))

@@ -13330,3 +13330,44 @@ static/eigen say so through `Em3dRunService.RadiationPatternIgnored`, in the run
 **Not measured.** A large board's cost: the FD surface dumps accumulate every sweep point during the run and
 write 23 files per face per frequency (21 phase snapshots, deleted after reading — 8.7 MB on the half-wave dipole).
 The PML margin of 3 cells is not a convergence study; the dipoles are the evidence it is enough.
+
+## The 3D view and the `.c3d` document — brief-em3d-41 (2026-09-26)
+
+A fourth `ViewType` (`ThreeD`, sub-folder `3d/`, extension `.c3d`), the format in `src/Design/ThreeD/`,
+New ▸ 3D View, and every walker that follows a cell reference. Nothing draws or solves a `.c3d` yet.
+
+- **One type family is both the working model and the file** (`C3dDocument.cs`), as `.clay`'s shapes
+  are. A DTO tree plus a mapping would have been a second copy that could only disagree. The price is
+  that every computed member must be `[JsonIgnore]` — STJ serializes public get-only properties — and a
+  point type needs a `[Description]` saying how it is SPELLED, because `DocumentSchema` would otherwise
+  expand `C3dPoint3` into X/Y/Z fields that are not in the file. `DocumentSchema` now honours that
+  (a type with its own `[JsonConverter]` and a `[Description]` is spelled, not expanded) and skips
+  `[JsonExtensionData]` properties.
+- **`Utf8JsonWriter.WriteRawValue` puts no line break before an ARRAY ELEMENT.** Writing each point
+  inline through its own converter put a whole outline on one line (`[[0, 0],[100, 0],…`). A raw value
+  is placed correctly only as a property's VALUE — which is why `.clay`'s `CoordinatePairsJsonConverter`
+  works — so every point LIST has its own converter that lays out the lines itself, from the writer's
+  `CurrentDepth`.
+- **Keys this build does not read are KEPT** (`[JsonExtensionData]` on the document, each object and
+  each instance) and `check` names each as a warning. Ignoring them silently would lose a later build's
+  data on save; refusing them would stop a later document opening at all. `Variables`, `Ports`,
+  `FaceBoundaries` and `Setups` are read and written uninterpreted for the same reason.
+- **An unknown `$type` refuses the DOCUMENT**, naming every unknown object (a pre-scan, so all of them
+  and not the serializer's first). The series overview describes brief 41 as refusing "that one object,
+  not the document"; brief 41's own §2d says the reader rejects it "as a refusal and not a crash", and
+  the per-object form needs a writer that can put an unread object back in its place byte for byte.
+  F4b's objects will be types this build knows, so nothing here forecloses its banner-and-operands rule.
+- **`InvalidDataException` is sealed**, so the reader's refusal is `C3dReadException : Exception`
+  carrying the `Diagnostic`. Every refusal and finding is a coded diagnostic (`C3dDiagnostics`), which
+  keeps `UserFacingTextGateTests`' allow-list unchanged.
+- **The display-unit rule reads the cell's `.clay` by TOKENIZING it** (`LayoutPersistence.TryReadUnits`)
+  and stopping at the two keys: a full load of an imported board is seconds.
+- **`ViewType.ToString()` was used as user text in five places** ("threed" would have reached the
+  Messages window and `find`'s JSON). Sentences now use `CellFolder.ViewNoun`, and machine tokens
+  (`find`, `new cell`'s report) use `CellFolder.SubFolderName` — "3d", which is also `--views`' spelling.
+  The per-view `.ccell` switches collapsed into `CcellFile.GetPrimary`/`SetPrimary`.
+- **`.gitattributes` gains `*.c3d -merge -text` for new workspaces only.** The block is appended once
+  and never rewritten, so a workspace whose block predates this does not get the line.
+- **`render` and `explain --extents` use `DocumentKinds.DrawableViewTypes`**, not `AllViewTypes`: a
+  cell whose only view is 3D says there is nothing to draw rather than handing a `.c3d` to the
+  schematic renderer, until brief 42 draws its sections.

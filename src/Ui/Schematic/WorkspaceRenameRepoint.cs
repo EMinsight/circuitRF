@@ -8,9 +8,9 @@ namespace CircuitRF.Ui.Schematic;
 //
 //  A workspace's name IS its folder name: `.cws` is a fixed filename and CwsFile
 //  carries no name field. So renaming one is `Directory.Move`, and nothing inside it
-//  notices — every intra-workspace reference (a CellRef, a layout's TechRef, a
-//  .ccell's primaries, the .cws's own OpenDocuments) is relative and travels with the
-//  folder.
+//  notices — every intra-workspace reference (a CellRef, a layout's or a 3D view's
+//  TechRef, a .ccell's primaries, the .cws's own OpenDocuments) is relative and travels
+//  with the folder. A .c3d is therefore not read here, and needs no row.
 //
 //  What DOES notice is another workspace pointing IN. Four fields can, and all four
 //  live in that other workspace's own `.cws`:

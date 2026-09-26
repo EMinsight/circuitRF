@@ -5,6 +5,7 @@ using System.Text.Json.Nodes;
 using CircuitRF.Design.Layout;
 using CircuitRF.Design.Schematic;
 using CircuitRF.Design.Symbol;
+using CircuitRF.Design.ThreeD;
 
 namespace CircuitRF.Design.Cells;
 
@@ -28,7 +29,7 @@ public static class CellViewFileValidator
 {
     /// <summary>
     /// The cell view a file's extension claims to be, or null when the extension is not one of the
-    /// three a cell folder has a home for. Lexical only — nothing is read.
+    /// four a cell folder has a home for. Lexical only — nothing is read.
     /// </summary>
     public static ViewType? ViewTypeFor(string path) =>
         Path.GetExtension(path).ToLowerInvariant() switch
@@ -36,6 +37,7 @@ public static class CellViewFileValidator
             ".csch" => ViewType.Schematic,
             ".csym" => ViewType.Symbol,
             ".clay" => ViewType.Layout,
+            ".c3d"  => ViewType.ThreeD,
             _       => null,
         };
 
@@ -49,6 +51,9 @@ public static class CellViewFileValidator
         ViewType.Schematic => "Components",
         ViewType.Symbol    => "Primitives",
         ViewType.Layout    => "Shapes",
+        // With FormatVersion, the key that tells a 3D view from a motion-capture file of the same
+        // extension (C3dPersistence.LooksLikeC3d) — written even when empty for exactly that reason.
+        ViewType.ThreeD    => "Objects",
         _                  => throw new ArgumentOutOfRangeException(nameof(type)),
     };
 
@@ -102,6 +107,8 @@ public static class CellViewFileValidator
                 case ViewType.Schematic: SchematicPersistence.LoadFromFile(path); break;
                 case ViewType.Symbol:    SymbolPersistence.LoadFromFile(path);    break;
                 case ViewType.Layout:    LayoutPersistence.LoadFromFile(path);    break;
+                case ViewType.ThreeD:    C3dPersistence.LoadFromFile(path);       break;
+                default: throw new ArgumentOutOfRangeException(nameof(viewType));
             }
         }
         catch (Exception ex)
@@ -112,11 +119,5 @@ public static class CellViewFileValidator
         return null;
     }
 
-    private static string DisplayName(ViewType type) => type switch
-    {
-        ViewType.Schematic => "schematic",
-        ViewType.Symbol    => "symbol",
-        ViewType.Layout    => "layout",
-        _                  => "view",
-    };
+    private static string DisplayName(ViewType type) => CellFolder.ViewNoun(type);
 }

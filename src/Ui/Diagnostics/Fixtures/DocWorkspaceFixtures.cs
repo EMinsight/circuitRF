@@ -199,6 +199,7 @@ public static class DocWorkspaceFixtures
         {
             case ViewType.Schematic: vm.OpenCellSchematic(cell); break;
             case ViewType.Layout:    vm.OpenCellLayout(cell);    break;
+            // No 3D arm: nothing opens a 3D view before brief 43, so no documentation figure asks for one.
             default:                 vm.OpenCellSymbol(cell);    break;
         }
         Pump();

@@ -577,6 +577,12 @@
                                                   IsVisible="{Binding IsOwnCell}">
                                             <MenuItem.Icon><mi:MaterialIcon Kind="LayersPlus" Width="14" Height="14"/></MenuItem.Icon>
                                         </MenuItem>
+                                        <MenuItem Header="New 3D View"
+                                                  Command="{Binding New3DViewCommand}"
+                                                  IsVisible="{Binding IsOwnCell}"
+                                                  ToolTip.Tip="Create an empty 3D view (.c3d) in this cell's 3d folder. It takes its units from the cell's layout when there is one, otherwise from the technology.">
+                                            <MenuItem.Icon><mi:MaterialIcon Kind="CubeOutline" Width="14" Height="14"/></MenuItem.Icon>
+                                        </MenuItem>
                                         <MenuItem Header="Duplicate…"
                                                   Command="{Binding DuplicateCellCommand}"
                                                   IsVisible="{Binding IsOwnCell}">

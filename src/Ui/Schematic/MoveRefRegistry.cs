@@ -266,6 +266,17 @@ public static class MoveRefRegistry
             n => One(RefSlot.For(n, "TechRef")),
             OwnDir, PlainResolve, PlainStore),
 
+        // ── .c3d ──────────────────────────────────────────────────────────────
+        // brief-em3d-41: a 3D view's instances and technology are spelled and based exactly as a
+        // .clay's — relative to the document's own folder.
+        new("c3d/CellRef", Ext(".c3d"),
+            n => Items(n, "Instances").Select(i => RefSlot.For(i, "CellRef")).OfType<RefSlot>(),
+            OwnDir, ResolveCellRef, StoreCellRef),
+
+        new("c3d/TechRef", Ext(".c3d"),
+            n => One(RefSlot.For(n, "TechRef")),
+            OwnDir, PlainResolve, PlainStore),
+
         // ── .cem ──────────────────────────────────────────────────────────────
         // EmSetupResolver's rule exactly: the workspace root when there is one, the `.cem`'s own
         // directory when there is not — which is what makes a loose `.cem` beside its `.clay`

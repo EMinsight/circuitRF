@@ -1,0 +1,236 @@
+// brief-em3d-41 R-em3d41-3 — reading and writing a .c3d.
+//
+// The conventions are .clay's newer ones, because the reason is the same: a workspace's history is
+// kept with git, so the file is written for a DIFF — a tab per level, LF on every platform, a point
+// per line. Key order is the declaration order (JsonPropertyOrder where a base type's keys must frame
+// a derived type's), nothing is ever sorted, and a field is omitted at its default only when it is a
+// modifier: a placement that states nothing, a zero shear, an empty hole list. Geometry is always
+// written, so a reader never has to know a default to know where a solid is.
+//
+// ROUND TRIP IS BYTE FOR BYTE (R-em3d41-3b): read then write gives the bytes that were read, for any
+// file this writer produced. The one thing the writer changes is a NEGATIVE size, which it normalises
+// by moving the corner (R-em3d41-2-dims) — in the model it is handed, so the document and the file
+// agree afterwards.
+
+using System.Collections;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
+using CircuitRF.Design.Cells;
+using CircuitRF.Design.Layout;
+using CircuitRF.Diagnostics;
+
+namespace CircuitRF.Design.ThreeD;
+
+/// <summary>A <c>.c3d</c> this build cannot read, with the diagnostic that says why.</summary>
+public sealed class C3dReadException(Diagnostic diagnostic) : Exception(diagnostic.Render())
+{
+    public Diagnostic Diagnostic { get; } = diagnostic;
+}
+
+/// <summary>Reads and writes <c>.c3d</c> files. Framework-free.</summary>
+public static class C3dPersistence
+{
+    public const string Extension            = ".c3d";
+    public const int    CurrentFormatVersion = 1;
+
+    private static readonly JsonSerializerOptions JsonOpts = new()
+    {
+        WriteIndented                     = true,
+        IndentCharacter                   = '\t',
+        IndentSize                        = 1,
+        NewLine                           = "\n",
+        DefaultIgnoreCondition            = JsonIgnoreCondition.WhenWritingNull,
+        PropertyNameCaseInsensitive       = true,
+        // A hand-written file may put "$type" anywhere in an object. .clay requires it first and
+        // refuses the whole file otherwise; nothing about a 3D view needs that trap.
+        AllowOutOfOrderMetadataProperties = true,
+        Converters =
+        {
+            new JsonStringEnumConverter(), new C3dInt64JsonConverter(), new C3dInt32JsonConverter(),
+            new C3dDoubleJsonConverter(), new C3dIndexListJsonConverter(), new C3dIndexLoopsJsonConverter(),
+            new C3dPoint2ListJsonConverter(), new C3dPoint3ListJsonConverter(), new C3dRingListJsonConverter(),
+        },
+        TypeInfoResolver = new DefaultJsonTypeInfoResolver { Modifiers = { OmitEmpty } },
+    };
+
+    /// <summary>
+    /// A list with nothing in it, and a placement that states nothing, are left out — except a
+    /// <c>[JsonRequired]</c> one, which is <see cref="C3dDocument.Objects"/>: its presence is half of
+    /// how a <c>.c3d</c> is recognised by content.
+    /// </summary>
+    private static void OmitEmpty(JsonTypeInfo info)
+    {
+        if (info.Kind != JsonTypeInfoKind.Object) return;
+        foreach (var p in info.Properties)
+        {
+            if (p.IsRequired || p.IsExtensionData) continue;
+            if (typeof(ICollection).IsAssignableFrom(p.PropertyType))
+                p.ShouldSerialize = static (_, v) => v is ICollection { Count: > 0 };
+            else if (p.PropertyType == typeof(C3dPlacement))
+                p.ShouldSerialize = static (_, v) => v is C3dPlacement { IsDefault: false };
+        }
+    }
+
+    // ── Write ─────────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>The document as the file's text. Normalises a negative size in place first.</summary>
+    public static string Serialize(C3dDocument doc)
+    {
+        Normalize(doc);
+        return JsonSerializer.Serialize(doc, JsonOpts);
+    }
+
+    public static void SaveToFile(string path, C3dDocument doc)
+        => AtomicFile.WriteAllText(path, Serialize(doc));
+
+    /// <summary>R-em3d41-2-dims: a size component is positive; a negative one moves the corner. A
+    /// prism's height and a cylinder's length keep their sign — each says which way it was pulled.</summary>
+    public static void Normalize(C3dDocument doc)
+    {
+        foreach (var o in doc.Objects)
+        {
+            switch (o)
+            {
+                case C3dBox b:
+                    var (mx, sx) = Positive(b.Min.X, b.Size.X);
+                    var (my, sy) = Positive(b.Min.Y, b.Size.Y);
+                    var (mz, sz) = Positive(b.Min.Z, b.Size.Z);
+                    b.Min  = new C3dPoint3(mx, my, mz);
+                    b.Size = new C3dPoint3(sx, sy, sz);
+                    break;
+                case C3dSheet { Rect: { } r }:
+                    var (mu, su) = Positive(r.Min.U, r.Size.U);
+                    var (mv, sv) = Positive(r.Min.V, r.Size.V);
+                    r.Min  = new C3dPoint2(mu, mv);
+                    r.Size = new C3dPoint2(su, sv);
+                    break;
+            }
+        }
+
+        static (long Min, long Size) Positive(long min, long size) => size < 0 ? (min + size, -size) : (min, size);
+    }
+
+    // ── Read ──────────────────────────────────────────────────────────────────────────────────
+
+    /// <exception cref="C3dReadException">The text is not a 3D view this build can read — not JSON, a
+    /// newer format, an object kind it does not know, or a string where a number belongs. Each names
+    /// what it found. A document that READS but is wrong (a duplicate name, an open polyhedron) is not
+    /// refused here: <see cref="C3dValidation"/> lists those, all of them.</exception>
+    public static C3dDocument Deserialize(string json)
+    {
+        PreScan(json);
+
+        C3dDocument? doc;
+        try { doc = JsonSerializer.Deserialize<C3dDocument>(json, JsonOpts); }
+        catch (JsonException ex) { throw new C3dReadException(C3dDiagnostics.Unreadable(ex.Message)); }
+
+        return doc ?? throw new C3dReadException(C3dDiagnostics.NotAnObject());
+    }
+
+    public static C3dDocument LoadFromFile(string path)
+        => Deserialize(GzipTextFile.ReadAllTextAutoGzip(path));
+
+    /// <summary>
+    /// What the serializer would report badly or not at all: a newer format (checked before binding, so
+    /// a later build's new keys are not what the user is told about), and every object kind this build
+    /// does not know — ALL of them, by name, not the first one the serializer tripped on.
+    /// </summary>
+    private static void PreScan(string json)
+    {
+        JsonDocument parsed;
+        try { parsed = JsonDocument.Parse(json, new JsonDocumentOptions { AllowTrailingCommas = false }); }
+        catch (JsonException ex) { throw new C3dReadException(C3dDiagnostics.Unreadable(ex.Message)); }
+
+        using (parsed)
+        {
+            var root = parsed.RootElement;
+            if (root.ValueKind != JsonValueKind.Object) throw new C3dReadException(C3dDiagnostics.NotAnObject());
+
+            if (TryGet(root, nameof(C3dDocument.FormatVersion), out var fv)
+                && fv.ValueKind == JsonValueKind.Number && fv.TryGetInt32(out int version)
+                && version > CurrentFormatVersion)
+                throw new C3dReadException(C3dDiagnostics.NewerFormat(version, CurrentFormatVersion));
+
+            if (!TryGet(root, nameof(C3dDocument.Objects), out var objects) || objects.ValueKind != JsonValueKind.Array)
+                return;   // the serializer's own "required" refusal names it
+
+            var known   = C3dObject.Kinds.Select(k => k.Name).ToHashSet(StringComparer.Ordinal);
+            var unknown = new List<string>();
+            int index   = 0;
+            foreach (var o in objects.EnumerateArray())
+            {
+                if (o.ValueKind == JsonValueKind.Object)
+                {
+                    if (!o.TryGetProperty("$type", out var kind) || kind.ValueKind != JsonValueKind.String)
+                        throw new C3dReadException(C3dDiagnostics.MissingKind(index));
+
+                    string k = kind.GetString() ?? "";
+                    if (!known.Contains(k))
+                    {
+                        string name = TryGet(o, nameof(C3dObject.Name), out var n) && n.ValueKind == JsonValueKind.String
+                            ? n.GetString() ?? "" : "";
+                        unknown.Add(name.Length > 0 ? $"object '{name}' (a \"{k}\")" : $"object {index} (a \"{k}\")");
+                    }
+                }
+                index++;
+            }
+
+            if (unknown.Count > 0)
+                throw new C3dReadException(C3dDiagnostics.UnknownKinds(
+                    string.Join(", ", unknown), string.Join(", ", C3dObject.Kinds.Select(k => k.Name))));
+        }
+    }
+
+    /// <summary>A property by name, case-insensitive — the reader's own matching.</summary>
+    private static bool TryGet(JsonElement obj, string name, out JsonElement value)
+    {
+        foreach (var p in obj.EnumerateObject())
+            if (string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase)) { value = p.Value; return true; }
+        value = default;
+        return false;
+    }
+
+    // ── Recognition by content (overview §1c) ─────────────────────────────────────────────────
+
+    /// <summary>
+    /// True when <paramref name="path"/> holds a circuitRF 3D view: a JSON object with a
+    /// <c>FormatVersion</c> and an <c>Objects</c> list at its top level. <b>By content, not by
+    /// extension</b>, because an established motion-capture format also uses <c>.c3d</c> — a file from
+    /// that program is binary and answers false on its first byte, so it is named as foreign rather
+    /// than reported as a broken 3D view. Reads only until both keys are seen.
+    /// </summary>
+    public static bool LooksLikeC3d(string path)
+    {
+        byte[] bytes;
+        try { bytes = GzipTextFile.ReadAllBytesAutoGzip(path); }
+        catch { return false; }
+
+        var span = new ReadOnlySpan<byte>(bytes);
+        if (span.StartsWith((ReadOnlySpan<byte>)[0xEF, 0xBB, 0xBF])) span = span[3..];
+
+        try
+        {
+            var reader = new Utf8JsonReader(span, isFinalBlock: true, state: default);
+            if (!reader.Read() || reader.TokenType != JsonTokenType.StartObject) return false;
+
+            bool version = false, objects = false;
+            while (reader.Read())
+            {
+                if (reader.TokenType == JsonTokenType.EndObject && reader.CurrentDepth == 0) break;
+                if (reader.TokenType != JsonTokenType.PropertyName || reader.CurrentDepth != 1) continue;
+
+                string name = reader.GetString() ?? "";
+                reader.Read();
+                if (string.Equals(name, nameof(C3dDocument.FormatVersion), StringComparison.OrdinalIgnoreCase))
+                    version = reader.TokenType == JsonTokenType.Number;
+                else if (string.Equals(name, nameof(C3dDocument.Objects), StringComparison.OrdinalIgnoreCase))
+                    objects = reader.TokenType == JsonTokenType.StartArray;
+                if (version && objects) return true;
+                reader.Skip();
+            }
+            return false;
+        }
+        catch (JsonException) { return false; }
+    }
+}

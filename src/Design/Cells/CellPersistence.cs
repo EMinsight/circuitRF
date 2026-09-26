@@ -185,6 +185,41 @@ public sealed class CcellFile
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? PrimaryLayout { get; set; }
 
+    /// <summary>
+    /// Filename relative to the 3d/ sub-folder that is the primary 3D view (e.g. "amp.c3d"), or null
+    /// for none chosen (brief-em3d-41 R-em3d41-1a). Written only when set, so every <c>.ccell</c>
+    /// written before 3D views existed re-serialises byte for byte.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Primary3D { get; set; }
+
+    /// <summary>
+    /// The primary named for <paramref name="viewType"/>. The one place a view type maps to its
+    /// field, so a new view type is one arm here rather than one in every caller that used to
+    /// switch on it (Make Primary, the primary rename, the removal repair, the stat cache).
+    /// </summary>
+    public string? GetPrimary(ViewType viewType) => viewType switch
+    {
+        ViewType.Schematic => PrimarySchematic,
+        ViewType.Symbol    => PrimarySymbol,
+        ViewType.Layout    => PrimaryLayout,
+        ViewType.ThreeD    => Primary3D,
+        _                  => throw new ArgumentOutOfRangeException(nameof(viewType)),
+    };
+
+    /// <summary>Sets the primary named for <paramref name="viewType"/>; null clears it.</summary>
+    public void SetPrimary(ViewType viewType, string? fileName)
+    {
+        switch (viewType)
+        {
+            case ViewType.Schematic: PrimarySchematic = fileName; break;
+            case ViewType.Symbol:    PrimarySymbol    = fileName; break;
+            case ViewType.Layout:    PrimaryLayout    = fileName; break;
+            case ViewType.ThreeD:    Primary3D        = fileName; break;
+            default: throw new ArgumentOutOfRangeException(nameof(viewType));
+        }
+    }
+
     /// <summary>True when this cell's schematic carries analyses and measurements.</summary>
     public bool IsTestBench { get; set; }
 

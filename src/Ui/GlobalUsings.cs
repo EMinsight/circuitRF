@@ -37,6 +37,10 @@ global using CircuitRF.Design.Workspace;
 global using CircuitRF.Design.Schematic;
 global using CircuitRF.Design.Symbol;
 
+// The 3D view's document (brief-em3d-41): born below the firewall, never here, so `circuitrf check`
+// and `new cell --views 3d` read and write the same `.c3d` the Project Tree lists.
+global using CircuitRF.Design.ThreeD;
+
 // The Skia renderers and the small framework-free types they read, which crossed the same wall in
 // RND-1 (brief-render-1-render-layer-below-the-firewall.md R-rnd1-1) so `circuitrf render` can draw
 // what the application draws rather than something that resembles it. What moved is every renderer

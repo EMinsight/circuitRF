@@ -39,12 +39,13 @@ public static class CrossWorkspaceCellCopy
 {
     private readonly record struct ScanKind(ViewType ViewType, string FilePattern, string ArrayPropertyName);
 
-    /// <summary>The two view kinds that can carry a <c>CellRef</c> — the same pair
+    /// <summary>The view kinds that can carry a <c>CellRef</c> — the same list
     /// <see cref="CellUsageScanner"/> scans, and the one list a future view kind has to join.</summary>
     private static readonly ScanKind[] ScannedKinds =
     [
         new(ViewType.Schematic, "*.csch", "Components"),
         new(ViewType.Layout,    "*.clay", "Instances"),
+        new(ViewType.ThreeD,    "*.c3d",  "Instances"),
     ];
 
     // ── The plan ──────────────────────────────────────────────────────────────
@@ -257,14 +258,17 @@ public static class CrossWorkspaceCellCopy
             }
         }
 
+        // A .c3d's TechRef is resolved exactly as a .clay's (brief-em3d-41 §2), so it arrives in the
+        // same two states and gets the same treatment.
         foreach (var folder in plan.Folders)
+        foreach (var view in (ReadOnlySpan<ViewType>)[ViewType.Layout, ViewType.ThreeD])
         {
-            string layoutDir = CellFolder.SubFolderPath(folder.DestDir, ViewType.Layout);
-            if (!Directory.Exists(layoutDir)) continue;
+            string viewDir = CellFolder.SubFolderPath(folder.DestDir, view);
+            if (!Directory.Exists(viewDir)) continue;
 
-            foreach (var clay in Directory.EnumerateFiles(layoutDir, "*.clay"))
+            foreach (var doc in Directory.EnumerateFiles(viewDir, "*" + CellFolder.ViewExtension(view)))
             {
-                try { RewriteTechRefIn(clay, brought); }
+                try { RewriteTechRefIn(doc, brought); }
                 catch { /* an unreadable view keeps whatever it had — the same bargain RewriteRefsIn strikes */ }
             }
         }

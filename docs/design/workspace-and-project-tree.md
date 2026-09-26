@@ -106,6 +106,11 @@ A **cell is a filesystem folder**. The **folder name is the cell name**. It cont
 - inside each sub-folder, **any number** of view files: `schematic/*.csch`, `symbol/*.csym`,
   `layout/*.clay`. A cell may have many schematics, many symbols.
 - optionally, **attachments** beside those view files (§1.2.1) — e.g. `layout/amp_v1.wBond`.
+- optionally, a fourth view sub-folder, **`3d/`**, holding the cell's **3D views** (`3d/*.c3d`,
+  brief-em3d-41). Unlike the other three it is **not** created with the cell: it is made when the cell's
+  first 3D view is (New ▸ 3D View, or `new cell --views 3d`), so every reader treats its absence as "no
+  3D view" and nothing creates it by reading. Primacy is the same five-branch rule (§2); the `.ccell`
+  records it as `Primary3D`, written only when set.
 
 ```
 AmpStage/                        ← cell name = folder name
@@ -252,7 +257,7 @@ could never fire. It is italic but is **not** a warning — an unread library is
 *Not yet off-thread: the workspace OPEN itself* — see §9.
 
 ### 3.1 Structure shown
-- The **workspace** root, its **cells** (each disclosing `schematic/`/`symbol/`/`layout/` → their view files),
+- The **workspace** root, its **cells** (each disclosing `schematic/`/`symbol/`/`layout/`/`3d/` → their view files),
   its **arbitrary user folders** and the `.cdd`/`.ccolor`/other files within (surfaced by extension),
   **referenced libraries** (each its own sub-tree of cells), **referenced workspaces** (§5C — the same
   sub-tree shape as a referenced library, read-only), and **Known Files** (§5).

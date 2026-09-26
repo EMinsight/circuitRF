@@ -11,6 +11,7 @@ using CircuitRF.Design.Layout.Footprints;
 using CircuitRF.Design.RailRf;
 using CircuitRF.Design.Schematic;
 using CircuitRF.Design.Smith;
+using CircuitRF.Design.ThreeD;
 using CircuitRF.Design.Workspace;
 using CircuitRF.Diagnostics;
 using CircuitRF.Engine.Mom;
@@ -201,6 +202,7 @@ internal static class Check
             case DocumentKind.Schematic:  Scoped(path, kind, f, () => CheckSchematic(path, f)); break;
             case DocumentKind.Symbol:     Scoped(path, kind, f, () => CheckViewFile(path, ViewType.Symbol, f)); break;
             case DocumentKind.Layout:     Scoped(path, kind, f, () => CheckLayout(path, f, cache)); break;
+            case DocumentKind.ThreeD:     Scoped(path, kind, f, () => CheckThreeD(path, f, cache)); break;
             case DocumentKind.Technology: Scoped(path, kind, f, () => CheckTechnology(path, f)); break;
             case DocumentKind.EmSetup:    Scoped(path, kind, f, () => CheckEmSetup(path, f, cache)); break;
             case DocumentKind.Netlist:    Scoped(path, kind, f, () => CheckNetlist(path, f)); break;
@@ -211,6 +213,11 @@ internal static class Check
                                           Scoped(path, kind, f, () => CheckDataDisplay(path, f)); break;
             case DocumentKind.Rail:       Scoped(path, kind, f, () => CheckRail(path, f)); break;
             case DocumentKind.Smith:      Scoped(path, kind, f, () => CheckSmith(path, f)); break;
+
+            case DocumentKind.Foreign:
+                f.Begin(path, kind);
+                f.Add(CliDiagnostics.CheckForeignFile(path));
+                break;
 
             case DocumentKind.Interchange:
                 f.Begin(path, kind);
@@ -291,7 +298,7 @@ internal static class Check
             // across all of them would bury a workspace's real findings under data-file notes about
             // parts the user did not author. A file is checked when it is NAMED.
             if (kind is DocumentKind.Unknown or DocumentKind.Interchange or DocumentKind.Workspace
-                     or DocumentKind.Touchstone) continue;
+                     or DocumentKind.Touchstone or DocumentKind.Foreign) continue;
             CheckPath(file, kind, f, cache, recursive);
         }
 
@@ -517,6 +524,29 @@ internal static class Check
         if (tech.Source == TechResolutionSource.None) f.Add(CliDiagnostics.CheckNoTechnology(path));
 
         RunDrc(path, view, full, tech.Tech, f, cache);
+    }
+
+    /// <summary>
+    /// brief-em3d-41 R-em3d41-5: every finding is <c>C3dValidation</c>'s — no rule of its own — with
+    /// the materials checked against the technology the document resolves, exactly as a layout's.
+    /// </summary>
+    private static void CheckThreeD(string path, Findings f, TechnologyCache cache)
+    {
+        if (!CheckViewFile(path, ViewType.ThreeD, f)) return;
+
+        C3dDocument doc;
+        try { doc = C3dPersistence.LoadFromFile(path); }
+        catch (Exception ex) { f.Add(CliDiagnostics.CheckUnreadable(path, ex.Message)); return; }
+
+        var (tech, _) = TechnologyResolver.ResolveForDocument(doc.TechRef, Path.GetFullPath(path), null, cache);
+        foreach (var d in tech.Diagnostics) f.Add(CliDiagnostics.CheckResolverNote(path, d));
+
+        Func<string, bool>? known = null;
+        if (tech.Tech is { } t) known = name => t.FindMaterial(name) is not null;
+        else f.Add(CliDiagnostics.CheckThreeDNoTechnology(path));
+
+        foreach (var finding in C3dValidation.Validate(doc, known))
+            f.Add(CliDiagnostics.CheckThreeDFinding(path, finding));
     }
 
     /// <summary>

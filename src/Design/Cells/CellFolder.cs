@@ -10,12 +10,22 @@ namespace CircuitRF.Design.Cells;
 
 // ── View-type enum + resolution result ───────────────────────────────────────
 
-/// <summary>The three view types that can live inside a cell folder.</summary>
+/// <summary>The four view types that can live inside a cell folder.</summary>
+/// <remarks>
+/// <b>A fifth member is a change to every <c>switch</c> on this type</b>, and most of them throw on a
+/// value they do not know (brief-em3d-41 R-em3d41-1c). <c>ThreeDViewTypeTests</c> enumerates this
+/// type through the functions that must accept every member, so a new one fails there first.
+/// </remarks>
 public enum ViewType
 {
     Schematic,
     Symbol,
     Layout,
+
+    /// <summary>A cell's 3D view — a <c>.c3d</c> in the cell's <c>3d/</c> sub-folder
+    /// (brief-em3d-41). Named <c>ThreeD</c> because an identifier cannot start with a digit; the user
+    /// sees "3D".</summary>
+    ThreeD,
 }
 
 /// <summary>
@@ -65,6 +75,14 @@ public static class CellFolder
     public const string SchematicSubFolder = "schematic";
     public const string SymbolSubFolder    = "symbol";
     public const string LayoutSubFolder    = "layout";
+
+    /// <summary>
+    /// The 3D view's sub-folder (brief-em3d-41, owner decision D10). <b>Created when the first 3D
+    /// view is made, never by <see cref="CreateCellFolder"/></b> — every cell made before it existed
+    /// lacks it, so every reader treats an absent <c>3d/</c> as <see cref="PrimaryState.NoView"/>,
+    /// and nothing may create it as a side effect of reading.
+    /// </summary>
+    public const string ThreeDSubFolder    = "3d";
     public const string CcellFileName      = ".ccell";
 
     // ── View helpers ──────────────────────────────────────────────────────────
@@ -75,6 +93,7 @@ public static class CellFolder
         ViewType.Schematic => SchematicSubFolder,
         ViewType.Symbol    => SymbolSubFolder,
         ViewType.Layout    => LayoutSubFolder,
+        ViewType.ThreeD    => ThreeDSubFolder,
         _                  => throw new ArgumentOutOfRangeException(nameof(type)),
     };
 
@@ -84,6 +103,17 @@ public static class CellFolder
         ViewType.Schematic => ".csch",
         ViewType.Symbol    => ".csym",
         ViewType.Layout    => ".clay",
+        ViewType.ThreeD    => ".c3d",
+        _                  => throw new ArgumentOutOfRangeException(nameof(type)),
+    };
+
+    /// <summary>What a sentence calls the view: "schematic", "symbol", "layout", "3D view".</summary>
+    public static string ViewNoun(ViewType type) => type switch
+    {
+        ViewType.Schematic => "schematic",
+        ViewType.Symbol    => "symbol",
+        ViewType.Layout    => "layout",
+        ViewType.ThreeD    => "3D view",
         _                  => throw new ArgumentOutOfRangeException(nameof(type)),
     };
 
@@ -125,6 +155,7 @@ public static class CellFolder
     /// <summary>
     /// Creates the cell folder structure under <paramref name="parentDir"/>:
     ///   cellName/ + schematic/ + symbol/ + layout/ + initial .ccell.
+    /// Deliberately NOT <c>3d/</c>: that one is made with the cell's first 3D view (D10).
     /// Validates <paramref name="cellName"/> via NameValidator first.
     /// </summary>
     /// <returns>The absolute path of the new cell folder.</returns>

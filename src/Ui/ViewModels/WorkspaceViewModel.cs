@@ -10899,12 +10899,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         var pr      = CellFolder.ResolvePrimary(cellDir, viewType);
         if (pr.State is not (PrimaryState.SoleFile or PrimaryState.NamedPresent) || pr.ResolvedName is null)
         {
-            var what = viewType switch
-            {
-                ViewType.Schematic => "schematic",
-                ViewType.Layout    => "layout",
-                _                  => "symbol",
-            };
+            var what = CellFolder.ViewNoun(viewType);
             Messages.Info($"Cell '{Path.GetFileName(cellDir)}' has no primary {what}.");
             return;
         }
@@ -11014,6 +11009,14 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 if (ext == ".csym")  { OpenOrActivateSymbol(node.AbsolutePath);    return; }
                 if (ext == ".csch")  { OpenOrActivateSchematic(node.AbsolutePath); return; }
                 if (ext == ".clay")  { _ = OpenOrActivateLayoutAsync(node.AbsolutePath); return; }
+                // brief-em3d-41: a 3D view is listed, kept and checked, and nothing draws one yet —
+                // brief 43 opens its window. Said, rather than a double-click that does nothing.
+                if (ext == CellFolder.ViewExtension(ViewType.ThreeD))
+                {
+                    Messages.Info($"'{Path.GetFileName(node.AbsolutePath)}' is a 3D view. This build lists, "
+                                + "creates and checks 3D views; the 3D editor is not in it yet.");
+                    return;
+                }
                 // other view-file types → deferred no-op
                 return;
 
@@ -11314,17 +11317,17 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             var filename = Path.GetFileName(node.AbsolutePath);
 
             var subFolderName = Path.GetFileName(viewSubDir)!.ToLowerInvariant();
-            if (subFolderName == CellFolder.SchematicSubFolder)
-                ccell.PrimarySchematic = filename;
-            else if (subFolderName == CellFolder.SymbolSubFolder)
-                ccell.PrimarySymbol = filename;
-            else if (subFolderName == CellFolder.LayoutSubFolder)
-                ccell.PrimaryLayout = filename;
-            else
+            // Every view type by its sub-folder's name — CellFolder's own table, so a view type added
+            // there (the 3D view, brief-em3d-41) is primary-able here with no arm of its own.
+            ViewType? viewType = null;
+            foreach (var vt in Enum.GetValues<ViewType>())
+                if (subFolderName == CellFolder.SubFolderName(vt)) viewType = vt;
+            if (viewType is not { } type)
             {
                 Messages.Error($"Cannot determine view type for: {node.AbsolutePath}");
                 return;
             }
+            ccell.SetPrimary(type, filename);
 
             CellPersistence.SaveToFile(ccellPath, ccell);
             _factory.ProjectTreeTool?.Refresh();
@@ -13643,7 +13646,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         if (CellViewFileValidator.ViewTypeFor(source) is not { } viewType)
         {
-            Messages.Error($"'{Path.GetFileName(source)}' is not a schematic, symbol or layout.");
+            Messages.Error($"'{Path.GetFileName(source)}' is not a schematic, symbol, layout or 3D view.");
             return;
         }
 
@@ -13691,6 +13694,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             var dest = Path.Combine(
                 CellFolder.SubFolderPath(newCellDir, viewType),
                 name + CellFolder.ViewExtension(viewType));
+            // A 3D view's sub-folder is not made with the cell (D10), so make it for the copy.
+            Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
             File.Copy(source, dest);
 
             _factory.ProjectTreeTool?.Refresh();
@@ -14297,13 +14302,15 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// </summary>
     private string PrimaryRemovalWarning(PrimaryRepairPlan plan, ProjectTreeNodeViewModel node)
     {
-        string viewNoun = plan.ViewType.ToString().ToLowerInvariant();
+        string viewNoun = CellFolder.ViewNoun(plan.ViewType);
         string cellName = Path.GetFileName(plan.CellDir!.TrimEnd(
             Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
 
         string outcome = plan.Survivors.Count switch
         {
-            0 => $"Cell '{cellName}' will have no {viewNoun} view.",
+            0 => plan.ViewType == ViewType.ThreeD
+                     ? $"Cell '{cellName}' will have no 3D view."
+                     : $"Cell '{cellName}' will have no {viewNoun} view.",
             1 => $"'{plan.Survivors[0]}' becomes the primary {viewNoun} of '{cellName}'.",
             _ => $"'{cellName}' has {plan.Survivors.Count} other {viewNoun}s and none of them will be "
                + "primary until you choose one (right-click ▸ Make Primary).",
@@ -14404,13 +14411,13 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         try { action = PrimaryViewRepair.Apply(plan, out promoted); }
         catch (Exception ex)
         {
-            Messages.Warning($"The cell's .ccell still names the removed {plan.ViewType.ToString().ToLowerInvariant()}: {ex.Message}");
+            Messages.Warning($"The cell's .ccell still names the removed {CellFolder.ViewNoun(plan.ViewType)}: {ex.Message}");
             return;
         }
 
         string cellName = Path.GetFileName(plan.CellDir.TrimEnd(
             Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-        string viewNoun = plan.ViewType.ToString().ToLowerInvariant();
+        string viewNoun = CellFolder.ViewNoun(plan.ViewType);
 
         switch (action)
         {
@@ -14831,6 +14838,63 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         }
 
         CreateAndOpenLayoutFile(cellDir, name);
+    }
+
+    /// <inheritdoc/>
+    public async Task New3DViewAsync(ProjectTreeNodeViewModel cellNode)
+    {
+        var cellDir = cellNode.AbsolutePath;
+
+        var mainWindow = ResolveOwner(null);
+        if (mainWindow is null) return;
+
+        var suggested = ViewFileNameSuggestion.Suggest(cellDir, cellNode.Name, ViewType.ThreeD);
+        var dialog = new InputNameDialog("New 3D View", "3D view file name (without extension):", suggested);
+        var name   = await dialog.ShowDialog<string?>(mainWindow);
+        if (name is null) return;
+
+        var reason = NameValidator.Validate(name);
+        if (reason is not null)
+        {
+            Messages.Error($"Invalid 3D view name: {reason}");
+            return;
+        }
+
+        CreateThreeDViewFile(cellDir, name);
+    }
+
+    /// <summary>
+    /// Writes an empty <c>.c3d</c> named <paramref name="name"/> into the cell's <c>3d/</c> sub-folder,
+    /// creating the sub-folder if this is the cell's first 3D view (brief-em3d-41, D10). Nothing opens:
+    /// the 3D editor is brief 43's. Reports its own failures.
+    /// </summary>
+    private bool CreateThreeDViewFile(string cellDir, string name)
+    {
+        var ext      = CellFolder.ViewExtension(ViewType.ThreeD);
+        var filePath = Path.Combine(CellFolder.SubFolderPath(cellDir, ViewType.ThreeD), name + ext);
+        if (File.Exists(filePath))
+        {
+            Messages.Error($"A file named '{name}{ext}' already exists.");
+            return false;
+        }
+
+        try
+        {
+            // The document is CellCreate's, shared with `circuitrf new cell --views 3d`; which
+            // technology its units and snap come from is this shell's own walk, as New Layout's is.
+            var resolution = ResolveTechFor(techRef: null, clayPath: filePath);
+            CellCreate.WriteThreeDView(cellDir, name, CellCreate.NewThreeDView(cellDir, resolution.Tech));
+
+            _factory.ProjectTreeTool?.Refresh();
+            RefreshCellEditorFileLists(cellDir);
+            Messages.Success("Created", filePath);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Messages.Error($"Failed to create 3D view: {ex.Message}");
+            return false;
+        }
     }
 
     /// <summary>

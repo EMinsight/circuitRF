@@ -48,6 +48,10 @@ public interface ITreeActions
     /// <summary>New Layout on cell node — prompts for name, creates .clay, opens editor, Refresh.</summary>
     Task NewLayoutAsync(ProjectTreeNodeViewModel cellNode);
 
+    /// <summary>New ▸ 3D View on cell node — prompts for name, creates <c>3d/</c> if absent and an empty
+    /// .c3d in it, Refresh (brief-em3d-41). Opens nothing: the 3D editor is brief 43's.</summary>
+    Task New3DViewAsync(ProjectTreeNodeViewModel cellNode);
+
     /// <summary>Register a file or directory path as a Known File in the workspace .cws.</summary>
     void AddKnownFile(string path);
 

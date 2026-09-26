@@ -206,8 +206,10 @@ internal static class Find
             {
                 var res = CellFolder.ResolvePrimary(cellDir, type);
                 if (res.State is PrimaryState.NoView) continue;
+                // The sub-folder's name is the token: "schematic", "symbol", "layout", "3d" — the
+                // spelling `new cell --views` takes.
                 views.Add(new FoundViewJson(
-                    type.ToString().ToLowerInvariant(), res.ResolvedName, res.State.ToString()));
+                    CellFolder.SubFolderName(type), res.ResolvedName, res.State.ToString()));
             }
 
             cells.Add(new FoundCellJson(

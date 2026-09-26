@@ -100,7 +100,8 @@ top-level verb. The three authoring verbs share one rule that decides every defa
 **whatever the GUI's dialog pre-selects, the verb selects with no flag, and anything the dialog would
 have ASKED is a refusal that names the flag answering it.** So `--tech` defaults to the New Workspace
 dialog's own pre-selected technology and an unknown id lists the real ones rather than falling back;
-`--views` defaults to `schematic`, which is what the GUI's New Cell creates; and a source folder
+`--views` defaults to `schematic`, which is what the GUI's New Cell creates (`3d` is accepted too, and
+writes through the same `CellCreate` call the tree's New ▸ 3D View makes); and a source folder
 holding several parts is refused with `--cell` / `--variant` / `--list-parts` named, never
 resolved by taking the first. They add no import or creation logic of their own: each calls the same
 function the GUI's own command calls, which is what

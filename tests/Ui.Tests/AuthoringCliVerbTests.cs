@@ -163,6 +163,29 @@ public sealed class AuthoringCliVerbTests : IDisposable
         AssertSameTree(Path.Combine(guiWs, "Stage1"), Path.Combine(cliWs, "Stage1"));
     }
 
+    /// <summary>
+    /// brief-em3d-41 §6.7: <c>--views 3d</c>, alone and beside a layout, byte for byte against the
+    /// <see cref="CellCreate"/> call New ▸ 3D View makes. Beside a layout is the case worth having:
+    /// the 3D view reads the layout just written for its units, so ORDER inside the creation matters.
+    /// </summary>
+    [Theory]
+    [InlineData("3d")]
+    [InlineData("layout,3d")]
+    public void NewCell_ThreeDView_WritesTheSameBytesAsTheCallTheGuiMakes(string views)
+    {
+        string cliWs = Path.Combine(Dir("cli3d"), "Pkg");
+        Assert.Equal(0, RunCli("new", "workspace", cliWs, "--tech", "none").ExitCode);
+        Assert.Equal(0, RunCli("new", "cell", cliWs, "Lid", "--views", views).ExitCode);
+
+        string guiWs = Path.Combine(Dir("gui3d"), "Pkg");
+        WorkspaceCreate.Create(Dir("gui3d"), "Pkg", technologyId: null);
+        var flags = CellViews.ThreeD | (views.Contains("layout") ? CellViews.Layout : CellViews.None);
+        CellCreate.Create(guiWs, "Lid", flags);
+
+        AssertSameTree(Path.Combine(guiWs, "Lid"), Path.Combine(cliWs, "Lid"));
+        Assert.True(File.Exists(Path.Combine(cliWs, "Lid", "3d", "Lid.c3d")));
+    }
+
     /// <summary>An imported part, byte for byte against <see cref="ComponentImport.Import"/> — the
     /// call the GUI's Import Component makes, with the same null <c>resolveLayerMapping</c> the
     /// headless path uses (R-aut3-11: the dialog's own pre-selected default).</summary>
@@ -199,6 +222,8 @@ public sealed class AuthoringCliVerbTests : IDisposable
     [InlineData("ViewModels/WorkspaceViewModel.cs", "CellCreate.WriteSchematicView(")]
     [InlineData("ViewModels/WorkspaceViewModel.cs", "CellCreate.WriteSymbolView(")]
     [InlineData("ViewModels/WorkspaceViewModel.cs", "CellCreate.WriteLayoutView(")]
+    [InlineData("ViewModels/WorkspaceViewModel.cs", "CellCreate.WriteThreeDView(")]
+    [InlineData("ViewModels/WorkspaceViewModel.cs", "CellCreate.NewThreeDView(")]
     [InlineData("ViewModels/WorkspaceViewModel.cs", "ComponentImport.Import(")]
     [InlineData("ViewModels/WorkspaceViewModel.ReadOnly.cs", "WorkspaceCreate.UnwritableParentRefusal(")]
     public void TheGuiCallsTheExtractedCapability(string file, string call)

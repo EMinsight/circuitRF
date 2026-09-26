@@ -83,6 +83,8 @@ public static class DesignatorPool
             {
                 ViewType.Layout    => [.. NamesIn(LayoutPersistence.LoadFromFile(path))],
                 ViewType.Schematic => [.. NamesIn(SchematicPersistence.LoadFromFile(path).model)],
+                // A symbol and a 3D view carry no designators (brief-em3d-41: a .c3d's instances
+                // are named, but a reference designator is a schematic/layout pairing, not a name).
                 _ => [],
             };
         }

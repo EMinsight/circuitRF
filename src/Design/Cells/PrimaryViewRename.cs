@@ -66,16 +66,16 @@ public readonly record struct PrimaryRenameResult(
 public static class PrimaryViewRename
 {
     /// <summary>
-    /// Renames the primary schematic, symbol and layout of <paramref name="cellDir"/> to
+    /// Renames the primary schematic, symbol, layout and 3D view of <paramref name="cellDir"/> to
     /// <paramref name="cellName"/> + the view's extension, updating the <c>.ccell</c> to match.
     /// Non-primary files of every type keep their names — they are the author's, not the cell's.
     /// </summary>
-    /// <returns>One result per view type, in Schematic / Symbol / Layout order, so a caller can
+    /// <returns>One result per view type, in <see cref="ViewType"/> order, so a caller can
     /// report each and act on the layout's old stem.</returns>
     public static IReadOnlyList<PrimaryRenameResult> ToCellName(string cellDir, string cellName)
     {
-        var results = new List<PrimaryRenameResult>(3);
-        foreach (var viewType in new[] { ViewType.Schematic, ViewType.Symbol, ViewType.Layout })
+        var results = new List<PrimaryRenameResult>(4);
+        foreach (var viewType in Enum.GetValues<ViewType>())
             results.Add(RenameOne(cellDir, cellName, viewType));
         return results;
     }
@@ -127,12 +127,7 @@ public static class PrimaryViewRename
         try
         {
             var ccell = CellPersistence.LoadFromFile(ccellPath);
-            switch (viewType)
-            {
-                case ViewType.Schematic: ccell.PrimarySchematic = newPrimaryFileName; break;
-                case ViewType.Symbol:    ccell.PrimarySymbol    = newPrimaryFileName; break;
-                case ViewType.Layout:    ccell.PrimaryLayout    = newPrimaryFileName; break;
-            }
+            ccell.SetPrimary(viewType, newPrimaryFileName);
             CellPersistence.SaveToFile(ccellPath, ccell);
         }
         catch { /* nothing to report to from here; the caller's own result already stands */ }

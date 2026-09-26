@@ -25,10 +25,10 @@ public enum NodeKind
     /// <summary>Synthetic group node that contains all Library children.</summary>
     LibrariesGroup,
 
-    /// <summary>One of the schematic / symbol / layout sub-folders inside a cell.</summary>
+    /// <summary>One of the schematic / symbol / layout / 3d sub-folders inside a cell.</summary>
     CellViewFolder,
 
-    /// <summary>A view file (.csch / .csym / .clay) inside a CellViewFolder.</summary>
+    /// <summary>A view file (.csch / .csym / .clay / .c3d) inside a CellViewFolder.</summary>
     ViewFile,
 
     /// <summary>An arbitrary workspace sub-folder that is not a cell.</summary>

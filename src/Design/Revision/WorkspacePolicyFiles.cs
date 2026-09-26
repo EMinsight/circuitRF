@@ -42,9 +42,12 @@ public static class WorkspacePolicyFiles
     public static readonly string[] ResultPatterns = ["*.npy", "*.spl", "*.lpcwave", "*.mat"];
 
     /// <summary>
-    /// The five document types marked unmergeable AND pinned byte-for-byte (R-rc3-12, R-rc3-12a, §6.1).
+    /// The document types marked unmergeable AND pinned byte-for-byte (R-rc3-12, R-rc3-12a, §6.1).
+    /// <c>.c3d</c> joined them with brief-em3d-41 for <c>.clay</c>'s reason: a three-way merge of a
+    /// polyhedron's faces can leave it open while the JSON stays well-formed. The block is appended
+    /// once and never rewritten, so a workspace whose block predates it does not gain the line.
     /// </summary>
-    public static readonly string[] UnmergeableExtensions = [".clay", ".csch", ".csym", ".cws", ".ctech"];
+    public static readonly string[] UnmergeableExtensions = [".clay", ".csch", ".csym", ".cws", ".ctech", ".c3d"];
 
     /// <summary>
     /// Writes both files into <paramref name="workspaceDir"/> if circuitRF's block is not already in

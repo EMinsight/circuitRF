@@ -1,4 +1,5 @@
 using CircuitRF.Design.Cells;
+using CircuitRF.Design.ThreeD;
 using CircuitRF.Design.Workspace;
 using RfCore;
 
@@ -13,6 +14,8 @@ internal enum DocumentKind
     Schematic,
     Symbol,
     Layout,
+    /// <summary>A cell's 3D view, a <c>.c3d</c> (brief-em3d-41).</summary>
+    ThreeD,
     Technology,
     EmSetup,
     Rail,
@@ -22,6 +25,10 @@ internal enum DocumentKind
     DataDisplay,
     Touchstone,
     Interchange,
+    /// <summary>A file with one of circuitRF's extensions whose CONTENT is another program's — the
+    /// motion-capture format that also uses <c>.c3d</c> (overview §1c). Named, never reported as a
+    /// broken circuitRF document.</summary>
+    Foreign,
     Unknown,
 }
 
@@ -47,6 +54,7 @@ internal static class DocumentKinds
         DocumentKind.Schematic     => "schematic",
         DocumentKind.Symbol        => "symbol",
         DocumentKind.Layout        => "layout",
+        DocumentKind.ThreeD        => "3d",
         DocumentKind.Technology    => "technology",
         DocumentKind.EmSetup       => "em-setup",
         DocumentKind.Rail          => "rail",
@@ -56,6 +64,7 @@ internal static class DocumentKinds
         DocumentKind.DataDisplay   => "data-display",
         DocumentKind.Touchstone    => "touchstone",
         DocumentKind.Interchange   => "interchange",
+        DocumentKind.Foreign       => "foreign",
         _                          => "unknown",
     };
 
@@ -94,6 +103,10 @@ internal static class DocumentKinds
             ".csch"  => DocumentKind.Schematic,
             ".csym"  => DocumentKind.Symbol,
             ".clay"  => DocumentKind.Layout,
+            // BY CONTENT, whatever contentSniff says: the extension is shared with a motion-capture
+            // format, and a file from that program must be named foreign rather than reported as a
+            // broken 3D view. The sniff reads a JSON prefix and stops — a binary file on its first byte.
+            ".c3d"   => C3dPersistence.LooksLikeC3d(path) ? DocumentKind.ThreeD : DocumentKind.Foreign,
             ".ctech" => DocumentKind.Technology,
             ".cem"   => DocumentKind.EmSetup,
             // A railRF document (brief-railrf-1-document.md R-rail1-11). `check`, `explain`, `find`
@@ -147,7 +160,14 @@ internal static class DocumentKinds
         return false;
     }
 
-    public static readonly ViewType[] AllViewTypes = [ViewType.Schematic, ViewType.Symbol, ViewType.Layout];
+    public static readonly ViewType[] AllViewTypes = Enum.GetValues<ViewType>();
+
+    /// <summary>
+    /// The view types <c>render</c> and <c>explain --extents</c> can draw or measure. A 3D view is
+    /// not one of them yet: its picture is the sections brief 42 draws from its elaboration, and until
+    /// then a cell whose only view is 3D has nothing to draw — said, not guessed.
+    /// </summary>
+    public static readonly ViewType[] DrawableViewTypes = [ViewType.Schematic, ViewType.Symbol, ViewType.Layout];
 
     /// <summary>The nearest ancestor <c>.cws</c>, or null. The same walk every document-relative
     /// reference in circuitRF resolves through (<c>cli.md</c> §8.1).</summary>

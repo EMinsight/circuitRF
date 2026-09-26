@@ -590,7 +590,7 @@ internal static class CliDiagnostics
 
     public static Diagnostic NewUnknownView(string view) => Diagnostic.Create(
         "new.views.unknown", DiagnosticSeverity.Error,
-        "--views: '{view}' is not a view. Known: schematic, symbol, layout.", ("view", view));
+        "--views: '{view}' is not a view. Known: schematic, symbol, layout, 3d.", ("view", view));
 
     public static Diagnostic ImportNounRequired() => new(
         "import.args.noun-required", DiagnosticSeverity.Error,
@@ -711,7 +711,7 @@ internal static class CliDiagnostics
     public static Diagnostic CheckUnknownKind(string path) => Diagnostic.Create(
         "check.path.unknown-kind", DiagnosticSeverity.Error,
         "Nothing circuitRF reads is named '{path}' — check takes a workspace, a cell folder, or a "
-        + ".csch, .csym, .clay, .ctech, .cem, .cnl, .wasm or a Touchstone .sNp.", ("path", path));
+        + ".csch, .csym, .clay, .c3d, .ctech, .cem, .cnl, .wasm or a Touchstone .sNp.", ("path", path));
 
     /// <summary>An interchange file. Reported rather than checked, because there is nothing to check
     /// it AGAINST: a GDSII or Gerber file is not a circuitRF document and has no primacy, no
@@ -942,6 +942,28 @@ internal static class CliDiagnostics
 
     /// <summary>A layout that resolves no technology at all. A WARNING, not an error — see this
     /// region's own header for why.</summary>
+    /// <summary>brief-em3d-41: a 3D view's own finding, from <c>C3dValidation</c> — the validator the
+    /// editor uses — with the file it belongs to in front. The id is the validator's, so a caller can
+    /// filter on it.</summary>
+    public static Diagnostic CheckThreeDFinding(string path, Diagnostic finding)
+    {
+        var args = new Dictionary<string, object?>(finding.Arguments, StringComparer.Ordinal) { ["path"] = path };
+        return new Diagnostic(finding.Id, finding.Severity, "{path}: " + finding.DefaultTemplate, args);
+    }
+
+    public static Diagnostic CheckThreeDNoTechnology(string path) => Diagnostic.Create(
+        "check.technology.none-3d", DiagnosticSeverity.Warning,
+        "{path}: no technology resolves for this 3D view — its own reference names none and the "
+        + "workspace states no default, so its materials could not be checked.",
+        ("path", path));
+
+    /// <summary>A file with circuitRF's extension and another program's content (overview §1c).</summary>
+    public static Diagnostic CheckForeignFile(string path) => Diagnostic.Create(
+        "check.path.foreign", DiagnosticSeverity.Info,
+        "'{path}' is not a circuitRF 3D view: it has the .c3d extension but not a 3D view's content "
+        + "(a motion-capture program uses the same extension). There is nothing here to check.",
+        ("path", path));
+
     public static Diagnostic CheckNoTechnology(string path) => Diagnostic.Create(
         "check.technology.none", DiagnosticSeverity.Warning,
         "{path}: no technology resolves for this layout — its own reference names none and the "

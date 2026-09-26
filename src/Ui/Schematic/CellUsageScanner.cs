@@ -33,6 +33,9 @@ public static class CellUsageScanner
     [
         new(ViewType.Schematic, "*.csch", "Components"),
         new(ViewType.Layout,    "*.clay", "Instances"),
+        // brief-em3d-41 R-em3d41-4: a 3D view places cells too, spelled exactly as a layout does.
+        // Easy to forget, and breaks designs when omitted (layout-view.md §7 said it about .clay).
+        new(ViewType.ThreeD,    "*.c3d",  "Instances"),
     ];
 
     /// <summary>
@@ -321,7 +324,18 @@ public static class CellUsageScanner
         if (!changed) return false;
 
         var opts = new JsonSerializerOptions { WriteIndented = true };
-        File.WriteAllText(filePath, node.ToJsonString(opts));
+        string text = node.ToJsonString(opts);
+
+        // A .c3d goes back out through its own writer, so a rename leaves the file in the layout its
+        // reader and every later save produce (a point per line) rather than a number per line. The
+        // edit itself is the JsonNode one above: one matching rule for every view kind.
+        if (Path.GetExtension(filePath).Equals(C3dPersistence.Extension, StringComparison.OrdinalIgnoreCase))
+        {
+            try { text = C3dPersistence.Serialize(C3dPersistence.Deserialize(text)); }
+            catch { /* unreadable by its own reader: the JsonNode text is still a correct edit */ }
+        }
+
+        File.WriteAllText(filePath, text);
         return true;
     }
 

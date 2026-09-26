@@ -132,13 +132,7 @@ public static class PrimaryViewRepair
         string? newPrimary = plan.Survivors.Count == 1 ? plan.Survivors[0] : null;
 
         var ccell = CellPersistence.LoadFromFile(ccellPath);
-        switch (plan.ViewType)
-        {
-            case ViewType.Schematic: ccell.PrimarySchematic = newPrimary; break;
-            case ViewType.Symbol:    ccell.PrimarySymbol    = newPrimary; break;
-            case ViewType.Layout:    ccell.PrimaryLayout    = newPrimary; break;
-            default: return PrimaryRepairAction.NotPrimary;
-        }
+        ccell.SetPrimary(plan.ViewType, newPrimary);
         CellPersistence.SaveToFile(ccellPath, ccell);
 
         promoted = newPrimary;
@@ -149,7 +143,7 @@ public static class PrimaryViewRepair
 
     /// <summary>
     /// True when <paramref name="viewFilePath"/> sits directly in a cell's <c>schematic/</c>,
-    /// <c>symbol/</c> or <c>layout/</c> sub-folder AND the folder above that holds a <c>.ccell</c>.
+    /// <c>symbol/</c>, <c>layout/</c> or <c>3d/</c> sub-folder AND the folder above that holds a <c>.ccell</c>.
     /// Both halves matter: the sub-folder name gives the view type, and the <c>.ccell</c> is what
     /// makes the folder a cell rather than a directory that happens to be called "layout".
     /// </summary>
@@ -168,6 +162,7 @@ public static class PrimaryViewRepair
             CellFolder.SchematicSubFolder => ViewType.Schematic,
             CellFolder.SymbolSubFolder    => ViewType.Symbol,
             CellFolder.LayoutSubFolder    => ViewType.Layout,
+            CellFolder.ThreeDSubFolder    => ViewType.ThreeD,
             _                             => null,
         };
         if (kind is null) return false;

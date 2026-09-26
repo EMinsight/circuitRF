@@ -533,6 +533,10 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
     /// <summary>New Layout — prompts for a name, creates .clay in this cell's layout/ folder, opens it.</summary>
     public IAsyncRelayCommand NewLayoutCommand { get; }
 
+    /// <summary>New 3D View — prompts for a name, creates .c3d in this cell's 3d/ folder (making the
+    /// folder when it is the cell's first 3D view).</summary>
+    public IAsyncRelayCommand New3DViewCommand { get; }
+
     /// <summary>Remove this file or directory (moves to Trash). Visible only for removable file/dir nodes.</summary>
     public IRelayCommand RemoveFileCommand { get; }
 
@@ -766,6 +770,10 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
 
         NewLayoutCommand = new AsyncRelayCommand(
             () => _actions?.NewLayoutAsync(this) ?? Task.CompletedTask,
+            () => _actions is not null && IsCell);
+
+        New3DViewCommand = new AsyncRelayCommand(
+            () => _actions?.New3DViewAsync(this) ?? Task.CompletedTask,
             () => _actions is not null && IsCell);
 
         OpenExternalCommand = new RelayCommand(

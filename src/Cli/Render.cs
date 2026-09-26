@@ -437,7 +437,7 @@ internal static class Render
     private static (Target? Target, int? Refusal) ResolveCellFolder(string cellDir, Options o)
     {
         var held = new List<ViewType>();
-        foreach (var v in DocumentKinds.AllViewTypes)
+        foreach (var v in DocumentKinds.DrawableViewTypes)
             if (CellFolder.ResolvePrimary(cellDir, v).State != PrimaryState.NoView) held.Add(v);
 
         if (held.Count == 0)
@@ -518,6 +518,7 @@ internal static class Render
         {
             ViewType.Layout => DrawLayout(o, t),
             ViewType.Symbol => DrawSymbol(o, t),
+            // No 3D arm: a target is only ever one of DocumentKinds.DrawableViewTypes.
             _               => DrawSchematic(o, t),
         };
     }

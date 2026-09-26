@@ -342,7 +342,7 @@ internal static class ExplainQueries
             {
                 string cellDir = Path.GetFullPath(path);
                 var held = new List<ViewType>();
-                foreach (var v in DocumentKinds.AllViewTypes)
+                foreach (var v in DocumentKinds.DrawableViewTypes)
                     if (CellFolder.ResolvePrimary(cellDir, v).State != PrimaryState.NoView) held.Add(v);
 
                 if (held.Count == 0)
@@ -374,6 +374,7 @@ internal static class ExplainQueries
                 {
                     ViewType.Layout    => LayoutExtents(doc),
                     ViewType.Symbol    => SymbolExtents(doc),
+                    // No 3D arm: `held` is drawn from DocumentKinds.DrawableViewTypes.
                     _                  => SchematicExtents(doc),
                 };
             }

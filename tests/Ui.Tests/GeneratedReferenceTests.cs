@@ -317,6 +317,7 @@ public sealed class GeneratedReferenceTests(ITestOutputHelper output)
     [InlineData("layout")]
     [InlineData("em-setup")]
     [InlineData("wbond")]
+    [InlineData("3d-view")]
     public void AFormatTopicsExampleIsReadByItsOwnReader(string topic)
     {
         var run = RunCli("reference", topic);
@@ -336,6 +337,12 @@ public sealed class GeneratedReferenceTests(ITestOutputHelper output)
             case "wbond":
                 var design = CircuitRF.WBond.WBondIo.Read(example);
                 Assert.Equal(2, design.Arrays.Single().Wires.Count);
+                break;
+            case "3d-view":
+                // Read, and CLEAN: brief-em3d-41 says the page's example is one `check` passes.
+                var c3d = CircuitRF.Design.ThreeD.C3dPersistence.Deserialize(example);
+                Assert.Equal(2, c3d.Objects.Count);
+                Assert.Empty(CircuitRF.Design.ThreeD.C3dValidation.Validate(c3d));
                 break;
         }
     }

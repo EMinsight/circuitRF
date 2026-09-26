@@ -1,4 +1,5 @@
 using System.Collections;
+using System.ComponentModel;
 using System.Reflection;
 using System.Text;
 using System.Text.Json.Serialization;
@@ -60,6 +61,8 @@ internal static class DocumentSchema
             typeof(CircuitRF.Design.Layout.Em.CemFile), CemPreamble),
         new("wbond", "The .wBond wirebond format", ".wBond",
             typeof(CircuitRF.WBond.WBondIo.WBondDocument), WBondPreamble),
+        new("3d-view", "The .c3d 3D view format", ".c3d",
+            typeof(CircuitRF.Design.ThreeD.C3dDocument), C3dPreamble),
     ];
 
     public static Format? Find(string topic)
@@ -322,6 +325,98 @@ internal static class DocumentSchema
         Every field the reader understands follows, with its default.
         """;
 
+    private const string C3dPreamble = """
+        A 3D view is a cell's solid model: boxes, prisms, cylinders, sheets and polyhedra, each made of
+        a named material, plus instances of other cells. It is JSON, at <cell>/3d/<name>.c3d — the 3d
+        folder is made with a cell's first 3D view. `new cell <workspace> <name> --views 3d` writes an
+        empty one whose units come from the cell's layout when it has one and from the technology
+        otherwise; start from that rather than a blank file. This build reads, writes, lists and
+        checks 3D views; it does not yet solve or draw them.
+
+        A microstrip on the shipped pcb-2layer_RO4350B_20mil_1oz technology: a 5 mm square of 20 mil
+        RO4350B with a 1.1 mm copper trace across its top. This is a whole file, and `check` passes it:
+
+            {
+                "FormatVersion": 1,
+                "DbuPerMicron": 1000,
+                "DisplayUnit": "Mil",
+                "SnapDbu": 25400,
+                "Objects": [
+                    {
+                        "$type": "Box",
+                        "Name": "substrate",
+                        "Material": "RO4350B",
+                        "Min": [0, 0, 0],
+                        "Size": [5000000, 5000000, 508000]
+                    },
+                    {
+                        "$type": "Sheet",
+                        "Name": "trace",
+                        "Material": "Copper",
+                        "Plane": "XY",
+                        "Offset": 508000,
+                        "Rect": {
+                            "Min": [0, 1950000],
+                            "Size": [5000000, 1100000]
+                        },
+                        "ThicknessUm": 35
+                    }
+                ]
+            }
+
+            circuitrf check ws/line/3d/line.c3d
+
+        What is not obvious from the field list:
+
+          * Every coordinate and size is an integer DBU; DbuPerMicron says what one is worth (at 1000,
+            a nanometre). A point is [x, y, z]; a point on a drawing plane is [u, v]. z is up.
+            DisplayUnit and SnapDbu are editor preferences — nothing is computed from them.
+          * A drawing plane is named by the two axes it spans: XY is (u, v) = (x, y) with its normal
+            along +z; YZ is (y, z) along +x; XZ is (x, z) along +y. Offset is the plane's position
+            along that normal, and a prism's Height is measured along it — negative is allowed, and
+            says which way the prism was pulled. Shear moves a prism's top against its bottom.
+          * Dimensions are SIZES, never second corners: a box is Min and Size, a rectangle Min and
+            Size, a cylinder Base, Axis, Length and Radius. A size is positive; a negative one is
+            normalised on the next save by moving Min.
+          * Placement: the object's own frame is mirrored (MirrorX negates its x), then rotated by
+            each Rotate entry in list order ({"Axis": "Z", "Deg": 90}, right-handed), then moved to
+            Origin. Omitted, it is the identity. A rotation lives here, never in the coordinates, so
+            geometry stays integer.
+          * Objects are in construction order: where two solids overlap, the LATER one wins the
+            volume. Nothing reorders the list.
+          * Names are unique across objects and instances and follow the cell-name rules; "airbox"
+            is reserved. Faces are NAMED, never indexed, so what attaches to a face survives an edit:
+
+                Box          xmin xmax ymin ymax zmin zmax (in its own frame)
+                Prism        bottom, top, side<k> (the outline edge from vertex k to k+1),
+                             hole<h>.side<k>
+                Cylinder     bottom, top, side
+                Polyhedron   each face's own Name, unique within the object
+
+          * A Polyhedron must be closed: every edge used by exactly two faces, in opposite
+            directions. Every face must be planar within 1 DBU.
+          * A Polyline is construction geometry. It has no Material and is never solved.
+          * Material names a material of the technology — the one TechRef names, or the workspace's
+            default when TechRef is omitted. Role (Conductor, Dielectric, Air) overrides what the
+            material implies.
+          * An instance places another cell: CellRef is spelled as a layout instance's (relative to
+            this file, or ws://), and View picks its 3D view (the default) or its Layout.
+          * Variables, Ports, FaceBoundaries and Setups are reserved for later builds. This build
+            keeps what they hold and writes it back unread. So does any key it does not know, which
+            `check` reports as a warning.
+
+        Refused, with the reason named: a file that is not JSON; a FormatVersion newer than this
+        build; an object whose "$type" this build does not know (every one is listed); and a string
+        where a number belongs — expressions arrive in a later version. Every other problem is a
+        `check` finding, and `check` lists all of them rather than the first: a duplicate name, an
+        outline of fewer than three distinct points, an open or non-planar polyhedron, a solid with
+        no volume, a material the technology does not define (a warning).
+
+        Every field the reader understands follows, with its default. Objects are listed once per
+        kind, each with the "$type" value that selects it; a type spelled [x, y, z] or [u, v] is a
+        point, written as a JSON array.
+        """;
+
     // ── rendering ────────────────────────────────────────────────────────────
 
     /// <summary>The topic's text. Pure — the topic list and the resource listing measure it by
@@ -380,6 +475,8 @@ internal static class DocumentSchema
             {
                 if (p.GetIndexParameters().Length > 0) continue;
                 if (p.GetCustomAttribute<JsonIgnoreAttribute>() is { Condition: JsonIgnoreCondition.Always }) continue;
+                // Where a reader PARKS the keys it does not know — not a key anyone writes.
+                if (p.GetCustomAttribute<JsonExtensionDataAttribute>() is not null) continue;
 
                 string name = p.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name ?? p.Name;
                 rows.Add(new Field(name, Spell(p.PropertyType), DefaultOf(p, blank)));
@@ -387,6 +484,7 @@ internal static class DocumentSchema
                 foreach (var t in Referenced(p.PropertyType))
                 {
                     if (t.IsEnum) { if (seen.Add(t)) enums.Add(EnumBlock(t)); continue; }
+                    if (SpelledAs(t) is not null) continue;
                     if (t.Assembly != asm || !seen.Add(t)) continue;
                     queue.Enqueue(t);
                 }
@@ -447,11 +545,23 @@ internal static class DocumentSchema
         yield return t;
     }
 
+    /// <summary>
+    /// A type with a converter of its own writes a shape its properties do not describe — a
+    /// <c>.c3d</c> point is the array <c>[x, y, z]</c>, not an object with X, Y and Z — so it says
+    /// how it is spelled in a <see cref="DescriptionAttribute"/>, and it is not expanded.
+    /// </summary>
+    private static string? SpelledAs(Type t)
+        => t.GetCustomAttribute<JsonConverterAttribute>() is not null
+               ? t.GetCustomAttribute<DescriptionAttribute>()?.Description
+               : null;
+
     /// <summary>How a type is written on the page: the JSON shape, not the CLR name.</summary>
     private static string Spell(Type t)
     {
         var nullable = Nullable.GetUnderlyingType(t);
         if (nullable is not null) return Spell(nullable) + "?";
+        if (SpelledAs(t) is { } spelled) return spelled;
+        if (t == typeof(System.Text.Json.JsonElement)) return "(any JSON)";
 
         if (t == typeof(string))                          return "string";
         if (t == typeof(bool))                            return "bool";
@@ -481,6 +591,10 @@ internal static class DocumentSchema
         if (blank is null) return "";
         object? v;
         try { v = p.GetValue(blank); } catch { return ""; }
+
+        // A self-spelled value (a point) is shown as the JSON it is written as.
+        if (v is not null && SpelledAs(v.GetType()) is not null)
+            return System.Text.Json.JsonSerializer.Serialize(v, v.GetType());
 
         return v switch
         {

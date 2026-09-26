@@ -1,6 +1,7 @@
 using CircuitRF.Design.Layout;
 using CircuitRF.Design.Schematic;
 using CircuitRF.Design.Symbol;
+using CircuitRF.Design.ThreeD;
 
 namespace CircuitRF.Design.Cells;
 
@@ -25,7 +26,7 @@ namespace CircuitRF.Design.Cells;
 //  produce the `MissingNamedPrimary` state the project tree surfaces as a warning.
 // ──────────────────────────────────────────────────────────────────────────────
 
-/// <summary>Which views <see cref="CellCreate.Create"/> writes. Flags, because the three are
+/// <summary>Which views <see cref="CellCreate.Create"/> writes. Flags, because the four are
 /// independent and a cell may legitimately have any subset of them (including none — that is a cell
 /// folder with three empty sub-folders, which is what the folder-creation call on its own makes).</summary>
 [Flags]
@@ -35,14 +36,19 @@ public enum CellViews
     Schematic = 1,
     Symbol    = 2,
     Layout    = 4,
+
+    /// <summary>A 3D view (brief-em3d-41). Its <c>3d/</c> sub-folder is made by writing it, never by
+    /// the folder creation (D10).</summary>
+    ThreeD    = 8,
 }
 
 /// <param name="CellDir">The cell folder.</param>
 /// <param name="SchematicPath">The written <c>.csch</c>, or null when it was not asked for.</param>
 /// <param name="SymbolPath">The written <c>.csym</c>, or null when it was not asked for.</param>
 /// <param name="LayoutPath">The written <c>.clay</c>, or null when it was not asked for.</param>
+/// <param name="ThreeDPath">The written <c>.c3d</c>, or null when it was not asked for.</param>
 public sealed record CellCreateResult(
-    string CellDir, string? SchematicPath, string? SymbolPath, string? LayoutPath)
+    string CellDir, string? SchematicPath, string? SymbolPath, string? LayoutPath, string? ThreeDPath = null)
 {
     /// <summary>Every path the creation produced, cell folder first — what a <c>--json</c> caller
     /// reads, since its next step is usually to rewrite one of them.</summary>
@@ -54,6 +60,7 @@ public sealed record CellCreateResult(
             if (SchematicPath is { } s) yield return s;
             if (SymbolPath    is { } y) yield return y;
             if (LayoutPath    is { } l) yield return l;
+            if (ThreeDPath    is { } t) yield return t;
         }
     }
 }
@@ -97,11 +104,15 @@ public static class CellCreate
     {
         string cellDir = CellFolder.CreateCellFolder(parentDir, cellName);
 
-        return new CellCreateResult(
-            cellDir,
-            views.HasFlag(CellViews.Schematic) ? WriteSchematicView(cellDir, cellName, cellName, schematic) : null,
-            views.HasFlag(CellViews.Symbol)    ? WriteSymbolView(cellDir, cellName)                         : null,
-            views.HasFlag(CellViews.Layout)    ? WriteLayoutView(cellDir, cellName, NewLayoutView(tech))    : null);
+        string? schematicPath = views.HasFlag(CellViews.Schematic) ? WriteSchematicView(cellDir, cellName, cellName, schematic) : null;
+        string? symbolPath    = views.HasFlag(CellViews.Symbol)    ? WriteSymbolView(cellDir, cellName)                         : null;
+        string? layoutPath    = views.HasFlag(CellViews.Layout)    ? WriteLayoutView(cellDir, cellName, NewLayoutView(tech))    : null;
+
+        // AFTER the layout, deliberately: a 3D view takes its units from the cell's primary .clay when
+        // there is one, so `--views layout,3d` gives a 3D view in the layout's units.
+        string? threeDPath    = views.HasFlag(CellViews.ThreeD)    ? WriteThreeDView(cellDir, cellName, NewThreeDView(cellDir, tech)) : null;
+
+        return new CellCreateResult(cellDir, schematicPath, symbolPath, layoutPath, threeDPath);
     }
 
     /// <summary>
@@ -155,9 +166,63 @@ public static class CellCreate
     }
 
     /// <summary>
+    /// The empty 3D view a new <c>.c3d</c> starts as (brief-em3d-41 R-em3d41-4, owner decision D4) —
+    /// the GUI's New ▸ 3D View and <c>new cell --views 3d</c> both start here.
+    ///
+    /// <list type="bullet">
+    /// <item><c>DbuPerMicron</c> is the cell's primary <c>.clay</c>'s when it has one, else
+    /// <see cref="LayoutUnits.DefaultDbuPerMicron"/>.</item>
+    /// <item><c>DisplayUnit</c> is the cell's primary <c>.clay</c>'s when it has one, else the
+    /// technology's <see cref="Technology.DefaultDisplayUnit"/>, else µm. The cell's own layout is more
+    /// specific than its technology: it is the unit someone already chose for this cell.</item>
+    /// <item><c>SnapDbu</c> is the technology's, with <see cref="NewLayoutView"/>'s fallback.</item>
+    /// <item><c>TechRef</c> is null, as a new layout's is: the workspace's default, resolved the
+    /// ordinary way.</item>
+    /// </list>
+    /// </summary>
+    /// <param name="cellDir">The cell the view is made in — read for its primary <c>.clay</c>, and
+    /// nothing is created in it.</param>
+    /// <param name="tech">The technology in force where the file will land, resolved by the caller;
+    /// null is the supported no-technology state.</param>
+    public static C3dDocument NewThreeDView(string cellDir, Technology? tech)
+    {
+        int dbuPerMicron = LayoutUnits.DefaultDbuPerMicron;
+        LayoutUnit displayUnit = tech?.DefaultDisplayUnit ?? LayoutUnit.Um;
+
+        var primary = CellFolder.ResolvePrimary(cellDir, ViewType.Layout);
+        if (primary.State is PrimaryState.SoleFile or PrimaryState.NamedPresent && primary.ResolvedName is { } clay)
+        {
+            string clayPath = Path.Combine(CellFolder.SubFolderPath(cellDir, ViewType.Layout), clay);
+            // An unreadable layout leaves the technology's answer standing: the new view is still
+            // creatable, and the layout's own defect is what `check` reports about it.
+            if (LayoutPersistence.TryReadUnits(clayPath) is { } units)
+                (dbuPerMicron, displayUnit) = units;
+        }
+
+        var model = NewLayoutView(tech);
+        return new C3dDocument
+        {
+            DbuPerMicron = dbuPerMicron,
+            DisplayUnit  = displayUnit,
+            SnapDbu      = model.SnapDbu,
+            TechRef      = null,
+        };
+    }
+
+    /// <summary>Writes one <c>.c3d</c> into the cell's <c>3d/</c> sub-folder — creating the sub-folder,
+    /// which is the only way it ever comes to exist (D10) — and returns its path.</summary>
+    public static string WriteThreeDView(string cellDir, string fileNameWithoutExt, C3dDocument doc)
+    {
+        string path = ViewPath(cellDir, ViewType.ThreeD, fileNameWithoutExt);
+        C3dPersistence.SaveToFile(path, doc);
+        return path;
+    }
+
+    /// <summary>
     /// The path a view file of this type and name takes inside a cell folder, and the sub-folder
     /// created if a hand-made cell folder is missing it. A caller that has just run
-    /// <see cref="CellFolder.CreateCellFolder"/> already has all three.
+    /// <see cref="CellFolder.CreateCellFolder"/> already has the first three; <c>3d/</c> is always
+    /// made here.
     /// </summary>
     private static string ViewPath(string cellDir, ViewType type, string fileNameWithoutExt)
     {

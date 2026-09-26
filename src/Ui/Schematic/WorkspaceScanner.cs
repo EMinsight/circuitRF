@@ -354,7 +354,7 @@ public static class WorkspaceScanner
     }
 
     /// <summary>
-    /// True for <c>schematic/</c>, <c>symbol/</c> or <c>layout/</c> — the three the loop above owns.
+    /// True for <c>schematic/</c>, <c>symbol/</c>, <c>layout/</c> or <c>3d/</c> — the four the loop above owns.
     /// Asked by NAME against <see cref="CellFolder.SubFolderName"/> rather than by "did I just emit a
     /// node for it", so a view folder that is EMPTY (which produces no node, by §3.1) is still not
     /// re-rendered as a user folder underneath it.
@@ -418,6 +418,7 @@ public static class WorkspaceScanner
             ".csym"   => NodeKind.ViewFile,
             ".csch"   => NodeKind.ViewFile,
             ".clay"   => NodeKind.ViewFile,
+            ".c3d"    => NodeKind.ViewFile,
             ".cdd"    => NodeKind.DataDisplayFile,
             ".charm"  => NodeKind.HarmonicaFile,
             ".wbond"  => NodeKind.WBondFile,
@@ -791,11 +792,5 @@ public static class WorkspaceScanner
 
     private static string FileName(string path) => Path.GetFileName(path) ?? path;
 
-    private static string ViewTypeName(ViewType vt) => vt switch
-    {
-        ViewType.Schematic => "schematic",
-        ViewType.Symbol    => "symbol",
-        ViewType.Layout    => "layout",
-        _                  => vt.ToString().ToLowerInvariant(),
-    };
+    private static string ViewTypeName(ViewType vt) => CellFolder.ViewNoun(vt);
 }

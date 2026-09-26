@@ -243,13 +243,7 @@ public static class CellStat
         try
         {
             var ccell = CellPersistence.LoadFromFile(ccellPath);
-            named = viewType switch
-            {
-                ViewType.Schematic => ccell.PrimarySchematic,
-                ViewType.Symbol    => ccell.PrimarySymbol,
-                ViewType.Layout    => ccell.PrimaryLayout,
-                _                  => null,
-            };
+            named = ccell.GetPrimary(viewType);
         }
         catch (InvalidDataException)
         {

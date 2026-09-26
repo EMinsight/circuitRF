@@ -153,7 +153,8 @@ public static class ExternalCellArchive
         {
             var ext = Path.GetExtension(f);
             if (ext.Equals(".csch", StringComparison.OrdinalIgnoreCase)
-             || ext.Equals(".clay", StringComparison.OrdinalIgnoreCase))
+             || ext.Equals(".clay", StringComparison.OrdinalIgnoreCase)
+             || ext.Equals(".c3d",  StringComparison.OrdinalIgnoreCase))
                 yield return f;
         }
     }
@@ -161,7 +162,7 @@ public static class ExternalCellArchive
     private static IEnumerable<string> ExternalRefsIn(string documentPath) =>
         AllCellRefsIn(documentPath).Where(ExternalCellRef.IsExternalRef);
 
-    /// <summary>Every <c>CellRef</c> value in a <c>.csch</c>/<c>.clay</c>. Read straight out of the
+    /// <summary>Every <c>CellRef</c> value in a <c>.csch</c>/<c>.clay</c>/<c>.c3d</c>. Read straight out of the
     /// JSON rather than through the document models: this runs over a whole workspace during a
     /// dialog's scan, and it needs one string per instance, not a loaded view.</summary>
     private static IReadOnlyList<string> AllCellRefsIn(string documentPath)
