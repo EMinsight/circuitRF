@@ -69,6 +69,7 @@ public partial class WorkspaceViewModel
         LayoutDocument d              => d.FilePath,
         TechDocument d                => d.FilePath,
         EmSetupDocument d             => d.FilePath,
+        ThreeD.C3dEditorDocument d    => d.FilePath,
         WBondDocument d               => d.FilePath,
         PartLibraryDocument d         => d.FilePath,
         _                             => null,

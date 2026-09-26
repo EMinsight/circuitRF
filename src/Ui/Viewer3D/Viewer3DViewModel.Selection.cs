@@ -1,0 +1,460 @@
+// brief-em3d-43 R-em3d43-2 / -3 / -4 / -5 — selection in EVERY 3D pane: the three modes, hover, click and
+// Shift-click, B through what is behind, the keys, and the context menu's frame.
+//
+// ONE PANE, TWO USES (R-em3d43-1a). The read-only viewer a .cem opens and the .c3d editor are the same
+// view model and the same pane; the editor is this plus a document, reached through IViewer3DEditHost.
+// With no host, selecting is for measuring and reading: the status line names the face's area and normal,
+// and every command that would write something is absent from the menu, not disabled.
+//
+// ALL OF IT IS INPUT-LOOP WORK (em-3d.md §8.4): a hover sets two uniforms, a click writes a selection list
+// the shader reads, and nothing here tessellates, elaborates or uploads (gate 5). The one CPU geometry query
+// is B's ray (RayHits), on the key press, never on a hover, over a hierarchy built once per scene; and
+// Vertex mode's hover reads the vertices of the ONE face under the cursor (Scene3DFaces).
+//
+// SELECTION SURVIVES A REGENERATION BY NAME. An edit rebuilds the scene and may renumber its objects (a
+// delete shifts every later ID), so the selection is carried across by object name and face index, and
+// what no longer exists drops out of it.
+
+using System.Globalization;
+using System.Numerics;
+using Avalonia.Input;
+using CircuitRF.Render.Scene3D;
+using CircuitRF.Render.Scene3D.Edit;
+using CommunityToolkit.Mvvm.ComponentModel;
+
+namespace CircuitRF.Ui.Viewer3D;
+
+/// <summary>What the editor adds to a 3D pane (null in the read-only viewer).</summary>
+public interface IViewer3DEditHost
+{
+    /// <summary>The document kind of a scene object — <c>Box</c>, <c>Prism</c> … — or the instance it came
+    /// from; null when the object is not the document's (never, in practice).</summary>
+    string KindOf(Scene3DObject o);
+
+    /// <summary>The instance path of an object inside an instance, or null for the document's own.</summary>
+    string? InstanceOf(Scene3DObject o);
+
+    /// <summary>The materials a drawn object may be given (the document's technology's).</summary>
+    IReadOnlyList<string> Materials { get; }
+
+    /// <summary>Hides <paramref name="objects"/> (<paramref name="hidden"/> true) or shows them, as ONE undoable
+    /// edit of the document's <c>Hidden</c> flags. False when none of them is the document's to hide.</summary>
+    bool SetHidden(IReadOnlyList<Scene3DObject> objects, bool hidden, string description);
+
+    /// <summary>Shows every document object, and hides all but <paramref name="keep"/> when it is given.</summary>
+    bool ShowAll(IReadOnlyList<Scene3DObject>? keep);
+
+    void SetMaterial(IReadOnlyList<Scene3DObject> objects, string material);
+
+    /// <summary>Deletes the selection's document objects: one undo entry. False when nothing was deletable.</summary>
+    bool DeleteSelection();
+
+    /// <summary>The Properties panel, shown (and its Name field focused when <paramref name="rename"/>).</summary>
+    void ShowProperties(bool rename);
+}
+
+/// <summary>One context-menu entry. <see cref="Run"/> null and no children is a heading or a disabled item.</summary>
+public sealed record Viewer3DMenuItem(string Header, Action? Run = null, bool Enabled = true, string? Tip = null,
+                                      IReadOnlyList<Viewer3DMenuItem>? Children = null)
+{
+    public static readonly Viewer3DMenuItem Separator = new("-");
+    public bool IsSeparator => Header == "-";
+}
+
+public sealed partial class Viewer3DViewModel
+{
+    /// <summary>B's list, cached per cursor, mode and scene (R-em3d43-4b).</summary>
+    public Scene3DHitCycle HitCycle { get; } = new();
+
+    /// <summary>The editor, or null in the read-only viewer.</summary>
+    public IViewer3DEditHost? EditHost { get; set; }
+
+    /// <summary>What a click would select now, or null.</summary>
+    public Scene3DItem? HoveredItem { get; private set; }
+
+    /// <summary>Vertex mode's candidate under the cursor (scene-local), for the overlay's dot.</summary>
+    public Vector3? HoveredVertex => HoveredItem is { Face: < 0, Object: > 0 } h && SelectMode == Scene3DSelectMode.Vertex ? h.Point : null;
+
+    /// <summary>The selection, in the order it was made.</summary>
+    public IReadOnlyList<Scene3DItem> Selection => View.Selection;
+
+    /// <summary>Raised whenever <see cref="Selection"/> changes.</summary>
+    public event Action? SelectionChanged;
+
+    /// <summary>How many times Fit ran — gate 8 reads it, since there is no pixel to look at.</summary>
+    public int Fits { get; private set; }
+
+    [ObservableProperty] private Scene3DSelectMode _selectMode;
+    [ObservableProperty] private string _selectionText = "";
+    [ObservableProperty] private string _cycleText = "";
+
+    partial void OnSelectModeChanged(Scene3DSelectMode value)
+    {
+        View.Mode = value;
+        HitCycle.ModeChanged(value);
+        // A selection means something only in the mode it was made in.
+        HoveredItem = null;
+        View.HoveredFace = -1;
+        SetSelection([]);
+        CycleText = "";
+        OnPropertyChanged(nameof(IsObjectMode));
+        OnPropertyChanged(nameof(IsFaceMode));
+        OnPropertyChanged(nameof(IsVertexMode));
+        OnPropertyChanged(nameof(HoveredVertex));
+        FrameRequested?.Invoke();
+    }
+
+    /// <summary>The toolbar's three exclusive toggles. Unchecking the checked one does nothing: a mode is
+    /// always on.</summary>
+    public bool IsObjectMode { get => SelectMode == Scene3DSelectMode.Object; set { if (value) SelectMode = Scene3DSelectMode.Object; else OnPropertyChanged(); } }
+    public bool IsFaceMode   { get => SelectMode == Scene3DSelectMode.Face;   set { if (value) SelectMode = Scene3DSelectMode.Face;   else OnPropertyChanged(); } }
+    public bool IsVertexMode { get => SelectMode == Scene3DSelectMode.Vertex; set { if (value) SelectMode = Scene3DSelectMode.Vertex; else OnPropertyChanged(); } }
+
+    // ── the selection ───────────────────────────────────────────────────────────────────────
+
+    private bool _selectingFromTree;
+
+    /// <summary>Replaces the selection. Duplicates are dropped; order is kept.</summary>
+    public void SetSelection(IEnumerable<Scene3DItem> items)
+    {
+        var list = new List<Scene3DItem>();
+        foreach (var i in items) if (i.Object != 0 && !list.Contains(i)) list.Add(i);
+        if (list.SequenceEqual(View.Selection)) { RefreshSelectionText(); return; }
+        View.Selection = [.. list];
+        RefreshSelectionText();
+        if (!_selectingFromTree)
+        {
+            _selectingFromTree = true;
+            try { SelectedItem = list.Count > 0 && _items.TryGetValue(list[0].Object, out var it) ? it : null; }
+            finally { _selectingFromTree = false; }
+        }
+        SelectionChanged?.Invoke();
+        FrameRequested?.Invoke();
+    }
+
+    /// <summary>The selection's objects, each once, in selection order.</summary>
+    public IReadOnlyList<Scene3DObject> SelectedObjects()
+        => [.. View.Selection.Select(i => Scene.Object(i.Object)).OfType<Scene3DObject>().Distinct()];
+
+    /// <summary>A click: select what is under the cursor (Shift adds or removes it). A click on nothing
+    /// clears, unless Shift is held.</summary>
+    public void Click(bool shift)
+    {
+        HitCycle.Reset();
+        CycleText = "";
+        var item = HoveredItem;
+        if (item is not { } it)
+        {
+            if (!shift) SetSelection([]);
+            return;
+        }
+        if (shift)
+            SetSelection(View.Selection.Contains(it) ? View.Selection.Where(s => s != it) : [.. View.Selection, it]);
+        else SetSelection([it]);
+        if (_items.TryGetValue(it.Object, out var treeItem)) RevealRequested?.Invoke(treeItem);
+    }
+
+    /// <summary>B (<paramref name="direction"/> +1) or Shift+B (−1): the next thing behind, or in front, along
+    /// the line of sight through the cursor (R-em3d43-4). True when the key did something.</summary>
+    public bool Cycle(int direction)
+    {
+        if (View.CursorX < 0 || Scene.Objects.Length == 0) return false;
+        Scene3DItem? current = View.Selection.Length == 1 ? View.Selection[0] : null;
+        var q = new Scene3DRayQuery(View.Camera, View.CursorX, View.CursorY, _viewW, _viewH);
+        var scene = Scene;
+        var mode = SelectMode;
+        var visible = View.Visible;
+        var clip = View.Clip;
+        var hit = HitCycle.Step(direction, View.CursorX, View.CursorY, mode, scene.Generation, current,
+                                () => RayHits.Collect(scene, q, mode, visible, clip));
+        if (hit is not { } h)
+        {
+            CycleText = "Nothing under the cursor to step through.";
+            return true;
+        }
+        SetSelection([h.Item]);
+        // R-em3d43-4c: without a readout, cycling feels like a glitch.
+        CycleText = $"{Name(h.Item)} · {HitCycle.Index + 1} of {HitCycle.Count}";
+        return true;
+    }
+
+    private readonly Dictionary<string, string> _renames = new(StringComparer.Ordinal);
+
+    /// <summary>The editor is renaming <paramref name="from"/> to <paramref name="to"/>: the next scene's
+    /// object of that name is the same object, and stays selected.</summary>
+    public void ExpectRename(string from, string to) => _renames[from] = to;
+
+    /// <summary>The selection's scene objects were renumbered by a regeneration: carry it across by name.</summary>
+    private void RemapSelection(Scene3DModel from, Scene3DModel to)
+    {
+        var renames = new Dictionary<string, string>(_renames, StringComparer.Ordinal);
+        _renames.Clear();
+        if (View.Selection.Length == 0 && HoveredItem is null) return;
+        var byName = new Dictionary<string, uint>(StringComparer.Ordinal);
+        foreach (var o in to.Objects) byName.TryAdd(o.Name, o.Id);
+        Scene3DItem? Map(Scene3DItem i)
+            => from.Object(i.Object) is { } o && byName.TryGetValue(renames.GetValueOrDefault(o.Name, o.Name), out uint id)
+               ? i with { Object = id } : null;
+        var mapped = View.Selection.Select(Map).OfType<Scene3DItem>().ToList();
+        HoveredItem = HoveredItem is { } h ? Map(h) : null;
+        View.Selection = [];          // SetSelection compares against it; force the notifications
+        SetSelection(mapped);
+    }
+
+    // ── hover (the ID pass's answer) ────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Frame loop → UI: the ID pass's (object, face) under the cursor. Sets what a click would select —
+    /// in Vertex mode the nearest corner of that face on screen, within the snap radius (R-em3d43-3b) —
+    /// and the tooltip. Touches no geometry beyond that one face's corners.
+    /// </summary>
+    internal void OnPicked(uint id, uint face, Vector3 point, bool hit)
+    {
+        int f = face == Scene3DVertex.NoFace ? -1 : (int)face;
+        Scene3DItem? item = null;
+        if (id != 0)
+            item = SelectMode switch
+            {
+                Scene3DSelectMode.Face => f >= 0 ? Scene3DItem.OfFace(id, f) : null,
+                Scene3DSelectMode.Vertex => Scene3DFaces.NearestVertexOnScreen(Scene, id, f, View.Camera, View.CursorX, View.CursorY,
+                                                                              _viewW, _viewH, Scene3DSnap.RadiusPixels) is { } v
+                                            ? Scene3DItem.OfVertex(id, v) : null,
+                _ => Scene3DItem.OfObject(id),
+            };
+        int hoveredFace = SelectMode == Scene3DSelectMode.Face ? f : -1;
+        if (item != HoveredItem || View.HoveredFace != hoveredFace)
+        {
+            HoveredItem = item;
+            View.HoveredFace = hoveredFace;
+            OnPropertyChanged(nameof(HoveredVertex));
+            FrameRequested?.Invoke();
+        }
+        OnPicked(id, point, hit);
+    }
+
+    // ── keys (owner decision D3) ────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// R-em3d43-2a — every 3D pane's keys. Mode keys act only with no modifier and no gesture in progress
+    /// (<paramref name="gestureInProgress"/>), so Cmd+V is still paste. Esc with a gesture is the pane's to
+    /// cancel (false here); with none it clears the selection. Delete and Backspace delete — in the editor.
+    /// </summary>
+    public bool HandleKey(Key key, KeyModifiers modifiers, bool gestureInProgress)
+    {
+        bool plain = modifiers == KeyModifiers.None;
+        if (key == Key.B && (plain || modifiers == KeyModifiers.Shift)) return Cycle(plain ? +1 : -1);
+        if (!plain) return false;
+        StandardView3D? standard = key switch
+        {
+            Key.D1 or Key.NumPad1 => StandardView3D.Iso, Key.D2 or Key.NumPad2 => StandardView3D.Top,
+            Key.D3 or Key.NumPad3 => StandardView3D.Front, Key.D4 or Key.NumPad4 => StandardView3D.Right,
+            Key.D5 or Key.NumPad5 => StandardView3D.Back, Key.D6 or Key.NumPad6 => StandardView3D.Left,
+            Key.D7 or Key.NumPad7 => StandardView3D.Bottom, _ => null,
+        };
+        if (standard is { } v) { StandardViewCommand.Execute(v); return true; }
+        switch (key)
+        {
+            case Key.O when !gestureInProgress: SelectMode = Scene3DSelectMode.Object; return true;
+            case Key.F when !gestureInProgress: SelectMode = Scene3DSelectMode.Face; return true;
+            case Key.V when !gestureInProgress: SelectMode = Scene3DSelectMode.Vertex; return true;
+            case Key.Home: FitCommand.Execute(null); return true;
+            case Key.P: IsPerspective = !IsPerspective; return true;
+            case Key.C: ClipEnabled = !ClipEnabled; return true;
+            case Key.A: ShowAxisIndicator = !ShowAxisIndicator; return true;
+            case Key.Escape:
+                if (gestureInProgress) return false;
+                HitCycle.Reset();
+                CycleText = "";
+                SetSelection([]);
+                return true;
+            case Key.Delete or Key.Back:
+                return EditHost?.DeleteSelection() ?? false;
+        }
+        return false;
+    }
+
+    // ── words ───────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>An object as the status line names it: <c>Box "lid"</c>, or its scene name in the viewer.</summary>
+    public string ObjectName(Scene3DObject o)
+        => EditHost?.KindOf(o) is { } kind ? $"{kind} \"{o.Name}\"" : $"\"{o.Name}\"";
+
+    /// <summary><c>Face top · Box "lid"</c>, <c>Vertex (x, y, z) · Box "lid"</c> or <c>Box "lid"</c>.</summary>
+    public string Name(Scene3DItem item)
+    {
+        if (Scene.Object(item.Object) is not { } o) return "";
+        string owner = ObjectName(o);
+        if (item.Face >= 0) return $"Face {o.FaceName(item.Face)} · {owner}";
+        if (SelectMode == Scene3DSelectMode.Vertex) return $"Vertex {Point(item.Point)} · {owner}";
+        return owner;
+    }
+
+    private string Point(Vector3 local)
+    {
+        var (x, y, z) = Scene.ToWorld(local);
+        return $"({FormatLength(x)}, {FormatLength(y)}, {FormatLength(z)})";
+    }
+
+    /// <summary>R-em3d43-2c / -6b — what is selected, in the document's display unit: a face's name, area
+    /// and normal; a vertex's coordinates; an object's material.</summary>
+    private void RefreshSelectionText()
+    {
+        var sel = View.Selection;
+        if (sel.Length == 0) { SelectionText = ""; return; }
+        string more = sel.Length > 1 ? $"  (+{sel.Length - 1} more selected)" : "";
+        if (sel.Length > Scene3DFramePlan.SelectionLimit)
+            more += $" — the first {Scene3DFramePlan.SelectionLimit} are drawn highlighted";
+        var first = sel[0];
+        string text = Name(first);
+        if (Scene.Object(first.Object) is { } o)
+        {
+            if (first.Face >= 0)
+            {
+                var (area, normal) = Scene3DFaces.AreaAndNormal(Scene, o.Id, first.Face);
+                text += $" · area {FormatArea(area)} · normal " +
+                        (normal is { } n ? $"({Num(n.X)}, {Num(n.Y)}, {Num(n.Z)})" : "varies (a curved face)");
+            }
+            if (o.Material is { } m) text += $" · {m}";
+        }
+        SelectionText = text + more;
+    }
+
+    private static string Num(float v) => (MathF.Abs(v) < 5e-7f ? 0f : v).ToString("0.####", CultureInfo.InvariantCulture);
+
+    /// <summary>An area in the display unit, squared: through the length formatter, so it follows the unit.</summary>
+    private string FormatArea(double m2)
+    {
+        // The formatter spells a LENGTH; an area is its value in unit² — found by formatting 1 m and reading
+        // the unit's scale off it would be fragile, so the scale comes from a length of one unit instead.
+        string one = FormatLength(1);
+        int space = one.LastIndexOf(' ');
+        string unit = space > 0 ? one[(space + 1)..] : "m";
+        double perMetre = space > 0 && double.TryParse(one[..space], NumberStyles.Float, CultureInfo.InvariantCulture, out double v) && v > 0 ? v : 1;
+        return (m2 * perMetre * perMetre).ToString("G5", CultureInfo.InvariantCulture) + " " + unit + "²";
+    }
+
+    /// <summary>Every text that prints a length again, after the display unit changed.</summary>
+    public void RefreshLengthTexts()
+    {
+        RefreshSelectionText();
+        if (_lastCursorWorld is { } w) CursorText = $"x {FormatLength(w.X)}   y {FormatLength(w.Y)}   z {FormatLength(w.Z)}";
+        CycleText = "";
+        OnPropertyChanged(nameof(Status));
+    }
+
+    // ── the context menu (R-em3d43-4e: it acts on the current item) ─────────────────────────
+
+    /// <summary>
+    /// A right-click: selects what is under the cursor first when it is not selected — unless the selection
+    /// came from B at this cursor, which the menu then acts on even though the cursor is over the front face.
+    /// Returns the menu for the selection.
+    /// </summary>
+    public IReadOnlyList<Viewer3DMenuItem> OpenContextMenu()
+    {
+        if (!HitCycle.Active && HoveredItem is { } h && !View.Selection.Contains(h)) SetSelection([h]);
+        return ContextMenuItems();
+    }
+
+    /// <summary>The menu for the current selection, per mode. Brief 43 builds the frame and the operations
+    /// that need no geometry; briefs 46, 47 and 49 add theirs.</summary>
+    public IReadOnlyList<Viewer3DMenuItem> ContextMenuItems()
+    {
+        var items = new List<Viewer3DMenuItem>();
+        var objects = SelectedObjects();
+        var host = EditHost;
+        if (View.Selection.Length > 0)
+        {
+            string title = View.Selection.Length == 1 ? Name(View.Selection[0]) : $"{View.Selection.Length} selected";
+            items.Add(new Viewer3DMenuItem(title, Enabled: false));
+            items.Add(Viewer3DMenuItem.Separator);
+        }
+        bool any = objects.Count > 0;
+        bool inInstance = host is not null && objects.Any(o => host.InstanceOf(o) is not null);
+        bool own = host is not null && any && !inInstance;
+
+        if (SelectMode != Scene3DSelectMode.Object && any)
+        {
+            if (inInstance)
+            {
+                // Measuring from a die's pad is the point; editing the child from here is refused by
+                // construction — the menu does not offer it (R-em3d43-3c).
+                items.Add(new Viewer3DMenuItem("Measure", Enabled: false, Tip: "The Measure tool comes with object operations (brief 46)."));
+                if (SelectMode == Scene3DSelectMode.Face)
+                    items.Add(new Viewer3DMenuItem("Copy Face as Sheet", Enabled: false, Tip: "Comes with face editing (brief 47)."));
+                items.Add(new Viewer3DMenuItem("Select Owning Instance", SelectOwningInstance));
+                items.Add(new Viewer3DMenuItem("Push into Cell to Edit", Enabled: false, Tip: "Comes with hierarchy editing (brief 48)."));
+            }
+            else items.Add(new Viewer3DMenuItem("Select Owning Object", SelectOwningObject));
+            items.Add(Viewer3DMenuItem.Separator);
+        }
+
+        if (SelectMode == Scene3DSelectMode.Object && own && host is not null)
+        {
+            items.Add(new Viewer3DMenuItem("Rename…", () => host.ShowProperties(rename: true), Enabled: objects.Count == 1));
+            var mats = host.Materials;
+            items.Add(new Viewer3DMenuItem("Material", Enabled: mats.Count > 0,
+                Tip: mats.Count > 0 ? null : "The document's technology defines no materials.",
+                Children: [.. mats.Select(m => new Viewer3DMenuItem(m, () => host.SetMaterial(objects, m)))]));
+        }
+        if (any)
+        {
+            items.Add(new Viewer3DMenuItem("Hide", () => Hide(objects)));
+            items.Add(new Viewer3DMenuItem("Isolate", () => Isolate(objects)));
+        }
+        items.Add(new Viewer3DMenuItem("Show All", ShowAll));
+        if (SelectMode == Scene3DSelectMode.Object && own && host is not null)
+            items.Add(new Viewer3DMenuItem("Delete", () => host.DeleteSelection()));
+        if (host is not null && any)
+        {
+            items.Add(Viewer3DMenuItem.Separator);
+            items.Add(new Viewer3DMenuItem("Properties", () => host.ShowProperties(rename: false)));
+        }
+        return items;
+    }
+
+    public void SelectOwningObject()
+    {
+        var ids = View.Selection.Select(i => i.Object).Distinct().ToList();
+        SelectMode = Scene3DSelectMode.Object;
+        SetSelection(ids.Select(Scene3DItem.OfObject));
+    }
+
+    public void SelectOwningInstance()
+    {
+        if (EditHost is not { } host) return;
+        var paths = SelectedObjects().Select(host.InstanceOf).OfType<string>().ToHashSet(StringComparer.Ordinal);
+        SelectMode = Scene3DSelectMode.Object;
+        SetSelection(Scene.Objects.Where(o => host.InstanceOf(o) is { } p && paths.Contains(p)).Select(o => Scene3DItem.OfObject(o.Id)));
+    }
+
+    /// <summary>Hide: the editor writes the document's <c>Hidden</c> (undoable); the viewer only draws less.</summary>
+    public void Hide(IReadOnlyList<Scene3DObject> objects)
+    {
+        if (EditHost?.SetHidden(objects, true, objects.Count == 1 ? $"Hide {objects[0].Name}" : $"Hide {objects.Count} objects") == true) return;
+        foreach (var o in objects) SetVisibleEverywhere(o.Id, false);
+        SetSelection([]);
+    }
+
+    public void Isolate(IReadOnlyList<Scene3DObject> objects)
+    {
+        if (EditHost?.ShowAll(objects) == true) return;
+        var keep = objects.Select(o => o.Id).ToHashSet();
+        foreach (var o in Scene.Objects.Where(o => o.Pickable)) SetVisibleEverywhere(o.Id, keep.Contains(o.Id));
+    }
+
+    public void ShowAll()
+    {
+        if (EditHost?.ShowAll(null) == true) return;
+        foreach (var o in Scene.Objects.Where(o => o.Pickable)) SetVisibleEverywhere(o.Id, true);
+    }
+
+    /// <summary>A visibility the view holds (not the document): the tree's checkbox follows.</summary>
+    internal void SetVisibleEverywhere(uint id, bool visible)
+    {
+        SetVisible(id, visible);
+        if (_items.TryGetValue(id, out var it)) it.Sync(visible);
+    }
+
+    /// <summary>Called from Fit: counted for gate 8.</summary>
+    private void CountFit() => Fits++;
+}

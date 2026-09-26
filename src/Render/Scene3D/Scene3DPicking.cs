@@ -51,10 +51,17 @@ public static class Scene3DPicking
     /// </summary>
     public static uint IdAtPixel(Scene3DModel scene, in Camera3D camera, float px, float py, float width,
                                  float height, ReadOnlySpan<bool> visible)
+        => PairAtPixel(scene, camera, px, py, width, height, visible).Id;
+
+    /// <summary>brief-em3d-43 R-em3d43-3a — the (object, face) pair the GPU's RG32Uint ID pass writes for the
+    /// pixel: <see cref="IdAtPixel"/>'s object, and the face of it that won the depth test
+    /// (<see cref="Scene3DVertex.NoFace"/> for a vertex on no face, and for the background).</summary>
+    public static (uint Id, uint Face) PairAtPixel(Scene3DModel scene, in Camera3D camera, float px, float py, float width,
+                                                  float height, ReadOnlySpan<bool> visible)
     {
         var m = camera.ViewProjectionMatrix(width, height, px, py);
         float bestDepth = float.MaxValue;
-        uint id = 0;
+        uint id = 0, face = Scene3DVertex.NoFace;
         var verts = scene.Vertices;
         foreach (var b in scene.Batches)
         {
@@ -77,9 +84,12 @@ public static class Scene3DPicking
                 if (z < 0 || z > 1 || z >= bestDepth) continue;
                 bestDepth = z;
                 id = b.ObjectId;
+                // The provoking vertex's face is what flat interpolation hands the fragment; every vertex of
+                // a triangle carries the same one, so any would do.
+                face = verts[scene.Indices[i]].Face;
             }
         }
-        return id;
+        return (id, face);
     }
 
     private static bool Visible(ReadOnlySpan<bool> visible, uint id)

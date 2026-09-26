@@ -115,18 +115,19 @@ public partial class WorkspaceViewModel
     /// rather than showing it disabled — the Reveal item's own convention: an entry that does not
     /// apply is not an entry that is temporarily unavailable.
     ///
-    /// <para>Three kinds answer false and all three are deliberate. <c>StubDocument</c> is the Welcome
+    /// <para>Four kinds answer false and all four are deliberate. <c>StubDocument</c> is the Welcome
     /// tab and has no file, ever. <c>CellParameterEditorDocument</c> writes its <c>.ccell</c> on every
     /// command it executes (<c>CellParameterEditModel.Save</c>), so it is never dirty and there is
     /// nothing a Save could do. <c>MarkdownDocument</c> is a README shown read-only: it holds the
     /// PARSED lines and not the source text, so there is nothing an edit could be applied to and
     /// nothing a Save could write — circuitRF is not a Markdown editor, and the user's own editor is
-    /// where that file is changed.</para>
+    /// where that file is changed. <c>Viewer3DDocument</c> is the read-only 3D view of a <c>.cem</c>
+    /// (brief-em3d-28): it writes nothing, so it has nothing to save — the <c>.cem</c>'s own tab does.</para>
     /// </summary>
     internal static bool HasSaveRoute(IDockable? dockable) => dockable is
         SchematicDocument or SymbolEditorDocument or LayoutDocument or TechDocument or
         EmSetupDocument or DataDisplayDocument or WBondDocument or HarmonicaDocument or
-        SmithChartDocument or PartLibraryDocument;
+        SmithChartDocument or PartLibraryDocument or ThreeD.C3dEditorDocument;
 
     /// <summary>
     /// True when this document kind can be written to a DIFFERENT file and followed there afterwards.
@@ -144,7 +145,7 @@ public partial class WorkspaceViewModel
     internal static bool HasSaveAsRoute(IDockable? dockable) => dockable is
         SchematicDocument or SymbolEditorDocument or LayoutDocument or TechDocument or
         EmSetupDocument or DataDisplayDocument or WBondDocument or HarmonicaDocument or
-        SmithChartDocument or PartLibraryDocument;
+        SmithChartDocument or PartLibraryDocument or ThreeD.C3dEditorDocument;
 
     /// <summary>Unsaved work in THIS document — the same per-kind test <c>CanSaveAllDocuments</c>
     /// applies to the active one. A never-saved wBond or harmonicaRF document counts even when clean:
@@ -157,6 +158,7 @@ public partial class WorkspaceViewModel
         TechDocument d          => d.IsDirty,
         EmSetupDocument d       => d.IsDirty,
         PartLibraryDocument d   => d.IsDirty,
+        ThreeD.C3dEditorDocument d => d.IsDirty,
         DataDisplayDocument d   => d.ViewModel.Window.HasUnsavedChanges(),
         WBondDocument d         => d.IsDirty || d.FilePath is null,
         HarmonicaDocument d     => d.IsDirty || d.FilePath is null,
@@ -207,6 +209,7 @@ public partial class WorkspaceViewModel
                 case TechDocument d:         d.ViewModel.SaveCommand.Execute(null);               break;
                 case EmSetupDocument d:      d.ViewModel.SaveCommand.Execute(null);               break;
                 case PartLibraryDocument d:  d.ViewModel.SaveCommand.Execute(null);               break;
+                case ThreeD.C3dEditorDocument d: SaveC3d(d);                                      break;
             }
         }
         finally
@@ -239,6 +242,7 @@ public partial class WorkspaceViewModel
                 case TechDocument d:         await SaveTechAs(d, window);                         break;
                 case EmSetupDocument d:      await SaveEmSetupAs(d, window);                      break;
                 case PartLibraryDocument d:  await SavePartLibraryAs(d, window);                  break;
+                case ThreeD.C3dEditorDocument d: await SaveC3dAs(d, window);                      break;
             }
         }
         finally

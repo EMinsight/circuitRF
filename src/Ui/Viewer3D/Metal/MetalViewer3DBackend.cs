@@ -29,7 +29,7 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
     [StructLayout(LayoutKind.Sequential)] private struct MtlSize { public nuint W, H, D; }
 
     private const int Ring = 3;
-    private const nuint FmtBGRA8 = 80, FmtR32Uint = 53, FmtRGBA32Float = 125, FmtDepth32F = 252;
+    private const nuint FmtBGRA8 = 80, FmtRG32Uint = 103, FmtRGBA32Float = 125, FmtDepth32F = 252;
     private const nuint VtxFloat3 = 30, VtxUInt = 36, VtxUChar4Normalized = 9;
     private const nuint PrimLine = 1, PrimTriangle = 3, IndexUInt32 = 1;
     private const nuint WindingCounterClockwise = 1;
@@ -37,7 +37,11 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
     [DllImport("/System/Library/Frameworks/Metal.framework/Metal")] private static extern nint MTLCreateSystemDefaultDevice();
 
     private readonly nint _device, _queue;
-    private nint _pOpaque, _pTrans, _pLines, _pPick, _pField, _dsWrite, _dsNoWrite, _depth, _pickId, _pickPos, _pickDepth;
+    private nint _pOpaque, _pTrans, _pLines, _pPick, _pField, _pEdges, _pTop, _dsWrite, _dsNoWrite, _dsAlways, _depth, _pickId, _pickPos, _pickDepth;
+    /// <summary>brief-em3d-43 — a partial upload waiting for the next frame's command buffer: staging buffer,
+    /// destination, offset, length. Copied by a blit on the queue, so it lands after every frame already
+    /// committed has finished reading the old bytes.</summary>
+    private readonly List<(nint Staging, nint Target, nuint Offset, nuint Length)> _patches = [];
     private nint _field;
     private int _fieldCount;
     private int _depthW, _depthH;
@@ -82,7 +86,7 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
             nint f = Send(lib, Sel("newFunctionWithName:"), NSString(name));
             return f != 0 ? f : throw new Viewer3DPresentFault($"The 3D view's Metal shader has no function '{name}'.");
         }
-        nint vs = Fn("vs"), fsc = Fn("fs_color"), fsl = Fn("fs_line"), fsp = Fn("fs_pick");
+        nint vs = Fn("vs"), fsc = Fn("fs_color"), fsl = Fn("fs_line"), fsp = Fn("fs_pick"), fse = Fn("fs_edge"), fst = Fn("fs_top");
         nint vsf = Fn("vs_field"), fsf = Fn("fs_field");
 
         nint vd = Send(Class("MTLVertexDescriptor"), Sel("vertexDescriptor"));
@@ -92,7 +96,7 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
             nint a = Idx(attrs, i);
             SendV(a, Sel("setFormat:"), fmt); SendV(a, Sel("setOffset:"), off); SendV(a, Sel("setBufferIndex:"), (nuint)0);
         }
-        Attr(0, VtxFloat3, 0); Attr(1, VtxUInt, 12); Attr(2, VtxUChar4Normalized, 16);
+        Attr(0, VtxFloat3, 0); Attr(1, VtxUInt, 12); Attr(2, VtxUChar4Normalized, 16); Attr(3, VtxUInt, 20);
         SendV(Idx(Send(vd, Sel("layouts")), 0), Sel("setStride:"), (nuint)Scene3DVertex.Stride);
 
         // brief-em3d-29 — the field vertex: position, the value's real part, its imaginary part.
@@ -116,7 +120,7 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
             nint cas = Send(d, Sel("colorAttachments"));
             if (pick)
             {
-                SendV(Idx(cas, 0), Sel("setPixelFormat:"), FmtR32Uint);
+                SendV(Idx(cas, 0), Sel("setPixelFormat:"), FmtRG32Uint);
                 SendV(Idx(cas, 1), Sel("setPixelFormat:"), FmtRGBA32Float);
             }
             else
@@ -143,11 +147,13 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
         _pLines = Pipe(fsl, false, false, TopoLine);
         _pPick = Pipe(fsp, false, true, TopoTriangle);
         _pField = Pipe(fsf, false, false, TopoTriangle, vsf, fvd);
+        _pEdges = Pipe(fse, true, false, TopoLine);
+        _pTop = Pipe(fst, true, false, TopoTriangle);
 
-        nint Depth(bool write)
+        nint Depth(bool write, nuint compare = 3)
         {
             nint d = Send(Send(Class("MTLDepthStencilDescriptor"), S.alloc), S.init);
-            SendV(d, Sel("setDepthCompareFunction:"), (nuint)3);   // LessEqual
+            SendV(d, Sel("setDepthCompareFunction:"), compare);   // 3 LessEqual, 7 Always
             SendB(d, Sel("setDepthWriteEnabled:"), write);
             nint s = Send(_device, Sel("newDepthStencilStateWithDescriptor:"), d);
             Send(d, S.release);
@@ -155,15 +161,16 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
         }
         _dsWrite = Depth(true);
         _dsNoWrite = Depth(false);
+        _dsAlways = Depth(false, 7);
         for (int i = 0; i < Ring; i++)
             _rb[i] = ((delegate* unmanaged<nint, nint, nuint, nuint, nint>)MsgSend)(_device, Sel("newBufferWithLength:options:"), 256, 0);
-        _pickId = NewTexture(1, 1, FmtR32Uint, 4, 0);
+        _pickId = NewTexture(1, 1, FmtRG32Uint, 4, 0);
         _pickPos = NewTexture(1, 1, FmtRGBA32Float, 4, 0);
         _pickDepth = NewTexture(1, 1, FmtDepth32F, 4, 2);
 
         // The pipelines hold what they need; the library and its functions were ours (new…), the
         // vertex descriptor was not (a class factory's autoreleased object).
-        foreach (nint f in new[] { vs, fsc, fsl, fsp, vsf, fsf }) Send(f, S.release);
+        foreach (nint f in new[] { vs, fsc, fsl, fsp, fse, fst, vsf, fsf }) Send(f, S.release);
         Send(lib, S.release);
     }
 
@@ -171,10 +178,41 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
 
     public override void UploadScene(Scene3DModel scene)
     {
+        foreach (var p in _patches) Send(p.Staging, S.release);
+        _patches.Clear();
         Release(ref _vb); Release(ref _ib); Release(ref _lines);
         fixed (Scene3DVertex* p = scene.Vertices) _vb = NewBuffer(p, scene.Vertices.Length * Scene3DVertex.Stride);
         fixed (uint* p = scene.Indices) _ib = NewBuffer(p, scene.Indices.Length * 4);
         fixed (Scene3DVertex* p = scene.LineVertices) _lines = NewBuffer(p, scene.LineVertices.Length * Scene3DVertex.Stride);
+    }
+
+    /// <summary>brief-em3d-43 gate 6 — only the changed ranges, staged now and copied on the queue by the next
+    /// frame (so never under a frame still reading them). Every staged byte is counted.</summary>
+    public override void PatchScene(Scene3DModel scene, Scene3DPatch patch)
+    {
+        foreach (var r in patch.Ranges)
+        {
+            nint target = r.Buffer switch { Scene3DPatchBuffer.Vertices => _vb, Scene3DPatchBuffer.Indices => _ib, _ => _lines };
+            if (target == 0) { UploadScene(scene); return; }
+            nint staging;
+            fixed (byte* p = Scene3DPatch.Source(scene, r)) staging = NewBuffer(p, r.ByteLength);
+            _patches.Add((staging, target, (nuint)r.ByteOffset, (nuint)r.ByteLength));
+        }
+    }
+
+    private static readonly nint Sel_copyBuffer = Sel("copyFromBuffer:sourceOffset:toBuffer:destinationOffset:size:");
+
+    /// <summary>Encodes the staged patches at the head of <paramref name="cb"/> and lets the staging buffers go
+    /// (the command buffer retains what it references).</summary>
+    private void EncodePatches(nint cb)
+    {
+        if (_patches.Count == 0) return;
+        nint blit = Send(cb, S.blitCommandEncoder);
+        foreach (var (staging, target, offset, length) in _patches)
+            ((delegate* unmanaged<nint, nint, nint, nuint, nint, nuint, nuint, void>)MsgSend)(blit, Sel_copyBuffer, staging, 0, target, offset, length);
+        Send(blit, S.endEncoding);
+        foreach (var p in _patches) Send(p.Staging, S.release);
+        _patches.Clear();
     }
 
     public override void UploadOverlay(Scene3DBuffer slot, Scene3DVertex[] lines)
@@ -371,6 +409,7 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
             EnsureDepth(plan.Width, plan.Height);
             nint cb = Send(_queue, S.commandBuffer);
             if (cb == 0) throw new Viewer3DPresentFault("Metal returned no command buffer.");
+            EncodePatches(cb);
 
             fixed (float* pu = plan.PickUniforms)
             fixed (float* u = plan.Uniforms)
@@ -388,7 +427,7 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
                     for (int i = 0; i < plan.PickDrawCount; i++) { DrawIndexed(enc, plan.PickDraws[i]); draws++; }
                     Send(enc, S.endEncoding);
                     nint blit = Send(cb, S.blitCommandEncoder);
-                    CopyTexel(blit, _pickId, _rb[slot], 0, 4);
+                    CopyTexel(blit, _pickId, _rb[slot], 0, 8);
                     CopyTexel(blit, _pickPos, _rb[slot], 16, 16);
                     Send(blit, S.endEncoding);
                 }
@@ -405,18 +444,24 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
                         Scene3DBuffer.Scene => _vb, Scene3DBuffer.SceneLines => _lines, Scene3DBuffer.Field => _field,
                         Scene3DBuffer.Overlay0 => _overlays[0], Scene3DBuffer.Overlay1 => _overlays[1], _ => _overlays[2],
                     };
-                    if (buf == 0 || (d.Pipeline is Scene3DPipeline.Opaque or Scene3DPipeline.Translucent && _ib == 0)) continue;
+                    if (buf == 0 || (d.Pipeline is Scene3DPipeline.Opaque or Scene3DPipeline.Translucent or Scene3DPipeline.OnTop && _ib == 0)) continue;
                     if (d.Pipeline == Scene3DPipeline.Field && d.First + d.Count > _fieldCount) continue;
                     SendV(e, S.setRenderPipelineState, d.Pipeline switch
                     {
                         Scene3DPipeline.Translucent => _pTrans, Scene3DPipeline.Lines => _pLines,
-                        Scene3DPipeline.Field => _pField, _ => _pOpaque,
+                        Scene3DPipeline.Field => _pField, Scene3DPipeline.Edges => _pEdges,
+                        Scene3DPipeline.OnTop => _pTop, _ => _pOpaque,
                     });
-                    SendV(e, S.setDepthStencilState, d.Pipeline == Scene3DPipeline.Translucent ? _dsNoWrite : _dsWrite);
+                    SendV(e, S.setDepthStencilState, d.Pipeline switch
+                    {
+                        Scene3DPipeline.Translucent => _dsNoWrite,
+                        Scene3DPipeline.Edges or Scene3DPipeline.OnTop => _dsAlways,
+                        _ => _dsWrite,
+                    });
                     ((delegate* unmanaged<nint, nint, nint, nuint, nuint, void>)MsgSend)(e, S.setVertexBuffer, buf, 0, 0);
-                    if (d.Pipeline is Scene3DPipeline.Lines or Scene3DPipeline.Field)
+                    if (d.Pipeline is Scene3DPipeline.Lines or Scene3DPipeline.Field or Scene3DPipeline.Edges)
                         ((delegate* unmanaged<nint, nint, nuint, nuint, nuint, void>)MsgSend)(e, Sel_drawPrimitives,
-                            d.Pipeline == Scene3DPipeline.Lines ? PrimLine : PrimTriangle, (nuint)d.First, (nuint)d.Count);
+                            d.Pipeline == Scene3DPipeline.Field ? PrimTriangle : PrimLine, (nuint)d.First, (nuint)d.Count);
                     else DrawIndexed(e, d);
                     draws++;
                 }
@@ -499,6 +544,7 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
             if (_rbCmd[slot] == 0 || SendU(_rbCmd[slot], S.status) < 4) continue;   // 4 = Completed
             byte* p = (byte*)Send(_rb[slot], S.contents);
             PickedId = *(uint*)p;
+            PickedFace = *(uint*)(p + 4);
             float* w = (float*)(p + 16);
             PickedPoint = new Vector3(w[0], w[1], w[2]);
             PickedSomething = w[3] > 0.5f;
@@ -523,8 +569,11 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
         for (int i = 0; i < 3; i++) Release(ref _overlays[i]);
         for (int i = 0; i < Ring; i++) Release(ref _rb[i]);
         Release(ref _depth); Release(ref _pickId); Release(ref _pickPos); Release(ref _pickDepth);
+        foreach (var p in _patches) Send(p.Staging, S.release);
+        _patches.Clear();
         Release(ref _pOpaque); Release(ref _pTrans); Release(ref _pLines); Release(ref _pPick); Release(ref _pField);
-        Release(ref _dsWrite); Release(ref _dsNoWrite);
+        Release(ref _pEdges); Release(ref _pTop);
+        Release(ref _dsWrite); Release(ref _dsNoWrite); Release(ref _dsAlways);
         if (_queue != 0) Send(_queue, S.release);
         if (_device != 0) Send(_device, S.release);
     }

@@ -10,6 +10,19 @@
 // take the fixed palette below, one set for the light variant and one for the dark, which is how the
 // 2D editors follow the application theme. Ports take the theme's pin colour, as in the section view.
 //
+// FACES AND EDGES (brief-em3d-43 R-em3d43-3a / -5). Every vertex carries the face it lies on, so a vertex
+// the tessellation shares between two faces (a box's corner is on three) is emitted once PER FACE: flat
+// interpolation takes the face from one vertex, and a shared one would give a triangle its neighbour's
+// face. Shading is flat already (the fragment shader's derivative normal), so nothing looks different. A
+// sheet is one face, 0. Each solid and sheet also gets its FEATURE EDGES — where two of its faces meet,
+// or a sheet's boundary — in the line buffer, drawn only when selected (the Object-mode outline).
+//
+// EDIT LOCALITY (R-em3d43-1b). With a Scene3DTessellationCache, a solid whose primitive is the same as
+// last build's is not tessellated again: the elaborator hands back its cached primitive for an unchanged
+// object, so an edit to one object of a thousand tessellates one. An editor also fixes the ORIGIN, so
+// an edit that does not move the bounds' centre leaves every other object's vertex bytes identical — which
+// is what lets the session upload only the changed ranges (Scene3DPatch).
+//
 // THE PALETTE, documented because it is a user-visible choice: dielectrics cycle through six hues in
 // problem order (green, blue, amber, violet, teal, rose) at 35 % opacity, so a stack of two substrates
 // is two colours; air is a pale blue at 8 %; an air-box face is grey for PEC, blue for absorbing,
@@ -22,6 +35,54 @@ using CircuitRF.Design.Theming;
 using CircuitRF.Engine.Em3d;
 
 namespace CircuitRF.Render.Scene3D;
+
+/// <summary>brief-em3d-43 — what an editor's build adds to the viewer's.</summary>
+/// <param name="FaceNames">An object's face names by its name (the elaboration's provenance), or null.</param>
+/// <param name="Cache">Tessellations kept from the last build; null tessellates everything.</param>
+/// <param name="DrawAirBox">False draws no air-box faces or edges — a document with no setup has none.</param>
+/// <param name="Origin">The scene-local origin to use, world metres; null takes the air box's centre.</param>
+public sealed record Scene3DBuildOptions(
+    Func<string, IReadOnlyList<string>?>? FaceNames = null,
+    Scene3DTessellationCache? Cache = null,
+    bool DrawAirBox = true,
+    (double X, double Y, double Z)? Origin = null);
+
+/// <summary>
+/// brief-em3d-43 R-em3d43-1b — tessellations kept between builds, keyed by the primitive (a sheet by its
+/// outline, holes, height and frame). A key a build did not use is dropped at its end, so the cache holds
+/// one scene's worth, never a history. Not thread-safe: one per document, used by one build at a time.
+/// </summary>
+public sealed class Scene3DTessellationCache
+{
+    private Dictionary<object, Em3dTriangleMesh> _kept = [];
+    private Dictionary<object, Em3dTriangleMesh> _used = [];
+    private long _misses;
+
+    /// <summary>Tessellations this cache had to make — one per primitive it had not kept.</summary>
+    public long Misses => Interlocked.Read(ref _misses);
+
+    internal Em3dTriangleMesh Get(object key, Func<Em3dTriangleMesh> make, ref long misses)
+    {
+        if (_used.TryGetValue(key, out var m)) return m;
+        if (!_kept.TryGetValue(key, out m))
+        {
+            m = make();
+            Interlocked.Increment(ref misses);
+            Interlocked.Increment(ref _misses);
+        }
+        _used[key] = m;
+        return m;
+    }
+
+    internal void EndBuild()
+    {
+        (_kept, _used) = (_used, _kept);
+        _used.Clear();
+    }
+
+    /// <summary>How many tessellations are kept.</summary>
+    public int Count => _kept.Count;
+}
 
 /// <summary>Builds a <see cref="Scene3DModel"/> from an <see cref="Em3dProblem"/>.</summary>
 public static class Scene3DBuilder
@@ -56,15 +117,26 @@ public static class Scene3DBuilder
                                      IReadOnlyDictionary<string, Em3dObjectOrigin>? origins = null,
                                      Technology? tech = null, ColorTheme? theme = null,
                                      ColorVariant variant = ColorVariant.Light,
-                                     IReadOnlyList<string>? notes = null)
+                                     IReadOnlyList<string>? notes = null, Scene3DBuildOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(problem);
         origins ??= new Dictionary<string, Em3dObjectOrigin>();
         theme ??= ColorTheme.BuiltIn;
+        options ??= new Scene3DBuildOptions();
         bool dark = variant == ColorVariant.Dark;
 
         var box = problem.Boundary;
-        var origin = ((box.Min.X + box.Max.X) / 2, (box.Min.Y + box.Max.Y) / 2, (box.Min.Z + box.Max.Z) / 2);
+        var origin = options.Origin is { } fixedOrigin
+            ? (fixedOrigin.X, fixedOrigin.Y, fixedOrigin.Z)
+            : ((box.Min.X + box.Max.X) / 2, (box.Min.Y + box.Max.Y) / 2, (box.Min.Z + box.Max.Z) / 2);
+        var cache = options.Cache;
+        Em3dTriangleMesh Tessellate(object key, Func<Em3dTriangleMesh> make)
+        {
+            if (cache is not null) return cache.Get(key, make, ref _tessellations);
+            Interlocked.Increment(ref _tessellations);
+            return make();
+        }
+        IReadOnlyList<string> FacesOf(string name) => options.FaceNames?.Invoke(name) ?? [];
         Vector3 L(Point3 p) => new((float)(p.X - origin.Item1), (float)(p.Y - origin.Item2), (float)(p.Z - origin.Item3));
 
         var conductorColours = Em3dSectionRenderer.ObjectColours(problem, origins, tech, theme, variant);
@@ -104,28 +176,32 @@ public static class Scene3DBuilder
                     break;
                 }
             }
-            Interlocked.Increment(ref _tessellations);
-            var mesh = Em3dTessellation.Of(s);
+            var solid = s;
+            var mesh = Tessellate(s.Primitive, () => Em3dTessellation.Of(solid));
             var (m, slot) = materials.TryGetValue(s.Material, out var mt) ? (mt.m, mt.i) : ((Em3dMaterial?)null, -1);
             b.Object(new Scene3DObject
             {
                 Id = 0, Name = s.Name, Kind = kind, Material = s.Material, MaterialValues = m, MaterialSlot = slot,
                 Rgba = rgba, Translucent = translucent,
                 InitiallyVisible = s.Role != Em3dRole.Air && s.Name != outermost,
-            }, mesh);
+                FaceNames = FacesOf(s.Name),
+            }, mesh, faces: true);
         }
 
         // ── sheets ───────────────────────────────────────────────────────────────────────────
         foreach (var sh in problem.Sheets)
         {
             var c = conductorColours.TryGetValue(sh.Name, out var sk) ? sk : new SkiaSharp.SKColor(150, 150, 155);
-            Interlocked.Increment(ref _tessellations);
+            var sheet = sh;
+            var mesh = Tessellate((sh.Outline, sh.Holes, sh.Z, sh.Frame), () => Em3dTessellation.OfSheet(sheet));
             var (m, slot) = materials.TryGetValue(sh.Material, out var mt) ? (mt.m, mt.i) : ((Em3dMaterial?)null, -1);
+            var names = FacesOf(sh.Name);
             b.Object(new Scene3DObject
             {
                 Id = 0, Name = sh.Name, Kind = Scene3DKind.Sheet, Material = sh.Material, MaterialValues = m,
                 MaterialSlot = slot, Rgba = Scene3DVertex.Pack(c.Red, c.Green, c.Blue, 255),
-            }, Em3dTessellation.OfSheet(sh));
+                FaceNames = names.Count > 0 ? names : SheetFaceNames,
+            }, mesh, faces: true, sheet: true);
         }
 
         // ── ports: a named sheet and a direction arrow ───────────────────────────────────────
@@ -142,27 +218,34 @@ public static class Scene3DBuilder
         }
 
         // ── the air box: its six faces (hidden until asked for) and its twelve edges ─────────
-        foreach (var (face, kind, corners) in Faces(box))
+        if (options.DrawAirBox)
         {
-            var (r, g, bl) = kind switch
+            foreach (var (face, kind, corners) in Faces(box))
             {
-                Em3dBoundaryKind.Pec       => ((byte)150, (byte)150, (byte)158),
-                Em3dBoundaryKind.Absorbing => ((byte)80, (byte)130, (byte)235),
-                Em3dBoundaryKind.Pmc       => ((byte)235, (byte)140, (byte)50),
-                _                          => ((byte)160, (byte)80, (byte)210),
-            };
-            b.Object(new Scene3DObject
-            {
-                Id = 0, Name = Em3dAirBox.FaceName(face), Kind = Scene3DKind.Boundary, Boundary = kind,
-                Rgba = Scene3DVertex.Pack(r, g, bl, FaceAlpha), Translucent = true, InitiallyVisible = false,
-            }, new Em3dTriangleMesh(corners, [new Em3dTriangle(0, 1, 2, ""), new Em3dTriangle(0, 2, 3, "")]));
+                var (r, g, bl) = kind switch
+                {
+                    Em3dBoundaryKind.Pec       => ((byte)150, (byte)150, (byte)158),
+                    Em3dBoundaryKind.Absorbing => ((byte)80, (byte)130, (byte)235),
+                    Em3dBoundaryKind.Pmc       => ((byte)235, (byte)140, (byte)50),
+                    _                          => ((byte)160, (byte)80, (byte)210),
+                };
+                b.Object(new Scene3DObject
+                {
+                    Id = 0, Name = Em3dAirBox.FaceName(face), Kind = Scene3DKind.Boundary, Boundary = kind,
+                    Rgba = Scene3DVertex.Pack(r, g, bl, FaceAlpha), Translucent = true, InitiallyVisible = false,
+                }, new Em3dTriangleMesh(corners, [new Em3dTriangle(0, 1, 2, ""), new Em3dTriangle(0, 2, 3, "")]));
+            }
+            uint edge = Scene3DVertex.Pack(ink.R, ink.G, ink.B, 255);
+            b.Object(new Scene3DObject { Id = 0, Name = "airbox", Kind = Scene3DKind.Boundary, Rgba = edge },
+                     null, BoxEdges(box).Select(q => (q, edge)));
         }
-        uint edge = Scene3DVertex.Pack(ink.R, ink.G, ink.B, 255);
-        b.Object(new Scene3DObject { Id = 0, Name = "airbox", Kind = Scene3DKind.Boundary, Rgba = edge },
-                 null, BoxEdges(box).Select(q => (q, edge)));
 
+        cache?.EndBuild();
         return b.Finish(generation, origin, problem, notes);
     }
+
+    /// <summary>A sheet is one surface, face 0.</summary>
+    public static readonly IReadOnlyList<string> SheetFaceNames = ["surface"];
 
     private static Scene3DKind KindOf(Em3dSolid s, IReadOnlyDictionary<string, Em3dObjectOrigin> origins)
     {
@@ -283,6 +366,10 @@ public static class Scene3DBuilder
 
     // ── accumulation ─────────────────────────────────────────────────────────────────────────
 
+    /// <summary>The face a triangle of an unnamed-face primitive (a sweep, a sphere) carries: one face, and
+    /// no feature edges drawn for it.</summary>
+    public const int FaceUnknown = 0xFFFE;
+
     private sealed class Accumulator(Func<Point3, Vector3> local)
     {
         private readonly List<Scene3DObject> _objects = [];
@@ -290,8 +377,13 @@ public static class Scene3DBuilder
         private readonly List<uint[]> _objIndices = [];
         private readonly List<Scene3DVertex> _lines = [];
         private readonly List<Scene3DLineBatch> _lineBatches = [];
+        private readonly List<(uint Id, List<Scene3DVertex> Lines)> _edges = [];
 
-        public void Object(Scene3DObject o, Em3dTriangleMesh? mesh, IEnumerable<(Point3 P, uint Rgba)>? lines = null)
+        /// <summary><paramref name="faces"/>: tag each vertex with its triangle's face (un-welding a vertex
+        /// shared by two faces) and collect the feature edges. <paramref name="sheet"/>: the whole mesh is
+        /// face 0.</summary>
+        public void Object(Scene3DObject o, Em3dTriangleMesh? mesh, IEnumerable<(Point3 P, uint Rgba)>? lines = null,
+                           bool faces = false, bool sheet = false)
         {
             uint id = (uint)(_objects.Count + 1);
             var obj = new Scene3DObject
@@ -299,11 +391,13 @@ public static class Scene3DBuilder
                 Id = id, Name = o.Name, Kind = o.Kind, Material = o.Material, MaterialValues = o.MaterialValues,
                 MaterialSlot = o.MaterialSlot, Rgba = o.Rgba, Translucent = o.Translucent,
                 InitiallyVisible = o.InitiallyVisible, PortNumber = o.PortNumber, Boundary = o.Boundary,
+                FaceNames = o.FaceNames,
             };
             var min = new Vector3(float.MaxValue);
             var max = new Vector3(float.MinValue);
             uint[] idx = [];
-            if (mesh is not null)
+            obj.FirstVertex = _verts.Count;
+            if (mesh is not null && !faces)
             {
                 int first = _verts.Count;
                 foreach (var p in mesh.Vertices)
@@ -321,6 +415,51 @@ public static class Scene3DBuilder
                     idx[w++] = (uint)(first + t.C);
                 }
             }
+            else if (mesh is not null)
+            {
+                // One scene vertex per (mesh vertex, face): a vertex's face must be its triangle's.
+                var at = new Dictionary<(int V, int F), uint>();
+                var q = new Vector3[mesh.Vertices.Count];
+                for (int k = 0; k < q.Length; k++) { q[k] = local(mesh.Vertices[k]); min = Vector3.Min(min, q[k]); max = Vector3.Max(max, q[k]); }
+                uint V(int v, int f)
+                {
+                    if (at.TryGetValue((v, f), out uint i)) return i;
+                    i = (uint)_verts.Count;
+                    _verts.Add(new Scene3DVertex(q[v].X, q[v].Y, q[v].Z, id, o.Rgba, (uint)f));
+                    at[(v, f)] = i;
+                    return i;
+                }
+                idx = new uint[mesh.Triangles.Count * 3];
+                int w = 0;
+                // Each undirected edge's faces, in first-seen order, for the feature edges.
+                var edgeFaces = new Dictionary<(int, int), (int F0, int F1, int Count)>();
+                void Edge(int a, int c, int f)
+                {
+                    var key = a < c ? (a, c) : (c, a);
+                    edgeFaces[key] = edgeFaces.TryGetValue(key, out var e) ? (e.F0, e.Count == 1 ? f : e.F1, e.Count + 1) : (f, -1, 1);
+                }
+                foreach (var t in mesh.Triangles)
+                {
+                    int f = sheet ? 0 : t.Face;
+                    if (f < 0) f = FaceUnknown;
+                    idx[w++] = V(t.A, f);
+                    idx[w++] = V(t.B, f);
+                    idx[w++] = V(t.C, f);
+                    Edge(t.A, t.B, f); Edge(t.B, t.C, f); Edge(t.C, t.A, f);
+                }
+                var edges = new List<Scene3DVertex>();
+                foreach (var ((a, c), (f0, f1, count)) in edgeFaces)
+                {
+                    if (f0 == FaceUnknown) continue;                            // a sweep or a sphere: no named faces
+                    bool feature = count == 1 ? sheet : f0 != f1;               // a sheet's rim; where two faces meet
+                    if (!feature) continue;
+                    uint packed = (uint)(f0 & 0xFFFF) | ((uint)((count == 1 ? 0xFFFF : f1) & 0xFFFF) << 16);
+                    edges.Add(new Scene3DVertex(q[a].X, q[a].Y, q[a].Z, id, o.Rgba, packed));
+                    edges.Add(new Scene3DVertex(q[c].X, q[c].Y, q[c].Z, id, o.Rgba, packed));
+                }
+                if (edges.Count > 0) _edges.Add((id, edges));
+            }
+            obj.VertexCount = _verts.Count - obj.FirstVertex;
             if (lines is not null)
             {
                 int first = _lines.Count;
@@ -365,11 +504,20 @@ public static class Scene3DBuilder
             if (bmin.X > bmax.X) { bmin = new Vector3(-1e-3f); bmax = new Vector3(1e-3f); }
             if (cmin.X > cmax.X) { cmin = bmin; cmax = bmax; }
 
+            // The feature edges follow every ordinary line, so LineBatches' offsets are what they were.
+            var edgeBatches = new List<Scene3DLineBatch>(_edges.Count);
+            foreach (var (id, lines) in _edges)
+            {
+                edgeBatches.Add(new Scene3DLineBatch(id, _lines.Count, lines.Count));
+                _lines.AddRange(lines);
+            }
+
             return new Scene3DModel
             {
                 Generation = generation, Origin = origin,
                 Vertices = [.. _verts], Indices = indices, LineVertices = [.. _lines],
                 Objects = [.. _objects], Batches = [.. batches], LineBatches = [.. _lineBatches],
+                EdgeBatches = [.. edgeBatches],
                 BoundsMin = bmin, BoundsMax = bmax, ContentMin = cmin, ContentMax = cmax,
                 Problem = problem, Notes = notes ?? [],
             };

@@ -9,7 +9,8 @@
 //   * the KERNEL loop is Scene3DSource: a change to the .cem, the layout, the technology or the .wBond
 //     regenerates the problem in the background, and the view keeps drawing the last finished scene.
 //
-// Read only (R-em3d28-5): nothing here writes the .cem. F4 is the editor.
+// Read only (R-em3d28-5): nothing here writes the .cem. The .c3d editor (brief-em3d-43, src/Ui/ThreeD) is
+// this same view model built with a scene builder of its own and an IViewer3DEditHost — one pane, two uses.
 
 using System.Collections.ObjectModel;
 using System.Globalization;
@@ -66,7 +67,7 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
     /// <summary>A regeneration waits this long after the last change, so a burst of edits is one build.</summary>
     public const int RegenerateDebounceMs = 250;
 
-    private readonly Func<Viewer3DInputs> _prepare;
+    private readonly Func<object?> _prepare;
     private readonly Func<string?> _resultsRoot;
     private readonly Action<Action> _post;
     private System.Threading.Timer? _debounce;
@@ -121,15 +122,34 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
 
     public Viewer3DViewModel(string cemPath, Func<Viewer3DInputs> prepare, Func<Viewer3DBackend> backend,
                              Func<string?> resultsRoot, Action<Action> post)
+        : this(cemPath, Path.GetFileNameWithoutExtension(cemPath) + " — 3D", () => prepare(), Build, backend, resultsRoot, post)
     {
-        CemPath = cemPath;
-        Title = Path.GetFileNameWithoutExtension(cemPath) + " — 3D";
-        _prepare = prepare;
+    }
+
+    /// <summary>brief-em3d-43 — a pane whose scene comes from <paramref name="build"/>, handed the snapshot
+    /// <paramref name="snapshot"/> takes on the UI thread for each generation (the .c3d editor's elaboration).</summary>
+    public Viewer3DViewModel(string path, string title, Func<object?> snapshot,
+                             Func<long, object?, CancellationToken, Scene3DModel> build, Func<Viewer3DBackend> backend,
+                             Func<string?> resultsRoot, Action<Action> post)
+    {
+        CemPath = path;
+        Title = title;
+        _prepare = snapshot;
         _resultsRoot = resultsRoot;
         _post = post;
         Session = new Viewer3DSession(backend);
-        Source = new Scene3DSource(Build);
+        Source = new Scene3DSource(build);
         Source.SceneReady += s => _post(() => Adopt(s));
+    }
+
+    /// <summary>Raised on the UI thread after a new scene has been adopted.</summary>
+    public event Action? SceneAdopted;
+
+    /// <summary>brief-em3d-43 — the editor's lengths follow its document's display unit.</summary>
+    public void SetLengthFormat(Func<double, string> format)
+    {
+        FormatLength = format;
+        RefreshLengthTexts();
     }
 
     // ── regeneration ────────────────────────────────────────────────────────────────────────
@@ -140,7 +160,7 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
         if (_disposed) return;
         var inputs = _prepare();
         long gen = Source.Request(inputs);
-        _inputs[gen] = inputs;
+        if (inputs is Viewer3DInputs vi) _inputs[gen] = vi;
         IsRegenerating = true;
     }
 
@@ -220,7 +240,9 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
         foreach (long old in _inputs.Keys.Where(k => k <= scene.Generation).ToList()) _inputs.Remove(old);
         View.Adopt(scene, _objectNames);
         _objectNames = [.. scene.Objects.Select(o => o.Name)];
+        var previous = Scene;
         Scene = scene;
+        HitCycle.SceneChanged(scene.Generation);
         IsRegenerating = scene.Generation < Source.Requested;
         // An empty scene's first note is its refusal, which Status already says.
         Notes = string.Join("\n", scene.Objects.Length == 0 ? scene.Notes.Skip(1) : scene.Notes);
@@ -245,8 +267,10 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
             View.Camera.SceneRadius = (scene.BoundsMax - scene.BoundsMin).Length() * 0.5f;
         }
         RebuildTree();
+        RemapSelection(previous, scene);
         RefreshSolverOverlays();
         OnPropertyChanged(nameof(Status));
+        SceneAdopted?.Invoke();
         FrameRequested?.Invoke();
     }
 
@@ -323,7 +347,18 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
 
     partial void OnSelectedItemChanged(Viewer3DTreeItem? value)
     {
-        View.Selected = value?.Id ?? 0;
+        // brief-em3d-43 — the tree selects an OBJECT, so it selects in Object mode.
+        if (!_selectingFromTree)
+        {
+            _selectingFromTree = true;
+            try
+            {
+                if (value is not null && SelectMode != Render.Scene3D.Edit.Scene3DSelectMode.Object)
+                    SelectMode = Render.Scene3D.Edit.Scene3DSelectMode.Object;
+                SetSelection(value is null ? [] : [Render.Scene3D.Edit.Scene3DItem.OfObject(value.Id)]);
+            }
+            finally { _selectingFromTree = false; }
+        }
         // brief-em3d-29 — a selected solid is where a volume field's surface is drawn.
         if (ShowField && FieldOnSurfaces && SelectedFieldQuantity is { OnBoundary: false }) ScheduleFieldGeometry();
         FrameRequested?.Invoke();
@@ -361,9 +396,10 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
         if (hit)
         {
             var (x, y, z) = Scene.ToWorld(point);
+            _lastCursorWorld = (x, y, z);
             CursorText = $"x {FormatLength(x)}   y {FormatLength(y)}   z {FormatLength(z)}";
         }
-        else CursorText = "";
+        else { CursorText = ""; _lastCursorWorld = null; }
     }
 
     /// <summary>The tooltip: name, material, and the values at the setup's operating temperature.</summary>
@@ -385,6 +421,7 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
 
     private float _aspect = 1.6f;
     private string _hoverField = "";
+    private (double X, double Y, double Z)? _lastCursorWorld;
 
     public void Resized(float width, float height)
     {
@@ -395,12 +432,15 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
     public void Hover(float x, float y)
     {
         View.CursorX = x; View.CursorY = y;
+        HitCycle.CursorMoved(x, y);
         FrameRequested?.Invoke();
     }
 
     public void Leave()
     {
         View.CursorX = View.CursorY = -1;
+        HoveredItem = null;
+        View.HoveredFace = -1;
         if (View.Hovered != 0) { View.Hovered = 0; HoverText = ""; }
         CursorText = "";
         FrameRequested?.Invoke();
@@ -417,14 +457,6 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
         FrameRequested?.Invoke();
     }
 
-    /// <summary>A click selects what is under the cursor, and the tree scrolls to it.</summary>
-    public void Click()
-    {
-        uint id = View.Hovered;
-        var item = id != 0 && _items.TryGetValue(id, out var it) ? it : null;
-        SelectedItem = item;
-        if (item is not null) RevealRequested?.Invoke(item);
-    }
 
     // ── the toolbar ─────────────────────────────────────────────────────────────────────────
 
@@ -441,6 +473,7 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
 
     [RelayCommand] private void Fit()
     {
+        CountFit();
         View.Camera.FitBounds(Scene.ContentMin, Scene.ContentMax, _aspect);
         View.Camera.SceneCentre = (Scene.BoundsMin + Scene.BoundsMax) * 0.5f;
         View.Camera.SceneRadius = (Scene.BoundsMax - Scene.BoundsMin).Length() * 0.5f;

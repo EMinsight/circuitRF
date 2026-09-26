@@ -878,6 +878,7 @@ public partial class WorkspaceViewModel
                 case "layout":      await OpenOrActivateLayoutAsync(docPath); break;
                 case "tech":        OpenOrActivateTech(docPath); break;
                 case "emsetup":     OpenOrActivateEmSetup(docPath); break;
+                case "c3d":         OpenOrActivateC3dEditor(docPath); break;
                 // Read unvalidated on the ordinary open path too, so a restored library that is
                 // malformed comes back in the one editor that can correct it rather than not at all.
                 case "partlibrary": OpenOrActivatePartLibrary(docPath); break;

@@ -29,6 +29,9 @@ public sealed class Viewer3DSession(Func<Viewer3DBackend> create) : IDisposable
     /// <summary>How many times a backend has been created — a re-dock must not add one.</summary>
     public int BackendsCreated { get; private set; }
 
+    /// <summary>How many new scenes were uploaded as a patch rather than whole.</summary>
+    public int PatchesApplied { get; private set; }
+
     /// <summary>Counters on the UI lane: the pane's per-frame share on the UI thread.</summary>
     public FrameCounters Ui { get; } = new("ui");
 
@@ -71,7 +74,13 @@ public sealed class Viewer3DSession(Func<Viewer3DBackend> create) : IDisposable
     {
         if (!ReferenceEquals(scene, _uploadedScene) || scene.Generation != _uploadedGeneration)
         {
-            b.UploadScene(scene);
+            // brief-em3d-43 gate 6: a scene with the last one's layout rewrites only what changed.
+            if (_uploadedScene is { } old && Scene3DPatch.Between(old, scene) is { } patch)
+            {
+                PatchesApplied++;
+                b.PatchScene(scene, patch);
+            }
+            else b.UploadScene(scene);
             _uploadedScene = scene;
             _uploadedGeneration = scene.Generation;
         }

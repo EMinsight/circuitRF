@@ -35761,3 +35761,52 @@ every backend's largest 2D texture, and the status line says when the cap reduce
 Avalonia bitmap is built from the composed pixels directly — the PNG-encode-then-decode every other copy
 here uses costs hundreds of megabytes each way at that size. That constructor copies the pixels and keeps
 RGBA order (checked in a headless Avalonia 12.0.3 scratch app; the test project has no Avalonia platform).
+
+## The 3D editor: window, modes and selection — brief-em3d-43 (2026-09-26)
+
+Built: `src/Ui/ThreeD/` (the editor view model, its undo entry, Properties, the Dock document),
+`src/Ui/Views/ThreeD/C3dEditorView`, `Viewer3DViewModel.Selection.cs` (modes, hover, click, B, keys, the
+context menu's frame — shared by the editor and the read-only viewer), `Viewer3DContextMenu`, the `3D`
+menu (`WorkspaceViewModel.ThreeD.cs`, both menu surfaces), and the backends' face pick and selection
+passes. Gates: `tests/Ui.Tests/ThreeD/C3dEditorGateTests.cs` and `GpuFirewallTests.Gate9`. **No window was
+seen from the agent's session.** The Metal backend was driven offscreen: the face comes back from the
+RG32Uint target, a Face-mode selection's edge and on-top draws run, and a patched scene still picks.
+**D3D11 and Vulkan compile and have not run** — both gained the face attribute, the RG32Uint target, two
+pipelines and a partial upload.
+
+- **The editor IS the viewer.** `C3dEditorViewModel` builds a `Viewer3DViewModel` with its own scene
+  builder (the elaboration, through `Scene3DBuilder`) and registers itself as `IViewer3DEditHost`. With no
+  host (a `.cem`'s Show 3D) every writing command is ABSENT from the menu, not disabled, and Delete does
+  nothing.
+- **The keys moved in every 3D pane** (owner decision D3): O / F / V are the modes, Home fits, P toggles
+  the projection. Mode keys wait for a drag in progress and ignore any modifier (Cmd+V stays paste).
+  Esc during a drag ends the drag (the camera stays: a camera move is not an edit); otherwise it clears.
+- **Shift + left press used to PAN.** It is Shift-CLICK now (add to / remove from the selection); a
+  Shift + left DRAG still pans — decided on release by whether it moved — and Alt + left drag pans too.
+- **A selection means something only in its mode**: changing mode clears it. The tree selects OBJECTS,
+  so a tree click switches the pane to Object mode.
+- **Selection survives a regeneration by NAME** (an edit renumbers the scene). A rename tells the pane
+  first (`ExpectRename`), or the renamed object would drop out of its own selection.
+- **An undo entry holds only the objects it changed**, as `C3dPersistence` spells them (also the
+  elaborator's cache key, so an undone object's elaboration is a cache hit). An entry is replacements, or
+  removals, or insertions — never a mix — so an index has one meaning. A gesture (brief 46's drags)
+  edits as it goes and pushes ONE entry on release; its first Execute is a no-op.
+- **The display unit is a preference**: it dirties the document (`IsDirty` = the stack's `IsModified` or
+  the preference flag) and is saved, adds no entry, requests no build, and every length re-formats —
+  cursor, selection line, Properties.
+- **Right-click after B keeps the B-cycled item** (R-em3d43-4e): the hovered item is selected first only
+  when B's list is not live. The menu's first line NAMES what it acts on.
+- **An instance's parts select and read, and edit nothing**: the menu offers Measure / Copy Face as Sheet
+  / Push into Cell (disabled, naming the brief that brings each) and Select Owning Instance; Delete of
+  one says so in the status line.
+- **The editor draws no air box**: the document has no setup until brief 49. Drawn conductors all take
+  the stackup ink colour — they have no drawing layer — which the owner may want by material later.
+- **NOT BUILT: the per-batch transform** (§5). Nothing in this brief uses it, and it is a per-DRAW
+  constant on three backends (Metal setVertexBytes, a D3D11 cbuffer per draw, Vulkan push constants) —
+  plus D3D11's SV_InstanceID ignores StartInstanceLocation, so the cheap instance-index trick fails
+  there. Brief 46's drag preview and brief 48's instances are its first users and should build it.
+- **Failing before this brief, fixed by it**: `DocumentTabContextMenuTests`' two guards had failed since
+  brief 28 added `Viewer3DDocument` without naming it in the save-route table or making it file-backed.
+  It is now `IFileBackedDocument` (Reveal shows its `.cem`) and named in `TabSave.cs` with no route.
+- **`FieldTests.Gate5` read the phase at uniform index 28**, a literal; the field block moved behind the
+  selection list, so it reads `Scene3DFramePlan.FieldAt` now.

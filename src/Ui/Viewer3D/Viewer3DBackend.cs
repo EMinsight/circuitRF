@@ -42,6 +42,11 @@ public abstract class Viewer3DBackend : IDisposable
     /// <summary>Replaces the scene's vertex, index and line buffers. Counts the bytes.</summary>
     public abstract void UploadScene(Scene3DModel scene);
 
+    /// <summary>brief-em3d-43 R-em3d43-1b — rewrites only <paramref name="patch"/>'s ranges of the buffers the
+    /// last <see cref="UploadScene"/> (or patch) left, to make them <paramref name="scene"/>'s. Counts the
+    /// bytes. A backend that cannot patch uploads the whole scene instead, which is always correct.</summary>
+    public virtual void PatchScene(Scene3DModel scene, Scene3DPatch patch) => UploadScene(scene);
+
     /// <summary>Replaces one overlay slot's line buffer (<see cref="Scene3DBuffer.Overlay0"/>…2).</summary>
     public abstract void UploadOverlay(Scene3DBuffer slot, Scene3DVertex[] lines);
 
@@ -86,6 +91,9 @@ public abstract class Viewer3DBackend : IDisposable
     /// <summary>The object the last completed ID pass found under the cursor (0 for none) and the
     /// world point it hit, scene-local.</summary>
     public uint PickedId { get; protected set; }
+    /// <summary>brief-em3d-43 R-em3d43-3a — the face of <see cref="PickedId"/> the ID pass found
+    /// (<see cref="Scene3DVertex.NoFace"/> for none): the second half of the RG32Uint target.</summary>
+    public uint PickedFace { get; protected set; } = Scene3DVertex.NoFace;
     public Vector3 PickedPoint { get; protected set; }
     public bool PickedSomething { get; protected set; }
 

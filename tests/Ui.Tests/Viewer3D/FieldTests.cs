@@ -405,7 +405,7 @@ public sealed class FieldTests(ITestOutputHelper output)
             FieldUniforms.Write(view.Field, q, scale, CircuitRF.Render.Scene3D.ColorMap3D.Viridis, 2 * Math.PI * i / 100);
             plan.Plan(scene, view, 800, 500, false, false, none, none, none, geometry);
             session.Frame(i % 3, plan, (ulong)i + 1, scene, none, none, none, false, geometry);
-            cosines.Add(plan.Uniforms[28]);           // the phase reached the uniform block
+            cosines.Add(plan.Uniforms[CircuitRF.Render.Scene3D.Scene3DFramePlan.FieldAt]);   // the phase reached the uniform block
         }
         Assert.Equal(first, fake.Counters.UploadBytesTotal);
         Assert.Equal(1, fake.FieldUploads);

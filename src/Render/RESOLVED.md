@@ -3816,3 +3816,31 @@ parasitics) carries a small standing wave: |V1|/h and |V2|/h differ by 13 %, and
 (1.842e-9) sat between them. The voltage at the centre is taken from both ends by the TEM line's own
 equation, V(ℓ/2) = (V1 + V2)/(2 cos βℓ/2), β = ω√εr/c: **0.96 %** from the dumped |E|. The port voltages
 are the port probes transformed with openEMS's own normalisation (2·Δt·Σ u e^{−jωt}), the one its dump uses.
+
+## Face IDs, selection passes and partial uploads — brief-em3d-43 (2026-09-26)
+
+- **A vertex carries its FACE (stride 20 → 24, the face last so no older offset moved), and a vertex the
+  tessellation SHARES between faces is emitted once per face.** Flat interpolation takes the face from one
+  vertex; a box corner shared by three faces would give a triangle its neighbour's face. Shading was
+  already flat (derivative normals), so nothing looks different; the scene simply holds more vertices.
+  A sheet is face 0 ("surface"); a sweep's or sphere's unnamed faces are one face, `FaceUnknown`, with no
+  feature edges.
+- **The ID pass writes (object, face) to RG32Uint**; `Scene3DPicking.PairAtPixel` is its software twin and
+  `IdAtPixel` is now its object half, so brief 28's gate 9 compares exactly what it did.
+- **The selection is a uniform list of 64 (object, face) pairs** (`SelectionLimit`). Beyond it the
+  selection is still whole — tree, Properties, commands — but only the first 64 highlight, and the status
+  line says so. A per-object selection-bit buffer would lift that, at a storage buffer on three backends.
+- **Selected edges and the on-top face are two pipelines with the depth test OFF**, drawn last and only
+  for selected objects; `fs_edge`/`fs_top` discard everything unselected. An edge vertex carries its two
+  faces packed in 16 bits each — so a solid with more than 65,534 faces loses its outline, not its pick.
+- **B's list is a CPU ray over a BVH of object bounds**, built once per scene (a scene is immutable, so it
+  is keyed by the scene object) and counted. Face mode keeps a face crossed twice (enter, leave); a ray
+  down the shared diagonal of a face's two triangles is one crossing (same face, same depth, deduped).
+- **An edit uploads only what changed** (`Scene3DPatch`): when two scenes' layouts match, each object's
+  bytes are compared and only differing ranges go up. A RENAME changes no byte and uploads nothing; a
+  move uploads that object's vertices and edges. Three things make layouts match: the editor FIXES the
+  scene origin while the content stays within its own size of it, the tessellation cache hands back the
+  same mesh for an unchanged primitive (records compare by value, so even a re-lowered but equal box is a
+  hit), and object IDs are construction order. Metal patches with a blit on the queue (ordered after
+  every frame already committed); D3D11 with UpdateSubresource (scene buffers are DEFAULT now, not
+  immutable); Vulkan waits idle and copies from staging, as a whole upload already did.

@@ -2056,6 +2056,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                     LayoutDocument alad                     => alad.FilePath,
                     TechDocument atech                      => atech.FilePath,
                     EmSetupDocument aem                  => aem.FilePath,
+                    ThreeD.C3dEditorDocument ac3d        => ac3d.FilePath,
                     PartLibraryDocument alib                => alib.FilePath,
                     _                                       => null,
                 };
@@ -2647,6 +2648,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         LayoutDocument       { FilePath: { } p }                      => (p, "layout"),
         TechDocument         techDoc                                  => (techDoc.FilePath, "tech"),
         EmSetupDocument      emDoc                                    => (emDoc.FilePath, "emsetup"),
+        ThreeD.C3dEditorDocument c3dDoc                               => (c3dDoc.FilePath, "c3d"),
         PartLibraryDocument  libDoc                                   => (libDoc.FilePath, "partlibrary"),
         MarkdownDocument     mdDoc                                    => (mdDoc.FilePath, "markdown"),
         _                                                             => (null, null),
@@ -2749,6 +2751,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                     break;
                 case "emsetup" when File.Exists(absPath):
                     OpenOrActivateEmSetup(absPath);
+                    break;
+                case "c3d" when File.Exists(absPath):
+                    OpenOrActivateC3dEditor(absPath);
                     break;
                 case "partlibrary" when File.Exists(absPath):
                     OpenOrActivatePartLibrary(absPath);
@@ -3131,6 +3136,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 SmithChartDocument smd           => smd.FilePath,
                 TechDocument td                  => td.FilePath,
                 EmSetupDocument emd           => emd.FilePath,
+                ThreeD.C3dEditorDocument c3dd    => ThreeD.C3dEditorDocument.KeyFor(c3dd.FilePath),
                 PartLibraryDocument plibd        => plibd.FilePath,
                 MarkdownDocument mdd             => mdd.FilePath,
                 CellParameterEditorDocument cpd  => Path.GetDirectoryName(cpd.ViewModel.EditModel.CcellPath),
@@ -11009,14 +11015,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 if (ext == ".csym")  { OpenOrActivateSymbol(node.AbsolutePath);    return; }
                 if (ext == ".csch")  { OpenOrActivateSchematic(node.AbsolutePath); return; }
                 if (ext == ".clay")  { _ = OpenOrActivateLayoutAsync(node.AbsolutePath); return; }
-                // brief-em3d-41: a 3D view is listed, kept and checked, and nothing draws one yet —
-                // brief 43 opens its window. Said, rather than a double-click that does nothing.
-                if (ext == CellFolder.ViewExtension(ViewType.ThreeD))
-                {
-                    Messages.Info($"'{Path.GetFileName(node.AbsolutePath)}' is a 3D view. This build lists, "
-                                + "creates and checks 3D views; the 3D editor is not in it yet.");
-                    return;
-                }
+                // brief-em3d-43: a 3D view opens in the 3D editor.
+                if (ext == CellFolder.ViewExtension(ViewType.ThreeD)) { OpenOrActivateC3dEditor(node.AbsolutePath); return; }
                 // other view-file types → deferred no-op
                 return;
 
@@ -15731,6 +15731,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         UpdateSchematicFromLayoutCommand.NotifyCanExecuteChanged();
         // Design ▸ Find Instance… — a schematic or a layout; both fan-outs, per the gotcha above.
         FindInstanceCommand.NotifyCanExecuteChanged();
+        // brief-em3d-43 — the 3D menu: every item needs an active 3D document; both fan-outs.
+        RaiseThreeDMenuChanged();
 
         // A dockable may have just been floated into a Dock-generated HostWindow.
         // Defer one frame (Background) so the HostWindow is fully shown before we scan.
@@ -16024,6 +16026,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         UpdateSchematicFromLayoutCommand.NotifyCanExecuteChanged();
         // Design ▸ Find Instance… — a schematic or a layout; both fan-outs, per the gotcha above.
         FindInstanceCommand.NotifyCanExecuteChanged();
+        // brief-em3d-43 — the 3D menu: every item needs an active 3D document; both fan-outs.
+        RaiseThreeDMenuChanged();
     }
 
     // ---- Dock float — per-window undo wiring --------------------------------
@@ -16249,6 +16253,22 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             }
         }
 
+        // brief-em3d-43 — a 3D view, like an EM setup, is always materialized.
+        if (dockable is ThreeD.C3dEditorDocument c3dCloseDoc && c3dCloseDoc.IsDirty)
+        {
+            var dlg = new Views.Dialogs.SaveChangesDialog(
+                $"Save '{Path.GetFileName(c3dCloseDoc.FilePath)}' before closing?",
+                title: "Unsaved Changes");
+            await dlg.ShowDialog(window);
+
+            switch (dlg.Result)
+            {
+                case SaveChangesResult.Cancel:   return false;
+                case SaveChangesResult.DontSave: return true;
+                case SaveChangesResult.Save:     return SaveC3d(c3dCloseDoc);
+            }
+        }
+
         // A part library, like an EM setup, is always materialized — R-rail24-1a routes it through
         // the same open path precisely so that it gets this without a second implementation.
         if (dockable is PartLibraryDocument libCloseDoc && libCloseDoc.IsDirty)
@@ -16398,6 +16418,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         // brief-em3d-28 R-em3d28-5: keep where its camera was, then free its GPU session.
         if (dockable is Viewer3D.Viewer3DDocument closed3D) Closed3DView(closed3D);
+        // brief-em3d-43: stop following its files and free its GPU session.
+        if (dockable is ThreeD.C3dEditorDocument closedC3d) ClosedC3dEditor(closedC3d);
 
         // Unsubscribe from cell edit model events to prevent memory leaks.
         if (dockable is CellParameterEditorDocument cellDoc)
@@ -16475,6 +16497,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             LayoutDocument ld        => ld.IsDirty,
             TechDocument td          => td.IsDirty,
             EmSetupDocument emd   => emd.IsDirty,
+            ThreeD.C3dEditorDocument c3d => c3d.IsDirty,
             PartLibraryDocument plb  => plb.IsDirty,
             _                        => HasAnyDirtyWork(),
         };
@@ -16605,6 +16628,19 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 return;
             }
 
+            // SingleDoc scope for an active 3D view (brief-em3d-43) — never scratch, a direct write.
+            if (ActiveSaveScope == SaveScope.SingleDoc &&
+                ResolveActiveDocumentForCommands() is ThreeD.C3dEditorDocument singleC3d)
+            {
+                if (!singleC3d.IsDirty)
+                {
+                    Messages.Info("Nothing to save.");
+                    return;
+                }
+                SaveC3d(singleC3d);
+                return;
+            }
+
             // SingleDoc scope for an active part library — R-rail24-1a: never scratch, so a direct
             // write, exactly like the two editors above.
             if (ActiveSaveScope == SaveScope.SingleDoc &&
@@ -16656,6 +16692,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             var dirtyEmDocs = Writable(_openDocsByPath.Values
                 .OfType<EmSetupDocument>()
                 .Where(d => d.IsDirty));
+            var dirtyC3dDocs = Writable(_openDocsByPath.Values
+                .OfType<ThreeD.C3dEditorDocument>()
+                .Where(d => d.IsDirty));
             var dirtyPartLibraries = Writable(_openDocsByPath.Values
                 .OfType<PartLibraryDocument>()
                 .Where(d => d.IsDirty));
@@ -16667,7 +16706,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                          || dirtyScratchSymbols.Count > 0 || dirtyMaterializedSymbols.Count > 0
                          || dirtyScratchLayouts.Count > 0 || dirtyMaterializedLayouts.Count > 0
                          || dirtyTechDocs.Count > 0 || dirtyEmDocs.Count > 0
-                         || dirtyPartLibraries.Count > 0;
+                         || dirtyPartLibraries.Count > 0 || dirtyC3dDocs.Count > 0;
             if (!anyDirty)
             {
                 // "Nothing to save" would be a lie when the only dirty work was read-only — the
@@ -16763,6 +16802,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             // Dirty EM setups — R-em-9: never scratch, so the same direct write.
             foreach (var emDoc in dirtyEmDocs)
                 emDoc.ViewModel.SaveCommand.Execute(null);
+
+            // Dirty 3D views (brief-em3d-43) — never scratch, the same direct write.
+            foreach (var c3dDoc in dirtyC3dDocs)
+                SaveC3d(c3dDoc);
         }
         finally
         {
@@ -16889,6 +16932,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             || _openDocsByPath.Values.OfType<LayoutDocument>().Any(d => d.IsDirty && Keep(d))
             || _openDocsByPath.Values.OfType<TechDocument>().Any(d => d.IsDirty && Keep(d))
             || _openDocsByPath.Values.OfType<EmSetupDocument>().Any(d => d.IsDirty && Keep(d))
+            || _openDocsByPath.Values.OfType<ThreeD.C3dEditorDocument>().Any(d => d.IsDirty && Keep(d))
             || _openDocsByPath.Values.OfType<PartLibraryDocument>().Any(d => d.IsDirty && Keep(d))
             || _scratchDataDisplays.Any(d => d.ViewModel.Window.HasUnsavedChanges() && Keep(d))
             || _openDocsByPath.Values.OfType<DataDisplayDocument>().Any(d => d.ViewModel.Window.HasUnsavedChanges() && Keep(d))
@@ -16942,6 +16986,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             .OfType<EmSetupDocument>()
             .Where(d => d.IsDirty && Keep(d))
             .ToList();
+        var dirtyC3dDocs = _openDocsByPath.Values
+            .OfType<ThreeD.C3dEditorDocument>()
+            .Where(d => d.IsDirty && Keep(d))
+            .ToList();
         // R-rail24-1a. Present in BOTH this method and HasAnyDirtyWork above, which is the rule the
         // block below states: a document type added to one and not the other loses work with no
         // error anywhere.
@@ -16975,7 +17023,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                   + dirtyScratchSymbols.Count + dirtyMatSymbols.Count
                   + dirtyScratchDisplays.Count + dirtyMatDisplays.Count
                   + dirtyScratchLayouts.Count + dirtyMatLayouts.Count
-                  + dirtyTechDocs.Count + dirtyEmDocs.Count + dirtyPartLibraries.Count
+                  + dirtyTechDocs.Count + dirtyEmDocs.Count + dirtyPartLibraries.Count + dirtyC3dDocs.Count
                   + dirtyScratchWBonds.Count + dirtyMatWBonds.Count
                   + dirtyScratchSmith.Count + dirtyMatSmith.Count
                   + dirtyOrphanedSessions.Count
@@ -16992,6 +17040,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             : dirtyMatLayouts.Count            > 0 ? dirtyMatLayouts[0].Id
             : dirtyTechDocs.Count              > 0 ? dirtyTechDocs[0].Id
             : dirtyEmDocs.Count                > 0 ? dirtyEmDocs[0].Id
+            : dirtyC3dDocs.Count               > 0 ? Path.GetFileName(dirtyC3dDocs[0].FilePath)
             : dirtyPartLibraries.Count         > 0 ? dirtyPartLibraries[0].Id
             : dirtyMatDisplays.Count           > 0 ? dirtyMatDisplays[0].Id
             : dirtyScratchDisplays.Count       > 0 ? dirtyScratchDisplays[0].Id
@@ -17127,6 +17176,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                     techDoc.ViewModel.SaveCommand.Execute(null);
                 foreach (var emDoc in dirtyEmDocs)
                     emDoc.ViewModel.SaveCommand.Execute(null);
+                foreach (var c3dDoc in dirtyC3dDocs)
+                    SaveC3d(c3dDoc);
                 foreach (var libDoc in dirtyPartLibraries)
                     libDoc.ViewModel.SaveCommand.Execute(null);
                 // Dirty data displays → save in place (materialized) or via picker (scratch).

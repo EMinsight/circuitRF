@@ -53,6 +53,31 @@ public class GpuFirewallTests
             "GPU backends live in src/Ui/Viewer3D only (brief-em3d-28 R-em3d28-1a).");
     }
 
+    /// <summary>
+    /// brief-em3d-43 gate 9 — <c>src/Render/Scene3D/Edit/</c> (the hit lists B steps through, face geometry,
+    /// selection) references no UI framework and no GPU API: the assembly checks above hold for the whole of
+    /// <c>CircuitRF.Render</c>, and this names the folder the editor's queries live in, so one moved there
+    /// from <c>src/Ui</c> with its usings is caught by name.
+    /// </summary>
+    [Fact]
+    public void Gate9_TheEditQueries_ReferenceNoUiFrameworkAndNoGpuApi()
+    {
+        string dir = Path.Combine(RepoRoot(), "src", "Render", "Scene3D", "Edit");
+        var files = Directory.GetFiles(dir, "*.cs");
+        Assert.NotEmpty(files);
+        var found = new List<string>();
+        foreach (string f in files)
+            foreach (string line in File.ReadLines(f))
+            {
+                string t = line.Trim();
+                if (!t.StartsWith("using ", StringComparison.Ordinal)) continue;
+                if (t.Contains("Avalonia", StringComparison.Ordinal) ||
+                    GpuAssemblyPrefixes.Any(p => t.Contains(p, StringComparison.OrdinalIgnoreCase)))
+                    found.Add($"{Path.GetFileName(f)}: {t}");
+            }
+        Assert.True(found.Count == 0, "src/Render/Scene3D/Edit must stay framework- and GPU-free: " + string.Join("; ", found));
+    }
+
     [Fact]
     public void Gate1_RouteA_AddsNoNativePackage()
     {

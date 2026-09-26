@@ -1,0 +1,73 @@
+// brief-em3d-43 R-em3d43-1b / gate 6 — what changed between two scenes, as byte ranges of the three
+// buffers a backend holds, so an edit to one object of a thousand uploads that object's bytes and not the
+// scene's.
+//
+// A PATCH EXISTS ONLY WHEN THE LAYOUT IS THE SAME: the same buffer lengths, the same batches at the same
+// offsets, the same objects over the same vertex ranges. Then every object's bytes are compared, and a
+// range is listed only where they differ — a rename changes no byte at all and uploads nothing; a new
+// material recolours one object and uploads its vertices. Anything else (an object added, deleted, grown,
+// or the origin moved) has no patch, and the scene is uploaded whole, as before.
+
+using System.Runtime.InteropServices;
+
+namespace CircuitRF.Render.Scene3D;
+
+/// <summary>Which of a scene's buffers a range is in.</summary>
+public enum Scene3DPatchBuffer { Vertices, Indices, Lines }
+
+/// <summary><see cref="ByteLength"/> bytes at <see cref="ByteOffset"/> of one buffer.</summary>
+public readonly record struct Scene3DPatchRange(Scene3DPatchBuffer Buffer, int ByteOffset, int ByteLength);
+
+/// <summary>The ranges to rewrite to turn one scene's buffers into another's.</summary>
+public sealed class Scene3DPatch
+{
+    public required IReadOnlyList<Scene3DPatchRange> Ranges { get; init; }
+
+    /// <summary>The bytes the ranges cover.</summary>
+    public long Bytes => Ranges.Sum(r => (long)r.ByteLength);
+
+    /// <summary>The patch from <paramref name="from"/> to <paramref name="to"/>, or null when their layouts
+    /// differ and <paramref name="to"/> must be uploaded whole.</summary>
+    public static Scene3DPatch? Between(Scene3DModel from, Scene3DModel to)
+    {
+        if (from.Vertices.Length != to.Vertices.Length || from.Indices.Length != to.Indices.Length ||
+            from.LineVertices.Length != to.LineVertices.Length || from.Objects.Length != to.Objects.Length ||
+            !from.Batches.AsSpan().SequenceEqual(to.Batches) || !from.LineBatches.AsSpan().SequenceEqual(to.LineBatches) ||
+            !from.EdgeBatches.AsSpan().SequenceEqual(to.EdgeBatches))
+            return null;
+        for (int k = 0; k < to.Objects.Length; k++)
+            if (from.Objects[k].FirstVertex != to.Objects[k].FirstVertex || from.Objects[k].VertexCount != to.Objects[k].VertexCount)
+                return null;
+
+        var ranges = new List<Scene3DPatchRange>();
+        void Add(Scene3DPatchBuffer buf, int offset, int length)
+        {
+            if (length == 0) return;
+            if (ranges.Count > 0 && ranges[^1] is var last && last.Buffer == buf && last.ByteOffset + last.ByteLength == offset)
+                ranges[^1] = last with { ByteLength = last.ByteLength + length };
+            else ranges.Add(new Scene3DPatchRange(buf, offset, length));
+        }
+
+        foreach (var o in to.Objects)
+            if (!Same(from.Vertices, to.Vertices, o.FirstVertex, o.VertexCount))
+                Add(Scene3DPatchBuffer.Vertices, o.FirstVertex * Scene3DVertex.Stride, o.VertexCount * Scene3DVertex.Stride);
+        foreach (var b in to.Batches.OrderBy(b => b.FirstIndex))
+            if (!Same(from.Indices, to.Indices, b.FirstIndex, b.IndexCount))
+                Add(Scene3DPatchBuffer.Indices, b.FirstIndex * sizeof(uint), b.IndexCount * sizeof(uint));
+        foreach (var b in to.LineBatches.Concat(to.EdgeBatches).OrderBy(b => b.FirstVertex))
+            if (!Same(from.LineVertices, to.LineVertices, b.FirstVertex, b.VertexCount))
+                Add(Scene3DPatchBuffer.Lines, b.FirstVertex * Scene3DVertex.Stride, b.VertexCount * Scene3DVertex.Stride);
+        return new Scene3DPatch { Ranges = ranges };
+    }
+
+    private static bool Same<T>(T[] a, T[] b, int first, int count) where T : unmanaged
+        => MemoryMarshal.AsBytes(a.AsSpan(first, count)).SequenceEqual(MemoryMarshal.AsBytes(b.AsSpan(first, count)));
+
+    /// <summary>The source bytes of <paramref name="r"/> in <paramref name="scene"/>.</summary>
+    public static ReadOnlySpan<byte> Source(Scene3DModel scene, Scene3DPatchRange r) => r.Buffer switch
+    {
+        Scene3DPatchBuffer.Vertices => MemoryMarshal.AsBytes(scene.Vertices.AsSpan()).Slice(r.ByteOffset, r.ByteLength),
+        Scene3DPatchBuffer.Indices  => MemoryMarshal.AsBytes(scene.Indices.AsSpan()).Slice(r.ByteOffset, r.ByteLength),
+        _                           => MemoryMarshal.AsBytes(scene.LineVertices.AsSpan()).Slice(r.ByteOffset, r.ByteLength),
+    };
+}

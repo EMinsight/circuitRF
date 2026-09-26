@@ -7,7 +7,7 @@
              x:DataType="v3:Viewer3DDocument"
              Background="{DynamicResource SystemChromeLowColor}">
 
-    <!-- brief-em3d-28 — the 3D view. Read only (F4 is the editor). Toolbar glyphs are Material icons,
+    <!-- brief-em3d-28 — the 3D view. Read only (the .c3d editor, brief-em3d-43, shares its pane and keys). Toolbar glyphs are Material icons,
          as in the Layout Editor, except the six plan views, which no Material icon says: those are
          Viewer3DViewGlyph, an isometric cube with the viewed face filled. -->
     <UserControl.Styles>
@@ -21,7 +21,21 @@
         <Border DockPanel.Dock="Top" Padding="4,2" BorderThickness="0,0,0,1"
                 BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
             <WrapPanel Orientation="Horizontal" ItemSpacing="4" LineSpacing="4">
-                <Button Command="{Binding ViewModel.FitCommand}" ToolTip.Tip="Fit  (F)">
+                <!-- brief-em3d-43 R-em3d43-2b — the selection modes, as in the 3D editor: selecting here is for
+                     measuring and reading. -->
+                <ToggleButton IsChecked="{Binding ViewModel.IsObjectMode}" ToolTip.Tip="Object mode: select whole solids and sheets  (O)">
+                    <mi:MaterialIcon Kind="CubeOutline" Width="16" Height="16"/>
+                </ToggleButton>
+                <ToggleButton IsChecked="{Binding ViewModel.IsFaceMode}" ToolTip.Tip="Face mode: select one face — its area and normal are shown  (F)">
+                    <mi:MaterialIcon Kind="VectorSquare" Width="16" Height="16"/>
+                </ToggleButton>
+                <ToggleButton IsChecked="{Binding ViewModel.IsVertexMode}" ToolTip.Tip="Vertex mode: select one vertex — its coordinates are shown  (V)">
+                    <mi:MaterialIcon Kind="VectorPoint" Width="16" Height="16"/>
+                </ToggleButton>
+
+                <Border Width="1" Margin="2,3" Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+
+                <Button Command="{Binding ViewModel.FitCommand}" ToolTip.Tip="Fit  (Home)">
                     <mi:MaterialIcon Kind="FitToPage" Width="16" Height="16"/>
                 </Button>
 
@@ -31,10 +45,10 @@
                         ToolTip.Tip="Isometric view  (1)">
                     <mi:MaterialIcon Kind="CubeOutline" Width="16" Height="16"/>
                 </Button>
-                <ToggleButton IsChecked="{Binding ViewModel.IsPerspective}" ToolTip.Tip="Perspective view  (P)">
+                <ToggleButton IsChecked="{Binding ViewModel.IsPerspective}" ToolTip.Tip="Perspective view  (P toggles)">
                     <mi:MaterialIcon Kind="PerspectiveMore" Width="16" Height="16"/>
                 </ToggleButton>
-                <ToggleButton IsChecked="{Binding ViewModel.IsOrthographic}" ToolTip.Tip="Orthographic view  (O)">
+                <ToggleButton IsChecked="{Binding ViewModel.IsOrthographic}" ToolTip.Tip="Orthographic view  (P toggles)">
                     <mi:MaterialIcon Kind="PerspectiveLess" Width="16" Height="16"/>
                 </ToggleButton>
 
@@ -202,6 +216,8 @@
                     <SelectableTextBlock DockPanel.Dock="Right" FontSize="11" Text="{Binding ViewModel.CursorText}"/>
                     <SelectableTextBlock FontSize="11" Text="{Binding ViewModel.Status}" TextWrapping="Wrap"/>
                 </DockPanel>
+                <SelectableTextBlock FontSize="11" Text="{Binding ViewModel.SelectionText}" TextWrapping="Wrap"
+                                     IsVisible="{Binding ViewModel.SelectionText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                 <SelectableTextBlock FontSize="11" Text="{Binding ViewModel.MeshText}" IsVisible="{Binding ViewModel.MeshText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                 <SelectableTextBlock FontSize="11" Text="{Binding ViewModel.FieldText}" IsVisible="{Binding ViewModel.FieldText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                 <SelectableTextBlock FontSize="11" Text="{Binding ViewModel.PictureText}" IsVisible="{Binding ViewModel.PictureText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>

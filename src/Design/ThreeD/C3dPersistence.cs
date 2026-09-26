@@ -88,6 +88,17 @@ public static class C3dPersistence
     /// key, so an object is re-elaborated exactly when what the file would say about it changes.</summary>
     public static string SerializeObject(C3dObject obj) => JsonSerializer.Serialize(obj, JsonOpts);
 
+    /// <summary>brief-em3d-43 — one object read back from <see cref="SerializeObject"/>'s text: what an undo
+    /// entry stores, so an entry holds only the objects it changed, never the document.</summary>
+    public static C3dObject DeserializeObject(string json)
+        => JsonSerializer.Deserialize<C3dObject>(json, JsonOpts) ?? throw new C3dReadException(C3dDiagnostics.NotAnObject());
+
+    /// <summary>brief-em3d-43 — one instance as the file spells it, and back.</summary>
+    public static string SerializeInstance(C3dInstance inst) => JsonSerializer.Serialize(inst, JsonOpts);
+
+    public static C3dInstance DeserializeInstance(string json)
+        => JsonSerializer.Deserialize<C3dInstance>(json, JsonOpts) ?? throw new C3dReadException(C3dDiagnostics.NotAnObject());
+
     /// <summary>R-em3d41-2-dims: a size component is positive; a negative one moves the corner. A
     /// prism's height and a cylinder's length keep their sign — each says which way it was pulled.</summary>
     public static void Normalize(C3dDocument doc)

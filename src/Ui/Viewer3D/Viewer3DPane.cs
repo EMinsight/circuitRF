@@ -10,10 +10,12 @@
 // problem still regenerating leaves the previous image up: the rest of the window cannot be starved by
 // it (the lesson of "the whole UI crawled", src/Ui/RESOLVED.md).
 //
-// INPUT (R-em3d28-4a): orbit = left drag; pan = middle drag, right drag or Shift + left drag; a right-CLICK
-// (no drag) opens the view's context menu; zoom to the cursor =
-// wheel or pinch; F fits; 1–7 are the standard views; P / O switch projection; C toggles the clip
-// plane; A the axis indicator. A trackpad's two-finger scroll zooms and its pinch zooms (macOS). No
+// INPUT (R-em3d28-4a, brief-em3d-43 R-em3d43-2a): orbit = left drag; pan = middle drag, right drag or
+// Alt + left drag; a click selects and Shift-click adds or removes; a right-CLICK (no drag) opens the
+// selection's context menu; zoom to the cursor = wheel or pinch. The keys are the view model's
+// (Viewer3DViewModel.HandleKey): O / F / V the selection mode, B / Shift+B next behind / in front, Home
+// fits, P toggles the projection, 1–7 the standard views, C the clip plane, A the axis indicator, Esc
+// cancels the gesture in progress or clears the selection. A trackpad's two-finger scroll zooms and its pinch zooms (macOS). No
 // modal dialog opens mid-gesture (§8.2 point 5): nothing here opens a dialog at all.
 //
 // A present step that cannot signal is a FAULT (Viewer3DPresentFault): the pane stops, says why in
@@ -217,7 +219,7 @@ public sealed class Viewer3DPane : Control
             catch (Exception ex) { SetFault(ex.Message); }
             _done = false;
             _busy = false;
-            _vm.OnPicked(backend.PickedId, backend.PickedPoint, backend.PickedSomething);
+            _vm.OnPicked(backend.PickedId, backend.PickedFace, backend.PickedPoint, backend.PickedSomething);
             FramePresented?.Invoke();
         }
 
@@ -310,7 +312,10 @@ public sealed class Viewer3DPane : Control
         Focus();
         var p = e.GetCurrentPoint(this);
         _last = _pressedAt = p.Position;
-        _panning = p.Properties.IsMiddleButtonPressed || (p.Properties.IsLeftButtonPressed && e.KeyModifiers.HasFlag(KeyModifiers.Shift))
+        // brief-em3d-43: Shift + left is Shift-CLICK now (add to the selection), so a Shift + left DRAG still
+        // pans — decided on release, by whether it moved — and Alt + left pans outright.
+        _shiftPress = p.Properties.IsLeftButtonPressed && e.KeyModifiers.HasFlag(KeyModifiers.Shift);
+        _panning = p.Properties.IsMiddleButtonPressed || (p.Properties.IsLeftButtonPressed && (_shiftPress || e.KeyModifiers.HasFlag(KeyModifiers.Alt)))
                    || p.Properties.IsRightButtonPressed;
         _orbiting = !_panning && p.Properties.IsLeftButtonPressed;
         _rightPressed = p.Properties.IsRightButtonPressed;
@@ -319,7 +324,10 @@ public sealed class Viewer3DPane : Control
         e.Handled = true;
     }
 
-    private bool _moved, _rightPressed;
+    private bool _moved, _rightPressed, _shiftPress;
+
+    /// <summary>A drag (orbit or pan) is under way — the mode keys wait for it (R-em3d43-2a).</summary>
+    public bool GestureInProgress => (_orbiting || _panning) && _moved;
 
     protected override void OnPointerMoved(PointerEventArgs e)
     {
@@ -339,9 +347,10 @@ public sealed class Viewer3DPane : Control
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
     {
         base.OnPointerReleased(e);
-        if (_orbiting && !_moved) _vm?.Click();
+        if (_orbiting && !_moved) _vm?.Click(shift: false);
+        else if (_shiftPress && !_moved) _vm?.Click(shift: true);
         bool menu = _rightPressed && !_moved && e.InitialPressMouseButton == MouseButton.Right;
-        _orbiting = _panning = _rightPressed = false;
+        _orbiting = _panning = _rightPressed = _shiftPress = false;
         _last = _pressedAt = null;
         e.Pointer.Capture(null);
         if (menu) ContextMenuRequested?.Invoke();
@@ -381,22 +390,16 @@ public sealed class Viewer3DPane : Control
     protected override void OnKeyDown(KeyEventArgs e)
     {
         base.OnKeyDown(e);
-        if (_vm is null || e.KeyModifiers != KeyModifiers.None) return;
-        StandardView3D? v = e.Key switch
+        if (_vm is null) return;
+        // Esc with a drag under way cancels the drag: the camera stays where the drag left it (a camera
+        // move is not an edit), and the button's release is no longer a click.
+        if (e.Key == Key.Escape && GestureInProgress)
         {
-            Key.D1 or Key.NumPad1 => StandardView3D.Iso, Key.D2 or Key.NumPad2 => StandardView3D.Top,
-            Key.D3 or Key.NumPad3 => StandardView3D.Front, Key.D4 or Key.NumPad4 => StandardView3D.Right,
-            Key.D5 or Key.NumPad5 => StandardView3D.Back, Key.D6 or Key.NumPad6 => StandardView3D.Left,
-            Key.D7 or Key.NumPad7 => StandardView3D.Bottom, _ => null,
-        };
-        if (v is { } view) { _vm.StandardViewCommand.Execute(view); e.Handled = true; return; }
-        switch (e.Key)
-        {
-            case Key.F: _vm.FitCommand.Execute(null); e.Handled = true; break;
-            case Key.P: _vm.IsPerspective = true; e.Handled = true; break;
-            case Key.O: _vm.IsPerspective = false; e.Handled = true; break;
-            case Key.C: _vm.ClipEnabled = !_vm.ClipEnabled; e.Handled = true; break;
-            case Key.A: _vm.ShowAxisIndicator = !_vm.ShowAxisIndicator; e.Handled = true; break;
+            _orbiting = _panning = _rightPressed = _shiftPress = false;
+            _last = _pressedAt = null;
+            e.Handled = true;
+            return;
         }
+        if (_vm.HandleKey(e.Key, e.KeyModifiers, GestureInProgress)) e.Handled = true;
     }
 }

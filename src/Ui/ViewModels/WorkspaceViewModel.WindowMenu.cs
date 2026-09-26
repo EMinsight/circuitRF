@@ -221,6 +221,7 @@ public partial class WorkspaceViewModel
         SymbolEditorDocument d => d.IsDirty,
         LayoutDocument d       => d.IsDirty,
         TechDocument d         => d.IsDirty,
+        ThreeD.C3dEditorDocument d => d.IsDirty,
         // DataDisplayDocument.IsDirty is never wired to live edits (documented in src/Ui/CLAUDE.md);
         // HasUnsavedChanges() is the authoritative baseline comparison.
         DataDisplayDocument d  => d.ViewModel.Window.HasUnsavedChanges(),

@@ -22,13 +22,18 @@ public partial class Viewer3DView : UserControl
     {
         InitializeComponent();
         Pane.FramePresented += () => Overlay.InvalidateVisual();
-        Pane.ContextMenuRequested += () => _menu.Open(Pane);
-        var copy = new MenuItem { Header = $"Copy Picture ({Viewer3DViewModel.CopyScale}× the window)" };
-        copy.Click += OnCopyPicture;
-        var export = new MenuItem { Header = "Export Picture…" };
-        export.Click += OnExportPicture;
-        _menu.Items.Add(copy);
-        _menu.Items.Add(export);
+        // brief-em3d-43 R-em3d43-4e — the menu is the selection's (per mode), rebuilt at each right-click,
+        // with the picture commands after it.
+        Pane.ContextMenuRequested += () =>
+        {
+            if (_vm is null) return;
+            var copy = new MenuItem { Header = $"Copy Picture ({Viewer3DViewModel.CopyScale}× the window)" };
+            copy.Click += OnCopyPicture;
+            var export = new MenuItem { Header = "Export Picture…" };
+            export.Click += OnExportPicture;
+            Viewer3DContextMenu.Fill(_menu, _vm.OpenContextMenu(), [copy, export]);
+            _menu.Open(Pane);
+        };
         Pane.FaultChanged += why =>
         {
             FaultText.Text = why is null ? "" : "The 3D view cannot draw here: " + why;

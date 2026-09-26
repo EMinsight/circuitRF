@@ -3,6 +3,10 @@
 // grid's smallest-cell labels (R-em3d28-3c), and the hover label naming what is under the cursor with
 // its material values (R-em3d28-4b).
 //
+// brief-em3d-43 R-em3d43-5: Vertex mode's DOTS are drawn here too — the hovered candidate a dot, each
+// selected vertex a larger one — because a dot that follows the cursor must cost a hover nothing on the
+// GPU (gate 5), and the vertices of every object at once would be noise. B's status readout sits top left.
+//
 // It is drawn by Avalonia, in DIPs, from the camera alone — a redraw per presented frame is a handful of
 // lines and a few text runs, and it touches no geometry. It takes no input: the pane under it does.
 
@@ -55,6 +59,21 @@ public sealed class Viewer3DOverlay : Control
         }
 
         if (vm.FieldLegendVisible) Legend(ctx, vm, w, ink, dark);
+
+        // Vertex mode: a dot for the candidate, a larger one for each selected vertex.
+        var accent = new SolidColorBrush(Color.FromRgb(255, 90, 255));
+        var ring = new Pen(dark ? Brushes.Black : Brushes.White, 1.5);
+        if (vm.SelectMode == CircuitRF.Render.Scene3D.Edit.Scene3DSelectMode.Vertex)
+        {
+            foreach (var item in vm.Selection)
+            {
+                var (x, y, visible) = cam.Project(item.Point, (float)w, (float)h);
+                if (visible) ctx.DrawEllipse(accent, ring, new Point(x, y), 6, 6);
+            }
+            if (vm.HoveredVertex is { } hv && cam.Project(hv, (float)w, (float)h) is (var hx, var hy, true))
+                ctx.DrawEllipse(Brushes.Transparent, new Pen(accent, 2), new Point(hx, hy), 4, 4);
+        }
+        if (vm.CycleText.Length > 0) Text(ctx, vm.CycleText, new Point(10, 8), ink, 12, dark);
 
         if (vm.HoverText.Length > 0 && vm.View.CursorX >= 0)
             Text(ctx, vm.HoverText, new Point(vm.View.CursorX + 14, vm.View.CursorY + 14), ink, 12, dark);

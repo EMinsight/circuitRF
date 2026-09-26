@@ -20,15 +20,22 @@ namespace CircuitRF.Render.Scene3D;
 /// <summary>What an object in the tree is (R-em3d28-4c's grouping).</summary>
 public enum Scene3DKind { Conductor, Dielectric, Air, Body, Wire, Via, Sheet, Port, Boundary }
 
-/// <summary>A vertex, 20 bytes: position (scene-local metres), the object's ID, its colour (RGBA8).</summary>
+/// <summary>A vertex, 24 bytes: position (scene-local metres), the object's ID, its colour (RGBA8), and
+/// the face of that object it lies on (brief-em3d-43 R-em3d43-3a) — the second half of the ID pass's
+/// (object, face) pair. The face is last so every older attribute keeps its offset.</summary>
 [StructLayout(LayoutKind.Sequential, Pack = 4)]
-public struct Scene3DVertex(float x, float y, float z, uint id, uint rgba)
+public struct Scene3DVertex(float x, float y, float z, uint id, uint rgba, uint face = Scene3DVertex.NoFace)
 {
-    public const int Stride = 20;
+    public const int Stride = 24;
+    /// <summary>The face of a vertex on no face: a port's sheet, an arrow, the box's edges.</summary>
+    public const uint NoFace = uint.MaxValue;
     public float X = x, Y = y, Z = z;
     public uint Id = id;
     /// <summary>R in the low byte, A in the high byte — RGBA8 unorm in memory order.</summary>
     public uint Rgba = rgba;
+    /// <summary>The face index (Em3dTriangle.Face), or <see cref="NoFace"/>. On an EDGE line vertex it is
+    /// the edge's two faces packed: the low 16 bits one, the high 16 the other.</summary>
+    public uint Face = face;
 
     public static uint Pack(byte r, byte g, byte b, byte a) => (uint)(r | (g << 8) | (b << 16) | (a << 24));
 }
@@ -58,6 +65,18 @@ public sealed class Scene3DObject
     public Vector3 Max { get; set; }
     public Vector3 Centroid => (Min + Max) * 0.5f;
 
+    /// <summary>brief-em3d-43 — its faces' names, by face index; empty when nothing named them.</summary>
+    public IReadOnlyList<string> FaceNames { get; init; } = [];
+
+    /// <summary>brief-em3d-43 — its triangle vertices: <see cref="VertexCount"/> from <see cref="FirstVertex"/>
+    /// in the scene's vertex buffer, contiguous (what a partial upload patches).</summary>
+    public int FirstVertex { get; set; }
+    public int VertexCount { get; set; }
+
+    /// <summary>The name of face <paramref name="face"/>: its stored name, else <c>face&lt;n&gt;</c>.</summary>
+    public string FaceName(int face) => face >= 0 && face < FaceNames.Count ? FaceNames[face]
+        : face == Scene3DBuilder.FaceUnknown ? "surface" : $"face{face}";
+
     /// <summary>Whether hover and click can land on it: everything but the air and the box's faces,
     /// which enclose everything else.</summary>
     public bool Pickable => Kind is not (Scene3DKind.Air or Scene3DKind.Boundary);
@@ -84,6 +103,9 @@ public sealed class Scene3DModel
     /// <summary>Opaque batches first, then translucent — each one object.</summary>
     public required Scene3DBatch[] Batches { get; init; }
     public required Scene3DLineBatch[] LineBatches { get; init; }
+    /// <summary>brief-em3d-43 R-em3d43-5 — each object's feature edges (where two of its faces meet), in the
+    /// line buffer after <see cref="LineBatches"/>' lines. Drawn only for what is selected.</summary>
+    public Scene3DLineBatch[] EdgeBatches { get; init; } = [];
     public required Vector3 BoundsMin { get; init; }
     public required Vector3 BoundsMax { get; init; }
     /// <summary>The bounds of what is not air, box or boundary — what Fit frames.</summary>

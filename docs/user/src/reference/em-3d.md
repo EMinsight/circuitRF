@@ -188,9 +188,17 @@ model circuitRF built, and after a run it also shows what the solver made.
 - **Model.** Every solid, coloured by its layer, with the dielectrics, the air and the air box's faces
   each switchable. The faces are coloured by boundary kind: grey metal, blue absorbing, orange PMC,
   violet symmetry. The **object tree** lists every solid, and a click in the view picks one and names it.
-- **Camera.** Drag to orbit; right-drag, middle-drag or Shift-drag to pan; scroll to zoom. **F** fits the model. **1** is
-  isometric, **2**–**7** are the six orthographic views, and **P** and **O** switch between perspective
-  and orthographic.
+- **Camera.** Drag to orbit; right-drag, middle-drag, Alt-drag or Shift-drag to pan; scroll to zoom. **Home**
+  fits the model. **1** is isometric, **2**–**7** are the six orthographic views, and **P** switches between
+  perspective and orthographic. These are the 3D editor's keys too: every 3D pane uses the same ones.
+- **Selecting.** **O**, **F** and **V** choose what a click selects: a whole **object**, one **face**, or one
+  **vertex** (the toolbar has a button for each). What is under the cursor is highlighted. A click
+  selects it; Shift-click adds to or removes from the selection; **Esc** clears it. A selected face's area
+  and normal, or a vertex's coordinates, are shown under the view, in the layout's unit. **B** steps to the
+  next thing *behind* the selection along the line of sight through the cursor, and **Shift+B** steps back
+  toward you — the status line says where you are (`Face zmin · "trace" · 2 of 5`). A face selected
+  behind others is drawn through what is in front of it. Right-click opens the menu for what is selected:
+  *Hide*, *Isolate*, *Show All*, and *Select Owning Object*. Nothing here changes the setup.
 - **Clip plane** (**C**). A plane along an axis or the view direction, dragged through the model. It
   shows inside a package, under a lid, or through a via's clearance.
 - **Mesh.** After a Palace run, the mesh Gmsh made: the boundary triangles, and the tetrahedra the clip

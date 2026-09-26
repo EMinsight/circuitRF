@@ -13,6 +13,7 @@
 
 using System.Numerics;
 using System.Runtime.InteropServices;
+using CircuitRF.Render.Scene3D.Edit;
 
 namespace CircuitRF.Render.Scene3D;
 
@@ -30,6 +31,12 @@ public enum Scene3DPipeline
     /// <summary>brief-em3d-29 — a field's triangles (FieldVertex, not indexed), depth write, no blend,
     /// coloured by the field uniforms.</summary>
     Field,
+    /// <summary>brief-em3d-43 — a selected object's feature edges (a line list from the scene's line
+    /// buffer), depth test off, blend, drawn only where the selection says (fs_edge).</summary>
+    Edges,
+    /// <summary>brief-em3d-43 R-em3d43-4d — a selected face again, depth test off, blend at reduced
+    /// opacity (fs_top), so a face behind others is seen through them.</summary>
+    OnTop,
 }
 
 /// <summary>Which buffer a draw reads: the scene's, one of the overlay slots, or the field's.</summary>
@@ -66,7 +73,20 @@ public sealed class Viewer3DViewState
     public ClipPlane3D Clip;
     public bool[] Visible = [];
     public uint Hovered;
-    public uint Selected;
+    /// <summary>brief-em3d-43 — the hovered object's face under the cursor (Face mode's hover), or −1.</summary>
+    public int HoveredFace = -1;
+    /// <summary>brief-em3d-43 R-em3d43-2 — what a click selects.</summary>
+    public Scene3DSelectMode Mode;
+    /// <summary>brief-em3d-43 — the selection, in the order it was made. The shader highlights the first
+    /// <see cref="Scene3DFramePlan.SelectionLimit"/>; the rest are selected all the same.</summary>
+    public Scene3DItem[] Selection = [];
+
+    /// <summary>The first selected object, 0 for none; setting it selects that one object.</summary>
+    public uint Selected
+    {
+        get => Selection.Length > 0 ? Selection[0].Object : 0;
+        set => Selection = value == 0 ? [] : [Scene3DItem.OfObject(value)];
+    }
     /// <summary>The cursor, device pixels from the top-left; negative when it is not over the view.</summary>
     public float CursorX = -1, CursorY = -1;
     public bool ShowMesh, ShowMeshSection, ShowGrid;
@@ -94,8 +114,8 @@ public sealed class Viewer3DViewState
         for (int i = 0; i < v.Length; i++)
             v[i] = old.TryGetValue(scene.Objects[i].Name, out bool was) ? was : scene.Objects[i].InitiallyVisible;
         Visible = v;
-        if (Hovered > v.Length) Hovered = 0;
-        if (Selected > v.Length) Selected = 0;
+        if (Hovered > v.Length) { Hovered = 0; HoveredFace = -1; }
+        if (Selection.Any(i => i.Object > v.Length)) Selection = [.. Selection.Where(i => i.Object <= v.Length)];
     }
 
     public bool IsVisible(uint id) => id >= 1 && id <= Visible.Length && Visible[id - 1];
@@ -107,10 +127,23 @@ public sealed class Viewer3DViewState
 /// <summary>One frame's uniform blocks and draw lists. Reused from frame to frame.</summary>
 public sealed class Scene3DFramePlan
 {
-    /// <summary>Floats in the uniform block — the WGSL <c>U</c>: vp (16), eye (4), clip (4), hover,
-    /// selection, flags, pad (112 bytes), then brief 29's field block (<see cref="Fields.FieldUniforms"/>,
-    /// 288 bytes). 400 bytes.</summary>
-    public const int UniformFloats = 28 + Fields.FieldUniforms.Floats;
+    /// <summary>brief-em3d-43 R-em3d43-5 — how many selected items the shader highlights: the uniform
+    /// block's (object, face) list. A selection beyond it is still the selection — the tree, the
+    /// Properties panel and every command see all of it — but only the first this many are drawn
+    /// highlighted, and the status line says so.</summary>
+    public const int SelectionLimit = 64;
+
+    /// <summary>Where the selection list starts in the block, in floats.</summary>
+    private const int SelectionAt = 32;
+
+    /// <summary>Where brief 29's field block starts, in floats.</summary>
+    public const int FieldAt = SelectionAt + 2 * SelectionLimit;
+
+    /// <summary>Floats in the uniform block — the WGSL <c>U</c>: vp (16), eye (4), clip (4), the hovered
+    /// (object, face), flags, the mode, the selection's count and three pads (128 bytes), the selection's
+    /// (object, face) pairs (512 bytes), then brief 29's field block (<see cref="Fields.FieldUniforms"/>,
+    /// 288 bytes). 928 bytes.</summary>
+    public const int UniformFloats = FieldAt + Fields.FieldUniforms.Floats;
     public const int UniformBytes = UniformFloats * 4;
 
     /// <summary>Flag bits in the uniform block's <c>flags</c>.</summary>
@@ -132,6 +165,9 @@ public sealed class Scene3DFramePlan
     private float[] _keys = [];
     private int[] _order = [];
     private Scene3DModel? _sized;
+    /// <summary>Per object (by ID − 1): its edge batch's index, or −1; and its triangle batch's.</summary>
+    private int[] _edgeOf = [], _batchOf = [];
+    private bool[] _marked = [];
 
     /// <summary>
     /// Plans a <paramref name="width"/> × <paramref name="height"/> frame of <paramref name="scene"/>.
@@ -187,6 +223,35 @@ public sealed class Scene3DFramePlan
             Add(ref Draws, ref DrawCount, Scene3DPipeline.Translucent, Scene3DBuffer.Scene, b.FirstIndex, b.IndexCount);
         }
 
+        // brief-em3d-43 — the selection, last: the edges of each selected object (Object mode) or of each
+        // object with a selected face (Face mode), then those objects' triangles again for the selected
+        // face drawn on top. The shaders pick out what is selected; the plan only chooses which batches.
+        if (view.Mode != Scene3DSelectMode.Vertex && view.Selection.Length > 0)
+        {
+            int limit = Math.Min(view.Selection.Length, SelectionLimit);
+            for (int k = 0; k < limit; k++)
+            {
+                uint id = view.Selection[k].Object;
+                if (id < 1 || id > _marked.Length || _marked[id - 1] || !view.IsDrawn(id)) continue;
+                _marked[id - 1] = true;
+                if (_edgeOf[id - 1] is int e and >= 0)
+                {
+                    var eb = scene.EdgeBatches[e];
+                    Add(ref Draws, ref DrawCount, Scene3DPipeline.Edges, Scene3DBuffer.SceneLines, eb.FirstVertex, eb.VertexCount);
+                }
+                if (view.Mode == Scene3DSelectMode.Face && _batchOf[id - 1] is int t and >= 0)
+                {
+                    var tb = batches[t];
+                    Add(ref Draws, ref DrawCount, Scene3DPipeline.OnTop, Scene3DBuffer.Scene, tb.FirstIndex, tb.IndexCount);
+                }
+            }
+            for (int k = 0; k < limit; k++)
+            {
+                uint id = view.Selection[k].Object;
+                if (id >= 1 && id <= _marked.Length) _marked[id - 1] = false;
+            }
+        }
+
         Pick = pick && view.CursorX >= 0 && view.CursorY >= 0 && view.CursorX < width && view.CursorY < height;
         PickDrawCount = 0;
         if (Pick)
@@ -201,11 +266,18 @@ public sealed class Scene3DFramePlan
 
     private void Size(Scene3DModel scene)
     {
-        int need = scene.Batches.Length + scene.LineBatches.Length + 5;
+        int need = scene.Batches.Length + scene.LineBatches.Length + 5 + 2 * Math.Min(scene.Objects.Length, SelectionLimit);
         if (Draws.Length < need) Draws = new Scene3DDraw[need];
         if (PickDraws.Length < need) PickDraws = new Scene3DDraw[need];
         _keys = new float[scene.Batches.Length];
         _order = new int[scene.Batches.Length];
+        _edgeOf = new int[scene.Objects.Length];
+        _batchOf = new int[scene.Objects.Length];
+        _marked = new bool[scene.Objects.Length];
+        Array.Fill(_edgeOf, -1);
+        Array.Fill(_batchOf, -1);
+        for (int k = 0; k < scene.EdgeBatches.Length; k++) _edgeOf[scene.EdgeBatches[k].ObjectId - 1] = k;
+        for (int k = 0; k < scene.Batches.Length; k++) _batchOf[scene.Batches[k].ObjectId - 1] = k;
         _sized = scene;
     }
 
@@ -230,9 +302,18 @@ public sealed class Scene3DFramePlan
         u[20] = c.X; u[21] = c.Y; u[22] = c.Z; u[23] = c.W;
         var bits = MemoryMarshal.Cast<float, uint>(u.AsSpan());
         bits[24] = view.Hovered;
-        bits[25] = view.Selected;
+        bits[25] = view.HoveredFace < 0 ? Scene3DVertex.NoFace : (uint)view.HoveredFace;
         bits[26] = flags;
-        bits[27] = 0;
-        view.Field.AsSpan().CopyTo(u.AsSpan(28));
+        bits[27] = (uint)view.Mode;
+        int nsel = Math.Min(view.Selection.Length, SelectionLimit);
+        bits[28] = (uint)nsel;
+        bits[29] = bits[30] = bits[31] = 0;
+        for (int k = 0; k < SelectionLimit; k++)
+        {
+            bool on = k < nsel;
+            bits[SelectionAt + 2 * k] = on ? view.Selection[k].Object : 0;
+            bits[SelectionAt + 2 * k + 1] = on && view.Selection[k].Face >= 0 ? (uint)view.Selection[k].Face : Scene3DVertex.NoFace;
+        }
+        view.Field.AsSpan().CopyTo(u.AsSpan(FieldAt));
     }
 }

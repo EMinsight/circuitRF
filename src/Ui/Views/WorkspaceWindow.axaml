@@ -1,6 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:CircuitRF.Ui.ViewModels"
+        xmlns:s3="using:CircuitRF.Render.Scene3D"
         xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
         xmlns:ctl="using:CircuitRF.Ui.DataDisplay.Controls"
         xmlns:dock="clr-namespace:Dock.Avalonia.Controls;assembly=Dock.Avalonia"
@@ -164,6 +165,51 @@
                         <NativeMenuItem Header="Update Schematic from Layout"   Command="{Binding UpdateSchematicFromLayoutCommand}" Gesture="Meta+Shift+U"/>
                         <NativeMenuItemSeparator/>
                         <NativeMenuItem Header="Check Design Rules"             Command="{Binding CheckDesignRulesCommand}" Gesture="Meta+Shift+K"/>
+                    </NativeMenu>
+                </NativeMenuItem.Menu>
+            </NativeMenuItem>
+
+            <!-- brief-em3d-43 R-em3d43-6c (owner decision D9) — ONE top-level 3D menu, always present: a
+                 window's NativeMenu is fixed for its lifetime, so a menu that came and went with the active
+                 document would be the fragile path. Every item needs an active 3D document (the editor or
+                 the read-only viewer). Hand-mirrored with the in-window menu below. -->
+            <NativeMenuItem Header="3D">
+                <NativeMenuItem.Menu>
+                    <NativeMenu>
+                        <NativeMenuItem Header="Select Mode" ToolTip="Requires an active 3D document.">
+                            <NativeMenuItem.Menu>
+                                <NativeMenu>
+                                    <NativeMenuItem Header="Object" ToolTip="Requires an active 3D document." Command="{Binding ThreeDSelectModeCommand}" CommandParameter="Object"/>
+                                    <NativeMenuItem Header="Face" ToolTip="Requires an active 3D document."   Command="{Binding ThreeDSelectModeCommand}" CommandParameter="Face"/>
+                                    <NativeMenuItem Header="Vertex" ToolTip="Requires an active 3D document." Command="{Binding ThreeDSelectModeCommand}" CommandParameter="Vertex"/>
+                                </NativeMenu>
+                            </NativeMenuItem.Menu>
+                        </NativeMenuItem>
+                        <NativeMenuItem Header="View" ToolTip="Requires an active 3D document.">
+                            <NativeMenuItem.Menu>
+                                <NativeMenu>
+                                    <NativeMenuItem Header="Fit" ToolTip="Requires an active 3D document." Command="{Binding ThreeDFitCommand}"/>
+                                    <NativeMenuItem Header="Standard Views" ToolTip="Requires an active 3D document.">
+                                        <NativeMenuItem.Menu>
+                                            <NativeMenu>
+                                                <NativeMenuItem Header="Isometric" ToolTip="Requires an active 3D document." Command="{Binding ThreeDStandardViewCommand}" CommandParameter="{x:Static s3:StandardView3D.Iso}"/>
+                                                <NativeMenuItem Header="Top" ToolTip="Requires an active 3D document."       Command="{Binding ThreeDStandardViewCommand}" CommandParameter="{x:Static s3:StandardView3D.Top}"/>
+                                                <NativeMenuItem Header="Front" ToolTip="Requires an active 3D document."     Command="{Binding ThreeDStandardViewCommand}" CommandParameter="{x:Static s3:StandardView3D.Front}"/>
+                                                <NativeMenuItem Header="Right" ToolTip="Requires an active 3D document."     Command="{Binding ThreeDStandardViewCommand}" CommandParameter="{x:Static s3:StandardView3D.Right}"/>
+                                                <NativeMenuItem Header="Back" ToolTip="Requires an active 3D document."      Command="{Binding ThreeDStandardViewCommand}" CommandParameter="{x:Static s3:StandardView3D.Back}"/>
+                                                <NativeMenuItem Header="Left" ToolTip="Requires an active 3D document."      Command="{Binding ThreeDStandardViewCommand}" CommandParameter="{x:Static s3:StandardView3D.Left}"/>
+                                                <NativeMenuItem Header="Bottom" ToolTip="Requires an active 3D document."    Command="{Binding ThreeDStandardViewCommand}" CommandParameter="{x:Static s3:StandardView3D.Bottom}"/>
+                                            </NativeMenu>
+                                        </NativeMenuItem.Menu>
+                                    </NativeMenuItem>
+                                    <NativeMenuItem Header="Perspective" ToolTip="Requires an active 3D document."    Command="{Binding ThreeDPerspectiveCommand}"/>
+                                    <NativeMenuItem Header="Clip Plane" ToolTip="Requires an active 3D document."     Command="{Binding ThreeDClipPlaneCommand}"/>
+                                    <NativeMenuItem Header="Axis Indicator" ToolTip="Requires an active 3D document." Command="{Binding ThreeDAxisIndicatorCommand}"/>
+                                </NativeMenu>
+                            </NativeMenuItem.Menu>
+                        </NativeMenuItem>
+                        <NativeMenuItemSeparator/>
+                        <NativeMenuItem Header="Show All" ToolTip="Requires an active 3D document." Command="{Binding ThreeDShowAllCommand}"/>
                     </NativeMenu>
                 </NativeMenuItem.Menu>
             </NativeMenuItem>
@@ -762,6 +808,48 @@
                           ToolTip.Tip="Check the active layout against its technology's minimum-width and minimum-spacing rules. Requires an active layout document.">
                     <MenuItem.Icon><mi:MaterialIcon Kind="ShieldCheckOutline" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
+            </MenuItem>
+
+            <!-- brief-em3d-43 — the 3D menu, hand-mirrored with the macOS NativeMenu above. -->
+            <MenuItem Header="_3D" Padding="8,4">
+                <MenuItem Header="Select _Mode" ToolTip.Tip="Requires an active 3D document.">
+                    <MenuItem Header="_Object" Command="{Binding ThreeDSelectModeCommand}" CommandParameter="Object"
+                              InputGesture="O" ToolTip.Tip="Select whole solids, sheets and instances. Requires an active 3D document.">
+                        <MenuItem.Icon><mi:MaterialIcon Kind="CubeOutline" Width="16" Height="16"/></MenuItem.Icon>
+                    </MenuItem>
+                    <MenuItem Header="_Face" Command="{Binding ThreeDSelectModeCommand}" CommandParameter="Face"
+                              InputGesture="F" ToolTip.Tip="Select one face. Requires an active 3D document.">
+                        <MenuItem.Icon><mi:MaterialIcon Kind="VectorSquare" Width="16" Height="16"/></MenuItem.Icon>
+                    </MenuItem>
+                    <MenuItem Header="_Vertex" Command="{Binding ThreeDSelectModeCommand}" CommandParameter="Vertex"
+                              InputGesture="V" ToolTip.Tip="Select one vertex. Requires an active 3D document.">
+                        <MenuItem.Icon><mi:MaterialIcon Kind="VectorPoint" Width="16" Height="16"/></MenuItem.Icon>
+                    </MenuItem>
+                </MenuItem>
+                <MenuItem Header="_View" ToolTip.Tip="Requires an active 3D document.">
+                    <MenuItem Header="_Fit" Command="{Binding ThreeDFitCommand}" InputGesture="Home"
+                              ToolTip.Tip="Frame everything. Requires an active 3D document.">
+                        <MenuItem.Icon><mi:MaterialIcon Kind="FitToPageOutline" Width="16" Height="16"/></MenuItem.Icon>
+                    </MenuItem>
+                    <MenuItem Header="_Standard Views" ToolTip.Tip="Requires an active 3D document.">
+                        <MenuItem Header="_Isometric" Command="{Binding ThreeDStandardViewCommand}" CommandParameter="{x:Static s3:StandardView3D.Iso}" InputGesture="D1" ToolTip.Tip="Requires an active 3D document."/>
+                        <MenuItem Header="_Top"       Command="{Binding ThreeDStandardViewCommand}" CommandParameter="{x:Static s3:StandardView3D.Top}" InputGesture="D2" ToolTip.Tip="Requires an active 3D document."/>
+                        <MenuItem Header="_Front"     Command="{Binding ThreeDStandardViewCommand}" CommandParameter="{x:Static s3:StandardView3D.Front}" InputGesture="D3" ToolTip.Tip="Requires an active 3D document."/>
+                        <MenuItem Header="_Right"     Command="{Binding ThreeDStandardViewCommand}" CommandParameter="{x:Static s3:StandardView3D.Right}" InputGesture="D4" ToolTip.Tip="Requires an active 3D document."/>
+                        <MenuItem Header="_Back"      Command="{Binding ThreeDStandardViewCommand}" CommandParameter="{x:Static s3:StandardView3D.Back}" InputGesture="D5" ToolTip.Tip="Requires an active 3D document."/>
+                        <MenuItem Header="_Left"      Command="{Binding ThreeDStandardViewCommand}" CommandParameter="{x:Static s3:StandardView3D.Left}" InputGesture="D6" ToolTip.Tip="Requires an active 3D document."/>
+                        <MenuItem Header="B_ottom"    Command="{Binding ThreeDStandardViewCommand}" CommandParameter="{x:Static s3:StandardView3D.Bottom}" InputGesture="D7" ToolTip.Tip="Requires an active 3D document."/>
+                    </MenuItem>
+                    <MenuItem Header="_Perspective" Command="{Binding ThreeDPerspectiveCommand}" InputGesture="P"
+                              ToolTip.Tip="Toggle perspective and orthographic. Requires an active 3D document."/>
+                    <MenuItem Header="_Clip Plane" Command="{Binding ThreeDClipPlaneCommand}" InputGesture="C"
+                              ToolTip.Tip="Toggle the clip plane. Requires an active 3D document."/>
+                    <MenuItem Header="_Axis Indicator" Command="{Binding ThreeDAxisIndicatorCommand}" InputGesture="A"
+                              ToolTip.Tip="Toggle the axis indicator. Requires an active 3D document."/>
+                </MenuItem>
+                <Separator/>
+                <MenuItem Header="Show _All" Command="{Binding ThreeDShowAllCommand}"
+                          ToolTip.Tip="Show every hidden object. Requires an active 3D document."/>
             </MenuItem>
 
             <MenuItem Header="_Simulate" Padding="8,4">

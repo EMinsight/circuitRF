@@ -143,6 +143,7 @@ public partial class WorkspaceViewModel
     {
         foreach (var doc in _openDocsByPath.Values.OfType<Viewer3DDocument>().ToList()) Closed3DView(doc);
         _viewer3DCameras = null;
+        ReleaseC3dEditorsOfOutgoingWorkspace();
     }
 
     private void Closed3DView(Viewer3DDocument doc)

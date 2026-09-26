@@ -52,7 +52,7 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
     /// <summary>How long a frame's fence may take before the GPU is declared stuck (a fault, never an
     /// endless wait: the render thread holds the render lock, and the UI thread takes it on detach).</summary>
     private const ulong FenceTimeoutNs = 2_000_000_000;
-    private const int UniformStride = 512;    // ≥ 400 (brief 29's field block) and a multiple of every minUniformBufferOffsetAlignment (≤ 256)
+    private const int UniformStride = 1024;   // ≥ 928 (brief 43's selection list) and a multiple of every minUniformBufferOffsetAlignment (≤ 256)
     private const VkFormat ColorFormat = VkFormat.R8G8B8A8Unorm;
     private const VkFormat DepthFormat = VkFormat.D32Sfloat;
     private const VkImageUsageFlags TargetUsage =
@@ -78,7 +78,7 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
     private VkDescriptorPool _pool;
     private VkDescriptorSet _set;
     private VkShaderModule _module;
-    private VkPipeline _pOpaque, _pTrans, _pLines, _pPick, _pField;
+    private VkPipeline _pOpaque, _pTrans, _pLines, _pPick, _pField, _pEdges, _pTop;
     private VkCommandPool _cmdPool;
     private (VkBuffer Buf, VkDeviceMemory Mem) _ub;
     private byte* _uMapped;
@@ -258,6 +258,9 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
         _pLines = Pipeline(api, _rpColor, "fs_line"u8, VkPrimitiveTopology.LineList, blend: false, depthWrite: true, targets: 1);
         _pPick = Pipeline(api, _rpPick, "fs_pick"u8, VkPrimitiveTopology.TriangleList, blend: false, depthWrite: true, targets: 2);
         _pField = Pipeline(api, _rpColor, "fs_field"u8, VkPrimitiveTopology.TriangleList, blend: false, depthWrite: true, targets: 1, field: true);
+        // brief-em3d-43 — the selection's edges and its face on top: no depth test.
+        _pEdges = Pipeline(api, _rpColor, "fs_edge"u8, VkPrimitiveTopology.LineList, blend: true, depthWrite: false, targets: 1, depthTest: false);
+        _pTop = Pipeline(api, _rpColor, "fs_top"u8, VkPrimitiveTopology.TriangleList, blend: true, depthWrite: false, targets: 1, depthTest: false);
 
         // two uniform blocks (pick, colour) per frame slot — host-coherent, mapped once
         _ub = NewBuffer(api, Ring * 2 * UniformStride, VkBufferUsageFlags.UniformBuffer, VkMemoryPropertyFlags.HostVisible | VkMemoryPropertyFlags.HostCoherent);
@@ -290,7 +293,7 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
             Check(api.vkMapMemory(_pickBuf[i].Mem, 0, VK_WHOLE_SIZE, 0, &pm), "vkMapMemory");
             _pickMapped[i] = (byte*)pm;
         }
-        _pickId = NewImage(api, 1, 1, VkFormat.R32Uint, VkImageUsageFlags.ColorAttachment | VkImageUsageFlags.TransferSrc, VkImageAspectFlags.Color, export: false);
+        _pickId = NewImage(api, 1, 1, VkFormat.R32G32Uint, VkImageUsageFlags.ColorAttachment | VkImageUsageFlags.TransferSrc, VkImageAspectFlags.Color, export: false);
         _pickPos = NewImage(api, 1, 1, VkFormat.R32G32B32A32Sfloat, VkImageUsageFlags.ColorAttachment | VkImageUsageFlags.TransferSrc, VkImageAspectFlags.Color, export: false);
         _pickDepth = NewImage(api, 1, 1, DepthFormat, VkImageUsageFlags.DepthStencilAttachment, VkImageAspectFlags.Depth, export: false);
         _pickFb = Framebuffer(api, _rpPick, [_pickId.View, _pickPos.View, _pickDepth.View], 1, 1);
@@ -303,7 +306,7 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
         for (int i = 0; i < colors; i++)
             att[i] = new VkAttachmentDescription
             {
-                format = pick ? (i == 0 ? VkFormat.R32Uint : VkFormat.R32G32B32A32Sfloat) : ColorFormat,
+                format = pick ? (i == 0 ? VkFormat.R32G32Uint : VkFormat.R32G32B32A32Sfloat) : ColorFormat,
                 samples = VkSampleCountFlags.Count1, loadOp = VkAttachmentLoadOp.Clear, storeOp = VkAttachmentStoreOp.Store,
                 stencilLoadOp = VkAttachmentLoadOp.DontCare, stencilStoreOp = VkAttachmentStoreOp.DontCare,
                 // TRANSFER_SRC_OPTIMAL: what both of Avalonia's importers read from, and what the pick copy reads
@@ -353,7 +356,7 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
     }
 
     private VkPipeline Pipeline(VkDeviceApi api, VkRenderPass rp, ReadOnlySpan<byte> fragmentEntry, VkPrimitiveTopology topology,
-                                bool blend, bool depthWrite, int targets, bool field = false)
+                                bool blend, bool depthWrite, int targets, bool field = false, bool depthTest = true)
     {
         fixed (byte* vsName = field ? "vs_field"u8 : "vs"u8)
         fixed (byte* fsName = fragmentEntry)
@@ -365,7 +368,8 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
             {
                 binding = 0, stride = field ? (uint)FieldVertex.Stride : Scene3DVertex.Stride, inputRate = VkVertexInputRate.Vertex,
             };
-            var attrs = stackalloc VkVertexInputAttributeDescription[3];
+            var attrs = stackalloc VkVertexInputAttributeDescription[4];
+            uint attrCount = field ? 3u : 4u;
             if (field)
             {
                 // brief-em3d-29 — FieldVertex: position, the value's real part, its imaginary part.
@@ -377,11 +381,12 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
                 attrs[0] = new VkVertexInputAttributeDescription { location = 0, binding = 0, format = VkFormat.R32G32B32Sfloat, offset = 0 };
                 attrs[1] = new VkVertexInputAttributeDescription { location = 1, binding = 0, format = VkFormat.R32Uint, offset = 12 };
                 attrs[2] = new VkVertexInputAttributeDescription { location = 2, binding = 0, format = VkFormat.R8G8B8A8Unorm, offset = 16 };
+                attrs[3] = new VkVertexInputAttributeDescription { location = 3, binding = 0, format = VkFormat.R32Uint, offset = 20 };
             }
             var vin = new VkPipelineVertexInputStateCreateInfo
             {
                 vertexBindingDescriptionCount = 1, pVertexBindingDescriptions = &vbd,
-                vertexAttributeDescriptionCount = 3, pVertexAttributeDescriptions = attrs,
+                vertexAttributeDescriptionCount = attrCount, pVertexAttributeDescriptions = attrs,
             };
             var ia = new VkPipelineInputAssemblyStateCreateInfo { topology = topology };
             var vp = new VkPipelineViewportStateCreateInfo { viewportCount = 1, scissorCount = 1 };
@@ -391,7 +396,7 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
                 polygonMode = VkPolygonMode.Fill, cullMode = VkCullModeFlags.None, frontFace = VkFrontFace.CounterClockwise, lineWidth = 1f,
             };
             var ms = new VkPipelineMultisampleStateCreateInfo { rasterizationSamples = VkSampleCountFlags.Count1 };
-            var ds = new VkPipelineDepthStencilStateCreateInfo { depthTestEnable = true, depthWriteEnable = depthWrite, depthCompareOp = VkCompareOp.LessOrEqual };
+            var ds = new VkPipelineDepthStencilStateCreateInfo { depthTestEnable = depthTest, depthWriteEnable = depthWrite, depthCompareOp = VkCompareOp.LessOrEqual };
             var cba = stackalloc VkPipelineColorBlendAttachmentState[2];
             for (int i = 0; i < targets; i++)
                 cba[i] = new VkPipelineColorBlendAttachmentState
@@ -498,6 +503,34 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
         fixed (Scene3DVertex* p = scene.Vertices) _vb = Upload(api, p, scene.Vertices.Length * Scene3DVertex.Stride, VkBufferUsageFlags.VertexBuffer);
         fixed (uint* p = scene.Indices) _ib = Upload(api, p, scene.Indices.Length * 4, VkBufferUsageFlags.IndexBuffer);
         fixed (Scene3DVertex* p = scene.LineVertices) _lines = Upload(api, p, scene.LineVertices.Length * Scene3DVertex.Stride, VkBufferUsageFlags.VertexBuffer);
+    }
+
+    /// <summary>brief-em3d-43 gate 6 — the changed ranges only, staged and copied into the buffers in place.
+    /// A frame in flight may still read them, so the GPU is waited for first, as a whole upload does.</summary>
+    public override void PatchScene(Scene3DModel scene, Scene3DPatch patch)
+    {
+        var api = Api;
+        api.vkDeviceWaitIdle();
+        foreach (var r in patch.Ranges)
+        {
+            var target = r.Buffer switch { Scene3DPatchBuffer.Vertices => _vb, Scene3DPatchBuffer.Indices => _ib, _ => _lines };
+            if (target.Buf.Handle == 0) { UploadScene(scene); return; }
+            Counters.CountUpload(r.ByteLength);
+            var staging = NewBuffer(api, r.ByteLength, VkBufferUsageFlags.TransferSrc, VkMemoryPropertyFlags.HostVisible | VkMemoryPropertyFlags.HostCoherent);
+            void* p;
+            Check(api.vkMapMemory(staging.Item2, 0, (ulong)r.ByteLength, 0, &p), "vkMapMemory");
+            Scene3DPatch.Source(scene, r).CopyTo(new Span<byte>(p, r.ByteLength));
+            api.vkUnmapMemory(staging.Item2);
+            var dst = target.Buf;
+            ulong offset = (ulong)r.ByteOffset, size = (ulong)r.ByteLength;
+            OneShot(api, cb =>
+            {
+                var region = new VkBufferCopy { dstOffset = offset, size = size };
+                api.vkCmdCopyBuffer(cb, staging.Item1, dst, 1, &region);
+            });
+            api.vkDestroyBuffer(staging.Item1, null);
+            api.vkFreeMemory(staging.Item2, null);
+        }
     }
 
     public override void UploadOverlay(Scene3DBuffer slot, Scene3DVertex[] lines)
@@ -819,7 +852,7 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
                     Scene3DBuffer.Scene => _vb.Buf, Scene3DBuffer.SceneLines => _lines.Buf, Scene3DBuffer.Field => _field.Buf,
                     Scene3DBuffer.Overlay0 => _overlays[0].Buf, Scene3DBuffer.Overlay1 => _overlays[1].Buf, _ => _overlays[2].Buf,
                 };
-                bool lines = d.Pipeline == Scene3DPipeline.Lines, field = d.Pipeline == Scene3DPipeline.Field;
+                bool lines = d.Pipeline is Scene3DPipeline.Lines or Scene3DPipeline.Edges, field = d.Pipeline == Scene3DPipeline.Field;
                 if (buf.Handle == 0 || (!lines && !field && _ib.Buf.Handle == 0)) continue;
                 if (field && d.First + d.Count > _fieldCount) continue;
                 if (d.Pipeline != state)
@@ -828,7 +861,8 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
                     api.vkCmdBindPipeline(cb, VkPipelineBindPoint.Graphics, state switch
                     {
                         Scene3DPipeline.Translucent => _pTrans, Scene3DPipeline.Lines => _pLines,
-                        Scene3DPipeline.Field => _pField, _ => _pOpaque,
+                        Scene3DPipeline.Field => _pField, Scene3DPipeline.Edges => _pEdges,
+                        Scene3DPipeline.OnTop => _pTop, _ => _pOpaque,
                     });
                 }
                 if (d.Buffer != bound)
@@ -895,6 +929,7 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
         if (!_pickPending[s]) return;
         byte* p = _pickMapped[s];
         PickedId = *(uint*)p;
+        PickedFace = ((uint*)p)[1];
         float* w = (float*)(p + 16);
         PickedPoint = new Vector3(w[0], w[1], w[2]);
         PickedSomething = w[3] > 0.5f;
@@ -950,6 +985,7 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
         foreach (var f in _fence) if (f.Handle != 0) api.vkDestroyFence(f, null);
         api.vkDestroyPipeline(_pOpaque, null); api.vkDestroyPipeline(_pTrans, null);
         api.vkDestroyPipeline(_pLines, null); api.vkDestroyPipeline(_pPick, null); api.vkDestroyPipeline(_pField, null);
+        api.vkDestroyPipeline(_pEdges, null); api.vkDestroyPipeline(_pTop, null);
         api.vkDestroyPipelineLayout(_layout, null); api.vkDestroyDescriptorPool(_pool, null);
         api.vkDestroyDescriptorSetLayout(_setLayout, null); api.vkDestroyShaderModule(_module, null);
         api.vkDestroyRenderPass(_rpColor, null); api.vkDestroyRenderPass(_rpPick, null);

@@ -1,0 +1,592 @@
+// brief-em3d-43 — the 3D editor: a .c3d document, and the 3D pane drawing its elaboration.
+//
+// WHAT THE EDITOR SHOWS IS WHAT THE SOLVER GETS (overview §0). The scene is built from C3dElaborator's
+// output — the same elaboration C3dProblemAssembly hands a solver — through Scene3DBuilder, under brief
+// 28's generation numbers, never from a second picture of the document. An edit changes the document,
+// which is elaborated again; the elaborator's per-object cache makes that ONE object's work, the builder's
+// tessellation cache makes it one object's tessellation, and the session's patch makes it one object's
+// upload (R-em3d43-1b, gate 6). The document has no setup yet (brief 49), so no air box is drawn.
+//
+// THE PANE IS THE VIEWER'S (R-em3d43-1a): Viewer3DViewModel with this class as its IViewer3DEditHost. The
+// build runs on the thread pool from a SNAPSHOT (the document's own text) taken on the UI thread, so the
+// document is never read while it is being edited; the elaborator is serialised by a lock, since two
+// generations may overlap for a moment and its caches are not thread-safe.
+//
+// UNDO (R-em3d43-1c): one entry per user action, storing only what it changed (C3dEdit). A GESTURE — a
+// drag, from brief 46 on — edits the document as it goes and commits ONE entry on release (BeginGesture).
+// The display unit is a document PREFERENCE, not geometry (owner decision D4): changing it dirties the
+// document and is saved, but adds no undo entry, elaborates nothing and moves nothing (gate 10).
+
+using System.Collections.Concurrent;
+using System.Collections.ObjectModel;
+using CircuitRF.Design.Layout;
+using CircuitRF.Design.Layout.Em;
+using CircuitRF.Design.ThreeD;
+using CircuitRF.Engine.Em3d;
+using CircuitRF.Render;
+using CircuitRF.Render.Scene3D;
+using CircuitRF.Render.Scene3D.Edit;
+using CircuitRF.Ui.Commands;
+using CircuitRF.Ui.Viewer3D;
+using CommunityToolkit.Mvvm.ComponentModel;
+
+namespace CircuitRF.Ui.ThreeD;
+
+/// <summary>The UI thread's snapshot for one scene build: the document as its file would say it.</summary>
+public sealed record C3dSceneInputs(string DocumentText, string Path, string? WorkspaceCws, ColorTheme Theme, ColorVariant Variant);
+
+public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEditHost, IDisposable
+{
+    private readonly C3dElaborator _elaborator;
+    private readonly object _elaborating = new();
+    private readonly Scene3DTessellationCache _tessellations = new();
+    private readonly ConcurrentDictionary<long, C3dElaboration> _elaborations = new();
+    private readonly Func<string?> _workspaceCws;
+    private (double X, double Y, double Z)? _origin;
+    private bool _preferenceDirty;
+    private bool _loading;
+    private string? _savedStamp;
+
+    public string FilePath { get; private set; }
+    public C3dDocument Document { get; private set; }
+    public UndoRedoStack UndoRedo { get; } = new();
+
+    /// <summary>The pane's view model — the read-only viewer's own class.</summary>
+    public Viewer3DViewModel Viewer { get; }
+
+    public ObservableCollection<C3dTreeGroup> Tree { get; } = [];
+    public C3dPropertiesViewModel Properties { get; }
+
+    /// <summary>The elaboration the current scene was built from (UI thread).</summary>
+    public C3dElaboration? Elaboration { get; private set; }
+
+    /// <summary>Undo entries pushed — gate 10 reads that a unit change adds none.</summary>
+    public int UndoEntries { get; private set; }
+
+    /// <summary>Tessellations the scene builder had to make for this document — gate 6's counter.</summary>
+    public long TessellationMisses => _tessellations.Misses;
+
+    /// <summary>The generation whose scene has been adopted and applied (tree, Hidden, Properties).</summary>
+    public long AdoptedGeneration => Interlocked.Read(ref _adoptedGeneration);
+    private long _adoptedGeneration;
+
+    /// <summary>Objects the elaborator lowered because its cache missed — gate 6's counter.</summary>
+    public long ObjectsElaborated { get { lock (_elaborating) return _elaborator.ObjectsElaborated; } }
+
+    public bool IsDirty => UndoRedo.IsModified || _preferenceDirty;
+
+    /// <summary>Raised when the file changed on disk while the document is dirty — the shell asks.</summary>
+    public event Action? ExternalChangeWhileDirty;
+
+    /// <summary>Raised when the Properties panel should show, and focus its name for a rename.</summary>
+    public event Action<bool>? PropertiesRequested;
+
+    [ObservableProperty] private string _statusMessage = "";
+    [ObservableProperty] private LayoutUnit _displayUnit;
+    [ObservableProperty] private bool _propertiesVisible = true;
+    [ObservableProperty] private bool _showTree = true;
+
+    public static IReadOnlyList<LayoutUnit> AllUnits => Layout.LayoutEditorViewModel.AllUnits;
+
+    public C3dEditorViewModel(string path, C3dDocument document, Func<Viewer3DBackend> backend, Func<string?> workspaceCws,
+                              Action<Action> post, TechnologyCache? technologies = null)
+    {
+        FilePath = Path.GetFullPath(path);
+        Document = document;
+        _workspaceCws = workspaceCws;
+        _elaborator = new C3dElaborator(technologies);
+        _savedStamp = Stamp(FilePath);
+        Viewer = new Viewer3DViewModel(FilePath, Path.GetFileName(FilePath), Snapshot, Build, backend, () => null, post)
+        {
+            EditHost = this,
+        };
+        Viewer.SceneAdopted += OnSceneAdopted;
+        Viewer.SelectionChanged += OnViewerSelectionChanged;
+        Properties = new C3dPropertiesViewModel(this);
+        UndoRedo.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(UndoRedoStack.IsModified)) OnPropertyChanged(nameof(IsDirty));
+        };
+        _loading = true;
+        DisplayUnit = document.DisplayUnit;
+        _loading = false;
+        ApplyLengthFormat();
+        RebuildTree();
+    }
+
+    /// <summary>Builds the first scene.</summary>
+    public void Start() => Viewer.Regenerate();
+
+    // ── the scene: elaboration → problem → scene ─────────────────────────────────────────────
+
+    private object Snapshot()
+        => new C3dSceneInputs(C3dPersistence.Serialize(Document), FilePath, _workspaceCws(), ThemeService.Active, ThemeService.CurrentVariant);
+
+    /// <summary>The origin moves only when the content has moved further than its own size from it, so an
+    /// ordinary edit leaves every other object's vertex bytes as they were (gate 6).</summary>
+    private static bool NearEnough((double X, double Y, double Z) o, (double X0, double Y0, double Z0, double X1, double Y1, double Z1) e)
+    {
+        double size = Math.Max(Math.Max(e.X1 - e.X0, e.Y1 - e.Y0), e.Z1 - e.Z0);
+        double cx = (e.X0 + e.X1) / 2, cy = (e.Y0 + e.Y1) / 2, cz = (e.Z0 + e.Z1) / 2;
+        return Math.Abs(cx - o.X) <= size && Math.Abs(cy - o.Y) <= size && Math.Abs(cz - o.Z) <= size;
+    }
+
+    private Scene3DModel Build(long generation, object? state, CancellationToken ct)
+    {
+        var inputs = (C3dSceneInputs)state!;
+        var doc = C3dPersistence.Deserialize(inputs.DocumentText);
+        lock (_elaborating)
+        {
+            ct.ThrowIfCancellationRequested();
+            var e = _elaborator.Elaborate(doc, inputs.Path, inputs.WorkspaceCws);
+            _elaborations[generation] = e;
+            var extent = e.Extent() ?? (-5e-4, -5e-4, -5e-4, 5e-4, 5e-4, 5e-4);
+            if (_origin is not { } o || !NearEnough(o, extent))
+                _origin = ((extent.X0 + extent.X1) / 2, (extent.Y0 + extent.Y1) / 2, (extent.Z0 + extent.Z1) / 2);
+            var a = Em3dBoundaryKind.Absorbing;
+            var faces = new Em3dFaces(a, a, a, a, a, a);
+            var box = new Em3dAirBox(new Point3(extent.X0, extent.Y0, extent.Z0), new Point3(extent.X1, extent.Y1, extent.Z1), faces);
+            var problem = new Em3dProblem(e.Solids, e.Sheets, e.Materials, [], box,
+                                          new Em3dFrequency(1e9, 1e9, 1, Em3dSweepKind.Linear), EmSetup.DefaultOperatingTempC);
+            var notes = new List<string>(e.Refusals);
+            notes.AddRange(e.Warnings);
+            notes.AddRange(e.Notes);
+            return Scene3DBuilder.Build(problem, generation, e.Origins, e.Technology, inputs.Theme, inputs.Variant, notes,
+                new Scene3DBuildOptions(name => e.Provenance.TryGetValue(name, out var p) ? p.FaceNames : null,
+                                        _tessellations, DrawAirBox: false, Origin: _origin));
+        }
+    }
+
+    private void OnSceneAdopted()
+    {
+        long gen = Viewer.Scene.Generation;
+        if (_elaborations.TryGetValue(gen, out var e)) Elaboration = e;
+        foreach (long old in _elaborations.Keys.Where(k => k <= gen).ToList()) _elaborations.TryRemove(old, out _);
+        ApplyHiddenFlags();
+        RefreshTreeVisibility();
+        RebuildInstanceChildren();
+        Properties.Reload();
+        OnPropertyChanged(nameof(Materials));
+        Interlocked.Exchange(ref _adoptedGeneration, gen);
+    }
+
+    /// <summary>A document object's <c>Hidden</c> is document state (brief 41 §2a): the pane follows it.</summary>
+    private void ApplyHiddenFlags()
+    {
+        foreach (var o in Document.Objects)
+            if (SceneObject(o.Name) is { } s) Viewer.SetVisibleEverywhere(s.Id, !o.Hidden);
+    }
+
+    /// <summary>The scene object a document object became, by its name, or null (a polyline, a refusal).</summary>
+    public Scene3DObject? SceneObject(string name) => Viewer.Scene.Objects.FirstOrDefault(o => o.Name == name);
+
+    /// <summary>The document index of a scene object that is the document's own, or −1.</summary>
+    public int DocumentIndex(Scene3DObject o) => InstanceOf(o) is null ? Document.Objects.FindIndex(d => d.Name == o.Name) : -1;
+
+    // ── IViewer3DEditHost ────────────────────────────────────────────────────────────────────
+
+    public string KindOf(Scene3DObject o)
+    {
+        if (InstanceOf(o) is { } inst) return $"Part of instance {inst}";
+        return Document.Objects.FirstOrDefault(d => d.Name == o.Name) is { } obj ? C3dObject.KindOf(obj) : o.Kind.ToString();
+    }
+
+    public string? InstanceOf(Scene3DObject o)
+        => Elaboration?.Provenance.TryGetValue(o.Name, out var p) == true && p.InstancePath.Length > 0 ? p.InstancePath : null;
+
+    public IReadOnlyList<string> Materials
+        => Elaboration?.Technology?.Materials.Select(m => m.Name).ToList() ?? (IReadOnlyList<string>)[];
+
+    public bool SetHidden(IReadOnlyList<Scene3DObject> objects, bool hidden, string description)
+    {
+        var indices = objects.Select(DocumentIndex).Where(i => i >= 0).Distinct().ToList();
+        if (indices.Count == 0) return false;
+        ChangeObjects(description, indices, o => o.Hidden = hidden);
+        // An instance's contents are not the document's to hide: the view hides them for this session.
+        foreach (var o in objects.Where(o => DocumentIndex(o) < 0)) Viewer.SetVisibleEverywhere(o.Id, !hidden);
+        if (hidden) Viewer.SetSelection([]);
+        return true;
+    }
+
+    public bool ShowAll(IReadOnlyList<Scene3DObject>? keep)
+    {
+        var keepNames = keep?.Select(o => o.Name).ToHashSet(StringComparer.Ordinal);
+        var indices = Enumerable.Range(0, Document.Objects.Count)
+            .Where(i => Document.Objects[i].Hidden != (keepNames is not null && !keepNames.Contains(Document.Objects[i].Name)))
+            .ToList();
+        if (indices.Count > 0)
+            ChangeObjects(keep is null ? "Show all" : "Isolate", indices,
+                          o => o.Hidden = keepNames is not null && !keepNames.Contains(o.Name));
+        foreach (var s in Viewer.Scene.Objects.Where(s => s.Pickable && DocumentIndex(s) < 0))
+            Viewer.SetVisibleEverywhere(s.Id, keepNames is null || keepNames.Contains(s.Name));
+        return true;
+    }
+
+    public void SetMaterial(IReadOnlyList<Scene3DObject> objects, string material)
+    {
+        var indices = objects.Select(DocumentIndex).Where(i => i >= 0).Distinct().ToList();
+        if (indices.Count == 0) return;
+        ChangeObjects(indices.Count == 1 ? $"Material of {Document.Objects[indices[0]].Name}" : $"Material of {indices.Count} objects",
+                      indices, o => o.Material = material);
+    }
+
+    public bool DeleteSelection()
+    {
+        if (Viewer.SelectMode != Scene3DSelectMode.Object) return false;
+        var objects = Viewer.SelectedObjects();
+        var indices = objects.Select(DocumentIndex).Where(i => i >= 0).Distinct().OrderBy(i => i).ToList();
+        if (indices.Count == 0)
+        {
+            if (objects.Count > 0) StatusMessage = "Nothing deletable is selected: an instance's contents belong to its own cell.";
+            return objects.Count > 0;
+        }
+        var slots = indices.Select(i => new C3dEditSlot(false, i, C3dPersistence.SerializeObject(Document.Objects[i]), null)).ToList();
+        Viewer.SetSelection([]);
+        Push(new C3dEdit(indices.Count == 1 ? $"Delete {Document.Objects[indices[0]].Name}" : $"Delete {indices.Count} objects",
+                         slots, ApplySlots));
+        return true;
+    }
+
+    public void ShowProperties(bool rename)
+    {
+        PropertiesVisible = true;
+        PropertiesRequested?.Invoke(rename);
+    }
+
+    // ── edits ────────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>One undoable edit of the objects at <paramref name="indices"/>: each is copied, the copy is
+    /// changed, and only the ones whose file spelling changed are in the entry. Nothing changed, no entry.</summary>
+    public void ChangeObjects(string description, IReadOnlyList<int> indices, Action<C3dObject> mutate)
+    {
+        var slots = new List<C3dEditSlot>();
+        foreach (int i in indices.Distinct().OrderBy(i => i))
+        {
+            string before = C3dPersistence.SerializeObject(Document.Objects[i]);
+            var copy = C3dPersistence.DeserializeObject(before);
+            mutate(copy);
+            string after = C3dPersistence.SerializeObject(copy);
+            if (after != before) slots.Add(new C3dEditSlot(false, i, before, after));
+        }
+        if (slots.Count > 0) Push(new C3dEdit(description, slots, ApplySlots));
+    }
+
+    /// <summary>A rename: validated here, one entry, and the pane keeps the object selected under its new name.</summary>
+    public string? Rename(int index, string name)
+    {
+        name = name.Trim();
+        var obj = Document.Objects[index];
+        if (name == obj.Name) return null;
+        if (name.Length == 0) return "A name cannot be empty.";
+        if (string.Equals(name, "airbox", StringComparison.OrdinalIgnoreCase)) return "'airbox' is reserved: the air box's faces are named after it.";
+        if (name.Contains('/')) return "A name cannot hold '/': an instance's contents are named '<instance>/<object>'.";
+        if (Document.Objects.Any(o => o != obj && o.Name == name) || Document.Instances.Any(i => i.Name == name))
+            return $"'{name}' is already the name of something in this 3D view.";
+        Viewer.ExpectRename(obj.Name, name);
+        ChangeObjects($"Rename {obj.Name} to {name}", [index], o => o.Name = name);
+        return null;
+    }
+
+    private void Push(C3dEdit edit)
+    {
+        UndoRedo.Execute(edit);
+        UndoEntries++;
+        StatusMessage = "";
+    }
+
+    /// <summary>The one place the document's objects change, for every entry, forward and back.</summary>
+    private void ApplySlots(IReadOnlyList<C3dEditSlot> slots, bool forward)
+    {
+        C3dEdit.Apply(Document, slots, forward);
+        DocumentChanged();
+    }
+
+    /// <summary>The document changed: elaborate again (the caches make it the changed objects' work), and
+    /// bring the tree and the panel up to date.</summary>
+    private void DocumentChanged()
+    {
+        Viewer.Regenerate();
+        RebuildTree();
+        Properties.Reload();
+        OnPropertyChanged(nameof(IsDirty));
+    }
+
+    /// <summary>
+    /// R-em3d43-1c — a gesture (a drag) changes the objects at <paramref name="indices"/> as it goes and is
+    /// ONE undo entry, pushed by <see cref="C3dGesture.Commit"/>. Each <see cref="C3dGesture.Update"/> re-elaborates
+    /// the changed objects only, so a drag previews through the same path an edit takes.
+    /// </summary>
+    public C3dGesture BeginGesture(string description, IReadOnlyList<int> indices) => new(this, description, indices);
+
+    public sealed class C3dGesture
+    {
+        private readonly C3dEditorViewModel _owner;
+        private readonly string _description;
+        private readonly List<(int Index, string Before)> _before;
+        private bool _done;
+
+        internal C3dGesture(C3dEditorViewModel owner, string description, IReadOnlyList<int> indices)
+        {
+            _owner = owner;
+            _description = description;
+            _before = [.. indices.Distinct().OrderBy(i => i).Select(i => (i, C3dPersistence.SerializeObject(owner.Document.Objects[i])))];
+        }
+
+        /// <summary>One step of the gesture: the objects change in the document, no entry is pushed.</summary>
+        public void Update(Action<C3dObject> mutate)
+        {
+            if (_done) throw new InvalidOperationException("This gesture has ended.");
+            foreach (var (i, _) in _before) mutate(_owner.Document.Objects[i]);
+            _owner.DocumentChanged();
+        }
+
+        /// <summary>The release: one entry holding each object's first before and last after.</summary>
+        public void Commit()
+        {
+            if (_done) return;
+            _done = true;
+            var slots = _before.Select(b => new C3dEditSlot(false, b.Index, b.Before, C3dPersistence.SerializeObject(_owner.Document.Objects[b.Index])))
+                               .Where(s => s.Before != s.After).ToList();
+            if (slots.Count > 0) _owner.Push(new C3dEdit(_description, slots, _owner.ApplySlots, alreadyApplied: true));
+        }
+
+        /// <summary>Esc: every object back as it was, no entry.</summary>
+        public void Cancel()
+        {
+            if (_done) return;
+            _done = true;
+            foreach (var (i, before) in _before) _owner.Document.Objects[i] = C3dPersistence.DeserializeObject(before);
+            _owner.DocumentChanged();
+        }
+    }
+
+    // ── the display unit (owner decision D4: a preference, not geometry) ────────────────────
+
+    partial void OnDisplayUnitChanged(LayoutUnit value)
+    {
+        if (_loading) return;
+        Document.DisplayUnit = value;
+        _preferenceDirty = true;
+        OnPropertyChanged(nameof(IsDirty));
+        ApplyLengthFormat();
+        Properties.Reload();
+    }
+
+    private void ApplyLengthFormat()
+    {
+        var f = EmLengthFormat.For(Document.DisplayUnit, Document.DbuPerMicron);
+        Viewer.SetLengthFormat(m => f(m));
+    }
+
+    /// <summary>A length in DBU, spelled in the display unit with its suffix.</summary>
+    public string Length(long dbu)
+        => $"{LayoutUnits.Format(dbu, Document.DisplayUnit, Document.DbuPerMicron)} {LayoutUnits.Suffix(Document.DisplayUnit)}";
+
+    // ── save, reload, external change (R-em3d43-1c / -1d) ────────────────────────────────────
+
+    /// <summary>Writes the document; null on success, else why not.</summary>
+    public string? Save()
+    {
+        try { C3dPersistence.SaveToFile(FilePath, Document); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return ex.Message; }
+        _savedStamp = Stamp(FilePath);
+        UndoRedo.MarkSaved();
+        _preferenceDirty = false;
+        OnPropertyChanged(nameof(IsDirty));
+        return null;
+    }
+
+    /// <summary>Writes the document to <paramref name="path"/> and follows it there; null on success.</summary>
+    public string? SaveAs(string path)
+    {
+        string was = FilePath;
+        FilePath = Path.GetFullPath(path);
+        if (Save() is { } why) { FilePath = was; return why; }
+        Viewer.Regenerate();         // the document's own path is where its relative references resolve from
+        return null;
+    }
+
+    /// <summary>The file changed on disk. Our own save is ignored; a clean document reloads without asking; a
+    /// dirty one raises <see cref="ExternalChangeWhileDirty"/> and the shell asks, as for a layout.</summary>
+    public void OnFileChangedOnDisk()
+    {
+        string? stamp = Stamp(FilePath);
+        if (stamp is null || stamp == _savedStamp) return;
+        if (IsDirty) { ExternalChangeWhileDirty?.Invoke(); return; }
+        Reload();
+    }
+
+    /// <summary>A placed cell's .c3d or .clay changed: elaborate again. The elaborator's child cache is keyed
+    /// by the file's stamp, so only that instance is rebuilt, and nothing is asked.</summary>
+    public void OnChildChanged() => Viewer.Invalidate();
+
+    /// <summary>Reads the file again, dropping the history (it described a document that is gone).</summary>
+    public string? Reload()
+    {
+        C3dDocument doc;
+        try { doc = C3dPersistence.LoadFromFile(FilePath); }
+        catch (Exception ex) { return ex.Message; }
+        Document = doc;
+        _savedStamp = Stamp(FilePath);
+        UndoRedo.Reset();
+        _preferenceDirty = false;
+        _loading = true;
+        DisplayUnit = doc.DisplayUnit;
+        _loading = false;
+        ApplyLengthFormat();
+        Viewer.SetSelection([]);
+        DocumentChanged();
+        return null;
+    }
+
+    private static string? Stamp(string path)
+    {
+        try
+        {
+            var f = new FileInfo(path);
+            return f.Exists ? $"{f.LastWriteTimeUtc.Ticks}:{f.Length}" : null;
+        }
+        catch (Exception) { return null; }
+    }
+
+    // ── the tree (R-em3d43-6a) ───────────────────────────────────────────────────────────────
+
+    private bool _syncingTree;
+
+    [ObservableProperty] private C3dTreeItem? _selectedTreeItem;
+
+    private static readonly (Type Type, string Header)[] Groups =
+    [
+        (typeof(C3dBox), "Boxes"), (typeof(C3dPrism), "Prisms"), (typeof(C3dCylinder), "Cylinders"),
+        (typeof(C3dPolyhedron), "Polyhedra"), (typeof(C3dSheet), "Sheets"), (typeof(C3dPolyline), "Polylines"),
+    ];
+
+    /// <summary>Objects in construction order, grouped by kind; then instances, each expandable to its
+    /// cell's objects (read-only).</summary>
+    private void RebuildTree()
+    {
+        string? keep = SelectedTreeItem?.Name;
+        _syncingTree = true;
+        try
+        {
+            Tree.Clear();
+            foreach (var (type, header) in Groups)
+            {
+                var items = Document.Objects.Select((o, i) => (o, i)).Where(t => t.o.GetType() == type)
+                    .Select(t => new C3dTreeItem(this, t.o.Name, C3dObject.KindOf(t.o), t.o.Material, t.i, -1, !t.o.Hidden)).ToList();
+                if (items.Count > 0) Tree.Add(new C3dTreeGroup(header, items));
+            }
+            var instances = Document.Instances.Select((inst, i) => new C3dTreeItem(this, inst.Name, "Instance", inst.CellRef, -1, i, true)).ToList();
+            if (instances.Count > 0) Tree.Add(new C3dTreeGroup("Instances", instances));
+            RebuildInstanceChildren();
+            SelectedTreeItem = keep is null ? null : AllTreeItems().FirstOrDefault(t => t.Name == keep);
+        }
+        finally { _syncingTree = false; }
+    }
+
+    private IEnumerable<C3dTreeItem> AllTreeItems()
+        => Tree.SelectMany(g => g.Items).SelectMany(i => i.Children.Prepend(i));
+
+    /// <summary>Each instance's children, from the elaboration: what the placed cell contributed.</summary>
+    private void RebuildInstanceChildren()
+    {
+        if (Elaboration is not { } e) return;
+        foreach (var inst in Tree.Where(g => g.Header == "Instances").SelectMany(g => g.Items))
+        {
+            inst.Children.Clear();
+            foreach (var (name, p) in e.Provenance.Where(kv => kv.Value.InstancePath == inst.Name ||
+                                                               kv.Value.InstancePath.StartsWith(inst.Name + "/", StringComparison.Ordinal) ||
+                                                               kv.Value.InstancePath.StartsWith(inst.Name + "[", StringComparison.Ordinal)))
+                inst.Children.Add(new C3dTreeItem(this, name, "Part", Path.GetFileName(p.DocumentPath), -1, -1,
+                                                  SceneObject(name) is { } s && Viewer.View.IsVisible(s.Id)) { IsReadOnly = true });
+        }
+    }
+
+    private void RefreshTreeVisibility()
+    {
+        foreach (var item in AllTreeItems())
+            if (item.ObjectIndex >= 0 && item.ObjectIndex < Document.Objects.Count) item.Sync(!Document.Objects[item.ObjectIndex].Hidden);
+            else if (SceneObject(item.Name) is { } s) item.Sync(Viewer.View.IsVisible(s.Id));
+    }
+
+    /// <summary>A tree checkbox: a document object's writes <c>Hidden</c> (undoable); an instance's contents
+    /// are hidden in the view only.</summary>
+    internal void TreeVisibilityChanged(C3dTreeItem item, bool visible)
+    {
+        if (_syncingTree) return;
+        if (item.ObjectIndex >= 0)
+        {
+            ChangeObjects($"{(visible ? "Show" : "Hide")} {item.Name}", [item.ObjectIndex], o => o.Hidden = !visible);
+            return;
+        }
+        var names = item.InstanceIndex >= 0 ? item.Children.Select(c => c.Name) : [item.Name];
+        foreach (string n in names)
+            if (SceneObject(n) is { } s) Viewer.SetVisibleEverywhere(s.Id, visible);
+        foreach (var c in item.Children) c.Sync(visible);
+    }
+
+    partial void OnSelectedTreeItemChanged(C3dTreeItem? value)
+    {
+        if (_syncingTree || value is null) return;
+        _syncingTree = true;
+        try
+        {
+            var names = value.InstanceIndex >= 0 ? value.Children.Select(c => c.Name).ToList() : [value.Name];
+            var ids = names.Select(SceneObject).OfType<Scene3DObject>().Select(s => Scene3DItem.OfObject(s.Id)).ToList();
+            if (Viewer.SelectMode != Scene3DSelectMode.Object) Viewer.SelectMode = Scene3DSelectMode.Object;
+            Viewer.SetSelection(ids);
+        }
+        finally { _syncingTree = false; }
+    }
+
+    private void OnViewerSelectionChanged()
+    {
+        Properties.Reload();
+        if (_syncingTree) return;
+        _syncingTree = true;
+        try
+        {
+            var first = Viewer.SelectedObjects().FirstOrDefault();
+            SelectedTreeItem = first is null ? null
+                : AllTreeItems().FirstOrDefault(t => t.Name == first.Name)
+                  ?? (InstanceOf(first) is { } inst ? AllTreeItems().FirstOrDefault(t => t.InstanceIndex >= 0 && t.Name == inst.Split('/', '[')[0]) : null);
+        }
+        finally { _syncingTree = false; }
+    }
+
+    public void Dispose() => Viewer.Dispose();
+}
+
+/// <summary>A group of the editor's tree.</summary>
+public sealed class C3dTreeGroup(string header, IEnumerable<C3dTreeItem> items)
+{
+    public string Header { get; } = header;
+    public ObservableCollection<C3dTreeItem> Items { get; } = [.. items];
+}
+
+/// <summary>One node of the editor's tree: a document object, an instance, or (read-only) an instance's part.</summary>
+public sealed partial class C3dTreeItem(C3dEditorViewModel owner, string name, string kind, string? detail,
+                                        int objectIndex, int instanceIndex, bool visible) : ObservableObject
+{
+    public string Name { get; } = name;
+    public string Kind { get; } = kind;
+    public string? Detail { get; } = detail;
+    public int ObjectIndex { get; } = objectIndex;
+    public int InstanceIndex { get; } = instanceIndex;
+    public bool IsReadOnly { get; init; }
+    public ObservableCollection<C3dTreeItem> Children { get; } = [];
+
+    [ObservableProperty] private bool _isVisible = visible;
+
+    partial void OnIsVisibleChanged(bool value) => owner.TreeVisibilityChanged(this, value);
+
+    /// <summary>Set without calling back — the document or the view changed it.</summary>
+    internal void Sync(bool visible)
+    {
+#pragma warning disable MVVMTK0034
+        if (_isVisible == visible) return;
+        _isVisible = visible;
+#pragma warning restore MVVMTK0034
+        OnPropertyChanged(nameof(IsVisible));
+    }
+}

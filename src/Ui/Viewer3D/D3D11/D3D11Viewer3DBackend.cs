@@ -53,11 +53,11 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
     private string _description = "Direct3D 11 (no device yet)";
     private ID3D11InputLayout _layout = null!, _layoutField = null!;
     private ID3D11VertexShader _vs = null!, _vsField = null!;
-    private ID3D11PixelShader _psColor = null!, _psLine = null!, _psPick = null!, _psField = null!;
+    private ID3D11PixelShader _psColor = null!, _psLine = null!, _psPick = null!, _psField = null!, _psEdge = null!, _psTop = null!;
     private ID3D11Buffer? _field;
     private int _fieldCount;
     private ID3D11BlendState _blendOff = null!, _blendOn = null!;
-    private ID3D11DepthStencilState _dsWrite = null!, _dsNoWrite = null!;
+    private ID3D11DepthStencilState _dsWrite = null!, _dsNoWrite = null!, _dsOff = null!;
     private ID3D11RasterizerState _raster = null!;
     private ID3D11Buffer _cb = null!;
     private ID3D11Texture2D _pickId = null!, _pickPos = null!, _pickDepth = null!;
@@ -143,6 +143,8 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
         _psColor = dev.CreatePixelShader(Compile("fs_color", "ps_5_0").Span);
         _psLine = dev.CreatePixelShader(Compile("fs_line", "ps_5_0").Span);
         _psPick = dev.CreatePixelShader(Compile("fs_pick", "ps_5_0").Span);
+        _psEdge = dev.CreatePixelShader(Compile("fs_edge", "ps_5_0").Span);
+        _psTop = dev.CreatePixelShader(Compile("fs_top", "ps_5_0").Span);
         // brief-em3d-29 — the field pass: FieldVertex (position, real part, imaginary part), LOC0..2.
         var vsf = Compile("vs_field", "vs_5_0");
         _vsField = dev.CreateVertexShader(vsf.Span);
@@ -158,6 +160,7 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
             new InputElementDescription("LOC", 0, DxFormat.R32G32B32_Float, 0, 0),
             new InputElementDescription("LOC", 1, DxFormat.R32_UInt, 12, 0),
             new InputElementDescription("LOC", 2, DxFormat.R8G8B8A8_UNorm, 16, 0),
+            new InputElementDescription("LOC", 3, DxFormat.R32_UInt, 20, 0),
         ], vs.Span);
 
         _blendOff = dev.CreateBlendState(BlendDescription.Opaque);
@@ -171,6 +174,8 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
         _blendOn = dev.CreateBlendState(on);
         _dsWrite = dev.CreateDepthStencilState(new DepthStencilDescription(true, DepthWriteMask.All, ComparisonFunction.LessEqual));
         _dsNoWrite = dev.CreateDepthStencilState(new DepthStencilDescription(true, DepthWriteMask.Zero, ComparisonFunction.LessEqual));
+        // brief-em3d-43 — the selection's edges and its face on top: no depth test at all.
+        _dsOff = dev.CreateDepthStencilState(new DepthStencilDescription(false, DepthWriteMask.Zero, ComparisonFunction.Always));
         // Cull none; front faces counter-clockwise, as the tessellation winds them seen from outside —
         // the shader's SV_IsFrontFace draws the clip plane's caps from the back faces.
         var rs = RasterizerDescription.CullNone;
@@ -178,7 +183,7 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
         _raster = dev.CreateRasterizerState(rs);
         _cb = dev.CreateBuffer(new BufferDescription(Scene3DFramePlan.UniformBytes, BindFlags.ConstantBuffer, ResourceUsage.Default));
 
-        _pickId = dev.CreateTexture2D(new Texture2DDescription(DxFormat.R32_UInt, 1, 1, 1, 1, BindFlags.RenderTarget));
+        _pickId = dev.CreateTexture2D(new Texture2DDescription(DxFormat.R32G32_UInt, 1, 1, 1, 1, BindFlags.RenderTarget));
         _pickPos = dev.CreateTexture2D(new Texture2DDescription(DxFormat.R32G32B32A32_Float, 1, 1, 1, 1, BindFlags.RenderTarget));
         _pickDepth = dev.CreateTexture2D(new Texture2DDescription(DxFormat.D32_Float, 1, 1, 1, 1, BindFlags.DepthStencil));
         _pickIdRtv = dev.CreateRenderTargetView(_pickId);
@@ -187,7 +192,7 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
         _pickTargets[0] = _pickIdRtv; _pickTargets[1] = _pickPosRtv;
         for (int i = 0; i < Ring; i++)
         {
-            _stagingId[i] = dev.CreateTexture2D(new Texture2DDescription(DxFormat.R32_UInt, 1, 1, 1, 1, BindFlags.None, ResourceUsage.Staging, CpuAccessFlags.Read));
+            _stagingId[i] = dev.CreateTexture2D(new Texture2DDescription(DxFormat.R32G32_UInt, 1, 1, 1, 1, BindFlags.None, ResourceUsage.Staging, CpuAccessFlags.Read));
             _stagingPos[i] = dev.CreateTexture2D(new Texture2DDescription(DxFormat.R32G32B32A32_Float, 1, 1, 1, 1, BindFlags.None, ResourceUsage.Staging, CpuAccessFlags.Read));
             _query[i] = dev.CreateQuery(QueryType.Event);
         }
@@ -198,9 +203,25 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
     public override void UploadScene(Scene3DModel scene)
     {
         _vb?.Dispose(); _ib?.Dispose(); _lines?.Dispose();
-        fixed (Scene3DVertex* p = scene.Vertices) _vb = NewBuffer(p, scene.Vertices.Length * Scene3DVertex.Stride, BindFlags.VertexBuffer);
-        fixed (uint* p = scene.Indices) _ib = NewBuffer(p, scene.Indices.Length * 4, BindFlags.IndexBuffer);
-        fixed (Scene3DVertex* p = scene.LineVertices) _lines = NewBuffer(p, scene.LineVertices.Length * Scene3DVertex.Stride, BindFlags.VertexBuffer);
+        // DEFAULT, not immutable: brief 43's PatchScene rewrites ranges of these three in place.
+        fixed (Scene3DVertex* p = scene.Vertices) _vb = NewBuffer(p, scene.Vertices.Length * Scene3DVertex.Stride, BindFlags.VertexBuffer, ResourceUsage.Default);
+        fixed (uint* p = scene.Indices) _ib = NewBuffer(p, scene.Indices.Length * 4, BindFlags.IndexBuffer, ResourceUsage.Default);
+        fixed (Scene3DVertex* p = scene.LineVertices) _lines = NewBuffer(p, scene.LineVertices.Length * Scene3DVertex.Stride, BindFlags.VertexBuffer, ResourceUsage.Default);
+    }
+
+    /// <summary>brief-em3d-43 gate 6 — the changed ranges only, through the immediate context, which orders
+    /// the write after every draw already issued that reads the old bytes.</summary>
+    public override void PatchScene(Scene3DModel scene, Scene3DPatch patch)
+    {
+        var ctx = Ctx;
+        foreach (var r in patch.Ranges)
+        {
+            var target = r.Buffer switch { Scene3DPatchBuffer.Vertices => _vb, Scene3DPatchBuffer.Indices => _ib, _ => _lines };
+            if (target is null) { UploadScene(scene); return; }
+            ctx.UpdateSubresource(Scene3DPatch.Source(scene, r), target, 0, 0, 0,
+                                  new Vortice.Mathematics.Box(r.ByteOffset, 0, 0, r.ByteOffset + r.ByteLength, 1, 1));
+            Counters.CountUpload(r.ByteLength);
+        }
     }
 
     public override void UploadOverlay(Scene3DBuffer slot, Scene3DVertex[] lines)
@@ -217,11 +238,11 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
         _fieldCount = vertices.Length;
     }
 
-    private ID3D11Buffer? NewBuffer(void* data, int length, BindFlags bind)
+    private ID3D11Buffer? NewBuffer(void* data, int length, BindFlags bind, ResourceUsage usage = ResourceUsage.Immutable)
     {
         if (length == 0) return null;
         Counters.CountUpload(length);
-        return Device.CreateBuffer(new BufferDescription((uint)length, bind, ResourceUsage.Immutable), (nint)data)
+        return Device.CreateBuffer(new BufferDescription((uint)length, bind, usage), (nint)data)
                ?? throw new Viewer3DPresentFault($"D3D11 could not allocate a {length:N0}-byte buffer.");
     }
 
@@ -399,7 +420,7 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
                 Scene3DBuffer.Scene => _vb, Scene3DBuffer.SceneLines => _lines, Scene3DBuffer.Field => _field,
                 Scene3DBuffer.Overlay0 => _overlays[0], Scene3DBuffer.Overlay1 => _overlays[1], _ => _overlays[2],
             };
-            bool lines = d.Pipeline == Scene3DPipeline.Lines, field = d.Pipeline == Scene3DPipeline.Field;
+            bool lines = d.Pipeline is Scene3DPipeline.Lines or Scene3DPipeline.Edges, field = d.Pipeline == Scene3DPipeline.Field;
             if (buf is null || (!lines && !field && _ib is null)) continue;
             if (field && d.First + d.Count > _fieldCount) continue;
             if (d.Pipeline != state)
@@ -412,9 +433,14 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
                     ctx.VSSetShader(field ? _vsField : _vs);
                     bound = (Scene3DBuffer)(-1);
                 }
-                ctx.PSSetShader(field ? _psField : lines ? _psLine : _psColor);
-                ctx.OMSetBlendState(state == Scene3DPipeline.Translucent ? _blendOn : _blendOff);
-                ctx.OMSetDepthStencilState(state == Scene3DPipeline.Translucent ? _dsNoWrite : _dsWrite);
+                ctx.PSSetShader(state switch
+                {
+                    Scene3DPipeline.Field => _psField, Scene3DPipeline.Lines => _psLine, Scene3DPipeline.Edges => _psEdge,
+                    Scene3DPipeline.OnTop => _psTop, _ => _psColor,
+                });
+                bool selection = state is Scene3DPipeline.Edges or Scene3DPipeline.OnTop;
+                ctx.OMSetBlendState(state == Scene3DPipeline.Translucent || selection ? _blendOn : _blendOff);
+                ctx.OMSetDepthStencilState(selection ? _dsOff : state == Scene3DPipeline.Translucent ? _dsNoWrite : _dsWrite);
                 ctx.IASetPrimitiveTopology(lines ? PrimitiveTopology.LineList : PrimitiveTopology.TriangleList);
             }
             if (d.Buffer != bound)
@@ -451,6 +477,7 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
             if (!ctx.GetData(_query[slot], AsyncGetDataFlags.DoNotFlush, out int done) || done == 0) continue;
             var m = ctx.Map(_stagingId[slot], 0, MapMode.Read, DxMapFlags.None);
             PickedId = *(uint*)m.DataPointer;
+            PickedFace = ((uint*)m.DataPointer)[1];
             ctx.Unmap(_stagingId[slot], 0);
             m = ctx.Map(_stagingPos[slot], 0, MapMode.Read, DxMapFlags.None);
             float* w = (float*)m.DataPointer;
@@ -475,8 +502,8 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
         _pickIdRtv?.Dispose(); _pickPosRtv?.Dispose(); _pickDsv?.Dispose();
         _pickId?.Dispose(); _pickPos?.Dispose(); _pickDepth?.Dispose();
         _cb?.Dispose(); _layout?.Dispose(); _vs?.Dispose(); _layoutField?.Dispose(); _vsField?.Dispose();
-        _psColor?.Dispose(); _psLine?.Dispose(); _psPick?.Dispose(); _psField?.Dispose();
-        _blendOff?.Dispose(); _blendOn?.Dispose(); _dsWrite?.Dispose(); _dsNoWrite?.Dispose(); _raster?.Dispose();
+        _psColor?.Dispose(); _psLine?.Dispose(); _psPick?.Dispose(); _psField?.Dispose(); _psEdge?.Dispose(); _psTop?.Dispose();
+        _blendOff?.Dispose(); _blendOn?.Dispose(); _dsWrite?.Dispose(); _dsNoWrite?.Dispose(); _dsOff?.Dispose(); _raster?.Dispose();
         _ctx?.Dispose(); _device.Dispose();
     }
 }
