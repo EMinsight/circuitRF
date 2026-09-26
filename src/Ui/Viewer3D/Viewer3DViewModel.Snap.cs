@@ -142,14 +142,14 @@ public sealed partial class Viewer3DViewModel
         {
             radius = GeometrySnap.RadiusPixels;
             _cpuPatch.Render(Scene, View.Camera, View.CursorX, View.CursorY, _viewW, _viewH, Scene3DIdPatch.SizeFor(radius),
-                             View.Visible, View.Clip);
+                             PickVisible, View.Clip);
             patch = _cpuPatch;
             _lastSnapWasCpu = true;
         }
         SnapUsedCpuPatch = _lastSnapWasCpu;
         SnapQueries++;
         var settings = new Snap3DSettings(SnapKinds, radius, GeometrySnapSuspended, SnapGrid);
-        SetSnap(SnapQuery.Query(Scene, patch, settings, SnapExclusion, View.Visible, View.Clip));
+        SetSnap(SnapQuery.Query(Scene, patch, settings, SnapExclusion, PickVisible, View.Clip));
     }
 
     private void SetSnap(Snap3DResult snap)

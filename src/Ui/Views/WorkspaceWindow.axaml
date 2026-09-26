@@ -246,10 +246,71 @@
                         <NativeMenuItem Header="Modify" ToolTip="Requires an active 3D editor.">
                             <NativeMenuItem.Menu>
                                 <NativeMenu>
+                                    <NativeMenuItem Header="Move  (G)" ToolTip="Base point, then target point, both snapped. X/Y/Z locks an axis. Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="Move"/>
+                                    <NativeMenuItem Header="Move Along" ToolTip="Requires an active 3D editor.">
+                                        <NativeMenuItem.Menu>
+                                            <NativeMenu>
+                                                <NativeMenuItem Header="X" ToolTip="Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="MoveX"/>
+                                                <NativeMenuItem Header="Y" ToolTip="Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="MoveY"/>
+                                                <NativeMenuItem Header="Z" ToolTip="Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="MoveZ"/>
+                                            </NativeMenu>
+                                        </NativeMenuItem.Menu>
+                                    </NativeMenuItem>
+                                    <NativeMenuItem Header="Rotate  (R)" ToolTip="About the drawing plane's normal through the pivot; 15° steps, Shift free, or typed. Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="Rotate"/>
+                                    <NativeMenuItem Header="Rotate 90°" ToolTip="Requires an active 3D editor.">
+                                        <NativeMenuItem.Menu>
+                                            <NativeMenu>
+                                                <NativeMenuItem Header="+90° about X" ToolTip="Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="RotX+"/>
+                                                <NativeMenuItem Header="−90° about X" ToolTip="Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="RotX-"/>
+                                                <NativeMenuItem Header="+90° about Y" ToolTip="Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="RotY+"/>
+                                                <NativeMenuItem Header="−90° about Y" ToolTip="Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="RotY-"/>
+                                                <NativeMenuItem Header="+90° about Z" ToolTip="Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="RotZ+"/>
+                                                <NativeMenuItem Header="−90° about Z" ToolTip="Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="RotZ-"/>
+                                            </NativeMenu>
+                                        </NativeMenuItem.Menu>
+                                    </NativeMenuItem>
+                                    <NativeMenuItem Header="Mirror" ToolTip="Requires an active 3D editor.">
+                                        <NativeMenuItem.Menu>
+                                            <NativeMenu>
+                                                <NativeMenuItem Header="Across XY" ToolTip="Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="MirrorXY"/>
+                                                <NativeMenuItem Header="Across YZ" ToolTip="Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="MirrorYZ"/>
+                                                <NativeMenuItem Header="Across XZ" ToolTip="Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="MirrorXZ"/>
+                                            </NativeMenu>
+                                        </NativeMenuItem.Menu>
+                                    </NativeMenuItem>
+                                    <NativeMenuItem Header="Duplicate  (Ctrl/Cmd+D)" ToolTip="Copies in place, then moves them. Esc cancels both. Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="Duplicate"/>
+                                    <NativeMenuItem Header="Array…" ToolTip="Copies along up to three axes at a pitch, previewed live. Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="Array"/>
+                                    <NativeMenuItem Header="Align" ToolTip="Requires an active 3D editor.">
+                                        <NativeMenuItem.Menu>
+                                            <NativeMenu>
+                                                <NativeMenuItem Header="X min" ToolTip="Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="AlignXMin"/>
+                                                <NativeMenuItem Header="X centre" ToolTip="Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="AlignXCentre"/>
+                                                <NativeMenuItem Header="X max" ToolTip="Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="AlignXMax"/>
+                                                <NativeMenuItem Header="Y min" ToolTip="Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="AlignYMin"/>
+                                                <NativeMenuItem Header="Y centre" ToolTip="Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="AlignYCentre"/>
+                                                <NativeMenuItem Header="Y max" ToolTip="Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="AlignYMax"/>
+                                                <NativeMenuItem Header="Z min" ToolTip="Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="AlignZMin"/>
+                                                <NativeMenuItem Header="Z centre" ToolTip="Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="AlignZCentre"/>
+                                                <NativeMenuItem Header="Z max" ToolTip="Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="AlignZMax"/>
+                                            </NativeMenu>
+                                        </NativeMenuItem.Menu>
+                                    </NativeMenuItem>
+                                    <NativeMenuItem Header="Order" ToolTip="Requires an active 3D editor.">
+                                        <NativeMenuItem.Menu>
+                                            <NativeMenu>
+                                                <NativeMenuItem Header="Bring to Front" ToolTip="Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="Front"/>
+                                                <NativeMenuItem Header="Bring Forward" ToolTip="Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="Forward"/>
+                                                <NativeMenuItem Header="Send Backward" ToolTip="Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="Backward"/>
+                                                <NativeMenuItem Header="Send to Back" ToolTip="Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="Back"/>
+                                            </NativeMenu>
+                                        </NativeMenuItem.Menu>
+                                    </NativeMenuItem>
+                                    <NativeMenuItemSeparator/>
                                     <NativeMenuItem Header="Extrude" ToolTip="A selected sheet, or a polyline selected in the tree, into a prism. Requires an active 3D editor." Command="{Binding ThreeDExtrudeCommand}"/>
                                 </NativeMenu>
                             </NativeMenuItem.Menu>
                         </NativeMenuItem>
+                        <NativeMenuItem Header="Measure" ToolTip="Two snapped points: x, y, z, the deltas and the distance, every number copyable (M). Requires an active 3D document." Command="{Binding ThreeDMeasureCommand}"/>
                         <NativeMenuItemSeparator/>
                         <NativeMenuItem Header="Show All" ToolTip="Requires an active 3D document." Command="{Binding ThreeDShowAllCommand}"/>
                     </NativeMenu>
@@ -949,8 +1010,52 @@
                     </MenuItem>
                 </MenuItem>
                 <MenuItem Header="_Modify" ToolTip.Tip="Requires an active 3D editor.">
+                    <MenuItem Header="_Move  (G)" Command="{Binding ThreeDModifyCommand}" CommandParameter="Move" ToolTip.Tip="Base point, then target point, both snapped. X/Y/Z locks an axis. Requires an active 3D editor."/>
+                    <MenuItem Header="Move _Along" ToolTip.Tip="Requires an active 3D editor.">
+                        <MenuItem Header="_X" Command="{Binding ThreeDModifyCommand}" CommandParameter="MoveX"/>
+                        <MenuItem Header="_Y" Command="{Binding ThreeDModifyCommand}" CommandParameter="MoveY"/>
+                        <MenuItem Header="_Z" Command="{Binding ThreeDModifyCommand}" CommandParameter="MoveZ"/>
+                    </MenuItem>
+                    <MenuItem Header="_Rotate  (R)" Command="{Binding ThreeDModifyCommand}" CommandParameter="Rotate" ToolTip.Tip="About the drawing plane's normal through the pivot; 15° steps, Shift free, or typed. Requires an active 3D editor."/>
+                    <MenuItem Header="Rotate _90°" ToolTip.Tip="Requires an active 3D editor.">
+                        <MenuItem Header="+90° about X" Command="{Binding ThreeDModifyCommand}" CommandParameter="RotX+"/>
+                        <MenuItem Header="−90° about X" Command="{Binding ThreeDModifyCommand}" CommandParameter="RotX-"/>
+                        <MenuItem Header="+90° about Y" Command="{Binding ThreeDModifyCommand}" CommandParameter="RotY+"/>
+                        <MenuItem Header="−90° about Y" Command="{Binding ThreeDModifyCommand}" CommandParameter="RotY-"/>
+                        <MenuItem Header="+90° about Z" Command="{Binding ThreeDModifyCommand}" CommandParameter="RotZ+"/>
+                        <MenuItem Header="−90° about Z" Command="{Binding ThreeDModifyCommand}" CommandParameter="RotZ-"/>
+                    </MenuItem>
+                    <MenuItem Header="M_irror" ToolTip.Tip="Requires an active 3D editor.">
+                        <MenuItem Header="Across XY" Command="{Binding ThreeDModifyCommand}" CommandParameter="MirrorXY"/>
+                        <MenuItem Header="Across YZ" Command="{Binding ThreeDModifyCommand}" CommandParameter="MirrorYZ"/>
+                        <MenuItem Header="Across XZ" Command="{Binding ThreeDModifyCommand}" CommandParameter="MirrorXZ"/>
+                    </MenuItem>
+                    <MenuItem Header="_Duplicate  (Ctrl+D)" Command="{Binding ThreeDModifyCommand}" CommandParameter="Duplicate" ToolTip.Tip="Copies in place, then moves them. Esc cancels both. Requires an active 3D editor."/>
+                    <MenuItem Header="Arra_y…" Command="{Binding ThreeDModifyCommand}" CommandParameter="Array" ToolTip.Tip="Copies along up to three axes at a pitch, previewed live. Requires an active 3D editor."/>
+                    <MenuItem Header="Ali_gn" ToolTip.Tip="Requires an active 3D editor.">
+                        <MenuItem Header="X min" Command="{Binding ThreeDModifyCommand}" CommandParameter="AlignXMin"/>
+                        <MenuItem Header="X centre" Command="{Binding ThreeDModifyCommand}" CommandParameter="AlignXCentre"/>
+                        <MenuItem Header="X max" Command="{Binding ThreeDModifyCommand}" CommandParameter="AlignXMax"/>
+                        <MenuItem Header="Y min" Command="{Binding ThreeDModifyCommand}" CommandParameter="AlignYMin"/>
+                        <MenuItem Header="Y centre" Command="{Binding ThreeDModifyCommand}" CommandParameter="AlignYCentre"/>
+                        <MenuItem Header="Y max" Command="{Binding ThreeDModifyCommand}" CommandParameter="AlignYMax"/>
+                        <MenuItem Header="Z min" Command="{Binding ThreeDModifyCommand}" CommandParameter="AlignZMin"/>
+                        <MenuItem Header="Z centre" Command="{Binding ThreeDModifyCommand}" CommandParameter="AlignZCentre"/>
+                        <MenuItem Header="Z max" Command="{Binding ThreeDModifyCommand}" CommandParameter="AlignZMax"/>
+                    </MenuItem>
+                    <MenuItem Header="_Order" ToolTip.Tip="Requires an active 3D editor.">
+                        <MenuItem Header="Bring to Front" Command="{Binding ThreeDModifyCommand}" CommandParameter="Front"/>
+                        <MenuItem Header="Bring Forward" Command="{Binding ThreeDModifyCommand}" CommandParameter="Forward"/>
+                        <MenuItem Header="Send Backward" Command="{Binding ThreeDModifyCommand}" CommandParameter="Backward"/>
+                        <MenuItem Header="Send to Back" Command="{Binding ThreeDModifyCommand}" CommandParameter="Back"/>
+                    </MenuItem>
+                    <Separator/>
                     <MenuItem Header="_Extrude" Command="{Binding ThreeDExtrudeCommand}"
                               ToolTip.Tip="A selected sheet, or a polyline selected in the tree, into a prism. Requires an active 3D editor."/>
+                </MenuItem>
+                <MenuItem Header="Mea_sure" Command="{Binding ThreeDMeasureCommand}"
+                          ToolTip.Tip="Two snapped points: x, y, z, the deltas and the distance, every number copyable (M). Requires an active 3D document.">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="RulerSquare" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
                 <Separator/>
                 <MenuItem Header="Show _All" Command="{Binding ThreeDShowAllCommand}"

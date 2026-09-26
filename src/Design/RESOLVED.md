@@ -13464,3 +13464,31 @@ neutral problem gained `Em3dPolyhedron` and `Em3dSheet.Frame` (`src/Engine/Em3d/
 - **The drawing plane is window state**: `CwsDrawingPlane` in the `.cwsuser` (`C3dDrawingPlanes`, keyed by
   the `.c3d`'s workspace-relative path, as the 3D cameras are), added to `MovedFieldNames`, `Extract`,
   `Merge` and `IsEmpty` together — the sidecar split's four lists must move as one. XY at 0 writes no row.
+
+## brief-em3d-46 — composing an operation into a placement, and its canonical form (2026-09-26)
+
+Built: `src/Design/ThreeD/C3dPlacement.cs` (`C3dPlacement` is now `partial`; `Then`, `Canonical`, `Translated`,
+`Clone`) and `C3dOperations` (rotation / reflection about a pivot, the copy-name rule). Gates 3, 4, 5 in
+`tests/Ui.Tests/ThreeD/OperationsGateTests.cs`.
+
+- **"The order Z, Y, X" is read as LIST order, Z applied first** — the matrix Rx·Ry·Rz (Z-Y-X Euler angles of
+  that product). The brief did not say which of the two readings; this one keeps the list in the order it is
+  written and applied, which is how every other placement list reads. The reference page says so.
+- **A signed permutation is found by search, not by rounding angles**: every quarter-turn triple (64) is
+  tried against the INTEGER matrix and the one with the fewest non-zero entries wins, so exactness is by
+  construction. Angles are 90, 180 and −90; a zero entry is left out, so the identity is an empty list and
+  the placement is omitted from the file again — which is what makes four quarter turns (and a mirror twice)
+  write the file byte for byte (gates 3 and 4).
+- **The mirror is split as L = R · MirrorX** because the placement mirrors FIRST (`T = O ∘ R ∘ MirrorX`), so
+  R = L · MirrorX and the canonical R is found from that.
+- **The default pivot is the bounding-box centre ROUNDED DOWN to a whole DBU.** A box an odd number of DBU wide
+  has a half-DBU centre, and a quarter turn about it would not be an integer transform; with an integer pivot
+  every quarter turn and mirror stays exact.
+- **A move changes only `Origin`** (`Translated`) — a hand-written rotation list survives a move verbatim. Only
+  rotate and mirror canonicalise.
+- **The elaborator already reversed winding at det < 0** (brief 42, `C3dLowering`, `Det(t) < 0 → Reversed`).
+  Gate 4 now holds it: mirroring a tetrahedron across each plane keeps its elaborated signed volume positive
+  and equal to 1e-12.
+- **No throw for the impossible branch**: the quarter-turn search falls back to Euler rather than throwing,
+  because `Firewall.Tests`' user-facing-text gate reads any exception message below the firewall as a
+  user-facing sentence.

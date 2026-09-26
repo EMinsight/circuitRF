@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:v3="using:CircuitRF.Ui.Viewer3D"
+             xmlns:vv3="using:CircuitRF.Ui.Views.Viewer3D"
              xmlns:s3="using:CircuitRF.Render.Scene3D"
              xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              x:Class="CircuitRF.Ui.Views.Viewer3D.Viewer3DView"
@@ -75,6 +76,10 @@
 
                 <Border Width="1" Margin="2,3" Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
 
+                <!-- brief-em3d-46 R-em3d46-6 — Measure: the read-only viewer is for measuring and reading. -->
+                <ToggleButton IsChecked="{Binding ViewModel.IsMeasureArmed}" ToolTip.Tip="Measure: two points — x, y, z, the deltas and the distance, every number copyable  (M)">
+                    <mi:MaterialIcon Kind="RulerSquare" Width="16" Height="16"/>
+                </ToggleButton>
                 <ToggleButton IsChecked="{Binding ViewModel.ShowAxisIndicator}" ToolTip.Tip="Axis indicator  (A)">
                     <mi:MaterialIcon Kind="AxisArrow" Width="16" Height="16"/>
                 </ToggleButton>
@@ -251,6 +256,7 @@
             <Panel Grid.Column="1">
                 <v3:Viewer3DPane x:Name="Pane" DataContext="{Binding ViewModel}"/>
                 <v3:Viewer3DOverlay x:Name="Overlay" DataContext="{Binding ViewModel}"/>
+                <vv3:Viewer3DMeasureCard DataContext="{Binding ViewModel}" HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="12,0,0,104"/>
                 <SelectableTextBlock x:Name="FaultText" IsVisible="False" TextWrapping="Wrap" Margin="24"
                                      HorizontalAlignment="Center" VerticalAlignment="Center"/>
             </Panel>

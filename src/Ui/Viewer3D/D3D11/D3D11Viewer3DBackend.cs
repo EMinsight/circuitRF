@@ -60,6 +60,8 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
     private ID3D11DepthStencilState _dsWrite = null!, _dsNoWrite = null!, _dsOff = null!;
     private ID3D11RasterizerState _raster = null!;
     private ID3D11Buffer _cb = null!;
+    /// <summary>brief-em3d-46 — the per-draw transform (register b1), 64 bytes, rewritten only when a draw's slot changes.</summary>
+    private ID3D11Buffer _cbTransform = null!;
     private ID3D11Texture2D _pickId = null!, _pickPos = null!, _pickDepth = null!;
     private ID3D11RenderTargetView _pickIdRtv = null!, _pickPosRtv = null!;
     private ID3D11DepthStencilView _pickDsv = null!;
@@ -185,6 +187,7 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
         rs.FrontCounterClockwise = true;
         _raster = dev.CreateRasterizerState(rs);
         _cb = dev.CreateBuffer(new BufferDescription(Scene3DFramePlan.UniformBytes, BindFlags.ConstantBuffer, ResourceUsage.Default));
+        _cbTransform = dev.CreateBuffer(new BufferDescription(Scene3DFramePlan.TransformBytesPerDraw, BindFlags.ConstantBuffer, ResourceUsage.Default));
 
         _pickId = dev.CreateTexture2D(new Texture2DDescription(DxFormat.R32G32_UInt, 1, 1, 1, 1, BindFlags.RenderTarget));
         _pickPos = dev.CreateTexture2D(new Texture2DDescription(DxFormat.R32G32B32A32_Float, 1, 1, 1, 1, BindFlags.RenderTarget));
@@ -375,6 +378,9 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
         ctx.VSSetShader(_vs);
         ctx.VSSetConstantBuffer(0, _cb);
         ctx.PSSetConstantBuffer(0, _cb);
+        ctx.VSSetConstantBuffer(1, _cbTransform);
+        SetTransform(ctx, plan, 0);
+        int transform = 0;
         ctx.RSSetState(_raster);
 
         int slot = _rbHead % Ring;
@@ -455,6 +461,11 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
                 draws++;
                 continue;
             }
+            if (d.Transform != transform && d.Transform < plan.TransformCount)
+            {
+                transform = d.Transform;
+                SetTransform(ctx, plan, transform);
+            }
             if (d.Buffer != bound)
             {
                 bound = d.Buffer;
@@ -513,9 +524,16 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
         _dsv?.Dispose(); _depth?.Dispose();
         _pickIdRtv?.Dispose(); _pickPosRtv?.Dispose(); _pickDsv?.Dispose();
         _pickId?.Dispose(); _pickPos?.Dispose(); _pickDepth?.Dispose();
-        _cb?.Dispose(); _layout?.Dispose(); _vs?.Dispose(); _layoutField?.Dispose(); _vsField?.Dispose();
+        _cb?.Dispose(); _cbTransform?.Dispose(); _layout?.Dispose(); _vs?.Dispose(); _layoutField?.Dispose(); _vsField?.Dispose();
         _psColor?.Dispose(); _psLine?.Dispose(); _psPick?.Dispose(); _psField?.Dispose(); _psEdge?.Dispose(); _psTop?.Dispose(); _vsGrid?.Dispose(); _psGrid?.Dispose();
         _blendOff?.Dispose(); _blendOn?.Dispose(); _dsWrite?.Dispose(); _dsNoWrite?.Dispose(); _dsOff?.Dispose(); _raster?.Dispose();
         _ctx?.Dispose(); _device.Dispose();
+    }
+
+    /// <summary>brief-em3d-46 — slot <paramref name="slot"/> of the plan's per-draw transforms into register b1.</summary>
+    private void SetTransform(ID3D11DeviceContext ctx, Scene3DFramePlan plan, int slot)
+    {
+        ctx.UpdateSubresource(plan.Transforms.AsSpan(16 * slot, 16), _cbTransform);
+        Counters.CountUniform(Scene3DFramePlan.TransformBytesPerDraw);
     }
 }

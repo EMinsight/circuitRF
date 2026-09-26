@@ -71,6 +71,26 @@ public interface IViewer3DEditHost
 
     /// <summary>brief-em3d-45 — the drawing's entries for the context menu (Extrude, Drawing Plane from Face).</summary>
     IEnumerable<Viewer3DMenuItem> DrawMenuItems() => [];
+
+    /// <summary>brief-em3d-46 R-em3d46-5 — where the move gizmo sits (world metres), or null for none: it is offered
+    /// in Object mode with something movable selected and no gesture in progress.</summary>
+    CircuitRF.Engine.Em3d.Point3? GizmoPivot => null;
+
+    /// <summary>A press on gizmo handle <paramref name="handle"/>: starts the constrained move. False when it did not.</summary>
+    bool GizmoDrag(GizmoHandle handle) => false;
+
+    /// <summary>The gizmo drag's release: the move commits.</summary>
+    void GizmoRelease() { }
+
+    /// <summary>The gizmo drag was lost: the move is cancelled.</summary>
+    void GizmoCancel() { }
+
+    /// <summary>brief-em3d-46 R-em3d46-6a — the point a measurement click takes: the snap, as the document's exact
+    /// point where it is one; else the drawing plane under the cursor. Null leaves it to the pane.</summary>
+    Viewer3DMeasurePoint? MeasurePoint() => null;
+
+    /// <summary>A measurement started: the editor disarms its tool (one gesture at a time).</summary>
+    void MeasureStarted() { }
 }
 
 /// <summary>brief-em3d-45 — the drawing's 2D chrome for one frame, in world metres: the overlay projects it.</summary>
@@ -86,10 +106,12 @@ public sealed class Viewer3DDrawOverlay
     public List<DrawSegment> Crossing { get; } = [];
     /// <summary>The points the gesture has fixed so far.</summary>
     public List<CircuitRF.Engine.Em3d.Point3> Fixed { get; } = [];
+    /// <summary>brief-em3d-46 — an operation's pivot, drawn as a small cross.</summary>
+    public List<CircuitRF.Engine.Em3d.Point3> Pivots { get; } = [];
 
     public void Clear()
     {
-        Rubber.Clear(); Construction.Clear(); Selected.Clear(); Crossing.Clear(); Fixed.Clear();
+        Rubber.Clear(); Construction.Clear(); Selected.Clear(); Crossing.Clear(); Fixed.Clear(); Pivots.Clear();
     }
 }
 
@@ -199,6 +221,8 @@ public sealed partial class Viewer3DViewModel
         HitCycle.Reset();
         CycleText = "";
         // brief-em3d-45 — the drawing has the click first: an armed tool places a point, a plane gesture moves the plane.
+        // brief-em3d-46 — a measurement takes the click before anything, and selects nothing.
+        if (MeasureActive) { MeasureClick(); return; }
         if (EditHost?.DrawClick(modifiers | (shift ? KeyModifiers.Shift : KeyModifiers.None), clickCount) == true) return;
         var item = HoveredItem;
         if (item is not { } it)
@@ -291,6 +315,9 @@ public sealed partial class Viewer3DViewModel
         }
         OnPicked(id, point, hit);
         ResolveSnap(patch);
+        // brief-em3d-46 — an operation's preview and a measurement's rubber band follow the cursor from here.
+        MeasureFollow();
+        CursorResolved?.Invoke();
     }
 
     // ── keys (owner decision D3) ────────────────────────────────────────────────────────────
@@ -322,11 +349,14 @@ public sealed partial class Viewer3DViewModel
             case Key.F when !gestureInProgress: SelectMode = Scene3DSelectMode.Face; return true;
             case Key.V when !gestureInProgress: SelectMode = Scene3DSelectMode.Vertex; return true;
             case Key.Home: FitCommand.Execute(null); return true;
+            case Key.M when !gestureInProgress: ToggleMeasure(); return true;
             case Key.P: IsPerspective = !IsPerspective; return true;
             case Key.C: ClipEnabled = !ClipEnabled; return true;
             case Key.A: ShowAxisIndicator = !ShowAxisIndicator; return true;
             case Key.Escape:
                 if (gestureInProgress) return false;
+                // brief-em3d-46 R-em3d46-6a — Esc ends a measurement before it clears a selection.
+                if (MeasureActive || MeasureP1 is not null) { EndMeasure(); return true; }
                 HitCycle.Reset();
                 CycleText = "";
                 SetSelection([]);
@@ -442,7 +472,6 @@ public sealed partial class Viewer3DViewModel
             {
                 // Measuring from a die's pad is the point; editing the child from here is refused by
                 // construction — the menu does not offer it (R-em3d43-3c).
-                items.Add(new Viewer3DMenuItem("Measure", Enabled: false, Tip: "The Measure tool comes with object operations (brief 46)."));
                 if (SelectMode == Scene3DSelectMode.Face)
                     items.Add(new Viewer3DMenuItem("Copy Face as Sheet", Enabled: false, Tip: "Comes with face editing (brief 47)."));
                 items.Add(new Viewer3DMenuItem("Select Owning Instance", SelectOwningInstance));
@@ -466,6 +495,8 @@ public sealed partial class Viewer3DViewModel
             items.Add(new Viewer3DMenuItem("Isolate", () => Isolate(objects)));
         }
         items.Add(new Viewer3DMenuItem("Show All", ShowAll));
+        // brief-em3d-46 R-em3d46-6 — in the read-only viewer as in the editor, on anything or nothing.
+        items.Add(new Viewer3DMenuItem(MeasureActive ? "End Measure  (M)" : "Measure  (M)", ToggleMeasure));
         if (SelectMode == Scene3DSelectMode.Object && own && host is not null)
             items.Add(new Viewer3DMenuItem("Delete", () => host.DeleteSelection()));
         if (host?.DrawMenuItems().ToList() is { Count: > 0 } draw)

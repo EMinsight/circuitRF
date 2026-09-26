@@ -425,6 +425,7 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
 
             fixed (float* pu = plan.PickUniforms)
             fixed (float* u = plan.Uniforms)
+            fixed (float* xf = plan.Transforms)
             {
                 int slot = -1;
                 if (plan.Pick && plan.PickDrawCount > 0 && _vb != 0 && _rbCmd[_rbHead % Ring] == 0)
@@ -436,7 +437,7 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
                                      plan.SceneGeneration, plan.PickPixelsPerDip);
                     nint rp = Pass(_pickId, _pickDepth, 0, 0, 0, _pickPos);
                     nint enc = Send(cb, S.renderCommandEncoderWithDescriptor, rp);
-                    Common(enc, pu);
+                    Common(enc, pu, xf);
                     SendV(enc, S.setRenderPipelineState, _pPick);
                     SendV(enc, S.setDepthStencilState, _dsWrite);
                     ((delegate* unmanaged<nint, nint, nint, nuint, nuint, void>)MsgSend)(enc, S.setVertexBuffer, _vb, 0, 0);
@@ -451,10 +452,17 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
                 var (r, g, b) = plan.Clear;
                 nint main = Pass(target, _depth, r, g, b, 0);
                 nint e = Send(cb, S.renderCommandEncoderWithDescriptor, main);
-                Common(e, u);
+                Common(e, u, xf);
+                int transform = 0;
                 for (int i = 0; i < plan.DrawCount; i++)
                 {
                     ref var d = ref plan.Draws[i];
+                    if (d.Transform != transform && d.Transform < plan.TransformCount)
+                    {
+                        // brief-em3d-46 — a drag's preview: this draw's 64 bytes, set only when they change.
+                        transform = d.Transform;
+                        SetTransform(e, xf, transform);
+                    }
                     nint buf = d.Buffer switch
                     {
                         Scene3DBuffer.Scene => _vb, Scene3DBuffer.SceneLines => _lines, Scene3DBuffer.Field => _field,
@@ -512,12 +520,21 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
     private static readonly nint Sel_setFrontFacing = Sel("setFrontFacingWinding:");
     private static readonly nint Class_RPD = Class("MTLRenderPassDescriptor");
 
-    private void Common(nint enc, float* u)
+    private void Common(nint enc, float* u, float* xf)
     {
         SendV(enc, Sel_setFrontFacing, WindingCounterClockwise);
         ((delegate* unmanaged<nint, nint, void*, nuint, nuint, void>)MsgSend)(enc, S.setVertexBytes, u, (nuint)Scene3DFramePlan.UniformBytes, 1);
         ((delegate* unmanaged<nint, nint, void*, nuint, nuint, void>)MsgSend)(enc, S.setFragmentBytes, u, (nuint)Scene3DFramePlan.UniformBytes, 1);
         Counters.CountUniform(2 * Scene3DFramePlan.UniformBytes);
+        SetTransform(enc, xf, 0);
+    }
+
+    /// <summary>brief-em3d-46 — the vertex stage's per-draw transform (buffer 2): slot <paramref name="slot"/> of the plan's.</summary>
+    private void SetTransform(nint enc, float* xf, int slot)
+    {
+        ((delegate* unmanaged<nint, nint, void*, nuint, nuint, void>)MsgSend)(enc, S.setVertexBytes, xf + 16 * slot,
+            (nuint)Scene3DFramePlan.TransformBytesPerDraw, 2);
+        Counters.CountUniform(Scene3DFramePlan.TransformBytesPerDraw);
     }
 
     private void DrawIndexed(nint enc, in Scene3DDraw d)

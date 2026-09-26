@@ -18,6 +18,9 @@
 //!   - uniform block @group(0) @binding(0): MSL `[[buffer(1)]]` in every entry point (the vertex
 //!     buffer is stage_in from buffer 0 through the pipeline's vertex descriptor); HLSL `register(b0)`;
 //!     SPIR-V descriptor set 0, binding 0.
+//!   - the per-draw transform @group(0) @binding(1) (brief-em3d-46): MSL `[[buffer(2)]]`; HLSL
+//!     `register(b1)`; SPIR-V descriptor set 0, binding 1. A uniform, not an immediate: naga writes an
+//!     immediate to HLSL as `ConstantBuffer<T>`, which Shader Model 5.0 does not compile.
 //!
 //! Deterministic: every option is set explicitly (naga's SPIR-V default flips a DEBUG flag with the
 //! build profile, which would make a debug-built tool emit different words).
@@ -33,6 +36,10 @@ use sha2::{Digest, Sha256};
 const UNIFORM: naga::ResourceBinding = naga::ResourceBinding { group: 0, binding: 0 };
 /// MSL argument-table slot of the uniform block (slot 0 is the vertex buffer).
 const MSL_UNIFORM_BUFFER: u8 = 1;
+/// brief-em3d-46 — the per-draw transform block, @group(0) @binding(1): MSL slot 2 (setVertexBytes per draw),
+/// HLSL register b1, SPIR-V descriptor set 0 binding 1.
+const TRANSFORM: naga::ResourceBinding = naga::ResourceBinding { group: 0, binding: 1 };
+const MSL_TRANSFORM_BUFFER: u8 = 2;
 /// MSL 2.3: macOS 11+.
 const MSL_VERSION: (u8, u8) = (2, 3);
 /// SPIR-V 1.0: every Vulkan 1.0 driver.
@@ -95,6 +102,10 @@ fn generate(wgsl_path: &Path, out: &Path) -> Result<(), String> {
     // ---- MSL ----
     let mut resources = msl::EntryPointResources::default();
     resources.resources.insert(
+        TRANSFORM,
+        msl::BindTarget { buffer: Some(MSL_TRANSFORM_BUFFER), ..Default::default() },
+    );
+    resources.resources.insert(
         UNIFORM,
         msl::BindTarget { buffer: Some(MSL_UNIFORM_BUFFER), ..Default::default() },
     );
@@ -116,6 +127,7 @@ fn generate(wgsl_path: &Path, out: &Path) -> Result<(), String> {
         ..Default::default()
     };
     hlsl_opts.binding_map.insert(UNIFORM, hlsl::BindTarget { space: 0, register: 0, ..Default::default() });
+    hlsl_opts.binding_map.insert(TRANSFORM, hlsl::BindTarget { space: 0, register: 1, ..Default::default() });
     let mut hlsl_src = String::new();
     let hlsl_pipe = hlsl::PipelineOptions::default();
     hlsl::Writer::new(&mut hlsl_src, &hlsl_opts, &hlsl_pipe)
@@ -130,6 +142,7 @@ fn generate(wgsl_path: &Path, out: &Path) -> Result<(), String> {
         ..Default::default()
     };
     spv_opts.binding_map.insert(UNIFORM, spv::BindingInfo { descriptor_set: 0, binding: 0, binding_array_size: None });
+    spv_opts.binding_map.insert(TRANSFORM, spv::BindingInfo { descriptor_set: 0, binding: 1, binding_array_size: None });
     let words = spv::write_vec(&module, &info, &spv_opts, None).map_err(|e| format!("SPIR-V: {e}"))?;
     let words = insert_hash_string(&words, &format!("wgsl-sha256:{hash}"))?;
 

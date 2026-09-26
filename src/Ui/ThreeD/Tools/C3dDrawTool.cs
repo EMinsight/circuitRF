@@ -18,25 +18,30 @@ using CircuitRF.Render.Scene3D.Edit;
 
 namespace CircuitRF.Ui.ThreeD.Tools;
 
-/// <summary>The tools (owner decision D6 adds the cylinder), and Extrude — a gesture on an existing object (§5).</summary>
-public enum C3dToolKind { Box, Sheet, Polygon, Polyline, Cylinder, Extrude }
+/// <summary>The tools (owner decision D6 adds the cylinder), and Extrude — a gesture on an existing object (§5) — and
+/// brief 46's Move and Rotate, which are gestures on the selection (Duplicate is a Move that keeps the original).</summary>
+public enum C3dToolKind { Box, Sheet, Polygon, Polyline, Cylinder, Extrude, Move, Rotate }
 
 /// <summary>
 /// Where the cursor is, as a tool reads it: the snap in force (a DBU point, and whether it is exact and on geometry
 /// rather than the grid), and the ray through the cursor, world metres. Either may be absent.
 /// </summary>
-public readonly record struct C3dDrawInput(C3dPoint3? Snap, bool SnapExact, bool SnapOnGeometry, Point3? RayOrigin, Point3? RayDirection)
+/// <para>brief-em3d-46 — <paramref name="Free"/> is Shift held: a rotation turns freely rather than by 15° steps.</para>
+public readonly record struct C3dDrawInput(C3dPoint3? Snap, bool SnapExact, bool SnapOnGeometry, Point3? RayOrigin, Point3? RayDirection,
+                                           bool Free = false)
 {
     public bool HasRay => RayOrigin is not null && RayDirection is not null;
 }
 
 /// <summary>What a click or a typed step did: advanced (or finished with <see cref="Result"/>), or was refused.</summary>
+/// <para>brief-em3d-46 — an operation finishes with <paramref name="Finished"/> and no object: the editor commits it.</para>
 public readonly record struct C3dToolStep(bool Advanced, C3dObject? Result = null, string? Refusal = null,
-                                          (int EdgeA, int EdgeB)? Crossing = null)
+                                          (int EdgeA, int EdgeB)? Crossing = null, bool Finished = false)
 {
     public static C3dToolStep Next => new(true);
     public static C3dToolStep Refuse(string why) => new(false, Refusal: why);
     public static C3dToolStep Done(C3dObject o) => new(true, o);
+    public static C3dToolStep Finish => new(true, Finished: true);
 }
 
 /// <summary>The services a tool needs from the editor: the plane, the points, and the new object's name and material.</summary>
@@ -71,7 +76,7 @@ public abstract class C3dDrawTool(IC3dDrawHost host)
     public abstract C3dToolKind Kind { get; }
 
     /// <summary>The tool's name as the menu and the status line say it.</summary>
-    public string Name => Kind.ToString();
+    public virtual string Name => Kind.ToString();
 
     /// <summary>0 before the first click; the gesture is in progress from then until it finishes or is cancelled.</summary>
     public int Step { get; protected set; }
@@ -108,6 +113,16 @@ public abstract class C3dDrawTool(IC3dDrawHost host)
 
     /// <summary>Esc: the gesture ends, nothing made.</summary>
     public virtual void Reset() => Step = 0;
+
+    /// <summary>brief-em3d-46 — the typed field's parse of dimension <paramref name="index"/>: a length, unless the tool
+    /// types something else (a rotation's angle).</summary>
+    public virtual C3dDimension ParseField(int index, string text, LayoutUnit unit, int dbuPerMicron) => C3dDimension.Parse(text, unit, dbuPerMicron);
+
+    /// <summary>The field's prefill of dimension <paramref name="index"/>, parsed back by <see cref="ParseField"/>.</summary>
+    public virtual string SpellField(int index, long value, LayoutUnit unit, int dbuPerMicron) => C3dDimension.Spell(value, unit, dbuPerMicron);
+
+    /// <summary>The unit the field's label names for dimension <paramref name="index"/>, or null for the display unit.</summary>
+    public virtual string? FieldSuffix(int index) => null;
 
     protected Point3 M(C3dPoint3 p) => DrawGeometry.Metres(p, Host.DbuPerMicron);
 

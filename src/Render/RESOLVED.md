@@ -3907,3 +3907,32 @@ Built: `Scene3D/Edit/DrawingPlane.cs`, `PlaneGrid.cs`, `DrawGeometry.cs`; `Scene
 - **Metal ran it; D3D11 and Vulkan compile but have not run** (as for briefs 43/44). The Metal pipeline
   builds in every Metal test; a one-off offscreen render with the grid on changed ~17 % of a 320 × 200
   frame, and edge-on it is a faint line.
+
+## The per-batch transform and the move gizmo — brief-em3d-46 (2026-09-26)
+
+Built: `Scene3DDraw.Transform`, `Scene3DPreview` and the plan's transform slots (`Scene3DFramePlan`), the WGSL
+`mx` block and its three backends, and `Edit/GizmoGeometry.cs`. Gates 1 and 8 in
+`tests/Ui.Tests/ThreeD/OperationsGateTests.cs`. **No window was seen from the agent's session.**
+
+- **This is brief 43 §5's per-batch transform, which brief 43 left unbuilt.** A draw carries a slot index
+  (0 = identity); the plan writes the slots (16 floats each, the camera's column-major layout) and counts
+  `TransformBytes` = 64 × non-identity draws — the gate's "≤ 64 × selected batches per move". A backend
+  sets the slot only when it differs from the previous draw's.
+- **It is a second UNIFORM binding, not a WGSL immediate (push constant).** The first attempt used
+  `var<immediate>`; naga 30 writes that to HLSL as `ConstantBuffer<T>`, which is Shader Model 5.1 syntax and
+  D3D11's `vs_5_0` does not compile — the Windows backend would have failed at start-up. So: `@group(0)
+  @binding(1)` → Metal `[[buffer(2)]]` (setVertexBytes per change), D3D11 `cbuffer : register(b1)`
+  (UpdateSubresource per change), Vulkan descriptor set 0 binding 1 as a DYNAMIC uniform whose offset is
+  re-bound per change, into a per-frame region of 257 slots × 256 bytes (256 is the spec's cap on
+  minUniformBufferOffsetAlignment). `tools/ShaderGen` states the binding for all three.
+- **A preview's moving objects are left out of the ID pass** (and out of the CPU snap patch's visibility), so
+  the snap finds what lies under the cursor, not the object being dragged.
+- **Duplicate and Array preview by drawing the originals again** under each copy's transform
+  (`KeepOriginal`), so the document is untouched until Accept. The preview draws at most
+  `MaxPreviewCopies` = 256 copies; an accepted array writes them all.
+- **Metal ran it; D3D11 and Vulkan compile but have not run.** The Metal pipeline compiled the new shader in
+  the existing Metal test, and a one-off offscreen render (not committed) with every object under a
+  translation moved the drawn picture's centroid 41 px as predicted, 512 transform bytes.
+- **The gizmo is laid out in screen pixels from the projected axis directions**, a constant size; an axis
+  whose projected step is under 20 % (pointing at the viewer) offers no arrow and no squares that use it.
+  Plane squares win a hit over arrows; they sit 16–30 px out along both arms, so the two never overlap.

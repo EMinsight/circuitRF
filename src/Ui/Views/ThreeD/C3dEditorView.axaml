@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:v3="using:CircuitRF.Ui.Viewer3D"
              xmlns:t3="using:CircuitRF.Ui.ThreeD"
+             xmlns:vv3="using:CircuitRF.Ui.Views.Viewer3D"
              xmlns:s3="using:CircuitRF.Render.Scene3D"
              xmlns:converters="using:CircuitRF.Ui.Converters"
              xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
@@ -165,6 +166,11 @@
 
                 <Border Width="1" Margin="2,3" Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
 
+                <!-- brief-em3d-46 R-em3d46-6 — Measure: two snapped points, their deltas and distance; nothing is written. -->
+                <ToggleButton IsChecked="{Binding ViewModel.Viewer.IsMeasureArmed}" ToolTip.Tip="Measure: two snapped points — x, y, z, the deltas and the distance, every number copyable  (M)">
+                    <mi:MaterialIcon Kind="RulerSquare" Width="16" Height="16"/>
+                </ToggleButton>
+
                 <ToggleButton IsChecked="{Binding ViewModel.ShowTree}" ToolTip.Tip="Object tree">
                     <mi:MaterialIcon Kind="FileTreeOutline" Width="16" Height="16"/>
                 </ToggleButton>
@@ -232,6 +238,8 @@
                             <StackPanel Orientation="Horizontal" Spacing="4">
                                 <CheckBox IsChecked="{Binding IsVisible}" MinWidth="0" Padding="0"
                                           ToolTip.Tip="Visible — a drawn object's visibility is saved with the document and undoable"/>
+                                <TextBlock Text="{Binding OrderText}" Opacity="0.55" FontSize="10" VerticalAlignment="Center"
+                                           ToolTip.Tip="Construction order: a later object wins where solids overlap (3D ▸ Modify ▸ Order)"/>
                                 <TextBlock Text="{Binding Name}" VerticalAlignment="Center"/>
                                 <TextBlock Text="{Binding Detail}" Opacity="0.6" FontSize="11" VerticalAlignment="Center"/>
                             </StackPanel>
@@ -244,6 +252,38 @@
             <Panel Grid.Column="1">
                 <v3:Viewer3DPane x:Name="Pane" DataContext="{Binding ViewModel.Viewer}"/>
                 <v3:Viewer3DOverlay x:Name="Overlay" DataContext="{Binding ViewModel.Viewer}"/>
+                <vv3:Viewer3DMeasureCard DataContext="{Binding ViewModel.Viewer}" HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="12,0,0,104"/>
+                <!-- brief-em3d-46 R-em3d46-4b — Array…: a popover, not a modal dialog (no gesture is in progress), with a live
+                     preview through per-batch transforms. Accept writes independent copies as one undo entry. -->
+                <Border IsVisible="{Binding ViewModel.ArrayOpen}" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="12"
+                        Padding="10,8" CornerRadius="4" BorderThickness="1" Width="300"
+                        Background="{DynamicResource SystemControlBackgroundAltHighBrush}"
+                        BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
+                    <StackPanel Spacing="5">
+                        <TextBlock Text="Array" FontWeight="SemiBold"/>
+                        <Grid ColumnDefinitions="60,*,4,*,4,*" RowDefinitions="Auto,Auto,Auto">
+                            <TextBlock Grid.Row="0" Grid.Column="1" Text="x" FontSize="11" Opacity="0.7"/>
+                            <TextBlock Grid.Row="0" Grid.Column="3" Text="y" FontSize="11" Opacity="0.7"/>
+                            <TextBlock Grid.Row="0" Grid.Column="5" Text="z" FontSize="11" Opacity="0.7"/>
+                            <TextBlock Grid.Row="1" Text="Count" VerticalAlignment="Center"/>
+                            <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding ViewModel.ArrayCountX}"/>
+                            <TextBox Grid.Row="1" Grid.Column="3" Text="{Binding ViewModel.ArrayCountY}"/>
+                            <TextBox Grid.Row="1" Grid.Column="5" Text="{Binding ViewModel.ArrayCountZ}"/>
+                            <TextBlock Grid.Row="2" Text="Pitch" VerticalAlignment="Center" ToolTip.Tip="In the display unit; a suffix (25um, 10mil) is honoured"/>
+                            <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding ViewModel.ArrayPitchX}"/>
+                            <TextBox Grid.Row="2" Grid.Column="3" Text="{Binding ViewModel.ArrayPitchY}"/>
+                            <TextBox Grid.Row="2" Grid.Column="5" Text="{Binding ViewModel.ArrayPitchZ}"/>
+                        </Grid>
+                        <TextBlock Text="{Binding ViewModel.ArrayError}" Foreground="IndianRed" FontSize="11" TextWrapping="Wrap"
+                                   IsVisible="{Binding ViewModel.ArrayError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                        <TextBlock Text="{Binding ViewModel.ArrayNote}" FontSize="11" Opacity="0.8" TextWrapping="Wrap"
+                                   IsVisible="{Binding ViewModel.ArrayNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                        <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Right">
+                            <Button Content="Cancel" Command="{Binding ViewModel.CloseArrayCommand}"/>
+                            <Button Content="Accept" Command="{Binding ViewModel.AcceptArrayCommand}" Classes="accent"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
                 <!-- brief-em3d-45 R-em3d45-4 — the typed field: inline at the cursor, never a dialog. Tab moves between the
                      step's dimensions, Enter accepts the step, Esc returns to the mouse. An entry that does not parse stays,
                      red. The space under it is left for brief 51's Define strip. -->

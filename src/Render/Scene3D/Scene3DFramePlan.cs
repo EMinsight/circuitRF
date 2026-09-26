@@ -52,6 +52,26 @@ public struct Scene3DDraw
     public Scene3DPipeline Pipeline;
     public Scene3DBuffer Buffer;
     public int First, Count;
+    /// <summary>brief-em3d-46 — the per-draw transform: a slot of <see cref="Scene3DFramePlan.Transforms"/>, 0 for the
+    /// identity. A backend hands the slot's 64 bytes to the vertex stage before the draw (Metal setVertexBytes,
+    /// a D3D11 constant buffer, Vulkan push constants), and only when it differs from the draw before.</summary>
+    public int Transform;
+}
+
+/// <summary>
+/// brief-em3d-46 R-em3d46-1a — a drag's PREVIEW: what is already drawn, drawn again under per-draw transforms. The
+/// document is not touched and nothing uploads but the transforms. <see cref="Moving"/> marks the objects (by
+/// ID − 1); each is drawn once per entry of <see cref="Copies"/> (row-vector matrices in scene-local metres), and
+/// also where it is when <see cref="KeepOriginal"/> (a duplicate, an array). A moving object is left out of the
+/// ID pass, so what the cursor finds — and snaps to — is what lies under it.
+/// </summary>
+public sealed class Scene3DPreview(bool[] moving, Matrix4x4[] copies, bool keepOriginal)
+{
+    public bool[] Moving { get; } = moving;
+    public Matrix4x4[] Copies { get; set; } = copies;
+    public bool KeepOriginal { get; } = keepOriginal;
+
+    public bool IsMoving(uint id) => id >= 1 && id <= Moving.Length && Moving[id - 1];
 }
 
 /// <summary>An overlay's lines (the Gmsh mesh, its section on the clip plane, the FDTD grid) and the
@@ -107,6 +127,8 @@ public sealed class Viewer3DViewState
     /// <summary>A camera gesture moved the camera since the last frame.</summary>
     public bool Orbiting;
     public (float R, float G, float B) Background = (0.12f, 0.13f, 0.15f);
+    /// <summary>brief-em3d-46 — a drag's preview, or null.</summary>
+    public Scene3DPreview? Preview;
 
     /// <summary>Resets visibility to the scene's defaults when the object list changed shape; keeps the
     /// user's toggles across a regeneration that kept the same objects.</summary>
@@ -158,6 +180,21 @@ public sealed class Scene3DFramePlan
     public const uint FlagClip = 1, FlagCapBackFaces = 2;
 
     public readonly float[] Uniforms = new float[UniformFloats];
+
+    /// <summary>brief-em3d-46 — the per-draw transforms, 16 floats a slot laid out as the WGSL <c>mat4x4f</c> (column-
+    /// major, p' = M·p); slot 0 is the identity. <see cref="TransformCount"/> slots are in use this frame.</summary>
+    public float[] Transforms = IdentitySlots(8);
+    public int TransformCount = 1;
+
+    /// <summary>Bytes of transform this frame hands the vertex stage for its non-identity draws: 64 each — what a
+    /// drag's preview costs a frame, and all it costs (gate 1).</summary>
+    public long TransformBytes;
+
+    public const int TransformBytesPerDraw = 64;
+
+    /// <summary>The most copies a preview draws (an array's live preview beyond this shows its first copies; the
+    /// accepted array writes them all). Also what a backend sizes its per-frame transform slots for.</summary>
+    public const int MaxPreviewCopies = 256;
     public readonly float[] PickUniforms = new float[UniformFloats];
     public Scene3DDraw[] Draws = new Scene3DDraw[16];
     public int DrawCount;
@@ -205,15 +242,18 @@ public sealed class Scene3DFramePlan
         Fill(Uniforms, view, width, height, flipY, -1, -1, flags);
 
         DrawCount = 0;
+        TransformBytes = 0;
+        var preview = view.Preview;
+        WriteTransforms(preview);
         foreach (var b in scene.Batches)
             if (!b.Translucent && view.IsDrawn(b.ObjectId))
-                Add(ref Draws, ref DrawCount, Scene3DPipeline.Opaque, Scene3DBuffer.Scene, b.FirstIndex, b.IndexCount);
+                AddMoved(preview, b.ObjectId, Scene3DPipeline.Opaque, Scene3DBuffer.Scene, b.FirstIndex, b.IndexCount, identity: true);
         // brief-em3d-29 — the field's slice and surfaces, one draw, opaque, before anything translucent.
         if (view.ShowField && field is { Vertices.Length: > 0 } f)
             Add(ref Draws, ref DrawCount, Scene3DPipeline.Field, Scene3DBuffer.Field, 0, f.Vertices.Length);
         foreach (var lb in scene.LineBatches)
             if (view.IsVisible(lb.ObjectId))
-                Add(ref Draws, ref DrawCount, Scene3DPipeline.Lines, Scene3DBuffer.SceneLines, lb.FirstVertex, lb.VertexCount);
+                AddMoved(preview, lb.ObjectId, Scene3DPipeline.Lines, Scene3DBuffer.SceneLines, lb.FirstVertex, lb.VertexCount, identity: true);
         if (view.ShowMesh && mesh.Lines.Length > 0)
             Add(ref Draws, ref DrawCount, Scene3DPipeline.Lines, Scene3DBuffer.Overlay0, 0, mesh.Lines.Length);
         if (view.ShowMeshSection && view.Clip.Enabled && section.Lines.Length > 0)
@@ -254,7 +294,7 @@ public sealed class Scene3DFramePlan
         for (int k = 0; k < n; k++)
         {
             var b = batches[_order[k]];
-            Add(ref Draws, ref DrawCount, Scene3DPipeline.Translucent, Scene3DBuffer.Scene, b.FirstIndex, b.IndexCount);
+            AddMoved(preview, b.ObjectId, Scene3DPipeline.Translucent, Scene3DBuffer.Scene, b.FirstIndex, b.IndexCount, identity: true);
         }
 
         // brief-em3d-43 — the selection, last: the edges of each selected object (Object mode) or of each
@@ -268,15 +308,16 @@ public sealed class Scene3DFramePlan
                 uint id = view.Selection[k].Object;
                 if (id < 1 || id > _marked.Length || _marked[id - 1] || !view.IsDrawn(id)) continue;
                 _marked[id - 1] = true;
+                // A moving object's outline follows its copies: the outline marks what is being placed.
                 if (_edgeOf[id - 1] is int e and >= 0)
                 {
                     var eb = scene.EdgeBatches[e];
-                    Add(ref Draws, ref DrawCount, Scene3DPipeline.Edges, Scene3DBuffer.SceneLines, eb.FirstVertex, eb.VertexCount);
+                    AddMoved(preview, id, Scene3DPipeline.Edges, Scene3DBuffer.SceneLines, eb.FirstVertex, eb.VertexCount, identity: false);
                 }
                 if (view.Mode == Scene3DSelectMode.Face && _batchOf[id - 1] is int t and >= 0)
                 {
                     var tb = batches[t];
-                    Add(ref Draws, ref DrawCount, Scene3DPipeline.OnTop, Scene3DBuffer.Scene, tb.FirstIndex, tb.IndexCount);
+                    AddMoved(preview, id, Scene3DPipeline.OnTop, Scene3DBuffer.Scene, tb.FirstIndex, tb.IndexCount, identity: false);
                 }
             }
             for (int k = 0; k < limit; k++)
@@ -295,7 +336,7 @@ public sealed class Scene3DFramePlan
             PickCursorX = view.CursorX; PickCursorY = view.CursorY;
             Fill(PickUniforms, view, width, height, flipY, PickX, PickY, view.Clip.Enabled ? FlagClip : 0, PickSize);
             foreach (var b in batches)
-                if (view.IsVisible(b.ObjectId) && scene.Objects[b.ObjectId - 1].Pickable)
+                if (view.IsVisible(b.ObjectId) && scene.Objects[b.ObjectId - 1].Pickable && preview?.IsMoving(b.ObjectId) != true)
                     Add(ref PickDraws, ref PickDrawCount, Scene3DPipeline.Pick, Scene3DBuffer.Scene, b.FirstIndex, b.IndexCount);
         }
     }
@@ -317,10 +358,54 @@ public sealed class Scene3DFramePlan
         _sized = scene;
     }
 
-    private static void Add(ref Scene3DDraw[] list, ref int count, Scene3DPipeline p, Scene3DBuffer buf, int first, int n)
+    private static void Add(ref Scene3DDraw[] list, ref int count, Scene3DPipeline p, Scene3DBuffer buf, int first, int n, int transform = 0)
     {
         if (count == list.Length) Array.Resize(ref list, list.Length * 2);
-        list[count++] = new Scene3DDraw { Pipeline = p, Buffer = buf, First = first, Count = n };
+        list[count++] = new Scene3DDraw { Pipeline = p, Buffer = buf, First = first, Count = n, Transform = transform };
+    }
+
+    /// <summary>A draw of object <paramref name="id"/>'s batch: as it is when nothing moves it; under each of the
+    /// preview's copies when it moves — and also as it is when the preview keeps the original and
+    /// <paramref name="identity"/> says the original is drawn in this pass.</summary>
+    private void AddMoved(Scene3DPreview? preview, uint id, Scene3DPipeline p, Scene3DBuffer buf, int first, int n, bool identity)
+    {
+        if (preview is null || !preview.IsMoving(id))
+        {
+            Add(ref Draws, ref DrawCount, p, buf, first, n);
+            return;
+        }
+        if (identity && preview.KeepOriginal) Add(ref Draws, ref DrawCount, p, buf, first, n);
+        for (int k = 0, m = Math.Min(preview.Copies.Length, MaxPreviewCopies); k < m; k++)
+        {
+            Add(ref Draws, ref DrawCount, p, buf, first, n, k + 1);
+            TransformBytes += TransformBytesPerDraw;
+        }
+    }
+
+    /// <summary>Slot 0 the identity, then the preview's copies. Allocates only when the copies outgrow the array.</summary>
+    private void WriteTransforms(Scene3DPreview? preview)
+    {
+        int copies = Math.Min(preview?.Copies.Length ?? 0, MaxPreviewCopies);
+        TransformCount = 1 + copies;
+        if (Transforms.Length < 16 * TransformCount) Transforms = IdentitySlots(Math.Max(TransformCount, 2 * Transforms.Length / 16));
+        for (int k = 0; k < copies; k++) WriteMatrix(preview!.Copies[k], Transforms.AsSpan(16 * (k + 1), 16));
+    }
+
+    private static float[] IdentitySlots(int slots)
+    {
+        var t = new float[16 * slots];
+        for (int k = 0; k < slots; k++) WriteMatrix(Matrix4x4.Identity, t.AsSpan(16 * k, 16));
+        return t;
+    }
+
+    /// <summary>A row-vector matrix into the WGSL layout: stored row-major, it is the column-vector transpose stored
+    /// column-major — the camera's own convention (Camera3D.WriteViewProjection).</summary>
+    public static void WriteMatrix(in Matrix4x4 m, Span<float> dst)
+    {
+        dst[0] = m.M11; dst[1] = m.M12; dst[2] = m.M13; dst[3] = m.M14;
+        dst[4] = m.M21; dst[5] = m.M22; dst[6] = m.M23; dst[7] = m.M24;
+        dst[8] = m.M31; dst[9] = m.M32; dst[10] = m.M33; dst[11] = m.M34;
+        dst[12] = m.M41; dst[13] = m.M42; dst[14] = m.M43; dst[15] = m.M44;
     }
 
     private static void Fill(float[] u, Viewer3DViewState view, int w, int h, bool flipY, float px, float py, uint flags, int pickSize = 1)

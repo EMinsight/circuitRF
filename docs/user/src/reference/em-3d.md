@@ -239,6 +239,34 @@ model circuitRF built, and after a run it also shows what the solver made.
   selected in the tree) pulls a closed polyline, a polygon or a rectangle into a prism — move to set the
   distance and click, or type it — and consumes the source unless **K** says keep it. An open polyline
   extrudes to a flat ribbon when it is a straight line along an axis of its plane.
+- **Moving and copying** (the 3D editor, Object mode). The selection — objects, placed cells, or both — is
+  moved, rotated and copied from its right-click menu or *3D ▸ Modify*. **G** moves it: click a **base
+  point**, then a **target point**, both snapped, and the selection moves by the difference — two clicks
+  put a pad's corner exactly on a trace's corner. Pressed with the cursor over the selection, **G** takes the
+  snapped point under the cursor as the base at once. While moving, **X**, **Y** or **Z** holds the move to
+  that axis (a snap still decides how far) and **Shift+X/Y/Z** to the plane across it; press the same key to
+  let go. Type a digit to enter the distance (`dx`, `dy`, `dz`, or one distance along a held axis). **R**
+  rotates about the drawing plane's normal (X, Y or Z changes the axis) through the selection's centre, or
+  through a snapped point Ctrl/Cmd-clicked first, in 15° steps — hold **Shift** to turn freely, or type the
+  angle. *Rotate 90°* and *Mirror* (across XY, YZ or XZ through the centre) act at once. **Ctrl+D**
+  (**Cmd+D**) duplicates the selection and moves the copies; **Esc** cancels both. *Array…* makes copies
+  along up to three axes at a pitch, shown as you type. *Align* lines the others up with the last one
+  selected, by their minimum, centre or maximum on an axis. *Order* moves objects in the construction
+  order — where two solids overlap, the later one wins — and the tree and the Properties panel show each
+  object's place in it. The **gizmo** at the selection's centre moves it too: drag an arrow to move along
+  that axis, or a square to move in that plane. While any of these runs nothing is changed yet; the
+  selection moves on screen, and the document changes once, as one undo step, when you click or release. A
+  rotation keeps an object what it was — a rotated box is still a box — and the file stores it as at most
+  three turns. A result that is not a whole number of database units is rounded and the status line says
+  **≈**.
+- **Measure** (**M**, the ruler button, *3D ▸ Measure*; in the editor and in this view). Click two points,
+  snapped as drawing is; after the first a line follows the cursor. A card in the corner of the view gives
+  both points' x, y and z, their differences (the second minus the first) and the distance, in the
+  document's unit — changing the unit re-spells them. Every number can be selected and copied; hover one for
+  its copy button, or **Copy All** for the whole card as a table that pastes into a spreadsheet. A copied
+  value carries its unit (`12.5mil`) and pastes back into any dimension box as exactly the same length.
+  **≈** marks a point that is not exactly on the database-unit grid. A third click starts a new
+  measurement; **Esc** ends it. Measuring changes nothing and adds no undo step.
 - **Clip plane** (**C**). A plane along an axis or the view direction, dragged through the model. It
   shows inside a package, under a lid, or through a via's clearance.
 - **Mesh.** After a Palace run, the mesh Gmsh made: the boundary triangles, and the tetrahedra the clip

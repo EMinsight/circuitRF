@@ -255,6 +255,7 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
             int dbu = src.DbuPerMicron;
             var f = EmLengthFormat.For(unit, dbu);
             FormatLength = m => f(m);
+            SetMeasureUnits(unit, dbu);
         }
         if (!_fitted && scene.Objects.Length > 0)
         {
@@ -436,6 +437,7 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
     {
         View.CursorX = x; View.CursorY = y;
         HitCycle.CursorMoved(x, y);
+        HoverGizmo(x, y);
         FrameRequested?.Invoke();
     }
 

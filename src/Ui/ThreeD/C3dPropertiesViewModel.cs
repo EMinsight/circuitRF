@@ -118,6 +118,9 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         RotateText = string.Join(", ", pl.Rotate.Select(r => $"{r.Axis.ToString().ToLowerInvariant()} {r.Deg.ToString("G", CultureInfo.InvariantCulture)}"));
         MirrorX = pl.MirrorX;
         Rows.Add(new C3dPropertyRow("Kind", C3dObject.KindOf(obj)));
+        // brief-em3d-46 R-em3d46-4d — construction order is invisible unless it is shown: it decides overlap.
+        Rows.Add(new C3dPropertyRow("Construction order",
+            $"{index + 1} of {editor.Document.Objects.Count} — a later object wins where solids overlap (Modify ▸ Order)"));
         foreach (var row in Dimensions(obj)) Rows.Add(row);
     }
 

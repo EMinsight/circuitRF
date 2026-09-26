@@ -225,6 +225,8 @@ public partial class WorkspaceViewModel
         ThreeDDrawCommand.NotifyCanExecuteChanged();
         ThreeDDrawingPlaneCommand.NotifyCanExecuteChanged();
         ThreeDExtrudeCommand.NotifyCanExecuteChanged();
+        ThreeDModifyCommand.NotifyCanExecuteChanged();
+        ThreeDMeasureCommand.NotifyCanExecuteChanged();
     }
 
     // brief-em3d-45 — drawing needs the editor, not the read-only viewer.
@@ -251,6 +253,15 @@ public partial class WorkspaceViewModel
     /// <summary>3D ▸ Modify ▸ Extrude.</summary>
     [RelayCommand(CanExecute = nameof(HasActiveC3dEditor))]
     private void ThreeDExtrude() => ActiveC3dEditor()?.Extrude();
+
+    /// <summary>brief-em3d-46 — 3D ▸ Modify's object operations, by name: the same functions the context menu and the
+    /// keys call (C3dEditorViewModel.RunModify).</summary>
+    [RelayCommand(CanExecute = nameof(HasActiveC3dEditor))]
+    private void ThreeDModify(string which) => ActiveC3dEditor()?.RunModify(which);
+
+    /// <summary>brief-em3d-46 R-em3d46-6 — 3D ▸ Measure, in the editor and the read-only viewer alike.</summary>
+    [RelayCommand(CanExecute = nameof(HasActive3DPane))]
+    private void ThreeDMeasure() => Active3DPane()?.ToggleMeasure();
 
     /// <summary>3D ▸ Select Mode ▸ Object / Face / Vertex.</summary>
     [RelayCommand(CanExecute = nameof(HasActive3DPane))]

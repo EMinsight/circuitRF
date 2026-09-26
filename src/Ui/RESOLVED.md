@@ -35877,3 +35877,43 @@ Extrude, commit), the drawing's overlay in `Viewer3DOverlay`, the toolbar/status
 - **The cylinder's icon is `Database`** — Material.Icons 3.0.2 has no Cylinder kind (checked against the
   assembly's metadata: only `CylinderOff`, a struck-through glyph). `CubeUnfolded`, `VectorRectangle`,
   `VectorPolygon`, `VectorPolyline`, `GridLarge` exist.
+
+## Object operations in the 3D editor — brief-em3d-46 (2026-09-26)
+
+Built: `src/Ui/ThreeD/Operations/` (Move — also Duplicate — and Rotate), `C3dEditorViewModel.Operations.cs`
+(targets, pivot, preview, commit, quick rotate/mirror, Align, Order, Array…, gizmo host, Measure host, menus),
+`Viewer3DViewModel.Operations.cs` / `.Measure.cs`, `Viewer3DMeasureReadout`, `Viewer3DMeasureCard`, the gizmo
+and measure drawing in `Viewer3DOverlay`, the pane's gizmo press routing, and 3D ▸ Modify / 3D ▸ Measure on both
+menu surfaces. Gates: `tests/Ui.Tests/ThreeD/OperationsGateTests.cs` (9). **No window was seen from the agent's
+session.** Owner check (brief §8) pending, including confirming G, R and M.
+
+- **Move and Rotate are `C3dDrawTool` subclasses** (like brief 45's Extrude), so they reuse the typed field,
+  Esc, and the host's points. The field gained per-tool `ParseField` / `SpellField` / `FieldSuffix` so Rotate
+  types an angle (held as 1e-9° units in the field's integer). A finishing step says `Finished` and the editor
+  commits the tool's transform.
+- **The preview is HELD until the committed scene is adopted.** Clearing it at the commit would draw the moved
+  objects back where they were for the frames the elaboration takes.
+- **The selection attracts the snap until the base point is fixed, and never after** — otherwise a pad's own
+  corner could not be the base. The pick pass leaves the moving objects out from then on.
+- **Rotate's default axis is the drawing plane's normal** (Z on XY); X/Y/Z change it. The brief left it open.
+- **Array's "> 100 copies asks once whether to group into a cell" is a one-line note, not a prompt**: *Group
+  into Cell* is brief 48's and does not exist yet, so there is nothing to offer. Accept still writes the copies,
+  as the brief says ("it does not refuse"). Brief 48 should turn the note into the question.
+- **Measure lives in the PANE (`Viewer3DViewModel`), not the editor**, because the read-only viewer measures
+  too. The editor supplies the point (`IViewer3DEditHost.MeasurePoint`: the snap as the document's exact point,
+  else the drawing plane); the viewer uses its snap when on, else the surface under the cursor, marked ≈.
+  Its unit is the `.cem`'s layout's, set where the viewer already set its length format.
+- **A copied value is `LayoutUnits.Spell`**; the card shows the same digits with the display suffix. The
+  distance is rounded at `SpellDecimals` in decimal. Copy All is TSV: `\tx\ty\tz\tunit`, then P1, P2, Δ and
+  Distance (the distance in the x column); an inexact row's label carries ≈.
+- **G, R and M carry no menu Gesture.** A plain-letter NativeMenu gesture is app-wide on macOS and would eat
+  the letter in every text box; the key is named in the header instead, and the pane handles it. Ctrl/Cmd+D is
+  handled by the pane too, as the layout canvas does its own.
+- **Alt is not used** (brief 44's note: Alt suspends geometry snap in 3D, unlike the layout).
+- **Order is replacements, not a new edit shape**: each list position whose object changed is one slot, so
+  undo puts every object back where it was. Instances follow the document's objects in construction order and
+  are not moved by it.
+- **The gizmo stays at the original pivot during its drag**, showing only the active handle; the preview shows
+  the motion. A lost capture cancels the move (Esc semantics).
+- **`C3dEditorGateTests.AnInstancesFace_…` asserted the old disabled "Measure" placeholder**; it now accepts
+  the live item, whose header is `Measure  (M)`.

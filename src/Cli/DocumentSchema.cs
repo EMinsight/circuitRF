@@ -385,9 +385,18 @@ internal static class DocumentSchema
           * Placement: the object's own frame is mirrored (MirrorX negates its x), then rotated by
             each Rotate entry in list order ({"Axis": "Z", "Deg": 90}, right-handed), then moved to
             Origin. Omitted, it is the identity. A rotation lives here, never in the coordinates, so
-            geometry stays integer.
+            geometry stays integer. An instance's Placement is the same record.
+          * The editor writes a rotated or mirrored placement in CANONICAL form, so the list never
+            grows with editing: at most three entries, in the order Z, Y, X (Z applied first), each
+            left out when its angle is 0. A composition of quarter turns and mirrors is stored
+            exactly — MirrorX plus 90, 180 or -90 entries; any other rotation as the Z-Y-X Euler
+            angles of its matrix (Rx·Ry·Rz), in degrees rounded to 1e-9. Origin is then the whole
+            transform's translation, so the rotation's pivot stays where it was. A placement back at
+            the identity is omitted again. A hand-written list of any length is still read as
+            written; a move changes only Origin and keeps it verbatim.
           * Objects are in construction order: where two solids overlap, the LATER one wins the
-            volume. Nothing reorders the list.
+            volume. Nothing reorders the list except the editor's Order commands (Bring to Front,
+            Send to Back, Forward, Backward), which move objects in it.
           * Names are unique across objects and instances and follow the cell-name rules; "airbox"
             is reserved. Faces are NAMED, never indexed, so what attaches to a face survives an edit:
 

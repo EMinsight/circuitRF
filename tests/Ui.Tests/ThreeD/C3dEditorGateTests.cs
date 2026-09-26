@@ -460,7 +460,7 @@ public sealed class C3dEditorGateTests : IDisposable
         v.SetSelection([Scene3DItem.OfFace(pad.Id, 5)]);
         var headers = v.ContextMenuItems().Select(i => i.Header).ToList();
         Assert.Contains("Select Owning Instance", headers);
-        Assert.Contains("Measure", headers);
+        Assert.Contains(headers, h => h.StartsWith("Measure", StringComparison.Ordinal));   // live since brief 46
         Assert.DoesNotContain("Rename…", headers);
         Assert.DoesNotContain("Delete", headers);
         Assert.Contains("area", v.SelectionText);

@@ -1,0 +1,77 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:v3="using:CircuitRF.Ui.Viewer3D"
+             xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             x:Class="CircuitRF.Ui.Views.Viewer3D.Viewer3DMeasureCard"
+             x:DataType="v3:Viewer3DViewModel">
+
+    <!-- brief-em3d-46 R-em3d46-6b / -6c — the Measure card, in a corner of every 3D pane: P1, P2, Δ = P2 − P1 and the
+         distance, in the display unit. Every number is a SelectableTextBlock (drag or double-click selects, Cmd/Ctrl+C
+         copies the selection); hovering one shows a copy button for that value; Copy All copies the card as
+         tab-separated text. A copied value is LayoutUnits.Spell's lossless unit-bearing spelling, so pasting it into a
+         typed field reads back the same database unit. ≈ marks what is not an exact database-unit point. -->
+    <UserControl.Styles>
+        <Style Selector="Button.copy">
+            <Setter Property="Opacity" Value="0"/>
+            <Setter Property="Padding" Value="2"/>
+            <Setter Property="MinWidth" Value="0"/>
+            <Setter Property="MinHeight" Value="0"/>
+            <Setter Property="Background" Value="Transparent"/>
+        </Style>
+        <Style Selector="Panel.cell:pointerover Button.copy">
+            <Setter Property="Opacity" Value="1"/>
+        </Style>
+    </UserControl.Styles>
+
+    <Border IsVisible="{Binding MeasureReadout, Converter={x:Static ObjectConverters.IsNotNull}}"
+            Padding="8,6" CornerRadius="4" BorderThickness="1" Opacity="0.95"
+            Background="{DynamicResource SystemControlBackgroundAltHighBrush}"
+            BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
+        <StackPanel Spacing="2">
+            <DockPanel>
+                <Button DockPanel.Dock="Right" Click="OnCopyAll" Padding="4,1" FontSize="11"
+                        ToolTip.Tip="Copy the whole card as a table: tab-separated, with a header row and a unit column">
+                    <StackPanel Orientation="Horizontal" Spacing="3">
+                        <mi:MaterialIcon Kind="ContentCopy" Width="12" Height="12"/>
+                        <TextBlock Text="Copy All"/>
+                    </StackPanel>
+                </Button>
+                <TextBlock Text="Measure" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center"/>
+            </DockPanel>
+            <Grid ColumnDefinitions="64,100,100,100">
+                <TextBlock Grid.Column="1" Text="x" FontSize="11" Opacity="0.7"/>
+                <TextBlock Grid.Column="2" Text="y" FontSize="11" Opacity="0.7"/>
+                <TextBlock Grid.Column="3" Text="z" FontSize="11" Opacity="0.7"/>
+            </Grid>
+            <ItemsControl ItemsSource="{Binding MeasureReadout.Rows}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="v3:Viewer3DMeasureRow">
+                        <Grid ColumnDefinitions="64,100,100,100">
+                            <TextBlock Grid.Column="0" Text="{Binding Heading}" FontSize="12" VerticalAlignment="Center"/>
+                            <ContentControl Grid.Column="1" Content="{Binding X}"/>
+                            <ContentControl Grid.Column="2" Content="{Binding Y}"/>
+                            <ContentControl Grid.Column="3" Content="{Binding Z}"/>
+                        </Grid>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <Grid ColumnDefinitions="64,*" IsVisible="{Binding MeasureReadout.Distance, Converter={x:Static ObjectConverters.IsNotNull}, FallbackValue=False}">
+                <TextBlock Text="{Binding MeasureReadout.DistanceHeading}" FontSize="12" VerticalAlignment="Center"/>
+                <ContentControl Grid.Column="1" Content="{Binding MeasureReadout.Distance}"/>
+            </Grid>
+        </StackPanel>
+    </Border>
+
+    <UserControl.DataTemplates>
+        <DataTemplate DataType="v3:Viewer3DMeasureValue">
+            <Panel Classes="cell">
+                <StackPanel Orientation="Horizontal" Spacing="2">
+                    <SelectableTextBlock Text="{Binding Text}" FontSize="12" VerticalAlignment="Center"/>
+                    <Button Classes="copy" Click="OnCopyValue" ToolTip.Tip="{Binding Copy, StringFormat='Copy {0}'}">
+                        <mi:MaterialIcon Kind="ContentCopy" Width="11" Height="11"/>
+                    </Button>
+                </StackPanel>
+            </Panel>
+        </DataTemplate>
+    </UserControl.DataTemplates>
+</UserControl>

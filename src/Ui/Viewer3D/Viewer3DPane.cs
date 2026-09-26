@@ -317,6 +317,16 @@ public sealed class Viewer3DPane : Control
         _last = _pressedAt = p.Position;
         // brief-em3d-43: Shift + left is Shift-CLICK now (add to the selection), so a Shift + left DRAG still
         // pans — decided on release, by whether it moved — and Alt + left pans outright.
+        // brief-em3d-46 R-em3d46-5 — a plain left press on a gizmo handle is a constrained move, not an orbit: the
+        // drag's moves are hovers (the snap and the preview follow them) and the release commits.
+        if (p.Properties.IsLeftButtonPressed && e.KeyModifiers == KeyModifiers.None && _vm?.PressGizmo() == true)
+        {
+            _gizmoDrag = true;
+            _orbiting = _panning = _rightPressed = _shiftPress = false;
+            e.Pointer.Capture(this);
+            e.Handled = true;
+            return;
+        }
         _shiftPress = p.Properties.IsLeftButtonPressed && e.KeyModifiers.HasFlag(KeyModifiers.Shift);
         _panning = p.Properties.IsMiddleButtonPressed || (p.Properties.IsLeftButtonPressed && (_shiftPress || e.KeyModifiers.HasFlag(KeyModifiers.Alt)))
                    || p.Properties.IsRightButtonPressed;
@@ -334,8 +344,11 @@ public sealed class Viewer3DPane : Control
     private KeyModifiers _pressModifiers;
     private int _pressClicks = 1;
 
-    /// <summary>A drag (orbit or pan) is under way — the mode keys wait for it (R-em3d43-2a).</summary>
-    public bool GestureInProgress => (_orbiting || _panning) && _moved;
+    /// <summary>brief-em3d-46 — a gizmo handle is being dragged.</summary>
+    private bool _gizmoDrag;
+
+    /// <summary>A drag (orbit, pan or a gizmo handle) is under way — the mode keys wait for it (R-em3d43-2a).</summary>
+    public bool GestureInProgress => ((_orbiting || _panning) && _moved) || _gizmoDrag;
 
     protected override void OnPointerMoved(PointerEventArgs e)
     {
@@ -350,12 +363,20 @@ public sealed class Viewer3DPane : Control
             _last = pos;
         }
         _vm?.SetGeometrySnapSuspended(e.KeyModifiers.HasFlag(KeyModifiers.Alt));
+        _vm?.SetShiftHeld(e.KeyModifiers.HasFlag(KeyModifiers.Shift));
         _vm?.Hover((float)pos.X, (float)pos.Y);
     }
 
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
     {
         base.OnPointerReleased(e);
+        if (_gizmoDrag)
+        {
+            _gizmoDrag = false;
+            e.Pointer.Capture(null);
+            _vm?.ReleaseGizmo();
+            return;
+        }
         if (_orbiting && !_moved) _vm?.Click(shift: false, _pressModifiers, _pressClicks);
         else if (_shiftPress && !_moved) _vm?.Click(shift: true, _pressModifiers, _pressClicks);
         bool menu = _rightPressed && !_moved && e.InitialPressMouseButton == MouseButton.Right;
@@ -372,6 +393,7 @@ public sealed class Viewer3DPane : Control
         base.OnPointerCaptureLost(e);
         _orbiting = _panning = _rightPressed = false;
         _last = _pressedAt = null;
+        if (_gizmoDrag) { _gizmoDrag = false; _vm?.CancelGizmo(); }
     }
 
     protected override void OnPointerExited(PointerEventArgs e)
@@ -402,7 +424,7 @@ public sealed class Viewer3DPane : Control
         if (_vm is null) return;
         // Esc with a drag under way cancels the drag: the camera stays where the drag left it (a camera
         // move is not an edit), and the button's release is no longer a click.
-        if (e.Key == Key.Escape && GestureInProgress)
+        if (e.Key == Key.Escape && GestureInProgress && !_gizmoDrag)
         {
             _orbiting = _panning = _rightPressed = _shiftPress = false;
             _last = _pressedAt = null;
@@ -410,6 +432,14 @@ public sealed class Viewer3DPane : Control
             return;
         }
         if (e.Key is Key.LeftAlt or Key.RightAlt) _vm.SetGeometrySnapSuspended(true);
+        if (e.Key is Key.LeftShift or Key.RightShift) _vm.SetShiftHeld(true);
+        // brief-em3d-46 — keys during a gizmo drag belong to the move it started (X/Y/Z, a typed distance, Esc).
+        if (_gizmoDrag)
+        {
+            if (_vm.HandleKey(e.Key, e.KeyModifiers, gestureInProgress: false)) e.Handled = true;
+            if (e.Key == Key.Escape) { _gizmoDrag = false; _vm.CancelGizmo(); }
+            return;
+        }
         if (_vm.HandleKey(e.Key, e.KeyModifiers, GestureInProgress)) e.Handled = true;
     }
 
@@ -418,6 +448,7 @@ public sealed class Viewer3DPane : Control
     {
         base.OnKeyUp(e);
         if (e.Key is Key.LeftAlt or Key.RightAlt) _vm?.SetGeometrySnapSuspended(false);
+        if (e.Key is Key.LeftShift or Key.RightShift) _vm?.SetShiftHeld(false);
     }
 
     /// <summary>The latched-key lesson: a key-up delivered to another window never reaches this one, so every
@@ -426,5 +457,6 @@ public sealed class Viewer3DPane : Control
     {
         base.OnLostFocus(e);
         _vm?.ClearHeldKeys();
+        _vm?.SetShiftHeld(false);
     }
 }

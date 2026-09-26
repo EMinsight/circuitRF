@@ -73,6 +73,10 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     /// <summary>Objects the elaborator lowered because its cache missed — gate 6's counter.</summary>
     public long ObjectsElaborated { get { lock (_elaborating) return _elaborator.ObjectsElaborated; } }
 
+    /// <summary>brief-em3d-46 gate 2 — placed cells read and built because the child cache missed: moving, rotating or
+    /// arraying an instance must leave it where it was.</summary>
+    public long ChildrenElaborated { get { lock (_elaborating) return _elaborator.ChildrenElaborated; } }
+
     public bool IsDirty => UndoRedo.IsModified || _preferenceDirty;
 
     /// <summary>Raised when the file changed on disk while the document is dirty — the shell asks.</summary>
@@ -108,6 +112,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         Viewer.SnapEnabled = snapOn;
         Viewer.SnapTogglesChanged += () => Snap3DPreference.Preferred = (Viewer.SnapEnabled, Viewer.SnapKinds);
         Viewer.FrameRequested += OnViewerFrame;
+        Viewer.CursorResolved += OnCursorResolvedForOperation;
         ApplySnapGrid();
         Properties = new C3dPropertiesViewModel(this);
         UndoRedo.PropertyChanged += (_, e) =>
@@ -194,6 +199,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         SyncCurrentMaterial();
         RefreshGridText();
         Interlocked.Exchange(ref _adoptedGeneration, gen);
+        ReleaseHeldPreview(gen);
     }
 
     /// <summary>A document object's <c>Hidden</c> is document state (brief 41 §2a): the pane follows it.</summary>
@@ -510,6 +516,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     {
         var f = EmLengthFormat.For(Document.DisplayUnit, Document.DbuPerMicron);
         Viewer.SetLengthFormat(m => f(m));
+        Viewer.SetMeasureUnits(Document.DisplayUnit, Document.DbuPerMicron);
     }
 
     /// <summary>A length in DBU, spelled in the display unit with its suffix.</summary>
@@ -720,6 +727,10 @@ public sealed partial class C3dTreeItem(C3dEditorViewModel owner, string name, s
     public string? Detail { get; } = detail;
     public int ObjectIndex { get; } = objectIndex;
     public int InstanceIndex { get; } = instanceIndex;
+
+    /// <summary>brief-em3d-46 R-em3d46-4d — a document object's place in construction order (1-based), which decides
+    /// which solid wins an overlap; empty for an instance and its parts.</summary>
+    public string OrderText => ObjectIndex >= 0 ? $"#{ObjectIndex + 1}" : "";
     public bool IsReadOnly { get; init; }
     public ObservableCollection<C3dTreeItem> Children { get; } = [];
 

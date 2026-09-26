@@ -28,6 +28,11 @@ The spike's shaders: `target/release/shadergen ../Viewer3dSpike/shaders/scene.wg
 | `.hlsl` | Shader Model 5.0 (`vs_5_0`/`ps_5_0`, the OS's d3dcompiler_47) | `cbuffer … : register(b0)`, `row_major` matrices | semantics `LOC0`, `LOC1` |
 | `.spv` | SPIR-V 1.0 (any Vulkan 1.0 driver) | descriptor set 0, binding 0 | locations 0, 1; clip-space y flipped (`ADJUST_COORDINATE_SPACE`) so one camera matrix serves all three APIs |
 
+The per-draw transform block `@group(0) @binding(1)` (brief-em3d-46: a drag's preview moves what is already
+drawn) is MSL `[[buffer(2)]]`, HLSL `cbuffer … : register(b1)`, SPIR-V descriptor set 0 binding 1 (a dynamic
+uniform the Vulkan backend re-offsets per draw). It is a uniform, not a WGSL immediate: naga writes an immediate
+to HLSL as `ConstantBuffer<T>`, which Shader Model 5.0 does not compile.
+
 - **Deterministic.** Every naga option is set explicitly (its SPIR-V default flips a DEBUG flag with the
   tool's own build profile). The same WGSL gives byte-identical outputs.
 - **Valid.** The SPIR-V is re-read by naga's own SPIR-V front end and re-validated before it is written,

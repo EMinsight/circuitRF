@@ -52,6 +52,10 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
     /// <summary>How long a frame's fence may take before the GPU is declared stuck (a fault, never an
     /// endless wait: the render thread holds the render lock, and the UI thread takes it on detach).</summary>
     private const ulong FenceTimeoutNs = 2_000_000_000;
+    /// <summary>brief-em3d-46 — one per-draw transform slot in the transform buffer: 64 bytes, at an offset every
+    /// minUniformBufferOffsetAlignment divides (the spec caps that at 256).</summary>
+    private const int TransformStride = 256;
+    private const int TransformSlots = 1 + Scene3DFramePlan.MaxPreviewCopies;
     private const int UniformStride = 1280;   // ≥ 1,072 (brief 45's grid block) and a multiple of every minUniformBufferOffsetAlignment (≤ 256)
     private const VkFormat ColorFormat = VkFormat.R8G8B8A8Unorm;
     private const VkFormat DepthFormat = VkFormat.D32Sfloat;
@@ -81,6 +85,9 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
     private VkPipeline _pOpaque, _pTrans, _pLines, _pPick, _pField, _pEdges, _pTop, _pGrid;
     private VkCommandPool _cmdPool;
     private (VkBuffer Buf, VkDeviceMemory Mem) _ub;
+    /// <summary>brief-em3d-46 — the per-draw transforms (binding 1), <see cref="TransformSlots"/> per frame slot.</summary>
+    private (VkBuffer Buf, VkDeviceMemory Mem) _tb;
+    private byte* _tMapped;
     private byte* _uMapped;
     private readonly VkCommandBuffer[] _cmd = new VkCommandBuffer[Ring];
     private readonly VkFence[] _fence = new VkFence[Ring];
@@ -239,12 +246,19 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
         _rpColor = RenderPass(api, pick: false);
         _rpPick = RenderPass(api, pick: true);
 
-        var binding = new VkDescriptorSetLayoutBinding
+        var bindings = stackalloc VkDescriptorSetLayoutBinding[2];
+        bindings[0] = new VkDescriptorSetLayoutBinding
         {
             binding = 0, descriptorType = VkDescriptorType.UniformBufferDynamic, descriptorCount = 1,
             stageFlags = VkShaderStageFlags.Vertex | VkShaderStageFlags.Fragment,
         };
-        var dsl = new VkDescriptorSetLayoutCreateInfo { bindingCount = 1, pBindings = &binding };
+        // brief-em3d-46 — the per-draw transform: a second dynamic uniform, re-offset per draw that changes it.
+        bindings[1] = new VkDescriptorSetLayoutBinding
+        {
+            binding = 1, descriptorType = VkDescriptorType.UniformBufferDynamic, descriptorCount = 1,
+            stageFlags = VkShaderStageFlags.Vertex,
+        };
+        var dsl = new VkDescriptorSetLayoutCreateInfo { bindingCount = 2, pBindings = bindings };
         VkDescriptorSetLayout setLayout;
         Check(api.vkCreateDescriptorSetLayout(&dsl, null, &setLayout), "vkCreateDescriptorSetLayout");
         _setLayout = setLayout;
@@ -269,7 +283,11 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
         void* um;
         Check(api.vkMapMemory(_ub.Mem, 0, VK_WHOLE_SIZE, 0, &um), "vkMapMemory");
         _uMapped = (byte*)um;
-        var ps = new VkDescriptorPoolSize { type = VkDescriptorType.UniformBufferDynamic, descriptorCount = 1 };
+        _tb = NewBuffer(api, Ring * TransformSlots * TransformStride, VkBufferUsageFlags.UniformBuffer, VkMemoryPropertyFlags.HostVisible | VkMemoryPropertyFlags.HostCoherent);
+        void* tm;
+        Check(api.vkMapMemory(_tb.Mem, 0, VK_WHOLE_SIZE, 0, &tm), "vkMapMemory");
+        _tMapped = (byte*)tm;
+        var ps = new VkDescriptorPoolSize { type = VkDescriptorType.UniformBufferDynamic, descriptorCount = 2 };
         var dpi = new VkDescriptorPoolCreateInfo { maxSets = 1, poolSizeCount = 1, pPoolSizes = &ps };
         VkDescriptorPool dp;
         Check(api.vkCreateDescriptorPool(&dpi, null, &dp), "vkCreateDescriptorPool");
@@ -279,8 +297,11 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
         Check(api.vkAllocateDescriptorSets(&dai, &set), "vkAllocateDescriptorSets");
         _set = set;
         var dbi = new VkDescriptorBufferInfo { buffer = _ub.Buf, offset = 0, range = Scene3DFramePlan.UniformBytes };
-        var w = new VkWriteDescriptorSet { dstSet = set, dstBinding = 0, descriptorCount = 1, descriptorType = VkDescriptorType.UniformBufferDynamic, pBufferInfo = &dbi };
-        api.vkUpdateDescriptorSets(1, &w, 0, null);
+        var tbi = new VkDescriptorBufferInfo { buffer = _tb.Buf, offset = 0, range = Scene3DFramePlan.TransformBytesPerDraw };
+        var writes = stackalloc VkWriteDescriptorSet[2];
+        writes[0] = new VkWriteDescriptorSet { dstSet = set, dstBinding = 0, descriptorCount = 1, descriptorType = VkDescriptorType.UniformBufferDynamic, pBufferInfo = &dbi };
+        writes[1] = new VkWriteDescriptorSet { dstSet = set, dstBinding = 1, descriptorCount = 1, descriptorType = VkDescriptorType.UniformBufferDynamic, pBufferInfo = &tbi };
+        api.vkUpdateDescriptorSets(2, writes, 0, null);
 
         var cai = new VkCommandBufferAllocateInfo { commandPool = _cmdPool, level = VkCommandBufferLevel.Primary, commandBufferCount = Ring };
         fixed (VkCommandBuffer* c = _cmd) Check(api.vkAllocateCommandBuffers(&cai, c), "vkAllocateCommandBuffers");
@@ -795,6 +816,14 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
         var clears = stackalloc VkClearValue[3];
         ulong zero = 0;
         var set = _set;
+        // brief-em3d-46 — this frame slot's transforms: slot 0 the identity, then a preview's copies.
+        uint tBase = (uint)(f0 * TransformSlots * TransformStride);
+        int tCount = Math.Min(plan.TransformCount, TransformSlots);
+        fixed (float* xf = plan.Transforms)
+            for (int k = 0; k < tCount; k++)
+                Buffer.MemoryCopy(xf + 16 * k, _tMapped + tBase + k * TransformStride, TransformStride, Scene3DFramePlan.TransformBytesPerDraw);
+        Counters.CountUniform((long)tCount * Scene3DFramePlan.TransformBytesPerDraw);
+        var offs = stackalloc uint[2];
 
         if (plan.Pick && plan.PickDrawCount > 0 && _vb.Buf.Handle != 0 && _ib.Buf.Handle != 0 && !_pickPending[f0])
         {
@@ -808,7 +837,8 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
             api.vkCmdBeginRenderPass(cb, &rbi, VkSubpassContents.Inline);
             SetViewport(api, cb, 1, 1);
             api.vkCmdBindPipeline(cb, VkPipelineBindPoint.Graphics, _pPick);
-            api.vkCmdBindDescriptorSets(cb, VkPipelineBindPoint.Graphics, _layout, 0, 1, &set, 1, &off);
+            offs[0] = off; offs[1] = tBase;
+            api.vkCmdBindDescriptorSets(cb, VkPipelineBindPoint.Graphics, _layout, 0, 1, &set, 2, offs);
             var vb = _vb.Buf;
             api.vkCmdBindVertexBuffers(cb, 0, 1, &vb, &zero);
             api.vkCmdBindIndexBuffer(cb, _ib.Buf, 0, VkIndexType.Uint32);
@@ -845,7 +875,9 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
             };
             api.vkCmdBeginRenderPass(cb, &rbi, VkSubpassContents.Inline);
             SetViewport(api, cb, im.Width, im.Height);
-            api.vkCmdBindDescriptorSets(cb, VkPipelineBindPoint.Graphics, _layout, 0, 1, &set, 1, &off);
+            offs[0] = off; offs[1] = tBase;
+            api.vkCmdBindDescriptorSets(cb, VkPipelineBindPoint.Graphics, _layout, 0, 1, &set, 2, offs);
+            int transform = 0;
             Scene3DPipeline state = (Scene3DPipeline)(-1);
             Scene3DBuffer bound = (Scene3DBuffer)(-1);
             for (int i = 0; i < plan.DrawCount; i++)
@@ -875,6 +907,13 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
                     api.vkCmdDraw(cb, 6, 1, 0, 0);
                     draws++;
                     continue;
+                }
+                if (d.Transform != transform && d.Transform < tCount)
+                {
+                    // brief-em3d-46 — a drag's preview: the same set, re-offset to this draw's transform.
+                    transform = d.Transform;
+                    offs[1] = tBase + (uint)(transform * TransformStride);
+                    api.vkCmdBindDescriptorSets(cb, VkPipelineBindPoint.Graphics, _layout, 0, 1, &set, 2, offs);
                 }
                 if (d.Buffer != bound)
                 {
@@ -991,6 +1030,7 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
         foreach (var o in _overlays) Free(api, o);
         foreach (var b in _pickBuf) Free(api, b);
         Free(api, _ub);
+        Free(api, _tb);
         Destroy(api, _pickId); Destroy(api, _pickPos); Destroy(api, _pickDepth);
         if (_pickFb.Handle != 0) api.vkDestroyFramebuffer(_pickFb, null);
         foreach (var f in _fence) if (f.Handle != 0) api.vkDestroyFence(f, null);

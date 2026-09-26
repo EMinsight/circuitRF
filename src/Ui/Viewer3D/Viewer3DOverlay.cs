@@ -17,6 +17,11 @@
 // here too, from world segments the editor hands over each frame (IViewer3DEditHost.FillDrawOverlay). A gesture
 // in progress is therefore a few projected lines, never a document edit or an upload.
 //
+// brief-em3d-46: the MOVE GIZMO (three arrows in the axis indicator's colours and three plane squares, a constant
+// size on screen, laid out by Render's GizmoGeometry so its hit test is the one tested headlessly), an operation's
+// PIVOT cross, and a MEASUREMENT's line with a marker at each point — no extension lines, no arrowheads and no
+// text in 3D: the numbers live on the card.
+//
 // It is drawn by Avalonia, in DIPs, from the camera alone — a redraw per presented frame is a handful of
 // lines and a few text runs, and it touches no geometry. It takes no input: the pane under it does.
 
@@ -92,6 +97,9 @@ public sealed class Viewer3DOverlay : Control
             Drawing(ctx, vm, _draw, w, h, dark);
         }
 
+        Measurement(ctx, vm, w, h, dark);
+        if (vm.GizmoNow() is { } gizmo) Gizmo(ctx, gizmo, vm.GizmoHover, vm.GizmoActive, dark);
+
         if (vm.Snap.IsSnap) SnapMarker(ctx, vm.Snap.Kind, new Point(vm.Snap.ScreenX, vm.Snap.ScreenY), dark);
 
         if (vm.HoverText.Length > 0 && vm.View.CursorX >= 0)
@@ -137,6 +145,94 @@ public sealed class Viewer3DOverlay : Control
         foreach (var p in d.Fixed)
             if (Screen(p) is (var sp, true)) ctx.DrawEllipse(RubberBrush, new Pen(dark ? Brushes.Black : Brushes.White, 1), sp, 3, 3);
         Lines(d.Crossing, new Pen(CrossingBrush, 3, lineCap: PenLineCap.Round));
+        // brief-em3d-46 R-em3d46-3a — a rotation's pivot: a small cross while the gesture lasts.
+        foreach (var p in d.Pivots)
+        {
+            if (Screen(p) is not (var c, true)) continue;
+            foreach (var stroke in new[] { new Pen(dark ? Brushes.Black : Brushes.White, 4), new Pen(RubberBrush, 1.8) })
+            {
+                ctx.DrawLine(stroke, new Point(c.X - 7, c.Y), new Point(c.X + 7, c.Y));
+                ctx.DrawLine(stroke, new Point(c.X, c.Y - 7), new Point(c.X, c.Y + 7));
+            }
+        }
+    }
+
+    private static readonly IBrush MeasureBrush = new SolidColorBrush(Color.FromRgb(40, 200, 220));
+
+    /// <summary>brief-em3d-46 R-em3d46-6e — a thin line between the measured points and a small marker at each.</summary>
+    private static void Measurement(DrawingContext ctx, Viewer3DViewModel vm, double w, double h, bool dark)
+    {
+        if (vm.MeasureP1 is not { } a) return;
+        var cam = vm.View.Camera;
+        (Point P, bool Ok) Screen(Viewer3DMeasurePoint p)
+        {
+            var (x, y, front) = cam.Project(vm.Scene.ToLocal(p.X, p.Y, p.Z), (float)w, (float)h);
+            return (new Point(x, y), front);
+        }
+        var halo = new Pen(dark ? Brushes.Black : Brushes.White, 3);
+        var pen = new Pen(MeasureBrush, 1.2) { DashStyle = vm.MeasureP2Fixed ? null : new DashStyle([5, 3], 0) };
+        var (pa, oa) = Screen(a);
+        if (vm.MeasureP2 is { } b && Screen(b) is (var pb, true) && oa)
+        {
+            ctx.DrawLine(halo, pa, pb);
+            ctx.DrawLine(pen, pa, pb);
+            ctx.DrawEllipse(MeasureBrush, new Pen(dark ? Brushes.Black : Brushes.White, 1), pb, 3.5, 3.5);
+        }
+        if (oa) ctx.DrawEllipse(MeasureBrush, new Pen(dark ? Brushes.Black : Brushes.White, 1), pa, 3.5, 3.5);
+    }
+
+    private static readonly IBrush GizmoHot = new SolidColorBrush(Color.FromRgb(255, 196, 40));
+
+    /// <summary>brief-em3d-46 R-em3d46-5 — the move gizmo: arrows in the axis colours, plane squares tinted by their
+    /// normal; the hovered handle in amber; during a drag only the active handle.</summary>
+    private static void Gizmo(DrawingContext ctx, CircuitRF.Render.Scene3D.Edit.GizmoLayout g, CircuitRF.Render.Scene3D.Edit.GizmoHandle hover,
+                              CircuitRF.Render.Scene3D.Edit.GizmoHandle active, bool dark)
+    {
+        IBrush[] axis = [XBrush, YBrush, ZBrush];
+        var halo = new Pen(dark ? Brushes.Black : Brushes.White, 5, lineCap: PenLineCap.Round);
+        var c = new Point(g.Centre.X, g.Centre.Y);
+        bool dragging = active != CircuitRF.Render.Scene3D.Edit.GizmoHandle.None;
+        for (int k = 0; k < 3; k++)
+        {
+            var h = CircuitRF.Render.Scene3D.Edit.GizmoHandle.PlaneX + k;
+            if (!g.SquareUsable[k] || (dragging && active != h)) continue;
+            var q = g.Squares[k];
+            var geo = new StreamGeometry();
+            using (var sc = geo.Open())
+            {
+                sc.BeginFigure(new Point(q[0].X, q[0].Y), true);
+                for (int i = 1; i < 4; i++) sc.LineTo(new Point(q[i].X, q[i].Y));
+                sc.EndFigure(true);
+            }
+            bool hot = hover == h || active == h;
+            var col = ((SolidColorBrush)axis[k]).Color;
+            ctx.DrawGeometry(new SolidColorBrush(hot ? Color.FromArgb(200, 255, 196, 40) : Color.FromArgb(90, col.R, col.G, col.B)),
+                             new Pen(hot ? GizmoHot : axis[k], 1), geo);
+        }
+        for (int k = 0; k < 3; k++)
+        {
+            var h = CircuitRF.Render.Scene3D.Edit.GizmoHandle.AxisX + k;
+            if (!g.AxisUsable[k] || (dragging && active != h)) continue;
+            var tip = new Point(g.Tips[k].X, g.Tips[k].Y);
+            var from = new Point(c.X + g.Directions[k].X * 6, c.Y + g.Directions[k].Y * 6);
+            bool hot = hover == h || active == h;
+            var pen = new Pen(hot ? GizmoHot : axis[k], hot ? 3.5 : 2.5, lineCap: PenLineCap.Round);
+            ctx.DrawLine(halo, from, tip);
+            ctx.DrawLine(pen, from, tip);
+            // The arrowhead: a small triangle at the tip.
+            var d = g.Directions[k];
+            var n = new System.Numerics.Vector2(-d.Y, d.X);
+            var head = new StreamGeometry();
+            using (var sc = head.Open())
+            {
+                sc.BeginFigure(new Point(tip.X + d.X * 8, tip.Y + d.Y * 8), true);
+                sc.LineTo(new Point(tip.X + n.X * 4, tip.Y + n.Y * 4));
+                sc.LineTo(new Point(tip.X - n.X * 4, tip.Y - n.Y * 4));
+                sc.EndFigure(true);
+            }
+            ctx.DrawGeometry(hot ? GizmoHot : axis[k], null, head);
+        }
+        if (!dragging) ctx.DrawEllipse(dark ? Brushes.WhiteSmoke : Brushes.DimGray, null, c, 3, 3);
     }
 
     /// <summary>The snap marker's colour: an amber no material or selection uses, over a contrasting halo.</summary>

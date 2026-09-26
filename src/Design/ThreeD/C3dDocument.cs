@@ -69,7 +69,7 @@ public sealed class C3dRotation
 /// mirror-then-rotate order, extended by a list. <see cref="MirrorX"/> negates the object's own x, as
 /// a layout instance's does. The whole record is omitted from the file when it states nothing.
 /// </summary>
-public sealed class C3dPlacement
+public sealed partial class C3dPlacement
 {
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public C3dPoint3 Origin { get; set; }

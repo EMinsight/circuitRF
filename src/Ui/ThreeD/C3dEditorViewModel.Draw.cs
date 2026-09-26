@@ -26,6 +26,7 @@ using CircuitRF.Engine.Em3d;
 using CircuitRF.Render;
 using CircuitRF.Render.Scene3D;
 using CircuitRF.Render.Scene3D.Edit;
+using CircuitRF.Ui.ThreeD.Operations;
 using CircuitRF.Ui.ThreeD.Tools;
 using CircuitRF.Ui.Viewer3D;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -228,7 +229,10 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
     {
         CloseField();
         _crossing = null;
+        if (_tool is C3dOperationTool && !ReferenceEquals(_tool, tool)) EndOperation();
         _tool = tool;
+        // brief-em3d-46 — one gesture at a time: arming a tool ends a measurement.
+        if (tool is not null) Viewer.EndMeasure();
         foreach (string p in new[] { nameof(ArmedTool), nameof(Tool), nameof(IsBoxArmed), nameof(IsSheetArmed), nameof(IsPolygonArmed),
                                      nameof(IsPolylineArmed), nameof(IsCylinderArmed), nameof(ToolPrompt) })
             OnPropertyChanged(p);
@@ -254,7 +258,7 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
             geometry = Viewer.Snap.Kind != Snap3DKind.Grid;
         }
         var ray = Viewer.CursorRay();
-        return new C3dDrawInput(snap, exact, geometry, ray?.Origin, ray?.Direction);
+        return new C3dDrawInput(snap, exact, geometry, ray?.Origin, ray?.Direction, Viewer.ShiftHeld);
     }
 
     public C3dPoint3? PlanePoint(in C3dDrawInput input, out string? refusal)
@@ -331,6 +335,7 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
             if (step.Crossing is { } x && _tool is PolygonTool pt) _crossing = pt.CrossingSegments(x);
         }
         else if (step.Advanced) StatusMessage = "";
+        if (step.Finished && _tool is C3dOperationTool op) CommitOperation(op);
         if (step.Result is { } obj)
         {
             if (_tool is ExtrudeTool ex) CommitExtrude(ex, obj);
@@ -374,12 +379,15 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
     public bool DrawKey(Key key, KeyModifiers modifiers)
     {
         if (key == Key.A && modifiers == KeyModifiers.Shift) { DrawMenuRequested?.Invoke(); return true; }
+        // brief-em3d-46 — G, R and Ctrl/Cmd+D start an operation on the selection (no gesture in progress).
+        if (_tool is not { InProgress: true } && OperationKey(key, modifiers)) return true;
         if (_tool is not { } tool) return false;
+        if (tool is C3dOperationTool opTool && opTool.Key(key, modifiers)) { OperationChanged(); return true; }
         bool plain = modifiers == KeyModifiers.None;
         switch (key)
         {
             case Key.Escape:
-                if (tool.InProgress && tool.Kind != C3dToolKind.Extrude)
+                if (tool.InProgress && tool.Kind != C3dToolKind.Extrude && tool is not C3dOperationTool)
                 {
                     tool.Reset();
                     _crossing = null;
@@ -389,7 +397,7 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
                 }
                 else
                 {
-                    StatusMessage = tool.Kind == C3dToolKind.Extrude ? "Extrude cancelled." : "";
+                    StatusMessage = tool.Kind == C3dToolKind.Extrude || tool is C3dOperationTool ? $"{tool.Name} cancelled." : "";
                     Disarm();
                 }
                 return true;
@@ -437,6 +445,7 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
             DrawGeometry.Chain(points, l.Closed, dbu, SelectedTreeItem?.Name == l.Name ? overlay.Selected : overlay.Construction);
         }
         if (_tool is { } tool) tool.Preview(CursorInput(), overlay.Rubber, overlay.Fixed);
+        if (_tool is C3dOperationTool { ShowsPivot: true } op) overlay.Pivots.Add(DrawGeometry.Metres(op.Pivot, dbu));
         if (_crossing is { } x) { overlay.Crossing.Add(x.A); overlay.Crossing.Add(x.B); }
     }
 
@@ -449,6 +458,7 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
 
     public IEnumerable<Viewer3DMenuItem> DrawMenuItems()
     {
+        foreach (var item in OperationMenuItems()) yield return item;
         if (Viewer.SelectMode == Scene3DSelectMode.Face && Viewer.Selection is [{ Face: >= 0 } f])
             yield return new Viewer3DMenuItem("Drawing Plane from Face", () => { if (PlaneFromFace(f.Object, f.Face) is { } why) StatusMessage = why; });
         if (ExtrudeSource() is { } src)
@@ -479,7 +489,7 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
         var current = tool.Current(CursorInput());
         _fieldTexts = new string[tool.Dimensions.Count];
         for (int i = 0; i < _fieldTexts.Length; i++)
-            _fieldTexts[i] = i < current.Length && current[i] is { } v ? C3dDimension.Spell(v, Document.DisplayUnit, Document.DbuPerMicron) : "";
+            _fieldTexts[i] = i < current.Length && current[i] is { } v ? tool.SpellField(i, v, Document.DisplayUnit, Document.DbuPerMicron) : "";
         _fieldTexts[0] = first ?? "";
         _fieldIndex = 0;
         FieldX = Math.Max(0, Viewer.View.CursorX) + 16;
@@ -498,9 +508,10 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
         FieldText = _fieldTexts[_fieldIndex];
         _showingField = false;
         var dims = _tool!.Dimensions;
+        string suffix = _tool.FieldSuffix(_fieldIndex) ?? Suffix;
         FieldLabel = dims.Count > 1
-            ? $"{dims[_fieldIndex]} ({Suffix}) — Tab: {dims[(_fieldIndex + 1) % dims.Count]}"
-            : $"{dims[_fieldIndex]} ({Suffix})";
+            ? $"{dims[_fieldIndex]} ({suffix}) — Tab: {dims[(_fieldIndex + 1) % dims.Count]}"
+            : $"{dims[_fieldIndex]} ({suffix})";
     }
 
     private string Suffix => LayoutUnits.Suffix(Document.DisplayUnit);
@@ -531,7 +542,7 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
         for (int i = 0; i < _fieldTexts.Length; i++)
         {
             if (_fieldTexts[i].Trim().Length == 0) continue;                 // left empty: the cursor's value
-            var d = C3dDimension.Parse(_fieldTexts[i], Document.DisplayUnit, Document.DbuPerMicron);
+            var d = tool.ParseField(i, _fieldTexts[i], Document.DisplayUnit, Document.DbuPerMicron);
             if (d.Kind != C3dDimensionKind.Value)
             {
                 _fieldIndex = i;

@@ -47,6 +47,15 @@ struct U {
 };
 @group(0) @binding(0) var<uniform> u: U;
 
+// brief-em3d-46 R-em3d46-1a — the per-draw transform (Scene3DFramePlan.Transforms): the identity, or a drag's
+// preview moving what is already drawn, so a drag uploads no geometry. A second uniform binding, set per draw:
+// Metal setVertexBytes at buffer 2, a D3D11 cbuffer at b1, a Vulkan dynamic offset into binding 1. Not an
+// immediate (push constant): naga writes those to HLSL as ConstantBuffer<T>, which vs_5_0 does not compile.
+struct MX {
+    m: mat4x4f,
+};
+@group(0) @binding(1) var<uniform> mx: MX;
+
 struct VI {
     @location(0) p: vec3f,
     @location(1) id: u32,
@@ -64,8 +73,9 @@ struct VO {
 
 @vertex fn vs(v: VI) -> VO {
     var o: VO;
-    o.pos = u.vp * vec4f(v.p, 1.0);
-    o.world = v.p;
+    let p = (mx.m * vec4f(v.p, 1.0)).xyz;
+    o.pos = u.vp * vec4f(p, 1.0);
+    o.world = p;
     o.id = v.id;
     o.col = v.col;
     o.face = v.face;
