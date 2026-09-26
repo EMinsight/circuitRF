@@ -960,10 +960,20 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
 
     private bool _suppressCommit;
 
-    public EmSetupEditorViewModel(string filePath, EmSetup setup)
+    public EmSetupEditorViewModel(string filePath, EmSetup setup) : this(filePath, setup, embedded: false) { }
+
+    /// <summary>
+    /// brief-em3d-49 R-em3d49-1a — the same panel on a setup EMBEDDED in a <c>.c3d</c> (<paramref name="embedded"/>):
+    /// <paramref name="filePath"/> is the <c>.c3d</c>, the geometry-reference rows are hidden (the document is the
+    /// geometry), the planar analysis is not offered (a 3D view is solved by the 3D solvers), and every edit is handed to
+    /// <see cref="EmbeddedCommit"/> as a document edit of the <c>.c3d</c> rather than pushed on this panel's own stack.
+    /// One editor, two containers: a field a <c>.cem</c> gains appears here with no change.
+    /// </summary>
+    public EmSetupEditorViewModel(string filePath, EmSetup setup, bool embedded)
     {
         FilePath = filePath;
         Working  = setup;
+        IsEmbedded = embedded;
 
         UndoCommand = new RelayCommand(() => UndoRedo.Undo(), () => UndoRedo.CanUndo);
         RedoCommand = new RelayCommand(() => UndoRedo.Redo(), () => UndoRedo.CanRedo);
@@ -1047,9 +1057,36 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     {
         var afterJson = SnapshotJson();
         if (afterJson == beforeJson) return;
-        UndoRedo.Execute(new EmSetupSnapshotCommand(this, beforeJson, afterJson, description));
+        // brief-em3d-49 — embedded, the edit is the .c3d's: its editor pushes one entry that writes the setup back.
+        if (EmbeddedCommit is { } commit) commit(beforeJson, afterJson, description);
+        else UndoRedo.Execute(new EmSetupSnapshotCommand(this, beforeJson, afterJson, description));
         SetupChanged?.Invoke();
     }
+
+    /// <summary>brief-em3d-49 — true when this panel edits a setup embedded in a <c>.c3d</c>.</summary>
+    public bool IsEmbedded { get; }
+
+    /// <summary>brief-em3d-49 — the geometry-reference rows (Layout, Solve region) are the <c>.cem</c>'s; embedded, the
+    /// document is the geometry.</summary>
+    public bool ShowGeometryReference => !IsEmbedded;
+
+    /// <summary>brief-em3d-49 — a setup shown for reading only: a <c>.cem</c> pointing at the <c>.c3d</c>, which keeps its
+    /// own panel.</summary>
+    [ObservableProperty] private bool _isReadOnly;
+
+    public bool IsEditable => !IsReadOnly;
+
+    partial void OnIsReadOnlyChanged(bool value) => OnPropertyChanged(nameof(IsEditable));
+
+    /// <summary>The solver choices this panel offers: a 3D view is never solved by the planar kernels.</summary>
+    public IReadOnlyList<Em3dSolverChoice> Solver3DChoiceList => IsEmbedded ? [.. Solver3DChoices.Where(c => c.Value != Em3dSolver.None)] : Solver3DChoices;
+
+    /// <summary>brief-em3d-49 — set by the 3D editor for an embedded setup: an edit's before and after (the full <c>.cem</c>
+    /// spelling) and its description. The editor pushes the undo entry; this panel's own stack stays empty.</summary>
+    public Action<string, string, string>? EmbeddedCommit { get; set; }
+
+    /// <summary>brief-em3d-49 — the 3D editor's undo or redo put a setup back: shown as it now reads, no entry.</summary>
+    public void ShowSnapshot(string json) => ApplySnapshot(json);
 
     internal void ApplySnapshot(string json)
     {
@@ -1832,6 +1869,13 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         DispersionDisabledReason = "The cross-section has not resolved yet.";
 
         ResolvedLayoutPath = null;
+
+        if (IsEmbedded)
+        {
+            LayoutStatus = "The 3D view is the geometry.";
+            RaiseState();
+            return;
+        }
 
         if (Working.LayoutRef is not { Length: > 0 })
         {

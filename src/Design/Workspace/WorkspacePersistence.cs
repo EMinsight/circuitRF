@@ -160,6 +160,13 @@ public sealed class CwsFile
     public Dictionary<string, CwsDrawingPlane>? C3dDrawingPlanes { get; set; }
 
     /// <summary>
+    /// brief-em3d-49 R-em3d49-1a — each 3D editor's ACTIVE setup (the one Simulate runs and the air box drawn is), by name,
+    /// keyed by its <c>.c3d</c>'s workspace-relative path. Editor state, per user: persisted in the <c>.cwsuser</c>.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Dictionary<string, string>? C3dActiveSetups { get; set; }
+
+    /// <summary>
     /// Documents open in the main DocumentDock when the workspace was last saved.
     /// Null or empty means no documents to restore (welcome stub is shown).
     /// Scratch documents are never persisted here.

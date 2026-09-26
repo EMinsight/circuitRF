@@ -152,7 +152,7 @@ public static class C3dLowering
     };
 
     /// <summary>A point of a drawing plane, (u, v) at height h along its normal, in the object's frame.</summary>
-    private static Point3 OnPlane(C3dPlane plane, double u, double v, double h) => plane switch
+    public static Point3 OnPlane(C3dPlane plane, double u, double v, double h) => plane switch
     {
         C3dPlane.YZ => new(h, u, v),
         C3dPlane.XZ => new(u, h, v),

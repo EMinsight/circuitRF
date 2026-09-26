@@ -15,8 +15,6 @@
 // EVERYTHING HERE IS IN THE OBJECT'S OWN FRAME. The editor takes a world vector into it by the inverse placement
 // (R-em3d47-1a) — the geometry stays integer, and the placement stays what the user wrote.
 
-using System.Text.Json;
-using System.Text.Json.Nodes;
 
 namespace CircuitRF.Design.ThreeD.Kernel;
 
@@ -567,24 +565,18 @@ public static class C3dFaceCommands
     /// R-em3d47-3c — every <c>FaceBoundaries</c> entry on object <paramref name="objectName"/> naming a folded face, replaced
     /// by one entry per piece, in order; everything else untouched. Null when nothing named a folded face.
     /// </summary>
-    public static List<JsonElement>? FollowFolds(IReadOnlyList<JsonElement> entries, string objectName, IReadOnlyDictionary<string, IReadOnlyList<string>> folds)
+    public static List<C3dFaceBoundary>? FollowFolds(IReadOnlyList<C3dFaceBoundary> entries, string objectName, IReadOnlyDictionary<string, IReadOnlyList<string>> folds)
     {
         if (folds.Count == 0) return null;
-        List<JsonElement>? result = null;
+        List<C3dFaceBoundary>? result = null;
         for (int i = 0; i < entries.Count; i++)
         {
             var e = entries[i];
-            if (e.ValueKind == JsonValueKind.Object && e.TryGetProperty("Object", out var obj) && obj.ValueKind == JsonValueKind.String
-                && obj.GetString() == objectName && e.TryGetProperty("Face", out var face) && face.ValueKind == JsonValueKind.String
-                && folds.TryGetValue(face.GetString()!, out var pieces))
+            if (e.Object == objectName && folds.TryGetValue(e.Face, out var pieces))
             {
                 result ??= [.. entries.Take(i)];
                 foreach (string piece in pieces)
-                {
-                    var node = JsonNode.Parse(e.GetRawText())!.AsObject();
-                    node["Face"] = piece;
-                    result.Add(JsonSerializer.SerializeToElement(node));
-                }
+                    result.Add(new C3dFaceBoundary { Object = e.Object, Face = piece, Kind = e.Kind, Material = e.Material, Unread = e.Unread });
                 continue;
             }
             result?.Add(e);

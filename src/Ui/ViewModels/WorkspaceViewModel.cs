@@ -1996,6 +1996,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             ws.Viewer3DCameras = Viewer3DCamerasToPersist();
             // brief-em3d-45 — each 3D editor's drawing plane, beside the cameras.
             ws.C3dDrawingPlanes = DrawingPlanesToPersist();
+            ws.C3dActiveSetups = ActiveSetupsToPersist();
 
             if (_factory.ProjectTreeTool?.FilterState is { } fs)
             {
@@ -3670,6 +3671,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     [RelayCommand(CanExecute = nameof(CanRunAnalysis))]
     private async Task RunAnalysis()
     {
+        // brief-em3d-49 R-em3d49-5a — a 3D view runs its active setup.
+        if (_factory.DocumentDock?.ActiveDockable is CircuitRF.Ui.ThreeD.C3dEditorDocument c3d) { await RunC3dSetupAsync(c3d.ViewModel, null); return; }
         var doc = (_factory.DocumentDock?.ActiveDockable as SchematicDocument) ?? _lastActiveSchematicDoc;
         if (doc is null) { Messages.Warning("Run: no schematic is active."); return; }
         await RunSchematicDocAsync(doc);
@@ -3688,7 +3691,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     // RunAnalysis's own fallback, which already reads it) resolves against. Everything else is
     // unchanged: focus a Data Display or a symbol editor and Run still greys out.
     private bool CanRunAnalysis() =>
-        _runCts is null && HasARunnableSchematicInFocus;
+        (_runCts is null && HasARunnableSchematicInFocus) || _factory.DocumentDock?.ActiveDockable is CircuitRF.Ui.ThreeD.C3dEditorDocument;
 
     /// <summary>
     /// True when the user is looking at somewhere a run can be started FROM: a schematic document,
@@ -8587,7 +8590,13 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// type — the kernel already returns a <c>DataSet</c> carrying S, per-port Z0 and the "tline"
     /// group, and this path must not filter any of it out on the way to Data Display.
     /// </summary>
-    private async Task RunEmSetupAsync(EmSetupEditorViewModel vm)
+    private Task RunEmSetupAsync(EmSetupEditorViewModel vm) => RunEmSetupAsync(vm, null, null);
+
+    /// <summary>brief-em3d-49 — the run with its setup and its geometry supplied: <paramref name="runSetup"/> as the run
+    /// names it, and <paramref name="run"/> in place of the layout route (a 3D view's elaboration). True when a result was
+    /// written.</summary>
+    private async Task<bool> RunEmSetupAsync(EmSetupEditorViewModel vm, EmSetup? runSetup,
+                                             Func<EmSetup, RunControl, string, EmRunResult>? run)
     {
         var baseDir = CurrentWorkspacePath is { } cws
             ? Path.GetDirectoryName(cws)!
@@ -8600,8 +8609,20 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // lands in the right workspace, and the tail of this method has to know that it did.
         var owningWorkspace = CurrentWorkspacePath;
 
-        var source = ResolveEmLayout(vm.FilePath, vm.Working.LayoutRef);
-        var setup  = vm.Working.Clone();
+        var setup  = runSetup ?? vm.Working.Clone();
+        // brief-em3d-49 — a .cem whose LayoutRef names a 3D view (brief 42) runs that document, as `em` does.
+        string? cemThreeD = run is null && CurrentWorkspacePath is var cwsNow
+            ? EmSetupResolver.ResolveLayoutPath(vm.FilePath, vm.Working.LayoutRef, cwsNow) : null;
+        if (run is null && C3dSetups.IsThreeDView(cemThreeD) && File.Exists(cemThreeD))
+        {
+            C3dDocument threeD;
+            try { threeD = C3dPersistence.LoadFromFile(cemThreeD!); }
+            catch (Exception ex) { Messages.Error($"The 3D view {cemThreeD} cannot be read: {ex.Message}"); return false; }
+            string c3dPath = cemThreeD!;
+            run = (s, control, root) => EmRunService.RunThreeDView(s, threeD, c3dPath, CircuitRF.Design.Workspace.WorkspaceRootFinder.FindAncestorCws(Path.GetDirectoryName(c3dPath)), root, default, control,
+                                                                  EmSolveCorePreference.Preferred, ConfirmEmMemory, fromCem: true);
+        }
+        var source = run is null ? ResolveEmLayout(vm.FilePath, vm.Working.LayoutRef) : null;
 
         // TWO live rows, because an EM run has two questions with two different answers and one bar
         // cannot carry both. A full-wave frequency point costs tens of seconds at the shipping mesh
@@ -8710,14 +8731,14 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 // R-emp-6/R-emcli-3 — the core cap is a MACHINE preference, so it is read HERE, on the
                 // UI side that owns the preferences file, and handed to the run service as an
                 // argument. EmRunService itself lives in CircuitRF.Design and cannot reach it.
-                result = await Task.Run(() => EmRunService.Run(
+                result = await Task.Run(() => run is not null ? run(setup, control, resultsRoot) : EmRunService.Run(
                     setup, source, resultsRoot, default, control, EmSolveCorePreference.Preferred, ConfirmEmMemory));
             }
             catch (Exception ex)
             {
                 stageLive.Complete(MessageLevel.Info, $"EM '{setup.Name}' — stopped");
                 sweepLive.Complete(MessageLevel.Error, $"The EM run failed: {ex.Message}");
-                return;
+                return false;
             }
             finally
             {
@@ -8786,7 +8807,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             // A both-run that failed on one solver kept the other's result (brief-em3d-10 R-em3d10-4a):
             // it was rewritten, so an open display of it must show the new numbers.
             await PostKeptEmOutputsAsync(result);
-            return;
+            return false;
         }
 
         // The stage row's job is over the moment the sweep is: it names a step, not an outcome, so
@@ -8827,7 +8848,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 sweepLive.Finish(MessageLevel.Warning, "EM stopped — the finished solver's result was kept", keepBar: false);
                 if (result.Diagnostic is { } kept) Messages.PostDiagnostic(kept);
                 await PostKeptEmOutputsAsync(result);
-                return;
+                return false;
             }
             sweepLive.Finish(MessageLevel.Warning, "EM stopped — no solution was written", keepBar: false);
             if (adaptive)
@@ -8835,7 +8856,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                     "Adaptive frequency sampling was on, so the points it had solved are not a " +
                     "usable sweep on their own — the published grid is only complete once " +
                     "refinement finishes. Nothing was written.");
-            return;
+            return false;
         }
 
         // Owner request, 2026-08-14: the bar glyph is dropped once the row settles (keepBar: false)
@@ -8873,7 +8894,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 $"This window moved to another workspace while '{setup.Name}' was solving, so no Data "
                 + $"Display was opened for it. The results are in {Path.Combine(baseDir, "results")} — "
                 + "open that workspace to plot them.");
-            return;
+            return true;
         }
 
         if (result.NpyPath is { } npy)
@@ -8890,6 +8911,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             string displayKey = setup.Is3D ? Path.GetFileNameWithoutExtension(npy) : EmRunService.ResolveNpyKey(setup);
             await AutoOpenOrCreateDataDisplayAsync(baseDir, displayKey, npy);
         }
+        return true;
     }
 
     /// <summary>The .npy files an EM run wrote — every one a both-run lists, else its one.</summary>

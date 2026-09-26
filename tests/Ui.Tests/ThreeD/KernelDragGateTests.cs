@@ -10,6 +10,7 @@ using Avalonia.Input;
 using CircuitRF.Design.Layout;
 using CircuitRF.Design.ThreeD;
 using CircuitRF.Design.Workspace;
+using CircuitRF.Engine.Em3d;
 using CircuitRF.Render.Scene3D;
 using CircuitRF.Render.Scene3D.Edit;
 using CircuitRF.Ui.ThreeD;
@@ -104,7 +105,7 @@ public sealed class KernelDragGateTests : IDisposable
         {
             SnapDbu = Um,
             Objects = [Box("lid", 0, 0, 0, 60, 40, 20)],
-            FaceBoundaries = [JsonDocument.Parse("""{ "Object": "lid", "Face": "zmax", "Kind": "Pec" }""").RootElement.Clone()],
+            FaceBoundaries = [new C3dFaceBoundary { Object = "lid", Face = "zmax", Kind = Em3dFaceBoundaryKind.Pec }],
         });
         var vm = Open(path);
         var v = vm.Viewer;
@@ -139,11 +140,11 @@ public sealed class KernelDragGateTests : IDisposable
         Assert.Equal("", vm.Properties.Error);
         var folded = Assert.IsType<C3dPolyhedron>(vm.Document.Objects[0]);
         Assert.Contains("zmax.0", folded.FaceNames());
-        Assert.Equal(["zmax.0", "zmax.1"], vm.Document.FaceBoundaries.Select(b => b.GetProperty("Face").GetString()));
+        Assert.Equal(["zmax.0", "zmax.1"], vm.Document.FaceBoundaries.Select(b => b.Face));
 
         vm.UndoRedo.Undo();
         Settle(vm);
-        Assert.Equal(["zmax"], vm.Document.FaceBoundaries.Select(b => b.GetProperty("Face").GetString()));
+        Assert.Equal(["zmax"], vm.Document.FaceBoundaries.Select(b => b.Face));
         vm.UndoRedo.Undo();
         Settle(vm);
         Assert.IsType<C3dBox>(vm.Document.Objects[0]);

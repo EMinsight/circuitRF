@@ -94,6 +94,34 @@ public static class Scene3DPicking
         return (id, face);
     }
 
+    /// <summary>
+    /// brief-em3d-49 R-em3d49-3b — every visible <see cref="Scene3DObject.PickLast"/> object the ray through pixel
+    /// (<paramref name="px"/>, <paramref name="py"/>) crosses, nearest first: the air-box faces the editor picks only
+    /// where nothing pickable is under the cursor, and B reaches after every solid face. A box's six faces are two
+    /// triangles each, so this is twelve ray tests.
+    /// </summary>
+    public static List<(uint Id, float Depth, Vector3 Point)> PickLastHits(Scene3DModel scene, in Camera3D camera, float px, float py,
+                                                                          float width, float height, ReadOnlySpan<bool> visible)
+    {
+        var (o, d) = camera.Ray(px, py, width, height);
+        var hits = new List<(uint, float, Vector3)>();
+        var verts = scene.Vertices;
+        foreach (var b in scene.Batches)
+        {
+            var obj = scene.Objects[b.ObjectId - 1];
+            if (!obj.PickLast || !Visible(visible, b.ObjectId)) continue;
+            float best = float.MaxValue;
+            for (int i = b.FirstIndex; i < b.FirstIndex + b.IndexCount; i += 3)
+            {
+                var v0 = P(verts[scene.Indices[i]]) + b.Offset; var v1 = P(verts[scene.Indices[i + 1]]) + b.Offset; var v2 = P(verts[scene.Indices[i + 2]]) + b.Offset;
+                if (Intersect(o, d, v0, v1, v2, out float t) && t < best) best = t;
+            }
+            if (best < float.MaxValue) hits.Add((b.ObjectId, best, o + d * best));
+        }
+        hits.Sort((a, c) => a.Item2.CompareTo(c.Item2));
+        return hits;
+    }
+
     private static bool Visible(ReadOnlySpan<bool> visible, uint id)
         => visible.IsEmpty || (id - 1 < (uint)visible.Length && visible[(int)id - 1]);
 

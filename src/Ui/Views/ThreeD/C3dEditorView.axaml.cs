@@ -49,6 +49,7 @@ public partial class C3dEditorView : UserControl
             _vm.PropertiesRequested -= OnPropertiesRequested;
             _vm.DrawMenuRequested -= OnDrawMenuRequested;
             _vm.FieldFocusRequested -= OnFieldFocusRequested;
+            _vm.TextRequested -= OnTextRequested;
         }
         var doc = DataContext as C3dEditorDocument;
         _vm = doc?.ViewModel;
@@ -56,8 +57,27 @@ public partial class C3dEditorView : UserControl
         _vm.PropertiesRequested += OnPropertiesRequested;
         _vm.DrawMenuRequested += OnDrawMenuRequested;
         _vm.FieldFocusRequested += OnFieldFocusRequested;
+        _vm.TextRequested += OnTextRequested;
         ApplyBackground();
         if (doc!.ConsumeActivationFocus()) Dispatcher.UIThread.Post(() => Pane.Focus(), DispatcherPriority.Loaded);
+    }
+
+    /// <summary>brief-em3d-49 — a value the view model asks for (a port's Z0, a box face's padding): asked, then committed;
+    /// a refusal goes to the status line.</summary>
+    private async void OnTextRequested(string title, string prompt, string current, Func<string, string?> commit)
+    {
+        if (TopLevel.GetTopLevel(this) is not Window window || _vm is null) return;
+        var text = await new Dialogs.InputNameDialog(title, prompt, current).ShowDialog<string?>(window);
+        if (text is null) return;
+        if (commit(text) is { } why) _vm.StatusMessage = why;
+    }
+
+    private async void OnRenameSetupClick(object? sender, RoutedEventArgs e)
+    {
+        if (_vm?.SelectedSetupItem is not { IsExternal: false } item || TopLevel.GetTopLevel(this) is not Window window) return;
+        var text = await new Dialogs.InputNameDialog("Rename Setup", "Setup name:", item.Name).ShowDialog<string?>(window);
+        if (text is null) return;
+        if (_vm.RenameSetup(text) is { } why) _vm.StatusMessage = why;
     }
 
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)

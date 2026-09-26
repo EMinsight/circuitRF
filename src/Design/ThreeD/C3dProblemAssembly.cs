@@ -9,9 +9,9 @@
 // THE PROBLEM is the elaboration plus the setup: the sweep, the temperature, the problem type, and the air
 // box padded around the elaborated content by the generator's own padding code (Em3dGenerator.PaddedAirBox
 // — shared, so a .cem and a .c3d cannot disagree about a box). There is no air solid: the background is
-// air. Ports and face boundaries are brief 49's; until then a driven setup with no port is refused where it
-// always was, by the backend ("nothing to excite"). A static setup's terminals name nets — a layout
-// instance's nets, or a drawn conductor's own name.
+// air. brief-em3d-49: the document's ports (C3dPorts — polarity by contact, measured against THIS box, so a
+// wave port is checked against the setup being run) and its face boundaries join it. A static setup's terminals
+// name nets — a layout instance's nets, or a drawn conductor's own name — or, from brief 49, objects by name.
 //
 // WHERE RESULTS LAND (R-em3d42-5d). EmRunService.ResolveSnpPath is predictable by design. An embedded
 // setup's result is named as if a .cem called "<c3d stem> <setup name>.cem" stood beside the .c3d — so
@@ -104,6 +104,120 @@ public static class C3dSetups
 public static class C3dProblemAssembly
 {
     /// <summary>
+    /// R-em3d49-2b — the setup's ground set: the conductors on its Ground3D net (a drawn conductor's net is its own name)
+    /// and a layout instance's ground-reference conductors. A PEC air-box face joins it in <see cref="C3dPortContext"/>.
+    /// </summary>
+    public static IReadOnlyList<string> GroundSet(EmSetup? setup, C3dElaboration e)
+    {
+        var set = new List<string>(e.GroundBandObjects);
+        if (setup?.Ground3D is { Length: > 0 } net)
+            set.AddRange(e.ObjectNets.Where(kv => kv.Value.Contains(net)).Select(kv => kv.Key));
+        return [.. set.Distinct(StringComparer.Ordinal)];
+    }
+
+    /// <summary>The port context <paramref name="setup"/>'s run measures ports against: this elaboration, this box.</summary>
+    public static C3dPortContext PortContext(EmSetup? setup, C3dDocument document, C3dElaboration e, Em3dAirBox? box)
+        => new(e, document.DbuPerMicron, box, GroundSet(setup, e));
+
+    /// <summary>
+    /// The air box <paramref name="setup"/> puts around <paramref name="e"/> — the one a run of it solves in, which is also
+    /// the one the editor draws (R-em3d49-3a) and a wave port must lie on. Null when there is no content.
+    /// </summary>
+    public static Em3dAirBox? AirBox(EmSetup setup, C3dElaboration e, out string? refusal)
+    {
+        refusal = null;
+        if (e.Extent() is not { } extent) return null;
+        double fMin;
+        try { fMin = setup.Frequency.Expand().Where(f => f > 0).DefaultIfEmpty(1e9).Min(); }
+        catch (Exception) { fMin = 1e9; }
+        return Em3dGenerator.PaddedAirBox(setup, (extent.X0, extent.Y0, extent.X1, extent.Y1, extent.Z0, extent.Z1),
+                                          fMin, floorZ: null, waves: [], [], out refusal);
+    }
+
+    /// <summary>
+    /// brief-em3d-49 R-em3d49-4d — each face boundary on its own, for drawing: its pieces in the world, or why it cannot
+    /// be placed. The same resolution <see cref="FaceBoundaries"/> makes, one boundary at a time, so one refusal does not
+    /// hide the others.
+    /// </summary>
+    public static IReadOnlyList<(C3dFaceBoundary Boundary, IReadOnlyList<Em3dFacePolygon> Pieces, string? Refusal)> FaceBoundaryPreview(
+        C3dDocument document, C3dElaboration e)
+    {
+        var list = new List<(C3dFaceBoundary, IReadOnlyList<Em3dFacePolygon>, string?)>();
+        foreach (var b in document.FaceBoundaries)
+        {
+            var one = new C3dDocument { Objects = document.Objects, FaceBoundaries = [b] };
+            var materials = e.Materials.ToList();
+            if (FaceBoundaries(one, e, materials, EmSetup.DefaultOperatingTempC, out var resolved) is { } why)
+            {
+                list.Add((b, [], why));
+                continue;
+            }
+            var solid = e.Solids.First(s => s.Name == b.Object);
+            list.Add((b, [.. resolved.SelectMany(r => Em3dFaceGeometry.Pieces(solid.Primitive, r.Face, out _) ?? [])], null));
+        }
+        return list;
+    }
+
+    /// <summary>
+    /// R-em3d49-4 — the document's face boundaries as the neutral problem states them: each on its object's elaborated
+    /// solid, the document's face name carried to the primitive's own through the provenance map (a box turned a quarter
+    /// turn has its document xmin on its world ymin). A conductive face's metal resolves in the document's technology.
+    /// A refusal names the object and the face — never a guess (§6.4).
+    /// </summary>
+    public static string? FaceBoundaries(C3dDocument document, C3dElaboration e, List<Em3dMaterial> materials, double tempC,
+                                         out List<Em3dFaceBoundary> boundaries)
+    {
+        boundaries = [];
+        foreach (var b in document.FaceBoundaries)
+        {
+            string where = $"The boundary on face '{b.Face}' of '{b.Object}'";
+            if (b.Kind is Em3dFaceBoundaryKind.Absorbing or Em3dFaceBoundaryKind.Pmc or Em3dFaceBoundaryKind.Symmetry)
+                return $"{where} is {b.Kind}, which both 3D solvers state only on the problem's outer boundary: set it on a face " +
+                       "of the setup's air box. A solid's face may be Pec or Conductive.";
+            var obj = document.Objects.FirstOrDefault(o => o.Name == b.Object);
+            if (obj is null) return $"{where} names no object of this 3D view.";
+            if (obj is C3dSheet or C3dPolyline)
+                return $"{where} is on a {(obj is C3dSheet ? "sheet, which is already a conductor's surface" : "polyline, which is construction geometry")}: " +
+                       "a boundary goes on a face of a dielectric or air solid.";
+            if (e.Solids.FirstOrDefault(s => s.Name == b.Object) is not { } solid || !e.Provenance.TryGetValue(b.Object, out var prov))
+                return $"{where} is on an object the elaboration did not make a solid of; its own refusal says why.";
+            if (solid.Role == Em3dRole.Conductor)
+                return $"{where} is on a conductor, which is a void bounded by its own metal: a boundary on it has nothing to add. " +
+                       "Put boundaries on dielectric and air objects.";
+            var primNames = Em3dFaceGeometry.FaceNames(solid.Primitive);
+            var mine = Enumerable.Range(0, Math.Min(prov.FaceNames.Count, primNames.Count))
+                                 .Where(i => prov.FaceNames[i] == b.Face).Select(i => primNames[i]).Distinct().ToList();
+            if (mine.Count == 0)
+                return $"{where} names a face '{b.Object}' does not have (it has {string.Join(", ", obj.FaceNames().Distinct())}). " +
+                       "A face's name is kept through every edit; one that no longer exists is refused, never guessed.";
+            string? material = null;
+            if (b.Kind == Em3dFaceBoundaryKind.Conductive)
+            {
+                if (b.Material is not { Length: > 0 } m) return $"{where} is Conductive and names no Material.";
+                if (e.Technology?.FindMaterial(m) is not { } tm)
+                    return $"{where} is made of '{m}', which the 3D view's technology does not define.";
+                var values = C3dElaborator.MaterialValues(tm, tempC);
+                if (!(values.SigmaSm > 0)) return $"{where} is made of '{m}', which states no conductivity.";
+                material = materials.FirstOrDefault(x => x.Name == tm.Name && x with { Name = "" } == values with { Name = "" })?.Name
+                           ?? materials.FirstOrDefault(x => x.Name.StartsWith(tm.Name + "@", StringComparison.Ordinal) &&
+                                                            x with { Name = "" } == values with { Name = "" })?.Name;
+                if (material is null)
+                {
+                    material = materials.Any(x => x.Name == tm.Name) ? $"{tm.Name}@face" : tm.Name;
+                    materials.Add(values with { Name = material });
+                }
+            }
+            foreach (string face in mine)
+            {
+                if (Em3dFaceGeometry.Pieces(solid.Primitive, face, out string? why) is null)
+                    return $"{where} cannot be placed: {why}.";
+                boundaries.Add(new Em3dFaceBoundary(b.Object, face, b.Kind, material));
+            }
+        }
+        return null;
+    }
+
+    /// <summary>
     /// The 3D problem <paramref name="setup"/> makes of <paramref name="document"/>: elaborated at the setup's
     /// top frequency and temperature, then the air box, sweep and type. A refusal names what is missing.
     /// </summary>
@@ -151,7 +265,37 @@ public static class C3dProblemAssembly
 
         var solids = e.Solids.ToList();
         var sheets = e.Sheets.ToList();
+        var materials = e.Materials.ToList();
+
+        // ── Ports (R-em3d49-2): the document's, polarity by contact ─────────────────────────────
+        // The generator's rule by problem (R-em3d22-1c): an electrostatic solve has none, and a magnetostatic one only
+        // the ports its terminals are driven through — so a port no solve reads can never refuse the run.
+        var context = PortContext(setup, document, e, box);
         var ports = new List<Em3dPort>();
+        if (setup.Problem3D == Em3dProblemType.Electrostatic)
+        {
+            if (document.Ports.Count > 0)
+                notes.Add($"An electrostatic solve has no ports: the 3D view's {document.Ports.Count} port(s) are not in the problem.");
+        }
+        else
+        {
+            var sources = setup.Problem3D == Em3dProblemType.Magnetostatic
+                ? setup.Terminals3D.Select(t => t.Source?.Trim()).OfType<string>()
+                       .Select(src => src.StartsWith("port/", StringComparison.Ordinal) ? src : "port/" + src).ToHashSet(StringComparer.Ordinal)
+                : null;
+            foreach (var r in C3dPorts.Resolve(document, context))
+            {
+                if (sources is not null && !sources.Contains(C3dPorts.ProblemName(r.Port.Number))) continue;
+                if (r.Resolved is null) return No(r.Refusal!, e.Warnings);
+                ports.Add(r.Resolved);
+            }
+            if (sources is not null && document.Ports.Count > ports.Count)
+                notes.Add($"{document.Ports.Count - ports.Count} port(s) drive no terminal and are not in the magnetostatic problem.");
+        }
+
+        // ── Face boundaries (R-em3d49-4) ────────────────────────────────────────────────────────
+        if (FaceBoundaries(document, e, materials, tempC, out var faceBoundaries) is { } boundaryRefusal)
+            return No(boundaryRefusal, e.Warnings);
 
         // ── Terminals and ground (R-em3d22-2), by net ───────────────────────────────────────────
         List<Em3dTerminal> terminals = [];
@@ -161,9 +305,10 @@ public static class C3dProblemAssembly
                                     [.. e.GroundBandObjects], out terminals, out ground) is { } terminalRefusal)
             return No(terminalRefusal, e.Warnings);
 
-        var problem = new Em3dProblem(solids, sheets, e.Materials, ports, box, frequency, tempC)
+        var problem = new Em3dProblem(solids, sheets, materials, ports, box, frequency, tempC)
         {
             Type = setup.Problem3D,
+            FaceBoundaries = faceBoundaries,
             Terminals = terminals,
             GroundObjects = ground,
             EigenmodeCount = setup.Eigenmode?.Count ?? EmEigenmode3D.DefaultCount,
@@ -176,5 +321,66 @@ public static class C3dProblemAssembly
             Origins = e.Origins,
             MaterialSources = e.MaterialSources,
         };
+    }
+}
+
+/// <summary>brief-em3d-49 R-em3d49-5c — one port as a setup's run resolves it; <see cref="Setup"/> is null when the
+/// document embeds no setup (lumped ports are still inferred; a wave port needs a box).</summary>
+public sealed record C3dPortReport(string? Setup, C3dPortResult Result)
+{
+    /// <summary>What <c>check</c> prints: the polarity and why, or the refusal.</summary>
+    public string Text => (Setup is { } s ? $"setup '{s}': " : "") + (Result.Refusal ?? C3dPortReports.Describe(Result));
+}
+
+/// <summary>
+/// brief-em3d-49 R-em3d49-5c — what <c>check</c> and <c>explain</c> say about a 3D view's ports and face boundaries: the
+/// SAME resolution a run makes (C3dPorts through the setup's own box and ground set, C3dProblemAssembly.FaceBoundaries),
+/// so a port that checks clean is the port the solver gets.
+/// </summary>
+public static class C3dPortReports
+{
+    /// <summary>Every port under every readable embedded setup — each setup's box and ground set can change a port's
+    /// polarity or, for a wave port, whether it lies on the box at all. Identical lines from two setups are said once.</summary>
+    public static IReadOnlyList<C3dPortReport> For(C3dDocument doc, C3dElaboration e)
+    {
+        var reports = new List<C3dPortReport>();
+        if (doc.Ports.Count == 0 || !e.Ok) return reports;
+        var setups = C3dSetups.Read(doc).Where(s => s.Setup is not null).ToList();
+        if (setups.Count == 0)
+        {
+            var ctx = C3dProblemAssembly.PortContext(null, doc, e, null);
+            reports.AddRange(C3dPorts.Resolve(doc, ctx).Select(r => new C3dPortReport(null, r)));
+            return reports;
+        }
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var s in setups)
+        {
+            var box = C3dProblemAssembly.AirBox(s.Setup!, e, out _);
+            var ctx = C3dProblemAssembly.PortContext(s.Setup, doc, e, box);
+            foreach (var r in C3dPorts.Resolve(doc, ctx))
+                if (seen.Add(r.Refusal ?? Describe(r))) reports.Add(new C3dPortReport(setups.Count == 1 ? null : s.Name, r));
+        }
+        return reports;
+    }
+
+    /// <summary>The face boundaries' refusals, in the document's technology at the default temperature.</summary>
+    public static IReadOnlyList<string> FaceBoundaryRefusals(C3dDocument doc, C3dElaboration e)
+    {
+        if (doc.FaceBoundaries.Count == 0 || !e.Ok) return [];
+        var materials = e.Materials.ToList();
+        return C3dProblemAssembly.FaceBoundaries(doc, e, materials, EmSetup.DefaultOperatingTempC, out _) is { } why ? [why] : [];
+    }
+
+    /// <summary>A resolved port in a sentence: <c>P1 (lumped) runs from 'ground' to 'trace' along +z: 'ground' is in the
+    /// ground set.</c></summary>
+    public static string Describe(C3dPortResult r)
+    {
+        if (r.Resolved is not { } p) return r.Refusal ?? "";
+        var d = p.Kind == Em3dPortKind.Wave && p.VoltagePath is { } v
+            ? new Point3(v.To.X - v.From.X, v.To.Y - v.From.Y, v.To.Z - v.From.Z) : p.Direction;
+        double ax = Math.Abs(d.X), ay = Math.Abs(d.Y), az = Math.Abs(d.Z);
+        string along = ax >= ay && ax >= az ? (d.X >= 0 ? "+x" : "-x") : ay >= az ? (d.Y >= 0 ? "+y" : "-y") : (d.Z >= 0 ? "+z" : "-z");
+        return $"{r.Label} ({(p.Kind == Em3dPortKind.Wave ? "wave" : "lumped")}) runs from '{p.NegativeObject}' to '{p.PositiveObject}' " +
+               $"along {along}: {r.Reason}.";
     }
 }

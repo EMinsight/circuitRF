@@ -123,3 +123,40 @@ public sealed class C3dListsEdit(string description, (IReadOnlyList<string> Obje
         doc.Instances = [.. instances.Select(C3dPersistence.DeserializeInstance)];
     }
 }
+
+/// <summary>
+/// brief-em3d-49 — ONE undo entry for an edit of the document's records: its ports, its face boundaries and its embedded
+/// setups, as the file spells the three lists before and after. They are small and edited together (a setup's air box and
+/// the ports measured against it), so the entry keeps the three whole — exact, and an undone list is byte for byte what
+/// it was.
+/// </summary>
+public sealed class C3dRecordsEdit(string description, string before, string after, Action<string> apply, bool alreadyApplied = false) : IUiCommand
+{
+    private bool _alreadyApplied = alreadyApplied;
+
+    public string Description { get; } = description;
+    public string Before { get; } = before;
+    public string After { get; } = after;
+
+    public void Execute()
+    {
+        if (_alreadyApplied) { _alreadyApplied = false; return; }
+        apply(After);
+    }
+
+    public void Undo() => apply(Before);
+
+    /// <summary>The three lists as one text: ports, face boundaries, setups.</summary>
+    public static string Of(C3dDocument doc)
+        => C3dPersistence.SerializePorts(doc.Ports) + "\u0001" + C3dPersistence.SerializeFaceBoundaries(doc.FaceBoundaries) +
+           "\u0001" + C3dPersistence.SerializeSetups(doc.Setups);
+
+    /// <summary>Writes the three lists of <paramref name="text"/> into <paramref name="doc"/>.</summary>
+    public static void Apply(C3dDocument doc, string text)
+    {
+        var parts = text.Split('\u0001');
+        doc.Ports = C3dPersistence.DeserializePorts(parts[0]);
+        doc.FaceBoundaries = C3dPersistence.DeserializeFaceBoundaries(parts[1]);
+        doc.Setups = C3dPersistence.DeserializeSetups(parts[2]);
+    }
+}

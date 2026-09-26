@@ -193,7 +193,7 @@ public sealed class HierarchyGateTests : IDisposable
         LayoutCell(ws, "Die");
         C3dCell(ws, "Die", new C3dDocument { Objects = [Box("trace", 0, 0, 0, 100, 20, 5)] });
         var doc = new C3dDocument { Instances = [new C3dInstance { Name = "U1", CellRef = "../../Die" }] };
-        doc.Ports.Add(JsonSerializer.SerializeToElement(new { Number = 1, Name = "P1", Kind = "Lumped", Positive = "U1/trace", Negative = (string?)null }));
+        doc.Ports.Add(new C3dPort { Number = 1, Name = "P1", Positive = "U1/trace" });
         var vm = Open(C3dCell(ws, "Pkg", doc));
         Assert.NotNull(vm.SceneObject("U1/trace"));
 
@@ -205,7 +205,7 @@ public sealed class HierarchyGateTests : IDisposable
 
         vm.UndoRedo.Undo();
         Assert.Equal(C3dInstanceView.ThreeD, vm.Document.Instances[0].View);
-        Assert.Equal("U1/trace", vm.Document.Ports[0].GetProperty("Positive").GetString());
+        Assert.Equal("U1/trace", vm.Document.Ports[0].Positive);
     }
 
     // ── 5. cycles at edit time ───────────────────────────────────────────────────────────────

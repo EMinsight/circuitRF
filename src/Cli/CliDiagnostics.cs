@@ -968,6 +968,18 @@ internal static class CliDiagnostics
     public static Diagnostic CheckThreeDSetup(string path, string reason) => Diagnostic.Create(
         "check.c3d.setup", DiagnosticSeverity.Error, "{path}: {reason}", ("path", path), ("reason", reason));
 
+    /// <summary>brief-em3d-49 — a port's inferred polarity, and why.</summary>
+    public static Diagnostic CheckThreeDPort(string path, string text) => Diagnostic.Create(
+        "check.c3d.port", DiagnosticSeverity.Info, "{path}: {text}", ("path", path), ("text", text));
+
+    /// <summary>brief-em3d-49 — a port that cannot be built, naming what it touches.</summary>
+    public static Diagnostic CheckThreeDPortRefused(string path, string text) => Diagnostic.Create(
+        "check.c3d.port-refused", DiagnosticSeverity.Error, "{path}: {text}", ("path", path), ("text", text));
+
+    /// <summary>brief-em3d-49 — a face boundary that cannot be placed.</summary>
+    public static Diagnostic CheckThreeDFaceBoundary(string path, string reason) => Diagnostic.Create(
+        "check.c3d.face-boundary", DiagnosticSeverity.Error, "{path}: {reason}", ("path", path), ("reason", reason));
+
     /// <summary>brief-em3d-42 — what elaboration noted.</summary>
     public static Diagnostic CheckThreeDNote(string path, string note) => Diagnostic.Create(
         "check.c3d.note", DiagnosticSeverity.Info, "{path}: {note}", ("path", path), ("note", note));

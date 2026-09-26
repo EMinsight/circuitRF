@@ -245,17 +245,11 @@ public sealed class KernelGateTests
         Assert.Equal(["zmax.0", "zmax.1"], r.Folds["zmax"]);
         AssertSolid(C3dBrepBuild.Of(poly)!, 0, "bent corner");
 
-        JsonElement E(string json) => JsonDocument.Parse(json).RootElement.Clone();
-        var boundaries = new List<JsonElement>
-        {
-            E("""{ "Object": "blk", "Face": "zmax", "Kind": "Pec" }"""),
-            E("""{ "Object": "blk", "Face": "xmin", "Kind": "Pec" }"""),
-            E("""{ "Object": "other", "Face": "zmax", "Kind": "Pec" }"""),
-        };
+        C3dFaceBoundary E(string obj, string face) => new() { Object = obj, Face = face, Kind = Em3dFaceBoundaryKind.Pec };
+        var boundaries = new List<C3dFaceBoundary> { E("blk", "zmax"), E("blk", "xmin"), E("other", "zmax") };
         var followed = C3dFaceCommands.FollowFolds(boundaries, "blk", r.Folds)!;
-        Assert.Equal(["blk/zmax.0", "blk/zmax.1", "blk/xmin", "other/zmax"],
-                     followed.Select(b => $"{b.GetProperty("Object").GetString()}/{b.GetProperty("Face").GetString()}"));
-        Assert.All(followed, b => Assert.Equal("Pec", b.GetProperty("Kind").GetString()));
+        Assert.Equal(["blk/zmax.0", "blk/zmax.1", "blk/xmin", "other/zmax"], followed.Select(b => $"{b.Object}/{b.Face}"));
+        Assert.All(followed, b => Assert.Equal(Em3dFaceBoundaryKind.Pec, b.Kind));
     }
 
     // ── 6. locality (counter) ────────────────────────────────────────────────────────────────

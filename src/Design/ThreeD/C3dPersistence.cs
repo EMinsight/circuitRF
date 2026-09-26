@@ -96,6 +96,22 @@ public static class C3dPersistence
     /// <summary>brief-em3d-43 — one instance as the file spells it, and back.</summary>
     public static string SerializeInstance(C3dInstance inst) => JsonSerializer.Serialize(inst, JsonOpts);
 
+    /// <summary>brief-em3d-49 — the document's face boundaries as the file spells them (an undo entry's before and after).</summary>
+    public static string SerializeFaceBoundaries(IReadOnlyList<C3dFaceBoundary> list) => JsonSerializer.Serialize(list, JsonOpts);
+
+    public static List<C3dFaceBoundary> DeserializeFaceBoundaries(string json)
+        => JsonSerializer.Deserialize<List<C3dFaceBoundary>>(json, JsonOpts) ?? [];
+
+    /// <summary>brief-em3d-49 — the document's ports, as the file spells them.</summary>
+    public static string SerializePorts(IReadOnlyList<C3dPort> list) => JsonSerializer.Serialize(list, JsonOpts);
+
+    public static List<C3dPort> DeserializePorts(string json) => JsonSerializer.Deserialize<List<C3dPort>>(json, JsonOpts) ?? [];
+
+    /// <summary>brief-em3d-49 — an embedded setup list, as the file spells it.</summary>
+    public static string SerializeSetups(IReadOnlyList<JsonElement> list) => JsonSerializer.Serialize(list, JsonOpts);
+
+    public static List<JsonElement> DeserializeSetups(string json) => JsonSerializer.Deserialize<List<JsonElement>>(json, JsonOpts) ?? [];
+
     public static C3dInstance DeserializeInstance(string json)
         => JsonSerializer.Deserialize<C3dInstance>(json, JsonOpts) ?? throw new C3dReadException(C3dDiagnostics.NotAnObject());
 

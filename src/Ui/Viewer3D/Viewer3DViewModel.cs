@@ -335,7 +335,7 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
         _syncingKinds = true;
         ShowDielectrics = Scene.Objects.Any(o => o.Kind == Scene3DKind.Dielectric && View.IsVisible(o.Id));
         ShowAir = Scene.Objects.Any(o => o.Kind == Scene3DKind.Air && View.IsVisible(o.Id));
-        ShowBoundaryFaces = Scene.Objects.Any(o => o.Kind == Scene3DKind.Boundary && o.Name != "airbox" && View.IsVisible(o.Id));
+        ShowBoundaryFaces = Scene.Objects.Any(o => IsBoxFace(o) && View.IsVisible(o.Id));
         _syncingKinds = false;
     }
 
@@ -345,7 +345,12 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
 
     partial void OnShowDielectricsChanged(bool value) { if (!_syncingKinds) SetKindVisible(o => o.Kind == Scene3DKind.Dielectric, value); }
     partial void OnShowAirChanged(bool value) { if (!_syncingKinds) SetKindVisible(o => o.Kind == Scene3DKind.Air, value); }
-    partial void OnShowBoundaryFacesChanged(bool value) { if (!_syncingKinds) SetKindVisible(o => o.Kind == Scene3DKind.Boundary && o.Name != "airbox", value); }
+    partial void OnShowBoundaryFacesChanged(bool value) { if (!_syncingKinds) SetKindVisible(IsBoxFace, value); }
+
+    /// <summary>An air-box face — not the box's edges, and not a face boundary's tint (brief-em3d-49), which the box's
+    /// toggle leaves drawn.</summary>
+    private static bool IsBoxFace(Scene3DObject o)
+        => o.Kind == Scene3DKind.Boundary && o.Name != "airbox" && !o.Name.StartsWith(Scene3DBuilder.FaceTintPrefix, StringComparison.Ordinal);
 
     [ObservableProperty] private Viewer3DTreeItem? _selectedItem;
 
@@ -600,6 +605,17 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
         if (setup.Solver3D is not (Em3dSolver.Palace or Em3dSolver.Both)) return null;
         string p = Path.Combine(Em3dRunService.RunDirectory(root, setup, Em3dSolver.Palace), GmshGeoWriter.MeshFile);
         return File.Exists(p) ? p : null;
+    }
+
+    /// <summary>
+    /// brief-em3d-49 R-em3d49-5b — the 3D editor's pane has no <c>.cem</c> of its own: the editor names the setup whose run
+    /// the fields (and the mesh) are read from — the active one, as its run names it — and they are re-read from that
+    /// run's own directory. Null takes them away.
+    /// </summary>
+    public void SetRunSetup(EmSetup? runSetup)
+    {
+        _lastSetup = runSetup;
+        RefreshSolverOverlays();
     }
 
     /// <summary>Re-reads what the setup's solver produced: the mesh file (a run may have made one) and

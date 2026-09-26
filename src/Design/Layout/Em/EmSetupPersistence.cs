@@ -154,6 +154,10 @@ public sealed class CemTerminal3D
     /// <summary>Magnetostatic only: the port whose sheet drives this terminal's current — its number,
     /// or <c>port/N</c>. Omitted for an electrostatic terminal.</summary>
     public string? Source { get; set; }
+
+    /// <summary>brief-em3d-49 — the terminal's conductors by NAME, instead of a Net: what a 3D view's terminal
+    /// states, since a drawn object carries no net. A terminal stating both is refused. Omitted when unused.</summary>
+    public List<string>? Objects { get; set; }
 }
 
 /// <summary>
@@ -798,7 +802,8 @@ public static class EmSetupPersistence
         Problem3D      = s.Problem3D == CircuitRF.Engine.Em3d.Em3dProblemType.Driven ? null : s.Problem3D,
         Terminals3D    = s.Terminals3D.Count == 0 ? null
             : [.. s.Terminals3D.Select(t => new CemTerminal3D { Name = t.Name, Net = t.Net,
-                                                                 Source = t.Source is { Length: > 0 } src ? src : null })],
+                                                                 Source = t.Source is { Length: > 0 } src ? src : null,
+                                                                 Objects = t.ByObjects ? [.. t.Objects!] : null })],
         Ground3D       = s.Ground3D is { Length: > 0 } g3 ? g3 : null,
         // R-em3d23-2a — a port with nothing but the default kind writes nothing, so every lumped-port
         // file keeps its bytes (gate 9).
@@ -874,7 +879,7 @@ public static class EmSetupPersistence
         Palace                = f.Palace,
         OpenEms               = f.OpenEms,
         Problem3D             = f.Problem3D ?? CircuitRF.Engine.Em3d.Em3dProblemType.Driven,
-        Terminals3D           = f.Terminals3D is { } ts ? [.. ts.Select(t => new EmTerminal3D(t.Name ?? "", t.Net ?? "", t.Source))] : [],
+        Terminals3D           = f.Terminals3D is { } ts ? [.. ts.Select(t => new EmTerminal3D(t.Name ?? "", t.Net ?? "", t.Source, t.Objects is { Count: > 0 } o ? [.. o] : null))] : [],
         Ground3D              = f.Ground3D ?? "",
         Ports3D               = f.Ports3D is { } ps
             ? [.. ps.Select(p => new EmPort3D(p.Port, p.Kind ?? CircuitRF.Engine.Em3d.Em3dPortKind.Lumped, p.Width, p.Height, p.OffsetUm))]

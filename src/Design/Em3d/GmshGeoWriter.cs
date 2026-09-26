@@ -56,6 +56,9 @@ public enum Em3dGroupKind
     Port,
     /// <summary>One face of the air box.</summary>
     Face,
+    /// <summary>brief-em3d-49 — a boundary on a named face of a dielectric or air solid: a perfect conductor, or a
+    /// conductive surface carrying its metal.</summary>
+    FaceBoundary,
 }
 
 /// <summary>
@@ -185,6 +188,18 @@ public static class GmshGeoWriter
                           AtLeast: !Covered(problem, key), Boundary: faceKinds[k])).ToList();
         groups.AddRange(faceGroups);
 
+        // brief-em3d-49 R-em3d49-4c — a face boundary is recovered by its pieces' bounding boxes and counted EXACTLY:
+        // a box that would also take a neighbour's coplanar surface is refused here, before Gmsh, and a count that
+        // still comes back different is refused by the entity check. Never a guess. None present: nothing below
+        // changes by a byte.
+        var faceBoundaries = problem.FaceBoundaryPieces();
+        if (CoplanarNeighbour(problem, faceBoundaries) is { } clash) return No(clash);
+        var boundaryGroups = faceBoundaries.Select(fb =>
+            new Em3dGroup(fb.Boundary.Name, ++attr, 2, Em3dGroupKind.FaceBoundary, fb.Pieces.Count, AtLeast: false,
+                          fb.Boundary.Kind == Em3dFaceBoundaryKind.Conductive ? fb.Boundary.Material : null,
+                          Boundary: fb.Boundary.Kind == Em3dFaceBoundaryKind.Pec ? Em3dBoundaryKind.Pec : null)).ToList();
+        groups.AddRange(boundaryGroups);
+
         // ── The script ───────────────────────────────────────────────────────────────────────
         var g = new StringBuilder();
         void L(string line = "") => g.Append(line).Append('\n');
@@ -311,6 +326,13 @@ public static class GmshGeoWriter
         // face by definition, so it is claimed before the faces too.
         if (problem.IsStatic) ClaimPorts(wave: false);
         else if (problem.HasWavePorts) ClaimPorts(wave: true);
+        // brief-em3d-49 — a face boundary is claimed before the air-box faces, so one lying ON the box (a cavity whose
+        // walls are its dielectric's faces) keeps its own surfaces.
+        for (int k = 0; k < faceBoundaries.Count; k++)
+        {
+            L($"// face boundary {Comment(faceBoundaries[k].Boundary.Name)}: {faceBoundaries[k].Boundary.Kind}");
+            Claim(g, $"b{k}", [.. faceBoundaries[k].Pieces.Select(pc => Query(pc.Bounds(), 0))], []);
+        }
         for (int k = 0; k < 6; k++)
         {
             L($"// air box {FaceKeys[k]}");
@@ -369,6 +391,8 @@ public static class GmshGeoWriter
             L($"Physical Surface(\"{PhysicalName(portGroups[k].Name)}\", {portGroups[k].Attribute}) = {{q{k}[]}};");
         for (int k = 0; k < 6; k++)
             L($"Physical Surface(\"{PhysicalName(faceGroups[k].Name)}\", {faceGroups[k].Attribute}) = {{f{k}[]}};");
+        for (int k = 0; k < boundaryGroups.Count; k++)
+            L($"Physical Surface(\"{PhysicalName(boundaryGroups[k].Name)}\", {boundaryGroups[k].Attribute}) = {{b{k}[]}};");
         L();
 
         L("// ---- the entity table circuitRF checks before it believes this mesh (R-em3d7-3b) ---------");
@@ -394,6 +418,8 @@ public static class GmshGeoWriter
             L($"Printf(\"group {portGroups[k].Attribute} %g 0\", #q{k}[]) >> \"{EntitiesFile}\";");
         for (int k = 0; k < 6; k++)
             L($"Printf(\"group {faceGroups[k].Attribute} %g 0\", #f{k}[]) >> \"{EntitiesFile}\";");
+        for (int k = 0; k < boundaryGroups.Count; k++)
+            L($"Printf(\"group {boundaryGroups[k].Attribute} %g 0\", #b{k}[]) >> \"{EntitiesFile}\";");
         L($"Printf(\"all_volumes %g\", #allV[]) >> \"{EntitiesFile}\";");
         L($"Printf(\"classified_volumes %g\", {classifiedVolumes}) >> \"{EntitiesFile}\";");
         L($"Printf(\"all_surfaces %g\", #allS[]) >> \"{EntitiesFile}\";");
@@ -453,7 +479,8 @@ public static class GmshGeoWriter
               $"Field[{t}].SizeMax = {Num(Round(sizeMax))}; Field[{t}].DistMin = {Num(Round(near))}; " +
               $"Field[{t}].DistMax = {Num(Round(DistMax(near)))};");
         }
-        Refine([.. conductors.Select(i => $"c{i}[]"), .. Enumerable.Range(0, problem.Sheets.Count).Select(k => $"w{k}[]")], sizeEdge);
+        Refine([.. conductors.Select(i => $"c{i}[]"), .. Enumerable.Range(0, problem.Sheets.Count).Select(k => $"w{k}[]"),
+                .. Enumerable.Range(0, boundaryGroups.Count).Select(k => $"b{k}[]")], sizeEdge);
         Refine([.. Enumerable.Range(0, problem.Ports.Count).Select(k => $"q{k}[]")], sizePort);
         int min = ++field;
         L($"Field[{min}] = Min; Field[{min}].FieldsList = {{{string.Join(", ", fields)}}};");
@@ -505,6 +532,13 @@ public static class GmshGeoWriter
             if (s.Role == Em3dRole.Conductor && s.Primitive is Em3dBox &&
                 Em3dProblem.Bounds(s.Primitive) is var (x0, y0, z0, x1, y1, z1) && Spans(x0, y0, z0, x1, y1, z1))
                 return true;
+        // brief-em3d-49 — or a face boundary's own piece lies on the box face and covers it whole: the surface is the
+        // boundary's, claimed before the face.
+        foreach (var (_, pieces) in problem.FaceBoundaryPieces())
+            foreach (var pc in pieces)
+                if (pc.NormalAxis == axis && pc.Bounds() is var (bx0, by0, bz0, bx1, by1, bz1) &&
+                    Math.Abs((axis == 0 ? bx0 : axis == 1 ? by0 : bz0) - at) <= tol && Spans(bx0, by0, bz0, bx1, by1, bz1))
+                    return true;
         return false;
 
         static double Get(Point3 q, int a) => a == 0 ? q.X : a == 1 ? q.Y : q.Z;
@@ -609,6 +643,7 @@ public static class GmshGeoWriter
 
     private static string Describe(Em3dGroup gr) => gr.Kind switch
     {
+        Em3dGroupKind.FaceBoundary => "a face boundary",
         Em3dGroupKind.Volume     => "a dielectric or air solid",
         Em3dGroupKind.Background => "the background air",
         Em3dGroupKind.Conductor  => "a conductor's surface",
@@ -881,6 +916,60 @@ public static class GmshGeoWriter
         string hi = marginM > 0 ? $" + e + {Num(Round(marginM * 1e6))}" : " + e";
         return $"Surface In BoundingBox{{{Um(b.X0)}{lo}, {Um(b.Y0)}{lo}, {Um(b.Z0)}{lo}, " +
                $"{Um(b.X1)}{hi}, {Um(b.Y1)}{hi}, {Um(b.Z1)}{hi}}}";
+    }
+
+    /// <summary>
+    /// brief-em3d-49 R-em3d49-4c — why a face boundary's box query would take more than its own face, or null: another
+    /// solid's flat face, a sheet or a port sheet lies in the same plane and overlaps one of the boundary's pieces, so the
+    /// fragment makes its surface coplanar with the face and inside the same box. Refused, naming both, rather than
+    /// merged. An oblique piece has no zero-thickness box; its count is left to the entity check.
+    /// </summary>
+    internal static string? CoplanarNeighbour(Em3dProblem problem,
+                                              IReadOnlyList<(Em3dFaceBoundary Boundary, IReadOnlyList<Em3dFacePolygon> Pieces)> boundaries)
+    {
+        if (boundaries.Count == 0) return null;
+        var b = problem.Boundary;
+        double tol = 1e-9 * Math.Max(1.0, Math.Max(b.Max.X - b.Min.X, Math.Max(b.Max.Y - b.Min.Y, b.Max.Z - b.Min.Z)));
+        // Every flat surface of the problem that is not the boundary's own: (what it is, its axis, its bound).
+        var others = new List<(string What, string Solid, string Face, int Axis, (double, double, double, double, double, double) Box)>();
+        foreach (var s in problem.Solids)
+            foreach (string face in Em3dFaceGeometry.FaceNames(s.Primitive).Distinct())
+                if (Em3dFaceGeometry.Pieces(s.Primitive, face, out _) is { } pieces)
+                    foreach (var pc in pieces)
+                        if (pc.NormalAxis is int ax) others.Add(($"face '{face}' of '{s.Name}'", s.Name, face, ax, pc.Bounds()));
+        foreach (var sh in problem.Sheets)
+        {
+            int? ax = sh.Frame is { } f ? f.NormalAxis : 2;
+            if (ax is int a) others.Add(($"sheet '{sh.Name}'", sh.Name, "", a, sh.WorldBounds()));
+        }
+        foreach (var p in problem.Ports)
+        {
+            int a = p.Max.X == p.Min.X ? 0 : p.Max.Y == p.Min.Y ? 1 : 2;
+            others.Add(($"port {p.Number}'s sheet", "", "", a, (p.Min.X, p.Min.Y, p.Min.Z, p.Max.X, p.Max.Y, p.Max.Z)));
+        }
+        foreach (var (boundary, pieces) in boundaries)
+            foreach (var pc in pieces)
+            {
+                if (pc.NormalAxis is not int axis) continue;
+                var box = pc.Bounds();
+                double[] lo = [box.X0, box.Y0, box.Z0], hi = [box.X1, box.Y1, box.Z1];
+                foreach (var o in others)
+                {
+                    if (o.Axis != axis || (o.Solid == boundary.Object && o.Face == boundary.Face)) continue;
+                    var (ox0, oy0, oz0, ox1, oy1, oz1) = o.Box;
+                    double[] olo = [ox0, oy0, oz0], ohi = [ox1, oy1, oz1];
+                    if (Math.Abs(olo[axis] - lo[axis]) > tol) continue;
+                    bool overlaps = true;
+                    for (int k = 0; k < 3 && overlaps; k++)
+                        if (k != axis) overlaps = olo[k] < hi[k] - tol && lo[k] < ohi[k] - tol;
+                    if (overlaps)
+                        return $"The boundary on face '{boundary.Face}' of '{boundary.Object}' cannot be recovered for Palace: " +
+                               $"{o.What} lies in the same plane and overlaps it, so the query that finds the face's surfaces " +
+                               "would take that one too, and a boundary is never guessed onto a surface (em-3d.md §6.4). Move one " +
+                               "of them, or put the boundary on a face nothing else touches.";
+                }
+            }
+        return null;
     }
 
     /// <summary>How far a conductor's faces may stand outside its problem bound: a round wire's spline

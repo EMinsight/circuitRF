@@ -174,11 +174,15 @@ public sealed class CwsUserFile
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public Dictionary<string, CwsDrawingPlane>? C3dDrawingPlanes { get; set; }
 
+    /// <summary>brief-em3d-49 — each 3D editor's active setup, by its <c>.c3d</c>'s workspace-relative path.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Dictionary<string, string>? C3dActiveSetups { get; set; }
+
     /// <summary>True when this carries nothing worth a file — the state in which no sidecar is written.</summary>
     internal bool IsEmpty =>
         DockLayout is null && TreeViewState is null && OpenDocuments is null &&
         ActiveDocumentPath is null && ColorSchemeName is null && HistoryFilter is null &&
-        Viewer3DCameras is null && C3dDrawingPlanes is null;
+        Viewer3DCameras is null && C3dDrawingPlanes is null && C3dActiveSetups is null;
 }
 
 /// <summary>
@@ -219,6 +223,7 @@ public static class WorkspaceUserPersistence
         nameof(CwsFile.ColorSchemeName),
         nameof(CwsFile.Viewer3DCameras),
         nameof(CwsFile.C3dDrawingPlanes),
+        nameof(CwsFile.C3dActiveSetups),
     ];
 
     /// <summary>The per-user half of <paramref name="ws"/>, lifted out for the sidecar.</summary>
@@ -232,6 +237,7 @@ public static class WorkspaceUserPersistence
         ColorSchemeName    = ws.ColorSchemeName,
         Viewer3DCameras    = ws.Viewer3DCameras,
         C3dDrawingPlanes   = ws.C3dDrawingPlanes,
+        C3dActiveSetups    = ws.C3dActiveSetups,
     };
 
     /// <summary>
@@ -252,6 +258,7 @@ public static class WorkspaceUserPersistence
         ws.ColorSchemeName    = user.ColorSchemeName;
         ws.Viewer3DCameras    = user.Viewer3DCameras;
         ws.C3dDrawingPlanes   = user.C3dDrawingPlanes;
+        ws.C3dActiveSetups    = user.C3dActiveSetups;
     }
 
     /// <summary>The sidecar beside a given <c>.cws</c> path.</summary>

@@ -559,6 +559,12 @@ internal static class Check
         foreach (string note in e.Notes) f.Add(CliDiagnostics.CheckThreeDNote(path, note));
         foreach (var setup in C3dSetups.Read(doc))
             if (setup.Refusal is { } why) f.Add(CliDiagnostics.CheckThreeDSetup(path, why));
+        // brief-em3d-49 R-em3d49-5c — every port's inferred polarity (info) or its refusal (error), and every face
+        // boundary that cannot be placed — through the resolution a run makes.
+        foreach (var port in C3dPortReports.For(doc, e))
+            f.Add(port.Result.Refusal is null ? CliDiagnostics.CheckThreeDPort(path, port.Text) : CliDiagnostics.CheckThreeDPortRefused(path, port.Text));
+        foreach (string why in C3dPortReports.FaceBoundaryRefusals(doc, e))
+            f.Add(CliDiagnostics.CheckThreeDFaceBoundary(path, why));
     }
 
     /// <summary>

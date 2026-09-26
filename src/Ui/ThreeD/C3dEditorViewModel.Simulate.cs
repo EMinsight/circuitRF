@@ -1,0 +1,787 @@
+// brief-em3d-49 — simulate from the document: the Setups panel on the embedded setups, ports drawn and inferred by
+// contact, the active setup's air box drawn and edited, boundaries on the faces of solids, Simulate, and the fields over
+// the run's geometry.
+//
+// EVERY EDIT HERE IS A DOCUMENT EDIT (R-em3d49-1b): one undo entry (C3dRecordsEdit — the ports, face boundaries and
+// setups as the file spells them, before and after), the document dirty, saved with the .c3d. The Setups panel is the
+// .cem panel itself (EmSetupEditorViewModel), bound to an embedded setup with its commit handed here: one editor, two
+// containers, and its own undo stack stays empty.
+//
+// WHAT IS DRAWN IS WHAT A RUN GETS (overview §0). The air box is the active setup's, padded by the one rule a run pads
+// by (C3dProblemAssembly.AirBox → Em3dGenerator.PaddedAirBox); the ports are resolved by the one inference a run makes
+// (C3dPorts), against that box and that setup's ground set — so a wave port off the box, or a port touching three
+// conductors, is refused on screen with the words a run would refuse it with.
+
+using System.Collections.ObjectModel;
+using System.Globalization;
+using System.Text.Json;
+using CircuitRF.Design.Em3d;
+using CircuitRF.Design.Layout;
+using CircuitRF.Design.Layout.Em;
+using CircuitRF.Design.ThreeD;
+using CircuitRF.Engine.Em3d;
+using CircuitRF.Render.Scene3D;
+using CircuitRF.Render.Scene3D.Edit;
+using CircuitRF.Ui.Layout.Em;
+using CircuitRF.Ui.ThreeD.Tools;
+using CircuitRF.Ui.Viewer3D;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+
+namespace CircuitRF.Ui.ThreeD;
+
+/// <summary>One row of the Setups panel: an embedded setup (by its index in the document), or the external <c>.cem</c>.</summary>
+public sealed partial class C3dSetupItem(string name, int index, string? refusal, string? externalPath) : ObservableObject
+{
+    public string Name { get; } = name;
+    public int Index { get; } = index;
+    public string? Refusal { get; } = refusal;
+    public string? ExternalPath { get; } = externalPath;
+    public bool IsExternal => ExternalPath is not null;
+
+    [ObservableProperty] private bool _isActive;
+
+    public string Label => (IsActive ? "● " : "   ") + Name + (IsExternal ? $"  (external: {Path.GetFileName(ExternalPath)})" : "") +
+                           (Refusal is null ? "" : "  — cannot run");
+
+    partial void OnIsActiveChanged(bool value) => OnPropertyChanged(nameof(Label));
+}
+
+public sealed partial class C3dEditorViewModel
+{
+    // ── records: ports, face boundaries and setups, as one undoable document edit ──────────────
+
+    /// <summary>
+    /// One document edit of the records (R-em3d49-1b): <paramref name="mutate"/> changes the document's ports, face
+    /// boundaries or setups; the change is one undo entry, or none when nothing changed.
+    /// </summary>
+    public bool ChangeRecords(string description, Action<C3dDocument> mutate)
+    {
+        string before = C3dRecordsEdit.Of(Document);
+        mutate(Document);
+        string after = C3dRecordsEdit.Of(Document);
+        if (after == before) return false;
+        Push(new C3dRecordsEdit(description, before, after, ApplyRecords, alreadyApplied: true));
+        RecordsChanged();
+        return true;
+    }
+
+    /// <summary>An undo or redo put the records back.</summary>
+    private void ApplyRecords(string text)
+    {
+        DocumentWrites++;
+        C3dRecordsEdit.Apply(Document, text);
+        RecordsChanged();
+    }
+
+    private void RecordsChanged()
+    {
+        DocumentChanged();
+        RebuildSetupItems();
+        ReloadSetupEditor();
+        RefreshFieldsStale();
+    }
+
+    // ── setups (R-em3d49-1) ──────────────────────────────────────────────────────────────────
+
+    /// <summary>The Setups panel's rows: the embedded setups, in file order, then the external one.</summary>
+    public ObservableCollection<C3dSetupItem> SetupItems { get; } = [];
+
+    [ObservableProperty] private C3dSetupItem? _selectedSetupItem;
+    [ObservableProperty] private bool _showSetups;
+
+    /// <summary>The active setup's name — editor state, per user (the shell stores it in the <c>.cwsuser</c>).</summary>
+    public string? ActiveSetupName { get; private set; }
+
+    /// <summary>Raised when the active setup changes: the shell remembers it, the scene redraws its box.</summary>
+    public event Action? ActiveSetupChanged;
+
+    /// <summary>The panel on the selected setup: <c>EmSetupEditorView</c>'s own document, never docked.</summary>
+    [ObservableProperty] private EmSetupDocument? _setupEditor;
+
+    /// <summary>R-em3d49-1c — a <c>.cem</c> naming this <c>.c3d</c>: shown read-only, marked with its path.</summary>
+    public (string Path, EmSetup Setup)? ExternalSetup { get; private set; }
+
+    /// <summary>The shell runs a setup: its name (null: the active one). Set by the workspace.</summary>
+    public Func<C3dEditorViewModel, string?, Task>? RunRequested { get; set; }
+
+    public string SetupsHeading => SetupItems.Count == 0
+        ? "No setups. Add one to simulate this 3D view."
+        : $"{SetupItems.Count} setup{(SetupItems.Count == 1 ? "" : "s")} · active: {ActiveSetupName ?? "none"}";
+
+    /// <summary>Called by the shell with the stored active setup, before the first scene.</summary>
+    public void RestoreActiveSetup(string? name)
+    {
+        ActiveSetupName = name;
+        RebuildSetupItems();
+        if ((ActiveSetupName is null || !SetupItems.Any(i => i.Name == ActiveSetupName)) && SetupItems.FirstOrDefault(i => i.Refusal is null) is { } first)
+            ActiveSetupName = first.Name;
+        RebuildSetupItems();
+        Viewer.SetRunSetup(ActiveRunSetup);
+        RefreshFieldsStale();
+    }
+
+    /// <summary>R-em3d49-1c — Show 3D from a <c>.cem</c> pointing here: that <c>.cem</c> joins the list, read-only, active.</summary>
+    public void ShowExternalSetup(string cemPath, EmSetup setup)
+    {
+        ExternalSetup = (Path.GetFullPath(cemPath), setup);
+        RebuildSetupItems();
+        SetActiveSetup(ExternalItemName);
+        SelectedSetupItem = SetupItems.FirstOrDefault(i => i.IsExternal);
+        ShowSetups = true;
+    }
+
+    private string ExternalItemName => ExternalSetup is { } x ? (x.Setup.Name is { Length: > 0 } n ? n : Path.GetFileNameWithoutExtension(x.Path)) : "";
+
+    private void RebuildSetupItems()
+    {
+        string? keep = SelectedSetupItem?.Name;
+        bool keepExternal = SelectedSetupItem?.IsExternal == true;
+        SetupItems.Clear();
+        foreach (var s in C3dSetups.Read(Document))
+            SetupItems.Add(new C3dSetupItem(s.Name, s.Index, s.Refusal, null) { IsActive = !IsExternalActive && s.Name == ActiveSetupName });
+        if (ExternalSetup is { } x)
+            SetupItems.Add(new C3dSetupItem(ExternalItemName, -1, x.Setup.Is3D ? null : C3dSetups.PlanarRefusal, x.Path) { IsActive = IsExternalActive });
+        _syncingSetups = true;
+        try { SelectedSetupItem = SetupItems.FirstOrDefault(i => i.Name == keep && i.IsExternal == keepExternal) ?? SetupItems.FirstOrDefault(i => i.IsActive); }
+        finally { _syncingSetups = false; }
+        OnPropertyChanged(nameof(SetupsHeading));
+        OnPropertyChanged(nameof(HasSetups));
+        ReloadSetupEditor();
+    }
+
+    public bool HasSetups => SetupItems.Count > 0;
+
+    private bool IsExternalActive => ExternalSetup is not null && _externalActive;
+    private bool _externalActive;
+    private bool _syncingSetups;
+
+    /// <summary>The active setup as the editor draws it and Simulate runs it: an embedded one, or the external <c>.cem</c>;
+    /// null when there is none (or it cannot be read).</summary>
+    public EmSetup? ActiveSetup
+    {
+        get
+        {
+            if (IsExternalActive) return ExternalSetup!.Value.Setup;
+            if (ActiveSetupName is null) return null;
+            return C3dSetups.Read(Document).FirstOrDefault(s => s.Name == ActiveSetupName)?.Setup;
+        }
+    }
+
+    /// <summary>The active setup as its run is named ("&lt;stem&gt; &lt;name&gt;", or the .cem itself) — what the fields are read from.</summary>
+    public EmSetup? ActiveRunSetup => IsExternalActive ? ExternalSetup!.Value.Setup
+                                    : ActiveSetup is { } s ? C3dSetups.ForRun(s, TopFilePath) : null;
+
+    [RelayCommand]
+    public void SetActiveSetup(string? name)
+    {
+        bool external = ExternalSetup is not null && name == ExternalItemName && SetupItems.Any(i => i.IsExternal && i.Name == name);
+        if (name == ActiveSetupName && external == _externalActive) return;
+        ActiveSetupName = name;
+        _externalActive = external;
+        foreach (var i in SetupItems) i.IsActive = i.Name == name && i.IsExternal == external;
+        OnPropertyChanged(nameof(SetupsHeading));
+        ActiveSetupChanged?.Invoke();
+        Viewer.SetRunSetup(ActiveRunSetup);
+        _boxShownFor = null;
+        Viewer.Regenerate();
+        RefreshFieldsStale();
+    }
+
+    partial void OnSelectedSetupItemChanged(C3dSetupItem? value)
+    {
+        if (_syncingSetups) return;
+        ReloadSetupEditor();
+    }
+
+    /// <summary>Builds the panel for the selected setup: the <c>.cem</c> view model in its embedded mode.</summary>
+    private void ReloadSetupEditor()
+    {
+        if (_suppressEditorReload) return;
+        var item = SelectedSetupItem;
+        if (item is null) { SetupEditor = null; return; }
+        EmSetup? setup = item.IsExternal ? ExternalSetup?.Setup.Clone()
+                       : item.Index >= 0 && item.Index < Document.Setups.Count ? TryRead(Document.Setups[item.Index]) : null;
+        if (setup is null) { SetupEditor = null; return; }
+        // The same view model, the same panel: rebuilt only when the setup is not the one already shown, so an edit made
+        // in the panel does not tear the panel down under the user's cursor.
+        if (SetupEditor?.ViewModel is { } shown && _editorFor == (item.Name, item.IsExternal) &&
+            EmSetupPersistence.Serialize(shown.Working) == EmSetupPersistence.Serialize(setup))
+            return;
+        var vm = new EmSetupEditorViewModel(item.IsExternal ? item.ExternalPath! : FilePath, setup, embedded: true)
+        {
+            IsReadOnly = item.IsExternal,
+        };
+        if (!item.IsExternal)
+        {
+            string name = item.Name;
+            vm.EmbeddedCommit = (_, after, description) => CommitSetupFromPanel(name, after, description);
+        }
+        vm.RunRequested = _ => RunRequested?.Invoke(this, item.IsExternal ? null : item.Name) ?? Task.CompletedTask;
+        _editorFor = (item.Name, item.IsExternal);
+        SetupEditor = new EmSetupDocument(item.Name, vm, item.IsExternal ? item.ExternalPath! : FilePath);
+    }
+
+    private (string Name, bool External)? _editorFor;
+
+    private static EmSetup? TryRead(JsonElement e)
+    {
+        try { return EmSetupPersistence.FromEmbedded(e); }
+        catch (Exception) { return null; }
+    }
+
+    /// <summary>R-em3d49-1b — the panel's edit, as the document's: the setup written back where it is, one entry.</summary>
+    private void CommitSetupFromPanel(string name, string afterJson, string description)
+    {
+        var edited = EmSetupPersistence.Deserialize(afterJson);
+        int index = C3dSetups.Read(Document).FirstOrDefault(s => s.Name == name)?.Index ?? -1;
+        if (index < 0) return;
+        bool renamed = edited.Name != name;
+        _suppressEditorReload = true;
+        try { ChangeRecords($"{description} ({name})", d => d.Setups[index] = EmSetupPersistence.ToEmbedded(edited)); }
+        finally { _suppressEditorReload = false; }
+        if (renamed && ActiveSetupName == name) SetActiveSetup(edited.Name);
+        if (name == ActiveSetupName) { Viewer.SetRunSetup(ActiveRunSetup); }
+    }
+
+    private bool _suppressEditorReload;
+
+    /// <summary>Add: a new Palace setup, named S1, S2 …; the first one added becomes the active one.</summary>
+    [RelayCommand]
+    public void AddSetup()
+    {
+        var names = C3dSetups.Read(Document).Select(s => s.Name).ToHashSet(StringComparer.Ordinal);
+        string name = Enumerable.Range(1, 10_000).Select(n => $"S{n}").First(n => !names.Contains(n));
+        var setup = new EmSetup { Name = name, Solver3D = Em3dSolver.Palace };
+        ChangeRecords($"Add setup {name}", d => d.Setups.Add(EmSetupPersistence.ToEmbedded(setup)));
+        if (ActiveSetupName is null || ActiveSetup is null) SetActiveSetup(name);
+        SelectedSetupItem = SetupItems.FirstOrDefault(i => i.Name == name && !i.IsExternal);
+        ShowSetups = true;
+    }
+
+    /// <summary>Duplicate: the selected setup, named "&lt;name&gt; copy" (then 2, 3 …).</summary>
+    [RelayCommand]
+    public void DuplicateSetup()
+    {
+        if (SelectedSetupItem is not { IsExternal: false } item || item.Index < 0 || TryRead(Document.Setups[item.Index]) is not { } s) return;
+        var names = C3dSetups.Read(Document).Select(x => x.Name).ToHashSet(StringComparer.Ordinal);
+        string name = item.Name + " copy";
+        for (int n = 2; names.Contains(name); n++) name = $"{item.Name} copy {n}";
+        s.Name = name;
+        ChangeRecords($"Duplicate setup {item.Name}", d => d.Setups.Insert(item.Index + 1, EmSetupPersistence.ToEmbedded(s)));
+        SelectedSetupItem = SetupItems.FirstOrDefault(i => i.Name == name && !i.IsExternal);
+    }
+
+    /// <summary>Rename the selected setup; null on success, else why not. The active one stays active under its new name.</summary>
+    public string? RenameSetup(string newName)
+    {
+        newName = newName.Trim();
+        if (SelectedSetupItem is not { IsExternal: false } item || item.Index < 0) return "Only a setup of this 3D view can be renamed here.";
+        if (newName == item.Name) return null;
+        if (newName.Length == 0) return "A setup's name cannot be empty: a 3D view's setups are chosen by name.";
+        if (C3dSetups.Read(Document).Any(s => s.Name == newName)) return $"This 3D view already has a setup named '{newName}'.";
+        if (TryRead(Document.Setups[item.Index]) is not { } s) return "That setup cannot be read, so it cannot be renamed.";
+        s.Name = newName;
+        bool wasActive = ActiveSetupName == item.Name && !IsExternalActive;
+        ChangeRecords($"Rename setup {item.Name} to {newName}", d => d.Setups[item.Index] = EmSetupPersistence.ToEmbedded(s));
+        if (wasActive) SetActiveSetup(newName);
+        SelectedSetupItem = SetupItems.FirstOrDefault(i => i.Name == newName && !i.IsExternal);
+        return null;
+    }
+
+    /// <summary>Remove the selected setup (undoable). Its results stay where they were written.</summary>
+    [RelayCommand]
+    public void RemoveSetup()
+    {
+        if (SelectedSetupItem is not { IsExternal: false } item || item.Index < 0) return;
+        bool wasActive = ActiveSetupName == item.Name && !IsExternalActive;
+        ChangeRecords($"Remove setup {item.Name}", d => d.Setups.RemoveAt(item.Index));
+        if (wasActive) SetActiveSetup(SetupItems.FirstOrDefault(i => i.Refusal is null)?.Name);
+    }
+
+    [RelayCommand]
+    public void MakeSelectedActive()
+    {
+        if (SelectedSetupItem is { } item) SetActiveSetup(item.Name);
+    }
+
+    /// <summary>Simulate ▸ Run: the active setup through the shell's run path.</summary>
+    [RelayCommand]
+    public Task SimulateActive() => RunRequested?.Invoke(this, null) ?? Task.CompletedTask;
+
+    /// <summary>Why the active setup cannot be run now, or null.</summary>
+    public string? SimulateRefusal()
+    {
+        if (CanPopOut) return "Pop out to the top 3D view to simulate it: a run solves the document the tab holds.";
+        if (IsExternalActive) return null;
+        if (ActiveSetupName is null)
+            return SetupItems.Count == 0 ? "This 3D view has no setup. Add one in the Setups panel (3D ▸ Setups…)." : "No setup is active: choose one in the Setups panel.";
+        var read = C3dSetups.Read(Document).FirstOrDefault(s => s.Name == ActiveSetupName);
+        return read is null ? $"The active setup '{ActiveSetupName}' is no longer in this 3D view." : read.Refusal;
+    }
+
+    /// <summary>The setup a run of <paramref name="name"/> (null: the active one) uses, as its run names it — or why not.</summary>
+    public (EmSetup? Setup, bool FromCem, string? Refusal) RunSetupFor(string? name)
+    {
+        if (CanPopOut) return (null, false, SimulateRefusal());
+        if (name is null && IsExternalActive) return (ExternalSetup!.Value.Setup.Clone(), true, null);
+        name ??= ActiveSetupName;
+        if (name is null) return (null, false, SimulateRefusal());
+        var read = C3dSetups.Read(Document).FirstOrDefault(s => s.Name == name);
+        if (read is null) return (null, false, $"This 3D view has no setup named '{name}'.");
+        if (read.Refusal is { } why) return (null, false, why);
+        return (C3dSetups.ForRun(read.Setup!, TopFilePath), false, null);
+    }
+
+    /// <summary>The document as a run reads it: a copy, so an edit during the run changes nothing it solves.</summary>
+    public C3dDocument RunDocument() => C3dPersistence.Deserialize(C3dPersistence.Serialize(Document));
+
+    // ── the active setup's box and the ports, as the scene shows them ────────────────────────
+
+    /// <summary>What a scene build resolved for the records: the box, each port, each face boundary (keyed by generation).</summary>
+    private sealed record RecordsView(Em3dAirBox? Box, IReadOnlyList<C3dPortResult> Ports,
+                                      IReadOnlyList<(C3dFaceBoundary Boundary, IReadOnlyList<Em3dFacePolygon> Pieces, string? Refusal)> Boundaries,
+                                      C3dPortContext Context);
+
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<long, RecordsView> _records = new();
+    private RecordsView? _recordsView;
+
+    /// <summary>The ports as the current scene resolved them (each resolved or refused).</summary>
+    public IReadOnlyList<C3dPortResult> PortResults => _recordsView?.Ports ?? [];
+
+    /// <summary>The active setup's air box as the current scene drew it, or null.</summary>
+    public Em3dAirBox? ShownAirBox => _recordsView?.Box;
+
+    /// <summary>The setup the scene draws with: the active one's full .cem spelling, for the build's snapshot.</summary>
+    private string? SceneSetupJson() => ActiveSetup is { } s ? EmSetupPersistence.Serialize(s) : null;
+
+    /// <summary>Runs on the build's thread: the box, the ports and the face boundaries for this elaboration.</summary>
+    private RecordsView ResolveRecords(C3dDocument doc, C3dElaboration e, string? setupJson)
+    {
+        EmSetup? setup = null;
+        if (setupJson is not null)
+            try { setup = EmSetupPersistence.Deserialize(setupJson); } catch (Exception) { setup = null; }
+        var box = setup is not null && e.Ok ? C3dProblemAssembly.AirBox(setup, e, out _) : null;
+        var ctx = C3dProblemAssembly.PortContext(setup, doc, e, box);
+        var ports = e.Ok ? C3dPorts.Resolve(doc, ctx) : [];
+        var boundaries = e.Ok ? C3dProblemAssembly.FaceBoundaryPreview(doc, e) : [];
+        return new RecordsView(box, ports, boundaries, ctx);
+    }
+
+    private bool? _boxShownFor;
+
+    /// <summary>After a scene is adopted: the records it resolved become the editor's, and the box starts shown when the
+    /// active setup has any face that is not absorbing (R-em3d49-3a).</summary>
+    private void AdoptRecords(long generation)
+    {
+        foreach (long old in _records.Keys.Where(k => k < generation).ToList()) _records.TryRemove(old, out _);
+        if (!_records.TryRemove(generation, out var view)) return;
+        _recordsView = view;
+        if (_boxShownFor is null && view.Box is { } box)
+        {
+            var f = box.Faces;
+            bool anyWall = new[] { f.XMin, f.XMax, f.YMin, f.YMax, f.ZMin, f.ZMax }.Any(k => k != Em3dBoundaryKind.Absorbing);
+            Viewer.ShowBoundaryFaces = anyWall;
+            _boxShownFor = anyWall;
+        }
+        RebuildRecordsTree();
+    }
+
+    // ── ports (R-em3d49-2) ───────────────────────────────────────────────────────────────────
+
+    /// <summary>The smallest port number the document does not use.</summary>
+    public int NextPortNumber()
+    {
+        var used = Document.Ports.Select(p => p.Number).ToHashSet();
+        for (int n = 1; ; n++) if (!used.Contains(n)) return n;
+    }
+
+    /// <summary>R-em3d49-2d — what a new port starts as: the next number, and the last port's Z0.</summary>
+    public C3dPort NewPortTemplate(Em3dPortKind kind = Em3dPortKind.Lumped)
+    {
+        int n = NextPortNumber();
+        return new C3dPort { Number = n, Name = $"P{n}", Kind = kind, Z0 = Document.Ports.LastOrDefault()?.Z0 ?? "50" };
+    }
+
+    /// <summary>Adds a port: one undo entry; the status line says what it joins, or why it cannot be built.</summary>
+    public void AddPort(C3dPort port)
+    {
+        ChangeRecords($"Add port {port.Name}", d => d.Ports.Add(port));
+        ToolCommits++;
+        var r = C3dPorts.Resolve(port, Document.DbuPerMicron, CurrentPortContext());
+        StatusMessage = r.Refusal ?? C3dPortReports.Describe(r);
+    }
+
+    /// <summary>The port context for the scene now shown — for a port the user is drawing.</summary>
+    private C3dPortContext CurrentPortContext()
+        => _recordsView?.Context ?? (Elaboration is { } e ? C3dProblemAssembly.PortContext(ActiveSetup, Document, e, null) : new C3dPortContext(
+               new C3dElaboration([], [], [], new Dictionary<string, C3dProvenance>(), [], []), Document.DbuPerMicron, null, []));
+
+    /// <summary>The document port a scene object is (<c>port/N</c>), or null.</summary>
+    public C3dPort? PortOf(Scene3DObject o)
+        => o.Kind == Scene3DKind.Port ? Document.Ports.FirstOrDefault(p => C3dPorts.ProblemName(p.Number) == o.Name) : null;
+
+    private IReadOnlyList<C3dPort> SelectedPorts()
+        => [.. Viewer.SelectedObjects().Select(PortOf).OfType<C3dPort>().Distinct()];
+
+    public void FlipPorts(IReadOnlyList<C3dPort> ports)
+    {
+        var numbers = ports.Select(p => p.Number).ToHashSet();
+        ChangeRecords(ports.Count == 1 ? $"Flip {C3dPorts.Label(ports[0])}" : $"Flip {ports.Count} ports",
+                      d => { foreach (var p in d.Ports.Where(p => numbers.Contains(p.Number))) p.Flip = !p.Flip; });
+    }
+
+    public void SetPortKind(IReadOnlyList<C3dPort> ports, Em3dPortKind kind)
+    {
+        var numbers = ports.Select(p => p.Number).ToHashSet();
+        ChangeRecords($"Make {(ports.Count == 1 ? C3dPorts.Label(ports[0]) : $"{ports.Count} ports")} {kind.ToString().ToLowerInvariant()}",
+                      d => { foreach (var p in d.Ports.Where(p => numbers.Contains(p.Number))) p.Kind = kind; });
+    }
+
+    /// <summary>Sets a port's Z0; null on success, else why not.</summary>
+    public string? SetPortZ0(int number, string z0)
+    {
+        if (!C3dPorts.TryParseZ0(z0, out var z) || !(z.Real > 0))
+            return $"'{z0}' is not a reference impedance: a number of ohms with a positive real part, or a complex one such as 25+j10.";
+        ChangeRecords($"Z0 of port {number}", d => { foreach (var p in d.Ports.Where(p => p.Number == number)) p.Z0 = z0.Trim(); });
+        return null;
+    }
+
+    public void DeletePorts(IReadOnlyList<C3dPort> ports)
+    {
+        var numbers = ports.Select(p => p.Number).ToHashSet();
+        Viewer.SetSelection([]);
+        ChangeRecords(ports.Count == 1 ? $"Delete {C3dPorts.Label(ports[0])}" : $"Delete {ports.Count} ports",
+                      d => d.Ports.RemoveAll(p => numbers.Contains(p.Number)));
+    }
+
+    /// <summary>
+    /// R-em3d49-2d — Make Port on an axis-aligned face: the face's rectangle becomes the port's, on the face's plane. A
+    /// face that is not a rectangle in an axis plane is refused, naming why. Returns the refusal, or null.
+    /// </summary>
+    public string? MakePortFromFace(uint objectId, int face, Em3dPortKind kind)
+    {
+        var scene = Viewer.Scene;
+        if (scene.Object(objectId) is not { } o || face < 0) return "Select a face first.";
+        var (area, normal) = Scene3DFaces.AreaAndNormal(scene, objectId, face);
+        if (normal is not { } n) return $"Face {o.FaceName(face)} is curved: a port is a flat rectangle.";
+        int axis = Math.Abs(n.X) > 0.999f ? 0 : Math.Abs(n.Y) > 0.999f ? 1 : Math.Abs(n.Z) > 0.999f ? 2 : -1;
+        if (axis < 0) return $"Face {o.FaceName(face)} is not normal to x, y or z: a port lies on a drawing plane.";
+        if (scene.FeaturesOf(objectId) is not { Table: { } t } fr || face >= t.FaceCount) return "That face's corners are not known.";
+        var pts = Enumerable.Range(t.FaceVertexStart[face], t.FaceVertexStart[face + 1] - t.FaceVertexStart[face])
+                            .Select(k => fr.Vertex(t.FaceVertices[k])).ToList();
+        double per = C3dLowering.Metres(1, Document.DbuPerMicron);
+        long D(double m) => (long)Math.Round(m / per, MidpointRounding.AwayFromZero);
+        var plane = axis switch { 0 => C3dPlane.YZ, 1 => C3dPlane.XZ, _ => C3dPlane.XY };
+        double Get(Point3 q, int a) => a == 0 ? q.X : a == 1 ? q.Y : q.Z;
+        int ua = axis == 0 ? 1 : 0, va = axis == 2 ? 1 : 2;
+        long u0 = D(pts.Min(q => Get(q, ua))), u1 = D(pts.Max(q => Get(q, ua)));
+        long v0 = D(pts.Min(q => Get(q, va))), v1 = D(pts.Max(q => Get(q, va)));
+        double rectArea = (u1 - u0) * per * ((v1 - v0) * per);
+        if (u1 <= u0 || v1 <= v0 || Math.Abs(rectArea - area) > 1e-6 * rectArea)
+            return $"Face {o.FaceName(face)} is not a rectangle: a port takes a rectangular face.";
+        var port = NewPortTemplate(kind);
+        port.Plane = plane;
+        port.Offset = D(Get(pts[0], axis));
+        port.Rect = new C3dRect { Min = new C3dPoint2(u0, v0), Size = new C3dPoint2(u1 - u0, v1 - v0) };
+        AddPort(port);
+        return null;
+    }
+
+    // ── the air box (R-em3d49-3) ─────────────────────────────────────────────────────────────
+
+    /// <summary>The air-box face a scene object is (<c>xmin</c> … <c>zmax</c>), or null.</summary>
+    public static string? BoxFaceOf(Scene3DObject o)
+        => o.Kind == Scene3DKind.Boundary && o.Name.StartsWith("airbox/", StringComparison.Ordinal) ? o.Name["airbox/".Length..] : null;
+
+    /// <summary>R-em3d49-3b — a box face's boundary, written to the ACTIVE setup's AirBox; null on success, else why not.</summary>
+    public string? SetAirBoxBoundary(string face, Em3dBoundaryKind kind)
+        => EditActiveAirBox(face, f => new EmAirBoxFace(f?.PaddingUm, kind), $"Air box {face}: {kind}");
+
+    /// <summary>R-em3d49-3b — a box face's padding, typed in the display unit; null on success, else why not.</summary>
+    public string? SetAirBoxPadding(string face, string text)
+    {
+        var d = C3dDimension.Parse(text, Document.DisplayUnit, Document.DbuPerMicron);
+        if (d.Kind != C3dDimensionKind.Value) return d.Why;
+        if (d.Dbu < 0) return "A padding is a distance from the geometry: zero or more.";
+        double um = (double)LayoutUnits.FromDbu(d.Dbu, LayoutUnit.Um, Document.DbuPerMicron);
+        return EditActiveAirBox(face, f => new EmAirBoxFace(um, f?.Boundary), $"Air box {face} padding");
+    }
+
+    /// <summary>The padding a box face has now, in the display unit — the Padding… field's prefill.</summary>
+    public string AirBoxPaddingText(string face)
+    {
+        if (ShownAirBox is not { } box || Elaboration?.Extent() is not { } x) return "";
+        double m = face switch
+        {
+            "xmin" => x.X0 - box.Min.X, "xmax" => box.Max.X - x.X1, "ymin" => x.Y0 - box.Min.Y,
+            "ymax" => box.Max.Y - x.Y1, "zmin" => x.Z0 - box.Min.Z, _ => box.Max.Z - x.Z1,
+        };
+        long dbu = (long)Math.Round(m / C3dLowering.Metres(1, Document.DbuPerMicron));
+        return C3dDimension.Spell(dbu, Document.DisplayUnit, Document.DbuPerMicron);
+    }
+
+    private string? EditActiveAirBox(string face, Func<EmAirBoxFace?, EmAirBoxFace> change, string description)
+    {
+        if (IsExternalActive) return $"The active setup is the .cem {Path.GetFileName(ExternalSetup!.Value.Path)}: edit its air box in its own panel.";
+        if (ActiveSetupName is not { } name || C3dSetups.Read(Document).FirstOrDefault(s => s.Name == name) is not { Setup: { } setup } read)
+            return "No setup is active: the air box is a setup's. Add or choose one in the Setups panel.";
+        var box = setup.AirBox ?? new EmAirBox();
+        box = face switch
+        {
+            "xmin" => box with { XMin = change(box.XMin) }, "xmax" => box with { XMax = change(box.XMax) },
+            "ymin" => box with { YMin = change(box.YMin) }, "ymax" => box with { YMax = change(box.YMax) },
+            "zmin" => box with { ZMin = change(box.ZMin) }, _ => box with { ZMax = change(box.ZMax) },
+        };
+        setup.AirBox = box;
+        ChangeRecords(description, d => d.Setups[read.Index] = EmSetupPersistence.ToEmbedded(setup));
+        StatusMessage = $"Writes setup '{name}': the air box is the setup's, not the geometry's.";
+        return null;
+    }
+
+    // ── face boundaries (R-em3d49-4) ─────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// R-em3d49-4a — a boundary on face <paramref name="face"/> (the document's name) of object <paramref name="obj"/>;
+    /// <paramref name="kind"/> null removes it. A conductor's face is refused, naming the object. Null on success.
+    /// </summary>
+    public string? SetFaceBoundary(string obj, string face, Em3dFaceBoundaryKind? kind, string? material = null)
+    {
+        if (Elaboration?.Solids.FirstOrDefault(s => s.Name == obj) is { Role: Em3dRole.Conductor })
+            return $"'{obj}' is a conductor: it is already a void bounded by its own metal, so a boundary on its face has nothing to add.";
+        if (kind is not null && Document.Objects.FirstOrDefault(o => o.Name == obj) is C3dSheet or C3dPolyline or null)
+            return $"'{obj}' has no solid face for a boundary: put boundaries on dielectric and air objects.";
+        string what = kind switch { null => "None", Em3dFaceBoundaryKind.Pec => "Perfect Conductor", _ => $"Conductive ({material})" };
+        ChangeRecords($"Boundary on {obj} {face}: {what}", d =>
+        {
+            d.FaceBoundaries.RemoveAll(b => b.Object == obj && b.Face == face);
+            if (kind is { } k) d.FaceBoundaries.Add(new C3dFaceBoundary { Object = obj, Face = face, Kind = k, Material = k == Em3dFaceBoundaryKind.Conductive ? material : null });
+        });
+        return null;
+    }
+
+    /// <summary>The metals a Conductive face may be: the technology's materials that conduct.</summary>
+    public IReadOnlyList<string> Metals
+        => Elaboration?.Technology?.Materials.Where(m => m.Sigma20 is > 0).Select(m => m.Name).ToList() ?? (IReadOnlyList<string>)[];
+
+    // ── the context menu (R-em3d49-2, -3b, -4) ───────────────────────────────────────────────
+
+    private IEnumerable<Viewer3DMenuItem> SimulateMenuItems()
+    {
+        var sel = Viewer.Selection;
+        if (Viewer.SelectMode == Scene3DSelectMode.Object && SelectedPorts() is { Count: > 0 } ports)
+        {
+            yield return new Viewer3DMenuItem(ports.Count == 1 ? $"Flip {C3dPorts.Label(ports[0])}" : "Flip Ports", () => FlipPorts(ports),
+                                              Tip: "Swap the port's + and − ends: the arrow turns round.");
+            yield return new Viewer3DMenuItem("Port Kind", Children:
+            [
+                new Viewer3DMenuItem("Lumped", () => SetPortKind(ports, Em3dPortKind.Lumped)),
+                new Viewer3DMenuItem("Wave", () => SetPortKind(ports, Em3dPortKind.Wave),
+                                     Tip: "A wave port lies on a face of the active setup's air box."),
+            ]);
+            if (ports.Count == 1)
+            {
+                var p = ports[0];
+                yield return new Viewer3DMenuItem($"Z0… ({p.Z0} Ω)", () => TextRequested?.Invoke($"Z0 of {C3dPorts.Label(p)}",
+                    "Reference impedance, Ω (a complex one as 25+j10):", p.Z0, text => SetPortZ0(p.Number, text)));
+            }
+            yield return new Viewer3DMenuItem(ports.Count == 1 ? $"Delete {C3dPorts.Label(ports[0])}" : "Delete Ports", () => DeletePorts(ports));
+            yield return Viewer3DMenuItem.Separator;
+        }
+        if (Viewer.SelectMode != Scene3DSelectMode.Face || sel.Count != 1 || sel[0].Face < 0) yield break;
+        var item = sel[0];
+        if (Viewer.Scene.Object(item.Object) is not { } o) yield break;
+
+        if (BoxFaceOf(o) is { } boxFace)
+        {
+            var current = ShownAirBox is { } bx ? FaceKindOf(bx, boxFace) : Em3dBoundaryKind.Absorbing;
+            string tip = ActiveSetupName is { } n ? $"Writes setup '{n}': the air box is the setup's." : "No setup is active.";
+            yield return new Viewer3DMenuItem("Boundary", Tip: tip, Children:
+            [
+                .. new[] { Em3dBoundaryKind.Absorbing, Em3dBoundaryKind.Pec, Em3dBoundaryKind.Pmc, Em3dBoundaryKind.Symmetry }
+                    .Select(k => new Viewer3DMenuItem((k == current ? "● " : "") + k switch
+                    {
+                        Em3dBoundaryKind.Absorbing => "Absorbing", Em3dBoundaryKind.Pec => "PEC", Em3dBoundaryKind.Pmc => "PMC", _ => "Symmetry",
+                    }, () => Report(SetAirBoxBoundary(boxFace, k)), Tip: tip)),
+            ]);
+            yield return new Viewer3DMenuItem("Padding…", () => TextRequested?.Invoke($"Air box {boxFace} padding",
+                $"Distance from the geometry to the {boxFace} face ({LayoutUnits.Suffix(Document.DisplayUnit)}):", AirBoxPaddingText(boxFace),
+                text => SetAirBoxPadding(boxFace, text)), Tip: tip);
+            yield return Viewer3DMenuItem.Separator;
+            yield break;
+        }
+        if (InstanceOf(o) is not null || o.Kind == Scene3DKind.Port) yield break;
+        string faceName = o.FaceName(item.Face);
+        bool conductor = Elaboration?.Solids.FirstOrDefault(s => s.Name == o.Name) is { Role: Em3dRole.Conductor };
+        bool solid = Document.Objects.FirstOrDefault(d => d.Name == o.Name) is not (C3dSheet or C3dPolyline or null);
+        var existing = Document.FaceBoundaries.FirstOrDefault(b => b.Object == o.Name && b.Face == faceName);
+        if (solid)
+        {
+            string? why = conductor ? $"'{o.Name}' is a conductor: a boundary on its face has nothing to add." : null;
+            var metals = Metals;
+            yield return new Viewer3DMenuItem("Boundary", Enabled: why is null, Tip: why, Children:
+            [
+                new Viewer3DMenuItem((existing?.Kind == Em3dFaceBoundaryKind.Pec ? "● " : "") + "Perfect Conductor",
+                                     () => Report(SetFaceBoundary(o.Name, faceName, Em3dFaceBoundaryKind.Pec))),
+                new Viewer3DMenuItem((existing?.Kind == Em3dFaceBoundaryKind.Conductive ? "● " : "") + "Conductive Surface",
+                                     Enabled: metals.Count > 0, Tip: metals.Count > 0 ? null : "The technology defines no conducting material.",
+                                     Children: [.. metals.Select(m => new Viewer3DMenuItem((existing?.Material == m ? "● " : "") + m,
+                                         () => Report(SetFaceBoundary(o.Name, faceName, Em3dFaceBoundaryKind.Conductive, m))))]),
+                new Viewer3DMenuItem((existing is null ? "● " : "") + "None", () => Report(SetFaceBoundary(o.Name, faceName, null))),
+            ]);
+        }
+        yield return new Viewer3DMenuItem("Make Port", Children:
+        [
+            new Viewer3DMenuItem("Lumped", () => Report(MakePortFromFace(item.Object, item.Face, Em3dPortKind.Lumped))),
+            new Viewer3DMenuItem("Wave", () => Report(MakePortFromFace(item.Object, item.Face, Em3dPortKind.Wave)),
+                                 Tip: "A wave port lies on a face of the active setup's air box — the end of a line that reaches the box."),
+        ]);
+        yield return Viewer3DMenuItem.Separator;
+    }
+
+    private static Em3dBoundaryKind FaceKindOf(Em3dAirBox b, string face) => face switch
+    {
+        "xmin" => b.Faces.XMin, "xmax" => b.Faces.XMax, "ymin" => b.Faces.YMin,
+        "ymax" => b.Faces.YMax, "zmin" => b.Faces.ZMin, _ => b.Faces.ZMax,
+    };
+
+    private void Report(string? refusal)
+    {
+        if (refusal is not null) StatusMessage = refusal;
+    }
+
+    /// <summary>A text the view should ask for: title, prompt, the prefill, and the commit (null on success, else why not).</summary>
+    public event Action<string, string, string, Func<string, string?>>? TextRequested;
+
+    // ── the overlay: numbers, refusals, the port tool's live inference ───────────────────────
+
+    private void FillSimulateOverlay(Viewer3DDrawOverlay overlay)
+    {
+        int dbu = Document.DbuPerMicron;
+        foreach (var r in PortResults)
+        {
+            if (r.Resolved is { } p)
+            {
+                overlay.Labels.Add((Centre(p.Min, p.Max), r.Port.Number.ToString(CultureInfo.InvariantCulture)));
+                continue;
+            }
+            var (min, max) = Rectangle(r.Port, dbu);
+            AddRect(overlay.Crossing, r.Port, dbu);
+            overlay.Labels.Add((Centre(min, max), $"{C3dPorts.Label(r.Port)}: refused"));
+        }
+        if (_tool is PortTool pt && pt.Preview(CursorInput()) is { } draft)
+        {
+            var r = C3dPorts.Resolve(draft, dbu, CurrentPortContext());
+            var (min, max) = Rectangle(draft, dbu);
+            if (r.Resolved is { } p)
+            {
+                var c = Centre(min, max);
+                double side = Math.Max(max.X - min.X, Math.Max(max.Y - min.Y, max.Z - min.Z)) * 0.3;
+                var d = p.Direction;
+                var from = new Point3(c.X - d.X * side, c.Y - d.Y * side, c.Z - d.Z * side);
+                var to = new Point3(c.X + d.X * side, c.Y + d.Y * side, c.Z + d.Z * side);
+                overlay.Rubber.Add(new Render.Scene3D.Edit.DrawSegment(from, to));
+                overlay.Labels.Add((to, $"+ {p.PositiveObject}"));
+                overlay.Labels.Add((from, $"− {p.NegativeObject}"));
+            }
+            else overlay.Labels.Add((Centre(min, max), r.Refusal ?? ""));
+        }
+    }
+
+    private static Point3 Centre(Point3 a, Point3 b) => new((a.X + b.X) / 2, (a.Y + b.Y) / 2, (a.Z + b.Z) / 2);
+
+    private static (Point3 Min, Point3 Max) Rectangle(C3dPort p, int dbu)
+    {
+        double M(long v) => C3dLowering.Metres(v, dbu);
+        var a = C3dLowering.OnPlane(p.Plane, M(p.Rect.Min.U), M(p.Rect.Min.V), M(p.Offset));
+        var b = C3dLowering.OnPlane(p.Plane, M(p.Rect.Min.U + p.Rect.Size.U), M(p.Rect.Min.V + p.Rect.Size.V), M(p.Offset));
+        return (new Point3(Math.Min(a.X, b.X), Math.Min(a.Y, b.Y), Math.Min(a.Z, b.Z)), new Point3(Math.Max(a.X, b.X), Math.Max(a.Y, b.Y), Math.Max(a.Z, b.Z)));
+    }
+
+    private static void AddRect(List<Render.Scene3D.Edit.DrawSegment> into, C3dPort p, int dbu)
+    {
+        double M(long v) => C3dLowering.Metres(v, dbu);
+        long u0 = p.Rect.Min.U, v0 = p.Rect.Min.V, u1 = u0 + p.Rect.Size.U, v1 = v0 + p.Rect.Size.V;
+        var c = new[] { (u0, v0), (u1, v0), (u1, v1), (u0, v1) }
+            .Select(q => C3dLowering.OnPlane(p.Plane, M(q.Item1), M(q.Item2), M(p.Offset))).ToArray();
+        for (int k = 0; k < 4; k++) into.Add(new Render.Scene3D.Edit.DrawSegment(c[k], c[(k + 1) % 4]));
+    }
+
+    // ── the tree: the ports, and each object's face boundaries (R-em3d49-4d) ─────────────────
+
+    private void RebuildRecordsTree()
+    {
+        foreach (var g in Tree.Where(g => g.Header == "Ports").ToList()) Tree.Remove(g);
+        var ports = PortResults.Select(r => new C3dTreeItem(this, C3dPorts.ProblemName(r.Port.Number), "Port",
+            r.Resolved is { } p ? $"{C3dPorts.Label(r.Port)} {(p.Kind == Em3dPortKind.Wave ? "wave" : "lumped")}: {p.NegativeObject} → {p.PositiveObject}"
+                                : $"{C3dPorts.Label(r.Port)}: refused", -1, -1, true) { IsReadOnly = true }).ToList();
+        if (ports.Count > 0) Tree.Add(new C3dTreeGroup("Ports", ports));
+        foreach (var item in Tree.Where(g => g.Header is not ("Instances" or "Ports")).SelectMany(g => g.Items))
+        {
+            foreach (var c in item.Children.Where(c => c.Kind == "Boundary").ToList()) item.Children.Remove(c);
+            foreach (var b in Document.FaceBoundaries.Where(b => b.Object == item.Name))
+                item.Children.Add(new C3dTreeItem(this, Scene3DBuilder.FaceTintPrefix + b.Object + "/" + b.Face, "Boundary",
+                    $"{b.Face}: {(b.Kind == Em3dFaceBoundaryKind.Conductive ? $"Conductive ({b.Material})" : b.Kind.ToString())}", -1, -1, true)
+                    { IsReadOnly = true });
+        }
+    }
+
+    // ── fields: from the run's own directory, and a banner when the model has moved on (R-em3d49-5b) ──
+
+    /// <summary>The file a run's directory keeps the document it solved in — what the stale-fields banner compares with.</summary>
+    public const string RunDocumentFile = "document.c3d";
+
+    [ObservableProperty] private string? _fieldsStaleText;
+
+    private ((string, DateTime) Stamp, string Text)? _solvedCache;
+
+    /// <summary>The shell's results root (the workspace's <c>results</c> folder, or the session's).</summary>
+    public Func<string?>? ResultsRootProvider { get; set; }
+
+    /// <summary>The run directories the active setup's run writes, first Palace's.</summary>
+    private IEnumerable<string> ActiveRunDirectories()
+    {
+        if (ActiveRunSetup is not { } s || ResultsRootProvider?.Invoke() is not { } root) yield break;
+        if (s.Solver3D is Em3dSolver.Palace or Em3dSolver.Both) yield return Em3dRunService.RunDirectory(root, s, Em3dSolver.Palace);
+        if (s.Solver3D is Em3dSolver.OpenEms or Em3dSolver.Both) yield return Em3dRunService.RunDirectory(root, s, Em3dSolver.OpenEms);
+    }
+
+    /// <summary>A run finished: the document it solved is kept in its directory, and the fields are read again.</summary>
+    public void RunFinished(EmSetup runSetup, string documentText)
+    {
+        if (ResultsRootProvider?.Invoke() is { } root)
+            foreach (var solver in new[] { Em3dSolver.Palace, Em3dSolver.OpenEms })
+                if (runSetup.Solver3D == solver || runSetup.Solver3D == Em3dSolver.Both)
+                {
+                    string dir = Em3dRunService.RunDirectory(root, runSetup, solver);
+                    if (!Directory.Exists(dir)) continue;
+                    try { File.WriteAllText(Path.Combine(dir, RunDocumentFile), documentText); }
+                    catch (Exception e) when (e is IOException or UnauthorizedAccessException) { StatusMessage = $"The run's document could not be kept: {e.Message}"; }
+                }
+        Viewer.SetRunSetup(ActiveRunSetup);
+        RefreshFieldsStale();
+    }
+
+    /// <summary>R-em3d49-5b — the banner: fields from a run whose document differs from the one being edited now. They are
+    /// still shown — the solver's own geometry, never re-mapped onto a model it did not see.</summary>
+    public void RefreshFieldsStale()
+    {
+        string? text = null;
+        foreach (string dir in ActiveRunDirectories())
+        {
+            string f = Path.Combine(dir, RunDocumentFile);
+            if (!File.Exists(f)) continue;
+            // The solved document, read once per file version: this runs on every edit.
+            var stamp = (f, File.GetLastWriteTimeUtc(f));
+            if (_solvedCache?.Stamp != stamp)
+            {
+                try { _solvedCache = (stamp, File.ReadAllText(f)); } catch (Exception) { continue; }
+            }
+            if (_solvedCache!.Value.Text != C3dPersistence.Serialize(Document))
+                text = $"Fields are from the run at {File.GetLastWriteTime(f):HH:mm}; the model has changed since. They are drawn on the " +
+                       "geometry that run solved.";
+            break;
+        }
+        FieldsStaleText = text;
+    }
+}

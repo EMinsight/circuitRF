@@ -3981,3 +3981,14 @@ Gates 1, 2 (CPU, software AND a real Metal ID pass) and 9 in `tests/Ui.Tests/Thr
   from the eye first; boxed elements are neither drawn nor picked, and `Viewer3DViewModel.LodText` says how
   many. It lives in the 3D menu, not Settings, so no Settings figure moves.
 - **Metal ran it** (the new gate's offscreen ID pass names element [>5]'s object); D3D11 and Vulkan compile only.
+
+## brief-em3d-49 — the editor's air box and face-boundary tints (2026-09-26)
+
+- **An air-box face is picked LAST, and not by the GPU.** It encloses everything, so in the ID pass the near face
+  stands in front of every solid seen from outside. `Scene3DObject.PickLast` keeps it out of the GPU pass (it stays
+  non-`Pickable`); `Scene3DPicking.PickLastHits` casts the cursor ray at the six faces on the CPU (twelve triangles).
+  The pane takes it only when the ID pass found nothing pickable, and B appends it after every solid hit.
+- `Scene3DBuildOptions.EditorBoundaries`: absorbing untinted (alpha 0), PEC grey, PMC orange, symmetry hatched (line
+  primitives on the face); the read-only viewer keeps brief 28's tints. `FaceTints`: each face boundary drawn as a
+  translucent sheet lifted 1e-4 of the box's size along the face's outward normal — coplanar would z-fight the solid.
+  Tints are named `boundary:<object>/<face>` and the air-box toggle leaves them alone.

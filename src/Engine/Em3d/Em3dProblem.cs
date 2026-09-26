@@ -295,6 +295,24 @@ public sealed record Em3dProblem(
     /// <summary>True when any port is a wave port.</summary>
     public bool HasWavePorts => Ports.Any(p => p.Kind == Em3dPortKind.Wave);
 
+    /// <summary>brief-em3d-49 R-em3d49-4c — boundaries on named faces of dielectric and air solids. Empty — every
+    /// problem written before them — lowers to exactly what it lowered before (overview §1h).</summary>
+    public IReadOnlyList<Em3dFaceBoundary> FaceBoundaries { get; init; } = [];
+
+    /// <summary>
+    /// brief-em3d-49 — each face boundary's planar pieces, in <see cref="FaceBoundaries"/> order. Call after
+    /// <see cref="Validate"/>: a boundary that does not resolve has no entry.
+    /// </summary>
+    public IReadOnlyList<(Em3dFaceBoundary Boundary, IReadOnlyList<Em3dFacePolygon> Pieces)> FaceBoundaryPieces()
+    {
+        var list = new List<(Em3dFaceBoundary, IReadOnlyList<Em3dFacePolygon>)>();
+        foreach (var b in FaceBoundaries)
+            if (Solids.FirstOrDefault(s => s.Name == b.Object) is { } solid &&
+                Em3dFaceGeometry.Pieces(solid.Primitive, b.Face, out _) is { } pieces)
+                list.Add((b, pieces));
+        return list;
+    }
+
     /// <summary>
     /// brief-em3d-23 — the air-box face a rectangle lies in (<c>xmin</c> … <c>zmax</c>), or null when it
     /// lies in none. A wave port must lie in one.
@@ -453,6 +471,8 @@ public sealed record Em3dProblem(
             }
         }
 
+        ValidateFaceBoundaries(problems);
+
         if (IsStatic) ValidateTerminals(problems);
         else if (Type == Em3dProblemType.Eigenmode)
         {
@@ -468,6 +488,53 @@ public sealed record Em3dProblem(
                          "positive start, a stop at or above it, and at least one point.");
 
         return problems;
+    }
+
+    /// <summary>
+    /// brief-em3d-49 R-em3d49-4b — every face boundary: on a face that exists and is flat, of a dielectric or air
+    /// solid, as a perfect conductor or a conductive surface of a metal the problem resolves; each face once.
+    /// </summary>
+    private void ValidateFaceBoundaries(List<string> problems)
+    {
+        var seen = new HashSet<(string, string)>();
+        foreach (var b in FaceBoundaries)
+        {
+            string where = $"The boundary on face '{b.Face}' of '{b.Object}'";
+            if (!seen.Add((b.Object, b.Face)))
+                problems.Add($"{where} is stated twice; a face has one boundary.");
+            if (b.Kind is Em3dFaceBoundaryKind.Absorbing or Em3dFaceBoundaryKind.Pmc or Em3dFaceBoundaryKind.Symmetry)
+            {
+                problems.Add($"{where} is {b.Kind}, which both 3D solvers state only on the outer boundary of the problem. " +
+                             "Set it on the air box's face in the setup's AirBox; a solid's face may be Pec or Conductive.");
+                continue;
+            }
+            var solid = Solids.FirstOrDefault(s => s.Name == b.Object);
+            if (solid is null)
+            {
+                problems.Add(Sheets.Any(s => s.Name == b.Object)
+                    ? $"{where} is on a sheet, which is already a conductor's surface: a boundary on it has nothing to add."
+                    : $"{where} names no solid of this problem.");
+                continue;
+            }
+            if (solid.Role == Em3dRole.Conductor)
+            {
+                problems.Add($"{where} is on a conductor. A conductor is a void bounded by its own metal, so a boundary on " +
+                             "its face has nothing to add; put boundaries on dielectric and air solids.");
+                continue;
+            }
+            if (Em3dFaceGeometry.Pieces(solid.Primitive, b.Face, out string? why) is null)
+                problems.Add($"{where} cannot be placed: {why}.");
+            if (b.Kind == Em3dFaceBoundaryKind.Conductive)
+            {
+                var metal = Materials.FirstOrDefault(m => m.Name == b.Material);
+                if (b.Material is not { Length: > 0 })
+                    problems.Add($"{where} is Conductive and names no material; a conductive surface is made of a metal.");
+                else if (metal is null)
+                    problems.Add($"{where} is made of '{b.Material}', which this problem does not resolve to any values.");
+                else if (!(metal.SigmaSm > 0))
+                    problems.Add($"{where} is made of '{b.Material}', which does not conduct (σ is 0).");
+            }
+        }
     }
 
     /// <summary>

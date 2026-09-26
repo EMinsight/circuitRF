@@ -44,6 +44,8 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
         (C3dToolKind.Polygon, 'G', "VectorPolygon"),
         (C3dToolKind.Polyline, 'L', "VectorPolyline"),
         (C3dToolKind.Cylinder, 'Y', "Database"),
+        // brief-em3d-49 R-em3d49-2d — a port, drawn like a sheet.
+        (C3dToolKind.Port, 'P', "ArrowUpBoldBoxOutline"),
     ];
 
     public const string EdgeOnFormat = "the {0} plane is edge-on; orbit or choose another plane";
@@ -192,6 +194,7 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
     public bool IsPolygonArmed  { get => ArmedTool == C3dToolKind.Polygon;  set => ArmToggle(C3dToolKind.Polygon, value); }
     public bool IsPolylineArmed { get => ArmedTool == C3dToolKind.Polyline; set => ArmToggle(C3dToolKind.Polyline, value); }
     public bool IsCylinderArmed { get => ArmedTool == C3dToolKind.Cylinder; set => ArmToggle(C3dToolKind.Cylinder, value); }
+    public bool IsPortArmed { get => ArmedTool == C3dToolKind.Port; set => ArmToggle(C3dToolKind.Port, value); }
 
     private void ArmToggle(C3dToolKind kind, bool on)
     {
@@ -210,6 +213,7 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
             C3dToolKind.Sheet => new SheetTool(this),
             C3dToolKind.Polygon => new PolygonTool(this),
             C3dToolKind.Polyline => new PolylineTool(this),
+            C3dToolKind.Port => new PortTool(this, () => NewPortTemplate()),
             _ => new CylinderTool(this),
         });
     }
@@ -235,7 +239,7 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
         // brief-em3d-46 — one gesture at a time: arming a tool ends a measurement.
         if (tool is not null) Viewer.EndMeasure();
         foreach (string p in new[] { nameof(ArmedTool), nameof(Tool), nameof(IsBoxArmed), nameof(IsSheetArmed), nameof(IsPolygonArmed),
-                                     nameof(IsPolylineArmed), nameof(IsCylinderArmed), nameof(ToolPrompt) })
+                                     nameof(IsPolylineArmed), nameof(IsCylinderArmed), nameof(IsPortArmed), nameof(ToolPrompt) })
             OnPropertyChanged(p);
         Viewer.RequestFrame();
     }
@@ -337,6 +341,13 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
         }
         else if (step.Advanced) StatusMessage = "";
         if (step.Finished && _tool is Hierarchy.PlaceInstanceTool place) { CommitPlacement(place); return; }
+        if (step.Finished && _tool is PortTool portTool && portTool.Made is { } port)
+        {
+            AddPort(port);
+            OnPropertyChanged(nameof(ToolPrompt));
+            Viewer.RequestFrame();
+            return;
+        }
         if (step.Finished && _tool is C3dOperationTool op) CommitOperation(op);
         else if (step.Finished && _tool is C3dFaceEditTool ft) CommitFaceEdit(ft);
         if (step.Result is { } obj)
@@ -462,6 +473,7 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
         FillHierarchyOverlay(overlay);
         if (_tool is C3dOperationTool { ShowsPivot: true } op) overlay.Pivots.Add(DrawGeometry.Metres(op.Pivot, dbu));
         if (_crossing is { } x) { overlay.Crossing.Add(x.A); overlay.Crossing.Add(x.B); }
+        FillSimulateOverlay(overlay);
     }
 
     private static List<C3dPoint3> Points3Of(C3dPolyline l)
@@ -476,6 +488,7 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
         foreach (var item in OperationMenuItems()) yield return item;
         foreach (var item in FaceMenuItems()) yield return item;
         foreach (var item in HierarchyMenuItems()) yield return item;
+        foreach (var item in SimulateMenuItems()) yield return item;
         if (Viewer.SelectMode == Scene3DSelectMode.Face && Viewer.Selection is [{ Face: >= 0 } f])
             yield return new Viewer3DMenuItem("Drawing Plane from Face", () => { if (PlaneFromFace(f.Object, f.Face) is { } why) StatusMessage = why; });
         if (ExtrudeSource() is { } src)

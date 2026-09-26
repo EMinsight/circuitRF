@@ -81,7 +81,7 @@ public sealed partial class EmSetupEditorViewModel
     public bool HasEigenmodeRows => EigenmodeRows.Count > 0;
 
     /// <summary>True when the port-kind table is shown: a 3D setup that is driven or eigenmode.</summary>
-    public bool IsPortKindSetup => Is3DSetup && !IsStaticSetup;
+    public bool IsPortKindSetup => Is3DSetup && !IsStaticSetup && !IsEmbedded;   // brief-em3d-49: a .c3d port carries its own kind and Z0
 
     /// <summary>True when the eigenmode boxes are shown.</summary>
     public bool IsEigenmodeSetup => Is3DSetup && Problem3DChoice.Value == Em3dProblemType.Eigenmode;

@@ -180,7 +180,10 @@ public static class PalaceConfigWriter
                 case Em3dGroupKind.Face when g.Boundary == Em3dBoundaryKind.Pec: pec.Add(g.Attribute); break;
                 case Em3dGroupKind.Face when g.Boundary == Em3dBoundaryKind.Pmc: pmc.Add(g.Attribute); break;
                 case Em3dGroupKind.Face:                                          absorbing.Add(g.Attribute); break;
-                case Em3dGroupKind.Conductor or Em3dGroupKind.Sheet:
+                // brief-em3d-49 — a face boundary: a perfect conductor, or its metal's surface impedance (no thickness:
+                // the face is the outside of a thick conductor).
+                case Em3dGroupKind.FaceBoundary when g.Material is null:          pec.Add(g.Attribute); break;
+                case Em3dGroupKind.Conductor or Em3dGroupKind.Sheet or Em3dGroupKind.FaceBoundary:
                 {
                     var metal = materials[g.Material!];
                     // A conductor stated with no finite conductivity is a perfect one.
@@ -472,6 +475,8 @@ public static class PalaceConfigWriter
             {
                 case Em3dGroupKind.Face when g.Boundary == Em3dBoundaryKind.Pec: ground.Add(g.Attribute); break;
                 case Em3dGroupKind.Face:                                          natural.Add(g.Attribute); break;
+                // brief-em3d-49 — a conducting face in no terminal is at the reference, as a PEC air-box face is.
+                case Em3dGroupKind.FaceBoundary:                                  ground.Add(g.Attribute); break;
                 case Em3dGroupKind.Conductor or Em3dGroupKind.Sheet:
                     if (es && g.Terminal is { Length: > 0 } t) terminal[index[t]].Add(g.Attribute);
                     else ground.Add(g.Attribute);       // ES: the ground's conductors; MS: every conductor

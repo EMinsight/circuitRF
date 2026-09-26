@@ -431,10 +431,43 @@ internal static class DocumentSchema
             AND view: a cell's 3D view may hold that cell's own layout, which is not a cycle.
           * Setups hold EM setups in the .cem schema (see the em-setup topic) without LayoutRef, each
             with a unique Name and Solver3D Palace or OpenEms. `em view.c3d` runs the one there is;
-            with several, `--setup <name>`. Its result is named "<file stem> <setup name>".
-          * Variables, Ports and FaceBoundaries are reserved for later builds. This build keeps what
-            they hold and writes it back unread. So does any key it does not know, which `check`
-            reports as a warning.
+            with several, `--setup <name>`. Its result is named "<file stem> <setup name>". A static
+            setup's Terminals3D name their conductors with Objects (["top"], U1/... allowed) — a drawn
+            object carries no net — instead of Net; stating both is refused.
+          * Ports belong to the document, and every setup uses all of them (choosing a subset per
+            setup is a later build). A placed cell's ports are never used: only the parent says where
+            a signal enters. A port is a Rect on a drawing Plane at an Offset, with a Number, a Name,
+            a Kind (Lumped or Wave) and a Z0 ("50", or a complex "25+j10"):
+
+                { "Number": 1, "Name": "P1", "Kind": "Lumped", "Plane": "XZ", "Offset": 0,
+                  "Rect": { "Min": [2000000, 0], "Size": [1100000, 508000] }, "Z0": "50" }
+
+            Which conductors a LUMPED port joins, and which way round, is INFERRED from what it
+            touches: each of the rectangle's four edges (its ends pulled in by two DBU, so a corner
+            contact does not count) is tested against every elaborated conductor — solids of role
+            Conductor, every sheet, a PEC face of the setup's air box — to within one DBU. Exactly
+            one pair of OPPOSITE edges must each touch exactly one conductor, the two different;
+            that pair's axis is the port's direction. The NEGATIVE end is the one in the setup's
+            ground set (its Ground3D net — a drawn conductor's net is its own name — a layout
+            instance's ground-reference conductors, or a PEC air-box face); failing that, the one
+            with the larger surface. Flip swaps them. Positive and Negative (elaborated names,
+            U1/pad allowed, or airbox/zmin) state both ends and override inference entirely; one
+            without the other is refused. A refusal names what each edge touched. `check` reports
+            every port's polarity and `explain` walks each edge's contacts.
+          * A WAVE port's rectangle is a region of an air-box face of the setup being run — the box
+            is each setup's own, so this is checked per setup. Its two conductors are the ones that
+            meet the region, and its voltage path runs across the gap between them at the positive
+            one's centre; VoltagePath ({"From": [u, v], "To": [u, v]}) states it instead.
+          * FaceBoundaries put a boundary on a NAMED face of a dielectric or air object:
+            {"Object": "block", "Face": "zmax", "Kind": "Pec"}, or Kind "Conductive" with a
+            Material. A boundary follows its face through every edit, and a fold hands it to each
+            piece. A conductor already is a void bounded by its metal, so a boundary on one is
+            refused; Absorbing, Pmc and Symmetry are the air box's (both solvers state them only on
+            the outer boundary), set in a setup's AirBox. Palace finds a face's surfaces by its
+            bounding box and counts them exactly: a neighbour's face lying in the same plane and
+            overlapping it is refused, never merged. A curved face (a cylinder's side) is refused.
+          * Variables are reserved for a later build. This build keeps what they hold and writes it
+            back unread. So does any key it does not know, which `check` reports as a warning.
 
         Refused, with the reason named: a file that is not JSON; a FormatVersion newer than this
         build; an object whose "$type" this build does not know (every one is listed); and a string

@@ -35973,3 +35973,29 @@ Layout and the cell menu's, 3D ▸ Triangle Budget…, and the shell's wiring in
 - **The gate harness must play the UI thread.** `post: a => a()` runs a scene's adoption on the builder's thread, and
   with a 400-element tree it raced the test's own next edit (`RebuildTree` vs `RefreshTreeVisibility`: "Collection
   was modified"). `HierarchyGateTests` queues posts and runs them in `Settle`, as a dispatcher would.
+
+## brief-em3d-49 — simulate from the 3D editor (2026-09-26)
+
+Built: `C3dEditorViewModel.Simulate.cs` (Setups panel, active setup, ports, air-box and face-boundary edits, the
+context menu, overlay numbers and the port tool's live inference, the records tree, fields and the stale banner),
+`C3dRecordsEdit`, `PortTool`, the `.cem` panel's embedded mode, `Viewer3DViewModel.SetRunSetup`, Simulate ▸ Run and
+3D ▸ Draw ▸ Port / 3D ▸ Setups… on a `.c3d`, Show 3D on a `.cem` naming a `.c3d`. Gates:
+`tests/Ui.Tests/ThreeD/SimulateEditorGateTests.cs`. Pixels were not seen.
+
+- **The Setups panel is the `.cem` panel, not a second form.** `EmSetupEditorViewModel(path, setup, embedded: true)`
+  hides the geometry rows, Undo/Redo/Save/Save As/Show 3D, the per-port kind table (a .c3d port carries its own kind
+  and Z0) and the planar solver choice; its `CommitEdit` hands (before, after, description) to `EmbeddedCommit`,
+  which the editor pushes as one `C3dRecordsEdit` — the panel's own stack stays empty. An undo re-builds the panel
+  only when the setup it shows actually differs (compared by serialisation), so an edit never tears the panel down
+  under the cursor. Static terminals: embedded, the Net column is `Objects` (comma-separated).
+- **`C3dRecordsEdit` keeps ports, face boundaries and setups whole**, before and after: they are small and one edit
+  can touch two (a setup's box and the ports measured against it).
+- **The scene's ports and box are the run's**: the build resolves them on the pool thread from the ACTIVE setup's
+  full `.cem` spelling in the snapshot (`C3dSceneInputs.SetupJson`), with `C3dProblemAssembly.AirBox`/`C3dPorts`.
+- **`RunEmSetupAsync` gained a run delegate** instead of a second run path: a `.c3d` setup (and a `.cem` whose
+  LayoutRef names a `.c3d` — brief 42 had wired only the CLI) runs `EmRunService.RunThreeDView` through the same
+  progress, Cancel, messages and Data Display. It now returns whether a result was written; then the editor keeps
+  the solved document as `document.c3d` in the run's directory, which is what the stale banner compares against —
+  across sessions too.
+- **The editor's pane had no results root and no setup** (`() => null`), so fields and the mesh could never appear
+  in it; `SetRunSetup` names the active setup as its run names it (`<stem> <name>`), which is the directory key.

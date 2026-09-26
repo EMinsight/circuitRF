@@ -59,6 +59,11 @@ public partial class WorkspaceViewModel
             // brief-em3d-45 R-em3d45-1a — the drawing plane is window state: put back where it was left.
             if (StoredDrawingPlane(full) is { } plane) vm.SetPlane(plane);
             vm.DrawingPlaneChanged += () => RememberDrawingPlane(vm);
+            // brief-em3d-49 — the active setup is per-user editor state; runs land in this workspace's results.
+            vm.ResultsRootProvider = () => EmResultsRoot();
+            vm.RestoreActiveSetup(StoredActiveSetup(full));
+            vm.ActiveSetupChanged += () => RememberActiveSetup(vm);
+            vm.RunRequested = (c3d, setupName) => RunC3dSetupAsync(c3d, setupName);
             vm.ExternalChangeWhileDirty += () => _ = AskReloadC3dAsync(doc);
             vm.PropertyChanged += (_, e) =>
             {
@@ -301,6 +306,55 @@ public partial class WorkspaceViewModel
     }
 
     /// <summary>Every 3D editor's drawing plane for the <c>.cwsuser</c> — null when none is off the default.</summary>
+    // ── the active setup in the window state (brief-em3d-49 R-em3d49-1a) ──────────────────────
+
+    private Dictionary<string, string>? _activeSetups;
+
+    private string? StoredActiveSetup(string c3dPath)
+    {
+        _activeSetups ??= CurrentWorkspacePath is { } cws && TryLoadCws(cws).C3dActiveSetups is { } stored
+            ? new Dictionary<string, string>(stored, StringComparer.Ordinal) : new Dictionary<string, string>(StringComparer.Ordinal);
+        return CameraKey(c3dPath) is { } k && _activeSetups.TryGetValue(k, out var name) ? name : null;
+    }
+
+    private void RememberActiveSetup(C3dEditorViewModel vm)
+    {
+        if (CameraKey(vm.TopFilePath) is not { } k) return;
+        _activeSetups ??= new Dictionary<string, string>(StringComparer.Ordinal);
+        if (vm.ActiveSetupName is { } name) _activeSetups[k] = name; else _activeSetups.Remove(k);
+    }
+
+    private Dictionary<string, string>? ActiveSetupsToPersist()
+    {
+        foreach (var doc in _openDocsByPath.Values.OfType<C3dEditorDocument>()) RememberActiveSetup(doc.ViewModel);
+        return _activeSetups is { Count: > 0 } a ? a : null;
+    }
+
+    /// <summary>Where an EM run from this window lands: the workspace's results folder, or the session's.</summary>
+    private string EmResultsRoot()
+        => Path.Combine(CurrentWorkspacePath is { } cws ? Path.GetDirectoryName(cws)! : _recovery.SessionDir, "results");
+
+    /// <summary>
+    /// brief-em3d-49 R-em3d49-5a — a 3D view's setup run: the same path a .cem's run takes (discovery, progress, cancel,
+    /// refusals, the Data Display), with the geometry the document itself — elaborated and assembled with the setup.
+    /// </summary>
+    internal async Task RunC3dSetupAsync(C3dEditorViewModel c3d, string? setupName)
+    {
+        var (setup, fromCem, refusal) = c3d.RunSetupFor(setupName);
+        if (setup is null) { Messages.Warning(refusal ?? "Nothing to simulate."); return; }
+        var document = c3d.RunDocument();
+        string text = C3dPersistence.Serialize(document);
+        string path = c3d.TopFilePath;
+        string? cws = CurrentWorkspacePath;
+        // The panel whose Simulate/Cancel reflect the run: the setup editor when it shows this setup, else a transient one.
+        var panel = c3d.SetupEditor?.ViewModel is { IsEmbedded: true } shown && !fromCem &&
+                    C3dSetups.ForRun(shown.Working, path).Name == setup.Name
+            ? shown : new CircuitRF.Ui.Layout.Em.EmSetupEditorViewModel(path, setup.Clone(), embedded: true);
+        bool ok = await RunEmSetupAsync(panel, setup, (s, control, root) => EmRunService.RunThreeDView(
+            s, document, path, cws, root, default, control, CircuitRF.Ui.Layout.Em.EmSolveCorePreference.Preferred, ConfirmEmMemory, fromCem));
+        if (ok) c3d.RunFinished(setup, text);
+    }
+
     private Dictionary<string, CwsDrawingPlane>? DrawingPlanesToPersist()
     {
         _drawingPlanes ??= LoadStoredDrawingPlanes();
@@ -352,6 +406,15 @@ public partial class WorkspaceViewModel
         ThreeDExtrudeCommand.NotifyCanExecuteChanged();
         ThreeDModifyCommand.NotifyCanExecuteChanged();
         ThreeDMeasureCommand.NotifyCanExecuteChanged();
+        ThreeDSetupsCommand.NotifyCanExecuteChanged();
+        RunAnalysisCommand.NotifyCanExecuteChanged();
+    }
+
+    /// <summary>brief-em3d-49 — 3D ▸ Setups…: the Setups panel, shown.</summary>
+    [RelayCommand(CanExecute = nameof(HasActiveC3dEditor))]
+    private void ThreeDSetups()
+    {
+        if (ActiveC3dEditor() is { } e) e.ShowSetups = true;
     }
 
     // brief-em3d-45 — drawing needs the editor, not the read-only viewer.

@@ -311,6 +311,67 @@ public sealed class C3dInstance
     public Dictionary<string, JsonElement>? Unread { get; set; }
 }
 
+// ── Ports and face boundaries (brief-em3d-49) ─────────────────────────────────────────────────
+
+/// <summary>A wave port's stated voltage path, on the port's own plane: from the negative conductor to the positive one.</summary>
+public sealed class C3dVoltagePath
+{
+    public C3dPoint2 From { get; set; }
+    public C3dPoint2 To   { get; set; }
+}
+
+/// <summary>
+/// brief-em3d-49 R-em3d49-2a — a port, drawn in the parent (overview §1k: a placed cell's ports are never used). A
+/// <see cref="Rect"/> on a drawing plane, axis-aligned. A lumped port is a sheet between two conductors; which two, and
+/// which way round, is INFERRED from what the rectangle's edges touch unless <see cref="Positive"/> and
+/// <see cref="Negative"/> say (both, or neither). A wave port's rectangle is a region of an air-box face of the setup
+/// being run. Every setup uses every port.
+/// </summary>
+public sealed class C3dPort
+{
+    public int    Number { get; set; }
+    public string Name   { get; set; } = "";
+    public Em3dPortKind Kind { get; set; }
+    public C3dPlane Plane  { get; set; }
+    public long     Offset { get; set; }
+    public C3dRect  Rect   { get; set; } = new();
+
+    /// <summary>The reference impedance, Ω — a real number or a complex one (<c>50</c>, <c>25+j10</c>), as a .cem's.</summary>
+    public string Z0 { get; set; } = "50";
+
+    /// <summary>The positive conductor, by elaborated name (<c>U1/pad3</c> allowed) or an air-box face
+    /// (<c>airbox/zmin</c>); null is inferred.</summary>
+    public string? Positive { get; set; }
+
+    /// <summary>The negative conductor; null is inferred. Stating one without the other is refused.</summary>
+    public string? Negative { get; set; }
+
+    /// <summary>Swaps the inferred (or stated) conductors: a wrong polarity is a 180° error in every transmission term.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Flip { get; set; }
+
+    /// <summary>A wave port's voltage path; null is inferred as brief 23 infers it.</summary>
+    public C3dVoltagePath? VoltagePath { get; set; }
+
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? Unread { get; set; }
+}
+
+/// <summary>
+/// brief-em3d-49 R-em3d49-4a — a boundary on a NAMED face of a dielectric or air object (overview §1e): it follows the
+/// face through every edit, and a fold hands it to every piece. <see cref="Material"/> is a Conductive face's metal.
+/// </summary>
+public sealed class C3dFaceBoundary
+{
+    public string Object { get; set; } = "";
+    public string Face   { get; set; } = "";
+    public Em3dFaceBoundaryKind Kind { get; set; }
+    public string? Material { get; set; }
+
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? Unread { get; set; }
+}
+
 // ── The document ──────────────────────────────────────────────────────────────────────────────
 
 /// <summary>
@@ -347,14 +408,15 @@ public sealed class C3dDocument
     /// </summary>
     public List<JsonElement> Variables      { get; set; } = [];
 
-    /// <summary>Brief 49's ports — carried through unread until then, for <see cref="Variables"/>' reason.</summary>
-    public List<JsonElement> Ports          { get; set; } = [];
+    /// <summary>brief-em3d-49 — the document's ports. They belong to the document, not to a setup: every setup uses all
+    /// of them.</summary>
+    public List<C3dPort> Ports { get; set; } = [];
 
-    /// <summary>Brief 49's face boundaries — carried through unread until then.</summary>
-    public List<JsonElement> FaceBoundaries { get; set; } = [];
+    /// <summary>brief-em3d-49 — boundaries on named faces of dielectric and air objects.</summary>
+    public List<C3dFaceBoundary> FaceBoundaries { get; set; } = [];
 
-    /// <summary>Brief 42's embedded EM setups (the <c>.cem</c> schema minus <c>LayoutRef</c>) — carried
-    /// through unread until then.</summary>
+    /// <summary>Brief 42's embedded EM setups (the <c>.cem</c> schema minus <c>LayoutRef</c>), each read by the
+    /// <c>.cem</c> reader (<see cref="C3dSetups.Read"/>).</summary>
     public List<JsonElement> Setups         { get; set; } = [];
 
     /// <summary>Keys this build does not read, kept and written back — see <see cref="C3dObject.Unread"/>.</summary>

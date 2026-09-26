@@ -6,6 +6,7 @@
              xmlns:s3="using:CircuitRF.Render.Scene3D"
              xmlns:converters="using:CircuitRF.Ui.Converters"
              xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             xmlns:vl="using:CircuitRF.Ui.Views.Layout"
              x:Class="CircuitRF.Ui.Views.ThreeD.C3dEditorView"
              x:DataType="t3:C3dEditorDocument"
              Background="{DynamicResource SystemChromeLowColor}">
@@ -161,6 +162,10 @@
                 <ToggleButton IsChecked="{Binding ViewModel.IsCylinderArmed}" ToolTip.Tip="Cylinder: centre, radius, height  (Shift+A, Y)">
                     <mi:MaterialIcon Kind="Database" Width="16" Height="16"/>
                 </ToggleButton>
+                <!-- brief-em3d-49 R-em3d49-2d — a port, drawn like a sheet; its polarity is inferred from what it touches. -->
+                <ToggleButton IsChecked="{Binding ViewModel.IsPortArmed}" ToolTip.Tip="Port: two corners on the drawing plane, between two conductors. The arrow runs from − to +; right-click it to flip  (Shift+A, P)">
+                    <mi:MaterialIcon Kind="ArrowUpBoldBoxOutline" Width="16" Height="16"/>
+                </ToggleButton>
                 <ComboBox MinWidth="90" VerticalAlignment="Center" ItemsSource="{Binding ViewModel.Materials}" SelectedItem="{Binding ViewModel.CurrentMaterial}"
                           ToolTip.Tip="The material every new object gets, from the technology's materials"/>
 
@@ -177,6 +182,20 @@
                 <ToggleButton IsChecked="{Binding ViewModel.PropertiesVisible}" ToolTip.Tip="Properties">
                     <mi:MaterialIcon Kind="CardTextOutline" Width="16" Height="16"/>
                 </ToggleButton>
+
+                <Border Width="1" Margin="2,3" Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+
+                <!-- brief-em3d-49 — the active setup's air box, the Setups panel, and Simulate. -->
+                <ToggleButton IsChecked="{Binding ViewModel.Viewer.ShowBoundaryFaces}"
+                              ToolTip.Tip="Air box: the active setup's, each face tinted by its boundary (PEC grey, PMC orange, symmetry hatched, absorbing clear). In Face mode its faces are picked last; right-click one to set its boundary or padding.">
+                    <mi:MaterialIcon Kind="BorderOutside" Width="16" Height="16"/>
+                </ToggleButton>
+                <ToggleButton IsChecked="{Binding ViewModel.ShowSetups}" ToolTip.Tip="Setups: the EM setups this 3D view carries, and which one is active">
+                    <mi:MaterialIcon Kind="TuneVariant" Width="16" Height="16"/>
+                </ToggleButton>
+                <Button Command="{Binding ViewModel.SimulateActiveCommand}" ToolTip.Tip="Simulate the active setup (Simulate ▸ Run)">
+                    <mi:MaterialIcon Kind="PlaylistPlay" Width="16" Height="16"/>
+                </Button>
 
                 <Border Width="1" Margin="2,3" Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
 
@@ -219,6 +238,48 @@
             </StackPanel>
         </Border>
 
+        <!-- ── brief-em3d-49 R-em3d49-5b: fields over the run's geometry, and the banner when the model moved on ── -->
+        <Border DockPanel.Dock="Top" Padding="4,2" BorderThickness="0,0,0,1" IsVisible="{Binding ViewModel.Viewer.FieldsAvailable}"
+                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
+            <StackPanel Spacing="2">
+                <WrapPanel Orientation="Horizontal" ItemSpacing="4" LineSpacing="4">
+                    <ToggleButton IsChecked="{Binding ViewModel.Viewer.ShowField}" ToolTip.Tip="{Binding ViewModel.Viewer.FieldsTip}">
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <mi:MaterialIcon Kind="Waves" Width="16" Height="16"/>
+                            <TextBlock Text="Field" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </ToggleButton>
+                    <ComboBox ItemsSource="{Binding ViewModel.Viewer.FieldSolutions}" SelectedItem="{Binding ViewModel.Viewer.SelectedFieldSolution}"
+                              IsEnabled="{Binding ViewModel.Viewer.ShowField}" MinWidth="150" VerticalAlignment="Center"
+                              ToolTip.Tip="The saved frequency (driven), the mode (eigenmode) or the terminal (static)"/>
+                    <ComboBox ItemsSource="{Binding ViewModel.Viewer.FieldQuantities}" SelectedItem="{Binding ViewModel.Viewer.SelectedFieldQuantity}"
+                              IsEnabled="{Binding ViewModel.Viewer.ShowField}" MinWidth="170" VerticalAlignment="Center"
+                              ToolTip.Tip="What is drawn — only what the solver's files hold is offered">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate><TextBlock Text="{Binding Label}"/></DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                    <ToggleButton IsChecked="{Binding ViewModel.Viewer.FieldOnClipPlane}" IsEnabled="{Binding ViewModel.Viewer.ShowField}"
+                                  ToolTip.Tip="On the clip plane (turn the plane on with C)">
+                        <mi:MaterialIcon Kind="ContentCut" Width="16" Height="16"/>
+                    </ToggleButton>
+                    <ToggleButton IsChecked="{Binding ViewModel.Viewer.FieldOnSurfaces}" IsEnabled="{Binding ViewModel.Viewer.ShowField}"
+                                  ToolTip.Tip="On surfaces: the selected solid's faces, or the conductors for a surface quantity (J_s)">
+                        <mi:MaterialIcon Kind="CubeOutline" Width="16" Height="16"/>
+                    </ToggleButton>
+                    <ToggleButton IsChecked="{Binding ViewModel.Viewer.FieldDb}" IsEnabled="{Binding ViewModel.Viewer.ShowField}" Content="dB"
+                                  ToolTip.Tip="Decibels (20·log10 of the amplitude), 40 dB below the top of the range"/>
+                    <ToggleButton IsChecked="{Binding ViewModel.Viewer.ShowMesh}" IsEnabled="{Binding ViewModel.Viewer.MeshAvailable}"
+                                  ToolTip.Tip="{Binding ViewModel.Viewer.MeshTip}" ToolTip.ShowOnDisabled="True">
+                        <mi:MaterialIcon Kind="VectorTriangle" Width="16" Height="16"/>
+                    </ToggleButton>
+                </WrapPanel>
+                <SelectableTextBlock FontSize="11" TextWrapping="Wrap" Foreground="{DynamicResource CrfWarningBrush}"
+                                     Text="{Binding ViewModel.FieldsStaleText}"
+                                     IsVisible="{Binding ViewModel.FieldsStaleText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+            </StackPanel>
+        </Border>
+
         <!-- ── Status ──────────────────────────────────────────────────────────── -->
         <Border DockPanel.Dock="Bottom" Padding="6,2" BorderThickness="0,1,0,0"
                 BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
@@ -250,7 +311,7 @@
             </StackPanel>
         </Border>
 
-        <Grid ColumnDefinitions="Auto,*,Auto">
+        <Grid ColumnDefinitions="Auto,*,Auto,Auto">
             <!-- ── The object tree (R-em3d43-6a), fed from the document ─────────── -->
             <Border Grid.Column="0" Width="230" IsVisible="{Binding ViewModel.ShowTree}" BorderThickness="0,0,1,0"
                     BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
@@ -382,6 +443,35 @@
                         </ItemsControl>
                     </StackPanel>
                 </ScrollViewer>
+            </Border>
+
+            <!-- ── brief-em3d-49 R-em3d49-1: the Setups panel — the embedded setups, the active one, and the .cem panel on the
+                 selected one (the same view a .cem opens; the geometry row and the planar choices are hidden there). ── -->
+            <Border Grid.Column="3" Width="460" IsVisible="{Binding ViewModel.ShowSetups}" BorderThickness="1,0,0,0"
+                    BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Top" Spacing="4" Margin="8,6">
+                        <TextBlock Text="{Binding ViewModel.SetupsHeading}" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                        <ListBox ItemsSource="{Binding ViewModel.SetupItems}" SelectedItem="{Binding ViewModel.SelectedSetupItem}"
+                                 MaxHeight="140" IsVisible="{Binding ViewModel.HasSetups}">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate x:DataType="t3:C3dSetupItem">
+                                    <TextBlock Text="{Binding Label}" ToolTip.Tip="{Binding Refusal}"/>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                        <WrapPanel Orientation="Horizontal" ItemSpacing="4" LineSpacing="4">
+                            <Button Content="Add" FontSize="11" Command="{Binding ViewModel.AddSetupCommand}" ToolTip.Tip="A new Palace setup, embedded in this 3D view"/>
+                            <Button Content="Duplicate" FontSize="11" Command="{Binding ViewModel.DuplicateSetupCommand}"/>
+                            <Button Content="Rename…" FontSize="11" Click="OnRenameSetupClick"/>
+                            <Button Content="Remove" FontSize="11" Command="{Binding ViewModel.RemoveSetupCommand}"/>
+                            <Button Content="Make Active" FontSize="11" Command="{Binding ViewModel.MakeSelectedActiveCommand}"
+                                    ToolTip.Tip="The active setup is the one Simulate runs and whose air box is drawn"/>
+                            <Button Content="Run" FontSize="11" Command="{Binding ViewModel.SimulateActiveCommand}" ToolTip.Tip="Simulate the active setup"/>
+                        </WrapPanel>
+                    </StackPanel>
+                    <vl:EmSetupEditorView DataContext="{Binding ViewModel.SetupEditor}" IsVisible="{Binding $parent[Border].((t3:C3dEditorDocument)DataContext).ViewModel.SetupEditor, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+                </DockPanel>
             </Border>
         </Grid>
     </DockPanel>

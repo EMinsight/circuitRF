@@ -61,7 +61,14 @@ public sealed record EmAirBox(
 /// is in the terminal.</param>
 /// <param name="Source">Magnetostatic only: the port (its number, or <c>port/N</c>) whose sheet
 /// drives this terminal's current.</param>
-public sealed record EmTerminal3D(string Name, string Net, string? Source = null);
+/// <param name="Objects">brief-em3d-49 — the terminal's conductors BY NAME, an alternative to <paramref name="Net"/>:
+/// a drawn object carries no net, so a 3D view's terminal names its objects (<c>U1/…</c> allowed). Stating both is
+/// refused. Null or empty: the net decides.</param>
+public sealed record EmTerminal3D(string Name, string Net, string? Source = null, IReadOnlyList<string>? Objects = null)
+{
+    /// <summary>True when the terminal names its conductors rather than a net.</summary>
+    public bool ByObjects => Objects is { Count: > 0 };
+}
 
 /// <summary>
 /// brief-em3d-23 R-em3d23-2 — one port's 3D settings, as the <c>.cem</c> states them.

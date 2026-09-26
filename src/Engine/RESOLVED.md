@@ -2617,3 +2617,19 @@ line), so y cannot be unchanged by construction. Gate 10 asserts a via feature (
 antipad) among the smallest cell's features, which the result reports for EVERY interval tying the
 smallest size — the barrel and the port extents tie at 23.5 µm, and naming whichever rounding put
 first would name half of the answer.
+
+## brief-em3d-49 — face boundaries in the neutral problem (2026-09-26)
+
+`Em3dFaceBoundary(Object, Face, Kind, Material?)`, `Em3dProblem.FaceBoundaries` (default empty), `Em3dFaceGeometry`
+(a primitive's own face names and each named face's planar pieces), `Em3dFaceSheets.Apply`.
+
+- **The face is the PRIMITIVE's name** (a box's world xmin…zmax, an extrusion's bottom/top/side<k>, a polyhedron's
+  `Em3dFace.Name` — split pieces share it and all are taken). A cylinder's side is refused: no box query recovers a
+  curved face and no flat sheet covers it.
+- **Validate refuses**: a conductor's face, a sheet, Absorbing/PMC/Symmetry (both backends state those only on the
+  outer boundary), a missing or curved face, a Conductive face with no conducting material, a face stated twice.
+- **The FDTD side is one transform, applied inside both `FdtdGrid.Build` and `CsxcadWriter.Write`**: each piece becomes
+  a sheet coincident with its face at priority max(order)+1 — PEC as σ = ∞ (which the writer already states as
+  `Metal`), Conductive at three skin depths of its metal at the top frequency, because a CSXCAD conducting sheet takes
+  a thickness and a face boundary is the outside of a thick conductor. Every caller of the grid (viewer overlay,
+  `check`, `explain`) sees the same lines without knowing. No face boundary → the same instance, same bytes.

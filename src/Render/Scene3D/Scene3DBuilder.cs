@@ -48,6 +48,10 @@ namespace CircuitRF.Render.Scene3D;
 /// null: an element after the first is not tessellated — it draws the first's triangles under its own offset.</param>
 /// <param name="Context">brief-em3d-48 R-em3d48-4a — true for the parent drawn around a pushed-in child: dimmed, and
 /// never hovered or selected (the snap still reaches it).</param>
+/// <param name="EditorBoundaries">brief-em3d-49 R-em3d49-3a — the air box as the 3D editor draws its active setup's: an
+/// absorbing face untinted, a PEC face metal grey, a PMC face its own hue, a symmetry face hatched, and every face
+/// pickable last (<see cref="Scene3DObject.PickLast"/>). False — the read-only viewer — keeps brief 28's tints.</param>
+/// <param name="FaceTints">brief-em3d-49 R-em3d49-4d — the face boundaries, each drawn tinted just off its face.</param>
 public sealed record Scene3DBuildOptions(
     Func<string, IReadOnlyList<string>?>? FaceNames = null,
     Scene3DTessellationCache? Cache = null,
@@ -55,7 +59,12 @@ public sealed record Scene3DBuildOptions(
     (double X, double Y, double Z)? Origin = null,
     Func<string, Scene3DFeatureShare?>? FeatureShare = null,
     Func<string, Scene3DInstancing?>? Instancing = null,
-    Func<string, bool>? Context = null);
+    Func<string, bool>? Context = null,
+    bool EditorBoundaries = false,
+    IReadOnlyList<Scene3DFaceTint>? FaceTints = null);
+
+/// <summary>brief-em3d-49 R-em3d49-4d — one face boundary to draw: its name (<c>object/face</c>), its kind and its pieces.</summary>
+public sealed record Scene3DFaceTint(string Name, Em3dFaceBoundaryKind Kind, IReadOnlyList<Em3dFacePolygon> Pieces);
 
 /// <summary>
 /// brief-em3d-48 R-em3d48-3a — an object's place in a RUN: the objects one placement of one child document puts in the
@@ -264,6 +273,35 @@ public static class Scene3DBuilder
             b.Object(obj, new Em3dTriangleMesh(verts, tris), PortArrow(p).Select(q => (q, line)));
         }
 
+        // ── brief-em3d-49: face boundaries, tinted just off their faces (never z-fighting the solid) ─
+        if (options.FaceTints is { Count: > 0 } tints)
+        {
+            double lift = 1e-4 * Math.Max(box.Max.X - box.Min.X, Math.Max(box.Max.Y - box.Min.Y, box.Max.Z - box.Min.Z));
+            foreach (var t in tints)
+            {
+                var (r, g, bl) = t.Kind == Em3dFaceBoundaryKind.Pec ? ((byte)150, (byte)150, (byte)158) : ((byte)214, (byte)168, (byte)64);
+                uint fill = Scene3DVertex.Pack(r, g, bl, BoundaryTintAlpha), edge = Scene3DVertex.Pack(r, g, bl, 255);
+                var verts = new List<Point3>();
+                var tris = new List<Em3dTriangle>();
+                var lines = new List<(Point3, uint)>();
+                foreach (var piece in t.Pieces)
+                {
+                    var n = piece.Normal;
+                    Point3 Up(Point3 q) => new(q.X + n.X * lift, q.Y + n.Y * lift, q.Z + n.Z * lift);
+                    var mesh = Em3dTessellation.OfSheet(piece.AsSheet(t.Name, "", 0, 0));
+                    int at = verts.Count;
+                    verts.AddRange(mesh.Vertices.Select(Up));
+                    tris.AddRange(mesh.Triangles.Select(tr => new Em3dTriangle(tr.A + at, tr.B + at, tr.C + at, t.Name)));
+                    foreach (var ring in piece.Holes.Prepend(piece.Outer))
+                        for (int k = 0; k < ring.Count; k++) { lines.Add((Up(ring[k]), edge)); lines.Add((Up(ring[(k + 1) % ring.Count]), edge)); }
+                }
+                b.Object(new Scene3DObject
+                {
+                    Id = 0, Name = FaceTintPrefix + t.Name, Kind = Scene3DKind.Boundary, Rgba = fill, Translucent = true,
+                }, new Em3dTriangleMesh(verts, tris), lines);
+            }
+        }
+
         // ── the air box: its six faces (hidden until asked for) and its twelve edges ─────────
         if (options.DrawAirBox)
         {
@@ -276,11 +314,19 @@ public static class Scene3DBuilder
                     Em3dBoundaryKind.Pmc       => ((byte)235, (byte)140, (byte)50),
                     _                          => ((byte)160, (byte)80, (byte)210),
                 };
+                // brief-em3d-49 R-em3d49-3a — the editor's box: an absorbing face is untinted (it is what the space does
+                // anyway), a symmetry face hatched, and every face picked last.
+                bool editor = options.EditorBoundaries;
+                byte alpha = editor && kind == Em3dBoundaryKind.Absorbing ? (byte)0 : FaceAlpha;
+                uint hatchInk = Scene3DVertex.Pack(r, g, bl, 255);
                 b.Object(new Scene3DObject
                 {
                     Id = 0, Name = Em3dAirBox.FaceName(face), Kind = Scene3DKind.Boundary, Boundary = kind,
-                    Rgba = Scene3DVertex.Pack(r, g, bl, FaceAlpha), Translucent = true, InitiallyVisible = false,
-                }, new Em3dTriangleMesh(corners, [new Em3dTriangle(0, 1, 2, ""), new Em3dTriangle(0, 2, 3, "")]));
+                    Rgba = Scene3DVertex.Pack(r, g, bl, alpha), Translucent = true, InitiallyVisible = false,
+                    PickLast = editor, FaceNames = editor ? [face] : [],
+                }, new Em3dTriangleMesh(corners, [new Em3dTriangle(0, 1, 2, "", editor ? 0 : -1), new Em3dTriangle(0, 2, 3, "", editor ? 0 : -1)]),
+                   editor && kind == Em3dBoundaryKind.Symmetry ? Hatch(corners).Select(q => (q, hatchInk)) : null,
+                   faces: editor);
             }
             uint edge = Scene3DVertex.Pack(ink.R, ink.G, ink.B, 255);
             b.Object(new Scene3DObject { Id = 0, Name = "airbox", Kind = Scene3DKind.Boundary, Rgba = edge },
@@ -459,6 +505,30 @@ public static class Scene3DBuilder
         yield return ("zmax", b.Faces.ZMax, [new(lo.X, lo.Y, hi.Z), new(hi.X, lo.Y, hi.Z), new(hi.X, hi.Y, hi.Z), new(lo.X, hi.Y, hi.Z)]);
     }
 
+    /// <summary>brief-em3d-49 — the name prefix of a face boundary's tint object; the air-box toggle does not hide these.</summary>
+    public const string FaceTintPrefix = "boundary:";
+
+    /// <summary>Opacity of a face boundary's tint.</summary>
+    public const byte BoundaryTintAlpha = 110;
+
+    /// <summary>Hatch lines across a rectangle (corners in order): a symmetry face, which states neither wall.</summary>
+    private static List<Point3> Hatch(Point3[] c)
+    {
+        var lines = new List<Point3>();
+        const int n = 12;
+        for (int k = 1; k < 2 * n; k++)
+        {
+            double t = (double)k / n;
+            // Diagonals of slope 1 in the face's own (s, u) frame: from edge 0→1 or 1→2 to edge 0→3 or 3→2.
+            Point3 On(Point3 a, Point3 b, double f) => new(a.X + (b.X - a.X) * f, a.Y + (b.Y - a.Y) * f, a.Z + (b.Z - a.Z) * f);
+            var p = t <= 1 ? On(c[0], c[1], t) : On(c[1], c[2], t - 1);
+            var q = t <= 1 ? On(c[0], c[3], t) : On(c[3], c[2], t - 1);
+            lines.Add(p);
+            lines.Add(q);
+        }
+        return lines;
+    }
+
     private static List<Point3> BoxEdges(Em3dAirBox b)
     {
         var (lo, hi) = (b.Min, b.Max);
@@ -514,7 +584,7 @@ public static class Scene3DBuilder
                 Id = id, Name = o.Name, Kind = o.Kind, Material = o.Material, MaterialValues = o.MaterialValues,
                 MaterialSlot = o.MaterialSlot, Rgba = o.Rgba, Translucent = o.Translucent,
                 InitiallyVisible = o.InitiallyVisible, PortNumber = o.PortNumber, Boundary = o.Boundary,
-                FaceNames = o.FaceNames, CapCentres = o.CapCentres, Context = o.Context,
+                FaceNames = o.FaceNames, CapCentres = o.CapCentres, Context = o.Context, PickLast = o.PickLast,
             };
             var min = new Vector3(float.MaxValue);
             var max = new Vector3(float.MinValue);

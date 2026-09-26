@@ -35,8 +35,11 @@ namespace CircuitRF.Ui.ThreeD;
 /// <summary>The UI thread's snapshot for one scene build: the document as its file would say it.</summary>
 /// <para>brief-em3d-48 — pushed into a child, the TOP document's text and path, the pushed element's path in it and the
 /// element's transform (the child's metres to the top's): the dimmed context.</para>
+/// <para>brief-em3d-49 — <paramref name="SetupJson"/> is the active setup's full .cem spelling: its air box is drawn and the
+/// ports are resolved against it.</para>
 public sealed record C3dSceneInputs(string DocumentText, string Path, string? WorkspaceCws, ColorTheme Theme, ColorVariant Variant,
-                                    (string Text, string Path, string Exclude, C3dTransform ToTop)? Context = null);
+                                    (string Text, string Path, string Exclude, C3dTransform ToTop)? Context = null,
+                                    string? SetupJson = null);
 
 public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEditHost, IDisposable
 {
@@ -106,7 +109,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         _elaborator = new C3dElaborator(technologies);
         _contextElaborator = new C3dElaborator(technologies);
         _savedStamp = Stamp(FilePath);
-        Viewer = new Viewer3DViewModel(FilePath, Path.GetFileName(FilePath), Snapshot, Build, backend, () => null, post)
+        Viewer = new Viewer3DViewModel(FilePath, Path.GetFileName(FilePath), Snapshot, Build, backend, () => ResultsRootProvider?.Invoke(), post)
         {
             EditHost = this,
         };
@@ -137,7 +140,8 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     // ── the scene: elaboration → problem → scene ─────────────────────────────────────────────
 
     private object Snapshot()
-        => new C3dSceneInputs(DocumentText(), FilePath, _workspaceCws(), ThemeService.Active, ThemeService.CurrentVariant, ContextSnapshot());
+        => new C3dSceneInputs(DocumentText(), FilePath, _workspaceCws(), ThemeService.Active, ThemeService.CurrentVariant, ContextSnapshot(),
+                              SceneSetupJson());
 
     /// <summary>
     /// The document as its file would say it — with, while a face or vertex gesture runs, the gesture's edited object
@@ -177,7 +181,10 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
                 _origin = ((extent.X0 + extent.X1) / 2, (extent.Y0 + extent.Y1) / 2, (extent.Z0 + extent.Z1) / 2);
             var a = Em3dBoundaryKind.Absorbing;
             var faces = new Em3dFaces(a, a, a, a, a, a);
-            var box = new Em3dAirBox(new Point3(extent.X0, extent.Y0, extent.Z0), new Point3(extent.X1, extent.Y1, extent.Z1), faces);
+            // brief-em3d-49 — the active setup's box, ports and face boundaries, resolved as a run resolves them.
+            var records = ResolveRecords(doc, e, inputs.SetupJson);
+            _records[generation] = records;
+            var box = records.Box ?? new Em3dAirBox(new Point3(extent.X0, extent.Y0, extent.Z0), new Point3(extent.X1, extent.Y1, extent.Z1), faces);
             IReadOnlyList<Em3dSolid> solids = e.Solids;
             IReadOnlyList<Em3dSheet> sheets = e.Sheets;
             IReadOnlyList<Em3dMaterial> materials = e.Materials;
@@ -190,17 +197,20 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
                 sheets = [.. e.Sheets, .. csh];
                 materials = [.. e.Materials, .. cm.Where(m => !e.Materials.Any(x => x.Name == m.Name))];
             }
-            var problem = new Em3dProblem(solids, sheets, materials, [], box,
+            var problem = new Em3dProblem(solids, sheets, materials, [.. records.Ports.Select(r => r.Resolved).OfType<Em3dPort>()], box,
                                           new Em3dFrequency(1e9, 1e9, 1, Em3dSweepKind.Linear), EmSetup.DefaultOperatingTempC);
             var notes = new List<string>(e.Refusals);
             notes.AddRange(e.Warnings);
             notes.AddRange(e.Notes);
             return Scene3DBuilder.Build(problem, generation, e.Origins, e.Technology, inputs.Theme, inputs.Variant, notes,
                 new Scene3DBuildOptions(name => e.Provenance.TryGetValue(name, out var p) ? p.FaceNames : null,
-                                        _tessellations, DrawAirBox: false, Origin: _origin,
+                                        _tessellations, DrawAirBox: records.Box is not null, Origin: _origin,
                                         FeatureShare: name => e.Provenance.TryGetValue(name, out var p) ? ShareOf(p) : null,
                                         Instancing: InstancingFor(doc, e),
-                                        Context: inputs.Context is null ? null : IsContext));
+                                        Context: inputs.Context is null ? null : IsContext,
+                                        EditorBoundaries: true,
+                                        FaceTints: [.. records.Boundaries.Where(b => b.Refusal is null)
+                                                           .Select(b => new Scene3DFaceTint(b.Boundary.Object + "/" + b.Boundary.Face, b.Boundary.Kind, b.Pieces))]));
         }
     }
 
@@ -221,6 +231,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     {
         long gen = Viewer.Scene.Generation;
         if (_elaborations.TryGetValue(gen, out var e)) Elaboration = e;
+        AdoptRecords(gen);
         ApplySnapGrid();
         ApplySnapExclusion();
         foreach (long old in _elaborations.Keys.Where(k => k <= gen).ToList()) _elaborations.TryRemove(old, out _);
@@ -305,6 +316,8 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     public bool DeleteSelection()
     {
         if (Viewer.SelectMode != Scene3DSelectMode.Object) return false;
+        // brief-em3d-49 — a selected port is a document record: deleted as one.
+        if (SelectedPorts() is { Count: > 0 } ports) { DeletePorts(ports); return true; }
         var objects = Viewer.SelectedObjects();
         var indices = objects.Select(DocumentIndex).Where(i => i >= 0).Distinct().OrderBy(i => i).ToList();
         if (indices.Count == 0)
@@ -385,6 +398,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         RebuildTree();
         Properties.Reload();
         OnPropertyChanged(nameof(IsDirty));
+        RefreshFieldsStale();
     }
 
     /// <summary>
@@ -682,6 +696,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
             var instances = Document.Instances.Select((inst, i) => new C3dTreeItem(this, inst.Name, "Instance", inst.CellRef, -1, i, true)).ToList();
             if (instances.Count > 0) Tree.Add(new C3dTreeGroup("Instances", instances));
             RebuildInstanceChildren();
+            RebuildRecordsTree();
             SelectedTreeItem = keep is null ? null : AllTreeItems().FirstOrDefault(t => t.Name == keep);
         }
         finally { _syncingTree = false; }

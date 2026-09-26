@@ -284,6 +284,43 @@ model circuitRF built, and after a run it also shows what the solver made.
   Polyhedron* (Object mode; for a cylinder, choose how many flat sides) makes every vertex editable. While a
   face or vertex is dragged only that object is redrawn, and the document changes once, as one undo step,
   when you click.
+- **Setups** (the 3D editor, the tune button or *3D ▸ Setups…*). A 3D view carries its own EM setups, in the
+  same form a `.cem` has, and the panel beside the view lists them: *Add*, *Duplicate*, *Rename…*, *Remove*,
+  and *Make Active*. The **active** setup (●) is the one *Simulate ▸ Run* runs and whose air box is drawn;
+  which one is active is remembered per user, not saved in the `.c3d`. Selecting a setup shows the same panel
+  a `.cem` opens, less the layout row (the 3D view is the geometry) and the planar analyses (a 3D view is
+  solved by Palace or openEMS). Every change in it is an edit of the 3D view: Undo takes it back and Save
+  writes it. A static setup's terminals name their conductors by **object** (`top`, or `U1/pad3` inside a
+  placed cell), because a drawn object has no net. *Show 3D* on a `.cem` whose geometry is a `.c3d` opens this
+  editor, with that `.cem` listed read-only and active, so its ports and boundaries can be seen.
+- **Ports** (the 3D editor, **P** in the Shift+A popup, or *3D ▸ Draw ▸ Port*). A port is drawn like a sheet —
+  two corners on the drawing plane — or made from a face: right-click a flat, rectangular face and choose
+  *Make Port ▸ Lumped* or *Wave*. It takes the next free number and the last port's Z0. **Which way round it
+  is comes from what it touches**: each edge of the rectangle is tested against every conductor, and exactly
+  one pair of opposite edges must each touch exactly one conductor. The end that is ground — the setup's
+  Ground net, a placed layout's ground plane, or a PEC face of the air box — is **−**; otherwise the larger
+  conductor is. The port is drawn with its number and an arrow from − to +, and while it is being drawn the
+  arrow, or the reason it cannot be one, follows the cursor. Right-click a port for *Flip*, its kind, *Z0…*
+  and *Delete*. A wrong polarity turns every transmission term by 180°, so check the arrow before a run.
+  A **wave** port must lie on a face of the active setup's air box. Every setup uses every port, and a
+  placed cell's own ports are never used: only the parent says where a signal enters.
+- **The air box** (the box button). The active setup's air box, its faces tinted by boundary: **PEC** grey,
+  **PMC** orange, **symmetry** hatched, and **absorbing** clear. It starts shown when a face is not
+  absorbing. In Face mode its faces can be picked, but only where no solid is under the cursor (**B** reaches
+  one behind a solid). Right-click one for *Boundary ▸ Absorbing / PEC / PMC / Symmetry* and *Padding…*:
+  these change the **setup**, not the geometry, and the status line says which setup they wrote.
+- **Boundaries on faces** (the 3D editor, Face mode). Right-click a face of a dielectric or air object for
+  *Boundary ▸ Perfect Conductor*, *Conductive Surface* (choose the metal) or *None*. The face is drawn tinted
+  and listed in the tree under its object. A boundary stays with its face through every edit, and a face
+  that is split into pieces hands it to each. A conductor's face takes none — it is already metal — and
+  absorbing, PMC and symmetry boundaries belong to the air box, because both solvers can state them only on
+  the outside of the problem. Palace finds a boundary's surfaces by the face's extent and counts them, so a
+  neighbour's face lying in the same plane and overlapping it is refused rather than guessed.
+- **Simulate** (*Simulate ▸ Run* with the 3D view active, or the play button). Runs the active setup with the
+  same progress, Cancel and messages as a `.cem`, and opens its results in the Data Display. Afterwards the
+  **Field** bar above the view shows the run's fields, drawn on the geometry the run solved; if the 3D view has
+  changed since, a line says so (`Fields are from the run at 14:02; the model has changed since`) and they are
+  still shown.
 - **Measure** (**M**, the ruler button, *3D ▸ Measure*; in the editor and in this view). Click two points,
   snapped as drawing is; after the first a line follows the cursor. A card in the corner of the view gives
   both points' x, y and z, their differences (the second minus the first) and the distance, in the

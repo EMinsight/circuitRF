@@ -235,6 +235,7 @@
                          shape as the row above, same reason. MaxWidth stays as the upper cap it
                          always was; the star column is what supplies the lower one. -->
                     <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="6" Margin="0,3,0,0"
+                          IsVisible="{Binding ViewModel.ShowGeometryReference}"
                           HorizontalAlignment="Left">
                         <TextBlock Grid.Column="0"
                                    Text="Layout:" Classes="colhdr" VerticalAlignment="Center"/>
@@ -273,6 +274,7 @@
                          Layout row above for the same reason. Selectable, like every reported string
                          here, so the coordinates can be copied. -->
                     <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="6" Margin="0,3,0,0"
+                          IsVisible="{Binding ViewModel.ShowGeometryReference}"
                           HorizontalAlignment="Left">
                         <TextBlock Grid.Column="0"
                                    Text="Solve region:" Classes="colhdr" VerticalAlignment="Center"/>
@@ -388,7 +390,7 @@
 
                 <!-- brief-em3d-28 R-em3d28-5: what is about to be solved, in 3D, before any solve. -->
                 <Button Name="Show3DButton" Margin="4,0,0,0"
-                        Command="{Binding ViewModel.Show3DCommand}"
+                        Command="{Binding ViewModel.Show3DCommand}" IsVisible="{Binding ViewModel.ShowGeometryReference}"
                         ToolTip.Tip="Open this setup's 3D view: the layout's solids, ports and air box in 3D, and after a 3D run the mesh or grid.">
                     <StackPanel Orientation="Horizontal" Spacing="4">
                         <mi:MaterialIcon Kind="CubeOutline" Width="14" Height="14"/>
@@ -396,17 +398,18 @@
                     </StackPanel>
                 </Button>
 
-                <Button Margin="8,0,0,0" Command="{Binding ViewModel.UndoCommand}"
+                <!-- brief-em3d-49 — embedded in a .c3d, the 3D editor's own Undo, Save and Show 3D are the ones. -->
+                <Button Margin="8,0,0,0" Command="{Binding ViewModel.UndoCommand}" IsVisible="{Binding ViewModel.ShowGeometryReference}"
                         ToolTip.Tip="Undo">
                     <mi:MaterialIcon Kind="UndoVariant" Width="14" Height="14"/>
                 </Button>
-                <Button Margin="2,0,0,0" Command="{Binding ViewModel.RedoCommand}"
+                <Button Margin="2,0,0,0" Command="{Binding ViewModel.RedoCommand}" IsVisible="{Binding ViewModel.ShowGeometryReference}"
                         ToolTip.Tip="Redo">
                     <mi:MaterialIcon Kind="RedoVariant" Width="14" Height="14"/>
                 </Button>
-                <Button Margin="8,0,0,0" Command="{Binding ViewModel.SaveCommand}"
+                <Button Margin="8,0,0,0" Command="{Binding ViewModel.SaveCommand}" IsVisible="{Binding ViewModel.ShowGeometryReference}"
                         Content="Save"/>
-                <Button Name="SaveAsButton" Margin="4,0,0,0" Content="Save As…"
+                <Button Name="SaveAsButton" Margin="4,0,0,0" Content="Save As…" IsVisible="{Binding ViewModel.ShowGeometryReference}"
                         ToolTip.Tip="Write this setup to a different .cem. The editor then follows the new file — the original is left exactly as it was on disk."/>
 
                 <!-- brief-user-docs-content §7.11: the documentation for this panel, one click away.
@@ -437,7 +440,8 @@
         <!-- Named so the code-behind can restore its offset across a window activation — see
              EmSetupEditorView.axaml.cs's own note on why focus restoration scrolls it to the top. -->
         <ScrollViewer Name="BodyScroll">
-            <StackPanel Margin="10,6,10,14" Spacing="2">
+            <!-- brief-em3d-49 — a .cem pointing at a .c3d, shown in the 3D editor's Setups panel, is read-only there. -->
+            <StackPanel Margin="10,6,10,14" Spacing="2" IsEnabled="{Binding ViewModel.IsEditable}">
 
                 <!-- ── L8e: which analysis, and why (D2, R-res-1) ─────────────────
                      Automatic first, because D2's rule is conservative and right for nearly every
@@ -472,7 +476,7 @@
                     <Grid ColumnDefinitions="*,*" ColumnSpacing="16">
                         <StackPanel Grid.Column="0" Spacing="2">
                             <ComboBox Classes="cell" MaxWidth="220" HorizontalAlignment="Left"
-                                      ItemsSource="{x:Static em:EmSetupEditorViewModel.Solver3DChoices}"
+                                      ItemsSource="{Binding ViewModel.Solver3DChoiceList}"
                                       SelectedItem="{Binding ViewModel.Solver3DChoice}"/>
                             <TextBlock Classes="colhdr" TextWrapping="Wrap" Margin="0,3,0,0"
                                        Text="{Binding ViewModel.Solver3DDescription}"/>
@@ -513,7 +517,7 @@
                     <StackPanel IsVisible="{Binding ViewModel.IsStaticSetup}" Spacing="2" Margin="0,6,0,0">
                         <Grid ColumnDefinitions="110,110,70,Auto" ColumnSpacing="6">
                             <TextBlock Grid.Column="0" Classes="colhdr" Text="Terminal"/>
-                            <TextBlock Grid.Column="1" Classes="colhdr" Text="Net"/>
+                            <TextBlock Grid.Column="1" Classes="colhdr" Text="{Binding ViewModel.TerminalConductorHeader}"/>
                             <TextBlock Grid.Column="2" Classes="colhdr" Text="Source port"
                                        IsVisible="{Binding ViewModel.IsMagnetostaticSetup}"/>
                         </Grid>

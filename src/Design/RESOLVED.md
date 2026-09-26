@@ -13573,3 +13573,40 @@ child's lowered solids. Gates 5–8 in `tests/Ui.Tests/ThreeD/HierarchyGateTests
   generated port that is one axis-aligned rectangle, in the new view's frame (the layout's stack bottom at z = 0);
   a coaxial annulus is left out and listed. Nothing reads `Ports` until brief 49, so this is unexercised by any
   solve — the Package example's setups have no ports.
+
+## brief-em3d-49 — simulate from the document, headless (2026-09-26)
+
+Built: typed `C3dPort`/`C3dFaceBoundary` records in the `.c3d` (were carried-through JSON), `C3dPorts` (polarity by
+contact, wave ports, `TryParseZ0`), `C3dPortContext`, `Geometry3`, `C3dProblemAssembly` gaining ports, face boundaries,
+`GroundSet`, `PortContext`, `AirBox` and `FaceBoundaryPreview`, `C3dPortReports` (what `check`/`explain` print),
+`EmTerminal3D.Objects`, the `.cwsuser`'s `C3dActiveSetups`. Gates: `tests/Ui.Tests/ThreeD/SimulateGateTests.cs`.
+
+- **"Touching" had to exclude corner contact, or no port is valid.** A vertical port under a trace's end has its left
+  and right edges ending ON the trace (top corner) and the ground (bottom corner), so each side edge "touches" two
+  conductors and the refusal fires on the ordinary case. Each edge is measured with its ends pulled in by 2 DBU, at a
+  1 DBU tolerance: a conductor meeting an edge only at a corner is 2 DBU away. A cylinder is measured analytically —
+  its 32 facets stand ~0.5 % of the radius inside the true surface, hundreds of DBU on a real via.
+- **Stated Positive/Negative still needs an axis.** With both stated, the all-conductor query is not run
+  (`C3dPortContext.InferenceRuns` stays 0); only the two named objects are measured against the four edges to pick
+  the opposite pair they sit on. Stating one end is refused.
+- **The per-problem port rule is the generator's, not "every port".** An electrostatic solve gets no ports; a
+  magnetostatic one only those its terminals are driven through (by `port/N`). Otherwise a port no solve reads could
+  refuse the run — Package C (electrostatic) has none on the .cem route, and gate 2 first failed on exactly that.
+  The neutral port is named `port/<n>` as the generator names it, so a terminal's `Source` resolves identically.
+- **Brief 48's `TranslatePorts` returned early unless a setup stated `Ports3D`**, which only a wave port does — so New
+  3D View from Layout carried no ports for any all-lumped setup, including every shipped example. Removed; translated
+  ports are named `P<n>`.
+- **Gate 2's one named difference is brief 42's:** the .cem route's return is the PEC floor (`airbox/zmin`); in a
+  .c3d the ground plane is a bounded conductor inside the instance (`U1/Floor`), which contact infers as the
+  negative end because it is in the ground set. Rectangles, positives, directions and Z0 are equal.
+- **Face names go document → primitive through the provenance map**, never by name equality: a box turned a quarter
+  turn keeps `Em3dBox`, and its document `xmin` is its world `ymin`. `Em3dFaceBoundary.Face` is the PRIMITIVE's name.
+- **A Conductive face's metal may be used by no object**, so it is not in the elaboration's materials; it is resolved
+  in the document's technology and added (reused when an equal-valued entry exists).
+- **Wave-port voltage path, generalised from brief 23:** each conductor's footprint on the port's plane inside the
+  rectangle (vertices on the plane and edges crossing it); the path crosses the axis on which the two footprints are
+  apart, at the positive's centre. A PEC air-box face adjacent to the port's own face counts as a footprint line, and
+  is dropped when two drawn conductors are found.
+- **Gate 3's cavity is walled by face boundaries on an Air block filling a zero-padding box**: the boundary pieces lie
+  ON the box faces, are claimed before them, and the box faces count as covered (expected 0). TE101 came out 0.0067 %
+  from the closed form on 520 tetrahedra; the plates-by-object gate matched ε₀εᵣA/d on 915. Both under 2 s — routine.

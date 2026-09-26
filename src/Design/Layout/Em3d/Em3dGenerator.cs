@@ -594,7 +594,20 @@ public static class Em3dGenerator
         foreach (var t in setup.Terminals3D)
         {
             var groundSet = ground;
-            var objects = OnNet(t.Net).Where(o => !groundSet.Contains(o)).ToList();
+            List<string> objects;
+            // brief-em3d-49 — a terminal may name its conductors instead of a net (a drawn object carries none).
+            if (t.ByObjects)
+            {
+                if (t.Net is { Length: > 0 })
+                    return $"Terminal '{t.Name}' states both a net ('{t.Net}') and objects; a terminal is one or the other.";
+                if (t.Objects!.FirstOrDefault(o => !conductors.Contains(o)) is { } missing)
+                    return $"Terminal '{t.Name}' names '{missing}', which is not a conductor of the 3D problem" +
+                           (solids.Any(s => s.Name == missing) ? " (it is a dielectric or air solid)" : "") + ".";
+                if (t.Objects!.FirstOrDefault(groundSet.Contains) is { } grounded)
+                    return $"Terminal '{t.Name}' names '{grounded}', which is the ground; a conductor is at one potential.";
+                objects = [.. t.Objects!.Distinct(StringComparer.Ordinal)];
+            }
+            else objects = OnNet(t.Net).Where(o => !groundSet.Contains(o)).ToList();
             if (objects.Count == 0)
                 return $"Terminal '{t.Name}' names net '{t.Net}', and no conductor in the 3D problem is on it" +
                        (OnNet(t.Net).Count > 0 ? " that is not also the ground" : "") +

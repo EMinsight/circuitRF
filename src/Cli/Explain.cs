@@ -508,9 +508,31 @@ internal static class Explain
         catch (Exception ex) { return JsonRun.Fail(CliDiagnostics.ExplainUnreadable(path, ex.Message)); }
         walks.Add(new ResolutionStepJson("technology", full, src.Elaboration?.TechnologyPath ?? src.Resolution.TechnologyPath,
             "the 3D view's own TechRef, else its ancestor workspace's default — resolved from the view's own path"));
-        if (src.Elaboration is { } e) ThreeDWalk(e, walks);
+        if (src.Elaboration is { } e)
+        {
+            ThreeDWalk(e, walks);
+            PortWalk(C3dPersistence.LoadFromFile(full), e, walks);
+        }
         em3d = ExplainEm3d.Build(src);
         return src.Refusal is null ? 0 : 1;
+    }
+
+    /// <summary>
+    /// brief-em3d-49 R-em3d49-5c — per port, the conductors each edge touches and why each end was chosen: the
+    /// resolution a run makes (C3dPortReports), walked rather than restated.
+    /// </summary>
+    private static void PortWalk(C3dDocument doc, C3dElaboration e, List<ResolutionStepJson> walks)
+    {
+        foreach (var report in C3dPortReports.For(doc, e))
+        {
+            var r = report.Result;
+            string touches = r.Contacts.Count == 0 ? "not measured: both ends are stated"
+                : string.Join("; ", r.Contacts.Select(c => $"{c.Edge}: {(c.Objects.Count == 0 ? "nothing" : string.Join(", ", c.Objects.Select(o => $"'{o}'")))}"));
+            walks.Add(new ResolutionStepJson($"port {r.Label}" + (report.Setup is { } s ? $" (setup '{s}')" : ""), null,
+                $"touches — {touches}. " + (r.Refusal ?? C3dPortReports.Describe(r)),
+                "each edge's conductors to within 1 DBU; one opposite pair, one conductor each; the negative end is the " +
+                "ground set's, else the larger surface; Flip swaps; Positive and Negative stated override it"));
+        }
     }
 
     private static void ThreeDWalk(C3dElaboration e, List<ResolutionStepJson> walks)

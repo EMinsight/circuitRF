@@ -253,7 +253,15 @@ public sealed partial class Viewer3DViewModel
         var visible = View.Visible;
         var clip = View.Clip;
         var hit = HitCycle.Step(direction, View.CursorX, View.CursorY, mode, scene.Generation, current,
-                                () => RayHits.Collect(scene, q, mode, visible, clip));
+                                () =>
+                                {
+                                    var hits = RayHits.Collect(scene, q, mode, visible, clip);
+                                    // brief-em3d-49 — the air-box faces after every solid face: lowest priority.
+                                    if (mode == Scene3DSelectMode.Face)
+                                        foreach (var (id, depth, point) in Scene3DPicking.PickLastHits(scene, q.Camera, q.Px, q.Py, q.Width, q.Height, visible))
+                                            hits.Add(new Scene3DHit(Scene3DItem.OfFace(id, 0), depth, point));
+                                    return hits;
+                                });
         if (hit is not { } h)
         {
             CycleText = "Nothing under the cursor to step through.";
@@ -303,6 +311,12 @@ public sealed partial class Viewer3DViewModel
         // brief-em3d-48 R-em3d48-4a — the dimmed parent around a pushed-in child is under the cursor for the snap and for
         // a drawing-plane pick, never for hover or selection.
         bool selectable = Scene.Object(id)?.Selectable == true;
+        // brief-em3d-49 R-em3d49-3b — in Face mode, where nothing pickable is under the cursor, the nearest air-box face
+        // the editor offers (picked last: a solid face in front always wins).
+        if (id == 0 && SelectMode == Scene3DSelectMode.Face && PickLastUnderCursor() is { } last)
+        {
+            (id, f, selectable) = (last, 0, true);
+        }
         if (id != 0 && selectable)
             item = SelectMode switch
             {
@@ -326,6 +340,14 @@ public sealed partial class Viewer3DViewModel
         // brief-em3d-46 — an operation's preview and a measurement's rubber band follow the cursor from here.
         MeasureFollow();
         CursorResolved?.Invoke();
+    }
+
+    /// <summary>brief-em3d-49 — the nearest pick-last object (an air-box face) under the cursor, or null.</summary>
+    private uint? PickLastUnderCursor()
+    {
+        if (View.CursorX < 0 || !Scene.Objects.Any(o => o.PickLast)) return null;
+        var hits = Scene3DPicking.PickLastHits(Scene, View.Camera, View.CursorX, View.CursorY, _viewW, _viewH, View.Visible);
+        return hits.Count > 0 ? hits[0].Id : null;
     }
 
     // ── keys (owner decision D3) ────────────────────────────────────────────────────────────

@@ -17,7 +17,6 @@
 // edges are drawn in the overlay's red, and the status bar says why, naming the faces.
 
 using System.Globalization;
-using System.Text.Json;
 using Avalonia.Input;
 using CircuitRF.Design.Layout;
 using CircuitRF.Design.ThreeD;
@@ -304,10 +303,10 @@ public sealed partial class C3dEditorViewModel : IC3dFaceHost
     private (string Before, string After)? BoundariesFollowing(string objectName, IReadOnlyDictionary<string, IReadOnlyList<string>> folds)
     {
         if (C3dFaceCommands.FollowFolds(Document.FaceBoundaries, objectName, folds) is not { } followed) return null;
-        return (JsonSerializer.Serialize(Document.FaceBoundaries), JsonSerializer.Serialize(followed));
+        return (C3dPersistence.SerializeFaceBoundaries(Document.FaceBoundaries), C3dPersistence.SerializeFaceBoundaries(followed));
     }
 
-    private void SetBoundaries(string json) => Document.FaceBoundaries = JsonSerializer.Deserialize<List<JsonElement>>(json) ?? [];
+    private void SetBoundaries(string json) => Document.FaceBoundaries = C3dPersistence.DeserializeFaceBoundaries(json);
 
     /// <summary>After a face edit, the edited face is selected again BY NAME: a primitive that became a polyhedron numbers
     /// its faces differently, and a scene carries a selection by face index.</summary>

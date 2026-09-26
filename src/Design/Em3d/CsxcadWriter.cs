@@ -143,6 +143,13 @@ public static class CsxcadWriter
                           "lumped port cannot state it.");
         }
         if (run.Problems() is { Count: > 0 } bad) return No(string.Join(" ", bad));
+        // brief-em3d-49 R-em3d49-4c — a face boundary is a zero-thickness sheet of PEC or of its metal, coincident with
+        // the face, at a priority above every solid; the grid (FdtdGrid.Build) was given the same sheets.
+        foreach (var (b, pieces) in problem.FaceBoundaryPieces())
+            if (pieces.Any(pc => pc.NormalAxis is null))
+                return No($"The boundary on face '{b.Face}' of '{b.Object}' lies in a plane no axis is normal to, and openEMS " +
+                          "states a surface as a polygon normal to x, y or z on its grid. Solve it with Palace.");
+        problem = Em3dFaceSheets.Apply(problem);
         // brief-em3d-42 R-em3d42-1c — CSXCAD's sheet primitive is a polygon normal to one axis.
         if (problem.Sheets.FirstOrDefault(sh => sh.Frame is { NormalAxis: null }) is { } oblique)
             return No($"Sheet '{oblique.Name}' lies in a plane no axis is normal to, and openEMS's sheet is a polygon " +

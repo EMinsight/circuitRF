@@ -24,6 +24,10 @@ public sealed partial class Em3dTerminalRow : ObservableObject
     [ObservableProperty] private string _name = "";
     [ObservableProperty] private string _net = "";
     [ObservableProperty] private string _source = "";
+
+    /// <summary>brief-em3d-49 — the Net column names the terminal's conductors by object (comma-separated), which is how
+    /// a 3D view's terminal is written; false for a terminal stated by net.</summary>
+    public bool ByObjects { get; init; }
 }
 
 public sealed partial class EmSetupEditorViewModel
@@ -46,6 +50,9 @@ public sealed partial class EmSetupEditorViewModel
 
     /// <summary>True when the terminal table is shown: a static problem on a 3D setup.</summary>
     public bool IsStaticSetup => Is3DSetup && Problem3DChoice.Value is Em3dProblemType.Electrostatic or Em3dProblemType.Magnetostatic;
+
+    /// <summary>brief-em3d-49 — the table's conductor column: a 3D view's terminals name objects (a drawn object has no net).</summary>
+    public string TerminalConductorHeader => IsEmbedded ? "Objects" : "Net";
 
     /// <summary>True when the table's Source column is read (magnetostatic only).</summary>
     public bool IsMagnetostaticSetup => Is3DSetup && Problem3DChoice.Value == Em3dProblemType.Magnetostatic;
@@ -90,7 +97,11 @@ public sealed partial class EmSetupEditorViewModel
         Problem3DChoice = Problem3DChoices.First(c => c.Value == Working.Problem3D);
         TerminalRows.Clear();
         foreach (var t in Working.Terminals3D)
-            TerminalRows.Add(new Em3dTerminalRow { Name = t.Name, Net = t.Net, Source = t.Source ?? "" });
+            TerminalRows.Add(new Em3dTerminalRow
+            {
+                Name = t.Name, Net = t.ByObjects ? string.Join(", ", t.Objects!) : t.Net, Source = t.Source ?? "",
+                ByObjects = t.ByObjects || (IsEmbedded && t.Net.Length == 0),
+            });
         Ground3DText = Working.Ground3D;
         SyncEigenFields();
         RaiseStaticVisibility();
@@ -103,7 +114,10 @@ public sealed partial class EmSetupEditorViewModel
         var before = SnapshotJson();
         Working.Terminals3D = [.. TerminalRows
             .Where(r => r.Name.Trim().Length > 0 || r.Net.Trim().Length > 0)
-            .Select(r => new EmTerminal3D(r.Name.Trim(), r.Net.Trim(), r.Source.Trim() is { Length: > 0 } s ? s : null))];
+            .Select(r => r.ByObjects
+                ? new EmTerminal3D(r.Name.Trim(), "", r.Source.Trim() is { Length: > 0 } src ? src : null,
+                                   [.. r.Net.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)])
+                : new EmTerminal3D(r.Name.Trim(), r.Net.Trim(), r.Source.Trim() is { Length: > 0 } s ? s : null))];
         Working.Ground3D = Ground3DText.Trim();
         if (SnapshotJson() == before) return;
         CommitEdit(before, "Change 3D terminals");
@@ -112,7 +126,7 @@ public sealed partial class EmSetupEditorViewModel
     [RelayCommand]
     private void AddTerminal()
     {
-        TerminalRows.Add(new Em3dTerminalRow { Name = $"T{TerminalRows.Count + 1}" });
+        TerminalRows.Add(new Em3dTerminalRow { Name = $"T{TerminalRows.Count + 1}", ByObjects = IsEmbedded });
         CommitTerminals();
     }
 

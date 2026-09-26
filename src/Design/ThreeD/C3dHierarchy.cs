@@ -189,7 +189,8 @@ public static class C3dHierarchy
                     break;
             }
         }
-        foreach (var e in doc.Ports.Concat(doc.FaceBoundaries)) Visit(e);
+        foreach (var p in doc.Ports) Visit(JsonSerializer.SerializeToElement(p));
+        foreach (var b in doc.FaceBoundaries) Visit(JsonSerializer.SerializeToElement(b));
         return [.. found];
     }
 
@@ -687,7 +688,7 @@ public static class C3dHierarchy
         var copied = new List<string>();
         var leftOut = new List<string>();
         var names = new HashSet<string>(StringComparer.Ordinal);
-        var ports = new Dictionary<int, JsonElement>();
+        var ports = new Dictionary<int, C3dPort>();
         foreach (string cem in cems.OrderBy(c => c, StringComparer.OrdinalIgnoreCase))
         {
             EmSetup setup;
@@ -708,9 +709,10 @@ public static class C3dHierarchy
     /// <summary>The setup's generated ports as brief 49's parent-level records (one per number, the first setup's wins),
     /// in the new view's frame: the layout sits at the origin with its stack's bottom at z = 0.</summary>
     private static void TranslatePorts(EmSetup setup, string cem, string? workspaceCws, TechnologyCache cache, LayoutView view,
-                                       Dictionary<int, JsonElement> ports, List<string> leftOut)
+                                       Dictionary<int, C3dPort> ports, List<string> leftOut)
     {
-        if (setup.Ports3D.Count == 0) return;
+        // brief-em3d-49 — a layout's ports are its port labels, whatever kind the setup states for them: Ports3D only
+        // names a wave port, so gating on it left every all-lumped setup's ports behind.
         var resolved = EmSetupResolver.Resolve(cem, setup.LayoutRef, workspaceCws, cache);
         if (resolved.Source is not { Technology: { } tech } source) return;
         var g = Em3dGenerator.Generate(setup, source, tech);
@@ -739,21 +741,16 @@ public static class C3dHierarchy
                 1 => (C3dPlane.XZ, a.Y, a.X, a.Z + dz, b.X, b.Z + dz),
                 _ => (C3dPlane.XY, a.Z + dz, a.X, a.Y, b.X, b.Y),
             };
-            var record = new Dictionary<string, object?>
+            ports[p.Number] = new C3dPort
             {
-                ["Number"] = p.Number,
-                ["Name"] = p.Name,
-                ["Kind"] = p.Kind.ToString(),
-                ["Plane"] = plane.ToString(),
-                ["Offset"] = D(offset),
-                ["Rect"] = new Dictionary<string, long[]> { ["Min"] = [D(u0), D(v0)], ["Size"] = [D(u1) - D(u0), D(v1) - D(v0)] },
-                ["Z0"] = p.Z0.Imaginary == 0 ? p.Z0.Real.ToString("R", CultureInfo.InvariantCulture)
-                                             : $"{p.Z0.Real.ToString("R", CultureInfo.InvariantCulture)}{(p.Z0.Imaginary < 0 ? "-" : "+")}j{Math.Abs(p.Z0.Imaginary).ToString("R", CultureInfo.InvariantCulture)}",
-                ["Positive"] = null,
-                ["Negative"] = null,
-                ["Flip"] = false,
+                Number = p.Number,
+                Name = $"P{p.Number}",
+                Kind = p.Kind,
+                Plane = plane,
+                Offset = D(offset),
+                Rect = new C3dRect { Min = new C3dPoint2(D(u0), D(v0)), Size = new C3dPoint2(D(u1) - D(u0), D(v1) - D(v0)) },
+                Z0 = C3dPorts.FormatZ0(p.Z0),
             };
-            ports[p.Number] = JsonSerializer.SerializeToElement(record);
         }
     }
 }

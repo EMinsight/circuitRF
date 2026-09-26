@@ -96,6 +96,13 @@ public sealed class Scene3DObject
     /// which enclose everything else.</summary>
     public bool Pickable => Kind is not (Scene3DKind.Air or Scene3DKind.Boundary);
 
+    /// <summary>
+    /// brief-em3d-49 R-em3d49-3b — an air-box face in the editor: pickable in Face mode at the LOWEST priority. The GPU's
+    /// ID pass never draws it (it encloses everything, so a near face would stand in front of every solid); the pane
+    /// finds it on the CPU only where nothing pickable is under the cursor, and B reaches it after every solid face.
+    /// </summary>
+    public bool PickLast { get; init; }
+
     /// <summary>Whether a hover or a click may land on it: pickable, and not the dimmed parent around a pushed-in child
     /// (which the ID pass still draws, so the snap reaches it).</summary>
     public bool Selectable => Pickable && !Context;

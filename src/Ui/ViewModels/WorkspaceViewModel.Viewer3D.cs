@@ -32,6 +32,22 @@ public partial class WorkspaceViewModel
     public void OpenOrActivate3DView(string cemPath)
     {
         string full = Path.GetFullPath(cemPath);
+        // brief-em3d-49 R-em3d49-1c — a .cem whose geometry is a 3D view: Show 3D opens the EDITOR on it, with this .cem
+        // shown read-only among its setups — the ports and boundaries this setup will use are the document's.
+        try
+        {
+            var cem = EmSetupPersistence.LoadFromFile(full);
+            if (EmSetupResolver.ResolveLayoutPath(full, cem.LayoutRef, CurrentWorkspacePath) is { } geometry &&
+                CircuitRF.Design.ThreeD.C3dSetups.IsThreeDView(geometry) && File.Exists(geometry))
+            {
+                OpenOrActivateC3dEditor(geometry);
+                if (_openDocsByPath.TryGetValue(CircuitRF.Ui.ThreeD.C3dEditorDocument.KeyFor(geometry), out var d) &&
+                    d is CircuitRF.Ui.ThreeD.C3dEditorDocument editor)
+                    editor.ViewModel.ShowExternalSetup(full, cem);
+                return;
+            }
+        }
+        catch (Exception) { /* an unreadable .cem opens the viewer, which says why */ }
         string key = Viewer3DDocument.KeyFor(full);
         if (ActivateIfOpen(key)) return;
 

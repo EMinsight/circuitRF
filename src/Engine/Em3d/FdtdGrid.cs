@@ -281,6 +281,8 @@ public static class FdtdGrid
         ArgumentNullException.ThrowIfNull(settings);
         if (settings.Problems() is { Count: > 0 } bad)
             throw new ArgumentException(string.Join(" ", bad), nameof(settings));
+        // brief-em3d-49 — a face boundary is a sheet coincident with its face here, so it gets that sheet's lines.
+        problem = Em3dFaceSheets.Apply(problem);
 
         var ctx = new Context(problem, settings);
         var merges = new List<FdtdMerge>();
