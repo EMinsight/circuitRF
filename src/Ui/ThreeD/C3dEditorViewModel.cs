@@ -33,11 +33,15 @@ using CommunityToolkit.Mvvm.ComponentModel;
 namespace CircuitRF.Ui.ThreeD;
 
 /// <summary>The UI thread's snapshot for one scene build: the document as its file would say it.</summary>
-public sealed record C3dSceneInputs(string DocumentText, string Path, string? WorkspaceCws, ColorTheme Theme, ColorVariant Variant);
+/// <para>brief-em3d-48 — pushed into a child, the TOP document's text and path, the pushed element's path in it and the
+/// element's transform (the child's metres to the top's): the dimmed context.</para>
+public sealed record C3dSceneInputs(string DocumentText, string Path, string? WorkspaceCws, ColorTheme Theme, ColorVariant Variant,
+                                    (string Text, string Path, string Exclude, C3dTransform ToTop)? Context = null);
 
 public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEditHost, IDisposable
 {
     private readonly C3dElaborator _elaborator;
+    private readonly C3dElaborator _contextElaborator;
     private readonly object _elaborating = new();
     private readonly Scene3DTessellationCache _tessellations = new();
     private readonly ConcurrentDictionary<long, C3dElaboration> _elaborations = new();
@@ -49,7 +53,8 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
 
     public string FilePath { get; private set; }
     public C3dDocument Document { get; private set; }
-    public UndoRedoStack UndoRedo { get; } = new();
+    /// <summary>The ACTIVE frame's history (brief-em3d-48: each pushed-in child has its own, as a layout frame does).</summary>
+    public UndoRedoStack UndoRedo { get; private set; } = new();
 
     /// <summary>The pane's view model — the read-only viewer's own class.</summary>
     public Viewer3DViewModel Viewer { get; }
@@ -77,7 +82,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     /// arraying an instance must leave it where it was.</summary>
     public long ChildrenElaborated { get { lock (_elaborating) return _elaborator.ChildrenElaborated; } }
 
-    public bool IsDirty => UndoRedo.IsModified || _preferenceDirty;
+    public bool IsDirty => UndoRedo.IsModified || _preferenceDirty || OtherFramesDirty;
 
     /// <summary>Raised when the file changed on disk while the document is dirty — the shell asks.</summary>
     public event Action? ExternalChangeWhileDirty;
@@ -99,6 +104,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         Document = document;
         _workspaceCws = workspaceCws;
         _elaborator = new C3dElaborator(technologies);
+        _contextElaborator = new C3dElaborator(technologies);
         _savedStamp = Stamp(FilePath);
         Viewer = new Viewer3DViewModel(FilePath, Path.GetFileName(FilePath), Snapshot, Build, backend, () => null, post)
         {
@@ -115,10 +121,8 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         Viewer.CursorResolved += OnCursorResolvedForOperation;
         ApplySnapGrid();
         Properties = new C3dPropertiesViewModel(this);
-        UndoRedo.PropertyChanged += (_, e) =>
-        {
-            if (e.PropertyName == nameof(UndoRedoStack.IsModified)) OnPropertyChanged(nameof(IsDirty));
-        };
+        WatchStack(UndoRedo);
+        InitFrames();
         _loading = true;
         DisplayUnit = document.DisplayUnit;
         _loading = false;
@@ -133,7 +137,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     // ── the scene: elaboration → problem → scene ─────────────────────────────────────────────
 
     private object Snapshot()
-        => new C3dSceneInputs(DocumentText(), FilePath, _workspaceCws(), ThemeService.Active, ThemeService.CurrentVariant);
+        => new C3dSceneInputs(DocumentText(), FilePath, _workspaceCws(), ThemeService.Active, ThemeService.CurrentVariant, ContextSnapshot());
 
     /// <summary>
     /// The document as its file would say it — with, while a face or vertex gesture runs, the gesture's edited object
@@ -174,7 +178,19 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
             var a = Em3dBoundaryKind.Absorbing;
             var faces = new Em3dFaces(a, a, a, a, a, a);
             var box = new Em3dAirBox(new Point3(extent.X0, extent.Y0, extent.Z0), new Point3(extent.X1, extent.Y1, extent.Z1), faces);
-            var problem = new Em3dProblem(e.Solids, e.Sheets, e.Materials, [], box,
+            IReadOnlyList<Em3dSolid> solids = e.Solids;
+            IReadOnlyList<Em3dSheet> sheets = e.Sheets;
+            IReadOnlyList<Em3dMaterial> materials = e.Materials;
+            // brief-em3d-48 R-em3d48-4a — pushed in: the top document around the child, in the child's frame, dimmed.
+            if (inputs.Context is { } ctx)
+            {
+                var top = _contextElaborator.Elaborate(C3dPersistence.Deserialize(ctx.Text), ctx.Path, inputs.WorkspaceCws);
+                var (cs, csh, cm) = Context(top, ctx.Exclude, ctx.ToTop, e.Solids.Count + e.Sheets.Count + 1);
+                solids = [.. e.Solids, .. cs];
+                sheets = [.. e.Sheets, .. csh];
+                materials = [.. e.Materials, .. cm.Where(m => !e.Materials.Any(x => x.Name == m.Name))];
+            }
+            var problem = new Em3dProblem(solids, sheets, materials, [], box,
                                           new Em3dFrequency(1e9, 1e9, 1, Em3dSweepKind.Linear), EmSetup.DefaultOperatingTempC);
             var notes = new List<string>(e.Refusals);
             notes.AddRange(e.Warnings);
@@ -182,7 +198,9 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
             return Scene3DBuilder.Build(problem, generation, e.Origins, e.Technology, inputs.Theme, inputs.Variant, notes,
                 new Scene3DBuildOptions(name => e.Provenance.TryGetValue(name, out var p) ? p.FaceNames : null,
                                         _tessellations, DrawAirBox: false, Origin: _origin,
-                                        FeatureShare: name => e.Provenance.TryGetValue(name, out var p) ? ShareOf(p) : null));
+                                        FeatureShare: name => e.Provenance.TryGetValue(name, out var p) ? ShareOf(p) : null,
+                                        Instancing: InstancingFor(doc, e),
+                                        Context: inputs.Context is null ? null : IsContext));
         }
     }
 
@@ -209,6 +227,12 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         ApplyHiddenFlags();
         RefreshTreeVisibility();
         RebuildInstanceChildren();
+        RememberInstanceBounds();
+        if (_fitOnAdopt && Viewer.Scene.Objects.Length > 0)
+        {
+            _fitOnAdopt = false;
+            Viewer.FitCommand.Execute(null);
+        }
         Properties.Reload();
         OnPropertyChanged(nameof(Materials));
         SyncCurrentMaterial();
@@ -335,7 +359,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         return null;
     }
 
-    private void Push(C3dEdit edit)
+    private void Push(IUiCommand edit)
     {
         UndoRedo.Execute(edit);
         UndoEntries++;
@@ -470,7 +494,9 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     public C3dSnapPoint ToDocumentPoint(in Snap3DResult snap)
     {
         bool chain = snap.Kind == Snap3DKind.Grid
-                     || (Viewer.Scene.Object(snap.Object) is { } o && Elaboration?.Provenance.TryGetValue(o.Name, out var p) == true && p!.Exact);
+                     || (Viewer.Scene.Object(snap.Object) is { } o &&
+                         (IsContext(o.Name) ? _frames.Count > 0 && _frames[^1].Exact
+                                            : Elaboration?.Provenance.TryGetValue(o.Name, out var p) == true && p!.Exact));
         double per = C3dLowering.Metres(1, Document.DbuPerMicron);
         (long D, bool Whole) Of(double m)
         {
@@ -546,7 +572,8 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
 
     // ── save, reload, external change (R-em3d43-1c / -1d) ────────────────────────────────────
 
-    /// <summary>Writes the document; null on success, else why not.</summary>
+    /// <summary>Writes the document — and, pushed in, every other frame with unsaved edits (brief-em3d-48 R-em3d48-4c:
+    /// the save the schematic and layout hierarchies have); null on success, else why not.</summary>
     public string? Save()
     {
         try { C3dPersistence.SaveToFile(FilePath, Document); }
@@ -554,6 +581,14 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         _savedStamp = Stamp(FilePath);
         UndoRedo.MarkSaved();
         _preferenceDirty = false;
+        foreach (var f in _frames.Take(Math.Max(0, _frames.Count - 1)).Where(f => f.UndoRedo.IsModified || f.PreferenceDirty))
+        {
+            try { C3dPersistence.SaveToFile(f.FilePath, f.Document); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return $"{Path.GetFileName(f.FilePath)}: {ex.Message}"; }
+            f.SavedStamp = Stamp(f.FilePath);
+            f.UndoRedo.MarkSaved();
+            f.PreferenceDirty = false;
+        }
         OnPropertyChanged(nameof(IsDirty));
         return null;
     }
@@ -561,6 +596,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     /// <summary>Writes the document to <paramref name="path"/> and follows it there; null on success.</summary>
     public string? SaveAs(string path)
     {
+        if (CanPopOut) return "Pop out to the top document first: Save As writes the tab's own file.";
         string was = FilePath;
         FilePath = Path.GetFullPath(path);
         if (Save() is { } why) { FilePath = was; return why; }
@@ -572,6 +608,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     /// dirty one raises <see cref="ExternalChangeWhileDirty"/> and the shell asks, as for a layout.</summary>
     public void OnFileChangedOnDisk()
     {
+        if (CanPopOut) { Viewer.Invalidate(); return; }       // pushed in: the top file is context, redrawn
         string? stamp = Stamp(FilePath);
         if (stamp is null || stamp == _savedStamp) return;
         if (IsDirty) { ExternalChangeWhileDirty?.Invoke(); return; }
@@ -591,6 +628,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         Document = doc;
         _savedStamp = Stamp(FilePath);
         UndoRedo.Reset();
+        InitFrames();
         _preferenceDirty = false;
         _loading = true;
         DisplayUnit = doc.DisplayUnit;

@@ -77,6 +77,17 @@ public sealed class Scene3DObject
     public int FirstVertex { get; set; }
     public int VertexCount { get; set; }
 
+    /// <summary>brief-em3d-48 R-em3d48-3a — an array element's object: which element (index into
+    /// <see cref="Scene3DModel.Elements"/>, −1 for an object that owns its geometry) and the prototype object whose
+    /// triangles it draws, moved by the element's offset. It owns no vertices: <see cref="FirstVertex"/> and
+    /// <see cref="VertexCount"/> are the prototype's.</summary>
+    public int Element { get; init; } = -1;
+    public uint Prototype { get; init; }
+
+    /// <summary>brief-em3d-48 R-em3d48-4a — part of the PARENT drawn around a pushed-in child: dimmed, snapped to, never
+    /// hovered or selected.</summary>
+    public bool Context { get; init; }
+
     /// <summary>The name of face <paramref name="face"/>: its stored name, else <c>face&lt;n&gt;</c>.</summary>
     public string FaceName(int face) => face >= 0 && face < FaceNames.Count ? FaceNames[face]
         : face == Scene3DBuilder.FaceUnknown ? "surface" : $"face{face}";
@@ -84,14 +95,40 @@ public sealed class Scene3DObject
     /// <summary>Whether hover and click can land on it: everything but the air and the box's faces,
     /// which enclose everything else.</summary>
     public bool Pickable => Kind is not (Scene3DKind.Air or Scene3DKind.Boundary);
+
+    /// <summary>Whether a hover or a click may land on it: pickable, and not the dimmed parent around a pushed-in child
+    /// (which the ID pass still draws, so the snap reaches it).</summary>
+    public bool Selectable => Pickable && !Context;
 }
 
 /// <summary>An object's triangles: <see cref="IndexCount"/> indices from <see cref="FirstIndex"/>.</summary>
-public readonly record struct Scene3DBatch(uint ObjectId, int MaterialSlot, int FirstIndex, int IndexCount, bool Translucent);
+/// <para>brief-em3d-48 — an array element's object draws its prototype's range: <see cref="Element"/> says which element
+/// (−1 for none) and <see cref="Offset"/> is that element's translation, scene-local metres, which every reader of the
+/// vertex buffer adds (the GPU through the element's per-draw transform).</para>
+public readonly record struct Scene3DBatch(uint ObjectId, int MaterialSlot, int FirstIndex, int IndexCount, bool Translucent,
+                                           int Element = -1, Vector3 Offset = default);
 
 /// <summary>An object's lines (a port's arrow, the box's edges): a line list of
 /// <see cref="VertexCount"/> vertices from <see cref="FirstVertex"/> in the line buffer.</summary>
-public readonly record struct Scene3DLineBatch(uint ObjectId, int FirstVertex, int VertexCount);
+public readonly record struct Scene3DLineBatch(uint ObjectId, int FirstVertex, int VertexCount, int Element = -1, Vector3 Offset = default);
+
+/// <summary>
+/// brief-em3d-48 R-em3d48-3a — one array element (or repeated placement) drawn from a prototype's geometry: its
+/// objects are <see cref="Count"/> ids from <see cref="FirstId"/>, each the prototype's object at the same position,
+/// and its batches are <see cref="BatchCount"/> from <see cref="FirstBatch"/>. The GPU draws it with one per-draw
+/// transform: the translation <see cref="Offset"/> and an ID offset <see cref="IdOffset"/> added to every vertex's id,
+/// so the ID pass writes the ELEMENT's object id — what makes a pick name the element (R-em3d48-3b).
+/// </summary>
+public readonly record struct Scene3DElement(int Group, uint FirstId, int Count, int FirstBatch, int BatchCount, Vector3 Offset, uint IdOffset);
+
+/// <summary>
+/// brief-em3d-48 — a prototype and the elements drawn from it: the prototype's objects are <see cref="Count"/> ids
+/// from <see cref="FirstId"/> (it is element 0, drawn like any object); its opaque triangles are the contiguous range
+/// <see cref="OpaqueFirst"/>..+<see cref="OpaqueCount"/> (−1 when they are not contiguous, and then an element is
+/// drawn object by object); <see cref="Min"/>/<see cref="Max"/> bound it, scene-local.
+/// </summary>
+public readonly record struct Scene3DInstanceGroup(uint FirstId, int Count, int OpaqueFirst, int OpaqueCount, int Triangles,
+                                                   Vector3 Min, Vector3 Max);
 
 /// <summary>The scene. Immutable once built; a new generation is a new instance.</summary>
 public sealed class Scene3DModel
@@ -113,6 +150,36 @@ public sealed class Scene3DModel
     /// <summary>brief-em3d-44 R-em3d44-3 — each object's snap features, by ID − 1 (a port and the air box's
     /// faces have none). Elements of one instance share a table and differ by an offset.</summary>
     public Edit.Scene3DFeatureRef[] Features { get; init; } = [];
+
+    /// <summary>brief-em3d-48 R-em3d48-3a — the prototypes and their elements. The objects that OWN geometry come first
+    /// (<see cref="GeometryObjectCount"/> of them, and <see cref="GeometryBatchCount"/> batches, and
+    /// <see cref="GeometryEdgeBatchCount"/> edge batches); every element's objects and batches follow, so adding an
+    /// element renumbers nothing that is in a buffer.</summary>
+    public Scene3DInstanceGroup[] Groups { get; init; } = [];
+    public Scene3DElement[] Elements { get; init; } = [];
+    public int GeometryObjectCount { get; init; } = -1;
+    public int GeometryBatchCount { get; init; } = -1;
+    public int GeometryEdgeBatchCount { get; init; } = -1;
+
+    /// <summary>The unit cube's twelve edges in the line buffer — what an element beyond the triangle budget is drawn as
+    /// (R-em3d48-3c), scaled and moved by its own transform. Empty when there are no elements.</summary>
+    public Scene3DLineBatch UnitBox { get; init; }
+
+    /// <summary>Objects that own geometry — all of them unless elements follow.</summary>
+    public int OwnedObjects => GeometryObjectCount >= 0 ? GeometryObjectCount : Objects.Length;
+    public int OwnedBatches => GeometryBatchCount >= 0 ? GeometryBatchCount : Batches.Length;
+    public int OwnedEdgeBatches => GeometryEdgeBatchCount >= 0 ? GeometryEdgeBatchCount : EdgeBatches.Length;
+
+    /// <summary>A vertex of object <paramref name="o"/> where it is drawn: the buffer's position plus the element's offset.</summary>
+    public Vector3 Position(Scene3DObject o, int vertex)
+    {
+        var v = Vertices[vertex];
+        var p = new Vector3(v.X, v.Y, v.Z);
+        return o.Element >= 0 ? p + Elements[o.Element].Offset : p;
+    }
+
+    /// <summary>The triangles the scene DRAWS — every owned batch's, and every element's under its offset.</summary>
+    public long DrawnTriangleCount => Batches.Sum(b => (long)b.IndexCount) / 3;
 
     /// <summary>The distinct feature tables this scene holds — an array of 900 elements holds one.</summary>
     public int FeatureTableCount => Features.Where(f => f.Table is not null).Select(f => f.Table).Distinct().Count();

@@ -14,22 +14,37 @@ public static class Scene3DFaces
     /// <summary>The index range of object <paramref name="id"/>'s triangles, or an empty range.</summary>
     public static (int First, int Count) TrianglesOf(Scene3DModel scene, uint id)
     {
+        var (first, count, _) = TrianglesAt(scene, id);
+        return (first, count);
+    }
+
+    /// <summary>brief-em3d-48 — the index range and the offset its vertices are drawn at (an array element's).</summary>
+    public static (int First, int Count, Vector3 Offset) TrianglesAt(Scene3DModel scene, uint id)
+    {
+        var o = scene.Object(id);
+        if (o is { Element: >= 0 } && o.Element < scene.Elements.Length)
+        {
+            var el = scene.Elements[o.Element];
+            for (int k = el.FirstBatch; k < el.FirstBatch + el.BatchCount; k++)
+                if (scene.Batches[k].ObjectId == id) return (scene.Batches[k].FirstIndex, scene.Batches[k].IndexCount, scene.Batches[k].Offset);
+            return (0, 0, default);
+        }
         foreach (var b in scene.Batches)
-            if (b.ObjectId == id) return (b.FirstIndex, b.IndexCount);
-        return (0, 0);
+            if (b.ObjectId == id) return (b.FirstIndex, b.IndexCount, b.Offset);
+        return (0, 0, default);
     }
 
     /// <summary>The distinct corners of face <paramref name="face"/> of object <paramref name="id"/>.</summary>
     public static List<Vector3> Vertices(Scene3DModel scene, uint id, int face)
     {
-        var (first, count) = TrianglesOf(scene, id);
+        var (first, count, offset) = TrianglesAt(scene, id);
         var seen = new HashSet<Vector3>();
         var list = new List<Vector3>();
         for (int i = first; i < first + count; i++)
         {
             var v = scene.Vertices[scene.Indices[i]];
             if ((int)v.Face != face && !(face < 0)) continue;
-            var p = new Vector3(v.X, v.Y, v.Z);
+            var p = new Vector3(v.X, v.Y, v.Z) + offset;
             if (seen.Add(p)) list.Add(p);
         }
         return list;

@@ -47,7 +47,8 @@ public static class RayHits
         {
             var b = scene.Batches[k];
             uint id = b.ObjectId;
-            if (!Visible(visible, id) || !scene.Objects[id - 1].Pickable) continue;
+            // B steps through what a click could select: the dimmed parent around a pushed-in child is not that.
+            if (!Visible(visible, id) || !scene.Objects[id - 1].Selectable) continue;
             switch (mode)
             {
                 case Scene3DSelectMode.Vertex:
@@ -96,9 +97,9 @@ public static class RayHits
         for (int i = b.FirstIndex; i < b.FirstIndex + b.IndexCount; i += 3)
         {
             var a = verts[scene.Indices[i]];
-            var v0 = new Vector3(a.X, a.Y, a.Z);
-            var v1 = P(verts[scene.Indices[i + 1]]);
-            var v2 = P(verts[scene.Indices[i + 2]]);
+            var v0 = new Vector3(a.X, a.Y, a.Z) + b.Offset;
+            var v1 = P(verts[scene.Indices[i + 1]]) + b.Offset;
+            var v2 = P(verts[scene.Indices[i + 2]]) + b.Offset;
             if (!Scene3DPicking.Intersect(o, d, v0, v1, v2, out float t)) continue;
             var point = o + d * t;
             if (!clip.Keeps(point)) continue;
@@ -123,7 +124,7 @@ public static class RayHits
         var verts = scene.Vertices;
         for (int i = b.FirstIndex; i < b.FirstIndex + b.IndexCount; i++)
         {
-            var p = P(verts[scene.Indices[i]]);
+            var p = P(verts[scene.Indices[i]]) + b.Offset;
             if (!clip.Keeps(p)) continue;
             var (x, y, inFront) = q.Camera.Project(p, q.Width, q.Height);
             if (!inFront || (x - q.Px) * (x - q.Px) + (y - q.Py) * (y - q.Py) > r2) continue;

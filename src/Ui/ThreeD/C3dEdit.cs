@@ -94,3 +94,32 @@ public sealed class C3dEdit : IUiCommand
         }
     }
 }
+
+/// <summary>
+/// brief-em3d-48 — ONE undo entry for a hierarchy edit that removes some objects or instances and inserts others (Flatten,
+/// Group into Cell), which <see cref="C3dEdit"/>'s one-shape rule cannot state. It keeps the two lists as the file spells
+/// them, before and after — a whole-list copy, which is acceptable for an edit this rare and this large, and exact: an
+/// undone object is byte for byte what it was, so its elaboration is a cache hit.
+/// </summary>
+public sealed class C3dListsEdit(string description, (IReadOnlyList<string> Objects, IReadOnlyList<string> Instances) before,
+                                 (IReadOnlyList<string> Objects, IReadOnlyList<string> Instances) after,
+                                 Action<IReadOnlyList<string>, IReadOnlyList<string>> apply) : IUiCommand
+{
+    public string Description { get; } = description;
+    public (IReadOnlyList<string> Objects, IReadOnlyList<string> Instances) Before { get; } = before;
+    public (IReadOnlyList<string> Objects, IReadOnlyList<string> Instances) After { get; } = after;
+
+    public void Execute() => apply(After.Objects, After.Instances);
+    public void Undo() => apply(Before.Objects, Before.Instances);
+
+    /// <summary>The document's two lists as the file spells them.</summary>
+    public static (IReadOnlyList<string> Objects, IReadOnlyList<string> Instances) Of(C3dDocument doc)
+        => ([.. doc.Objects.Select(C3dPersistence.SerializeObject)], [.. doc.Instances.Select(C3dPersistence.SerializeInstance)]);
+
+    /// <summary>Writes the two lists into <paramref name="doc"/>.</summary>
+    public static void Apply(C3dDocument doc, IReadOnlyList<string> objects, IReadOnlyList<string> instances)
+    {
+        doc.Objects = [.. objects.Select(C3dPersistence.DeserializeObject)];
+        doc.Instances = [.. instances.Select(C3dPersistence.DeserializeInstance)];
+    }
+}

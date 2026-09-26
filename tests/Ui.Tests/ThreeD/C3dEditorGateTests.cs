@@ -24,7 +24,7 @@ namespace CircuitRF.Ui.Tests.ThreeD;
 /// <summary>A recording backend that also records partial uploads (brief 43's PatchScene).</summary>
 internal sealed class PatchRecordingBackend : Viewer3DBackend
 {
-    public int SceneUploads, Patches;
+    public int SceneUploads, Patches, ElementTransforms;
     public long PatchBytes;
     public uint AnswerId;
     public uint AnswerFace = Scene3DVertex.NoFace;
@@ -41,6 +41,7 @@ internal sealed class PatchRecordingBackend : Viewer3DBackend
     {
         Patches++;
         PatchBytes += patch.Bytes;
+        ElementTransforms += patch.ElementTransforms;
         Counters.CountUpload(patch.Bytes);
     }
 

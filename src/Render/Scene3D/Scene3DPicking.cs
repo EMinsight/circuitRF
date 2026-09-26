@@ -32,7 +32,7 @@ public static class Scene3DPicking
             if (!Visible(visible, b.ObjectId) || !scene.Objects[b.ObjectId - 1].Pickable) continue;
             for (int i = b.FirstIndex; i < b.FirstIndex + b.IndexCount; i += 3)
             {
-                var v0 = P(verts[scene.Indices[i]]); var v1 = P(verts[scene.Indices[i + 1]]); var v2 = P(verts[scene.Indices[i + 2]]);
+                var v0 = P(verts[scene.Indices[i]]) + b.Offset; var v1 = P(verts[scene.Indices[i + 1]]) + b.Offset; var v2 = P(verts[scene.Indices[i + 2]]) + b.Offset;
                 if (Intersect(o, d, v0, v1, v2, out float t) && t < best && clip.Keeps(o + d * t))
                 {
                     best = t;
@@ -68,9 +68,11 @@ public static class Scene3DPicking
             if (!Visible(visible, b.ObjectId) || !scene.Objects[b.ObjectId - 1].Pickable) continue;
             for (int i = b.FirstIndex; i < b.FirstIndex + b.IndexCount; i += 3)
             {
-                var c0 = Vector4.Transform(new Vector4(P(verts[scene.Indices[i]]), 1), m);
-                var c1 = Vector4.Transform(new Vector4(P(verts[scene.Indices[i + 1]]), 1), m);
-                var c2 = Vector4.Transform(new Vector4(P(verts[scene.Indices[i + 2]]), 1), m);
+                // brief-em3d-48 — an element's batch is its prototype's triangles under the element's offset, and the
+                // GPU adds the element's id offset to the prototype's ids: the batch's own ObjectId is that sum.
+                var c0 = Vector4.Transform(new Vector4(P(verts[scene.Indices[i]]) + b.Offset, 1), m);
+                var c1 = Vector4.Transform(new Vector4(P(verts[scene.Indices[i + 1]]) + b.Offset, 1), m);
+                var c2 = Vector4.Transform(new Vector4(P(verts[scene.Indices[i + 2]]) + b.Offset, 1), m);
                 if (c0.W <= 0 || c1.W <= 0 || c2.W <= 0) continue;
                 var n0 = new Vector3(c0.X, c0.Y, c0.Z) / c0.W;
                 var n1 = new Vector3(c1.X, c1.Y, c1.Z) / c1.W;

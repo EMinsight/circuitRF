@@ -13544,3 +13544,32 @@ recognition). Gates 1–6, 8, 9 in `tests/Ui.Tests/ThreeD/KernelGateTests.cs`; g
 - **Align's Touching/Flush toggle cannot choose between two translations** — the translation to coplanarity along
   the target's normal is unique. It states which way the faces must face (touching: opposite normals; flush: the
   same), and a pair that faces the other way is refused, saying T switches.
+
+## brief-em3d-48 — hierarchy in a .c3d, headless (2026-09-26)
+
+Built: `src/Design/ThreeD/C3dHierarchy.cs` (instance names, the by-(cell, view) cycle check, Swap View's refusal and
+the names a swap can strand, one-level and all-levels Flatten, Group into Cell, New 3D View from Layout),
+`C3dElaboration.Unresolved`, `C3dElaborator.MaterialValues`, and the elaborator's per-element cache of a layout
+child's lowered solids. Gates 5–8 in `tests/Ui.Tests/ThreeD/HierarchyGateTests.cs`.
+
+- **A layout child's solids are made of its STACKUP's entries, named after the entry** ("Top Copper (1 oz)",
+  "RO4350") and valued from it — not of technology materials. A .c3d object names a technology material, so
+  Flatten maps each entry to the technology's material of the same NAME, else the one with EQUAL values (σ at the
+  operating temperature, εr, tanδ, μr), and refuses naming the rest. The round-trip gate therefore compares
+  material VALUES, not names: an entry and the material it became are one material under two names.
+- **A layout instance's lowered solids are cached per element transform** (`LayoutLowered`, swapped per
+  elaboration like the tessellation cache). Without it, `C3dLowering.Transform` made fresh outline LISTS for every
+  extrusion on every elaboration, and the scene's tessellation cache — keyed by the primitive record, whose list
+  members compare by REFERENCE — missed every one, so a column added to an array re-tessellated the prototype.
+- **Flattened objects are appended to the END of Objects.** Instances elaborate after every object, so relative to
+  an EARLIER instance's contents the flattened solids now come first in construction order: an overlap between
+  them and an earlier instance changes winner. Flatten All is exact; one level with several instances is not, in
+  that one respect. A 3D child's flatten is exact otherwise: primitives kept, placements composed through
+  `C3dPlacement.Then` (a non-quarter-turn instance whose composed origin is not whole DBU is refused, never rounded).
+- **The cycle check is by (cell, view).** A 3D view may place its own cell's layout (a layout contains no 3D view);
+  placing its own 3D view, or a 3D view that reaches it, is refused at the pick with the path (`A → B → A`). The
+  elaborator's own cycle refusal stays as the backstop.
+- **New 3D View from Layout writes brief 49's port record** (Plane, Offset, Rect, Z0, Positive/Negative null) for each
+  generated port that is one axis-aligned rectangle, in the new view's frame (the layout's stack bottom at z = 0);
+  a coaxial annulus is left out and listed. Nothing reads `Ports` until brief 49, so this is unexercised by any
+  solve — the Package example's setups have no ports.

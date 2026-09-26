@@ -378,6 +378,33 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
     [ObservableProperty] private string _cursorText = "";
     [ObservableProperty] private string _meshText = "";
 
+    // ── brief-em3d-48 R-em3d48-3c: the triangle budget, and saying when it bites ──────────────────
+
+    /// <summary>The frame's triangle budget (the user's, from 3D ▸ Triangle Budget…).</summary>
+    public long TriangleBudget { get; set; } = Lod3DPreference.Budget;
+
+    /// <summary>Empty, or how many array elements the last frame drew as boxes and why — the one place a picture shows
+    /// less than the solver gets, so it is said on screen.</summary>
+    [ObservableProperty] private string _lodText = "";
+
+    /// <summary>Frame loop → UI: what the planned frame left out. Allocates only when the count changes.</summary>
+    public void FramePlanned(Scene3DFramePlan plan)
+    {
+        int boxed = plan.LodBoxedElements;
+        if (boxed == _lastBoxed && _lastBudget == plan.TriangleBudget) return;
+        _lastBoxed = boxed;
+        _lastBudget = plan.TriangleBudget;
+        LodText = boxed == 0 ? "" : LodMessage(boxed, plan.ElementCount, plan.TriangleBudget);
+    }
+
+    private int _lastBoxed;
+    private long _lastBudget;
+
+    /// <summary>The status line's sentence for <paramref name="boxed"/> of <paramref name="elements"/> drawn as boxes.</summary>
+    public static string LodMessage(int boxed, int elements, long budget)
+        => $"{boxed:N0} of {elements:N0} array elements drawn as boxes: over the {budget:N0}-triangle budget " +
+           "(3D ▸ Triangle Budget…). Nearer ones are drawn in full; the solver gets every one.";
+
     public string Status => Scene.Objects.Length == 0
         ? (Scene.Notes.Count > 0 ? "Nothing to show: " + Scene.Notes[0] : "Generating the 3D problem…")
         : $"{Scene.Objects.Length} objects, {Scene.TriangleCount:N0} triangles, {Scene.Batches.Length} draws (generation {Scene.Generation})"

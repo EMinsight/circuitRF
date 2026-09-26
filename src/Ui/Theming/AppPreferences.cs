@@ -277,6 +277,13 @@ public sealed class AppPreferences
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public int? Snap3DKinds { get; set; }
 
+    // brief-em3d-48 R-em3d48-3c: the 3D view's triangle budget — beyond it, array elements farthest from the eye are
+    // drawn as their bounding boxes (and the status line says so). Per USER, a property of the machine it runs on. Null
+    // means the shipped default (Scene3DFramePlan.DefaultTriangleBudget). See Lod3DPreference.
+    [JsonPropertyName("view3d_triangle_budget")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public long? View3DTriangleBudget { get; set; }
+
     // R-h9r2-18a: what a BRAND NEW harmonicaRF document's tickle starts at. Null means the shipped
     // default (on, −50 dBm). Per USER, not per document — see HarmonicaTickleDefaults' own reasoning,
     // the same "a .charm from someone else must not change your own working habit" rule

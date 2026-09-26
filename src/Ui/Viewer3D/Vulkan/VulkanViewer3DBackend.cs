@@ -52,10 +52,12 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
     /// <summary>How long a frame's fence may take before the GPU is declared stuck (a fault, never an
     /// endless wait: the render thread holds the render lock, and the UI thread takes it on detach).</summary>
     private const ulong FenceTimeoutNs = 2_000_000_000;
-    /// <summary>brief-em3d-46 — one per-draw transform slot in the transform buffer: 64 bytes, at an offset every
+    /// <summary>brief-em3d-46 — one per-draw transform slot in the transform buffer: 80 bytes (brief-em3d-48: the matrix and the id offset), at an offset every
     /// minUniformBufferOffsetAlignment divides (the spec caps that at 256).</summary>
     private const int TransformStride = 256;
-    private const int TransformSlots = 1 + Scene3DFramePlan.MaxPreviewCopies;
+    /// <summary>Transform slots per frame slot: a preview's copies at first; brief-em3d-48's array elements (a slot each,
+    /// and one for each one's box) grow it — the ring is re-made, once, between frames (EnsureTransformRing).</summary>
+    private int _transformSlots = 1 + Scene3DFramePlan.MaxPreviewCopies;
     private const int UniformStride = 1280;   // ≥ 1,072 (brief 45's grid block) and a multiple of every minUniformBufferOffsetAlignment (≤ 256)
     private const VkFormat ColorFormat = VkFormat.R8G8B8A8Unorm;
     private const VkFormat DepthFormat = VkFormat.D32Sfloat;
@@ -85,7 +87,7 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
     private VkPipeline _pOpaque, _pTrans, _pLines, _pPick, _pField, _pEdges, _pTop, _pGrid;
     private VkCommandPool _cmdPool;
     private (VkBuffer Buf, VkDeviceMemory Mem) _ub;
-    /// <summary>brief-em3d-46 — the per-draw transforms (binding 1), <see cref="TransformSlots"/> per frame slot.</summary>
+    /// <summary>brief-em3d-46 — the per-draw transforms (binding 1), <see cref="_transformSlots"/> per frame slot.</summary>
     private (VkBuffer Buf, VkDeviceMemory Mem) _tb;
     private byte* _tMapped;
     private byte* _uMapped;
@@ -283,7 +285,7 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
         void* um;
         Check(api.vkMapMemory(_ub.Mem, 0, VK_WHOLE_SIZE, 0, &um), "vkMapMemory");
         _uMapped = (byte*)um;
-        _tb = NewBuffer(api, Ring * TransformSlots * TransformStride, VkBufferUsageFlags.UniformBuffer, VkMemoryPropertyFlags.HostVisible | VkMemoryPropertyFlags.HostCoherent);
+        _tb = NewBuffer(api, Ring * _transformSlots * TransformStride, VkBufferUsageFlags.UniformBuffer, VkMemoryPropertyFlags.HostVisible | VkMemoryPropertyFlags.HostCoherent);
         void* tm;
         Check(api.vkMapMemory(_tb.Mem, 0, VK_WHOLE_SIZE, 0, &tm), "vkMapMemory");
         _tMapped = (byte*)tm;
@@ -621,6 +623,26 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
         api.vkFreeCommandBuffers(_cmdPool, 1, &cb);
     }
 
+    /// <summary>brief-em3d-48 — room for <paramref name="slots"/> transforms per frame slot: when the plan outgrows the
+    /// ring (an array's elements), the device is idled, the ring re-made at least twice as large, and binding 1 pointed at
+    /// it. Nothing is in flight then, so no descriptor is rewritten under a command buffer.</summary>
+    private void EnsureTransformRing(VkDeviceApi api, int slots)
+    {
+        if (slots <= _transformSlots) return;
+        Check(api.vkDeviceWaitIdle(), "vkDeviceWaitIdle");
+        api.vkUnmapMemory(_tb.Mem);
+        Free(api, _tb);
+        _transformSlots = Math.Max(slots, 2 * _transformSlots);
+        _tb = NewBuffer(api, Ring * _transformSlots * TransformStride, VkBufferUsageFlags.UniformBuffer,
+                        VkMemoryPropertyFlags.HostVisible | VkMemoryPropertyFlags.HostCoherent);
+        void* tm;
+        Check(api.vkMapMemory(_tb.Mem, 0, VK_WHOLE_SIZE, 0, &tm), "vkMapMemory");
+        _tMapped = (byte*)tm;
+        var tbi = new VkDescriptorBufferInfo { buffer = _tb.Buf, offset = 0, range = Scene3DFramePlan.TransformBytesPerDraw };
+        var write = new VkWriteDescriptorSet { dstSet = _set, dstBinding = 1, descriptorCount = 1, descriptorType = VkDescriptorType.UniformBufferDynamic, pBufferInfo = &tbi };
+        api.vkUpdateDescriptorSets(1, &write, 0, null);
+    }
+
     private static void Free(VkDeviceApi api, (VkBuffer Buf, VkDeviceMemory Mem) b)
     {
         if (b.Buf.Handle == 0) return;
@@ -816,12 +838,15 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
         var clears = stackalloc VkClearValue[3];
         ulong zero = 0;
         var set = _set;
-        // brief-em3d-46 — this frame slot's transforms: slot 0 the identity, then a preview's copies.
-        uint tBase = (uint)(f0 * TransformSlots * TransformStride);
-        int tCount = Math.Min(plan.TransformCount, TransformSlots);
+        // brief-em3d-46 — this frame slot's transforms: slot 0 the identity, then (brief 48) each array element's and its
+        // box's, then a preview's copies.
+        EnsureTransformRing(api, plan.TransformCount);
+        uint tBase = (uint)(f0 * _transformSlots * TransformStride);
+        int tCount = Math.Min(plan.TransformCount, _transformSlots);
         fixed (float* xf = plan.Transforms)
             for (int k = 0; k < tCount; k++)
-                Buffer.MemoryCopy(xf + 16 * k, _tMapped + tBase + k * TransformStride, TransformStride, Scene3DFramePlan.TransformBytesPerDraw);
+                Buffer.MemoryCopy(xf + Scene3DFramePlan.TransformFloats * k, _tMapped + tBase + k * TransformStride, TransformStride,
+                                  Scene3DFramePlan.TransformBytesPerDraw);
         Counters.CountUniform((long)tCount * Scene3DFramePlan.TransformBytesPerDraw);
         var offs = stackalloc uint[2];
 
@@ -842,9 +867,17 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
             var vb = _vb.Buf;
             api.vkCmdBindVertexBuffers(cb, 0, 1, &vb, &zero);
             api.vkCmdBindIndexBuffer(cb, _ib.Buf, 0, VkIndexType.Uint32);
+            int pickTransform = 0;
             for (int i = 0; i < plan.PickDrawCount; i++)
             {
                 ref var d = ref plan.PickDraws[i];
+                // brief-em3d-48 — an array element's pick draw: its translation and id offset.
+                if (d.Transform != pickTransform && d.Transform < tCount)
+                {
+                    pickTransform = d.Transform;
+                    offs[1] = tBase + (uint)(pickTransform * TransformStride);
+                    api.vkCmdBindDescriptorSets(cb, VkPipelineBindPoint.Graphics, _layout, 0, 1, &set, 2, offs);
+                }
                 api.vkCmdDrawIndexed(cb, (uint)d.Count, 1, (uint)d.First, 0, 0); draws++;
             }
             api.vkCmdEndRenderPass(cb);

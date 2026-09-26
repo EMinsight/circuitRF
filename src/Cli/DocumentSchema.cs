@@ -427,7 +427,8 @@ internal static class DocumentSchema
             not apply here — it exists because layouts match layers by number, and a 3D view matches
             nothing by layer: every instance is metres and named materials before it arrives. Two
             technologies' same-named materials merge when equal and become <name>@<technology stem>
-            otherwise. A 3D view that reaches itself through its instances is refused.
+            otherwise. A 3D view that reaches itself through its instances is refused — judged by cell
+            AND view: a cell's 3D view may hold that cell's own layout, which is not a cycle.
           * Setups hold EM setups in the .cem schema (see the em-setup topic) without LayoutRef, each
             with a unique Name and Solver3D Palace or OpenEms. `em view.c3d` runs the one there is;
             with several, `--setup <name>`. Its result is named "<file stem> <setup name>".

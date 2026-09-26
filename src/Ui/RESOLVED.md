@@ -35946,3 +35946,30 @@ two-face distance, the 3D ▸ Modify ▸ Face / Vertex / Convert to Polyhedron i
   reader outside its allow-list; six Em3d "every .cem in the repo … no new key" gates and
   `SettingsDialogHelpAndTooltipsTests.Em3dTab_EveryVisibleStringIsSelectable` fail on repository content this brief
   did not touch.
+
+## Hierarchy in the 3D editor — brief-em3d-48 (2026-09-26)
+
+Built: `C3dEditorViewModel.Hierarchy.cs` (placement, Swap View, instance arrays, Push In / Pop Out frames, Flatten,
+Group into Cell, the missing-instance and `[alias]` chrome, the menu and keys), `ThreeD/Hierarchy/PlaceInstanceTool`,
+`C3dListsEdit`, the picker's 3D mode (`InstanceCellPickerDialog`, `InstanceCellChoices`), Design ▸ New 3D View from
+Layout and the cell menu's, 3D ▸ Triangle Budget…, and the shell's wiring in `WorkspaceViewModel.ThreeD.cs`. Gates in
+`tests/Ui.Tests/ThreeD/HierarchyGateTests.cs` (all nine, plus a push-in test). **No window was seen.**
+
+- **Array… on ONE selected instance now sets that instance's own `Array`** instead of writing copies (the brief's
+  "brief 46's operations, acting on placements"). `OperationsGateTests.Gate2` asserted three instance copies and
+  was changed to assert one instance with counts [3, 1, 1]. Several objects, or objects and instances, still copy.
+- **Push In is a frame stack in the same editor, and `UndoRedo`, `Document` and `FilePath` are the ACTIVE frame's**
+  (as `LayoutDocument.UndoRedo` is its active view model's). The tab is the TOP file:
+  `C3dEditorDocument.FilePath` → `TopFilePath`, and so are the tree's dirty mark and the drawing-plane key. The tab
+  is dirty while ANY frame is; Save writes every dirty frame. Pushing into a child open in its own tab is refused
+  (two editors of one file would each save over the other). Only the TOP document is drawn as context: a middle
+  frame's unsaved edits are not in the context until saved.
+- **The parent around a pushed-in child is ELABORATED, not reused**: a second elaborator elaborates the top document,
+  the pushed element's path left out, and moves it into the child's frame by the inverse of the element's metres
+  transform (`C3dLowering.Transform`). Its objects are named `^/<name>` (no document name starts with '/'),
+  `Scene3DObject.Context` = true: in the ID pass (the snap reaches them), never hovered, selected or B-cycled.
+- **Ctrl/Cmd-click is the placement's bottom-centre handle, not a plane pick**, while `PlaceInstanceTool` is armed
+  (`DrawClick`). The pane now tracks Ctrl/Cmd like Shift (`Viewer3DViewModel.CommandHeld`, cleared on focus loss).
+- **The gate harness must play the UI thread.** `post: a => a()` runs a scene's adoption on the builder's thread, and
+  with a 400-element tree it raced the test's own next edit (`RebuildTree` vs `RefreshTreeVisibility`: "Collection
+  was modified"). `HierarchyGateTests` queues posts and runs them in `Settle`, as a dispatcher would.

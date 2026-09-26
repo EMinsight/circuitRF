@@ -259,7 +259,7 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
             geometry = Viewer.Snap.Kind != Snap3DKind.Grid;
         }
         var ray = Viewer.CursorRay();
-        return new C3dDrawInput(snap, exact, geometry, ray?.Origin, ray?.Direction, Viewer.ShiftHeld);
+        return new C3dDrawInput(snap, exact, geometry, ray?.Origin, ray?.Direction, Viewer.ShiftHeld, Viewer.CommandHeld);
     }
 
     public C3dPoint3? PlanePoint(in C3dDrawInput input, out string? refusal)
@@ -336,6 +336,7 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
             if (step.Crossing is { } x && _tool is PolygonTool pt) _crossing = pt.CrossingSegments(x);
         }
         else if (step.Advanced) StatusMessage = "";
+        if (step.Finished && _tool is Hierarchy.PlaceInstanceTool place) { CommitPlacement(place); return; }
         if (step.Finished && _tool is C3dOperationTool op) CommitOperation(op);
         else if (step.Finished && _tool is C3dFaceEditTool ft) CommitFaceEdit(ft);
         if (step.Result is { } obj)
@@ -369,12 +370,17 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
                 return true;
             }
             if (_tool is null) return false;
-            if (PlaneFromFace(Viewer.LastPick.Object, Viewer.LastPick.Face) is { } refusal) StatusMessage = refusal;
-            return true;
+            // brief-em3d-48 R-em3d48-1b — Ctrl/Cmd while placing is the bottom-centre handle, not a plane pick.
+            if (_tool is not Hierarchy.PlaceInstanceTool)
+            {
+                if (PlaneFromFace(Viewer.LastPick.Object, Viewer.LastPick.Face) is { } refusal) StatusMessage = refusal;
+                return true;
+            }
         }
         if (_tool is null) return false;
         CloseField();
         var input = CursorInput();
+        if (Command(modifiers)) input = input with { Command = true };
         Apply(clickCount >= 2 ? _tool.DoubleClick(input) : _tool.Click(input));
         return true;
     }
@@ -382,6 +388,8 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
     public bool DrawKey(Key key, KeyModifiers modifiers)
     {
         if (key == Key.A && modifiers == KeyModifiers.Shift) { DrawMenuRequested?.Invoke(); return true; }
+        // brief-em3d-48 — Ctrl/Cmd+] and Ctrl/Cmd+[: Push In and Pop Out, the layout editor's keys.
+        if (_tool is not { InProgress: true } && HierarchyKey(key, modifiers)) return true;
         // brief-em3d-46 — G, R and Ctrl/Cmd+D start an operation on the selection (no gesture in progress).
         if (_tool is not { InProgress: true } && OperationKey(key, modifiers)) return true;
         if (_tool is not { } tool) return false;
@@ -451,6 +459,7 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
         }
         if (_tool is { } tool) tool.Preview(CursorInput(), overlay.Rubber, overlay.Fixed);
         FillFaceOverlay(overlay);
+        FillHierarchyOverlay(overlay);
         if (_tool is C3dOperationTool { ShowsPivot: true } op) overlay.Pivots.Add(DrawGeometry.Metres(op.Pivot, dbu));
         if (_crossing is { } x) { overlay.Crossing.Add(x.A); overlay.Crossing.Add(x.B); }
     }
@@ -466,6 +475,7 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
     {
         foreach (var item in OperationMenuItems()) yield return item;
         foreach (var item in FaceMenuItems()) yield return item;
+        foreach (var item in HierarchyMenuItems()) yield return item;
         if (Viewer.SelectMode == Scene3DSelectMode.Face && Viewer.Selection is [{ Face: >= 0 } f])
             yield return new Viewer3DMenuItem("Drawing Plane from Face", () => { if (PlaneFromFace(f.Object, f.Face) is { } why) StatusMessage = why; });
         if (ExtrudeSource() is { } src)

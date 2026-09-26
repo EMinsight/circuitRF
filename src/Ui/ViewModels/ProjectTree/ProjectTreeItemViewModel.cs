@@ -537,6 +537,9 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
     /// folder when it is the cell's first 3D view).</summary>
     public IAsyncRelayCommand New3DViewCommand { get; }
 
+    /// <summary>brief-em3d-48 — New 3D View from Layout: the cell's layout as the first instance of a new .c3d.</summary>
+    public IAsyncRelayCommand New3DViewFromLayoutCommand { get; }
+
     /// <summary>Remove this file or directory (moves to Trash). Visible only for removable file/dir nodes.</summary>
     public IRelayCommand RemoveFileCommand { get; }
 
@@ -774,6 +777,10 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
 
         New3DViewCommand = new AsyncRelayCommand(
             () => _actions?.New3DViewAsync(this) ?? Task.CompletedTask,
+            () => _actions is not null && IsCell);
+
+        New3DViewFromLayoutCommand = new AsyncRelayCommand(
+            () => _actions?.New3DViewFromLayoutAsync(this) ?? Task.CompletedTask,
             () => _actions is not null && IsCell);
 
         OpenExternalCommand = new RelayCommand(

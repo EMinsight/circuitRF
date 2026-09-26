@@ -60,7 +60,7 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
     private ID3D11DepthStencilState _dsWrite = null!, _dsNoWrite = null!, _dsOff = null!;
     private ID3D11RasterizerState _raster = null!;
     private ID3D11Buffer _cb = null!;
-    /// <summary>brief-em3d-46 — the per-draw transform (register b1), 64 bytes, rewritten only when a draw's slot changes.</summary>
+    /// <summary>brief-em3d-46 — the per-draw transform (register b1), 80 bytes (brief-em3d-48 added the id offset), rewritten only when a draw's slot changes.</summary>
     private ID3D11Buffer _cbTransform = null!;
     private ID3D11Texture2D _pickId = null!, _pickPos = null!, _pickDepth = null!;
     private ID3D11RenderTargetView _pickIdRtv = null!, _pickPosRtv = null!;
@@ -402,6 +402,12 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
             for (int i = 0; i < plan.PickDrawCount; i++)
             {
                 ref var d = ref plan.PickDraws[i];
+                // brief-em3d-48 — an array element's pick draw: its translation and id offset.
+                if (d.Transform != transform && d.Transform < plan.TransformCount)
+                {
+                    transform = d.Transform;
+                    SetTransform(ctx, plan, transform);
+                }
                 ctx.DrawIndexed((uint)d.Count, (uint)d.First, 0); draws++;
             }
             ctx.CopyResource(_stagingId[slot], _pickId);
@@ -533,7 +539,7 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
     /// <summary>brief-em3d-46 — slot <paramref name="slot"/> of the plan's per-draw transforms into register b1.</summary>
     private void SetTransform(ID3D11DeviceContext ctx, Scene3DFramePlan plan, int slot)
     {
-        ctx.UpdateSubresource(plan.Transforms.AsSpan(16 * slot, 16), _cbTransform);
+        ctx.UpdateSubresource(plan.Transforms.AsSpan(Scene3DFramePlan.TransformFloats * slot, Scene3DFramePlan.TransformFloats), _cbTransform);
         Counters.CountUniform(Scene3DFramePlan.TransformBytesPerDraw);
     }
 }

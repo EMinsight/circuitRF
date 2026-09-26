@@ -3944,3 +3944,40 @@ object copy) and `Scene3DFaces.NearestVertexOnScreen` offer ONLY those two point
 cursor is on: a cylinder's tessellation vertices are not design (R-em3d47-5). This applies in the read-only viewer
 too, so a via's rim points are no longer vertex candidates there either. Snapping is unchanged (a cap's centre was
 already its face centre).
+
+## Instanced drawing: elements, their pick, the triangle budget — brief-em3d-48 (2026-09-26)
+
+Built: `Scene3DElement`/`Scene3DInstanceGroup` and the owned-prefix counts on `Scene3DModel`, the builder's
+`RunTracker` and `Scene3DInstancing` option, element slots and `ChooseDetail` in `Scene3DFramePlan`, the `mx.id`
+offset in `scene.wgsl`, per-draw transforms in all three backends' ID pass, and `Scene3DPatch.ElementTransforms`.
+Gates 1, 2 (CPU, software AND a real Metal ID pass) and 9 in `tests/Ui.Tests/ThreeD/HierarchyGateTests.cs`.
+**No window was seen from the agent's session.**
+
+- **The pick encoding is NOT the brief's reference packing** (draw index in the top bits). Element objects are
+  MATERIALISED — a `Scene3DObject` per element's object, with a dense 32-bit id — because the whole viewer and
+  editor (visibility arrays, selection, hover, the tree, snapping) index objects by `id − 1`; a virtual id
+  would have touched every one of them. An element owns no bytes: its objects' ids follow every object that
+  does (`GeometryObjectCount`), each element's in one contiguous block mirroring the prototype's, so the ID
+  pass writes `v.id + mx.id.x` — the ELEMENT's object — with one per-draw offset. The documented limits
+  (`C3dEditorViewModel.DefaultMaxChildObjects` = 2²⁰ per child, `DefaultMaxPlacementObjects` = 2²⁴ per
+  placement) are the view's per-object records, refused at placement with both numbers.
+- **A per-draw slot is now 80 bytes** (the mat4 and a vec4u); `TransformFloats` = 20. Slot 0 identity, then one
+  per element and one per element's BOX (written once per scene in `Size()`), then a preview's copies, then
+  (only while a preview moves an element) that element under each copy. Vulkan's ring GROWS
+  (`EnsureTransformRing`, device idle, binding 1 rewritten) — its fixed 257 slots could not hold a 20 × 20 array.
+- **One draw per element**, when the prototype's opaque triangles are one contiguous index range and every
+  OPAQUE object of the element is drawn; a translucent one is sorted and drawn on its own either way (the
+  "whole element" test once required translucent objects too, and the hidden outermost dielectric — which
+  every element inherits from the prototype — made every element fall back to per-object draws).
+- **Every CPU reader of the vertex buffer adds `Scene3DBatch.Offset`**: `Scene3DPicking`, `RayHits`,
+  `Scene3DIdPatch`, `Scene3DFaces.TrianglesAt`. A new reader that forgets it picks the PROTOTYPE's triangles
+  under an element's id — right object, wrong place — so grep for `scene.Vertices[` when adding one.
+- **`Scene3DPatch.ElementTransforms` counts new TRANSLATIONS**, not changed indices: a column added to a 20 × 20
+  array renumbers every element after it (their ids move, their translations do not), and counting by index
+  said 400.
+- **`Accumulator.Object` copies a `Scene3DObject` field by field.** `Context` (the dimmed parent) was silently
+  dropped there until the push-in test looked; a new object field must be added to that copy.
+- **The triangle budget** (default 20 M, `Lod3DPreference`, 3D ▸ Triangle Budget…) boxes the elements farthest
+  from the eye first; boxed elements are neither drawn nor picked, and `Viewer3DViewModel.LodText` says how
+  many. It lives in the 3D menu, not Settings, so no Settings figure moves.
+- **Metal ran it** (the new gate's offscreen ID pass names element [>5]'s object); D3D11 and Vulkan compile only.

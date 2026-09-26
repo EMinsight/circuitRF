@@ -20,7 +20,8 @@ public sealed class C3dEditorDocument : Document, IUndoableDocument, IActivatabl
 
     public C3dEditorViewModel ViewModel { get; }
     public UndoRedoStack UndoRedo => ViewModel.UndoRedo;
-    public string FilePath => ViewModel.FilePath;
+    /// <summary>The TOP document's file — the tab's, whatever frame is pushed in (brief-em3d-48).</summary>
+    public string FilePath => ViewModel.TopFilePath;
 
     /// <summary>The key a .c3d is registered under among the open documents: its full path.</summary>
     public static string KeyFor(string path) => Path.GetFullPath(path);
@@ -39,8 +40,8 @@ public sealed class C3dEditorDocument : Document, IUndoableDocument, IActivatabl
     /// <summary>Save As landed: the tab follows the new file.</summary>
     public void FollowSavedAs()
     {
-        _baseTitle = Path.GetFileName(ViewModel.FilePath);
-        Id = KeyFor(ViewModel.FilePath);
+        _baseTitle = Path.GetFileName(ViewModel.TopFilePath);
+        Id = KeyFor(ViewModel.TopFilePath);
         Title = _isDirty ? $"• {_baseTitle}" : _baseTitle;
     }
 

@@ -22,15 +22,17 @@ namespace CircuitRF.Ui.ThreeD.Tools;
 /// brief 46's Move and Rotate, which are gestures on the selection (Duplicate is a Move that keeps the original).</summary>
 /// <para>brief-em3d-47 — the face and vertex gestures: Move Along Normal, a face's Move, a vertex's Move, Extrude to New
 /// Solid and Align to Face.</para>
-public enum C3dToolKind { Box, Sheet, Polygon, Polyline, Cylinder, Extrude, Move, Rotate, PushPull, FaceMove, VertexMove, ExtrudeFace, AlignFace }
+/// <para>brief-em3d-48 — Place: an instance of a cell, following the cursor until the click.</para>
+public enum C3dToolKind { Box, Sheet, Polygon, Polyline, Cylinder, Extrude, Move, Rotate, PushPull, FaceMove, VertexMove, ExtrudeFace, AlignFace, Place }
 
 /// <summary>
 /// Where the cursor is, as a tool reads it: the snap in force (a DBU point, and whether it is exact and on geometry
 /// rather than the grid), and the ray through the cursor, world metres. Either may be absent.
 /// </summary>
 /// <para>brief-em3d-46 — <paramref name="Free"/> is Shift held: a rotation turns freely rather than by 15° steps.</para>
+/// <para>brief-em3d-48 — <paramref name="Command"/> is Ctrl/Cmd held: a placement's handle is the child's bottom-centre.</para>
 public readonly record struct C3dDrawInput(C3dPoint3? Snap, bool SnapExact, bool SnapOnGeometry, Point3? RayOrigin, Point3? RayDirection,
-                                           bool Free = false)
+                                           bool Free = false, bool Command = false)
 {
     public bool HasRay => RayOrigin is not null && RayDirection is not null;
 }

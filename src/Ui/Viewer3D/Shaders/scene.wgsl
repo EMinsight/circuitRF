@@ -51,8 +51,13 @@ struct U {
 // preview moving what is already drawn, so a drag uploads no geometry. A second uniform binding, set per draw:
 // Metal setVertexBytes at buffer 2, a D3D11 cbuffer at b1, a Vulkan dynamic offset into binding 1. Not an
 // immediate (push constant): naga writes those to HLSL as ConstantBuffer<T>, which vs_5_0 does not compile.
+//
+// brief-em3d-48 R-em3d48-3b — and an ID offset: an array element draws its prototype's triangles, whose vertices carry
+// the prototype's object ids; the element's objects are numbered the same distance after them, so id + mx.id.x is the
+// ELEMENT's object — which is what the ID pass must write for a pick to name the element. 0 for every other draw.
 struct MX {
     m: mat4x4f,
+    id: vec4u,
 };
 @group(0) @binding(1) var<uniform> mx: MX;
 
@@ -76,7 +81,7 @@ struct VO {
     let p = (mx.m * vec4f(v.p, 1.0)).xyz;
     o.pos = u.vp * vec4f(p, 1.0);
     o.world = p;
-    o.id = v.id;
+    o.id = v.id + mx.id.x;
     o.col = v.col;
     o.face = v.face;
     return o;

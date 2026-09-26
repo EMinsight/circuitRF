@@ -127,7 +127,8 @@ public sealed class Scene3DIdPatch
             {
                 TrianglesRasterized++;
                 var a0 = verts[scene.Indices[t]]; var a1 = verts[scene.Indices[t + 1]]; var a2 = verts[scene.Indices[t + 2]];
-                var p0 = new Vector3(a0.X, a0.Y, a0.Z); var p1 = new Vector3(a1.X, a1.Y, a1.Z); var p2 = new Vector3(a2.X, a2.Y, a2.Z);
+                var p0 = new Vector3(a0.X, a0.Y, a0.Z) + b.Offset; var p1 = new Vector3(a1.X, a1.Y, a1.Z) + b.Offset;
+                var p2 = new Vector3(a2.X, a2.Y, a2.Z) + b.Offset;
                 var c0 = Vector4.Transform(new Vector4(p0, 1), m);
                 var c1 = Vector4.Transform(new Vector4(p1, 1), m);
                 var c2 = Vector4.Transform(new Vector4(p2, 1), m);

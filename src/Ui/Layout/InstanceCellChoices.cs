@@ -17,8 +17,9 @@ namespace CircuitRF.Ui.Layout;
 /// <param name="Note">A remark that does NOT disable the row — used where the missing view is
 /// something the placement itself offers to create (a schematic placement generates a symbol), so
 /// the row must say what will happen rather than pretend the cell is unusable.</param>
+/// <para>brief-em3d-48 R-em3d48-1a — for a 3D view, which of the two placeable views the cell has.</para>
 public sealed record InstanceCellChoice(
-    string DisplayName, string AbsoluteCellDir, string? DisabledReason, string? Note = null)
+    string DisplayName, string AbsoluteCellDir, string? DisabledReason, string? Note = null, bool Has3D = false, bool HasLayout = false)
 {
     public bool IsEnabled => DisabledReason is null;
 
@@ -166,6 +167,15 @@ public static class InstanceCellChoices
     /// </summary>
     private static InstanceCellChoice RowFor(string cellDir, string displayName, ViewType view)
     {
+        if (view == ViewType.ThreeD)
+        {
+            // brief-em3d-48 R-em3d48-1a — a 3D view places either view: the row says which the cell has, and a cell
+            // with neither is listed disabled with the reason, never left out.
+            bool has3D = CellFolder.ResolvePrimary(cellDir, ViewType.ThreeD).ResolvedName is not null;
+            bool hasLayout = CellFolder.ResolvePrimary(cellDir, ViewType.Layout).ResolvedName is not null;
+            string? note = (has3D, hasLayout) switch { (true, true) => "3D view and layout", (true, false) => "3D view only", (false, true) => "layout only", _ => null };
+            return new InstanceCellChoice(displayName, cellDir, has3D || hasLayout ? null : "No 3D view or layout view", note, has3D, hasLayout);
+        }
         var primary = CellFolder.ResolvePrimary(cellDir, view);
         bool hasView = primary.State is PrimaryState.SoleFile or PrimaryState.NamedPresent;
         if (hasView) return new InstanceCellChoice(displayName, cellDir, null);
@@ -195,8 +205,9 @@ public static class InstanceCellChoices
 /// workspace instead of choosing one from the list. The other two fields are empty; the caller runs
 /// the cross-workspace flow and re-asks. A nested modal is what this avoids — see the picker's own
 /// note.</param>
+/// <param name="View">brief-em3d-48 — for a 3D view, the view chosen (3D or layout); null elsewhere.</param>
 public sealed record CellPickResult(
-    string CellRef, string AbsoluteCellDir, bool ReferenceRequested = false)
+    string CellRef, string AbsoluteCellDir, bool ReferenceRequested = false, ViewType? View = null)
 {
     public static CellPickResult Reference { get; } = new("", "", true);
 }

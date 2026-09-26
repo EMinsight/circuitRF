@@ -239,8 +239,10 @@ public sealed class Viewer3DPane : Control
                 // brief-em3d-44: the ID pass reads the snap's patch around the cursor, in device pixels.
                 _plan.PickSize = _vm.PickSizeFor(scale, backend.MaxPickSize);
                 _plan.PickPixelsPerDip = (float)scale;
+                _plan.TriangleBudget = _vm.TriangleBudget;
                 _plan.Plan(_vm.Scene, view, w, h, backend.FlipY, pick: view.CursorX >= 0,
                            _vm.MeshOverlay, _vm.SectionOverlay, _vm.GridOverlay, _vm.FieldGeometry);
+                _vm.FramePlanned(_plan);
                 _pField = _vm.FieldGeometry;
                 view.CursorX = cx; view.CursorY = cy;
                 _planScene = _vm.Scene;
@@ -364,6 +366,7 @@ public sealed class Viewer3DPane : Control
         }
         _vm?.SetGeometrySnapSuspended(e.KeyModifiers.HasFlag(KeyModifiers.Alt));
         _vm?.SetShiftHeld(e.KeyModifiers.HasFlag(KeyModifiers.Shift));
+        _vm?.SetCommandHeld((e.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Meta)) != 0);
         _vm?.Hover((float)pos.X, (float)pos.Y);
     }
 
@@ -433,6 +436,7 @@ public sealed class Viewer3DPane : Control
         }
         if (e.Key is Key.LeftAlt or Key.RightAlt) _vm.SetGeometrySnapSuspended(true);
         if (e.Key is Key.LeftShift or Key.RightShift) _vm.SetShiftHeld(true);
+        if (e.Key is Key.LeftCtrl or Key.RightCtrl or Key.LWin or Key.RWin) _vm.SetCommandHeld(true);
         // brief-em3d-46 — keys during a gizmo drag belong to the move it started (X/Y/Z, a typed distance, Esc).
         if (_gizmoDrag)
         {
@@ -449,6 +453,7 @@ public sealed class Viewer3DPane : Control
         base.OnKeyUp(e);
         if (e.Key is Key.LeftAlt or Key.RightAlt) _vm?.SetGeometrySnapSuspended(false);
         if (e.Key is Key.LeftShift or Key.RightShift) _vm?.SetShiftHeld(false);
+        if (e.Key is Key.LeftCtrl or Key.RightCtrl or Key.LWin or Key.RWin) _vm?.SetCommandHeld(false);
     }
 
     /// <summary>The latched-key lesson: a key-up delivered to another window never reaches this one, so every
@@ -458,5 +463,6 @@ public sealed class Viewer3DPane : Control
         base.OnLostFocus(e);
         _vm?.ClearHeldKeys();
         _vm?.SetShiftHeld(false);
+        _vm?.SetCommandHeld(false);
     }
 }

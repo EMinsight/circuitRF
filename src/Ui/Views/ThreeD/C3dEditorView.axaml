@@ -197,6 +197,28 @@
             </WrapPanel>
         </Border>
 
+        <!-- ── brief-em3d-48: the push-in breadcrumb (hier4's shape); a click pops out to that level ── -->
+        <Border DockPanel.Dock="Top" Padding="6,3" BorderThickness="0,0,0,1" IsVisible="{Binding ViewModel.CanPopOut}"
+                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
+            <StackPanel Orientation="Horizontal" Spacing="4">
+                <Button Content="Pop Out" FontSize="11" Padding="6,1" Click="OnPopOutClick" ToolTip.Tip="Back to the parent (Ctrl/Cmd+[). A dirty child is saved or discarded as you answer."/>
+                <ItemsControl ItemsSource="{Binding ViewModel.Breadcrumbs}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="2"/></ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="t3:C3dBreadcrumb">
+                            <StackPanel Orientation="Horizontal" Spacing="2">
+                                <TextBlock Text="›" FontSize="11" Opacity="0.6" VerticalAlignment="Center"/>
+                                <Button Content="{Binding Text}" FontSize="11" Padding="4,1" Tag="{Binding FrameIndex}"
+                                        IsEnabled="{Binding !IsCurrent}" Click="OnBreadcrumbClick"/>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+        </Border>
+
         <!-- ── Status ──────────────────────────────────────────────────────────── -->
         <Border DockPanel.Dock="Bottom" Padding="6,2" BorderThickness="0,1,0,0"
                 BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
@@ -219,6 +241,10 @@
                                      IsVisible="{Binding ViewModel.ToolPrompt, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                 <SelectableTextBlock FontSize="11" Text="{Binding ViewModel.StatusMessage}" TextWrapping="Wrap"
                                      IsVisible="{Binding ViewModel.StatusMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                <SelectableTextBlock FontSize="11" Text="{Binding ViewModel.FrameText}" TextWrapping="Wrap"
+                                     IsVisible="{Binding ViewModel.FrameText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                <SelectableTextBlock FontSize="11" Text="{Binding ViewModel.Viewer.LodText}" TextWrapping="Wrap" Foreground="{DynamicResource CrfWarningBrush}"
+                                     IsVisible="{Binding ViewModel.Viewer.LodText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                 <SelectableTextBlock FontSize="11" Text="{Binding ViewModel.Viewer.Notes}" TextWrapping="Wrap" Opacity="0.85"
                                      IsVisible="{Binding ViewModel.Viewer.Notes, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
             </StackPanel>

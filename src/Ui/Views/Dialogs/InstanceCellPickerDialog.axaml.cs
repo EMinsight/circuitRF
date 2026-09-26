@@ -39,6 +39,7 @@ public partial class InstanceCellPickerDialog : Window
 {
     private readonly string _baseDir = "";
     private readonly bool _canReferenceExternal;
+    private readonly bool _threeD;
 
     public InstanceCellPickerDialog() => InitializeComponent();
 
@@ -65,10 +66,16 @@ public partial class InstanceCellPickerDialog : Window
     {
         _baseDir = baseDir;
         _canReferenceExternal = canReferenceExternal;
+        _threeD = view == ViewType.ThreeD;
 
         PromptText.Text = view == ViewType.Symbol
             ? "Choose a cell to place in this schematic."
+            : _threeD ? "Choose a cell, and which of its views, to place in this 3D view."
             : "Choose a cell to place as an instance.";
+        ViewChoice.IsVisible = TechNote.IsVisible = _threeD;
+        // A 3D view may hold its own cell's LAYOUT (the views differ), so its own cell is listed; placing its own 3D
+        // view is refused at the pick, with the path, like any other cycle.
+        if (_threeD) parentCellDir = null;
 
         // The actual scan/exclusion/disabled-reason logic lives in InstanceCellChoices (framework-
         // free, headlessly testable) — this constructor only turns the result into ListBox state.
@@ -95,7 +102,8 @@ public partial class InstanceCellPickerDialog : Window
 
         BrowseButton.Click += async (_, _) => await OnBrowseAsync();
         CancelButton.Click += (_, _) => Close(null);
-        ChoiceList.SelectionChanged += (_, _) => UpdateOkEnabled();
+        ChoiceList.SelectionChanged += (_, _) => { SyncViewChoice(); UpdateOkEnabled(); };
+        SyncViewChoice();
         ChoiceList.DoubleTapped += (_, _) => TryAccept();
         OkButton.Click += (_, _) => TryAccept();
     }
@@ -103,7 +111,18 @@ public partial class InstanceCellPickerDialog : Window
     private void TryAccept()
     {
         if (ChoiceList.SelectedItem is InstanceCellChoice { IsEnabled: true } chosen)
-            Close(new CellPickResult(RelativeCellRef(chosen.AbsoluteCellDir), chosen.AbsoluteCellDir));
+            Close(new CellPickResult(RelativeCellRef(chosen.AbsoluteCellDir), chosen.AbsoluteCellDir,
+                                     View: _threeD ? (ViewLayoutRadio.IsChecked == true ? ViewType.Layout : ViewType.ThreeD) : null));
+    }
+
+    /// <summary>brief-em3d-48 — the chosen row's views: one it lacks cannot be picked; one it alone has is picked.</summary>
+    private void SyncViewChoice()
+    {
+        if (!_threeD || ChoiceList.SelectedItem is not InstanceCellChoice c) return;
+        View3DRadio.IsEnabled = c.Has3D;
+        ViewLayoutRadio.IsEnabled = c.HasLayout;
+        if (!c.Has3D && c.HasLayout) ViewLayoutRadio.IsChecked = true;
+        else if (c.Has3D && !c.HasLayout) View3DRadio.IsChecked = true;
     }
 
     private void UpdateOkEnabled()

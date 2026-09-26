@@ -160,6 +160,7 @@
                     <NativeMenu>
                         <NativeMenuItem Header="Place Cell Instance…"       Command="{Binding PlaceCellInstanceCommand}" Gesture="Meta+Shift+I"/>
                         <NativeMenuItem Header="Find Instance…"             Command="{Binding FindInstanceCommand}" Gesture="Meta+F"/>
+                        <NativeMenuItem Header="New 3D View from Layout"    Command="{Binding NewThreeDViewFromLayoutCommand}" ToolTip="A 3D view holding one instance of this cell's own layout, with a copy of every 3D setup naming it. Requires an active layout document saved to a cell."/>
                         <NativeMenuItemSeparator/>
                         <NativeMenuItem Header="Update Layout from Schematic"   Command="{Binding UpdateLayoutFromSchematicCommand}" Gesture="Meta+U"/>
                         <NativeMenuItem Header="Update Schematic from Layout"   Command="{Binding UpdateSchematicFromLayoutCommand}" Gesture="Meta+Shift+U"/>
@@ -333,6 +334,7 @@
                             </NativeMenuItem.Menu>
                         </NativeMenuItem>
                         <NativeMenuItem Header="Measure" ToolTip="Two snapped points: x, y, z, the deltas and the distance, every number copyable (M). Requires an active 3D document." Command="{Binding ThreeDMeasureCommand}"/>
+                        <NativeMenuItem Header="Triangle Budget…" ToolTip="How many triangles a frame draws before array elements, farthest first, are drawn as their bounding boxes. Stored per user." Command="{Binding ThreeDTriangleBudgetCommand}"/>
                         <NativeMenuItemSeparator/>
                         <NativeMenuItem Header="Show All" ToolTip="Requires an active 3D document." Command="{Binding ThreeDShowAllCommand}"/>
                     </NativeMenu>
@@ -904,7 +906,7 @@
                 <MenuItem Header="_Place Cell Instance…"
                           Command="{Binding PlaceCellInstanceCommand}"
                           InputGesture="Ctrl+Shift+I"
-                          ToolTip.Tip="Choose a cell and click to place an instance of it. Requires an active schematic or layout document.">
+                          ToolTip.Tip="Choose a cell and click to place an instance of it. Requires an active schematic, layout or 3D document.">
                     <MenuItem.Icon><mi:MaterialIcon Kind="ShapeSquarePlus" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
                 <MenuItem Header="_Find Instance…"
@@ -912,6 +914,11 @@
                           InputGesture="Ctrl+F"
                           ToolTip.Tip="List the placed components of the active schematic or layout, filter them by name or type, and double-click one to zoom to it. Requires an active schematic or layout document.">
                     <MenuItem.Icon><mi:MaterialIcon Kind="Magnify" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="New _3D View from Layout"
+                          Command="{Binding NewThreeDViewFromLayoutCommand}"
+                          ToolTip.Tip="A 3D view holding one instance of this cell's own layout, in its units and technology, with a copy of every 3D setup naming it. Requires an active layout document saved to a cell.">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="CubeScan" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
                 <Separator/>
                 <MenuItem Header="Update _Layout from Schematic"
@@ -1093,6 +1100,8 @@
                           ToolTip.Tip="Two snapped points: x, y, z, the deltas and the distance, every number copyable (M). Requires an active 3D document.">
                     <MenuItem.Icon><mi:MaterialIcon Kind="RulerSquare" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
+                <MenuItem Header="_Triangle Budget…" Command="{Binding ThreeDTriangleBudgetCommand}"
+                          ToolTip.Tip="How many triangles a frame draws before array elements, farthest first, are drawn as their bounding boxes. Stored per user."/>
                 <Separator/>
                 <MenuItem Header="Show _All" Command="{Binding ThreeDShowAllCommand}"
                           ToolTip.Tip="Show every hidden object. Requires an active 3D document."/>

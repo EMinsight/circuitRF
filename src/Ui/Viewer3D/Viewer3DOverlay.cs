@@ -136,6 +136,10 @@ public sealed class Viewer3DOverlay : Control
             DashStyle = new DashStyle([4, 3], 0),
         };
         Lines(d.Construction, construction);
+        // brief-em3d-48 R-em3d48-6b — a cell that resolves to nothing: its last known box, dashed, and its name.
+        Lines(d.Missing, new Pen(CrossingBrush, 1.4) { DashStyle = new DashStyle([5, 4], 0) });
+        foreach (var (at, text) in d.Labels)
+            if (Screen(at) is (var lp, true)) Text(ctx, text, new Point(lp.X + 4, lp.Y - 18), dark ? Brushes.White : Brushes.Black, 11, dark);
         Lines(d.Selected, new Pen(new SolidColorBrush(Color.FromRgb(255, 90, 255)), 2));
         if (d.Rubber.Count > 0)
         {

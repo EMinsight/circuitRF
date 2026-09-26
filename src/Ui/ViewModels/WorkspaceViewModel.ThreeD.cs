@@ -20,6 +20,9 @@ using CircuitRF.Design.Workspace;
 using CircuitRF.Render.Scene3D;
 using CircuitRF.Render.Scene3D.Edit;
 using CircuitRF.Ui.ThreeD;
+using CircuitRF.Ui.ViewModels.ProjectTree;
+using CircuitRF.Ui.Layout;
+using CircuitRF.Design.Workspace;
 using CircuitRF.Ui.Viewer3D;
 using CircuitRF.Ui.Views.Dialogs;
 using CommunityToolkit.Mvvm.Input;
@@ -59,10 +62,12 @@ public partial class WorkspaceViewModel
             vm.ExternalChangeWhileDirty += () => _ = AskReloadC3dAsync(doc);
             vm.PropertyChanged += (_, e) =>
             {
+                if (e.PropertyName is nameof(C3dEditorViewModel.CanPopOut)) NotifyHierarchyCanExecuteChanged();
                 if (e.PropertyName is not nameof(C3dEditorViewModel.IsDirty)) return;
-                _factory.ProjectTreeTool?.SetFileDirty(vm.FilePath, vm.IsDirty);
+                _factory.ProjectTreeTool?.SetFileDirty(vm.TopFilePath, vm.IsDirty);
                 RaiseFileMenuEnablementChanged();
             };
+            WireC3dHierarchy(doc);
             _factory.OpenDocument(doc);
             _openDocsByPath[key] = doc;
             WatchC3d(doc);
@@ -151,6 +156,125 @@ public partial class WorkspaceViewModel
         Messages.Success("Saved", path);
     }
 
+    // ── hierarchy (brief-em3d-48) ─────────────────────────────────────────────────────────────
+
+    /// <summary>What the 3D editor's hierarchy asks of the shell: open a layout (Push In on a layout child), refresh the
+    /// tree (Group into Cell), a yes/no (Flatten), Save / Discard / Cancel (Pop Out of a dirty child), a name, and whether
+    /// a child is open in its own tab.</summary>
+    private void WireC3dHierarchy(C3dEditorDocument doc)
+    {
+        var vm = doc.ViewModel;
+        vm.OpenLayoutRequested += path => _ = OpenOrActivateLayoutAsync(path);
+        vm.CellCreated += _ => _factory.ProjectTreeTool?.Refresh();
+        vm.OpenElsewhere = path => _openDocsByPath.TryGetValue(C3dEditorDocument.KeyFor(path), out var other) && !ReferenceEquals(other, doc);
+        vm.Confirm = async question =>
+            HostWindowOf(doc) is { } w && await TextConfirmDialog.AskAsync(w, "3D Editor", "Confirm", question, "Continue");
+        vm.PopOutQuestion = async question =>
+        {
+            if (HostWindowOf(doc) is not { } w) return C3dPopOutChoice.Save;
+            var dlg = new SaveChangesDialog(question, saveLabel: "Save", dontSaveLabel: "Discard", cancelLabel: "Cancel", title: "Pop Out");
+            await dlg.ShowDialog(w);
+            return dlg.Result switch { SaveChangesResult.Save => C3dPopOutChoice.Save, SaveChangesResult.DontSave => C3dPopOutChoice.Discard, _ => C3dPopOutChoice.Cancel };
+        };
+        vm.AskName = async (prompt, suggestion) =>
+            HostWindowOf(doc) is { } w ? await new InputNameDialog("3D Editor", prompt, suggestion).ShowDialog<string?>(w) : null;
+    }
+
+    /// <summary>brief-em3d-48 R-em3d48-1a — Design ▸ Place Cell Instance… into a 3D view: the cell picker in its 3D mode
+    /// (a View choice, no technology gate), the Reference Cell… escape hatch as the layout editor has it, then the
+    /// placement armed — or refused at the pick with its reason.</summary>
+    private async Task PlaceCellInstanceIn3DAsync(C3dEditorDocument doc)
+    {
+        if (HostWindowOf(doc) is not { } owner) return;
+        var vm = doc.ViewModel;
+        string baseDir = Path.GetDirectoryName(vm.FilePath)!;
+        while (true)
+        {
+            var dialog = new InstanceCellPickerDialog(WorkspaceRootDir, baseDir, C3dHierarchy.CellDirOf(vm.FilePath),
+                                                      CircuitRF.Design.Cells.ViewType.ThreeD, CanReferenceExternalCell);
+            var pick = await dialog.ShowDialog<CircuitRF.Ui.Layout.CellPickResult?>(owner);
+            if (pick is null) return;
+            if (pick.ReferenceRequested)
+            {
+                string? broughtIn = await ReferenceExternalCellAsync();
+                if (broughtIn is null) continue;
+                pick = new CircuitRF.Ui.Layout.CellPickResult(ExternalCellRef.MakeCellRef(baseDir, broughtIn), broughtIn);
+            }
+            if (pick.CellRef.Length == 0) return;
+            var view = pick.View switch
+            {
+                CircuitRF.Design.Cells.ViewType.Layout => C3dInstanceView.Layout,
+                CircuitRF.Design.Cells.ViewType.ThreeD => C3dInstanceView.ThreeD,
+                _ => C3dHierarchy.ViewFile(pick.AbsoluteCellDir, C3dInstanceView.ThreeD) is null ? C3dInstanceView.Layout : C3dInstanceView.ThreeD,
+            };
+            if (vm.BeginInstancePlacement(pick.CellRef, pick.AbsoluteCellDir, view) is { } why) Messages.Warning(why);
+            return;
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task New3DViewFromLayoutAsync(ProjectTreeNodeViewModel cellNode) => await NewThreeDViewFromLayoutAsync(cellNode.AbsolutePath);
+
+    /// <summary>
+    /// brief-em3d-48 R-em3d48-7 — a cell's 3D view from its own layout: the name asked, the document made by
+    /// C3dHierarchy.NewFromLayout (the one place it is made), written with CellCreate's writer, and opened. What could
+    /// not be carried across — a port that is not one rectangle — is said, never dropped in silence.
+    /// </summary>
+    private async Task NewThreeDViewFromLayoutAsync(string cellDir)
+    {
+        if (ResolveOwner(null) is not { } window) return;
+        string cellName = Path.GetFileName(cellDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        var suggested = CircuitRF.Ui.Schematic.ViewFileNameSuggestion.Suggest(cellDir, cellName, CircuitRF.Design.Cells.ViewType.ThreeD);
+        var name = await new InputNameDialog("New 3D View from Layout", "3D view file name (without extension):", suggested).ShowDialog<string?>(window);
+        if (name is null) return;
+        if (CircuitRF.Design.Cells.NameValidator.Validate(name) is { } reason) { Messages.Error($"Invalid 3D view name: {reason}"); return; }
+        var path = Path.Combine(CircuitRF.Design.Cells.CellFolder.SubFolderPath(cellDir, CircuitRF.Design.Cells.ViewType.ThreeD), name + C3dPersistence.Extension);
+        if (File.Exists(path)) { Messages.Error($"A file named '{name}{C3dPersistence.Extension}' already exists."); return; }
+        var made = C3dHierarchy.NewFromLayout(cellDir, path, CurrentWorkspacePath, _techCache);
+        if (made.Document is not { } c3d) { Messages.Error($"New 3D View from Layout: {made.Refusal}"); return; }
+        try { CircuitRF.Design.Cells.CellCreate.WriteThreeDView(cellDir, name, c3d); }
+        catch (Exception ex) { Messages.Error($"Failed to create the 3D view: {ex.Message}"); return; }
+        _factory.ProjectTreeTool?.Refresh();
+        RefreshCellEditorFileLists(cellDir);
+        Messages.Success("Created", path);
+        if (made.SetupsCopied.Count > 0) Messages.Info($"Copied {made.SetupsCopied.Count} 3D setup(s) as embedded setups: {string.Join(", ", made.SetupsCopied)}.");
+        if (made.PortsLeftOut.Count > 0) Messages.Warning($"Ports left out (each must be one rectangle to become a parent-level port): {string.Join("; ", made.PortsLeftOut)}.");
+        OpenOrActivateC3dEditor(path);
+    }
+
+    /// <summary>Design ▸ New 3D View from Layout — the active layout's cell.</summary>
+    [RelayCommand(CanExecute = nameof(CanNewThreeDViewFromLayout))]
+    private async Task NewThreeDViewFromLayout()
+    {
+        if (ActiveLayoutDocument?.ActiveViewModel.CurrentCellDir is { Length: > 0 } cellDir) await NewThreeDViewFromLayoutAsync(cellDir);
+    }
+
+    private bool CanNewThreeDViewFromLayout() => ActiveLayoutDocument?.ActiveViewModel.CurrentCellDir is { Length: > 0 };
+
+    /// <summary>brief-em3d-48 R-em3d48-3c — 3D ▸ Triangle Budget…: the frame's budget before array elements draw as boxes.</summary>
+    [RelayCommand]
+    private async Task ThreeDTriangleBudget()
+    {
+        if (ResolveOwner(null) is not { } window) return;
+        string current = Lod3DPreference.Budget.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var text = await new InputNameDialog("Triangle Budget",
+            $"Triangles a 3D frame draws before array elements, farthest first, are drawn as boxes (at least {Lod3DPreference.Minimum:N0}):",
+            current).ShowDialog<string?>(window);
+        if (text is null) return;
+        if (!long.TryParse(text.Replace(",", "").Replace("_", "").Trim(), System.Globalization.NumberStyles.Integer,
+                           System.Globalization.CultureInfo.InvariantCulture, out long budget) || budget < Lod3DPreference.Minimum)
+        {
+            Messages.Error($"'{text}' is not a whole number of at least {Lod3DPreference.Minimum:N0}.");
+            return;
+        }
+        Lod3DPreference.Budget = budget;
+        foreach (var d in _openDocsByPath.Values)
+        {
+            if (d is C3dEditorDocument e) { e.ViewModel.Viewer.TriangleBudget = budget; e.ViewModel.Viewer.RequestFrame(); }
+            else if (d is Viewer3DDocument v) { v.ViewModel.TriangleBudget = budget; v.ViewModel.RequestFrame(); }
+        }
+    }
+
     // ── the drawing plane in the window state (brief-em3d-45 R-em3d45-1a) ─────────────────────
 
     private Dictionary<string, CwsDrawingPlane>? _drawingPlanes;
@@ -170,7 +294,7 @@ public partial class WorkspaceViewModel
     /// <summary>The plane as it is now; the default plane is no row at all.</summary>
     private void RememberDrawingPlane(C3dEditorViewModel vm)
     {
-        if (CameraKey(vm.FilePath) is not { } k) return;
+        if (CameraKey(vm.TopFilePath) is not { } k) return;
         _drawingPlanes ??= LoadStoredDrawingPlanes();
         if (vm.Plane == DrawingPlane.Default) _drawingPlanes.Remove(k);
         else _drawingPlanes[k] = new CwsDrawingPlane { Plane = vm.Plane.Plane.ToString(), OffsetDbu = vm.Plane.OffsetDbu };
@@ -189,6 +313,7 @@ public partial class WorkspaceViewModel
         RememberDrawingPlane(doc.ViewModel);
         if (_c3dWatchers.Remove(doc, out var w)) w.Dispose();
         _factory.ProjectTreeTool?.SetFileDirty(doc.FilePath, false);
+        NotifyHierarchyCanExecuteChanged();
         doc.ViewModel.Dispose();
         RaiseThreeDMenuChanged();
     }

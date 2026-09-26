@@ -108,10 +108,15 @@ public sealed class Viewer3DDrawOverlay
     public List<CircuitRF.Engine.Em3d.Point3> Fixed { get; } = [];
     /// <summary>brief-em3d-46 — an operation's pivot, drawn as a small cross.</summary>
     public List<CircuitRF.Engine.Em3d.Point3> Pivots { get; } = [];
+    /// <summary>brief-em3d-48 R-em3d48-6b — an instance whose cell resolves to nothing: a dashed box.</summary>
+    public List<DrawSegment> Missing { get; } = [];
+    /// <summary>brief-em3d-48 — chrome text at a world point: a missing cell's name, an external instance's
+    /// <c>[alias]</c> tag. Marking is chrome, never geometry (layout-view §7.1).</summary>
+    public List<(CircuitRF.Engine.Em3d.Point3 At, string Text)> Labels { get; } = [];
 
     public void Clear()
     {
-        Rubber.Clear(); Construction.Clear(); Selected.Clear(); Crossing.Clear(); Fixed.Clear(); Pivots.Clear();
+        Rubber.Clear(); Construction.Clear(); Selected.Clear(); Crossing.Clear(); Fixed.Clear(); Pivots.Clear(); Missing.Clear(); Labels.Clear();
     }
 }
 
@@ -295,7 +300,10 @@ public sealed partial class Viewer3DViewModel
     {
         int f = face == Scene3DVertex.NoFace ? -1 : (int)face;
         Scene3DItem? item = null;
-        if (id != 0)
+        // brief-em3d-48 R-em3d48-4a — the dimmed parent around a pushed-in child is under the cursor for the snap and for
+        // a drawing-plane pick, never for hover or selection.
+        bool selectable = Scene.Object(id)?.Selectable == true;
+        if (id != 0 && selectable)
             item = SelectMode switch
             {
                 Scene3DSelectMode.Face => f >= 0 ? Scene3DItem.OfFace(id, f) : null,
@@ -313,7 +321,7 @@ public sealed partial class Viewer3DViewModel
             OnPropertyChanged(nameof(HoveredVertex));
             FrameRequested?.Invoke();
         }
-        OnPicked(id, point, hit);
+        OnPicked(selectable ? id : 0, point, hit);
         ResolveSnap(patch);
         // brief-em3d-46 — an operation's preview and a measurement's rubber band follow the cursor from here.
         MeasureFollow();

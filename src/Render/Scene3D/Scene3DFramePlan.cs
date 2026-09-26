@@ -53,7 +53,7 @@ public struct Scene3DDraw
     public Scene3DBuffer Buffer;
     public int First, Count;
     /// <summary>brief-em3d-46 — the per-draw transform: a slot of <see cref="Scene3DFramePlan.Transforms"/>, 0 for the
-    /// identity. A backend hands the slot's 64 bytes to the vertex stage before the draw (Metal setVertexBytes,
+    /// identity. A backend hands the slot's 80 bytes (the matrix, and brief-em3d-48's id offset) to the vertex stage before the draw (Metal setVertexBytes,
     /// a D3D11 constant buffer, Vulkan push constants), and only when it differs from the draw before.</summary>
     public int Transform;
 }
@@ -181,16 +181,22 @@ public sealed class Scene3DFramePlan
 
     public readonly float[] Uniforms = new float[UniformFloats];
 
-    /// <summary>brief-em3d-46 — the per-draw transforms, 16 floats a slot laid out as the WGSL <c>mat4x4f</c> (column-
-    /// major, p' = M·p); slot 0 is the identity. <see cref="TransformCount"/> slots are in use this frame.</summary>
+    /// <summary>brief-em3d-46 — the per-draw transforms, <see cref="TransformFloats"/> floats a slot: the WGSL <c>MX</c> —
+    /// a <c>mat4x4f</c> (column-major, p' = M·p) and, brief-em3d-48, a <c>vec4u</c> whose x is added to every vertex's id
+    /// (an array element's objects are the prototype's plus that). Slot 0 is the identity; then each element's slot and
+    /// its box's (written once per scene); then a preview's copies. <see cref="TransformCount"/> slots are in use this
+    /// frame.</summary>
     public float[] Transforms = IdentitySlots(8);
     public int TransformCount = 1;
 
-    /// <summary>Bytes of transform this frame hands the vertex stage for its non-identity draws: 64 each — what a
+    /// <summary>Floats a transform slot takes: the matrix's 16 and the id offset's vec4u.</summary>
+    public const int TransformFloats = 20;
+
+    /// <summary>Bytes of transform this frame hands the vertex stage for its preview draws: TransformBytesPerDraw each — what a
     /// drag's preview costs a frame, and all it costs (gate 1).</summary>
     public long TransformBytes;
 
-    public const int TransformBytesPerDraw = 64;
+    public const int TransformBytesPerDraw = TransformFloats * 4;
 
     /// <summary>The most copies a preview draws (an array's live preview beyond this shows its first copies; the
     /// accepted array writes them all). Also what a backend sizes its per-frame transform slots for.</summary>
@@ -226,6 +232,27 @@ public sealed class Scene3DFramePlan
     private int[] _edgeOf = [], _batchOf = [];
     private bool[] _marked = [];
 
+    /// <summary>brief-em3d-48 R-em3d48-3c — the most triangles a frame draws before array elements, farthest from the eye
+    /// first, are drawn as their bounding boxes. The owner sets it (Settings); the status line says when it bites.</summary>
+    public long TriangleBudget = DefaultTriangleBudget;
+    public const long DefaultTriangleBudget = 20_000_000;
+
+    /// <summary>brief-em3d-48 — how many elements this frame drew as boxes, and how many the scene has.</summary>
+    public int LodBoxedElements;
+    public int ElementCount;
+
+    /// <summary>brief-em3d-48 — slot of element <paramref name="e"/>'s transform, and of its bounding box's.</summary>
+    public static int ElementSlot(int e) => 1 + e;
+    private int BoxSlot(int e) => 1 + _elements + e;
+    private int _elements, _copyBase = 1;
+    private float[] _elemKeys = [];
+    private int[] _elemOrder = [];
+    private bool[] _boxed = [];
+    private long _ownedTriangles, _elementTriangles;
+    private int[] _comboStart = [];
+    private readonly List<int> _comboUsed = [];
+    private int _nextSlot;
+
     /// <summary>
     /// Plans a <paramref name="width"/> × <paramref name="height"/> frame of <paramref name="scene"/>.
     /// <paramref name="flipY"/> for an API whose framebuffer y runs down. <paramref name="pick"/> asks
@@ -245,15 +272,45 @@ public sealed class Scene3DFramePlan
         TransformBytes = 0;
         var preview = view.Preview;
         WriteTransforms(preview);
-        foreach (var b in scene.Batches)
+        ChooseDetail(scene, view);
+        var batches = scene.Batches;
+        int owned = scene.OwnedBatches;
+        for (int k = 0; k < owned; k++)
+        {
+            var b = batches[k];
             if (!b.Translucent && view.IsDrawn(b.ObjectId))
                 AddMoved(preview, b.ObjectId, Scene3DPipeline.Opaque, Scene3DBuffer.Scene, b.FirstIndex, b.IndexCount, identity: true);
+        }
+        // brief-em3d-48 R-em3d48-3a — each element: ONE draw of its prototype's opaque triangles under its own transform
+        // when the whole element is drawn as it is; object by object when part of it is hidden or moving.
+        for (int e = 0; e < _elements; e++)
+        {
+            if (_boxed[e]) continue;
+            var el = scene.Elements[e];
+            var g = scene.Groups[el.Group];
+            if (Whole(scene, view, preview, el, g, pickPass: false))
+            {
+                Add(ref Draws, ref DrawCount, Scene3DPipeline.Opaque, Scene3DBuffer.Scene, g.OpaqueFirst, g.OpaqueCount, ElementSlot(e));
+                continue;
+            }
+            for (int k = el.FirstBatch; k < el.FirstBatch + el.BatchCount; k++)
+            {
+                var b = batches[k];
+                if (!b.Translucent && view.IsDrawn(b.ObjectId))
+                    AddMoved(preview, b.ObjectId, Scene3DPipeline.Opaque, Scene3DBuffer.Scene, b.FirstIndex, b.IndexCount, identity: true, e);
+            }
+        }
         // brief-em3d-29 — the field's slice and surfaces, one draw, opaque, before anything translucent.
         if (view.ShowField && field is { Vertices.Length: > 0 } f)
             Add(ref Draws, ref DrawCount, Scene3DPipeline.Field, Scene3DBuffer.Field, 0, f.Vertices.Length);
         foreach (var lb in scene.LineBatches)
             if (view.IsVisible(lb.ObjectId))
                 AddMoved(preview, lb.ObjectId, Scene3DPipeline.Lines, Scene3DBuffer.SceneLines, lb.FirstVertex, lb.VertexCount, identity: true);
+        // brief-em3d-48 R-em3d48-3c — an element over the budget: its bounding box, stated on screen.
+        if (LodBoxedElements > 0)
+            for (int e = 0; e < _elements; e++)
+                if (_boxed[e])
+                    Add(ref Draws, ref DrawCount, Scene3DPipeline.Lines, Scene3DBuffer.SceneLines, scene.UnitBox.FirstVertex, scene.UnitBox.VertexCount, BoxSlot(e));
         if (view.ShowMesh && mesh.Lines.Length > 0)
             Add(ref Draws, ref DrawCount, Scene3DPipeline.Lines, Scene3DBuffer.Overlay0, 0, mesh.Lines.Length);
         if (view.ShowMeshSection && view.Clip.Enabled && section.Lines.Length > 0)
@@ -282,10 +339,10 @@ public sealed class Scene3DFramePlan
         var eye = view.Camera.Eye;
         var forward = view.Camera.Forward;
         int n = 0;
-        var batches = scene.Batches;
         for (int i = 0; i < batches.Length; i++)
         {
             if (!batches[i].Translucent || !view.IsDrawn(batches[i].ObjectId)) continue;
+            if (batches[i].Element >= 0 && _boxed[batches[i].Element]) continue;
             _order[n] = i;
             _keys[n] = -Vector3.Dot(scene.Objects[batches[i].ObjectId - 1].Centroid - eye, forward);
             n++;
@@ -294,7 +351,7 @@ public sealed class Scene3DFramePlan
         for (int k = 0; k < n; k++)
         {
             var b = batches[_order[k]];
-            AddMoved(preview, b.ObjectId, Scene3DPipeline.Translucent, Scene3DBuffer.Scene, b.FirstIndex, b.IndexCount, identity: true);
+            AddMoved(preview, b.ObjectId, Scene3DPipeline.Translucent, Scene3DBuffer.Scene, b.FirstIndex, b.IndexCount, identity: true, b.Element);
         }
 
         // brief-em3d-43 — the selection, last: the edges of each selected object (Object mode) or of each
@@ -312,12 +369,12 @@ public sealed class Scene3DFramePlan
                 if (_edgeOf[id - 1] is int e and >= 0)
                 {
                     var eb = scene.EdgeBatches[e];
-                    AddMoved(preview, id, Scene3DPipeline.Edges, Scene3DBuffer.SceneLines, eb.FirstVertex, eb.VertexCount, identity: false);
+                    AddMoved(preview, id, Scene3DPipeline.Edges, Scene3DBuffer.SceneLines, eb.FirstVertex, eb.VertexCount, identity: false, eb.Element);
                 }
                 if (view.Mode == Scene3DSelectMode.Face && _batchOf[id - 1] is int t and >= 0)
                 {
                     var tb = batches[t];
-                    AddMoved(preview, id, Scene3DPipeline.OnTop, Scene3DBuffer.Scene, tb.FirstIndex, tb.IndexCount, identity: false);
+                    AddMoved(preview, id, Scene3DPipeline.OnTop, Scene3DBuffer.Scene, tb.FirstIndex, tb.IndexCount, identity: false, tb.Element);
                 }
             }
             for (int k = 0; k < limit; k++)
@@ -335,9 +392,73 @@ public sealed class Scene3DFramePlan
             PickCamera = view.Camera;
             PickCursorX = view.CursorX; PickCursorY = view.CursorY;
             Fill(PickUniforms, view, width, height, flipY, PickX, PickY, view.Clip.Enabled ? FlagClip : 0, PickSize);
-            foreach (var b in batches)
+            for (int k = 0; k < owned; k++)
+            {
+                var b = batches[k];
                 if (view.IsVisible(b.ObjectId) && scene.Objects[b.ObjectId - 1].Pickable && preview?.IsMoving(b.ObjectId) != true)
                     Add(ref PickDraws, ref PickDrawCount, Scene3DPipeline.Pick, Scene3DBuffer.Scene, b.FirstIndex, b.IndexCount);
+            }
+            for (int e = 0; e < _elements; e++)
+            {
+                if (_boxed[e]) continue;
+                var el = scene.Elements[e];
+                var g = scene.Groups[el.Group];
+                bool whole = Whole(scene, view, preview, el, g, pickPass: true);
+                if (whole) Add(ref PickDraws, ref PickDrawCount, Scene3DPipeline.Pick, Scene3DBuffer.Scene, g.OpaqueFirst, g.OpaqueCount, ElementSlot(e));
+                for (int k = el.FirstBatch; k < el.FirstBatch + el.BatchCount; k++)
+                {
+                    var b = batches[k];
+                    if (whole && !b.Translucent) continue;
+                    if (view.IsVisible(b.ObjectId) && scene.Objects[b.ObjectId - 1].Pickable && preview?.IsMoving(b.ObjectId) != true)
+                        Add(ref PickDraws, ref PickDrawCount, Scene3DPipeline.Pick, Scene3DBuffer.Scene, b.FirstIndex, b.IndexCount, ElementSlot(e));
+                }
+            }
+        }
+        TransformCount = _nextSlot;
+    }
+
+    /// <summary>Whether element <paramref name="el"/> draws its opaque triangles in ONE draw this frame: its group's opaque
+    /// range is one contiguous run, every one of its opaque objects is drawn (visible and pickable, in the ID pass) and
+    /// none of its objects is moving.</summary>
+    private static bool Whole(Scene3DModel scene, Viewer3DViewState view, Scene3DPreview? preview, in Scene3DElement el,
+                              in Scene3DInstanceGroup g, bool pickPass)
+    {
+        if (g.OpaqueCount <= 0 || el.Count != g.Count) return false;
+        for (uint id = el.FirstId; id < el.FirstId + (uint)el.Count; id++)
+        {
+            if (preview?.IsMoving(id) == true) return false;
+            // Only the opaque objects are in the one draw; a translucent one is drawn (and sorted) on its own either way.
+            if (scene.Objects[id - 1].Translucent) continue;
+            if (pickPass ? !view.IsVisible(id) || !scene.Objects[id - 1].Pickable : !view.IsDrawn(id)) return false;
+        }
+        return true;
+    }
+
+    /// <summary>R-em3d48-3c — which elements are over the triangle budget: none while the whole scene fits; else the
+    /// farthest from the eye, until the rest fits.</summary>
+    private void ChooseDetail(Scene3DModel scene, Viewer3DViewState view)
+    {
+        LodBoxedElements = 0;
+        if (_elements == 0) return;
+        Array.Clear(_boxed);
+        long room = TriangleBudget - _ownedTriangles;
+        if (_elementTriangles <= room) return;
+        var eye = view.Camera.Eye;
+        for (int e = 0; e < _elements; e++)
+        {
+            var el = scene.Elements[e];
+            var g = scene.Groups[el.Group];
+            var c = (g.Min + g.Max) * 0.5f + el.Offset;
+            _elemKeys[e] = Vector3.DistanceSquared(c, eye);
+            _elemOrder[e] = e;
+        }
+        Array.Sort(_elemKeys, _elemOrder, 0, _elements);
+        long used = 0;
+        for (int k = 0; k < _elements; k++)
+        {
+            int e = _elemOrder[k];
+            used += scene.Groups[scene.Elements[e].Group].Triangles;
+            if (used > room) { _boxed[e] = true; LodBoxedElements++; }
         }
     }
 
@@ -355,6 +476,29 @@ public sealed class Scene3DFramePlan
         Array.Fill(_batchOf, -1);
         for (int k = 0; k < scene.EdgeBatches.Length; k++) _edgeOf[scene.EdgeBatches[k].ObjectId - 1] = k;
         for (int k = 0; k < scene.Batches.Length; k++) _batchOf[scene.Batches[k].ObjectId - 1] = k;
+
+        // brief-em3d-48 — the element slots and their boxes' slots are written once per scene; a frame writes only a
+        // preview's copies after them.
+        _elements = ElementCount = scene.Elements.Length;
+        _copyBase = 1 + 2 * _elements;
+        _elemKeys = new float[_elements];
+        _elemOrder = new int[_elements];
+        _boxed = new bool[_elements];
+        _comboStart = new int[_elements];
+        Array.Fill(_comboStart, -1);
+        _ownedTriangles = 0;
+        for (int k = 0; k < scene.OwnedBatches; k++) _ownedTriangles += scene.Batches[k].IndexCount / 3;
+        _elementTriangles = 0;
+        foreach (var el in scene.Elements) _elementTriangles += scene.Groups[el.Group].Triangles;
+        EnsureSlots(_copyBase);
+        for (int e = 0; e < _elements; e++)
+        {
+            var el = scene.Elements[e];
+            var g = scene.Groups[el.Group];
+            WriteSlot(ElementSlot(e), Matrix4x4.CreateTranslation(el.Offset), el.IdOffset);
+            var size = Vector3.Max(g.Max - g.Min, new Vector3(1e-12f));
+            WriteSlot(BoxSlot(e), Matrix4x4.CreateScale(size) * Matrix4x4.CreateTranslation(g.Min + el.Offset), 0);
+        }
         _sized = scene;
     }
 
@@ -364,37 +508,82 @@ public sealed class Scene3DFramePlan
         list[count++] = new Scene3DDraw { Pipeline = p, Buffer = buf, First = first, Count = n, Transform = transform };
     }
 
-    /// <summary>A draw of object <paramref name="id"/>'s batch: as it is when nothing moves it; under each of the
-    /// preview's copies when it moves — and also as it is when the preview keeps the original and
-    /// <paramref name="identity"/> says the original is drawn in this pass.</summary>
-    private void AddMoved(Scene3DPreview? preview, uint id, Scene3DPipeline p, Scene3DBuffer buf, int first, int n, bool identity)
+    /// <summary>A draw of object <paramref name="id"/>'s batch: as it is when nothing moves it (under its element's
+    /// transform, for an element's object); under each of the preview's copies when it moves — and also as it is when
+    /// the preview keeps the original and <paramref name="identity"/> says the original is drawn in this pass.</summary>
+    private void AddMoved(Scene3DPreview? preview, uint id, Scene3DPipeline p, Scene3DBuffer buf, int first, int n, bool identity,
+                          int element = -1)
     {
+        int own = element >= 0 ? ElementSlot(element) : 0;
         if (preview is null || !preview.IsMoving(id))
         {
-            Add(ref Draws, ref DrawCount, p, buf, first, n);
+            Add(ref Draws, ref DrawCount, p, buf, first, n, own);
             return;
         }
-        if (identity && preview.KeepOriginal) Add(ref Draws, ref DrawCount, p, buf, first, n);
-        for (int k = 0, m = Math.Min(preview.Copies.Length, MaxPreviewCopies); k < m; k++)
+        if (identity && preview.KeepOriginal) Add(ref Draws, ref DrawCount, p, buf, first, n, own);
+        int copies = Math.Min(preview.Copies.Length, MaxPreviewCopies);
+        int start = element >= 0 ? ComboSlots(preview, element, copies) : _copyBase;
+        for (int k = 0; k < copies; k++)
         {
-            Add(ref Draws, ref DrawCount, p, buf, first, n, k + 1);
+            Add(ref Draws, ref DrawCount, p, buf, first, n, start + k);
             TransformBytes += TransformBytesPerDraw;
         }
     }
 
-    /// <summary>Slot 0 the identity, then the preview's copies. Allocates only when the copies outgrow the array.</summary>
+    /// <summary>The slots of element <paramref name="element"/> under each of the preview's copies: the element's own
+    /// translation, then the copy — made on first asking in a frame, after every slot before them.</summary>
+    private int ComboSlots(Scene3DPreview preview, int element, int copies)
+    {
+        if (_comboStart[element] >= 0) return _comboStart[element];
+        int start = _nextSlot;
+        EnsureSlots(start + copies);
+        var own = ReadMatrix(ElementSlot(element), out uint idOff);
+        for (int k = 0; k < copies; k++) WriteSlot(start + k, own * preview.Copies[k], idOff);
+        _nextSlot = start + copies;
+        _comboStart[element] = start;
+        _comboUsed.Add(element);
+        return start;
+    }
+
+    /// <summary>Slot 0 the identity, the element slots (written with the scene), then the preview's copies.</summary>
     private void WriteTransforms(Scene3DPreview? preview)
     {
+        foreach (int e in _comboUsed) _comboStart[e] = -1;
+        _comboUsed.Clear();
         int copies = Math.Min(preview?.Copies.Length ?? 0, MaxPreviewCopies);
-        TransformCount = 1 + copies;
-        if (Transforms.Length < 16 * TransformCount) Transforms = IdentitySlots(Math.Max(TransformCount, 2 * Transforms.Length / 16));
-        for (int k = 0; k < copies; k++) WriteMatrix(preview!.Copies[k], Transforms.AsSpan(16 * (k + 1), 16));
+        EnsureSlots(_copyBase + copies);
+        for (int k = 0; k < copies; k++) WriteSlot(_copyBase + k, preview!.Copies[k], 0);
+        _nextSlot = _copyBase + copies;
+    }
+
+    /// <summary>Room for <paramref name="slots"/> slots; a grown array keeps what the old one held.</summary>
+    private void EnsureSlots(int slots)
+    {
+        if (Transforms.Length >= TransformFloats * slots) return;
+        var grown = IdentitySlots(Math.Max(slots, 2 * Transforms.Length / TransformFloats));
+        Transforms.AsSpan().CopyTo(grown);
+        Transforms = grown;
+    }
+
+    private void WriteSlot(int slot, in Matrix4x4 m, uint idOffset)
+    {
+        var dst = Transforms.AsSpan(TransformFloats * slot, TransformFloats);
+        WriteMatrix(m, dst);
+        dst[16] = BitConverter.UInt32BitsToSingle(idOffset);
+        dst[17] = dst[18] = dst[19] = 0;
+    }
+
+    private Matrix4x4 ReadMatrix(int slot, out uint idOffset)
+    {
+        var s = Transforms.AsSpan(TransformFloats * slot, TransformFloats);
+        idOffset = BitConverter.SingleToUInt32Bits(s[16]);
+        return new Matrix4x4(s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7], s[8], s[9], s[10], s[11], s[12], s[13], s[14], s[15]);
     }
 
     private static float[] IdentitySlots(int slots)
     {
-        var t = new float[16 * slots];
-        for (int k = 0; k < slots; k++) WriteMatrix(Matrix4x4.Identity, t.AsSpan(16 * k, 16));
+        var t = new float[TransformFloats * slots];
+        for (int k = 0; k < slots; k++) WriteMatrix(Matrix4x4.Identity, t.AsSpan(TransformFloats * k, 16));
         return t;
     }
 

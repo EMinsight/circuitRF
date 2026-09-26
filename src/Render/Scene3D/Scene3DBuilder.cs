@@ -44,12 +44,27 @@ namespace CircuitRF.Render.Scene3D;
 /// <param name="Origin">The scene-local origin to use, world metres; null takes the air box's centre.</param>
 /// <param name="FeatureShare">brief-em3d-44 R-em3d44-3b — an object's share key and translation when it is one
 /// element of an instance (objects under one key share ONE feature table), or null for its own table.</param>
+/// <param name="Instancing">brief-em3d-48 R-em3d48-3a — where an object stands in an array or a repeated placement, or
+/// null: an element after the first is not tessellated — it draws the first's triangles under its own offset.</param>
+/// <param name="Context">brief-em3d-48 R-em3d48-4a — true for the parent drawn around a pushed-in child: dimmed, and
+/// never hovered or selected (the snap still reaches it).</param>
 public sealed record Scene3DBuildOptions(
     Func<string, IReadOnlyList<string>?>? FaceNames = null,
     Scene3DTessellationCache? Cache = null,
     bool DrawAirBox = true,
     (double X, double Y, double Z)? Origin = null,
-    Func<string, Scene3DFeatureShare?>? FeatureShare = null);
+    Func<string, Scene3DFeatureShare?>? FeatureShare = null,
+    Func<string, Scene3DInstancing?>? Instancing = null,
+    Func<string, bool>? Context = null);
+
+/// <summary>
+/// brief-em3d-48 R-em3d48-3a — an object's place in a RUN: the objects one placement of one child document puts in the
+/// problem under one rotation, element after element, each element's objects in the child's own order. <see cref="Run"/>
+/// is compared with Equals; <see cref="Element"/> numbers the elements; (<see cref="Tx"/>, <see cref="Ty"/>,
+/// <see cref="Tz"/>) is the element's translation (world metres) and <see cref="LocalName"/> the object's name inside
+/// the element — which is what pairs an element's k-th object with the prototype's.
+/// </summary>
+public readonly record struct Scene3DInstancing(object Run, int Element, double Tx, double Ty, double Tz, string LocalName);
 
 /// <summary>
 /// brief-em3d-43 R-em3d43-1b — tessellations kept between builds, keyed by the primitive (a sheet by its
@@ -162,11 +177,16 @@ public static class Scene3DBuilder
         var materials = problem.Materials.Select((m, i) => (m, i)).ToDictionary(t => t.m.Name, t => t, StringComparer.Ordinal);
 
         var b = new Accumulator(L);
+        var solidRuns = new RunTracker(b);
+        var sheetRuns = new RunTracker(b);
+        bool Dim(string name) => options.Context?.Invoke(name) == true;
 
         // ── solids ───────────────────────────────────────────────────────────────────────────
         string? outermost = OutermostDielectric(problem);
         foreach (var s in problem.Solids)
         {
+            var place = options.Instancing?.Invoke(s.Name);
+            if (place is { } pl && solidRuns.Element(pl, s.Name)) continue;
             var kind = KindOf(s, origins);
             uint rgba;
             bool translucent = false;
@@ -191,6 +211,8 @@ public static class Scene3DBuilder
                     break;
                 }
             }
+            bool dim = Dim(s.Name);
+            if (dim) (rgba, translucent) = (Dimmed(rgba, dark), true);
             var solid = s;
             var mesh = Tessellate(s.Primitive, () => Em3dTessellation.Of(solid));
             var (m, slot) = materials.TryGetValue(s.Material, out var mt) ? (mt.m, mt.i) : ((Em3dMaterial?)null, -1);
@@ -201,23 +223,32 @@ public static class Scene3DBuilder
                 InitiallyVisible = s.Role != Em3dRole.Air && s.Name != outermost,
                 FaceNames = FacesOf(s.Name),
                 CapCentres = s.Primitive is Em3dCylinder cyl ? [cyl.AxisStart, cyl.AxisEnd] : null,
+                Context = dim,
             }, mesh, faces: true, features: Features(s.Name, mesh, sheet: false));
+            if (place is { } p0) solidRuns.Prototype(p0, s.Name);
+            else solidRuns.Break();
         }
 
         // ── sheets ───────────────────────────────────────────────────────────────────────────
         foreach (var sh in problem.Sheets)
         {
+            var place = options.Instancing?.Invoke(sh.Name);
+            if (place is { } pl && sheetRuns.Element(pl, sh.Name)) continue;
             var c = conductorColours.TryGetValue(sh.Name, out var sk) ? sk : new SkiaSharp.SKColor(150, 150, 155);
             var sheet = sh;
             var mesh = Tessellate((sh.Outline, sh.Holes, sh.Z, sh.Frame), () => Em3dTessellation.OfSheet(sheet));
             var (m, slot) = materials.TryGetValue(sh.Material, out var mt) ? (mt.m, mt.i) : ((Em3dMaterial?)null, -1);
             var names = FacesOf(sh.Name);
+            bool dim = Dim(sh.Name);
+            uint rgba = Scene3DVertex.Pack(c.Red, c.Green, c.Blue, 255);
             b.Object(new Scene3DObject
             {
                 Id = 0, Name = sh.Name, Kind = Scene3DKind.Sheet, Material = sh.Material, MaterialValues = m,
-                MaterialSlot = slot, Rgba = Scene3DVertex.Pack(c.Red, c.Green, c.Blue, 255),
-                FaceNames = names.Count > 0 ? names : SheetFaceNames,
+                MaterialSlot = slot, Rgba = dim ? Dimmed(rgba, dark) : rgba, Translucent = dim,
+                FaceNames = names.Count > 0 ? names : SheetFaceNames, Context = dim,
             }, mesh, faces: true, sheet: true, features: Features(sh.Name, mesh, sheet: true));
+            if (place is { } p0) sheetRuns.Prototype(p0, sh.Name);
+            else sheetRuns.Break();
         }
 
         // ── ports: a named sheet and a direction arrow ───────────────────────────────────────
@@ -262,6 +293,65 @@ public static class Scene3DBuilder
 
     /// <summary>A sheet is one surface, face 0.</summary>
     public static readonly IReadOnlyList<string> SheetFaceNames = ["surface"];
+
+    /// <summary>Opacity of the parent drawn around a pushed-in child.</summary>
+    public const byte ContextAlpha = 70;
+
+    /// <summary>brief-em3d-48 R-em3d48-4a — a colour pulled halfway to the background's grey and made translucent: the
+    /// parent around a pushed-in child reads as surroundings, not as something to edit.</summary>
+    private static uint Dimmed(uint rgba, bool dark)
+    {
+        byte g = dark ? (byte)70 : (byte)190;
+        byte Mix(uint c) => (byte)((c + g) / 2);
+        return Scene3DVertex.Pack(Mix(rgba & 0xFF), Mix((rgba >> 8) & 0xFF), Mix((rgba >> 16) & 0xFF), ContextAlpha);
+    }
+
+    /// <summary>
+    /// brief-em3d-48 R-em3d48-3a — follows the runs of one pass (solids, or sheets) as the builder walks them: the
+    /// first element of a run is the PROTOTYPE, tessellated as any object is; each later element's k-th object, when it
+    /// is named as the prototype's k-th is, becomes an element object that draws the prototype's triangles under its own
+    /// offset. Anything that does not line up is drawn as an ordinary object — slower, never wrong.
+    /// </summary>
+    private sealed class RunTracker(Accumulator acc)
+    {
+        private object? _run;
+        private int _protoElement, _element = -1, _k;
+        private (double X, double Y, double Z) _protoAt;
+        private readonly List<(string Local, int Index)> _proto = [];
+        private bool _contiguous;
+        private int _group = -1;
+
+        public void Break() { _run = null; _proto.Clear(); _group = -1; }
+
+        /// <summary>An object the builder has just added as an ordinary object: it starts a run, or extends its prototype.</summary>
+        public void Prototype(Scene3DInstancing p, string name)
+        {
+            int index = acc.LastIndex;
+            if (!Equals(_run, p.Run) || p.Element != _protoElement || _element != _protoElement)
+            {
+                _run = p.Run;
+                _protoElement = _element = p.Element;
+                _protoAt = (p.Tx, p.Ty, p.Tz);
+                _proto.Clear();
+                _contiguous = true;
+                _group = -1;
+            }
+            if (_proto.Count > 0 && _proto[^1].Index + 1 != index) _contiguous = false;
+            _proto.Add((p.LocalName, index));
+        }
+
+        /// <summary>True when the object is a later element's and was deferred as an element object.</summary>
+        public bool Element(Scene3DInstancing p, string name)
+        {
+            if (!Equals(_run, p.Run) || !_contiguous || _proto.Count == 0 || p.Element == _protoElement) return false;
+            if (p.Element != _element) { _element = p.Element; _k = 0; }
+            if (_k >= _proto.Count || _proto[_k].Local != p.LocalName) return false;
+            if (_group < 0) _group = acc.NewGroup(_proto[0].Index, _proto.Count);
+            acc.Defer(_group, _element, _proto[_k].Index, name, p.Tx - _protoAt.X, p.Ty - _protoAt.Y, p.Tz - _protoAt.Z);
+            _k++;
+            return true;
+        }
+    }
 
     private static Scene3DKind KindOf(Em3dSolid s, IReadOnlyDictionary<string, Em3dObjectOrigin> origins)
     {
@@ -395,6 +485,21 @@ public static class Scene3DBuilder
         private readonly List<Scene3DLineBatch> _lineBatches = [];
         private readonly List<(uint Id, List<Scene3DVertex> Lines)> _edges = [];
         private readonly List<Scene3DFeatureRef> _features = [];
+        private readonly List<(int ProtoIndex, int Count)> _groups = [];
+        private readonly List<(int Group, int Element, int Proto, string Name, double Dx, double Dy, double Dz)> _deferred = [];
+
+        /// <summary>The object-list index of the object added last.</summary>
+        public int LastIndex => _objects.Count - 1;
+
+        public int NewGroup(int protoIndex, int count)
+        {
+            _groups.Add((protoIndex, count));
+            return _groups.Count - 1;
+        }
+
+        /// <summary>An element object, made in <see cref="Finish"/> after every object that owns geometry.</summary>
+        public void Defer(int group, int element, int proto, string name, double dx, double dy, double dz)
+            => _deferred.Add((group, element, proto, name, dx, dy, dz));
 
         /// <summary><paramref name="faces"/>: tag each vertex with its triangle's face (un-welding a vertex
         /// shared by two faces) and collect the feature edges. <paramref name="sheet"/>: the whole mesh is
@@ -409,7 +514,7 @@ public static class Scene3DBuilder
                 Id = id, Name = o.Name, Kind = o.Kind, Material = o.Material, MaterialValues = o.MaterialValues,
                 MaterialSlot = o.MaterialSlot, Rgba = o.Rgba, Translucent = o.Translucent,
                 InitiallyVisible = o.InitiallyVisible, PortNumber = o.PortNumber, Boundary = o.Boundary,
-                FaceNames = o.FaceNames, CapCentres = o.CapCentres,
+                FaceNames = o.FaceNames, CapCentres = o.CapCentres, Context = o.Context,
             };
             var min = new Vector3(float.MaxValue);
             var max = new Vector3(float.MinValue);
@@ -519,16 +624,101 @@ public static class Scene3DBuilder
                 if (o.Kind == Scene3DKind.Dielectric && !o.InitiallyVisible) continue;
                 cmin = Vector3.Min(cmin, o.Min); cmax = Vector3.Max(cmax, o.Max);
             }
-            if (bmin.X > bmax.X) { bmin = new Vector3(-1e-3f); bmax = new Vector3(1e-3f); }
-            if (cmin.X > cmax.X) { cmin = bmin; cmax = bmax; }
+            // brief-em3d-48 — the unit cube an element over the triangle budget is drawn as, after every ordinary line.
+            Scene3DLineBatch unitBox = default;
+            if (_deferred.Count > 0)
+            {
+                int first = _lines.Count;
+                uint grey = Scene3DVertex.Pack(150, 150, 160, 255);
+                for (int k = 0; k < 8; k++)
+                    for (int bit = 1; bit <= 4; bit <<= 1)
+                        if ((k & bit) == 0)
+                        {
+                            int j = k | bit;
+                            _lines.Add(new Scene3DVertex(k & 1, (k >> 1) & 1, (k >> 2) & 1, 0, grey));
+                            _lines.Add(new Scene3DVertex(j & 1, (j >> 1) & 1, (j >> 2) & 1, 0, grey));
+                        }
+                unitBox = new Scene3DLineBatch(0, first, _lines.Count - first);
+            }
 
             // The feature edges follow every ordinary line, so LineBatches' offsets are what they were.
             var edgeBatches = new List<Scene3DLineBatch>(_edges.Count);
+            var edgeOf = new Dictionary<uint, int>();
             foreach (var (id, lines) in _edges)
             {
+                edgeOf[id] = edgeBatches.Count;
                 edgeBatches.Add(new Scene3DLineBatch(id, _lines.Count, lines.Count));
                 _lines.AddRange(lines);
             }
+
+            // brief-em3d-48 — the prototypes, then every element's objects and batches, AFTER everything that owns bytes.
+            int ownedObjects = _objects.Count, ownedBatches = batches.Count, ownedEdges = edgeBatches.Count;
+            var batchOf = new Dictionary<uint, int>();
+            for (int k = 0; k < batches.Count; k++) batchOf[batches[k].ObjectId] = k;
+            var groups = new List<Scene3DInstanceGroup>();
+            foreach (var (protoIndex, count) in _groups)
+            {
+                uint firstId = (uint)(protoIndex + 1);
+                int opaqueFirst = -1, opaqueCount = 0, tris = 0;
+                var gmin = new Vector3(float.MaxValue); var gmax = new Vector3(float.MinValue);
+                for (int k = 0; k < count; k++)
+                {
+                    var o = _objects[protoIndex + k];
+                    gmin = Vector3.Min(gmin, o.Min); gmax = Vector3.Max(gmax, o.Max);
+                    if (!batchOf.TryGetValue(o.Id, out int bi)) continue;
+                    var pb = batches[bi];
+                    tris += pb.IndexCount / 3;
+                    if (pb.Translucent) continue;
+                    if (opaqueFirst == -1) { opaqueFirst = pb.FirstIndex; opaqueCount = pb.IndexCount; }
+                    else if (opaqueFirst >= 0 && opaqueFirst + opaqueCount == pb.FirstIndex) opaqueCount += pb.IndexCount;
+                    else opaqueFirst = -2;
+                }
+                if (opaqueFirst < 0) opaqueCount = opaqueFirst == -1 ? 0 : -1;
+                groups.Add(new Scene3DInstanceGroup(firstId, count, Math.Max(opaqueFirst, 0), opaqueCount, tris, gmin, gmax));
+            }
+            var elements = new List<Scene3DElement>();
+            int at2 = 0;
+            while (at2 < _deferred.Count)
+            {
+                var (group, element, _, _, dx, dy, dz) = _deferred[at2];
+                int end = at2;
+                while (end < _deferred.Count && _deferred[end].Group == group && _deferred[end].Element == element) end++;
+                var offset = new Vector3((float)dx, (float)dy, (float)dz);
+                uint firstId = (uint)(_objects.Count + 1);
+                int firstBatch = batches.Count, index = elements.Count;
+                for (int k = at2; k < end; k++)
+                {
+                    var d = _deferred[k];
+                    var proto = _objects[d.Proto];
+                    uint id = (uint)(_objects.Count + 1);
+                    var obj = new Scene3DObject
+                    {
+                        Id = id, Name = d.Name, Kind = proto.Kind, Material = proto.Material, MaterialValues = proto.MaterialValues,
+                        MaterialSlot = proto.MaterialSlot, Rgba = proto.Rgba, Translucent = proto.Translucent,
+                        InitiallyVisible = proto.InitiallyVisible, FaceNames = proto.FaceNames, Context = proto.Context,
+                        CapCentres = proto.CapCentres?.Select(c => new Point3(c.X + d.Dx, c.Y + d.Dy, c.Z + d.Dz)).ToArray(),
+                        Element = index, Prototype = proto.Id,
+                        FirstVertex = proto.FirstVertex, VertexCount = proto.VertexCount,
+                        Min = proto.Min + offset, Max = proto.Max + offset,
+                    };
+                    _objects.Add(obj);
+                    var f = _features[d.Proto];
+                    _features.Add(f.Table is null ? f : new Scene3DFeatureRef(f.Table, f.Dx + d.Dx, f.Dy + d.Dy, f.Dz + d.Dz, true));
+                    if (batchOf.TryGetValue(proto.Id, out int bi))
+                        batches.Add(batches[bi] with { ObjectId = id, Element = index, Offset = offset });
+                    if (edgeOf.TryGetValue(proto.Id, out int ei))
+                        edgeBatches.Add(edgeBatches[ei] with { ObjectId = id, Element = index, Offset = offset });
+                    bmin = Vector3.Min(bmin, obj.Min); bmax = Vector3.Max(bmax, obj.Max);
+                    if (obj.Kind is not (Scene3DKind.Air or Scene3DKind.Boundary) && !(obj.Kind == Scene3DKind.Dielectric && !obj.InitiallyVisible))
+                    { cmin = Vector3.Min(cmin, obj.Min); cmax = Vector3.Max(cmax, obj.Max); }
+                }
+                uint protoFirst = groups[group].FirstId;
+                elements.Add(new Scene3DElement(group, firstId, end - at2, firstBatch, batches.Count - firstBatch, offset, firstId - protoFirst));
+                at2 = end;
+            }
+
+            if (bmin.X > bmax.X) { bmin = new Vector3(-1e-3f); bmax = new Vector3(1e-3f); }
+            if (cmin.X > cmax.X) { cmin = bmin; cmax = bmax; }
 
             return new Scene3DModel
             {
@@ -537,6 +727,9 @@ public static class Scene3DBuilder
                 Objects = [.. _objects], Batches = [.. batches], LineBatches = [.. _lineBatches],
                 EdgeBatches = [.. edgeBatches],
                 Features = [.. _features],
+                Groups = [.. groups], Elements = [.. elements],
+                GeometryObjectCount = ownedObjects, GeometryBatchCount = ownedBatches, GeometryEdgeBatchCount = ownedEdges,
+                UnitBox = unitBox,
                 BoundsMin = bmin, BoundsMax = bmax, ContentMin = cmin, ContentMax = cmax,
                 Problem = problem, Notes = notes ?? [],
             };

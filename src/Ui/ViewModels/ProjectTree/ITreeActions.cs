@@ -52,6 +52,10 @@ public interface ITreeActions
     /// .c3d in it, Refresh (brief-em3d-41). Opens nothing: the 3D editor is brief 43's.</summary>
     Task New3DViewAsync(ProjectTreeNodeViewModel cellNode);
 
+    /// <summary>brief-em3d-48 R-em3d48-7 — New 3D View from Layout on a cell node: a .c3d holding one instance of the
+    /// cell's own layout, its units and technology, and a copy of every 3D setup naming it; opened in the 3D editor.</summary>
+    Task New3DViewFromLayoutAsync(ProjectTreeNodeViewModel cellNode);
+
     /// <summary>Register a file or directory path as a Known File in the workspace .cws.</summary>
     void AddKnownFile(string path);
 

@@ -47,6 +47,17 @@ public sealed partial class Viewer3DViewModel
         CursorResolved?.Invoke();
     }
 
+    /// <summary>brief-em3d-48 R-em3d48-1b — Ctrl (Cmd on macOS) is held: a placement takes the child's bottom-centre as its
+    /// handle instead of its origin.</summary>
+    public bool CommandHeld { get; private set; }
+
+    public void SetCommandHeld(bool held)
+    {
+        if (held == CommandHeld) return;
+        CommandHeld = held;
+        CursorResolved?.Invoke();
+    }
+
     // ── the move gizmo (R-em3d46-5) ─────────────────────────────────────────────────────────
 
     private readonly GizmoLayout _gizmoLayout = new();

@@ -9505,6 +9505,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         {
             case LayoutDocument layout:      layout.RequestPlaceCellInstance(); break;
             case SchematicDocument schematic: schematic.RequestPlaceCellInstance(); break;
+            case CircuitRF.Ui.ThreeD.C3dEditorDocument c3d: _ = PlaceCellInstanceIn3DAsync(c3d); break;
         }
     }
 
@@ -9513,7 +9514,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// reference layout: its canvas draws wires over a layout it does not own, and placing an
     /// instance into that layout from here would edit a document the user is not looking at.</summary>
     private bool CanPlaceCellInstance()
-        => ResolveActiveDocumentForCommands() is LayoutDocument or SchematicDocument;
+        => ResolveActiveDocumentForCommands() is LayoutDocument or SchematicDocument or CircuitRF.Ui.ThreeD.C3dEditorDocument;
 
     /// <summary>
     /// Ctrl+K / Cmd+K — docs/design/layout-view.md §9B.6 R-rul-13: removes every in-design RULER
@@ -12222,6 +12223,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     [RelayCommand(CanExecute = nameof(CanHierarchyPushIn))]
     private void HierarchyPushIn()
     {
+        // brief-em3d-48 — the 3D editor pushes into the selected instance (a layout child opens the layout editor).
+        if (ResolveActiveDocumentForCommands() is CircuitRF.Ui.ThreeD.C3dEditorDocument c3d) { c3d.ViewModel.PushIntoSelected(); return; }
         if (ActiveSchematicDocument is { } schDoc)
         {
             var comp = GetSingleSelectedCellComp(schDoc.ActiveViewModel);
@@ -12236,6 +12239,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     }
     private bool CanHierarchyPushIn()
     {
+        if (ResolveActiveDocumentForCommands() is CircuitRF.Ui.ThreeD.C3dEditorDocument c3d) return c3d.ViewModel.SelectedInstance() >= 0;
         if (ActiveSchematicDocument is { } schDoc)
             return CanPushInto(GetSingleSelectedCellComp(schDoc.ActiveViewModel),
                                schDoc.ActiveViewModel.EditModel, out _);
@@ -12248,11 +12252,13 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     [RelayCommand(CanExecute = nameof(CanHierarchyPopOut))]
     private void HierarchyPopOut()
     {
+        if (ResolveActiveDocumentForCommands() is CircuitRF.Ui.ThreeD.C3dEditorDocument c3d) { _ = c3d.ViewModel.PopOutAsync(); return; }
         if (ActiveSchematicDocument is { } schDoc) { PopOutOf(schDoc); return; }
         if (ActiveLayoutDocument is { } layDoc) PopOutOf(layDoc);
     }
     private bool CanHierarchyPopOut()
-        => (ActiveSchematicDocument?.CanPopOut ?? false) || (ActiveLayoutDocument?.CanPopOut ?? false);
+        => (ActiveSchematicDocument?.CanPopOut ?? false) || (ActiveLayoutDocument?.CanPopOut ?? false)
+           || (ResolveActiveDocumentForCommands() as CircuitRF.Ui.ThreeD.C3dEditorDocument)?.ViewModel.CanPopOut == true;
 
     [RelayCommand(CanExecute = nameof(CanHierarchyPushIn))]
     private void HierarchyOpenInNewTab()
@@ -15691,6 +15697,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // Design ▸ Place Cell Instance… — a schematic or a layout, so BOTH fan-outs, per the standing
         // gotcha noted just below.
         PlaceCellInstanceCommand.NotifyCanExecuteChanged();
+        NewThreeDViewFromLayoutCommand.NotifyCanExecuteChanged();
         // Same document-type gate, same fan-out — see the standing gotcha note further down: a
         // [RelayCommand(CanExecute=...)] gated on the active document is NOT re-evaluated on its own.
         ClearAllRulersCommand.NotifyCanExecuteChanged();
@@ -16002,6 +16009,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         ExportGdsiiCommand.NotifyCanExecuteChanged();
         PlaceCellInstanceCommand.NotifyCanExecuteChanged();
+        NewThreeDViewFromLayoutCommand.NotifyCanExecuteChanged();
         // Standing gotcha (see this file's own L5 note): a [RelayCommand(CanExecute=...)] gated on
         // the active document type is NOT re-evaluated on its own — it must be added to BOTH
         // fan-outs, or it silently stays stuck at whatever it was on construction.

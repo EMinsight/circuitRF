@@ -100,6 +100,10 @@ public sealed record C3dElaboration(
     /// <summary>A layout instance's bond-wire reports, renamed into the parent.</summary>
     public IReadOnlyList<Em3dWireReport> Wires { get; init; } = [];
 
+    /// <summary>brief-em3d-48 R-em3d48-6b — the instances whose cell or view resolved to nothing or could not be read, by
+    /// instance path: what the editor draws as a dashed box with the cell's name.</summary>
+    public IReadOnlyList<(string InstancePath, string CellRef)> Unresolved { get; init; } = [];
+
     /// <summary>The walk: instances resolved, units converted, materials merged, objects lowered.</summary>
     public IReadOnlyList<C3dWalkStep> WalkInstances { get; init; } = [];
     public IReadOnlyList<C3dWalkStep> WalkUnits { get; init; } = [];
@@ -135,6 +139,13 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null)
     private readonly Dictionary<string, C3dLowered?> _objects = new(StringComparer.Ordinal);
     private readonly Dictionary<string, object> _children = new(StringComparer.Ordinal);
 
+    // brief-em3d-48 R-em3d48-3a — a layout instance's solids LOWERED under each element's transform, kept from one
+    // elaboration to the next: an unchanged element hands back the very primitives it did last time, so the scene's
+    // tessellation cache (keyed by primitive) hits and an array of a layout child is tessellated once, even when a column
+    // is added. What one elaboration did not use is dropped at its end, as the tessellation cache drops its own.
+    private Dictionary<(object Child, string Transform), (C3dLowered[] Solids, C3dSheetGeometry[] Sheets)> _layoutKept = [];
+    private Dictionary<(object Child, string Transform), (C3dLowered[] Solids, C3dSheetGeometry[] Sheets)> _layoutUsed = [];
+
     /// <summary>Objects lowered because the per-object cache missed.</summary>
     public long ObjectsElaborated { get; private set; }
 
@@ -155,7 +166,10 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null)
         ArgumentNullException.ThrowIfNull(document);
         ArgumentNullException.ThrowIfNull(path);
         var run = new Run(this, options ?? new C3dElaborationOptions(), workspaceCws);
-        return run.Go(document, Path.GetFullPath(path));
+        var result = run.Go(document, Path.GetFullPath(path));
+        (_layoutKept, _layoutUsed) = (_layoutUsed, _layoutKept);
+        _layoutUsed.Clear();
+        return result;
     }
 
     // ── caches ────────────────────────────────────────────────────────────────────────────────────
@@ -240,8 +254,30 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null)
         return made;
     }
 
+    /// <summary>A layout child's solids and sheets under <paramref name="t"/>: kept from the last elaboration when the same
+    /// child was placed under the same transform.</summary>
+    private (C3dLowered[] Solids, C3dSheetGeometry[] Sheets) LayoutLowered(object child, Em3dLayoutSolidsResult solids, C3dTransform t,
+                                                                         Func<Em3dSolid, C3dLowered> lower)
+    {
+        var key = (child, string.Create(CultureInfo.InvariantCulture,
+            $"{t.M00:R},{t.M01:R},{t.M02:R},{t.M10:R},{t.M11:R},{t.M12:R},{t.M20:R},{t.M21:R},{t.M22:R},{t.Tx:R},{t.Ty:R},{t.Tz:R}"));
+        if (_layoutUsed.TryGetValue(key, out var hit) || _layoutKept.TryGetValue(key, out hit)) return _layoutUsed[key] = hit;
+        (C3dLowered[] Solids, C3dSheetGeometry[] Sheets) made = (solids.Solids.Select(lower).ToArray(), solids.Sheets.Select(sh => C3dLowering.TransformSheet(C3dLowering.Geometry(sh), t)).ToArray());
+        return _layoutUsed[key] = made;
+    }
+
     private static string TechName(TechResolution t)
         => t.ResolvedPath is { } p ? Path.GetFileNameWithoutExtension(p) : t.Tech?.Name ?? "(no technology)";
+
+    /// <summary>A technology material's values at <paramref name="tempC"/> — the one rule elaboration resolves a drawn
+    /// object's material by (brief-em3d-48 compares a flattened object's against it).</summary>
+    public static Em3dMaterial MaterialValues(TechMaterial m, double tempC)
+    {
+        double sigma = 0;
+        if (m.Sigma20 is { } s20)
+            sigma = m.Alpha20 is { } a20 ? new WireMaterial(m.Name, s20, a20, 0).SigmaAt(tempC) : s20;
+        return new Em3dMaterial(m.Name, m.Epsr ?? 1, m.EpsrTensor is { Length: 3 } t ? [.. t] : null, m.TanD ?? 0, m.Mur ?? 1, sigma);
+    }
 
     // ── one elaboration ─────────────────────────────────────────────────────────────────────────────
 
@@ -258,6 +294,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null)
         private readonly Dictionary<string, Em3dObjectOrigin> _origins = new(StringComparer.Ordinal);
         private readonly List<Em3dWireReport> _wires = [];
         private readonly List<C3dWalkStep> _walkInstances = [], _walkUnits = [], _walkLowering = [];
+        private readonly List<(string, string)> _unresolved = [];
         private int _order;
         private int _polylines;
         private int _topDbu;
@@ -298,6 +335,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null)
             return new C3dElaboration(solids, sheets, materials, _provenance, _notes, _refusals)
             {
                 Warnings = _warnings,
+                Unresolved = _unresolved,
                 ObjectNets = _nets,
                 GroundBandObjects = _groundBand,
                 MaterialSources = sources,
@@ -394,6 +432,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null)
             string? cellDir = ExternalCellRef.ResolveCellDir(inst.CellRef, baseDir, out _, out bool exists);
             if (cellDir is null || !exists)
             {
+                _unresolved.Add((instPath, inst.CellRef));
                 _refusals.Add($"Instance '{instPath}' places cell '{inst.CellRef}', which resolves to nothing" +
                               (cellDir is null ? " (the reference cannot be worked out from here)." : $" (tried {cellDir})."));
                 return;
@@ -401,6 +440,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null)
             var primary = CellFolder.ResolvePrimary(cellDir, viewType);
             if (primary.ResolvedName is not { } file)
             {
+                _unresolved.Add((instPath, inst.CellRef));
                 _refusals.Add($"Instance '{instPath}' places the {noun} of cell '{Path.GetFileName(cellDir)}', which has " +
                               $"{(primary.State == PrimaryState.NoView ? $"no {noun}" : $"no primary {noun}")} " +
                               $"(tried {CellFolder.SubFolderPath(cellDir, viewType)}).");
@@ -435,6 +475,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null)
                     (isArray ? $"; array {counts[0]}×{counts[1]}×{counts[2]}" : "")));
                 if (child.Refusal is { } why)
                 {
+                    _unresolved.Add((instPath, inst.CellRef));
                     _refusals.Add($"Instance '{instPath}' places '{viewPath}', which cannot be read: {why}");
                     return;
                 }
@@ -453,6 +494,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null)
                 $"layout's technology, never the parent's)" + (isArray ? $"; array {counts[0]}×{counts[1]}×{counts[2]}" : "")));
             if (layout.Refusal is { } refusal || layout.Solids is not { } solids)
             {
+                _unresolved.Add((instPath, inst.CellRef));
                 _refusals.Add($"Instance '{instPath}' places layout '{viewPath}', which cannot be put in 3D: {layout.Refusal}");
                 return;
             }
@@ -463,7 +505,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null)
             }
             if (LayoutHasPortShapes(viewPath)) _ignored.Add("a layout's port shapes");
             foreach (var (ijk, w, integral) in Elements(doc, inst, counts, pitch, world))
-                Layout(solids, layout.TechName, viewPath, prefix + inst.Name + (isArray ? ijk : ""), w,
+                Layout(layout, solids, layout.TechName, viewPath, prefix + inst.Name + (isArray ? ijk : ""), w,
                        exact && integral && layout.DbuPerMicron == _topDbu);
         }
 
@@ -489,11 +531,13 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null)
         }
 
         /// <summary>A layout instance's solids under <paramref name="world"/>, its stack's bottom at the instance's z.</summary>
-        private void Layout(Em3dLayoutSolidsResult solids, string techName, string viewPath, string instPath, C3dTransform world,
+        private void Layout(object child, Em3dLayoutSolidsResult solids, string techName, string viewPath, string instPath, C3dTransform world,
                             bool exact)
         {
             var t = C3dTransform.Identity with { Tz = -solids.StackBottomM };
             t = t.Then(world);
+            var (loweredSolids, loweredSheets) = owner.LayoutLowered(child, solids, t,
+                s => C3dLowering.Transform(s.Primitive, FaceNamesOf(s.Primitive), t, KindOf(s.Primitive)));
             string prefix = instPath + "/";
             int baseOrder = _order;
             int maxOrder = 0;
@@ -501,9 +545,10 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null)
             foreach (var m in solids.Materials)
                 materialKey[m.Name] = Register(techName, m.Name, m, solids.MaterialSources.GetValueOrDefault(m.Name) ?? $"technology '{techName}'");
 
-            foreach (var s in solids.Solids)
+            for (int si = 0; si < solids.Solids.Count; si++)
             {
-                var lowered = C3dLowering.Transform(s.Primitive, FaceNamesOf(s.Primitive), t, KindOf(s.Primitive));
+                var s = solids.Solids[si];
+                var lowered = loweredSolids[si];
                 string name = prefix + s.Name;
                 _uses.Add((_solids.Count, false, techName, s.Material));
                 _solids.Add(new Em3dSolid(name, materialKey[s.Material], s.Role, lowered.Solid!, baseOrder + s.Order));
@@ -511,9 +556,10 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null)
                 _provenance[name] = new C3dProvenance(instPath, viewPath, s.Name, lowered.FaceNames) { Exact = exact, Element = t };
                 _walkLowering.Add(new C3dWalkStep(name, $"{lowered.Kind} (from the layout)"));
             }
-            foreach (var sh in solids.Sheets)
+            for (int hi = 0; hi < solids.Sheets.Count; hi++)
             {
-                var g = C3dLowering.TransformSheet(C3dLowering.Geometry(sh), t);
+                var sh = solids.Sheets[hi];
+                var g = loweredSheets[hi];
                 string name = prefix + sh.Name;
                 _uses.Add((_sheets.Count, true, techName, sh.Material));
                 _sheets.Add(new Em3dSheet(name, materialKey[sh.Material], g.Outline, g.Holes, g.Z, sh.ThicknessM, baseOrder + sh.Order)
@@ -585,14 +631,8 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null)
         /// <summary>A technology material's values at the operating temperature — the generator's body rule.</summary>
         private Em3dMaterial Resolve(TechMaterial m, out string note)
         {
-            double sigma = 0;
-            note = "";
-            if (m.Sigma20 is { } s20)
-            {
-                if (m.Alpha20 is { } a20) sigma = new WireMaterial(m.Name, s20, a20, 0).SigmaAt(options.TempC);
-                else { sigma = s20; note = " (σ₂₀, no α₂₀)"; }
-            }
-            return new Em3dMaterial(m.Name, m.Epsr ?? 1, m.EpsrTensor is { Length: 3 } t ? [.. t] : null, m.TanD ?? 0, m.Mur ?? 1, sigma);
+            note = m.Sigma20 is not null && m.Alpha20 is null ? " (σ₂₀, no α₂₀)" : "";
+            return MaterialValues(m, options.TempC);
         }
 
         private string Register(string tech, string name, Em3dMaterial values, string source)

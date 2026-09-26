@@ -121,8 +121,9 @@ public sealed class OperationsGateTests : IDisposable
         vm.ArrayCountX = "3";
         vm.AcceptArray();
         Settle(vm);
-        Assert.Equal(3, vm.Document.Instances.Count);
-        Assert.Equal(["U1", "U2", "U3"], vm.Document.Instances.Select(i => i.Name));
+        // brief-em3d-48 — Array… on one instance is that placement's own array, not copies: one child, drawn three times.
+        var inst = Assert.Single(vm.Document.Instances);
+        Assert.Equal([3, 1, 1], inst.Array!.Counts);
         Assert.Equal(children, vm.ChildrenElaborated);
     }
 

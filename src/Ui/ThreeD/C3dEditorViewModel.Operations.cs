@@ -190,6 +190,7 @@ public sealed partial class C3dEditorViewModel
     {
         if (_tool is C3dOperationTool) OperationChanged();
         else if (_tool is C3dFaceEditTool) FaceToolChanged();
+        else if (_tool is Hierarchy.PlaceInstanceTool) { OnPropertyChanged(nameof(ToolPrompt)); Viewer.RequestFrame(); }
     }
 
     /// <summary>The operation's state changed (the cursor, a key): its preview and its prompt follow.</summary>
@@ -608,7 +609,7 @@ public sealed partial class C3dEditorViewModel
         if (copies is null) { Viewer.SetPreview(null); ArrayNote = null; return; }
         ArrayNote = copies.Count > ArrayGroupHint
             ? $"{copies.Count:N0} copies. Grouping them into a cell and arraying one instance would be one object to edit and one child to " +
-              "elaborate (Group into Cell comes with hierarchy editing); Accept writes independent copies."
+              "elaborate (Group into Cell, in the context menu); Accept writes independent copies."
             : null;
         if (copies.Count > Scene3DFramePlan.MaxPreviewCopies)
             ArrayNote = (ArrayNote is null ? "" : ArrayNote + " ") + $"The preview shows the first {Scene3DFramePlan.MaxPreviewCopies}.";
@@ -622,6 +623,16 @@ public sealed partial class C3dEditorViewModel
         if (_arrayTargets is not { } targets) return;
         var copies = ArrayCopies(out var why);
         if (copies is null) { ArrayError = why; return; }
+        // brief-em3d-48 — one instance: its OWN array, not copies (one child, drawn as transforms).
+        if (targets is [{ Instance: true }])
+        {
+            ArrayError = null;
+            if (!AcceptInstanceArray(targets) || ArrayError is not null) return;
+            ArrayOpen = false;
+            _arrayTargets = null;
+            HoldPreviewForCommit();
+            return;
+        }
         ArrayOpen = false;
         _arrayTargets = null;
         if (copies.Count == 0 || !InsertCopies(targets, copies, $"Array {Describe(targets)}")) { Viewer.SetPreview(null); return; }

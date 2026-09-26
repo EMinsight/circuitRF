@@ -441,7 +441,19 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
                     SendV(enc, S.setRenderPipelineState, _pPick);
                     SendV(enc, S.setDepthStencilState, _dsWrite);
                     ((delegate* unmanaged<nint, nint, nint, nuint, nuint, void>)MsgSend)(enc, S.setVertexBuffer, _vb, 0, 0);
-                    for (int i = 0; i < plan.PickDrawCount; i++) { DrawIndexed(enc, plan.PickDraws[i]); draws++; }
+                    int pickTransform = 0;
+                    for (int i = 0; i < plan.PickDrawCount; i++)
+                    {
+                        // brief-em3d-48 — an array element's pick draw: its translation and id offset.
+                        ref var pd = ref plan.PickDraws[i];
+                        if (pd.Transform != pickTransform && pd.Transform < plan.TransformCount)
+                        {
+                            pickTransform = pd.Transform;
+                            SetTransform(enc, xf, pickTransform);
+                        }
+                        DrawIndexed(enc, pd);
+                        draws++;
+                    }
                     Send(enc, S.endEncoding);
                     nint blit = Send(cb, S.blitCommandEncoder);
                     CopyRegion(blit, _pickId, _rb[slot], 0, 8, n);
@@ -459,7 +471,7 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
                     ref var d = ref plan.Draws[i];
                     if (d.Transform != transform && d.Transform < plan.TransformCount)
                     {
-                        // brief-em3d-46 — a drag's preview: this draw's 64 bytes, set only when they change.
+                        // brief-em3d-46 — a drag's preview (brief 48: an array element): this draw's slot, set only when it changes.
                         transform = d.Transform;
                         SetTransform(e, xf, transform);
                     }
@@ -532,7 +544,7 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
     /// <summary>brief-em3d-46 — the vertex stage's per-draw transform (buffer 2): slot <paramref name="slot"/> of the plan's.</summary>
     private void SetTransform(nint enc, float* xf, int slot)
     {
-        ((delegate* unmanaged<nint, nint, void*, nuint, nuint, void>)MsgSend)(enc, S.setVertexBytes, xf + 16 * slot,
+        ((delegate* unmanaged<nint, nint, void*, nuint, nuint, void>)MsgSend)(enc, S.setVertexBytes, xf + Scene3DFramePlan.TransformFloats * slot,
             (nuint)Scene3DFramePlan.TransformBytesPerDraw, 2);
         Counters.CountUniform(Scene3DFramePlan.TransformBytesPerDraw);
     }

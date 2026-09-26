@@ -7,6 +7,11 @@
 // range is listed only where they differ — a rename changes no byte at all and uploads nothing; a new
 // material recolours one object and uploads its vertices. Anything else (an object added, deleted, grown,
 // or the origin moved) has no patch, and the scene is uploaded whole, as before.
+//
+// brief-em3d-48 R-em3d48-3a — an array element owns no bytes: it is its prototype's triangles under a per-draw
+// transform. So only the objects and batches that OWN geometry are compared for the layout, and an element added,
+// removed or moved is counted as a TRANSFORM (ElementTransforms) — 80 bytes a frame's per-draw uniform carries —
+// never as a range. Adding a column to a 20 × 20 array is 20 transforms and no geometry.
 
 using System.Runtime.InteropServices;
 
@@ -26,16 +31,22 @@ public sealed class Scene3DPatch
     /// <summary>The bytes the ranges cover.</summary>
     public long Bytes => Ranges.Sum(r => (long)r.ByteLength);
 
+    /// <summary>brief-em3d-48 — array elements standing where none stood before (by group and translation): each is one
+    /// per-draw transform, and no geometry.</summary>
+    public int ElementTransforms { get; init; }
+
     /// <summary>The patch from <paramref name="from"/> to <paramref name="to"/>, or null when their layouts
     /// differ and <paramref name="to"/> must be uploaded whole.</summary>
     public static Scene3DPatch? Between(Scene3DModel from, Scene3DModel to)
     {
+        int oo = to.OwnedObjects, ob = to.OwnedBatches, oe = to.OwnedEdgeBatches;
         if (from.Vertices.Length != to.Vertices.Length || from.Indices.Length != to.Indices.Length ||
-            from.LineVertices.Length != to.LineVertices.Length || from.Objects.Length != to.Objects.Length ||
-            !from.Batches.AsSpan().SequenceEqual(to.Batches) || !from.LineBatches.AsSpan().SequenceEqual(to.LineBatches) ||
-            !from.EdgeBatches.AsSpan().SequenceEqual(to.EdgeBatches))
+            from.LineVertices.Length != to.LineVertices.Length || from.OwnedObjects != oo ||
+            from.OwnedBatches != ob || from.OwnedEdgeBatches != oe ||
+            !from.Batches.AsSpan(0, ob).SequenceEqual(to.Batches.AsSpan(0, ob)) || !from.LineBatches.AsSpan().SequenceEqual(to.LineBatches) ||
+            !from.EdgeBatches.AsSpan(0, oe).SequenceEqual(to.EdgeBatches.AsSpan(0, oe)))
             return null;
-        for (int k = 0; k < to.Objects.Length; k++)
+        for (int k = 0; k < oo; k++)
             if (from.Objects[k].FirstVertex != to.Objects[k].FirstVertex || from.Objects[k].VertexCount != to.Objects[k].VertexCount)
                 return null;
 
@@ -48,16 +59,21 @@ public sealed class Scene3DPatch
             else ranges.Add(new Scene3DPatchRange(buf, offset, length));
         }
 
-        foreach (var o in to.Objects)
+        foreach (var o in to.Objects.Take(oo))
             if (!Same(from.Vertices, to.Vertices, o.FirstVertex, o.VertexCount))
                 Add(Scene3DPatchBuffer.Vertices, o.FirstVertex * Scene3DVertex.Stride, o.VertexCount * Scene3DVertex.Stride);
-        foreach (var b in to.Batches.OrderBy(b => b.FirstIndex))
+        foreach (var b in to.Batches.Take(ob).OrderBy(b => b.FirstIndex))
             if (!Same(from.Indices, to.Indices, b.FirstIndex, b.IndexCount))
                 Add(Scene3DPatchBuffer.Indices, b.FirstIndex * sizeof(uint), b.IndexCount * sizeof(uint));
-        foreach (var b in to.LineBatches.Concat(to.EdgeBatches).OrderBy(b => b.FirstVertex))
+        var unitBox = to.UnitBox.VertexCount > 0 ? [to.UnitBox] : Array.Empty<Scene3DLineBatch>();
+        foreach (var b in to.LineBatches.Concat(unitBox).Concat(to.EdgeBatches.Take(oe)).OrderBy(b => b.FirstVertex))
             if (!Same(from.LineVertices, to.LineVertices, b.FirstVertex, b.VertexCount))
                 Add(Scene3DPatchBuffer.Lines, b.FirstVertex * Scene3DVertex.Stride, b.VertexCount * Scene3DVertex.Stride);
-        return new Scene3DPatch { Ranges = ranges };
+        // An element is identified by where it stands, not by its index: a column added to an array renumbers the elements
+        // after it, which changes their ids and not their translations.
+        var had = new HashSet<(int, System.Numerics.Vector3)>(from.Elements.Select(e => (e.Group, e.Offset)));
+        int moved = to.Elements.Count(e => !had.Contains((e.Group, e.Offset)));
+        return new Scene3DPatch { Ranges = ranges, ElementTransforms = moved };
     }
 
     private static bool Same<T>(T[] a, T[] b, int first, int count) where T : unmanaged
