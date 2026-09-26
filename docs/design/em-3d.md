@@ -1,6 +1,6 @@
 # circuitRF — 3D full-wave EM (FEM and FDTD) and thermal (design draft)
 
-**Status:** Draft — rev 5, scoping only · **Date:** 2026-09-24 (rev 0: 2026-09-23, as `fem-3d.md`) ·
+**Status:** Draft — rev 6, scoping only · **Date:** 2026-09-26 (rev 0: 2026-09-23, as `fem-3d.md`) ·
 **Target:** **v2 at the earliest; parts of it are v3** (PRD §2, §17 v1.4). Nothing here is v1 scope and
 nothing in v1 depends on it.
 
@@ -35,6 +35,15 @@ nothing in v1 depends on it.
 > (§6.2, §6.4); CSXCAD's STL/PLY import is verified and a missing file is silent (§6.5); openEMS's
 > energy end criterion cannot be met on a floating structure in an open domain (§3); a signal via
 > through a reference plane is outside planar MoM (§1). Evidence: `em-3d-f0-findings.md`.
+>
+> **rev 5 → rev 6 (2026-09-26), F4 decided by the owner:** the editable 3D view is a **fourth cell view,
+> "3D"**, in a **`.c3d`** document (`3d/` sub-folder), stored in the `.clay`'s integer DBU with a
+> placement per object (§6.3). **F4 splits** (§10): **F4a**, a managed polyhedral modeller that draws and
+> edits basic shapes with **no OpenCASCADE**, briefed as the third series
+> (`docs/sonnet-briefs/brief-em3d-40-overview.md`); and **F4b**, OpenCASCADE added later as a capability
+> **the user installs**, which unlocks booleans, rounded edges and STEP import (§6.2). §6.3's
+> construction history is narrowed to a flat, ordered object list; §8.6's drag gate is restated for an
+> in-process kernel. Open 3 is closed.
 
 > **This is a dated survey of a fast-moving landscape — re-survey before building anything.**
 > Every tool choice below reflects what the open-source ecosystem offered on the dates given, and is
@@ -360,7 +369,9 @@ Each 3D addition therefore lands on a page with no page to write: §4.1a's mater
 
 **Tier B's document (§6.3, F4) is the one real format-design problem**, and it carries one
 requirement from the start: a client must be able to write a working construction history from its
-reference page alone, which is the test the 2D pages above were held to.
+reference page alone, which is the test the 2D pages above were held to. *(rev 6: that document is the
+`.c3d`, and its reference page is generated as the `.clay` and `.cem` pages are —
+`brief-em3d-41-the-3d-view-document.md` §5.)*
 
 ---
 
@@ -470,6 +481,17 @@ The limitation is that Route A is **batch**: each edit re-runs `gmsh`. That is f
 for a read-only preview of generated geometry, and too slow and too coarse-grained for an interactive
 modeler that must retessellate and hit-test on every drag.
 
+> **rev 6 (owner, 2026-09-26): Route B is F4b, and it is optional.** Drawing and editing basic shapes —
+> boxes, prisms, sheets, polylines, cylinders, polyhedra with planar faces, moving objects, faces and
+> vertices, hierarchy — is done by a **managed polyhedral kernel** in circuitRF itself (F4a), with no
+> OpenCASCADE and no native dependency. **OpenCASCADE is added in a later series as something the user
+> installs**, found and installed the way the solvers are (§7.1, §7.2); installing it **unlocks
+> booleans, rounded edges (fillets and chamfers) and STEP import**. Without it those commands are offered
+> disabled, saying what enables them, and a document that uses them still opens: its operands draw,
+> marked. How circuitRF's own worker program reaches the user alongside a user-installed OpenCASCADE is
+> F4b's question. The text below predates that decision; where it says the worker ships in every
+> installer, the user-installed direction above supersedes it.
+
 **Route B — a geometry worker (F4, v3).** A small C++ program, `tools/geometry-worker`, links OCCT
 and stays running for the life of a modelling session, spoken to over stdin/stdout the way the device
 workers are:
@@ -503,6 +525,16 @@ mould compound and lids from the technology's bodies (§4.1a).
 **The user draws no solid.** Every dimension is already a resolved circuitRF value, so a parametric
 sweep regenerates and remeshes per point with no new machinery. Tier A's vocabulary is almost exactly
 CSXCAD's primitive set, so the FDTD lowering of a Tier A problem needs no OCCT at all.
+
+> **rev 6 (2026-09-26): Tier B is the "3D" cell view and the `.c3d` document** (owner decisions,
+> `brief-em3d-40-overview.md` §3). Its coordinates are the `.clay`'s integer DBU, with a placement
+> (integer origin, ordered rotations, mirror) per object so that rotation never distorts geometry. Its
+> default display unit comes from the cell's `.clay`, else the technology's; the user changes it with
+> the layout editor's Unit combobox, which moves nothing. Without booleans there is no history to
+> replay, so F4a's document is a **flat, ordered list of named objects**, construction order deciding
+> overlap; a boolean (F4b) becomes an object whose operands are other objects. Dimensions become
+> expressions in F4a's last brief, with VARs stored in the `.c3d` and linkable to the cell's
+> parameters.
 
 **Tier B — a 3D view the user edits (v3).** A new cell view holding a **construction history**:
 named primitives and operations (box, cylinder, polygon extrude, sweep, boolean, fragment), each
@@ -1040,7 +1072,10 @@ either field or their difference.
   and GPU-picks under the cursor, on all three operating systems, before any viewer code is written.
 - **Gates are counters, not timings** (timing tests measure the machine and flake): *an orbit uploads
   zero bytes*, *a hover makes zero kernel calls*, *a drag makes zero kernel calls until release*,
-  *a superseded generation's result is never drawn*.
+  *a superseded generation's result is never drawn*. *(rev 6: "zero kernel calls until release" was
+  written for an OpenCASCADE rebuild taking tens of milliseconds. F4a's in-process kernel edits one
+  small solid in microseconds, so for a face or vertex drag the gate is **one object re-tessellated and
+  uploaded per move, and no other**; a whole-object move still makes zero until release.)*
 - **Feel is judged by hand.** A headless session can build and test the viewer but cannot see it;
   "does it feel fast" is an owner check on real hardware, recorded as such.
 
@@ -1099,7 +1134,8 @@ That coupling is the reason thermal belongs in circuitRF rather than in a separa
 | **FU** | Upstream, not product code: help the community Palace package recipe land (linux-64), then extend it to macOS; offer §7.4's Windows findings to Palace. Whatever lands, §7.1's discovery picks up with no circuitRF change — once discovery looks in conda environments (`brief-em3d-24`). **Deferred (owner, 2026-09-25):** nothing is posted publicly until circuitRF's Palace integration has been demonstrated; it blocks nothing in F2–F4. | after F2 |
 | **F2** | Read-only 3D viewer: geometry, mesh or grid, fields from either solver — opened by the hosting spike of §8.6. | v2 |
 | **F3** | Native thermal FEM on the F1 mesh pipeline; thermal-resistance matrix and Z_th(jω) fitted to a network on the FET thermal node. | v2 or v3 |
-| **F4** | Editable 3D view (Tier B), construction history with expressions, `tools/geometry-worker` (OCCT, Route B), feeding both backends. | v3 |
+| **F4a** | Editable 3D view (Tier B): the "3D" cell view and `.c3d` document; draw, select (object / face / vertex), snap, edit with a **managed polyhedral kernel** and no OpenCASCADE; hierarchy of 3D and layout instances; ports, boundaries and simulation from the document; dimensions as expressions. **Briefed 2026-09-26** as the third series (`docs/sonnet-briefs/brief-em3d-40-overview.md`, briefs 41–52). | v3 |
+| **F4b** | OpenCASCADE as a capability **the user installs** (§6.2 Route B): booleans, rounded edges, STEP import. Not briefed. | v3 |
 
 Whether F1 or F1b ships first is F0's call, not a prior decision: F1 carries Palace's broader problem
 set, F1b a solver every Windows user runs natively.
@@ -1173,11 +1209,21 @@ shared geometry are cross-checks, not references — all of them are circuitRF-d
   platform where the native route does not work, and implemented on all three later. Its native
   library is accepted for that use.
 
+**Made (2026-09-26), by the owner:**
+- **The editable 3D view is a fourth cell view, "3D", in a `.c3d` document** (sub-folder `3d/`),
+  accepting that the extension is shared with a motion-capture format outside circuitRF.
+- **No OpenCASCADE in F4a.** Basic shapes are drawn and edited without it. **OpenCASCADE comes later
+  (F4b), installed by the user**, and unlocks booleans, rounded edges and STEP import (§6.2).
+- **In the 3D editor, O / F / V select Object / Face / Vertex mode**, F included, knowingly unlike the
+  other editors, where F fits the view. Fit is Home in every 3D pane.
+- **The `.c3d` uses the `.clay`'s DBU.** Its default display unit comes from the cell's `.clay`, else the
+  `.ctech`; the user changes it with the layout editor's Unit combobox.
+
 **Open:**
 1. The run verb's shape — `em` with a 3D setup, or a sibling verb (§5.3; §4.6 leans towards `em`).
 2. *Decided 2026-09-25 — see "Made (2026-09-25)" above (native per platform first, WebGPU second).
    Kept here so the numbering the briefs cite still holds.*
-3. The Tier B document's format and extension (§6.3).
+3. *Decided 2026-09-26 — the `.c3d` (see "Made (2026-09-26)"). Kept here so the numbering holds.*
 4. Where the thermal solver lives in the source tree — `src/Engine` or a project of its own.
 5. Whether F1 (Palace) or F1b (openEMS) ships first (§10).
 6. The install assistant's CLI spelling, install and uninstall (§7.2).
