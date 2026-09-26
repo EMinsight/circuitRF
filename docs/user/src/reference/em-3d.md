@@ -201,7 +201,7 @@ model circuitRF built, and after a run it also shows what the solver made.
   *Hide*, *Isolate*, *Show All*, and *Select Owning Object*. Nothing here changes the setup.
 - **Snapping** (the 3D editor). The cursor snaps to a **vertex** (a square marker), an edge's **midpoint**
   (a triangle), the nearest point on an **edge** (an ×), a face's **centre** (a circle) and, when nothing is
-  within reach, the **grid** (a small +) — the document's snap step on the XY plane. A vertex wins over
+  within reach, the **grid** (a small +) — the document's snap step on the drawing plane. A vertex wins over
   anything else in reach, even a nearer midpoint. Snapping reaches into placed cells, so a die's pad corner
   is a target in its package. Only what you can see is a target: a corner hidden behind a surface is not,
   except inside a translucent object or with the clip plane on. The snap distance is the layout editor's,
@@ -211,6 +211,34 @@ model circuitRF built, and after a run it also shows what the solver made.
   still applies. The status line names what the cursor snapped to and where, in the document's unit. A
   **≈** before the point means it is not exactly a point of the document's database-unit grid: a corner of
   an object rotated by an angle that is not a multiple of 90°, or of a cell drawn at another scale.
+- **Drawing** (the 3D editor). Shapes are drawn on the **drawing plane** — XY, YZ or XZ, at an offset along
+  its normal — chosen with the **XY / YZ / XZ** buttons and the offset box on the toolbar (a bare number is the
+  document's unit; `25um` or `10mil` says its own), from *3D ▸ Drawing Plane*, from a face (*Drawing Plane
+  from Face* on a face's menu in Face mode, or **Ctrl**-click a face — **Cmd**-click on a Mac — with a tool
+  armed), or through a snapped point (**Ctrl/Cmd+Shift**-click moves the offset there and keeps the plane).
+  Only axis-aligned faces make a plane; a tilted face is refused, naming its normal. Moving the camera never
+  moves the plane, and a plane seen edge-on is refused rather than drawn on. The plane is remembered for the
+  document in the workspace's window state, not in the `.c3d`. A faint **grid** lies on it, behind the
+  objects, in steps of the document's unit — major lines every 10 minor ones, every 5 in mil and inch —
+  spaced to stay readable at every zoom and fading away from the view's centre and when the plane is seen
+  at a grazing angle; the lines through the origin are in the axis colours. The status line gives the
+  grid's spacing, and the snap step too when that differs (it is the document's snap step, and changing it
+  moves nothing already drawn). The tools are on the toolbar, under *3D ▸ Draw*, and at the cursor with
+  **Shift+A** — then one letter: **B**ox (corner, opposite corner, then its height), **S**heet (a rectangle,
+  two clicks), Poly**g**on (a closed sheet, a click per vertex; click the first vertex, press Enter or
+  double-click to close — an outline that crosses itself is refused and the crossing shown), Poly**l**ine
+  (construction geometry; Enter or a double-click ends it, a click on its first vertex closes it) and
+  C**y**linder (centre, radius, height). A box or cylinder rises along the plane's normal; near a
+  neighbour's feature its height snaps to that feature, so a box rises to exactly the top of a pad. Every
+  click snaps. While a shape is in progress, type a digit to enter a dimension instead of clicking — the
+  box that opens at the cursor shows the width, depth, height or radius the next click would set; **Tab**
+  moves between them, **Enter** accepts, **Esc** goes back to the mouse. An entry that is not a length stays
+  in the box, in red, and nothing changes. **Esc** cancels a shape in progress; pressed again it puts the
+  tool down. Each new object takes the material chosen on the toolbar and a name you can change
+  (`box1`, `sheet1`, …); each is one undo step. **Extrude** (a sheet's menu, *3D ▸ Modify*, or a polyline
+  selected in the tree) pulls a closed polyline, a polygon or a rectangle into a prism — move to set the
+  distance and click, or type it — and consumes the source unless **K** says keep it. An open polyline
+  extrudes to a flat ribbon when it is a straight line along an axis of its plane.
 - **Clip plane** (**C**). A plane along an axis or the view direction, dragged through the model. It
   shows inside a package, under a lid, or through a via's clearance.
 - **Mesh.** After a Palace run, the mesh Gmsh made: the boundary triangles, and the tetrahedra the clip

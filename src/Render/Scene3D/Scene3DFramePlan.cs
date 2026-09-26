@@ -37,10 +37,13 @@ public enum Scene3DPipeline
     /// <summary>brief-em3d-43 R-em3d43-4d — a selected face again, depth test off, blend at reduced
     /// opacity (fs_top), so a face behind others is seen through them.</summary>
     OnTop,
+    /// <summary>brief-em3d-45 R-em3d45-2 — the drawing plane's grid: six vertices made by the vertex shader
+    /// (vs_grid) from the uniform block, no vertex buffer, depth test without write, blend (fs_grid).</summary>
+    Grid,
 }
 
-/// <summary>Which buffer a draw reads: the scene's, one of the overlay slots, or the field's.</summary>
-public enum Scene3DBuffer { Scene, SceneLines, Overlay0, Overlay1, Overlay2, Field }
+/// <summary>Which buffer a draw reads: the scene's, one of the overlay slots, the field's, or none (the grid).</summary>
+public enum Scene3DBuffer { Scene, SceneLines, Overlay0, Overlay1, Overlay2, Field, None }
 
 /// <summary>One draw: <see cref="Count"/> indices (triangles) or vertices (lines) from <see cref="First"/>.</summary>
 [StructLayout(LayoutKind.Sequential)]
@@ -98,6 +101,8 @@ public sealed class Viewer3DViewState
     /// <summary>The field uniform block (FieldUniforms.Floats): the phase, the range, the mode and the
     /// colour map — what an animation changes, per frame, instead of any geometry.</summary>
     public readonly float[] Field = new float[Fields.FieldUniforms.Floats];
+    /// <summary>brief-em3d-45 — the drawing plane's grid, or null (the read-only viewer draws none).</summary>
+    public DrawingGridSettings? DrawingGrid;
     public bool ShowAxisIndicator = true;
     /// <summary>A camera gesture moved the camera since the last frame.</summary>
     public bool Orbiting;
@@ -139,11 +144,14 @@ public sealed class Scene3DFramePlan
     /// <summary>Where brief 29's field block starts, in floats.</summary>
     public const int FieldAt = SelectionAt + 2 * SelectionLimit;
 
+    /// <summary>Where brief 45's grid block starts, in floats.</summary>
+    public const int GridAt = FieldAt + Fields.FieldUniforms.Floats;
+
     /// <summary>Floats in the uniform block — the WGSL <c>U</c>: vp (16), eye (4), clip (4), the hovered
     /// (object, face), flags, the mode, the selection's count and three pads (128 bytes), the selection's
-    /// (object, face) pairs (512 bytes), then brief 29's field block (<see cref="Fields.FieldUniforms"/>,
-    /// 288 bytes). 928 bytes.</summary>
-    public const int UniformFloats = FieldAt + Fields.FieldUniforms.Floats;
+    /// (object, face) pairs (512 bytes), brief 29's field block (<see cref="Fields.FieldUniforms"/>,
+    /// 288 bytes), then brief 45's grid block (<see cref="PlaneGrid.Floats"/>, 144 bytes). 1,072 bytes.</summary>
+    public const int UniformFloats = GridAt + PlaneGrid.Floats;
     public const int UniformBytes = UniformFloats * 4;
 
     /// <summary>Flag bits in the uniform block's <c>flags</c>.</summary>
@@ -169,6 +177,10 @@ public sealed class Scene3DFramePlan
     public int Width, Height;
     public (float R, float G, float B) Clear;
     public long SceneGeneration = -1;
+
+    /// <summary>brief-em3d-45 — the grid this frame drew (MinorDbu 0: none), and how many frames drew one.</summary>
+    public PlaneGridSpacing GridSpacing;
+    public long GridFrames;
 
     private float[] _keys = [];
     private int[] _order = [];
@@ -208,6 +220,20 @@ public sealed class Scene3DFramePlan
             Add(ref Draws, ref DrawCount, Scene3DPipeline.Lines, Scene3DBuffer.Overlay1, 0, section.Lines.Length);
         if (view.ShowGrid && grid.Lines.Length > 0)
             Add(ref Draws, ref DrawCount, Scene3DPipeline.Lines, Scene3DBuffer.Overlay2, 0, grid.Lines.Length);
+
+        // brief-em3d-45 R-em3d45-2b — the drawing grid after everything opaque (so solids hide it) and before
+        // the translucent objects (so it shows faintly through a dielectric). Uniforms only: nothing uploads.
+        GridSpacing = default;
+        if (view.DrawingGrid is { Visible: true } dg)
+        {
+            GridSpacing = PlaneGrid.Fill(Uniforms.AsSpan(GridAt), scene, view.Camera, dg, width, height);
+            if (GridSpacing.MinorDbu > 0)
+            {
+                Add(ref Draws, ref DrawCount, Scene3DPipeline.Grid, Scene3DBuffer.None, 0, 6);
+                GridFrames++;
+            }
+        }
+        else Uniforms.AsSpan(GridAt, PlaneGrid.Floats).Clear();
 
         // Translucent objects back to front, one draw each (brief 27 §2.4: per object, not per triangle).
         // Keyed on VIEW DEPTH, not distance from the eye: orthographic allows a negative near plane, so
@@ -276,7 +302,7 @@ public sealed class Scene3DFramePlan
 
     private void Size(Scene3DModel scene)
     {
-        int need = scene.Batches.Length + scene.LineBatches.Length + 5 + 2 * Math.Min(scene.Objects.Length, SelectionLimit);
+        int need = scene.Batches.Length + scene.LineBatches.Length + 6 + 2 * Math.Min(scene.Objects.Length, SelectionLimit);
         if (Draws.Length < need) Draws = new Scene3DDraw[need];
         if (PickDraws.Length < need) PickDraws = new Scene3DDraw[need];
         _keys = new float[scene.Batches.Length];

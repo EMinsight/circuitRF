@@ -115,6 +115,9 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
     /// <summary>The pane asks for a frame when anything it draws changed.</summary>
     public event Action? FrameRequested;
 
+    /// <summary>brief-em3d-45 — the editor changed something the pane draws (the grid, the drawing's overlay).</summary>
+    public void RequestFrame() => FrameRequested?.Invoke();
+
     /// <summary>The tree should scroll to this item (a click in the view selected it).</summary>
     public event Action<Viewer3DTreeItem>? RevealRequested;
 

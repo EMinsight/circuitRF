@@ -35843,3 +35843,37 @@ and the editor's grid, exactness and gesture exclusion. Gates: `tests/Ui.Tests/T
   scene's generation and is wide enough, else from a CPU patch. A toggle or Alt change answers at once when
   the last snap came from the CPU, and asks for a frame otherwise — the render thread may be writing the
   GPU patch at that moment.
+
+## Drawing in the 3D editor — brief-em3d-45 (2026-09-26)
+
+Built: `ThreeD/Tools/` (one class per tool: Box and Sheet on a shared rectangle base, Polygon and Polyline on
+a shared chain base, Cylinder, Extrude), `C3dEditorViewModel.Draw.cs` (plane, grid, arming, the typed field,
+Extrude, commit), the drawing's overlay in `Viewer3DOverlay`, the toolbar/status/field/Shift+A popup in
+`C3dEditorView`, `3D ▸ Draw / Drawing Plane / Modify` on both menu surfaces. Gates:
+`tests/Ui.Tests/ThreeD/DrawToolGateTests.cs`. **No window was seen from the agent's session.**
+
+- **A tool never touches the document.** It is fed `C3dDrawInput` (the snap + the cursor's ray) and returns
+  one object; the editor inserts it as one entry. The rubber band is overlay lines. So Esc mid-gesture needs
+  no undo bookkeeping at all, and a gesture uploads nothing.
+- **The height step ignores a GRID snap.** The grid lies on the drawing plane, so projecting a grid snap
+  onto the normal line would pin every height to 0 whenever no geometry is in reach. Only a geometry snap is
+  projected (that is what makes a box rise to a pad's top exactly); otherwise the closest point of the line
+  to the cursor's ray, rounded to the snap step.
+- **The drawing gets the click and the key first** (`IViewer3DEditHost.DrawClick` / `DrawKey`), so while a
+  gesture is in progress a digit opens the typed field instead of choosing a standard view (1–7), and Esc
+  cancels the gesture rather than clearing the selection; with no gesture, 1–7 are the views again. The pane
+  now hands `Click` the press's modifiers and click count (Ctrl/Cmd for the plane gestures, 2 for a
+  double-click).
+- **The typed field is one parser** (`C3dDimension.Parse`): exact DBU through `LayoutUnits`, or "an
+  expression" (it parses as one in the expression engine), or neither. Prefill uses `SpellDecimals`, so an
+  untouched prefilled dimension parses back to the very DBU it showed. An empty dimension means the
+  cursor's value.
+- **Extrude consumes by REPLACING the source's slot** — one `C3dEdit` of one shape, as the edit type
+  requires; keep is an insertion. A consumed sheet's prism keeps its name, material and role. Extrude acts on
+  the one selected sheet, or a polyline selected in the TREE: polylines are construction geometry, not in the
+  scene, so they cannot be picked in the pane (they are drawn dashed by the overlay, and do not snap).
+- **An open polyline's ribbon is built only along an axis of its plane**; a slanted or bent one is refused
+  with the reason (a tilted plane, or quads in several planes, is a later brief).
+- **The cylinder's icon is `Database`** — Material.Icons 3.0.2 has no Cylinder kind (checked against the
+  assembly's metadata: only `CylinderOff`, a struck-through glyph). `CubeUnfolded`, `VectorRectangle`,
+  `VectorPolygon`, `VectorPolyline`, `GridLarge` exist.

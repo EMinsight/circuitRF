@@ -52,8 +52,8 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
     private byte[]? _adapterLuid;
     private string _description = "Direct3D 11 (no device yet)";
     private ID3D11InputLayout _layout = null!, _layoutField = null!;
-    private ID3D11VertexShader _vs = null!, _vsField = null!;
-    private ID3D11PixelShader _psColor = null!, _psLine = null!, _psPick = null!, _psField = null!, _psEdge = null!, _psTop = null!;
+    private ID3D11VertexShader _vs = null!, _vsField = null!, _vsGrid = null!;
+    private ID3D11PixelShader _psColor = null!, _psLine = null!, _psPick = null!, _psField = null!, _psEdge = null!, _psTop = null!, _psGrid = null!;
     private ID3D11Buffer? _field;
     private int _fieldCount;
     private ID3D11BlendState _blendOff = null!, _blendOn = null!;
@@ -149,6 +149,9 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
         var vsf = Compile("vs_field", "vs_5_0");
         _vsField = dev.CreateVertexShader(vsf.Span);
         _psField = dev.CreatePixelShader(Compile("fs_field", "ps_5_0").Span);
+        // brief-em3d-45 — the drawing grid: SV_VertexID only, so no input layout at all.
+        _vsGrid = dev.CreateVertexShader(Compile("vs_grid", "vs_5_0").Span);
+        _psGrid = dev.CreatePixelShader(Compile("fs_grid", "ps_5_0").Span);
         _layoutField = dev.CreateInputLayout(
         [
             new InputElementDescription("LOC", 0, DxFormat.R32G32B32_Float, 0, 0),
@@ -421,32 +424,41 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
                 Scene3DBuffer.Overlay0 => _overlays[0], Scene3DBuffer.Overlay1 => _overlays[1], _ => _overlays[2],
             };
             bool lines = d.Pipeline is Scene3DPipeline.Lines or Scene3DPipeline.Edges, field = d.Pipeline == Scene3DPipeline.Field;
-            if (buf is null || (!lines && !field && _ib is null)) continue;
+            bool grid = d.Pipeline == Scene3DPipeline.Grid;
+            if (!grid && (buf is null || (!lines && !field && _ib is null))) continue;
             if (field && d.First + d.Count > _fieldCount) continue;
             if (d.Pipeline != state)
             {
-                bool wasField = state == Scene3DPipeline.Field;
+                // The vertex stage: the scene's vertex (0), the field's (1), or none at all — the grid (2).
+                int wasStage = state == Scene3DPipeline.Field ? 1 : state == Scene3DPipeline.Grid ? 2 : 0;
+                int stage = field ? 1 : grid ? 2 : 0;
                 state = d.Pipeline;
-                if (field != wasField)
+                if (stage != wasStage)
                 {
-                    ctx.IASetInputLayout(field ? _layoutField : _layout);
-                    ctx.VSSetShader(field ? _vsField : _vs);
+                    ctx.IASetInputLayout(stage == 1 ? _layoutField : stage == 2 ? null : _layout);
+                    ctx.VSSetShader(stage == 1 ? _vsField : stage == 2 ? _vsGrid : _vs);
                     bound = (Scene3DBuffer)(-1);
                 }
                 ctx.PSSetShader(state switch
                 {
                     Scene3DPipeline.Field => _psField, Scene3DPipeline.Lines => _psLine, Scene3DPipeline.Edges => _psEdge,
-                    Scene3DPipeline.OnTop => _psTop, _ => _psColor,
+                    Scene3DPipeline.OnTop => _psTop, Scene3DPipeline.Grid => _psGrid, _ => _psColor,
                 });
                 bool selection = state is Scene3DPipeline.Edges or Scene3DPipeline.OnTop;
-                ctx.OMSetBlendState(state == Scene3DPipeline.Translucent || selection ? _blendOn : _blendOff);
-                ctx.OMSetDepthStencilState(selection ? _dsOff : state == Scene3DPipeline.Translucent ? _dsNoWrite : _dsWrite);
+                ctx.OMSetBlendState(state is Scene3DPipeline.Translucent or Scene3DPipeline.Grid || selection ? _blendOn : _blendOff);
+                ctx.OMSetDepthStencilState(selection ? _dsOff : state is Scene3DPipeline.Translucent or Scene3DPipeline.Grid ? _dsNoWrite : _dsWrite);
                 ctx.IASetPrimitiveTopology(lines ? PrimitiveTopology.LineList : PrimitiveTopology.TriangleList);
+            }
+            if (grid)
+            {
+                ctx.Draw(6, 0);
+                draws++;
+                continue;
             }
             if (d.Buffer != bound)
             {
                 bound = d.Buffer;
-                ctx.IASetVertexBuffer(0, buf, field ? (uint)FieldVertex.Stride : Scene3DVertex.Stride);
+                ctx.IASetVertexBuffer(0, buf!, field ? (uint)FieldVertex.Stride : Scene3DVertex.Stride);
                 if (!lines && !field) ctx.IASetIndexBuffer(_ib!, DxFormat.R32_UInt, 0);
             }
             if (lines || field) ctx.Draw((uint)d.Count, (uint)d.First);
@@ -502,7 +514,7 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
         _pickIdRtv?.Dispose(); _pickPosRtv?.Dispose(); _pickDsv?.Dispose();
         _pickId?.Dispose(); _pickPos?.Dispose(); _pickDepth?.Dispose();
         _cb?.Dispose(); _layout?.Dispose(); _vs?.Dispose(); _layoutField?.Dispose(); _vsField?.Dispose();
-        _psColor?.Dispose(); _psLine?.Dispose(); _psPick?.Dispose(); _psField?.Dispose(); _psEdge?.Dispose(); _psTop?.Dispose();
+        _psColor?.Dispose(); _psLine?.Dispose(); _psPick?.Dispose(); _psField?.Dispose(); _psEdge?.Dispose(); _psTop?.Dispose(); _vsGrid?.Dispose(); _psGrid?.Dispose();
         _blendOff?.Dispose(); _blendOn?.Dispose(); _dsWrite?.Dispose(); _dsNoWrite?.Dispose(); _dsOff?.Dispose(); _raster?.Dispose();
         _ctx?.Dispose(); _device.Dispose();
     }

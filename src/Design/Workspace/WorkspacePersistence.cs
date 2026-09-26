@@ -153,6 +153,13 @@ public sealed class CwsFile
     public Dictionary<string, CwsCamera3D>? Viewer3DCameras { get; set; }
 
     /// <summary>
+    /// brief-em3d-45 R-em3d45-1a — each 3D editor's drawing plane, keyed by its <c>.c3d</c>'s workspace-relative
+    /// path. Editor state, so it is <b>persisted in the sibling <c>.cwsuser</c></b>, never in the <c>.c3d</c>.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Dictionary<string, CwsDrawingPlane>? C3dDrawingPlanes { get; set; }
+
+    /// <summary>
     /// Documents open in the main DocumentDock when the workspace was last saved.
     /// Null or empty means no documents to restore (welcome stub is shown).
     /// Scratch documents are never persisted here.

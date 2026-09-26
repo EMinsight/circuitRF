@@ -5,7 +5,8 @@
 //
 // The uniform block is Scene3DFramePlan's: vp, eye, clip, the hovered (object, face), flags, the selection
 // mode, the selection (brief-em3d-43 R-em3d43-5: up to 64 (object, face) pairs), then brief 29's field block
-// (FieldUniforms: phase, range, mode, dB, the colour map's stops) — 928 bytes.
+// (FieldUniforms: phase, range, mode, dB, the colour map's stops), then brief 45's drawing grid (PlaneGrid.Fill)
+// — 1,072 bytes.
 // A vertex is Scene3DVertex: position, object id, RGBA8 colour, face (24 bytes); a FIELD vertex is
 // FieldVertex: position, the value's real part, its imaginary part (36 bytes).
 
@@ -31,6 +32,18 @@ struct U {
     fmode: vec4f,
     // (t, r, g, b) per stop
     stops: array<vec4f, 16>,
+    // brief-em3d-45 — the drawing grid (PlaneGrid.Fill): the plane's u and v axes with each one's phase, its
+    // normal and offset, the quad's centre and half-size, (minor, major every, fade radius, on), the line
+    // colour, where the world origin's lines are (local u, v), and the colours of the lines along u and v.
+    gu: vec4f,
+    gv: vec4f,
+    gn: vec4f,
+    gq: vec4f,
+    gs: vec4f,
+    gcol: vec4f,
+    gax: vec4f,
+    gcu: vec4f,
+    gcv: vec4f,
 };
 @group(0) @binding(0) var<uniform> u: U;
 
@@ -199,4 +212,55 @@ fn colour_map(t: f32) -> vec3f {
     if (u.fmode.y > 0.5) { v = 20.0 * 0.30102999566 * log2(max(abs(v), 1e-30)); }
     let t = clamp((v - u.fphase.z) / max(u.fphase.w - u.fphase.z, 1e-30), 0.0, 1.0);
     return vec4f(colour_map(t), 1.0);
+}
+
+// ── brief-em3d-45: the drawing grid ────────────────────────────────────────────────────────────────
+// One quad on the plane, made here from six vertex indices and the uniform block — no vertex buffer, so an
+// orbit uploads nothing. The lines are found per fragment: minor lines where the plane coordinate is a
+// multiple of the spacing, major ones every gs.y of them, the origin's axis lines in the axis colours. Minor
+// lines fade where a cell would be under a few pixels (perspective's distance); everything fades with the
+// distance from the focus and with obliqueness, so a plane seen nearly edge-on is a faint line, not a slab.
+
+struct GVO {
+    @builtin(position) pos: vec4f,
+    @location(0) world: vec3f,
+};
+
+@vertex fn vs_grid(@builtin(vertex_index) k: u32) -> GVO {
+    // Two triangles: (-1,-1) (1,-1) (1,1) and (-1,-1) (1,1) (-1,1). Bit k of 0x16 is x > 0; of 0x34, y > 0.
+    let cx = f32((0x16u >> k) & 1u) * 2.0 - 1.0;
+    let cy = f32((0x34u >> k) & 1u) * 2.0 - 1.0;
+    let p = u.gq.xyz + (u.gu.xyz * cx + u.gv.xyz * cy) * u.gq.w;
+    var o: GVO;
+    o.pos = u.vp * vec4f(p, 1.0);
+    o.world = p;
+    return o;
+}
+
+@fragment fn fs_grid(i: GVO) -> @location(0) vec4f {
+    if (clipped(i.world)) { discard; }
+    let pu = dot(i.world, u.gu.xyz);
+    let pv = dot(i.world, u.gv.xyz);
+    let a = (vec2f(pu, pv) + vec2f(u.gu.w, u.gv.w)) / u.gs.x;
+    let fw = max(fwidth(a), vec2f(1e-7, 1e-7));
+    let cell_px = 1.0 / max(fw.x, fw.y);
+    let minor_fade = clamp((cell_px - 4.0) / 6.0, 0.0, 1.0);
+    let dm = abs(fract(a - 0.5) - 0.5) / fw;
+    let line_minor = 1.0 - min(min(dm.x, dm.y), 1.0);
+    let am = a / u.gs.y;
+    let dmaj = abs(fract(am - 0.5) - 0.5) / (fw / u.gs.y);
+    let line_major = 1.0 - min(min(dmaj.x, dmaj.y), 1.0);
+    let r = length(i.world - u.gq.xyz);
+    let view = normalize(u.eye.xyz - i.world);
+    let fade = (1.0 - smoothstep(0.45 * u.gs.z, u.gs.z, r)) * smoothstep(0.03, 0.35, abs(dot(u.gn.xyz, view)));
+    var alpha = max(line_minor * 0.45 * minor_fade, line_major) * u.gcol.w;
+    var rgb = u.gcol.rgb;
+    // The line u = 0 runs along v, so it is v's colour; v = 0 runs along u.
+    let on_v = 1.0 - min(abs(pu - u.gax.x) / max(fwidth(pu), 1e-12) / 1.2, 1.0);
+    let on_u = 1.0 - min(abs(pv - u.gax.y) / max(fwidth(pv), 1e-12) / 1.2, 1.0);
+    if (on_v * u.gcv.w > alpha) { alpha = on_v * u.gcv.w; rgb = u.gcv.rgb; }
+    if (on_u * u.gcu.w > alpha) { alpha = on_u * u.gcu.w; rgb = u.gcu.rgb; }
+    alpha = alpha * fade;
+    if (alpha <= 0.002) { discard; }
+    return vec4f(rgb, alpha);
 }

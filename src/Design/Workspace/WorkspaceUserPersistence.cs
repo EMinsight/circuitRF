@@ -57,6 +57,19 @@ public sealed class CwsHistoryFilter
 /// view state, not design: it lives with the dock layout in the <c>.cwsuser</c>, never in the
 /// <c>.cem</c>. Scene-local metres and radians, as <c>Camera3D</c> holds them.
 /// </summary>
+/// <summary>
+/// brief-em3d-45 R-em3d45-1a — one 3D editor's drawing plane, so reopening the document draws where it was drawn.
+/// Editor state, not design: it lives in the <c>.cwsuser</c> with the cameras, never in the <c>.c3d</c>.
+/// </summary>
+public sealed class CwsDrawingPlane
+{
+    /// <summary><c>XY</c>, <c>YZ</c> or <c>XZ</c>.</summary>
+    public string Plane { get; set; } = "XY";
+
+    /// <summary>The offset along the plane's normal, in the document's own DBU.</summary>
+    public long OffsetDbu { get; set; }
+}
+
 public sealed class CwsCamera3D
 {
     public double TargetX { get; set; }
@@ -156,11 +169,16 @@ public sealed class CwsUserFile
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public Dictionary<string, CwsCamera3D>? Viewer3DCameras { get; set; }
 
+    /// <summary>brief-em3d-45 R-em3d45-1a — each 3D editor's drawing plane, by its <c>.c3d</c>'s path relative to the
+    /// workspace root (forward slashes). Null when no plane has been moved off XY at 0.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Dictionary<string, CwsDrawingPlane>? C3dDrawingPlanes { get; set; }
+
     /// <summary>True when this carries nothing worth a file — the state in which no sidecar is written.</summary>
     internal bool IsEmpty =>
         DockLayout is null && TreeViewState is null && OpenDocuments is null &&
         ActiveDocumentPath is null && ColorSchemeName is null && HistoryFilter is null &&
-        Viewer3DCameras is null;
+        Viewer3DCameras is null && C3dDrawingPlanes is null;
 }
 
 /// <summary>
@@ -200,6 +218,7 @@ public static class WorkspaceUserPersistence
         nameof(CwsFile.ActiveDocumentPath),
         nameof(CwsFile.ColorSchemeName),
         nameof(CwsFile.Viewer3DCameras),
+        nameof(CwsFile.C3dDrawingPlanes),
     ];
 
     /// <summary>The per-user half of <paramref name="ws"/>, lifted out for the sidecar.</summary>
@@ -212,6 +231,7 @@ public static class WorkspaceUserPersistence
         ActiveDocumentPath = ws.ActiveDocumentPath,
         ColorSchemeName    = ws.ColorSchemeName,
         Viewer3DCameras    = ws.Viewer3DCameras,
+        C3dDrawingPlanes   = ws.C3dDrawingPlanes,
     };
 
     /// <summary>
@@ -231,6 +251,7 @@ public static class WorkspaceUserPersistence
         ws.ActiveDocumentPath = user.ActiveDocumentPath;
         ws.ColorSchemeName    = user.ColorSchemeName;
         ws.Viewer3DCameras    = user.Viewer3DCameras;
+        ws.C3dDrawingPlanes   = user.C3dDrawingPlanes;
     }
 
     /// <summary>The sidecar beside a given <c>.cws</c> path.</summary>

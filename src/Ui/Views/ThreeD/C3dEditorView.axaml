@@ -20,6 +20,9 @@
         <Style Selector="ToggleButton, Button">
             <Setter Property="Padding" Value="6,3"/>
         </Style>
+        <Style Selector="TextBox.error">
+            <Setter Property="BorderBrush" Value="IndianRed"/>
+        </Style>
     </UserControl.Styles>
 
     <DockPanel>
@@ -118,6 +121,50 @@
 
                 <Border Width="1" Margin="2,3" Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
 
+                <!-- brief-em3d-45 R-em3d45-1a — the drawing plane: three exclusive buttons and its offset along the normal,
+                     in the display unit (a suffix is honoured). Editor state, saved in the workspace's window state. -->
+                <ToggleButton IsChecked="{Binding ViewModel.IsPlaneXY}" ToolTip.Tip="Draw on the XY plane (normal z). Ctrl/Cmd-click a face with a tool armed to draw on it.">
+                    <TextBlock Text="XY" FontSize="11" FontWeight="SemiBold"/>
+                </ToggleButton>
+                <ToggleButton IsChecked="{Binding ViewModel.IsPlaneYZ}" ToolTip.Tip="Draw on the YZ plane (normal x)">
+                    <TextBlock Text="YZ" FontSize="11" FontWeight="SemiBold"/>
+                </ToggleButton>
+                <ToggleButton IsChecked="{Binding ViewModel.IsPlaneXZ}" ToolTip.Tip="Draw on the XZ plane (normal y)">
+                    <TextBlock Text="XZ" FontSize="11" FontWeight="SemiBold"/>
+                </ToggleButton>
+                <TextBox x:Name="PlaneOffsetBox" Width="72" VerticalAlignment="Center" Text="{Binding ViewModel.PlaneOffsetText}"
+                         Classes.error="{Binding ViewModel.PlaneOffsetError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                         KeyDown="OnPlaneOffsetKey" LostFocus="OnPlaneOffsetLostFocus"
+                         ToolTip.Tip="The plane's offset along its normal, in the display unit (25um, 10mil …). Ctrl/Cmd+Shift-click a snapped point to move it there."/>
+                <ToggleButton IsChecked="{Binding ViewModel.ShowDrawingGrid}" ToolTip.Tip="The drawing grid on the plane">
+                    <mi:MaterialIcon Kind="GridLarge" Width="16" Height="16"/>
+                </ToggleButton>
+
+                <Border Width="1" Margin="2,3" Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+
+                <!-- brief-em3d-45 R-em3d45-3 — the tools (Shift+A opens them at the cursor, one letter each). Arming one keeps
+                     the selection mode; Esc disarms. Icon kinds verified in Material.Icons 3.0.2: there is no Cylinder
+                     kind, so the cylinder is Database (a stack of discs). -->
+                <ToggleButton IsChecked="{Binding ViewModel.IsBoxArmed}" ToolTip.Tip="Box: corner, opposite corner, height  (Shift+A, B)">
+                    <mi:MaterialIcon Kind="CubeUnfolded" Width="16" Height="16"/>
+                </ToggleButton>
+                <ToggleButton IsChecked="{Binding ViewModel.IsSheetArmed}" ToolTip.Tip="Sheet: a rectangle, two clicks  (Shift+A, S)">
+                    <mi:MaterialIcon Kind="VectorRectangle" Width="16" Height="16"/>
+                </ToggleButton>
+                <ToggleButton IsChecked="{Binding ViewModel.IsPolygonArmed}" ToolTip.Tip="Polygon: a closed sheet, a click per vertex  (Shift+A, G)">
+                    <mi:MaterialIcon Kind="VectorPolygon" Width="16" Height="16"/>
+                </ToggleButton>
+                <ToggleButton IsChecked="{Binding ViewModel.IsPolylineArmed}" ToolTip.Tip="Polyline: construction geometry, a click per vertex  (Shift+A, L)">
+                    <mi:MaterialIcon Kind="VectorPolyline" Width="16" Height="16"/>
+                </ToggleButton>
+                <ToggleButton IsChecked="{Binding ViewModel.IsCylinderArmed}" ToolTip.Tip="Cylinder: centre, radius, height  (Shift+A, Y)">
+                    <mi:MaterialIcon Kind="Database" Width="16" Height="16"/>
+                </ToggleButton>
+                <ComboBox MinWidth="90" VerticalAlignment="Center" ItemsSource="{Binding ViewModel.Materials}" SelectedItem="{Binding ViewModel.CurrentMaterial}"
+                          ToolTip.Tip="The material every new object gets, from the technology's materials"/>
+
+                <Border Width="1" Margin="2,3" Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+
                 <ToggleButton IsChecked="{Binding ViewModel.ShowTree}" ToolTip.Tip="Object tree">
                     <mi:MaterialIcon Kind="FileTreeOutline" Width="16" Height="16"/>
                 </ToggleButton>
@@ -150,6 +197,11 @@
             <StackPanel Spacing="1">
                 <DockPanel>
                     <SelectableTextBlock DockPanel.Dock="Right" FontSize="11" Text="{Binding ViewModel.Viewer.CursorText}"/>
+                    <SelectableTextBlock DockPanel.Dock="Right" FontSize="11" Margin="0,0,16,0" Text="{Binding ViewModel.GridText}"
+                                         IsVisible="{Binding ViewModel.GridText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                         ToolTip.Tip="The drawn grid's minor spacing, and the snap step when it differs (the document's SnapDbu)"/>
+                    <SelectableTextBlock DockPanel.Dock="Right" FontSize="11" Margin="0,0,16,0" Text="{Binding ViewModel.PlaneText}"
+                                         ToolTip.Tip="The drawing plane"/>
                     <SelectableTextBlock DockPanel.Dock="Right" FontSize="11" Margin="0,0,16,0" Text="{Binding ViewModel.Viewer.SnapText}"
                                          IsVisible="{Binding ViewModel.Viewer.SnapText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
                                          ToolTip.Tip="What the cursor snaps to, in the display unit. ≈ marks a point that is not an exact database-unit point (a rotated object, or another scale)."/>
@@ -157,6 +209,8 @@
                 </DockPanel>
                 <SelectableTextBlock FontSize="11" Text="{Binding ViewModel.Viewer.SelectionText}" TextWrapping="Wrap"
                                      IsVisible="{Binding ViewModel.Viewer.SelectionText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                <SelectableTextBlock FontSize="11" Text="{Binding ViewModel.ToolPrompt}" TextWrapping="Wrap"
+                                     IsVisible="{Binding ViewModel.ToolPrompt, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                 <SelectableTextBlock FontSize="11" Text="{Binding ViewModel.StatusMessage}" TextWrapping="Wrap"
                                      IsVisible="{Binding ViewModel.StatusMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                 <SelectableTextBlock FontSize="11" Text="{Binding ViewModel.Viewer.Notes}" TextWrapping="Wrap" Opacity="0.85"
@@ -190,6 +244,23 @@
             <Panel Grid.Column="1">
                 <v3:Viewer3DPane x:Name="Pane" DataContext="{Binding ViewModel.Viewer}"/>
                 <v3:Viewer3DOverlay x:Name="Overlay" DataContext="{Binding ViewModel.Viewer}"/>
+                <!-- brief-em3d-45 R-em3d45-4 — the typed field: inline at the cursor, never a dialog. Tab moves between the
+                     step's dimensions, Enter accepts the step, Esc returns to the mouse. An entry that does not parse stays,
+                     red. The space under it is left for brief 51's Define strip. -->
+                <Canvas>
+                    <Border Canvas.Left="{Binding ViewModel.FieldX}" Canvas.Top="{Binding ViewModel.FieldY}" IsVisible="{Binding ViewModel.FieldOpen}"
+                            Padding="6,4" CornerRadius="4" BorderThickness="1" MinWidth="170"
+                            Background="{DynamicResource SystemControlBackgroundAltHighBrush}"
+                            BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
+                        <StackPanel Spacing="3">
+                            <TextBlock Text="{Binding ViewModel.FieldLabel}" FontSize="11" Opacity="0.75"/>
+                            <TextBox x:Name="FieldInput" Text="{Binding ViewModel.FieldText}" MinWidth="150"
+                                     Classes.error="{Binding ViewModel.FieldError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                            <TextBlock Text="{Binding ViewModel.FieldError}" Foreground="IndianRed" FontSize="11" TextWrapping="Wrap" MaxWidth="260"
+                                       IsVisible="{Binding ViewModel.FieldError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                        </StackPanel>
+                    </Border>
+                </Canvas>
                 <SelectableTextBlock x:Name="FaultText" IsVisible="False" TextWrapping="Wrap" Margin="24"
                                      HorizontalAlignment="Center" VerticalAlignment="Center"/>
             </Panel>

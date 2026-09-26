@@ -236,11 +236,24 @@ public sealed class C3dSheet : C3dObject
 
 /// <summary>Construction geometry (R-em3d41-2e): drawn and snapped to, and the input to Extrude, but
 /// NEVER in the solved problem. It has no material.</summary>
+/// <para>brief-em3d-45 R-em3d45-3d — a polyline's vertices snap to features off its plane, so one whose points
+/// leave the plane is stored in 3D form: <see cref="Points3"/> instead of <see cref="Points"/>, with
+/// <see cref="Plane"/>/<see cref="Offset"/> still the plane it was drawn on. <c>Points3</c> is written only then,
+/// so a planar polyline's spelling is unchanged.</para>
 public sealed class C3dPolyline : C3dObject
 {
     public C3dPlane        Plane  { get; set; }
     public long            Offset { get; set; }
     public List<C3dPoint2> Points { get; set; } = [];
+
+    /// <summary>The vertices in 3D, integer DBU, when they do not all lie on the plane; null (and absent from the
+    /// file) otherwise. When present it is the polyline and <see cref="Points"/> is empty.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<C3dPoint3>? Points3 { get; set; }
+
+    /// <summary>How many vertices the polyline has, in whichever form it is stored.</summary>
+    [JsonIgnore]
+    public int VertexCount => Points3?.Count ?? Points.Count;
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool Closed { get; set; }

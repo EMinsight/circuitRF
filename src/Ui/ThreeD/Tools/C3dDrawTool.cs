@@ -1,0 +1,152 @@
+// brief-em3d-45 R-em3d45-3 / -4 — what every drawing tool is: a small state machine fed clicks and typed values,
+// which shows a rubber band while it runs and hands back ONE object when it finishes.
+//
+// A TOOL NEVER TOUCHES THE DOCUMENT. It is given points (C3dDrawInput, resolved by the editor from the snap and the
+// cursor's ray) and returns what it made; the editor inserts that as one undo entry. So a cancelled gesture adds no
+// entry (gate 8), and the preview is the overlay's, never the scene's.
+//
+// EVERY TYPED DIMENSION LANDS IN EXACTLY ONE STORED FIELD (R-em3d45-4a): a box's Size component, a rectangle's Size,
+// a cylinder's Radius or Length, a prism's Height — the fields brief 51 will bind an expression to. The typed
+// field's parser is one function answering "an exact DBU value" or "this is an expression" (C3dDimension.Parse).
+
+using System.Globalization;
+using CircuitRF.Core.Expressions;
+using CircuitRF.Design.Layout;
+using CircuitRF.Design.ThreeD;
+using CircuitRF.Engine.Em3d;
+using CircuitRF.Render.Scene3D.Edit;
+
+namespace CircuitRF.Ui.ThreeD.Tools;
+
+/// <summary>The tools (owner decision D6 adds the cylinder), and Extrude — a gesture on an existing object (§5).</summary>
+public enum C3dToolKind { Box, Sheet, Polygon, Polyline, Cylinder, Extrude }
+
+/// <summary>
+/// Where the cursor is, as a tool reads it: the snap in force (a DBU point, and whether it is exact and on geometry
+/// rather than the grid), and the ray through the cursor, world metres. Either may be absent.
+/// </summary>
+public readonly record struct C3dDrawInput(C3dPoint3? Snap, bool SnapExact, bool SnapOnGeometry, Point3? RayOrigin, Point3? RayDirection)
+{
+    public bool HasRay => RayOrigin is not null && RayDirection is not null;
+}
+
+/// <summary>What a click or a typed step did: advanced (or finished with <see cref="Result"/>), or was refused.</summary>
+public readonly record struct C3dToolStep(bool Advanced, C3dObject? Result = null, string? Refusal = null,
+                                          (int EdgeA, int EdgeB)? Crossing = null)
+{
+    public static C3dToolStep Next => new(true);
+    public static C3dToolStep Refuse(string why) => new(false, Refusal: why);
+    public static C3dToolStep Done(C3dObject o) => new(true, o);
+}
+
+/// <summary>The services a tool needs from the editor: the plane, the points, and the new object's name and material.</summary>
+public interface IC3dDrawHost
+{
+    DrawingPlane Plane { get; }
+    int DbuPerMicron { get; }
+
+    /// <summary>The cursor's point ON the plane: a snap moved along the normal onto it, or the ray's hit. Null, with
+    /// the reason in <paramref name="refusal"/>, when the plane is seen edge-on or the ray misses it.</summary>
+    C3dPoint3? PlanePoint(in C3dDrawInput input, out string? refusal);
+
+    /// <summary>The cursor's point anywhere in 3D: a geometry snap as it is, or else the plane point.</summary>
+    C3dPoint3? FreePoint(in C3dDrawInput input, out string? refusal);
+
+    /// <summary>R-em3d45-3a step 3 — how far along <paramref name="direction"/> (a world axis, ±) from
+    /// <paramref name="through"/> the cursor says: a geometry snap projected onto that line, or the point of the line
+    /// closest to the cursor's ray, on the grid. Null when neither says anything (the ray runs along the line).</summary>
+    long? Along(C3dPoint3 through, C3dAxis axis, in C3dDrawInput input);
+
+    string NextName(string prefix);
+    string? CurrentMaterial { get; }
+
+    /// <summary>A conductor sheet's thickness from the technology, µm, or null when it states none.</summary>
+    double? ThicknessUmFor(string? material);
+}
+
+public abstract class C3dDrawTool(IC3dDrawHost host)
+{
+    protected IC3dDrawHost Host { get; } = host;
+
+    public abstract C3dToolKind Kind { get; }
+
+    /// <summary>The tool's name as the menu and the status line say it.</summary>
+    public string Name => Kind.ToString();
+
+    /// <summary>0 before the first click; the gesture is in progress from then until it finishes or is cancelled.</summary>
+    public int Step { get; protected set; }
+
+    public bool InProgress => Step > 0;
+
+    /// <summary>The status line's prompt for the next click.</summary>
+    public abstract string Prompt { get; }
+
+    /// <summary>The dimensions the next click would fix, in Tab order — empty when the step has none to type.</summary>
+    public abstract IReadOnlyList<string> Dimensions { get; }
+
+    /// <summary>Those dimensions' values at the cursor now (DBU), for the field's prefill; null where the cursor says nothing.</summary>
+    public abstract long?[] Current(in C3dDrawInput input);
+
+    /// <summary>A click at the cursor.</summary>
+    public abstract C3dToolStep Click(in C3dDrawInput input);
+
+    /// <summary>The typed field's Enter: the step as if clicked, each typed dimension exact, the rest the cursor's.</summary>
+    public abstract C3dToolStep Typed(long?[] values, in C3dDrawInput input);
+
+    /// <summary>Enter with no field open: a polygon or polyline finishes; any other tool clicks.</summary>
+    public virtual C3dToolStep Enter(in C3dDrawInput input) => Click(input);
+
+    /// <summary>The second click of a double-click: a polygon or polyline finishes; elsewhere it is ignored (the first
+    /// click already placed the point).</summary>
+    public virtual C3dToolStep DoubleClick(in C3dDrawInput input) => new(false);
+
+    /// <summary>Backspace: a polygon or polyline takes back its last vertex. True when it did something.</summary>
+    public virtual bool Backspace() => false;
+
+    /// <summary>The rubber band for the cursor where it is, and the points already fixed.</summary>
+    public abstract void Preview(in C3dDrawInput input, List<DrawSegment> rubber, List<Point3> fixedPoints);
+
+    /// <summary>Esc: the gesture ends, nothing made.</summary>
+    public virtual void Reset() => Step = 0;
+
+    protected Point3 M(C3dPoint3 p) => DrawGeometry.Metres(p, Host.DbuPerMicron);
+
+    protected static long Or(long? typed, long? cursor) => typed ?? cursor ?? 0;
+}
+
+/// <summary>What the typed field's text is (R-em3d45-4a).</summary>
+public enum C3dDimensionKind { Value, Expression, Invalid }
+
+/// <summary>The parse of one typed dimension.</summary>
+public readonly record struct C3dDimension(C3dDimensionKind Kind, long Dbu, string? Why)
+{
+    /// <summary>
+    /// THE one parser of a typed dimension: an exact DBU value — a bare number is the display unit, a suffix
+    /// (<c>25um</c>, <c>10mil</c>) is honoured, all in decimal arithmetic (LayoutUnits) — or "this is an
+    /// expression" (<c>w</c>, <c>2*w</c>), which brief 51 will bind; or neither, with the reason.
+    /// </summary>
+    public static C3dDimension Parse(string? text, LayoutUnit unit, int dbuPerMicron)
+    {
+        string t = (text ?? "").Trim();
+        if (t.Length == 0) return new(C3dDimensionKind.Invalid, 0, "Type a length.");
+        if (LayoutUnits.TryParse(t, unit, dbuPerMicron, out long dbu)) return new(C3dDimensionKind.Value, dbu, null);
+        // A number with a word after it is a length with a unit this build does not know — not an expression.
+        if (char.IsDigit(t[0]) || t[0] is '.' or ',' || (t.Length > 1 && t[0] is '+' or '-' && char.IsDigit(t[1])))
+            if (t.All(c => char.IsLetterOrDigit(c) || c is '.' or ',' or '+' or '-' or ' ' or 'µ' or 'μ'))
+                return new(C3dDimensionKind.Invalid, 0, $"'{t}' is not a length: the units are nm, um, mm, mil and in.");
+        try
+        {
+            Parser.Parse(t);
+            return new(C3dDimensionKind.Expression, 0, "Expressions arrive with the 3D expressions feature.");
+        }
+        catch (Exception ex) when (ex is ExpressionException or FormatException or ArgumentException)
+        {
+            return new(C3dDimensionKind.Invalid, 0, $"'{t}' is not a length.");
+        }
+    }
+
+    /// <summary>A length as the field is prefilled with it: the display unit's number, lossless (it parses back to
+    /// the same DBU), with no suffix — a bare number is the display unit.</summary>
+    public static string Spell(long dbu, LayoutUnit unit, int dbuPerMicron)
+        => LayoutUnits.Format(dbu, unit, dbuPerMicron, LayoutUnits.SpellDecimals(unit, dbuPerMicron));
+}

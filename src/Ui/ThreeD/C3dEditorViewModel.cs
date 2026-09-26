@@ -107,6 +107,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         Viewer.SnapKinds = kinds;
         Viewer.SnapEnabled = snapOn;
         Viewer.SnapTogglesChanged += () => Snap3DPreference.Preferred = (Viewer.SnapEnabled, Viewer.SnapKinds);
+        Viewer.FrameRequested += OnViewerFrame;
         ApplySnapGrid();
         Properties = new C3dPropertiesViewModel(this);
         UndoRedo.PropertyChanged += (_, e) =>
@@ -118,6 +119,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         _loading = false;
         ApplyLengthFormat();
         RebuildTree();
+        SyncPlaneTexts();
     }
 
     /// <summary>Builds the first scene.</summary>
@@ -189,6 +191,8 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         RebuildInstanceChildren();
         Properties.Reload();
         OnPropertyChanged(nameof(Materials));
+        SyncCurrentMaterial();
+        RefreshGridText();
         Interlocked.Exchange(ref _adoptedGeneration, gen);
     }
 
@@ -420,13 +424,14 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     // ── snapping (brief-em3d-44) ─────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// R-em3d44-3c — the grid the snap uses: the XY plane at z = 0 until brief 45's drawing plane replaces it,
-    /// at the document's snap step (its technology's default when the document states none).
+    /// R-em3d44-3c / brief-em3d-45 R-em3d45-2d — the grid the snap uses: the drawing plane, at the document's snap
+    /// step (its technology's default when the document states none) — not necessarily the drawn minor spacing.
+    /// The pane's drawn grid follows the same plane.
     /// </summary>
     private void ApplySnapGrid()
     {
-        long pitch = Document.SnapDbu > 0 ? Document.SnapDbu : Elaboration?.Technology?.DefaultSnapDbu ?? 0;
-        Viewer.SnapGrid = new Snap3DGrid(C3dPlane.XY, 0, pitch, Document.DbuPerMicron);
+        Viewer.SnapGrid = new Snap3DGrid(_plane.Plane, _plane.OffsetDbu, SnapPitch, Document.DbuPerMicron);
+        ApplyDrawingGrid();
     }
 
     /// <summary>
@@ -497,6 +502,8 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         OnPropertyChanged(nameof(IsDirty));
         ApplyLengthFormat();
         Properties.Reload();
+        ApplyDrawingGrid();
+        SyncPlaneTexts();
     }
 
     private void ApplyLengthFormat()
@@ -562,6 +569,9 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         _loading = false;
         ApplyLengthFormat();
         Viewer.SetSelection([]);
+        SetTool(null);
+        ApplySnapGrid();
+        SyncPlaneTexts();
         DocumentChanged();
         return null;
     }
@@ -679,6 +689,12 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
                   ?? (InstanceOf(first) is { } inst ? AllTreeItems().FirstOrDefault(t => t.InstanceIndex >= 0 && t.Name == inst.Split('/', '[')[0]) : null);
         }
         finally { _syncingTree = false; }
+    }
+
+    /// <summary>A camera move changes the drawn grid spacing: the status line follows (cheap arithmetic, no geometry).</summary>
+    private void OnViewerFrame()
+    {
+        if (ShowDrawingGrid) RefreshGridText();
     }
 
     public void Dispose() => Viewer.Dispose();

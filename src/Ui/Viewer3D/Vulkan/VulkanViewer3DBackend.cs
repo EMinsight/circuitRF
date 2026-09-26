@@ -52,7 +52,7 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
     /// <summary>How long a frame's fence may take before the GPU is declared stuck (a fault, never an
     /// endless wait: the render thread holds the render lock, and the UI thread takes it on detach).</summary>
     private const ulong FenceTimeoutNs = 2_000_000_000;
-    private const int UniformStride = 1024;   // ≥ 928 (brief 43's selection list) and a multiple of every minUniformBufferOffsetAlignment (≤ 256)
+    private const int UniformStride = 1280;   // ≥ 1,072 (brief 45's grid block) and a multiple of every minUniformBufferOffsetAlignment (≤ 256)
     private const VkFormat ColorFormat = VkFormat.R8G8B8A8Unorm;
     private const VkFormat DepthFormat = VkFormat.D32Sfloat;
     private const VkImageUsageFlags TargetUsage =
@@ -78,7 +78,7 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
     private VkDescriptorPool _pool;
     private VkDescriptorSet _set;
     private VkShaderModule _module;
-    private VkPipeline _pOpaque, _pTrans, _pLines, _pPick, _pField, _pEdges, _pTop;
+    private VkPipeline _pOpaque, _pTrans, _pLines, _pPick, _pField, _pEdges, _pTop, _pGrid;
     private VkCommandPool _cmdPool;
     private (VkBuffer Buf, VkDeviceMemory Mem) _ub;
     private byte* _uMapped;
@@ -261,6 +261,8 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
         // brief-em3d-43 — the selection's edges and its face on top: no depth test.
         _pEdges = Pipeline(api, _rpColor, "fs_edge"u8, VkPrimitiveTopology.LineList, blend: true, depthWrite: false, targets: 1, depthTest: false);
         _pTop = Pipeline(api, _rpColor, "fs_top"u8, VkPrimitiveTopology.TriangleList, blend: true, depthWrite: false, targets: 1, depthTest: false);
+        // brief-em3d-45 — the drawing grid: no vertex input at all, depth test without write, blend.
+        _pGrid = Pipeline(api, _rpColor, "fs_grid"u8, VkPrimitiveTopology.TriangleList, blend: true, depthWrite: false, targets: 1, grid: true);
 
         // two uniform blocks (pick, colour) per frame slot — host-coherent, mapped once
         _ub = NewBuffer(api, Ring * 2 * UniformStride, VkBufferUsageFlags.UniformBuffer, VkMemoryPropertyFlags.HostVisible | VkMemoryPropertyFlags.HostCoherent);
@@ -356,9 +358,9 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
     }
 
     private VkPipeline Pipeline(VkDeviceApi api, VkRenderPass rp, ReadOnlySpan<byte> fragmentEntry, VkPrimitiveTopology topology,
-                                bool blend, bool depthWrite, int targets, bool field = false, bool depthTest = true)
+                                bool blend, bool depthWrite, int targets, bool field = false, bool depthTest = true, bool grid = false)
     {
-        fixed (byte* vsName = field ? "vs_field"u8 : "vs"u8)
+        fixed (byte* vsName = field ? "vs_field"u8 : grid ? "vs_grid"u8 : "vs"u8)
         fixed (byte* fsName = fragmentEntry)
         {
             var stages = stackalloc VkPipelineShaderStageCreateInfo[2];
@@ -383,11 +385,13 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
                 attrs[2] = new VkVertexInputAttributeDescription { location = 2, binding = 0, format = VkFormat.R8G8B8A8Unorm, offset = 16 };
                 attrs[3] = new VkVertexInputAttributeDescription { location = 3, binding = 0, format = VkFormat.R32Uint, offset = 20 };
             }
-            var vin = new VkPipelineVertexInputStateCreateInfo
-            {
-                vertexBindingDescriptionCount = 1, pVertexBindingDescriptions = &vbd,
-                vertexAttributeDescriptionCount = attrCount, pVertexAttributeDescriptions = attrs,
-            };
+            var vin = grid
+                ? new VkPipelineVertexInputStateCreateInfo()
+                : new VkPipelineVertexInputStateCreateInfo
+                {
+                    vertexBindingDescriptionCount = 1, pVertexBindingDescriptions = &vbd,
+                    vertexAttributeDescriptionCount = attrCount, pVertexAttributeDescriptions = attrs,
+                };
             var ia = new VkPipelineInputAssemblyStateCreateInfo { topology = topology };
             var vp = new VkPipelineViewportStateCreateInfo { viewportCount = 1, scissorCount = 1 };
             // cull none; counter-clockwise front faces — see the header on why FlipY is false
@@ -853,7 +857,8 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
                     Scene3DBuffer.Overlay0 => _overlays[0].Buf, Scene3DBuffer.Overlay1 => _overlays[1].Buf, _ => _overlays[2].Buf,
                 };
                 bool lines = d.Pipeline is Scene3DPipeline.Lines or Scene3DPipeline.Edges, field = d.Pipeline == Scene3DPipeline.Field;
-                if (buf.Handle == 0 || (!lines && !field && _ib.Buf.Handle == 0)) continue;
+                bool grid = d.Pipeline == Scene3DPipeline.Grid;
+                if (!grid && (buf.Handle == 0 || (!lines && !field && _ib.Buf.Handle == 0))) continue;
                 if (field && d.First + d.Count > _fieldCount) continue;
                 if (d.Pipeline != state)
                 {
@@ -862,8 +867,14 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
                     {
                         Scene3DPipeline.Translucent => _pTrans, Scene3DPipeline.Lines => _pLines,
                         Scene3DPipeline.Field => _pField, Scene3DPipeline.Edges => _pEdges,
-                        Scene3DPipeline.OnTop => _pTop, _ => _pOpaque,
+                        Scene3DPipeline.OnTop => _pTop, Scene3DPipeline.Grid => _pGrid, _ => _pOpaque,
                     });
+                }
+                if (grid)
+                {
+                    api.vkCmdDraw(cb, 6, 1, 0, 0);
+                    draws++;
+                    continue;
                 }
                 if (d.Buffer != bound)
                 {
@@ -985,7 +996,7 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
         foreach (var f in _fence) if (f.Handle != 0) api.vkDestroyFence(f, null);
         api.vkDestroyPipeline(_pOpaque, null); api.vkDestroyPipeline(_pTrans, null);
         api.vkDestroyPipeline(_pLines, null); api.vkDestroyPipeline(_pPick, null); api.vkDestroyPipeline(_pField, null);
-        api.vkDestroyPipeline(_pEdges, null); api.vkDestroyPipeline(_pTop, null);
+        api.vkDestroyPipeline(_pEdges, null); api.vkDestroyPipeline(_pTop, null); api.vkDestroyPipeline(_pGrid, null);
         api.vkDestroyPipelineLayout(_layout, null); api.vkDestroyDescriptorPool(_pool, null);
         api.vkDestroyDescriptorSetLayout(_setLayout, null); api.vkDestroyShaderModule(_module, null);
         api.vkDestroyRenderPass(_rpColor, null); api.vkDestroyRenderPass(_rpPick, null);

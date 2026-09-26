@@ -38,7 +38,7 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
     [DllImport("/System/Library/Frameworks/Metal.framework/Metal")] private static extern nint MTLCreateSystemDefaultDevice();
 
     private readonly nint _device, _queue;
-    private nint _pOpaque, _pTrans, _pLines, _pPick, _pField, _pEdges, _pTop, _dsWrite, _dsNoWrite, _dsAlways, _depth, _pickId, _pickPos, _pickDepth;
+    private nint _pOpaque, _pTrans, _pLines, _pPick, _pField, _pEdges, _pTop, _pGrid, _dsWrite, _dsNoWrite, _dsAlways, _depth, _pickId, _pickPos, _pickDepth;
     /// <summary>brief-em3d-43 — a partial upload waiting for the next frame's command buffer: staging buffer,
     /// destination, offset, length. Copied by a blit on the queue, so it lands after every frame already
     /// committed has finished reading the old bytes.</summary>
@@ -97,6 +97,7 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
         }
         nint vs = Fn("vs"), fsc = Fn("fs_color"), fsl = Fn("fs_line"), fsp = Fn("fs_pick"), fse = Fn("fs_edge"), fst = Fn("fs_top");
         nint vsf = Fn("vs_field"), fsf = Fn("fs_field");
+        nint vsg = Fn("vs_grid"), fsg = Fn("fs_grid");
 
         nint vd = Send(Class("MTLVertexDescriptor"), Sel("vertexDescriptor"));
         nint attrs = Send(vd, Sel("attributes"));
@@ -123,7 +124,8 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
             nint d = Send(Send(Class("MTLRenderPipelineDescriptor"), S.alloc), S.init);
             SendV(d, Sel("setVertexFunction:"), vfn != 0 ? vfn : vs);
             SendV(d, Sel("setFragmentFunction:"), fs);
-            SendV(d, Sel("setVertexDescriptor:"), vdesc != 0 ? vdesc : vd);
+            // brief-em3d-45: the grid's vertex shader reads no vertex buffer — its pipeline has no descriptor (−1).
+            SendV(d, Sel("setVertexDescriptor:"), vdesc == -1 ? 0 : vdesc != 0 ? vdesc : vd);
             SendV(d, Sel("setDepthAttachmentPixelFormat:"), FmtDepth32F);
             SendV(d, Sel("setInputPrimitiveTopology:"), topologyClass);
             nint cas = Send(d, Sel("colorAttachments"));
@@ -158,6 +160,7 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
         _pField = Pipe(fsf, false, false, TopoTriangle, vsf, fvd);
         _pEdges = Pipe(fse, true, false, TopoLine);
         _pTop = Pipe(fst, true, false, TopoTriangle);
+        _pGrid = Pipe(fsg, true, false, TopoTriangle, vsg, -1);
 
         nint Depth(bool write, nuint compare = 3)
         {
@@ -457,6 +460,15 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
                         Scene3DBuffer.Scene => _vb, Scene3DBuffer.SceneLines => _lines, Scene3DBuffer.Field => _field,
                         Scene3DBuffer.Overlay0 => _overlays[0], Scene3DBuffer.Overlay1 => _overlays[1], _ => _overlays[2],
                     };
+                    if (d.Pipeline == Scene3DPipeline.Grid)
+                    {
+                        // brief-em3d-45 — six vertices from the uniform block; no buffer is bound.
+                        SendV(e, S.setRenderPipelineState, _pGrid);
+                        SendV(e, S.setDepthStencilState, _dsNoWrite);
+                        ((delegate* unmanaged<nint, nint, nuint, nuint, nuint, void>)MsgSend)(e, Sel_drawPrimitives, PrimTriangle, 0, 6);
+                        draws++;
+                        continue;
+                    }
                     if (buf == 0 || (d.Pipeline is Scene3DPipeline.Opaque or Scene3DPipeline.Translucent or Scene3DPipeline.OnTop && _ib == 0)) continue;
                     if (d.Pipeline == Scene3DPipeline.Field && d.First + d.Count > _fieldCount) continue;
                     SendV(e, S.setRenderPipelineState, d.Pipeline switch
@@ -610,7 +622,7 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
         foreach (var p in _patches) Send(p.Staging, S.release);
         _patches.Clear();
         Release(ref _pOpaque); Release(ref _pTrans); Release(ref _pLines); Release(ref _pPick); Release(ref _pField);
-        Release(ref _pEdges); Release(ref _pTop);
+        Release(ref _pEdges); Release(ref _pTop); Release(ref _pGrid);
         Release(ref _dsWrite); Release(ref _dsNoWrite); Release(ref _dsAlways);
         if (_queue != 0) Send(_queue, S.release);
         if (_device != 0) Send(_device, S.release);

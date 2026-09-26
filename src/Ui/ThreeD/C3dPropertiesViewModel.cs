@@ -165,7 +165,7 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
             case C3dPolyline l:
                 yield return new("Plane", l.Plane.ToString());
                 yield return new("Offset", editor.Length(l.Offset));
-                yield return new("Points", l.Points.Count + (l.Closed ? ", closed" : ""));
+                yield return new("Points", l.VertexCount + (l.Closed ? ", closed" : "") + (l.Points3 is not null ? ", leaving its plane (stored in 3D)" : ""));
                 yield return new("In the problem", "No: a polyline is construction geometry.");
                 break;
             case C3dPolyhedron ph:

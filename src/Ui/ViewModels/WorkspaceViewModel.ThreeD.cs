@@ -16,6 +16,7 @@ using Avalonia.Controls;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using CircuitRF.Design.ThreeD;
+using CircuitRF.Design.Workspace;
 using CircuitRF.Render.Scene3D;
 using CircuitRF.Render.Scene3D.Edit;
 using CircuitRF.Ui.ThreeD;
@@ -52,6 +53,9 @@ public partial class WorkspaceViewModel
             var vm = new C3dEditorViewModel(full, document, Viewer3DBackends.Create, () => CurrentWorkspacePath,
                                             a => Dispatcher.UIThread.Post(a), _techCache);
             var doc = new C3dEditorDocument(vm);
+            // brief-em3d-45 R-em3d45-1a — the drawing plane is window state: put back where it was left.
+            if (StoredDrawingPlane(full) is { } plane) vm.SetPlane(plane);
+            vm.DrawingPlaneChanged += () => RememberDrawingPlane(vm);
             vm.ExternalChangeWhileDirty += () => _ = AskReloadC3dAsync(doc);
             vm.PropertyChanged += (_, e) =>
             {
@@ -147,8 +151,42 @@ public partial class WorkspaceViewModel
         Messages.Success("Saved", path);
     }
 
+    // ── the drawing plane in the window state (brief-em3d-45 R-em3d45-1a) ─────────────────────
+
+    private Dictionary<string, CwsDrawingPlane>? _drawingPlanes;
+
+    private Dictionary<string, CwsDrawingPlane> LoadStoredDrawingPlanes()
+        => CurrentWorkspacePath is { } cws && TryLoadCws(cws).C3dDrawingPlanes is { } stored
+            ? new Dictionary<string, CwsDrawingPlane>(stored, StringComparer.Ordinal)
+            : new Dictionary<string, CwsDrawingPlane>(StringComparer.Ordinal);
+
+    private DrawingPlane? StoredDrawingPlane(string c3dPath)
+    {
+        _drawingPlanes ??= LoadStoredDrawingPlanes();
+        return CameraKey(c3dPath) is { } k && _drawingPlanes.TryGetValue(k, out var p) && Enum.TryParse<C3dPlane>(p.Plane, out var plane)
+            ? new DrawingPlane(plane, p.OffsetDbu) : null;
+    }
+
+    /// <summary>The plane as it is now; the default plane is no row at all.</summary>
+    private void RememberDrawingPlane(C3dEditorViewModel vm)
+    {
+        if (CameraKey(vm.FilePath) is not { } k) return;
+        _drawingPlanes ??= LoadStoredDrawingPlanes();
+        if (vm.Plane == DrawingPlane.Default) _drawingPlanes.Remove(k);
+        else _drawingPlanes[k] = new CwsDrawingPlane { Plane = vm.Plane.Plane.ToString(), OffsetDbu = vm.Plane.OffsetDbu };
+    }
+
+    /// <summary>Every 3D editor's drawing plane for the <c>.cwsuser</c> — null when none is off the default.</summary>
+    private Dictionary<string, CwsDrawingPlane>? DrawingPlanesToPersist()
+    {
+        _drawingPlanes ??= LoadStoredDrawingPlanes();
+        foreach (var doc in _openDocsByPath.Values.OfType<C3dEditorDocument>()) RememberDrawingPlane(doc.ViewModel);
+        return _drawingPlanes.Count > 0 ? _drawingPlanes : null;
+    }
+
     private void ClosedC3dEditor(C3dEditorDocument doc)
     {
+        RememberDrawingPlane(doc.ViewModel);
         if (_c3dWatchers.Remove(doc, out var w)) w.Dispose();
         _factory.ProjectTreeTool?.SetFileDirty(doc.FilePath, false);
         doc.ViewModel.Dispose();
@@ -184,7 +222,35 @@ public partial class WorkspaceViewModel
         ThreeDAxisIndicatorCommand.NotifyCanExecuteChanged();
         ThreeDShowAllCommand.NotifyCanExecuteChanged();
         ThreeDSnapCommand.NotifyCanExecuteChanged();
+        ThreeDDrawCommand.NotifyCanExecuteChanged();
+        ThreeDDrawingPlaneCommand.NotifyCanExecuteChanged();
+        ThreeDExtrudeCommand.NotifyCanExecuteChanged();
     }
+
+    // brief-em3d-45 — drawing needs the editor, not the read-only viewer.
+    private C3dEditorViewModel? ActiveC3dEditor() => ResolveActiveDocumentForCommands() is C3dEditorDocument e ? e.ViewModel : null;
+
+    private bool HasActiveC3dEditor() => ActiveC3dEditor() is not null;
+
+    /// <summary>3D ▸ Draw ▸ Box … Cylinder — the same arming the toolbar and the Shift+A popup do.</summary>
+    [RelayCommand(CanExecute = nameof(HasActiveC3dEditor))]
+    private void ThreeDDraw(string kind)
+    {
+        if (ActiveC3dEditor() is { } e && Enum.TryParse<CircuitRF.Ui.ThreeD.Tools.C3dToolKind>(kind, out var k)) e.Arm(k);
+    }
+
+    /// <summary>3D ▸ Drawing Plane ▸ XY / YZ / XZ (keeping the offset), and Show Grid.</summary>
+    [RelayCommand(CanExecute = nameof(HasActiveC3dEditor))]
+    private void ThreeDDrawingPlane(string which)
+    {
+        if (ActiveC3dEditor() is not { } e) return;
+        if (which == "Grid") { e.ShowDrawingGrid = !e.ShowDrawingGrid; return; }
+        if (Enum.TryParse<CircuitRF.Design.ThreeD.C3dPlane>(which, out var p)) e.SetPlane(e.Plane with { Plane = p });
+    }
+
+    /// <summary>3D ▸ Modify ▸ Extrude.</summary>
+    [RelayCommand(CanExecute = nameof(HasActiveC3dEditor))]
+    private void ThreeDExtrude() => ActiveC3dEditor()?.Extrude();
 
     /// <summary>3D ▸ Select Mode ▸ Object / Face / Vertex.</summary>
     [RelayCommand(CanExecute = nameof(HasActive3DPane))]
@@ -232,5 +298,6 @@ public partial class WorkspaceViewModel
     private void ReleaseC3dEditorsOfOutgoingWorkspace()
     {
         foreach (var doc in _openDocsByPath.Values.OfType<C3dEditorDocument>().ToList()) ClosedC3dEditor(doc);
+        _drawingPlanes = null;
     }
 }

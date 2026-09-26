@@ -12,6 +12,11 @@
 // force, because a snap the user cannot see is one they cannot trust. It is the snap's own screen point,
 // resolved from the frame's patch, so it costs a hover nothing either.
 //
+// brief-em3d-45: the DRAWING's chrome — a tool's rubber band, the points it has fixed, the document's construction
+// polylines (never in the solved problem, so never in the scene), and a refused outline's crossing edges — is drawn
+// here too, from world segments the editor hands over each frame (IViewer3DEditHost.FillDrawOverlay). A gesture
+// in progress is therefore a few projected lines, never a document edit or an upload.
+//
 // It is drawn by Avalonia, in DIPs, from the camera alone — a redraw per presented frame is a handful of
 // lines and a few text runs, and it touches no geometry. It takes no input: the pane under it does.
 
@@ -80,10 +85,58 @@ public sealed class Viewer3DOverlay : Control
         }
         if (vm.CycleText.Length > 0) Text(ctx, vm.CycleText, new Point(10, 8), ink, 12, dark);
 
+        if (vm.EditHost is { } host)
+        {
+            _draw.Clear();
+            host.FillDrawOverlay(_draw);
+            Drawing(ctx, vm, _draw, w, h, dark);
+        }
+
         if (vm.Snap.IsSnap) SnapMarker(ctx, vm.Snap.Kind, new Point(vm.Snap.ScreenX, vm.Snap.ScreenY), dark);
 
         if (vm.HoverText.Length > 0 && vm.View.CursorX >= 0)
             Text(ctx, vm.HoverText, new Point(vm.View.CursorX + 14, vm.View.CursorY + 14), ink, 12, dark);
+    }
+
+    private readonly Viewer3DDrawOverlay _draw = new();
+
+    private static readonly IBrush RubberBrush = new SolidColorBrush(Color.FromRgb(255, 196, 40));
+    private static readonly IBrush CrossingBrush = new SolidColorBrush(Color.FromRgb(235, 40, 40));
+
+    /// <summary>brief-em3d-45 — the drawing's chrome: construction dashed, a selected polyline in the selection colour,
+    /// the rubber band in amber over a halo, fixed points as dots, a crossing in red.</summary>
+    private static void Drawing(DrawingContext ctx, Viewer3DViewModel vm, Viewer3DDrawOverlay d, double w, double h, bool dark)
+    {
+        var cam = vm.View.Camera;
+        var scene = vm.Scene;
+        (Point P, bool Ok) Screen(CircuitRF.Engine.Em3d.Point3 p)
+        {
+            var (x, y, front) = cam.Project(scene.ToLocal(p.X, p.Y, p.Z), (float)w, (float)h);
+            return (new Point(x, y), front);
+        }
+        void Lines(List<CircuitRF.Render.Scene3D.Edit.DrawSegment> segs, Pen pen)
+        {
+            foreach (var s in segs)
+            {
+                var (a, oa) = Screen(s.A);
+                var (b, ob) = Screen(s.B);
+                if (oa && ob) ctx.DrawLine(pen, a, b);
+            }
+        }
+        var construction = new Pen(dark ? new SolidColorBrush(Color.FromArgb(200, 200, 205, 215)) : new SolidColorBrush(Color.FromArgb(200, 70, 75, 85)), 1.2)
+        {
+            DashStyle = new DashStyle([4, 3], 0),
+        };
+        Lines(d.Construction, construction);
+        Lines(d.Selected, new Pen(new SolidColorBrush(Color.FromRgb(255, 90, 255)), 2));
+        if (d.Rubber.Count > 0)
+        {
+            Lines(d.Rubber, new Pen(dark ? Brushes.Black : Brushes.White, 3.5, lineCap: PenLineCap.Round));
+            Lines(d.Rubber, new Pen(RubberBrush, 1.5, lineCap: PenLineCap.Round));
+        }
+        foreach (var p in d.Fixed)
+            if (Screen(p) is (var sp, true)) ctx.DrawEllipse(RubberBrush, new Pen(dark ? Brushes.Black : Brushes.White, 1), sp, 3, 3);
+        Lines(d.Crossing, new Pen(CrossingBrush, 3, lineCap: PenLineCap.Round));
     }
 
     /// <summary>The snap marker's colour: an amber no material or selection uses, over a contrasting halo.</summary>

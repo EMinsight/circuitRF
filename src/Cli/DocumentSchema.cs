@@ -334,7 +334,8 @@ internal static class DocumentSchema
         empty one whose units come from the cell's layout when it has one and from the technology
         otherwise; start from that rather than a blank file. `em` solves one through an embedded setup
         (or a .cem whose LayoutRef names it), `explain` reports how it elaborates, and `render
-        --section`/`--iso` draws it. Nothing draws or edits one in a window yet.
+        --section`/`--iso` draws it. Opening one in the application opens the 3D editor, which draws and
+        edits it.
 
         A microstrip on the shipped pcb-2layer_RO4350B_20mil_1oz technology: a 5 mm square of 20 mil
         RO4350B with a 1.1 mm copper trace across its top. This is a whole file, and `check` passes it:
@@ -398,7 +399,11 @@ internal static class DocumentSchema
 
           * A Polyhedron must be closed: every edge used by exactly two faces, in opposite
             directions. Every face must be planar within 1 DBU.
-          * A Polyline is construction geometry. It has no Material and is never solved.
+          * A Polyline is construction geometry. It has no Material and is never solved. Its Points
+            are [u, v] on its Plane at its Offset — unless a vertex leaves that plane (the editor
+            snaps a polyline's vertices to features anywhere), when the polyline is written with
+            Points3, a list of [x, y, z], instead, and Points is empty. Points3 is written only
+            then, so a planar polyline is spelled as it always was.
           * Material names a material of the technology — the one TechRef names, or the workspace's
             default when TechRef is omitted. Role (Conductor, Dielectric, Air) overrides what the
             material implies: a material with σ and no εr is a conductor, one with εr a dielectric,

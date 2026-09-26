@@ -1013,7 +1013,12 @@ viewer must show: intersecting translucent solids, and fields on 10⁵–10⁶ e
    (`pcell-parameter-handles.md`) govern a drag on a dimension bound to an expression.
 4. **Heavy work is off the drawing path.** The viewport always draws the last *finished* geometry; a
    rebuild in flight never blanks or stalls it.
-5. **Keyboard-first, no modal dialogs mid-gesture** — a value can be typed while dragging.
+5. **Keyboard-first, no modal dialogs mid-gesture** — a value can be typed while dragging. *(Brief 45:)* a
+   digit typed mid-gesture opens an inline field at the cursor in the 2D overlay, prefilled with the
+   dimensions the next click fixes; Tab moves between them, Enter takes the step, Esc returns to the mouse,
+   and an entry that does not parse stays in the field, red, and writes nothing. A tool's rubber band is
+   overlay lines too, so a gesture edits nothing and uploads nothing until it commits. The drawing grid is a
+   shader over one quad on the plane — an orbit changes uniforms only.
 
 A mesh modeller works on triangles; a B-rep kernel's booleans and tessellation take tens of
 milliseconds to seconds. The kernel cannot be made that fast, so the design makes sure **nothing ever

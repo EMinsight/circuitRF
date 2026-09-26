@@ -55,6 +55,42 @@ public interface IViewer3DEditHost
     /// <summary>brief-em3d-44 R-em3d44-4 / -5 — a snapped point as the status line shows it, in the document's
     /// display unit with <c>≈</c> when it is not an exact DBU point; null leaves it to the pane.</summary>
     string? SnapPointText(Snap3DResult snap) => null;
+
+    /// <summary>brief-em3d-45 R-em3d45-1b / -3 — a click the editor's drawing takes: a tool is armed, or it is a
+    /// drawing-plane gesture (Ctrl/Cmd-click a face, Ctrl/Cmd+Shift-click a snapped point). False leaves it to
+    /// selection. <paramref name="clickCount"/> 2 is the second click of a double-click.</summary>
+    bool DrawClick(KeyModifiers modifiers, int clickCount) => false;
+
+    /// <summary>brief-em3d-45 — a key the drawing takes before the pane's own keys: Shift+A, and while a tool is armed
+    /// its Esc, Enter, Tab and the digits that open the typed field.</summary>
+    bool DrawKey(Key key, KeyModifiers modifiers) => false;
+
+    /// <summary>brief-em3d-45 — what the drawing adds to the 2D overlay this frame: the rubber band, the document's
+    /// construction polylines, a refused outline's crossing.</summary>
+    void FillDrawOverlay(Viewer3DDrawOverlay overlay) { }
+
+    /// <summary>brief-em3d-45 — the drawing's entries for the context menu (Extrude, Drawing Plane from Face).</summary>
+    IEnumerable<Viewer3DMenuItem> DrawMenuItems() => [];
+}
+
+/// <summary>brief-em3d-45 — the drawing's 2D chrome for one frame, in world metres: the overlay projects it.</summary>
+public sealed class Viewer3DDrawOverlay
+{
+    /// <summary>The tool's rubber band.</summary>
+    public List<DrawSegment> Rubber { get; } = [];
+    /// <summary>The document's construction polylines (never in the solved problem, so never in the scene).</summary>
+    public List<DrawSegment> Construction { get; } = [];
+    /// <summary>The polylines selected in the tree.</summary>
+    public List<DrawSegment> Selected { get; } = [];
+    /// <summary>The two edges a refused outline crosses at.</summary>
+    public List<DrawSegment> Crossing { get; } = [];
+    /// <summary>The points the gesture has fixed so far.</summary>
+    public List<CircuitRF.Engine.Em3d.Point3> Fixed { get; } = [];
+
+    public void Clear()
+    {
+        Rubber.Clear(); Construction.Clear(); Selected.Clear(); Crossing.Clear(); Fixed.Clear();
+    }
 }
 
 /// <summary>One context-menu entry. <see cref="Run"/> null and no children is a heading or a disabled item.</summary>
@@ -75,6 +111,22 @@ public sealed partial class Viewer3DViewModel
 
     /// <summary>What a click would select now, or null.</summary>
     public Scene3DItem? HoveredItem { get; private set; }
+
+    /// <summary>brief-em3d-45 — the (object, face) the ID pass last found under the cursor, in any mode; (0, −1) for none.</summary>
+    public (uint Object, int Face) LastPick { get; private set; } = (0, -1);
+
+    /// <summary>brief-em3d-45 — the ray through the cursor, world metres (a unit direction), or null off the view.</summary>
+    public (CircuitRF.Engine.Em3d.Point3 Origin, CircuitRF.Engine.Em3d.Point3 Direction)? CursorRay()
+    {
+        if (View.CursorX < 0 || View.CursorY < 0) return null;
+        // The snap query casts its ray through the cursor itself (Ray adds half a pixel): the same ray here.
+        var (o, d) = View.Camera.Ray(View.CursorX - 0.5f, View.CursorY - 0.5f, _viewW, _viewH);
+        var (x, y, z) = Scene.ToWorld(o);
+        return (new CircuitRF.Engine.Em3d.Point3(x, y, z), new CircuitRF.Engine.Em3d.Point3(d.X, d.Y, d.Z));
+    }
+
+    /// <summary>The pane's size, DIPs, as the last resize said.</summary>
+    public (float Width, float Height) ViewSize => (_viewW, _viewH);
 
     /// <summary>Vertex mode's candidate under the cursor (scene-local), for the overlay's dot.</summary>
     public Vector3? HoveredVertex => HoveredItem is { Face: < 0, Object: > 0 } h && SelectMode == Scene3DSelectMode.Vertex ? h.Point : null;
@@ -142,10 +194,12 @@ public sealed partial class Viewer3DViewModel
 
     /// <summary>A click: select what is under the cursor (Shift adds or removes it). A click on nothing
     /// clears, unless Shift is held.</summary>
-    public void Click(bool shift)
+    public void Click(bool shift, KeyModifiers modifiers = KeyModifiers.None, int clickCount = 1)
     {
         HitCycle.Reset();
         CycleText = "";
+        // brief-em3d-45 — the drawing has the click first: an armed tool places a point, a plane gesture moves the plane.
+        if (EditHost?.DrawClick(modifiers | (shift ? KeyModifiers.Shift : KeyModifiers.None), clickCount) == true) return;
         var item = HoveredItem;
         if (item is not { } it)
         {
@@ -226,6 +280,7 @@ public sealed partial class Viewer3DViewModel
                                             ? Scene3DItem.OfVertex(id, v) : null,
                 _ => Scene3DItem.OfObject(id),
             };
+        LastPick = (id, f);
         int hoveredFace = SelectMode == Scene3DSelectMode.Face ? f : -1;
         if (item != HoveredItem || View.HoveredFace != hoveredFace)
         {
@@ -247,6 +302,9 @@ public sealed partial class Viewer3DViewModel
     /// </summary>
     public bool HandleKey(Key key, KeyModifiers modifiers, bool gestureInProgress)
     {
+        // brief-em3d-45 — the drawing's keys come first: while a tool gesture is in progress a digit opens the typed
+        // field instead of choosing a standard view, and Esc cancels the gesture rather than the selection.
+        if (!gestureInProgress && EditHost?.DrawKey(key, modifiers) == true) return true;
         bool plain = modifiers == KeyModifiers.None;
         if (key == Key.B && (plain || modifiers == KeyModifiers.Shift)) return Cycle(plain ? +1 : -1);
         if (!plain) return false;
@@ -410,6 +468,11 @@ public sealed partial class Viewer3DViewModel
         items.Add(new Viewer3DMenuItem("Show All", ShowAll));
         if (SelectMode == Scene3DSelectMode.Object && own && host is not null)
             items.Add(new Viewer3DMenuItem("Delete", () => host.DeleteSelection()));
+        if (host?.DrawMenuItems().ToList() is { Count: > 0 } draw)
+        {
+            items.Add(Viewer3DMenuItem.Separator);
+            items.AddRange(draw);
+        }
         if (host is not null && any)
         {
             items.Add(Viewer3DMenuItem.Separator);

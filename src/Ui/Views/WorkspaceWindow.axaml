@@ -221,6 +221,35 @@
                                 </NativeMenu>
                             </NativeMenuItem.Menu>
                         </NativeMenuItem>
+                        <NativeMenuItem Header="Draw" ToolTip="Requires an active 3D editor.">
+                            <NativeMenuItem.Menu>
+                                <NativeMenu>
+                                    <NativeMenuItem Header="Box" ToolTip="Corner, opposite corner, height. Requires an active 3D editor."      Command="{Binding ThreeDDrawCommand}" CommandParameter="Box"/>
+                                    <NativeMenuItem Header="Sheet" ToolTip="A rectangle, two clicks. Requires an active 3D editor."            Command="{Binding ThreeDDrawCommand}" CommandParameter="Sheet"/>
+                                    <NativeMenuItem Header="Polygon" ToolTip="A closed sheet, a click per vertex. Requires an active 3D editor." Command="{Binding ThreeDDrawCommand}" CommandParameter="Polygon"/>
+                                    <NativeMenuItem Header="Polyline" ToolTip="Construction geometry, a click per vertex. Requires an active 3D editor." Command="{Binding ThreeDDrawCommand}" CommandParameter="Polyline"/>
+                                    <NativeMenuItem Header="Cylinder" ToolTip="Centre, radius, height. Requires an active 3D editor."          Command="{Binding ThreeDDrawCommand}" CommandParameter="Cylinder"/>
+                                </NativeMenu>
+                            </NativeMenuItem.Menu>
+                        </NativeMenuItem>
+                        <NativeMenuItem Header="Drawing Plane" ToolTip="Requires an active 3D editor.">
+                            <NativeMenuItem.Menu>
+                                <NativeMenu>
+                                    <NativeMenuItem Header="XY" ToolTip="Draw on the XY plane. Requires an active 3D editor." Command="{Binding ThreeDDrawingPlaneCommand}" CommandParameter="XY"/>
+                                    <NativeMenuItem Header="YZ" ToolTip="Draw on the YZ plane. Requires an active 3D editor." Command="{Binding ThreeDDrawingPlaneCommand}" CommandParameter="YZ"/>
+                                    <NativeMenuItem Header="XZ" ToolTip="Draw on the XZ plane. Requires an active 3D editor." Command="{Binding ThreeDDrawingPlaneCommand}" CommandParameter="XZ"/>
+                                    <NativeMenuItemSeparator/>
+                                    <NativeMenuItem Header="Show Grid" ToolTip="The drawing grid on the plane. Requires an active 3D editor." Command="{Binding ThreeDDrawingPlaneCommand}" CommandParameter="Grid"/>
+                                </NativeMenu>
+                            </NativeMenuItem.Menu>
+                        </NativeMenuItem>
+                        <NativeMenuItem Header="Modify" ToolTip="Requires an active 3D editor.">
+                            <NativeMenuItem.Menu>
+                                <NativeMenu>
+                                    <NativeMenuItem Header="Extrude" ToolTip="A selected sheet, or a polyline selected in the tree, into a prism. Requires an active 3D editor." Command="{Binding ThreeDExtrudeCommand}"/>
+                                </NativeMenu>
+                            </NativeMenuItem.Menu>
+                        </NativeMenuItem>
                         <NativeMenuItemSeparator/>
                         <NativeMenuItem Header="Show All" ToolTip="Requires an active 3D document." Command="{Binding ThreeDShowAllCommand}"/>
                     </NativeMenu>
@@ -886,6 +915,42 @@
                               ToolTip.Tip="Toggle snapping to the drawing grid. Requires an active 3D document.">
                         <MenuItem.Icon><mi:MaterialIcon Kind="Grid" Width="16" Height="16"/></MenuItem.Icon>
                     </MenuItem>
+                </MenuItem>
+                <MenuItem Header="_Draw" ToolTip.Tip="Requires an active 3D editor. Shift+A opens it at the cursor.">
+                    <MenuItem Header="_Box" Command="{Binding ThreeDDrawCommand}" CommandParameter="Box"
+                              ToolTip.Tip="Corner, opposite corner, height. Requires an active 3D editor.">
+                        <MenuItem.Icon><mi:MaterialIcon Kind="CubeUnfolded" Width="16" Height="16"/></MenuItem.Icon>
+                    </MenuItem>
+                    <MenuItem Header="_Sheet" Command="{Binding ThreeDDrawCommand}" CommandParameter="Sheet"
+                              ToolTip.Tip="A rectangle, two clicks. Requires an active 3D editor.">
+                        <MenuItem.Icon><mi:MaterialIcon Kind="VectorRectangle" Width="16" Height="16"/></MenuItem.Icon>
+                    </MenuItem>
+                    <MenuItem Header="Poly_gon" Command="{Binding ThreeDDrawCommand}" CommandParameter="Polygon"
+                              ToolTip.Tip="A closed sheet, a click per vertex. Requires an active 3D editor.">
+                        <MenuItem.Icon><mi:MaterialIcon Kind="VectorPolygon" Width="16" Height="16"/></MenuItem.Icon>
+                    </MenuItem>
+                    <MenuItem Header="Poly_line" Command="{Binding ThreeDDrawCommand}" CommandParameter="Polyline"
+                              ToolTip.Tip="Construction geometry, a click per vertex. Requires an active 3D editor.">
+                        <MenuItem.Icon><mi:MaterialIcon Kind="VectorPolyline" Width="16" Height="16"/></MenuItem.Icon>
+                    </MenuItem>
+                    <MenuItem Header="C_ylinder" Command="{Binding ThreeDDrawCommand}" CommandParameter="Cylinder"
+                              ToolTip.Tip="Centre, radius, height. Requires an active 3D editor.">
+                        <MenuItem.Icon><mi:MaterialIcon Kind="Database" Width="16" Height="16"/></MenuItem.Icon>
+                    </MenuItem>
+                </MenuItem>
+                <MenuItem Header="Drawing _Plane" ToolTip.Tip="Requires an active 3D editor.">
+                    <MenuItem Header="_XY" Command="{Binding ThreeDDrawingPlaneCommand}" CommandParameter="XY" ToolTip.Tip="Draw on the XY plane. Requires an active 3D editor."/>
+                    <MenuItem Header="_YZ" Command="{Binding ThreeDDrawingPlaneCommand}" CommandParameter="YZ" ToolTip.Tip="Draw on the YZ plane. Requires an active 3D editor."/>
+                    <MenuItem Header="X_Z" Command="{Binding ThreeDDrawingPlaneCommand}" CommandParameter="XZ" ToolTip.Tip="Draw on the XZ plane. Requires an active 3D editor."/>
+                    <Separator/>
+                    <MenuItem Header="Show _Grid" Command="{Binding ThreeDDrawingPlaneCommand}" CommandParameter="Grid"
+                              ToolTip.Tip="The drawing grid on the plane. Requires an active 3D editor.">
+                        <MenuItem.Icon><mi:MaterialIcon Kind="GridLarge" Width="16" Height="16"/></MenuItem.Icon>
+                    </MenuItem>
+                </MenuItem>
+                <MenuItem Header="_Modify" ToolTip.Tip="Requires an active 3D editor.">
+                    <MenuItem Header="_Extrude" Command="{Binding ThreeDExtrudeCommand}"
+                              ToolTip.Tip="A selected sheet, or a polyline selected in the tree, into a prism. Requires an active 3D editor."/>
                 </MenuItem>
                 <Separator/>
                 <MenuItem Header="Show _All" Command="{Binding ThreeDShowAllCommand}"

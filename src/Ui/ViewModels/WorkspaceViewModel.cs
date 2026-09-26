@@ -1994,6 +1994,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
             // brief-em3d-28 R-em3d28-5 — each 3D view's camera, per-user view state like the rest.
             ws.Viewer3DCameras = Viewer3DCamerasToPersist();
+            // brief-em3d-45 — each 3D editor's drawing plane, beside the cameras.
+            ws.C3dDrawingPlanes = DrawingPlanesToPersist();
 
             if (_factory.ProjectTreeTool?.FilterState is { } fs)
             {

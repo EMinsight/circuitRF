@@ -13453,3 +13453,14 @@ neutral problem gained `Em3dPolyhedron` and `Em3dSheet.Frame` (`src/Engine/Em3d/
   document's own objects. Two objects of one child under elements with the same rotation are one mesh
   moved by the difference of the translations — which is what lets 900 array elements share one snap
   feature table.
+
+## brief-em3d-45 — the drawing tools' document side (2026-09-26)
+
+- **`C3dPolyline.Points3`** is the 3D form of a polyline whose vertices leave its plane (the editor snaps
+  them to features anywhere). Null — and absent from the file — otherwise, so a planar polyline's
+  spelling is unchanged; when present, `Points` is empty and `Plane`/`Offset` are still the plane it was
+  drawn on. `VertexCount` reads either form; validation and the Properties panel use it. The decision is
+  written in the `3d-view` reference preamble (`src/Cli/DocumentSchema.cs`).
+- **The drawing plane is window state**: `CwsDrawingPlane` in the `.cwsuser` (`C3dDrawingPlanes`, keyed by
+  the `.c3d`'s workspace-relative path, as the 3D cameras are), added to `MovedFieldNames`, `Extract`,
+  `Merge` and `IsEmpty` together — the sidecar split's four lists must move as one. XY at 0 writes no row.

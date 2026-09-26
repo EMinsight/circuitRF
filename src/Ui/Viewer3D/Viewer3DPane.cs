@@ -322,12 +322,17 @@ public sealed class Viewer3DPane : Control
                    || p.Properties.IsRightButtonPressed;
         _orbiting = !_panning && p.Properties.IsLeftButtonPressed;
         _rightPressed = p.Properties.IsRightButtonPressed;
+        _pressModifiers = e.KeyModifiers;
+        _pressClicks = e.ClickCount;
         _moved = false;
         e.Pointer.Capture(this);
         e.Handled = true;
     }
 
     private bool _moved, _rightPressed, _shiftPress;
+    // brief-em3d-45 — what the press carried, for the drawing: Ctrl/Cmd for a plane gesture, 2 for a double-click.
+    private KeyModifiers _pressModifiers;
+    private int _pressClicks = 1;
 
     /// <summary>A drag (orbit or pan) is under way — the mode keys wait for it (R-em3d43-2a).</summary>
     public bool GestureInProgress => (_orbiting || _panning) && _moved;
@@ -351,8 +356,8 @@ public sealed class Viewer3DPane : Control
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
     {
         base.OnPointerReleased(e);
-        if (_orbiting && !_moved) _vm?.Click(shift: false);
-        else if (_shiftPress && !_moved) _vm?.Click(shift: true);
+        if (_orbiting && !_moved) _vm?.Click(shift: false, _pressModifiers, _pressClicks);
+        else if (_shiftPress && !_moved) _vm?.Click(shift: true, _pressModifiers, _pressClicks);
         bool menu = _rightPressed && !_moved && e.InitialPressMouseButton == MouseButton.Right;
         _orbiting = _panning = _rightPressed = _shiftPress = false;
         _last = _pressedAt = null;

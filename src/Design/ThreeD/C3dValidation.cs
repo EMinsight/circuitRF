@@ -146,7 +146,7 @@ public static class C3dValidation
 
     private static void Polyline(C3dPolyline l, List<Diagnostic> found)
     {
-        if (l.Points.Count < 2) found.Add(C3dDiagnostics.PolylineTooShort(l.Name, l.Points.Count));
+        if (l.VertexCount < 2) found.Add(C3dDiagnostics.PolylineTooShort(l.Name, l.VertexCount));
     }
 
     /// <summary>A loop needs three DISTINCT points; returns whether it has them.</summary>
