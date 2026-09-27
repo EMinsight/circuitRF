@@ -28,7 +28,9 @@
 //    whole board affordable: on a real board almost every station along a trace is a repeat.
 // 5. FINDINGS, per trace: where Z0 leaves target ± tolerance; where the nearest layer below (or
 //    above) stops covering the trace while covering it elsewhere along the same trace (a broken
-//    return); where the reference itself steps to another layer; and what each end is.
+//    return); where the reference itself steps to another layer; and what each end is. Each finding
+//    is a WARNING or a FAIL (brief-impedance-1): a review needs "look at this" apart from "this is
+//    wrong", and the table at Assemble is the product's position on which is which.
 
 using System.Diagnostics;
 using Clipper2Lib;
@@ -47,6 +49,17 @@ public sealed record TraceImpedanceOptions
     /// <summary>± this many percent of <see cref="TargetOhms"/> passes.</summary>
     public double TolerancePercent { get; init; } = DefaultTolerancePercent;
 
+    /// <summary>± this many percent of <see cref="TargetOhms"/> is a WARNING rather than a fail: a
+    /// stretch outside the tolerance but inside this band warns. A second percentage, not a multiple
+    /// of the tolerance (owner, 2026-09-26); it must be wider than the tolerance and below 100 %.</summary>
+    public double WarningPercent { get; init; } = DefaultWarningPercent;
+
+    /// <summary>The highest frequency the traces carry, or null. When set, a stretch outside the
+    /// warning band that is shorter than λ/<see cref="TraceImpedanceAnalysis.ShortFraction"/> there
+    /// (λ from each station's own ε_eff) is a warning, not a fail: a neck-down into a pad is not what
+    /// fails a line at the frequency it carries. Null turns the rule off.</summary>
+    public double? MaxFrequencyHz { get; init; }
+
     /// <summary>The copper layers to analyse; null for every drawing layer bound to a conductor of the
     /// stackup that carries copper.</summary>
     public IReadOnlyList<LayerKey>? Layers { get; init; }
@@ -62,6 +75,7 @@ public sealed record TraceImpedanceOptions
 
     public const double DefaultTargetOhms = 50;
     public const double DefaultTolerancePercent = 10;
+    public const double DefaultWarningPercent = 20;
 }
 
 /// <summary>What kind of finding a <see cref="TraceIssue"/> is.</summary>
@@ -82,15 +96,24 @@ public enum TraceIssueKind
     Unsolved,
 }
 
+/// <summary>How much a finding counts against its trace.</summary>
+public enum IssueSeverity
+{
+    /// <summary>Look at this: the reviewer decides.</summary>
+    Warning,
+    /// <summary>This is wrong.</summary>
+    Fail,
+}
+
 /// <summary>One finding on one trace, at a stretch of it. Coordinates in DBU.</summary>
-public sealed record TraceIssue(TraceIssueKind Kind, long X0, long Y0, long X1, long Y1, string Text)
+public sealed record TraceIssue(
+    TraceIssueKind Kind, IssueSeverity Severity, long X0, long Y0, long X1, long Y1, string Text)
 {
     public long X => (X0 + X1) / 2;
     public long Y => (Y0 + Y1) / 2;
 
-    /// <summary>Whether this finding fails the trace. Every kind does; the property is here so a
-    /// reader does not have to know that.</summary>
-    public bool Fails => true;
+    /// <summary>Whether this finding fails the trace.</summary>
+    public bool Fails => Severity == IssueSeverity.Fail;
 }
 
 /// <summary>One cut along a trace. Coordinates and lengths in DBU.</summary>
@@ -122,7 +145,9 @@ public sealed record TraceStation
     public string? Refusal { get; init; }
 }
 
-public enum TraceVerdict { Pass, Fail, Unsolved }
+/// <summary>A trace's result. <see cref="Warning"/> is APPENDED rather than placed between Pass and
+/// Fail, so a number stored anywhere keeps its meaning.</summary>
+public enum TraceVerdict { Pass, Fail, Unsolved, Warning }
 
 /// <summary>One trace, end to end on one layer.</summary>
 public sealed record TraceRun
@@ -231,6 +256,14 @@ public sealed record TraceImpedanceReport
     public double LowOhms => TargetOhms * (1 - TolerancePercent / 100);
     public double HighOhms => TargetOhms * (1 + TolerancePercent / 100);
 
+    /// <summary>The warning band: outside the pass band but inside this warns.</summary>
+    public double WarningPercent { get; init; }
+    public double WarnLowOhms => TargetOhms * (1 - WarningPercent / 100);
+    public double WarnHighOhms => TargetOhms * (1 + WarningPercent / 100);
+
+    /// <summary>The frequency the electrically-short rule was judged at, or null when it was off.</summary>
+    public double? MaxFrequencyHz { get; init; }
+
     public int DbuPerMicron { get; init; } = LayoutUnits.DefaultDbuPerMicron;
     public LayoutUnit DisplayUnit { get; init; } = LayoutUnit.Um;
 
@@ -256,7 +289,17 @@ public sealed record TraceImpedanceReport
     public IEnumerable<TraceRun> AllTraces => Layers.SelectMany(l => l.Traces);
     public int TraceCount => Layers.Sum(l => l.Traces.Count);
     public int PassCount => AllTraces.Count(t => t.Verdict == TraceVerdict.Pass);
+    public int WarningCount => AllTraces.Count(t => t.Verdict == TraceVerdict.Warning);
     public int FailCount => AllTraces.Count(t => t.Verdict == TraceVerdict.Fail);
+
+    /// <summary>A frequency as a reviewer writes it — "6 GHz", "900 MHz".</summary>
+    public static string Hz(double hz) => hz switch
+    {
+        >= 1e9 => $"{hz / 1e9:0.###} GHz",
+        >= 1e6 => $"{hz / 1e6:0.###} MHz",
+        >= 1e3 => $"{hz / 1e3:0.###} kHz",
+        _      => $"{hz:0.###} Hz",
+    };
 
     /// <summary>The decimals a number needs in the report's unit to say what
     /// <paramref name="umDecimals"/> decimals say in µm — 0.1 µm is three more places in mm.</summary>
@@ -329,6 +372,10 @@ public static class TraceImpedanceAnalysis
     /// <summary>At most this many cuts on one piece.</summary>
     public const int MaxStationsPerPiece = 400;
 
+    /// <summary>With <see cref="TraceImpedanceOptions.MaxFrequencyHz"/> set, a stretch outside the
+    /// warning band shorter than λ over this is electrically short, and warns.</summary>
+    public const double ShortFraction = 20;
+
     /// <summary>
     /// The analysis of a layout file on disk — read, its technology resolved as the editor resolves
     /// it, its placed cells flattened as a DRC run flattens them. What <c>circuitrf impedance</c> calls.
@@ -391,6 +438,12 @@ public static class TraceImpedanceAnalysis
             return TraceImpedanceReport.Refused("The target impedance must be a positive number of ohms.");
         if (!(options.TolerancePercent > 0) || options.TolerancePercent >= 100)
             return TraceImpedanceReport.Refused("The tolerance must be more than 0 % and less than 100 %.");
+        if (!(options.WarningPercent > options.TolerancePercent) || options.WarningPercent >= 100)
+            return TraceImpedanceReport.Refused(
+                $"The warning band (± {options.WarningPercent:0.##} %) must be wider than the tolerance " +
+                $"(± {options.TolerancePercent:0.##} %) and less than 100 %.");
+        if (options.MaxFrequencyHz is { } fMax && !(fMax > 0 && double.IsFinite(fMax)))
+            return TraceImpedanceReport.Refused("The highest frequency must be a positive number of hertz, or left out.");
 
         var clock = Stopwatch.StartNew();
         var ct = control?.Token ?? CancellationToken.None;
@@ -579,6 +632,8 @@ public static class TraceImpedanceAnalysis
             Technology = tech,
             TargetOhms = options.TargetOhms,
             TolerancePercent = options.TolerancePercent,
+            WarningPercent = options.WarningPercent,
+            MaxFrequencyHz = options.MaxFrequencyHz,
             DbuPerMicron = dbuPerMicron,
             DisplayUnit = options.DisplayUnit ?? LayoutUnit.Um,
             Layers = layers,
@@ -944,6 +999,8 @@ public static class TraceImpedanceAnalysis
         var fmt = new TraceImpedanceReport { DbuPerMicron = dbuPerMicron, DisplayUnit = options.DisplayUnit ?? LayoutUnit.Um };
         double lo = options.TargetOhms * (1 - options.TolerancePercent / 100);
         double hi = options.TargetOhms * (1 + options.TolerancePercent / 100);
+        double wlo = options.TargetOhms * (1 - options.WarningPercent / 100);
+        double whi = options.TargetOhms * (1 + options.WarningPercent / 100);
 
         var stations = new List<TraceStation>();
         foreach (var st in chain.Stations)
@@ -1006,16 +1063,48 @@ public static class TraceImpedanceAnalysis
         }
         double SpanLen(int i, int j) => stations[j].S - stations[i].S + 0.5 * (stations[i].Length + stations[j].Length);
 
+        // ── severities ─────────────────────────────────────────────────────────────────────────
+        // Every finding kind is a Warning or a Fail, and this is the one place that says which:
+        //
+        //   OutOfTolerance    Warning inside the warning band, Fail outside it — and, with a highest
+        //                     frequency given, Warning again when the stretch is under λ/20 there: a
+        //                     neck-down into a pad is not what fails a line at the frequency it carries.
+        //   ReturnBroken      Fail. The return current has to go round the gap, however short it is.
+        //   NoReference       Fail. There is no impedance to speak of without a return.
+        //   PartialReference  Warning. A plane edge under the trace moves Z0, and the Z0 finding (if
+        //                     any) already says by how much.
+        //   ReferenceStep     Warning. Often a designed transition; the reviewer decides.
+        //   Unsolved          Warning. Part of the trace was not checked, which is not the same as wrong.
+        //
+        // Not configurable per kind: the table is the product's position (brief-impedance-1 §6).
+
         // Z0 outside the band.
         Runs(i => stations[i].Z0 is { } z && (z < lo || z > hi), (i, j) =>
         {
-            var zs = stations.Skip(i).Take(j - i + 1).Select(s => s.Z0!.Value).ToList();
+            var run = stations.Skip(i).Take(j - i + 1).ToList();
+            var zs = run.Select(s => s.Z0!.Value).ToList();
             var (x0, y0, x1, y1) = Span(i, j);
             string range = zs.Min() == zs.Max() || Math.Abs(zs.Max() - zs.Min()) < 0.05
                 ? $"{zs[0]:0.0} Ω" : $"{zs.Min():0.0}–{zs.Max():0.0} Ω";
-            issues.Add(new TraceIssue(TraceIssueKind.OutOfTolerance, x0, y0, x1, y1,
-                $"Z0 {range} over {fmt.Len(SpanLen(i, j))} from {fmt.Pt(x0, y0)} to {fmt.Pt(x1, y1)}, outside " +
-                $"{options.TargetOhms:0.#} Ω ± {options.TolerancePercent:0.#} %."));
+            string head = $"Z0 {range} over {fmt.Len(SpanLen(i, j))} from {fmt.Pt(x0, y0)} to {fmt.Pt(x1, y1)}, outside ";
+            if (zs.All(z => z >= wlo && z <= whi))
+            {
+                issues.Add(new TraceIssue(TraceIssueKind.OutOfTolerance, IssueSeverity.Warning, x0, y0, x1, y1,
+                    head + $"{options.TargetOhms:0.#} Ω ± {options.TolerancePercent:0.#} %, inside ± {options.WarningPercent:0.#} %."));
+                return;
+            }
+            string text = head + $"{options.TargetOhms:0.#} Ω ± {options.WarningPercent:0.#} %";
+            var severity = IssueSeverity.Fail;
+            if (options.MaxFrequencyHz is { } f)
+            {
+                // Electrical length over free-space λ: Σ Length·√ε_eff, each station its own ε_eff.
+                double metres = run.Sum(s => s.Length * Math.Sqrt(s.Eeff ?? 1)) / dbuPerMicron * 1e-6;
+                double waves = metres * f / 299_792_458.0;
+                string at = $"{waves:0.000} λ at {TraceImpedanceReport.Hz(f)}";
+                if (waves < 1 / ShortFraction) { severity = IssueSeverity.Warning; text += $"; {at} — electrically short"; }
+                else text += $"; {at}";
+            }
+            issues.Add(new TraceIssue(TraceIssueKind.OutOfTolerance, severity, x0, y0, x1, y1, text + "."));
         });
 
         // The nearest layer on each side, walked along the whole trace.
@@ -1048,7 +1137,7 @@ public static class TraceImpedanceAnalysis
                 {
                     var (x0, y0, x1, y1) = Span(i, j);
                     string? refThere = cuts[i] is { } c ? refOf(c)?.Layer.Name : null;
-                    issues.Add(new TraceIssue(TraceIssueKind.ReturnBroken, x0, y0, x1, y1,
+                    issues.Add(new TraceIssue(TraceIssueKind.ReturnBroken, IssueSeverity.Fail, x0, y0, x1, y1,
                         $"'{nearest.Layer.Name}' is missing {where} the trace for {fmt.Len(SpanLen(i, j))}, from " +
                         $"{fmt.Pt(x0, y0)} to {fmt.Pt(x1, y1)}, but present elsewhere along it — the return path " +
                         $"is broken there ({(refThere is null ? $"no reference {where} there" : $"the reference there is '{refThere}'")})."));
@@ -1058,7 +1147,7 @@ public static class TraceImpedanceAnalysis
             {
                 var (x0, y0, x1, y1) = Span(i, j);
                 double cov = skippedOf(cuts[i]!).First().Cov;
-                issues.Add(new TraceIssue(TraceIssueKind.PartialReference, x0, y0, x1, y1,
+                issues.Add(new TraceIssue(TraceIssueKind.PartialReference, IssueSeverity.Warning, x0, y0, x1, y1,
                     $"'{nearest.Layer.Name}' covers only {cov:P0} of the width {where} the trace for " +
                     $"{fmt.Len(SpanLen(i, j))}, from {fmt.Pt(x0, y0)} to {fmt.Pt(x1, y1)}: copper edge under the trace."));
             });
@@ -1071,7 +1160,7 @@ public static class TraceImpedanceAnalysis
                 string? ra = refOf(a)?.Layer.Name, rb = refOf(b)?.Layer.Name;
                 if (ra == rb || ra is null || rb is null) continue;
                 var s = stations[i];
-                issues.Add(new TraceIssue(TraceIssueKind.ReferenceStep, s.X, s.Y, s.X, s.Y,
+                issues.Add(new TraceIssue(TraceIssueKind.ReferenceStep, IssueSeverity.Warning, s.X, s.Y, s.X, s.Y,
                     $"The reference {where} steps from '{ra}' to '{rb}' at {fmt.Pt(s.X, s.Y)}."));
             }
         }
@@ -1085,14 +1174,14 @@ public static class TraceImpedanceAnalysis
         Runs(i => stations[i].Refusal == "no return conductor", (i, j) =>
         {
             var (x0, y0, x1, y1) = Span(i, j);
-            issues.Add(new TraceIssue(TraceIssueKind.NoReference, x0, y0, x1, y1,
+            issues.Add(new TraceIssue(TraceIssueKind.NoReference, IssueSeverity.Fail, x0, y0, x1, y1,
                 $"No copper covers the trace on any layer, and nothing is beside it, for {fmt.Len(SpanLen(i, j))} " +
                 $"from {fmt.Pt(x0, y0)} to {fmt.Pt(x1, y1)}: there is no return path to take an impedance against."));
         });
         Runs(i => stations[i].Refusal is { } r && r != "no return conductor", (i, j) =>
         {
             var (x0, y0, x1, y1) = Span(i, j);
-            issues.Add(new TraceIssue(TraceIssueKind.Unsolved, x0, y0, x1, y1,
+            issues.Add(new TraceIssue(TraceIssueKind.Unsolved, IssueSeverity.Warning, x0, y0, x1, y1,
                 $"The cross-section could not be solved over {fmt.Len(SpanLen(i, j))} from {fmt.Pt(x0, y0)}: {stations[i].Refusal}."));
         });
 
@@ -1135,7 +1224,8 @@ public static class TraceImpedanceAnalysis
             Issues = issues,
             Notes = runNotes,
             Verdict = solved.Count == 0 ? TraceVerdict.Unsolved
-                    : issues.Count > 0 ? TraceVerdict.Fail : TraceVerdict.Pass,
+                    : issues.Any(x => x.Fails) ? TraceVerdict.Fail
+                    : issues.Count > 0 ? TraceVerdict.Warning : TraceVerdict.Pass,
         };
     }
 }

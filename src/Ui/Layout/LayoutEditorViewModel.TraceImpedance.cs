@@ -144,7 +144,7 @@ public partial class LayoutEditorViewModel
 
         string verdict = $"{report.TraceCount} trace{(report.TraceCount == 1 ? "" : "s")} on {report.Layers.Count} " +
                          $"layer{(report.Layers.Count == 1 ? "" : "s")} against {report.TargetOhms:0.##} Ω ± " +
-                         $"{report.TolerancePercent:0.##} %: {report.PassCount} pass, {report.FailCount} fail" +
+                         $"{report.TolerancePercent:0.##} %: {report.PassCount} pass, {report.WarningCount} warning, {report.FailCount} fail" +
                          (report.Cancelled ? $" (cancelled after {report.Layers.Count} of {report.LayersRequested.Count} layers)" : "");
         if (report.FailCount > 0 || report.Cancelled) _messageSink?.Warning($"Impedance Analysis: {verdict}.", pdfPath);
         else ReportMessage($"Impedance Analysis: {verdict}.", pdfPath);

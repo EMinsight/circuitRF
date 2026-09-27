@@ -608,6 +608,7 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "impedance.args.output-not-pdf",
         "impedance.args.path-required",
         "impedance.args.unknown-option",
+        "impedance.args.unknown-severity",
         "impedance.cancelled",
         "impedance.cancelled-partial",
         "impedance.layers.unknown",

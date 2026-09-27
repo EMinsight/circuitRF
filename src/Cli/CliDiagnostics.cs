@@ -3077,6 +3077,10 @@ internal static class CliDiagnostics
         "impedance: {option} takes {wanted}, got '{text}'.",
         ("option", option), ("text", text), ("wanted", wanted));
 
+    public static Diagnostic ImpedanceUnknownSeverity(string text) => Diagnostic.Create(
+        "impedance.args.unknown-severity", DiagnosticSeverity.Error,
+        "impedance: --severity takes warning or fail, got '{text}'.", ("text", text));
+
     public static Diagnostic ImpedanceOutputNotPdf(string path) => Diagnostic.Create(
         "impedance.args.output-not-pdf", DiagnosticSeverity.Error,
         "impedance: the report is a PDF — give -o a path ending in .pdf, got '{path}'.", ("path", path));

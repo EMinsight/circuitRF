@@ -9,7 +9,9 @@
 //   * Per layer, ONE MAP page (the board designer's own ask: one page per layer): the layer's copper
 //     in grey, every trace found drawn over it coloured by its Z0 station by station, green inside
 //     target ± tolerance, blue below, red above, with each trace's id and a numbered marker at every
-//     finding. The colour scale and the tolerance band are on the page.
+//     finding — FILLED for a fail, HOLLOW for a warning, so the kind colours (orange = Z0, purple =
+//     return path) keep their meaning across both tiers. The colour scale, the pass band and the
+//     warning band are on the page.
 //   * Per layer, the TABLE of its traces and the numbered FINDINGS, continued over as many pages as
 //     they need. A marker's number on the map is the finding's number in this list.
 //
@@ -35,6 +37,7 @@ public static class TraceImpedanceReportDocument
     private static readonly SKColor CopperEdge = new(0xb9, 0xbf, 0xc6);
     private static readonly SKColor PassInk    = new(0x1e, 0x7b, 0x3c);
     private static readonly SKColor FailInk    = new(0xb4, 0x23, 0x18);
+    private static readonly SKColor WarnInk    = new(0xb0, 0x6a, 0x00);
     private static readonly SKColor Unsolved   = new(0x9a, 0xa0, 0xa6);
     private static readonly SKColor GroundMark = new(0x7b, 0x2c, 0xbf);
     private static readonly SKColor ZMark      = new(0xd9, 0x6c, 0x06);
@@ -100,10 +103,21 @@ public static class TraceImpedanceReportDocument
 
     private static string VerdictText(TraceVerdict v) => v switch
     {
-        TraceVerdict.Pass => "PASS",
-        TraceVerdict.Fail => "FAIL",
+        TraceVerdict.Pass    => "PASS",
+        TraceVerdict.Warning => "WARN",
+        TraceVerdict.Fail    => "FAIL",
         _ => "—",
     };
+
+    private static SKColor VerdictInk(TraceVerdict v) => v switch
+    {
+        TraceVerdict.Pass    => PassInk,
+        TraceVerdict.Warning => WarnInk,
+        TraceVerdict.Fail    => FailInk,
+        _ => Muted,
+    };
+
+    private static string SeverityText(TraceIssue i) => i.Fails ? "FAIL" : "WARN";
 
     /// <summary>The page stream: the current page, a cursor, and the running header and footer.</summary>
     private sealed class Writer(SKDocument document, TraceImpedanceReport report)
@@ -153,7 +167,8 @@ public static class TraceImpedanceReportDocument
             C.DrawLine(Margin, PageH - Margin + 2, PageW - Margin, PageH - Margin + 2, rule);
             // The units on EVERY page (owner, 2026-09-25): a page pulled out of the report and
             // filed on its own still says what its numbers are in.
-            C.DrawText($"Target {report.TargetOhms:0.##} Ω ± {report.TolerancePercent:0.##} %  ·  " +
+            C.DrawText($"Target {report.TargetOhms:0.##} Ω ± {report.TolerancePercent:0.##} % " +
+                       $"(warning ± {report.WarningPercent:0.##} %)  ·  " +
                        $"Units: coordinates, lengths and widths in {report.Unit}; Z0 in Ω  ·  " +
                        $"{report.CreatedUtc.ToLocalTime():yyyy-MM-dd HH:mm}  ·  circuitRF",
                        Margin, PageH - Margin + 13, SKTextAlign.Left, _small, muted);
@@ -241,7 +256,8 @@ public static class TraceImpedanceReportDocument
             var facts = new List<(string, string)>
             {
                 ("Target", $"{report.TargetOhms:0.##} Ω ± {report.TolerancePercent:0.##} %  " +
-                           $"(pass band {report.LowOhms:0.0}–{report.HighOhms:0.0} Ω)"),
+                           $"(pass {report.LowOhms:0.0}–{report.HighOhms:0.0} Ω, " +
+                           $"warning {report.WarnLowOhms:0.0}–{report.WarnHighOhms:0.0} Ω)"),
                 ("Technology", report.TechnologyPath is { Length: > 0 } tp
                     ? $"{report.TechnologyName}  ({Path.GetFileName(tp)})" : report.TechnologyName),
                 ("Layers", report.LayersRequested.Count > 0 ? string.Join(", ", report.LayersRequested)
@@ -275,8 +291,8 @@ public static class TraceImpedanceReportDocument
             {
                 ("Traces analysed", report.TraceCount.ToString(), Ink),
                 ("Pass", report.PassCount.ToString(), PassInk),
+                ("Warning", report.WarningCount.ToString(), WarnInk),
                 ("Fail", report.FailCount.ToString(), FailInk),
-                ("Layers", report.Layers.Count.ToString(), Ink),
             };
             float tileW = (leftW - 3 * 10) / 4f;
             for (int i = 0; i < tiles.Length; i++)
@@ -293,8 +309,8 @@ public static class TraceImpedanceReportDocument
             // Per-layer table — every layer, however many; a layer is one short row.
             C.DrawText("By layer", x0, _y, SKTextAlign.Left, _h2, ink);
             _y += 5;
-            float[] cols = [x0, x0 + 120, x0 + 166, x0 + 204, x0 + 242, x0 + 290];
-            string[] heads = ["Layer", "Traces", "Pass", "Fail", "Pours", "Worst Z0 excursion"];
+            float[] cols = [x0, x0 + 110, x0 + 150, x0 + 184, x0 + 228, x0 + 262, x0 + 298];
+            string[] heads = ["Layer", "Traces", "Pass", "Warning", "Fail", "Pours", "Worst Z0 excursion"];
             Header(cols, heads, x0 + leftW);
             foreach (var l in report.Layers)
             {
@@ -305,10 +321,11 @@ public static class TraceImpedanceReportDocument
                                         .Cast<double?>().FirstOrDefault();
                 Row(cols, [l.Name, l.Traces.Count.ToString(),
                            l.Traces.Count(t => t.Verdict == TraceVerdict.Pass).ToString(),
+                           l.Traces.Count(t => t.Verdict == TraceVerdict.Warning).ToString(),
                            l.Traces.Count(t => t.Verdict == TraceVerdict.Fail).ToString(),
                            l.PoursSkipped.ToString(),
                            worst is { } w ? $"{w:0.0} Ω ({(w - report.TargetOhms) / report.TargetOhms:+0%;-0%})" : "—"],
-                    [Ink, Ink, PassInk, FailInk, Muted, Ink], right: x0 + leftW);
+                    [Ink, Ink, PassInk, WarnInk, FailInk, Muted, Ink], right: x0 + leftW);
             }
             _y += 16;
 
@@ -344,9 +361,16 @@ public static class TraceImpedanceReportDocument
                     "is a quasi-static cross-section solve over the stackup at right: the reference below (and above) is " +
                     "the nearest layer whose copper covers the trace's whole width there, and every other conductor near " +
                     "it is held at ground. Bend corners are not cut and not flagged. A trace FAILS when any of it is " +
-                    "outside target ± tolerance, when the nearest layer under (or over) it stops covering it part of the " +
-                    "way, or when its reference steps to another layer. The solve is lossless and frequency-independent: " +
-                    "a review of the geometry, not a replacement for an EM run.";
+                    "outside the warning band, when the nearest layer under (or over) it stops covering it part of the " +
+                    "way, or when it has no return at all. It WARNS when it leaves the pass band but stays inside the " +
+                    "warning band, when a plane edge runs under it, when its reference steps to another layer, or when " +
+                    "part of it could not be solved." +
+                    (report.MaxFrequencyHz is { } f
+                        ? $" A stretch outside the warning band that is shorter than λ/{TraceImpedanceAnalysis.ShortFraction:0} " +
+                          $"at {TraceImpedanceReport.Hz(f)} (λ from each cut's own effective permittivity) is electrically " +
+                          "short, and warns rather than fails."
+                        : "") +
+                    " The solve is lossless and frequency-independent: a review of the geometry, not a replacement for an EM run.";
                 _y = Paragraph(method, x0, _y + 1, leftW, _small, Muted, 1.35f, Bottom);
             }
 
@@ -447,8 +471,9 @@ public static class TraceImpedanceReportDocument
             _y += 14;
             C.DrawText(layer.Name, Margin, _y, SKTextAlign.Left, _h1, ink);
             int pass = layer.Traces.Count(t => t.Verdict == TraceVerdict.Pass);
+            int warn = layer.Traces.Count(t => t.Verdict == TraceVerdict.Warning);
             int fail = layer.Traces.Count(t => t.Verdict == TraceVerdict.Fail);
-            C.DrawText($"{layer.Traces.Count} traces  ·  {pass} pass  ·  {fail} fail" +
+            C.DrawText($"{layer.Traces.Count} traces  ·  {pass} pass  ·  {warn} warning  ·  {fail} fail" +
                        (layer.PoursSkipped > 0 ? $"  ·  {layer.PoursSkipped} pours not analysed" : ""),
                        Margin + _h1.MeasureText(layer.Name) + 12, _y, SKTextAlign.Left, _body, muted);
             _y += 8;
@@ -531,13 +556,7 @@ public static class TraceImpedanceReportDocument
                     }
                 }
                 var m = P(issue.X, issue.Y);
-                using var disc = Fill(color);
-                using var ring = Stroke(SKColors.White, 0.7f);
-                C.DrawCircle(m.X + 5, m.Y - 5, 4.3f, disc);
-                C.DrawCircle(m.X + 5, m.Y - 5, 4.3f, ring);
-                using var white = Fill(SKColors.White);
-                using var f = Font(SkiaFonts.PlexSemiBold, n >= 100 ? 3.4f : 4.6f);
-                C.DrawText(n.ToString(), m.X + 5, m.Y - 3.4f, SKTextAlign.Center, f, white);
+                Marker(new SKPoint(m.X + 5, m.Y - 5), 4.3f, n, color, issue.Fails, n >= 100 ? 3.4f : 4.6f);
             }
 
             // Trace ids, at each trace's longest piece, with a white halo.
@@ -569,6 +588,31 @@ public static class TraceImpedanceReportDocument
             C.DrawText(report.Len(nice), bx + barW + 5, by + 2.5f, SKTextAlign.Left, _small, inkS);
         }
 
+        /// <summary>A numbered finding marker: FILLED in the kind colour with a white number for a fail,
+        /// HOLLOW — white inside a ring of the kind colour, the number in that colour — for a warning.</summary>
+        private void Marker(SKPoint c, float radius, int n, SKColor color, bool fails, float textSize)
+        {
+            using var f = Font(SkiaFonts.PlexSemiBold, textSize);
+            if (fails)
+            {
+                using var disc = Fill(color);
+                using var ring = Stroke(SKColors.White, 0.7f);
+                C.DrawCircle(c, radius, disc);
+                C.DrawCircle(c, radius, ring);
+                using var white = Fill(SKColors.White);
+                C.DrawText(n.ToString(), c.X, c.Y + 0.35f * textSize, SKTextAlign.Center, f, white);
+            }
+            else
+            {
+                using var inside = Fill(SKColors.White);
+                using var ring = Stroke(color, Math.Max(0.8f, radius * 0.22f));
+                C.DrawCircle(c, radius, inside);
+                C.DrawCircle(c, radius - 0.4f, ring);
+                using var ink = Fill(color);
+                C.DrawText(n.ToString(), c.X, c.Y + 0.35f * textSize, SKTextAlign.Center, f, ink);
+            }
+        }
+
         private void DrawLegend(SKRect r, TraceLayerResult layer)
         {
             using var ink = Fill(Ink);
@@ -577,8 +621,10 @@ public static class TraceImpedanceReportDocument
             C.DrawText("Z0 along each trace", r.Left, y, SKTextAlign.Left, _h2, ink);
             y += 10;
 
-            // The scale: target ± 45 %, with the pass band marked.
-            double t = report.TargetOhms, lo = t * 0.55, hi = t * 1.45;
+            // The scale: target ± 45 % (wider when the warning band is), with the pass band marked and the
+            // warning band's edges as a second, lighter pair of ticks.
+            double span = Math.Max(0.45, report.WarningPercent / 100 + 0.1);
+            double t = report.TargetOhms, lo = t * Math.Max(0.02, 1 - span), hi = t * (1 + span);
             float barH = 150, barW = 14;
             var bar = new SKRect(r.Left, y, r.Left + barW, y + barH);
             for (int i = 0; i < 60; i++)
@@ -593,9 +639,25 @@ public static class TraceImpedanceReportDocument
                 foreach (var z in new[] { report.HighOhms, report.LowOhms })
                     C.DrawLine(bar.Left - 3, Yz(z), bar.Right + 3, Yz(z), br);
             }
-            foreach (var z in new[] { hi, report.HighOhms, t, report.LowOhms, lo })
+            bool warnOnBar = report.WarnLowOhms > lo && report.WarnHighOhms < hi;
+            if (warnOnBar)
+                using (var wr = Stroke(Muted, 0.5f))
+                {
+                    wr.PathEffect = SKPathEffect.CreateDash([1.5f, 1f], 0);
+                    foreach (var z in new[] { report.WarnHighOhms, report.WarnLowOhms })
+                        C.DrawLine(bar.Left - 3, Yz(z), bar.Right + 3, Yz(z), wr);
+                }
+            var marks = warnOnBar
+                ? new[] { hi, report.WarnHighOhms, report.HighOhms, t, report.LowOhms, report.WarnLowOhms, lo }
+                : new[] { hi, report.HighOhms, t, report.LowOhms, lo };
+            foreach (var z in marks)
                 C.DrawText($"{z:0.#} Ω" + (z == hi ? "+" : z == lo ? "−" : ""), bar.Right + 7, Yz(z) + 3, SKTextAlign.Left, _small, z == t ? ink : muted);
-            C.DrawText("pass band", bar.Right + 50, Yz(t) + 3, SKTextAlign.Left, _small, Fill(PassInk));
+            using (var passInk = Fill(PassInk))
+                C.DrawText("pass band", bar.Right + 50, Yz(t) + 3, SKTextAlign.Left, _small, passInk);
+            if (warnOnBar)
+                using (var warnInk = Fill(WarnInk))
+                    C.DrawText("warning band", bar.Right + 50, Yz(0.5 * (report.HighOhms + report.WarnHighOhms)) + 3,
+                               SKTextAlign.Left, _small, warnInk);
             y = bar.Bottom + 12;
 
             void Key(SKColor c, string text, bool disc)
@@ -609,6 +671,12 @@ public static class TraceImpedanceReportDocument
             Key(Unsolved, "not solved (no return path, or the cut left the copper)", false);
             Key(ZMark, "numbered: Z0 outside the pass band", true);
             Key(GroundMark, "numbered, with the stretch outlined: return path broken or partial, or the reference steps to another layer", true);
+            {
+                float top = y;
+                Marker(new SKPoint(r.Left + 5, top + 5.5f), 4.5f, 1, Muted, true, 4.6f);
+                Marker(new SKPoint(r.Left + 16, top + 5.5f), 4.5f, 2, Muted, false, 4.6f);
+                y = Paragraph("filled: a fail; hollow: a warning", r.Left + 27, top - 1.5f, r.Width - 27, _small, Muted, 1.35f) + 6;
+            }
             y += 10;
 
             // The worst findings on this page, briefly; the full list follows the table.
@@ -619,7 +687,7 @@ public static class TraceImpedanceReportDocument
                 y += 3;
                 foreach (var (n, trace, issue) in findings)
                 {
-                    string text = $"{n}. {trace.Id} — {Brief(issue)}";
+                    string text = $"{n}. {trace.Id} {SeverityText(issue)} — {Brief(issue)}";
                     var lines = Wrap(text, _small, r.Width);
                     if (y + lines.Count * 9.5f > r.Bottom - 12)
                     {
@@ -686,7 +754,7 @@ public static class TraceImpedanceReportDocument
                 string width = Math.Abs(t.WidthMax - t.WidthMin) < 0.5 * report.DbuPerMicron
                     ? report.Num(t.WidthMin, 1)
                     : $"{report.Num(t.WidthMin, 0)}–{report.Num(t.WidthMax, 0)}";
-                var verdictColor = t.Verdict switch { TraceVerdict.Pass => PassInk, TraceVerdict.Fail => FailInk, _ => Muted };
+                var verdictColor = VerdictInk(t.Verdict);
                 Row(Cols,
                     [t.Id, Pt(t.StartX, t.StartY), Pt(t.EndX, t.EndY), $"{t.StartsAt} / {t.EndsAt}",
                      report.Num(t.Length, 0), width,
@@ -714,14 +782,12 @@ public static class TraceImpedanceReportDocument
             _y += 2;
             foreach (var (n, trace, issue) in findings)
             {
-                var lines = Wrap($"{trace.Id}: {issue.Text}", _body, PageW - 2 * Margin - 24);
+                string line = $"{trace.Id} {SeverityText(issue)}: {issue.Text}";
+                var lines = Wrap(line, _body, PageW - 2 * Margin - 24);
                 if (_y + lines.Count * 12 + 2 > Bottom) { NewPage(section + " (continued)"); _y += 6; }
                 var color = issue.Kind == TraceIssueKind.OutOfTolerance ? ZMark : GroundMark;
-                using (var disc = Fill(color)) C.DrawCircle(Margin + 6, _y + 8.5f, 5.5f, disc);
-                using (var white = Fill(SKColors.White))
-                using (var f = Font(SkiaFonts.PlexSemiBold, n >= 100 ? 4.5f : 6f))
-                    C.DrawText(n.ToString(), Margin + 6, _y + 10.6f, SKTextAlign.Center, f, white);
-                _y = Paragraph($"{trace.Id}: {issue.Text}", Margin + 18, _y - 1, PageW - 2 * Margin - 24, _body, Ink) + 4;
+                Marker(new SKPoint(Margin + 6, _y + 8.5f), 5.5f, n, color, issue.Fails, n >= 100 ? 4.5f : 6f);
+                _y = Paragraph(line, Margin + 18, _y - 1, PageW - 2 * Margin - 24, _body, Ink) + 4;
             }
             if (notes.Count > 0)
             {
@@ -737,6 +803,8 @@ public static class TraceImpedanceReportDocument
         }
 
         private SKColor Zc(double? z) =>
-            z is not { } v ? Muted : v >= report.LowOhms && v <= report.HighOhms ? PassInk : FailInk;
+            z is not { } v ? Muted
+            : v >= report.LowOhms && v <= report.HighOhms ? PassInk
+            : v >= report.WarnLowOhms && v <= report.WarnHighOhms ? WarnInk : FailInk;
     }
 }

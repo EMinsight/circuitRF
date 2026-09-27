@@ -600,9 +600,12 @@ namespace RfCore.Export
         string                             Technology,
         double                             TargetOhms,
         double                             TolerancePercent,
+        double                             WarningPercent,
+        double?                            MaxFrequencyHz,
         bool                               Cancelled,
         int                                Traces,
         int                                Pass,
+        int                                WarningCount,
         int                                Fail,
         IReadOnlyList<ImpedanceLayerJson>  Layers);
 
@@ -611,7 +614,7 @@ namespace RfCore.Export
         int                                PoursSkipped,
         IReadOnlyList<ImpedanceTraceJson>  Traces);
 
-    /// <param name="Verdict"><c>pass</c>, <c>fail</c> or <c>unsolved</c>.</param>
+    /// <param name="Verdict"><c>pass</c>, <c>warning</c>, <c>fail</c> or <c>unsolved</c>.</param>
     /// <param name="StartsAt">What the start is: <c>via</c>, <c>pad</c>, <c>junction</c>,
     /// <c>open end</c> or <c>continues</c>. Likewise <paramref name="EndsAt"/>.</param>
     /// <param name="InTolerance">The share of the solved length inside the pass band, 0–1.</param>
@@ -645,7 +648,8 @@ namespace RfCore.Export
 
     /// <param name="Kind"><c>out-of-tolerance</c>, <c>return-broken</c>, <c>partial-reference</c>,
     /// <c>reference-step</c>, <c>no-reference</c> or <c>unsolved</c>.</param>
-    public sealed record ImpedanceIssueJson(string Kind, double[] From, double[] To, string Message);
+    /// <param name="Severity"><c>warning</c> or <c>fail</c>.</param>
+    public sealed record ImpedanceIssueJson(string Kind, string Severity, double[] From, double[] To, string Message);
 
     /// <summary>
     /// What <c>lvs</c> compared, and what it concluded.

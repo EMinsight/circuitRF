@@ -12,7 +12,8 @@ using CircuitRF.Ui.Layout;
 namespace CircuitRF.Ui.Views.Dialogs;
 
 /// <summary>
-/// The layout editor's Impedance Analysis (round 8): target Z0, ± tolerance and the copper layers,
+/// The layout editor's Impedance Analysis (round 8): target Z0, ± tolerance, ± warning band, an
+/// optional highest frequency and the copper layers,
 /// then Export — a save picker, then the run with a per-layer progress bar and Cancel. A cancelled
 /// run still writes the report for the layers it finished (owner, 2026-09-25).
 /// </summary>
@@ -26,6 +27,8 @@ public partial class TraceImpedanceAnalysisDialog : Window
 {
     private static double s_target = TraceImpedanceOptions.DefaultTargetOhms;
     private static double s_tolerance = TraceImpedanceOptions.DefaultTolerancePercent;
+    private static double s_warning = TraceImpedanceOptions.DefaultWarningPercent;
+    private static string s_frequency = "";
     private static readonly HashSet<string> s_unticked = new(StringComparer.Ordinal);
 
     private readonly LayoutEditorViewModel? _vm;
@@ -43,6 +46,8 @@ public partial class TraceImpedanceAnalysisDialog : Window
         _vm = vm;
         TargetBox.Text = s_target.ToString("0.##", CultureInfo.InvariantCulture);
         ToleranceBox.Text = s_tolerance.ToString("0.##", CultureInfo.InvariantCulture);
+        WarningBox.Text = s_warning.ToString("0.##", CultureInfo.InvariantCulture);
+        FrequencyBox.Text = s_frequency;
 
         foreach (var choice in vm.TraceImpedanceLayers())
         {
@@ -81,6 +86,21 @@ public partial class TraceImpedanceAnalysisDialog : Window
     private static bool TryNumber(string? text, out double value) =>
         double.TryParse((text ?? "").Trim().Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out value);
 
+    /// <summary>The highest frequency, in Hz: null when the field is blank (the rule is off). A bare
+    /// number is GHz, the unit a board's highest frequency is nearly always said in; a typed unit is
+    /// honoured.</summary>
+    private static bool TryFrequency(string? text, out double? hz)
+    {
+        hz = null;
+        if (string.IsNullOrWhiteSpace(text)) return true;
+        if (!CircuitRF.Design.Matching.MatchValueFormat.TryParseWithUnit(
+                text.Replace(',', '.'), CircuitRF.Design.Matching.MatchQuantity.Frequency, "GHz", out double v, out _)
+            || !(v > 0))
+            return false;
+        hz = v;
+        return true;
+    }
+
     private void OnInputChanged(object? sender, TextChangedEventArgs e) => Validate();
 
     /// <summary>The pass band, and whether Export can go.</summary>
@@ -92,10 +112,16 @@ public partial class TraceImpedanceAnalysisDialog : Window
             problem = "Enter the target impedance in ohms, e.g. 50.";
         else if (!TryNumber(ToleranceBox.Text, out double tol) || !(tol > 0) || tol >= 100)
             problem = "Enter the tolerance as a percentage above 0 and below 100, e.g. 10.";
+        else if (!TryNumber(WarningBox.Text, out double warn) || !(warn > tol) || warn >= 100)
+            problem = string.Create(CultureInfo.InvariantCulture,
+                $"Enter the warning band as a percentage wider than the tolerance (± {tol:0.##} %) and below 100, e.g. 20.");
+        else if (!TryFrequency(FrequencyBox.Text, out _))
+            problem = "Enter the highest frequency with its unit, e.g. 6 GHz, or leave it blank.";
         else
         {
             BandText.Text = string.Create(CultureInfo.InvariantCulture,
-                $"Pass band {target * (1 - tol / 100):0.0} – {target * (1 + tol / 100):0.0} Ω");
+                $"Pass {target * (1 - tol / 100):0.0}–{target * (1 + tol / 100):0.0} Ω · " +
+                $"Warning {target * (1 - warn / 100):0.0}–{target * (1 + warn / 100):0.0} Ω");
             if (!_layers.Any(l => l.Box.IsChecked == true)) problem = "Tick at least one layer.";
         }
 
@@ -122,6 +148,8 @@ public partial class TraceImpedanceAnalysisDialog : Window
         if (_vm is null || _running || !Validate()) return;
         TryNumber(TargetBox.Text, out double target);
         TryNumber(ToleranceBox.Text, out double tolerance);
+        TryNumber(WarningBox.Text, out double warning);
+        TryFrequency(FrequencyBox.Text, out double? maxFrequency);
         var chosen = _layers.Where(l => l.Box.IsChecked == true).ToList();
 
         string suggested = _vm.CurrentLayoutPath is { Length: > 0 } p
@@ -137,6 +165,8 @@ public partial class TraceImpedanceAnalysisDialog : Window
 
         s_target = target;
         s_tolerance = tolerance;
+        s_warning = warning;
+        s_frequency = FrequencyBox.Text?.Trim() ?? "";
         s_unticked.Clear();
         foreach (var (choice, box) in _layers) if (box.IsChecked != true) s_unticked.Add(choice.Name);
 
@@ -166,6 +196,8 @@ public partial class TraceImpedanceAnalysisDialog : Window
         {
             TargetOhms = target,
             TolerancePercent = tolerance,
+            WarningPercent = warning,
+            MaxFrequencyHz = maxFrequency,
             Layers = [.. chosen.Select(l => l.Choice.Key)],
         };
 

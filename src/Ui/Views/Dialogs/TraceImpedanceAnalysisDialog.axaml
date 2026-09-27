@@ -8,7 +8,7 @@
         WindowStartupLocation="CenterOwner"
         ShowInTaskbar="False">
 
-    <!-- Trace Impedance Analysis (round 8). Target, tolerance and layers, then Export: a save picker,
+    <!-- Trace Impedance Analysis (round 8). Target, tolerance, warning band and layers, then Export: a save picker,
          then the run with a per-layer progress bar and Cancel. A cancelled run still writes the
          layers it finished. The work is TraceImpedanceAnalysis; this window only asks and reports. -->
     <Window.Styles>
@@ -59,11 +59,11 @@
         <Border Classes="card" x:Name="TargetCard">
             <StackPanel Spacing="10">
                 <TextBlock Classes="section" Text="TARGET"/>
-                <Grid ColumnDefinitions="*,16,*">
+                <Grid ColumnDefinitions="*,12,*,12,*">
                     <StackPanel Grid.Column="0" Spacing="4">
                         <TextBlock Text="Impedance Z₀" FontSize="11" Opacity="0.7"/>
                         <StackPanel Orientation="Horizontal">
-                            <TextBox x:Name="TargetBox" Width="90" FontSize="13" Text="50"
+                            <TextBox x:Name="TargetBox" Width="70" FontSize="13" Text="50"
                                      HorizontalContentAlignment="Right" TextChanged="OnInputChanged"/>
                             <TextBlock Classes="unit" Text="Ω"/>
                         </StackPanel>
@@ -72,14 +72,34 @@
                         <TextBlock Text="Tolerance" FontSize="11" Opacity="0.7"/>
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Classes="unit" Text="±" Margin="0,0,6,0"/>
-                            <TextBox x:Name="ToleranceBox" Width="70" FontSize="13" Text="10"
+                            <TextBox x:Name="ToleranceBox" Width="52" FontSize="13" Text="10"
+                                     HorizontalContentAlignment="Right" TextChanged="OnInputChanged"/>
+                            <TextBlock Classes="unit" Text="%"/>
+                        </StackPanel>
+                    </StackPanel>
+                    <!-- Outside the tolerance but inside this is a warning, not a fail (brief-impedance-1). -->
+                    <StackPanel Grid.Column="4" Spacing="4">
+                        <TextBlock Text="Warning" FontSize="11" Opacity="0.7"/>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Classes="unit" Text="±" Margin="0,0,6,0"/>
+                            <TextBox x:Name="WarningBox" Width="52" FontSize="13" Text="20"
                                      HorizontalContentAlignment="Right" TextChanged="OnInputChanged"/>
                             <TextBlock Classes="unit" Text="%"/>
                         </StackPanel>
                     </StackPanel>
                 </Grid>
+                <!-- Optional: a stretch outside the warning band shorter than λ/20 here warns. Blank = off. -->
+                <StackPanel Spacing="4">
+                    <TextBlock Text="Highest frequency (optional)" FontSize="11" Opacity="0.7"/>
+                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                        <TextBox Grid.Column="0" x:Name="FrequencyBox" Width="110" FontSize="13" Text=""
+                                 PlaceholderText="off" HorizontalContentAlignment="Right" TextChanged="OnInputChanged"/>
+                        <TextBlock Grid.Column="1" FontSize="10" Opacity="0.6" TextWrapping="Wrap" VerticalAlignment="Center"
+                                   Text="e.g. 6 GHz (a bare number is GHz). A stretch outside the warning band shorter than λ/20 there warns rather than fails."/>
+                    </Grid>
+                </StackPanel>
                 <Border CornerRadius="4" Padding="8,5" Background="{DynamicResource SystemControlBackgroundBaseLowBrush}">
-                    <TextBlock x:Name="BandText" FontSize="11" Text="Pass band 45.0 – 55.0 Ω"/>
+                    <TextBlock x:Name="BandText" FontSize="11" Text="Pass 45.0–55.0 Ω · Warning 40.0–60.0 Ω"/>
                 </Border>
             </StackPanel>
         </Border>

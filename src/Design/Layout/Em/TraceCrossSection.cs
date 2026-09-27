@@ -246,7 +246,11 @@ internal static class TraceCrossSection
             ], band.Layer.SigmaSm > 0 ? band.Layer.SigmaSm : double.PositiveInfinity);
 
         conductors.Add(Rect("signal", sa, sb, signal));
-        key.Append(signal.Index).Append(':').Append(Q(sb - sa));
+        // The quantum goes in beside the width: the analysis passes a quantum PROPORTIONAL to the width
+        // (1.5 % of it), so Q(width) alone is 67 for every trace wider than ~67 µm, and a 300 µm
+        // microstrip took a 1000 µm one's solve (47.7 Ω against the probe's 85.0). With the quantum,
+        // the width is keyed absolutely, to within one quantum.
+        key.Append(signal.Index).Append(':').Append(Q(sb - sa)).Append('/').Append((long)Math.Round(q));
         key.Append(plane ? "|P" : "|N").Append(groundM.ToString("R", CultureInfo.InvariantCulture));
 
         int grounded = 0;

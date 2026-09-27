@@ -2388,9 +2388,13 @@ static int PrintHelp()
     Console.WriteLine("impedance options:   <layout> is a .clay or a cell folder holding one");
     Console.WriteLine("  --target 50             the target Z0, ohms. Default 50.");
     Console.WriteLine("  --tol 10                the tolerance, percent either side. Default 10.");
+    Console.WriteLine("  --warn 20               the warning band, percent either side; wider than --tol. Default 20.");
+    Console.WriteLine("  --max-freq 6GHz         a stretch under λ/20 here warns rather than fails. Unit required.");
+    Console.WriteLine("  --severity warning|fail what decides the exit code. Default fail; warnings are");
+    Console.WriteLine("                          reported either way.");
     Console.WriteLine("  --layers \"A,B\"          the copper layers, by name. Default every copper layer.");
     Console.WriteLine("  --max-width <um>        the widest copper read as a trace. Default from the stackup.");
-    Console.WriteLine("  -o report.pdf           the report the layout editor exports. Exit 0 all pass,");
+    Console.WriteLine("  -o report.pdf           the report the layout editor exports. Exit 0 none fail,");
     Console.WriteLine("                          1 any fail, 130 cancelled (the finished layers are written).");
     Console.WriteLine();
     Console.WriteLine("convert options:");

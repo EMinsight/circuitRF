@@ -2720,7 +2720,7 @@ double-click routes still targeting the `.exe` and `%F`, the `.com`'s subsystem 
 
 ## 21. `impedance` — Trace Impedance Analysis, headless
 
-`circuitrf impedance <layout> [--target 50] [--tol 10] [--layers "A,B"] [--max-width <um>] [-o report.pdf]`
+`circuitrf impedance <layout> [--target 50] [--tol 10] [--warn 20] [--max-freq 6GHz] [--layers "A,B"] [--max-width <um>] [--severity warning|fail] [-o report.pdf]`
 
 **It owns no analysis and no page.** Every number is `TraceImpedanceAnalysis.AnalyzeFile`
 (`src/Design/Layout/Em`) and every pixel of the PDF is `TraceImpedanceReportDocument.Pdf`
@@ -2736,7 +2736,11 @@ parsing, the layer-name lookup, refusals and reporting.
   one that found nothing wrong.
 - **Units.** stdout and the PDF speak the layout's own `DisplayUnit`; `--json` is µm throughout, so a
   script reads one unit whatever the layout says.
-- **Exit codes.** 0 every trace passes; 1 one fails, is unsolved, or the run is refused; 130 cancelled.
+- **Three tiers** (brief-impedance-1): every trace is PASS / WARN / FAIL and every finding a warning or a
+  fail, graded in `TraceImpedanceAnalysis` and nowhere else. `--max-freq` requires its unit, the rule
+  every CLI frequency follows.
+- **Exit codes**, on `check`'s convention. 0 nothing fails (warnings are reported and still exit 0); 1 one
+  fails, is unsolved, or the run is refused — and with `--severity warning`, one warns; 130 cancelled.
   **A cancelled run writes the layers that finished** (owner, 2026-09-25) — the analysis is layer by
   layer so that stopping a long run keeps what it has done. This is the one verb where a cancellation
   writes anything, and the report's first page says it was cancelled.

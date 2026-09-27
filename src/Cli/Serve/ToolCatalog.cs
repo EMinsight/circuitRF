@@ -724,7 +724,9 @@ internal static class ToolCatalog
           + "along its length with a quasi-static cross-section solve, and report per trace Z0 min/max/mean, "
           + "the share inside target +/- tolerance, the line type (microstrip, grounded CPW, stripline…), "
           + "and every finding: Z0 out of band, a return path that breaks or steps to another layer. "
-          + "Exit 0 when every trace passes, 1 when one fails. Writes nothing unless output is given.",
+          + "Each trace is PASS, WARNING or FAIL, and each finding a warning or a fail. "
+          + "Exit 0 when no trace fails (warnings are reported and still exit 0 unless severity is "
+          + "warning), 1 when one fails or is unsolved. Writes nothing unless output is given.",
             null, null,
             [
                 new("", [ "impedance" ],
@@ -733,6 +735,15 @@ internal static class ToolCatalog
                         new("target", "--target", OptKind.Number, "The target Z0 in ohms. Default 50."),
                         new("tolerance", "--tol", OptKind.Number,
                             "The tolerance, percent either side of the target. Default 10."),
+                        new("warn", "--warn", OptKind.Number,
+                            "The warning band, percent either side of the target: outside the tolerance but "
+                          + "inside this is a warning, not a fail. Must be wider than the tolerance. Default 20."),
+                        new("maxFreq", "--max-freq", OptKind.Str,
+                            "The highest frequency the traces carry, WITH its unit (6GHz); a bare number is "
+                          + "refused. A stretch outside the warning band shorter than lambda/20 there is a "
+                          + "warning, not a fail. Default off."),
+                        new("severity", "--severity", OptKind.Str,
+                            "What decides the exit code: warning or fail. Default fail; warnings are reported either way."),
                         new("layers", "--layers", OptKind.StrList,
                             "The copper layers to analyse, by the technology's layer names. Default every "
                           + "copper layer. A name that is not a copper layer is refused with the names that are."),

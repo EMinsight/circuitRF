@@ -740,8 +740,8 @@ example workspace.
 
 ## `impedance` — every trace against a target Z0 {#impedance}
 
-<pre><code class="cmd"><span class="prompt">$ </span>circuitrf impedance &lt;layout&gt; [--target 50] [--tol 10] [--layers "Top Copper,Inner 2"]
-<span class="prompt">  </span>[--max-width &lt;um&gt;] [-o report.pdf]</code></pre>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf impedance &lt;layout&gt; [--target 50] [--tol 10] [--warn 20] [--max-freq 6GHz]
+<span class="prompt">  </span>[--layers "Top Copper,Inner 2"] [--max-width &lt;um&gt;] [--severity warning|fail] [-o report.pdf]</code></pre>
 
 `impedance` is the layout editor's [Impedance Analysis](layout-editor.html#impedance-analysis): it finds
 every trace on the chosen copper layers, cuts it along its length with the same quasi-static
@@ -757,16 +757,24 @@ resolves it, and placed cells are flattened as a design-rule check flattens them
 |---|---|
 | `--target <ohms>` | The target Z0. Default `50`. `50`, `50ohm` and `50R` all read as 50 Ω. |
 | `--tol <percent>` | ± this many percent passes. Default `10`. |
+| `--warn <percent>` | ± this many percent is a **warning** rather than a fail. Default `20`; it must be wider than `--tol`, so a `--tol` of 20 or more needs a wider `--warn` too. |
+| `--max-freq <freq>` | The highest frequency the traces carry. A stretch outside the warning band shorter than **λ/20** there warns rather than fails &mdash; see [electrically short](layout-editor.html#impedance-findings). **The unit is required** (`6GHz`); a bare number is refused. Default off. |
+| `--severity warning\|fail` | What decides the exit code. Default `fail`; `warning` makes a warning exit 1 too. Warnings are reported either way. |
 | `--layers "A,B"` | The copper layers, by the technology's layer names. Default every copper layer. A name that is not a copper layer is refused with the names that are. |
 | `--max-width <um>` | The widest copper read as a trace. Default ten times the distance to the nearest other copper layer, between 1 and 8 mm. |
 | `-o report.pdf` | The PDF report. With no `-o` it writes nothing. |
 
-stdout is one line per trace, its findings under it; stderr says which layer is being analysed. Lengths
+stdout is one line per trace &mdash; `PASS`, `WARN` or `FAIL` &mdash; its findings under it (`!` a fail,
+`?` a warning), and a closing line *N pass, W warning, F fail*; stderr says which layer is being
+analysed. Lengths
 and coordinates are in **the layout's own unit**. With `--json` the result carries every layer, trace and
-finding, with coordinates and lengths in **µm** whatever the layout's unit, so a script reads one unit.
+finding, with coordinates and lengths in **µm** whatever the layout's unit, so a script reads one unit;
+`warningCount` sits beside `pass` and `fail`, a trace's verdict can be `"warning"`, and every finding
+carries `"severity": "warning"` or `"fail"`.
 
-**Exit 0** when every trace passes, **1** when one fails (or cannot be solved) or the run is refused,
-**130** on a cancellation. A cancelled run still writes the report for the layers that **finished**,
+**Exit codes follow [`check`](#check)'s convention.** **0** when no trace fails &mdash; warnings are
+always reported and still exit 0 &mdash; **1** when one fails (or no part of it could be solved) or the
+run is refused, and with `--severity warning` when one warns; **130** on a cancellation. A cancelled run still writes the report for the layers that **finished**,
 and says on its first page that it was cancelled.
 
 ## `smith` — a matching network, headless {#smith}

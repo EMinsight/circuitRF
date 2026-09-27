@@ -796,20 +796,26 @@ The **Impedance Analysis** button on the toolbar (the **Z₀** tile beside Check
 [Trace impedance](#trace-impedance) run end to end along every trace, from the same cross-section
 solve, so a trace's number in the report is the number you get by right-clicking it.
 
-The dialog asks three things:
+The dialog asks:
 
 - **Impedance Z₀** &mdash; the target, in ohms. 50 Ω by default.
-- **Tolerance** &mdash; ± this many percent passes, 10 % by default. The dialog shows the pass band it
-  gives you, for example *45.0 – 55.0 Ω*.
+- **Tolerance** &mdash; ± this many percent passes, 10 % by default.
+- **Warning** &mdash; ± this many percent is a warning rather than a fail, 20 % by default. It must be
+  wider than the tolerance. The dialog shows both bands it gives you, for example
+  *Pass 45.0–55.0 Ω · Warning 40.0–60.0 Ω*.
+- **Highest frequency** &mdash; optional, blank by default. When given (*6 GHz*; a bare number is GHz),
+  a stretch outside the warning band that is **shorter than λ/20** at that frequency is a warning
+  rather than a fail &mdash; see [electrically short](#impedance-findings).
 - **Layers** &mdash; every copper layer of the stackup, all ticked by default. A layer with no copper
   on it is shown but cannot be ticked.
 
 **Export…** asks where to save the `.pdf`, then runs. A bar shows the layer being analysed and how far
 through it the run is; a whole eight-layer board of about 300 traces takes a couple of minutes, a
 single outer layer a few seconds. **Cancel** stops the run and still writes the report for **every
-layer that finished**, with a note on its first page saying it was cancelled. The target, tolerance
-and layer choice are remembered until you close circuitRF. The Messages panel gets one line with the
-verdict and a link to the file.
+layer that finished**, with a note on its first page saying it was cancelled. The target, both bands,
+the frequency and the layer choice are remembered until you close circuitRF. The Messages panel gets
+one line with the counts that pass, warn and fail, and a link to the file; it is a warning line only
+when something **failed** or the run was cancelled.
 
 ### What counts as a trace {#impedance-traces}
 
@@ -833,27 +839,44 @@ other conductor near the trace is held at ground.
 
 ### What it flags {#impedance-findings}
 
-A trace **fails** when any of these is found on it, and each is numbered on the layer's map:
+Every trace is **PASS**, **WARN** or **FAIL**. Each finding is a warning or a fail, and a trace takes
+the worst of its findings: *look at this* is kept apart from *this is wrong*. Each is numbered on the
+layer's map.
 
-- **Z0 outside target ± tolerance**, with the stretch it is out over and its range.
-- **A broken return path** &mdash; the nearest layer under (or over) the trace stops covering it part
-  of the way, while covering it elsewhere along the same trace. A layer cleared under the **whole**
-  trace is not a fault; it is noted, with the deeper layer that became the reference.
-- **Copper only partly under the trace** &mdash; a plane edge running beneath it.
-- **A reference step** &mdash; the reference itself changes from one layer to another along the trace.
+| Finding | Severity |
+|---|---|
+| **Z0 outside target ± tolerance** but inside ± the warning band, with the stretch it is out over and its range | Warning |
+| **Z0 outside the warning band** | Fail &mdash; or a warning when it is electrically short (below) |
+| **A broken return path** &mdash; the nearest layer under (or over) the trace stops covering it part of the way, while covering it elsewhere along the same trace | Fail, however short |
+| **No return at all** &mdash; no copper covers the trace and nothing is beside it | Fail |
+| **Copper only partly under the trace** &mdash; a plane edge running beneath it | Warning |
+| **A reference step** &mdash; the reference changes from one layer to another along the trace; often a designed transition | Warning |
+| **Part of the trace could not be solved** &mdash; not checked, which is not the same as wrong | Warning |
+
+A layer cleared under the **whole** trace is not a fault; it is noted, with the deeper layer that
+became the reference.
+
+**Electrically short.** With a **Highest frequency** given, a stretch outside the warning band whose
+electrical length is under **λ/20** there &mdash; a neck-down into a pad, a width step at a launch
+&mdash; is a warning, not a fail. λ is taken from each cut's own effective permittivity, and the
+finding says how long the stretch is in wavelengths, for example *0.018 λ at 6 GHz &mdash;
+electrically short*. It applies to Z0 only: a broken return is never softened by being short. Left
+blank, the rule is off and the report says nothing about it.
 
 ### The report {#impedance-report}
 
 - **A summary page** &mdash; always one page: the target and pass band, the technology and its `.ctech`
-  file, the layers, the counts of traces that pass and fail, and per layer the worst excursion from the
-  target. On the right is the **stackup** the traces were solved against, drawn exactly as the
+  file, the layers, the counts of traces that pass, warn and fail, and per layer the worst excursion from the
+  target. With a highest frequency given, *How it was measured* states the λ/20 rule and the frequency. On the right is the **stackup** the traces were solved against, drawn exactly as the
   technology editor's Stackup tab draws it, with each layer's thickness, εr, tanδ and conductivity.
 - **A map page per layer**: the layer's copper in grey with every trace drawn over it **coloured by its
   Z0** &mdash; green inside the pass band, blue below, red above &mdash; its id, and a numbered marker at
-  every finding. The colour scale and the pass band are on the page.
+  every finding: **filled** for a fail, **hollow** for a warning, orange for Z0 and purple for the
+  return path. The colour scale marks the pass band, and the warning band's edges as a lighter pair of
+  ticks.
 - **A table per layer**: each trace's start and end, what each end is, its length and width, its line
   **type**, Z0 min, max and average, the share of its length inside the band, its reference layers,
-  PASS or FAIL, and then the numbered findings in full.
+  PASS, WARN or FAIL, and then the numbered findings in full, each with its severity.
 
 The **type** is microstrip, **GCPW** (grounded coplanar waveguide: a plane below and ground beside it on
 both sides), **GCPW 1-side**, stripline or CPW. A trace that is **both** along its run &mdash; grounded CPW

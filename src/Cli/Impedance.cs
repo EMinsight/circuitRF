@@ -18,8 +18,9 @@ namespace CircuitRF.Cli;
 /// <see cref="TraceImpedanceReportDocument.Pdf"/> — the two calls the editor's dialog makes — so a
 /// board that passes headlessly passes when it is opened, and the two PDFs are the same document.</para>
 ///
-/// <para><b>Exit codes</b>: 0 when every trace passes, 1 when one fails or the run is refused, 130
-/// when it is cancelled. A cancelled run still writes the report for the layers that FINISHED
+/// <para><b>Exit codes</b>, on <c>check</c>'s convention: 0 when no trace fails — warnings are always
+/// reported and still exit 0 — 1 when one fails or is unsolved or the run is refused (and, with
+/// <c>--severity warning</c>, when one warns), 130 when it is cancelled. A cancelled run still writes the report for the layers that FINISHED
 /// (owner, 2026-09-25) — the analysis is layer by layer precisely so that stopping a long run keeps
 /// what it has done — and says on its first page that it was cancelled.</para>
 /// </summary>
@@ -31,6 +32,9 @@ internal static class Impedance
         public string? Output;
         public double Target = TraceImpedanceOptions.DefaultTargetOhms;
         public double Tolerance = TraceImpedanceOptions.DefaultTolerancePercent;
+        public double Warn = TraceImpedanceOptions.DefaultWarningPercent;
+        public double? MaxFrequencyHz;
+        public bool WarningsFail;
         public readonly List<string> Layers = [];
         public double? MaxWidthMicrons;
     }
@@ -73,6 +77,8 @@ internal static class Impedance
         {
             TargetOhms = o.Target,
             TolerancePercent = o.Tolerance,
+            WarningPercent = o.Warn,
+            MaxFrequencyHz = o.MaxFrequencyHz,
             Layers = layers,
             MaxWidthMicrons = o.MaxWidthMicrons,
         };
@@ -136,7 +142,8 @@ internal static class Impedance
             JsonRun.Report(CliDiagnostics.ImpedanceCancelledPartial(report.Layers.Count, report.LayersRequested.Count));
             return 130;
         }
-        return report.FailCount > 0 || report.AllTraces.Any(t => t.Verdict == TraceVerdict.Unsolved) ? 1 : 0;
+        return report.FailCount > 0 || report.AllTraces.Any(t => t.Verdict == TraceVerdict.Unsolved)
+               || (o.WarningsFail && report.WarningCount > 0) ? 1 : 0;
     }
 
     private sealed class Inline(Action<RunProgress> a) : IProgress<RunProgress>
@@ -147,8 +154,9 @@ internal static class Impedance
     private static int Usage()
     {
         Console.Error.WriteLine(
-            "Usage: circuitrf impedance <layout> [--target 50] [--tol 10] [--layers \"Top Copper,Inner 2\"]\n" +
-            "                           [--max-width <um>] [-o report.pdf]\n" +
+            "Usage: circuitrf impedance <layout> [--target 50] [--tol 10] [--warn 20] [--max-freq 6GHz]\n" +
+            "                           [--layers \"Top Copper,Inner 2\"] [--max-width <um>]\n" +
+            "                           [--severity warning|fail] [-o report.pdf]\n" +
             "  <layout> is a .clay or a cell folder holding one.");
         return 1;
     }
@@ -169,6 +177,34 @@ internal static class Impedance
                     if (!double.TryParse(args[++i].TrimEnd('%'), NumberStyles.Float, CultureInfo.InvariantCulture, out o.Tolerance)
                         || !(o.Tolerance > 0) || o.Tolerance >= 100)
                         return JsonRun.Fail(CliDiagnostics.ImpedanceBadNumber("--tol", args[i], "a percentage above 0 and below 100"));
+                    continue;
+                case "--warn" when i + 1 < args.Length:
+                    if (!double.TryParse(args[++i].TrimEnd('%'), NumberStyles.Float, CultureInfo.InvariantCulture, out o.Warn)
+                        || !(o.Warn > 0) || o.Warn >= 100)
+                        return JsonRun.Fail(CliDiagnostics.ImpedanceBadNumber("--warn", args[i], "a percentage above 0 and below 100"));
+                    continue;
+                case "--max-freq" when i + 1 < args.Length:
+                {
+                    // The unit is REQUIRED, the rule every CLI frequency follows: a bare 6 is 6 Hz to
+                    // one reader and 6 GHz to another, and λ/20 at the wrong one softens nothing or
+                    // everything.
+                    string text = args[++i];
+                    var (_, unit) = CircuitRF.Design.Matching.MatchValueFormat.SplitTypedValue(text);
+                    if (CircuitRF.Design.Matching.MatchValueFormat.TryMatchUnit(unit, CircuitRF.Design.Matching.MatchQuantity.Frequency) is null
+                        || !CircuitRF.Design.Matching.MatchValueFormat.TryParseWithUnit(
+                               text, CircuitRF.Design.Matching.MatchQuantity.Frequency, "Hz", out double hz, out _)
+                        || !(hz > 0))
+                        return JsonRun.Fail(CliDiagnostics.ImpedanceBadNumber("--max-freq", text, "a frequency with its unit, e.g. 6GHz"));
+                    o.MaxFrequencyHz = hz;
+                    continue;
+                }
+                case "--severity" when i + 1 < args.Length:
+                    switch (args[++i].ToLowerInvariant())
+                    {
+                        case "warning":          o.WarningsFail = true;  break;
+                        case "fail" or "error":  o.WarningsFail = false; break;
+                        default: return JsonRun.Fail(CliDiagnostics.ImpedanceUnknownSeverity(args[i]));
+                    }
                     continue;
                 case "--layers" or "--layer" when i + 1 < args.Length:
                     o.Layers.AddRange(args[++i].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
@@ -225,7 +261,8 @@ internal static class Impedance
     {
         var sb = new StringBuilder();
         sb.AppendLine($"Trace impedance: {r.Title} — target {r.TargetOhms:0.##} Ω ± {r.TolerancePercent:0.##} % " +
-                      $"({r.LowOhms:0.0}–{r.HighOhms:0.0} Ω)");
+                      $"(pass {r.LowOhms:0.0}–{r.HighOhms:0.0} Ω, warning {r.WarnLowOhms:0.0}–{r.WarnHighOhms:0.0} Ω)" +
+                      (r.MaxFrequencyHz is { } f ? $"; under λ/{TraceImpedanceAnalysis.ShortFraction:0} at {TraceImpedanceReport.Hz(f)} is electrically short" : ""));
         foreach (var layer in r.Layers)
         {
             sb.AppendLine();
@@ -235,17 +272,20 @@ internal static class Impedance
             {
                 sb.AppendLine(string.Create(CultureInfo.InvariantCulture,
                     $"  {t.Id,-5} {Verdict(t.Verdict),-4}  Z0 {Z(t.Z0Min)}–{Z(t.Z0Max)} Ω (avg {Z(t.Z0Mean)}), {t.InTolerance:0%} in band, {t.TypeSummary}, {r.Len(t.Length)}, {r.Pt(t.StartX, t.StartY)} → {r.Pt(t.EndX, t.EndY)} [{t.StartsAt} / {t.EndsAt}]"));
-                foreach (var issue in t.Issues) sb.AppendLine($"        ! {issue.Text}");
+                foreach (var issue in t.Issues) sb.AppendLine($"        {(issue.Fails ? '!' : '?')} {issue.Text}");
                 foreach (var note in t.Notes) sb.AppendLine($"        · {note}");
             }
         }
         sb.AppendLine();
-        sb.AppendLine($"{r.TraceCount} trace(s) on {r.Layers.Count} layer(s): {r.PassCount} pass, {r.FailCount} fail." +
+        sb.AppendLine($"{r.TraceCount} trace(s) on {r.Layers.Count} layer(s): {r.PassCount} pass, {r.WarningCount} warning, {r.FailCount} fail." +
                       (r.Cancelled ? $" Cancelled after {r.Layers.Count} of {r.LayersRequested.Count} layers." : ""));
         return sb.ToString();
 
         static string Z(double? z) => z is { } v ? v.ToString("0.0", CultureInfo.InvariantCulture) : "—";
-        static string Verdict(TraceVerdict v) => v switch { TraceVerdict.Pass => "PASS", TraceVerdict.Fail => "FAIL", _ => "—" };
+        static string Verdict(TraceVerdict v) => v switch
+        {
+            TraceVerdict.Pass => "PASS", TraceVerdict.Warning => "WARN", TraceVerdict.Fail => "FAIL", _ => "—",
+        };
     }
 
     // ── --json ───────────────────────────────────────────────────────────────────────────────
@@ -254,8 +294,8 @@ internal static class Impedance
     {
         double Um(double dbu) => dbu / r.DbuPerMicron;
         return new ImpedanceReportJson(
-            r.Title, r.TechnologyName, r.TargetOhms, r.TolerancePercent, r.Cancelled,
-            r.TraceCount, r.PassCount, r.FailCount,
+            r.Title, r.TechnologyName, r.TargetOhms, r.TolerancePercent, r.WarningPercent, r.MaxFrequencyHz,
+            r.Cancelled, r.TraceCount, r.PassCount, r.WarningCount, r.FailCount,
             [.. r.Layers.Select(l => new ImpedanceLayerJson(
                 l.Name, l.PoursSkipped,
                 [.. l.Traces.Select(t => new ImpedanceTraceJson(
@@ -265,7 +305,7 @@ internal static class Impedance
                     t.Z0Min, t.Z0Max, t.Z0Mean, t.InTolerance, t.Configuration,
                     [.. t.Configurations.Select(c => new ImpedanceTypeJson(c.Name, c.Share))], t.References,
                     [.. t.Issues.Select(i => new ImpedanceIssueJson(
-                        IssueId(i.Kind), [Um(i.X0), Um(i.Y0)], [Um(i.X1), Um(i.Y1)], i.Text))],
+                        IssueId(i.Kind), i.Fails ? "fail" : "warning", [Um(i.X0), Um(i.Y0)], [Um(i.X1), Um(i.Y1)], i.Text))],
                     t.Notes))]))]);
     }
 

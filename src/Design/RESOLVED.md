@@ -13799,3 +13799,33 @@ different design from the one drawn.
 
 Gate: `tests/Ui.Tests/ThreeD/NoMaterialIgnoredTests.cs` (run ignores it + box unaffected; typo still refuses + all-bare
 has nothing to solve; `check` as a process exits 0 and says it once).
+
+## Impedance review brief 1 — the warning tier: Pass / Warning / Fail (2026-09-26)
+
+`TraceImpedanceAnalysis` now grades every finding (`IssueSeverity`) and every trace (`TraceVerdict.Warning`,
+APPENDED to the enum so a stored number keeps its meaning). `TraceImpedanceOptions.WarningPercent` (default 20) is the
+second band; `MaxFrequencyHz` (default off) turns on the λ/20 electrically-short rule. The per-kind severity table is a
+comment at the findings in `Assemble`, once. PDF, CLI (`--warn`, `--max-freq`, `--severity warning|fail`, WARN, `?` for
+a warning finding), `--json` (`warningCount`, per-issue `severity`, verdict `"warning"`) and the dialog all read it.
+
+**Findings worth keeping:**
+- **The analysis's solve-cache key collapsed every trace wider than ~67 µm to one width** — a real Z0 bug, fixed here
+  with the owner's go-ahead (the brief's scope said no Z0 would change). `Cut` passes a key quantum of
+  `max(1 µm, 1.5 % of w)`, and `TraceCrossSection.Cut` keyed the width as `round(w / q)` — 67 for every w above
+  ~67 µm. Everything else in the key is ALSO relative to `q` (the lateral distances in `D()`), so for a microstrip with no
+  side conductor the whole key was scale-free and a 300 µm line took a 1000 µm line's solve: **47.7 Ω where the probe
+  reads 85.0 Ω**, silently, whichever width was solved first. The probe never showed it because it passes an absolute
+  quantum of 1. The key now carries the quantum beside the width, which pins the scale; sharing along one trace is
+  unchanged. A trace with a side ground keys its gaps in quanta too, so there two widths collided only when the gaps
+  scaled with the width as well. Gate: `TwoWidthsOnOneLayer_EachReadTheirOwnZ0`.
+- **A default warning band of 20 % refuses a tolerance of 20 % or more** unless the caller widens the warning band too.
+  The refusal names both numbers. That is the brief's rule (`TolerancePercent < WarningPercent < 100`); a script that
+  passed `--tol 25` alone now needs `--warn`.
+- A reference step whose nearest layer covers the trace ANYWHERE along it is reported as a broken return (a Fail), not
+  a step: `ReferenceStep` only fires between stations the nearest layer covers at neither. The test fixture for "a
+  reference step alone" therefore clears L2 under the whole trace and steps L3 → L4.
+- Pre-existing and NOT this brief's: `CliStructuredOutputTests.DiagnosticIds_AreTheCommittedSet_UniqueAndCaseDistinct`
+  fails on 25 declared ids missing from its expected list (`check.c3d.*`, `solver.*`, `em.c3d.setup`, …), all from the
+  3D-EM series. This brief's one new id, `impedance.args.unknown-severity`, is registered.
+
+Gate: `tests/Ui.Tests/Em/TraceImpedanceAnalysisTests.cs`.
