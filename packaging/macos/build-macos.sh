@@ -78,6 +78,21 @@ if [ "$APP" = circuitrf ]; then
     SMOKE_DLL="${ROOT}/tools/CliSmoke/bin/Release/net10.0/CliSmoke.dll"
 fi
 
+# ── The geometry kernel (brief-em3d-62 R-em3d62-5) ────────────────────────────
+#
+# OpenCASCADE behind tools/geometry-worker, in Contents/MacOS/geometry-kernel/. `dotnet build` only
+# ever COPIES it out of the per-user cache and warns when the cache is empty, which is right for a
+# build and wrong for a release -- so this script BUILDS it, per RID, with --strict, and fails at the
+# end when a RID that ships it (recipe.env's KERNEL_RIDS -- decision D2) came out without it.
+# The first run on a machine builds OCCT itself: about 5 minutes per architecture, once.
+#
+# Set CRF_ALLOW_NO_KERNEL=1 to package without it on purpose (nothing is fetched or built then).
+# Only circuitRF ships it; harmonicaRF and wBond drop the folder in their own bundle scripts.
+KERNEL_RECIPE="${ROOT}/tools/geometry-worker/occt/recipe.env"
+OCCT_VERSION=$(sed -n 's/^OCCT_VERSION=//p' "$KERNEL_RECIPE")
+KERNEL_RIDS=$(sed -n 's/^KERNEL_RIDS=//p' "$KERNEL_RECIPE")
+NO_KERNEL=""
+
 # THE VM IMAGE IS BUILT HERE EVEN THOUGH A PLAIN BUILD LEAVES IT ALONE. Compiled device models are
 # Linux libraries — nothing on macOS can load one — so circuitRF runs the worker inside the small
 # Linux VM it ships, and the kernel and initramfs are part of that. Building them from scratch pulls
@@ -318,6 +333,16 @@ for ARCH in $ARCHES; do
     # names and the RID the .app is built at ONE value rather than two that happen to agree.
     export CRF_RID="$RID"
 
+    SHIPS_KERNEL=0
+    if [ "$APP" = circuitrf ]; then
+        case " $KERNEL_RIDS " in *" $RID "*) SHIPS_KERNEL=1 ;; esac
+    fi
+    if [ "$SHIPS_KERNEL" = 1 ] && [ "${CRF_ALLOW_NO_KERNEL:-}" != 1 ]; then
+        echo "🧊 Building the geometry kernel (${RID})..."
+        "${ROOT}/tools/geometry-worker/build.sh" --strict --rid "$RID" \
+            || echo "⚠️  The geometry kernel did not build for ${RID} (see above); this is reported again at the end."
+    fi
+
     echo "📦 Building ${NAME}.app (${RID})..."
     ( cd "${ROOT}/src/Ui" && bash "./${BUNDLE_SCRIPT}" )
 
@@ -362,6 +387,12 @@ for ARCH in $ARCHES; do
         fi
     fi
 
+    # ── The geometry kernel is in the bundle ──────────────────────────────────
+    KERNEL_WORKER="${APP_BUNDLE}/Contents/MacOS/geometry-kernel/geometry-worker"
+    if [ "$SHIPS_KERNEL" = 1 ] && [ ! -f "$KERNEL_WORKER" ]; then
+        NO_KERNEL="${NO_KERNEL} ${ARCH}"
+    fi
+
     # ── Architecture, measured rather than assumed ────────────────────────────
     #
     # Mirrors what build-linux.sh does with the worker's ELF header, and for the same reason: a binary
@@ -372,7 +403,12 @@ for ARCH in $ARCHES; do
     # senior_worker is deliberately NOT checked here — it is a Linux ELF, always x86-64 on purpose,
     # and lipo knows nothing about it. build-linux.sh's ELF check is the one that covers that file.
     BAD=""
-    for f in "${NAME}" crf-vmhost osdi-worker; do
+    # The geometry kernel's worker and every library beside it, too: the cache holds one OCCT build per
+    # architecture, and a publish that copied the other one would launch and then fail to load it.
+    KERNEL_FILES=""
+    [ -d "${APP_BUNDLE}/Contents/MacOS/geometry-kernel" ] \
+        && KERNEL_FILES=$(cd "${APP_BUNDLE}/Contents/MacOS" && ls geometry-kernel/geometry-worker geometry-kernel/*.dylib 2>/dev/null)
+    for f in "${NAME}" crf-vmhost osdi-worker $KERNEL_FILES; do
         path="${APP_BUNDLE}/Contents/MacOS/${f}"
         [ -f "$path" ] || continue
         archs=$(lipo -archs "$path" 2>/dev/null || echo "?")
@@ -437,7 +473,14 @@ KPY
 
         if [ "$CAN_RUN" = 1 ]; then
             echo "🔎 Smoke-testing the command line in ${NAME}.app (${ARCH})..."
-            dotnet "$SMOKE_DLL" "${APP_BUNDLE}/Contents/MacOS/${NAME}" "$VERSION" || {
+            if [ -f "$KERNEL_WORKER" ]; then
+                KERNEL_SMOKE=(--kernel "$OCCT_VERSION")
+            elif [ "$SHIPS_KERNEL" = 1 ]; then
+                KERNEL_SMOKE=(--no-kernel "built without it; reported at the end")
+            else
+                KERNEL_SMOKE=(--no-kernel "not shipped on ${RID}")
+            fi
+            dotnet "$SMOKE_DLL" "${APP_BUNDLE}/Contents/MacOS/${NAME}" "$VERSION" "${KERNEL_SMOKE[@]}" || {
                 echo "❌ The command line in ${NAME}.app (${ARCH}) does not answer (see above)."
                 echo "   This bundle must not be imaged."
                 exit 1
@@ -591,6 +634,20 @@ if [ -n "$UNSMOKED" ]; then
     echo ""
 fi
 
+if [ -n "$NO_KERNEL" ]; then
+    echo "⚠️  NO GEOMETRY KERNEL in:${NO_KERNEL}. Those packages have no booleans, fillets, chamfers or"
+    echo "   STEP import and export, and a .c3d using any of them is refused on open."
+    if [ "${CRF_ALLOW_NO_KERNEL:-}" = 1 ]; then
+        echo "   CRF_ALLOW_NO_KERNEL=1 says that is intended."
+    else
+        echo "   Build it and run this again -- tools/geometry-worker/build.sh --rid osx-<arch> (needs"
+        echo "   cmake and Xcode's command line tools; about 5 minutes per architecture, once) -- or set"
+        echo "   CRF_ALLOW_NO_KERNEL=1 to ship without it knowingly."
+        NO_KERNEL_FAIL=1
+    fi
+    echo ""
+fi
+
 if [ "$NOTARISED" = 1 ]; then
     echo "   Signed and notarised. These open with no prompt, on any Mac, offline."
 elif [ "$SIGN_IDENTITY" != "-" ]; then
@@ -631,4 +688,5 @@ source "${ROOT}/packaging/signing-status.sh"
 crf_report_release_key "${ROOT}/src/Ui/Updates/ReleaseKeys.cs"
 
 [ "${UNSMOKED_FAIL:-0}" = 1 ] && exit 1
+[ "${NO_KERNEL_FAIL:-0}" = 1 ] && exit 1
 exit 0

@@ -5,6 +5,51 @@ symptom first, because that is what the next person will have in front of them.
 
 ---
 
+## The geometry kernel ships: OpenCASCADE in `geometry-kernel/` (EM3D brief 62, 2026-09-27)
+
+**What each script does now.** Before publishing a RID in `recipe.env`'s `KERNEL_RIDS` (D2), each script
+runs `tools/geometry-worker/build.sh --strict --rid <rid>` (`build.cmd` on Windows), which builds OCCT
+into `~/.circuitRF-build/occt/<version>/<rid>/` the first time (measured here: **4 m 49 s** osx-arm64,
+**4 m 53 s** osx-x64 cross-built, M4, 10 cores) and only compiles the worker after that. The publish copies
+`geometry-kernel/` whole. After it, the script reads the worker's architecture back out (`lipo` on the
+worker and every dylib; the ELF header on Linux; the PE header on Windows), drops the folder for a RID D2
+leaves out, passes `--kernel <version>` to `tools/CliSmoke` — which runs the worker's `--version` and
+`selftest` out of the tree being packaged — and **fails at the end** when a shipping RID came out without
+the kernel. `CRF_ALLOW_NO_KERNEL=1` packages without it on purpose and fetches nothing.
+
+**macOS signing, inside-out.** `bundleForMacOS.sh` signs each of the 25 dylibs and the worker on its own,
+after the `--deep` pass and before one non-`--deep` re-seal it now shares with `crf-vmhost`. Verified on a
+Developer ID build: both `.app`s pass `codesign --verify --deep --strict`; worker and libraries carry
+`flags=0x10000(runtime)` and the team identifier; and the hardened-runtime worker, run from inside the
+signed arm64 bundle, passes `selftest`, so library validation accepts the libraries. **Not verified:**
+notarisation (no notary profile on the build Mac that run), and the x64 bundle's smoke test (no Rosetta).
+The worker carries no entitlements; it needs none.
+
+**harmonicaRF and wBond drop the folder** in their own bundle scripts: all three applications publish into
+one shared tree, so without that each would carry ~56 MB of OCCT it never loads, and an LGPL component
+without the notices written for it.
+
+**Windows: written, not run.** `build.cmd`, `ensure-built.cmd` and the `build-windows.ps1` changes have
+never executed; there is no Windows machine or `pwsh` in the session that wrote them. Points to watch
+on the first run: the MSVC runtime is copied app-local from the Visual Studio redistributable folder found
+by `vswhere` (the Windows closure is brief 61's owed Q2); `certutil`'s hash output is parsed with its
+spaces removed; the generator defaults to the recipe's `Visual Studio 17 2022` (`CRF_CMAKE_GENERATOR`
+overrides). **win-x86 is not in `KERNEL_RIDS`** until brief 61's Q13 is answered, and the script prints the
+release-notes sentence for it.
+
+**Linux: written, not run.** The recipe's Linux line adds `-DCMAKE_INSTALL_RPATH=$ORIGIN`, which brief 61
+did not verify: an ELF's `DT_RUNPATH` covers only that object's own `NEEDED` entries, so the worker's
+`$ORIGIN` alone would not let `TKBO` find `TKG2d`. On macOS the libraries bind each other by `@rpath` and
+inherit the executable's run path, which is why the macOS recipe needed nothing. linux-arm64 from an x64
+machine needs `CRF_OCCT_TOOLCHAIN_FILE`; otherwise build on arm64.
+
+**Nothing of OCCT's is in the working tree.** The archive, source, build tree and install live in the
+cache; `tools/geometry-worker/build/<rid>/` (git-ignored) holds only the compiled worker and the staged
+copies of the libraries. `tests/Firewall.Tests/OcctBoundaryTests.cs` fails on an OCCT licence header
+under `src/` or `tools/`.
+
+---
+
 ## No installer through 1.0.0-beta.32 contained a command line (AUT-13, 2026-09-24)
 
 **Symptom:** an agent told to install circuitRF from a release and drive it over MCP had nothing to

@@ -36805,3 +36805,40 @@ ROW: the drawn wire and `Count − 1` copies, each moved one more pitch.
   whose end misses its pad is fixed by moving the drawn wire or changing the pitch, not per copy.
 
 Gate: `tests/Ui.Tests/ThreeD/WireArrayTests.cs` (5 tests).
+
+## EM3D brief 62 — the geometry kernel's build step, and the notices that never shipped (2026-09-27)
+
+**`EnsureGeometryWorker` reads a cache and nothing else.** `tools/geometry-worker/ensure-built.{sh,cmd}`
+look for `~/.circuitRF-build/occt/<version>/<rid>/install.json` (`%LOCALAPPDATA%\circuitRF-build\…` on
+Windows); with it they compile the worker when its source, `CMakeLists.txt`, the script, `VERSION` or
+`install.json` is newer than the staged binary, stage it with its library closure in
+`tools/geometry-worker/build/<rid>/geometry-kernel/`, and copy that folder to `$(OutDir)geometry-kernel/`.
+Without it they print ONE line and exit 0. That line is written in MSBuild's canonical form —
+`geometry-worker : warning GK001 : …` — so the build summary counts it as a warning (`1 Warning(s)`,
+measured with `CRF_OCCT_CACHE` pointed at an empty directory) instead of burying it in output; the other
+helpers' plain `echo` lines are not counted anywhere. `--rid` comes from `$(RuntimeIdentifier)`
+(`_CrfKernelRidFlag`), so a publish for `osx-x64` on Apple Silicon stages the x86_64 kernel.
+`PackagingScriptTests.TheBuildsKernelStep_NeverDownloads` holds the "never fetches" rule by text.
+
+**The publish takes the folder whole** (`_CrfGeometryKernel`, `$(OutDir)geometry-kernel/**/*` with
+`RelativePath` `geometry-kernel/%(RecursiveDir)…`). A per-file list, like the other helpers', would be
+the place a library added to the closure gets forgotten; the closure is read from the binaries at build
+time instead (`otool -L` / `readelf -d`, recursively), so there is no list at all.
+
+**`THIRD-PARTY-NOTICES.md` had never been in any installer.** The brief's written offer assumes "the
+OCCT entry in `THIRD-PARTY-NOTICES.md`, which every installer carries" — but nothing copied the file, or
+`LICENSE`, or `licenses/`, into the publish tree; only the repository had them, and the Acknowledgments
+dialog said as much ("at the root of the circuitRF repository"). They are now `None` items copied
+beside the executable, and the About box's **Third-Party Notices** button opens that copy.
+
+**The About box asks the worker, it does not assume.** `GeometryKernelNotice` runs
+`geometry-kernel/geometry-worker --version` off the UI thread and shows *Uses Open CASCADE Technology
+8.0.1 …*, or *Geometry kernel: not included in this installation …* when there is no worker — the
+exception's "prominent notice" must not name a library the installation does not have. This is not
+discovery (brief 63's); it reads the one fixed place a packaged build puts the worker. Not seen on
+screen: the GUI cannot be launched from this session, so it is verified by compiler and tests only.
+
+**OCCT 8.0 API, for whoever writes brief 63's worker code:** `Standard_Failure` now derives from
+`std::exception` and has no `DynamicType()` — use `ExceptionType()` and `what()`
+(`GetMessageString()` is deprecated); and the `TopTools_IndexedMapOfShape` typedef is gone — write
+`NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher>`, as the spike harness does.

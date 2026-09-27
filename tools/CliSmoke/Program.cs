@@ -2,18 +2,26 @@
 //  CliSmoke — does the command line in THIS publish tree answer?
 //
 //      dotnet run --project tools/CliSmoke -c Release -- <executable> <expected-version>
+//                                                        [--kernel <occt-version> | --no-kernel <why>]
 //
 //  <executable> is the application as it will be installed: Contents/MacOS/circuitRF inside the
 //  .app, publish/linux-*/circuitRF, or — on Windows — the per-user launcher stub in front of the
 //  publish tree, so the pipe route an MCP client takes is the route that is checked
 //  (brief-automation-13-installed-cli.md R-aut13-2, route 1).
 //
-//  Three checks, all required; exit 0 only when all three pass:
+//  Four checks, all required; exit 0 only when all four pass:
 //    1. `--version` prints exactly <expected-version> (the VERSION file) and exits 0.
 //    2. `reference --json` exits 0 and its stdout parses as JSON.
 //    3. `serve --root <tmp>` answers `initialize` with a result carrying serverInfo, answers
 //       `tools/list` with EXACTLY the tools ToolCatalog defines (plus the batch tool), and exits 0
 //       when its stdin closes.
+//    4. THE GEOMETRY KERNEL (brief-em3d-62 R-em3d62-5e). With --kernel <occt-version>:
+//       geometry-kernel/geometry-worker[.exe], found relative to <executable>, answers `--version`
+//       with that OCCT version (the recipe's), answers `{"op":"selftest"}` over its protocol with
+//       "ok":true and "valid":true, and exits 0 on `quit`. With --no-kernel <why> -- a RID the
+//       release does not ship it on, or a package built without it on purpose -- the check reports
+//       <why> and passes; whether that is allowed is the packaging script's decision, not this one's.
+//       With neither, the check is skipped and says so.
 // ================================================================
 
 using System.Collections.Concurrent;
@@ -23,9 +31,12 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using CircuitRF.Cli.Serve;
 
-if (args.Length != 2)
+string? expectedOcct = null, noKernelWhy = null;
+if (args.Length == 4 && args[2] == "--kernel")    expectedOcct = args[3].Trim();
+if (args.Length == 4 && args[2] == "--no-kernel") noKernelWhy  = args[3].Trim();
+if (args.Length != 2 && expectedOcct is null && noKernelWhy is null)
 {
-    Console.Error.WriteLine("usage: CliSmoke <executable> <expected-version>");
+    Console.Error.WriteLine("usage: CliSmoke <executable> <expected-version> [--kernel <occt-version> | --no-kernel <why>]");
     return 2;
 }
 
@@ -85,10 +96,96 @@ int failures = 0;
     finally { try { Directory.Delete(root, recursive: true); } catch { /* best effort */ } }
 }
 
+// ── 4. the geometry kernel ───────────────────────────────────────────────────
+if (expectedOcct is not null)
+    failures += Kernel(exe, expectedOcct, timeout);
+else if (noKernelWhy is not null)
+    Console.WriteLine($"ok    geometry kernel  -> not shipped here: {noKernelWhy}");
+else
+    Console.WriteLine("skip  geometry kernel  -> not asked (no --kernel or --no-kernel)");
+
 Console.WriteLine(failures == 0
     ? "PASS  the command line in this publish tree answers."
-    : $"FAIL  {failures} of 3 checks failed; this tree must not be packaged.");
+    : $"FAIL  {failures} of 4 checks failed; this tree must not be packaged.");
 return failures == 0 ? 0 : 1;
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+// The worker is found relative to the executable CliSmoke was given: beside it (the .app's
+// Contents/MacOS, a Linux publish tree), or -- on Windows, where the smoke target is the per-user
+// launcher stub -- inside the version directory the stub's `current` file names.
+static string? FindWorker(string exe)
+{
+    string name = OperatingSystem.IsWindows() ? "geometry-worker.exe" : "geometry-worker";
+    string dir = Path.GetDirectoryName(exe)!;
+    var candidates = new List<string> { Path.Combine(dir, "geometry-kernel", name) };
+    string current = Path.Combine(dir, "current");
+    if (File.Exists(current))
+        candidates.Add(Path.Combine(dir, File.ReadAllText(current).Trim(), "geometry-kernel", name));
+    return candidates.FirstOrDefault(File.Exists);
+}
+
+static int Kernel(string exe, string expectedOcct, TimeSpan timeout)
+{
+    string? worker = FindWorker(exe);
+    if (worker is null)
+    {
+        Console.WriteLine($"FAIL  geometry kernel: no geometry-kernel/geometry-worker beside {exe}");
+        return 1;
+    }
+
+    var v = RunToEnd(worker, ["--version"], timeout);
+    string? occt = v.Stdout.Split('\n').Select(l => l.Trim())
+                    .FirstOrDefault(l => l.StartsWith("occt ", StringComparison.Ordinal))?["occt ".Length..];
+    if (v.ExitCode != 0 || occt != expectedOcct)
+        return Fail("geometry kernel --version", $"exit {v.ExitCode}, OCCT '{occt}', expected '{expectedOcct}' (the recipe's)", v);
+    Console.WriteLine($"ok    geometry kernel --version  -> {Escape(v.Stdout.TrimEnd())}");
+
+    var psi = Start(worker, []);
+    psi.RedirectStandardInput = true;
+    using var p = Process.Start(psi)!;
+    var stderr = p.StandardError.ReadToEndAsync();
+    try
+    {
+        p.StandardInput.WriteLine("{\"op\":\"selftest\"}");
+        p.StandardInput.Flush();
+        var read = p.StandardOutput.ReadLineAsync();
+        if (!read.Wait(timeout))
+        {
+            try { p.Kill(entireProcessTree: true); } catch { /* already gone */ }
+            Console.WriteLine($"FAIL  geometry kernel selftest: no answer within {timeout.TotalSeconds:0} s");
+            return 1;
+        }
+        string answer = read.Result ?? "";
+        JsonObject? json = null;
+        try { json = JsonNode.Parse(answer) as JsonObject; } catch (JsonException) { }
+        static bool True(JsonNode? n) => n is JsonValue jv && jv.TryGetValue<bool>(out bool b) && b;
+        bool ok = True(json?["ok"]) && True(json?["valid"]);
+
+        p.StandardInput.WriteLine("{\"op\":\"quit\"}");
+        p.StandardInput.Close();
+        bool exited = p.WaitForExit((int)timeout.TotalMilliseconds);
+        if (!ok)
+        {
+            Console.WriteLine($"FAIL  geometry kernel selftest: answered '{answer}'");
+            if (stderr.IsCompleted && stderr.Result.Length > 0) Console.WriteLine("      stderr:\n" + Indent(stderr.Result));
+            return 1;
+        }
+        if (!exited || p.ExitCode != 0)
+        {
+            try { p.Kill(entireProcessTree: true); } catch { /* already gone */ }
+            Console.WriteLine($"FAIL  geometry kernel: did not exit 0 on quit");
+            return 1;
+        }
+        Console.WriteLine($"ok    geometry kernel selftest  -> {answer}");
+        return 0;
+    }
+    catch (IOException ex)
+    {
+        Console.WriteLine($"FAIL  geometry kernel: the pipe broke: {ex.Message}");
+        return 1;
+    }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 

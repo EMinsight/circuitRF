@@ -577,8 +577,8 @@ public class TraceImpedanceAnalysisTests
 
         var joined = Run(TracePickExtent.Connected);
         Assert.Equal(2, joined.TraceCount);
-        Assert.Equal(1, joined.Layers.Single(l => l.Name == "Top").Traces.Count);
-        Assert.Equal(1, joined.Layers.Single(l => l.Name == "Mid").Traces.Count);
+        Assert.Single(joined.Layers.Single(l => l.Name == "Top").Traces);
+        Assert.Single(joined.Layers.Single(l => l.Name == "Mid").Traces);
         Assert.Empty(joined.PicksWithoutCopper);
     }
 

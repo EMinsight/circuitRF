@@ -93,6 +93,21 @@ dotnet build "${ROOT}/tools/CliSmoke" -c Release -v quiet
 SMOKE_DLL="${ROOT}/tools/CliSmoke/bin/Release/net10.0/CliSmoke.dll"
 UNSMOKED=""
 
+# -- The geometry kernel (brief-em3d-62 R-em3d62-5) ---------------------------
+#
+# OpenCASCADE behind tools/geometry-worker, in <publish>/geometry-kernel/. `dotnet build` only ever
+# COPIES it out of the per-user cache and warns when the cache is empty - right for a build, wrong for
+# a release - so this script BUILDS it per RID with --strict, and fails at the end when a RID that
+# ships it (recipe.env's KERNEL_RIDS, decision D2) came out without it. The first run on a machine
+# builds OCCT itself (minutes, once per architecture). The other architecture needs a CMake toolchain
+# file named by CRF_OCCT_TOOLCHAIN_FILE, or a run on that architecture.
+#
+# Set CRF_ALLOW_NO_KERNEL=1 to package without it on purpose (nothing is fetched or built then).
+KERNEL_RECIPE="${ROOT}/tools/geometry-worker/occt/recipe.env"
+OCCT_VERSION=$(sed -n 's/^OCCT_VERSION=//p' "$KERNEL_RECIPE")
+KERNEL_RIDS=$(sed -n 's/^KERNEL_RIDS=//p' "$KERNEL_RECIPE")
+NO_KERNEL=""
+
 case "$(uname -m)" in
     x86_64)        HOST_ARCH=x64   ;;
     aarch64|arm64) HOST_ARCH=arm64 ;;
@@ -108,6 +123,14 @@ for ARCH in $ARCHES; do
         x64)   RID="linux-x64";   DEB_ARCH="amd64" ;;
         arm64) RID="linux-arm64"; DEB_ARCH="arm64" ;;
     esac
+
+    SHIPS_KERNEL=0
+    case " $KERNEL_RIDS " in *" $RID "*) SHIPS_KERNEL=1 ;; esac
+    if [ "$SHIPS_KERNEL" = 1 ] && [ "${CRF_ALLOW_NO_KERNEL:-}" != 1 ]; then
+        echo "Building the geometry kernel (${RID})..."
+        "${ROOT}/tools/geometry-worker/build.sh" --strict --rid "$RID" \
+            || echo "WARNING: the geometry kernel did not build for ${RID} (see above); reported again at the end."
+    fi
 
     PUBLISH="${ROOT}/publish/${RID}"
     echo "Publishing ${RID}..."
@@ -216,6 +239,38 @@ for ARCH in $ARCHES; do
         fi
     fi
 
+    # -- The geometry kernel -------------------------------------------------
+    #
+    # Read back out of the publish tree like the workers above: an ELF of the package's architecture
+    # (the cache holds one OCCT build per RID, and a stale build directory could hold the other), and
+    # dropped when this RID does not ship it (D2), so a package matches the decision whatever the
+    # build machine's cache happens to hold.
+    KERNEL_DIR="${PUBLISH}/geometry-kernel"
+    KERNEL_WORKER="${KERNEL_DIR}/geometry-worker"
+    if [ -f "$KERNEL_WORKER" ]; then
+        elf="$(od -An -tx1 -N4        "$KERNEL_WORKER" | tr -d ' ')"
+        machine="$(od -An -tx1 -j18 -N2 "$KERNEL_WORKER" | tr -d ' ')"
+        case "${elf}:${RID}:${machine}" in
+            7f454c46:linux-x64:3e00|7f454c46:linux-arm64:b700) ;;
+            *) echo "WARNING: the geometry worker in the publish tree is not a ${RID} binary; leaving the kernel out."
+               rm -rf "$KERNEL_DIR" ;;
+        esac
+    fi
+    if [ "$SHIPS_KERNEL" = 0 ] && [ -d "$KERNEL_DIR" ]; then
+        echo "NOTE: ${RID} is not in recipe.env's KERNEL_RIDS; leaving the geometry kernel out."
+        rm -rf "$KERNEL_DIR"
+    fi
+    if [ "$SHIPS_KERNEL" = 1 ] && [ ! -f "$KERNEL_WORKER" ]; then
+        NO_KERNEL="${NO_KERNEL} ${ARCH}"
+    fi
+    if [ -f "$KERNEL_WORKER" ]; then
+        KERNEL_SMOKE=(--kernel "$OCCT_VERSION")
+    elif [ "$SHIPS_KERNEL" = 1 ]; then
+        KERNEL_SMOKE=(--no-kernel "built without it; reported at the end")
+    else
+        KERNEL_SMOKE=(--no-kernel "not shipped on ${RID}")
+    fi
+
     # -- The command line, run out of THIS publish tree ----------------------
     #
     # THE GATE THAT WAS MISSING FOR 32 RELEASES (brief-automation-13-installed-cli.md). Every release
@@ -236,7 +291,7 @@ for ARCH in $ARCHES; do
 
     if [ "$ARCH" = "$HOST_ARCH" ] || [ -e "$QEMU_BINFMT" ]; then
         echo "Smoke-testing the command line in ${PUBLISH} ..."
-        dotnet "$SMOKE_DLL" "${PUBLISH}/circuitRF" "$CRF_VERSION" || {
+        dotnet "$SMOKE_DLL" "${PUBLISH}/circuitRF" "$CRF_VERSION" "${KERNEL_SMOKE[@]}" || {
             echo "ERROR: the command line in ${PUBLISH} does not answer (see above)."
             echo "       This tree must not be packaged."
             exit 1
@@ -309,6 +364,7 @@ for ARCH in $ARCHES; do
             chmod +x "${APPDIR}/circuitRF" 2>/dev/null || true
             [ -f "${APPDIR}/senior_worker" ] && chmod +x "${APPDIR}/senior_worker"
             [ -f "${APPDIR}/osdi-worker" ]   && chmod +x "${APPDIR}/osdi-worker"
+            [ -f "${APPDIR}/geometry-kernel/geometry-worker" ] && chmod +x "${APPDIR}/geometry-kernel/geometry-worker"
             # The uninstaller rides INSIDE the version directory too (brief-em3d-25): the updater installs
             # only app-<ver>/ out of this archive, so a copy beside it never reaches an updated install,
             # and the documented uninstall is current/install.sh --uninstall.
@@ -364,6 +420,21 @@ if [ -n "$UNSMOKED" ]; then
     [ "${CRF_ALLOW_UNSMOKED:-}" = 1 ] || UNSMOKED_FAIL=1
 fi
 
+NO_KERNEL_FAIL=0
+if [ -n "$NO_KERNEL" ]; then
+    echo ""
+    echo "NO GEOMETRY KERNEL in:${NO_KERNEL}. Those packages have no booleans, fillets, chamfers or STEP"
+    echo "  import and export, and a .c3d using any of them is refused on open."
+    if [ "${CRF_ALLOW_NO_KERNEL:-}" = 1 ]; then
+        echo "  CRF_ALLOW_NO_KERNEL=1 says that is intended."
+    else
+        echo "  Build it and run this again - tools/geometry-worker/build.sh --rid linux-<arch> (needs cmake,"
+        echo "  make and a C++ compiler; minutes per architecture, once) - or set CRF_ALLOW_NO_KERNEL=1 to"
+        echo "  ship without it knowingly."
+        NO_KERNEL_FAIL=1
+    fi
+fi
+
 # Whether these artifacts can ever be installed as an AUTOMATIC UPDATE is decided by the release key
 # compiled into the binary, not by anything this script did - so it is stated here, where someone is
 # already reading the output, rather than discovered when a published release reaches nobody.
@@ -371,4 +442,5 @@ source "${ROOT}/packaging/signing-status.sh"
 crf_report_release_key "${ROOT}/src/Ui/Updates/ReleaseKeys.cs"
 
 [ "$UNSMOKED_FAIL" = 1 ] && exit 1
+[ "$NO_KERNEL_FAIL" = 1 ] && exit 1
 exit 0

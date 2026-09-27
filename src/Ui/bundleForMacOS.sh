@@ -200,6 +200,7 @@ if [ $? -ne 0 ]; then echo "❌ Code signing failed."; exit 1; fi
 # Inside-out is the fix, and the order is the whole of it: sign the nested binary with its own
 # entitlements, then RE-SEAL the bundle without `--deep` so the outer signature records the new
 # cdhash and does not touch the inner binary again.
+RESEAL=0
 VMHOST="${MAC_OS_DIR}/crf-vmhost"
 VMHOST_ENTITLEMENTS="../../tools/macos-vmhost/crf-vmhost.entitlements"
 if [ -f "$VMHOST" ] && [ -f "$VMHOST_ENTITLEMENTS" ]; then
@@ -209,7 +210,36 @@ if [ -f "$VMHOST" ] && [ -f "$VMHOST_ENTITLEMENTS" ]; then
     codesign --force --sign "$SIGN_IDENTITY" --entitlements "$VMHOST_ENTITLEMENTS" \
              --options runtime $TIMESTAMP_FLAG "$VMHOST" || {
         echo "❌ Could not sign crf-vmhost."; exit 1; }
+    RESEAL=1
+fi
 
+# ── The geometry kernel, inside-out, for the same reason (brief-em3d-62 R-em3d62-5c) ─────────────
+#
+# Contents/MacOS/geometry-kernel/ holds the worker and OpenCASCADE's libraries. Each is signed ON ITS
+# OWN, with the bundle's identity: `--deep` above re-signed the worker with circuitRF's entitlements,
+# which are not the worker's (it needs none), and it is not a substitute for signing nested code in
+# order. With a real identity the worker carries the hardened runtime, whose LIBRARY VALIDATION then
+# accepts these libraries because every one carries the same team identity; notarisation covers them
+# with the bundle. The re-seal below records the new signatures without `--deep`.
+#
+# Only this script does this. harmonicaRF and wBond do not load the kernel, so their bundle scripts
+# drop the folder instead of signing it.
+KERNEL_DIR="${MAC_OS_DIR}/geometry-kernel"
+if [ -d "$KERNEL_DIR" ]; then
+    echo "🔐 Signing the geometry kernel's libraries and worker individually..."
+    for lib in "$KERNEL_DIR"/*.dylib; do
+        [ -f "$lib" ] || continue
+        codesign --force --sign "$SIGN_IDENTITY" $RUNTIME_FLAG $TIMESTAMP_FLAG "$lib" || {
+            echo "❌ Could not sign $(basename "$lib")."; exit 1; }
+    done
+    if [ -f "$KERNEL_DIR/geometry-worker" ]; then
+        codesign --force --sign "$SIGN_IDENTITY" $RUNTIME_FLAG $TIMESTAMP_FLAG "$KERNEL_DIR/geometry-worker" || {
+            echo "❌ Could not sign geometry-worker."; exit 1; }
+    fi
+    RESEAL=1
+fi
+
+if [ "$RESEAL" = 1 ]; then
     codesign --force --sign "$SIGN_IDENTITY" --entitlements "$ENTITLEMENTS" \
              $RUNTIME_FLAG $TIMESTAMP_FLAG "$BUNDLE_DIR" || {
         echo "❌ Could not re-seal the bundle."; exit 1; }

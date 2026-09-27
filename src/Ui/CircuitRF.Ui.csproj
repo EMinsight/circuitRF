@@ -349,6 +349,24 @@
 
   <ItemGroup>
     <!--
+      THE NOTICES TRAVEL WITH EVERY INSTALLER (brief-em3d-62 R-em3d62-6). circuitRF's own licence, the
+      third-party notices and the licence texts they name land beside the executable, so the .msi, the
+      .dmg, the .deb and the tarball each carry them - which is what the LGPL-2.1 and the Open CASCADE
+      Exception ask of a binary that includes OpenCASCADE, and what the written offer in
+      THIRD-PARTY-NOTICES.md relies on to reach its reader. The About box opens this copy.
+    -->
+    <None Include="../../LICENSE;../../THIRD-PARTY-NOTICES.md">
+      <Link>%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="../../licenses/*.txt">
+      <Link>licenses/%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
       The example workspaces (Tools > Examples), beside the executable.
 
       THEY ARE COPIED, NOT EMBEDDED, and that is the point. `examples/` holds REAL workspaces: the
@@ -516,6 +534,35 @@
   </Target>
 
   <!--
+    EVERY platform: the geometry kernel (tools/geometry-worker, brief-em3d-62) - OpenCASCADE behind an
+    out-of-process worker, in ONE folder beside the assemblies: $(OutDir)geometry-kernel/.
+
+    THIS STEP READS A CACHE AND NOTHING ELSE. OCCT is an hour-scale C++ build on a slow machine (about
+    five minutes on a fast one), so `dotnet build` NEVER builds, downloads, unpacks or configures it:
+    when ~/.circuitRF-build/occt/<version>/<rid>/ (Windows: %LOCALAPPDATA%\circuitRF-build\...) holds
+    a finished build, the worker is compiled against it if its source is newer (seconds) and copied
+    here with its libraries; when it does not, ONE warning says so and the build succeeds. circuitRF
+    builds, tests and runs with no OCCT anywhere (R-em3d62-3f) - booleans, fillets and STEP are then
+    disabled. Only tools/geometry-worker/build.sh (build.cmd) fetches OCCT, run deliberately.
+
+    Never fails the build: the scripts exit 0 on every failure unless told to be strict, which only
+    the packaging scripts do. The RID comes from the publish, so `dotnet publish -r osx-x64` on an Apple
+    Silicon Mac stages the x86_64 kernel. Skip with -p:CrfSkipGeometryWorker=true.
+  -->
+  <Target Name="EnsureGeometryWorker"
+          AfterTargets="Build"
+          Condition="'$(CrfSkipGeometryWorker)' != 'true'">
+    <Exec Condition="!$([MSBuild]::IsOSPlatform('Windows'))"
+          Command="&quot;$(MSBuildProjectDirectory)/../../tools/geometry-worker/ensure-built.sh&quot; --dest &quot;$(MSBuildProjectDirectory)/$(OutDir.TrimEnd('/'))&quot; $(_CrfKernelRidFlag)"
+          ContinueOnError="WarnAndContinue"
+          StandardOutputImportance="high" />
+    <Exec Condition="$([MSBuild]::IsOSPlatform('Windows'))"
+          Command="&quot;$(MSBuildProjectDirectory)\..\..\tools\geometry-worker\ensure-built.cmd&quot; --dest &quot;$(MSBuildProjectDirectory)\$(OutDir.TrimEnd('\'))&quot; $(_CrfKernelRidFlag)"
+          ContinueOnError="WarnAndContinue"
+          StandardOutputImportance="high" />
+  </Target>
+
+  <!--
     ...and into the PUBLISHED tree, which is a separate question from landing beside the assemblies.
 
     A file an Exec drops into $(OutDir) is not an MSBuild item, and `dotnet publish` copies ITEMS,
@@ -555,6 +602,19 @@
         <RelativePath>%(Filename)%(Extension)</RelativePath>
         <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
       </ResolvedFileToPublish>
+
+      <!--
+        The geometry kernel: the WHOLE folder, whatever the worker's closure holds on this platform -
+        so a library added to the closure cannot be built and then left out of an installer. It keeps
+        its folder, because the worker finds its libraries beside itself (@loader_path / $ORIGIN / the
+        executable's own directory) and because one folder is what the LGPL's "the user can substitute
+        the library" then means. Absent is the ordinary developer state and publishes nothing.
+      -->
+      <_CrfGeometryKernel Include="$(OutDir)geometry-kernel/**/*" />
+      <ResolvedFileToPublish Include="@(_CrfGeometryKernel)">
+        <RelativePath>geometry-kernel/%(RecursiveDir)%(Filename)%(Extension)</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
     </ItemGroup>
   </Target>
 
@@ -577,6 +637,10 @@
     <_CrfHelperArch Condition="'$(RuntimeIdentifier)' == 'osx-arm64'">arm64</_CrfHelperArch>
     <_CrfHelperArch Condition="'$(RuntimeIdentifier)' == 'osx-x64'">x86_64</_CrfHelperArch>
     <_CrfHelperArchFlag Condition="'$(_CrfHelperArch)' != ''">--arch $(_CrfHelperArch)</_CrfHelperArchFlag>
+
+    <!-- The geometry kernel is per RID outright (tools/geometry-worker/ensure-built.*): the cache holds
+         one OCCT build per RID. Empty for a plain `dotnet build`, which means this machine's own. -->
+    <_CrfKernelRidFlag Condition="'$(RuntimeIdentifier)' != ''">--rid $(RuntimeIdentifier)</_CrfKernelRidFlag>
 
     <!--
       ...AND THE OSDI WORKER NEEDS THE TARGET OS TOO, WHICH IS WHY IT HAS ITS OWN PAIR.

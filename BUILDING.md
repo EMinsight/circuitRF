@@ -155,6 +155,44 @@ Some things worth knowing before they surprise you:
 
 To package deliberately without them, set `CRF_ALLOW_NO_DEVICE_WORKER=1`.
 
+<a id="geometry-kernel"></a>
+
+### The geometry kernel — OpenCASCADE, built once per machine and architecture
+
+Booleans, fillets, chamfers and STEP import and export run in `tools/geometry-worker`, a small C++
+program linked against **Open CASCADE Technology** (LGPL-2.1 with the Open CASCADE Exception — see
+`THIRD-PARTY-NOTICES.md`). It ships in every installer as one folder, `geometry-kernel/`, beside the
+application. **No OCCT file is ever in this repository**: the recipe in
+`tools/geometry-worker/occt/` fetches upstream's archive, checks its SHA-256, and builds it into a
+per-user cache outside the working tree:
+
+```bash
+tools/geometry-worker/build.sh                   # macOS / Linux, this machine's architecture
+tools/geometry-worker/build.sh --rid osx-x64     # macOS builds either architecture
+```
+```powershell
+tools\geometry-worker\build.cmd                  # Windows (--rid win-arm64 / win-x86 for the others)
+```
+
+It needs CMake and a C++ compiler (Xcode's command line tools; `build-essential`; Visual Studio 2022
+or later with the C++ workload), about **5 minutes per architecture** the first time on a 10-core
+machine (brief 61 measured 4 m 54 s on an M4), and ~1.5 GB of build tree you may delete afterwards.
+The cache is `~/.circuitRF-build/occt/<version>/<rid>/` (`%LOCALAPPDATA%\circuitRF-build\...` on
+Windows; `CRF_OCCT_CACHE` moves it; no space in the path).
+
+- **`dotnet build` never builds OCCT.** It compiles the worker against the cache (seconds) and copies
+  it into `bin/`; with an empty cache it prints one warning and succeeds, and circuitRF runs with the
+  kernel reported absent. It never downloads anything. Skip it with `-p:CrfSkipGeometryWorker=true`.
+- **The packaging scripts build it** for every architecture they ship, with `--strict`, and **fail at
+  the end** when an architecture listed in `recipe.env`'s `KERNEL_RIDS` came out without it. Set
+  `CRF_ALLOW_NO_KERNEL=1` to package without it knowingly (nothing is fetched then).
+- **Windows x86 does not ship it** until brief 61's Q13 is answered; `build-windows.ps1` prints the
+  sentence for that installer's release notes.
+- **Linux arm64 from an x64 machine** needs a CMake toolchain file named by `CRF_OCCT_TOOLCHAIN_FILE`,
+  or a run on an arm64 machine.
+
+`tools/geometry-worker/README.md` has the protocol, the recipe and the licence position.
+
 ## The command line is run out of every build
 
 The installed `circuitRF` executable is also the command line (`circuitrf check .`,
@@ -737,8 +775,14 @@ staged. Quit and relaunch — that relaunch is what the matrix is actually testi
    would put the private key on three machines instead of one. What the build scripts *do* is end by
    stating whether a release key is compiled in and therefore whether these artifacts can auto-update
    at all; `tests/Ui.Tests/PackagingScriptTests.cs` holds all three to it.
-8. Update the download table in `README.md` to the new version.
-9. Add the release notes and publish it. **One command, the same for either channel:**
+8. **The OCCT archive for this version is retained for the written offer.** Every release that
+   ships the geometry kernel makes the offer in `THIRD-PARTY-NOTICES.md` (LGPL-2.1 §6(c)): the exact
+   archive the recipe names — `OCCT-<tag>.tar.gz` in the kernel cache, whose SHA-256 is in
+   `tools/geometry-worker/occt/recipe.env` — is kept **outside this repository** for at least three
+   years after the last release that includes that version. It is never attached to a release and
+   never committed.
+9. Update the download table in `README.md` to the new version.
+10. Add the release notes and publish it. **One command, the same for either channel:**
 
    ```bash
    gh release edit <version> --draft=false

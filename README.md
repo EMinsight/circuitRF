@@ -399,13 +399,18 @@ circuitRF's own source code is released under the **[MIT License](LICENSE)**. A 
 superset, if any, layers on through a clean extension boundary without forking the core.
 
 The distribution also contains third-party components under their own terms, inventoried in
-**[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)**. Two of them are copyleft and worth knowing about
+**[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)**. Three of them are copyleft and worth knowing about
 before you redistribute a build:
 
 - **[CSparse.NET](https://github.com/wo80/CSparse.NET)** (sparse complex LU, used throughout the engine)
   is **LGPL-2.1-only**. The packaged installers link it statically, so LGPL §6's relink requirement
   applies — satisfied here by publishing complete source, since anyone can substitute a modified
   CSparse.NET and rebuild. If you redistribute circuitRF binaries, that obligation travels with them.
+- **[Open CASCADE Technology](https://github.com/Open-Cascade-SAS/OCCT)** (the geometry kernel behind
+  booleans, fillets and STEP, run by `tools/geometry-worker`) is **LGPL-2.1-only with the Open CASCADE
+  Exception**. The installers carry it unmodified as shared libraries in one replaceable folder, and
+  its source is available under the written offer in the notices. The repository holds none of it:
+  building from source fetches it with the recipe in `tools/geometry-worker/occt/`.
 - **[`tools/osdi-worker/osdi.h`](tools/osdi-worker/osdi.h)** is **MPL-2.0** (© 2022 SemiMod GmbH, from
   ngspice). MPL is copyleft at file scope: the file may live inside an MIT project, but it stays MPL
   and its header notice must not be removed.
@@ -420,6 +425,7 @@ rule on learning from GPL simulators without copying them.
 - **[Avalonia](https://avaloniaui.net/)** (cross-platform UI — MIT)
 - **[SkiaSharp](https://github.com/mono/SkiaSharp)** (2D rendering — MIT)
 - **[CSparse.NET](https://github.com/wo80/CSparse.NET)** (sparse complex LU — **LGPL-2.1-only**)
+- **[Open CASCADE Technology](https://github.com/Open-Cascade-SAS/OCCT)** (geometry kernel — **LGPL-2.1-only** with the Open CASCADE Exception 1.0); circuitRF uses facilities provided by Open CASCADE Technology
 - **[NumFlat](https://github.com/sinshu/numflat)** (dense linear algebra — MIT)
 - **[FftFlat](https://github.com/sinshu/FftFlat)** (FFT — MIT)
 - **[Clipper2](https://github.com/AngusJohnson/Clipper2)** (integer-coordinate polygon clipping and offsetting, used by the layout editor — Boost Software License)

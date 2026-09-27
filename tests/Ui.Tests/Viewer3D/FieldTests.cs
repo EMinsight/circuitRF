@@ -180,6 +180,7 @@ public sealed class FieldTests(ITestOutputHelper output)
         var probes = ProbeCentres(Path.Combine(dir, PalaceConfigWriter.ConfigFile));
         var table = ReadProbeE(Path.Combine(dir, "postpro", "probe-E.csv"));
         double worst = 0, worstDrawn = 0;
+        Span<double> ch = stackalloc double[6];   // one buffer, refilled by every Sample below
         foreach (var sol in run.Solutions)
         {
             int mode = sol.Index + 1;
@@ -190,7 +191,6 @@ public sealed class FieldTests(ITestOutputHelper output)
             for (int p = 0; p < probes.Count; p++)
             {
                 var (x, y, z) = probes[p];
-                Span<double> ch = stackalloc double[6];
                 Assert.True(sampler.Sample(e, x, y, z, ch), $"probe {p + 1} not located");
                 var palace = table[mode][p];
                 double err = VecDiff(ch, palace) / Norm(palace);

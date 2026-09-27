@@ -79,8 +79,9 @@ public class PackagingScriptTests
     /// each helper, a build step conditioned on Windows and one conditioned off it.</para>
     /// </summary>
     [Theory]
-    [InlineData("senior-worker", "ensure-built.sh", "ensure-built.cmd")]
-    [InlineData("osdi-worker",   "build.sh",        "build.cmd")]
+    [InlineData("senior-worker",   "ensure-built.sh", "ensure-built.cmd")]
+    [InlineData("osdi-worker",     "build.sh",        "build.cmd")]
+    [InlineData("geometry-worker", "ensure-built.sh", "ensure-built.cmd")]
     public void EveryHelper_IsBuiltOnWindowsToo(string tool, string posixScript, string windowsScript)
     {
         Assert.True(File.Exists(RepoFile("tools", tool, posixScript)),   $"{tool}/{posixScript} is missing.");
@@ -1406,5 +1407,150 @@ public class PackagingScriptTests
         // The updater installs only app-<ver>/, so the uninstaller must ride inside it.
         Assert.Contains("cp \"${HERE}/install.sh\" \"${APPDIR}/install.sh\"",
                         File.ReadAllText(RepoFile("packaging", "linux", "build-linux.sh")), StringComparison.Ordinal);
+    }
+
+    // ── The geometry kernel (brief-em3d-62) ──────────────────────────────────────────────────────
+
+    private static string Code(string text) =>
+        string.Join("\n", text.Split('\n').Where(l => !l.TrimStart().StartsWith("#", StringComparison.Ordinal)
+                                                  && !l.TrimStart().StartsWith("rem ", StringComparison.OrdinalIgnoreCase)));
+
+    /// <summary>
+    /// <b>The kernel is published as ONE folder, and the folder is what the build scripts stage into</b>
+    /// (R-em3d62-3e). The worker's library closure is read from the binaries at build time, so no file
+    /// list exists to forget a library in; what can go wrong is a script staging somewhere the publish
+    /// glob does not reach, or a publish that flattens the folder and so breaks the worker's run path.
+    /// Both folder names are read from the scripts and compared with the <c>.csproj</c>.
+    /// </summary>
+    [Fact]
+    public void TheGeometryKernelFolder_IsWhatTheScriptsStage_AndIsPublishedWhole()
+    {
+        string sh  = File.ReadAllText(RepoFile("tools", "geometry-worker", "ensure-built.sh"));
+        string cmd = File.ReadAllText(RepoFile("tools", "geometry-worker", "ensure-built.cmd"));
+        string project = File.ReadAllText(RepoFile("src", "Ui", "CircuitRF.Ui.csproj"));
+
+        string shFolder  = Regex.Match(sh,  @"stage=""\$work/([A-Za-z0-9._-]+)""").Groups[1].Value;
+        string cmdFolder = Regex.Match(cmd, @"set ""stage=%work%\\([A-Za-z0-9._-]+)""").Groups[1].Value;
+        Assert.Equal("geometry-kernel", shFolder);
+        Assert.Equal(shFolder, cmdFolder);
+        Assert.DoesNotContain('.', shFolder);   // codesign reads a dotted directory under Contents/MacOS as a bundle
+
+        // Every file the POSIX staging copies lands in the staged folder.
+        foreach (System.Text.RegularExpressions.Match m in Regex.Matches(Code(sh), @"^\s*cp\s+(?:-\w+\s+)*""[^""]+""\s+""\$(\w+)", RegexOptions.Multiline))
+            Assert.True(m.Groups[1].Value is "stage" or "worker" or "dest",
+                        $"ensure-built.sh copies a product somewhere other than the staged folder: {m.Value.Trim()}");
+
+        Assert.Contains($"<_CrfGeometryKernel Include=\"$(OutDir){shFolder}/**/*\" />", project, StringComparison.Ordinal);
+        Assert.Contains($"<RelativePath>{shFolder}/%(RecursiveDir)%(Filename)%(Extension)</RelativePath>", project, StringComparison.Ordinal);
+        // ...and every consumer looks for the worker by the same path.
+        foreach (var consumer in new[] { RepoFile("tools", "CliSmoke", "Program.cs"), RepoFile("src", "Ui", "GeometryKernelNotice.cs") })
+            Assert.Contains($"\"{shFolder}\"", File.ReadAllText(consumer), StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// <b><c>dotnet build</c> reads the kernel cache and nothing else</b> (R-em3d62-3f): circuitRF builds,
+    /// tests and runs on a machine with no OCCT, no network and no C++ toolchain. Only
+    /// <c>build.sh</c>/<c>build.cmd</c>, run deliberately, may fetch anything — so the scripts a build runs,
+    /// and the build step itself, name no download tool and not the recipe's URL.
+    /// </summary>
+    [Fact]
+    public void TheBuildsKernelStep_NeverDownloads()
+    {
+        string project = File.ReadAllText(RepoFile("src", "Ui", "CircuitRF.Ui.csproj"));
+        string target = Regex.Match(project, @"<Target Name=""EnsureGeometryWorker""[\s\S]*?</Target>").Value;
+        Assert.NotEmpty(target);
+        string url = File.ReadAllLines(RepoFile("tools", "geometry-worker", "occt", "recipe.env"))
+                         .Single(l => l.StartsWith("OCCT_URL=", StringComparison.Ordinal))["OCCT_URL=".Length..];
+
+        foreach (var (name, text) in new[]
+                 {
+                     ("ensure-built.sh",  File.ReadAllText(RepoFile("tools", "geometry-worker", "ensure-built.sh"))),
+                     ("ensure-built.cmd", File.ReadAllText(RepoFile("tools", "geometry-worker", "ensure-built.cmd"))),
+                     ("the EnsureGeometryWorker target", target),
+                 })
+        {
+            foreach (var tool in new[] { "curl", "wget", "Invoke-WebRequest", "Start-BitsTransfer", "OCCT_URL", url })
+                Assert.False(text.Contains(tool, StringComparison.OrdinalIgnoreCase),
+                             $"{name} names '{tool}'. The build's kernel step must read the cache and nothing else; "
+                             + "only tools/geometry-worker/build.sh / build.cmd may fetch OCCT.");
+        }
+        Assert.Contains("CrfSkipGeometryWorker", target, StringComparison.Ordinal);
+        Assert.Contains("ContinueOnError=\"WarnAndContinue\"", target, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// <b>The worker finds OCCT beside itself, never in the cache</b> (R-em3d62-4a). A worker that found
+    /// its libraries only because the build cache was on the machine would pass every developer's run and
+    /// fail every user's; the run path is therefore relative on every platform and set on the build-tree
+    /// binary too. Read from the build description, which needs no toolchain.
+    /// </summary>
+    [Fact]
+    public void TheGeometryWorker_IsLinkedWithARelativeSearchPath_OnEveryPlatform()
+    {
+        string cmake  = Code(File.ReadAllText(RepoFile("tools", "geometry-worker", "CMakeLists.txt")));
+        string recipe = File.ReadAllText(RepoFile("tools", "geometry-worker", "occt", "recipe.env"));
+        string cmd    = File.ReadAllText(RepoFile("tools", "geometry-worker", "ensure-built.cmd"));
+
+        Assert.Matches(@"if\(APPLE\)[\s\S]*?BUILD_WITH_INSTALL_RPATH ON[\s\S]*?INSTALL_RPATH ""@loader_path""[\s\S]*?elseif\(UNIX\)", cmake);
+        Assert.Matches(@"elseif\(UNIX\)[\s\S]*?BUILD_WITH_INSTALL_RPATH ON[\s\S]*?INSTALL_RPATH ""\$ORIGIN""[\s\S]*?--enable-new-dtags", cmake);
+        Assert.DoesNotContain("BUILD_RPATH", cmake.Replace("BUILD_WITH_INSTALL_RPATH", ""), StringComparison.Ordinal);
+        // Linux: each OCCT library finds its siblings too - an ELF's RUNPATH covers only its own dependencies.
+        Assert.Matches(@"(?m)^OCCT_CMAKE_OPTIONS_LINUX=.*-DCMAKE_INSTALL_RPATH=\$ORIGIN", recipe);
+        // Windows: the DLLs are copied beside the executable, which the loader searches first.
+        Assert.Contains(@"(TK*.dll) do copy /Y ""%%D"" ""%stage%\""", cmd, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// <b>Each packaging script builds the kernel, smoke-tests it, and fails without it</b> (R-em3d62-5a/b/e):
+    /// the build step only warns, which is right for a build and wrong for a release.
+    /// </summary>
+    [Theory]
+    [InlineData("packaging/macos/build-macos.sh",      "tools/geometry-worker/build.sh")]
+    [InlineData("packaging/linux/build-linux.sh",      "tools/geometry-worker/build.sh")]
+    [InlineData("packaging/windows/build-windows.ps1", "tools\\geometry-worker\\build.cmd")]
+    public void EachPlatformScript_BuildsTheKernelStrictly_AndFailsWithoutIt(string script, string builder)
+    {
+        string text = Code(File.ReadAllText(RepoFile(script.Split('/'))));
+        Assert.Contains(builder, text, StringComparison.Ordinal);
+        Assert.Contains("--strict", text, StringComparison.Ordinal);
+        Assert.Contains("KERNEL_RIDS", text, StringComparison.Ordinal);            // D2 is read, not restated
+        Assert.Contains("CRF_ALLOW_NO_KERNEL", text, StringComparison.Ordinal);    // the one escape hatch
+        Assert.Contains("--kernel", text, StringComparison.Ordinal);               // CliSmoke's fourth check
+        Assert.Matches(@"exit 1", text);
+    }
+
+    /// <summary>
+    /// <b>macOS signs the kernel inside-out</b> (R-em3d62-5c): every library and the worker individually,
+    /// then a re-seal that is not <c>--deep</c>. harmonicaRF and wBond do not load it, so they drop it.
+    /// </summary>
+    [Fact]
+    public void MacBundles_SignTheKernelInsideOut_OrDropIt()
+    {
+        string circuit = Code(File.ReadAllText(RepoFile("src", "Ui", "bundleForMacOS.sh"))).Replace("\\\n", " ");
+        int kernel = circuit.IndexOf("geometry-kernel", StringComparison.Ordinal);
+        Assert.True(kernel >= 0, "bundleForMacOS.sh never signs the geometry kernel");
+        string after = circuit[kernel..];
+        Assert.Matches(@"for lib in ""\$KERNEL_DIR""/\*\.dylib[\s\S]*?codesign --force --sign", after);
+        Assert.Matches(@"codesign[^\n]*""\$KERNEL_DIR/geometry-worker""", after);
+        Assert.Contains(after.Split('\n'), l => l.Contains("codesign", StringComparison.Ordinal)
+                                               && l.Contains("BUNDLE_DIR", StringComparison.Ordinal)
+                                               && !l.Contains("--deep", StringComparison.Ordinal));
+
+        foreach (var other in new[] { "bundleForHarmonicaMacOS.sh", "bundleForWBondMacOS.sh" })
+            Assert.Contains("rm -rf \"${MAC_OS_DIR}/geometry-kernel\"", File.ReadAllText(RepoFile("src", "Ui", other)), StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// <b>The notices travel with every installer</b> (R-em3d62-6): the written offer in
+    /// THIRD-PARTY-NOTICES.md reaches a binary's recipient only if the binary carries it, so the file and
+    /// the licence texts are copied beside the executable, into the tree all three platforms package.
+    /// </summary>
+    [Fact]
+    public void TheNoticesAndLicenceTexts_AreCopiedIntoTheOutput()
+    {
+        string project = File.ReadAllText(RepoFile("src", "Ui", "CircuitRF.Ui.csproj"));
+        Assert.Matches(@"<None Include=""[^""]*\.\./\.\./THIRD-PARTY-NOTICES\.md[^""]*"">\s*<Link>%\(Filename\)%\(Extension\)</Link>\s*<CopyToOutputDirectory>", project);
+        Assert.Matches(@"<None Include=""\.\./\.\./licenses/\*\.txt"">\s*<Link>licenses/%\(Filename\)%\(Extension\)</Link>\s*<CopyToOutputDirectory>", project);
+        Assert.True(File.Exists(RepoFile("licenses", "OCCT-exception-1.0.txt")));
     }
 }

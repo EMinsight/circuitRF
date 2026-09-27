@@ -50,6 +50,13 @@
                 </TextBlock>
 
                 <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="18">
+                    <Run FontWeight="SemiBold">Open CASCADE Technology</Run>
+                    <Run> — Geometry kernel behind booleans, fillets and STEP. © Matra Datavision and OPEN CASCADE SAS. LGPL v2.1 only, with the Open CASCADE Exception 1.0.</Run>
+                    <LineBreak/>
+                    <Run Foreground="{DynamicResource SystemBaseMediumColor}" FontSize="11">circuitRF uses facilities provided by Open CASCADE Technology. Its libraries ship unmodified and dynamically linked, in the geometry-kernel folder beside the application, where a modified build can replace them. The source is available under the written offer in THIRD-PARTY-NOTICES.md.</Run>
+                </TextBlock>
+
+                <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="18">
                     <Run FontWeight="SemiBold">NumFlat</Run>
                     <Run> — Dense linear algebra for .NET. MIT License.</Run>
                 </TextBlock>
@@ -113,7 +120,7 @@
 
                 <TextBlock TextWrapping="Wrap" FontSize="11" LineHeight="16" Margin="0,14,0,0"
                            Foreground="{DynamicResource SystemBaseMediumColor}">
-                    <Run>Full terms for every component above, including redistribution obligations, are in THIRD-PARTY-NOTICES.md at the root of the circuitRF repository.</Run>
+                    <Run>Full terms for every component above, including redistribution obligations, are in THIRD-PARTY-NOTICES.md, which is installed beside the application and is at the root of the circuitRF repository.</Run>
                 </TextBlock>
 
             </StackPanel>

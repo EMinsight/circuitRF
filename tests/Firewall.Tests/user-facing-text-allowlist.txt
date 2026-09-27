@@ -955,3 +955,10 @@ src/Design/Layout/MaterialLibraryPersistence.cs|'{path}' already exists. Use Add
 src/Design/Layout/MaterialLibraryPersistence.cs|.cmat FormatVersion {file.FormatVersion} is newer than this build reads 
 src/Design/Layout/MaterialLibraryPersistence.cs|Failed to deserialize .cmat file.
 src/Design/Layout/MaterialLibraryPersistence.cs|not a circuitRF material library: a .cmat is a JSON object with a FormatVersion and a Materials list.
+
+# ── An internal invariant, not a refusal (EM3D brief 51, allow-listed 2026-09-27) ────────
+# C3dExpressionText.Rename re-parses its own token rewrite to prove the reference moved. The caller,
+# C3dVariableEdits.Rename, has already refused every case a user can cause (a bad name, a duplicate,
+# a parameter clash) as a returned sentence; this throw fires only if the rewrite itself is wrong,
+# and stops the document edit rather than letting a silently half-renamed expression through.
+src/Design/ThreeD/C3dVariableEdits.cs|Renaming '{from}' to '{to}' in '{expression}' did not rename the reference.

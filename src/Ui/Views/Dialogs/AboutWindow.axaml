@@ -3,7 +3,7 @@
         x:Class="CircuitRF.Ui.Views.Dialogs.AboutWindow"
         Title="About circuitRF"
         Width="400"
-        Height="364"
+        Height="420"
         CanResize="False"
         WindowStartupLocation="CenterOwner"
         ShowInTaskbar="False">
@@ -64,7 +64,20 @@
                              FontSize="12"
                              HorizontalAlignment="Center"
                              Opacity="0.7"
-                             Margin="0,2,0,24"/>
+                             Margin="0,2,0,8"/>
+
+        <!-- THE PROMINENT NOTICE the Open CASCADE Exception asks for (brief-em3d-62 R-em3d62-6d). Filled
+             in by the code-behind from the geometry worker's own version report, so it names the version
+             this installation actually carries - and says the kernel is absent, rather than naming a
+             library that is not there, when it is. -->
+        <SelectableTextBlock x:Name="GeometryKernelText"
+                             Text="Geometry kernel: checking..."
+                             FontSize="11"
+                             HorizontalAlignment="Center"
+                             Opacity="0.6"
+                             TextWrapping="Wrap"
+                             TextAlignment="Center"
+                             Margin="0,0,0,24"/>
 
         <!-- Action row -->
         <StackPanel Orientation="Horizontal"
@@ -75,6 +88,13 @@
                     HorizontalContentAlignment="Center"
                     VerticalContentAlignment="Center"
                     Click="OnAcknowledgmentsClicked"
+                    FontSize="12"/>
+
+            <Button x:Name="NoticesButton"
+                    Content="Third-Party Notices"
+                    HorizontalContentAlignment="Center"
+                    VerticalContentAlignment="Center"
+                    Click="OnNoticesClicked"
                     FontSize="12"/>
 
             <Button Content="OK"

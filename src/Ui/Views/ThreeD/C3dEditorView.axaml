@@ -583,8 +583,8 @@
                         </ItemsControl>
                         <TextBlock Text="Add a VAR" FontSize="11" Opacity="0.7"/>
                         <Grid ColumnDefinitions="70,4,*,4,70">
-                            <TextBox Grid.Column="0" Text="{Binding NewName}" Watermark="name"/>
-                            <TextBox Grid.Column="2" Text="{Binding NewExpression}" Watermark="value or expression"/>
+                            <TextBox Grid.Column="0" Text="{Binding NewName}" PlaceholderText="name"/>
+                            <TextBox Grid.Column="2" Text="{Binding NewExpression}" PlaceholderText="value or expression"/>
                             <ComboBox Grid.Column="4" ItemsSource="{x:Static t3:C3dVariablesViewModel.UnitChoices}" SelectedItem="{Binding NewUnit}" ItemTemplate="{StaticResource LowerUnit}"/>
                         </Grid>
                         <Button Content="Add" FontSize="11" Click="OnVariableAdd"/>

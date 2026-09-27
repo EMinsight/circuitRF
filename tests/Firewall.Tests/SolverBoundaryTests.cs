@@ -171,7 +171,7 @@ public sealed class SolverBoundaryTests : IDisposable
         return path;
     }
 
-    private static IEnumerable<string> ProjectFiles()
+    internal static IEnumerable<string> ProjectFiles()
     {
         string root = RepoRoot();
         foreach (string f in (string[])["Directory.Build.props", "Directory.Build.targets", "Directory.Packages.props"])
@@ -184,7 +184,7 @@ public sealed class SolverBoundaryTests : IDisposable
     /// <summary>Every circuitRF assembly this test can see: the ones copied beside it (every project but
     /// src/Ui, which this project may not reference), plus src/Ui's own from its build output when
     /// there is one.</summary>
-    private static IEnumerable<string> CircuitRfAssemblies()
+    internal static IEnumerable<string> CircuitRfAssemblies()
     {
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (string f in Directory.EnumerateFiles(AppContext.BaseDirectory, "*.dll"))
@@ -211,7 +211,7 @@ public sealed class SolverBoundaryTests : IDisposable
     /// untracked state under <c>tools/</c> (an emulator prefix whose drive links reach the whole disk),
     /// and a scan that followed it would read — or be refused — files that are not the tree.
     /// </summary>
-    private static IEnumerable<string> SourceFiles(string root, string pattern)
+    internal static IEnumerable<string> SourceFiles(string root, string pattern)
     {
         var skip = new[] { "bin", "obj", "venv", "node_modules", "TestResults" };
         var stack = new Stack<string>([root]);
@@ -247,8 +247,11 @@ internal static class Boundary
     /// <summary>The programs on the far side of the wall. Palace is on it for ParMETIS (§2), not for GPL.</summary>
     private static readonly Regex Named = new(@"gmsh|openems|csxcad|palace", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-    public static IReadOnlyList<string> ProjectFileViolations(IEnumerable<string> files)
+    /// <summary><paramref name="named"/> defaults to the solvers; <see cref="OcctBoundaryTests"/> passes
+    /// OpenCASCADE's names to the same scanner.</summary>
+    public static IReadOnlyList<string> ProjectFileViolations(IEnumerable<string> files, Regex? named = null)
     {
+        named ??= Named;
         var item = new Regex(@"<(\w+)\b[^>]*\b(?:Include|Update)\s*=\s*""([^""]*)""", RegexOptions.Compiled);
         var hint = new Regex(@"<HintPath>([^<]*)</HintPath>", RegexOptions.Compiled);
         var found = new List<string>();
@@ -256,17 +259,18 @@ internal static class Boundary
         {
             string text = File.ReadAllText(f);
             foreach (Match m in item.Matches(text))
-                if (Named.IsMatch(m.Groups[2].Value)) found.Add($"{f}: <{m.Groups[1].Value} Include=\"{m.Groups[2].Value}\">");
+                if (named.IsMatch(m.Groups[2].Value)) found.Add($"{f}: <{m.Groups[1].Value} Include=\"{m.Groups[2].Value}\">");
             foreach (Match m in hint.Matches(text))
-                if (Named.IsMatch(m.Groups[1].Value)) found.Add($"{f}: <HintPath>{m.Groups[1].Value}</HintPath>");
+                if (named.IsMatch(m.Groups[1].Value)) found.Add($"{f}: <HintPath>{m.Groups[1].Value}</HintPath>");
         }
         return found;
     }
 
     /// <summary>A managed assembly's references — other assemblies, and the native modules its P/Invokes
     /// name (<c>ModuleReferences</c>). A file that is not a managed assembly is not this rule's.</summary>
-    public static IReadOnlyList<string> AssemblyViolations(IEnumerable<string> dlls)
+    public static IReadOnlyList<string> AssemblyViolations(IEnumerable<string> dlls, Regex? named = null)
     {
+        named ??= Named;
         var found = new List<string>();
         foreach (string dll in dlls)
         {
@@ -277,12 +281,12 @@ internal static class Boundary
             foreach (var h in md.AssemblyReferences)
             {
                 string name = md.GetString(md.GetAssemblyReference(h).Name);
-                if (Named.IsMatch(name)) found.Add($"{dll}: references assembly {name}");
+                if (named.IsMatch(name)) found.Add($"{dll}: references assembly {name}");
             }
             for (int row = 1; row <= md.GetTableRowCount(TableIndex.ModuleRef); row++)
             {
                 string name = md.GetString(md.GetModuleReference(MetadataTokens.ModuleReferenceHandle(row)).Name);
-                if (Named.IsMatch(name)) found.Add($"{dll}: imports native module {name}");
+                if (named.IsMatch(name)) found.Add($"{dll}: imports native module {name}");
             }
         }
         return found;
@@ -304,8 +308,9 @@ internal static class Boundary
         return found;
     }
 
-    public static IReadOnlyList<string> InteropViolations(IEnumerable<string> csFiles)
+    public static IReadOnlyList<string> InteropViolations(IEnumerable<string> csFiles, Regex? named = null)
     {
+        named ??= Named;
         var literal = new Regex(@"(?:DllImport|LibraryImport)\s*\(\s*""([^""]*)""|NativeLibrary\.(?:Try)?Load\s*\(\s*""([^""]*)""");
         var byName  = new Regex(@"(?:DllImport|LibraryImport)\s*\(\s*(\w+)\s*[,)]");
         var found = new List<string>();
@@ -315,13 +320,13 @@ internal static class Boundary
             foreach (Match m in literal.Matches(text))
             {
                 string lib = m.Groups[1].Success ? m.Groups[1].Value : m.Groups[2].Value;
-                if (Named.IsMatch(lib)) found.Add($"{f}: {m.Value}");
+                if (named.IsMatch(lib)) found.Add($"{f}: {m.Value}");
             }
             foreach (Match m in byName.Matches(text))
             {
                 // [DllImport(Lib)] with `const string Lib = "…"` in the same file.
                 var constant = Regex.Match(text, $@"\bconst\s+string\s+{Regex.Escape(m.Groups[1].Value)}\s*=\s*""([^""]*)""");
-                if (constant.Success && Named.IsMatch(constant.Groups[1].Value)) found.Add($"{f}: {m.Value} = \"{constant.Groups[1].Value}\"");
+                if (constant.Success && named.IsMatch(constant.Groups[1].Value)) found.Add($"{f}: {m.Value} = \"{constant.Groups[1].Value}\"");
             }
         }
         return found;

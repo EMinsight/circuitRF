@@ -4,8 +4,8 @@ circuitRF's own source code is released under the MIT License (see [`LICENSE`](L
 covers the code in this repository and nothing else. The distribution — and the installers built from
 it — also contains third-party components under their own terms, listed here.
 
-**Two of these are copyleft**, one weakly and one at file scope. Neither restricts circuitRF's own
-MIT licensing, but both carry obligations that travel with any binary you redistribute, so they are
+**Three of these are copyleft**, two weakly and one at file scope. None restricts circuitRF's own
+MIT licensing, but each carries obligations that travel with any binary you redistribute, so they are
 listed first and in full.
 
 ---
@@ -43,7 +43,124 @@ component can replace it without touching the rest of the engine.
 
 ---
 
-## 2. OSDI header — MPL-2.0
+## 2. Open CASCADE Technology — LGPL-2.1-only, with the Open CASCADE Exception 1.0
+
+| | |
+|---|---|
+| **Component** | Open CASCADE Technology (OCCT) 8.0.1 — 25 of its toolkits, as shared libraries |
+| **Copyright** | © 1990–2026 Matra Datavision and OPEN CASCADE SAS |
+| **Licence** | GNU Lesser General Public License, version 2.1 **only**, with the **Open CASCADE Exception 1.0** |
+| **Licence text** | [`licenses/LGPL-2.1.txt`](licenses/LGPL-2.1.txt) and [`licenses/OCCT-exception-1.0.txt`](licenses/OCCT-exception-1.0.txt) |
+| **Source** | https://github.com/Open-Cascade-SAS/OCCT — tag `V8_0_1`; the build is described in [`tools/geometry-worker/occt/RECIPE.md`](tools/geometry-worker/occt/RECIPE.md) |
+| **Used by** | `tools/geometry-worker` — the geometry kernel (booleans, fillets and chamfers, STEP import and export), a separate program circuitRF starts |
+
+**circuitRF uses facilities provided by Open CASCADE Technology.** That sentence is the prominent notice
+the Open CASCADE Exception asks for: the geometry worker's object code includes material from OCCT's
+header files, which the exception lets circuitRF distribute on terms of its own choosing — the MIT
+License — provided this notice is given. It is also shown in circuitRF's **About** box.
+
+### What this means if you redistribute a circuitRF binary
+
+Every circuitRF installer that includes the geometry kernel carries OCCT's libraries **unmodified**
+and **dynamically linked**, in one folder beside the application — `geometry-kernel/` (inside the
+`.app`, `Contents/MacOS/geometry-kernel/`). No managed part of circuitRF references them; only the worker
+program in that folder loads them. LGPL-2.1 §6 requires that whoever receives the combined work be able
+to substitute a modified OCCT: replace the libraries in that folder with a build of your own from the
+same version (the recipe says how the shipped ones were built) and the worker loads yours. On macOS,
+replacing a signed library breaks the application's signature; re-sign it with your own identity.
+LGPL-2.1 asks for nothing more there — it has no "installation information" clause.
+
+**The corresponding source is available under this written offer** (LGPL-2.1 §6(c)):
+
+> *circuitRF binaries include Open CASCADE Technology 8.0.1, unmodified, as shared libraries. For at
+> least three years after the last circuitRF release that includes this version, the circuitRF project will
+> give anyone who received such a binary a complete machine-readable copy of the corresponding source code
+> of Open CASCADE Technology 8.0.1, for a charge no more than the cost of providing it. To request it,
+> open an issue on the circuitRF project's issue tracker titled "OCCT source request".*
+
+As a convenience, and not as the fulfilment of that offer: the source is upstream's tag `V8_0_1`,
+whose archive (`https://github.com/Open-Cascade-SAS/OCCT/archive/refs/tags/V8_0_1.tar.gz`) has SHA-256
+`0d6913eae4bcc09a3653ceced6dda1aec11c35a1513d4c06762c9b002092c68a`. circuitRF's own repository contains
+no OCCT source; building circuitRF from source fetches it with the recipe.
+
+If you redistribute circuitRF binaries yourself, you inherit these obligations: ship this notice and both
+licence texts, keep the libraries replaceable, and make the corresponding source available yourself —
+accompanying the binaries, or by a written offer of your own.
+
+*Why an offer rather than a published archive.* Eight files compiled into OCCT's `TKGeomBase` toolkit
+carry a header that contradicts the licence under which OCCT publishes them; upstream has been asked to
+correct it ([OCCT#1564](https://github.com/Open-Cascade-SAS/OCCT/issues/1564)). Until that is answered,
+circuitRF republishes none of OCCT's source files and provides the source on request.
+
+### Notices OCCT carries for code of other origin
+
+These files are compiled into the shipped libraries and carry licences of their own, reproduced here
+as each requires.
+
+**`strtod`** (in `TKernel`, adapted by OCCT from netlib):
+
+> The author of this software is David M. Gay.
+>
+> Copyright (c) 1991, 2000, 2001 by Lucent Technologies.
+>
+> Permission to use, copy, modify, and distribute this software for any purpose without fee is hereby
+> granted, provided that this entire notice is included in all copies of any software which is or
+> includes a copy or modification of this software and in all copies of the supporting documentation
+> for such software.
+>
+> THIS SOFTWARE IS BEING PROVIDED "AS IS", WITHOUT ANY EXPRESS OR IMPLIED WARRANTY. IN PARTICULAR,
+> NEITHER THE AUTHOR NOR LUCENT MAKES ANY REPRESENTATION OR WARRANTY OF ANY KIND CONCERNING THE
+> MERCHANTABILITY OF THIS SOFTWARE OR ITS FITNESS FOR ANY PARTICULAR PURPOSE.
+
+**DELABELLA** (the Delaunay triangulator in `TKMesh`) — MIT License:
+
+> DELABELLA - Delaunay triangulation library
+> Copyright (C) 2018 GUMIX - Marcin Sokalski
+>
+> Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+> associated documentation files (the "Software"), to deal in the Software without restriction,
+> including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense,
+> and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so,
+> subject to the following conditions:
+>
+> The above copyright notice and this permission notice shall be included in all copies or substantial
+> portions of the Software.
+>
+> THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT
+> LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+> NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+> WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+> SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+**`FlexLexer.h`** (the interface of the STEP reader's scanner, in `TKDESTEP`):
+
+> Copyright (c) 1993 The Regents of the University of California. All rights reserved.
+>
+> This code is derived from software contributed to Berkeley by Kent Williams and Tom Epperly.
+>
+> Redistribution and use in source and binary forms, with or without modification, are permitted
+> provided that the following conditions are met:
+>
+> 1. Redistributions of source code must retain the above copyright notice, this list of conditions and
+>    the following disclaimer.
+> 2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions
+>    and the following disclaimer in the documentation and/or other materials provided with the
+>    distribution.
+>
+> Neither the name of the University nor the names of its contributors may be used to endorse or
+> promote products derived from this software without specific prior written permission.
+>
+> THIS SOFTWARE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, WITHOUT
+> LIMITATION, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+
+The STEP reader's parser (`step.tab.cxx`, in `TKDESTEP`) was generated by Bison. Its skeleton is GPL-3
+**with the Bison exception**, which permits distributing a larger work containing the parser skeleton
+under terms of one's choice; that is why a reader of OCCT's source finds "GPL" there, and it places no
+obligation on circuitRF or on anyone redistributing it.
+
+---
+
+## 3. OSDI header — MPL-2.0
 
 | | |
 |---|---|
@@ -64,7 +181,7 @@ written against the published ABI this header describes.
 
 ---
 
-## 3. Permissively licensed components
+## 4. Permissively licensed components
 
 None of these impose obligations beyond retaining their notices.
 
@@ -109,7 +226,7 @@ of any of these faces must be distributed under a different name. circuitRF embe
 
 ---
 
-## 4. Build-time downloads (not redistributed)
+## 5. Build-time downloads (not redistributed)
 
 `tools/macos-vmimage/build-image.sh` downloads pinned Alpine Linux and Ubuntu base images to
 construct the Linux guest that runs Linux-only device workers on macOS. Those images are fetched by
@@ -122,7 +239,7 @@ The same is true of the cross-compiler images `tools/senior-worker/build.sh` and
 
 ---
 
-## 5. Test data
+## 6. Test data
 
 `tests/RfCore.Tests/testdata/2SC5226A.s2p` is manufacturer-published small-signal S-parameter data
 for a commercially available transistor, used as a Touchstone parser fixture.

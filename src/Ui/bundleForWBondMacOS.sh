@@ -130,6 +130,17 @@ for _crf_other in circuitRF harmonicaRF wBond; do
     fi
 done
 
+# -- The geometry kernel is circuitRF's, not wBond's (brief-em3d-62 R-em3d62-5c) ---------------
+#
+# The shared publish tree carries geometry-kernel/ (OpenCASCADE and its worker) because circuitRF
+# ships it. wBond never loads it, so it is dropped rather than signed: shipping it here would put
+# ~56 MB of libraries in a bundle that does not use them, and an LGPL component in a package whose
+# notices were never written for it.
+if [ -d "${MAC_OS_DIR}/geometry-kernel" ]; then
+    echo "   dropping geometry-kernel (circuitRF's; wBond does not load it)"
+    rm -rf "${MAC_OS_DIR}/geometry-kernel"
+fi
+
 # -- Nothing under Contents/MacOS may have a DOT in a DIRECTORY name --------------------------
 #
 # codesign reads every directory under Contents/MacOS as code, and a dot in a directory's name

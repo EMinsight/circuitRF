@@ -187,6 +187,24 @@ dotnet build (Join-Path $root 'tools\CliSmoke') -c Release -v quiet
 if ($LASTEXITCODE -ne 0) { throw 'Could not build tools\CliSmoke.' }
 $smokeDll = Join-Path $root 'tools\CliSmoke\bin\Release\net10.0\CliSmoke.dll'
 
+# == The geometry kernel (brief-em3d-62 R-em3d62-5) ==============================
+#
+# OpenCASCADE behind tools\geometry-worker, in <publish>\geometry-kernel\. 'dotnet build' only ever
+# COPIES it out of the per-user cache and warns when the cache is empty - right for a build, wrong
+# for a release - so this script BUILDS it per architecture with --strict, and fails at the end when
+# an architecture that ships it (recipe.env's KERNEL_RIDS, decision D2) came out without it. The
+# first run on a machine builds OCCT itself: minutes per architecture, once, with Visual Studio's
+# C++ workload and CMake. An architecture D2 leaves out gets no kernel even if the cache has one.
+#
+# Set CRF_ALLOW_NO_KERNEL=1 to package without it on purpose (nothing is fetched or built then).
+$kernelRecipe = Join-Path $root 'tools\geometry-worker\occt\recipe.env'
+$recipeLines  = Get-Content -LiteralPath $kernelRecipe
+$occtVersion  = (($recipeLines | Where-Object { $_ -match '^OCCT_VERSION=' }) -replace '^OCCT_VERSION=', '')
+$kernelRids   = (($recipeLines | Where-Object { $_ -match '^KERNEL_RIDS=' }) -replace '^KERNEL_RIDS=', '') -split ' '
+$noKernel     = @()
+$kernelLeftOut = @()
+$kernelFail   = $false
+
 # Which of the three this machine can EXECUTE. Windows on ARM runs all three (x64 and x86 under
 # emulation); an x64 machine runs x64 and x86 but has no way to run arm64 at all.
 $hostArch = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
@@ -320,6 +338,15 @@ foreach ($Arch in $arches) {
 
 
     # == Publish ===================================================================
+
+    $shipsKernel = $kernelRids -contains $rid
+    if ($shipsKernel -and $env:CRF_ALLOW_NO_KERNEL -ne '1') {
+        Write-Host "Building the geometry kernel ($rid) ..."
+        & (Join-Path $root 'tools\geometry-worker\build.cmd') --strict --rid $rid
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "WARNING: the geometry kernel did not build for $rid (see above); reported again at the end."
+        }
+    }
 
     Write-Host "Publishing $rid ..."
     if (Test-Path $publish) { Remove-Item $publish -Recurse -Force }
@@ -462,6 +489,31 @@ To package deliberately without a working one: set CRF_ALLOW_NO_DEVICE_WORKER=1
     }
 
 
+    # == The geometry kernel, read back out of the publish tree ===================
+    #
+    # Like the OSDI worker's flat copy above: the PE header, not where the file came from, says which
+    # architecture it is - the cache holds one OCCT build per RID and a stale build directory could
+    # hold another. An architecture D2 leaves out loses the folder here, so the package matches the
+    # decision whatever this machine's cache holds.
+    $kernelDir    = Join-Path $publish 'geometry-kernel'
+    $kernelWorker = Join-Path $kernelDir 'geometry-worker.exe'
+    if (Test-Path $kernelWorker) {
+        $wantKernel = switch ($Arch) { 'arm64' { 0xAA64 } 'x86' { 0x014C } default { 0x8664 } }
+        if ((Get-PeMachine $kernelWorker) -ne $wantKernel) {
+            Write-Host "WARNING: the geometry worker in publish\$rid is not a $Arch binary; leaving the kernel out."
+            Remove-Item $kernelDir -Recurse -Force
+        }
+    }
+    if (-not $shipsKernel -and (Test-Path $kernelDir)) {
+        Write-Host "NOTE: $rid is not in recipe.env's KERNEL_RIDS; leaving the geometry kernel out."
+        Remove-Item $kernelDir -Recurse -Force
+    }
+    if (-not $shipsKernel) { $kernelLeftOut += $Arch }
+    if ($shipsKernel -and -not (Test-Path $kernelWorker)) { $noKernel += $Arch }
+    $kernelSmoke = if (Test-Path $kernelWorker) { @('--kernel', $occtVersion) }
+                   elseif ($shipsKernel)       { @('--no-kernel', 'built without it; reported at the end') }
+                   else                        { @('--no-kernel', "not shipped on $rid") }
+
     # == The command line, run out of THIS publish tree =============================
     #
     # THE GATE THAT WAS MISSING FOR 32 RELEASES (brief-automation-13-installed-cli.md). Every
@@ -510,7 +562,7 @@ To package deliberately without a working one: set CRF_ALLOW_NO_DEVICE_WORKER=1
             Write-Host "Smoke-testing the command line in publish\$rid directly (no stub for $Arch) ..."
         }
 
-        & dotnet $smokeDll $smokeTarget $CrfVersion
+        & dotnet $smokeDll $smokeTarget $CrfVersion @kernelSmoke
         $smokeCode = $LASTEXITCODE
         Remove-Item $smokeRoot -Recurse -Force -ErrorAction SilentlyContinue
         if ($smokeCode -ne 0) {
@@ -657,6 +709,29 @@ if ($Arch -eq 'all' -and $Scope -eq 'all' -and $built.Count -ne 9) {
 # NOT SMOKE-TESTED IS NOT PASSED. An architecture this machine cannot execute has not been shown to
 # have a working command line, which is precisely what shipped broken for 32 releases. So it fails
 # the run like a missing stub does, unless CRF_ALLOW_UNSMOKED=1 says that is understood.
+# The sentence brief 61 wrote for an architecture D2 leaves out; it belongs in that installer's notes.
+if ($kernelLeftOut.Count -gt 0) {
+    Write-Host ''
+    Write-Host "Geometry kernel not shipped on: $($kernelLeftOut -join ', ') (recipe.env KERNEL_RIDS). For the release notes:"
+    Write-Host '  The 32-bit Windows edition of circuitRF does not include the geometry kernel, so booleans,'
+    Write-Host '  fillets, chamfers and STEP import and export are unavailable in it; every other feature is'
+    Write-Host '  the same. The 64-bit edition includes the kernel.'
+}
+
+if ($noKernel.Count -gt 0) {
+    Write-Host ''
+    Write-Host "NO GEOMETRY KERNEL in: $($noKernel -join ', '). Those packages have no booleans, fillets,"
+    Write-Host '  chamfers or STEP import and export, and a .c3d using any of them is refused on open.'
+    if ($env:CRF_ALLOW_NO_KERNEL -eq '1') {
+        Write-Host '  CRF_ALLOW_NO_KERNEL=1 says that is intended.'
+    } else {
+        Write-Host '  Build it and run this again - tools\geometry-worker\build.cmd --rid win-<arch> (needs'
+        Write-Host '  CMake and Visual Studio with the C++ workload; minutes per architecture, once) - or'
+        Write-Host '  set CRF_ALLOW_NO_KERNEL=1 to ship without it knowingly.'
+        $kernelFail = $true
+    }
+}
+
 if ($unsmoked.Count -gt 0) {
     Write-Host ''
     Write-Host "NOT SMOKE-TESTED: $($unsmoked -join ', ') - this $hostArch machine cannot execute them, so"
@@ -729,3 +804,6 @@ if ($pub.Length -gt 0) {
     Write-Host '   publisher for the updater to compare a payload against, so it stays notify-only.'
     Write-Host "   See BUILDING.md, 'The release signing key'."
 }
+
+# Reported with the rest above, and decided last, so nothing else the run has to say is lost.
+if ($kernelFail) { exit 1 }
