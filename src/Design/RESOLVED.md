@@ -14298,3 +14298,51 @@ rule ("as if the operation were not there") now holds at every depth, the way it
   the existing refusal rather than hidden. Not changed: an ENABLED nested Subtract with `KeepTools` still keeps
   nothing (only a top-level one does), as before.
 Gate: `OperationsInTheDocumentTests.Gate10_Round5_…` (fails with the tree condition put back to fillet/chamfer only).
+
+## brief-em3d-69 — STEP export: what the worker and the Design side had to grow (2026-09-27)
+
+`src/Design/ThreeD/Step/StepExport.cs` is the one function File ▸ Export ▸ STEP…, 3D ▸ Export STEP… and
+`convert … -o x.step` call: `Plan` (what would be written — parts, cuts, assemblies, counts), `Write` (the worker's bytes,
+through a temporary file renamed into place), `Export` (both). The worker's new request is `write-step`. Gates:
+`tests/Ui.Tests/ThreeD/StepExportTests.cs` and `StepConvertCliTests.cs`.
+
+- **Colours were written and read as LINEAR RGB.** OCCT's `Quantity_TOC_RGB` is linear, and the STEP writer re-encodes
+  it to sRGB on the way out, so a material `#b87333` was written as `COLOUR_RGB(0.866, 0.702, 0.485)`. Brief 68's reader
+  had the mirror defect: it returned the file's colour as linear values, so a part coloured by any other tool never
+  matched a material by colour, and the round trip only agreed with itself because both ends were wrong the same way
+  (its fixtures were pure red, where the two encodings coincide). `write-step`, `export` and the reader's `Collect` all
+  use `Quantity_TOC_sRGB` now; `StepExportTests` checks the file's numbers against the hex and the reader's hex against
+  the material.
+- **OCCT's assembly writer numbers occurrences for the life of the process.** A `NEXT_ASSEMBLY_USAGE_OCCURRENCE` id comes
+  from a counter the worker never resets, so the worker's second export numbered on from its first and one model was not
+  one byte sequence — found by gate 1, whose in-process kernel had written two files before the assembly case. The worker
+  renumbers each file's occurrences from 1 in the model's order after the transfer. Otherwise the writer IS
+  byte-deterministic across processes, so gate 1 compares bytes (bar `FILE_NAME`'s time-stamp) and needs no canonical
+  re-read.
+- **The header.** `APIHeaderSection_MakeHeader` on the writer's model after the transfer: the file name (never the path),
+  empty author, organisation and authorisation, the description saying which model was written, and `circuitRF
+  <version>` as the originating system. The version is read from `CircuitRF.Design`'s own `InformationalVersion` —
+  `AppVersion` lives in `src/Ui`, where nothing here can reach it, and `Directory.Build.props` stamps every assembly from
+  the one `VERSION` file, so it is the same answer and no second literal. The preprocessor field is OCCT's own.
+- **`C3dElaboration.Instances` (additive).** *As assembly* needs each placed element's frame, which provenance only
+  carries for elements that hold objects of their own. The elaborator records one `C3dInstanceFrame` per resolved
+  element (path, document-metres-to-world transform, placed file, cell name, layout or not), parents before children.
+  Nothing else reads it.
+- **What "the same sub-assembly" means.** Two elements share one written sub-assembly when their contents, carried back
+  into each element's own frame and rounded to 0.1 nm, are the same (names, materials, roles, geometry; a kernel solid by
+  its face names, kinds and face boxes) and their children share too. Sixteen dies written once is the design case. An
+  element whose placement is not a quarter turn of another's lowers its boxes as polyhedra, so the two compare different
+  and are written twice — correct, only less compact. Parts are sent in the world frame, cut there, then carried into
+  their sub-assembly's frame by a `local` matrix, so a cut is made where the solver makes it.
+- **Precedence is GmshGeoWriter's rule, tie-break included** — higher `Em3dPrecedence`, or equal and later — cut from
+  the parts as built. A thickened sheet takes part as the metal it is; a sheet left as a face neither cuts nor is cut.
+  With *As assembly* the cuts stay inside one sub-assembly; the air box, a top-level part, is cut only by top-level parts.
+- **Choices the brief left open.** The air box of a `.c3d` is the first 3D setup's, else the box a new setup would solve
+  in (the editor's own rule); a layout's is the default setup's padded box. A `.clay` is placed by `Em3dLayoutSolids.From`
+  with no top frequency, so a conductor with thickness is a solid and only a zero-thickness layer is a sheet — the same
+  answer a layout placed in a `.c3d` with no setup gets. A thickened sheet grows along its plane's normal (up, for a
+  layout's), because `Em3dSheet` does not say which surface of its layer it was taken from; the note says so. The summary
+  line's *faces* are the sheets written as surfaces.
+- **A bond wire** is written as the `.geo` script writes it: a ruled loft through its rings (a periodic spline per ring
+  for a round wire), closed by its end faces. `BRepOffsetAPI_ThruSections` is in `TKOffset`, which the recipe does not
+  build, so the worker uses `BRepFill_Generator` (in `TKBool`) and sews the caps.

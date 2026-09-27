@@ -128,6 +128,7 @@
                                     <NativeMenuItem Header="DXF"    Command="{Binding ExportDxfCommand}"/>
                                     <NativeMenuItem Header="Gerber" Command="{Binding ExportGerberCommand}"/>
                                     <NativeMenuItem Header="Board…" Command="{Binding ExportBoardCommand}"/>
+                                    <NativeMenuItem Header="STEP…" ToolTip="{Binding ThreeDExportStepTip}" Command="{Binding ExportStepCommand}" CommandParameter="{Binding $parent[Window]}"/>
                                     <NativeMenuItem Header="Board netlist (IPC-D-356)…" Command="{Binding ExportBoardNetlistCommand}"/>
                                     <NativeMenuItem Header="Placement…" Command="{Binding ExportPlacementCommand}"/>
                                     <NativeMenuItem Header="Bill of materials…" Command="{Binding ExportBomCommand}"/>
@@ -364,6 +365,8 @@
                         </NativeMenuItem>
                         <!-- brief-em3d-68 — mirrored by the in-window 3D menu below, and by File ▸ Import ▸ STEP…. -->
                         <NativeMenuItem Header="Import STEP…" ToolTip="{Binding ThreeDImportStepTip}" Command="{Binding ImportStepCommand}" CommandParameter="{Binding $parent[Window]}"/>
+                        <!-- brief-em3d-69 — mirrored by the in-window 3D menu below, and by File ▸ Export ▸ STEP…. -->
+                        <NativeMenuItem Header="Export STEP…" ToolTip="{Binding ThreeDExportStepTip}" Command="{Binding ExportStepCommand}" CommandParameter="{Binding $parent[Window]}"/>
                         <NativeMenuItem Header="Measure" ToolTip="Two snapped points: x, y, z, the deltas and the distance, every number copyable (M). Requires an active 3D document." Command="{Binding ThreeDMeasureCommand}"/>
                         <NativeMenuItem Header="Materials…" ToolTip="The active 3D view's technology, opened on its Materials tab: its own materials and the libraries it names. Requires an active 3D document." Command="{Binding ThreeDMaterialsCommand}"/>
                         <NativeMenuItem Header="Triangle Budget…" ToolTip="How many triangles a frame draws before array elements, farthest first, are drawn as their bounding boxes. Stored per user." Command="{Binding ThreeDTriangleBudgetCommand}"/>
@@ -864,6 +867,10 @@
                     <MenuItem Header="_Board…"
                               Command="{Binding ExportBoardCommand}"
                               ToolTip.Tip="Write this layout as a .kicad_pcb board: stackup, nets, tracks, vias, copper zones and footprints. Design rules are never written — set them on the receiving side. Requires an active layout document."/>
+                    <MenuItem Header="_STEP…"
+                              Command="{Binding ExportStepCommand}"
+                              CommandParameter="{Binding $parent[Window]}"
+                              ToolTip.Tip="{Binding ThreeDExportStepTip}"/>
                     <MenuItem Header="Board _netlist (IPC-D-356)…"
                               Command="{Binding ExportBoardNetlistCommand}"
                               ToolTip.Tip="Write the net at every pad and via this board draws, as IPC-D-356. Projected from the artwork itself — railRF never needs it. Requires an active layout document."/>
@@ -1169,6 +1176,9 @@
                 <!-- brief-em3d-68 — mirrors the macOS menu's 3D ▸ Import STEP… above. -->
                 <MenuItem Header="_Import STEP…" Command="{Binding ImportStepCommand}" CommandParameter="{Binding $parent[Window]}"
                           ToolTip.Tip="{Binding ThreeDImportStepTip}"/>
+                <!-- brief-em3d-69 — mirrors the macOS menu's 3D ▸ Export STEP… above. -->
+                <MenuItem Header="E_xport STEP…" Command="{Binding ExportStepCommand}" CommandParameter="{Binding $parent[Window]}"
+                          ToolTip.Tip="{Binding ThreeDExportStepTip}"/>
                 <MenuItem Header="Mea_sure" Command="{Binding ThreeDMeasureCommand}"
                           ToolTip.Tip="Two snapped points: x, y, z, the deltas and the distance, every number copyable (M). Requires an active 3D document.">
                     <MenuItem.Icon><mi:MaterialIcon Kind="RulerSquare" Width="16" Height="16"/></MenuItem.Icon>

@@ -386,9 +386,15 @@ internal static class CliDiagnostics
         "convert.step.target", DiagnosticSeverity.Error,
         "A STEP file converts to a new 3D view: name a .c3d as the output ('{output}' is not one).", ("output", output));
 
-    public static Diagnostic ConvertStepIsASource(string output) => Diagnostic.Create(
-        "convert.step.source-only", DiagnosticSeverity.Error,
-        "'{output}' is a STEP file, which convert reads (into a .c3d) and does not write.", ("output", output));
+    public static Diagnostic ConvertStepExportFlagsWithoutStep() => new(
+        "convert.step.export-flags", DiagnosticSeverity.Error,
+        "--assembly, --as-drawn, --thicken-sheets, --include-airbox, --schema and --view apply to a STEP target (-o <file>.step) only.");
+
+    public static Diagnostic ConvertUnknownSchema(string value) => Diagnostic.Create(
+        "convert.step.schema", DiagnosticSeverity.Error, "--schema takes ap214 or ap242, not '{value}'.", ("value", value));
+
+    public static Diagnostic ConvertUnknownView(string value) => Diagnostic.Create(
+        "convert.step.view", DiagnosticSeverity.Error, "--view takes 3d or layout, not '{value}'.", ("value", value));
 
     public static Diagnostic ConvertStepListCells() => new(
         "convert.step.list-cells", DiagnosticSeverity.Error,

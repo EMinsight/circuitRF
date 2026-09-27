@@ -601,6 +601,72 @@ public partial class WorkspaceViewModel
         foreach (string note in editor.LastStepNotes) Messages.Info(note, editor.FilePath);
     }
 
+    // ── Export STEP (brief-em3d-69) ────────────────────────────────────────────────────────────
+
+    /// <summary>File ▸ Export ▸ STEP… and 3D ▸ Export STEP…: shown always, enabled with the kernel and an active 3D or layout
+    /// document (R-em3d69-4b).</summary>
+    public bool ThreeDExportStepAvailable => CircuitRF.Ui.ThreeD.GeometryKernelAvailability.IsAvailable && StepExportSource() is not null;
+
+    /// <summary>The Export STEP items' tooltip: the capability's own sentence when that is why they are disabled.</summary>
+    public string ThreeDExportStepTip
+        => (CircuitRF.Ui.ThreeD.GeometryKernelAvailability.DisabledReason("Export STEP") is { } why ? why + " "
+            : "The elaborated model — the solids the solver gets, named and coloured — as one STEP file. ") +
+           "Requires an active 3D or layout document.";
+
+    private bool CanExportStep() => ThreeDExportStepAvailable;
+
+    /// <summary>What an export of the active document reads: its top file, and its model as it stands when that is what the
+    /// tab shows (a 3D view pushed into a placed cell exports the top document from disk).</summary>
+    private (string Path, CircuitRF.Design.ThreeD.Step.StepExportOptions Source)? StepExportSource()
+    {
+        switch (ResolveActiveDocumentForCommands())
+        {
+            case C3dEditorDocument c:
+            {
+                var vm = c.ViewModel;
+                bool top = string.Equals(Path.GetFullPath(vm.FilePath), Path.GetFullPath(vm.TopFilePath), StringComparison.OrdinalIgnoreCase);
+                return (vm.TopFilePath, new CircuitRF.Design.ThreeD.Step.StepExportOptions
+                {
+                    Document = top ? vm.Document : null, WorkspaceCws = CurrentWorkspacePath,
+                });
+            }
+            case LayoutDocument l when l.NavDepth == 0 && l.ActiveViewModel.CurrentLayoutPath is { Length: > 0 } clay:
+                return (clay, new CircuitRF.Design.ThreeD.Step.StepExportOptions
+                {
+                    Layout = l.ActiveViewModel.Model, WorkspaceCws = CurrentWorkspacePath,
+                });
+            default:
+                return null;
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanExportStep))]
+    private async Task ExportStep(Window? owner)
+    {
+        if (StepExportSource() is not { } src) return;
+        if (ResolveOwner(owner) is not { } window) return;
+        var start = await window.StorageProvider.TryGetFolderFromPathAsync(new Uri(Path.GetDirectoryName(src.Path)!));
+        var file = await window.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = "Export STEP",
+            SuggestedFileName = Path.GetFileNameWithoutExtension(src.Path) + ".step",
+            SuggestedStartLocation = start,
+            DefaultExtension = "step",
+            ShowOverwritePrompt = true,
+            FileTypeChoices = [new FilePickerFileType("STEP") { Patterns = ["*.step", "*.stp"] }],
+        });
+        if (file?.TryGetLocalPath() is not { } target) return;
+
+        var kernel = CircuitRF.Design.ThreeD.Occ.GeometryKernel.Shared;
+        var vm = new StepExportDialogViewModel(target, src.Source,
+            options => CircuitRF.Design.ThreeD.Step.StepExport.Plan(src.Path, options, kernel, _techCache),
+            (plan, control) => CircuitRF.Design.ThreeD.Step.StepExport.Write(plan, target, kernel, control));
+        bool ok = await new CircuitRF.Ui.Views.ThreeD.StepExportDialog(vm).ShowDialog<bool>(window);
+        if (!ok || vm.Result is not { } result) return;
+        foreach (string note in result.Notes) Messages.Info(note, src.Path);
+        Messages.Success($"Exported STEP: {result.Plan.Summary}", result.Path);
+    }
+
     /// <summary>The 3D menu's items again — when the geometry kernel's probe answers.</summary>
     internal void RefreshThreeDMenu() => RaiseThreeDMenuChanged();
 
@@ -630,6 +696,9 @@ public partial class WorkspaceViewModel
         OnPropertyChanged(nameof(ThreeDImportStepAvailable));
         OnPropertyChanged(nameof(ThreeDImportStepTip));
         ImportStepCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(ThreeDExportStepAvailable));
+        OnPropertyChanged(nameof(ThreeDExportStepTip));
+        ExportStepCommand.NotifyCanExecuteChanged();
         ThreeDSelectModeCommand.NotifyCanExecuteChanged();
         ThreeDFitCommand.NotifyCanExecuteChanged();
         ThreeDStandardViewCommand.NotifyCanExecuteChanged();

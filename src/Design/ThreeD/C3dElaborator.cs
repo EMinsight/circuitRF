@@ -103,6 +103,11 @@ public sealed record C3dKernelBuild(string Name, string Kind, IReadOnlyList<stri
     public int Solids { get; init; }
 }
 
+/// <summary>brief-em3d-69 R-em3d69-2c — one placed element of an instance: its path (<c>U1</c>, <c>U1[0,1,0]</c>, <c>U1/U3</c>), its
+/// document's metres to world metres, the placed file and its cell's name, and whether it is a layout. What STEP export's
+/// <i>As assembly</i> builds its sub-assemblies from; the objects inside are those whose provenance names this path.</summary>
+public sealed record C3dInstanceFrame(string Path, C3dTransform World, string DocumentPath, string CellName, bool Layout);
+
 /// <summary>One step of the walk <c>explain</c> reports (R-em3d42-6): what, and how it was decided.</summary>
 public sealed record C3dWalkStep(string Subject, string Detail);
 
@@ -152,6 +157,9 @@ public sealed record C3dElaboration(
     /// <summary>brief-em3d-64 R-em3d64-6b — each kernel object's build, for <c>explain</c>: its operands, whether the
     /// build came from a cache, its face and edge counts, its smallest radius and the kernel's notes.</summary>
     public IReadOnlyList<C3dKernelBuild> KernelBuilds { get; init; } = [];
+
+    /// <summary>brief-em3d-69 — every placed instance element that resolved, parents before their children.</summary>
+    public IReadOnlyList<C3dInstanceFrame> Instances { get; init; } = [];
 
     /// <summary>brief-em3d-48 R-em3d48-6b — the instances whose cell or view resolved to nothing or could not be read, by
     /// instance path: what the editor draws as a dashed box with the cell's name.</summary>
@@ -584,6 +592,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
         private readonly List<(string Name, string Source)> _builtInWireValues = [];
         private readonly List<C3dWalkStep> _walkInstances = [], _walkUnits = [], _walkLowering = [];
         private readonly List<(string, string)> _unresolved = [];
+        private readonly List<C3dInstanceFrame> _instances = [];
         private int _order;
         private int _polylines;
         private int _topDbu;
@@ -640,6 +649,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
             {
                 Warnings = _warnings,
                 Unresolved = _unresolved,
+                Instances = _instances,
                 ObjectNets = _nets,
                 GroundBandObjects = _groundBand,
                 MaterialSources = sources,
@@ -1079,8 +1089,11 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
                 foreach (string n in childRes.Notes) _notes.Add($"{instPath}: {n}");
                 var next = new List<(string, string, string)>(stack) { (CellOf(viewPath), inst.Name, viewPath) };
                 foreach (var (ijk, w, integral) in Elements(doc, inst, counts, pitch, world))
+                {
+                    _instances.Add(new C3dInstanceFrame(prefix + inst.Name + (isArray ? ijk : ""), w, viewPath, Path.GetFileName(cellDir), Layout: false));
                     Document(resolvedDoc, childRes, viewPath, child.Tech, w, prefix + inst.Name + (isArray ? ijk : "") + "/", next,
                              exact && integral && resolvedDoc.DbuPerMicron == _topDbu);
+                }
                 return;
             }
 
@@ -1103,8 +1116,11 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
             }
             if (LayoutHasPortShapes(viewPath)) _ignored.Add("a layout's port shapes");
             foreach (var (ijk, w, integral) in Elements(doc, inst, counts, pitch, world))
+            {
+                _instances.Add(new C3dInstanceFrame(prefix + inst.Name + (isArray ? ijk : ""), w, viewPath, Path.GetFileName(cellDir), Layout: true));
                 Layout(layout, solids, layout.TechName, viewPath, prefix + inst.Name + (isArray ? ijk : ""), w,
                        exact && integral && layout.DbuPerMicron == _topDbu);
+            }
         }
 
         /// <summary>Each array element's transform: the placement's rotation and mirror, and its origin moved

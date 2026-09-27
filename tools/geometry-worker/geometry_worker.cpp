@@ -29,6 +29,7 @@
 //      faces        a held shape -> name, surface kind, tight box, area, min radius per face
 //      edges        a held shape -> name, faces, curve kind, length, min radius, polyline per edge
 //      export       held shapes -> B-rep, STEP, PLY or STL bytes
+//      write-step   the elaborated model -> one STEP file: parts cut by precedence, assemblies, header (brief 69)
 //      import-step  STEP bytes (or a path) -> one held shape per part, names, colours, units, healing
 //      release      drop held shapes
 //      shutdown     answer, then exit 0 ("quit" is the same)
@@ -53,6 +54,7 @@
 //  Cancellation is always by killing the process -- a fillet never polls a user break.
 // ================================================================================================
 
+#include <APIHeaderSection_MakeHeader.hxx>
 #include <BRepAdaptor_Curve.hxx>
 #include <BRepAdaptor_Surface.hxx>
 #include <BRepAlgoAPI_Common.hxx>
@@ -79,6 +81,8 @@
 #include <BRepPrimAPI_MakeBox.hxx>
 #include <BRepPrimAPI_MakeCylinder.hxx>
 #include <BRepPrimAPI_MakePrism.hxx>
+#include <BRepPrimAPI_MakeSphere.hxx>
+#include <BRepFill_Generator.hxx>
 #include <BRepTools.hxx>
 #include <BRep_Builder.hxx>
 #include <BRep_Tool.hxx>
@@ -87,6 +91,7 @@
 #include <GCPnts_AbscissaPoint.hxx>
 #include <GCPnts_QuasiUniformDeflection.hxx>
 #include <GProp_GProps.hxx>
+#include <GeomAPI_Interpolate.hxx>
 #include <GeomAPI_ProjectPointOnSurf.hxx>
 #include <Message.hxx>
 #include <Message_Messenger.hxx>
@@ -97,6 +102,8 @@
 #include <OSD_Signal.hxx>
 #include <Poly_Triangulation.hxx>
 #include <Quantity_Color.hxx>
+#include <Quantity_ColorRGBA.hxx>
+#include <TColgp_HArray1OfPnt.hxx>
 #include <STEPCAFControl_Reader.hxx>
 #include <STEPCAFControl_Writer.hxx>
 #include <STEPConstruct_UnitContext.hxx>
@@ -111,6 +118,7 @@
 #include <StepGeom_GeomRepContextAndGlobUnitAssCtxAndGlobUncertaintyAssCtx.hxx>
 #include <StepGeom_GeometricRepresentationContextAndGlobalUnitAssignedContext.hxx>
 #include <StepRepr_GlobalUnitAssignedContext.hxx>
+#include <StepRepr_NextAssemblyUsageOccurrence.hxx>
 #include <TCollection_HAsciiString.hxx>
 #include <TopLoc_Location.hxx>
 #include <XCAFDoc_DimTolTool.hxx>
@@ -146,6 +154,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <exception>
+#include <functional>
 #include <fstream>
 #include <iostream>
 #include <map>
@@ -1969,7 +1978,8 @@ static Frame OpExport(const Json& req)
         {
           const Json& c = colours->items[i];
           if (c.kind == Json::Array && c.items.size() == 3)
-            ct->SetColor(l, Quantity_Color(c.items[0].number, c.items[1].number, c.items[2].number, Quantity_TOC_RGB), XCAFDoc_ColorSurf);
+            // sRGB, the values a STEP file's COLOUR_RGB carries: OCCT's Quantity_TOC_RGB is LINEAR and is re-encoded on write.
+            ct->SetColor(l, Quantity_Color(c.items[0].number, c.items[1].number, c.items[2].number, Quantity_TOC_sRGB), XCAFDoc_ColorSurf);
         }
       }
       if (!assembly) continue;
@@ -2060,6 +2070,358 @@ static Frame OpExport(const Json& req)
   r.j.Str("format", f).Str("units", units);
   r.Blob("data", "bytes", data.size(), data);
   return r.Finish();
+}
+
+// ------------------------------------------------------------------------------------------------
+// write-step (brief 69): the elaborated model as one STEP file
+// ------------------------------------------------------------------------------------------------
+//
+// circuitRF decides WHAT is in the file (src/Design/ThreeD/Step/StepExport.cs): the parts, their names and colours,
+// which higher-precedence parts each one loses its overlap to, and the assembly they sit in. This writes it. Every part
+// arrives as resolved numbers in micrometres, in the WORLD frame, so the cuts are made where the solver makes them; a
+// part a sub-assembly shares is then carried into that sub-assembly's own frame by its "local" matrix.
+
+static gp_Trsf Matrix12(const Json& m, const NodeReader& r, const char* what)
+{
+  if (m.kind != Json::Array || m.items.size() != 12) r.Bad(std::string(what) + " is not twelve numbers (a 3 x 4 matrix, rows)");
+  double v[12];
+  for (int i = 0; i < 12; ++i)
+  {
+    if (!NodeReader::IsNum(m.items[i])) r.Bad(std::string(what) + " holds something that is not a finite number");
+    v[i] = m.items[i].number;
+  }
+  gp_Trsf t;
+  t.SetValues(v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8], v[9], v[10], v[11]);
+  return t;
+}
+
+// A ring as a closed wire: straight edges, or (smooth) one periodic spline through its points -- a round bond wire's
+// section, as the .geo script's closed Spline draws it.
+static TopoDS_Wire RingWire(const std::vector<gp_Pnt>& p, bool smooth, const NodeReader& r)
+{
+  if (!smooth) return Loop(p, nullptr, r);
+  if (p.size() < 3) r.Bad("a ring has fewer than three points");
+  occ::handle<TColgp_HArray1OfPnt> pts = new TColgp_HArray1OfPnt(1, static_cast<int>(p.size()));
+  for (size_t i = 0; i < p.size(); ++i) pts->SetValue(static_cast<int>(i) + 1, p[i]);
+  GeomAPI_Interpolate interp(pts, true, 1e-6);
+  interp.Perform();
+  if (!interp.IsDone()) r.Bad("a ring does not make a closed spline");
+  return BRepBuilderAPI_MakeWire(BRepBuilderAPI_MakeEdge(interp.Curve()).Edge()).Wire();
+}
+
+// One part's shape, micrometres, in the world.
+static TopoDS_Shape ExportGeometry(const Json& g, const std::string& name, const std::map<std::string, std::string>& blobs)
+{
+  NodeReader r{g, name};
+  if (g.kind != Json::Object) r.Bad("a part's \"geometry\" is not an object");
+  const Json& kind = r.Member("kind");
+  if (kind.kind != Json::String) r.Bad("\"kind\" is not a string");
+  const std::string& k = kind.text;
+  auto holesOf = [&](const Json& node) {
+    std::vector<std::vector<gp_Pnt>> holes;
+    if (const Json* hs = node.Get("holes"))
+    {
+      if (hs->kind != Json::Array) r.Bad("\"holes\" is not an array of loops");
+      for (const Json& h : hs->items) holes.push_back(r.Points(h, "a hole"));
+    }
+    return holes;
+  };
+
+  if (k == "box")
+  {
+    gp_XYZ a = r.Xyz("min"), b = r.Xyz("max");
+    if (!(b.X() > a.X() && b.Y() > a.Y() && b.Z() > a.Z())) r.Bad("the box has no volume");
+    return BRepPrimAPI_MakeBox(gp_Pnt(a), gp_Pnt(b)).Shape();
+  }
+  if (k == "cylinder")
+  {
+    gp_Pnt a(r.Xyz("from")), b(r.Xyz("to"));
+    double radius = r.Num("radius");
+    gp_Vec v(a, b);
+    if (v.Magnitude() <= 0) r.Bad("the axis has no length");
+    if (radius <= 0) r.Bad("the radius is not positive");
+    return BRepPrimAPI_MakeCylinder(gp_Ax2(a, gp_Dir(v)), radius, v.Magnitude()).Shape();
+  }
+  if (k == "sphere")
+  {
+    gp_Pnt c(r.Xyz("centre"));
+    double radius = r.Num("radius");
+    if (radius <= 0) r.Bad("the radius is not positive");
+    TopoDS_Shape s = BRepPrimAPI_MakeSphere(c, radius).Shape();
+    // A ball flattened on its pad: the sphere kept between two heights, as the .geo script's intersection keeps it.
+    double z0 = c.Z() - radius, z1 = c.Z() + radius;
+    if (const Json* v = g.Get("zmin"); v && NodeReader::IsNum(*v)) z0 = std::max(z0, v->number);
+    if (const Json* v = g.Get("zmax"); v && NodeReader::IsNum(*v)) z1 = std::min(z1, v->number);
+    if (z0 <= c.Z() - radius && z1 >= c.Z() + radius) return s;
+    if (!(z1 > z0)) r.Bad("the sphere is kept between heights that leave nothing");
+    double w = 1.01 * radius;
+    TopoDS_Shape slab = BRepPrimAPI_MakeBox(gp_Pnt(c.X() - w, c.Y() - w, z0), gp_Pnt(c.X() + w, c.Y() + w, z1)).Shape();
+    BRepAlgoAPI_Common common(s, slab);
+    if (!common.IsDone()) r.Bad("the truncated sphere could not be cut");
+    return common.Shape();
+  }
+  if (k == "prism")
+  {
+    const Json& outline = r.Member("outline");
+    size_t n = 2 + (outline.kind == Json::Array ? outline.items.size() : 0);
+    for (auto& h : holesOf(g)) n += h.size();
+    std::vector<std::string> names(n, "");
+    return BuildPrism(r, names).shape;
+  }
+  if (k == "polyhedron")
+  {
+    const Json& loops = r.Member("loops");
+    std::vector<std::string> names(loops.kind == Json::Array ? loops.items.size() : 0, "");
+    return BuildPolyhedron(r, names).shape;
+  }
+  if (k == "loft")
+  {
+    // A bond wire: its section at every vertex of its path, joined vertex k to vertex k (a ruled loft, the .geo
+    // script's Ruled ThruSections), closed by its two end faces.
+    const Json& rings = r.Member("rings");
+    if (rings.kind != Json::Array || rings.items.size() < 2) r.Bad("\"rings\" is not two or more rings");
+    bool smooth = false;
+    if (const Json* s = g.Get("smooth"); s && s->kind == Json::Bool) smooth = s->boolean;
+    BRepFill_Generator gen;
+    std::vector<TopoDS_Wire> wires;
+    for (const Json& ring : rings.items)
+    {
+      wires.push_back(RingWire(r.Points(ring, "a ring"), smooth, r));
+      gen.AddWire(wires.back());
+    }
+    gen.Perform();
+    BRepBuilderAPI_Sewing sew(1e-4);
+    sew.Add(gen.Shell());
+    for (const TopoDS_Wire* w : {&wires.front(), &wires.back()})
+    {
+      BRepBuilderAPI_MakeFace cap(*w, true);
+      if (!cap.IsDone()) r.Bad("an end of the wire is not flat");
+      sew.Add(cap.Face());
+    }
+    sew.Perform();
+    TopoDS_Shell shell;
+    int shells = 0;
+    for (TopExp_Explorer x(sew.SewedShape(), TopAbs_SHELL); x.More(); x.Next()) { shell = TopoDS::Shell(x.Current()); ++shells; }
+    if (shells != 1) r.Bad("the wire's faces do not close into one shell");
+    BRepBuilderAPI_MakeSolid ms(shell);
+    if (!ms.IsDone()) r.Bad("the wire's shell does not bound a solid");
+    return OrientedSolid(ms.Solid());
+  }
+  if (k == "face")
+  {
+    // A sheet: a surface, which a STEP file carries as a shell-based surface model.
+    return PlanarFace(r.Points(r.Member("outline"), "outline"), holesOf(g), nullptr, nullptr, r);
+  }
+  if (k == "brep")
+  {
+    const Json& blob = r.Member("blob");
+    if (blob.kind != Json::String) r.Bad("\"blob\" is not a blob's name");
+    auto it = blobs.find(blob.text);
+    if (it == blobs.end()) r.Bad("the request carries no blob '" + blob.text + "'");
+    std::istringstream is(it->second);
+    TopoDS_Shape s;
+    BRep_Builder b;
+    BRepTools::Read(s, is, b);
+    if (s.IsNull()) r.Bad("the B-rep blob could not be read");
+    return s;
+  }
+  r.Bad("a part cannot be a \"" + k + "\"");
+}
+
+static Frame OpWriteStep(const Json& req, const std::map<std::string, std::string>& blobs)
+{
+  const Json* parts = req.Get("parts");
+  const Json* assemblies = req.Get("assemblies");
+  if (parts == nullptr || parts->kind != Json::Array)
+    throw Refuse{"request.malformed", "", "write-step needs \"parts\""};
+  if (assemblies == nullptr || assemblies->kind != Json::Array || assemblies->items.empty())
+    throw Refuse{"request.malformed", "", "write-step needs \"assemblies\": the root first"};
+  std::string units = "mm";
+  if (const Json* u = req.Get("units"); u && u->kind == Json::String) units = u->text;
+  UnitsMethods_LengthUnit stepUnit = UnitsMethods_LengthUnit_Millimeter;
+  MicronsPer(units, &stepUnit);
+
+  // Test builds only: a write that takes as long as it is told, which is what cancelling an export is tested against.
+  if (g_testOps)
+    if (const char* s = std::getenv("CRF_GEOMETRY_WORKER_TEST_WRITE_SECONDS"))
+      std::this_thread::sleep_for(std::chrono::duration<double>(std::atof(s)));
+
+  // 1. Every part in the world.
+  size_t n = parts->items.size();
+  std::vector<std::string> names(n);
+  std::vector<TopoDS_Shape> world(n);
+  for (size_t i = 0; i < n; ++i)
+  {
+    const Json& p = parts->items[i];
+    if (const Json* nm = p.Get("name"); nm && nm->kind == Json::String) names[i] = nm->text;
+    const Json* g = p.Get("geometry");
+    if (g == nullptr) throw Refuse{"request.malformed", names[i], "a part has no \"geometry\""};
+    try
+    {
+      world[i] = ExportGeometry(*g, names[i], blobs);
+    }
+    catch (const Standard_Failure& e)
+    {
+      throw Refuse{"build.failed", names[i], std::string(e.ExceptionType()) + (e.what() && *e.what() ? std::string(": ") + e.what() : "")};
+    }
+  }
+
+  // 2. Precedence (em-3d.md section 6.3a): each part loses what the parts its "cut" lists take -- cut from the parts as
+  // built, never as already cut, which is the set the .geo script's cuts leave too.
+  std::vector<TopoDS_Shape> final(world);
+  std::vector<bool> empty(n, false);
+  for (size_t i = 0; i < n; ++i)
+  {
+    const Json& p = parts->items[i];
+    const Json* cut = p.Get("cut");
+    if (cut == nullptr || cut->kind != Json::Array || cut->items.empty()) continue;
+    NCollection_List<TopoDS_Shape> args, tools;
+    args.Append(world[i]);
+    for (const Json& j : cut->items)
+    {
+      if (j.kind != Json::Number || j.number < 0 || j.number >= double(n) || j.number == double(i))
+        throw Refuse{"request.malformed", names[i], "\"cut\" names a part the request does not have"};
+      tools.Append(world[static_cast<size_t>(j.number)]);
+    }
+    BRepAlgoAPI_Cut op;
+    op.SetArguments(args);
+    op.SetTools(tools);
+    op.SetRunParallel(false);
+    op.Build();
+    if (op.HasErrors() || !op.IsDone())
+    {
+      std::ostringstream why;
+      op.DumpErrors(why);
+      throw Refuse{"export.failed", names[i], "taking the higher-precedence parts out of it failed: " + why.str()};
+    }
+    final[i] = op.Shape();
+    empty[i] = !HasSolid(final[i]);
+  }
+
+  // 3. Into its sub-assembly's frame, where it has one.
+  for (size_t i = 0; i < n; ++i)
+  {
+    const Json* local = parts->items[i].Get("local");
+    if (empty[i] || local == nullptr || local->kind != Json::Array) continue;
+    NodeReader r{parts->items[i], names[i]};
+    BRepBuilderAPI_Transform xf(final[i], Matrix12(*local, r, "\"local\""), true);
+    if (!xf.IsDone()) r.Bad("\"local\" could not be applied");
+    final[i] = xf.Shape();
+  }
+
+  // 4. The document: one label per part, then the assemblies, each written once however often it is placed.
+  occ::handle<TDocStd_Document> doc = NewXcafDocument();
+  occ::handle<XCAFDoc_ShapeTool> st = XCAFDoc_DocumentTool::ShapeTool(doc->Main());
+  occ::handle<XCAFDoc_ColorTool> ct = XCAFDoc_DocumentTool::ColorTool(doc->Main());
+  std::vector<TDF_Label> labels(n);
+  for (size_t i = 0; i < n; ++i)
+  {
+    if (empty[i]) continue;
+    labels[i] = st->AddShape(final[i], false);
+    TDataStd_Name::Set(labels[i], TCollection_ExtendedString(names[i].c_str(), true));
+    const Json* c = parts->items[i].Get("colour");
+    if (c && c->kind == Json::Array && c->items.size() == 4)
+      // sRGB: a material's #rrggbb is what COLOUR_RGB then says. Quantity_TOC_RGB is LINEAR, and the writer re-encodes it, so
+      // #b87333 went out as (0.866, 0.702, 0.485).
+      ct->SetColor(labels[i], Quantity_ColorRGBA(Quantity_Color(c->items[0].number, c->items[1].number, c->items[2].number, Quantity_TOC_sRGB),
+                                                 static_cast<float>(c->items[3].number)), XCAFDoc_ColorSurf);
+  }
+  std::map<size_t, TDF_Label> built;
+  std::vector<bool> building(assemblies->items.size(), false);
+  std::function<TDF_Label(size_t)> assembly = [&](size_t a) -> TDF_Label {
+    if (auto it = built.find(a); it != built.end()) return it->second;
+    if (building[a]) throw Refuse{"request.malformed", "", "an assembly contains itself"};
+    building[a] = true;
+    const Json& node = assemblies->items[a];
+    NodeReader r{node, ""};
+    TDF_Label lab = st->NewShape();
+    if (const Json* nm = node.Get("name"); nm && nm->kind == Json::String)
+      TDataStd_Name::Set(lab, TCollection_ExtendedString(nm->text.c_str(), true));
+    const Json& comps = r.Member("components");
+    if (comps.kind != Json::Array) r.Bad("\"components\" is not an array");
+    for (const Json& c : comps.items)
+    {
+      NodeReader cr{c, ""};
+      TDF_Label child;
+      if (const Json* p = c.Get("part"))
+      {
+        if (p->kind != Json::Number || p->number < 0 || p->number >= double(n)) cr.Bad("\"part\" names a part the request does not have");
+        size_t i = static_cast<size_t>(p->number);
+        if (empty[i]) continue;
+        child = labels[i];
+      }
+      else if (const Json* s = c.Get("assembly"))
+      {
+        if (s->kind != Json::Number || s->number < 0 || s->number >= double(assemblies->items.size()))
+          cr.Bad("\"assembly\" names an assembly the request does not have");
+        child = assembly(static_cast<size_t>(s->number));
+      }
+      else cr.Bad("a component names neither a \"part\" nor an \"assembly\"");
+      gp_Trsf tr;
+      if (const Json* l = c.Get("location"); l && l->kind == Json::Array) tr = Matrix12(*l, cr, "\"location\"");
+      TDF_Label placed = st->AddComponent(lab, child, TopLoc_Location(tr));
+      if (const Json* nm = c.Get("name"); nm && nm->kind == Json::String && !placed.IsNull())
+        TDataStd_Name::Set(placed, TCollection_ExtendedString(nm->text.c_str(), true));
+    }
+    building[a] = false;
+    return built[a] = lab;
+  };
+  assembly(0);
+  st->UpdateAssemblies();
+
+  // 5. The file. The header names the output's FILE (never its path), no author and no organisation, and the
+  // originating system circuitRF states: a STEP file travels, and must not carry a login name or a home directory.
+  STEPCAFControl_Writer wr;
+  wr.SetNameMode(true);
+  wr.SetColorMode(true);
+  DESTEP_Parameters prm;
+  prm.InitFromStatic();
+  prm.WriteUnit = stepUnit;
+  if (const Json* sc = req.Get("schema"); sc && sc->kind == Json::String && sc->text == "ap242")
+    prm.WriteSchema = DESTEP_Parameters::WriteMode_StepSchema_AP242DIS;
+  if (!wr.Transfer(doc, prm)) throw Refuse{"export.failed", "", "the STEP writer could not transfer the model"};
+  // The same model is the same bytes whatever this worker wrote before: OCCT numbers each assembly occurrence's id from a
+  // counter that lives as long as the process, so a second export from one worker would number its occurrences on from
+  // the first's. Renumbered per file, in the model's own order, from 1.
+  {
+    occ::handle<StepData_StepModel> model = wr.ChangeWriter().Model();
+    int next = 0;
+    for (int i = 1; i <= model->NbEntities(); ++i)
+      if (auto nauo = occ::down_cast<StepRepr_NextAssemblyUsageOccurrence>(model->Value(i)); !nauo.IsNull())
+        nauo->SetId(new TCollection_HAsciiString(++next));
+  }
+  {
+    APIHeaderSection_MakeHeader mh(wr.ChangeWriter().Model());
+    auto text = [](const std::string& s) { return occ::handle<TCollection_HAsciiString>(new TCollection_HAsciiString(s.c_str())); };
+    std::string fileName, description, system;
+    if (const Json* h = req.Get("header"))
+    {
+      if (const Json* v = h->Get("name"); v && v->kind == Json::String) fileName = v->text;
+      if (const Json* v = h->Get("description"); v && v->kind == Json::String) description = v->text;
+      if (const Json* v = h->Get("system"); v && v->kind == Json::String) system = v->text;
+    }
+    mh.SetName(text(fileName));
+    mh.SetAuthorValue(1, text(""));
+    mh.SetOrganizationValue(1, text(""));
+    mh.SetAuthorisation(text(""));
+    mh.SetOriginatingSystem(text(system));
+    mh.SetDescriptionValue(1, text(description));
+  }
+  std::ostringstream os;
+  if (wr.WriteStream(os) != IFSelect_RetDone) throw Refuse{"export.failed", "", "the STEP writer did not complete"};
+  std::string data = os.str();
+
+  Reply rep;
+  rep.j.Key("parts").BeginArr();
+  for (size_t i = 0; i < n; ++i)
+  {
+    Counts c = empty[i] ? Counts{} : Count(final[i]);
+    rep.j.Begin().Str("name", names[i]).Bool("empty", empty[i]).Int("solids", c.solids).Int("faces", c.faces)
+         .Num("volume_um3", empty[i] ? 0.0 : Volume(final[i])).End();
+  }
+  rep.j.EndArr();
+  rep.Blob("data", "bytes", data.size(), data);
+  return rep.Finish();
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -2231,9 +2593,11 @@ static void Collect(const occ::handle<XCAFDoc_ShapeTool>& st, const occ::handle<
   Quantity_Color c;
   for (TDF_Label q : {l, ref})
     for (XCAFDoc_ColorType ty : {XCAFDoc_ColorSurf, XCAFDoc_ColorGen, XCAFDoc_ColorCurv})
-      if (!p.hasColor && ct->GetColor(q, ty, c)) { p.hasColor = true; c.Values(p.rgb[0], p.rgb[1], p.rgb[2], Quantity_TOC_RGB); }
+      if (!p.hasColor && ct->GetColor(q, ty, c)) { p.hasColor = true; c.Values(p.rgb[0], p.rgb[1], p.rgb[2], Quantity_TOC_sRGB); }
   p.shape = XCAFDoc_ShapeTool::GetShape(ref).Moved(here);
-  if (!p.hasColor && ct->GetColor(p.shape, XCAFDoc_ColorSurf, c)) { p.hasColor = true; c.Values(p.rgb[0], p.rgb[1], p.rgb[2], Quantity_TOC_RGB); }
+  // sRGB: the file's own COLOUR_RGB numbers, which is what a material's #rrggbb is compared with (brief 69 found the reader
+  // returning OCCT's LINEAR values, so a colour written by any other tool never matched by colour).
+  if (!p.hasColor && ct->GetColor(p.shape, XCAFDoc_ColorSurf, c)) { p.hasColor = true; c.Values(p.rgb[0], p.rgb[1], p.rgb[2], Quantity_TOC_sRGB); }
   p.healing = Heal(p.shape);
   p.closed = ClosedSolid(p.shape, p.why);
   out.push_back(p);
@@ -2566,6 +2930,7 @@ static Frame Dispatch(const Frame& in, bool& quit)
     if (name == "faces") return OpFaces(req);
     if (name == "edges") return OpEdges(req);
     if (name == "export") return OpExport(req);
+    if (name == "write-step") return OpWriteStep(req, blobs);
     if (name == "import-step") return OpImportStep(req, blobs);
     if (name == "release") return OpRelease(req);
     if (name == "box") return OpBox(req);

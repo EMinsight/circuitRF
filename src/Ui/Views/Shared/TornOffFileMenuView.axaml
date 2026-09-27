@@ -179,6 +179,10 @@
                 <MenuItem Header="_Board…"
                           Command="{Binding ExportBoardCommand}"
                           ToolTip.Tip="Requires an active layout document."/>
+                <MenuItem Header="_STEP…"
+                          Command="{Binding ExportStepCommand}"
+                          CommandParameter="{Binding $parent[Window]}"
+                          ToolTip.Tip="{Binding ThreeDExportStepTip}"/>
                 <MenuItem Header="Board _netlist (IPC-D-356)…"
                           Command="{Binding ExportBoardNetlistCommand}"
                           ToolTip.Tip="Requires an active layout document."/>

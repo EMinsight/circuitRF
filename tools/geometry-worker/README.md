@@ -101,6 +101,7 @@ the target no longer has).
 | `faces` | `shape` | per face, in `TopExp::MapShapes` order: `name`, `kind` (`plane`, `cylinder`, `cone`, `sphere`, `torus`, `bspline`, `other`), `box` (tight, 6 numbers), `area`, `min_radius` (0 for a plane), `centroid`, `normal` (outward, at the face's point nearest its centroid; zeros where undefined) — the fingerprint Reload from Source matches by (brief 68) |
 | `edges` | `shape`, `deflection_um` | per feature edge, sorted by name: `name`, `faces` (its two), `kind`, `length`, `min_radius` (0 for a line), `points`, and (brief 67) `closed`, `ends` (6 numbers, the polyline's way), `tangents` (the unit tangents there, 6 numbers), `mid` (halfway along the curve; absent when closed), `centre` and `radius` (a circle or an arc); blob `polylines` f64 |
 | `export` | `shapes[]`, `format` (`brep`, `step`, `ply`, `stl`), `units` (`um`, `mm`, `mil`, `in`, `m`), `names[]`, `colours[]`, `linear_um`, `schema` (`ap242`, else AP214); STEP only: `assembly` (true: one assembly whose components are the shapes; a handle listed twice is one part instanced twice) and `locations[]` (per shape, 12 numbers, µm, or null) | blob `data` |
+| `write-step` (brief 69) | `parts[]` (`name`, `colour` — four numbers, sRGB and alpha, or null — `geometry`, `cut`, `local`), `assemblies[]` (the root first; `name`, `components[]` of `{"part": i}` or `{"assembly": j}` with an optional `location` and `name`), `units` (`mm`, `in`, …), `schema` (`ap242`, else AP214), `header` (`name` — the output's FILE name, `description`, `system`) | `parts[]` (`name`, `empty`, `solids`, `faces`, `volume_um3`, after the cuts); blob `data` |
 | `import-step` | `shape` (a handle prefix), blob `file` or `path`, `hold` (false: hold nothing), `display_rel` (count display triangles at that fraction of each part's diagonal) | `units[]` and `unit_um[]` (the file's length units, each resolved exactly as the transfer resolves it — an unresolvable one, or none, is the refusal `import.units`), `pmi` (dimensions, tolerances and datums, none imported), `parts[]` (`shape` = prefix`/n` or empty, `name`, `path` — the occurrence, composed through every assembly level, `1/2` — `colour` or null, `solids`, `faces`, `valid`, `closed`, `why`, `healing`, `triangles`), `healing[]` |
 | `release` | `shapes[]` | `released`, `held` |
 | `shutdown` (or `quit`) | — | `ok`, then exit 0 |
@@ -170,6 +171,29 @@ propagates. An empty result is refused as `build.empty` (brief 66: the editor wo
 *"'lid' and 'pin' share nothing"*), and a fillet OCCT cannot build as `build.failed`, each naming the object. A
 `step` node reads its file once per (path, hash) for the life of the worker.
 
+### `write-step` (brief 69)
+
+StepExport (`src/Design/ThreeD/Step/StepExport.cs`) decides what is in the file; this writes it, in one request. Each
+part's `geometry` is resolved numbers, micrometres, in the WORLD frame: `box` (`min`, `max`), `prism` (`outline`,
+`holes`, `extrude` — the same reader as a tree's prism), `cylinder` (`from`, `to`, `radius`), `sphere` (`centre`,
+`radius`, optional `zmin`/`zmax` — a ball flattened on its pad, kept between two heights), `polyhedron` (`vertices`,
+`loops`), `loft` (`rings`, `smooth` — a bond wire: a ruled loft through its sections, closed by its end faces, each ring
+a periodic spline when smooth), `face` (`outline`, `holes` — a sheet, written as a shell-based surface model) and `brep`
+(`blob`, naming a request blob of B-rep bytes — a kernel solid). Then, in order: each part loses what the parts its
+`cut` lists take (cut from the parts as built, never as already cut — precedence, em-3d.md §6.3a); a part a
+sub-assembly shares is carried into that sub-assembly's frame by `local` (twelve numbers, µm); the assemblies are built
+once each however often they are placed. A part the cuts leave empty is not written and says `empty`.
+
+**Colours are sRGB.** `Quantity_TOC_RGB` is OCCT's LINEAR RGB, and the writer re-encodes it: `#b87333` went out as
+(0.866, 0.702, 0.485). `write-step`, `export` and the reader all use `Quantity_TOC_sRGB` now, so a file's `COLOUR_RGB`
+is a material's `#rrggbb`, and a colour written by another tool matches a material by colour on import. The alpha is
+written as a surface-style transparency (1 − alpha), which both schemas carry.
+
+**The header** names the output's file (never its path) with no author, no organisation and no authorisation, and the
+`system` circuitRF states as the originating system. **Each file's assembly occurrences are numbered from 1**: OCCT
+numbers a `NEXT_ASSEMBLY_USAGE_OCCURRENCE`'s id from a counter that lives as long as the process, so without this a
+worker's second export numbered on from its first, and one model was not one byte sequence.
+
 ### Test nodes
 
 With `CRF_GEOMETRY_WORKER_TEST=1` in its environment the worker also builds a node of kind `crash` (it exits at
@@ -178,7 +202,8 @@ crash and cancellation gates are tested against. Without it both are refused lik
 nodes of a `build`, so the client's cache, failed-tree record and restart are what those gates exercise.
 With the same switch, `CRF_GEOMETRY_WORKER_TEST_IMPORT_SECONDS=<s>` makes every `import-step` wait that long before
 reading — what cancelling the Import STEP dialog mid-read is tested against (brief 68). Without the switch it is
-ignored.
+ignored. `CRF_GEOMETRY_WORKER_TEST_WRITE_SECONDS=<s>` does the same for every `write-step` — what
+cancelling an export is tested against (brief 69).
 
 `geometry-worker --version` prints `geometry-worker <VERSION>` and `occt <version>` and exits 0, so a
 person and `tools/CliSmoke` can ask without speaking the protocol.

@@ -65,6 +65,11 @@ public static class LayoutConvert
         // brief-em3d-68 R-em3d68-7b — STEP: what the Import STEP dialog would have asked.
         public List<(string Part, string Material)> StepMaterials = [];
         public List<string> StepParts = [];
+
+        // brief-em3d-69 R-em3d69-5b — STEP export: the Export STEP dialog's options, one flag each.
+        public bool StepAssembly, StepAsDrawn, StepThicken, StepAirBox, StepExportFlags;
+        public StepExportSchema StepSchema = StepExportSchema.Ap214;
+        public StepExportView StepView = StepExportView.Auto;
     }
 
     public static int Run(string[] args)
@@ -140,6 +145,28 @@ public static class LayoutConvert
                     break;
                 }
                 case "--part" when i + 1 < args.Length: o.StepParts.Add(args[++i]); break;
+                case "--assembly": o.StepAssembly = o.StepExportFlags = true; break;
+                case "--as-drawn": o.StepAsDrawn = o.StepExportFlags = true; break;
+                case "--thicken-sheets": o.StepThicken = o.StepExportFlags = true; break;
+                case "--include-airbox": o.StepAirBox = o.StepExportFlags = true; break;
+                case "--schema" when i + 1 < args.Length:
+                    o.StepExportFlags = true;
+                    switch (args[++i].ToLowerInvariant())
+                    {
+                        case "ap214": o.StepSchema = StepExportSchema.Ap214; break;
+                        case "ap242": o.StepSchema = StepExportSchema.Ap242; break;
+                        default: return JsonRun.Fail(CliDiagnostics.ConvertUnknownSchema(args[i]));
+                    }
+                    break;
+                case "--view" when i + 1 < args.Length:
+                    o.StepExportFlags = true;
+                    switch (args[++i].ToLowerInvariant())
+                    {
+                        case "3d": o.StepView = StepExportView.ThreeD; break;
+                        case "layout": o.StepView = StepExportView.Layout; break;
+                        default: return JsonRun.Fail(CliDiagnostics.ConvertUnknownView(args[i]));
+                    }
+                    break;
 
                 default:
                     if (a.StartsWith('-')) { JsonRun.Report(CliDiagnostics.ConvertUnknownOption(a)); return Usage(); }
@@ -158,12 +185,23 @@ public static class LayoutConvert
         // file with no telling extension is classified by CONTENT through the same classifier the
         // Gerber import itself uses, so `convert` and the import can never disagree about what a file
         // is. --from overrides all of it.
+        bool stepSource = o.From == Fmt.Step || (o.From is null && DetectSource(o.Input) == Fmt.Step);
+        if (stepSource)
+        {
+            if (o.StepExportFlags) return JsonRun.Fail(CliDiagnostics.ConvertStepExportFlagsWithoutStep());
+            return ImportStep(o);
+        }
+        if (o.StepMaterials.Count > 0 || o.StepParts.Count > 0) return JsonRun.Fail(CliDiagnostics.ConvertStepFlagsWithoutStep());
+
+        // brief-em3d-69 R-em3d69-5a — a STEP TARGET: a .c3d, a .clay or a cell folder exports straight through StepExport;
+        // an interchange source is imported into a scratch cell first, exactly as every other target does.
+        bool stepTarget = o.To == Fmt.Step || (o.To is null && o.Output is not null && DetectTarget(o.Output) == Fmt.Step);
+        if (stepTarget) return ExportStep(o);
+        if (o.StepExportFlags) return JsonRun.Fail(CliDiagnostics.ConvertStepExportFlagsWithoutStep());
+
         Fmt from = o.From ?? DetectSource(o.Input) ?? Fmt.Clay;
         if (o.From is null && DetectSource(o.Input) is null)
             return JsonRun.Fail(CliDiagnostics.ConvertSourceUnrecognised(Path.GetFileName(o.Input)));
-
-        if (from == Fmt.Step) return ImportStep(o);
-        if (o.StepMaterials.Count > 0 || o.StepParts.Count > 0) return JsonRun.Fail(CliDiagnostics.ConvertStepFlagsWithoutStep());
 
         if (o.ListCells) return ListCells(o, from);
 
@@ -176,8 +214,6 @@ public static class LayoutConvert
         Fmt? to = o.To ?? DetectTarget(o.Output);
         if (to is null)
             return JsonRun.Fail(CliDiagnostics.ConvertTargetUnrecognised(o.Output));
-
-        if (to == Fmt.Step) return JsonRun.Fail(CliDiagnostics.ConvertStepIsASource(o.Output));
 
         if (from == Fmt.Clay && to == Fmt.Clay)
             return JsonRun.Fail(CliDiagnostics.ConvertClayToClay());
@@ -284,6 +320,79 @@ public static class LayoutConvert
         JsonRun.AddOutput("3d", c3d);
         JsonRun.AddOutput("step", result.CopiedPath);
         return 0;
+    }
+
+    /// <summary>
+    /// brief-em3d-69 R-em3d69-5 — <c>.c3d</c> / <c>.clay</c> / cell folder / any interchange source → one STEP file. Argument
+    /// checks, the interchange import and reporting only: what is in the file is <see cref="StepExport.Export"/>'s, the
+    /// function the Export STEP dialog calls (a source scan holds it).
+    /// </summary>
+    private static int ExportStep(Options o)
+    {
+        if (o.ListCells) return JsonRun.Fail(CliDiagnostics.ConvertListCellsNotApplicable());
+        var kernel = GeometryKernel.Shared;
+        if (!kernel.Capability.Available)
+            return JsonRun.Fail(CliDiagnostics.ConvertFailed(GeometryKernel.NeedsKernel("Export STEP", kernel.Capability)));
+
+        string input = Path.GetFullPath(o.Input!);
+        bool direct = Path.GetExtension(input).ToLowerInvariant() is ".c3d" or ".clay"
+                      || (o.From is null && Directory.Exists(input) && DocumentKinds.LooksLikeCellFolder(input));
+        var options = new StepExportOptions
+        {
+            Assembly = o.StepAssembly, AsDrawn = o.StepAsDrawn, ThickenSheets = o.StepThicken, IncludeAirBox = o.StepAirBox,
+            Schema = o.StepSchema, View = o.StepView, TechPath = direct ? o.TechPath : null,
+            WorkspaceCws = o.Cws is { } w ? Path.GetFullPath(w) : null,
+        };
+
+        string? scratch = null;
+        try
+        {
+            string source = input;
+            if (!direct)
+            {
+                // Every other source imports into a scratch cell, as every other target does; the layout it lands on is the
+                // source, and its minted technology is what that layout references.
+                Fmt from = o.From ?? DetectSource(input) ?? Fmt.Clay;
+                if (o.From is null && DetectSource(input) is null)
+                    return JsonRun.Fail(CliDiagnostics.ConvertSourceUnrecognised(Path.GetFileName(input)));
+                Console.Error.WriteLine($"[circuitRF] {Name(from)} -> STEP");
+                var src = LoadSource(o, from, Fmt.Step, ref scratch);
+                if (src is null) return 1;
+                var primary = CellFolder.ResolvePrimary(src.CellDir, ViewType.Layout);
+                if (primary.ResolvedName is not { } file) { JsonRun.Report(CliDiagnostics.ConvertCellHasNoLayout(Path.GetFileName(src.CellDir))); return 1; }
+                source = Path.Combine(CellFolder.SubFolderPath(src.CellDir, ViewType.Layout), file);
+            }
+            else Console.Error.WriteLine("[circuitRF] -> STEP");
+
+            var result = StepExport.Export(source, o.Output!, options, kernel, RunHost.Control);
+            Report(result.Notes);
+            Console.Error.WriteLine($"[circuitRF] {result.Plan.Summary}");
+            Console.WriteLine(result.Path);
+            JsonRun.AddOutput("step", result.Path);
+            return 0;
+        }
+        catch (OperationCanceledException)
+        {
+            Console.Error.WriteLine("[circuitRF] cancelled; nothing was written");
+            return 130;
+        }
+        catch (StepExportException e)
+        {
+            return JsonRun.Fail(e.Diagnostic);
+        }
+        catch (GeometryKernelException e)
+        {
+            return JsonRun.Fail(CliDiagnostics.ConvertFailed(e.Message));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return JsonRun.Fail(CliDiagnostics.ConvertFailed(ex.Message));
+        }
+        finally
+        {
+            if (scratch is not null && Directory.Exists(scratch))
+                try { Directory.Delete(scratch, recursive: true); } catch { /* best effort */ }
+        }
     }
 
     private static int? ClayDirectoryRefusal(string output)
@@ -879,8 +988,10 @@ public static class LayoutConvert
     private static int Usage()
     {
         Console.Error.WriteLine("Usage: circuitrf convert <input> -o <output> [--from f] [--to f] [--cell name]");
-        Console.Error.WriteLine("       formats: clay | gdsii | dxf | gerber | board; step (a source: -o <new>.c3d)");
-        Console.Error.WriteLine("       step:  --material <part>=<name> (repeatable)  --part <path> (repeatable)  --tech <path.ctech>");
+        Console.Error.WriteLine("       formats: clay | gdsii | dxf | gerber | board | step");
+        Console.Error.WriteLine("       step source (-o <new>.c3d):  --material <part>=<name> (repeatable)  --part <path> (repeatable)  --tech <path.ctech>");
+        Console.Error.WriteLine("       step target (-o <file>.step; from a .c3d, .clay, cell folder or any format above):");
+        Console.Error.WriteLine("              --assembly  --as-drawn  --thicken-sheets  --include-airbox  --schema ap214|ap242  --view 3d|layout  --tech <path.ctech>");
         Console.Error.WriteLine("       --no-coalesce  keep a painted pour's individual strokes");
         JsonRun.Note(CliDiagnostics.ConvertUsage());
         return 1;

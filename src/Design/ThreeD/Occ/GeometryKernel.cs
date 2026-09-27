@@ -28,6 +28,9 @@ public sealed record GeometryKernelDeadlines
     public TimeSpan Handshake { get; init; } = TimeSpan.FromSeconds(10);
     public TimeSpan Build { get; init; } = TimeSpan.FromSeconds(120);
     public TimeSpan ImportStep { get; init; } = TimeSpan.FromSeconds(300);
+
+    /// <summary>brief-em3d-69 — a whole model's STEP file: every part built, cut by precedence and written in one request.</summary>
+    public TimeSpan WriteStep { get; init; } = TimeSpan.FromSeconds(900);
     public TimeSpan Other { get; init; } = TimeSpan.FromSeconds(30);
 }
 
@@ -147,6 +150,13 @@ public sealed record GeometryKernelExportItem(GeometryKernelTree Tree, string? N
     /// identity. Two items of one tree are one part instanced twice.</summary>
     public double[]? Location { get; init; }
 }
+
+/// <summary>brief-em3d-69 — one part as the worker wrote it: its solid and face counts and volume after the precedence
+/// cuts (µm³); <see cref="Empty"/> when the cuts left nothing, and the part was not written.</summary>
+public sealed record GeometryKernelWrittenPart(string Name, bool Empty, int Solids, int Faces, double VolumeUm3);
+
+/// <summary>brief-em3d-69 — a <c>write-step</c> reply: the file's bytes and each part's outcome, in request order.</summary>
+public sealed record GeometryKernelStepFile(byte[] Data, IReadOnlyList<GeometryKernelWrittenPart> Parts);
 
 /// <summary>The geometry kernel, as circuitRF sees it: discovery, capability, and every request to the worker.</summary>
 public sealed class GeometryKernel : IDisposable
@@ -668,6 +678,27 @@ public sealed class GeometryKernel : IDisposable
         var reply = _model.Send(path, new GeometryKernelMessage(request), Deadlines.Other, control, "exporting", what.Trim('\''));
         if (!reply.Ok) throw Refused(reply, what.Trim('\''));
         return reply.Blob("data")?.Data ?? [];
+    }
+
+    /// <summary>
+    /// brief-em3d-69 — writes one STEP file from <paramref name="request"/> (the <c>write-step</c> request StepExport composes:
+    /// parts, cuts, assemblies, header) and the B-rep <paramref name="blobs"/> it names. Holds nothing and is never cached: a
+    /// STEP file carries a time-stamp. The kernel only carries the request; what is in the file is StepExport's decision.
+    /// </summary>
+    /// <exception cref="GeometryKernelException">Refused, crashed, timed out, or no kernel; the message is the sentence.</exception>
+    /// <exception cref="OperationCanceledException"><paramref name="control"/>'s token cancelled; the worker was killed.</exception>
+    public GeometryKernelStepFile WriteStep(JsonObject request, IReadOnlyList<GeometryKernelBlob> blobs, RunControl? control = null)
+    {
+        var (path, _) = Require("Export STEP");
+        request["op"] = "write-step";
+        var reply = _model.Send(path, new GeometryKernelMessage(request, blobs), Deadlines.WriteStep, control, "exporting", "the STEP file");
+        if (!reply.Ok) throw Refused(reply, "the STEP file");
+        var parts = new List<GeometryKernelWrittenPart>();
+        foreach (var p in reply.Json["parts"] as JsonArray ?? [])
+            if (p is not null)
+                parts.Add(new GeometryKernelWrittenPart(p["name"]?.GetValue<string>() ?? "", p["empty"]?.GetValue<bool>() ?? false,
+                    p["solids"]?.GetValue<int>() ?? 0, p["faces"]?.GetValue<int>() ?? 0, p["volume_um3"]?.GetValue<double>() ?? 0));
+        return new GeometryKernelStepFile(reply.Blob("data")?.Data ?? [], parts);
     }
 
     /// <summary>

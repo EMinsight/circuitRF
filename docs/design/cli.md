@@ -56,7 +56,7 @@ Thirteen verbs run no analysis, so none of §3-§6 applies to them and §7's exi
 
 | Verb | Input | Does | Writes |
 |---|---|---|---|
-| `convert` | any interchange format; a STEP file | one import, one export | the target format; documented in the repo-root `CLAUDE.md`. **A `clay` target is a DIRECTORY**; a STEP source's one target is a new `.c3d` — see below |
+| `convert` | any interchange format; a STEP file; a `.c3d` or a cell folder (to STEP) | one import, one export | the target format; documented in the repo-root `CLAUDE.md`. **A `clay` target is a DIRECTORY**; a STEP source's one target is a new `.c3d`, and a STEP target takes a `.c3d`, a `.clay`, a cell folder or any interchange source — see below |
 | `new workspace` | a directory | `WorkspaceCreate.Create` | a `.cws` and, unless `--tech none`, a copied `.ctech` |
 | `new cell` | a workspace + a name | `CellCreate.Create` | a cell folder and one empty-but-valid file per `--views` |
 | `import part` | a component file or folder | `ComponentRead` + `ComponentImport.Import` | a cell folder holding the land patterns and the symbol |
@@ -96,7 +96,7 @@ that decide it are in `src/Design/RESOLVED.md`.
 **`convert part.step -o <cell>/3d/<name>.c3d` makes a NEW 3D view from a STEP file** (brief-em3d-68 R-em3d68-7).
 `step` is a SOURCE with exactly one legal target, a `.c3d` that does not exist yet; importing into an existing one
 is writing its `Step` objects (the format is the contract — `reference topic=c3d` describes every field), so an
-existing target is a refusal saying so, and a `.step` target is a refusal that STEP is read here, not written. The
+existing target is a refusal saying so (a `.step` TARGET is the export, below). The
 verb is argument parsing and reporting around `StepImport.Import` — the function the Import STEP dialog calls — and
 a comment-stripped scan of `src/Cli` holds that. The dialog's defaults are the verb's: materials by part name,
 then by exact colour, else none (a note lists the unmapped parts); a part that is not a closed solid is skipped
@@ -106,6 +106,23 @@ document's `TechRef`; otherwise the workspace's default by the usual walk-up). A
 cannot resolve is a refusal naming it, never a guess — Excellon's rule. A `.step`/`.stp` is recognised by
 extension, and anything else by its first line (ISO 10303-21's header) through `DetectSource`, the one classifier
 `check` also names a foreign file with. Without the geometry kernel it refuses with the capability's own sentence.
+
+**`convert <x.c3d | x.clay | cell | board…> -o out.step` writes the ELABORATED model as one STEP file**
+(brief-em3d-69 R-em3d69-5, D9) — the solids the solver gets, named by their instance paths and coloured by their
+materials, in the document's display unit mapped to millimetres (nm, µm, mm) or inches (mil, inch). The verb is argument
+parsing and reporting around `StepExport.Export`, the function File ▸ Export ▸ STEP… calls; a comment-stripped scan of
+`src/Cli` finds no call into the worker and no STEP text, and the process's file matches the in-process call's byte for
+byte but for `FILE_NAME`'s time-stamp. Legal sources: a `.c3d`, a `.clay`, a cell folder (its 3D view, else its layout;
+a cell with both is a refusal listing the two and naming `--view 3d|layout`, `render`'s rule) and every interchange
+source, imported into a scratch cell first as for every other target — so `convert board.kicad_pcb -o board.step` is
+one line. The flags mirror the dialog: `--assembly` (each placed cell a sub-assembly, written once however often it is
+placed), `--as-drawn` (every solid whole; the default applies precedence, so the file holds disjoint solids),
+`--thicken-sheets`, `--include-airbox` and `--schema ap214|ap242` (AP214 by default). Any of them with another target is
+a refusal. Refusals name their remedy: a `.clay` whose stackup cannot place a drawn layer is `Em3dLayoutSolids.From`'s
+own sentence, verbatim; a `.clay` with no resolvable technology names `--tech` (never an empty technology — with no
+stackup nothing has a height); a model with nothing in it says *nothing to export*; an absent kernel is the
+capability's sentence. stdout is the written path, and `--json` records it as an output of kind `step`. A cancelled
+export exits 130 and writes nothing: the worker's bytes go to a temporary file renamed into place.
 | `reference` | **nothing at all** | reports what a caller may WRITE: the shipped reference pages, plus four topics generated from the live registries and readers — the component catalogue, the analysis directives, and the `.cdd` and `.ctech` formats | **nothing** — §12 |
 
 **`new` is one verb with a noun, not three** (`brief-automation-3-authoring-verbs.md` R-aut3-13): the

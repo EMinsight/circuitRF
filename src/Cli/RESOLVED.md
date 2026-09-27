@@ -2739,3 +2739,18 @@ a file that leaves it out reads false. The page says to write it.
   classify through `DetectSource`) name such a file `interchange`/`STEP` rather than unknown.
 - **Absent kernel**: the refusal is `GeometryKernel.NeedsKernel("Import STEP", …)` — the disabled menu item's own
   sentence — with exit 1, checked before the file is read.
+
+## `convert` gains a STEP target — brief-em3d-69 (2026-09-27)
+
+- **A STEP target is decided before the source is classified.** `DetectSource` does not know a `.c3d` (and must not —
+  `check` and `explain` classify through it), and it calls every directory a Gerber file set. So `LayoutConvert.Run`
+  asks first whether the source is STEP (the import), then whether the TARGET is (`ExportStep`), and only then refuses an
+  unrecognised source. Inside `ExportStep` a `.c3d`, a `.clay` and a directory `DocumentKinds.LooksLikeCellFolder`
+  accepts go straight to `StepExport.Export`; anything else is imported into a scratch cell exactly as for every other
+  target, and its layout — which references the minted technology — is the source.
+- **The flags are refused, not ignored, with any other target** (`convert.step.export-flags`), as `--material`/`--part`
+  already are with any other source. The kernel is checked before an interchange import, so an absent kernel costs no
+  import. The old `convert.step.source-only` refusal is gone: a `.step` target is now the export.
+- **No logic in the verb.** `StepConvertCliTests.Gate8` scans `src/Cli` (comments stripped) for any call into the worker
+  and any STEP text; `Gate1` compares the process's file with the in-process call's byte for byte, bar `FILE_NAME`'s
+  time-stamp, for a `.c3d`, a `.clay` and a cell folder.
