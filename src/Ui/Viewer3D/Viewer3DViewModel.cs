@@ -344,7 +344,7 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
         _syncingKinds = true;
         ShowDielectrics = Scene.Objects.Any(o => o.Kind == Scene3DKind.Dielectric && View.IsVisible(o.Id));
         ShowAir = Scene.Objects.Any(o => o.Kind == Scene3DKind.Air && View.IsVisible(o.Id));
-        ShowBoundaryFaces = Scene.Objects.Any(o => IsBoxFace(o) && View.IsVisible(o.Id));
+        ShowBoundaryFaces = Scene.Objects.Any(o => IsAirBoxPart(o) && View.IsVisible(o.Id));
         _syncingKinds = false;
     }
 
@@ -354,12 +354,17 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
 
     partial void OnShowDielectricsChanged(bool value) { if (!_syncingKinds) SetKindVisible(o => o.Kind == Scene3DKind.Dielectric, value); }
     partial void OnShowAirChanged(bool value) { if (!_syncingKinds) SetKindVisible(o => o.Kind == Scene3DKind.Air, value); }
-    partial void OnShowBoundaryFacesChanged(bool value) { if (!_syncingKinds) SetKindVisible(IsBoxFace, value); }
+    partial void OnShowBoundaryFacesChanged(bool value) { if (!_syncingKinds) SetKindVisible(IsAirBoxPart, value); }
 
-    /// <summary>An air-box face — not the box's edges, and not a face boundary's tint (brief-em3d-49), which the box's
-    /// toggle leaves drawn.</summary>
+    /// <summary>An air-box face — not the box's edges, and not a face boundary's tint (brief-em3d-49).</summary>
     private static bool IsBoxFace(Scene3DObject o)
         => o.Kind == Scene3DKind.Boundary && o.Name != "airbox" && !o.Name.StartsWith(Scene3DBuilder.FaceTintPrefix, StringComparison.Ordinal);
+
+    /// <summary>3D editor round 3 — what the air-box switch shows and hides: its faces AND its edges. The edges were left
+    /// out, so switching the box off still drew its outline, and the switch then read "on" again from that outline.
+    /// A face boundary's tint is not the box's and stays drawn.</summary>
+    private static bool IsAirBoxPart(Scene3DObject o)
+        => o.Kind == Scene3DKind.Boundary && !o.Name.StartsWith(Scene3DBuilder.FaceTintPrefix, StringComparison.Ordinal);
 
     [ObservableProperty] private Viewer3DTreeItem? _selectedItem;
 

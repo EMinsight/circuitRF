@@ -73,10 +73,12 @@ public sealed class Snap3DGateTests : IDisposable
         }), ws);
         var v = vm.Viewer;
         var scene = v.Scene;
-        Assert.Equal(900, scene.Objects.Length);
+        // 900 elements, and (3D editor round 3) the air box a design with no setup draws: six faces and its edges.
+        Assert.Equal(900, scene.Objects.Count(o => o.Kind != CircuitRF.Render.Scene3D.Scene3DKind.Boundary));
+        Assert.Equal(7, scene.Objects.Count(o => o.Kind == CircuitRF.Render.Scene3D.Scene3DKind.Boundary));
         Assert.Equal(1, scene.FeatureTableCount);                           // the child is tabled once
         Assert.True(scene.Features[0].Table!.FeatureCount >= 200, $"{scene.Features[0].Table!.FeatureCount} features");
-        Assert.All(scene.Features, f => Assert.True(f.Shared));
+        Assert.All(scene.Features.Where(f => f.Table is not null), f => Assert.True(f.Shared));   // the air box's parts have none
 
         // Element [12,17]'s first corner, on its top.
         var corner = new Point3((12 * 200 + outline[0].U / (double)Um) * UmM, (17 * 200 + outline[0].V / (double)Um) * UmM, 10 * UmM);

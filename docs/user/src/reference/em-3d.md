@@ -191,9 +191,12 @@ model circuitRF built, and after a run it also shows what the solver made.
   In the 3D editor the tree is headed **Objects** and lists the document's objects **by material** (the
   default — objects with no material come first, in their own group) or **by type** (boxes, sheets,
   cylinders, …), chosen in its header. By material a row does not repeat the material its group is headed
-  by; an object's construction order is its name's tooltip. The **air box** is always listed once the view
-  has content — under **Air** by material, first under Boxes by type — and says which setup it belongs to,
-  or that no setup is active yet. The filter at the header's right hides tree rows by type or by
+  by; an object's construction order is its name's tooltip. The **air box** appears — drawn and listed — once
+  there is a solid or a sheet to size it: with no setup yet it is the box a new setup would solve in. By
+  material it is listed under the material that fills it, first under Boxes by type, and says which setup it
+  belongs to. It is filled with **Air** unless you choose otherwise: select it and pick its **Material** in the
+  Properties panel (**Vacuum** for free space, or any material of the technology). Its tick hides it — faces
+  and outline — and it stays hidden until you show it again. The filter at the header's right hides tree rows by type or by
   material, and its icon changes while it hides anything; it never hides an object in the view.
 - **Camera.** Drag to orbit; right-drag, middle-drag, Alt-drag or Shift-drag to pan; scroll to zoom. **Home**
   fits the model. **1** is isometric, **2**–**7** are the six orthographic views, and **P** switches between
@@ -366,8 +369,7 @@ model circuitRF built, and after a run it also shows what the solver made.
   flagged, so a pitch error shows at once. Foot length and ball size come from the workspace's assembly rules
   (`.wasm`) unless the wire's end states a foot length, and the run says when a built-in first guess was used.
 - **The air box** (the box button). The active setup's air box, its faces tinted by boundary: **PEC** grey,
-  **PMC** orange, **symmetry** hatched, and **absorbing** clear. It starts shown when a face is not
-  absorbing. In Face mode its faces can be picked, but only where no solid is under the cursor (**B** reaches
+  **PMC** orange, **symmetry** hatched, and **absorbing** clear. It is shown until you hide it. In Face mode its faces can be picked, but only where no solid is under the cursor (**B** reaches
   one behind a solid). Right-click one for *Boundary ▸ Absorbing / PEC / PMC / Symmetry* and *Padding…*:
   these change the **setup**, not the geometry, and the status line says which setup they wrote.
 - **Boundaries on faces** (the 3D editor, Face mode). Right-click a face of a dielectric or air object for

@@ -62,7 +62,9 @@ public sealed class EditorRound2ViewportTests : IDisposable
         var vm = Open(Write([Box("b", "Gold", 0, 0, 0, 50, 50, 20)]));
         var v = vm.Viewer;
         var o = vm.SceneObject("b")!;
-        float far = 40 * v.View.Camera.SceneRadius;
+        // Beyond everything the scene holds — the air box included, which (3D editor round 3) a design with no setup draws
+        // too, at a new setup's padding: forty scene radii of THAT reach past the camera, which no drag does.
+        float far = 2 * (v.Scene.BoundsMax - v.Scene.BoundsMin).Length();
         var moving = new bool[v.Scene.Objects.Length];
         moving[o.Id - 1] = true;
         v.View.Preview = new Scene3DPreview(moving, [Matrix4x4.CreateTranslation(far, far, 0)], keepOriginal: false);

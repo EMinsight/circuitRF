@@ -595,7 +595,11 @@ Construction order decides only what the rule leaves open — two metals, or two
 - **Air is not dielectric for this rule.** With no booleans (F4a), an air solid drawn after a metal is the only way to
   make a hole in it, and a plated via's bore is exactly that (R-em3d3-5d). So air keeps construction order against
   metal: an air solid drawn after the first metal ranks with the metals, in its own order among them; one drawn before
-  every metal — the air above a layout's stack — ranks with the dielectrics.
+  every metal — the air above a layout's stack — ranks with the dielectrics. **To hollow a conductor with a filled
+  bore** (a coax's dielectric inside its outer conductor) the fill states Role Air with its dielectric material: the
+  role decides precedence, the material decides the physics. A dielectric-role fill drawn after an air bore does not
+  fill it — a static priority cannot say both "metal over dielectric" and "this dielectric over that air over that
+  metal"; F4b's booleans remove the need.
 - **One rule, one place:** `Em3dPrecedence` (`src/Engine/Em3d`). openEMS's CSXCAD priorities (§6.5), the gmsh script's
   cut order (Palace, §6.2), the face boundaries layered above every solid, the section and isometric pictures' paint
   order, and the 3D view all read it; nothing re-derives it from `Order`.
@@ -1322,6 +1326,10 @@ shared geometry are cross-checks, not references — all of them are circuitRF-d
 - **Metal takes precedence over dielectric where solids overlap**, by default and whatever the construction order —
   in both solvers' geometry and in every rendering of it (§6.3a). Air keeps construction order against metal, so an
   air solid can still bore a hole.
+- **A 3D view's air box is filled with Air by default** (the technology's, else built in), and the user changes it —
+  to Vacuum, say — through the box's material (`AirBoxMaterial` in the `.c3d`; both solvers' background reads
+  `Em3dAirBox.Material`). The box is drawn once a solid or a sheet exists, with no setup too (a new setup's default);
+  never before.
 
 **Open:**
 1. The run verb's shape — `em` with a 3D setup, or a sibling verb (§5.3; §4.6 leans towards `em`).

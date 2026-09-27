@@ -36648,3 +36648,25 @@ still wanted). A material colour is `#rrggbb` only (`MaterialValidation.IsColour
 is dropped (`Rgba.ToHex()`); the commit goes through `ColorText`, so it is one undo entry and the colour
 already stated writes nothing. Unset colour seeds the picker mid-grey; the swatch shows transparent.
 Gate: `tests/Ui.Tests/Em3d/MaterialsTableInPlaceTests.cs`.
+
+### The air box: its material, drawn with no setup, and a tick that stays off (owner decisions, 2026-09-26)
+
+- **Fill:** Air by default, changed through the box's Material in Properties (`C3dDocument.AirBoxMaterial`, written only
+  when it is not Air; part of `C3dRecordsEdit`'s text, so one undo entry). `C3dProblemAssembly.AirFill` resolves it in the
+  technology, with built-in Air and Vacuum (free space's values) as fallbacks; any other unknown name is a refusal. The
+  assembled problem carries it as `Em3dAirBox.Material`, which `GmshGeoWriter`, `CsxcadWriter` and
+  `Em3dRunService.EstimatePalace` read before the older air-solid rule — so a `.c3d` run's background is no longer the
+  anonymous "(free space)". The tree heads the row with it (`C3dProblemAssembly.BoxFill`).
+- **Drawn with no setup, once a shape exists:** `ResolveRecords` builds the box from `new EmSetup { Solver3D = Palace }`
+  when no setup is active — the box a new setup would solve in. `Extent()` is null until a material-bearing solid or
+  sheet exists, so nothing is drawn before. Three tests counted the scene without it and were adjusted, not bypassed:
+  `HierarchyGateTests.Gate1` (adding an array column now moves the air box's 1,056 bytes and nothing else),
+  `Snap3DGateTests.Gate2` (907 objects = 900 + the box's 7), `EditorRound2ViewportTests.Preview_Far…` ("far" is now
+  twice the bounds, which include the box — forty scene radii of a 37.5 mm-padded box put the copy behind the camera).
+- **The tick that stayed on — two causes.** (1) The switch (`Viewer3DViewModel.ShowBoundaryFaces`) hid the six faces
+  but never the `airbox` EDGES object, so an unticked box still drew its outline, and `SyncKindToggles` re-read the switch
+  from whatever was visible. It now covers faces and edges (`IsAirBoxPart`). (2) Selecting the air-box row forced it
+  visible, and a click on the tick selects the row. Selection no longer touches visibility. The choice is the editor's
+  `AirBoxShown` (toolbar and tick), re-applied on every adopted scene; the old "starts shown when a face is not
+  absorbing" rule is gone — absorbing faces are clear in the editor, so shown means outline plus any wall.
+- Gate: `EditorRound2TreeTests.Round3_*` and `tests/Ui.Tests/ThreeD/AirBoxFillTests.cs`.

@@ -112,6 +112,18 @@ public static class GmshGeoWriter
     /// <summary>What an empty background is meshed as when the problem names no air.</summary>
     internal static readonly Em3dMaterial FreeSpace = new("(free space)", 1, null, 0, 1, 0);
 
+    /// <summary>
+    /// The material the air box is filled with — what no solid claims inside it: the problem's air solid's, else the
+    /// technology's "Air" when the problem carries it, else <see cref="FreeSpace"/>. The one rule the script and the
+    /// 3D editor's object tree (3D editor round 3: its row is headed by it) both read.
+    /// </summary>
+    public static string BackgroundMaterial(IEnumerable<Em3dSolid> solids, IEnumerable<Em3dMaterial> materials)
+        => solids.FirstOrDefault(s => s.Role == Em3dRole.Air)?.Material
+           ?? (materials.Any(m => m.Name == "Air") ? "Air" : FreeSpace.Name);
+
+    /// <summary>Whether <paramref name="material"/> is the built-in free space — a vacuum, not a technology's material.</summary>
+    public static bool IsFreeSpace(string material) => material == FreeSpace.Name;
+
     private static readonly string[] FaceKeys = ["xmin", "xmax", "ymin", "ymax", "zmin", "zmax"];
 
     /// <summary>
@@ -161,8 +173,7 @@ public static class GmshGeoWriter
         }
         // The background is the problem's air; a problem with no air solid (a box closed by a PEC face
         // right at the stack) has at most an empty background, meshed as free space.
-        string backgroundMaterial = problem.Solids.FirstOrDefault(s => s.Role == Em3dRole.Air)?.Material
-                                    ?? (materials.ContainsKey("Air") ? "Air" : FreeSpace.Name);
+        string backgroundMaterial = problem.Boundary.Material ?? BackgroundMaterial(problem.Solids, problem.Materials);
         if (!materials.ContainsKey(backgroundMaterial)) materials[backgroundMaterial] = FreeSpace;
         var background = new Em3dGroup(BackgroundName, ++attr, 3, Em3dGroupKind.Background, 0, AtLeast: true,
                                        backgroundMaterial);

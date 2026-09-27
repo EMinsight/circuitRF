@@ -277,6 +277,17 @@ public static class C3dProblemAssembly
         var solids = e.Solids.ToList();
         var sheets = e.Sheets.ToList();
         var materials = e.Materials.ToList();
+        // 3D editor round 3 — the air box's fill (owner decision): the document's AirBoxMaterial, Air when it names none — the
+        // technology's material of that name, else (for Air and Vacuum) a built-in one with free space's values.
+        var materialSources = new Dictionary<string, string>(e.MaterialSources, StringComparer.Ordinal);
+        if (AirFill(document.AirBoxMaterial, e.Technology, tempC, out string fillWhy) is not { } fill)
+            return No(fillWhy, e.Warnings);
+        if (!materials.Any(m => m.Name == fill.Material.Name))
+        {
+            materials.Add(fill.Material);
+            materialSources.TryAdd(fill.Material.Name, fill.Source);
+        }
+        box = box with { Material = fill.Material.Name };
 
         // ── Ports (R-em3d49-2): the document's, polarity by contact ─────────────────────────────
         // The generator's rule by problem (R-em3d22-1c): an electrostatic solve has none, and a magnetostatic one only
@@ -330,8 +341,34 @@ public static class C3dProblemAssembly
             Warnings = e.Warnings,
             Wires = e.Wires,
             Origins = e.Origins,
-            MaterialSources = e.MaterialSources,
+            MaterialSources = materialSources,
         };
+    }
+
+    /// <summary>The material name Vacuum — built in, like Air, when the technology does not define it.</summary>
+    public const string VacuumMaterial = "Vacuum";
+
+    /// <summary>3D editor round 3 — the material the air box is filled with, as the tree heads its row and a run fills it.</summary>
+    public static string BoxFill(C3dDocument document)
+        => document.AirBoxMaterial is { Length: > 0 } m ? m : Em3dGenerator.AirMaterial;
+
+    /// <summary>
+    /// The air box's fill as a problem material: <paramref name="name"/> (Air when null) from the technology at
+    /// <paramref name="tempC"/>; Air and Vacuum fall back to built-in free space when the technology lacks them. A material
+    /// that neither the technology nor the built-ins know is a refusal naming it, never a guess.
+    /// </summary>
+    public static (Em3dMaterial Material, string Source)? AirFill(string? name, Technology? tech, double tempC, out string why)
+    {
+        why = "";
+        string want = name is { Length: > 0 } n ? n : Em3dGenerator.AirMaterial;
+        if (tech?.FindMaterial(want) is { } m)
+            return (C3dElaborator.MaterialValues(m, tempC) with { Name = m.Name }, $"technology '{tech.Name}'");
+        if (string.Equals(want, Em3dGenerator.AirMaterial, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(want, VacuumMaterial, StringComparison.OrdinalIgnoreCase))
+            return (new Em3dMaterial(want, 1, null, 0, 1, 0), "built in (free space)");
+        why = $"The air box is filled with '{want}', which the technology does not define. Pick one of its materials for the " +
+              "air box, or Air or Vacuum.";
+        return null;
     }
 }
 

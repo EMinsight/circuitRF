@@ -240,6 +240,13 @@ public sealed record Em3dFaces(
 public sealed record Em3dAirBox(Point3 Min, Point3 Max, Em3dFaces Faces)
 {
     /// <summary>
+    /// 3D editor round 3 — the material that fills the box where no solid is (one of the problem's materials): Air by
+    /// default, and whatever the user gave the air box — Vacuum, say — otherwise. Null keeps the older rule (the problem's
+    /// air solid's material, else Air, else free space), which every layout-generated problem uses.
+    /// </summary>
+    public string? Material { get; init; }
+
+    /// <summary>
     /// The name a port uses to end on a face of the box — <c>airbox/zmin</c> and so on. A port may
     /// only end on a <see cref="Em3dBoundaryKind.Pec"/> face: that is the one kind that is a
     /// conductor.

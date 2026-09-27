@@ -230,7 +230,6 @@ public sealed partial class C3dEditorViewModel
         OnPropertyChanged(nameof(SetupsHeading));
         ActiveSetupChanged?.Invoke();
         Viewer.SetRunSetup(ActiveRunSetup);
-        _boxShownFor = null;
         Viewer.Regenerate();
         RefreshFieldsStale();
     }
@@ -407,14 +406,31 @@ public sealed partial class C3dEditorViewModel
         EmSetup? setup = null;
         if (setupJson is not null)
             try { setup = EmSetupPersistence.Deserialize(setupJson); } catch (Exception) { setup = null; }
-        var box = setup is not null && e.Ok ? C3dProblemAssembly.AirBox(setup, e, out _) : null;
+        // 3D editor round 3 — with no setup, the box a new setup would solve in (owner decision): drawn once there is a solid
+        // or a sheet to size it (Extent is null until then), never before.
+        var boxSetup = setup ?? (setupJson is null ? new EmSetup { Solver3D = Em3dSolver.Palace } : null);
+        var box = boxSetup is not null && e.Ok ? C3dProblemAssembly.AirBox(boxSetup, e, out _) : null;
         var ctx = C3dProblemAssembly.PortContext(setup, doc, e, box);
         var ports = e.Ok ? C3dPorts.Resolve(doc, ctx) : [];
         var boundaries = e.Ok ? C3dProblemAssembly.FaceBoundaryPreview(doc, e) : [];
         return new RecordsView(box, ports, boundaries, ctx);
     }
 
-    private bool? _boxShownFor;
+    /// <summary>
+    /// 3D editor round 3 — whether the air box is drawn (faces and edges): the toolbar switch and the tree tick. The user's
+    /// choice, kept by the editor and put back on every scene it adopts, so a rebuild never turns a hidden box back on.
+    /// On by default: the box is drawn once there is a shape to size it (absorbing faces are clear in the editor, so only
+    /// its outline and any wall show).
+    /// </summary>
+    [ObservableProperty] private bool _airBoxShown = true;
+
+    partial void OnAirBoxShownChanged(bool value) => ApplyAirBoxShown();
+
+    private void ApplyAirBoxShown()
+    {
+        if (Viewer.ShowBoundaryFaces != AirBoxShown) Viewer.ShowBoundaryFaces = AirBoxShown;
+        if (AllTreeItems().FirstOrDefault(t => t.IsAirBox) is { } box) box.Sync(AirBoxShown);
+    }
 
     /// <summary>After a scene is adopted: the records it resolved become the editor's, and the box starts shown when the
     /// active setup has any face that is not absorbing (R-em3d49-3a).</summary>
@@ -423,14 +439,8 @@ public sealed partial class C3dEditorViewModel
         foreach (long old in _records.Keys.Where(k => k < generation).ToList()) _records.TryRemove(old, out _);
         if (!_records.TryRemove(generation, out var view)) return;
         _recordsView = view;
-        if (_boxShownFor is null && view.Box is { } box)
-        {
-            var f = box.Faces;
-            bool anyWall = new[] { f.XMin, f.XMax, f.YMin, f.YMax, f.ZMin, f.ZMax }.Any(k => k != Em3dBoundaryKind.Absorbing);
-            Viewer.ShowBoundaryFaces = anyWall;
-            _boxShownFor = anyWall;
-        }
         RebuildRecordsTree();
+        ApplyAirBoxShown();
     }
 
     // ── ports (R-em3d49-2) ───────────────────────────────────────────────────────────────────
@@ -543,6 +553,30 @@ public sealed partial class C3dEditorViewModel
     /// <summary>R-em3d49-3b — a box face's boundary, written to the ACTIVE setup's AirBox; null on success, else why not.</summary>
     public string? SetAirBoxBoundary(string face, Em3dBoundaryKind kind)
         => EditActiveAirBox(face, f => f is null ? new EmAirBoxFace(null, kind) : f with { Boundary = kind }, $"Air box {face}: {kind}");
+
+    /// <summary>3D editor round 3 — the air box's material choices: the technology's materials, and Air and Vacuum (built in
+    /// when the technology lacks them).</summary>
+    public IReadOnlyList<string> AirBoxMaterialChoices
+    {
+        get
+        {
+            var list = Materials.ToList();
+            foreach (string b in new[] { CircuitRF.Design.Layout.Em3d.Em3dGenerator.AirMaterial, C3dProblemAssembly.VacuumMaterial })
+                if (!list.Contains(b, StringComparer.OrdinalIgnoreCase)) list.Add(b);
+            return list;
+        }
+    }
+
+    /// <summary>3D editor round 3 — the material that fills the air box (the document's, Air by default); one undo entry.
+    /// Air writes nothing (it is the default). Null on success, else why not.</summary>
+    public string? SetAirBoxMaterial(string material)
+    {
+        if (string.IsNullOrWhiteSpace(material)) return "Pick a material for the air box.";
+        string? stored = string.Equals(material, CircuitRF.Design.Layout.Em3d.Em3dGenerator.AirMaterial, StringComparison.Ordinal) ? null : material;
+        if (Document.AirBoxMaterial == stored) return null;
+        ChangeRecords($"Air box material: {material}", d => d.AirBoxMaterial = stored);
+        return null;
+    }
 
     /// <summary>R-em3d49-3b — a box face's padding, typed in the display unit; null on success, else why not.</summary>
     public string? SetAirBoxPadding(string face, string text)
@@ -810,29 +844,31 @@ public sealed partial class C3dEditorViewModel
     /// </summary>
     private void RebuildAirBoxItem()
     {
-        bool want = Document.Objects.Count > 0 || Document.Instances.Count > 0;
-        string detail = ActiveSetup is null ? "no active setup"
+        // 3D editor round 3 — listed when a box is drawn (with no setup, once a solid or a sheet exists), and with a setup
+        // whose box could not be built, so its row can say so. Headed, by material, by what fills it (Air by default).
+        bool want = ShownAirBox is not null || (ActiveSetup is not null && (Document.Objects.Count > 0 || Document.Instances.Count > 0));
+        string detail = ActiveSetup is null ? "no setup yet: a new setup's default"
                       : $"setup {(IsExternalActive ? ExternalItemName : ActiveSetupName)}{(ShownAirBox is null ? ": not built" : "")}";
+        string air = C3dProblemAssembly.BoxFill(Document);
         if (Tree.FirstOrDefault(g => g.Items.Any(i => i.IsAirBox)) is { } home)
         {
             var old = home.Items.First(i => i.IsAirBox);
-            if (want && old.Detail == detail)
+            if (want && old.Detail == detail && (TreeGrouping == C3dTreeGrouping.Primitive || string.Equals(home.Header, air, StringComparison.OrdinalIgnoreCase)))
             {
-                old.Sync(Viewer.ShowBoundaryFaces);
+                old.Sync(AirBoxShown);
                 return;
             }
             home.Items.Remove(old);
             if (home.Items.Count == 0) { DetachExpansion([home]); Tree.Remove(home); }
         }
         if (!want) return;
-        var item = new C3dTreeItem(this, AirBoxName, C3dTreeItem.AirBoxKind, detail, -1, -1, Viewer.ShowBoundaryFaces) { IsReadOnly = true };
+        var item = new C3dTreeItem(this, AirBoxName, C3dTreeItem.AirBoxKind, detail, -1, -1, AirBoxShown) { IsReadOnly = true };
         if (TreeGrouping == C3dTreeGrouping.Primitive)
         {
             if (Tree.FirstOrDefault(g => g.Role == C3dTreeGroupRole.Objects && g.Header == "Boxes") is { } boxes) boxes.Items.Insert(0, item);
             else Tree.Insert(0, new C3dTreeGroup("Boxes", [item]));
             return;
         }
-        const string air = CircuitRF.Design.Layout.Em3d.Em3dGenerator.AirMaterial;
         if (Tree.FirstOrDefault(g => g.Role == C3dTreeGroupRole.Objects && string.Equals(g.Header, air, StringComparison.OrdinalIgnoreCase)) is { } shared)
         {
             shared.Items.Insert(0, item);

@@ -80,6 +80,13 @@
                 </Grid>
             </StackPanel>
 
+            <!-- 3D editor round 3 — what fills the air box: Air by default, Vacuum or any technology material by choice. -->
+            <StackPanel Spacing="4" IsVisible="{Binding IsAirBoxRow}">
+                <TextBlock Text="Material" FontSize="11" Opacity="0.7"/>
+                <ComboBox ItemsSource="{Binding AirBoxMaterials}" SelectedItem="{Binding AirBoxMaterial}" HorizontalAlignment="Stretch"
+                          ToolTip.Tip="What fills the air box where no object is. Air by default; pick Vacuum for free space."/>
+            </StackPanel>
+
             <!-- 3D editor round 1 — the air box: padding per axis as a share of the content's extent, and each face's boundary. -->
             <StackPanel Spacing="4" IsVisible="{Binding IsAirBox}">
                 <TextBlock Text="Padding, % of the content's extent (each side)" FontSize="11" Opacity="0.7"

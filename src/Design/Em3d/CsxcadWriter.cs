@@ -341,7 +341,9 @@ public static class CsxcadWriter
                       "medium rather than a step into free space.");
 
         // ── The file ─────────────────────────────────────────────────────────────────────────────
-        var air = problem.Solids.FirstOrDefault(s => s.Role == Em3dRole.Air) is { } a ? materials[a.Material] : GmshGeoWriter.FreeSpace;
+        // 3D editor round 3 — the box's own fill when the problem states one (a 3D view's: Air, or what the user chose).
+        var air = problem.Boundary.Material is { } fill && materials.TryGetValue(fill, out var filled) ? filled
+                : problem.Solids.FirstOrDefault(s => s.Role == Em3dRole.Air) is { } a ? materials[a.Material] : GmshGeoWriter.FreeSpace;
         string head = Head(grid, faceKinds, ctx.Pml, maxSteps, run.EndCriterionDb, f0, fc, air, fitHz);
         const string tail = "        </Properties>\n    </ContinuousStructure>\n</openEMS>\n";
         string body = props.ToString();

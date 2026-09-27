@@ -134,13 +134,8 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         Viewer.SnapTogglesChanged += () => Snap3DPreference.Preferred = (Viewer.SnapEnabled, Viewer.SnapKinds);
         Viewer.FrameRequested += OnViewerFrame;
         Viewer.CursorResolved += OnCursorResolvedForOperation;
-        // 3D editor round 1 — the air box's tree tick is the toolbar's air-box switch.
-        Viewer.PropertyChanged += (_, e) =>
-        {
-            if (e.PropertyName == nameof(Viewer3DViewModel.ShowBoundaryFaces) &&
-                AllTreeItems().FirstOrDefault(t => t.IsAirBox) is { } box)
-                box.Sync(Viewer.ShowBoundaryFaces);
-        };
+        // 3D editor round 1 — the air box's tree tick is the toolbar's air-box switch. Round 3: both are AirBoxShown, the
+        // user's choice, which the editor re-applies to every scene it adopts.
         ApplySnapGrid();
         Properties = new C3dPropertiesViewModel(this);
         Variables = new C3dVariablesViewModel(this);
@@ -907,7 +902,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         if (_syncingTree) return;
         if (item.IsAirBox)
         {
-            Viewer.ShowBoundaryFaces = visible;
+            AirBoxShown = visible;
             return;
         }
         if (item.ObjectIndex >= 0)
@@ -936,7 +931,8 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
             List<Scene3DItem> ids;
             if (value.IsAirBox)
             {
-                Viewer.ShowBoundaryFaces = true;
+                // Round 3: selecting it never switches it on — a click on its tick selects the row too, and turned a box
+                // the user had just hidden straight back on.
                 ids = [.. AirBoxFaceObjects().Select(o => Scene3DItem.OfObject(o.Id))];
             }
             else

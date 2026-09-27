@@ -149,6 +149,7 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         MaterialPlaceholder = NoMaterialPlaceholder;
         IsVertexEditable = false;
         IsAirBox = false;
+        IsAirBoxRow = false;
         AirBoxFaces.Clear();
         var viewer = editor.Viewer;
         var sel = viewer.Selection;
@@ -364,6 +365,20 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
 
     /// <summary>The active setup's air box is what is shown: its padding per axis and each face's boundary.</summary>
     [ObservableProperty] private bool _isAirBox;
+
+    /// <summary>3D editor round 3 — the air box is what is shown, with or without a setup: its material is editable either way.</summary>
+    [ObservableProperty] private bool _isAirBoxRow;
+
+    /// <summary>3D editor round 3 — the material that fills the air box (Air by default); a choice is one undo entry.</summary>
+    [ObservableProperty] private string? _airBoxMaterial;
+
+    public IReadOnlyList<string> AirBoxMaterials => editor.AirBoxMaterialChoices;
+
+    partial void OnAirBoxMaterialChanged(string? value)
+    {
+        if (_loading || !IsAirBoxRow || value is null) return;
+        Error = editor.SetAirBoxMaterial(value) ?? "";
+    }
     [ObservableProperty] private string _padXPercent = "";
     [ObservableProperty] private string _padYPercent = "";
     [ObservableProperty] private string _padZPercent = "";
@@ -376,12 +391,15 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
     private void LoadAirBox()
     {
         IsAirBox = true;
+        IsAirBoxRow = true;
+        AirBoxMaterial = C3dProblemAssembly.BoxFill(editor.Document);
+        OnPropertyChanged(nameof(AirBoxMaterials));
         var setup = editor.ActiveSetup;
         Heading = "Air box";
         if (setup is null || editor.ShownAirBox is not { } box)
         {
             Rows.Add(new C3dPropertyRow("Setup", setup is null
-                ? "No setup is active: the air box's padding and faces are a setup's. Add one in Simulate ▸ Setup Analyses…"
+                ? "No setup is active: the box drawn is a new setup's default. Its padding and faces are a setup's — add one in Simulate ▸ Setup Analyses…"
                 : "The active setup's air box could not be built around this geometry; Simulate ▸ Run reports why."));
             IsAirBox = false;
             return;

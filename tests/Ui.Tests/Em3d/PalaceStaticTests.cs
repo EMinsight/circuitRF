@@ -307,8 +307,11 @@ public sealed class PalaceStaticTests(ITestOutputHelper output) : IDisposable
     ];
 
     /// <summary>
-    /// A coaxial section along z, 0 to ℓ, filling the box's height: the outer conductor a tube (its
-    /// metal cut by the higher-order dielectric), the inner a cylinder, air outside the tube. The ends
+    /// A coaxial section along z, 0 to ℓ, filling the box's height: the outer conductor a tube (its metal cut by the
+    /// higher-order fill), the inner a cylinder, air outside the tube. Metal takes precedence over a DIELECTRIC whatever the
+    /// order (em-3d.md §6.3a), so the fill that hollows the tube states Role Air — an air-role solid keeps construction order
+    /// against metal, which is how a hole is made with no booleans — while its material is the εr = 2 fill. The box states
+    /// its own fill (Air), so the air-role solid is not taken for the background. The ends
     /// are natural walls, except that the magnetostatic section is shorted by a PEC far face and driven
     /// through the dielectric's annulus at z = 0.
     /// </summary>
@@ -327,11 +330,11 @@ public sealed class PalaceStaticTests(ITestOutputHelper output) : IDisposable
         return new Em3dProblem(
             [
                 new Em3dSolid("outer", "metal", Em3dRole.Conductor, Cyl(r), 1),
-                new Em3dSolid("dielectric", "fill", Em3dRole.Dielectric, Cyl(CoaxB), 2),
+                new Em3dSolid("dielectric", "fill", Em3dRole.Air, Cyl(CoaxB), 2),
                 new Em3dSolid("inner", "metal", Em3dRole.Conductor, Cyl(CoaxA), 3),
             ],
             [], Materials(CoaxEr), ms ? [port] : [],
-            new Em3dAirBox(new(-half, -half, 0), new(half, half, CoaxLength), faces), Hz, 20)
+            new Em3dAirBox(new(-half, -half, 0), new(half, half, CoaxLength), faces) { Material = "Air" }, Hz, 20)
         {
             Type = type,
             Terminals = [new Em3dTerminal("inner", ["inner"], ms ? "port/1" : null)],

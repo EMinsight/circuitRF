@@ -13954,4 +13954,10 @@ change keeps it; a worse finding shows both numbers; round-trip and absent-when-
   with a dielectric drawn after a metal changes. The gmsh script says so in a comment line only when the shift is
   non-zero — the golden carries the script's comments, and rewording the always-present one moved it.
 - Gate: `tests/Ui.Tests/Em3d/MetalPrecedenceTests.cs` (rule, openEMS priorities, gmsh cut order, section paint order,
-  viewport depth + pick).
+  viewport depth + pick).- **A dielectric can no longer hollow a conductor.** `PalaceStaticTests`' coax built its outer conductor as a SOLID
+  cylinder cut by a higher-order dielectric — exactly what the rule forbids, so Palace refused the mesh ("'dielectric'
+  selected nothing"). A ring polygon (64-gon with a 64-gon hole) fixed the electrostatic gate (+0.27 %) but not the
+  magnetostatic one: its port is a circular ANNULUS that no polygon hole matches, and Palace aborted in mfem. The fill
+  now states **Role Air** with its εr = 2 material — an air-role solid keeps construction order against metal, which is
+  the documented way to bore a conductor — and the box states its own fill (Air) so that solid is not taken for the
+  background. C +0.13 %, L −0.08 %.

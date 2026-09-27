@@ -502,6 +502,13 @@ public sealed class C3dDocument
     /// <summary>brief-em3d-49 — boundaries on named faces of dielectric and air objects.</summary>
     public List<C3dFaceBoundary> FaceBoundaries { get; set; } = [];
 
+    /// <summary>
+    /// 3D editor round 3 — the material that fills the air box where no object is: a technology material's name. Absent
+    /// means Air (the common case; the technology's Air, else a built-in one with free space's values) — the user makes the
+    /// box a vacuum by naming Vacuum here. It belongs to the document, not to a setup: it is physics, like an object's material.
+    /// </summary>
+    public string? AirBoxMaterial { get; set; }
+
     /// <summary>Brief 42's embedded EM setups (the <c>.cem</c> schema minus <c>LayoutRef</c>), each read by the
     /// <c>.cem</c> reader (<see cref="C3dSetups.Read"/>).</summary>
     public List<JsonElement> Setups         { get; set; } = [];

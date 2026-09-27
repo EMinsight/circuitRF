@@ -1416,9 +1416,10 @@ public static class Em3dRunService
     {
         if (settings.ElementOrder is not (1 or 2)) return null;
         var byName = p.Materials.ToDictionary(m => m.Name, StringComparer.Ordinal);
-        // The background is meshed as the problem's air, or free space with none — GmshGeoWriter's rule.
-        var background = p.Solids.FirstOrDefault(s => s.Role == Em3dRole.Air) is { } air
-            ? byName[air.Material] : new Em3dMaterial("(free space)", 1, null, 0, 1, 0);
+        // The background is meshed as GmshGeoWriter meshes it: the box's own fill (3D editor round 3), else the problem's
+        // air, else free space.
+        string fill = p.Boundary.Material ?? GmshGeoWriter.BackgroundMaterial(p.Solids, p.Materials);
+        var background = byName.TryGetValue(fill, out var bg) ? bg : new Em3dMaterial("(free space)", 1, null, 0, 1, 0);
         return Em3dSizeEstimate.Palace(
             p, s => GmshGeoWriter.MaxElementSizeM(byName[s.Material], GmshGeoWriter.SizingFrequencyHz(p), settings), settings.ElementOrder,
             GmshGeoWriter.MaxElementSizeM(background, GmshGeoWriter.SizingFrequencyHz(p), settings), settings.AdaptiveMaxIterations);

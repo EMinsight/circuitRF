@@ -24,8 +24,7 @@ public sealed partial class C3dEditorViewModel
             items.Add(Viewer3DMenuItem.Separator);
             items.Add(new Viewer3DMenuItem("Delete", Enabled: false, Tip: why));
             items.Add(Viewer3DMenuItem.Separator);
-            items.Add(new Viewer3DMenuItem(Viewer.ShowBoundaryFaces ? "Hide" : "Show",
-                                           () => Viewer.ShowBoundaryFaces = !Viewer.ShowBoundaryFaces));
+            items.Add(new Viewer3DMenuItem(AirBoxShown ? "Hide" : "Show", () => AirBoxShown = !AirBoxShown));
         }
         else if (item.Kind == "Port")
         {

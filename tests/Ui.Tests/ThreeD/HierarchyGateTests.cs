@@ -75,7 +75,7 @@ public sealed class HierarchyGateTests : IDisposable
         int elementDraws = plan.Draws.Take(plan.DrawCount).Count(d => d.Pipeline == Scene3DPipeline.Opaque && d.Transform >= 1 && d.Transform <= 399);
         Assert.Equal(399, elementDraws);
 
-        // A column more: the child is not read again, nothing is tessellated, no geometry byte moves — 20 transforms.
+        // A column more: the child is not read again, nothing is tessellated, no geometry byte of it moves — 20 transforms.
         long uploads = fake.Counters.UploadBytesTotal;
         var before = scene;
         vm.ChangeInstance("Add a column", 0, i => i.Array!.Counts = [21, 20, 1]);
@@ -86,9 +86,11 @@ public sealed class HierarchyGateTests : IDisposable
         Assert.Equal(419, v.Scene.Elements.Length);
         var patch = Scene3DPatch.Between(before, v.Scene);
         Assert.NotNull(patch);
-        Assert.Equal(0, patch!.Bytes);
+        // 3D editor round 3 — the one geometry that moves is the air box (drawn with no setup too), which grows with the
+        // array: its six faces' 24 vertices and its twelve edges' 24 line vertices, and nothing of the array itself.
+        Assert.Equal(24 * Scene3DVertex.Stride + 24 * 20, patch!.Bytes);
         Assert.Equal(20, patch.ElementTransforms);
-        Assert.Equal(uploads, fake.Counters.UploadBytesTotal);
+        Assert.Equal(uploads + patch.Bytes, fake.Counters.UploadBytesTotal);
         Assert.Equal(20, fake.ElementTransforms);
     }
 

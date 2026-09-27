@@ -102,12 +102,61 @@ public sealed class EditorRound2TreeTests : IDisposable
         var vm = Open(Doc());
         var box = vm.Tree.Single(g => g.Header == "Air").Items.Single();
         Assert.True(box.IsAirBox);
-        Assert.Equal("no active setup", box.Detail);
+        Assert.Equal("no setup yet: a new setup's default", box.Detail);
+        Assert.NotNull(vm.ShownAirBox);                                   // drawn with no setup, once there is a shape
         Assert.False(vm.TreeMenuItems(box).Single(m => m.Header == "Delete").Enabled);
 
         vm.SelectedTreeItem = box;
         Assert.Equal("Air box", vm.Properties.Heading);
         Assert.Contains(vm.Properties.Rows, r => r.Label == "Setup" && r.Value.Contains("Setup Analyses"));
+        Assert.True(vm.Properties.IsAirBoxRow);
+        Assert.Equal("Air", vm.Properties.AirBoxMaterial);
+    }
+
+    [Fact]
+    public void Round3_UntickingTheAirBox_HidesItsOutlineToo_AndNothingTurnsItBackOn()
+    {
+        var vm = Open(Doc());
+        bool AnyBoxPartVisible() => vm.Viewer.Scene.Objects.Any(o => (o.Name == "airbox" || o.Name.StartsWith("airbox/")) && vm.Viewer.View.IsVisible(o.Id));
+        Assert.True(vm.AirBoxShown);
+        Assert.True(AnyBoxPartVisible());
+
+        var row = vm.Tree.Single(g => g.Header == "Air").Items.Single();
+        row.IsVisible = false;
+        Assert.False(AnyBoxPartVisible());                                // the edges went with the faces
+        vm.SelectedTreeItem = row;                                        // a click on its tick selects the row too
+        Assert.False(AnyBoxPartVisible());
+
+        vm.Rename(0, "substrate");                                        // any edit: a new scene
+        Settle(vm);
+        Assert.False(vm.AirBoxShown);
+        Assert.False(AnyBoxPartVisible());
+        Assert.False(vm.Tree.SelectMany(g => g.Items).Single(i => i.IsAirBox).IsVisible);
+    }
+
+    [Fact]
+    public void Round3_NoAirBoxUntilAShapeIsDrawn()
+    {
+        var vm = Open(new C3dDocument());
+        Assert.Null(vm.ShownAirBox);
+        Assert.DoesNotContain(vm.Tree.SelectMany(g => g.Items), i => i.IsAirBox);
+    }
+
+    [Fact]
+    public void Round3_TheAirBoxsMaterial_IsAir_UntilTheUserMakesItVacuum_OneUndoEntry()
+    {
+        var vm = Open(Doc());
+        vm.SelectedTreeItem = vm.Tree.Single(g => g.Header == "Air").Items.Single();
+        vm.Properties.AirBoxMaterial = "Vacuum";
+        Settle(vm);
+        Assert.Equal("Vacuum", vm.Document.AirBoxMaterial);
+        Assert.Equal([C3dEditorViewModel.AirBoxName], Names(vm, "Vacuum"));
+        Assert.DoesNotContain(vm.Tree, g => g.Header == "Air");
+
+        vm.UndoRedo.Undo();
+        Settle(vm);
+        Assert.Null(vm.Document.AirBoxMaterial);                          // Air is the default and writes nothing
+        Assert.Equal([C3dEditorViewModel.AirBoxName], Names(vm, "Air"));
     }
 
     [Fact]
