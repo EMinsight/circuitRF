@@ -1,0 +1,256 @@
+// brief-em3d-63 R-em3d63-5 — the tree the geometry worker receives: resolved numbers, and circuitRF's names.
+//
+// ELABORATE FIRST (R-em3d63-5a). A tree is made from objects C3dResolver has already turned into numbers
+// (it writes every bound field in place), and it carries no expression, no unit and no variable: the
+// worker never sees a .c3d. Lengths are MICROMETRES (R-em3d63-4c) — OCCT's absolute tolerances sit nine
+// orders of magnitude below a 25 µm feature in µm and two in metres, the reason GmshGeoWriter writes µm
+// too — converted from DBU once, here, by LayoutUnits' exact decimal path.
+//
+// EVERY NODE CARRIES ITS FACE NAMES (R-em3d63-5b), in the primitive's own face order — the names
+// C3dObject.FaceNames() gives it — and the worker names its OCCT faces from them (README.md "Face names").
+//
+// CANONICAL, SO IT HASHES (R-em3d63-5c). Fixed key order, invariant culture, shortest round-trip doubles,
+// no -0, and one trailing "\n": the same resolved tree is the same bytes and the same SHA-256 on every
+// platform — GmshGeoWriter's determinism rules. A rotation matrix's entries are the one input whose last
+// bit can come from a platform's cosine, so they are snapped to integers (as C3dLowering does) and
+// otherwise quantised to 2⁻⁴⁸ — far below anything geometric, far above a last-bit difference.
+//
+// THE NODE FORM (the worker's reader is the other half of this; README.md is the reference):
+//
+//   {"tree":1,"root":{"kind":"box","name":"lid","faces":[…],"transform":[12 numbers, 3 × 4 rows],
+//                     "min":[x,y,z],"size":[x,y,z]}}
+//   cylinder:   "base":[x,y,z],"axis":[x,y,z],"length":L,"radius":r          (bottom is the cap at base)
+//   prism:      "outline":[[x,y,z]…],"holes":[[[x,y,z]…]…],"extrude":[x,y,z]  (points in the object's frame)
+//   polyhedron: "vertices":[[x,y,z]…],"loops":[{"outer":[i…],"holes":[[i…]…]}…]
+//
+// Brief 64 adds operation nodes (boolean, fillet, chamfer, step) whose operands are nodes of this form.
+
+using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
+using CircuitRF.Design.Layout;
+
+namespace CircuitRF.Design.ThreeD.Occ;
+
+/// <summary>One object's geometry as the worker receives it: canonical JSON, its bytes and their hash.</summary>
+public sealed class GeometryKernelTree
+{
+    private GeometryKernelTree(string obj, string json, IReadOnlyList<string> faceNames)
+    {
+        Object = obj;
+        Json = json;
+        Bytes = Encoding.UTF8.GetBytes(json);
+        Hash = Convert.ToHexStringLower(SHA256.HashData(Bytes));
+        FaceNames = faceNames;
+    }
+
+    /// <summary>The root object's name — what a refusal or a crash sentence names.</summary>
+    public string Object { get; }
+
+    /// <summary>The canonical text, ending in one <c>\n</c>.</summary>
+    public string Json { get; }
+
+    public byte[] Bytes { get; }
+
+    /// <summary>SHA-256 of <see cref="Bytes"/>, lower-case hex.</summary>
+    public string Hash { get; }
+
+    /// <summary>The root's face names, in the order the tree lists them.</summary>
+    public IReadOnlyList<string> FaceNames { get; }
+
+    /// <summary>The kinds a tree can hold. A sheet, a polyline and a wire are not solids the kernel builds.</summary>
+    public static bool CanHold(C3dObject obj) => obj is C3dBox or C3dCylinder or C3dPrism or C3dPolyhedron;
+
+    /// <summary>
+    /// <paramref name="obj"/> — RESOLVED, its placement applied first and then <paramref name="worldUm"/> (the
+    /// instances above it, translation in micrometres; identity when omitted).
+    /// </summary>
+    /// <exception cref="ArgumentException">The object is not a kind a tree can hold (<see cref="CanHold"/>).</exception>
+    public static GeometryKernelTree From(C3dObject obj, int dbuPerMicron, C3dTransform? worldUm = null)
+    {
+        if (!CanHold(obj))
+            throw new ArgumentException($"'{obj.Name}' is a {C3dObject.KindOf(obj).ToLowerInvariant()}, which is not a solid the geometry kernel builds.", nameof(obj));
+        var w = new CanonicalJson();
+        w.Begin().Key("tree").Int(1).Key("root");
+        var names = WriteNode(w, obj, dbuPerMicron, worldUm ?? C3dTransform.Identity);
+        w.End();
+        return new GeometryKernelTree(obj.Name, w.Text + "\n", names);
+    }
+
+    /// <summary>A tree from text the caller vouches is canonical — the tests' route to the worker's test-only nodes.</summary>
+    internal static GeometryKernelTree FromJson(string obj, string canonicalJson, IReadOnlyList<string>? faceNames = null) =>
+        new(obj, canonicalJson.EndsWith('\n') ? canonicalJson : canonicalJson + "\n", faceNames ?? []);
+
+    /// <summary>Writes one object as a node; returns the face names it listed.</summary>
+    internal static IReadOnlyList<string> WriteNode(CanonicalJson w, C3dObject obj, int dbuPerMicron, C3dTransform worldUm)
+    {
+        double U(long dbu) => Um(dbu, dbuPerMicron);
+        var placement = obj.Placement.ToTransform();
+        var t = placement with { Tx = U((long)placement.Tx), Ty = U((long)placement.Ty), Tz = U((long)placement.Tz) };
+        t = Canonical(t.Then(worldUm));
+
+        IReadOnlyList<string> names = obj is C3dPolyhedron ph0 ? [.. (Kernel.C3dRecognition.ExactlyPlanarFaces(ph0) ?? ph0.Faces).Select(f => f.Name)]
+                                                               : obj.FaceNames();
+        w.Begin()
+         .Key("kind").Str(obj switch { C3dBox => "box", C3dCylinder => "cylinder", C3dPrism => "prism", _ => "polyhedron" })
+         .Key("name").Str(obj.Name)
+         .Key("faces").BeginArr();
+        foreach (var n in names) w.Str(n);
+        w.EndArr().Key("transform").BeginArr();
+        foreach (double v in (double[])[t.M00, t.M01, t.M02, t.Tx, t.M10, t.M11, t.M12, t.Ty, t.M20, t.M21, t.M22, t.Tz]) w.Num(v);
+        w.EndArr();
+
+        switch (obj)
+        {
+            case C3dBox b:
+                w.Key("min").Point(U(b.Min.X), U(b.Min.Y), U(b.Min.Z));
+                w.Key("size").Point(U(b.Size.X), U(b.Size.Y), U(b.Size.Z));
+                break;
+            case C3dCylinder c:
+                w.Key("base").Point(U(c.Base.X), U(c.Base.Y), U(c.Base.Z));
+                w.Key("axis").Point(c.Axis == C3dAxis.X ? 1 : 0, c.Axis == C3dAxis.Y ? 1 : 0, c.Axis == C3dAxis.Z ? 1 : 0);
+                w.Key("length").Num(U(c.Length));
+                w.Key("radius").Num(U(c.Radius));
+                break;
+            case C3dPrism p:
+            {
+                double h = U(p.Offset);
+                void Ring(List<C3dPoint2> ring)
+                {
+                    w.BeginArr();
+                    foreach (var q in ring)
+                    {
+                        var pt = C3dLowering.OnPlane(p.Plane, U(q.U), U(q.V), h);
+                        w.Point(pt.X, pt.Y, pt.Z);
+                    }
+                    w.EndArr();
+                }
+                w.Key("outline");
+                Ring(p.Outline);
+                w.Key("holes").BeginArr();
+                foreach (var hole in p.Holes) Ring(hole);
+                w.EndArr();
+                // The top is the outline moved by the height along the plane's normal and by the shear in it.
+                var e = C3dLowering.OnPlane(p.Plane, U(p.Shear.U), U(p.Shear.V), U(p.Height));
+                w.Key("extrude").Point(e.X, e.Y, e.Z);
+                break;
+            }
+            case C3dPolyhedron ph:
+            {
+                w.Key("vertices").BeginArr();
+                foreach (var v in ph.Vertices) w.Point(U(v.X), U(v.Y), U(v.Z));
+                w.EndArr().Key("loops").BeginArr();
+                foreach (var f in Kernel.C3dRecognition.ExactlyPlanarFaces(ph) ?? ph.Faces)
+                {
+                    w.Begin().Key("outer").BeginArr();
+                    foreach (int i in f.Outer) w.Int(i);
+                    w.EndArr().Key("holes").BeginArr();
+                    foreach (var hole in f.Holes)
+                    {
+                        w.BeginArr();
+                        foreach (int i in hole) w.Int(i);
+                        w.EndArr();
+                    }
+                    w.EndArr().End();
+                }
+                w.EndArr();
+                break;
+            }
+        }
+        w.End();
+        return names;
+    }
+
+    /// <summary>DBU to micrometres, exactly: the decimal value, then the nearest double.</summary>
+    public static double Um(long dbu, int dbuPerMicron) => (double)LayoutUnits.FromDbu(dbu, LayoutUnit.Um, dbuPerMicron);
+
+    /// <summary>The matrix snapped to integers where it is one within 1e-12, and otherwise quantised to 2⁻⁴⁸.</summary>
+    private static C3dTransform Canonical(C3dTransform t)
+    {
+        static double Q(double v)
+        {
+            double r = Math.Round(v);
+            if (Math.Abs(v - r) <= 1e-12) return r + 0.0;
+            const double scale = 281474976710656.0;  // 2^48
+            return Math.Round(v * scale) / scale + 0.0;
+        }
+        return t with
+        {
+            M00 = Q(t.M00), M01 = Q(t.M01), M02 = Q(t.M02),
+            M10 = Q(t.M10), M11 = Q(t.M11), M12 = Q(t.M12),
+            M20 = Q(t.M20), M21 = Q(t.M21), M22 = Q(t.M22),
+        };
+    }
+}
+
+/// <summary>
+/// A JSON writer whose output depends on nothing but the values written: keys in the order the caller
+/// writes them, invariant culture, shortest round-trip doubles, -0 written as 0, no whitespace.
+/// </summary>
+internal sealed class CanonicalJson
+{
+    private readonly StringBuilder _s = new();
+    private readonly Stack<bool> _first = new();
+    private bool _afterKey;
+
+    public string Text => _s.ToString();
+
+    public CanonicalJson Begin() { Value(); _s.Append('{'); _first.Push(true); return this; }
+    public CanonicalJson End() { _s.Append('}'); _first.Pop(); return this; }
+    public CanonicalJson BeginArr() { Value(); _s.Append('['); _first.Push(true); return this; }
+    public CanonicalJson EndArr() { _s.Append(']'); _first.Pop(); return this; }
+
+    public CanonicalJson Key(string k)
+    {
+        Comma();
+        Quote(k);
+        _s.Append(':');
+        _afterKey = true;
+        return this;
+    }
+
+    public CanonicalJson Str(string v) { Value(); Quote(v); return this; }
+    public CanonicalJson Int(long v) { Value(); _s.Append(v.ToString(CultureInfo.InvariantCulture)); return this; }
+
+    public CanonicalJson Num(double v)
+    {
+        if (!double.IsFinite(v)) throw new ArgumentException("A geometry tree holds finite numbers only.");
+        Value();
+        _s.Append((v + 0.0).ToString("R", CultureInfo.InvariantCulture));
+        return this;
+    }
+
+    public CanonicalJson Point(double x, double y, double z) => BeginArr().Num(x).Num(y).Num(z).EndArr();
+
+    private void Comma()
+    {
+        if (_first.Count == 0) return;
+        if (!_first.Peek()) _s.Append(',');
+        _first.Pop();
+        _first.Push(false);
+    }
+
+    private void Value()
+    {
+        if (_afterKey) { _afterKey = false; return; }
+        Comma();
+    }
+
+    private void Quote(string v)
+    {
+        _s.Append('"');
+        foreach (char c in v)
+        {
+            switch (c)
+            {
+                case '"': _s.Append("\\\""); break;
+                case '\\': _s.Append("\\\\"); break;
+                default:
+                    if (c < 0x20) _s.Append("\\u").Append(((int)c).ToString("x4", CultureInfo.InvariantCulture));
+                    else _s.Append(c);
+                    break;
+            }
+        }
+        _s.Append('"');
+    }
+}

@@ -3,7 +3,7 @@
 circuitRF's geometry kernel: **Open CASCADE Technology** (OCCT) behind a small program that circuitRF
 starts and speaks to over stdin/stdout. Booleans, fillets and chamfers, and STEP import and export run
 here — never in circuitRF's own process. Brief 62 (`docs/sonnet-briefs/brief-em3d-62-geometry-worker-and-shipping.md`)
-built the program and its shipping; brief 63 builds the client, discovery and the protocol proper.
+built the program and its shipping; brief 63 built the client, discovery and the protocol proper.
 
 Why out of process (series overview §1c): a crash inside the kernel costs one operation, not the user's
 unsaved document; a runaway operation is stopped by killing a process, which always works; the licence
@@ -70,28 +70,86 @@ staged folder as the proof. No directory name under it may contain a dot (codesi
 under `Contents/MacOS` as a nested bundle). On macOS every library and the worker are signed individually
 before the bundle is sealed (`src/Ui/bundleForMacOS.sh`).
 
-## The protocol — the skeleton (brief 62)
+## The protocol (brief 63)
 
-Line-delimited JSON: one request per line on stdin, one response per line on stdout, diagnostics on
-stderr. Brief 63 extends it (it may add a binary payload for tessellations).
+**Frames**, one per request on stdin and one per reply on stdout; diagnostics on stderr:
 
-| request | response |
-|---|---|
-| `{"op":"hello","protocol":1}` | `{"ok":true,"worker":"<VERSION>","occt":"8.0.1","protocol":1,"modules":[…]}` |
-| `{"op":"box","size_um":[x,y,z]}` | `{"ok":true,"solids":1,"faces":6,"volume_um3":…}` |
-| `{"op":"selftest"}` | `{"ok":true,"faces":8,"valid":true,"step_roundtrip":true,…}` — a block minus a cylinder, a 25 µm fillet on the bore's rim, and a STEP write and read back in memory; the volume is checked against Pappus |
-| `{"op":"quit"}` | `{"ok":true}`, then exit 0 |
-| anything else | `{"ok":false,"error":"<sentence>"}` — and the worker keeps running |
+```
+[uint32 jsonLen][uint32 binLen][jsonLen bytes of UTF-8 JSON][binLen bytes]        little-endian
+```
+
+The device worker's layout on purpose, so a hex dump of either reads the same way — except that the binary
+part is **bytes**, declared by the JSON's `blobs` array in order, because a reply carries doubles, 32-bit
+integers and opaque B-rep/STEP bytes: `"blobs":[{"name":"vertices","type":"f64","count":3012}, …]`, with
+`type` one of `f64`, `u32`, `bytes`. The worker flushes after every reply and reads a request until all of it
+has arrived. The managed half is `src/Design/ThreeD/Occ/` (`GeometryKernel` and its codec,
+`GeometryKernelFrame`); nothing else in circuitRF starts this program.
+
+**A refusal is an ordinary reply**, and the worker keeps running:
+`{"ok":false,"code":"build.failed","object":"lid","detail":"<OCCT's own text>"}`. The client words `code` in
+circuitRF's voice and appends `detail` verbatim; an unknown `code` is reported as unrecognised.
+
+| request | in | out |
+|---|---|---|
+| `hello` | `protocol` | `worker`, `occt` (the version it LOADED), `protocol`, `rid` (the RID it was COMPILED for), `modules`, `test_ops` |
+| `build` | `shape` (the handle to hold it under), `tree` (below), `options` (`fuzzy`, `keepTools`) | `shape`, `object`, `valid`, `solids`, `faces`, `volume_um3`, `notes[]`; blob `brep` — format version 1, no triangles, written straight from the result |
+| `tessellate` | `shape`, `linear_um`, `angular_rad` | blobs `vertices` f64 (3 per node), `tris` u32 (3 per triangle), `face` u32 (per triangle, an index into `faces`' list) |
+| `faces` | `shape` | per face, in `TopExp::MapShapes` order: `name`, `kind` (`plane`, `cylinder`, `cone`, `sphere`, `torus`, `bspline`, `other`), `box` (tight, 6 numbers), `area`, `min_radius` (0 for a plane) |
+| `edges` | `shape`, `deflection_um` | per feature edge, sorted by name: `name`, `faces` (its two), `kind`, `length`, `min_radius` (0 for a line), `points`; blob `polylines` f64 |
+| `export` | `shapes[]`, `format` (`brep`, `step`, `ply`, `stl`), `units` (`um`, `mm`, `mil`, `in`, `m`), `names[]`, `colours[]`, `linear_um`, `schema` (`ap242`, else AP214) | blob `data` |
+| `import-step` | `shape` (a handle prefix), blob `file` or `path` | `units[]` (the file's), `parts[]` (`shape` = prefix`/n`, `name`, `path` — the occurrence, `1/2` — `colour` or null, `solids`, `faces`, `valid`), `healing[]` |
+| `release` | `shapes[]` | `released`, `held` |
+| `shutdown` (or `quit`) | — | `ok`, then exit 0 |
+| `box`, `selftest` | brief 62's skeleton checks, kept for `tools/CliSmoke` | |
+
+**Units are micrometres** throughout — OCCT's absolute tolerances sit nine orders of magnitude below a 25 µm
+feature in µm, and two in metres (the reason `GmshGeoWriter` writes µm too).
+
+### The tree
+
+A `build`'s tree is **resolved numbers only** — no expression, no unit, no variable; the worker never sees a
+`.c3d` (`GeometryKernelTree` writes it, canonically, so the same tree is the same bytes and hash everywhere):
+
+```json
+{"tree":1,"root":{"kind":"box","name":"lid","faces":["xmin","xmax","ymin","ymax","zmin","zmax"],
+                  "transform":[m00,m01,m02,tx, m10,m11,m12,ty, m20,m21,m22,tz],"min":[x,y,z],"size":[x,y,z]}}
+```
+
+Each primitive is built **in its own frame**, its faces named, and then carried by `transform` (a rigid
+3 × 4 matrix, rows; a mirror is allowed). Brief 64 adds operation nodes whose operands are nodes like these.
+
+### Face names
+
+Every node lists its face names in the primitive's own order — `C3dObject.FaceNames()` — and the worker
+attaches each to the OCCT face that IS that face, by geometry, never by OCCT's list order:
+
+| kind | fields | names, in order | which OCCT face |
+|---|---|---|---|
+| `box` | `min`, `size` | `xmin xmax ymin ymax zmin zmax` | the face's plane: its normal picks the axis, its side of the middle picks min or max |
+| `cylinder` | `base`, `axis`, `length` (negative runs backwards), `radius` | `bottom top side` | `side` is the cylindrical face; `bottom` is the cap at `base` |
+| `prism` | `outline`, `holes` (points in the object's frame), `extrude` (one vector: height along the plane's normal plus the shear) | `bottom top side0… hole0.side0…` | `bottom` is the outline's face, `top` its translate; side *k* is the face `BRepPrimAPI_MakePrism` generated from outline edge *k* → *k*+1 |
+| `polyhedron` | `vertices`, `loops` (`outer`, `holes`: vertex indices) | one per loop | the face made from that loop, followed through sewing |
+
+**Edges** are named by the two faces they separate, sorted and joined by `|` (`xmax|zmax`); where one pair
+bounds more than one edge a third field numbers them in geometric order (`side|zmax|2`). A seam (a face meeting
+itself, as a cylinder's side does) and a degenerate edge are not feature edges and are not listed.
+
+### Test nodes
+
+With `CRF_GEOMETRY_WORKER_TEST=1` in its environment the worker also builds a node of kind `crash` (it exits at
+once with status 70, answering nothing) and `sleep` (`seconds`, then builds its `then` node) — what the client's
+crash and cancellation gates are tested against. Without it both are refused like any unknown kind. They are
+nodes of a `build`, so the client's cache, failed-tree record and restart are what those gates exercise.
 
 `geometry-worker --version` prints `geometry-worker <VERSION>` and `occt <version>` and exits 0, so a
-person, the About box and `tools/CliSmoke` can ask without speaking the protocol.
+person and `tools/CliSmoke` can ask without speaking the protocol.
 
 **The OCCT it loaded, not the one it was built against.** The worker compares the version compiled into
 it (`OCC_VERSION_COMPLETE`) with the loaded `TKernel`'s own (`OCCT_Version_String_Complete()`). On a
-mismatch `--version` says so and exits 1, and every request but `quit` is refused with a sentence naming
-both — never a silent run against the wrong library.
+mismatch `--version` says so and exits 1, and every request but `shutdown` is refused (`kernel.mismatch`)
+with a sentence naming both — never a silent run against the wrong library.
 
-Nothing but a response ever reaches stdout: at start-up the worker keeps a private copy of the stdout
+Nothing but a frame ever reaches stdout: at start-up the worker keeps a private copy of the stdout
 descriptor for the protocol and points descriptor 1 at stderr, so anything OCCT prints lands there.
 
 ## Failure
@@ -103,7 +161,7 @@ Written from brief 61 Q9 (`docs/design/em-3d-f4b-spike-findings.md`, "Crash post
 - **A fault inside the kernel** is turned into an exception: the worker installs `OSD::SetSignal(false)`
   and wraps each request in `OCC_CATCH_SIGNALS`, which is what Q9 found to work — after a caught SIGSEGV
   the spike's process ran a boolean and a fillet correctly. **The worker still exits after one** (status 3,
-  after answering the request with a refusal): a handler cannot vouch for a heap after a wild write, and a
+  after answering the request with the refusal `kernel.fault`): a handler cannot vouch for a heap after a wild write, and a
   restart costs 40 ms (Q12). Brief 63 restarts it.
 - **Cancellation is by killing the process.** A fillet never polls a user break (Q9), so nothing here
   promises cooperative cancel.

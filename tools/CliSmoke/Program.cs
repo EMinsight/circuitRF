@@ -17,8 +17,8 @@
 //       when its stdin closes.
 //    4. THE GEOMETRY KERNEL (brief-em3d-62 R-em3d62-5e). With --kernel <occt-version>:
 //       geometry-kernel/geometry-worker[.exe], found relative to <executable>, answers `--version`
-//       with that OCCT version (the recipe's), answers `{"op":"selftest"}` over its protocol with
-//       "ok":true and "valid":true, and exits 0 on `quit`. With --no-kernel <why> -- a RID the
+//       with that OCCT version (the recipe's), answers `{"op":"selftest"}` over its framed protocol
+//       (brief-em3d-63) with "ok":true and "valid":true, and exits 0 on `quit`. With --no-kernel <why> -- a RID the
 //       release does not ship it on, or a package built without it on purpose -- the check reports
 //       <why> and passes; whether that is allowed is the packaging script's decision, not this one's.
 //       With neither, the check is skipped and says so.
@@ -145,11 +145,13 @@ static int Kernel(string exe, string expectedOcct, TimeSpan timeout)
     psi.RedirectStandardInput = true;
     using var p = Process.Start(psi)!;
     var stderr = p.StandardError.ReadToEndAsync();
+    Stream toWorker = p.StandardInput.BaseStream, fromWorker = p.StandardOutput.BaseStream;
     try
     {
-        p.StandardInput.WriteLine("{\"op\":\"selftest\"}");
-        p.StandardInput.Flush();
-        var read = p.StandardOutput.ReadLineAsync();
+        // The protocol is framed (brief-em3d-63 R-em3d63-4a): [uint32 jsonLen][uint32 binLen][json][bin],
+        // little-endian. Written out here rather than referenced: this program depends on no project.
+        SendFrame(toWorker, "{\"op\":\"selftest\"}");
+        var read = Task.Run(() => ReadFrameJson(fromWorker));
         if (!read.Wait(timeout))
         {
             try { p.Kill(entireProcessTree: true); } catch { /* already gone */ }
@@ -162,7 +164,7 @@ static int Kernel(string exe, string expectedOcct, TimeSpan timeout)
         static bool True(JsonNode? n) => n is JsonValue jv && jv.TryGetValue<bool>(out bool b) && b;
         bool ok = True(json?["ok"]) && True(json?["valid"]);
 
-        p.StandardInput.WriteLine("{\"op\":\"quit\"}");
+        SendFrame(toWorker, "{\"op\":\"quit\"}");
         p.StandardInput.Close();
         bool exited = p.WaitForExit((int)timeout.TotalMilliseconds);
         if (!ok)
@@ -184,6 +186,33 @@ static int Kernel(string exe, string expectedOcct, TimeSpan timeout)
     {
         Console.WriteLine($"FAIL  geometry kernel: the pipe broke: {ex.Message}");
         return 1;
+    }
+}
+
+static void SendFrame(Stream s, string json)
+{
+    byte[] body = Encoding.UTF8.GetBytes(json);
+    var head = new byte[8];
+    BitConverter.TryWriteBytes(head.AsSpan(0), (uint)body.Length);   // little-endian on every RID shipped
+    s.Write(head);
+    s.Write(body);
+    s.Flush();
+}
+
+// A reply's JSON, its binary part read and dropped; null when the pipe closed first.
+static string? ReadFrameJson(Stream s)
+{
+    var head = new byte[8];
+    if (!Fill(s, head)) return null;
+    var body = new byte[BitConverter.ToUInt32(head, 0)];
+    var bin = new byte[BitConverter.ToUInt32(head, 4)];
+    return Fill(s, body) && Fill(s, bin) ? Encoding.UTF8.GetString(body) : null;
+
+    static bool Fill(Stream s, byte[] b)
+    {
+        for (int at = 0, n; at < b.Length; at += n)
+            if ((n = s.Read(b, at, b.Length - at)) == 0) return false;
+        return true;
     }
 }
 

@@ -71,7 +71,6 @@
              this installation actually carries - and says the kernel is absent, rather than naming a
              library that is not there, when it is. -->
         <SelectableTextBlock x:Name="GeometryKernelText"
-                             Text="Geometry kernel: checking..."
                              FontSize="11"
                              HorizontalAlignment="Center"
                              Opacity="0.6"

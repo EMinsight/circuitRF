@@ -5,6 +5,7 @@ using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using CircuitRF.Design.Em3d;
 using CircuitRF.Design.Em3d.Install;
+using CircuitRF.Design.ThreeD.Occ;
 using CircuitRF.Ui.Theming;
 
 namespace CircuitRF.Ui.Views.Dialogs;
@@ -31,7 +32,8 @@ public partial class Em3dSolverSettingsView : UserControl
         Load();
         // Loaded fires when the tab is first SHOWN, not when the dialog is built: asking three programs
         // their version is not a cost every opening of Settings should pay.
-        Loaded += (_, _) => { RefreshAll(); RefreshLocations(); };
+        Loaded += (_, _) => { RefreshAll(); RefreshLocations(); RefreshKernel(); };
+        KernelTitle.Text = GeometryKernel.SettingsTitle;
         // brief-em3d-24 — an install that ends (however it ends) changes what discovery finds.
         CircuitRF.Ui.Layout.Em.SolverInstallRunner.Finished += OnInstallFinished;
         CircuitRF.Ui.Layout.Em.SolverRemovalRunner.Finished += OnRemovalFinished;
@@ -43,6 +45,44 @@ public partial class Em3dSolverSettingsView : UserControl
     }
 
     private void OnInstallFinished(SolverTool tool) => Dispatcher.UIThread.Post(RefreshAll);
+
+    // ── brief-em3d-63 R-em3d63-3d — the geometry kernel's row ────────────────────────────────────
+
+    /// <summary>Shows what the background probe found — probing now if nothing has asked yet — and the disk cache's size.</summary>
+    private void RefreshKernel()
+    {
+        ShowKernel(GeometryKernel.Shared.Known);
+        if (GeometryKernel.Shared.Known is null) _ = ProbeKernelAsync();
+    }
+
+    private async Task ProbeKernelAsync()
+    {
+        KernelCheck.IsEnabled = false;
+        try
+        {
+            var cap = await GeometryKernel.Shared.ProbeAsync();
+            ShowKernel(cap);
+        }
+        finally { KernelCheck.IsEnabled = true; }
+    }
+
+    private void ShowKernel(GeometryKernelCapability? cap)
+    {
+        KernelStatus.Text = GeometryKernel.SettingsStatus(cap);
+        KernelPath.Text = cap?.WorkerPath ?? "";
+        KernelPath.IsVisible = cap?.WorkerPath is not null;
+        _ = Task.Run(() => GeometryKernel.Shared.DiskCacheBytes()).ContinueWith(t =>
+            Dispatcher.UIThread.Post(() => KernelCache.Text = $"Built shapes kept on disk: {SolverUninstaller.Size(t.Result)}"),
+            TaskContinuationOptions.OnlyOnRanToCompletion);
+    }
+
+    private void OnKernelCheckAgain(object? sender, RoutedEventArgs e) => _ = ProbeKernelAsync();
+
+    private void OnKernelClearCache(object? sender, RoutedEventArgs e)
+    {
+        GeometryKernel.Shared.ClearDiskCache();
+        ShowKernel(GeometryKernel.Shared.Known);
+    }
 
     private void OnRemovalFinished() => Dispatcher.UIThread.Post(RefreshAll);
 

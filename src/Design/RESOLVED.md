@@ -14000,3 +14000,47 @@ no pitch. `C3dWires.BakePlacement` turns the pitch with a placement's rotation/m
 non-integral result as inexact; `C3dHierarchy.Scale` scales it with the points. `C3dBindings.OwnersOf` yields the
 row as `Array.` so its count and pitch take expressions. The `.c3d` reference page (`DocumentSchema`) and em-3d.md §6.6
 say so. Detail in `src/Ui/RESOLVED.md`, same heading.
+
+## brief-em3d-63 — the geometry kernel's managed client (2026-09-27)
+
+`src/Design/ThreeD/Occ/`: `GeometryKernel` (capability, sentences, requests, previews), `GeometryKernelCapability`
+(discovery, the recipe, the absence record), `GeometryKernelSession` (one worker process: handshake, deadlines,
+cancel, crash), `GeometryKernelFrame` (the codec), `GeometryKernelCache`, `GeometryKernelTree`. The worker grew the
+real requests in the same change (`tools/geometry-worker/README.md` is the protocol's reference).
+
+- **Brief 62's worker spoke line-delimited JSON; the protocol is now framed** (`[u32 jsonLen][u32 binLen][json][bin]`).
+  There is no line mode left, so `tools/CliSmoke`'s selftest speaks frames too (written inline — it references no
+  project). `ensure-built` and the About box only ever used `--version`, which is unchanged.
+- **Where the brief and the tree disagreed, the tree won:** row 3 of discovery is
+  `tools/geometry-worker/build/<rid>/geometry-kernel/geometry-worker` (the brief omitted `geometry-kernel/`), and
+  the recipe is `occt/recipe.env`, not `recipe.json`. It is embedded IN PLACE; `OcctBoundaryTests`' project-file
+  rule matches `occt` in any item path, so it now exempts exactly that one `EmbeddedResource` (a planted twin of
+  any other item under the folder is still caught).
+- **In the dev tree, row 2 usually answers, not row 3.** `EnsureGeometryWorker` copies `geometry-kernel/` into
+  `src/Ui/bin/<config>/`, so a `dotnet run` finds the shipped route; row 3 is what `tests/Ui.Tests` (whose bin has
+  no such folder) and a skipped `-p:CrfSkipGeometryWorker=true` build reach.
+- **The test-only requests are an environment switch, not a test build.** `CRF_GEOMETRY_WORKER_TEST=1` lets the
+  worker build tree nodes `crash` and `sleep`; one binary means the tests drive the worker that ships. They are
+  NODES of a `build`, not requests of their own, so gates 6 and 7 exercise the client's real build path — cache,
+  failed-tree record, restart — rather than a side door.
+- **A deliberately killed worker must not read as a crash.** Cancelling a preview kills the preview session's
+  worker; without the session's "killed on purpose" flag the blocked build came back as `Crashed`, and the failed
+  cache (R-em3d63-6c) then refused that tree for the rest of the process — the next preview of the same shape would
+  have been refused with a crash sentence nobody caused. A kill while idle is consumed at the next request (the
+  dead worker is dropped and a fresh one started).
+- **The crash sentence says "it restarts for the next operation"**, not the brief's "it has been restarted": the
+  restart is lazy (the next request starts the worker, and counts `WorkerRestarts`), so the brief's wording would
+  have been false for however long nobody asked.
+- **STEP healing is reported only for a part that fails the validity check.** `ShapeFix_Shape` reports DONE for the
+  tolerance touch-ups every translated file needs, so "healed" on status alone said every part of every file was
+  repaired — including a file the worker had just written itself.
+- **A tree's transform is quantised** (snapped to integers within 1e-12, else to 2⁻⁴⁸): it is the one input whose
+  last bit can come from a platform's `cos`, and the tree's hash is a cache key that must agree across machines.
+- **One place words the absence, and the About box and Acknowledgments had to give up their own words to prove it.**
+  `GeometryKernelNotice` (brief 62) is gone: the About box reads `GeometryKernel.AboutNotice` from the one probe, and
+  the Acknowledgments line no longer says "geometry kernel". `GeometryKernelBoundaryTests` scans every `.cs` and
+  `.axaml` in `src/Ui` and `src/Cli`, comments stripped, for the words.
+- **`Probe()` restarts both sessions.** It is also *Check again*, and a folder put back (or taken away) since the
+  last probe must be what answers; the failed-tree record is forgotten with it.
+- **`KernelFact` probes a kernel of its own**, disk cache off, rather than `GeometryKernel.Shared`, so test discovery
+  never writes into the user's state directory; each test builds its own kernel so no counter is shared.

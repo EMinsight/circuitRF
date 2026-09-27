@@ -466,6 +466,15 @@ used commercially for evaluation only. If you build Palace, you accept those ter
 How each program was installed for validation is in
 {{anchor: em-setup.html#install-3d-solvers|Installing the 3D solvers by hand}}.
 
+**The geometry kernel row** is the one program here that circuitRF *does* include: Open CASCADE
+Technology, behind a small helper program in the `geometry-kernel` folder beside circuitRF, which runs
+booleans, fillets and chamfers and reads and writes STEP. The row is read-only — there is nothing to
+choose, because it is part of the installation. It shows the version and where it is, or, when it is
+missing or does not start, what is wrong and what fixes it; commands that need it show the same sentence
+while they are disabled. **Check again** looks for it once more without restarting circuitRF. circuitRF
+keeps the shapes it builds on disk, so a document with a large imported part reopens at once; the row
+shows how much space that takes, and **Clear** deletes it (anything needed is rebuilt).
+
 ## The footer: Help, Revert, Cancel, Close {#footer}
 
 **Help** sits at the leading edge and opens this page. Everything that acts on the dialog is grouped at

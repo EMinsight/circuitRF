@@ -78,7 +78,21 @@ public sealed class OcctBoundaryTests : IDisposable
 
     [Fact]
     public void NoProjectFileReferencesAnOcctPackage()
-        => AssertNone(Boundary.ProjectFileViolations(SolverBoundaryTests.ProjectFiles(), OcctBoundary.Named), "project file");
+        => AssertNone(OcctBoundary.WithoutTheRecipe(Boundary.ProjectFileViolations(SolverBoundaryTests.ProjectFiles(), OcctBoundary.Named)),
+                      "project file");
+
+    /// <summary>brief-em3d-63 R-em3d63-2b: CircuitRF.Design embeds brief 62's RECIPE — a text file of version, checksum and
+    /// CMake options, which links nothing — so the client pins the OCCT version the worker was built from. That one item,
+    /// and only as an embedded resource, is not a reference to OCCT; anything else under the same folder still is.</summary>
+    [Theory]
+    [InlineData("""<EmbeddedResource Include="..\..\tools\geometry-worker\occt\libTKernel.8.0.dylib" />""", true)]
+    [InlineData("""<None Include="..\..\tools\geometry-worker\occt\recipe.env" />""", true)]
+    [InlineData("""<EmbeddedResource Include="..\..\tools\geometry-worker\occt\recipe.env" />""", false)]
+    public void TheRecipeResourceIsTheOnlyExemption(string item, bool caught)
+    {
+        string csproj = Write("Planted.csproj", $"""<Project Sdk="Microsoft.NET.Sdk"><ItemGroup>{item}</ItemGroup></Project>""");
+        Assert.Equal(caught, OcctBoundary.WithoutTheRecipe(Boundary.ProjectFileViolations([csproj], OcctBoundary.Named)).Count > 0);
+    }
 
     [Theory]
     [InlineData("""<PackageReference Include="OpenCascade.Net" Version="7.9.0" />""")]
@@ -157,6 +171,10 @@ public sealed class OcctBoundaryTests : IDisposable
 
 internal static class OcctBoundary
 {
+    /// <summary>The violations, less the one embedded resource brief 63 reads the pinned version from.</summary>
+    public static IReadOnlyList<string> WithoutTheRecipe(IReadOnlyList<string> violations) =>
+        [.. violations.Where(v => !v.EndsWith("""<EmbeddedResource Include="..\..\tools\geometry-worker\occt\recipe.env">""", StringComparison.Ordinal))];
+
     /// <summary>
     /// OCCT's names: the project's own (<c>OCCT</c>, <c>OpenCASCADE</c>) anywhere, case-insensitively, and a
     /// toolkit library — <c>TK</c> then letters (<c>TKernel</c>, <c>TKBO</c>), alone or as <c>libTK…</c>, which

@@ -1443,7 +1443,7 @@ public class PackagingScriptTests
         Assert.Contains($"<_CrfGeometryKernel Include=\"$(OutDir){shFolder}/**/*\" />", project, StringComparison.Ordinal);
         Assert.Contains($"<RelativePath>{shFolder}/%(RecursiveDir)%(Filename)%(Extension)</RelativePath>", project, StringComparison.Ordinal);
         // ...and every consumer looks for the worker by the same path.
-        foreach (var consumer in new[] { RepoFile("tools", "CliSmoke", "Program.cs"), RepoFile("src", "Ui", "GeometryKernelNotice.cs") })
+        foreach (var consumer in new[] { RepoFile("tools", "CliSmoke", "Program.cs"), RepoFile("src", "Design", "ThreeD", "Occ", "GeometryKernelCapability.cs") })
             Assert.Contains($"\"{shFolder}\"", File.ReadAllText(consumer), StringComparison.Ordinal);
     }
 

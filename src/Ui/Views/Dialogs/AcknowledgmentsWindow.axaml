@@ -51,7 +51,7 @@
 
                 <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="18">
                     <Run FontWeight="SemiBold">Open CASCADE Technology</Run>
-                    <Run> — Geometry kernel behind booleans, fillets and STEP. © Matra Datavision and OPEN CASCADE SAS. LGPL v2.1 only, with the Open CASCADE Exception 1.0.</Run>
+                    <Run> — The modelling kernel behind booleans, fillets and STEP. © Matra Datavision and OPEN CASCADE SAS. LGPL v2.1 only, with the Open CASCADE Exception 1.0.</Run>
                     <LineBreak/>
                     <Run Foreground="{DynamicResource SystemBaseMediumColor}" FontSize="11">circuitRF uses facilities provided by Open CASCADE Technology. Its libraries ship unmodified and dynamically linked, in the geometry-kernel folder beside the application, where a modified build can replace them. The source is available under the written offer in THIRD-PARTY-NOTICES.md.</Run>
                 </TextBlock>

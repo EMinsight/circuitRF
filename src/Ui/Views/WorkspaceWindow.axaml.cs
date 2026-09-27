@@ -376,6 +376,9 @@ public partial class WorkspaceWindow : Window
         // AttachSharedNativeMenuIfMacOS, run for every float). One instance on several windows is not
         // the "duplicate menu" R-dock-12 warns against — nothing is copied, so nothing can drift.
         AttachNativeMenuAtApplicationScope();
+
+        // brief-em3d-63 R-em3d63-3c — once per process, after a window is on screen, never on the launch path.
+        CircuitRF.Ui.ThreeD.GeometryKernelAvailability.ProbeOnceInBackground();
     }
 
     /// <summary>

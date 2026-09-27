@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
+using CircuitRF.Design.ThreeD.Occ;
 
 namespace CircuitRF.Ui.Views.Dialogs;
 
@@ -16,17 +17,22 @@ public partial class AboutWindow : Window
         VersionText.Text  = $"Version {AppVersion.Display}";
         PlatformText.Text = AppVersion.Platform;
 
-        // The geometry kernel names ITSELF: the worker is asked for its OCCT version off the UI thread
-        // (a process start, ~40 ms), so the dialog opens at once and the line fills in.
-        _ = FillGeometryKernelAsync();
+        // The kernel names ITSELF (brief-em3d-62 R-em3d62-6d): the line is the capability the one client
+        // established — the version the worker REPORTED in its handshake (brief-em3d-63) — asked off the UI
+        // thread when nothing has asked yet, so the dialog opens at once and the line fills in.
+        GeometryKernelText.Text = GeometryKernel.AboutNotice(GeometryKernel.Shared.Known);
+        if (GeometryKernel.Shared.Known is null) _ = FillGeometryKernelAsync();
 
-        NoticesButton.IsEnabled = File.Exists(GeometryKernelNotice.NoticesPath(AppContext.BaseDirectory));
+        NoticesButton.IsEnabled = File.Exists(NoticesPath);
     }
+
+    /// <summary>The notices file every installer carries beside the executable (the .csproj copies it).</summary>
+    private static string NoticesPath => Path.Combine(AppContext.BaseDirectory, "THIRD-PARTY-NOTICES.md");
 
     private async Task FillGeometryKernelAsync()
     {
-        string text = await Task.Run(() => GeometryKernelNotice.ProbeAsync(AppContext.BaseDirectory, TimeSpan.FromSeconds(10)));
-        await Dispatcher.UIThread.InvokeAsync(() => GeometryKernelText.Text = text);
+        var cap = await GeometryKernel.Shared.ProbeAsync();
+        await Dispatcher.UIThread.InvokeAsync(() => GeometryKernelText.Text = GeometryKernel.AboutNotice(cap));
     }
 
     private async void OnAcknowledgmentsClicked(object? sender, RoutedEventArgs e)
@@ -37,7 +43,7 @@ public partial class AboutWindow : Window
     // The copy the installer carries beside the executable, opened with whatever reads Markdown here.
     private void OnNoticesClicked(object? sender, RoutedEventArgs e)
     {
-        string path = GeometryKernelNotice.NoticesPath(AppContext.BaseDirectory);
+        string path = NoticesPath;
         try
         {
             if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))

@@ -79,6 +79,14 @@
                       LogicalName="CircuitRF.Design.Em3d.Install.recipes.%(Filename)%(Extension)" />
   </ItemGroup>
 
+  <!-- brief-em3d-63 R-em3d63-2b: the geometry kernel's recipe, read IN PLACE (brief 62's single copy), so the
+       client pins exactly the OCCT version the worker was built from and knows which RIDs ship it. A second
+       copy of the version here would be a third place to forget when the recipe moves (VERSION's rule). -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\tools\geometry-worker\occt\recipe.env"
+                      LogicalName="CircuitRF.Design.ThreeD.Occ.recipe.env" />
+  </ItemGroup>
+
   <!-- The reference pages `circuitrf reference` serves
        (docs/sonnet-briefs/brief-automation-6-reference-and-components.md R-aut6-5/R-aut6-6).
 

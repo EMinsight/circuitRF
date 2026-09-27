@@ -962,3 +962,28 @@ src/Design/Layout/MaterialLibraryPersistence.cs|not a circuitRF material library
 # a parameter clash) as a returned sentence; this throw fires only if the rewrite itself is wrong,
 # and stops the document edit rather than letting a silently half-renamed expression through.
 src/Design/ThreeD/C3dVariableEdits.cs|Renaming '{from}' to '{to}' in '{expression}' did not rename the reference.
+
+# ── brief-em3d-63 (2026-09-27): the geometry kernel client's own invariants ───────────
+# A corrupt frame, a missing embedded recipe, a stopped request, a non-solid handed to the tree
+# writer. Every sentence the USER reads about the kernel is built in GeometryKernel (NeedsKernel,
+# the refusal table, the crash and timeout sentences) and reaches them as GeometryKernelException's
+# message, whose constructor takes the sentence as a variable -- these are what is left.
+src/Design/ThreeD/Occ/GeometryKernelCapability.cs|The geometry kernel's recipe is not embedded in CircuitRF.Design (its csproj names tools/geometry-worker/occt/recipe.env).
+src/Design/ThreeD/Occ/GeometryKernelFrame.cs|A frame carries bytes no blob declares.
+src/Design/ThreeD/Occ/GeometryKernelFrame.cs|A frame declares a blob without a name, a known type and a count.
+src/Design/ThreeD/Occ/GeometryKernelFrame.cs|A frame declares a {bl}-byte binary part; the limit is 2 GB.
+src/Design/ThreeD/Occ/GeometryKernelFrame.cs|A frame declares a {jl}-byte header; the limit is {MaxJsonBytes}.
+src/Design/ThreeD/Occ/GeometryKernelFrame.cs|A frame's binary part is limited to 4 GB.
+src/Design/ThreeD/Occ/GeometryKernelFrame.cs|A frame's header is not a JSON object.
+src/Design/ThreeD/Occ/GeometryKernelFrame.cs|A frame's header is not valid JSON: 
+src/Design/ThreeD/Occ/GeometryKernelFrame.cs|A {Spell(type)} blob holds a whole number of {unit}-byte values; '{name}' has {data.Length} bytes.
+src/Design/ThreeD/Occ/GeometryKernelFrame.cs|An empty frame.
+src/Design/ThreeD/Occ/GeometryKernelFrame.cs|Blob '{Name}' is {Spell(Type)}, not {Spell(t)}.
+src/Design/ThreeD/Occ/GeometryKernelFrame.cs|Blob '{name}' runs past the frame's binary part.
+src/Design/ThreeD/Occ/GeometryKernelFrame.cs|Bytes follow the frame.
+src/Design/ThreeD/Occ/GeometryKernelFrame.cs|The geometry worker's pipe closed inside a frame header.
+src/Design/ThreeD/Occ/GeometryKernelFrame.cs|The geometry worker's pipe closed inside a frame.
+src/Design/ThreeD/Occ/GeometryKernelSession.cs|The request was stopped.
+src/Design/ThreeD/Occ/GeometryKernelSession.cs|{path} did not start.
+src/Design/ThreeD/Occ/GeometryKernelTree.cs|'{obj.Name}' is a {C3dObject.KindOf(obj).ToLowerInvariant()}, which is not a solid the geometry kernel builds.
+src/Design/ThreeD/Occ/GeometryKernelTree.cs|A geometry tree holds finite numbers only.
