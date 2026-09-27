@@ -14088,3 +14088,70 @@ the fold rule), the elaborator's kernel path and `Em3dShapeSolid` in the Engine.
   refuse any kernel solid until brief 65 (`Em3dShapeSolid.Refusal`), before a grid is placed or a file written.
 - **The writer now omits an EMPTY `Name` on any object** (an operand has none). A top-level object with an empty
   name was already invalid, so only such a broken file writes back differently.
+
+## brief-em3d-65 — both solvers take a kernel solid, and say what they cannot respect (2026-09-27)
+
+`GmshGeoWriter` imports a kernel solid's B-rep (`ShapeFromFile`, `GmshLowering.KernelFiles`, written by
+`PalaceRun.Mesh`); `CsxcadWriter` writes a grid-fitted tessellation as PLY (`CsxcadLowering.KernelFiles`,
+staged by `OpenEmsRun.Stage`, checked by `OpenEmsRun.CheckKernelFiles` before each port's run);
+`Em3dFidelityReport` gives a setup's rows to `check` and the Setup Analyses dialog. Gates:
+`tests/Ui.Tests/Em3d/KernelSolverTests.cs` (2, 3, 4, 6, 8, and 9 as Benchmark); the Engine half is in
+`src/Engine/RESOLVED.md`.
+
+- **The import count cannot be printed where the brief's snippet prints it.** `If (#s7[] != 1) Printf(...) >>
+  "entities.txt"` straight after the import is erased by the entity table's first line, which opens the file with
+  `>`; and `s7[]` is reassigned by every precedence cut after it. So the count is kept at import (`ns7 = #s7[];`)
+  and tested in the entity-table section as `kernel_import_count <attribute> <n>`, which `ReadEntities` reads and
+  `CheckEntities` turns into a refusal naming the object.
+- **The hand-off is the solid's CARRIED bytes, not an `export` call.** `Em3dShapeSolid.Brep` is what the worker
+  wrote from the operation's result (version 1, no triangles, µm) and what `BrepHash` hashes. An `export` would
+  re-serialise the held shape after `faces`/`tessellate` had touched it — D12's caveat: a validity check changes
+  the TShape flag bits, and with them the bytes. Writing the carried bytes needs no worker call during a run and
+  keeps the file name (the hash) and the content in step by construction.
+- **D12 answered B-rep, so no `.step` hand-off and no `OCCTargetUnit` line exist.** Gate 2's `.step` variant is the
+  brief's conditional ("if Q4 found Gmsh cannot read our B-rep") and was not built; the gate asserts the unit line
+  is absent.
+- **A kernel conductor's surfaces are the union of one tight-box query per face, counted at least one** — the same
+  count every conductor has. Checking a per-face count on a CONDUCTOR would refuse ordinary designs: a face in full
+  contact with other metal (a lid sitting on a wall) bounds no meshed volume after both are deleted, so its query
+  finds nothing although nothing is wrong. The exact per-face count is enforced where a face is NAMED — a face
+  boundary's group expects exactly as many surfaces as the face has `#n` pieces.
+- **A kernel face is ONE piece per face-table entry**, where brief 64 made one piece per display triangle: a Palace
+  group expects one surface per piece, and a triangle count would have been a refusal every time. A flat piece is
+  the boundary loops of its triangles (edges used once, chained from the lowest vertex index; the largest ring is
+  the outline), bounded by the kernel's tight box; a curved one is its box and its triangles (`CurvedKind`, `Mesh`),
+  which Palace recovers and openEMS refuses. The editor draws a curved boundary's tint from those triangles.
+- **`CoplanarNeighbour` skipped a boundary's own face but not its own PIECES**: a boundary on `zmax` compared its
+  pieces against `zmax#1` and `zmax#2` as "another face in the same plane". Pieces of the boundary's face are now
+  its own.
+- **openEMS re-tessellates through a hook the elaboration sets** (`Em3dShapeSolid.Tessellator`, a delegate over the
+  kernel and the tree): the neutral problem carries no tree and the Engine may not know the kernel, and a problem
+  handed to the writer must still reach the worker at the grid's deflection. `C3dElaborator.ShapeSolid` is the one
+  lowering (the elaboration's cache sits over it, and the tests call it directly).
+- **The face-node offset is measured, not assumed** (gate 6): a 600 × 400 × 35 µm strip built by the kernel (a
+  boolean whose Tool misses) and the equal managed `Box`, on ONE grid, `--debug-PEC`: **1,710 metal grid edges
+  each**. With the offset set to zero the kernel strip gave **1,236** — brief 42's defect, reproduced at the scale
+  it was reported. The PLY welds vertices by exact coordinate first and offsets each welded vertex on every
+  axis-normal face it lies on, so a vertex on an edge moves on both axes and the mesh stays closed.
+- **A face lying on an absorbing air-box face is carried out through the PML instead of offset**, as every managed
+  primitive's coordinate on that face is (`Context.OutAxis`).
+- **The PLY states `float` coordinates** (VTK's reader keeps float whatever the header says). At 1e-4 of a cell the
+  offset is nanometres; a float at 0.1 m resolves ~6 nm, so on a very large board the offset approaches the
+  precision it is written in. Nothing in the shipped examples comes near it.
+- **Fidelity rows are split by severity across the run's two channels**: warnings through `FdtdGridResult.Warnings`
+  (beside the oblique-face warning, and read by `explain`), notes through `CsxcadLowering.Notes` — so a run states
+  each row once.
+- **The Setup Analyses dialog shows rows under EMBEDDED setups only.** An external `.cem` card shows none (the
+  scene worker assembles embedded setups); `check` on that `.cem` gives its rows.
+- **Gate 3, measured**: box minus a through bore from the worker, meshed by Gmsh 4.15.2 from the written script —
+  the conductor group took 7 surfaces (six faces and the bore's wall), every air-box face 1, the port 1,
+  `unclassified_single_sided 0`, 0.67 s.
+- **Gate 9, measured once** (Benchmark, 5.8 s: Palace 0.18.1 Draft and openEMS 0.37.0-rc3): a copper pin (r 260 µm)
+  through a 500 µm copper plate bored at r 600 µm with both rims filleted at 100 µm, in a PEC box, a lumped port at
+  each end of the pin, 1–20 GHz. **Palace against openEMS: S21 within 0.033 dB and 2.8°, S11 within 0.36 dB and
+  2.7°, all worst at 20 GHz.** The rows beside it: openEMS *"will not represent the 100 µm fillet on 'plate'
+  (fillet(bore:side|zmax)): the grid cell there is 142.061 µm … It is the worst of 3 rounded features"* (a warning),
+  and Palace *"… puts elements of about 52.36 µm on it — a sixth of the smallest elsewhere …"* (a note). No
+  conductor-model warning: 100 µm is ~48 skin depths of copper at 1 GHz. So on this launch the unrepresented
+  fillet costs openEMS little — the warning says the geometry is not the grid's, not that the answer is far off;
+  the grid (24 × 23 × 16) was set by the ports and the pin, never refined for the fillet, which is FDTD's nature.

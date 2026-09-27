@@ -980,6 +980,12 @@ internal static class CliDiagnostics
     public static Diagnostic CheckThreeDFaceBoundary(string path, string reason) => Diagnostic.Create(
         "check.c3d.face-boundary", DiagnosticSeverity.Error, "{path}: {reason}", ("path", path), ("reason", reason));
 
+    /// <summary>brief-em3d-65 R-em3d65-4d — what a setup's solver will not respect of a kernel solid (a warning), or will
+    /// respect at a cost (a note). Never an error: the run is not blocked by it.</summary>
+    public static Diagnostic CheckThreeDFidelity(string path, string setup, string solver, string sentence, bool warning) => Diagnostic.Create(
+        "check.c3d.fidelity", warning ? DiagnosticSeverity.Warning : DiagnosticSeverity.Info,
+        "{path}: setup '{setup}' ({solver}): {sentence}", ("path", path), ("setup", setup), ("solver", solver), ("sentence", sentence));
+
     /// <summary>brief-em3d-42 — what elaboration noted.</summary>
     public static Diagnostic CheckThreeDNote(string path, string note) => Diagnostic.Create(
         "check.c3d.note", DiagnosticSeverity.Info, "{path}: {note}", ("path", path), ("note", note));

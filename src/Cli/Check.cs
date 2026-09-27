@@ -585,6 +585,26 @@ internal static class Check
             f.Add(port.Result.Refusal is null ? CliDiagnostics.CheckThreeDPort(path, port.Text) : CliDiagnostics.CheckThreeDPortRefused(path, port.Text));
         foreach (string why in C3dPortReports.FaceBoundaryRefusals(doc, e))
             f.Add(CliDiagnostics.CheckThreeDFaceBoundary(path, why));
+
+        // brief-em3d-65 R-em3d65-4d — what each embedded setup's solver will not respect of a kernel solid, at the row's own
+        // severity. Only a document holding a kernel object assembles anything here.
+        if (C3dKernelUse.Of(doc).Count > 0)
+            foreach (var embedded in C3dSetups.Read(doc))
+                if (embedded is { Refusal: null, Setup: { Is3D: true } s })
+                {
+                    var run = C3dSetups.ForRun(s, Path.GetFullPath(path));
+                    var assembled = C3dProblemAssembly.Assemble(run, doc, Path.GetFullPath(path), DocumentKinds.AncestorCws(Path.GetFullPath(path)));
+                    AddFidelity(path, f, embedded.Name, run, assembled.Problem);
+                }
+    }
+
+    /// <summary>brief-em3d-65 — one finding per fidelity row of <paramref name="problem"/> under <paramref name="setup"/>.</summary>
+    private static void AddFidelity(string path, Findings f, string setupName, EmSetup setup, CircuitRF.Engine.Em3d.Em3dProblem? problem)
+    {
+        if (problem is null) return;
+        foreach (var row in CircuitRF.Design.Em3d.Em3dFidelityReport.For(problem, setup))
+            f.Add(CliDiagnostics.CheckThreeDFidelity(path, setupName, CircuitRF.Design.Em3d.Em3dFidelityReport.SolverName(row.Solver),
+                                                     row.Sentence, row.Severity == CircuitRF.Engine.Em3d.Em3dFidelitySeverity.Warning));
     }
 
     /// <summary>
@@ -722,6 +742,8 @@ internal static class Check
             var p3 = src.Generated!.Problem!;
             var bad = p3.Validate();
             foreach (string b in bad) f.Add(CliDiagnostics.CheckEmRefused(path, b));
+            // brief-em3d-65 R-em3d65-4d — a .cem naming a .c3d: the same rows, under this setup.
+            if (bad.Count == 0) AddFidelity(path, f, setup.Name is { Length: > 0 } sn ? sn : Path.GetFileNameWithoutExtension(path), setup, p3);
             if (bad.Count == 0)
                 f.Add(CliDiagnostics.CheckEmWouldRun(path,
                     $"3D problem for {setup.Solver3D} from a 3D view: {p3.Solids.Count} solid(s), {p3.Sheets.Count} sheet(s), " +

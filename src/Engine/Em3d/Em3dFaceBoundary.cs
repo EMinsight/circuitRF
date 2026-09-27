@@ -47,9 +47,24 @@ public sealed record Em3dFacePolygon(IReadOnlyList<Point3> Outer, IReadOnlyList<
         }
     }
 
+    /// <summary>
+    /// brief-em3d-65 R-em3d65-2b — a kernel face's tight box, as the geometry kernel measured it: what the piece's bound
+    /// is, where the outline is only its tessellation's (a hole's circle, a curved face). Null for every other primitive's.
+    /// </summary>
+    public (double X0, double Y0, double Z0, double X1, double Y1, double Z1)? TightBox { get; init; }
+
+    /// <summary>brief-em3d-65 R-em3d65-3f — the surface kind of a CURVED kernel face (<c>cylinder</c>, <c>torus</c>, …), whose
+    /// piece is a box and its triangles, not a polygon: Palace recovers it by the box, openEMS cannot state it. Null for a
+    /// flat piece.</summary>
+    public string? CurvedKind { get; init; }
+
+    /// <summary>A curved kernel face's own triangles, for drawing it; null for a flat piece, which draws its polygon.</summary>
+    public Em3dTriangleMesh? Mesh { get; init; }
+
     /// <summary>The piece's bound, metres.</summary>
     public (double X0, double Y0, double Z0, double X1, double Y1, double Z1) Bounds()
     {
+        if (TightBox is { } tight) return tight;
         double x0 = double.PositiveInfinity, y0 = x0, z0 = x0, x1 = double.NegativeInfinity, y1 = x1, z1 = x1;
         foreach (var q in Outer)
         {
@@ -213,23 +228,13 @@ public static class Em3dFaceGeometry
             }
             case Em3dShapeSolid k:
             {
-                // brief-em3d-64 — a kernel face is recovered by name, every piece of it (zmax covers zmax#1 and zmax#2),
-                // as the kernel tessellated it: a flat face exactly, one planar piece per triangle.
+                // brief-em3d-64 — a kernel face is recovered by name, every piece of it (zmax covers zmax#1 and zmax#2).
+                // brief-em3d-65 R-em3d65-2c/3f — ONE piece per face entry, bounded by the kernel's tight box: Palace recovers
+                // it by that box, and a flat one is its triangles' boundary loops for openEMS's sheet. A curved one is a box
+                // and its triangles, which Palace takes and openEMS refuses (CurvedKind says which).
                 var list = new List<Em3dFacePolygon>();
                 foreach (var f in k.Faces.Where(f => f.Name == face || IsPiece(face, f.Name)))
-                {
-                    if (f.Kind != "plane")
-                    {
-                        why = $"it is a curved face (a {f.Kind}), and a boundary is placed on a flat face";
-                        return null;
-                    }
-                    for (int t = f.FirstTriangle; t < f.FirstTriangle + f.TriangleCount; t++)
-                    {
-                        var tri = k.Display.Triangles[t];
-                        Point3 a = k.Display.Vertices[tri.A], b = k.Display.Vertices[tri.B], c = k.Display.Vertices[tri.C];
-                        list.Add(new Em3dFacePolygon([a, b, c], [], Em3dFacePolygon.Unit(Em3dFacePolygon.Cross(Em3dFacePolygon.Sub(b, a), Em3dFacePolygon.Sub(c, a)))));
-                    }
-                }
+                    list.Add(KernelPiece(k, f));
                 if (list.Count > 0) return list;
                 break;
             }
@@ -239,6 +244,97 @@ public static class Em3dFaceGeometry
         }
         why = $"it has no face named '{face}'";
         return null;
+    }
+
+    /// <summary>
+    /// brief-em3d-65 — one kernel face as a piece. Flat: the boundary loops of its triangle range (edges used by one of its
+    /// triangles only, chained in index order; the largest ring is the outline, the rest holes), the outward normal — an axis
+    /// exactly when the tight box has no thickness along one. Curved: its triangles, with no normal.
+    /// </summary>
+    private static Em3dFacePolygon KernelPiece(Em3dShapeSolid k, Em3dShapeFace f)
+    {
+        var tris = new List<Em3dTriangle>(f.TriangleCount);
+        for (int t = f.FirstTriangle; t < f.FirstTriangle + f.TriangleCount && t < k.Display.Triangles.Count; t++) tris.Add(k.Display.Triangles[t]);
+        if (f.Kind != "plane")
+        {
+            // The mesh's own vertices, renumbered to this face.
+            var at = new Dictionary<int, int>();
+            var verts = new List<Point3>();
+            int V(int i)
+            {
+                if (at.TryGetValue(i, out int j)) return j;
+                at[i] = verts.Count;
+                verts.Add(k.Display.Vertices[i]);
+                return verts.Count - 1;
+            }
+            var mine = tris.Select(t => new Em3dTriangle(V(t.A), V(t.B), V(t.C), t.Solid, t.Face)).ToList();
+            return new Em3dFacePolygon([], [], new Point3(0, 0, 0))
+            {
+                TightBox = f.Box, CurvedKind = f.Kind, Mesh = new Em3dTriangleMesh(verts, mine),
+            };
+        }
+
+        // The normal: an axis when the box says so (exactly, so NormalAxis reads it), else the area-weighted sum.
+        Point3 normal;
+        if (Em3dShapeSolid.NormalAxis(f) is int axis)
+        {
+            double sum = 0;
+            foreach (var t in tris)
+            {
+                var n = Em3dFacePolygon.Cross(Em3dFacePolygon.Sub(k.Display.Vertices[t.B], k.Display.Vertices[t.A]),
+                                              Em3dFacePolygon.Sub(k.Display.Vertices[t.C], k.Display.Vertices[t.A]));
+                sum += axis == 0 ? n.X : axis == 1 ? n.Y : n.Z;
+            }
+            double sign = sum < 0 ? -1 : 1;
+            normal = axis == 0 ? new Point3(sign, 0, 0) : axis == 1 ? new Point3(0, sign, 0) : new Point3(0, 0, sign);
+        }
+        else
+        {
+            var acc = new Point3(0, 0, 0);
+            foreach (var t in tris)
+            {
+                var n = Em3dFacePolygon.Cross(Em3dFacePolygon.Sub(k.Display.Vertices[t.B], k.Display.Vertices[t.A]),
+                                              Em3dFacePolygon.Sub(k.Display.Vertices[t.C], k.Display.Vertices[t.A]));
+                acc = new Point3(acc.X + n.X, acc.Y + n.Y, acc.Z + n.Z);
+            }
+            normal = Em3dFacePolygon.Unit(acc);
+        }
+
+        // Boundary loops: a directed edge whose reverse no triangle of the face uses. Outward triangles walk the outline
+        // counter-clockwise seen from outside and each hole the other way — the orientation Em3dFacePolygon states.
+        var directed = new HashSet<(int, int)>();
+        foreach (var t in tris) { directed.Add((t.A, t.B)); directed.Add((t.B, t.C)); directed.Add((t.C, t.A)); }
+        var next = new SortedDictionary<int, int>();
+        foreach (var (a, b) in directed)
+            if (!directed.Contains((b, a))) next.TryAdd(a, b);
+        var rings = new List<IReadOnlyList<Point3>>();
+        var used = new HashSet<int>();
+        foreach (int start in next.Keys)
+        {
+            if (used.Contains(start)) continue;
+            var ring = new List<Point3>();
+            int v = start;
+            while (used.Add(v) && next.TryGetValue(v, out int w))
+            {
+                ring.Add(k.Display.Vertices[v]);
+                v = w;
+            }
+            if (ring.Count >= 3) rings.Add(ring);
+        }
+        if (rings.Count == 0) return new Em3dFacePolygon([], [], normal) { TightBox = f.Box };
+        double Area(IReadOnlyList<Point3> r)
+        {
+            var acc = new Point3(0, 0, 0);
+            for (int i = 0; i < r.Count; i++)
+            {
+                var c = Em3dFacePolygon.Cross(r[i], r[(i + 1) % r.Count]);
+                acc = new Point3(acc.X + c.X, acc.Y + c.Y, acc.Z + c.Z);
+            }
+            return Math.Abs(Em3dFacePolygon.Dot(acc, normal));
+        }
+        int outer = 0;
+        for (int i = 1; i < rings.Count; i++) if (Area(rings[i]) > Area(rings[outer])) outer = i;
+        return new Em3dFacePolygon(rings[outer], [.. rings.Where((_, i) => i != outer)], normal) { TightBox = f.Box };
     }
 
     /// <summary>The fold rule: <paramref name="candidate"/> is a piece of <paramref name="face"/> when it is <c>face#n</c>.</summary>
@@ -296,6 +392,8 @@ public static class Em3dFaceSheets
                 double mu0 = 4e-7 * Math.PI;
                 thickness = SkinDepths / Math.Sqrt(Math.PI * Math.Max(f, 1) * mu0 * metal.Mur * metal.SigmaSm);
             }
+            // brief-em3d-65 — a curved kernel face is no sheet; the writer refuses the boundary for openEMS, naming it.
+            if (pieces.Any(pc => pc.CurvedKind is not null)) continue;
             for (int k = 0; k < pieces.Count; k++)
                 sheets.Add(pieces[k].AsSheet(pieces.Count == 1 ? b.Name : $"{b.Name}#{k + 1}", material, thickness, order));
         }

@@ -205,6 +205,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
             // brief-em3d-49 — the active setup's box, ports and face boundaries, resolved as a run resolves them.
             var records = ResolveRecords(doc, e, inputs.SetupJson);
             _records[generation] = records;
+            ComputeFidelity(generation, doc, inputs.Path, inputs.WorkspaceCws);
             var box = records.Box ?? new Em3dAirBox(new Point3(extent.X0, extent.Y0, extent.Z0), new Point3(extent.X1, extent.Y1, extent.Z1), faces);
             IReadOnlyList<Em3dSolid> solids = e.Solids;
             IReadOnlyList<Em3dSheet> sheets = e.Sheets;

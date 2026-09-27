@@ -2633,3 +2633,27 @@ first would name half of the answer.
   `Metal`), Conductive at three skin depths of its metal at the top frequency, because a CSXCAD conducting sheet takes
   a thickness and a face boundary is the outside of a thick conductor. Every caller of the grid (viewer overlay,
   `check`, `explain`) sees the same lines without knowing. No face boundary → the same instance, same bytes.
+
+## brief-em3d-65 — `Em3dFidelity`, and a kernel solid's grid lines (2026-09-27)
+
+`Em3dFidelity.For(problem, solver, grid, palaceSmallestSizeM)` → `Em3dFidelityFinding` rows; `FdtdGrid`'s kernel
+lines (`KernelLines`). Gates: `tests/Engine.Tests/Em3d/Em3dFidelityTests.cs` (5 and 7).
+
+- **The staircase cell is measured across the axes a face BENDS across, not all three.** The brief's rule (the
+  largest of the three axes' cells inside the face's box) counted a fillet's LENGTH axis, whose cells decide
+  nothing about it — on an ordinary grid, coarse along the edge, that is a "will not represent" warning on a fillet
+  the grid resolves. The axes are those a triangle normal of the face has a component along (> 1e-3): a cylinder's
+  facets contain its generators, so its axis drops out exactly; a sphere or torus keeps all three.
+- **A chamfer's width is its smaller leg** — the face's box extent on the axes it slopes across — which is the
+  chamfer distance a user typed for a symmetric one, not the face's own width (√2 larger).
+- **One row per solid, per rule.** The worst feature (warnings before notes, then the smallest ratio) is named, and
+  "It is the worst of N rounded features" says how many others there are; the ≥ 4-cell note is already a summary.
+  The sentences carry the face in parentheses, which the brief's examples left out, so a row can be found.
+- **`PalaceCurvatureElements` lives here** and `GmshGeoWriter.CurvatureElements` reads it: the mesh-size note and the
+  script cannot state two numbers.
+- **Kernel grid lines**: every planar face normal to the axis (a `MetalExtreme` for a conductor, as the brief says —
+  not `MetalEdge`), the solid's extremes, and each other face's extremes (a bore's, a chamfer's). The thirds rule
+  runs at a straight edge parallel to another axis only when the edge is CONVEX — the face lying on the line faces
+  away from the metal its neighbour runs back over (read from the neighbour's box and the face's winding); a concave
+  edge keeps only its face line, as `bordersMetal` does for an outline. The local cell is `MaxCellAt` and 3/5 of the
+  neighbour face's extent across the edge; the gap clamp to separate metal is not applied to a kernel solid.

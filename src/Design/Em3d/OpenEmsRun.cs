@@ -77,13 +77,46 @@ public static class OpenEmsRun
         if (!lowering.Ok) throw new ArgumentException(lowering.Refusal, nameof(lowering));
         Directory.CreateDirectory(runDir);
         WriteText(Path.Combine(runDir, CsxcadWriter.ModelFile), lowering.Model!);
+        // brief-em3d-65 R-em3d65-3b — each kernel solid's PLY beside every file naming it: openEMS runs in the port's own
+        // directory and reads a PolyhedronReader's file relative to it.
+        foreach (var kernel in lowering.KernelFiles ?? []) kernel.WriteInto(runDir);
         for (int k = 0; k < lowering.Ports.Count; k++)
         {
             string dir = Path.Combine(runDir, PortDirectory(lowering.Ports[k]));
             if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
             Directory.CreateDirectory(dir);
             WriteText(Path.Combine(dir, CsxcadWriter.ModelFile), lowering.PortFiles[k]);
+            foreach (var kernel in lowering.KernelFiles ?? []) kernel.WriteInto(dir);
         }
+    }
+
+    private static readonly Regex PolyhedronReaderFile = new("<PolyhedronReader FileName=\"([^\"]*)\"", RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// brief-em3d-65 R-em3d65-3c — null when every <c>PolyhedronReader</c> file <paramref name="xml"/> names exists in
+    /// <paramref name="dir"/>, is not empty and hashes to what the writer wrote; otherwise the refusal, naming the solid and
+    /// the file. F0 Q8: CSXCAD skips a file it cannot read with a warning and exit code 0, so openEMS would solve as if the
+    /// solid were not there — which is why this is checked immediately before openEMS is started, not trusted.
+    /// </summary>
+    public static string? CheckKernelFiles(string dir, CsxcadLowering lowering, string xml)
+    {
+        foreach (Match m in PolyhedronReaderFile.Matches(xml))
+        {
+            string name = System.Net.WebUtility.HtmlDecode(m.Groups[1].Value);
+            var written = lowering.KernelFiles?.FirstOrDefault(f => f.FileName == name);
+            string solid = written is { Solid.Length: > 0 } w ? $"'{w.Solid}'" : "a kernel solid";
+            string path = Path.Combine(dir, name);
+            string? what =
+                written is null ? "which circuitRF did not write for this run" :
+                !File.Exists(path) ? "which is missing" :
+                new FileInfo(path).Length == 0 ? "which is empty" :
+                Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(path))) != written.Sha256
+                    ? "which is not what circuitRF wrote (it changed after it was written)" : null;
+            if (what is not null)
+                return $"{char.ToUpperInvariant(solid[0])}{solid[1..]} is read by openEMS from {path}, {what}. openEMS would " +
+                       "solve without it and say nothing, so it was not started.";
+        }
+        return null;
     }
 
     // ── One run ──────────────────────────────────────────────────────────────────────────────

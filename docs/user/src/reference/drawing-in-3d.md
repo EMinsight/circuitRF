@@ -292,9 +292,22 @@ error per such object and exits 1, and <code>em</code> refuses before writing an
 a <i>child</i> using one still opens; that one instance is refused and Simulate says which.</p>
 </div>
 
-Palace and openEMS cannot yet be handed a kernel solid: a run with one in it is refused, naming it. The
-editor draws it, and `check`, `explain` (which reports the kernel, each operation's operands, its face and
-edge counts and its smallest radius) and `render` all work on it.
+Both solvers take a kernel solid, and they do not treat its curves alike:
+
+- **Palace** reads the kernel's own shape, so a fillet or a bore is meshed as the curved surface it is (second-order
+  elements, twelve per full turn). Two things are said before the run: a **warning** where a conductor's curved
+  face is under ten skin depths in radius at the bottom of the band — Palace models a conductor's loss as a flat
+  surface's, which reads low there — and a **note** where a small radius sets the mesh's size; the operation's
+  **Enabled** box is the way to see whether that feature matters.
+- **openEMS** reads a tessellation fitted to its grid and **staircases** every curved or sloping face to the grid's
+  cells. Each kernel object gets one line about its worst rounded feature: *will not represent* (the cell is wider
+  than the radius, so the edge is solved as sharp), *staircases … with about N cells* (a warning below four), or a
+  note that refining the grid converges it. A boundary on a curved face is refused for openEMS; Palace takes it.
+
+Those lines appear under each setup in *Simulate ▸ Setup Analyses…*, in `circuitrf check` (at their own severity;
+they never change the exit code), and in the run's messages. None of them stops a run. `explain` (which reports the
+kernel, each operation's operands, its face and edge counts and its smallest radius) and `render` work on kernel
+objects too.
 
 ## Hierarchy: placing cells {#hierarchy}
 

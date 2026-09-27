@@ -70,7 +70,8 @@ public sealed record CsxcadLowering(
     IReadOnlyList<string> SubCellWires,
     IReadOnlyList<string> Notes,
     string?               Refusal,
-    Nf2ffSurface?         FarField = null)
+    Nf2ffSurface?         FarField = null,
+    IReadOnlyList<Em3dKernelFile>? KernelFiles = null)
 {
     public bool Ok => Refusal is null;
 }
@@ -124,8 +125,6 @@ public static class CsxcadWriter
         CsxcadLowering No(string why) => new(null, [], [], 0, 0, 0, 0, [], [], [], why);
 
         // ── What openEMS cannot be told ──────────────────────────────────────────────────────────
-        // brief-em3d-64 §10 — a kernel solid's lowering is brief 65's; until then it is refused, never approximated.
-        if (Em3dShapeSolid.Refusal(problem, "openEMS") is { } kernel) return No(kernel);
         var f = problem.Boundary.Faces;
         var faceKinds = new[] { f.XMin, f.XMax, f.YMin, f.YMax, f.ZMin, f.ZMax };
         for (int k = 0; k < 6; k++)
@@ -149,7 +148,10 @@ public static class CsxcadWriter
         // brief-em3d-49 R-em3d49-4c — a face boundary is a zero-thickness sheet of PEC or of its metal, coincident with
         // the face, at a priority above every solid; the grid (FdtdGrid.Build) was given the same sheets.
         foreach (var (b, pieces) in problem.FaceBoundaryPieces())
-            if (pieces.Any(pc => pc.NormalAxis is null))
+            if (pieces.Any(pc => pc.CurvedKind is not null))
+                return No($"The boundary on '{b.Object}', face '{b.Face}', is on a curved face, which openEMS cannot state as a " +
+                          "sheet. Palace can; or put the boundary on a planar face.");
+            else if (pieces.Any(pc => pc.NormalAxis is null))
                 return No($"The boundary on face '{b.Face}' of '{b.Object}' lies in a plane no axis is normal to, and openEMS " +
                           "states a surface as a polygon normal to x, y or z on its grid. Solve it with Palace.");
         problem = Em3dFaceSheets.Apply(problem);
@@ -178,6 +180,21 @@ public static class CsxcadWriter
         var props = new StringBuilder();
         int id = 0;
 
+        // ── brief-em3d-65 R-em3d65-3 — each kernel solid as a PLY file, tessellated for THIS grid ─────────
+        var kernelFiles = new List<Em3dKernelFile>();
+        var kernelPrimitive = new Dictionary<string, string>(StringComparer.Ordinal);
+        var kernelSaid = new List<string>();
+        foreach (var solid in problem.Solids)
+        {
+            if (solid.Primitive is not Em3dShapeSolid k) continue;
+            var (file, why) = KernelPly(solid, k, grid, ctx);
+            if (file is null) return No(why!);
+            if (!kernelFiles.Any(x => x.FileName == file.FileName)) kernelFiles.Add(file);
+            kernelPrimitive[solid.Name] =
+                $"                    <PolyhedronReader FileName=\"{Esc(file.FileName)}\" FileType=\"PLY\" Priority=\"{ctx.Precedence.Of(solid)}\" />\n";
+            kernelSaid.Add($"'{solid.Name}' at {FdtdGrid.FormatLength(file.DeflectionM!.Value)}");
+        }
+
         // ── Solids and sheets, in construction order; priority = Em3dPrecedence (metal over dielectric) ──
         var items = problem.Solids.Select(s => (s.Order, Solid: (Em3dSolid?)s, Sheet: (Em3dSheet?)null))
                            .Concat(problem.Sheets.Select(s => (s.Order, Solid: (Em3dSolid?)null, Sheet: (Em3dSheet?)s)))
@@ -188,7 +205,7 @@ public static class CsxcadWriter
             {
                 var m = materials[s.Material];
                 bool reached = false;
-                string prim = Primitive(s, ctx, thin, onFaces, ref reached);
+                string prim = kernelPrimitive.TryGetValue(s.Name, out var read) ? read : Primitive(s, ctx, thin, onFaces, ref reached);
                 if (reached) extended.Add(s.Name);
                 if (s.Role == Em3dRole.Conductor)
                 {
@@ -337,6 +354,15 @@ public static class CsxcadWriter
                       "lines, written as openEMS's polyhedron primitive — which, measured against an equal Box, leaves out " +
                       "the grid edges lying exactly on its faces (518 of the Box's edges became 78 on a 35 µm strip). " +
                       "Expect that metal to act a cell smaller on those faces; Palace meshes it exactly.");
+        if (kernelSaid.Count > 0)
+            notes.Add($"Kernel solids are read by openEMS from a tessellation fitted to the grid — {string.Join(", ", kernelSaid)}, a " +
+                      "quarter of the smallest cell inside each. Their faces normal to an axis are written 1e-4 of the local cell " +
+                      "outward of where they are, so the grid nodes lying on them are inside the solid: openEMS's polyhedron leaves " +
+                      "out nodes exactly on its faces (518 of an equal Box's grid edges became 78 on a 35 µm strip).");
+        // brief-em3d-65 R-em3d65-4d — the rounded features the grid will not respect: the WARNINGS are the grid's own
+        // (FdtdGridResult.Warnings), the notes are here, so a run states each row once.
+        notes.AddRange(Em3dFidelity.For(problem, Em3dFidelitySolver.OpenEms, grid)
+                                   .Where(r => r.Severity == Em3dFidelitySeverity.Note).Select(r => r.Sentence));
         if (extended.Count > 0)
             notes.Add($"{Names(extended)} reach{(extended.Count == 1 ? "es" : "")} an absorbing face and " +
                       (extended.Count == 1 ? "is" : "are") + " continued through its PML, so the absorber terminates the " +
@@ -354,7 +380,111 @@ public static class CsxcadWriter
             head + body + e.Replace("{ID}", (id).ToString(CultureInfo.InvariantCulture)) + tail).ToList();
 
         return new CsxcadLowering(model, files, [.. ports.Select(p => p.Number)], fitHz, f0, fc, maxSteps,
-                                  pec, thin, notes, null, surface);
+                                  pec, thin, notes, null, surface, kernelFiles);
+    }
+
+    /// <summary>A face normal to an axis is written this fraction of its local cell outward (R-em3d65-3d).</summary>
+    public const double FaceOffsetCells = 1e-4;
+
+    /// <summary>brief-em3d-65 R-em3d65-3a — the linear deflection, metres, a kernel solid is tessellated at for
+    /// <paramref name="grid"/>: a quarter of the smallest cell inside its box.</summary>
+    public static double KernelDeflectionM(Em3dShapeSolid k, FdtdGridResult grid)
+    {
+        var (x0, y0, z0, x1, y1, z1) = k.Bounds();
+        double cell = Math.Min(Em3dFidelity.SmallestCell(grid.X.Lines, x0, x1),
+                      Math.Min(Em3dFidelity.SmallestCell(grid.Y.Lines, y0, y1), Em3dFidelity.SmallestCell(grid.Z.Lines, z0, z1)));
+        return 0.25 * cell;
+    }
+
+    /// <summary>
+    /// brief-em3d-65 R-em3d65-3a/b/d — <paramref name="k"/> tessellated at <see cref="KernelDeflectionM"/> and written as
+    /// ASCII PLY in metres: vertices welded by exact coordinate (the kernel writes a shared edge's nodes to identical
+    /// coordinates on both faces, brief 61 Q10), each vertex on a planar face normal to an axis moved outward along that
+    /// axis by <see cref="FaceOffsetCells"/> of its local cell — or, on an absorbing air-box face, out through the PML as
+    /// every other primitive is — and every number in round-trip form. Or the refusal.
+    /// </summary>
+    private static (Em3dKernelFile? File, string? Refusal) KernelPly(Em3dSolid s, Em3dShapeSolid k, FdtdGridResult grid, Context ctx)
+    {
+        double deflection = KernelDeflectionM(k, grid);
+        if (!(deflection > 0) || double.IsInfinity(deflection))
+            return (null, $"'{s.Name}' is a kernel solid the openEMS grid has no cell inside, so there is nothing to fit its tessellation to.");
+        if (k.Tessellator is not { } tessellate)
+            return (null, $"'{s.Name}' is a kernel solid with no way to be tessellated for openEMS's grid (it was not built by the geometry kernel).");
+        Em3dTriangleMesh mesh;
+        try { mesh = tessellate(deflection, Em3dFidelity.OpenEmsAngularRad); }
+        catch (CircuitRF.Design.ThreeD.Occ.GeometryKernelException e)
+        {
+            return (null, $"'{s.Name}' could not be tessellated for openEMS: {e.Message}");
+        }
+        if (mesh.Triangles.Count == 0)
+            return (null, $"'{s.Name}' was tessellated for openEMS into no triangles, so openEMS would solve without it.");
+
+        // The outward sign of each planar axis-normal face, from its triangles' winding in THIS mesh.
+        var sum = new double[k.Faces.Count];
+        foreach (var t in mesh.Triangles)
+        {
+            if (t.Face < 0 || t.Face >= k.Faces.Count || Em3dShapeSolid.NormalAxis(k.Faces[t.Face]) is not int a) continue;
+            Point3 p = mesh.Vertices[t.A], q = mesh.Vertices[t.B], r = mesh.Vertices[t.C];
+            sum[t.Face] += a switch
+            {
+                0 => (q.Y - p.Y) * (r.Z - p.Z) - (q.Z - p.Z) * (r.Y - p.Y),
+                1 => (q.Z - p.Z) * (r.X - p.X) - (q.X - p.X) * (r.Z - p.Z),
+                _ => (q.X - p.X) * (r.Y - p.Y) - (q.Y - p.Y) * (r.X - p.X),
+            };
+        }
+        var faceAt = new double?[k.Faces.Count];
+        var faceAxis = new int[k.Faces.Count];
+        for (int f = 0; f < k.Faces.Count; f++)
+        {
+            if (Em3dShapeSolid.NormalAxis(k.Faces[f]) is not int a || sum[f] == 0) continue;
+            var box = k.Faces[f].Box;
+            double at = a == 0 ? box.X0 : a == 1 ? box.Y0 : box.Z0;
+            var lines = grid.Axis((FdtdAxis)a).Lines;
+            bool reached = false;
+            double carried = ctx.OutAxis(at, a, ref reached);
+            faceAt[f] = reached ? carried : at + Math.Sign(sum[f]) * FaceOffsetCells * Em3dFidelity.SmallestCell(lines, at, at);
+            faceAxis[f] = a;
+        }
+
+        // Weld by exact coordinate, then place each welded vertex on every axis-normal face it lies on.
+        var index = new Dictionary<Point3, int>();
+        var welded = new List<double[]>();
+        var map = new int[mesh.Vertices.Count];
+        for (int i = 0; i < mesh.Vertices.Count; i++)
+        {
+            var v = mesh.Vertices[i];
+            if (!index.TryGetValue(v, out int w))
+            {
+                w = welded.Count;
+                index[v] = w;
+                welded.Add([v.X, v.Y, v.Z]);
+            }
+            map[i] = w;
+        }
+        var placed = new bool[welded.Count * 3];
+        foreach (var t in mesh.Triangles)
+        {
+            if (t.Face < 0 || t.Face >= k.Faces.Count || faceAt[t.Face] is not double at) continue;
+            int a = faceAxis[t.Face];
+            foreach (int v in (int[])[t.A, t.B, t.C])
+            {
+                int w = map[v];
+                if (placed[3 * w + a]) continue;
+                placed[3 * w + a] = true;
+                welded[w][a] = at;
+            }
+        }
+
+        var ply = new StringBuilder();
+        ply.Append("ply\nformat ascii 1.0\n");
+        ply.Append($"comment circuitRF brief-em3d-65: kernel solid {k.BrepHash[..Math.Min(16, k.BrepHash.Length)]}, metres, linear deflection {R(deflection)}\n");
+        ply.Append($"element vertex {welded.Count}\nproperty float x\nproperty float y\nproperty float z\n");
+        ply.Append($"element face {mesh.Triangles.Count}\nproperty list uchar int vertex_indices\nend_header\n");
+        foreach (var v in welded) ply.Append(R(v[0])).Append(' ').Append(R(v[1])).Append(' ').Append(R(v[2])).Append('\n');
+        foreach (var t in mesh.Triangles)
+            ply.Append("3 ").Append(map[t.A]).Append(' ').Append(map[t.B]).Append(' ').Append(map[t.C]).Append('\n');
+        string name = $"kernel-{k.BrepHash[..Math.Min(16, k.BrepHash.Length)]}-{R(Math.Round(deflection * 1e6, 6))}.ply";
+        return (new Em3dKernelFile(name, Encoding.UTF8.GetBytes(ply.ToString()), s.Name, deflection), null);
     }
 
     // ── The file's head: the run, the boundaries, the grid, the background ───────────────────────

@@ -580,8 +580,11 @@ internal static class DocumentSchema
           * WITHOUT OPENCASCADE a 3D view that holds any Boolean, Fillet, Chamfer or Step —
             at any depth, ENABLED OR NOT — is refused on open with the reason and the action; `check`
             reports one error per such object and exits 1, and `em` refuses before writing anything.
-            A 3D view with none opens and runs exactly as before. Palace and openEMS cannot yet be
-            given a kernel solid, and refuse one by name.
+            A 3D view with none opens and runs exactly as before. Palace meshes a kernel solid's
+            curves as they are; openEMS staircases them to its grid. Each setup says, per object,
+            what its solver will not respect (a fillet narrower than the grid cell, a curved
+            conductor under ten skin depths) — in `check`, the run's messages and the editor's
+            setups — and none of it blocks a run. A boundary on a curved face is openEMS's refusal.
           * A NAMED DIMENSION may hold an expression instead of a number: Min and Size (box,
             rectangle), Offset, Height and Shear (prism, sheet, polyline), Base, Length and Radius
             (cylinder), ThicknessUm, a placement's Origin and each Rotate angle, an array's Counts and

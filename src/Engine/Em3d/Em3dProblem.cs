@@ -119,6 +119,15 @@ public sealed record Em3dShapeSolid(
     /// <summary>The linear deflection <see cref="Display"/> was made at, metres.</summary>
     public double DisplayDeflectionM { get; init; }
 
+    /// <summary>
+    /// brief-em3d-65 R-em3d65-3a — the same solid tessellated again at a linear deflection (metres) and an angular one
+    /// (radians), with each triangle's <see cref="Em3dTriangle.Face"/> an index into <see cref="Faces"/>: how the FDTD
+    /// lowering asks for a tessellation fitted to ITS grid rather than the screen's. Set by whoever built the solid (the
+    /// elaboration, over the geometry kernel); the Engine only calls it. Null — a solid built by hand — has no other
+    /// tessellation than <see cref="Display"/>. Not part of equality: it re-asks for the same B-rep.
+    /// </summary>
+    public Func<double, double, Em3dTriangleMesh>? Tessellator { get; init; }
+
     /// <summary>The bound of the faces' tight boxes, metres.</summary>
     public (double X0, double Y0, double Z0, double X1, double Y1, double Z1) Bounds()
     {
@@ -144,12 +153,22 @@ public sealed record Em3dShapeSolid(
 
     public override int GetHashCode() => HashCode.Combine(BrepHash, DisplayDeflectionM);
 
-    /// <summary>The sentence a backend refuses one with until it can write a kernel solid (brief 65 lowers them).</summary>
-    public static string NotYet(string solid, string solver) => $"'{solid}' is a kernel solid, which this build cannot yet write for {solver}.";
+    /// <summary>The surface kinds a face table calls curved (everything but <c>plane</c> and <c>other</c>).</summary>
+    public static bool IsCurved(string kind) => kind is "cylinder" or "cone" or "sphere" or "torus" or "bspline";
 
-    /// <summary>The first kernel solid in <paramref name="problem"/>, refused for <paramref name="solver"/>; null when it has none.</summary>
-    public static string? Refusal(Em3dProblem problem, string solver)
-        => problem.Solids.FirstOrDefault(s => s.Primitive is Em3dShapeSolid) is { } k ? NotYet(k.Name, solver) : null;
+    /// <summary>brief-em3d-65 — the axis (0 x, 1 y, 2 z) a PLANAR face is normal to, read from its tight box having no
+    /// thickness along it; null for a curved or an oblique face.</summary>
+    public static int? NormalAxis(Em3dShapeFace face)
+    {
+        if (face.Kind != "plane") return null;
+        var b = face.Box;
+        double[] d = [b.X1 - b.X0, b.Y1 - b.Y0, b.Z1 - b.Z0];
+        double tol = 1e-9 * Math.Max(d.Max(), 1e-9);
+        int? axis = null;
+        for (int k = 0; k < 3; k++)
+            if (d[k] <= tol) { if (axis is not null) return null; axis = k; }
+        return axis;
+    }
 }
 
 /// <summary>One named face of a kernel solid: its surface kind (plane, cylinder, cone, sphere, torus, bspline, other),

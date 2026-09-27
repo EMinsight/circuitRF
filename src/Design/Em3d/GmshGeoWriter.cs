@@ -79,7 +79,10 @@ public sealed record Em3dGroup(
 
 /// <summary>The lowering: the script, its groups, and the groups as the file written beside the
 /// mesh — or the reason the problem cannot be lowered.</summary>
-public sealed record GmshLowering(string? Geo, IReadOnlyList<Em3dGroup> Groups, string? GroupsJson, string? Refusal)
+/// <param name="KernelFiles">brief-em3d-65 R-em3d65-2a — the B-rep of each kernel solid the script imports, to be written
+/// beside it; empty for a problem with none.</param>
+public sealed record GmshLowering(string? Geo, IReadOnlyList<Em3dGroup> Groups, string? GroupsJson, string? Refusal,
+                                  IReadOnlyList<Em3dKernelFile>? KernelFiles = null)
 {
     public bool Ok => Refusal is null;
 }
@@ -98,8 +101,9 @@ public static class GmshGeoWriter
     public const string BackgroundName = "background";
 
     /// <summary>Elements per full turn on a curved surface — a via barrel, a round wire. Twelve puts a
-    /// 1 mil wire's surface elements at about its quarter-diameter, F0 case A's hand-tuned size.</summary>
-    public const int CurvatureElements = 12;
+    /// 1 mil wire's surface elements at about its quarter-diameter, F0 case A's hand-tuned size. brief-em3d-65: held in
+    /// <see cref="Em3dFidelity.PalaceCurvatureElements"/>, so the mesh-size note reads the number the script writes.</summary>
+    public const int CurvatureElements = Em3dFidelity.PalaceCurvatureElements;
 
     /// <summary>Elements across a port sheet's smaller side, at least (R-em3d7-2e).</summary>
     public const int PortCellsAcross = 4;
@@ -138,9 +142,6 @@ public static class GmshGeoWriter
         var problems = problem.Validate().Concat(settings.Problems()).ToList();
         if (problems.Count > 0)
             return No("The 3D problem cannot be lowered for Palace: " + string.Join(" ", problems));
-        // brief-em3d-64 §10 — a kernel solid's lowering is brief 65's; until then it is refused, never approximated.
-        if (Em3dShapeSolid.Refusal(problem, "Palace") is { } kernel) return No(kernel);
-
         var f = problem.Boundary.Faces;
         var faceKinds = new[] { f.XMin, f.XMax, f.YMin, f.YMax, f.ZMin, f.ZMax };
         for (int k = 0; k < 6; k++)
@@ -235,6 +236,10 @@ public static class GmshGeoWriter
             EmitPrimitive(g, $"s{i}", s.Primitive);
         }
         L();
+        // brief-em3d-65 R-em3d65-2a — each kernel solid's B-rep, written beside the script under its hash.
+        var kernelFiles = problem.Solids.Select(x => x.Primitive).OfType<Em3dShapeSolid>()
+                                 .Select(k => new Em3dKernelFile(KernelFileName(k), k.Brep.ToArray()))
+                                 .DistinctBy(x => x.FileName).ToList();
 
         L("// ---- disjoint by construction order: each solid loses what a higher-order solid takes -----");
         var bounds = problem.Solids.Select(s => Em3dProblem.Bounds(s.Primitive)).ToList();
@@ -377,7 +382,14 @@ public static class GmshGeoWriter
         {
             var s = problem.Solids[i];
             L($"// conductor {Comment(s.Name)}");
-            L($"c{i}[] = {Query(bounds[i], Margin(s.Primitive))};");
+            // brief-em3d-65 R-em3d65-2b — a kernel solid's faces by the kernel's own tight box per face, not one box
+            // around the whole solid: a pin standing in a lid's bore lies inside the lid's box, and outside its faces'.
+            if (s.Primitive is Em3dShapeSolid kernel && kernel.Faces.Count > 0)
+            {
+                L($"c{i}[] = {Query(kernel.Faces[0].Box, 0)};");
+                foreach (var face in kernel.Faces.Skip(1)) L($"c{i}[] += {Query(face.Box, 0)};");
+            }
+            else L($"c{i}[] = {Query(bounds[i], Margin(s.Primitive))};");
             L($"x[] = c{i}[];");
             L("x[] -= voids[];");
             L($"c{i}[] -= x[];");
@@ -438,6 +450,10 @@ public static class GmshGeoWriter
             L($"Printf(\"group {faceGroups[k].Attribute} %g 0\", #f{k}[]) >> \"{EntitiesFile}\";");
         for (int k = 0; k < boundaryGroups.Count; k++)
             L($"Printf(\"group {boundaryGroups[k].Attribute} %g 0\", #b{k}[]) >> \"{EntitiesFile}\";");
+        // brief-em3d-65 R-em3d65-2a — a kernel file read as anything but one volume is named by the check.
+        for (int i = 0; i < problem.Solids.Count; i++)
+            if (problem.Solids[i].Primitive is Em3dShapeSolid)
+                L($"If (ns{i} != 1) Printf(\"kernel_import_count {solidGroup[i].Attribute} %g\", ns{i}) >> \"{EntitiesFile}\"; EndIf");
         L($"Printf(\"all_volumes %g\", #allV[]) >> \"{EntitiesFile}\";");
         L($"Printf(\"classified_volumes %g\", {classifiedVolumes}) >> \"{EntitiesFile}\";");
         L($"Printf(\"all_surfaces %g\", #allS[]) >> \"{EntitiesFile}\";");
@@ -510,7 +526,31 @@ public static class GmshGeoWriter
         L("Mesh.MshFileVersion = 2.2;");
         L("Mesh.Binary = 1;");
 
-        return new GmshLowering(g.ToString(), groups, GroupsJson(groups), null);
+        return new GmshLowering(g.ToString(), groups, GroupsJson(groups), null, kernelFiles);
+    }
+
+    /// <summary>brief-em3d-65 R-em3d65-2a — the file a kernel solid's B-rep is handed to Gmsh in: named by its hash, so the
+    /// script names it byte-deterministically and an unchanged solid reuses the mesh beside it.</summary>
+    public static string KernelFileName(Em3dShapeSolid k) => $"kernel-{k.BrepHash[..Math.Min(16, k.BrepHash.Length)]}.brep";
+
+    /// <summary>
+    /// brief-em3d-65 R-em3d65-4c — the smallest element size, metres, the script asks for anywhere but a curved face's own
+    /// curvature sizing: the conductor and sheet refinement (<c>EdgeRefinement</c> times the smallest volume's size).
+    /// </summary>
+    public static double SmallestRequestedSizeM(Em3dProblem problem, PalaceSettings settings)
+    {
+        var materials = problem.Materials.ToDictionary(m => m.Name, StringComparer.Ordinal);
+        string backgroundMaterial = problem.Boundary.Material ?? BackgroundMaterial(problem.Solids, problem.Materials);
+        if (!materials.ContainsKey(backgroundMaterial)) materials[backgroundMaterial] = FreeSpace;
+        var box = problem.Boundary;
+        double boxSide = Math.Max(box.Max.X - box.Min.X, Math.Max(box.Max.Y - box.Min.Y, box.Max.Z - box.Min.Z));
+        double fMax = SizingFrequencyHz(problem);
+        double Size(string material) => problem.IsStatic ? StaticMaxElementSizeM(boxSide, settings)
+                                                         : MaxElementSizeM(materials[material], fMax, settings);
+        double least = Size(backgroundMaterial);
+        foreach (var s in problem.Solids)
+            if (s.Role != Em3dRole.Conductor && materials.ContainsKey(s.Material)) least = Math.Min(least, Size(s.Material));
+        return settings.EdgeRefinement * least;
     }
 
     /// <summary>
@@ -619,12 +659,17 @@ public static class GmshGeoWriter
     /// <summary>What <see cref="EntitiesFile"/> says: per attribute, the count and the volume tags lost;
     /// and the books' totals.</summary>
     public sealed record EntityTable(IReadOnlyDictionary<int, (int Count, int Lost)> Groups,
-                                     int AllVolumes, int ClassifiedVolumes, int UnclassifiedSingleSided);
+                                     int AllVolumes, int ClassifiedVolumes, int UnclassifiedSingleSided)
+    {
+        /// <summary>brief-em3d-65 — per attribute, a kernel solid whose file was read as other than one volume.</summary>
+        public IReadOnlyDictionary<int, int> KernelImports { get; init; } = new Dictionary<int, int>();
+    }
 
     /// <summary>Parses <see cref="EntitiesFile"/>, or null when it is not one this writer's script wrote.</summary>
     public static EntityTable? ReadEntities(string text)
     {
         var groups = new Dictionary<int, (int, int)>();
+        var imports = new Dictionary<int, int>();
         int? all = null, classified = null, rest = null;
         foreach (string raw in text.Split('\n'))
         {
@@ -633,6 +678,9 @@ public static class GmshGeoWriter
             if (t[0] == "group" && t.Length == 4 && int.TryParse(t[1], CultureInfo.InvariantCulture, out int a) &&
                 TryInt(t[2], out int c) && TryInt(t[3], out int lost))
                 groups[a] = (c, lost);
+            else if (t[0] == "kernel_import_count" && t.Length == 3 && int.TryParse(t[1], CultureInfo.InvariantCulture, out int ka) &&
+                     TryInt(t[2], out int kc))
+                imports[ka] = kc;
             else if (t.Length == 2 && TryInt(t[1], out int v))
                 switch (t[0])
                 {
@@ -642,7 +690,7 @@ public static class GmshGeoWriter
                 }
         }
         return all is null || classified is null || rest is null ? null
-            : new EntityTable(groups, all.Value, classified.Value, rest.Value);
+            : new EntityTable(groups, all.Value, classified.Value, rest.Value) { KernelImports = imports };
 
         static bool TryInt(string s, out int v)
         {
@@ -666,6 +714,8 @@ public static class GmshGeoWriter
         var faults = new List<string>();
         foreach (var gr in groups)
         {
+            if (table.KernelImports.TryGetValue(gr.Attribute, out int read))
+                faults.Add($"'{gr.Name}' was read from its kernel file as {read} volume(s) where one solid was written.");
             if (!table.Groups.TryGetValue(gr.Attribute, out var got))
             {
                 faults.Add($"'{gr.Name}' is missing from the entity table.");
@@ -772,6 +822,14 @@ public static class GmshGeoWriter
             }
             case Em3dPolyhedron ph:
                 EmitPolyhedron(g, list, ph);
+                break;
+            case Em3dShapeSolid k:
+                // brief-em3d-65 R-em3d65-2a — the kernel's own B-rep (D12: version 1, no triangles, micrometres, so no
+                // unit line), under the same name a managed primitive would take: the cuts, the fragment and the entity
+                // table below never know the difference. Its count is kept for the entity table (a later cut reassigns
+                // the list, and the table is started afresh after the solids).
+                L($"{list}[] = ShapeFromFile(\"{KernelFileName(k)}\");");
+                L($"n{list} = #{list}[];");
                 break;
             case Em3dExtrudedPolygon e:
                 EmitPlanar(g, "bs", [e.Outline, .. e.Holes], q => new Point3(q.X, q.Y, e.ZBottom));
@@ -1008,7 +1066,8 @@ public static class GmshGeoWriter
                 double[] lo = [box.X0, box.Y0, box.Z0], hi = [box.X1, box.Y1, box.Z1];
                 foreach (var o in others)
                 {
-                    if (o.Axis != axis || (o.Solid == boundary.Object && o.Face == boundary.Face)) continue;
+                    if (o.Axis != axis || (o.Solid == boundary.Object &&
+                                           (o.Face == boundary.Face || Em3dFaceGeometry.IsPiece(boundary.Face, o.Face)))) continue;
                     var (ox0, oy0, oz0, ox1, oy1, oz1) = o.Box;
                     double[] olo = [ox0, oy0, oz0], ohi = [ox1, oy1, oz1];
                     if (Math.Abs(olo[axis] - lo[axis]) > tol) continue;

@@ -290,53 +290,79 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
         KernelLowered made;
         try
         {
-            var build = k.Build(tree);
-            var faces = k.Faces(tree);
-            double diag = 0;
-            if (faces.Count > 0)
-            {
-                double x0 = faces.Min(f => f.Box[0]), y0 = faces.Min(f => f.Box[1]), z0 = faces.Min(f => f.Box[2]);
-                double x1 = faces.Max(f => f.Box[3]), y1 = faces.Max(f => f.Box[4]), z1 = faces.Max(f => f.Box[5]);
-                diag = Math.Sqrt((x1 - x0) * (x1 - x0) + (y1 - y0) * (y1 - y0) + (z1 - z0) * (z1 - z0));
-            }
-            // Relative to the object's size (overview §1j): a thousandth of its diagonal, never below a nanometre.
-            double linearUm = Math.Max(diag * 1e-3, 1e-3);
-            var mesh = k.Tessellate(tree, linearUm, DisplayAngularRad);
-            var edges = k.Edges(tree, linearUm);
-            const double M = 1e-6;
-            var vertices = new Point3[mesh.Vertices.Length / 3];
-            for (int i = 0; i < vertices.Length; i++)
-                vertices[i] = new Point3(mesh.Vertices[3 * i] * M, mesh.Vertices[3 * i + 1] * M, mesh.Vertices[3 * i + 2] * M);
-            var triangles = new Em3dTriangle[mesh.TriangleFace.Length];
-            var first = new int[faces.Count];
-            var count = new int[faces.Count];
-            Array.Fill(first, -1);
-            for (int t = 0; t < triangles.Length; t++)
-            {
-                int f = (int)mesh.TriangleFace[t];
-                triangles[t] = new Em3dTriangle((int)mesh.Triangles[3 * t], (int)mesh.Triangles[3 * t + 1], (int)mesh.Triangles[3 * t + 2], name, f);
-                if (f < 0 || f >= faces.Count) continue;
-                if (first[f] < 0) first[f] = t;
-                count[f]++;
-            }
-            var shapeFaces = faces.Select((f, i) => new Em3dShapeFace(f.Name, f.Kind,
-                (f.Box[0] * M, f.Box[1] * M, f.Box[2] * M, f.Box[3] * M, f.Box[4] * M, f.Box[5] * M),
-                f.MinRadius * M, Math.Max(first[i], 0), count[i])).ToList();
-            var shapeEdges = edges.Select(e => new Em3dShapeEdge(e.Name, e.FaceA, e.FaceB, e.Kind, e.MinRadius * M,
-                [.. Enumerable.Range(0, e.Polyline.Length / 3).Select(i => new Point3(e.Polyline[3 * i] * M, e.Polyline[3 * i + 1] * M, e.Polyline[3 * i + 2] * M))])).ToList();
-            var solid = new Em3dShapeSolid(build.Brep, build.BrepHash, new Em3dTriangleMesh(vertices, triangles), shapeFaces, shapeEdges)
-            {
-                DisplayDeflectionM = linearUm * M,
-            };
+            var (solid, build, faces, edges) = ShapeSolid(k, tree, name);
             var radii = faces.Select(f => f.MinRadius).Concat(edges.Select(e => e.MinRadius)).Where(r => r > 0).ToList();
             made = new KernelLowered(new C3dLowered(solid, null, [.. faces.Select(f => f.Name)], KindKernel), null, build.Notes,
-                                     k.RequestsSent > before, edges.Count, radii.Count > 0 ? radii.Min() * M : null);
+                                     k.RequestsSent > before, edges.Count, radii.Count > 0 ? radii.Min() * 1e-6 : null);
         }
         catch (GeometryKernelException e)
         {
             made = new KernelLowered(null, e.Message, [], k.RequestsSent > before, 0, null);
         }
         return _kernelSolids[tree.Hash] = made;
+    }
+
+    /// <summary>
+    /// brief-em3d-64 R-em3d64-3a — <paramref name="tree"/> built by <paramref name="k"/> and lowered to the neutral problem's
+    /// <see cref="Em3dShapeSolid"/>, named <paramref name="name"/>: the B-rep, the face table and edges in metres, the display
+    /// tessellation, and (brief-em3d-65) the hook openEMS re-tessellates it through. Not cached: the elaboration caches it.
+    /// </summary>
+    /// <exception cref="GeometryKernelException">The kernel refused, crashed or is absent.</exception>
+    public static (Em3dShapeSolid Solid, GeometryKernelBuild Build, IReadOnlyList<GeometryKernelFace> Faces, IReadOnlyList<GeometryKernelEdge> Edges)
+        ShapeSolid(GeometryKernel k, GeometryKernelTree tree, string name)
+    {
+        var build = k.Build(tree);
+        var faces = k.Faces(tree);
+        double diag = 0;
+        if (faces.Count > 0)
+        {
+            double x0 = faces.Min(f => f.Box[0]), y0 = faces.Min(f => f.Box[1]), z0 = faces.Min(f => f.Box[2]);
+            double x1 = faces.Max(f => f.Box[3]), y1 = faces.Max(f => f.Box[4]), z1 = faces.Max(f => f.Box[5]);
+            diag = Math.Sqrt((x1 - x0) * (x1 - x0) + (y1 - y0) * (y1 - y0) + (z1 - z0) * (z1 - z0));
+        }
+        // Relative to the object's size (overview §1j): a thousandth of its diagonal, never below a nanometre.
+        double linearUm = Math.Max(diag * 1e-3, 1e-3);
+        var mesh = k.Tessellate(tree, linearUm, DisplayAngularRad);
+        var edges = k.Edges(tree, linearUm);
+        const double M = 1e-6;
+        var display = Metres(mesh, name);
+        var triangles = display.Triangles;
+        var first = new int[faces.Count];
+        var count = new int[faces.Count];
+        Array.Fill(first, -1);
+        for (int t = 0; t < triangles.Count; t++)
+        {
+            int f = triangles[t].Face;
+            if (f < 0 || f >= faces.Count) continue;
+            if (first[f] < 0) first[f] = t;
+            count[f]++;
+        }
+        var shapeFaces = faces.Select((f, i) => new Em3dShapeFace(f.Name, f.Kind,
+            (f.Box[0] * M, f.Box[1] * M, f.Box[2] * M, f.Box[3] * M, f.Box[4] * M, f.Box[5] * M),
+            f.MinRadius * M, Math.Max(first[i], 0), count[i])).ToList();
+        var shapeEdges = edges.Select(e => new Em3dShapeEdge(e.Name, e.FaceA, e.FaceB, e.Kind, e.MinRadius * M,
+            [.. Enumerable.Range(0, e.Polyline.Length / 3).Select(i => new Point3(e.Polyline[3 * i] * M, e.Polyline[3 * i + 1] * M, e.Polyline[3 * i + 2] * M))])).ToList();
+        var solid = new Em3dShapeSolid(build.Brep, build.BrepHash, display, shapeFaces, shapeEdges)
+        {
+            DisplayDeflectionM = linearUm * M,
+            // brief-em3d-65 R-em3d65-3a — openEMS asks again, at its own grid's deflection, through the same kernel.
+            Tessellator = (linearM, angularRad) => Metres(k.Tessellate(tree, linearM / M, angularRad), name),
+        };
+        return (solid, build, faces, edges);
+    }
+
+    /// <summary>A kernel tessellation (micrometres) in metres, each triangle carrying its face's index.</summary>
+    private static Em3dTriangleMesh Metres(GeometryKernelMesh mesh, string name)
+    {
+        const double M = 1e-6;
+        var vertices = new Point3[mesh.Vertices.Length / 3];
+        for (int i = 0; i < vertices.Length; i++)
+            vertices[i] = new Point3(mesh.Vertices[3 * i] * M, mesh.Vertices[3 * i + 1] * M, mesh.Vertices[3 * i + 2] * M);
+        var triangles = new Em3dTriangle[mesh.TriangleFace.Length];
+        for (int t = 0; t < triangles.Length; t++)
+            triangles[t] = new Em3dTriangle((int)mesh.Triangles[3 * t], (int)mesh.Triangles[3 * t + 1], (int)mesh.Triangles[3 * t + 2], name,
+                                            (int)mesh.TriangleFace[t]);
+        return new Em3dTriangleMesh(vertices, triangles);
     }
 
     /// <summary>The display tessellation's angular deflection, radians.</summary>

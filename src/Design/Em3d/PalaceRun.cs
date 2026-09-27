@@ -128,6 +128,9 @@ public static class PalaceRun
         GmshLogProgress? gmshLog = null;
 
         WriteText(Path.Combine(runDir, GmshGeoWriter.GroupsFile), lowering.GroupsJson!);
+        // brief-em3d-65 R-em3d65-2a — the kernel solids' B-reps the script imports, by hash: the same file for the same solid,
+        // so an unchanged problem still reuses its mesh.
+        foreach (var kernel in lowering.KernelFiles ?? []) kernel.WriteInto(runDir);
         string hash = Sha256(lowering.Geo!);
 
         bool reuse = File.Exists(hashPath) && File.Exists(mshPath) && File.Exists(entPath) &&

@@ -311,6 +311,24 @@ public static class Scene3DBuilder
                 var lines = new List<(Point3, uint)>();
                 foreach (var piece in t.Pieces)
                 {
+                    // brief-em3d-65 — a curved kernel face (Palace takes a boundary on one): its own triangles, each lifted
+                    // along its own normal.
+                    if (piece.Mesh is { } curved)
+                    {
+                        foreach (var tr in curved.Triangles)
+                        {
+                            Point3 a = curved.Vertices[tr.A], c1 = curved.Vertices[tr.B], c2 = curved.Vertices[tr.C];
+                            double ux = c1.X - a.X, uy = c1.Y - a.Y, uz = c1.Z - a.Z, vx = c2.X - a.X, vy = c2.Y - a.Y, vz = c2.Z - a.Z;
+                            double nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+                            double nl = Math.Sqrt(nx * nx + ny * ny + nz * nz);
+                            var tn = nl > 0 ? new Point3(nx / nl, ny / nl, nz / nl) : new Point3(0, 0, 0);
+                            Point3 Lift(Point3 q) => new(q.X + tn.X * lift, q.Y + tn.Y * lift, q.Z + tn.Z * lift);
+                            int k0 = verts.Count;
+                            verts.Add(Lift(a)); verts.Add(Lift(c1)); verts.Add(Lift(c2));
+                            tris.Add(new Em3dTriangle(k0, k0 + 1, k0 + 2, t.Name));
+                        }
+                        continue;
+                    }
                     var n = piece.Normal;
                     Point3 Up(Point3 q) => new(q.X + n.X * lift, q.Y + n.Y * lift, q.Z + n.Z * lift);
                     var mesh = Em3dTessellation.OfSheet(piece.AsSheet(t.Name, "", 0, 0));

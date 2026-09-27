@@ -121,6 +121,22 @@
                                     <TextBlock Text="{Binding Name}" FontSize="12" TextTrimming="CharacterEllipsis"/>
                                     <TextBlock Text="{Binding Summary}" FontSize="10" TextTrimming="CharacterEllipsis"
                                                Foreground="{DynamicResource SystemBaseMediumColor}" ToolTip.Tip="{Binding Summary}"/>
+                                    <!-- brief-em3d-65 — what this setup's solver will not respect of a kernel solid; Simulate is not blocked by it. -->
+                                    <ItemsControl ItemsSource="{Binding Fidelity}" IsVisible="{Binding HasFidelity}" Margin="0,2,0,0">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="t3:C3dFidelityRow">
+                                                <Grid ColumnDefinitions="Auto,*" Margin="0,1,0,0">
+                                                    <mi:MaterialIcon Grid.Column="0" Kind="AlertOutline" Width="12" Height="12" Margin="0,1,4,0"
+                                                                     VerticalAlignment="Top" Foreground="Goldenrod" IsVisible="{Binding IsWarning}"/>
+                                                    <mi:MaterialIcon Grid.Column="0" Kind="InformationOutline" Width="12" Height="12" Margin="0,1,4,0"
+                                                                     VerticalAlignment="Top" Foreground="{DynamicResource SystemBaseMediumColor}"
+                                                                     IsVisible="{Binding IsNote}"/>
+                                                    <SelectableTextBlock Grid.Column="1" Text="{Binding Text}" FontSize="10" TextWrapping="Wrap"
+                                                                         Foreground="{DynamicResource SystemBaseMediumHighColor}"/>
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
                                 </StackPanel>
                             </Grid>
                         </Border>

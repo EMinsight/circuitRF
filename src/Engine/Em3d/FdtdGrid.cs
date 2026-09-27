@@ -319,6 +319,10 @@ public static class FdtdGrid
         long limit = availableMemoryBytes ?? GC.GetGCMemoryInfo().TotalAvailableMemoryBytes;
 
         var result = new FdtdGridResult(x, y, z, ctx.MinCell, cells, dt, pulse, steps, memory, merges, warnings, null);
+        // brief-em3d-65 R-em3d65-4d — a kernel solid's rounded features the grid will not respect, beside the oblique-face
+        // warning above; the NOTE rows are the writer's (CsxcadLowering.Notes), so a run says each row once.
+        warnings.AddRange(Em3dFidelity.For(problem, Em3dFidelitySolver.OpenEms, result)
+                                      .Where(r => r.Severity == Em3dFidelitySeverity.Warning).Select(r => r.Sentence));
         return memory > limit ? result with { Refusal = MemoryRefusal(result, limit) } : result;
     }
 
@@ -375,6 +379,15 @@ public static class FdtdGrid
                 foreach (double ex in new[] { lo, hi })
                     if (!at.Any(e => Math.Abs(e - ex) <= ctx.Tol))
                         Add(ex, false, new FdtdLineSource(shape.Name, extreme, ex));
+                continue;
+            }
+
+            // brief-em3d-65 R-em3d65-3e — a kernel solid: its extremes, a line on every planar face normal to this axis,
+            // each other face's extremes (a bore's, a chamfer's), and for a conductor the thirds rule at each straight
+            // edge parallel to another axis. Between those, curved and oblique faces are staircased (Em3dFidelity says so).
+            if (shape.Kernel is { } kernel)
+            {
+                KernelLines(kernel, shape, axis, settings, minCellM, ctx, Add);
                 continue;
             }
 
@@ -469,6 +482,92 @@ public static class FdtdGrid
         Add(ctx.BoxMin(axis), true, new FdtdLineSource(Em3dAirBox.FaceName(n + "min"), FdtdLineKind.AirBoxFace, ctx.BoxMin(axis)));
         Add(ctx.BoxMax(axis), true, new FdtdLineSource(Em3dAirBox.FaceName(n + "max"), FdtdLineKind.AirBoxFace, ctx.BoxMax(axis)));
         return lines;
+    }
+
+    /// <summary>brief-em3d-65 R-em3d65-3e — the required lines of one kernel solid on <paramref name="axis"/>.</summary>
+    private static void KernelLines(Em3dShapeSolid k, Shape shape, FdtdAxis axis, OpenEmsGridSettings settings, double minCellM,
+                                    Context ctx, Action<double, bool, FdtdLineSource, double> add)
+    {
+        int a = (int)axis;
+        var faceKind = shape.Conductor ? FdtdLineKind.MetalExtreme : FdtdLineKind.MaterialFace;
+        var placed = new List<double>();
+        void Line(double at, FdtdLineKind kind)
+        {
+            if (placed.Any(p => Math.Abs(p - at) <= ctx.Tol)) return;
+            placed.Add(at);
+            add(at, false, new FdtdLineSource(shape.Name, kind, at), double.PositiveInfinity);
+        }
+        static double Lo((double X0, double Y0, double Z0, double X1, double Y1, double Z1) b, int a) => a == 0 ? b.X0 : a == 1 ? b.Y0 : b.Z0;
+        static double Hi((double X0, double Y0, double Z0, double X1, double Y1, double Z1) b, int a) => a == 0 ? b.X1 : a == 1 ? b.Y1 : b.Z1;
+
+        // Planar faces normal to this axis first, so an extreme that is one keeps the face's line.
+        foreach (var f in k.Faces)
+            if (Em3dShapeSolid.NormalAxis(f) == a) Line(Lo(f.Box, a), faceKind);
+        var (lo, hi) = shape.Range(axis);
+        Line(lo, faceKind);
+        Line(hi, faceKind);
+        foreach (var f in k.Faces)
+            if (Em3dShapeSolid.NormalAxis(f) is null)
+            {
+                Line(Lo(f.Box, a), faceKind);
+                Line(Hi(f.Box, a), faceKind);
+            }
+
+        if (!shape.Conductor || !settings.ThirdsRule) return;
+        var byName = k.Faces.GroupBy(f => f.Name, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal);
+        var thirds = new HashSet<(double, int)>();
+        foreach (var e in k.Edges)
+        {
+            if (e.Kind != "line" || e.Polyline.Count < 2) continue;
+            var p = e.Polyline[0];
+            var q = e.Polyline[^1];
+            double[] pa = [p.X, p.Y, p.Z], qa = [q.X, q.Y, q.Z];
+            int moving = 0, along = -1;
+            for (int j = 0; j < 3; j++)
+                if (Math.Abs(pa[j] - qa[j]) > ctx.Tol) { moving++; along = j; }
+            if (moving != 1 || along == a) continue;
+            double at = pa[a];
+            // The face of the pair lying ON this line (normal to this axis) and the one leaving it; metal is behind the first.
+            Em3dShapeFace? on = null, off = null;
+            foreach (string name in new[] { e.FaceA, e.FaceB })
+                foreach (var f in byName.GetValueOrDefault(name) ?? [])
+                {
+                    if (Em3dShapeSolid.NormalAxis(f) == a && Math.Abs(Lo(f.Box, a) - at) <= ctx.Tol) on ??= f;
+                    else if (Lo(f.Box, a) <= at + ctx.Tol && Hi(f.Box, a) >= at - ctx.Tol) off ??= f;
+                }
+            if (on is null || off is null) continue;
+            // Behind the face lying on the line: the side its neighbour extends to. A convex edge's neighbour runs back
+            // over the metal; a concave edge's runs away from it, and keeps only its line on the face.
+            int metalSide = Lo(off.Box, a) < at - ctx.Tol ? -1 : Hi(off.Box, a) > at + ctx.Tol ? +1 : 0;
+            if (metalSide == 0) continue;
+            if (Em3dPieceSide(on, k, a) is int outward && outward != -metalSide) continue;
+            double width = Hi(off.Box, a) - Lo(off.Box, a);
+            double h = Math.Min(ctx.MaxCellAt(axis, at), ThirdsWidthFraction * width);
+            double outside = at - metalSide * 2 * h / 3;
+            if (!(h >= ThirdsMinCells * minCellM) || outside < ctx.BoxMin(axis) || outside > ctx.BoxMax(axis)) continue;
+            if (!thirds.Add((at, metalSide))) continue;
+            add(at + metalSide * h / 3, false, new FdtdLineSource(shape.Name, FdtdLineKind.ThirdsInside, at, h), h);
+            add(outside, false, new FdtdLineSource(shape.Name, FdtdLineKind.ThirdsOutside, at, h), h);
+        }
+    }
+
+    /// <summary>The sign of a planar face's outward normal along <paramref name="axis"/>, read from its triangles'
+    /// winding; null when it has none.</summary>
+    private static int? Em3dPieceSide(Em3dShapeFace f, Em3dShapeSolid k, int axis)
+    {
+        double sum = 0;
+        for (int t = f.FirstTriangle; t < f.FirstTriangle + f.TriangleCount && t < k.Display.Triangles.Count; t++)
+        {
+            var tri = k.Display.Triangles[t];
+            Point3 p = k.Display.Vertices[tri.A], q = k.Display.Vertices[tri.B], r = k.Display.Vertices[tri.C];
+            sum += axis switch
+            {
+                0 => (q.Y - p.Y) * (r.Z - p.Z) - (q.Z - p.Z) * (r.Y - p.Y),
+                1 => (q.Z - p.Z) * (r.X - p.X) - (q.X - p.X) * (r.Z - p.Z),
+                _ => (q.X - p.X) * (r.Y - p.Y) - (q.Y - p.Y) * (r.X - p.X),
+            };
+        }
+        return sum > 0 ? 1 : sum < 0 ? -1 : null;
     }
 
     // ── step 2: merging (R-em3d8-3) ──────────────────────────────────────────────────────────
@@ -844,6 +943,8 @@ public static class FdtdGrid
         public IReadOnlyList<double>[]? EdgeLines;
         /// <summary>A sheet not lying flat: the axis its plane is normal to, or null for an oblique plane.</summary>
         public FdtdAxis? SheetAxis;
+        /// <summary>brief-em3d-65 — a kernel solid, whose face and edge tables give its lines.</summary>
+        public Em3dShapeSolid? Kernel;
 
         public (double Lo, double Hi) Range(FdtdAxis a) => a switch
         {
@@ -913,6 +1014,16 @@ public static class FdtdGrid
                     _ => null,
                 };
                 bool conductor = s.Role == Em3dRole.Conductor;
+                if (s.Primitive is Em3dShapeSolid kernel)
+                {
+                    Shapes.Add(new Shape
+                    {
+                        Name = s.Name, Conductor = conductor, IsSheet = false, Thin = false,
+                        X0 = x0, X1 = x1, Y0 = y0, Y1 = y1, Z0 = z0, Z1 = z1, Rings = null,
+                        Index = conductor ? 1 : Index(s.Material), Kernel = kernel,
+                    });
+                    continue;
+                }
                 Shapes.Add(new Shape
                 {
                     Name = s.Name, Conductor = conductor, IsSheet = false,
@@ -982,7 +1093,7 @@ public static class FdtdGrid
             return C0 / (_p.Frequency.StopHz * n * _settings.CellsPerWavelength);
         }
 
-        private double MaxCellAt(FdtdAxis a, double at)
+        public double MaxCellAt(FdtdAxis a, double at)
         {
             double n = 1;
             foreach (var s in Shapes)

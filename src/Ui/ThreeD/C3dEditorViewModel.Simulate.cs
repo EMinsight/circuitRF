@@ -80,14 +80,64 @@ public sealed partial class C3dSetupItem(string name, int index, string? refusal
 
     [ObservableProperty] private bool _isActive;
 
+    /// <summary>brief-em3d-65 R-em3d65-4d — what this setup's solver will not respect of the document's kernel solids,
+    /// recomputed with the scene (the document or the setup changed). Shown under the card; Simulate is not blocked by it.</summary>
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(HasFidelity))] private IReadOnlyList<C3dFidelityRow> _fidelity = [];
+
+    public bool HasFidelity => Fidelity.Count > 0;
+
     public string Label => (IsActive ? "● " : "   ") + Name + (IsExternal ? $"  (external: {Path.GetFileName(ExternalPath)})" : "") +
                            (Refusal is null ? "" : "  — cannot run");
 
     partial void OnIsActiveChanged(bool value) => OnPropertyChanged(nameof(Label));
 }
 
+/// <summary>brief-em3d-65 — one fidelity row under a setup's card: a warning (the answer near the feature is the grid's, or
+/// the loss model's) or a note.</summary>
+public sealed record C3dFidelityRow(bool IsWarning, string Text)
+{
+    public bool IsNote => !IsWarning;
+}
+
 public sealed partial class C3dEditorViewModel
 {
+    // ── brief-em3d-65 R-em3d65-4d — each setup's fidelity rows, computed with the scene ─────────
+
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<long, IReadOnlyDictionary<string, IReadOnlyList<C3dFidelityRow>>> _fidelity = new();
+    private IReadOnlyDictionary<string, IReadOnlyList<C3dFidelityRow>> _fidelityNow = new Dictionary<string, IReadOnlyList<C3dFidelityRow>>();
+
+    /// <summary>
+    /// On the scene's worker, under the elaboration lock: every embedded setup's rows, from the problem a run of it would
+    /// assemble. Nothing is assembled for a document with no kernel object — every existing document pays nothing.
+    /// </summary>
+    private void ComputeFidelity(long generation, C3dDocument doc, string path, string? workspaceCws)
+    {
+        var rows = new Dictionary<string, IReadOnlyList<C3dFidelityRow>>(StringComparer.Ordinal);
+        if (C3dKernelUse.Of(doc).Count > 0)
+            foreach (var embedded in C3dSetups.Read(doc))
+            {
+                if (embedded is not { Refusal: null, Setup: { Is3D: true } s }) continue;
+                try
+                {
+                    var run = C3dSetups.ForRun(s, path);
+                    if (C3dProblemAssembly.Assemble(run, doc, path, workspaceCws, _elaborator).Problem is not { } problem) continue;
+                    rows[embedded.Name] = [.. Em3dFidelityReport.For(problem, run).Select(r =>
+                        new C3dFidelityRow(r.Severity == Em3dFidelitySeverity.Warning, $"{Em3dFidelityReport.SolverName(r.Solver)}: {r.Sentence}"))];
+                }
+                catch (Exception e) when (e is InvalidOperationException or ArgumentException or IOException) { /* the run says it */ }
+            }
+        _fidelity[generation] = rows;
+    }
+
+    /// <summary>The adopted scene's rows onto the setup cards.</summary>
+    private void AdoptFidelity(long generation)
+    {
+        foreach (long old in _fidelity.Keys.Where(k => k < generation).ToList()) _fidelity.TryRemove(old, out _);
+        if (!_fidelity.TryRemove(generation, out var rows)) return;
+        _fidelityNow = rows;
+        foreach (var item in SetupItems) item.Fidelity = item.IsExternal ? [] : rows.GetValueOrDefault(item.Name) ?? [];
+    }
+
     // ── records: ports, face boundaries and setups, as one undoable document edit ──────────────
 
     /// <summary>
@@ -186,7 +236,10 @@ public sealed partial class C3dEditorViewModel
         bool keepExternal = SelectedSetupItem?.IsExternal == true;
         SetupItems.Clear();
         foreach (var s in C3dSetups.Read(Document))
-            SetupItems.Add(new C3dSetupItem(s.Name, s.Index, s.Refusal, null, s.Setup) { IsActive = !IsExternalActive && s.Name == ActiveSetupName });
+            SetupItems.Add(new C3dSetupItem(s.Name, s.Index, s.Refusal, null, s.Setup)
+            {
+                IsActive = !IsExternalActive && s.Name == ActiveSetupName, Fidelity = _fidelityNow.GetValueOrDefault(s.Name) ?? [],
+            });
         if (ExternalSetup is { } x)
             SetupItems.Add(new C3dSetupItem(ExternalItemName, -1, x.Setup.Is3D ? null : C3dSetups.PlanarRefusal, x.Path, x.Setup) { IsActive = IsExternalActive });
         _syncingSetups = true;
@@ -436,6 +489,7 @@ public sealed partial class C3dEditorViewModel
     /// active setup has any face that is not absorbing (R-em3d49-3a).</summary>
     private void AdoptRecords(long generation)
     {
+        AdoptFidelity(generation);
         foreach (long old in _records.Keys.Where(k => k < generation).ToList()) _records.TryRemove(old, out _);
         if (!_records.TryRemove(generation, out var view)) return;
         _recordsView = view;

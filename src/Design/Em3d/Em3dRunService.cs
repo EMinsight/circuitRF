@@ -508,6 +508,10 @@ public static class Em3dRunService
                           $"skin depths in radius at {Fmt(problem.Frequency.StartHz / 1e9)} GHz. Palace models a conductor's " +
                           "loss as a flat surface's, which on such a wire reads the resistance low by up to about 10 % at the " +
                           "bottom of the band (3 % at 10 GHz on a 1 mil wire); inductance is not affected.");
+        // brief-em3d-65 R-em3d65-4b/4c — a kernel solid's curved faces: the loss model at a small radius (a warning), and a
+        // radius small enough to set the mesh (a note). Neither blocks the run.
+        foreach (var row in Em3dFidelity.For(problem, Em3dFidelitySolver.Palace, null, GmshGeoWriter.SmallestRequestedSizeM(problem, settings)))
+            (row.Severity == Em3dFidelitySeverity.Warning ? log.Warnings : log.Notes).Add(row.Sentence);
 
         return new PalacePlan(settings, lowering, config.Json!,
                               readiness.Single(r => r.Tool == SolverTool.Palace).Installation!,
@@ -989,12 +993,6 @@ public static class Em3dRunService
         stop = null;
 
         // ── brief 8: the grid, then the lowering ──────────────────────────────────────────────
-        // brief-em3d-64 §10 — refused before any grid is placed or file written: a kernel solid is brief 65's to lower.
-        if (Em3dShapeSolid.Refusal(problem, "openEMS") is { } kernel)
-        {
-            stop = new(EmRunStatus.Refused, EmDiagnostics.Forwarded("openems-lowering", kernel));
-            return null;
-        }
         control?.BeginStage("placing the FDTD grid");
         FdtdGridResult grid;
         try { grid = FdtdGrid.Build(problem, gridSettings); }
@@ -1061,6 +1059,10 @@ public static class Em3dRunService
         var runs = new List<OpenEmsPortRun>();
         for (int k = 0; k < n; k++)
         {
+            // brief-em3d-65 R-em3d65-3c — every kernel solid's file, checked immediately before openEMS is started.
+            string portDir = Path.Combine(runDir, OpenEmsRun.PortDirectory(lowering.Ports[k]));
+            if (OpenEmsRun.CheckKernelFiles(portDir, lowering, lowering.PortFiles[k]) is { } damaged)
+                return Leg.Failed(Me, EmRunStatus.Refused, EmDiagnostics.Forwarded("openems-kernel-file", damaged));
             OpenEmsPortRun r;
             try
             {
