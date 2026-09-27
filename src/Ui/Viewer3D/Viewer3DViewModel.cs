@@ -497,6 +497,36 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
         FrameRequested?.Invoke();
     }
 
+    // ── 3D round 3: a Project Tree item dragged onto the pane ────────────────────────────────
+    // A drag delivers no pointer moves, so the drag-over IS the hover: the cursor, Ctrl/Cmd (the placement's
+    // bottom-centre handle) and the snap follow it exactly as they follow the mouse, and the drop takes the point a
+    // click there would take. The read-only viewer has no edit host and accepts nothing.
+
+    /// <summary>A drag carrying <paramref name="text"/> is over the pane at (<paramref name="x"/>, <paramref name="y"/>).</summary>
+    public bool TreeDragOver(float x, float y, string text, bool command)
+    {
+        if (EditHost is not { } host) return false;
+        SetCommandHeld(command);
+        Hover(x, y);
+        return host.TreeDragOver(text);
+    }
+
+    /// <summary>The drag was dropped at (<paramref name="x"/>, <paramref name="y"/>): true when it was placed or refused as ours.</summary>
+    public bool TreeDrop(float x, float y, string text, bool command)
+    {
+        if (EditHost is not { } host) return false;
+        SetCommandHeld(command);
+        Hover(x, y);
+        return host.TreeDrop(text);
+    }
+
+    /// <summary>The drag left the pane.</summary>
+    public void TreeDragLeave()
+    {
+        EditHost?.TreeDragLeave();
+        Leave();
+    }
+
     /// <summary>
     /// 3D editor bugs round 2 — an orbit or pan drag is under way. While it is, the view has no cursor: nothing is hovered,
     /// highlighted or snapped, because the cursor is steering the camera and is not pointing at anything. A pick read back
@@ -517,6 +547,10 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
 
     public void Zoom(float notches, float x, float y, float w, float h)
     {
+        // 3D editor bugs round 3 — a perspective zoom in approaches the drawing plane under the cursor rather than dollying
+        // through it (the grid vanished below a ~10 µm scale): PlaneGrid.SeatTargetOnPlane.
+        if (notches > 0 && View.DrawingGrid is { Visible: true } g)
+            CircuitRF.Render.Scene3D.Edit.PlaneGrid.SeatTargetOnPlane(ref View.Camera, Scene, g, x, y, w, h);
         View.Camera.ZoomAt(notches, x, y, w, h);
         View.Orbiting = true;
         FrameRequested?.Invoke();

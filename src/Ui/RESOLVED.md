@@ -36498,3 +36498,153 @@ Not seen: the GUI cannot be launched from this session; checked by the compiler 
 - The canvas marker for an accepted finding is grey with a check (`ImpedanceFindingMarker.Accepted`), the PDF map's.
 
 GUI not seen (this shell cannot launch Avalonia); verified by the compiler and the impedance test classes.
+
+
+## 3D editor bugs round 3 (owner, 2026-09-26)
+
+### 3D editor bugs round 3 — axis-indicator double-click: the Z letter from the Right view did nothing
+
+- In iso every arm projects to 0.82 × AxisArm, so its letter sits well inside the hit reach. In a plan or side view
+  the in-plane arms are drawn FULL length, the letter centred on the ring (AxisArm + 8 = 38 DIPs) — and the hit test
+  cut off at AxisArm + 10 from the centre and AxisArm + 12 along the arm, so the outer half of the letter was a miss.
+  Double-clicking X from iso worked; the Z letter from the Right view it produced often asked for nothing.
+  `AxisHitRadius = AxisArm + 8 + 7` now covers the whole letter, and the perpendicular tolerance is the letter's half
+  width (7, was 5).
+- `Viewer3DPane` also turns the view on every EVEN click count, not only `== 2`: Avalonia keeps counting while clicks
+  stay inside its 4-DIP double-tap rect, so a quick second double-click on the same letter (Right, then Left) came in
+  as 3 and 4.
+
+### 3D editor bugs round 3 — the Snap ladder in a unit its base is not round in
+
+- `SnapLadder.Build` (shared by the layout editor and the 3D editor) spelled the technology's base rungs converted,
+  so a 1 µm process shown in mil offered 0.0039 / 0.0197 / 0.0394 … mil. `SnapLadder.NiceBase` keeps a base that is
+  1, 2, 2.5 or 5 × 10ⁿ of the display unit and otherwise replaces it with the nearest power of ten of that unit (log
+  scale): 1 µm → 0.1 mil, 1 mil → 10 µm. **This changes the LAYOUT editor too** — its test pinning "0.0394 mil"
+  (`LayoutSnapControlTests.SnapLadder_DisplayUnitChange_RelabelsEveryEntry_NeverBlanks`, R-cmb-3's "same DBU rungs
+  relabelled") now expects "0.1 mil". The CURRENT snap text is untouched: a document whose step is 1 µm still reads
+  0.0394 mil, because that is its value.
+
+### Shift holds a Move to an axis
+
+- Shift held during Move (object Move, Duplicate, and brief 47's face/vertex Move, which wraps `MoveTool`) locks to
+  the world axis whose line through the base passes NEAREST the cursor ray (`DrawingPlane.AxisNearestRay`: skew-line
+  distance, axes within ~3° of the line of sight skipped). Chosen per cursor move, so it follows where the cursor
+  went; explicit X/Y/Z or Shift+X/Y/Z locks still win. Nearest-to-ray rather than "dominant component of the free
+  displacement" because the free point lies on the drawing plane, so the plane's normal axis could never win — a
+  top face could not be Shift-moved up. Rather than the face normal only, because Move Along Normal (N) already is
+  that. The prompt says "along Y only (Shift)".
+- **Trap:** `Snap3DPreference`'s test store is PROCESS-STATIC. A test that sets `Viewer.SnapEnabled = false` and
+  does not restore it turns snapping off for every later test in the run (`DrawToolGateTests.Draw1` failed only
+  when run after such a test, passed alone). Don't toggle snap in a test without restoring it.
+
+### Properties: wire fields and named sizes
+
+- **A drawn wire showed nothing to edit because its diameter field was SKIPPED, not missing.** `DimensionFields`
+  omits a bindable field whose number is null and which holds no expression — and a drawn wire's `DiameterUm` is
+  null whenever it takes the default (1 mil). So the only wire-specific field vanished, and what remained (placement
+  origin, rotations, mirror) is meaningless on a wire: `C3dWire` has no placement, every operation bakes it into the
+  world points (brief 50). Now: a wire's diameter is always offered (at the default when unstated, "The default
+  (1 mil)" beside it); its placement fields are hidden (`IsPlaced` false, and `Placement.*` omitted from Fields);
+  the material combo's placeholder names the wire's effective material ("Gold (the default)") instead of "None — a
+  solver needs one", which was false for a wire.
+- **Wire points are typed through the drag's own validation.** `C3dEditorViewModel.SetWirePoint` clones the wire, sets
+  the point, and runs `SeatEditedWire` — the function a Vertex-mode drag's release runs — so an end moved off every
+  pad is refused with the same sentence and the feet are re-seated the same way. One `C3dEdit`, through `Push` (so the
+  drag rule applies). An end's typed z that the seat puts back is SAID ("an end's z follows its pad") rather than
+  silently ignored — when that is the only change, nothing is pushed and the sentence is the refusal.
+- Also on the wire panel: start/end bond style and section (ComboBoxes over `C3dEditorViewModel.BondStyles` /
+  `WireSections`), each one undo entry via `ChangeObjects`.
+- **Every dimension field now has a LABEL in the object's own axes** (`C3dPropertiesViewModel.FieldLabel`): a box's
+  `Size[0]` is "X size", a sheet's `Rect.Size[1]` on XZ is "Z size", a prism's height is "Height (z)" on XY, a
+  cylinder's length says its axis. The path stays the file's name and is the label's tooltip. The box sizes were
+  already editable (brief 51 made `Size` a bound field) — the owner could not recognise `Size[0]` as X size.
+- **Microns fields accept a unit**: a bare number is still µm, but "1.5mil" is now 38.1 µm instead of an expression
+  parse error (it had no space, so `SplitUnit` did not split it and `1.5mil` was handed to the expression engine).
+  Parsed through `LayoutUnits.TryParse` at DBU resolution (1 nm at 1000 DBU/µm).
+- **Zero/negative sizes are refused at the typed number**: a box's size, a rect's size and a cylinder's radius, and
+  any µm field (diameter, thickness). Prism height and cylinder length were left signed — not checked whether the
+  lowering accepts a negative one, so no refusal was invented. An expression that resolves ≤ 0 is not caught here.
+
+Gate: `tests/Ui.Tests/ThreeD/EditorRound3PropertiesTests.cs` (3 tests).
+
+### Project Tree drag and drop into a 3D view
+
+A cell, or a cell's `.c3d` / `.clay`, dragged from the Project Tree into an open 3D view places an instance of it.
+It is Place Cell Instance with the drag as the pick: the first drag-over decides WHAT (`C3dTreeDrop.Resolve`, pure,
+in `src/Ui/ThreeD/C3dTreeDrop.cs`) and arms the SAME `BeginInstancePlacement` the menu arms, so every refusal is the
+menu's and happens before anything is written; the placement outline follows the drag; the drop is the placing click
+(one undo entry, `Place U1`). Leaving the pane disarms what the drag armed. Gate: `tests/Ui.Tests/ThreeD/TreeDropTests.cs`.
+
+- **A drag delivers no pointer moves, so the drag-over IS the hover.** `Viewer3DViewModel.TreeDragOver` sets the
+  cursor (`Hover`) and Ctrl/Cmd (`SetCommandHeld` — the bottom-centre handle) from the `DragEventArgs`, so the snap and
+  the preview follow the drag exactly as they follow the mouse. The drop takes `CursorInput()` — the snap resolved on
+  the last drag-over frame, else the drawing-plane hit under the cursor. A refused drop point (plane edge-on) leaves the
+  placement armed with its reason, as a refused click does.
+- **View files had no drag source.** `NodeKind.ViewFile` rows were not draggable at all. They now carry a NEW payload,
+  `CellViewDragPayload` (`circuitrf-cellview:`), deliberately not `WorkspaceFileDragPayload`: the tree's own drop reads
+  that as a loose file and would MOVE it (TM1) or copy it into another workspace (R-mw3-11) — a view file lifted out of
+  its cell's sub-folder is a broken cell. No tree reads the new prefix. Only `.c3d`/`.clay` rows are draggable; `.csch`/
+  `.csym` rows are unchanged. A loose `.c3d`/`.clay` (not in a cell) still travels as a workspace file and is refused
+  by the 3D view with "belongs to no cell".
+- **An instance names a cell and a view KIND, never a file.** So a dropped view file must be its cell's PRIMARY view of
+  that kind, or the instance would silently resolve to a different file; a non-primary file is refused naming the
+  primary ("Make it primary first, or drop the cell").
+- **A cell whose 3D view would contain this view falls back to its layout** (a layout never contains a 3D view), with a
+  note on the viewport line — the rule asked for is ".c3d first, else .clay", and a cell dropped on its own 3D view is
+  the ordinary way to start one (New 3D View from Layout places exactly that). A dropped `.c3d` FILE that cycles is a
+  refusal: that specific view was asked for.
+- A drag that cannot be placed answers `DragDropEffects.None` and puts the reason on the viewport line
+  (`StatusMessage` → `ViewportLine`), so a refused drop is never silent. A drag while a gesture is in progress is refused
+  ("Finish or cancel the gesture in progress (Esc)…") rather than discarding the gesture.
+- The read-only viewer has no edit host and accepts nothing; the handlers live on `Viewer3DPane` (the overlay and the
+  viewport line are not hit-testable, so the pane is what the drag is over).
+
+### The object tree: air box, material column, order number
+
+- **The air box was missing because it was listed only when a setup was active AND its box had been built.**
+  `RebuildAirBoxItem` returned early on `ActiveSetup is null || ShownAirBox is null`, and a new 3D design (File ▸ New
+  3D Design, or New 3D View) has no embedded setup, so the node round 1 added never appeared. Not a round-2 grouping
+  regression: round 2 only moved the node into its own "Air box" group by material. Now it is listed whenever the
+  document has content (objects or instances); its detail says `no active setup`, `setup <name>`, or
+  `setup <name>: not built` (the padded box refused, e.g. a wave port short of the box face). Selecting it with no
+  setup shows the Properties "Air box" heading with a row naming Simulate ▸ Setup Analyses. No box is drawn until a
+  setup exists — the scene builder still draws only `records.Box` — deliberately: a default setup's padding is 1/8
+  λ at its lowest frequency (37.5 mm at 1 GHz), which would dwarf a small part and move the view fit.
+- **By material it lives under the material that fills it** — `Em3dGenerator.AirMaterial` ("Air"), in the material
+  groups' name order after "No material", and SHARES an existing "Air" object group rather than making a second
+  group of the same header. It is still found by `IsAirBox` (Kind), never by header, so a technology material named
+  "Air" cannot be mistaken for it. By type it stays first under Boxes. It is a setup's record: the filter never hides it.
+- **By material a row no longer repeats its material** (`Detail` null; the group header already says it). By type the
+  material stays in the row.
+- **"#n" was construction order (brief-em3d-46 R-em3d46-4d), not a disambiguator** — object names are unique in a
+  `.c3d` (C3dDiagnostics). It moved from a prefix TextBlock to the name's tooltip (`C3dTreeItem.OrderTip`,
+  replacing `OrderText`), so the information that decides which solid wins an overlap is still one hover away.
+- Gates: `tests/Ui.Tests/ThreeD/EditorRound2TreeTests.cs` (`Round3_*`, and the three round-2 assertions that
+  expected no air box without a setup were updated).
+
+### Materials table flashing, and the colour picker
+
+**The flashing row.** Every field of the Materials table (the one control a `.cmat` document, the
+technology editor's Materials tab and the Material picker's New tab all host) commits on LostFocus, and
+each commit rebuilt the whole `Rows` collection with `Clear()` + re-add — TWICE, because the host's
+snapshot command rebuilds on `UndoRedoStack.Execute` (Execute runs the command) and then
+`MaterialsTableViewModel.Edit` rebuilds again. Each pass destroyed every row container, swapped the
+detail panel's DataContext (SelectedRow became a new instance), and threw away the text box focus had
+just moved into. So typing in one box and moving to the next flashed the whole table.
+Fix: `Rebuild` now reconciles in place — a row keeps its view model and is re-pointed at the snapshot's
+record (`MaterialRowViewModel.Rebind`, then `PropertyChanged("")`; a binding whose value did not change
+writes nothing to its control). Only a change in row count, or an own row becoming a library row at that
+position, adds/removes/replaces a container. Selection is kept by name, and by position when a rename took
+the name away (a rename used to deselect and reselect, which flashed the detail panel too).
+
+**Second cause, technology tab only:** a library row's boxes are read-only, but leaving one still pushes
+its (unchanged) text to the setter, and `Set`/`SetTensor` called `Refuse()` BEFORE the no-change test —
+so every focus move through a library row raised the "open that library to edit it" refusal (the refusal
+line appearing shifts the table) and re-read the row. The no-change test now comes first.
+
+**The colour picker** is the Layers tab's: a swatch `Button` → `ColorPickerDialog` (no new control),
+beside the hex box, which stays (typing a colour and clearing it to "the 3D view's own palette" are both
+still wanted). A material colour is `#rrggbb` only (`MaterialValidation.IsColour`), so the picker's alpha
+is dropped (`Rgba.ToHex()`); the commit goes through `ColorText`, so it is one undo entry and the colour
+already stated writes nothing. Unset colour seeds the picker mid-grey; the swatch shows transparent.
+Gate: `tests/Ui.Tests/Em3d/MaterialsTableInPlaceTests.cs`.

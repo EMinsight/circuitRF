@@ -1035,8 +1035,11 @@ public sealed partial class C3dTreeItem(C3dEditorViewModel owner, string name, s
     public int InstanceIndex { get; } = instanceIndex;
 
     /// <summary>brief-em3d-46 R-em3d46-4d — a document object's place in construction order (1-based), which decides
-    /// which solid wins an overlap; empty for an instance and its parts.</summary>
-    public string OrderText => ObjectIndex >= 0 ? $"#{ObjectIndex + 1}" : "";
+    /// which solid wins an overlap; null for an instance and its parts. 3D editor round 3: the row's tooltip, no longer a
+    /// "#n" in front of every name — the tree lists in construction order within a group anyway.</summary>
+    public string? OrderTip => ObjectIndex >= 0
+        ? $"Construction order {ObjectIndex + 1}: a later object wins where solids overlap (3D ▸ Modify ▸ Order)"
+        : null;
     public bool IsReadOnly { get; init; }
     public ObservableCollection<C3dTreeItem> Children { get; } = [];
 

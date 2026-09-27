@@ -87,6 +87,11 @@ public sealed class Viewer3DPane : Control
         ClipToBounds = true;
         Focusable = true;
         Background = Brushes.Transparent;
+        // 3D round 3 — a Project Tree cell or view file dropped here places an instance (C3dTreeDrop).
+        DragDrop.SetAllowDrop(this, true);
+        AddHandler(DragDrop.DragOverEvent, OnTreeDragOver);
+        AddHandler(DragDrop.DropEvent, OnTreeDrop);
+        AddHandler(DragDrop.DragLeaveEvent, OnTreeDragLeave);
     }
 
     public static readonly StyledProperty<IBrush?> BackgroundProperty =
@@ -324,7 +329,9 @@ public sealed class Viewer3DPane : Control
             && Viewer3DOverlay.AxisIndicatorHit(tv.View.Camera, Viewer3DOverlay.AxisIndicatorCentre(Bounds.Height), p.Position) is { } sv)
         {
             _onTriad = true;
-            if (e.ClickCount == 2)
+            // 3D editor bugs round 3 — every second click, not only the second: Avalonia keeps counting while the clicks stay
+            // put, so a quick second double-click on the same letter (Right, then Left) reported 3 and 4 and did nothing.
+            if (e.ClickCount % 2 == 0)
             {
                 tv.StandardViewCommand.Execute(sv);
                 _last = _pressedAt = null;
@@ -450,6 +457,36 @@ public sealed class Viewer3DPane : Control
         _vm?.Zoom((float)e.Delta.Y, (float)p.X, (float)p.Y, (float)Bounds.Width, (float)Bounds.Height);
         e.Handled = true;
     }
+
+    // ── 3D round 3: Project Tree drops — the payload is text on the pasteboard (CellDragPayload's reason) ──────
+
+    private static string? DragText(DragEventArgs e)
+    {
+        foreach (var item in e.DataTransfer.Items)
+            if (item.TryGetRaw(DataFormat.Text) is string text) return text;
+        return null;
+    }
+
+    private static bool Command(DragEventArgs e) => (e.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Meta)) != 0;
+
+    private void OnTreeDragOver(object? sender, DragEventArgs e)
+    {
+        var p = e.GetPosition(this);
+        bool ok = DragText(e) is { } text && _vm?.TreeDragOver((float)p.X, (float)p.Y, text, Command(e)) == true;
+        e.DragEffects = ok ? DragDropEffects.Copy : DragDropEffects.None;
+        if (ok) e.Handled = true;
+    }
+
+    private void OnTreeDrop(object? sender, DragEventArgs e)
+    {
+        if (DragText(e) is not { } text) return;
+        var p = e.GetPosition(this);
+        if (_vm?.TreeDrop((float)p.X, (float)p.Y, text, Command(e)) != true) return;
+        e.Handled = true;
+        Focus();
+    }
+
+    private void OnTreeDragLeave(object? sender, DragEventArgs e) => _vm?.TreeDragLeave();
 
     private void OnMagnify(object? sender, PointerDeltaEventArgs e)
     {

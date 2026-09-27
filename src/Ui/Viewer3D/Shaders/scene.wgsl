@@ -20,8 +20,9 @@ struct U {
     // 0 Object, 1 Face, 2 Vertex (brief-em3d-43 R-em3d43-2)
     mode: u32,
     nsel: u32,
-    pad0: u32,
-    pad1: u32,
+    // 3D editor bugs round 3 — clip units per pixel, x and y: a thickened edge's pixel offset (vs)
+    ppx: f32,
+    ppy: f32,
     pad2: u32,
     // (object, face) pairs, two per vec4u: entry k is sel[k / 2].xy or .zw
     sel: array<vec4u, 32>,
@@ -62,6 +63,9 @@ struct U {
 // brief-em3d-48 R-em3d48-3b — and an ID offset: an array element draws its prototype's triangles, whose vertices carry
 // the prototype's object ids; the element's objects are numbered the same distance after them, so id + mx.id.x is the
 // ELEMENT's object — which is what the ID pass must write for a pick to name the element. 0 for every other draw.
+//
+// 3D editor bugs round 3 — and id.y, a selected object's edge pass (Scene3DFramePlan.EdgePasses): 0 none, else the line
+// drawn again (id.y & 1, id.y >> 1) pixels over, so the outline is two pixels wide where no backend draws a wider line.
 struct MX {
     m: mat4x4f,
     id: vec4u,
@@ -87,6 +91,10 @@ struct VO {
     var o: VO;
     let p = (mx.m * vec4f(v.p, 1.0)).xyz;
     o.pos = u.vp * vec4f(p, 1.0);
+    if (mx.id.y != 0u) {
+        let px = vec2f(f32(mx.id.y & 1u) * u.ppx, f32((mx.id.y >> 1u) & 1u) * u.ppy);
+        o.pos = vec4f(o.pos.xy + px * o.pos.w, o.pos.zw);
+    }
     o.world = p;
     o.id = v.id + mx.id.x;
     o.col = v.col;
@@ -144,7 +152,11 @@ fn highlight(rgb: vec3f, id: u32, face: u32) -> vec3f {
     let d = abs(dot(n, normalize(u.eye.xyz - i.world)));
     var rgb = i.col.rgb * (0.3 + 0.7 * d);
     if (!front && (u.flags & 2u) != 0u) { rgb = i.col.rgb * 0.8; }
-    return vec4f(highlight(rgb, i.id, i.face), i.col.a);
+    // 3D editor bugs round 3 — an object selected in Object mode is drawn faded (Scene3DFramePlan.SelectedAlpha; the plan
+    // draws it with the translucent objects), so what it hides shows through.
+    var a = i.col.a;
+    if (u.mode == 0u && is_selected(i.id, 0u)) { a = min(a, 0.5); }
+    return vec4f(highlight(rgb, i.id, i.face), a);
 }
 
 @fragment fn fs_line(i: VO) -> @location(0) vec4f {
@@ -251,8 +263,9 @@ fn colour_map(t: f32) -> vec3f {
 // by the scene's near and far planes (the fragment writes its true depth, clamped into [0, 1]).
 //
 // The lines are found per fragment at the spacing the FRAGMENT needs: level k is every gs.y^k minor lines, and a
-// level's weight grows with how many pixels its cell spans there — nothing under 4 px, the minor lines' faint
-// alpha by 10 px, full alpha by gs.y times that. So near the focus the minor lines show with every gs.y-th one
+// level's weight grows with how many pixels its cell spans there — nothing under 6 px, the minor lines' faint
+// alpha by 14 px (PlaneGrid.MinPixels), full alpha by gs.y times that (3D editor bugs round 3: 4 and 10 px, which
+// read as too dense zoomed out). So near the focus the minor lines show with every gs.y-th one
 // heavier, and toward the horizon the coarser levels take over one after another until even they would crowd,
 // where the grid fades out. A weight depends only on the cell's size on screen, so the change of level is seamless.
 // The world origin's lines are drawn in the axis colours. A plane seen nearly edge-on fades.
@@ -277,9 +290,9 @@ struct GOut {
     @builtin(frag_depth) depth: f32,
 };
 
-// The alpha of a line of cell size c pixels: 0 under 4 px, the faint minor alpha (0.45) by 10 px, 1 by m times that.
+// The alpha of a line of cell size c pixels: 0 under 6 px, the faint minor alpha (0.45) by 14 px, 1 by m times that.
 fn grid_weight(c: f32, m: f32) -> f32 {
-    return 0.45 * clamp((c - 4.0) / 6.0, 0.0, 1.0) + 0.55 * clamp((c - 4.0 * m) / (6.0 * m), 0.0, 1.0);
+    return 0.45 * clamp((c - 6.0) / 8.0, 0.0, 1.0) + 0.55 * clamp((c - 6.0 * m) / (8.0 * m), 0.0, 1.0);
 }
 
 // How much the fragment at p (metres per pixel pf) lies on a line every s metres, phase ph.
@@ -308,9 +321,9 @@ fn grid_on(p: vec2f, pf: vec2f, s: f32, ph: vec2f) -> f32 {
     let mpp = max(pf.x, pf.y);
     let m = max(u.gs.y, 2.0);
     let c0 = u.gs.x / mpp;
-    // The finest level whose cell spans 4 px; finer ones weigh nothing. Three levels from it: any coarser one's
+    // The finest level whose cell spans 6 px; finer ones weigh nothing. Three levels from it: any coarser one's
     // lines are among the third's, which is already at full weight.
-    let k0 = clamp(ceil(log(4.0 / c0) / log(m)), 0.0, 24.0);
+    let k0 = clamp(ceil(log(6.0 / c0) / log(m)), 0.0, 24.0);
     var alpha = 0.0;
     for (var j = 0; j < 3; j = j + 1) {
         let k = k0 + f32(j);

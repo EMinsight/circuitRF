@@ -106,7 +106,8 @@ public sealed partial class C3dPlacement : IC3dBindable
 /// <summary>
 /// One object of the document: a primitive, a polyhedron, or a construction polyline. The list order
 /// is construction order (R-em3d41-2b): where two solids overlap, the LATER one wins the volume, which
-/// is <c>Em3dSolid.Order</c> — the one overlap rule both backends honour. Nothing sorts the list.
+/// is <c>Em3dSolid.Order</c> — except that metal always takes precedence over dielectric, whatever the order
+/// (<c>Em3dPrecedence</c>, em-3d.md §6.3a), the one overlap rule both backends honour. Nothing sorts the list.
 /// </summary>
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "$type")]
 [JsonDerivedType(typeof(C3dBox),        "Box")]

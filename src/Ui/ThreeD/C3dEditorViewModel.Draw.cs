@@ -169,13 +169,14 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
         Viewer.RequestFrame();
     }
 
-    /// <summary>The pane's grid follows the plane, the document's DBU and its display unit.</summary>
+    /// <summary>The pane's grid follows the plane, the document's DBU, its display unit and its snap step.</summary>
     private void ApplyDrawingGrid()
     {
         _grid.Plane = _plane;
         _grid.DbuPerMicron = Document.DbuPerMicron;
         _grid.Unit = Document.DisplayUnit;
         _grid.Dark = ThemeService.CurrentVariant == ColorVariant.Dark;
+        _grid.SnapDbu = SnapPitch;          // 3D editor bugs round 3: close in, the minor spacing is the snap step
         _grid.Visible = ShowDrawingGrid;
         Viewer.View.DrawingGrid = _grid;
     }

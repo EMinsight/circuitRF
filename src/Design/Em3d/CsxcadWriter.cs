@@ -11,7 +11,8 @@
 //
 // WHAT CSXCAD CANNOT SAY, AND WHAT THIS WRITER DOES INSTEAD — every one reported on the run:
 //   * No booleans (§6.5). Where solids overlap, the higher PRIORITY wins the cell, and the priority is
-//     the solid's construction order, written from the problem and never re-derived (R-em3d9-2b).
+//     Em3dPrecedence's — metal over dielectric, then construction order within each (§6.3a; 3D editor
+//     round 3) — computed from the problem once and never re-derived here (R-em3d9-2b).
 //     A polygon's HOLE is the one subtraction inside a single solid; it is written as one KEYHOLE
 //     polygon — the hole joined to the outline by a zero-width slit through the metal — which CSXCAD's
 //     winding-number inside test reads exactly (the slit's two edges cancel, and a point on the slit is
@@ -175,7 +176,7 @@ public static class CsxcadWriter
         var props = new StringBuilder();
         int id = 0;
 
-        // ── Solids and sheets, in construction order (priority = order) ─────────────────────────
+        // ── Solids and sheets, in construction order; priority = Em3dPrecedence (metal over dielectric) ──
         var items = problem.Solids.Select(s => (s.Order, Solid: (Em3dSolid?)s, Sheet: (Em3dSheet?)null))
                            .Concat(problem.Sheets.Select(s => (s.Order, Solid: (Em3dSolid?)null, Sheet: (Em3dSheet?)s)))
                            .OrderBy(x => x.Order).ToList();
@@ -228,7 +229,7 @@ public static class CsxcadWriter
         }
 
         // ── Ports: resistor, voltage probe, current probe (F0's element order) ──────────────────
-        int portPriority = items.Count == 0 ? 1 : items.Max(x => x.Order) + 1;
+        int portPriority = items.Count == 0 ? 1 : ctx.Precedence.Max + 1;
         var ports = problem.Ports.OrderBy(p => p.Number).ToList();
         var excitations = new List<string>();
         foreach (var p in ports)
@@ -454,7 +455,7 @@ public static class CsxcadWriter
 
     private static string Primitive(Em3dSolid s, Context ctx, List<string> thin, List<string> onFaces, ref bool reached)
     {
-        int pr = s.Order;
+        int pr = ctx.Precedence.Of(s);
         switch (s.Primitive)
         {
             // brief-em3d-42 — openEMS's polyhedron leaves out grid nodes lying exactly on its faces, where a Box or
@@ -579,7 +580,7 @@ public static class CsxcadWriter
         var ring = Keyhole(sh.Outline, sh.Holes);
         for (int i = 0; i < ring.Count; i++) ring[i] = ctx.Out2(ring[i], ref reached);
         var sb = new StringBuilder();
-        sb.Append($"                    <Polygon Priority=\"{sh.Order}\" Elevation=\"{R(sh.Z)}\" NormDir=\"2\" QtyVertices=\"{ring.Count}\">\n");
+        sb.Append($"                    <Polygon Priority=\"{ctx.Precedence.Of(sh)}\" Elevation=\"{R(sh.Z)}\" NormDir=\"2\" QtyVertices=\"{ring.Count}\">\n");
         foreach (var q in ring) sb.Append($"                        <Vertex X1=\"{R(q.X)}\" X2=\"{R(q.Y)}\" />\n");
         sb.Append("                    </Polygon>\n");
         return sb.ToString();
@@ -598,7 +599,7 @@ public static class CsxcadWriter
         foreach (var q in Keyhole(sh.Outline, sh.Holes)) ring.Add(ctx.Out(sh.World(q), ref reached));
         double elevation = Get(sh.World(sh.Outline[0]), n);
         var sb = new StringBuilder();
-        sb.Append($"                    <Polygon Priority=\"{sh.Order}\" Elevation=\"{R(elevation)}\" NormDir=\"{n}\" QtyVertices=\"{ring.Count}\">\n");
+        sb.Append($"                    <Polygon Priority=\"{ctx.Precedence.Of(sh)}\" Elevation=\"{R(elevation)}\" NormDir=\"{n}\" QtyVertices=\"{ring.Count}\">\n");
         foreach (var q in ring) sb.Append($"                        <Vertex X1=\"{R(Get(q, a1))}\" X2=\"{R(Get(q, a2))}\" />\n");
         sb.Append("                    </Polygon>\n");
         return sb.ToString();
@@ -717,10 +718,13 @@ public static class CsxcadWriter
         private readonly bool[] _absorbing;
         private readonly double _tol;
         public int Pml { get; }
+        /// <summary>3D editor round 3 — metal over dielectric, construction order within each (em-3d.md §6.3a).</summary>
+        public Em3dPrecedence Precedence { get; }
 
         public Context(Em3dProblem problem, FdtdGridResult grid, Em3dBoundaryKind[] faces, int pmlCells)
         {
             _grid = grid;
+            Precedence = Em3dPrecedence.Of(problem);
             var b = problem.Boundary;
             _box = [b.Min.X, b.Max.X, b.Min.Y, b.Max.Y, b.Min.Z, b.Max.Z];
             _outer = [grid.X.Lines[0], grid.X.Lines[^1], grid.Y.Lines[0], grid.Y.Lines[^1], grid.Z.Lines[0], grid.Z.Lines[^1]];

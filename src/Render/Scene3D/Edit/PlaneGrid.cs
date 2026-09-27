@@ -8,11 +8,15 @@
 // projection — whose near and far planes bracket the SCENE, so the plane beyond the scene was cut off as well: the
 // grid read as a patch. The fragment now writes its own depth, clamped, so the plane runs to the horizon.
 //
-// THE SPACING ADAPTS in the display unit's own steps — 1, 2, 5 × 10ⁿ of a µm, a mil, … — chosen so that one
-// minor cell is at least MinPixels on screen at the view's FOCUS (where the view's line of sight meets the
-// plane). A 1-2-5 step is at most 2.5× the one before, so the spacing stays in [8, 20] px there: well inside
-// the brief's 8–40 px band. Major lines every 10 minor lines, every 5 in mil and inch — the layout grid's own
-// spacing for those units. Away from the focus the shader decimates by the same factor: a fragment draws the
+// THE SPACING ADAPTS (3D editor bugs round 3 — it read as too dense zoomed out, and close in it had nothing to do with
+// the snap). Zoomed out, in the display unit's own steps — 1, 2, 5 × 10ⁿ of a µm, a mil, … — chosen so that one
+// minor cell is at least MinPixels (14) on screen at the view's FOCUS (where the view's line of sight meets the
+// plane): a 1-2-5 step is at most 2.5× the one before, so a cell is 14–35 px there (it was 8–20). Zoomed in far
+// enough that the SNAP STEP itself spans MinPixels, the minor spacing IS the snap step — every line crossing is a
+// point the cursor can land on — until it spans major-every × MinPixels, when it is divided by major-every so the
+// snap step becomes the MAJOR lines (and again, while it divides into whole DBU). A snap step that does not divide
+// evenly goes back to the unit's steps below that. Major lines every 10 minor lines, every 5 in mil and inch — the
+// layout grid's own spacing for those units. Away from the focus the shader decimates by the same factor: a fragment draws the
 // finest level of (minor × major-every^k) whose cells span a few pixels THERE, so a perspective view's distant
 // plane shows ever coarser lines and fades out only where even those would crowd — the far edge of the view.
 //
@@ -21,7 +25,15 @@
 // objects with depth test on and depth write off.
 //
 // THE GRID IS NOT THE SNAP (R-em3d45-2d): the snap uses the document's SnapDbu, which need not be the drawn
-// minor spacing; the editor's status line shows both when they differ.
+// minor spacing — zoomed out it is not, close in it is (or is the major spacing); the editor's status line shows
+// both when they differ.
+//
+// A PERSPECTIVE ZOOM STOPS AT THE PLANE (3D editor bugs round 3 — below a ~10 µm scale the grid vanished). The camera
+// zooms toward a TARGET whose depth a zoom never changes, and the target starts at the scene's centre: with the plane
+// above it (a substrate's top face, say) the eye dollied straight through the plane, which was then behind it and — in
+// perspective, correctly — not drawn. SeatTargetOnPlane moves the target along the line of sight onto the plane
+// before a zoom in, with the eye left where it is, so the picture does not change and the eye approaches the plane
+// by the zoom's factor each notch without ever reaching it. Orthographic draws the plane wherever the eye is.
 
 using System.Numerics;
 using CircuitRF.Design.Layout;
@@ -38,6 +50,8 @@ public sealed class DrawingGridSettings
     public LayoutUnit Unit = LayoutUnit.Um;
     /// <summary>True on a dark background: light lines.</summary>
     public bool Dark = true;
+    /// <summary>3D editor bugs round 3 — the document's snap step (DBU; 0 none): close in, the minor spacing follows it.</summary>
+    public long SnapDbu;
 }
 
 /// <summary>One frame's grid: the minor spacing (DBU), major every n minor lines, and the minor cell's size on
@@ -46,11 +60,13 @@ public readonly record struct PlaneGridSpacing(long MinorDbu, int MajorEvery, do
 
 public static class PlaneGrid
 {
-    /// <summary>A minor cell is at least this many pixels at the focus.</summary>
-    public const double MinPixels = 8;
+    /// <summary>A minor cell is at least this many pixels at the focus (8 until 3D editor bugs round 3, which read as too
+    /// dense zoomed out).</summary>
+    public const double MinPixels = 14;
 
-    /// <summary>The brief's upper bound of the band (R-em3d45-2a).</summary>
-    public const double MaxPixels = 40;
+    /// <summary>The largest minor cell at the focus: a snap step is kept as the minor spacing until it spans ten times
+    /// <see cref="MinPixels"/> (major-every times, in mil and inch: 70 px) — the unit's own steps stay within 2.5×.</summary>
+    public const double MaxPixels = MinPixels * 10;
 
     /// <summary>Floats in the grid's uniform block: fourteen vec4s.</summary>
     public const int Floats = 56;
@@ -62,12 +78,20 @@ public static class PlaneGrid
     /// <summary>Major lines every 10 minor lines, every 5 in mil and inch (the layout grid's spacing).</summary>
     public static int MajorEvery(LayoutUnit unit) => unit is LayoutUnit.Mil or LayoutUnit.Inch ? 5 : 10;
 
-    /// <summary>The spacing for a view whose focus is <paramref name="metresPerPixel"/> metres a pixel.</summary>
-    public static PlaneGridSpacing Spacing(double metresPerPixel, LayoutUnit unit, int dbuPerMicron)
+    /// <summary>The spacing for a view whose focus is <paramref name="metresPerPixel"/> metres a pixel; close in, the
+    /// snap step <paramref name="snapDbu"/> (0: none) or a major-every-th of it.</summary>
+    public static PlaneGridSpacing Spacing(double metresPerPixel, LayoutUnit unit, int dbuPerMicron, long snapDbu = 0)
     {
         int major = MajorEvery(unit);
         if (!(metresPerPixel > 0) || double.IsInfinity(metresPerPixel) || dbuPerMicron <= 0) return new PlaneGridSpacing(0, major, 0);
         double mPerDbu = C3dLowering.Metres(1, dbuPerMicron);
+        if (snapDbu > 0 && snapDbu * mPerDbu / metresPerPixel >= MinPixels)
+        {
+            long step = snapDbu;
+            while (step * mPerDbu / metresPerPixel >= MinPixels * major && step % major == 0) step /= major;
+            if (step * mPerDbu / metresPerPixel < MinPixels * major) return new PlaneGridSpacing(step, major, step * mPerDbu / metresPerPixel);
+            // A snap step that no longer divides evenly: the unit's own steps, finer than it.
+        }
         double unitMetres = LayoutUnits.ToDbu(1m, unit, dbuPerMicron) * mPerDbu;
         double units = LayoutGridMath.CeilingNiceStep(MinPixels * metresPerPixel / unitMetres);
         long minor = 1;
@@ -108,11 +132,38 @@ public static class PlaneGrid
         return 2.0 * depth * Math.Tan(fov * 0.5) / Math.Max(1f, height);
     }
 
+    /// <summary>
+    /// Before a perspective zoom in at pixel (<paramref name="px"/>, <paramref name="py"/>), top-left origin: when the
+    /// cursor's ray meets the plane in front of the eye but nearer than the target's depth, the target moves along the
+    /// line of sight to that depth — the eye and the view direction unchanged, so the picture is the same — and the
+    /// zoom then approaches the plane instead of passing through it. True when it moved.
+    /// </summary>
+    public static bool SeatTargetOnPlane(ref Camera3D cam, Scene3DModel scene, DrawingGridSettings g, float px, float py, float width, float height)
+    {
+        if (cam.Projection != Projection3D.Perspective || !(cam.Distance > 0) || width < 1 || height < 1) return false;
+        var n = DrawingPlane.UnitNormal(g.Plane.Normal);
+        var o = scene.ToLocal(0, 0, 0);
+        float w = (float)C3dLowering.Metres(g.Plane.OffsetDbu, g.DbuPerMicron) + Vector3.Dot(o, n);
+        float fov = cam.FovY > 0 && cam.FovY < MathF.PI ? cam.FovY : Camera3D.DefaultFovY;
+        float ty = MathF.Tan(fov * 0.5f), aspect = width / height;
+        float nx = 2f * px / width - 1f, ny = 1f - 2f * py / height;
+        var eye = cam.Eye;
+        // The ray's forward component is 1, so its parameter at the plane IS the hit's view depth.
+        var dir = cam.Forward + cam.Right * (nx * ty * aspect) + cam.Up * (ny * ty);
+        float dn = Vector3.Dot(dir, n);
+        if (MathF.Abs(dn) < 1e-6f * dir.Length()) return false;
+        float depth = (w - Vector3.Dot(eye, n)) / dn;
+        if (!(depth > 0) || depth >= cam.Distance * (1 - 1e-4f)) return false;
+        cam.Target = eye + cam.Forward * depth;
+        cam.Distance = depth;
+        return true;
+    }
+
     /// <summary>The spacing this view draws at: what the frame plan writes, and what the status line reports.</summary>
     public static PlaneGridSpacing SpacingFor(Scene3DModel scene, in Camera3D cam, DrawingGridSettings g, float height)
     {
         var focus = Focus(scene, cam, g.Plane, g.DbuPerMicron);
-        return Spacing(MetresPerPixel(cam, focus, height), g.Unit, g.DbuPerMicron);
+        return Spacing(MetresPerPixel(cam, focus, height), g.Unit, g.DbuPerMicron, g.SnapDbu);
     }
 
     // Axis colours: the axis indicator's (Viewer3DOverlay), so the lines through the origin read as its arms.
@@ -134,7 +185,7 @@ public static class PlaneGrid
         var plane = g.Plane;
         var focus = Focus(scene, cam, plane, g.DbuPerMicron);
         double mpp = MetresPerPixel(cam, focus, height);
-        var s = Spacing(mpp, g.Unit, g.DbuPerMicron);
+        var s = Spacing(mpp, g.Unit, g.DbuPerMicron, g.SnapDbu);
         if (s.MinorDbu <= 0) return s;
         var (ua, va) = DrawingPlane.AxesOf(plane.Plane);
         var un = DrawingPlane.UnitNormal(ua);

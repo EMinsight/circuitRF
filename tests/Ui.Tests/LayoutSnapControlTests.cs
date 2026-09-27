@@ -231,8 +231,10 @@ public class LayoutSnapControlTests
 
         vm.DisplayUnit = LayoutUnit.Mil;
 
-        // Same underlying DBU rungs, relabeled in the new unit (1 um == 1/25.4 mil) — never blank.
-        Assert.Equal("0.0394 mil", vm.SnapLadderOptions[2]);
+        // Relabelled in the new unit and never blank — and, since 3D editor bugs round 3, round numbers of it: 1 µm is
+        // 0.0394 mil, so the ladder is built off the nearest power of ten of a mil (0.1 mil) rather than spelling 1 µm's
+        // own rungs converted.
+        Assert.Equal("0.1 mil", vm.SnapLadderOptions[2]);
         Assert.NotEmpty(vm.SnapDistanceText);
     }
 

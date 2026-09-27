@@ -150,6 +150,38 @@ public sealed class KernelDragGateTests : IDisposable
         Assert.IsType<C3dBox>(vm.Document.Objects[0]);
     }
 
+    /// <summary>3D editor bugs round 3 — Move (G) of a face with Shift held goes along ONE world axis: the one whose line
+    /// through the base the cursor is nearest. A cursor off diagonally, mostly along +Y, moves the face along Y only;
+    /// without Shift the same cursor moves it on more than one axis.</summary>
+    [Fact]
+    public void FaceMove_WithShiftHeld_GoesAlongTheAxisNearestTheCursor()
+    {
+        string ws = Workspace();
+        string path = WriteC3d(ws, "cell", new C3dDocument { SnapDbu = Um, Objects = [Box("lid", 0, 0, 0, 60, 40, 20)] });
+        var vm = Open(path);
+        var v = vm.Viewer;
+
+        SelectFace(vm, "lid", "xmax");
+        var (sx, sy, _) = v.View.Camera.Project(v.Scene.ToLocal(60 * UmM, 20 * UmM, 10 * UmM), W, H);
+        HoverVm(v, sx, sy);
+        Assert.True(vm.DrawKey(Key.G, KeyModifiers.None));
+        var move = Assert.IsType<FaceMoveTool>(vm.Tool);
+        Assert.True(move.InProgress);
+
+        var (tx, ty, _) = v.View.Camera.Project(v.Scene.ToLocal(63 * UmM, 45 * UmM, 12 * UmM), W, H);
+        HoverVm(v, tx, ty);
+        var free = move.Current(vm.CursorInput());
+        Assert.True(free.Count(c => c is not null and not 0) > 1, string.Join(", ", free));
+
+        v.SetShiftHeld(true);
+        var held = move.Current(vm.CursorInput());
+        Assert.Equal(0, held[0]);
+        Assert.Equal(0, held[2]);
+        Assert.InRange(held[1]!.Value, 20 * Um, 35 * Um);
+        Assert.Contains("along Y only", vm.ToolPrompt);
+        v.SetShiftHeld(false);
+    }
+
     // ── helpers (OperationsGateTests' shape) ─────────────────────────────────────────────────
 
     /// <summary>3D editor bugs round 2 — a distance typed quickly, before the field has focus, arrives key by key at the

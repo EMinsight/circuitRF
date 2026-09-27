@@ -99,7 +99,9 @@ public sealed partial class C3dEditorViewModel
     private IEnumerable<C3dTreeGroup> ObjectGroups()
     {
         var rows = Document.Objects.Select((o, i) => (o, i)).Where(t => PassesTreeFilter(t.o)).ToList();
-        C3dTreeItem Item((C3dObject o, int i) t) => new(this, t.o.Name, C3dObject.KindOf(t.o), t.o.Material, t.i, -1, !t.o.Hidden);
+        // Round 3: by material the group's header already names each row's material, so the row does not repeat it.
+        bool byMaterial = TreeGrouping == C3dTreeGrouping.Material;
+        C3dTreeItem Item((C3dObject o, int i) t) => new(this, t.o.Name, C3dObject.KindOf(t.o), byMaterial ? null : t.o.Material, t.i, -1, !t.o.Hidden);
 
         if (TreeGrouping == C3dTreeGrouping.Primitive)
         {

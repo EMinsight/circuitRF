@@ -12,8 +12,8 @@
 // testable with no solver installed and what lets a re-run reuse a mesh.
 //
 // THE RECIPE (overview §1e, confirmed by F0 Q5 — docs/design/em-3d-f0-findings.md):
-//   1. Every solid is cut by every higher-order solid it overlaps, so the volumes are disjoint by
-//      construction order BEFORE any fragment. A conductor is then deleted: it is a VOID whose
+//   1. Every solid is cut by every higher-precedence solid it overlaps (Em3dPrecedence: metal over
+//      dielectric, then construction order), so the volumes are disjoint BEFORE any fragment. A conductor is then deleted: it is a VOID whose
 //      surface carries Palace's conductivity boundary. What no solid claims inside the box is the
 //      background, which is air.
 //   2. Sheets and port sheets are plane surfaces, and ONE BooleanFragments imprints them and the
@@ -225,14 +225,19 @@ public static class GmshGeoWriter
 
         L("// ---- disjoint by construction order: each solid loses what a higher-order solid takes -----");
         var bounds = problem.Solids.Select(s => Em3dProblem.Bounds(s.Primitive)).ToList();
+        // 3D editor round 3 — and metal over dielectric whatever the order (em-3d.md §6.3a). Said in the script only when it
+        // changed something, so a problem that already obeyed it is the same bytes.
+        var precedence = Em3dPrecedence.Of(problem);
+        if (precedence.Shift > 0) L("// metal takes precedence over dielectric: every metal is ranked above every dielectric (em-3d.md §6.3a)");
         for (int i = 0; i < problem.Solids.Count; i++)
         {
             var tools = new List<int>();
+            int pi = precedence.Of(problem.Solids[i]);
             for (int j = 0; j < problem.Solids.Count; j++)
             {
                 if (j == i) continue;
-                bool higher = problem.Solids[j].Order > problem.Solids[i].Order ||
-                              (problem.Solids[j].Order == problem.Solids[i].Order && j > i);
+                int pj = precedence.Of(problem.Solids[j]);
+                bool higher = pj > pi || (pj == pi && j > i);
                 if (higher && Overlap(bounds[i], bounds[j])) tools.Add(j);
             }
             if (tools.Count == 0) continue;

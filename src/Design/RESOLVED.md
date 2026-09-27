@@ -13934,3 +13934,24 @@ empty, so a `.clay` without one is byte-identical to before.
 Gate: `tests/Ui.Tests/Em/TraceImpedanceAnalysisTests.cs` — five tests (accept passes until the trace moves; tolerance
 change keeps it; a worse finding shows both numbers; round-trip and absent-when-none; the verb exits 0 / 1 with
 `--ignore-accepted`).
+
+
+## 3D editor round 3 — metal takes precedence over dielectric (owner change, 2026-09-26)
+
+- Owner decision: where solids overlap, metal wins over dielectric whatever the construction order — in both solvers
+  and every rendering (em-3d.md §6.3a). One rule, `Em3dPrecedence` (`src/Engine/Em3d`), read by `CsxcadWriter`
+  (priorities, the port/boundary priority above them), `GmshGeoWriter` (which solid cuts which), the section and iso
+  pictures' paint order (`Em3dSectionScene`) and the 3D view (`Scene3DDraw.Behind`, `src/Render/RESOLVED.md`).
+- **Trap: a plain "metal first" breaks every plated via.** The layout generator makes a barrel as a conductor cylinder
+  and bores it with a HIGHER-order air cylinder (`via/N/fill`, R-em3d3-5d) — construction order doing the subtraction.
+  The first version ranked every non-metal below every metal; the via goldens (openEMS gate 4, Palace gate 1) changed
+  and Palace gate 4 refused the mesh ("'via/1/fill' … selected nothing"), because the barrel had swallowed its bore.
+  **Air is therefore not dielectric for this rule**: an air solid drawn after the first metal ranks in the metal band
+  in its own order (so it still carves), one drawn before every metal (the air above the stack) ranks with the
+  dielectrics. The owner asked for metal over DIELECTRIC; with no booleans, air-after-metal is the only hole there is.
+- **Stated as a shift, not a renumbering**: metal-band priority = order + the smallest shift that clears every
+  dielectric. Zero for every generator-written problem, so all Palace/openEMS goldens are byte-identical; only a design
+  with a dielectric drawn after a metal changes. The gmsh script says so in a comment line only when the shift is
+  non-zero — the golden carries the script's comments, and rewording the always-present one moved it.
+- Gate: `tests/Ui.Tests/Em3d/MetalPrecedenceTests.cs` (rule, openEMS priorities, gmsh cut order, section paint order,
+  viewport depth + pick).

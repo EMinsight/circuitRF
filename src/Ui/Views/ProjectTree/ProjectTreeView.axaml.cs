@@ -272,7 +272,8 @@ public partial class ProjectTreeView : UserControl
         if (GetCellNodeFromSource(source) is null
          && GetNpyFileNodeFromSource(source) is null
          && GetLooseFileNodeFromSource(source) is null
-         && GetFolderNodeFromSource(source) is null) return;
+         && GetFolderNodeFromSource(source) is null
+         && GetPlaceableViewFileNodeFromSource(source) is null) return;
         _cellPressArgs = e;
         _cellPressPos  = e.GetPosition(this);
     }
@@ -298,9 +299,12 @@ public partial class ProjectTreeView : UserControl
         // does something. It carries no cross-workspace meaning and gets no other payload.
         var folderVm  = cellVm is null && npyVm is null && fileVm is null
                       ? GetFolderNodeFromSource(source) : null;
+        // 3D round 3 — a cell's .c3d / .clay, draggable into a 3D view as an instance of exactly that view.
+        var viewVm    = cellVm is null && npyVm is null && fileVm is null && folderVm is null
+                      ? GetPlaceableViewFileNodeFromSource(source) : null;
         var savedArgs = _cellPressArgs;
         _cellPressArgs = null; // clear before await to prevent re-entry
-        if (cellVm is null && npyVm is null && fileVm is null && folderVm is null) return;
+        if (cellVm is null && npyVm is null && fileVm is null && folderVm is null && viewVm is null) return;
 
         // The .npy payload stays what it was: the Data Display reads that format, and giving a data
         // file a second spelling for the sake of MW3 would break the drop it already serves. The
@@ -309,7 +313,8 @@ public partial class ProjectTreeView : UserControl
             cellVm   is not null ? new CellDragPayload(cellVm.AbsolutePath).Serialize()
           : npyVm    is not null ? new NpyFileDragPayload(npyVm.AbsolutePath).Serialize()
           : fileVm   is not null ? new WorkspaceFileDragPayload(fileVm.AbsolutePath).Serialize()
-          :                        new FolderDragPayload(folderVm!.AbsolutePath).Serialize();
+          : folderVm is not null ? new FolderDragPayload(folderVm.AbsolutePath).Serialize()
+          :                        new CellViewDragPayload(viewVm!.AbsolutePath).Serialize();
 
         var transferItem = new DataTransferItem();
         transferItem.Set(DataFormat.Text, serialized);
@@ -399,6 +404,23 @@ public partial class ProjectTreeView : UserControl
     // Walk upward to a loose FILE node — anything the tree shows that is a file and is not part of a
     // cell's own views. Draggable only for MW3 §5: dropped on another workspace's tree it is copied
     // in, and dropped on its own it does nothing, exactly as before.
+    // 3D round 3 — a view file a 3D view can place: a cell's .c3d or .clay. Its own payload (CellViewDragPayload), which
+    // no tree reads, so dragging it can never move a view file out of its cell's sub-folder.
+    private static ProjectTreeNodeViewModel? GetPlaceableViewFileNodeFromSource(Visual? source)
+    {
+        var v = source;
+        while (v is not null)
+        {
+            if (v is TreeViewItem { DataContext: ProjectTreeNodeViewModel { Kind: NodeKind.ViewFile } vm }
+                && Path.GetExtension(vm.AbsolutePath) is var ext
+                && (string.Equals(ext, ".c3d", StringComparison.OrdinalIgnoreCase) || string.Equals(ext, ".clay", StringComparison.OrdinalIgnoreCase))
+                && File.Exists(vm.AbsolutePath))
+                return vm;
+            v = v.GetVisualParent();
+        }
+        return null;
+    }
+
     private static ProjectTreeNodeViewModel? GetLooseFileNodeFromSource(Visual? source)
     {
         var v = source;

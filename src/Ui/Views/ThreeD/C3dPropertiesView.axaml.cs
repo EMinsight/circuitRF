@@ -99,6 +99,20 @@ public partial class C3dPropertiesView : UserControl
         if ((sender as Control)?.DataContext is C3dDimensionField f) _vm?.CommitField(f);
     }
 
+    // 3D editor round 3 — a bond wire's points.
+    private void OnWirePointKey(object? sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Escape) { _vm?.Reload(); e.Handled = true; return; }
+        if (e.Key != Key.Enter || (sender as Control)?.DataContext is not C3dWirePointRow row) return;
+        _vm?.CommitWirePoint(row);
+        e.Handled = true;
+    }
+
+    private void OnWirePointLostFocus(object? sender, RoutedEventArgs e)
+    {
+        if ((sender as Control)?.DataContext is C3dWirePointRow row) _vm?.CommitWirePoint(row);
+    }
+
     // 3D editor round 1 — the air box's padding per axis.
     private static char AxisOf(object? sender) => (sender as Control)?.Tag is string { Length: 1 } a ? a[0] : 'x';
 

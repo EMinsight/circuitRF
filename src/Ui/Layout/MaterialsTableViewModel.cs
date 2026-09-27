@@ -2,8 +2,10 @@ using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Linq;
 using CommunityToolkit.Mvvm.ComponentModel;
+using Avalonia.Controls;
 using CommunityToolkit.Mvvm.Input;
 using CircuitRF.Core.Expressions;
+using CircuitRF.Design.Theming;
 using CircuitRF.Design.ThreeD;
 
 namespace CircuitRF.Ui.Layout;
@@ -75,16 +77,40 @@ public sealed partial class MaterialsTableViewModel : ObservableObject
 
     public bool HasRows => Rows.Count > 0;
 
-    /// <summary>Re-projects the rows from the host's current list — after an undo, a redo or a reload.
-    /// Keeps the selection by name.</summary>
+    /// <summary>
+    /// Re-projects the rows from the host's current list — after every committed field, an undo, a redo or a
+    /// reload. Keeps the selection by name (by position when a rename took the name away).
+    ///
+    /// <para><b>The rows are reconciled IN PLACE, never cleared and re-added.</b> Every field commits on
+    /// LostFocus, and each commit reaches here twice (the host's snapshot command rebuilds on Execute, then
+    /// <see cref="Edit"/> does). Clearing the collection destroyed every row's container on each pass, so
+    /// moving from one text box to the next after typing made the whole table flash, swapped the detail
+    /// panel's DataContext, and threw away the box focus had just moved into. A row view model is re-pointed
+    /// at the snapshot's record instead (<see cref="MaterialRowViewModel.Rebind"/>); only a change in the
+    /// number of rows, or an own row turning into a library row, adds, removes or replaces a container.</para>
+    /// </summary>
     public void Rebuild(IReadOnlyList<LibraryMaterial>? libraryRows = null)
     {
         if (libraryRows is not null) LibraryRows = libraryRows;
-        string? selected = SelectedRow?.Name;
-        Rows.Clear();
-        foreach (var m in _list()) Rows.Add(new MaterialRowViewModel(this, m, null));
-        foreach (var lm in LibraryRows) Rows.Add(new MaterialRowViewModel(this, lm.Material, lm.SourcePath));
-        SelectedRow = Rows.FirstOrDefault(r => string.Equals(r.Name, selected, StringComparison.OrdinalIgnoreCase));
+        var selectedRow = SelectedRow;
+        string? selected = selectedRow?.Name;
+        int selectedIndex = selectedRow is null ? -1 : Rows.IndexOf(selectedRow);
+        int countBefore = Rows.Count;
+
+        var wanted = new List<(TechMaterial Material, string? Source)>();
+        foreach (var m in _list()) wanted.Add((m, null));
+        foreach (var lm in LibraryRows) wanted.Add((lm.Material, lm.SourcePath));
+        for (int i = 0; i < wanted.Count; i++)
+        {
+            var (m, source) = wanted[i];
+            if (i >= Rows.Count) Rows.Add(new MaterialRowViewModel(this, m, source));
+            else if (string.Equals(Rows[i].LibrarySource, source, StringComparison.OrdinalIgnoreCase)) Rows[i].Rebind(m);
+            else Rows[i] = new MaterialRowViewModel(this, m, source);
+        }
+        while (Rows.Count > wanted.Count) Rows.RemoveAt(Rows.Count - 1);
+
+        SelectedRow = Rows.FirstOrDefault(r => string.Equals(r.Name, selected, StringComparison.OrdinalIgnoreCase))
+                   ?? (selectedIndex >= 0 && Rows.Count == countBefore && selectedIndex < Rows.Count ? Rows[selectedIndex] : null);
         OnPropertyChanged(nameof(Problems));
         OnPropertyChanged(nameof(HasRows));
         Changed?.Invoke();
@@ -233,9 +259,21 @@ public sealed partial class MaterialRowViewModel : ObservableObject
         Material = material;
         LibrarySource = librarySource;
         _nameText = material.Name;
+        PickColorCommand = new AsyncRelayCommand<Window?>(PickColorAsync);
     }
 
-    public TechMaterial Material { get; }
+    /// <summary>The record this row shows — re-pointed by <see cref="Rebind"/> when a snapshot replaces the list.</summary>
+    public TechMaterial Material { get; private set; }
+
+    /// <summary>Re-points the row at <paramref name="material"/> (the same position in a list a commit, an undo or a
+    /// redo replaced) and re-reads every binding. A binding whose value did not change writes nothing to its
+    /// control, so the row stays still; the container is the table's and survives.</summary>
+    internal void Rebind(TechMaterial material)
+    {
+        Material = material;
+        _nameText = material.Name;
+        OnPropertyChanged(string.Empty);
+    }
 
     /// <summary>The library this row came from, or null for a row of the list being edited.</summary>
     public string? LibrarySource { get; }
@@ -306,14 +344,17 @@ public sealed partial class MaterialRowViewModel : ObservableObject
 
     private void Set(string? text, double? current, Action<double?> write, string field)
     {
+        // The no-change test comes FIRST: leaving a field pushes its text back even when nothing was typed, and a
+        // library row's read-only box would otherwise raise the refusal (and re-read the row) on every focus move.
+        bool parsed = MaterialsTableViewModel.TryParse(text, out double? v);
+        if (parsed && v == current && v.HasValue == current.HasValue) return;
         if (Refuse()) return;
-        if (!MaterialsTableViewModel.TryParse(text, out double? v))
+        if (!parsed)
         {
             _table.Refusal = $"'{text}' is not a number. Leave the field empty for \"not stated\".";
             OnPropertyChanged(string.Empty);
             return;
         }
-        if (v == current && v.HasValue == current.HasValue) return;
         string name = Material.Name;
         _table.Edit(() => write(v), v is null ? $"Clear {field} of {name}" : $"Set {field} of {name}");
     }
@@ -342,16 +383,18 @@ public sealed partial class MaterialRowViewModel : ObservableObject
 
     private void SetTensor(int i, string? text)
     {
-        if (Material.EpsrTensor is not { Length: 3 } t || Refuse()) return;
-        if (!MaterialsTableViewModel.TryParse(text, out double? v) || v is null)
+        if (Material.EpsrTensor is not { Length: 3 } t) return;
+        bool parsed = MaterialsTableViewModel.TryParse(text, out double? v) && v is not null;
+        if (parsed && t[i] == v!.Value) return;
+        if (Refuse()) return;
+        if (!parsed)
         {
             _table.Refusal = "Each tensor component needs a number; untick Anisotropic to remove the tensor.";
             OnPropertyChanged(string.Empty);
             return;
         }
-        if (t[i] == v.Value) return;
         string name = Material.Name;
-        _table.Edit(() => { var copy = (double[])t.Clone(); copy[i] = v.Value; Material.EpsrTensor = copy; },
+        _table.Edit(() => { var copy = (double[])t.Clone(); copy[i] = v!.Value; Material.EpsrTensor = copy; },
                     $"Set εr {"xyz"[i]}{"xyz"[i]} of {name}");
     }
 
@@ -373,6 +416,31 @@ public sealed partial class MaterialRowViewModel : ObservableObject
             string name = Material.Name;
             _table.Edit(() => Material.Color = v, v is null ? $"Clear the colour of {name}" : $"Colour {name}");
         }
+    }
+
+    /// <summary>The Colour column's swatch — transparent while no colour is stated (the 3D view's own palette).</summary>
+    public Avalonia.Media.Color SwatchColor
+        => Material.Color is { } c && Rgba.TryParseHex(c, out var rgba)
+            ? new Avalonia.Media.Color(255, rgba.R, rgba.G, rgba.B)
+            : Avalonia.Media.Colors.Transparent;
+
+    /// <summary>Opens the application's one colour picker (<see cref="Views.Dialogs.ColorPickerDialog"/>, the one
+    /// the Layers tab opens) seeded with the stated colour, or mid-grey when none is stated.</summary>
+    public IAsyncRelayCommand<Window?> PickColorCommand { get; }
+
+    private async Task PickColorAsync(Window? owner)
+    {
+        if (owner is null || Refuse()) return;
+        var seed = Material.Color is { } c && Rgba.TryParseHex(c, out var rgba) ? rgba : new Rgba(0x80, 0x80, 0x80);
+        ApplyPickedColour(await new Views.Dialogs.ColorPickerDialog(seed).ShowDialog<Rgba?>(owner));
+    }
+
+    /// <summary>The picker's answer, committed through the same path as a typed colour, as <c>#rrggbb</c> (a
+    /// material's colour carries no alpha). Null (Cancel) and the colour already stated change nothing.</summary>
+    internal void ApplyPickedColour(Rgba? picked)
+    {
+        if (picked is not { } p) return;
+        ColorText = p.ToHex();
     }
 
     public string SourceText

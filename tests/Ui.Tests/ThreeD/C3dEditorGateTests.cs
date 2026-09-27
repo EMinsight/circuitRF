@@ -430,7 +430,23 @@ public sealed class C3dEditorGateTests : IDisposable
         Frames(scene);
         Assert.Contains(plan.Draws.Take(plan.DrawCount), d => d.Pipeline == Scene3DPipeline.Edges);
         Assert.Contains(plan.Draws.Take(plan.DrawCount), d => d.Pipeline == Scene3DPipeline.OnTop);
-        Assert.Equal(plain + 2, metal.DrawCallsLastFrame);
+        // 3D editor bugs round 3 — the edges drawn EdgePasses times (a two-pixel outline), the face once on top.
+        Assert.Equal(plain + Scene3DFramePlan.EdgePasses + 1, metal.DrawCallsLastFrame);
+
+        // 3D editor bugs round 3 — Object mode: the selected object moves from the opaque draws to the translucent ones
+        // (faded), its outline is four draws under offset slots, and the ID pass still finds it where it is faded.
+        view.Mode = Scene3DSelectMode.Object;
+        view.Selection = [Scene3DItem.OfObject(want.Id)];
+        Frames(scene);
+        var batch = scene.Batches.Single(b => b.ObjectId == want.Id);
+        var drawn = plan.Draws.Take(plan.DrawCount).ToList();
+        Assert.DoesNotContain(drawn, d => d.Pipeline == Scene3DPipeline.Opaque && d.First == batch.FirstIndex);
+        Assert.Contains(drawn, d => d.Pipeline == Scene3DPipeline.Translucent && d.First == batch.FirstIndex);
+        var edges = drawn.Where(d => d.Pipeline == Scene3DPipeline.Edges).ToList();
+        Assert.Equal(Scene3DFramePlan.EdgePasses, edges.Count);
+        Assert.Equal([0u, 1u, 2u, 3u], edges.Select(d => BitConverter.SingleToUInt32Bits(plan.Transforms[Scene3DFramePlan.TransformFloats * d.Transform + 17])));
+        Assert.Equal(want.Id, metal.PickedId);
+        view.Mode = Scene3DSelectMode.Face;
 
         // An edit that keeps the layout goes up as a patch, and the device draws and picks from it.
         vm.ChangeObjects("Move", [2], o => o.Placement.Origin = new C3dPoint3(0, 0, -2 * Um));

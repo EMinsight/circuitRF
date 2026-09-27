@@ -426,9 +426,7 @@
                             <StackPanel Orientation="Horizontal" Spacing="4">
                                 <CheckBox IsChecked="{Binding IsVisible}" MinWidth="0" Padding="0"
                                           ToolTip.Tip="Visible — a drawn object's visibility is saved with the document and undoable"/>
-                                <TextBlock Text="{Binding OrderText}" Opacity="0.55" FontSize="10" VerticalAlignment="Center"
-                                           ToolTip.Tip="Construction order: a later object wins where solids overlap (3D ▸ Modify ▸ Order)"/>
-                                <TextBlock Text="{Binding Name}" VerticalAlignment="Center"/>
+                                <TextBlock Text="{Binding Name}" VerticalAlignment="Center" ToolTip.Tip="{Binding OrderTip}"/>
                                 <TextBlock Text="{Binding Detail}" Opacity="0.6" FontSize="11" VerticalAlignment="Center"/>
                                 <!-- brief-em3d-50 R-em3d50-4 — a wire whose end is on no pad: flagged, with the refusal's words. -->
                                 <mi:MaterialIcon Kind="AlertOutline" Width="12" Height="12" VerticalAlignment="Center"

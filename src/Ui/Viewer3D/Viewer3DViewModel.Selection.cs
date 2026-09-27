@@ -101,6 +101,16 @@ public interface IViewer3DEditHost
     /// <summary>3D round 1 — a drawing tool or an operation is armed: a plain left drag must not orbit (only
     /// Ctrl/Cmd + drag does), so a press that wobbles past the click slop still places its point.</summary>
     bool DrawArmed => false;
+
+    /// <summary>3D round 3 — a Project Tree drag is over the pane carrying <paramref name="text"/>: true when a drop
+    /// would place something (the placement's outline then follows the cursor). A refusal is said on the status line.</summary>
+    bool TreeDragOver(string text) => false;
+
+    /// <summary>3D round 3 — the drag was dropped at the cursor: true when it was ours.</summary>
+    bool TreeDrop(string text) => false;
+
+    /// <summary>3D round 3 — the drag left the pane without a drop: a placement it armed is disarmed.</summary>
+    void TreeDragLeave() { }
 }
 
 /// <summary>brief-em3d-45 — the drawing's 2D chrome for one frame, in world metres: the overlay projects it.</summary>

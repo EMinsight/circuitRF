@@ -24,23 +24,26 @@ public static class Scene3DPicking
                                                  in ClipPlane3D clip = default)
     {
         var (o, d) = camera.Ray(px, py, width, height);
-        float best = float.MaxValue;
+        float best = float.MaxValue, at = 0;
         uint id = 0;
         var verts = scene.Vertices;
         foreach (var b in scene.Batches)
         {
             if (!Visible(visible, b.ObjectId) || !scene.Objects[b.ObjectId - 1].Pickable) continue;
+            // 3D editor round 3 — a dielectric gives way to a metal face lying on its own (Scene3DDraw.Behind).
+            float give = Scene3DFramePlan.IsBehind(scene, b.ObjectId) ? 1 + Scene3DFramePlan.BehindNdc : 1;
             for (int i = b.FirstIndex; i < b.FirstIndex + b.IndexCount; i += 3)
             {
                 var v0 = P(verts[scene.Indices[i]]) + b.Offset; var v1 = P(verts[scene.Indices[i + 1]]) + b.Offset; var v2 = P(verts[scene.Indices[i + 2]]) + b.Offset;
-                if (Intersect(o, d, v0, v1, v2, out float t) && t < best && clip.Keeps(o + d * t))
+                if (Intersect(o, d, v0, v1, v2, out float t) && t * give < best && clip.Keeps(o + d * t))
                 {
-                    best = t;
+                    best = t * give;
+                    at = t;
                     id = b.ObjectId;
                 }
             }
         }
-        return (id, id == 0 ? Vector3.Zero : o + d * best);
+        return (id, id == 0 ? Vector3.Zero : o + d * at);
     }
 
     /// <summary>
@@ -66,6 +69,8 @@ public static class Scene3DPicking
         foreach (var b in scene.Batches)
         {
             if (!Visible(visible, b.ObjectId) || !scene.Objects[b.ObjectId - 1].Pickable) continue;
+            // 3D editor round 3 — the depth bias the GPU gives a Behind draw (Scene3DDraw.Behind).
+            float bias = Scene3DFramePlan.IsBehind(scene, b.ObjectId) ? Scene3DFramePlan.BehindNdc : 0;
             for (int i = b.FirstIndex; i < b.FirstIndex + b.IndexCount; i += 3)
             {
                 // brief-em3d-48 — an element's batch is its prototype's triangles under the element's offset, and the
@@ -83,7 +88,9 @@ public static class Scene3DPicking
                 float w0 = Edge(n1, n2, 0, 0) / area, w1 = Edge(n2, n0, 0, 0) / area, w2 = Edge(n0, n1, 0, 0) / area;
                 if (w0 < 0 || w1 < 0 || w2 < 0) continue;
                 float z = w0 * n0.Z + w1 * n1.Z + w2 * n2.Z;
-                if (z < 0 || z > 1 || z >= bestDepth) continue;
+                if (z < 0 || z > 1) continue;
+                z += bias;
+                if (z >= bestDepth) continue;
                 bestDepth = z;
                 id = b.ObjectId;
                 // The provoking vertex's face is what flat interpolation hands the fragment; every vertex of

@@ -84,7 +84,7 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
     private VkDescriptorPool _pool;
     private VkDescriptorSet _set;
     private VkShaderModule _module;
-    private VkPipeline _pOpaque, _pTrans, _pLines, _pPick, _pField, _pEdges, _pTop, _pGrid;
+    private VkPipeline _pOpaque, _pTrans, _pLines, _pPick, _pField, _pEdges, _pTop, _pGrid, _pTransBehind, _pPickBehind;
     private VkCommandPool _cmdPool;
     private (VkBuffer Buf, VkDeviceMemory Mem) _ub;
     /// <summary>brief-em3d-46 — the per-draw transforms (binding 1), <see cref="_transformSlots"/> per frame slot.</summary>
@@ -271,8 +271,12 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
 
         _pOpaque = Pipeline(api, _rpColor, "fs_color"u8, VkPrimitiveTopology.TriangleList, blend: false, depthWrite: true, targets: 1);
         _pTrans = Pipeline(api, _rpColor, "fs_color"u8, VkPrimitiveTopology.TriangleList, blend: true, depthWrite: false, targets: 1);
+        // 3D editor round 3 — a Behind draw (a dielectric, air) with Scene3DFramePlan's polygon offset: a static twin of each
+        // pipeline a Behind draw uses, rather than dynamic depth-bias state, so no new command is loaded.
+        _pTransBehind = Pipeline(api, _rpColor, "fs_color"u8, VkPrimitiveTopology.TriangleList, blend: true, depthWrite: false, targets: 1, behind: true);
         _pLines = Pipeline(api, _rpColor, "fs_line"u8, VkPrimitiveTopology.LineList, blend: false, depthWrite: true, targets: 1);
         _pPick = Pipeline(api, _rpPick, "fs_pick"u8, VkPrimitiveTopology.TriangleList, blend: false, depthWrite: true, targets: 2);
+        _pPickBehind = Pipeline(api, _rpPick, "fs_pick"u8, VkPrimitiveTopology.TriangleList, blend: false, depthWrite: true, targets: 2, behind: true);
         _pField = Pipeline(api, _rpColor, "fs_field"u8, VkPrimitiveTopology.TriangleList, blend: false, depthWrite: true, targets: 1, field: true);
         // brief-em3d-43 — the selection's edges and its face on top: no depth test.
         _pEdges = Pipeline(api, _rpColor, "fs_edge"u8, VkPrimitiveTopology.LineList, blend: true, depthWrite: false, targets: 1, depthTest: false);
@@ -381,7 +385,8 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
     }
 
     private VkPipeline Pipeline(VkDeviceApi api, VkRenderPass rp, ReadOnlySpan<byte> fragmentEntry, VkPrimitiveTopology topology,
-                                bool blend, bool depthWrite, int targets, bool field = false, bool depthTest = true, bool grid = false)
+                                bool blend, bool depthWrite, int targets, bool field = false, bool depthTest = true, bool grid = false,
+                                bool behind = false)
     {
         fixed (byte* vsName = field ? "vs_field"u8 : grid ? "vs_grid"u8 : "vs"u8)
         fixed (byte* fsName = fragmentEntry)
@@ -421,6 +426,9 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
             var rs = new VkPipelineRasterizationStateCreateInfo
             {
                 polygonMode = VkPolygonMode.Fill, cullMode = VkCullModeFlags.None, frontFace = VkFrontFace.CounterClockwise, lineWidth = 1f,
+                depthBiasEnable = behind,
+                depthBiasConstantFactor = behind ? Scene3DFramePlan.BehindDepthBias : 0,
+                depthBiasSlopeFactor = behind ? Scene3DFramePlan.BehindSlopeScale : 0,
             };
             var ms = new VkPipelineMultisampleStateCreateInfo { rasterizationSamples = VkSampleCountFlags.Count1 };
             var ds = new VkPipelineDepthStencilStateCreateInfo { depthTestEnable = depthTest, depthWriteEnable = depthWrite, depthCompareOp = VkCompareOp.LessOrEqual };
@@ -868,9 +876,12 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
             api.vkCmdBindVertexBuffers(cb, 0, 1, &vb, &zero);
             api.vkCmdBindIndexBuffer(cb, _ib.Buf, 0, VkIndexType.Uint32);
             int pickTransform = 0;
+            bool pickBehind = false;
             for (int i = 0; i < plan.PickDrawCount; i++)
             {
                 ref var d = ref plan.PickDraws[i];
+                if (d.Behind != pickBehind)
+                    api.vkCmdBindPipeline(cb, VkPipelineBindPoint.Graphics, (pickBehind = d.Behind) ? _pPickBehind : _pPick);
                 // brief-em3d-48 — an array element's pick draw: its translation and id offset.
                 if (d.Transform != pickTransform && d.Transform < tCount)
                 {
@@ -912,6 +923,7 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
             api.vkCmdBindDescriptorSets(cb, VkPipelineBindPoint.Graphics, _layout, 0, 1, &set, 2, offs);
             int transform = 0;
             Scene3DPipeline state = (Scene3DPipeline)(-1);
+            bool stateBehind = false;
             Scene3DBuffer bound = (Scene3DBuffer)(-1);
             for (int i = 0; i < plan.DrawCount; i++)
             {
@@ -925,12 +937,14 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
                 bool grid = d.Pipeline == Scene3DPipeline.Grid;
                 if (!grid && (buf.Handle == 0 || (!lines && !field && _ib.Buf.Handle == 0))) continue;
                 if (field && d.First + d.Count > _fieldCount) continue;
-                if (d.Pipeline != state)
+                bool drawBehind = d.Behind && d.Pipeline == Scene3DPipeline.Translucent;
+                if (d.Pipeline != state || drawBehind != stateBehind)
                 {
                     state = d.Pipeline;
+                    stateBehind = drawBehind;
                     api.vkCmdBindPipeline(cb, VkPipelineBindPoint.Graphics, state switch
                     {
-                        Scene3DPipeline.Translucent => _pTrans, Scene3DPipeline.Lines => _pLines,
+                        Scene3DPipeline.Translucent => drawBehind ? _pTransBehind : _pTrans, Scene3DPipeline.Lines => _pLines,
                         Scene3DPipeline.Field => _pField, Scene3DPipeline.Edges => _pEdges,
                         Scene3DPipeline.OnTop => _pTop, Scene3DPipeline.Grid => _pGrid, _ => _pOpaque,
                     });
@@ -1068,6 +1082,7 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
         if (_pickFb.Handle != 0) api.vkDestroyFramebuffer(_pickFb, null);
         foreach (var f in _fence) if (f.Handle != 0) api.vkDestroyFence(f, null);
         api.vkDestroyPipeline(_pOpaque, null); api.vkDestroyPipeline(_pTrans, null);
+        api.vkDestroyPipeline(_pTransBehind, null); api.vkDestroyPipeline(_pPickBehind, null);
         api.vkDestroyPipeline(_pLines, null); api.vkDestroyPipeline(_pPick, null); api.vkDestroyPipeline(_pField, null);
         api.vkDestroyPipeline(_pEdges, null); api.vkDestroyPipeline(_pTop, null); api.vkDestroyPipeline(_pGrid, null);
         api.vkDestroyPipelineLayout(_layout, null); api.vkDestroyDescriptorPool(_pool, null);

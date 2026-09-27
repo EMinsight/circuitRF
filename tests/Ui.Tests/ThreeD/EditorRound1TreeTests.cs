@@ -87,7 +87,7 @@ public sealed class EditorRound1TreeTests : IDisposable
     public void TheAirBox_IsANodeUnderBoxes_NotDeletable_ItsPaddingAShareOfTheExtent()
     {
         var vm = Open(Doc(new EmSetup { Name = "S1", Solver3D = Em3dSolver.Palace }));
-        vm.TreeGrouping = C3dTreeGrouping.Primitive;                     // round 2: by material it heads its own group
+        vm.TreeGrouping = C3dTreeGrouping.Primitive;                     // round 3: by material it is under "Air"
         var box = vm.Tree.Single(g => g.Header == "Boxes").Items[0];
         Assert.True(box.IsAirBox);
         var menu = vm.TreeMenuItems(box);

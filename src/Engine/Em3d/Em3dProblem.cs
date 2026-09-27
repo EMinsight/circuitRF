@@ -57,8 +57,8 @@ public readonly record struct Em3dSegment(Point3 From, Point3 To);
 // ── Construction primitives ──────────────────────────────────────────────────────────────────
 //
 // Tier A's vocabulary, which is almost exactly CSXCAD's primitive set (§6.3). There is deliberately
-// NO boolean here: overlap is resolved by construction order (R-em3d3-1d), which both backends can
-// state — CSXCAD as a priority, Palace by subtracting. Tier B (F4) adds booleans.
+// NO boolean here: overlap is resolved by Em3dPrecedence — metal over dielectric, then construction order
+// (R-em3d3-1d; em-3d.md §6.3a) — which both backends can state — CSXCAD as a priority, Palace by subtracting. Tier B (F4) adds booleans.
 
 /// <summary>A construction primitive. Every coordinate is metres.</summary>
 public abstract record Em3dPrimitive;
@@ -104,7 +104,8 @@ public sealed record Em3dTruncatedSphere(Point3 Center, double Radius, double ZM
 
 /// <summary>
 /// One named solid. <paramref name="Order"/> is its construction order (R-em3d3-1d): where two
-/// solids overlap, the higher order wins the volume. It is part of the problem so that no backend
+/// solids overlap, the higher order wins the volume — after the rule that metal takes precedence over
+/// dielectric (<see cref="Em3dPrecedence"/>, em-3d.md §6.3a). It is part of the problem so that no backend
 /// ever infers it.
 /// </summary>
 public sealed record Em3dSolid(string Name, string Material, Em3dRole Role, Em3dPrimitive Primitive,

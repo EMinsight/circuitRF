@@ -18,6 +18,8 @@ using CircuitRF.Design.ThreeD;
 using CircuitRF.Engine.Em3d;
 using CircuitRF.Render.Scene3D;
 using CircuitRF.Render.Scene3D.Edit;
+using CircuitRF.WBond;
+using Point3 = CircuitRF.Engine.Em3d.Point3;
 using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace CircuitRF.Ui.ThreeD;
@@ -44,11 +46,27 @@ public sealed partial class C3dAirBoxFaceRow(string face, Em3dBoundaryKind kind,
 public sealed partial class C3dDimensionField : ObservableObject
 {
     public required string Path { get; init; }
+    /// <summary>3D editor round 3 — what the field is called on screen ("X size", "Radius"); the path is the file's name for it.</summary>
+    public string Label { get; init; } = "";
     public required string ValueText { get; init; }
     public string? Error { get; init; }
     public bool IsExpression { get; init; }
     [ObservableProperty] private string _text = "";
     internal string Loaded { get; set; } = "";
+}
+
+/// <summary>
+/// 3D editor round 3 — one point of a selected bond wire, its world coordinates editable in the display unit. The first
+/// and last are the bonded ends: each sits on the top of its pad, so its z follows the pad.
+/// </summary>
+public sealed partial class C3dWirePointRow : ObservableObject
+{
+    public required int Index { get; init; }
+    public required string Label { get; init; }
+    [ObservableProperty] private string _x = "";
+    [ObservableProperty] private string _y = "";
+    [ObservableProperty] private string _z = "";
+    internal (string X, string Y, string Z) Loaded { get; set; }
 }
 
 public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : ObservableObject
@@ -82,6 +100,22 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
     [ObservableProperty] private bool _mirrorX;
     [ObservableProperty] private string _error = "";
 
+    /// <summary>3D editor round 3 — false for a bond wire, which has no placement (its points are world points).</summary>
+    [ObservableProperty] private bool _isPlaced;
+    [ObservableProperty] private string _materialPlaceholder = NoMaterialPlaceholder;
+
+    private const string NoMaterialPlaceholder = "None — a solver needs one";
+
+    // ── a bond wire (3D editor round 3) ─────────────────────────────────────────────────────
+
+    [ObservableProperty] private bool _isWire;
+    [ObservableProperty] private WireCrossSection _wireSection;
+    [ObservableProperty] private BondStyle _wireStartStyle;
+    [ObservableProperty] private BondStyle _wireEndStyle;
+
+    /// <summary>The selected wire's points, start to end.</summary>
+    public ObservableCollection<C3dWirePointRow> WirePoints { get; } = [];
+
     /// <summary>brief-em3d-47 R-em3d47-3e — the selected vertex's world coordinates, editable (Set Coordinates).</summary>
     [ObservableProperty] private bool _isVertexEditable;
     [ObservableProperty] private string _vertexX = "";
@@ -109,6 +143,10 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         Error = "";
         ObjectIndex = -1;
         IsEditable = false;
+        IsPlaced = false;
+        IsWire = false;
+        WirePoints.Clear();
+        MaterialPlaceholder = NoMaterialPlaceholder;
         IsVertexEditable = false;
         IsAirBox = false;
         AirBoxFaces.Clear();
@@ -207,12 +245,119 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         OriginX = Len(pl.Origin.X); OriginY = Len(pl.Origin.Y); OriginZ = Len(pl.Origin.Z);
         RotateText = string.Join(", ", pl.Rotate.Select(r => $"{r.Axis.ToString().ToLowerInvariant()} {r.Deg.ToString("G", CultureInfo.InvariantCulture)}"));
         MirrorX = pl.MirrorX;
+        IsPlaced = obj is not C3dWire;
+        if (obj is C3dWire wire) LoadWire(wire);
         Rows.Add(new C3dPropertyRow("Kind", C3dObject.KindOf(obj)));
         // brief-em3d-46 R-em3d46-4d — construction order is invisible unless it is shown: it decides overlap.
         Rows.Add(new C3dPropertyRow("Construction order",
             $"{index + 1} of {editor.Document.Objects.Count} — a later object wins where solids overlap (Modify ▸ Order)"));
         foreach (var row in Dimensions(obj)) Rows.Add(row);
         foreach (var f in editor.DimensionFields(obj)) Fields.Add(f);
+    }
+
+    private void LoadWire(C3dWire wire)
+    {
+        IsWire = true;
+        MaterialPlaceholder = $"{C3dWires.MaterialOf(wire)} (the default)";
+        WireSection = C3dWires.SectionOf(wire);
+        WireStartStyle = wire.Start.Style;
+        WireEndStyle = wire.End.Style;
+        string L(long dbu) => Tools.C3dDimension.Spell(dbu, editor.Document.DisplayUnit, editor.Document.DbuPerMicron);
+        for (int k = 0; k < wire.Points.Count; k++)
+        {
+            var p = wire.Points[k];
+            string label = k == 0 ? "Start" : k == wire.Points.Count - 1 ? "End" : k.ToString(CultureInfo.InvariantCulture);
+            var row = new C3dWirePointRow { Index = k, Label = label, X = L(p.X), Y = L(p.Y), Z = L(p.Z) };
+            row.Loaded = (row.X, row.Y, row.Z);
+            WirePoints.Add(row);
+        }
+    }
+
+    /// <summary>3D editor round 3 — a wire point's Enter or lost focus: three lengths in the display unit (a suffix may name
+    /// another), the point moved there and the feet re-seated exactly as a Vertex-mode drag's are, as one undo entry — or
+    /// the refusal, with the fields left for correcting.</summary>
+    public void CommitWirePoint(C3dWirePointRow row)
+    {
+        if (!IsWire || ObjectIndex < 0 || (row.X, row.Y, row.Z) == row.Loaded) return;
+        var doc = editor.Document;
+        if (!LayoutUnits.TryParse(row.X, doc.DisplayUnit, doc.DbuPerMicron, out long x) ||
+            !LayoutUnits.TryParse(row.Y, doc.DisplayUnit, doc.DbuPerMicron, out long y) ||
+            !LayoutUnits.TryParse(row.Z, doc.DisplayUnit, doc.DbuPerMicron, out long z))
+        {
+            Error = $"A point is three lengths, in {LayoutUnits.Suffix(doc.DisplayUnit)} unless a unit is written.";
+            return;
+        }
+        Error = editor.SetWirePoint(ObjectIndex, row.Index, new C3dPoint3(x, y, z)) ?? "";
+    }
+
+    partial void OnWireSectionChanged(WireCrossSection value) => ChangeWire("Section", w => w.Section = value);
+
+    partial void OnWireStartStyleChanged(BondStyle value) => ChangeWire("Start bond", w => w.Start.Style = value);
+
+    partial void OnWireEndStyleChanged(BondStyle value) => ChangeWire("End bond", w => w.End.Style = value);
+
+    private void ChangeWire(string what, Action<C3dWire> mutate)
+    {
+        if (_loading || !IsWire || ObjectIndex < 0) return;
+        int i = ObjectIndex;
+        editor.ChangeObjects($"{what} of {editor.Document.Objects[i].Name}", [i], o => { if (o is C3dWire w) mutate(w); });
+    }
+
+    /// <summary>
+    /// 3D editor round 3 — a dimension's name on screen, in the words of the object's own axes: a box's <c>Size[0]</c> is
+    /// its "X size"; a sheet's <c>Rect.Size[1]</c> on the XZ plane is its "Z size". The path stays the file's name for it.
+    /// </summary>
+    public static string FieldLabel(C3dObject obj, string path)
+    {
+        static string Xyz(int k) => k switch { 0 => "x", 1 => "y", _ => "z" };
+        static (string U, string V, string N) Axes(C3dPlane p) => p switch
+        {
+            C3dPlane.YZ => ("y", "z", "x"),
+            C3dPlane.XZ => ("x", "z", "y"),
+            _ => ("x", "y", "z"),
+        };
+        static string Up(string a) => a.ToUpperInvariant();
+        int bracket = path.IndexOf('[');
+        string head = bracket >= 0 ? path[..bracket] : path;
+        int k = bracket >= 0 && bracket + 1 < path.Length && char.IsDigit(path[bracket + 1]) ? path[bracket + 1] - '0' : 0;
+        if (head == "Placement.Rotate") return $"Rotation {k + 1} (°)";
+        if (head == "Placement.Origin") return $"Placement origin {Xyz(k)}";
+        switch (obj)
+        {
+            case C3dBox:
+                if (head == "Min") return $"Corner {Xyz(k)}";
+                if (head == "Size") return $"{Up(Xyz(k))} size";
+                break;
+            case C3dPrism pr:
+            {
+                var (u, v, n) = Axes(pr.Plane);
+                if (head == "Offset") return $"Offset ({n})";
+                if (head == "Height") return $"Height ({n})";
+                if (head == "Shear") return $"Shear {(k == 0 ? u : v)}";
+                break;
+            }
+            case C3dSheet sh:
+            {
+                var (u, v, n) = Axes(sh.Plane);
+                if (head == "Offset") return $"Offset ({n})";
+                if (head == "Rect.Min") return $"Corner {(k == 0 ? u : v)}";
+                if (head == "Rect.Size") return $"{Up(k == 0 ? u : v)} size";
+                if (head == "ThicknessUm") return "Thickness (µm)";
+                break;
+            }
+            case C3dPolyline pl:
+                if (head == "Offset") return $"Offset ({Axes(pl.Plane).N})";
+                break;
+            case C3dCylinder c:
+                if (head == "Base") return $"Base {Xyz(k)}";
+                if (head == "Length") return $"Length (along {c.Axis.ToString().ToLowerInvariant()})";
+                if (head == "Radius") return "Radius";
+                break;
+            case C3dWire:
+                if (head == "DiameterUm") return "Diameter (µm)";
+                break;
+        }
+        return path;
     }
 
     // ── the air box (3D editor round 1) ─────────────────────────────────────────────────────
@@ -235,7 +380,9 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         Heading = "Air box";
         if (setup is null || editor.ShownAirBox is not { } box)
         {
-            Rows.Add(new C3dPropertyRow("Setup", "No setup is active: the air box is a setup's."));
+            Rows.Add(new C3dPropertyRow("Setup", setup is null
+                ? "No setup is active: the air box's padding and faces are a setup's. Add one in Simulate ▸ Setup Analyses…"
+                : "The active setup's air box could not be built around this geometry; Simulate ▸ Run reports why."));
             IsAirBox = false;
             return;
         }

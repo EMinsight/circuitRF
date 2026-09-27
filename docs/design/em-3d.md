@@ -568,7 +568,7 @@ CSXCAD's primitive set, so the FDTD lowering of a Tier A problem needs no OCCT a
 > default display unit comes from the cell's `.clay`, else the technology's; the user changes it with
 > the layout editor's Unit combobox, which moves nothing. Without booleans there is no history to
 > replay, so F4a's document is a **flat, ordered list of named objects**, construction order deciding
-> overlap; a boolean (F4b) becomes an object whose operands are other objects. Dimensions become
+> overlap — after the rule that metal takes precedence over dielectric (§6.3a); a boolean (F4b) becomes an object whose operands are other objects. Dimensions become
 > expressions in F4a's last brief, with VARs stored in the `.c3d` and linkable to the cell's
 > parameters. *(Built, brief 51:)* a named dimension holds `{ "Expr", "Unit" }` beside its number — the
 > unit stored so the display unit stays free — and resolves before any geometry (`C3dResolver`); a
@@ -583,6 +583,31 @@ like every other view. The file is human-readable, as every circuitRF document i
 extension are decided with F4. The rule the circuit side already lives by applies unchanged —
 **elaborate first**: circuitRF resolves every expression and hands the geometry kernel numbers only,
 just as the numeric layer never sees an unresolved parameter.
+
+### 6.3a Overlap — metal takes precedence over dielectric (owner decision, 2026-09-26)
+
+Where two solids overlap, one of them owns the region. **Metal always takes precedence over dielectric, whatever
+order the two were drawn in.** A mould compound drawn over a die, a substrate drawn after the traces on it, a
+dielectric block that swallows a pad: the metal stays whole and the dielectric loses the part the metal occupies.
+Construction order decides only what the rule leaves open — two metals, or two dielectrics.
+
+- **What is metal:** a conductor solid (`Em3dRole.Conductor`) and every sheet.
+- **Air is not dielectric for this rule.** With no booleans (F4a), an air solid drawn after a metal is the only way to
+  make a hole in it, and a plated via's bore is exactly that (R-em3d3-5d). So air keeps construction order against
+  metal: an air solid drawn after the first metal ranks with the metals, in its own order among them; one drawn before
+  every metal — the air above a layout's stack — ranks with the dielectrics.
+- **One rule, one place:** `Em3dPrecedence` (`src/Engine/Em3d`). openEMS's CSXCAD priorities (§6.5), the gmsh script's
+  cut order (Palace, §6.2), the face boundaries layered above every solid, the section and isometric pictures' paint
+  order, and the 3D view all read it; nothing re-derives it from `Order`.
+- **Stated as a shift, not a renumbering.** The metal band's priority is its order plus the smallest amount that puts
+  it above every dielectric — zero for every problem the layout generator writes, whose metals follow its substrates.
+  A problem that already obeyed the rule therefore lowers to the same bytes it always did (the Palace and openEMS
+  goldens did not move), and only a design with a dielectric drawn after a metal changes.
+- **In the 3D view** every solid is drawn whole (the view does no booleans), dielectrics translucent, so a metal inside
+  a dielectric already shows through it. What the rule adds is the COINCIDENT face — a pad flush with the substrate's
+  top, a trace ending on the board edge: the dielectric's and air's triangles are drawn with a small polygon offset
+  (`Scene3DDraw.Behind`, the depth bias on all three GPU backends and the same bias in the CPU picks), so the metal
+  face wins the depth test and the pick instead of the two fighting pixel by pixel.
 
 ### 6.4 Naming — the problem every history-based modeler has
 
@@ -608,8 +633,9 @@ refusal.
 **Geometry.** Each named solid becomes CSXCAD primitives on a property named after it: extruded
 polygons, boxes, cylinders, spheres, wires and curves cover Tier A. CSXCAD has **no booleans**; where
 primitives overlap, the one with the higher **priority** wins the cell. A subtraction therefore
-becomes a higher-priority solid of the surrounding material, and circuitRF assigns priorities from the
-construction order so the FDTD result means what the construction tree means. Shapes no primitive can
+becomes a higher-priority solid of the surrounding material, and circuitRF assigns priorities from
+`Em3dPrecedence` — metal over dielectric, then construction order (§6.3a) — so the FDTD result means what
+the construction tree means, and the same thing Palace's cut order means. Shapes no primitive can
 state (fillets, general booleans from Tier B) are tessellated by OCCT (§6.2) and read by CSXCAD as a
 polyhedron from a triangle file. CSXCAD reads both STL and PLY (`PolyhedronReader`, verified at F0).
 **A file it cannot open is not an error**: openEMS prints `Warning: No primitives found in property`
@@ -1293,6 +1319,9 @@ shared geometry are cross-checks, not references — all of them are circuitRF-d
   other editors, where F fits the view. Fit is Home in every 3D pane.
 - **The `.c3d` uses the `.clay`'s DBU.** Its default display unit comes from the cell's `.clay`, else the
   `.ctech`; the user changes it with the layout editor's Unit combobox.
+- **Metal takes precedence over dielectric where solids overlap**, by default and whatever the construction order —
+  in both solvers' geometry and in every rendering of it (§6.3a). Air keeps construction order against metal, so an
+  air solid can still bore a hole.
 
 **Open:**
 1. The run verb's shape — `em` with a 3D setup, or a sibling verb (§5.3; §4.6 leans towards `em`).

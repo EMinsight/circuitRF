@@ -802,31 +802,48 @@ public sealed partial class C3dEditorViewModel
     /// <summary>
     /// 3D editor round 1 — the active setup's air box, first under Boxes: selectable (the Properties Inspector shows its
     /// boundaries and padding), never deletable or duplicable — it is the setup's, not the geometry's. Its tick is the
-    /// toolbar's air-box switch. No setup active, no node. Round 2: by material there is no Boxes group to share, so it
-    /// is the one node of an "Air box" group at the top.
+    /// toolbar's air-box switch. Round 2: by material there is no Boxes group to share. Round 3: by material it is listed
+    /// under the material that fills it (<see cref="CircuitRF.Design.Layout.Em3d.Em3dGenerator.AirMaterial"/>, beside any object of that material,
+    /// in the material groups' name order), and it is listed whenever the document has content — with no active setup
+    /// too, when there is no box to draw yet and its row says so: a run always solves in one, and a tree that left it
+    /// out until a setup existed read as "there is no air box".
     /// </summary>
     private void RebuildAirBoxItem()
     {
-        var boxes = TreeGrouping == C3dTreeGrouping.Primitive
-            ? Tree.FirstOrDefault(g => g.Role == C3dTreeGroupRole.Objects && g.Header == "Boxes")
-            : Tree.FirstOrDefault(g => g.Role == C3dTreeGroupRole.AirBox);
-        if (boxes?.Items.FirstOrDefault(i => i.IsAirBox) is { } old)
+        bool want = Document.Objects.Count > 0 || Document.Instances.Count > 0;
+        string detail = ActiveSetup is null ? "no active setup"
+                      : $"setup {(IsExternalActive ? ExternalItemName : ActiveSetupName)}{(ShownAirBox is null ? ": not built" : "")}";
+        if (Tree.FirstOrDefault(g => g.Items.Any(i => i.IsAirBox)) is { } home)
         {
-            if (ActiveSetup is not null && ShownAirBox is not null)
+            var old = home.Items.First(i => i.IsAirBox);
+            if (want && old.Detail == detail)
             {
                 old.Sync(Viewer.ShowBoundaryFaces);
                 return;
             }
-            boxes.Items.Remove(old);
-            if (boxes.Items.Count == 0) { DetachExpansion([boxes]); Tree.Remove(boxes); }
+            home.Items.Remove(old);
+            if (home.Items.Count == 0) { DetachExpansion([home]); Tree.Remove(home); }
         }
-        if (ActiveSetup is null || ShownAirBox is null) return;
-        var item = new C3dTreeItem(this, AirBoxName, C3dTreeItem.AirBoxKind, $"setup {(IsExternalActive ? ExternalItemName : ActiveSetupName)}",
-                                   -1, -1, Viewer.ShowBoundaryFaces) { IsReadOnly = true };
-        if (boxes is null)
-            Tree.Insert(0, TreeGrouping == C3dTreeGrouping.Primitive ? new C3dTreeGroup("Boxes", [item])
-                                                                     : new C3dTreeGroup("Air box", [item], C3dTreeGroupRole.AirBox));
-        else boxes.Items.Insert(0, item);
+        if (!want) return;
+        var item = new C3dTreeItem(this, AirBoxName, C3dTreeItem.AirBoxKind, detail, -1, -1, Viewer.ShowBoundaryFaces) { IsReadOnly = true };
+        if (TreeGrouping == C3dTreeGrouping.Primitive)
+        {
+            if (Tree.FirstOrDefault(g => g.Role == C3dTreeGroupRole.Objects && g.Header == "Boxes") is { } boxes) boxes.Items.Insert(0, item);
+            else Tree.Insert(0, new C3dTreeGroup("Boxes", [item]));
+            return;
+        }
+        const string air = CircuitRF.Design.Layout.Em3d.Em3dGenerator.AirMaterial;
+        if (Tree.FirstOrDefault(g => g.Role == C3dTreeGroupRole.Objects && string.Equals(g.Header, air, StringComparison.OrdinalIgnoreCase)) is { } shared)
+        {
+            shared.Items.Insert(0, item);
+            return;
+        }
+        // Its own group, where the material groups' name order puts it ("No material" leads them).
+        int at = 0;
+        while (at < Tree.Count && Tree[at].Role == C3dTreeGroupRole.Objects &&
+               (Tree[at].Header == NoMaterialHeader || string.Compare(Tree[at].Header, air, StringComparison.OrdinalIgnoreCase) < 0))
+            at++;
+        Tree.Insert(at, new C3dTreeGroup(air, [item], C3dTreeGroupRole.AirBox));
     }
 
     /// <summary>The air box's name in the tree and in the scene (its faces are <c>airbox/xmin</c> …).</summary>

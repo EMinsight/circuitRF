@@ -242,6 +242,33 @@ public sealed partial class C3dEditorViewModel : IC3dWireHost
         return null;
     }
 
+    /// <summary>
+    /// 3D editor round 3 — Properties' typed wire point: point <paramref name="k"/> of the wire at <paramref name="index"/>
+    /// moved to <paramref name="world"/> (a wire's points ARE world points), the feet re-seated exactly as a Vertex-mode
+    /// drag's are, one undo entry. An end moved off every pad is refused; an end's z is its pad's top, so a typed z on an
+    /// end that the seat puts back is said rather than silently ignored. Null on success, else why not.
+    /// </summary>
+    public string? SetWirePoint(int index, int k, C3dPoint3 world)
+    {
+        if (index < 0 || index >= Document.Objects.Count || Document.Objects[index] is not C3dWire was) return "Select one wire.";
+        if (k < 0 || k >= was.Points.Count) return $"{was.Name} has no point {k + 1}.";
+        if (was.Points[k] == world) return null;
+        string before = C3dPersistence.SerializeObject(was);
+        var moved = (C3dWire)C3dPersistence.DeserializeObject(before);
+        moved.Points[k] = world;
+        if (SeatEditedWire(was, ref moved) is { } refusal) return refusal;
+        bool end = k == 0 || k == was.Points.Count - 1;
+        string? zNote = end && moved.Points[k].Z != world.Z
+            ? $"{was.Name}'s {(k == 0 ? "start" : "end")} is bonded to the top of its pad, at z = {Length(moved.Points[k].Z)}: an end's z follows its pad."
+            : null;
+        string after = C3dPersistence.SerializeObject(moved);
+        if (after == before) return zNote;
+        if (!Push(new C3dEdit($"Set point {k + 1} of {was.Name}", [new C3dEditSlot(false, index, before, after)], ApplySlots)))
+            return StatusMessage;
+        StatusMessage = zNote ?? $"Moved point {k + 1} of '{was.Name}'.";
+        return null;
+    }
+
     private IEnumerable<Viewer3DMenuItem> WireMenuItems()
     {
         if (SelectedWires().Count == 0) yield break;

@@ -123,6 +123,8 @@ public sealed class Scene3DIdPatch
         {
             var b = scene.Batches[k];
             if (!IsVisible(visible, b.ObjectId) || !scene.Objects[b.ObjectId - 1].Pickable) continue;
+            // 3D editor round 3 — the depth bias the GPU gives a Behind draw: a metal face on a dielectric's wins.
+            float bias = Scene3DFramePlan.IsBehind(scene, b.ObjectId) ? Scene3DFramePlan.BehindNdc : 0;
             for (int t = b.FirstIndex; t < b.FirstIndex + b.IndexCount; t += 3)
             {
                 TrianglesRasterized++;
@@ -154,7 +156,9 @@ public sealed class Scene3DIdPatch
                         float z = w0 * n0.Z + w1 * n1.Z + w2 * n2.Z;
                         int at = j * size + i;
                         // LessEqual, as the GPU's depth state: of two equal depths the later draw wins.
-                        if (z < 0 || z > 1 || z > _ndcZ[at]) continue;
+                        if (z < 0 || z > 1) continue;
+                        z += bias;
+                        if (z > _ndcZ[at]) continue;
                         // The point itself, perspective-correct, for the clip plane and the view depth.
                         float q0 = w0 / c0.W, q1 = w1 / c1.W, q2 = w2 / c2.W, qs = q0 + q1 + q2;
                         var world = (p0 * q0 + p1 * q1 + p2 * q2) / qs;

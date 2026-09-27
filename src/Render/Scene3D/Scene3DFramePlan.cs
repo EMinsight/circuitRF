@@ -32,7 +32,9 @@ public enum Scene3DPipeline
     /// coloured by the field uniforms.</summary>
     Field,
     /// <summary>brief-em3d-43 — a selected object's feature edges (a line list from the scene's line
-    /// buffer), depth test off, blend, drawn only where the selection says (fs_edge).</summary>
+    /// buffer), depth test off, blend, drawn only where the selection says (fs_edge). 3D editor bugs round 3 — each
+    /// is drawn <see cref="Scene3DFramePlan.EdgePasses"/> times a pixel apart, so the outline is two pixels wide on
+    /// every backend (none of them draws a line wider than one).</summary>
     Edges,
     /// <summary>brief-em3d-43 R-em3d43-4d — a selected face again, depth test off, blend at reduced
     /// opacity (fs_top), so a face behind others is seen through them.</summary>
@@ -57,6 +59,11 @@ public struct Scene3DDraw
     /// identity. A backend hands the slot's 80 bytes (the matrix, and brief-em3d-48's id offset) to the vertex stage before the draw (Metal setVertexBytes,
     /// a D3D11 constant buffer, Vulkan push constants), and only when it differs from the draw before.</summary>
     public int Transform;
+    /// <summary>3D editor round 3 — a dielectric's or air's triangles: drawn with the depth bias
+    /// (<see cref="Scene3DFramePlan.BehindDepthBias"/>, <see cref="Scene3DFramePlan.BehindSlopeScale"/>), so where a metal
+    /// face lies ON one of its faces the metal wins the depth test — in the picture and in the ID pass — instead of the two
+    /// fighting per pixel. Metal takes precedence over dielectric everywhere (em-3d.md §6.3a).</summary>
+    public bool Behind;
 }
 
 /// <summary>
@@ -177,6 +184,31 @@ public sealed class Scene3DFramePlan
     public const int UniformFloats = GridAt + PlaneGrid.Floats;
     public const int UniformBytes = UniformFloats * 4;
 
+    /// <summary>3D editor bugs round 3 — how many times a selected object's edges are drawn: at (0, 0), (1, 0), (0, 1)
+    /// and (1, 1) pixels, a 2 × 2 brush — twice the one-pixel line every backend draws. Pass k's slot carries k in
+    /// <c>id.y</c> (x = k &amp; 1, y = k &gt;&gt; 1; 0 is no offset), applied after projection by the vertex shader.</summary>
+    public const int EdgePasses = 4;
+
+    /// <summary>3D editor bugs round 3 — the opacity an opaque object is drawn at while it is selected in Object mode
+    /// (fs_color; a translucent one keeps its own when that is already less). Drawn with the translucent objects,
+    /// sorted among them and writing no depth, so what it hides shows through; the ID pass is unchanged.</summary>
+    public const float SelectedAlpha = 0.5f;
+
+    /// <summary>3D editor round 3 — the depth bias a <see cref="Scene3DDraw.Behind"/> draw takes: a constant, in the depth
+    /// format's smallest resolvable steps, and a slope factor — a polygon offset pushing the dielectric AWAY from the eye, so a
+    /// coincident metal face passes LessEqual and the dielectric's does not. Small enough that a dielectric genuinely in
+    /// front of a metal (a passivation over a trace) still covers it at any zoom the depth range allows.</summary>
+    public const float BehindDepthBias = 4, BehindSlopeScale = 2;
+
+    /// <summary>The same bias as the CPU picks apply it (Scene3DPicking, Scene3DIdPatch): added to a Behind object's NDC
+    /// depth (and, relative, to its ray distance) — a few float steps at depth 1, so exactly coincident faces resolve to
+    /// the metal and nothing else changes.</summary>
+    public const float BehindNdc = 1e-6f;
+
+    /// <summary>Whether object <paramref name="id"/> gives way to a coincident metal face (<see cref="Scene3DDraw.Behind"/>).</summary>
+    public static bool IsBehind(Scene3DModel scene, uint id)
+        => id >= 1 && id <= scene.Objects.Length && scene.Objects[id - 1].Kind is Scene3DKind.Dielectric or Scene3DKind.Air;
+
     /// <summary>Flag bits in the uniform block's <c>flags</c>.</summary>
     public const uint FlagClip = 1, FlagCapBackFaces = 2;
 
@@ -232,6 +264,14 @@ public sealed class Scene3DFramePlan
     /// <summary>Per object (by ID − 1): its edge batch's index, or −1; and its triangle batch's.</summary>
     private int[] _edgeOf = [], _batchOf = [];
     private bool[] _marked = [];
+    /// <summary>Per object (by ID − 1): selected in Object mode this frame, so drawn faded (<see cref="SelectedAlpha"/>).</summary>
+    private bool[] _faded = [];
+    private readonly int[] _fadedIds = new int[SelectionLimit];
+    private int _fadedCount;
+    /// <summary>Per transform slot this frame: the first of its <see cref="EdgePasses"/> − 1 offset slots, or −1.</summary>
+    private int[] _edgeSlotsOf = [];
+    private int[] _edgeSlotKeys = new int[16];
+    private int _edgeSlotsUsed;
 
     /// <summary>brief-em3d-48 R-em3d48-3c — the most triangles a frame draws before array elements, farthest from the eye
     /// first, are drawn as their bounding boxes. The owner sets it (Settings); the status line says when it bites.</summary>
@@ -275,12 +315,13 @@ public sealed class Scene3DFramePlan
         var preview = view.Preview;
         WriteTransforms(preview);
         ChooseDetail(scene, view);
+        MarkFaded(view);
         var batches = scene.Batches;
         int owned = scene.OwnedBatches;
         for (int k = 0; k < owned; k++)
         {
             var b = batches[k];
-            if (!b.Translucent && view.IsDrawn(b.ObjectId))
+            if (!b.Translucent && !Faded(b.ObjectId) && view.IsDrawn(b.ObjectId))
                 AddMoved(preview, b.ObjectId, Scene3DPipeline.Opaque, Scene3DBuffer.Scene, b.FirstIndex, b.IndexCount, identity: true);
         }
         // brief-em3d-48 R-em3d48-3a — each element: ONE draw of its prototype's opaque triangles under its own transform
@@ -290,7 +331,7 @@ public sealed class Scene3DFramePlan
             if (_boxed[e]) continue;
             var el = scene.Elements[e];
             var g = scene.Groups[el.Group];
-            if (Whole(scene, view, preview, el, g, pickPass: false))
+            if (Whole(scene, view, preview, el, g, pickPass: false) && !AnyFaded(el))
             {
                 Add(ref Draws, ref DrawCount, Scene3DPipeline.Opaque, Scene3DBuffer.Scene, g.OpaqueFirst, g.OpaqueCount, ElementSlot(e));
                 continue;
@@ -298,7 +339,7 @@ public sealed class Scene3DFramePlan
             for (int k = el.FirstBatch; k < el.FirstBatch + el.BatchCount; k++)
             {
                 var b = batches[k];
-                if (!b.Translucent && view.IsDrawn(b.ObjectId))
+                if (!b.Translucent && !Faded(b.ObjectId) && view.IsDrawn(b.ObjectId))
                     AddMoved(preview, b.ObjectId, Scene3DPipeline.Opaque, Scene3DBuffer.Scene, b.FirstIndex, b.IndexCount, identity: true, e);
             }
         }
@@ -334,7 +375,8 @@ public sealed class Scene3DFramePlan
         }
         else Uniforms.AsSpan(GridAt, PlaneGrid.Floats).Clear();
 
-        // Translucent objects back to front, one draw each (brief 27 §2.4: per object, not per triangle).
+        // Translucent objects back to front, one draw each (brief 27 §2.4: per object, not per triangle) — and, 3D editor
+        // bugs round 3, an opaque object selected in Object mode, faded, among them.
         // Keyed on VIEW DEPTH, not distance from the eye: orthographic allows a negative near plane, so
         // after zooming in the eye sits inside the scene and objects behind it are still drawn — the
         // nearest to the viewer, though the eye is closer to them than to what they cover.
@@ -343,7 +385,7 @@ public sealed class Scene3DFramePlan
         int n = 0;
         for (int i = 0; i < batches.Length; i++)
         {
-            if (!batches[i].Translucent || !view.IsDrawn(batches[i].ObjectId)) continue;
+            if (!(batches[i].Translucent || Faded(batches[i].ObjectId)) || !view.IsDrawn(batches[i].ObjectId)) continue;
             if (batches[i].Element >= 0 && _boxed[batches[i].Element]) continue;
             _order[n] = i;
             _keys[n] = -Vector3.Dot(scene.Objects[batches[i].ObjectId - 1].Centroid - eye, forward);
@@ -353,8 +395,10 @@ public sealed class Scene3DFramePlan
         for (int k = 0; k < n; k++)
         {
             var b = batches[_order[k]];
-            AddMoved(preview, b.ObjectId, Scene3DPipeline.Translucent, Scene3DBuffer.Scene, b.FirstIndex, b.IndexCount, identity: true, b.Element);
+            AddMoved(preview, b.ObjectId, Scene3DPipeline.Translucent, Scene3DBuffer.Scene, b.FirstIndex, b.IndexCount, identity: true, b.Element,
+                     behind: IsBehind(scene, b.ObjectId));
         }
+        ClearFaded();
 
         // brief-em3d-43 — the selection, last: the edges of each selected object (Object mode) or of each
         // object with a selected face (Face mode), then those objects' triangles again for the selected
@@ -371,7 +415,9 @@ public sealed class Scene3DFramePlan
                 if (_edgeOf[id - 1] is int e and >= 0)
                 {
                     var eb = scene.EdgeBatches[e];
+                    int from = DrawCount;
                     AddMoved(preview, id, Scene3DPipeline.Edges, Scene3DBuffer.SceneLines, eb.FirstVertex, eb.VertexCount, identity: false, eb.Element);
+                    Thicken(from);
                 }
                 if (view.Mode == Scene3DSelectMode.Face && _batchOf[id - 1] is int t and >= 0)
                 {
@@ -384,6 +430,8 @@ public sealed class Scene3DFramePlan
                 uint id = view.Selection[k].Object;
                 if (id >= 1 && id <= _marked.Length) _marked[id - 1] = false;
             }
+            for (int k = 0; k < _edgeSlotsUsed; k++) _edgeSlotsOf[_edgeSlotKeys[k]] = -1;
+            _edgeSlotsUsed = 0;
         }
 
         Pick = pick && view.CursorX >= 0 && view.CursorY >= 0 && view.CursorX < width && view.CursorY < height;
@@ -398,7 +446,8 @@ public sealed class Scene3DFramePlan
             {
                 var b = batches[k];
                 if (view.IsVisible(b.ObjectId) && scene.Objects[b.ObjectId - 1].Pickable && preview?.IsMoving(b.ObjectId) != true)
-                    Add(ref PickDraws, ref PickDrawCount, Scene3DPipeline.Pick, Scene3DBuffer.Scene, b.FirstIndex, b.IndexCount);
+                    Add(ref PickDraws, ref PickDrawCount, Scene3DPipeline.Pick, Scene3DBuffer.Scene, b.FirstIndex, b.IndexCount,
+                        behind: IsBehind(scene, b.ObjectId));
             }
             for (int e = 0; e < _elements; e++)
             {
@@ -412,11 +461,83 @@ public sealed class Scene3DFramePlan
                     var b = batches[k];
                     if (whole && !b.Translucent) continue;
                     if (view.IsVisible(b.ObjectId) && scene.Objects[b.ObjectId - 1].Pickable && preview?.IsMoving(b.ObjectId) != true)
-                        Add(ref PickDraws, ref PickDrawCount, Scene3DPipeline.Pick, Scene3DBuffer.Scene, b.FirstIndex, b.IndexCount, ElementSlot(e));
+                        Add(ref PickDraws, ref PickDrawCount, Scene3DPipeline.Pick, Scene3DBuffer.Scene, b.FirstIndex, b.IndexCount, ElementSlot(e),
+                            IsBehind(scene, b.ObjectId));
                 }
             }
         }
         TransformCount = _nextSlot;
+    }
+
+    /// <summary>3D editor bugs round 3 — marks the objects selected in Object mode (the first <see cref="SelectionLimit"/>, the
+    /// ones the shader fades) for this frame.</summary>
+    private void MarkFaded(Viewer3DViewState view)
+    {
+        _fadedCount = 0;
+        if (view.Mode != Scene3DSelectMode.Object) return;
+        int limit = Math.Min(view.Selection.Length, SelectionLimit);
+        for (int k = 0; k < limit; k++)
+        {
+            uint id = view.Selection[k].Object;
+            if (id < 1 || id > _faded.Length || _faded[id - 1]) continue;
+            _faded[id - 1] = true;
+            _fadedIds[_fadedCount++] = (int)id - 1;
+        }
+    }
+
+    private void ClearFaded()
+    {
+        for (int k = 0; k < _fadedCount; k++) _faded[_fadedIds[k]] = false;
+        _fadedCount = 0;
+    }
+
+    private bool Faded(uint id) => _fadedCount > 0 && id >= 1 && id <= _faded.Length && _faded[id - 1];
+
+    private bool AnyFaded(in Scene3DElement el)
+    {
+        if (_fadedCount == 0) return false;
+        for (uint id = el.FirstId; id < el.FirstId + (uint)el.Count; id++)
+            if (Faded(id)) return true;
+        return false;
+    }
+
+    /// <summary>3D editor bugs round 3 — the edge draws from <paramref name="from"/> on, drawn again one pixel right, one
+    /// down and one diagonally: each under a slot copying its own (matrix and id offset) with the pass in <c>id.y</c>. A
+    /// slot's offset copies are made once a frame, however many draws share it.</summary>
+    private void Thicken(int from)
+    {
+        int to = DrawCount;
+        for (int k = from; k < to; k++)
+        {
+            var d = Draws[k];
+            int first = EdgeSlots(d.Transform);
+            for (int pass = 1; pass < EdgePasses; pass++)
+                Add(ref Draws, ref DrawCount, d.Pipeline, d.Buffer, d.First, d.Count, first + pass - 1);
+        }
+    }
+
+    private int EdgeSlots(int slot)
+    {
+        if (slot >= _edgeSlotsOf.Length)
+        {
+            int old = _edgeSlotsOf.Length;
+            Array.Resize(ref _edgeSlotsOf, Math.Max(slot + 1, Math.Max(16, 2 * old)));
+            Array.Fill(_edgeSlotsOf, -1, old, _edgeSlotsOf.Length - old);
+        }
+        if (_edgeSlotsOf[slot] >= 0) return _edgeSlotsOf[slot];
+        int start = _nextSlot;
+        EnsureSlots(start + EdgePasses - 1);
+        var m = ReadMatrix(slot, out uint idOff);
+        for (int pass = 1; pass < EdgePasses; pass++)
+        {
+            WriteSlot(start + pass - 1, m, idOff);
+            Transforms[TransformFloats * (start + pass - 1) + 17] = BitConverter.UInt32BitsToSingle((uint)pass);
+        }
+        _nextSlot = start + EdgePasses - 1;
+        _edgeSlotsOf[slot] = start;
+        if (_edgeSlotsUsed == _edgeSlotKeys.Length) Array.Resize(ref _edgeSlotKeys, 2 * _edgeSlotKeys.Length);
+        _edgeSlotKeys[_edgeSlotsUsed++] = slot;
+        return start;
     }
 
     /// <summary>Whether element <paramref name="el"/> draws its opaque triangles in ONE draw this frame: its group's opaque
@@ -466,7 +587,7 @@ public sealed class Scene3DFramePlan
 
     private void Size(Scene3DModel scene)
     {
-        int need = scene.Batches.Length + scene.LineBatches.Length + 6 + 2 * Math.Min(scene.Objects.Length, SelectionLimit);
+        int need = scene.Batches.Length + scene.LineBatches.Length + 6 + (1 + EdgePasses) * Math.Min(scene.Objects.Length, SelectionLimit);
         if (Draws.Length < need) Draws = new Scene3DDraw[need];
         if (PickDraws.Length < need) PickDraws = new Scene3DDraw[need];
         _keys = new float[scene.Batches.Length];
@@ -474,6 +595,8 @@ public sealed class Scene3DFramePlan
         _edgeOf = new int[scene.Objects.Length];
         _batchOf = new int[scene.Objects.Length];
         _marked = new bool[scene.Objects.Length];
+        _faded = new bool[scene.Objects.Length];
+        _fadedCount = 0;
         Array.Fill(_edgeOf, -1);
         Array.Fill(_batchOf, -1);
         for (int k = 0; k < scene.EdgeBatches.Length; k++) _edgeOf[scene.EdgeBatches[k].ObjectId - 1] = k;
@@ -504,30 +627,31 @@ public sealed class Scene3DFramePlan
         _sized = scene;
     }
 
-    private static void Add(ref Scene3DDraw[] list, ref int count, Scene3DPipeline p, Scene3DBuffer buf, int first, int n, int transform = 0)
+    private static void Add(ref Scene3DDraw[] list, ref int count, Scene3DPipeline p, Scene3DBuffer buf, int first, int n, int transform = 0,
+                            bool behind = false)
     {
         if (count == list.Length) Array.Resize(ref list, list.Length * 2);
-        list[count++] = new Scene3DDraw { Pipeline = p, Buffer = buf, First = first, Count = n, Transform = transform };
+        list[count++] = new Scene3DDraw { Pipeline = p, Buffer = buf, First = first, Count = n, Transform = transform, Behind = behind };
     }
 
     /// <summary>A draw of object <paramref name="id"/>'s batch: as it is when nothing moves it (under its element's
     /// transform, for an element's object); under each of the preview's copies when it moves — and also as it is when
     /// the preview keeps the original and <paramref name="identity"/> says the original is drawn in this pass.</summary>
     private void AddMoved(Scene3DPreview? preview, uint id, Scene3DPipeline p, Scene3DBuffer buf, int first, int n, bool identity,
-                          int element = -1)
+                          int element = -1, bool behind = false)
     {
         int own = element >= 0 ? ElementSlot(element) : 0;
         if (preview is null || !preview.IsMoving(id))
         {
-            Add(ref Draws, ref DrawCount, p, buf, first, n, own);
+            Add(ref Draws, ref DrawCount, p, buf, first, n, own, behind);
             return;
         }
-        if (identity && preview.KeepOriginal) Add(ref Draws, ref DrawCount, p, buf, first, n, own);
+        if (identity && preview.KeepOriginal) Add(ref Draws, ref DrawCount, p, buf, first, n, own, behind);
         int copies = Math.Min(preview.Copies.Length, MaxPreviewCopies);
         int start = element >= 0 ? ComboSlots(preview, element, copies) : _copyBase;
         for (int k = 0; k < copies; k++)
         {
-            Add(ref Draws, ref DrawCount, p, buf, first, n, start + k);
+            Add(ref Draws, ref DrawCount, p, buf, first, n, start + k, behind);
             TransformBytes += TransformBytesPerDraw;
         }
     }
@@ -656,7 +780,10 @@ public sealed class Scene3DFramePlan
         bits[27] = (uint)view.Mode;
         int nsel = Math.Min(view.Selection.Length, SelectionLimit);
         bits[28] = (uint)nsel;
-        bits[29] = bits[30] = bits[31] = 0;
+        // 3D editor bugs round 3 — clip units per pixel (x, y), for the vertex shader's pixel offset of a thickened edge.
+        u[29] = w > 0 ? 2f / w : 0;
+        u[30] = h > 0 ? 2f / h : 0;
+        bits[31] = 0;
         for (int k = 0; k < SelectionLimit; k++)
         {
             bool on = k < nsel;

@@ -43,6 +43,10 @@ public sealed class Viewer3DOverlay : Control
     /// <summary>The axis indicator's arm length and its centre's inset from the corner, DIPs.</summary>
     public const double AxisArm = 30, AxisInset = 46;
 
+    /// <summary>Half an axis letter (11 px text), and the reach of a click on the indicator: out to the far edge of a
+    /// letter drawn on the ring.</summary>
+    internal const double AxisLetterHalf = 7, AxisHitRadius = AxisArm + 8 + AxisLetterHalf;
+
     /// <summary>The scale bar aims for about this many DIPs.</summary>
     public const double ScaleBarTarget = 110;
 
@@ -342,15 +346,18 @@ public sealed class Viewer3DOverlay : Control
     /// triads: Z the Top view, Y the Front (the XZ plane — Front looks along +y), X the Right (the YZ plane). Asked again
     /// from that view it turns to the opposite one (Bottom, Back, Left) — an axis seen end-on is the dot at the ring's
     /// centre, so Top, double-clicked there, turns to Bottom. Anywhere else inside the ring is Isometric.
+    /// <para>3D editor bugs round 3 — an arm in the view plane is drawn full length, its letter centred on the ring
+    /// (AxisArm + 8), so half the letter lay outside the old reach (AxisArm + 10 from the centre, AxisArm + 12 along the
+    /// arm): from the Right view a double-click on the Z letter asked for nothing. The reach now covers the whole letter.</para>
     /// </summary>
     public static StandardView3D? AxisIndicatorHit(in Camera3D cam, Point o, Point p)
     {
         var d = p - o;
-        if (d.X * d.X + d.Y * d.Y > (AxisArm + 10) * (AxisArm + 10)) return null;
+        if (d.X * d.X + d.Y * d.Y > AxisHitRadius * AxisHitRadius) return null;
         var r = cam.Right; var u = cam.Up; var f = cam.Forward;
         Span<Vector3> axes = [Vector3.UnitX, Vector3.UnitY, Vector3.UnitZ];
         int best = -1;
-        double bestDist = 5, bestDepth = double.MaxValue;
+        double bestDist = AxisLetterHalf, bestDepth = double.MaxValue;
         for (int k = 0; k < 3; k++)
         {
             var dir = new Point(Vector3.Dot(r, axes[k]), -Vector3.Dot(u, axes[k]));
@@ -361,7 +368,7 @@ public sealed class Viewer3DOverlay : Control
             {
                 // Along the arm and out to its letter (drawn 8 DIPs past the tip): the distance to that segment. The
                 // first 6 DIPs are left to an axis seen end-on, whose dot is there.
-                double reach = AxisArm * len + 12;
+                double reach = AxisArm * len + 8 + AxisLetterHalf;
                 var unit = new Point(dir.X / len, dir.Y / len);
                 double t = Math.Clamp(d.X * unit.X + d.Y * unit.Y, 6, reach);
                 double dx = d.X - unit.X * t, dy = d.Y - unit.Y * t;

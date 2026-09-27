@@ -7,6 +7,8 @@
 //     the cursor says — a geometry snap projected onto the axis, so a snap still decides HOW FAR, or else the point
 //     of the axis nearest the cursor's ray, on the grid. Shift+X/Y/Z locks it to the plane NORMAL to that axis;
 //   * with nothing locked the target is the snapped point, or the drawing-plane point when nothing is snapped;
+//     holding SHIFT (3D editor bugs round 3) holds it to the world axis whose line through the base passes nearest
+//     the cursor — an axis lock for as long as Shift is down, chosen by where the cursor went;
 //   * digits open the typed field: dx, dy, dz, or one distance along a locked axis — exact in DBU.
 //
 // A displacement between two exact points is an integer DBU vector (R-em3d46-2d). One between inexact points is
@@ -88,9 +90,12 @@ public sealed class MoveTool : C3dOperationTool
         C3dMoveLock.PlaneX => C3dAxis.X, C3dMoveLock.PlaneY => C3dAxis.Y, C3dMoveLock.PlaneZ => C3dAxis.Z, _ => null,
     };
 
+    /// <summary>The axis Shift held the last evaluated target to, or null.</summary>
+    private C3dAxis? _shiftAxis;
+
     public override string ConstraintText => Lock switch
     {
-        C3dMoveLock.None => "",
+        C3dMoveLock.None => _shiftAxis is { } s ? $"along {s} only (Shift)" : "",
         C3dMoveLock.AxisX or C3dMoveLock.AxisY or C3dMoveLock.AxisZ => $"along {AxisLocked} only",
         _ => $"in the {DrawingPlane.PlaneNormalTo(PlaneNormal!.Value)} plane only",
     };
@@ -98,7 +103,7 @@ public sealed class MoveTool : C3dOperationTool
     public override string Prompt => Step == 0
         ? $"{Name}: click the base point."
         : $"{Name}: click the target point" + (ConstraintText.Length > 0 ? $" ({ConstraintText})" : "")
-          + " — X, Y or Z locks an axis, Shift+X/Y/Z a plane; type a distance; Esc cancels.";
+          + " — X, Y or Z locks an axis, Shift+X/Y/Z a plane, Shift held the nearest axis; type a distance; Esc cancels.";
 
     public override bool Key(Key key, KeyModifiers modifiers)
     {
@@ -120,12 +125,8 @@ public sealed class MoveTool : C3dOperationTool
     private (C3dPoint3 Target, bool Exact)? Target(in C3dDrawInput input, out string? refusal)
     {
         refusal = null;
-        if (AxisLocked is { } axis)
-        {
-            if (Host.Along(_base, axis, input) is not { } w) { refusal = $"The cursor's line of sight runs along {axis}: orbit, or type the distance."; return null; }
-            bool exact = input.Snap is null || !input.SnapOnGeometry || input.SnapExact;
-            return (DrawingPlane.With(_base, axis, w), exact);
-        }
+        _shiftAxis = null;
+        if (AxisLocked is { } axis) return OnAxis(axis, input, out refusal);
         if (PlaneNormal is { } n)
         {
             if (input.Snap is { } s && input.SnapOnGeometry) return (DrawingPlane.With(s, n, DrawingPlane.Get(_base, n)), input.SnapExact);
@@ -140,8 +141,22 @@ public sealed class MoveTool : C3dOperationTool
             long R(double m) => (long)Math.Round(m / per, MidpointRounding.AwayFromZero);
             return (DrawingPlane.With(new C3dPoint3(R(hit.X), R(hit.Y), R(hit.Z)), n, DrawingPlane.Get(_base, n)), true);
         }
+        if (input.Free && input.HasRay && DrawingPlane.AxisNearestRay(M(_base), input.RayOrigin!.Value, input.RayDirection!.Value) is { } nearest)
+        {
+            _shiftAxis = nearest;
+            return OnAxis(nearest, input, out refusal);
+        }
         if (Host.FreePoint(input, out refusal) is not { } p) return null;
         return (p, input.Snap is null || !input.SnapOnGeometry || input.SnapExact);
+    }
+
+    /// <summary>The target on the line through the base along <paramref name="axis"/>: how far along it the cursor says.</summary>
+    private (C3dPoint3 Target, bool Exact)? OnAxis(C3dAxis axis, in C3dDrawInput input, out string? refusal)
+    {
+        refusal = null;
+        if (Host.Along(_base, axis, input) is not { } w) { refusal = $"The cursor's line of sight runs along {axis}: orbit, or type the distance."; return null; }
+        bool exact = input.Snap is null || !input.SnapOnGeometry || input.SnapExact;
+        return (DrawingPlane.With(_base, axis, w), exact);
     }
 
     public override C3dOperationTransform? Current(in C3dDrawInput input, out string? refusal)

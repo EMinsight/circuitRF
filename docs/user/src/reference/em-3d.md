@@ -190,7 +190,10 @@ model circuitRF built, and after a run it also shows what the solver made.
   violet symmetry. The **object tree** lists every solid, and a click in the view picks one and names it.
   In the 3D editor the tree is headed **Objects** and lists the document's objects **by material** (the
   default — objects with no material come first, in their own group) or **by type** (boxes, sheets,
-  cylinders, …), chosen in its header. The filter at the header's right hides tree rows by type or by
+  cylinders, …), chosen in its header. By material a row does not repeat the material its group is headed
+  by; an object's construction order is its name's tooltip. The **air box** is always listed once the view
+  has content — under **Air** by material, first under Boxes by type — and says which setup it belongs to,
+  or that no setup is active yet. The filter at the header's right hides tree rows by type or by
   material, and its icon changes while it hides anything; it never hides an object in the view.
 - **Camera.** Drag to orbit; right-drag, middle-drag, Alt-drag or Shift-drag to pan; scroll to zoom. **Home**
   fits the model. **1** is isometric, **2**–**7** are the six orthographic views, and **P** switches between
@@ -263,8 +266,9 @@ model circuitRF built, and after a run it also shows what the solver made.
   (**Cmd+D**) duplicates the selection and moves the copies; **Esc** cancels both. *Array…* makes copies
   along up to three axes at a pitch, shown as you type. *Align* lines the others up with the last one
   selected, by their minimum, centre or maximum on an axis. *Order* moves objects in the construction
-  order — where two solids overlap, the later one wins — and the tree and the Properties panel show each
-  object's place in it. The **gizmo** at the selection's centre moves it too: drag an arrow to move along
+  order — where two solids overlap, the later one wins, except that **metal always wins over a dielectric**
+  whatever the order (an air object drawn after a metal still cuts a hole in it) — and the tree and the
+  Properties panel show each object's place in it. The **gizmo** at the selection's centre moves it too: drag an arrow to move along
   that axis, or a square to move in that plane. While any of these runs nothing is changed yet; the
   selection moves on screen, and the document changes once, as one undo step, when you click or release. A
   rotation keeps an object what it was — a rotated box is still a box — and the file stores it as at most

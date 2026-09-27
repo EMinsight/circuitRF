@@ -126,7 +126,11 @@ public sealed partial class C3dEditorViewModel
         foreach (var (prefix, owner) in C3dBindings.OwnersOf(obj))
             foreach (var (spec, k, path) in C3dBindings.FieldsOf(owner, prefix))
             {
-                if (C3dBindings.GetNumber(owner, spec, k) is not { } n && C3dBindings.GetExpr(owner, spec.Property, k) is null) continue;
+                // 3D editor round 3 — a wire has no placement (every operation bakes it into the points), so its placement
+                // fields are not offered; its diameter is offered even when unstated, at the default it is built with.
+                if (obj is C3dWire && prefix.StartsWith("Placement.", StringComparison.Ordinal)) continue;
+                bool wireDefault = obj is C3dWire { DiameterUm: null } && path == nameof(C3dWire.DiameterUm);
+                if (!wireDefault && C3dBindings.GetNumber(owner, spec, k) is not { } n && C3dBindings.GetExpr(owner, spec.Property, k) is null) continue;
                 var e = C3dBindings.GetExpr(owner, spec.Property, k);
                 string text;
                 string value = "";
@@ -142,9 +146,14 @@ public sealed partial class C3dEditorViewModel
                             _ => si.ToString("0", System.Globalization.CultureInfo.InvariantCulture),
                         };
                 }
-                else text = SpellNumber(spec.Kind, C3dBindings.GetNumber(owner, spec, k) ?? 0);
+                else text = SpellNumber(spec.Kind, wireDefault ? C3dWires.DefaultDiameterUm : C3dBindings.GetNumber(owner, spec, k) ?? 0);
+                if (e is null && wireDefault) value = "The default (1 mil)";
                 string? error = res.FieldErrors.FirstOrDefault(x => x.Item == obj.Name && x.Path == path)?.Message;
-                yield return new C3dDimensionField { Path = path, ValueText = value, Error = error, IsExpression = e is not null, Text = text, Loaded = text };
+                yield return new C3dDimensionField
+                {
+                    Path = path, Label = C3dPropertiesViewModel.FieldLabel(obj, path), ValueText = value, Error = error,
+                    IsExpression = e is not null, Text = text, Loaded = text,
+                };
             }
     }
 
@@ -186,12 +195,22 @@ public sealed partial class C3dEditorViewModel
             {
                 case C3dFieldKind.Length:
                     if (LayoutUnits.TryParse(text, Document.DisplayUnit, Document.DbuPerMicron, out long dbu))
-                    { C3dBindings.SetExpr(f.Owner, f.Spec, f.Component, null); C3dBindings.SetNumber(f.Owner, f.Spec, f.Component, dbu); return null; }
+                    {
+                        if (dbu <= 0 && MustBePositive(path)) return $"{C3dPropertiesViewModel.FieldLabel(obj, path)} is a positive length.";
+                        C3dBindings.SetExpr(f.Owner, f.Spec, f.Component, null); C3dBindings.SetNumber(f.Owner, f.Spec, f.Component, dbu); return null;
+                    }
                     var (expr, unit) = SplitUnit(text, Document.DisplayUnit);
                     return Bind(f, expr, C3dUnits.Stored(unit));
                 case C3dFieldKind.Microns:
-                    if (double.TryParse(text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double um))
-                    { C3dBindings.SetExpr(f.Owner, f.Spec, f.Component, null); C3dBindings.SetNumber(f.Owner, f.Spec, f.Component, um); return null; }
+                    // A bare number is µm; a length with a unit written against it ("1mil") is that length, in µm.
+                    bool isUm = double.TryParse(text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double um);
+                    if (!isUm && LayoutUnits.TryParse(text, LayoutUnit.Um, Document.DbuPerMicron, out long umDbu))
+                        (isUm, um) = (true, (double)LayoutUnits.FromDbu(umDbu, LayoutUnit.Um, Document.DbuPerMicron));
+                    if (isUm)
+                    {
+                        if (um <= 0 || !double.IsFinite(um)) return $"{C3dPropertiesViewModel.FieldLabel(obj, path)} is a positive length.";
+                        C3dBindings.SetExpr(f.Owner, f.Spec, f.Component, null); C3dBindings.SetNumber(f.Owner, f.Spec, f.Component, um); return null;
+                    }
                     var (e2, u2) = SplitUnit(text, LayoutUnit.Um);
                     return Bind(f, e2, C3dUnits.Stored(u2));
                 case C3dFieldKind.Angle:
@@ -207,6 +226,10 @@ public sealed partial class C3dEditorViewModel
                     return Bind(f, text, null);
             }
         });
+
+        // A box's or a rectangle's size, a radius: what a zero or negative number would make is no solid at all.
+        static bool MustBePositive(string path)
+            => path is "Size[0]" or "Size[1]" or "Size[2]" or "Rect.Size[0]" or "Rect.Size[1]" or "Radius";
 
         static string? Bind((IC3dBindable Owner, C3dFieldSpec Spec, int Component) f, string expr, string? unit)
         {

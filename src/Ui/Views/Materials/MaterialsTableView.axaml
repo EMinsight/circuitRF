@@ -97,7 +97,7 @@
                     <ColumnDefinition Width="50"/>
                     <ColumnDefinition Width="84"/>
                     <ColumnDefinition Width="64"/>
-                    <ColumnDefinition Width="72"/>
+                    <ColumnDefinition Width="100"/>
                     <ColumnDefinition Width="*" MinWidth="80"/>
                 </Grid.ColumnDefinitions>
                 <TextBlock Grid.Column="0"  Classes="colhdr" Text="Name"/>
@@ -128,7 +128,7 @@
                                 <ColumnDefinition Width="50"/>
                                 <ColumnDefinition Width="84"/>
                                 <ColumnDefinition Width="64"/>
-                                <ColumnDefinition Width="72"/>
+                                <ColumnDefinition Width="100"/>
                                 <ColumnDefinition Width="*" MinWidth="80"/>
                             </Grid.ColumnDefinitions>
                             <TextBox Grid.Column="0" Classes="cell" IsReadOnly="{Binding !IsEditable}" KeyDown="OnCellKeyDown"
@@ -151,9 +151,26 @@
                                      ToolTip.Tip="Conductivity at 20 °C. Accepts 41e6 or 41M."/>
                             <TextBox Grid.Column="8" Classes="cell" IsReadOnly="{Binding !IsEditable}" KeyDown="OnCellKeyDown"
                                      Text="{Binding Alpha20Text, UpdateSourceTrigger=LostFocus}"/>
-                            <TextBox Grid.Column="9" Classes="cell" IsReadOnly="{Binding !IsEditable}" KeyDown="OnCellKeyDown"
-                                     Text="{Binding ColorText, UpdateSourceTrigger=LostFocus}" PlaceholderText="#rrggbb"
-                                     ToolTip.Tip="The colour the 3D view draws it in. Empty: the view's own palette."/>
+                            <!-- The Layers tab's swatch button, opening the application's one ColorPickerDialog; the
+                                 hex box stays, since typing a colour and clearing it (empty = the view's palette)
+                                 are both still wanted. -->
+                            <Grid Grid.Column="9" ColumnDefinitions="Auto,*" ColumnSpacing="3">
+                                <Button Grid.Column="0" Width="26" Padding="2" VerticalAlignment="Center"
+                                        IsEnabled="{Binding IsEditable}"
+                                        Command="{Binding PickColorCommand}"
+                                        CommandParameter="{Binding $parent[Window]}"
+                                        ToolTip.Tip="Pick the colour the 3D view draws it in.">
+                                    <Border Width="18" Height="12" CornerRadius="2"
+                                            BorderBrush="{DynamicResource CrfTileBorderBrush}" BorderThickness="1">
+                                        <Border.Background>
+                                            <SolidColorBrush Color="{Binding SwatchColor}"/>
+                                        </Border.Background>
+                                    </Border>
+                                </Button>
+                                <TextBox Grid.Column="1" Classes="cell" IsReadOnly="{Binding !IsEditable}" KeyDown="OnCellKeyDown"
+                                         Text="{Binding ColorText, UpdateSourceTrigger=LostFocus}" PlaceholderText="#rrggbb"
+                                         ToolTip.Tip="The colour the 3D view draws it in. Empty: the view's own palette."/>
+                            </Grid>
                             <TextBlock Grid.Column="10" Text="{Binding UsedByText}" ToolTip.Tip="{Binding UsedByTip}"
                                        VerticalAlignment="Center" FontSize="11" TextTrimming="CharacterEllipsis"/>
                         </Grid>

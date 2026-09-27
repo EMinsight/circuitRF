@@ -303,9 +303,11 @@ public static class Em3dSectionScene
                                                 new Uv(xs[i], sh.Z), new Uv(xs[i + 1], sh.Z), sh.ThicknessM));
         }
 
-        // Construction order is paint order: where two solids overlap the later one wins the volume
-        // (R-em3d3-1d), so painting it later shows exactly the solid that owns each point.
-        regions.Sort((a, b) => a.Order.CompareTo(b.Order));
+        // Precedence is paint order: where two solids overlap the higher one wins the volume — metal over
+        // dielectric, then construction order within each (Em3dPrecedence; em-3d.md §6.3a) — so painting it
+        // later shows exactly the solid that owns each point, as both solvers see it.
+        var precedence = Em3dPrecedence.Of(problem);
+        regions.Sort((a, b) => precedence.Of(a.Role, a.Order, a.IsSheet).CompareTo(precedence.Of(b.Role, b.Order, b.IsSheet)));
 
         var ports = problem.Ports.Select(p =>
         {
@@ -506,7 +508,8 @@ public static class Em3dSectionScene
                     lines.Add(new Em3dSceneLine(sh.Name, Em3dRole.Conductor, sh.Material, sh.Order, true,
                                                 Project(sh.World(ring[j])), Project(sh.World(ring[i])), sh.ThicknessM));
 
-        lines.Sort((a, b) => a.Order.CompareTo(b.Order));
+        var precedence = Em3dPrecedence.Of(problem);
+        lines.Sort((a, b) => precedence.Of(a.Role, a.Order, a.IsSheet).CompareTo(precedence.Of(b.Role, b.Order, b.IsSheet)));
 
         var ports = problem.Ports.Select(p =>
         {

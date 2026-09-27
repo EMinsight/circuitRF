@@ -41,7 +41,9 @@ public sealed class EditorRound2TreeTests : IDisposable
     {
         var vm = Open(Doc());
         Assert.Equal(C3dTreeGrouping.Material, vm.TreeGrouping);
-        Assert.Equal([C3dEditorViewModel.NoMaterialHeader, "Copper", "Fill"], vm.Tree.Select(g => g.Header));
+        // Round 3: the air box is listed with no setup too, under the material that fills it, in name order.
+        Assert.Equal([C3dEditorViewModel.NoMaterialHeader, "Air", "Copper", "Fill"], vm.Tree.Select(g => g.Header));
+        Assert.Equal([C3dEditorViewModel.AirBoxName], Names(vm, "Air"));
         Assert.Equal(["gnd", "trace"], Names(vm, "Copper"));             // construction order within a group
         Assert.Equal(["bare"], Names(vm, C3dEditorViewModel.NoMaterialHeader));
     }
@@ -53,7 +55,7 @@ public sealed class EditorRound2TreeTests : IDisposable
         vm.TreeGroupingText = "By type";
         Assert.Equal(C3dTreeGrouping.Primitive, vm.TreeGrouping);
         Assert.Equal(["Boxes", "Sheets"], vm.Tree.Select(g => g.Header));
-        Assert.Equal(["sub", "bare"], Names(vm, "Boxes"));
+        Assert.Equal([C3dEditorViewModel.AirBoxName, "sub", "bare"], Names(vm, "Boxes"));
     }
 
     [Fact]
@@ -70,11 +72,11 @@ public sealed class EditorRound2TreeTests : IDisposable
         Assert.NotNull(vm.SceneObject("trace"));                         // still drawn
 
         vm.TypeFilters.Single(f => f.Name == "Boxes").IsChecked = false;
-        Assert.Empty(vm.Tree);
+        Assert.Equal(["Air"], vm.Tree.Select(g => g.Header));           // the air box is a setup's record: never filtered
 
         vm.ShowAllTreeRowsCommand.Execute(null);
         Assert.False(vm.IsTreeFilterActive);
-        Assert.Equal(4, vm.Tree.SelectMany(g => g.Items).Count());
+        Assert.Equal(5, vm.Tree.SelectMany(g => g.Items).Count());      // four objects and the air box
     }
 
     [Fact]
@@ -92,6 +94,37 @@ public sealed class EditorRound2TreeTests : IDisposable
         // And a pick in the scene still lands on its node in the regrouped tree.
         vm.Viewer.SetSelection([CircuitRF.Render.Scene3D.Edit.Scene3DItem.OfObject(vm.SceneObject("sub")!.Id)]);
         Assert.Equal("sub", vm.SelectedTreeItem?.Name);
+    }
+
+    [Fact]
+    public void Round3_TheAirBoxIsListedWithNoSetup_AndSelectingItSaysWhatAddsOne()
+    {
+        var vm = Open(Doc());
+        var box = vm.Tree.Single(g => g.Header == "Air").Items.Single();
+        Assert.True(box.IsAirBox);
+        Assert.Equal("no active setup", box.Detail);
+        Assert.False(vm.TreeMenuItems(box).Single(m => m.Header == "Delete").Enabled);
+
+        vm.SelectedTreeItem = box;
+        Assert.Equal("Air box", vm.Properties.Heading);
+        Assert.Contains(vm.Properties.Rows, r => r.Label == "Setup" && r.Value.Contains("Setup Analyses"));
+    }
+
+    [Fact]
+    public void Round3_ByMaterial_ARowDoesNotRepeatItsGroupsMaterial_ByTypeItDoes_AndNoRowCarriesAnOrderNumber()
+    {
+        var vm = Open(Doc());
+        Assert.All(vm.Tree.SelectMany(g => g.Items).Where(i => i.ObjectIndex >= 0), i => Assert.Null(i.Detail));
+
+        vm.TreeGrouping = C3dTreeGrouping.Primitive;
+        var trace = vm.Tree.Single(g => g.Header == "Sheets").Items.Single(i => i.Name == "trace");
+        Assert.Equal("Copper", trace.Detail);
+
+        // Construction order is the name's tooltip, not a "#n" in front of it.
+        Assert.StartsWith("Construction order 3:", trace.OrderTip);
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (!File.Exists(Path.Combine(dir!.FullName, "circuitrf.slnx"))) dir = dir.Parent;
+        Assert.DoesNotContain("OrderText", File.ReadAllText(Path.Combine(dir.FullName, "src/Ui/Views/ThreeD/C3dEditorView.axaml")));
     }
 
     // ── fixtures ────────────────────────────────────────────────────────────────────────────

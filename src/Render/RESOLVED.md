@@ -4072,3 +4072,77 @@ polyhedron had no edges at all. A box moved at a vertex becomes a polyhedron: fi
 material-less, drawn as edges only, it disappeared and only its hover highlight showed. The edges are now keyed by the
 corners welded by position, as `Scene3DFeatureTable` (the snap's features) has always welded them. The engine's
 tessellation is untouched. Anything else that repeats corners per face (a prism's walls) gains its outline too.
+
+
+## 3D editor bugs round 3 (owner, 2026-09-26)
+
+### 3D editor bugs round 3 — the grid vanished below a ~10 µm scale: a perspective zoom went THROUGH the plane
+
+- **Not precision, not the shader.** A float emulation of `fs_grid` and a real-Metal offscreen render both drew the
+  grid cleanly down to ~10 pm/px with the target on the plane. It reproduced only in PERSPECTIVE with the orbit
+  target BELOW the drawing plane (plane on a substrate's top face, target at the scene's centre): at a 52 µm
+  distance (63 nm/px, a ~7 µm scale bar) the eye passed under the plane, which was then behind it and — correctly for
+  a perspective ray (`gq.w > 0.5 && t <= 0` discards) — not drawn. `Camera3D.ZoomAt` never changes the target's
+  DEPTH (it keeps the cursor's point on the focal plane through the target), so nothing stopped the dolly.
+  Orthographic draws the plane wherever the eye is and never showed it.
+- **Fix: `PlaneGrid.SeatTargetOnPlane`**, called by `Viewer3DViewModel.Zoom` before a zoom IN when the pane has a
+  visible drawing grid: if the cursor's ray meets the plane in front of the eye but nearer than the target's depth,
+  the target moves along the line of sight to that depth with the eye fixed — the picture is identical (perspective
+  depends only on eye, direction, fov) — and the zoom then approaches the plane by ×0.88 a notch, never reaching it.
+  The orbit centre therefore lands on the plane under the cursor. Objects are NOT considered (only the plane).
+- Side effect seen while probing: `PlaneGrid.Focus` falls back to the target dropped onto the plane when the plane is
+  behind the eye, and `MetresPerPixel` clamps that depth to 1e-6 × Distance, so the status line read "Grid 1 nm" in
+  that state. Unreachable now from a zoom; left as is.
+
+### 3D editor bugs round 3 — minor grid spacing: less dense far out, the snap step close in
+
+- `PlaneGrid.MinPixels` 8 → 14 (a 1-2-5 step then spans 14–35 px at the focus, was 8–20); the shader's per-fragment
+  decimation moved with it (`grid_weight`: nothing under 6 px, faint minor alpha by 14 px, full by major-every × that;
+  `k0` from 6 px). `MaxPixels` is now `MinPixels × 10` (was the brief's 40).
+- `DrawingGridSettings.SnapDbu` (set from `C3dEditorViewModel.SnapPitch` in `ApplyDrawingGrid`): once the snap step
+  spans MinPixels it IS the minor spacing (every crossing is a landable point) until it spans major-every ×
+  MinPixels, then it is divided by major-every so the snap step becomes the MAJOR lines — repeated while it divides
+  into whole DBU. A snap step that does not divide falls back to the display unit's own steps below it.
+- The three generated shaders were regenerated with `tools/ShaderGen` (naga 30.0.1); a merge that also changes
+  `scene.wgsl` must re-run it rather than 3-way-merge `scene.metal/.hlsl/.spv`.
+
+### Selected object faded, two-pixel outline
+
+- **No backend draws a line wider than one pixel** (Metal has no line width at all; D3D11 likewise; Vulkan's
+  `wideLines` is optional). So "thicker outline" cannot be a pipeline setting. `Scene3DFramePlan` now draws each
+  selected object's edge batch `EdgePasses` (4) times; passes 1-3 use a transform slot that COPIES the draw's own
+  slot (matrix + array id offset) and puts the pass number in the slot's spare `id.y`. The vertex shader offsets
+  the clip position by `(id.y & 1, id.y >> 1)` pixels × `w` — a 2 × 2 brush, i.e. 1 px → 2 px. The clip units per
+  pixel ride in the uniform block's old `pad0`/`pad1` (now `ppx`/`ppy`, floats 29/30) — no block size change, no
+  backend change. A slot's offset copies are made once a frame however many draws share it (all plain objects
+  share slot 0 → 3 extra slots total); preview copies each get their own three.
+- **Faded selection = routing, not just a shader alpha.** The opaque pipeline has no blend and writes depth, so an
+  Object-mode-selected object is taken OUT of the opaque draws (and out of an array element's one-draw fast path,
+  `AnyFaded`) and sorted into the translucent list; `fs_color` drops its alpha to `min(a, 0.5)`
+  (`Scene3DFramePlan.SelectedAlpha`). The ID pass is unchanged, so picking and snapping still see it. Only the first
+  `SelectionLimit` (64) are faded — the same entries the shader's `is_selected` can see; faded beyond that would
+  draw at alpha 1 with no depth write. Face and Vertex mode do not fade (their selection is a face/vertex, drawn
+  on top already). The read-only viewer shares the plan, so its selection fades too.
+- Draw counts changed: a Face-mode selection is now `EdgePasses + 1` draws, not 2
+  (`C3dEditorGateTests.Metal_…`, which runs on the real Metal device and now also exercises the Object-mode path).
+
+### Metal over dielectric at a coincident face (owner change, em-3d.md §6.3a)
+
+- Every solid is drawn WHOLE (no booleans in the view), dielectrics translucent, so a metal inside a dielectric already
+  showed through. The case the precedence rule changes is the COINCIDENT face — a pad flush with a substrate's top, a
+  trace ending on the board edge. There the depth test is `LessEqual` on every backend and the translucent pass comes
+  after the opaque one, so the dielectric's face passed wherever its interpolated depth came out equal or a float step
+  nearer — speckled tint over the metal, and (the ID pass has the same rule) a pick that could name the substrate.
+- `Scene3DDraw.Behind`, set by the frame plan on the Translucent and Pick draws of `Scene3DKind.Dielectric`/`Air`
+  objects (`Scene3DFramePlan.IsBehind`), asks for a polygon offset: `BehindDepthBias` 4 / `BehindSlopeScale` 2. Metal
+  sets it per draw on the encoder (`setDepthBias:slopeScale:clamp:`, only on change), D3D11 swaps to a second rasterizer
+  state, Vulkan binds a static twin of the Translucent and Pick pipelines with `depthBiasEnable` (no dynamic state, so
+  no new command to load). The CPU picks (`Scene3DPicking.Pick`/`PairAtPixel`, `Scene3DIdPatch.Render`) add
+  `BehindNdc` (1e-6, relative for the ray) to the same objects, so the gates and the D3D11/Vulkan patch fallback agree
+  with the GPU. `MetalPrecedenceTests.TheViewport_…` fails with the bias at 0 and passes with it.
+- A shader-side bias was considered and not used: the vertex does not carry its object's kind, and alpha alone cannot
+  tell a dielectric from a port sheet or a face tint (which is already lifted off its face and must not be pushed back
+  behind it).
+- The viewer OPENS with the outermost dielectric hidden (`InitiallyVisible` false for it) — a test of the substrate's
+  draw has to show it first.
+- D3D11 and Vulkan compile; only Metal ran (the gates' plan counters and the CPU picks are backend-free).

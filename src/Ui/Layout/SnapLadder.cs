@@ -32,6 +32,7 @@ public static class SnapLadder
     public static IReadOnlyList<string> Build(long baseDbu, LayoutUnit unit, int dbuPerMicron)
     {
         if (baseDbu <= 0) baseDbu = LayoutUnits.ToDbu(1m, LayoutUnit.Um, dbuPerMicron);
+        baseDbu = NiceBase(baseDbu, unit, dbuPerMicron);
         var rungs = new List<string>(Multipliers.Length);
         long previous = 0;
         foreach (var mult in Multipliers)
@@ -47,6 +48,28 @@ public static class SnapLadder
             rungs.Add(Spell(dbu, unit, dbuPerMicron));
         }
         return rungs;
+    }
+
+    /// <summary>
+    /// The base the rungs multiply, as a round number of <paramref name="unit"/> (3D editor bugs round 3). A base that is
+    /// already 1, 2, 2.5 or 5 × 10ⁿ of the display unit is kept. One that is not — a 1 µm process shown in mil is
+    /// 0.03937 mil, a 1 mil process shown in µm is 25.4 µm — is replaced by the power of ten of the display unit nearest
+    /// it (0.1 mil, 10 µm): the old ladder spelled every rung of the base's own unit converted, which offered choices
+    /// like 0.0039 mil and 1.9685 mil. A power of ten too small for one DBU keeps the original base.
+    /// </summary>
+    internal static long NiceBase(long baseDbu, LayoutUnit unit, int dbuPerMicron)
+    {
+        decimal v = LayoutUnits.FromDbu(baseDbu, unit, dbuPerMicron);
+        if (v <= 0) return baseDbu;
+        decimal p10 = 1m;
+        while (p10 > v) p10 /= 10m;
+        while (p10 * 10m <= v) p10 *= 10m;
+        decimal mantissa = v / p10;
+        if (mantissa is 1m or 2m or 2.5m or 5m) return baseDbu;
+        // Nearest power of ten on a log scale: above √10 · 10ⁿ, the next one up.
+        decimal nice = (double)mantissa >= Math.Sqrt(10) ? p10 * 10m : p10;
+        long dbu = LayoutUnits.ToDbu(nice, unit, dbuPerMicron);
+        return dbu > 0 ? dbu : baseDbu;
     }
 
     /// <summary>A snap distance as the control shows it: <c>1 mil</c>, <c>25.4 µm</c>.</summary>

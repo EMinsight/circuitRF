@@ -58,7 +58,7 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
     private int _fieldCount;
     private ID3D11BlendState _blendOff = null!, _blendOn = null!;
     private ID3D11DepthStencilState _dsWrite = null!, _dsNoWrite = null!, _dsOff = null!;
-    private ID3D11RasterizerState _raster = null!;
+    private ID3D11RasterizerState _raster = null!, _rasterBehind = null!;
     private ID3D11Buffer _cb = null!;
     /// <summary>brief-em3d-46 — the per-draw transform (register b1), 80 bytes (brief-em3d-48 added the id offset), rewritten only when a draw's slot changes.</summary>
     private ID3D11Buffer _cbTransform = null!;
@@ -186,6 +186,11 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
         var rs = RasterizerDescription.CullNone;
         rs.FrontCounterClockwise = true;
         _raster = dev.CreateRasterizerState(rs);
+        // 3D editor round 3 — a Behind draw (a dielectric, air): the same state with Scene3DFramePlan's polygon offset, so a
+        // metal face lying on the dielectric's wins the depth test.
+        rs.DepthBias = (int)Scene3DFramePlan.BehindDepthBias;
+        rs.SlopeScaledDepthBias = Scene3DFramePlan.BehindSlopeScale;
+        _rasterBehind = dev.CreateRasterizerState(rs);
         _cb = dev.CreateBuffer(new BufferDescription(Scene3DFramePlan.UniformBytes, BindFlags.ConstantBuffer, ResourceUsage.Default));
         _cbTransform = dev.CreateBuffer(new BufferDescription(Scene3DFramePlan.TransformBytesPerDraw, BindFlags.ConstantBuffer, ResourceUsage.Default));
 
@@ -382,6 +387,7 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
         SetTransform(ctx, plan, 0);
         int transform = 0;
         ctx.RSSetState(_raster);
+        bool behind = false;
 
         int slot = _rbHead % Ring;
         if (plan.Pick && plan.PickDrawCount > 0 && _vb is not null && _ib is not null && !_inFlight[slot])
@@ -402,6 +408,7 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
             for (int i = 0; i < plan.PickDrawCount; i++)
             {
                 ref var d = ref plan.PickDraws[i];
+                if (d.Behind != behind) ctx.RSSetState((behind = d.Behind) ? _rasterBehind : _raster);
                 // brief-em3d-48 — an array element's pick draw: its translation and id offset.
                 if (d.Transform != transform && d.Transform < plan.TransformCount)
                 {
@@ -430,6 +437,7 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
         for (int i = 0; i < plan.DrawCount; i++)
         {
             ref var d = ref plan.Draws[i];
+            if (d.Behind != behind) ctx.RSSetState((behind = d.Behind) ? _rasterBehind : _raster);
             var buf = d.Buffer switch
             {
                 Scene3DBuffer.Scene => _vb, Scene3DBuffer.SceneLines => _lines, Scene3DBuffer.Field => _field,
@@ -532,7 +540,7 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
         _pickId?.Dispose(); _pickPos?.Dispose(); _pickDepth?.Dispose();
         _cb?.Dispose(); _cbTransform?.Dispose(); _layout?.Dispose(); _vs?.Dispose(); _layoutField?.Dispose(); _vsField?.Dispose();
         _psColor?.Dispose(); _psLine?.Dispose(); _psPick?.Dispose(); _psField?.Dispose(); _psEdge?.Dispose(); _psTop?.Dispose(); _vsGrid?.Dispose(); _psGrid?.Dispose();
-        _blendOff?.Dispose(); _blendOn?.Dispose(); _dsWrite?.Dispose(); _dsNoWrite?.Dispose(); _dsOff?.Dispose(); _raster?.Dispose();
+        _blendOff?.Dispose(); _blendOn?.Dispose(); _dsWrite?.Dispose(); _dsNoWrite?.Dispose(); _dsOff?.Dispose(); _raster?.Dispose(); _rasterBehind?.Dispose();
         _ctx?.Dispose(); _device.Dispose();
     }
 

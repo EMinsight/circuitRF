@@ -104,6 +104,33 @@ public readonly record struct DrawingPlane(C3dPlane Plane, long OffsetDbu)
     }
 
     /// <summary>
+    /// 3D editor bugs round 3 — the world axis whose line through <paramref name="linePoint"/> passes nearest the cursor's
+    /// ray: what Shift holds a Move to. The distance is the two lines' closest approach, so the axis the cursor has moved
+    /// out along wins whichever plane it is drawn on. An axis the ray runs (nearly) along is never chosen — its line is
+    /// a dot on screen. Null only when the ray is degenerate.
+    /// </summary>
+    public static C3dAxis? AxisNearestRay(Point3 linePoint, Point3 origin, Point3 direction)
+    {
+        double dx = direction.X, dy = direction.Y, dz = direction.Z;
+        double c = dx * dx + dy * dy + dz * dz;
+        if (!(c > 0)) return null;
+        double wx = linePoint.X - origin.X, wy = linePoint.Y - origin.Y, wz = linePoint.Z - origin.Z;
+        C3dAxis? best = null;
+        double bestDist = double.PositiveInfinity;
+        foreach (var axis in (ReadOnlySpan<C3dAxis>)[C3dAxis.X, C3dAxis.Y, C3dAxis.Z])
+        {
+            var a = UnitNormal(axis);
+            // n = a × d; the lines' distance is |w · n| / |n|.
+            double nx = a.Y * dz - a.Z * dy, ny = a.Z * dx - a.X * dz, nz = a.X * dy - a.Y * dx;
+            double nn = nx * nx + ny * ny + nz * nz;
+            if (nn <= 0.0025 * c) continue;       // within ~3° of the line of sight
+            double dist = Math.Abs(wx * nx + wy * ny + wz * nz) / Math.Sqrt(nn);
+            if (dist < bestDist) { bestDist = dist; best = axis; }
+        }
+        return best;
+    }
+
+    /// <summary>
     /// R-em3d45-3a step 3 — the parameter (metres, along +<paramref name="axis"/>) of the point on the line through
     /// <paramref name="linePoint"/> along that axis that is closest to the ray: the closest points of two lines.
     /// Null when the ray runs along the line, where every point is equally close.
