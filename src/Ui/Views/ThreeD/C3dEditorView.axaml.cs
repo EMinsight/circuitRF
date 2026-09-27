@@ -38,6 +38,8 @@ public partial class C3dEditorView : UserControl
         AddHandler(KeyDownEvent, OnViewKeyTunnel, RoutingStrategies.Tunnel, handledEventsToo: true);
         AddHandler(GotFocusEvent, OnViewGotFocus, RoutingStrategies.Bubble, handledEventsToo: true);
         Pane.FramePresented += () => Overlay.InvalidateVisual();
+        ObjectTree.TemplateApplied += OnObjectTreeTemplateApplied;
+        ObjectTree.AddHandler(PointerPressedEvent, OnTreePointerPressedTunnel, RoutingStrategies.Tunnel);
         Pane.ContextMenuRequested += () =>
         {
             if (_vm is null) return;
@@ -183,11 +185,36 @@ public partial class C3dEditorView : UserControl
 
     private bool _mirroringTree;
 
+    /// <summary>
+    /// Ctrl-click adds a row to the selection or takes it out, on every platform. The TreeView's own toggle key is the
+    /// platform's COMMAND key — Ctrl on Windows and Linux, but Cmd on macOS, where Ctrl-click therefore did nothing but
+    /// select the one row. Cmd-click still reaches the TreeView and toggles as before; Shift-click is still its range.
+    /// A click on a row's tick or its expander is left to them.
+    /// </summary>
+    private void OnTreePointerPressedTunnel(object? sender, PointerPressedEventArgs e)
+    {
+        if (!e.KeyModifiers.HasFlag(KeyModifiers.Control) || e.KeyModifiers.HasFlag(KeyModifiers.Shift) ||
+            !e.GetCurrentPoint(ObjectTree).Properties.IsLeftButtonPressed || e.Source is not Visual source) return;
+        foreach (var v in source.GetSelfAndVisualAncestors())
+        {
+            if (v is Avalonia.Controls.Primitives.ToggleButton) return;          // a tick (CheckBox) or the expander
+            if (v is TreeViewItem { DataContext: C3dTreeItem row })
+            {
+                if (ObjectTree.SelectedItems is not { } selected) return;
+                if (selected.Contains(row)) selected.Remove(row); else selected.Add(row);
+                e.Handled = true;
+                return;
+            }
+            if (ReferenceEquals(v, ObjectTree)) return;
+        }
+    }
+
     /// <summary>The user changed the tree's selection: the view model keeps the order and selects in the scene.</summary>
     private void OnTreeSelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
         if (_mirroringTree || _vm is null) return;
-        _vm.TreeSelectionChanged(e.RemovedItems.OfType<C3dTreeItem>(), e.AddedItems.OfType<C3dTreeItem>());
+        // Clear-then-Add (a plain click) raises a Reset that names no removed rows: the tree's whole selection is the truth.
+        _vm.TreeSelectionChanged([.. ObjectTree.SelectedItems.OfType<C3dTreeItem>()]);
         // The view model may have settled on something else (a row it cannot select alongside others): show that.
         MirrorTreeSelection();
     }
@@ -210,6 +237,42 @@ public partial class C3dEditorView : UserControl
             foreach (var row in want) selected.Add(row);
         }
         finally { _mirroringTree = false; }
+    }
+
+    // ── 3D editor round 5: the tree's width and its horizontal scroll ─────────────────────────
+
+    /// <summary>The grip on the tree's right edge: the panel follows the drag, between a usable minimum and most of the view.</summary>
+    private void OnTreeGripDrag(object? sender, VectorEventArgs e)
+    {
+        double max = Math.Max(TreeMinWidth, Bounds.Width * 0.7);
+        TreePanel.Width = Math.Clamp(TreePanel.Width + e.Vector.X, TreeMinWidth, max);
+    }
+
+    private const double TreeMinWidth = 150;
+
+    private ScrollViewer? _treeScroll;
+
+    /// <summary>The tree's scroll content takes every bring-into-view (a click on a row, a selection, a reveal) itself,
+    /// before the scroll viewer does: vertical only. The TreeView brings the WHOLE row into view, and a row wider than
+    /// the panel scrolled the horizontal bar to its right-hand end on every click.</summary>
+    private void OnObjectTreeTemplateApplied(object? sender, Avalonia.Controls.Primitives.TemplateAppliedEventArgs e)
+    {
+        // The theme's TreeView template names only its items presenter; the unnamed scroll viewer is its parent.
+        if (e.NameScope.Find<Control>("PART_ItemsPresenter") is not { Parent: ScrollViewer scroll } presenter) return;
+        _treeScroll = scroll;
+        presenter.AddHandler(RequestBringIntoViewEvent, OnTreeBringIntoView);
+    }
+
+    private void OnTreeBringIntoView(object? sender, RequestBringIntoViewEventArgs e)
+    {
+        if (_treeScroll is null || sender is not Visual content || e.TargetObject is not Visual target) return;
+        if (target.TransformToVisual(content) is not { } m) return;
+        e.Handled = true;
+        var rect = e.TargetRect.TransformToAABB(m);
+        double y = _treeScroll.Offset.Y, h = _treeScroll.Viewport.Height;
+        if (rect.Top < y) y = rect.Top;
+        else if (rect.Bottom > y + h) y = Math.Min(rect.Top, rect.Bottom - h);
+        if (y != _treeScroll.Offset.Y) _treeScroll.Offset = new Vector(_treeScroll.Offset.X, y);
     }
 
     // ── 3D round 1: Esc ─────────────────────────────────────────────────────────────────────

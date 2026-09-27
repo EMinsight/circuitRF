@@ -129,6 +129,86 @@ public static class Scene3DPicking
         return hits;
     }
 
+    /// <summary>
+    /// 3D editor round 5 — the <paramref name="accept"/>ed object whose drawn triangles come nearest the cursor ON SCREEN,
+    /// within <paramref name="radiusPx"/>, and its vertex nearest the cursor (scene-local); null for none. The ID pass reads
+    /// one pixel, and a bond wire a few tens of microns across is under a pixel wide on a board-sized view: the click has
+    /// to be allowed to miss it by a few pixels. <paramref name="cursorX"/>/<paramref name="cursorY"/> are the cursor in
+    /// DIPs, the frame <see cref="Camera3D.Project"/> maps to. Occlusion is the caller's (<see cref="RayDistance"/>).
+    /// </summary>
+    public static (uint Id, Vector3 Point)? NearestOnScreen(Scene3DModel scene, in Camera3D camera, float cursorX, float cursorY,
+                                                            float width, float height, ReadOnlySpan<bool> visible, float radiusPx,
+                                                            Func<Scene3DObject, bool> accept, in ClipPlane3D clip = default)
+    {
+        var m = camera.ViewProjectionMatrix(width, height);
+        var cursor = new Vector2(cursorX, cursorY);
+        float best = radiusPx;
+        uint id = 0;
+        Vector3 at = default;
+        var verts = scene.Vertices;
+        Span<Vector2> s = stackalloc Vector2[3];
+        Span<Vector3> w = stackalloc Vector3[3];
+        foreach (var b in scene.Batches)
+        {
+            if (!Visible(visible, b.ObjectId) || !accept(scene.Objects[b.ObjectId - 1])) continue;
+            for (int i = b.FirstIndex; i < b.FirstIndex + b.IndexCount; i += 3)
+            {
+                bool front = true;
+                for (int k = 0; k < 3 && front; k++)
+                {
+                    w[k] = P(verts[scene.Indices[i + k]]) + b.Offset;
+                    var c = Vector4.Transform(new Vector4(w[k], 1), m);
+                    if (c.W <= 0) { front = false; break; }
+                    s[k] = new Vector2((c.X / c.W + 1) * 0.5f * width, (1 - c.Y / c.W) * 0.5f * height);
+                }
+                if (!front || !clip.Keeps((w[0] + w[1] + w[2]) / 3)) continue;
+                float d = ScreenDistance(cursor, s[0], s[1], s[2]);
+                if (d > best || (d == best && id != 0)) continue;
+                best = d;
+                id = b.ObjectId;
+                int k0 = 0;
+                for (int k = 1; k < 3; k++) if (Vector2.DistanceSquared(s[k], cursor) < Vector2.DistanceSquared(s[k0], cursor)) k0 = k;
+                at = w[k0];
+            }
+        }
+        return id == 0 ? null : (id, at);
+    }
+
+    /// <summary>How far along the ray through pixel (<paramref name="px"/>, <paramref name="py"/>) object
+    /// <paramref name="id"/> is first met, or null when the ray misses it — one object's triangles, not the scene's.</summary>
+    public static float? RayDistance(Scene3DModel scene, in Camera3D camera, float px, float py, float width, float height, uint id)
+    {
+        var (o, d) = camera.Ray(px, py, width, height);
+        float best = float.MaxValue;
+        var verts = scene.Vertices;
+        foreach (var b in scene.Batches)
+        {
+            if (b.ObjectId != id) continue;
+            for (int i = b.FirstIndex; i < b.FirstIndex + b.IndexCount; i += 3)
+            {
+                var v0 = P(verts[scene.Indices[i]]) + b.Offset; var v1 = P(verts[scene.Indices[i + 1]]) + b.Offset; var v2 = P(verts[scene.Indices[i + 2]]) + b.Offset;
+                if (Intersect(o, d, v0, v1, v2, out float t) && t < best) best = t;
+            }
+        }
+        return best < float.MaxValue ? best : null;
+    }
+
+    /// <summary>A screen point's distance to a screen triangle: 0 inside it, else to its nearest side.</summary>
+    private static float ScreenDistance(Vector2 p, Vector2 a, Vector2 b, Vector2 c)
+    {
+        static float Cross(Vector2 u, Vector2 v) => u.X * v.Y - u.Y * v.X;
+        float d0 = Cross(b - a, p - a), d1 = Cross(c - b, p - b), d2 = Cross(a - c, p - c);
+        if ((d0 >= 0 && d1 >= 0 && d2 >= 0) || (d0 <= 0 && d1 <= 0 && d2 <= 0)) return 0;
+        static float Seg(Vector2 p, Vector2 a, Vector2 b)
+        {
+            var ab = b - a;
+            float l = ab.LengthSquared();
+            float t = l > 0 ? Math.Clamp(Vector2.Dot(p - a, ab) / l, 0, 1) : 0;
+            return Vector2.Distance(p, a + ab * t);
+        }
+        return Math.Min(Seg(p, a, b), Math.Min(Seg(p, b, c), Seg(p, c, a)));
+    }
+
     private static bool Visible(ReadOnlySpan<bool> visible, uint id)
         => visible.IsEmpty || (id - 1 < (uint)visible.Length && visible[(int)id - 1]);
 

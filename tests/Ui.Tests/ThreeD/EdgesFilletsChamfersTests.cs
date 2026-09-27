@@ -442,6 +442,18 @@ public sealed class EdgesFilletsChamfersTests : IDisposable
         Assert.DoesNotContain("fillet(xmin|zmax)", faces);
     }
 
+    /// <summary>3D editor round 5 — a feature row spells its size in the display unit, so a change of unit re-spells it.</summary>
+    [KernelFact]
+    public void Round5_AFeatureRow_FollowsTheDisplayUnit()
+    {
+        var vm = Open(Write([Fillet("lid", Box("", "Alumina", 0, 0, 0, 400, 300, 100), 20, "xmax|zmax")]), Kernel(KernelForTests.New()));
+        string Row() => vm.Tree.SelectMany(g => g.Items).SelectMany(i => i.Children).Single(c => c.FeaturePath is not null).Name;
+        vm.DisplayUnit = LayoutUnit.Um;
+        Assert.StartsWith("Fillet 20 µm", Row(), StringComparison.Ordinal);
+        vm.DisplayUnit = LayoutUnit.Mm;
+        Assert.StartsWith("Fillet 0.02 mm", Row(), StringComparison.Ordinal);
+    }
+
     // ── helpers ────────────────────────────────────────────────────────────────────────────────────
 
     private GeometryKernel Kernel(GeometryKernel k)

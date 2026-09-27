@@ -143,6 +143,9 @@ public partial class WorkspaceViewModel
                                             a => Dispatcher.UIThread.Post(a), _techCache, scratch);
             var doc = new C3dEditorDocument(vm);
             if (newlyCreated) vm.Viewer.IsPerspective = false;
+            // 3D editor round 5 — the camera (projection included) is window state, as a .cem's 3D view's always was: put
+            // back as it was left, from the .cwsuser — never the .c3d, which stays the design.
+            if (StoredCamera(full) is { } camera) vm.Viewer.RestoreCamera(camera);
             // brief-em3d-45 R-em3d45-1a — the drawing plane is window state: put back where it was left.
             if (StoredDrawingPlane(full) is { } plane) vm.SetPlane(plane);
             vm.DrawingPlaneChanged += () => RememberDrawingPlane(vm);
@@ -497,6 +500,9 @@ public partial class WorkspaceViewModel
     private void ClosedC3dEditor(C3dEditorDocument doc)
     {
         RememberDrawingPlane(doc.ViewModel);
+        // Not after a workspace switch has dropped the table: the outgoing session was persisted with this camera in it.
+        if (_viewer3DCameras is not null && !doc.IsScratch && CameraKey(doc.FilePath) is { } k && doc.ViewModel.Viewer.CameraToPersist() is { } cam)
+            _viewer3DCameras[k] = cam;
         if (_c3dWatchers.Remove(doc, out var w)) w.Dispose();
         _factory.ProjectTreeTool?.SetFileDirty(doc.FilePath, false);
         NotifyHierarchyCanExecuteChanged();

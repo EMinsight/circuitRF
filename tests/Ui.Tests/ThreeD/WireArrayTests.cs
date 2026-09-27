@@ -122,6 +122,28 @@ public sealed class WireArrayTests : IDisposable
         Assert.Equal(new C3dPoint3(-15 * Um, 0, 0), w.Array.Pitch);
     }
 
+    /// <summary>3D editor round 5 — the ID pass reads one pixel, and on a board-sized view a bond wire is narrower than one:
+    /// a click a few pixels off it selects it, unless a solid under the cursor stands in front.</summary>
+    [Fact]
+    public void AClickAFewPixelsOffAThinWire_SelectsIt()
+    {
+        var vm = Open(Wire());
+        var v = vm.Viewer;
+        v.Resized(800, 600);
+        v.View.Camera = Camera3D.Fit(v.Scene.ContentMin, v.Scene.ContentMax, 800f / 600f);
+        v.View.Camera.Yaw = -0.9f; v.View.Camera.Pitch = 0.5f;
+        v.View.Camera.Distance *= 40;                                        // ~40 µm a pixel: the 25 µm wire is sub-pixel
+        var (x, y, front) = v.View.Camera.Project(v.Scene.ToLocal(350e-6, 20e-6, 200e-6), 800, 600);
+        Assert.True(front);
+        v.Hover(x, y - 4);
+        var (id, face) = Scene3DPicking.PairAtPixel(v.Scene, v.View.Camera, x, y - 4, 800, 600, v.View.Visible);
+        Assert.NotEqual("w1", v.Scene.Object(id)?.Name);                    // the pixel itself misses it
+        v.OnPicked(id, face, System.Numerics.Vector3.Zero, id != 0);
+        v.Click(false);
+        Assert.Equal(["w1"], v.Selection.Select(s => v.Scene.Object(s.Object)!.Name));
+        Assert.Equal("w1", vm.SelectedTreeItem?.Name);
+    }
+
     private static C3dWire Wire() => new()
     {
         Name = "w1", Material = "Gold",

@@ -5,6 +5,7 @@
 //  multi-selection highlights every row it stands for. Pixels were not seen: these read the view model.
 // ================================================================
 
+using Avalonia.Controls;
 using CircuitRF.Design.Layout;
 using CircuitRF.Design.ThreeD;
 using CircuitRF.Design.Workspace;
@@ -78,16 +79,41 @@ public sealed class EditorRound5TreeTests : IDisposable
     public void SeveralRows_SelectEveryObjectInTheOrderSelected_AndTheMenuIsTheCanvassWithItsBoolean()
     {
         var vm = Open(Doc(), out _);
-        vm.TreeSelectionChanged([], [Row(vm, "b")]);
-        vm.TreeSelectionChanged([], [Row(vm, "a")]);                      // Ctrl/Cmd-click adds a second row
+        vm.TreeSelectionChanged([Row(vm, "b")]);
+        vm.TreeSelectionChanged([Row(vm, "a"), Row(vm, "b")]);            // Shift/Ctrl/Cmd-click adds a second row
 
         Assert.Equal(["b", "a"], vm.SelectedTreeItems.Select(r => r.Name));
         Assert.Equal(["b", "a"], vm.Viewer.SelectedObjects().Select(o => o.Name));   // first-selected is the Tool (D4)
         Assert.Contains(vm.Viewer.ContextMenuItems(), m => m.Header == "Boolean");
 
-        vm.TreeSelectionChanged([Row(vm, "b")], []);                      // and removes one again
+        vm.TreeSelectionChanged([Row(vm, "a")]);                          // and removes one again
         Assert.Equal(["a"], vm.Viewer.SelectedObjects().Select(o => o.Name));
         Assert.Equal("a", vm.SelectedTreeItem?.Name);
+    }
+
+    /// <summary>A plain click replaces the selection. The TreeView does it as Clear-then-Add, and the Clear's Reset reports
+    /// no removed rows — so the handler must hand over the tree's whole selection, never the event's deltas.</summary>
+    [Fact]
+    public void APlainClick_ReplacesTheSelection_ThoughTheTreesClearNamesNoRemovedRows()
+    {
+        var vm = Open(Doc(), out _);
+        var tree = new TreeView { SelectionMode = SelectionMode.Multiple, ItemsSource = vm.Tree.SelectMany(g => g.Items).ToList() };
+        List<(int Removed, int Added)> events = [];
+        tree.SelectionChanged += (_, e) =>
+        {
+            events.Add((e.RemovedItems.Count, e.AddedItems.Count));
+            vm.TreeSelectionChanged([.. tree.SelectedItems.OfType<C3dTreeItem>()]);
+        };
+        tree.SelectedItems.Add(Row(vm, "a"));
+        tree.SelectedItems.Add(Row(vm, "b"));
+        Assert.Equal(["a", "b"], vm.SelectedTreeItems.Select(r => r.Name));
+
+        events.Clear();
+        tree.SelectedItems.Clear();                                        // TreeView.SelectSingleItem, as a plain click runs it
+        tree.SelectedItems.Add(Row(vm, "c"));
+        Assert.All(events, e => Assert.Equal(0, e.Removed));              // the Reset: no row ever said to have been removed
+        Assert.Equal(["c"], vm.SelectedTreeItems.Select(r => r.Name));
+        Assert.Equal(["c"], vm.Viewer.SelectedObjects().Select(o => o.Name));
     }
 
     [Fact]

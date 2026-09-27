@@ -798,6 +798,8 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         ApplyDrawingGrid();
         SyncPlaneTexts();
         RefreshSnapDistance();
+        // 3D editor round 5 — a fillet's or chamfer's row spells its size in the display unit (C3dFillets.RowLabel).
+        RebuildTree();
     }
 
     private void ApplyLengthFormat()
@@ -1157,14 +1159,16 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     }
 
     /// <summary>
-    /// The tree's own selection changed: <paramref name="removed"/> left it and <paramref name="added"/> joined it, in the
-    /// order the tree raised them. One row selects as a click on it always has; several select every object they stand
-    /// for in the scene, in the order the rows were selected, and the canvas's menu is then theirs.
+    /// The tree's own selection changed, and <paramref name="current"/> is what it now holds. One row selects as a click
+    /// on it always has; several select every object they stand for in the scene, in the order the rows were selected —
+    /// rows already selected keep their place, new ones follow — and the canvas's menu is then theirs.
+    /// <para>The tree's WHOLE selection, not its event's added/removed lists: a plain click clears the TreeView's
+    /// selection with a Reset, which names no removed rows, so a delta-kept list grew with every click.</para>
     /// </summary>
-    public void TreeSelectionChanged(IEnumerable<C3dTreeItem> removed, IEnumerable<C3dTreeItem> added)
+    public void TreeSelectionChanged(IReadOnlyCollection<C3dTreeItem> current)
     {
-        var rows = _selectedTreeItems.Except(removed).ToList();
-        foreach (var a in added) if (!rows.Contains(a)) rows.Add(a);
+        var rows = _selectedTreeItems.Where(current.Contains).ToList();
+        foreach (var a in current) if (!rows.Contains(a)) rows.Add(a);
         if (rows.Count <= 1)
         {
             var one = rows.FirstOrDefault();

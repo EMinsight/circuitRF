@@ -33,6 +33,21 @@ public sealed class NewThreeDViewOpensTests
         Assert.Contains("if (newlyCreated) vm.Viewer.IsPerspective = false;", td);
     }
 
+    /// <summary>3D editor round 5 — a .c3d's camera, projection included, is window state as a .cem view's is: restored on
+    /// open, written with the session, and kept when the tab closes.</summary>
+    [Fact]
+    public void TheEditorsCamera_IsRestoredOnOpen_AndPersistedWithTheSession()
+    {
+        string td = StripComments(Src("src/Ui/ViewModels/WorkspaceViewModel.ThreeD.cs"));
+        int start = td.IndexOf("private void OpenC3dEditor(", StringComparison.Ordinal);
+        Assert.Contains("if (StoredCamera(full) is { } camera) vm.Viewer.RestoreCamera(camera);", td[start..]);
+        start = td.IndexOf("private void ClosedC3dEditor(", StringComparison.Ordinal);
+        Assert.Contains("doc.ViewModel.Viewer.CameraToPersist()", td[start..td.IndexOf("doc.ViewModel.Dispose()", start, StringComparison.Ordinal)]);
+        string v3 = StripComments(Src("src/Ui/ViewModels/WorkspaceViewModel.Viewer3D.cs"));
+        start = v3.IndexOf("Viewer3DCamerasToPersist()", StringComparison.Ordinal);
+        Assert.Matches(@"OfType<CircuitRF\.Ui\.ThreeD\.C3dEditorDocument>\(\)\)\s*if \(!doc\.IsScratch", v3[start..]);
+    }
+
     /// <summary>The cell menu's Open 3D View sits with the other Open items and runs the tree's command.</summary>
     [Fact]
     public void CellMenu_OffersOpen3DView()

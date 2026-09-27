@@ -556,6 +556,7 @@ Every step above has a command-line spelling, and none of them needs a solver ex
 | **Ctrl/Cmd** while placing | The bottom-centre (die-attach) handle |
 | **Ctrl/Cmd+]**, **Ctrl/Cmd+[** | Push into a placed cell, or enter a boolean to edit its operands; pop out, or leave it |
 | **Home**, **1**–**7**, **P**, **C** | Fit; standard views; perspective; clip plane |
+| In the object tree: **Shift**-click, **Ctrl**-click (**Cmd** too on a Mac) | Select every row between; add or remove one row |
 
 ## Every control, in detail {#reference}
 

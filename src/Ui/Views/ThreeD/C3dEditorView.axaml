@@ -442,9 +442,29 @@
 
         <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto">
             <!-- ── The object tree (R-em3d43-6a), fed from the document ─────────── -->
-            <Border Grid.Column="0" Width="230" IsVisible="{Binding ViewModel.ShowTree}" BorderThickness="0,0,1,0"
+            <Border Grid.Column="0" x:Name="TreePanel" Width="230" IsVisible="{Binding ViewModel.ShowTree}" BorderThickness="0,0,1,0"
                     BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
               <DockPanel>
+                <!-- 3D editor round 5 — the panel's right edge is a grip: drag it to widen the tree and read a long name.
+                     A view setting, never the document's. The theme styles a Thumb only inside a scroll bar or a slider:
+                     a bare one has no template, so it drew nothing and took no pointer — hence its own, which shows on
+                     hover. -->
+                <Thumb DockPanel.Dock="Right" x:Name="TreeGrip" Width="6" Cursor="SizeWestEast"
+                       DragDelta="OnTreeGripDrag" ToolTip.Tip="Drag to resize the object tree">
+                    <Thumb.Styles>
+                        <Style Selector="Thumb#TreeGrip">
+                            <Setter Property="Background" Value="Transparent"/>
+                            <Setter Property="Template">
+                                <ControlTemplate>
+                                    <Border Background="{TemplateBinding Background}"/>
+                                </ControlTemplate>
+                            </Setter>
+                        </Style>
+                        <Style Selector="Thumb#TreeGrip:pointerover, Thumb#TreeGrip:pressed">
+                            <Setter Property="Background" Value="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+                        </Style>
+                    </Thumb.Styles>
+                </Thumb>
                 <!-- 3D editor round 2 — the panel's header: its name, how its objects are grouped (by material, the
                      default, or by primitive type), and at the top right the filter, whose icon changes while it hides
                      anything. The filter hides tree rows only; the 3D view still draws every object. -->

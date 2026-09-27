@@ -37033,3 +37033,48 @@ without the editing, so an editor improvement reaches it with no second change.
   `CRF_3D_STATUS_PANE=1`; a setup's refusals and notes are the point of its view).
 - Gate: `tests/Ui.Tests/ThreeD/EditorRound5ViewOnlyTests.cs`. `EditorRound4MenuTests`' Copy check now scans the one
   view. Pixels were not seen (the GUI cannot be launched from this session).
+
+## 3D editor bugs round 5 — follow-ups: tree click selection, horizontal scroll, width grip (2026-09-27)
+
+- **A plain click ADDED the row to the tree's selection.** `C3dEditorViewModel.TreeSelectionChanged` kept the rows from
+  the SelectionChanged event's added/removed lists. Avalonia 12's `TreeView.SelectSingleItem` (every plain click, and a
+  right-click on an unselected row) is `SelectedItems.Clear()` then `Add(item)`, and the Clear is a Reset whose
+  SelectionChanged reports NO removed rows (read from the decompiled 12.0.3 `TreeView`, and pinned by
+  `EditorRound5TreeTests.APlainClick_…`), so nothing was ever taken out. The handler now hands over the tree's whole
+  `SelectedItems`; the view model keeps its order (rows already selected keep their place, new ones follow) so the
+  first-selected is still the Tool.
+- **A click scrolled the tree's horizontal bar.** The TreeView brings the WHOLE row into view on select and on focus,
+  so a row wider than the panel jumped the bar to its right-hand end. The view now takes `RequestBringIntoView` on the
+  tree's items presenter (the one part the theme's template names — its `ScrollViewer` is unnamed, so it is found as the
+  presenter's parent), before the scroll viewer does, and scrolls vertically only. The editor's own reveal goes through
+  the same path.
+- **A grip on the tree's right edge** (`TreeGrip`, a `Thumb`) resizes the panel between 150 px and 70 % of the view. A
+  view setting only: not in the `.c3d`, not in the `.cwsuser`. Neither of the last two is covered by a test (the test
+  host applies no control templates); pixels not seen.
+
+## 3D editor bugs round 5 — follow-ups 2: the grip, the camera, thin wires, units in the tree (2026-09-27)
+
+- **The tree's grip was invisible and inert.** The Fluent theme gives a `Thumb` a template only inside its scroll bar
+  and slider themes; a bare `Thumb` has none, so it drew nothing and was never hit-tested. `TreeGrip` now carries its own
+  template (a `Border`), transparent at rest and shaded on hover or drag.
+- **A `.c3d` always opened in perspective.** Nothing stored the editor's camera at all — only a `.cem`'s 3D view had
+  one (`Viewer3DCameras` in the `.cwsuser`). The editor now uses the same table, keyed by its top document's
+  workspace-relative path: restored in `OpenC3dEditor` (after the newly-created orthographic default, so a stored one
+  wins), written with the session and kept when the tab closes. Window state, not the document: Save does not write
+  it, closing the workspace does. `ClosedC3dEditor` stores only while the table is loaded — a workspace switch drops
+  it after the outgoing session was already persisted, and loading it again there would read the INCOMING `.cwsuser`.
+- **A bond wire could not be clicked.** Selection works (a click on a wire in a small scene selects it and its row);
+  the hit did not. The ID pass reads ONE pixel, and on a board-sized view a 25 µm wire is narrower than one. Object
+  mode now prefers a wire within the snap radius (8 px) on screen (`Scene3DPicking.NearestOnScreen`, wire triangles
+  only), unless the object under the cursor stands in front of it along the cursor's ray (`RayDistance`, that one
+  object's triangles). Only the hover's item changes: the pick itself — the snap, a tool's pad — stays the pixel's.
+  Gate `WireArrayTests.AClickAFewPixelsOffAThinWire_SelectsIt` (fails without it).
+- **Fillet and chamfer rows kept the old unit.** `C3dFillets.RowLabel` spells the size in the display unit when the
+  tree is built, and a unit change rebuilt nothing in the tree. `OnDisplayUnitChanged` now rebuilds it. Gate
+  `EdgesFilletsChamfersTests.Round5_AFeatureRow_FollowsTheDisplayUnit`.
+- **Ctrl-click in the tree did not add a row on macOS.** Avalonia's TreeView toggles on the platform's COMMAND key
+  (`PlatformHotkeyConfiguration.CommandModifiers`, through `ItemSelectionEventTriggers.HasToggleSelectionModifier`):
+  Ctrl on Windows and Linux, Cmd on macOS. A tunnel `PointerPressed` handler on the tree now makes a left Ctrl-click
+  toggle the row on every platform (a click on a tick or an expander is left alone); Cmd-click and Shift's range are
+  still the TreeView's own. The context menu is raised only for the right button, so a Ctrl-click never opened it.
+  Pixels not seen; no test (the test host applies no control templates).

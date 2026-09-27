@@ -297,6 +297,22 @@ public sealed partial class Viewer3DViewModel
         if (_items.TryGetValue(it.Object, out var treeItem)) RevealRequested?.Invoke(treeItem);
     }
 
+    /// <summary>3D editor round 5 — the selectable wire nearest the cursor on screen, within the snap radius, when nothing in
+    /// front of it is under the cursor: <paramref name="under"/> (the ID pass's object, 0 for none) is met along the
+    /// cursor's ray before the wire's nearest point only when it hides it.</summary>
+    private uint? WireNearCursor(uint under)
+    {
+        if (View.CursorX < 0 || View.CursorY < 0) return null;
+        if (Scene3DPicking.NearestOnScreen(Scene, View.Camera, View.CursorX, View.CursorY, _viewW, _viewH, PickVisible,
+                                           Scene3DSnap.RadiusPixels, o => o.Kind == Scene3DKind.Wire && o.Selectable, View.Clip)
+            is not { } near) return null;
+        if (under == 0) return near.Id;
+        float px = View.CursorX - 0.5f, py = View.CursorY - 0.5f;
+        if (Scene3DPicking.RayDistance(Scene, View.Camera, px, py, _viewW, _viewH, under) is not { } front) return near.Id;
+        var (o, d) = View.Camera.Ray(px, py, _viewW, _viewH);
+        return Vector3.Dot(near.Point - o, d) <= front ? near.Id : null;
+    }
+
     /// <summary>B (<paramref name="direction"/> +1) or Shift+B (−1): the next thing behind, or in front, along
     /// the line of sight through the cursor (R-em3d43-4). True when the key did something.</summary>
     public bool Cycle(int direction)
@@ -395,6 +411,11 @@ public sealed partial class Viewer3DViewModel
             if (SnapQuery.NearestEdge(Scene, edgePatch, radius, PickVisible, View.Clip, o => Scene.Object(o)?.Selectable == true) is { } eh)
                 item = Scene3DItem.OfEdge(eh.Object, eh.Edge);
         }
+        // 3D editor round 5 — Object mode: a bond wire within a few pixels of the cursor is what a click selects, unless
+        // what IS under the cursor stands in front of it. Only the hover's item: the pick itself (the snap, a tool's pad)
+        // stays the pixel's.
+        else if (SelectMode == Scene3DSelectMode.Object && Scene.Object(id)?.Kind != Scene3DKind.Wire && WireNearCursor(id) is { } wire)
+            item = Scene3DItem.OfObject(wire);
         else if (id != 0 && selectable)
             item = SelectMode switch
             {
