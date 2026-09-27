@@ -1233,7 +1233,7 @@ public partial class LayoutEditorView : UserControl
         // Trace Impedance — offered only where there is stackup-bound copper under the click; the
         // answer (or the reason there is none) goes to the Messages panel.
         if (BuildTraceImpedanceItem() is { } impedance)
-            items = [.. items, new Separator(), impedance];
+            items = [.. items, new Separator(), impedance, BuildAddToImpedanceReviewItem()];
 
         if (sender is ContextMenu menu) menu.ItemsSource = items;
 
@@ -1244,6 +1244,17 @@ public partial class LayoutEditorView : UserControl
             ToolTip.SetTip(mi, "Z0 of the trace here, from the stackup and the copper drawn — quasi-static, " +
                                "with a warning where the ground under it is missing or broken. Result in Messages.");
             mi.Click += (_, _) => vm.ProbeTraceImpedance((long)Math.Round(t.Wx), (long)Math.Round(t.Wy));
+            return mi;
+        }
+
+        // brief-impedance-4 R-imp4-2c: the trace here into the Impedance review's scope, as a pick — offered
+        // wherever Trace Impedance is, i.e. where there is stackup-bound copper under the click.
+        MenuItem BuildAddToImpedanceReviewItem()
+        {
+            var mi = new MenuItem { Header = "Add to impedance review" };
+            ToolTip.SetTip(mi, "Review the trace here in the Impedance panel's analysis — a pick, resolved at " +
+                               "every run. The panel's Pick traces tool also takes every trace joined to one (Shift-click).");
+            mi.Click += (_, _) => Vm?.AddImpedancePickAt((long)Math.Round(t.Wx), (long)Math.Round(t.Wy), TracePickExtent.Trace);
             return mi;
         }
 

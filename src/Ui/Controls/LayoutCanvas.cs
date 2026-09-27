@@ -2113,6 +2113,9 @@ public sealed class LayoutCanvas : Control
         // and every subsequent press claims a grip instead of moving the instance — the same failure
         // as the Space-to-pan latch above, with a different key.
         _viewModel?.ClearGripLockArmed();
+        // An impedance-scope drag (brief-impedance-4) whose release went elsewhere is dropped, not
+        // latched: the next press would otherwise extend a lasso the user let go of.
+        _viewModel?.AbandonImpedanceScopeDrag();
         _altHeld = false;   // same latch, same reason — see above
         _isPanning = false; // and the pan latch — see EndPanIfActive for the report this closes
 

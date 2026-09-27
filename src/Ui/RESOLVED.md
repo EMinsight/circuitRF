@@ -36456,3 +36456,29 @@ documents switches results.
 
 Not seen: the GUI cannot be launched from this session; the panel, the overlay and the dock placement were verified by
 the compiler and `ImpedancePanelTests` only.
+
+## Impedance review brief 4 — regions, picks and nets in the Impedance panel (2026-09-26)
+
+The panel gained a **Regions, picks and nets** section: Add region ▸ Rectangle / Lasso, a Pick traces toggle
+(click = the trace, Shift-click = everything joined through vias), the region and pick lists, and a searchable Nets
+list shown only when copper carries a net. The canvas side is `LayoutEditorViewModel.ImpedanceScope.cs`; the overlay
+is `LayoutOverlay.ImpedanceScope`, drawn by `LayoutRenderer.DrawImpedanceScopeOverlay` while the panel is on screen.
+The canvas's right-click menu has **Add to impedance review** beside Trace Impedance.
+
+**Findings worth keeping:**
+- **The selectors have ONE owner: the layout's saved review, edited only through `EditImpedanceScope`.** The panel's
+  lists are views rebuilt on `ImpedanceScopeVersion`; the canvas gestures and the context menu go through the same
+  method. The panel's own `CurrentScope()` takes widths from its rows and selectors from the layout, so a settings
+  edit can never overwrite a pick added from the canvas a moment earlier.
+- **Renaming a region types into a row the rebuild would replace**, so the panel's own edits set `_editingSelectors`
+  and the change notice skips the rebuild while it is set — otherwise every keystroke would drop focus.
+- **The gestures follow the EM solve-region drag**: armed from outside the canvas, they own the press ahead of every
+  tool, Escape disarms. A lasso records a point per screen pixel of travel and is simplified by Douglas–Peucker at
+  three pixels (`SimplifyLasso`), refused below three vertices; a rectangle snaps like the solve region.
+- **Focus loss drops a drag in progress** (`AbandonImpedanceScopeDrag`, from `LayoutCanvas.OnCanvasLostFocus`), for
+  the latched-Space reason: the release may be delivered elsewhere. Shift is read from the press's own modifiers, so
+  there is no key latch to clear.
+- **Hiding the panel disarms the tool** (`ShowImpedanceScope` false), so a pick tool cannot stay armed on a canvas
+  whose panel is not on screen to say so.
+
+Not seen: the GUI cannot be launched from this session; checked by the compiler and the analysis tests only.

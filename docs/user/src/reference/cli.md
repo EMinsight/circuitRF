@@ -742,6 +742,7 @@ example workspace.
 
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf impedance &lt;layout&gt; [--target 50] [--tol 10] [--warn 20] [--max-freq 6GHz]
 <span class="prompt">  </span>[--layers "Top Copper,Inner 2"] [--max-width &lt;um&gt;] [--width "Top Copper=457"]… [--no-scope]
+<span class="prompt">  </span>[--region x0,y0,x1,y1]… [--net &lt;name&gt;]… [--pick &lt;layer&gt;@&lt;x&gt;,&lt;y&gt;[:connected]]…
 <span class="prompt">  </span>[--survey] [--severity warning|fail] [-o report.pdf]</code></pre>
 
 `impedance` is the layout editor's [Impedance Analysis](layout-editor.html#impedance-analysis): it finds
@@ -755,8 +756,9 @@ The path is a **`.clay`** or a **cell folder** holding one. The technology resol
 resolves it, and placed cells are flattened as a design-rule check flattens them.
 
 **The review saved in the layout applies by default**, so a headless run reports what the editor
-reports: the target, bands, frequency, layers and [trace widths](layout-editor.html#impedance-scope) last
-chosen in the editor's Impedance panel. A flag overrides the saved value, and the saved value overrides
+reports: the target, bands, frequency, layers, [trace widths](layout-editor.html#impedance-scope) and
+[regions, picks and nets](layout-editor.html#impedance-scope-board) last chosen in the editor's Impedance
+panel. A flag overrides the saved value, and the saved value overrides
 the default. A saved layer the technology no longer has is skipped with a line on stderr.
 
 | Option | Meaning |
@@ -769,9 +771,18 @@ the default. A saved layer the technology no longer has is skipped with a line o
 | `--layers "A,B"` | The copper layers, by the technology's layer names. Default every copper layer. A name that is not a copper layer is refused with the names that are. |
 | `--max-width <um>` | The widest copper read as a trace. Default ten times the distance to the nearest other copper layer, between 1 and 8 mm. |
 | `--width <layer>=<w>[,<w>…]` | Review only the traces of these widths on that layer; repeat it for another layer. A bare width is µm, as `--max-width` reads it, or give a unit (`18mil`, `0.457mm`). It **replaces** the saved widths for that layer for this run; a layer with no widths is reviewed at every width. A trace's width is the width over most of its length, and a width matches within 1 % (or 1 µm). |
-| `--no-scope` | Ignore the saved trace widths and review every trace. The saved target, bands and layers still apply. |
+| `--region x0,y0,x1,y1` | Review the traces any part of whose centre line lies inside this rectangle, **whole**. **Every coordinate carries its unit** (`10mm,5mm,30mm,20mm`, `400um`, `50mil`) and a bare number is refused, as for [`render --window`](#render): a layout coordinate could be DBU, µm or mm. [`explain --extents`](#explain) prints a layout's `window` in exactly this spelling. Repeatable. |
+| `--net <name>` | Review the traces on copper carrying this net. Repeatable. |
+| `--pick <layer>@<x>,<y>[:connected]` | Review the trace whose copper holds this point on that layer, coordinates with their units; `:connected` takes every trace joined to it through vias. A pick with no copper under it is reported on stderr and selects nothing. Repeatable. |
+| `--no-scope` | Ignore the saved scope and review every trace. The saved target, bands and layers still apply. |
 | `--survey` | List the width classes per layer &mdash; width, trace count, total length and one **typical** Z0 (a single cut at the middle of the class's longest trace) &mdash; and analyse nothing. The way to choose `--width`. |
 | `-o report.pdf` | The PDF report. With no `-o` it writes nothing. |
+
+**Regions, nets and picks choose; widths filter.** A trace any `--region`, `--net` or `--pick` chooses
+is reviewed (with none, every trace is), and `--width` then filters what they chose. Each of the three
+**replaces the saved selectors of its kind** for this run and leaves the other kinds as saved &mdash;
+so a lasso drawn in the editor, which has no command-line spelling, still applies unless `--region`
+replaces it.
 
 stdout starts with the target and, on the next line, the **scope in words** &mdash; *Top Copper at 457 µm
 (1 trace). 21 traces on Top Copper are outside the scope and were not analysed.* &mdash; then one line per

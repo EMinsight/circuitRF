@@ -1057,6 +1057,8 @@ public static partial class LayoutRenderer
 
                 // brief-impedance-3 R-imp3-3: the Impedance panel's results. Overlay-only, like LVS —
                 // results are review state, not document content, so no export ever draws them.
+                if (opts.Overlay?.ImpedanceScope is { } impedanceScope)
+                    DrawImpedanceScopeOverlay(canvas, impedanceScope, ps, scaleUm);
                 if (opts.Overlay?.Impedance is { } impedance)
                     DrawImpedanceOverlay(canvas, impedance, ps, scaleUm);
             }

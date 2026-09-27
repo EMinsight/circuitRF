@@ -237,6 +237,10 @@ public sealed record TraceLayerResult
     /// <summary>Traces found on this layer and left out by the scope — counted, never listed.</summary>
     public int OutOfScope { get; init; }
 
+    /// <summary>Traces found on this layer whose copper carries no net, or two (R-imp4-3b) — which no
+    /// net selector can choose. Zero when the artwork carries no nets.</summary>
+    public int NetlessTraces { get; init; }
+
     /// <summary>The widest copper read as a trace on this layer, DBU.</summary>
     public double MaxWidth { get; init; }
 }
@@ -304,6 +308,16 @@ public sealed record TraceImpedanceReport
     public string ScopeText { get; init; } = "";
 
     public int OutOfScopeCount => Layers.Sum(l => l.OutOfScope);
+
+    /// <summary>Whether any copper shape carries a net — the case in which <see cref="NetlessCount"/>
+    /// means something.</summary>
+    public bool HasNets { get; init; }
+
+    public int NetlessCount => Layers.Sum(l => l.NetlessTraces);
+
+    /// <summary>The picks with no copper under them at this run (R-imp4-2d) — kept in the scope and
+    /// listed, never silently dropped.</summary>
+    public IReadOnlyList<TracePick> PicksWithoutCopper { get; init; } = [];
 
     public DateTime CreatedUtc { get; init; } = DateTime.UtcNow;
     public int StationCount { get; init; }
@@ -400,7 +414,7 @@ public sealed record TraceImpedanceReport
     ];
 }
 
-public static class TraceImpedanceAnalysis
+public static partial class TraceImpedanceAnalysis
 {
     /// <summary>Two edges are parallel within this.</summary>
     public const double ParallelToleranceDeg = 2.0;
@@ -531,6 +545,7 @@ public static class TraceImpedanceAnalysis
         var analysed = prep.Analysed;
         var notes = prep.Notes;
         var scope = options.Scope is { IsEmpty: false } s ? s : null;
+        var selection = new Selection(scope, prep, shapes, tech);
 
         // ── layer by layer ──────────────────────────────────────────────────────────────────────
         // Each layer is found, cut, solved and assembled before the next is started, so a run that
@@ -556,10 +571,14 @@ public static class TraceImpedanceAnalysis
                 // dropped here leave the layer's copper (lw.Copper) and every other layer's (ctx.Copper)
                 // untouched, so the out-of-scope trace running beside a trace under review is still a
                 // grounded neighbour in that trace's cross-section, exactly as without a scope.
+                // The selectors (regions, picks, nets) choose; the widths then filter what they chose.
                 int outOfScope = 0;
+                int netless = selection.HasNets ? lw.Chains.Count(c => selection.NetOf(lw, c) is null) : 0;
                 if (scope is not null)
                 {
-                    var kept = lw.Chains.Where(c => scope.Includes(name, DominantWidth(c, dbuPerMicron) / dbuPerMicron)).ToList();
+                    var chosen = selection.Select(lw);
+                    var kept = lw.Chains.Where((c, i) => (chosen is null || chosen[i])
+                                                         && scope.Includes(name, DominantWidth(c, dbuPerMicron) / dbuPerMicron)).ToList();
                     outOfScope = lw.Chains.Count - kept.Count;
                     lw = lw with { Chains = kept };
                 }
@@ -591,6 +610,7 @@ public static class TraceImpedanceAnalysis
                     Traces = runs,
                     PoursSkipped = lw.Pours,
                     OutOfScope = outOfScope,
+                    NetlessTraces = netless,
                     MaxWidth = lw.MaxWidth,
                     Copper = lw.Copper is null ? [] : [.. lw.Copper.Paths.Select(p =>
                     {
@@ -609,6 +629,22 @@ public static class TraceImpedanceAnalysis
                           $"not analysed: {string.Join(", ", rest)}.");
                 break;
             }
+        }
+
+        // A pick is kept whatever it resolves to, and said (R-imp4-2d): the artwork changing under a
+        // saved pick is exactly what the reviewer must see.
+        var noCopper = new List<TracePick>();
+        foreach (var (pick, state) in selection.Picks)
+        {
+            string at = $"{pick.LayerName} at {new TraceImpedanceReport { DbuPerMicron = dbuPerMicron, DisplayUnit = options.DisplayUnit ?? LayoutUnit.Um }.Pt(pick.X, pick.Y)}";
+            if (!state.OnCopper)
+            {
+                noCopper.Add(pick);
+                notes.Add($"The pick on {at} has no copper under it now; it selected nothing.");
+            }
+            else if (state.Traces == 0 && !cancelled)
+                notes.Add($"The pick on {at} is on copper that carries no trace on the layers analysed (a pour or a pad, " +
+                          "or a layer that was not analysed); it selected nothing.");
         }
 
         if (!cancelled && layers.All(l => l.Traces.Count == 0 && l.OutOfScope == 0))
@@ -631,6 +667,8 @@ public static class TraceImpedanceAnalysis
             Extent = prep.Extent,
             Notes = notes,
             Scope = scope,
+            HasNets = selection.HasNets,
+            PicksWithoutCopper = noCopper,
             StationCount = stationCount,
             SolveCount = solveCount,
             Elapsed = clock.Elapsed,
@@ -662,6 +700,7 @@ public static class TraceImpedanceAnalysis
 
         var layers = new List<TraceWidthLayer>();
         int solveCount = 0;
+        var selection = new Selection(null, prep, shapes, tech);
         for (int li = 0; li < prep.Analysed.Count; li++)
         {
             var (key, band) = prep.Analysed[li];
@@ -695,12 +734,16 @@ public static class TraceImpedanceAnalysis
                 });
                 control?.TickStage();
             }
-            layers.Add(new TraceWidthLayer { Layer = key, Name = name, Classes = classes, PoursSkipped = lw.Pours });
+            layers.Add(new TraceWidthLayer
+            {
+                Layer = key, Name = name, Classes = classes, PoursSkipped = lw.Pours,
+                NetlessTraces = selection.HasNets ? lw.Chains.Count(c => selection.NetOf(lw, c) is null) : 0,
+            });
             control?.Tick();
         }
         return new TraceWidthSurvey
         {
-            Layers = layers, Notes = prep.Notes, SolveCount = solveCount, Elapsed = clock.Elapsed,
+            Layers = layers, Notes = prep.Notes, Nets = selection.NetNames, SolveCount = solveCount, Elapsed = clock.Elapsed,
         };
     }
 
@@ -808,8 +851,10 @@ public static class TraceImpedanceAnalysis
                              beforeRun: true);
     }
 
-    /// <summary>One sentence for both: the layers with the widths reviewed on each and how many traces
-    /// that is, then how many were left out. <paramref name="units"/> formats the widths.</summary>
+    /// <summary>One sentence for both: what selected the traces (regions, picks, nets), the layers with
+    /// the widths reviewed on each and how many traces that is, then how many were left out.
+    /// <paramref name="units"/> formats the widths. Before a run, a scope with selectors cannot count
+    /// what they select — that is geometry the run resolves — so it says so rather than guess.</summary>
     private static string ScopeSentence(
         IReadOnlyList<(string Name, int InScope, int OutOfScope)> layers, TraceImpedanceScope? scope, TraceImpedanceReport units,
         bool beforeRun)
@@ -819,16 +864,20 @@ public static class TraceImpedanceAnalysis
         if (scope is null)
             return $"Every trace on {JoinAnd([.. layers.Select(l => l.Name)])}.";
 
+        bool counted = !(beforeRun && scope.HasSelectors);
         var clauses = new List<string>();
         foreach (var l in layers)
         {
             var widths = scope.WidthsOn(l.Name).Select(w => w.NominalMicrons).Distinct().OrderBy(w => w).ToList();
+            string count = counted ? $" ({Traces(l.InScope)})" : "";
             clauses.Add(widths.Count == 0
-                ? $"{l.Name}, every width ({Traces(l.InScope)})"
-                : $"{l.Name} at {JoinAnd([.. widths.Select(w => units.Num(w * units.DbuPerMicron))])} {units.Unit} ({Traces(l.InScope)})");
+                ? $"{l.Name}, every width{count}"
+                : $"{l.Name} at {JoinAnd([.. widths.Select(w => units.Num(w * units.DbuPerMicron))])} {units.Unit}{count}");
         }
-        string text = string.Join("; ", clauses) + ".";
+        string text = (scope.HasSelectors ? $"Selected by {SelectorText(scope)}. " : "") + string.Join("; ", clauses) + ".";
 
+        if (!counted)
+            return text + " The traces the selectors choose are counted when the analysis runs.";
         var outside = layers.Where(l => l.OutOfScope > 0).ToList();
         if (outside.Count > 0)
         {
@@ -838,6 +887,25 @@ public static class TraceImpedanceAnalysis
                     (beforeRun ? "will not be analysed." : $"{(one ? "was" : "were")} not analysed.");
         }
         return text;
+    }
+
+    /// <summary>The selectors in words (R-imp4-4a): "2 regions ('RF front end', 'antenna'); 1 pick (Top
+    /// Copper, connected); net RF_OUT".</summary>
+    public static string SelectorText(TraceImpedanceScope scope)
+    {
+        var parts = new List<string>();
+        if (scope.Regions.Count > 0)
+        {
+            var names = scope.Regions.Where(r => !string.IsNullOrWhiteSpace(r.Name)).Select(r => $"'{r.Name}'").ToList();
+            parts.Add((scope.Regions.Count == 1 ? "1 region" : $"{scope.Regions.Count} regions") +
+                      (names.Count > 0 ? $" ({string.Join(", ", names)})" : ""));
+        }
+        if (scope.Picks.Count > 0)
+            parts.Add((scope.Picks.Count == 1 ? "1 pick" : $"{scope.Picks.Count} picks") + " (" +
+                      string.Join("; ", scope.Picks.Select(p => p.Extent == TracePickExtent.Connected ? $"{p.LayerName}, connected" : p.LayerName)) + ")");
+        if (scope.Nets.Count > 0)
+            parts.Add((scope.Nets.Count == 1 ? "net " : "nets ") + JoinAnd(scope.Nets));
+        return string.Join("; ", parts);
     }
 
     private static string JoinAnd(IReadOnlyList<string> items) => items.Count switch

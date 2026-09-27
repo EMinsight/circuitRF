@@ -46,8 +46,16 @@ public sealed partial class ImpedancePanelViewModel : ObservableObject
 
     partial void OnEditorChanged(LayoutEditorViewModel? oldValue, LayoutEditorViewModel? newValue)
     {
-        if (oldValue is not null) oldValue.PropertyChanged -= OnEditorPropertyChanged;
-        if (newValue is not null) newValue.PropertyChanged += OnEditorPropertyChanged;
+        if (oldValue is not null)
+        {
+            oldValue.PropertyChanged -= OnEditorPropertyChanged;
+            oldValue.ShowImpedanceScope = false;
+        }
+        if (newValue is not null)
+        {
+            newValue.PropertyChanged += OnEditorPropertyChanged;
+            newValue.ShowImpedanceScope = IsShown;
+        }
         _surveyCts?.Cancel();
 
         LoadSettings();
@@ -71,6 +79,8 @@ public sealed partial class ImpedancePanelViewModel : ObservableObject
         {
             if (_isShown == value) return;
             _isShown = value;
+            // The scope is drawn on the canvas only while the panel is on screen (R-imp4-1d).
+            if (Editor is { } vm) vm.ShowImpedanceScope = value;
             if (value && _surveyPending) RequestSurvey();
         }
     }
@@ -91,6 +101,15 @@ public sealed partial class ImpedancePanelViewModel : ObservableObject
         {
             case nameof(LayoutEditorViewModel.ImpedanceReport):
                 RebuildResults();
+                RebuildSelectorRows();
+                break;
+            case nameof(LayoutEditorViewModel.ImpedanceScopeVersion):
+                if (!_editingSelectors) RebuildSelectorRows();
+                UpdateScopeText();
+                break;
+            case nameof(LayoutEditorViewModel.ImpedanceScopeTool):
+                OnPropertyChanged(nameof(IsDrawingRegion));
+                OnPropertyChanged(nameof(IsPicking));
                 break;
             case nameof(LayoutEditorViewModel.IsImpedanceStale):
                 OnPropertyChanged(nameof(IsStale));
@@ -138,6 +157,7 @@ public sealed partial class ImpedancePanelViewModel : ObservableObject
             WidthGroups.Clear();
             _widthRows.Clear();
             _surveyed = false;
+            _survey = null;
             SurveyText = "";
 
             var saved = Editor?.SavedImpedanceReview ?? new TraceImpedanceReview();
@@ -157,6 +177,7 @@ public sealed partial class ImpedancePanelViewModel : ObservableObject
         }
         finally { _loading = false; }
         OnPropertyChanged(nameof(HasNoLayers));
+        RebuildSelectorRows();
         Validate();
         UpdateScopeText();
     }
@@ -257,9 +278,21 @@ public sealed partial class ImpedancePanelViewModel : ObservableObject
         };
     }
 
-    private TraceImpedanceScope? CurrentScope() => _surveyed
-        ? TraceWidthRows.ScopeOf(_widthRows.Where(r => r.IsChecked).Select(r => r.Row))
-        : Editor?.SavedImpedanceReview?.Scope?.Clone();
+    /// <summary>The widths ticked (or, before the survey, the saved widths) with the selectors as the
+    /// layout holds them — the selectors are edited only through the layout's EditImpedanceScope.</summary>
+    private TraceImpedanceScope? CurrentScope()
+    {
+        if (Editor is not { } vm) return null;
+        var saved = vm.ImpedanceScope;
+        var scope = _surveyed ? TraceWidthRows.ScopeOf(_widthRows.Where(r => r.IsChecked).Select(r => r.Row)) : saved.Clone();
+        if (_surveyed)
+        {
+            scope.Regions = [.. saved.Regions];
+            scope.Picks = [.. saved.Picks];
+            scope.Nets = [.. saved.Nets];
+        }
+        return scope;
+    }
 
     // ── the trace widths (brief 2's survey) and the scope line ───────────────────────────────
 
@@ -338,6 +371,7 @@ public sealed partial class ImpedancePanelViewModel : ObservableObject
 
         if (WidthGroups.Count == 0) SurveyText = "No traces were found on the copper layers.";
         ShowGroups();
+        RebuildSelectorRows();
         UpdateScopeText();
     }
 
@@ -363,6 +397,141 @@ public sealed partial class ImpedancePanelViewModel : ObservableObject
         }
         var ticked = Layers.Where(l => l.IsChecked).Select(l => l.Name).ToList();
         ScopeText = TraceImpedanceAnalysis.DescribeScope(survey, ticked, CurrentScope(), vm.Model.DbuPerMicron, vm.DisplayUnit);
+    }
+
+    // ── the selectors: regions, picks, nets (brief-impedance-4) ──────────────────────────────
+
+    public ObservableCollection<ImpedanceRegionRow> Regions { get; } = [];
+    public ObservableCollection<ImpedancePickRow> Picks { get; } = [];
+    public ObservableCollection<ImpedanceNetRow> NetRows { get; } = [];
+    private readonly List<ImpedanceNetRow> _allNets = [];
+
+    public bool HasRegions => Regions.Count > 0;
+    public bool HasPicks => Picks.Count > 0;
+
+    /// <summary>R-imp4-3a: the Nets section exists only when copper on the layout carries a net — absent,
+    /// not empty, otherwise. A saved net the artwork no longer has keeps it on screen.</summary>
+    public bool HasNets => _allNets.Count > 0;
+
+    /// <summary>Traces no net selector can choose, counted so the gap is visible (R-imp4-3b).</summary>
+    [ObservableProperty] private string _netlessText = "";
+
+    [ObservableProperty] private string _netFilterText = "";
+    partial void OnNetFilterTextChanged(string value) => FilterNets();
+
+    public bool IsDrawingRegion => Editor?.ImpedanceScopeTool is ImpedanceScopeTool.Rectangle or ImpedanceScopeTool.Lasso;
+
+    /// <summary>The Pick traces toggle: armed while checked; Escape on the canvas unchecks it.</summary>
+    public bool IsPicking
+    {
+        get => Editor?.ImpedanceScopeTool == ImpedanceScopeTool.Pick;
+        set
+        {
+            if (Editor is not { } vm || value == IsPicking) return;
+            vm.ArmImpedanceScopeTool(value ? ImpedanceScopeTool.Pick : ImpedanceScopeTool.None);
+        }
+    }
+
+    [ObservableProperty] private ImpedanceRegionRow? _selectedRegion;
+    partial void OnSelectedRegionChanged(ImpedanceRegionRow? value)
+    {
+        if (Editor is { } vm) vm.SelectedImpedanceRegion = value is null ? -1 : Regions.IndexOf(value);
+    }
+
+    // Set while this panel itself edits the scope, so the layout's change notice does not rebuild the
+    // rows under the control being typed into.
+    private bool _editingSelectors;
+
+    private void EditSelectors(Action<TraceImpedanceScope> edit)
+    {
+        if (Editor is not { } vm) return;
+        _editingSelectors = true;
+        try { vm.EditImpedanceScope(edit); }
+        finally { _editingSelectors = false; }
+    }
+
+    [RelayCommand]
+    private void AddRectangleRegion() => Editor?.ArmImpedanceScopeTool(ImpedanceScopeTool.Rectangle);
+
+    [RelayCommand]
+    private void AddLassoRegion() => Editor?.ArmImpedanceScopeTool(ImpedanceScopeTool.Lasso);
+
+    internal void DeleteRegion(ImpedanceRegionRow? row)
+    {
+        int i = row is null ? -1 : Regions.IndexOf(row);
+        if (i < 0) return;
+        Editor?.EditImpedanceScope(s => { if (i < s.Regions.Count) s.Regions.RemoveAt(i); });
+    }
+
+    private void DeletePick(ImpedancePickRow? row)
+    {
+        if (row is null) return;
+        Editor?.EditImpedanceScope(s => s.Picks.Remove(row.Pick));
+    }
+
+    internal void RenameRegion(ImpedanceRegionRow row, string name)
+    {
+        int i = Regions.IndexOf(row);
+        if (i < 0) return;
+        string? trimmed = string.IsNullOrWhiteSpace(name) ? null : name.Trim();
+        EditSelectors(s => { if (i < s.Regions.Count) s.Regions[i] = s.Regions[i] with { Name = trimmed }; });
+        UpdateScopeText();
+    }
+
+    private void NetTicked()
+    {
+        EditSelectors(s => s.Nets = [.. _allNets.Where(n => n.IsChecked).Select(n => n.Name)]);
+        UpdateScopeText();
+    }
+
+    /// <summary>The three lists, from the scope the layout holds and the latest survey and report.</summary>
+    private void RebuildSelectorRows()
+    {
+        var vm = Editor;
+        var scope = vm?.ImpedanceScope ?? new TraceImpedanceScope();
+        var missing = vm?.ImpedanceReport?.PicksWithoutCopper ?? [];
+
+        var selected = SelectedRegion is { } sel ? Regions.IndexOf(sel) : -1;
+        Regions.Clear();
+        for (int i = 0; i < scope.Regions.Count; i++) Regions.Add(new ImpedanceRegionRow(this, scope.Regions[i], i));
+        SelectedRegion = selected >= 0 && selected < Regions.Count ? Regions[selected] : null;
+
+        Picks.Clear();
+        foreach (var p in scope.Picks)
+            Picks.Add(new ImpedancePickRow(p, missing.Contains(p), vm?.FormatPoint(p.X, p.Y) ?? "", DeletePick));
+
+        foreach (var n in _allNets) n.PropertyChanged -= OnNetRowChanged;
+        _allNets.Clear();
+        var surveyed = _survey?.Nets ?? [];
+        foreach (string name in surveyed)
+            _allNets.Add(new ImpedanceNetRow(name, scope.Nets.Contains(name, StringComparer.OrdinalIgnoreCase), missing: false));
+        foreach (string name in scope.Nets)
+            if (!surveyed.Contains(name, StringComparer.OrdinalIgnoreCase))
+                _allNets.Add(new ImpedanceNetRow(name, true, missing: _surveyed));
+        foreach (var n in _allNets) n.PropertyChanged += OnNetRowChanged;
+        FilterNets();
+
+        int netless = _survey?.Layers.Where(l => Layers.Any(r => r.IsChecked && string.Equals(r.Name, l.Name, StringComparison.OrdinalIgnoreCase)))
+                                     .Sum(l => l.NetlessTraces) ?? 0;
+        NetlessText = surveyed.Count == 0 || netless == 0 ? ""
+            : $"{(netless == 1 ? "1 trace carries" : $"{netless} traces carry")} no net (or two) on the copper under it, so no net can choose {(netless == 1 ? "it" : "them")}.";
+
+        OnPropertyChanged(nameof(HasRegions));
+        OnPropertyChanged(nameof(HasPicks));
+        OnPropertyChanged(nameof(HasNets));
+    }
+
+    private void OnNetRowChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(ImpedanceNetRow.IsChecked)) NetTicked();
+    }
+
+    private void FilterNets()
+    {
+        NetRows.Clear();
+        foreach (var n in _allNets)
+            if (NetFilterText.Length == 0 || n.Name.Contains(NetFilterText.Trim(), StringComparison.OrdinalIgnoreCase))
+                NetRows.Add(n);
     }
 
     // ── the run ──────────────────────────────────────────────────────────────────────────────
@@ -736,4 +905,59 @@ public sealed class ImpedanceFindingResultRow(TraceRun trace, TraceIssue issue) 
 public sealed class ImpedanceNoteResultRow(TraceRun trace, string note) : ImpedanceResultRow(trace)
 {
     public string Text { get; } = note;
+}
+
+/// <summary>One region in the Scope list: its name (editable) and its shape.</summary>
+public sealed partial class ImpedanceRegionRow : ObservableObject
+{
+    private readonly ImpedancePanelViewModel _panel;
+
+    public ImpedanceRegionRow(ImpedancePanelViewModel panel, TraceScopeRegion region, int index)
+    {
+        _panel = panel;
+        _name = region.Name ?? "";
+        Placeholder = $"Region {index + 1}";
+        ShapeText = region.VertexCount == 4 && IsAxisAligned(region) ? "rectangle" : $"lasso, {region.VertexCount} vertices";
+    }
+
+    public string Placeholder { get; }
+    public string ShapeText { get; }
+
+    [RelayCommand]
+    private void Delete() => _panel.DeleteRegion(this);
+
+    [ObservableProperty] private string _name;
+    partial void OnNameChanged(string value) => _panel.RenameRegion(this, value);
+
+    private static bool IsAxisAligned(TraceScopeRegion r)
+    {
+        for (int i = 0; i < 4; i++)
+        {
+            int j = (i + 1) % 4;
+            if (r.Xy[2 * i] != r.Xy[2 * j] && r.Xy[2 * i + 1] != r.Xy[2 * j + 1]) return false;
+        }
+        return true;
+    }
+}
+
+/// <summary>One pick: its layer, point and extent — and "no copper here now" when the last run found
+/// none under it (R-imp4-2d).</summary>
+public sealed partial class ImpedancePickRow(TracePick pick, bool missing, string pointText, Action<ImpedancePickRow> delete)
+{
+    [RelayCommand]
+    private void Delete() => delete(this);
+
+    public TracePick Pick { get; } = pick;
+    public string Text { get; } = $"{pick.LayerName} {pointText}" +
+                                  (pick.Extent == TracePickExtent.Connected ? " · connected" : "");
+    public bool Missing { get; } = missing;
+}
+
+/// <summary>One net the artwork carries, ticked when it is in the scope; a saved net the artwork no
+/// longer carries is kept, ticked, and said to be missing.</summary>
+public sealed partial class ImpedanceNetRow(string name, bool isChecked, bool missing) : ObservableObject
+{
+    public string Name { get; } = name;
+    public bool Missing { get; } = missing;
+    [ObservableProperty] private bool _isChecked = isChecked;
 }

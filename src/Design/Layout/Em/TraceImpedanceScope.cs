@@ -13,26 +13,47 @@ namespace CircuitRF.Design.Layout.Em;
 ///
 /// <para><b>A trace is in scope when its layer is analysed, AND (no selector is set OR it matches any
 /// selector), AND (no width class is set for its layer OR its dominant width is in one).</b> Widths are
-/// a FILTER; regions, picks and nets — brief-impedance-4, which add <c>Regions</c>, <c>Picks</c> and
-/// <c>Nets</c> here — are SELECTORS. Until those exist, the selector clause is always true.</para>
+/// a FILTER; <see cref="Regions"/>, <see cref="Picks"/> and <see cref="Nets"/> (brief-impedance-4) are
+/// SELECTORS — the three ways a reviewer points at a board: draw round the RF area, mark these traces,
+/// name the net.</para>
 ///
 /// <para><b>Scope selects TRACES, never COPPER.</b> Every cross-section still sees every conductor on
 /// every layer; scope decides only which traces are cut, solved and reported.</para>
+///
+/// <para><b>Nets are where schematic back-annotation lands.</b> A trace's net is read from
+/// <see cref="LayoutShape.Net"/> on the copper under its middle, so anything that writes that property —
+/// a Gerber X2 <c>%TO.N</c> attribute, a board netlist applied on import, and later a schematic's
+/// back-annotation — makes the RF net selectable here with no change to this type.</para>
 /// </summary>
 public sealed class TraceImpedanceScope
 {
     /// <summary>The width classes under review, per layer; empty means every width on every layer.</summary>
     public List<TraceWidthSelector> Widths { get; set; } = [];
 
+    /// <summary>Board areas (R-imp4-1): a trace any part of whose centre line lies inside one is
+    /// selected, whole. A region applies to every layer.</summary>
+    public List<TraceScopeRegion> Regions { get; set; } = [];
+
+    /// <summary>Points on copper (R-imp4-2), resolved to traces at every run — never a stored list of
+    /// shapes, so a pick survives edits and re-imports while copper is still there.</summary>
+    public List<TracePick> Picks { get; set; } = [];
+
+    /// <summary>Net names (R-imp4-3): a trace on copper carrying one of them is selected.</summary>
+    public List<string> Nets { get; set; } = [];
+
+    /// <summary>Whether any selector is set — with none, every trace passes the selector clause.</summary>
+    public bool HasSelectors => Regions.Count > 0 || Picks.Count > 0 || Nets.Count > 0;
+
     /// <summary>Whether nothing is selected or filtered — the same as no scope at all.</summary>
-    public bool IsEmpty => Widths.Count == 0;
+    public bool IsEmpty => Widths.Count == 0 && !HasSelectors;
 
     /// <summary>The width classes set for <paramref name="layerName"/>, by name, ignoring case.</summary>
     public IEnumerable<TraceWidthSelector> WidthsOn(string layerName) =>
         Widths.Where(w => string.Equals(w.LayerName, layerName, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>Whether a trace on <paramref name="layerName"/> whose dominant width is
-    /// <paramref name="widthMicrons"/> is in scope.</summary>
+    /// <paramref name="widthMicrons"/> passes the WIDTH filter. The selectors are geometry, and are
+    /// matched by the analysis itself.</summary>
     public bool Includes(string layerName, double widthMicrons)
     {
         bool any = false;
@@ -44,8 +65,89 @@ public sealed class TraceImpedanceScope
         return !any;
     }
 
-    public TraceImpedanceScope Clone() => new() { Widths = [.. Widths] };
+    public TraceImpedanceScope Clone() => new()
+    {
+        Widths = [.. Widths],
+        Regions = [.. Regions.Select(r => r with { Xy = [.. r.Xy] })],
+        Picks = [.. Picks],
+        Nets = [.. Nets],
+    };
+
+    /// <summary>Whether <paramref name="other"/> selects and filters the same traces — list by list, in
+    /// order, a region by its name and vertices. Null is the empty scope.</summary>
+    public static bool Same(TraceImpedanceScope? a, TraceImpedanceScope? b)
+    {
+        a ??= new TraceImpedanceScope();
+        b ??= new TraceImpedanceScope();
+        return a.Widths.SequenceEqual(b.Widths) && a.Picks.SequenceEqual(b.Picks)
+            && a.Nets.SequenceEqual(b.Nets, StringComparer.Ordinal)
+            && a.Regions.Count == b.Regions.Count
+            && a.Regions.Zip(b.Regions).All(p => p.First.Name == p.Second.Name && p.First.Xy.SequenceEqual(p.Second.Xy));
+    }
 }
+
+/// <summary>
+/// One board area under review (R-imp4-1a): a polygon in DBU, as flat x,y pairs, with an optional name.
+/// It is a BOARD area and applies to every layer; a region never cuts a trace short — a trace crossing
+/// its edge is reviewed whole, because cutting it there would invent an open end at the region's edge.
+/// </summary>
+public sealed record TraceScopeRegion(string? Name, long[] Xy)
+{
+    public int VertexCount => Xy.Length / 2;
+
+    /// <summary>Whether (<paramref name="x"/>, <paramref name="y"/>) is inside — even-odd, which for the
+    /// simple polygons a rectangle or a simplified lasso makes is plain inside.</summary>
+    public bool Contains(double x, double y)
+    {
+        bool inside = false;
+        int n = VertexCount;
+        for (int i = 0, j = n - 1; i < n; j = i++)
+        {
+            double xi = Xy[2 * i], yi = Xy[2 * i + 1], xj = Xy[2 * j], yj = Xy[2 * j + 1];
+            if ((yi > y) != (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside;
+        }
+        return inside;
+    }
+
+    /// <summary>Whether any part of the segment (a → b) lies inside: an end inside, or the segment
+    /// crossing an edge.</summary>
+    public bool Touches(double ax, double ay, double bx, double by)
+    {
+        if (Contains(ax, ay) || Contains(bx, by)) return true;
+        int n = VertexCount;
+        for (int i = 0, j = n - 1; i < n; j = i++)
+            if (Cross(ax, ay, bx, by, Xy[2 * j], Xy[2 * j + 1], Xy[2 * i], Xy[2 * i + 1])) return true;
+        return false;
+    }
+
+    private static bool Cross(double ax, double ay, double bx, double by, double cx, double cy, double dx, double dy)
+    {
+        static double Side(double px, double py, double qx, double qy, double rx, double ry) =>
+            (qx - px) * (ry - py) - (qy - py) * (rx - px);
+        double d1 = Side(cx, cy, dx, dy, ax, ay), d2 = Side(cx, cy, dx, dy, bx, by);
+        double d3 = Side(ax, ay, bx, by, cx, cy), d4 = Side(ax, ay, bx, by, dx, dy);
+        return ((d1 > 0) != (d2 > 0)) && ((d3 > 0) != (d4 > 0));
+    }
+
+    /// <summary>The rectangle between two corners, DBU.</summary>
+    public static TraceScopeRegion Rectangle(string? name, long x0, long y0, long x1, long y1) =>
+        new(name, [Math.Min(x0, x1), Math.Min(y0, y1), Math.Max(x0, x1), Math.Min(y0, y1),
+                   Math.Max(x0, x1), Math.Max(y0, y1), Math.Min(x0, x1), Math.Max(y0, y1)]);
+}
+
+/// <summary>How much a <see cref="TracePick"/> selects.</summary>
+public enum TracePickExtent
+{
+    /// <summary>The trace whose copper holds the point, on the pick's layer.</summary>
+    Trace,
+
+    /// <summary>Every trace on the copper galvanically joined to the point, across layers through vias —
+    /// the partition DRC and railRF use. A series part breaks it.</summary>
+    Connected,
+}
+
+/// <summary>A point on copper (R-imp4-2a), DBU, on the layer named — resolved to traces at every run.</summary>
+public sealed record TracePick(string LayerName, long X, long Y, TracePickExtent Extent);
 
 /// <summary>One width class under review: traces on <paramref name="LayerName"/> whose dominant width is
 /// within <paramref name="ToleranceMicrons"/> of <paramref name="NominalMicrons"/>. The layer is named,
@@ -82,6 +184,12 @@ public sealed class TraceImpedanceReview
     /// <summary>Which traces are reviewed; null for every trace.</summary>
     public TraceImpedanceScope? Scope { get; set; }
 
+    public TraceImpedanceReview Clone() => new()
+    {
+        TargetOhms = TargetOhms, TolerancePercent = TolerancePercent, WarningPercent = WarningPercent,
+        MaxFrequencyHz = MaxFrequencyHz, Layers = Layers is null ? null : [.. Layers], Scope = Scope?.Clone(),
+    };
+
     /// <summary>Whether <paramref name="other"/> says the same thing — so a dialog closed with nothing
     /// changed does not mark the layout dirty. A null or empty scope and a null layer list are the
     /// same as their absence; <paramref name="other"/> null is the default review.</summary>
@@ -92,7 +200,7 @@ public sealed class TraceImpedanceReview
             (a is null || a.Count == 0) ? (b is null || b.Count == 0) : b is not null && a.SequenceEqual(b);
         return TargetOhms == other.TargetOhms && TolerancePercent == other.TolerancePercent
             && WarningPercent == other.WarningPercent && MaxFrequencyHz == other.MaxFrequencyHz
-            && SameList(Layers, other.Layers) && SameList(Scope?.Widths, other.Scope?.Widths);
+            && SameList(Layers, other.Layers) && TraceImpedanceScope.Same(Scope, other.Scope);
     }
 }
 
@@ -111,6 +219,10 @@ public sealed record TraceWidthSurvey
     public IReadOnlyList<TraceWidthLayer> Layers { get; init; } = [];
     public IReadOnlyList<string> Notes { get; init; } = [];
 
+    /// <summary>Every net name stated on a shape on a copper layer, sorted; empty when the artwork
+    /// carries none — the panel then offers no Nets list at all (R-imp4-3a).</summary>
+    public IReadOnlyList<string> Nets { get; init; } = [];
+
     /// <summary>The typical-Z0 cuts solved — one per class.</summary>
     public int SolveCount { get; init; }
 
@@ -128,6 +240,10 @@ public sealed record TraceWidthLayer
     /// <summary>Narrowest first.</summary>
     public IReadOnlyList<TraceWidthClass> Classes { get; init; } = [];
     public int PoursSkipped { get; init; }
+
+    /// <summary>Traces on this layer whose copper carries no net, or several (R-imp4-3b) — which no net
+    /// selector can choose. Zero when the artwork carries no nets at all.</summary>
+    public int NetlessTraces { get; init; }
 }
 
 /// <summary>

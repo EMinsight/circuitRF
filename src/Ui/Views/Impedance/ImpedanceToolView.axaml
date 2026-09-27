@@ -158,6 +158,92 @@
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
 
+                    <!-- brief-impedance-4: the traces chosen ON THE BOARD. Any one of these selects a trace;
+                         the widths above then filter what they chose. The scope is drawn on the canvas
+                         while this panel is open. -->
+                    <TextBlock Classes="section" Text="REGIONS, PICKS AND NETS"/>
+                    <TextBlock FontSize="10" Opacity="0.6" TextWrapping="Wrap"
+                               Text="Point at the RF path on the board: a trace any region, pick or net chooses is reviewed, and the widths above then filter what they chose. With none set, every trace is reviewed."/>
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <DropDownButton FontSize="11" Padding="8,2" Content="Add region"
+                                        ToolTip.Tip="Draw round the traces to review. A trace any part of which lies inside is reviewed whole.">
+                            <DropDownButton.Flyout>
+                                <MenuFlyout>
+                                    <MenuItem Header="Rectangle" Command="{Binding Panel.AddRectangleRegionCommand}"/>
+                                    <MenuItem Header="Lasso" Command="{Binding Panel.AddLassoRegionCommand}"/>
+                                </MenuFlyout>
+                            </DropDownButton.Flyout>
+                        </DropDownButton>
+                        <ToggleButton FontSize="11" Padding="8,2" Content="Pick traces" IsChecked="{Binding Panel.IsPicking}"
+                                      ToolTip.Tip="Click a trace on the canvas to review it; Shift-click adds every trace joined to it through vias. Escape stops."/>
+                    </StackPanel>
+                    <TextBlock FontSize="10" Opacity="0.7" TextWrapping="Wrap" IsVisible="{Binding Panel.IsDrawingRegion}"
+                               Text="Drag on the canvas. Escape cancels."/>
+                    <TextBlock FontSize="10" Opacity="0.7" TextWrapping="Wrap" IsVisible="{Binding Panel.IsPicking}"
+                               Text="Click a trace to add it; Shift-click adds every trace joined to it through vias. A series part breaks joined copper, so a path through a DC-block capacitor takes two picks, one each side."/>
+
+                    <ListBox ItemsSource="{Binding Panel.Regions}" SelectedItem="{Binding Panel.SelectedRegion, Mode=TwoWay}"
+                             IsVisible="{Binding Panel.HasRegions}" Background="Transparent" BorderThickness="0"
+                             SelectionMode="Single" MaxHeight="120">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="imp:ImpedanceRegionRow">
+                                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+                                    <TextBox Grid.Column="0" FontSize="11" MinHeight="22" Padding="4,1"
+                                             Text="{Binding Name}" PlaceholderText="{Binding Placeholder}"/>
+                                    <TextBlock Grid.Column="1" FontSize="10" Opacity="0.6" VerticalAlignment="Center"
+                                               Text="{Binding ShapeText}"/>
+                                    <Button Grid.Column="2" Classes="link" Command="{Binding DeleteCommand}"
+                                            ToolTip.Tip="Remove this region">
+                                        <mi:MaterialIcon Kind="Close" Width="12" Height="12"/>
+                                    </Button>
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+
+                    <ItemsControl ItemsSource="{Binding Panel.Picks}" IsVisible="{Binding Panel.HasPicks}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="imp:ImpedancePickRow">
+                                <Grid ColumnDefinitions="*,Auto" MinHeight="20">
+                                    <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6">
+                                        <mi:MaterialIcon Kind="Crosshairs" Width="12" Height="12" Opacity="0.7"/>
+                                        <TextBlock FontSize="11" Text="{Binding Text}" VerticalAlignment="Center"/>
+                                        <TextBlock FontSize="10" Opacity="0.6" FontStyle="Italic" VerticalAlignment="Center"
+                                                   Text="no copper here now" IsVisible="{Binding Missing}"/>
+                                    </StackPanel>
+                                    <Button Grid.Column="1" Classes="link" Command="{Binding DeleteCommand}"
+                                            ToolTip.Tip="Remove this pick">
+                                        <mi:MaterialIcon Kind="Close" Width="12" Height="12"/>
+                                    </Button>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <!-- Nets: only when some copper carries one (R-imp4-3a) — absent, not empty, otherwise. -->
+                    <StackPanel Spacing="3" IsVisible="{Binding Panel.HasNets}">
+                        <TextBlock FontSize="11" FontWeight="SemiBold" Opacity="0.8" Text="Nets"/>
+                        <TextBox FontSize="11" MinHeight="22" Padding="4,1" PlaceholderText="Search nets"
+                                 Text="{Binding Panel.NetFilterText}"/>
+                        <ScrollViewer MaxHeight="120" VerticalScrollBarVisibility="Auto">
+                            <ItemsControl ItemsSource="{Binding Panel.NetRows}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="imp:ImpedanceNetRow">
+                                        <CheckBox IsChecked="{Binding IsChecked}" MinHeight="20">
+                                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                                <TextBlock FontSize="11" Text="{Binding Name}"/>
+                                                <TextBlock FontSize="10" Opacity="0.6" FontStyle="Italic"
+                                                           Text="no copper carries it now" IsVisible="{Binding Missing}"/>
+                                            </StackPanel>
+                                        </CheckBox>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                        <TextBlock FontSize="10" Opacity="0.7" TextWrapping="Wrap" Text="{Binding Panel.NetlessText}"
+                                   IsVisible="{Binding Panel.NetlessText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                    </StackPanel>
+
                     <!-- The scope, in the report's own words, live as it is edited. -->
                     <Border CornerRadius="4" Padding="8,5" Background="{DynamicResource SystemControlBackgroundBaseLowBrush}"
                             IsVisible="{Binding Panel.ScopeText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">

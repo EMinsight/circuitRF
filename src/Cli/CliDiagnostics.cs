@@ -3077,6 +3077,24 @@ internal static class CliDiagnostics
         "impedance: {option} takes {wanted}, got '{text}'.",
         ("option", option), ("text", text), ("wanted", wanted));
 
+    /// <summary>A --region or --pick coordinate with no unit — refused, render --window's rule: a bare
+    /// number could be DBU, µm or mm.</summary>
+    public static Diagnostic ImpedanceCoordinateNeedsUnit(string option, string text, string suggestion) => Diagnostic.Create(
+        "impedance.args.coordinate-needs-unit", DiagnosticSeverity.Error,
+        "impedance: {option} coordinate '{text}' has no unit, and a layout coordinate could be DBU, µm or mm. "
+      + "Write it with its unit — {suggestion}.",
+        ("option", option), ("text", text), ("suggestion", suggestion));
+
+    public static Diagnostic ImpedanceBadRegion(string text) => Diagnostic.Create(
+        "impedance.args.bad-region", DiagnosticSeverity.Error,
+        "impedance: --region takes two opposite corners of a rectangle, x0,y0,x1,y1, each with its unit "
+      + "(e.g. 10mm,5mm,30mm,20mm), got '{text}'.", ("text", text));
+
+    public static Diagnostic ImpedanceBadPick(string text) => Diagnostic.Create(
+        "impedance.args.bad-pick", DiagnosticSeverity.Error,
+        "impedance: --pick takes <layer>@<x>,<y>[:connected], each coordinate with its unit "
+      + "(e.g. \"Top Copper@12.5mm,4mm:connected\"), got '{text}'.", ("text", text));
+
     public static Diagnostic ImpedanceUnknownSeverity(string text) => Diagnostic.Create(
         "impedance.args.unknown-severity", DiagnosticSeverity.Error,
         "impedance: --severity takes warning or fail, got '{text}'.", ("text", text));

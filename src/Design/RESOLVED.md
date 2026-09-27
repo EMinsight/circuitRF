@@ -13865,3 +13865,41 @@ No new diagnostic id: a bad `--width` reuses `impedance.args.bad-number`, an unk
 
 Gate: `tests/Ui.Tests/Em/TraceImpedanceAnalysisTests.cs` — the five scope tests (solves counted, the neighbour still
 copper, one solve per class, the `.clay` round trip, the verb's saved-scope default).
+
+## Impedance review brief 4 — scope on the canvas: regions, picks, nets (2026-09-26)
+
+`TraceImpedanceScope` gained three SELECTORS beside the width filter: `Regions` (`TraceScopeRegion`, a DBU polygon with
+an optional name), `Picks` (`TracePick`: layer name, point, `Trace | Connected`) and `Nets`. In scope = layer analysed
+AND (no selector OR any selector matches) AND width filter. Matching lives in
+`TraceImpedanceAnalysis.Selection.cs` (the analysis is now a `partial` class) and runs before cutting, so a trace no
+selector chooses is never cut or solved. The CLI takes `--region x0,y0,x1,y1`, `--net`, `--pick
+<layer>@<x>,<y>[:connected]`, each replacing the saved selectors of its kind; three new diagnostic ids
+(`impedance.args.coordinate-needs-unit`, `.bad-region`, `.bad-pick`).
+
+**Findings worth keeping:**
+- **A chain's "middle station" is computed from its PIECES**, not its stations: selection happens before `Cut`, and
+  stations do not exist yet. `ChainMiddle` walks half the pieces' summed length. The net lookup and the connected pick
+  both probe there, so a trace is judged by the copper under its middle, never by an end sitting on a pad.
+- **A Trace pick resolves to the chain nearest the point ON THE POINT'S COPPER ISLAND** (the island found through the
+  nearest boundary edge, which for a point inside copper always bounds the region holding it). A click on a pour or a
+  pad-only island is on copper but selects no trace; the report says that separately from "no copper here now".
+- **A Connected pick reads `CopperPieces` (DrcConnectivity's partition), built only when a connected pick exists** — on
+  a large board the partition is the expensive part, and a scope of regions and widths should not pay for it.
+  `PieceAt` is asked on each drawing layer of the chain's band, since a band may bind several.
+- **Nets are read whenever the artwork carries any**, selector or not, because the report counts the traces no net
+  can choose (`TraceLayerResult.NetlessTraces`) and the survey lists the names (`TraceWidthSurvey.Nets`) the panel
+  offers. The lookup indexes ONLY the netted shapes on copper layers in a `LayoutSpatialIndex`, then tests the
+  candidates by their DRC expansion; a netless shape under a netted one does not "disagree" — only two different
+  names do.
+- **Pre-run, the Scope sentence cannot count what selectors choose** — that is geometry the run resolves — so it names
+  them and says the count comes with the run, rather than printing the width-only count as if it were the answer.
+  With no selectors the sentence is byte-identical to brief 2's.
+- **`explain --extents`' `window` string is spelled by `LayoutUnits.Spell` and `--region` parses with
+  `LayoutUnits.TryParse`** — the same pair `render --window` uses — so its output pastes straight into `--region`.
+
+**Not built, per the brief:** exclude-selectors ("everything but…") — the width filter is the pruning tool; no real
+board has yet shown one is needed.
+
+Gate: `tests/Ui.Tests/Em/TraceImpedanceAnalysisTests.cs` — six tests (a region selects whole traces; a trace pick vs a
+connected pick through a via; a net selects and the netless are counted; a pick on bare board is kept and said; all
+three kinds round-trip in the `.clay`; `--region` refuses a bare number).

@@ -814,6 +814,8 @@ the layout you are working in, and each layout keeps its own results.
   on it is shown but cannot be ticked.
 - **Traces** &mdash; the trace widths on each ticked layer, to say which traces are under review. See
   [Choosing the traces](#impedance-scope).
+- **Regions, picks and nets** &mdash; the traces under review pointed at on the board itself: an area
+  drawn round them, the traces clicked, or their net. See [On the board](#impedance-scope-board).
 - **Scope** &mdash; the traces that will be reviewed, in one sentence, updated as you tick and untick.
 
 **Run** analyses them. A bar shows the layer being analysed and how far through it the run is; a whole
@@ -848,7 +850,7 @@ there are results; a PDF exported from stale results says so at the top of its f
 pass as a review of the board as it is now. The Messages line for an export links to the file.
 
 **The review is saved in the layout** as you edit it: the target, both bands, the frequency, the layers
-and the trace widths ticked are stored in the `.clay`, beside the layout's design-rule waivers, so the
+the trace widths ticked, and the regions, picks and nets are stored in the `.clay`, beside the layout's design-rule waivers, so the
 panel opens on them next time and [`circuitrf impedance`](cli.html#impedance) reviews the same traces
 headlessly. Like a waiver, it is a statement about this artwork: changing it marks the layout modified,
 and it is not undone by **Undo**. The results themselves are not saved.
@@ -882,6 +884,43 @@ of the run time &mdash; but they are still **copper**: a trace under review stil
 neighbour as grounded copper beside it, exactly as without a choice. The report says what was reviewed
 and counts what was not, for example *Top Copper at 457 µm (1 trace). 21 traces on Top Copper and 19 on
 Inner 1 are outside the scope and were not analysed.*
+
+### On the board: regions, picks and nets {#impedance-scope-board}
+
+Width fails when an RF trace shares its width with other traces &mdash; a 50 Ω line and a digital bus
+drawn at the same width &mdash; or when the RF path changes width along its way. The **Regions, picks and
+nets** section says which traces are under review by pointing at them:
+
+- **Add region ▸ Rectangle** &mdash; drag a rectangle on the canvas. **Add region ▸ Lasso** &mdash; drag
+  round the area freehand; the outline closes when you let go. **Escape** cancels.
+- **Pick traces** &mdash; while it is on, **click** a trace to add it, or **Shift-click** to add it
+  **and every trace joined to it** through vias, on any layer. Escape, or clicking the button again,
+  stops. The canvas's right-click menu also has **Add to impedance review** beside **Trace Impedance**.
+- **Nets** &mdash; when the artwork carries net names (a Gerber X2 file's net attributes, or a board
+  netlist applied on import), a searchable list of them; tick the nets to review. The section is not
+  there at all for artwork with no nets. A trace's net is the net of the copper under its middle; the
+  panel counts the traces whose copper carries no net (or two), because no net can choose them.
+
+**Any one of them chooses a trace, and the widths then filter what they chose.** With none set, every
+trace is reviewed, as before.
+
+- **A region takes a trace any part of which lies inside it**, and reviews it **whole**: a region that
+  clips the end of the RF trace does not drop it, and never cuts it short. A region is a board area, so
+  it applies to every layer. Regions are listed in the panel, where you can name one (the name appears
+  in the report) or remove it; selecting one highlights it on the canvas. To change a region, remove it
+  and draw it again.
+- **A pick is a point, not a list of shapes**: it is looked up again at every run, so it survives edits
+  and a re-import as long as copper is still there. A pick with no copper under it any more is kept and
+  listed as *no copper here now* until you remove it.
+- **Joined copper stops at a part.** A capacitor or resistor in series is not copper, so a path through a
+  DC-block capacitor is two picks, one each side of it.
+
+While the panel is open, regions are drawn on the canvas as a dashed outline over a light tint and picks
+as a ring and a cross (two rings for a joined pick, grey when there is no copper under it). The PDF's
+maps draw the regions dashed too, and its scope sentence names each selector: *Selected by 2 regions
+('RF front end', 'antenna'); 1 pick (Top Copper, connected); net RF_OUT. Top Copper, every width (3
+traces).* Before a run the panel's Scope line names the selectors but cannot count what they choose;
+the run counts it.
 
 ### What counts as a trace {#impedance-traces}
 

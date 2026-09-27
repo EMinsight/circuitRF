@@ -3551,6 +3551,9 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         // The EM solve-region drag, armed from a .cem editor, owns the press on the same terms.
         if (_emRegionPick is not null) { EmRegionPress(wx, wy); return; }
 
+        // brief-impedance-4: a scope gesture armed from the Impedance panel, on the same terms.
+        if (ImpedanceScopeArmed) { ImpedanceScopePress(wx, wy, mods); return; }
+
         if (ActiveTool == Tool.Select) { HandleSelectPress(wx, wy, mods, Math.Max(hitTolDbu, 0), Math.Max(snapTolDbu, 0), Math.Max(gripLockTolDbu, 0)); return; }
 
         if (ActiveTool == Tool.Instance) { CommitInstancePlacement(); return; }
@@ -3624,6 +3627,8 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         if (_rulerLabelMove is not null) { UpdateRulerLabelMove(wx, wy); return; }
 
         if (_emRegionPick is not null) { EmRegionMove(wx, wy, leftDown); return; }
+
+        if (ImpedanceScopeArmed) { ImpedanceScopeMove(wx, wy, leftDown); return; }
 
         if (ActiveTool == Tool.Select) { HandleSelectMove(wx, wy, leftDown, mods, Math.Max(hitTolDbu, 0), Math.Max(pixelDbu, 0), Math.Max(snapTolDbu, 0), Math.Max(gripLockTolDbu, 0)); return; }
 
@@ -3727,6 +3732,8 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     {
         if (_emRegionPick is not null) { EmRegionRelease(wx, wy); return; }
 
+        if (ImpedanceScopeArmed) { ImpedanceScopeRelease(wx, wy); return; }
+
         if (ActiveTool == Tool.Select) { HandleSelectRelease(wx, wy); return; }
 
         if (!_isDrawingTwoPoint) return;
@@ -3779,6 +3786,12 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         if (_emRegionPick is not null)
         {
             if (key == Key.Escape) CancelEmRegionPick();
+            return;
+        }
+
+        if (ImpedanceScopeArmed)
+        {
+            if (key == Key.Escape) CancelImpedanceScopeTool();
             return;
         }
 
@@ -4493,6 +4506,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             DrcMarkers = BuildDrcMarkers(),
             LvsMarkers = BuildLvsMarkers(),
             Impedance = BuildImpedanceOverlay(),
+            ImpedanceScope = BuildImpedanceScopeOverlay(),
             // pcell-parameter-handles.md: the selected PCell instance's parameter grips, and — while
             // one is being dragged live — the regenerated artwork to draw in that instance's place.
             PCellHandles = BuildPCellHandleMarkers(instanceDragOverrides),

@@ -604,6 +604,9 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         // Trace Impedance Analysis. Every one is a REFUSAL of the verb's own; what the analysis
         // finds is the report, not a diagnostic.
         "impedance.args.bad-number",
+        "impedance.args.bad-pick",
+        "impedance.args.bad-region",
+        "impedance.args.coordinate-needs-unit",
         "impedance.args.multiple-paths",
         "impedance.args.output-not-pdf",
         "impedance.args.path-required",

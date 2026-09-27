@@ -209,7 +209,23 @@ public sealed record class LayoutOverlay
     /// results or the panel's Show on canvas is off.
     /// </summary>
     public ImpedanceOverlay? Impedance { get; init; }
+
+    /// <summary>
+    /// brief-impedance-4 R-imp4-1d: the Impedance review's scope on the artwork — its regions dashed
+    /// over a light tint, its picks marked, and a region being drawn. Drawn while the Impedance panel is
+    /// open, whether or not there are results; the same system layer as <see cref="Impedance"/>.
+    /// </summary>
+    public ImpedanceScopeOverlay? ImpedanceScope { get; init; }
 }
+
+/// <summary>The review's scope ready to draw — world DBU.</summary>
+/// <param name="Regions">Each region's vertices as flat x,y pairs, and whether the panel has it selected.</param>
+/// <param name="Picks">Each pick's point, whether it takes the connected copper, and whether it found none.</param>
+/// <param name="Drawing">The region being drawn — a rectangle's corners or a lasso's path so far — or null.</param>
+public sealed record ImpedanceScopeOverlay(
+    IReadOnlyList<(long[] Xy, bool Selected)> Regions,
+    IReadOnlyList<(long X, long Y, bool Connected, bool Missing)> Picks,
+    long[]? Drawing);
 
 /// <summary>
 /// The Impedance Analysis results, ready to draw: the report's pass band (the colour scale is the PDF

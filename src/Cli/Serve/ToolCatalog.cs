@@ -757,6 +757,20 @@ internal static class ToolCatalog
                           + "layer for this run; a layer given none is reviewed at every width. A trace's width is "
                           + "the width over most of its length. Out-of-scope traces are not cut, solved or listed, "
                           + "only counted, and still count as grounded neighbours."),
+                        new("region", "--region", OptKind.StrRepeat,
+                            "Review only the traces any part of whose centre line lies inside this rectangle, "
+                          + "\"x0,y0,x1,y1\", EVERY coordinate with its unit (10mm,5mm,30mm,20mm); a bare number "
+                          + "is refused. A trace crossing the edge is reviewed whole. Replaces the saved regions "
+                          + "(saved lasso polygons included) for this run. explain --extents prints coordinates in "
+                          + "this spelling."),
+                        new("net", "--net", OptKind.StrRepeat,
+                            "Review only the traces on copper carrying this net name (from Gerber X2 attributes or "
+                          + "a board netlist). Replaces the saved nets for this run."),
+                        new("pick", "--pick", OptKind.StrRepeat,
+                            "Review the trace whose copper holds this point, \"<layer>@<x>,<y>\" with units; "
+                          + "\":connected\" appended takes every trace galvanically joined to it through vias "
+                          + "(a series part breaks it). Replaces the saved picks for this run. Regions, nets and "
+                          + "picks SELECT (a trace any one chooses is in); widths then FILTER what they chose."),
                         new("noScope", "--no-scope", OptKind.Flag,
                             "Ignore the scope saved on the layout and review every trace."),
                         new("survey", "--survey", OptKind.Flag,

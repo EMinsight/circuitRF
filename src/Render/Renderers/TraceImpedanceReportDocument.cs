@@ -540,6 +540,20 @@ public static class TraceImpedanceReportDocument
                 C.DrawPath(path, edge);
             }
 
+            // The scope's regions (brief-impedance-4 R-imp4-4a), dashed, so a reader sees what was
+            // reviewed. A region is a board area, so it is on every layer's map.
+            foreach (var region in report.Scope?.Regions ?? [])
+            {
+                if (region.VertexCount < 3) continue;
+                using var outline = new SKPath();
+                outline.MoveTo(P(region.Xy[0], region.Xy[1]));
+                for (int i = 2; i < region.Xy.Length; i += 2) outline.LineTo(P(region.Xy[i], region.Xy[i + 1]));
+                outline.Close();
+                using var dash = Stroke(Ink, 0.7f);
+                dash.PathEffect = SKPathEffect.CreateDash([3f, 2f], 0);
+                C.DrawPath(outline, dash);
+            }
+
             // The traces, station by station.
             foreach (var t in layer.Traces)
                 foreach (var st in t.Stations)

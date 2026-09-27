@@ -5,7 +5,11 @@
 // (brief-impedance-1): a stretch inside the warning band warns, an electrically short one warns, a
 // broken return never does, a reference step alone warns, and the verb exits 0 on warnings. The scope
 // (brief-impedance-2): it saves solves, it never removes copper, the survey solves one cut per width
-// class, the review round-trips in the .clay, and the verb applies the saved scope by default.
+// class, the review round-trips in the .clay, and the verb applies the saved scope by default. Scope on
+// the canvas (brief-impedance-4): a region selects the traces it touches, whole; a pick selects one
+// trace, or every trace joined to it through a via; a net selects its traces and the netless ones are
+// counted; a pick on bare board is kept and said; all three round-trip; and the verb refuses a bare
+// --region coordinate.
 
 using System.Text.Json;
 using CircuitRF.Cli;
@@ -481,6 +485,166 @@ public class TraceImpedanceAnalysisTests
             var classes = JsonDocument.Parse(_last).RootElement.GetProperty("result").GetProperty("impedanceSurvey")
                                       .GetProperty("layers")[0].GetProperty("classes");
             Assert.Equal(2, classes.GetArrayLength());
+        }
+        finally { try { Directory.Delete(dir, true); } catch (IOException) { } }
+    }
+
+    // ── scope on the canvas (brief-impedance-4) ─────────────────────────────────────────────────
+
+    /// <summary>Two 100 µm traces, 1 mm apart, over the plane.</summary>
+    private static List<LayoutShape> TwinBoard(string? netOfFirst = null)
+    {
+        var first = Rect(Top, -6000, 2500, 6000, 2600);
+        first.Net = netOfFirst;
+        return [first, Rect(Top, -6000, 3500, 6000, 3600), Rect(Gnd, -8000, -8000, 8000, 8000)];
+    }
+
+    private static TraceScopeRegion Box(double x0, double y0, double x1, double y1) =>
+        TraceScopeRegion.Rectangle(null, Um(x0), Um(y0), Um(x1), Um(y1));
+
+    /// <summary>A region round one of two same-width traces reviews that one; a region clipping only its
+    /// end still reviews it WHOLE — the same length as with no scope.</summary>
+    [Fact]
+    public void ARegion_SelectsTheTracesItTouches_Whole()
+    {
+        double fullLength = AnalyzeScoped(TwinBoard(), null).AllTraces.Single(t => t.StartY < Um(3000)).Length;
+
+        var around = Assert.Single(AnalyzeScoped(TwinBoard(), new() { Regions = [Box(-7000, 2400, 7000, 2700)] }).AllTraces);
+        Assert.True(around.StartY < Um(3000));
+
+        var clipped = AnalyzeScoped(TwinBoard(), new() { Regions = [Box(5000, 2300, 7000, 2800)] });
+        Assert.Equal(fullLength, Assert.Single(clipped.AllTraces).Length);
+        Assert.Equal(1, clipped.Layers[0].OutOfScope);
+    }
+
+    private static readonly LayerKey Mid = new(3, 0);
+    private static readonly LayerKey Drill = new(4, 0);
+
+    /// <summary>Top and Mid over the plane, a via joining them.</summary>
+    private static Technology ViaTech() => new()
+    {
+        Name = "via",
+        Layers =
+        [
+            new LayerDef { Key = Top, Name = "Top", Purpose = "conductor" },
+            new LayerDef { Key = Mid, Name = "Mid", Purpose = "conductor" },
+            new LayerDef { Key = Gnd, Name = "Plane", Purpose = "conductor" },
+            new LayerDef { Key = Drill, Name = "Via" },
+        ],
+        Stackup = new Stackup
+        {
+            Top = BoundaryCondition.Open,
+            Bottom = BoundaryCondition.Open,
+            Layers =
+            [
+                new StackupLayer { Kind = StackupKind.Conductor, Name = "Top", ThicknessDbu = Um(35), SigmaSm = 5.8e7, DrawingLayers = [Top] },
+                new StackupLayer { Kind = StackupKind.Via, Name = "V1", DrawingLayers = [Drill], SpanFromLayer = "Top", SpanToLayer = "Mid" },
+                new StackupLayer { Kind = StackupKind.Dielectric, Name = "Core 1", ThicknessDbu = Um(300), Epsr = 4.4 },
+                new StackupLayer { Kind = StackupKind.Conductor, Name = "Mid", ThicknessDbu = Um(35), SigmaSm = 5.8e7, DrawingLayers = [Mid] },
+                new StackupLayer { Kind = StackupKind.Dielectric, Name = "Core 2", ThicknessDbu = Um(300), Epsr = 4.4 },
+                new StackupLayer { Kind = StackupKind.Conductor, Name = "Plane", ThicknessDbu = Um(35), SigmaSm = 5.8e7, DrawingLayers = [Gnd] },
+            ],
+        },
+    };
+
+    /// <summary>A trace on Top down a via to a trace on Mid, and a second, unconnected trace on Top.</summary>
+    private static List<LayoutShape> ViaBoard() =>
+    [
+        Rect(Top, -6000, -150, 0, 150),
+        new ViaShape { Layer = Drill, X = 0, Y = 0, DrillSize = Um(250) },
+        Rect(Mid, 0, -150, 6000, 150),
+        Rect(Top, -6000, 2850, 6000, 3150),
+        Rect(Gnd, -8000, -8000, 8000, 8000),
+    ];
+
+    /// <summary>A Trace pick selects the one trace under it; a Connected pick at the same point also
+    /// selects the trace on Mid the via joins it to — and never the unconnected trace beside it.</summary>
+    [Fact]
+    public void APick_SelectsItsTrace_OrEverythingJoinedThroughAVia()
+    {
+        TraceImpedanceReport Run(TracePickExtent extent) => TraceImpedanceAnalysis.Analyze(ViaBoard(), ViaTech(),
+            LayoutUnits.DefaultDbuPerMicron, new TraceImpedanceOptions
+            {
+                Layers = [Top, Mid], Scope = new() { Picks = [new TracePick("Top", Um(-3000), 0, extent)] },
+            });
+
+        var one = Run(TracePickExtent.Trace);
+        var trace = Assert.Single(one.AllTraces);
+        Assert.True(Math.Abs(trace.StartY) < Um(200), $"picked the trace at y = {trace.StartY}");
+        Assert.Empty(one.Layers.Single(l => l.Name == "Mid").Traces);
+
+        var joined = Run(TracePickExtent.Connected);
+        Assert.Equal(2, joined.TraceCount);
+        Assert.Equal(1, joined.Layers.Single(l => l.Name == "Top").Traces.Count);
+        Assert.Equal(1, joined.Layers.Single(l => l.Name == "Mid").Traces.Count);
+        Assert.Empty(joined.PicksWithoutCopper);
+    }
+
+    /// <summary>A net selects the traces on copper carrying it; the trace on unnetted copper is counted
+    /// as having no net.</summary>
+    [Fact]
+    public void ANet_SelectsItsTraces_AndTheNetlessAreCounted()
+    {
+        var report = AnalyzeScoped(TwinBoard(netOfFirst: "RF_OUT"), new() { Nets = ["RF_OUT"] });
+
+        var trace = Assert.Single(report.AllTraces);
+        Assert.True(trace.StartY < Um(3000));
+        Assert.True(report.HasNets);
+        Assert.Equal(1, report.NetlessCount);
+        Assert.StartsWith("Selected by net RF_OUT. ", report.ScopeText, StringComparison.Ordinal);
+    }
+
+    /// <summary>A pick on bare board is kept, reported as finding no copper, and the run still succeeds.</summary>
+    [Fact]
+    public void APickOnBareBoard_IsKeptAndSaid_AndTheRunSucceeds()
+    {
+        var pick = new TracePick("Top", 0, Um(7500), TracePickExtent.Trace);
+        var report = AnalyzeScoped(TwinBoard(), new() { Picks = [pick] });
+
+        Assert.Null(report.Refusal);
+        Assert.Equal(pick, Assert.Single(report.PicksWithoutCopper));
+        Assert.Contains(report.Notes, n => n.Contains("no copper under it now", StringComparison.Ordinal));
+        Assert.Equal(0, report.TraceCount);
+    }
+
+    /// <summary>A scope with all three selector kinds round-trips through the .clay.</summary>
+    [Fact]
+    public void EverySelectorKind_RoundTripsInTheClay()
+    {
+        var scope = new TraceImpedanceScope
+        {
+            Regions = [TraceScopeRegion.Rectangle("RF front end", 0, 0, 1000, 2000), new TraceScopeRegion(null, [0, 0, 500, 900, -300, 400])],
+            Picks = [new TracePick("Top", 10, 20, TracePickExtent.Connected)],
+            Nets = ["RF_OUT"],
+        };
+        var view = new LayoutView { TechRef = "board.ctech", ImpedanceReview = new TraceImpedanceReview { Scope = scope } };
+
+        var back = LayoutPersistence.Deserialize(LayoutPersistence.Serialize(view)).ImpedanceReview!.Scope;
+        Assert.True(TraceImpedanceScope.Same(scope, back));
+        Assert.True(back!.HasSelectors);
+    }
+
+    /// <summary>The verb's --region takes a unit on every coordinate and refuses a bare number; with
+    /// units it selects what the region in the first test selects.</summary>
+    [Fact]
+    public void TheVerb_Region_RequiresUnits()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "crf-impedance-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            TechPersistence.SaveToFile(Path.Combine(dir, "board.ctech"), Tech());
+            var view = new LayoutView { TechRef = "board.ctech" };
+            view.Shapes.AddRange(TwinBoard());
+            string clay = Path.Combine(dir, "board.clay");
+            LayoutPersistence.SaveToFile(clay, view);
+
+            Assert.Equal(1, InProcess("impedance", clay, "--layers", "Top", "--region", "-7000,2400,7000,2700", "--json"));
+            Assert.Contains("impedance.args.coordinate-needs-unit", _last, StringComparison.Ordinal);
+
+            InProcess("impedance", clay, "--layers", "Top", "--region", "-7mm,2.4mm,7mm,2.7mm", "--json");
+            Assert.Equal(1, JsonDocument.Parse(_last).RootElement.GetProperty("result").GetProperty("impedance")
+                                        .GetProperty("traces").GetInt32());
         }
         finally { try { Directory.Delete(dir, true); } catch (IOException) { } }
     }

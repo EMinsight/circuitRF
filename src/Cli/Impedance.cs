@@ -46,6 +46,10 @@ internal static class Impedance
         public bool NoScope;
         public bool Survey;
         public readonly List<(string Layer, List<double> Microns)> Widths = [];
+        // brief-impedance-4: the selectors, as typed — a coordinate needs the layout's DBU to read.
+        public readonly List<string> Regions = [];
+        public readonly List<string> Nets = [];
+        public readonly List<string> Picks = [];
     }
 
     public static int Run(string[] args)
@@ -121,6 +125,52 @@ internal static class Impedance
                 scope.Widths.RemoveAll(w => string.Equals(w.LayerName, def.Name, StringComparison.OrdinalIgnoreCase));
                 foreach (double um in microns) scope.Widths.Add(TraceWidthSelector.Around(def.Name, um));
             }
+
+            // --region, --net and --pick each REPLACE the saved selectors of their kind for this run
+            // (R-imp4-4b); a kind not given keeps what was saved, lasso polygons included.
+            if (o.Regions.Count > 0)
+            {
+                scope.Regions.Clear();
+                foreach (string text in o.Regions)
+                {
+                    var parts = text.Split(',');
+                    if (parts.Length != 4) return JsonRun.Fail(CliDiagnostics.ImpedanceBadRegion(text));
+                    var v = new long[4];
+                    for (int k = 0; k < 4; k++)
+                        if (Coordinate(parts[k], "--region", source.View, out v[k]) is { } refused) return refused;
+                    if (v[0] == v[2] || v[1] == v[3]) return JsonRun.Fail(CliDiagnostics.ImpedanceBadRegion(text));
+                    scope.Regions.Add(TraceScopeRegion.Rectangle(null, v[0], v[1], v[2], v[3]));
+                }
+            }
+            if (o.Nets.Count > 0)
+            {
+                scope.Nets.Clear();
+                scope.Nets.AddRange(o.Nets);
+            }
+            if (o.Picks.Count > 0)
+            {
+                scope.Picks.Clear();
+                foreach (string text in o.Picks)
+                {
+                    // <layer>@<x>,<y>[:connected] — the layer first, because a layer name may hold a comma
+                    // no more than it may hold an @.
+                    string body = text;
+                    var extent = TracePickExtent.Trace;
+                    if (body.EndsWith(":connected", StringComparison.OrdinalIgnoreCase))
+                    {
+                        extent = TracePickExtent.Connected;
+                        body = body[..^":connected".Length];
+                    }
+                    int at = body.LastIndexOf('@');
+                    var xy = at > 0 ? body[(at + 1)..].Split(',') : [];
+                    if (xy.Length != 2) return JsonRun.Fail(CliDiagnostics.ImpedanceBadPick(text));
+                    if (CopperLayer(tech, copperNames, body[..at].Trim()) is not { } def)
+                        return JsonRun.Fail(CliDiagnostics.ImpedanceUnknownLayer(body[..at].Trim(), string.Join(", ", copperNames)));
+                    if (Coordinate(xy[0], "--pick", source.View, out long px) is { } rx) return rx;
+                    if (Coordinate(xy[1], "--pick", source.View, out long py) is { } ry) return ry;
+                    scope.Picks.Add(new TracePick(def.Name, px, py, extent));
+                }
+            }
         }
 
         var options = new TraceImpedanceOptions
@@ -195,6 +245,28 @@ internal static class Impedance
                || (o.WarningsFail && report.WarningCount > 0) ? 1 : 0;
     }
 
+    /// <summary>
+    /// A layout coordinate for <c>--region</c> or <c>--pick</c>: <b>every coordinate carries a unit and a
+    /// bare number is refused</b>, <c>render --window</c>'s rule for the same reason — 500 could be DBU,
+    /// µm or mm, three boards six orders of magnitude apart, and a region drawn at the wrong one selects
+    /// nothing or everything with no error. Null on success.
+    /// </summary>
+    private static int? Coordinate(string text, string option, LayoutView view, out long dbu)
+    {
+        dbu = 0;
+        string trimmed = text.Trim();
+        if (trimmed.Length == 0 || !char.IsLetter(trimmed[^1]))
+        {
+            var units = new List<LayoutUnit> { LayoutUnit.Um, LayoutUnit.Mm };
+            if (!units.Contains(view.DisplayUnit)) units.Add(view.DisplayUnit);
+            return JsonRun.Fail(CliDiagnostics.ImpedanceCoordinateNeedsUnit(option, text,
+                string.Join(" or ", units.Select(u => $"'{trimmed}{LayoutUnits.AsciiSuffix(u)}'"))));
+        }
+        return LayoutUnits.TryParse(trimmed, LayoutUnit.Um, view.DbuPerMicron, out dbu)
+            ? null
+            : JsonRun.Fail(CliDiagnostics.ImpedanceBadNumber(option, text, "a coordinate with its unit, e.g. 12.5mm"));
+    }
+
     private sealed class Inline(Action<RunProgress> a) : IProgress<RunProgress>
     {
         public void Report(RunProgress value) => a(value);
@@ -206,9 +278,12 @@ internal static class Impedance
             "Usage: circuitrf impedance <layout> [--target 50] [--tol 10] [--warn 20] [--max-freq 6GHz]\n" +
             "                           [--layers \"Top Copper,Inner 2\"] [--max-width <um>]\n" +
             "                           [--width \"Top Copper=457\"]... [--no-scope] [--survey]\n" +
+            "                           [--region x0,y0,x1,y1]... [--net <name>]... [--pick <layer>@<x>,<y>[:connected]]...\n" +
             "                           [--severity warning|fail] [-o report.pdf]\n" +
             "  <layout> is a .clay or a cell folder holding one. The review saved on the layout applies\n" +
-            "  unless a flag overrides it; --survey lists the trace widths per layer and analyses nothing.");
+            "  unless a flag overrides it; --survey lists the trace widths per layer and analyses nothing.\n" +
+            "  --region, --net and --pick select traces and each replaces the saved selectors of its kind;\n" +
+            "  every coordinate carries a unit (12.5mm, 400um, 50mil).");
         return 1;
     }
 
@@ -294,6 +369,9 @@ internal static class Impedance
                     o.Widths.Add((text[..eq].Trim(), microns));
                     continue;
                 }
+                case "--region" when i + 1 < args.Length: o.Regions.Add(args[++i]); continue;
+                case "--net" when i + 1 < args.Length: o.Nets.Add(args[++i]); continue;
+                case "--pick" when i + 1 < args.Length: o.Picks.Add(args[++i]); continue;
                 case "--no-scope": o.NoScope = true; continue;
                 case "--survey": o.Survey = true; continue;
                 default:
