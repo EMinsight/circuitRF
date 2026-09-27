@@ -756,7 +756,7 @@ resolves it, and placed cells are flattened as a design-rule check flattens them
 
 **The review saved in the layout applies by default**, so a headless run reports what the editor
 reports: the target, bands, frequency, layers and [trace widths](layout-editor.html#impedance-scope) last
-chosen in the Impedance Analysis dialog. A flag overrides the saved value, and the saved value overrides
+chosen in the editor's Impedance panel. A flag overrides the saved value, and the saved value overrides
 the default. A saved layer the technology no longer has is skipped with a line on stderr.
 
 | Option | Meaning |

@@ -186,7 +186,7 @@ public partial class WorkspaceViewModel
             // Closed: back where it was, if anywhere is remembered; otherwise DOCKED beside a panel of
             // its kind rather than floated over the canvas the user is about to search.
             if (RestorePanelToItsHome(DockPanelIds.Instances, tool)) return;
-            if (DockInstancesPanelBesideSibling(tool)) return;
+            if (DockPanelBesideSibling(tool, _factory.AnalysesTool, _factory.PropertiesTool, _factory.ProjectTreeTool)) return;
 
             ShowToolPanelCore(DockPanelIds.Instances);
         }
@@ -197,13 +197,13 @@ public partial class WorkspaceViewModel
     }
 
     /// <summary>
-    /// Tabs the panel in front of the Analyses (or failing that the Properties, or the Project) panel
-    /// in the shell. An insert into a live dock, never a layout rebuild — a rebuild re-realises every
-    /// open canvas, and a keystroke must not cost that.
+    /// Tabs <paramref name="tool"/> in front of the first of <paramref name="siblings"/> docked in the
+    /// shell (the Instances panel: Analyses, then Properties, then Project). An insert into a live dock,
+    /// never a layout rebuild — a rebuild re-realises every open canvas, and a keystroke must not cost that.
     /// </summary>
-    private bool DockInstancesPanelBesideSibling(InstancesTool tool)
+    private bool DockPanelBesideSibling(ITool tool, params ITool?[] siblings)
     {
-        foreach (var sibling in new ITool?[] { _factory.AnalysesTool, _factory.PropertiesTool, _factory.ProjectTreeTool })
+        foreach (var sibling in siblings)
         {
             if (sibling is null) continue;
             if (!_factory.TryFindTool(sibling, out var parent, out var window) || parent is null || window is not null)

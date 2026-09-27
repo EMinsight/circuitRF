@@ -786,22 +786,26 @@ Gerber stroke was split, is not a bend: the direction is taken from the trace's 
 the one edge beside the click. And where the coplanar ground beside the trace **is not straight**
 &mdash; a pour that juts in toward the trace for part of its run &mdash; the answer is for the gap at the
 point you clicked, and the line adds *G right varies 184–259 µm along the run* so you know the number
-is local. The [Impedance Analysis](#impedance-analysis) report shows Z0 along the whole trace.
+is local. The [Impedance Analysis](#impedance-analysis) shows Z0 along the whole trace.
 
 ## Impedance Analysis {#impedance-analysis}
 
-The **Impedance Analysis** button on the toolbar (the **Z₀** tile beside Check Design Rules) checks
-**every trace on the layers you choose** against a target impedance and writes the review as a PDF
-&mdash; the document you file with a board you send out with an impedance-control note. It is
-[Trace impedance](#trace-impedance) run end to end along every trace, from the same cross-section
-solve, so a trace's number in the report is the number you get by right-clicking it.
+The **Impedance** panel checks **every trace on the layers you choose** against a target impedance,
+shows the result on the board, and exports the review as a PDF &mdash; the document you file with a
+board you send out with an impedance-control note. It is [Trace impedance](#trace-impedance) run end
+to end along every trace, from the same cross-section solve, so a trace's number in the panel is the
+number you get by right-clicking it.
 
-The dialog asks:
+The **Z₀** tile on the toolbar (beside Check Design Rules) opens the panel for the layout you are in,
+docked beside Properties; it is also under **View ▸ Panels ▸ Impedance**. Like the DRC panel it follows
+the layout you are working in, and each layout keeps its own results.
 
-- **Impedance Z₀** &mdash; the target, in ohms. 50 Ω by default.
+**Settings and scope**, at the top of the panel:
+
+- **Target Z₀** &mdash; the target, in ohms. 50 Ω by default.
 - **Tolerance** &mdash; ± this many percent passes, 10 % by default.
 - **Warning** &mdash; ± this many percent is a warning rather than a fail, 20 % by default. It must be
-  wider than the tolerance. The dialog shows both bands it gives you, for example
+  wider than the tolerance. The panel shows both bands it gives you, for example
   *Pass 45.0–55.0 Ω · Warning 40.0–60.0 Ω*.
 - **Highest frequency** &mdash; optional, blank by default. When given (*6 GHz*; a bare number is GHz),
   a stretch outside the warning band that is **shorter than λ/20** at that frequency is a warning
@@ -810,19 +814,44 @@ The dialog asks:
   on it is shown but cannot be ticked.
 - **Traces** &mdash; the trace widths on each ticked layer, to say which traces are under review. See
   [Choosing the traces](#impedance-scope).
+- **Scope** &mdash; the traces that will be reviewed, in one sentence, updated as you tick and untick.
 
-**Export…** asks where to save the `.pdf`, then runs. A bar shows the layer being analysed and how far
-through it the run is; a whole eight-layer board of about 300 traces takes a couple of minutes, a
-single outer layer a few seconds. **Cancel** stops the run and still writes the report for **every
-layer that finished**, with a note on its first page saying it was cancelled. The Messages panel gets
-one line with the counts that pass, warn and fail, and a link to the file; it is a warning line only
-when something **failed** or the run was cancelled.
+**Run** analyses them. A bar shows the layer being analysed and how far through it the run is; a whole
+eight-layer board of about 300 traces takes a couple of minutes, a single outer layer a few seconds.
+**Cancel** stops the run and keeps **every layer that finished**. The Messages panel gets one line with
+the counts that pass, warn and fail; it is a warning line only when something **failed** or the run was
+cancelled.
 
-**The review is saved in the layout.** Closing the dialog &mdash; after Export or with Cancel &mdash;
-stores the target, both bands, the frequency, the layers and the trace widths ticked in the `.clay`,
-beside the layout's design-rule waivers, so the next Impedance Analysis opens on them and
-[`circuitrf impedance`](cli.html#impedance) reviews the same traces headlessly. Like a waiver, it is a
-statement about this artwork: saving it marks the layout modified, and it is not undone by **Undo**.
+**The results** stay in the panel until you run again:
+
+- **Tiles** count the traces that **pass**, **warn** and **fail**, and those **out of scope**.
+- A **filter** lists **All**, **Warnings and failures** (the default) or **Failures**. A trace that
+  could not be solved at all was not reviewed, and is listed with the failures.
+- **One row per trace**: its id, layer, verdict, width, Z0 min–max, the share of it inside the pass
+  band, and its line type &mdash; the same text the PDF's table prints. The arrow beside a row opens its
+  findings, each with its severity, and its notes.
+- **Selecting a row** marks that trace, or that finding, on the canvas; **double-clicking** it zooms to
+  the trace, or to the stretch the finding is about.
+
+**On the canvas**, while the panel has results, every reviewed trace's centre line is drawn in its Z0
+colour &mdash; the PDF map's scale: green inside the pass band, blue below, red above &mdash; with a
+marker at each finding: **filled** for a fail, **hollow** for a warning, orange for Z0 and purple for the
+return path. A trace outside the scope is not drawn. **Show on canvas** turns this off. It is never part
+of the artwork: no export, Gerber, GDSII or `render` picture carries it.
+
+**Editing the layout keeps the results** and marks them stale &mdash; *The layout has changed since this
+run* &mdash; because you are usually part-way through fixing what they found. Run again to review the
+artwork as it is now.
+
+**Export PDF…** writes the results the panel holds as a PDF, without running again. It is available once
+there are results; a PDF exported from stale results says so at the top of its first page, so it cannot
+pass as a review of the board as it is now. The Messages line for an export links to the file.
+
+**The review is saved in the layout** as you edit it: the target, both bands, the frequency, the layers
+and the trace widths ticked are stored in the `.clay`, beside the layout's design-rule waivers, so the
+panel opens on them next time and [`circuitrf impedance`](cli.html#impedance) reviews the same traces
+headlessly. Like a waiver, it is a statement about this artwork: changing it marks the layout modified,
+and it is not undone by **Undo**. The results themselves are not saved.
 
 ### Choosing the traces {#impedance-scope}
 
@@ -831,8 +860,9 @@ report that is mostly FAIL for traces nobody meant to be 50 Ω. The **Traces** s
 under review, by **width** &mdash; which is how a fabrication drawing's impedance note is written
 (*457 µm on L1: 50 Ω controlled*), and which works on imported Gerber artwork with no nets.
 
-When the dialog opens it surveys the board in the background (closing the dialog stops it) and lists,
-under each ticked layer, every **width class** on it:
+When the panel is on screen it surveys the board in the background and lists, under each ticked layer,
+every **width class** on it (the refresh button beside **Traces** surveys again after the artwork has
+changed):
 
 *457 µm &nbsp; 1 trace &nbsp; 18.3 mm · typical Z₀ 55.4 Ω*
 
@@ -842,7 +872,7 @@ under each ticked layer, every **width class** on it:
   which, not the class's result. The analysis measures every trace in full.
 - **Nothing is ticked for you**, not even the widths already near the target: a trace drawn at the wrong
   width is exactly what the review exists to catch. Once you have ticked some, the saved choice is what
-  the dialog opens on.
+  the panel opens on.
 - **No width ticked on a layer reviews every width on it.** Unticking a layer hides its widths.
 - A saved width the artwork no longer has is kept, struck through, with *no traces at this width now*;
   untick it to drop it.
@@ -901,7 +931,8 @@ blank, the rule is off and the report says nothing about it.
 
 ### The report {#impedance-report}
 
-- **A summary page** &mdash; always one page: the target and pass band, the **scope** &mdash; which traces
+- **A summary page** &mdash; always one page: first, when the results were stale when exported, a line
+  saying the layout had changed since the run; then the target and pass band, the **scope** &mdash; which traces
   were reviewed and how many on each layer were outside it &mdash; the technology and its `.ctech`
   file, the layers, the counts of traces that pass, warn and fail, and per layer the traces outside the
   scope and the worst excursion from the target. With a highest frequency given, *How it was measured* states the λ/20 rule and the frequency. On the right is the **stackup** the traces were solved against, drawn exactly as the

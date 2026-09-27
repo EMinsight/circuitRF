@@ -12732,6 +12732,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         _factory.LvsTool?.SetActiveLayout(doc.ActiveViewModel);
         InstallLvsSchematic(doc.ActiveViewModel);
 
+        // brief-impedance-3: and the Impedance panel — its results are held on the layout analysed.
+        _factory.ImpedanceTool?.SetActiveLayout(doc.ActiveViewModel);
+
         // wbond.md §10.1 (WB39a/M3): so do the two wBond panels, and that is the milestone — push into
         // a wirebond cell (WB40) and its wires' profile and its arrays' inductance are right there,
         // with no second editor to open. A layout with no wires leaves both saying so.
@@ -15682,6 +15685,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // violations on screen beside unrelated artwork by simply not knowing about this panel.
         _factory.DrcTool?.SetActiveLayout(null);
         _factory.LvsTool?.SetActiveLayout(null);
+        _factory.ImpedanceTool?.SetActiveLayout(null);
 
         // brief-find-instance-panel.md — the Instances panel lists THIS document's placed components,
         // and nothing for a document that is neither a schematic nor a layout (R-fi-3), on the same

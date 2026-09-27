@@ -1054,6 +1054,11 @@ public static partial class LayoutRenderer
                 // do (R-lvs12-1e), so nothing headless draws these.
                 if (opts.Overlay?.LvsMarkers is { Count: > 0 } lvsMarkers)
                     DrawLvsMarkers(canvas, lvsMarkers, theme, ps, scaleUm);
+
+                // brief-impedance-3 R-imp3-3: the Impedance panel's results. Overlay-only, like LVS —
+                // results are review state, not document content, so no export ever draws them.
+                if (opts.Overlay?.Impedance is { } impedance)
+                    DrawImpedanceOverlay(canvas, impedance, ps, scaleUm);
             }
             finally
             {

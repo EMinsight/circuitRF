@@ -550,6 +550,10 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             // after nudging a pad. The panel says so and refuses to probe; it does not re-run.
             MarkLvsStaleOnEdit();
 
+            // brief-impedance-3 R-imp3-2e: and so is an Impedance Analysis result — kept, and said to
+            // be stale, because the reviewer is usually mid-fix and still reading the rows.
+            MarkImpedanceStaleOnEdit();
+
             bool shapesChanged = _selectedIndices.RemoveAll(i => i < 0 || i >= Model.Shapes.Count) > 0;
             bool instancesChanged = _selectedInstanceIndices.RemoveAll(i => i < 0 || i >= Model.Instances.Count) > 0;
             bool rulersChanged = PruneRulerSelection();
@@ -4488,6 +4492,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             SnapMarker = _currentSnapCandidate,
             DrcMarkers = BuildDrcMarkers(),
             LvsMarkers = BuildLvsMarkers(),
+            Impedance = BuildImpedanceOverlay(),
             // pcell-parameter-handles.md: the selected PCell instance's parameter grips, and — while
             // one is being dragged live — the regenerated artwork to draw in that instance's place.
             PCellHandles = BuildPCellHandleMarkers(instanceDragOverrides),

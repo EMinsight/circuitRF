@@ -89,6 +89,10 @@ public class CircuitRfDockFactory : Factory
     /// placed components, following the focused document as the DRC and LVS panels do.</summary>
     public InstancesTool?    InstancesTool    { get; private set; }
 
+    /// <summary>brief-impedance-3's Impedance panel, following the active layout as the DRC and LVS
+    /// panels do.</summary>
+    public ImpedanceTool?    ImpedanceTool    { get; private set; }
+
     /// <summary>
     /// RC-10's one history panel (§5.10) — the versions and the restore points in one list.
     /// <b>Replaces the two properties this factory carried before</b>, which is what makes "a layout
@@ -197,6 +201,7 @@ public class CircuitRfDockFactory : Factory
             DrcTool         = new DrcTool();
             LvsTool         = new LvsTool();
             InstancesTool   = new InstancesTool();
+            ImpedanceTool   = new ImpedanceTool();
             HistoryTool = new HistoryTool();
             WBondProfileTool    = new WBondProfileTool();
             WBondInductanceTool = new WBondInductanceTool();
@@ -213,6 +218,7 @@ public class CircuitRfDockFactory : Factory
             DrcTool         ??= new DrcTool();
             LvsTool         ??= new LvsTool();
             InstancesTool   ??= new InstancesTool();
+            ImpedanceTool   ??= new ImpedanceTool();
             HistoryTool ??= new HistoryTool();
             WBondProfileTool    ??= new WBondProfileTool();
             WBondInductanceTool ??= new WBondInductanceTool();
@@ -234,6 +240,7 @@ public class CircuitRfDockFactory : Factory
             DockPanelIds.Drc         => DrcTool,
             DockPanelIds.Lvs         => LvsTool,
             DockPanelIds.Instances   => InstancesTool,
+            DockPanelIds.Impedance   => ImpedanceTool,
             DockPanelIds.History     => HistoryTool,
             DockPanelIds.WBondProfile    => WBondProfileTool,
             DockPanelIds.WBondInductance => WBondInductanceTool,
@@ -717,6 +724,7 @@ public class CircuitRfDockFactory : Factory
         DockPanelIds.Drc         => DrcTool,
         DockPanelIds.Lvs         => LvsTool,
         DockPanelIds.Instances   => InstancesTool,
+        DockPanelIds.Impedance   => ImpedanceTool,
         DockPanelIds.History     => HistoryTool,
         DockPanelIds.WBondProfile    => WBondProfileTool,
         DockPanelIds.WBondInductance => WBondInductanceTool,
@@ -727,7 +735,7 @@ public class CircuitRfDockFactory : Factory
     private IEnumerable<ITool?> AllTools() =>
     [
         ProjectTreeTool, PaletteTool, PropertiesTool, AnalysesTool, MessagesTool, DrcTool, LvsTool,
-        WBondProfileTool, WBondInductanceTool, HistoryTool, InstancesTool,
+        WBondProfileTool, WBondInductanceTool, HistoryTool, InstancesTool, ImpedanceTool,
     ];
 
     // ── Auto-hidden panels ────────────────────────────────────────────────────

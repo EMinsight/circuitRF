@@ -283,6 +283,13 @@ public sealed record TraceImpedanceReport
     /// <summary>The run was cancelled; <see cref="Layers"/> holds the layers it finished.</summary>
     public bool Cancelled { get; init; }
 
+    /// <summary>The layout was edited after this run (brief-impedance-3 R-imp3-2e). Set by the editor on
+    /// the copy it exports, so a stale PDF says so on its summary page and cannot pass as current.</summary>
+    public bool Stale { get; init; }
+
+    /// <summary>What a stale report says about itself — the panel's banner and the PDF's alike.</summary>
+    public const string StaleText = "The layout has changed since this run";
+
     /// <summary>The whole artwork's extent, DBU — every layer page is framed on it so the pages line up.</summary>
     public Bbox Extent { get; init; } = Bbox.Empty;
 
@@ -308,6 +315,30 @@ public sealed record TraceImpedanceReport
     public int PassCount => AllTraces.Count(t => t.Verdict == TraceVerdict.Pass);
     public int WarningCount => AllTraces.Count(t => t.Verdict == TraceVerdict.Warning);
     public int FailCount => AllTraces.Count(t => t.Verdict == TraceVerdict.Fail);
+
+    // ── the strings a trace row prints — the PDF's table and the panel's rows share them (R-imp3-2c) ──
+
+    /// <summary>A Z0 as a table cell: "55.4", or "—" when there is none.</summary>
+    public static string OhmsText(double? z) => z is { } v ? $"{v:0.0}" : "—";
+
+    public static string VerdictText(TraceVerdict v) => v switch
+    {
+        TraceVerdict.Pass    => "PASS",
+        TraceVerdict.Warning => "WARN",
+        TraceVerdict.Fail    => "FAIL",
+        _ => "—",
+    };
+
+    public static string SeverityText(TraceIssue i) => i.Fails ? "FAIL" : "WARN";
+
+    /// <summary>The share of the trace's solved length inside the pass band: "84%".</summary>
+    public static string InToleranceText(TraceRun t) => $"{t.InTolerance:0%}";
+
+    /// <summary>A trace's width, bare, in the report's unit: one number when it is uniform, else min–max.</summary>
+    public string WidthText(TraceRun t) =>
+        Math.Abs(t.WidthMax - t.WidthMin) < 0.5 * DbuPerMicron
+            ? Num(t.WidthMin, 1)
+            : $"{Num(t.WidthMin, 0)}–{Num(t.WidthMax, 0)}";
 
     /// <summary>A frequency as a reviewer writes it — "6 GHz", "900 MHz".</summary>
     public static string Hz(double hz) => hz switch
@@ -750,29 +781,61 @@ public static class TraceImpedanceAnalysis
     /// traces left out, counted — never listed (the series rule: what was not reviewed is said, not
     /// hidden).
     /// </summary>
-    private static string DescribeScope(TraceImpedanceReport r)
+    private static string DescribeScope(TraceImpedanceReport r) =>
+        ScopeSentence([.. r.Layers.Select(l => (l.Name, l.Traces.Count, l.OutOfScope))], r.Scope, r, beforeRun: false);
+
+    /// <summary>
+    /// The scope in the report's own words BEFORE a run, from a survey (brief-impedance-3 R-imp3-1b: the
+    /// panel's Scope line, live as the scope is edited). A width class counts as in scope by its nominal
+    /// width; a run decides trace by trace, so the counts are the survey's and the run's may differ
+    /// where a class straddles a selector's edge.
+    /// </summary>
+    public static string DescribeScope(
+        TraceWidthSurvey survey, IReadOnlyCollection<string>? layerNames, TraceImpedanceScope? scope,
+        int dbuPerMicron, LayoutUnit displayUnit)
+    {
+        ArgumentNullException.ThrowIfNull(survey);
+        if (scope is { IsEmpty: true }) scope = null;
+        var layers = new List<(string, int, int)>();
+        foreach (var l in survey.Layers)
+        {
+            if (layerNames is not null && !layerNames.Contains(l.Name, StringComparer.OrdinalIgnoreCase)) continue;
+            int all = l.Classes.Sum(c => c.TraceCount);
+            int inScope = l.Classes.Where(c => scope?.Includes(l.Name, c.NominalMicrons) ?? true).Sum(c => c.TraceCount);
+            layers.Add((l.Name, inScope, all - inScope));
+        }
+        return ScopeSentence(layers, scope, new TraceImpedanceReport { DbuPerMicron = dbuPerMicron, DisplayUnit = displayUnit },
+                             beforeRun: true);
+    }
+
+    /// <summary>One sentence for both: the layers with the widths reviewed on each and how many traces
+    /// that is, then how many were left out. <paramref name="units"/> formats the widths.</summary>
+    private static string ScopeSentence(
+        IReadOnlyList<(string Name, int InScope, int OutOfScope)> layers, TraceImpedanceScope? scope, TraceImpedanceReport units,
+        bool beforeRun)
     {
         static string Traces(int n) => n == 1 ? "1 trace" : $"{n} traces";
-        if (r.Layers.Count == 0) return "";
-        if (r.Scope is null)
-            return $"Every trace on {JoinAnd([.. r.Layers.Select(l => l.Name)])}.";
+        if (layers.Count == 0) return "";
+        if (scope is null)
+            return $"Every trace on {JoinAnd([.. layers.Select(l => l.Name)])}.";
 
         var clauses = new List<string>();
-        foreach (var l in r.Layers)
+        foreach (var l in layers)
         {
-            var widths = r.Scope.WidthsOn(l.Name).Select(w => w.NominalMicrons).Distinct().OrderBy(w => w).ToList();
+            var widths = scope.WidthsOn(l.Name).Select(w => w.NominalMicrons).Distinct().OrderBy(w => w).ToList();
             clauses.Add(widths.Count == 0
-                ? $"{l.Name}, every width ({Traces(l.Traces.Count)})"
-                : $"{l.Name} at {JoinAnd([.. widths.Select(w => r.Num(w * r.DbuPerMicron))])} {r.Unit} ({Traces(l.Traces.Count)})");
+                ? $"{l.Name}, every width ({Traces(l.InScope)})"
+                : $"{l.Name} at {JoinAnd([.. widths.Select(w => units.Num(w * units.DbuPerMicron))])} {units.Unit} ({Traces(l.InScope)})");
         }
         string text = string.Join("; ", clauses) + ".";
 
-        var outside = r.Layers.Where(l => l.OutOfScope > 0).ToList();
+        var outside = layers.Where(l => l.OutOfScope > 0).ToList();
         if (outside.Count > 0)
         {
             var parts = outside.Select((l, i) => i == 0 ? $"{Traces(l.OutOfScope)} on {l.Name}" : $"{l.OutOfScope} on {l.Name}").ToList();
             bool one = outside.Count == 1 && outside[0].OutOfScope == 1;
-            text += $" {JoinAnd(parts)} {(one ? "is" : "are")} outside the scope and {(one ? "was" : "were")} not analysed.";
+            text += $" {JoinAnd(parts)} {(one ? "is" : "are")} outside the scope and " +
+                    (beforeRun ? "will not be analysed." : $"{(one ? "was" : "were")} not analysed.");
         }
         return text;
     }

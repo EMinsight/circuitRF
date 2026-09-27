@@ -40,9 +40,11 @@ public static class TraceImpedanceReportDocument
     private static readonly SKColor PassInk    = new(0x1e, 0x7b, 0x3c);
     private static readonly SKColor FailInk    = new(0xb4, 0x23, 0x18);
     private static readonly SKColor WarnInk    = new(0xb0, 0x6a, 0x00);
-    private static readonly SKColor Unsolved   = new(0x9a, 0xa0, 0xa6);
-    private static readonly SKColor GroundMark = new(0x7b, 0x2c, 0xbf);
-    private static readonly SKColor ZMark      = new(0xd9, 0x6c, 0x06);
+    // The layout canvas's results overlay draws in these too (LayoutRenderer.Impedance.cs), so a marker
+    // on screen and the same marker on the map page are one colour.
+    internal static readonly SKColor Unsolved   = new(0x9a, 0xa0, 0xa6);
+    internal static readonly SKColor GroundMark = new(0x7b, 0x2c, 0xbf);
+    internal static readonly SKColor ZMark      = new(0xd9, 0x6c, 0x06);
 
     /// <summary>The whole report as PDF bytes. Complete before the caller writes anything, so a
     /// failed or cancelled export leaves no half-written file.</summary>
@@ -101,15 +103,9 @@ public static class TraceImpedanceReportDocument
     private static SKFont Font(SKTypeface face, float size) =>
         new(face, size) { Edging = SKFontEdging.Antialias, Subpixel = false };
 
-    private static string Ohms(double? z) => z is { } v ? $"{v:0.0}" : "—";
+    private static string Ohms(double? z) => TraceImpedanceReport.OhmsText(z);
 
-    private static string VerdictText(TraceVerdict v) => v switch
-    {
-        TraceVerdict.Pass    => "PASS",
-        TraceVerdict.Warning => "WARN",
-        TraceVerdict.Fail    => "FAIL",
-        _ => "—",
-    };
+    private static string VerdictText(TraceVerdict v) => TraceImpedanceReport.VerdictText(v);
 
     private static SKColor VerdictInk(TraceVerdict v) => v switch
     {
@@ -119,7 +115,7 @@ public static class TraceImpedanceReportDocument
         _ => Muted,
     };
 
-    private static string SeverityText(TraceIssue i) => i.Fails ? "FAIL" : "WARN";
+    private static string SeverityText(TraceIssue i) => TraceImpedanceReport.SeverityText(i);
 
     /// <summary>The page stream: the current page, a cursor, and the running header and footer.</summary>
     private sealed class Writer(SKDocument document, TraceImpedanceReport report)
@@ -286,6 +282,19 @@ public static class TraceImpedanceReportDocument
                 }
             }
             _y = y + 12;
+
+            // A report exported after the layout was edited (brief-impedance-3 R-imp3-4a) says so first:
+            // a stale PDF must not pass as a review of the artwork as it is now.
+            if (report.Stale)
+            {
+                using var warn = Fill(new SKColor(0xfd, 0xf1, 0xe6));
+                using var warnInk = Fill(new SKColor(0x9a, 0x4a, 0x00));
+                C.DrawRoundRect(new SKRect(x0, _y, x0 + leftW, _y + 20), 3, 3, warn);
+                C.DrawText(Clip($"{TraceImpedanceReport.StaleText}: these results are of the artwork as it was.",
+                                _bold, leftW - 16),
+                           x0 + 8, _y + 13.5f, SKTextAlign.Left, _bold, warnInk);
+                _y += 28;
+            }
 
             if (report.Cancelled)
             {
@@ -765,14 +774,12 @@ public static class TraceImpedanceReportDocument
                 if (_y + 13 > Bottom) { NewPage(section + " (continued)"); _y += 6; Header(Cols, Heads); }
                 string Pt(long x, long y) =>
                     $"{report.Num(x, 0)}, {report.Num(y, 0)}";
-                string width = Math.Abs(t.WidthMax - t.WidthMin) < 0.5 * report.DbuPerMicron
-                    ? report.Num(t.WidthMin, 1)
-                    : $"{report.Num(t.WidthMin, 0)}–{report.Num(t.WidthMax, 0)}";
+                string width = report.WidthText(t);
                 var verdictColor = VerdictInk(t.Verdict);
                 Row(Cols,
                     [t.Id, Pt(t.StartX, t.StartY), Pt(t.EndX, t.EndY), $"{t.StartsAt} / {t.EndsAt}",
                      report.Num(t.Length, 0), width,
-                     t.TypeSummary, Ohms(t.Z0Min), Ohms(t.Z0Max), Ohms(t.Z0Mean), $"{t.InTolerance:0%}",
+                     t.TypeSummary, Ohms(t.Z0Min), Ohms(t.Z0Max), Ohms(t.Z0Mean), TraceImpedanceReport.InToleranceText(t),
                      string.Join(", ", t.References), VerdictText(t.Verdict), t.Issues.Count == 0 ? "" : t.Issues.Count.ToString()],
                     [Ink, Muted, Muted, Muted, Ink, Ink, Ink,
                      Zc(t.Z0Min), Zc(t.Z0Max), Zc(t.Z0Mean), Ink, Muted, verdictColor, Ink],

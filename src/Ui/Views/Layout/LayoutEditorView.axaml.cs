@@ -1690,18 +1690,24 @@ public partial class LayoutEditorView : UserControl
     // actual hierarchy walk + write. The fidelity dialog states what will change BEFORE any bytes
     // are written, and blocks the write outright if the plan carries a coordinate overflow.
 
-    // Impedance Analysis (round 8): the options dialog runs the analysis and writes the PDF itself,
-    // so a cancelled run can still write the layers it finished.
-    private async void OnImpedanceAnalysis(object? sender, RoutedEventArgs e)
+    // Impedance Analysis (brief-impedance-3): the Z0 tile shows and focuses the dockable Impedance panel
+    // for THIS layout — settings, Run, results on the canvas, Export PDF. It used to open a modal dialog
+    // whose only way out was a PDF. Resolved through the workspace as OnCheckDesignRules is, because
+    // this view's DataContext is a LayoutDocument; a torn-off window with no shell in reach says so.
+    private void OnImpedanceAnalysis(object? sender, RoutedEventArgs e)
     {
         if (Vm is not { } vm) return;
-        if (TopLevel.GetTopLevel(this) is not Window owner) return;
         if (vm.Technology is null)
         {
             vm.ReportError("Impedance Analysis: this layout has no technology, so there is no stackup to take an impedance from.");
             return;
         }
-        await new TraceImpedanceAnalysisDialog(vm).ShowDialog<bool>(owner);
+        if (ResolveWorkspace() is { } workspace)
+        {
+            workspace.ShowImpedancePanel(vm);
+            return;
+        }
+        vm.ReportWarning("Open the Impedance panel from the main window — a torn-off layout window has no panels.");
     }
 
     private async void OnExportGdsii(object? sender, RoutedEventArgs e) => await OnExportGdsiiAsync();

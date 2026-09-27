@@ -400,6 +400,17 @@ public static class DockPanelIds
     public const string Instances = "Instances";
 
     /// <summary>
+    /// brief-impedance-3's Impedance panel — the Impedance Analysis settings, its run, its results and
+    /// Export PDF, following the active layout as the DRC and LVS panels do. It replaced a modal dialog
+    /// whose only way out was a PDF.
+    ///
+    /// <para>Absent from both shipped default layouts, deliberately: the layout toolbar's Z₀ tile puts it
+    /// on screen when it is wanted, docked in the side column where its settings and rows have height,
+    /// and it is then captured and restored with every other panel.</para>
+    /// </summary>
+    public const string Impedance = "Impedance";
+
+    /// <summary>
     /// <b>The two ids RC-10 retired, and they must keep resolving</b> (R-rc10-3).
     ///
     /// <para><c>RestorePoints</c> and <c>VersionHistory</c> are written into every <c>.cwsuser</c> in
@@ -418,7 +429,7 @@ public static class DockPanelIds
     public static readonly string[] All =
     [
         ProjectTree, Palette, Properties, Analyses, Messages, Drc, Lvs, WBondProfile,
-        WBondInductance, History, Instances,
+        WBondInductance, History, Instances, Impedance,
     ];
 
     /// <summary>

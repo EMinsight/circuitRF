@@ -36421,3 +36421,38 @@ as is — the code-behind only lays the rows out.
 
 Not seen: the GUI cannot be launched from this session; the dialog was verified by the compiler and the Design-side
 tests only.
+
+## Impedance review brief 3 — the Impedance panel replaces the dialog (2026-09-26)
+
+`TraceImpedanceAnalysisDialog` is deleted. The Z₀ tile calls `WorkspaceViewModel.ShowImpedancePanel(vm)`, which
+points `DockPanelIds.Impedance` at the layout and shows it — where it was if anywhere is remembered, else docked
+beside Properties (the Instances panel's route, now `DockPanelBesideSibling(tool, siblings…)`). It is absent from both
+default layouts. The panel is `Layout/Impedance/ImpedancePanelViewModel` (no code-behind logic); the report is held on
+the LAYOUT's view model (`ImpedanceReport`, `IsImpedanceStale`), as the DRC and LVS results are, so switching
+documents switches results.
+
+- **Run and export are split.** `RunTraceImpedanceAsync` holds the report and posts the Messages line;
+  `ExportTraceImpedancePdfAsync` writes `Pdf(report with { Stale })` of what is held. The gate compares the export
+  byte for byte against a direct `Analyze` + `Pdf` with the same title, source, unit and timestamps. A run cancelled
+  before its first layer, or refused, leaves the previously held report in place.
+- **The survey runs only while the panel is on screen** (`ImpedancePanelViewModel.IsShown`, set by the view on
+  attach/detach). The tool follows every layout activation whether or not it is open, and the survey flattens the
+  artwork on the UI thread — tying it to `SetEditor` alone would have cost every layout switch a flatten and a round
+  of typical-Z₀ solves for a panel nobody had opened.
+- **The row strings come off the report.** `OhmsText`, `VerdictText`, `SeverityText`, `InToleranceText` and
+  `WidthText` moved from the PDF composer's privates onto `TraceImpedanceReport`; the PDF and the panel both call
+  them. The live Scope line is `TraceImpedanceAnalysis.DescribeScope(survey, layers, scope, …)`, sharing one sentence
+  builder with the report's own `ScopeText` (future tense before a run).
+- **Stale, not cleared.** `Model.Changed` calls `MarkImpedanceStaleOnEdit`, beside the LVS one; the overlay keeps
+  drawing stale results, as LVS markers do. The PDF of stale results carries `TraceImpedanceReport.StaleText` in a
+  banner at the top of the summary page.
+- **The overlay** is `LayoutOverlay.Impedance` (`ImpedanceOverlay`), drawn by `LayoutRenderer.Impedance.cs` in
+  device-pixel widths with the PDF map's `Z0Color` and marker colours (now `internal` on the composer so both read
+  one set). It is overlay-only like LVS — no export opt-in pair — so no exporter or `render` can draw it.
+- **Filter:** an `Unsolved` trace is listed under Failures (it was not reviewed; `circuitrf impedance` already exits 1
+  on one). Zoom is on double-click, as in the DRC panel; a single click emphasises the row on the canvas.
+- **SVG comparisons in tests:** Skia numbers `<clipPath id="cl_N">` process-wide, so two renders of the same picture
+  differ only there — normalise `cl_\d+` before comparing.
+
+Not seen: the GUI cannot be launched from this session; the panel, the overlay and the dock placement were verified by
+the compiler and `ImpedancePanelTests` only.

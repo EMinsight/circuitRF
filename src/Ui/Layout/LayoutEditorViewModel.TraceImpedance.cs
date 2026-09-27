@@ -2,10 +2,13 @@
 // The work is TraceImpedanceProbe in src/Design; this file picks the layer the click means, hands
 // the probe the same flattened artwork a DRC run checks, and posts the answer to Messages.
 //
-// And the toolbar's Impedance Analysis (round 8): every trace on the chosen layers, as a PDF. The
-// work is TraceImpedanceAnalysis and the page TraceImpedanceReportDocument — the two calls
-// `circuitrf impedance` makes — so this file only gathers the artwork and says what it did.
+// And the Impedance panel (brief-impedance-3): every trace on the chosen layers, held here as a
+// report until the next run, drawn over the canvas, and exported as a PDF of the report already held.
+// The work is TraceImpedanceAnalysis and the page TraceImpedanceReportDocument — the two calls
+// `circuitrf impedance` makes — so this file only gathers the artwork, holds the result and says what
+// it did. The panel itself is Layout/Impedance/ImpedancePanelViewModel.
 
+using CommunityToolkit.Mvvm.ComponentModel;
 using CircuitRF.Design.Layout.Em;
 using CircuitRF.Design.Layout.Extraction;
 using CircuitRF.Engine;
@@ -70,7 +73,7 @@ public partial class LayoutEditorViewModel
         return int.MaxValue;
     }
 
-    /// <summary>One copper layer the Impedance Analysis dialog offers.</summary>
+    /// <summary>One copper layer the Impedance panel offers.</summary>
     public sealed record TraceImpedanceLayerChoice(LayerKey Key, string Name, Rgba Color, bool HasCopper);
 
     /// <summary>
@@ -130,14 +133,47 @@ public partial class LayoutEditorViewModel
         $"{LayoutUnits.Format((long)Math.Round(microns * Model.DbuPerMicron), DisplayUnit, Model.DbuPerMicron, 3)} " +
         LayoutUnits.Suffix(DisplayUnit);
 
+    // ── the run, the held report, and the export (brief-impedance-3) ─────────────────────────
+
     /// <summary>
-    /// Runs the analysis on a worker thread and writes the PDF. The artwork is flattened HERE, on the
-    /// caller's (UI) thread, because the model is the editor's and not the worker's. A cancelled run
-    /// still writes the layers it finished (owner, 2026-09-25); one cancelled before the first layer
-    /// finished writes nothing. Returns the report, or null when nothing was written.
+    /// The last Impedance Analysis of this layout, held for the panel, the canvas overlay and Export
+    /// PDF until the next run (R-imp3-2e). An edit does not clear it; it sets
+    /// <see cref="IsImpedanceStale"/>.
     /// </summary>
-    public async Task<TraceImpedanceReport?> ExportTraceImpedanceAsync(
-        string pdfPath, TraceImpedanceOptions options, RunControl control)
+    [ObservableProperty] private TraceImpedanceReport? _impedanceReport;
+
+    /// <summary>The layout has been edited since <see cref="ImpedanceReport"/> was run.</summary>
+    [ObservableProperty] private bool _isImpedanceStale;
+
+    /// <summary>The panel's Show on canvas (R-imp3-3b).</summary>
+    [ObservableProperty] private bool _showImpedanceOverlay = true;
+
+    private TraceRun? _impedanceSelectedTrace;
+    private TraceIssue? _impedanceSelectedIssue;
+
+    partial void OnImpedanceReportChanged(TraceImpedanceReport? value)
+    {
+        _impedanceSelectedTrace = null;
+        _impedanceSelectedIssue = null;
+        RebuildOverlay();
+    }
+
+    partial void OnShowImpedanceOverlayChanged(bool value) => RebuildOverlay();
+
+    /// <summary>Called from the model's own change notification.</summary>
+    internal void MarkImpedanceStaleOnEdit()
+    {
+        if (ImpedanceReport is not null && !IsImpedanceStale) IsImpedanceStale = true;
+    }
+
+    /// <summary>
+    /// Runs the analysis on a worker thread and holds the report (R-imp3-2a). The artwork is flattened
+    /// HERE, on the caller's (UI) thread, because the model is the editor's and not the worker's. A
+    /// cancelled run keeps the layers it finished (owner, 2026-09-25); one cancelled before the first
+    /// layer finished, or refused, leaves the report held before it in place. Posts the one Messages
+    /// line (R-imp3-4b). Returns the report, or null when there is none.
+    /// </summary>
+    public async Task<TraceImpedanceReport?> RunTraceImpedanceAsync(TraceImpedanceOptions options, RunControl control)
     {
         if (Technology is not { } tech) { ReportError("Impedance Analysis: this layout has no technology, so no stackup."); return null; }
 
@@ -156,18 +192,33 @@ public partial class LayoutEditorViewModel
         }
         catch (OperationCanceledException)
         {
-            _messageSink?.Info("Impedance Analysis: cancelled before the first layer finished. Nothing was written.");
+            _messageSink?.Info("Impedance Analysis: cancelled before the first layer finished.");
             return null;
         }
         if (report.Refusal is { } why) { ReportError($"Impedance Analysis: {why}"); return null; }
-        report = report with { Title = title, SourcePath = source, TechnologyPath = ResolvedTechPath };
-
         if (report.Layers.Count == 0)
         {
-            _messageSink?.Info("Impedance Analysis: cancelled before the first layer finished. Nothing was written.");
+            _messageSink?.Info("Impedance Analysis: cancelled before the first layer finished.");
             return null;
         }
 
+        ImpedanceReport = report with { Title = title, SourcePath = source, TechnologyPath = ResolvedTechPath };
+        IsImpedanceStale = false;
+        PostImpedanceVerdict(ImpedanceReport, pdfPath: null);
+        return ImpedanceReport;
+    }
+
+    /// <summary>The held report as Export PDF writes it: stale when the layout has changed since.</summary>
+    public TraceImpedanceReport? ImpedanceReportForExport =>
+        ImpedanceReport is { } r ? r with { Stale = IsImpedanceStale } : null;
+
+    /// <summary>
+    /// Writes the PDF of the report already held — no second run (R-imp3-4a). A stale report is written
+    /// with its stale sentence on the summary page. Returns whether the file was written.
+    /// </summary>
+    public async Task<bool> ExportTraceImpedancePdfAsync(string pdfPath)
+    {
+        if (ImpedanceReportForExport is not { } report) return false;
         try
         {
             byte[] pdf = await Task.Run(() => TraceImpedanceReportDocument.Pdf(report));
@@ -176,15 +227,84 @@ public partial class LayoutEditorViewModel
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             ReportError($"Impedance Analysis: '{pdfPath}' was not written: {ex.Message}");
-            return null;
+            return false;
         }
+        PostImpedanceVerdict(report, pdfPath);
+        return true;
+    }
 
+    /// <summary>ONE line: the counts, against what, and — after an export — a link to the PDF.</summary>
+    private void PostImpedanceVerdict(TraceImpedanceReport report, string? pdfPath)
+    {
         string verdict = $"{report.TraceCount} trace{(report.TraceCount == 1 ? "" : "s")} on {report.Layers.Count} " +
                          $"layer{(report.Layers.Count == 1 ? "" : "s")} against {report.TargetOhms:0.##} Ω ± " +
                          $"{report.TolerancePercent:0.##} %: {report.PassCount} pass, {report.WarningCount} warning, {report.FailCount} fail" +
-                         (report.Cancelled ? $" (cancelled after {report.Layers.Count} of {report.LayersRequested.Count} layers)" : "");
-        if (report.FailCount > 0 || report.Cancelled) _messageSink?.Warning($"Impedance Analysis: {verdict}.", pdfPath);
-        else ReportMessage($"Impedance Analysis: {verdict}.", pdfPath);
-        return report;
+                         (report.Cancelled ? $" (cancelled after {report.Layers.Count} of {report.LayersRequested.Count} layers)" : "") +
+                         (report.Stale ? $" — stale: {TraceImpedanceReport.StaleText.ToLowerInvariant()}" : "");
+        string text = pdfPath is null ? $"Impedance Analysis: {verdict}." : $"Impedance Analysis exported: {verdict}.";
+        if (report.FailCount > 0 || report.Cancelled || report.Stale) _messageSink?.Warning(text, pdfPath);
+        else ReportMessage(text, pdfPath);
+    }
+
+    // ── cross-probing (R-imp3-2d, R-imp3-3b) ─────────────────────────────────────────────────
+
+    /// <summary>The panel's selected row, emphasised on the canvas: a trace, or one of its findings.</summary>
+    public void SelectImpedance(TraceRun? trace, TraceIssue? issue)
+    {
+        if (ReferenceEquals(trace, _impedanceSelectedTrace) && ReferenceEquals(issue, _impedanceSelectedIssue)) return;
+        _impedanceSelectedTrace = trace;
+        _impedanceSelectedIssue = issue;
+        RebuildOverlay();
+    }
+
+    /// <summary>
+    /// Brings a trace, or one finding's stretch of it, on screen — through the seam a DRC violation
+    /// uses (<see cref="RequestZoomToRegion"/>). Padded by the trace's width so a zero-length finding
+    /// still frames something.
+    /// </summary>
+    public void ZoomToImpedance(TraceRun trace, TraceIssue? issue)
+    {
+        long pad = (long)Math.Ceiling(Math.Max(trace.WidthMax, Model.DbuPerMicron));
+        Bbox box;
+        if (issue is { } i)
+            box = new Bbox(Math.Min(i.X0, i.X1) - 2 * pad, Math.Min(i.Y0, i.Y1) - 2 * pad,
+                           Math.Max(i.X0, i.X1) + 2 * pad, Math.Max(i.Y0, i.Y1) + 2 * pad);
+        else if (trace.Pieces.Count > 0)
+            box = new Bbox(trace.Pieces.Min(p => Math.Min(p.X0, p.X1)) - pad, trace.Pieces.Min(p => Math.Min(p.Y0, p.Y1)) - pad,
+                           trace.Pieces.Max(p => Math.Max(p.X0, p.X1)) + pad, trace.Pieces.Max(p => Math.Max(p.Y0, p.Y1)) + pad);
+        else
+            box = new Bbox(Math.Min(trace.StartX, trace.EndX) - pad, Math.Min(trace.StartY, trace.EndY) - pad,
+                           Math.Max(trace.StartX, trace.EndX) + pad, Math.Max(trace.StartY, trace.EndY) + pad);
+        RequestZoomToRegion(box);
+    }
+
+    /// <summary>
+    /// The results overlay (R-imp3-3a): each reviewed trace's centre line, cut by cut, and a marker at
+    /// each finding — or null with no results or Show on canvas off. Stale results still draw, as a
+    /// stale LVS result does: the banner says so, and the rows are what the reviewer is fixing.
+    /// </summary>
+    private ImpedanceOverlay? BuildImpedanceOverlay()
+    {
+        if (!ShowImpedanceOverlay || ImpedanceReport is not { } r) return null;
+
+        var traces = new List<ImpedanceTraceMarker>();
+        var findings = new List<ImpedanceFindingMarker>();
+        foreach (var t in r.AllTraces)
+        {
+            var stretches = new List<ImpedanceStretch>(t.Stations.Count);
+            foreach (var st in t.Stations)
+            {
+                double dx = st.Uy, dy = -st.Ux;   // along the trace; (Ux, Uy) is the cut's normal
+                stretches.Add(new ImpedanceStretch(
+                    (long)Math.Round(st.X - 0.5 * st.Length * dx), (long)Math.Round(st.Y - 0.5 * st.Length * dy),
+                    (long)Math.Round(st.X + 0.5 * st.Length * dx), (long)Math.Round(st.Y + 0.5 * st.Length * dy), st.Z0));
+            }
+            traces.Add(new ImpedanceTraceMarker(stretches,
+                ReferenceEquals(t, _impedanceSelectedTrace) && _impedanceSelectedIssue is null));
+            foreach (var i in t.Issues)
+                findings.Add(new ImpedanceFindingMarker(i.X, i.Y, i.Kind != TraceIssueKind.OutOfTolerance, i.Fails,
+                    ReferenceEquals(i, _impedanceSelectedIssue)));
+        }
+        return new ImpedanceOverlay(r.TargetOhms, r.TolerancePercent, traces, findings);
     }
 }

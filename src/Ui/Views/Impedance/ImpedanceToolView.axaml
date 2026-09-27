@@ -1,0 +1,316 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CircuitRF.Ui.ViewModels.Dock"
+             xmlns:imp="using:CircuitRF.Ui.Layout.Impedance"
+             xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             x:Class="CircuitRF.Ui.Views.Impedance.ImpedanceToolView"
+             x:DataType="vm:ImpedanceTool"
+             Background="{DynamicResource SystemChromeLowColor}">
+
+    <!-- brief-impedance-3: the Impedance Analysis dialog as a dockable panel, on the DRC panel's terms.
+         Top: what to review (settings, layers, widths, the scope sentence) and Run. Below: the results,
+         which stay until the next run and are marked stale by an edit. Every row string is the PDF's. -->
+    <UserControl.Styles>
+        <Style Selector="TextBlock.section">
+            <Setter Property="FontSize" Value="10"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Opacity" Value="0.7"/>
+        </Style>
+        <Style Selector="TextBlock.label">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Opacity" Value="0.7"/>
+        </Style>
+        <Style Selector="TextBlock.unit">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Opacity" Value="0.6"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="4,0,0,0"/>
+        </Style>
+        <Style Selector="Button.link">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="4,1"/>
+            <Setter Property="FontSize" Value="11"/>
+        </Style>
+        <Style Selector="Border.tile">
+            <Setter Property="CornerRadius" Value="4"/>
+            <Setter Property="Padding" Value="8,4"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource CrfTileBorderBrush}"/>
+        </Style>
+        <Style Selector="TextBlock.pass"><Setter Property="Foreground" Value="#2E9E4F"/></Style>
+        <Style Selector="TextBlock.warn"><Setter Property="Foreground" Value="{DynamicResource CrfWarningBrush}"/></Style>
+        <Style Selector="TextBlock.fail"><Setter Property="Foreground" Value="#D0453A"/></Style>
+    </UserControl.Styles>
+
+    <Grid RowDefinitions="Auto,*">
+
+        <!-- ── what to review, and Run ─────────────────────────────────────────────────────── -->
+        <Expander Grid.Row="0" IsExpanded="True" Margin="4,2" Padding="6,4"
+                  HorizontalAlignment="Stretch" IsEnabled="{Binding Panel.IsLayoutActive}">
+            <Expander.Header>
+                <TextBlock Text="Settings and scope" FontSize="11" FontWeight="SemiBold"/>
+            </Expander.Header>
+            <ScrollViewer MaxHeight="420" VerticalScrollBarVisibility="Auto">
+                <StackPanel Spacing="8" IsEnabled="{Binding !Panel.IsRunning}">
+
+                    <!-- Settings -->
+                    <Grid ColumnDefinitions="Auto,Auto,Auto" ColumnSpacing="12">
+                        <StackPanel Grid.Column="0" Spacing="2">
+                            <TextBlock Classes="label" Text="Target Z₀"/>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBox Width="62" FontSize="12" HorizontalContentAlignment="Right"
+                                         Text="{Binding Panel.TargetText}"/>
+                                <TextBlock Classes="unit" Text="Ω"/>
+                            </StackPanel>
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Spacing="2">
+                            <TextBlock Classes="label" Text="Tolerance"/>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Classes="unit" Text="±" Margin="0,0,4,0"/>
+                                <TextBox Width="48" FontSize="12" HorizontalContentAlignment="Right"
+                                         Text="{Binding Panel.ToleranceText}"/>
+                                <TextBlock Classes="unit" Text="%"/>
+                            </StackPanel>
+                        </StackPanel>
+                        <!-- Outside the tolerance but inside this is a warning, not a fail (brief-impedance-1). -->
+                        <StackPanel Grid.Column="2" Spacing="2">
+                            <TextBlock Classes="label" Text="Warning"/>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Classes="unit" Text="±" Margin="0,0,4,0"/>
+                                <TextBox Width="48" FontSize="12" HorizontalContentAlignment="Right"
+                                         Text="{Binding Panel.WarningText}"/>
+                                <TextBlock Classes="unit" Text="%"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Grid>
+                    <StackPanel Spacing="2">
+                        <TextBlock Classes="label" Text="Highest frequency (optional)"/>
+                        <TextBox Width="110" FontSize="12" HorizontalAlignment="Left" HorizontalContentAlignment="Right"
+                                 PlaceholderText="off" Text="{Binding Panel.FrequencyText}"
+                                 ToolTip.Tip="e.g. 6 GHz (a bare number is GHz). A stretch outside the warning band shorter than λ/20 there warns rather than fails."/>
+                    </StackPanel>
+                    <TextBlock FontSize="11" Opacity="0.8" Text="{Binding Panel.BandText}"/>
+
+                    <!-- Layers -->
+                    <Grid ColumnDefinitions="*,Auto,Auto">
+                        <TextBlock Grid.Column="0" Classes="section" Text="LAYERS" VerticalAlignment="Center"/>
+                        <Button Grid.Column="1" Classes="link" Content="All" Command="{Binding Panel.AllLayersCommand}"/>
+                        <Button Grid.Column="2" Classes="link" Content="None" Command="{Binding Panel.NoLayersCommand}"/>
+                    </Grid>
+                    <TextBlock FontSize="11" Opacity="0.7" TextWrapping="Wrap" IsVisible="{Binding Panel.HasNoLayers}"
+                               Text="This layout's technology binds no drawing layer to a conductor of its stackup."/>
+                    <ItemsControl ItemsSource="{Binding Panel.Layers}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="imp:ImpedanceLayerRow">
+                                <CheckBox IsChecked="{Binding IsChecked}" IsEnabled="{Binding HasCopper}" MinHeight="22">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <Border Width="11" Height="11" CornerRadius="2" Background="{Binding Swatch}"
+                                                VerticalAlignment="Center"/>
+                                        <TextBlock Text="{Binding Name}" FontSize="12" VerticalAlignment="Center"/>
+                                        <TextBlock Text="no copper" FontSize="10" Opacity="0.5" VerticalAlignment="Center"
+                                                   IsVisible="{Binding !HasCopper}"/>
+                                    </StackPanel>
+                                </CheckBox>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <!-- Traces (brief-impedance-2): the widths on each ticked layer. None ticked on a
+                         layer reviews every width there. Nothing is ticked from its Z0: a trace drawn at
+                         the wrong width is what the review exists to catch. -->
+                    <Grid ColumnDefinitions="*,Auto">
+                        <TextBlock Grid.Column="0" Classes="section" Text="TRACES" VerticalAlignment="Center"/>
+                        <Button Grid.Column="1" Classes="link" Command="{Binding Panel.SurveyCommand}"
+                                ToolTip.Tip="Survey the trace widths again — after the artwork has changed">
+                            <mi:MaterialIcon Kind="Refresh" Width="13" Height="13"/>
+                        </Button>
+                    </Grid>
+                    <TextBlock FontSize="10" Opacity="0.6" TextWrapping="Wrap"
+                               Text="Tick the widths to review on each layer; none ticked reviews every width there. Typical Z₀ is one cut at the middle of the class's longest trace."/>
+                    <StackPanel Spacing="3" IsVisible="{Binding Panel.SurveyText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                        <TextBlock FontSize="11" Opacity="0.7" TextWrapping="Wrap" Text="{Binding Panel.SurveyText}"/>
+                        <ProgressBar IsIndeterminate="True" Height="3" IsVisible="{Binding Panel.IsSurveying}"/>
+                    </StackPanel>
+                    <ItemsControl ItemsSource="{Binding Panel.WidthGroups}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="imp:ImpedanceWidthGroup">
+                                <StackPanel Spacing="1" Margin="0,0,0,4" IsVisible="{Binding IsVisible}">
+                                    <TextBlock Text="{Binding LayerName}" FontSize="11" FontWeight="SemiBold" Opacity="0.8"/>
+                                    <ItemsControl ItemsSource="{Binding Rows}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="imp:ImpedanceWidthRow">
+                                                <CheckBox IsChecked="{Binding IsChecked}" MinHeight="20">
+                                                    <Grid ColumnDefinitions="96,62,*">
+                                                        <TextBlock Grid.Column="0" Text="{Binding WidthText}" FontSize="12"
+                                                                   Opacity="{Binding WidthOpacity}"
+                                                                   TextDecorations="{Binding WidthDecorations}"/>
+                                                        <TextBlock Grid.Column="1" Text="{Binding CountText}" FontSize="11" Opacity="0.7"/>
+                                                        <TextBlock Grid.Column="2" Text="{Binding DetailText}" FontSize="11" Opacity="0.7"
+                                                                   TextTrimming="CharacterEllipsis"/>
+                                                    </Grid>
+                                                </CheckBox>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <!-- The scope, in the report's own words, live as it is edited. -->
+                    <Border CornerRadius="4" Padding="8,5" Background="{DynamicResource SystemControlBackgroundBaseLowBrush}"
+                            IsVisible="{Binding Panel.ScopeText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                        <TextBlock FontSize="11" TextWrapping="Wrap">
+                            <Run Text="Scope: " FontWeight="SemiBold"/><Run Text="{Binding Panel.ScopeText}"/>
+                        </TextBlock>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
+        </Expander>
+
+        <Grid Grid.Row="1" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,*,Auto" Margin="8,0,8,6">
+
+            <!-- Run / Cancel -->
+            <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="6" Margin="0,4,0,2">
+                <Button Command="{Binding Panel.RunCommand}" Classes="accent" Padding="10,3" FontSize="12"
+                        ToolTip.Tip="Analyse every trace in the scope against the target">
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <mi:MaterialIcon Kind="Play" Width="14" Height="14"/>
+                        <TextBlock Text="Run" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+                <Button Command="{Binding Panel.CancelCommand}" Content="Cancel" Padding="10,3" FontSize="12"
+                        IsVisible="{Binding Panel.IsRunning}"
+                        ToolTip.Tip="Stop the run; the layers that finished are kept"/>
+                <CheckBox Content="Show on canvas" FontSize="11" Margin="8,0,0,0"
+                          IsVisible="{Binding Panel.HasResults}"
+                          IsChecked="{Binding Panel.Editor.ShowImpedanceOverlay, Mode=TwoWay, FallbackValue=True}"
+                          ToolTip.Tip="Draw each reviewed trace in its Z₀ colour, and a marker at each finding"/>
+            </StackPanel>
+
+            <TextBlock Grid.Row="1" FontSize="11" TextWrapping="Wrap" IsVisible="{Binding Panel.HasValidation}"
+                       Foreground="{DynamicResource CrfWarningBrush}" Text="{Binding Panel.ValidationText}"/>
+
+            <!-- Progress -->
+            <StackPanel Grid.Row="2" Spacing="3" Margin="0,2" IsVisible="{Binding Panel.IsRunning}">
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Grid.Column="0" Text="{Binding Panel.RunLayerText}" FontSize="11" FontWeight="SemiBold"
+                               TextTrimming="CharacterEllipsis"/>
+                    <TextBlock Grid.Column="1" Text="{Binding Panel.RunLayerCountText}" FontSize="11" Opacity="0.65"/>
+                </Grid>
+                <ProgressBar Minimum="0" Maximum="1" Height="5" Value="{Binding Panel.RunLayerProgress}"/>
+                <TextBlock Text="{Binding Panel.RunStageText}" FontSize="11" Opacity="0.65" TextTrimming="CharacterEllipsis"/>
+                <ProgressBar Minimum="0" Maximum="1" Height="3" Opacity="0.6" Value="{Binding Panel.RunOverallProgress}"/>
+            </StackPanel>
+
+            <TextBlock Grid.Row="3" Text="Open a layout document to review its trace impedances."
+                       FontSize="12" Opacity="0.6" Margin="0,8" TextWrapping="Wrap"
+                       IsVisible="{Binding !Panel.IsLayoutActive}"/>
+
+            <!-- Stale banner (R-imp3-2e): an edit keeps the results and says they are old. -->
+            <Border Grid.Row="4" CornerRadius="4" Padding="8,4" Margin="0,4,0,0" Background="#33D98A1C"
+                    IsVisible="{Binding Panel.IsStale}">
+                <TextBlock FontSize="11" TextWrapping="Wrap" Text="{Binding Panel.StaleText}"/>
+            </Border>
+
+            <!-- Verdict tiles and the filter -->
+            <StackPanel Grid.Row="5" Spacing="4" Margin="0,6,0,2" IsVisible="{Binding Panel.HasResults}">
+                <WrapPanel Orientation="Horizontal">
+                    <Border Classes="tile" Margin="0,0,6,4">
+                        <StackPanel><TextBlock Classes="pass" Text="{Binding Panel.PassCount}" FontSize="16" FontWeight="SemiBold"/>
+                                    <TextBlock Text="Pass" FontSize="10" Opacity="0.7"/></StackPanel>
+                    </Border>
+                    <Border Classes="tile" Margin="0,0,6,4">
+                        <StackPanel><TextBlock Classes="warn" Text="{Binding Panel.WarningCount}" FontSize="16" FontWeight="SemiBold"/>
+                                    <TextBlock Text="Warning" FontSize="10" Opacity="0.7"/></StackPanel>
+                    </Border>
+                    <Border Classes="tile" Margin="0,0,6,4">
+                        <StackPanel><TextBlock Classes="fail" Text="{Binding Panel.FailCount}" FontSize="16" FontWeight="SemiBold"/>
+                                    <TextBlock Text="Fail" FontSize="10" Opacity="0.7"/></StackPanel>
+                    </Border>
+                    <Border Classes="tile" Margin="0,0,6,4" IsVisible="{Binding Panel.HasOutOfScope}">
+                        <StackPanel><TextBlock Text="{Binding Panel.OutOfScopeCount}" FontSize="16" FontWeight="SemiBold" Opacity="0.7"/>
+                                    <TextBlock Text="Out of scope" FontSize="10" Opacity="0.7"/></StackPanel>
+                    </Border>
+                </WrapPanel>
+                <TextBlock FontSize="11" Opacity="0.7" TextWrapping="Wrap" Text="{Binding Panel.ResultSummaryText}"/>
+                <StackPanel Orientation="Horizontal" Spacing="10">
+                    <RadioButton GroupName="ImpedanceFilter" Content="All" FontSize="11"
+                                 IsChecked="{Binding Panel.FilterAll}"/>
+                    <RadioButton GroupName="ImpedanceFilter" Content="Warnings and failures" FontSize="11"
+                                 IsChecked="{Binding Panel.FilterWarningsAndFailures}"/>
+                    <RadioButton GroupName="ImpedanceFilter" Content="Failures" FontSize="11"
+                                 IsChecked="{Binding Panel.FilterFailures}"/>
+                </StackPanel>
+            </StackPanel>
+
+            <!-- The rows: a trace, then — expanded — its findings and notes. Double-click zooms. -->
+            <Panel Grid.Row="6">
+                <TextBlock FontSize="11" Opacity="0.6" Margin="2,6" Text="{Binding Panel.EmptyRowsText}"/>
+                <ListBox ItemsSource="{Binding Panel.Rows}"
+                         SelectedItem="{Binding Panel.SelectedRow, Mode=TwoWay}"
+                         DoubleTapped="OnRowDoubleTapped"
+                         Background="Transparent" BorderThickness="0" SelectionMode="Single"
+                         IsVisible="{Binding Panel.HasResults}"
+                         ScrollViewer.VerticalScrollBarVisibility="Auto">
+                    <ListBox.DataTemplates>
+                        <DataTemplate DataType="imp:ImpedanceTraceResultRow">
+                            <Grid ColumnDefinitions="18,*" Margin="0,1">
+                                <Button Grid.Column="0" Classes="link" Padding="0" VerticalAlignment="Top"
+                                        Command="{Binding ToggleExpandedCommand}" IsVisible="{Binding HasChildren}"
+                                        ToolTip.Tip="Show or hide this trace's findings">
+                                    <Panel>
+                                        <mi:MaterialIcon Kind="ChevronRight" Width="14" Height="14" IsVisible="{Binding !IsExpanded}"/>
+                                        <mi:MaterialIcon Kind="ChevronDown" Width="14" Height="14" IsVisible="{Binding IsExpanded}"/>
+                                    </Panel>
+                                </Button>
+                                <StackPanel Grid.Column="1" Spacing="1">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <TextBlock Text="{Binding VerdictText}" FontSize="11" FontWeight="SemiBold" Width="36"
+                                                   Classes.pass="{Binding IsPass}" Classes.warn="{Binding IsWarning}"
+                                                   Classes.fail="{Binding IsFail}"/>
+                                        <TextBlock Text="{Binding Id}" FontSize="12" FontWeight="SemiBold"/>
+                                        <TextBlock Text="{Binding LayerName}" FontSize="11" Opacity="0.65"/>
+                                        <TextBlock Text="{Binding WidthText}" FontSize="11" Opacity="0.8"/>
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal" Spacing="8" Margin="42,0,0,0">
+                                        <TextBlock Text="{Binding Z0Text}" FontSize="11"/>
+                                        <TextBlock Text="{Binding InBandText}" FontSize="11" Opacity="0.7"/>
+                                        <TextBlock Text="{Binding TypeText}" FontSize="11" Opacity="0.7"/>
+                                        <TextBlock Text="{Binding ChildCountText}" FontSize="11" Opacity="0.55"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Grid>
+                        </DataTemplate>
+                        <DataTemplate DataType="imp:ImpedanceFindingResultRow">
+                            <StackPanel Orientation="Horizontal" Spacing="6" Margin="60,0,0,1">
+                                <TextBlock Text="{Binding SeverityText}" FontSize="10" FontWeight="SemiBold" Width="32"
+                                           Classes.fail="{Binding Fails}" Classes.warn="{Binding !Fails}"
+                                           VerticalAlignment="Top"/>
+                                <TextBlock Text="{Binding Text}" FontSize="11" TextWrapping="Wrap" MaxWidth="560"/>
+                            </StackPanel>
+                        </DataTemplate>
+                        <DataTemplate DataType="imp:ImpedanceNoteResultRow">
+                            <StackPanel Orientation="Horizontal" Spacing="6" Margin="60,0,0,1">
+                                <TextBlock Text="NOTE" FontSize="10" FontWeight="SemiBold" Width="32" Opacity="0.6"/>
+                                <TextBlock Text="{Binding Text}" FontSize="11" Opacity="0.75" TextWrapping="Wrap" MaxWidth="560"/>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListBox.DataTemplates>
+                </ListBox>
+            </Panel>
+
+            <!-- Export: the report already held, never a second run. -->
+            <StackPanel Grid.Row="7" Orientation="Horizontal" Spacing="8" Margin="0,4,0,0">
+                <Button Click="OnExportPdfClick" IsEnabled="{Binding Panel.CanExport}" Padding="10,3" FontSize="12"
+                        ToolTip.Tip="Write these results as a PDF review — no second run">
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <mi:MaterialIcon Kind="FilePdfBox" Width="14" Height="14"/>
+                        <TextBlock Text="Export PDF…" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+            </StackPanel>
+        </Grid>
+    </Grid>
+</UserControl>

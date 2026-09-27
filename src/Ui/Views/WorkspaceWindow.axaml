@@ -421,6 +421,7 @@
                                     <NativeMenuItem Header="DRC"          Command="{Binding ShowToolPanelCommand}" CommandParameter="Drc"/>
                                     <NativeMenuItem Header="LVS"          Command="{Binding ShowToolPanelCommand}" CommandParameter="Lvs"/>
                                     <NativeMenuItem Header="Instances"    Command="{Binding ShowToolPanelCommand}" CommandParameter="Instances"/>
+                                    <NativeMenuItem Header="Impedance"    Command="{Binding ShowToolPanelCommand}" CommandParameter="Impedance"/>
                                     <NativeMenuItem Header="History"      Command="{Binding ShowToolPanelCommand}" CommandParameter="History"/>
                                     <NativeMenuItem Header="Wire Profile"     Command="{Binding ShowToolPanelCommand}" CommandParameter="WBondProfile"/>
                                     <NativeMenuItem Header="Array Inductance" Command="{Binding ShowToolPanelCommand}" CommandParameter="WBondInductance"/>
@@ -1252,6 +1253,12 @@
                     <MenuItem Header="_Instances"
                               Command="{Binding ShowToolPanelCommand}" CommandParameter="Instances">
                         <MenuItem.Icon><mi:MaterialIcon Kind="FormatListBulleted" Width="16" Height="16"/></MenuItem.Icon>
+                    </MenuItem>
+                    <!-- brief-impedance-3. Not in either shipped default layout: the layout toolbar's
+                         Z0 tile puts it on screen when an impedance review is wanted. -->
+                    <MenuItem Header="I_mpedance"
+                              Command="{Binding ShowToolPanelCommand}" CommandParameter="Impedance">
+                        <MenuItem.Icon><mi:MaterialIcon Kind="Omega" Width="16" Height="16"/></MenuItem.Icon>
                     </MenuItem>
                     <!-- revision-control.md §5.10, RC-10 R-rc10-1. ONE panel, replacing Restore Points
                          and Versions. §5's argument is about two kinds of ENTRY and rev 2 spent it as

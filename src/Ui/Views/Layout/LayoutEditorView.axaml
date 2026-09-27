@@ -433,13 +433,14 @@
                             <mi:MaterialIcon Kind="ShieldCheckOutline" Width="16" Height="16"/>
                         </Button>
 
-                        <!-- Impedance Analysis (round 8): every trace against a target Z0, as a PDF for
-                             the review file. Beside Check Design Rules because both are "check the
-                             whole layout" actions a reviewer runs repeatedly. LETTERED like EM, with
-                             the symbol a board designer reads as characteristic impedance, so it is
-                             not one more pictogram to learn. -->
+                        <!-- Impedance Analysis: shows the Impedance panel (brief-impedance-3) — every trace
+                             against a target Z0, results on the canvas, a PDF for the review file.
+                             Beside Check Design Rules because both are "check the whole layout" actions
+                             a reviewer runs repeatedly. LETTERED like EM, with the symbol a board
+                             designer reads as characteristic impedance, so it is not one more pictogram
+                             to learn. -->
                         <Button Click="OnImpedanceAnalysis"
-                                ToolTip.Tip="Impedance Analysis… — every trace against a target Z0 and its return path, exported as a PDF report"
+                                ToolTip.Tip="Impedance Analysis — every trace against a target Z0 and its return path, in the Impedance panel"
                                 Padding="6,3">
                             <Panel Width="16" Height="16">
                                 <Border Width="16" Height="12" CornerRadius="2"

@@ -200,7 +200,37 @@ public sealed record class LayoutOverlay
     /// the part with the hairline-crosshair rule in it.</para>
     /// </summary>
     public IReadOnlyList<LvsFindingMarker> LvsMarkers { get; init; } = [];
+
+    /// <summary>
+    /// brief-impedance-3 R-imp3-3a: the Impedance panel's results over the artwork — each reviewed
+    /// trace's centre line coloured by its Z0, and a marker at each finding. The same system layer as
+    /// <see cref="DrcMarkers"/>: never a <c>LayerKey</c>, never in <c>LayoutView.Shapes</c>, never
+    /// reachable by an exporter (every export path passes <c>Overlay = null</c>). Null when there are no
+    /// results or the panel's Show on canvas is off.
+    /// </summary>
+    public ImpedanceOverlay? Impedance { get; init; }
 }
+
+/// <summary>
+/// The Impedance Analysis results, ready to draw: the report's pass band (the colour scale is the PDF
+/// map's, <c>TraceImpedanceReportDocument.Z0Color</c>), the traces reviewed and the findings. A trace
+/// outside the review's scope is not in the report and so is not here — it is plain copper.
+/// </summary>
+public sealed record ImpedanceOverlay(
+    double TargetOhms,
+    double TolerancePercent,
+    IReadOnlyList<ImpedanceTraceMarker> Traces,
+    IReadOnlyList<ImpedanceFindingMarker> Findings);
+
+/// <summary>One cut's stretch of centre line, world DBU, and its Z0 (null where it was not solved).</summary>
+public readonly record struct ImpedanceStretch(long X0, long Y0, long X1, long Y1, double? Z0);
+
+/// <summary>One trace's centre line, stretch by stretch. <paramref name="Selected"/>: the panel's row.</summary>
+public sealed record ImpedanceTraceMarker(IReadOnlyList<ImpedanceStretch> Stretches, bool Selected);
+
+/// <summary>One finding at the middle of its stretch: FILLED for a fail, HOLLOW for a warning, purple for
+/// a return-path kind and orange for Z0 — the PDF map's rule, so the two read alike.</summary>
+public readonly record struct ImpedanceFindingMarker(long X, long Y, bool ReturnPath, bool Fails, bool Selected);
 
 /// <summary>
 /// One parameter grip, ready to draw — world DBU, with its travel direction already expressed in

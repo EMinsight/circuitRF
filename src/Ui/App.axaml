@@ -13,6 +13,7 @@
              xmlns:mv="using:CircuitRF.Ui.Views.Messages"
              xmlns:drcv="using:CircuitRF.Ui.Views.Drc"
              xmlns:lvsv="using:CircuitRF.Ui.Views.Lvs"
+             xmlns:impv="using:CircuitRF.Ui.Views.Impedance"
              xmlns:instv="using:CircuitRF.Ui.Views.Instances"
              xmlns:revv="using:CircuitRF.Ui.Views.Revision"
              xmlns:wbondv="using:CircuitRF.Ui.Views.WBond"
@@ -87,6 +88,10 @@
         </DataTemplate>
         <DataTemplate DataType="{x:Type dockVm:LvsTool}">
             <lvsv:LvsToolView/>
+        </DataTemplate>
+        <!-- brief-impedance-3 — the Impedance Analysis settings, run, results and Export PDF. -->
+        <DataTemplate DataType="{x:Type dockVm:ImpedanceTool}">
+            <impv:ImpedanceToolView/>
         </DataTemplate>
         <!-- brief-find-instance-panel.md — the focused schematic's or layout's placed components. -->
         <DataTemplate DataType="{x:Type dockVm:InstancesTool}">
