@@ -539,7 +539,7 @@ internal static class DocumentSchema
             edge's second face); a Step is ONE solid part of a STEP file in the cell's 3d folder:
 
                 { "$type": "Boolean", "Name": "lid", "Op": "Subtract",
-                  "Blank": { "$type": "Box", "Material": "Kovar",
+                  "Blank": { "$type": "Box", "Material": "Lid alloy",
                              "Min": [0, 0, 500000], "Size": [4000000, 3000000, 250000] },
                   "Tools": [ { "$type": "Cylinder", "Name": "bore", "Base": [2000000, 1500000, 400000],
                                "Length": 500000, "Radius": 300000 } ] }

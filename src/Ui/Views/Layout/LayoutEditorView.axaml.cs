@@ -931,7 +931,7 @@ public partial class LayoutEditorView : UserControl
         var file = await owner.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
             Title = "Export Board",
-            SuggestedFileName = cellName + ".kicad_pcb",
+            SuggestedFileName = cellName,
             DefaultExtension = "kicad_pcb",
             FileTypeChoices = [new FilePickerFileType("Board") { Patterns = ["*.kicad_pcb"] }],
         });

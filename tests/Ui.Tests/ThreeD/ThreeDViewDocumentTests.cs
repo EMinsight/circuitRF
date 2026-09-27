@@ -492,7 +492,7 @@ public sealed class ThreeDViewDocumentTests : IDisposable
 		{
 			"$type": "Polyhedron",
 			"Name": "lid",
-			"Material": "Kovar",
+			"Material": "Lid alloy",
 			"Vertices": [
 				[0, 0, 0],
 				[1000, 0, 0],
@@ -544,7 +544,7 @@ public sealed class ThreeDViewDocumentTests : IDisposable
 			"KeepTools": true,
 			"Blank": {
 				"$type": "Box",
-				"Material": "Kovar",
+				"Material": "Lid alloy",
 				"Min": [0, 0, 1000],
 				"Size": [2000, 2000, 100]
 			},
@@ -594,7 +594,7 @@ public sealed class ThreeDViewDocumentTests : IDisposable
 		{
 			"$type": "Step",
 			"Name": "shell",
-			"Material": "Kovar",
+			"Material": "Lid alloy",
 			"File": "shell.step",
 			"Part": "1",
 			"Hash": "sha256:00",
@@ -648,7 +648,7 @@ public sealed class ThreeDViewDocumentTests : IDisposable
 		{
 			"$type": "Polyhedron",
 			"Name": "frame",
-			"Material": "Kovar",
+			"Material": "Lid alloy",
 			"Vertices": [
 				[0, 0, 0],
 				[254000, 0, 0],

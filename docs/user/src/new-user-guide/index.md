@@ -21,6 +21,7 @@ lede: Never used a circuit simulator before? Perfect — this guide starts from 
       <li><a href="#examples">Two worked examples</a></li>
       <li><a href="#loadpull">Loadpull, contours &amp; Pursuit</a></li>
       <li><a href="#match">Matching networks: the Match component</a></li>
+      <li><a href="#connector-3d">A first 3D solve: a connector and its fillet</a></li>
     </ol>
   </nav>
 
@@ -291,6 +292,30 @@ the button says the same thing in two sentences.
 
 <p class="small">The full story — what absorption buys you, how to read the solutions list, and the two
 worked amplifier examples — is in <a href="../reference/match.html">The Match Component</a>.</p>
+
+## 13 · A first 3D solve: a connector and its fillet {#connector-3d}
+
+Ten minutes, and nothing to draw. It shows what the 3D editor's geometry kernel adds — booleans, fillets and
+imported parts — and what a solver does and does not see of a curved surface.
+
+1. **Tools ▸ Examples ▸ 3D Connector**, and choose a folder for your copy. It opens `README.md`; open the
+   **Launch** cell's 3D view from the Project panel.
+2. Look at the **object tree**. `housing` is a **boolean**: a box with the bore subtracted, the bore **kept** as the
+   PTFE that fills it, and a flange **imported from a STEP file** united with it. `pin` is a cylinder with a
+   **fillet** row beneath it, which rounds its tip. Click each row; the view shows what it is.
+3. **Simulate ▸ Setup Analyses…** lists two setups, *Palace* and *openEMS*. Under *openEMS* there is already a
+   warning: it will not represent the pin's fillet, because its grid cell there is wider than the fillet's radius.
+   Nothing has run yet — the warning is worked out from the drawing. Solvers not installed? The first **Run**
+   offers to install them.
+4. **Run** *Palace* (about a minute on a recent laptop), then make *openEMS* the active setup and run it (about two).
+5. In the tree, untick **Enabled** on the pin's fillet row — the tip turns square — and run both again.
+6. Compare |S11|. Palace moves by a fraction of a dB; openEMS moves too, but its warning told you why that is not the
+   fillet: the grid changed shape, not the geometry it resolves.
+
+The whole story, with the numbers, is in
+<a href="../reference/em-solvers.html#curved">EM Solvers ▸ What each solver sees of curved geometry</a>, and every
+gesture that drew the example is in
+<a href="../reference/drawing-in-3d.html#connector">The 3D Editor ▸ The second example</a>.
 
 ---
 

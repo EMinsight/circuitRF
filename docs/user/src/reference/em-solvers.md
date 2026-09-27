@@ -4,7 +4,7 @@ slug: reference/em-solvers.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > EM solvers
 lede: circuitRF can solve a structure three ways — its own planar method of moments (MoM), Palace's finite element method (FEM) and openEMS's finite-difference time-domain method (FDTD). What each one is, why there are three, and which to use for what.
-keywords: EM solver, electromagnetic solver, FEM, finite element, finite element method, FDTD, finite-difference time-domain, finite difference time domain, MoM, method of moments, planar, 2.5D, 3D, full-wave, full wave, Palace, openEMS, Gmsh, mesh, tetrahedra, Yee grid, time step, CFL, eigenmode, cavity resonance, electrostatic, magnetostatic, capacitance matrix, inductance matrix, which solver, compare solvers, speed, memory, open source
+keywords: EM solver, electromagnetic solver, FEM, finite element, finite element method, FDTD, finite-difference time-domain, finite difference time domain, MoM, method of moments, planar, 2.5D, 3D, full-wave, full wave, Palace, openEMS, Gmsh, mesh, tetrahedra, Yee grid, time step, CFL, eigenmode, cavity resonance, curved geometry, fillet, staircase, staircasing, fidelity, curved elements, connector, electrostatic, magnetostatic, capacitance matrix, inductance matrix, which solver, compare solvers, speed, memory, open source
 ---
 
 circuitRF can solve an electromagnetic problem in three different ways, and each is a different
@@ -33,6 +33,7 @@ one is good at and bad at. How to set each one up is in [EM Setup](em-setup.html
 <li><a href="#compare">Side by side</a></li>
 <li><a href="#speed-memory">Is it speed? Is it memory?</a></li>
 <li><a href="#choosing">Choosing, by problem</a></li>
+<li><a href="#curved">What each solver sees of curved geometry</a></li>
 <li><a href="#why-three">Why not just one?</a></li>
 </ol>
 </nav>
@@ -277,6 +278,71 @@ advice, not a restriction.
 the same model that circuitRF built, so a mistake in building it would appear in both answers. It checks
 the solving, not the model. See <a href="em-setup.html#run-both">EM Setup ▸ Running both</a>.</p>
 </div>
+
+## What each solver sees of curved geometry {#curved}
+
+A bore, a pin, a fillet, a chamfer at an angle: a 3D model is full of surfaces that are not flat and not aligned
+with an axis. The two 3D solvers see them differently, and the difference follows from their methods.
+
+- **Palace meshes the exact surface.** Gmsh reads the geometry kernel's own shape, not a faceted copy of it, and
+  circuitRF asks for **second-order (curved) elements** — each tetrahedron's edges bend to lie on the surface — sized
+  to the curvature: about twelve elements per full turn. What limits it
+  is the **initial mesh**: a small radius forces small elements, and small elements cost unknowns. So Palace's note
+  about a curved feature says how small its elements there will be and that the feature *will dominate the mesh* —
+  and its setup's **Enabled** box on the feature is how to find out whether it matters.
+- **openEMS staircases to its grid.** Its grid is rectilinear, so a curved surface is represented by the cells it
+  fills: a bore becomes a staircase, and a feature smaller than about **one cell** is not represented at all — a
+  fillet of 100 µm on a grid of 110 µm cells is solved as a sharp edge. Refining the grid converges a staircase; it
+  cannot make the grid follow the surface. Its note per kernel object names the worst feature: *will not represent*
+  (the cell is wider than the radius), *staircases … with about N cells* (a warning below four), or that refining
+  the grid converges it.
+
+**Where the notes appear.** Under each setup in *Simulate ▸ Setup Analyses…* (the 3D editor's Setups panel), in
+`circuitrf check` at their own severity — they never change its exit code — and in the run's messages. None of them
+stops a run.
+
+{{ui: em3d-connector-setups}}
+
+**What to change.** A feature openEMS will not represent needs a **finer grid near it**, or it needs **Palace**. In the
+setup's openEMS section, more cells per wavelength refines the grid everywhere, and a smaller grading ratio keeps the
+cells small further from a part's own edges. The grid beside a small part is set by that grading, not only by the
+wavelength: the connector below still had a 113 µm cell at its pin's tip at 30 cells per wavelength. A feature Palace says dominates its mesh can be
+switched off with its **Enabled** box to see what it costs and what it changes.
+
+### Measured: a connector pin's fillet {#curved-measured}
+
+The **3D Connector** example (*Tools ▸ Examples ▸ 3D Connector*) asks the question with numbers. A 0.4 mm pin in a
+1.34 mm PTFE bore — 50.06 Ω by the coaxial closed form — launches onto a 62 mil line on 20 mil of laminate — 49.85 Ω
+by Hammerstad and Jensen's — and the pin's tip is rounded by a 0.1 mm fillet. Those two impedances are closed-form
+references; everything below is the solvers' output. Each setup ran twice, the fillet enabled and disabled, over 2–18
+GHz, on an Apple M4 with 10 cores and 16 GB:
+
+| Run | Time | Size | \|S11\| at 10 GHz | \|S11\| at 18 GHz |
+|---|---|---|---|---|
+| Palace (Draft), fillet | 1 min 10 s | 4.0 GB | −16.71 dB | −40.75 dB |
+| Palace (Draft), no fillet | 1 min 9 s | 4.3 GB | −16.69 dB | −40.90 dB |
+| Palace, element order 2, fillet | 10 min 43 s | 10.1 GB | −18.55 dB | −31.95 dB |
+| Palace, element order 2, no fillet | 8 min 32 s | 10.7 GB | −18.53 dB | −32.20 dB |
+| openEMS (default grid), fillet | 1 min 45 s | 510,291 cells | −18.23 dB | −23.48 dB |
+| openEMS (default grid), no fillet | 1 min 34 s | 449,748 cells | −18.32 dB | −24.32 dB |
+| openEMS, 30 cells per wavelength, fillet | 4 min 46 s | 692,300 cells | −18.73 dB | −22.76 dB |
+
+- **Palace sees the fillet** — it meshes it with elements of about 52 µm — and finds it changes |S11| by at most 0.25
+  dB, at 18 GHz where the match is 32 dB down, with the same sign at both element orders, and |S21| by under 0.001 dB.
+  At this band a 0.1 mm rounding on a 0.4 mm pin is **electrically negligible**.
+- **openEMS does not see it**: the cell at the tip is 110.688 µm, and its warning says the edge is solved as sharp.
+  Its two runs differ by 0.84 dB at 18 GHz because the fillet's faces add grid lines of their own — the grid moved, not
+  the geometry — and one step of grid refinement moves |S11| there by 0.72 dB on its own. A difference no larger than
+  the grid's own refinement spread is the grid's, and that is the honest answer to *does openEMS respect a fillet?*:
+  not one under a cell.
+- **Neither |S11| is converged at the settings a first run uses**: element order alone moves Palace's by up to 8.8 dB
+  at the deepest null. |S21| is steadier: Palace −0.246 dB (Draft) and −0.207 dB (order 2) at 10 GHz, −0.518 dB and
+  −0.503 dB at 18 GHz; openEMS −0.118 dB and −0.429 dB. The difference between the two solvers there is named by the run
+  itself: openEMS writes the metals as perfect conductors, since an FDTD grid does not resolve a skin depth, so its
+  answer has no conductor loss.
+
+The example's README has every setting behind these numbers, and `expected-numbers.json` beside it records every
+frequency of the shipped runs, which circuitRF's own regression test holds.
 
 ## Why not just one? {#why-three}
 

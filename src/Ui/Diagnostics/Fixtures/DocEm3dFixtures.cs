@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
@@ -60,19 +61,72 @@ public static class DocEm3dFixtures
     /// <summary>The example's .c3d through its Driven setup — what <c>render --iso</c> / <c>--section</c> draw for
     /// it — less the named objects, for a picture that shows inside.</summary>
     private static FigureScene ThreeDView(Em3dView view, string[] leaveOut)
+        => ThreeDView("3D Package", "Package/3d/Package.c3d", "Driven", "ceramic-package.ctech", view, leaveOut);
+
+    private static FigureScene ThreeDView(string example, string c3d, string setup, string techFile, Em3dView view, string[] leaveOut)
     {
         string root = ExampleWorkspaces.ResolveRoot()
-            ?? throw new InvalidOperationException("No examples/ tree beside the generator or above it, so the 3D Package figures have no document.");
-        string ws = Path.Combine(root, "3D Package");
-        string path = Path.Combine(ws, "Package", "3d", "Package.c3d");
+            ?? throw new InvalidOperationException($"No examples/ tree beside the generator or above it, so the {example} figures have no document.");
+        string ws = Path.Combine(root, example);
+        string path = Path.Combine(ws, c3d);
         var doc = C3dPersistence.LoadFromFile(path);
-        var (embedded, why) = C3dSetups.Select(doc, "Driven");
+        var (embedded, why) = C3dSetups.Select(doc, setup);
         if (embedded is null) throw new InvalidOperationException(why);
         var generated = C3dProblemAssembly.Assemble(C3dSetups.ForRun(embedded, path), doc, path, Path.Combine(ws, ".cws"));
-        if (!generated.Ok) throw new InvalidOperationException($"Package.c3d: {generated.Refusal}");
+        if (!generated.Ok) throw new InvalidOperationException($"{Path.GetFileName(c3d)}: {generated.Refusal}");
         var problem = generated.Problem! with { Solids = [.. generated.Problem!.Solids.Where(s => !leaveOut.Contains(s.Name))] };
-        var tech = TechPersistence.LoadFromFile(Path.Combine(ws, "tech", "ceramic-package.ctech"));
+        var tech = TechPersistence.LoadFromFile(Path.Combine(ws, "tech", techFile));
         return new FigureScene(new SectionView(generated with { Problem = problem }, tech, view, ws));
+    }
+
+    // ── The 3D Connector example (brief-em3d-70): a connector launch built from booleans, a fillet and a STEP part ──
+
+    private const string Connector = "3D Connector", Launch = "Launch/3d/Launch.c3d", ConnectorTech = "board-and-connector.ctech";
+
+    /// <summary>The launch from the iso view: the housing united with its flange, the pin over the board's line.</summary>
+    public static FigureScene ConnectorIso() => ThreeDView(Connector, Launch, "Palace", ConnectorTech, Em3dView.Iso, []);
+
+    /// <summary>The launch cut along the coax's axis: the housing, the kept PTFE fill, the pin and its rounded tip on the
+    /// line, the board.</summary>
+    public static FigureScene ConnectorSection() => ThreeDView(Connector, Launch, "Palace", ConnectorTech, Side, []);
+
+    /// <summary>
+    /// The 3D editor's Setups panel on the launch — the control Simulate ▸ Setup Analyses… and the Analyses panel host —
+    /// with each setup's fidelity rows as the editor computes them (brief-em3d-65): openEMS's warning that it will not
+    /// represent the pin's fillet. The editor's own view model on the example's file; its 3D pane is never drawn, so its
+    /// backend draws nothing.
+    /// </summary>
+    public static FigureScene ConnectorSetups()
+    {
+        string root = ExampleWorkspaces.ResolveRoot()
+            ?? throw new InvalidOperationException("No examples/ tree beside the generator or above it, so the 3D Connector figures have no document.");
+        string ws = Path.Combine(root, Connector);
+        string path = Path.Combine(ws, Launch);
+        var vm = new CircuitRF.Ui.ThreeD.C3dEditorViewModel(path, C3dPersistence.LoadFromFile(path), () => new NoPixels(),
+                                                            () => Path.Combine(ws, ".cws"), a => a());
+        vm.RestoreActiveSetup("Palace");
+        vm.Start();
+        if (!System.Threading.SpinWait.SpinUntil(() => vm.SetupItems.Any(i => i.HasFidelity), TimeSpan.FromSeconds(120)))
+            throw new InvalidOperationException("Launch.c3d: the setups' fidelity rows never arrived.");
+        vm.SelectedSetupItem = vm.SetupItems.FirstOrDefault(i => i.Name == "openEMS");
+        return new FigureScene(new CircuitRF.Ui.Views.ThreeD.C3dSetupAnalysesView { DataContext = vm }) { Cleanup = vm.Dispose };
+    }
+
+    /// <summary>A 3D backend that draws nothing: the Setups panel's figure never shows the pane.</summary>
+    private sealed class NoPixels : CircuitRF.Ui.Viewer3D.Viewer3DBackend
+    {
+        public override string Description => "no pixels (a figure of a panel)";
+        public override void UploadScene(CircuitRF.Render.Scene3D.Scene3DModel scene) { }
+        public override void UploadOverlay(CircuitRF.Render.Scene3D.Scene3DBuffer slot, CircuitRF.Render.Scene3D.Scene3DVertex[] lines) { }
+        public override void UploadField(CircuitRF.Render.Scene3D.Fields.FieldVertex[] vertices) { }
+        public override byte[] RenderPixels(CircuitRF.Render.Scene3D.Scene3DFramePlan plan) => new byte[plan.Width * plan.Height * 4];
+        public override string? CheckInterop(Avalonia.Rendering.Composition.ICompositionGpuInterop interop) => null;
+        public override void CreateImages(Avalonia.Rendering.Composition.ICompositionGpuInterop interop, int width, int height, int count) { }
+        public override void ReleaseImages() { }
+        public override bool WaitReusable(int image, int timeoutMs) => true;
+        public override void Render(int image, CircuitRF.Render.Scene3D.Scene3DFramePlan plan, ulong frame) { }
+        public override void Present(Avalonia.Rendering.Composition.CompositionDrawingSurface surface, int image, ulong frame) { }
+        public override void Dispose() { }
     }
 
     private static FigureScene Section(string cem, Em3dView view)

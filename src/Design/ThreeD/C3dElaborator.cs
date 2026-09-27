@@ -868,7 +868,12 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
             bool integral = exact && op.Placement.ToTransform().IsIntegral;
             if (op.Enabled)
             {
-                foreach (var (_, operand) in C3dOperands.Of(op)) NestedTools(operand, frame, doc, tech, prefix, path, integral);
+                // brief-em3d-70 — an enabled Subtract with KeepTools nested inside another operation keeps its Tools too
+                // (a bore kept as fill in a housing that is then united with a flange); only the top level did before.
+                List<C3dObject> kept = op is C3dBoolean { Op: C3dBooleanOp.Subtract, KeepTools: true } k ? k.Tools : [];
+                foreach (var tool in kept) Object(tool, prefix + tool.Name, frame, doc, tech, prefix, path, integral);
+                foreach (var (_, operand) in C3dOperands.Of(op))
+                    if (!kept.Contains(operand)) NestedTools(operand, frame, doc, tech, prefix, path, integral);
                 return;
             }
             // A Tool is a whole object in its own right: Object elaborates anything nested inside it.

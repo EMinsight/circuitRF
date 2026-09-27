@@ -590,6 +590,23 @@ public static class FigureCatalog
           + "wires down to the leads, the walls and the lid. The cavity is ten times wider than it is "
           + "tall."),
 
+        // ── The 3D Editor chapter: the 3D Connector example (brief-em3d-70) ─────────────────────
+        // The launch through its Palace setup, as `render --iso` / `--section` draw it; and the
+        // Setups panel with each setup's fidelity rows, openEMS's warning about the pin's fillet.
+
+        new("em3d-connector-3d", DocEm3dFixtures.ConnectorIso, 960, 600, null,
+            "The 3D Connector example's launch: a connector housing united with its flange, the flange "
+          + "imported from a STEP file, against the edge of a board with a 50 ohm line; the centre pin "
+          + "reaches out over the line."),
+
+        new("em3d-connector-section", DocEm3dFixtures.ConnectorSection, 960, 540, null,
+            "The launch cut along the coax's axis: the housing, the bore it keeps as a PTFE fill, the "
+          + "centre pin with its rounded tip resting on the line, and the board's laminate and ground."),
+
+        new("em3d-connector-setups", DocEm3dFixtures.ConnectorSetups, 460, 420, null,
+            "The launch's two setups in the Setups panel. Under openEMS, a warning: it will not represent "
+          + "the pin's 100 um fillet, because the grid cell there is wider than the radius."),
+
         new("cv-editor", DocCvFixtures.Editor, 620, 500,
             WindowFrame.Titled("C-V Editor - C1"),
             "The C-V Editor: a measured C(V) table, the fit order, and the polynomial it fits."),

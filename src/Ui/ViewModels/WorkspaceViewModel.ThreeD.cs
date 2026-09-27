@@ -258,7 +258,7 @@ public partial class WorkspaceViewModel
         var file = await owner.StorageProvider.SaveFilePickerAsync(new Avalonia.Platform.Storage.FilePickerSaveOptions
         {
             Title = "Save 3D View As",
-            SuggestedFileName = Path.GetFileName(doc.FilePath),
+            SuggestedFileName = Path.GetFileNameWithoutExtension(doc.FilePath),
             SuggestedStartLocation = start,
             DefaultExtension = "c3d",
             ShowOverwritePrompt = true,
@@ -649,7 +649,9 @@ public partial class WorkspaceViewModel
         var file = await window.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
             Title = "Export STEP",
-            SuggestedFileName = Path.GetFileNameWithoutExtension(src.Path) + ".step",
+            // NO extension on the suggested name: Avalonia's storage provider appends DefaultExtension itself, so
+            // supplying both spelled it twice ("x.step.step"). src/Ui/RESOLVED.md, SuggestedFileNameGateTests.
+            SuggestedFileName = Path.GetFileNameWithoutExtension(src.Path),
             SuggestedStartLocation = start,
             DefaultExtension = "step",
             ShowOverwritePrompt = true,

@@ -1304,6 +1304,12 @@ conversion here and the same conversion through the GUI produce the same bytes.<
 <td>✓</td>
 <td>✓</td>
 </tr>
+<tr>
+<td>STEP</td>
+<td><code>.step</code>, <code>.stp</code></td>
+<td>into a <strong>new <code>.c3d</code></strong></td>
+<td>from a <code>.c3d</code>, a <code>.clay</code>, a cell folder, or any source above</td>
+</tr>
 </tbody>
 </table>
 <p><strong>Every ordered pair works</strong> — DXF to Gerber, Gerber to board, GDSII to DXF, board to GDSII, and the
@@ -1337,6 +1343,30 @@ other circuitRF tool expects a layout view to be.</p>
 <span class="prompt">$ </span>circuitrf convert lib.gds -o coupler.dxf --cell COUPLER</code></pre>
 <p>Convert a directory of drawings in one line:</p>
 <pre><code class="cmd"><span class="prompt">$ </span>for f in dxf/*.dxf; do circuitrf convert "$f" -o "gds/$(basename "${f%.dxf}").gds"; done</code></pre>
+<h3 id="convert-step">STEP, both ways</h3>
+<p>A STEP file is a solid model, so it goes <strong>into a 3D view</strong>, and anything circuitRF can draw in 3D comes
+<strong>out as one</strong>. Both directions call the function the 3D editor's own dialog calls — <em>Import STEP…</em> and
+<em>Export STEP…</em> — so a conversion here and the same one in the editor produce the same document, and the
+same bytes but for the file's time stamp.</p>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf convert body.step -o Connector/3d/Connector.c3d --material "flange=Connector alloy"
+<span class="prompt">$ </span>circuitrf convert Launch/3d/Launch.c3d -o launch.step
+<span class="prompt">$ </span>circuitrf convert board.kicad_pcb -o board.step</code></pre>
+<ul>
+<li><strong>Import</strong> writes a <strong>new</strong> <code>.c3d</code>, with one <code>Step</code> object per solid part and the STEP file copied beside
+it. The target must be a <code>.c3d</code> path. Each part takes a material as the dialog's table would give it — by
+its name, then its colour, from the technology the new file resolves (<code>--tech</code> names another) — and
+<code>--material &lt;part&gt;=&lt;material&gt;</code> answers any the file cannot. <code>--part &lt;path&gt;</code> imports only the named parts
+(their occurrence paths, <code>1/2</code>). A part nothing matches is imported with <strong>no</strong> material, and the run says
+so: it is drawn, and it is left out of a solve until it is given one.</li>
+<li><strong>Export</strong> writes one file, flattened with the overlap precedence applied, in millimetres (inches for a
+mil or inch design), AP214. <code>--assembly</code> keeps placed cells as sub-assemblies, <code>--as-drawn</code> writes each
+object as drawn rather than cut by precedence, <code>--thicken-sheets</code> gives sheets their thickness,
+<code>--include-airbox</code> adds the first 3D setup's air box, <code>--schema ap242</code> and <code>--view 3d|layout</code> (for a
+cell with both) do what they say. A source that is not already circuitRF's — GDSII, a board — is imported
+first, exactly as the other conversions do.</li>
+</ul>
+<p>The geometry kernel does the work in both directions, so on an installation without it both are refused,
+saying why and how to restore it.</p>
 <h3 id="convert-options">Options</h3>
 <table>
 <thead>
@@ -1352,7 +1382,7 @@ other circuitRF tool expects a layout view to be.</p>
 </tr>
 <tr>
 <td><code>--from &lt;fmt&gt;</code>, <code>--to &lt;fmt&gt;</code></td>
-<td><code>clay</code>, <code>gdsii</code>, <code>dxf</code>, <code>gerber</code>, <code>board</code>. Say it when the path does not.</td>
+<td><code>clay</code>, <code>gdsii</code>, <code>dxf</code>, <code>gerber</code>, <code>board</code>, <code>step</code>. Say it when the path does not.</td>
 </tr>
 <tr>
 <td><code>--cell &lt;name&gt;</code></td>
@@ -1405,6 +1435,18 @@ other circuitRF tool expects a layout view to be.</p>
 <tr>
 <td><code>--accept-inferred-drill-format</code></td>
 <td>Take each drill file's own inference rather than refusing.</td>
+</tr>
+<tr>
+<td><code>--material &lt;part&gt;=&lt;material&gt;</code></td>
+<td>STEP import: the material a part takes. Repeat it per part.</td>
+</tr>
+<tr>
+<td><code>--part &lt;path&gt;</code></td>
+<td>STEP import: import only this part (its occurrence path). Repeat it per part.</td>
+</tr>
+<tr>
+<td><code>--assembly</code>, <code>--as-drawn</code>, <code>--thicken-sheets</code>, <code>--include-airbox</code>, <code>--schema ap214\|ap242</code>, <code>--view 3d\|layout</code></td>
+<td>STEP export: the Export STEP dialog's choices, one flag each.</td>
 </tr>
 <tr>
 <td><code>--open-archives</code></td>

@@ -340,9 +340,7 @@ public partial class WBondShellWindow : Window, ICrfDocumentWindow
             var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
             {
                 Title = "Save wBond",
-                SuggestedFileName = (Document.FilePath is { } p
-                    ? Path.GetFileNameWithoutExtension(p)
-                    : "wirebonds") + ".wBond",
+                SuggestedFileName = Document.FilePath is { } p ? Path.GetFileNameWithoutExtension(p) : "wirebonds",
                 DefaultExtension = "wBond",
                 FileTypeChoices = [new FilePickerFileType("wBond design") { Patterns = ["*.wBond"] }],
             });

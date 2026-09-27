@@ -403,12 +403,20 @@ public static class Em3dSectionScene
     }
 
     /// <summary>
-    /// The closed loops a plane cuts from a welded triangle mesh, in 3D. Each crossing point is keyed by
+    /// The closed loops a plane cuts from a triangle mesh, in 3D. Each crossing point is keyed by
     /// the EDGE it lies on and computed from that edge's lower-indexed vertex, so the two triangles
     /// sharing an edge produce the same point bit for bit and the loops close exactly.
+    /// <para>brief-em3d-70 — the mesh is welded first, by exact coordinate: a kernel solid's tessellation comes face by
+    /// face, each face with its own copies of its boundary's nodes (at identical coordinates — CsxcadWriter welds them
+    /// the same way), and unwelded no loop ever closed, so every kernel solid was silently missing from a section.</para>
     /// </summary>
     public static List<List<Point3>> MeshCut(Em3dTriangleMesh mesh, int axis, double at)
     {
+        var first = new Dictionary<Point3, int>();
+        var weld = new int[mesh.Vertices.Count];
+        for (int i = 0; i < weld.Length; i++)
+            weld[i] = first.TryGetValue(mesh.Vertices[i], out int w) ? w : first[mesh.Vertices[i]] = i;
+        mesh = new Em3dTriangleMesh(mesh.Vertices, [.. mesh.Triangles.Select(t => t with { A = weld[t.A], B = weld[t.B], C = weld[t.C] })]);
         double C(Point3 q) => axis == 0 ? q.X : axis == 1 ? q.Y : q.Z;
         var point = new Dictionary<(int, int), Point3>();
         var links = new Dictionary<(int, int), List<(int, int)>>();

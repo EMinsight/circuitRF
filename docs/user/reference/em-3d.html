@@ -266,12 +266,16 @@ configuration, both programs' logs, and the saved fields. The run can be repeate
 unchanged model reuses its mesh.</p>
 <h2 id="view">The 3D view</h2>
 <p><strong>Show 3D</strong> on a setup's panel opens the 3D view beside it, drawn by the graphics card. It shows the
-model circuitRF built, and after a run it also shows what the solver made.</p>
+model circuitRF built, and after a run it also shows what the solver made. It is the
+<a href="drawing-in-3d.html">3D editor</a>'s own view with nothing to edit — the same toolbar, tree, keys and menus, without
+the drawing tools, the setups, Simulate, the unit and the snap step — and its status lines under the view (the
+setup's refusals and notes, the mesh, the field) are always shown.</p>
 <ul>
 <li><strong>Model.</strong> Every solid, coloured by its layer, with the dielectrics, the air and the air box's faces
 each switchable. The faces are coloured by boundary kind: grey metal, blue absorbing, orange PMC,
-violet symmetry. The <strong>object tree</strong> lists every solid, and a click in the view picks one and names it.
-In the 3D editor the tree is headed <strong>Objects</strong> and lists the document's objects <strong>by material</strong> (the
+violet symmetry. The <strong>object tree</strong> lists every solid, and a click in the view picks one, names it and
+brings its row into sight; a row's tick hides that solid in this view only. The tree is headed <strong>Objects</strong>
+and lists the objects <strong>by material</strong> (the
 default — objects with no material come first, in their own group) or <strong>by type</strong> (boxes, sheets,
 cylinders, …), chosen in its header. By material a row does not repeat the material its group is headed
 by; an object's construction order is its name's tooltip. The <strong>air box</strong> appears — drawn and listed — once
@@ -287,10 +291,11 @@ perspective and orthographic. Double-click the axis indicator for the same views
 down it — <strong>Z</strong> the top view, <strong>Y</strong> the front, <strong>X</strong> the right — and again turns to the opposite side; anywhere
 else inside its ring is isometric. While you orbit or pan nothing is highlighted and nothing snaps.
 These are the 3D editor's keys too: every 3D pane uses the same ones.</li>
-<li><strong>Selecting.</strong> <strong>O</strong>, <strong>F</strong> and <strong>V</strong> choose what a click selects: a whole <strong>object</strong>, one <strong>face</strong>, or one
-<strong>vertex</strong> (the toolbar has a button for each). What is under the cursor is highlighted. A click
+<li><strong>Selecting.</strong> <strong>O</strong>, <strong>F</strong>, <strong>E</strong> and <strong>V</strong> choose what a click selects: a whole <strong>object</strong>, one <strong>face</strong>, one
+<strong>edge</strong>, or one <strong>vertex</strong> (the toolbar has a button for each). What is under the cursor is highlighted. A click
 selects it; Shift-click adds to or removes from the selection; <strong>Esc</strong> clears it. A selected face's area
-and normal, or a vertex's coordinates, are shown under the view, in the layout's unit. <strong>B</strong> steps to the
+and normal, an edge's name, kind and length, or a vertex's coordinates, are shown under the view, in the
+layout's unit. <strong>B</strong> steps to the
 next thing <em>behind</em> the selection along the line of sight through the cursor, and <strong>Shift+B</strong> steps back
 toward you — the status line says where you are (<code>Face zmin · &quot;trace&quot; · 2 of 5</code>). A face selected
 behind others is drawn through what is in front of it. Right-click opens the menu for what is selected:
@@ -320,7 +325,8 @@ picture.</li>
 <li><strong>Animation.</strong> The play button sweeps the phase through one cycle and draws the instantaneous field
 Re{E·e^jφ}. That is the standing wave in a cavity, or the current running along a wire.</li>
 <li><strong>Pictures.</strong> <strong>Export picture …</strong> saves a PNG of the view at a multiple of the window's size, with or
-without the legend and caption. Right-click in the view for <strong>Copy Picture</strong>.</li>
+without the legend and caption. Right-click in the view — on anything or nothing — for <strong>Copy</strong>, which puts
+the view on the clipboard at four times the window's size (the 3D editor's canvas offers it too).</li>
 </ul>
 <p><strong>What the mesh tells you about trusting the answer.</strong> Look at where the small elements are. After
 refinement they gather where Palace's own error estimate said the answer needed them: along the edges of
@@ -352,6 +358,44 @@ with the legend on.</p>
      Package/em/Package lid modes.cem after a run, top view (2), clip plane on z just below the lid,
      Field = mode 3, |E| on the clip plane.
      Caption: "|E| of the lid's first cavity mode in a plane just below the lid." -->
+<h3 id="dielectrics">How far the dielectric reaches</h3>
+<p>A stackup gives each dielectric a thickness and a material but no outline, so circuitRF decides how far
+it reaches sideways. The answer depends on the solver, and for the 3D solvers it is part of what gets
+solved.</p>
+<ul>
+<li><p><strong>Planar (MoM) setups.</strong> The planar solver treats every dielectric as <strong>laterally infinite</strong>: a board
+that goes on forever under the metal. <strong>Show 3D</strong> on a planar setup has to draw the substrate some
+size, so it draws each dielectric to the <strong>board outline</strong>, or, if the layout has none, to the <strong>outline
+of the copper above and below it</strong>. That shape is <strong>for viewing only</strong>. The planar result is the same
+whatever the picture shows.</p>
+</li>
+<li><p><strong>3D setups (a <code>.cem</code> run in Palace or openEMS).</strong> The dielectric reaches the air box, so a board with
+no drawn edge reaches the absorbing boundary as though it went on forever. A layout that draws a board
+outline is cut to that outline instead.</p>
+</li>
+<li><p><strong>A layout placed in a 3D view (a <code>.c3d</code>).</strong> There is no air box around the layout, so every dielectric
+is <strong>finite</strong>, and its sideways shape <strong>is part of the problem</strong> Palace and openEMS solve. Each slab takes
+the first of these that exists:</p>
+<ol>
+<li>The layout's <strong>board outline</strong>: closed shapes on the technology's outline layer (the layer exported
+as <code>Edge.Cuts</code>, or a Gerber profile).</li>
+<li>The <strong>copper hull</strong>: the outline of the copper directly above and below the slab. If a neighbouring
+copper layer has nothing drawn on it, circuitRF looks further out to the next layer that has copper.
+Gaps up to <strong>10 dielectric stack heights</strong> wide are closed, holes such as via clearances and antipads
+are filled, and the edge stands <strong>2 stack heights</strong> past the outermost copper. On a 1.5 mm board that
+is gaps up to 15 mm closed and a 3 mm margin. The gaps are closed because the field of a coplanar
+line runs through the substrate under its gaps. The margin is there because a trace's fringing field
+runs through the substrate beside it. A slab cut flush to the copper would lose both, and the line
+would read the wrong impedance.</li>
+<li>The <strong>bounding box</strong> of everything drawn, if there is no copper above or below the slab at all.</li>
+</ol>
+<p>The Messages note for the run says which bound each slab took.</p>
+</li>
+</ul>
+<p><strong>Draw a board outline whenever the board's real edge matters</strong>, for example for radiation from the
+board edge, coupling across it, or a board much larger than its copper. The copper hull is a sensible
+guess at the board. The outline is the board itself. How a placed layout comes into a 3D view is in
+<a href="drawing-in-3d.html#layout-dielectric">Drawing in 3D ▸ A placed layout's dielectric</a>.</p>
 <h2 id="example">Walking through the example</h2>
 <p><strong>Tools ▸ Examples ▸ 3D EM</strong> copies a workspace with three cells to a folder you choose and opens it.
 Each cell is something a planar solver cannot do, or can do only as a comparison. Every setup runs in

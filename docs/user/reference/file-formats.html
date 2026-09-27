@@ -84,6 +84,7 @@ visually until you draw one.</p>
       <tr><td><code>.ccolor</code></td><td>Color theme — a named light+dark palette for rendering.</td></tr>
       <tr><td><code>.ctech</code></td><td>Technology — the layer table (GDSII layer/datatype pairs, colours, purposes), the substrate stackup, the DRC rules, and the default display unit and snap grid. Shared at workspace level: every layout in the workspace resolves against one of these. See <a href="layout-editor.html#technology">Technology</a>.</td></tr>
       <tr><td><code>.cmat</code></td><td>Material library — named materials (εr, tanδ, μr, σ₂₀, α₂₀, and where each value comes from) in exactly the form a technology's own Materials list takes. A technology names its libraries, relative to the <code>.ctech</code>; several technologies may share one. It opens as its own document, and is also edited from the technology editor's Materials tab. circuitRF ships <code>generic-materials.cmat</code>, and New Workspace copies it beside the technology.</td></tr>
+      <tr><td><code>.c3d</code></td><td>3D view — a cell's solid model: boxes, prisms, cylinders, sheets, polyhedra, bond wires, the kernel operations below, placed cells, ports, face boundaries, VARs and any number of embedded EM setups. See <a href="drawing-in-3d.html">The 3D Editor</a> and <a href="#c3d-operations">The 3D view's operations</a>.</td></tr>
       <tr><td><code>.cem</code></td><td>EM setup — one electromagnetic run's configuration: which layout, the stackup mapping, the ports and their reference impedances, the mesh settings, the frequency plan and the de-embedding choice. See <a href="em-setup.html">EM Setup</a>.</td></tr>
       <tr><td><code>.charm</code></td><td>harmonicaRF document — the DUT, the source and load termination planes at every harmonic, the package, the display configuration and the markers. See <a href="harmonicarf.html">harmonicaRF</a>.</td></tr>
       <tr><td><code>.wBond</code></td><td>wBond design — bondwire geometry: the wires, their arrays and profiles, the substrate and the solver settings. Self-contained and shareable. See <a href="wbond.html">wBond</a>.</td></tr>
@@ -94,7 +95,10 @@ visually until you draw one.</p>
 <p class="small">These are circuitRF's own formats. The <strong>interchange</strong> formats it reads
 and writes — GDSII, DXF, Gerber plus Excellon drill, and <code>.kicad_pcb</code> board files — are not
 in this family and are not documents you open: they are imported into cells, or exported from them. See
-<a href="layout-editor.html#interchange">Interchange</a> for what each carries and what it cannot.</p>
+<a href="layout-editor.html#interchange">Interchange</a> for what each carries and what it cannot. The
+same goes for <strong>STEP</strong> (<code>.step</code>, <code>.stp</code>), the solid-model interchange
+format: its parts are imported into a 3D view, and a 3D view or a layout is exported as one — see
+<a href="drawing-in-3d.html#step">The 3D Editor ▸ STEP</a>.</p>
 <div class="callout note">
 <span class="label">Which of these are documents you open</span>
 <p><code>.csch</code>, <code>.csym</code>, <code>.clay</code>, <code>.cdd</code>, <code>.ctech</code>,
@@ -104,6 +108,63 @@ in this family and are not documents you open: they are imported into cells, or 
 application maintains for you — though double-clicking either half of a workspace opens the whole
 workspace. <code>.cnl</code> is the engine's input and is normally derived rather than edited.</p>
 </div>
+<h2 id="c3d-operations">The 3D view's operations</h2>
+<p>A <code>.c3d</code> holds four kinds of object that the geometry kernel (OpenCASCADE, which ships inside circuitRF)
+builds rather than the editor. <code>circuitrf reference 3d-view</code> prints every field; these are the rules a
+hand-written or scripted file must follow.</p>
+<table>
+<thead>
+<tr>
+<th><code>$type</code></th>
+<th>What it is</th>
+<th>Its operands</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Boolean</code></td>
+<td><code>Op</code> — <code>Subtract</code>, <code>Unite</code> or <code>Intersect</code> — of one <code>Blank</code> and one or more <code>Tools</code>. <code>KeepTools</code> (Subtract only) also keeps each Tool as a solid of its own, right after the result.</td>
+<td><code>Blank</code>, <code>Tools</code></td>
+</tr>
+<tr>
+<td><code>Fillet</code></td>
+<td>The named <code>Edges</code> of its <code>Target</code> rounded by <code>Radius</code>.</td>
+<td><code>Target</code></td>
+</tr>
+<tr>
+<td><code>Chamfer</code></td>
+<td>The named <code>Edges</code> of its <code>Target</code> cut by <code>Distance</code> (and <code>Distance2</code> along the edge's second face).</td>
+<td><code>Target</code></td>
+</tr>
+<tr>
+<td><code>Step</code></td>
+<td>One solid part of a STEP file in the cell's <code>3d/</code> folder: <code>File</code>, <code>Part</code> (its occurrence path in the file's assembly, <code>1/2</code>), <code>Hash</code>, the file's <code>Unit</code>, and the <code>SourcePath</code> it was imported from.</td>
+<td>none</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><strong>An operation takes its operand's name.</strong> A Boolean is its Blank to the rest of the document, a Fillet
+or Chamfer its Target: the object inside has no <code>Name</code>, and a port or a boundary written against the
+name before the operation existed still lands after it. A Tool keeps its own name, unique across the
+document. Operations nest — a Blank may itself be a Boolean, a Target a Boolean result.</li>
+<li><strong><code>&quot;Enabled&quot;: false</code></strong> makes an operation as if it were not there: its operands elaborate as ordinary
+objects, the Blank or Target under the operation's name. It is written only when false.</li>
+<li><strong>Face names.</strong> A Blank's faces keep their bare names (<code>zmax</code>); a Tool's are <code>&lt;tool&gt;:&lt;face&gt;</code>
+(<code>bore:side</code>); a face the operation cut in pieces is <code>zmax#1</code>, <code>zmax#2</code>, and a reference to <code>zmax</code>
+covers every piece. A fillet's new face is <code>fillet(&lt;edge&gt;)</code>, a chamfer's <code>chamfer(&lt;edge&gt;)</code>. A STEP
+part's faces are <code>face&lt;n&gt;</code>, numbered as the file's shape numbers them.</li>
+<li><strong>Edge names</strong> are the two faces an edge separates, in order: <code>xmax|zmax</code>, <code>side|top</code>,
+<code>bore:side|zmax</code>. Two separate runs between the same pair are <code>a|b|1</code>, <code>a|b|2</code>, numbered in the
+object's own frame. An edge whose face has gone is refused by name, never moved to a nearby edge.</li>
+<li><strong>The <code>Hash</code> rule.</strong> <code>Hash</code> is <code>sha256:&lt;hex&gt;</code> of the STEP file's bytes, recorded at import. A part's
+<code>face&lt;n&gt;</code> names mean something only for those bytes, so a <code>Step</code> object whose file no longer hashes to
+its <code>Hash</code> is an error, naming the part and the file (<code>check</code> reports it), and <strong>Reload from Source</strong> —
+which re-matches every reference by geometry — is how a changed file is taken in on purpose. The file itself is the import's own copy, beside
+the <code>.c3d</code>; the source it came from is only remembered.</li>
+<li><strong>Without the kernel</strong> a 3D view holding any of these — even disabled — is not opened, and <code>check</code>
+reports one error per object; see <a href="drawing-in-3d.html#operations">The 3D Editor</a>.</li>
+</ul>
 <h2 id="hierarchy">Workspace › Library › Cell</h2>
 <p>The conceptual hierarchy maps to folders of the small files above — never one monolithic blob.</p>
 <h3 id="cell-a-folder-of-views">Cell = a folder of views</h3>

@@ -39,7 +39,7 @@ public partial class WBondEditorView
             Title = "Export DXF",
             DefaultExtension = "dxf",
             FileTypeChoices = [DxfFileType],
-            SuggestedFileName = "wirebonds.dxf",
+            SuggestedFileName = "wirebonds",
         });
 
         if (file?.TryGetLocalPath() is not { } path) return;

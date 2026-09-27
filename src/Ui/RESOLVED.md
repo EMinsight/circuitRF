@@ -37216,3 +37216,21 @@ schematic no longer had (C9–C16, R3):
   rewritten behind the user — a layout closed in between keeps what it saved, and the orphan recovery above is
   what handles that case. Added only when the run has a schematic edit to undo, so a run that merely advanced
   orientation baselines still reports NothingChanged.
+
+### Export STEP suggested `x.step.step` — the fifth time, so now a scan (brief-em3d-70, 2026-09-27)
+
+Reported by the owner: the Export STEP picker suggested the name with `.step` twice. It is the defect
+recorded above under *`SuggestedFileName` + `DefaultExtension` spells the extension twice*, shipped a
+fifth time by brief 69. One more per-picker note would not have stopped a sixth, so
+`tests/Ui.Tests/SuggestedFileNameGateTests.cs` scans every `FilePickerSaveOptions` in `src/Ui`: where
+the picker states its type (DefaultExtension AND FileTypeChoices), the suggested name may not end in an
+extension literal nor come from `Path.GetFileName(…)`. The scan found eight more of the same shape and
+all nine are fixed: Export STEP, Save EM Setup As, Save Technology As, Save 3D View As, Export Technology
+Sections, Save wBond (the workspace's and the wBond shell's), Export Board (`.kicad_pcb`), the 3D
+view's Export Picture (`-3d.png`) and wBond's Export DXF.
+
+Two kinds are deliberately left and named in the gate: the board companion tables (`x.placement.csv`,
+`x.bom.csv`, `x.ipc`), because `x.placement` alone would already read as having an extension and a
+picker that appends only to an extensionless name could then drop `.csv`; and the loadpull export's
+`.lpcwave`, whose own comment records the opposite finding (a non-standard extension NOT appended). The
+agent that made this change could not open a picker from its shell, so none of the nine was seen.

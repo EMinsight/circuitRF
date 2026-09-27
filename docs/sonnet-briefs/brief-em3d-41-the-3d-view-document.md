@@ -76,7 +76,7 @@ JSON, as `.clay` and `.cem`. `FormatVersion: 1`. Human-readable, stable key orde
       "ThicknessUm": 5 },
     { "$type": "Polyline", "Name": "path1", "Plane": "XZ", "Offset": 0,
       "Points": [[u,v],..], "Closed": false },  // construction only — never solved (§2e)
-    { "$type": "Polyhedron", "Name": "lid", "Material": "Kovar",
+    { "$type": "Polyhedron", "Name": "lid", "Material": "Lid alloy",
       "Vertices": [[x,y,z],..],
       "Faces": [ { "Name": "f0", "Outer": [0,1,2,3], "Holes": [] }, .. ] }
   ],

@@ -14496,3 +14496,20 @@ geometry (an absorbing face emulating an infinite board), so `HideOutermostDiele
 What moved: `C3dElaborationTests.Gate3`'s substrate is now an extrusion M past the drawn extent, and the `.c3d`
 air box — which pads the elaborated content — grows by the same M laterally. Layout STEP export (brief 69) goes
 through `Em3dLayoutSolids.From` too, so an exported board with no outline carries the hull, not the box.
+
+## brief-em3d-70 — two findings from drawing the 3D Connector example (2026-09-27)
+
+**A kept Tool of a NESTED Subtract was dropped.** `C3dElaborator.KeptTools` emitted a Subtract's Tools (with
+`KeepTools`) only when the Subtract was the top-level object. The connector's housing is a Unite whose Blank is that
+Subtract (the bore kept as the PTFE fill, then the flange united on), and `NestedTools` recursed through an ENABLED
+nested operation without ever looking at its `KeepTools`: the fill silently vanished and the bore was air. Fixed in
+`NestedTools`: an enabled nested Subtract with `KeepTools` elaborates its Tools as objects of their own, right after
+the result, carried by every placement on the way down. Gate: `OperationsInTheDocumentTests.Gate7b`.
+
+**A VAR with its own unit scales its NAMES too.** `axis_z = 0.508 + 0.035/2 + pin_d/2` with Unit `Mm` evaluated to
+0.5257 mm, not 0.7255 mm: the unit multiplies the whole expression, and `pin_d` — already a length — was scaled a
+second time, adding 0.2 µm instead of 0.2 mm. The pin sank 200 µm into the laminate, and `check` said nothing. The
+inverse case (`axis_z - 1.5` in a field: a literal beside a name with its own unit is in METRES) IS warned about.
+The working spelling names every length and gives the combining VAR no unit of its own:
+`axis_z = sub_h + cu_t/2 + pin_d/2`, Unit empty. A `check` warning for a unit-bearing VAR whose expression
+references a unit-bearing name would have caught it; not added here.

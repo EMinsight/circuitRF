@@ -3,8 +3,8 @@ title: The 3D Editor
 slug: reference/drawing-in-3d.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > The 3D editor
-lede: Drawing a cell in three dimensions — boxes, cylinders, faces, placed cells, bond wires and ports — in circuitRF's own 3D editor, which needs no solver to draw anything. Taught through the 3D Package example, an MMIC in a lidded package.
-keywords: 3D editor, 3D view, c3d, drawing in 3D, solid model, CAD, box, cylinder, sheet, polygon, extrude, push pull, move along normal, face, vertex, snap, drawing plane, grid, typed dimensions, expressions, parameters, variables, array, align, gizmo, hierarchy, place cell, die attach, swap view, push in, flatten, group into cell, bond wire, wire, ball bond, wedge bond, loop height, port, lumped port, wave port, air box, boundary, package, lid, cavity, cavity resonance, eigenmode, MMIC, Palace, openEMS, no solver needed
+lede: Drawing a cell in three dimensions — boxes, cylinders, faces, booleans, fillets, STEP parts, placed cells, bond wires and ports — in circuitRF's own 3D editor, which needs no solver to draw anything. Taught through two examples, an MMIC in a lidded package and a coaxial connector launching onto a board.
+keywords: 3D editor, boolean, subtract, unite, intersect, keep tools, fillet, chamfer, edge mode, STEP, STEP import, STEP export, connector, connector launch, coaxial, OpenCASCADE, 3D view, c3d, drawing in 3D, solid model, CAD, box, cylinder, sheet, polygon, extrude, push pull, move along normal, face, vertex, snap, drawing plane, grid, typed dimensions, expressions, parameters, variables, array, align, gizmo, hierarchy, place cell, die attach, swap view, push in, flatten, group into cell, bond wire, wire, ball bond, wedge bond, loop height, port, lumped port, wave port, air box, boundary, package, lid, cavity, cavity resonance, eigenmode, MMIC, Palace, openEMS, no solver needed
 ---
 
 The **3D editor** is where a cell's **3D view** is drawn: solids, sheets, bond wires and ports in three
@@ -17,19 +17,23 @@ section pictures — works on a machine with no 3D solver at all. A solver is ne
 which problem.
 
 This page teaches the editor through the **3D Package** example — an MMIC die in a ceramic package with a
-lid — which was drawn with exactly the gestures below. Open it with **Tools ▸ Examples ▸ 3D Package**.
+lid — which was drawn with exactly the gestures below. Open it with **Tools ▸ Examples ▸ 3D Package**. The
+**3D Connector** example teaches the operations the geometry kernel adds — booleans, fillets and STEP
+parts — through a coaxial connector launching onto a board ([below](#connector)).
 
 <nav class="toc">
 <h2>On this page</h2>
 <ol>
 <li><a href="#view">The 3D view of a cell</a></li>
 <li><a href="#example">The example: an MMIC in a package</a></li>
+<li><a href="#connector">The second example: a connector launch</a></li>
 <li><a href="#selecting">Selecting</a></li>
 <li><a href="#snapping">Snapping</a></li>
 <li><a href="#drawing">Drawing</a></li>
 <li><a href="#editing">Moving and editing</a></li>
 <li><a href="#expressions">Dimensions as expressions</a></li>
 <li><a href="#operations">Booleans, fillets, chamfers and STEP parts</a></li>
+<li><a href="#step">STEP: importing and exporting</a></li>
 <li><a href="#hierarchy">Hierarchy: placing cells</a></li>
 <li><a href="#wires">Bond wires</a></li>
 <li><a href="#simulate">Simulating</a></li>
@@ -94,6 +98,30 @@ The cavity is **400 × 320 mil and 40 mil high** — three **cell parameters**, 
 that the floor, the base, the walls and the lid are all written in terms of, so changing one redraws the
 package (see [Dimensions as expressions](#expressions)). The die, its pad, the leads, the wires and the
 ports do not depend on them: a bigger cavity leaves the die where it is and moves the walls out.
+
+## The second example: a connector launch {#connector}
+
+**Tools ▸ Examples ▸ 3D Connector** is a coaxial connector launching onto a 50 Ω microstrip at a board's edge —
+the 3D problem an RF board meets most — and it is built from the operations the geometry kernel adds:
+
+- **Board** — a layout in **mil**: 20 mil of PTFE-glass laminate over a ground plane, with a 62 mil line.
+- **Flange** — a 3D view in **mm**: a plate with a hole, a **Subtract** of a cylinder from a box. It is the source
+  of the STEP file below, standing in for the model a connector's maker would send.
+- **Launch** — a 3D view in **mm**: the board placed from its layout; a housing with its **bore subtracted and
+  kept** as the PTFE fill (*Keep tools*); the flange **imported from STEP** (`flange.step`, exported from Flange)
+  and **united** with the housing; a centre pin whose tip is **filleted** — a fillet on a curved edge; and two
+  ports and two setups, one for **Palace** and one for **openEMS**.
+
+{{ui: em3d-connector-3d}}
+
+{{ui: em3d-connector-section}}
+
+Its `README.md` lists the gestures that drew it, in order — Box, Cylinder, *Boolean ▸ Subtract…* with the Tool
+selected first and *Keep tools* ticked, *Export STEP…* and *Import STEP…*, *Boolean ▸ Unite…*, **E** and
+*Fillet…* — and what each run measured. The experiment it exists for is one click: untick **Enabled** on the pin's
+fillet row in the object tree and Simulate again. Palace meshes the fillet as a curved surface; openEMS, whose grid
+cell at the tip is wider than the fillet's radius, says before the run that it will not represent it. What each
+makes of it is in [EM Solvers ▸ What each solver sees of curved geometry](em-solvers.html#curved).
 
 ## Selecting {#selecting}
 
@@ -245,8 +273,10 @@ type the expression's unit after it. The example uses names for every constant i
 Four kinds of object are built by **OpenCASCADE**, the geometry kernel that ships inside circuitRF, rather
 than by the editor itself: a **Boolean** (subtract, unite or intersect), a **Fillet**, a **Chamfer** and a
 **Step** part (one solid of an imported STEP file). **Settings ▸ 3D EM** says whether this installation has
-the kernel. **Booleans, fillets and chamfers are made in the editor** (below); STEP parts are written in the
-file for now, and a `.c3d` holding any of them is drawn, checked, explained and elaborated.
+the kernel. **All four are made in the editor** — booleans and fillets below, STEP parts in
+[STEP](#step) — and a `.c3d` holding any of them is drawn, checked, explained and elaborated. The kernel is
+Open CASCADE Technology; **Help ▸ About** and its third-party notices say which version and under what
+licence.
 
 A boolean owns its operands. This one subtracts a bore from a lid:
 
@@ -257,7 +287,7 @@ A boolean owns its operands. This one subtracts a bore from a lid:
 	"Op": "Subtract",
 	"Blank": {
 		"$type": "Box",
-		"Material": "Kovar",
+		"Material": "Lid alloy",
 		"Min": [0, 0, 500000],
 		"Size": [4000000, 3000000, 250000]
 	},
@@ -294,7 +324,7 @@ A boolean owns its operands. This one subtracts a bore from a lid:
   leaves nothing — is refused by name, and the rest of the document still elaborates. The edit stays; fix it or
   undo it.
 
-### Making a boolean {#boolean-panel}
+### Making a boolean {#booleans}
 
 Select two or more solids in **Object** mode — **the first one you select is a Tool, the last is the Blank** —
 then right-click ▸ **Boolean ▸ Subtract…**, **Unite…** or **Intersect…** (also under **3D ▸ Boolean**). A panel
@@ -339,7 +369,7 @@ enters its boolean too.
 them, but moving or extruding one is refused — *"'lid' is made by a boolean: edit its operands (double-click it)
 or the operation in Properties."*
 
-### Rounding edges: Fillet and Chamfer {#fillet-panel}
+### Rounding edges: Fillet and Chamfer {#fillets}
 
 Select edges of one solid in **Edge** mode, then right-click ▸ **Fillet…** or **Chamfer…** (also under
 **3D ▸ Modify ▸ Edge**). A box, prism, cylinder, polyhedron, boolean result or STEP part can be rounded, and so can a
@@ -406,6 +436,59 @@ Those lines appear under each setup in *Simulate ▸ Setup Analyses…*, in `cir
 they never change the exit code), and in the run's messages. None of them stops a run. `explain` (which reports the
 kernel, each operation's operands, its face and edge counts and its smallest radius) and `render` work on kernel
 objects too.
+
+## STEP: importing and exporting {#step}
+
+**STEP** (`.step`, `.stp`) is how a solid model travels between mechanical tools: a connector's maker, a
+housing's designer and a CAD package all read and write it. circuitRF reads its solids **into a 3D view**
+and writes a 3D view — or a layout — **out as one**. The geometry kernel does both, so without it both
+commands are disabled with the reason.
+
+**Import STEP…** (*File ▸ Import ▸ STEP…*, or *3D ▸ Import STEP…*) reads the file, off the editor's thread
+and cancellable, and opens a table of its parts:
+
+- **Units.** The first line says what the file is in and that it is imported exactly — *File is in
+  inches; imported exactly* — because a STEP file states its own unit and every coordinate is converted,
+  not guessed.
+- **One row per part**: its name, its colour, whether it is a closed solid, the **material** it will take,
+  how that was chosen (**Match**: by name, by colour, or chosen), and its path in the file's assembly. A part
+  whose name is a material of the technology takes it; failing that, a part whose colour is a material's
+  takes that one. The **⇉** button on a row — **Map all of this colour** — gives every part of the row's
+  colour the row's material: a connector's brass parts in one gesture. **(no material)** imports a part
+  that is drawn and ignored by the solver, and `check` names it.
+- **What is not imported, and why.** Only a closed solid can be solved, so a surface, a wire body or an
+  open shell is listed, unchecked and disabled, with its reason on its row. Dimensions, tolerances and
+  datums (product manufacturing information) are counted in the notes and not imported: they describe
+  how to make a part, not what it is.
+- **Import** copies the file **into the 3D view's own folder** — so the workspace carries it, and a copy
+  that holds the same bytes is reused rather than duplicated — and adds one **Step** object per checked
+  part, selected, ready to Move. It is one undo entry, and undoing it removes the copy at the next save.
+  The part lands exactly where its file puts it: the file's assembly transform is applied, the object's
+  own placement starts at nothing.
+
+A Step object is a solid like any other: it takes a material, moves, and is a boolean operand or a fillet's
+target. Its faces are `face1`, `face2` … as the file's shape numbers them, and they mean something only for
+those bytes — which is why the object records the file's **Hash**. When the source file changes (a new
+revision from the maker), **Reload from Source** on the object's menu reads it again and re-matches every
+port, boundary and fillet on it **by geometry**, then says what moved; a part the new file no longer has is
+said by name. A part the new file adds is offered in the import table, unchecked.
+
+**Export STEP…** (*File ▸ Export ▸ STEP…*, or *3D ▸ Export STEP…*) writes the active 3D view or layout:
+
+- **Structure**: **Flattened** writes one product per solid; **As assembly** writes each placed cell as a
+  sub-assembly, once, however many times it is placed.
+- **Overlaps**: **Precedence applied** writes disjoint solids, cut exactly as the solver gets them — metal
+  over dielectric, then construction order, so a via is a hole through the substrate with the via in it.
+  **As drawn** writes every solid whole, overlapping where it was drawn.
+- **Thicken sheets** gives each sheet its stated thickness, for a receiving tool that drops surfaces;
+  **Include air box** adds the first 3D setup's air box as one uncoloured solid, for checking clearance to
+  a housing. **Schema**: AP214 (the widest read) or AP242.
+- **Units** follow the design: millimetres for a design in nm, µm or mm; inches for one in mil or inch.
+  Each product carries its object's name and its material's colour, and the header names circuitRF and its
+  version. A summary line says what will be written before anything is.
+
+The **3D Connector** example's flange was made this way: drawn in its own cell, exported, and imported into
+the launch — see [the second example](#connector).
 
 ## Hierarchy: placing cells {#hierarchy}
 
@@ -551,12 +634,18 @@ Every step above has a command-line spelling, and none of them needs a solver ex
   isometric view. The pictures on this page are drawn that way.
 - **`circuitrf em <path.c3d> --setup "Lid modes"`** — runs one setup, exactly as Run does, and writes the
   same files.
+- **`circuitrf convert part.step -o Cell/3d/Cell.c3d`** — Import STEP into a new 3D view, each part's material by
+  name or colour, or `--material <part>=<material>`; **`circuitrf convert x.c3d -o x.step`** — Export STEP, with the
+  dialog's choices as flags. See [convert ▸ STEP, both ways](cli.html#convert-step).
+- **Booleans, fillets, chamfers and Step parts by hand.** The `Boolean`, `Fillet`, `Chamfer` and `Step` objects are
+  ordinary JSON in the `.c3d`, and `circuitrf reference 3d-view` prints every field; the rules for their names, faces,
+  edges and `Hash` are in [File formats ▸ The 3D view's operations](file-formats.html#c3d-operations).
 
 ## Keys at a glance {#keys}
 
 | Key | What it does |
 |---|---|
-| **O**, **E**, **F**, **V** | Select objects, edges, faces, vertices |
+| **O**, **E**, **F**, **V** | Select objects, edges (Edge mode, for Fillet… and Chamfer…), faces, vertices |
 | **B**, **Shift+B** | The next thing behind the selection; back toward you |
 | **Shift+A** then a letter | Box, Sheet, polyGon, polyLine, cYlinder, Port, Wire |
 | digits, **Tab**, **Enter** | Type a dimension instead of clicking |

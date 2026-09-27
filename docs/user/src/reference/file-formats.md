@@ -63,6 +63,7 @@ visually until you draw one.
       <tr><td><code>.ccolor</code></td><td>Color theme — a named light+dark palette for rendering.</td></tr>
       <tr><td><code>.ctech</code></td><td>Technology — the layer table (GDSII layer/datatype pairs, colours, purposes), the substrate stackup, the DRC rules, and the default display unit and snap grid. Shared at workspace level: every layout in the workspace resolves against one of these. See <a href="layout-editor.html#technology">Technology</a>.</td></tr>
       <tr><td><code>.cmat</code></td><td>Material library — named materials (εr, tanδ, μr, σ₂₀, α₂₀, and where each value comes from) in exactly the form a technology's own Materials list takes. A technology names its libraries, relative to the <code>.ctech</code>; several technologies may share one. It opens as its own document, and is also edited from the technology editor's Materials tab. circuitRF ships <code>generic-materials.cmat</code>, and New Workspace copies it beside the technology.</td></tr>
+      <tr><td><code>.c3d</code></td><td>3D view — a cell's solid model: boxes, prisms, cylinders, sheets, polyhedra, bond wires, the kernel operations below, placed cells, ports, face boundaries, VARs and any number of embedded EM setups. See <a href="drawing-in-3d.html">The 3D Editor</a> and <a href="#c3d-operations">The 3D view's operations</a>.</td></tr>
       <tr><td><code>.cem</code></td><td>EM setup — one electromagnetic run's configuration: which layout, the stackup mapping, the ports and their reference impedances, the mesh settings, the frequency plan and the de-embedding choice. See <a href="em-setup.html">EM Setup</a>.</td></tr>
       <tr><td><code>.charm</code></td><td>harmonicaRF document — the DUT, the source and load termination planes at every harmonic, the package, the display configuration and the markers. See <a href="harmonicarf.html">harmonicaRF</a>.</td></tr>
       <tr><td><code>.wBond</code></td><td>wBond design — bondwire geometry: the wires, their arrays and profiles, the substrate and the solver settings. Self-contained and shareable. See <a href="wbond.html">wBond</a>.</td></tr>
@@ -74,7 +75,10 @@ visually until you draw one.
 <p class="small">These are circuitRF's own formats. The <strong>interchange</strong> formats it reads
 and writes — GDSII, DXF, Gerber plus Excellon drill, and <code>.kicad_pcb</code> board files — are not
 in this family and are not documents you open: they are imported into cells, or exported from them. See
-<a href="layout-editor.html#interchange">Interchange</a> for what each carries and what it cannot.</p>
+<a href="layout-editor.html#interchange">Interchange</a> for what each carries and what it cannot. The
+same goes for <strong>STEP</strong> (<code>.step</code>, <code>.stp</code>), the solid-model interchange
+format: its parts are imported into a 3D view, and a 3D view or a layout is exported as one — see
+<a href="drawing-in-3d.html#step">The 3D Editor ▸ STEP</a>.</p>
 
 <div class="callout note">
 <span class="label">Which of these are documents you open</span>
@@ -85,6 +89,40 @@ in this family and are not documents you open: they are imported into cells, or 
 application maintains for you — though double-clicking either half of a workspace opens the whole
 workspace. <code>.cnl</code> is the engine's input and is normally derived rather than edited.</p>
 </div>
+
+## The 3D view's operations {#c3d-operations}
+
+A `.c3d` holds four kinds of object that the geometry kernel (OpenCASCADE, which ships inside circuitRF)
+builds rather than the editor. `circuitrf reference 3d-view` prints every field; these are the rules a
+hand-written or scripted file must follow.
+
+| `$type` | What it is | Its operands |
+|---|---|---|
+| `Boolean` | `Op` — `Subtract`, `Unite` or `Intersect` — of one `Blank` and one or more `Tools`. `KeepTools` (Subtract only) also keeps each Tool as a solid of its own, right after the result. | `Blank`, `Tools` |
+| `Fillet` | The named `Edges` of its `Target` rounded by `Radius`. | `Target` |
+| `Chamfer` | The named `Edges` of its `Target` cut by `Distance` (and `Distance2` along the edge's second face). | `Target` |
+| `Step` | One solid part of a STEP file in the cell's `3d/` folder: `File`, `Part` (its occurrence path in the file's assembly, `1/2`), `Hash`, the file's `Unit`, and the `SourcePath` it was imported from. | none |
+
+- **An operation takes its operand's name.** A Boolean is its Blank to the rest of the document, a Fillet
+  or Chamfer its Target: the object inside has no `Name`, and a port or a boundary written against the
+  name before the operation existed still lands after it. A Tool keeps its own name, unique across the
+  document. Operations nest — a Blank may itself be a Boolean, a Target a Boolean result.
+- **`"Enabled": false`** makes an operation as if it were not there: its operands elaborate as ordinary
+  objects, the Blank or Target under the operation's name. It is written only when false.
+- **Face names.** A Blank's faces keep their bare names (`zmax`); a Tool's are `<tool>:<face>`
+  (`bore:side`); a face the operation cut in pieces is `zmax#1`, `zmax#2`, and a reference to `zmax`
+  covers every piece. A fillet's new face is `fillet(<edge>)`, a chamfer's `chamfer(<edge>)`. A STEP
+  part's faces are `face<n>`, numbered as the file's shape numbers them.
+- **Edge names** are the two faces an edge separates, in order: `xmax|zmax`, `side|top`,
+  `bore:side|zmax`. Two separate runs between the same pair are `a|b|1`, `a|b|2`, numbered in the
+  object's own frame. An edge whose face has gone is refused by name, never moved to a nearby edge.
+- **The `Hash` rule.** `Hash` is `sha256:<hex>` of the STEP file's bytes, recorded at import. A part's
+  `face<n>` names mean something only for those bytes, so a `Step` object whose file no longer hashes to
+  its `Hash` is an error, naming the part and the file (`check` reports it), and **Reload from Source** —
+  which re-matches every reference by geometry — is how a changed file is taken in on purpose. The file itself is the import's own copy, beside
+  the `.c3d`; the source it came from is only remembered.
+- **Without the kernel** a 3D view holding any of these — even disabled — is not opened, and `check`
+  reports one error per object; see [The 3D Editor](drawing-in-3d.html#operations).
 
 ## Workspace › Library › Cell {#hierarchy}
 

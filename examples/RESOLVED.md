@@ -462,3 +462,31 @@ checked with `check` and `explain`. The two package layouts differ only by a via
 the floor: magnetostatics needs a closed current loop, and the same via would short an electrostatic
 terminal to ground, so the inductance runs on `Package shorted.clay` (with its own stem-paired
 `.wBond`).
+
+## brief-em3d-70 — the 3D Connector example (2026-09-27)
+
+**The coax end is a gap port, not the annular port the brief named.** A `.c3d`'s ports are rectangles (`C3dPort`
+has no annulus; brief 22's `Em3dAnnulus` exists only for the `.cem` path and faces z only), and openEMS lowers only
+rectangular lumped ports. So P1 bridges a 0.3 mm gap between the bore's floor and the pin's end. The gap is a small
+capacitance across the port, the same in every run, so the A/B comparisons stand; the absolute |S11| carries it. The
+brief's second external check — the closed-form coax Z₀ against the impedance Palace reports at the port — needs a
+wave port (Palace's Z_PV), which would rule openEMS out; the README states the closed form as a reference only.
+
+**The fillet is electrically negligible here, and the example says so rather than enlarging it.** Palace sees
+≤ 0.25 dB in |S11| (at 18 GHz, 32 dB down), the same sign at element orders 1 and 2, while order alone moves |S11|
+by up to 8.8 dB. openEMS's fillet cell is 110.7 µm (113.0 µm at 30 cells per wavelength — the grid near the pin is
+set by grading, not wavelength), so it solves the tip as sharp; its variants differ because the fillet's faces add
+grid lines (510,291 vs 449,748 cells), by about as much as one step of refinement.
+
+**The recorded numbers came from a programmatic probe, not from `Launch.c3d` itself.** They are the shipped file's
+because the probe's document and the authored one were shown to hand Palace (geometry, groups, kernel BREP hashes,
+config) and openEMS (the whole CSX model) byte-identical inputs, with the fillet enabled and disabled. The first
+authored file did NOT: see src/Design/RESOLVED.md on a VAR's unit scaling its names — the pin had sunk 200 µm.
+
+**The regression table holds magnitudes only.** Gate 6 re-runs the four shipped runs and holds every |S11|, |S21|,
+|S22| at every frequency (±0.05 / ±0.005 / ±0.05 dB). The table was built from the |S| in dB each run printed; the
+Touchstones were not kept, so phase is not held. Re-recording it after a deliberate change is a copy of the run's
+own output into `expected-numbers.json`.
+
+**The shipped STEP file names the circuitRF version** in its FILE_NAME originating system, so gate 3 masks it
+beside the time stamp — otherwise every release would fail it. The OCCT processor's version is not masked.

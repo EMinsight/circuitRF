@@ -4212,3 +4212,15 @@ difference reaches 170. Hue and alpha are kept; the `.ctech` is never written.
   round 2, so a build that takes seconds read as an empty grid. The canvas now shows "Building the 3D view…" while
   a view that has drawn nothing is building (`Viewer3DViewModel.IsBuildingFirstScene`). Reopening a view is still a
   cold build — the elaborator's child cache lives with the editor.
+
+## brief-em3d-70 — every kernel solid was missing from a section (fixed, 2026-09-27)
+
+`render --section xz@y=0` of the 3D Connector's launch drew the bore's fill and the board and NOTHING of the housing,
+flange or pin — the three kernel solids (`Em3dShapeSolid`), with no note saying so; the iso view drew them. The cause
+was not where the plane fell (moving it off the axis changed nothing): `Em3dSectionScene.MeshCut` chains crossing
+points by the mesh's EDGE keys, which assumes a welded mesh, and a kernel solid's tessellation arrives face by face,
+each face with its own copies of the nodes it shares with its neighbours. No loop ever closed, so each kernel solid
+contributed nothing. `MeshCut` now welds by exact coordinate first — the kernel writes a shared edge's nodes to
+identical coordinates, which is the same weld `CsxcadWriter` already does for openEMS's PLY. An analytic primitive
+(the bore, an `Em3dCylinder`) was always cut by formula, which is why it alone survived. Gate:
+`tests/Ui.Tests/Em3d/Em3dSectionMeshCutTests.cs`.

@@ -153,7 +153,7 @@ public partial class C3dEditorView : UserControl
         var file = await owner.StorageProvider.SaveFilePickerAsync(new Avalonia.Platform.Storage.FilePickerSaveOptions
         {
             Title = "Export Picture",
-            SuggestedFileName = System.IO.Path.GetFileNameWithoutExtension(_vm.FilePath) + "-3d.png",
+            SuggestedFileName = System.IO.Path.GetFileNameWithoutExtension(_vm.FilePath) + "-3d",
             DefaultExtension = "png",
             ShowOverwritePrompt = true,
             FileTypeChoices = [new Avalonia.Platform.Storage.FilePickerFileType("PNG image") { Patterns = ["*.png"] }],

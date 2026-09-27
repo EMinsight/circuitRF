@@ -7642,7 +7642,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         var file = await window.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
             Title = "Export Technology Sections",
-            SuggestedFileName = $"{tech.Name}-export.ctech",
+            SuggestedFileName = $"{tech.Name}-export",
             DefaultExtension = "ctech",
             FileTypeChoices = [new FilePickerFileType("Technology") { Patterns = ["*.ctech"] }],
         });
@@ -10438,9 +10438,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             var file = await storage.SaveFilePickerAsync(new FilePickerSaveOptions
             {
                 Title = saveAs ? "Save wBond As" : "Save wBond",
-                SuggestedFileName = (doc.FilePath is { } p
-                    ? Path.GetFileNameWithoutExtension(p)
-                    : "wirebonds") + ".wBond",
+                SuggestedFileName = doc.FilePath is { } p ? Path.GetFileNameWithoutExtension(p) : "wirebonds",
                 DefaultExtension = "wBond",
                 FileTypeChoices = [new FilePickerFileType("wBond design") { Patterns = ["*.wBond"] }],
             });

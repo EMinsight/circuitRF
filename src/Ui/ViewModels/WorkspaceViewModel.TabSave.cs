@@ -311,7 +311,7 @@ public partial class WorkspaceViewModel
         var file = await owner.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
             Title               = "Save EM Setup As",
-            SuggestedFileName   = Path.GetFileName(doc.ViewModel.FilePath),
+            SuggestedFileName   = Path.GetFileNameWithoutExtension(doc.ViewModel.FilePath),
             DefaultExtension    = "cem",
             ShowOverwritePrompt = true,
             FileTypeChoices     = [new FilePickerFileType("circuitRF EM Setup") { Patterns = ["*.cem"] }],
@@ -412,7 +412,7 @@ public partial class WorkspaceViewModel
         var file = await owner.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
             Title               = "Save Technology As",
-            SuggestedFileName   = Path.GetFileName(doc.FilePath),
+            SuggestedFileName   = Path.GetFileNameWithoutExtension(doc.FilePath),
             DefaultExtension    = "ctech",
             ShowOverwritePrompt = true,
             FileTypeChoices     = [new FilePickerFileType("circuitRF Technology") { Patterns = ["*.ctech"] }],

@@ -35,7 +35,13 @@ public sealed class OperationsInTheDocumentTests : IDisposable
     {
         var fake = new FakeKernel();
         using var kernel = fake.Create();
-        var files = Directory.GetFiles(Path.Combine(RepoRoot(), "examples"), "*.c3d", SearchOption.AllDirectories);
+        // brief-em3d-70 — the 3D Connector example uses the kernel on purpose; every OTHER shipped 3D view holds no kernel
+        // object, and those are what this gate is about.
+        var all = Directory.GetFiles(Path.Combine(RepoRoot(), "examples"), "*.c3d", SearchOption.AllDirectories);
+        var usesKernel = all.Where(f => C3dKernelUse.Of(C3dPersistence.LoadFromFile(f)).Count > 0).ToList();
+        Assert.Equal(["Flange.c3d", "Launch.c3d"], usesKernel.Select(Path.GetFileName).Order());
+        Assert.All(usesKernel, f => Assert.Contains($"{Path.DirectorySeparatorChar}3D Connector{Path.DirectorySeparatorChar}", f));
+        var files = all.Except(usesKernel).ToList();
         Assert.NotEmpty(files);
         foreach (string f in files)
         {
@@ -220,6 +226,22 @@ public sealed class OperationsInTheDocumentTests : IDisposable
         Assert.True(p.Of(pin) > p.Of(body));
     }
 
+    /// <summary>brief-em3d-70 — a Subtract that keeps its Tools, NESTED as the Blank of a Unite (a housing with its bore kept
+    /// as fill, then united with a flange): the kept Tool is still its own solid. Only the top level kept them before.</summary>
+    [KernelFact]
+    public void Gate7b_AKeptTool_OfASubtractNestedInAUnite_IsStillItsOwnSolid()
+    {
+        using var kernel = KernelForTests.New();
+        var sub = Subtract("body", Box("", "Copper", 0, 0, 0, 1000, 1000, 200), Cyl("fill", "Alumina", 500, 500, -10, 220, 100));
+        sub.KeepTools = true;
+        var unite = C3dBooleans.Make(C3dBooleanOp.Unite, [Box("plate", "Copper", 1000, 0, 0, 100, 1000, 200), sub], 1, false);
+        var doc = new C3dDocument { Objects = [unite] };
+        var e = new C3dElaborator(null, kernel).Elaborate(doc, WriteC3d(Workspace(), "Nested", doc), null);
+        Assert.True(e.Ok, string.Join(" ", e.Refusals));
+        Assert.Equal(["body", "fill"], e.Solids.Select(s => s.Name));
+        Assert.Equal(Em3dRole.Dielectric, e.Solids.Single(s => s.Name == "fill").Role);
+    }
+
     // ── 8. refused on open without the kernel — a disabled-only document included ─────────────
 
     [Fact]
@@ -341,7 +363,7 @@ public sealed class OperationsInTheDocumentTests : IDisposable
 			"Op": "Subtract",
 			"Blank": {
 				"$type": "Box",
-				"Material": "Kovar",
+				"Material": "Lid alloy",
 				"Min": [0, 0, 500000],
 				"Size": [4000000, 3000000, 250000]
 			},
@@ -380,7 +402,7 @@ public sealed class OperationsInTheDocumentTests : IDisposable
 				"Op": "Subtract",
 				"Blank": {
 					"$type": "Box",
-					"Material": "Kovar",
+					"Material": "Lid alloy",
 					"Min": [0, 0, 500000],
 					"Size": [4000000, 3000000, 250000]
 				},
@@ -424,7 +446,7 @@ public sealed class OperationsInTheDocumentTests : IDisposable
 			],
 			"Target": {
 				"$type": "Cylinder",
-				"Material": "Kovar",
+				"Material": "Lid alloy",
 				"Base": [0, 0, 0],
 				"Axis": "Z",
 				"Length": 500000,
@@ -482,7 +504,7 @@ public sealed class OperationsInTheDocumentTests : IDisposable
     private static GeometryKernelCapability Absent() => new(false, GeometryKernelAbsence.Missing, null, null, "included with circuitRF",
         "The geometry kernel was not found at /nowhere/geometry-kernel.", "Reinstall circuitRF to restore it.");
 
-    /// <summary>A workspace whose default technology holds a dielectric, two metals and Kovar.</summary>
+    /// <summary>A workspace whose default technology holds a dielectric, two metals and a lid alloy.</summary>
     private string Workspace()
     {
         string ws = Path.Combine(_root, "ws" + Guid.NewGuid().ToString("N")[..6]);
@@ -494,7 +516,7 @@ public sealed class OperationsInTheDocumentTests : IDisposable
             [
                 new TechMaterial { Name = "Alumina", Epsr = 9.8 },
                 new TechMaterial { Name = "Copper", Sigma20 = 5.8e7 },
-                new TechMaterial { Name = "Kovar", Sigma20 = 2e6 },
+                new TechMaterial { Name = "Lid alloy", Sigma20 = 2e6 },
                 new TechMaterial { Name = "Brass", Sigma20 = 1.5e7 },
             ],
         });

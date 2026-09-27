@@ -223,7 +223,7 @@ why it is not done silently.
    50 µm (hand-written per brief 64 if brief 67 is not built yet).
 2. Select an openEMS setup: the Setups panel shows *"openEMS will not represent the 50 µm fillet…"*. Refine
    the grid until it says *"staircases … with about 2 cells"*.
-3. Select a Palace setup: no fidelity warning for the lid (a Kovar lid's rim radius is far above ten skin
+3. Select a Palace setup: no fidelity warning for the lid (a lid-alloy lid's rim radius is far above ten skin
    depths). Run `circuitrf check` on the file: the same rows, exit 0.
 4. Simulate in both; read the notes in each run's Messages output.
 

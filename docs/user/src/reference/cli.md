@@ -893,6 +893,7 @@ conversion here and the same conversion through the GUI produce the same bytes.
 | DXF | `.dxf` | ✓ | ✓ |
 | Gerber + Excellon | a **folder**, or one Gerber/drill file | ✓ | a **folder** |
 | Board | `.kicad_pcb` | ✓ | ✓ |
+| STEP | `.step`, `.stp` | into a **new `.c3d`** | from a `.c3d`, a `.clay`, a cell folder, or any source above |
 
 **Every ordered pair works** — DXF to Gerber, Gerber to board, GDSII to DXF, board to GDSII, and the
 rest. There is no privileged direction and no hub format you have to route through by hand: a
@@ -943,12 +944,39 @@ Convert a directory of drawings in one line:
 
 <pre><code class="cmd"><span class="prompt">$ </span>for f in dxf/*.dxf; do circuitrf convert "$f" -o "gds/$(basename "${f%.dxf}").gds"; done</code></pre>
 
+### STEP, both ways {#convert-step}
+
+A STEP file is a solid model, so it goes **into a 3D view**, and anything circuitRF can draw in 3D comes
+**out as one**. Both directions call the function the 3D editor's own dialog calls — *Import STEP…* and
+*Export STEP…* — so a conversion here and the same one in the editor produce the same document, and the
+same bytes but for the file's time stamp.
+
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf convert body.step -o Connector/3d/Connector.c3d --material "flange=Connector alloy"
+<span class="prompt">$ </span>circuitrf convert Launch/3d/Launch.c3d -o launch.step
+<span class="prompt">$ </span>circuitrf convert board.kicad_pcb -o board.step</code></pre>
+
+- **Import** writes a **new** `.c3d`, with one `Step` object per solid part and the STEP file copied beside
+  it. The target must be a `.c3d` path. Each part takes a material as the dialog's table would give it — by
+  its name, then its colour, from the technology the new file resolves (`--tech` names another) — and
+  `--material <part>=<material>` answers any the file cannot. `--part <path>` imports only the named parts
+  (their occurrence paths, `1/2`). A part nothing matches is imported with **no** material, and the run says
+  so: it is drawn, and it is left out of a solve until it is given one.
+- **Export** writes one file, flattened with the overlap precedence applied, in millimetres (inches for a
+  mil or inch design), AP214. `--assembly` keeps placed cells as sub-assemblies, `--as-drawn` writes each
+  object as drawn rather than cut by precedence, `--thicken-sheets` gives sheets their thickness,
+  `--include-airbox` adds the first 3D setup's air box, `--schema ap242` and `--view 3d|layout` (for a
+  cell with both) do what they say. A source that is not already circuitRF's — GDSII, a board — is imported
+  first, exactly as the other conversions do.
+
+The geometry kernel does the work in both directions, so on an installation without it both are refused,
+saying why and how to restore it.
+
 ### Options {#convert-options}
 
 | Option | What it does |
 |---|---|
 | `-o, --output <path>` | The file to write — or the **folder**, for `gerber` and `clay`; a file-shaped path there is refused. Required. |
-| `--from <fmt>`, `--to <fmt>` | `clay`, `gdsii`, `dxf`, `gerber`, `board`. Say it when the path does not. |
+| `--from <fmt>`, `--to <fmt>` | `clay`, `gdsii`, `dxf`, `gerber`, `board`, `step`. Say it when the path does not. |
 | `--cell <name>` | Which cell to export, when the source holds several. |
 | `--list-cells` | Report what the input holds and write nothing. |
 | `--name <stem>` | What to call the written Gerber file set. Default: the cell's name. |
@@ -962,6 +990,9 @@ Convert a directory of drawings in one line:
 | `--drill-format <int>:<dec>` | Excellon digit counts, e.g. `2:4`. Applies to every drill file in the set. |
 | `--drill-zeros <leading or trailing>` | Excellon zero suppression. Applies to every drill file in the set. |
 | `--accept-inferred-drill-format` | Take each drill file's own inference rather than refusing. |
+| `--material <part>=<material>` | STEP import: the material a part takes. Repeat it per part. |
+| `--part <path>` | STEP import: import only this part (its occurrence path). Repeat it per part. |
+| `--assembly`, `--as-drawn`, `--thicken-sheets`, `--include-airbox`, `--schema ap214\|ap242`, `--view 3d\|layout` | STEP export: the Export STEP dialog's choices, one flag each. |
 | `--open-archives` | Look inside an archive when a Gerber folder holds no artwork of its own. It is unpacked to a temporary folder, imported from there, and deleted again; nothing is added to the folder you named. Without this flag, such a folder is a refusal that names the flag. |
 
 ### Which cell gets exported {#convert-cell}
