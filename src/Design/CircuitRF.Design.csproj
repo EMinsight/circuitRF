@@ -63,6 +63,11 @@
        class compiles, enumerates nothing, and reports nothing). -->
   <ItemGroup>
     <EmbeddedResource Include="resources\technologies\*.ctech" />
+    <!-- brief-em3d-53 R-em3d53-8a: the shipped generic material library, BESIDE the technologies that
+         name it, so their reference "generic-materials.cmat" is true in the assembly and in a
+         workspace's tech/ folder alike. Left out of this glob, every shipped technology would refuse
+         to load, naming the library it could not find. -->
+    <EmbeddedResource Include="resources\technologies\*.cmat" />
   </ItemGroup>
 
   <!-- brief-em3d-24 R-em3d24-1: the solver install recipes and their schema, read by SolverRecipes out of

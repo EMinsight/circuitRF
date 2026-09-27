@@ -302,7 +302,7 @@ public sealed partial class LayoutEditorViewModel
         var toAdd = mapping.Where(r => r.Choice.Action == LayoutFragment.LayerReconciliationAction.AddToTechnology).ToList();
         if (toAdd.Count == 0 || resolvedTechPath is null || Technology is not { } destTech) return;
 
-        var clone = TechPersistence.Deserialize(TechPersistence.Serialize(destTech));
+        var clone = TechPersistence.Clone(destTech);
         foreach (var row in toAdd)
         {
             if (clone.Layers.Any(l => l.Key == row.Source)) continue;

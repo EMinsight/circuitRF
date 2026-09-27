@@ -104,7 +104,7 @@ public class PCellContractTests
         var parameters = new Dictionary<string, PCellValue> { ["W"] = 0.0029, ["L"] = 0.01 };
         var first = MlinPCell.Generate(parameters, Pcb, PCellLayerSelection.Default);
 
-        var reloaded = TechPersistence.Deserialize(TechPersistence.Serialize(Pcb));
+        var reloaded = TechPersistence.Clone(Pcb);
         var second = MlinPCell.Generate(parameters, reloaded, PCellLayerSelection.Default);
 
         Assert.Equal(first.Shapes.Count, second.Shapes.Count);

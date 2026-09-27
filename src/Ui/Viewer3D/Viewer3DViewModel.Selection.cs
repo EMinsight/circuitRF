@@ -46,6 +46,12 @@ public interface IViewer3DEditHost
 
     void SetMaterial(IReadOnlyList<Scene3DObject> objects, string material);
 
+    /// <summary>brief-em3d-53 — Assign Material…: the picker over the technology's materials, for these objects.</summary>
+    void AssignMaterial(IReadOnlyList<Scene3DObject> objects) { }
+
+    /// <summary>brief-em3d-53 — Material ▸ New Material…: the picker on a new row, for these objects.</summary>
+    void NewMaterial(IReadOnlyList<Scene3DObject> objects) { }
+
     /// <summary>Deletes the selection's document objects: one undo entry. False when nothing was deletable.</summary>
     bool DeleteSelection();
 
@@ -528,9 +534,14 @@ public sealed partial class Viewer3DViewModel
         {
             items.Add(new Viewer3DMenuItem("Rename…", () => host.ShowProperties(rename: true), Enabled: objects.Count == 1));
             var mats = host.Materials;
-            items.Add(new Viewer3DMenuItem("Material", Enabled: mats.Count > 0,
-                Tip: mats.Count > 0 ? null : "The document's technology defines no materials.",
-                Children: [.. mats.Select(m => new Viewer3DMenuItem(m, () => host.SetMaterial(objects, m)))]));
+            // brief-em3d-53 R-em3d53-5 — ends in New Material…, so a technology with no materials is not a dead end.
+            items.Add(new Viewer3DMenuItem("Material",
+                Children: [.. mats.Select(m => new Viewer3DMenuItem(m, () => host.SetMaterial(objects, m))),
+                           .. mats.Count > 0 ? [Viewer3DMenuItem.Separator] : Array.Empty<Viewer3DMenuItem>(),
+                           new Viewer3DMenuItem("New Material…", () => host.NewMaterial(objects),
+                               Tip: "Make a material in the technology or one of its libraries, and give it to the selection.")]));
+            items.Add(new Viewer3DMenuItem("Assign Material…", () => host.AssignMaterial(objects),
+                Tip: "Choose the material from the technology's materials — each with its role and source — or make a new one."));
         }
         if (any)
         {

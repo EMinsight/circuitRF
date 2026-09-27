@@ -71,6 +71,9 @@ public enum NodeKind
     /// </summary>
     PartLibraryFile,
 
+    /// <summary>A <c>.cmat</c> material library (brief-em3d-53 R-em3d53-4a) — opens as its own Materials document.</summary>
+    MaterialLibraryFile,
+
     /// <summary>A .ccolor color-theme file.</summary>
     ColorThemeFile,
 

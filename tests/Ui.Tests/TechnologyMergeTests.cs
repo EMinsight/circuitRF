@@ -242,7 +242,7 @@ public class TechnologyMergeTests
         Assert.Equal("Rules", rulesOnly.Name);
 
         // And it survives the real `.ctech` round trip, because it is just a technology.
-        var reloaded = TechPersistence.Deserialize(TechPersistence.Serialize(rulesOnly));
+        var reloaded = TechPersistence.Clone(rulesOnly);
         Assert.Single(reloaded.DrcRules);
         Assert.Empty(reloaded.Layers);
     }

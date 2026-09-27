@@ -42,6 +42,10 @@ public sealed class CtechFile
     /// formula may refer to (rev 1, additive).</summary>
     public List<TechConstant>? Constants { get; set; }
 
+    /// <summary>The <c>.cmat</c> libraries this technology names (brief-em3d-53 R-em3d53-1a, additive),
+    /// relative to the <c>.ctech</c>'s directory; omitted when null.</summary>
+    public List<string>? MaterialLibraries { get; set; }
+
     /// <summary>The process's named materials (brief-em3d-2 R-em3d2-1b, additive) — nullable for
     /// <see cref="Constants"/>' reason: absent in every .ctech written before the list existed, and
     /// omitted on write when empty so every one of those round-trips byte-identically.</summary>
@@ -57,7 +61,9 @@ public static class TechPersistence
 {
     public const int CurrentFormatVersion = 1;
 
-    private static readonly JsonSerializerOptions JsonOpts = new()
+    /// <summary>The one serializer contract — the <c>.cmat</c> reader uses it too, so a material record
+    /// reads identically in either file (brief-em3d-53 §1a).</summary>
+    internal static readonly JsonSerializerOptions JsonOpts = new()
     {
         WriteIndented               = true,
         DefaultIgnoreCondition      = JsonIgnoreCondition.WhenWritingNull,
@@ -70,16 +76,80 @@ public static class TechPersistence
     public static string Serialize(Technology tech)
         => JsonSerializer.Serialize(ToFileModel(tech), JsonOpts);
 
+    /// <remarks>
+    /// brief-em3d-53 R-em3d53-1c — <b>a technology loaded from circuitRF's own resources brings its shipped
+    /// libraries with it.</b> Its references (<c>generic-materials.cmat</c>) are relative, and resolved against the
+    /// resources while it was in the assembly; written to disk they resolve against the new file's directory, where
+    /// nothing is — so the New Technology starters and any other "save a shipped technology here" would write a
+    /// technology that refuses to load. Each shipped library is written beside it, and ONLY where no file of that name
+    /// exists: a workspace's copy is its own file and is never overwritten.
+    /// </remarks>
     public static void SaveToFile(string path, Technology tech)
-        => AtomicFile.WriteAllText(path, Serialize(tech));
+    {
+        AtomicFile.WriteAllText(path, Serialize(tech));
+        foreach (string reference in tech.MaterialLibraries ?? [])
+        {
+            string shipped = MaterialLibraries.Shipped.Locate(reference);
+            if (!tech.ResolvedLibraryPaths.Contains(shipped, StringComparer.Ordinal)) continue;
+            string target = MaterialLibraries.ResolvePath(path, reference);
+            if (File.Exists(target)) continue;
+            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+            File.WriteAllText(target, MaterialLibraries.ShippedRawJson(Path.GetFileName(target)));
+        }
+    }
 
     // ── Read ──────────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// A technology from its JSON <b>with no library resolved</b> — a <c>.ctech</c> read with no path has
+    /// nothing to resolve its <see cref="Technology.MaterialLibraries"/> against. A file is read with
+    /// <see cref="LoadFromFile(string)"/>; a copy of a loaded technology is made with <see cref="Clone"/>,
+    /// which keeps what its libraries contributed.
+    /// </summary>
     public static Technology Deserialize(string json)
     {
         var tech = DeserializeUnresolved(json);
         ResolveMaterials(tech);
         return tech;
+    }
+
+    /// <summary>
+    /// A technology from its JSON with its libraries resolved through <paramref name="libraries"/>
+    /// (brief-em3d-53 §1c) and then its named materials applied. Throws
+    /// <see cref="MaterialLibraryException"/> for a library that cannot be read and for a name two
+    /// sources define differently (§1d).
+    /// </summary>
+    public static Technology Deserialize(string json, MaterialLibraryLoader libraries, string ctechLabel)
+    {
+        var tech = DeserializeUnresolved(json);
+        MaterialLibraries.Resolve(tech, libraries, ctechLabel);
+        ResolveMaterials(tech);
+        return tech;
+    }
+
+    /// <summary>
+    /// Re-resolves <paramref name="tech"/>'s libraries in place — for a library edited while a technology
+    /// naming it is loaded (R-em3d53-1f) — then re-applies its named materials. Throws as
+    /// <see cref="Deserialize(string, MaterialLibraryLoader, string)"/> does.
+    /// </summary>
+    public static void ResolveLibraries(Technology tech, MaterialLibraryLoader libraries, string ctechLabel)
+    {
+        MaterialLibraries.Resolve(tech, libraries, ctechLabel);
+        ResolveMaterials(tech);
+    }
+
+    /// <summary>
+    /// A deep copy that keeps what the libraries contributed — a round trip through the writer and
+    /// <see cref="Deserialize(string)"/> would drop it, since the file stores only the references. The
+    /// library records themselves are shared: nothing edits a library through a technology (M4).
+    /// </summary>
+    public static Technology Clone(Technology tech)
+    {
+        var clone = DeserializeUnresolved(Serialize(tech));
+        clone.LibraryMaterials = tech.LibraryMaterials;
+        clone.ResolvedLibraryPaths = tech.ResolvedLibraryPaths;
+        ResolveMaterials(clone);
+        return clone;
     }
 
     /// <summary>
@@ -118,7 +188,7 @@ public static class TechPersistence
     /// </summary>
     public static void ResolveMaterials(Technology tech)
     {
-        if (tech.Materials.Count == 0) return;
+        if (tech.Materials.Count == 0 && tech.LibraryMaterials.Count == 0) return;
         foreach (var layer in tech.Stackup.Layers)
         {
             if (tech.FindMaterial(layer.Material) is not { } m) continue;
@@ -135,7 +205,21 @@ public static class TechPersistence
         }
     }
 
+    /// <summary>A <c>.ctech</c> from disk, its libraries resolved against its own directory.</summary>
     public static Technology LoadFromFile(string path)
+        => LoadFromFile(path, MaterialLibraries.Disk(path));
+
+    /// <summary>As <see cref="LoadFromFile(string)"/>, with the caller's loader — the cache passes one
+    /// that answers a library open with unsaved edits.</summary>
+    public static Technology LoadFromFile(string path, MaterialLibraryLoader libraries)
+        => Deserialize(GzipTextFile.ReadAllTextAutoGzip(path), libraries, Path.GetFullPath(path));
+
+    /// <summary>
+    /// A <c>.ctech</c>'s OWN content with no library resolved — what the technology editor opens, so a
+    /// technology whose libraries refuse to load can still be opened and fixed (brief-em3d-53 §1d).
+    /// Nothing that USES a technology may load it this way.
+    /// </summary>
+    public static Technology LoadOwnFromFile(string path)
         => Deserialize(GzipTextFile.ReadAllTextAutoGzip(path));
 
     // ── Convert Technology <-> CtechFile ──────────────────────────────────────
@@ -157,6 +241,7 @@ public static class TechPersistence
         LvsTolerances        = tech.LvsTolerances.Count > 0 ? [.. tech.LvsTolerances] : null,
         DeviceRules          = tech.DeviceRules.Count > 0 ? [.. tech.DeviceRules] : null,
         Constants            = tech.Constants.Count > 0 ? [.. tech.Constants] : null,
+        MaterialLibraries    = tech.MaterialLibraries is { Count: > 0 } ml ? [.. ml] : null,
         Materials            = tech.Materials.Count > 0 ? [.. tech.Materials] : null,
         Bodies               = tech.Bodies.Count > 0 ? [.. tech.Bodies] : null,
     };
@@ -202,6 +287,7 @@ public static class TechPersistence
         LvsTolerances        = file.LvsTolerances is { Count: > 0 } lt ? [.. lt] : [],
         DeviceRules          = file.DeviceRules is { Count: > 0 } dr ? [.. dr] : [],
         Constants            = file.Constants is { Count: > 0 } tc ? [.. tc] : [],
+        MaterialLibraries    = file.MaterialLibraries is { Count: > 0 } fml ? [.. fml] : null,
         Materials            = file.Materials is { Count: > 0 } tm ? [.. tm] : [],
         Bodies               = file.Bodies is { Count: > 0 } tb ? [.. tb] : [],
     };

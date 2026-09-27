@@ -139,7 +139,7 @@ public sealed partial class LayoutEditorViewModel
 
         if (result.LayersToAdd.Count > 0 && Technology is { } tech && ResolvedTechPath is { } techPath)
         {
-            var clone = TechPersistence.Deserialize(TechPersistence.Serialize(tech));
+            var clone = TechPersistence.Clone(tech);
             foreach (var def in result.LayersToAdd)
             {
                 if (clone.Layers.Any(l => l.Key == def.Key)) continue;

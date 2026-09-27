@@ -1,0 +1,165 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:lay="using:CircuitRF.Ui.Layout"
+             x:Class="CircuitRF.Ui.Views.Materials.MaterialsTableView"
+             x:DataType="lay:MaterialsTableViewModel">
+
+    <!-- brief-em3d-53 R-em3d53-4 — the ONE Materials table: a .cmat document and the technology editor's
+         Materials tab both host this control over a MaterialsTableViewModel. Every numeric field commits on
+         LostFocus (or Enter) through the row view model, which writes ONLY the field edited (§1f); an empty
+         field is "not stated" and is written as an omitted key (§1e). -->
+    <UserControl.Styles>
+        <Style Selector="TextBlock.colhdr">
+            <Setter Property="FontSize" Value="10"/>
+            <Setter Property="Foreground" Value="{DynamicResource SystemBaseMediumColor}"/>
+        </Style>
+        <Style Selector="TextBox.cell">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Padding" Value="4,3"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <Style Selector="ListBox.rows">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="0"/>
+        </Style>
+        <Style Selector="ListBox.rows ListBoxItem">
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="MinHeight" Value="0"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+        </Style>
+    </UserControl.Styles>
+
+    <DockPanel>
+        <!-- Actions -->
+        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="4" Margin="6,4">
+            <Button Content="＋ Add" Command="{Binding AddCommand}" FontSize="11" Padding="8,3"
+                    IsEnabled="{Binding !IsReadOnly}"
+                    ToolTip.Tip="Add a material that states nothing yet — give it σ₂₀ (a conductor) or εr (a dielectric)."/>
+            <Button Content="Duplicate" Command="{Binding DuplicateCommand}" FontSize="11" Padding="8,3"
+                    IsEnabled="{Binding !IsReadOnly}"
+                    ToolTip.Tip="Add a copy of the selected material under a new name."/>
+            <Button Content="Delete" Command="{Binding DeleteCommand}" FontSize="11" Padding="8,3"
+                    IsEnabled="{Binding !IsReadOnly}"
+                    ToolTip.Tip="Delete the selected material. A material in use is not deleted; its uses are listed."/>
+            <TextBlock Text="{Binding ReadOnlyReason}" IsVisible="{Binding IsReadOnly}" FontSize="11"
+                       VerticalAlignment="Center" Margin="8,0,0,0" Foreground="{DynamicResource SystemBaseMediumColor}"/>
+        </StackPanel>
+        <TextBlock DockPanel.Dock="Top" Text="{Binding Refusal}" IsVisible="{Binding Refusal, Converter={x:Static ObjectConverters.IsNotNull}}"
+                   TextWrapping="Wrap" FontSize="11" Margin="6,0,6,4" Foreground="#C0392B"/>
+
+        <!-- The selected row's details: its Source text, the εr tensor and the thermal placeholders. -->
+        <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource CrfTileBorderBrush}" BorderThickness="0,1,0,0"
+                Padding="6,4" IsVisible="{Binding SelectedRow, Converter={x:Static ObjectConverters.IsNotNull}}">
+            <StackPanel Spacing="4" DataContext="{Binding SelectedRow}" x:DataType="lay:MaterialRowViewModel">
+                <TextBlock Classes="colhdr" Text="Source — where the values come from, and for a dielectric the frequency they are stated at"/>
+                <TextBox Classes="cell" TextWrapping="Wrap" AcceptsReturn="False" MinHeight="40"
+                         IsReadOnly="{Binding !IsEditable}" KeyDown="OnCellKeyDown"
+                         Text="{Binding SourceText, UpdateSourceTrigger=LostFocus}"/>
+                <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding IsAnisotropic}">
+                    <TextBlock Classes="colhdr" Text="εr tensor  xx" VerticalAlignment="Center"/>
+                    <TextBox Classes="cell" Width="70" IsReadOnly="{Binding !IsEditable}" KeyDown="OnCellKeyDown"
+                             Text="{Binding TensorXxText, UpdateSourceTrigger=LostFocus}"/>
+                    <TextBlock Classes="colhdr" Text="yy" VerticalAlignment="Center"/>
+                    <TextBox Classes="cell" Width="70" IsReadOnly="{Binding !IsEditable}" KeyDown="OnCellKeyDown"
+                             Text="{Binding TensorYyText, UpdateSourceTrigger=LostFocus}"/>
+                    <TextBlock Classes="colhdr" Text="zz" VerticalAlignment="Center"/>
+                    <TextBox Classes="cell" Width="70" IsReadOnly="{Binding !IsEditable}" KeyDown="OnCellKeyDown"
+                             Text="{Binding TensorZzText, UpdateSourceTrigger=LostFocus}"/>
+                </StackPanel>
+                <TextBlock Text="{Binding TemperatureTablesNote}" IsVisible="{Binding HasTemperatureTables}" FontSize="11"
+                           Foreground="{DynamicResource SystemBaseMediumColor}"/>
+                <Expander Header="Thermal — not read by any solver yet" IsExpanded="False" FontSize="11">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <TextBlock Classes="colhdr" Text="k (W/(m·K))" VerticalAlignment="Center"/>
+                        <TextBox Classes="cell" Width="80" IsReadOnly="{Binding !IsEditable}" KeyDown="OnCellKeyDown"
+                                 Text="{Binding ThermalKText, UpdateSourceTrigger=LostFocus}"/>
+                        <TextBlock Classes="colhdr" Text="density (kg/m³)" VerticalAlignment="Center"/>
+                        <TextBox Classes="cell" Width="80" IsReadOnly="{Binding !IsEditable}" KeyDown="OnCellKeyDown"
+                                 Text="{Binding DensityText, UpdateSourceTrigger=LostFocus}"/>
+                        <TextBlock Classes="colhdr" Text="specific heat (J/(kg·K))" VerticalAlignment="Center"/>
+                        <TextBox Classes="cell" Width="80" IsReadOnly="{Binding !IsEditable}" KeyDown="OnCellKeyDown"
+                                 Text="{Binding SpecificHeatText, UpdateSourceTrigger=LostFocus}"/>
+                    </StackPanel>
+                </Expander>
+            </StackPanel>
+        </Border>
+
+        <Grid RowDefinitions="Auto,*">
+            <Grid Grid.Row="0" Margin="4,4,4,2" ColumnSpacing="4">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="140"/>
+                    <ColumnDefinition Width="110"/>
+                    <ColumnDefinition Width="90"/>
+                    <ColumnDefinition Width="64"/>
+                    <ColumnDefinition Width="34"/>
+                    <ColumnDefinition Width="64"/>
+                    <ColumnDefinition Width="50"/>
+                    <ColumnDefinition Width="84"/>
+                    <ColumnDefinition Width="64"/>
+                    <ColumnDefinition Width="72"/>
+                    <ColumnDefinition Width="*" MinWidth="80"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0"  Classes="colhdr" Text="Name"/>
+                <TextBlock Grid.Column="1"  Classes="colhdr" Text="Source"/>
+                <TextBlock Grid.Column="2"  Classes="colhdr" Text="Role"/>
+                <TextBlock Grid.Column="3"  Classes="colhdr" Text="εr"/>
+                <TextBlock Grid.Column="4"  Classes="colhdr" Text="Aniso" ToolTip.Tip="Anisotropic: state εr as xx / yy / zz (edited below the table). Untick to remove the tensor."/>
+                <TextBlock Grid.Column="5"  Classes="colhdr" Text="tanδ"/>
+                <TextBlock Grid.Column="6"  Classes="colhdr" Text="μr"/>
+                <TextBlock Grid.Column="7"  Classes="colhdr" Text="σ₂₀ (S/m)"/>
+                <TextBlock Grid.Column="8"  Classes="colhdr" Text="α₂₀ (1/K)"/>
+                <TextBlock Grid.Column="9"  Classes="colhdr" Text="Colour"/>
+                <TextBlock Grid.Column="10" Classes="colhdr" Text="Used by"/>
+            </Grid>
+
+            <ListBox Grid.Row="1" Classes="rows" ItemsSource="{Binding Rows}" SelectedItem="{Binding SelectedRow, Mode=TwoWay}"
+                     Margin="4,0,4,4" SelectionMode="Single">
+                <ListBox.ItemTemplate>
+                    <DataTemplate x:DataType="lay:MaterialRowViewModel">
+                        <Grid ColumnSpacing="4" Margin="0,2">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="140"/>
+                                <ColumnDefinition Width="110"/>
+                                <ColumnDefinition Width="90"/>
+                                <ColumnDefinition Width="64"/>
+                                <ColumnDefinition Width="34"/>
+                                <ColumnDefinition Width="64"/>
+                                <ColumnDefinition Width="50"/>
+                                <ColumnDefinition Width="84"/>
+                                <ColumnDefinition Width="64"/>
+                                <ColumnDefinition Width="72"/>
+                                <ColumnDefinition Width="*" MinWidth="80"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBox Grid.Column="0" Classes="cell" IsReadOnly="{Binding !IsEditable}" KeyDown="OnCellKeyDown"
+                                     Text="{Binding NameText, UpdateSourceTrigger=LostFocus}"
+                                     ToolTip.Tip="The name a stackup entry, body or 3D object names it by. '@' is reserved."/>
+                            <TextBlock Grid.Column="1" Text="{Binding SourceLabel}" ToolTip.Tip="{Binding SourceTip}"
+                                       VerticalAlignment="Center" FontSize="11" TextTrimming="CharacterEllipsis"/>
+                            <TextBlock Grid.Column="2" Text="{Binding Role}" ToolTip.Tip="{Binding RoleReason}"
+                                       VerticalAlignment="Center" FontSize="11"/>
+                            <TextBox Grid.Column="3" Classes="cell" IsReadOnly="{Binding !IsEditable}" KeyDown="OnCellKeyDown"
+                                     Text="{Binding EpsrText, UpdateSourceTrigger=LostFocus}"/>
+                            <CheckBox Grid.Column="4" IsChecked="{Binding IsAnisotropic}" IsEnabled="{Binding IsEditable}"
+                                      HorizontalAlignment="Center"/>
+                            <TextBox Grid.Column="5" Classes="cell" IsReadOnly="{Binding !IsEditable}" KeyDown="OnCellKeyDown"
+                                     Text="{Binding TanDText, UpdateSourceTrigger=LostFocus}"/>
+                            <TextBox Grid.Column="6" Classes="cell" IsReadOnly="{Binding !IsEditable}" KeyDown="OnCellKeyDown"
+                                     Text="{Binding MurText, UpdateSourceTrigger=LostFocus}"/>
+                            <TextBox Grid.Column="7" Classes="cell" IsReadOnly="{Binding !IsEditable}" KeyDown="OnCellKeyDown"
+                                     Text="{Binding Sigma20Text, UpdateSourceTrigger=LostFocus}"
+                                     ToolTip.Tip="Conductivity at 20 °C. Accepts 41e6 or 41M."/>
+                            <TextBox Grid.Column="8" Classes="cell" IsReadOnly="{Binding !IsEditable}" KeyDown="OnCellKeyDown"
+                                     Text="{Binding Alpha20Text, UpdateSourceTrigger=LostFocus}"/>
+                            <TextBox Grid.Column="9" Classes="cell" IsReadOnly="{Binding !IsEditable}" KeyDown="OnCellKeyDown"
+                                     Text="{Binding ColorText, UpdateSourceTrigger=LostFocus}" PlaceholderText="#rrggbb"
+                                     ToolTip.Tip="The colour the 3D view draws it in. Empty: the view's own palette."/>
+                            <TextBlock Grid.Column="10" Text="{Binding UsedByText}" ToolTip.Tip="{Binding UsedByTip}"
+                                       VerticalAlignment="Center" FontSize="11" TextTrimming="CharacterEllipsis"/>
+                        </Grid>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+        </Grid>
+    </DockPanel>
+</UserControl>

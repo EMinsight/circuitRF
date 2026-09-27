@@ -336,7 +336,7 @@ public static class C3dHierarchy
             string? match = tech?.FindMaterial(n) is { } same && (values is null || SameValues(C3dElaborator.MaterialValues(same, EmSetup.DefaultOperatingTempC), values))
                 ? same.Name
                 : values is null ? null
-                : tech?.Materials.FirstOrDefault(m => SameValues(C3dElaborator.MaterialValues(m, EmSetup.DefaultOperatingTempC), values))?.Name;
+                : tech?.ResolvedMaterials.FirstOrDefault(m => SameValues(C3dElaborator.MaterialValues(m, EmSetup.DefaultOperatingTempC), values))?.Name;
             if (match is null) unmatched.Add(values is null ? $"'{n}'" : $"'{n}' ({Describe(values)})");
             else rename[n] = match;
         }

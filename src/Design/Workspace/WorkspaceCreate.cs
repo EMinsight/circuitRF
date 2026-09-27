@@ -95,6 +95,9 @@ public static class WorkspaceCreate
         // behind, and the four steps below have no rollback (the same reasoning R-sl2-13's
         // unwritable-parent refusal is placed on).
         var entry = technologyId is { Length: > 0 } id ? ResolveTechnology(id) : null;
+        // brief-em3d-53 R-em3d53-1c: the libraries the technology names are read here too, for the same
+        // reason — one that cannot be read must refuse before a folder exists.
+        var libraries = entry is null ? [] : TechnologyCatalog.LibraryFiles(entry);
 
         string cwsPath = Path.Combine(workspaceDir, ".cws");
         Directory.CreateDirectory(workspaceDir);
@@ -107,6 +110,15 @@ public static class WorkspaceCreate
             Directory.CreateDirectory(techDir);
             techPath = Path.Combine(techDir, entry.Id + ".ctech");
             File.WriteAllText(techPath, TechnologyCatalog.LoadRawJson(entry));
+            // Each named library lands where the copied .ctech's own reference says, so the copy
+            // resolves from disk exactly as the original did. From here on it is the workspace's own
+            // file: a later release's library never reaches it (R-em3d53-8d).
+            foreach (var (reference, json) in libraries)
+            {
+                string libPath = MaterialLibraries.ResolvePath(techPath, reference);
+                Directory.CreateDirectory(Path.GetDirectoryName(libPath)!);
+                File.WriteAllText(libPath, json);
+            }
             cws.DefaultTechRef = Path.GetRelativePath(workspaceDir, techPath);
         }
 

@@ -117,6 +117,7 @@ public sealed partial class TechEditorViewModel : ObservableObject
         1 => TechProblemArea.Stackup,
         2 => TechProblemArea.Drc,
         3 => TechProblemArea.Interchange,
+        MaterialsTabIndex => TechProblemArea.Materials,
         _ => TechProblemArea.Layers,
     };
 
@@ -444,10 +445,16 @@ public sealed partial class TechEditorViewModel : ObservableObject
     /// must surface an error, never crash the app — mirrors <see cref="LayoutEditorViewModel"/>.</summary>
     public event Action<string>? SaveError;
 
-    public TechEditorViewModel(string filePath, Technology tech)
+    /// <param name="libraryLoader">How the technology's material libraries are read (brief-em3d-53) — the workspace
+    /// passes its cache's, so an open library's unsaved edits are seen. Null reads them from disk.
+    /// <paramref name="tech"/> may be the file's OWN content (<see cref="TechPersistence.LoadOwnFromFile"/>): the
+    /// editor resolves the libraries itself, so a technology whose libraries refuse to load still opens.</param>
+    public TechEditorViewModel(string filePath, Technology tech, Func<string, MaterialLibraryLoader>? libraryLoader = null)
     {
         FilePath = filePath;
         Working  = tech;
+        if (libraryLoader is not null) _libraryLoader = libraryLoader;
+        InitMaterials();
 
         UndoCommand = new RelayCommand(() => UndoRedo.Undo(), () => UndoRedo.CanUndo);
         RedoCommand = new RelayCommand(() => UndoRedo.Redo(), () => UndoRedo.CanRedo);
@@ -502,12 +509,17 @@ public sealed partial class TechEditorViewModel : ObservableObject
     public void SaveAs(string newPath)
     {
         if (string.IsNullOrWhiteSpace(newPath)) return;
+        // brief-em3d-53 R-em3d53-1e — a relative library reference is re-pointed so the copy names the same
+        // file from its new place; put back if the write fails.
+        var refsBefore = Working.MaterialLibraries?.ToList();
+        RepointLibraries(FilePath, newPath);
         try
         {
             TechPersistence.SaveToFile(newPath, Working);
         }
         catch (Exception ex)
         {
+            Working.MaterialLibraries = refsBefore;
             SaveError?.Invoke($"Couldn't save technology to '{newPath}': {ex.Message}");
             return;
         }
@@ -516,6 +528,8 @@ public sealed partial class TechEditorViewModel : ObservableObject
         FilePath = newPath;
         UndoRedo.MarkSaved();
         TechSavedAs?.Invoke(oldPath, newPath);
+        ResolveLibrariesInPlace();
+        RebuildAll();
     }
 
     // ── Snapshot undo plumbing (internal — used by row view models) ───────────
@@ -562,7 +576,10 @@ public sealed partial class TechEditorViewModel : ObservableObject
     /// every case the brief's event table lists.</summary>
     internal void ApplySnapshot(string json)
     {
-        Working = TechPersistence.Deserialize(json);
+        // brief-em3d-53 — the file's own content, then its libraries (a snapshot may have added or removed one);
+        // a refusal becomes the Materials tab's problems rather than an editor that cannot load its own undo.
+        Working = TechPersistence.DeserializeUnresolved(json);
+        ResolveLibrariesInPlace();
         RebuildAll();
 
         // R-fix-1: a SEPARATE deserialize of the same json, never Working itself — Working keeps
@@ -570,7 +587,7 @@ public sealed partial class TechEditorViewModel : ObservableObject
         // reference wholesale, so a consumer holding Working directly would either observe
         // half-applied edits or silently stop updating after the first undo. Reusing `json` (already
         // in hand) rather than re-serializing Working is the "one extra deserialize" the brief notes.
-        TechLiveChanged?.Invoke(FilePath, TechPersistence.Deserialize(json));
+        TechLiveChanged?.Invoke(FilePath, TechPersistence.Clone(Working));
 
         // Last, after Working has been replaced and every row collection rebuilt: the drawing reads
         // Working directly, so a cue raised any earlier would rebuild the scene from the technology
@@ -587,6 +604,7 @@ public sealed partial class TechEditorViewModel : ObservableObject
         RebuildLayers();
         RebuildStackup();
         RebuildDrcRules();
+        RebuildMaterials();
         ApplyFilters();   // every rebuild replaces the row VMs — the filtered views must follow
 
         // LAST, and after ApplyFilters: the selection is held by NAME precisely because every row VM
@@ -601,7 +619,8 @@ public sealed partial class TechEditorViewModel : ObservableObject
     /// temperature table carried but not yet read) is the technology explaining itself to
     /// <c>check</c>, not a problem for this banner to count on a tab header.</summary>
     private void Revalidate() => ValidationProblems =
-        [.. TechValidation.Analyze(Working).Where(p => p.Severity != CircuitRF.Diagnostics.DiagnosticSeverity.Info)];
+        [.. LibraryProblems(),
+         .. TechValidation.Analyze(Working).Where(p => p.Severity != CircuitRF.Diagnostics.DiagnosticSeverity.Info)];
 
     partial void OnValidationProblemsChanged(IReadOnlyList<TechProblem> value) => RaiseValidationViews();
 
@@ -633,6 +652,7 @@ public sealed partial class TechEditorViewModel : ObservableObject
         1 => ("reference/stackup.html",       ""),
         2 => ("reference/layout-editor.html", "drc"),
         3 => ("reference/layout-editor.html", "interchange"),
+        MaterialsTabIndex => ("reference/layout-editor.html", "technology"),
         _ => ("reference/layout-editor.html", "technology"),
     };
 
@@ -646,6 +666,7 @@ public sealed partial class TechEditorViewModel : ObservableObject
         1 => "Open the documentation for the Stackup",
         2 => "Open the documentation for design-rule checking",
         3 => "Open the documentation for interchange mappings",
+        MaterialsTabIndex => "Open the documentation for the technology, its materials and material libraries",
         _ => "Open the documentation for the technology and its layer table",
     };
 
@@ -661,6 +682,7 @@ public sealed partial class TechEditorViewModel : ObservableObject
         OnPropertyChanged(nameof(StackupTabHeader));
         OnPropertyChanged(nameof(DrcTabHeader));
         OnPropertyChanged(nameof(InterchangeTabHeader));
+        OnPropertyChanged(nameof(MaterialsTabHeader));
     }
 
     // ── Layer table ────────────────────────────────────────────────────────────

@@ -101,12 +101,15 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
 
     public static IReadOnlyList<LayoutUnit> AllUnits => Layout.LayoutEditorViewModel.AllUnits;
 
+    private readonly Action<Action> _post;
+
     public C3dEditorViewModel(string path, C3dDocument document, Func<Viewer3DBackend> backend, Func<string?> workspaceCws,
                               Action<Action> post, TechnologyCache? technologies = null)
     {
         FilePath = Path.GetFullPath(path);
         Document = document;
         _workspaceCws = workspaceCws;
+        _post = post;
         _elaborator = new C3dElaborator(technologies);
         _contextElaborator = new C3dElaborator(technologies);
         _savedStamp = Stamp(FilePath);
@@ -279,6 +282,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         }
         Properties.Reload();
         OnPropertyChanged(nameof(Materials));
+        OnPropertyChanged(nameof(MaterialChoices));
         SyncCurrentMaterial();
         RefreshGridText();
         Interlocked.Exchange(ref _adoptedGeneration, gen);
@@ -319,7 +323,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         => Elaboration?.Provenance.TryGetValue(o.Name, out var p) == true && p.InstancePath.Length > 0 ? p.InstancePath : null;
 
     public IReadOnlyList<string> Materials
-        => Elaboration?.Technology?.Materials.Select(m => m.Name).ToList() ?? (IReadOnlyList<string>)[];
+        => Elaboration?.Technology?.ResolvedMaterials.Select(m => m.Name).ToList() ?? (IReadOnlyList<string>)[];
 
     public bool SetHidden(IReadOnlyList<Scene3DObject> objects, bool hidden, string description)
     {

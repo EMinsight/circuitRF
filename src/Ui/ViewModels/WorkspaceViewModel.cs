@@ -1193,6 +1193,13 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             doc.ViewModel.ApplyTechResolution(resolution);
         }
 
+        // brief-em3d-53 R-em3d53-1f — an open 3D view elaborates through this same cache but was never told
+        // it changed: an εr edited in the technology editor (or in a material library) did not move an open
+        // .c3d until something else re-elaborated it. Its own technology and every instance's are resolved
+        // on each elaboration, so the cue is enough; the elaborator's child cache notices a replaced instance.
+        foreach (var c3d in _openDocsByPath.Values.OfType<ThreeD.C3dEditorDocument>())
+            c3d.ViewModel.OnChildChanged();
+
         TechnologyReResolved?.Invoke(changedPath);
     }
 
@@ -2062,6 +2069,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                     EmSetupDocument aem                  => aem.FilePath,
                     ThreeD.C3dEditorDocument ac3d        => ac3d.FilePath,
                     PartLibraryDocument alib                => alib.FilePath,
+                    MaterialsDocument amat                  => amat.FilePath,
                     _                                       => null,
                 };
 
@@ -2654,6 +2662,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         EmSetupDocument      emDoc                                    => (emDoc.FilePath, "emsetup"),
         ThreeD.C3dEditorDocument c3dDoc                               => (c3dDoc.FilePath, "c3d"),
         PartLibraryDocument  libDoc                                   => (libDoc.FilePath, "partlibrary"),
+        MaterialsDocument    matDoc                                   => (matDoc.FilePath, "materials"),
         MarkdownDocument     mdDoc                                    => (mdDoc.FilePath, "markdown"),
         _                                                             => (null, null),
     };
@@ -2761,6 +2770,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                     break;
                 case "partlibrary" when File.Exists(absPath):
                     OpenOrActivatePartLibrary(absPath);
+                    break;
+                case "materials" when File.Exists(absPath):
+                    OpenOrActivateMaterials(absPath);
                     break;
                 case "markdown" when File.Exists(absPath):
                     OpenOrActivateMarkdown(absPath);
@@ -3142,6 +3154,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 EmSetupDocument emd           => emd.FilePath,
                 ThreeD.C3dEditorDocument c3dd    => ThreeD.C3dEditorDocument.KeyFor(c3dd.FilePath),
                 PartLibraryDocument plibd        => plibd.FilePath,
+                MaterialsDocument matd           => matd.FilePath,
                 MarkdownDocument mdd             => mdd.FilePath,
                 CellParameterEditorDocument cpd  => Path.GetDirectoryName(cpd.ViewModel.EditModel.CcellPath),
                 Viewer3D.Viewer3DDocument v3d    => Viewer3D.Viewer3DDocument.KeyFor(v3d.CemPath),
@@ -5400,7 +5413,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         if (techRes.Tech is not { } tech || techRes.ResolvedPath is not { } techPath) return;
         if (layersToAdd.Count == 0 && stackup is null && viaEntries.Count == 0) return;
 
-        var clone = TechPersistence.Deserialize(TechPersistence.Serialize(tech));
+        var clone = TechPersistence.Clone(tech);
 
         int added = 0;
         foreach (var def in layersToAdd)
@@ -7636,8 +7649,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         try
         {
-            var tech = TechPersistence.LoadFromFile(absolutePath);
-            var vm   = new TechEditorViewModel(absolutePath, tech);
+            // brief-em3d-53 §1d — the file's OWN content: the editor resolves the libraries itself, so a
+            // technology whose libraries refuse to load still opens, with the refusal on its Materials tab.
+            var tech = TechPersistence.LoadOwnFromFile(absolutePath);
+            var vm   = new TechEditorViewModel(absolutePath, tech, p => _techCache.LoaderFor(p));
+            HookTechMaterials(vm);
             vm.TechSaved += OnTechSaved;
             vm.SaveError += OnTechSaveError;
             vm.TechLiveChanged += OnTechLiveChanged;
@@ -11109,6 +11125,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 OpenOrActivateTech(node.AbsolutePath);
                 return;
 
+            // brief-em3d-53 R-em3d53-4a — a .cmat opens as its own Materials document.
+            case NodeKind.MaterialLibraryFile:
+                OpenOrActivateMaterials(node.AbsolutePath);
+                return;
+
             case NodeKind.EmSetupFile:
                 OpenOrActivateEmSetup(node.AbsolutePath);
                 return;
@@ -13087,6 +13108,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 return _openDocsByPath.Values.OfType<PartLibraryDocument>().Any(d =>
                     d.IsDirty && string.Equals(Path.GetFullPath(d.FilePath), libKey, StringComparison.OrdinalIgnoreCase));
             }
+            case NodeKind.MaterialLibraryFile:
+            {
+                var matKey = Path.GetFullPath(node.AbsolutePath);
+                return _openDocsByPath.Values.OfType<MaterialsDocument>().Any(d =>
+                    d.IsDirty && string.Equals(Path.GetFullPath(d.FilePath), matKey, StringComparison.OrdinalIgnoreCase));
+            }
             default:
                 return false;
         }
@@ -13122,6 +13149,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 break;
             case NodeKind.PartLibraryFile:
                 SavePartLibraryByPath(node.AbsolutePath);
+                break;
+            case NodeKind.MaterialLibraryFile:
+                SaveMaterialsByPath(node.AbsolutePath);
                 break;
         }
 
@@ -16338,6 +16368,25 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         // A part library, like an EM setup, is always materialized — R-rail24-1a routes it through
         // the same open path precisely so that it gets this without a second implementation.
+        // brief-em3d-53 — a material library, likewise; Don't Save drops its live override so every
+        // technology naming it re-resolves against the file on disk.
+        if (dockable is MaterialsDocument matCloseDoc && matCloseDoc.IsDirty)
+        {
+            var dlg = new Views.Dialogs.SaveChangesDialog(
+                $"Save '{matCloseDoc.Id}' before closing?",
+                title: "Unsaved Changes");
+            await dlg.ShowDialog(window);
+
+            switch (dlg.Result)
+            {
+                case SaveChangesResult.Cancel:   return false;
+                case SaveChangesResult.DontSave: DiscardLiveMaterials(matCloseDoc.FilePath); return true;
+                case SaveChangesResult.Save:
+                    matCloseDoc.ViewModel.SaveCommand.Execute(null);
+                    return !matCloseDoc.IsDirty;
+            }
+        }
+
         if (dockable is PartLibraryDocument libCloseDoc && libCloseDoc.IsDirty)
         {
             var dlg = new Views.Dialogs.SaveChangesDialog(
@@ -16465,6 +16514,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             TechDocument d        => d.FilePath,
             EmSetupDocument d     => d.FilePath,
             PartLibraryDocument d => d.FilePath,
+            MaterialsDocument d   => d.FilePath,
             _                     => null,
         };
         if (closedFilePath is not null)
@@ -16482,6 +16532,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // clean or already-saved document has none), so this is safe to call unconditionally.
         if (dockable is TechDocument closedTechDoc)
             _techCache.ClearLive(closedTechDoc.FilePath);
+        // brief-em3d-53 — the same for a material library's live override.
+        if (dockable is MaterialsDocument closedMaterials && _techCache.LiveLibrary(closedMaterials.FilePath) is not null)
+            DiscardLiveMaterials(closedMaterials.FilePath);
 
         // brief-em3d-28 R-em3d28-5: keep where its camera was, then free its GPU session.
         if (dockable is Viewer3D.Viewer3DDocument closed3D) Closed3DView(closed3D);
@@ -16566,6 +16619,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             EmSetupDocument emd   => emd.IsDirty,
             ThreeD.C3dEditorDocument c3d => c3d.IsDirty,
             PartLibraryDocument plb  => plb.IsDirty,
+            MaterialsDocument mat    => mat.IsDirty,
             _                        => HasAnyDirtyWork(),
         };
     }
@@ -16711,6 +16765,14 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             // SingleDoc scope for an active part library — R-rail24-1a: never scratch, so a direct
             // write, exactly like the two editors above.
             if (ActiveSaveScope == SaveScope.SingleDoc &&
+                ResolveActiveDocumentForCommands() is MaterialsDocument singleMatDoc)
+            {
+                if (!singleMatDoc.IsDirty) { Messages.Info("Nothing to save."); return; }
+                singleMatDoc.ViewModel.SaveCommand.Execute(null);
+                return;
+            }
+
+            if (ActiveSaveScope == SaveScope.SingleDoc &&
                 ResolveActiveDocumentForCommands() is PartLibraryDocument singleLibDoc)
             {
                 if (!singleLibDoc.IsDirty)
@@ -16765,6 +16827,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             var dirtyPartLibraries = Writable(_openDocsByPath.Values
                 .OfType<PartLibraryDocument>()
                 .Where(d => d.IsDirty));
+            var dirtyMaterialLibraries = Writable(_openDocsByPath.Values
+                .OfType<MaterialsDocument>()
+                .Where(d => d.IsDirty));
 
             foreach (var skipped in readOnlyDirty)
                 ReportReadOnlySaveAsRoute(skipped, sweep: true);
@@ -16773,7 +16838,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                          || dirtyScratchSymbols.Count > 0 || dirtyMaterializedSymbols.Count > 0
                          || dirtyScratchLayouts.Count > 0 || dirtyMaterializedLayouts.Count > 0
                          || dirtyTechDocs.Count > 0 || dirtyEmDocs.Count > 0
-                         || dirtyPartLibraries.Count > 0 || dirtyC3dDocs.Count > 0;
+                         || dirtyPartLibraries.Count > 0 || dirtyC3dDocs.Count > 0
+                         || dirtyMaterialLibraries.Count > 0;
             if (!anyDirty)
             {
                 // "Nothing to save" would be a lie when the only dirty work was read-only — the
@@ -16873,6 +16939,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             // Dirty 3D views (brief-em3d-43) — never scratch, the same direct write.
             foreach (var c3dDoc in dirtyC3dDocs)
                 SaveC3d(c3dDoc);
+
+            // Dirty material libraries (brief-em3d-53) — never scratch, the same direct write.
+            foreach (var matDoc in dirtyMaterialLibraries)
+                matDoc.ViewModel.SaveCommand.Execute(null);
         }
         finally
         {
@@ -17001,6 +17071,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             || _openDocsByPath.Values.OfType<EmSetupDocument>().Any(d => d.IsDirty && Keep(d))
             || _openDocsByPath.Values.OfType<ThreeD.C3dEditorDocument>().Any(d => d.IsDirty && Keep(d))
             || _openDocsByPath.Values.OfType<PartLibraryDocument>().Any(d => d.IsDirty && Keep(d))
+            || _openDocsByPath.Values.OfType<MaterialsDocument>().Any(d => d.IsDirty && Keep(d))
             || _scratchDataDisplays.Any(d => d.ViewModel.Window.HasUnsavedChanges() && Keep(d))
             || _openDocsByPath.Values.OfType<DataDisplayDocument>().Any(d => d.ViewModel.Window.HasUnsavedChanges() && Keep(d))
             || _scratchWBonds.Any(d => d.IsDirty && Keep(d))
@@ -17064,6 +17135,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             .OfType<PartLibraryDocument>()
             .Where(d => d.IsDirty && Keep(d))
             .ToList();
+        var dirtyMaterialLibraries = _openDocsByPath.Values
+            .OfType<MaterialsDocument>()
+            .Where(d => d.IsDirty && Keep(d))
+            .ToList();
         // THE TWO TOOL DOCUMENTS, and their absence here was a silent discard (owner report,
         // 2026-09-19: a dirty scratch `.csmith` let circuitRF quit with nothing asked).
         // HasAnyDirtyWork has counted both kinds since each was built, so the close path DID stop and
@@ -17091,6 +17166,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                   + dirtyScratchDisplays.Count + dirtyMatDisplays.Count
                   + dirtyScratchLayouts.Count + dirtyMatLayouts.Count
                   + dirtyTechDocs.Count + dirtyEmDocs.Count + dirtyPartLibraries.Count + dirtyC3dDocs.Count
+                  + dirtyMaterialLibraries.Count
                   + dirtyScratchWBonds.Count + dirtyMatWBonds.Count
                   + dirtyScratchSmith.Count + dirtyMatSmith.Count
                   + dirtyOrphanedSessions.Count
@@ -17109,6 +17185,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             : dirtyEmDocs.Count                > 0 ? dirtyEmDocs[0].Id
             : dirtyC3dDocs.Count               > 0 ? Path.GetFileName(dirtyC3dDocs[0].FilePath)
             : dirtyPartLibraries.Count         > 0 ? dirtyPartLibraries[0].Id
+            : dirtyMaterialLibraries.Count     > 0 ? dirtyMaterialLibraries[0].Id
             : dirtyMatDisplays.Count           > 0 ? dirtyMatDisplays[0].Id
             : dirtyScratchDisplays.Count       > 0 ? dirtyScratchDisplays[0].Id
             : dirtyScratchWBonds.Count         > 0 ? dirtyScratchWBonds[0].Id
@@ -17135,6 +17212,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 // clear its live override rather than leaving unsaved edits visible after "discard".
                 foreach (var techDoc in dirtyTechDocs)
                     _techCache.ClearLive(techDoc.FilePath);
+                foreach (var matDoc in dirtyMaterialLibraries)
+                    DiscardLiveMaterials(matDoc.FilePath);
                 return true; // discard everything else — caller proceeds
 
             case SaveChangesResult.Save:
@@ -17247,6 +17326,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                     SaveC3d(c3dDoc);
                 foreach (var libDoc in dirtyPartLibraries)
                     libDoc.ViewModel.SaveCommand.Execute(null);
+                foreach (var matDoc in dirtyMaterialLibraries)
+                    matDoc.ViewModel.SaveCommand.Execute(null);
                 // Dirty data displays → save in place (materialized) or via picker (scratch).
                 foreach (var dd in dirtyMatDisplays)
                     await SaveDataDisplayDoc(dd, owner);

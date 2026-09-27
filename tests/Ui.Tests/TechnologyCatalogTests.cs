@@ -50,6 +50,8 @@ public sealed class TechnologyCatalogTests : IDisposable
 
         string path = Path.Combine(_root, stem + ".ctech");
         File.WriteAllText(path, TechPersistence.Serialize(tech));
+        // brief-em3d-53: the shipped technology names the generic library; an authored copy carries it beside.
+        File.WriteAllText(Path.Combine(_root, MaterialLibraries.GenericFileName), MaterialLibraries.GenericRawJson());
         return path;
     }
 

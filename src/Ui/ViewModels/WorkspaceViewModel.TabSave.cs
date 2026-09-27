@@ -127,7 +127,7 @@ public partial class WorkspaceViewModel
     internal static bool HasSaveRoute(IDockable? dockable) => dockable is
         SchematicDocument or SymbolEditorDocument or LayoutDocument or TechDocument or
         EmSetupDocument or DataDisplayDocument or WBondDocument or HarmonicaDocument or
-        SmithChartDocument or PartLibraryDocument or ThreeD.C3dEditorDocument;
+        SmithChartDocument or PartLibraryDocument or ThreeD.C3dEditorDocument or MaterialsDocument;
 
     /// <summary>
     /// True when this document kind can be written to a DIFFERENT file and followed there afterwards.
@@ -145,7 +145,7 @@ public partial class WorkspaceViewModel
     internal static bool HasSaveAsRoute(IDockable? dockable) => dockable is
         SchematicDocument or SymbolEditorDocument or LayoutDocument or TechDocument or
         EmSetupDocument or DataDisplayDocument or WBondDocument or HarmonicaDocument or
-        SmithChartDocument or PartLibraryDocument or ThreeD.C3dEditorDocument;
+        SmithChartDocument or PartLibraryDocument or ThreeD.C3dEditorDocument or MaterialsDocument;
 
     /// <summary>Unsaved work in THIS document — the same per-kind test <c>CanSaveAllDocuments</c>
     /// applies to the active one. A never-saved wBond or harmonicaRF document counts even when clean:
@@ -158,6 +158,7 @@ public partial class WorkspaceViewModel
         TechDocument d          => d.IsDirty,
         EmSetupDocument d       => d.IsDirty,
         PartLibraryDocument d   => d.IsDirty,
+        MaterialsDocument d     => d.IsDirty,
         ThreeD.C3dEditorDocument d => d.IsDirty,
         DataDisplayDocument d   => d.ViewModel.Window.HasUnsavedChanges(),
         WBondDocument d         => d.IsDirty || d.FilePath is null,
@@ -209,6 +210,7 @@ public partial class WorkspaceViewModel
                 case TechDocument d:         d.ViewModel.SaveCommand.Execute(null);               break;
                 case EmSetupDocument d:      d.ViewModel.SaveCommand.Execute(null);               break;
                 case PartLibraryDocument d:  d.ViewModel.SaveCommand.Execute(null);               break;
+                case MaterialsDocument d:    d.ViewModel.SaveCommand.Execute(null);               break;
                 case ThreeD.C3dEditorDocument d: SaveC3d(d);                                      break;
             }
         }
@@ -242,6 +244,7 @@ public partial class WorkspaceViewModel
                 case TechDocument d:         await SaveTechAs(d, window);                         break;
                 case EmSetupDocument d:      await SaveEmSetupAs(d, window);                      break;
                 case PartLibraryDocument d:  await SavePartLibraryAs(d, window);                  break;
+                case MaterialsDocument d:    await SaveMaterialsAs(d, window);                    break;
                 case ThreeD.C3dEditorDocument d: await SaveC3dAs(d, window);                      break;
             }
         }
@@ -358,6 +361,23 @@ public partial class WorkspaceViewModel
 
         if (files is [var file] && file.TryGetLocalPath() is { Length: > 0 } path)
             doc.ViewModel.ImportBiasCurve(path);
+    }
+
+    /// <summary>brief-em3d-53 — writes a material library to a different <c>.cmat</c> and follows it.</summary>
+    internal async Task SaveMaterialsAs(MaterialsDocument doc, Window owner)
+    {
+        var file = await owner.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title               = "Save Material Library As",
+            SuggestedFileName   = Path.GetFileNameWithoutExtension(doc.ViewModel.FilePath),
+            DefaultExtension    = MaterialLibraryPersistence.Extension.TrimStart('.'),
+            ShowOverwritePrompt = true,
+            FileTypeChoices     =
+                [new FilePickerFileType("circuitRF Material Library")
+                 { Patterns = ["*" + MaterialLibraryPersistence.Extension] }],
+        });
+
+        if (file?.TryGetLocalPath() is { Length: > 0 } path) doc.ViewModel.SaveAs(path);
     }
 
     internal async Task SavePartLibraryAs(PartLibraryDocument doc, Window owner)

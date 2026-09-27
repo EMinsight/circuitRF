@@ -53,9 +53,77 @@ public sealed class TechnologyCache
         if (!File.Exists(absPath))
             return null;
 
-        var tech = TechPersistence.LoadFromFile(absPath);
+        var tech = TechPersistence.LoadFromFile(absPath, LoaderFor(absPath));
         _cache[absPath] = tech;
         return tech;
+    }
+
+    // ── Material libraries (brief-em3d-53 R-em3d53-1f) ────────────────────────────────────────
+    //
+    // A `.cmat` open in its own document with unsaved edits installs a live override here, and every
+    // technology this cache holds that names that library is re-resolved against it — the same seam
+    // a `.ctech` edit already uses, so a `.c3d` or a layout on the technology sees the edit without
+    // a Save. A library is never cached on its own: it is read when a technology naming it loads.
+
+    private readonly Dictionary<string, IReadOnlyList<TechMaterial>> _liveLibraries = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>How many technologies a library change has re-resolved in this cache's lifetime — the
+    /// counter brief-em3d-53's gate 9 reads ("exactly the cached technologies that name it").</summary>
+    public int LibraryReresolutions { get; private set; }
+
+    /// <summary>The loader this cache reads a technology's libraries through: the disk, with any
+    /// library open in an editor answered from its live override.</summary>
+    public MaterialLibraryLoader LoaderFor(string ctechPath)
+        => MaterialLibraries.Disk(ctechPath, p => _liveLibraries.GetValueOrDefault(Path.GetFullPath(p)));
+
+    /// <summary>The live override installed for a library, or null.</summary>
+    public IReadOnlyList<TechMaterial>? LiveLibrary(string absLibraryPath)
+        => _liveLibraries.GetValueOrDefault(Path.GetFullPath(absLibraryPath));
+
+    /// <summary>Installs (or replaces) a live override for a library — a deep copy the caller no longer
+    /// mutates — and re-resolves every technology that names it.</summary>
+    public void SetLiveLibrary(string absLibraryPath, IReadOnlyList<TechMaterial> materials)
+    {
+        absLibraryPath = Path.GetFullPath(absLibraryPath);
+        _liveLibraries[absLibraryPath] = materials;
+        LibraryChanged(absLibraryPath);
+    }
+
+    /// <summary>Drops a library's live override (discard, or after its Save wrote the same content) and
+    /// re-resolves every technology that names it from disk.</summary>
+    public void ClearLiveLibrary(string absLibraryPath)
+    {
+        absLibraryPath = Path.GetFullPath(absLibraryPath);
+        _liveLibraries.Remove(absLibraryPath);
+        LibraryChanged(absLibraryPath);
+    }
+
+    /// <summary>
+    /// A library's content changed (a live edit, a save, an external write): every technology naming it
+    /// is re-resolved. A file-backed entry is dropped and re-read on the next <see cref="Get"/> — which is
+    /// where a re-resolution that now REFUSES surfaces, as the resolver's diagnostic. A live technology
+    /// override (an open technology editor) is re-resolved in place, keeping its unsaved own edits; one
+    /// that now refuses keeps no library materials until fixed.
+    /// </summary>
+    public void LibraryChanged(string absLibraryPath)
+    {
+        absLibraryPath = Path.GetFullPath(absLibraryPath);
+        var changed = new List<string>();
+        foreach (var (path, tech) in _cache.ToList())
+            if (Names(tech, absLibraryPath)) { _cache.Remove(path); changed.Add(path); }
+        foreach (var (path, tech) in _live)
+        {
+            if (!Names(tech, absLibraryPath)) continue;
+            try { TechPersistence.ResolveLibraries(tech, LoaderFor(path), path); }
+            catch (MaterialLibraryException) { /* reported when the technology is next resolved from disk */ }
+            if (!changed.Contains(path, StringComparer.OrdinalIgnoreCase)) changed.Add(path);
+        }
+        LibraryReresolutions += changed.Count;
+        foreach (string path in changed) TechnologyChanged?.Invoke(path);
+
+        static bool Names(Technology t, string lib)
+            => t.ResolvedLibraryPaths.Contains(lib, StringComparer.OrdinalIgnoreCase)
+            || (t.MaterialLibraries?.Count > 0 && t.ResolvedLibraryPaths.Count == 0);
     }
 
     /// <summary>True when a live (unsaved) override is installed for <paramref name="absPath"/> —

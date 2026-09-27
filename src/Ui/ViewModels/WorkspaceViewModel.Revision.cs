@@ -821,6 +821,9 @@ public partial class WorkspaceViewModel
         foreach (string abs in changedAbs)
             if (abs.EndsWith(".ctech", StringComparison.OrdinalIgnoreCase))
                 _techCache.Invalidate(abs);
+            // brief-em3d-53 — a restored library re-resolves every technology that names it.
+            else if (abs.EndsWith(MaterialLibraryPersistence.Extension, StringComparison.OrdinalIgnoreCase))
+                _techCache.LibraryChanged(abs);
 
         var affected = OpenDocumentsAffectedBy(_openDocsByPath.Keys, changedAbs);
 
@@ -882,6 +885,7 @@ public partial class WorkspaceViewModel
                 // Read unvalidated on the ordinary open path too, so a restored library that is
                 // malformed comes back in the one editor that can correct it rather than not at all.
                 case "partlibrary": OpenOrActivatePartLibrary(docPath); break;
+                case "materials":   OpenOrActivateMaterials(docPath); break;
                 // A README the restore rewrote. Nothing is dirty and nothing is being
                 // discarded — the document holds the text it parsed, so the only way to show
                 // the restored file is to read it again.

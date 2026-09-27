@@ -300,7 +300,9 @@ shared by several technologies.
   silently shadowed. Between two *technologies* the §1j rule of the third series is unchanged (merge equal
   values, otherwise qualify `Name@technology`).
 - **A missing or unreadable library is a refusal naming its path**, never an empty list.
-- **A generic library ships** (decided 2026-09-26): `generic-materials.cmat`, an embedded resource of generic
+- **A generic library ships** (decided 2026-09-26): `generic-materials.cmat`, an embedded resource (built:
+  `src/Design/resources/technologies/`, BESIDE the shipped technologies, so their one reference spelling
+  `"generic-materials.cmat"` is true in the assembly and in a workspace's `tech/` alike) of generic
   metals, ceramics, semiconductors and laminates with a cited `Source` on every record. Every shipped technology
   names it; New Workspace copies it beside the technology it copies, and the copy is the workspace's own file
   from then on — an upgrade never moves a result through it. Names it shares with a shipped technology carry

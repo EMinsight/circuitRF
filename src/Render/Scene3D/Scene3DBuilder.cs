@@ -131,6 +131,16 @@ public static class Scene3DBuilder
     /// <summary>Segments around a coaxial port's annulus.</summary>
     public const int AnnulusSegments = 32;
 
+    /// <summary>brief-em3d-53 M6 — a material's own display colour (<c>#rrggbb</c>), when its technology states one;
+    /// null keeps the scene's palette. A qualified or stackup-derived name finds nothing, which is the palette.</summary>
+    private static (byte R, byte G, byte B)? MaterialColour(Technology? tech, string material)
+    {
+        if (tech?.FindMaterial(material)?.Color is not { Length: 7 } hex || hex[0] != '#') return null;
+        return uint.TryParse(hex.AsSpan(1), System.Globalization.NumberStyles.HexNumber, null, out uint v)
+            ? ((byte)(v >> 16), (byte)(v >> 8), (byte)v)
+            : null;
+    }
+
     private static long _tessellations;
 
     /// <summary>How many solids and sheets have been tessellated in this process — gate 5's counter
@@ -215,7 +225,7 @@ public static class Scene3DBuilder
                 case Em3dRole.Dielectric:
                 {
                     var pal = dark ? DielectricDark : DielectricLight;
-                    var c = pal[Math.Max(0, dielectrics.IndexOf(s.Material)) % pal.Length];
+                    var c = MaterialColour(tech, s.Material) ?? pal[Math.Max(0, dielectrics.IndexOf(s.Material)) % pal.Length];
                     rgba = Scene3DVertex.Pack(c.R, c.G, c.B, DielectricAlpha);
                     translucent = true;
                     break;
@@ -223,6 +233,7 @@ public static class Scene3DBuilder
                 default:
                 {
                     var c = conductorColours.TryGetValue(s.Name, out var sk) ? sk : new SkiaSharp.SKColor(150, 150, 155);
+                    if (MaterialColour(tech, s.Material) is { } own) c = new SkiaSharp.SKColor(own.R, own.G, own.B);
                     rgba = Scene3DVertex.Pack(c.Red, c.Green, c.Blue, 255);
                     break;
                 }
@@ -253,6 +264,7 @@ public static class Scene3DBuilder
             var place = options.Instancing?.Invoke(sh.Name);
             if (place is { } pl && sheetRuns.Element(pl, sh.Name)) continue;
             var c = conductorColours.TryGetValue(sh.Name, out var sk) ? sk : new SkiaSharp.SKColor(150, 150, 155);
+            if (MaterialColour(tech, sh.Material) is { } own) c = new SkiaSharp.SKColor(own.R, own.G, own.B);
             var sheet = sh;
             var mesh = Tessellate((sh.Outline, sh.Holes, sh.Z, sh.Frame), () => Em3dTessellation.OfSheet(sheet));
             var (m, slot) = materials.TryGetValue(sh.Material, out var mt) ? (mt.m, mt.i) : ((Em3dMaterial?)null, -1);

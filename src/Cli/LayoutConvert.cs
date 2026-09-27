@@ -488,7 +488,7 @@ public static class LayoutConvert
     {
         var tech = destTech is null
             ? new Technology { Name = name }
-            : TechPersistence.Deserialize(TechPersistence.Serialize(destTech));
+            : TechPersistence.Clone(destTech);
 
         foreach (var def in layersToAdd)
             if (!tech.Layers.Any(l => l.Key == def.Key)) tech.Layers.Add(def);

@@ -134,6 +134,8 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
         // R-rail24-1a — a .crlib. It is a TABLE of parts, and a list glyph is what reads as one at
         // 16 px; the capacitor-ish glyphs all claim more about the contents than the file does.
         (NodeKind.PartLibraryFile, _)    => MaterialIconKind.FormatListBulletedType,
+        // brief-em3d-53 — a .cmat: a table of materials, shown where technologies are.
+        (NodeKind.MaterialLibraryFile, _) => MaterialIconKind.Texture,
         (NodeKind.ColorThemeFile,  _)     => MaterialIconKind.Palette,
         (NodeKind.TechFile,        _)     => MaterialIconKind.LayersOutline,
         (NodeKind.EmSetupFile,     _)     => MaterialIconKind.SineWave,
@@ -1090,6 +1092,8 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
             NodeKind.PartLibraryFile => f.Cells,
             NodeKind.ColorThemeFile  => f.ColorThemes,
             NodeKind.TechFile        => f.TechFiles,
+            // A material library is process configuration a technology names: shown with the technologies.
+            NodeKind.MaterialLibraryFile => f.TechFiles,
             // An EM setup is process/analysis configuration alongside the technology it reads, so it
             // rides the same filter toggle rather than earning a seventh checkbox of its own.
             NodeKind.EmSetupFile     => f.TechFiles,

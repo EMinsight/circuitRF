@@ -178,7 +178,7 @@ public static class TechnologyCatalog
     public static Technology Load(TechnologyCatalogEntry entry)
         => entry.Origin == TechnologyOrigin.Shipped
             ? ShippedTechnologies.Load(new ShippedTechnologyEntry(entry.Id, entry.ResourceName!))
-            : TechPersistence.Deserialize(File.ReadAllText(entry.FilePath!));
+            : TechPersistence.LoadFromFile(entry.FilePath!);
 
     /// <summary>
     /// The still-authored JSON bytes — what <see cref="Workspace.WorkspaceCreate"/> writes verbatim
@@ -190,6 +190,28 @@ public static class TechnologyCatalog
         => entry.Origin == TechnologyOrigin.Shipped
             ? ShippedTechnologies.LoadRawJson(new ShippedTechnologyEntry(entry.Id, entry.ResourceName!))
             : File.ReadAllText(entry.FilePath!);
+
+    /// <summary>
+    /// The libraries an entry's technology names by a RELATIVE reference, each with its authored bytes —
+    /// what <see cref="Workspace.WorkspaceCreate"/> copies beside the technology so the copied
+    /// <c>.ctech</c>'s references still resolve on disk (brief-em3d-53 R-em3d53-1c). An absolute
+    /// reference is not copied: it already names one file wherever the copy lands. Throws for a named
+    /// library that cannot be read, before anything is written.
+    /// </summary>
+    public static IReadOnlyList<(string Reference, string Json)> LibraryFiles(TechnologyCatalogEntry entry)
+    {
+        var refs = TechPersistence.DeserializeUnresolved(LoadRawJson(entry)).MaterialLibraries ?? [];
+        var list = new List<(string, string)>();
+        foreach (string reference in refs)
+        {
+            if (Path.IsPathRooted(Core.RefPath.ToNative(reference))) continue;
+            string json = entry.Origin == TechnologyOrigin.Shipped
+                ? MaterialLibraries.ShippedRawJson(Path.GetFileName(Core.RefPath.ToNative(reference)))
+                : File.ReadAllText(MaterialLibraries.ResolvePath(entry.FilePath!, reference));
+            list.Add((reference, json));
+        }
+        return list;
+    }
 
     /// <summary>
     /// Copies <paramref name="sourcePath"/> into <see cref="UserDirectory"/> so it is offered for
@@ -248,6 +270,20 @@ public static class TechnologyCatalog
             // and a round trip through the writer would quietly normalise a file nobody asked us to
             // touch. ShippedTechnologies.LoadRawJson makes the same choice for the same reason.
             File.WriteAllText(target, json);
+
+            // brief-em3d-53: the libraries it names by a relative reference come with it, or the
+            // installed copy would refuse to load for want of a file left behind.
+            foreach (string reference in tech.MaterialLibraries ?? [])
+            {
+                if (Path.IsPathRooted(Core.RefPath.ToNative(reference))) continue;
+                string from = MaterialLibraries.ResolvePath(sourcePath, reference);
+                string to = MaterialLibraries.ResolvePath(target, reference);
+                if (File.Exists(from) && !File.Exists(to))
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(to)!);
+                    File.Copy(from, to);
+                }
+            }
 
             return new TechnologyInstallResult(
                 new TechnologyCatalogEntry(id, tech.Name, TechnologyOrigin.User, ResourceName: null, target),

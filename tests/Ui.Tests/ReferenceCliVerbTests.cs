@@ -459,7 +459,7 @@ public sealed class ReferenceCliVerbTests(ITestOutputHelper output)
         // component catalogue.
         Assert.Equal(
             ReferenceLibrary.TopicNames.Concat(["data-display", "technology", "layout", "em-setup", "wbond",
-                                               "3d-view", "analyses", "components"]),
+                                               "3d-view", "materials", "analyses", "components"]),
             names);
 
         foreach (var t in topics.EnumerateArray())

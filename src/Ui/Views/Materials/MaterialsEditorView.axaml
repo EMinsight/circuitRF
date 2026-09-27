@@ -1,0 +1,22 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:lay="using:CircuitRF.Ui.Layout"
+             xmlns:matv="using:CircuitRF.Ui.Views.Materials"
+             x:Class="CircuitRF.Ui.Views.Materials.MaterialsEditorView"
+             x:DataType="lay:MaterialsDocument"
+             Focusable="True" IsTabStop="False"
+             Background="{DynamicResource SystemChromeLowColor}">
+
+    <!-- brief-em3d-53 R-em3d53-4a — a .cmat as its own document. Its header names the technologies that
+         reference it, since an edit here changes all of them. -->
+    <DockPanel>
+        <Border DockPanel.Dock="Top" Padding="8,6" BorderBrush="{DynamicResource CrfTileBorderBrush}" BorderThickness="0,0,0,1">
+            <StackPanel Spacing="2">
+                <TextBlock Text="{Binding FilePath}" FontSize="11" TextTrimming="CharacterEllipsis"/>
+                <TextBlock Text="{Binding ViewModel.NamedByText}" FontSize="11" TextWrapping="Wrap"
+                           Foreground="{DynamicResource SystemBaseMediumColor}"/>
+            </StackPanel>
+        </Border>
+        <matv:MaterialsTableView DataContext="{Binding ViewModel.Table}"/>
+    </DockPanel>
+</UserControl>

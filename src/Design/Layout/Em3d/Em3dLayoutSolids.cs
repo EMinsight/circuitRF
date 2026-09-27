@@ -439,7 +439,7 @@ public static class Em3dLayoutSolids
                 string wbondSource = wireSource.Path is { } wbPath
                     ? $".wBond '{Path.GetFileName(wbPath)}' Materials" : "the .wBond's Materials";
                 WireBuild = Em3dWires.Build(wireSource, pads, zOrigin, tech, tempC,
-                                            (m, fromWBond) => Add(m, fromWBond ? wbondSource : TechnologySource()));
+                                            (m, fromWBond) => Add(m, fromWBond ? wbondSource : TechnologySource(m.Name)));
                 Notes.AddRange(WireBuild.Notes);
                 WarningList.AddRange(WireBuild.Warnings);
                 if (WireBuild.Refusal is { } wireRefusal) return wireRefusal;
@@ -732,7 +732,7 @@ public static class Em3dLayoutSolids
                 // unknown temperature, from the stackup entry, and reported as both.
                 else if (!_unknownTemperature.Contains(entry.Name)) _unknownTemperature.Add(entry.Name);
                 return Add(new Em3dMaterial(m.Name, m.Epsr ?? 1, null, m.TanD ?? 0, m.Mur ?? 1, sigma),
-                           m.Sigma20 is null ? EntrySource(entry) : TechnologySource());
+                           m.Sigma20 is null ? EntrySource(entry) : TechnologySource(m.Name));
             }
             if (!_unknownTemperature.Contains(entry.Name)) _unknownTemperature.Add(entry.Name);
             return Add(new Em3dMaterial(entry.Name, 1, null, 0, entry.Mur, entry.SigmaSm), EntrySource(entry));
@@ -746,7 +746,7 @@ public static class Em3dLayoutSolids
             return Add(new Em3dMaterial(m?.Name ?? entry.Name, entry.Epsr,
                                         m?.EpsrTensor is { Length: 3 } t ? [.. t] : null,
                                         entry.TanD, entry.Mur, 0),
-                       m is null ? EntrySource(entry) : TechnologySource());
+                       m is null ? EntrySource(entry) : TechnologySource(m.Name));
         }
 
         private string BodyMaterial(TechMaterial m, out Em3dRole role)
@@ -759,7 +759,7 @@ public static class Em3dLayoutSolids
             }
             role = m.Epsr is null && m.EpsrTensor is null && sigma > 0 ? Em3dRole.Conductor : Em3dRole.Dielectric;
             return Add(new Em3dMaterial(m.Name, m.Epsr ?? 1, m.EpsrTensor is { Length: 3 } t ? [.. t] : null,
-                                        m.TanD ?? 0, m.Mur ?? 1, sigma), TechnologySource());
+                                        m.TanD ?? 0, m.Mur ?? 1, sigma), TechnologySource(m.Name));
         }
 
         /// <summary>R-em3d3-5f — a conductor is a sheet when it has no thickness, or is thinner than both
@@ -814,7 +814,11 @@ public static class Em3dLayoutSolids
             return m.Name;
         }
 
-        private string TechnologySource() => $"technology '{tech.Name}' Materials";
+        /// <summary>brief-em3d-53 R-em3d53-6 — names the library a material came from, when it came from one.</summary>
+        private string TechnologySource(string? material = null)
+            => tech.LibrarySourceOf(material) is { } lib
+                ? $"technology '{tech.Name}' via library '{MaterialLibraries.Display(lib)}'"
+                : $"technology '{tech.Name}' Materials";
 
         private static string EntrySource(StackupLayer entry) => $"stackup entry '{entry.Name}' (its own numbers)";
 
@@ -831,7 +835,7 @@ public static class Em3dLayoutSolids
         public string AirMaterialName()
         {
             if (tech.FindMaterial(Em3dGenerator.AirMaterial) is { } m)
-                return Add(new Em3dMaterial(m.Name, m.Epsr ?? 1, null, m.TanD ?? 0, m.Mur ?? 1, 0), TechnologySource());
+                return Add(new Em3dMaterial(m.Name, m.Epsr ?? 1, null, m.TanD ?? 0, m.Mur ?? 1, 0), TechnologySource(m.Name));
             return Add(new Em3dMaterial(Em3dGenerator.AirMaterial, 1, null, 0, 1, 0), "built in (free space)");
         }
 

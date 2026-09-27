@@ -6,6 +6,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using Avalonia.Platform.Storage;
 using CircuitRF.Ui.Controls;
 using CircuitRF.Ui.Layout;
 
@@ -872,5 +873,34 @@ public partial class TechEditorView : UserControl
                 case "NetScope": dr.CommitNetScope(); break;
             }
         }
+    }
+
+    // ── brief-em3d-53 R-em3d53-4b — the Materials tab's two pickers. The rule is the view model's. ──
+
+    private async void OnAddMaterialLibrary(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (DataContext is not TechDocument doc || TopLevel.GetTopLevel(this)?.StorageProvider is not { } storage) return;
+        var files = await storage.OpenFilePickerAsync(new Avalonia.Platform.Storage.FilePickerOpenOptions
+        {
+            Title = "Add a material library",
+            AllowMultiple = false,
+            FileTypeFilter = [new Avalonia.Platform.Storage.FilePickerFileType("Material library") { Patterns = ["*.cmat"] }],
+            SuggestedStartLocation = await storage.TryGetFolderFromPathAsync(new System.Uri(System.IO.Path.GetDirectoryName(doc.FilePath)!)),
+        });
+        if (files.Count > 0 && files[0].TryGetLocalPath() is { } path) doc.ViewModel.AddLibrary(path);
+    }
+
+    private async void OnNewMaterialLibrary(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (DataContext is not TechDocument doc || TopLevel.GetTopLevel(this)?.StorageProvider is not { } storage) return;
+        var file = await storage.SaveFilePickerAsync(new Avalonia.Platform.Storage.FilePickerSaveOptions
+        {
+            Title = "New material library",
+            SuggestedFileName = "materials",
+            DefaultExtension = "cmat",
+            FileTypeChoices = [new Avalonia.Platform.Storage.FilePickerFileType("Material library") { Patterns = ["*.cmat"] }],
+            SuggestedStartLocation = await storage.TryGetFolderFromPathAsync(new System.Uri(System.IO.Path.GetDirectoryName(doc.FilePath)!)),
+        });
+        if (file?.TryGetLocalPath() is { } path) doc.ViewModel.NewLibrary(path);
     }
 }

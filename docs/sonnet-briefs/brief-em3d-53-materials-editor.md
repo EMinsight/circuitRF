@@ -1,7 +1,7 @@
 # Brief 53 — material libraries (`.cmat`) and the Materials editor
 
 **Series:** [3D EM, third series](brief-em3d-40-overview.md) · **Tag:** `R-em3d53-n` ·
-**Status:** Briefed, not built · **Date:** 2026-09-26 · **M1–M3 and M10 decided by the owner, 2026-09-26;
+**Status:** Built 2026-09-26, uncommitted (M4–M9 took the defaults) · **Date:** 2026-09-26 · **M1–M3 and M10 decided by the owner, 2026-09-26;
 M4–M9 open** (§11)
 **Design note:** [`em-3d.md`](../design/em-3d.md) **rev 7** §4.1a (*material libraries*); overview §1j
 (same-name materials from two technologies are merged or qualified `Name@technology` — unchanged here)

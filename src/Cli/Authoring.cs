@@ -497,7 +497,7 @@ public static class Authoring
             // The same shape the GUI's own install has: a CLONE is edited, so a partial write cannot
             // leave the technology half-updated, and an already-present key is skipped rather than
             // duplicated.
-            var clone = TechPersistence.Deserialize(TechPersistence.Serialize(destTech));
+            var clone = TechPersistence.Clone(destTech);
             int added = 0;
             foreach (var def in result.LayersToAdd)
             {

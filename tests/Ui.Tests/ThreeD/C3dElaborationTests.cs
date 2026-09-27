@@ -427,7 +427,7 @@ public sealed class C3dElaborationTests(ITestOutputHelper output) : IDisposable
 
         string ws = Workspace();
         // The stackup entries' own numbers, as named materials a drawn object can be made of.
-        var tech = TechPersistence.Deserialize(TechPersistence.Serialize(source.Technology!));
+        var tech = TechPersistence.Clone(source.Technology!);
         foreach (var m in p.Materials.Where(m => tech.FindMaterial(m.Name) is null))
             tech.Materials.Add(m.SigmaSm > 0
                 ? new TechMaterial { Name = m.Name, Sigma20 = m.SigmaSm, Mur = m.Mur }

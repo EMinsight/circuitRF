@@ -940,3 +940,17 @@ src/Design/Em3d/VtrFile.cs|'{path}': an array's compressed blocks could not be d
 # Authored: caller-invariant argument checks on the far-field stage and transform (no user reaches them).
 src/Engine/Em3d/NearToFarField.cs|With a conducting floor the pattern is the upper hemisphere: θ must not pass 90°.
 src/Engine/Mom/FarFieldStage.cs|A pattern on this grid has {grid.DirectionCount} directions.
+
+# brief-em3d-53 — the .cmat material-library reader and loader (2026-09-26). Deliberate plain exceptions, for the
+# .ctech reader's own reason (its two lines are above): each is a file-format or file-system refusal, and every one
+# reaches the user INSIDE a MaterialLibraryException whose problems already carry `check` ids
+# (material.library-unreadable, material.conflict) and name the library and the technology. The two "already
+# exists" refusals are New Library… and Add Generic Materials declining to overwrite a user's file.
+src/Design/Layout/MaterialLibraries.cs|'{target}' already exists and is not circuitRF's generic library. Rename or move it, or add it 
+src/Design/Layout/MaterialLibraries.cs|circuitRF ships no material library named '{fileName}'.
+src/Design/Layout/MaterialLibraries.cs|it is a directory, not a .cmat file.
+src/Design/Layout/MaterialLibraries.cs|the file does not exist.
+src/Design/Layout/MaterialLibraryPersistence.cs|'{path}' already exists. Use Add Library… to name an existing library.
+src/Design/Layout/MaterialLibraryPersistence.cs|.cmat FormatVersion {file.FormatVersion} is newer than this build reads 
+src/Design/Layout/MaterialLibraryPersistence.cs|Failed to deserialize .cmat file.
+src/Design/Layout/MaterialLibraryPersistence.cs|not a circuitRF material library: a .cmat is a JSON object with a FormatVersion and a Materials list.

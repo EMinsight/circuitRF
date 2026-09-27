@@ -5,6 +5,7 @@
              xmlns:conv="using:CircuitRF.Ui.Converters"
              xmlns:ctrl="using:CircuitRF.Ui.Controls"
              xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             xmlns:matv="using:CircuitRF.Ui.Views.Materials"
              x:Class="CircuitRF.Ui.Views.Layout.TechEditorView"
              x:DataType="lay:TechDocument"
              Focusable="True" IsTabStop="False"
@@ -1518,6 +1519,56 @@
                                 </ListBox.ItemTemplate>
                         </ListBox>
                     </Grid>
+                </DockPanel>
+            </TabItem>
+
+            <!-- ═══ Materials (brief-em3d-53 R-em3d53-4b) ═══════════════════════════════════════════
+                 The technology's OWN materials, edited here on its undo; the libraries it names, listed
+                 below with their load state; library records shown read-only in the table and edited in
+                 their own .cmat document (Open Library). -->
+            <TabItem Header="{Binding ViewModel.MaterialsTabHeader}">
+                <DockPanel>
+                    <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource CrfTileBorderBrush}" BorderThickness="0,1,0,0" Padding="6,4">
+                        <StackPanel Spacing="4">
+                            <TextBlock Classes="colhdr" Text="Material libraries this technology names (.cmat, relative to this .ctech)"/>
+                            <ItemsControl ItemsSource="{Binding ViewModel.MaterialLibraryRows}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="lay:MaterialLibraryRow">
+                                        <Grid ColumnDefinitions="*,140,Auto,Auto" ColumnSpacing="6" Margin="0,1">
+                                            <TextBlock Grid.Column="0" Text="{Binding Reference}" ToolTip.Tip="{Binding ResolvedPath}"
+                                                       VerticalAlignment="Center" FontSize="11" TextTrimming="CharacterEllipsis"/>
+                                            <TextBlock Grid.Column="1" Text="{Binding State}" VerticalAlignment="Center" FontSize="11"
+                                                       Foreground="{DynamicResource SystemBaseMediumColor}"/>
+                                            <Button Grid.Column="2" Content="Open Library" FontSize="11" Padding="6,2"
+                                                    Command="{Binding $parent[UserControl].((lay:TechDocument)DataContext).ViewModel.OpenLibraryCommand}"
+                                                    CommandParameter="{Binding}"
+                                                    ToolTip.Tip="Open this library as its own document, where its materials are edited — an edit there changes every technology that names it."/>
+                                            <Button Grid.Column="3" Content="Remove" FontSize="11" Padding="6,2"
+                                                    Command="{Binding $parent[UserControl].((lay:TechDocument)DataContext).ViewModel.RemoveLibraryCommand}"
+                                                    CommandParameter="{Binding}"
+                                                    ToolTip.Tip="Stop naming this library. The file itself is left where it is."/>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <Button Content="Add Library…" FontSize="11" Padding="8,3" Click="OnAddMaterialLibrary"
+                                        ToolTip.Tip="Name an existing .cmat material library."/>
+                                <Button Content="New Library…" FontSize="11" Padding="8,3" Click="OnNewMaterialLibrary"
+                                        ToolTip.Tip="Write an empty .cmat beside this technology and name it."/>
+                                <Button Content="Add Generic Materials" FontSize="11" Padding="8,3"
+                                        Command="{Binding ViewModel.AddGenericMaterialsCommand}"
+                                        IsVisible="{Binding ViewModel.CanAddGenericMaterials}"
+                                        ToolTip.Tip="Copy circuitRF's generic library (metals, ceramics, semiconductors, laminates — every value with its source) beside this technology and name it."/>
+                                <Button Content="Open Selected Row's Library" FontSize="11" Padding="8,3"
+                                        Command="{Binding ViewModel.OpenSelectedRowLibraryCommand}"
+                                        ToolTip.Tip="Library rows are edited in their own document: open the library the selected row came from."/>
+                            </StackPanel>
+                            <TextBlock Text="{Binding ViewModel.MaterialsRefusal}" TextWrapping="Wrap" FontSize="11" Foreground="#C0392B"
+                                       IsVisible="{Binding ViewModel.MaterialsRefusal, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+                        </StackPanel>
+                    </Border>
+                    <matv:MaterialsTableView DataContext="{Binding ViewModel.MaterialsTable}"/>
                 </DockPanel>
             </TabItem>
 

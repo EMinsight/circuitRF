@@ -63,6 +63,8 @@ internal static class DocumentSchema
             typeof(CircuitRF.WBond.WBondIo.WBondDocument), WBondPreamble),
         new("3d-view", "The .c3d 3D view format", ".c3d",
             typeof(CircuitRF.Design.ThreeD.C3dDocument), C3dPreamble),
+        new("materials", "The .cmat material library format", ".cmat",
+            typeof(CircuitRF.Design.Layout.CmatFile), CmatPreamble),
     ];
 
     public static Format? Find(string topic)
@@ -323,6 +325,52 @@ internal static class DocumentSchema
           * Omitted fields take the editor's defaults: OperatingTempC 85 (degrees C), ground plane
             on, capacitance on, OvermoldEr 1 (air).
           * EmbeddedGeometry and ViewState are the editor's own; leave them out when writing a file.
+
+        Every field the reader understands follows, with its default.
+        """;
+
+    private const string CmatPreamble = """
+        A material library is a list of named materials a technology can use, in a file of its own so
+        several technologies can share it. It is JSON with exactly two keys, and both are always
+        written — an EMPTY library is this, and nothing more:
+
+            { "FormatVersion": 1, "Materials": [] }
+
+        A library with two materials, one a dielectric and one a metal:
+
+            {
+              "FormatVersion": 1,
+              "Materials": [
+                { "Name": "Mould compound", "Epsr": 3.9, "TanD": 0.008, "Mur": 1,
+                  "Source": "representative epoxy moulding compound, 1 MHz" },
+                { "Name": "Plated gold", "Sigma20": 3.3e7, "Alpha20": 0.0034 }
+              ]
+            }
+
+        A record here is EXACTLY a record of a .ctech's own Materials list — one type, one reader — so
+        one cut from either file and pasted into the other reads identically.
+
+        Four things that are not obvious from the field list:
+
+          * ONLY A TECHNOLOGY NAMES A LIBRARY. A .ctech lists it in MaterialLibraries, as a path
+            relative to the .ctech's own directory; a workspace, a .cem and a .c3d never do. They
+            reach a library through the technology they already resolve, which is what makes a
+            technology resolve identically everywhere it is used. There is no verb that adds one:
+            write the path into the .ctech.
+          * A name defined by the technology and by a library (or by two libraries) with DIFFERENT
+            values is an error, and the technology refuses to load until it is fixed — nothing is
+            shadowed. Equal values are one material. A library that cannot be read is also a
+            refusal, naming the file, never an empty list. `check` on the .ctech reports both
+            (`material.conflict`, `material.library-unreadable`).
+          * Null means NOT STATED. Omit a key rather than writing 0 or 1: a material stating only
+            Sigma20 is a conductor, one stating only Epsr a dielectric, both is ambiguous and a 3D
+            object made of it must state its own Role. A material named Air is air.
+          * '@' may not appear in a Name: `Name@technology` is how a 3D view tells two technologies'
+            same-name materials apart. Keys this build does not know are kept on save.
+
+        circuitRF ships generic-materials.cmat — metals, ceramics, semiconductors and laminates, each
+        record with its Source — and every shipped technology names it; `new workspace` copies it
+        into tech/ beside the technology. `check <file.cmat>` checks a library on its own.
 
         Every field the reader understands follows, with its default.
         """;

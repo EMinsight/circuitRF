@@ -648,7 +648,7 @@ public partial class ProjectTreeTool : Tool, IActivatableTool
     private static bool IsDirtyableFile(NodeKind kind) => kind is
         NodeKind.ViewFile or NodeKind.DataDisplayFile or NodeKind.TechFile
         or NodeKind.EmSetupFile or NodeKind.HarmonicaFile or NodeKind.WBondFile
-        or NodeKind.PartLibraryFile;
+        or NodeKind.PartLibraryFile or NodeKind.MaterialLibraryFile;
 
     private static ProjectTreeNodeViewModel? FindNodeByPath(
         ProjectTreeNodeViewModel root, string absPath)

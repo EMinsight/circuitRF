@@ -338,6 +338,7 @@
                             </NativeMenuItem.Menu>
                         </NativeMenuItem>
                         <NativeMenuItem Header="Measure" ToolTip="Two snapped points: x, y, z, the deltas and the distance, every number copyable (M). Requires an active 3D document." Command="{Binding ThreeDMeasureCommand}"/>
+                        <NativeMenuItem Header="Materials…" ToolTip="The active 3D view's technology, opened on its Materials tab: its own materials and the libraries it names. Requires an active 3D document." Command="{Binding ThreeDMaterialsCommand}"/>
                         <NativeMenuItem Header="Triangle Budget…" ToolTip="How many triangles a frame draws before array elements, farthest first, are drawn as their bounding boxes. Stored per user." Command="{Binding ThreeDTriangleBudgetCommand}"/>
                         <NativeMenuItemSeparator/>
                         <NativeMenuItem Header="Show All" ToolTip="Requires an active 3D document." Command="{Binding ThreeDShowAllCommand}"/>
@@ -1118,6 +1119,8 @@
                           ToolTip.Tip="Two snapped points: x, y, z, the deltas and the distance, every number copyable (M). Requires an active 3D document.">
                     <MenuItem.Icon><mi:MaterialIcon Kind="RulerSquare" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
+                <MenuItem Header="_Materials…" Command="{Binding ThreeDMaterialsCommand}"
+                          ToolTip.Tip="The active 3D view's technology, opened on its Materials tab: its own materials and the libraries it names. Requires an active 3D document."/>
                 <MenuItem Header="_Triangle Budget…" Command="{Binding ThreeDTriangleBudgetCommand}"
                           ToolTip.Tip="How many triangles a frame draws before array elements, farthest first, are drawn as their bounding boxes. Stored per user."/>
                 <Separator/>

@@ -66,9 +66,14 @@ public sealed partial class C3dEditorViewModel
                 int index = item.ObjectIndex;
                 items.Add(new Viewer3DMenuItem("Rename…", () => ShowProperties(rename: true)));
                 var mats = Materials;
-                items.Add(new Viewer3DMenuItem("Material", Enabled: mats.Count > 0,
-                    Tip: mats.Count > 0 ? null : "The document's technology defines no materials.",
-                    Children: [.. mats.Select(m => new Viewer3DMenuItem(m, () => ChangeObjects($"Material of {Document.Objects[index].Name}", [index], o => o.Material = m)))]));
+                // brief-em3d-53 — the list ends in New Material…, so a technology with none is not a dead end.
+                items.Add(new Viewer3DMenuItem("Material",
+                    Children: [.. mats.Select(m => new Viewer3DMenuItem(m, () => ChangeObjects($"Material of {Document.Objects[index].Name}", [index], o => o.Material = m))),
+                               .. mats.Count > 0 ? [Viewer3DMenuItem.Separator] : Array.Empty<Viewer3DMenuItem>(),
+                               new Viewer3DMenuItem(NewMaterialItem, () => RequestMaterialPicker([index], startNew: true),
+                                   Tip: "Make a material in the technology or one of its libraries, and give it to this object.")]));
+                items.Add(new Viewer3DMenuItem("Assign Material…", () => RequestMaterialPicker([index], startNew: false),
+                    Tip: "Choose this object's material from its technology's materials — each with its role and source — or make a new one."));
                 bool hidden = Document.Objects[index].Hidden;
                 items.Add(new Viewer3DMenuItem(hidden ? "Show" : "Hide",
                     () => ChangeObjects($"{(hidden ? "Show" : "Hide")} {Document.Objects[index].Name}", [index], o => o.Hidden = !hidden)));

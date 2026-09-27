@@ -165,7 +165,7 @@
                 <ToggleButton IsChecked="{Binding ViewModel.IsWireArmed}" ToolTip.Tip="Wire: click the top of one pad, then another (inside an instance too), then set the loop height — measured from the lower foot to the top of the wire — with the mouse or by typing it  (Shift+A, W)">
                     <mi:MaterialIcon Kind="VectorCurve" Width="16" Height="16"/>
                 </ToggleButton>
-                <ComboBox MinWidth="90" VerticalAlignment="Center" ItemsSource="{Binding ViewModel.Materials}" SelectedItem="{Binding ViewModel.CurrentMaterial}"
+                <ComboBox MinWidth="90" VerticalAlignment="Center" ItemsSource="{Binding ViewModel.MaterialChoices}" SelectedItem="{Binding ViewModel.CurrentMaterial}"
                           IsVisible="{Binding !ViewModel.IsWireArmed}"
                           ToolTip.Tip="The material every new object gets, from the technology's materials"/>
                 <!-- brief-em3d-50 R-em3d50-3b — the next wire's values, changeable before the first click. -->

@@ -209,7 +209,7 @@ public sealed partial class StackupLayerRowViewModel : ObservableObject
     {
         get
         {
-            var names = _owner.Working.Materials.Select(m => m.Name)
+            var names = _owner.Working.ResolvedMaterials.Select(m => m.Name)
                                                 .Where(n => n is { Length: > 0 })
                                                 .Distinct(StringComparer.OrdinalIgnoreCase)
                                                 .ToList();
@@ -220,7 +220,7 @@ public sealed partial class StackupLayerRowViewModel : ObservableObject
 
     /// <summary>Whether there is a named material to offer or to show — the picker is hidden
     /// otherwise, since "(none)" alone is not a choice.</summary>
-    public bool HasMaterialChoices => _owner.Working.Materials.Count > 0 || Layer.Material is { Length: > 0 };
+    public bool HasMaterialChoices => _owner.Working.ResolvedMaterials.Count > 0 || Layer.Material is { Length: > 0 };
 
     private string _selectedMaterial = MaterialNone;
     public string SelectedMaterial

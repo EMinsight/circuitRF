@@ -1,0 +1,103 @@
+{
+  "FormatVersion": 1,
+  "Materials": [
+    {
+      "Name": "Gold",
+      "Sigma20": 41000000,
+      "Alpha20": 0.0034,
+      "DensityKgM3": 19300,
+      "Source": "Resistivity 2.44e-8 ohm-m and temperature coefficient 0.0034 /K at 20 C, as tabulated in university physics texts (e.g. Serway, Physics for Scientists and Engineers, table of resistivities). Representative of deposited gold: the CRC Handbook of Chemistry and Physics gives bulk gold 2.21e-8 ohm-m (4.5e7 S/m). Density: CRC Handbook of Chemistry and Physics."
+    },
+    {
+      "Name": "Aluminium",
+      "Sigma20": 37700000,
+      "Alpha20": 0.0039,
+      "DensityKgM3": 2700,
+      "Source": "Resistivity 2.65e-8 ohm-m at 20 C: CRC Handbook of Chemistry and Physics, electrical resistivity of pure metals. Temperature coefficient 0.0039 /K and density 2700 kg/m3: CRC Handbook of Chemistry and Physics."
+    },
+    {
+      "Name": "Copper",
+      "Sigma20": 58000000,
+      "Alpha20": 0.0039,
+      "DensityKgM3": 8960,
+      "Source": "5.80e7 S/m at 20 C is 100 % IACS, the International Annealed Copper Standard; its temperature coefficient is 0.00393 /K, rounded here. Density: CRC Handbook of Chemistry and Physics."
+    },
+    {
+      "Name": "Silver",
+      "Sigma20": 63000000,
+      "Alpha20": 0.0038,
+      "DensityKgM3": 10490,
+      "Source": "Resistivity 1.59e-8 ohm-m and temperature coefficient 0.0038 /K at 20 C: CRC Handbook of Chemistry and Physics, electrical resistivity of pure metals. Density: CRC Handbook of Chemistry and Physics."
+    },
+    {
+      "Name": "Alumina 96%",
+      "Epsr": 9.4,
+      "TanD": 0.0004,
+      "Mur": 1,
+      "Source": "Representative value for 96 % alumina thick-film substrate at 1 MHz. Ceramics handbooks (e.g. Harper, Handbook of Ceramics, Glasses, and Diamonds) give 9.0 to 9.6 for the grade; the loss tangent is a representative value, not a measurement."
+    },
+    {
+      "Name": "Alumina 99.6%",
+      "Epsr": 9.8,
+      "TanD": 0.0003,
+      "Mur": 1,
+      "Source": "At 10 GHz: Pozar, Microwave Engineering, appendix table of dielectric constants and loss tangents, which gives 9.5 to 10.0 and tan d 0.0003 for 99.5 % alumina. Representative mid-range value."
+    },
+    {
+      "Name": "Aluminium nitride",
+      "Epsr": 8.8,
+      "TanD": 0.0005,
+      "Mur": 1,
+      "Source": "Representative value for sintered aluminium nitride substrate at 1 MHz; ceramics handbooks (e.g. Harper, Handbook of Ceramics, Glasses, and Diamonds) give 8.6 to 8.9. The loss tangent is a representative value, not a measurement."
+    },
+    {
+      "Name": "Fused silica",
+      "Epsr": 3.78,
+      "TanD": 0.0001,
+      "Mur": 1,
+      "Source": "At 10 GHz: Pozar, Microwave Engineering, appendix table of dielectric constants and loss tangents (fused quartz)."
+    },
+    {
+      "Name": "High-resistivity silicon",
+      "Epsr": 11.9,
+      "TanD": 0.0015,
+      "Mur": 1,
+      "Source": "Relative permittivity 11.9: Sze and Ng, Physics of Semiconductor Devices, properties of Si at 300 K. Loss tangent at 10 GHz derived for 10 kohm-cm resistivity from tan d = sigma / (omega eps0 epsr); lower-resistivity silicon is lossier in proportion."
+    },
+    {
+      "Name": "GaAs",
+      "Epsr": 12.9,
+      "TanD": 0.0006,
+      "Mur": 1,
+      "Source": "Relative permittivity 12.9: Sze and Ng, Physics of Semiconductor Devices, properties of GaAs at 300 K. Loss tangent 0.0006 at 10 GHz: representative value for a semi-insulating substrate, equal to the shipped MMIC technology's."
+    },
+    {
+      "Name": "Silicon nitride",
+      "Epsr": 7.5,
+      "TanD": 0.001,
+      "Mur": 1,
+      "Source": "Relative permittivity 7.5 at 1 MHz: Sze and Ng, Physics of Semiconductor Devices, properties of Si3N4. Deposited films range roughly 6 to 8 with composition. The loss tangent is a representative value, not a measurement."
+    },
+    {
+      "Name": "PTFE",
+      "Epsr": 2.08,
+      "TanD": 0.0004,
+      "Mur": 1,
+      "Source": "Unfilled PTFE at 10 GHz: Pozar, Microwave Engineering, appendix table of dielectric constants and loss tangents."
+    },
+    {
+      "Name": "FR-4",
+      "Epsr": 4.4,
+      "TanD": 0.02,
+      "Mur": 1,
+      "Source": "Representative value for generic epoxy-glass laminate (NEMA grade FR-4) at 1 MHz. The literature spans roughly 4.0 to 4.8 and tan d 0.015 to 0.025 with resin content and frequency; equal to the shipped FR-4 technologies' value."
+    },
+    {
+      "Name": "Polyimide",
+      "Epsr": 3.4,
+      "TanD": 0.002,
+      "Mur": 1,
+      "Source": "Representative value for generic polyimide film at 1 MHz; polymer handbooks give 3.4 to 3.5 and tan d 0.002 to 0.003."
+    }
+  ]
+}

@@ -10,7 +10,7 @@ namespace CircuitRF.Design.Layout;
 /// ones that would fix it. The Technology editor shows the ACTIVE tab's problems only (a Gerber
 /// suffix collision has nothing to say to someone editing the layer table), and counts the rest on
 /// their own tab headers so nothing is hidden.</summary>
-public enum TechProblemArea { Layers, Stackup, Drc, Interchange }
+public enum TechProblemArea { Layers, Stackup, Drc, Interchange, Materials }
 
 /// <summary>One technology-consistency problem, and the tab that owns it.</summary>
 /// <param name="Id">A stable rule id (<c>tech.material.unknown</c>), or null for the problems that
@@ -384,9 +384,9 @@ public static class TechValidation
 
     // ── Named materials and 3D bodies (brief-em3d-2 R-em3d2-4) ─────────────────────────────────
     //
-    // Under the Stackup area: the stackup card's material picker is where a named material is
-    // chosen, and there is no Materials or Bodies tab yet (R-em3d2-5d). A problem with no tab behind
-    // it would count on no header and be reported by `check` alone.
+    // A USE of a material (an entry or body naming one) is under the Stackup area — the stackup card's
+    // picker is where the fix is made. A material's OWN shape is under Materials, the tab brief-em3d-53
+    // added, and comes from MaterialValidation so a .ctech and a .cmat are checked by the same code.
 
     /// <summary>The ids of brief-em3d-2's rules — one place, so a test and a reader spell them
     /// identically.</summary>
@@ -408,36 +408,22 @@ public static class TechValidation
         => new(TechProblemArea.Stackup, message, Id: id, Severity: severity);
 
     private static string MaterialList(Technology tech)
-        => tech.Materials.Count == 0
+        => tech.ResolvedMaterials.Count == 0
             ? "This technology defines no materials."
-            : "Defined materials: " + string.Join(", ", tech.Materials.Select(m => $"\"{m.Name}\"")) + ".";
+            : "Defined materials: " + string.Join(", ", tech.ResolvedMaterials.Select(m => $"\"{m.Name}\"")) + ".";
 
     private static void ValidateMaterials(Technology tech, List<TechProblem> problems)
     {
-        // ── tech.material.duplicate — one problem per duplicated NAME, naming how many share it ───
-        foreach (var group in tech.Materials
-                     .GroupBy(m => m.Name ?? "", StringComparer.OrdinalIgnoreCase)
-                     .Where(g => g.Count() > 1))
-            problems.Add(Material(Ids.MaterialDuplicate, DiagnosticSeverity.Error,
-                $"{group.Count()} materials are named \"{group.Key}\" (material names ignore case). " +
-                "A stackup entry naming it could mean any of them; rename all but one."));
+        // ── the materials' own shape (brief-em3d-53 R-em3d53-4: one function for .ctech and .cmat) ──
+        problems.AddRange(MaterialValidation.Validate(tech.Materials));
 
-        // ── the material's own shape: a tensor of three, and the temperature tables ─────────────
-        foreach (var m in tech.Materials)
-        {
-            if (m.EpsrTensor is { } tensor
-                && (tensor.Length != 3 || tensor.Any(v => !double.IsFinite(v) || v < 1)))
-                problems.Add(Material(Ids.MaterialInvalid, DiagnosticSeverity.Error,
-                    $"Material \"{m.Name}\" states an εr tensor that is not three finite values of at " +
-                    "least 1 (xx, yy, zz)."));
-
-            ValidateTemperatureTable(m, m.SigmaVsTemp, "conductivity against temperature (SigmaVsTemp)",
-                "every solver uses its conductivity at 20 °C (Sigma20)" +
-                (m.Alpha20 is not null ? " and, for a bond wire, its temperature coefficient (Alpha20)" : ""),
-                problems);
-            ValidateTemperatureTable(m, m.ThermalKVsTemp, "thermal conductivity against temperature (ThermalKVsTemp)",
-                "no thermal solver exists yet", problems);
-        }
+        // ── a library named by an absolute path (R-em3d53-1a): accepted, and warned about ─────────
+        foreach (string reference in tech.MaterialLibraries ?? [])
+            if (Path.IsPathRooted(Core.RefPath.ToNative(reference)))
+                problems.Add(new(TechProblemArea.Materials,
+                    $"Material library \"{reference}\" is named by an absolute path, so the technology resolves " +
+                    "only on a machine with that file in that place. A path relative to the .ctech travels with it.",
+                    Id: MaterialLibraries.LibraryAbsoluteId, Severity: DiagnosticSeverity.Warning));
 
         // ── Use: every stackup entry that names one ─────────────────────────────────────────────
         foreach (var layer in tech.Stackup.Layers)
@@ -503,42 +489,6 @@ public static class TechValidation
                     $"Body \"{body.Name}\" names material \"{m.Name}\", which states neither εr (Epsr) " +
                     "nor conductivity at 20 °C (Sigma20), so nothing says what the body is."));
         }
-    }
-
-    /// <summary>
-    /// The owner's placeholders for temperature-dependent conductivity (2026-09-25): a table is
-    /// validated as a table — finite, above absolute zero, positive, strictly increasing in
-    /// temperature — and, being read by nothing yet, is reported at info so a stated table never
-    /// looks as though it were in force.
-    /// </summary>
-    private static void ValidateTemperatureTable(
-        TechMaterial m, List<TechTemperaturePoint>? table, string what, string instead,
-        List<TechProblem> problems)
-    {
-        if (table is not { Count: > 0 }) return;
-
-        string? fault = null;
-        for (int i = 0; i < table.Count && fault is null; i++)
-        {
-            var p = table[i];
-            if (!double.IsFinite(p.TempC) || !double.IsFinite(p.Value))
-                fault = $"point {i + 1} is not a finite number";
-            else if (p.TempC < -273.15)
-                fault = $"point {i + 1} is below absolute zero ({p.TempC} °C)";
-            else if (p.Value <= 0)
-                fault = $"point {i + 1} has a value of zero or less ({p.Value})";
-            else if (i > 0 && p.TempC <= table[i - 1].TempC)
-                fault = $"its temperatures do not strictly increase (point {i + 1}, {p.TempC} °C, " +
-                        $"follows {table[i - 1].TempC} °C)";
-        }
-
-        if (fault is not null)
-            problems.Add(Material(Ids.MaterialInvalid, DiagnosticSeverity.Error,
-                $"Material \"{m.Name}\" states {what}, but {fault}."));
-
-        problems.Add(Material(Ids.MaterialNotReadYet, DiagnosticSeverity.Info,
-            $"Material \"{m.Name}\" states {what} ({table.Count} point{(table.Count == 1 ? "" : "s")}). " +
-            $"It is carried in the file and read by nothing yet: {instead}."));
     }
 
     private static void ValidateBodies(

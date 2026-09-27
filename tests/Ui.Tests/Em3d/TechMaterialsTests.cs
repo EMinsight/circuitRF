@@ -197,6 +197,9 @@ public sealed class TechMaterialsTests(ITestOutputHelper output) : IDisposable
             "CircuitRF.Design.Layout.Em3d.Em3dGenerator",   // brief-em3d-3: the tensor only it carries
             // brief-em3d-42: the same two reads, moved with the geometry half the generator was split into.
             "CircuitRF.Design.Layout.Em3d.Em3dLayoutSolids",
+            // brief-em3d-53: a material's uses (the Used-by column, Delete's refusal) and a rename across files.
+            "CircuitRF.Ui.Layout.TechEditorViewModel",
+            "CircuitRF.Ui.ViewModels.WorkspaceViewModel",
         ];
 
         var readers = new List<string>();
@@ -340,7 +343,7 @@ public sealed class TechMaterialsTests(ITestOutputHelper output) : IDisposable
     /// number says 3.0 — the file a hand edit produces.</summary>
     private static string NamedSubstrateJson(Technology original)
     {
-        var t = TechPersistence.Deserialize(TechPersistence.Serialize(original));
+        var t = TechPersistence.Clone(original);
         var sub = t.Stackup.Layers.Single(l => l.Kind == StackupKind.Dielectric);
         t.Materials.Add(new TechMaterial { Name = "Sub", Epsr = 4.4, TanD = sub.TanD, Mur = sub.Mur });
         sub.Material = "Sub";
@@ -352,7 +355,7 @@ public sealed class TechMaterialsTests(ITestOutputHelper output) : IDisposable
     /// the extractors see is what a file carrying them loads as.</summary>
     private static Technology WithMaterialsAndOvermold(Technology original)
     {
-        var t = TechPersistence.Deserialize(TechPersistence.Serialize(original));
+        var t = TechPersistence.Clone(original);
         t.Materials.AddRange(WireMaterials.All.Select(w => new TechMaterial
             { Name = w.Name, Sigma20 = w.Sigma20, Alpha20 = w.Alpha20, DensityKgM3 = w.DensityKgM3 }));
         t.Materials.Add(new TechMaterial { Name = "Mould compound", Epsr = 3.9, TanD = 0.005, ThermalK = 0.9 });
@@ -362,7 +365,7 @@ public sealed class TechMaterialsTests(ITestOutputHelper output) : IDisposable
             SitsOn = t.Stackup.Layers.First(l => l.Kind != StackupKind.Via).Name,
             ThicknessDbu = 500_000,
         });
-        return TechPersistence.Deserialize(TechPersistence.Serialize(t));
+        return TechPersistence.Clone(t);
     }
 
     private static string DumpExtraction(EmSetup setup, EmLayoutSource source)
@@ -428,6 +431,12 @@ public sealed class TechMaterialsTests(ITestOutputHelper output) : IDisposable
     /// <summary>Every method in <paramref name="dll"/> whose IL calls <c>StackupLayer.get_Material</c>,
     /// as "DeclaringType::Method".</summary>
     private static IEnumerable<string> MaterialGetterCallers(string dll)
+        => GetterCallers(dll, "StackupLayer", "get_Material");
+
+    /// <summary>Every method (as <c>Type.Method</c>) in <paramref name="dll"/> whose IL calls
+    /// <c>CircuitRF.Design.Layout.<paramref name="typeName"/>.<paramref name="getter"/></c>. Shared with
+    /// brief-em3d-53's reader list for <c>Technology.Materials</c>.</summary>
+    internal static IEnumerable<string> GetterCallers(string dll, string typeName, string getter)
     {
         using var pe = new PEReader(File.OpenRead(dll));
         if (!pe.HasMetadata) yield break;
@@ -438,15 +447,15 @@ public sealed class TechMaterialsTests(ITestOutputHelper output) : IDisposable
         {
             var m = md.GetMethodDefinition(h);
             var t = md.GetTypeDefinition(m.GetDeclaringType());
-            if (md.GetString(m.Name) == "get_Material" && md.GetString(t.Name) == "StackupLayer")
+            if (md.GetString(m.Name) == getter && md.GetString(t.Name) == typeName)
                 targets.Add(MetadataTokens.GetToken(h));
         }
         foreach (var h in md.MemberReferences)
         {
             var r = md.GetMemberReference(h);
-            if (md.GetString(r.Name) != "get_Material" || r.Parent.Kind != HandleKind.TypeReference) continue;
+            if (md.GetString(r.Name) != getter || r.Parent.Kind != HandleKind.TypeReference) continue;
             var tr = md.GetTypeReference((TypeReferenceHandle)r.Parent);
-            if (md.GetString(tr.Name) == "StackupLayer" && md.GetString(tr.Namespace) == "CircuitRF.Design.Layout")
+            if (md.GetString(tr.Name) == typeName && md.GetString(tr.Namespace) == "CircuitRF.Design.Layout")
                 targets.Add(MetadataTokens.GetToken(h));
         }
         if (targets.Count == 0) yield break;

@@ -13723,3 +13723,49 @@ names the key.
 ### Objects with no material are elaborated as UnassignedSolids/UnassignedSheets (drawn wireframe, never solved)
 
 `C3dElaborator` still refuses a material-less object for Simulate, but now also lowers it into `UnassignedSolids`/`UnassignedSheets` (provenance recorded; the solver lists are unchanged) so the editor can draw, pick and snap it. Detail in `src/Render/RESOLVED.md` §3D editor bugs round 1.
+
+## Material libraries (`.cmat`) — brief-em3d-53 (2026-09-26)
+
+`MaterialLibraryPersistence` (the `.cmat` reader), `MaterialLibraries` (loaders, the one resolution rule, the
+shipped generic library), `MaterialValidation` (a material list's own rules, shared by `.ctech` and `.cmat`),
+`C3dMaterialRole` (the role a material implies), `Technology.MaterialLibraries` / `LibraryMaterials` /
+`ResolvedMaterials`.
+
+- **`TechPersistence.Deserialize(string)` with no path resolves NO library**, because a relative reference has
+  nothing to resolve against. That made every `Deserialize(Serialize(tech))` clone in the tree a silent
+  library-dropper: the copy looked complete and its library-named entries came back "unknown". Every such clone in
+  `src/` and `tests/` is now `TechPersistence.Clone`, which carries `LibraryMaterials` across. A file is read with
+  `LoadFromFile` (path-aware); the technology editor reads `LoadOwnFromFile` so a technology whose libraries refuse
+  still opens (§1d).
+- **Saving a technology loaded from the resources wrote a `.ctech` that refused to load.** Its reference
+  `generic-materials.cmat` resolved against the resources while it was in the assembly and against the new file's
+  directory once written — the New Technology starters (`WorkspaceViewModel`, `OrphanTechnologyDialog`) and ~20 test
+  fixtures do exactly that. `TechPersistence.SaveToFile` now writes each SHIPPED library beside the file, only where
+  no file of that name exists (a workspace's copy is never overwritten). A hand `Serialize` + `WriteAllText` does not
+  get this and must copy the library itself (`TechnologyCatalogTests.AuthorTech`).
+- **The generic library sits beside the shipped technologies** (`resources/technologies/generic-materials.cmat`),
+  not in `resources/materials/` as the brief sketched. One reference spelling, `"generic-materials.cmat"`, is then
+  true in the assembly (`MaterialLibraries.Shipped` maps it to the resource) and in a workspace's `tech/`, so
+  `WorkspaceCreate` copies the technology's bytes VERBATIM plus the library beside — no reference rewriting. Its
+  `EmbeddedResource` glob is `*.cmat`, separate from `*.ctech`; `ShippedTechnologies.Discover` keys on `.ctech` and
+  never sees it.
+- **"Equal values" for a conflict is the solver's view**: εr, tensor, tanδ, μr, σ as the elaborator hands them on
+  (unstated εr 1, tanδ 0, μr 1, σ 0), plus α₂₀ when σ is stated. `Source`, `Color` and the thermal placeholders take
+  no part, so the generic library's cited Gold merges with a shipped technology's uncited one.
+- **`InvalidDataException` is sealed** (brief 41 met it too): `MaterialLibraryException` derives from
+  `IOException`, which the catalog's and importers' existing `catch (IOException …)` filters already handle.
+- **Live library edits**: `TechnologyCache.SetLiveLibrary` drops every FILE-backed technology naming the library
+  (re-read on the next `Get`, which is where a now-refusing library surfaces as the resolver's diagnostic) and
+  re-resolves every LIVE technology override in place; `LibraryReresolutions` counts both.
+- **The 3D elaborator's child cache would have kept stale materials**: it keyed a placed layout's technology on the
+  `.ctech` FILE stamp, and a live technology edit or a library edit replaces the cached INSTANCE without touching the
+  file. `C3dElaborator.Current` now also requires the cached instance to be the one the cache hands out.
+- **`MaterialSources` names the file**: `technology 'x' Materials` (unchanged, so every dump stays byte-identical)
+  or `technology 'x' via library '<path>'`. The `.c3d` materials walk (`explain`) now carries the source text in
+  parentheses.
+- **For the owner — citations.** Every generic record's `Source` was written from standard references (CRC Handbook,
+  IACS, Pozar's appendix table, Sze & Ng, Harper's ceramics handbook, a university-physics resistivity table) without
+  the books to hand; the table/page references deserve a check before release. **Gold is the one number that
+  disagrees with a handbook**: 4.10e7 S/m is the widely-reprinted textbook ρ = 2.44e-8 Ω·m, while the CRC Handbook's
+  bulk value is 2.21e-8 Ω·m (4.5e7). The shipped technologies' value was kept (changing it moves answers) and the
+  record's `Source` says it is representative of deposited gold.

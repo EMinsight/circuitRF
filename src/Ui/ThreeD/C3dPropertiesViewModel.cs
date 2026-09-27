@@ -67,7 +67,8 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
 
     /// <summary>brief-em3d-51 — the selected object's named dimensions, editable as a number or an expression.</summary>
     public ObservableCollection<C3dDimensionField> Fields { get; } = [];
-    public IReadOnlyList<string> Materials => editor.Materials;
+    /// <summary>The technology's materials and, last, New Material… (brief-em3d-53 R-em3d53-5).</summary>
+    public IReadOnlyList<string> Materials => editor.MaterialChoices;
 
     [ObservableProperty] private string _heading = "Nothing selected";
     [ObservableProperty] private bool _isEditable;
@@ -415,6 +416,15 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
     {
         if (_loading || ObjectIndex < 0 || value is null) return;
         int i = ObjectIndex;
+        if (value == C3dEditorViewModel.NewMaterialItem)
+        {
+            // A command, not a material: the picker opens on a new row; the field keeps what the object states.
+            _loading = true;
+            Material = editor.Document.Objects[i].Material;
+            _loading = false;
+            editor.RequestMaterialPicker([i], startNew: true);
+            return;
+        }
         editor.ChangeObjects($"Material of {editor.Document.Objects[i].Name}", [i], o => o.Material = value);
     }
 

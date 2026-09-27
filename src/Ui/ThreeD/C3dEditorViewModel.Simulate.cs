@@ -629,7 +629,7 @@ public sealed partial class C3dEditorViewModel
 
     /// <summary>The metals a Conductive face may be: the technology's materials that conduct.</summary>
     public IReadOnlyList<string> Metals
-        => Elaboration?.Technology?.Materials.Where(m => m.Sigma20 is > 0).Select(m => m.Name).ToList() ?? (IReadOnlyList<string>)[];
+        => Elaboration?.Technology?.ResolvedMaterials.Where(m => m.Sigma20 is > 0).Select(m => m.Name).ToList() ?? (IReadOnlyList<string>)[];
 
     // ── the context menu (R-em3d49-2, -3b, -4) ───────────────────────────────────────────────
 

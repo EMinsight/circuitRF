@@ -60,7 +60,7 @@ public sealed class PcbViaSpanImportTests : IDisposable
     {
         var tech = destTech is null
             ? new Technology { Name = "imported" }
-            : TechPersistence.Deserialize(TechPersistence.Serialize(destTech));
+            : TechPersistence.Clone(destTech);
 
         foreach (var def in r.LayersToAdd)
             if (!tech.Layers.Any(l => l.Key == def.Key)) tech.Layers.Add(def);

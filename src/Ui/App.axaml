@@ -23,6 +23,7 @@
              xmlns:harmv="using:CircuitRF.Ui.Views.Harmonica"
              xmlns:railrf="using:CircuitRF.Ui.RailRf"
              xmlns:railv="using:CircuitRF.Ui.Views.RailRf"
+             xmlns:matv="using:CircuitRF.Ui.Views.Materials"
              xmlns:sm="using:CircuitRF.Ui.Smith"
              xmlns:smv="using:CircuitRF.Ui.Views.Smith"
              xmlns:wb="using:CircuitRF.Ui.WBond"
@@ -153,6 +154,12 @@
              document kinds. railRF's own window is a different thing and stays one. -->
         <DataTemplate DataType="{x:Type railrf:PartLibraryDocument}">
             <railv:PartLibraryEditorView/>
+        </DataTemplate>
+
+        <!-- brief-em3d-53 R-em3d53-4a — a .cmat material library is a DOCUMENT: the same Materials table the
+             technology editor's Materials tab hosts, with its own undo, dirty mark and Save. -->
+        <DataTemplate DataType="{x:Type lay:MaterialsDocument}">
+            <matv:MaterialsEditorView/>
         </DataTemplate>
     </Application.DataTemplates>
 

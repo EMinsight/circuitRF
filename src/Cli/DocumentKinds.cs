@@ -17,6 +17,8 @@ internal enum DocumentKind
     /// <summary>A cell's 3D view, a <c>.c3d</c> (brief-em3d-41).</summary>
     ThreeD,
     Technology,
+    /// <summary>A <c>.cmat</c> material library (brief-em3d-53 §1a).</summary>
+    MaterialLibrary,
     EmSetup,
     Rail,
     Smith,
@@ -56,6 +58,7 @@ internal static class DocumentKinds
         DocumentKind.Layout        => "layout",
         DocumentKind.ThreeD        => "3d",
         DocumentKind.Technology    => "technology",
+        DocumentKind.MaterialLibrary => "material-library",
         DocumentKind.EmSetup       => "em-setup",
         DocumentKind.Rail          => "rail",
         DocumentKind.Smith         => "smith",
@@ -108,6 +111,7 @@ internal static class DocumentKinds
             // broken 3D view. The sniff reads a JSON prefix and stops — a binary file on its first byte.
             ".c3d"   => C3dPersistence.LooksLikeC3d(path) ? DocumentKind.ThreeD : DocumentKind.Foreign,
             ".ctech" => DocumentKind.Technology,
+            ".cmat"  => DocumentKind.MaterialLibrary,
             ".cem"   => DocumentKind.EmSetup,
             // A railRF document (brief-railrf-1-document.md R-rail1-11). `check`, `explain`, `find`
             // and `render` classify it BY KIND rather than calling it unreadable; the `rail` verb

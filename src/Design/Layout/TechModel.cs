@@ -641,6 +641,66 @@ public sealed class Technology
     public List<TechMaterial> Materials { get; set; } = [];
 
     /// <summary>
+    /// The material libraries (<c>.cmat</c>) this technology names (brief-em3d-53 R-em3d53-1a) — paths
+    /// relative to the <c>.ctech</c>'s own directory. Null, the ordinary case, names none. Order is
+    /// display order only, never a precedence: a name two sources define with different values is a
+    /// refusal to load (§3), so there is nothing for an order to decide.
+    ///
+    /// <para><b>Only a technology names a library</b> (M2) — never a workspace, a <c>.cem</c> or a
+    /// <c>.c3d</c>. That is what makes a technology resolve identically everywhere it is used.</para>
+    /// </summary>
+    public List<string>? MaterialLibraries { get; set; }
+
+    /// <summary>
+    /// What the named libraries contributed, each record with the file it came from — filled by the
+    /// loader (<see cref="TechPersistence.ResolveLibraries"/>), <b>never persisted</b>. It is kept apart
+    /// from <see cref="Materials"/> because that list is what the <c>.ctech</c> STORES: merging library
+    /// records into it would make the next save of the technology write every one of them into the
+    /// file, freezing a copy that no longer follows the library (brief-em3d-53 §1b).
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public IReadOnlyList<LibraryMaterial> LibraryMaterials { get; set; } = [];
+
+    /// <summary>Every library this technology named when it was resolved, as absolute paths (a shipped
+    /// technology's are resource names), including one that contributed nothing. What the cache asks
+    /// "does this technology name that library?" of. Never persisted.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public IReadOnlyList<string> ResolvedLibraryPaths { get; set; } = [];
+
+    /// <summary>
+    /// <b>Every material this technology can name</b>: its own list, then each library record whose name
+    /// the own list (or an earlier library) does not already hold. A name two sources define is known to
+    /// carry equal values by the time this exists — different values refuse the load (§3) — so the first
+    /// one is the answer and the rest agree with it. Compare <see cref="Materials"/>, which is what the
+    /// file stores.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public IReadOnlyList<TechMaterial> ResolvedMaterials
+    {
+        get
+        {
+            if (LibraryMaterials.Count == 0) return Materials;
+            var list = new List<TechMaterial>(Materials);
+            var seen = new HashSet<string>(Materials.Select(m => m.Name), StringComparer.OrdinalIgnoreCase);
+            foreach (var lm in LibraryMaterials)
+                if (seen.Add(lm.Material.Name)) list.Add(lm.Material);
+            return list;
+        }
+    }
+
+    /// <summary>The library file a resolved material came from, or null for one of the technology's own
+    /// (and for an unknown name).</summary>
+    public string? LibrarySourceOf(string? name)
+    {
+        if (string.IsNullOrEmpty(name)) return null;
+        foreach (var m in Materials)
+            if (string.Equals(m.Name, name, StringComparison.OrdinalIgnoreCase)) return null;
+        foreach (var lm in LibraryMaterials)
+            if (string.Equals(lm.Material.Name, name, StringComparison.OrdinalIgnoreCase)) return lm.SourcePath;
+        return null;
+    }
+
+    /// <summary>
     /// 3D-only solids the stackup has no row for — mould compound, a lid, a die attach
     /// (brief-em3d-2 R-em3d2-3). <b>No planar extractor reads this list</b>, and a separate list
     /// rather than a new <see cref="StackupKind"/> is what makes that true by construction: the
@@ -650,11 +710,16 @@ public sealed class Technology
 
     /// <summary>The material <paramref name="name"/> names, compared ordinal and case-insensitive
     /// (as <c>WireMaterials.ByName</c> does), or null for none/unknown.</summary>
+    /// <remarks>Answers from <see cref="ResolvedMaterials"/> — own list first, then the libraries
+    /// (brief-em3d-53 §1b) — so every reader that looks a material up by name sees library materials
+    /// with no change of its own.</remarks>
     public TechMaterial? FindMaterial(string? name)
     {
         if (string.IsNullOrEmpty(name)) return null;
         foreach (var m in Materials)
             if (string.Equals(m.Name, name, StringComparison.OrdinalIgnoreCase)) return m;
+        foreach (var lm in LibraryMaterials)
+            if (string.Equals(lm.Material.Name, name, StringComparison.OrdinalIgnoreCase)) return lm.Material;
         return null;
     }
 
@@ -714,8 +779,9 @@ public sealed class TechConstant
 
 // ── Named materials and 3D bodies (brief-em3d-2, docs/design/em-3d.md §4.1a) ─────────────────
 //
-// There is no 3D materials file: a 3D problem takes its materials from the same .ctech the layout
-// and the planar solvers read. Every property is NULLABLE and null means NOT STATED — a material is
+// A 3D problem takes its materials from the same technology the layout and the planar solvers read —
+// its own list plus the `.cmat` libraries it names (brief-em3d-53), which hold records of exactly
+// this type. Every property is NULLABLE and null means NOT STATED — a material is
 // not a dielectric or a conductor by nature (gold is a conductor in one place and nothing in
 // another), so what it must state is decided where it is USED, and reported there by `check`.
 
@@ -780,7 +846,28 @@ public sealed class TechMaterial
 
     /// <summary>Specific heat, J/(kg·K), for the thermal solver. Carried, read by nothing yet.</summary>
     public double? SpecificHeat { get; set; }
+
+    /// <summary>
+    /// Where the values come from — free text, and for a dielectric <b>the frequency they are stated
+    /// at</b>, since every backend receives constant εr and tanδ (brief-em3d-53 R-em3d53-8b). Read by
+    /// no solver.
+    /// </summary>
+    public string? Source { get; set; }
+
+    /// <summary>A display colour, <c>#rrggbb</c> (brief-em3d-53 M6). The 3D scene uses it when stated
+    /// and its own palette otherwise; no solver reads it.</summary>
+    public string? Color { get; set; }
+
+    /// <summary>Keys this build does not read. Kept, and written back, so a record from a later build
+    /// survives being saved here — in a <c>.cmat</c> and in a <c>.ctech</c> alike, since it is one
+    /// type (brief-em3d-53 §1a).</summary>
+    [System.Text.Json.Serialization.JsonExtensionData]
+    public Dictionary<string, System.Text.Json.JsonElement>? Unread { get; set; }
 }
+
+/// <summary>A material a technology reaches through one of its libraries (brief-em3d-53 §1b), and the
+/// file it came from — an absolute path, or a shipped library's resource name.</summary>
+public sealed record LibraryMaterial(TechMaterial Material, string SourcePath);
 
 /// <summary>One point of a temperature-dependent property table: the property's value at
 /// <see cref="TempC"/>. The unit of <see cref="Value"/> is the property's own.</summary>

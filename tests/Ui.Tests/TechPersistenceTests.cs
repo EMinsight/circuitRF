@@ -530,7 +530,7 @@ public class TechPersistenceTests
         var tech = LaneFixture();
         tech.Stackup.Layers.Single(l => l.Kind == StackupKind.Via).DrawLaneFraction = 0.375;
 
-        var restored = TechPersistence.Deserialize(TechPersistence.Serialize(tech));
+        var restored = TechPersistence.Clone(tech);
 
         Assert.Equal(0.375, restored.Stackup.Layers.Single(l => l.Kind == StackupKind.Via).DrawLaneFraction);
         Assert.Equal(TechPersistence.Serialize(tech), TechPersistence.Serialize(restored));
@@ -567,7 +567,7 @@ public class TechPersistenceTests
         var tech = LaneFixture();
         tech.Stackup.Layers.Single(l => l.Kind == StackupKind.Via).DrawLaneFraction = written;
 
-        var restored = TechPersistence.Deserialize(TechPersistence.Serialize(tech));
+        var restored = TechPersistence.Clone(tech);
 
         Assert.Equal(expected, restored.Stackup.Layers.Single(l => l.Kind == StackupKind.Via).DrawLaneFraction);
     }

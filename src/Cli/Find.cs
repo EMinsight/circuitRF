@@ -1,5 +1,6 @@
 using System.Globalization;
 using CircuitRF.Design.Cells;
+using CircuitRF.Design.Layout;
 using CircuitRF.Design.Workspace;
 using RfCore.Export;
 
@@ -129,6 +130,10 @@ internal static class Find
                 if (c.Analyses is { Count: > 0 } a)
                     Console.WriteLine($"    {"",-24} analyses: {string.Join(", ", a)}");
             }
+            foreach (var lib in ws.MaterialLibraries ?? [])
+                Console.WriteLine($"    material library {lib.Path}" + (lib.NamedBy.Count == 0
+                    ? "  (named by no technology)"
+                    : $"  named by {string.Join(", ", lib.NamedBy.Select(Path.GetFileName))}"));
         }
         return 0;
     }
@@ -217,10 +222,36 @@ internal static class Find
                 cellDir, views, analyses ? AnalysesOf(cellDir) : null));
         }
 
+        // brief-em3d-53 R-em3d53-7 — each material library, and which technologies name it: an edit to a
+        // library changes every one of them, so "who uses this" is part of what is here.
+        var techs = MaterialLibraries.TechnologyFiles(workspaceDir);
+        var libraries = new List<FoundMaterialLibraryJson>();
+        foreach (string cmat in LibraryFiles(workspaceDir))
+            libraries.Add(new FoundMaterialLibraryJson(cmat,
+                [.. techs.Where(t => MaterialLibraries.ReferencesOf(t).Contains(cmat, StringComparer.OrdinalIgnoreCase))]));
+
         return new FoundWorkspaceJson(
             workspaceDir,
             Path.GetFileName(Path.TrimEndingDirectorySeparator(workspaceDir)),
-            tech, cells);
+            tech, cells, libraries.Count > 0 ? libraries : null);
+    }
+
+    /// <summary>Every <c>.cmat</c> under a workspace, sorted; a symlinked directory is not followed.</summary>
+    private static List<string> LibraryFiles(string workspaceDir)
+    {
+        var list = new List<string>();
+        try
+        {
+            var options = new EnumerationOptions
+            {
+                RecurseSubdirectories = true, IgnoreInaccessible = true, AttributesToSkip = FileAttributes.ReparsePoint,
+            };
+            list.AddRange(Directory.EnumerateFiles(workspaceDir, "*" + MaterialLibraryPersistence.Extension, options)
+                                   .Select(Path.GetFullPath));
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+        list.Sort(StringComparer.Ordinal);
+        return list;
     }
 
     /// <summary>

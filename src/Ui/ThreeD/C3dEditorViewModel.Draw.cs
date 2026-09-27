@@ -337,7 +337,10 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
     private void SyncCurrentMaterial()
     {
         var mats = Materials;
+        // brief-em3d-53 — a material just made in the picker is kept until the elaboration that holds it arrives.
+        if (CurrentMaterial is not null && CurrentMaterial == _pendingMaterial && !mats.Contains(CurrentMaterial)) return;
         if (CurrentMaterial is null || !mats.Contains(CurrentMaterial)) CurrentMaterial = mats.Count > 0 ? mats[0] : null;
+        if (CurrentMaterial is not null && mats.Contains(CurrentMaterial)) _pendingMaterial = null;
     }
 
     public double? ThicknessUmFor(string? material)

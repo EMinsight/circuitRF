@@ -2711,3 +2711,19 @@ and the page's example now names the file relatively.
 **`DispersionCorrection` is the one `.cem` flag whose omission is not the GUI's default** — the field
 is non-nullable on purpose (its model default flipped to true and every existing file carries it), so
 a file that leaves it out reads false. The page says to write it.
+
+## Material libraries headless — brief-em3d-53 (2026-09-26)
+
+- `DocumentKind.MaterialLibrary` (`material-library`); `check <file.cmat>` runs `MaterialValidation` only (use is a
+  technology's question). `check` on a `.ctech` reports a refusing library as errors under their own ids
+  (`material.conflict`, `material.library-unreadable`) and then the file's own material rules, rather than stopping at
+  "unreadable". An absolute library path is `material.library-absolute` (warning); `@` in a name is
+  `material.reserved-character`. Pre-existing rule ids and sentences are unchanged; only their `area` argument moved
+  from `Stackup` to `Materials` for the material-SELF rules.
+- `explain` on a `.ctech` lists each library, where it lands and what it contributed (exit 1 on a refusal); on a
+  `.cmat`, the technologies under its workspace that name it (`MaterialLibraries.TechnologiesNaming`).
+- `find` gains `MaterialLibraries` per workspace (each `.cmat` and the `.ctech` files naming it), omitted when none.
+- `reference materials` is generated from `CmatFile` like `technology`/`3d-view`; `reference technology` gains
+  `MaterialLibraries` with no page written. `ReferenceCliVerbTests`' topic order now includes it.
+- The eight new exception sentences in the `.cmat` reader/loader are on the firewall text allow-list, for the `.ctech`
+  reader's reason (they reach the user inside a `MaterialLibraryException` whose problems carry ids).

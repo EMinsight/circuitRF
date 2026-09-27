@@ -50,7 +50,7 @@ public sealed partial class C3dEditorViewModel : IC3dWireHost
 
     /// <summary>The technology's metals (a material with a conductivity) — what a wire may be made of.</summary>
     public IReadOnlyList<string> WireMetals
-        => Elaboration?.Technology?.Materials.Where(m => m.Sigma20 is not null).Select(m => m.Name).ToList() ?? (IReadOnlyList<string>)[];
+        => Elaboration?.Technology?.ResolvedMaterials.Where(m => m.Sigma20 is not null).Select(m => m.Name).ToList() ?? (IReadOnlyList<string>)[];
 
     partial void OnWireDiameterTextChanged(string value)
     {

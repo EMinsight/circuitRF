@@ -72,6 +72,7 @@ public partial class WorkspaceViewModel
         ThreeD.C3dEditorDocument d    => d.FilePath,
         WBondDocument d               => d.FilePath,
         PartLibraryDocument d         => d.FilePath,
+        MaterialsDocument d           => d.FilePath,
         _                             => null,
     };
 

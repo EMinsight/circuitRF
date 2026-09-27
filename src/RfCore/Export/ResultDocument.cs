@@ -308,12 +308,21 @@ namespace RfCore.Export
 
     /// <param name="Path">The workspace DIRECTORY — what every other verb takes.</param>
     /// <param name="Technology">The `.cws`'s own default technology reference, or null for none.</param>
+    /// <param name="MaterialLibraries">brief-em3d-53 R-em3d53-7 — every <c>.cmat</c> in the workspace and
+    /// the <c>.ctech</c> files that name each; absent when there are none.</param>
     public sealed record FoundWorkspaceJson(
         string                        Path,
         string                        Name,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         string?                       Technology,
-        IReadOnlyList<FoundCellJson>  Cells);
+        IReadOnlyList<FoundCellJson>  Cells,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        IReadOnlyList<FoundMaterialLibraryJson>? MaterialLibraries = null);
+
+    /// <param name="Path">The <c>.cmat</c>.</param>
+    /// <param name="NamedBy">The <c>.ctech</c> files in the workspace whose <c>MaterialLibraries</c> name it —
+    /// empty for a library nothing uses.</param>
+    public sealed record FoundMaterialLibraryJson(string Path, IReadOnlyList<string> NamedBy);
 
     /// <param name="Depth">How deep the walk was allowed to go below the root.</param>
     /// <param name="Truncated">

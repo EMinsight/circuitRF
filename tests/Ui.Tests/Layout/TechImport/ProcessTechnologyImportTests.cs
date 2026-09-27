@@ -458,7 +458,7 @@ public class ProcessTechnologyBuilderTests
     public void TheResultRoundTripsThroughTheRealCtechWriterAndReader()
     {
         var tech = BuildFixture().Technology;
-        var back = TechPersistence.Deserialize(TechPersistence.Serialize(tech));
+        var back = TechPersistence.Clone(tech);
 
         Assert.Equal(tech.Name, back.Name);
         Assert.Equal(tech.Layers.Count, back.Layers.Count);

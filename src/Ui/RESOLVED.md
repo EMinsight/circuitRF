@@ -36220,3 +36220,34 @@ creation paths share one writer and one open. **There is no scratch form** (New 
 layout with no workspace): the 3D editor's hierarchy and technology walks start from a file in a cell folder, so the
 command is disabled with no workspace rather than half-working. It carries the ellipsis because it always prompts
 (R-menu-1). Mirrored in all three File menus (in-window, native, torn-off); `FileMenuRestructureTests` holds the order.
+
+## The Materials editor — brief-em3d-53 (2026-09-26)
+
+`MaterialsTableViewModel` + `Views/Materials/MaterialsTableView` (one table), `MaterialsEditorViewModel` +
+`MaterialsDocument` (a `.cmat` document), `TechEditorViewModel.Materials.cs` (the fifth tab),
+`WorkspaceViewModel.Materials.cs` (open, live overrides, renames across files, the 3D picker), `MaterialPickerDialog`.
+
+- **An open `.c3d` never listened to a technology change.** `OnTechnologyChanged` re-resolved open LAYOUTS only, so an
+  εr edited in the technology editor did not move an open 3D view until something else re-elaborated it. It now cues
+  every open 3D editor (`OnChildChanged`); the elaborator's own child-cache fix (src/Design) makes the cue enough.
+- **A library row is refused in the view model**, not just drawn read-only: `IsReadOnly` on a TextBox is the view's
+  business, and a binding written from anywhere else (a test, a paste) would otherwise have edited a shared library
+  through one technology's undo (M4).
+- Fields bind with `UpdateSourceTrigger=LostFocus` (Enter commits through the binding expression), because each
+  commit is one snapshot undo entry and a keystroke is not an edit.
+- `MaterialsDocument` was added at every site `PartLibraryDocument` appears (Save/Save As routes, dirty sweeps, close
+  prompt, quit prompt, read-only question, reopen tokens `"materials"`, the tree's `MaterialLibraryFile` kind). **Found,
+  not fixed: File ▸ Save All (all-documents scope) builds `dirtyPartLibraries` and never saves it** — only the quit
+  prompt does. Materials documents are saved in both.
+- **Assign Material… (owner request during the brief)** is on the canvas object menu and the object tree's menu, beside
+  *Material ▸* (which now always ends in *New Material…*, so a technology with no materials is not a dead end). Both,
+  the toolbar combo's last item and Properties ▸ Material's, raise one `MaterialPickerRequested`; the workspace shows
+  `MaterialPickerDialog` and commits a new material to its file's own document before the objects take it as one
+  `C3dEdit`.
+- **Simplifications against the brief**: 3D ▸ Materials… names instance technologies in the Messages panel rather than
+  a dialog footer; the cross-file rename's orchestration lives in the workspace and gate 11 tests its per-file pieces
+  (one entry per stack), not the orchestration; `.cmat` is not registered with the operating systems (the plist, `.wxs`
+  and mime parity tests would need all three), so it opens from the Project Tree, the technology tab and the 3D editor.
+- M4–M9 took the brief's defaults: library rows open their own document; rename = one entry per open file, unopened
+  files listed; `Color` is in (`#rrggbb`, the 3D scene's palette otherwise); thermal scalars shown collapsed; instance
+  technologies read-only; New Material… saves to the first library, else the technology.

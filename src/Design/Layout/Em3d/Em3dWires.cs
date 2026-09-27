@@ -340,7 +340,7 @@ public static class Em3dWires
         if (own is not null)
             return addMaterial(new Em3dMaterial(own.Name, 1, null, 0, 1, own.SigmaAt(tempC)), true);
 
-        var known = tech.Materials.Where(m => m.Sigma20 is not null).Select(m => m.Name)
+        var known = tech.ResolvedMaterials.Where(m => m.Sigma20 is not null).Select(m => m.Name)
                         .Concat(design.Materials.Select(m => m.Name))
                         .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         refusal = $"Wire {wireName} is made of '{metal}', which neither technology '{tech.Name}' nor the .wBond " +

@@ -299,7 +299,7 @@ public class StackupEditorFieldsTests
         Assert.True(vm.UndoRedo.CanUndo);
 
         // It survives the .ctech round trip, which is what "persist in the file" means.
-        var reread = TechPersistence.Deserialize(TechPersistence.Serialize(vm.Working));
+        var reread = TechPersistence.Clone(vm.Working);
         Assert.False(reread.Stackup.CardPaneExpanded);
 
         vm.UndoRedo.Undo();

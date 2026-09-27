@@ -253,7 +253,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null)
         string docKey = "3d|" + path + "|" + Stamp(path);
         if (_children.TryGetValue(docKey, out var hit) && hit is Child3D c)
         {
-            if (Stamp(c.Tech.ResolvedPath) == TechStampOf(docKey)) return c;
+            if (Stamp(c.Tech.ResolvedPath) == TechStampOf(docKey) && Current(c.Tech)) return c;
         }
         ChildrenElaborated++;
         C3dDocument doc;
@@ -269,6 +269,18 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null)
         _children[docKey] = made;
         _children["techstamp|" + docKey] = Stamp(tech.ResolvedPath);
         return made;
+    }
+
+    /// <summary>
+    /// brief-em3d-53 R-em3d53-1f — whether a cached child's technology is still the one the cache hands out. A live
+    /// (unsaved) technology edit and a material-library edit replace the cached INSTANCE without touching the
+    /// file, so the file stamp alone would keep an instance built on the old values.
+    /// </summary>
+    private bool Current(TechResolution t)
+    {
+        if (t.ResolvedPath is null || t.Tech is null) return true;
+        try { return ReferenceEquals(_tech.Get(t.ResolvedPath), t.Tech); }
+        catch { return false; }
     }
 
     private string TechStampOf(string docKey) => _children.TryGetValue("techstamp|" + docKey, out var s) ? (string)s : "-";
@@ -293,7 +305,8 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null)
     private ChildLayout ChildLayoutCached(string path, string? fallbackCws, C3dElaborationOptions options)
     {
         string key = string.Create(CultureInfo.InvariantCulture, $"layout|{path}|{Stamp(path)}|{options.FMaxHz:R}|{options.TempC:R}");
-        if (_children.TryGetValue(key, out var hit) && hit is ChildLayout c && Stamp(c.Tech.ResolvedPath) == TechStampOf(key))
+        if (_children.TryGetValue(key, out var hit) && hit is ChildLayout c && Stamp(c.Tech.ResolvedPath) == TechStampOf(key)
+            && Current(c.Tech))
             return c;
         ChildrenElaborated++;
         LayoutView view;
@@ -479,7 +492,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null)
                 var lowered = owner.LowerCached(obj, world, doc.DbuPerMicron);
                 if (lowered is null) continue;
                 var values = Resolve(material, out string source);
-                string key = Register(techName, material.Name, values, $"technology '{techName}' Materials" + source);
+                string key = Register(techName, material.Name, values, TechSource(tech, techName, material!.Name) + source);
 
                 if (lowered.Sheet is { } g)
                 {
@@ -553,7 +566,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null)
                 TechMaterial? material = tech.Tech?.FindMaterial(matName);
                 if (material is null)
                 {
-                    var metals = tech.Tech?.Materials.Where(m => m.Sigma20 is not null).Select(m => m.Name).ToList() ?? [];
+                    var metals = tech.Tech?.ResolvedMaterials.Where(m => m.Sigma20 is not null).Select(m => m.Name).ToList() ?? [];
                     refusal = $"Wire '{name}' is made of '{matName}', which its technology ({techName}) does not define. Known metals: " +
                               $"{(metals.Count == 0 ? "none" : string.Join(", ", metals))}. A 3D model does not substitute a metal.";
                 }
@@ -578,7 +591,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null)
                 }
                 _warnings.AddRange(r.Warnings);
                 var values = Resolve(material!, out string source);
-                string key = Register(techName, material!.Name, values, $"technology '{techName}' Materials" + source);
+                string key = Register(techName, material!.Name, values, TechSource(tech, techName, material!.Name) + source);
                 void Solid(string solidName, Em3dPrimitive primitive)
                 {
                     _uses.Add((_solids.Count, false, techName, material.Name));
@@ -806,21 +819,29 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null)
         private Em3dRole? Role(C3dObject obj, TechMaterial m, string name)
         {
             if (obj.Role is { } stated) return stated;
-            if (string.Equals(m.Name, Em3dGenerator.AirMaterial, StringComparison.OrdinalIgnoreCase)) return Em3dRole.Air;
-            bool hasSigma = m.Sigma20 is > 0;
-            bool hasEpsr = m.Epsr is not null || m.EpsrTensor is { Length: 3 };
-            if (hasSigma && hasEpsr)
+            // brief-em3d-53 §4 — the material's own answer comes from the one rule the editor's Role column shows.
+            switch (C3dMaterialRole.Implied(m))
             {
-                _refusals.Add($"'{name}' is made of '{m.Name}', which states both a conductivity and a permittivity, so it could be " +
-                              "a conductor or a lossy dielectric. Say which with the object's Role.");
-                return null;
+                case C3dImpliedRole.Air:        return Em3dRole.Air;
+                case C3dImpliedRole.Conductor:  return Em3dRole.Conductor;
+                case C3dImpliedRole.Dielectric: return Em3dRole.Dielectric;
+                case C3dImpliedRole.Ambiguous:
+                    _refusals.Add($"'{name}' is made of '{m.Name}', which states both a conductivity and a permittivity, so it could be " +
+                                  "a conductor or a lossy dielectric. Say which with the object's Role.");
+                    return null;
+                default:
+                    _refusals.Add($"'{name}' is made of '{m.Name}', which states neither a conductivity nor a permittivity, so nothing says " +
+                                  "what it is. Give the material σ₂₀ or εr, or give the object a Role.");
+                    return null;
             }
-            if (hasSigma) return Em3dRole.Conductor;
-            if (hasEpsr) return Em3dRole.Dielectric;
-            _refusals.Add($"'{name}' is made of '{m.Name}', which states neither a conductivity nor a permittivity, so nothing says " +
-                          "what it is. Give the material σ₂₀ or εr, or give the object a Role.");
-            return null;
         }
+
+        /// <summary>brief-em3d-53 R-em3d53-6 — the FILE a material came from: the technology's own list, or one of
+        /// its libraries.</summary>
+        private static string TechSource(TechResolution tech, string techName, string material)
+            => tech.Tech?.LibrarySourceOf(material) is { } lib
+                ? $"technology '{techName}' via library '{MaterialLibraries.Display(lib)}'"
+                : $"technology '{techName}' Materials";
 
         /// <summary>A technology material's values at the operating temperature — the generator's body rule.</summary>
         private Em3dMaterial Resolve(TechMaterial m, out string note)
@@ -847,24 +868,26 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null)
             var walk = new List<C3dWalkStep>();
             foreach (var group in _materials.GroupBy(m => m.Name, StringComparer.Ordinal))
             {
-                var sets = new List<(Em3dMaterial Values, List<string> Techs, string Source)>();
+                var sets = new List<(Em3dMaterial Values, List<string> Techs, string Source, List<string> Sources)>();
                 foreach (var m in group)
                 {
                     int i = sets.FindIndex(s => Same(s.Values, m.Values));
-                    if (i >= 0) sets[i].Techs.Add(m.Tech);
-                    else sets.Add((m.Values, [m.Tech], m.Source));
+                    if (i >= 0) { sets[i].Techs.Add(m.Tech); if (!sets[i].Sources.Contains(m.Source)) sets[i].Sources.Add(m.Source); }
+                    else sets.Add((m.Values, [m.Tech], m.Source, [m.Source]));
                 }
                 if (sets.Count == 1)
                 {
                     list.Add(sets[0].Values);
                     sources[group.Key] = sets[0].Source;
+                    // brief-em3d-53 R-em3d53-7 — the step names the FILE that answered, and for a merged name every
+                    // file that agreed.
                     walk.Add(new C3dWalkStep(group.Key, sets[0].Techs.Count > 1
-                        ? $"equal in {string.Join(" and ", sets[0].Techs.Select(t => $"'{t}'"))}, merged"
-                        : $"from '{sets[0].Techs[0]}'"));
+                        ? $"equal in {string.Join(" and ", sets[0].Techs.Select(t => $"'{t}'"))}, merged ({string.Join("; ", sets[0].Sources)})"
+                        : $"from '{sets[0].Techs[0]}' ({sets[0].Source})"));
                     continue;
                 }
                 var described = new List<string>();
-                foreach (var (values, techs, source) in sets)
+                foreach (var (values, techs, source, _) in sets)
                 {
                     string q = $"{group.Key}@{techs[0]}";
                     foreach (string t in techs) _final[(t, group.Key)] = q;

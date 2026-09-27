@@ -343,7 +343,7 @@ public sealed class FootprintDesignatorTests : IDisposable
     private static Technology StripSilk(Technology tech)
     {
         var silk = Silk(tech);
-        var stripped = TechPersistence.Deserialize(TechPersistence.Serialize(tech));
+        var stripped = TechPersistence.Clone(tech);
         stripped.Layers.RemoveAll(l => l.Key.Equals(silk));
         return stripped;
     }

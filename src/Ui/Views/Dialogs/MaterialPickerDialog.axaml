@@ -1,0 +1,47 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:t3="using:CircuitRF.Ui.ThreeD"
+        xmlns:matv="using:CircuitRF.Ui.Views.Materials"
+        x:Class="CircuitRF.Ui.Views.Dialogs.MaterialPickerDialog"
+        x:DataType="t3:MaterialPickerViewModel"
+        Title="Material" Width="880" Height="440" MinWidth="560" MinHeight="300"
+        WindowStartupLocation="CenterOwner" CanResize="True">
+
+    <!-- brief-em3d-53 R-em3d53-5 — Assign Material… and New Material…. Assign lists the technology's resolved
+         materials; New hosts the Materials table on one new row with a Save to selector. -->
+    <DockPanel Margin="10">
+        <StackPanel DockPanel.Dock="Bottom" Spacing="6" Margin="0,8,0,0">
+            <TextBlock Text="{Binding Refusal}" TextWrapping="Wrap" FontSize="11" Foreground="#C0392B"
+                       IsVisible="{Binding Refusal, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+            <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="6">
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6" IsVisible="{Binding IsNew}">
+                    <TextBlock Text="Save to" VerticalAlignment="Center" FontSize="11"/>
+                    <ComboBox MinWidth="260" ItemsSource="{Binding Targets}" SelectedItem="{Binding SelectedTarget}"
+                              ToolTip.Tip="Where the new material is written: a library the technology names, or the technology's own list. That file's document becomes dirty; nothing reaches disk until it is saved."/>
+                </StackPanel>
+                <Button Grid.Column="0" Content="New Material…" IsVisible="{Binding !IsNew}" Click="OnNew"
+                        ToolTip.Tip="Make a material instead of choosing one."/>
+                <Button Grid.Column="2" Content="OK" IsDefault="True" MinWidth="80" Click="OnOk"/>
+                <Button Grid.Column="3" Content="Cancel" IsCancel="True" MinWidth="80" Click="OnCancel"/>
+            </Grid>
+        </StackPanel>
+
+        <Panel>
+            <ListBox IsVisible="{Binding !IsNew}" ItemsSource="{Binding Choices}" SelectedItem="{Binding SelectedChoice}"
+                     DoubleTapped="OnChoiceDoubleTapped">
+                <ListBox.ItemTemplate>
+                    <DataTemplate x:DataType="t3:MaterialChoice">
+                        <Grid ColumnDefinitions="180,*,200" ColumnSpacing="8">
+                            <TextBlock Grid.Column="0" Text="{Binding Name}" FontSize="12"/>
+                            <TextBlock Grid.Column="1" Text="{Binding Role}" FontSize="11" Opacity="0.75" TextTrimming="CharacterEllipsis"/>
+                            <TextBlock Grid.Column="2" Text="{Binding Source}" FontSize="11" Opacity="0.75" TextTrimming="CharacterEllipsis"/>
+                        </Grid>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+            <Panel IsVisible="{Binding IsNew}">
+                <matv:MaterialsTableView DataContext="{Binding NewTable}"/>
+            </Panel>
+        </Panel>
+    </DockPanel>
+</Window>

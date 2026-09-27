@@ -171,8 +171,9 @@ internal static class Explain
             case DocumentKind.Netlist:
             case DocumentKind.Schematic:
             case DocumentKind.Cell:
+            case DocumentKind.Technology:      exit |= ExplainTechnology(path, walks); break;
+            case DocumentKind.MaterialLibrary: ExplainMaterialLibrary(path, walks); break;
             case DocumentKind.Workspace:
-            case DocumentKind.Technology:
             case DocumentKind.Symbol:
             case DocumentKind.AssemblyRules:
             case DocumentKind.Rail:
@@ -400,6 +401,67 @@ internal static class Explain
                 ? "nearest ancestor .cws — none found, so references resolve against the document's own directory"
                 : "nearest ancestor .cws"));
         return cws;
+    }
+
+    /// <summary>
+    /// brief-em3d-53 R-em3d53-7 — a technology's libraries: where each reference lands and what it
+    /// contributed. A technology whose libraries refuse to load says so, with the refusal's own sentence,
+    /// and exits 1.
+    /// </summary>
+    private static int ExplainTechnology(string path, List<ResolutionStepJson> walks)
+    {
+        string full = Path.GetFullPath(path);
+        Workspace(path, walks);
+
+        Technology own;
+        try { own = TechPersistence.LoadOwnFromFile(full); }
+        catch (Exception ex) { JsonRun.Report(CliDiagnostics.ExplainUnreadable(path, ex.Message)); return 1; }
+        if (own.MaterialLibraries is not { Count: > 0 } refs)
+        {
+            walks.Add(new ResolutionStepJson("material libraries", full, null,
+                $"none named; its {own.Materials.Count} material(s) are its own"));
+            return 0;
+        }
+
+        Technology? tech = null;
+        string? refusal = null;
+        try { tech = TechPersistence.LoadFromFile(full); }
+        catch (MaterialLibraryException ex) { refusal = ex.Message; }
+
+        foreach (string reference in refs)
+        {
+            string lib = MaterialLibraries.ResolvePath(full, reference);
+            var names = tech?.LibraryMaterials.Where(m => string.Equals(m.SourcePath, lib, StringComparison.OrdinalIgnoreCase))
+                             .Select(m => m.Material.Name).ToList();
+            walks.Add(new ResolutionStepJson($"library {reference}", full, lib,
+                "relative to the .ctech's own directory" +
+                (names is null ? "" : names.Count == 0 ? "; contributes no material"
+                    : $"; contributes {string.Join(", ", names.Select(n => $"'{n}'"))}")));
+        }
+        if (refusal is not null)
+        {
+            walks.Add(new ResolutionStepJson("material libraries", full, null, "REFUSED: " + refusal));
+            return 1;
+        }
+        walks.Add(new ResolutionStepJson("materials", full, null,
+            $"{tech!.Materials.Count} own and {tech.ResolvedMaterials.Count - tech.Materials.Count} from libraries; " +
+            "a name two sources define must carry equal values"));
+        return 0;
+    }
+
+    /// <summary>brief-em3d-53 R-em3d53-7 — a library: the technologies in its workspace that name it, since an
+    /// edit to it changes every one of them.</summary>
+    private static void ExplainMaterialLibrary(string path, List<ResolutionStepJson> walks)
+    {
+        string full = Path.GetFullPath(path);
+        string? cws = Workspace(path, walks);
+        string root = cws is null ? Path.GetDirectoryName(full)! : Path.GetDirectoryName(cws)!;
+        var users = MaterialLibraries.TechnologiesNaming(full, root);
+        if (users.Count == 0)
+            walks.Add(new ResolutionStepJson("named by", full, null,
+                "no technology under " + root + " names this library"));
+        foreach (string ctech in users)
+            walks.Add(new ResolutionStepJson("named by", full, ctech, "a .ctech's MaterialLibraries"));
     }
 
     private static void ExplainLayout(string path, List<ResolutionStepJson> walks)

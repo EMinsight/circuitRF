@@ -34,7 +34,7 @@ public partial class WorkspaceViewModel
     private readonly Dictionary<C3dEditorDocument, FileSystemWatcher> _c3dWatchers = [];
 
     /// <summary>Extensions whose change on disk re-elaborates an open 3D editor (a placed cell, a technology).</summary>
-    private static readonly string[] C3dInputs = [".c3d", ".clay", ".ctech", ".wbond"];
+    private static readonly string[] C3dInputs = [".c3d", ".clay", ".ctech", ".wbond", ".cmat"];
 
     /// <summary>Opens (or focuses) the 3D editor on <paramref name="path"/>. A view opened straight after
     /// it was CREATED (<paramref name="newlyCreated"/>) starts orthographic: a new view is drawn on a
@@ -85,6 +85,7 @@ public partial class WorkspaceViewModel
                 RaiseFileMenuEnablementChanged();
             };
             WireC3dHierarchy(doc);
+            HookC3dMaterials(doc);
             _factory.OpenDocument(doc);
             _openDocsByPath[key] = doc;
             WatchC3d(doc);
@@ -428,6 +429,7 @@ public partial class WorkspaceViewModel
         ThreeDExtrudeCommand.NotifyCanExecuteChanged();
         ThreeDModifyCommand.NotifyCanExecuteChanged();
         ThreeDMeasureCommand.NotifyCanExecuteChanged();
+        ThreeDMaterialsCommand.NotifyCanExecuteChanged();
         RunAnalysisCommand.NotifyCanExecuteChanged();
     }
 

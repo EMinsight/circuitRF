@@ -290,7 +290,7 @@ public sealed class LayerStipplePatternTests
     {
         var before = ImportTable(out _);
 
-        var after = TechPersistence.Deserialize(TechPersistence.Serialize(before));
+        var after = TechPersistence.Clone(before);
 
         Assert.Equal(before.FillPatterns.Count, after.FillPatterns.Count);
         var layer = after.Layers.Single(l => l.Name == "MetalA.drawing");

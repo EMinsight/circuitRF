@@ -394,6 +394,9 @@
       "Severity": "Error"
     }
   ],
+  "MaterialLibraries": [
+    "generic-materials.cmat"
+  ],
   "Materials": [
     {
       "Name": "Gold",

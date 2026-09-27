@@ -92,7 +92,7 @@ public sealed class LandPatternRoleSeverityTests
     /// one layer taken out of it.</summary>
     private static List<string> Diagnose(Technology tech, LayerKey removed)
     {
-        var stripped = TechPersistence.Deserialize(TechPersistence.Serialize(tech));
+        var stripped = TechPersistence.Clone(tech);
         stripped.Layers.RemoveAll(l => l.Key.Equals(removed));
         var diagnostics = new List<string>();
         LandPatternLayers.Resolve(stripped, PCellLayerSelection.Default, diagnostics);

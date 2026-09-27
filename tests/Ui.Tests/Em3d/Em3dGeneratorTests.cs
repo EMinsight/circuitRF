@@ -157,7 +157,7 @@ public sealed class Em3dGeneratorTests
     public void Gate4_AnOvermoldCoversTheLateralExtent_AboveDielectricsBelowConductors()
     {
         var (setup, source) = Microstrip();
-        var tech = TechPersistence.Deserialize(TechPersistence.Serialize(source.Technology!));
+        var tech = TechPersistence.Clone(source.Technology!);
         tech.Materials.Add(new TechMaterial { Name = "Mould compound", Epsr = 3.9, TanD = 0.005 });
         tech.Bodies.Add(new TechBody
         {

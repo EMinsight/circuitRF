@@ -204,6 +204,8 @@ internal static class Check
             case DocumentKind.Layout:     Scoped(path, kind, f, () => CheckLayout(path, f, cache)); break;
             case DocumentKind.ThreeD:     Scoped(path, kind, f, () => CheckThreeD(path, f, cache)); break;
             case DocumentKind.Technology: Scoped(path, kind, f, () => CheckTechnology(path, f)); break;
+            case DocumentKind.MaterialLibrary:
+                                          Scoped(path, kind, f, () => CheckMaterialLibrary(path, f)); break;
             case DocumentKind.EmSetup:    Scoped(path, kind, f, () => CheckEmSetup(path, f, cache)); break;
             case DocumentKind.Netlist:    Scoped(path, kind, f, () => CheckNetlist(path, f)); break;
             case DocumentKind.AssemblyRules:
@@ -642,17 +644,50 @@ internal static class Check
     private static void CheckTechnology(string path, Findings f)
     {
         Technology tech, raw;
+        string json;
         try
         {
-            string json = GzipTextFile.ReadAllTextAutoGzip(path);
-            tech = TechPersistence.Deserialize(json);
+            json = GzipTextFile.ReadAllTextAutoGzip(path);
             // brief-em3d-2 R-em3d2-4a: the file AS WRITTEN, for the one rule a loaded technology
             // can no longer see — a named material's numbers disagreeing with the entry's own.
             raw  = TechPersistence.DeserializeUnresolved(json);
         }
         catch (Exception ex) { f.Add(CliDiagnostics.CheckUnreadable(path, ex.Message)); return; }
 
+        // brief-em3d-53 §1d — a technology whose libraries cannot be read, or define one name two ways,
+        // does not load. Each such problem is an error under its own id; the file's own content is then
+        // still checked, so the rest of what is wrong is not hidden behind the refusal.
+        try
+        {
+            tech = TechPersistence.Deserialize(json, MaterialLibraries.Disk(path), Path.GetFullPath(path));
+        }
+        catch (MaterialLibraryException ex)
+        {
+            foreach (var p in ex.Problems)
+                f.Add(CliDiagnostics.CheckTechProblem(path, nameof(TechProblemArea.Materials), p.Message,
+                                                      DiagnosticSeverity.Error, p.Id));
+            foreach (var p in MaterialValidation.Validate(raw.Materials))
+                f.Add(CliDiagnostics.CheckTechProblem(path, p.Area.ToString(), p.Message, p.Severity, p.Id));
+            return;
+        }
+        raw.LibraryMaterials = tech.LibraryMaterials;
+
         foreach (var p in TechValidation.Analyze(tech).Concat(TechValidation.AnalyzeRaw(raw)))
+            f.Add(CliDiagnostics.CheckTechProblem(path, p.Area.ToString(), p.Message, p.Severity, p.Id));
+    }
+
+    /// <summary>
+    /// brief-em3d-53 R-em3d53-7 — a standalone <c>.cmat</c>: the same material rules a technology's own
+    /// list is held to (<see cref="MaterialValidation"/>), and nothing about USE, which only a technology
+    /// that names the library can answer.
+    /// </summary>
+    private static void CheckMaterialLibrary(string path, Findings f)
+    {
+        List<TechMaterial> materials;
+        try { materials = MaterialLibraryPersistence.LoadFromFile(path); }
+        catch (Exception ex) { f.Add(CliDiagnostics.CheckUnreadable(path, ex.Message)); return; }
+
+        foreach (var p in MaterialValidation.Validate(materials))
             f.Add(CliDiagnostics.CheckTechProblem(path, p.Area.ToString(), p.Message, p.Severity, p.Id));
     }
 

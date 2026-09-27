@@ -52,7 +52,10 @@ public static class ShippedTechnologies
         using var stream = asm.GetManifestResourceStream(entry.ResourceName)
             ?? throw new InvalidOperationException($"Embedded technology resource \"{entry.ResourceName}\" not found.");
         using var reader = new StreamReader(stream);
-        return TechPersistence.Deserialize(reader.ReadToEnd());
+        // brief-em3d-53 R-em3d53-1c: a shipped technology's library references resolve against the
+        // resources beside it — the same spelling that resolves beside a workspace's copy on disk.
+        return TechPersistence.Deserialize(reader.ReadToEnd(), MaterialLibraries.Shipped,
+            MaterialLibraries.ShippedPrefix + entry.Id + ResourceSuffix);
     }
 
     /// <summary>Convenience overload keyed by file-stem id (e.g. <see cref="DefaultId"/>).</summary>

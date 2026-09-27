@@ -241,37 +241,10 @@ public class WsProbeDocsTests
     [Fact]
     public void NoVendorNameReachesTheUserDocumentationSource()
     {
-        HashSet<string> banned = new(StringComparer.Ordinal)
-        {
-            "f0752d059804986d", "03b548bd99277bf0", "abf36cd32bcc04eb", "fee6fd0cc1707a18",
-            "df179ecdb694113f", "b0a29cba258364f6", "4f6b9e1c24d93d9a", "dddc2540655a9e86",
-            "921bcc89bf6d54bd", "e214fdf90c1468b9", "e4472d0cd5e7c4ea", "0a1bab7945d5c6a3",
-            "db87f26b104e7544", "699949a69f87ff18", "b5a28fbec19341f0", "0cdd2b0bb11909d9",
-            "a2309cf1d14f05b8", "8e89759c83aa90a9", "446be308664e1964", "256b21fc60dc82ff",
-            "85f697115c7a2a87", "d53ad95e70babd32", "f562e3c126d4ac7a", "ccc55dcbfdee7146",
-            "872f53a234135a2c", "8c7ad921eb8dd369", "d597e69e0f4dccfc", "892fe341c689e4fe",
-            "bd761ee8c7fc09c6",
-        };
-
+        var banned = BannedDigests;
         var hits = new List<string>();
         foreach (string f in Directory.EnumerateFiles(DocsSrc(), "*.md", SearchOption.AllDirectories))
-        {
-            var lines = File.ReadAllLines(f);
-            for (int i = 0; i < lines.Length; i++)
-            {
-                var words = Regex.Matches(lines[i].ToLowerInvariant(), @"[a-z][a-z0-9]*")
-                                 .Select(w => w.Value).ToList();
-                for (int w = 0; w < words.Count; w++)
-                {
-                    if (banned.Contains(Digest(words[w])) ||
-                        (w + 1 < words.Count && banned.Contains(Digest(words[w] + " " + words[w + 1]))))
-                    {
-                        hits.Add($"{Path.GetFileName(f)}:{i + 1}");
-                        break;
-                    }
-                }
-            }
-        }
+            ScanForBanned(f, banned, hits);
 
         Assert.True(hits.Count == 0,
             "A commercial vendor, simulator or kit name reached docs/user/src at: "
@@ -280,7 +253,40 @@ public class WsProbeDocsTests
           + "why this gate cannot tell you which one it found.");
     }
 
-    private static string Digest(string s)
+    /// <summary>The digests <see cref="NoVendorNameReachesTheUserDocumentationSource"/> checks — shared with
+    /// brief-em3d-53's generic material library, whose Source citations must name no manufacturer.</summary>
+    internal static readonly HashSet<string> BannedDigests = new(StringComparer.Ordinal)
+    {
+            "f0752d059804986d", "03b548bd99277bf0", "abf36cd32bcc04eb", "fee6fd0cc1707a18",
+            "df179ecdb694113f", "b0a29cba258364f6", "4f6b9e1c24d93d9a", "dddc2540655a9e86",
+            "921bcc89bf6d54bd", "e214fdf90c1468b9", "e4472d0cd5e7c4ea", "0a1bab7945d5c6a3",
+            "db87f26b104e7544", "699949a69f87ff18", "b5a28fbec19341f0", "0cdd2b0bb11909d9",
+            "a2309cf1d14f05b8", "8e89759c83aa90a9", "446be308664e1964", "256b21fc60dc82ff",
+            "85f697115c7a2a87", "d53ad95e70babd32", "f562e3c126d4ac7a", "ccc55dcbfdee7146",
+            "872f53a234135a2c", "8c7ad921eb8dd369", "d597e69e0f4dccfc", "892fe341c689e4fe",
+            "bd761ee8c7fc09c6",
+    };
+
+    private static void ScanForBanned(string f, HashSet<string> banned, List<string> hits)
+    {
+        var lines = File.ReadAllLines(f);
+        for (int i = 0; i < lines.Length; i++)
+        {
+            var words = Regex.Matches(lines[i].ToLowerInvariant(), @"[a-z][a-z0-9]*")
+                             .Select(w => w.Value).ToList();
+            for (int w = 0; w < words.Count; w++)
+            {
+                if (banned.Contains(Digest(words[w])) ||
+                    (w + 1 < words.Count && banned.Contains(Digest(words[w] + " " + words[w + 1]))))
+                {
+                    hits.Add($"{Path.GetFileName(f)}:{i + 1}");
+                    break;
+                }
+            }
+        }
+    }
+
+    internal static string Digest(string s)
         => Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(
                System.Text.Encoding.UTF8.GetBytes(s)))[..16];
 
