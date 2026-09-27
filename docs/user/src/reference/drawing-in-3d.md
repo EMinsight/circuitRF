@@ -29,6 +29,7 @@ lid — which was drawn with exactly the gestures below. Open it with **Tools �
 <li><a href="#drawing">Drawing</a></li>
 <li><a href="#editing">Moving and editing</a></li>
 <li><a href="#expressions">Dimensions as expressions</a></li>
+<li><a href="#operations">Booleans, fillets, chamfers and STEP parts</a></li>
 <li><a href="#hierarchy">Hierarchy: placing cells</a></li>
 <li><a href="#wires">Bond wires</a></li>
 <li><a href="#simulate">Simulating</a></li>
@@ -229,6 +230,71 @@ object using that name follows too.
 <code>check</code> warns about any dimension over 1 m. Write the forty as a name (<code>2*wall</code>), or
 type the expression's unit after it. The example uses names for every constant it adds for this reason.</p>
 </div>
+
+## Booleans, fillets, chamfers and STEP parts {#operations}
+
+Four kinds of object are built by **OpenCASCADE**, the geometry kernel that ships inside circuitRF, rather
+than by the editor itself: a **Boolean** (subtract, unite or intersect), a **Fillet**, a **Chamfer** and a
+**Step** part (one solid of an imported STEP file). **Settings ▸ 3D EM** says whether this installation has
+the kernel. The editor's commands for making them arrive in later releases; the format is complete now, and
+a `.c3d` written by hand with one of them in it is drawn, checked, explained and elaborated.
+
+A boolean owns its operands. This one subtracts a bore from a lid:
+
+```json
+{
+	"$type": "Boolean",
+	"Name": "lid",
+	"Op": "Subtract",
+	"Blank": {
+		"$type": "Box",
+		"Material": "Kovar",
+		"Min": [0, 0, 500000],
+		"Size": [4000000, 3000000, 250000]
+	},
+	"Tools": [
+		{
+			"$type": "Cylinder",
+			"Name": "bore",
+			"Base": [2000000, 1500000, 400000],
+			"Axis": "Z",
+			"Length": 500000,
+			"Radius": 300000
+		}
+	]
+}
+```
+
+- **The boolean takes its Blank's name.** The box inside it has no `Name`, and the result is `lid` — so a
+  port or a boundary that was on `lid` before anything was subtracted from it is still on `lid`. A Fillet or
+  Chamfer takes its Target's name the same way. The result's **material and role are the Blank's**; a Unite
+  of different materials takes the Blank's and says which it replaced.
+- **Faces keep their names.** The Blank's faces are still `zmax`, `xmin` …; a Tool's are `bore:side`; a face
+  the operation cut in pieces is `zmax#1`, `zmax#2`, and a boundary on `zmax` lands on every piece. Edges are
+  named by the two faces they separate, `bore:side|zmax`, and that is how a Fillet names what it rounds:
+  `"Radius": 50000, "Edges": ["bore:side|zmax"]`. A fillet's new face is `fillet(bore:side|zmax)`.
+- **`"Enabled": false`** makes the operation as if it were not there: the Blank is drawn and solved under the
+  boolean's name and each Tool under its own — the bore standing in the lid. A boundary on `bore:side` of `lid`
+  then lands on the cylinder's `side`. Nothing in the file changes; switching it back is the A/B test.
+- **`"KeepTools": true`** on a Subtract also keeps each Tool as its own solid, right after the result, with its
+  own material — how a dielectric fill in a bore is stated.
+- **An operation the kernel cannot build** — a fillet larger than the faces beside it, a subtraction that
+  leaves nothing — is refused by name, and the rest of the document still elaborates. The edit stays; fix it or
+  undo it.
+
+<div class="callout warn">
+<span class="label">Without the geometry kernel</span>
+<p>A development build, or an installation missing its <code>geometry-kernel</code> folder, cannot build
+these objects. A 3D view that holds <b>any</b> of them — even a disabled one — is <b>not opened</b>: a dialog
+names the objects, says why, and offers <b>Open Settings ▸ 3D EM</b>, where the kernel's row says how to
+restore it. A 3D view with none of them opens exactly as before. <code>circuitrf check</code> reports one
+error per such object and exits 1, and <code>em</code> refuses before writing anything. A document that places
+a <i>child</i> using one still opens; that one instance is refused and Simulate says which.</p>
+</div>
+
+Palace and openEMS cannot yet be handed a kernel solid: a run with one in it is refused, naming it. The
+editor draws it, and `check`, `explain` (which reports the kernel, each operation's operands, its face and
+edge counts and its smallest radius) and `render` all work on it.
 
 ## Hierarchy: placing cells {#hierarchy}
 

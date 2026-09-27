@@ -134,6 +134,30 @@ attaches each to the OCCT face that IS that face, by geometry, never by OCCT's l
 bounds more than one edge a third field numbers them in geometric order (`side|zmax|2`). A seam (a face meeting
 itself, as a cylinder's side does) and a degenerate edge are not feature edges and are not listed.
 
+**The geometric order** (brief 64 §2d) numbers split pieces and repeated edges by CENTROID in the root object's
+own frame — before its `transform`, so moving or rotating the object renumbers nothing — compared x, then y, then
+z, each rounded to 1 nm.
+
+### Operation nodes (brief 64)
+
+An operation lists no `faces`: it names its result from its operands' through OCCT's history (`Modified`,
+`IsDeleted`, and `Generated` for a fillet's or chamfer's new faces). Its operands are built in its own frame, then
+the result is carried by its `transform`.
+
+| kind | fields | the result's face names |
+|---|---|---|
+| `boolean` | `op` (`subtract`, `unite`, `intersect`), `blank` (a node whose `name` is `""`), `tools` (named nodes) | the blank's bare; a tool's `<tool>:<face>` (a nested tool's `<tool>:<inner>:<face>`) |
+| `fillet` | `radius`, `edges` (names, as above), `target` | the target's; each rounded edge's new face `fillet(<edge>)` |
+| `chamfer` | `distance`, optional `distance2` (on the edge's second face), `edges`, `target` | the target's; `chamfer(<edge>)` |
+| `step` | `file` (a path), `hash`, `part` (the occurrence path `import-step` reports, `1/2`) | `face<n>` in the part's own order, as `import-step` names them |
+
+A face of the result keeps the first name that claims it, the blank's before a tool's. A name held by more than
+one face of the result — a split face, including one an operand had already split — is numbered `#1…#n` in the
+geometric order, so a reference to `zmax` means every `zmax#k`. A fillet's and chamfer's faces are named from
+EVERY edge of each contour OCCT built (`Edge(contour, i)`), not only the edges listed: a tangent chain
+propagates. An empty result, or a fillet OCCT cannot build, is refused (`build.failed`), naming the object. A
+`step` node reads its file once per (path, hash) for the life of the worker.
+
 ### Test nodes
 
 With `CRF_GEOMETRY_WORKER_TEST=1` in its environment the worker also builds a node of kind `crash` (it exits at

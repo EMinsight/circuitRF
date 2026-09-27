@@ -63,12 +63,12 @@ public sealed class ThreeDViewDocumentTests : IDisposable
     [Fact]
     public void AnUnknownKind_AndAnExpression_AreRefusedByName()
     {
-        string boolean = EveryKind.Replace("\"$type\": \"Box\"", "\"$type\": \"Boolean\"")
-                                  .Replace("\"$type\": \"Cylinder\"", "\"$type\": \"Fillet\"");
-        var kind = Assert.Throws<C3dReadException>(() => C3dPersistence.Deserialize(boolean));
+        string later = EveryKind.Replace("\"$type\": \"Prism\"", "\"$type\": \"Torus\"")
+                                .Replace("\"$type\": \"Polyhedron\"", "\"$type\": \"Loft\"");
+        var kind = Assert.Throws<C3dReadException>(() => C3dPersistence.Deserialize(later));
         Assert.Equal("c3d.read.unknown-kind", kind.Diagnostic.Id);
-        Assert.Contains("'base' (a \"Boolean\")", kind.Message, StringComparison.Ordinal);
-        Assert.Contains("'via' (a \"Fillet\")", kind.Message, StringComparison.Ordinal);
+        Assert.Contains("'lead' (a \"Torus\")", kind.Message, StringComparison.Ordinal);
+        Assert.Contains("'lid' (a \"Loft\")", kind.Message, StringComparison.Ordinal);
 
         string expression = EveryKind.Replace("\"Length\": 254", "\"Length\": \"w\"");
         var expr = Assert.Throws<C3dReadException>(() => C3dPersistence.Deserialize(expression));
@@ -535,6 +535,70 @@ public sealed class ThreeDViewDocumentTests : IDisposable
 				"Style": "Wedge",
 				"FootLengthUm": 50.8
 			}
+		},
+		{
+			"$type": "Boolean",
+			"Name": "cap",
+			"Op": "Subtract",
+			"Enabled": false,
+			"KeepTools": true,
+			"Blank": {
+				"$type": "Box",
+				"Material": "Kovar",
+				"Min": [0, 0, 1000],
+				"Size": [2000, 2000, 100]
+			},
+			"Tools": [
+				{
+					"$type": "Cylinder",
+					"Name": "bore",
+					"Material": "Alumina",
+					"Base": [1000, 1000, 900],
+					"Axis": "Z",
+					"Length": 300,
+					"Radius": 200
+				}
+			]
+		},
+		{
+			"$type": "Fillet",
+			"Name": "rim",
+			"Radius": 20,
+			"Edges": [
+				"xmax|zmax"
+			],
+			"Target": {
+				"$type": "Box",
+				"Material": "Gold",
+				"Min": [3000, 0, 0],
+				"Size": [500, 500, 500]
+			}
+		},
+		{
+			"$type": "Chamfer",
+			"Name": "pin",
+			"Distance": 20,
+			"Distance2": 10,
+			"Edges": [
+				"side|top"
+			],
+			"Target": {
+				"$type": "Cylinder",
+				"Material": "Gold",
+				"Base": [4000, 0, 0],
+				"Axis": "Z",
+				"Length": 500,
+				"Radius": 100
+			}
+		},
+		{
+			"$type": "Step",
+			"Name": "shell",
+			"Material": "Kovar",
+			"File": "shell.step",
+			"Part": "1",
+			"Hash": "sha256:00",
+			"Unit": "mm"
 		}
 	],
 	"Instances": [

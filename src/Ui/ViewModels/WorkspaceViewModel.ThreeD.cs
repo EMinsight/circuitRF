@@ -53,7 +53,36 @@ public partial class WorkspaceViewModel
             Messages.Error($"Could not open the 3D view '{Path.GetFileName(full)}': {ex.Message}");
             return;
         }
+
+        // brief-em3d-64 R-em3d64-5b (D3) — a document holding a kernel object, enabled or not, is refused on open when this
+        // installation has no geometry kernel: nothing is opened, and the dialog and the Messages line say why and what
+        // fixes it. A document with none opens exactly as before and never asks the kernel anything.
+        if (C3dKernelUse.RefusalOnOpen(document, KernelCapability) is { } why)
+        {
+            Messages.Error($"{C3dKernelUse.CannotOpen} {why}");
+            _ = KernelRefusalDialog(Path.GetFileName(full), why);
+            return;
+        }
         OpenC3dEditor(full, key, document, newlyCreated, scratch: false);
+    }
+
+    /// <summary>The geometry kernel's capability as the refusal on open reads it; a test substitutes an absent one.</summary>
+    internal Func<CircuitRF.Design.ThreeD.Occ.GeometryKernelCapability> KernelCapability { get; set; } =
+        () => CircuitRF.Design.ThreeD.Occ.GeometryKernel.Shared.Capability;
+
+    /// <summary>The refusal's dialog (file name, the sentence); a test substitutes a recorder.</summary>
+    internal Func<string, string, Task> KernelRefusalDialog { get; set; }
+
+    /// <summary>[Open Settings ▸ 3D EM] [Close] over the sentence — Settings' 3D EM tab carries the kernel's row.</summary>
+    private async Task ShowKernelRefusalAsync(string file, string why)
+    {
+        if (ResolveOwner(null) is not { } owner) return;
+        if (await TextConfirmDialog.AskAsync(owner, file, C3dKernelUse.CannotOpen, why, "Open Settings ▸ 3D EM"))
+        {
+            var settings = new SettingsView(CurrentWorkspacePath is { } ws ? Path.GetDirectoryName(ws) : null);
+            settings.SelectTab("3D EM");
+            settings.Show(owner);
+        }
     }
 
     // ── On Launch ▸ New 3D Design (3D editor bugs round 2) ────────────────────────────────────

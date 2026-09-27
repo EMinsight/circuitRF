@@ -190,16 +190,21 @@ public static class C3dProblemAssembly
             if (obj is C3dSheet or C3dPolyline)
                 return $"{where} is on a {(obj is C3dSheet ? "sheet, which is already a conductor's surface" : "polyline, which is construction geometry")}: " +
                        "a boundary goes on a face of a dielectric or air solid.";
-            if (e.Solids.FirstOrDefault(s => s.Name == b.Object) is not { } solid || !e.Provenance.TryGetValue(b.Object, out var prov))
+            // brief-em3d-64 R-em3d64-2f — through a disabled operation (lid, bore:side) is the standalone bore's side;
+            // nothing in the file is rewritten.
+            var (target, targetFace) = C3dKernelUse.Resolve(document, b.Object, b.Face);
+            if (e.Solids.FirstOrDefault(s => s.Name == target) is not { } solid || !e.Provenance.TryGetValue(target, out var prov))
                 return $"{where} is on an object the elaboration did not make a solid of; its own refusal says why.";
             if (solid.Role == Em3dRole.Conductor)
                 return $"{where} is on a conductor, which is a void bounded by its own metal: a boundary on it has nothing to add. " +
                        "Put boundaries on dielectric and air objects.";
             var primNames = Em3dFaceGeometry.FaceNames(solid.Primitive);
+            // The fold rule: a reference to zmax covers every piece an operation split it into (zmax#1, zmax#2).
             var mine = Enumerable.Range(0, Math.Min(prov.FaceNames.Count, primNames.Count))
-                                 .Where(i => prov.FaceNames[i] == b.Face).Select(i => primNames[i]).Distinct().ToList();
+                                 .Where(i => C3dKernelUse.Covers(targetFace, prov.FaceNames[i])).Select(i => primNames[i]).Distinct().ToList();
             if (mine.Count == 0)
-                return $"{where} names a face '{b.Object}' does not have (it has {string.Join(", ", obj.FaceNames().Distinct())}). " +
+                return $"{where} names a face '{b.Object}' does not have (it has " +
+                       $"{string.Join(", ", (solid.Primitive is Em3dShapeSolid ? prov.FaceNames : obj.FaceNames()).Distinct())}). " +
                        "A face's name is kept through every edit; one that no longer exists is refused, never guessed.";
             string? material = null;
             if (b.Kind == Em3dFaceBoundaryKind.Conductive)
@@ -222,7 +227,7 @@ public static class C3dProblemAssembly
             {
                 if (Em3dFaceGeometry.Pieces(solid.Primitive, face, out string? why) is null)
                     return $"{where} cannot be placed: {why}.";
-                boundaries.Add(new Em3dFaceBoundary(b.Object, face, b.Kind, material));
+                boundaries.Add(new Em3dFaceBoundary(target, face, b.Kind, material));
             }
         }
         return null;

@@ -138,6 +138,8 @@ public static class GmshGeoWriter
         var problems = problem.Validate().Concat(settings.Problems()).ToList();
         if (problems.Count > 0)
             return No("The 3D problem cannot be lowered for Palace: " + string.Join(" ", problems));
+        // brief-em3d-64 §10 — a kernel solid's lowering is brief 65's; until then it is refused, never approximated.
+        if (Em3dShapeSolid.Refusal(problem, "Palace") is { } kernel) return No(kernel);
 
         var f = problem.Boundary.Faces;
         var faceKinds = new[] { f.XMin, f.XMax, f.YMin, f.YMax, f.ZMin, f.ZMax };

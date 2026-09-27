@@ -440,6 +440,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
     public WorkspaceViewModel()
     {
+        KernelRefusalDialog = ShowKernelRefusalAsync;
         _factory = new CircuitRfDockFactory();
         // Before anything can be floated: every CrfHostWindow the factory creates is stamped with
         // this view model, which is how a float is attributed to its own workspace window under

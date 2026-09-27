@@ -124,6 +124,8 @@ public static class CsxcadWriter
         CsxcadLowering No(string why) => new(null, [], [], 0, 0, 0, 0, [], [], [], why);
 
         // ── What openEMS cannot be told ──────────────────────────────────────────────────────────
+        // brief-em3d-64 §10 — a kernel solid's lowering is brief 65's; until then it is refused, never approximated.
+        if (Em3dShapeSolid.Refusal(problem, "openEMS") is { } kernel) return No(kernel);
         var f = problem.Boundary.Faces;
         var faceKinds = new[] { f.XMin, f.XMax, f.YMin, f.YMax, f.ZMin, f.ZMax };
         for (int k = 0; k < 6; k++)

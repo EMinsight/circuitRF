@@ -27,6 +27,13 @@
 // Em3dWires.Resolve a .wBond's wires use). A wire that lands on no pad is refused by name and end, and the rest of the
 // document still elaborates, so the editor can draw it and flag it (WireRefusals).
 //
+// KERNEL OBJECTS (brief-em3d-64 R-em3d64-3). A Boolean, Fillet, Chamfer or Step object is resolved, turned into the
+// canonical tree (GeometryKernelTree), built by the geometry worker and lowered to ONE ordinary Em3dSolid whose primitive
+// is an Em3dShapeSolid — material and role its Blank's. A build that fails is THAT object's refusal, never the
+// document's, and never an undo: the rest elaborates and the edit stays. A DISABLED operation is as if it were not
+// there: its operands elaborate as independent objects at its place in construction order, with no worker call. A
+// document with no kernel object makes no worker call at all — the kernel is not even asked whether it is there.
+//
 // CACHING (R-em3d42-4), because the editor calls this on every edit. An elaborator instance keeps a
 // per-OBJECT cache keyed by the object's serialized form, its world transform and its document's scale,
 // and a per-CHILD cache keyed by (file, file stamp, view, technology stamp) — brief 28's rule: a file
@@ -39,6 +46,7 @@ using CircuitRF.Design.Cells;
 using CircuitRF.Design.Layout;
 using CircuitRF.Design.Layout.Em;
 using CircuitRF.Design.Layout.Em3d;
+using CircuitRF.Design.ThreeD.Occ;
 using CircuitRF.Design.Workspace;
 using CircuitRF.Engine.Em3d;
 using WireMaterial = CircuitRF.WBond.WireMaterial;
@@ -79,6 +87,13 @@ public sealed record C3dProvenance(string InstancePath, string DocumentPath, str
     /// under transforms with the same rotation are the same mesh moved by the difference of translations.</summary>
     public C3dTransform? Element { get; init; }
 }
+
+/// <summary>brief-em3d-64 R-em3d64-6b — one kernel object's build as <c>explain</c> reports it.</summary>
+/// <param name="Operands">The operand tree, one line per node, indented two spaces per level.</param>
+/// <param name="Built">True when the worker was asked; false when a cache answered.</param>
+/// <param name="MinRadiusM">The smallest radius of curvature on any face or edge, metres; null when every one is flat.</param>
+public sealed record C3dKernelBuild(string Name, string Kind, IReadOnlyList<string> Operands, bool Built, int Faces, int Edges,
+                                    double? MinRadiusM, IReadOnlyList<string> Notes, string? Refusal);
 
 /// <summary>One step of the walk <c>explain</c> reports (R-em3d42-6): what, and how it was decided.</summary>
 public sealed record C3dWalkStep(string Subject, string Detail);
@@ -121,6 +136,14 @@ public sealed record C3dElaboration(
     /// <summary>brief-em3d-50 — each drawn wire's result, by elaborated name: its pads and process values, for
     /// <c>explain</c> and the Wire tool's readout.</summary>
     public IReadOnlyDictionary<string, C3dWireResult> DrawnWires { get; init; } = new Dictionary<string, C3dWireResult>();
+
+    /// <summary>brief-em3d-64 R-em3d64-3d — each kernel object that did not build (or could not, with no kernel), by
+    /// elaborated name: the refusal, which is also in <see cref="Refusals"/>. What the editor marks in its tree.</summary>
+    public IReadOnlyDictionary<string, string> KernelRefusals { get; init; } = new Dictionary<string, string>();
+
+    /// <summary>brief-em3d-64 R-em3d64-6b — each kernel object's build, for <c>explain</c>: its operands, whether the
+    /// build came from a cache, its face and edge counts, its smallest radius and the kernel's notes.</summary>
+    public IReadOnlyList<C3dKernelBuild> KernelBuilds { get; init; } = [];
 
     /// <summary>brief-em3d-48 R-em3d48-6b — the instances whose cell or view resolved to nothing or could not be read, by
     /// instance path: what the editor draws as a dashed box with the cell's name.</summary>
@@ -179,7 +202,7 @@ public sealed record C3dElaboration(
 /// Elaborates <c>.c3d</c> documents. Keep one per open document: its caches are what make re-elaboration
 /// after one edit cost one object (R-em3d42-4).
 /// </summary>
-public sealed class C3dElaborator(TechnologyCache? technologies = null)
+public sealed class C3dElaborator(TechnologyCache? technologies = null, GeometryKernel? kernel = null)
 {
     /// <summary>3D editor bugs round 2 — the warning an object with no material raises: the solver ignores it. The same
     /// words as <see cref="C3dDiagnostics.NoMaterial"/>, so <c>check</c> says it once.</summary>
@@ -199,6 +222,16 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null)
     /// <summary>Objects lowered because the per-object cache missed.</summary>
     public long ObjectsElaborated { get; private set; }
 
+    /// <summary>brief-em3d-64 R-em3d64-3e — trees handed to the geometry kernel because the per-tree cache missed. An edit
+    /// to one boolean raises it by one; an unrelated edit, its undo, and re-elaborating an unchanged document by zero.</summary>
+    public long KernelTreesBuilt { get; private set; }
+
+    /// <summary>The kernel this elaborator builds with: the application's, unless a caller (a test) gave its own. Only
+    /// read when a document holds a kernel object.</summary>
+    public GeometryKernel Kernel => kernel ?? GeometryKernel.Shared;
+
+    private readonly Dictionary<string, KernelLowered> _kernelSolids = new(StringComparer.Ordinal);
+
     /// <summary>Child views read and built because the per-child cache missed.</summary>
     public long ChildrenElaborated { get; private set; }
 
@@ -210,8 +243,8 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null)
 
     /// <summary>One elaboration with no cache kept.</summary>
     public static C3dElaboration ElaborateOnce(C3dDocument document, string path, string? workspaceCws,
-                                               C3dElaborationOptions? options = null)
-        => new C3dElaborator().Elaborate(document, path, workspaceCws, options);
+                                               C3dElaborationOptions? options = null, GeometryKernel? kernel = null)
+        => new C3dElaborator(null, kernel).Elaborate(document, path, workspaceCws, options);
 
     /// <summary>
     /// <paramref name="document"/>, at <paramref name="path"/>, elaborated. <paramref name="workspaceCws"/> is
@@ -239,6 +272,78 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null)
         ObjectsElaborated++;
         return _objects[key] = C3dLowering.Lower(obj, world, dbuPerMicron);
     }
+
+    /// <summary>A kernel object's build, lowered — or its refusal. Kept by the tree's hash, which is the resolved inputs'.</summary>
+    private sealed record KernelLowered(C3dLowered? Lowered, string? Refusal, IReadOnlyList<string> Notes, bool Built, int Edges, double? MinRadiusM);
+
+    /// <summary>
+    /// brief-em3d-64 R-em3d64-3a — <paramref name="tree"/> built by the kernel and lowered to an <see cref="Em3dShapeSolid"/>:
+    /// build, face table, edges and the display tessellation, in metres. From this elaborator's cache when the tree has been
+    /// lowered before (<see cref="KernelTreesBuilt"/> counts the misses); the kernel's own cache sits under that.
+    /// </summary>
+    private KernelLowered KernelCached(GeometryKernelTree tree, string name)
+    {
+        if (_kernelSolids.TryGetValue(tree.Hash, out var hit)) return hit;
+        KernelTreesBuilt++;
+        var k = Kernel;
+        long before = k.RequestsSent;
+        KernelLowered made;
+        try
+        {
+            var build = k.Build(tree);
+            var faces = k.Faces(tree);
+            double diag = 0;
+            if (faces.Count > 0)
+            {
+                double x0 = faces.Min(f => f.Box[0]), y0 = faces.Min(f => f.Box[1]), z0 = faces.Min(f => f.Box[2]);
+                double x1 = faces.Max(f => f.Box[3]), y1 = faces.Max(f => f.Box[4]), z1 = faces.Max(f => f.Box[5]);
+                diag = Math.Sqrt((x1 - x0) * (x1 - x0) + (y1 - y0) * (y1 - y0) + (z1 - z0) * (z1 - z0));
+            }
+            // Relative to the object's size (overview §1j): a thousandth of its diagonal, never below a nanometre.
+            double linearUm = Math.Max(diag * 1e-3, 1e-3);
+            var mesh = k.Tessellate(tree, linearUm, DisplayAngularRad);
+            var edges = k.Edges(tree, linearUm);
+            const double M = 1e-6;
+            var vertices = new Point3[mesh.Vertices.Length / 3];
+            for (int i = 0; i < vertices.Length; i++)
+                vertices[i] = new Point3(mesh.Vertices[3 * i] * M, mesh.Vertices[3 * i + 1] * M, mesh.Vertices[3 * i + 2] * M);
+            var triangles = new Em3dTriangle[mesh.TriangleFace.Length];
+            var first = new int[faces.Count];
+            var count = new int[faces.Count];
+            Array.Fill(first, -1);
+            for (int t = 0; t < triangles.Length; t++)
+            {
+                int f = (int)mesh.TriangleFace[t];
+                triangles[t] = new Em3dTriangle((int)mesh.Triangles[3 * t], (int)mesh.Triangles[3 * t + 1], (int)mesh.Triangles[3 * t + 2], name, f);
+                if (f < 0 || f >= faces.Count) continue;
+                if (first[f] < 0) first[f] = t;
+                count[f]++;
+            }
+            var shapeFaces = faces.Select((f, i) => new Em3dShapeFace(f.Name, f.Kind,
+                (f.Box[0] * M, f.Box[1] * M, f.Box[2] * M, f.Box[3] * M, f.Box[4] * M, f.Box[5] * M),
+                f.MinRadius * M, Math.Max(first[i], 0), count[i])).ToList();
+            var shapeEdges = edges.Select(e => new Em3dShapeEdge(e.Name, e.FaceA, e.FaceB, e.Kind, e.MinRadius * M,
+                [.. Enumerable.Range(0, e.Polyline.Length / 3).Select(i => new Point3(e.Polyline[3 * i] * M, e.Polyline[3 * i + 1] * M, e.Polyline[3 * i + 2] * M))])).ToList();
+            var solid = new Em3dShapeSolid(build.Brep, build.BrepHash, new Em3dTriangleMesh(vertices, triangles), shapeFaces, shapeEdges)
+            {
+                DisplayDeflectionM = linearUm * M,
+            };
+            var radii = faces.Select(f => f.MinRadius).Concat(edges.Select(e => e.MinRadius)).Where(r => r > 0).ToList();
+            made = new KernelLowered(new C3dLowered(solid, null, [.. faces.Select(f => f.Name)], KindKernel), null, build.Notes,
+                                     k.RequestsSent > before, edges.Count, radii.Count > 0 ? radii.Min() * M : null);
+        }
+        catch (GeometryKernelException e)
+        {
+            made = new KernelLowered(null, e.Message, [], k.RequestsSent > before, 0, null);
+        }
+        return _kernelSolids[tree.Hash] = made;
+    }
+
+    /// <summary>The display tessellation's angular deflection, radians.</summary>
+    public const double DisplayAngularRad = 0.5;
+
+    /// <summary>The lowering table's row a kernel object takes.</summary>
+    public const string KindKernel = "kernel-solid";
 
     private static string Stamp(string? path)
     {
@@ -383,6 +488,9 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null)
         private readonly List<Em3dWireReport> _wires = [];
         private readonly Dictionary<string, string> _wireRefusals = new(StringComparer.Ordinal);
         private readonly Dictionary<string, C3dWireResult> _drawnWires = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, string> _kernelRefusals = new(StringComparer.Ordinal);
+        private readonly List<C3dKernelBuild> _kernelBuilds = [];
+        private GeometryKernelCapability? _capability;
         private readonly List<(string Name, string Source)> _builtInWireValues = [];
         private readonly List<C3dWalkStep> _walkInstances = [], _walkUnits = [], _walkLowering = [];
         private readonly List<(string, string)> _unresolved = [];
@@ -448,6 +556,8 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null)
                 Origins = _origins,
                 Wires = _wires,
                 WireRefusals = _wireRefusals,
+                KernelRefusals = _kernelRefusals,
+                KernelBuilds = _kernelBuilds,
                 DrawnWires = _drawnWires,
                 WalkInstances = _walkInstances,
                 WalkUnits = _walkUnits,
@@ -481,63 +591,209 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null)
             {
                 if (obj is C3dPolyline) { _polylines++; continue; }
                 if (obj is C3dWire) continue;                       // after the instances: see Wires
-                string name = prefix + obj.Name;
-                if (obj.Material is not { Length: > 0 } matName)
-                {
-                    // 3D editor bugs round 2 — an object with no material yet is IGNORED by the solver, not a refusal: a
-                    // half-finished design still runs. One naming a material the technology lacks stays a refusal below — a
-                    // broken reference, not an unassigned object.
-                    _warnings.Add(NoMaterialWarning(name));
-                    Unassigned(obj, name, world, doc.DbuPerMicron, prefix, path, exact);
-                    continue;
-                }
-                if (tech.Tech?.FindMaterial(matName) is not { } material)
-                {
-                    _refusals.Add($"'{name}' is made of '{matName}', which its technology ({techName}) does not define.");
-                    Unassigned(obj, name, world, doc.DbuPerMicron, prefix, path, exact);
-                    continue;
-                }
-                if (Role(obj, material, name) is not { } role) continue;
-
-                var lowered = owner.LowerCached(obj, world, doc.DbuPerMicron);
-                if (lowered is null) continue;
-                var values = Resolve(material, out string source);
-                string key = Register(techName, material.Name, values, TechSource(tech, techName, material!.Name) + source);
-
-                if (lowered.Sheet is { } g)
-                {
-                    if (role != Em3dRole.Conductor)
-                    {
-                        _refusals.Add($"Sheet '{name}' is made of '{matName}', a {role.ToString().ToLowerInvariant()}: a sheet is a " +
-                                      "conductor thin enough to be a surface, so a sheet of anything else has no meaning. Make it a " +
-                                      "solid, or give it a conducting material.");
-                        continue;
-                    }
-                    double t = (obj as C3dSheet)?.ThicknessUm is { } um ? um * 1e-6 : 0;
-                    _uses.Add((_sheets.Count, true, techName, material.Name));
-                    _sheets.Add(new Em3dSheet(name, key, g.Outline, g.Holes, g.Z, t, ++_order) { Frame = g.Frame });
-                }
-                else
-                {
-                    _uses.Add((_solids.Count, false, techName, material.Name));
-                    _solids.Add(new Em3dSolid(name, key, role, lowered.Solid!, ++_order));
-                }
-                _provenance[name] = new C3dProvenance(prefix.TrimEnd('/'), path, obj.Name, lowered.FaceNames)
-                {
-                    Exact = exact && obj.Placement.ToTransform().IsIntegral,
-                    Element = prefix.Length > 0 ? world : null,
-                };
-                _walkLowering.Add(new C3dWalkStep(name, lowered.Kind));
-                _origins[name] = new Em3dObjectOrigin(role switch
-                {
-                    Em3dRole.Conductor => Em3dObjectKind.Conductor, Em3dRole.Air => Em3dObjectKind.Air, _ => Em3dObjectKind.Body,
-                }, null, null, null);
-                if (role == Em3dRole.Conductor) Net(name, name);
+                Object(obj, prefix + obj.Name, world, doc, tech, prefix, path, exact);
             }
 
             string baseDir = Path.GetDirectoryName(path)!;
             foreach (var inst in doc.Instances) Instance(doc, resolution, inst, baseDir, world, prefix, stack, exact);
             if (doc.Objects.Any(o => o is C3dWire)) Wires(doc, path, tech, world, prefix);
+        }
+
+        /// <summary>
+        /// One object of a document under <paramref name="world"/> (metres), named <paramref name="name"/>: a managed object
+        /// as before; a kernel object built by the worker (R-em3d64-3a); a DISABLED operation as its operands, each an
+        /// ordinary object at this place in construction order and carried by the operation's placement (R-em3d64-4).
+        /// </summary>
+        private void Object(C3dObject obj, string name, C3dTransform world, C3dDocument doc, TechResolution tech, string prefix,
+                            string path, bool exact)
+        {
+            if (obj is C3dOperation { Enabled: false } off)
+            {
+                // The object inside takes the operation's name; a Tool keeps its own (R-em3d64-1d).
+                var carried = C3dLowering.InMetres(off.Placement.ToTransform(), doc.DbuPerMicron).Then(world);
+                bool integral = exact && off.Placement.ToTransform().IsIntegral;
+                foreach (var (_, operand) in C3dOperands.Of(off))
+                {
+                    bool inner = ReferenceEquals(operand, C3dOperands.Inner(off));
+                    Object(operand, inner ? name : prefix + operand.Name, carried, doc, tech, prefix, path, integral);
+                }
+                return;
+            }
+            if (C3dOperands.IsKernel(obj)) { KernelObject(obj, name, world, doc, tech, prefix, path, exact); return; }
+            Managed(obj, name, world, doc, tech, prefix, path, exact);
+        }
+
+        private void Managed(C3dObject obj, string name, C3dTransform world, C3dDocument doc, TechResolution tech, string prefix,
+                             string path, bool exact)
+        {
+            string techName = TechName(tech);
+            if (obj.Material is not { Length: > 0 } matName)
+            {
+                // 3D editor bugs round 2 — an object with no material yet is IGNORED by the solver, not a refusal: a
+                // half-finished design still runs. One naming a material the technology lacks stays a refusal below — a
+                // broken reference, not an unassigned object.
+                _warnings.Add(NoMaterialWarning(name));
+                Unassigned(obj, name, world, doc.DbuPerMicron, prefix, path, exact);
+                return;
+            }
+            if (tech.Tech?.FindMaterial(matName) is not { } material)
+            {
+                _refusals.Add($"'{name}' is made of '{matName}', which its technology ({techName}) does not define.");
+                Unassigned(obj, name, world, doc.DbuPerMicron, prefix, path, exact);
+                return;
+            }
+            if (Role(obj.Role, material, name) is not { } role) return;
+
+            var lowered = owner.LowerCached(obj, world, doc.DbuPerMicron);
+            if (lowered is null) return;
+            Add(obj, name, lowered, material, role, world, tech, prefix, path, exact);
+        }
+
+        /// <summary>A lowered object into the problem: its solid or sheet, material, provenance, origin and net.</summary>
+        private void Add(C3dObject obj, string name, C3dLowered lowered, TechMaterial material, Em3dRole role, C3dTransform world,
+                         TechResolution tech, string prefix, string path, bool exact)
+        {
+            string techName = TechName(tech);
+            var values = Resolve(material, out string source);
+            string key = Register(techName, material.Name, values, TechSource(tech, techName, material.Name) + source);
+
+            if (lowered.Sheet is { } g)
+            {
+                if (role != Em3dRole.Conductor)
+                {
+                    _refusals.Add($"Sheet '{name}' is made of '{material.Name}', a {role.ToString().ToLowerInvariant()}: a sheet is a " +
+                                  "conductor thin enough to be a surface, so a sheet of anything else has no meaning. Make it a " +
+                                  "solid, or give it a conducting material.");
+                    return;
+                }
+                double t = (obj as C3dSheet)?.ThicknessUm is { } um ? um * 1e-6 : 0;
+                _uses.Add((_sheets.Count, true, techName, material.Name));
+                _sheets.Add(new Em3dSheet(name, key, g.Outline, g.Holes, g.Z, t, ++_order) { Frame = g.Frame });
+            }
+            else
+            {
+                _uses.Add((_solids.Count, false, techName, material.Name));
+                _solids.Add(new Em3dSolid(name, key, role, lowered.Solid!, ++_order));
+            }
+            _provenance[name] = new C3dProvenance(prefix.TrimEnd('/'), path, name[prefix.Length..], lowered.FaceNames)
+            {
+                Exact = exact && obj.Placement.ToTransform().IsIntegral,
+                Element = prefix.Length > 0 ? world : null,
+            };
+            _walkLowering.Add(new C3dWalkStep(name, lowered.Kind));
+            _origins[name] = new Em3dObjectOrigin(role switch
+            {
+                Em3dRole.Conductor => Em3dObjectKind.Conductor, Em3dRole.Air => Em3dObjectKind.Air, _ => Em3dObjectKind.Body,
+            }, null, null, null);
+            if (role == Em3dRole.Conductor) Net(name, name);
+        }
+
+        /// <summary>
+        /// brief-em3d-64 R-em3d64-3 — a Boolean, Fillet, Chamfer or Step object, built by the geometry kernel: the Blank's
+        /// material and role; with no kernel, or a build that fails, THIS object's refusal and nothing drawn. A kept Tool
+        /// follows the result in construction order (R-em3d64-3c).
+        /// </summary>
+        private void KernelObject(C3dObject obj, string name, C3dTransform world, C3dDocument doc, TechResolution tech, string prefix,
+                                  string path, bool exact)
+        {
+            string label = $"'{name}' ({C3dOperands.Article(obj)})";
+            _capability ??= owner.Kernel.Capability;
+            if (!_capability.Available)
+            {
+                Kernel(name, GeometryKernel.NeedsKernel(label, _capability), obj, null);
+                KeptTools(obj, world, doc, tech, prefix, path, exact);
+                return;
+            }
+
+            // A tree the kernel could not mean (no Blank, a sheet as a Tool) is this object's refusal, in validation's words.
+            if (C3dValidation.OperationFindings(obj, name) is [var first, ..])
+            {
+                Kernel(name, first.Render(), obj, null);
+                return;
+            }
+
+            string techName = TechName(tech);
+            string? matName = C3dValidation.EffectiveMaterial(obj);
+            TechMaterial? material = matName is { Length: > 0 } ? tech.Tech?.FindMaterial(matName) : null;
+            if (matName is { Length: > 0 } && material is null)
+                _refusals.Add($"'{name}' is made of '{matName}', which its technology ({techName}) does not define.");
+
+            var worldUm = world with { Tx = world.Tx * 1e6, Ty = world.Ty * 1e6, Tz = world.Tz * 1e6 };
+            var tree = GeometryKernelTree.From(obj, doc.DbuPerMicron, worldUm, Path.GetDirectoryName(path));
+            var built = owner.KernelCached(tree, name);
+            Kernel(name, built.Refusal, obj, built);
+            if (built.Lowered is not { } lowered) { KeptTools(obj, world, doc, tech, prefix, path, exact); return; }
+
+            if (obj is C3dBoolean { Op: C3dBooleanOp.Unite } unite && material is not null)
+            {
+                // D11 — a Unite of different materials is allowed; the result is the Blank's, and says so.
+                var replaced = unite.Tools.Select(t => (t.Name, Material: C3dValidation.EffectiveMaterial(t)))
+                                          .Where(t => t.Material is { Length: > 0 } m && m != material.Name).ToList();
+                if (replaced.Count > 0)
+                    _notes.Add($"'{name}' unites objects of different materials, and the result is made of its Blank's, '{material.Name}': " +
+                               string.Join(", ", replaced.Select(t => $"'{t.Name}' ({t.Material})")) + $" {(replaced.Count == 1 ? "is" : "are")} " +
+                               $"'{material.Name}' in the result.");
+            }
+
+            if (matName is not { Length: > 0 })
+            {
+                _warnings.Add(NoMaterialWarning(name));
+                _unassignedSolids.Add(new Em3dSolid(name, "", Em3dRole.Dielectric, lowered.Solid!, 0));
+                _provenance[name] = new C3dProvenance(prefix.TrimEnd('/'), path, name[prefix.Length..], lowered.FaceNames)
+                {
+                    Exact = exact && obj.Placement.ToTransform().IsIntegral,
+                    Element = prefix.Length > 0 ? world : null,
+                };
+            }
+            else if (material is not null && Role(C3dValidation.EffectiveRole(obj), material, name) is { } role)
+                Add(obj, name, lowered, material, role, world, tech, prefix, path, exact);
+            KeptTools(obj, world, doc, tech, prefix, path, exact);
+        }
+
+        /// <summary>R-em3d64-3c — a Subtract's Tools with <c>KeepTools</c>: each its own object right after the result.</summary>
+        private void KeptTools(C3dObject obj, C3dTransform world, C3dDocument doc, TechResolution tech, string prefix, string path, bool exact)
+        {
+            if (obj is not C3dBoolean { Op: C3dBooleanOp.Subtract, KeepTools: true } b) return;
+            var carried = C3dLowering.InMetres(b.Placement.ToTransform(), doc.DbuPerMicron).Then(world);
+            foreach (var tool in b.Tools) Object(tool, prefix + tool.Name, carried, doc, tech, prefix, path, exact && b.Placement.ToTransform().IsIntegral);
+        }
+
+        /// <summary>A kernel object's refusal (when it has one) and its report for <c>explain</c>.</summary>
+        private void Kernel(string name, string? refusal, C3dObject obj, KernelLowered? built)
+        {
+            if (refusal is not null)
+            {
+                _kernelRefusals[name] = refusal;
+                _refusals.Add(refusal);
+            }
+            var faces = built?.Lowered?.Solid is Em3dShapeSolid k ? k.Faces.Count : 0;
+            _kernelBuilds.Add(new C3dKernelBuild(name, C3dObject.KindOf(obj), OperandTree(obj, name), built?.Built ?? false, faces,
+                                                 built?.Edges ?? 0, built?.MinRadiusM, built?.Notes ?? [], refusal));
+            if (built?.Lowered is { } l) _walkLowering.Add(new C3dWalkStep(name, $"{l.Kind} ({C3dObject.KindOf(obj)}, built by the geometry kernel)"));
+        }
+
+        /// <summary>The operand tree, one line per node: <c>Boolean Subtract 'lid'</c>, then <c>  Blank: Box</c> …</summary>
+        private static List<string> OperandTree(C3dObject obj, string name)
+        {
+            var lines = new List<string>();
+            void Walk(C3dObject o, string label, int depth)
+            {
+                string what = o switch
+                {
+                    C3dBoolean b => $"Boolean {b.Op}",
+                    C3dFillet f => $"Fillet of {string.Join(", ", f.Edges)}",
+                    C3dChamfer c => $"Chamfer of {string.Join(", ", c.Edges)}",
+                    C3dStep st => $"Step part {st.Part} of {st.File}",
+                    _ => C3dObject.KindOf(o),
+                };
+                string state = o is C3dOperation { Enabled: false } ? " (disabled)" : "";
+                string material = o.Material is { Length: > 0 } m ? $", {m}" : "";
+                lines.Add($"{new string(' ', 2 * depth)}{label}{what}{state}{material}");
+                foreach (var (prefix, child) in C3dOperands.Of(o))
+                    Walk(child, (ReferenceEquals(child, C3dOperands.Inner(o)) ? prefix.TrimEnd('.') : $"Tool '{child.Name}'") + ": ", depth + 1);
+            }
+            Walk(obj, $"'{name}': ", 0);
+            return lines;
         }
 
         /// <summary>3D editor bugs round 1 — an object refused for its material, lowered for the editor alone (see
@@ -552,7 +808,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null)
                 _unassignedSheets.Add(new Em3dSheet(name, "", g.Outline, g.Holes, g.Z, t, 0) { Frame = g.Frame });
             }
             else _unassignedSolids.Add(new Em3dSolid(name, "", Em3dRole.Dielectric, lowered.Solid!, 0));
-            _provenance[name] = new C3dProvenance(prefix.TrimEnd('/'), path, obj.Name, lowered.FaceNames)
+            _provenance[name] = new C3dProvenance(prefix.TrimEnd('/'), path, name[prefix.Length..], lowered.FaceNames)
             {
                 Exact = exact && obj.Placement.ToTransform().IsIntegral,
                 Element = prefix.Length > 0 ? world : null,
@@ -828,9 +1084,9 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null)
         /// conductor, one with εr a dielectric, and <c>Air</c> is air. σ AND εr with no Role is refused: whether a
         /// lossy dielectric is a conductor is exactly the call the user must make.
         /// </summary>
-        private Em3dRole? Role(C3dObject obj, TechMaterial m, string name)
+        private Em3dRole? Role(Em3dRole? stated, TechMaterial m, string name)
         {
-            if (obj.Role is { } stated) return stated;
+            if (stated is { } s) return s;
             // brief-em3d-53 §4 — the material's own answer comes from the one rule the editor's Role column shows.
             switch (C3dMaterialRole.Implied(m))
             {

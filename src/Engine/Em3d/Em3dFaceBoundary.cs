@@ -111,6 +111,7 @@ public static class Em3dFaceGeometry
                                   .. e.Holes.SelectMany((h, i) => Enumerable.Range(0, h.Count).Select(k => $"hole{i}.side{k}"))],
         Em3dCylinder => ["bottom", "top", "side"],
         Em3dPolyhedron ph => [.. ph.Faces.Select(f => f.Name)],
+        Em3dShapeSolid k => [.. k.Faces.Select(f => f.Name)],
         _ => [],
     };
 
@@ -210,6 +211,28 @@ public static class Em3dFaceGeometry
                 if (list.Count > 0) return list;
                 break;
             }
+            case Em3dShapeSolid k:
+            {
+                // brief-em3d-64 — a kernel face is recovered by name, every piece of it (zmax covers zmax#1 and zmax#2),
+                // as the kernel tessellated it: a flat face exactly, one planar piece per triangle.
+                var list = new List<Em3dFacePolygon>();
+                foreach (var f in k.Faces.Where(f => f.Name == face || IsPiece(face, f.Name)))
+                {
+                    if (f.Kind != "plane")
+                    {
+                        why = $"it is a curved face (a {f.Kind}), and a boundary is placed on a flat face";
+                        return null;
+                    }
+                    for (int t = f.FirstTriangle; t < f.FirstTriangle + f.TriangleCount; t++)
+                    {
+                        var tri = k.Display.Triangles[t];
+                        Point3 a = k.Display.Vertices[tri.A], b = k.Display.Vertices[tri.B], c = k.Display.Vertices[tri.C];
+                        list.Add(new Em3dFacePolygon([a, b, c], [], Em3dFacePolygon.Unit(Em3dFacePolygon.Cross(Em3dFacePolygon.Sub(b, a), Em3dFacePolygon.Sub(c, a)))));
+                    }
+                }
+                if (list.Count > 0) return list;
+                break;
+            }
             default:
                 why = "it has no named faces";
                 return null;
@@ -217,6 +240,11 @@ public static class Em3dFaceGeometry
         why = $"it has no face named '{face}'";
         return null;
     }
+
+    /// <summary>The fold rule: <paramref name="candidate"/> is a piece of <paramref name="face"/> when it is <c>face#n</c>.</summary>
+    public static bool IsPiece(string face, string candidate)
+        => candidate.Length > face.Length + 1 && candidate.StartsWith(face, StringComparison.Ordinal) && candidate[face.Length] == '#'
+           && candidate.AsSpan(face.Length + 1).IndexOfAnyExceptInRange('0', '9') < 0;
 
     /// <summary>Two unit vectors perpendicular to <paramref name="a"/> and to each other — Em3dTessellation's frame.</summary>
     private static (Point3 U, Point3 W) Perpendiculars(Point3 a)

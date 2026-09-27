@@ -117,13 +117,18 @@ public sealed partial class C3dPlacement : IC3dBindable
 [JsonDerivedType(typeof(C3dPolyline),   "Polyline")]
 [JsonDerivedType(typeof(C3dPolyhedron), "Polyhedron")]
 [JsonDerivedType(typeof(C3dWire),       "Wire")]
+[JsonDerivedType(typeof(C3dBoolean),    "Boolean")]
+[JsonDerivedType(typeof(C3dFillet),     "Fillet")]
+[JsonDerivedType(typeof(C3dChamfer),    "Chamfer")]
+[JsonDerivedType(typeof(C3dStep),       "Step")]
 public abstract class C3dObject : IC3dBindable
 {
     /// <summary>brief-em3d-51 — the object's dimension fields that hold an expression (<see cref="C3dBindings"/>).</summary>
     [JsonIgnore] public Dictionary<string, C3dExpr?[]>? Exprs { get; set; }
 
     /// <summary>Unique in the document, validated as a cell name is; <c>airbox</c> is reserved (the air
-    /// box's faces are <c>airbox/xmin</c> …).</summary>
+    /// box's faces are <c>airbox/xmin</c> …). brief-em3d-64 R-em3d64-1d — an operation's Blank or Target has none: the
+    /// operation carries it, so the key is left out of the file when it is empty.</summary>
     [JsonPropertyOrder(-10)]
     public string Name { get; set; } = "";
 
@@ -353,6 +358,125 @@ public sealed class C3dWireArray : IC3dBindable
 
     /// <summary>Element <paramref name="k"/>'s offset from the drawn wire.</summary>
     public C3dPoint3 Offset(long k) => new(k * Pitch.X, k * Pitch.Y, k * Pitch.Z);
+}
+
+// ── Kernel operations (brief-em3d-64) ─────────────────────────────────────────────────────────
+//
+// A SMALL TREE PER OBJECT, NOT A GLOBAL HISTORY (overview §1f). Each of these owns its operands inline and is evaluated
+// bottom-up by the geometry worker; the top-level list keeps construction order and precedence exactly as before.
+//
+// THE WRAPPER TAKES THE NAME (R-em3d64-1d). A Boolean IS its Blank to the rest of the document, a Fillet or Chamfer its
+// Target: the object inside carries no Name, so a port or a boundary put on `lid` before anything was subtracted from it
+// is still on `lid` afterwards, with nothing rewritten. Tools keep their own names, unique across the whole document.
+
+/// <summary>What a <see cref="C3dBoolean"/> does with its Tools.</summary>
+public enum C3dBooleanOp { Subtract, Unite, Intersect }
+
+/// <summary>The operations: a <see cref="C3dBoolean"/>, <see cref="C3dFillet"/> or <see cref="C3dChamfer"/>. <see cref="Enabled"/>
+/// false means as if the operation were not there (R-em3d64-4).</summary>
+public abstract class C3dOperation : C3dObject
+{
+    /// <summary>Written only when false. Disabled, the operands elaborate as ordinary objects.</summary>
+    [DefaultValue(true)]
+    [JsonPropertyOrder(1)]
+    public bool Enabled { get; set; } = true;
+}
+
+/// <summary>
+/// <see cref="Op"/> of one <see cref="Blank"/> and one or more <see cref="Tools"/> (R-em3d64-1a). It takes the Blank's
+/// name, material and role; the Blank stores none of its own. The result's faces: the Blank's keep their bare names,
+/// a Tool's are <c>&lt;tool&gt;:&lt;face&gt;</c>, and a face the operation split is <c>zmax#1</c>, <c>zmax#2</c> — a
+/// reference to <c>zmax</c> covering every piece.
+/// </summary>
+public sealed class C3dBoolean : C3dOperation
+{
+    [JsonPropertyOrder(0)]
+    public C3dBooleanOp Op { get; set; }
+
+    /// <summary>With <c>Subtract</c>: each Tool also elaborates as its own solid, right after the result, with its own
+    /// material — a dielectric fill in a bore stated directly (R-em3d64-3c).</summary>
+    [JsonPropertyOrder(2)]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool KeepTools { get; set; }
+
+    [JsonPropertyOrder(3)]
+    public C3dObject? Blank { get; set; }
+
+    [JsonPropertyOrder(4)]
+    public List<C3dObject> Tools { get; set; } = [];
+
+    /// <summary>The Blank's faces bare, then each Tool's as <c>&lt;tool&gt;:&lt;face&gt;</c> — what the result may have
+    /// before split pieces and deleted faces are known, which only the kernel knows.</summary>
+    public override IReadOnlyList<string> FaceNames() =>
+        [.. Blank?.FaceNames() ?? [], .. Tools.SelectMany(t => t.FaceNames().Select(f => t.Name + ":" + f))];
+}
+
+/// <summary>A <see cref="Target"/> with named <see cref="Edges"/> rounded by <see cref="Radius"/>. It takes the target's name.</summary>
+public sealed class C3dFillet : C3dOperation
+{
+    /// <summary>DBU, or an expression; positive.</summary>
+    [JsonPropertyOrder(0)]
+    public long Radius { get; set; }
+
+    /// <summary>Edges of the target by NAME — the two faces they separate, <c>xmax|zmax</c> (R-em3d64-2b).</summary>
+    [JsonPropertyOrder(0)]
+    public List<string> Edges { get; set; } = [];
+
+    [JsonPropertyOrder(3)]
+    public C3dObject? Target { get; set; }
+
+    /// <summary>The target's faces, and <c>fillet(&lt;edge&gt;)</c> for each listed edge.</summary>
+    public override IReadOnlyList<string> FaceNames() =>
+        [.. Target?.FaceNames() ?? [], .. Edges.Select(e => $"fillet({e})")];
+}
+
+/// <summary>A <see cref="Target"/> with named <see cref="Edges"/> cut by <see cref="Distance"/> (and, when set,
+/// <see cref="Distance2"/> along the edge's second face). It takes the target's name.</summary>
+public sealed class C3dChamfer : C3dOperation
+{
+    [JsonPropertyOrder(0)]
+    public long Distance { get; set; }
+
+    /// <summary>The distance along the edge's second face; omitted (0) for a symmetric chamfer.</summary>
+    [JsonPropertyOrder(0)]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public long Distance2 { get; set; }
+
+    [JsonPropertyOrder(0)]
+    public List<string> Edges { get; set; } = [];
+
+    [JsonPropertyOrder(3)]
+    public C3dObject? Target { get; set; }
+
+    public override IReadOnlyList<string> FaceNames() =>
+        [.. Target?.FaceNames() ?? [], .. Edges.Select(e => $"chamfer({e})")];
+}
+
+/// <summary>
+/// ONE solid part of a STEP file in the cell's <c>3d/</c> folder (brief 68 owns every field's meaning). The part's
+/// assembly transform is applied by the worker from <see cref="Part"/>, never written into the placement, which starts
+/// at identity — so an imported part lands exactly where its file puts it. Its faces are <c>face&lt;n&gt;</c>, meaningful
+/// for the recorded <see cref="Hash"/>.
+/// </summary>
+public sealed class C3dStep : C3dObject
+{
+    /// <summary>Relative to the <c>.c3d</c>, inside the cell's <c>3d/</c> folder.</summary>
+    public string File { get; set; } = "";
+
+    /// <summary>The part's occurrence path in the file's assembly, as the worker's STEP reader reports it (<c>1/2</c>).</summary>
+    public string Part { get; set; } = "";
+
+    /// <summary><c>sha256:&lt;hex&gt;</c> of the file's bytes.</summary>
+    public string Hash { get; set; } = "";
+
+    /// <summary>The file's own length unit, recorded for <c>explain</c>.</summary>
+    public string? Unit { get; set; }
+
+    /// <summary>Where the file was imported from, for <i>Reload from Source</i>.</summary>
+    public string? SourcePath { get; set; }
+
+    /// <summary>Known only once the kernel has read the part.</summary>
+    public override IReadOnlyList<string> FaceNames() => [];
 }
 
 // ── Instances ─────────────────────────────────────────────────────────────────────────────────

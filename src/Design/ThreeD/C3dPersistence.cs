@@ -80,6 +80,19 @@ public static class C3dPersistence
         foreach (var p in info.Properties)
         {
             if (p.IsRequired || p.IsExtensionData) continue;
+            // brief-em3d-64 R-em3d64-1b — a switch whose default is not its type's (Enabled, true) is written only when it
+            // differs; an operand's empty Name is left out (R-em3d64-1d).
+            if (p.AttributeProvider?.GetCustomAttributes(typeof(System.ComponentModel.DefaultValueAttribute), true) is [System.ComponentModel.DefaultValueAttribute dv, ..])
+            {
+                object? d = dv.Value;
+                p.ShouldSerialize = (_, v) => !Equals(v, d);
+                continue;
+            }
+            if (p.Name == nameof(C3dObject.Name) && typeof(C3dObject).IsAssignableFrom(info.Type))
+            {
+                p.ShouldSerialize = static (_, v) => v is string { Length: > 0 };
+                continue;
+            }
             if (typeof(ICollection).IsAssignableFrom(p.PropertyType))
                 p.ShouldSerialize = static (_, v) => v is ICollection { Count: > 0 };
             else if (p.PropertyType == typeof(C3dPlacement))
@@ -145,7 +158,7 @@ public static class C3dPersistence
     /// will recompute would change what the file means. A negative size from an expression is refused at resolution.</para>
     public static void Normalize(C3dDocument doc)
     {
-        foreach (var o in doc.Objects)
+        foreach (var o in doc.Objects.SelectMany(C3dOperands.SelfAndDescendants))
         {
             if (C3dBindings.HasAny(o)) continue;
             switch (o)
@@ -222,14 +235,7 @@ public static class C3dPersistence
                 {
                     if (!o.TryGetProperty("$type", out var kind) || kind.ValueKind != JsonValueKind.String)
                         throw new C3dReadException(C3dDiagnostics.MissingKind(index));
-
-                    string k = kind.GetString() ?? "";
-                    if (!known.Contains(k))
-                    {
-                        string name = TryGet(o, nameof(C3dObject.Name), out var n) && n.ValueKind == JsonValueKind.String
-                            ? n.GetString() ?? "" : "";
-                        unknown.Add(name.Length > 0 ? $"object '{name}' (a \"{k}\")" : $"object {index} (a \"{k}\")");
-                    }
+                    Scan(o, kind.GetString() ?? "", $"object {index}", known, unknown);
                 }
                 index++;
             }
@@ -237,6 +243,36 @@ public static class C3dPersistence
             if (unknown.Count > 0)
                 throw new C3dReadException(C3dDiagnostics.UnknownKinds(
                     string.Join(", ", unknown), string.Join(", ", C3dObject.Kinds.Select(k => k.Name))));
+        }
+    }
+
+    /// <summary>
+    /// One object's kind, and — brief-em3d-64 R-em3d64-1f — every operand inside it: an unknown kind nested in a boolean is
+    /// named as clearly as one at the top. An operand is named by its own Name, or by where it sits (<c>the Blank of 'lid'</c>).
+    /// </summary>
+    private static void Scan(JsonElement o, string kind, string where, HashSet<string> known, List<string> unknown)
+    {
+        string name = TryGet(o, nameof(C3dObject.Name), out var n) && n.ValueKind == JsonValueKind.String ? n.GetString() ?? "" : "";
+        string label = name.Length > 0 ? $"object '{name}'" : where;
+        if (!known.Contains(kind))
+        {
+            unknown.Add($"{label} (a \"{kind}\")");
+            return;
+        }
+        void Operand(JsonElement e, string at)
+        {
+            if (e.ValueKind != JsonValueKind.Object) return;
+            if (!e.TryGetProperty("$type", out var k) || k.ValueKind != JsonValueKind.String)
+                throw new C3dReadException(C3dDiagnostics.MissingOperandKind(at));
+            Scan(e, k.GetString() ?? "", at, known, unknown);
+        }
+        string owner = name.Length > 0 ? $"'{name}'" : where;
+        foreach (string key in (string[])[nameof(C3dBoolean.Blank), nameof(C3dFillet.Target)])
+            if (TryGet(o, key, out var e)) Operand(e, $"the {key} of {owner}");
+        if (TryGet(o, nameof(C3dBoolean.Tools), out var tools) && tools.ValueKind == JsonValueKind.Array)
+        {
+            int k = 0;
+            foreach (var t in tools.EnumerateArray()) Operand(t, $"tool {k++} of {owner}");
         }
     }
 

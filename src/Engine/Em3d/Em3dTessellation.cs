@@ -69,6 +69,10 @@ public static class Em3dTessellation
                 break;
             case Em3dExtrudedPolygon e:    b.Extrusion(e.Outline, e.Holes, e.ZBottom, e.ZTop); break;
             case Em3dPolyhedron ph:        b.Polyhedron(ph); break;
+            // brief-em3d-64 — the kernel's own tessellation, made when it was built; only the solid's name is ours.
+            case Em3dShapeSolid k:
+                return k.Display.Triangles.All(t => t.Solid == solid.Name) ? k.Display
+                    : new Em3dTriangleMesh(k.Display.Vertices, [.. k.Display.Triangles.Select(t => t with { Solid = solid.Name })]);
             default:
                 throw new ArgumentOutOfRangeException(nameof(solid), solid.Primitive.GetType().Name,
                                                       "unknown primitive");

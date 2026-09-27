@@ -394,6 +394,10 @@ public static class C3dResolver
                     r.Warnings.Add(string.Create(CultureInfo.InvariantCulture,
                         $"'{f.Item}' {f.Path} = {f.Expr.Expr} is {si:0.######} m, above 1 m. A literal in an expression that references a name with its own unit is in METRES (var-unit-wins), so `2*w + 5` adds five metres."));
                 if (rounded < 0 && IsSize(f)) return string.Create(CultureInfo.InvariantCulture, $"it is {rounded:0} DBU; a size is positive.");
+                // brief-em3d-64 R-em3d64-1c — a fillet's radius and a chamfer's distances round or cut something: zero is as
+                // meaningless as negative, and the kernel would refuse it far from the field that caused it.
+                if (rounded <= 0 && (f.Spec.Owner == typeof(C3dFillet) || f.Spec.Owner == typeof(C3dChamfer)))
+                    return string.Create(CultureInfo.InvariantCulture, $"it is {rounded:0} DBU; a {(f.Spec.Owner == typeof(C3dFillet) ? "fillet's radius" : "chamfer's distance")} is positive.");
                 value = rounded;
                 break;
             case C3dFieldKind.Angle:

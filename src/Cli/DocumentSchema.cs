@@ -532,10 +532,61 @@ internal static class DocumentSchema
             x-extent on each side; never both on one face. Palace finds a face's surfaces by its
             bounding box and counts them exactly: a neighbour's face lying in the same plane and
             overlapping it is refused, never merged. A curved face (a cylinder's side) is refused.
+          * OPERATIONS are built by OpenCASCADE, which ships with circuitRF (Settings ▸ 3D EM says
+            whether this installation has it). A Boolean is Op (Subtract,
+            Unite, Intersect) of one Blank and one or more Tools, owned inline; a Fillet rounds named
+            Edges of its Target by Radius; a Chamfer cuts them by Distance (and Distance2 along the
+            edge's second face); a Step is ONE solid part of a STEP file in the cell's 3d folder:
+
+                { "$type": "Boolean", "Name": "lid", "Op": "Subtract",
+                  "Blank": { "$type": "Box", "Material": "Kovar",
+                             "Min": [0, 0, 500000], "Size": [4000000, 3000000, 250000] },
+                  "Tools": [ { "$type": "Cylinder", "Name": "bore", "Base": [2000000, 1500000, 400000],
+                               "Length": 500000, "Radius": 300000 } ] }
+                { "$type": "Fillet", "Name": "lid", "Radius": 50000, "Edges": ["bore:side|zmax"],
+                  "Target": { "$type": "Boolean", "Op": "Subtract", "Blank": …, "Tools": [ … ] } }
+                { "$type": "Chamfer", "Name": "pin", "Distance": 20000, "Edges": ["side|top"],
+                  "Target": { "$type": "Cylinder", … } }
+                { "$type": "Step", "Name": "shell", "Material": "Brass", "File": "sma-body.step",
+                  "Part": "1/2", "Hash": "sha256:…", "Unit": "inch" }
+
+            THE WRAPPER TAKES THE NAME: a Boolean is its Blank to the rest of the document, a Fillet or
+            Chamfer its Target — the object inside has NO Name (writing one is a check error), and its
+            Material and Role are the result's (an operation stating its own is a check error). Tools
+            keep their own names, unique across the whole document at every depth. So a port or a
+            boundary put on lid before anything was subtracted from it is still on lid afterwards.
+            Operands are solids only — Box, Prism, Cylinder, Polyhedron, Boolean, Fillet, Chamfer,
+            Step; a Sheet, Polyline or Wire is refused. Radius, Distance and Distance2 are dimensions,
+            expressions allowed, and must be positive. A Placement on an operation moves its whole
+            result, after each operand's own.
+          * The RESULT's faces: the Blank's keep their bare names (zmax), a Tool's are <tool>:<face>
+            (bore:side; a nested Tool's <tool>:<inner>:<face>), a face the operation split is zmax#1,
+            zmax#2 — numbered by centroid in the object's own frame, x then y then z — and a reference
+            to zmax covers every piece. Edges are named by the two faces they separate, sorted and
+            joined by '|' (xmax|zmax, bore:side|zmax); two faces sharing more than one edge give each
+            a third field, its number (trench:side|zmax|1). A seam is not named. A fillet's new faces
+            are fillet(<edge>), a chamfer's chamfer(<edge>), for every edge the kernel rounded. A Step
+            part's faces are face<n> in the part's own order, meaningful for its Hash: a file whose
+            bytes changed outside circuitRF is a check error naming Reload from Source.
+          * "Enabled": false (written only then) makes an operation as if it were not there: a
+            disabled Boolean elaborates its Blank under the Boolean's name and each Tool under its
+            own, at the Boolean's place in the list; a disabled Fillet or Chamfer its Target
+            unrounded. A reference to (lid, bore:side) then lands on (bore, side), and (lid, zmax) on
+            the Blank — nothing in the file changes. "KeepTools": true on a Subtract also elaborates
+            each Tool as its own solid right after the result, with its own material: a dielectric
+            fill in a bore. A Unite of different materials takes the Blank's, and the elaboration
+            says which it replaced. An operation the kernel cannot build (a fillet too large, an empty
+            result) is refused by name and the rest of the document still elaborates.
+          * WITHOUT OPENCASCADE a 3D view that holds any Boolean, Fillet, Chamfer or Step —
+            at any depth, ENABLED OR NOT — is refused on open with the reason and the action; `check`
+            reports one error per such object and exits 1, and `em` refuses before writing anything.
+            A 3D view with none opens and runs exactly as before. Palace and openEMS cannot yet be
+            given a kernel solid, and refuse one by name.
           * A NAMED DIMENSION may hold an expression instead of a number: Min and Size (box,
             rectangle), Offset, Height and Shear (prism, sheet, polyline), Base, Length and Radius
             (cylinder), ThicknessUm, a placement's Origin and each Rotate angle, an array's Counts and
-            Pitch, a port's Rect, a wire's DiameterUm and its Array's Count and Pitch. It is an object
+            Pitch, a port's Rect, a wire's DiameterUm and its Array's Count and Pitch, a Fillet's Radius
+            and a Chamfer's Distance and Distance2. It is an object
             that ALWAYS carries the unit it
             was typed in, component by component:
 

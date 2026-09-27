@@ -987,3 +987,6 @@ src/Design/ThreeD/Occ/GeometryKernelSession.cs|The request was stopped.
 src/Design/ThreeD/Occ/GeometryKernelSession.cs|{path} did not start.
 src/Design/ThreeD/Occ/GeometryKernelTree.cs|'{obj.Name}' is a {C3dObject.KindOf(obj).ToLowerInvariant()}, which is not a solid the geometry kernel builds.
 src/Design/ThreeD/Occ/GeometryKernelTree.cs|A geometry tree holds finite numbers only.
+src/Design/ThreeD/Occ/GeometryKernelTree.cs|The boolean '{obj.Name}' has no Blank.
+src/Design/ThreeD/Occ/GeometryKernelTree.cs|The chamfer '{obj.Name}' has no Target.
+src/Design/ThreeD/Occ/GeometryKernelTree.cs|The fillet '{obj.Name}' has no Target.

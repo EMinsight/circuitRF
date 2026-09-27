@@ -72,6 +72,13 @@ public partial class SettingsView : Window
         Activated += OnActivatedRefresh;
     }
 
+    /// <summary>brief-em3d-64 R-em3d64-5b — opens on the tab whose header is <paramref name="header"/> (the refusal on open's
+    /// <i>Open Settings ▸ 3D EM</i>); an unknown header leaves the first tab selected.</summary>
+    public void SelectTab(string header)
+    {
+        if (Tabs.Items.OfType<TabItem>().FirstOrDefault(t => t.Header as string == header) is { } tab) Tabs.SelectedItem = tab;
+    }
+
     /// <summary>
     /// Re-reads what depends on WHICH workspace is open. Only the Revision Control tab does — and
     /// re-reading is also how a change made in another window, or by hand, reaches this dialog: the

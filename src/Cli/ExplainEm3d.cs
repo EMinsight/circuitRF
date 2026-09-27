@@ -2,6 +2,7 @@ using System.Globalization;
 using CircuitRF.Design.Em3d;
 using CircuitRF.Design.Layout.Em;
 using CircuitRF.Design.Layout.Em3d;
+using CircuitRF.Design.ThreeD.Occ;
 using CircuitRF.Engine.Em3d;
 using CircuitRF.Render;
 using RfCore.Export;
@@ -263,11 +264,37 @@ internal static class ExplainEm3d
 
     // ── the human report ─────────────────────────────────────────────────────────────────────
 
+    /// <summary>brief-em3d-64 R-em3d64-6b — the kernel, and each object it built, as the elaboration recorded them. Every
+    /// word about an absent kernel is <see cref="GeometryKernel"/>'s own (R-em3d63-3b).</summary>
+    public static Em3dGeometryKernelJson Kernel(CircuitRF.Design.ThreeD.C3dElaboration e)
+    {
+        var cap = GeometryKernel.Shared.Capability;
+        return new Em3dGeometryKernelJson(cap.Available, cap.HowFound is { Length: > 0 } h ? h : null, cap.WorkerPath, cap.OcctVersion,
+            cap.Available ? null : $"{cap.Reason} {cap.Action}",
+            [.. e.KernelBuilds.Select(k => new Em3dKernelObjectJson(k.Name, k.Kind, k.Operands, k.Built ? "built" : "cache",
+                                                                    k.Faces, k.Edges, k.MinRadiusM, k.Notes, k.Refusal))]);
+    }
+
+    private static void PrintKernel(Em3dGeometryKernelJson k)
+    {
+        Console.WriteLine($"  {GeometryKernel.SettingsTitle.ToLowerInvariant()}  " +
+                          (k.Available ? $"Open CASCADE Technology {k.OcctVersion}, {k.HowFound} ({k.WorkerPath})" : k.Reason));
+        foreach (var o in k.Objects)
+        {
+            foreach (string line in o.Operands) Console.WriteLine($"    {line}");
+            if (o.Refusal is { } why) { Console.WriteLine($"      refused: {why}"); continue; }
+            string radius = o.MinRadiusM is { } r ? $", smallest radius {Em3dSectionScene.FormatLength(r)}" : ", every face flat";
+            Console.WriteLine($"      {(o.Build == "built" ? "built" : "from the cache")}: {o.Faces} faces, {o.Edges} edges{radius}");
+            foreach (string n in o.Notes) Console.WriteLine($"      note: {n}");
+        }
+    }
+
     public static void Print(ExplainEm3dJson r)
     {
         static string L(double m) => Em3dSectionScene.FormatLength(m);
         static string G(double v) => v.ToString("G4", CultureInfo.InvariantCulture);
 
+        if (r.GeometryKernel is { } kernel) PrintKernel(kernel);
         Console.WriteLine($"  3D setup     solver {r.Solver}");
         if (r.Refusal is { } refusal)
         {
@@ -420,6 +447,7 @@ internal static class ExplainEm3d
         Em3dSphere          => "sphere",
         Em3dTruncatedSphere => "truncated-sphere",
         Em3dPolyhedron      => "polyhedron",
+        Em3dShapeSolid      => "kernel-solid",
         _                   => p.GetType().Name,
     };
 

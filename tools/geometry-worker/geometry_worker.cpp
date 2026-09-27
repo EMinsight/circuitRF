@@ -55,7 +55,9 @@
 
 #include <BRepAdaptor_Curve.hxx>
 #include <BRepAdaptor_Surface.hxx>
+#include <BRepAlgoAPI_Common.hxx>
 #include <BRepAlgoAPI_Cut.hxx>
+#include <BRepAlgoAPI_Fuse.hxx>
 #include <BRepBndLib.hxx>
 #include <BRepBuilderAPI_MakeEdge.hxx>
 #include <BRepBuilderAPI_MakeFace.hxx>
@@ -66,6 +68,7 @@
 #include <BRepBuilderAPI_Sewing.hxx>
 #include <BRepBuilderAPI_Transform.hxx>
 #include <BRepCheck_Analyzer.hxx>
+#include <BRepFilletAPI_MakeChamfer.hxx>
 #include <BRepFilletAPI_MakeFillet.hxx>
 #include <BRepGProp.hxx>
 #include <BRepLProp_CLProps.hxx>
@@ -624,14 +627,36 @@ static Box6 Tight(const TopoDS_Shape& s)
   return r;
 }
 
-// A deterministic, geometric order -- by tight box, lexicographic (brief 61 Q7: never OCCT's list order).
-static bool GeoLess(const TopoDS_Shape& a, const TopoDS_Shape& b)
+// The order split pieces and repeated edges are numbered in (brief 64 section 2d): by centroid in the
+// OBJECT'S OWN frame -- before its placement, so moving or rotating it never renumbers -- compared x,
+// then y, then z, each rounded to 1 nm, so the order never depends on the last bit of a double. Brief
+// 61 Q7: never OCCT's list order, which it measured to differ between runs of one build.
+using GeoKey = std::array<long long, 3>;
+
+static GeoKey CentroidKey(const TopoDS_Shape& s, const gp_Trsf& toOwn)
 {
-  Box6 p = Tight(a), q = Tight(b);
-  std::array<double, 6> u{p.x0, p.y0, p.z0, p.x1, p.y1, p.z1}, v{q.x0, q.y0, q.z0, q.x1, q.y1, q.z1};
-  for (int i = 0; i < 6; ++i)
-    if (std::abs(u[i] - v[i]) > 1e-6) return u[i] < v[i];
-  return false;
+  GProp_GProps p;
+  if (s.ShapeType() == TopAbs_EDGE) BRepGProp::LinearProperties(s, p);
+  else BRepGProp::SurfaceProperties(s, p);
+  gp_Pnt c = p.CentreOfMass();
+  if (!(p.Mass() > 0))
+  {
+    Box6 b = Tight(s);
+    c = gp_Pnt((b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2, (b.z0 + b.z1) / 2);
+  }
+  c.Transform(toOwn);
+  return {std::llround(c.X() * 1000), std::llround(c.Y() * 1000), std::llround(c.Z() * 1000)};  // um -> nm
+}
+
+template <class T>
+static void SortByCentroid(std::vector<T>& list, const gp_Trsf& toOwn, const TopoDS_Shape& (*shapeOf)(const T&))
+{
+  std::vector<std::pair<GeoKey, size_t>> keys;
+  for (size_t i = 0; i < list.size(); ++i) keys.push_back({CentroidKey(shapeOf(list[i]), toOwn), i});
+  std::stable_sort(keys.begin(), keys.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+  std::vector<T> sorted;
+  for (auto& [k, i] : keys) sorted.push_back(list[i]);
+  list = sorted;
 }
 
 // The B-rep hand-off: format version 1 (read by every OCCT, and by the one inside Gmsh) and no
@@ -652,6 +677,7 @@ struct Held
 {
   TopoDS_Shape shape;
   std::vector<std::string> faceNames;  // by face index, TopExp::MapShapes order
+  gp_Trsf toOwn;                       // world -> the root object's own frame (brief 64 section 2d's numbering frame)
 };
 
 static std::map<std::string, Held> g_shapes;
@@ -673,6 +699,7 @@ struct Named
 {
   TopoDS_Shape shape;
   std::vector<std::pair<TopoDS_Shape, std::string>> faces;
+  gp_Trsf toOwn;  // identity while a node is built in its own frame; its transform's inverse once carried by it
 };
 
 struct NodeReader
@@ -930,6 +957,279 @@ static Named BuildPolyhedron(const NodeReader& r, const std::vector<std::string>
   return n;
 }
 
+
+// ------------------------------------------------------------------------------------------------
+// edges by name (overview section 1g, as brief 61 Q7 corrected it; brief 64 section 2b)
+// ------------------------------------------------------------------------------------------------
+
+// A feature edge: the edge, its name, and the two faces it separates (their names sorted, and shapes).
+struct NamedEdge
+{
+  TopoDS_Edge edge;
+  std::string name;
+  std::array<std::string, 2> faceNames;
+  std::array<TopoDS_Face, 2> faces;
+};
+
+static const TopoDS_Shape& EdgeOf(const NamedEdge& e) { return e.edge; }
+
+// Edges are named by the two faces they separate, sorted and joined by '|'; where a pair bounds more
+// than one edge a third field numbers them in section 2d's order. A seam -- a face meeting itself --
+// and a degenerate edge are not feature edges and are left out.
+static std::vector<NamedEdge> NameEdges(const TopoDS_Shape& shape, const std::vector<std::string>& faceNames, const gp_Trsf& toOwn)
+{
+  Shapes faces;
+  TopExp::MapShapes(shape, TopAbs_FACE, faces);
+  Ancestors anc;
+  TopExp::MapShapesAndAncestors(shape, TopAbs_EDGE, TopAbs_FACE, anc);
+  std::map<std::string, std::vector<NamedEdge>> byPair;
+  for (int i = 1; i <= anc.Extent(); ++i)
+  {
+    TopoDS_Edge e = TopoDS::Edge(anc.FindKey(i));
+    if (BRep_Tool::Degenerated(e)) continue;
+    Shapes distinct;
+    for (const TopoDS_Shape& f : anc(i)) distinct.Add(f);
+    if (distinct.Extent() != 2) continue;  // a seam (one face) or a non-manifold edge
+    NamedEdge ne;
+    ne.edge = e;
+    ne.faces = {TopoDS::Face(distinct(1)), TopoDS::Face(distinct(2))};
+    ne.faceNames = {faceNames[faces.FindIndex(distinct(1)) - 1], faceNames[faces.FindIndex(distinct(2)) - 1]};
+    if (ne.faceNames[1] < ne.faceNames[0])
+    {
+      std::swap(ne.faceNames[0], ne.faceNames[1]);
+      std::swap(ne.faces[0], ne.faces[1]);
+    }
+    byPair[ne.faceNames[0] + "|" + ne.faceNames[1]].push_back(ne);
+  }
+  std::vector<NamedEdge> out;
+  for (auto& [key, list] : byPair)
+  {
+    SortByCentroid(list, toOwn, &EdgeOf);
+    for (size_t k = 0; k < list.size(); ++k)
+    {
+      list[k].name = list.size() > 1 ? key + "|" + std::to_string(k + 1) : key;
+      out.push_back(list[k]);
+    }
+  }
+  return out;
+}
+
+// ------------------------------------------------------------------------------------------------
+// operation nodes (brief 64): boolean, fillet, chamfer, step -- named from OCCT's own history
+// ------------------------------------------------------------------------------------------------
+
+static Named BuildNode(const Json& node);
+static Held Hold(const Named& n);
+
+// The name before any piece number: "zmax#2" -> "zmax".
+static std::string BaseName(const std::string& n)
+{
+  size_t h = n.find('#');
+  return h == std::string::npos ? n : n.substr(0, h);
+}
+
+using FacePiece = std::pair<TopoDS_Shape, std::string>;
+static const TopoDS_Shape& PieceOf(const FacePiece& p) { return p.first; }
+
+// Gives every face of an operation's RESULT its name. `claims` are (source face, name) in priority
+// order -- the blank's before a tool's -- and `history` maps a source face to what became of it. A
+// face of the result keeps the first name that claims it. Then every base name held by more than one
+// face is numbered #1..#n in section 2d's order: the pieces of a split face, including a face an
+// operand had already split, which is renumbered with its siblings rather than suffixed twice.
+template <class Op>
+static Named NameResult(const TopoDS_Shape& result, const std::vector<FacePiece>& claims, Op& history)
+{
+  Shapes faces;
+  TopExp::MapShapes(result, TopAbs_FACE, faces);
+  std::vector<std::string> nameOf(faces.Extent());
+  auto claim = [&](const TopoDS_Shape& f, const std::string& nm) {
+    int i = faces.FindIndex(f);
+    if (i > 0 && nameOf[i - 1].empty()) nameOf[i - 1] = BaseName(nm);
+  };
+  for (const auto& [f, nm] : claims)
+  {
+    if (history.IsDeleted(f)) continue;
+    const NCollection_List<TopoDS_Shape>& mod = history.Modified(f);
+    if (mod.IsEmpty()) claim(f, nm);
+    else
+      for (const TopoDS_Shape& g : mod) claim(g, nm);
+  }
+  Named n{result, {}, gp_Trsf()};
+  std::map<std::string, std::vector<FacePiece>> byBase;
+  for (int i = 1; i <= faces.Extent(); ++i)
+    if (!nameOf[i - 1].empty()) byBase[nameOf[i - 1]].push_back({faces(i), nameOf[i - 1]});
+  for (auto& [base, list] : byBase)
+  {
+    if (list.size() == 1) { n.faces.push_back(list[0]); continue; }
+    SortByCentroid(list, gp_Trsf(), &PieceOf);
+    for (size_t k = 0; k < list.size(); ++k) n.faces.push_back({list[k].first, base + "#" + std::to_string(k + 1)});
+  }
+  return n;
+}
+
+static bool HasSolid(const TopoDS_Shape& s)
+{
+  return !s.IsNull() && TopExp_Explorer(s, TopAbs_SOLID).More();
+}
+
+static std::string OperandName(const Json& node)
+{
+  const Json* nm = node.Get("name");
+  return nm && nm->kind == Json::String ? nm->text : "";
+}
+
+static Named BuildBoolean(const NodeReader& r)
+{
+  const Json& opv = r.Member("op");
+  if (opv.kind != Json::String || (opv.text != "subtract" && opv.text != "unite" && opv.text != "intersect"))
+    r.Bad("\"op\" is not one of subtract, unite, intersect");
+  Named blank = BuildNode(r.Member("blank"));
+  const Json& tools = r.Member("tools");
+  if (tools.kind != Json::Array || tools.items.empty()) r.Bad("\"tools\" is not a list of one or more nodes");
+
+  std::vector<FacePiece> claims(blank.faces.begin(), blank.faces.end());
+  NCollection_List<TopoDS_Shape> args, toolShapes;
+  args.Append(blank.shape);
+  for (const Json& t : tools.items)
+  {
+    Named tool = BuildNode(t);
+    std::string prefix = OperandName(t);
+    if (prefix.empty()) r.Bad("a tool has no name, and a tool's faces are named after it");
+    toolShapes.Append(tool.shape);
+    for (auto& [f, nm] : tool.faces) claims.push_back({f, prefix + ":" + nm});
+  }
+
+  auto run = [&](auto& op) -> Named {
+    op.SetArguments(args);
+    op.SetTools(toolShapes);
+    op.SetRunParallel(false);
+    op.Build();
+    if (op.HasErrors() || !op.IsDone())
+    {
+      std::ostringstream why;
+      op.DumpErrors(why);
+      std::string text = why.str();
+      while (!text.empty() && (text.back() == '\n' || text.back() == ' ')) text.pop_back();
+      throw Refuse{"build.failed", r.name, "the " + opv.text + " failed" + (text.empty() ? "" : ": " + text)};
+    }
+    if (!HasSolid(op.Shape()))
+      throw Refuse{"build.failed", r.name, "the " + opv.text + " leaves nothing: the result has no volume"};
+    return NameResult(op.Shape(), claims, op);
+  };
+  if (opv.text == "subtract") { BRepAlgoAPI_Cut op; return run(op); }
+  if (opv.text == "unite") { BRepAlgoAPI_Fuse op; return run(op); }
+  BRepAlgoAPI_Common op;
+  return run(op);
+}
+
+// The target's edges named as a Fillet or Chamfer lists them, and each listed name's edges.
+struct EdgeLookup
+{
+  std::vector<NamedEdge> all;
+  std::vector<const NamedEdge*> Find(const std::string& name) const
+  {
+    std::vector<const NamedEdge*> out;
+    for (const auto& e : all)
+      if (e.name == name) out.push_back(&e);
+    return out;
+  }
+  const NamedEdge* Of(const TopoDS_Shape& edge) const
+  {
+    for (const auto& e : all)
+      if (e.edge.IsSame(edge)) return &e;
+    return nullptr;
+  }
+};
+
+static std::vector<std::string> EdgeNames(const NodeReader& r)
+{
+  const Json& v = r.Member("edges");
+  if (v.kind != Json::Array || v.items.empty()) r.Bad("\"edges\" is not a list of one or more edge names");
+  std::vector<std::string> out;
+  for (const Json& e : v.items)
+  {
+    if (e.kind != Json::String) r.Bad("\"edges\" holds something that is not an edge name");
+    out.push_back(e.text);
+  }
+  return out;
+}
+
+// Rounds or cuts the named edges of the target, and names every face the operation made after the
+// edge it came from -- every edge of each CONTOUR, not only the listed ones: a tangent chain
+// propagates, and brief 61 Q7 left 7 of 18 faces unnamed when it named from the listed edge alone.
+template <class Maker>
+static Named FinishLocal(const NodeReader& r, Maker& mk, const Named& target, const EdgeLookup& edges, const char* word)
+{
+  mk.Build();
+  if (!mk.IsDone())
+    throw Refuse{"build.failed", r.name, std::string("the ") + word + " could not be built on those edges (a radius or distance too large for the faces beside it is the usual reason)"};
+  std::vector<FacePiece> claims(target.faces.begin(), target.faces.end());
+  Named n = NameResult(mk.Shape(), claims, mk);
+  Shapes named;
+  for (auto& [f, nm] : n.faces) named.Add(f);
+  Shapes faces;
+  TopExp::MapShapes(mk.Shape(), TopAbs_FACE, faces);
+  for (int c = 1; c <= mk.NbContours(); ++c)
+    for (int i = 1; i <= mk.NbEdges(c); ++i)
+    {
+      const TopoDS_Edge& e = mk.Edge(c, i);
+      const NamedEdge* ne = edges.Of(e);
+      if (ne == nullptr) continue;
+      for (const TopoDS_Shape& g : mk.Generated(e))
+        if (g.ShapeType() == TopAbs_FACE && faces.Contains(g) && !named.Contains(g))
+        {
+          named.Add(g);
+          n.faces.push_back({g, std::string(word) + "(" + ne->name + ")"});
+        }
+    }
+  return n;
+}
+
+static Named BuildFillet(const NodeReader& r)
+{
+  Named target = BuildNode(r.Member("target"));
+  double radius = r.Num("radius");
+  if (!(radius > 0)) r.Bad("the radius is not positive");
+  Held th = Hold(target);
+  EdgeLookup edges{NameEdges(th.shape, th.faceNames, gp_Trsf())};
+  BRepFilletAPI_MakeFillet mk(target.shape);
+  for (const std::string& nm : EdgeNames(r))
+  {
+    auto found = edges.Find(nm);
+    if (found.empty()) r.Bad("the target has no edge named '" + nm + "'");
+    for (const NamedEdge* e : found) mk.Add(radius, e->edge);
+  }
+  return FinishLocal(r, mk, target, edges, "fillet");
+}
+
+static Named BuildChamfer(const NodeReader& r)
+{
+  Named target = BuildNode(r.Member("target"));
+  double d1 = r.Num("distance");
+  if (!(d1 > 0)) r.Bad("the distance is not positive");
+  double d2 = 0;
+  if (r.node.Get("distance2") != nullptr)
+  {
+    d2 = r.Num("distance2");
+    if (!(d2 > 0)) r.Bad("the second distance is not positive");
+  }
+  Held th = Hold(target);
+  EdgeLookup edges{NameEdges(th.shape, th.faceNames, gp_Trsf())};
+  BRepFilletAPI_MakeChamfer mk(target.shape);
+  for (const std::string& nm : EdgeNames(r))
+  {
+    auto found = edges.Find(nm);
+    if (found.empty()) r.Bad("the target has no edge named '" + nm + "'");
+    // Distance lies on the edge's first face (its name sorts first), Distance2 on its second.
+    for (const NamedEdge* e : found)
+      if (d2 > 0) mk.Add(d1, d2, e->edge, e->faces[0]);
+      else mk.Add(d1, e->edge);
+  }
+  return FinishLocal(r, mk, target, edges, "chamfer");
+}
+
+static Named BuildStep(const NodeReader& r);
+
 // One node: its primitive in its own frame, named, then carried by its transform.
 static Named BuildNode(const Json& node)
 {
@@ -951,13 +1251,20 @@ static Named BuildNode(const Json& node)
     return BuildNode(r.Member("then"));
   }
 
-  std::vector<std::string> names = r.FaceNames();
   Named n;
-  if (kind.text == "box") n = BuildBox(r, names);
-  else if (kind.text == "cylinder") n = BuildCylinder(r, names);
-  else if (kind.text == "prism") n = BuildPrism(r, names);
-  else if (kind.text == "polyhedron") n = BuildPolyhedron(r, names);
-  else r.Bad("this worker cannot build a \"" + kind.text + "\"");
+  if (kind.text == "boolean") n = BuildBoolean(r);
+  else if (kind.text == "fillet") n = BuildFillet(r);
+  else if (kind.text == "chamfer") n = BuildChamfer(r);
+  else if (kind.text == "step") n = BuildStep(r);
+  else
+  {
+    std::vector<std::string> names = r.FaceNames();
+    if (kind.text == "box") n = BuildBox(r, names);
+    else if (kind.text == "cylinder") n = BuildCylinder(r, names);
+    else if (kind.text == "prism") n = BuildPrism(r, names);
+    else if (kind.text == "polyhedron") n = BuildPolyhedron(r, names);
+    else r.Bad("this worker cannot build a \"" + kind.text + "\"");
+  }
 
   if (const Json* t = node.Get("transform"))
   {
@@ -975,7 +1282,7 @@ static Named BuildNode(const Json& node)
       tr.SetValues(m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8], m[9], m[10], m[11]);
       BRepBuilderAPI_Transform xf(n.shape, tr, true);
       if (!xf.IsDone()) r.Bad("the transform could not be applied");
-      Named moved{xf.Shape(), {}};
+      Named moved{xf.Shape(), {}, tr.Inverted()};
       for (auto& [f, nm] : n.faces) moved.faces.push_back({xf.ModifiedShape(f), nm});
       n = moved;
     }
@@ -985,7 +1292,7 @@ static Named BuildNode(const Json& node)
 
 static Held Hold(const Named& n)
 {
-  Held h{n.shape, {}};
+  Held h{n.shape, {}, n.toOwn};
   Shapes faces;
   TopExp::MapShapes(n.shape, TopAbs_FACE, faces);
   h.faceNames.assign(faces.Extent(), "");
@@ -1236,10 +1543,6 @@ static double EdgeMinRadius(const BRepAdaptor_Curve& c)
   return kmax > 1e-12 ? 1 / kmax : 0;
 }
 
-// Edges are named by the two faces they separate, sorted and joined by '|'; where a pair bounds more
-// than one edge a third field numbers them in geometric order (overview section 1g, as brief 61 Q7
-// corrected it). A seam -- a face meeting itself -- and a degenerate edge are not feature edges and
-// are left out.
 static Frame OpEdges(const Json& req)
 {
   Held& h = Find(req);
@@ -1247,55 +1550,33 @@ static Frame OpEdges(const Json& req)
   if (d == nullptr || d->kind != Json::Number || !(d->number > 0))
     throw Refuse{"request.malformed", "", "\"deflection_um\" is not a positive number of micrometres"};
 
-  Shapes faces;
-  TopExp::MapShapes(h.shape, TopAbs_FACE, faces);
-  Ancestors anc;
-  TopExp::MapShapesAndAncestors(h.shape, TopAbs_EDGE, TopAbs_FACE, anc);
-  std::map<std::string, std::vector<std::pair<TopoDS_Edge, std::array<std::string, 2>>>> byPair;
-  for (int i = 1; i <= anc.Extent(); ++i)
-  {
-    TopoDS_Edge e = TopoDS::Edge(anc.FindKey(i));
-    if (BRep_Tool::Degenerated(e)) continue;
-    Shapes distinct;
-    for (const TopoDS_Shape& f : anc(i)) distinct.Add(f);
-    if (distinct.Extent() != 2) continue;  // a seam (one face) or a non-manifold edge
-    std::array<std::string, 2> fn{h.faceNames[faces.FindIndex(distinct(1)) - 1], h.faceNames[faces.FindIndex(distinct(2)) - 1]};
-    std::sort(fn.begin(), fn.end());
-    byPair[fn[0] + "|" + fn[1]].push_back({e, fn});
-  }
-
   Reply r;
   std::vector<double> poly;
   r.j.Key("edges").BeginArr();
-  for (auto& [key, list] : byPair)
+  for (const NamedEdge& ne : NameEdges(h.shape, h.faceNames, h.toOwn))
   {
-    std::stable_sort(list.begin(), list.end(), [](const auto& a, const auto& b) { return GeoLess(a.first, b.first); });
-    for (size_t k = 0; k < list.size(); ++k)
-    {
-      const TopoDS_Edge& e = list[k].first;
-      BRepAdaptor_Curve c(e);
-      size_t before = poly.size();
-      GCPnts_QuasiUniformDeflection q(c, d->number);
-      if (q.IsDone() && q.NbPoints() >= 2)
-        for (int i = 1; i <= q.NbPoints(); ++i)
-        {
-          gp_Pnt p = q.Value(i);
-          poly.insert(poly.end(), {p.X(), p.Y(), p.Z()});
-        }
-      else
-        for (double t : {c.FirstParameter(), c.LastParameter()})
-        {
-          gp_Pnt p = c.Value(t);
-          poly.insert(poly.end(), {p.X(), p.Y(), p.Z()});
-        }
-      r.j.Begin().Str("name", list.size() > 1 ? key + "|" + std::to_string(k + 1) : key);
-      r.j.Key("faces").BeginArr().Str(list[k].second[0]).Str(list[k].second[1]).EndArr();
-      r.j.Str("kind", CurveKind(c.GetType()))
-         .Num("length", GCPnts_AbscissaPoint::Length(c))
-         .Num("min_radius", EdgeMinRadius(c))
-         .Int("points", static_cast<long long>((poly.size() - before) / 3))
-         .End();
-    }
+    BRepAdaptor_Curve c(ne.edge);
+    size_t before = poly.size();
+    GCPnts_QuasiUniformDeflection q(c, d->number);
+    if (q.IsDone() && q.NbPoints() >= 2)
+      for (int i = 1; i <= q.NbPoints(); ++i)
+      {
+        gp_Pnt p = q.Value(i);
+        poly.insert(poly.end(), {p.X(), p.Y(), p.Z()});
+      }
+    else
+      for (double t : {c.FirstParameter(), c.LastParameter()})
+      {
+        gp_Pnt p = c.Value(t);
+        poly.insert(poly.end(), {p.X(), p.Y(), p.Z()});
+      }
+    r.j.Begin().Str("name", ne.name);
+    r.j.Key("faces").BeginArr().Str(ne.faceNames[0]).Str(ne.faceNames[1]).EndArr();
+    r.j.Str("kind", CurveKind(c.GetType()))
+       .Num("length", GCPnts_AbscissaPoint::Length(c))
+       .Num("min_radius", EdgeMinRadius(c))
+       .Int("points", static_cast<long long>((poly.size() - before) / 3))
+       .End();
   }
   r.j.EndArr();
   r.Blob("polylines", "f64", poly.size(), Bytes(poly.data(), poly.size() * 8));
@@ -1559,6 +1840,70 @@ static Frame OpImportStep(const Json& req, const std::map<std::string, std::stri
   for (auto& s : healing) r.j.Str(s);
   r.j.EndArr();
   return r.Finish();
+}
+
+
+// ------------------------------------------------------------------------------------------------
+// a Step node (brief 64): one solid part of a STEP file, located where its assembly puts it
+// ------------------------------------------------------------------------------------------------
+
+// A STEP file's parts, read once per file (by its path and the hash the document recorded) for the
+// life of the worker: a document with several parts of one file reads it once.
+static std::map<std::string, std::vector<ReadPart>> g_stepFiles;
+
+static std::vector<ReadPart> ReadStepParts(const std::string& path, std::string& why)
+{
+  STEPCAFControl_Reader rd;
+  rd.SetNameMode(true);
+  rd.SetColorMode(true);
+  if (rd.ReadFile(path.c_str()) != IFSelect_RetDone) { why = "'" + path + "' is not a STEP file the reader can read"; return {}; }
+  occ::handle<TDocStd_Document> doc = NewXcafDocument();
+  if (!rd.Transfer(doc)) { why = "the STEP reader could not transfer the shapes of '" + path + "'"; return {}; }
+  occ::handle<XCAFDoc_ShapeTool> st = XCAFDoc_DocumentTool::ShapeTool(doc->Main());
+  occ::handle<XCAFDoc_ColorTool> ct = XCAFDoc_DocumentTool::ColorTool(doc->Main());
+  NCollection_Sequence<TDF_Label> free;
+  st->GetFreeShapes(free);
+  std::vector<ReadPart> parts;
+  for (int i = 1; i <= free.Length(); ++i) Collect(st, ct, free(i), std::to_string(i), parts);
+  return parts;
+}
+
+static Named BuildStep(const NodeReader& r)
+{
+  const Json& file = r.Member("file");
+  const Json& part = r.Member("part");
+  if (file.kind != Json::String || file.text.empty()) r.Bad("\"file\" is not a path");
+  if (part.kind != Json::String || part.text.empty()) r.Bad("\"part\" is not an occurrence path");
+  std::string hash;
+  if (const Json* h = r.node.Get("hash"); h && h->kind == Json::String) hash = h->text;
+  std::string key = file.text + "\n" + hash;
+  auto it = g_stepFiles.find(key);
+  if (it == g_stepFiles.end())
+  {
+    std::string why;
+    auto parts = ReadStepParts(file.text, why);
+    if (!why.empty()) throw Refuse{"import.failed", r.name, why};
+    it = g_stepFiles.emplace(key, std::move(parts)).first;
+  }
+  for (const ReadPart& p : it->second)
+  {
+    if (p.path != part.text) continue;
+    TopoDS_Shape shape = p.shape;
+    if (!Valid(shape))
+    {
+      ShapeFix_Shape fix(shape);
+      fix.Perform();
+      shape = fix.Shape();
+    }
+    if (!HasSolid(shape)) r.Bad("part " + part.text + " of the file holds no solid");
+    // Faces are face<n> in the part's own topological order (brief 68 R-em3d68-1e), as import-step names them.
+    Named n{shape, {}, gp_Trsf()};
+    Shapes faces;
+    TopExp::MapShapes(shape, TopAbs_FACE, faces);
+    for (int k = 1; k <= faces.Extent(); ++k) n.faces.push_back({faces(k), "face" + std::to_string(k)});
+    return n;
+  }
+  r.Bad("the file has no part " + part.text);
 }
 
 static Frame OpRelease(const Json& req)

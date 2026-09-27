@@ -100,6 +100,69 @@ public sealed record Em3dSphere(Point3 Center, double Radius) : Em3dPrimitive;
 public sealed record Em3dTruncatedSphere(Point3 Center, double Radius, double ZMin, double ZMax)
     : Em3dPrimitive;
 
+/// <summary>
+/// brief-em3d-64 R-em3d64-3a — a solid the geometry kernel built (a boolean, a fillet, a chamfer, a STEP part): an OPAQUE
+/// B-rep only the worker reads, the kernel's display tessellation of it, and its named faces and edges. It is a
+/// primitive, not a second kind of solid, so precedence, construction order, materials and provenance need no new case.
+/// The Engine never parses <see cref="Brep"/>. Every length is metres.
+/// </summary>
+/// <param name="Brep">The B-rep bytes, as the worker wrote them.</param>
+/// <param name="BrepHash">SHA-256 of <see cref="Brep"/>, lower-case hex — what the solid is content-hashed by.</param>
+/// <param name="Display">The display tessellation: each triangle's <see cref="Em3dTriangle.Face"/> is an index into <see cref="Faces"/>.</param>
+public sealed record Em3dShapeSolid(
+    ReadOnlyMemory<byte>          Brep,
+    string                        BrepHash,
+    Em3dTriangleMesh              Display,
+    IReadOnlyList<Em3dShapeFace>  Faces,
+    IReadOnlyList<Em3dShapeEdge>  Edges) : Em3dPrimitive
+{
+    /// <summary>The linear deflection <see cref="Display"/> was made at, metres.</summary>
+    public double DisplayDeflectionM { get; init; }
+
+    /// <summary>The bound of the faces' tight boxes, metres.</summary>
+    public (double X0, double Y0, double Z0, double X1, double Y1, double Z1) Bounds()
+    {
+        double x0 = double.PositiveInfinity, y0 = x0, z0 = x0, x1 = double.NegativeInfinity, y1 = x1, z1 = x1;
+        foreach (var f in Faces)
+        {
+            x0 = Math.Min(x0, f.Box.X0); y0 = Math.Min(y0, f.Box.Y0); z0 = Math.Min(z0, f.Box.Z0);
+            x1 = Math.Max(x1, f.Box.X1); y1 = Math.Max(y1, f.Box.Y1); z1 = Math.Max(z1, f.Box.Z1);
+        }
+        if (double.IsInfinity(x0))
+            foreach (var q in Display.Vertices)
+            {
+                x0 = Math.Min(x0, q.X); y0 = Math.Min(y0, q.Y); z0 = Math.Min(z0, q.Z);
+                x1 = Math.Max(x1, q.X); y1 = Math.Max(y1, q.Y); z1 = Math.Max(z1, q.Z);
+            }
+        return (x0, y0, z0, x1, y1, z1);
+    }
+
+    /// <summary>Equal when the B-rep and the display deflection are: what lets a tessellation cache keyed by primitive
+    /// hit across re-elaborations of an unchanged object.</summary>
+    public bool Equals(Em3dShapeSolid? other)
+        => other is not null && BrepHash == other.BrepHash && DisplayDeflectionM.Equals(other.DisplayDeflectionM);
+
+    public override int GetHashCode() => HashCode.Combine(BrepHash, DisplayDeflectionM);
+
+    /// <summary>The sentence a backend refuses one with until it can write a kernel solid (brief 65 lowers them).</summary>
+    public static string NotYet(string solid, string solver) => $"'{solid}' is a kernel solid, which this build cannot yet write for {solver}.";
+
+    /// <summary>The first kernel solid in <paramref name="problem"/>, refused for <paramref name="solver"/>; null when it has none.</summary>
+    public static string? Refusal(Em3dProblem problem, string solver)
+        => problem.Solids.FirstOrDefault(s => s.Primitive is Em3dShapeSolid) is { } k ? NotYet(k.Name, solver) : null;
+}
+
+/// <summary>One named face of a kernel solid: its surface kind (plane, cylinder, cone, sphere, torus, bspline, other),
+/// tight box and smallest radius of curvature (0 for a plane), metres, and its triangles in the display mesh.</summary>
+public sealed record Em3dShapeFace(string Name, string Kind,
+                                   (double X0, double Y0, double Z0, double X1, double Y1, double Z1) Box,
+                                   double MinRadiusM, int FirstTriangle, int TriangleCount);
+
+/// <summary>One named feature edge of a kernel solid: the two faces it separates, its curve kind, smallest radius
+/// (0 for a line), metres, and a polyline for drawing and snapping.</summary>
+public sealed record Em3dShapeEdge(string Name, string FaceA, string FaceB, string Kind, double MinRadiusM,
+                                   IReadOnlyList<Point3> Polyline);
+
 // ── The problem's parts ──────────────────────────────────────────────────────────────────────
 
 /// <summary>
@@ -678,6 +741,8 @@ public sealed record Em3dProblem(
             case Em3dTruncatedSphere t:
                 return (t.Center.X - t.Radius, t.Center.Y - t.Radius, Math.Max(t.ZMin, t.Center.Z - t.Radius),
                         t.Center.X + t.Radius, t.Center.Y + t.Radius, Math.Min(t.ZMax, t.Center.Z + t.Radius));
+            case Em3dShapeSolid k:
+                return k.Bounds();
             default:
                 throw new ArgumentOutOfRangeException(nameof(p), p.GetType().Name, "unknown primitive");
         }

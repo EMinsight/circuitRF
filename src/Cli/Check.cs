@@ -556,7 +556,12 @@ internal static class Check
         foreach (string warning in resolution.Warnings) f.Add(CliDiagnostics.CheckEmFinding(path, warning, true));
         foreach (string note in resolution.Notes.Concat(resolution.Infos)) f.Add(CliDiagnostics.CheckThreeDNote(path, note));
 
-        var findings = C3dValidation.Validate(doc, known, resolution.FieldErrors.Select(e => e.Item).ToHashSet(StringComparer.Ordinal));
+        var findings = C3dValidation.Validate(doc, known, resolution.FieldErrors.Select(e => e.Item).ToHashSet(StringComparer.Ordinal),
+                                              Path.GetFullPath(path)).ToList();
+        // brief-em3d-64 R-em3d64-5e — without the geometry kernel, one error per object that needs it, in the words the
+        // editor refuses to open the document with. The kernel is asked only when the document holds such an object.
+        if (C3dKernelUse.Of(doc).Count > 0)
+            findings.AddRange(C3dValidation.KernelFindings(doc, CircuitRF.Design.ThreeD.Occ.GeometryKernel.Shared.Capability));
         foreach (var finding in findings)
             f.Add(CliDiagnostics.CheckThreeDFinding(path, finding));
 

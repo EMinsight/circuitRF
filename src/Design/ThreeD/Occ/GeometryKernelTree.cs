@@ -23,7 +23,13 @@
 //   prism:      "outline":[[x,y,z]…],"holes":[[[x,y,z]…]…],"extrude":[x,y,z]  (points in the object's frame)
 //   polyhedron: "vertices":[[x,y,z]…],"loops":[{"outer":[i…],"holes":[[i…]…]}…]
 //
-// Brief 64 adds operation nodes (boolean, fillet, chamfer, step) whose operands are nodes of this form.
+// brief-em3d-64 adds the operation nodes, whose operands are nodes of this form, built in the operation's own frame and
+// then carried by its transform. They list no "faces": the worker names the result from its operands' (README.md):
+//
+//   boolean:  "op":"subtract"|"unite"|"intersect","blank":{node},"tools":[{node}…]   (the blank has "name":"")
+//   fillet:   "radius":r,"edges":["xmax|zmax"…],"target":{node}
+//   chamfer:  "distance":d,["distance2":d2,]"edges":[…],"target":{node}
+//   step:     "file":<absolute path>,"hash":"sha256:…","part":"1/2"      (the part's faces are face<n>)
 
 using System.Globalization;
 using System.Security.Cryptography;
@@ -59,20 +65,22 @@ public sealed class GeometryKernelTree
     public IReadOnlyList<string> FaceNames { get; }
 
     /// <summary>The kinds a tree can hold. A sheet, a polyline and a wire are not solids the kernel builds.</summary>
-    public static bool CanHold(C3dObject obj) => obj is C3dBox or C3dCylinder or C3dPrism or C3dPolyhedron;
+    public static bool CanHold(C3dObject obj) => obj is C3dBox or C3dCylinder or C3dPrism or C3dPolyhedron
+                                                 or C3dBoolean or C3dFillet or C3dChamfer or C3dStep;
 
     /// <summary>
     /// <paramref name="obj"/> — RESOLVED, its placement applied first and then <paramref name="worldUm"/> (the
     /// instances above it, translation in micrometres; identity when omitted).
     /// </summary>
     /// <exception cref="ArgumentException">The object is not a kind a tree can hold (<see cref="CanHold"/>).</exception>
-    public static GeometryKernelTree From(C3dObject obj, int dbuPerMicron, C3dTransform? worldUm = null)
+    /// <param name="documentDir">The folder of the <c>.c3d</c> holding it: what a Step object's <c>File</c> is relative to.</param>
+    public static GeometryKernelTree From(C3dObject obj, int dbuPerMicron, C3dTransform? worldUm = null, string? documentDir = null)
     {
         if (!CanHold(obj))
             throw new ArgumentException($"'{obj.Name}' is a {C3dObject.KindOf(obj).ToLowerInvariant()}, which is not a solid the geometry kernel builds.", nameof(obj));
         var w = new CanonicalJson();
         w.Begin().Key("tree").Int(1).Key("root");
-        var names = WriteNode(w, obj, dbuPerMicron, worldUm ?? C3dTransform.Identity);
+        var names = WriteNode(w, obj, dbuPerMicron, worldUm ?? C3dTransform.Identity, documentDir);
         w.End();
         return new GeometryKernelTree(obj.Name, w.Text + "\n", names);
     }
@@ -82,12 +90,19 @@ public sealed class GeometryKernelTree
         new(obj, canonicalJson.EndsWith('\n') ? canonicalJson : canonicalJson + "\n", faceNames ?? []);
 
     /// <summary>Writes one object as a node; returns the face names it listed.</summary>
-    internal static IReadOnlyList<string> WriteNode(CanonicalJson w, C3dObject obj, int dbuPerMicron, C3dTransform worldUm)
+    internal static IReadOnlyList<string> WriteNode(CanonicalJson w, C3dObject obj, int dbuPerMicron, C3dTransform worldUm,
+                                                    string? documentDir = null)
     {
         double U(long dbu) => Um(dbu, dbuPerMicron);
         var placement = obj.Placement.ToTransform();
         var t = placement with { Tx = U((long)placement.Tx), Ty = U((long)placement.Ty), Tz = U((long)placement.Tz) };
         t = Canonical(t.Then(worldUm));
+
+        if (obj is C3dOperation or C3dStep)
+        {
+            WriteOperation(w, obj, t, dbuPerMicron, documentDir);
+            return obj.FaceNames();
+        }
 
         IReadOnlyList<string> names = obj is C3dPolyhedron ph0 ? [.. (Kernel.C3dRecognition.ExactlyPlanarFaces(ph0) ?? ph0.Faces).Select(f => f.Name)]
                                                                : obj.FaceNames();
@@ -159,6 +174,54 @@ public sealed class GeometryKernelTree
         }
         w.End();
         return names;
+    }
+
+    /// <summary>An operation node: its switches, its transform, then its operands — each in the operation's own frame.</summary>
+    private static void WriteOperation(CanonicalJson w, C3dObject obj, C3dTransform t, int dbuPerMicron, string? documentDir)
+    {
+        double U(long dbu) => Um(dbu, dbuPerMicron);
+        w.Begin()
+         .Key("kind").Str(obj switch { C3dBoolean => "boolean", C3dFillet => "fillet", C3dChamfer => "chamfer", _ => "step" })
+         .Key("name").Str(obj.Name)
+         .Key("transform").BeginArr();
+        foreach (double v in (double[])[t.M00, t.M01, t.M02, t.Tx, t.M10, t.M11, t.M12, t.Ty, t.M20, t.M21, t.M22, t.Tz]) w.Num(v);
+        w.EndArr();
+        void Operand(C3dObject o) => WriteNode(w, o, dbuPerMicron, C3dTransform.Identity, documentDir);
+        void Edges(List<string> edges)
+        {
+            w.Key("edges").BeginArr();
+            foreach (string e in edges) w.Str(e);
+            w.EndArr();
+        }
+        switch (obj)
+        {
+            case C3dBoolean b:
+                w.Key("op").Str(b.Op switch { C3dBooleanOp.Subtract => "subtract", C3dBooleanOp.Unite => "unite", _ => "intersect" });
+                w.Key("blank");
+                Operand(b.Blank ?? throw new ArgumentException($"The boolean '{obj.Name}' has no Blank.", nameof(obj)));
+                w.Key("tools").BeginArr();
+                foreach (var tool in b.Tools) Operand(tool);
+                w.EndArr();
+                break;
+            case C3dFillet f:
+                w.Key("radius").Num(U(f.Radius));
+                Edges(f.Edges);
+                w.Key("target");
+                Operand(f.Target ?? throw new ArgumentException($"The fillet '{obj.Name}' has no Target.", nameof(obj)));
+                break;
+            case C3dChamfer c:
+                w.Key("distance").Num(U(c.Distance));
+                if (c.Distance2 != 0) w.Key("distance2").Num(U(c.Distance2));
+                Edges(c.Edges);
+                w.Key("target");
+                Operand(c.Target ?? throw new ArgumentException($"The chamfer '{obj.Name}' has no Target.", nameof(obj)));
+                break;
+            case C3dStep st:
+                string file = documentDir is null ? st.File : Path.GetFullPath(Path.Combine(documentDir, st.File));
+                w.Key("file").Str(file).Key("hash").Str(st.Hash).Key("part").Str(st.Part);
+                break;
+        }
+        w.End();
     }
 
     /// <summary>DBU to micrometres, exactly: the decimal value, then the nearest double.</summary>

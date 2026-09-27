@@ -586,6 +586,9 @@ internal static class Explain
             PortWalk(C3dPersistence.LoadFromFile(full), e, walks);
         }
         em3d = ExplainEm3d.Build(src);
+        // brief-em3d-64 R-em3d64-6b — only a document that holds a kernel object asks the kernel anything.
+        if (src.Elaboration is { KernelBuilds.Count: > 0 } withKernel)
+            em3d = em3d with { GeometryKernel = ExplainEm3d.Kernel(withKernel) };
         return src.Refusal is null ? 0 : 1;
     }
 

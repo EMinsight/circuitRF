@@ -14044,3 +14044,47 @@ real requests in the same change (`tools/geometry-worker/README.md` is the proto
   last probe must be what answers; the failed-tree record is forgotten with it.
 - **`KernelFact` probes a kernel of its own**, disk cache off, rather than `GeometryKernel.Shared`, so test discovery
   never writes into the user's state directory; each test builds its own kernel so no counter is shared.
+
+## brief-em3d-64 — Boolean, Fillet, Chamfer and Step in the `.c3d` (2026-09-27)
+
+Four `$type`s (`C3dBoolean`, `C3dFillet`, `C3dChamfer` under `C3dOperation`, and `C3dStep`), their tree nodes in
+`GeometryKernelTree` and the worker, `C3dKernelUse` (the one rule by kind, `Resolve` through a disabled operation,
+the fold rule), the elaborator's kernel path and `Em3dShapeSolid` in the Engine. Gates:
+`tests/Ui.Tests/ThreeD/OperationsInTheDocumentTests.cs`.
+
+- **Split pieces are numbered per BASE name across the whole result**, not suffixed per level: a face an operand had
+  already split (`zmax#2`) that the next operation splits again is renumbered with every other piece of `zmax`,
+  never `zmax#2#1` — so the fold rule stays one `#n` suffix deep and a reference to `zmax` still covers them all.
+- **Edge numbering moved from tight-box order to §2d's** (centroid in the object's OWN frame, x/y/z rounded to
+  1 nm). Brief 63's `edges` sorted by world tight box, which a rotation renumbers. The worker now keeps each held
+  shape's `toOwn` (the inverse of the root's transform) so `edges` measures in the frame the object was drawn in;
+  gate 4 turns a split slab a quarter turn and finds `#1` still at the lowest own-frame x.
+- **A cut that runs right across a face splits it — it does not make a doubled edge.** The first doubled-edge
+  fixture (a cylinder lying across the whole top) gave `trench:side|zmax#1` and `…|zmax#2`, correctly; a doubled
+  edge needs a slot that stops short of both ends, so `zmax` stays one face meeting the slot's wall twice.
+- **`Part` is the occurrence path `import-step` reports (`1/2`)**, not the XCAF label entry the brief's example shows
+  (`0:1:1:2`): the Step node and the importer must agree, and the importer already reported paths. Brief 68 owns
+  the field; if it wants label entries, both change together. The node carries the file's ABSOLUTE path and its
+  `Hash`, so the tree hash (and the kernel cache) follow the file's content; the worker reads a file once per
+  (path, hash). `Hash` is `sha256:<hex>` (`C3dValidation.StepHash`).
+- **The refusal on open needed a plural.** "'lid' (a Boolean) and 'shell' (a Step part) needs the geometry kernel"
+  was the only thing `NeedsKernel` could say, and the wording may live nowhere else (the Firewall scan) — so it grew
+  `NeedsKernel(what, capability, plural)`. The same scan is why the `3d-view` reference topic says "OpenCASCADE",
+  never the two words, and why `explain`'s heading is `GeometryKernel.SettingsTitle`.
+- **A document with no kernel object never asks the kernel whether it is there.** `C3dKernelUse.RefusalOnOpen`,
+  `check` and the elaborator all consult the capability only once a kernel object is found — a probe is a worker
+  start and a handshake — so gate 1 holds `FakeKernel.Requests` EMPTY (not merely no builds) for every shipped view.
+- **A malformed operation is refused by the ELABORATOR in validation's words** (`C3dValidation.OperationFindings`),
+  not handed to the tree writer: the editor elaborates documents validation has not blessed, and a Boolean with no
+  Blank would otherwise have thrown out of `GeometryKernelTree.From`. Those throws remain as invariants (allowlisted).
+- **An operation stating its own `Material`/`Role`, and a named Blank/Target, are check ERRORS** (R-em3d64-3b/-1d);
+  a Tool's missing material is NOT reported by validation (a cutter is normally bare) — elaboration warns only when
+  the Tool is actually elaborated (disabled, or `KeepTools`).
+- **Disabled operands are carried by the operation's placement.** A disabled boolean's Blank and Tools are drawn
+  where they sit in the result, so the toggle moves nothing on screen. A standalone Tool's provenance names the Tool,
+  which is not a top-level object — brief 66's tree is what gives it a row.
+- **A face boundary on a kernel face** is placed on its display triangles when the face is planar and refused as
+  curved otherwise (the cylinder side's rule); the fold rule decides which faces a name covers. Palace and openEMS
+  refuse any kernel solid until brief 65 (`Em3dShapeSolid.Refusal`), before a grid is placed or a file written.
+- **The writer now omits an EMPTY `Name` on any object** (an operand has none). A top-level object with an empty
+  name was already invalid, so only such a broken file writes back differently.

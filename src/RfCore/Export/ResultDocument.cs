@@ -1172,7 +1172,31 @@ namespace RfCore.Export
         /// <summary>brief-em3d-23 R-em3d23-4a — an eigenmode problem's mode count and target; null otherwise.</summary>
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public Em3dEigenmodeJson? Eigenmode { get; init; }
+
+        /// <summary>brief-em3d-64 R-em3d64-6b — the geometry kernel and each object it builds; null for a 3D view that
+        /// holds no kernel object, so every earlier report is unchanged.</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public Em3dGeometryKernelJson? GeometryKernel { get; init; }
     }
+
+    /// <summary>brief-em3d-64 R-em3d64-6b — whether the geometry kernel is here, where it was found and which OCCT it is;
+    /// with it absent, the reason and the action.</summary>
+    public sealed record Em3dGeometryKernelJson(
+        bool Available,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? HowFound,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? WorkerPath,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? OcctVersion,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Reason,
+        IReadOnlyList<Em3dKernelObjectJson> Objects);
+
+    /// <summary>One kernel object: its operands as an indented tree, whether the worker built it or a cache answered
+    /// (<c>built</c>/<c>cache</c>), its face and edge counts, the smallest radius of curvature on it (metres; null when
+    /// every face and edge is flat), the kernel's notes, and its refusal when it did not build.</summary>
+    public sealed record Em3dKernelObjectJson(
+        string Name, string Kind, IReadOnlyList<string> Operands, string Build, int Faces, int Edges,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double? MinRadiusM,
+        IReadOnlyList<string> Notes,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Refusal);
 
     /// <summary>brief-em3d-23 — how many modes an eigenmode run finds, above which frequency, and where each
     /// setting came from ("field" or "default").</summary>

@@ -35,6 +35,14 @@ public static class C3dDiagnostics
         "Object {index} has no \"$type\", so there is no telling what kind of object it is.",
         ("index", index));
 
+    /// <summary>brief-em3d-64 — an operation's operand with no <c>$type</c>.</summary>
+    public static Diagnostic MissingOperandKind(string where) => Diagnostic.Create(
+        "c3d.read.missing-kind", DiagnosticSeverity.Error,
+        "{where} has no \"$type\", so there is no telling what kind of object it is.",
+        ("where", Capital(where)));
+
+    private static string Capital(string s) => s.Length == 0 ? s : char.ToUpperInvariant(s[0]) + s[1..];
+
     /// <summary>R-em3d41-2d / brief-em3d-51: a bare string where a number belongs. A dimension's expression is an object
     /// carrying its unit; a point list holds numbers only.</summary>
     public static Diagnostic ExpressionNotYet(string text) => Diagnostic.Create(
@@ -176,6 +184,50 @@ public static class C3dDiagnostics
     public static Diagnostic ArrayCounts(string name) => Diagnostic.Create(
         "c3d.instance.array-counts", DiagnosticSeverity.Error,
         "The array on '{name}' must give three counts, [nx, ny, nz], each at least 1.", ("name", name));
+
+    // ── Operations (brief-em3d-64 R-em3d64-6a) ─────────────────────────────────────────────────
+
+    public static Diagnostic OperationShape(string name, string kind, string why) => Diagnostic.Create(
+        "c3d.operation.shape", DiagnosticSeverity.Error,
+        "The {kind} '{name}' {why}.", ("name", name), ("kind", kind), ("why", why));
+
+    /// <summary>R-em3d64-3b — a result's material and role are its Blank's (or Target's).</summary>
+    public static Diagnostic OperationMaterial(string name, string kind, string inner) => Diagnostic.Create(
+        "c3d.operation.material", DiagnosticSeverity.Error,
+        "The {kind} '{name}' states a Material or Role of its own. A {kind}'s result is made of its {inner}'s material and takes " +
+        "its {inner}'s role: set them on the {inner}.",
+        ("name", name), ("kind", kind), ("inner", inner));
+
+    /// <summary>R-em3d64-1d — the wrapper takes the name.</summary>
+    public static Diagnostic OperandNamed(string name, string operandName, string slot) => Diagnostic.Create(
+        "c3d.operation.operand-named", DiagnosticSeverity.Error,
+        "The {slot} of '{name}' is named '{operandName}'. An operation takes the name of the object it acts on, which then has none " +
+        "of its own: leave the {slot}'s Name out, and '{name}' is how the result is addressed.",
+        ("name", name), ("operandName", operandName), ("slot", slot));
+
+    /// <summary>R-em3d64-1e — solids only.</summary>
+    public static Diagnostic OperandKind(string name, string operand, string kind) => Diagnostic.Create(
+        "c3d.operation.operand-kind", DiagnosticSeverity.Error,
+        "'{operand}' in '{name}' is a {kind}, which cannot be an operand: a Box, Prism, Cylinder, Polyhedron, Boolean, Fillet, " +
+        "Chamfer or Step part can. A sheet boolean is a later build's, and a wire is not a solid the kernel builds.",
+        ("name", name), ("operand", operand), ("kind", kind));
+
+    public static Diagnostic StepShape(string name, string why) => Diagnostic.Create(
+        "c3d.step.shape", DiagnosticSeverity.Error,
+        "The Step part '{name}' {why}.", ("name", name), ("why", why));
+
+    /// <summary>Brief 68 §6's wording: the file changed outside circuitRF, so its face numbers no longer mean what the
+    /// references assumed.</summary>
+    public static Diagnostic StepHashMismatch(string name, string file) => Diagnostic.Create(
+        "c3d.step.hash", DiagnosticSeverity.Error,
+        "The Step part '{name}' was read from '{file}', and that file has changed since: its bytes are not the ones recorded in " +
+        "Hash, so its face<n> names no longer mean what the ports and boundaries on it assumed. Use Reload from Source, which " +
+        "re-matches every reference by geometry.",
+        ("name", name), ("file", file));
+
+    /// <summary>R-em3d64-5e — the sentence is <c>GeometryKernel.NeedsKernel</c>'s, the one place the absence is worded.</summary>
+    public static Diagnostic NeedsKernel(string sentence) => Diagnostic.Create(
+        "c3d.kernel.absent", DiagnosticSeverity.Error, "{sentence}", ("sentence", sentence));
 
     public static Diagnostic UnreadKey(string owner, string key) => Diagnostic.Create(
         "c3d.key.unread", DiagnosticSeverity.Warning,

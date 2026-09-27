@@ -33,8 +33,10 @@ public static class C3dValidation
     /// </param>
     /// <param name="unresolved">brief-em3d-51 — items whose expression fields did not resolve: their geometry is not checked,
     /// because an unresolved size reads as zero and the resolver has already said why.</param>
+    /// <param name="documentPath">brief-em3d-64 — the <c>.c3d</c>'s own path, which a Step object's <c>File</c> is relative to;
+    /// null skips the file checks (a document that has not been saved has no folder to look in).</param>
     public static IReadOnlyList<Diagnostic> Validate(C3dDocument doc, Func<string, bool>? isKnownMaterial = null,
-                                                     IReadOnlySet<string>? unresolved = null)
+                                                     IReadOnlySet<string>? unresolved = null, string? documentPath = null)
     {
         var found = new List<Diagnostic>();
 
@@ -45,23 +47,16 @@ public static class C3dValidation
             if (o is not C3dPolyline)
             {
                 // brief-em3d-50: a wire's omitted material is wBond's default metal, which the technology must still define.
-                string? material = o is C3dWire w ? C3dWires.MaterialOf(w) : o.Material;
+                // brief-em3d-64 R-em3d64-3b: an operation's material is its Blank's (or Target's), which is checked there.
+                string? material = o is C3dWire w ? C3dWires.MaterialOf(w) : EffectiveMaterial(o);
                 if (string.IsNullOrWhiteSpace(material)) found.Add(C3dDiagnostics.NoMaterial(o.Name));
                 else if (isKnownMaterial is not null && !isKnownMaterial(material))
                     found.Add(C3dDiagnostics.UnknownMaterial(o.Name, material));
             }
 
             if (unresolved?.Contains(o.Name) == true) { Unread(o.Unread, $"'{o.Name}'", found); continue; }
-            switch (o)
-            {
-                case C3dBox b:        Box(b, found);        break;
-                case C3dPrism p:      Prism(p, found);      break;
-                case C3dCylinder c:   Cylinder(c, found);   break;
-                case C3dSheet s:      Sheet(s, found);      break;
-                case C3dPolyline l:   Polyline(l, found);   break;
-                case C3dPolyhedron h: Polyhedron(h, found); break;
-                case C3dWire w:       Wire(w, found);       break;
-            }
+            Geometry(o, o.Name, found);
+            if (C3dOperands.IsKernel(o)) Operation(o, o.Name, isKnownMaterial, documentPath, found);
 
             Unread(o.Unread, $"'{o.Name}'", found);
         }
@@ -78,6 +73,133 @@ public static class C3dValidation
         return found;
     }
 
+    private static void Geometry(C3dObject o, string label, List<Diagnostic> found)
+    {
+        // An operand without a name of its own is reported by where it sits (lid.Blank).
+        if (o.Name.Length == 0) o = Labelled(o, label);
+        switch (o)
+        {
+            case C3dBox b:        Box(b, found);        break;
+            case C3dPrism p:      Prism(p, found);      break;
+            case C3dCylinder c:   Cylinder(c, found);   break;
+            case C3dSheet s:      Sheet(s, found);      break;
+            case C3dPolyline l:   Polyline(l, found);   break;
+            case C3dPolyhedron h: Polyhedron(h, found); break;
+            case C3dWire w:       Wire(w, found);       break;
+        }
+    }
+
+    /// <summary>A shallow stand-in carrying <paramref name="label"/> as its name, so a finding about an unnamed operand
+    /// says where it is. The document is not touched.</summary>
+    private static C3dObject Labelled(C3dObject o, string label)
+    {
+        var copy = C3dPersistence.DeserializeObject(C3dPersistence.SerializeObject(o));
+        copy.Name = label;
+        return copy;
+    }
+
+    /// <summary>brief-em3d-64 R-em3d64-3b — the material a top-level object elaborates with: an operation's is its Blank's
+    /// (or Target's), all the way down.</summary>
+    public static string? EffectiveMaterial(C3dObject o) => o is C3dOperation && C3dOperands.Inner(o) is { } inner ? EffectiveMaterial(inner) : o.Material;
+
+    /// <summary>The role an operation's result takes: its Blank's (or Target's).</summary>
+    public static CircuitRF.Engine.Em3d.Em3dRole? EffectiveRole(C3dObject o) => o is C3dOperation && C3dOperands.Inner(o) is { } inner ? EffectiveRole(inner) : o.Role;
+
+    // ── operations (brief-em3d-64 R-em3d64-6a) ─────────────────────────────────────────────────
+
+    /// <summary>What is wrong with one operation's own shape — a missing Blank, Tool or Target, an operand that is not a
+    /// solid, a named Blank — at any depth: what the elaborator refuses an operation with instead of handing the kernel a
+    /// tree it cannot mean.</summary>
+    public static IReadOnlyList<Diagnostic> OperationFindings(C3dObject o, string label)
+    {
+        var found = new List<Diagnostic>();
+        Operation(o, label, null, null, found);
+        return [.. found.Where(d => d.Severity == DiagnosticSeverity.Error)];
+    }
+
+    private static void Operation(C3dObject o, string label, Func<string, bool>? isKnownMaterial, string? documentPath, List<Diagnostic> found)
+    {
+        switch (o)
+        {
+            case C3dBoolean b:
+                if (b.Blank is null) found.Add(C3dDiagnostics.OperationShape(label, "Boolean", "has no Blank; a boolean acts on exactly one"));
+                if (b.Tools.Count == 0) found.Add(C3dDiagnostics.OperationShape(label, "Boolean", "has no Tools; it needs at least one"));
+                break;
+            case C3dFillet f:
+                if (f.Target is null) found.Add(C3dDiagnostics.OperationShape(label, "Fillet", "has no Target"));
+                if (f.Edges.Count == 0) found.Add(C3dDiagnostics.OperationShape(label, "Fillet", "names no Edges to round"));
+                if (f.Radius <= 0 && C3dBindings.GetExpr(f, nameof(C3dFillet.Radius), 0) is null)
+                    found.Add(C3dDiagnostics.OperationShape(label, "Fillet", "has a Radius that is not positive"));
+                break;
+            case C3dChamfer c:
+                if (c.Target is null) found.Add(C3dDiagnostics.OperationShape(label, "Chamfer", "has no Target"));
+                if (c.Edges.Count == 0) found.Add(C3dDiagnostics.OperationShape(label, "Chamfer", "names no Edges to cut"));
+                if (c.Distance <= 0 && C3dBindings.GetExpr(c, nameof(C3dChamfer.Distance), 0) is null)
+                    found.Add(C3dDiagnostics.OperationShape(label, "Chamfer", "has a Distance that is not positive"));
+                if (c.Distance2 < 0) found.Add(C3dDiagnostics.OperationShape(label, "Chamfer", "has a Distance2 that is negative"));
+                break;
+            case C3dStep st:
+                Step(st, label, documentPath, found);
+                return;
+        }
+
+        // R-em3d64-3b — a result's material and role are its Blank's: stated on the operation they would be a second answer.
+        if (o is C3dOperation && (o.Material is not null || o.Role is not null))
+            found.Add(C3dDiagnostics.OperationMaterial(label, C3dObject.KindOf(o), o is C3dBoolean ? "Blank" : "Target"));
+
+        foreach (var (prefix, child) in C3dOperands.Of(o))
+        {
+            string where = child.Name.Length > 0 ? child.Name : label + "." + prefix.TrimEnd('.');
+            bool inner = ReferenceEquals(child, C3dOperands.Inner(o));
+            // R-em3d64-1d — the wrapper carries the name; the object inside it has none.
+            if (inner && child.Name.Length > 0) found.Add(C3dDiagnostics.OperandNamed(label, child.Name, prefix.TrimEnd('.')));
+            // R-em3d64-1e — solids only.
+            if (!C3dOperands.IsSolid(child)) { found.Add(C3dDiagnostics.OperandKind(label, where, C3dObject.KindOf(child))); continue; }
+            // A Tool's material matters when it is kept or the boolean is disabled; an unknown one is worth a warning.
+            if (!inner && child.Material is { Length: > 0 } m && isKnownMaterial is not null && !isKnownMaterial(m))
+                found.Add(C3dDiagnostics.UnknownMaterial(where, m));
+            Geometry(child, where, found);
+            if (C3dOperands.IsKernel(child)) Operation(child, where, isKnownMaterial, documentPath, found);
+            Unread(child.Unread, $"'{where}'", found);
+        }
+    }
+
+    /// <summary>A Step object's file: present, inside the cell's <c>3d/</c> folder, and the bytes its <c>face&lt;n&gt;</c>
+    /// names were recorded against (brief 68 §6).</summary>
+    private static void Step(C3dStep st, string label, string? documentPath, List<Diagnostic> found)
+    {
+        if (string.IsNullOrWhiteSpace(st.File)) { found.Add(C3dDiagnostics.StepShape(label, "names no File")); return; }
+        if (string.IsNullOrWhiteSpace(st.Part)) found.Add(C3dDiagnostics.StepShape(label, "names no Part"));
+        if (documentPath is null) return;
+        string folder = Path.GetDirectoryName(Path.GetFullPath(documentPath))!;
+        string file = Path.GetFullPath(Path.Combine(folder, st.File));
+        if (!file.StartsWith(folder + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+        {
+            found.Add(C3dDiagnostics.StepShape(label, $"names '{st.File}', which is outside this 3D view's folder; an imported file is copied into it"));
+            return;
+        }
+        if (!File.Exists(file)) { found.Add(C3dDiagnostics.StepShape(label, $"names '{st.File}', which does not exist")); return; }
+        if (StepHash(file) is var actual && !string.Equals(actual, st.Hash, StringComparison.OrdinalIgnoreCase))
+            found.Add(C3dDiagnostics.StepHashMismatch(label, st.File));
+    }
+
+    /// <summary><c>sha256:&lt;hex&gt;</c> of a file's bytes — how a Step object records the file it was read from.</summary>
+    public static string StepHash(string path)
+    {
+        using var s = File.OpenRead(path);
+        return "sha256:" + Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(s));
+    }
+
+    /// <summary>
+    /// R-em3d64-5e — one ERROR per object that needs the kernel, when it is absent: the same sentence the editor's
+    /// refusal on open uses, so a headless check fails a document the application would not open.
+    /// </summary>
+    public static IReadOnlyList<Diagnostic> KernelFindings(C3dDocument doc, Occ.GeometryKernelCapability capability)
+    {
+        if (capability.Available) return [];
+        return [.. C3dKernelUse.Of(doc).Select(k => C3dDiagnostics.NeedsKernel(Occ.GeometryKernel.NeedsKernel(k.Label, capability)))];
+    }
+
     // ── names ─────────────────────────────────────────────────────────────────────────────────
 
     /// <summary>Objects and instances share one namespace: both are addressed by name, and a port on
@@ -85,7 +207,10 @@ public static class C3dValidation
     /// reason cell names are.</summary>
     private static void Names(C3dDocument doc, List<Diagnostic> found)
     {
+        // brief-em3d-64 R-em3d64-1d — a Tool keeps its own name, unique across the whole document at every depth; the
+        // object an operation wraps has none (Operation reports one that does).
         var named = doc.Objects.Select(o => (Kind: "object", o.Name))
+                   .Concat(doc.Objects.SelectMany(Tools).Select(t => (Kind: "object", t.Name)))
                    .Concat(doc.Instances.Select(i => (Kind: "instance", i.Name)))
                    .ToList();
 
@@ -100,6 +225,16 @@ public static class C3dValidation
                                .GroupBy(n => n.Name, StringComparer.OrdinalIgnoreCase)
                                .Where(g => g.Count() > 1))
             found.Add(C3dDiagnostics.DuplicateName(g.Key, g.Count()));
+    }
+
+    /// <summary>Every Tool at any depth — the named operands.</summary>
+    private static IEnumerable<C3dObject> Tools(C3dObject o)
+    {
+        foreach (var (_, child) in C3dOperands.Of(o))
+        {
+            if (!ReferenceEquals(child, C3dOperands.Inner(o))) yield return child;
+            foreach (var t in Tools(child)) yield return t;
+        }
     }
 
     private static void Unread(Dictionary<string, System.Text.Json.JsonElement>? keys, string owner, List<Diagnostic> found)

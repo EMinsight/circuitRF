@@ -989,6 +989,12 @@ public static class Em3dRunService
         stop = null;
 
         // ── brief 8: the grid, then the lowering ──────────────────────────────────────────────
+        // brief-em3d-64 §10 — refused before any grid is placed or file written: a kernel solid is brief 65's to lower.
+        if (Em3dShapeSolid.Refusal(problem, "openEMS") is { } kernel)
+        {
+            stop = new(EmRunStatus.Refused, EmDiagnostics.Forwarded("openems-lowering", kernel));
+            return null;
+        }
         control?.BeginStage("placing the FDTD grid");
         FdtdGridResult grid;
         try { grid = FdtdGrid.Build(problem, gridSettings); }

@@ -256,8 +256,12 @@ public sealed class GeometryKernel : IDisposable
     /// The ONE sentence every surface uses for a kernel feature it cannot offer (R-em3d63-3b):
     /// <i>"&lt;What&gt; needs the geometry kernel, which this installation does not have: &lt;Reason&gt; &lt;Action&gt;"</i>.
     /// </summary>
-    public static string NeedsKernel(string what, GeometryKernelCapability capability) =>
-        $"{what} needs the geometry kernel, which this installation does not have: {capability.Reason} {capability.Action}";
+    public static string NeedsKernel(string what, GeometryKernelCapability capability) => NeedsKernel(what, capability, plural: false);
+
+    /// <summary>The same sentence with a plural subject — <i>"'lid' (a Boolean) and 'shell' (a Step part) need …"</i>, the
+    /// refusal on open (brief 64 R-em3d64-5b).</summary>
+    public static string NeedsKernel(string what, GeometryKernelCapability capability, bool plural) =>
+        $"{what} {(plural ? "need" : "needs")} the geometry kernel, which this installation does not have: {capability.Reason} {capability.Action}";
 
     /// <summary><see cref="NeedsKernel(string, GeometryKernelCapability)"/> against the application's kernel, probing it if nothing has yet.</summary>
     public static string NeedsKernel(string what) => NeedsKernel(what, Shared.Capability);

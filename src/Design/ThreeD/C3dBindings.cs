@@ -119,6 +119,10 @@ public static class C3dBindings
         new(typeof(C3dArray), nameof(C3dArray.Pitch), 3, C3dFieldKind.Length),
         new(typeof(C3dWireArray), nameof(C3dWireArray.Count), 1, C3dFieldKind.Count),
         new(typeof(C3dWireArray), nameof(C3dWireArray.Pitch), 3, C3dFieldKind.Length),
+        // brief-em3d-64 R-em3d64-1c — an operation's dimensions, exactly as every other.
+        new(typeof(C3dFillet), nameof(C3dFillet.Radius), 1, C3dFieldKind.Length),
+        new(typeof(C3dChamfer), nameof(C3dChamfer.Distance), 1, C3dFieldKind.Length),
+        new(typeof(C3dChamfer), nameof(C3dChamfer.Distance2), 1, C3dFieldKind.Length),
     ];
 
     public static C3dFieldSpec? SpecOf(Type owner, string property)
@@ -193,6 +197,10 @@ public static class C3dBindings
                 if (o is C3dSheet { Rect: { } r }) yield return ("Rect.", r);
                 if (o is C3dWire { Array: { } wa }) yield return ("Array.", wa);
                 foreach (var p in Placement(o.Placement)) yield return p;
+                // brief-em3d-64 — an operation's operands are owned inline, so their fields are the operation's own,
+                // named under the operand's path (Blank.Size[0], Tools[1].Radius, Target.Blank.Min[2]).
+                foreach (var (prefix, child) in C3dOperands.Of(o))
+                    foreach (var (p, owner) in OwnersOf(child)) yield return (prefix + p, owner);
                 break;
             case C3dInstance i:
                 foreach (var p in Placement(i.Placement)) yield return p;
