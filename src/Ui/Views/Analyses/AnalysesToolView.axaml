@@ -2,10 +2,19 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:dockVm="using:CircuitRF.Ui.ViewModels.Dock"
              xmlns:av="using:CircuitRF.Ui.Views.Analyses"
+             xmlns:t3v="using:CircuitRF.Ui.Views.ThreeD"
              x:Class="CircuitRF.Ui.Views.Analyses.AnalysesToolView"
              x:DataType="dockVm:AnalysesTool"
              Background="{DynamicResource SystemChromeLowColor}">
 
-    <av:AnalysesListView DataContext="{Binding ListVm}"/>
+    <Panel>
+        <Panel IsVisible="{Binding ShowsSchematic}">
+            <av:AnalysesListView DataContext="{Binding ListVm}"/>
+        </Panel>
+        <!-- 3D editor round 5 — a .c3d's analyses are its EM setups: the same cards Simulate ▸ Setup Analyses… shows. -->
+        <Panel IsVisible="{Binding !ShowsSchematic}">
+            <t3v:C3dSetupAnalysesView DataContext="{Binding C3dEditor}"/>
+        </Panel>
+    </Panel>
 
 </UserControl>

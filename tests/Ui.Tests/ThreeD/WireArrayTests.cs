@@ -122,6 +122,20 @@ public sealed class WireArrayTests : IDisposable
         Assert.Equal(new C3dPoint3(-15 * Um, 0, 0), w.Array.Pitch);
     }
 
+    /// <summary>3D editor round 5 — a refusal elsewhere (a wire end off its pad, as when a boolean takes the pad away) leaves
+    /// the air box drawn and listed: it is sized from what did elaborate, and with no setup it had vanished with its row.</summary>
+    [Fact]
+    public void ARefusedWire_LeavesTheAirBoxDrawnAndListed()
+    {
+        var w = Wire();
+        w.Array = new C3dWireArray { Count = 4, Pitch = new(0, 15 * Um, 0) };     // w1[3] ends off the pads: refused
+        var vm = Open(w);
+        Assert.False(vm.Elaboration!.Ok);
+        Assert.Null(vm.ActiveSetupName);
+        Assert.NotNull(vm.ShownAirBox);
+        Assert.Contains(vm.Tree.SelectMany(g => g.Items), i => i.IsAirBox);
+    }
+
     /// <summary>3D editor round 5 — the ID pass reads one pixel, and on a board-sized view a bond wire is narrower than one:
     /// a click a few pixels off it selects it, unless a solid under the cursor stands in front.</summary>
     [Fact]

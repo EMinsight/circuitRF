@@ -586,7 +586,9 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
     [RelayCommand] private void Fit()
     {
         CountFit();
-        View.Camera.FitBounds(Scene.ContentMin, Scene.ContentMax, _aspect);
+        // 3D editor round 5 — only what is shown: a hidden object is not framed, the air box is while it is drawn.
+        var (min, max) = Scene.VisibleContent(View.Visible);
+        View.Camera.FitBounds(min, max, _aspect);
         View.Camera.SceneCentre = (Scene.BoundsMin + Scene.BoundsMax) * 0.5f;
         View.Camera.SceneRadius = (Scene.BoundsMax - Scene.BoundsMin).Length() * 0.5f;
         FrameRequested?.Invoke();

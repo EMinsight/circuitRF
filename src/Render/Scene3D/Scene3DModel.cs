@@ -204,6 +204,23 @@ public sealed class Scene3DModel
     /// <summary>The bounds of what is not air, box or boundary — what Fit frames.</summary>
     public required Vector3 ContentMin { get; init; }
     public required Vector3 ContentMax { get; init; }
+
+    /// <summary>3D editor round 5 — what Fit frames NOW: the bounds of every object <paramref name="visible"/> shows. A hidden
+    /// solid is not framed; a dielectric the user shows is, and so is the air box while it is drawn — unlike
+    /// <see cref="ContentMin"/>, which is what the FIRST view of a scene frames. With nothing shown, the content's bounds.</summary>
+    public (Vector3 Min, Vector3 Max) VisibleContent(ReadOnlySpan<bool> visible)
+    {
+        var min = new Vector3(float.MaxValue);
+        var max = new Vector3(float.MinValue);
+        for (int i = 0; i < Objects.Length; i++)
+        {
+            var o = Objects[i];
+            if (!visible.IsEmpty && (i >= visible.Length || !visible[i])) continue;
+            min = Vector3.Min(min, o.Min);
+            max = Vector3.Max(max, o.Max);
+        }
+        return min.X > max.X ? (ContentMin, ContentMax) : (min, max);
+    }
     /// <summary>The problem the scene was built from — kept for the tooltip, the grid and the tree.</summary>
     public Em3dProblem? Problem { get; init; }
     /// <summary>The problem's notes and warnings, or the refusal when there is no problem.</summary>

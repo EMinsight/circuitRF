@@ -133,6 +133,54 @@ public sealed class EditorRound5TreeTests : IDisposable
 
     private static C3dTreeItem Row(C3dEditorViewModel vm, string name) => vm.Tree.SelectMany(g => g.Items).Single(i => i.Name == name);
 
+    /// <summary>Fit frames what is shown: the air box while it is drawn; with it and the far box hidden, the two boxes left.</summary>
+    [Fact]
+    public void Fit_FramesOnlyTheVisibleObjects_TheAirBoxIncludedWhileShown()
+    {
+        var vm = Open(Doc(), out _);
+        vm.Viewer.Resized(400, 300);
+        Assert.True(vm.AirBoxShown);
+        vm.Viewer.FitCommand.Execute(null);
+        float withBox = vm.Viewer.View.Camera.Distance;
+        vm.AirBoxShown = false;
+        Settle(vm);
+        vm.Viewer.FitCommand.Execute(null);
+        float withoutBox = vm.Viewer.View.Camera.Distance;
+        Assert.True(withoutBox < withBox, $"{withoutBox} vs {withBox}");  // the padded box is larger than the content
+
+        vm.Tree.SelectMany(g => g.Items).Single(i => i.Name == "c").IsVisible = false;
+        Settle(vm);
+        vm.Viewer.FitCommand.Execute(null);
+        var target = vm.Viewer.Scene.ToWorld(vm.Viewer.View.Camera.Target);
+        Assert.Equal(75e-6, target.X, 1e-7);                                 // a (0..100 µm) and b (50..150 µm)
+        Assert.True(vm.Viewer.View.Camera.Distance < withoutBox / 2);
+    }
+
+    /// <summary>The Analyses panel shows the active .c3d's EM setups — not the last schematic's analyses — and lets go of them
+    /// when the .c3d closes.</summary>
+    [Fact]
+    public void TheAnalysesPanel_ShowsTheActiveC3dsSetups_AndLetsGoWhenItCloses()
+    {
+        var vm = Open(Doc(), out _);
+        var doc = new C3dEditorDocument(vm);
+        var ws = new CircuitRF.Ui.ViewModels.WorkspaceViewModel();
+        var tool = ws.Factory.AnalysesTool!;
+        Assert.True(tool.ShowsSchematic);
+
+        Invoke(ws, "ActivateDocument", doc, false);
+        Assert.Same(vm, tool.C3dEditor);
+        Assert.False(tool.ShowsSchematic);
+
+        Invoke(ws, "ClosedC3dEditor", doc);
+        Assert.Null(tool.C3dEditor);
+        Assert.True(tool.ShowsSchematic);
+        _open.Remove(vm);                                                  // ClosedC3dEditor disposed it
+    }
+
+    private static void Invoke(object target, string name, params object?[] args)
+        => target.GetType().GetMethod(name, System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+                 .Invoke(target, args);
+
     private static C3dDocument Doc()
     {
         C3dBox Box(string name, long x) => new() { Name = name, Material = "Copper", Min = new C3dPoint3(x * Um, 0, 0), Size = new C3dPoint3(100 * Um, 100 * Um, 100 * Um) };

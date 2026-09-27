@@ -385,7 +385,8 @@ public sealed class BooleansInTheEditorTests : IDisposable
         vm.TreeGrouping = C3dTreeGrouping.Primitive;
         var booleans = vm.Tree.Single(g => g.Role == C3dTreeGroupRole.Booleans);
         Assert.Equal(("Booleans", "lid"), (booleans.Header, booleans.Items.Single().Name));
-        Assert.Equal(["other"], vm.Tree.Single(g => g.Header == "Boxes").Items.Select(i => i.Name));
+        // 3D editor round 5: the air box is drawn around what did elaborate, and heads Boxes — not an operand either.
+        Assert.Equal(["other"], vm.Tree.Single(g => g.Header == "Boxes").Items.Where(i => !i.IsAirBox).Select(i => i.Name));
     }
 
     // ── 3D editor bugs round 5 ─────────────────────────────────────────────────────────────────────

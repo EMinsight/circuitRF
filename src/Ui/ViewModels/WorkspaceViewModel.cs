@@ -15533,6 +15533,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     private void PointAnalysesAt(SchematicDocument sd)
     {
         _lastActiveSchematicDoc = sd;
+        if (_factory.AnalysesTool is { } tool) tool.C3dEditor = null;       // a schematic takes the panel back from a .c3d
         string schName = RunResultsWriter.SchematicKey(sd.FilePath, sd.Id);
         _factory.AnalysesTool?.SetActiveSchematic(sd.ViewModel, schName);
     }
@@ -15762,6 +15763,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         if (activeDockable is SchematicDocument sd)
         {
             PointAnalysesAt(sd);
+        }
+        // 3D editor round 5 — a .c3d's analyses are its EM setups: the panel shows them, retained as a schematic is.
+        else if (activeDockable is ThreeD.C3dEditorDocument c3dForAnalyses)
+        {
+            if (_factory.AnalysesTool is { } tool) tool.C3dEditor = c3dForAnalyses.ViewModel;
         }
         else if (activeDockable is DataDisplayDocument ddForAnalyses
                  && MatchSchematicForDataDisplay(

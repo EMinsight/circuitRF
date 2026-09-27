@@ -37078,3 +37078,37 @@ without the editing, so an editor improvement reaches it with no second change.
   toggle the row on every platform (a click on a tick or an expander is left alone); Cmd-click and Shift's range are
   still the TreeView's own. The context menu is raised only for the right button, so a Ctrl-click never opened it.
   Pixels not seen; no test (the test host applies no control templates).
+
+## 3D editor bugs round 5 — enabling a boolean took the air box away (2026-09-27)
+
+Not the boolean: the wires. The design's bond-wire row ended on the TOOL of a Subtract. Disabled, the Tool is its own
+solid and the wires land on it; enabled, the Tool is subtracted away, every wire end floats, and each is refused
+("end is no longer on a pad"). `ResolveRecords` built the air box only for a clean elaboration (`e.Ok`), so any
+refusal anywhere removed the box from the view — and, with no active setup (where the row is listed only when a box is
+drawn), removed its tree row too. The gate was copied from the port and face-boundary lines beside it, which do need a
+clean elaboration; the box needs only the extent of what DID elaborate (`C3dProblemAssembly.AirBox` reads nothing else).
+It is now built regardless; ports and face boundaries still wait. Consequence: with the kernel absent, a document's
+managed objects now get their box too (Gate10's Boxes list skips the air box row). Gate
+`WireArrayTests.ARefusedWire_LeavesTheAirBoxDrawnAndListed` (fails with the gate put back).
+
+## 3D editor bugs round 5 — Fit frames what is shown (2026-09-27)
+
+Fit (the toolbar, Home, and every standard view, which ends in Fit) framed `Scene3DModel.ContentMin/Max` — fixed when
+the scene is built, from every object whatever the user had hidden, and never the air box. It now frames
+`Scene3DModel.VisibleContent(View.Visible)`: every object the view shows, the air box's faces included while the box
+is drawn (they are ordinary objects with their own visibility, so the air-box switch is honoured with no special case),
+a hidden solid left out. Nothing shown: the content's bounds, as before. The FIRST view of a scene still frames
+`ContentMin/Max` — it is framed before the editor re-applies the document's hidden flags. Gate
+`EditorRound5TreeTests.Fit_FramesOnlyTheVisibleObjects_TheAirBoxIncludedWhileShown` (fails on the old bounds).
+
+## 3D editor bugs round 5 — the Analyses panel follows a .c3d (2026-09-27)
+
+The Analyses panel knew only schematics: `ActivateDocument` pointed it at a schematic, and every other document left
+the RETAINED schematic in place — so with a `.c3d` in focus the panel showed the last schematic's analyses beside it.
+A `.c3d`'s analyses already had a view (Simulate ▸ Setup Analyses…, `C3dSetupAnalysesDialog`). Its list is now a
+control of its own, `Views/ThreeD/C3dSetupAnalysesView` (the dialog hosts it above its Close footer, so the two
+cannot drift), and `AnalysesTool.C3dEditor` puts it in the panel: set when a `.c3d` becomes the active document,
+cleared when a schematic does (`PointAnalysesAt`) or when that `.c3d` closes (`ClosedC3dEditor`, which the workspace
+switch also runs); any other document leaves it, as it leaves the retained schematic. The read-only Show 3D View has
+no setups of its own and does not take the panel. Gate
+`EditorRound5TreeTests.TheAnalysesPanel_ShowsTheActiveC3dsSetups_AndLetsGoWhenItCloses` (fails without the routing).

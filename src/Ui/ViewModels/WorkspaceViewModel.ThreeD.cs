@@ -500,6 +500,8 @@ public partial class WorkspaceViewModel
     private void ClosedC3dEditor(C3dEditorDocument doc)
     {
         RememberDrawingPlane(doc.ViewModel);
+        // 3D editor round 5 — the Analyses panel lets go of a closed .c3d's setups (and falls back to the schematic's list).
+        if (_factory.AnalysesTool is { } tool && ReferenceEquals(tool.C3dEditor, doc.ViewModel)) tool.C3dEditor = null;
         // Not after a workspace switch has dropped the table: the outgoing session was persisted with this camera in it.
         if (_viewer3DCameras is not null && !doc.IsScratch && CameraKey(doc.FilePath) is { } k && doc.ViewModel.Viewer.CameraToPersist() is { } cam)
             _viewer3DCameras[k] = cam;
