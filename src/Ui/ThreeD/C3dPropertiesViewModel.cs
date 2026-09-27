@@ -164,6 +164,24 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
 
     public bool BooleanKeepToolsEnabled => BooleanEditable && BooleanOperation == CircuitRF.Design.ThreeD.C3dBooleanOp.Subtract;
 
+    // ── a fillet or chamfer row (brief-em3d-67 R-em3d67-6b) ─────────────────────────────────
+
+    [ObservableProperty] private bool _isFeature;
+    [ObservableProperty] private bool _featureIsChamfer;
+    [ObservableProperty] private bool _featureEnabled;
+    /// <summary>False without the kernel: every field shown, disabled, with the capability's sentence.</summary>
+    [ObservableProperty] private bool _featureEditable;
+    [ObservableProperty] private string? _featureTip;
+    [ObservableProperty] private bool _featureCanFlip;
+    /// <summary>The feature's edges, by name.</summary>
+    public ObservableCollection<string> FeatureEdges { get; } = [];
+    private string _featurePath = "";
+
+    /// <summary>The dimension lines: an object's, or a feature row's size fields.</summary>
+    public bool FieldsVisible => IsEditable || IsFeature;
+    partial void OnIsEditableChanged(bool value) => OnPropertyChanged(nameof(FieldsVisible));
+    partial void OnIsFeatureChanged(bool value) => OnPropertyChanged(nameof(FieldsVisible));
+
     /// <summary>brief-em3d-47 R-em3d47-3e — the selected vertex's world coordinates, editable (Set Coordinates).</summary>
     [ObservableProperty] private bool _isVertexEditable;
     [ObservableProperty] private string _vertexX = "";
@@ -202,6 +220,8 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         MaterialPlaceholder = NoMaterialPlaceholder;
         IsVertexEditable = false;
         IsBoolean = false;
+        IsFeature = false;
+        FeatureEdges.Clear();
         IsMaterialEditable = true;
         BooleanOperands.Clear();
         IsAirBox = false;
@@ -209,6 +229,20 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         AirBoxFaces.Clear();
         var viewer = editor.Viewer;
         var sel = viewer.Selection;
+        // brief-em3d-67 R-em3d67-6b — a fillet's or chamfer's row: its own fields, not its object's.
+        if (editor.SelectedTreeItem is { FeaturePath: { } fp, ObjectIndex: >= 0 and var ft } && ft < editor.Document.Objects.Count
+            && (sel.Count == 0 || viewer.SelectMode == Scene3DSelectMode.Object))
+        {
+            LoadFeature(ft, fp);
+            return;
+        }
+        // brief-em3d-67 R-em3d67-3f — edges: one's name, faces, kind, length (and a circle's radius and centre); several's
+        // count and total length. No kernel is needed: a managed object's edges are its own.
+        if (viewer.SelectMode == Scene3DSelectMode.Edge && sel.Count > 0 && sel.All(i => i.IsEdge))
+        {
+            LoadEdges(sel);
+            return;
+        }
         if (sel.Count == 0)
         {
             // 3D editor round 1 — the tree's node when the scene holds nothing selected: an object elaboration refused
@@ -324,6 +358,99 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         foreach (var row in Dimensions(obj)) Rows.Add(row);
         foreach (var f in editor.DimensionFields(obj)) Fields.Add(f);
         foreach (var row in RowsOf(Fields)) FieldRows.Add(row);
+    }
+
+    /// <summary>brief-em3d-67 R-em3d67-3f — what Properties shows for selected edges, every value selectable and copyable.</summary>
+    private void LoadEdges(IReadOnlyList<Scene3DItem> sel)
+    {
+        var viewer = editor.Viewer;
+        var edges = sel.Select(i => (Item: i, Edge: viewer.EdgeOf(i))).Where(t => t.Edge is not null).ToList();
+        if (edges.Count == 0) { Heading = "Nothing selected"; return; }
+        if (edges.Count > 1)
+        {
+            Heading = $"{edges.Count} edges";
+            Rows.Add(new C3dPropertyRow("Total length", viewer.FormatLength(edges.Sum(t => t.Edge!.Value.Edge.Length))));
+            var owners = edges.Select(t => viewer.Scene.Object(t.Item.Object)).OfType<CircuitRF.Render.Scene3D.Scene3DObject>().Distinct().ToList();
+            Rows.Add(new C3dPropertyRow(owners.Count == 1 ? "Object" : "Objects", string.Join(", ", owners.Select(viewer.ObjectName))));
+            Rows.Add(new C3dPropertyRow("Edges", string.Join("\n", edges.Select(t => t.Edge!.Value.Edge.Name))));
+            return;
+        }
+        var (item, found) = edges[0];
+        var (e, off) = found!.Value;
+        Heading = viewer.Name(item);
+        Rows.Add(new C3dPropertyRow("Edge", e.Name));
+        Rows.Add(new C3dPropertyRow("Faces", e.FaceName1.Length > 0 ? $"{e.FaceName0}, {e.FaceName1}" : $"{e.FaceName0} (its rim)"));
+        Rows.Add(new C3dPropertyRow("Kind", e.Kind.ToString().ToLowerInvariant() + (e.Closed && e.Kind != Scene3DEdgeKind.Circle ? " (closed)" : "")));
+        Rows.Add(new C3dPropertyRow("Length", viewer.FormatLength(e.Length)));
+        if (e.Kind is Scene3DEdgeKind.Circle or Scene3DEdgeKind.Arc && e.Centre is { } c)
+        {
+            Rows.Add(new C3dPropertyRow("Radius", viewer.FormatLength(e.Radius)));
+            Rows.Add(new C3dPropertyRow("Centre", $"({viewer.FormatLength(c.X + off.X)}, {viewer.FormatLength(c.Y + off.Y)}, {viewer.FormatLength(c.Z + off.Z)})"));
+        }
+        if (viewer.Scene.Object(item.Object) is { } o) Rows.Add(new C3dPropertyRow("Object", viewer.ObjectName(o)));
+    }
+
+    /// <summary>
+    /// brief-em3d-67 R-em3d67-6b — a fillet's or chamfer's row: Radius (or Distance, Distance 2 and Flip), Enabled, its edges
+    /// (Show, Edit…) and Remove, each one undo entry, re-evaluated through the client. A failed evaluation is not rolled back:
+    /// the refusal is shown here and on the row.
+    /// </summary>
+    private void LoadFeature(int top, string path)
+    {
+        var root = editor.Document.Objects[top];
+        if (C3dFillets.At(root, path) is not C3dOperation f || !C3dFillets.IsFeature(f)) { Heading = "Nothing selected"; return; }
+        IsFeature = true;
+        ObjectIndex = top;
+        _featurePath = path;
+        FeatureIsChamfer = f is C3dChamfer;
+        FeatureTip = editor.KernelMissing(f is C3dChamfer ? "Chamfer" : "Fillet");
+        FeatureEditable = FeatureTip is null;
+        FeatureEnabled = f.Enabled;
+        FeatureCanFlip = f is C3dChamfer { Distance2: > 0 } && FeatureEditable;
+        foreach (string e in C3dFillets.EdgesOf(f)) FeatureEdges.Add(e);
+        Heading = $"{C3dFillets.RowLabel(f, dbu => LayoutUnits.Format(dbu, editor.Document.DisplayUnit, editor.Document.DbuPerMicron) + " " + LengthUnit)} of '{root.Name}'";
+        if (editor.Elaboration?.KernelRefusals.TryGetValue(root.Name, out var why) == true) Rows.Add(new C3dPropertyRow("Refused", why));
+        var (core, _) = C3dFillets.Core(root);
+        Rows.Add(new C3dPropertyRow("Rounds", core is null ? root.Name : $"'{root.Name}' ({C3dObject.KindOf(core)})"));
+        string[] own = f is C3dChamfer ? [nameof(C3dChamfer.Distance), nameof(C3dChamfer.Distance2)] : [nameof(C3dFillet.Radius)];
+        foreach (var field in editor.DimensionFields(root).Where(x => own.Any(o => x.Path == path + o)))
+            Fields.Add(field);
+        foreach (var row in RowsOf(Fields)) FieldRows.Add(row);
+    }
+
+    partial void OnFeatureEnabledChanged(bool value)
+    {
+        if (_loading || !IsFeature) return;
+        editor.SetFeatureEnabled(ObjectIndex, _featurePath, value);
+    }
+
+    /// <summary>Show: the feature's edges selected in the view (Edge mode).</summary>
+    [CommunityToolkit.Mvvm.Input.RelayCommand]
+    private void ShowFeatureEdges() { if (IsFeature) editor.ShowFeatureEdges(ObjectIndex, _featurePath); }
+
+    /// <summary>Edit…: the panel on the feature's edges; they are added and removed exactly as at creation.</summary>
+    [CommunityToolkit.Mvvm.Input.RelayCommand]
+    private void EditFeatureEdges() { if (IsFeature) Error = editor.EditFeature(ObjectIndex, _featurePath) ?? ""; }
+
+    /// <summary>Remove: the feature unwrapped, its target back in its place with its name.</summary>
+    [CommunityToolkit.Mvvm.Input.RelayCommand]
+    private void RemoveFeature() { if (IsFeature) editor.RemoveFeature(ObjectIndex, _featurePath); }
+
+    /// <summary>Flip (a chamfer at two distances): which face the first distance is measured on.</summary>
+    [CommunityToolkit.Mvvm.Input.RelayCommand]
+    private void FlipChamfer()
+    {
+        if (!IsFeature) return;
+        int top = ObjectIndex;
+        editor.ChangeFeature(top, _featurePath, "Flip the chamfer of " + editor.Document.Objects[top].Name, o =>
+        {
+            if (o is not C3dChamfer c) return;
+            (c.Distance, c.Distance2) = (c.Distance2, c.Distance);
+            var e1 = C3dBindings.GetExpr(c, nameof(C3dChamfer.Distance), 0);
+            var e2 = C3dBindings.GetExpr(c, nameof(C3dChamfer.Distance2), 0);
+            if (C3dBindings.Find(c, nameof(C3dChamfer.Distance)) is { } f1) C3dBindings.SetExpr(f1.Owner, f1.Spec, f1.Component, e2);
+            if (C3dBindings.Find(c, nameof(C3dChamfer.Distance2)) is { } f2) C3dBindings.SetExpr(f2.Owner, f2.Spec, f2.Component, e1);
+        });
     }
 
     /// <summary>

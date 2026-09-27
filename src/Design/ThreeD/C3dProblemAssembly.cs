@@ -202,6 +202,10 @@ public static class C3dProblemAssembly
             // The fold rule: a reference to zmax covers every piece an operation split it into (zmax#1, zmax#2).
             var mine = Enumerable.Range(0, Math.Min(prov.FaceNames.Count, primNames.Count))
                                  .Where(i => C3dKernelUse.Covers(targetFace, prov.FaceNames[i])).Select(i => primNames[i]).Distinct().ToList();
+            // brief-em3d-67 R-em3d67-6d — a fillet's or chamfer's own face, while that feature is disabled: said as that.
+            if (mine.Count == 0 && C3dFillets.Chain(obj).FirstOrDefault(f => !f.Feature.Enabled &&
+                    b.Face.StartsWith(f.Feature is C3dChamfer ? "chamfer(" : "fillet(", StringComparison.Ordinal)).Feature is { } off)
+                return "A face boundary cannot be placed: " + C3dFillets.OnlyWhileEnabled(b.Face, b.Object, off);
             if (mine.Count == 0)
                 return $"{where} names a face '{b.Object}' does not have (it has " +
                        $"{string.Join(", ", (solid.Primitive is Em3dShapeSolid ? prov.FaceNames : obj.FaceNames()).Distinct())}). " +

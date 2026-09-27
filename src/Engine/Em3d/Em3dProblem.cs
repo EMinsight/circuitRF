@@ -180,7 +180,25 @@ public sealed record Em3dShapeFace(string Name, string Kind,
 /// <summary>One named feature edge of a kernel solid: the two faces it separates, its curve kind, smallest radius
 /// (0 for a line), metres, and a polyline for drawing and snapping.</summary>
 public sealed record Em3dShapeEdge(string Name, string FaceA, string FaceB, string Kind, double MinRadiusM,
-                                   IReadOnlyList<Point3> Polyline);
+                                   IReadOnlyList<Point3> Polyline)
+{
+    /// <summary>brief-em3d-67 — a closed edge (a circle): one vertex, no midpoint.</summary>
+    public bool Closed { get; init; }
+
+    /// <summary>brief-em3d-67 — its length along the curve, metres; 0 when the kernel did not say.</summary>
+    public double LengthM { get; init; }
+
+    /// <summary>brief-em3d-67 — the unit tangents at the polyline's first and last points, along its direction; null when
+    /// the kernel did not say.</summary>
+    public (Point3 Start, Point3 End)? Tangents { get; init; }
+
+    /// <summary>brief-em3d-67 — the point halfway along the curve (from the curve, not the polyline); null when closed.</summary>
+    public Point3? Mid { get; init; }
+
+    /// <summary>brief-em3d-67 — a circle's or an arc's centre, and its radius (metres); null for any other curve.</summary>
+    public Point3? Centre { get; init; }
+    public double RadiusM { get; init; }
+}
 
 // ── The problem's parts ──────────────────────────────────────────────────────────────────────
 

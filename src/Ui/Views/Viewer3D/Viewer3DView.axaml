@@ -30,6 +30,10 @@
                 <ToggleButton IsChecked="{Binding ViewModel.IsFaceMode}" ToolTip.Tip="Face mode: select one face — its area and normal are shown  (F)">
                     <mi:MaterialIcon Kind="VectorSquare" Width="16" Height="16"/>
                 </ToggleButton>
+                <!-- brief-em3d-67 R-em3d67-1c — between Face and Vertex: surfaces, then edges, then points. -->
+                <ToggleButton IsChecked="{Binding ViewModel.IsEdgeMode}" ToolTip.Tip="Edge mode: select edges; Shift-click adds  (E)">
+                    <mi:MaterialIcon Kind="VectorLine" Width="16" Height="16"/>
+                </ToggleButton>
                 <ToggleButton IsChecked="{Binding ViewModel.IsVertexMode}" ToolTip.Tip="Vertex mode: select one vertex — its coordinates are shown  (V)">
                     <mi:MaterialIcon Kind="VectorPoint" Width="16" Height="16"/>
                 </ToggleButton>

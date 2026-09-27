@@ -324,7 +324,7 @@ public sealed class BooleansInTheEditorTests : IDisposable
             Assert.Null(vm.Tool);
             Assert.Equal(refusal, vm.StatusMessage);
         }
-        Assert.All(vm.DrawMenuItems().Where(i => i.Header is "Move Along Normal  (N)" or "Move  (G)" or "Extrude to New Solid  (E)" or "Align to Face…"),
+        Assert.All(vm.DrawMenuItems().Where(i => i.Header is "Move Along Normal  (N)" or "Move  (G)" or "Extrude to New Solid  (Shift+E)" or "Align to Face…"),
                    i => Assert.Equal((false, refusal), (i.Enabled, i.Tip)));
         var lid = vm.SceneObject("lid")!;
         var corner = vm.Viewer.Scene.FeaturesOf(lid.Id).Vertex(0);

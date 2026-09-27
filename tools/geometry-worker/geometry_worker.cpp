@@ -68,6 +68,7 @@
 #include <BRepBuilderAPI_Sewing.hxx>
 #include <BRepBuilderAPI_Transform.hxx>
 #include <BRepCheck_Analyzer.hxx>
+#include <BRepExtrema_DistShapeShape.hxx>
 #include <BRepFilletAPI_MakeChamfer.hxx>
 #include <BRepFilletAPI_MakeFillet.hxx>
 #include <BRepGProp.hxx>
@@ -130,6 +131,7 @@
 #include <fstream>
 #include <iostream>
 #include <map>
+#include <memory>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -484,12 +486,33 @@ private:
 struct Refuse
 {
   std::string code, object, detail;
+  // brief-em3d-67 R-em3d67-5d: which edges a fillet or chamfer failed on, so the client can name them in the user's
+  // terms. `edges` is one edge that does not fit (with `width_um`, the narrower of the two faces beside it) or the
+  // edges meeting at a corner the kernel cannot blend; `missing` is an edge name's faces the target no longer has.
+  std::vector<std::string> edges;
+  double width_um = -1;
+  bool corner = false;
+  std::vector<std::string> missing;
 };
 
 static Frame Refusal(const Refuse& r)
 {
   JsonOut j;
-  j.Begin().Bool("ok", false).Str("code", r.code).Str("object", r.object).Str("detail", r.detail).End();
+  j.Begin().Bool("ok", false).Str("code", r.code).Str("object", r.object).Str("detail", r.detail);
+  if (!r.edges.empty())
+  {
+    j.Key("edges").BeginArr();
+    for (const std::string& e : r.edges) j.Str(e);
+    j.EndArr().Bool("corner", r.corner);
+  }
+  if (r.width_um > 0) j.Num("width_um", r.width_um);
+  if (!r.missing.empty())
+  {
+    j.Key("missing").BeginArr();
+    for (const std::string& m : r.missing) j.Str(m);
+    j.EndArr();
+  }
+  j.End();
   return {j.Text(), {}};
 }
 
@@ -1123,17 +1146,58 @@ static Named BuildBoolean(const NodeReader& r)
   return run(op);
 }
 
+// The name a face piece was split from, every piece number off: "zmax#2" -> "zmax", a managed fold's "zmax.1" ->
+// "zmax" (brief 40 section 1e), and both at once. Only a numeric suffix is a piece number: "hole0.side0" is itself.
+static std::string FoldBase(std::string n)
+{
+  for (;;)
+  {
+    size_t at = n.find_last_of("#.");
+    if (at == std::string::npos || at + 1 >= n.size()) return n;
+    for (size_t i = at + 1; i < n.size(); ++i)
+      if (n[i] < '0' || n[i] > '9') return n;
+    n.resize(at);
+  }
+}
+
+static std::vector<std::string> SplitBar(const std::string& s)
+{
+  std::vector<std::string> out;
+  size_t from = 0;
+  for (;;)
+  {
+    size_t at = s.find('|', from);
+    out.push_back(s.substr(from, at == std::string::npos ? std::string::npos : at - from));
+    if (at == std::string::npos) return out;
+    from = at + 1;
+  }
+}
+
 // The target's edges named as a Fillet or Chamfer lists them, and each listed name's edges.
 struct EdgeLookup
 {
   std::vector<NamedEdge> all;
+
+  // brief-em3d-67 R-em3d67-2d -- a name resolves to the edge of that name; failing that, a two-face name resolves to
+  // EVERY edge between the pieces of its two faces (the fold rule applied on both sides), so a fillet on xmax|zmax
+  // follows zmax folded into zmax.0 and zmax.1 onto both new edges. A numbered name (side|zmax|2) or a name of a piece
+  // (xmax|zmax#1) resolves exactly or not at all: widening it would be a guess (em-3d.md section 6.4).
   std::vector<const NamedEdge*> Find(const std::string& name) const
   {
     std::vector<const NamedEdge*> out;
     for (const auto& e : all)
       if (e.name == name) out.push_back(&e);
+    if (!out.empty()) return out;
+    std::vector<std::string> f = SplitBar(name);
+    if (f.size() != 2 || FoldBase(f[0]) != f[0] || FoldBase(f[1]) != f[1]) return out;
+    for (const auto& e : all)
+    {
+      std::string a = FoldBase(e.faceNames[0]), b = FoldBase(e.faceNames[1]);
+      if ((a == f[0] && b == f[1]) || (a == f[1] && b == f[0])) out.push_back(&e);
+    }
     return out;
   }
+
   const NamedEdge* Of(const TopoDS_Shape& edge) const
   {
     for (const auto& e : all)
@@ -1141,6 +1205,21 @@ struct EdgeLookup
     return nullptr;
   }
 };
+
+// The faces an edge name names that the target has no face (nor piece of a face) called.
+static std::vector<std::string> MissingFaces(const std::string& name, const std::vector<std::string>& faceNames)
+{
+  std::vector<std::string> out;
+  std::vector<std::string> f = SplitBar(name);
+  for (size_t k = 0; k < std::min<size_t>(f.size(), 2); ++k)
+  {
+    if (f[k].empty()) continue;
+    bool has = false;
+    for (const std::string& n : faceNames) has = has || n == f[k] || FoldBase(n) == f[k];
+    if (!has) out.push_back(f[k]);
+  }
+  return out;
+}
 
 static std::vector<std::string> EdgeNames(const NodeReader& r)
 {
@@ -1155,15 +1234,12 @@ static std::vector<std::string> EdgeNames(const NodeReader& r)
   return out;
 }
 
-// Rounds or cuts the named edges of the target, and names every face the operation made after the
-// edge it came from -- every edge of each CONTOUR, not only the listed ones: a tangent chain
-// propagates, and brief 61 Q7 left 7 of 18 faces unnamed when it named from the listed edge alone.
+// Names every face the operation made after the edge it came from -- every edge of each CONTOUR, not only the listed
+// ones: a tangent chain propagates, and brief 61 Q7 left 7 of 18 faces unnamed when it named from the listed edge alone.
+// `mk` has been built.
 template <class Maker>
-static Named FinishLocal(const NodeReader& r, Maker& mk, const Named& target, const EdgeLookup& edges, const char* word)
+static Named FinishLocal(Maker& mk, const Named& target, const EdgeLookup& edges, const char* word)
 {
-  mk.Build();
-  if (!mk.IsDone())
-    throw Refuse{"build.failed", r.name, std::string("the ") + word + " could not be built on those edges (a radius or distance too large for the faces beside it is the usual reason)"};
   std::vector<FacePiece> claims(target.faces.begin(), target.faces.end());
   Named n = NameResult(mk.Shape(), claims, mk);
   Shapes named;
@@ -1186,21 +1262,127 @@ static Named FinishLocal(const NodeReader& r, Maker& mk, const Named& target, co
   return n;
 }
 
+// Whether a maker built a solid. An exception is the kernel saying no; a fault (OSD_Signal) is left to the request
+// boundary, which answers it and exits (README "Failure").
+template <class Maker>
+static bool Built(Maker& mk)
+{
+  try
+  {
+    mk.Build();
+    return mk.IsDone() && HasSolid(mk.Shape());
+  }
+  catch (const OSD_Signal&) { throw; }
+  catch (const Standard_Failure&) { return false; }
+}
+
+// brief-em3d-67 R-em3d67-5d -- how far the narrower of the two faces beside an edge reaches from it: the farthest of
+// each face's vertices from the edge, the lesser of the two. A radius or distance must be less than this.
+static double WidthBeside(const NamedEdge& e)
+{
+  double w = -1;
+  for (const TopoDS_Face& f : e.faces)
+  {
+    double reach = 0;
+    for (TopExp_Explorer x(f, TopAbs_VERTEX); x.More(); x.Next())
+    {
+      BRepExtrema_DistShapeShape d(x.Current(), e.edge);
+      if (d.IsDone() && d.NbSolution() > 0) reach = std::max(reach, d.Value());
+    }
+    if (reach > 0 && (w < 0 || reach < w)) w = reach;
+  }
+  return w;
+}
+
+// Rounds or cuts the named edges of the target. A name that resolves to nothing is refused naming it and the face it
+// has lost (edge.missing); an operation OCCT cannot build is diagnosed before it is refused: each name alone, so the
+// one that does not fit is named with the width beside it; and when every name fits alone, the corner where two of
+// them meet, named by the edges meeting there (R-em3d67-5d). Only a failure costs the extra builds.
+template <class Maker, class Add>
+static Named LocalOperation(const NodeReader& r, const Named& target, const char* word, Add add)
+{
+  Held th = Hold(target);
+  // Numbered in the target's own frame, as `edges` numbers it when the target is a root (section 2d).
+  EdgeLookup edges{NameEdges(th.shape, th.faceNames, th.toOwn)};
+  std::vector<std::string> names = EdgeNames(r);
+  std::vector<std::vector<const NamedEdge*>> found;
+  for (const std::string& nm : names)
+  {
+    auto f = edges.Find(nm);
+    if (f.empty())
+    {
+      Refuse no{"edge.missing", r.name, "the target has no edge named '" + nm + "'"};
+      no.edges = {nm};
+      no.missing = MissingFaces(nm, th.faceNames);
+      throw no;
+    }
+    found.push_back(f);
+  }
+  auto make = [&](const std::vector<size_t>& which) {
+    auto mk = std::make_unique<Maker>(target.shape);
+    for (size_t i : which)
+      for (const NamedEdge* e : found[i]) add(*mk, *e);
+    return mk;
+  };
+  std::vector<size_t> every(names.size());
+  for (size_t i = 0; i < every.size(); ++i) every[i] = i;
+  auto mk = make(every);
+  if (Built(*mk)) return FinishLocal(*mk, target, edges, word);
+
+  std::string failed = std::string("the ") + word + " could not be built on those edges";
+  for (size_t i = 0; i < names.size(); ++i)
+  {
+    if (names.size() > 1)
+    {
+      auto one = make({i});
+      if (Built(*one)) continue;
+    }
+    Refuse no{"build.failed", r.name, failed};
+    no.edges = {names[i]};
+    for (const NamedEdge* e : found[i])
+    {
+      double w = WidthBeside(*e);
+      if (w > 0 && (no.width_um < 0 || w < no.width_um)) no.width_um = w;
+    }
+    throw no;
+  }
+  // Every name fits alone: the corner where edges of two names meet.
+  Refuse no{"build.failed", r.name, failed};
+  no.corner = true;
+  Ancestors byVertex;
+  TopExp::MapShapesAndAncestors(th.shape, TopAbs_VERTEX, TopAbs_EDGE, byVertex);
+  for (size_t i = 0; i < found.size() && no.edges.empty(); ++i)
+    for (size_t j = i + 1; j < found.size() && no.edges.empty(); ++j)
+      for (const NamedEdge* a : found[i])
+        for (const NamedEdge* b : found[j])
+        {
+          if (!no.edges.empty()) break;
+          for (TopExp_Explorer va(a->edge, TopAbs_VERTEX); va.More() && no.edges.empty(); va.Next())
+            for (TopExp_Explorer vb(b->edge, TopAbs_VERTEX); vb.More(); vb.Next())
+            {
+              if (!va.Current().IsSame(vb.Current())) continue;
+              int k = byVertex.FindIndex(va.Current());
+              std::vector<std::string> at;
+              if (k > 0)
+                for (const TopoDS_Shape& e : byVertex(k))
+                  if (const NamedEdge* ne = edges.Of(e); ne && std::find(at.begin(), at.end(), ne->name) == at.end())
+                    at.push_back(ne->name);
+              std::sort(at.begin(), at.end());
+              no.edges = at;
+              break;
+            }
+        }
+  if (no.edges.empty()) no.corner = false;
+  throw no;
+}
+
 static Named BuildFillet(const NodeReader& r)
 {
   Named target = BuildNode(r.Member("target"));
   double radius = r.Num("radius");
   if (!(radius > 0)) r.Bad("the radius is not positive");
-  Held th = Hold(target);
-  EdgeLookup edges{NameEdges(th.shape, th.faceNames, gp_Trsf())};
-  BRepFilletAPI_MakeFillet mk(target.shape);
-  for (const std::string& nm : EdgeNames(r))
-  {
-    auto found = edges.Find(nm);
-    if (found.empty()) r.Bad("the target has no edge named '" + nm + "'");
-    for (const NamedEdge* e : found) mk.Add(radius, e->edge);
-  }
-  return FinishLocal(r, mk, target, edges, "fillet");
+  return LocalOperation<BRepFilletAPI_MakeFillet>(r, target, "fillet",
+    [radius](BRepFilletAPI_MakeFillet& mk, const NamedEdge& e) { mk.Add(radius, e.edge); });
 }
 
 static Named BuildChamfer(const NodeReader& r)
@@ -1214,19 +1396,12 @@ static Named BuildChamfer(const NodeReader& r)
     d2 = r.Num("distance2");
     if (!(d2 > 0)) r.Bad("the second distance is not positive");
   }
-  Held th = Hold(target);
-  EdgeLookup edges{NameEdges(th.shape, th.faceNames, gp_Trsf())};
-  BRepFilletAPI_MakeChamfer mk(target.shape);
-  for (const std::string& nm : EdgeNames(r))
-  {
-    auto found = edges.Find(nm);
-    if (found.empty()) r.Bad("the target has no edge named '" + nm + "'");
-    // Distance lies on the edge's first face (its name sorts first), Distance2 on its second.
-    for (const NamedEdge* e : found)
-      if (d2 > 0) mk.Add(d1, d2, e->edge, e->faces[0]);
-      else mk.Add(d1, e->edge);
-  }
-  return FinishLocal(r, mk, target, edges, "chamfer");
+  // Distance lies on the edge's first face (its name sorts first), Distance2 on its second.
+  return LocalOperation<BRepFilletAPI_MakeChamfer>(r, target, "chamfer",
+    [d1, d2](BRepFilletAPI_MakeChamfer& mk, const NamedEdge& e) {
+      if (d2 > 0) mk.Add(d1, d2, e.edge, e.faces[0]);
+      else mk.Add(d1, e.edge);
+    });
 }
 
 static Named BuildStep(const NodeReader& r);
@@ -1571,13 +1746,41 @@ static Frame OpEdges(const Json& req)
         gp_Pnt p = c.Value(t);
         poly.insert(poly.end(), {p.X(), p.Y(), p.Z()});
       }
+    double t0 = c.FirstParameter(), t1 = c.LastParameter();
+    double length = GCPnts_AbscissaPoint::Length(c);
     r.j.Begin().Str("name", ne.name);
     r.j.Key("faces").BeginArr().Str(ne.faceNames[0]).Str(ne.faceNames[1]).EndArr();
     r.j.Str("kind", CurveKind(c.GetType()))
-       .Num("length", GCPnts_AbscissaPoint::Length(c))
+       .Num("length", length)
        .Num("min_radius", EdgeMinRadius(c))
-       .Int("points", static_cast<long long>((poly.size() - before) / 3))
-       .End();
+       .Int("points", static_cast<long long>((poly.size() - before) / 3));
+    // brief-em3d-67 R-em3d67-2c / -3e / -4: what snapping and the tangent chain need, exact from the curve rather than
+    // read off the polyline (whose points move with the deflection). The ends and their tangents run the polyline's way;
+    // a closed edge (a circle) has one vertex and no midpoint; a circle or an arc also gives its centre and radius.
+    bool closed = TopExp::FirstVertex(ne.edge).IsSame(TopExp::LastVertex(ne.edge));
+    gp_Pnt p0 = c.Value(t0), p1 = c.Value(t1);
+    gp_Pnt pm0;
+    gp_Vec d0, d1;
+    c.D1(t0, pm0, d0);
+    c.D1(t1, pm0, d1);
+    if (d0.Magnitude() > 0) d0.Normalize();
+    if (d1.Magnitude() > 0) d1.Normalize();
+    r.j.Bool("closed", closed);
+    r.j.Key("ends").BeginArr().Num(p0.X()).Num(p0.Y()).Num(p0.Z()).Num(p1.X()).Num(p1.Y()).Num(p1.Z()).EndArr();
+    r.j.Key("tangents").BeginArr().Num(d0.X()).Num(d0.Y()).Num(d0.Z()).Num(d1.X()).Num(d1.Y()).Num(d1.Z()).EndArr();
+    if (!closed)
+    {
+      GCPnts_AbscissaPoint half(c, length / 2, t0);
+      gp_Pnt m = c.Value(half.IsDone() ? half.Parameter() : (t0 + t1) / 2);
+      r.j.Key("mid").BeginArr().Num(m.X()).Num(m.Y()).Num(m.Z()).EndArr();
+    }
+    if (c.GetType() == GeomAbs_Circle)
+    {
+      gp_Circ circ = c.Circle();
+      r.j.Key("centre").BeginArr().Num(circ.Location().X()).Num(circ.Location().Y()).Num(circ.Location().Z()).EndArr();
+      r.j.Num("radius", circ.Radius());
+    }
+    r.j.End();
   }
   r.j.EndArr();
   r.Blob("polylines", "f64", poly.size(), Bytes(poly.data(), poly.size() * 8));

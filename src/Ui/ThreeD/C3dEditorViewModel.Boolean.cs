@@ -92,6 +92,10 @@ public sealed partial class C3dEditorViewModel
         => Viewer.SelectMode == Scene3DSelectMode.Object && Targets() is [{ Instance: false } t] && !IsOperandIndex(t.Index)
            && Document.Objects[t.Index] is C3dBoolean ? t.Index : -1;
 
+    /// <summary>brief-em3d-67 — the path of the boolean a top-level object is, under its fillets and chamfers ("" when it is
+    /// one itself), or null when it is none.</summary>
+    private static string? BooleanPathOf(C3dObject o) => C3dFillets.Core(o) is (C3dBoolean, var path) ? path : null;
+
     // ── the panel (R-em3d66-2) ────────────────────────────────────────────────────────────────
 
     public static IReadOnlyList<C3dBooleanOp> BooleanOps { get; } = Enum.GetValues<C3dBooleanOp>();
@@ -484,7 +488,8 @@ public sealed partial class C3dEditorViewModel
         var refusals = Elaboration?.KernelRefusals;
         foreach (var item in AllTreeItems().Where(i => i.OperandPath is null && i.ObjectIndex >= 0 && i.ObjectIndex < Document.Objects.Count
                                                        && C3dOperands.IsKernel(Document.Objects[i.ObjectIndex])))
-            item.Refusal = refusals is not null && refusals.TryGetValue(item.Name, out var why) ? why : null;
+            // brief-em3d-67 — a feature row carries its object's refusal too (the row is labelled, not named).
+            item.Refusal = refusals is not null && refusals.TryGetValue(Document.Objects[item.ObjectIndex].Name, out var why) ? why : null;
     }
 
     // ── entering a boolean (R-em3d66-5a) ──────────────────────────────────────────────────────
@@ -587,6 +592,8 @@ public sealed partial class C3dEditorViewModel
         foreach (int s in C3dBooleans.Steps(path) ?? [])
         {
             walked += C3dBooleans.StepText(s);
+            // brief-em3d-67 — a fillet's Target is the solid under the same name: it adds nothing to the label.
+            if (s == C3dBooleans.TargetStep) continue;
             label = s < 0 ? label + ":Blank" : C3dBooleans.At(Document.Objects[t], walked)?.Name ?? label;
         }
         return label;
@@ -774,7 +781,8 @@ public sealed partial class C3dEditorViewModel
         }
         int i = DocumentIndex(o);
         if (i < 0) i = BooleanOwningTool(o.Name);
-        if (i >= 0 && Document.Objects[i] is C3dBoolean) { EnterBoolean(i); return true; }
+        // brief-em3d-67 — a rounded boolean is entered through its fillets.
+        if (i >= 0 && BooleanPathOf(Document.Objects[i]) is { } bp) { EnterBoolean(i, bp); return true; }
         return false;
     }
 
@@ -796,6 +804,11 @@ public sealed partial class C3dEditorViewModel
         if (command && key == Avalonia.Input.Key.OemCloseBrackets && SelectedInstance() < 0)
         {
             if (SelectedBoolean() is >= 0 and var b) { EnterBoolean(b); return true; }
+            if (Targets() is [{ Instance: false } rt] && !IsOperandIndex(rt.Index) && BooleanPathOf(Document.Objects[rt.Index]) is { Length: > 0 } rp)
+            {
+                EnterBoolean(rt.Index, rp);
+                return true;
+            }
             if (Targets() is [{ Instance: false } t] && IsOperandIndex(t.Index) && TopOf(t.Index, out string path) is >= 0 and var top
                 && C3dBooleans.At(Document.Objects[top], path) is C3dBoolean)
             {
@@ -817,7 +830,8 @@ public sealed partial class C3dEditorViewModel
     /// <summary>Why a face or vertex edit on <paramref name="obj"/> is refused, or null: a Boolean, Fillet, Chamfer or Step
     /// object — enabled or not — is edited through its operands or the operation.</summary>
     private static string? ResultEditRefusal(C3dObject obj)
-        => C3dOperands.IsKernel(obj) ? C3dBooleans.ResultNotEditable(obj.Name, obj) : null;
+        => C3dFillets.IsFeature(obj) ? C3dFillets.RoundedNotEditable(obj.Name, obj)          // brief-em3d-67 R-em3d67-6e
+         : C3dOperands.IsKernel(obj) ? C3dBooleans.ResultNotEditable(obj.Name, obj) : null;
 
     // ── the menus (R-em3d66-3d, -7) ───────────────────────────────────────────────────────────
 

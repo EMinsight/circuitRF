@@ -12,15 +12,20 @@ using System.Numerics;
 
 namespace CircuitRF.Render.Scene3D.Edit;
 
-/// <summary>What a click selects (owner decision D3: O / F / V).</summary>
-public enum Scene3DSelectMode { Object, Face, Vertex }
+/// <summary>What a click selects (owner decision D3: O / F / V; brief-em3d-67 D6: E).</summary>
+public enum Scene3DSelectMode { Object, Face, Vertex, Edge }
 
-/// <summary>One selectable thing: an object, a face of one, or a vertex of one (scene-local metres).</summary>
-public readonly record struct Scene3DItem(uint Object, int Face, Vector3 Point)
+/// <summary>One selectable thing: an object, a face of one, a vertex of one (scene-local metres), or — brief-em3d-67
+/// R-em3d67-3b — one named edge of one: <paramref name="Edge"/> indexes its object's edge table (Scene3DEdges), −1 otherwise.
+/// An edge index is a scene detail rebuilt per elaboration; the editor carries a selection across by the edge's NAME.</summary>
+public readonly record struct Scene3DItem(uint Object, int Face, Vector3 Point, int Edge = -1)
 {
     public static Scene3DItem OfObject(uint id) => new(id, -1, default);
     public static Scene3DItem OfFace(uint id, int face) => new(id, face, default);
     public static Scene3DItem OfVertex(uint id, Vector3 point) => new(id, -1, point);
+    public static Scene3DItem OfEdge(uint id, int edge) => new(id, -1, default, edge);
+
+    public bool IsEdge => Edge >= 0;
 
     /// <summary>The item <paramref name="mode"/> makes of an (object, face) hit at <paramref name="point"/>.</summary>
     public static Scene3DItem In(Scene3DSelectMode mode, uint id, int face, Vector3 point) => mode switch

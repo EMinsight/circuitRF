@@ -1,5 +1,5 @@
 // brief-em3d-47 — face and vertex editing in the 3D editor: Move Along Normal (N), Move (G) of a face or a vertex,
-// Extrude to New Solid (E), Align to Face, Copy as Sheet, Measure, Measure From, Set Coordinates, and — in Object
+// Extrude to New Solid (Shift+E), Align to Face, Copy as Sheet, Measure, Measure From, Set Coordinates, and — in Object
 // mode — Convert to Polyhedron.
 //
 // WHAT IS EDITED IS A DOCUMENT OBJECT, BY FACE NAME. A selected scene face is its document object (never an
@@ -68,7 +68,8 @@ public sealed partial class C3dEditorViewModel : IC3dFaceHost
     public (int Index, C3dObject Obj, string Face, Scene3DObject Scene, int SceneFace)? FaceSelection()
     {
         if (Viewer.SelectMode != Scene3DSelectMode.Face || Viewer.Selection is not [{ Face: >= 0 } item]) return null;
-        if (Viewer.Scene.Object(item.Object) is not { } o || EditableIndex(o) is not (>= 0 and var i) || ObjectAt(i) is not { } obj) return null;
+        // brief-em3d-67 R-em3d67-6e — a disabled chain's managed target is edited directly (EditObjectAt).
+        if (Viewer.Scene.Object(item.Object) is not { } o || EditableIndex(o) is not (>= 0 and var i) || EditObjectAt(i) is not { } obj) return null;
         return (i, obj, o.FaceName(item.Face), o, item.Face);
     }
 
@@ -77,7 +78,7 @@ public sealed partial class C3dEditorViewModel : IC3dFaceHost
     public (int Index, C3dObject Obj, int Vertex, C3dPoint3 World, bool Exact)? VertexSelection()
     {
         if (Viewer.SelectMode != Scene3DSelectMode.Vertex || Viewer.Selection is not [{ Face: < 0 } item]) return null;
-        if (Viewer.Scene.Object(item.Object) is not { } o || EditableIndex(o) is not (>= 0 and var i) || ObjectAt(i) is not { } obj) return null;
+        if (Viewer.Scene.Object(item.Object) is not { } o || EditableIndex(o) is not (>= 0 and var i) || EditObjectAt(i) is not { } obj) return null;
         // brief-em3d-66 D13 — a kernel-made solid's vertices are the kernel's, not a document's: nothing here edits them.
         if (C3dOperands.IsKernel(obj)) return null;
         var (wx, wy, wz) = Viewer.Scene.ToWorld(item.Point);
@@ -110,7 +111,7 @@ public sealed partial class C3dEditorViewModel : IC3dFaceHost
     /// <summary>brief-em3d-66 D13 — the refusal for a vertex selected on a kernel-made solid, or null.</summary>
     private string? SelectedKernelVertex()
         => Viewer.SelectMode == Scene3DSelectMode.Vertex && Viewer.Selection is [{ Face: < 0 } item] &&
-           Viewer.Scene.Object(item.Object) is { } o && EditableIndex(o) is >= 0 and var i && ObjectAt(i) is { } obj
+           Viewer.Scene.Object(item.Object) is { } o && EditableIndex(o) is >= 0 and var i && EditObjectAt(i) is { } obj
             ? ResultEditRefusal(obj)
             : null;
 
@@ -172,7 +173,7 @@ public sealed partial class C3dEditorViewModel : IC3dFaceHost
         ApplySnapExclusion();
     }
 
-    /// <summary>R-em3d47-4 — Extrude to New Solid (E).</summary>
+    /// <summary>R-em3d47-4 — Extrude to New Solid (Shift+E).</summary>
     public void StartExtrudeFace()
     {
         if (!HaveFace(out var f)) return;
@@ -308,6 +309,8 @@ public sealed partial class C3dEditorViewModel : IC3dFaceHost
         int index = ft.Index;
         bool operand = IsOperandIndex(index);
         string before = C3dPersistence.SerializeObject(operand ? ObjectAt(index)! : Document.Objects[index]);
+        // brief-em3d-67 R-em3d67-6e — a disabled chain's target goes back inside its chain.
+        if (!operand) obj = Rewrapped(index, obj);
         string after = C3dPersistence.SerializeObject(obj);
         string? selectFace = ft switch
         {
@@ -435,6 +438,13 @@ public sealed partial class C3dEditorViewModel : IC3dFaceHost
         string before = C3dPersistence.SerializeObject(v.Obj), after = C3dPersistence.SerializeObject(obj);
         if (before == after) return null;
         bool operand = IsOperandIndex(v.Index);
+        if (!operand && C3dFillets.DisabledCore(Document.Objects[v.Index]) is not null)
+        {
+            // brief-em3d-67 R-em3d67-6e — the slot replaces the chain, with the edited target inside it.
+            before = C3dPersistence.SerializeObject(Document.Objects[v.Index]);
+            obj = Rewrapped(v.Index, obj);
+            after = C3dPersistence.SerializeObject(obj);
+        }
         if (!Push(new C3dEdit($"Set a vertex of {ObjectLabel(v.Index)}", operand ? ReplacementSlots([(v.Index, obj)]) : [new C3dEditSlot(false, v.Index, before, after)],
                               ApplySlots, faceBoundaries: operand ? null : BoundariesFollowing(obj.Name, r.Folds), setBoundaries: SetBoundaries)))
             return StatusMessage;
@@ -471,14 +481,16 @@ public sealed partial class C3dEditorViewModel : IC3dFaceHost
 
     // ── keys and menus ───────────────────────────────────────────────────────────────────────
 
-    /// <summary>N and E in Face mode; G in Face and Vertex mode. True when the key was one of them.</summary>
+    /// <summary>N and Shift+E in Face mode; G in Face and Vertex mode. True when the key was one of them.</summary>
     private bool FaceKey(Key key, KeyModifiers modifiers)
     {
+        // brief-em3d-67 R-em3d67-1b (D6) — Extrude to New Solid is Shift+E; plain E falls through to the pane, which arms
+        // Edge mode. This runs before the pane's mode keys, so a plain E claimed here would swallow Edge mode in Face mode.
+        if (modifiers == KeyModifiers.Shift && key == Key.E && Viewer.SelectMode == Scene3DSelectMode.Face) { StartExtrudeFace(); return true; }
         if (modifiers != KeyModifiers.None) return false;
         switch (Viewer.SelectMode)
         {
             case Scene3DSelectMode.Face when key == Key.N: StartPushPull(); return true;
-            case Scene3DSelectMode.Face when key == Key.E: StartExtrudeFace(); return true;
             case Scene3DSelectMode.Face when key == Key.G: StartFaceMove(); return true;
             case Scene3DSelectMode.Vertex when key == Key.G: StartVertexMove(); return true;
         }
@@ -494,7 +506,7 @@ public sealed partial class C3dEditorViewModel : IC3dFaceHost
             // brief-em3d-66 D13 — every edit of a result's face disabled, with what to edit instead; what reads it stays.
             yield return new Viewer3DMenuItem("Move Along Normal  (N)", Enabled: false, Tip: d13);
             yield return new Viewer3DMenuItem("Move  (G)", Enabled: false, Tip: d13);
-            yield return new Viewer3DMenuItem("Extrude to New Solid  (E)", Enabled: false, Tip: d13);
+            yield return new Viewer3DMenuItem("Extrude to New Solid  (Shift+E)", Enabled: false, Tip: d13);
             yield return new Viewer3DMenuItem("Align to Face…", Enabled: false, Tip: d13);
             yield return new Viewer3DMenuItem("Measure", MeasureFace, Tip: "Area, perimeter and normal in Properties; Shift-click a parallel face for the distance.");
         }
@@ -506,7 +518,7 @@ public sealed partial class C3dEditorViewModel : IC3dFaceHost
             else if (aligned is null) copyWhy = "A tilted face: sheets lie on XY, YZ or XZ in this version.";
             yield return new Viewer3DMenuItem("Move Along Normal  (N)", StartPushPull);
             yield return new Viewer3DMenuItem("Move  (G)", StartFaceMove, Enabled: !cyl, Tip: cyl ? C3dFaceEditor.CylinderFreeMove : null);
-            yield return new Viewer3DMenuItem("Extrude to New Solid  (E)", StartExtrudeFace, Enabled: !(cyl && f.Face == "side"),
+            yield return new Viewer3DMenuItem("Extrude to New Solid  (Shift+E)", StartExtrudeFace, Enabled: !(cyl && f.Face == "side"),
                                               Tip: cyl && f.Face == "side" ? "A cylinder's side is curved." : "Grows a new solid from the face; the source is unchanged.");
             yield return new Viewer3DMenuItem("Align to Face…", StartAlignToFace, Enabled: !(cyl && f.Face == "side"),
                                               Tip: "Then click the face to align with: T toggles Touching and Flush.");

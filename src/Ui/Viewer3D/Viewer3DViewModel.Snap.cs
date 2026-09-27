@@ -142,7 +142,22 @@ public sealed partial class Viewer3DViewModel
     /// <summary>The pane's patch size for its next frame: N for the snap radius at the display's scale, capped
     /// by what the backend reads back; 1 when snapping is off.</summary>
     internal int PickSizeFor(double pixelsPerDip, int backendMax)
-        => SnapEnabled ? Math.Max(1, Math.Min(backendMax, Scene3DIdPatch.SizeFor((float)(GeometrySnap.RadiusPixels * pixelsPerDip)))) : 1;
+        => SnapEnabled || SelectMode == Scene3DSelectMode.Edge  // brief-em3d-67: Edge mode's hover reads the patch too
+            ? Math.Max(1, Math.Min(backendMax, Scene3DIdPatch.SizeFor((float)(GeometrySnap.RadiusPixels * pixelsPerDip)))) : 1;
+
+    /// <summary>
+    /// brief-em3d-67 R-em3d67-3a — the patch Edge mode's hover reads: the frame's read-back when it is a patch of the current
+    /// scene at least the radius wide, otherwise one rendered on the CPU; and the radius in its pixels.
+    /// </summary>
+    private (Scene3DIdPatch Patch, float Radius) EdgePatch(Scene3DIdPatch? gpu)
+    {
+        if (gpu is { Valid: true } g && g.Generation == Scene.Generation
+            && g.Size >= Scene3DIdPatch.SizeFor(GeometrySnap.RadiusPixels * g.PixelsPerDip))
+            return (g, GeometrySnap.RadiusPixels * g.PixelsPerDip);
+        _cpuPatch.Render(Scene, View.Camera, View.CursorX, View.CursorY, _viewW, _viewH, Scene3DIdPatch.SizeFor(GeometrySnap.RadiusPixels),
+                         PickVisible, View.Clip);
+        return (_cpuPatch, GeometrySnap.RadiusPixels);
+    }
 
     /// <summary>Alt / Option pressed or released (a key event, or a pointer event's modifiers).</summary>
     public void SetGeometrySnapSuspended(bool held)
@@ -204,7 +219,7 @@ public sealed partial class Viewer3DViewModel
     public static string SnapKindName(Snap3DKind kind) => kind switch
     {
         Snap3DKind.Vertex => "Vertex", Snap3DKind.Midpoint => "Midpoint", Snap3DKind.Edge => "Edge",
-        Snap3DKind.FaceCentre => "Face centre", Snap3DKind.Grid => "Grid", _ => "",
+        Snap3DKind.FaceCentre => "Face centre", Snap3DKind.Grid => "Grid", Snap3DKind.Centre => "Centre", _ => "",
     };
 
     private string WorldText(Point3 p)

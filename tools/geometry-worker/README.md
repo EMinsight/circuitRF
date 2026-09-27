@@ -87,7 +87,11 @@ has arrived. The managed half is `src/Design/ThreeD/Occ/` (`GeometryKernel` and 
 
 **A refusal is an ordinary reply**, and the worker keeps running:
 `{"ok":false,"code":"build.failed","object":"lid","detail":"<OCCT's own text>"}`. The client words `code` in
-circuitRF's voice and appends `detail` verbatim; an unknown `code` is reported as unrecognised.
+circuitRF's voice and appends `detail` verbatim; an unknown `code` is reported as unrecognised. A fillet's or
+chamfer's refusal also says which edges (brief 67): `edges` with `width_um` (the one that does not fit, and the
+narrower of the two faces beside it), or `edges` with `"corner":true` (those meeting where the kernel cannot blend);
+and `edge.missing` — a listed name that resolves to nothing — carries `edges` (that name) and `missing` (its faces
+the target no longer has).
 
 | request | in | out |
 |---|---|---|
@@ -95,7 +99,7 @@ circuitRF's voice and appends `detail` verbatim; an unknown `code` is reported a
 | `build` | `shape` (the handle to hold it under), `tree` (below), `options` (`fuzzy`, `keepTools`) | `shape`, `object`, `valid`, `solids`, `faces`, `volume_um3`, `notes[]`; blob `brep` — format version 1, no triangles, written straight from the result |
 | `tessellate` | `shape`, `linear_um`, `angular_rad` | blobs `vertices` f64 (3 per node), `tris` u32 (3 per triangle), `face` u32 (per triangle, an index into `faces`' list) |
 | `faces` | `shape` | per face, in `TopExp::MapShapes` order: `name`, `kind` (`plane`, `cylinder`, `cone`, `sphere`, `torus`, `bspline`, `other`), `box` (tight, 6 numbers), `area`, `min_radius` (0 for a plane) |
-| `edges` | `shape`, `deflection_um` | per feature edge, sorted by name: `name`, `faces` (its two), `kind`, `length`, `min_radius` (0 for a line), `points`; blob `polylines` f64 |
+| `edges` | `shape`, `deflection_um` | per feature edge, sorted by name: `name`, `faces` (its two), `kind`, `length`, `min_radius` (0 for a line), `points`, and (brief 67) `closed`, `ends` (6 numbers, the polyline's way), `tangents` (the unit tangents there, 6 numbers), `mid` (halfway along the curve; absent when closed), `centre` and `radius` (a circle or an arc); blob `polylines` f64 |
 | `export` | `shapes[]`, `format` (`brep`, `step`, `ply`, `stl`), `units` (`um`, `mm`, `mil`, `in`, `m`), `names[]`, `colours[]`, `linear_um`, `schema` (`ap242`, else AP214) | blob `data` |
 | `import-step` | `shape` (a handle prefix), blob `file` or `path` | `units[]` (the file's), `parts[]` (`shape` = prefix`/n`, `name`, `path` — the occurrence, `1/2` — `colour` or null, `solids`, `faces`, `valid`), `healing[]` |
 | `release` | `shapes[]` | `released`, `held` |
@@ -150,6 +154,13 @@ the result is carried by its `transform`.
 | `fillet` | `radius`, `edges` (names, as above), `target` | the target's; each rounded edge's new face `fillet(<edge>)` |
 | `chamfer` | `distance`, optional `distance2` (on the edge's second face), `edges`, `target` | the target's; `chamfer(<edge>)` |
 | `step` | `file` (a path), `hash`, `part` (the occurrence path `import-step` reports, `1/2`) | `face<n>` in the part's own order, as `import-step` names them |
+
+A fillet's or chamfer's `edges` are resolved on its target numbered in the TARGET's own frame — the frame `edges`
+numbers it in when it is a root. A name resolves to the edge of that name; failing that, a two-field name resolves
+to EVERY edge between the pieces of its two faces — `zmax#k` and a managed fold's `zmax.k` alike — so `xmax|zmax`
+follows a split `zmax` onto both new edges (brief 67). A numbered name, or one naming a piece, resolves exactly or
+not at all. When the operation fails the worker builds each listed name alone, to say which does not fit, and only
+then the corner; that costs nothing unless it fails.
 
 A face of the result keeps the first name that claims it, the blank's before a tool's. A name held by more than
 one face of the result — a split face, including one an operand had already split — is numbered `#1…#n` in the

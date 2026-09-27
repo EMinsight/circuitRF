@@ -44,6 +44,20 @@ public sealed partial class C3dEditorViewModel
         }
         else if (item.OperandPath is { } path && item.ObjectIndex >= 0 && item.ObjectIndex < Document.Objects.Count)
             items.AddRange(OperandTreeItems(item, path));
+        // brief-em3d-67 R-em3d67-6b — a fillet's or chamfer's row: the inspector's own functions.
+        else if (item.FeaturePath is { } fp && item.ObjectIndex >= 0 && item.ObjectIndex < Document.Objects.Count
+                 && C3dFillets.At(Document.Objects[item.ObjectIndex], fp) is C3dOperation feature)
+        {
+            int top = item.ObjectIndex;
+            string? kernel = KernelMissing(feature is C3dChamfer ? "Chamfer" : "Fillet");
+            items.Add(new Viewer3DMenuItem(feature.Enabled ? "✓ Enabled" : "Enabled", () => SetFeatureEnabled(top, fp, !feature.Enabled),
+                Enabled: kernel is null, Tip: kernel ?? "Unticked, the solid elaborates unrounded — a cheap A/B for the simulation."));
+            items.Add(new Viewer3DMenuItem("Show Edges", () => ShowFeatureEdges(top, fp)));
+            items.Add(new Viewer3DMenuItem("Edit Edges…", () => EditFeature(top, fp), Enabled: kernel is null, Tip: kernel));
+            items.Add(Viewer3DMenuItem.Separator);
+            items.Add(new Viewer3DMenuItem("Remove", () => RemoveFeature(top, fp),
+                Tip: "The solid returns unrounded, in its place and under its name."));
+        }
         else if (item.IsReadOnly)
         {
             const string why = "Part of an instance: it belongs to its own cell. Push into the cell to edit it.";

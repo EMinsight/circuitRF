@@ -93,6 +93,17 @@ public sealed class Viewer3DOverlay : Control
             if (vm.HoveredVertex is { } hv && cam.Project(hv, (float)w, (float)h) is (var hx, var hy, true))
                 ctx.DrawEllipse(Brushes.Transparent, new Pen(accent, 2), new Point(hx, hy), 4, 4);
         }
+        // brief-em3d-67 R-em3d67-3c — Edge mode: each selected edge, then the hovered one, as a thick polyline projected from
+        // the camera each frame (no GPU buffer changes when the hover moves).
+        if (vm.SelectMode == CircuitRF.Render.Scene3D.Edit.Scene3DSelectMode.Edge)
+        {
+            var halo = new Pen(dark ? Brushes.Black : Brushes.White, 5, lineCap: PenLineCap.Round, lineJoin: PenLineJoin.Round);
+            var selected = new Pen(accent, 3, lineCap: PenLineCap.Round, lineJoin: PenLineJoin.Round);
+            foreach (var item in vm.Selection)
+                if (vm.EdgePoints(item) is { } pts) Polyline(ctx, vm, pts, w, h, halo, selected);
+            if (vm.HoveredItem is { IsEdge: true } he && !vm.Selection.Contains(he) && vm.EdgePoints(he) is { } hp)
+                Polyline(ctx, vm, hp, w, h, halo, new Pen(RubberBrush, 2.5, lineCap: PenLineCap.Round, lineJoin: PenLineJoin.Round));
+        }
         if (vm.CycleText.Length > 0) Text(ctx, vm.CycleText, new Point(10, 8), ink, 12, dark);
 
         if (vm.EditHost is { } host)
@@ -112,6 +123,30 @@ public sealed class Viewer3DOverlay : Control
     }
 
     private readonly Viewer3DDrawOverlay _draw = new();
+
+    /// <summary>brief-em3d-67 — a world polyline, projected, drawn twice: a halo, then the stroke.</summary>
+    private static void Polyline(DrawingContext ctx, Viewer3DViewModel vm, IReadOnlyList<CircuitRF.Engine.Em3d.Point3> pts, double w, double h,
+                                 Pen halo, Pen stroke)
+    {
+        var cam = vm.View.Camera;
+        var screen = new List<Point>(pts.Count);
+        foreach (var p in pts)
+        {
+            var (x, y, front) = cam.Project(vm.Scene.ToLocal(p.X, p.Y, p.Z), (float)w, (float)h);
+            if (!front) return;
+            screen.Add(new Point(x, y));
+        }
+        if (screen.Count < 2) return;
+        var g = new StreamGeometry();
+        using (var c = g.Open())
+        {
+            c.BeginFigure(screen[0], false);
+            for (int i = 1; i < screen.Count; i++) c.LineTo(screen[i]);
+            c.EndFigure(false);
+        }
+        ctx.DrawGeometry(null, halo, g);
+        ctx.DrawGeometry(null, stroke, g);
+    }
 
     private static readonly IBrush RubberBrush = new SolidColorBrush(Color.FromRgb(255, 196, 40));
     private static readonly IBrush CrossingBrush = new SolidColorBrush(Color.FromRgb(235, 40, 40));
@@ -295,6 +330,11 @@ public sealed class Viewer3DOverlay : Control
                     break;
                 case CircuitRF.Render.Scene3D.Edit.Snap3DKind.FaceCentre:
                     ctx.DrawEllipse(null, stroke, p, r, r);
+                    break;
+                // brief-em3d-67 R-em3d67-3e — a circle's or an arc's centre: the face-centre marker with a dot in it.
+                case CircuitRF.Render.Scene3D.Edit.Snap3DKind.Centre:
+                    ctx.DrawEllipse(null, stroke, p, r, r);
+                    ctx.DrawEllipse(stroke.Brush, null, p, 1.8, 1.8);
                     break;
                 case CircuitRF.Render.Scene3D.Edit.Snap3DKind.Grid:
                     ctx.DrawLine(stroke, new Point(p.X - r * 0.6, p.Y), new Point(p.X + r * 0.6, p.Y));

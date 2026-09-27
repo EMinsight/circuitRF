@@ -81,7 +81,27 @@ public sealed record GeometryKernelFace(string Name, string Kind, double[] Box, 
 
 /// <summary>One feature edge: its name (overview §1g), the two faces it separates, curve kind, length, smallest radius
 /// (0 for a line) and a polyline for drawing and snapping, three doubles per point.</summary>
-public sealed record GeometryKernelEdge(string Name, string FaceA, string FaceB, string Kind, double Length, double MinRadius, double[] Polyline);
+public sealed record GeometryKernelEdge(string Name, string FaceA, string FaceB, string Kind, double Length, double MinRadius, double[] Polyline)
+{
+    /// <summary>brief-em3d-67 — the edge's two ends (6 numbers, the polyline's way), µm; a closed edge's are one point.</summary>
+    public double[] Ends { get; init; } = [];
+
+    /// <summary>brief-em3d-67 R-em3d67-4 — the unit tangents at the two ends, along the polyline's direction (6 numbers).</summary>
+    public double[] Tangents { get; init; } = [];
+
+    /// <summary>A closed edge — a circle — has one vertex and no midpoint.</summary>
+    public bool Closed { get; init; }
+
+    /// <summary>brief-em3d-67 R-em3d67-3e — the point halfway along the curve, from the curve (never the polyline's
+    /// middle); null for a closed edge.</summary>
+    public double[]? Mid { get; init; }
+
+    /// <summary>A circle's or an arc's centre, µm; null for any other curve.</summary>
+    public double[]? Centre { get; init; }
+
+    /// <summary>A circle's or an arc's radius, µm; 0 for any other curve.</summary>
+    public double Radius { get; init; }
+}
 
 /// <summary>One part of an imported STEP file, held by the worker under <see cref="Handle"/>.</summary>
 public sealed record GeometryKernelImportPart(string Handle, string Name, string Path, double[]? Colour, int Solids, int Faces, bool Valid);
@@ -567,7 +587,11 @@ public sealed class GeometryKernel : IDisposable
             edges.Add(new GeometryKernelEdge(e["name"]?.GetValue<string>() ?? "",
                 faces?[0]?.GetValue<string>() ?? "", faces?[1]?.GetValue<string>() ?? "",
                 e["kind"]?.GetValue<string>() ?? "other", e["length"]?.GetValue<double>() ?? 0, e["min_radius"]?.GetValue<double>() ?? 0,
-                poly.AsSpan(3 * at, 3 * n).ToArray()));
+                poly.AsSpan(3 * at, 3 * n).ToArray())
+            {
+                Ends = Numbers(e["ends"]) ?? [], Tangents = Numbers(e["tangents"]) ?? [], Closed = e["closed"]?.GetValue<bool>() ?? false,
+                Mid = Numbers(e["mid"]), Centre = Numbers(e["centre"]), Radius = e["radius"]?.GetValue<double>() ?? 0,
+            });
             at += n;
         }
         _cache.PutMemory(key, edges, poly.Length * 8L + edges.Count * 256L + 256);
@@ -624,6 +648,8 @@ public sealed class GeometryKernel : IDisposable
         return new GeometryKernelImport(Strings(reply, "units"), parts, Strings(reply, "healing"));
     }
 
+    private static double[]? Numbers(JsonNode? n) => n is JsonArray a ? [.. a.Select(x => x?.GetValue<double>() ?? 0)] : null;
+
     private static List<string> Strings(GeometryKernelMessage m, string key) =>
         m.Json[key] is JsonArray a ? [.. a.Select(x => x?.GetValue<string>() ?? "")] : [];
 
@@ -634,6 +660,7 @@ public sealed class GeometryKernel : IDisposable
         ["tree.invalid"] = o => $"'{o}' is not a solid the geometry kernel can build",
         ["build.failed"] = o => $"The geometry kernel could not build '{o}'",
         ["build.empty"] = o => $"'{o}' is empty",
+        ["edge.missing"] = o => $"The geometry kernel could not find an edge of '{o}'",
         ["build.invalid-result"] = o => $"The geometry kernel built '{o}', but the result is not a valid solid",
         ["shape.unknown"] = o => $"The geometry kernel no longer held '{o}'",
         ["export.failed"] = o => $"The geometry kernel could not export {o}",
@@ -652,7 +679,12 @@ public sealed class GeometryKernel : IDisposable
         string sentence = RefusalSentences.TryGetValue(code, out var words)
             ? $"{words(o)}: {detail}"
             : $"The geometry kernel could not build '{o}': {detail} (an unrecognised refusal, '{code}')";
-        return new GeometryKernelException(GeometryKernelFailure.Refused, sentence, code, o);
+        return new GeometryKernelException(GeometryKernelFailure.Refused, sentence, code, o)
+        {
+            // brief-em3d-67 R-em3d67-5d — which edges a fillet or chamfer failed on, for the caller to say in the user's terms.
+            Edges = Strings(reply, "edges"), Corner = reply.Json["corner"]?.GetValue<bool>() ?? false,
+            WidthUm = reply.Json["width_um"]?.GetValue<double>(), Missing = Strings(reply, "missing"),
+        };
     }
 
     // ── previews (R-em3d63-8) ────────────────────────────────────────────────────────────────────

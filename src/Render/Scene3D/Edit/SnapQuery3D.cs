@@ -24,6 +24,16 @@
 // dragged corner's old position, still in a scene that has not caught up) gives nothing that lies on it.
 //
 // ZERO ALLOCATIONS per query in steady state (gate 7): every set and list is the query's own and reused.
+//
+// brief-em3d-67 R-em3d67-3e — A KERNEL SOLID SNAPS TO ITS CURVES, NOT ITS TRIANGLES. Its vertices are the B-rep's (a
+// curved edge's polyline points move with the display deflection and are none, nor is a circle's seam); an open edge's midpoint is the one along
+// the curve the worker gave, and a closed one has none; the nearest point on an edge runs along the polyline and is
+// APPROXIMATE (≈) unless it lands on a vertex; and a circle's or an arc's centre is a target — how a pin is put exactly
+// on a bore's axis. Every managed object snaps exactly as before: this path reads only a kernel object's edge table.
+//
+// brief-em3d-67 R-em3d67-3a — EDGE MODE'S HOVER IS THIS QUERY'S EDGE TIER (NearestEdge): the named edges of the (object,
+// face) pairs in the patch, the nearest visible one on screen within the radius — no new GPU channel, and a count of
+// edges examined that the patch bounds, never the scene.
 
 using System.Numerics;
 using CircuitRF.Design.ThreeD;
@@ -32,7 +42,7 @@ using CircuitRF.Engine.Em3d;
 namespace CircuitRF.Render.Scene3D.Edit;
 
 /// <summary>What a snap landed on.</summary>
-public enum Snap3DKind { None, Vertex, Midpoint, FaceCentre, Edge, Grid }
+public enum Snap3DKind { None, Vertex, Midpoint, FaceCentre, Edge, Grid, Centre }
 
 /// <summary>The kinds a user has switched on (R-em3d44-5's toggles).</summary>
 [Flags]
@@ -60,8 +70,10 @@ public readonly record struct Snap3DSettings(Snap3DKinds Kinds, float RadiusPixe
 /// One snapped point (R-em3d44-4): world metres, the kind, what it came from (object, face, table index)
 /// and where it is on screen in DIPs. <see cref="Kind"/> None is no snap.
 /// </summary>
+/// brief-em3d-67 — <see cref="Approximate"/>: a point on a curved edge's polyline, within the display deflection of the
+/// curve and never an exact point (the status line's <c>≈</c>).
 public readonly record struct Snap3DResult(Snap3DKind Kind, Point3 World, uint Object, int Face, int Index,
-                                           float ScreenX, float ScreenY, float Depth, float Distance)
+                                           float ScreenX, float ScreenY, float Depth, float Distance, bool Approximate = false)
 {
     public bool IsSnap => Kind != Snap3DKind.None;
 }
@@ -77,7 +89,12 @@ public struct Snap3DCounters
     public int ElementsTransformed;
     /// <summary>Translucent objects X-ray added from along the line of sight.</summary>
     public int XRayObjects;
+    /// <summary>brief-em3d-67 — named edges Edge mode's hover looked at.</summary>
+    public int EdgesExamined;
 }
+
+/// <summary>brief-em3d-67 R-em3d67-3a — Edge mode's hover: the nearest visible named edge under the cursor.</summary>
+public readonly record struct Edge3DHit(uint Object, int Edge, int Face, Point3 World, float Distance, float Depth);
 
 /// <summary>R-snpf-4 — what the gesture in progress is moving. World metres for points.</summary>
 public sealed class Snap3DExclusion
@@ -201,6 +218,9 @@ public sealed class SnapQuery3D
             if (fr.Shared && _transformed.Add(id)) Counters.ElementsTransformed++;
             bool xray = _xrayObjects.Contains(id);
 
+            if (t.Named.FromKernel) KernelFeatures(id, face, fr, t, xray);
+            else
+            {
             if (_s.Wants(Snap3DKinds.Vertex))
                 for (int k = t.FaceVertexStart[face]; k < t.FaceVertexStart[face + 1]; k++)
                 {
@@ -229,6 +249,7 @@ public sealed class SnapQuery3D
                         if (NearestOnEdge(a, b) is { } p) Consider(Snap3DKind.Edge, 3, p, id, face, e, t, Snap3DKind.Edge, xray);
                     }
                 }
+            }
             if (_s.Wants(Snap3DKinds.FaceCentre) && t.HasCentre[face])
             {
                 Counters.FeaturesExamined++;
@@ -240,6 +261,125 @@ public sealed class SnapQuery3D
             }
         }
     }
+
+    /// <summary>
+    /// brief-em3d-67 R-em3d67-3e — a kernel solid's features on one face, from its named edges: the B-rep's vertices, each
+    /// open edge's midpoint along the curve, a circle's or an arc's centre, and the nearest point along the polyline
+    /// (approximate unless it is a vertex).
+    /// </summary>
+    private void KernelFeatures(uint id, int face, Scene3DFeatureRef fr, Scene3DFeatureTable t, bool xray)
+    {
+        var named = t.Named;
+        if (face >= named.FaceCount) return;
+        bool vtx = _s.Wants(Snap3DKinds.Vertex), mid = _s.Wants(Snap3DKinds.Midpoint), edge = _s.Wants(Snap3DKinds.Edge),
+             centre = _s.Wants(Snap3DKinds.FaceCentre);
+        for (int k = named.FaceEdgeStart[face]; k < named.FaceEdgeStart[face + 1]; k++)
+        {
+            int e = named.FaceEdges[k];
+            var ed = named.Edges[e];
+            if (_ex is not null && (_ex.Faces.Contains((id, ed.Face0)) || _ex.Faces.Contains((id, ed.Face1)))) continue;
+            // A closed edge's one vertex is where the kernel happened to start the circle — no point a user aims for — and it
+            // would win over the circle's centre, whose tier is lower (src/Render/RESOLVED.md). An open edge ending there offers it.
+            if (vtx && !ed.Closed)
+                for (int end = 0; end < 2; end++)
+                {
+                    Counters.FeaturesExamined++;
+                    var v = Off(fr, named.Vertices[end == 0 ? ed.StartVertex : ed.EndVertex]);
+                    if (_ex is null || !_ex.Excludes(v)) Consider(Snap3DKind.Vertex, 1, v, id, face, e, t, Snap3DKind.Edge, xray, ed.Face0, ed.Face1);
+                }
+            if (mid && ed.Mid is { } m)
+            {
+                Counters.FeaturesExamined++;
+                var w = Off(fr, m);
+                if (_ex is null || !_ex.Excludes(w)) Consider(Snap3DKind.Midpoint, 2, w, id, face, e, t, Snap3DKind.Edge, xray, ed.Face0, ed.Face1);
+            }
+            if (centre && ed.Centre is { } c)
+            {
+                Counters.FeaturesExamined++;
+                var w = Off(fr, c);
+                if (_ex is null || !_ex.Excludes(w)) Consider(Snap3DKind.Centre, 2, w, id, face, e, t, Snap3DKind.Edge, xray, ed.Face0, ed.Face1);
+            }
+            if (edge && _bestTier >= 3)
+                for (int i = 1; i < ed.Points.Length; i++)
+                {
+                    Counters.FeaturesExamined++;
+                    var a = Off(fr, ed.Points[i - 1]);
+                    var b = Off(fr, ed.Points[i]);
+                    if (NearestOnEdge(a, b, out float s) is not { } p) continue;
+                    // On a vertex only at the run's own ends; anywhere else it is on a chord of the curve.
+                    bool vertex = (i == 1 && s <= 0) || (i == ed.Points.Length - 1 && s >= 1);
+                    bool approx = !vertex && ed.Kind != Scene3DEdgeKind.Line;
+                    Consider(Snap3DKind.Edge, 3, p, id, face, e, t, Snap3DKind.Edge, xray, ed.Face0, ed.Face1, approx);
+                }
+        }
+    }
+
+    private static Point3 Off(Scene3DFeatureRef fr, Point3 p) => new(p.X + fr.Dx, p.Y + fr.Dy, p.Z + fr.Dz);
+
+    /// <summary>
+    /// brief-em3d-67 R-em3d67-3a — Edge mode's hover: of the named edges on the (object, face) pairs the patch holds, the
+    /// nearest on screen within <paramref name="radiusPixels"/> that is visible there (R-em3d44-2b's test), a tie going to
+    /// the nearer. <paramref name="selectable"/> says which objects a click may select. Null when there is none.
+    /// </summary>
+    public Edge3DHit? NearestEdge(Scene3DModel scene, Scene3DIdPatch patch, float radiusPixels, ReadOnlySpan<bool> visible,
+                                  in ClipPlane3D clip, Func<uint, bool>? selectable = null)
+    {
+        Counters = default;
+        if (!patch.Valid || patch.Generation != scene.Generation) return null;
+        _scene = scene; _patch = patch; _clip = clip; _ex = null;
+        _cam = patch.Camera;
+        _vp = _cam.ViewProjectionMatrix(patch.Width, patch.Height);
+        (_rayO, _rayD) = _cam.Ray(patch.CursorX - 0.5f, patch.CursorY - 0.5f, patch.Width, patch.Height);
+        _r2 = radiusPixels * radiusPixels;
+        _dip = patch.PixelsPerDip;
+        _seen.Clear(); _pairs.Clear();
+        int n = patch.Size * patch.Size;
+        for (int k = 0; k < n; k++)
+        {
+            uint id = patch.Ids[k];
+            if (id == 0) continue;
+            ulong key = ((ulong)id << 32) | patch.Faces[k];
+            if (_seen.Add(key)) _pairs.Add(key);
+        }
+        Counters.FacesInPatch = _pairs.Count;
+        Edge3DHit? best = null;
+        _edgesSeen.Clear();
+        foreach (ulong key in _pairs)
+        {
+            uint id = (uint)(key >> 32);
+            int face = (int)(uint)key;
+            if (!IsVisible(visible, id) || selectable?.Invoke(id) == false) continue;
+            var fr = scene.FeaturesOf(id);
+            if (fr.Table is not { } t || face < 0 || face >= t.Named.FaceCount) continue;
+            var named = t.Named;
+            for (int k = named.FaceEdgeStart[face]; k < named.FaceEdgeStart[face + 1]; k++)
+            {
+                int e = named.FaceEdges[k];
+                if (!_edgesSeen.Add(((ulong)id << 32) | (uint)e)) continue;
+                Counters.EdgesExamined++;
+                var ed = named.Edges[e];
+                for (int i = 1; i < ed.Points.Length; i++)
+                {
+                    if (NearestOnEdge(Off(fr, ed.Points[i - 1]), Off(fr, ed.Points[i]), out _) is not { } p) continue;
+                    var local = scene.ToLocal(p.X, p.Y, p.Z);
+                    if (!clip.Keeps(local)) continue;
+                    var c = Vector4.Transform(new Vector4(local, 1), _vp);
+                    if (c.W <= 0) continue;
+                    float x = (c.X / c.W + 1) * 0.5f * patch.Width, y = (1 - c.Y / c.W) * 0.5f * patch.Height;
+                    float dx = x - patch.CursorX, dy = y - patch.CursorY, d2 = dx * dx + dy * dy;
+                    if (d2 > _r2) continue;
+                    float d = MathF.Sqrt(d2), depth = _cam.ViewDepth(local);
+                    if (best is { } b && (d > b.Distance + TiePixels || (d >= b.Distance - TiePixels && depth >= b.Depth))) continue;
+                    if (!VisibleOn(x, y, depth, id, ed.Face0, ed.Face1)) continue;
+                    best = new Edge3DHit(id, e, face, p, d, depth);
+                }
+            }
+        }
+        _patch = null!;
+        return best;
+    }
+
+    private readonly HashSet<ulong> _edgesSeen = [];
 
     private bool ExcludedVertex(uint id, Scene3DFeatureTable t, int v)
     {
@@ -255,7 +395,7 @@ public sealed class SnapQuery3D
     /// feature lies on — a corner's, an edge's two, or a centre's one — for the visibility test.
     /// </summary>
     private void Consider(Snap3DKind kind, int tier, Point3 world, uint id, int face, int index, Scene3DFeatureTable t,
-                          Snap3DKind on, bool xray)
+                          Snap3DKind on, bool xray, int ownA = -2, int ownB = -2, bool approximate = false)
     {
         if (tier > _bestTier) return;
         var local = _scene.ToLocal(world.X, world.Y, world.Z);
@@ -270,10 +410,11 @@ public sealed class SnapQuery3D
         // Two corners one behind the other land on one screen point, a rounding apart: that is a tie, and a
         // tie goes to the nearer (R-em3d44-2c).
         if (tier == _bestTier && (d > _best.Distance + TiePixels || (d >= _best.Distance - TiePixels && depth >= _best.Depth))) return;
-        bool shown = (xray && _scene.Objects[id - 1].Translucent) || Visible(x, y, depth, id, index, t, on);
+        bool shown = (xray && _scene.Objects[id - 1].Translucent)
+                     || (ownA != -2 ? VisibleOn(x, y, depth, id, ownA, ownB) : Visible(x, y, depth, id, index, t, on));
         if (!shown) return;
         _bestTier = tier;
-        _best = new Snap3DResult(kind, world, id, face, index, x / _dip, y / _dip, depth, d);
+        _best = new Snap3DResult(kind, world, id, face, index, x / _dip, y / _dip, depth, d, approximate);
     }
 
     /// <summary>R-em3d44-2b — at the feature's pixel or one beside it: nothing, one of its own faces, or
@@ -304,6 +445,26 @@ public sealed class SnapQuery3D
         return !any;
     }
 
+    /// <summary>brief-em3d-67 — <see cref="Visible"/> for a feature on faces <paramref name="f0"/> and <paramref name="f1"/>
+    /// of object <paramref name="id"/> (a named edge's two, −1 for a rim's missing one).</summary>
+    private bool VisibleOn(float x, float y, float depth, uint id, int f0, int f1)
+    {
+        int px = (int)MathF.Floor(x), py = (int)MathF.Floor(y);
+        float tol = 1e-4f * MathF.Abs(depth) + 1.5f * PixelWorld(depth);
+        bool any = false;
+        for (int j = -1; j <= 1; j++)
+            for (int i = -1; i <= 1; i++)
+            {
+                int k = _patch.IndexOf(px + i, py + j);
+                if (k < 0) continue;
+                any = true;
+                uint pid = _patch.Ids[k];
+                if (pid == 0 || depth <= _patch.Depth[k] + tol) return true;
+                if (pid == id && ((int)_patch.Faces[k] == f0 || (f1 >= 0 && (int)_patch.Faces[k] == f1))) return true;
+            }
+        return !any;
+    }
+
     /// <summary>A pixel's world size at view depth <paramref name="depth"/>.</summary>
     private float PixelWorld(float depth)
         => _cam.Projection == Projection3D.Orthographic
@@ -311,8 +472,11 @@ public sealed class SnapQuery3D
             : 2f * MathF.Abs(depth) * MathF.Tan(_cam.FovY * 0.5f) / MathF.Max(1f, _patch.Height);
 
     /// <summary>The point of segment a–b nearest the cursor's ray (world metres), or null for a degenerate edge.</summary>
-    private Point3? NearestOnEdge(Point3 a, Point3 b)
+    private Point3? NearestOnEdge(Point3 a, Point3 b) => NearestOnEdge(a, b, out _);
+
+    private Point3? NearestOnEdge(Point3 a, Point3 b, out float s)
     {
+        s = 0;
         // In scene-local single precision the geometry is fine for FINDING the parameter; the point returned
         // is re-made in doubles from it.
         var la = _scene.ToLocal(a.X, a.Y, a.Z);
@@ -324,7 +488,7 @@ public sealed class SnapQuery3D
         float ud = Vector3.Dot(u, _rayD), dd = Vector3.Dot(_rayD, _rayD);
         float denom = uu * dd - ud * ud;
         // Parallel to the ray: every point is equally near; the nearer end is as good as any.
-        float s = denom <= 1e-12f * uu * dd ? 0 : Math.Clamp((ud * Vector3.Dot(_rayD, w) - dd * Vector3.Dot(u, w)) / denom, 0, 1);
+        s = denom <= 1e-12f * uu * dd ? 0 : Math.Clamp((ud * Vector3.Dot(_rayD, w) - dd * Vector3.Dot(u, w)) / denom, 0, 1);
         return new Point3(a.X + (b.X - a.X) * s, a.Y + (b.Y - a.Y) * s, a.Z + (b.Z - a.Z) * s);
     }
 

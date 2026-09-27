@@ -159,6 +159,20 @@ public sealed class GeometryKernelException(GeometryKernelFailure failure, strin
 
     /// <summary>The object the request concerned.</summary>
     public string? Object { get; } = obj;
+
+    /// <summary>brief-em3d-67 — the edge names a fillet or chamfer refusal concerns: the one that does not fit, the edges
+    /// meeting at a corner that cannot be blended (<see cref="Corner"/>), or a name that resolves to nothing
+    /// (<c>edge.missing</c>). Empty for any other refusal.</summary>
+    public IReadOnlyList<string> Edges { get; init; } = [];
+
+    /// <summary>True when <see cref="Edges"/> are the edges meeting at a corner.</summary>
+    public bool Corner { get; init; }
+
+    /// <summary>The narrower of the two faces beside the edge that does not fit, µm — what a radius must stay under.</summary>
+    public double? WidthUm { get; init; }
+
+    /// <summary>For <c>edge.missing</c>: the faces the edge name names that the target no longer has.</summary>
+    public IReadOnlyList<string> Missing { get; init; } = [];
 }
 
 /// <summary>

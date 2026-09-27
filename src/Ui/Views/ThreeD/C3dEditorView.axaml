@@ -43,6 +43,10 @@
                 <ToggleButton IsChecked="{Binding ViewModel.Viewer.IsFaceMode}" ToolTip.Tip="Face mode: select one face of a solid or sheet  (F)">
                     <mi:MaterialIcon Kind="VectorSquare" Width="16" Height="16"/>
                 </ToggleButton>
+                <!-- brief-em3d-67 R-em3d67-1c — between Face and Vertex: surfaces, then edges, then points. -->
+                <ToggleButton IsChecked="{Binding ViewModel.Viewer.IsEdgeMode}" ToolTip.Tip="Edge mode: select edges; Shift-click adds  (E)">
+                    <mi:MaterialIcon Kind="VectorLine" Width="16" Height="16"/>
+                </ToggleButton>
                 <ToggleButton IsChecked="{Binding ViewModel.Viewer.IsVertexMode}" ToolTip.Tip="Vertex mode: select one vertex  (V)">
                     <mi:MaterialIcon Kind="VectorPoint" Width="16" Height="16"/>
                 </ToggleButton>
@@ -424,7 +428,7 @@
                         </TreeDataTemplate>
                         <TreeDataTemplate DataType="t3:C3dTreeItem" ItemsSource="{Binding Children}">
                             <StackPanel Orientation="Horizontal" Spacing="4">
-                                <CheckBox IsChecked="{Binding IsVisible}" MinWidth="0" Padding="0"
+                                <CheckBox IsChecked="{Binding IsVisible}" MinWidth="0" Padding="0" IsVisible="{Binding !IsFeature}"
                                           ToolTip.Tip="Visible — a drawn object's visibility is saved with the document and undoable"/>
                                 <!-- brief-em3d-66 R-em3d66-3a — an operation's icon; dimmed while it is disabled. -->
                                 <mi:MaterialIcon Kind="{Binding IconKind}" Width="14" Height="14" VerticalAlignment="Center"
@@ -536,6 +540,71 @@
                         <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Right">
                             <Button Content="Cancel" Command="{Binding ViewModel.CancelBooleanCommand}"/>
                             <Button Content="OK" Command="{Binding ViewModel.AcceptBooleanCommand}" Classes="accent"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+                <!-- brief-em3d-67 R-em3d67-5b — the Fillet / Chamfer panel: brief 66's popover, reused. Not modal: while it is
+                     open a click, a Shift-click or a double-click (a chain) in Edge mode edits the edge list. The size field
+                     takes a number or an expression; a name nothing defines is offered as a VAR. OK only once a reply is drawn. -->
+                <Border IsVisible="{Binding ViewModel.FilletOpen}" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="12"
+                        Padding="10,8" CornerRadius="4" BorderThickness="1" Width="320"
+                        Background="{DynamicResource SystemControlBackgroundAltHighBrush}"
+                        BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
+                    <Border.KeyBindings>
+                        <KeyBinding Gesture="Escape" Command="{Binding ViewModel.CancelFilletCommand}"/>
+                        <KeyBinding Gesture="Enter" Command="{Binding ViewModel.AcceptFilletCommand}"/>
+                    </Border.KeyBindings>
+                    <StackPanel Spacing="5">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <TextBlock Text="{Binding ViewModel.FilletTitle}" FontWeight="SemiBold"/>
+                            <ProgressBar Grid.Column="1" IsIndeterminate="True" Width="48" MinWidth="0" Height="4" VerticalAlignment="Center"
+                                         IsVisible="{Binding ViewModel.FilletBusy}" ToolTip.Tip="Previewing: OK waits for the result."/>
+                        </Grid>
+                        <StackPanel Orientation="Horizontal" Spacing="10" IsVisible="{Binding ViewModel.IsChamferPanel}">
+                            <RadioButton Content="Equal distances" IsChecked="{Binding !ViewModel.ChamferTwoDistances}" GroupName="chamfer"/>
+                            <RadioButton Content="Two distances" IsChecked="{Binding ViewModel.ChamferTwoDistances}" GroupName="chamfer"/>
+                        </StackPanel>
+                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="6">
+                            <TextBlock Text="{Binding ViewModel.FilletSizeLabel}" VerticalAlignment="Center" FontSize="11" Opacity="0.75"/>
+                            <TextBox Grid.Column="1" Text="{Binding ViewModel.FilletSizeText}"
+                                     ToolTip.Tip="A length, or an expression (r_edge, 2*t): a bare number is in the display unit."/>
+                            <TextBlock Grid.Column="2" Text="{Binding ViewModel.FilletUnit}" VerticalAlignment="Center" FontSize="11" Opacity="0.75"/>
+                        </Grid>
+                        <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="6" IsVisible="{Binding ViewModel.ChamferTwoDistances}">
+                            <TextBlock Text="Distance 2" VerticalAlignment="Center" FontSize="11" Opacity="0.75"/>
+                            <TextBox Grid.Column="1" Text="{Binding ViewModel.FilletSize2Text}"/>
+                            <TextBlock Grid.Column="2" Text="{Binding ViewModel.FilletUnit}" VerticalAlignment="Center" FontSize="11" Opacity="0.75"/>
+                            <ToggleButton Grid.Column="3" Content="Flip" IsChecked="{Binding ViewModel.ChamferFlip}"
+                                          ToolTip.Tip="Which face the first distance is measured on; the note below says which."/>
+                        </Grid>
+                        <TextBlock Text="{Binding ViewModel.FilletSizePreview}" FontSize="11" Opacity="0.8"
+                                   IsVisible="{Binding ViewModel.FilletSizePreview, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="6" IsVisible="{Binding ViewModel.HasFilletUnknown}">
+                            <TextBlock Text="{Binding ViewModel.FilletUnknown, StringFormat='Define {0} ='}" VerticalAlignment="Center" FontSize="11"/>
+                            <TextBox Grid.Column="1" Text="{Binding ViewModel.FilletDefineValue}" PlaceholderText="50 um"/>
+                            <Button Grid.Column="2" Content="Define" Command="{Binding ViewModel.DefineFilletNameCommand}"
+                                    ToolTip.Tip="A VAR of this 3D view: one undo entry of its own."/>
+                        </Grid>
+                        <TextBlock Text="{Binding ViewModel.FilletEdgesText}" FontSize="11" Opacity="0.75"
+                                   ToolTip.Tip="Shift-click in the view adds or removes an edge; double-click adds a tangent chain."/>
+                        <ItemsControl ItemsSource="{Binding ViewModel.FilletEdgeRows}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="t3:C3dFilletEdgeRow">
+                                    <Grid ColumnDefinitions="*,Auto" Margin="0,1">
+                                        <SelectableTextBlock Text="{Binding Name}" VerticalAlignment="Center"/>
+                                        <Button Grid.Column="1" Content="×" Padding="5,0" Command="{Binding RemoveCommand}"
+                                                ToolTip.Tip="Leave this edge unrounded."/>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <TextBlock Text="{Binding ViewModel.FilletNote}" FontSize="11" Opacity="0.8" TextWrapping="Wrap"
+                                   IsVisible="{Binding ViewModel.FilletNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                        <TextBlock Text="{Binding ViewModel.FilletError}" Foreground="IndianRed" FontSize="11" TextWrapping="Wrap"
+                                   IsVisible="{Binding ViewModel.FilletError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                        <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Right">
+                            <Button Content="Cancel" Command="{Binding ViewModel.CancelFilletCommand}"/>
+                            <Button Content="OK" Command="{Binding ViewModel.AcceptFilletCommand}" Classes="accent"/>
                         </StackPanel>
                     </StackPanel>
                 </Border>

@@ -56,6 +56,8 @@ namespace CircuitRF.Render.Scene3D;
 /// (<see cref="Scene3DObject.Wireframe"/>), never taken for the outermost dielectric.</param>
 /// <param name="Ghost">brief-em3d-66 R-em3d66-2e — how an object draws while a boolean is previewed or entered: a ghost is
 /// translucent and never hovered or selected; a Tool of a subtraction is a ghost in the overlay's red.</param>
+/// <param name="OwnFrame">brief-em3d-67 R-em3d67-2b — an object's map from world metres into its own frame (before its
+/// placement), where the runs one pair of faces bounds are numbered; null (or null for a name) is the identity.</param>
 public sealed record Scene3DBuildOptions(
     Func<string, IReadOnlyList<string>?>? FaceNames = null,
     Scene3DTessellationCache? Cache = null,
@@ -67,7 +69,8 @@ public sealed record Scene3DBuildOptions(
     bool EditorBoundaries = false,
     IReadOnlyList<Scene3DFaceTint>? FaceTints = null,
     Func<string, bool>? Wireframe = null,
-    Func<string, Scene3DGhost>? Ghost = null);
+    Func<string, Scene3DGhost>? Ghost = null,
+    Func<string, Func<Point3, Point3>?>? OwnFrame = null);
 
 /// <summary>brief-em3d-66 — an object's draw state while a boolean is previewed or entered.</summary>
 public enum Scene3DGhost
@@ -78,6 +81,12 @@ public enum Scene3DGhost
     Ghost,
     /// <summary>A ghost in the overlay's red: what a subtraction takes away.</summary>
     Taken,
+    /// <summary>brief-em3d-67 R-em3d67-5c — translucent like a ghost but still hovered and selected: a fillet's target
+    /// while its preview is shown, whose edges the panel's list is still edited on.</summary>
+    Pickable,
+    /// <summary>brief-em3d-67 — drawn as it is, but never hovered or selected: the fillet's previewed result, seen through
+    /// its translucent target.</summary>
+    Inert,
 }
 
 /// <summary>brief-em3d-49 R-em3d49-4d — one face boundary to draw: its name (<c>object/face</c>), its kind and its pieces.</summary>
@@ -194,12 +203,15 @@ public static class Scene3DBuilder
         IReadOnlyList<string> FacesOf(string name) => options.FaceNames?.Invoke(name) ?? [];
         // brief-em3d-44 R-em3d44-3 — each solid's and sheet's snap features, one table per shared key.
         var shared = new Dictionary<object, (Scene3DFeatureTable Table, double X, double Y, double Z)>();
-        Scene3DFeatureRef Features(string name, Em3dTriangleMesh mesh, bool sheet)
+        // brief-em3d-67 — and its named edges: the kernel's for a kernel solid, else runs of its own segments.
+        Scene3DFeatureRef Features(string name, Em3dTriangleMesh mesh, bool sheet, IReadOnlyList<Em3dShapeEdge>? kernel = null,
+                                   IReadOnlyList<string>? sheetNames = null)
         {
-            if (options.FeatureShare?.Invoke(name) is not { } share) return new(Scene3DFeatureTable.Of(mesh, sheet), 0, 0, 0, false);
+            var source = new Scene3DEdgeSource(sheetNames ?? FacesOf(name), kernel, options.OwnFrame?.Invoke(name));
+            if (options.FeatureShare?.Invoke(name) is not { } share) return new(Scene3DFeatureTable.Of(mesh, sheet, source), 0, 0, 0, false);
             if (shared.TryGetValue(share.Key, out var t))
                 return new(t.Table, share.Tx - t.X, share.Ty - t.Y, share.Tz - t.Z, true);
-            var table = Scene3DFeatureTable.Of(mesh, sheet);
+            var table = Scene3DFeatureTable.Of(mesh, sheet, source);
             shared[share.Key] = (table, share.Tx, share.Ty, share.Tz);
             return new(table, 0, 0, 0, true);
         }
@@ -259,7 +271,9 @@ public static class Scene3DBuilder
             if (dim) (rgba, translucent) = (Dimmed(rgba, dark), true);
             if (wire) (rgba, translucent) = (wireFill, true);
             var ghost = options.Ghost?.Invoke(s.Name) ?? Scene3DGhost.None;
-            if (ghost != Scene3DGhost.None) (rgba, translucent, dim) = (Ghosted(rgba, ghost == Scene3DGhost.Taken, dark), true, true);
+            if (ghost is Scene3DGhost.Ghost or Scene3DGhost.Taken) (rgba, translucent, dim) = (Ghosted(rgba, ghost == Scene3DGhost.Taken, dark), true, true);
+            else if (ghost == Scene3DGhost.Pickable) (rgba, translucent) = (Ghosted(rgba, false, dark), true);
+            else if (ghost == Scene3DGhost.Inert) dim = true;
             var solid = s;
             var mesh = Tessellate(s.Primitive, () => Em3dTessellation.Of(solid));
             var (m, slot) = materials.TryGetValue(s.Material, out var mt) ? (mt.m, mt.i) : ((Em3dMaterial?)null, -1);
@@ -272,7 +286,7 @@ public static class Scene3DBuilder
                 CapCentres = s.Primitive is Em3dCylinder cyl ? [cyl.AxisStart, cyl.AxisEnd] : null,
                 Context = dim, Wireframe = wire,
             }, mesh, wire && s.Primitive is Em3dCylinder c0 ? CylinderGenerators(c0).Select(q => (q, wireEdge)) : null,
-               faces: true, features: Features(s.Name, mesh, sheet: false), wireEdges: wire ? wireEdge : null);
+               faces: true, features: Features(s.Name, mesh, sheet: false, (s.Primitive as Em3dShapeSolid)?.Edges), wireEdges: wire ? wireEdge : null);
             if (place is { } p0) solidRuns.Prototype(p0, s.Name);
             else solidRuns.Break();
         }
@@ -296,7 +310,8 @@ public static class Scene3DBuilder
                 Id = 0, Name = sh.Name, Kind = Scene3DKind.Sheet, Material = sh.Material, MaterialValues = m,
                 MaterialSlot = slot, Rgba = wire ? wireFill : dim ? Dimmed(rgba, dark) : rgba, Translucent = dim || wire,
                 FaceNames = names.Count > 0 ? names : SheetFaceNames, Context = dim, Wireframe = wire,
-            }, mesh, faces: true, sheet: true, features: Features(sh.Name, mesh, sheet: true), wireEdges: wire ? wireEdge : null);
+            }, mesh, faces: true, sheet: true, features: Features(sh.Name, mesh, sheet: true, sheetNames: names.Count > 0 ? names : SheetFaceNames),
+               wireEdges: wire ? wireEdge : null);
             if (place is { } p0) sheetRuns.Prototype(p0, sh.Name);
             else sheetRuns.Break();
         }

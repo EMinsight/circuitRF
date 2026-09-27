@@ -62,6 +62,32 @@
                 </Grid>
             </StackPanel>
 
+            <!-- brief-em3d-67 R-em3d67-6b — a fillet's or chamfer's row: each field one undo entry, re-evaluated through the
+                 client. An evaluation that fails is not rolled back: the row carries the refusal. Its size fields are the
+                 dimension lines below (a number or an expression). -->
+            <StackPanel Spacing="4" IsVisible="{Binding IsFeature}">
+                <CheckBox IsChecked="{Binding FeatureEnabled}" Content="Enabled" IsEnabled="{Binding FeatureEditable}"
+                          ToolTip.Tip="Unticked, the solid elaborates unrounded — a cheap A/B for the simulation."/>
+                <Button Content="Flip" Command="{Binding FlipChamferCommand}" IsVisible="{Binding FeatureCanFlip}" HorizontalAlignment="Left"
+                        ToolTip.Tip="Measure the first distance on the edge's other face."/>
+                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="4">
+                    <TextBlock Text="Edges" FontSize="11" Opacity="0.7" VerticalAlignment="Center"/>
+                    <Button Grid.Column="1" Content="Show" Command="{Binding ShowFeatureEdgesCommand}"
+                            ToolTip.Tip="Select them in the view (Edge mode)."/>
+                    <Button Grid.Column="2" Content="Edit…" Command="{Binding EditFeatureEdgesCommand}" IsEnabled="{Binding FeatureEditable}"
+                            ToolTip.Tip="{Binding FeatureTip}"/>
+                </Grid>
+                <ItemsControl ItemsSource="{Binding FeatureEdges}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="x:String">
+                            <SelectableTextBlock Text="{Binding}" FontSize="11"/>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <Button Content="Remove" Command="{Binding RemoveFeatureCommand}" HorizontalAlignment="Left"
+                        ToolTip.Tip="The solid returns unrounded, in its place and under its name. One undo entry."/>
+            </StackPanel>
+
             <!-- 3D editor round 3 — a bond wire: its bonds, its section, and every point of its axis in world coordinates.
                  A point commits on Enter or lost focus (one undo entry); an end is re-seated on its pad's top as a drag's is. -->
             <StackPanel Spacing="4" IsVisible="{Binding IsWire}">
@@ -155,7 +181,7 @@
 
             <!-- brief-em3d-51 R-em3d51-4b — each named dimension: its expression and resolved value, editable as either.
                  3D editor round 4 — a vector's components share one line ("Size: x [ ] y [ ] z [ ]"), labels aligned. -->
-            <ItemsControl ItemsSource="{Binding FieldRows}" IsVisible="{Binding IsEditable}" Grid.IsSharedSizeScope="True">
+            <ItemsControl ItemsSource="{Binding FieldRows}" IsVisible="{Binding FieldsVisible}" Grid.IsSharedSizeScope="True">
                 <ItemsControl.ItemTemplate>
                     <DataTemplate DataType="t3:C3dDimensionRow">
                         <StackPanel Margin="0,2" Spacing="1">

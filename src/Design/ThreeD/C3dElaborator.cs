@@ -283,7 +283,11 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
 
     /// <summary>A kernel object's build, lowered — or its refusal. Kept by the tree's hash, which is the resolved inputs'.</summary>
     private sealed record KernelLowered(C3dLowered? Lowered, string? Refusal, IReadOnlyList<string> Notes, bool Built, int Edges, double? MinRadiusM,
-                                        bool Empty = false, int Solids = 1);
+                                        bool Empty = false, int Solids = 1)
+    {
+        /// <summary>brief-em3d-67 — the kernel's refusal, for the caller to word in the operation's terms.</summary>
+        public GeometryKernelException? Failure { get; init; }
+    }
 
     /// <summary>
     /// brief-em3d-64 R-em3d64-3a — <paramref name="tree"/> built by the kernel and lowered to an <see cref="Em3dShapeSolid"/>:
@@ -311,7 +315,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
         catch (GeometryKernelException e)
         {
             // brief-em3d-66 — the worker's own "leaves nothing" (build.empty) is worded by the caller, as an empty build is.
-            made = new KernelLowered(null, e.Message, [], k.RequestsSent > before, 0, null, Empty: e.Code == EmptyCode, Solids: 0);
+            made = new KernelLowered(null, e.Message, [], k.RequestsSent > before, 0, null, Empty: e.Code == EmptyCode, Solids: 0) { Failure = e };
         }
         return _kernelSolids[tree.Hash] = made;
     }
@@ -363,8 +367,15 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
         var shapeFaces = faces.Select((f, i) => new Em3dShapeFace(f.Name, f.Kind,
             (f.Box[0] * M, f.Box[1] * M, f.Box[2] * M, f.Box[3] * M, f.Box[4] * M, f.Box[5] * M),
             f.MinRadius * M, Math.Max(first[i], 0), count[i])).ToList();
+        static Point3? P(double[]? v, int at = 0) => v is { } a && a.Length >= at + 3 ? new Point3(a[at] * M, a[at + 1] * M, a[at + 2] * M) : null;
+        static Point3? D(double[] v, int at) => v.Length >= at + 3 ? new Point3(v[at], v[at + 1], v[at + 2]) : null;
         var shapeEdges = edges.Select(e => new Em3dShapeEdge(e.Name, e.FaceA, e.FaceB, e.Kind, e.MinRadius * M,
-            [.. Enumerable.Range(0, e.Polyline.Length / 3).Select(i => new Point3(e.Polyline[3 * i] * M, e.Polyline[3 * i + 1] * M, e.Polyline[3 * i + 2] * M))])).ToList();
+            [.. Enumerable.Range(0, e.Polyline.Length / 3).Select(i => new Point3(e.Polyline[3 * i] * M, e.Polyline[3 * i + 1] * M, e.Polyline[3 * i + 2] * M))])
+        {
+            // brief-em3d-67 — what snapping and the tangent chain read: exact from the curve, not the polyline.
+            Closed = e.Closed, LengthM = e.Length * M, Mid = P(e.Mid), Centre = P(e.Centre), RadiusM = e.Radius * M,
+            Tangents = D(e.Tangents, 0) is { } t0 && D(e.Tangents, 3) is { } t1 ? (t0, t1) : null,
+        }).ToList();
         var solid = new Em3dShapeSolid(build.Brep, build.BrepHash, display, shapeFaces, shapeEdges)
         {
             DisplayDeflectionM = linearUm * M,
@@ -797,6 +808,9 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
             var tree = GeometryKernelTree.From(obj, doc.DbuPerMicron, worldUm, Path.GetDirectoryName(path));
             var built = owner.KernelCached(tree, name);
             if (built.Empty) built = built with { Refusal = C3dBooleans.EmptyResult(obj, name) };
+            // brief-em3d-67 R-em3d67-5d / -6c — a fillet's or chamfer's refusal names the edge, in the user's terms.
+            else if (built.Failure is { } failure && C3dFillets.Worded(failure, obj, name, doc.DisplayUnit, doc.DbuPerMicron) is { } said)
+                built = built with { Refusal = said };
             Kernel(name, built.Refusal, obj, built);
             if (built.Lowered is not { } lowered) { KeptTools(obj, world, doc, tech, prefix, path, exact); return; }
 

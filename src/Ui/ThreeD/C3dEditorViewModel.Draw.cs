@@ -472,7 +472,8 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
     public bool DrawKey(Key key, KeyModifiers modifiers)
     {
         if (key == Key.A && modifiers == KeyModifiers.Shift) { DrawMenuRequested?.Invoke(); return true; }
-        // brief-em3d-66 — the panel's Esc and Enter; entering and leaving a boolean.
+        // brief-em3d-66 — the panel's Esc and Enter; entering and leaving a boolean. brief-em3d-67 — the Fillet panel's.
+        if (_tool is not { InProgress: true } && FilletKey(key, modifiers)) return true;
         if (_tool is not { InProgress: true } && BooleanKey(key, modifiers)) return true;
         // brief-em3d-48 — Ctrl/Cmd+] and Ctrl/Cmd+[: Push In and Pop Out, the layout editor's keys.
         if (_tool is not { InProgress: true } && HierarchyKey(key, modifiers)) return true;

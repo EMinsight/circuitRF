@@ -538,12 +538,22 @@ public partial class WorkspaceViewModel
     public string ThreeDBooleanTip
         => (CircuitRF.Ui.ThreeD.GeometryKernelAvailability.DisabledReason("Boolean") is { } why ? why + " " : "") + "Requires an active 3D editor.";
 
+    /// <summary>brief-em3d-67 — 3D ▸ Modify ▸ Edge ▸ Fillet… and Chamfer…: what they do, after the capability's own sentence
+    /// when that is why they are disabled.</summary>
+    public string ThreeDFilletTip => EdgeTip("Fillet", "Round the selected edges of one solid with a radius; previewed before OK.");
+    public string ThreeDChamferTip => EdgeTip("Chamfer", "Bevel the selected edges of one solid, at one distance or two; previewed before OK.");
+
+    private static string EdgeTip(string what, string does)
+        => (CircuitRF.Ui.ThreeD.GeometryKernelAvailability.DisabledReason(what) is { } why ? why + " " : does + " ") + "Requires an active 3D editor.";
+
     /// <summary>Re-evaluates every 3D menu item — called from both of the shell's enablement fan-outs.</summary>
     private void RaiseThreeDMenuChanged()
     {
         OnPropertyChanged(nameof(IsThreeDMenuVisible));
         OnPropertyChanged(nameof(ThreeDBooleanAvailable));
         OnPropertyChanged(nameof(ThreeDBooleanTip));
+        OnPropertyChanged(nameof(ThreeDFilletTip));
+        OnPropertyChanged(nameof(ThreeDChamferTip));
         ThreeDSelectModeCommand.NotifyCanExecuteChanged();
         ThreeDFitCommand.NotifyCanExecuteChanged();
         ThreeDStandardViewCommand.NotifyCanExecuteChanged();
@@ -595,7 +605,7 @@ public partial class WorkspaceViewModel
     [RelayCommand(CanExecute = nameof(HasActive3DPane))]
     private void ThreeDMeasure() => Active3DPane()?.ToggleMeasure();
 
-    /// <summary>3D ▸ Select Mode ▸ Object / Face / Vertex.</summary>
+    /// <summary>3D ▸ Select Mode ▸ Object / Face / Edge / Vertex.</summary>
     [RelayCommand(CanExecute = nameof(HasActive3DPane))]
     private void ThreeDSelectMode(string mode)
     {

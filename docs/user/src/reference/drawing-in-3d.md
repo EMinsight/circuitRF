@@ -97,9 +97,18 @@ ports do not depend on them: a bigger cavity leaves the die where it is and move
 
 ## Selecting {#selecting}
 
-**O**, **F** and **V** choose what a click selects — a whole **object**, one **face**, or one **vertex** —
-and the toolbar has a button for each. What is under the cursor is highlighted; a click selects it,
-**Shift**-click adds or removes, **Esc** clears.
+**O**, **F**, **E** and **V** choose what a click selects — a whole **object**, one **face**, one **edge**, or
+one **vertex** — and the toolbar has a button for each. What is under the cursor is highlighted; a click selects
+it, **Shift**-click adds or removes, **Esc** clears.
+
+- **Edge mode** (**E**) picks the edge nearest the cursor that you can see. An edge is a whole run between two
+  faces — a cylinder's rim is one edge, not a ring of segments — named by those two faces: `xmax|zmax`,
+  `bottom|side`, `bore:side|zmax`. Where one pair of faces meets in more than one place the name takes a number,
+  `side|zmax|1`, `side|zmax|2`, counted in the object's own frame, so moving or turning it renames nothing.
+  **Double-click** an edge to take its **tangent chain** — every edge that carries on smoothly from it (within a
+  degree), the loop round a rounded top — and **Shift**-double-click to add it; a chain that meets a fork stops
+  there and says how many ways it could go. Properties shows an edge's faces, kind and length, and a circle's or
+  an arc's radius and centre; several edges, their count and total length. Edge mode needs no geometry kernel.
 
 - **B** selects the next thing **behind** the selection along the line of sight through the cursor, and
   **Shift+B** steps back toward you; the status line says where you are (`Face zmin · "base" · 2 of 5`).
@@ -188,7 +197,7 @@ source.
   it, so a pushed box is still a box. It stops before a neighbour would vanish, and says which.
 - **G** moves a face freely (its neighbours tilt to follow), or a vertex in Vertex mode; Properties' *Set
   coordinates* types where a vertex goes.
-- **E** grows a new solid out of a face along its normal — a bump on a pad, a wall on a floor. *Align to
+- **Shift+E** grows a new solid out of a face along its normal — a bump on a pad, a wall on a floor. *Align to
   Face…* moves an object until two faces meet (**T** switches between *Touching* and *Flush*). *Copy as
   Sheet* makes a sheet on a face. *Measure* reports a face's area, perimeter and normal.
 
@@ -236,7 +245,7 @@ type the expression's unit after it. The example uses names for every constant i
 Four kinds of object are built by **OpenCASCADE**, the geometry kernel that ships inside circuitRF, rather
 than by the editor itself: a **Boolean** (subtract, unite or intersect), a **Fillet**, a **Chamfer** and a
 **Step** part (one solid of an imported STEP file). **Settings ▸ 3D EM** says whether this installation has
-the kernel. **Booleans are made in the editor** (below); fillets, chamfers and STEP parts are written in the
+the kernel. **Booleans, fillets and chamfers are made in the editor** (below); STEP parts are written in the
 file for now, and a `.c3d` holding any of them is drawn, checked, explained and elaborated.
 
 A boolean owns its operands. This one subtracts a bore from a lid:
@@ -272,7 +281,10 @@ A boolean owns its operands. This one subtracts a bore from a lid:
 - **Faces keep their names.** The Blank's faces are still `zmax`, `xmin` …; a Tool's are `bore:side`; a face
   the operation cut in pieces is `zmax#1`, `zmax#2`, and a boundary on `zmax` lands on every piece. Edges are
   named by the two faces they separate, `bore:side|zmax`, and that is how a Fillet names what it rounds:
-  `"Radius": 50000, "Edges": ["bore:side|zmax"]`. A fillet's new face is `fillet(bore:side|zmax)`.
+  `"Radius": 50000, "Edges": ["bore:side|zmax"]`. A fillet's new face is `fillet(bore:side|zmax)`. An edge name
+  follows its faces through an edit: when `zmax` is split into `zmax.0` and `zmax.1`, a fillet on `xmax|zmax`
+  rounds the edges between `xmax` and both pieces. One whose face has gone is refused by name
+  (*"Edge 'xmax|zmax' of 'lid' no longer exists: its face 'zmax' was removed"*), never moved to a nearby edge.
 - **`"Enabled": false`** makes the operation as if it were not there: the Blank is drawn and solved under the
   boolean's name and each Tool under its own — the bore standing in the lid. A boundary on `bore:side` of `lid`
   then lands on the cylinder's `side`. Nothing in the file changes; switching it back is the A/B test.
@@ -326,6 +338,45 @@ enters its boolean too.
 **A result's faces are for reading**: a port, a boundary, Measure, snapping and *Drawing Plane from Face* all use
 them, but moving or extruding one is refused — *"'lid' is made by a boolean: edit its operands (double-click it)
 or the operation in Properties."*
+
+### Rounding edges: Fillet and Chamfer {#fillet-panel}
+
+Select edges of one solid in **Edge** mode, then right-click ▸ **Fillet…** or **Chamfer…** (also under
+**3D ▸ Modify ▸ Edge**). A box, prism, cylinder, polyhedron, boolean result or STEP part can be rounded, and so can a
+solid that is already; a sheet has no volume to round, a bond wire is made from its points, and a placed cell's
+solids belong to its own cell — each disabled item says which. Without the kernel both are disabled with the
+reason, and Edge mode still works.
+
+- **The panel** is the Boolean panel's: **Radius** for a fillet; for a chamfer **Equal distances** or **Two
+  distances**, where **Flip** chooses which face the first distance is measured on and a line says which. A size
+  is a number or an expression (`r_edge`, `2*t`); a name nothing defines is offered as a VAR, with its value.
+- **The edge list** counts the edges and names each, with a **×** to leave one out. The panel does not hold the
+  view: click, **Shift**-click or double-click edges while it is open to change the list. The object is drawn
+  translucent over the preview so its edges can still be picked; an edge of another object is refused.
+- **The preview is live**, as a boolean's is, and **OK** waits for it. A size that does not fit is said in the
+  edge's own terms — *"A 50 µm radius does not fit edge 'xmax|zmax': the faces beside it are 30 µm wide. Try less
+  than 30 µm."* — and a corner the kernel cannot blend names the edges that meet there.
+- **OK** is one undo entry (*Fillet 4 edges of lid*). The fillet **wraps** the solid and **takes its name and its
+  place**: every port, boundary and wire on the solid's faces still lands, the faces keep their names, and each new
+  face is `fillet(<edge>)` or `chamfer(<edge>)`. A second Fillet… on the same solid wraps it again.
+
+**In the object tree** a rounded solid is **one node**, listed as the solid it rounds, with its fillets and
+chamfers as rows beneath it, innermost first (*Fillet 50 µm — 4 edges*). **In Properties** a row shows its
+**Radius** (or **Distance** and **Distance 2**, and **Flip**), **Enabled**, and its **Edges** — **Show** selects
+them in the view and **Edit…** reopens the panel on them — and **Remove** unwraps it: the solid returns unrounded,
+in its place and under its name. Each is one undo entry; a change the kernel cannot build is kept and the row
+flagged. **Enabled** off draws and solves the solid unrounded, and a boundary on one of the fillet's own faces then
+says it *"exists only while its fillet is enabled"*.
+
+**A rounded solid's faces are for reading** too: *"'lid' is rounded by a fillet: edit the box (disable the fillet,
+or change it in Properties)."* With every fillet and chamfer on it disabled, its faces and vertices are edited as
+the solid's own, and switching them back on rounds the edited solid — an edge still there is rounded again at the
+new size.
+
+**Snapping to curves.** On a solid the kernel built, a snap reaches the true vertices only (a curved edge's
+drawing points are not vertices), an open curve's midpoint along the curve, and the **centre of a circle or an
+arc** — shown as the face-centre marker with a dot in it — which is how a pin is put exactly on a bore's axis. A
+point found along a curved edge is on its drawn chord, so the status line marks it **≈**.
 
 <div class="callout warn">
 <span class="label">Without the geometry kernel</span>
@@ -488,14 +539,15 @@ Every step above has a command-line spelling, and none of them needs a solver ex
 
 | Key | What it does |
 |---|---|
-| **O**, **F**, **V** | Select objects, faces, vertices |
+| **O**, **E**, **F**, **V** | Select objects, edges, faces, vertices |
 | **B**, **Shift+B** | The next thing behind the selection; back toward you |
 | **Shift+A** then a letter | Box, Sheet, polyGon, polyLine, cYlinder, Port, Wire |
 | digits, **Tab**, **Enter** | Type a dimension instead of clicking |
 | **Esc** | Back one step: the typed box, the shape, the tool, the selection |
 | **G**, **R**, **X/Y/Z** | Move, rotate; hold to an axis |
 | **Ctrl/Cmd+D** | Duplicate and move |
-| **N**, **E**, **T** | Push/pull a face; extrude a face into a new solid; Touching/Flush while aligning |
+| **N**, **Shift+E**, **T** | Push/pull a face; extrude a face into a new solid; Touching/Flush while aligning |
+| double-click an edge | Its tangent chain (**Shift** adds it) |
 | **M** | Measure |
 | **Alt** (**Option**) | Suspend geometry snapping while held |
 | **Ctrl/Cmd**-click a face | Draw on that face's plane |
@@ -579,7 +631,7 @@ order a pane presents them, with the rules each one follows.
   just before a neighbour would shrink to nothing, and the status line names that neighbour (`'side2' would
   vanish at 1.2 mil`); a typed distance past that point is refused rather than shortened. **G** moves the face
   freely, base point to target point, with **X/Y/Z** and typed distances as for objects; the faces around it
-  tilt to follow. **E** (*Extrude to New Solid*) grows a new solid from the face along its normal — a bump
+  tilt to follow. **Shift+E** (*Extrude to New Solid*) grows a new solid from the face along its normal — a bump
   from a pad, a wall from a floor — in the toolbar's material, or the source's with **M**; the source is
   unchanged. *Align to Face…* then a click on another face moves the object until the two are in one plane:
   *Touching* (facing each other, a die on its substrate) or *Flush* (the same way), **T** switches, and the

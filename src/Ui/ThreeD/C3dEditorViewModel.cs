@@ -165,8 +165,8 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
 
     private object Snapshot()
     {
-        // brief-em3d-66 — a boolean previewed or entered draws its own document, with ghosts.
-        var boolean = BooleanScene();
+        // brief-em3d-66 — a boolean previewed or entered draws its own document, with ghosts; brief-em3d-67 — so does a fillet.
+        var boolean = FilletScene() ?? BooleanScene();
         return new C3dSceneInputs(boolean?.Text ?? DocumentText(), FilePath, _workspaceCws(), ThemeService.Active, ThemeService.CurrentVariant,
                                   ContextSnapshot(), SceneSetupJson(), _namePreview?.Cell, boolean?.Ghosts);
     }
@@ -255,9 +255,30 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
                                         Context: inputs.Context is null ? null : IsContext,
                                         EditorBoundaries: true,
                                         Ghost: inputs.Ghosts is { Count: > 0 } ghosts ? n => ghosts.TryGetValue(n, out var g) ? g : Scene3DGhost.None : null,
+                                        OwnFrame: name => OwnFrameOf(doc, e, name),
                                         FaceTints: [.. records.Boundaries.Where(b => b.Refusal is null)
                                                            .Select(b => new Scene3DFaceTint(b.Boundary.Object + "/" + b.Boundary.Face, b.Boundary.Kind, b.Pieces))]));
         }
+    }
+
+    /// <summary>
+    /// brief-em3d-67 R-em3d67-2b — an object's map from world metres into its own frame, where the runs one pair of faces
+    /// bounds are numbered: the inverse of its placement (and, inside an instance, of the element's transform). Null — the
+    /// identity — for an object the document does not place.
+    /// </summary>
+    private static Func<Point3, Point3>? OwnFrameOf(C3dDocument doc, C3dElaboration e, string name)
+    {
+        if (!e.Provenance.TryGetValue(name, out var p)) return null;
+        var t = C3dTransform.Identity;
+        // A managed object's own placement (a disabled chain's target carries it; the features' are the identity).
+        if (p.InstancePath.Length == 0 && doc.Objects.FirstOrDefault(o => o.Name == name) is { } obj
+            && (C3dFillets.DisabledCore(obj) ?? obj) is { Placement.IsDefault: false } placed && !C3dOperands.IsKernel(placed))
+            t = C3dLowering.InMetres(placed.Placement.ToTransform(), doc.DbuPerMicron);
+        if (p.Element is { } w) t = t.Then(w);
+        if (t == C3dTransform.Identity) return null;
+        var i = t.Inverse();
+        return q => new Point3(i.M00 * q.X + i.M01 * q.Y + i.M02 * q.Z + i.Tx, i.M10 * q.X + i.M11 * q.Y + i.M12 * q.Z + i.Ty,
+                               i.M20 * q.X + i.M21 * q.Y + i.M22 * q.Z + i.Tz);
     }
 
     /// <summary>
@@ -309,6 +330,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         RefreshGridText();
         ReleaseHeldPreview(gen);
         ReselectFace();
+        FilletSceneAdopted(gen);
         // Published LAST: a reader that waits for this generation (a test's settle) must find the adoption finished — the
         // held preview released and the face reselected — not half done.
         Interlocked.Exchange(ref _adoptedGeneration, gen);
@@ -897,7 +919,9 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     {
         string? keep = SelectedTreeItem?.Name;
         string? keepPath = SelectedTreeItem?.OperandPath;
+        string? keepFeature = SelectedTreeItem?.FeaturePath;
         bool keepAirBox = SelectedTreeItem?.IsAirBox == true;
+        string? keepTop = SelectedTreeItem?.TopName;
         _syncingTree = true;
         try
         {
@@ -910,7 +934,9 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
             RefreshWireFlags();
             RefreshKernelFlags();
             RebuildRecordsTree();
-            SelectedTreeItem = keep is null ? null : AllTreeItems().FirstOrDefault(t => t.Name == keep && t.IsAirBox == keepAirBox && t.OperandPath == keepPath);
+            SelectedTreeItem = keep is null ? null
+                : keepFeature is not null ? AllTreeItems().FirstOrDefault(t => t.FeaturePath == keepFeature && t.TopName == keepTop)
+                : AllTreeItems().FirstOrDefault(t => t.Name == keep && t.IsAirBox == keepAirBox && t.OperandPath == keepPath);
         }
         finally { _syncingTree = false; }
     }
@@ -995,6 +1021,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
             AirBoxShown = visible;
             return;
         }
+        if (item.IsFeature) return;           // brief-em3d-67 — a feature row's switch is Enabled, not visibility
         if (item.OperandPath is { } path && item.ObjectIndex >= 0)
         {
             ChangeOperand($"{(visible ? "Show" : "Hide")} {item.Name}", item.ObjectIndex, path, o => o.Hidden = !visible);
@@ -1053,6 +1080,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
 
     private void OnViewerSelectionChanged()
     {
+        FilletSelectionChanged();
         if (!_syncingTree)
         {
             _syncingTree = true;
@@ -1128,7 +1156,8 @@ public sealed partial class C3dTreeItem(C3dEditorViewModel owner, string name, s
     /// <summary>The kind of the air box's node (3D editor round 1): selectable, never deletable.</summary>
     public const string AirBoxKind = "Air box";
 
-    public override string ExpansionKey => "item:" + Kind + ":" + Name + (OperandPath is { } p ? "@" + TopName + "/" + p : "");
+    public override string ExpansionKey => "item:" + Kind + ":" + Name + (OperandPath is { } p ? "@" + TopName + "/" + p : "")
+                                           + (FeaturePath is { } fp ? "@" + TopName + "#" + fp : "");
 
     /// <summary>The active setup's air box.</summary>
     public bool IsAirBox => Kind == AirBoxKind;
@@ -1142,13 +1171,20 @@ public sealed partial class C3dTreeItem(C3dEditorViewModel owner, string name, s
     /// <summary>brief-em3d-46 R-em3d46-4d — a document object's place in construction order (1-based), which decides
     /// which solid wins an overlap; null for an instance and its parts. 3D editor round 3: the row's tooltip, no longer a
     /// "#n" in front of every name — the tree lists in construction order within a group anyway.</summary>
-    public string? OrderTip => ObjectIndex >= 0 && OperandPath is null
+    public string? OrderTip => ObjectIndex >= 0 && OperandPath is null && FeaturePath is null
         ? $"Construction order {ObjectIndex + 1}: a later object wins where solids overlap (3D ▸ Modify ▸ Order)"
         : null;
 
     /// <summary>brief-em3d-66 R-em3d66-3c — an operand's path under its top-level object (<see cref="ObjectIndex"/>):
     /// <c>Blank.</c>, <c>Tools[1].</c>, <c>Tools[0].Blank.</c>; null for a top-level row.</summary>
     public string? OperandPath { get; init; }
+
+    /// <summary>brief-em3d-67 R-em3d67-6a — a fillet's or chamfer's row: the feature's path under its top-level object
+    /// (<see cref="ObjectIndex"/>) — "" for the outermost, "Target." for the one inside it; null for any other row.</summary>
+    public string? FeaturePath { get; init; }
+
+    /// <summary>A feature row has no visibility of its own: its switch is Enabled, in the inspector.</summary>
+    public bool IsFeature => FeaturePath is not null;
 
     /// <summary>The top-level object's name, for an operand's row: what its expansion is remembered under.</summary>
     public string TopName { get; init; } = "";

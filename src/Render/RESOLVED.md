@@ -4146,3 +4146,23 @@ tessellation is untouched. Anything else that repeats corners per face (a prism'
 - The viewer OPENS with the outermost dielectric hidden (`InitiallyVisible` false for it) — a test of the substrate's
   draw has to show it first.
 - D3D11 and Vulkan compile; only Metal ran (the gates' plan counters and the CPU picks are backend-free).
+
+## brief-em3d-67 — named edges, Edge mode's hover and snapping to curves (2026-09-27)
+
+- **An edge is a run, built beside the feature table** (`Scene3DEdges`, `Scene3DFeatureTable.Named`): a managed
+  object's segments grouped by face pair and connectivity; a kernel object's taken from the worker's edge table. The
+  table is still keyed by MESH, so the names that come with a mesh's first build are its names; a moved object has a
+  new mesh. Numbering needs the object's own frame, which only the editor knows, hence `Scene3DBuildOptions.OwnFrame`.
+- **Managed tessellation leaves T-junctions where a face's loop has a collinear vertex.** The ear clipper drops the
+  degenerate ear, so the face's boundary skips the vertex its neighbour uses; the feature table then sees two rims
+  (`side0|`) instead of one shared edge. Pre-existing and harmless for drawing; it means such edges do not chain or
+  carry both faces' names. The tangent-chain gate uses a box drawn as two halves (every loop a plain rectangle).
+- **A circle's seam vertex is not offered as a snap.** It is where OCCT happened to start the curve, and at tier 1 it
+  beat the circle's centre (tier 2, the face-centre tier) whenever the rim was inside the radius — so the centre of a
+  small bore could never be reached. An open edge ending at the same vertex still offers it.
+- **Edge mode needs no new GPU mode.** The shaders know three modes; Edge writes Vertex's value, so nothing is
+  highlighted on the GPU and the 2D overlay draws the hovered and selected edges. The frame plan skips its selection
+  pass for Edge as it does for Vertex. No shader changed.
+- **Two ghost kinds for the fillet preview**: `Pickable` (translucent, still hovered and selected — the target whose
+  edges the panel lists) and `Inert` (drawn as it is, never picked — the result seen through it). The pick patch's
+  nearest surface is the translucent target's, which encloses the result, so edges stay pickable through the preview.

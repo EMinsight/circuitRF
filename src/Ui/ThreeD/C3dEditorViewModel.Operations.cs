@@ -132,7 +132,7 @@ public sealed partial class C3dEditorViewModel
 
     // ── starting an operation (keys, menus, the gizmo) ───────────────────────────────────────
 
-    /// <summary>G, R, Ctrl/Cmd+D — and brief-em3d-47's N, E and G on a face or a vertex. True when the key was one of them
+    /// <summary>G, R, Ctrl/Cmd+D — and brief-em3d-47's N, Shift+E and G on a face or a vertex. True when the key was one of them
     /// (a refusal is still an answer).</summary>
     private bool OperationKey(Key key, KeyModifiers modifiers)
     {
@@ -886,7 +886,7 @@ public sealed partial class C3dEditorViewModel
     /// <summary>3D ▸ Modify's items, by name — the same functions the context menu and the keys call.</summary>
     public void RunModify(string which)
     {
-        if (RunFaceModify(which) || RunBooleanModify(which)) return;
+        if (RunFaceModify(which) || RunBooleanModify(which) || RunEdgeModify(which)) return;
         switch (which)
         {
             case "Move" when Viewer.SelectMode == Scene3DSelectMode.Face: StartFaceMove(); break;

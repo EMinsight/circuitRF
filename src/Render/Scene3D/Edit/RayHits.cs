@@ -7,6 +7,8 @@
 //              one side face) appears twice: both are faces a user may want.
 //   * Object — every object crossed, ONCE, at its nearest hit.
 //   * Vertex — every vertex within the snap radius of the ray (measured on screen), by depth.
+//   * Edge   — brief-em3d-67 R-em3d67-3d: every NAMED edge within the snap radius of the ray, once, at its nearest
+//              point, by depth — hidden ones included: reaching what is behind is the point of B.
 // What is hidden, not pickable (the air, the box's faces) or cut away by the clip plane is not a hit.
 //
 // A BOUNDING-VOLUME HIERARCHY over the objects' boxes, built once per scene (a scene is immutable, so its
@@ -41,7 +43,9 @@ public static class RayHits
         var candidates = new List<int>();
         // Vertex mode widens each box by the snap radius at the box's far depth, so a vertex just off the
         // silhouette of an object the ray misses is still found.
-        tree.Query(o, d, q.Camera, q.Height, mode == Scene3DSelectMode.Vertex ? q.RadiusPixels : 0, candidates, new Stack<int>());
+        bool near = mode is Scene3DSelectMode.Vertex or Scene3DSelectMode.Edge;
+        tree.Query(o, d, q.Camera, q.Height, near ? q.RadiusPixels : 0, candidates, new Stack<int>());
+        var objects = new HashSet<uint>();
 
         foreach (int k in candidates)
         {
@@ -53,6 +57,9 @@ public static class RayHits
             {
                 case Scene3DSelectMode.Vertex:
                     CollectVertices(scene, b, q, o, d, clip, hits);
+                    break;
+                case Scene3DSelectMode.Edge:
+                    if (objects.Add(id)) CollectEdges(scene, id, q, o, d, clip, hits);
                     break;
                 default:
                     CollectTriangles(scene, b, o, d, clip, mode, hits);
@@ -129,6 +136,38 @@ public static class RayHits
             var (x, y, inFront) = q.Camera.Project(p, q.Width, q.Height);
             if (!inFront || (x - q.Px) * (x - q.Px) + (y - q.Py) * (y - q.Py) > r2) continue;
             hits.Add(new Scene3DHit(Scene3DItem.OfVertex(b.ObjectId, p), Vector3.Dot(p - o, d), p));
+        }
+    }
+
+    /// <summary>brief-em3d-67 — each named edge of object <paramref name="id"/> within the radius of the cursor on screen,
+    /// once, at its nearest point.</summary>
+    private static void CollectEdges(Scene3DModel scene, uint id, in Scene3DRayQuery q, Vector3 o, Vector3 d, in ClipPlane3D clip,
+                                     List<Scene3DHit> hits)
+    {
+        var fr = scene.FeaturesOf(id);
+        if (fr.Table is not { } t) return;
+        float r2 = q.RadiusPixels * q.RadiusPixels;
+        for (int e = 0; e < t.Named.Edges.Length; e++)
+        {
+            var pts = t.Named.Edges[e].Points;
+            float best = float.MaxValue;
+            Vector3 at = default;
+            for (int i = 1; i < pts.Length; i++)
+            {
+                var a = scene.ToLocal(pts[i - 1].X + fr.Dx, pts[i - 1].Y + fr.Dy, pts[i - 1].Z + fr.Dz);
+                var b = scene.ToLocal(pts[i].X + fr.Dx, pts[i].Y + fr.Dy, pts[i].Z + fr.Dz);
+                var (ax, ay, fa) = q.Camera.Project(a, q.Width, q.Height);
+                var (bx, by, fb) = q.Camera.Project(b, q.Width, q.Height);
+                if (!fa || !fb) continue;
+                float ux = bx - ax, uy = by - ay, uu = ux * ux + uy * uy;
+                float s = uu > 0 ? Math.Clamp(((q.Px - ax) * ux + (q.Py - ay) * uy) / uu, 0, 1) : 0;
+                float dx = ax + ux * s - q.Px, dy = ay + uy * s - q.Py, d2 = dx * dx + dy * dy;
+                var p = a + (b - a) * s;
+                if (d2 > r2 || d2 >= best || !clip.Keeps(p)) continue;
+                best = d2;
+                at = p;
+            }
+            if (best < float.MaxValue) hits.Add(new Scene3DHit(Scene3DItem.OfEdge(id, e), Vector3.Dot(at - o, d), at));
         }
     }
 

@@ -1,5 +1,5 @@
 // brief-em3d-47 — the face and vertex gestures: Move Along Normal (N), Move (G) of a face, Move (G) of a vertex,
-// Extrude to New Solid (E), and Align to Face.
+// Extrude to New Solid (Shift+E), and Align to Face.
 //
 // A FACE DRAG CANNOT BE PREVIEWED BY A RIGID TRANSFORM, because the neighbours change shape (R-em3d47-6). So each
 // state of the gesture is an EDITED OBJECT — the kernel's answer for where the cursor is — and the editor draws it
@@ -322,7 +322,7 @@ public sealed class FaceMoveTool : C3dFaceEditTool
         => _mover.Preview(input, rubber, fixedPoints);
 }
 
-/// <summary>Extrude to New Solid (E): a new object grows from the face along its normal; the source is unchanged
+/// <summary>Extrude to New Solid (Shift+E): a new object grows from the face along its normal; the source is unchanged
 /// (R-em3d47-4). Its material is the current one; M takes the source's instead.</summary>
 public sealed class ExtrudeFaceTool : C3dFaceEditTool
 {

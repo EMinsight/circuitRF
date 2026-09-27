@@ -111,6 +111,12 @@ public interface IViewer3DEditHost
 
     /// <summary>3D round 3 — the drag left the pane without a drop: a placement it armed is disarmed.</summary>
     void TreeDragLeave() { }
+
+    /// <summary>brief-em3d-67 R-em3d67-5a — Edge mode's entries for the context menu (Fillet…, Chamfer…).</summary>
+    IEnumerable<Viewer3DMenuItem> EdgeMenuItems() => [];
+
+    /// <summary>brief-em3d-67 — a status sentence (the tangent chain's "stopped at a branch").</summary>
+    void Say(string text) { }
 }
 
 /// <summary>brief-em3d-45 — the drawing's 2D chrome for one frame, in world metres: the overlay projects it.</summary>
@@ -225,6 +231,7 @@ public sealed partial class Viewer3DViewModel
         OnPropertyChanged(nameof(IsObjectMode));
         OnPropertyChanged(nameof(IsFaceMode));
         OnPropertyChanged(nameof(IsVertexMode));
+        OnPropertyChanged(nameof(IsEdgeMode));
         OnPropertyChanged(nameof(HoveredVertex));
         FrameRequested?.Invoke();
     }
@@ -234,6 +241,7 @@ public sealed partial class Viewer3DViewModel
     public bool IsObjectMode { get => SelectMode == Scene3DSelectMode.Object; set { if (value) SelectMode = Scene3DSelectMode.Object; else OnPropertyChanged(); } }
     public bool IsFaceMode   { get => SelectMode == Scene3DSelectMode.Face;   set { if (value) SelectMode = Scene3DSelectMode.Face;   else OnPropertyChanged(); } }
     public bool IsVertexMode { get => SelectMode == Scene3DSelectMode.Vertex; set { if (value) SelectMode = Scene3DSelectMode.Vertex; else OnPropertyChanged(); } }
+    public bool IsEdgeMode   { get => SelectMode == Scene3DSelectMode.Edge;   set { if (value) SelectMode = Scene3DSelectMode.Edge;   else OnPropertyChanged(); } }
 
     // ── the selection ───────────────────────────────────────────────────────────────────────
 
@@ -277,6 +285,12 @@ public sealed partial class Viewer3DViewModel
             if (!shift) SetSelection([]);
             return;
         }
+        // brief-em3d-67 R-em3d67-4 — a double-click on an edge takes its tangent chain (Shift adds it).
+        if (it.IsEdge && clickCount == 2)
+        {
+            SelectTangentChain(it, add: shift);
+            return;
+        }
         if (shift)
             SetSelection(View.Selection.Contains(it) ? View.Selection.Where(s => s != it) : [.. View.Selection, it]);
         else SetSelection([it]);
@@ -298,6 +312,8 @@ public sealed partial class Viewer3DViewModel
                                 () =>
                                 {
                                     var hits = RayHits.Collect(scene, q, mode, visible, clip);
+                                    // brief-em3d-67 — B steps through what a click could select.
+                                    if (mode == Scene3DSelectMode.Edge) hits.RemoveAll(x => scene.Object(x.Item.Object)?.Selectable != true);
                                     // brief-em3d-49 — the air-box faces after every solid face: lowest priority.
                                     if (mode == Scene3DSelectMode.Face)
                                         foreach (var (id, depth, point) in Scene3DPicking.PickLastHits(scene, q.Camera, q.Px, q.Py, q.Width, q.Height, visible))
@@ -332,8 +348,19 @@ public sealed partial class Viewer3DViewModel
         Scene3DItem? Map(Scene3DItem i)
             => from.Object(i.Object) is { } o && byName.TryGetValue(renames.GetValueOrDefault(o.Name, o.Name), out uint id)
                ? i with { Object = id } : null;
-        var mapped = View.Selection.Select(Map).OfType<Scene3DItem>().ToList();
-        HoveredItem = HoveredItem is { } h ? Map(h) : null;
+        // brief-em3d-67 R-em3d67-3b — an edge by its NAME: its index is this scene's, rebuilt per elaboration.
+        Scene3DItem? MapEdge(Scene3DItem i)
+        {
+            if (Map(i) is not { } m) return null;
+            if (!i.IsEdge) return m;
+            var was = from.FeaturesOf(i.Object).Table?.Named;
+            var now = to.FeaturesOf(m.Object).Table?.Named;
+            if (was is null || now is null || i.Edge >= was.Edges.Length) return null;
+            int e = now.IndexOf(was.Edges[i.Edge].Name);
+            return e < 0 ? null : m with { Edge = e };
+        }
+        var mapped = View.Selection.Select(MapEdge).OfType<Scene3DItem>().ToList();
+        HoveredItem = HoveredItem is { } h ? MapEdge(h) : null;
         View.Selection = [];          // SetSelection compares against it; force the notifications
         SetSelection(mapped);
     }
@@ -360,7 +387,15 @@ public sealed partial class Viewer3DViewModel
         {
             (id, f, selectable) = (last, 0, true);
         }
-        if (id != 0 && selectable)
+        // brief-em3d-67 R-em3d67-3a — Edge mode: the snap query's edge tier over the frame's patch, not the ID pass's object.
+        if (SelectMode == Scene3DSelectMode.Edge)
+        {
+            var (edgePatch, radius) = EdgePatch(patch);
+            patch ??= edgePatch;
+            if (SnapQuery.NearestEdge(Scene, edgePatch, radius, PickVisible, View.Clip, o => Scene.Object(o)?.Selectable == true) is { } eh)
+                item = Scene3DItem.OfEdge(eh.Object, eh.Edge);
+        }
+        else if (id != 0 && selectable)
             item = SelectMode switch
             {
                 Scene3DSelectMode.Face => f >= 0 ? Scene3DItem.OfFace(id, f) : null,
@@ -425,6 +460,8 @@ public sealed partial class Viewer3DViewModel
             case Key.O when !gestureInProgress: SelectMode = Scene3DSelectMode.Object; return true;
             case Key.F when !gestureInProgress: SelectMode = Scene3DSelectMode.Face; return true;
             case Key.V when !gestureInProgress: SelectMode = Scene3DSelectMode.Vertex; return true;
+            // brief-em3d-67 R-em3d67-1a (D6) — E arms Edge mode in every 3D pane, beside O, F and V.
+            case Key.E when !gestureInProgress: SelectMode = Scene3DSelectMode.Edge; return true;
             case Key.Home: FitCommand.Execute(null); return true;
             // 3D round 1 — the layout editor's snap keys: S or F3 geometry snap, F9 the grid.
             case Key.S or Key.F3: ToggleGeometrySnap(); return true;
@@ -461,6 +498,7 @@ public sealed partial class Viewer3DViewModel
         if (Scene.Object(item.Object) is not { } o) return "";
         string owner = ObjectName(o);
         if (item.Face >= 0) return $"Face {o.FaceName(item.Face)} · {owner}";
+        if (item.IsEdge) return EdgeOf(item) is { } e ? $"Edge {e.Edge.Name} · {owner}" : owner;
         if (SelectMode == Scene3DSelectMode.Vertex) return $"Vertex {Point(item.Point)} · {owner}";
         return owner;
     }
@@ -490,9 +528,13 @@ public sealed partial class Viewer3DViewModel
                 text += $" · area {FormatArea(area)} · normal " +
                         (normal is { } n ? $"({Num(n.X)}, {Num(n.Y)}, {Num(n.Z)})" : "varies (a curved face)");
             }
+            if (first.IsEdge && EdgeOf(first) is { } e) text += $" · {e.Edge.Kind.ToString().ToLowerInvariant()} · length {FormatLength(e.Edge.Length)}";
             if (o.Material is { } m) text += $" · {m}";
         }
-        SelectionText = text + more;
+        // brief-em3d-67 R-em3d67-3f — several edges: their count and total length.
+        if (sel.Length > 1 && sel.All(i => i.IsEdge))
+            text = $"{sel.Length} edges · total length {FormatLength(sel.Sum(i => EdgeOf(i)?.Edge.Length ?? 0))}";
+        SelectionText = text + (sel.All(i => i.IsEdge) ? "" : more);
     }
 
     private static string Num(float v) => (MathF.Abs(v) < 5e-7f ? 0f : v).ToString("0.####", CultureInfo.InvariantCulture);
@@ -586,6 +628,15 @@ public sealed partial class Viewer3DViewModel
         items.Add(new Viewer3DMenuItem(MeasureActive ? "End Measure  (M)" : "Measure  (M)", ToggleMeasure));
         if (SelectMode == Scene3DSelectMode.Object && own && host is not null)
             items.Add(new Viewer3DMenuItem("Delete", () => host.DeleteSelection()));
+        // brief-em3d-67 R-em3d67-4 / -5a — on an edge: its tangent chain, and the editor's Fillet… and Chamfer….
+        if (SelectMode == Scene3DSelectMode.Edge && View.Selection.Length > 0 && View.Selection[^1].IsEdge)
+        {
+            var last = View.Selection[^1];
+            items.Add(Viewer3DMenuItem.Separator);
+            items.Add(new Viewer3DMenuItem("Select Tangent Chain", () => SelectTangentChain(last, add: false),
+                Tip: "Every edge that continues this one smoothly (tangents within 1°). Or double-click the edge; Shift adds."));
+            if (host?.EdgeMenuItems().ToList() is { Count: > 0 } edgeItems) items.AddRange(edgeItems);
+        }
         if (host?.DrawMenuItems().ToList() is { Count: > 0 } draw)
         {
             items.Add(Viewer3DMenuItem.Separator);
@@ -640,6 +691,53 @@ public sealed partial class Viewer3DViewModel
     {
         SetVisible(id, visible);
         if (_items.TryGetValue(id, out var it)) it.Sync(visible);
+    }
+
+    // ── edges (brief-em3d-67) ───────────────────────────────────────────────────────────────
+
+    /// <summary>An edge item's edge and the translation from its table to where its object is (an instance's offset).</summary>
+    public (Scene3DEdge Edge, CircuitRF.Engine.Em3d.Point3 Offset)? EdgeOf(Scene3DItem item)
+    {
+        if (!item.IsEdge) return null;
+        var fr = Scene.FeaturesOf(item.Object);
+        if (fr.Table?.Named is not { } named || item.Edge >= named.Edges.Length) return null;
+        return (named.Edges[item.Edge], new CircuitRF.Engine.Em3d.Point3(fr.Dx, fr.Dy, fr.Dz));
+    }
+
+    /// <summary>An edge item's run in world metres, for the overlay; null for anything else.</summary>
+    public IReadOnlyList<CircuitRF.Engine.Em3d.Point3>? EdgePoints(Scene3DItem item)
+        => EdgeOf(item) is { } e ? [.. e.Edge.Points.Select(p => new CircuitRF.Engine.Em3d.Point3(p.X + e.Offset.X, p.Y + e.Offset.Y, p.Z + e.Offset.Z))] : null;
+
+    /// <summary>The selected edges' names, by object name, in selection order — what the editor's model holds.</summary>
+    public IReadOnlyList<(string Object, string Edge)> SelectedEdgeNames()
+        => [.. View.Selection.Where(i => i.IsEdge).Select(i => (Scene.Object(i.Object)?.Name ?? "", EdgeOf(i)?.Edge.Name ?? "")).Where(t => t.Item2.Length > 0)];
+
+    /// <summary>The edge of scene object <paramref name="objectName"/> called <paramref name="edge"/>, or null.</summary>
+    public Scene3DItem? EdgeItem(string objectName, string edge)
+    {
+        foreach (var o in Scene.Objects)
+            if (o.Name == objectName && Scene.FeaturesOf(o.Id).Table?.Named is { } named && named.IndexOf(edge) is >= 0 and var e)
+                return Scene3DItem.OfEdge(o.Id, e);
+        return null;
+    }
+
+    /// <summary>The chain the last Select Tangent Chain took, for the tests.</summary>
+    public Scene3DChain? LastChain { get; private set; }
+
+    /// <summary>
+    /// brief-em3d-67 R-em3d67-4 — every edge of <paramref name="edge"/>'s object reachable through vertices where the
+    /// tangents differ by less than a degree; <paramref name="add"/> adds them to the selection. Stopping at a branch is
+    /// said on the status line.
+    /// </summary>
+    public void SelectTangentChain(Scene3DItem edge, bool add)
+    {
+        if (Scene.FeaturesOf(edge.Object).Table?.Named is not { } named || !edge.IsEdge) return;
+        var chain = Scene3DEdgeChain.Walk(named, edge.Edge);
+        LastChain = chain;
+        var items = chain.Edges.Select(e => Scene3DItem.OfEdge(edge.Object, e)).ToList();
+        SetSelection(add ? [.. View.Selection, .. items] : items);
+        string text = chain.StoppedAtBranch ? $"Stopped at a branch: {chain.BranchCount} edges" : $"Tangent chain: {items.Count} edge{(items.Count == 1 ? "" : "s")}";
+        if (EditHost is { } h) h.Say(text); else CycleText = text;
     }
 
     /// <summary>Called from Fit: counted for gate 8.</summary>

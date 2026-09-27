@@ -206,10 +206,11 @@ model circuitRF built, and after a run it also shows what the solver made.
   down it — **Z** the top view, **Y** the front, **X** the right — and again turns to the opposite side; anywhere
   else inside its ring is isometric. While you orbit or pan nothing is highlighted and nothing snaps.
   These are the 3D editor's keys too: every 3D pane uses the same ones.
-- **Selecting.** **O**, **F** and **V** choose what a click selects: a whole **object**, one **face**, or one
-  **vertex** (the toolbar has a button for each). What is under the cursor is highlighted. A click
+- **Selecting.** **O**, **F**, **E** and **V** choose what a click selects: a whole **object**, one **face**, one
+  **edge**, or one **vertex** (the toolbar has a button for each). What is under the cursor is highlighted. A click
   selects it; Shift-click adds to or removes from the selection; **Esc** clears it. A selected face's area
-  and normal, or a vertex's coordinates, are shown under the view, in the layout's unit. **B** steps to the
+  and normal, an edge's name, kind and length, or a vertex's coordinates, are shown under the view, in the
+  layout's unit. **B** steps to the
   next thing *behind* the selection along the line of sight through the cursor, and **Shift+B** steps back
   toward you — the status line says where you are (`Face zmin · "trace" · 2 of 5`). A face selected
   behind others is drawn through what is in front of it. Right-click opens the menu for what is selected:

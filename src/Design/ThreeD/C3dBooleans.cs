@@ -5,7 +5,8 @@
 // FIRST-SELECTED IS A TOOL, LAST-SELECTED IS THE BLANK (D4). Written once, in DefaultBlank, and said once, in RowsTip.
 //
 // AN OPERAND IS ADDRESSED BY A PATH, NOT AN INDEX (R-em3d66-3c). A path is the operand prefixes C3dOperands.Of already
-// spells, concatenated — "Blank.", "Tools[1].", "Tools[0].Blank." — from a top-level object down. The empty path is the
+// spells, concatenated — "Blank.", "Tools[1].", "Tools[0].Blank." — from a top-level object down. brief-em3d-67 adds
+// "Target.", a Fillet's or Chamfer's, so the operands of a rounded boolean are still addressed: "Target.Tools[0].". The empty path is the
 // top-level object itself. The spelling is the one C3dBindings names an operand's fields with, so a field of an operand is
 // the path followed by the field.
 //
@@ -181,10 +182,14 @@ public static partial class C3dBooleans
 
     // ── paths (R-em3d66-3c) ───────────────────────────────────────────────────────────────────────
 
-    [GeneratedRegex(@"\G(?:Blank\.|Tools\[(\d+)\]\.)")]
+    [GeneratedRegex(@"\G(?:(Target\.)|Blank\.|Tools\[(\d+)\]\.)")]
     private static partial Regex Step();
 
-    /// <summary>A path's steps: −1 for a Blank, k for Tools[k]. Null when it is not a path.</summary>
+    /// <summary>The step a Fillet's or Chamfer's Target is (brief-em3d-67).</summary>
+    public const int TargetStep = -2;
+
+    /// <summary>A path's steps: −1 for a Blank, k for Tools[k], <see cref="TargetStep"/> for a feature's Target. Null when it
+    /// is not a path.</summary>
     public static List<int>? Steps(string path)
     {
         var steps = new List<int>();
@@ -194,14 +199,14 @@ public static partial class C3dBooleans
         {
             var m = step.Match(path, at);
             if (!m.Success) return null;
-            steps.Add(m.Groups[1].Success ? int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture) : -1);
+            steps.Add(m.Groups[1].Success ? TargetStep : m.Groups[2].Success ? int.Parse(m.Groups[2].Value, CultureInfo.InvariantCulture) : -1);
             at += m.Length;
         }
         return steps;
     }
 
     /// <summary>One step's spelling.</summary>
-    public static string StepText(int step) => step < 0 ? "Blank." : $"Tools[{step.ToString(CultureInfo.InvariantCulture)}].";
+    public static string StepText(int step) => step == TargetStep ? "Target." : step < 0 ? "Blank." : $"Tools[{step.ToString(CultureInfo.InvariantCulture)}].";
 
     /// <summary>The path of the operand's parent — the path with its last step removed.</summary>
     public static string ParentPath(string path)
@@ -219,7 +224,8 @@ public static partial class C3dBooleans
         if (Steps(path) is not { } steps) return null;
         C3dObject? o = top;
         foreach (int s in steps)
-            o = o is C3dBoolean b ? (s < 0 ? b.Blank : s < b.Tools.Count ? b.Tools[s] : null) : null;
+            o = s == TargetStep ? (o is C3dFillet or C3dChamfer ? C3dOperands.Inner(o) : null)
+              : o is C3dBoolean b ? (s < 0 ? b.Blank : s < b.Tools.Count ? b.Tools[s] : null) : null;
         return o;
     }
 
@@ -233,10 +239,14 @@ public static partial class C3dBooleans
         var steps = Steps(path) ?? throw new ArgumentException(null, nameof(path));
         C3dObject o = copy;
         for (int k = 0; k < steps.Count - 1; k++)
-            o = steps[k] < 0 ? ((C3dBoolean)o).Blank! : ((C3dBoolean)o).Tools[steps[k]];
-        var parent = (C3dBoolean)o;
-        if (steps[^1] < 0) parent.Blank = replacement;
-        else parent.Tools[steps[^1]] = replacement;
+            o = steps[k] == TargetStep ? C3dOperands.Inner(o)! : steps[k] < 0 ? ((C3dBoolean)o).Blank! : ((C3dBoolean)o).Tools[steps[k]];
+        switch (o)
+        {
+            case C3dFillet f when steps[^1] == TargetStep: f.Target = replacement; break;
+            case C3dChamfer c when steps[^1] == TargetStep: c.Target = replacement; break;
+            case C3dBoolean parent when steps[^1] < 0: parent.Blank = replacement; break;
+            case C3dBoolean parent: parent.Tools[steps[^1]] = replacement; break;
+        }
         return copy;
     }
 
@@ -251,6 +261,7 @@ public static partial class C3dBooleans
         C3dObject? o = top;
         foreach (int s in steps)
         {
+            if (s == TargetStep && o is C3dFillet or C3dChamfer) { chain.Add(o); o = C3dOperands.Inner(o); continue; }
             if (o is not C3dBoolean b) break;
             chain.Add(b);
             o = s < 0 ? b.Blank : s < b.Tools.Count ? b.Tools[s] : null;

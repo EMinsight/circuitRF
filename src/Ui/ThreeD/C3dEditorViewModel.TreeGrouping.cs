@@ -90,8 +90,10 @@ public sealed partial class C3dEditorViewModel
     /// <summary>The primitive-type group an object belongs to (its header by type, and its type-filter name).</summary>
     private static string TypeHeaderOf(C3dObject o)
     {
-        foreach (var (type, header) in Groups) if (o.GetType() == type) return header;
-        return C3dObject.KindOf(o);
+        // brief-em3d-67 R-em3d67-6a — a rounded solid is listed as the solid it rounds: its fillets are rows beneath it.
+        var solid = C3dFillets.Core(o).Core ?? o;
+        foreach (var (type, header) in Groups) if (solid.GetType() == type) return header;
+        return C3dObject.KindOf(solid);
     }
 
     /// <summary>The material group an object belongs to (its header by material, and its material-filter name).</summary>
@@ -108,11 +110,16 @@ public sealed partial class C3dEditorViewModel
         bool byMaterial = TreeGrouping == C3dTreeGrouping.Material;
         C3dTreeItem Item((C3dObject o, int i) t)
         {
-            var item = new C3dTreeItem(this, t.o.Name, C3dObject.KindOf(t.o), byMaterial ? null : C3dValidation.EffectiveMaterial(t.o), t.i, -1, !t.o.Hidden)
+            // brief-em3d-67 R-em3d67-6a — a solid with fillets and chamfers is ONE node, of the solid it rounds: its own
+            // children (a boolean's operands) first, then its feature rows, innermost first.
+            var (core, corePath) = C3dFillets.Core(t.o);
+            var solid = core ?? t.o;
+            var item = new C3dTreeItem(this, t.o.Name, C3dObject.KindOf(solid), byMaterial ? null : C3dValidation.EffectiveMaterial(t.o), t.i, -1, !t.o.Hidden)
             {
-                Icon = IconOf(t.o), IconOpacity = t.o is C3dOperation { Enabled: false } ? 0.4 : 1,
+                Icon = IconOf(solid), IconOpacity = solid is C3dOperation { Enabled: false } ? 0.4 : 1,
             };
-            AddOperands(item, t.o, t.i, "", t.o.Name);
+            AddOperands(item, solid, t.i, corePath, t.o.Name);
+            AddFeatures(item, t.o, t.i);
             return item;
         }
 
@@ -159,12 +166,27 @@ public sealed partial class C3dEditorViewModel
         }
     }
 
+    /// <summary>brief-em3d-67 R-em3d67-6a — a rounded solid's feature rows, innermost first: <c>Fillet 50 µm — 4 edges</c>,
+    /// each addressed by its path under the top-level object and never listed anywhere else.</summary>
+    private void AddFeatures(C3dTreeItem parent, C3dObject o, int top)
+    {
+        string L(long dbu) => CircuitRF.Design.Layout.LayoutUnits.Format(dbu, Document.DisplayUnit, Document.DbuPerMicron) + " " +
+                              CircuitRF.Design.Layout.LayoutUnits.Suffix(Document.DisplayUnit);
+        foreach (var (path, f) in C3dFillets.Chain(o).Reverse())
+            parent.Children.Add(new C3dTreeItem(this, C3dFillets.RowLabel(f, L), C3dObject.KindOf(f), f.Enabled ? null : "disabled", top, -1, true)
+            {
+                FeaturePath = path, TopName = o.Name, Icon = IconOf(f), IconOpacity = f.Enabled ? 1 : 0.4,
+            });
+    }
+
     /// <summary>An operation's icon — the toolbar's set — or null for anything else.</summary>
     private static Material.Icons.MaterialIconKind? IconOf(C3dObject o) => o switch
     {
         C3dBoolean { Op: C3dBooleanOp.Subtract } => Material.Icons.MaterialIconKind.VectorDifferenceBa,
         C3dBoolean { Op: C3dBooleanOp.Unite } => Material.Icons.MaterialIconKind.VectorUnion,
         C3dBoolean => Material.Icons.MaterialIconKind.VectorIntersection,
+        C3dFillet => Material.Icons.MaterialIconKind.RoundedCorner,
+        C3dChamfer => Material.Icons.MaterialIconKind.AngleObtuse,
         _ => null,
     };
 

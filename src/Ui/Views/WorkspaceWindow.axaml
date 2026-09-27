@@ -183,6 +183,7 @@
                                 <NativeMenu>
                                     <NativeMenuItem Header="Object" ToolTip="Requires an active 3D document." Command="{Binding ThreeDSelectModeCommand}" CommandParameter="Object"/>
                                     <NativeMenuItem Header="Face" ToolTip="Requires an active 3D document."   Command="{Binding ThreeDSelectModeCommand}" CommandParameter="Face"/>
+                                    <NativeMenuItem Header="Edge" ToolTip="Requires an active 3D document."   Command="{Binding ThreeDSelectModeCommand}" CommandParameter="Edge"/>
                                     <NativeMenuItem Header="Vertex" ToolTip="Requires an active 3D document." Command="{Binding ThreeDSelectModeCommand}" CommandParameter="Vertex"/>
                                 </NativeMenu>
                             </NativeMenuItem.Menu>
@@ -318,10 +319,20 @@
                                             <NativeMenu>
                                                 <NativeMenuItem Header="Move Along Normal  (N)" ToolTip="Push or pull the selected face; its neighbours keep their planes. Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="PushPull"/>
                                                 <NativeMenuItem Header="Move  (G)" ToolTip="The face's corners follow base point to target point; its neighbours tilt, or fold. Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="FaceMove"/>
-                                                <NativeMenuItem Header="Extrude to New Solid  (E)" ToolTip="A new solid grows from the face along its normal. Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="ExtrudeFace"/>
+                                                <NativeMenuItem Header="Extrude to New Solid  (Shift+E)" ToolTip="A new solid grows from the face along its normal. Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="ExtrudeFace"/>
                                                 <NativeMenuItem Header="Align to Face…" ToolTip="Then click a parallel face: the object moves until they are coplanar. T toggles Touching and Flush. Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="AlignFace"/>
                                                 <NativeMenuItem Header="Copy as Sheet" ToolTip="A new sheet exactly on the face. Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="CopySheet"/>
                                                 <NativeMenuItem Header="Measure" ToolTip="Area, perimeter and normal in Properties; Shift-click a parallel face for the distance. Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="MeasureFace"/>
+                                            </NativeMenu>
+                                        </NativeMenuItem.Menu>
+                                    </NativeMenuItem>
+                                    <!-- brief-em3d-67 R-em3d67-5a — mirrored by the in-window menu's Modify ▸ Edge below. -->
+                                    <NativeMenuItem Header="Edge" ToolTip="Edge mode (E): the selected edges of one solid. Requires an active 3D editor.">
+                                        <NativeMenuItem.Menu>
+                                            <NativeMenu>
+                                                <NativeMenuItem Header="Fillet…" ToolTip="{Binding ThreeDFilletTip}" IsEnabled="{Binding ThreeDBooleanAvailable}" Command="{Binding ThreeDModifyCommand}" CommandParameter="Fillet"/>
+                                                <NativeMenuItem Header="Chamfer…" ToolTip="{Binding ThreeDChamferTip}" IsEnabled="{Binding ThreeDBooleanAvailable}" Command="{Binding ThreeDModifyCommand}" CommandParameter="Chamfer"/>
+                                                <NativeMenuItem Header="Select Tangent Chain" ToolTip="Every edge that continues the selected one smoothly (or double-click the edge). Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="TangentChain"/>
                                             </NativeMenu>
                                         </NativeMenuItem.Menu>
                                     </NativeMenuItem>
@@ -977,6 +988,10 @@
                               InputGesture="F" ToolTip.Tip="Select one face. Requires an active 3D document.">
                         <MenuItem.Icon><mi:MaterialIcon Kind="VectorSquare" Width="16" Height="16"/></MenuItem.Icon>
                     </MenuItem>
+                    <MenuItem Header="_Edge" Command="{Binding ThreeDSelectModeCommand}" CommandParameter="Edge"
+                              InputGesture="E" ToolTip.Tip="Select one edge; Shift-click adds, double-click takes its tangent chain. Requires an active 3D document.">
+                        <MenuItem.Icon><mi:MaterialIcon Kind="VectorLine" Width="16" Height="16"/></MenuItem.Icon>
+                    </MenuItem>
                     <MenuItem Header="_Vertex" Command="{Binding ThreeDSelectModeCommand}" CommandParameter="Vertex"
                               InputGesture="V" ToolTip.Tip="Select one vertex. Requires an active 3D document.">
                         <MenuItem.Icon><mi:MaterialIcon Kind="VectorPoint" Width="16" Height="16"/></MenuItem.Icon>
@@ -1118,10 +1133,16 @@
                     <MenuItem Header="_Face" ToolTip.Tip="Face mode (F): the selected face. Requires an active 3D editor.">
                         <MenuItem Header="Move Along Normal  (N)" Command="{Binding ThreeDModifyCommand}" CommandParameter="PushPull" ToolTip.Tip="Push or pull the selected face; its neighbours keep their planes. Requires an active 3D editor."/>
                         <MenuItem Header="Move  (G)" Command="{Binding ThreeDModifyCommand}" CommandParameter="FaceMove" ToolTip.Tip="The face's corners follow base point to target point; its neighbours tilt, or fold. Requires an active 3D editor."/>
-                        <MenuItem Header="Extrude to New Solid  (E)" Command="{Binding ThreeDModifyCommand}" CommandParameter="ExtrudeFace" ToolTip.Tip="A new solid grows from the face along its normal. Requires an active 3D editor."/>
+                        <MenuItem Header="Extrude to New Solid  (Shift+E)" Command="{Binding ThreeDModifyCommand}" CommandParameter="ExtrudeFace" ToolTip.Tip="A new solid grows from the face along its normal. Requires an active 3D editor."/>
                         <MenuItem Header="Align to Face…" Command="{Binding ThreeDModifyCommand}" CommandParameter="AlignFace" ToolTip.Tip="Then click a parallel face: the object moves until they are coplanar. T toggles Touching and Flush. Requires an active 3D editor."/>
                         <MenuItem Header="Copy as Sheet" Command="{Binding ThreeDModifyCommand}" CommandParameter="CopySheet" ToolTip.Tip="A new sheet exactly on the face. Requires an active 3D editor."/>
                         <MenuItem Header="Measure" Command="{Binding ThreeDModifyCommand}" CommandParameter="MeasureFace" ToolTip.Tip="Area, perimeter and normal in Properties; Shift-click a parallel face for the distance. Requires an active 3D editor."/>
+                    </MenuItem>
+                    <!-- brief-em3d-67 R-em3d67-5a — mirrors the macOS menu's Modify ▸ Edge above. -->
+                    <MenuItem Header="E_dge" ToolTip.Tip="Edge mode (E): the selected edges of one solid. Requires an active 3D editor.">
+                        <MenuItem Header="_Fillet…" Command="{Binding ThreeDModifyCommand}" CommandParameter="Fillet" ToolTip.Tip="{Binding ThreeDFilletTip}" IsEnabled="{Binding ThreeDBooleanAvailable}"/>
+                        <MenuItem Header="_Chamfer…" Command="{Binding ThreeDModifyCommand}" CommandParameter="Chamfer" ToolTip.Tip="{Binding ThreeDChamferTip}" IsEnabled="{Binding ThreeDBooleanAvailable}"/>
+                        <MenuItem Header="Select _Tangent Chain" Command="{Binding ThreeDModifyCommand}" CommandParameter="TangentChain" ToolTip.Tip="Every edge that continues the selected one smoothly (or double-click the edge). Requires an active 3D editor."/>
                     </MenuItem>
                     <MenuItem Header="_Vertex" ToolTip.Tip="Vertex mode (V): the selected vertex. Requires an active 3D editor.">
                         <MenuItem Header="Move  (G)" Command="{Binding ThreeDModifyCommand}" CommandParameter="VertexMove" ToolTip.Tip="The vertex follows base point to target point; the faces on it tilt, or fold. Requires an active 3D editor."/>

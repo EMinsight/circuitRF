@@ -14185,3 +14185,38 @@ spelling `C3dBindings` already names an operand's fields with). Gate: `tests/Ui.
   greys the box for Unite and Intersect and `Make` never writes it for them.
 - `C3dKernelBuild` gained `Solids` (the inspector's piece count). An internal-invariant throw in `C3dBooleans.With`
   carries no sentence, so the user-facing-text gate does not have to list it.
+
+## brief-em3d-67 — edges, fillets and chamfers: what the Design side and the worker had to grow (2026-09-27)
+
+`C3dFillets` (new) holds every rule a fillet or chamfer is made by — what may be rounded and its sentences, `MakeFillet`
+/ `MakeChamfer` (the feature WRAPS its target and takes its name), `Unwrap`, the chain of features on one solid and its
+`Target.` paths, and the refusals worded in the user's terms. Gate: `tests/Ui.Tests/ThreeD/EdgesFilletsChamfersTests.cs`.
+
+- **The edge-name spelling and order are the worker's, not the brief's.** Brief 67 §2b proposed `#1`, `#2` for repeated
+  runs, ordered by lowest point. The overview (§1g, as brief 61 Q7 corrected it) had already moved the number to a THIRD
+  FIELD (`side|zmax|2`) because `#n` is a split face's suffix and `x|zmax#2` would mean two things; and brief 64's worker
+  already numbers by CENTROID in the object's own frame, rounded to 1 nm. A managed object's edges are named by the
+  editor and a fillet on them is resolved by the worker, so the two must agree: the managed side uses the worker's rule.
+- **The worker numbered a fillet target's edges in the wrong frame.** `edges` numbers a root in its own frame
+  (`toOwn`), but `BuildFillet`/`BuildChamfer` looked the target's edges up with the identity — the target's PLACED frame.
+  For a rotated target with repeated face pairs a stored `|2` could land on the other run. The lookup now uses the
+  target's own `toOwn`.
+- **An edge name did not follow a fold.** The worker's lookup was an exact string match, so a fillet on `xmax|zmax`
+  refused the moment `zmax` split. It now falls back, for a two-field name only, to every edge between the pieces of
+  both faces — `zmax#k` (a boolean's split) and `zmax.k` (a managed face edit's fold) alike. A numbered name or a
+  piece's name stays exact: widening those would be a guess.
+- **A failed fillet said nothing about which edge.** `build.failed` carried OCCT's generic text. On failure the worker
+  now builds each listed name alone (the one that fails is named, with the narrower of the two faces beside it,
+  measured as each face's farthest vertex from the edge), then — every name fitting alone — names the edges meeting at
+  the shared vertex. The extra builds are paid only on failure. A name that resolves to nothing is its own code,
+  `edge.missing`, with the faces the target lost. `C3dFillets.Worded` turns both into the brief's sentences and the
+  elaborator uses it, so the tree row, `check` and the panel say the same thing.
+- **Brief 66's operand paths gained a `Target.` step** (`C3dBooleans.TargetStep`), so a filleted boolean's operands are
+  still addressed (`Target.Tools[0].`) and the boolean can still be entered through its fillets.
+- **A disabled chain's target is edited in place** (`C3dFillets.DisabledCore` / `WithCore`): with every fillet on a
+  solid off, a face or vertex edit acts on the managed target in its world form and is written back inside the chain,
+  so turning the fillet back on rounds the edited solid by name.
+- The worker's `edges` reply grew `closed`, `ends`, `tangents`, `mid` (halfway along the CURVE, via
+  `GCPnts_AbscissaPoint` — equal to the parameter midpoint for a line or a circle) and a circle's `centre`/`radius`;
+  `Em3dShapeEdge` carries them as init-only properties so no constructor changed. Rebuild the worker after pulling
+  (`tools/geometry-worker/ensure-built.sh`, seconds).

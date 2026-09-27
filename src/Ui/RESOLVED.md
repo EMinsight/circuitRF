@@ -36872,3 +36872,20 @@ plus small hooks in the partials they touch; every rule is `C3dBooleans` (`src/D
   a stale preview scene (1 run in 3 before `Quiet` was added; 10 in 10 after).
 - Tool names are unique across the whole document (R-em3d64-1d): `NextName`, `Rename` and a Duplicate of a whole
   boolean (whose Tools are renamed too) now count the names inside booleans.
+
+## brief-em3d-67 — Edge mode, Fillet… and Chamfer… (2026-09-27)
+
+- **Plain E was swallowed in Face mode.** `FaceKey` runs before the pane's mode keys and claimed E for *Extrude to New
+  Solid*, so Edge mode's key would never reach the pane there. Extrude is Shift+E (D6) and plain E falls through.
+- **The panel's edge list is the truth; the selection only shows it.** The preview regenerates the scene and renames
+  what is picked on (`lid` → `lid:target`), and a regenerated scene's selection remap is not a click. The list is
+  written back into the selection after every adoption and read from it only when the scene has not changed since
+  (`_filletSceneGen`).
+- **The preview draws the result under the object's own name** (its tree hash includes the name, so OK's elaboration
+  finds it cached and asks the kernel nothing — measured, as brief 66's) **and the target beside it as
+  `<name>:target`**. For a kernel target that copy is one extra build per panel opening, under its own name.
+- **The commit is a lists edit, not an object edit**, as a boolean's is: `C3dEdit`'s drag rule compares the bound
+  fields before and after, and a box whose size is an expression moves under `Target.` when wrapped — the rule would
+  refuse it as a field that disappeared.
+- **Menu tooltips may not word the kernel's absence themselves** (`GeometryKernelBoundaryTests`): 3D ▸ Modify ▸ Edge ▸
+  Fillet… / Chamfer… bind `ThreeDFilletTip` / `ThreeDChamferTip`, which take the capability's sentence.

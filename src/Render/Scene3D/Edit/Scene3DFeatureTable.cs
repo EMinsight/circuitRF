@@ -58,6 +58,10 @@ public sealed class Scene3DFeatureTable
     public required Point3[] FaceCentres { get; init; }
     public required bool[] HasCentre { get; init; }
 
+    /// <summary>brief-em3d-67 R-em3d67-2 — the object's NAMED edges: runs of these segments (a managed object), or the
+    /// kernel's edge table (a kernel object, whose snapping then reads it). Empty when the builder gave no names.</summary>
+    public Scene3DEdges Named { get; private set; } = Scene3DEdges.Empty;
+
     /// <summary>Every feature it holds: corners, edges, midpoints and centres.</summary>
     public int FeatureCount => Vertices.Length + 2 * EdgeA.Length + HasCentre.Count(h => h);
 
@@ -71,8 +75,20 @@ public sealed class Scene3DFeatureTable
 
     /// <summary>The table for <paramref name="mesh"/>, built on first asking and kept while the mesh lives.
     /// <paramref name="sheet"/>: the whole mesh is face 0 (Scene3DBuilder's rule for a sheet).</summary>
-    public static Scene3DFeatureTable Of(Em3dTriangleMesh mesh, bool sheet)
-        => Kept.GetValue(mesh, m => { Interlocked.Increment(ref _builds); return Build(m, sheet); });
+    public static Scene3DFeatureTable Of(Em3dTriangleMesh mesh, bool sheet) => Of(mesh, sheet, null);
+
+    /// <summary>brief-em3d-67 — the table, with its named edges made from <paramref name="edges"/> when it is first built
+    /// (a mesh is one object's, so the names that come with its first asking are its names).</summary>
+    public static Scene3DFeatureTable Of(Em3dTriangleMesh mesh, bool sheet, Scene3DEdgeSource? edges)
+        => Kept.GetValue(mesh, m =>
+        {
+            Interlocked.Increment(ref _builds);
+            var t = Build(m, sheet);
+            if (edges is not null && !ReferenceEquals(t, Empty))
+                t.Named = edges.Kernel is { } k ? Scene3DEdges.OfKernel(k, edges.FaceNames, t.FaceCount)
+                                                : Scene3DEdges.OfSegments(t, edges.FaceNames, edges.ToOwn);
+            return t;
+        });
 
     private static Scene3DFeatureTable Build(Em3dTriangleMesh mesh, bool sheet)
     {
@@ -221,6 +237,12 @@ public readonly record struct Scene3DFeatureRef(Scene3DFeatureTable? Table, doub
         return new Point3(p.X + Dx, p.Y + Dy, p.Z + Dz);
     }
 }
+
+/// <summary>brief-em3d-67 — what an object's edges are named from: its face names (by the mesh's face numbering), the
+/// kernel's edge table when it is a kernel solid, and the map from world metres into its own frame — where the runs of
+/// one face pair are numbered — or null for the identity.</summary>
+public sealed record Scene3DEdgeSource(IReadOnlyList<string> FaceNames, IReadOnlyList<Em3dShapeEdge>? Kernel = null,
+                                       Func<Point3, Point3>? ToOwn = null);
 
 /// <summary>
 /// brief-em3d-44 R-em3d44-3b — what lets instances share a table: objects with equal <paramref name="Key"/>

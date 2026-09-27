@@ -403,7 +403,8 @@ public sealed class Scene3DFramePlan
         // brief-em3d-43 — the selection, last: the edges of each selected object (Object mode) or of each
         // object with a selected face (Face mode), then those objects' triangles again for the selected
         // face drawn on top. The shaders pick out what is selected; the plan only chooses which batches.
-        if (view.Mode != Scene3DSelectMode.Vertex && view.Selection.Length > 0)
+        // brief-em3d-67 — an Edge-mode selection is drawn by the 2D overlay, like a vertex: no GPU batch changes.
+        if (view.Mode is not (Scene3DSelectMode.Vertex or Scene3DSelectMode.Edge) && view.Selection.Length > 0)
         {
             int limit = Math.Min(view.Selection.Length, SelectionLimit);
             for (int k = 0; k < limit; k++)
@@ -777,7 +778,8 @@ public sealed class Scene3DFramePlan
         bits[24] = view.Hovered;
         bits[25] = view.HoveredFace < 0 ? Scene3DVertex.NoFace : (uint)view.HoveredFace;
         bits[26] = flags;
-        bits[27] = (uint)view.Mode;
+        // brief-em3d-67 — the shaders know three modes; Edge mode draws as Vertex mode does (its highlight is the overlay's).
+        bits[27] = (uint)(view.Mode == Scene3DSelectMode.Edge ? Scene3DSelectMode.Vertex : view.Mode);
         int nsel = Math.Min(view.Selection.Length, SelectionLimit);
         bits[28] = (uint)nsel;
         // 3D editor bugs round 3 — clip units per pixel (x, y), for the vertex shader's pixel offset of a thickened edge.
