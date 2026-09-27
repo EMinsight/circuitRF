@@ -77,9 +77,21 @@ public readonly record struct PdnRegionRef(LayerKey Layer, long X, long Y)
     /// as a database integer. Omitted where nothing has stated one, and the string then says DBU out
     /// loud rather than picking a unit nobody named.
     /// </param>
-    public string Describe(RailRf.RailLengthFormat? format = null) =>
-        $"layer {Layer.Layer}/{Layer.Datatype} at "
+    /// <param name="technology">
+    /// Where the layer's NAME comes from. A board designer reads "Top Copper", not the drawing
+    /// layer's GDS number — a refusal naming "layer 1/0" was reported as unreadable (2026-09-27).
+    /// Omitted, or a layer the technology does not name, and the number is all there is to print.
+    /// </param>
+    public string Describe(RailRf.RailLengthFormat? format = null, Technology? technology = null) =>
+        $"{LayerName(technology, Layer)} at "
       + $"{(format ?? RailRf.RailLengthFormat.Dbu).Point(X, Y)}";
+
+    /// <summary>The technology's own name for <paramref name="layer"/> — <c>Top Copper</c> — or
+    /// <c>layer 1/0</c> where it has none.</summary>
+    public static string LayerName(Technology? technology, LayerKey layer) =>
+        technology?.Layers.FirstOrDefault(l => l.Key == layer)?.Name is { Length: > 0 } name
+            ? name
+            : $"layer {layer.Layer}/{layer.Datatype}";
 }
 
 /// <summary>

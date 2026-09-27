@@ -519,7 +519,7 @@ public static class PdnMeshExtractor
 
         if (referenceCopper.Count == 0)
             return
-                $"Rail '{rail.Name}' names layer {referenceLayer.Layer}/{referenceLayer.Datatype} as " +
+                $"Rail '{rail.Name}' names {PdnRegionRef.LayerName(request.Technology, referenceLayer)} as " +
                 "its reference and there is no copper on it. Name the layer the return actually runs " +
                 "on, or fill the reference to the board outline.";
 
@@ -1853,7 +1853,7 @@ public static class PdnMeshExtractor
                 // Once per run, not once per island.
                 if (regions.Power.Any(island => island.Copper.Any(c => c.Layer == referenceLayer)))
                     diagnostics.Add(
-                        $"The rail has copper on layer {referenceLayer.Layer}/{referenceLayer.Datatype}, which is also " +
+                        $"The rail has copper on {PdnRegionRef.LayerName(request.Technology, referenceLayer)}, which is also " +
                         "its reference layer. That copper was not meshed as part of the rail — a " +
                         "conductor cannot be its own return.");
 

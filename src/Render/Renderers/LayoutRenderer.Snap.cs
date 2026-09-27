@@ -61,7 +61,7 @@ public static partial class LayoutRenderer
                 (float)((originX - vp.PanX) * vp.Zoom),
                 (float)(vp.Height - (originY - vp.PanY) * vp.Zoom)));
 
-            DrawSnapMarker(canvas, candidate, tech?.Layers.ToDictionary(l => l.Key),
+            DrawSnapMarker(canvas, candidate, LayerCanvasContrast.DrawnLayerMap(tech, opts.Theme.Background),
                            new PathSpace(originX, originY, dbuToUm), scaleUm, opts.Theme);
         }
         finally

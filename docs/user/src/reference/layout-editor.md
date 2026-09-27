@@ -767,8 +767,9 @@ gets there:
   line, so microstrip, grounded coplanar waveguide at any gap and stripline are one method. It is
   frequency-independent and lossless: a check of the geometry, not a replacement for an EM run.
 - **It refuses rather than guess.** A pad or a short stub, a bend or a mitre, a junction and a taper
-  have no single width, and the message says which one it found. Click the middle of a straight,
-  constant-width run.
+  have no single width, and the message says which one it found. Copper is a line when it runs at least
+  twice its width; a click less than a width from its end is measured one width in, and the answer
+  says where. Click the middle of a straight, constant-width run.
 
 It also walks the whole constant-width section and **warns where the ground under the trace breaks**
 — a trace on an inner layer routed over a cutout in the plane next to it is flagged with where the gap
@@ -939,6 +940,10 @@ you drew:
 - **A trace ends** at a junction, at a via, at a pad or where the copper ends. **A via ends it**: what
   continues on another layer is that layer's trace, and is a row of its own. The table says what each
   end is.
+- **A stretch shorter than four of its widths is read as a pad** &mdash; unless a region, a pick or a
+  net chooses it, and then two widths is enough. A wide line cut into sections by series parts is often
+  only two or three widths long between them; point at it and each section is reviewed. A run with no
+  region, pick or net leaves them out, as it leaves out the lands under a package.
 - **Pours and planes are skipped.** A copper island much larger than the strips found in it, or one
   carrying a row of vias, is a pour; the report says how many it skipped on each layer. Copper wider
   than about ten times the distance to the nearest other copper layer is not read as a trace.

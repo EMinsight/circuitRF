@@ -2650,6 +2650,7 @@ public static class PlanarExtractor
 
         var boxes = new Bbox[n];
         var paths = new Clipper2Lib.Paths64?[n];
+        var outerOwn = new int?[n];
         for (int i = 0; i < n; i++) boxes[i] = LayoutGeometry.BboxOf(shapes[i].Shape);
 
         Clipper2Lib.Paths64 PathsOf(int i) =>
@@ -2680,14 +2681,16 @@ public static class PlanarExtractor
 
         // Two shapes with no common area share an edge exactly when their union has fewer outer rings than the two
         // have between them: an edge of positive length joins them, a corner alone does not.
+        // A shape's own ring count is kept once it is known (designer feedback 02): a pour's box meets every pad on it, and
+        // re-unioning the pour by itself for each of them was repeated work that dominated this merge on an imported board.
+        static int Outer(Clipper2Lib.Paths64 p) => p.Count(q => Clipper2Lib.Clipper.IsPositive(q));
+        int OuterOwn(int i) => outerOwn[i] ??= Outer(Clipper2Lib.Clipper.Union(PathsOf(i), Clipper2Lib.FillRule.NonZero));
         bool ShareAnEdge(int i, int j)
         {
-            static int Outer(Clipper2Lib.Paths64 p) => p.Count(q => Clipper2Lib.Clipper.IsPositive(q));
             var both = new Clipper2Lib.Paths64(PathsOf(i));
             both.AddRange(PathsOf(j));
             var u = Clipper2Lib.Clipper.Union(both, Clipper2Lib.FillRule.NonZero);
-            return Outer(u) < Outer(Clipper2Lib.Clipper.Union(PathsOf(i), Clipper2Lib.FillRule.NonZero))
-                            + Outer(Clipper2Lib.Clipper.Union(PathsOf(j), Clipper2Lib.FillRule.NonZero));
+            return Outer(u) < OuterOwn(i) + OuterOwn(j);
         }
 
         var groups = Enumerable.Range(0, n).GroupBy(Find).ToDictionary(g => g.Key, g => g.ToList());

@@ -539,7 +539,11 @@ internal sealed class PdnAssembly
                 // a reference the board does not have — see SeriesEndOffTheRail.
                 return off.IsPad && PdnAttachments.ResolveLands(off, _req.Pads).Count > 0
                     ? PdnAttachments.SeriesEndOffTheRail(where, part.Refdes, off, other, otherOn, _req.LengthFormat)
-                    : PdnAttachments.RefusalForUnresolved($"{where}'s {end}", off, 0, _req.LengthFormat);
+                    // "The first end of series part FB1", not "Series part FB1 on rail 'X''s first
+                    // end": the possessive landed on the rail's NAME, which on a picked rail is a
+                    // coordinate, and the rail is already named by "was not solved" (2026-09-27).
+                    : PdnAttachments.RefusalForUnresolved(
+                        $"The {end} of series part {part.Refdes}", off, 0, _req.LengthFormat);
             }
 
             int na = Merge(a), nb = Merge(b);

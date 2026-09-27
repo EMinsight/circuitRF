@@ -191,6 +191,23 @@ public sealed record RailDcRunResult(
 public static class RailDcRun
 {
     /// <summary>
+    /// "Rail 'X' was not solved", followed by why — naming the rail ONCE.
+    /// </summary>
+    /// <remarks>
+    /// Most extraction refusals open with the rail's own name, because the sweep and plane runs show
+    /// them on their own. Prefixed here as they were, the name was printed twice back to back — and a
+    /// rail picked on the board is named by its coordinates, so the first line of a refusal was two
+    /// copies of "rail at (26500.0, 9875.0) µm" before it said anything (2026-09-27).
+    /// </remarks>
+    internal static string NotSolved(string railName, string why)
+    {
+        string self = $"Rail '{railName}' ";
+        return why.StartsWith(self, StringComparison.Ordinal)
+            ? $"Rail '{railName}' was not solved: it {why[self.Length..]}"
+            : $"Rail '{railName}' was not solved. {why}";
+    }
+
+    /// <summary>
     /// Solves every rail of <paramref name="request"/>'s document, upstream first, or refuses and
     /// says why.
     ///
@@ -216,7 +233,7 @@ public static class RailDcRun
         var ambiguities = new List<PdnAnchorAmbiguity>();
 
         void Refuse(string railName, string why) =>
-            refusals.Add((railName, $"Rail '{railName}' was not solved. {why}"));
+            refusals.Add((railName, NotSolved(railName, why)));
 
         bool first = true;
         foreach (string railName in order.Order)
@@ -844,7 +861,7 @@ public static class RailDcRun
         var viaCheck = PdnViaCheck.Run(
             pdn, voltages, request.Document.Settings.ViaTemperatureRiseCelsius, request.DbuPerMicron);
 
-        foreach (var flag in viaCheck.Flags) findings.Add(flag.Describe());
+        foreach (var flag in viaCheck.Flags) findings.Add(flag.Describe(request.LengthFormat, request.Technology));
         notes.AddRange(viaCheck.Notes);
 
         // R-rail5-11, and it is one line on the report rather than a setting, a sweep or a derating.

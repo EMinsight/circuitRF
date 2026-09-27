@@ -33,6 +33,8 @@ public sealed class PdnRefusalCauseTests
     private static Technology Tech()
     {
         var tech = new Technology { Name = "three" };
+        // Named, so a refusal can be checked for naming the layer the way a designer reads it.
+        tech.Layers = [new LayerDef { Key = Top, Name = "Top Copper" }];
         tech.Stackup.Layers =
         [
             new StackupLayer { Kind = StackupKind.Conductor, Name = "TOP", ThicknessDbu = Um(35), SigmaSm = 5.8e7, DrawingLayers = [Top] },
@@ -237,12 +239,43 @@ public sealed class PdnRefusalCauseTests
         Assert.All(new[] { link, pour, land }, c => Assert.Equal(PdnCopperClass.Spreading, c.Class));
 
         var fmt = request.LengthFormat;
+        var tech = request.Technology;
         Assert.True(refused.Refusal.Contains(
-                        $"only through a {fmt.Length(Mm(3))} × {fmt.Length(Mm(3))} region on " +
-                        link.Region.Describe(fmt), StringComparison.Ordinal),
+                        $"Region: {fmt.Length(Mm(3))} × {fmt.Length(Mm(3))} on " +
+                        link.Region.Describe(fmt, tech), StringComparison.Ordinal),
                     refused.Refusal);
-        Assert.DoesNotContain(pour.Region.Describe(fmt), refused.Refusal, StringComparison.Ordinal);
-        Assert.DoesNotContain(land.Region.Describe(fmt), refused.Refusal, StringComparison.Ordinal);
+        Assert.DoesNotContain(pour.Region.Describe(fmt, tech), refused.Refusal, StringComparison.Ordinal);
+        Assert.DoesNotContain(land.Region.Describe(fmt, tech), refused.Refusal, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The same refusal, read the way a board designer reads it (2026-09-27): the FIRST line says
+    /// what happened and both remedies, and the region is named by its technology layer name rather
+    /// than its GDS layer/datatype. The old sentence put the remedies mid-paragraph behind the
+    /// closed-form argument and named the copper "layer 1/0".
+    /// </summary>
+    [Fact]
+    public void TheSpreadingRefusalLeadsWithTheRemediesAndNamesTheLayer()
+    {
+        var refused = PdnGraphExtractor.Extract(SpreadingLink()).Refusal;
+
+        Assert.NotNull(refused);
+        string first = refused.Split('\n')[0];
+        Assert.Contains("Run Accuracy", first, StringComparison.Ordinal);
+        Assert.Contains("Trace on the Class tab", first, StringComparison.Ordinal);
+        Assert.Contains("on Top Copper at", refused, StringComparison.Ordinal);
+        Assert.DoesNotContain($"layer {Top.Layer}/{Top.Datatype}", refused, StringComparison.Ordinal);
+    }
+
+    /// <summary>A rail's refusal that already opens with the rail's name is not prefixed with it a
+    /// second time; one that does not is prefixed as before.</summary>
+    [Fact]
+    public void NotSolvedNamesTheRailOnce()
+    {
+        Assert.Equal("Rail 'A' was not solved: it reaches X only through…",
+                     RailDcRun.NotSolved("A", "Rail 'A' reaches X only through…"));
+        Assert.Equal("Rail 'A' was not solved. It is fed from rail 'B'.",
+                     RailDcRun.NotSolved("A", "It is fed from rail 'B'."));
     }
 
     /// <summary>

@@ -37,6 +37,24 @@ public partial class ImpedanceToolView : UserControl
         if (this.IsAttachedToVisualTree()) ShowFor(DataContext as ImpedanceTool);
     }
 
+    /// <summary>The panel scrolls as a whole so every part of it is reachable at any dock height (field
+    /// report, 2026-09-27). Inside a ScrollViewer the Grid is measured with infinite height, so its
+    /// star row would take ALL the result rows and stop virtualizing: the rows are capped at the
+    /// viewport's height (they scroll on their own), and the grid is held at least the viewport's
+    /// height so the rows still stretch into spare room when there is some.</summary>
+    private void OnPanelScrollSizeChanged(object? sender, SizeChangedEventArgs e) =>
+        ApplyScrollBounds(e.NewSize.Height);
+
+    internal void ApplyScrollBounds(double viewportHeight)
+    {
+        if (!(viewportHeight > 0) || double.IsInfinity(viewportHeight)) return;
+        PanelRoot.MinHeight = viewportHeight;
+        RowsList.MaxHeight = Math.Max(MinRowsHeight, viewportHeight);
+    }
+
+    /// <summary>Below this the list is too short to read a trace and its findings together.</summary>
+    internal const double MinRowsHeight = 160;
+
     private void ShowFor(ImpedanceTool? tool)
     {
         if (ReferenceEquals(tool, _shownTool)) return;

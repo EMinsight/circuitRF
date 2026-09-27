@@ -256,6 +256,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
                                         EditorBoundaries: true,
                                         Ghost: inputs.Ghosts is { Count: > 0 } ghosts ? n => ghosts.TryGetValue(n, out var g) ? g : Scene3DGhost.None : null,
                                         OwnFrame: name => OwnFrameOf(doc, e, name),
+                                        HideOutermostDielectric: false,
                                         FaceTints: [.. records.Boundaries.Where(b => b.Refusal is null)
                                                            .Select(b => new Scene3DFaceTint(b.Boundary.Object + "/" + b.Boundary.Face, b.Boundary.Kind, b.Pieces))]));
         }

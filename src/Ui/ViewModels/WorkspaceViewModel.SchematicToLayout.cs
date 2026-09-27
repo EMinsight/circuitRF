@@ -331,7 +331,8 @@ public partial class WorkspaceViewModel
         var schematicVm = GetOrCreateSession(targetPath);
 
         var layoutVm = GetOrCreateLayoutSession(layoutPath);
-        var result = LayoutToSchematicGenerator.Run(layoutVm.Model, schematicVm.EditModel, layoutDir, layoutVm.Technology);
+        var result = LayoutToSchematicGenerator.Run(layoutVm.Model, schematicVm.EditModel, layoutDir, layoutVm.Technology,
+                                                    layoutChanged: layoutVm.MarkBookkeepingDirty);
 
         if (result.Command is not null)
             schematicVm.Execute(result.Command);

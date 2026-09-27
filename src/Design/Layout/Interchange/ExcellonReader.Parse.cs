@@ -175,7 +175,7 @@ public sealed partial class ExcellonReader
         }
     }
 
-    private static (bool? Plated, int? From, int? To, string? Kind) ParseFunctionFields(string[] fields)
+    internal static (bool? Plated, int? From, int? To, string? Kind) ParseFunctionFields(string[] fields)
     {
         bool? plated = null;
         int? from = null, to = null;

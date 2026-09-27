@@ -839,7 +839,7 @@ public static partial class LayoutRenderer
         double coarseCoverage = opts.CoarseCoverageThreshold != 0
             ? opts.CoarseCoverageThreshold : DefaultCoarseCoverageThreshold;
         double devicePxPerDbu = scaleUm * ps.DbuToUm;
-        var layerMap = tech?.Layers.ToDictionary(l => l.Key);
+        var layerMap = LayerCanvasContrast.DrawnLayerMap(tech, opts.Theme.Background);
 
         // Built on first broken instance and shared by every one after it, so a workspace that has
         // lost a whole library pays for one set of paints rather than one per placement — and a

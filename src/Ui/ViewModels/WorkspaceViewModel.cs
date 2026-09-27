@@ -4530,6 +4530,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         vm.RequestAddLayerToTechnology += OnLayoutRequestAddLayerToTechnology;
         vm.WireSidecarRemoved += OnWireSidecarRemoved;
         vm.OpenSiblingSchematicNames = OpenSchematicNamesFor;
+        vm.OpenSiblingSchematic = OpenSchematicFor;
         WireRetargetSeam(vm);
         var doc = new LayoutDocument(title, vm) { Hierarchy = this };  // filePath = null → scratch
         _scratchLayouts.Add(doc);
@@ -7513,13 +7514,20 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     public void OpenTechnologyDocumentBesideLayout(
         string absolutePath, IDockable layoutDocument, double availableWidth)
     {
+        // A technology not yet open opens in the LAYOUT's own strip (field report, 2026-09-27: Edit…
+        // sometimes showed nothing). It used to open in the PRIMARY strip, so a layout sitting in a
+        // side pane or a torn-off window got its technology somewhere else entirely — no split, since
+        // the strips differ, and in the torn-off case in the shell window BEHIND the one being used,
+        // with nothing brought forward because only an ALREADY-open document was raised.
         var strip = layoutDocument.Owner;
-        OpenOrActivateTech(absolutePath);
+        OpenOrActivateTech(absolutePath, strip as IDocumentDock);
 
         if (!_openDocsByPath.TryGetValue(absolutePath, out var tech)) return;
-        if (!ReferenceEquals(tech.Owner, strip)) return;
+        if (ReferenceEquals(tech.Owner, strip))
+            _factory.SplitDocumentRightOf(tech, layoutDocument, TechEditPaneProportion(availableWidth));
 
-        _factory.SplitDocumentRightOf(tech, layoutDocument, TechEditPaneProportion(availableWidth));
+        // Wherever it ended up, the window showing it comes forward — it was asked for by name.
+        BringDockableWindowToFront(tech);
     }
 
     /// <summary>
@@ -7656,7 +7664,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
     private bool IsTechDocumentActive() => ResolveActiveDocumentForCommands() is TechDocument;
 
-    private void OpenOrActivateTech(string absolutePath)
+    /// <param name="into">The document strip a NEWLY opened editor joins; the primary strip when null.
+    /// An editor that is already open is only activated where it is.</param>
+    private void OpenOrActivateTech(string absolutePath, IDocumentDock? into = null)
     {
         if (ActivateIfOpen(absolutePath)) return;
 
@@ -7678,7 +7688,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             // key that is actually current instead of removing the original one again.
             vm.TechSavedAs += OnTechSavedAs;
 
-            _factory.OpenDocument(doc);
+            if (into is not null) _factory.OpenDocumentIn(into, doc);
+            else _factory.OpenDocument(doc);
             _openDocsByPath[absolutePath] = doc;
             HookTechFileDirty(doc);
             Messages.Info("Opened", absolutePath);
@@ -11652,9 +11663,14 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// <summary>The instance names an OPEN primary schematic of <paramref name="cellDir"/> holds, on
     /// the same terms.</summary>
     private IReadOnlyList<string>? OpenSchematicNamesFor(string cellDir)
+        => OpenSchematicFor(cellDir) is { } model ? [.. DesignatorPool.NamesIn(model)] : null;
+
+    /// <summary>The OPEN primary schematic of <paramref name="cellDir"/>, or null when it is not
+    /// open.</summary>
+    private SchematicEditModel? OpenSchematicFor(string cellDir)
         => DesignatorPool.PrimaryViewPath(cellDir, ViewType.Schematic) is { Length: > 0 } path
         && _registry.TryGet(Path.GetFullPath(path), out var vm) && vm is not null
-            ? [.. DesignatorPool.NamesIn(vm.EditModel)]
+            ? vm.EditModel
             : null;
 
     /// <summary>
@@ -11809,6 +11825,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         vm.RequestAddLayerToTechnology += OnLayoutRequestAddLayerToTechnology;
         vm.WireSidecarRemoved += OnWireSidecarRemoved;
         vm.OpenSiblingSchematicNames = OpenSchematicNamesFor;
+        vm.OpenSiblingSchematic = OpenSchematicFor;
         WireRetargetSeam(vm);
 
         // WB40 — a wirebond cell holds a `.wBond` beside its `.clay`, and its wires ride over the

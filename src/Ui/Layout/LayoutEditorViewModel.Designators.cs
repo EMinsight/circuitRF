@@ -410,9 +410,19 @@ public sealed partial class LayoutEditorViewModel
             if (inst.DisplayRefDes is not { Length: > 0 } existing) continue;   // nothing to collide
             if (taken.Add(existing)) continue;                                  // free — a Cut, or a foreign document
 
+            string? sourceComponent = inst.SchematicId;
             inst.SchematicId = null;   // it is NOT the component the source is; the source still is
             inst.RefDes      = FootprintLabel.SeedDesignator(taken, PastePrefixFor(inst, existing));
             if (inst.DisplayRefDes is { Length: > 0 } minted) taken.Add(minted);
+
+            // A copy of a LINKED part is still that kind of part (field report, 2026-09-27: a copied
+            // resistor never reached the schematic). The source carried no PartKind — the schematic
+            // knew — so stripping the link left bare artwork, which Update Schematic from Layout
+            // counts and creates nothing for. The kind is read off the component the source was
+            // linked to, AFTER the prefix is chosen, so an inductor named FB1 still copies to FB2.
+            if (sourceComponent is { Length: > 0 } && inst.PartKind is null
+                && SiblingComponentKind(sourceComponent) is { } kind && FootprintDefaults.IsDiscreteRlc(kind))
+                inst.PartKind = LayoutPartKind.Name(kind);
         }
     }
 
@@ -461,6 +471,29 @@ public sealed partial class LayoutEditorViewModel
     public Func<string, IReadOnlyList<string>?>? OpenSiblingSchematicNames { get; set; }
 
     private readonly SiblingDesignatorCache _siblingDesignators = new();
+
+    /// <summary>
+    /// The OPEN primary schematic of a cell folder, or null when it is not open — set by
+    /// <c>WorkspaceViewModel</c> beside <see cref="OpenSiblingSchematicNames"/>, on the same terms.
+    /// </summary>
+    public Func<string, SchematicEditModel?>? OpenSiblingSchematic { get; set; }
+
+    /// <summary>
+    /// The kind of the component named <paramref name="name"/> in this cell's primary schematic — the
+    /// open document when there is one (an unsaved edit counts), else the file. Null when there is no
+    /// such component or no schematic. Read only by a paste, so the file is not cached.
+    /// </summary>
+    private SymbolKind? SiblingComponentKind(string name)
+    {
+        if (CurrentCellDir is not { Length: > 0 } cellDir) return null;
+        var schematic = OpenSiblingSchematic?.Invoke(cellDir);
+        if (schematic is null && DesignatorPool.PrimaryViewPath(cellDir, ViewType.Schematic) is { Length: > 0 } path)
+        {
+            try { schematic = SchematicPersistence.LoadFromFile(path).model; }
+            catch { return null; }   // an unreadable sibling is not a failed paste
+        }
+        return schematic?.Components.FirstOrDefault(c => c.InstanceName == name)?.Symbol;
+    }
 
     /// <summary>How many times the sibling schematic has been read off disk — the gate asserts a
     /// counter, not a clock.</summary>

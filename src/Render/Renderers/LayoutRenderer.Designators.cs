@@ -70,6 +70,7 @@ public static partial class LayoutRenderer
 
         var def = tech?.Layers.FirstOrDefault(l => l.Key.Equals(silk)) ?? FallbackPalette.For(silk);
         if (!def.Visible) return none;
+        def = LayerCanvasContrast.Drawn(def, opts.Theme.Background);
         var color = new SKColor(def.Color.R, def.Color.G, def.Color.B);
 
         string baseDir = opts.BaseDir ?? "";

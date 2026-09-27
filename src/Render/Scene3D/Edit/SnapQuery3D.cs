@@ -218,7 +218,7 @@ public sealed class SnapQuery3D
             if (fr.Shared && _transformed.Add(id)) Counters.ElementsTransformed++;
             bool xray = _xrayObjects.Contains(id);
 
-            if (t.Named.FromKernel) KernelFeatures(id, face, fr, t, xray);
+            if (t.NamedFromKernel) KernelFeatures(id, face, fr, t, xray);
             else
             {
             if (_s.Wants(Snap3DKinds.Vertex))

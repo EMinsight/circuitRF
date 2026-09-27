@@ -4166,3 +4166,49 @@ tessellation is untouched. Anything else that repeats corners per face (a prism'
 - **Two ghost kinds for the fillet preview**: `Pickable` (translucent, still hovered and selected — the target whose
   edges the panel lists) and `Inert` (drawn as it is, never picked — the result seen through it). The pick patch's
   nearest surface is the translucent target's, which encloses the result, so edges stay pickable through the preview.
+
+## Silk drawn for contrast against the canvas, stored colour untouched (2026-09-27)
+
+A board designer reported Silk Top unreadable on the light canvas. The shipped technologies store
+Silk Top #F2F2F2 and Silk Bottom #C8C8C8 (the ink's colour); the Gerber importer stores a dark Silk
+Top and a light Silk Bottom. No stored colour reads on both the white and the dark canvas, so
+`LayerCanvasContrast` resolves what a silk layer is DRAWN in: when its Rec. 601 luminance is within 96
+of the background's, it is blended toward black (light canvas) or white (dark canvas) until the
+difference reaches 170. Hue and alpha are kept; the `.ctech` is never written.
+
+- **Silk only, deliberately.** Copper and process colours are chosen hues that separate layers (a kit
+  can carry hundreds); a luminance guard would recolour them by a rule nobody chose. Silk is a neutral
+  and has nothing but luminance to be seen by.
+- **Identified by structured fields, never the display name**: `Interchange.PcbLayerName`
+  `F.SilkS`/`B.SilkS`, a Gerber file function starting `Legend`, or purpose `silkscreen`.
+- **Applied where each frame builds its layer map** (main draw, instance draw, snap overlay) and to the
+  designator colour, so ghosts, placements and ref-des text agree. One comparison per layer per frame;
+  a clone only for a silk layer that actually moves. Nothing per shape.
+- **The tile key hashes `IsSilkscreen`** alongside the stored colour and the background — the drawn
+  colour is a pure function of those three, and the interchange field is not otherwise in the key.
+- **The Layers panel swatch still shows the STORED colour** — it is what the colour field edits.
+- CLI `render` and the GUI share the path, so they agree. Doc figures whose light variant draws silk
+  will change on the next DocGen run (silk used to vanish there — `DocFootprintFixtures`' remark).
+- Gate: `tests/Ui.Tests/Render/SilkCanvasContrastTests.cs`.
+
+## Designer feedback 02 — a board from its layout drew no dielectric, and took seconds to draw at all (2026-09-27)
+
+- **No dielectric.** The viewer opens with the OUTERMOST dielectric hidden (`InitiallyVisible` false) — right for a
+  `.cem`, where the substrate is a slab the size of the solve region and the traces are what a user came to see. The
+  3D editor used the same rule, and a board placed from its layout (New 3D View from Layout) is bounded to the board:
+  a two-layer board's only dielectric IS its outermost, and a four-layer board lost its core, so the copper drew
+  floating in air. `Scene3DBuildOptions.HideOutermostDielectric` (default true, the viewer's) is passed false by the
+  editor, which now shows every dielectric. Gate: `LayoutBoardViewTests.ABoardPlacedFromItsLayout_OpensWithItsDielectricShown`.
+- **Seconds before the first picture.** Measured with a scratch harness (Release, this Mac) on the round-7 board
+  (691 solids, 228k triangles): elaborate ~1.0 s + scene ~1.5 s cold before; the largest single cost was brief-67's
+  NAMED EDGE RUNS (`Scene3DEdges.OfSegments`), made eagerly for every object in the build — ~0.6-2 s depending on load,
+  about as much as all the rest of the scene. A pour with ~18,000 hole vertices is ~18,000 side faces to pair and walk.
+  Only Edge mode, a fillet and a kernel snap read them, one hovered object at a time. `Scene3DFeatureTable.Named` is
+  now a `Lazy` made on first read (the kernel's table stays eager — it is cheap and its snap reads it), and the snap's
+  "is this a kernel table" test reads `NamedFromKernel` instead of making the runs to ask. With the merge memo in
+  `src/Design`, the same cold build measured ~0.7 s + ~0.6 s under heavy machine load. Gate:
+  `LayoutBoardViewTests.TheFirstScene_MakesNoNamedEdgeRuns_UntilOneIsRead` (a per-table flag, not a timing).
+- **"Nothing, for a while".** The status line that says "Generating the 3D problem…" is hidden by default since editor
+  round 2, so a build that takes seconds read as an empty grid. The canvas now shows "Building the 3D view…" while
+  a view that has drawn nothing is building (`Viewer3DViewModel.IsBuildingFirstScene`). Reopening a view is still a
+  cold build — the elaborator's child cache lives with the editor.

@@ -58,6 +58,11 @@ namespace CircuitRF.Render.Scene3D;
 /// translucent and never hovered or selected; a Tool of a subtraction is a ghost in the overlay's red.</param>
 /// <param name="OwnFrame">brief-em3d-67 R-em3d67-2b — an object's map from world metres into its own frame (before its
 /// placement), where the runs one pair of faces bounds are numbered; null (or null for a name) is the identity.</param>
+/// <param name="HideOutermostDielectric">True (a 3D .cem's viewer) opens with the outermost dielectric hidden: there the
+/// substrate is a slab the size of the air box — solver geometry — and the traces are what a user came to look at.
+/// False shows every dielectric: the 3D editor, where a board placed from a layout is bounded to the board (hiding its
+/// thickest dielectric drew copper floating in air with nothing between the layers), and a PLANAR .cem's preview, whose
+/// slabs are drawn to the board outline or the copper hull (SlabLateralBound) rather than across the air box.</param>
 public sealed record Scene3DBuildOptions(
     Func<string, IReadOnlyList<string>?>? FaceNames = null,
     Scene3DTessellationCache? Cache = null,
@@ -70,7 +75,8 @@ public sealed record Scene3DBuildOptions(
     IReadOnlyList<Scene3DFaceTint>? FaceTints = null,
     Func<string, bool>? Wireframe = null,
     Func<string, Scene3DGhost>? Ghost = null,
-    Func<string, Func<Point3, Point3>?>? OwnFrame = null);
+    Func<string, Func<Point3, Point3>?>? OwnFrame = null,
+    bool HideOutermostDielectric = true);
 
 /// <summary>brief-em3d-66 — an object's draw state while a boolean is previewed or entered.</summary>
 public enum Scene3DGhost
@@ -231,7 +237,7 @@ public static class Scene3DBuilder
 
         // ── solids ───────────────────────────────────────────────────────────────────────────
         bool Wire(string name) => options.Wireframe?.Invoke(name) == true;
-        string? outermost = OutermostDielectric(problem, Wire);
+        string? outermost = options.HideOutermostDielectric ? OutermostDielectric(problem, Wire) : null;
         // 3D editor bugs round 1 — a wireframe object's triangles: the ink colour at alpha 0; its edges: the ink, opaque.
         // 3D editor bugs round 2 — on a light background the mid-grey ink was too faint for an object drawn as its edges
         // ALONE (one-pixel lines, nothing filled): the wireframe's edges are near-black there. Dark keeps the ink.

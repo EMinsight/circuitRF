@@ -1,5 +1,47 @@
 # src/Design — resolved findings (detail, off the CLAUDE.md growth path)
 
+## A parts table pasted into a schematic places its parts (2026-09-27)
+
+A field report asked to create a schematic from a parts table instead of typing each part — the
+tables live in datasheets and application notes (PDF) and sometimes in a spreadsheet. The owner chose
+paste into a schematic plus a dropped `.csv`, explicitly as a best try. Reader:
+`Schematic/BomTablePaste.cs`; placement: `src/Ui/ViewModels/SchematicViewModel.BomPaste.cs`; gates
+`tests/Ui.Tests/Schematic/BomTablePasteTests.cs` and `BomTablePastePlacementTests.cs`.
+
+- **Not `BomFile`.** railRF's bill-of-materials reader treats the table as EVIDENCE about artwork and
+  never creates anything; it also requires a part-number/quantity/description column and refuses a
+  header it cannot place. A schematic paste is the opposite contract. The shared pieces are shared:
+  `DelimitedTables` (delimiter inference) and `RefdesCell` (lists and ranges).
+- **Cells are recognised by what they look like, not where they are.** The report's own table had
+  its unit under a "Package" header and its case under "Size" (a spreadsheet split "100 pF" into two
+  cells under one heading). A header only says which cell to try first; a number whose unit is in the
+  next cell is joined; a case column holding a unit is passed over for the next case column.
+- **Text copied out of a PDF has no columns.** It is read as words: a row starts on a line whose first
+  word is a reference, other lines continue it. A wrapped cell arrives as a broken word ("Capacito r",
+  "Valu e") — header words are joined pairwise, type words match by prefix — and a wrapped reference
+  list ("M11,M12,M1" then "6") is re-joined only when it IS a list ending in a digit and the stray is
+  one or two digits not followed by a unit. A bare "R" is never an ohm here: in PDF text it is the
+  wrapped tail of "Capacitor". A dash-only cell is do-not-populate only in the TYPE column; elsewhere
+  it is an empty manufacturer cell.
+- **A single-letter type is only a whole cell.** "C0805" reduced to its letters is "c", which read as
+  a capacitor TYPE and consumed the case column — found by the CSV test.
+- **Bare "0402" is read as imperial and SAID.** `FootprintTokens` reports a bare colliding code as
+  ambiguous and never picks; placing a part needs an answer, and a passive-part table is written in
+  imperial codes, so the paste takes the imperial reading and posts one note per such code naming
+  the metric alternative. Three digits ("402") are an imperial code whose leading zero a spreadsheet
+  ate. Series aliases resolve through `SmtCaseTable.Find`; decorated spellings ("C0805") through
+  `FootprintTokens.Match`, unambiguous matches only.
+- **Each part is built by the palette's own construction.** `CommitPlacement` was split into
+  `BuildPlacedComponent` + commit, and the paste overwrites only the value parameter and — where the
+  technology is a board, so placement already gave one — the footprint. Off a board no footprint is
+  invented (one note says so): that would be a second footprint policy beside `FootprintDefaults`.
+- **Renaming a clash must not cascade.** `SchematicPasteCommand` resolves collisions walking the list
+  in order, so a table's C1 clashing with the sheet's C1 became C2, which then clashed with the
+  table's own C2, and so on down the table. The paste reserves every table name first and renumbers
+  only the parts that clash with the SHEET, and lists the renames.
+- **The canvas Ctrl+V path now calls `SchematicViewModel.ClipboardPasteAsync`** rather than a copy of
+  it, so the Edit-menu and canvas paths cannot disagree about the new fall-through.
+
 ## A `.clay` key the reader ignored, and a shape with no vertices, now say so (2026-09-24)
 
 The 3D-EM F0 spike wrote a ground plane as `{"$type": "Poly", "Points": [...]}`; the format's field
@@ -14346,3 +14388,111 @@ through a temporary file renamed into place), `Export` (both). The worker's new 
 - **A bond wire** is written as the `.geo` script writes it: a ruled loft through its rings (a periodic spline per ring
   for a round wire), closed by its end faces. `BRepOffsetAPI_ThruSections` is in `TKOffset`, which the recipe does not
   build, so the worker uses `BRepFill_Generator` (in `TKBool`) and sews the caps.
+
+## railRF field report, general round 2 — the spreading refusal, and a PDN through one series coil (2026-09-27)
+
+- **The spreading refusal was unreadable, not wrong.** A board designer's whole reaction to it was a question mark.
+  It was one ~150-word paragraph: the rail's name twice back to back (`RailDcRun.Refuse` prefixed "Rail 'X' was not
+  solved." onto an extraction sentence that itself opened "Rail 'X' …" — and a rail picked on the board is NAMED by
+  its coordinates), the region on "layer 1/0" (the GDS layer/datatype), its size in µm against a measurement in mm, and
+  the two remedies mid-paragraph behind the closed-form argument. `PourDominatedRefusal` now leads with one line —
+  what happened plus *Run Accuracy* / *set the region's class to Trace on the Class tab* — then `Region:`,
+  `Measured:` (every length through `RailLengthFormat`) and `Why no number:` lines. The refusal itself is unchanged.
+- **`RailDcRun.NotSolved`** names the rail once: an extraction sentence opening "Rail 'X' " becomes "Rail 'X' was not
+  solved: it …". The sweep and plane runs show extraction refusals bare, which is why those sentences carry the name.
+- **Layers by technology name.** `PdnRegionRef.Describe(format, technology)` and `PdnRegionRef.LayerName` print the
+  `.ctech`'s own name, falling back to `layer L/D` only where the technology has none. The same raw-number defect was
+  in the refined-pour ceiling refusal, the mesh extractor's reference-layer refusal and diagnostic, and the via-flag
+  finding — which also printed the worst via's position as bare DBU integers with no unit. All now name the layer.
+- **A series element's unresolved end** read "Series part FB1 on rail '…''s first end names …" — the possessive landed
+  on the rail's coordinate name. Now "The first end of series part FB1 names …".
+- **The single-coil PDN.** A series part with ESR 0 and no inductance is NOT the fault: DC stamps it as 0 Ω (and says
+  so), the sweep stamps a 0 Ω LINK (and warns). On the reported board the Fast model refused the spreading copper (the
+  message above), and the frequency sweep refused because the SOURCE states no output R or L — an ideal source shorts
+  the rail at every frequency, a correct refusal. Two defects around it were real:
+  - that refusal named the source "(26500000, 9875000) DBU" — `RailSourceLife.Of` now takes the board's format;
+  - **the sweep's series partition came from the PREVIOUS run.** `BuildSweepRequest` runs on the UI thread before the
+    run's own DC solve and read `ByModel`'s regions — none on a first run, none after a Fast refusal — so a rail with a
+    series element fell back to the TYPED partition and said "this rail has no artwork" beside a loaded board (and a
+    part whose row did not state its side would have been stamped on the wrong node). The run now fills
+    `PdnSweepRequest.Partition` (settable for this) from its own solve's regions before sweeping.
+- **Repro trick still needed:** a zip of a workspace carries no `.generated-cells`; `GeneratedCellsLifecycle.RegenerateAll`
+  from a throwaway test (tech loader = `TechPersistence.LoadFromFile`) rebuilds and repoints them, after which
+  `circuitrf rail` runs.
+- **Left alone:** the classifier's `Reason` (the Class tab readout) still reads in mm whatever the board's unit; it has
+  no format to hand and is not a refusal.
+
+## Designer feedback 02 — a wide line cut up by series parts read as pads (2026-09-27)
+
+An outside report on an imported PA evaluation board (a 2.83 mm grounded coplanar RF line on 1.524 mm, G 2.026 mm,
+70 µm copper; an independent line calculator gives 49.0 Ω): the probe called the line "a pad, a via land or a short
+stub", a region drawn round the whole RF path reviewed nothing, and naming each section as a net did not help — the only
+trace left to review was the supply line, which is why the report seemed to look "somewhere strange".
+
+- **Root cause: both length rules were in widths, and a wide line on a thick board is short in widths.** Series parts
+  cut that line into sections 6.3-8.6 mm long — 2.2-3.0 widths — with one at 4.1. The analysis's chain rule
+  (`MinAspect` = 4) made every section but one a pad, so no region, pick or net could choose them; the probe demanded
+  copper for 2W on EACH side of the click (4W in all), so no click on any section could answer.
+- **Analysis: `SelectedMinAspect` = 2, for chains a selector chooses.** A chain 2-4 widths long is kept, marked
+  `Short`, and reviewed only where a region, pick or net chooses it; a run with no selector (and the survey) still drops
+  it, and a short chain nothing chose is not counted as a trace left out. Lowering `MinAspect` itself was measured and
+  rejected: on the reporter's fine-pitch QFN board the unscoped review grew from 44 to 68 traces, nearly all of them
+  fan-out stubs under the package failing at 95-160 Ω. With the rule as built, the delivered region reviews 4 sections at
+  48.2-48.7 Ω (was 1), the net selectors the same 4, and on the QFN board the two RF-row regions review 10 traces (was
+  4) — the five sections between the series parts on that board's RF line, all 48.2 Ω.
+- **Probe: copper must run 2W in all, not 2W each side.** A click less than W from where the copper ends moves the cut
+  along the axis until ±W fits, and a note says where. A click within about W/4 of the end still meets the corner (the
+  narrowest chord cuts across it) and is refused by the edge cross-check; when the edge is the nearest one and runs
+  ACROSS the axis, the refusal now says the point is within half a width of an edge across the trace rather than calling
+  it a bend. At the reporter's own point the probe now answers 48.7 Ω GCPW, W 2830, G 2107/2027, H 1524 µm.
+- **The side grounds were never the problem.** Where the copper was measured it was read as grounded coplanar with both
+  coplanar gaps, 0.6-1.6 % under the hand calculation.
+- **Still refused, correctly:** one named section of that line is 5.45 mm long but reads 3.28 mm wide where a pad
+  overlaps it — under 2W — and the two wide matching sections (4.9 mm) are under 1.3W.
+
+## Designer feedback 02 — a Gerber-format drill file minted no via entry (2026-09-27)
+
+- **Symptom.** A Gerber set whose holes came as a GERBER file (`%TF.FileFunction,Plated,1,4,PTH,Drill*%`) instead of
+  an Excellon one imported with its holes drawn on a drill-purpose layer and NO `StackupKind.Via` entry, so nothing
+  built a barrel from them. The import also said "no drill data was read" about a set that plainly had some.
+- **Cause.** Step 9's via entries are minted in a loop over the EXCELLON reads (`drills`). A Gerber-format drill file is
+  classified as artwork, read by `GerberReader`, and identified as drill purpose by the cascade from its FileFunction —
+  so it reached the layer table as a drill layer and never reached that loop. `ReportLayersLeftOutOfTheStackup` even
+  assumed every drill-purpose layer had its entry.
+- **Fix.** After the Excellon loop, every drill-purpose ARTWORK identity mints its entry by the same rules: plating
+  and span from its FileFunction (`ExcellonReader.ParseFunctionFields`, now internal, so the two spellings of one
+  attribute cannot drift), the file name when it states neither, top-to-bottom otherwise; the default wall thickness
+  on a plated one. It is skipped when an Excellon file of the same plating was read — a production set often carries
+  both spellings of one drill program, and two entries over the same holes would be two barrels per hole. Pairing
+  holes with pads (`DrillViaPairing`) is NOT run for it: the flashes are already circles on a via-bound layer, which is
+  what the planar and 3D extractors build barrels from.
+- **Existing boards are not repaired** — a technology imported before this has to be re-imported, or given a Via
+  entry on the Stackup tab that names the drill layer.
+- Gate: `GerberImportTests.AGerberFormatDrillFile_MintsAPlatedViaEntrySpanningTheCopperItNames`.
+
+## Designer feedback 02 — `MergeOverlapping(touching)` re-unioned a pour once per pad (2026-09-27)
+
+`ShareAnEdge` compared the union of a pair with each shape's own union, computing both own unions afresh for EVERY
+candidate pair. A pour's box meets every pad on it, so an imported board's pour (thousands of hole vertices) was
+re-unioned by itself once per neighbour. The own ring count is now kept per shape. Pure memoisation — the answer is
+unchanged; it was the largest part of a cold `Em3dLayoutSolids` on the round-7 board.
+
+## Designer feedback 02, Q5 — a slab with no outline: board outline, else the copper hull (2026-09-27)
+
+A placed layout's (a `.c3d` instance's) dielectrics, bodies without an outline layer and undrawn ground plane
+were bounded by the board outline, else by the drawn geometry's BOUNDING BOX. The owner decided (after the
+alternative — trimming exactly to the copper — was ruled out because it removes the substrate from a CPW gap and
+beside a top-only trace, and so changes the impedance a 3D solver reads) on `SlabLateralBound`: outline, else the
+CLOSED hull of the copper directly above and below the slab (nearest band with copper each way, walking past an
+empty conductor entry), else the bounding box. The hull is offset-out R = 5 H, union, drop holes, offset-in
+R − M with M = 2 H (H = the dielectric stack height), miter joins, integer nanometres — so gaps under 10 H close,
+holes fill, and the edge stands 2 H past the copper. The Messages note names the bound each slab took.
+
+The SAME helper draws a planar (MoM) setup's Show 3D preview (`Em3dGenerator.Generate(displaySlabs: true)`,
+clipped to the preview's air box), which is why that preview no longer needs its substrate hidden. The planar
+solve is untouched (laterally infinite), and so is a 3D `.cem` run: there the slab reaching the air box IS the
+geometry (an absorbing face emulating an infinite board), so `HideOutermostDielectric` stays for that viewer.
+
+What moved: `C3dElaborationTests.Gate3`'s substrate is now an extrusion M past the drawn extent, and the `.c3d`
+air box — which pads the elaborated content — grows by the same M laterally. Layout STEP export (brief 69) goes
+through `Em3dLayoutSolids.From` too, so an exported board with no outline carries the hull, not the box.

@@ -817,11 +817,21 @@ public sealed partial class RailRfViewModel
         var sweepRequest = BuildSweepRequest(kind);
         string? sweptRail = SelectedRailName;
         var token = cts.Token;
+        IReadOnlyList<PlacedPin> sweepPads = SidedPads(board).Pads;
 
         Pending = RunOffThread(() =>
         {
             var watch = Stopwatch.StartNew();
             var result = SolveFunc(request, token);
+
+            // THIS solve's walk of the copper, not the last one's. BuildSweepRequest ran before the
+            // solve above and could only read a PREVIOUS result's regions — none on a first run, and
+            // none after a Fast refusal — so a rail with a series element fell back to the partition
+            // its rows state and the sweep said the rail had no artwork (2026-09-27).
+            if (sweepRequest is { Rail.HasSeriesElements: true } &&
+                result.Rail(sweepRequest.Rail.Name)?.Regions is { Power.Count: > 0 } walked)
+                sweepRequest.Partition =
+                    RailSeriesPartition.FromArtworkRegions(sweepRequest.Rail, walked, sweepPads);
 
             // Its own stage, with no denominator: the sweep reports nothing while it runs, and a bar
             // left full from the DC half would read as a run that had finished and then stuck.

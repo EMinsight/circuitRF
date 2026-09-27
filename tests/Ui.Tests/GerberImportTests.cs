@@ -1227,4 +1227,33 @@ public class GerberImportTests : IDisposable
         Assert.True(result.Cancelled);
         Assert.Equal(before, Directory.GetDirectories(_root));
     }
+
+    // ── A drill layer written as GERBER, not Excellon (designer feedback 02) ─────────────────────
+
+    /// <summary>
+    /// An X2 set may carry its holes as a Gerber file (`%TF.FileFunction,Plated,1,2,PTH,Drill*%`)
+    /// instead of an Excellon one. It reads as artwork — flashes on a drill-purpose layer — and used to
+    /// reach the technology with no Via entry at all, so the holes were drawn and nothing made a barrel
+    /// of them. The entry must be minted, plated and spanning the two copper layers the file names.
+    /// </summary>
+    [Fact]
+    public void AGerberFormatDrillFile_MintsAPlatedViaEntrySpanningTheCopperItNames()
+    {
+        var dir = Folder("gerber-drill");
+        Write(dir, "board-top.gbr", Artwork("Copper,L1,Top,Signal"));
+        Write(dir, "board-bot.gbr", Artwork("Copper,L2,Bot,Signal"));
+        Write(dir, "board-pth.gbr", MmHeader + "%TF.FileFunction,Plated,1,2,PTH,Drill*%\n" +
+                                     "%ADD10C,0.300*%\nD10*\nX1000000Y1000000D03*\nM02*\n");
+
+        var result = Import(dir, _root, "gerber_drill_import");
+
+        var tech = TechPersistence.LoadFromFile(result.TechPath!);
+        var drillLayer = tech.Layers.Single(l => l.Purpose == "drill");
+        var via = tech.Stackup.Layers.Single(l => l.Kind == StackupKind.Via);
+        var conductors = tech.Stackup.Layers.Where(l => l.Kind == StackupKind.Conductor).ToList();
+        Assert.Equal([drillLayer.Key], via.DrawingLayers);
+        Assert.True(via.Plated);
+        Assert.Equal(conductors[0].Name, via.SpanFromLayer);
+        Assert.Equal(conductors[^1].Name, via.SpanToLayer);
+    }
 }

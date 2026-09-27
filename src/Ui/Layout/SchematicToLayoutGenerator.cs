@@ -517,8 +517,9 @@ public static class SchematicToLayoutGenerator
     /// shared by both directions, which record the link the same way.</summary>
     internal static string UnlinkedRotationNote(int count) =>
         $"{count} component{(count == 1 ? "'s" : "s'")} schematic and layout rotations differ and had never " +
-        "been synced, so neither was turned. They are linked now: a rotation made on either side from " +
-        "here on is carried across by Update Layout from Schematic and Update Schematic from Layout.";
+        "been synced, so neither was turned. They are linked now: a symbol turned in the schematic from " +
+        "here on turns its placement on the next Update Layout from Schematic. A placement turned on the " +
+        "board never turns its symbol — a board angle is not a drawing orientation.";
 
     /// <summary>
     /// Sets <paramref name="after"/>'s orientation and moves its origin so the part turns about the

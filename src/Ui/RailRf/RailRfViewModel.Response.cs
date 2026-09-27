@@ -259,7 +259,7 @@ public sealed partial class RailRfViewModel
             var measured = row.TouchstoneRef is { Length: > 0 } reference
                 ? resolver.ReadMeasured(ResolveRelative(reference), out _)
                 : null;
-            sources.Add(RailSourceLife.Of(row, i, measured));
+            sources.Add(RailSourceLife.Of(row, i, measured, BoardLengthFormat()));
         }
 
         // ── brief 25: the elements the rail runs THROUGH, and which section everything is in ───

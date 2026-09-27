@@ -481,8 +481,19 @@ public static partial class TraceImpedanceAnalysis
     /// <summary>An island carrying at least this many vias is a pour, a plane or a ground strip.</summary>
     public const int PourViaCount = 4;
 
-    /// <summary>A chain shorter than this many of its widths is a pad, not a trace.</summary>
+    /// <summary>A chain shorter than this many of its widths is a pad, not a trace — unless a selector
+    /// chooses it (<see cref="SelectedMinAspect"/>).</summary>
     public const double MinAspect = 4;
+
+    /// <summary>
+    /// A chain a region, a pick or a net CHOOSES is a trace from this many of its widths. A wide line on a
+    /// thick board, cut into sections by series parts, is 2-4 widths long between them (field report: a
+    /// 2.83 mm grounded coplanar line on 1.5 mm, 6.3-7.7 mm between parts, every section but one read
+    /// as a pad), and the reviewer pointing at it is saying it is a line. Left at
+    /// <see cref="MinAspect"/> for a run nothing points with, where the same rule on a fine-pitch board
+    /// admits every fan-out stub under a package (24 more, nearly all failing, on the reported QFN board).
+    /// </summary>
+    public const double SelectedMinAspect = 2;
 
     /// <summary>Cuts per width along a piece.</summary>
     public const double StationsPerWidth = 1;
@@ -628,13 +639,25 @@ public static partial class TraceImpedanceAnalysis
                 // untouched, so the out-of-scope trace running beside a trace under review is still a
                 // grounded neighbour in that trace's cross-section, exactly as without a scope.
                 // The selectors (regions, picks, nets) choose; the widths then filter what they chose.
+                // A SHORT chain (SelectedMinAspect to MinAspect widths) is a trace only where a selector
+                // chooses it; one no selector chooses is a pad, as it is in a run with no scope, and is
+                // neither reviewed nor counted as a trace left out.
                 int outOfScope = 0;
                 var outOfScopeKeys = new List<string>();
+                var chosen = scope is null ? null : selection.Select(lw);
+                var eligible = new List<ChainWork>();
+                var selected = new List<bool>();
+                for (int i = 0; i < lw.Chains.Count; i++)
+                {
+                    if (lw.Chains[i].Short && chosen?[i] != true) continue;
+                    eligible.Add(lw.Chains[i]);
+                    selected.Add(chosen?[i] ?? true);
+                }
+                lw = lw with { Chains = eligible };
                 int netless = selection.HasNets ? lw.Chains.Count(c => selection.NetOf(lw, c) is null) : 0;
                 if (scope is not null)
                 {
-                    var chosen = selection.Select(lw);
-                    var kept = lw.Chains.Where((c, i) => (chosen is null || chosen[i])
+                    var kept = lw.Chains.Where((c, i) => selected[i]
                                                          && scope.Includes(name, DominantWidth(c, dbuPerMicron) / dbuPerMicron)).ToList();
                     outOfScope = lw.Chains.Count - kept.Count;
                     foreach (var c in lw.Chains.Except(kept))
@@ -772,6 +795,8 @@ public static partial class TraceImpedanceAnalysis
             ct.ThrowIfCancellationRequested();
             control?.BeginStage($"{tag}: finding traces");
             var lw = prep.FindLayer(key, name, band, options, ct);
+            // A survey chooses nothing, so a short chain is a pad here as in a run with no scope.
+            lw = lw with { Chains = [.. lw.Chains.Where(c => !c.Short)] };
 
             var widths = lw.Chains.Select(c => DominantWidth(c, dbuPerMicron)).ToArray();
             var lengths = lw.Chains.Select(ChainLength).ToArray();
@@ -1313,6 +1338,9 @@ public static partial class TraceImpedanceAnalysis
         public string StartsAt = "", EndsAt = "";
         public bool StartJunction, EndJunction;
         public double LastX, LastY, Length;
+
+        /// <summary>Shorter than <see cref="MinAspect"/> widths: a trace only where a selector chooses it.</summary>
+        public bool Short;
     }
 
     private sealed class StationWork
@@ -1421,13 +1449,18 @@ public static partial class TraceImpedanceAnalysis
             while (c.Pieces.Count > 1 && c.Pieces[^1].Piece.Length < c.Pieces[^1].Piece.Width) { c.Pieces.RemoveAt(c.Pieces.Count - 1); c.EndJunction = false; }
         }
 
-        // A chain shorter than MinAspect widths is a pad; one piece shorter than a width is a corner.
-        return [.. chains.Where(c =>
+        // A chain shorter than SelectedMinAspect widths is a pad; one piece shorter than a width is a
+        // corner. One shorter than MinAspect widths is kept, marked Short: only a selector admits it.
+        var kept = new List<ChainWork>();
+        foreach (var c in chains)
         {
             double length = c.Pieces.Sum(p => p.Piece.Length);
             double width = c.Pieces.Max(p => p.Piece.Width);
-            return length >= MinAspect * width && c.Pieces.Any(p => p.Piece.Length >= width);
-        })];
+            if (length < SelectedMinAspect * width || !c.Pieces.Any(p => p.Piece.Length >= width)) continue;
+            c.Short = length < MinAspect * width;
+            kept.Add(c);
+        }
+        return kept;
     }
 
     // ── 5. findings ─────────────────────────────────────────────────────────────────────────────

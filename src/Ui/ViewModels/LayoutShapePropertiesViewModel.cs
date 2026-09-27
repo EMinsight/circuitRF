@@ -1140,21 +1140,49 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
     /// index 1. Kept rather than re-derived so the two handlers below cannot disagree about it.</summary>
     private bool _instanceFootprintHasCurrentRow;
 
+    // A PICK IS APPLIED AFTER THE COMBOBOX HAS FINISHED SELECTING (field report, 2026-09-27: the layout
+    // crashed opening a dropdown after footprints had been changed). These two handlers run INSIDE the
+    // ComboBox's own two-way SelectedIndex write-back, and applying the pick there re-points the instance,
+    // which raises Model.Changed, which refreshes this panel, which rebuilt InstanceFootprintOptions — the
+    // very ItemsSource the ComboBox was part-way through selecting from. Avalonia throws inside that nested
+    // selection commit, and the binding SWALLOWS a write-back exception, so nothing was reported: the
+    // control was simply left half-updated. Measured with a headless reproduction of this exact shape
+    // (see src/Ui/RESOLVED.md): swallowed exceptions on every run applied synchronously, none posted.
+    // The crash itself surfaced later, on the next open of that dropdown, as the ArgumentOutOfRange
+    // inside VirtualizingStackPanel that both crash logs carry.
+
+    /// <summary>How a pick is deferred past the ComboBox's selection. Tests run the work inline.</summary>
+    internal Action<Action> PostToUi { get; set; } = work => Avalonia.Threading.Dispatcher.UIThread.Post(work);
+
     partial void OnInstanceFootprintIndexChanged(int oldValue, int newValue)
     {
         if (_isRefreshing || _vm is null) return;
-        ApplyInstanceFootprint(newValue, InstanceFootprintDensityIndex);
+        PostInstanceFootprint(newValue, InstanceFootprintDensityIndex);
     }
 
     partial void OnInstanceFootprintDensityIndexChanged(int oldValue, int newValue)
     {
         if (_isRefreshing || _vm is null) return;
-        ApplyInstanceFootprint(InstanceFootprintIndex, newValue);
+        PostInstanceFootprint(InstanceFootprintIndex, newValue);
     }
 
-    private void ApplyInstanceFootprint(int rowIndex, int densityIndex)
+    private void PostInstanceFootprint(int rowIndex, int densityIndex)
     {
-        int caseIndex = _instanceFootprintHasCurrentRow ? rowIndex - 1 : rowIndex;
+        // The row index means something only against the rows AND the instance it was picked from; a
+        // selection that changed before the post ran drops the pick rather than re-pointing another part.
+        var vm = _vm;
+        bool hadCurrentRow = _instanceFootprintHasCurrentRow;
+        var target = SingleSelectedInstance;
+        PostToUi(() =>
+        {
+            if (!ReferenceEquals(vm, _vm) || target is null || !ReferenceEquals(target, SingleSelectedInstance)) return;
+            ApplyInstanceFootprint(rowIndex, densityIndex, hadCurrentRow);
+        });
+    }
+
+    private void ApplyInstanceFootprint(int rowIndex, int densityIndex, bool hadCurrentRow)
+    {
+        int caseIndex = hadCurrentRow ? rowIndex - 1 : rowIndex;
         if ((uint)caseIndex >= (uint)LayoutEditorViewModel.FootprintCases.Count) return;
 
         var reference = FootprintRef.For(
@@ -1185,18 +1213,26 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         // row goes away rather than offering to re-point a microstrip at an 0402 pad pair.
         ShowInstanceFootprintRow = origin is null || current is not null;
 
-        InstanceFootprintOptions.Clear();
         _instanceFootprintHasCurrentRow = current is null;
 
+        var rows = new List<string>(LayoutEditorViewModel.FootprintCases.Count + 1);
         if (_instanceFootprintHasCurrentRow)
         {
             string name = inst.CellRef is { Length: > 0 } r
                 ? System.IO.Path.GetFileName(r.TrimEnd('/', '\\'))
                 : "(no cell)";
-            InstanceFootprintOptions.Add(name);
+            rows.Add(name);
         }
+        foreach (var c in LayoutEditorViewModel.FootprintCases) rows.Add(c.Display);
 
-        foreach (var c in LayoutEditorViewModel.FootprintCases) InstanceFootprintOptions.Add(c.Display);
+        // Rebuilt only when the rows actually differ. This runs on every frame of a move drag, and a
+        // Clear-and-refill of a ComboBox's ItemsSource recycles every one of its item containers — the
+        // churn the dropdown crash of 2026-09-27 needed. The rows are the same for every built-in part.
+        if (!InstanceFootprintOptions.SequenceEqual(rows, System.StringComparer.Ordinal))
+        {
+            InstanceFootprintOptions.Clear();
+            foreach (var row in rows) InstanceFootprintOptions.Add(row);
+        }
 
         int index = 0;
         if (current is not null)
@@ -1455,7 +1491,8 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
             InstanceShowRefDesValue = null; InstanceDesignatorIsManual = false;
             InstanceMagText = ""; InstanceRowsText = ""; InstanceColsText = "";
             InstancePitchXText = ""; InstancePitchYText = ""; InstanceArrayCountText = "";
-            InstanceFootprintOptions.Clear(); _instanceFootprintHasCurrentRow = false;
+            if (InstanceFootprintOptions.Count > 0) InstanceFootprintOptions.Clear();
+            _instanceFootprintHasCurrentRow = false;
             ShowInstanceFootprintRow = true;
         }
 

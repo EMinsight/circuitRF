@@ -661,7 +661,8 @@ public static partial class LayoutRenderer
             // Resolved once and shared, rather than re-indexed here and again in DrawBitmapShapes —
             // two independent reads of a list that is moving underneath is two chances to disagree,
             // and it was the second one that actually crashed.
-            var layerMap = tech?.Layers.ToDictionary(l => l.Key);
+            // Silk resolved to the colour it is DRAWN in on this canvas — LayerCanvasContrast.
+            var layerMap = LayerCanvasContrast.DrawnLayerMap(tech, theme.Background);
             var unknownLayers = new HashSet<LayerKey>();
 
             // ── CANDIDATE INDICES -> SHAPES, GROUPED BY RESOLVED LAYER, FOR ANY DOCUMENT REGION ──

@@ -106,6 +106,42 @@ alone would show a plain box during the drag and then place the kit's real artwo
 one thing and the result another.</p>
 </div>
 
+### Placing the parts of a parts table {#parts-table}
+
+A parts list typed by hand is slow, and the one you have is usually a table in a datasheet, an
+application note or a spreadsheet. Copy it, click the schematic, and press <kbd>Ctrl</kbd>+<kbd>V</kbd>
+(<kbd>⌘</kbd>+<kbd>V</kbd> on macOS) — or drop a <code>.csv</code> file on the canvas. Every
+resistor, capacitor and inductor in it is placed, named by its reference designator, with its value
+and its case size as the footprint: one row of parts per type, below what is already on the sheet
+(or at the point where you dropped the file). It is one step on the undo stack.
+
+What it reads, row by row:
+
+- **The reference** — <code>C4</code>, a list (<code>M11,M12,M16</code>) or a range
+  (<code>C3-C5</code>), one part each.
+- **The type** — a Type or Description column (<code>Capacitor</code>, <code>CAP CER …</code>,
+  <code>C</code>), otherwise the reference's own letter (<code>C</code>, <code>R</code>,
+  <code>L</code>, <code>FB</code>), otherwise the value's unit.
+- **The value** — <code>100 pF</code>, <code>100pF</code>, <code>4k7</code>, or a number with its unit
+  in the next cell.
+- **The case size** — a Size, Case, Package or Footprint column: <code>0402</code>, <code>402</code>
+  (a spreadsheet drops the leading zero), <code>C0805</code>, or a series code the case table knows.
+
+Text copied out of a PDF works too: the words of a wrapped cell (<code>Capacito r</code>) and a
+reference list that wrapped onto the next line are put back together. Rows marked
+<code>DNP</code> or <code>--</code> are skipped. Anything it could not place — an IC, a ferrite bead
+whose value is in ohms, a row with no type — is listed in the Messages panel with the reason, and so is
+every reading worth checking: a bare <code>0402</code> is read as the imperial size, and says so,
+because the same digits are also a smaller metric part.
+
+<div class="callout note">
+<span class="label">A best try, not an import</span>
+<p>A table's columns are not a standard, so the parts are recognised by what each cell looks like
+rather than by where it is. Check the Messages panel after a paste. A reference already on the sheet
+is renumbered past every name the table uses, and the renames are listed there too. Case sizes become
+footprints only in a workspace whose technology is a board.</p>
+</div>
+
 ## Wiring, values and labels {#wiring}
 
 **Wire** is <kbd>W</kbd> (or the toolbar button). Click from one pin to another; <kbd>Enter</kbd>

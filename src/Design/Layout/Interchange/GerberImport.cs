@@ -560,7 +560,8 @@ public static class GerberImport
 
         // R-L4g-4: an artwork set with no drill data imports, and says so — it is a perfectly ordinary
         // thing to want, and it must not read as a failure.
-        if (drills.Count == 0)
+        if (drills.Count == 0 &&
+            !identities.Any(i => string.Equals(i.Purpose, GerberLayerCascade.DrillPurpose, StringComparison.Ordinal)))
         {
             messages.Add(
                 "No drill data was read, so no vias were reconstructed. Any via in this board is present " +
@@ -1067,7 +1068,7 @@ public static class GerberImport
         // has no conductor entries to name, and inventing two would be a substrate invented under
         // another name — that import already says, in words, that the technology is incomplete.
         var conductorEntries = tech.Stackup.Layers.Where(l => l.Kind == StackupKind.Conductor).ToList();
-        int platedViaEntries = 0;
+        int platedViaEntries = 0, gerberDrillLayers = 0;
         foreach (var (drillFile, drillRead, identity) in drills)
         {
             // GI1 R-gi1-2. The plating of this file was already settled up in step 5, where it chose
@@ -1143,6 +1144,59 @@ public static class GerberImport
                     "imported and drawn exactly as they are.");
 
             if (conductive) platedViaEntries++;
+        }
+
+        // Designer feedback 02. A drill layer written as GERBER (an X2 `Plated,1,4,PTH,Drill` or
+        // `NonPlated,…,Drill` FileFunction) is read as artwork — its holes arrive as flashes on a
+        // drill-purpose layer — so the loop above, which walks the Excellon reads, never saw it, and
+        // the board came in with its holes drawn and no Via entry in the stackup. Nothing then built
+        // a barrel out of them. The entry is minted here by the same rules: plating and span from the
+        // file's own FileFunction, the file name when it states neither, through-hole otherwise.
+        //
+        // Skipped when an Excellon file of the same plating was read: a production set commonly
+        // carries both spellings of ONE drill program, and two entries over the same holes would be
+        // two barrels in every hole.
+        foreach (var identity in identities)
+        {
+            if (!string.Equals(identity.Purpose, GerberLayerCascade.DrillPurpose, StringComparison.Ordinal)) continue;
+
+            var (fnPlated, from, to, kind) = identity.FileFunction is { Length: > 0 } fn
+                ? ExcellonReader.ParseFunctionFields(["FileFunction", .. fn.Split(',', StringSplitOptions.TrimEntries)])
+                : (null, null, null, null);
+            bool? plated = fnPlated ?? ExcellonReader.PlatingFromFileName(identity.FilePath);
+            bool conductive = plated != false;
+            if (drills.Any(d => ((d.Read.Plated ?? ExcellonReader.PlatingFromFileName(d.File.Path)) != false) == conductive))
+            {
+                messages.Add(
+                    $"{identity.FileName}: a Gerber drawing of drill holes, imported as artwork on '{identity.LayerName}'. " +
+                    "An Excellon drill file of the same plating in this set already defines these vias, so no " +
+                    "second via entry was added for it.");
+                continue;
+            }
+
+            var spans = new Dictionary<string, DrillSpan>(StringComparer.Ordinal);
+            if (from is not null && to is not null)
+                spans[identity.FilePath] = new DrillSpan(from.Value, to.Value, kind ?? "PTH", plated);
+
+            tech.Stackup.Layers.Add(new StackupLayer
+            {
+                Kind = StackupKind.Via,
+                Name = identity.LayerName,
+                DrawingLayers = [finalKeyByFile[identity.FilePath]],
+                Fill = conductive ? ViaFillKind.Plated : null,
+                Plated = plated,
+                SpanFromLayer = SpanEndName(identity.FilePath, conductive, conductorEntries, spans, true),
+                SpanToLayer = SpanEndName(identity.FilePath, conductive, conductorEntries, spans, false),
+                WallThicknessDbu = conductive ? ViaDefaults.PlatedWallThicknessDbu(destDbuPerMicron) : null,
+            });
+            gerberDrillLayers++;
+            if (conductive) platedViaEntries++;
+            messages.Add(
+                $"{identity.FileName}: drill holes written as Gerber, read as flashes on '{identity.LayerName}' — " +
+                (conductive
+                    ? $"added to the stackup as a plated via layer spanning {SpanEndName(identity.FilePath, true, conductorEntries, spans, true) ?? "the board"}" +
+                      $" to {SpanEndName(identity.FilePath, true, conductorEntries, spans, false) ?? "the board"}, so every hole on it is a barrel."
+                    : "added to the stackup as a NON-PLATED drill layer, so its holes are not conductors."));
         }
 
         // GI3 R-gi3-4 — said ONCE for the whole import, not once per drill file: it is one fact about
@@ -1303,8 +1357,11 @@ public static class GerberImport
             ? $"a via is written as a copper flash PLUS a drill hit, and the two were rejoined into " +
               $"{vias:N0} via(s) because the drill data came with the artwork — a flash whose hole was " +
               "not in the set stays a plain pad"
-            : "a via is written as a copper flash PLUS a drill hit; with no drill file in this set, " +
-              "every via in the source design is here as its copper pad alone");
+            : gerberDrillLayers > 0
+                ? "a via is written as a copper flash PLUS a drill hit; this set's holes came as a Gerber " +
+                  "drawing, so each is a barrel on its drill layer beside the copper pad it was drawn with"
+                : "a via is written as a copper flash PLUS a drill hit; with no drill file in this set, " +
+                  "every via in the source design is here as its copper pad alone");
         messages.Add(
             "What this format cannot carry back, permanently — this is the format's limit, not the " +
             "reader's: " + string.Join("; ", losses) + ".");

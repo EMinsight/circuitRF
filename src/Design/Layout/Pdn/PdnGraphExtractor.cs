@@ -1484,25 +1484,50 @@ internal sealed class GraphBuild(
                 !landing.Contains(i) &&
                 _spreadingPieceNodes[i].Any(n => Reaches(all, sourceNodes, [n])));
 
-            // IN THE BOARD'S OWN UNIT, both the size and the vertex — this row used to read a
-            // millimetre size against a DBU vertex, two units in one clause, on a board that reads
-            // in neither (owner, 2026-09-20).
-            string where = onPath is null
-                ? "copper the fast model classified as spreading"
-                : $"a {fmt.Length(onPath.Bounds.MaxX - onPath.Bounds.MinX)} × " +
-                  $"{fmt.Length(onPath.Bounds.MaxY - onPath.Bounds.MinY)} region on " +
-                  $"{onPath.Region.Describe(fmt)}";
+            // ── WHAT HAPPENED AND WHAT TO DO FIRST, THE MEASUREMENT AFTER (2026-09-27) ────────────
+            //
+            // This used to be one 150-word paragraph that named the region by its GDS layer number
+            // ("layer 1/0"), mixed µm and mm, and put the two remedies in the middle of the
+            // closed-form argument — and a board designer's whole reaction to it was a question
+            // mark. The first line now says what happened and the two things that answer it; the
+            // region, the measurement and the reason follow as their own lines, every length in
+            // the board's own unit and the layer by its technology name. The REFUSAL is unchanged:
+            // still no number, because the number the closed form would give here is optimistic.
+            var tech = request.Technology;
+            var lines = new List<string>
+            {
+                $"Rail '{request.Rail.Name}' reaches {load.Anchor.Describe(fmt)} only through " +
+                "spreading copper, which the fast model does not price. Run Accuracy, or — if you " +
+                "know the current follows a path across that copper — set the region's class to " +
+                "Trace on the Class tab.",
+            };
 
-            return
-                $"Rail '{request.Rail.Name}' reaches {load.Anchor.Describe(fmt)} " +
-                (isCut ? "only through " : "only through spreading copper, including ") +
-                $"{where}, which the fast model read as spreading rather than as a trace. The " +
-                "closed form has no bounded error across copper the current fans out in, and the " +
-                "error it would make is OPTIMISTIC — so the fast model produces no number here " +
-                "rather than a smaller one. Run Accuracy, which meshes it; or, if you know the " +
-                "current on this board follows a path across that region, force it to 'trace' on " +
-                "the class tab and the fast reading will price it as one." +
-                (onPath is null ? "" : $" What was measured: {onPath.Reason}");
+            if (onPath is not null)
+            {
+                lines.Add(
+                    $"{(isCut ? "Region" : "Largest region on the path")}: " +
+                    $"{fmt.Length(onPath.Bounds.MaxX - onPath.Bounds.MinX)} × " +
+                    $"{fmt.Length(onPath.Bounds.MaxY - onPath.Bounds.MinY)} on " +
+                    $"{onPath.Region.Describe(fmt, tech)}.");
+
+                string narrowest = onPath.MinimumFeatureDbu > 0
+                    ? $", narrowest copper {fmt.Length(onPath.MinimumFeatureDbu)}"
+                    : "";
+                lines.Add(onPath.Squares > 0
+                    ? $"Measured: about {fmt.Metres(onPath.EquivalentLengthMetres)} long × " +
+                      $"{fmt.Metres(onPath.EquivalentWidthMetres)} wide{narrowest} — " +
+                      $"{onPath.Squares:0.#} squares, below the {request.Graph.TraceSquaresThreshold:0.#} " +
+                      "the fast model needs before it treats copper as a trace."
+                    : "Measured: too compact to have a length and a width — current spreads across " +
+                      "it in every direction.");
+            }
+
+            lines.Add(
+                "Why no number: current fans out across copper of this shape, and the trace formula " +
+                "would report too small a drop there — so the fast model gives none rather than an " +
+                "optimistic one. Accuracy meshes the copper and answers.");
+
+            return string.Join("\n", lines);
         }
 
         return null;
@@ -2031,7 +2056,7 @@ internal sealed class GraphBuild(
         {
             var fmt = request.LengthFormat;
             _refusal =
-                $"The {(c.IsReference ? "return" : "rail's")} copper on {c.Region.Describe(fmt)}, " +
+                $"The {(c.IsReference ? "return" : "rail's")} copper on {c.Region.Describe(fmt, request.Technology)}, " +
                 $"{fmt.Length(w)} × {fmt.Length(h)}, has {entries.Count} port pad(s) on it, and " +
                 $"meshing each one finely enough to price the current spreading out of it would take " +
                 $"{(double)nx * ny:N0} cells, over the fast model's ceiling of " +

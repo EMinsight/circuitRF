@@ -94,8 +94,59 @@ public static class CrashReporter
             AppDomain.CurrentDomain.ProcessExit        += (_, _) => MarkCleanExit();
             AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
             TaskScheduler.UnobservedTaskException      += OnUnobservedTaskException;
+            AppDomain.CurrentDomain.FirstChanceException += OnFirstChanceException;
         }
         catch { /* nothing to do if the runtime refuses the subscription */ }
+    }
+
+    // ── Exceptions the toolkit swallows ──────────────────────────────────────────
+    //
+    // An Avalonia two-way binding runs the view model's setter inside a bare `catch { return false; }`
+    // (BindingExpression.WriteValueToSource), so anything thrown underneath a write-back — including
+    // inside the toolkit's own selection or layout code — vanishes without a log line. The 2026-09-27
+    // dropdown crash was exactly that shape: an exception swallowed in one write-back left a ComboBox
+    // half-updated, and the report came from a LATER click, with an empty trail and a stack that said
+    // nothing about the cause. Noting such exceptions as they are thrown puts the cause in the trail.
+    // Narrow by construction — UI thread only, the index/state exception types those failures take, a
+    // toolkit frame on the stack — and capped, so an exception used for control flow cannot flood it.
+
+    private const int MaxToolkitNotes = 25;
+    private static int _toolkitNotes;
+    [ThreadStatic] private static bool _inFirstChance;
+
+    private static void OnFirstChanceException(object? sender, System.Runtime.ExceptionServices.FirstChanceExceptionEventArgs e)
+    {
+        if (_inFirstChance || _uiThreadId == 0 || Environment.CurrentManagedThreadId != _uiThreadId) return;
+        if (Volatile.Read(ref _toolkitNotes) >= MaxToolkitNotes) return;
+        if (e.Exception is not (ArgumentOutOfRangeException or IndexOutOfRangeException
+                                or InvalidOperationException or NullReferenceException)) return;
+        _inFirstChance = true;
+        try
+        {
+            if (ToolkitFrames(new StackTrace(1, false).GetFrames()) is not { } where) return;
+            if (Interlocked.Increment(ref _toolkitNotes) > MaxToolkitNotes) return;
+            Note($"thrown inside the UI toolkit (may be swallowed): {e.Exception.GetType().Name}: {e.Exception.Message} <- {where}");
+        }
+        catch { /* diagnostics never throw */ }
+        finally { _inFirstChance = false; }
+    }
+
+    /// <summary>The first few Avalonia and circuitRF frames, or null when no Avalonia frame is on the
+    /// stack (then the exception is ours to handle or report, not the toolkit's to swallow).</summary>
+    internal static string? ToolkitFrames(StackFrame[] frames)
+    {
+        var parts = new List<string>(6);
+        bool toolkit = false;
+        foreach (var f in frames)
+        {
+            if (f.GetMethod() is not { DeclaringType: { } type } m) continue;
+            string ns = type.Namespace ?? "";
+            bool isToolkit = ns.StartsWith("Avalonia", StringComparison.Ordinal);
+            toolkit |= isToolkit;
+            if ((isToolkit || ns.StartsWith("CircuitRF", StringComparison.Ordinal)) && parts.Count < 6)
+                parts.Add($"{type.Name}.{m.Name}");
+        }
+        return toolkit ? string.Join(" <- ", parts) : null;
     }
 
     /// <summary>

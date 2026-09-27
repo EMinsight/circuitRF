@@ -5,8 +5,9 @@ using Xunit;
 namespace CircuitRF.Ui.Tests;
 
 /// <summary>
-/// Update Layout from Schematic and Update Schematic from Layout carry a component's ROTATION across,
-/// but only from the side that was turned since the last sync (<see cref="SchematicLayoutOrientation"/>).
+/// Update Layout from Schematic carries a symbol's ROTATION to its placement when the symbol was turned
+/// since the last sync (<see cref="SchematicLayoutOrientation"/>). Update Schematic from Layout never
+/// turns a symbol: a board angle is not a drawing orientation (field report, 2026-09-27).
 /// </summary>
 public sealed class RotationSyncTests : IDisposable
 {
@@ -96,14 +97,14 @@ public sealed class RotationSyncTests : IDisposable
         var (lx, ly) = LayoutPinDirection(layout.Instances[0], tech);
         Assert.Equal((Math.Sign(sx), -Math.Sign(sy)), (Math.Sign(lx), Math.Sign(ly)));   // the sheet is Y-down
 
-        // …and the reverse: a component created from that placement faces the way the symbol did.
-        // Unlinked, and declared a resistor the way a part dropped from the Library palette is — a
-        // bare land pattern is artwork and creates nothing.
+        // …and the reverse does NOT: a component created from that placement takes the symbol's
+        // default facing whatever the board angle. Unlinked, and declared a resistor the way a part
+        // dropped from the Library palette is — a bare land pattern is artwork and creates nothing.
         layout.Instances[0].SchematicId = null;
         layout.Instances[0].PartKind = nameof(SymbolKind.Resistor);
         var fresh = new SchematicEditModel { SchematicDirectory = _schematicDir };
         LayoutToSchematicGenerator.Run(layout, fresh, _layoutDir, tech).Command!.Execute();
-        Assert.Equal(rot, fresh.Components.Single().Rotation);
+        Assert.Equal(SymbolRotation.R0, fresh.Components.Single().Rotation);
     }
 
     private static (double X, double Y) SchematicPinDirection(EditableComponent c)
@@ -125,7 +126,7 @@ public sealed class RotationSyncTests : IDisposable
     }
 
     [Fact]
-    public void ATurnOnEitherSide_IsCarried_AndATurnOnTheOtherSideIsNotReverted()
+    public void ASchematicTurnIsCarried_ABoardTurnNeverTurnsTheSymbol()
     {
         var schematic = new SchematicEditModel { SchematicDirectory = _schematicDir };
         var comp = Mlin("MLIN1");
@@ -152,14 +153,18 @@ public sealed class RotationSyncTests : IDisposable
         Assert.Null(pushed.Command);
         Assert.Equal(90.0, layout.Instances[0].RotationDegrees);
 
-        // …and Update Schematic carries it back: 180° → 90° is a clockwise quarter turn, R180 → R270.
+        // …and so does Update Schematic: the symbol keeps the orientation it was drawn with.
         var back = Back(layout, schematic);
-        Assert.Equal(SymbolRotation.R270, comp.Rotation);
-        Assert.Contains(back.Lines, l => l.Text.Contains("rotation changed from R180 to R270 (from layout)"));
+        Assert.Null(back.Command);
+        Assert.Equal(SymbolRotation.R180, comp.Rotation);
 
-        // Nothing left to carry either way.
+        // The board's turn is now the baseline, so the next schematic turn is applied ON TOP of it
+        // (90° turned a further quarter clockwise) rather than overwriting it.
         Assert.Null(Forward(schematic, layout).Command);
-        Assert.Null(Back(layout, schematic).Command);
+        comp.Rotation = SymbolRotation.R270;
+        var again = Forward(schematic, layout);
+        Assert.Equal(0.0, layout.Instances[0].RotationDegrees);
+        Assert.DoesNotContain(again.Lines, l => l.Text.Contains("being overwritten"));
     }
 
     /// <summary>A placement made before rotations were linked: nothing says which side's orientation

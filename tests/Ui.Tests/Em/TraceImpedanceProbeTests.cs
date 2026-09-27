@@ -1,7 +1,7 @@
 // TraceImpedanceProbe — the layout's "what Z0 is this trace?" review tool (round-7 field report).
 // One test per claim: it agrees with an independent closed form for microstrip and for grounded
-// coplanar waveguide, it refuses a pad and a tee rather than printing a width they do not have, and
-// it flags a return path that breaks under the trace.
+// coplanar waveguide, it refuses a pad and a tee rather than printing a width they do not have, it
+// measures a line only three widths long, and it flags a return path that breaks under the trace.
 
 using CircuitRF.Core.Devices.Microstrip;
 using CircuitRF.Design.Layout;
@@ -128,6 +128,32 @@ public class TraceImpedanceProbeTests
 
         Assert.False(r.Ok);
         Assert.Contains("not a line", r.Refusal);
+    }
+
+    /// <summary>A wide grounded coplanar line cut into sections by series parts (field report: 2.83 mm
+    /// on 1.5 mm, G 2.026 mm, 70 µm copper) is about three widths long between them. It is a line, and a
+    /// click near a section's end is measured further in, not refused as a pad. An independent line
+    /// calculator gives 49.0 Ω for these dimensions.</summary>
+    [Fact]
+    public void AWideLineThreeWidthsLong_IsMeasured_EvenClickedNearItsEnd()
+    {
+        const double w = 2830, g = 2026;
+        var tech = Tech(70, 1524, 4.4);
+        LayoutShape[] shapes =
+        [
+            Rect(Top, -12000, -w / 2, -5300, w / 2),
+            Rect(Top, -4300, -w / 2, 4300, w / 2),   // 8.6 mm: 3.04 widths, a part at each end
+            Rect(Top, 5300, -w / 2, 12000, w / 2),
+            Rect(Top, -12000, w / 2 + g, 12000, 9000),
+            Rect(Top, -12000, -9000, 12000, -w / 2 - g),
+            Rect(Gnd, -14000, -14000, 14000, 14000),
+        ];
+
+        var r = Probe(shapes, tech, 2600, 200);
+
+        Assert.True(r.Ok, r.Refusal);
+        Assert.Equal(49.0, r.Z0Ohms, 49.0 * 0.03);
+        Assert.Contains(r.Notes, n => n.Contains("further along the trace"));
     }
 
     [Fact]

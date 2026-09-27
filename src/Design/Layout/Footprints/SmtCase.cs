@@ -136,8 +136,12 @@ public sealed record SmtCase(
         SmtCaseFamily.WireJumper =>
             $"{Code} ({MetricTwin})   {Mm(BodyLengthMm)} mm pad pitch",
 
-        _ => $"{Code} (metric {MetricTwin})   {Mm(BodyLengthMm)} x {Mm(BodyWidthMm)} mm",
+        _ => $"{Code} (metric {MetricTwin})   {Mm(BodyLengthMm)} x {Mm(BodyWidthMm)} mm" + AlsoKnownAs(),
     };
+
+    // A series alias is how many designers know the body, so the picker row carries it.
+    private string AlsoKnownAs()
+        => SmtCaseTable.AliasesOf(Code) is { Count: > 0 } a ? "   also " + string.Join(", ", a) : "";
 
     // Two decimals is the reading of a case size everywhere else in the industry ("1.00 x 0.50 mm");
     // three only where a third one is real, which on this table is 008004's 0.125 mm alone. Formatting
@@ -190,6 +194,18 @@ public static class SmtCaseTable
         new SmtCase("2220",   "5750", SmtCaseFamily.Mlcc,            5.70m,  5.00m,  0.250m, 0.650m, 0.250m),
         new SmtCase("2225",   "5763", SmtCaseFamily.Mlcc,            5.70m,  6.30m,  0.250m, 0.650m, 0.250m),
 
+        // ── Square high-Q RF chips ─────────────────────────────────────────────────────────────
+        // The two porcelain/NP0 bodies RF boards use for coupling, matching and bypass at power:
+        // 0.055" and 0.110" square. Better known by their series codes (100A/800A and 100B/800B),
+        // which SmtCaseTable accepts as aliases — see _aliases. 0.110" is 2.794 mm, written 2.80 as
+        // its metric twin is. The drawing states L as +0.38/-0.25
+        // (+0.51/-0.25 on the larger body) and W as ±0.38; the one symmetric tolerance column takes
+        // the LARGER side, so the maximum body — which sets the toe of the land — is exact and the
+        // minimum is conservative. The band is 0.25 +0.25/-0.13 mm and 0.38 ±0.25 mm respectively.
+        //                Code      twin    family                    L        W       tol      T       Ttol
+        new SmtCase("0505",   "1414", SmtCaseFamily.Chip,            1.40m,  1.40m,  0.380m, 0.300m, 0.200m),
+        new SmtCase("1111",   "2828", SmtCaseFamily.Chip,            2.80m,  2.80m,  0.510m, 0.380m, 0.250m),
+
         // ── Moulded tantalum / polymer, EIA metric codes ────────────────────────────────────────
         // The twin column is the LETTER (R-fp1-1b) and the code's trailing group is the HEIGHT. The
         // termination band is narrower than the body on all of them, which is why they are the only
@@ -233,10 +249,40 @@ public static class SmtCaseTable
     /// <summary>Every code, in table order — what a refusal lists (R-fp1-5a).</summary>
     public static IReadOnlyList<string> Codes { get; } = _all.Select(c => c.Code).ToArray();
 
-    private static readonly Dictionary<string, SmtCase> _byCode =
-        _all.ToDictionary(c => c.Code, StringComparer.OrdinalIgnoreCase);
+    /// <summary>
+    /// Series codes a designer writes on a bill of materials for a body this table already has, each
+    /// with the table code it means. <b>An alias is a second NAME, never a second case</b>: it
+    /// resolves to the table row, so <c>smt:100B</c> parses as <c>smt:1111</c> and a board holding
+    /// both spellings shares one generated land pattern rather than two that could drift apart.
+    /// The bodies were checked against each series' outline drawing: 0.055" and 0.110" square for
+    /// the A and B cases, and 0603 / 0805 for the S and F bodies (1.60 x 0.81 and 2.01 x 1.24 mm).
+    /// </summary>
+    private static readonly (string Alias, string Code)[] _aliases =
+    [
+        ("100A", "0505"), ("800A", "0505"),
+        ("100B", "1111"), ("800B", "1111"),
+        ("600S", "0603"),
+        ("600F", "0805"),
+    ];
 
-    /// <summary>The case with this code, or null. Case-insensitive; never throws.</summary>
+    private static readonly Dictionary<string, SmtCase> _byCode = BuildIndex();
+
+    private static Dictionary<string, SmtCase> BuildIndex()
+    {
+        var byCode = _all.ToDictionary(c => c.Code, StringComparer.OrdinalIgnoreCase);
+        foreach (var (alias, code) in _aliases)
+            byCode.Add(alias, byCode[code]);   // throws at type init if an alias shadows a code
+        return byCode;
+    }
+
+    /// <summary>The case with this code or series alias, or null. Case-insensitive; never
+    /// throws.</summary>
     public static SmtCase? Find(string? code)
         => code is { Length: > 0 } && _byCode.TryGetValue(code.Trim(), out var c) ? c : null;
+
+    /// <summary>The series aliases that name this case, in table order — empty for most rows. What
+    /// <see cref="SmtCase.Display"/> prints so a picker can be searched by either name.</summary>
+    public static IReadOnlyList<string> AliasesOf(string code)
+        => [.. _aliases.Where(a => string.Equals(a.Code, code, StringComparison.OrdinalIgnoreCase))
+                       .Select(a => a.Alias)];
 }

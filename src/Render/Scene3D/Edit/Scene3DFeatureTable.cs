@@ -60,7 +60,19 @@ public sealed class Scene3DFeatureTable
 
     /// <summary>brief-em3d-67 R-em3d67-2 — the object's NAMED edges: runs of these segments (a managed object), or the
     /// kernel's edge table (a kernel object, whose snapping then reads it). Empty when the builder gave no names.</summary>
-    public Scene3DEdges Named { get; private set; } = Scene3DEdges.Empty;
+    /// <remarks>A managed object's runs are made on FIRST READ, not with the table (designer feedback 02). Naming every run of
+    /// every object in the build took most of a cold build on an imported board — a copper pour with ~18,000 hole vertices
+    /// is ~18,000 side faces to pair and walk — and delayed the first picture by seconds for something only Edge mode, a
+    /// fillet and a kernel snap ever read, one hovered object at a time. The kernel's table is cheap and stays eager.</remarks>
+    public Scene3DEdges Named => _named?.Value ?? Scene3DEdges.Empty;
+
+    private Lazy<Scene3DEdges>? _named;
+
+    /// <summary>Whether <see cref="Named"/> is the kernel's edge table — known without making a managed object's runs.</summary>
+    public bool NamedFromKernel { get; private set; }
+
+    /// <summary>Whether <see cref="Named"/> has been made yet — what shows a build no longer makes it.</summary>
+    public bool NamedMade => _named?.IsValueCreated ?? false;
 
     /// <summary>Every feature it holds: corners, edges, midpoints and centres.</summary>
     public int FeatureCount => Vertices.Length + 2 * EdgeA.Length + HasCentre.Count(h => h);
@@ -85,8 +97,17 @@ public sealed class Scene3DFeatureTable
             Interlocked.Increment(ref _builds);
             var t = Build(m, sheet);
             if (edges is not null && !ReferenceEquals(t, Empty))
-                t.Named = edges.Kernel is { } k ? Scene3DEdges.OfKernel(k, edges.FaceNames, t.FaceCount)
-                                                : Scene3DEdges.OfSegments(t, edges.FaceNames, edges.ToOwn);
+            {
+                if (edges.Kernel is { } k)
+                {
+                    var named = Scene3DEdges.OfKernel(k, edges.FaceNames, t.FaceCount);
+                    t._named = new Lazy<Scene3DEdges>(named);
+                    t.NamedFromKernel = true;
+                }
+                else
+                    t._named = new Lazy<Scene3DEdges>(() => Scene3DEdges.OfSegments(t, edges.FaceNames, edges.ToOwn),
+                                                      LazyThreadSafetyMode.ExecutionAndPublication);
+            }
             return t;
         });
 

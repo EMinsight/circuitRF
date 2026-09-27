@@ -145,20 +145,22 @@ public static class Em3dGenerator
     /// relative to the <c>.cem</c>'s workspace, the technology relative to the layout's), which this
     /// method does not repeat.
     /// </summary>
+    /// <param name="displaySlabs">True for a PLANAR setup previewed in 3D: every laterally unbounded slab is drawn to
+    /// <see cref="SlabLateralBound"/>'s shape instead of across the air box — for viewing only, never for a solve.</param>
     /// <param name="wires">The bond wires to include. Null — the ordinary case — takes the
     /// <c>.wBond</c> stem-paired with the layout (WB40), if it has one.</param>
     public static Em3dGenerationResult Generate(EmSetup setup, EmLayoutSource source, Technology tech,
-                                                Em3dWireSource? wires = null)
+                                                Em3dWireSource? wires = null, bool displaySlabs = false)
     {
         ArgumentNullException.ThrowIfNull(setup);
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(tech);
-        return new Run(setup, source, tech, wires).Go();
+        return new Run(setup, source, tech, wires, displaySlabs).Go();
     }
 
     // ── One generation ─────────────────────────────────────────────────────────────────────────
 
-    private sealed class Run(EmSetup setup, EmLayoutSource source, Technology tech, Em3dWireSource? wires)
+    private sealed class Run(EmSetup setup, EmLayoutSource source, Technology tech, Em3dWireSource? wires, bool displaySlabs)
     {
         // brief-em3d-42 R-em3d42-2 — the geometry lives in Em3dLayoutSolids now; this class adds the sweep,
         // the ports, the air box, the air above the stack and the terminals around its stages. The notes
@@ -193,7 +195,7 @@ public static class Em3dGenerator
             // ── The geometry, up to the bond wires (Em3dLayoutSolids' first stage) ────────────
             var earlier = _notes;
             _g = new Em3dLayoutSolids.Builder(source, tech, wires,
-                new Em3dLayoutSolidsOptions(fMax, _tempC, Instance: false) { RegionSetup = setup, FloorAllowed = !floorStatedAway });
+                new Em3dLayoutSolidsOptions(fMax, _tempC, Instance: false) { RegionSetup = setup, FloorAllowed = !floorStatedAway, DisplaySlabs = displaySlabs });
             _g.Notes.AddRange(earlier);
             _notes = _g.Notes;
             if (_g.Prepare() is { } geometryRefusal) return No(geometryRefusal);

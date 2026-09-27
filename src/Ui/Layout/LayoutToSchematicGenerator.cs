@@ -61,6 +61,22 @@ public static class LayoutToSchematicGenerator
         public bool NothingChanged => Command is null;
     }
 
+    /// <summary>The kind a reference designator's letter prefix names — C, R or L and nothing else — or
+    /// null. Used ONLY for a placement whose linked component the schematic no longer has.</summary>
+    internal static SymbolKind? GuessKindFromName(string name)
+    {
+        int n = 0;
+        while (n < name.Length && char.IsAsciiLetter(name[n])) n++;
+        if (n == 0 || n == name.Length || !char.IsAsciiDigit(name[n])) return null;
+        return name[..n].ToUpperInvariant() switch
+        {
+            "C" => SymbolKind.Capacitor,
+            "R" => SymbolKind.Resistor,
+            "L" => SymbolKind.Inductor,
+            _   => null,
+        };
+    }
+
     /// <summary>Public lookup for the same generator-id → SymbolKind map §5's Properties Inspector
     /// parameter list uses to order a PCell instance's parameters the same way the schematic's own
     /// symbol declares them (<c>ComponentTypeRegistry.DefaultParameters</c>), rather than an arbitrary
@@ -89,8 +105,10 @@ public static class LayoutToSchematicGenerator
     /// whatever unit it was authored with — the schematic side is never silently rewritten to the
     /// technology default on every push, only a brand-new field picks one.
     /// </param>
-    public static GenerationResult Run(LayoutView source, SchematicEditModel schematic, string layoutBaseDir, Technology? technology = null)
+    public static GenerationResult Run(LayoutView source, SchematicEditModel schematic, string layoutBaseDir,
+                                       Technology? technology = null, Action? layoutChanged = null)
     {
+        var linksBefore = CaptureLinks(source);
         var lines = new List<SchematicToLayoutGenerator.ReportLine>();
         var noSymbol = new List<string>();
 
@@ -101,76 +119,72 @@ public static class LayoutToSchematicGenerator
                       ?? WorkspaceRootFinder.WorkspaceDirOf(layoutBaseDir);
         IUiCommand? chain = null;
         int created = 0, updated = 0, unchanged = 0, overwritten = 0;
-        int unlinkedDiffering = 0;
         bool linksRecorded = false;
 
-        // The pin alignment between a component's symbol and the cell its placement draws —
-        // SchematicLayoutOrientation.PinAlignment, which is why an upright resistor symbol and a flat
-        // land pattern still face the same way.
-        VisualOrientation Alignment(EditableComponent c, LayoutInstance li) =>
-            CellLayoutResolver.Resolve(li.CellRef, layoutBaseDir) is { State: CellLayoutState.Resolved, View: { } cell }
-                ? SchematicToLayoutGenerator.PinAlignment(c, schematic.SchematicDirectory, cell, technology)
-                : new VisualOrientation(false, 0);
-
-        // A new component faces the way its placement faces, to the nearest quarter turn, and is
-        // linked so a later turn on either side is carried across.
-        void FaceLikeLayout(EditableComponent c, LayoutInstance li)
+        // A PLACEMENT ANGLE IS NOT A SCHEMATIC ORIENTATION (field report, 2026-09-27). A part is
+        // turned on a board to fit the copper; the same part is turned on a sheet to make the drawing
+        // read. Neither says anything about the other, so this command never turns a symbol: an
+        // existing component keeps the rotation and mirror it was drawn with, and a component this
+        // run CREATES is placed at the symbol's default facing, the way dropping it from the palette
+        // places it. Until then a placement turned on the board turned its symbol on the next run,
+        // and re-pointing a part at another case (which can turn it) scrambled the drawing.
+        //
+        // The orientation link is still maintained — Update Layout from Schematic carries a symbol
+        // turned since the last sync, and it reads that baseline. What this run advances is only the
+        // LAYOUT half, to where the placement is now: the board's own turn is then the baseline a later
+        // schematic turn is applied to, rather than something that turn would overwrite. The schematic
+        // half is left alone, so a symbol turned but not yet pushed is still pushed.
+        void LinkAtDefaultFacing(EditableComponent c, LayoutInstance li)
         {
-            var l = SchematicLayoutOrientation.FromLayout(li);
-            var symbolFacing = l.Compose(Alignment(c, li).Inverse());
-            int deg = SchematicLayoutOrientation.ToSchematicDeg(symbolFacing, out _);
-            c.Rotation = (SymbolRotation)deg;
-            c.MirrorX  = symbolFacing.Mirror;
-            li.OrientationLink = SchematicLayoutOrientation.Link(deg, symbolFacing.Mirror, l);
+            c.Rotation = SymbolRotation.R0;
+            c.MirrorX  = false;
+            li.OrientationLink = SchematicLayoutOrientation.Link(0, false, SchematicLayoutOrientation.FromLayout(li));
             linksRecorded = true;
         }
 
-        // The reverse of SchematicToLayoutGenerator.CarryRotation, with the same rules and roles
-        // swapped: a placement turned since the last sync turns its component by the same world-frame
-        // change; a component turned only in the schematic is left alone for Update Layout to carry.
-        // True when the component is being turned.
-        bool CarryRotationBack(LayoutInstance li, EditableComponent c)
+        void AdvanceLayoutBaseline(LayoutInstance li, EditableComponent c)
         {
-            int sDeg = (int)c.Rotation;
-            var sNow = SchematicLayoutOrientation.FromSchematic(sDeg, c.MirrorX);
             var lNow = SchematicLayoutOrientation.FromLayout(li);
-
-            if (li.OrientationLink is not { } b)
-            {
-                li.OrientationLink = SchematicLayoutOrientation.Link(sDeg, c.MirrorX, lNow);
-                linksRecorded = true;
-                if (!sNow.Compose(Alignment(c, li)).SameAs(lNow)) unlinkedDiffering++;
-                return false;
-            }
-
-            var lb = new VisualOrientation(b.LayoutMirror, b.LayoutDeg);
-            if (lNow.SameAs(lb)) return false;
-
-            var sb = SchematicLayoutOrientation.FromSchematic(b.SchematicDeg, b.SchematicMirror);
-            var target = SchematicLayoutOrientation.Carry(lNow, lb, sb);
-            int tDeg = SchematicLayoutOrientation.ToSchematicDeg(target, out bool exact);
-            var link = SchematicLayoutOrientation.Link(tDeg, target.Mirror, lNow);
-            linksRecorded = true;
+            var link = li.OrientationLink is { } b
+                ? SchematicLayoutOrientation.Link(b.SchematicDeg, b.SchematicMirror, lNow)
+                : SchematicLayoutOrientation.Link((int)c.Rotation, c.MirrorX, lNow);
+            if (Equals(li.OrientationLink, link)) return;
             li.OrientationLink = link;
-            if (tDeg == sDeg && target.Mirror == c.MirrorX) return false;
-
-            bool schematicMoved = !sNow.SameAs(sb);
-            chain = Chain(chain, new Commands.Schematic.SetOrientationCommand(schematic, c, (SymbolRotation)tDeg, target.Mirror));
-            lines.Add(new SchematicToLayoutGenerator.ReportLine(c.InstanceName,
-                $"{c.InstanceName} — rotation changed from {SchematicLayoutOrientation.DescribeSchematic(sDeg, c.MirrorX)} " +
-                $"to {SchematicLayoutOrientation.DescribeSchematic(tDeg, target.Mirror)}" +
-                (schematicMoved ? " (a schematic rotation is being overwritten)" : " (from layout)") +
-                (exact ? "" : $" — the placement is at {SchematicLayoutOrientation.Describe(lNow)}, which a symbol " +
-                              "cannot take, so it was given the nearest quarter turn"),
-                schematicMoved ? SchematicToLayoutGenerator.ReportSeverity.Warning : SchematicToLayoutGenerator.ReportSeverity.Info));
-            if (schematicMoved) overwritten++;
-            return true;
+            linksRecorded = true;
         }
 
         // brief-footprint-6 R-fp6-1b: placements that ARE bare land patterns. Counted rather than
         // listed — a hand-authored board can hold a hundred of them, and a hundred identical lines is
         // a report nobody reads.
         int landPatterns = 0;
+        var danglingLinks = new List<string>();
+
+        // A land pattern re-pointed on the board (the Footprint picker) is a different PART SIZE, and
+        // the schematic's Footprint parameter is where the part size is stated — so it follows. It was
+        // left behind before, and the next Update Layout from Schematic then put the old case back.
+        // Only a built-in land pattern is compared: its generator id IS the canonical Footprint
+        // spelling (R-fp1-2b), so the two are equal exactly when they name the same artwork, and a
+        // stored reference that already means it is never rewritten (R-fp2-1c). True when changed.
+        bool PushFootprintBack(EditableComponent c, string generatorId)
+        {
+            if (!FootprintRef.IsBuiltInReference(generatorId)) return false;
+            string? stated = c.Footprint;
+            if (stated is not null && FootprintRef.TryParse(stated, out var parsed, out _)
+                && string.Equals(parsed!.ToString(), generatorId, StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            // No Footprint row: the component reaches its artwork another way (a cell of its own), and
+            // adding one beside it would give it two.
+            if (c.Parameters.FirstOrDefault(p =>
+                    p.Name.Equals(ArtworkParameters.FootprintName, StringComparison.OrdinalIgnoreCase)) is not { } param)
+                return false;
+            chain = Chain(chain, new Commands.Schematic.EditParameterCommand(schematic, param, generatorId, param.Unit));
+            lines.Add(new SchematicToLayoutGenerator.ReportLine(c.InstanceName,
+                $"{c.InstanceName} — footprint changed from {EditableComponent.FootprintDisplayName(stated)} " +
+                $"to {EditableComponent.FootprintDisplayName(generatorId)} (from layout)",
+                SchematicToLayoutGenerator.ReportSeverity.Info));
+            return true;
+        }
 
         var bySchematicId = new Dictionary<string, EditableComponent>(StringComparer.Ordinal);
         foreach (var c in schematic.Components)
@@ -210,8 +224,8 @@ public static class LayoutToSchematicGenerator
                 // linked to a component.
                 if (inst.SchematicId is { Length: > 0 } psid && bySchematicId.TryGetValue(psid, out var plainComp))
                 {
-                    if (CarryRotationBack(inst, plainComp)) updated++;
-                    else unchanged++;
+                    AdvanceLayoutBaseline(inst, plainComp);
+                    unchanged++;
                     continue;
                 }
 
@@ -221,7 +235,7 @@ public static class LayoutToSchematicGenerator
                 placed.X = (newSlot % GridCols) * GridPitchSchematic;
                 placed.Y = (newSlot / GridCols) * GridPitchSchematic;
                 newSlot++;
-                FaceLikeLayout(placed, inst);
+                LinkAtDefaultFacing(placed, inst);
 
                 chain = Chain(chain, new Commands.Schematic.PlaceComponentCommand(schematic, placed));
                 inst.SchematicId = placed.InstanceName;
@@ -258,19 +272,30 @@ public static class LayoutToSchematicGenerator
             // success having ignored every one of them — the same failure the ordinary-cell path above
             // was fixed for in 2026-08-17.
             SymbolKind? layoutFirstPart = null;
+            string? guessedName = null;
             if (!builtIn && kitRef is null)
             {
                 if (inst.SchematicId is { Length: > 0 } landSid && bySchematicId.TryGetValue(landSid, out var landComp))
                 {
-                    if (CarryRotationBack(inst, landComp)) updated++;
+                    AdvanceLayoutBaseline(inst, landComp);
+                    if (PushFootprintBack(landComp, origin.GeneratorId)) updated++;
                     else unchanged++;
                     continue;
                 }
 
                 if (LayoutPartKind.Of(inst) is not { } declared)
                 {
-                    landPatterns++;
-                    continue;
+                    // A placement LINKED to a component this schematic does not have is not bare
+                    // artwork — the board draws that component's name, and to the user it is that
+                    // part. What the component WAS is not recorded on a linked placement (the
+                    // schematic knew), so the kind is GUESSED from the name's prefix (owner decision,
+                    // 2026-09-27) — here and only here: a placement whose component still exists keeps
+                    // the no-guess rule that protects a renamed part (R1 -> Rin). A prefix other than
+                    // C, R or L (FB1, U3) cannot be guessed, and the placement is named instead.
+                    if (inst.SchematicId is not { Length: > 0 } danglingSid) { landPatterns++; continue; }
+                    if (GuessKindFromName(danglingSid) is not { } guessed) { danglingLinks.Add(danglingSid); continue; }
+                    declared = guessed;
+                    guessedName = danglingSid;
                 }
 
                 layoutFirstPart = declared;
@@ -301,7 +326,7 @@ public static class LayoutToSchematicGenerator
                 // name free is R-fp6-4's job; if it was not free anyway, the collision is reported and
                 // the instance is LEFT ALONE rather than renamed.
                 string instanceName;
-                if (layoutFirstPart is not null && inst.RefDes is { Length: > 0 } ownName)
+                if (layoutFirstPart is not null && (guessedName ?? inst.RefDes) is { Length: > 0 } ownName)
                 {
                     if (bySchematicId.ContainsKey(ownName) || claimed.Contains(ownName))
                     {
@@ -331,7 +356,7 @@ public static class LayoutToSchematicGenerator
                 comp.X = (newSlot % GridCols) * GridPitchSchematic;
                 comp.Y = (newSlot / GridCols) * GridPitchSchematic;
                 newSlot++;
-                FaceLikeLayout(comp, inst);
+                LinkAtDefaultFacing(comp, inst);
                 if (kitRef is null)
                     foreach (var dp in ComponentTypeRegistry.DefaultParameters(kind, 0))
                         comp.Parameters.Add(new EditableParameter
@@ -354,9 +379,8 @@ public static class LayoutToSchematicGenerator
                     });
 
                 chain = Chain(chain, new Commands.Schematic.PlaceComponentCommand(schematic, comp));
-                inst.SchematicId = comp.InstanceName; // bookkeeping — not part of the undo entry, mirrors
-                                                       // SchematicPCellSnapshots below (R-L5-13's own note:
-                                                       // "what is reported is what happened").
+                inst.SchematicId = comp.InstanceName; // written now; LayoutLinkCommand puts it in the undo
+                                                       // entry, with SchematicPCellSnapshots below.
                 // R-fp6-3d: linking TRANSFERS the name, it does not copy it. An instance with a
                 // SchematicId stores no RefDes (R-fp4b-1a) — two fields with one meaning drift — and
                 // DisplayRefDes ALREADY prefers SchematicId, so clearing this changes nothing that is
@@ -366,8 +390,13 @@ public static class LayoutToSchematicGenerator
                 // PartKind goes with it on a part, for the same reason: the schematic now knows.
                 if (layoutFirstPart is not null) inst.PartKind = null;
                 created++;
-                lines.Add(new SchematicToLayoutGenerator.ReportLine(comp.InstanceName,
-                    $"{comp.InstanceName} — created from layout", SchematicToLayoutGenerator.ReportSeverity.Info));
+                lines.Add(guessedName is null
+                    ? new SchematicToLayoutGenerator.ReportLine(comp.InstanceName,
+                          $"{comp.InstanceName} — created from layout", SchematicToLayoutGenerator.ReportSeverity.Info)
+                    : new SchematicToLayoutGenerator.ReportLine(comp.InstanceName,
+                          $"{comp.InstanceName} — created from layout as a {kind.ToString().ToLowerInvariant()}, " +
+                          "guessed from its name, because the schematic had lost the part it was linked to. " +
+                          "Its value is the default; set it.", SchematicToLayoutGenerator.ReportSeverity.Warning));
                 source.SchematicPCellSnapshots[comp.InstanceName] = new Dictionary<string, PCellValue>(origin.Parameters);
                 continue;
             }
@@ -418,11 +447,7 @@ public static class LayoutToSchematicGenerator
 
             source.SchematicPCellSnapshots[comp.InstanceName] = new Dictionary<string, PCellValue>(origin.Parameters);
 
-            if (CarryRotationBack(inst, comp))
-            {
-                anyChanged = true;
-                reportedThisInstance = true;
-            }
+            AdvanceLayoutBaseline(inst, comp);
 
             if (anyChanged)
             {
@@ -447,6 +472,25 @@ public static class LayoutToSchematicGenerator
                 "the Library palette to place a part that has one.",
                 SchematicToLayoutGenerator.ReportSeverity.Info));
 
+        // Named, and a Warning: unlike a bare land pattern, this is two documents disagreeing. The
+        // usual cause is a schematic closed without saving while the layout was saved; a C/R/L name is
+        // recreated above, so what reaches this list is a name whose kind cannot be guessed.
+        if (danglingLinks.Count > 0)
+        {
+            const int shown = 12;
+            string names = string.Join(", ", danglingLinks.Take(shown))
+                         + (danglingLinks.Count > shown ? $" and {danglingLinks.Count - shown} more" : "");
+            lines.Add(new SchematicToLayoutGenerator.ReportLine("",
+                $"{names} {(danglingLinks.Count == 1 ? "is" : "are")} linked to " +
+                $"{(danglingLinks.Count == 1 ? "a component" : "components")} this schematic does not have, " +
+                "so nothing was created for " + (danglingLinks.Count == 1 ? "it" : "them") +
+                ": the layout does not record what kind of part each one was. Place " +
+                (danglingLinks.Count == 1 ? "it" : "them") + " in the schematic under the same name " +
+                "and run this again to relink — or, if the schematic was not saved, reopen the version " +
+                "that has them.",
+                SchematicToLayoutGenerator.ReportSeverity.Warning));
+        }
+
         // R-fp6-3f: R-L5-19 stands — this command places and updates components and draws no wires, so
         // a layout-first board back-annotates to correctly named, correctly footprinted, UNCONNECTED
         // parts. That is a BOM round trip, not yet a design flow, and the user is told rather than left
@@ -458,10 +502,10 @@ public static class LayoutToSchematicGenerator
                 "draws no wires, so the parts it created are unconnected.",
                 SchematicToLayoutGenerator.ReportSeverity.Info));
 
-        if (unlinkedDiffering > 0)
-            lines.Add(new SchematicToLayoutGenerator.ReportLine("",
-                SchematicToLayoutGenerator.UnlinkedRotationNote(unlinkedDiffering),
-                SchematicToLayoutGenerator.ReportSeverity.Info));
+        // Only when there IS a schematic edit to undo: a run that merely advanced orientation baselines
+        // changed nothing a user would undo, and stays NothingChanged.
+        if (chain is not null)
+            chain = Chain(new LayoutLinkCommand(source, linksBefore, CaptureLinks(source), layoutChanged), chain);
 
         return new GenerationResult(chain, lines, created, updated, unchanged, overwritten, noSymbol, linksRecorded);
     }
@@ -625,4 +669,41 @@ public static class LayoutToSchematicGenerator
 
     private static IUiCommand Chain(IUiCommand? existing, IUiCommand next)
         => existing is null ? next : new CompositeCommand(existing, next);
+
+    /// <summary>One placement's link to the schematic — everything this command writes on the LAYOUT.</summary>
+    private readonly record struct LinkState(string? SchematicId, string? RefDes, string? PartKind, OrientationLink? Orientation);
+
+    private static (Dictionary<LayoutInstance, LinkState> Links, Dictionary<string, Dictionary<string, PCellValue>> Snapshots)
+        CaptureLinks(LayoutView source)
+        => (source.Instances.ToDictionary(i => i, i => new LinkState(i.SchematicId, i.RefDes, i.PartKind, i.OrientationLink)),
+            new Dictionary<string, Dictionary<string, PCellValue>>(source.SchematicPCellSnapshots, StringComparer.Ordinal));
+
+    /// <summary>
+    /// Puts the layout's links into the SCHEMATIC's undo entry (owner decision, 2026-09-27). The run
+    /// writes them on the layout as it goes, so undoing only the schematic half left placements linked
+    /// to components the undo had just removed — the orphans a later sync could only name. Undo puts the
+    /// links back as they were before the run and Redo as they were after it; both act on the open
+    /// layout's in-memory model and mark it dirty, so nothing is written to a file behind anyone's back.
+    /// A layout closed in between holds its own copy, which this never reaches — and a sync on that copy
+    /// recovers the orphans by their names.
+    /// </summary>
+    private sealed class LayoutLinkCommand(
+        LayoutView source,
+        (Dictionary<LayoutInstance, LinkState> Links, Dictionary<string, Dictionary<string, PCellValue>> Snapshots) before,
+        (Dictionary<LayoutInstance, LinkState> Links, Dictionary<string, Dictionary<string, PCellValue>> Snapshots) after,
+        Action? layoutChanged) : IUiCommand
+    {
+        public string Description => "Update Schematic from Layout";
+        public void Execute() => Apply(after);
+        public void Undo() => Apply(before);
+
+        private void Apply((Dictionary<LayoutInstance, LinkState> Links, Dictionary<string, Dictionary<string, PCellValue>> Snapshots) state)
+        {
+            foreach (var (inst, s) in state.Links)
+                (inst.SchematicId, inst.RefDes, inst.PartKind, inst.OrientationLink) = (s.SchematicId, s.RefDes, s.PartKind, s.Orientation);
+            source.SchematicPCellSnapshots.Clear();
+            foreach (var (k, v) in state.Snapshots) source.SchematicPCellSnapshots[k] = v;
+            layoutChanged?.Invoke();
+        }
+    }
 }

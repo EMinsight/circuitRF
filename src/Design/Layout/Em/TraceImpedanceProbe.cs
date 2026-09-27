@@ -379,6 +379,13 @@ public static class TraceImpedanceProbe
             double sin = Math.Abs(sig.SinTo(e, vx, vy));
             if (sin <= sinTol) continue;
             if (e >= 0 && sig.Length(e) * sin <= tolDrift) continue;
+            // The nearest edge running ACROSS the axis, with the narrowest cut still clean, is where the
+            // copper ends (or turns) less than half a width from the point: say that, not "a bend".
+            if (e == nearest && e != chord0.E0 && e != chord0.E1 && sin >= Math.Cos(ParallelToleranceDeg * Math.PI / 180))
+                return TraceImpedanceResult.Refused(
+                    $"The point at {Pt(x, y)} is within half a width ({Len(0.5 * w)}) of an edge running across " +
+                    "the trace — where the copper ends, meets a pad or turns. Click further along the trace, " +
+                    "at least half its width from that edge.");
             return TraceImpedanceResult.Refused(
                 $"The copper at {Pt(x, y)} is not a straight run: the edges beside the point are not " +
                 $"parallel to one axis (the narrowest cut is {Len(w)} at {axisDeg:0.#}°, but an edge there " +
@@ -386,19 +393,46 @@ public static class TraceImpedanceProbe
                 "trace has no single width. Click on a straight, constant-width part of the trace.");
         }
 
-        // ── 2. uniformity ±W, and copper for ±2W ────────────────────────────────────────────────
-        // Copper must CONTINUE for two widths either way (otherwise the point is on a pad, a land or
-        // a stub), but the width and the centre line are held only over ±W. Round 8's trace narrows
-        // from 381 to 320 µm about 1.4 × its width from where the reviewer clicked; that cut is a
-        // perfectly good cross-section, and a width step that far off is what the section walk below
-        // reports, not a reason to answer nothing.
-        foreach (int k in new[] { -2, 2 })
+        // ── 2. uniformity ±W, on copper at least 2W long ────────────────────────────────────────
+        // Copper must run on for two widths in all (otherwise the point is on a pad, a land or a
+        // stub), and the width and the centre line are held over ±W of the cut. Round 8's trace
+        // narrows from 381 to 320 µm about 1.4 × its width from where the reviewer clicked; that cut
+        // is a perfectly good cross-section, and a width step that far off is what the section walk
+        // below reports, not a reason to answer nothing.
+        // The copper was once required to reach 2W on EACH side of the point — 4W in all — which
+        // refused every section of a wide line cut up by series parts (field report: 2.83 mm wide,
+        // 6.3-8.6 mm between parts, on 1.5 mm). A point within W of where the copper ends now moves
+        // the cut along the axis until ±W fits, and the answer says so.
+        double Reach(int dir)
         {
-            if (sig.ChordAt(cx + k * w * vx, cy + k * w * vy, ux, uy) is null)
-                return TraceImpedanceResult.Refused(
-                    $"The copper at {Pt(x, y)} is not a line: it ends within {Math.Abs(k)} × its width " +
-                    $"({Len(w)}) along its own axis. It is a pad, a via land or a short stub, and a trace " +
-                    "impedance is not defined for it. Click on a trace.");
+            double inside = 0, outside = double.NaN;
+            for (int k = 1; k <= 16; k++)
+            {
+                double s = k * w / 8;
+                if (sig.ChordAt(cx + dir * s * vx, cy + dir * s * vy, ux, uy) is null) { outside = s; break; }
+                inside = s;
+            }
+            if (double.IsNaN(outside)) return inside;
+            for (int k = 0; k < 12; k++)
+            {
+                double s = 0.5 * (inside + outside);
+                if (sig.ChordAt(cx + dir * s * vx, cy + dir * s * vy, ux, uy) is null) outside = s; else inside = s;
+            }
+            return inside;
+        }
+        double ahead = Reach(1), behind = Reach(-1);
+        if (ahead + behind < 2 * (w + tol))
+            return TraceImpedanceResult.Refused(
+                $"The copper at {Pt(x, y)} is not a line: it runs {Len(ahead + behind)} along its own axis, " +
+                $"less than twice its width ({Len(w)}). It is a pad, a via land or a short stub, and a " +
+                "trace impedance is not defined for it. Click on a trace.");
+        double shift = ahead < w + tol ? ahead - (w + tol) : behind < w + tol ? w + tol - behind : 0;
+        var probeNotes = new List<string>();
+        if (shift != 0)
+        {
+            cx += shift * vx; cy += shift * vy;
+            probeNotes.Add($"The point is within one width of where the copper ends, so the cut was taken " +
+                           $"{Len(Math.Abs(shift))} further along the trace, at {Pt(cx, cy)}.");
         }
 
         var widths = new SortedDictionary<double, double> { [0] = w };
@@ -446,7 +480,7 @@ public static class TraceImpedanceProbe
 
         var warnings = new List<string>();
         var flags = new List<string>();
-        var notes = new List<string>();
+        var notes = probeNotes;
         double metresPerDbu = ctx.MetresPerDbu;
 
         if (cut.LowerRef is null && cut.Below.Count > 0)

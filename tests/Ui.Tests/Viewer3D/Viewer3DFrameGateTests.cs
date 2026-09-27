@@ -244,7 +244,9 @@ public sealed class Viewer3DFrameGateTests : IDisposable
 
         Assert.Contains(vm.Scene.Objects, o => o.Kind == Scene3DKind.Conductor);
         Assert.Contains(vm.Scene.Objects, o => o.Kind == Scene3DKind.Port);
-        Assert.Equal(["Planar setup, shown in 3D."], vm.Scene.Notes);
+        Assert.Equal([Viewer3DViewModel.PlanarPreviewNote], vm.Scene.Notes);
+        // Designer feedback 02 Q5: the substrate is drawn to the board's shape, not the air box's, so it is shown.
+        Assert.All(vm.Scene.Objects.Where(o => o.Kind == Scene3DKind.Dielectric), o => Assert.True(o.InitiallyVisible, o.Name));
         Assert.False(vm.MeshAvailable);
         Assert.False(vm.GridAvailable);
     }

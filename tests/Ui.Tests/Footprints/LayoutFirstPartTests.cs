@@ -465,6 +465,95 @@ public sealed class LayoutFirstPartTests : IDisposable
         Assert.Equal("R1", Assert.Single(cell.Vm.Model.Instances).SchematicId);
     }
 
+    // ══ Field report, 2026-09-27 ════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public void ACopyOfALinkedPartIsStillThatKindOfPartAndBackAnnotates()
+    {
+        // A copied resistor never reached the schematic: the copy lost its link (correctly) and with
+        // it the only statement of what it was, so it became bare artwork.
+        var cell = Cell("Board20");
+        Assert.True(cell.Vm.CommitPaletteDrop(SymbolKind.Resistor, 2, 0, 0));
+        Run(cell).Command!.Execute();
+        cell.Vm.OpenSiblingSchematic = _ => cell.Schematic;
+
+        cell.Vm.PasteInstancesInPlace([LayoutGeometry.Clone(cell.Vm.Model.Instances[0])]);
+
+        var copy = cell.Vm.Model.Instances[1];
+        Assert.Equal(("R2", "Resistor"), (copy.DisplayRefDes, copy.PartKind));
+        var result = Run(cell);
+        Assert.Equal(1, result.CreatedCount);
+        result.Command!.Execute();
+        Assert.Equal(SymbolKind.Resistor, cell.Schematic.Components.Single(c => c.InstanceName == "R2").Symbol);
+    }
+
+    [Fact]
+    public void ARePointedAndTurnedPlacementPushesItsCaseBackAndNeverTurnsTheSymbol()
+    {
+        var cell = Cell("Board21");
+        Assert.True(cell.Vm.CommitPaletteDrop(SymbolKind.Inductor, 2, 0, 0));
+        Run(cell).Command!.Execute();
+        var comp = Assert.Single(cell.Schematic.Components);
+        Assert.Equal(SymbolRotation.R0, comp.Rotation);   // created at the default facing, not the board's
+
+        Assert.True(cell.Vm.RetargetSelectedInstanceToFootprint(FootprintRef.For(SmtCaseTable.Find("0603")!)));
+        cell.Vm.Model.Instances[0].RotationDegrees = 90;
+
+        var result = Run(cell);
+        result.Command!.Execute();
+        Assert.Equal("smt:0603@N", comp.Footprint);
+        Assert.Equal((SymbolRotation.R0, false), (comp.Rotation, comp.MirrorX));
+        Assert.Contains(result.Lines, l => l.Text == "L1 — footprint changed from 0201 to 0603 (from layout)");
+        Assert.True(Run(cell).NothingChanged);
+    }
+
+    [Fact]
+    public void APlacementLinkedToAComponentTheSchematicLost_IsRecreatedAsTheKindItsNameSays()
+    {
+        // The schematic lost the parts after they were linked (closed unsaved while the layout was
+        // saved). The kind is guessed from the name — C, R and L only; anything else is named.
+        var cell = Cell("Board22");
+        DropThree(cell);
+        Run(cell).Command!.Execute();
+        cell.Schematic.Components.Clear();
+        cell.Vm.Model.Instances[1].SchematicId = "FB1";
+
+        var result = Run(cell);
+        Assert.Equal(2, result.CreatedCount);
+        Assert.Contains(result.Lines, l => l.Severity == SchematicToLayoutGenerator.ReportSeverity.Warning
+                                        && l.Text.StartsWith("R1 — created from layout as a resistor, guessed from its name"));
+        Assert.Contains(result.Lines, l => l.Text.StartsWith("C1 — created from layout as a capacitor"));
+        Assert.Contains(result.Lines, l => l.Text.StartsWith("FB1 is linked to a component this schematic does not have"));
+
+        result.Command!.Execute();
+        var r1 = Assert.Single(cell.Schematic.Components, c => c.InstanceName == "R1");
+        Assert.Equal((SymbolKind.Resistor, SymbolRotation.R0), (r1.Symbol, r1.Rotation));
+        Assert.Equal(GeneratorOf(cell, 0), r1.Footprint);
+        Assert.Equal("R1", cell.Vm.Model.Instances[0].SchematicId);
+    }
+
+    [Fact]
+    public void UndoingTheSyncInTheSchematic_PutsTheLayoutLinksBack_AndRedoRelinks()
+    {
+        var cell = Cell("Board22");
+        DropThree(cell);
+        var before = cell.Vm.Model.Instances.Select(i => (i.SchematicId, i.RefDes, i.PartKind)).ToList();
+        int layoutTold = 0;
+        var first = LayoutToSchematicGenerator.Run(cell.Vm.Model, cell.Schematic, cell.LayoutDir, cell.Vm.Technology,
+                                                   layoutChanged: () => layoutTold++);
+        first.Command!.Execute();
+        first.Command.Undo();
+
+        Assert.Equal(before, cell.Vm.Model.Instances.Select(i => (i.SchematicId, i.RefDes, i.PartKind)));
+        Assert.True(layoutTold > 0);
+        var again = Run(cell);
+        Assert.Equal(3, again.CreatedCount);
+        Assert.DoesNotContain(again.Lines, l => l.Severity == SchematicToLayoutGenerator.ReportSeverity.Warning);
+
+        first.Command.Execute();   // redo
+        Assert.Equal(["R1", "R2", "C1"], cell.Vm.Model.Instances.Select(i => i.SchematicId));
+    }
+
     // ── Fixture ─────────────────────────────────────────────────────────────────────────────────
 
     private sealed record CellFixture(

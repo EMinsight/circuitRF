@@ -435,6 +435,21 @@ metal on top — bounded by its board outline, the die edge. Its objects are nam
 - **Flatten** replaces an instance with its objects (a layout's become solids; it asks first, stating how
   many). **Group into Cell…** does the reverse for selected objects, without moving them.
 
+### A placed layout's dielectric {#layout-dielectric}
+
+A placed layout's dielectrics are drawn, and they are **part of the problem** Palace and openEMS solve. A
+stackup gives a dielectric no outline, so each slab is cut to one of these, the first that exists:
+
+- The layout's **board outline**, as with the die edge above.
+- The **outline of the copper directly above and below it**, with gaps closed, holes filled and a margin of
+  2 dielectric stack heights past the copper. This keeps the substrate in a coplanar line's gaps and beside
+  every trace, where its fringing field runs.
+- The bounding box of everything drawn, if there is no copper above or below it.
+
+The Messages note for the build says which one each slab took. Draw a board outline when the board's real
+edge matters. The whole rule, and how it differs from a planar setup's laterally infinite dielectric, is
+in [3D EM ▸ How far the dielectric reaches](em-3d.html#dielectrics).
+
 ## Bond wires {#wires}
 
 **Shift+A W** (or *3D ▸ Draw ▸ Wire*). A wire runs between two metal objects: click the one it starts on

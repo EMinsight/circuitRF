@@ -37112,3 +37112,107 @@ cleared when a schematic does (`PointAnalysesAt`) or when that `.c3d` closes (`C
 switch also runs); any other document leaves it, as it leaves the retained schematic. The read-only Show 3D View has
 no setups of its own and does not take the panel. Gate
 `EditorRound5TreeTests.TheAnalysesPanel_ShowsTheActiveC3dsSetups_AndLetsGoWhenItCloses` (fails without the routing).
+
+## Update Schematic from Layout — orientation, copies, re-pointed cases, lost components (2026-09-27)
+
+Field report on an imported power-amplifier board; four findings, one command (`LayoutToSchematicGenerator`).
+
+- **A board angle never turns a symbol.** The reverse half of the orientation link (`CarryRotationBack`) turned a
+  component whenever its placement had been turned since the last sync, and a created component faced the way its
+  placement did. The reporter's point: a part is turned on a board to fit copper and on a sheet to make the drawing
+  read, and neither says anything about the other. Now an existing component keeps its rotation and mirror, and a
+  created one takes R0 unmirrored, as a palette drop does. The link survives because the FORWARD direction still
+  carries a symbol turned since the last sync; the reverse run advances only the link's LAYOUT half to where the
+  placement is now, so a later schematic turn is applied on top of the board's turn instead of overwriting it, and
+  a symbol turned but not yet pushed is still pushed. `UnlinkedRotationNote` no longer promises a reverse carry.
+- **A copy of a linked part was bare artwork.** A paste/duplicate that collides re-mints the copy's identity
+  (`ResolvePastedInstanceIdentities`) — correctly dropping `SchematicId`. But a schematic-owned placement stores no
+  `PartKind` (the schematic knew), so the copy kept nothing saying it was a resistor, and the reverse run counted
+  it among the land patterns with no part behind them. The copy now takes `PartKind` from the component its source
+  was linked to — the open primary schematic (`OpenSiblingSchematic`, wired beside `OpenSiblingSchematicNames`) or
+  the file — for a discrete RLC only, and only AFTER the replacement prefix is chosen, so `FB1` still copies to `FB2`.
+- **A re-pointed land pattern did not move the schematic's case.** A linked built-in land pattern was "unchanged"
+  whatever its artwork, so after a re-point the schematic still stated the old case and the next Update Layout put
+  it back. `PushFootprintBack` now edits the component's existing `Footprint` row when its canonical spelling
+  differs from the placement's generator id (they are the same spelling, R-fp1-2b). A component with no Footprint
+  row reaches its artwork another way and is left alone.
+- **A placement linked to a component the schematic no longer has was called a land pattern.** The reporter's
+  board had nine: `SchematicId`s naming components absent from the `.csch` (the links were in the saved `.clay`).
+  Reproducible here by an Undo in the schematic after a sync — the link, `RefDes` and `PartKind` bookkeeping is
+  written on the LAYOUT, outside that undo — or by a schematic closed unsaved beside a saved layout. They are now
+  NAMED in one Warning line with the remedy (place them under the same name and re-run, which relinks). Nothing is
+  created: what kind each was is not recorded on a linked placement, and reading it from the name prefix is the
+  inference R-fp6-2e refuses. Whether to relax that for this case is an open owner question.
+
+Gates: `LayoutFirstPartTests.ACopyOfALinkedPartIsStillThatKindOfPartAndBackAnnotates`,
+`…ARePointedAndTurnedPlacementPushesItsCaseBackAndNeverTurnsTheSymbol`,
+`…APlacementLinkedToAComponentTheSchematicLostIsNamedNotCalledALandPattern`, and
+`RotationSyncTests.ASchematicTurnIsCarried_ABoardTurnNeverTurnsTheSymbol` (rewritten from the carry-both-ways test).
+
+
+## Designer field report (2026-09-27) — dropdown crash, Impedance panel reach, Technology ▸ Edit…
+
+**The crash (two Windows logs, identical): `ArgumentOutOfRangeException` in `AvaloniaList.InsertRange` ←
+`Panel.ChildrenChanged` ← `VirtualizingStackPanel.RealizeElements`, opening a ComboBox dropdown in the layout
+editor, empty trail.** `Panel.ChildrenChanged` inserts into `VisualChildren` at the index the `Children` add was
+made at, so the throw means `VisualChildren` was already SHORTER than `Children`. Avalonia 12.0.3's only way to
+get there is an earlier add whose `VisualChildren` insert threw after the `Children` insert had succeeded — and
+that earlier exception was not fatal, which means something swallowed it. **Avalonia's two-way binding does:**
+`BindingExpression.WriteValueToSource` wraps the source setter in a bare `catch { return false; }` (no log).
+The footprint combo in the layout Properties panel had exactly the shape that throws there: a pick's
+`SelectedIndex` write-back ran `ApplyInstanceFootprint` synchronously, the re-point raised `Model.Changed`,
+the panel refresh `Clear()`ed and refilled `InstanceFootprintOptions` — the ItemsSource the ComboBox was
+mid-way through selecting from. A headless Avalonia 12.0.3 harness of that shape (TwoWay `SelectedIndex`,
+setter rebuilding the collection, real pointer clicks into the popup; scratch only, not committed) counted
+first-chance exceptions: **5–18 swallowed per 1,500 picks applied synchronously, zero with the pick posted**,
+across five seeds. The swallowed ones were in the selection commit (`SelectedItems` enumerating a list the
+refresh had just emptied); the harness never produced the exact `VisualChildren` mismatch, so the causal
+link to the logged stack is inferred from the mechanism, not reproduced. The same rule was already on record
+for the 3D editor's snap ladder (R-crash-1 above: a pick never rebuilds the list it came from).
+
+Fixed at the source: `OnInstanceFootprintIndexChanged`/`…DensityIndexChanged` post the pick
+(`PostToUi`, a `Dispatcher.UIThread.Post`, dropped if the selection changed first), and
+`RefreshInstanceFootprint` rebuilds the rows only when they differ — it runs on every move-drag frame, and a
+rebuild recycled every item container of the ComboBox each frame (the `GetRecycledElement` in the second
+log). **Not fixed and worth knowing: any other ComboBox whose two-way setter rebuilds its own ItemsSource has
+the same failure** — `LayerMappingDialog`/`Em3dSolverSettingsView` build `ComboBoxItem`s in code but were not
+implicated. `CrashReporter` now notes, on the UI thread only and at most 25 per session, any
+`ArgumentOutOfRange`/`IndexOutOfRange`/`InvalidOperation`/`NullReference` thrown with an Avalonia frame on the
+stack, so the next swallowed cause lands in the trail. Gates: `FootprintPickDeferredTests`,
+`ImpedancePanelScrollTests.OnlyAnExceptionThrownUnderTheToolkitIsNotedAsPossiblySwallowed`.
+
+**Impedance panel: the bottom was unreachable at an ordinary dock height.** The root was `Auto,*` with the
+settings expander (its own `ScrollViewer`, `MaxHeight` 420) in the `Auto` row, so at a dock height near 420
+the lower grid's `Auto` rows — tiles, filter, Accept, Export — were clipped with no scroll anywhere. The whole
+panel is now one outer `ScrollViewer`; because a Grid inside a ScrollViewer is measured at infinite height (its
+star row would take every result row and stop virtualizing), `OnPanelScrollSizeChanged` holds the root at
+least the viewport's height (rows still fill spare room) and caps the rows `ListBox` at the viewport's height
+(it scrolls on its own). Verified on the same structure headlessly: bottom reachable at a 300-unit dock, 8 of
+500 rows realized. **Pixels not seen** — the GUI cannot be launched from this session.
+
+**Technology ▸ Edit… sometimes showed nothing.** Not reproduced with the reporter's workspace (both of its
+`.ctech` files resolve correctly; the layout's `TechRef` names the Gerber one). What the code did: a technology
+not yet open opened in the PRIMARY document strip, and split beside the layout only when that was the layout's
+strip. A layout in a side pane (every earlier Edit… creates one) or a torn-off window got its technology in a
+different pane or — torn off — in the shell window behind it, and only an already-open document was brought
+forward. It now opens in the layout's own strip (`CircuitRfDockFactory.OpenDocumentIn`) and the window holding
+it is raised either way. Gate `TechEditPaneTests.ALayoutInASidePane_GetsItsTechnologyBesideIt_NotInThePrimaryStrip`.
+
+## Update Schematic from Layout — orphaned links recreated by name, and the links joined the schematic's undo (2026-09-27)
+
+Two owner decisions following the round-8 field report, which had placements linked to schematic parts the
+schematic no longer had (C9–C16, R3):
+
+- **The kind is guessed from the name, but ONLY for an orphaned link.** A placement whose `SchematicId` names a
+  component the schematic does not have is recreated under that name when its prefix is C, R or L
+  (`LayoutToSchematicGenerator.GuessKindFromName`), at R0, with the land pattern as its Footprint and the type's
+  default value — each reported as a WARNING saying it was guessed and the value must be set. Any other prefix
+  (FB, U) is still named in one warning. A placement with a LIVE component keeps the no-guess rule, which is
+  what protects a renamed part (R1 -> Rin).
+- **The layout's links are now part of the schematic's undo entry.** The run writes `SchematicId`, `RefDes`,
+  `PartKind`, `OrientationLink` and `SchematicPCellSnapshots` on the layout as it goes; `LayoutLinkCommand`
+  captures them before and after and restores the before on Undo and the after on Redo, marking the layout
+  dirty through the caller's callback. It acts on the OPEN layout's in-memory model only, so no file is ever
+  rewritten behind the user — a layout closed in between keeps what it saved, and the orphan recovery above is
+  what handles that case. Added only when the run has a schematic edit to undo, so a run that merely advanced
+  orientation baselines still reports NothingChanged.

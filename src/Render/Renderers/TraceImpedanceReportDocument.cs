@@ -393,7 +393,8 @@ public static class TraceImpedanceReportDocument
                     "Traces are found in the copper as drawn: two long parallel edges facing each other are a trace, and " +
                     "stretches meeting within about a width — through a jog, a bend, a mitre or a width step — are one " +
                     "trace. A junction, a via, a pad and the end of the copper end a trace; what continues on another layer " +
-                    "is that layer's trace. Pours and planes are not analysed. Each trace is cut once per width, and each cut " +
+                    "is that layer's trace. Copper shorter than four of its widths is a pad unless a region, pick or net " +
+                    "chooses it; then two widths is enough. Pours and planes are not analysed. Each trace is cut once per width, and each cut " +
                     "is a quasi-static cross-section solve over the stackup at right: the reference below (and above) is " +
                     "the nearest layer whose copper covers the trace's whole width there, and every other conductor near " +
                     "it is held at ground. Bend corners are not cut and not flagged. A trace FAILS when any of it is " +

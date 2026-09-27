@@ -141,6 +141,9 @@ public static partial class LayoutRenderer
                 h.Add(def.Color.R); h.Add(def.Color.G); h.Add(def.Color.B); h.Add(def.Color.A);
                 h.Add(def.FillOpacity);
                 h.Add(def.FillPattern);
+                // The drawn colour of a silk layer also depends on whether it IS silk (the background
+                // is hashed above), and that is read from the interchange fields.
+                h.Add(LayerCanvasContrast.IsSilkscreen(def));
             }
 
         return h.ToHashCode();

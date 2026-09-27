@@ -3411,6 +3411,22 @@ public sealed partial class SchematicViewModel : ObservableObject
     public void CommitPlacement(SymbolKind kind, int portCount, SymbolRotation rotation,
                                 double worldX, double worldY, bool mirrorX = false)
     {
+        var comp = BuildPlacedComponent(kind, portCount, rotation, worldX, worldY, mirrorX);
+        Execute(WithSeriesWireCuts(new PlaceComponentCommand(EditModel, comp), comp));
+        SelectPlacedPart(comp.Id);
+        ComponentPlaced?.Invoke(kind);
+    }
+
+    /// <summary>
+    /// Builds — but does not place — the component <see cref="CommitPlacement"/> would place: auto
+    /// name, the registry's default parameters, the technology's microstrip defaults, the default
+    /// footprint and a free port number. Split out so a pasted parts table
+    /// (<c>SchematicViewModel.BomPaste</c>) creates each part exactly as a palette drop does
+    /// rather than through a second construction path.
+    /// </summary>
+    private EditableComponent BuildPlacedComponent(SymbolKind kind, int portCount, SymbolRotation rotation,
+                                                   double worldX, double worldY, bool mirrorX = false)
+    {
         double sx = EditModel.SnapToGrid(worldX);
         double sy = EditModel.SnapToGrid(worldY);
         var comp = new EditableComponent
@@ -3471,10 +3487,7 @@ public sealed partial class SchematicViewModel : ObservableObject
             if (numParam != null)
                 numParam.Expression = NextFreePinNum(EditModel).ToString();
         }
-
-        Execute(WithSeriesWireCuts(new PlaceComponentCommand(EditModel, comp), comp));
-        SelectPlacedPart(comp.Id);
-        ComponentPlaced?.Invoke(kind);
+        return comp;
     }
 
     /// <summary>
@@ -5018,7 +5031,16 @@ public sealed partial class SchematicViewModel : ObservableObject
     public async Task ClipboardPasteAsync(IClipboard clipboard)
     {
         var result = await SchematicClipboard.PasteAsync(clipboard);
-        if (result is null) return;
+        if (result is null)
+        {
+            // Not schematic content: a parts table copied from a spreadsheet or a PDF places its
+            // parts. Any other text is left alone, exactly as before.
+            string? text = null;
+            try { text = await clipboard.TryGetTextAsync(); }
+            catch { return; }
+            PlaceBomTable(text, source: "the clipboard");
+            return;
+        }
         var (comps, wires, cobjs, srcGrid, netLabels) = result.Value;
         PasteFragment(comps, wires, cobjs, srcGrid, netLabels);
     }

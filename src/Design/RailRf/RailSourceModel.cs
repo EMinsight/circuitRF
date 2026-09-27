@@ -161,9 +161,13 @@ public static class RailSourceLife
     /// states both, so there is no preference to express here — which is the point: <i>a silently
     /// preferred one of two stated models</i> is the failure that refusal exists to prevent.</para>
     /// </summary>
-    public static RailSourceModel Of(RailSource source, int index, RailMeasuredPart? measured = null) =>
+    /// <param name="format">The board's units, which name a coordinate-anchored source in every
+    /// sentence the sweep says about it. Omitted, it read "Source (26500000, 9875000) DBU" — on the
+    /// one refusal a designer has to act on (2026-09-27).</param>
+    public static RailSourceModel Of(
+        RailSource source, int index, RailMeasuredPart? measured = null, RailLengthFormat? format = null) =>
         new(index,
-            source.Anchor.Describe(),
+            source.Anchor.Describe(format),
             source.TouchstoneRef is { Length: > 0 } ? RailSourceBasis.Measured : RailSourceBasis.Rl,
             source.SeriesResistanceOhms,
             source.SeriesInductanceHenries,

@@ -231,7 +231,7 @@ public sealed class PadLandLayerTests(ITestOutputHelper output)
         Assert.Null(run.Rail("FED"));
 
         var alone = Run(Doc(Rail("BROKEN", withFerrite: false)));
-        Assert.StartsWith("Rail 'BROKEN' was not solved.", alone.Refusal, StringComparison.Ordinal);
+        Assert.StartsWith("Rail 'BROKEN' was not solved", alone.Refusal, StringComparison.Ordinal);
         Assert.Equal(alone.Refusal, alone.RefusalFor("BROKEN"));
     }
 }

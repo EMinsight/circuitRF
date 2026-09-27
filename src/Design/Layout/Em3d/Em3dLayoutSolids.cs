@@ -21,8 +21,9 @@
 //
 // `From` is the one-call form an instance uses, with the instance options (§2c): no solve region, no PEC
 // floor, and every laterally unbounded slab — a dielectric, a body without an outline, and the ground
-// plane that a .cem would have made its floor — bounded by the board outline, else by the drawn geometry's
-// bounding box, with a note saying which.
+// plane that a .cem would have made its floor — bounded by SlabLateralBound's rule: the board outline, else the
+// closed hull of the copper above and below the slab, else the drawn geometry's bounding box, with a note
+// saying which bound each slab took. A planar setup previewed in 3D (DisplaySlabs) draws its slabs the same way.
 
 using System.Globalization;
 using CircuitRF.Design.Layout.Em;
@@ -47,6 +48,11 @@ public sealed record Em3dLayoutSolidsOptions(double? FMaxHz, double TempC, bool 
     /// <summary>False when the <c>.cem</c>'s AirBox ZMin states a boundary other than PEC, which steps the
     /// floor rule aside (the generator's case). An instance never has a floor.</summary>
     public bool FloorAllowed { get; init; } = true;
+
+    /// <summary>A planar setup previewed in 3D, for VIEWING only: every laterally unbounded slab is drawn to
+    /// <see cref="SlabLateralBound"/>'s shape rather than across the air box. The planar solve still treats
+    /// every dielectric as laterally infinite; nothing a solver reads is built this way.</summary>
+    public bool DisplaySlabs { get; init; }
 }
 
 /// <summary>A layout's geometry as the 3D problem's vocabulary: solids, sheets and materials, and where
@@ -508,8 +514,10 @@ public static class Em3dLayoutSolids
             int order = 0;
             double x0 = fullExtent?.Min.X ?? Cx0, y0 = fullExtent?.Min.Y ?? Cy0;
             double x1 = fullExtent?.Max.X ?? Cx1, y1 = fullExtent?.Max.Y ?? Cy1;
-            bool boundedByOutline = _outline.Count > 0;
             int bounded = 0;
+            // An instance (no air box) or a planar preview: a slab with no outline of its own takes SlabLateralBound's.
+            bool bound = fullExtent is null || options.DisplaySlabs;
+            _displayBox = options.DisplaySlabs ? fullExtent : null;
 
             Em3dPrimitive FullExtent(double z0, double z1)
             {
@@ -528,6 +536,7 @@ public static class Em3dLayoutSolids
                 string material = DielectricMaterial(b.Layer);
                 IReadOnlyList<PlanarPolygon>? lateral =
                     _filmPolys.TryGetValue(b.Index, out var film) ? film : _outline.Count > 0 ? _outline : null;
+                if (lateral is null && bound) lateral = Bounded(z0, z1, b.Layer.Name);
                 if (lateral is { Count: 0 }) continue;
                 order++;
                 if (lateral is null)
@@ -548,10 +557,11 @@ public static class Em3dLayoutSolids
                     AirSlot = (solids.Count, ++order, AirMaterialName(), airBottom);
             }
 
-            foreach (var (body, z0, z1, polys) in _bodies)
+            foreach (var (body, z0, z1, drawnPolys) in _bodies)
             {
                 string material = BodyMaterial(tech.FindMaterial(body.Material)!, out var role);
                 order++;
+                IReadOnlyList<PlanarPolygon> polys = drawnPolys.Count == 0 && bound ? Bounded(z0, z1, body.Name) : drawnPolys;
                 if (polys.Count == 0)
                     solids.Add(Origin(new Em3dSolid(body.Name, material, role, FullExtent(z0, z1), order),
                                       Em3dObjectKind.Body, null));
@@ -644,16 +654,84 @@ public static class Em3dLayoutSolids
                 }
             }
 
-            if (fullExtent is null && (bounded > 0 || _instancePlane is not null))
-                Notes.Add(boundedByOutline
-                    ? "Placed in a 3D view, the layout's slabs are bounded by its board outline."
-                    : "Placed in a 3D view, the layout's laterally unbounded slabs" +
-                      (_instancePlane is not null ? " and its ground plane" : "") +
-                      " are bounded by the bounding box of its drawn geometry: it draws no board outline.");
+            if (fullExtent is null && (bounded > 0 || _slabBounds.Count > 0))
+                Notes.Add(SlabBoundNote());
+        }
+
+        // ── Lateral bounds (SlabLateralBound) ───────────────────────────────────────────────────────
+        private readonly List<(string Slab, SlabBoundKind Kind, string? From)> _slabBounds = [];
+        private readonly Dictionary<(int Above, int Below), IReadOnlyList<PlanarPolygon>> _hulls = [];
+        private Em3dAirBox? _displayBox;
+
+        /// <summary>The dielectric stack's height, metres — what SlabLateralBound's two distances scale with.</summary>
+        private double StackHeightM()
+        {
+            double lo = double.PositiveInfinity, hi = double.NegativeInfinity;
+            foreach (var (_, z) in _dielZ) { lo = Math.Min(lo, z.Bottom); hi = Math.Max(hi, z.Top); }
+            return hi > lo ? hi - lo : ZHigh > ZLow ? ZHigh - ZLow : 0;
+        }
+
+        /// <summary>
+        /// The lateral shape of a slab spanning <paramref name="z0"/>..<paramref name="z1"/> that has no outline of
+        /// its own: the board outline; else the closed hull of the nearest copper above and the nearest copper below
+        /// its middle (walking outward past a conductor entry with nothing drawn on it); else the bounding box.
+        /// </summary>
+        private IReadOnlyList<PlanarPolygon> Bounded(double z0, double z1, string slab)
+        {
+            if (_outline.Count > 0)
+            {
+                _slabBounds.Add((slab, SlabBoundKind.Outline, null));
+                return _outline;
+            }
+            double zc = (z0 + z1) / 2, h = StackHeightM();
+            var drawn = Bands.Where(b => Pieces.TryGetValue(b.Index, out var l) && l.Count > 0).ToList();
+            var above = drawn.Where(b => b.BottomM >= zc).OrderBy(b => b.BottomM).FirstOrDefault();
+            var below = drawn.Where(b => b.TopM <= zc).OrderByDescending(b => b.TopM).FirstOrDefault();
+            if (h > 0 && (above is not null || below is not null))
+            {
+                var key = (above?.Index ?? -1, below?.Index ?? -1);
+                if (!_hulls.TryGetValue(key, out var hull))
+                {
+                    var copper = new[] { above, below }.Where(b => b is not null)
+                                                       .SelectMany(b => Pieces[b!.Index].Select(p => p.Poly));
+                    hull = SlabLateralBound.CopperHull(copper,
+                        SlabLateralBound.CloseRadiusInStackHeights * h, SlabLateralBound.MarginInStackHeights * h);
+                    if (_displayBox is { } box)
+                        hull = SlabLateralBound.ClipToRect(hull, box.Min.X, box.Min.Y, box.Max.X, box.Max.Y);
+                    _hulls[key] = hull;
+                }
+                if (hull.Count > 0)
+                {
+                    string from = string.Join(" and ", new[] { above, below }.Where(b => b is not null)
+                                                                          .Select(b => $"'{b!.Layer.Name}'"));
+                    _slabBounds.Add((slab, SlabBoundKind.CopperHull, from));
+                    return hull;
+                }
+            }
+            _slabBounds.Add((slab, SlabBoundKind.BoundingBox, null));
+            return [new PlanarPolygon([new(Cx0, Cy0), new(Cx1, Cy0), new(Cx1, Cy1), new(Cx0, Cy1)])];
+        }
+
+        /// <summary>What an instance's note says: which bound each slab took.</summary>
+        private string SlabBoundNote()
+        {
+            if (_outline.Count > 0)
+                return "Placed in a 3D view, the layout's slabs are bounded by its board outline.";
+            var hulls = _slabBounds.Where(b => b.Kind == SlabBoundKind.CopperHull).ToList();
+            var boxes = _slabBounds.Where(b => b.Kind == SlabBoundKind.BoundingBox).Select(b => $"'{b.Slab}'").ToList();
+            var parts = new List<string>();
+            if (hulls.Count > 0)
+                parts.Add("each laterally unbounded slab takes " + SlabLateralBound.HullRule(StackHeightM()) + " — " +
+                          string.Join("; ", hulls.Select(b => $"'{b.Slab}' from {b.From}")));
+            if (boxes.Count > 0)
+                parts.Add($"{string.Join(", ", boxes)} {(boxes.Count == 1 ? "has" : "have")} no copper above or below " +
+                          $"and {(boxes.Count == 1 ? "is" : "are")} bounded by the bounding box of the drawn geometry");
+            return "Placed in a 3D view, the layout draws no board outline, so " + string.Join("; and ", parts) +
+                   ". Draw a board outline when the board's edge matters.";
         }
 
         /// <summary>brief-em3d-42 R-em3d42-2c — an instance's ground plane: the undrawn lowest ground-reference
-        /// conductor a .cem would have made its PEC floor, as metal over the outline or the drawn extent.</summary>
+        /// conductor a .cem would have made its PEC floor, as metal over the outline or the copper hull above it.</summary>
         private void Plane(PlanarExtractor.StackBand band, ref int order)
         {
             string material = ConductorMaterial(band.Layer);
@@ -662,9 +740,7 @@ public static class Em3dLayoutSolids
             double delta = mat.SigmaSm > 0 && options.FMaxHz is { } fMax
                 ? 1.0 / Math.Sqrt(Math.PI * fMax * Mu0 * mat.Mur * mat.SigmaSm) : 0;
             double sheetZ = band.Layer.SheetAt == ConductorSheetSurface.Top ? band.TopM : band.BottomM;
-            IReadOnlyList<PlanarPolygon> lateral = _outline.Count > 0
-                ? _outline
-                : [new PlanarPolygon([new(Cx0, Cy0), new(Cx1, Cy0), new(Cx1, Cy1), new(Cx0, Cy1)])];
+            IReadOnlyList<PlanarPolygon> lateral = Bounded(band.BottomM, band.TopM, band.Layer.Name);
             for (int k = 0; k < lateral.Count; k++)
             {
                 string name = lateral.Count == 1 ? band.Layer.Name : $"{band.Layer.Name}/{k + 1}";

@@ -519,6 +519,20 @@ public class TraceImpedanceAnalysisTests
         Assert.Equal(1, clipped.Layers[0].OutOfScope);
     }
 
+    /// <summary>A section three widths long — a wide line between two series parts — is a pad to a run
+    /// nothing points with, and a trace to a region round it (field report: every section of the RF line
+    /// but one read as a pad, so no selector could choose it).</summary>
+    [Fact]
+    public void AShortSection_IsATrace_OnlyWhereASelectorChoosesIt()
+    {
+        LayoutShape[] shapes = [Rect(Top, -1500, -500, 1500, 500), Rect(Gnd, -8000, -8000, 8000, 8000)];
+
+        Assert.Empty(AnalyzeScoped(shapes, null).AllTraces);
+        var chosen = AnalyzeScoped(shapes, new() { Regions = [Box(-2000, -1000, 2000, 1000)] });
+        Assert.Equal(3000, Assert.Single(chosen.AllTraces).Length / LayoutUnits.DefaultDbuPerMicron, 1.0);
+        Assert.Equal(0, chosen.Layers[0].OutOfScope);
+    }
+
     private static readonly LayerKey Mid = new(3, 0);
     private static readonly LayerKey Drill = new(4, 0);
 

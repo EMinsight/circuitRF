@@ -283,6 +283,42 @@ with the legend on.</p>
      Field = mode 3, |E| on the clip plane.
      Caption: "|E| of the lid's first cavity mode in a plane just below the lid." -->
 
+### How far the dielectric reaches {#dielectrics}
+
+A stackup gives each dielectric a thickness and a material but no outline, so circuitRF decides how far
+it reaches sideways. The answer depends on the solver, and for the 3D solvers it is part of what gets
+solved.
+
+- **Planar (MoM) setups.** The planar solver treats every dielectric as **laterally infinite**: a board
+  that goes on forever under the metal. **Show 3D** on a planar setup has to draw the substrate some
+  size, so it draws each dielectric to the **board outline**, or, if the layout has none, to the **outline
+  of the copper above and below it**. That shape is **for viewing only**. The planar result is the same
+  whatever the picture shows.
+- **3D setups (a `.cem` run in Palace or openEMS).** The dielectric reaches the air box, so a board with
+  no drawn edge reaches the absorbing boundary as though it went on forever. A layout that draws a board
+  outline is cut to that outline instead.
+- **A layout placed in a 3D view (a `.c3d`).** There is no air box around the layout, so every dielectric
+  is **finite**, and its sideways shape **is part of the problem** Palace and openEMS solve. Each slab takes
+  the first of these that exists:
+  1. The layout's **board outline**: closed shapes on the technology's outline layer (the layer exported
+     as `Edge.Cuts`, or a Gerber profile).
+  2. The **copper hull**: the outline of the copper directly above and below the slab. If a neighbouring
+     copper layer has nothing drawn on it, circuitRF looks further out to the next layer that has copper.
+     Gaps up to **10 dielectric stack heights** wide are closed, holes such as via clearances and antipads
+     are filled, and the edge stands **2 stack heights** past the outermost copper. On a 1.5 mm board that
+     is gaps up to 15 mm closed and a 3 mm margin. The gaps are closed because the field of a coplanar
+     line runs through the substrate under its gaps. The margin is there because a trace's fringing field
+     runs through the substrate beside it. A slab cut flush to the copper would lose both, and the line
+     would read the wrong impedance.
+  3. The **bounding box** of everything drawn, if there is no copper above or below the slab at all.
+
+  The Messages note for the run says which bound each slab took.
+
+**Draw a board outline whenever the board's real edge matters**, for example for radiation from the
+board edge, coupling across it, or a board much larger than its copper. The copper hull is a sensible
+guess at the board. The outline is the board itself. How a placed layout comes into a 3D view is in
+[Drawing in 3D ▸ A placed layout's dielectric](drawing-in-3d.html#layout-dielectric).
+
 ## Walking through the example {#example}
 
 **Tools ▸ Examples ▸ 3D EM** copies a workspace with three cells to a folder you choose and opens it.

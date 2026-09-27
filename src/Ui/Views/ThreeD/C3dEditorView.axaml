@@ -558,6 +558,16 @@
             <Panel Grid.Column="1">
                 <v3:Viewer3DPane x:Name="Pane" DataContext="{Binding ViewModel.Viewer}"/>
                 <v3:Viewer3DOverlay x:Name="Overlay" DataContext="{Binding ViewModel.Viewer}"/>
+                <!-- Designer feedback 02 — the first scene of a large board takes seconds, and the status pane that says so is
+                     hidden: say it on the canvas until something is drawn. -->
+                <Border IsHitTestVisible="False" HorizontalAlignment="Center" VerticalAlignment="Center" Padding="14,8" CornerRadius="4"
+                        Background="{DynamicResource SystemControlBackgroundAltMediumHighBrush}"
+                        IsVisible="{Binding ViewModel.Viewer.IsBuildingFirstScene}">
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <ProgressBar IsIndeterminate="True" Width="48" MinWidth="0" Height="4" VerticalAlignment="Center"/>
+                        <TextBlock Text="Building the 3D view…" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Border>
                 <vv3:Viewer3DMeasureCard DataContext="{Binding ViewModel.Viewer}" HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="12,0,0,104"/>
                 <!-- 3D editor bugs round 2 — the status pane's one line, on the viewport between the axis indicator and the
                      scale bar: the last message, else the tool's prompt (C3dEditorViewModel.ViewportLine). The text lets the

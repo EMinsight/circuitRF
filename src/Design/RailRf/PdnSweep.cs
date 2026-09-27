@@ -108,8 +108,15 @@ public sealed class PdnSweepRequest
     /// (<see cref="RailSeriesPartition.Typed"/>) — but a caller that has a board should never hand
     /// one in, because then the section a part is shaded in on the copper map and the node its branch
     /// is stamped on would be two answers to one question.
+    ///
+    /// <para><b>Settable, because the walk it comes from may not exist yet when the request is
+    /// built.</b> A run builds its sweep request on the UI thread BEFORE its own DC solve, which is
+    /// what walks the copper; the window fills this in from that solve's regions once it lands
+    /// (2026-09-27). Built from the PREVIOUS solve's regions instead, the first run on a board with
+    /// a series element — and every run after a Fast refusal — fell back to the typed partition and
+    /// said "this rail has no artwork" beside a loaded board.</para>
     /// </remarks>
-    public RailSeriesPartition? Partition { get; init; }
+    public RailSeriesPartition? Partition { get; set; }
 
     /// <summary>The grid, or null to take <see cref="RailSpec.Band"/>'s own.</summary>
     public double[]? FrequenciesHz { get; init; }

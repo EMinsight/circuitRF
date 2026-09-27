@@ -192,6 +192,47 @@ public class TechEditPaneTests
         Assert.Same(host, tech.Owner);
     }
 
+    /// <summary>
+    /// Field report, 2026-09-27: Edit… sometimes showed nothing. A layout in a SIDE pane (or a torn-off
+    /// window) had its technology opened in the PRIMARY strip — somewhere else, with no split because
+    /// the strips differ. It opens beside the layout wherever the layout is.
+    /// </summary>
+    [Fact]
+    public void ALayoutInASidePane_GetsItsTechnologyBesideIt_NotInThePrimaryStrip()
+    {
+        var ws = new WorkspaceViewModel();
+        var f = ws.Factory;
+        var primary = f.DocumentDock!;
+        var other  = new StubDocument("other", StubDocument.StubKind.Welcome);
+        var layout = new StubDocument("board", StubDocument.StubKind.Welcome);
+        f.OpenDocument(other);
+        f.OpenDocument(layout);
+        Assert.True(f.SplitDocumentRightOf(layout, other, 0.5));
+        var layoutPane = Assert.IsAssignableFrom<IDocumentDock>(layout.Owner);
+        Assert.NotSame(primary, layoutPane);
+
+        string dir = Path.Combine(Path.GetTempPath(), "crf-techedit-" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(dir);
+        try
+        {
+            string techPath = Path.Combine(dir, "pcb.ctech");
+            File.Copy(Path.Combine(RepoRoot(), "examples", "Patch Antenna", "tech",
+                                   "pcb-2layer_RO4350B_30mil_1oz.ctech"), techPath);
+
+            ws.OpenTechnologyDocumentBesideLayout(techPath, layout, 1000);
+
+            var tech = ws.FindOpenDocument(techPath);
+            Assert.NotNull(tech);
+            Assert.NotSame(primary, tech!.Owner);
+            var techPane = Assert.IsAssignableFrom<IDocumentDock>(tech.Owner);
+            // Immediately right of the layout's pane, in the same row.
+            var wrapper = Assert.IsAssignableFrom<IProportionalDock>(layoutPane.Owner);
+            var panes = wrapper.VisibleDockables!.Where(d => d is not IProportionalDockSplitter).ToList();
+            Assert.Equal(panes.IndexOf(layoutPane) + 1, panes.IndexOf(techPane));
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
     /// <summary>The real shell, with a layout and a technology open as two tabs of the one strip —
     /// which is exactly where Edit… finds them before it splits.</summary>
     private static (CircuitRfDockFactory Factory, IRootDock Root, IDocumentDock Host,

@@ -258,6 +258,9 @@ public sealed class SchematicCanvas : Control
         AddHandler(DragDrop.DropEvent,      OnCellDrop);
         AddHandler(DragDrop.DragOverEvent,  OnImageFileDragOver);
         AddHandler(DragDrop.DropEvent,      OnImageFileDrop);
+        //   4. A parts table (.csv / .tsv / .txt) — places the parts it lists.
+        AddHandler(DragDrop.DragOverEvent,  OnPartsTableDragOver);
+        AddHandler(DragDrop.DropEvent,      OnPartsTableDrop);
     }
 
     private void OnLayoutUpdated(object? sender, EventArgs e)
@@ -1208,6 +1211,67 @@ public sealed class SchematicCanvas : Control
         _editContext.DropBitmap(path, ScreenToWorldX(pos.X), ScreenToWorldY(pos.Y));
         e.Handled = true;
         InvalidateVisual();
+    }
+
+    // ── Parts-table file DnD ──────────────────────────────────────────────────
+    // A .csv (or a tab-separated .tsv/.txt) dropped on the sheet places the resistors, capacitors
+    // and inductors it lists, at the drop point — the same reading a pasted table gets. A file that
+    // turns out not to be a parts table is reported and nothing is placed.
+
+    private void OnPartsTableDragOver(object? _, DragEventArgs e)
+    {
+        if (e.Handled) return;
+        if (TryExtractPath(e, IsPartsTableExtension) is not null)
+        { e.DragEffects = DragDropEffects.Copy; e.Handled = true; }
+    }
+
+    private void OnPartsTableDrop(object? _, DragEventArgs e)
+    {
+        if (e.Handled) return;
+        var path = TryExtractPath(e, IsPartsTableExtension);
+        if (path is null || _editContext is null) return;
+        TakeKeyboardFocus();
+        e.Handled = true;
+
+        string? text;
+        try { text = File.ReadAllText(path); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _editContext.MessageSink?.Warning($"{Path.GetFileName(path)} could not be read: {ex.Message}");
+            return;
+        }
+
+        var pos = e.GetPosition(this);
+        if (!_editContext.PlaceBomTable(text, Path.GetFileName(path),
+                                        (ScreenToWorldX(pos.X), ScreenToWorldY(pos.Y))))
+            _editContext.MessageSink?.Warning(
+                $"{Path.GetFileName(path)} is not a parts table circuitRF could read — it needs a " +
+                "reference column and a type, value or case column.", path);
+        InvalidateVisual();
+    }
+
+    private static bool IsPartsTableExtension(string path)
+    {
+        var ext = Path.GetExtension(path);
+        return ext.Equals(".csv", StringComparison.OrdinalIgnoreCase)
+            || ext.Equals(".tsv", StringComparison.OrdinalIgnoreCase)
+            || ext.Equals(".txt", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string? TryExtractPath(DragEventArgs e, Func<string, bool> accept)
+    {
+        foreach (var item in e.DataTransfer.Items)
+        {
+            string? path = item.TryGetRaw(DataFormat.File) switch
+            {
+                IStorageItem single             => single.Path?.LocalPath,
+                IEnumerable<IStorageItem> files => files.FirstOrDefault()?.Path?.LocalPath,
+                string s                        => s,
+                _                               => null,
+            };
+            if (path is not null && accept(path)) return path;
+        }
+        return null;
     }
 
     // The OS surfaces a dropped file under DataFormat.File. The payload TYPE varies by platform:

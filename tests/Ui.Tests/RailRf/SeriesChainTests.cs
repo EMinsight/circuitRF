@@ -369,6 +369,37 @@ public sealed class SeriesChainTests(ITestOutputHelper output)
         finally { Directory.Delete(dir, recursive: true); }
     }
 
+    /// <summary>
+    /// The FIRST run on a board with a series element sweeps on the partition measured off the
+    /// artwork (2026-09-27). The sweep request is built before the run's own DC solve, and it used
+    /// to read the previous solve's walk of the copper — none on a first run — so it fell back to
+    /// the rows' stated sides and said the rail had no artwork, beside a loaded board.
+    /// </summary>
+    [Fact]
+    public void TheFirstRunSweepsOnThePartitionMeasuredOffTheArtwork()
+    {
+        var doc = new RailDocument { Name = "first run" };
+        doc.Rails.Add(ChainRail(null, null));
+
+        var vm = new RailRfViewModel(doc, null)
+        {
+            PostToUi     = a => a(),
+            RunOffThread = (work, _) => Task.FromResult(work()),
+            Board = new RailBoardInputs
+            {
+                Technology = Board(),
+                Shapes     = ChainShapes(),
+                Pads       = ChainPads(),
+                NetPoints  = [.. ChainPads().Select(p => new PdnNetPoint(p.Net!, p.X, p.Y))],
+            },
+        };
+        vm.RunCommand.Execute(null);
+
+        Assert.NotNull(vm.Sweep);
+        Assert.DoesNotContain(vm.Sweep!.Notes, n => n.Contains("has no artwork", StringComparison.Ordinal));
+        Assert.Contains(vm.Sweep.Notes, n => n.Contains("Measured off the artwork", StringComparison.Ordinal));
+    }
+
     // ── fixtures ─────────────────────────────────────────────────────────────
 
     private static Complex BeadZ(double f) => new(30.0, 2 * Math.PI * f * 1e-6);

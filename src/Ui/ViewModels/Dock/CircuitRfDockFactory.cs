@@ -1172,9 +1172,16 @@ public class CircuitRfDockFactory : Factory
     public void OpenDocument(Document doc)
     {
         if (_documentDock is null) return;
-        AddDockable(_documentDock, doc);
+        OpenDocumentIn(_documentDock, doc);
+    }
+
+    /// <summary>Opens <paramref name="doc"/> as the active tab of a GIVEN document strip — a side pane
+    /// or a torn-off window's strip, not only the primary one <see cref="OpenDocument"/> uses.</summary>
+    public void OpenDocumentIn(IDocumentDock strip, Document doc)
+    {
+        AddDockable(strip, doc);
         SetActiveDockable(doc);
-        SetFocusedDockable(_documentDock, doc);
+        SetFocusedDockable(strip, doc);
     }
 
     /// <summary>

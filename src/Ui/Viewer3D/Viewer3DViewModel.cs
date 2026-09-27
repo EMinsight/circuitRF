@@ -213,10 +213,18 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
 
     /// <summary>
     /// A PLANAR setup, for a look in 3D: its layout through the stackup, as a driven 3D problem with every
-    /// port lumped would be built — the air box at the generator's default and the dielectrics finite.
-    /// Nothing about a 3D solve is asked of it, so the generator's notes on one are not repeated; the
-    /// single note says what the picture is.
+    /// port lumped would be built — the air box at the generator's default. Nothing about a 3D solve is asked
+    /// of it, so the generator's notes on one are not repeated; the note says what the picture is.
+    /// <para>The planar solve treats every dielectric as laterally INFINITE, so there is no slab shape to show;
+    /// the picture draws each one to <see cref="SlabLateralBound"/>'s shape (the board outline, else the closed
+    /// hull of the copper above and below it) — the shape a 3D solver would use for the same layout — and shows
+    /// it, rather than an air-box-wide slab hidden so the traces can be seen.</para>
     /// </summary>
+    /// <summary>The one note a planar setup's 3D picture carries.</summary>
+    public const string PlanarPreviewNote =
+        "Planar setup, shown in 3D. The planar solve treats every dielectric as laterally infinite; each is drawn " +
+        "here to the board outline, or to the outline of the copper above and below it, for viewing only.";
+
     private static Scene3DModel BuildPlanar(long gen, Viewer3DInputs inputs, EmLayoutSource source,
                                             Technology tech, CancellationToken ct)
     {
@@ -224,11 +232,11 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
         preview.Solver3D = Em3dSolver.Palace;
         preview.Problem3D = Em3dProblemType.Driven;
         preview.Ports3D = [];
-        var g = Em3dGenerator.Generate(preview, source, tech);
+        var g = Em3dGenerator.Generate(preview, source, tech, displaySlabs: true);
         ct.ThrowIfCancellationRequested();
         if (g.Problem is null) return Scene3DModel.Empty(gen, [g.Refusal ?? "the layout could not be built in 3D."]);
         return Scene3DBuilder.Build(g.Problem, gen, g.Origins, tech, inputs.Theme, inputs.Variant,
-                                    ["Planar setup, shown in 3D."]);
+                                    [PlanarPreviewNote], new Scene3DBuildOptions(HideOutermostDielectric: false));
     }
 
     /// <summary>
@@ -256,6 +264,7 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
         Scene = scene;
         HitCycle.SceneChanged(scene.Generation);
         IsRegenerating = scene.Generation < Source.Requested;
+        OnPropertyChanged(nameof(IsBuildingFirstScene));
         // An empty scene's first note is its refusal, which Status already says.
         Notes = string.Join("\n", scene.Objects.Length == 0 ? scene.Notes.Skip(1) : scene.Notes);
         if (_lastSource is { } src)
@@ -399,7 +408,18 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
 
     [ObservableProperty] private bool _isRegenerating;
 
-    partial void OnIsRegeneratingChanged(bool value) => OnPropertyChanged(nameof(Status));
+    partial void OnIsRegeneratingChanged(bool value)
+    {
+        OnPropertyChanged(nameof(Status));
+        OnPropertyChanged(nameof(IsBuildingFirstScene));
+    }
+
+    /// <summary>
+    /// Designer feedback 02 — true while a view that has drawn nothing yet is building its first scene. The status pane
+    /// that says "Generating the 3D problem…" is hidden by default, so a board that takes seconds to build opened on an
+    /// empty grid and read as a view that had failed; the viewport says it on the canvas instead.
+    /// </summary>
+    public bool IsBuildingFirstScene => IsRegenerating && Scene.Objects.Length == 0;
     [ObservableProperty] private string _notes = "";
     [ObservableProperty] private string _hoverText = "";
     [ObservableProperty] private string _cursorText = "";

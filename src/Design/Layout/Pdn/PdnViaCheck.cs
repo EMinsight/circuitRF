@@ -137,15 +137,20 @@ public sealed record PdnViaFlag(PdnViaTransition Transition)
     /// the count that would clear it — and the plating thickness and its provenance, every time
     /// (R-rail6-3).
     /// </summary>
-    public string Describe()
+    /// <param name="format">The board's own unit for the worst via's position. Omitted, the point
+    /// prints as DBU and says so.</param>
+    /// <param name="technology">Where the two layers' NAMES come from — "Top Copper → Bottom
+    /// Copper" rather than GDS numbers, which is what this sentence printed until 2026-09-27.</param>
+    public string Describe(RailRf.RailLengthFormat? format = null, Technology? technology = null)
     {
         var t = Transition;
         var w = t.Worst!;
         var lim = t.Limit!;
 
         return
-            $"The {t.FromLayer.Layer}/{t.FromLayer.Datatype} → {t.ToLayer.Layer}/{t.ToLayer.Datatype} " +
-            $"transition at ({w.Barrel.X}, {w.Barrel.Y}) carries {t.TotalCurrentA:0.###} A through " +
+            $"The {PdnRegionRef.LayerName(technology, t.FromLayer)} → " +
+            $"{PdnRegionRef.LayerName(technology, t.ToLayer)} transition at " +
+            $"{(format ?? RailRf.RailLengthFormat.Dbu).Point(w.Barrel.X, w.Barrel.Y)} carries {t.TotalCurrentA:0.###} A through " +
             $"{t.Count} via(s). They do not share it equally: the worst carries {w.CurrentA:0.###} A, " +
             $"{t.PeakingFactor:0.##}× an equal split, against a limit of {lim.Describe()}. " +
             (t.CountThatClears is { } m

@@ -69,6 +69,8 @@ public sealed class ChipLandPatternTests
             // 5% its own rounding allows, which is still tight enough to catch a transposed digit.
             var (inchL, inchW) = ImperialCode(c.Code);
             if (inchL < 0.04m) continue;
+            // 0505 is the one code above the threshold that rounds DOWN: the body is 0.055 in square.
+            if (c.Code == "0505") { AssertWithin(0.055m * 25.4m, c.BodyLengthMm, "0505 length"); continue; }
             AssertWithin(inchL * 25.4m, c.BodyLengthMm, $"{c.Code} length");
             AssertWithin(inchW * 25.4m, c.BodyWidthMm, $"{c.Code} width");
         }
@@ -78,6 +80,22 @@ public sealed class ChipLandPatternTests
         // this reason, so the display string is part of the contract, not decoration.
         Assert.Equal("0201 (metric 0603)   0.60 x 0.30 mm", SmtCaseTable.Find("0201")!.Display);
         Assert.Equal("008004 (metric 0201)   0.25 x 0.125 mm", SmtCaseTable.Find("008004")!.Display);
+    }
+
+    // A series code is a second NAME for a row, never a second case: it resolves to the same row, the
+    // reference it parses to is the canonical code, and the picker row carries it so it can be found.
+    [Theory]
+    [InlineData("100A", "0505")]
+    [InlineData("800b", "1111")]
+    [InlineData("600S", "0603")]
+    [InlineData("600F", "0805")]
+    public void ASeriesAliasResolvesToItsTableRow(string alias, string code)
+    {
+        Assert.Same(SmtCaseTable.Find(code), SmtCaseTable.Find(alias));
+        Assert.True(FootprintRef.TryParse("smt:" + alias, out var r, out _));
+        Assert.Equal($"smt:{code}@N", r!.ToString());
+        Assert.Contains(alias.ToUpperInvariant(), SmtCaseTable.Find(code)!.Display, StringComparison.Ordinal);
+        Assert.Equal(FootprintTokenOutcome.Matched, FootprintTokens.Match("C-" + alias).Outcome);
     }
 
     private static int Tenths(decimal mm) => (int)(mm * 10m);
