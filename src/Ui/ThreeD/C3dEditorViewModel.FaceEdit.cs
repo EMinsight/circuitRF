@@ -220,7 +220,17 @@ public sealed partial class C3dEditorViewModel : IC3dFaceHost
         var r = ft.Evaluate(CursorInput());
         if (r is { Ok: true, Object: { } obj })
         {
-            string text = C3dPersistence.SerializeObject(obj);
+            // brief-em3d-51 R-em3d51-6 — the drag rule: an expression the edit would change writes its name (every object
+            // using it previews), or the gesture is refused here, where it first reaches the field.
+            if (!PreviewThroughNames(ft.Index, ref obj))
+            {
+                string why = StatusMessage;
+                SetTool(null);
+                StatusMessage = why;
+                Viewer.Regenerate();
+                return;
+            }
+            string text = C3dPersistence.SerializeObject(obj) + (_namePreview is { } np ? C3dPersistence.SerializeVariables(np.Variables) : "");
             if (text != _facePreviewText)
             {
                 _facePreviewText = text;
@@ -264,6 +274,7 @@ public sealed partial class C3dEditorViewModel : IC3dFaceHost
         _faceAttempt.Clear();
         ClearSnapExclusion();
         _facePreviewText = null;
+        _namePreview = null;
         if (_facePreview is null) return;
         _facePreview = null;
         Viewer.Regenerate();
@@ -275,6 +286,7 @@ public sealed partial class C3dEditorViewModel : IC3dFaceHost
         if (ft.Committed is not { Object: { } obj } r) return;
         _facePreview = null;                   // the document is about to say the same thing: no flicker back
         _facePreviewText = null;
+        _namePreview = null;
         int index = ft.Index;
         string before = C3dPersistence.SerializeObject(Document.Objects[index]);
         string after = C3dPersistence.SerializeObject(obj);
@@ -305,7 +317,14 @@ public sealed partial class C3dEditorViewModel : IC3dFaceHost
             after = C3dPersistence.SerializeObject(obj);
         }
         var boundaries = BoundariesFollowing(obj.Name, r.Folds);
-        Push(new C3dEdit(ft.Describe, [new C3dEditSlot(false, index, before, after)], ApplySlots, faceBoundaries: boundaries, setBoundaries: SetBoundaries));
+        if (!Push(new C3dEdit(ft.Describe, [new C3dEditSlot(false, index, before, after)], ApplySlots, faceBoundaries: boundaries, setBoundaries: SetBoundaries)))
+        {
+            string why = StatusMessage;               // the drag rule's refusal (brief-em3d-51)
+            SetTool(null);
+            StatusMessage = why;
+            Viewer.Regenerate();
+            return;
+        }
         FaceEdits++;
         if (selectFace is not null) _selectFaceAfterAdopt = (obj.Name, r.Folds.TryGetValue(selectFace, out var pieces) ? pieces[0] : selectFace);
         string text = r.Converted ? $"'{obj.Name}' is now a polyhedron (undo to keep it a {ft.Editor.Kind})." : $"{ft.Name}: {obj.Name}.";
@@ -393,8 +412,9 @@ public sealed partial class C3dEditorViewModel : IC3dFaceHost
         if (r is not { Object: { } obj }) return r.Refusal;
         string before = C3dPersistence.SerializeObject(v.Obj), after = C3dPersistence.SerializeObject(obj);
         if (before == after) return null;
-        Push(new C3dEdit($"Set a vertex of {v.Obj.Name}", [new C3dEditSlot(false, v.Index, before, after)], ApplySlots,
-                         faceBoundaries: BoundariesFollowing(obj.Name, r.Folds), setBoundaries: SetBoundaries));
+        if (!Push(new C3dEdit($"Set a vertex of {v.Obj.Name}", [new C3dEditSlot(false, v.Index, before, after)], ApplySlots,
+                              faceBoundaries: BoundariesFollowing(obj.Name, r.Folds), setBoundaries: SetBoundaries)))
+            return StatusMessage;
         FaceEdits++;
         StatusMessage = r.Converted ? $"'{obj.Name}' is now a polyhedron (undo to keep it a {editor.Kind})." : $"Moved a vertex of '{obj.Name}'.";
         return null;
@@ -413,9 +433,10 @@ public sealed partial class C3dEditorViewModel : IC3dFaceHost
         var source = Document.Objects[i];
         var r = C3dFaceEditor.ConvertToPolyhedron(source, facets);
         if (r is not { Object: { } obj }) { StatusMessage = r.Refusal!; return; }
-        Push(new C3dEdit($"Convert {source.Name} to a polyhedron",
-                         [new C3dEditSlot(false, i, C3dPersistence.SerializeObject(source), C3dPersistence.SerializeObject(obj))], ApplySlots,
-                         faceBoundaries: BoundariesFollowing(obj.Name, r.Folds), setBoundaries: SetBoundaries));
+        if (!Push(new C3dEdit($"Convert {source.Name} to a polyhedron",
+                              [new C3dEditSlot(false, i, C3dPersistence.SerializeObject(source), C3dPersistence.SerializeObject(obj))], ApplySlots,
+                              faceBoundaries: BoundariesFollowing(obj.Name, r.Folds), setBoundaries: SetBoundaries)))
+            return;
         FaceEdits++;
         string kind = C3dObject.KindOf(source).ToLowerInvariant();
         StatusMessage = source is C3dCylinder

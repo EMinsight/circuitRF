@@ -3220,3 +3220,19 @@ the only off-state that can be passive with finite isolation.
 Gates: `tests/Core.Tests/Devices/SystemBlockPassivityTests.cs` (the instance is named, a passive
 block and the tile defaults are silent, a PIM-enabled block is still reached, the amplifier is out of
 scope), and `ExampleWorkspacesTests.NoExampleShipsASystemBlockThatIsNotPassive`.
+
+## brief-em3d-51 R-em3d51-0 — a cell VAR with a parameter's name (2026-09-26)
+
+**The code is right and a comment was loose.** With a cell parameter `w` (default 10) and a cell VAR
+`w` (12), instanced twice — once with no override, once overriding `w = 20` — the elaborated values
+are **12 and 20**. `Elaborator.BuildCellScope` binds defaults, then VARs, then overrides, each
+`Scope.Bind` replacing the last, so a same-name VAR replaces the parameter's DEFAULT and an instance
+override still reaches the name. `SubcircuitTranslation.CarryGlobals`' "would bind over it and seal it
+shut" describes a VAR that is itself given the parameter's value, which is not what happens: an
+override binds after the VAR and wins. The cost of the circuit side's order is that one name has two
+defaults — the `.ccell`'s, used where no VAR exists, and the VAR's — with nothing reporting it.
+
+Nothing on the circuit side changed. The 3D view (`.c3d`) deliberately does NOT follow this order: a
+same-name VAR there is LINKED by default and a linked VAR takes the parameter's value, default
+included, so a cell keeps one default per name (the reference page's `3d-view` topic says how and
+why). Gate: `tests/Core.Tests/Elaboration/SameNameVarAndParameterTests.cs`.

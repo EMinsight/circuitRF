@@ -34,7 +34,17 @@ public static class C3dPersistence
     public const string Extension            = ".c3d";
     public const int    CurrentFormatVersion = 1;
 
-    private static readonly JsonSerializerOptions JsonOpts = new()
+    private static readonly JsonSerializerOptions JsonOpts = Options(C3dSpelling.File);
+
+    /// <summary>brief-em3d-51 — an object's in-memory spelling (undo entries, clones): each bound component carries its last
+    /// resolved number beside its expression, so a copy is where the original is before anything re-resolves it.</summary>
+    private static readonly JsonSerializerOptions ItemOpts = Options(C3dSpelling.WithValues);
+
+    /// <summary>brief-em3d-51 R-em3d51-5b — the same spelling with every expression replaced by its resolved number: what
+    /// the elaborator keys an object on, so changing a VAR re-elaborates exactly the objects whose values changed.</summary>
+    private static readonly JsonSerializerOptions ResolvedOpts = Options(C3dSpelling.NumbersOnly);
+
+    private static JsonSerializerOptions Options(C3dSpelling spelling) => new()
     {
         WriteIndented                     = true,
         IndentCharacter                   = '\t',
@@ -51,7 +61,12 @@ public static class C3dPersistence
             new C3dDoubleJsonConverter(), new C3dIndexListJsonConverter(), new C3dIndexLoopsJsonConverter(),
             new C3dPoint2ListJsonConverter(), new C3dPoint3ListJsonConverter(), new C3dRingListJsonConverter(),
         },
-        TypeInfoResolver = new DefaultJsonTypeInfoResolver { Modifiers = { OmitEmpty } },
+        // brief-em3d-51 — an expression's '+' is written as a plus (C3dBindings.Encoder).
+        Encoder = C3dBindings.Encoder,
+        TypeInfoResolver = new DefaultJsonTypeInfoResolver
+        {
+            Modifiers = { info => C3dBindings.Modify(info, spelling), OmitEmpty },
+        },
     };
 
     /// <summary>
@@ -86,15 +101,24 @@ public static class C3dPersistence
 
     /// <summary>brief-em3d-42 R-em3d42-4 — one object as the file spells it: the elaborator's per-object cache
     /// key, so an object is re-elaborated exactly when what the file would say about it changes.</summary>
-    public static string SerializeObject(C3dObject obj) => JsonSerializer.Serialize(obj, JsonOpts);
+    public static string SerializeObject(C3dObject obj) => JsonSerializer.Serialize(obj, ItemOpts);
+
+    /// <summary>brief-em3d-51 R-em3d51-5b — one object with its expressions replaced by their resolved numbers: the
+    /// elaborator's cache key. Never read back.</summary>
+    public static string SerializeResolved(C3dObject obj) => JsonSerializer.Serialize(obj, ResolvedOpts);
+
+    /// <summary>brief-em3d-51 — the VAR list as the file spells it (an undo entry's before and after).</summary>
+    public static string SerializeVariables(IReadOnlyList<C3dVariable> list) => JsonSerializer.Serialize(list, JsonOpts);
+
+    public static List<C3dVariable> DeserializeVariables(string json) => JsonSerializer.Deserialize<List<C3dVariable>>(json, JsonOpts) ?? [];
 
     /// <summary>brief-em3d-43 — one object read back from <see cref="SerializeObject"/>'s text: what an undo
     /// entry stores, so an entry holds only the objects it changed, never the document.</summary>
     public static C3dObject DeserializeObject(string json)
-        => JsonSerializer.Deserialize<C3dObject>(json, JsonOpts) ?? throw new C3dReadException(C3dDiagnostics.NotAnObject());
+        => JsonSerializer.Deserialize<C3dObject>(json, ItemOpts) ?? throw new C3dReadException(C3dDiagnostics.NotAnObject());
 
     /// <summary>brief-em3d-43 — one instance as the file spells it, and back.</summary>
-    public static string SerializeInstance(C3dInstance inst) => JsonSerializer.Serialize(inst, JsonOpts);
+    public static string SerializeInstance(C3dInstance inst) => JsonSerializer.Serialize(inst, ItemOpts);
 
     /// <summary>brief-em3d-49 — the document's face boundaries as the file spells them (an undo entry's before and after).</summary>
     public static string SerializeFaceBoundaries(IReadOnlyList<C3dFaceBoundary> list) => JsonSerializer.Serialize(list, JsonOpts);
@@ -103,9 +127,9 @@ public static class C3dPersistence
         => JsonSerializer.Deserialize<List<C3dFaceBoundary>>(json, JsonOpts) ?? [];
 
     /// <summary>brief-em3d-49 — the document's ports, as the file spells them.</summary>
-    public static string SerializePorts(IReadOnlyList<C3dPort> list) => JsonSerializer.Serialize(list, JsonOpts);
+    public static string SerializePorts(IReadOnlyList<C3dPort> list) => JsonSerializer.Serialize(list, ItemOpts);
 
-    public static List<C3dPort> DeserializePorts(string json) => JsonSerializer.Deserialize<List<C3dPort>>(json, JsonOpts) ?? [];
+    public static List<C3dPort> DeserializePorts(string json) => JsonSerializer.Deserialize<List<C3dPort>>(json, ItemOpts) ?? [];
 
     /// <summary>brief-em3d-49 — an embedded setup list, as the file spells it.</summary>
     public static string SerializeSetups(IReadOnlyList<JsonElement> list) => JsonSerializer.Serialize(list, JsonOpts);
@@ -113,14 +137,17 @@ public static class C3dPersistence
     public static List<JsonElement> DeserializeSetups(string json) => JsonSerializer.Deserialize<List<JsonElement>>(json, JsonOpts) ?? [];
 
     public static C3dInstance DeserializeInstance(string json)
-        => JsonSerializer.Deserialize<C3dInstance>(json, JsonOpts) ?? throw new C3dReadException(C3dDiagnostics.NotAnObject());
+        => JsonSerializer.Deserialize<C3dInstance>(json, ItemOpts) ?? throw new C3dReadException(C3dDiagnostics.NotAnObject());
 
     /// <summary>R-em3d41-2-dims: a size component is positive; a negative one moves the corner. A
     /// prism's height and a cylinder's length keep their sign — each says which way it was pulled.</summary>
+    /// <para>brief-em3d-51 — an object holding an expression is left alone: moving a corner under a size the expression
+    /// will recompute would change what the file means. A negative size from an expression is refused at resolution.</para>
     public static void Normalize(C3dDocument doc)
     {
         foreach (var o in doc.Objects)
         {
+            if (C3dBindings.HasAny(o)) continue;
             switch (o)
             {
                 case C3dBox b:

@@ -110,6 +110,10 @@ public sealed class ExtrudeTool : C3dDrawTool
 
     public override IReadOnlyList<string> Dimensions => Distance;
 
+    /// <summary>brief-em3d-51 — the distance is the prism's signed <c>Height</c> (a result of another kind has no such field,
+    /// and the expression is then evaluated once).</summary>
+    public override string? FieldFor(int step, int dim) => "Height";
+
     private long? CursorDistance(in C3dDrawInput input)
     {
         if (_worldAxis is not { } axis) return null;

@@ -466,8 +466,59 @@ internal static class DocumentSchema
             the outer boundary), set in a setup's AirBox. Palace finds a face's surfaces by its
             bounding box and counts them exactly: a neighbour's face lying in the same plane and
             overlapping it is refused, never merged. A curved face (a cylinder's side) is refused.
-          * Variables are reserved for a later build. This build keeps what they hold and writes it
-            back unread. So does any key it does not know, which `check` reports as a warning.
+          * A NAMED DIMENSION may hold an expression instead of a number: Min and Size (box,
+            rectangle), Offset, Height and Shear (prism, sheet, polyline), Base, Length and Radius
+            (cylinder), ThicknessUm, a placement's Origin and each Rotate angle, an array's Counts and
+            Pitch, a port's Rect, a wire's DiameterUm. It is an object that ALWAYS carries the unit it
+            was typed in, component by component:
+
+                "Size": [{ "Expr": "w", "Unit": "Mil" }, 1270000, { "Expr": "h_sub + t_met", "Unit": "Um" }]
+
+            The unit is stored so that changing DisplayUnit never changes what an expression means.
+            There are no units inside an expression (`2*w + 5um` does not parse). An angle's unit is
+            Deg; a count has none and must come out a whole number of at least 1 — never rounded.
+            Point lists (Outline, Holes, Points, Points3, Vertices, a wire's Points) hold numbers
+            only. Everything resolves BEFORE any geometry is built; a length is rounded to the DBU
+            once, and `check` notes a rounding that moved it by more than 1e-9.
+          * THE UNIT TRAP. A field's unit is its SITE unit, and it is skipped when the expression
+            references a name that carries a unit of its own (var-unit-wins). So in `2*w + 5`, with
+            w in mil, the literal 5 is FIVE METRES — 5.000508 m. The editor's field previews that
+            as it is typed, and `check` warns on any dimension above 1 m, the mark a unit slip
+            leaves.
+          * Variables are the 3D view's VARs, the record a schematic VAR row holds:
+
+                { "Name": "w", "Expression": "10", "Unit": "Mil" }
+                { "Name": "gap", "Expression": "w / 4" }      unit-less: takes w's units
+
+            A name is one the expression engine reads as a reference — not a built-in function,
+            not j, pi, e or freq — and unique among the VARs. A 3D view sees its CELL's parameters
+            (the .ccell's) and its own VARs, in one namespace; there are no globals, and a 3D view
+            outside a cell folder sees its VARs only.
+          * A VAR NAMED LIKE A CELL PARAMETER is LINKED to it unless it says "Linked": false:
+
+                Linked (or absent)  the VAR's value is the PARAMETER's — an instance's override, else
+                                    the .ccell default. Its own Expression is used only when the
+                                    3D view has no cell. Overrides reach every dimension using it.
+                false               the VAR's own Expression. Overrides of the name do NOT reach this
+                                    3D view, and `check` warns that the VAR hides the parameter.
+
+            This is deliberately NOT the schematic's order. There a same-name VAR replaces the
+            parameter's default and only an override gets through, which gives a cell two defaults
+            for one name — an instance that overrides nothing would be one size in the schematic and
+            another in 3D. Linking to the parameter as a whole keeps one default, in the .ccell.
+          * An instance of another cell's 3D view may override that cell's PARAMETERS, each an
+            expression evaluated in THIS document's scope:
+
+                "Params": { "w": { "Expr": "2*a", "Unit": "Mil" } }
+
+            A name that is only a VAR of the child is refused (promote it there first), and a Layout
+            instance takes none — a .clay has no parameters. Two instances whose overrides come to
+            the same values share one elaboration of the child. Names that cycle (a → b → a),
+            through defaults, VARs, links and overrides, are refused with the chain.
+          * `check` reports an undefined name (error), a VAR hiding a parameter and a dimension above
+            1 m (warnings), and an unused VAR (info). `explain` reports where each name's value came
+            from, and `explain x.c3d --expr "2*w" --set w=…` evaluates in the document's scope. A
+            key this build does not know is kept and written back, and `check` warns of it.
 
         Refused, with the reason named: a file that is not JSON; a FormatVersion newer than this
         build; an object whose "$type" this build does not know (every one is listed); and a string

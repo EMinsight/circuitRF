@@ -49,7 +49,15 @@ namespace CircuitRF.Design.ThreeD;
 /// <param name="FMaxHz">The top frequency, for the sheet rule inside a layout instance; null makes every
 /// conductor with thickness a solid.</param>
 /// <param name="TempC">The temperature σ(T) is evaluated at.</param>
-public sealed record C3dElaborationOptions(double? FMaxHz = null, double TempC = EmSetup.DefaultOperatingTempC);
+public sealed record C3dElaborationOptions(double? FMaxHz = null, double TempC = EmSetup.DefaultOperatingTempC)
+{
+    /// <summary>brief-em3d-51 — <c>explain --set</c>: names bound over the top document's scope before anything resolves.</summary>
+    public IReadOnlyList<(string Name, string Expr)>? Sets { get; init; }
+
+    /// <summary>brief-em3d-51 — the top document's cell, when the caller holds one the disk does not yet say (the editor's
+    /// preview of a drag that writes a parameter's default). Null: read from the document's own cell folder.</summary>
+    public C3dCell? Cell { get; init; }
+}
 
 /// <summary>Where one object of the elaborated problem came from (R-em3d42-3a).</summary>
 /// <param name="InstancePath">The instance path, <c>U1/U3</c> or <c>U1[0,1,0]</c>; empty for the document's own objects.</param>
@@ -123,6 +131,10 @@ public sealed record C3dElaboration(
     public IReadOnlyList<C3dWalkStep> WalkMaterials { get; init; } = [];
     public IReadOnlyList<C3dWalkStep> WalkLowering { get; init; } = [];
 
+    /// <summary>brief-em3d-51 — the top document's names and fields, resolved before any geometry: what explain reports per
+    /// name, what the editor's Variables panel and Properties show. Null only when elaboration did not start.</summary>
+    public C3dResolution? Resolution { get; init; }
+
     /// <summary>The document's own technology, and where it resolved.</summary>
     public Technology? Technology { get; init; }
     public string? TechnologyPath { get; init; }
@@ -165,6 +177,12 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null)
     /// <summary>Child views read and built because the per-child cache missed.</summary>
     public long ChildrenElaborated { get; private set; }
 
+    /// <summary>brief-em3d-51 R-em3d51-5b — child 3D views RESOLVED because no earlier instance had the same override
+    /// values: two instances with equal overrides share one.</summary>
+    public long ChildrenResolved { get; private set; }
+
+    private readonly Dictionary<string, (C3dDocument Doc, C3dResolution Res)> _resolvedChildren = new(StringComparer.Ordinal);
+
     /// <summary>One elaboration with no cache kept.</summary>
     public static C3dElaboration ElaborateOnce(C3dDocument document, string path, string? workspaceCws,
                                                C3dElaborationOptions? options = null)
@@ -191,7 +209,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null)
     {
         string key = string.Create(CultureInfo.InvariantCulture,
             $"{dbuPerMicron}|{world.M00:R},{world.M01:R},{world.M02:R},{world.M10:R},{world.M11:R},{world.M12:R},{world.M20:R},{world.M21:R},{world.M22:R},{world.Tx:R},{world.Ty:R},{world.Tz:R}|") +
-            C3dPersistence.SerializeObject(obj);
+            C3dPersistence.SerializeResolved(obj);
         if (_objects.TryGetValue(key, out var hit)) return hit;
         ObjectsElaborated++;
         return _objects[key] = C3dLowering.Lower(obj, world, dbuPerMicron);
@@ -236,6 +254,23 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null)
     }
 
     private string TechStampOf(string docKey) => _children.TryGetValue("techstamp|" + docKey, out var s) ? (string)s : "-";
+
+    /// <summary>
+    /// brief-em3d-51 R-em3d51-5b — a child 3D view resolved under one set of override VALUES: a copy of the shared document
+    /// with its numbers written, kept by (file, file stamp, .ccell stamp, the values). Two instances whose overrides are
+    /// equal share one, however their override expressions were spelled.
+    /// </summary>
+    private (C3dDocument Doc, C3dResolution Res) ResolvedChild(string path, Child3D child, C3dCell cell, IReadOnlyDictionary<string, C3dOverride> overrides)
+    {
+        string key = "3d|" + path + "|" + Stamp(path) + "|" + Stamp(cell.CcellPath) + "|" +
+                     string.Join(";", overrides.OrderBy(o => o.Key, StringComparer.Ordinal)
+                                               .Select(o => $"{o.Key}={o.Value.Value}:{o.Value.Unit}"));
+        if (_resolvedChildren.TryGetValue(key, out var hit)) return hit;
+        ChildrenResolved++;
+        var copy = C3dPersistence.Deserialize(C3dPersistence.Serialize(child.Document));
+        var res = C3dResolver.Resolve(copy, cell, overrides);
+        return _resolvedChildren[key] = (copy, res);
+    }
 
     private ChildLayout ChildLayoutCached(string path, string? fallbackCws, C3dElaborationOptions options)
     {
@@ -326,7 +361,16 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null)
             var (tech, _) = TechnologyResolver.ResolveForDocument(doc.TechRef, path, workspaceCws, owner._tech);
             foreach (string d in tech.Diagnostics) _notes.Add(d);
             _topDbu = doc.DbuPerMicron;
-            Document(doc, path, tech, C3dTransform.Identity, "", [(CellOf(path), "", path)], exact: true);
+
+            // brief-em3d-51 R-em3d51-5a — every expression resolves before any geometry is built; a document whose names or
+            // fields do not resolve is refused with the engine's message and builds nothing.
+            var resolution = C3dResolver.Resolve(doc, options.Cell ?? C3dCell.Of(path), null, options.Sets);
+            _refusals.AddRange(resolution.Errors);
+            _warnings.AddRange(resolution.Warnings);
+            _notes.AddRange(resolution.Notes);
+            _notes.AddRange(resolution.Infos);
+            if (resolution.Ok)
+                Document(doc, resolution, path, tech, C3dTransform.Identity, "", [(CellOf(path), "", path)], exact: true);
 
             if (_polylines > 0)
                 _notes.Add($"{_polylines} polyline(s) are construction geometry and are not in the 3D problem.");
@@ -371,11 +415,12 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null)
                 WalkLowering = _walkLowering,
                 Technology = tech.Tech,
                 TechnologyPath = tech.ResolvedPath,
+                Resolution = resolution,
             };
         }
 
         /// <summary>A document's objects and instances under <paramref name="world"/> (metres).</summary>
-        private void Document(C3dDocument doc, string path, TechResolution tech, C3dTransform world, string prefix,
+        private void Document(C3dDocument doc, C3dResolution resolution, string path, TechResolution tech, C3dTransform world, string prefix,
                               List<(string Cell, string Instance, string Path)> stack, bool exact)
         {
             string techName = TechName(tech);
@@ -444,7 +489,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null)
             }
 
             string baseDir = Path.GetDirectoryName(path)!;
-            foreach (var inst in doc.Instances) Instance(doc, inst, baseDir, world, prefix, stack, exact);
+            foreach (var inst in doc.Instances) Instance(doc, resolution, inst, baseDir, world, prefix, stack, exact);
             if (doc.Objects.Any(o => o is C3dWire)) Wires(doc, path, tech, world, prefix);
         }
 
@@ -515,7 +560,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null)
         }
 
         /// <summary>One instance: resolved, then elaborated once per array element.</summary>
-        private void Instance(C3dDocument doc, C3dInstance inst, string baseDir, C3dTransform world, string prefix,
+        private void Instance(C3dDocument doc, C3dResolution resolution, C3dInstance inst, string baseDir, C3dTransform world, string prefix,
                               List<(string Cell, string Instance, string Path)> stack, bool exact)
         {
             string instPath = prefix + inst.Name;
@@ -571,10 +616,24 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null)
                     _refusals.Add($"Instance '{instPath}' places '{viewPath}', which cannot be read: {why}");
                     return;
                 }
+                // brief-em3d-51 R-em3d51-2e — the overrides, evaluated in THIS document's scope, then the child resolved under
+                // their values (shared with every other instance whose values are the same).
+                var childCell = C3dCell.OfFolder(cellDir);
+                var overrideErrors = new List<string>();
+                var overrides = resolution.OverridesFor(inst, instPath, childCell, child.Document.Variables, overrideErrors);
+                if (overrideErrors.Count > 0) { _refusals.AddRange(overrideErrors); return; }
+                var (resolvedDoc, childRes) = owner.ResolvedChild(viewPath, child, childCell, overrides);
+                if (!childRes.Ok)
+                {
+                    foreach (string e in childRes.Errors) _refusals.Add($"Instance '{instPath}' ({viewPath}): {e}");
+                    return;
+                }
+                foreach (string w in childRes.Warnings) _warnings.Add($"{instPath}: {w}");
+                foreach (string n in childRes.Notes) _notes.Add($"{instPath}: {n}");
                 var next = new List<(string, string, string)>(stack) { (CellOf(viewPath), inst.Name, viewPath) };
                 foreach (var (ijk, w, integral) in Elements(doc, inst, counts, pitch, world))
-                    Document(child.Document, viewPath, child.Tech, w, prefix + inst.Name + (isArray ? ijk : "") + "/", next,
-                             exact && integral && child.Document.DbuPerMicron == _topDbu);
+                    Document(resolvedDoc, childRes, viewPath, child.Tech, w, prefix + inst.Name + (isArray ? ijk : "") + "/", next,
+                             exact && integral && resolvedDoc.DbuPerMicron == _topDbu);
                 return;
             }
 

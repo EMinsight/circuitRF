@@ -47,6 +47,29 @@ public sealed class CylinderTool(IC3dDrawHost host) : C3dDrawTool(host)
         _ => [],
     };
 
+    /// <summary>The radius is <c>Radius</c> (a magnitude); the height is the signed <c>Length</c>.</summary>
+    public override string? FieldFor(int step, int dim) => step switch { 1 => "Radius", 2 => "Length", _ => null };
+
+    public override bool FieldIsMagnitude(int step, int dim) => step == 1;
+
+    public override void PreviewTyped(long?[] values, in C3dDrawInput input, List<DrawSegment> rubber, List<Point3> fixedPoints)
+    {
+        long? typed = values.Length > 0 ? values[0] : null;
+        if (Step == 1 && typed is { } r && r > 0)
+        {
+            fixedPoints.Add(M(_plane.FromUv(_centre)));
+            DrawGeometry.Circle(_plane, _centre, r, 0, Host.DbuPerMicron, rubber);
+            return;
+        }
+        if (Step == 2 && typed is { } h)
+        {
+            fixedPoints.Add(M(_plane.FromUv(_centre)));
+            DrawGeometry.Cylinder(_plane, _centre, _radius, h, Host.DbuPerMicron, rubber);
+            return;
+        }
+        Preview(input, rubber, fixedPoints);
+    }
+
     public override C3dToolStep Click(in C3dDrawInput input)
     {
         switch (Step)

@@ -24,6 +24,21 @@ namespace CircuitRF.Ui.ThreeD;
 /// <summary>One read-only line of the panel; its value is selectable, so it can be copied.</summary>
 public sealed record C3dPropertyRow(string Label, string Value);
 
+/// <summary>
+/// brief-em3d-51 R-em3d51-4b — one named dimension of the selected object: its text (a number in the display unit, or an
+/// expression) and its resolved value, editable as either. A resolution error shows here, red, with the engine's message;
+/// the document keeps the text, and elaboration refuses with the same message.
+/// </summary>
+public sealed partial class C3dDimensionField : ObservableObject
+{
+    public required string Path { get; init; }
+    public required string ValueText { get; init; }
+    public string? Error { get; init; }
+    public bool IsExpression { get; init; }
+    [ObservableProperty] private string _text = "";
+    internal string Loaded { get; set; } = "";
+}
+
 public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : ObservableObject
 {
     /// <summary>The Role choices: the material's own, or an override.</summary>
@@ -37,6 +52,9 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
     public int ObjectIndex { get; private set; } = -1;
 
     public ObservableCollection<C3dPropertyRow> Rows { get; } = [];
+
+    /// <summary>brief-em3d-51 — the selected object's named dimensions, editable as a number or an expression.</summary>
+    public ObservableCollection<C3dDimensionField> Fields { get; } = [];
     public IReadOnlyList<string> Materials => editor.Materials;
 
     [ObservableProperty] private string _heading = "Nothing selected";
@@ -69,6 +87,7 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
     private void Load()
     {
         Rows.Clear();
+        Fields.Clear();
         Error = "";
         ObjectIndex = -1;
         IsEditable = false;
@@ -140,6 +159,15 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         Rows.Add(new C3dPropertyRow("Construction order",
             $"{index + 1} of {editor.Document.Objects.Count} — a later object wins where solids overlap (Modify ▸ Order)"));
         foreach (var row in Dimensions(obj)) Rows.Add(row);
+        foreach (var f in editor.DimensionFields(obj)) Fields.Add(f);
+    }
+
+    /// <summary>A dimension's Enter or lost focus: a number replaces the expression; an expression is bound (and kept even
+    /// when it does not resolve — the field then says why). One undo entry.</summary>
+    public void CommitField(C3dDimensionField field)
+    {
+        if (ObjectIndex < 0 || field.Text == field.Loaded) return;
+        Error = editor.SetFieldText(ObjectIndex, field.Path, field.Text) ?? "";
     }
 
     /// <summary>A face's perimeter (metres): the scene's own feature edges around it, which are the solid's edges, not its

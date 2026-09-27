@@ -32,6 +32,9 @@ public sealed class C3dEdit : IUiCommand
     public string Description { get; }
     public IReadOnlyList<C3dEditSlot> Slots { get; }
 
+    /// <summary>brief-em3d-51 — the document already holds the after state (a gesture's release), until the first Execute.</summary>
+    public bool AlreadyApplied => _alreadyApplied;
+
     /// <param name="apply">Writes the slots into the document: forward (after) or back (before).</param>
     /// <param name="alreadyApplied">The document already holds the after state (a gesture committed on
     /// release, R-em3d43-1c): the stack's first Execute does nothing, and every Redo after it applies.</param>
@@ -158,5 +161,52 @@ public sealed class C3dRecordsEdit(string description, string before, string aft
         doc.Ports = C3dPersistence.DeserializePorts(parts[0]);
         doc.FaceBoundaries = C3dPersistence.DeserializeFaceBoundaries(parts[1]);
         doc.Setups = C3dPersistence.DeserializeSetups(parts[2]);
+    }
+}
+
+/// <summary>
+/// brief-em3d-51 — ONE undo entry for an edit of the document's NAMES: its VARs, the fields a rename rewrote, the objects a
+/// drag moved through a name — and, when a cell parameter is written (a linked VAR's value, Promote, a drag of a
+/// parameter), the cell's <c>.ccell</c>. The document is kept whole, as the file spells it, before and after; the
+/// <c>.ccell</c> as its text. A name edit touches the whole document by construction (every field that uses the name), and
+/// it is rare, so the copy is the exact choice rather than the cheap one.
+/// </summary>
+public sealed class C3dDocumentEdit(string description, string before, string after, string? ccellPath, string? ccellBefore,
+                                    string? ccellAfter, Action<string, string?, string?> apply, bool alreadyApplied = false) : IUiCommand
+{
+    private bool _alreadyApplied = alreadyApplied;
+
+    public string Description { get; } = description;
+    public string Before { get; } = before;
+    public string After { get; } = after;
+    public string? CcellPath { get; } = ccellPath;
+
+    public void Execute()
+    {
+        if (_alreadyApplied) { _alreadyApplied = false; return; }
+        apply(After, CcellPath, ccellAfter);
+    }
+
+    public void Undo() => apply(Before, CcellPath, ccellBefore);
+}
+
+/// <summary>brief-em3d-51 R-em3d51-3c — entries that happened as one user action (a Define strip's definitions and the
+/// object the step then drew), undone and redone together. Each was applied as it was pushed.</summary>
+public sealed class C3dGroupEdit(string description, IReadOnlyList<IUiCommand> parts) : IUiCommand
+{
+    private bool _applied = true;
+
+    public string Description { get; } = description;
+    public IReadOnlyList<IUiCommand> Parts { get; } = parts;
+
+    public void Execute()
+    {
+        if (_applied) { _applied = false; return; }
+        foreach (var p in Parts) p.Execute();
+    }
+
+    public void Undo()
+    {
+        for (int i = Parts.Count - 1; i >= 0; i--) Parts[i].Undo();
     }
 }

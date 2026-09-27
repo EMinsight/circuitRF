@@ -37,9 +37,11 @@ namespace CircuitRF.Ui.ThreeD;
 /// element's transform (the child's metres to the top's): the dimmed context.</para>
 /// <para>brief-em3d-49 — <paramref name="SetupJson"/> is the active setup's full .cem spelling: its air box is drawn and the
 /// ports are resolved against it.</para>
+/// <para>brief-em3d-51 — <paramref name="Cell"/> is the cell as a gesture's preview would leave it (a drag writing a
+/// parameter's default); null reads the cell from disk.</para>
 public sealed record C3dSceneInputs(string DocumentText, string Path, string? WorkspaceCws, ColorTheme Theme, ColorVariant Variant,
                                     (string Text, string Path, string Exclude, C3dTransform ToTop)? Context = null,
-                                    string? SetupJson = null);
+                                    string? SetupJson = null, C3dCell? Cell = null);
 
 public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEditHost, IDisposable
 {
@@ -124,6 +126,8 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         Viewer.CursorResolved += OnCursorResolvedForOperation;
         ApplySnapGrid();
         Properties = new C3dPropertiesViewModel(this);
+        Variables = new C3dVariablesViewModel(this);
+        ResolveDocument();
         WatchStack(UndoRedo);
         InitFrames();
         _loading = true;
@@ -141,21 +145,25 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
 
     private object Snapshot()
         => new C3dSceneInputs(DocumentText(), FilePath, _workspaceCws(), ThemeService.Active, ThemeService.CurrentVariant, ContextSnapshot(),
-                              SceneSetupJson());
+                              SceneSetupJson(), _namePreview?.Cell);
 
     /// <summary>
     /// The document as its file would say it — with, while a face or vertex gesture runs, the gesture's edited object
     /// standing in for the document's own (brief-em3d-47 R-em3d47-6). The document's list is swapped for a copy for the
     /// length of one serialisation; its objects are never written.
     /// </summary>
+    /// <para>brief-em3d-51 — and with the VARs as the gesture's drag rule would leave them, so every object using a name
+    /// the release will write previews too.</para>
     private string DocumentText()
     {
         if (_facePreview is not { } p || p.Index >= Document.Objects.Count) return C3dPersistence.Serialize(Document);
         var objects = Document.Objects;
+        var variables = Document.Variables;
         var shown = new List<C3dObject>(objects) { [p.Index] = p.Object };
         Document.Objects = shown;
+        if (_namePreview is { } names) Document.Variables = names.Variables;
         try { return C3dPersistence.Serialize(Document); }
-        finally { Document.Objects = objects; }
+        finally { Document.Objects = objects; Document.Variables = variables; }
     }
 
     /// <summary>The origin moves only when the content has moved further than its own size from it, so an
@@ -174,7 +182,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         lock (_elaborating)
         {
             ct.ThrowIfCancellationRequested();
-            var e = _elaborator.Elaborate(doc, inputs.Path, inputs.WorkspaceCws);
+            var e = _elaborator.Elaborate(doc, inputs.Path, inputs.WorkspaceCws, new C3dElaborationOptions { Cell = inputs.Cell });
             _elaborations[generation] = e;
             var extent = e.Extent() ?? (-5e-4, -5e-4, -5e-4, 5e-4, 5e-4, 5e-4);
             if (_origin is not { } o || !NearEnough(o, extent))
@@ -381,11 +389,28 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         return null;
     }
 
-    private void Push(IUiCommand edit)
+    /// <para>brief-em3d-51 — every entry replacing objects passes the drag rule first (<see cref="ThroughNames"/>): it may
+    /// become an entry that writes the names the edit moved, or be refused. Inside a group (<see cref="BeginGroup"/>) the
+    /// entry is applied and kept for the group's one entry.</para>
+    /// <returns>False when the drag rule refused it (the status line says why, and the document is as it was).</returns>
+    private bool Push(IUiCommand edit)
     {
+        if (edit is C3dEdit ce)
+        {
+            if (ThroughNames(ce) is not { } through) return false;
+            edit = through;
+        }
+        CanReplaceWithNumber = false;
+        StatusMessage = "";
+        if (_group is { } group)
+        {
+            edit.Execute();
+            group.Add(edit);
+            return true;
+        }
         UndoRedo.Execute(edit);
         UndoEntries++;
-        StatusMessage = "";
+        return true;
     }
 
     /// <summary>Times the document's objects were written — brief-em3d-47 gate 7 reads that a drag writes none.</summary>
@@ -403,6 +428,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     /// bring the tree and the panel up to date.</summary>
     private void DocumentChanged()
     {
+        ResolveDocument();
         Viewer.Regenerate();
         RebuildTree();
         Properties.Reload();

@@ -175,6 +175,8 @@ public sealed partial class C3dEditorViewModel
     private void BeginOperation(C3dOperationTool tool)
     {
         CloseArray();
+        // brief-em3d-51 R-em3d51-6 — a placement holding an expression the preview could not show in full is refused here.
+        if (OperationGrabRefusal(tool) is not null) return;
         SetTool(tool);
         StatusMessage = "";
         OperationChanged();
@@ -356,7 +358,7 @@ public sealed partial class C3dEditorViewModel
             }
         }
         if (slots.Count == 0) { StatusMessage = $"{description}: nothing moved."; return false; }
-        Push(new C3dEdit(description, slots, ApplySlots));
+        if (!Push(new C3dEdit(description, slots, ApplySlots))) return false;
         OperationCommits++;
         StatusMessage = $"{description}." + (allExact ? "" : " ≈ Not a whole number of database units: rounded to the nearest one.");
         return true;
@@ -406,7 +408,7 @@ public sealed partial class C3dEditorViewModel
             }
         }
         if (slots.Count == 0) return false;
-        Push(new C3dEdit(description, slots, ApplySlots));
+        if (!Push(new C3dEdit(description, slots, ApplySlots))) return false;
         OperationCommits++;
         _selectAfterAdopt = names;
         StatusMessage = $"{description}: {names.Count} {(names.Count == 1 ? "copy" : "copies")}." +
@@ -482,7 +484,7 @@ public sealed partial class C3dEditorViewModel
             }
         }
         string word = at switch { AlignAt.Min => "min", AlignAt.Max => "max", _ => "centre" };
-        Push(new C3dEdit($"Align {axis} {word} to {NameOf(reference)}", slots, ApplySlots));
+        if (!Push(new C3dEdit($"Align {axis} {word} to {NameOf(reference)}", slots, ApplySlots))) return;
         OperationCommits++;
         StatusMessage = $"Aligned {moves.Count} to the {axis} {word} of '{NameOf(reference)}'." +
                         (exact ? "" : " ≈ Not a whole number of database units: rounded to the nearest one.");
@@ -526,7 +528,7 @@ public sealed partial class C3dEditorViewModel
         {
             OrderMove.ToFront => "Bring to Front", OrderMove.ToBack => "Send to Back", OrderMove.Forward => "Bring Forward", _ => "Send Backward",
         };
-        Push(new C3dEdit($"{word}: {Describe(targets)}", slots, ApplySlots));
+        if (!Push(new C3dEdit($"{word}: {Describe(targets)}", slots, ApplySlots))) return;
         OperationCommits++;
         StatusMessage = $"{word}: a later object wins where solids overlap.";
     }
@@ -580,23 +582,7 @@ public sealed partial class C3dEditorViewModel
     private List<C3dTransform>? ArrayCopies(out string? why)
     {
         why = null;
-        int[] n = new int[3];
-        string[] counts = [ArrayCountX, ArrayCountY, ArrayCountZ];
-        for (int k = 0; k < 3; k++)
-            if (!int.TryParse(counts[k].Trim(), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out n[k]) || n[k] < 1)
-            {
-                why = $"A count is a whole number, at least 1 — '{counts[k]}' is not.";
-                return null;
-            }
-        long[] pitch = new long[3];
-        string[] pitches = [ArrayPitchX, ArrayPitchY, ArrayPitchZ];
-        for (int k = 0; k < 3; k++)
-        {
-            if (n[k] == 1 && pitches[k].Trim().Length == 0) continue;
-            var d = C3dDimension.Parse(pitches[k], Document.DisplayUnit, Document.DbuPerMicron);
-            if (d.Kind != C3dDimensionKind.Value) { why = d.Why; return null; }
-            pitch[k] = d.Dbu;
-        }
+        if (ArrayValues(out var n, out var pitch, out _, out why) is false) return null;
         long total = (long)n[0] * n[1] * n[2];
         if (total > 100_000) { why = $"{total:N0} copies is more than an array here holds."; return null; }
         var list = new List<C3dTransform>((int)total - 1);

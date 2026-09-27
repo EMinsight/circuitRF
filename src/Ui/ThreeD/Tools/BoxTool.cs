@@ -67,12 +67,18 @@ public abstract class C3dRectangleTool(IC3dDrawHost host) : C3dDrawTool(host)
         return SetB(new C3dPoint2(A.U + Or(values[0], cur[0]), A.V + Or(values.Length > 1 ? values[1] : null, cur[1])));
     }
 
-    protected void PreviewRectangle(in C3dDrawInput input, List<DrawSegment> rubber, List<Point3> fixedPoints)
+    protected void PreviewRectangle(in C3dDrawInput input, List<DrawSegment> rubber, List<Point3> fixedPoints, long?[]? typed = null)
     {
         if (Step == 0) return;
         fixedPoints.Add(M(Plane.FromUv(A)));
-        if (Step == 1 && Cursor(input, out _) is { } c) DrawGeometry.Chain(DrawGeometry.Rectangle(Plane, A, c), true, Host.DbuPerMicron, rubber);
+        if (Step != 1) return;
+        var cur = Current(input);
+        long? du = typed is { Length: > 0 } && typed[0] is { } t0 ? t0 : cur[0];
+        long? dv = typed is { Length: > 1 } && typed[1] is { } t1 ? t1 : cur[1];
+        if (du is { } u && dv is { } v) DrawGeometry.Chain(DrawGeometry.Rectangle(Plane, A, new C3dPoint2(A.U + u, A.V + v)), true, Host.DbuPerMicron, rubber);
     }
+
+    public override bool FieldIsMagnitude(int step, int dim) => true;
 }
 
 public sealed class BoxTool(IC3dDrawHost host) : C3dRectangleTool(host)
@@ -93,6 +99,21 @@ public sealed class BoxTool(IC3dDrawHost host) : C3dRectangleTool(host)
     private long? Height(in C3dDrawInput input) => Host.Along(Plane.FromUv(B), Plane.Normal, input) is { } w ? w - Plane.OffsetDbu : null;
 
     public override long?[] Current(in C3dDrawInput input) => Step == 2 ? [Height(input)] : base.Current(input);
+
+    /// <summary>Width and depth are the Size components along the plane's u and v; the height is the one along its normal.</summary>
+    public override string? FieldFor(int step, int dim)
+    {
+        var (u, v, n) = AxesOf(Plane.Plane);
+        return step switch { 1 => $"Size[{(dim == 0 ? u : v)}]", 2 => $"Size[{n}]", _ => null };
+    }
+
+    public override void PreviewTyped(long?[] values, in C3dDrawInput input, List<DrawSegment> rubber, List<Point3> fixedPoints)
+    {
+        if (Step != 2) { PreviewRectangle(input, rubber, fixedPoints, values); return; }
+        PreviewRectangle(input, rubber, fixedPoints);
+        fixedPoints.Add(M(Plane.FromUv(B)));
+        DrawGeometry.Box(Plane, A, B, (values.Length > 0 ? values[0] : null) ?? Height(input) ?? 0, Host.DbuPerMicron, rubber);
+    }
 
     public override C3dToolStep Click(in C3dDrawInput input)
     {
@@ -150,6 +171,11 @@ public sealed class SheetTool(IC3dDrawHost host) : C3dRectangleTool(host)
 
     public override C3dToolStep Typed(long?[] values, in C3dDrawInput input)
         => Step == 1 ? Finish(TypedRectangle(values, input)) : new(false);
+
+    public override string? FieldFor(int step, int dim) => step == 1 ? $"Rect.Size[{dim}]" : null;
+
+    public override void PreviewTyped(long?[] values, in C3dDrawInput input, List<DrawSegment> rubber, List<Point3> fixedPoints)
+        => PreviewRectangle(input, rubber, fixedPoints, values);
 
     /// <summary>The rectangle's second corner makes the sheet: a Rect (corner + size) on the plane, at the material's
     /// thickness when the technology states one (else none, and the elaboration says so).</summary>

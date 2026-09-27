@@ -118,9 +118,11 @@ public sealed class DrawToolGateTests : IDisposable
         vm.FieldEnter();
         Assert.True(vm.FieldOpen);                                             // stays, red
         Assert.NotNull(vm.FieldError);
-        vm.FieldText = "2*w";
+        vm.FieldText = "2*w";                                                  // brief-em3d-51: an unknown name asks to be defined
         vm.FieldEnter();
-        Assert.Contains("expressions", vm.FieldError!, StringComparison.OrdinalIgnoreCase);
+        Assert.True(vm.DefineOpen);
+        Assert.Equal("w", Assert.Single(vm.DefineRows).Name);
+        vm.DefineEscape();                                                     // … and Esc returns to the field, nothing written
         Assert.Equal(objects, vm.Document.Objects.Count);
         Assert.Equal(entries, vm.UndoEntries);
         Assert.Equal(2, vm.Tool.Step);

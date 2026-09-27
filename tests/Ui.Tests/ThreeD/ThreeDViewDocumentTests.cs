@@ -72,7 +72,7 @@ public sealed class ThreeDViewDocumentTests : IDisposable
 
         string expression = EveryKind.Replace("\"Length\": 254", "\"Length\": \"w\"");
         var expr = Assert.Throws<C3dReadException>(() => C3dPersistence.Deserialize(expression));
-        Assert.Contains("Expressions arrive in a later version", expr.Message, StringComparison.Ordinal);
+        Assert.Contains("is written as a bare string", expr.Message, StringComparison.Ordinal);
     }
 
     /// <summary>R-em3d41-2-dims: a negative size is normalised on write by moving the corner; a
@@ -609,7 +609,8 @@ public sealed class ThreeDViewDocumentTests : IDisposable
 	"Variables": [
 		{
 			"Name": "w",
-			"Value": "10 mil"
+			"Expression": "10",
+			"Unit": "Mil"
 		}
 	],
 	"Booleans": []

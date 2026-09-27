@@ -24,8 +24,9 @@ public sealed partial class C3dPlacement
     public C3dPlacement Clone() => new()
     {
         Origin = Origin,
-        Rotate = [.. Rotate.Select(r => new C3dRotation { Axis = r.Axis, Deg = r.Deg })],
+        Rotate = [.. Rotate.Select(r => new C3dRotation { Axis = r.Axis, Deg = r.Deg, Exprs = C3dBindings.Copy(r.Exprs) })],
         MirrorX = MirrorX,
+        Exprs = C3dBindings.Copy(Exprs),
     };
 
     /// <summary>This placement moved by <paramref name="by"/>: only the origin changes, so the rotation list is kept

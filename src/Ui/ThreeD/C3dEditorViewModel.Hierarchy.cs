@@ -336,19 +336,7 @@ public sealed partial class C3dEditorViewModel
     private bool AcceptInstanceArray(IReadOnlyList<C3dTarget> targets)
     {
         if (targets is not [{ Instance: true } t]) return false;
-        int[] n = new int[3];
-        string[] counts = [ArrayCountX, ArrayCountY, ArrayCountZ];
-        for (int k = 0; k < 3; k++)
-            if (!int.TryParse(counts[k].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out n[k]) || n[k] < 1) return false;
-        long[] pitch = new long[3];
-        string[] pitches = [ArrayPitchX, ArrayPitchY, ArrayPitchZ];
-        for (int k = 0; k < 3; k++)
-        {
-            if (n[k] == 1 && pitches[k].Trim().Length == 0) continue;
-            var d = C3dDimension.Parse(pitches[k], Document.DisplayUnit, Document.DbuPerMicron);
-            if (d.Kind != C3dDimensionKind.Value) return false;
-            pitch[k] = d.Dbu;
-        }
+        if (!ArrayValues(out var n, out var pitch, out var exprs, out _)) return false;
         var inst = Document.Instances[t.Index];
         long objects = Elaboration?.Provenance.Count(kv => kv.Value.InstancePath == inst.Name || kv.Value.InstancePath.StartsWith(inst.Name + "[", StringComparison.Ordinal)
                                                           || kv.Value.InstancePath.StartsWith(inst.Name + "/", StringComparison.Ordinal)) ?? 0;
@@ -357,6 +345,10 @@ public sealed partial class C3dEditorViewModel
         ChangeInstance($"Array {inst.Name} {n[0]}×{n[1]}×{n[2]}", t.Index, i =>
         {
             i.Array = n[0] * n[1] * n[2] == 1 ? null : new C3dArray { Counts = [n[0], n[1], n[2]], Pitch = new C3dPoint3(pitch[0], pitch[1], pitch[2]) };
+            // brief-em3d-51 — a count or a pitch typed as an expression is bound on the instance's own array.
+            if (i.Array is { } a)
+                foreach (var (field, k, e) in exprs)
+                    C3dBindings.SetExpr(a, C3dBindings.SpecOf(typeof(C3dArray), field)!, k, e);
         });
         OperationCommits++;
         StatusMessage = $"{inst.Name} is now an array of {n[0]} × {n[1]} × {n[2]}: one child, drawn {n[0] * n[1] * n[2]:N0} times.";
@@ -420,6 +412,7 @@ public sealed partial class C3dEditorViewModel
         var f = _frames[^1];
         FilePath = f.FilePath;
         Document = f.Document;
+        ResolveDocument();
         UndoRedo = f.UndoRedo;
         _preferenceDirty = f.PreferenceDirty;
         _savedStamp = f.SavedStamp;

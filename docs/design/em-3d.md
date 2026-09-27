@@ -534,7 +534,11 @@ CSXCAD's primitive set, so the FDTD lowering of a Tier A problem needs no OCCT a
 > replay, so F4a's document is a **flat, ordered list of named objects**, construction order deciding
 > overlap; a boolean (F4b) becomes an object whose operands are other objects. Dimensions become
 > expressions in F4a's last brief, with VARs stored in the `.c3d` and linkable to the cell's
-> parameters.
+> parameters. *(Built, brief 51:)* a named dimension holds `{ "Expr", "Unit" }` beside its number — the
+> unit stored so the display unit stays free — and resolves before any geometry (`C3dResolver`); a
+> same-name VAR is LINKED by default and then takes the parameter's value, default included (owner
+> decision D12 — deliberately not the schematic's order, `src/Core/RESOLVED.md`); an instance
+> overrides a child's parameters in its own scope.
 
 **Tier B — a 3D view the user edits (v3).** A new cell view holding a **construction history**:
 named primitives and operations (box, cylinder, polygon extrude, sweep, boolean, fragment), each
@@ -1024,7 +1028,10 @@ viewer must show: intersecting translucent solids, and fields on 10⁵–10⁶ e
    reads back one texel leaves the patch to the CPU, which renders it from the objects near the cursor's ray.
 3. **A drag is a preview.** Moving, rotating or resizing transforms what is already drawn; the kernel
    rebuild happens once, on release. The rules the PCell parameter handles already follow
-   (`pcell-parameter-handles.md`) govern a drag on a dimension bound to an expression. *(Brief 47:)* a face
+   (`pcell-parameter-handles.md`) govern a drag on a dimension bound to an expression — *(brief 51:)* the
+   drag writes the NAME (a bare VAR, a parameter's default, or the one name an affine expression is solved
+   for, by measured slope) and everything using it previews and moves; anything else is refused at the
+   grab with *Replace with Number*. *(Brief 47:)* a face
    or vertex drag cannot be a rigid transform, because the neighbours change shape: each move runs the
    managed kernel on that ONE object and re-tessellates and uploads it alone, from a snapshot in which the
    edited object stands in for the document's; the document is written once, on release (§8.6's rev-6 gate).

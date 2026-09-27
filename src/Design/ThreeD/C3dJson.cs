@@ -2,10 +2,10 @@
 //
 // Two jobs. WRITING: a point is one line, "[x, y, z]", so a list of vertices is a vertex per line and a
 // moved vertex is a one-line diff — the rule CoordinatePairsJsonConverter states for .clay. READING:
-// every number is an integer today, and a STRING where a number belongs is refused by name
-// (R-em3d41-2d) rather than by System.Text.Json's "could not be converted to System.Int64". Brief 51
-// makes a dimension an expression; until then "w" in a Size is a document from a later build, and the
-// reader should say so.
+// every number is an integer, and a STRING where a number belongs is refused by name (R-em3d41-2d)
+// rather than by System.Text.Json's "could not be converted to System.Int64". Since brief 51 a NAMED
+// dimension may hold an expression — an object carrying its unit, read by C3dBindings, not here; what
+// these readers see is a point list, which holds numbers only, and the refusal says so.
 
 using System.Buffers;
 using System.Text;

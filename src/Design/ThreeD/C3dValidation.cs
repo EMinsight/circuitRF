@@ -31,7 +31,10 @@ public static class C3dValidation
     /// in which case materials are not checked here at all, and the caller says why (a warning per
     /// object for a missing technology would bury the one finding that matters).
     /// </param>
-    public static IReadOnlyList<Diagnostic> Validate(C3dDocument doc, Func<string, bool>? isKnownMaterial = null)
+    /// <param name="unresolved">brief-em3d-51 — items whose expression fields did not resolve: their geometry is not checked,
+    /// because an unresolved size reads as zero and the resolver has already said why.</param>
+    public static IReadOnlyList<Diagnostic> Validate(C3dDocument doc, Func<string, bool>? isKnownMaterial = null,
+                                                     IReadOnlySet<string>? unresolved = null)
     {
         var found = new List<Diagnostic>();
 
@@ -48,6 +51,7 @@ public static class C3dValidation
                     found.Add(C3dDiagnostics.UnknownMaterial(o.Name, material));
             }
 
+            if (unresolved?.Contains(o.Name) == true) { Unread(o.Unread, $"'{o.Name}'", found); continue; }
             switch (o)
             {
                 case C3dBox b:        Box(b, found);        break;
@@ -65,7 +69,7 @@ public static class C3dValidation
         foreach (var i in doc.Instances)
         {
             if (string.IsNullOrWhiteSpace(i.CellRef)) found.Add(C3dDiagnostics.InstanceNoCell(i.Name));
-            if (i.Array is { } a && (a.Counts.Count != 3 || a.Counts.Any(n => n < 1)))
+            if (i.Array is { } a && unresolved?.Contains(i.Name) != true && (a.Counts.Count != 3 || a.Counts.Any(n => n < 1)))
                 found.Add(C3dDiagnostics.ArrayCounts(i.Name));
             Unread(i.Unread, $"The instance '{i.Name}'", found);
         }

@@ -36023,3 +36023,33 @@ not seen.
 - **Defaults**: the last wire drawn; else the workspace `.wasm`'s first allowed diameter; else 1 mil, the technology's
   Gold (or its first metal), hexagon, wedge–wedge. The toolbar's general material combo is hidden while Wire is armed,
   since the wire's metal is its own combo (metals only).
+
+## brief-em3d-51 — dimensions as expressions in the 3D editor (2026-09-26)
+
+Built: `C3dEditorViewModel.Expressions.cs` (the live resolution, `EditNames`, the drag rule in `Push` and in a face
+gesture's preview, Replace with Number, Properties' dimension fields), `C3dEditorViewModel.Typed.cs` (expressions in the
+typed field, the live preview, the Define strip, the Array panel's counts and pitches), `C3dVariablesViewModel` (the
+Variables panel), `C3dDocumentEdit` and `C3dGroupEdit`, and each drawing tool's `FieldFor`/`FieldIsMagnitude`/
+`PreviewTyped`. Gates: `tests/Ui.Tests/ThreeD/ExpressionsEditorGateTests.cs` (4, 5 with 6's preview, 11).
+
+- **The drag rule lives in `Push`, the one door every entry passes.** An entry replacing objects or instances whose
+  bound components it changed becomes a `C3dDocumentEdit` writing the names (and the `.ccell` for a parameter); an
+  expression a tool dropped (a fresh object from the kernel) is put back; an unsolvable one refuses the entry, puts an
+  already-applied gesture back, and offers Replace with Number. `Push` returns false then, and every caller that set a
+  status after pushing now stops — CommitFaceEdit's own "Move Along Normal: a." was overwriting the refusal.
+- **A face gesture's preview substitutes the NAMES too** (`_namePreview`: the VARs, and a `C3dCell` with the written
+  default, passed to elaboration through `C3dElaborationOptions.Cell`), so every object using `gap` re-elaborates in the
+  preview. The gate counts it: objects re-lowered per preview = objects whose resolved fields the commit changed.
+- **Move and Rotate cannot preview a name write** — they move the selection's own drawing by per-draw transforms — so
+  they are refused at the grab when the placement's names reach any object outside the selection, and always when a
+  rotation angle holds one (a rotation re-states the whole list canonically). A placement whose names only the
+  selection uses goes ahead, and its commit writes them.
+- **The face drag's refusal comes at the first preview that reaches the field**, not at the button press: which fields
+  a push/pull changes is only known once it moves, and refusing a field the drag would never touch would be wrong.
+- **One undo entry across a Define strip and the object it sizes** is a group: entries pushed between `BeginGroup` and
+  `EndGroup` are applied as they come and kept as one `C3dGroupEdit`, whose first Execute is nothing. The group ends when
+  the gesture makes its object, or when it is cancelled (the definitions then stand as their own entry).
+- **A `.ccell` in an entry only when its CONTENT changed** — a re-serialisation that merely re-spells it would otherwise
+  make every name edit rewrite the cell file.
+- Owner check (§9) not run: pixels not seen. The panel's layout, the Define strip under the field and the Replace with
+  Number button compile and are bound; the Variables icon is `Variable`.

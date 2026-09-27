@@ -129,6 +129,31 @@ public abstract class C3dDrawTool(IC3dDrawHost host)
     /// <summary>The unit the field's label names for dimension <paramref name="index"/>, or null for the display unit.</summary>
     public virtual string? FieldSuffix(int index) => null;
 
+    /// <summary>
+    /// brief-em3d-51 R-em3d51-1b — the stored field that dimension <paramref name="dim"/> of step <paramref name="step"/>
+    /// lands in, in the finished object (<c>Size[2]</c>, <c>Rect.Size[0]</c>, <c>Radius</c>) — where a typed expression
+    /// is BOUND. Null when it lands in no named field (a point list, a displacement): an expression there is evaluated
+    /// once and stored as a number, and the field says so as the user types.
+    /// </summary>
+    public virtual string? FieldFor(int step, int dim) => null;
+
+    /// <summary>Whether that field stores the typed value's MAGNITUDE (a size): a negative typed expression is then bound
+    /// negated, so the stored size stays positive.</summary>
+    public virtual bool FieldIsMagnitude(int step, int dim) => false;
+
+    /// <summary>brief-em3d-51 R-em3d51-3b — the rubber band for the values the typed field previews (a null is the
+    /// cursor's). By default the cursor's own.</summary>
+    public virtual void PreviewTyped(long?[] values, in C3dDrawInput input, List<DrawSegment> rubber, List<Point3> fixedPoints)
+        => Preview(input, rubber, fixedPoints);
+
+    /// <summary>World axis index (x 0, y 1, z 2) of a plane's u, v and normal.</summary>
+    protected static (int U, int V, int N) AxesOf(C3dPlane plane) => plane switch
+    {
+        C3dPlane.YZ => (1, 2, 0),
+        C3dPlane.XZ => (0, 2, 1),
+        _ => (0, 1, 2),
+    };
+
     protected Point3 M(C3dPoint3 p) => DrawGeometry.Metres(p, Host.DbuPerMicron);
 
     protected static long Or(long? typed, long? cursor) => typed ?? cursor ?? 0;
@@ -143,7 +168,7 @@ public readonly record struct C3dDimension(C3dDimensionKind Kind, long Dbu, stri
     /// <summary>
     /// THE one parser of a typed dimension: an exact DBU value — a bare number is the display unit, a suffix
     /// (<c>25um</c>, <c>10mil</c>) is honoured, all in decimal arithmetic (LayoutUnits) — or "this is an
-    /// expression" (<c>w</c>, <c>2*w</c>), which brief 51 will bind; or neither, with the reason.
+    /// expression" (<c>w</c>, <c>2*w</c>), which the editor evaluates and binds (brief 51); or neither, with the reason.
     /// </summary>
     public static C3dDimension Parse(string? text, LayoutUnit unit, int dbuPerMicron)
     {
@@ -157,7 +182,7 @@ public readonly record struct C3dDimension(C3dDimensionKind Kind, long Dbu, stri
         try
         {
             Parser.Parse(t);
-            return new(C3dDimensionKind.Expression, 0, "Expressions arrive with the 3D expressions feature.");
+            return new(C3dDimensionKind.Expression, 0, null);
         }
         catch (Exception ex) when (ex is ExpressionException or FormatException or ArgumentException)
         {

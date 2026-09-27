@@ -212,6 +212,10 @@
                 <ToggleButton IsChecked="{Binding ViewModel.ShowSetups}" ToolTip.Tip="Setups: the EM setups this 3D view carries, and which one is active">
                     <mi:MaterialIcon Kind="TuneVariant" Width="16" Height="16"/>
                 </ToggleButton>
+                <!-- brief-em3d-51 R-em3d51-4a — the Variables panel. -->
+                <ToggleButton IsChecked="{Binding ViewModel.ShowVariables}" ToolTip.Tip="Variables: this 3D view's VARs and its cell's parameters — the names its dimensions may use">
+                    <mi:MaterialIcon Kind="Variable" Width="16" Height="16"/>
+                </ToggleButton>
                 <Button Command="{Binding ViewModel.SimulateActiveCommand}" ToolTip.Tip="Simulate the active setup (Simulate ▸ Run)">
                     <mi:MaterialIcon Kind="PlaylistPlay" Width="16" Height="16"/>
                 </Button>
@@ -319,8 +323,12 @@
                                      IsVisible="{Binding ViewModel.Viewer.SelectionText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                 <SelectableTextBlock FontSize="11" Text="{Binding ViewModel.ToolPrompt}" TextWrapping="Wrap"
                                      IsVisible="{Binding ViewModel.ToolPrompt, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
-                <SelectableTextBlock FontSize="11" Text="{Binding ViewModel.StatusMessage}" TextWrapping="Wrap"
-                                     IsVisible="{Binding ViewModel.StatusMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                <DockPanel IsVisible="{Binding ViewModel.StatusMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                    <!-- brief-em3d-51 R-em3d51-6 — a drag refused on an expression offers the field's number in its place. -->
+                    <Button DockPanel.Dock="Right" Content="Replace with Number" FontSize="11" Padding="6,1"
+                            Command="{Binding ViewModel.ReplaceWithNumberCommand}" IsVisible="{Binding ViewModel.CanReplaceWithNumber}"/>
+                    <SelectableTextBlock FontSize="11" Text="{Binding ViewModel.StatusMessage}" TextWrapping="Wrap"/>
+                </DockPanel>
                 <SelectableTextBlock FontSize="11" Text="{Binding ViewModel.FrameText}" TextWrapping="Wrap"
                                      IsVisible="{Binding ViewModel.FrameText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                 <SelectableTextBlock FontSize="11" Text="{Binding ViewModel.Viewer.LodText}" TextWrapping="Wrap" Foreground="{DynamicResource CrfWarningBrush}"
@@ -330,7 +338,7 @@
             </StackPanel>
         </Border>
 
-        <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+        <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto">
             <!-- ── The object tree (R-em3d43-6a), fed from the document ─────────── -->
             <Border Grid.Column="0" Width="230" IsVisible="{Binding ViewModel.ShowTree}" BorderThickness="0,0,1,0"
                     BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
@@ -409,6 +417,36 @@
                                      Classes.error="{Binding ViewModel.FieldError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                             <TextBlock Text="{Binding ViewModel.FieldError}" Foreground="IndianRed" FontSize="11" TextWrapping="Wrap" MaxWidth="260"
                                        IsVisible="{Binding ViewModel.FieldError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                            <!-- brief-em3d-51 R-em3d51-3b — the live preview: the value in the display unit, or what is unknown. -->
+                            <TextBlock Text="{Binding ViewModel.FieldPreview}" FontSize="11" Opacity="0.85" TextWrapping="Wrap" MaxWidth="260"
+                                       IsVisible="{Binding ViewModel.FieldPreview, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                            <!-- brief-em3d-51 R-em3d51-3c — the Define strip: one row per unknown name. Enter defines them all and
+                                 takes the step; Esc returns to the field with its text. -->
+                            <StackPanel Spacing="3" IsVisible="{Binding ViewModel.DefineOpen}" Margin="0,4,0,0">
+                                <TextBlock Text="Define (Enter: define and continue, Esc: back to the field)" FontSize="11" Opacity="0.75"/>
+                                <ItemsControl ItemsSource="{Binding ViewModel.DefineRows}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="t3:C3dDefineRow">
+                                            <StackPanel Spacing="2" Margin="0,2">
+                                                <StackPanel Orientation="Horizontal" Spacing="4">
+                                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" VerticalAlignment="Center" MinWidth="40"/>
+                                                    <TextBlock Text="=" VerticalAlignment="Center"/>
+                                                    <TextBox Text="{Binding ValueText}" MinWidth="70" KeyDown="OnDefineKey"/>
+                                                    <ComboBox ItemsSource="{x:Static t3:C3dEditorViewModel.DefineUnits}" SelectedItem="{Binding Unit}" MinWidth="60"/>
+                                                </StackPanel>
+                                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                                    <RadioButton Content="VAR in this 3D view" IsChecked="{Binding !AsParameter}" FontSize="11"/>
+                                                    <RadioButton Content="Cell parameter" IsChecked="{Binding AsParameter}" IsEnabled="{Binding CanBeParameter}" FontSize="11"/>
+                                                </StackPanel>
+                                                <TextBlock Text="{Binding Error}" Foreground="IndianRed" FontSize="11" TextWrapping="Wrap"
+                                                           IsVisible="{Binding Error, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <TextBlock Text="{Binding ViewModel.DefineError}" Foreground="IndianRed" FontSize="11" TextWrapping="Wrap" MaxWidth="260"
+                                           IsVisible="{Binding ViewModel.DefineError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                            </StackPanel>
                         </StackPanel>
                     </Border>
                 </Canvas>
@@ -455,6 +493,23 @@
                         <SelectableTextBlock Text="{Binding Error}" Foreground="IndianRed" TextWrapping="Wrap"
                                              IsVisible="{Binding Error, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
 
+                        <!-- brief-em3d-51 R-em3d51-4b — each named dimension: its expression and resolved value, editable as either. -->
+                        <ItemsControl ItemsSource="{Binding Fields}" IsVisible="{Binding IsEditable}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="t3:C3dDimensionField">
+                                    <StackPanel Margin="0,2" Spacing="1">
+                                        <TextBlock Text="{Binding Path}" FontSize="11" Opacity="0.7"/>
+                                        <TextBox Text="{Binding Text}" KeyDown="OnDimensionKey" LostFocus="OnDimensionLostFocus"
+                                                 Classes.error="{Binding Error, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                                        <SelectableTextBlock Text="{Binding ValueText}" FontSize="11" Opacity="0.8"
+                                                             IsVisible="{Binding ValueText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                                        <SelectableTextBlock Text="{Binding Error}" FontSize="11" Foreground="IndianRed" TextWrapping="Wrap"
+                                                             IsVisible="{Binding Error, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
                         <ItemsControl ItemsSource="{Binding Rows}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate DataType="t3:C3dPropertyRow">
@@ -496,6 +551,75 @@
                     </StackPanel>
                     <vl:EmSetupEditorView DataContext="{Binding ViewModel.SetupEditor}" IsVisible="{Binding $parent[Border].((t3:C3dEditorDocument)DataContext).ViewModel.SetupEditor, Converter={x:Static ObjectConverters.IsNotNull}}"/>
                 </DockPanel>
+            </Border>
+
+            <!-- ── brief-em3d-51 R-em3d51-4a: the Variables panel — the VARs (name, expression, unit, value, link, uses), then the
+                 cell's parameters, read-only. Every action is one undo entry. ── -->
+            <Border Grid.Column="4" Width="300" IsVisible="{Binding ViewModel.ShowVariables}" BorderThickness="1,0,0,0"
+                    BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" Padding="8,6">
+                <ScrollViewer>
+                    <StackPanel Spacing="6" DataContext="{Binding ViewModel.Variables}" x:DataType="t3:C3dVariablesViewModel">
+                        <TextBlock Text="{Binding Heading}" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                        <ItemsControl ItemsSource="{Binding Rows}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="t3:C3dVariableRow">
+                                    <Border BorderThickness="0,0,0,1" BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" Padding="0,4">
+                                        <StackPanel Spacing="3">
+                                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold"/>
+                                                <TextBlock Text="{Binding ValueText}" Opacity="0.85"/>
+                                                <TextBlock Text="{Binding UsesText}" FontSize="11" Opacity="0.6" VerticalAlignment="Center"/>
+                                            </StackPanel>
+                                            <TextBlock Text="{Binding LinkText}" FontSize="11" Opacity="0.75" TextWrapping="Wrap"
+                                                       IsVisible="{Binding LinkText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                                            <Grid ColumnDefinitions="*,4,70">
+                                                <TextBox Grid.Column="0" Text="{Binding EditExpression}" KeyDown="OnVariableKey"
+                                                         ToolTip.Tip="The value or expression. A linked VAR's is the cell parameter's default: editing it writes the .ccell."/>
+                                                <ComboBox Grid.Column="2" ItemsSource="{x:Static t3:C3dVariablesViewModel.UnitChoices}" SelectedItem="{Binding EditUnit}"/>
+                                            </Grid>
+                                            <TextBlock Text="{Binding Error}" Foreground="IndianRed" FontSize="11" TextWrapping="Wrap"
+                                                       IsVisible="{Binding Error, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                                            <WrapPanel Orientation="Horizontal" ItemSpacing="4" LineSpacing="4">
+                                                <Button Content="Set" FontSize="11" Click="OnVariableSet"/>
+                                                <TextBox Text="{Binding EditName}" MinWidth="70" FontSize="11" ToolTip.Tip="A new name; Rename rewrites every reference"/>
+                                                <Button Content="Rename" FontSize="11" Click="OnVariableRename"/>
+                                                <Button Content="Delete" FontSize="11" Click="OnVariableDelete"/>
+                                                <Button Content="Inline" FontSize="11" Click="OnVariableInline" ToolTip.Tip="Write each field's current number in place of this VAR, then delete it"/>
+                                                <Button Content="Link" FontSize="11" Click="OnVariableLink" IsVisible="{Binding CanLink}"/>
+                                                <Button Content="Unlink" FontSize="11" Click="OnVariableUnlink" IsVisible="{Binding CanUnlink}"/>
+                                                <Button Content="Promote to Cell Parameter" FontSize="11" Click="OnVariablePromote" IsVisible="{Binding CanPromote}"/>
+                                            </WrapPanel>
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <TextBlock Text="Add a VAR" FontSize="11" Opacity="0.7"/>
+                        <Grid ColumnDefinitions="70,4,*,4,70">
+                            <TextBox Grid.Column="0" Text="{Binding NewName}" Watermark="name"/>
+                            <TextBox Grid.Column="2" Text="{Binding NewExpression}" Watermark="value or expression"/>
+                            <ComboBox Grid.Column="4" ItemsSource="{x:Static t3:C3dVariablesViewModel.UnitChoices}" SelectedItem="{Binding NewUnit}"/>
+                        </Grid>
+                        <Button Content="Add" FontSize="11" Click="OnVariableAdd"/>
+                        <SelectableTextBlock Text="{Binding Error}" Foreground="IndianRed" TextWrapping="Wrap"
+                                             IsVisible="{Binding Error, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                        <TextBlock Text="Cell parameters (edit them in the cell's parameter editor)" FontSize="11" Opacity="0.7"
+                                   IsVisible="{Binding InCell}"/>
+                        <ItemsControl ItemsSource="{Binding Parameters}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="t3:C3dVariableRow">
+                                    <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,1">
+                                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold"/>
+                                        <TextBlock Text="{Binding Expression}" Opacity="0.8"/>
+                                        <TextBlock Text="{Binding Unit}" Opacity="0.8"/>
+                                        <TextBlock Text="{Binding ValueText}" Opacity="0.8"/>
+                                        <TextBlock Text="{Binding UsesText}" FontSize="11" Opacity="0.6" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </ScrollViewer>
             </Border>
         </Grid>
     </DockPanel>

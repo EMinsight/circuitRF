@@ -13652,3 +13652,55 @@ loop-height solve the Wire tool uses); drawn wires in `C3dElaborator` (`WireRefu
   `examples/3D EM/Bond wire/layout/Bond wire.wBond`, and Gate 8 asserts no repo `.wBond` carries that key. The brief
   asks that file to pass unchanged; it could not already. Either the example or the assertion has to give, which is
   the owner's call.
+
+## brief-em3d-51 — dimensions as expressions, VARs and cell parameters in a .c3d, headless (2026-09-26)
+
+Built: `C3dBindings` (the bindable-field table, the `{ "Expr", "Unit" }` spelling, accessors by path), `C3dResolver`
+(the scope, VAR linking, overrides, every field resolved in place before geometry), `C3dVariableEdits` (rename through
+the tokenizer, delete/inline, link, promote, the drag rule's `Classify`/`Solve`), `C3dVariable`, `C3dInstance.Params`,
+`C3dElaborator` resolving first and per override set (`ChildrenResolved`), `check`/`explain` over names, and the
+`3d-view` reference page. Gates: `tests/Ui.Tests/ThreeD/ExpressionsGateTests.cs`; the circuit-side pin is
+`tests/Core.Tests/Elaboration/SameNameVarAndParameterTests.cs` (see `src/Core/RESOLVED.md`).
+
+- **The number stays where it was; the expression sits beside it.** Every bindable field keeps its integer (or real)
+  property, which is what the kernel, lowering, tools and scene read; an owner record (`C3dObject`, `C3dRect`,
+  `C3dPlacement`, `C3dRotation`, `C3dArray`) carries `Exprs`, one slot per component, and resolution writes each value
+  into the number. So nothing below the resolver changed. The JSON is produced by REPLACING each bindable property's
+  contract in a `JsonTypeInfo` modifier with one of type `C3dFieldJson`, so a document with no expressions writes byte
+  for byte as before (brief 41's fixtures pass unchanged).
+- **Three spellings, and the middle one is the trap-avoider.** The FILE writes `{ "Expr", "Unit" }` only. An OBJECT's
+  in-memory spelling (`SerializeObject`: undo entries, clones, `C3dEdit`) also writes `"Value"` — the last resolved
+  number — because every editor path copies an object by serialising it, and a copy whose bound components read back
+  as 0 would move a box to the origin the moment anything edited it. The RESOLVED spelling (`SerializeResolved`, numbers
+  only) is the elaborator's per-object cache key, so changing `w` re-lowers exactly the objects whose values changed.
+- **`long`/`double` in a `?:` is a `double`.** `reader.TryGetInt64(out l) ? l : reader.GetDouble()` widened every
+  integer to double, and the next check called 0 "not an integer". Boxed as `(object)l` now; worth knowing for any
+  reader that keeps a number's kind in an `object`.
+- **The encoder is `UnsafeRelaxedJsonEscaping`**, so `h_sub + t_met` is written with a plus rather than `+`. No
+  `.c3d` is committed, so nothing already on disk changes spelling; a port's `Z0` of `25+j10` now reads as written.
+- **A unit-less VAR that references a unit-bearing name TAKES that unit.** The engine's var-unit-wins looks only at
+  the DIRECT references' binding units, so `gap = w / 4` (no unit) referenced from a field typed in mil had mil applied
+  to a value already in metres. The resolver marks such a binding with `metre` (scale 1: the value is unchanged, the
+  mark is only what var-unit-wins reads), to a fixpoint for chains; the brief's example (`gap` "takes w's") needs it.
+- **An injected override outlives a later `Bind` of the same name.** `Evaluator.Resolve` checks the memo before the
+  binding, so an unlinked VAR bound after an injected override still resolved to the override. The resolver does not
+  inject an override the VAR hides. The circuit side is not affected: there the override binds LAST.
+- **Linked is `bool?`: absent means linked when a parameter of the name exists** (D12's default), `false` is unlinked.
+  The editor writes `true` when it links; a hand-written file need not.
+- **Validation reads the RESOLVED numbers**, so `check` resolves first and `C3dValidation.Validate` skips an object
+  whose field did not resolve (its size reads 0 and the resolver already said why). Elaboration's repeats of the
+  resolver's findings are not reported twice.
+- **A negative SIZE from an expression is refused** (box Size, cylinder Radius), never normalised: normalising moves
+  Min, which is a number the expression does not own, and the file would then say something the user did not type.
+  `Normalize` skips any object that holds an expression for the same reason.
+- **Built-in function names are asked of the engine**, not listed: a name is refused as a VAR when `name(1)` fails
+  with anything other than `UnknownFunctionException`. A function added to the engine is refused here without a second
+  list to keep in step.
+- **The drag rule measures.** `Classify` nudges each writable name (a 1e-3 relative step), checks the doubled nudge
+  and every pairwise cross-nudge agree with the slopes to 1e-7, and so tells `2*w + gap` (jointly affine — solves the
+  first name in reading order, holds the rest) from `2*w*l` (the slope in w depends on l — refused). A written value
+  goes in the name's own unit; a name that had none but took one (the base-unit mark) is written in the field's site
+  unit, with that unit.
+- **Not built:** a drag of a bare parameter while pushed into an instance's context writes the `.ccell` DEFAULT, not
+  that instance's override in the parent (a cross-frame undo entry); a Setup field referencing a `.c3d` VAR (§3a, out of
+  scope); SL3's interface-change report is not triggered by Promote.

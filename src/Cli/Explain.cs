@@ -167,7 +167,7 @@ internal static class Explain
         {
             case DocumentKind.Layout:   ExplainLayout(path, walks); break;
             case DocumentKind.EmSetup:  exit |= ExplainEmSetup(path, walks, out em3d); break;
-            case DocumentKind.ThreeD:   exit |= ExplainThreeD(path, walks, out em3d); break;
+            case DocumentKind.ThreeD:   exit |= ExplainThreeD(path, walks, out em3d, sets); break;
             case DocumentKind.Netlist:
             case DocumentKind.Schematic:
             case DocumentKind.Cell:
@@ -228,6 +228,14 @@ internal static class Explain
             var (rows, fpExit) = ExplainQueries.Footprints(path, kind, walks);
             footprints = rows.Count > 0 || fpExit == 0 ? rows : null;
             exit |= fpExit;
+        }
+
+        // brief-em3d-51 R-em3d51-5c — a 3D view's --expr evaluates in the DOCUMENT's resolved scope (its cell's parameters
+        // and its VARs), with --set applied first, as a circuit's does in its global scope.
+        if (expr is not null && kind == DocumentKind.ThreeD)
+        {
+            exit |= ExplainThreeDExpression(path, expr, sets, out value);
+            expr = null;
         }
 
         if (expr is not null || wantAnalyses)
@@ -498,11 +506,13 @@ internal static class Explain
     /// technology and where each came from, each unit conversion, each material merge or qualification, and
     /// the lowering table's choice per object — then, with exactly one embedded setup, the problem it makes.
     /// </summary>
-    private static int ExplainThreeD(string path, List<ResolutionStepJson> walks, out ExplainEm3dJson? em3d)
+    private static int ExplainThreeD(string path, List<ResolutionStepJson> walks, out ExplainEm3dJson? em3d,
+                                     IReadOnlyList<(string Name, string Expr)> sets)
     {
         em3d = null;
         string full = Path.GetFullPath(path);
         Workspace(path, walks);
+        NameWalk(full, sets, walks);
         Em3dSetupSource src;
         try { src = Em3dSetupSource.ForThreeDView(full, null); }
         catch (Exception ex) { return JsonRun.Fail(CliDiagnostics.ExplainUnreadable(path, ex.Message)); }
@@ -515,6 +525,64 @@ internal static class Explain
         }
         em3d = ExplainEm3d.Build(src);
         return src.Refusal is null ? 0 : 1;
+    }
+
+    /// <summary>
+    /// brief-em3d-51 R-em3d51-5c — per name of the 3D view's scope, where its value came from: an instance override does
+    /// not exist at the top, so a parameter is its <c>.ccell</c> default, a linked VAR takes the parameter's, an unlinked
+    /// one its own expression — and <c>--set</c> binds over all of them.
+    /// </summary>
+    private static void NameWalk(string full, IReadOnlyList<(string Name, string Expr)> sets, List<ResolutionStepJson> walks)
+    {
+        C3dDocument doc;
+        try { doc = C3dPersistence.LoadFromFile(full); }
+        catch { return; }
+        var cell = C3dCell.Of(full);
+        var res = C3dResolver.Resolve(doc, cell, null, sets);
+        foreach (var n in res.Names.Values)
+        {
+            string value = n.Error is { } err ? $"does not resolve: {err}"
+                         : n.Value is { } v ? $"= {v.ToString("G9", System.Globalization.CultureInfo.InvariantCulture)} (base SI)"
+                           + (n.Unit is { } u ? $"; unit {u}" : "") : "(not real)";
+            string source = n.Source switch
+            {
+                C3dNameSource.Override    => "an instance override",
+                C3dNameSource.CellDefault => $"the .ccell default '{n.Expression}'",
+                C3dNameSource.LinkedVar   => $"a linked VAR: the cell parameter's {(n.ParameterSource == C3dNameSource.Override ? "override" : $".ccell default '{n.Expression}'")}",
+                C3dNameSource.Var         => $"{(cell.Parameter(n.Name) is not null ? "an UNLINKED VAR, hiding the cell parameter" : "a VAR")} '{n.Expression}'",
+                _                         => $"--set '{n.Expression}'",
+            };
+            int uses = res.Uses.TryGetValue(n.Name, out var list) ? list.Count : 0;
+            walks.Add(new ResolutionStepJson($"name {n.Name}", cell.CcellPath, $"{value}, from {source}; used by {uses} field(s)",
+                "a 3D view sees its cell's parameters and its own VARs; a VAR named like a parameter is linked unless Linked is " +
+                "false, and linked means the parameter's value, default included"));
+        }
+    }
+
+    /// <summary>brief-em3d-51 — <c>explain x.c3d --expr</c>: the expression in the document's resolved scope.</summary>
+    private static int ExplainThreeDExpression(string path, string expression, IReadOnlyList<(string Name, string Expr)> sets,
+                                               out ExplainExpressionJson? value)
+    {
+        value = null;
+        string full = Path.GetFullPath(path);
+        C3dDocument doc;
+        try { doc = C3dPersistence.LoadFromFile(full); }
+        catch (Exception ex) { return JsonRun.Fail(CliDiagnostics.ExplainUnreadable(path, ex.Message)); }
+        foreach (var (name, e) in sets) Console.Error.WriteLine($"[circuitRF] set {name} = {e}");
+        var res = C3dResolver.Resolve(doc, C3dCell.Of(full), null, sets);
+        Value v;
+        try { v = res.Evaluate(expression, null); }
+        catch (Exception ex) { return JsonRun.Fail(CliDiagnostics.ExplainExpressionFailed(expression, ex.Message)); }
+        value = new ExplainExpressionJson(
+            expression,
+            v.Kind.ToString().ToLowerInvariant(),
+            v.Kind == ValueKind.Real && res.SkipsSiteUnit(expression)
+                ? $"{v} m ({C3dUnits.Spell(v.AsReal(), doc.DisplayUnit)})"
+                : v.ToString(),
+            v.Kind == ValueKind.Real    ? v.AsReal() : null,
+            v.Kind == ValueKind.Complex ? [v.AsComplex().Real, v.AsComplex().Imaginary] : null,
+            v.Kind == ValueKind.Bool    ? v.AsBool() : null);
+        return 0;
     }
 
     /// <summary>

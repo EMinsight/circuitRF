@@ -235,6 +235,8 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
     private void SetTool(C3dDrawTool? tool)
     {
         CloseField();
+        _typedExpressions.Clear();
+        EndGroup();
         _crossing = null;
         if (_tool is C3dOperationTool && !ReferenceEquals(_tool, tool)) EndOperation();
         if (_tool is C3dFaceEditTool && !ReferenceEquals(_tool, tool)) EndFaceEdit();
@@ -359,12 +361,16 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
             else if (_tool is ExtrudeFaceTool ef) CommitExtrudeFace(ef, obj);
             else
             {
+                _evaluatedOnce = "";
+                if (_tool is { } drawing) obj = BindTyped(drawing, obj);
                 Push(new C3dEdit($"Draw {C3dObject.KindOf(obj).ToLowerInvariant()} {obj.Name}",
                                  [new C3dEditSlot(false, Document.Objects.Count, null, C3dPersistence.SerializeObject(obj))], ApplySlots));
                 ToolCommits++;
-                StatusMessage = $"Drew {C3dObject.KindOf(obj).ToLowerInvariant()} \"{obj.Name}\"" + (obj.Material is { } m ? $" in {m}." : ".");
+                StatusMessage = $"Drew {C3dObject.KindOf(obj).ToLowerInvariant()} \"{obj.Name}\"" + (obj.Material is { } m ? $" in {m}." : ".") + _evaluatedOnce;
                 if (_tool is WireTool wt) RememberWire(wt);
             }
+            // brief-em3d-51 R-em3d51-3c — a Define strip's definitions and the object they sized are one entry.
+            EndGroup();
         }
         OnPropertyChanged(nameof(ToolPrompt));
         Viewer.RequestFrame();
@@ -418,6 +424,8 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
                 if (tool.InProgress && !gesture)
                 {
                     tool.Reset();
+                    _typedExpressions.Clear();
+                    EndGroup();
                     _crossing = null;
                     StatusMessage = $"{tool.Name} cancelled.";
                     OnPropertyChanged(nameof(ToolPrompt));
@@ -472,7 +480,12 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
                 points = [.. points.Select(p => { var (x, y, z) = tr.Apply(p); return new C3dPoint3((long)Math.Round(x), (long)Math.Round(y), (long)Math.Round(z)); })];
             DrawGeometry.Chain(points, l.Closed, dbu, SelectedTreeItem?.Name == l.Name ? overlay.Selected : overlay.Construction);
         }
-        if (_tool is { } tool) tool.Preview(CursorInput(), overlay.Rubber, overlay.Fixed);
+        if (_tool is { } tool)
+        {
+            // brief-em3d-51 R-em3d51-3b — while the field is open, the rubber band follows what it previews.
+            if (FieldOpen && _fieldValues is { } typed) tool.PreviewTyped(typed, CursorInput(), overlay.Rubber, overlay.Fixed);
+            else tool.Preview(CursorInput(), overlay.Rubber, overlay.Fixed);
+        }
         FillFaceOverlay(overlay);
         FillHierarchyOverlay(overlay);
         FillWireOverlay(overlay);
@@ -548,6 +561,7 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
         FieldLabel = dims.Count > 1
             ? $"{dims[_fieldIndex]} ({suffix}) — Tab: {dims[(_fieldIndex + 1) % dims.Count]}"
             : $"{dims[_fieldIndex]} ({suffix})";
+        UpdateFieldPreview();
     }
 
     private string Suffix => LayoutUnits.Suffix(Document.DisplayUnit);
@@ -557,6 +571,7 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
         if (_showingField || !FieldOpen || _fieldIndex >= _fieldTexts.Length) return;
         _fieldTexts[_fieldIndex] = value;
         FieldError = null;
+        UpdateFieldPreview();
     }
 
     /// <summary>Tab: the next dimension of the same step.</summary>
@@ -570,28 +585,13 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
 
     /// <summary>Enter: every dimension parsed exactly and the step taken as if clicked — or, if one does not parse, the
     /// field stays open on it, red, and nothing is written.</summary>
+    /// <para>brief-em3d-51 — a dimension may be an expression: evaluated in the document's scope and, where it lands in a
+    /// named field, bound there; an unknown name opens the Define strip instead of refusing.</para>
     public void FieldEnter()
     {
         if (!FieldOpen || _tool is not { } tool) return;
         _fieldTexts[_fieldIndex] = FieldText;
-        var values = new long?[_fieldTexts.Length];
-        for (int i = 0; i < _fieldTexts.Length; i++)
-        {
-            if (_fieldTexts[i].Trim().Length == 0) continue;                 // left empty: the cursor's value
-            var d = tool.ParseField(i, _fieldTexts[i], Document.DisplayUnit, Document.DbuPerMicron);
-            if (d.Kind != C3dDimensionKind.Value)
-            {
-                _fieldIndex = i;
-                ShowFieldIndex();
-                FieldError = d.Why;
-                return;
-            }
-            values[i] = d.Dbu;
-        }
-        var step = tool.Typed(values, CursorInput());
-        if (!step.Advanced && step.Refusal is { } why) { FieldError = why; return; }
-        CloseField();
-        Apply(step);
+        TypedEnter(tool);
     }
 
     /// <summary>Esc in the field: back to the mouse; the gesture goes on.</summary>
@@ -601,6 +601,10 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
     {
         FieldOpen = false;
         FieldError = null;
+        FieldPreview = "";
+        _fieldValues = null;
+        DefineOpen = false;
+        DefineRows.Clear();
         _fieldTexts = [];
         _fieldIndex = 0;
     }
@@ -637,6 +641,7 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
     /// <summary>The extrude's one undo entry: the source replaced by the result (consumed), or the result inserted (kept).</summary>
     private void CommitExtrude(ExtrudeTool ex, C3dObject result)
     {
+        result = BindTyped(ex, result);
         string after = C3dPersistence.SerializeObject(result);
         string kind = C3dObject.KindOf(result).ToLowerInvariant();
         if (ex.Keep)

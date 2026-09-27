@@ -59,10 +59,13 @@ public enum C3dInstanceView { ThreeD, Layout }
 
 /// <summary>One rotation of a placement: about a world axis through the object's origin, right-handed,
 /// in degrees.</summary>
-public sealed class C3dRotation
+public sealed class C3dRotation : IC3dBindable
 {
     public C3dAxis Axis { get; set; } = C3dAxis.Z;
     public double  Deg  { get; set; }
+
+    /// <summary>brief-em3d-51 — the angle's expression, when it holds one (<see cref="C3dBindings"/>).</summary>
+    [JsonIgnore] public Dictionary<string, C3dExpr?[]>? Exprs { get; set; }
 }
 
 /// <summary>
@@ -71,8 +74,11 @@ public sealed class C3dRotation
 /// mirror-then-rotate order, extended by a list. <see cref="MirrorX"/> negates the object's own x, as
 /// a layout instance's does. The whole record is omitted from the file when it states nothing.
 /// </summary>
-public sealed partial class C3dPlacement
+public sealed partial class C3dPlacement : IC3dBindable
 {
+    /// <summary>brief-em3d-51 — the origin's expressions, when it holds any (<see cref="C3dBindings"/>).</summary>
+    [JsonIgnore] public Dictionary<string, C3dExpr?[]>? Exprs { get; set; }
+
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public C3dPoint3 Origin { get; set; }
 
@@ -84,7 +90,7 @@ public sealed partial class C3dPlacement
     /// <summary>True when the placement states nothing, which is when the file leaves it out. A stated
     /// 0° rotation is not nothing: it was written, so it is kept.</summary>
     [JsonIgnore]
-    public bool IsDefault => Origin == default && Rotate.Count == 0 && !MirrorX;
+    public bool IsDefault => Origin == default && Rotate.Count == 0 && !MirrorX && Exprs is null;
 
     /// <summary>The placement as one rigid transform — see <see cref="C3dTransform"/>.</summary>
     public C3dTransform ToTransform()
@@ -110,8 +116,11 @@ public sealed partial class C3dPlacement
 [JsonDerivedType(typeof(C3dPolyline),   "Polyline")]
 [JsonDerivedType(typeof(C3dPolyhedron), "Polyhedron")]
 [JsonDerivedType(typeof(C3dWire),       "Wire")]
-public abstract class C3dObject
+public abstract class C3dObject : IC3dBindable
 {
+    /// <summary>brief-em3d-51 — the object's dimension fields that hold an expression (<see cref="C3dBindings"/>).</summary>
+    [JsonIgnore] public Dictionary<string, C3dExpr?[]>? Exprs { get; set; }
+
     /// <summary>Unique in the document, validated as a cell name is; <c>airbox</c> is reserved (the air
     /// box's faces are <c>airbox/xmin</c> …).</summary>
     [JsonPropertyOrder(-10)]
@@ -215,8 +224,10 @@ public sealed class C3dCylinder : C3dObject
 }
 
 /// <summary>A rectangle on a drawing plane: a corner and a size.</summary>
-public sealed class C3dRect
+public sealed class C3dRect : IC3dBindable
 {
+    [JsonIgnore] public Dictionary<string, C3dExpr?[]>? Exprs { get; set; }
+
     public C3dPoint2 Min  { get; set; }
     public C3dPoint2 Size { get; set; }
 }
@@ -325,8 +336,10 @@ public sealed class C3dWire : C3dObject
 
 /// <summary>An array of an instance: <see cref="Counts"/> copies along x, y and z, <see cref="Pitch"/>
 /// apart. What it elaborates to is brief 42's.</summary>
-public sealed class C3dArray
+public sealed class C3dArray : IC3dBindable
 {
+    [JsonIgnore] public Dictionary<string, C3dExpr?[]>? Exprs { get; set; }
+
     /// <summary>[nx, ny, nz], each at least 1.</summary>
     public List<int>  Counts { get; set; } = [1, 1, 1];
     public C3dPoint3  Pitch  { get; set; }
@@ -347,6 +360,13 @@ public sealed class C3dInstance
 
     public C3dPlacement Placement { get; set; } = new();
     public C3dArray?    Array     { get; set; }
+
+    /// <summary>
+    /// brief-em3d-51 R-em3d51-2e — overrides of the placed cell's PARAMETERS, each an expression evaluated in THIS
+    /// document's scope (override → parent scope, expressions.md §9). A name that is only a VAR of the child is refused,
+    /// and a <c>Layout</c> instance takes none: a <c>.clay</c> has no parameters.
+    /// </summary>
+    public Dictionary<string, C3dExpr>? Params { get; set; }
 
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? Unread { get; set; }
@@ -413,6 +433,31 @@ public sealed class C3dFaceBoundary
     public Dictionary<string, JsonElement>? Unread { get; set; }
 }
 
+// ── VARs (brief-em3d-51) ──────────────────────────────────────────────────────────────────────
+
+/// <summary>
+/// brief-em3d-51 R-em3d51-1c — a VAR of the 3D view: a name, an expression and a unit, as a <c>.csch</c> VAR row. The
+/// unit scales the expression (<c>10</c> with <c>Mil</c> is ten mil); with none the expression takes the units of the
+/// names it references. <see cref="Linked"/> says what happens when the cell has a PARAMETER of the same name.
+/// </summary>
+public sealed class C3dVariable
+{
+    public string  Name       { get; set; } = "";
+    public string  Expression { get; set; } = "";
+    public string? Unit       { get; set; }
+
+    /// <summary>
+    /// With a cell parameter of the same name: <b>linked</b> (true, or absent — owner decision D12) takes the PARAMETER's
+    /// value, an instance's override else the <c>.ccell</c> default, and this VAR's own expression is used only when the
+    /// document has no cell; <b>false</b> keeps this VAR's own expression, which then hides the parameter from every
+    /// dimension here (check warns). Ignored when no parameter has the name.
+    /// </summary>
+    public bool? Linked { get; set; }
+
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? Unread { get; set; }
+}
+
 // ── The document ──────────────────────────────────────────────────────────────────────────────
 
 /// <summary>
@@ -444,10 +489,10 @@ public sealed class C3dDocument
     public List<C3dInstance> Instances { get; set; } = [];
 
     /// <summary>
-    /// Brief 51's VARs. <b>Read and written from brief 41</b>, uninterpreted, so a document written
-    /// after brief 51 keeps its VARs when a build from before it saves it (R-em3d41-2d).
+    /// brief-em3d-51 R-em3d51-1c — the 3D view's VARs, the record a <c>.csch</c> VAR row holds. With the cell's
+    /// parameters they are one namespace; a VAR named like a parameter is LINKED to it unless it says otherwise.
     /// </summary>
-    public List<JsonElement> Variables      { get; set; } = [];
+    public List<C3dVariable> Variables      { get; set; } = [];
 
     /// <summary>brief-em3d-49 — the document's ports. They belong to the document, not to a setup: every setup uses all
     /// of them.</summary>

@@ -545,18 +545,28 @@ internal static class Check
         if (tech.Tech is { } t) known = name => t.FindMaterial(name) is not null;
         else f.Add(CliDiagnostics.CheckThreeDNoTechnology(path));
 
-        var findings = C3dValidation.Validate(doc, known);
+        // brief-em3d-51 R-em3d51-5c — the names and every expression first, through the resolver elaboration uses: an
+        // undefined name or a cycle (error), a VAR hiding a parameter or a dimension above 1 m (warning), a rounding and an
+        // unused VAR (info). Validation then reads the RESOLVED numbers, and skips the objects whose fields did not resolve
+        // rather than calling an unresolved size zero.
+        var resolution = C3dResolver.Resolve(doc, C3dCell.Of(Path.GetFullPath(path)));
+        foreach (string why in resolution.Errors) f.Add(CliDiagnostics.CheckThreeDElaboration(path, why));
+        foreach (string warning in resolution.Warnings) f.Add(CliDiagnostics.CheckEmFinding(path, warning, true));
+        foreach (string note in resolution.Notes.Concat(resolution.Infos)) f.Add(CliDiagnostics.CheckThreeDNote(path, note));
+
+        var findings = C3dValidation.Validate(doc, known, resolution.FieldErrors.Select(e => e.Item).ToHashSet(StringComparer.Ordinal));
         foreach (var finding in findings)
             f.Add(CliDiagnostics.CheckThreeDFinding(path, finding));
 
         // brief-em3d-42 R-em3d42-6 — elaboration's refusals, through the elaborator the GUI will draw with, and
         // every embedded setup read as a run would read it. Only once the document is sound: elaborating a
         // document validation already refused would report its defects twice, in two voices.
-        if (findings.Any(d => d.Severity == DiagnosticSeverity.Error)) return;
+        if (!resolution.Ok || findings.Any(d => d.Severity == DiagnosticSeverity.Error)) return;
         var e = C3dElaborator.ElaborateOnce(doc, Path.GetFullPath(path), null);
-        foreach (string refusal in e.Refusals) f.Add(CliDiagnostics.CheckThreeDElaboration(path, refusal));
-        foreach (string warning in e.Warnings) f.Add(CliDiagnostics.CheckEmFinding(path, warning, true));
-        foreach (string note in e.Notes) f.Add(CliDiagnostics.CheckThreeDNote(path, note));
+        var said = new HashSet<string>(resolution.Errors.Concat(resolution.Warnings).Concat(resolution.Notes).Concat(resolution.Infos), StringComparer.Ordinal);
+        foreach (string refusal in e.Refusals.Where(x => !said.Contains(x))) f.Add(CliDiagnostics.CheckThreeDElaboration(path, refusal));
+        foreach (string warning in e.Warnings.Where(x => !said.Contains(x))) f.Add(CliDiagnostics.CheckEmFinding(path, warning, true));
+        foreach (string note in e.Notes.Where(x => !said.Contains(x))) f.Add(CliDiagnostics.CheckThreeDNote(path, note));
         foreach (var setup in C3dSetups.Read(doc))
             if (setup.Refusal is { } why) f.Add(CliDiagnostics.CheckThreeDSetup(path, why));
         // brief-em3d-49 R-em3d49-5c — every port's inferred polarity (info) or its refusal (error), and every face

@@ -284,6 +284,31 @@ model circuitRF built, and after a run it also shows what the solver made.
   Polyhedron* (Object mode; for a cylinder, choose how many flat sides) makes every vertex editable. While a
   face or vertex is dragged only that object is redrawn, and the document changes once, as one undo step,
   when you click.
+- **Dimensions as expressions** (the 3D editor). Wherever a dimension is typed — the box at the cursor while
+  drawing, Properties, the Array panel — you may type a name or an expression instead of a number: `w`,
+  `2*w`, `h_sub + t_met`, optionally followed by a unit (`2*w mil`); with none, the display unit is the
+  expression's unit, and it is stored with the expression, so changing the display unit later moves nothing.
+  The box shows the value as you type (`= 0.254 mm`), or `unknown: w`. Press Enter with an unknown name and a
+  **Define** strip opens under the box, one row per name: a value (for a bare `w`, the size the rubber band
+  shows now), a unit, and whether it becomes a **VAR of this 3D view** or a **cell parameter**; Enter defines
+  them and the shape carries on, and the definitions and the new object are one undo step. A width, depth,
+  height, radius or extrude distance keeps its expression; a polygon's points and a move's distance are
+  evaluated once and stored as numbers, and the box says so. **Beware one trap:** in `2*w + 5` with `w` in mil,
+  the `5` is five **metres** — a literal beside a name that has its own unit is in metres — and the preview
+  shows `5.000508 m` before you press Enter; `check` warns about any dimension over 1 m.
+  The **Variables** panel (the *x* button) lists each VAR with its expression, unit, value and how many fields
+  use it, then the cell's parameters: *Set*, *Rename* (every use is rewritten; `ww` is not touched by renaming
+  `w`), *Delete* (refused while anything uses it — *Inline* writes the current numbers into those fields
+  first), and *Promote to Cell Parameter*. A VAR with the same name as a cell parameter is **linked** to it:
+  it takes the parameter's value — an instance's override, else the cell's default — and editing it edits the
+  parameter, so the cell has one default for the name. *Unlink* makes it keep its own value, which then hides
+  the parameter from this 3D view (`check` warns). Placing a cell's 3D view, an instance can override its
+  parameters in the file (`"Params"`); two instances with the same values are elaborated once.
+  **Dragging** a face whose size is an expression changes the *name*, never the field: a bare VAR is given the
+  new value, a parameter (or linked VAR) gets a new default, and an expression linear in one name (`2*w + gap`)
+  solves for that name — and every other object using it moves with it, in the preview too. A drag of
+  anything else (`2*w*l`) is refused, with *Replace with Number* offered. A move or rotation is refused when
+  it would change a name another object uses, because only the selection moves while you drag.
 - **Setups** (the 3D editor, the tune button or *3D ▸ Setups…*). A 3D view carries its own EM setups, in the
   same form a `.cem` has, and the panel beside the view lists them: *Add*, *Duplicate*, *Rename…*, *Remove*,
   and *Make Active*. The **active** setup (●) is the one *Simulate ▸ Run* runs and whose air box is drawn;

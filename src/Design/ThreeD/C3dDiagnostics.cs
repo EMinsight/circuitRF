@@ -35,12 +35,28 @@ public static class C3dDiagnostics
         "Object {index} has no \"$type\", so there is no telling what kind of object it is.",
         ("index", index));
 
-    /// <summary>R-em3d41-2d: a string where a number belongs is a later build's expression.</summary>
+    /// <summary>R-em3d41-2d / brief-em3d-51: a bare string where a number belongs. A dimension's expression is an object
+    /// carrying its unit; a point list holds numbers only.</summary>
     public static Diagnostic ExpressionNotYet(string text) => Diagnostic.Create(
         "c3d.read.expression", DiagnosticSeverity.Error,
-        "\"{text}\" is written where a number belongs. Expressions arrive in a later version; today every " +
-        "dimension here is an integer in DBU.",
-        ("text", text));
+        "\"{text}\" is written where a number belongs. Point lists (Outline, Holes, Points, Vertices) hold numbers only; " +
+        "a named dimension may hold an expression, written {example} with its unit.",
+        ("text", text), ("example", Example(text)));
+
+    /// <summary>brief-em3d-51 R-em3d51-1a — an expression written as a bare string in a dimension field.</summary>
+    public static Diagnostic ExpressionAsString(string text) => Diagnostic.Create(
+        "c3d.read.expression", DiagnosticSeverity.Error,
+        "\"{text}\" is written as a bare string. An expression in a dimension is an object that carries the unit it was " +
+        "typed in — {example} — so that changing the display unit never changes what it means.",
+        ("text", text), ("example", Example(text)));
+
+    /// <summary>brief-em3d-51 — an expression object with a key it does not have, or no text.</summary>
+    public static Diagnostic ExpressionShape(string key) => Diagnostic.Create(
+        "c3d.read.expression-shape", DiagnosticSeverity.Error,
+        "An expression in a dimension is written {example}; '{key}' is not one of its keys, or its Expr is empty.",
+        ("key", key), ("example", Example("…")));
+
+    private static string Example(string text) => "{ \"Expr\": \"" + text + "\", \"Unit\": \"Mil\" }";
 
     public static Diagnostic NumberExpected(string found) => Diagnostic.Create(
         "c3d.read.number-expected", DiagnosticSeverity.Error,

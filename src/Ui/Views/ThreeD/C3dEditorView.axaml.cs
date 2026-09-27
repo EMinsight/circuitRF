@@ -215,6 +215,44 @@ public partial class C3dEditorView : UserControl
 
     private void OnVertexLostFocus(object? sender, RoutedEventArgs e) => _vm?.Properties.CommitVertex();
 
+    // ── brief-em3d-51: a dimension in Properties, the Define strip, the Variables panel ──
+
+    private void OnDimensionKey(object? sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter || (sender as Control)?.DataContext is not C3dDimensionField f) return;
+        _vm?.Properties.CommitField(f);
+        e.Handled = true;
+    }
+
+    private void OnDimensionLostFocus(object? sender, RoutedEventArgs e)
+    {
+        if ((sender as Control)?.DataContext is C3dDimensionField f) _vm?.Properties.CommitField(f);
+    }
+
+    private void OnDefineKey(object? sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter) { _vm?.DefineEnter(); e.Handled = true; }
+        else if (e.Key == Key.Escape) { _vm?.DefineEscape(); FieldInput.Focus(); e.Handled = true; }
+    }
+
+    private C3dVariableRow? RowOf(object? sender) => (sender as Control)?.DataContext as C3dVariableRow;
+
+    private void OnVariableKey(object? sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter || RowOf(sender) is not { } row) return;
+        _vm?.Variables?.Edit(row);
+        e.Handled = true;
+    }
+
+    private void OnVariableSet(object? sender, RoutedEventArgs e) { if (RowOf(sender) is { } r) _vm?.Variables?.Edit(r); }
+    private void OnVariableRename(object? sender, RoutedEventArgs e) { if (RowOf(sender) is { } r) _vm?.Variables?.Rename(r); }
+    private void OnVariableDelete(object? sender, RoutedEventArgs e) { if (RowOf(sender) is { } r) _vm?.Variables?.Delete(r); }
+    private void OnVariableInline(object? sender, RoutedEventArgs e) { if (RowOf(sender) is { } r) _vm?.Variables?.InlineAndDelete(r); }
+    private void OnVariableLink(object? sender, RoutedEventArgs e) { if (RowOf(sender) is { } r) _vm?.Variables?.Link(r, true); }
+    private void OnVariableUnlink(object? sender, RoutedEventArgs e) { if (RowOf(sender) is { } r) _vm?.Variables?.Link(r, false); }
+    private void OnVariablePromote(object? sender, RoutedEventArgs e) { if (RowOf(sender) is { } r) _vm?.Variables?.Promote(r); }
+    private void OnVariableAdd(object? sender, RoutedEventArgs e) => _vm?.Variables?.Add();
+
     // brief-em3d-48 — the breadcrumb and the Pop Out button: the view model asks about a dirty child.
     private void OnPopOutClick(object? sender, RoutedEventArgs e) => _ = _vm?.PopOutAsync();
 
