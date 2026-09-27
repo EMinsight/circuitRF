@@ -53,11 +53,65 @@ public partial class WorkspaceViewModel
             Messages.Error($"Could not open the 3D view '{Path.GetFileName(full)}': {ex.Message}");
             return;
         }
+        OpenC3dEditor(full, key, document, newlyCreated, scratch: false);
+    }
 
+    // ── On Launch ▸ New 3D Design (3D editor bugs round 2) ────────────────────────────────────
+
+    /// <summary>
+    /// A scratch 3D design to draw in at once — what Settings ▸ On Launch ▸ New 3D Design opens. Nothing is written for
+    /// it: its path is where it WOULD be, so its technology and relative references resolve as a saved one's will, and
+    /// its first save is a Save As. With a workspace open that is the workspace's root, so it draws in the workspace's
+    /// technology; with none it is a workspace of its own in the temporary folder, made by the same
+    /// <see cref="WorkspaceCreate.Create"/> New Workspace calls, on the default technology the New Workspace dialog opens
+    /// on — without one no material would resolve and nothing drawn could be simulated once saved.
+    /// </summary>
+    internal void OpenScratchC3d()
+    {
+        string? folder = WorkspaceRootDir ?? ScratchC3dWorkspace();
+        if (folder is null) return;
+        string path = Path.Combine(folder, NextScratchC3dName(folder) + C3dPersistence.Extension);
+        var (tech, _) = TechnologyResolver.ResolveForDocument(null, path, CurrentWorkspacePath, _techCache);
+        var document = CircuitRF.Design.Cells.CellCreate.NewThreeDView(folder, tech.Tech);
+        string full = Path.GetFullPath(path);
+        OpenC3dEditor(full, C3dEditorDocument.KeyFor(full), document, newlyCreated: true, scratch: true);
+    }
+
+    /// <summary>The session's own scratch workspace, made on first use; null (and said) when it cannot be.</summary>
+    private string? ScratchC3dWorkspace()
+    {
+        string parent = Path.Combine(Path.GetTempPath(), "circuitRF-scratch", Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        string dir = Path.Combine(parent, "3d");
+        if (File.Exists(Path.Combine(dir, ".cws"))) return dir;
+        try
+        {
+            Directory.CreateDirectory(parent);
+            return WorkspaceCreate.Create(parent, "3d", WorkspaceCreate.DefaultTechnologyId).WorkspaceDir;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            Messages.Error($"Could not make a scratch 3D design: {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>The lowest free <c>Untitled-3D-N</c>: no file of that name in <paramref name="folder"/>, and no open tab.</summary>
+    private string NextScratchC3dName(string folder)
+    {
+        for (int n = 1; ; n++)
+        {
+            string name = $"Untitled-3D-{n}";
+            string path = Path.GetFullPath(Path.Combine(folder, name + C3dPersistence.Extension));
+            if (!File.Exists(path) && !_openDocsByPath.ContainsKey(C3dEditorDocument.KeyFor(path))) return name;
+        }
+    }
+
+    private void OpenC3dEditor(string full, string key, C3dDocument document, bool newlyCreated, bool scratch)
+    {
         try
         {
             var vm = new C3dEditorViewModel(full, document, Viewer3DBackends.Create, () => CurrentWorkspacePath,
-                                            a => Dispatcher.UIThread.Post(a), _techCache);
+                                            a => Dispatcher.UIThread.Post(a), _techCache, scratch);
             var doc = new C3dEditorDocument(vm);
             if (newlyCreated) vm.Viewer.IsPerspective = false;
             // brief-em3d-45 R-em3d45-1a — the drawing plane is window state: put back where it was left.
@@ -152,10 +206,21 @@ public partial class WorkspaceViewModel
         return true;
     }
 
-    /// <summary>Save As for a 3D view: a new .c3d beside the old one by default, which the tab then follows.</summary>
+    /// <summary>Save for a 3D view wherever a window can be asked: a scratch design's first save is a Save As (3D editor bugs
+    /// round 2), anything else is <see cref="SaveC3d"/>. True when it was written; a cancelled picker is false.</summary>
+    private async Task<bool> SaveC3dAsync(C3dEditorDocument doc, Window owner)
+    {
+        if (!doc.IsScratch) return SaveC3d(doc);
+        await SaveC3dAs(doc, owner);
+        return !doc.IsScratch;
+    }
+
+    /// <summary>Save As for a 3D view: a new .c3d beside the old one by default, which the tab then follows. A scratch
+    /// design starts in the open workspace (its own folder is a temporary one), else wherever the picker opens.</summary>
     internal async Task SaveC3dAs(C3dEditorDocument doc, Window owner)
     {
-        var start = await owner.StorageProvider.TryGetFolderFromPathAsync(new Uri(Path.GetDirectoryName(doc.FilePath)!));
+        string? startDir = doc.IsScratch ? WorkspaceRootDir : Path.GetDirectoryName(doc.FilePath);
+        var start = startDir is null ? null : await owner.StorageProvider.TryGetFolderFromPathAsync(new Uri(startDir));
         var file = await owner.StorageProvider.SaveFilePickerAsync(new Avalonia.Platform.Storage.FilePickerSaveOptions
         {
             Title = "Save 3D View As",
@@ -167,11 +232,14 @@ public partial class WorkspaceViewModel
         });
         if (file?.TryGetLocalPath() is not { } path) return;
         string oldKey = C3dEditorDocument.KeyFor(doc.FilePath);
+        bool wasScratch = doc.IsScratch;
         if (doc.ViewModel.SaveAs(path) is { } why) { Messages.Error($"Failed to save '{path}': {why}"); return; }
         _openDocsByPath.Remove(oldKey);
         _openDocsByPath[C3dEditorDocument.KeyFor(path)] = doc;
         doc.FollowSavedAs();
         Messages.Success("Saved", path);
+        // A scratch design's first file: the tree shows it when it landed in the workspace, and it is now a tab a .cws reopens.
+        if (wasScratch) { _factory.ProjectTreeTool?.Refresh(); RaiseFileMenuEnablementChanged(); }
     }
 
     // ── hierarchy (brief-em3d-48) ─────────────────────────────────────────────────────────────
@@ -353,6 +421,16 @@ public partial class WorkspaceViewModel
     /// </summary>
     internal async Task RunC3dSetupAsync(C3dEditorViewModel c3d, string? setupName)
     {
+        // 3D editor bugs round 2 — a scratch design is saved before it runs (Simulate offers the Save As): a run belongs to a file on disk.
+        if (c3d.IsScratch)
+        {
+            var doc = _openDocsByPath.Values.OfType<C3dEditorDocument>().FirstOrDefault(d => ReferenceEquals(d.ViewModel, c3d));
+            if (doc is null || HostWindowOf(doc) is not { } window || !await SaveC3dAsync(doc, window))
+            {
+                Messages.Warning($"'{Path.GetFileName(c3d.FilePath)}' has not been saved: save it (File ▸ Save As…) to simulate it.");
+                return;
+            }
+        }
         var (setup, fromCem, refusal) = c3d.RunSetupFor(setupName);
         if (setup is null) { Messages.Warning(refusal ?? "Nothing to simulate."); return; }
         var document = c3d.RunDocument();

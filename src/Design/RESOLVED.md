@@ -13769,3 +13769,33 @@ shipped generic library), `MaterialValidation` (a material list's own rules, sha
   disagrees with a handbook**: 4.10e7 S/m is the widely-reprinted textbook ρ = 2.44e-8 Ω·m, while the CRC Handbook's
   bulk value is 2.21e-8 Ω·m (4.5e7). The shipped technologies' value was kept (changing it moves answers) and the
   record's `Source` says it is representative of deposited gold.
+
+## 3D editor bugs round 2 — an object with no material is ignored by the solver, not a refusal (2026-09-26)
+
+**Change.** `C3dElaborator` used to add a REFUSAL for a `.c3d` object with no material, so one unfinished box stopped
+every run of the design. It now adds a WARNING (`C3dElaborator.NoMaterialWarning`: "'X' has no material, so the solver
+ignores it.") and still lowers the object into `UnassignedSolids`/`UnassignedSheets`, so the editor keeps drawing it as
+a pickable wireframe. `C3dDiagnostics.NoMaterial` (validation, which `check` runs) is now `Warning` with the SAME words.
+
+**Deliberately unchanged:** an object naming a material its technology does not define is still a refusal — that is a
+broken reference (a typo, a missing `.cmat`), not an object nobody has finished, and ignoring it would silently solve a
+different design from the one drawn.
+
+**Findings worth keeping:**
+- The air box was already right: `C3dElaboration.Extent()` counts only solved solids/sheets; only `DisplayExtent()`
+  (the editor's framing and scene origin) includes the unassigned ones. `C3dProblemAssembly.Assemble`/`AirBox` and the
+  CLI's `Em3dSetupSource` all size from `Extent()`, so an ignored object moves no face of the box (pinned by a test with
+  the object 5 mm away).
+- A port or wire whose only contact is an ignored object needs no new rule: port contact is measured against the
+  elaboration's solved conductors and wire pads against `_solids`/`_sheets`, so it gets the existing "touches no
+  conductor" / no-pad refusal.
+- A design whose EVERY object has no material still has nothing to solve; `C3dProblemAssembly.NothingToSolve` now says
+  that (with the count) instead of the misleading "holds no solid or sheet". `Em3dSetupSource` (render/explain) uses it too.
+- `check` previously STOPPED at validation's error and never elaborated such a design. Now validation's warning lets it
+  elaborate, which also emits the warning — `check` adds validation's rendered findings to its `said` set, so the line is
+  reported once (the two texts are identical by construction).
+- Properties' "Not simulated" row now matches the exact warning for the object (not a `'name'` substring over all
+  warnings, which would pick up an unrelated layout-instance warning naming the same object).
+
+Gate: `tests/Ui.Tests/ThreeD/NoMaterialIgnoredTests.cs` (run ignores it + box unaffected; typo still refuses + all-bare
+has nothing to solve; `check` as a process exits 0 and says it once).

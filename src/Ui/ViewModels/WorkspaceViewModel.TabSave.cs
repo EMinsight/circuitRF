@@ -211,7 +211,7 @@ public partial class WorkspaceViewModel
                 case EmSetupDocument d:      d.ViewModel.SaveCommand.Execute(null);               break;
                 case PartLibraryDocument d:  d.ViewModel.SaveCommand.Execute(null);               break;
                 case MaterialsDocument d:    d.ViewModel.SaveCommand.Execute(null);               break;
-                case ThreeD.C3dEditorDocument d: SaveC3d(d);                                      break;
+                case ThreeD.C3dEditorDocument d: await SaveC3dAsync(d, window);                   break;
             }
         }
         finally

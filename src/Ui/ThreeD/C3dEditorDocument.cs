@@ -1,6 +1,7 @@
 // brief-em3d-43 R-em3d43-1a — the 3D editor as a Dock document. It mirrors EmSetupDocument: a .c3d is a
-// cell's view, so it is never scratch — FilePath is set once and the tab carries the dirty mark every other
-// editor does. The 3D pane inside is brief 28's, whose GPU device and buffers live in the view model's
+// cell's view — FilePath is set once and the tab carries the dirty mark every other editor does. The one
+// exception is On Launch ▸ New 3D Design (3D editor bugs round 2): a scratch design whose path is where it
+// WOULD be, written by its first Save As (IsScratch). The 3D pane inside is brief 28's, whose GPU device and buffers live in the view model's
 // session, so a float or a re-dock re-imports three images and uploads no geometry (R-em3d28-1d).
 
 using Dock.Model.Mvvm.Controls;
@@ -22,6 +23,9 @@ public sealed class C3dEditorDocument : Document, IUndoableDocument, IActivatabl
     public UndoRedoStack UndoRedo => ViewModel.UndoRedo;
     /// <summary>The TOP document's file — the tab's, whatever frame is pushed in (brief-em3d-48).</summary>
     public string FilePath => ViewModel.TopFilePath;
+
+    /// <summary>Nothing written yet: saving it is a Save As (<see cref="C3dEditorViewModel.IsScratch"/>).</summary>
+    public bool IsScratch => ViewModel.IsScratch;
 
     /// <summary>The key a .c3d is registered under among the open documents: its full path.</summary>
     public static string KeyFor(string path) => Path.GetFullPath(path);

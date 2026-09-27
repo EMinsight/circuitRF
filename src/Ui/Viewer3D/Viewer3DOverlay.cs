@@ -31,6 +31,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Documents;
 using Avalonia.Media;
+using CircuitRF.Design.Layout;
 using CircuitRF.Render;
 using CircuitRF.Render.Scene3D;
 using CircuitRF.Render.Scene3D.Fields;
@@ -63,7 +64,7 @@ public sealed class Viewer3DOverlay : Control
         double w = Bounds.Width, h = Bounds.Height;
         if (w < 10 || h < 10) return;
 
-        if (vm.View.ShowAxisIndicator) AxisIndicator(ctx, cam, new Point(AxisInset, h - AxisInset), ink);
+        if (vm.View.ShowAxisIndicator) AxisIndicator(ctx, cam, AxisIndicatorCentre(h), ink);
         ScaleBar(ctx, cam, vm, w, h, inkPen, ink);
 
         foreach (var label in vm.GridLabels)
@@ -100,7 +101,7 @@ public sealed class Viewer3DOverlay : Control
         Measurement(ctx, vm, w, h, dark);
         if (vm.GizmoNow() is { } gizmo) Gizmo(ctx, gizmo, vm.GizmoHover, vm.GizmoActive, dark);
 
-        if (vm.Snap.IsSnap) SnapMarker(ctx, vm.Snap.Kind, new Point(vm.Snap.ScreenX, vm.Snap.ScreenY), dark);
+        if (vm.Snap.IsSnap) SnapMarker(ctx, vm.Snap.Kind, new Point(vm.Snap.ScreenX, vm.Snap.ScreenY), dark, SnapColour(vm.Scene, vm.Snap));
 
         if (vm.HoverText.Length > 0 && vm.View.CursorX >= 0)
             Text(ctx, vm.HoverText, new Point(vm.View.CursorX + 14, vm.View.CursorY + 14), ink, 12, dark);
@@ -239,15 +240,31 @@ public sealed class Viewer3DOverlay : Control
         if (!dragging) ctx.DrawEllipse(dark ? Brushes.WhiteSmoke : Brushes.DimGray, null, c, 3, 3);
     }
 
-    /// <summary>The snap marker's colour: an amber no material or selection uses, over a contrasting halo.</summary>
-    private static readonly IBrush SnapBrush = new SolidColorBrush(Color.FromRgb(255, 176, 0));
+    /// <summary>The snap marker's colour when there is no material to take one from: an amber no material or selection
+    /// uses, over a contrasting halo.</summary>
+    internal static readonly Color SnapAmber = Color.FromRgb(255, 176, 0);
 
-    /// <summary>brief-em3d-44 R-em3d44-5 — one glyph per kind, drawn twice: a halo, then the amber stroke.</summary>
-    private static void SnapMarker(DrawingContext ctx, CircuitRF.Render.Scene3D.Edit.Snap3DKind kind, Point p, bool dark)
+    /// <summary>
+    /// 3D editor bugs round 2 — the marker is drawn in the colour of what it snaps to, as the layout editor draws its
+    /// marker in the snapped layer's colour: the object's own material colour, opaque (a translucent dielectric's alpha
+    /// would make the glyph faint). Amber for the grid, for an object with no material (drawn wireframe), and for
+    /// anything that is not a material's object — a port, a box face.
+    /// </summary>
+    internal static Color SnapColour(Scene3DModel scene, CircuitRF.Render.Scene3D.Edit.Snap3DResult snap)
+    {
+        if (snap.Kind == CircuitRF.Render.Scene3D.Edit.Snap3DKind.Grid || scene.Object(snap.Object) is not { } o
+            || o.Wireframe || o.Material is not { Length: > 0 })
+            return SnapAmber;
+        uint c = o.Rgba;
+        return Color.FromRgb((byte)c, (byte)(c >> 8), (byte)(c >> 16));
+    }
+
+    /// <summary>brief-em3d-44 R-em3d44-5 — one glyph per kind, drawn twice: a halo, then the coloured stroke.</summary>
+    private static void SnapMarker(DrawingContext ctx, CircuitRF.Render.Scene3D.Edit.Snap3DKind kind, Point p, bool dark, Color colour)
     {
         const double r = 6;
         var halo = new Pen(dark ? Brushes.Black : Brushes.White, 4, lineCap: PenLineCap.Round);
-        var pen = new Pen(SnapBrush, 2, lineCap: PenLineCap.Round);
+        var pen = new Pen(new SolidColorBrush(colour), 2, lineCap: PenLineCap.Round);
         foreach (var stroke in new[] { halo, pen })
         {
             switch (kind)
@@ -316,6 +333,54 @@ public sealed class Viewer3DOverlay : Control
         for (int i = 1; i < texts.Count; i++, y += line) ctx.DrawText(texts[i], new Point(x0 + pad, y));
     }
 
+    /// <summary>The axis indicator's centre in a view <paramref name="height"/> DIPs tall.</summary>
+    public static Point AxisIndicatorCentre(double height) => new(AxisInset, height - AxisInset);
+
+    /// <summary>
+    /// 3D editor bugs round 2 — what a double-click on the axis indicator asks for, or null when <paramref name="p"/> is
+    /// not on it. An axis (its arm or its letter) looks straight down that axis, the convention of the CAD tools' view
+    /// triads: Z the Top view, Y the Front (the XZ plane — Front looks along +y), X the Right (the YZ plane). Asked again
+    /// from that view it turns to the opposite one (Bottom, Back, Left) — an axis seen end-on is the dot at the ring's
+    /// centre, so Top, double-clicked there, turns to Bottom. Anywhere else inside the ring is Isometric.
+    /// </summary>
+    public static StandardView3D? AxisIndicatorHit(in Camera3D cam, Point o, Point p)
+    {
+        var d = p - o;
+        if (d.X * d.X + d.Y * d.Y > (AxisArm + 10) * (AxisArm + 10)) return null;
+        var r = cam.Right; var u = cam.Up; var f = cam.Forward;
+        Span<Vector3> axes = [Vector3.UnitX, Vector3.UnitY, Vector3.UnitZ];
+        int best = -1;
+        double bestDist = 5, bestDepth = double.MaxValue;
+        for (int k = 0; k < 3; k++)
+        {
+            var dir = new Point(Vector3.Dot(r, axes[k]), -Vector3.Dot(u, axes[k]));
+            double len = Math.Sqrt(dir.X * dir.X + dir.Y * dir.Y);
+            double dist;
+            if (len < 0.2) dist = Math.Sqrt(d.X * d.X + d.Y * d.Y);   // seen end-on: a dot at the centre
+            else
+            {
+                // Along the arm and out to its letter (drawn 8 DIPs past the tip): the distance to that segment. The
+                // first 6 DIPs are left to an axis seen end-on, whose dot is there.
+                double reach = AxisArm * len + 12;
+                var unit = new Point(dir.X / len, dir.Y / len);
+                double t = Math.Clamp(d.X * unit.X + d.Y * unit.Y, 6, reach);
+                double dx = d.X - unit.X * t, dy = d.Y - unit.Y * t;
+                dist = Math.Sqrt(dx * dx + dy * dy);
+            }
+            double depth = Vector3.Dot(f, axes[k]);            // nearer the viewer wins a tie, as it is drawn on top
+            if (dist < bestDist || (dist == bestDist && depth < bestDepth)) { best = k; bestDist = dist; bestDepth = depth; }
+        }
+        if (best < 0) return StandardView3D.Iso;
+        // Already looking down this axis: the opposite view.
+        var back = cam.Back;
+        return best switch
+        {
+            0 => Vector3.Dot(back, Vector3.UnitX) > 0.999f ? StandardView3D.Left : StandardView3D.Right,
+            1 => Vector3.Dot(back, -Vector3.UnitY) > 0.999f ? StandardView3D.Back : StandardView3D.Front,
+            _ => Vector3.Dot(back, Vector3.UnitZ) > 0.999f ? StandardView3D.Bottom : StandardView3D.Top,
+        };
+    }
+
     private static void AxisIndicator(DrawingContext ctx, in Camera3D cam, Point o, IBrush ink)
     {
         var r = cam.Right; var u = cam.Up; var f = cam.Forward;
@@ -341,12 +406,25 @@ public sealed class Viewer3DOverlay : Control
         }
     }
 
+    /// <summary>
+    /// The scale bar's length, metres: a 1, 2 or 5 × 10ⁿ of the DISPLAY unit near <paramref name="targetMetres"/>. It was
+    /// a round number of metres, which reads as 393.7008 mil in mil (3D editor bugs round 2); rounding in the unit the
+    /// bar is labelled in is what makes the label a round number in every unit.
+    /// </summary>
+    internal static double ScaleBarLength(double targetMetres, LayoutUnit unit, int dbuPerMicron)
+    {
+        double unitMetres = dbuPerMicron > 0 ? LayoutUnits.ToDbu(1m, unit, dbuPerMicron) * 1e-6 / dbuPerMicron : 0;
+        if (!(unitMetres > 0)) unitMetres = 1e-6;
+        double target = targetMetres / unitMetres, p10 = Math.Pow(10, Math.Floor(Math.Log10(target)));
+        double units = new[] { 1.0, 2.0, 5.0, 10.0 }.Select(m => m * p10).Last(v => v <= target * 1.4);
+        return units * unitMetres;
+    }
+
     private static void ScaleBar(DrawingContext ctx, in Camera3D cam, Viewer3DViewModel vm, double w, double h, Pen pen, IBrush ink)
     {
         double perDip = cam.WorldPerPixel((float)h);
         if (!(perDip > 0) || double.IsInfinity(perDip)) return;
-        double target = ScaleBarTarget * perDip, p10 = Math.Pow(10, Math.Floor(Math.Log10(target)));
-        double len = new[] { 1.0, 2.0, 5.0, 10.0 }.Select(m => m * p10).Last(v => v <= target * 1.4);
+        double len = ScaleBarLength(ScaleBarTarget * perDip, vm.MeasureUnit, vm.MeasureDbuPerMicron);
         double dips = len / perDip;
         var right = new Point(w - 20, h - 22);
         var left = new Point(right.X - dips, right.Y);

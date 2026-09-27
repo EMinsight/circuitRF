@@ -155,13 +155,16 @@ public static class PlaneGrid
         u[8] = nn.X; u[9] = nn.Y; u[10] = nn.Z; u[11] = (float)(plane.OffsetDbu * mPerDbu - Origin(plane.Normal));
         u[16] = (float)minor; u[17] = s.MajorEvery; u[18] = 0; u[19] = 1;
         var line = g.Dark ? new Vector3(0.86f, 0.88f, 0.92f) : new Vector3(0.18f, 0.2f, 0.24f);
-        u[20] = line.X; u[21] = line.Y; u[22] = line.Z; u[23] = g.Dark ? 0.2f : 0.24f;
+        // 3D editor bugs round 2 — on a light background the grid at 0.24 (and its axis lines at 0.6) could not be seen: dark
+        // lines on white need about twice the alpha light ones on near-black do.
+        u[20] = line.X; u[21] = line.Y; u[22] = line.Z; u[23] = g.Dark ? 0.2f : 0.5f;
         u[24] = (float)-Origin(ua); u[25] = (float)-Origin(va);
         u[26] = (float)Mod(Origin(ua), coarseLen); u[27] = (float)Mod(Origin(va), coarseLen);
         var cu = AxisRgb[(int)ua];
         var cv = AxisRgb[(int)va];
-        u[28] = cu.X; u[29] = cu.Y; u[30] = cu.Z; u[31] = 0.6f;
-        u[32] = cv.X; u[33] = cv.Y; u[34] = cv.Z; u[35] = 0.6f;
+        float axisAlpha = g.Dark ? 0.6f : 0.85f;
+        u[28] = cu.X; u[29] = cu.Y; u[30] = cu.Z; u[31] = axisAlpha;
+        u[32] = cv.X; u[33] = cv.Y; u[34] = cv.Z; u[35] = axisAlpha;
         WriteRay(u, cam, width, height, flipY);
         return s;
     }

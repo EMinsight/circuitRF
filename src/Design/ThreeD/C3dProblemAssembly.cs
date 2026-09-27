@@ -119,6 +119,17 @@ public static class C3dProblemAssembly
     public static C3dPortContext PortContext(EmSetup? setup, C3dDocument document, C3dElaboration e, Em3dAirBox? box)
         => new(e, document.DbuPerMicron, box, GroundSet(setup, e));
 
+    /// <summary>Why an elaboration with no solved content has nothing to solve — counting the objects the solver ignores
+    /// for having no material, when that is why (3D editor bugs round 2).</summary>
+    public static string NothingToSolve(C3dElaboration e)
+    {
+        int ignored = e.UnassignedSolids.Count + e.UnassignedSheets.Count;
+        return ignored == 0
+            ? "This 3D view holds no solid or sheet, so there is nothing to solve."
+            : $"None of this 3D view's {ignored} object{(ignored == 1 ? "" : "s")} has a material, and the solver ignores an " +
+              "object with none, so there is nothing to solve. Give one a material.";
+    }
+
     /// <summary>
     /// The air box <paramref name="setup"/> puts around <paramref name="e"/> — the one a run of it solves in, which is also
     /// the one the editor draws (R-em3d49-3a) and a wave port must lie on. Null when there is no content.
@@ -254,7 +265,7 @@ public static class C3dProblemAssembly
         notes.AddRange(e.Notes);
         if (!e.Ok) return No(string.Join(" ", e.Refusals), e.Warnings);
         if (e.Extent() is not { } extent)
-            return No("This 3D view holds no solid or sheet, so there is nothing to solve.", e.Warnings);
+            return No(NothingToSolve(e), e.Warnings);
 
         // ── The air box, padded by the generator's own rule ─────────────────────────────────────
         var box = Em3dGenerator.PaddedAirBox(setup, (extent.X0, extent.Y0, extent.X1, extent.Y1, extent.Z0, extent.Z1),

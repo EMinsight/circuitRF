@@ -67,7 +67,7 @@ internal sealed record Em3dSetupSource(
         var drawing = new EmSetup { Name = System.IO.Path.GetFileNameWithoutExtension(full), Solver3D = Em3dSolver.Palace };
         if (!elaboration.Ok || elaboration.Extent() is not { } x)
             return new Em3dSetupSource(full, drawing, ResolutionOf(full, elaboration), null,
-                elaboration.Ok ? "this 3D view holds no solid or sheet." : string.Join(" ", elaboration.Refusals)) { Elaboration = elaboration };
+                elaboration.Ok ? C3dProblemAssembly.NothingToSolve(elaboration) : string.Join(" ", elaboration.Refusals)) { Elaboration = elaboration };
         var box = new Em3dAirBox(new Point3(x.X0, x.Y0, x.Z0), new Point3(x.X1, x.Y1, x.Z1),
                                  new Em3dFaces(Em3dBoundaryKind.Absorbing, Em3dBoundaryKind.Absorbing, Em3dBoundaryKind.Absorbing,
                                                Em3dBoundaryKind.Absorbing, Em3dBoundaryKind.Absorbing, Em3dBoundaryKind.Absorbing));

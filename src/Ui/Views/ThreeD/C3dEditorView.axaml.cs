@@ -222,6 +222,23 @@ public partial class C3dEditorView : UserControl
 
     private void OnPlaneOffsetLostFocus(object? sender, RoutedEventArgs e) { if (!_cancellingEdit) _vm?.CommitPlaneOffset(); }
 
+    // 3D editor bugs round 2 — the Snap combobox is the layout editor's: a ladder pick commits at once, typed text on
+    // Enter or when focus leaves.
+    private void OnSnapDistanceKey(object? sender, KeyEventArgs e)
+    {
+        if (e.Key is Key.Enter or Key.Return && sender is ComboBox cb) { _vm?.CommitSnapDistanceText(cb.Text ?? ""); Pane.Focus(); e.Handled = true; }
+    }
+
+    private void OnSnapDistanceLostFocus(object? sender, RoutedEventArgs e)
+    {
+        if (!_cancellingEdit && sender is ComboBox cb) _vm?.CommitSnapDistanceText(cb.Text ?? "");
+    }
+
+    private void OnSnapDistanceSelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (sender is ComboBox { SelectedItem: string text }) _vm?.CommitSnapDistanceText(text);
+    }
+
     private void OnDefineKey(object? sender, KeyEventArgs e)
     {
         if (e.Key == Key.Enter) { _vm?.DefineEnter(); e.Handled = true; }

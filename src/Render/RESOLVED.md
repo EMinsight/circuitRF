@@ -4062,3 +4062,13 @@ Gate: same file — a box, a cylinder, a sheet with no material and a box of an 
 scene (alpha-0 translucent triangles, 12/4 edge lines), still in `Refusals` and absent from `Solids`; a click selects
 one in Object and Face mode and `BoundsDbu` answers for it; on Metal edges are drawn, faces are not filled (drawn
 pixels < ¼ of the silhouette) and the ID pass names it at a pixel inside a face.
+
+## 3D editor bugs round 2 — a polyhedron had no edges, so a material-less one vanished (2026-09-26)
+
+`Scene3DBuilder`'s feature edges (the dark outline of every solid, and the WHOLE drawing of a material-less wireframe
+object) paired each triangle edge with its neighbour by mesh vertex INDEX. `Em3dTessellation.Polyhedron` repeats each
+corner once per face — it adds a vertex per face corner — so by index no two faces ever shared an edge, and every
+polyhedron had no edges at all. A box moved at a vertex becomes a polyhedron: filled, it merely lost its outline;
+material-less, drawn as edges only, it disappeared and only its hover highlight showed. The edges are now keyed by the
+corners welded by position, as `Scene3DFeatureTable` (the snap's features) has always welded them. The engine's
+tessellation is untouched. Anything else that repeats corners per face (a prism's walls) gains its outline too.

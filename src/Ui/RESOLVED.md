@@ -36251,3 +36251,152 @@ command is disabled with no workspace rather than half-working. It carries the e
 - M4–M9 took the brief's defaults: library rows open their own document; rename = one entry per open file, unopened
   files listed; `Color` is in (`#rrggbb`, the 3D scene's palette otherwise); thermal scalars shown collapsed; instance
   technologies read-only; New Material… saves to the first library, else the technology.
+
+## 3D editor bugs round 2 — the object tree: "Objects" header, by material / by type, and a filter (2026-09-26)
+
+The owner asked for a header on the tree, a choice of listing by material (default) or by primitive type, and a filter
+at the panel's top right. Built in `src/Ui/ThreeD/C3dEditorViewModel.TreeGrouping.cs`; the header row (title, a
+"By material / By type" combo, the filter button with a flyout of checkable Types and Materials and a Show All) is in
+`C3dEditorView.axaml`. Gate: `tests/Ui.Tests/ThreeD/EditorRound2TreeTests.cs`.
+
+- **Groups were found by their HEADER string, and by material a header is any material's name.** Four places
+  (`RebuildInstanceChildren`, `RebuildRecordsTree` twice, `RebuildAirBoxItem`, `RefreshWireFlags`) looked a group up
+  by `"Instances"`, `"Ports"`, `"Boxes"`, `"Wires"`. Once a group can be called whatever a technology names a material,
+  a material called "Ports" would have been deleted by the port rebuild. `C3dTreeGroup` now carries a `Role`
+  (`Objects`, `Construction`, `Instances`, `Ports`, `AirBox`) and every lookup reads it; the expansion key carries the
+  role too. Wire refusal flags are found by the item's kind, since by material a wire sits under its metal.
+- **The air box by material** has no Boxes group to share: it is the one node of an "Air box" group at the top. By
+  type it is still first under Boxes (round 1's placement).
+- **Polylines by material** go in a "Polylines" group of their own (role `Construction`), never "No material": they
+  are construction geometry and never take one, so listing them as missing a material would be a false alarm.
+- **The filter hides tree rows only.** It stores the UNCHECKED names, so a material or type that appears later is
+  listed from the start. Ports and the air box are setup records and are never filtered; the material filter does
+  not apply to instances or polylines (filtered by type alone). A selected object that the filter hides leaves the
+  tree with no selection while the scene keeps it.
+- **Grouping and filter are per editor, not persisted.** Persisting in the `.cws` window state means a new key; a
+  static "last choice" would leak between tests in one process. By material is the default the owner asked for.
+- Round 1's tests that named "Sheets"/"Boxes" groups now set `TreeGrouping = Primitive` first; the wire gate tests
+  find their wire by name rather than under "Wires".
+
+## 3D editor bugs round 2 — scratch 3D design on launch, the shared Snap control, VAR units, Run button (2026-09-26)
+
+**On Launch ▸ New 3D Design opens a SCRATCH `.c3d` whose path is where it WOULD be, and nothing is written.**
+`LaunchAction.New3DDesign` is APPENDED (the enum and `SettingsView`'s string array are an ordinal file format;
+`SmithWindowTests` now pins `New3DDesign` last and `NewSmithChart` by position). Round 1 had decided the 3D editor
+has no scratch form because the editor, the elaborator and the technology walk all key off the document's own
+path; that stays true — the scratch keeps a path, it just is not on disk yet. With a workspace open the path is
+`<workspace root>/Untitled-3D-N.c3d`, so `TechnologyResolver.ResolveForDocument`'s walk-up finds the workspace's
+`.cws` and the design draws in its materials. With none, a session workspace is made in
+`<temp>/circuitRF-scratch/<pid>/3d` by `WorkspaceCreate.Create` on `WorkspaceCreate.DefaultTechnologyId` — without a
+technology no material resolves and every drawn object would be material-less. **The walk-up ignores the
+"fallback" `.cws` whenever a document path is given**, which is why a temporary path with no `.cws` above it
+cannot borrow the open workspace's technology — the reason for putting the prospective path inside the workspace.
+
+`C3dEditorViewModel.IsScratch`: `Save()` refuses; `SaveAs` clears it (restored if the write fails). Every shell
+save route that could reach a scratch design now goes through `SaveC3dAsync` (Save As for a scratch, plain
+`SaveC3d` otherwise): the tab Save, SingleDoc Save (which also saves a CLEAN scratch — "Nothing to save" would be
+wrong for a design that is not a file), the close prompt, Save All and the quit prompt. `DocumentPathAndKind` and
+the `.cws` active-document switch skip a scratch design, so a `.cws` never records a tab it cannot reopen.
+`RunC3dSetupAsync` offers the Save As before a scratch design runs, and warns if it is cancelled.
+
+**The 3D toolbar's Snap box is the layout editor's control.** The ladder and its typed-entry parse moved to
+`src/Ui/Layout/SnapLadder.cs`, which `LayoutEditorViewModel.RebuildSnapLadderOptions` and the 3D editor both call;
+the 3D editor's `SnapLadderOptions` is keyed on (technology default, display unit, DBU) and rebuilt only when that
+key changes, so a pick never rebuilds the list it came from (R-crash-1). It sets `C3dDocument.SnapDbu` as a
+document preference (dirty, no undo entry), as the display unit already is. **Zero is refused in the 3D editor,
+unlike the layout editor**: a `.c3d`'s `SnapDbu` of 0 means "the technology's default" (`SnapPitch`), not "off" —
+grid snap off is F9 / the grid-snap toggle. Note the 3D editor's geometry-snap APERTURE (screen pixels) was
+already the layout editor's; this control is the grid snap step, the layout toolbar's "Snap:".
+
+**VAR/Define unit combos show lower case** through a keyed `LowerUnit` item template (display only — the stored
+value is still the enum name). **Simulate is the workspace toolbar's Run button** (`PlayCircleOutline`, 18 px,
+transparent). No Stop beside it: the workspace Stop cancels only a schematic run (`_runCts`); an EM run is
+cancelled from its progress row.
+
+Gate: `tests/Ui.Tests/ThreeD/EditorRound2ToolbarTests.cs`.
+
+## 3D editor bugs round 2 — the view: re-based origin, preview depth, camera drags, scale bar, snap colour, triad, status pane, typed keys (2026-09-26)
+
+- **"Moving a solid moves the viewport" was the scene's ORIGIN moving, not the camera.** The camera lives in scene-LOCAL
+  coordinates and `C3dEditorViewModel.Build` re-bases the origin whenever the design's extent centre leaves `NearEnough`
+  (one object dragged a few of its own sizes does it). The camera kept its local numbers, so the whole world — objects,
+  grid, axes — jumped at once. `CarryCameraAcrossOrigin` moves the target by the origin's shift so it stays on the same
+  WORLD point — but only within one navigation frame (keyed by the elaborated path and the push-in context): a push fits
+  and a pop restores the parent's own camera, and carrying across either would be wrong. This is also the likely reading
+  of "the grid is not fixed": the grid shader was always at the plane's world offset.
+- **The ghost clipped past a threshold** because near/far bracket the SCENE's sphere (`Camera3D.DepthRange`) and a drag's
+  preview is drawn where the scene is not. `Scene3DFramePlan.DepthCamera` grows the sphere for that frame over every
+  moving object's copies; the colour pass, the pick pass (`PickCamera`, which the backends unproject with) and the grid's
+  ray all use it, so their depths agree. The view's own camera is never written.
+- **A camera drag hovers and snaps to nothing** (`Viewer3DViewModel.CameraGesture`): set once an orbit/pan has MOVED past
+  the click slop, so a still press is still a click. It clears the cursor (no pick, no snap) and drops a pick read back
+  from a frame planned before the drag.
+- **The scale bar** rounded 1-2-5 in METRES, so it read 393.7008 mil; it now rounds in the display unit.
+- **Snap marker colour** is the snapped object's material colour, opaque; amber for the grid, for a material-less
+  (wireframe) object and for a port or box face.
+- **Axis indicator double-click**: an axis looks down itself (Z Top, Y Front, X Right — the CAD triad convention, Front
+  looking along +y here), again gives the opposite; an axis seen end-on is the centre dot; elsewhere in the ring is
+  Isometric. A single click on the triad selects nothing (it used to clear the selection as an empty-space click).
+- **The status pane under the viewport is hidden**, kept whole behind `CRF_3D_STATUS_PANE=1`. It carried tool prompts,
+  refusals, the drawing-plane and grid text, and brief 51's Replace with Number button — none of those has another home
+  yet, and the user reference still describes "the status line".
+- **Typed distances**: the field takes focus a dispatcher turn after the key that opened it, so a quick second key reached
+  `DrawKey` and RE-OPENED the field with only itself ("10" → "0", a move of nothing). A key arriving while the field is
+  open is now appended. Move Along Normal itself was verified relative in mil, positive and negative.
+- **Test race, pre-existing**: `OnSceneAdopted` published `AdoptedGeneration` before releasing the held preview, so a
+  settle could observe a half-finished adoption (`OperationsGateTests.Gate1` failed under load). It is published last.
+
+## 3D editor bugs round 2 (cont.) — a wire attaches to any face, the viewport's status line, the grid is not clipped (2026-09-26)
+
+- **The Wire tool demanded "the top of a pad"** — a word the tool never defined, and a gesture that only worked
+  looking DOWN (`C3dWires.PadHit` rejects a ray with no downward z) on a conductor's top. A click on any face of a
+  metal object or a sheet now attaches: `C3dEditorViewModel.PadOnObject` takes the object under the cursor (a CPU pick
+  at the click, `Viewer3DViewModel.PickUnderCursor`, never a pick read back from an earlier frame; the last ID pass
+  for the rubber band) and `C3dWires.LandOn` puts the end on that object's TOP above the point — a bond sits on a
+  top, and that is the one place elaboration looks. A side face's hit lies ON the outline, which the polygon's own
+  `Contains` counts as inside, so "inside" means clear of the outline by a DBU; otherwise the nearest outline point
+  is moved two wire diameters in, so the foot does not hang over the edge. A snapped point on a top is still taken
+  exactly. A refusal names the object and why (no material, an insulator, an upright sheet).
+- **Test trap:** snapping is a per-USER preference shared by the whole test process — a test that turns it off
+  must put it back in a `finally`, or every later snap test in the run fails (14 did).
+- **The status pane's one line** is drawn on the viewport, between the axis indicator and the scale bar:
+  `ViewportLine` = the last `StatusMessage`, else the tool's prompt, else the push-in frame text. The text is not
+  hit-testable (the view keeps its clicks); Replace with Number rides beside it when offered.
+- **The clip plane no longer cuts the drawing grid**: `fs_grid` called `clipped(w)` like the model's shaders, so a
+  Z clip at its minimum hid the whole grid below it — half an XZ grid seen from the front. Regenerated with
+  tools/ShaderGen (all three outputs current).
+
+## 3D editor bugs round 2 (cont.) — "XY plane is behind the camera" on a plain click (2026-09-26)
+
+`Camera3D.Ray` returns a ray that starts on the NEAR CLIP PLANE, and near/far bracket the scene's sphere. The cursor ray
+every tool reads (`Viewer3DViewModel.CursorRay`) used it as is, and `DrawingPlane.Hit` refuses t < 0 — so wherever the
+drawing plane was nearer the camera than the near plane it was "behind the camera". In an orthographic view (a new
+.c3d starts orthographic) that is the whole lower part of the view once it is larger than the scene — an empty scratch
+design above all. `CursorRay` now starts at the eye in perspective, and in orthographic far enough back to precede any
+plane the view can show short of edge-on (the grid shader already treated an orthographic ray as a whole line). Moving
+the origin back along the ray's own direction, in double, moves no hit point. The refusal left (perspective, cursor
+above the plane's horizon) now says so instead of "behind the camera".
+
+## 3D editor bugs round 2 (cont.) — the view jumped when the first box appeared (2026-09-26)
+
+The viewer fits its FIRST scene with content (`Viewer3DViewModel.Adopt`, `_fitted`) — right for a setup's viewer, where
+an empty scene is a refusal. In the editor an empty design is a canvas the user is already drawing in, so the box that
+became the first content was fitted to and the view jumped as it appeared. `KeepEmptyView` (the editor passes "the
+document holds no object or instance") makes an empty first scene count as framed; a document whose first build merely
+failed still fits when its content arrives. A stored camera is applied at that moment, as before.
+
+## 3D editor bugs round 2 (cont.) — New Material… in a design with no technology; light-mode contrast; toolbar order (2026-09-26)
+
+- **New Material… did nothing visible** in a cell with no layout in a workspace with no default technology: the
+  picker's precondition (a resolved technology) failed and the only trace was a Messages warning. A design that
+  resolves NO technology is now given one first: `ChangeTechnologyDialog`'s second constructor (the workspace's
+  `.ctech` files, the catalog's technologies, Browse…) — no "(Workspace default)" row, since that is what resolved
+  nothing. A catalog choice is copied by `WorkspaceCreate.InstallTechnology`, the copy New Workspace makes, extracted
+  so there is one (a file already there is never overwritten, nor a library). The choice is the DESIGN's own
+  `TechRef` (one undo entry, `C3dEditorViewModel.UseTechnology`); the workspace default is not touched. 3D ▸ Materials…
+  takes the same route. A technology that exists but fails to load still opens for fixing, as before.
+  `ApplyDocumentText` now carries `TechRef` too — without it an undo of that entry left the reference in place.
+- **Light mode**: a material-less object is drawn as its edges alone, and the mid-grey ink was too faint on white —
+  its edges are near-black in light mode. The drawing grid's lines went from 0.24 to 0.5 alpha and its axis lines from
+  0.6 to 0.85, light mode only.
+- **Toolbar**: the clip-plane controls moved after Snap; the tools and the snap switches swapped places.

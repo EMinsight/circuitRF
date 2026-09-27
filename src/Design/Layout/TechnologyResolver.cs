@@ -129,6 +129,11 @@ public static class TechnologyResolver
     /// exactly which file it wants (brief-foreign-documents.md R-fgn-4's session-scoped "pick a
     /// specific .ctech" override) can reuse it instead of re-deriving a second load path.
     /// </summary>
+    /// <summary>A technology file loaded as a document's explicit reference to it would load it — through a fresh cache, so
+    /// what is on disk now is what is read; null when it does not load.</summary>
+    public static Technology? LoadForPath(string path)
+        => Load(Path.GetFullPath(path), TechResolutionSource.LayoutRef, new TechnologyCache()).Tech;
+
     internal static TechResolution LoadDirect(string path, TechResolutionSource source, TechnologyCache cache)
         => Load(path, source, cache);
 

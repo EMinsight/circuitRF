@@ -231,6 +231,15 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
                                     ["Planar setup, shown in 3D."]);
     }
 
+    /// <summary>
+    /// 3D editor bugs round 2 — an EMPTY first scene counts as framed when this says so: the camera it is shown with is the
+    /// one the user draws in. The editor says so for a document with nothing in it (not for one whose first build merely
+    /// failed, which still wants a fit when its content arrives). Without it the first scene with an object in it — the first box drawn into a new
+    /// design — was fitted, and the view jumped the moment that box appeared. A viewer of a setup keeps waiting for
+    /// content to fit, since there an empty scene is a refusal, not a canvas.
+    /// </summary>
+    public Func<bool>? KeepEmptyView { get; init; }
+
     /// <summary>UI thread: the newest scene arrived. Keeps the user's toggles, fits the first one.</summary>
     internal void Adopt(Scene3DModel scene)
     {
@@ -257,9 +266,9 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
             FormatLength = m => f(m);
             SetMeasureUnits(unit, dbu);
         }
-        if (!_fitted && scene.Objects.Length > 0)
+        if (!_fitted && (scene.Objects.Length > 0 || KeepEmptyView?.Invoke() == true))
         {
-            View.Camera = Camera3D.Fit(scene.ContentMin, scene.ContentMax, _aspect, View.Camera.Projection);
+            if (scene.Objects.Length > 0) View.Camera = Camera3D.Fit(scene.ContentMin, scene.ContentMax, _aspect, View.Camera.Projection);
             if (_pendingCamera is { } c) { ApplyCamera(c); _pendingCamera = null; }
             View.Camera.SceneCentre = (scene.BoundsMin + scene.BoundsMax) * 0.5f;
             View.Camera.SceneRadius = (scene.BoundsMax - scene.BoundsMin).Length() * 0.5f;
@@ -470,6 +479,7 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
 
     public void Hover(float x, float y)
     {
+        if (CameraGesture) return;
         View.CursorX = x; View.CursorY = y;
         HitCycle.CursorMoved(x, y);
         HoverGizmo(x, y);
@@ -485,6 +495,20 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
         CursorText = "";
         ClearSnap();
         FrameRequested?.Invoke();
+    }
+
+    /// <summary>
+    /// 3D editor bugs round 2 — an orbit or pan drag is under way. While it is, the view has no cursor: nothing is hovered,
+    /// highlighted or snapped, because the cursor is steering the camera and is not pointing at anything. A pick read back
+    /// from a frame planned before the drag began is dropped (<see cref="OnPicked(uint, uint, Vector3, bool, Scene3DIdPatch?)"/>).
+    /// </summary>
+    public bool CameraGesture { get; private set; }
+
+    public void SetCameraGesture(bool on)
+    {
+        if (CameraGesture == on) return;
+        CameraGesture = on;
+        if (on) Leave();
     }
 
     public void Orbit(float dx, float dy) { View.Camera.Orbit(dx, dy); View.Orbiting = true; FrameRequested?.Invoke(); }

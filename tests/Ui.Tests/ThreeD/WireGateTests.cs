@@ -94,6 +94,47 @@ public sealed class WireGateTests : IDisposable
         Assert.InRange(report.AssemblyLoopHeightM / PerDbu - 203_200, -1.0, 1.0);
     }
 
+    /// <summary>3D editor bugs round 2 — a wire attaches to ANY face of a metal object: in the Front view (no top in
+    /// sight) the two side faces are clicked, and each end lands on its object's top, inside its outline. An object with
+    /// no material is refused by name, saying why.</summary>
+    [Fact]
+    public void AnyFaceOfAMetalObject_StartsAndEndsAWire_OnItsTop_AndAMaterialLessOneIsRefusedByName()
+    {
+        var vm = OpenPads(0, extra: new C3dBox { Name = "bare", Min = new(300 * Um, 0, 0), Size = new(100 * Um, 60 * Um, 20 * Um) });
+        vm.Viewer.StandardViewCommand.Execute(StandardView3D.Front);
+        // Snapping is a per-USER preference, shared by every test in the process: put back, whatever happens.
+        bool snapWas = vm.Viewer.SnapEnabled;
+        vm.Viewer.SnapEnabled = false;                                // a snapped point on a top is taken exactly: not this path
+        try
+        {
+            vm.Arm(C3dToolKind.Wire);
+            Assert.Contains("any face", vm.ViewportLine);                  // the prompt, on the viewport's line
+
+            ClickAt(vm, 350, 0, 10);
+            Assert.Equal(0, vm.Tool!.Step);
+            Assert.Contains("'bare' has no material", vm.ViewportLine);    // the refusal replaces it there
+
+            ClickAt(vm, 50, 0, 7);
+            Assert.Equal(1, vm.Tool!.Step);
+            ClickAt(vm, 640, 0, 7);
+            Assert.Equal(2, vm.Tool!.Step);
+            vm.OpenField(null);
+            vm.FieldText = "8mil";
+            vm.FieldEnter();
+            Settle(vm);
+
+            var wire = Assert.IsType<C3dWire>(vm.Document.Objects[^1]);
+            var (a, b) = (wire.Points[0], wire.Points[^1]);
+            Assert.Equal((20 * Um, 20 * Um), (a.Z, b.Z));
+            Assert.InRange(a.X, 0, 100 * Um);
+            Assert.InRange(a.Y, 1, 60 * Um);                              // inside the edge, not on it
+            Assert.InRange(b.X, 600 * Um, 700 * Um);
+            var report = vm.Elaboration!.Wires.Single(w => w.Name == wire.Name);
+            Assert.Equal(("die", "lead"), (report.Start.Pad, report.End.Pad));
+        }
+        finally { vm.Viewer.SnapEnabled = snapWas; }
+    }
+
     // ── 3. across hierarchy ──────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -198,7 +239,7 @@ public sealed class WireGateTests : IDisposable
             Name = "w1", Material = "Gold",                                  // its start 5 µm above the die's top
             Points = [new(50 * Um, 20 * Um, 25 * Um), new(350 * Um, 20 * Um, 200 * Um), new(650 * Um, 20 * Um, 20 * Um)],
         });
-        var item = vm.Tree.Single(g => g.Header == "Wires").Items.Single();
+        var item = vm.Tree.SelectMany(g => g.Items).Single(i => i.Name == "w1");   // by material the wire is under Gold
         Assert.Contains("w1's start is no longer on a pad", item.Refusal, StringComparison.Ordinal);
 
         vm.SelectedTreeItem = item;
@@ -207,7 +248,7 @@ public sealed class WireGateTests : IDisposable
         Settle(vm);
         Assert.Equal(before + 1, vm.UndoEntries);
         Assert.Equal(20 * Um, ((C3dWire)vm.Document.Objects[^1]).Points[0].Z);
-        Assert.Null(vm.Tree.Single(g => g.Header == "Wires").Items.Single().Refusal);
+        Assert.Null(vm.Tree.SelectMany(g => g.Items).Single(i => i.Name == "w1").Refusal);
     }
 
     // ── R-em3d50-4. an array of wires ────────────────────────────────────────────────────────
@@ -230,7 +271,7 @@ public sealed class WireGateTests : IDisposable
         Assert.Equal(3, copies.Count);
         Assert.All(copies, c => Assert.True(c.Placement.IsDefault));    // the pitch is in the points
         Assert.Equal(200 * Um + 20 * Um, copies[^1].Points[0].Y);
-        var flagged = vm.Tree.Single(g => g.Header == "Wires").Items.Where(i => i.Refusal is not null).Select(i => i.Name).ToList();
+        var flagged = vm.Tree.SelectMany(g => g.Items).Where(i => i.Refusal is not null).Select(i => i.Name).ToList();
         Assert.Equal([copies[^1].Name], flagged);
         Assert.Contains("end is no longer on a pad", vm.Elaboration!.WireRefusals[copies[^1].Name], StringComparison.Ordinal);
     }

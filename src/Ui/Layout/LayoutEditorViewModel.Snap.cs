@@ -63,21 +63,8 @@ public sealed partial class LayoutEditorViewModel
     /// <see cref="Technology"/>/<see cref="DisplayUnit"/> that a selection can never perturb.</summary>
     public ObservableCollection<string> SnapLadderOptions { get; } = [];
 
-    /// <summary>
-    /// The ladder's rungs, as multiples of the technology's own default snap.
-    ///
-    /// <para><b>Two SUB-unit rungs, added at the owner's request (2026-08-16)</b> — on a PCB
-    /// technology whose default snap is 1 mil these are the "0.5 mil" and "0.1 mil" asked for, and on
-    /// any other technology they are the same fractions of that process's own step, which is what
-    /// R-snp-2's relative ladder means by "the equivalent in the other units". A fixed
-    /// <c>0.1 · 0.5 · 1 · 5 · 10</c> list of ABSOLUTE lengths would be the "one WHAT" defect R-snp-2
-    /// exists to avoid.</para>
-    ///
-    /// <para><c>decimal</c>, not <c>double</c>, for the reason <see cref="LayoutUnits"/> gives at
-    /// length: a double cannot represent 1 mil = 25,400 nm exactly, and these products are rounded to
-    /// integer DBU. In decimal, 0.1 × 25,400 is 2,540 on the nose.</para>
-    /// </summary>
-    private static readonly decimal[] SnapLadderMultipliers = [0.1m, 0.5m, 1m, 5m, 10m, 25m, 50m];
+    // The rungs themselves (multiples of the technology's default snap, two of them sub-unit) are
+    // SnapLadder.Multipliers — shared with the 3D editor's snap control (3D editor bugs round 2).
 
     /// <summary>Rebuilds <see cref="SnapLadderOptions"/> — called ONLY when the resolved technology
     /// changes (<c>OnTechnologyChanged</c>, which also covers a later retarget — R-cmb-2), the display
@@ -115,21 +102,8 @@ public sealed partial class LayoutEditorViewModel
         if (baseDbu <= 0) baseDbu = LayoutUnits.ToDbu(1m, LayoutUnit.Um, Model.DbuPerMicron);
 
         SnapLadderOptions.Clear();
-
-        long previous = 0;
-        foreach (var mult in SnapLadderMultipliers)
-        {
-            long dbu = (long)decimal.Round(baseDbu * mult, MidpointRounding.AwayFromZero);
-
-            // A sub-unit rung on an already-tiny base quantises to zero DBU — which is not a fine snap
-            // but the OFF state (LayoutSnapping's "SnapDbu <= 0 means none"), so offering it as a
-            // distance would be a trap. It can also collapse onto the rung below it. Multipliers
-            // ascend, so comparing against the last one kept is enough to drop both.
-            if (dbu <= 0 || dbu == previous) continue;
-            previous = dbu;
-
-            SnapLadderOptions.Add($"{LayoutUnits.Format(dbu, DisplayUnit, Model.DbuPerMicron)} {UnitSuffix(DisplayUnit)}");
-        }
+        foreach (var rung in SnapLadder.Build(baseDbu, DisplayUnit, Model.DbuPerMicron))
+            SnapLadderOptions.Add(rung);
     }
 
     /// <summary>
@@ -158,7 +132,7 @@ public sealed partial class LayoutEditorViewModel
     /// formatted value, never throws.</summary>
     public void CommitSnapDistanceText(string text)
     {
-        if (LayoutUnits.TryParse(text, DisplayUnit, Model.DbuPerMicron, out var dbu) && dbu >= 0)
+        if (SnapLadder.TryParse(text, DisplayUnit, Model.DbuPerMicron, out var dbu))
             SnapDbu = dbu;
         else
             RefreshSnapDistanceDisplay();

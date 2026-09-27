@@ -317,6 +317,21 @@ public sealed class Viewer3DPane : Control
         Focus();
         var p = e.GetCurrentPoint(this);
         _last = _pressedAt = p.Position;
+        // 3D editor bugs round 2 — the axis indicator: a double-click turns the view (Viewer3DOverlay.AxisIndicatorHit), and a
+        // single click on it selects nothing — it would otherwise clear the selection, being a click on empty space.
+        _onTriad = false;
+        if (_vm is { } tv && tv.View.ShowAxisIndicator && p.Properties.IsLeftButtonPressed && e.KeyModifiers == KeyModifiers.None
+            && Viewer3DOverlay.AxisIndicatorHit(tv.View.Camera, Viewer3DOverlay.AxisIndicatorCentre(Bounds.Height), p.Position) is { } sv)
+        {
+            _onTriad = true;
+            if (e.ClickCount == 2)
+            {
+                tv.StandardViewCommand.Execute(sv);
+                _last = _pressedAt = null;
+                e.Handled = true;
+                return;
+            }
+        }
         // brief-em3d-43: Shift + left is Shift-CLICK now (add to the selection), so a Shift + left DRAG still
         // pans — decided on release, by whether it moved — and Alt + left pans outright.
         // brief-em3d-46 R-em3d46-5 — a plain left press on a gizmo handle is a constrained move, not an orbit: the
@@ -350,6 +365,8 @@ public sealed class Viewer3DPane : Control
     }
 
     private bool _moved, _rightPressed, _shiftPress;
+    /// <summary>3D editor bugs round 2 — the press landed on the axis indicator.</summary>
+    private bool _onTriad;
     /// <summary>3D round 1 — a plain left press while something waits for a click: its release is the click, moved or not.</summary>
     private bool _drawPress;
     // brief-em3d-45 — what the press carried, for the drawing: Ctrl/Cmd for a plane gesture, 2 for a double-click.
@@ -373,6 +390,9 @@ public sealed class Viewer3DPane : Control
             if (_orbiting) _vm?.Orbit((float)d.X, (float)d.Y);
             else _vm?.Pan((float)d.X, (float)d.Y, (float)Bounds.Height);
             _last = pos;
+            // 3D editor bugs round 2 — a camera drag hovers nothing and snaps to nothing (Viewer3DViewModel.CameraGesture).
+            // Not before the drag has MOVED: a press that stays put is still a click, and selects what it hovers.
+            if (_moved) _vm?.SetCameraGesture(true);
         }
         _vm?.SetGeometrySnapSuspended(e.KeyModifiers.HasFlag(KeyModifiers.Alt));
         _vm?.SetShiftHeld(e.KeyModifiers.HasFlag(KeyModifiers.Shift));
@@ -390,12 +410,19 @@ public sealed class Viewer3DPane : Control
             _vm?.ReleaseGizmo();
             return;
         }
-        if (_drawPress || (_orbiting && !_moved)) _vm?.Click(shift: false, _pressModifiers, _pressClicks);
+        if (_onTriad && !_moved) { }
+        else if (_drawPress || (_orbiting && !_moved)) _vm?.Click(shift: false, _pressModifiers, _pressClicks);
         else if (_shiftPress && !_moved) _vm?.Click(shift: true, _pressModifiers, _pressClicks);
         bool menu = _rightPressed && !_moved && e.InitialPressMouseButton == MouseButton.Right;
         _orbiting = _panning = _rightPressed = _shiftPress = _drawPress = false;
         _last = _pressedAt = null;
         e.Pointer.Capture(null);
+        if (_vm?.CameraGesture == true)
+        {
+            _vm.SetCameraGesture(false);
+            var at = e.GetPosition(this);
+            _vm.Hover((float)at.X, (float)at.Y);
+        }
         if (menu) ContextMenuRequested?.Invoke();
     }
 
@@ -406,6 +433,7 @@ public sealed class Viewer3DPane : Control
         base.OnPointerCaptureLost(e);
         _orbiting = _panning = _rightPressed = _drawPress = false;
         _last = _pressedAt = null;
+        _vm?.SetCameraGesture(false);
         if (_gizmoDrag) { _gizmoDrag = false; _vm?.CancelGizmo(); }
     }
 

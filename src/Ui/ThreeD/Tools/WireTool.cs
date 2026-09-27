@@ -1,8 +1,8 @@
 // brief-em3d-50 R-em3d50-3 — Wire: a bond wire from one pad to another, across hierarchy, then its loop height.
 //
-// THREE CLICKS. The start, on the top of a pad — a snapped point (face-centre snap is the natural target on a pad) or
-// any point that lies on an upward-facing conductor face; anything else is refused with "a wire starts on the top of
-// a pad". The end, by the same rule, with a rubber-band arch (LoopShape.Seed) following the cursor. Then the LOOP
+// THREE CLICKS. The start: a snapped point on a conductor's top, or ANY face of a metal object or a sheet (3D editor bugs
+// round 2 — "pad" meant nothing to a user), landed on that object's top above the point clicked, since a bond sits on a
+// top; anything else is refused naming the object and why (no material, an insulator). The end, by the same rule, with a rubber-band arch (LoopShape.Seed) following the cursor. Then the LOOP
 // HEIGHT, set with the mouse as a box's height is set — or typed — and measured the ASSEMBLY way (em-3d.md §6.6):
 // from the bottom of the lower foot (the lower pad's top) to the top of the wire at its apex. The status bar shows
 // that number and the axis's own loop height side by side, as `explain` does, because users hold one or the other.
@@ -36,6 +36,10 @@ public interface IC3dWireHost
     /// <summary>The pad top the cursor's ray meets first, as a document DBU point on it; null for none.</summary>
     (string Pad, C3dPoint3 At)? PadUnderRay(Point3 origin, Point3 direction);
 
+    /// <summary>3D editor bugs round 2 — the object under the cursor, any face, landed on its top; null with the reason when
+    /// it is none a wire can attach to. <paramref name="precise"/> for a click.</summary>
+    (string Pad, C3dPoint3 At)? PadOnObject(bool precise, out string? refusal);
+
     /// <summary>The resolved assembly loop height of <paramref name="candidate"/>, DBU; null when it does not resolve.</summary>
     double? MeasureAssembly(C3dWire candidate);
 
@@ -64,8 +68,8 @@ public sealed class WireTool(IC3dDrawHost host, IC3dWireHost wires) : C3dDrawToo
 
     public override string Prompt => Step switch
     {
-        0 => "Wire: click the top of the first pad (a face-centre snap lands on a pad's middle).",
-        1 => $"Wire: click the top of the second pad (from '{_padA}').",
+        0 => "Wire: click a metal object or a sheet — any face — where the wire starts. It attaches to that object's top.",
+        1 => $"Wire: click where it ends — any face of a metal object or a sheet (from '{_padA}').",
         _ => _shown is { } s
             ? $"Wire: loop height {wires.Length(s.Assembly)} (assembly: lower foot to the top of the apex) · axis loop " +
               $"{wires.Length(s.AxisLoop)} — move and click, or type it. Esc cancels."
@@ -86,23 +90,28 @@ public sealed class WireTool(IC3dDrawHost host, IC3dWireHost wires) : C3dDrawToo
 
     public override long?[] Current(in C3dDrawInput input) => Step == 2 ? [Assembly(input)] : [];
 
-    private C3dPoint3? OnPad(in C3dDrawInput input, out string pad, out string? refusal)
+    private C3dPoint3? OnPad(in C3dDrawInput input, out string pad, out string? refusal, bool precise = false)
     {
         pad = "";
-        refusal = Step == 0 ? "A wire starts on the top of a pad." : "A wire ends on the top of a pad.";
-        // A snapped point on a pad's top (a face centre, a corner, an edge) — or else the pad top under the cursor.
+        refusal = null;
+        // A snapped point on a top (a face centre, a corner, an edge) is taken exactly where it is.
         if (input.Snap is { } snap && input.SnapOnGeometry && wires.PadAt(snap) is { } hit)
         {
             pad = hit.Pad;
-            refusal = null;
             return snap with { Z = hit.TopDbu };
+        }
+        // 3D editor bugs round 2 — otherwise any face of the object under the cursor: the end lands on its top.
+        if (wires.PadOnObject(precise, out var why) is { } on)
+        {
+            pad = on.Pad;
+            return on.At;
         }
         if (input.HasRay && wires.PadUnderRay(input.RayOrigin!.Value, input.RayDirection!.Value) is { } under)
         {
             pad = under.Pad;
-            refusal = null;
             return under.At;
         }
+        refusal = why ?? "Click a metal object or a sheet — any face — to attach the wire.";
         return null;
     }
 
@@ -111,14 +120,14 @@ public sealed class WireTool(IC3dDrawHost host, IC3dWireHost wires) : C3dDrawToo
         switch (Step)
         {
             case 0:
-                if (OnPad(input, out _padA, out var why0) is not { } a) return C3dToolStep.Refuse(why0!);
+                if (OnPad(input, out _padA, out var why0, precise: true) is not { } a) return C3dToolStep.Refuse(why0!);
                 _template = wires.WireTemplate;
                 _a = a;
                 Step = 1;
                 return C3dToolStep.Next;
             case 1:
-                if (OnPad(input, out _padB, out var why1) is not { } b) return C3dToolStep.Refuse(why1!);
-                if (b.X == _a.X && b.Y == _a.Y) return C3dToolStep.Refuse("A wire's two ends are at one plan position: pick the other pad.");
+                if (OnPad(input, out _padB, out var why1, precise: true) is not { } b) return C3dToolStep.Refuse(why1!);
+                if (b.X == _a.X && b.Y == _a.Y) return C3dToolStep.Refuse("A wire's two ends are at one plan position: click somewhere else for its end.");
                 _b = b;
                 _shown = null;
                 Step = 2;

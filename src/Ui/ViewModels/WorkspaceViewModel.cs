@@ -1363,6 +1363,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 _factory.RemoveWelcomeStub();
                 NewSmithChart();
                 break;
+
+            // 3D editor bugs round 2 — a scratch .c3d to draw in at once (OpenScratchC3d).
+            case LaunchAction.New3DDesign:
+                _factory.RemoveWelcomeStub();
+                OpenScratchC3d();
+                break;
         }
     }
 
@@ -1415,6 +1421,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             case LaunchAction.NewSmithChart:
                 _factory.RemoveWelcomeStub();
                 NewSmithChart();
+                break;
+
+            // 3D editor bugs round 2 — a scratch .c3d to draw in at once (OpenScratchC3d).
+            case LaunchAction.New3DDesign:
+                _factory.RemoveWelcomeStub();
+                OpenScratchC3d();
                 break;
         }
     }
@@ -2067,7 +2079,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                     LayoutDocument alad                     => alad.FilePath,
                     TechDocument atech                      => atech.FilePath,
                     EmSetupDocument aem                  => aem.FilePath,
-                    ThreeD.C3dEditorDocument ac3d        => ac3d.FilePath,
+                    ThreeD.C3dEditorDocument { IsScratch: false } ac3d => ac3d.FilePath,
                     PartLibraryDocument alib                => alib.FilePath,
                     MaterialsDocument amat                  => amat.FilePath,
                     _                                       => null,
@@ -2660,7 +2672,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         LayoutDocument       { FilePath: { } p }                      => (p, "layout"),
         TechDocument         techDoc                                  => (techDoc.FilePath, "tech"),
         EmSetupDocument      emDoc                                    => (emDoc.FilePath, "emsetup"),
-        ThreeD.C3dEditorDocument c3dDoc                               => (c3dDoc.FilePath, "c3d"),
+        ThreeD.C3dEditorDocument { IsScratch: false } c3dDoc          => (c3dDoc.FilePath, "c3d"),
         PartLibraryDocument  libDoc                                   => (libDoc.FilePath, "partlibrary"),
         MaterialsDocument    matDoc                                   => (matDoc.FilePath, "materials"),
         MarkdownDocument     mdDoc                                    => (mdDoc.FilePath, "markdown"),
@@ -16362,7 +16374,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             {
                 case SaveChangesResult.Cancel:   return false;
                 case SaveChangesResult.DontSave: return true;
-                case SaveChangesResult.Save:     return SaveC3d(c3dCloseDoc);
+                case SaveChangesResult.Save:     return await SaveC3dAsync(c3dCloseDoc, window);
             }
         }
 
@@ -16749,16 +16761,17 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 return;
             }
 
-            // SingleDoc scope for an active 3D view (brief-em3d-43) — never scratch, a direct write.
+            // SingleDoc scope for an active 3D view (brief-em3d-43) — a direct write; a scratch design (On Launch ▸
+            // New 3D Design) is a Save As, whether or not it has been drawn in yet.
             if (ActiveSaveScope == SaveScope.SingleDoc &&
                 ResolveActiveDocumentForCommands() is ThreeD.C3dEditorDocument singleC3d)
             {
-                if (!singleC3d.IsDirty)
+                if (!singleC3d.IsDirty && !singleC3d.IsScratch)
                 {
                     Messages.Info("Nothing to save.");
                     return;
                 }
-                SaveC3d(singleC3d);
+                await SaveC3dAsync(singleC3d, window);
                 return;
             }
 
@@ -16936,9 +16949,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             foreach (var emDoc in dirtyEmDocs)
                 emDoc.ViewModel.SaveCommand.Execute(null);
 
-            // Dirty 3D views (brief-em3d-43) — never scratch, the same direct write.
+            // Dirty 3D views (brief-em3d-43) — the same direct write; a scratch one asks where (3D editor bugs round 2).
             foreach (var c3dDoc in dirtyC3dDocs)
-                SaveC3d(c3dDoc);
+                await SaveC3dAsync(c3dDoc, window);
 
             // Dirty material libraries (brief-em3d-53) — never scratch, the same direct write.
             foreach (var matDoc in dirtyMaterialLibraries)
@@ -17323,7 +17336,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 foreach (var emDoc in dirtyEmDocs)
                     emDoc.ViewModel.SaveCommand.Execute(null);
                 foreach (var c3dDoc in dirtyC3dDocs)
-                    SaveC3d(c3dDoc);
+                    await SaveC3dAsync(c3dDoc, owner);
                 foreach (var libDoc in dirtyPartLibraries)
                     libDoc.ViewModel.SaveCommand.Execute(null);
                 foreach (var matDoc in dirtyMaterialLibraries)

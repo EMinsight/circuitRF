@@ -207,7 +207,10 @@ public static class Scene3DBuilder
         bool Wire(string name) => options.Wireframe?.Invoke(name) == true;
         string? outermost = OutermostDielectric(problem, Wire);
         // 3D editor bugs round 1 — a wireframe object's triangles: the ink colour at alpha 0; its edges: the ink, opaque.
-        uint wireFill = Scene3DVertex.Pack(ink.R, ink.G, ink.B, 0), wireEdge = Scene3DVertex.Pack(ink.R, ink.G, ink.B, 255);
+        // 3D editor bugs round 2 — on a light background the mid-grey ink was too faint for an object drawn as its edges
+        // ALONE (one-pixel lines, nothing filled): the wireframe's edges are near-black there. Dark keeps the ink.
+        var wireInk = dark ? ink : (R: (byte)20, G: (byte)22, B: (byte)28);
+        uint wireFill = Scene3DVertex.Pack(wireInk.R, wireInk.G, wireInk.B, 0), wireEdge = Scene3DVertex.Pack(wireInk.R, wireInk.G, wireInk.B, 255);
         foreach (var s in problem.Solids)
         {
             var place = options.Instancing?.Invoke(s.Name);
@@ -668,10 +671,21 @@ public static class Scene3DBuilder
                 }
                 idx = new uint[mesh.Triangles.Count * 3];
                 int w = 0;
-                // Each undirected edge's faces, in first-seen order, for the feature edges.
+                // Each undirected edge's faces, in first-seen order, for the feature edges. Keyed by the corners WELDED BY
+                // POSITION, as Scene3DFeatureTable welds them (3D editor bugs round 2): a polyhedron's tessellation repeats
+                // each corner once per face, so by index no two faces ever shared an edge and a polyhedron had no edges at
+                // all — a material-less one, drawn as its edges only, vanished the moment a box became one.
+                var weld = new Dictionary<Point3, int>();
+                var welded = new int[mesh.Vertices.Count];
+                for (int k = 0; k < welded.Length; k++)
+                {
+                    if (!weld.TryGetValue(mesh.Vertices[k], out int wk)) weld[mesh.Vertices[k]] = wk = k;
+                    welded[k] = wk;
+                }
                 var edgeFaces = new Dictionary<(int, int), (int F0, int F1, int Count)>();
                 void Edge(int a, int c, int f)
                 {
+                    a = welded[a]; c = welded[c];
                     var key = a < c ? (a, c) : (c, a);
                     edgeFaces[key] = edgeFaces.TryGetValue(key, out var e) ? (e.F0, e.Count == 1 ? f : e.F1, e.Count + 1) : (f, -1, 1);
                 }

@@ -267,7 +267,8 @@ public sealed class Scene3DFramePlan
         Clear = view.Background;
         SceneGeneration = scene.Generation;
         uint flags = view.Clip.Enabled ? FlagClip | FlagCapBackFaces : 0;
-        Fill(Uniforms, view, width, height, flipY, -1, -1, flags);
+        var cam = DepthCamera(scene, view);
+        Fill(Uniforms, view, cam, width, height, flipY, -1, -1, flags);
 
         DrawCount = 0;
         TransformBytes = 0;
@@ -324,7 +325,7 @@ public sealed class Scene3DFramePlan
         GridSpacing = default;
         if (view.DrawingGrid is { Visible: true } dg)
         {
-            GridSpacing = PlaneGrid.Fill(Uniforms.AsSpan(GridAt), scene, view.Camera, dg, width, height, flipY);
+            GridSpacing = PlaneGrid.Fill(Uniforms.AsSpan(GridAt), scene, cam, dg, width, height, flipY);
             if (GridSpacing.MinorDbu > 0)
             {
                 Add(ref Draws, ref DrawCount, Scene3DPipeline.Grid, Scene3DBuffer.None, 0, 6);
@@ -390,9 +391,9 @@ public sealed class Scene3DFramePlan
         if (Pick)
         {
             PickX = (int)view.CursorX; PickY = (int)view.CursorY;
-            PickCamera = view.Camera;
+            PickCamera = cam;
             PickCursorX = view.CursorX; PickCursorY = view.CursorY;
-            Fill(PickUniforms, view, width, height, flipY, PickX, PickY, view.Clip.Enabled ? FlagClip : 0, PickSize);
+            Fill(PickUniforms, view, cam, width, height, flipY, PickX, PickY, view.Clip.Enabled ? FlagClip : 0, PickSize);
             for (int k = 0; k < owned; k++)
             {
                 var b = batches[k];
@@ -598,15 +599,52 @@ public sealed class Scene3DFramePlan
         dst[12] = m.M41; dst[13] = m.M42; dst[14] = m.M43; dst[15] = m.M44;
     }
 
-    private static void Fill(float[] u, Viewer3DViewState view, int w, int h, bool flipY, float px, float py, uint flags, int pickSize = 1)
+    /// <summary>
+    /// 3D editor bugs round 2 — the camera a frame is drawn with: the view's own, its depth range widened to take in a
+    /// drag's preview. Near and far bracket the SCENE's sphere (Camera3D.DepthRange), and a preview copy is drawn where
+    /// the scene is not yet — so an object dragged past the sphere's rim was cut by the near or far plane and its live
+    /// ghost looked clipped beyond some distance. The sphere is grown for this frame only; the view's camera is not
+    /// written, so nothing accumulates once the drag ends.
+    /// </summary>
+    public static Camera3D DepthCamera(Scene3DModel scene, Viewer3DViewState view)
     {
-        view.Camera.WriteViewProjection(u.AsSpan(0, 16), w, h, flipY, px, py, pickSize);
-        var eye = view.Camera.Eye;
-        if (view.Camera.Projection == Projection3D.Orthographic)
+        var cam = view.Camera;
+        if (view.Preview is not { } p || p.Copies.Length == 0) return cam;
+        var lo = cam.SceneCentre - new Vector3(cam.SceneRadius);
+        var hi = cam.SceneCentre + new Vector3(cam.SceneRadius);
+        bool grew = false;
+        int n = Math.Min(p.Moving.Length, scene.Objects.Length);
+        int copies = Math.Min(p.Copies.Length, MaxPreviewCopies);
+        for (int i = 0; i < n; i++)
+        {
+            if (!p.Moving[i]) continue;
+            var o = scene.Objects[i];
+            for (int k = 0; k < copies; k++)
+                for (int c = 0; c < 8; c++)
+                {
+                    var corner = new Vector3((c & 1) == 0 ? o.Min.X : o.Max.X, (c & 2) == 0 ? o.Min.Y : o.Max.Y, (c & 4) == 0 ? o.Min.Z : o.Max.Z);
+                    var q = Vector3.Transform(corner, p.Copies[k]);
+                    if (!float.IsFinite(q.X) || !float.IsFinite(q.Y) || !float.IsFinite(q.Z)) continue;
+                    lo = Vector3.Min(lo, q);
+                    hi = Vector3.Max(hi, q);
+                    grew = true;
+                }
+        }
+        if (!grew) return cam;
+        cam.SceneCentre = (lo + hi) * 0.5f;
+        cam.SceneRadius = MathF.Max(cam.SceneRadius, (hi - lo).Length() * 0.5f);
+        return cam;
+    }
+
+    private static void Fill(float[] u, Viewer3DViewState view, in Camera3D cam, int w, int h, bool flipY, float px, float py, uint flags, int pickSize = 1)
+    {
+        cam.WriteViewProjection(u.AsSpan(0, 16), w, h, flipY, px, py, pickSize);
+        var eye = cam.Eye;
+        if (cam.Projection == Projection3D.Orthographic)
         {
             // An orthographic eye is at infinity: shade by the view direction, not a point.
-            var back = view.Camera.Back;
-            eye = view.Camera.Target + back * (view.Camera.Distance * 1e4f);
+            var back = cam.Back;
+            eye = cam.Target + back * (cam.Distance * 1e4f);
         }
         u[16] = eye.X; u[17] = eye.Y; u[18] = eye.Z; u[19] = 1;
         var c = view.Clip.Equation;

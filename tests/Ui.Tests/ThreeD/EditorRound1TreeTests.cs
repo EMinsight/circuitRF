@@ -44,6 +44,7 @@ public sealed class EditorRound1TreeTests : IDisposable
     public void AVisibilityTick_LeavesEveryGroupExpandedAsTheUserLeftIt()
     {
         var vm = Open(Doc());
+        vm.TreeGrouping = C3dTreeGrouping.Primitive;                     // round 2: by material is the default
         var sheets = vm.Tree.Single(g => g.Header == "Sheets");
         Assert.True(sheets.IsExpanded);                                  // a group starts open
         vm.Tree.Single(g => g.Header == "Boxes").IsExpanded = false;
@@ -57,7 +58,7 @@ public sealed class EditorRound1TreeTests : IDisposable
     }
 
     [Fact]
-    public void AnObjectWithNoMaterial_IsSelectableFromTheTree_AndPropertiesSaysWhySimulateRefusesIt()
+    public void AnObjectWithNoMaterial_IsSelectableFromTheTree_AndPropertiesSaysTheSolverIgnoresIt()
     {
         var doc = Doc();
         doc.Objects.Add(new C3dBox { Name = "bare", Min = new C3dPoint3(0, 0, 200 * Um), Size = new C3dPoint3(100 * Um, 100 * Um, 100 * Um) });
@@ -68,7 +69,7 @@ public sealed class EditorRound1TreeTests : IDisposable
         Assert.Equal([drawn.Id], vm.Viewer.Selection.Select(s => s.Object));   // the node is the scene's selection
         Assert.True(vm.Properties.IsEditable);
         Assert.Equal("bare", vm.Properties.NameText);
-        Assert.Contains(vm.Properties.Rows, r => r.Label == "Not simulated" && r.Value.Contains("no material"));
+        Assert.Contains(vm.Properties.Rows, r => r.Label == "Not simulated" && r.Value == C3dElaborator.NoMaterialWarning("bare"));
 
         vm.Properties.Material = "Fill";
         Settle(vm);
@@ -86,6 +87,7 @@ public sealed class EditorRound1TreeTests : IDisposable
     public void TheAirBox_IsANodeUnderBoxes_NotDeletable_ItsPaddingAShareOfTheExtent()
     {
         var vm = Open(Doc(new EmSetup { Name = "S1", Solver3D = Em3dSolver.Palace }));
+        vm.TreeGrouping = C3dTreeGrouping.Primitive;                     // round 2: by material it heads its own group
         var box = vm.Tree.Single(g => g.Header == "Boxes").Items[0];
         Assert.True(box.IsAirBox);
         var menu = vm.TreeMenuItems(box);

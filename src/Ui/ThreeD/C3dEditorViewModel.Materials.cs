@@ -83,6 +83,18 @@ public sealed partial class C3dEditorViewModel
         => [.. Document.Objects.Where(o => string.Equals(o.Material, name, StringComparison.OrdinalIgnoreCase))
                                .Select(o => $"3D object '{o.Name}' in {Path.GetFileName(FilePath)}")];
 
+    /// <summary>
+    /// 3D editor bugs round 2 — the design's OWN technology reference (<see cref="C3dDocument.TechRef"/>), relative to this
+    /// file as a <c>.clay</c>'s is, as ONE undo entry: what the Choose a Technology dialog writes when the design resolved
+    /// none and a material had nowhere to come from. The workspace's default is not touched.
+    /// </summary>
+    public void UseTechnology(string absolutePath)
+    {
+        string dir = Path.GetDirectoryName(Path.GetFullPath(FilePath))!;
+        string reference = CircuitRF.Core.RefPath.ToStored(Path.GetRelativePath(dir, Path.GetFullPath(absolutePath)))!;
+        EditNames($"Technology {Path.GetFileName(absolutePath)}", (doc, _) => { doc.TechRef = reference; return null; });
+    }
+
     /// <summary>The absolute paths of the technologies this document resolved — its own first, then its instances'.</summary>
     public IReadOnlyList<string> TechnologyPaths()
     {

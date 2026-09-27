@@ -141,8 +141,11 @@ public static class C3dWires
 
     /// <summary>Whether (x, y) is inside <paramref name="poly"/>, or within <paramref name="tol"/> of its boundary.</summary>
     public static bool Covers(PlanarPolygon poly, double x, double y, double tol)
+        => poly.Contains(x, y) || NearOutline(poly, x, y, tol);
+
+    /// <summary>Whether (x, y) is within <paramref name="tol"/> of any ring of <paramref name="poly"/>.</summary>
+    private static bool NearOutline(PlanarPolygon poly, double x, double y, double tol)
     {
-        if (poly.Contains(x, y)) return true;
         bool Near(IReadOnlyList<EmPoint> ring)
         {
             for (int i = 0, j = ring.Count - 1; i < ring.Count; j = i++)
@@ -181,6 +184,46 @@ public static class C3dWires
             best = (pad, new Point3(x, y, pad.TopM));
         }
         return best;
+    }
+
+    /// <summary>
+    /// 3D editor bugs round 2 — where a wire end lands when ANY face of an object was clicked: <paramref name="pads"/> are
+    /// that one object's tops. A bond sits on a top, so a side or a bottom face lands the end on the top above the point
+    /// clicked: the highest top containing (<paramref name="x"/>, <paramref name="y"/>) further than <paramref name="tolM"/>
+    /// from its outline, or else the nearest point of the
+    /// nearest top's outline — a side face's point lies ON the outline — moved <paramref name="insetM"/> inside it where
+    /// the top is wide enough, so the foot is not left hanging over the edge. Null when there are no tops.
+    /// </summary>
+    public static (C3dWirePad Pad, double X, double Y)? LandOn(IReadOnlyList<C3dWirePad> pads, double x, double y, double insetM, double tolM)
+    {
+        if (pads.Count == 0) return null;
+        // Inside, and clear of the outline: a point ON it (a side face's) is inside by the polygon's own test.
+        if (pads.Where(q => q.Poly.Contains(x, y) && !NearOutline(q.Poly, x, y, tolM))
+                .OrderByDescending(q => q.TopM).FirstOrDefault() is { } inside)
+            return (inside, x, y);
+        C3dWirePad? best = null;
+        double bx = x, by = y, bd = double.PositiveInfinity, nx = 0, ny = 0;
+        foreach (var pad in pads)
+            foreach (var ring in pad.Poly.HoleRings.Prepend(pad.Poly.Outer))
+                for (int i = 0, j = ring.Count - 1; i < ring.Count; j = i++)
+                {
+                    double ax = ring[j].X, ay = ring[j].Y, dx = ring[i].X - ax, dy = ring[i].Y - ay;
+                    double l2 = dx * dx + dy * dy;
+                    if (!(l2 > 0)) continue;
+                    double t = Math.Clamp(((x - ax) * dx + (y - ay) * dy) / l2, 0, 1);
+                    double px = ax + t * dx, py = ay + t * dy, d = (px - x) * (px - x) + (py - y) * (py - y);
+                    if (d >= bd) continue;
+                    double l = Math.Sqrt(l2);
+                    (best, bx, by, bd, nx, ny) = (pad, px, py, d, -dy / l, dx / l);
+                }
+        if (best is null) return null;
+        for (double inset = insetM; inset > 0 && inset >= insetM / 8; inset /= 2)
+            foreach (int side in (ReadOnlySpan<int>)[1, -1])
+            {
+                double qx = bx + side * nx * inset, qy = by + side * ny * inset;
+                if (best.Poly.Contains(qx, qy)) return (best, qx, qy);
+            }
+        return (best, bx, by);
     }
 
     /// <summary>Re-seating's question: the highest top surface under the plan point, at any height.</summary>

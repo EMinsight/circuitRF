@@ -93,9 +93,11 @@ public static class C3dDiagnostics
         "so every name must be unique in the document.",
         ("name", name), ("count", count));
 
+    /// <summary>A warning (3D editor bugs round 2): an object with no material yet is ignored by the solver, so a
+    /// half-finished design still runs. The words are <see cref="C3dElaborator.NoMaterialWarning"/>'s.</summary>
     public static Diagnostic NoMaterial(string name) => Diagnostic.Create(
-        "c3d.material.missing", DiagnosticSeverity.Error,
-        "'{name}' names no material, so nothing says what it is made of.", ("name", name));
+        "c3d.material.missing", DiagnosticSeverity.Warning,
+        "'{name}' has no material, so the solver ignores it.", ("name", name));
 
     /// <summary>A warning, because materials resolve late (brief 42): the technology may not be the
     /// one the document will be elaborated against.</summary>

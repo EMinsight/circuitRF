@@ -188,9 +188,19 @@ model circuitRF built, and after a run it also shows what the solver made.
 - **Model.** Every solid, coloured by its layer, with the dielectrics, the air and the air box's faces
   each switchable. The faces are coloured by boundary kind: grey metal, blue absorbing, orange PMC,
   violet symmetry. The **object tree** lists every solid, and a click in the view picks one and names it.
+  In the 3D editor the tree is headed **Objects** and lists the document's objects **by material** (the
+  default — objects with no material come first, in their own group) or **by type** (boxes, sheets,
+  cylinders, …), chosen in its header. The filter at the header's right hides tree rows by type or by
+  material, and its icon changes while it hides anything; it never hides an object in the view.
 - **Camera.** Drag to orbit; right-drag, middle-drag, Alt-drag or Shift-drag to pan; scroll to zoom. **Home**
   fits the model. **1** is isometric, **2**–**7** are the six orthographic views, and **P** switches between
-  perspective and orthographic. These are the 3D editor's keys too: every 3D pane uses the same ones.
+  perspective and orthographic. Double-click the axis indicator for the same views: an axis looks straight
+  down it — **Z** the top view, **Y** the front, **X** the right — and again turns to the opposite side; anywhere
+  else inside its ring is isometric. While you orbit or pan nothing is highlighted and nothing snaps.
+  These are the 3D editor's keys too: every 3D pane uses the same ones.
+- **The line on the view** (the 3D editor). One line at the bottom of the view is the editor's status line: what
+  the armed tool wants next, or the last message — a refusal and its reason, or what an edit did. Where this page
+  says *the status line* in the 3D editor, it means that line. The clip plane cuts the model, never the drawing grid.
 - **Selecting.** **O**, **F** and **V** choose what a click selects: a whole **object**, one **face**, or one
   **vertex** (the toolbar has a button for each). What is under the cursor is highlighted. A click
   selects it; Shift-click adds to or removes from the selection; **Esc** clears it. A selected face's area
@@ -201,15 +211,16 @@ model circuitRF built, and after a run it also shows what the solver made.
   *Hide*, *Isolate*, *Show All*, and *Select Owning Object*. Nothing here changes the setup.
 - **Snapping** (the 3D editor). The cursor snaps to a **vertex** (a square marker), an edge's **midpoint**
   (a triangle), the nearest point on an **edge** (an ×), a face's **centre** (a circle) and, when nothing is
-  within reach, the **grid** (a small +) — the document's snap step on the drawing plane. A vertex wins over
+  within reach, the **grid** (a small +) — the document's snap step on the drawing plane. A marker is drawn in
+  the colour of the material it snaps to, and in amber on the grid or on an object with no material. A vertex wins over
   anything else in reach, even a nearer midpoint. Snapping reaches into placed cells, so a die's pad corner
   is a target in its package. Only what you can see is a target: a corner hidden behind a surface is not,
   except inside a translucent object or with the clip plane on. The snap distance is the layout editor's,
   in screen pixels, so it feels the same at every zoom. The magnet on the toolbar, and *3D ▸ Snap*, turn
   snapping on and off, and the buttons beside it turn each kind on and off; these are your settings, not the
   document's. Hold **Alt** (**Option** on a Mac) to suspend geometry snapping while it is held; the grid
-  still applies. The status line names what the cursor snapped to and where, in the document's unit. A
-  **≈** before the point means it is not exactly a point of the document's database-unit grid: a corner of
+  still applies. The marker's shape says what the cursor snapped to; the point itself is read with Measure (**M**).
+  A **≈** before a point means it is not exactly a point of the document's database-unit grid: a corner of
   an object rotated by an angle that is not a multiple of 90°, or of a cell drawn at another scale.
 - **Drawing** (the 3D editor). Shapes are drawn on the **drawing plane** — XY, YZ or XZ, at an offset along
   its normal — chosen with the **XY / YZ / XZ** buttons and the offset box on the toolbar (a bare number is the
@@ -221,9 +232,9 @@ model circuitRF built, and after a run it also shows what the solver made.
   document in the workspace's window state, not in the `.c3d`. A faint **grid** lies on it, behind the
   objects, in steps of the document's unit — major lines every 10 minor ones, every 5 in mil and inch —
   spaced to stay readable at every zoom and fading away from the view's centre and when the plane is seen
-  at a grazing angle; the lines through the origin are in the axis colours. The status line gives the
-  grid's spacing, and the snap step too when that differs (it is the document's snap step, and changing it
-  moves nothing already drawn). The tools are on the toolbar, under *3D ▸ Draw*, and at the cursor with
+  at a grazing angle; the lines through the origin are in the axis colours. The snap step is the **Snap** box beside **Unit** on
+  the toolbar — the layout editor's control, with the same steps off the technology's default: pick one or type
+  a length (`2.5mil`). It is saved in the document, and changing it moves nothing already drawn. The tools are on the toolbar, under *3D ▸ Draw*, and at the cursor with
   **Shift+A** — then one letter: **B**ox (corner, opposite corner, then its height), **S**heet (a rectangle,
   two clicks), Poly**g**on (a closed sheet, a click per vertex; click the first vertex, press Enter or
   double-click to close — an outline that crosses itself is refused and the crossing shown), Poly**l**ine
@@ -331,11 +342,12 @@ model circuitRF built, and after a run it also shows what the solver made.
   and *Delete*. A wrong polarity turns every transmission term by 180°, so check the arrow before a run.
   A **wave** port must lie on a face of the active setup's air box. Every setup uses every port, and a
   placed cell's own ports are never used: only the parent says where a signal enters.
-- **Bond wires** (the 3D editor, **W** in the Shift+A popup, or *3D ▸ Draw ▸ Wire*). A wire runs from the top of
-  one pad to the top of another — a die pad inside a placed cell to a lead in the package is the usual case, which
-  a `.wBond` cannot do because it belongs to one layout. Click the first pad's top (a face-centre snap lands in
-  its middle; any point on the top of a conductor will do, and anything else is refused with *a wire starts on
-  the top of a pad*), then the second's, then move to set the **loop height** and click, or type it (`8mil`). The
+- **Bond wires** (the 3D editor, **W** in the Shift+A popup, or *3D ▸ Draw ▸ Wire*). A wire runs between two metal
+  objects or sheets — a die's pad inside a placed cell to a lead in the package is the usual case, which a `.wBond`
+  cannot do because it belongs to one layout. Click any face of the object the wire starts on: each end attaches to
+  its object's **top**, above the point you clicked (a side face lands just inside the top's edge; a snapped corner or
+  face centre on a top is taken exactly). An object with no material, or an insulator, is refused with the reason.
+  Then click the object it ends on, then move to set the **loop height** and click, or type it (`8mil`). The
   loop height is the assembly one: from the top of the lower pad to the top of the wire at its highest point.
   The status line shows it and the wire's centre-line loop height side by side, and **the height you type is
   the height the wire measures**. Before the first click the toolbar sets the diameter, the metal, how each end
@@ -361,11 +373,12 @@ model circuitRF built, and after a run it also shows what the solver made.
   absorbing, PMC and symmetry boundaries belong to the air box, because both solvers can state them only on
   the outside of the problem. Palace finds a boundary's surfaces by the face's extent and counts them, so a
   neighbour's face lying in the same plane and overlapping it is refused rather than guessed.
-- **Simulate** (*Simulate ▸ Run* with the 3D view active, or the play button). Runs the active setup with the
+- **Simulate** (*Simulate ▸ Run* with the 3D view active, or the toolbar's Run button — the workspace toolbar's). Runs the active setup with the
   same progress, Cancel and messages as a `.cem`, and opens its results in the Data Display. Afterwards the
   **Field** bar above the view shows the run's fields, drawn on the geometry the run solved; if the 3D view has
   changed since, a line says so (`Fields are from the run at 14:02; the model has changed since`) and they are
-  still shown.
+  still shown. An object with **no material** yet — drawn as a wireframe — does not stop the run: the solver
+  ignores it and the run's messages say so. One whose material the technology does not define does stop it.
 - **Measure** (**M**, the ruler button, *3D ▸ Measure*; in the editor and in this view). Click two points,
   snapped as drawing is; after the first a line follows the cursor. A card in the corner of the view gives
   both points' x, y and z, their differences (the second minus the first) and the distance, in the

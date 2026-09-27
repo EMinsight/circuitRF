@@ -232,7 +232,7 @@
                                     <NativeMenuItem Header="Polyline" ToolTip="Construction geometry, a click per vertex. Requires an active 3D editor." Command="{Binding ThreeDDrawCommand}" CommandParameter="Polyline"/>
                                     <NativeMenuItem Header="Cylinder" ToolTip="Centre, radius, height. Requires an active 3D editor."          Command="{Binding ThreeDDrawCommand}" CommandParameter="Cylinder"/>
                                     <NativeMenuItem Header="Port" ToolTip="A port between two conductors, two clicks; its polarity is inferred from what it touches. Requires an active 3D editor." Command="{Binding ThreeDDrawCommand}" CommandParameter="Port"/>
-                                    <NativeMenuItem Header="Wire" ToolTip="A bond wire from the top of one pad to another, then its loop height. Requires an active 3D editor." Command="{Binding ThreeDDrawCommand}" CommandParameter="Wire"/>
+                                    <NativeMenuItem Header="Wire" ToolTip="A bond wire between two metal objects or sheets (click any face of each), then its loop height. Requires an active 3D editor." Command="{Binding ThreeDDrawCommand}" CommandParameter="Wire"/>
                                 </NativeMenu>
                             </NativeMenuItem.Menu>
                         </NativeMenuItem>
@@ -1042,7 +1042,7 @@
                         <MenuItem.Icon><mi:MaterialIcon Kind="ArrowUpBoldBoxOutline" Width="16" Height="16"/></MenuItem.Icon>
                     </MenuItem>
                     <MenuItem Header="_Wire" Command="{Binding ThreeDDrawCommand}" CommandParameter="Wire"
-                              ToolTip.Tip="A bond wire from the top of one pad to another, then its loop height. Requires an active 3D editor.">
+                              ToolTip.Tip="A bond wire between two metal objects or sheets (click any face of each), then its loop height. Requires an active 3D editor.">
                         <MenuItem.Icon><mi:MaterialIcon Kind="VectorCurve" Width="16" Height="16"/></MenuItem.Icon>
                     </MenuItem>
                 </MenuItem>

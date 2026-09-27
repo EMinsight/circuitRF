@@ -148,13 +148,14 @@ public partial class SettingsView : Window
             // below, and LaunchAction's own remarks). A row is APPENDED and never inserted or
             // reordered: doing either silently changes what every already-saved preferences.json
             // means. "Smith Chart" was appended with LaunchAction.NewSmithChart in one change
-            // (smith-chart.md §5.9), and SmithWindowTests asserts this array against the
-            // enum so the pairing cannot come apart quietly.
+            // (smith-chart.md §5.9), and "New 3D Design" with LaunchAction.New3DDesign (3D editor
+            // bugs round 2); SmithWindowTests asserts this array against the enum so the pairing
+            // cannot come apart quietly.
             LaunchActionCombo.ItemsSource = new[]
             {
                 "Welcome", "New Schematic", "New Workspace", "Open Workspace",
                 "New Data Display", "New Symbol", "New Layout", "harmonicaRF",
-                "Smith Chart",
+                "Smith Chart", "New 3D Design",
             };
             LaunchActionCombo.SelectedIndex = (int)(prefs.LaunchAction ?? LaunchAction.Welcome);
 

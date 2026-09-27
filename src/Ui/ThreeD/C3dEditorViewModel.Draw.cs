@@ -183,6 +183,49 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
     /// <summary>The snap step: the document's, or its technology's default when it states none.</summary>
     public long SnapPitch => Document.SnapDbu > 0 ? Document.SnapDbu : Elaboration?.Technology?.DefaultSnapDbu ?? 0;
 
+    // ── the snap distance (3D editor bugs round 2) ───────────────────────────────────────────
+
+    /// <summary>The toolbar's Snap ladder: the layout editor's (<see cref="Layout.SnapLadder"/>), off the technology's default
+    /// step. A function of the technology and the display unit only — never of the snap chosen from it
+    /// (brief-snap-ladder-crash.md R-crash-1), so a pick cannot rebuild the list it was picked from.</summary>
+    public ObservableCollection<string> SnapLadderOptions { get; } = [];
+    private (long Base, LayoutUnit Unit, int Dbu)? _snapLadderKey;
+
+    /// <summary>The snap step as the editable combobox shows it; committed with <see cref="CommitSnapDistanceText"/>.</summary>
+    [ObservableProperty] private string _snapDistanceText = "";
+
+    /// <summary>Typed or picked text: a positive length in the display unit (a suffix is honoured) becomes the document's
+    /// snap step — a document preference like the display unit, so it dirties the document, adds no undo entry and moves
+    /// nothing. Anything else puts the current step back. Zero is not "off" here, as it is in the layout editor: a
+    /// .c3d's zero means "the technology's default", and the grid snap's own switch (F9) is what turns it off.</summary>
+    public void CommitSnapDistanceText(string text)
+    {
+        if (Layout.SnapLadder.TryParse(text, Document.DisplayUnit, Document.DbuPerMicron, out long dbu) && dbu > 0 && dbu != SnapPitch)
+        {
+            Document.SnapDbu = dbu;
+            _preferenceDirty = true;
+            OnPropertyChanged(nameof(IsDirty));
+            ApplySnapGrid();          // refreshes the text too
+            RefreshGridText();
+            return;
+        }
+        RefreshSnapDistance();
+    }
+
+    private void RefreshSnapDistance()
+    {
+        long baseDbu = Elaboration?.Technology is { DefaultSnapDbu: > 0 } t ? t.DefaultSnapDbu : 0;
+        var key = (baseDbu, Document.DisplayUnit, Document.DbuPerMicron);
+        if (_snapLadderKey != key)
+        {
+            _snapLadderKey = key;
+            SnapLadderOptions.Clear();
+            foreach (var rung in Layout.SnapLadder.Build(baseDbu, Document.DisplayUnit, Document.DbuPerMicron)) SnapLadderOptions.Add(rung);
+        }
+        long pitch = SnapPitch;
+        SnapDistanceText = pitch > 0 ? Layout.SnapLadder.Spell(pitch, Document.DisplayUnit, Document.DbuPerMicron) : "";
+    }
+
     /// <summary>R-em3d45-2d — <c>Grid 10 µm</c>, and <c>· snap 1 µm</c> when the snap step is not the drawn one.</summary>
     public void RefreshGridText()
     {
@@ -298,7 +341,8 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
             long R(double m) => (long)Math.Round(m / per, MidpointRounding.AwayFromZero);
             return _plane.Project(new C3dPoint3(R(hit.X), R(hit.Y), R(hit.Z)));
         }
-        refusal = input.HasRay ? $"The {_plane.Plane} plane is behind the camera." : "Move the cursor over the view.";
+        refusal = input.HasRay ? $"The {_plane.Plane} drawing plane is not under the cursor: point below its horizon, or turn the view toward it."
+                               : "Move the cursor over the view.";
         return null;
     }
 
@@ -451,7 +495,19 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
         }
         if (!tool.InProgress || tool.Dimensions.Count == 0) return false;
         if (key == Key.Tab || (key == Key.OemPlus && plain)) { OpenField(null); return true; }
-        if (TypedChar(key, modifiers) is { } c) { OpenField(c.ToString()); return true; }
+        if (TypedChar(key, modifiers) is { } c)
+        {
+            // 3D editor bugs round 2 — the field takes focus a dispatcher turn after the key that opened it, so a quickly
+            // typed second key can still arrive here. Re-opening then threw the first away ("10" became "0", a move of
+            // nothing); while the field is open a key is APPENDED to what it holds.
+            if (FieldOpen && _fieldIndex < _fieldTexts.Length)
+            {
+                FieldText += c;
+                FieldFocusRequested?.Invoke();
+            }
+            else OpenField(c.ToString());
+            return true;
+        }
         return false;
     }
 

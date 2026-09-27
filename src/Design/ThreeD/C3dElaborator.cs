@@ -94,7 +94,8 @@ public sealed record C3dElaboration(
 {
     public bool Ok => Refusals.Count == 0;
 
-    /// <summary>Warnings a layout instance's own build raised (a foot overhanging its pad…).</summary>
+    /// <summary>Warnings a layout instance's own build raised (a foot overhanging its pad…), and each object the solver
+    /// ignores for having no material (3D editor bugs round 2).</summary>
     public IReadOnlyList<string> Warnings { get; init; } = [];
 
     /// <summary>Each conductor's nets, by object name: a layout instance's nets, and a drawn conductor's own
@@ -125,9 +126,11 @@ public sealed record C3dElaboration(
     /// instance path: what the editor draws as a dashed box with the cell's name.</summary>
     public IReadOnlyList<(string InstancePath, string CellRef)> Unresolved { get; init; } = [];
 
-    /// <summary>3D editor bugs round 1 — the objects with no material, or one their technology does not define: each is a
-    /// refusal and none reaches a solver, but each is lowered all the same, under the name it would have had, so the
-    /// editor can draw it (as a wireframe) and keep it selectable and editable. Material is empty; order 0.</summary>
+    /// <summary>3D editor bugs round 1 — the objects with no material, or one their technology does not define: none reaches a
+    /// solver, but each is lowered all the same, under the name it would have had, so the editor can draw it (as a
+    /// wireframe) and keep it selectable and editable. Material is empty; order 0. Round 2: one with NO material is a
+    /// warning and the solver ignores it (<see cref="C3dElaborator.NoMaterialWarning"/>); one whose material the technology
+    /// does not define is still a refusal.</summary>
     public IReadOnlyList<Em3dSolid> UnassignedSolids { get; init; } = [];
     public IReadOnlyList<Em3dSheet> UnassignedSheets { get; init; } = [];
 
@@ -178,6 +181,10 @@ public sealed record C3dElaboration(
 /// </summary>
 public sealed class C3dElaborator(TechnologyCache? technologies = null)
 {
+    /// <summary>3D editor bugs round 2 — the warning an object with no material raises: the solver ignores it. The same
+    /// words as <see cref="C3dDiagnostics.NoMaterial"/>, so <c>check</c> says it once.</summary>
+    public static string NoMaterialWarning(string name) => $"'{name}' has no material, so the solver ignores it.";
+
     private readonly TechnologyCache _tech = technologies ?? new TechnologyCache();
     private readonly Dictionary<string, C3dLowered?> _objects = new(StringComparer.Ordinal);
     private readonly Dictionary<string, object> _children = new(StringComparer.Ordinal);
@@ -477,7 +484,10 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null)
                 string name = prefix + obj.Name;
                 if (obj.Material is not { Length: > 0 } matName)
                 {
-                    _refusals.Add($"'{name}' has no material, so nothing says what it is to a solver.");
+                    // 3D editor bugs round 2 — an object with no material yet is IGNORED by the solver, not a refusal: a
+                    // half-finished design still runs. One naming a material the technology lacks stays a refusal below — a
+                    // broken reference, not an unassigned object.
+                    _warnings.Add(NoMaterialWarning(name));
                     Unassigned(obj, name, world, doc.DbuPerMicron, prefix, path, exact);
                     continue;
                 }

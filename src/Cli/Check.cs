@@ -565,7 +565,10 @@ internal static class Check
         // document validation already refused would report its defects twice, in two voices.
         if (!resolution.Ok || findings.Any(d => d.Severity == DiagnosticSeverity.Error)) return;
         var e = C3dElaborator.ElaborateOnce(doc, Path.GetFullPath(path), null);
-        var said = new HashSet<string>(resolution.Errors.Concat(resolution.Warnings).Concat(resolution.Notes).Concat(resolution.Infos), StringComparer.Ordinal);
+        // Validation's own findings too: an object with no material is a validation warning AND an elaboration warning, in
+        // the same words (3D editor bugs round 2), and is said once.
+        var said = new HashSet<string>(resolution.Errors.Concat(resolution.Warnings).Concat(resolution.Notes).Concat(resolution.Infos)
+                                                        .Concat(findings.Select(d => d.Render())), StringComparer.Ordinal);
         foreach (string refusal in e.Refusals.Where(x => !said.Contains(x))) f.Add(CliDiagnostics.CheckThreeDElaboration(path, refusal));
         foreach (string warning in e.Warnings.Where(x => !said.Contains(x))) f.Add(CliDiagnostics.CheckEmFinding(path, warning, true));
         foreach (string note in e.Notes.Where(x => !said.Contains(x))) f.Add(CliDiagnostics.CheckThreeDNote(path, note));

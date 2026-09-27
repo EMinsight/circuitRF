@@ -107,6 +107,7 @@ public sealed partial class C3dEditorViewModel
         if (ccellPath is not null && ccellText is not null && (!File.Exists(ccellPath) || File.ReadAllText(ccellPath) != ccellText))
             AtomicFile.WriteAllText(ccellPath, ccellText);
         var d = C3dPersistence.Deserialize(text);
+        Document.TechRef = d.TechRef;
         Document.Objects = d.Objects;
         Document.Instances = d.Instances;
         Document.Variables = d.Variables;

@@ -112,10 +112,11 @@ public sealed class GridAndWireframeTests : IDisposable
     /// <summary>
     /// A box, a cylinder and a sheet with no material — and a box whose material the technology does not define — are
     /// all in the scene as wireframes: triangles at alpha 0 (for the pick) and their feature edges as an always-drawn
-    /// line batch; still refused to a solver, and never in its lists.
+    /// line batch; never in a solver's lists. No material is a warning the solver ignores (round 2); a material the
+    /// technology lacks is still a refusal.
     /// </summary>
     [Fact]
-    public void Wireframe_AnObjectWithNoMaterial_IsInTheSceneAsEdges_AndStillRefusedToASolver()
+    public void Wireframe_AnObjectWithNoMaterial_IsInTheSceneAsEdges_AndNeverInASolversLists()
     {
         var vm = Open(Write(
         [
@@ -131,7 +132,9 @@ public sealed class GridAndWireframeTests : IDisposable
         Assert.Empty(e.Sheets);
         Assert.Equal(["ghost", "typo", "post"], e.UnassignedSolids.Select(s => s.Name));
         Assert.Equal(["leaf"], e.UnassignedSheets.Select(s => s.Name));
-        Assert.Contains(e.Refusals, r => r.Contains("'ghost' has no material"));
+        Assert.Contains(C3dElaborator.NoMaterialWarning("ghost"), e.Warnings);
+        Assert.DoesNotContain(e.Refusals, r => r.Contains("'ghost'"));
+        Assert.Contains(e.Refusals, r => r.Contains("'typo' is made of 'Gld'"));
 
         var solid = scene.Objects.Single(o => o.Name == "solid");
         Assert.False(solid.Wireframe);

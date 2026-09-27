@@ -14,7 +14,7 @@ namespace CircuitRF.Ui.Views.Dialogs;
 /// §4). <see cref="AbsoluteTechPath"/> null means "(Workspace default)" — writes
 /// <c>LayoutView.TechRef = null</c> and re-resolves through L0c's resolution order; a non-null path
 /// (a <c>tech/</c> entry or a browsed file) becomes an explicit <c>TechRef</c>.</summary>
-public sealed record ChangeTechnologyResult(string? AbsoluteTechPath, bool AdoptUnits);
+public sealed record ChangeTechnologyResult(string? AbsoluteTechPath, bool AdoptUnits, string? CatalogId = null);
 
 /// <summary>
 /// "Change Technology…" picker — the entry point for Gap 1 (docs/sonnet-briefs/brief-L1g-technology-retarget.md
@@ -76,8 +76,47 @@ public partial class ChangeTechnologyDialog : Window
         ChoiceList.SelectedIndex = selected;
         ChoiceList.ScrollIntoView(items[selected]);
 
+        WireButtons();
+    }
+
+    /// <summary>
+    /// 3D editor bugs round 2 — the same picker for a 3D design that resolves NO technology, so a material has nowhere to
+    /// come from: every <c>.ctech</c> in the workspace, then the catalog's technologies (a copy goes into the workspace's
+    /// <c>tech/</c>, as New Workspace makes one — <see cref="ChangeTechnologyResult.CatalogId"/>), then Browse…. There is
+    /// no "(Workspace default)" row, since that default is what resolved nothing, and no unit adoption (a 3D design's unit
+    /// is its own).
+    /// </summary>
+    public ChangeTechnologyDialog(string intro, string? workspaceRootDir, IReadOnlyList<(string Label, string Id)> catalog) : this()
+    {
+        Title = "Choose a Technology";
+        CurrentText.Text = intro;
+        CurrentText.Opacity = 1;
+        AdoptUnitsCheck.IsVisible = false;
+        OkButton.Content = "Use";
+        var items = new List<ListBoxItem>();
+        string? techDir = workspaceRootDir is null ? null : Path.Combine(workspaceRootDir, "tech");
+        foreach (var choice in WorkspaceTechnologyChoices.Enumerate(workspaceRootDir, techDir))
+            items.Add(Row(choice.Label, choice.AbsolutePath, choice.AbsolutePath));
+        foreach (var (label, id) in catalog)
+        {
+            var row = Row($"{label}  —  built in, copied into tech/", null, workspaceRootDir is null
+                ? "Built into circuitRF. This design belongs to no workspace, so there is no tech/ folder to copy it into: use Browse…."
+                : $"Built into circuitRF: a copy is written to {Path.Combine("tech", id + ".ctech")} and used from there.");
+            row.Tag = CatalogTag + id;
+            row.IsEnabled = workspaceRootDir is not null;
+            items.Add(row);
+        }
+        ChoiceList.ItemsSource = items;
+        ChoiceList.SelectedIndex = items.FindIndex(i => i.IsEnabled);
+        WireButtons();
+    }
+
+    private const string CatalogTag = "catalog:";
+
+    private void WireButtons()
+    {
         BrowseButton.Click += async (_, _) => await OnBrowseAsync();
-        OkButton.Click      += (_, _) => Close(BuildResult());
+        OkButton.Click      += (_, _) => { if (ChoiceList.SelectedItem is not null) Close(BuildResult()); };
         CancelButton.Click  += (_, _) => Close(null);
     }
 
@@ -139,6 +178,11 @@ public partial class ChangeTechnologyDialog : Window
         catch { return $"  ·  {Path.GetFileName(path)}"; }
     }
 
-    private ChangeTechnologyResult BuildResult() =>
-        new((ChoiceList.SelectedItem as ListBoxItem)?.Tag as string, AdoptUnitsCheck.IsChecked == true);
+    private ChangeTechnologyResult BuildResult()
+    {
+        string? tag = (ChoiceList.SelectedItem as ListBoxItem)?.Tag as string;
+        return tag is not null && tag.StartsWith(CatalogTag, StringComparison.Ordinal)
+            ? new(null, false, tag[CatalogTag.Length..])
+            : new(tag, AdoptUnitsCheck.IsChecked == true);
+    }
 }

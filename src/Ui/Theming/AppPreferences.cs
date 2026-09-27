@@ -38,6 +38,10 @@ public enum LaunchAction
     /// <summary>A new scratch <c>.csmith</c> (smith-chart.md §5.9, owner instruction). APPENDED —
     /// see this type's own remarks.</summary>
     NewSmithChart,
+
+    /// <summary>A scratch <c>.c3d</c> to draw in at once, written by its first Save As (3D editor bugs round 2). APPENDED —
+    /// see this type's own remarks.</summary>
+    New3DDesign,
 }
 
 /// <summary>

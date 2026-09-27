@@ -73,6 +73,39 @@ public static class WorkspaceCreate
                nameof(id));
 
     /// <summary>
+    /// A catalog technology copied into an EXISTING workspace's <c>tech/</c>, with the material libraries it names — the
+    /// copy <see cref="Create"/> makes, for a workspace that was made with none (3D editor bugs round 2: a 3D design with
+    /// no technology is given one from its Choose a Technology dialog). A file already there under that name is the
+    /// workspace's own and is never overwritten: its path is returned as it is.
+    /// </summary>
+    public static string InstallTechnology(string workspaceDir, string technologyId)
+    {
+        var entry = ResolveTechnology(technologyId);
+        string existing = Path.Combine(workspaceDir, "tech", entry.Id + ".ctech");
+        if (File.Exists(existing)) return existing;
+        return CopyTechnology(workspaceDir, entry, TechnologyCatalog.LibraryFiles(entry));
+    }
+
+    /// <summary>The entry's own raw bytes into <c>tech/</c>, and each library it names where the copy's reference says.</summary>
+    private static string CopyTechnology(string workspaceDir, TechnologyCatalogEntry entry, IReadOnlyList<(string Reference, string Json)> libraries)
+    {
+        var techDir = Path.Combine(workspaceDir, "tech");
+        Directory.CreateDirectory(techDir);
+        string techPath = Path.Combine(techDir, entry.Id + ".ctech");
+        File.WriteAllText(techPath, TechnologyCatalog.LoadRawJson(entry));
+        // Each named library lands where the copied .ctech's own reference says, so the copy
+        // resolves from disk exactly as the original did. From here on it is the workspace's own
+        // file: a later release's library never reaches it (R-em3d53-8d).
+        foreach (var (reference, json) in libraries)
+        {
+            string libPath = MaterialLibraries.ResolvePath(techPath, reference);
+            Directory.CreateDirectory(Path.GetDirectoryName(libPath)!);
+            if (!File.Exists(libPath)) File.WriteAllText(libPath, json);
+        }
+        return techPath;
+    }
+
+    /// <summary>
     /// Creates the workspace: the directory, the optional technology copy, and the <c>.cws</c>.
     /// </summary>
     /// <param name="technologyId">
@@ -106,19 +139,7 @@ public static class WorkspaceCreate
         string? techPath = null;
         if (entry is not null)
         {
-            var techDir = Path.Combine(workspaceDir, "tech");
-            Directory.CreateDirectory(techDir);
-            techPath = Path.Combine(techDir, entry.Id + ".ctech");
-            File.WriteAllText(techPath, TechnologyCatalog.LoadRawJson(entry));
-            // Each named library lands where the copied .ctech's own reference says, so the copy
-            // resolves from disk exactly as the original did. From here on it is the workspace's own
-            // file: a later release's library never reaches it (R-em3d53-8d).
-            foreach (var (reference, json) in libraries)
-            {
-                string libPath = MaterialLibraries.ResolvePath(techPath, reference);
-                Directory.CreateDirectory(Path.GetDirectoryName(libPath)!);
-                File.WriteAllText(libPath, json);
-            }
+            techPath = CopyTechnology(workspaceDir, entry, libraries);
             cws.DefaultTechRef = Path.GetRelativePath(workspaceDir, techPath);
         }
 

@@ -280,8 +280,10 @@ public sealed class SmithWindowTests
         // Order: the LAST member is the one this brief appended, and it is last in both. A member
         // inserted anywhere else would leave the lengths equal and the meanings shifted, which is
         // exactly the silent failure — so the pairing is checked position by position.
-        Assert.Equal(LaunchAction.NewSmithChart, Enum.GetValues<LaunchAction>()[^1]);
-        Assert.Equal("Smith Chart", labels[^1]);
+        // New3DDesign (3D editor bugs round 2) was appended after it, the same way.
+        Assert.Equal(LaunchAction.New3DDesign, Enum.GetValues<LaunchAction>()[^1]);
+        Assert.Equal("New 3D Design", labels[^1]);
+        Assert.Equal("Smith Chart", labels[(int)LaunchAction.NewSmithChart]);
         Assert.Equal("Welcome",     labels[0]);
         Assert.Equal("harmonicaRF", labels[(int)LaunchAction.NewHarmonica]);
         Assert.Equal("New Layout",  labels[(int)LaunchAction.NewLayout]);
@@ -290,6 +292,7 @@ public sealed class SmithWindowTests
         // a launch action that does nothing on one of the two paths and nothing reports it.
         string vm = StripComments(ReadRepoFile("src/Ui/ViewModels/WorkspaceViewModel.cs"));
         Assert.Equal(2, Regex.Matches(vm, @"case LaunchAction\.NewSmithChart:").Count);
+        Assert.Equal(2, Regex.Matches(vm, @"case LaunchAction\.New3DDesign:").Count);
     }
 
     // ── 6. both Tools menus carry the entry (gate 6, R-smith4-9) ─────────────

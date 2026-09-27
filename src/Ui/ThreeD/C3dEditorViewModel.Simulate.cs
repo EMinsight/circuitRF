@@ -778,7 +778,7 @@ public sealed partial class C3dEditorViewModel
 
     private void RebuildRecordsTree()
     {
-        foreach (var g in Tree.Where(g => g.Header == "Ports").ToList())
+        foreach (var g in Tree.Where(g => g.Role == C3dTreeGroupRole.Ports).ToList())
         {
             DetachExpansion([g]);
             Tree.Remove(g);
@@ -787,8 +787,8 @@ public sealed partial class C3dEditorViewModel
         var ports = PortResults.Select(r => new C3dTreeItem(this, C3dPorts.ProblemName(r.Port.Number), "Port",
             r.Resolved is { } p ? $"{C3dPorts.Label(r.Port)} {(p.Kind == Em3dPortKind.Wave ? "wave" : "lumped")}: {p.NegativeObject} → {p.PositiveObject}"
                                 : $"{C3dPorts.Label(r.Port)}: refused", -1, -1, true) { IsReadOnly = true }).ToList();
-        if (ports.Count > 0) Tree.Add(new C3dTreeGroup("Ports", ports));
-        foreach (var item in Tree.Where(g => g.Header is not ("Instances" or "Ports")).SelectMany(g => g.Items))
+        if (ports.Count > 0) Tree.Add(new C3dTreeGroup("Ports", ports, C3dTreeGroupRole.Ports));
+        foreach (var item in Tree.Where(g => g.Role is C3dTreeGroupRole.Objects or C3dTreeGroupRole.Construction).SelectMany(g => g.Items))
         {
             foreach (var c in item.Children.Where(c => c.Kind == "Boundary").ToList()) item.Children.Remove(c);
             foreach (var b in Document.FaceBoundaries.Where(b => b.Object == item.Name))
@@ -802,11 +802,14 @@ public sealed partial class C3dEditorViewModel
     /// <summary>
     /// 3D editor round 1 — the active setup's air box, first under Boxes: selectable (the Properties Inspector shows its
     /// boundaries and padding), never deletable or duplicable — it is the setup's, not the geometry's. Its tick is the
-    /// toolbar's air-box switch. No setup active, no node.
+    /// toolbar's air-box switch. No setup active, no node. Round 2: by material there is no Boxes group to share, so it
+    /// is the one node of an "Air box" group at the top.
     /// </summary>
     private void RebuildAirBoxItem()
     {
-        var boxes = Tree.FirstOrDefault(g => g.Header == "Boxes");
+        var boxes = TreeGrouping == C3dTreeGrouping.Primitive
+            ? Tree.FirstOrDefault(g => g.Role == C3dTreeGroupRole.Objects && g.Header == "Boxes")
+            : Tree.FirstOrDefault(g => g.Role == C3dTreeGroupRole.AirBox);
         if (boxes?.Items.FirstOrDefault(i => i.IsAirBox) is { } old)
         {
             if (ActiveSetup is not null && ShownAirBox is not null)
@@ -820,7 +823,9 @@ public sealed partial class C3dEditorViewModel
         if (ActiveSetup is null || ShownAirBox is null) return;
         var item = new C3dTreeItem(this, AirBoxName, C3dTreeItem.AirBoxKind, $"setup {(IsExternalActive ? ExternalItemName : ActiveSetupName)}",
                                    -1, -1, Viewer.ShowBoundaryFaces) { IsReadOnly = true };
-        if (boxes is null) Tree.Insert(0, new C3dTreeGroup("Boxes", [item]));
+        if (boxes is null)
+            Tree.Insert(0, TreeGrouping == C3dTreeGrouping.Primitive ? new C3dTreeGroup("Boxes", [item])
+                                                                     : new C3dTreeGroup("Air box", [item], C3dTreeGroupRole.AirBox));
         else boxes.Items.Insert(0, item);
     }
 

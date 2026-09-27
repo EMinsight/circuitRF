@@ -157,9 +157,31 @@ public sealed partial class Viewer3DViewModel
     {
         if (View.CursorX < 0 || View.CursorY < 0) return null;
         // The snap query casts its ray through the cursor itself (Ray adds half a pixel): the same ray here.
-        var (o, d) = View.Camera.Ray(View.CursorX - 0.5f, View.CursorY - 0.5f, _viewW, _viewH);
+        var cam = View.Camera;
+        var (o, d) = cam.Ray(View.CursorX - 0.5f, View.CursorY - 0.5f, _viewW, _viewH);
+        // 3D editor bugs round 2 — Ray starts at the NEAR CLIP PLANE, which brackets the scene's sphere; a drawing plane
+        // nearer the camera than that (the lower half of a new, empty design's orthographic view) was "behind the camera"
+        // and refused the click. The ray starts where the view does: at the eye in perspective, and in orthographic —
+        // where every ray is a whole line and the grid is drawn along all of it — far enough back to precede any plane the
+        // view can show short of edge-on. Moving the origin along the ray's own direction, in double, moves no hit point.
+        double back = Vector3.Dot(o - cam.Eye, d);
+        if (cam.Projection == Projection3D.Orthographic)
+        {
+            double half = cam.Distance * Math.Tan((cam.FovY > 0 ? cam.FovY : Camera3D.DefaultFovY) * 0.5) * Math.Max(1.0, _viewW / Math.Max(1f, _viewH));
+            back += 2 * (cam.Distance + cam.SceneRadius) + 2 * half / DrawingPlane.EdgeOnCosine;
+        }
         var (x, y, z) = Scene.ToWorld(o);
-        return (new CircuitRF.Engine.Em3d.Point3(x, y, z), new CircuitRF.Engine.Em3d.Point3(d.X, d.Y, d.Z));
+        return (new CircuitRF.Engine.Em3d.Point3(x - d.X * back, y - d.Y * back, z - d.Z * back), new CircuitRF.Engine.Em3d.Point3(d.X, d.Y, d.Z));
+    }
+
+    /// <summary>3D editor bugs round 2 — the nearest visible object under the cursor and where the cursor's ray meets it
+    /// (world metres), found on the CPU from the scene itself: exact at the moment of a click, never a pick read back from an
+    /// earlier frame. (0, null) off the view or over nothing.</summary>
+    public (uint Object, (double X, double Y, double Z)? World) PickUnderCursor()
+    {
+        if (View.CursorX < 0 || View.CursorY < 0) return (0, null);
+        var (id, point) = Scene3DPicking.Pick(Scene, View.Camera, View.CursorX - 0.5f, View.CursorY - 0.5f, _viewW, _viewH, View.Visible, View.Clip);
+        return id == 0 ? (0, null) : (id, Scene.ToWorld(point));
     }
 
     /// <summary>The pane's size, DIPs, as the last resize said.</summary>
@@ -316,6 +338,7 @@ public sealed partial class Viewer3DViewModel
     /// </summary>
     internal void OnPicked(uint id, uint face, Vector3 point, bool hit, Scene3DIdPatch? patch = null)
     {
+        if (CameraGesture) return;
         int f = face == Scene3DVertex.NoFace ? -1 : (int)face;
         Scene3DItem? item = null;
         // brief-em3d-48 R-em3d48-4a — the dimmed parent around a pushed-in child is under the cursor for the snap and for

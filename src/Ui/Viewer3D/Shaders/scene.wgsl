@@ -301,7 +301,9 @@ fn grid_on(p: vec2f, pf: vec2f, s: f32, ph: vec2f) -> f32 {
     let p = vec2f(pu, pv);
     let pf = max(fwidth(p), vec2f(1e-30, 1e-30));
     let cosine = abs(dn) / max(length(rd), 1e-30);
-    if (cosine < 1e-4 || (u.gq.w > 0.5 && t <= 0.0) || clipped(w)) { discard; }
+    // 3D editor bugs round 2 — the clip plane cuts the MODEL, not the drawing grid: the grid is a drawing aid, and with
+    // the plane at an extreme it vanished across half the view with nothing in it to cut.
+    if (cosine < 1e-4 || (u.gq.w > 0.5 && t <= 0.0)) { discard; }
 
     let mpp = max(pf.x, pf.y);
     let m = max(u.gs.y, 2.0);

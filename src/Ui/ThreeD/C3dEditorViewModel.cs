@@ -19,6 +19,7 @@
 
 using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
+using System.Numerics;
 using CircuitRF.Design.Layout;
 using CircuitRF.Design.Layout.Em;
 using CircuitRF.Design.ThreeD;
@@ -57,6 +58,11 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     private string? _savedStamp;
 
     public string FilePath { get; private set; }
+
+    /// <summary>3D editor bugs round 2 — a SCRATCH design (Settings ▸ On Launch ▸ New 3D Design): <see cref="FilePath"/> is
+    /// where it WOULD be — its relative references and its technology resolve from there — but nothing has been written.
+    /// Its first save is a Save As, and Simulate asks for that Save As before it runs.</summary>
+    public bool IsScratch { get; private set; }
     public C3dDocument Document { get; private set; }
     /// <summary>The ACTIVE frame's history (brief-em3d-48: each pushed-in child has its own, as a layout frame does).</summary>
     public UndoRedoStack UndoRedo { get; private set; } = new();
@@ -104,9 +110,10 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     private readonly Action<Action> _post;
 
     public C3dEditorViewModel(string path, C3dDocument document, Func<Viewer3DBackend> backend, Func<string?> workspaceCws,
-                              Action<Action> post, TechnologyCache? technologies = null)
+                              Action<Action> post, TechnologyCache? technologies = null, bool scratch = false)
     {
         FilePath = Path.GetFullPath(path);
+        IsScratch = scratch;
         Document = document;
         _workspaceCws = workspaceCws;
         _post = post;
@@ -116,6 +123,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         Viewer = new Viewer3DViewModel(FilePath, Path.GetFileName(FilePath), Snapshot, Build, backend, () => ResultsRootProvider?.Invoke(), post)
         {
             EditHost = this,
+            KeepEmptyView = () => Document.Objects.Count == 0 && Document.Instances.Count == 0,
         };
         Viewer.SceneAdopted += OnSceneAdopted;
         Viewer.SelectionChanged += OnViewerSelectionChanged;
@@ -193,6 +201,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
             ct.ThrowIfCancellationRequested();
             var e = _elaborator.Elaborate(doc, inputs.Path, inputs.WorkspaceCws, new C3dElaborationOptions { Cell = inputs.Cell });
             _elaborations[generation] = e;
+            _frameKeys[generation] = inputs.Path + "|" + inputs.Context?.Exclude;
             var extent = e.DisplayExtent() ?? (-5e-4, -5e-4, -5e-4, 5e-4, 5e-4, 5e-4);
             if (_origin is not { } o || !NearEnough(o, extent))
                 _origin = ((extent.X0 + extent.X1) / 2, (extent.Y0 + extent.Y1) / 2, (extent.Z0 + extent.Z1) / 2);
@@ -215,7 +224,8 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
                 materials = [.. e.Materials, .. cm.Where(m => !e.Materials.Any(x => x.Name == m.Name))];
             }
             // 3D editor bugs round 1 — what has no material is drawn as a wireframe, last (never an instance run's
-            // element), so it can still be seen, picked and edited; the refusal still stops a run.
+            // element), so it can still be seen, picked and edited. Round 2: the solver ignores it (a warning); a material
+            // the technology lacks is still a refusal that stops a run.
             var unassigned = new HashSet<string>(e.UnassignedSolids.Select(s => s.Name).Concat(e.UnassignedSheets.Select(s => s.Name)), StringComparer.Ordinal);
             if (unassigned.Count > 0)
             {
@@ -257,6 +267,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     private void OnSceneAdopted()
     {
         long gen = Viewer.Scene.Generation;
+        CarryCameraAcrossOrigin(gen);
         if (_elaborations.TryGetValue(gen, out var e)) Elaboration = e;
         AdoptRecords(gen);
         ApplySnapGrid();
@@ -285,10 +296,56 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         OnPropertyChanged(nameof(MaterialChoices));
         SyncCurrentMaterial();
         RefreshGridText();
-        Interlocked.Exchange(ref _adoptedGeneration, gen);
         ReleaseHeldPreview(gen);
         ReselectFace();
+        // Published LAST: a reader that waits for this generation (a test's settle) must find the adoption finished — the
+        // held preview released and the face reselected — not half done.
+        Interlocked.Exchange(ref _adoptedGeneration, gen);
     }
+
+    /// <summary>
+    /// 3D editor bugs round 2 — the one line drawn on the viewport, now that the status pane under it is hidden: the last
+    /// message (a refusal, what a gesture did) while there is one, else what the armed tool wants next, else — pushed
+    /// into a placed cell — which frame the coordinates are in. The full text is the pane's (CRF_3D_STATUS_PANE=1).
+    /// </summary>
+    public string ViewportLine
+        => StatusMessage is { Length: > 0 } m ? m : ToolPrompt is { Length: > 0 } p ? p : FrameText;
+
+    protected override void OnPropertyChanged(System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        base.OnPropertyChanged(e);
+        if (e.PropertyName is nameof(StatusMessage) or nameof(ToolPrompt) or nameof(FrameText))
+            base.OnPropertyChanged(new System.ComponentModel.PropertyChangedEventArgs(nameof(ViewportLine)));
+    }
+
+    /// <summary>3D editor bugs round 2 — the status text under the viewport is hidden; it is kept, whole, for debugging, and
+    /// shown when the environment sets <c>CRF_3D_STATUS_PANE=1</c>.</summary>
+    public static bool ShowStatusPane { get; } = Environment.GetEnvironmentVariable("CRF_3D_STATUS_PANE") == "1";
+
+    private readonly ConcurrentDictionary<long, string> _frameKeys = new();
+    private (string Frame, (double X, double Y, double Z) Origin)? _adoptedFrame;
+
+    /// <summary>
+    /// 3D editor bugs round 2 — the camera lives in scene-LOCAL coordinates, and Build re-bases the origin when the design
+    /// has moved far from the old one (NearEnough), which one object dragged a few of its own sizes does. The camera used to
+    /// keep its local numbers while the world moved under them, so every object, the grid and the axes jumped at once: the
+    /// viewport seemed to move with the drag. Within one frame the target is carried to the same WORLD point. Across a
+    /// push or a pop it is not — a push fits, and a pop restores the parent's own camera.
+    /// </summary>
+    private void CarryCameraAcrossOrigin(long gen)
+    {
+        var scene = Viewer.Scene;
+        if (!_frameKeys.TryGetValue(gen, out var frame)) return;
+        foreach (long old in _frameKeys.Keys.Where(k => k < gen).ToList()) _frameKeys.TryRemove(old, out _);
+        if (_adoptedFrame is { } prev && prev.Frame == frame && prev.Origin != scene.Origin)
+            Viewer.View.Camera.Target += CameraShift(prev.Origin, scene.Origin);
+        _adoptedFrame = (frame, scene.Origin);
+    }
+
+    /// <summary>What a scene-local point gains when the origin moves from <paramref name="from"/> to <paramref name="to"/>
+    /// with the world point held still.</summary>
+    internal static Vector3 CameraShift((double X, double Y, double Z) from, (double X, double Y, double Z) to)
+        => new((float)(from.X - to.X), (float)(from.Y - to.Y), (float)(from.Z - to.Z));
 
     /// <summary>A document object's <c>Hidden</c> is document state (brief 41 §2a): the pane follows it.</summary>
     private void ApplyHiddenFlags()
@@ -576,6 +633,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     {
         Viewer.SnapGrid = new Snap3DGrid(_plane.Plane, _plane.OffsetDbu, SnapPitch, Document.DbuPerMicron);
         ApplyDrawingGrid();
+        RefreshSnapDistance();
     }
 
     /// <summary>
@@ -650,6 +708,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         Properties.Reload();
         ApplyDrawingGrid();
         SyncPlaneTexts();
+        RefreshSnapDistance();
     }
 
     private void ApplyLengthFormat()
@@ -669,6 +728,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     /// the save the schematic and layout hierarchies have); null on success, else why not.</summary>
     public string? Save()
     {
+        if (IsScratch) return "This 3D design has not been saved yet: Save As chooses where it goes.";
         try { C3dPersistence.SaveToFile(FilePath, Document); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return ex.Message; }
         _savedStamp = Stamp(FilePath);
@@ -691,8 +751,11 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     {
         if (CanPopOut) return "Pop out to the top document first: Save As writes the tab's own file.";
         string was = FilePath;
+        bool wasScratch = IsScratch;
         FilePath = Path.GetFullPath(path);
-        if (Save() is { } why) { FilePath = was; return why; }
+        IsScratch = false;
+        if (Save() is { } why) { FilePath = was; IsScratch = wasScratch; return why; }
+        if (wasScratch) OnPropertyChanged(nameof(IsScratch));
         Viewer.Regenerate();         // the document's own path is where its relative references resolve from
         return null;
     }
@@ -758,28 +821,24 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         (typeof(C3dWire), "Wires"),
     ];
 
-    /// <summary>Objects in construction order, grouped by kind; then instances, each expandable to its
-    /// cell's objects (read-only).</summary>
+    /// <summary>Objects in construction order, grouped by material or by kind (3D editor round 2) and filtered; then
+    /// instances, each expandable to its cell's objects (read-only).</summary>
     private void RebuildTree()
     {
         string? keep = SelectedTreeItem?.Name;
+        bool keepAirBox = SelectedTreeItem?.IsAirBox == true;
         _syncingTree = true;
         try
         {
             DetachExpansion(Tree);
             Tree.Clear();
-            foreach (var (type, header) in Groups)
-            {
-                var items = Document.Objects.Select((o, i) => (o, i)).Where(t => t.o.GetType() == type)
-                    .Select(t => new C3dTreeItem(this, t.o.Name, C3dObject.KindOf(t.o), t.o.Material, t.i, -1, !t.o.Hidden)).ToList();
-                if (items.Count > 0) Tree.Add(new C3dTreeGroup(header, items));
-            }
-            var instances = Document.Instances.Select((inst, i) => new C3dTreeItem(this, inst.Name, "Instance", inst.CellRef, -1, i, true)).ToList();
-            if (instances.Count > 0) Tree.Add(new C3dTreeGroup("Instances", instances));
+            RebuildTreeFilters();
+            foreach (var g in ObjectGroups()) Tree.Add(g);
+            if (InstanceGroup() is { } instances) Tree.Add(instances);
             RebuildInstanceChildren();
             RefreshWireFlags();
             RebuildRecordsTree();
-            SelectedTreeItem = keep is null ? null : AllTreeItems().FirstOrDefault(t => t.Name == keep);
+            SelectedTreeItem = keep is null ? null : AllTreeItems().FirstOrDefault(t => t.Name == keep && t.IsAirBox == keepAirBox);
         }
         finally { _syncingTree = false; }
     }
@@ -823,7 +882,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     private void RebuildInstanceChildren()
     {
         if (Elaboration is not { } e) return;
-        foreach (var inst in Tree.Where(g => g.Header == "Instances").SelectMany(g => g.Items))
+        foreach (var inst in Tree.Where(g => g.Role == C3dTreeGroupRole.Instances).SelectMany(g => g.Items))
         {
             inst.Children.Clear();
             foreach (var (name, p) in e.Provenance.Where(kv => kv.Value.InstancePath == inst.Name ||
@@ -947,12 +1006,14 @@ public abstract partial class C3dTreeNode : ObservableObject
     }
 }
 
-/// <summary>A group of the editor's tree.</summary>
-public sealed class C3dTreeGroup(string header, IEnumerable<C3dTreeItem> items) : C3dTreeNode
+/// <summary>A group of the editor's tree. Code finds a group by its <see cref="Role"/>: by material, a header is a
+/// material's name, and any name is possible.</summary>
+public sealed class C3dTreeGroup(string header, IEnumerable<C3dTreeItem> items, C3dTreeGroupRole role = C3dTreeGroupRole.Objects) : C3dTreeNode
 {
     public string Header { get; } = header;
+    public C3dTreeGroupRole Role { get; } = role;
     public ObservableCollection<C3dTreeItem> Items { get; } = [.. items];
-    public override string ExpansionKey => "group:" + Header;
+    public override string ExpansionKey => "group:" + Role + ":" + Header;
 }
 
 /// <summary>One node of the editor's tree: a document object, an instance, or (read-only) an instance's part.</summary>

@@ -186,9 +186,12 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
     private void LoadObject(int index, bool inScene)
     {
         var obj = editor.Document.Objects[index];
-        // A refused object is either not drawn at all, or — with no material — drawn as a wireframe the solver never
-        // sees; either way the refusal Simulate will give is shown on the object it names.
-        string? why = editor.Elaboration?.Refusals.FirstOrDefault(r => r.Contains($"'{obj.Name}'", StringComparison.Ordinal));
+        // A refused object is either not drawn at all, or — with a material its technology lacks — drawn as a wireframe
+        // the solver never sees; either way the refusal Simulate will give is shown on the object it names. One with NO
+        // material is drawn the same way and is not a refusal: the solver ignores it (3D editor bugs round 2), and this row
+        // says so.
+        string? why = editor.Elaboration?.Refusals.FirstOrDefault(r => r.Contains($"'{obj.Name}'", StringComparison.Ordinal))
+                      ?? editor.Elaboration?.Warnings.FirstOrDefault(w => w == C3dElaborator.NoMaterialWarning(obj.Name));
         if (!inScene)
         {
             Heading = obj.Name;

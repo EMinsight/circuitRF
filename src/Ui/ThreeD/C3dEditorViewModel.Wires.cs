@@ -135,6 +135,52 @@ public sealed partial class C3dEditorViewModel : IC3dWireHost
         return (hit.Pad.Name, new C3dPoint3(R(hit.At.X), R(hit.At.Y), R(hit.Pad.TopM)));
     }
 
+    /// <summary>
+    /// 3D editor bugs round 2 — a wire starts and ends on the OBJECT under the cursor, any face of it: a metal solid or a
+    /// sheet. The end lands on that object's top above the point (C3dWires.LandOn), since a bond sits on a top — the one
+    /// place elaboration looks for it. <paramref name="precise"/> (a click) picks on the CPU from the scene itself;
+    /// otherwise (the rubber band, every cursor move) the last ID pass's object and point are used. Null with the reason
+    /// in plain words when there is no object, or it is not something a wire can bond to.
+    /// </summary>
+    public (string Pad, C3dPoint3 At)? PadOnObject(bool precise, out string? refusal)
+    {
+        refusal = null;
+        var v = Viewer;
+        var (id, world) = precise ? v.PickUnderCursor() : (v.LastPick.Object, v.CursorWorld);
+        if (id == 0 && precise && v.LastPick.Object != 0) id = v.LastPick.Object;   // a wireframe has no triangles to hit
+        if (v.Scene.Object(id) is not { } o)
+        {
+            refusal = "Click a metal object or a sheet — any face — to attach the wire.";
+            return null;
+        }
+        var pads = WirePads().Where(q => q.Name == o.Name).ToList();
+        if (pads.Count == 0)
+        {
+            refusal = WhyNoBond(o);
+            return null;
+        }
+        if (world is not { } w) return null;
+        double inset = (WireTemplate.DiameterUm > 0 ? WireTemplate.DiameterUm : C3dWires.DefaultDiameterUm) * 2e-6;
+        if (C3dWires.LandOn(pads, w.X, w.Y, inset, PerDbu) is not { } land) return null;
+        long R(double m) => (long)Math.Round(m / PerDbu, MidpointRounding.AwayFromZero);
+        return (land.Pad.Name, new C3dPoint3(R(land.X), R(land.Y), R(land.Pad.TopM)));
+    }
+
+    /// <summary>Why a wire cannot attach to <paramref name="o"/>, in the words of the object and its material.</summary>
+    private static string WhyNoBond(Scene3DObject o)
+    {
+        if (o.Wireframe || o.Material is not { Length: > 0 })
+            return $"'{o.Name}' has no material. Give it a metal (Assign Material…) and a wire can attach to it.";
+        return o.Kind switch
+        {
+            Scene3DKind.Dielectric or Scene3DKind.Air => $"'{o.Name}' is {o.Material}, an insulator: a wire attaches to metal — a conductor or a sheet.",
+            Scene3DKind.Port => "A wire attaches to metal, not to a port.",
+            Scene3DKind.Wire => $"'{o.Name}' is a wire: start the new one on the metal it lands on.",
+            Scene3DKind.Sheet => $"'{o.Name}' is an upright sheet: a wire attaches to a level top.",
+            _ => $"'{o.Name}' has no level top for a wire to attach to.",
+        };
+    }
+
     public double? MeasureAssembly(C3dWire candidate)
     {
         var r = C3dWires.Resolve(candidate, candidate.Name, C3dTransform.Identity, Document.DbuPerMicron, WirePads(), PerDbu,
@@ -208,7 +254,7 @@ public sealed partial class C3dEditorViewModel : IC3dWireHost
     private void RefreshWireFlags()
     {
         var refusals = Elaboration?.WireRefusals;
-        foreach (var item in Tree.Where(g => g.Header == "Wires").SelectMany(g => g.Items))
+        foreach (var item in Tree.Where(g => g.Role == C3dTreeGroupRole.Objects).SelectMany(g => g.Items).Where(i => i.Kind == C3dObject.KindOf(typeof(C3dWire))))
             item.Refusal = refusals is not null && refusals.TryGetValue(item.Name, out var why) ? why : null;
     }
 

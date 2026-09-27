@@ -152,6 +152,39 @@ public sealed class KernelDragGateTests : IDisposable
 
     // ── helpers (OperationsGateTests' shape) ─────────────────────────────────────────────────
 
+    /// <summary>3D editor bugs round 2 — a distance typed quickly, before the field has focus, arrives key by key at the
+    /// pane: the keys build the distance ("1", "0" is 10, never a re-opened "0"), a minus sign pulls, and the face moves
+    /// by that much from where it is, in the display unit.</summary>
+    [Fact]
+    public void TypedDistance_KeysReachingThePane_BuildTheNumber_AndMoveRelativeInTheDisplayUnit()
+    {
+        const long Mil = 25_400;
+        string ws = Workspace();
+        string path = WriteC3d(ws, "cell", new C3dDocument
+        {
+            SnapDbu = Um, DisplayUnit = CircuitRF.Design.Layout.LayoutUnit.Mil,
+            Objects = [Box("lid", 0, 0, 0, 2540, 2540, 2540)],
+        });
+        var vm = Open(path);
+
+        SelectFace(vm, "lid", "zmax");
+        Assert.True(vm.DrawKey(Key.N, KeyModifiers.None));
+        Assert.True(vm.DrawKey(Key.D1, KeyModifiers.None));
+        Assert.True(vm.DrawKey(Key.D0, KeyModifiers.None));
+        Assert.Equal("10", vm.FieldText);
+        vm.FieldEnter();
+        Settle(vm);
+        Assert.Equal(110 * Mil, Assert.IsType<C3dBox>(vm.Document.Objects[0]).Size.Z);
+
+        SelectFace(vm, "lid", "zmax");
+        Assert.True(vm.DrawKey(Key.N, KeyModifiers.None));
+        Assert.True(vm.DrawKey(Key.OemMinus, KeyModifiers.None));
+        Assert.True(vm.DrawKey(Key.D5, KeyModifiers.None));
+        vm.FieldEnter();
+        Settle(vm);
+        Assert.Equal(105 * Mil, Assert.IsType<C3dBox>(vm.Document.Objects[0]).Size.Z);
+    }
+
     private static C3dBox Box(string name, long x, long y, long z, long sx, long sy, long sz)
         => new() { Name = name, Material = "Gold", Min = new C3dPoint3(x * Um, y * Um, z * Um), Size = new C3dPoint3(sx * Um, sy * Um, sz * Um) };
 

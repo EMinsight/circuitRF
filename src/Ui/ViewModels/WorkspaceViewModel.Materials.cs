@@ -245,14 +245,19 @@ public partial class WorkspaceViewModel
         string? techPath = vm.Elaboration?.TechnologyPath;
         if (vm.Elaboration?.Technology is not { } tech || techPath is null)
         {
-            // A technology that fails to resolve leaves nothing to choose from; the way out is to open it.
-            string why = techPath is null
-                ? "This 3D view resolves no technology, so there are no materials to choose from. Give its workspace a default technology."
-                : $"This 3D view's technology '{Path.GetFileName(techPath)}' did not load, so there are no materials to choose from. It is open to fix.";
-            vm.StatusMessage = why;
-            Messages.Warning(why);
-            if (techPath is not null && File.Exists(techPath)) OpenOrActivateTech(techPath);
-            return;
+            if (techPath is not null && File.Exists(techPath))
+            {
+                // A technology that fails to LOAD leaves nothing to choose from; the way out is to open it.
+                string why = $"This 3D view's technology '{Path.GetFileName(techPath)}' did not load, so there are no materials to choose from. It is open to fix.";
+                vm.StatusMessage = why;
+                Messages.Warning(why);
+                OpenOrActivateTech(techPath);
+                return;
+            }
+            // 3D editor bugs round 2 — resolving NONE used to end here with a sentence, so New Material… did nothing
+            // visible in a cell with no layout and a workspace with no default. The design is given one instead.
+            if (await ChooseC3dTechnologyAsync(doc, window) is not { } chosen) return;
+            (tech, techPath) = chosen;
         }
 
         string? current = indices.Count == 1 ? vm.Document.Objects[indices[0]].Material : vm.CurrentMaterial;
@@ -270,6 +275,51 @@ public partial class WorkspaceViewModel
             ActivateIfOpen(C3dEditorDocument.KeyFor(doc.FilePath));
         }
         vm.ApplyPickedMaterial(indices, picker.ChosenName);
+    }
+
+    /// <summary>
+    /// 3D editor bugs round 2 — a 3D design that resolves no technology is given one: the Choose a Technology dialog (the
+    /// workspace's <c>.ctech</c> files, the built-in ones — copied into <c>tech/</c> by the function New Workspace copies
+    /// with — and Browse…), written as the design's own reference, one undo entry. Returns the technology loaded from it,
+    /// or null when cancelled or it would not load.
+    /// </summary>
+    private async Task<(Technology Tech, string Path)?> ChooseC3dTechnologyAsync(C3dEditorDocument doc, Avalonia.Controls.Window window)
+    {
+        var vm = doc.ViewModel;
+        string? cws = CircuitRF.Design.Workspace.WorkspaceRootFinder.FindAncestorCws(Path.GetDirectoryName(Path.GetFullPath(vm.FilePath)));
+        string? root = cws is null ? null : Path.GetDirectoryName(cws);
+        var catalog = TechnologyCatalog.All.Select(e => (e.Name, e.Id)).ToList();
+        var dialog = new Views.Dialogs.ChangeTechnologyDialog(
+            "This 3D design has no technology, and its materials come from one. Choose the technology it uses:", root, catalog);
+        if (await dialog.ShowDialog<Views.Dialogs.ChangeTechnologyResult?>(window) is not { } result) return null;
+
+        string path;
+        try
+        {
+            if (result.CatalogId is { } id)
+            {
+                if (root is null) return null;
+                path = CircuitRF.Design.Workspace.WorkspaceCreate.InstallTechnology(root, id);
+                Messages.Info($"'{Path.GetFileName(path)}' was copied into this workspace's tech/ folder.");
+            }
+            else if (result.AbsoluteTechPath is { } chosen) path = chosen;
+            else return null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            Messages.Error($"The technology could not be copied into the workspace: {ex.Message}");
+            return null;
+        }
+
+        var loaded = TechnologyResolver.LoadForPath(path);
+        if (loaded is null)
+        {
+            Messages.Error($"'{Path.GetFileName(path)}' did not load as a technology, so it was not used.");
+            return null;
+        }
+        vm.UseTechnology(path);
+        vm.StatusMessage = $"This 3D design now uses {loaded.Name} ({Path.GetFileName(path)}).";
+        return (loaded, path);
     }
 
     /// <summary>
@@ -301,18 +351,21 @@ public partial class WorkspaceViewModel
     /// not edited from here (M8): editing a child's process from its parent is editing another design.
     /// </summary>
     [RelayCommand(CanExecute = nameof(HasActiveC3dEditor))]
-    private void ThreeDMaterials()
+    private async Task ThreeDMaterials()
     {
         if (ActiveC3dEditor() is not { } c3d) return;
         if (c3d.Elaboration?.TechnologyPath is not { } techPath || !File.Exists(techPath))
         {
-            Messages.Warning("This 3D view resolves no technology, so there are no materials to edit. Give its workspace a default technology.");
-            return;
+            // 3D editor bugs round 2 — resolving none is not a dead end: the design is given a technology first.
+            if (ResolveActiveDocumentForCommands() is not C3dEditorDocument doc
+                || HostWindowOf(doc) is not { } window || await ChooseC3dTechnologyAsync(doc, window) is not { } chosen)
+                return;
+            techPath = chosen.Path;
         }
         OpenOrActivateTech(techPath);
         if (OpenTechEditor(techPath) is { } editor) editor.SelectedTabIndex = TechEditorViewModel.MaterialsTabIndex;
 
-        var others = c3d.Elaboration.WalkInstances.Select(s => s.Detail).ToList();
+        var others = c3d.Elaboration?.WalkInstances.Select(s => s.Detail).ToList() ?? [];
         if (others.Count > 0)
             Messages.Info("Placed cells resolve their own technologies, edited from those technologies, not from here: " +
                           string.Join("; ", others));

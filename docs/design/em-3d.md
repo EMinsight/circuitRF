@@ -596,6 +596,13 @@ expose; OCCT's `Modified`/`Generated`/`IsDeleted` history in Route B), and to CS
 name, since each named object becomes one or more named CSXCAD primitives. A named object that no
 longer yields any face is a refusal naming the object, never a guess.
 
+**An object that names no material is not in the problem** (3D editor round 2, 2026-09-26): the solver
+ignores it, the run and `check` say so as a **warning**, and it neither sizes the air box nor gives a port
+or a wire anything to land on. A half-finished design therefore still runs; only a design whose every
+object has no material has nothing to solve, and is refused as such. An object naming a material its
+technology does **not** define is different — a broken reference, not an unassigned object — and stays a
+refusal.
+
 ### 6.5 The FDTD lowering and its grid
 
 **Geometry.** Each named solid becomes CSXCAD primitives on a property named after it: extruded
