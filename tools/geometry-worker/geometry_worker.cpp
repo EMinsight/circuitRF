@@ -87,6 +87,7 @@
 #include <GCPnts_AbscissaPoint.hxx>
 #include <GCPnts_QuasiUniformDeflection.hxx>
 #include <GProp_GProps.hxx>
+#include <GeomAPI_ProjectPointOnSurf.hxx>
 #include <Message.hxx>
 #include <Message_Messenger.hxx>
 #include <Message_PrinterOStream.hxx>
@@ -98,6 +99,22 @@
 #include <Quantity_Color.hxx>
 #include <STEPCAFControl_Reader.hxx>
 #include <STEPCAFControl_Writer.hxx>
+#include <STEPConstruct_UnitContext.hxx>
+#include <ShapeAnalysis_ShapeTolerance.hxx>
+#include <StepBasic_ConversionBasedUnit.hxx>
+#include <StepBasic_ConversionBasedUnitAndLengthUnit.hxx>
+#include <StepBasic_LengthUnit.hxx>
+#include <StepBasic_SiUnit.hxx>
+#include <StepBasic_SiUnitAndLengthUnit.hxx>
+#include <StepData_Factors.hxx>
+#include <StepData_StepModel.hxx>
+#include <StepGeom_GeomRepContextAndGlobUnitAssCtxAndGlobUncertaintyAssCtx.hxx>
+#include <StepGeom_GeometricRepresentationContextAndGlobalUnitAssignedContext.hxx>
+#include <StepRepr_GlobalUnitAssignedContext.hxx>
+#include <TCollection_HAsciiString.hxx>
+#include <TopLoc_Location.hxx>
+#include <XCAFDoc_DimTolTool.hxx>
+#include <XSControl_Reader.hxx>
 #include <ShapeFix_Shape.hxx>
 #include <Standard_ErrorHandler.hxx>
 #include <Standard_Failure.hxx>
@@ -1405,6 +1422,7 @@ static Named BuildChamfer(const NodeReader& r)
 }
 
 static Named BuildStep(const NodeReader& r);
+static std::vector<std::string> g_buildNotes;
 
 // One node: its primitive in its own frame, named, then carried by its transform.
 static Named BuildNode(const Json& node)
@@ -1516,6 +1534,7 @@ static Frame OpBuild(const Json& req)
   }
 
   Named n;
+  g_buildNotes.clear();
   try
   {
     n = BuildNode(*root);
@@ -1531,6 +1550,7 @@ static Frame OpBuild(const Json& req)
   int unnamed = 0;
   for (auto& f : h.faceNames) if (f.empty()) ++unnamed;
   if (unnamed > 0) notes.push_back(std::to_string(unnamed) + " face(s) of the result carry no name");
+  notes.insert(notes.end(), g_buildNotes.begin(), g_buildNotes.end());
 
   // The hand-off bytes come straight from the result, before any other request touches the shape: a
   // later STEP export clears flag bits a validity check set (brief 61, D12's caveat).
@@ -1681,7 +1701,24 @@ static Frame OpFaces(const Json& req)
        .Str("name", h.faceNames[i - 1])
        .Str("kind", SurfaceKind(BRepAdaptor_Surface(f).GetType()));
     r.j.Key("box").BeginArr().Num(b.x0).Num(b.y0).Num(b.z0).Num(b.x1).Num(b.y1).Num(b.z1).EndArr();
-    r.j.Num("area", Area(f)).Num("min_radius", FaceMinRadius(f)).End();
+    r.j.Num("area", Area(f)).Num("min_radius", FaceMinRadius(f));
+    // brief 68 R-em3d68-5c -- the fingerprint Reload from Source matches a face by: its centroid, and the outward
+    // normal at the point of the face nearest it (the face's orientation applied).
+    GProp_GProps gp;
+    BRepGProp::SurfaceProperties(f, gp);
+    gp_Pnt c = gp.CentreOfMass();
+    r.j.Key("centroid").BeginArr().Num(c.X()).Num(c.Y()).Num(c.Z()).EndArr();
+    gp_Dir nrm(0, 0, 1);
+    BRepAdaptor_Surface sa(f);
+    GeomAPI_ProjectPointOnSurf proj(c, BRep_Tool::Surface(f));
+    double u = (sa.FirstUParameter() + sa.LastUParameter()) / 2, v = (sa.FirstVParameter() + sa.LastVParameter()) / 2;
+    if (proj.NbPoints() > 0) proj.LowerDistanceParameters(u, v);
+    BRepLProp_SLProps sp(sa, u, v, 1, 1e-9);
+    bool have = sp.IsNormalDefined();
+    if (have) nrm = sp.Normal();
+    if (have && f.Orientation() == TopAbs_REVERSED) nrm.Reverse();
+    r.j.Key("normal").BeginArr().Num(have ? nrm.X() : 0).Num(have ? nrm.Y() : 0).Num(have ? nrm.Z() : 0).EndArr();
+    r.j.End();
   }
   r.j.EndArr();
   return r.Finish();
@@ -1849,18 +1886,48 @@ static Frame OpExport(const Json& req)
     occ::handle<TDocStd_Document> doc = NewXcafDocument();
     occ::handle<XCAFDoc_ShapeTool> st = XCAFDoc_DocumentTool::ShapeTool(doc->Main());
     occ::handle<XCAFDoc_ColorTool> ct = XCAFDoc_DocumentTool::ColorTool(doc->Main());
+    // "assembly": true writes one assembly whose components are the shapes, each at its "locations" entry (twelve
+    // numbers, a 3 x 4 matrix in rows, micrometres; null is identity) -- and a handle listed twice is ONE part
+    // instanced twice, which is what a STEP file with repeated parts looks like.
+    bool assembly = false;
+    if (const Json* a = req.Get("assembly"); a && a->kind == Json::Bool) assembly = a->boolean;
+    const Json* locations = req.Get("locations");
+    TDF_Label top;
+    std::map<std::string, TDF_Label> prototypes;
+    if (assembly)
+    {
+      top = st->NewShape();
+      TDataStd_Name::Set(top, TCollection_ExtendedString("assembly"));
+    }
     for (size_t i = 0; i < shapes.size(); ++i)
     {
-      TDF_Label l = st->AddShape(shapes[i], false);
-      if (names && names->kind == Json::Array && i < names->items.size() && names->items[i].kind == Json::String)
-        TDataStd_Name::Set(l, TCollection_ExtendedString(names->items[i].text.c_str(), true));
-      if (colours && colours->kind == Json::Array && i < colours->items.size())
+      const std::string& handle = list->items[i].text;
+      bool again = assembly && prototypes.count(handle) > 0;
+      TDF_Label l = again ? prototypes[handle] : st->AddShape(shapes[i], false);
+      if (!again)
       {
-        const Json& c = colours->items[i];
-        if (c.kind == Json::Array && c.items.size() == 3)
-          ct->SetColor(l, Quantity_Color(c.items[0].number, c.items[1].number, c.items[2].number, Quantity_TOC_RGB), XCAFDoc_ColorSurf);
+        prototypes[handle] = l;
+        if (names && names->kind == Json::Array && i < names->items.size() && names->items[i].kind == Json::String)
+          TDataStd_Name::Set(l, TCollection_ExtendedString(names->items[i].text.c_str(), true));
+        if (colours && colours->kind == Json::Array && i < colours->items.size())
+        {
+          const Json& c = colours->items[i];
+          if (c.kind == Json::Array && c.items.size() == 3)
+            ct->SetColor(l, Quantity_Color(c.items[0].number, c.items[1].number, c.items[2].number, Quantity_TOC_RGB), XCAFDoc_ColorSurf);
+        }
       }
+      if (!assembly) continue;
+      gp_Trsf tr;
+      if (locations && locations->kind == Json::Array && i < locations->items.size() && locations->items[i].kind == Json::Array)
+      {
+        const Json& m = locations->items[i];
+        if (m.items.size() != 12) throw Refuse{"request.malformed", "", "a \"locations\" entry is not twelve numbers"};
+        tr.SetValues(m.items[0].number, m.items[1].number, m.items[2].number, m.items[3].number, m.items[4].number, m.items[5].number,
+                     m.items[6].number, m.items[7].number, m.items[8].number, m.items[9].number, m.items[10].number, m.items[11].number);
+      }
+      st->AddComponent(top, l, TopLoc_Location(tr));
     }
+    if (assembly) st->UpdateAssemblies();
     STEPCAFControl_Writer wr;
     wr.SetNameMode(true);
     wr.SetColorMode(true);
@@ -1939,105 +2006,288 @@ static Frame OpExport(const Json& req)
   return r.Finish();
 }
 
+// ------------------------------------------------------------------------------------------------
+// reading a STEP file (brief 68): one entry per solid PART, located where its assembly puts it
+// ------------------------------------------------------------------------------------------------
+//
+// ONE READER for `import-step` and the `step` tree node, so the dialog's table and every later build agree on the
+// parts, their order, their faces and whether each is a solid. The XCAF document's length unit is the micrometre
+// (NewXcafDocument), so the reader converts every coordinate from the FILE's unit as it transfers: exact for every
+// SI unit and for the inch. A unit the reader cannot resolve is a refusal naming what the file says (R-em3d68-2b),
+// never OCCT's silent default -- it would read an unknown unit as a millimetre.
+
 struct ReadPart
 {
   std::string name, path;
   bool hasColor = false;
   double rgb[3] = {0, 0, 0};
   TopoDS_Shape shape;
+  bool closed = false;   // a closed solid after healing: what a Step object may be
+  std::string why;       // why it is not, when it is not
+  std::string healing;   // what healing changed, when it ran
 };
 
+struct FileUnit { std::string name; double um = 0; };
+
+struct StepRead
+{
+  std::vector<ReadPart> parts;
+  std::vector<FileUnit> units;  // one per distinct length unit the file's representations state
+  int pmi = 0;                  // dimensions, tolerances and datums the file carried (none is imported)
+};
+
+// A length unit's name as a person would say it: a conversion-based unit by the name the file gives it, an SI one
+// by its prefix and "metre".
+static std::string LengthUnitName(const occ::handle<StepBasic_NamedUnit>& u)
+{
+  if (occ::handle<StepBasic_ConversionBasedUnit> c = occ::down_cast<StepBasic_ConversionBasedUnit>(u); !c.IsNull())
+  {
+    std::string n = c->Name().IsNull() ? "" : c->Name()->ToCString();
+    std::transform(n.begin(), n.end(), n.begin(), [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+    return n.empty() ? "an unnamed conversion-based unit" : n;
+  }
+  if (occ::handle<StepBasic_SiUnit> s = occ::down_cast<StepBasic_SiUnit>(u); !s.IsNull())
+  {
+    static const std::map<int, const char*> prefix = {
+      {StepBasic_spKilo, "kilo"}, {StepBasic_spHecto, "hecto"}, {StepBasic_spDeca, "deca"}, {StepBasic_spDeci, "deci"},
+      {StepBasic_spCenti, "centi"}, {StepBasic_spMilli, "milli"}, {StepBasic_spMicro, "micro"}, {StepBasic_spNano, "nano"}};
+    std::string p;
+    if (s->HasPrefix()) { auto it = prefix.find(s->Prefix()); p = it != prefix.end() ? it->second : "(a prefix)"; }
+    return p + (s->Name() == StepBasic_sunMetre ? "metre" : "(not a length)");
+  }
+  return "an unrecognised unit";
+}
+
+static bool IsLengthUnit(const occ::handle<StepBasic_NamedUnit>& u)
+{
+  return u->IsKind(STANDARD_TYPE(StepBasic_SiUnitAndLengthUnit)) || u->IsKind(STANDARD_TYPE(StepBasic_ConversionBasedUnitAndLengthUnit))
+         || u->IsKind(STANDARD_TYPE(StepBasic_LengthUnit));
+}
+
+// The file's length units, each resolved exactly as the reader's own transfer resolves it (STEPConstruct_UnitContext
+// with the default factors, so LengthFactor() is millimetres per unit). Refuses when a representation states a length
+// unit the reader cannot resolve, or when no representation states one at all.
+static std::vector<FileUnit> LengthUnits(STEPCAFControl_Reader& rd)
+{
+  std::vector<FileUnit> units;
+  occ::handle<StepData_StepModel> model = rd.ChangeReader().StepModel();
+  if (model.IsNull()) return units;
+  for (int i = 1; i <= model->NbEntities(); ++i)
+  {
+    occ::handle<StepRepr_GlobalUnitAssignedContext> ctx;
+    occ::handle<Standard_Transient> e = model->Value(i);
+    if (auto a = occ::down_cast<StepGeom_GeomRepContextAndGlobUnitAssCtxAndGlobUncertaintyAssCtx>(e); !a.IsNull())
+      ctx = a->GlobalUnitAssignedContext();
+    else if (auto b = occ::down_cast<StepGeom_GeometricRepresentationContextAndGlobalUnitAssignedContext>(e); !b.IsNull())
+      ctx = b->GlobalUnitAssignedContext();
+    if (ctx.IsNull()) continue;
+    std::string name;
+    for (int k = 1; k <= ctx->NbUnits(); ++k)
+      if (occ::handle<StepBasic_NamedUnit> u = ctx->UnitsValue(k); !u.IsNull() && IsLengthUnit(u)) name = LengthUnitName(u);
+    STEPConstruct_UnitContext uc;
+    int status = uc.ComputeFactors(ctx, StepData_Factors());
+    if (!uc.LengthDone() || !(uc.LengthFactor() > 0) || status == 3 || status == 11)
+    {
+      std::string because = status == 3    ? "its conversion factor is not stated in an SI unit"
+                            : status == 11 ? "it names an SI unit that is not a length"
+                                           : "no length factor follows from it";
+      throw Refuse{"import.units", "",
+                   name.empty() ? "the file states no length unit, and circuitRF does not guess one"
+                                : "the file's length unit is '" + name + "', which the reader cannot resolve to a length (" + because
+                                    + "); circuitRF does not guess one"};
+    }
+    double um = uc.LengthFactor() * 1000;  // millimetres per unit -> micrometres per unit
+    bool seen = false;
+    for (auto& u : units) seen = seen || (u.name == name && u.um == um);
+    if (!seen) units.push_back({name.empty() ? "unnamed" : name, um});
+  }
+  if (units.empty()) throw Refuse{"import.units", "", "the file states no length unit, and circuitRF does not guess one"};
+  return units;
+}
+
+// A part's shape, healed only when it fails the validity check: ShapeFix reports "done" for the tolerance touch-ups
+// every translated file needs, which would make every report say every part was repaired. Returns what changed.
+static std::string Heal(TopoDS_Shape& shape)
+{
+  if (Valid(shape)) return "";
+  ShapeAnalysis_ShapeTolerance tol;
+  int facesBefore = Count(shape).faces;
+  double tolBefore = tol.Tolerance(shape, 1);
+  ShapeFix_Shape fix(shape);
+  fix.Perform();
+  shape = fix.Shape();
+  std::vector<std::string> did;
+  static const std::pair<ShapeExtend_Status, const char*> kinds[] = {
+    {ShapeExtend_DONE1, "edges"}, {ShapeExtend_DONE2, "wires"}, {ShapeExtend_DONE3, "faces"},
+    {ShapeExtend_DONE4, "shells"}, {ShapeExtend_DONE5, "solids"}};
+  for (auto& [st, what] : kinds) if (fix.Status(st)) did.push_back(what);
+  int facesAfter = Count(shape).faces;
+  double tolAfter = tol.Tolerance(shape, 1);
+  std::ostringstream o;
+  o << "invalid as read; shape healing ";
+  if (did.empty()) o << "ran";
+  else
+  {
+    o << "fixed its ";
+    for (size_t i = 0; i < did.size(); ++i) o << (i == 0 ? "" : i + 1 == did.size() ? " and " : ", ") << did[i];
+  }
+  if (facesAfter != facesBefore) o << ", faces " << facesBefore << " -> " << facesAfter;
+  if (tolAfter > tolBefore * (1 + 1e-9)) o << ", largest tolerance raised " << tolBefore << " -> " << tolAfter << " um";
+  o << (Valid(shape) ? "; the part is now valid" : "; the part is still invalid");
+  return o.str();
+}
+
+// Whether a healed part is what a Step object may be -- a closed solid -- and if not, why (R-em3d68-4b).
+static bool ClosedSolid(const TopoDS_Shape& s, std::string& why)
+{
+  if (!HasSolid(s))
+  {
+    bool shells = TopExp_Explorer(s, TopAbs_SHELL).More(), faces = TopExp_Explorer(s, TopAbs_FACE).More();
+    why = shells ? "it is a surface model (shells with no solid)" : faces ? "it is loose faces, not a solid" : "it holds no geometry";
+    return false;
+  }
+  for (TopExp_Explorer x(s, TopAbs_SHELL); x.More(); x.Next())
+    if (!BRep_Tool::IsClosed(x.Current())) { why = "its shell is open, so it has no inside"; return false; }
+  if (!Valid(s)) { why = "it is not a valid solid, even after shape healing"; return false; }
+  return true;
+}
+
+// Walks the assembly tree, composing each occurrence's location with its parents' so a part in a sub-assembly lands
+// where the whole file puts it. The occurrence path is the component index at each level, from 1.
 static void Collect(const occ::handle<XCAFDoc_ShapeTool>& st, const occ::handle<XCAFDoc_ColorTool>& ct, const TDF_Label& l,
-                    const std::string& path, std::vector<ReadPart>& out)
+                    const std::string& path, const TopLoc_Location& parent, std::vector<ReadPart>& out)
 {
   TDF_Label ref = l;
   if (st->IsReference(l)) st->GetReferredShape(l, ref);
+  TopLoc_Location here = parent * XCAFDoc_ShapeTool::GetLocation(l);
   if (st->IsAssembly(ref))
   {
     NCollection_Sequence<TDF_Label> comps;
     st->GetComponents(ref, comps);
-    for (int i = 1; i <= comps.Length(); ++i) Collect(st, ct, comps(i), path + "/" + std::to_string(i), out);
+    for (int i = 1; i <= comps.Length(); ++i) Collect(st, ct, comps(i), path + "/" + std::to_string(i), here, out);
     return;
   }
   ReadPart p;
   p.path = path;
   occ::handle<TDataStd_Name> nm;
-  if (l.FindAttribute(TDataStd_Name::GetID(), nm) || ref.FindAttribute(TDataStd_Name::GetID(), nm))
+  if (ref.FindAttribute(TDataStd_Name::GetID(), nm) || l.FindAttribute(TDataStd_Name::GetID(), nm))
     p.name = TCollection_AsciiString(nm->Get()).ToCString();
   Quantity_Color c;
   for (TDF_Label q : {l, ref})
     for (XCAFDoc_ColorType ty : {XCAFDoc_ColorSurf, XCAFDoc_ColorGen, XCAFDoc_ColorCurv})
       if (!p.hasColor && ct->GetColor(q, ty, c)) { p.hasColor = true; c.Values(p.rgb[0], p.rgb[1], p.rgb[2], Quantity_TOC_RGB); }
-  p.shape = st->GetShape(l);  // located: the assembly's placement is applied
+  p.shape = XCAFDoc_ShapeTool::GetShape(ref).Moved(here);
   if (!p.hasColor && ct->GetColor(p.shape, XCAFDoc_ColorSurf, c)) { p.hasColor = true; c.Values(p.rgb[0], p.rgb[1], p.rgb[2], Quantity_TOC_RGB); }
+  p.healing = Heal(p.shape);
+  p.closed = ClosedSolid(p.shape, p.why);
   out.push_back(p);
 }
 
+// Reads a STEP file from bytes (import-step) or a path (a build's step node).
+static StepRead ReadStep(const std::string* bytes, const std::string* path)
+{
+  STEPCAFControl_Reader rd;
+  rd.SetNameMode(true);
+  rd.SetColorMode(true);
+  rd.SetGDTMode(true);
+  IFSelect_ReturnStatus status;
+  if (bytes != nullptr)
+  {
+    std::istringstream is(*bytes);
+    status = rd.ReadStream("import.step", is);
+  }
+  else status = rd.ReadFile(path->c_str());
+  std::string what = path != nullptr ? "'" + *path + "'" : "the file";
+  if (status != IFSelect_RetDone) throw Refuse{"import.failed", "", what + " is not a STEP file the reader can read"};
+
+  StepRead out;
+  out.units = LengthUnits(rd);
+  occ::handle<TDocStd_Document> doc = NewXcafDocument();
+  if (!rd.Transfer(doc)) throw Refuse{"import.failed", "", "the STEP reader could not transfer the shapes of " + what};
+  occ::handle<XCAFDoc_ShapeTool> st = XCAFDoc_DocumentTool::ShapeTool(doc->Main());
+  occ::handle<XCAFDoc_ColorTool> ct = XCAFDoc_DocumentTool::ColorTool(doc->Main());
+  NCollection_Sequence<TDF_Label> free;
+  st->GetFreeShapes(free);
+  for (int i = 1; i <= free.Length(); ++i) Collect(st, ct, free(i), std::to_string(i), TopLoc_Location(), out.parts);
+  if (XCAFDoc_DocumentTool::CheckDimTolTool(doc->Main()))
+  {
+    occ::handle<XCAFDoc_DimTolTool> dt = XCAFDoc_DocumentTool::DimTolTool(doc->Main());
+    NCollection_Sequence<TDF_Label> dims, tols, datums;
+    dt->GetDimensionLabels(dims);
+    dt->GetGeomToleranceLabels(tols);
+    dt->GetDatumLabels(datums);
+    out.pmi = dims.Length() + tols.Length() + datums.Length();
+  }
+  return out;
+}
+
+static std::string UnitsText(const std::vector<FileUnit>& units)
+{
+  std::string s;
+  for (size_t i = 0; i < units.size(); ++i) s += (i == 0 ? "" : ", ") + units[i].name;
+  return s;
+}
+
+// import-step: every part, as the dialog's table lists it. With "display_rel" (a fraction of each part's diagonal) it
+// also counts the triangles the viewport would draw the part with (R-em3d68-4c). "hold": false holds nothing.
 static Frame OpImportStep(const Json& req, const std::map<std::string, std::string>& blobs)
 {
   const Json* prefix = req.Get("shape");
   if (prefix == nullptr || prefix->kind != Json::String || prefix->text.empty())
     throw Refuse{"request.malformed", "", "import-step needs \"shape\": the handle prefix its parts are held under"};
+  bool hold = true;
+  if (const Json* h = req.Get("hold"); h && h->kind == Json::Bool) hold = h->boolean;
+  double displayRel = 0;
+  if (const Json* d = req.Get("display_rel"); d && d->kind == Json::Number && d->number > 0) displayRel = d->number;
 
-  STEPCAFControl_Reader rd;
-  rd.SetNameMode(true);
-  rd.SetColorMode(true);
-  IFSelect_ReturnStatus status;
+  // Test builds only: a read that takes as long as it is told, which is what cancellation is tested against.
+  if (g_testOps)
+    if (const char* s = std::getenv("CRF_GEOMETRY_WORKER_TEST_IMPORT_SECONDS"))
+      std::this_thread::sleep_for(std::chrono::duration<double>(std::atof(s)));
+
+  StepRead read;
   auto file = blobs.find("file");
-  if (file != blobs.end())
-  {
-    std::istringstream is(file->second);
-    status = rd.ReadStream("import.step", is);
-  }
-  else if (const Json* p = req.Get("path"); p && p->kind == Json::String)
-    status = rd.ReadFile(p->text.c_str());
-  else
-    throw Refuse{"request.malformed", "", "import-step needs the file as a \"file\" blob or a \"path\""};
-  if (status != IFSelect_RetDone) throw Refuse{"import.failed", "", "the file is not a STEP file the reader can read"};
-
-  NCollection_Sequence<TCollection_AsciiString> len, ang, sol;
-  rd.ChangeReader().FileUnits(len, ang, sol);
-  occ::handle<TDocStd_Document> doc = NewXcafDocument();
-  if (!rd.Transfer(doc)) throw Refuse{"import.failed", "", "the STEP reader could not transfer the file's shapes"};
-  occ::handle<XCAFDoc_ShapeTool> st = XCAFDoc_DocumentTool::ShapeTool(doc->Main());
-  occ::handle<XCAFDoc_ColorTool> ct = XCAFDoc_DocumentTool::ColorTool(doc->Main());
-  NCollection_Sequence<TDF_Label> free;
-  st->GetFreeShapes(free);
-  std::vector<ReadPart> parts;
-  for (int i = 1; i <= free.Length(); ++i) Collect(st, ct, free(i), std::to_string(i), parts);
+  if (file != blobs.end()) read = ReadStep(&file->second, nullptr);
+  else if (const Json* p = req.Get("path"); p && p->kind == Json::String) read = ReadStep(nullptr, &p->text);
+  else throw Refuse{"request.malformed", "", "import-step needs the file as a \"file\" blob or a \"path\""};
 
   Reply r;
-  std::vector<std::string> healing;
   r.j.Key("units").BeginArr();
-  for (int i = 1; i <= len.Length(); ++i) r.j.Str(len(i).ToCString());
+  for (auto& u : read.units) r.j.Str(u.name);
   r.j.EndArr();
+  r.j.Key("unit_um").BeginArr();
+  for (auto& u : read.units) r.j.Num(u.um);
+  r.j.EndArr();
+  r.j.Int("pmi", read.pmi);
+  std::vector<std::string> healing;
   r.j.Key("parts").BeginArr();
-  for (size_t i = 0; i < parts.size(); ++i)
+  for (size_t i = 0; i < read.parts.size(); ++i)
   {
-    ReadPart& p = parts[i];
-    // Only a part that fails the validity check is healed: ShapeFix reports "done" for the tolerance
-    // touch-ups every translated file needs, which would make every report say every part was repaired.
-    std::string who = "part " + p.path + (p.name.empty() ? "" : " '" + p.name + "'");
-    if (!Valid(p.shape))
-    {
-      ShapeFix_Shape fix(p.shape);
-      fix.Perform();
-      p.shape = fix.Shape();
-      healing.push_back(who + (Valid(p.shape) ? ": invalid as read; shape healing repaired it"
-                                              : ": invalid as read, and still invalid after shape healing"));
-    }
-    Held h{p.shape, {}};
-    Shapes faces;
-    TopExp::MapShapes(p.shape, TopAbs_FACE, faces);
-    for (int k = 1; k <= faces.Extent(); ++k) h.faceNames.push_back("face" + std::to_string(k));
+    ReadPart& p = read.parts[i];
+    if (!p.healing.empty()) healing.push_back("part " + p.path + (p.name.empty() ? "" : " '" + p.name + "'") + ": " + p.healing);
     std::string handle = prefix->text + "/" + std::to_string(i + 1);
-    g_shapes[handle] = h;
+    if (hold)
+    {
+      Held h{p.shape, {}};
+      Shapes faces;
+      TopExp::MapShapes(p.shape, TopAbs_FACE, faces);
+      for (int k = 1; k <= faces.Extent(); ++k) h.faceNames.push_back("face" + std::to_string(k));
+      g_shapes[handle] = h;
+    }
     Counts c = Count(p.shape);
-    r.j.Begin().Str("shape", handle).Str("name", p.name).Str("path", p.path);
+    long long triangles = 0;
+    if (displayRel > 0 && c.faces > 0)
+    {
+      Box6 b = Tight(p.shape);
+      double diag = std::sqrt((b.x1 - b.x0) * (b.x1 - b.x0) + (b.y1 - b.y0) * (b.y1 - b.y0) + (b.z1 - b.z0) * (b.z1 - b.z0));
+      triangles = static_cast<long long>(Tessellate(p.shape, std::max(diag * displayRel, 1e-3), 0.5).faceOfTri.size());
+    }
+    r.j.Begin().Str("shape", hold ? handle : "").Str("name", p.name).Str("path", p.path);
     r.j.Key("colour");
     if (p.hasColor) r.j.BeginArr().Num(p.rgb[0]).Num(p.rgb[1]).Num(p.rgb[2]).EndArr();
     else r.j.Null();
-    r.j.Int("solids", c.solids).Int("faces", c.faces).Bool("valid", Valid(p.shape)).End();
+    r.j.Int("solids", c.solids).Int("faces", c.faces).Bool("valid", Valid(p.shape)).Bool("closed", p.closed).Str("why", p.why)
+       .Str("healing", p.healing).Int("triangles", triangles).End();
   }
   r.j.EndArr();
   r.j.Key("healing").BeginArr();
@@ -2053,24 +2303,9 @@ static Frame OpImportStep(const Json& req, const std::map<std::string, std::stri
 
 // A STEP file's parts, read once per file (by its path and the hash the document recorded) for the
 // life of the worker: a document with several parts of one file reads it once.
-static std::map<std::string, std::vector<ReadPart>> g_stepFiles;
+static std::map<std::string, StepRead> g_stepFiles;
 
-static std::vector<ReadPart> ReadStepParts(const std::string& path, std::string& why)
-{
-  STEPCAFControl_Reader rd;
-  rd.SetNameMode(true);
-  rd.SetColorMode(true);
-  if (rd.ReadFile(path.c_str()) != IFSelect_RetDone) { why = "'" + path + "' is not a STEP file the reader can read"; return {}; }
-  occ::handle<TDocStd_Document> doc = NewXcafDocument();
-  if (!rd.Transfer(doc)) { why = "the STEP reader could not transfer the shapes of '" + path + "'"; return {}; }
-  occ::handle<XCAFDoc_ShapeTool> st = XCAFDoc_DocumentTool::ShapeTool(doc->Main());
-  occ::handle<XCAFDoc_ColorTool> ct = XCAFDoc_DocumentTool::ColorTool(doc->Main());
-  NCollection_Sequence<TDF_Label> free;
-  st->GetFreeShapes(free);
-  std::vector<ReadPart> parts;
-  for (int i = 1; i <= free.Length(); ++i) Collect(st, ct, free(i), std::to_string(i), parts);
-  return parts;
-}
+// g_buildNotes (declared above BuildNode): what a build's step nodes add to its reply -- healing -- cleared by each build.
 
 static Named BuildStep(const NodeReader& r)
 {
@@ -2084,26 +2319,25 @@ static Named BuildStep(const NodeReader& r)
   auto it = g_stepFiles.find(key);
   if (it == g_stepFiles.end())
   {
-    std::string why;
-    auto parts = ReadStepParts(file.text, why);
-    if (!why.empty()) throw Refuse{"import.failed", r.name, why};
-    it = g_stepFiles.emplace(key, std::move(parts)).first;
+    try
+    {
+      it = g_stepFiles.emplace(key, ReadStep(nullptr, &file.text)).first;
+    }
+    catch (Refuse& e)
+    {
+      e.object = r.name;
+      throw;
+    }
   }
-  for (const ReadPart& p : it->second)
+  for (const ReadPart& p : it->second.parts)
   {
     if (p.path != part.text) continue;
-    TopoDS_Shape shape = p.shape;
-    if (!Valid(shape))
-    {
-      ShapeFix_Shape fix(shape);
-      fix.Perform();
-      shape = fix.Shape();
-    }
-    if (!HasSolid(shape)) r.Bad("part " + part.text + " of the file holds no solid");
+    if (!p.closed) r.Bad("part " + part.text + " of the file is not a closed solid: " + p.why);
+    if (!p.healing.empty()) g_buildNotes.push_back("part " + part.text + ": " + p.healing);
     // Faces are face<n> in the part's own topological order (brief 68 R-em3d68-1e), as import-step names them.
-    Named n{shape, {}, gp_Trsf()};
+    Named n{p.shape, {}, gp_Trsf()};
     Shapes faces;
-    TopExp::MapShapes(shape, TopAbs_FACE, faces);
+    TopExp::MapShapes(p.shape, TopAbs_FACE, faces);
     for (int k = 1; k <= faces.Extent(); ++k) n.faces.push_back({faces(k), "face" + std::to_string(k)});
     return n;
   }

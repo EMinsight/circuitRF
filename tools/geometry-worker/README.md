@@ -98,10 +98,10 @@ the target no longer has).
 | `hello` | `protocol` | `worker`, `occt` (the version it LOADED), `protocol`, `rid` (the RID it was COMPILED for), `modules`, `test_ops` |
 | `build` | `shape` (the handle to hold it under), `tree` (below), `options` (`fuzzy`, `keepTools`) | `shape`, `object`, `valid`, `solids`, `faces`, `volume_um3`, `notes[]`; blob `brep` — format version 1, no triangles, written straight from the result |
 | `tessellate` | `shape`, `linear_um`, `angular_rad` | blobs `vertices` f64 (3 per node), `tris` u32 (3 per triangle), `face` u32 (per triangle, an index into `faces`' list) |
-| `faces` | `shape` | per face, in `TopExp::MapShapes` order: `name`, `kind` (`plane`, `cylinder`, `cone`, `sphere`, `torus`, `bspline`, `other`), `box` (tight, 6 numbers), `area`, `min_radius` (0 for a plane) |
+| `faces` | `shape` | per face, in `TopExp::MapShapes` order: `name`, `kind` (`plane`, `cylinder`, `cone`, `sphere`, `torus`, `bspline`, `other`), `box` (tight, 6 numbers), `area`, `min_radius` (0 for a plane), `centroid`, `normal` (outward, at the face's point nearest its centroid; zeros where undefined) — the fingerprint Reload from Source matches by (brief 68) |
 | `edges` | `shape`, `deflection_um` | per feature edge, sorted by name: `name`, `faces` (its two), `kind`, `length`, `min_radius` (0 for a line), `points`, and (brief 67) `closed`, `ends` (6 numbers, the polyline's way), `tangents` (the unit tangents there, 6 numbers), `mid` (halfway along the curve; absent when closed), `centre` and `radius` (a circle or an arc); blob `polylines` f64 |
-| `export` | `shapes[]`, `format` (`brep`, `step`, `ply`, `stl`), `units` (`um`, `mm`, `mil`, `in`, `m`), `names[]`, `colours[]`, `linear_um`, `schema` (`ap242`, else AP214) | blob `data` |
-| `import-step` | `shape` (a handle prefix), blob `file` or `path` | `units[]` (the file's), `parts[]` (`shape` = prefix`/n`, `name`, `path` — the occurrence, `1/2` — `colour` or null, `solids`, `faces`, `valid`), `healing[]` |
+| `export` | `shapes[]`, `format` (`brep`, `step`, `ply`, `stl`), `units` (`um`, `mm`, `mil`, `in`, `m`), `names[]`, `colours[]`, `linear_um`, `schema` (`ap242`, else AP214); STEP only: `assembly` (true: one assembly whose components are the shapes; a handle listed twice is one part instanced twice) and `locations[]` (per shape, 12 numbers, µm, or null) | blob `data` |
+| `import-step` | `shape` (a handle prefix), blob `file` or `path`, `hold` (false: hold nothing), `display_rel` (count display triangles at that fraction of each part's diagonal) | `units[]` and `unit_um[]` (the file's length units, each resolved exactly as the transfer resolves it — an unresolvable one, or none, is the refusal `import.units`), `pmi` (dimensions, tolerances and datums, none imported), `parts[]` (`shape` = prefix`/n` or empty, `name`, `path` — the occurrence, composed through every assembly level, `1/2` — `colour` or null, `solids`, `faces`, `valid`, `closed`, `why`, `healing`, `triangles`), `healing[]` |
 | `release` | `shapes[]` | `released`, `held` |
 | `shutdown` (or `quit`) | — | `ok`, then exit 0 |
 | `box`, `selftest` | brief 62's skeleton checks, kept for `tools/CliSmoke` | |
@@ -153,7 +153,7 @@ the result is carried by its `transform`.
 | `boolean` | `op` (`subtract`, `unite`, `intersect`), `blank` (a node whose `name` is `""`), `tools` (named nodes) | the blank's bare; a tool's `<tool>:<face>` (a nested tool's `<tool>:<inner>:<face>`) |
 | `fillet` | `radius`, `edges` (names, as above), `target` | the target's; each rounded edge's new face `fillet(<edge>)` |
 | `chamfer` | `distance`, optional `distance2` (on the edge's second face), `edges`, `target` | the target's; `chamfer(<edge>)` |
-| `step` | `file` (a path), `hash`, `part` (the occurrence path `import-step` reports, `1/2`) | `face<n>` in the part's own order, as `import-step` names them |
+| `step` | `file` (a path), `hash`, `part` (the occurrence path `import-step` reports, `1/2`) | `face<n>` in the part's own order, as `import-step` names them; a part that is not a closed solid is refused, and healing is a build note |
 
 A fillet's or chamfer's `edges` are resolved on its target numbered in the TARGET's own frame — the frame `edges`
 numbers it in when it is a root. A name resolves to the edge of that name; failing that, a two-field name resolves
@@ -176,6 +176,9 @@ With `CRF_GEOMETRY_WORKER_TEST=1` in its environment the worker also builds a no
 once with status 70, answering nothing) and `sleep` (`seconds`, then builds its `then` node) — what the client's
 crash and cancellation gates are tested against. Without it both are refused like any unknown kind. They are
 nodes of a `build`, so the client's cache, failed-tree record and restart are what those gates exercise.
+With the same switch, `CRF_GEOMETRY_WORKER_TEST_IMPORT_SECONDS=<s>` makes every `import-step` wait that long before
+reading — what cancelling the Import STEP dialog mid-read is tested against (brief 68). Without the switch it is
+ignored.
 
 `geometry-worker --version` prints `geometry-worker <VERSION>` and `occt <version>` and exits 0, so a
 person and `tools/CliSmoke` can ask without speaking the protocol.

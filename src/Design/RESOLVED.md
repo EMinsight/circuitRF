@@ -14220,3 +14220,51 @@ spelling `C3dBindings` already names an operand's fields with). Gate: `tests/Ui.
   `GCPnts_AbscissaPoint` — equal to the parameter midpoint for a line or a circle) and a circle's `centre`/`radius`;
   `Em3dShapeEdge` carries them as init-only properties so no constructor changed. Rebuild the worker after pulling
   (`tools/geometry-worker/ensure-built.sh`, seconds).
+
+## brief-em3d-68 — STEP import: what the worker and the Design side had to grow (2026-09-27)
+
+`src/Design/ThreeD/Step/StepImport.cs` is the one function the Import STEP dialog, 3D ▸ Import STEP… and
+`convert x.step` call: `Read` (the table), `Apply` (the copy and the objects), `Import` (a new `.c3d`, convert's whole
+verb), `PlanReload`/`ApplyReload` (Reload from Source). Gates: `tests/Ui.Tests/ThreeD/StepImportTests.cs` and
+`StepConvertCliTests.cs`.
+
+- **OCCT reads an unknown unit as a millimetre, silently.** The reader's transfer falls back to its default factor when
+  a length unit does not resolve — a conversion-based unit whose factor is stated in another conversion-based unit is
+  the realistic case (`STEPConstruct_UnitContext::ComputeFactors` returns 3 for it). The worker now resolves each
+  representation context's units itself, with the same `STEPConstruct_UnitContext` and default factors the transfer
+  uses, BEFORE transferring, and refuses (`import.units`) naming the unit when `LengthDone()` is false or the status is
+  3 or 11. `FileUnits()` alone could not do this: it returns names, never whether a factor followed from them.
+- **`Collect` dropped every location above the first assembly level.** `XCAFDoc_ShapeTool::GetShape` on a component
+  label gives the shape with THAT component's location only; a part inside a sub-assembly landed where its sub-assembly
+  put it, not where the file did. The walk now composes `parent * GetLocation(label)` down the tree and places the
+  referred shape with `Moved`. Flat files and one-level assemblies are unchanged.
+- **One reader for the table and the build.** `import-step` and the `step` tree node both go through `ReadStep`, which
+  heals only an invalid part (as before — ShapeFix reports "done" for the touch-ups every translated file needs) and
+  decides "closed solid" once: a solid, every shell closed, valid after healing. The node now refuses a part that is
+  not one, and puts its healing line in the build's notes, which is how `explain` reports it. Healing's report names
+  what ShapeFix fixed (edges, wires, faces, shells, solids), a changed face count and a raised largest tolerance.
+- **`import-step` holds nothing now** (`"hold": false`, the client's only spelling). Its held shapes were never used —
+  every Step object is built from the COPY through the ordinary cached build path — and they stayed in the worker for
+  its life. It also counts each part's display triangles at `C3dElaborator.DisplayRelativeDeflection` of the part's
+  diagonal (the elaborator's own display deflection, now a named constant), so the dialog's count is what is drawn.
+- **`faces` grew `centroid` and `normal`** (outward, at the face's point nearest its centroid, orientation applied):
+  Reload from Source fingerprints a face by kind, area, centroid and normal within the document's tolerance (one DBU).
+  Faces stay memory-cached only, so no cache format changed.
+- **`export` grew `assembly`/`locations`**: one assembly whose components are the shapes, a handle listed twice being
+  ONE part instanced twice. The gates need a file with a repeated part and no third-party file may enter the repo;
+  brief 69's *As assembly* is the same request.
+- **Deviations from the brief's letter.** `Part` is the worker's occurrence path (`1/2`), not an XCAF label path
+  (`0:1:1:2`) — brief 64 had already committed to it. The request is still called `import-step` (brief 63's name), not
+  `read-step`. Names are made unique with `_2`, `_3` as the brief says, which is NOT how Duplicate names a copy
+  (Duplicate increments a trailing number, and `part-1` becoming `part-2` would name a different product). Ports in a
+  `.c3d` are plane rectangles whose conductors are inferred (brief 49) and name no face, so Reload re-validates face
+  boundaries and fillet/chamfer edges — the references that DO name `face<n>`; a port whose conductor moves is caught
+  by port inference at elaboration, as for any edit. The unit and open-shell fixtures are the worker's own STEP text
+  with one entity edited, rather than a committed hand-written file.
+- **Reload copies beside, never over.** A revised file under the same name is `<stem>_2.step` (the copy rule of §4e),
+  so the saved document on disk never names bytes it was not written against, and a refused part simply keeps the old
+  copy. The editor's entry (`C3dFilesEdit`) carries the bytes of the files it names in both directions, so an undo or
+  a redo after a save that removed an unnamed copy writes it back first.
+- **The save removes only what this session wrote.** `C3dEditorViewModel.RemoveUnnamedStepCopies` deletes a copy an
+  import or reload wrote in this session that no open frame's Step objects name; a file it did not write is never
+  touched.

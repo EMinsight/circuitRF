@@ -56,7 +56,7 @@ Thirteen verbs run no analysis, so none of §3-§6 applies to them and §7's exi
 
 | Verb | Input | Does | Writes |
 |---|---|---|---|
-| `convert` | any interchange format | one import, one export | the target format; documented in the repo-root `CLAUDE.md`. **A `clay` target is a DIRECTORY** — see below |
+| `convert` | any interchange format; a STEP file | one import, one export | the target format; documented in the repo-root `CLAUDE.md`. **A `clay` target is a DIRECTORY**; a STEP source's one target is a new `.c3d` — see below |
 | `new workspace` | a directory | `WorkspaceCreate.Create` | a `.cws` and, unless `--tech none`, a copied `.ctech` |
 | `new cell` | a workspace + a name | `CellCreate.Create` | a cell folder and one empty-but-valid file per `--views` |
 | `import part` | a component file or folder | `ComponentRead` + `ComponentImport.Import` | a cell folder holding the land patterns and the symbol |
@@ -92,6 +92,20 @@ as authored. Either way the import SAYS what it did, per layer, with both counts
 tolerance — on stderr with the rest of the import's notes, never on stdout, which stays the result
 document. The GUI's own switch is Settings ▸ General ▸ Import; detail and the two counted conditions
 that decide it are in `src/Design/RESOLVED.md`.
+
+**`convert part.step -o <cell>/3d/<name>.c3d` makes a NEW 3D view from a STEP file** (brief-em3d-68 R-em3d68-7).
+`step` is a SOURCE with exactly one legal target, a `.c3d` that does not exist yet; importing into an existing one
+is writing its `Step` objects (the format is the contract — `reference topic=c3d` describes every field), so an
+existing target is a refusal saying so, and a `.step` target is a refusal that STEP is read here, not written. The
+verb is argument parsing and reporting around `StepImport.Import` — the function the Import STEP dialog calls — and
+a comment-stripped scan of `src/Cli` holds that. The dialog's defaults are the verb's: materials by part name,
+then by exact colour, else none (a note lists the unmapped parts); a part that is not a closed solid is skipped
+and named. What the dialog would ASK is a flag: `--material <part>=<name>` (repeatable; a part is its occurrence
+path, product name or object name), `--part <path>` (repeatable; import only these) and `--tech <path>` (the new
+document's `TechRef`; otherwise the workspace's default by the usual walk-up). A file's length unit the reader
+cannot resolve is a refusal naming it, never a guess — Excellon's rule. A `.step`/`.stp` is recognised by
+extension, and anything else by its first line (ISO 10303-21's header) through `DetectSource`, the one classifier
+`check` also names a foreign file with. Without the geometry kernel it refuses with the capability's own sentence.
 | `reference` | **nothing at all** | reports what a caller may WRITE: the shipped reference pages, plus four topics generated from the live registries and readers — the component catalogue, the analysis directives, and the `.cdd` and `.ctech` formats | **nothing** — §12 |
 
 **`new` is one verb with a noun, not three** (`brief-automation-3-authoring-verbs.md` R-aut3-13): the

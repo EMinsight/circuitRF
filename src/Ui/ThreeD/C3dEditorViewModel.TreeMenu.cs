@@ -86,6 +86,12 @@ public sealed partial class C3dEditorViewModel
                     items.AddRange(BooleanTreeItems(item));
                     items.Add(Viewer3DMenuItem.Separator);
                 }
+                // brief-em3d-68 R-em3d68-5a — an imported part's (or a boolean holding one) Reload from Source.
+                if (StepAt(index) is { } step)
+                {
+                    items.Add(ReloadItem(step));
+                    items.Add(Viewer3DMenuItem.Separator);
+                }
                 items.Add(new Viewer3DMenuItem("Rename…", () => ShowProperties(rename: true)));
                 var mats = Materials;
                 // brief-em3d-53 — the list ends in New Material…, so a technology with none is not a dead end.

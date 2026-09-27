@@ -1,0 +1,798 @@
+// brief-em3d-68 — STEP import: the ONE function File ▸ Import ▸ STEP…, 3D ▸ Import STEP… and `circuitrf convert x.step`
+// all call. Nothing here interprets STEP: the worker reads the file (OCCT's reader, with names, colours, units and
+// healing) and answers with a description; this file decides what becomes an object, and writes it.
+//
+//   Read        the file → a plan: one row per part, its proposed name, its material and WHY, whether it can be imported
+//   Apply       a plan → the file copied into the 3D view's folder (D7) and one Step object per checked part
+//   Import      Read + Apply + save, into a NEW .c3d — `convert`'s whole verb, so the CLI holds no import logic
+//   PlanReload  a revised source file → which references into it still land, re-pointed by GEOMETRY, never by index
+//   ApplyReload a reload plan → the new copy, its hash, and every reference re-pointed
+//
+// ONE OBJECT PER PART (R-em3d68-1b). A part is one solid with one name, one material, one placement and one face
+// namespace, so every rule a Box obeys a Step part obeys. The assembly's transform is the worker's, applied from the
+// occurrence path; the placement starts at identity, so an imported part lands exactly where its file puts it.
+//
+// MATERIALS BY NAME, THEN BY EXACT COLOUR, THEN NONE (R-em3d68-3a). Nothing fuzzier: a near-colour match would give a
+// gold-coloured plastic a metal's conductivity in silence. No material is not a refusal — it is the ordinary unmapped
+// state, drawn, ignored by the solver and named by `check`.
+
+using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.RegularExpressions;
+using CircuitRF.Design.Cells;
+using CircuitRF.Design.Layout;
+using CircuitRF.Design.ThreeD.Occ;
+using CircuitRF.Design.Workspace;
+using CircuitRF.Diagnostics;
+using CircuitRF.Engine;
+
+namespace CircuitRF.Design.ThreeD.Step;
+
+/// <summary>Why a part's material is what it is (R-em3d68-3c).</summary>
+public enum StepMatch
+{
+    /// <summary>The part's name equals a material's, ignoring case.</summary>
+    ByName,
+    /// <summary>The part's colour equals a material's <c>Color</c>, exactly, at 8 bits a channel.</summary>
+    ByColour,
+    /// <summary>Neither: the part has no material until someone gives it one.</summary>
+    Unmatched,
+    /// <summary>Someone chose it (the dialog's combo, or <c>--material</c>).</summary>
+    Chosen,
+}
+
+/// <summary>One part of the file: a row of the dialog's table.</summary>
+public sealed class StepImportPart
+{
+    /// <summary>The occurrence path in the file's assembly (<c>1/2</c>) — the object's <c>Part</c>.</summary>
+    public required string Path { get; init; }
+
+    /// <summary>The STEP product name, as the file gives it; empty when it gives none.</summary>
+    public required string ProductName { get; init; }
+
+    /// <summary><c>#rrggbb</c>, or null when the file gives the part no colour.</summary>
+    public string? Colour { get; init; }
+
+    /// <summary>A closed solid after healing — importable. Anything else is listed, unchecked and disabled (R-em3d68-4b).</summary>
+    public bool Solid { get; init; }
+
+    /// <summary>Why it is not a closed solid, when it is not.</summary>
+    public string Why { get; init; } = "";
+
+    /// <summary>What shape healing changed, when it ran.</summary>
+    public string Healing { get; init; } = "";
+
+    public int Faces { get; init; }
+    public long Triangles { get; init; }
+
+    /// <summary>The object's name: the product name made valid and unique, editable before OK (R-em3d68-1d).</summary>
+    public string Name { get; set; } = "";
+
+    /// <summary>The material, or null for none.</summary>
+    public string? Material { get; set; }
+
+    public StepMatch Match { get; set; }
+
+    /// <summary>Checked: imported on OK. Always false for a part that is not a solid.</summary>
+    public bool Import { get; set; }
+
+    /// <summary>The match's reason in the table's words.</summary>
+    public string MatchText => Match switch
+    {
+        StepMatch.ByName => "by name",
+        StepMatch.ByColour => "by colour",
+        StepMatch.Chosen => "chosen",
+        _ => "unmatched",
+    };
+}
+
+/// <summary>What <see cref="StepImport.Read"/> found: the rows, the file's units and the notes the import will make.</summary>
+public sealed class StepImportPlan
+{
+    public required string SourcePath { get; init; }
+    public required byte[] Bytes { get; init; }
+
+    /// <summary><c>sha256:&lt;hex&gt;</c> of <see cref="Bytes"/> — the copy's hash, since the copy is these bytes.</summary>
+    public required string Hash { get; init; }
+
+    /// <summary>The file's length units as the reader names them (<c>inch</c>, <c>millimetre</c>), and µm per each.</summary>
+    public required IReadOnlyList<string> Units { get; init; }
+    public required IReadOnlyList<double> UnitMicrons { get; init; }
+
+    public required IReadOnlyList<StepImportPart> Parts { get; init; }
+
+    /// <summary>The materials a part may be given: the destination technology's own and its libraries'.</summary>
+    public required IReadOnlyList<string> Materials { get; init; }
+
+    /// <summary>Why no part can be matched at all — the destination has no materials (R-em3d68-3d) — or null.</summary>
+    public string? NoMaterials { get; init; }
+
+    /// <summary>Healing, one line per part it changed (R-em3d68-4a).</summary>
+    public required IReadOnlyList<string> Healing { get; init; }
+
+    /// <summary>Dimensions, tolerances and datums the file carried; none is imported.</summary>
+    public int Pmi { get; init; }
+
+    /// <summary>What is recorded as each object's <c>Unit</c>.</summary>
+    public string Unit => string.Join(", ", Units);
+
+    /// <summary>The dialog's units line, in words (R-em3d68-2b).</summary>
+    public string UnitsLine => StepImport.UnitsLine(Units, UnitMicrons);
+
+    public long Triangles => Parts.Where(p => p.Import).Sum(p => p.Triangles);
+}
+
+/// <summary>What <see cref="StepImport.Apply"/> did.</summary>
+/// <param name="CopiedPath">The copy in the 3D view's folder.</param>
+/// <param name="Created">True when this import wrote the copy; false when an identical file was already there.</param>
+/// <param name="Objects">The objects added, in the order they were appended.</param>
+/// <param name="Notes">What the import says it did: healing, parts skipped, parts left without a material, PMI.</param>
+public sealed record StepImportResult(string CopiedPath, bool Created, byte[] Bytes, IReadOnlyList<C3dStep> Objects, IReadOnlyList<string> Notes);
+
+/// <summary>A refusal of the import (or a reload) as a whole: a coded diagnostic, its sentence the message.</summary>
+public sealed class StepImportException(Diagnostic diagnostic) : Exception(diagnostic.Render())
+{
+    public Diagnostic Diagnostic { get; } = diagnostic;
+}
+
+/// <summary>brief-em3d-68 — what STEP import and Reload from Source refuse, as coded diagnostics (<c>C3dDiagnostics</c>'
+/// pattern). Returned in the exception; the dialog, the status line and <c>convert</c>'s stderr all render the same sentence.</summary>
+public static class StepDiagnostics
+{
+    public static Diagnostic NothingChecked() => new(
+        "step.import.nothing-checked", DiagnosticSeverity.Error, "No part is checked, so there is nothing to import.");
+
+    public static Diagnostic NoSolid(string file, string why) => Diagnostic.Create(
+        "step.import.no-solid", DiagnosticSeverity.Error,
+        "'{file}' holds no closed solid, so there is nothing to import.{why}", ("file", file), ("why", why.Length > 0 ? " " + why : ""));
+
+    public static Diagnostic Names(string why) => Diagnostic.Create(
+        "step.import.name", DiagnosticSeverity.Error, "{why}", ("why", why));
+
+    public static Diagnostic TargetExists(string path) => Diagnostic.Create(
+        "step.import.target-exists", DiagnosticSeverity.Error,
+        "'{path}' exists; importing into an existing document is writing its Step objects — see `reference topic=c3d`.", ("path", path));
+
+    public static Diagnostic TechnologyMissing(string path) => Diagnostic.Create(
+        "step.import.technology-missing", DiagnosticSeverity.Error, "The technology '{path}' does not exist.", ("path", path));
+
+    public static Diagnostic TechnologyUnreadable(string path, string why) => Diagnostic.Create(
+        "step.import.technology-unreadable", DiagnosticSeverity.Error, "The technology '{path}' could not be read: {why}", ("path", path), ("why", why));
+
+    public static Diagnostic NoSuchPart(string path, string parts) => Diagnostic.Create(
+        "step.import.no-such-part", DiagnosticSeverity.Error, "The file has no part '{path}'. Its parts: {parts}.", ("path", path), ("parts", parts));
+
+    public static Diagnostic MaterialPartUnknown(string key, string parts) => Diagnostic.Create(
+        "step.import.material-part", DiagnosticSeverity.Error,
+        "--material names '{key}', which is no part of the file. Its parts: {parts}.", ("key", key), ("parts", parts));
+
+    public static Diagnostic MaterialUnknown(string material, string known) => Diagnostic.Create(
+        "step.import.material-unknown", DiagnosticSeverity.Error,
+        "--material names '{material}', which the technology does not define. {known}", ("material", material), ("known", known));
+
+    public static Diagnostic NotNamed(string file) => Diagnostic.Create(
+        "step.reload.not-named", DiagnosticSeverity.Error, "No object names '{file}'.", ("file", file));
+
+    public static Diagnostic SourceUnreadable(string file, string source) => Diagnostic.Create(
+        "step.reload.source", DiagnosticSeverity.Error,
+        "The source of '{file}' ({source}) cannot be read, so it cannot be reloaded.", ("file", file), ("source", source));
+}
+
+/// <summary>What <c>convert</c> answers with flags where the dialog asks (R-em3d68-7b).</summary>
+public sealed record StepImportOptions
+{
+    /// <summary><c>--material &lt;part&gt;=&lt;name&gt;</c>: a part (occurrence path, product name or object name) → material.</summary>
+    public IReadOnlyList<(string Part, string Material)> Materials { get; init; } = [];
+
+    /// <summary><c>--part &lt;path&gt;</c>: import only these occurrence paths; empty imports every solid.</summary>
+    public IReadOnlyList<string> Parts { get; init; } = [];
+
+    /// <summary><c>--tech &lt;path&gt;</c>: the new document's <c>TechRef</c>; null takes the workspace's default.</summary>
+    public string? TechPath { get; init; }
+}
+
+/// <summary>brief-em3d-68 — STEP import and Reload from Source.</summary>
+public static class StepImport
+{
+    /// <summary>The display tessellation's deflection as a fraction of a part's diagonal — the elaborator's own
+    /// (<see cref="C3dElaborator.DisplayRelativeDeflection"/>), so the triangle count the dialog shows is what is drawn.</summary>
+    public static double DisplayRelative => C3dElaborator.DisplayRelativeDeflection;
+
+    /// <summary>R-em3d68-3d — said when the destination can match nothing.</summary>
+    public const string NoMaterialsReason = "This document's technology defines no materials.";
+
+    // ── what a file is (R-em3d68-7d) ────────────────────────────────────────────────────────────
+
+    /// <summary>A STEP file by extension: <c>.step</c> or <c>.stp</c>.</summary>
+    public static bool IsStepExtension(string path)
+        => System.IO.Path.GetExtension(path).ToLowerInvariant() is ".step" or ".stp";
+
+    /// <summary>
+    /// A STEP file by CONTENT: its first line is ISO 10303-21's header, <c>ISO-10303-21;</c>. The one line of STEP text
+    /// read outside the worker (§10), and the one rule — <c>convert</c> and <c>check</c> both reach it through
+    /// <c>LayoutConvert.DetectSource</c>.
+    /// </summary>
+    public static bool LooksLikeStep(string path)
+    {
+        try
+        {
+            using var s = File.OpenRead(path);
+            var buf = new byte[64];
+            int n = s.Read(buf, 0, buf.Length);
+            string head = Encoding.ASCII.GetString(buf, 0, n).TrimStart('﻿', 'ï', '»', '¿', ' ', '\t', '\r', '\n');
+            return head.StartsWith("ISO-10303-21;", StringComparison.Ordinal);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary><c>sha256:&lt;hex&gt;</c> of some bytes — the spelling <see cref="C3dValidation.StepHash"/> gives a file.</summary>
+    public static string HashOf(byte[] bytes) => "sha256:" + Convert.ToHexStringLower(SHA256.HashData(bytes));
+
+    // ── Read ────────────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Reads <paramref name="sourcePath"/> through the kernel and proposes a row per part: its name made valid and unique
+    /// in <paramref name="target"/>, its material from <paramref name="tech"/> (null is an empty technology, never "no
+    /// destination"), and whether it is checked. Nothing is written.
+    /// </summary>
+    /// <exception cref="GeometryKernelException">The kernel refused the file (not STEP, a unit it cannot resolve), crashed, or is absent.</exception>
+    /// <exception cref="OperationCanceledException">Cancelled; the worker was killed and nothing changed.</exception>
+    public static StepImportPlan Read(string sourcePath, GeometryKernel kernel, Technology? tech, C3dDocument target, RunControl? control = null)
+    {
+        byte[] bytes = File.ReadAllBytes(sourcePath);
+        var read = kernel.ImportStep(bytes, control, DisplayRelative);
+        var materials = tech?.ResolvedMaterials ?? [];
+        var used = UsedNames(target);
+        string stem = System.IO.Path.GetFileNameWithoutExtension(sourcePath);
+        var parts = new List<StepImportPart>();
+        for (int i = 0; i < read.Parts.Count; i++)
+        {
+            var p = read.Parts[i];
+            string? colour = p.Colour is { Length: 3 } c ? Hex(c) : null;
+            var (material, match) = AutoMatch(p.Name, colour, materials);
+            parts.Add(new StepImportPart
+            {
+                Path = p.Path, ProductName = p.Name, Colour = colour, Solid = p.Closed, Why = p.Why, Healing = p.Healing,
+                Faces = p.Faces, Triangles = p.Triangles, Material = material, Match = match, Import = p.Closed,
+                Name = ProposeName(p.Name, $"{stem}_{i + 1}", used),
+            });
+        }
+        return new StepImportPlan
+        {
+            SourcePath = System.IO.Path.GetFullPath(sourcePath), Bytes = bytes, Hash = HashOf(bytes),
+            Units = read.Units, UnitMicrons = read.UnitMicrons, Parts = parts, Healing = read.Healing, Pmi = read.Pmi,
+            Materials = [.. materials.Select(m => m.Name)],
+            NoMaterials = materials.Count == 0 ? NoMaterialsReason : null,
+        };
+    }
+
+    /// <summary>R-em3d68-3a — by name (ignoring case), then by exact colour, then none. Nothing fuzzier.</summary>
+    public static (string? Material, StepMatch Match) AutoMatch(string partName, string? colour, IReadOnlyList<TechMaterial> materials)
+    {
+        if (partName.Length > 0 && materials.FirstOrDefault(m => string.Equals(m.Name, partName.Trim(), StringComparison.OrdinalIgnoreCase)) is { } byName)
+            return (byName.Name, StepMatch.ByName);
+        if (colour is not null && materials.FirstOrDefault(m => m.Color is { } mc && string.Equals(NormaliseHex(mc), colour, StringComparison.Ordinal)) is { } byColour)
+            return (byColour.Name, StepMatch.ByColour);
+        return (null, StepMatch.Unmatched);
+    }
+
+    /// <summary>R-em3d68-3c — <i>Map all of this colour</i>: every part sharing <paramref name="part"/>'s colour gets
+    /// <paramref name="material"/>. A part with no colour maps alone. Returns how many rows changed.</summary>
+    public static int MapColour(StepImportPlan plan, StepImportPart part, string? material)
+    {
+        int n = 0;
+        foreach (var p in plan.Parts)
+        {
+            if (!ReferenceEquals(p, part) && (part.Colour is null || p.Colour != part.Colour)) continue;
+            p.Material = material;
+            p.Match = material is null ? StepMatch.Unmatched : StepMatch.Chosen;
+            n++;
+        }
+        return n;
+    }
+
+    /// <summary>A colour, RGB 0–1, as <c>#rrggbb</c>: the 8-bit spelling a material's <c>Color</c> is written in.</summary>
+    public static string Hex(double[] rgb)
+    {
+        static int B(double v) => (int)Math.Round(Math.Clamp(v, 0, 1) * 255, MidpointRounding.AwayFromZero);
+        return string.Create(CultureInfo.InvariantCulture, $"#{B(rgb[0]):x2}{B(rgb[1]):x2}{B(rgb[2]):x2}");
+    }
+
+    private static string NormaliseHex(string s) => s.Trim().ToLowerInvariant() is var t && t.Length == 9 && t[0] == '#' ? t[..7] : s.Trim().ToLowerInvariant();
+
+    // ── names (R-em3d68-1d) ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>Every name the document already uses — objects, Tools at any depth, instances — case-insensitively.</summary>
+    public static HashSet<string> UsedNames(C3dDocument doc)
+    {
+        var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { C3dValidation.ReservedName };
+        foreach (var o in doc.Objects)
+            foreach (var d in C3dOperands.SelfAndDescendants(o))
+                if (d.Name.Length > 0) used.Add(d.Name);
+        foreach (var i in doc.Instances) used.Add(i.Name);
+        return used;
+    }
+
+    /// <summary>
+    /// A part's object name: the product name made valid by <see cref="NameValidator"/>'s rule (each character it forbids
+    /// becomes <c>_</c>; a trailing space or dot is dropped) — <paramref name="fallback"/> when nothing is left — then made
+    /// unique by <c>_2</c>, <c>_3</c>. The name is added to <paramref name="used"/>. A product name's own trailing number
+    /// is never incremented, as Duplicate increments one: <c>part-1</c> becoming <c>part-2</c> would name a different
+    /// product.
+    /// </summary>
+    public static string ProposeName(string productName, string fallback, ISet<string> used)
+    {
+        var sb = new StringBuilder();
+        foreach (char ch in productName.Trim())
+            sb.Append(ch <= 0x1F || "<>:\"/\\|?*".Contains(ch) ? '_' : ch);
+        string name = sb.ToString().TrimEnd(' ', '.');
+        if (name.Length == 0 || NameValidator.Validate(name) is not null) name = fallback;
+        string unique = name;
+        for (int n = 2; used.Contains(unique); n++) unique = $"{name}_{n}";
+        used.Add(unique);
+        return unique;
+    }
+
+    /// <summary>Why the checked rows' names cannot be used as they stand, or null: each valid, none used twice or already in
+    /// the document.</summary>
+    public static string? NamesRefusal(StepImportPlan plan, C3dDocument target)
+    {
+        var used = UsedNames(target);
+        var mine = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var p in plan.Parts.Where(p => p.Import))
+        {
+            if (NameValidator.Validate(p.Name) is { } why) return $"'{p.Name}' (part {p.Path}) cannot be a name: {why}";
+            if (used.Contains(p.Name)) return $"'{p.Name}' (part {p.Path}) is already a name in this document.";
+            if (!mine.Add(p.Name)) return $"'{p.Name}' names two of the parts being imported.";
+        }
+        return null;
+    }
+
+    // ── Apply ───────────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Copies the file into <paramref name="c3dPath"/>'s folder (D7, R-em3d68-4e) and appends one Step object per checked
+    /// row to <paramref name="doc"/>. The only step that writes: the dialog's OK, and <see cref="Import"/>.
+    /// </summary>
+    /// <exception cref="StepImportException">No row is checked, or a name cannot be used.</exception>
+    public static StepImportResult Apply(StepImportPlan plan, C3dDocument doc, string c3dPath)
+    {
+        var chosen = plan.Parts.Where(p => p.Import && p.Solid).ToList();
+        if (chosen.Count == 0)
+            throw new StepImportException(plan.Parts.Any(p => p.Solid)
+                ? StepDiagnostics.NothingChecked()
+                : StepDiagnostics.NoSolid(System.IO.Path.GetFileName(plan.SourcePath), ""));
+        if (NamesRefusal(plan, doc) is { } bad) throw new StepImportException(StepDiagnostics.Names(bad));
+
+        string dir = System.IO.Path.GetDirectoryName(System.IO.Path.GetFullPath(c3dPath))!;
+        var (copy, created) = CopyInto(dir, System.IO.Path.GetFileName(plan.SourcePath), plan.Bytes, plan.Hash, write: true);
+        string source = SourceSpelling(plan.SourcePath, c3dPath);
+        var added = new List<C3dStep>();
+        foreach (var p in chosen)
+        {
+            var step = new C3dStep
+            {
+                Name = p.Name, Material = p.Material, File = System.IO.Path.GetFileName(copy), Part = p.Path, Hash = plan.Hash,
+                Unit = plan.Unit, SourcePath = source,
+            };
+            doc.Objects.Add(step);
+            added.Add(step);
+        }
+        return new StepImportResult(copy, created, plan.Bytes, added, Notes(plan, chosen));
+    }
+
+    /// <summary>What the import says it did (R-em3d68-4a/-4b/-3b, §10): healing, parts skipped and why, parts with no
+    /// material, and the product-manufacturing information it did not bring.</summary>
+    public static IReadOnlyList<string> Notes(StepImportPlan plan, IReadOnlyList<StepImportPart> chosen)
+    {
+        var notes = new List<string>(plan.Healing);
+        var solids = plan.Parts.Where(p => !p.Solid).ToList();
+        if (solids.Count > 0)
+            notes.Add($"{solids.Count} part{(solids.Count == 1 ? " is" : "s are")} not a closed solid and {(solids.Count == 1 ? "was" : "were")} not imported: " +
+                      string.Join("; ", solids.Select(p => $"{Label(p)} — {p.Why}")) + ".");
+        var unmatched = chosen.Where(p => p.Material is null).ToList();
+        if (unmatched.Count > 0)
+            notes.Add($"{unmatched.Count} part{(unmatched.Count == 1 ? " has" : "s have")} no material, so {(unmatched.Count == 1 ? "it is" : "they are")} drawn " +
+                      $"and ignored by the solver until given one: {string.Join(", ", unmatched.Select(p => p.Name))}." +
+                      (plan.NoMaterials is { } why ? " " + why : ""));
+        if (plan.Pmi > 0)
+            notes.Add($"The file carries {plan.Pmi} dimension{(plan.Pmi == 1 ? "" : "s")}, tolerance{(plan.Pmi == 1 ? "" : "s")} or datum{(plan.Pmi == 1 ? "" : "s")}; none is imported.");
+        return notes;
+    }
+
+    private static string Label(StepImportPart p) => p.ProductName.Length > 0 ? $"'{p.ProductName}' (part {p.Path})" : $"part {p.Path}";
+
+    /// <summary>
+    /// R-em3d68-4e — where the copy goes: <c>&lt;dir&gt;/&lt;name&gt;</c>, reused when a file of that name holds the same
+    /// bytes, else <c>&lt;stem&gt;_2&lt;ext&gt;</c> and so on. Writes only when <paramref name="write"/> and the copy is new.
+    /// </summary>
+    public static (string Path, bool Created) CopyInto(string dir, string fileName, byte[] bytes, string hash, bool write)
+    {
+        string stem = System.IO.Path.GetFileNameWithoutExtension(fileName), ext = System.IO.Path.GetExtension(fileName);
+        for (int n = 1; ; n++)
+        {
+            string path = System.IO.Path.Combine(dir, n == 1 ? fileName : $"{stem}_{n}{ext}");
+            if (File.Exists(path))
+            {
+                if (string.Equals(C3dValidation.StepHash(path), hash, StringComparison.OrdinalIgnoreCase)) return (path, false);
+                continue;
+            }
+            if (write)
+            {
+                Directory.CreateDirectory(dir);
+                File.WriteAllBytes(path, bytes);
+            }
+            return (path, true);
+        }
+    }
+
+    /// <summary><c>SourcePath</c>: relative to the <c>.c3d</c> (with <c>/</c>) when the source is inside the document's
+    /// workspace, absolute otherwise (R-em3d68-1a).</summary>
+    public static string SourceSpelling(string sourcePath, string c3dPath)
+    {
+        string full = System.IO.Path.GetFullPath(sourcePath);
+        string dir = System.IO.Path.GetDirectoryName(System.IO.Path.GetFullPath(c3dPath))!;
+        if (WorkspaceRootFinder.FindAncestorCws(dir) is { } cws)
+        {
+            string root = System.IO.Path.GetDirectoryName(cws)! + System.IO.Path.DirectorySeparatorChar;
+            if (full.StartsWith(root, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+                return System.IO.Path.GetRelativePath(dir, full).Replace('\\', '/');
+        }
+        return full;
+    }
+
+    /// <summary>Where a Step object's <c>SourcePath</c> points, or null when it names nothing.</summary>
+    public static string? ResolveSource(C3dStep step, string c3dPath)
+    {
+        if (string.IsNullOrWhiteSpace(step.SourcePath)) return null;
+        string dir = System.IO.Path.GetDirectoryName(System.IO.Path.GetFullPath(c3dPath))!;
+        return System.IO.Path.GetFullPath(System.IO.Path.IsPathRooted(step.SourcePath) ? step.SourcePath : System.IO.Path.Combine(dir, step.SourcePath));
+    }
+
+    // ── Import: convert's whole verb (R-em3d68-7) ──────────────────────────────────────────────
+
+    /// <summary>
+    /// A NEW <c>.c3d</c> at <paramref name="c3dPath"/> from <paramref name="sourcePath"/>: the dialog's defaults (§3a
+    /// auto-match; non-solids skipped), <paramref name="options"/> where the dialog would have asked, the file copied beside
+    /// it, and the document saved. <c>circuitrf convert x.step -o y.c3d</c> is this call and argument parsing.
+    /// </summary>
+    /// <exception cref="StepImportException">The target exists, a flag names nothing, or the file holds no solid.</exception>
+    /// <exception cref="GeometryKernelException">The kernel refused the file, crashed, or is absent.</exception>
+    public static StepImportResult Import(string sourcePath, string c3dPath, StepImportOptions options, GeometryKernel kernel,
+                                          TechnologyCache? cache = null, RunControl? control = null)
+    {
+        string full = System.IO.Path.GetFullPath(c3dPath);
+        if (File.Exists(full) || Directory.Exists(full))
+            throw new StepImportException(StepDiagnostics.TargetExists(c3dPath));
+
+        string dir = System.IO.Path.GetDirectoryName(full)!;
+        bool inCell = string.Equals(System.IO.Path.GetFileName(dir), CellFolder.ThreeDSubFolder, StringComparison.OrdinalIgnoreCase);
+        string cellDir = inCell ? System.IO.Path.GetDirectoryName(dir)! : dir;
+        string? techRef = null;
+        if (options.TechPath is { } tp)
+        {
+            string techFull = System.IO.Path.GetFullPath(tp);
+            if (!File.Exists(techFull)) throw new StepImportException(StepDiagnostics.TechnologyMissing(tp));
+            techRef = System.IO.Path.GetRelativePath(dir, techFull).Replace('\\', '/');
+        }
+        var (resolution, _) = TechnologyResolver.ResolveForDocument(techRef, full, null, cache ?? new TechnologyCache());
+        if (techRef is not null && resolution.Tech is null)
+            throw new StepImportException(StepDiagnostics.TechnologyUnreadable(options.TechPath!, string.Join(" ", resolution.Diagnostics)));
+
+        var doc = CellCreate.NewThreeDView(cellDir, resolution.Tech);
+        doc.TechRef = techRef;
+        var plan = Read(sourcePath, kernel, resolution.Tech, doc, control);
+
+        foreach (string path in options.Parts)
+            if (plan.Parts.All(p => p.Path != path))
+                throw new StepImportException(StepDiagnostics.NoSuchPart(path, string.Join(", ", plan.Parts.Select(p => p.Path))));
+        if (options.Parts.Count > 0)
+            foreach (var p in plan.Parts) p.Import = p.Solid && options.Parts.Contains(p.Path);
+        foreach (var (key, material) in options.Materials)
+        {
+            var hits = plan.Parts.Where(p => p.Path == key || string.Equals(p.Name, key, StringComparison.OrdinalIgnoreCase)
+                                             || string.Equals(p.ProductName, key, StringComparison.OrdinalIgnoreCase)).ToList();
+            if (hits.Count == 0)
+                throw new StepImportException(StepDiagnostics.MaterialPartUnknown(key, string.Join(", ", plan.Parts.Select(p => $"{p.Path} ({p.Name})"))));
+            string? known = plan.Materials.FirstOrDefault(m => string.Equals(m, material, StringComparison.OrdinalIgnoreCase));
+            if (known is null)
+                throw new StepImportException(StepDiagnostics.MaterialUnknown(material,
+                    plan.Materials.Count == 0 ? NoMaterialsReason : "Its materials: " + string.Join(", ", plan.Materials) + "."));
+            foreach (var p in hits) { p.Material = known; p.Match = StepMatch.Chosen; }
+        }
+        if (!plan.Parts.Any(p => p.Solid))
+            throw new StepImportException(StepDiagnostics.NoSolid(System.IO.Path.GetFileName(sourcePath),
+                                                                  string.Join(" ", plan.Parts.Select(p => $"{Label(p)}: {p.Why}."))));
+
+        Directory.CreateDirectory(dir);
+        var result = Apply(plan, doc, full);
+        C3dPersistence.SaveToFile(full, doc);
+        var notes = result.Notes.ToList();
+        if (!inCell) notes.Add("The document belongs to no cell (it is not in a cell's 3d folder); render, check and em all accept it.");
+        return result with { Notes = notes };
+    }
+
+    // ── units (R-em3d68-2) ──────────────────────────────────────────────────────────────────────
+
+    private static readonly Dictionary<string, string> Plurals = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["inch"] = "inches", ["millimetre"] = "millimetres", ["micrometre"] = "micrometres", ["metre"] = "metres",
+        ["centimetre"] = "centimetres", ["decimetre"] = "decimetres", ["nanometre"] = "nanometres", ["kilometre"] = "kilometres",
+        ["foot"] = "feet", ["mil"] = "mils", ["thou"] = "thou",
+    };
+
+    /// <summary>The dialog's units line: <i>File is in inches; imported exactly</i>. A unit the table does not know is
+    /// said with its size, which is what makes "exactly" checkable.</summary>
+    public static string UnitsLine(IReadOnlyList<string> units, IReadOnlyList<double> microns)
+    {
+        string Say(int i) => Plurals.TryGetValue(units[i], out var p) ? p
+            : string.Create(CultureInfo.InvariantCulture, $"'{units[i]}' ({(i < microns.Count ? microns[i] : 0):G10} µm each)");
+        return units.Count switch
+        {
+            0 => "File states no length unit.",
+            1 => $"File is in {Say(0)}; imported exactly.",
+            _ => $"File uses {string.Join(" and ", Enumerable.Range(0, units.Count).Select(Say))}; each part imported exactly in its own.",
+        };
+    }
+
+    // ── Reload from Source (R-em3d68-5) ─────────────────────────────────────────────────────────
+
+    /// <summary>Every Step object in <paramref name="doc"/>, at any depth, naming <paramref name="file"/>.</summary>
+    public static IReadOnlyList<C3dStep> NamingFile(C3dDocument doc, string file)
+        => [.. doc.Objects.SelectMany(C3dOperands.SelfAndDescendants).OfType<C3dStep>()
+                .Where(s => string.Equals(s.File, file, StringComparison.Ordinal))];
+
+    /// <summary>Whether Reload from Source can run for <paramref name="step"/>: its source resolves to a readable file.</summary>
+    public static bool CanReload(C3dStep step, string c3dPath) => ResolveSource(step, c3dPath) is { } p && File.Exists(p);
+
+    /// <summary>
+    /// R-em3d68-5 — reads the revised source of every object naming <paramref name="file"/> and decides, per object,
+    /// whether it moves to the new bytes: its part must still exist, and every reference into its faces must land on
+    /// exactly one face of the new file with the same fingerprint (surface kind, area, centroid, normal at the centroid)
+    /// within the document's tolerance. Nothing is written.
+    /// </summary>
+    public static StepReloadPlan PlanReload(C3dDocument doc, string c3dPath, string file, GeometryKernel kernel, RunControl? control = null)
+    {
+        var objects = NamingFile(doc, file);
+        if (objects.Count == 0) throw new StepImportException(StepDiagnostics.NotNamed(file));
+        string? source = objects.Select(o => ResolveSource(o, c3dPath)).FirstOrDefault(p => p is not null && File.Exists(p));
+        if (source is null)
+            throw new StepImportException(StepDiagnostics.SourceUnreadable(file, objects[0].SourcePath ?? "not recorded"));
+        byte[] bytes = File.ReadAllBytes(source);
+        string hash = HashOf(bytes);
+        if (objects.All(o => string.Equals(o.Hash, hash, StringComparison.OrdinalIgnoreCase)))
+            return new StepReloadPlan(file, source, bytes, hash, true, [], [], [], []);
+
+        var read = kernel.ImportStep(bytes, control);
+        string dir = System.IO.Path.GetDirectoryName(System.IO.Path.GetFullPath(c3dPath))!;
+        double tolUm = Math.Max(1.0 / Math.Max(doc.DbuPerMicron, 1), 1e-6);
+        var accepted = new List<C3dStep>();
+        var refusals = new List<string>();
+        var repoints = new List<StepRepoint>();
+        var byPart = read.Parts.ToDictionary(p => p.Path, StringComparer.Ordinal);
+        foreach (var obj in objects)
+        {
+            if (!byPart.TryGetValue(obj.Part, out var np))
+            {
+                refusals.Add($"'{obj.Name}' is part {obj.Part} of '{file}', which the revised file no longer has.");
+                continue;
+            }
+            if (!np.Closed)
+            {
+                refusals.Add($"'{obj.Name}' is part {obj.Part} of '{file}', which in the revised file is not a closed solid: {np.Why}.");
+                continue;
+            }
+            var refs = References(doc, obj);
+            if (refs.Count == 0) { accepted.Add(obj); continue; }
+            var oldFaces = kernel.Faces(StepTree(obj, System.IO.Path.Combine(dir, obj.File), obj.Hash, doc.DbuPerMicron));
+            var newFaces = kernel.Faces(StepTree(obj, source, hash, doc.DbuPerMicron));
+            var map = new Dictionary<int, int>();
+            bool ok = true;
+            foreach (int n in refs.Select(r => r.Face).Distinct().Order())
+            {
+                if (n < 1 || n > oldFaces.Count)
+                {
+                    refusals.Add($"{refs.First(r => r.Face == n).What} is on {obj.Name}/face{n}, which the file it was imported from never had.");
+                    ok = false;
+                    continue;
+                }
+                var old = oldFaces[n - 1];
+                var hits = Enumerable.Range(0, newFaces.Count).Where(k => SameFace(old, newFaces[k], tolUm)).ToList();
+                if (hits.Count == 1) { map[n] = hits[0] + 1; continue; }
+                string what = refs.First(r => r.Face == n).What;
+                refusals.Add(hits.Count == 0
+                    ? $"{what} is on {obj.Name}/face{n}, which the revised file no longer has."
+                    : $"{what} is on {obj.Name}/face{n}, which matches {hits.Count} faces of the revised file; circuitRF does not choose one.");
+                ok = false;
+            }
+            if (!ok) continue;
+            accepted.Add(obj);
+            foreach (var r in refs)
+                if (map[r.Face] != r.Face) repoints.Add(new StepRepoint(obj.Name, r.What, r.Face, map[r.Face]));
+        }
+        var usedParts = objects.Select(o => o.Part).ToHashSet(StringComparer.Ordinal);
+        var newParts = read.Parts.Where(p => !usedParts.Contains(p.Path)).ToList();
+        return new StepReloadPlan(file, source, bytes, hash, false, accepted, refusals, repoints, newParts)
+        {
+            Maps = accepted.ToDictionary(o => o, o => repoints.Where(r => r.Object == o.Name).GroupBy(r => r.From).ToDictionary(g => g.Key, g => g.First().To)),
+        };
+    }
+
+    /// <summary>
+    /// R-em3d68-5e — an accepted reload: the revised file copied beside the old one (the copy rule of §4e — a changed file
+    /// under the same name is <c>&lt;stem&gt;_2.step</c>), every accepted object moved to it with its new hash, and every
+    /// reference re-pointed. Refused objects keep the old file. Returns the copy and whether it was written.
+    /// </summary>
+    public static (string Path, bool Created) ApplyReload(StepReloadPlan plan, C3dDocument doc, string c3dPath)
+    {
+        if (plan.NoChange || plan.Accepted.Count == 0) return ("", false);
+        string dir = System.IO.Path.GetDirectoryName(System.IO.Path.GetFullPath(c3dPath))!;
+        var (copy, created) = CopyInto(dir, plan.File, plan.Bytes, plan.Hash, write: true);
+        foreach (var obj in plan.Accepted)
+        {
+            if (plan.Maps.TryGetValue(obj, out var map) && map.Count > 0) Repoint(doc, obj, map);
+            obj.File = System.IO.Path.GetFileName(copy);
+            obj.Hash = plan.Hash;
+        }
+        return (copy, created);
+    }
+
+    /// <summary>The kernel tree of a Step object's part in <paramref name="file"/>, at identity — the file's own frame, which
+    /// is the frame the old and the revised faces are compared in.</summary>
+    private static GeometryKernelTree StepTree(C3dStep obj, string file, string hash, int dbuPerMicron)
+        => GeometryKernelTree.From(new C3dStep { Name = obj.Name, File = System.IO.Path.GetFullPath(file), Hash = hash, Part = obj.Part }, dbuPerMicron);
+
+    /// <summary>Two faces are one when the kind is the same and the area, centroid and normal agree within the tolerance.</summary>
+    public static bool SameFace(GeometryKernelFace a, GeometryKernelFace b, double tolUm)
+    {
+        if (a.Kind != b.Kind || a.Centroid.Length != 3 || b.Centroid.Length != 3) return false;
+        if (Math.Abs(a.Area - b.Area) > Math.Max(1e-6 * Math.Max(a.Area, b.Area), tolUm * tolUm)) return false;
+        double d = Math.Sqrt(Enumerable.Range(0, 3).Sum(i => (a.Centroid[i] - b.Centroid[i]) * (a.Centroid[i] - b.Centroid[i])));
+        if (d > tolUm) return false;
+        if (a.Normal.Length == 3 && b.Normal.Length == 3)
+        {
+            double dot = a.Normal[0] * b.Normal[0] + a.Normal[1] * b.Normal[1] + a.Normal[2] * b.Normal[2];
+            bool none = a.Normal.All(v => v == 0) && b.Normal.All(v => v == 0);
+            if (!none && dot < 1 - 1e-6) return false;
+        }
+        return true;
+    }
+
+    // ── references into a Step part's faces ─────────────────────────────────────────────────────
+
+    private static readonly Regex FaceField = new(@"^(?<p>.*?)face(?<n>[0-9]+)(?<s>([#.][0-9]+)?)$", RegexOptions.CultureInvariant);
+
+    /// <summary>One reference into <c>face&lt;n&gt;</c> of a Step object, in words for a refusal.</summary>
+    private sealed record FaceRef(int Face, string What);
+
+    /// <summary>Where a Step object's faces appear, and under what prefix: each (owner name, prefix) its faces are named by.</summary>
+    private static List<(string Owner, string Prefix)> Owners(C3dDocument doc, C3dStep step)
+    {
+        var list = new List<(string, string)>();
+        void Walk(C3dObject o, string owner, string prefix)
+        {
+            if (ReferenceEquals(o, step)) { list.Add((owner, prefix)); return; }
+            switch (o)
+            {
+                case C3dBoolean b:
+                    if (b.Blank is { } blank) Walk(blank, owner, prefix);
+                    foreach (var t in b.Tools)
+                    {
+                        Walk(t, owner, prefix + t.Name + ":");
+                        Walk(t, t.Name, "");   // a disabled boolean's Tool, named by its own name (R-em3d64-2f)
+                    }
+                    break;
+                case C3dFillet { Target: { } ft }: Walk(ft, owner, prefix); break;
+                case C3dChamfer { Target: { } ct }: Walk(ct, owner, prefix); break;
+            }
+        }
+        foreach (var top in doc.Objects) Walk(top, top.Name, "");
+        return list;
+    }
+
+    /// <summary>The fillets and chamfers whose target holds <paramref name="step"/>, each with the prefix its faces carry there.</summary>
+    private static List<(C3dObject Op, string Prefix)> EdgeOwners(C3dDocument doc, C3dStep step)
+    {
+        var list = new List<(C3dObject, string)>();
+        string? PrefixIn(C3dObject o, string prefix)
+        {
+            if (ReferenceEquals(o, step)) return prefix;
+            foreach (var (_, child) in C3dOperands.Of(o))
+            {
+                string p = o is C3dBoolean b && !ReferenceEquals(child, b.Blank) ? prefix + child.Name + ":" : prefix;
+                if (PrefixIn(child, p) is { } hit) return hit;
+            }
+            return null;
+        }
+        foreach (var top in doc.Objects)
+            foreach (var o in C3dOperands.SelfAndDescendants(top))
+            {
+                var target = (o as C3dFillet)?.Target ?? (o as C3dChamfer)?.Target;
+                if (target is not null && PrefixIn(target, "") is { } p) list.Add((o, p));
+            }
+        return list;
+    }
+
+    private static List<FaceRef> References(C3dDocument doc, C3dStep step)
+    {
+        var refs = new List<FaceRef>();
+        var owners = Owners(doc, step);
+        foreach (var fb in doc.FaceBoundaries)
+            foreach (var (owner, prefix) in owners)
+                if (string.Equals(fb.Object, owner, StringComparison.OrdinalIgnoreCase) && FaceNumber(fb.Face, prefix) is { } n)
+                    refs.Add(new FaceRef(n, $"the {fb.Kind} boundary on '{fb.Object}'"));
+        foreach (var (op, prefix) in EdgeOwners(doc, step))
+        {
+            var edges = op is C3dFillet f ? f.Edges : ((C3dChamfer)op).Edges;
+            string word = op is C3dFillet ? "fillet" : "chamfer";
+            string name = op.Name.Length > 0 ? $"'{op.Name}'" : "(inner)";
+            foreach (string e in edges)
+                foreach (string field in e.Split('|').Take(2))
+                    if (FaceNumber(field, prefix) is { } n) refs.Add(new FaceRef(n, $"the {word} {name}'s edge {e}"));
+        }
+        return refs;
+    }
+
+    private static int? FaceNumber(string name, string prefix)
+    {
+        if (!name.StartsWith(prefix, StringComparison.Ordinal)) return null;
+        var m = FaceField.Match(name[prefix.Length..]);
+        return m.Success && m.Groups["p"].Value.Length == 0 && int.TryParse(m.Groups["n"].Value, NumberStyles.None, CultureInfo.InvariantCulture, out int n) ? n : null;
+    }
+
+    private static string Renamed(string name, string prefix, IReadOnlyDictionary<int, int> map)
+    {
+        if (FaceNumber(name, prefix) is not { } n || !map.TryGetValue(n, out int to)) return name;
+        var m = FaceField.Match(name[prefix.Length..]);
+        return prefix + "face" + to.ToString(CultureInfo.InvariantCulture) + m.Groups["s"].Value;
+    }
+
+    private static void Repoint(C3dDocument doc, C3dStep step, IReadOnlyDictionary<int, int> map)
+    {
+        var owners = Owners(doc, step);
+        foreach (var fb in doc.FaceBoundaries)
+            foreach (var (owner, prefix) in owners)
+                if (string.Equals(fb.Object, owner, StringComparison.OrdinalIgnoreCase) && FaceNumber(fb.Face, prefix) is not null)
+                {
+                    fb.Face = Renamed(fb.Face, prefix, map);
+                    break;
+                }
+        foreach (var (op, prefix) in EdgeOwners(doc, step))
+        {
+            var edges = op is C3dFillet f ? f.Edges : ((C3dChamfer)op).Edges;
+            for (int i = 0; i < edges.Count; i++)
+            {
+                var fields = edges[i].Split('|');
+                for (int k = 0; k < Math.Min(2, fields.Length); k++) fields[k] = Renamed(fields[k], prefix, map);
+                // An edge's name sorts its two faces (overview §1g); a re-pointed face can change which comes first.
+                if (fields.Length >= 2 && string.CompareOrdinal(fields[0], fields[1]) > 0) (fields[0], fields[1]) = (fields[1], fields[0]);
+                edges[i] = string.Join('|', fields);
+            }
+        }
+    }
+}
+
+/// <summary>One reference Reload from Source re-points: <paramref name="What"/> on <paramref name="Object"/>, from
+/// <c>face&lt;From&gt;</c> to <c>face&lt;To&gt;</c>.</summary>
+public sealed record StepRepoint(string Object, string What, int From, int To)
+{
+    public override string ToString() => $"{What}: {Object}/face{From} is face{To} in the revised file.";
+}
+
+/// <summary>What <see cref="StepImport.PlanReload"/> decided.</summary>
+/// <param name="NoChange">The source's bytes are the ones every object already names: nothing to do (R-em3d68-5b).</param>
+/// <param name="Accepted">Objects that move to the revised file.</param>
+/// <param name="Refusals">Why each other object does not — the reload is refused for it (R-em3d68-5c/-5d).</param>
+/// <param name="Repoints">Every reference whose face number changes.</param>
+/// <param name="NewParts">Parts the revised file has that no object names: offered, unchecked (R-em3d68-5d).</param>
+public sealed record StepReloadPlan(string File, string SourcePath, byte[] Bytes, string Hash, bool NoChange,
+                                    IReadOnlyList<C3dStep> Accepted, IReadOnlyList<string> Refusals,
+                                    IReadOnlyList<StepRepoint> Repoints, IReadOnlyList<GeometryKernelImportPart> NewParts)
+{
+    /// <summary>Per accepted object, old face number → new.</summary>
+    public IReadOnlyDictionary<C3dStep, Dictionary<int, int>> Maps { get; init; } = new Dictionary<C3dStep, Dictionary<int, int>>();
+}

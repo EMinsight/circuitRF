@@ -370,15 +370,37 @@ internal static class CliDiagnostics
 
     public static Diagnostic ConvertUnknownFormat(string format) => Diagnostic.Create(
         "convert.args.unknown-format", DiagnosticSeverity.Error,
-        "Unknown format '{format}'. Known: clay, gdsii, dxf, gerber, board.", ("format", format));
+        "Unknown format '{format}'. Known: clay, gdsii, dxf, gerber, board, step.", ("format", format));
 
     /// <summary>The usage text itself, recorded so a document says what stderr said. Both lines,
     /// because both were printed.</summary>
     public static Diagnostic ConvertUsage() => new(
         "convert.args.usage", DiagnosticSeverity.Error,
         "Usage: circuitrf convert <input> -o <output> [--from f] [--to f] [--cell name]\n" +
-        "       formats: clay | gdsii | dxf | gerber | board\n" +
+        "       formats: clay | gdsii | dxf | gerber | board; step (a source: -o <new>.c3d)\n" +
+        "       step:  --material <part>=<name> (repeatable)  --part <path> (repeatable)  --tech <path.ctech>\n" +
         "       --no-coalesce  keep a painted pour's individual strokes");
+
+    /// <summary>brief-em3d-68 R-em3d68-7a — a STEP file becomes a NEW .c3d and nothing else.</summary>
+    public static Diagnostic ConvertStepTarget(string output) => Diagnostic.Create(
+        "convert.step.target", DiagnosticSeverity.Error,
+        "A STEP file converts to a new 3D view: name a .c3d as the output ('{output}' is not one).", ("output", output));
+
+    public static Diagnostic ConvertStepIsASource(string output) => Diagnostic.Create(
+        "convert.step.source-only", DiagnosticSeverity.Error,
+        "'{output}' is a STEP file, which convert reads (into a .c3d) and does not write.", ("output", output));
+
+    public static Diagnostic ConvertStepListCells() => new(
+        "convert.step.list-cells", DiagnosticSeverity.Error,
+        "A STEP file holds parts, not cells — --list-cells does not apply. --part names the parts to import.");
+
+    public static Diagnostic ConvertStepFlagsWithoutStep() => new(
+        "convert.step.flags", DiagnosticSeverity.Error,
+        "--material and --part apply to a STEP source only.");
+
+    public static Diagnostic ConvertBadMaterialMapping(string text) => Diagnostic.Create(
+        "convert.step.material", DiagnosticSeverity.Error,
+        "--material takes <part>=<material>; '{text}' is not that.", ("text", text));
 
     public static Diagnostic ConvertListCellsNotApplicable() => new(
         "convert.args.list-cells-not-applicable", DiagnosticSeverity.Error,
@@ -387,7 +409,7 @@ internal static class CliDiagnostics
     public static Diagnostic ConvertSourceUnrecognised(string fileName) => Diagnostic.Create(
         "convert.source.unrecognised", DiagnosticSeverity.Error,
         "Could not tell what '{fileName}' is from its name or its content. " +
-        "Name it with --from clay|gdsii|dxf|gerber|board.", ("fileName", fileName));
+        "Name it with --from clay|gdsii|dxf|gerber|board|step.", ("fileName", fileName));
 
     public static Diagnostic ConvertTargetUnrecognised(string output) => Diagnostic.Create(
         "convert.target.unrecognised", DiagnosticSeverity.Error,

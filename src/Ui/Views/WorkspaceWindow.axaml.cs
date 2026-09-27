@@ -379,7 +379,11 @@ public partial class WorkspaceWindow : Window
 
         // brief-em3d-63 R-em3d63-3c — once per process, after a window is on screen, never on the launch path.
         CircuitRF.Ui.ThreeD.GeometryKernelAvailability.ProbeOnceInBackground();
+        // brief-em3d-68 — the kernel commands' enabled state and tooltips follow the probe's answer.
+        CircuitRF.Ui.ThreeD.GeometryKernelAvailability.Changed += OnKernelCapabilityChanged;
     }
+
+    private void OnKernelCapabilityChanged() => (DataContext as WorkspaceViewModel)?.RefreshThreeDMenu();
 
     /// <summary>
     /// R-dock-12. Deliberately NOT guarded by <c>OperatingSystem.IsMacOS()</c>: the attachment is a
@@ -468,6 +472,7 @@ public partial class WorkspaceWindow : Window
     protected override void OnClosed(EventArgs e)
     {
         base.OnClosed(e);
+        CircuitRF.Ui.ThreeD.GeometryKernelAvailability.Changed -= OnKernelCapabilityChanged;
 
         // This window's floating TOOL panels go with it. Nothing closed them on any per-window path —
         // App's sweep runs only for File ▸ Quit — so a floated Restore Points, Properties or Messages

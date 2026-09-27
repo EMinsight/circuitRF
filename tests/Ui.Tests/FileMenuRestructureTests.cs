@@ -336,7 +336,9 @@ public class FileMenuRestructureTests
             // "Component" (PL1) closes that group: one PART rather than a whole board, and ONE entry
             // rather than one per format — the importer classifies the files it is given by content
             // (R-PL1-3).
-            "Data", "GDSII", "DXF", "Board", "Gerber", "Component", "PDK", "Model or Subcircuit", "Technology", "Into Open Technology",
+            // "STEP" (brief-em3d-68) is the one geometry importer whose destination is the ACTIVE 3D view, not a new
+            // cell: a connector body's parts land in the .c3d being edited, so it is disabled with no 3D editor active.
+            "Data", "GDSII", "DXF", "Board", "Gerber", "STEP", "Component", "PDK", "Model or Subcircuit", "Technology", "Into Open Technology",
             "Wirebond Table", "Wirebond Wires", "Wirebond as Cell",
         ];
 

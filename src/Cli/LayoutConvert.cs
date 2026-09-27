@@ -19,6 +19,9 @@
 using CircuitRF.Design.Cells;
 using CircuitRF.Design.Layout;
 using CircuitRF.Design.Layout.Interchange;
+using CircuitRF.Design.ThreeD;
+using CircuitRF.Design.ThreeD.Occ;
+using CircuitRF.Design.ThreeD.Step;
 using CircuitRF.Design.Workspace;
 
 namespace CircuitRF.Cli;
@@ -31,7 +34,7 @@ public static class LayoutConvert
     /// second rule for it — an interchange file they could not name would read as a file circuitRF
     /// does not handle, when in fact `convert` handles it.
     /// </summary>
-    internal enum Fmt { Clay, Gdsii, Dxf, Gerber, Board }
+    internal enum Fmt { Clay, Gdsii, Dxf, Gerber, Board, Step }
 
     private sealed class Options
     {
@@ -58,6 +61,10 @@ public static class LayoutConvert
         // exists for the case the default cannot serve: comparing against the CAM source, or chasing
         // an import bug, where the primitives have to arrive exactly as authored.
         public bool NoCoalesce;
+
+        // brief-em3d-68 R-em3d68-7b — STEP: what the Import STEP dialog would have asked.
+        public List<(string Part, string Material)> StepMaterials = [];
+        public List<string> StepParts = [];
     }
 
     public static int Run(string[] args)
@@ -124,6 +131,15 @@ public static class LayoutConvert
                 case "--accept-inferred-drill-format": o.AcceptInferredDrillFormat = true; break;
                 case "--open-archives": o.OpenArchives = true; break;
                 case "--no-coalesce": o.NoCoalesce = true; break;
+                case "--material" when i + 1 < args.Length:
+                {
+                    string m = args[++i];
+                    int eq = m.IndexOf('=');
+                    if (eq <= 0 || eq == m.Length - 1) return JsonRun.Fail(CliDiagnostics.ConvertBadMaterialMapping(m));
+                    o.StepMaterials.Add((m[..eq], m[(eq + 1)..]));
+                    break;
+                }
+                case "--part" when i + 1 < args.Length: o.StepParts.Add(args[++i]); break;
 
                 default:
                     if (a.StartsWith('-')) { JsonRun.Report(CliDiagnostics.ConvertUnknownOption(a)); return Usage(); }
@@ -146,6 +162,9 @@ public static class LayoutConvert
         if (o.From is null && DetectSource(o.Input) is null)
             return JsonRun.Fail(CliDiagnostics.ConvertSourceUnrecognised(Path.GetFileName(o.Input)));
 
+        if (from == Fmt.Step) return ImportStep(o);
+        if (o.StepMaterials.Count > 0 || o.StepParts.Count > 0) return JsonRun.Fail(CliDiagnostics.ConvertStepFlagsWithoutStep());
+
         if (o.ListCells) return ListCells(o, from);
 
         if (o.Output is null)
@@ -157,6 +176,8 @@ public static class LayoutConvert
         Fmt? to = o.To ?? DetectTarget(o.Output);
         if (to is null)
             return JsonRun.Fail(CliDiagnostics.ConvertTargetUnrecognised(o.Output));
+
+        if (to == Fmt.Step) return JsonRun.Fail(CliDiagnostics.ConvertStepIsASource(o.Output));
 
         if (from == Fmt.Clay && to == Fmt.Clay)
             return JsonRun.Fail(CliDiagnostics.ConvertClayToClay());
@@ -215,6 +236,56 @@ public static class LayoutConvert
     /// this target has. An existing directory passes whatever it is called — a caller with a folder
     /// called <c>cells.clay</c> already has the thing that would be written into.
     /// </summary>
+    /// <summary>
+    /// brief-em3d-68 R-em3d68-7 — <c>.step</c> → a NEW <c>.c3d</c>. Argument checks, refusals and reporting only: every
+    /// decision is <see cref="StepImport.Import"/>'s, the function the Import STEP dialog calls (a source scan holds it).
+    /// </summary>
+    private static int ImportStep(Options o)
+    {
+        if (o.ListCells) return JsonRun.Fail(CliDiagnostics.ConvertStepListCells());
+        if (o.Output is null)
+        {
+            JsonRun.Report(CliDiagnostics.ConvertOutputRequired());
+            return Usage();
+        }
+        if (!string.Equals(Path.GetExtension(o.Output), C3dPersistence.Extension, StringComparison.OrdinalIgnoreCase)
+            || o.To is not null)
+            return JsonRun.Fail(CliDiagnostics.ConvertStepTarget(o.Output));
+
+        var kernel = GeometryKernel.Shared;
+        if (!kernel.Capability.Available)
+            return JsonRun.Fail(CliDiagnostics.ConvertFailed(GeometryKernel.NeedsKernel("Import STEP", kernel.Capability)));
+
+        Console.Error.WriteLine("[circuitRF] STEP -> 3d");
+        var options = new StepImportOptions { Materials = o.StepMaterials, Parts = o.StepParts, TechPath = o.TechPath };
+        StepImportResult result;
+        try
+        {
+            result = StepImport.Import(o.Input!, o.Output, options, kernel, control: RunHost.Control);
+        }
+        catch (OperationCanceledException)
+        {
+            Console.Error.WriteLine("[circuitRF] cancelled; nothing was written");
+            return 130;
+        }
+        catch (StepImportException e)
+        {
+            return JsonRun.Fail(e.Diagnostic);
+        }
+        catch (GeometryKernelException e)
+        {
+            return JsonRun.Fail(CliDiagnostics.ConvertFailed(e.Message));
+        }
+        Report(result.Notes);
+        Console.Error.WriteLine($"[circuitRF] wrote {result.Objects.Count} Step object(s) to {o.Output}" +
+                                (result.Created ? $" and copied the file to {result.CopiedPath}" : $"; {result.CopiedPath} was already there"));
+        string c3d = Path.GetFullPath(o.Output);
+        Console.WriteLine(c3d);
+        JsonRun.AddOutput("3d", c3d);
+        JsonRun.AddOutput("step", result.CopiedPath);
+        return 0;
+    }
+
     private static int? ClayDirectoryRefusal(string output)
     {
         if (Directory.Exists(output)) return null;
@@ -762,6 +833,7 @@ public static class LayoutConvert
         "dxf" => Fmt.Dxf,
         "gerber" or "rs274x" or "excellon" => Fmt.Gerber,
         "board" or "kicad_pcb" => Fmt.Board,   // the extension is a data format; the bare product name is not ours to use
+        "step" or "stp" => Fmt.Step,
         _ => null,
     };
 
@@ -770,7 +842,7 @@ public static class LayoutConvert
     internal static string Name(Fmt f) => f switch
     {
         Fmt.Clay => "clay", Fmt.Gdsii => "GDSII", Fmt.Dxf => "DXF",
-        Fmt.Gerber => "Gerber", _ => "board",
+        Fmt.Gerber => "Gerber", Fmt.Step => "STEP", _ => "board",
     };
 
     internal static Fmt? DetectSource(string path)
@@ -780,7 +852,9 @@ public static class LayoutConvert
 
         // No telling extension. Gerber and Excellon files are named however the toolchain that wrote
         // them felt like, so the answer comes from the content — through the classifier the import
-        // itself uses, never a second rule.
+        // itself uses, never a second rule. A STEP file says so on its first line (ISO 10303-21's
+        // header), which StepImport reads — the one line of STEP text read outside the worker.
+        if (StepImport.LooksLikeStep(path)) return Fmt.Step;
         try
         {
             var kind = GerberFileClassifier.Classify(path).Kind;
@@ -798,13 +872,15 @@ public static class LayoutConvert
         ".gds" or ".gdsii" or ".gds2" => Fmt.Gdsii,
         ".dxf" => Fmt.Dxf,
         ".kicad_pcb" => Fmt.Board,
+        ".step" or ".stp" => Fmt.Step,
         _ => null,
     };
 
     private static int Usage()
     {
         Console.Error.WriteLine("Usage: circuitrf convert <input> -o <output> [--from f] [--to f] [--cell name]");
-        Console.Error.WriteLine("       formats: clay | gdsii | dxf | gerber | board");
+        Console.Error.WriteLine("       formats: clay | gdsii | dxf | gerber | board; step (a source: -o <new>.c3d)");
+        Console.Error.WriteLine("       step:  --material <part>=<name> (repeatable)  --part <path> (repeatable)  --tech <path.ctech>");
         Console.Error.WriteLine("       --no-coalesce  keep a painted pour's individual strokes");
         JsonRun.Note(CliDiagnostics.ConvertUsage());
         return 1;

@@ -152,6 +152,8 @@ public partial class WorkspaceViewModel
             vm.ActiveSetupChanged += () => RememberActiveSetup(vm);
             vm.RunRequested = (c3d, setupName) => RunC3dSetupAsync(c3d, setupName);
             vm.SetupAnalysesRequested = c3d => _ = ShowC3dSetupAnalysesAsync(c3d, null);
+            // brief-em3d-68 R-em3d68-5d — a reload's new parts are offered in the import table, unchecked.
+            vm.OfferStepParts = (source, parts) => ShowStepImportAsync(vm, source, null, parts.ToHashSet(StringComparer.Ordinal));
             vm.ExternalChangeWhileDirty += () => _ = AskReloadC3dAsync(doc);
             // 3D editor round 1 — the selection's fields are the application's Properties Inspector: Properties (the
             // toolbar button, the menus) brings it forward, opening it when it was closed.
@@ -546,6 +548,54 @@ public partial class WorkspaceViewModel
     private static string EdgeTip(string what, string does)
         => (CircuitRF.Ui.ThreeD.GeometryKernelAvailability.DisabledReason(what) is { } why ? why + " " : does + " ") + "Requires an active 3D editor.";
 
+    // ── Import STEP (brief-em3d-68) ────────────────────────────────────────────────────────────
+
+    /// <summary>File ▸ Import ▸ STEP… and 3D ▸ Import STEP…: shown always, disabled without the kernel or a 3D editor.</summary>
+    public bool ThreeDImportStepAvailable => CircuitRF.Ui.ThreeD.GeometryKernelAvailability.IsAvailable && HasActiveC3dEditor();
+
+    /// <summary>The Import STEP items' tooltip: the capability's own sentence when that is why they are disabled.</summary>
+    public string ThreeDImportStepTip
+        => (CircuitRF.Ui.ThreeD.GeometryKernelAvailability.DisabledReason("Import STEP") is { } why ? why + " "
+            : "A STEP file's parts in this 3D view, one object per part, each with a material you choose. ") + "Requires an active 3D editor.";
+
+    private bool CanImportStep() => ThreeDImportStepAvailable;
+
+    [RelayCommand(CanExecute = nameof(CanImportStep))]
+    private async Task ImportStep(Window? owner)
+    {
+        if (ActiveC3dEditor() is not { } editor) return;
+        if (editor.ImportStepRefusal() is { } refusal) { Messages.Error(refusal); return; }
+        if (ResolveOwner(owner) is not { } window) return;
+        var files = await window.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Import STEP",
+            AllowMultiple = false,
+            FileTypeFilter =
+            [
+                new FilePickerFileType("STEP") { Patterns = ["*.step", "*.stp", "*.STEP", "*.STP"] },
+                new FilePickerFileType("All Files") { Patterns = ["*.*"] },
+            ],
+        });
+        if (files.Count == 0) return;
+        await ShowStepImportAsync(editor, files[0].Path.LocalPath, window, null);
+    }
+
+    /// <summary>The Import STEP dialog on <paramref name="source"/> — reading, then the table — and the editor's commit on OK.
+    /// <paramref name="onlyParts"/> limits the table to a reload's new parts, unchecked.</summary>
+    private async Task ShowStepImportAsync(C3dEditorViewModel editor, string source, Window? owner, IReadOnlySet<string>? onlyParts)
+    {
+        if (ResolveOwner(owner) is not { } window) return;
+        var dialogVm = new StepImportDialogViewModel(source, control => editor.ReadStep(source, control),
+                                                     plan => CircuitRF.Design.ThreeD.Step.StepImport.NamesRefusal(plan, editor.Document), onlyParts);
+        bool ok = await new CircuitRF.Ui.Views.ThreeD.StepImportDialog(dialogVm).ShowDialog<bool>(window);
+        if (!ok || dialogVm.Plan is not { } plan) return;
+        if (editor.AcceptStepImport(plan) is { } why) { Messages.Error(why); return; }
+        foreach (string note in editor.LastStepNotes) Messages.Info(note, editor.FilePath);
+    }
+
+    /// <summary>The 3D menu's items again — when the geometry kernel's probe answers.</summary>
+    internal void RefreshThreeDMenu() => RaiseThreeDMenuChanged();
+
     /// <summary>Re-evaluates every 3D menu item — called from both of the shell's enablement fan-outs.</summary>
     private void RaiseThreeDMenuChanged()
     {
@@ -554,6 +604,9 @@ public partial class WorkspaceViewModel
         OnPropertyChanged(nameof(ThreeDBooleanTip));
         OnPropertyChanged(nameof(ThreeDFilletTip));
         OnPropertyChanged(nameof(ThreeDChamferTip));
+        OnPropertyChanged(nameof(ThreeDImportStepAvailable));
+        OnPropertyChanged(nameof(ThreeDImportStepTip));
+        ImportStepCommand.NotifyCanExecuteChanged();
         ThreeDSelectModeCommand.NotifyCanExecuteChanged();
         ThreeDFitCommand.NotifyCanExecuteChanged();
         ThreeDStandardViewCommand.NotifyCanExecuteChanged();

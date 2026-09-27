@@ -601,6 +601,7 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
     {
         foreach (var item in OperationMenuItems()) yield return item;
         foreach (var item in BooleanMenuItems()) yield return item;
+        foreach (var item in StepMenuItems()) yield return item;
         foreach (var item in FaceMenuItems()) yield return item;
         foreach (var item in HierarchyMenuItems()) yield return item;
         foreach (var item in SimulateMenuItems()) yield return item;

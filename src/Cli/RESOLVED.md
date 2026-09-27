@@ -2727,3 +2727,15 @@ a file that leaves it out reads false. The page says to write it.
   `MaterialLibraries` with no page written. `ReferenceCliVerbTests`' topic order now includes it.
 - The eight new exception sentences in the `.cmat` reader/loader are on the firewall text allow-list, for the `.ctech`
   reader's reason (they reach the user inside a `MaterialLibraryException` whose problems carry ids).
+
+## `convert` gains a STEP source — brief-em3d-68 (2026-09-27)
+
+- **`step` is a source with one target, a NEW `.c3d`.** `LayoutConvert.ImportStep` is argument parsing, refusals and
+  reporting around `StepImport.Import`; `StepConvertCliTests` holds the rule with a comment-stripped scan of `src/Cli`
+  and a byte-for-byte comparison of the process's `.c3d` against the in-process call. `--material`, `--part` are
+  refused with any other source rather than ignored; `--list-cells` is refused for a STEP source (it holds parts).
+- **Content classification stays one rule.** A STEP file with no telling extension is recognised in
+  `LayoutConvert.DetectSource` by its first line through `StepImport.LooksLikeStep`, so `check` and `explain` (which
+  classify through `DetectSource`) name such a file `interchange`/`STEP` rather than unknown.
+- **Absent kernel**: the refusal is `GeometryKernel.NeedsKernel("Import STEP", …)` — the disabled menu item's own
+  sentence — with exit 1, checked before the file is read.

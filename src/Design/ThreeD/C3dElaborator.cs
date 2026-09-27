@@ -348,7 +348,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
             diag = Math.Sqrt((x1 - x0) * (x1 - x0) + (y1 - y0) * (y1 - y0) + (z1 - z0) * (z1 - z0));
         }
         // Relative to the object's size (overview §1j): a thousandth of its diagonal, never below a nanometre.
-        double linearUm = Math.Max(diag * 1e-3, 1e-3);
+        double linearUm = Math.Max(diag * DisplayRelativeDeflection, 1e-3);
         var mesh = shapes.Tessellate(tree, linearUm, DisplayAngularRad);
         var edges = shapes.Edges(tree, linearUm);
         const double M = 1e-6;
@@ -404,6 +404,10 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
 
     /// <summary>The display tessellation's angular deflection, radians.</summary>
     public const double DisplayAngularRad = 0.5;
+
+    /// <summary>The display tessellation's linear deflection as a fraction of the object's diagonal (overview §1j) — also
+    /// what STEP import counts a part's display triangles at (brief-em3d-68 R-em3d68-4c).</summary>
+    public const double DisplayRelativeDeflection = 1e-3;
 
     /// <summary>
     /// brief-em3d-66 R-em3d66-2g — the tree elaboration hands the kernel for TOP-LEVEL object <paramref name="index"/> of
@@ -874,7 +878,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
                     C3dBoolean b => $"Boolean {b.Op}",
                     C3dFillet f => $"Fillet of {string.Join(", ", f.Edges)}",
                     C3dChamfer c => $"Chamfer of {string.Join(", ", c.Edges)}",
-                    C3dStep st => $"Step part {st.Part} of {st.File}",
+                    C3dStep st => $"Step part {st.Part} of {st.File}{(st.Unit is { Length: > 0 } u ? $" (in {u})" : "")}",
                     _ => C3dObject.KindOf(o),
                 };
                 string state = o is C3dOperation { Enabled: false } ? " (disabled)" : "";

@@ -1,0 +1,87 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:t3="using:CircuitRF.Ui.ThreeD"
+        x:Class="CircuitRF.Ui.Views.ThreeD.StepImportDialog"
+        x:DataType="t3:StepImportDialogViewModel"
+        Title="{Binding Title}"
+        Width="820" Height="480" MinWidth="560" MinHeight="300"
+        WindowStartupLocation="CenterOwner"
+        CanResize="True"
+        ShowInTaskbar="False">
+
+    <!-- brief-em3d-68 R-em3d68-3c / -4c: reading (progress + Cancel), then the parts as a table and OK. -->
+    <Grid RowDefinitions="Auto,Auto,Auto,*,Auto,Auto" Margin="16,12,16,12">
+
+        <SelectableTextBlock Grid.Row="0" Text="{Binding UnitsLine}" FontWeight="SemiBold" FontSize="12"
+                             IsVisible="{Binding !Reading}"/>
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8" IsVisible="{Binding Reading}">
+            <ProgressBar IsIndeterminate="True" Width="120" VerticalAlignment="Center"/>
+            <SelectableTextBlock Text="{Binding Progress}" FontSize="12" VerticalAlignment="Center"/>
+        </StackPanel>
+
+        <SelectableTextBlock Grid.Row="1" Text="{Binding CountsLine}" FontSize="11" Margin="0,4,0,0"
+                             Foreground="{DynamicResource SystemBaseMediumColor}" IsVisible="{Binding !Reading}"/>
+
+        <StackPanel Grid.Row="2" Spacing="2" Margin="0,4,0,6">
+            <SelectableTextBlock Text="{Binding Error}" IsVisible="{Binding Error, Converter={x:Static ObjectConverters.IsNotNull}}"
+                                 Foreground="{DynamicResource SystemErrorTextColor}" TextWrapping="Wrap" FontSize="12"/>
+            <SelectableTextBlock Text="{Binding NoMaterials}" IsVisible="{Binding NoMaterials, Converter={x:Static ObjectConverters.IsNotNull}}"
+                                 TextWrapping="Wrap" FontSize="11"/>
+            <SelectableTextBlock Text="{Binding CoarseNote}" IsVisible="{Binding CoarseNote, Converter={x:Static ObjectConverters.IsNotNull}}"
+                                 TextWrapping="Wrap" FontSize="11"/>
+            <SelectableTextBlock Text="{Binding Notes}" IsVisible="{Binding HasNotes}" TextWrapping="Wrap" FontSize="11"
+                                 Foreground="{DynamicResource SystemBaseMediumColor}"/>
+        </StackPanel>
+
+        <Grid Grid.Row="3" RowDefinitions="Auto,*" IsVisible="{Binding !Reading}">
+            <Grid ColumnDefinitions="28,160,60,70,160,80,*" Margin="0,0,0,2">
+                <TextBlock Grid.Column="1" Text="Name" FontSize="11" FontWeight="SemiBold"/>
+                <TextBlock Grid.Column="2" Text="Colour" FontSize="11" FontWeight="SemiBold"/>
+                <TextBlock Grid.Column="3" Text="Solid" FontSize="11" FontWeight="SemiBold"/>
+                <TextBlock Grid.Column="4" Text="Material" FontSize="11" FontWeight="SemiBold"/>
+                <TextBlock Grid.Column="5" Text="Match" FontSize="11" FontWeight="SemiBold"/>
+                <TextBlock Grid.Column="6" Text="Part" FontSize="11" FontWeight="SemiBold"/>
+            </Grid>
+            <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled">
+                <ItemsControl ItemsSource="{Binding Rows}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="t3:StepImportRow">
+                            <Grid ColumnDefinitions="28,160,60,70,160,80,*" Margin="0,1">
+                                <CheckBox Grid.Column="0" IsChecked="{Binding Import}" IsEnabled="{Binding CanImport}"
+                                          ToolTip.Tip="{Binding SolidTip}" VerticalAlignment="Center"/>
+                                <TextBox Grid.Column="1" Text="{Binding Name}" FontSize="12" Margin="0,0,6,0"
+                                         IsEnabled="{Binding CanImport}"/>
+                                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                                    <Border Width="14" Height="14" Background="{Binding Swatch}" BorderThickness="1"
+                                            BorderBrush="{DynamicResource SystemBaseMediumLowColor}"/>
+                                    <Button Content="⇉" Padding="3,0" FontSize="11" Command="{Binding MapAllOfThisColourCommand}"
+                                            ToolTip.Tip="Map all of this colour: every part of this colour takes this row's material."/>
+                                </StackPanel>
+                                <TextBlock Grid.Column="3" Text="{Binding SolidText}" FontSize="12" VerticalAlignment="Center"
+                                           ToolTip.Tip="{Binding SolidTip}"/>
+                                <ComboBox Grid.Column="4" ItemsSource="{Binding $parent[ItemsControl].((t3:StepImportDialogViewModel)DataContext).Materials}"
+                                          SelectedItem="{Binding Material}" FontSize="12" HorizontalAlignment="Stretch" Margin="0,0,6,0"
+                                          IsEnabled="{Binding CanImport}"/>
+                                <TextBlock Grid.Column="5" Text="{Binding MatchText}" FontSize="12" VerticalAlignment="Center"/>
+                                <SelectableTextBlock Grid.Column="6" FontSize="11" VerticalAlignment="Center"
+                                                     Foreground="{DynamicResource SystemBaseMediumColor}">
+                                    <Run Text="{Binding Path}"/><Run Text="  "/><Run Text="{Binding ProductName}"/>
+                                </SelectableTextBlock>
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+        </Grid>
+
+        <SelectableTextBlock Grid.Row="4" Text="{Binding NamesError}" TextWrapping="Wrap" FontSize="11" Margin="0,6,0,0"
+                             Foreground="{DynamicResource SystemErrorTextColor}"
+                             IsVisible="{Binding NamesError, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+
+        <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,10,0,0">
+            <Button Content="Cancel" Width="90" HorizontalContentAlignment="Center" Command="{Binding CancelCommand}"/>
+            <Button Content="Import" Width="90" HorizontalContentAlignment="Center" IsDefault="True" Command="{Binding AcceptCommand}"
+                    ToolTip.Tip="Copy the file into this 3D view's folder and add one object per checked part, selected."/>
+        </StackPanel>
+    </Grid>
+</Window>

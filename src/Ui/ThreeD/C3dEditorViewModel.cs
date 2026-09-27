@@ -831,6 +831,8 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
             f.UndoRedo.MarkSaved();
             f.PreferenceDirty = false;
         }
+        // brief-em3d-68 R-em3d68-4d — a copy this session wrote and nothing now names goes with the save.
+        RemoveUnnamedStepCopies();
         OnPropertyChanged(nameof(IsDirty));
         return null;
     }

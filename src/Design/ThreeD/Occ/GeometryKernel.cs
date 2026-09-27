@@ -77,7 +77,14 @@ public sealed record GeometryKernelMesh(double[] Vertices, uint[] Triangles, uin
 
 /// <summary>One face of a built shape: its name, surface kind (plane, cylinder, cone, sphere, torus, bspline, other),
 /// tight box [x0,y0,z0,x1,y1,z1] µm, area µm² and smallest radius of curvature µm (0 for a plane).</summary>
-public sealed record GeometryKernelFace(string Name, string Kind, double[] Box, double Area, double MinRadius);
+public sealed record GeometryKernelFace(string Name, string Kind, double[] Box, double Area, double MinRadius)
+{
+    /// <summary>brief-em3d-68 R-em3d68-5c — the face's centroid, µm: half of the fingerprint Reload from Source matches by.</summary>
+    public double[] Centroid { get; init; } = [];
+
+    /// <summary>The outward unit normal at the face's point nearest its centroid; zeros where none is defined.</summary>
+    public double[] Normal { get; init; } = [];
+}
 
 /// <summary>One feature edge: its name (overview §1g), the two faces it separates, curve kind, length, smallest radius
 /// (0 for a line) and a polyline for drawing and snapping, three doubles per point.</summary>
@@ -103,17 +110,43 @@ public sealed record GeometryKernelEdge(string Name, string FaceA, string FaceB,
     public double Radius { get; init; }
 }
 
-/// <summary>One part of an imported STEP file, held by the worker under <see cref="Handle"/>.</summary>
-public sealed record GeometryKernelImportPart(string Handle, string Name, string Path, double[]? Colour, int Solids, int Faces, bool Valid);
+/// <summary>One part of a STEP file as the worker read it: its occurrence <see cref="Path"/> (<c>1/2</c>), product name,
+/// colour (RGB 0–1, or null), and counts. <see cref="Handle"/> is empty: an import holds nothing in the worker.</summary>
+public sealed record GeometryKernelImportPart(string Handle, string Name, string Path, double[]? Colour, int Solids, int Faces, bool Valid)
+{
+    /// <summary>brief-em3d-68 R-em3d68-4b — a closed solid after healing: what a Step object may be.</summary>
+    public bool Closed { get; init; }
+
+    /// <summary>Why it is not a closed solid, when it is not.</summary>
+    public string Why { get; init; } = "";
+
+    /// <summary>What shape healing changed, when it ran; empty for a part that was valid as read.</summary>
+    public string Healing { get; init; } = "";
+
+    /// <summary>The triangles the viewport would draw it with (R-em3d68-4c); 0 unless asked for.</summary>
+    public long Triangles { get; init; }
+}
 
 /// <summary>What <see cref="GeometryKernel.ImportStep"/> read: the file's length units, its parts, and what healing did.</summary>
-public sealed record GeometryKernelImport(IReadOnlyList<string> Units, IReadOnlyList<GeometryKernelImportPart> Parts, IReadOnlyList<string> Healing);
+public sealed record GeometryKernelImport(IReadOnlyList<string> Units, IReadOnlyList<GeometryKernelImportPart> Parts, IReadOnlyList<string> Healing)
+{
+    /// <summary>Micrometres per unit, one per entry of <see cref="Units"/>, as the reader resolved it.</summary>
+    public IReadOnlyList<double> UnitMicrons { get; init; } = [];
+
+    /// <summary>How many dimensions, tolerances and datums the file carried; none is imported (brief-em3d-68 §10).</summary>
+    public int Pmi { get; init; }
+}
 
 /// <summary>A preview: the build and its tessellation.</summary>
 public sealed record GeometryKernelPreview(GeometryKernelBuild Build, GeometryKernelMesh Mesh);
 
 /// <summary>One shape to export, with the name and colour a STEP file carries.</summary>
-public sealed record GeometryKernelExportItem(GeometryKernelTree Tree, string? Name = null, double[]? Colour = null);
+public sealed record GeometryKernelExportItem(GeometryKernelTree Tree, string? Name = null, double[]? Colour = null)
+{
+    /// <summary>In an assembly export, where this component sits: twelve numbers, a 3 × 4 matrix in rows, µm; null is
+    /// identity. Two items of one tree are one part instanced twice.</summary>
+    public double[]? Location { get; init; }
+}
 
 /// <summary>The geometry kernel, as circuitRF sees it: discovery, capability, and every request to the worker.</summary>
 public sealed class GeometryKernel : IDisposable
@@ -548,7 +581,10 @@ public sealed class GeometryKernel : IDisposable
             if (f is null) continue;
             faces.Add(new GeometryKernelFace(f["name"]?.GetValue<string>() ?? "", f["kind"]?.GetValue<string>() ?? "other",
                 [.. (f["box"] as JsonArray ?? []).Select(x => x?.GetValue<double>() ?? 0)],
-                f["area"]?.GetValue<double>() ?? 0, f["min_radius"]?.GetValue<double>() ?? 0));
+                f["area"]?.GetValue<double>() ?? 0, f["min_radius"]?.GetValue<double>() ?? 0)
+            {
+                Centroid = Numbers(f["centroid"]) ?? [], Normal = Numbers(f["normal"]) ?? [],
+            });
         }
         _cache.PutMemory(key, faces, faces.Count * 256L + 256);
         return faces;
@@ -602,8 +638,9 @@ public sealed class GeometryKernel : IDisposable
     /// Writes <paramref name="items"/> as <paramref name="format"/> — <c>brep</c>, <c>step</c>, <c>ply</c> or <c>stl</c> — in
     /// <paramref name="units"/> (<c>um</c>, <c>mm</c>, <c>mil</c>, <c>in</c>, <c>m</c>). Not cached: a STEP file carries a timestamp.
     /// </summary>
+    /// <param name="assembly">STEP only: one assembly whose components are the items, each at its <see cref="GeometryKernelExportItem.Location"/>.</param>
     public byte[] Export(IReadOnlyList<GeometryKernelExportItem> items, string format, string units = "um",
-                         double linearUm = 1, double angularRad = 0.5, string? schema = null, RunControl? control = null)
+                         double linearUm = 1, double angularRad = 0.5, string? schema = null, RunControl? control = null, bool assembly = false)
     {
         string what = items.Count == 1 ? $"'{items[0].Tree.Object}'" : $"{items.Count} objects";
         var (path, id) = Require($"Exporting {what}");
@@ -622,18 +659,31 @@ public sealed class GeometryKernel : IDisposable
             ["linear_um"] = linearUm, ["angular_rad"] = angularRad,
         };
         if (schema is not null) request["schema"] = schema;
+        if (assembly)
+        {
+            request["assembly"] = true;
+            request["locations"] = new JsonArray([.. items.Select(i => i.Location is { Length: 12 } m ? new JsonArray([.. m.Select(v => JsonValue.Create(v))]) : null)]);
+        }
         var reply = _model.Send(path, new GeometryKernelMessage(request), Deadlines.Other, control, "exporting", what.Trim('\''));
         if (!reply.Ok) throw Refused(reply, what.Trim('\''));
         return reply.Blob("data")?.Data ?? [];
     }
 
-    /// <summary>Reads a STEP file: one held shape per part, with names, colours, units and the healing report.</summary>
-    public GeometryKernelImport ImportStep(byte[] file, RunControl? control = null)
+    /// <summary>
+    /// Reads a STEP file — its parts with names, colours, counts and whether each is a closed solid, its length units and
+    /// the healing report. Holds nothing in the worker: what becomes an object is built later, from the copied file, by
+    /// the ordinary build path. <paramref name="displayRelative"/> &gt; 0 also counts each part's display triangles at that
+    /// fraction of its diagonal (the elaborator's display deflection). Never cached: the bytes are the question.
+    /// </summary>
+    /// <exception cref="GeometryKernelException">Refused (not STEP, or a unit it cannot resolve), crashed, or no kernel.</exception>
+    /// <exception cref="OperationCanceledException"><paramref name="control"/>'s token cancelled; the worker was killed.</exception>
+    public GeometryKernelImport ImportStep(byte[] file, RunControl? control = null, double displayRelative = 0)
     {
         var (path, _) = Require("Importing a STEP file");
         string prefix = "step:" + Convert.ToHexStringLower(SHA256.HashData(file));
-        var reply = _model.Send(path, new GeometryKernelMessage(new JsonObject { ["op"] = "import-step", ["shape"] = prefix },
-                                                                [GeometryKernelBlob.OfBytes("file", file)]),
+        var request = new JsonObject { ["op"] = "import-step", ["shape"] = prefix, ["hold"] = false };
+        if (displayRelative > 0) request["display_rel"] = displayRelative;
+        var reply = _model.Send(path, new GeometryKernelMessage(request, [GeometryKernelBlob.OfBytes("file", file)]),
                                 Deadlines.ImportStep, control, "importing", "the STEP file");
         if (!reply.Ok) throw Refused(reply, "the STEP file");
         var parts = new List<GeometryKernelImportPart>();
@@ -643,9 +693,16 @@ public sealed class GeometryKernel : IDisposable
             double[]? colour = p["colour"] is JsonArray c ? [.. c.Select(x => x?.GetValue<double>() ?? 0)] : null;
             parts.Add(new GeometryKernelImportPart(p["shape"]?.GetValue<string>() ?? "", p["name"]?.GetValue<string>() ?? "",
                 p["path"]?.GetValue<string>() ?? "", colour, p["solids"]?.GetValue<int>() ?? 0, p["faces"]?.GetValue<int>() ?? 0,
-                p["valid"]?.GetValue<bool>() ?? false));
+                p["valid"]?.GetValue<bool>() ?? false)
+            {
+                Closed = p["closed"]?.GetValue<bool>() ?? false, Why = p["why"]?.GetValue<string>() ?? "",
+                Healing = p["healing"]?.GetValue<string>() ?? "", Triangles = p["triangles"]?.GetValue<long>() ?? 0,
+            });
         }
-        return new GeometryKernelImport(Strings(reply, "units"), parts, Strings(reply, "healing"));
+        return new GeometryKernelImport(Strings(reply, "units"), parts, Strings(reply, "healing"))
+        {
+            UnitMicrons = Numbers(reply.Json["unit_um"]) ?? [], Pmi = Int(reply, "pmi"),
+        };
     }
 
     private static double[]? Numbers(JsonNode? n) => n is JsonArray a ? [.. a.Select(x => x?.GetValue<double>() ?? 0)] : null;
@@ -665,6 +722,7 @@ public sealed class GeometryKernel : IDisposable
         ["shape.unknown"] = o => $"The geometry kernel no longer held '{o}'",
         ["export.failed"] = o => $"The geometry kernel could not export {o}",
         ["import.failed"] = _ => "The geometry kernel could not read the STEP file",
+        ["import.units"] = _ => "The STEP file's length unit is not one circuitRF can import exactly",
         ["kernel.exception"] = o => $"The geometry kernel failed on '{o}'",
         ["request.malformed"] = o => $"The geometry kernel did not understand circuitRF's request for '{o}'",
     };

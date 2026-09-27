@@ -107,6 +107,7 @@
                                     <NativeMenuItem Header="DXF…"   Command="{Binding ImportDxfLibraryCommand}"   CommandParameter="{Binding $parent[Window]}"/>
                                     <NativeMenuItem Header="Board…" Command="{Binding ImportBoardCommand}"        CommandParameter="{Binding $parent[Window]}"/>
                                     <NativeMenuItem Header="Gerber…" Command="{Binding ImportGerberCommand}"      CommandParameter="{Binding $parent[Window]}"/>
+                                    <NativeMenuItem Header="STEP…" ToolTip="{Binding ThreeDImportStepTip}" Command="{Binding ImportStepCommand}" CommandParameter="{Binding $parent[Window]}"/>
                                     <NativeMenuItem Header="Component…" Command="{Binding ImportComponentCommand}" CommandParameter="{Binding $parent[Window]}"/>
                                     <NativeMenuItem Header="PDK…"   Command="{Binding ImportPdkCommand}"          CommandParameter="{Binding $parent[Window]}"/>
                                     <NativeMenuItem Header="Model or Subcircuit…" Command="{Binding ImportModelCardCommand}" CommandParameter="{Binding $parent[Window]}"/>
@@ -361,6 +362,8 @@
                                 </NativeMenu>
                             </NativeMenuItem.Menu>
                         </NativeMenuItem>
+                        <!-- brief-em3d-68 — mirrored by the in-window 3D menu below, and by File ▸ Import ▸ STEP…. -->
+                        <NativeMenuItem Header="Import STEP…" ToolTip="{Binding ThreeDImportStepTip}" Command="{Binding ImportStepCommand}" CommandParameter="{Binding $parent[Window]}"/>
                         <NativeMenuItem Header="Measure" ToolTip="Two snapped points: x, y, z, the deltas and the distance, every number copyable (M). Requires an active 3D document." Command="{Binding ThreeDMeasureCommand}"/>
                         <NativeMenuItem Header="Materials…" ToolTip="The active 3D view's technology, opened on its Materials tab: its own materials and the libraries it names. Requires an active 3D document." Command="{Binding ThreeDMaterialsCommand}"/>
                         <NativeMenuItem Header="Triangle Budget…" ToolTip="How many triangles a frame draws before array elements, farthest first, are drawn as their bounding boxes. Stored per user." Command="{Binding ThreeDTriangleBudgetCommand}"/>
@@ -805,6 +808,10 @@
                               Command="{Binding ImportGerberCommand}"
                               CommandParameter="{Binding $parent[Window]}"
                               ToolTip.Tip="Import a Gerber/Excellon file set as one flat cell and a technology of its own. Point at a folder, or at one file and say whether its folder was meant. Vias are rebuilt where the drill data comes too."/>
+                    <MenuItem Header="_STEP…"
+                              Command="{Binding ImportStepCommand}"
+                              CommandParameter="{Binding $parent[Window]}"
+                              ToolTip.Tip="{Binding ThreeDImportStepTip}"/>
                     <MenuItem Header="_Component…"
                               Command="{Binding ImportComponentCommand}"
                               CommandParameter="{Binding $parent[Window]}"
@@ -1159,6 +1166,9 @@
                     <MenuItem Header="_Dissolve Boolean" Command="{Binding ThreeDModifyCommand}" CommandParameter="BooleanDissolve" ToolTip.Tip="The selected boolean's operands become top-level objects again. Requires an active 3D editor."/>
                     <MenuItem Header="_Edit Operands  (Ctrl/Cmd+])" Command="{Binding ThreeDModifyCommand}" CommandParameter="BooleanEnter" ToolTip.Tip="Enter the selected boolean to edit its operands; Esc or Ctrl/Cmd+[ leaves. Requires an active 3D editor."/>
                 </MenuItem>
+                <!-- brief-em3d-68 — mirrors the macOS menu's 3D ▸ Import STEP… above. -->
+                <MenuItem Header="_Import STEP…" Command="{Binding ImportStepCommand}" CommandParameter="{Binding $parent[Window]}"
+                          ToolTip.Tip="{Binding ThreeDImportStepTip}"/>
                 <MenuItem Header="Mea_sure" Command="{Binding ThreeDMeasureCommand}"
                           ToolTip.Tip="Two snapped points: x, y, z, the deltas and the distance, every number copyable (M). Requires an active 3D document.">
                     <MenuItem.Icon><mi:MaterialIcon Kind="RulerSquare" Width="16" Height="16"/></MenuItem.Icon>

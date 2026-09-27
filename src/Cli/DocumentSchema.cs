@@ -548,7 +548,8 @@ internal static class DocumentSchema
                 { "$type": "Chamfer", "Name": "pin", "Distance": 20000, "Edges": ["side|top"],
                   "Target": { "$type": "Cylinder", … } }
                 { "$type": "Step", "Name": "shell", "Material": "Brass", "File": "sma-body.step",
-                  "Part": "1/2", "Hash": "sha256:…", "Unit": "inch" }
+                  "Part": "1/2", "Hash": "sha256:…", "Unit": "inch",
+                  "SourcePath": "../../incoming/sma-body.step" }
 
             THE WRAPPER TAKES THE NAME: a Boolean is its Blank to the rest of the document, a Fillet or
             Chamfer its Target — the object inside has NO Name (writing one is a check error), and its
@@ -577,6 +578,19 @@ internal static class DocumentSchema
             fill in a bore. A Unite of different materials takes the Blank's, and the elaboration
             says which it replaced. An operation the kernel cannot build (a fillet too large, an empty
             result) is refused by name and the rest of the document still elaborates.
+          * A STEP PART is ONE solid of a STEP file copied into the .c3d's own folder. File is that
+            copy's name (relative to the .c3d); Part is the occurrence path in the file's assembly
+            ("1", "1/2" — the component index at each level; a part instanced twice is two paths and
+            two objects); Hash is "sha256:<hex>" of the copy's bytes; Unit is the file's length unit
+            as read (informational — the reader converts every coordinate exactly); SourcePath is
+            where it was imported from, relative to the .c3d inside the workspace, else absolute
+            (what Reload from Source reads). The file's assembly placement is applied from Part, so
+            Placement starts at identity and anything written there composes on top. Material may be
+            absent: the part is then drawn, ignored by the solver, and named by `check`. Several
+            objects may name one File. To import into an EXISTING 3D view headlessly, copy the file
+            beside the .c3d and write these objects; `convert part.step -o <cell>/3d/<name>.c3d`
+            makes a NEW one (materials by part name, then by exact colour, else none; --material
+            <part>=<name>, --part <path> and --tech <path> answer what the dialog would ask).
           * WITHOUT OPENCASCADE a 3D view that holds any Boolean, Fillet, Chamfer or Step —
             at any depth, ENABLED OR NOT — is refused on open with the reason and the action; `check`
             reports one error per such object and exits 1, and `em` refuses before writing anything.
