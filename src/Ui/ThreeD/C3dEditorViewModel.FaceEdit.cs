@@ -83,6 +83,9 @@ public sealed partial class C3dEditorViewModel : IC3dFaceHost
         var (lx, ly, lz) = t.Inverse().Apply(new C3dPoint3(R(wx / per), R(wy / per), R(wz / per)));
         // The scene's floats resolve a part in ~10⁷ of the distance from the scene's origin.
         double reach = 2 + 1e-6 * Math.Sqrt(item.Point.X * item.Point.X + item.Point.Y * item.Point.Y + item.Point.Z * item.Point.Z) / per;
+        // brief-em3d-50 — a wire's picked vertex is a corner of its section, a foot's end or a ball's rim: its axis point is
+        // within a few diameters of it.
+        if (obj is C3dWire wire) reach += 3 * C3dWires.DiameterNm(wire) * 1e-9 / per;
         IReadOnlyList<C3dPoint3> candidates = obj is C3dCylinder c ? C3dFaceEditor.CapCentres(c) : new C3dFaceEditor(obj).Vertices;
         int best = -1;
         double bestD = reach * reach;
@@ -287,6 +290,19 @@ public sealed partial class C3dEditorViewModel : IC3dFaceHost
             SetTool(null);
             Viewer.Regenerate();
             return;
+        }
+        // brief-em3d-50 R-em3d50-3c — a wire's feet are re-seated on release; an end moved off every pad is refused.
+        if (obj is C3dWire movedWire && Document.Objects[index] is C3dWire was)
+        {
+            if (SeatEditedWire(was, ref movedWire) is { } refusal)
+            {
+                StatusMessage = refusal;
+                SetTool(null);
+                Viewer.Regenerate();
+                return;
+            }
+            obj = movedWire;
+            after = C3dPersistence.SerializeObject(obj);
         }
         var boundaries = BoundariesFollowing(obj.Name, r.Folds);
         Push(new C3dEdit(ft.Describe, [new C3dEditSlot(false, index, before, after)], ApplySlots, faceBoundaries: boundaries, setBoundaries: SetBoundaries));

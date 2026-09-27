@@ -20,6 +20,8 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using CircuitRF.Design.Layout;
 using CircuitRF.Engine.Em3d;
+using BondStyle = CircuitRF.WBond.BondStyle;
+using WireCrossSection = CircuitRF.WBond.WireCrossSection;
 
 namespace CircuitRF.Design.ThreeD;
 
@@ -107,6 +109,7 @@ public sealed partial class C3dPlacement
 [JsonDerivedType(typeof(C3dSheet),      "Sheet")]
 [JsonDerivedType(typeof(C3dPolyline),   "Polyline")]
 [JsonDerivedType(typeof(C3dPolyhedron), "Polyhedron")]
+[JsonDerivedType(typeof(C3dWire),       "Wire")]
 public abstract class C3dObject
 {
     /// <summary>Unique in the document, validated as a cell name is; <c>airbox</c> is reserved (the air
@@ -278,6 +281,44 @@ public sealed class C3dPolyhedron : C3dObject
     public List<C3dFace>   Faces    { get; set; } = [];
 
     public override IReadOnlyList<string> FaceNames() => [.. Faces.Select(f => f.Name)];
+}
+
+// ── Bond wires (brief-em3d-50) ────────────────────────────────────────────────────────────────
+
+/// <summary>One end of a <see cref="C3dWire"/>: how it is bonded.</summary>
+public sealed class C3dWireEnd
+{
+    /// <summary>A wedge lays a foot on the pad; a ball sits a flattened ball on it (em-3d.md §6.6).</summary>
+    public BondStyle Style { get; set; }
+
+    /// <summary>A wedge's foot length, µm. Omitted: the workspace's assembly rules (<c>.wasm</c>), then about twice
+    /// the diameter — and the elaboration says which.</summary>
+    public double? FootLengthUm { get; set; }
+}
+
+/// <summary>
+/// brief-em3d-50 R-em3d50-2 — a bond wire drawn in the 3D view: between two pads that may be in different instances
+/// (a die pad inside <c>U1</c>, a package lead in the parent), which a <c>.wBond</c> — attached to one layout — cannot
+/// reach across. <see cref="Points"/> are the axis and <b>the only truth about the shape</b> (wbond.md): there is no
+/// stored profile. They are WORLD points of this document — a wire has no placement, because it spans things that
+/// each have their own — and each end lies on its pad's top surface.
+/// </summary>
+public sealed class C3dWire : C3dObject
+{
+    /// <summary>The axis, in order from start to end, integer DBU.</summary>
+    public List<C3dPoint3> Points { get; set; } = [];
+
+    /// <summary>The wire's diameter, µm. Omitted: 1 mil (wBond's own default).</summary>
+    public double? DiameterUm { get; set; }
+
+    /// <summary>The swept cross-section. Omitted: <c>Hexagon</c>, the flat-bottomed section a foot lands on face to face.</summary>
+    public WireCrossSection? Section { get; set; }
+
+    public C3dWireEnd Start { get; set; } = new();
+    public C3dWireEnd End   { get; set; } = new();
+
+    /// <summary>A wire is a swept solid with no named faces.</summary>
+    public override IReadOnlyList<string> FaceNames() => [];
 }
 
 // ── Instances ─────────────────────────────────────────────────────────────────────────────────

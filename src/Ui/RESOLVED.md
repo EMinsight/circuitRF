@@ -35999,3 +35999,27 @@ context menu, overlay numbers and the port tool's live inference, the records tr
   across sessions too.
 - **The editor's pane had no results root and no setup** (`() => null`), so fields and the mesh could never appear
   in it; `SetRunSetup` names the active setup as its run names it (`<stem> <name>`), which is the directory key.
+
+## brief-em3d-50 — bond wires in the 3D editor (2026-09-26)
+
+Built: `Tools/WireTool.cs` (start, end, loop height; typed or by the mouse), `C3dEditorViewModel.Wires.cs` (the tool's
+host: pad at a point, pad under the ray, a candidate's measured assembly height; the toolbar's diameter, metal,
+styles and section; Re-Seat Wire Ends; the tree flag; the axis drawn in Vertex mode and in red when refused),
+Shift+A **W**, 3D ▸ Draw ▸ Wire, 3D ▸ Modify ▸ Re-Seat Wire Ends, a "Wires" tree group, Vertex-mode editing of a
+wire's axis points with the feet re-seated on release. Gates: `tests/Ui.Tests/ThreeD/WireGateTests.cs`. Pixels were
+not seen.
+
+- **There is no "anywhere on a face" snap**, so a click in the middle of a pad top that is near no feature would have
+  been refused. The tool takes a geometry snap on a pad top first, and otherwise the first pad top the cursor's ray
+  meets (`C3dWires.PadHit`) — which ignores any non-pad solid in front of it; a lid over the die is a known limit.
+- **A refused wire has no solid, so it cannot be picked in the view** — and it is exactly the wire Re-Seat exists for.
+  Re-Seat therefore also takes the wire selected in the tree, and is on 3D ▸ Modify as well as the context menu.
+- **A wire is up to three scene objects** (the sweep and `…/ball/start`, `…/ball/end`). `DocumentIndex` falls back to
+  the provenance's object name, so picking a ball selects its wire, and `SceneObjectsOf` includes the balls.
+- **Vertex mode finds a wire's axis point from a picked section corner** by widening the reach by three diameters (a
+  foot's far end is two diameters out). Not driven by a gate: it needs the pick pass on a real sweep — owner check.
+- **The loop-height readout follows the mouse**: `WireTool.Track` runs on every cursor resolve, so the status line's
+  two numbers (assembly, and the axis's own rise) are the arch being drawn, not the previous frame's.
+- **Defaults**: the last wire drawn; else the workspace `.wasm`'s first allowed diameter; else 1 mil, the technology's
+  Gold (or its first metal), hexagon, wedge–wedge. The toolbar's general material combo is hidden while Wire is armed,
+  since the wire's metal is its own combo (metals only).

@@ -46,6 +46,8 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
         (C3dToolKind.Cylinder, 'Y', "Database"),
         // brief-em3d-49 R-em3d49-2d — a port, drawn like a sheet.
         (C3dToolKind.Port, 'P', "ArrowUpBoldBoxOutline"),
+        // brief-em3d-50 R-em3d50-3a — a bond wire, pad to pad.
+        (C3dToolKind.Wire, 'W', "VectorCurve"),
     ];
 
     public const string EdgeOnFormat = "the {0} plane is edge-on; orbit or choose another plane";
@@ -214,6 +216,7 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
             C3dToolKind.Polygon => new PolygonTool(this),
             C3dToolKind.Polyline => new PolylineTool(this),
             C3dToolKind.Port => new PortTool(this, () => NewPortTemplate()),
+            C3dToolKind.Wire => WireToolArmed(),
             _ => new CylinderTool(this),
         });
     }
@@ -239,7 +242,7 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
         // brief-em3d-46 — one gesture at a time: arming a tool ends a measurement.
         if (tool is not null) Viewer.EndMeasure();
         foreach (string p in new[] { nameof(ArmedTool), nameof(Tool), nameof(IsBoxArmed), nameof(IsSheetArmed), nameof(IsPolygonArmed),
-                                     nameof(IsPolylineArmed), nameof(IsCylinderArmed), nameof(IsPortArmed), nameof(ToolPrompt) })
+                                     nameof(IsPolylineArmed), nameof(IsCylinderArmed), nameof(IsPortArmed), nameof(IsWireArmed), nameof(ToolPrompt) })
             OnPropertyChanged(p);
         Viewer.RequestFrame();
     }
@@ -360,6 +363,7 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
                                  [new C3dEditSlot(false, Document.Objects.Count, null, C3dPersistence.SerializeObject(obj))], ApplySlots));
                 ToolCommits++;
                 StatusMessage = $"Drew {C3dObject.KindOf(obj).ToLowerInvariant()} \"{obj.Name}\"" + (obj.Material is { } m ? $" in {m}." : ".");
+                if (_tool is WireTool wt) RememberWire(wt);
             }
         }
         OnPropertyChanged(nameof(ToolPrompt));
@@ -471,6 +475,7 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
         if (_tool is { } tool) tool.Preview(CursorInput(), overlay.Rubber, overlay.Fixed);
         FillFaceOverlay(overlay);
         FillHierarchyOverlay(overlay);
+        FillWireOverlay(overlay);
         if (_tool is C3dOperationTool { ShowsPivot: true } op) overlay.Pivots.Add(DrawGeometry.Metres(op.Pivot, dbu));
         if (_crossing is { } x) { overlay.Crossing.Add(x.A); overlay.Crossing.Add(x.B); }
         FillSimulateOverlay(overlay);
@@ -489,6 +494,7 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
         foreach (var item in FaceMenuItems()) yield return item;
         foreach (var item in HierarchyMenuItems()) yield return item;
         foreach (var item in SimulateMenuItems()) yield return item;
+        foreach (var item in WireMenuItems()) yield return item;
         if (Viewer.SelectMode == Scene3DSelectMode.Face && Viewer.Selection is [{ Face: >= 0 } f])
             yield return new Viewer3DMenuItem("Drawing Plane from Face", () => { if (PlaneFromFace(f.Object, f.Face) is { } why) StatusMessage = why; });
         if (ExtrudeSource() is { } src)

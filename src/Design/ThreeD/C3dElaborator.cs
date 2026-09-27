@@ -22,6 +22,11 @@
 // a silent merge would give one of them the wrong conductivity, and nothing would look wrong. The
 // technology is named by its .ctech file's stem (its display name may hold spaces and commas).
 //
+// BOND WIRES (brief-em3d-50). A drawn Wire resolves AFTER its document's objects and instances, because its ends land
+// on conductors anywhere below it — a die pad in `U1`, a lead in the parent (C3dWires: the pad lookup, then the same
+// Em3dWires.Resolve a .wBond's wires use). A wire that lands on no pad is refused by name and end, and the rest of the
+// document still elaborates, so the editor can draw it and flag it (WireRefusals).
+//
 // CACHING (R-em3d42-4), because the editor calls this on every edit. An elaborator instance keeps a
 // per-OBJECT cache keyed by the object's serialized form, its world transform and its document's scale,
 // and a per-CHILD cache keyed by (file, file stamp, view, technology stamp) — brief 28's rule: a file
@@ -97,8 +102,16 @@ public sealed record C3dElaboration(
     /// <summary>What each object is, by name — a layout instance's origins, prefixed; a drawn object's by its role.</summary>
     public IReadOnlyDictionary<string, Em3dObjectOrigin> Origins { get; init; } = new Dictionary<string, Em3dObjectOrigin>();
 
-    /// <summary>A layout instance's bond-wire reports, renamed into the parent.</summary>
+    /// <summary>A layout instance's bond-wire reports, renamed into the parent, and every drawn wire's (brief-em3d-50).</summary>
     public IReadOnlyList<Em3dWireReport> Wires { get; init; } = [];
+
+    /// <summary>brief-em3d-50 — each drawn wire that did not resolve, by its elaborated name: the refusal, which is also in
+    /// <see cref="Refusals"/>. What the editor flags in its tree and draws in red.</summary>
+    public IReadOnlyDictionary<string, string> WireRefusals { get; init; } = new Dictionary<string, string>();
+
+    /// <summary>brief-em3d-50 — each drawn wire's result, by elaborated name: its pads and process values, for
+    /// <c>explain</c> and the Wire tool's readout.</summary>
+    public IReadOnlyDictionary<string, C3dWireResult> DrawnWires { get; init; } = new Dictionary<string, C3dWireResult>();
 
     /// <summary>brief-em3d-48 R-em3d48-6b — the instances whose cell or view resolved to nothing or could not be read, by
     /// instance path: what the editor draws as a dashed box with the cell's name.</summary>
@@ -293,6 +306,9 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null)
         private readonly List<string> _groundBand = [];
         private readonly Dictionary<string, Em3dObjectOrigin> _origins = new(StringComparer.Ordinal);
         private readonly List<Em3dWireReport> _wires = [];
+        private readonly Dictionary<string, string> _wireRefusals = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, C3dWireResult> _drawnWires = new(StringComparer.Ordinal);
+        private readonly List<(string Name, string Source)> _builtInWireValues = [];
         private readonly List<C3dWalkStep> _walkInstances = [], _walkUnits = [], _walkLowering = [];
         private readonly List<(string, string)> _unresolved = [];
         private int _order;
@@ -322,6 +338,12 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null)
                            $"{(parts.Count == 1 ? "is" : "are")} not part of its instance. Only the parent says where a signal enters.");
             }
 
+            if (_builtInWireValues.Count > 0)
+                _notes.Add($"No {string.Join(", ", _builtInWireValues.Select(v => v.Source).Distinct())} is stated on " +
+                           $"{string.Join(", ", _builtInWireValues.Select(v => v.Name).Distinct().Select(n => $"'{n}'"))} or in the " +
+                           "workspace's assembly rules, so the built-in starting value was used. It is a first guess, not assembly " +
+                           "data: set it on the wire's end, or in the .wasm the workspace's DefaultAssemblyRef names.");
+
             var (materials, sources, walkMaterials) = Materials();
             var solids = new List<Em3dSolid>(_solids);
             var sheets = new List<Em3dSheet>(_sheets);
@@ -341,6 +363,8 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null)
                 MaterialSources = sources,
                 Origins = _origins,
                 Wires = _wires,
+                WireRefusals = _wireRefusals,
+                DrawnWires = _drawnWires,
                 WalkInstances = _walkInstances,
                 WalkUnits = _walkUnits,
                 WalkMaterials = walkMaterials,
@@ -369,6 +393,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null)
             foreach (var obj in doc.Objects)
             {
                 if (obj is C3dPolyline) { _polylines++; continue; }
+                if (obj is C3dWire) continue;                       // after the instances: see Wires
                 string name = prefix + obj.Name;
                 if (obj.Material is not { Length: > 0 } matName)
                 {
@@ -420,6 +445,73 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null)
 
             string baseDir = Path.GetDirectoryName(path)!;
             foreach (var inst in doc.Instances) Instance(doc, inst, baseDir, world, prefix, stack, exact);
+            if (doc.Objects.Any(o => o is C3dWire)) Wires(doc, path, tech, world, prefix);
+        }
+
+        /// <summary>brief-em3d-50 — the document's drawn wires, landed on the conductors of this document and everything
+        /// below it (never a sibling's: a wire in a child lands inside that child).</summary>
+        private void Wires(C3dDocument doc, string path, TechResolution tech, C3dTransform world, string prefix)
+        {
+            string techName = TechName(tech);
+            var wireNames = new HashSet<string>(doc.Objects.OfType<C3dWire>().Select(w => prefix + w.Name), StringComparer.Ordinal);
+            var pads = C3dWires.Pads(_solids, _sheets, prefix, wireNames);
+            double tol = C3dLowering.Metres(1, _topDbu);
+            var workspace = new WireBondWorkspace(path, WorkspaceRootFinder.FindAncestorCws(Path.GetDirectoryName(path)) ?? workspaceCws);
+            foreach (var w in doc.Objects.OfType<C3dWire>())
+            {
+                string name = prefix + w.Name;
+                string matName = C3dWires.MaterialOf(w);
+                string? refusal = null;
+                TechMaterial? material = tech.Tech?.FindMaterial(matName);
+                if (material is null)
+                {
+                    var metals = tech.Tech?.Materials.Where(m => m.Sigma20 is not null).Select(m => m.Name).ToList() ?? [];
+                    refusal = $"Wire '{name}' is made of '{matName}', which its technology ({techName}) does not define. Known metals: " +
+                              $"{(metals.Count == 0 ? "none" : string.Join(", ", metals))}. A 3D model does not substitute a metal.";
+                }
+                else if (material.Sigma20 is null)
+                    refusal = $"Wire '{name}' is made of '{matName}', which technology '{techName}' defines with no conductivity " +
+                              "(Sigma20), so it is not a metal.";
+                else if (w.Role is { } role && role != Em3dRole.Conductor)
+                    refusal = $"Wire '{name}' has the role {role}; a wire is a conductor.";
+                C3dWireResult? result = null;
+                if (refusal is null)
+                {
+                    result = C3dWires.Resolve(w, name, world, doc.DbuPerMicron, pads, tol, workspace, LayoutUnits.AsciiSuffix(doc.DisplayUnit));
+                    _drawnWires[name] = result;
+                    refusal = result.Refusal;
+                }
+                if (refusal is not null || result?.Resolution is not { Sweep: { } sweep } r)
+                {
+                    refusal ??= $"Wire '{name}' could not be built.";
+                    _wireRefusals[name] = refusal;
+                    _refusals.Add(refusal);
+                    continue;
+                }
+                _warnings.AddRange(r.Warnings);
+                var values = Resolve(material!, out string source);
+                string key = Register(techName, material!.Name, values, $"technology '{techName}' Materials" + source);
+                void Solid(string solidName, Em3dPrimitive primitive)
+                {
+                    _uses.Add((_solids.Count, false, techName, material.Name));
+                    _solids.Add(new Em3dSolid(solidName, key, Em3dRole.Conductor, primitive, ++_order));
+                    _provenance[solidName] = new C3dProvenance(prefix.TrimEnd('/'), path, w.Name, []) { Exact = false, Element = prefix.Length > 0 ? world : null };
+                    _origins[solidName] = new Em3dObjectOrigin(Em3dObjectKind.Wire, null, null, null);
+                    Net(solidName, name);
+                }
+                Solid(name, sweep);
+                foreach (var (ballName, ball) in r.Balls) Solid(ballName, ball);
+                _walkLowering.Add(new C3dWalkStep(name, $"wire: {r.Report!.Section} sweep of {sweep.Rings.Count} sections from " +
+                                                        $"'{result.StartPad!.Name}' to '{result.EndPad!.Name}'"));
+                _wires.Add(r.Report with { Material = material.Name });
+                foreach (var (v, what) in new[] { (result.StartProcess!, w.Start), (result.EndProcess!, w.End) })
+                {
+                    if (what.Style == WBond.BondStyle.Wedge && v.FootLength.Source == WireBondValueSource.BuiltIn)
+                        _builtInWireValues.Add((name, "wedge-foot length"));
+                    if (what.Style == WBond.BondStyle.Ball && v.BallDiameter.Source == WireBondValueSource.BuiltIn)
+                        _builtInWireValues.Add((name, "ball diameter and height"));
+                }
+            }
         }
 
         /// <summary>One instance: resolved, then elaborated once per array element.</summary>

@@ -41,9 +41,11 @@ public static class C3dValidation
         {
             if (o is not C3dPolyline)
             {
-                if (string.IsNullOrWhiteSpace(o.Material)) found.Add(C3dDiagnostics.NoMaterial(o.Name));
-                else if (isKnownMaterial is not null && !isKnownMaterial(o.Material))
-                    found.Add(C3dDiagnostics.UnknownMaterial(o.Name, o.Material));
+                // brief-em3d-50: a wire's omitted material is wBond's default metal, which the technology must still define.
+                string? material = o is C3dWire w ? C3dWires.MaterialOf(w) : o.Material;
+                if (string.IsNullOrWhiteSpace(material)) found.Add(C3dDiagnostics.NoMaterial(o.Name));
+                else if (isKnownMaterial is not null && !isKnownMaterial(material))
+                    found.Add(C3dDiagnostics.UnknownMaterial(o.Name, material));
             }
 
             switch (o)
@@ -54,6 +56,7 @@ public static class C3dValidation
                 case C3dSheet s:      Sheet(s, found);      break;
                 case C3dPolyline l:   Polyline(l, found);   break;
                 case C3dPolyhedron h: Polyhedron(h, found); break;
+                case C3dWire w:       Wire(w, found);       break;
             }
 
             Unread(o.Unread, $"'{o.Name}'", found);
@@ -147,6 +150,20 @@ public static class C3dValidation
     private static void Polyline(C3dPolyline l, List<Diagnostic> found)
     {
         if (l.VertexCount < 2) found.Add(C3dDiagnostics.PolylineTooShort(l.Name, l.VertexCount));
+    }
+
+    private static void Wire(C3dWire w, List<Diagnostic> found)
+    {
+        if (!w.Placement.IsDefault) found.Add(C3dDiagnostics.WirePlacement(w.Name));
+        if (w.Points.Distinct().Count() < 2)
+            found.Add(C3dDiagnostics.WireShape(w.Name, $"has {w.Points.Distinct().Count()} distinct point(s); it needs at least two"));
+        if (w.DiameterUm is { } d && !(d > 0))
+            found.Add(C3dDiagnostics.WireShape(w.Name, "has a diameter that is not positive"));
+        foreach (var (end, which) in new[] { (w.Start, "start"), (w.End, "end") })
+            if (end.FootLengthUm is { } f && !(f > 0))
+                found.Add(C3dDiagnostics.WireShape(w.Name, $"has a foot length at its {which} that is not positive"));
+        if (w.Role is { } role && role != CircuitRF.Engine.Em3d.Em3dRole.Conductor)
+            found.Add(C3dDiagnostics.WireShape(w.Name, $"has the role {role}; a wire is a conductor"));
     }
 
     /// <summary>A loop needs three DISTINCT points; returns whether it has them.</summary>

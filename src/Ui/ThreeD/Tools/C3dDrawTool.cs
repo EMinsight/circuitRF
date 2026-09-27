@@ -23,7 +23,8 @@ namespace CircuitRF.Ui.ThreeD.Tools;
 /// <para>brief-em3d-47 — the face and vertex gestures: Move Along Normal, a face's Move, a vertex's Move, Extrude to New
 /// Solid and Align to Face.</para>
 /// <para>brief-em3d-48 — Place: an instance of a cell, following the cursor until the click.</para>
-public enum C3dToolKind { Box, Sheet, Polygon, Polyline, Cylinder, Extrude, Move, Rotate, PushPull, FaceMove, VertexMove, ExtrudeFace, AlignFace, Place, Port }
+/// <para>brief-em3d-50 — Wire: a bond wire from pad to pad, then its loop height.</para>
+public enum C3dToolKind { Box, Sheet, Polygon, Polyline, Cylinder, Extrude, Move, Rotate, PushPull, FaceMove, VertexMove, ExtrudeFace, AlignFace, Place, Port, Wire }
 
 /// <summary>
 /// Where the cursor is, as a tool reads it: the snap in force (a DBU point, and whether it is exact and on geometry

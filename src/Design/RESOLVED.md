@@ -13610,3 +13610,45 @@ contact, wave ports, `TryParseZ0`), `C3dPortContext`, `Geometry3`, `C3dProblemAs
 - **Gate 3's cavity is walled by face boundaries on an Air block filling a zero-padding box**: the boundary pieces lie
   ON the box faces, are claimed before them, and the box faces count as covered (expected 0). TE101 came out 0.0067 %
   from the closed form on 520 tetrahedra; the plates-by-object gate matched ε₀εᵣA/d on 915. Both under 2 s — routine.
+
+## brief-em3d-50 — bond wires in a .c3d, across hierarchy, headless (2026-09-26)
+
+Built: `Em3dWires` split into `Resolve` (an axis in metres, section, diameter, per-end style and foot length, ball
+size, two pads → sweep, balls, report) and the `.wBond` reader `Build` that calls it; the `.c3d` `Wire` object
+(`C3dWire`, `C3dWireEnd`); `C3dWires` (the pad lookup, a drawn wire's resolution, re-seating, `BakePlacement`, the
+loop-height solve the Wire tool uses); drawn wires in `C3dElaborator` (`WireRefusals`, `DrawnWires`);
+`WireBondProcess.Resolve(diameter, foot, workspace)`; `c3d.wire.shape` / `c3d.wire.placement` in `check`. Gates:
+`tests/Ui.Tests/ThreeD/WireSplitDumpTests.cs` (17 dumps, `testdata/em3d/wire-dumps/`, written before the split with
+`CRF_WRITE_WIRE_DUMPS=1`) and `tests/Ui.Tests/ThreeD/WireGateTests.cs`.
+
+- **The split is byte-identical, and the `.wBond` reader kept its OWN pad lookup.** The generalised lookup (a top
+  surface containing the end's plan point AT THE END'S z, within 1 DBU) cannot apply to a `.wBond`: its end points are
+  axis points in the wire model's own z (the Bond wire example's sit 115.7 µm up against a 106 µm pad top). So the
+  reader still finds each end's pad by plan position, highest top, and only drawn wires use `C3dWires.PadAt`. The dumps
+  add each report's two loop heights and every process value with its source to brief 42's generator dump, so the
+  split could not move a number the problem itself does not carry.
+- **A drawn wire's END lies ON its pad's top; resolution then moves a wedge end to pad top + h/2**, exactly as it moves
+  a `.wBond`'s. That is what makes gate 5 hold: the example's `.wBond` points, redrawn with the ends seated on the
+  pads and the interior at the ground's top + z, give the `.cem` route's rings to 1e-12 relative.
+- **"The .c3d's technology" states no bond value.** No `.ctech` carries a foot length or a ball size — series 1's D2
+  put them in the `.wasm`. A drawn wire's chain is its end's own field, then the `.wasm` its workspace's
+  `DefaultAssemblyRef` names, then built in: the same `.wasm` a `.wBond` in that workspace bonds under with no
+  `AssemblyRef` of its own. Foot length is PER END on a drawn wire (a `.wBond` has one per wire); the report's single
+  `Process` is the wedge end's (the start's when both are).
+- **A wire has no placement, so every operation that composes into one bakes it into the points**
+  (`C3dWires.BakePlacement`): move, rotate, mirror, duplicate, array, align, flatten (after the child's DBU scale) and
+  group-into-cell. A stated `Placement` in a file is refused by `check` and by elaboration, never applied silently.
+- **A refused wire leaves the rest of the document elaborating.** Its refusal is in `Refusals` (so `Ok` is false and
+  nothing runs) and in `WireRefusals` by name, which is what the editor flags and draws in red. The sentence names the
+  wire and the end, and says whether a pad is under the end at another height (Re-Seat's case) or nothing is.
+- **Pads are every conductor top of the document's own subtree** (a wire in a child lands inside that child): a box's
+  zmax, an extrusion's top, a vertical cylinder's top disc (a 72-gon), a polyhedron's flat upward faces, a flat sheet.
+  Other wires' sweeps and balls are never pads. A point on a pad's edge counts (within 1 DBU of the boundary).
+- **The loop-height solve iterates against the resolved solid** rather than a formula: `LoopShape` shapes the axis to
+  a target, `Em3dWires` resolves it, and the target is corrected by the difference until they agree to half a DBU;
+  the first guess is the typed height less half the section's height. The apex mitre and a ball's neck are what the
+  correction absorbs. Gate 2 holds to 1 DBU for ball–wedge, wedge–wedge and a 10 mil pad-height difference.
+- **Pre-existing, not this brief's:** `Em3dWireTests.Gate8` fails at HEAD — brief 30 wrote `FootLengthNm` into
+  `examples/3D EM/Bond wire/layout/Bond wire.wBond`, and Gate 8 asserts no repo `.wBond` carries that key. The brief
+  asks that file to pass unchanged; it could not already. Either the example or the assertion has to give, which is
+  the owner's call.

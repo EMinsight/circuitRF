@@ -57,7 +57,13 @@ public sealed class C3dFaceEditor
     public IReadOnlyList<string> FaceNames => Brep is { } b ? [.. b.Faces.Select(f => f.Name)] : Source.FaceNames();
 
     /// <summary>The source's vertices a Vertex-mode edit may move (a sheet's corners; none for a cylinder), own frame.</summary>
-    public IReadOnlyList<C3dPoint3> Vertices => Brep?.Vertices ?? (Source is C3dSheet s ? SheetCorners(s) : []);
+    /// <para>brief-em3d-50 — a wire's are its axis points: Vertex mode edits its shape as wBond's point edit does.</para>
+    public IReadOnlyList<C3dPoint3> Vertices => Brep?.Vertices ?? (Source switch
+    {
+        C3dSheet s => SheetCorners(s),
+        C3dWire w => w.Points,
+        _ => [],
+    });
 
     /// <summary>The vertex nearest <paramref name="local"/> (own frame, DBU) within <paramref name="within"/>, or −1.</summary>
     public int NearestVertex((double X, double Y, double Z) local, double within)
@@ -198,6 +204,14 @@ public sealed class C3dFaceEditor
             case C3dCylinder: return C3dFaceEditResult.Refuse(CylinderVertexMove);
             case C3dSheet s: return SheetVertex(s, vertex, to);
             case C3dPolyline: return C3dFaceEditResult.Refuse("A polyline is construction geometry: edit it by drawing it again.");
+            case C3dWire w:
+            {
+                // brief-em3d-50 R-em3d50-3c — one axis point moved; the editor re-seats the feet on release.
+                if (vertex < 0 || vertex >= w.Points.Count) return C3dFaceEditResult.Refuse("There is no such point on the wire.");
+                var copy = Copy(w);
+                copy.Points[vertex] = to;
+                return Done(copy);
+            }
         }
         if (Brep is not { } b || vertex < 0 || vertex >= b.Vertices.Count) return C3dFaceEditResult.Refuse("There is no such vertex.");
         return Restate(C3dKernel.MoveVertex(b, vertex, to));

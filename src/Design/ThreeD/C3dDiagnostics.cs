@@ -105,6 +105,17 @@ public static class C3dDiagnostics
         "c3d.polyline.too-short", DiagnosticSeverity.Error,
         "The polyline '{name}' has {count} point(s); it needs at least two.", ("name", name), ("count", count));
 
+    /// <summary>brief-em3d-50 — a wire that cannot be a wire, whatever it lands on.</summary>
+    public static Diagnostic WireShape(string name, string why) => Diagnostic.Create(
+        "c3d.wire.shape", DiagnosticSeverity.Error,
+        "The wire '{name}' {why}.", ("name", name), ("why", why));
+
+    /// <summary>brief-em3d-50 R-em3d50-2 — a wire's points are world points: it has no placement.</summary>
+    public static Diagnostic WirePlacement(string name) => Diagnostic.Create(
+        "c3d.wire.placement", DiagnosticSeverity.Error,
+        "The wire '{name}' states a Placement. A wire has none: its Points are where it is, because it spans things that " +
+        "each have their own placement. Write the points where the wire is, and leave Placement out.", ("name", name));
+
     public static Diagnostic FaceIndex(string name, string face, int index, int vertexCount) => Diagnostic.Create(
         "c3d.polyhedron.bad-index", DiagnosticSeverity.Error,
         "Face '{face}' of '{name}' names vertex {index}, and the polyhedron has {vertexCount} vertices.",

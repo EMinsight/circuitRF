@@ -1,0 +1,231 @@
+// brief-em3d-50 — bond wires in the 3D editor: the Wire tool's services, its toolbar values, Re-seat Wire Ends, the tree's
+// flag on a wire that lands on no pad, and the axis drawn for Vertex mode.
+//
+// ONE LOOKUP. The tool asks "is this the top of a pad" through C3dWires.PadAt over the editor's current elaboration —
+// the function elaboration itself answers with — so an end the tool accepts is an end the solver accepts.
+//
+// A WIRE IS NOT DRAGGED ALONG (R-em3d50-3c). When what a wire was bonded to moves, the wire keeps its points and its
+// elaboration refuses it by name and end; the tree flags it and its axis is drawn in red. Re-Seat Wire Ends is the
+// explicit fix for the vertical case: each end moved in z onto the top now under it, where there is one. Moving a
+// wire's point in Vertex mode re-seats its feet on release, and an END moved to where there is no pad is refused.
+//
+// DEFAULTS (R-em3d50-3b): the last wire drawn, then the workspace's assembly rules (a .wasm's first allowed diameter),
+// then built in (1 mil, Gold where the technology has it, a hexagonal section, wedge–wedge).
+
+using CircuitRF.Design.Layout;
+using CircuitRF.Design.Layout.Em3d;
+using CircuitRF.Design.ThreeD;
+using CircuitRF.Design.Workspace;
+using CircuitRF.Engine.Em3d;
+using CircuitRF.Render.Scene3D;
+using CircuitRF.Render.Scene3D.Edit;
+using CircuitRF.Ui.ThreeD.Tools;
+using CircuitRF.Ui.Viewer3D;
+using CircuitRF.WBond;
+using CommunityToolkit.Mvvm.ComponentModel;
+using Point3 = CircuitRF.Engine.Em3d.Point3;
+
+namespace CircuitRF.Ui.ThreeD;
+
+public sealed partial class C3dEditorViewModel : IC3dWireHost
+{
+    public static IReadOnlyList<BondStyle> BondStyles { get; } = [BondStyle.Wedge, BondStyle.Ball];
+    public static IReadOnlyList<WireCrossSection> WireSections { get; } = [WireCrossSection.Hexagon, WireCrossSection.Round];
+
+    public bool IsWireArmed { get => ArmedTool == C3dToolKind.Wire; set => ArmToggle(C3dToolKind.Wire, value); }
+
+    // ── the toolbar (R-em3d50-3b) ────────────────────────────────────────────────────────────
+
+    /// <summary>The next wire's diameter, in the display unit (a suffix is honoured).</summary>
+    [ObservableProperty] private string _wireDiameterText = "";
+    [ObservableProperty] private string? _wireDiameterError;
+    [ObservableProperty] private string? _wireMaterial;
+    [ObservableProperty] private BondStyle _wireStartStyle = BondStyle.Wedge;
+    [ObservableProperty] private BondStyle _wireEndStyle = BondStyle.Wedge;
+    [ObservableProperty] private WireCrossSection _wireSection = WireCrossSection.Hexagon;
+
+    private double _wireDiameterUm = C3dWires.DefaultDiameterUm;
+    private long? _lastLoopHeightDbu;
+    private bool _wireDefaultsTaken;
+
+    /// <summary>The technology's metals (a material with a conductivity) — what a wire may be made of.</summary>
+    public IReadOnlyList<string> WireMetals
+        => Elaboration?.Technology?.Materials.Where(m => m.Sigma20 is not null).Select(m => m.Name).ToList() ?? (IReadOnlyList<string>)[];
+
+    partial void OnWireDiameterTextChanged(string value)
+    {
+        var d = C3dDimension.Parse(value, Document.DisplayUnit, Document.DbuPerMicron);
+        if (d.Kind != C3dDimensionKind.Value || d.Dbu <= 0) { WireDiameterError = d.Why ?? "A diameter is a positive length."; return; }
+        WireDiameterError = null;
+        _wireDiameterUm = (double)LayoutUnits.FromDbu(d.Dbu, LayoutUnit.Um, Document.DbuPerMicron);
+    }
+
+    /// <summary>The first time the tool is armed: the assembly rules' first allowed diameter, the technology's gold (or its
+    /// first metal). After a wire is drawn its values stay on the toolbar, which is "the last wire drawn".</summary>
+    private void TakeWireDefaults()
+    {
+        OnPropertyChanged(nameof(WireMetals));
+        if (!_wireDefaultsTaken)
+        {
+            _wireDefaultsTaken = true;
+            var last = Document.Objects.OfType<C3dWire>().LastOrDefault();
+            if (last is not null)
+            {
+                _wireDiameterUm = last.DiameterUm ?? C3dWires.DefaultDiameterUm;
+                WireMaterial = C3dWires.MaterialOf(last);
+                (WireStartStyle, WireEndStyle, WireSection) = (last.Start.Style, last.End.Style, C3dWires.SectionOf(last));
+            }
+            else if (WireWorkspace().WorkspaceRules().Rules?.AllowedDiametersNm is [var first, ..] && first > 0)
+                _wireDiameterUm = first / 1000.0;
+            WireDiameterText = Length((long)Math.Round(_wireDiameterUm * Document.DbuPerMicron, MidpointRounding.AwayFromZero));
+        }
+        var metals = WireMetals;
+        if (WireMaterial is null || !metals.Contains(WireMaterial))
+            WireMaterial = metals.FirstOrDefault(m => string.Equals(m, WireMaterials.Default.Name, StringComparison.OrdinalIgnoreCase))
+                           ?? metals.FirstOrDefault() ?? WireMaterials.Default.Name;
+    }
+
+    public C3dWireTemplate WireTemplate
+        => new(_wireDiameterUm, WireMaterial, WireSection, WireStartStyle, WireEndStyle, _lastLoopHeightDbu);
+
+    private WireBondWorkspace WireWorkspace()
+        => new(FilePath, WorkspaceRootFinder.FindAncestorCws(Path.GetDirectoryName(FilePath)) ?? _workspaceCws());
+
+    private WireTool WireToolArmed()
+    {
+        TakeWireDefaults();
+        return new WireTool(this, this);
+    }
+
+    /// <summary>After the tool drew a wire: its loop height is the next one's first guess.</summary>
+    private void RememberWire(WireTool tool)
+    {
+        if (tool.LastAssembly is { } h) _lastLoopHeightDbu = h;
+    }
+
+    // ── IC3dWireHost ─────────────────────────────────────────────────────────────────────────
+
+    private (C3dElaboration Of, List<C3dWirePad> Pads)? _pads;
+
+    /// <summary>The current elaboration's conductor tops (world metres), kept until the next elaboration.</summary>
+    private List<C3dWirePad> WirePads()
+    {
+        if (Elaboration is not { } e) return [];
+        if (_pads is { } p && ReferenceEquals(p.Of, e)) return p.Pads;
+        var pads = C3dWires.Pads(e.Solids, e.Sheets);
+        _pads = (e, pads);
+        return pads;
+    }
+
+    private double PerDbu => C3dLowering.Metres(1, Document.DbuPerMicron);
+
+    public (string Pad, long TopDbu)? PadAt(C3dPoint3 p)
+    {
+        var at = new Point3(C3dLowering.Metres(p.X, Document.DbuPerMicron), C3dLowering.Metres(p.Y, Document.DbuPerMicron),
+                            C3dLowering.Metres(p.Z, Document.DbuPerMicron));
+        return C3dWires.PadAt(WirePads(), at, PerDbu) is { } pad
+            ? (pad.Name, (long)Math.Round(pad.TopM / PerDbu, MidpointRounding.AwayFromZero))
+            : null;
+    }
+
+    public (string Pad, C3dPoint3 At)? PadUnderRay(Point3 origin, Point3 direction)
+    {
+        if (C3dWires.PadHit(WirePads(), origin, direction) is not { } hit) return null;
+        long R(double m) => (long)Math.Round(m / PerDbu, MidpointRounding.AwayFromZero);
+        return (hit.Pad.Name, new C3dPoint3(R(hit.At.X), R(hit.At.Y), R(hit.Pad.TopM)));
+    }
+
+    public double? MeasureAssembly(C3dWire candidate)
+    {
+        var r = C3dWires.Resolve(candidate, candidate.Name, C3dTransform.Identity, Document.DbuPerMicron, WirePads(), PerDbu,
+                                 WireWorkspace(), LayoutUnits.AsciiSuffix(Document.DisplayUnit));
+        return r.Resolution?.Report is { } report ? report.AssemblyLoopHeightM / PerDbu : null;
+    }
+
+    // ── Re-seat Wire Ends (R-em3d50-3c) ──────────────────────────────────────────────────────
+
+    /// <summary>The selected objects that are wires, by document index — and the wire selected in the tree, because a
+    /// wire that lands on no pad has no solid to pick in the view, and that is the wire Re-Seat is for.</summary>
+    private List<int> SelectedWires()
+    {
+        var list = Targets().Where(t => !t.Instance && Document.Objects[t.Index] is C3dWire).Select(t => t.Index).ToList();
+        if (SelectedTreeItem is { ObjectIndex: >= 0 and var i } && i < Document.Objects.Count && Document.Objects[i] is C3dWire && !list.Contains(i))
+            list.Add(i);
+        return list;
+    }
+
+    /// <summary>Each selected wire's ends moved in z onto the top now under them — one undo entry. An end with nothing under
+    /// it is left where it is and named.</summary>
+    public void ReseatWireEnds()
+    {
+        var wires = SelectedWires();
+        if (wires.Count == 0) { StatusMessage = "Re-Seat Wire Ends acts on selected wires."; return; }
+        var pads = WirePads();
+        var slots = new List<C3dEditSlot>();
+        var missing = new List<string>();
+        foreach (int i in wires)
+        {
+            var w = (C3dWire)Document.Objects[i];
+            var seated = C3dWires.Reseat(w, pads, Document.DbuPerMicron, out var unseated);
+            missing.AddRange(unseated.Select(e => $"{w.Name}'s {e}"));
+            string before = C3dPersistence.SerializeObject(w), after = C3dPersistence.SerializeObject(seated);
+            if (after != before) slots.Add(new C3dEditSlot(false, i, before, after));
+        }
+        if (slots.Count > 0) Push(new C3dEdit($"Re-seat wire ends: {string.Join(", ", slots.Select(s => Document.Objects[s.Index].Name))}", slots, ApplySlots));
+        string none = missing.Count == 0 ? "" : $" Nothing conductive is under {string.Join(", ", missing)}: move {(missing.Count == 1 ? "it" : "them")} onto a pad.";
+        StatusMessage = (slots.Count > 0 ? $"Re-seated {slots.Count} wire(s)." : "Every end is already on the top under it.") + none;
+    }
+
+    /// <summary>
+    /// A Vertex-mode edit of a wire, before it is committed: the feet re-seated on the tops under them. An END that moved
+    /// to where nothing is under it is refused (the refusal's sentence), and so is one whose pad cannot be found at all.
+    /// </summary>
+    private string? SeatEditedWire(C3dWire before, ref C3dWire after)
+    {
+        var pads = WirePads();
+        var seated = C3dWires.Reseat(after, pads, Document.DbuPerMicron, out var unseated);
+        foreach (string end in unseated)
+        {
+            int i = end == "start" ? 0 : after.Points.Count - 1;
+            int j = end == "start" ? 0 : before.Points.Count - 1;
+            if (i < 0 || j < 0 || after.Points[i] == before.Points[j]) continue;
+            var q = after.Points[i];
+            return $"{after.Name}'s {end} would be over no pad at ({Length(q.X)}, {Length(q.Y)}): a wire's end is bonded to the top of a pad.";
+        }
+        after = seated;
+        return null;
+    }
+
+    private IEnumerable<Viewer3DMenuItem> WireMenuItems()
+    {
+        if (SelectedWires().Count == 0) yield break;
+        yield return new Viewer3DMenuItem("Re-Seat Wire Ends", ReseatWireEnds,
+            Tip: "Move each end up or down onto the top of the pad now under it. A pad that moved sideways is not followed.");
+    }
+
+    // ── the tree and the overlay ─────────────────────────────────────────────────────────────
+
+    private void RefreshWireFlags()
+    {
+        var refusals = Elaboration?.WireRefusals;
+        foreach (var item in Tree.Where(g => g.Header == "Wires").SelectMany(g => g.Items))
+            item.Refusal = refusals is not null && refusals.TryGetValue(item.Name, out var why) ? why : null;
+    }
+
+    /// <summary>A refused wire's axis in red (it has no solid to draw), and in Vertex mode every wire's axis and points —
+    /// what Vertex mode edits on a wire.</summary>
+    private void FillWireOverlay(Viewer3DDrawOverlay overlay)
+    {
+        int dbu = Document.DbuPerMicron;
+        bool vertex = Viewer.SelectMode == Scene3DSelectMode.Vertex;
+        var refused = Elaboration?.WireRefusals;
+        foreach (var w in Document.Objects.OfType<C3dWire>())
+        {
+            if (w.Hidden || w.Points.Count < 2) continue;
+            bool bad = refused?.ContainsKey(w.Name) == true;
+            if (bad) DrawGeometry.Chain(w.Points, false, dbu, overlay.Crossing);
+            else if (vertex) DrawGeometry.Chain(w.Points, false, dbu, overlay.Construction);
+            if (vertex) foreach (var p in w.Points) overlay.Fixed.Add(DrawGeometry.Metres(p, dbu));
+        }
+    }
+}

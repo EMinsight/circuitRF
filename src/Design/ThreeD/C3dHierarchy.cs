@@ -279,7 +279,8 @@ public static class C3dHierarchy
                 var copy = C3dPersistence.DeserializeObject(C3dPersistence.SerializeObject(o));
                 if (scale != 1) Scale(copy, scale);
                 copy.Placement = copy.Placement.Then(outer, out bool exact);
-                if (!exact) return C3dFlattenResult.Refuse(OffGrid(inst, o.Name));
+                // brief-em3d-50 — a wire has no placement: the instance's lands on its points.
+                if (!exact || !C3dWires.BakePlacement(copy)) return C3dFlattenResult.Refuse(OffGrid(inst, o.Name));
                 copy.Name = Unique($"{inst.Name}{suffix}_{o.Name}", used);
                 objects.Add(copy);
             }
@@ -552,6 +553,7 @@ public static class C3dHierarchy
                 if (l.Points3 is { } p3) l.Points3 = [.. p3.Select(q => Mul(q, k))];
                 break;
             case C3dPolyhedron ph: ph.Vertices = [.. ph.Vertices.Select(q => Mul(q, k))]; break;
+            case C3dWire w: w.Points = [.. w.Points.Select(q => Mul(q, k))]; break;
         }
     }
 
@@ -622,6 +624,7 @@ public static class C3dHierarchy
         {
             var o = C3dPersistence.DeserializeObject(C3dPersistence.SerializeObject(doc.Objects[i]));
             o.Placement = o.Placement.Translated(minus);
+            C3dWires.BakePlacement(o);
             child.Objects.Add(o);
         }
         foreach (int i in instanceIndices.Order())

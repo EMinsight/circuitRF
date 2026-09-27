@@ -231,6 +231,7 @@
                                     <NativeMenuItem Header="Polyline" ToolTip="Construction geometry, a click per vertex. Requires an active 3D editor." Command="{Binding ThreeDDrawCommand}" CommandParameter="Polyline"/>
                                     <NativeMenuItem Header="Cylinder" ToolTip="Centre, radius, height. Requires an active 3D editor."          Command="{Binding ThreeDDrawCommand}" CommandParameter="Cylinder"/>
                                     <NativeMenuItem Header="Port" ToolTip="A port between two conductors, two clicks; its polarity is inferred from what it touches. Requires an active 3D editor." Command="{Binding ThreeDDrawCommand}" CommandParameter="Port"/>
+                                    <NativeMenuItem Header="Wire" ToolTip="A bond wire from the top of one pad to another, then its loop height. Requires an active 3D editor." Command="{Binding ThreeDDrawCommand}" CommandParameter="Wire"/>
                                 </NativeMenu>
                             </NativeMenuItem.Menu>
                         </NativeMenuItem>
@@ -283,6 +284,7 @@
                                     </NativeMenuItem>
                                     <NativeMenuItem Header="Duplicate  (Ctrl/Cmd+D)" ToolTip="Copies in place, then moves them. Esc cancels both. Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="Duplicate"/>
                                     <NativeMenuItem Header="Array…" ToolTip="Copies along up to three axes at a pitch, previewed live. Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="Array"/>
+                                    <NativeMenuItem Header="Re-Seat Wire Ends" ToolTip="Each selected wire's ends moved up or down onto the pad now under them. Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="ReseatWires"/>
                                     <NativeMenuItem Header="Align" ToolTip="Requires an active 3D editor.">
                                         <NativeMenuItem.Menu>
                                             <NativeMenu>
@@ -1033,6 +1035,10 @@
                               ToolTip.Tip="A port between two conductors, two clicks; its polarity is inferred from what it touches. Requires an active 3D editor.">
                         <MenuItem.Icon><mi:MaterialIcon Kind="ArrowUpBoldBoxOutline" Width="16" Height="16"/></MenuItem.Icon>
                     </MenuItem>
+                    <MenuItem Header="_Wire" Command="{Binding ThreeDDrawCommand}" CommandParameter="Wire"
+                              ToolTip.Tip="A bond wire from the top of one pad to another, then its loop height. Requires an active 3D editor.">
+                        <MenuItem.Icon><mi:MaterialIcon Kind="VectorCurve" Width="16" Height="16"/></MenuItem.Icon>
+                    </MenuItem>
                 </MenuItem>
                 <MenuItem Header="Se_tups…" Command="{Binding ThreeDSetupsCommand}"
                           ToolTip.Tip="The EM setups this 3D view carries, and the active one. Requires an active 3D editor.">
@@ -1071,6 +1077,7 @@
                     </MenuItem>
                     <MenuItem Header="_Duplicate  (Ctrl+D)" Command="{Binding ThreeDModifyCommand}" CommandParameter="Duplicate" ToolTip.Tip="Copies in place, then moves them. Esc cancels both. Requires an active 3D editor."/>
                     <MenuItem Header="Arra_y…" Command="{Binding ThreeDModifyCommand}" CommandParameter="Array" ToolTip.Tip="Copies along up to three axes at a pitch, previewed live. Requires an active 3D editor."/>
+                    <MenuItem Header="Re-_Seat Wire Ends" Command="{Binding ThreeDModifyCommand}" CommandParameter="ReseatWires" ToolTip.Tip="Each selected wire's ends moved up or down onto the pad now under them. Requires an active 3D editor."/>
                     <MenuItem Header="Ali_gn" ToolTip.Tip="Requires an active 3D editor.">
                         <MenuItem Header="X min" Command="{Binding ThreeDModifyCommand}" CommandParameter="AlignXMin"/>
                         <MenuItem Header="X centre" Command="{Binding ThreeDModifyCommand}" CommandParameter="AlignXCentre"/>

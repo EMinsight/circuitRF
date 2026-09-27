@@ -166,8 +166,27 @@
                 <ToggleButton IsChecked="{Binding ViewModel.IsPortArmed}" ToolTip.Tip="Port: two corners on the drawing plane, between two conductors. The arrow runs from − to +; right-click it to flip  (Shift+A, P)">
                     <mi:MaterialIcon Kind="ArrowUpBoldBoxOutline" Width="16" Height="16"/>
                 </ToggleButton>
+                <!-- brief-em3d-50 R-em3d50-3 — a bond wire, pad to pad, then its loop height (assembly: lower foot to apex top). -->
+                <ToggleButton IsChecked="{Binding ViewModel.IsWireArmed}" ToolTip.Tip="Wire: click the top of one pad, then another (inside an instance too), then set the loop height — measured from the lower foot to the top of the wire — with the mouse or by typing it  (Shift+A, W)">
+                    <mi:MaterialIcon Kind="VectorCurve" Width="16" Height="16"/>
+                </ToggleButton>
                 <ComboBox MinWidth="90" VerticalAlignment="Center" ItemsSource="{Binding ViewModel.Materials}" SelectedItem="{Binding ViewModel.CurrentMaterial}"
+                          IsVisible="{Binding !ViewModel.IsWireArmed}"
                           ToolTip.Tip="The material every new object gets, from the technology's materials"/>
+                <!-- brief-em3d-50 R-em3d50-3b — the next wire's values, changeable before the first click. -->
+                <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center" IsVisible="{Binding ViewModel.IsWireArmed}">
+                    <TextBox Width="64" VerticalAlignment="Center" Text="{Binding ViewModel.WireDiameterText}"
+                             Classes.error="{Binding ViewModel.WireDiameterError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                             ToolTip.Tip="The wire's diameter, in the display unit (25.4um, 1mil …)"/>
+                    <ComboBox MinWidth="80" ItemsSource="{Binding ViewModel.WireMetals}" SelectedItem="{Binding ViewModel.WireMaterial}"
+                              ToolTip.Tip="The wire's metal, from the technology's materials with a conductivity"/>
+                    <ComboBox ItemsSource="{x:Static t3:C3dEditorViewModel.BondStyles}" SelectedItem="{Binding ViewModel.WireStartStyle}"
+                              ToolTip.Tip="How the start is bonded: a wedge's foot, or a ball"/>
+                    <ComboBox ItemsSource="{x:Static t3:C3dEditorViewModel.BondStyles}" SelectedItem="{Binding ViewModel.WireEndStyle}"
+                              ToolTip.Tip="How the end is bonded: a wedge's foot, or a ball"/>
+                    <ComboBox ItemsSource="{x:Static t3:C3dEditorViewModel.WireSections}" SelectedItem="{Binding ViewModel.WireSection}"
+                              ToolTip.Tip="The swept section: a flat-bottomed hexagon (a foot lands face to face), or round"/>
+                </StackPanel>
 
                 <Border Width="1" Margin="2,3" Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
 
@@ -329,6 +348,11 @@
                                            ToolTip.Tip="Construction order: a later object wins where solids overlap (3D ▸ Modify ▸ Order)"/>
                                 <TextBlock Text="{Binding Name}" VerticalAlignment="Center"/>
                                 <TextBlock Text="{Binding Detail}" Opacity="0.6" FontSize="11" VerticalAlignment="Center"/>
+                                <!-- brief-em3d-50 R-em3d50-4 — a wire whose end is on no pad: flagged, with the refusal's words. -->
+                                <mi:MaterialIcon Kind="AlertOutline" Width="12" Height="12" VerticalAlignment="Center"
+                                                 Foreground="{DynamicResource CrfWarningBrush}"
+                                                 IsVisible="{Binding Refusal, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                                 ToolTip.Tip="{Binding Refusal}"/>
                             </StackPanel>
                         </TreeDataTemplate>
                     </TreeView.DataTemplates>

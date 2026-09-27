@@ -1,0 +1,3 @@
+refusal Wire wire/G1/1 turns by 162.326° at (0, 0, 262.7) µm. A swept section cannot turn more sharply than 150° without crossing itself; smooth the wire there.
+no-alpha 
+unknown-temperature 

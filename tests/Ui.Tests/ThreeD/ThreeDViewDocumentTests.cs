@@ -517,6 +517,24 @@ public sealed class ThreeDViewDocumentTests : IDisposable
 					"Outer": [1, 2, 3]
 				}
 			]
+		},
+		{
+			"$type": "Wire",
+			"Name": "w1",
+			"Material": "Gold",
+			"Points": [
+				[500, 0, 254],
+				[1500, 0, 900],
+				[3000, 0, 254]
+			],
+			"DiameterUm": 25.4,
+			"Start": {
+				"Style": "Ball"
+			},
+			"End": {
+				"Style": "Wedge",
+				"FootLengthUm": 50.8
+			}
 		}
 	],
 	"Instances": [

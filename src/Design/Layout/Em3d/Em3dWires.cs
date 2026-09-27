@@ -26,6 +26,15 @@
 //     note says how far the point moved.
 //   * A ball end's point is replaced by the centre of the ball's top face; when the path does not
 //     leave it vertically, a vertical neck rises from there first (R-em3d4-4b).
+//
+// ── Two halves (brief-em3d-50 R-em3d50-1a) ────────────────────────────────────────────────────
+//
+//   * RESOLUTION (Resolve): an axis in metres, a section, a diameter, two bond styles, the foot
+//     lengths, the ball's size and the two pads in; the sweep, its balls and the report out. It
+//     knows nothing of where a wire came from, which is what lets a .c3d's drawn Wire use it.
+//   * READING (Build): a .wBond's arrays, each wire's pads found in the layout's merged pieces, the
+//     metal resolved, the notes a .wBond run carries — then Resolve per wire. Split with the dumps of
+//     testdata/em3d/wire-dumps/ written first, and held byte-identical to them (WireSplitDumpTests).
 
 using System.Globalization;
 using CircuitRF.Engine.Em3d;
@@ -102,7 +111,32 @@ public sealed record Em3dWireSource(WBondDesign Design, WireBondWorkspace Worksp
 }
 
 /// <summary>A conductor piece a wire can land on: its name, its outline (metres) and its top.</summary>
-internal sealed record Em3dWirePad(string Name, PlanarPolygon Poly, double TopM);
+public sealed record Em3dWirePad(string Name, PlanarPolygon Poly, double TopM);
+
+/// <summary>
+/// brief-em3d-50 R-em3d50-1a — one wire, as resolution takes it: whatever it was read from.
+/// </summary>
+/// <param name="Name">The swept solid's name; a ball is <c>&lt;name&gt;/ball/start</c>.</param>
+/// <param name="Axis">The axis polyline, metres, in the frame the pads are in. Its end points' plan positions are the
+/// feet's; their z is what a wedge end moves from (the move is counted, for the note).</param>
+/// <param name="StartFootNm">The start's wedge-foot length, nm (unused for a ball).</param>
+/// <param name="EndFootNm">The end's.</param>
+/// <param name="Process">The ball's size, and what the report says the process values were.</param>
+/// <param name="WBondLoopHeightM">wBond's own loop height (the axis's max − min z), for the report.</param>
+public sealed record Em3dWireInput(
+    string Name, IReadOnlyList<Point3> Axis, Em3dSection Section, double DiameterM, BondStyle StartStyle, BondStyle EndStyle,
+    long StartFootNm, long EndFootNm, WireBondProcessValues Process, double WBondLoopHeightM);
+
+/// <summary>What resolution made of one wire, or why it could not; its warnings either way.</summary>
+/// <param name="Balls">Each ball solid, by name, in end order.</param>
+/// <param name="MovedEnds">Wedge ends whose point moved in z to sit the foot on its pad.</param>
+/// <param name="MaxMoveM">The largest such move, metres.</param>
+public sealed record Em3dWireResolution(
+    Em3dSweep? Sweep, IReadOnlyList<(string Name, Em3dPrimitive Primitive)> Balls, Em3dWireReport? Report,
+    IReadOnlyList<string> Warnings, string? Refusal, int MovedEnds, double MaxMoveM)
+{
+    public bool Ok => Refusal is null && Sweep is not null;
+}
 
 /// <summary>What <see cref="Em3dWires.Build"/> produced, in construction order.</summary>
 internal sealed class Em3dWireBuild
@@ -195,10 +229,33 @@ public static class Em3dWires
 
                 var process = WireBondProcess.Resolve(wire, array, design, source.Workspace);
                 anyProcess ??= process;
-                var made = One(name, wire, process, pads, zOriginM, build, moved);
-                if (build.Refusal is not null) return build;
 
-                var (sweep, balls, report) = made!.Value;
+                // ── The pads (R-em3d4-4c): the highest piece under each end's plan position ─────────
+                double d = wire.DiameterNm * 1e-9;
+                var section = wire.CrossSection == WireCrossSection.Round ? Em3dSection.Circle : Em3dSection.Hexagon;
+                var pts = wire.Points.Select(q => new Point3(q.X * 1e-9, q.Y * 1e-9, zOriginM + q.Z * 1e-9)).ToList();
+                Em3dWirePad? PadUnder(Point3 q) =>
+                    pads.Where(p => p.Poly.Contains(q.X, q.Y)).OrderByDescending(p => p.TopM).FirstOrDefault();
+                var startPad = PadUnder(pts[0]);
+                var endPad   = PadUnder(pts[^1]);
+                foreach (var (pad, end, q) in new[] { (startPad, "start", pts[0]), (endPad, "end", pts[^1]) })
+                    if (pad is null)
+                    {
+                        build.Refusal = $"Wire {name}'s {end} at ({Um(q.X * 1e6)}, {Um(q.Y * 1e6)}) µm is over no conductor " +
+                                        "in this problem, so there is no pad for it to be bonded to. A 3D model does not put " +
+                                        "a foot on nothing: move the end onto its pad, or draw the pad.";
+                        return build;
+                    }
+
+                var made = Resolve(new Em3dWireInput(name, pts, section, d, wire.StartBond ?? BondStyle.Wedge,
+                                                     wire.EndBond ?? BondStyle.Wedge, process.FootLength.Nm,
+                                                     process.FootLength.Nm, process, wire.LoopHeightNm * 1e-9),
+                                   startPad!, endPad!);
+                build.Warnings.AddRange(made.Warnings);
+                if (made.Refusal is { } why) { build.Refusal = why; return build; }
+                if (made.MovedEnds > 0) { moved.Count += made.MovedEnds; moved.Max = Math.Max(moved.Max, made.MaxMoveM); }
+
+                var (sweep, balls, report) = (made.Sweep!, made.Balls, made.Report!);
                 build.Solids.Add((name, material!, sweep));
                 foreach (var (ballName, ball) in balls) build.Solids.Add((ballName, material!, ball));
                 build.Reports.Add(report with { Array = array.Name, Member = k + 1, Material = material! });
@@ -292,33 +349,42 @@ public static class Em3dWires
         return null;
     }
 
-    /// <summary>One wire: its sweep, its balls, and its report (array, member and material are filled
-    /// in by the caller). Sets <see cref="Em3dWireBuild.Refusal"/> and returns null on refusal.</summary>
-    private static (Em3dSweep Sweep, List<(string, Em3dPrimitive)> Balls, Em3dWireReport Report)? One(
-        string name, Wire wire, WireBondProcessValues process, IReadOnlyList<Em3dWirePad> pads, double zOriginM,
-        Em3dWireBuild build, EndMoves moved)
+    /// <summary>
+    /// brief-em3d-50 R-em3d50-1a — RESOLUTION: one wire's sweep, its balls and its report (array, member and material
+    /// are the caller's to fill in), landed on the two pads it is given. Nothing here looks a pad up or reads a file.
+    /// </summary>
+    public static Em3dWireResolution Resolve(Em3dWireInput input, Em3dWirePad startPad, Em3dWirePad endPad)
     {
-        double d = wire.DiameterNm * 1e-9;
-        var section = wire.CrossSection == WireCrossSection.Round ? Em3dSection.Circle : Em3dSection.Hexagon;
+        ArgumentNullException.ThrowIfNull(input);
+        ArgumentNullException.ThrowIfNull(startPad);
+        ArgumentNullException.ThrowIfNull(endPad);
+        var build = new Em3dWireBuild();
+        var moved = new EndMoves();
+        var made = One(input, startPad, endPad, build, moved);
+        return made is { } m
+            ? new Em3dWireResolution(m.Sweep, m.Balls, m.Report, build.Warnings, null, moved.Count, moved.Max)
+            : new Em3dWireResolution(null, [], null, build.Warnings, build.Refusal ?? $"Wire {input.Name} could not be built.",
+                                     moved.Count, moved.Max);
+    }
+
+    /// <summary>One wire: its sweep, its balls, and its report. Sets <see cref="Em3dWireBuild.Refusal"/> and returns
+    /// null on refusal.</summary>
+    private static (Em3dSweep Sweep, List<(string, Em3dPrimitive)> Balls, Em3dWireReport Report)? One(
+        Em3dWireInput input, Em3dWirePad startPad, Em3dWirePad endPad, Em3dWireBuild build, EndMoves moved)
+    {
+        string name = input.Name;
+        double d = input.DiameterM;
+        var section = input.Section;
         var size = Em3dWireSection.Of(section, d);
         double h = size.Height;
 
-        var pts = wire.Points.Select(q => new Point3(q.X * 1e-9, q.Y * 1e-9, zOriginM + q.Z * 1e-9)).ToList();
+        var pts = input.Axis;
         int n = pts.Count;
-
-        // ── The pads (R-em3d4-4c) ───────────────────────────────────────────────────────────────
-        Em3dWirePad? PadUnder(Point3 q) =>
-            pads.Where(p => p.Poly.Contains(q.X, q.Y)).OrderByDescending(p => p.TopM).FirstOrDefault();
-        var startPad = PadUnder(pts[0]);
-        var endPad   = PadUnder(pts[^1]);
-        foreach (var (pad, end, q) in new[] { (startPad, "start", pts[0]), (endPad, "end", pts[^1]) })
-            if (pad is null)
-            {
-                build.Refusal = $"Wire {name}'s {end} at ({Um(q.X * 1e6)}, {Um(q.Y * 1e6)}) µm is over no conductor " +
-                                "in this problem, so there is no pad for it to be bonded to. A 3D model does not put " +
-                                "a foot on nothing: move the end onto its pad, or draw the pad.";
-                return null;
-            }
+        if (n < 2)
+        {
+            build.Refusal = $"Wire {name} has {n} point(s); a wire needs at least two.";
+            return null;
+        }
 
         var path     = new List<Point3>();
         var footRing = new Dictionary<int, double>();   // ring index → the pad top its lowest vertices lie on
@@ -334,7 +400,7 @@ public static class Em3dWires
 
         Em3dWireEnd? EndOf(bool start, Em3dWirePad pad)
         {
-            var style = (start ? wire.StartBond : wire.EndBond) ?? BondStyle.Wedge;
+            var style = start ? input.StartStyle : input.EndStyle;
             var e     = start ? pts[0] : pts[^1];
             string which = start ? "start" : "end";
 
@@ -347,7 +413,7 @@ public static class Em3dWires
                                     "so there is no direction for its foot to lie along.";
                     return null;
                 }
-                double footLen = process.FootLength.Nm * 1e-9;
+                double footLen = (start ? input.StartFootNm : input.EndFootNm) * 1e-9;
                 double za   = pad.TopM + h / 2;
                 var near    = new Point3(e.X, e.Y, za);
                 var far     = new Point3(e.X + footLen * dir.X, e.Y + footLen * dir.Y, za);
@@ -367,7 +433,7 @@ public static class Em3dWires
             }
 
             // ── R-em3d4-4b — a flattened ball, and a vertical neck unless the path arrives vertically ──
-            double D = process.BallDiameter.Nm * 1e-9, H = process.BallHeight.Nm * 1e-9;
+            double D = input.Process.BallDiameter.Nm * 1e-9, H = input.Process.BallHeight.Nm * 1e-9;
             if (!(H < D))
             {
                 build.Refusal = $"Wire {name}'s ball is {Um(H * 1e6)} µm high and {Um(D * 1e6)} µm across. A flattened " +
@@ -407,10 +473,10 @@ public static class Em3dWires
             return new Em3dWireEnd(style, pad.Name, pad.TopM, neck, null, 0);
         }
 
-        var startEnd = EndOf(true, startPad!);
+        var startEnd = EndOf(true, startPad);
         if (startEnd is null) return null;
         for (int i = 1; i < n - 1; i++) Append(pts[i]);
-        var endEnd = EndOf(false, endPad!);
+        var endEnd = EndOf(false, endPad);
         if (endEnd is null) return null;
 
         if (path.Count < 2)
@@ -433,9 +499,9 @@ public static class Em3dWires
         }
 
         var sweep = new Em3dSweep(path, section, d, [.. rings.Select(r => (IReadOnlyList<Point3>)r)]);
-        double assembly = AssemblyLoopHeight(sweep, Math.Min(startPad!.TopM, endPad!.TopM));
-        var report = new Em3dWireReport(name, "", 0, "", section, d, size, startEnd, endEnd, process,
-                                        assembly, wire.LoopHeightNm * 1e-9);
+        double assembly = AssemblyLoopHeight(sweep, Math.Min(startPad.TopM, endPad.TopM));
+        var report = new Em3dWireReport(name, "", 0, "", section, d, size, startEnd, endEnd, input.Process,
+                                        assembly, input.WBondLoopHeightM);
         return (sweep, balls, report);
     }
 
@@ -518,7 +584,7 @@ public static class Em3dWires
 
     /// <summary>The unit plan direction pointing OUT of the loop at one end, from the end segment,
     /// walking inward past vertical segments; null when every segment is vertical.</summary>
-    private static Point3? PlanDirection(List<Point3> pts, bool start)
+    private static Point3? PlanDirection(IReadOnlyList<Point3> pts, bool start)
     {
         int n = pts.Count;
         for (int i = 0; i + 1 < n; i++)

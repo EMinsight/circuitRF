@@ -65,7 +65,9 @@ public sealed partial class C3dEditorViewModel
     private IEnumerable<Scene3DObject> SceneObjectsOf(C3dTarget t)
     {
         string name = NameOf(t);
-        if (!t.Instance) return SceneObject(name) is { } s ? [s] : [];
+        // brief-em3d-50 — a wire is its sweep and its balls.
+        if (!t.Instance)
+            return new[] { name, name + "/ball/start", name + "/ball/end" }.Select(SceneObject).OfType<Scene3DObject>();
         return Viewer.Scene.Objects.Where(o => InstanceOf(o) is { } p && (p == name || p.StartsWith(name + "/", StringComparison.Ordinal)
                                                                           || p.StartsWith(name + "[", StringComparison.Ordinal)));
     }
@@ -191,6 +193,7 @@ public sealed partial class C3dEditorViewModel
         if (_tool is C3dOperationTool) OperationChanged();
         else if (_tool is C3dFaceEditTool) FaceToolChanged();
         else if (_tool is Hierarchy.PlaceInstanceTool) { OnPropertyChanged(nameof(ToolPrompt)); Viewer.RequestFrame(); }
+        else if (_tool is WireTool { Step: 2 } wire) { wire.Track(CursorInput()); OnPropertyChanged(nameof(ToolPrompt)); }
     }
 
     /// <summary>The operation's state changed (the cursor, a key): its preview and its prompt follow.</summary>
@@ -347,6 +350,7 @@ public sealed partial class C3dEditorViewModel
                 string before = C3dPersistence.SerializeObject(Document.Objects[target.Index]);
                 var copy = C3dPersistence.DeserializeObject(before);
                 copy.Placement = Next(copy.Placement);
+                allExact &= C3dWires.BakePlacement(copy);          // brief-em3d-50: a wire carries its points
                 string after = C3dPersistence.SerializeObject(copy);
                 if (after != before) slots.Add(new C3dEditSlot(false, target.Index, before, after));
             }
@@ -395,6 +399,7 @@ public sealed partial class C3dEditorViewModel
                     var copy = C3dPersistence.DeserializeObject(C3dPersistence.SerializeObject(Document.Objects[target.Index]));
                     copy.Name = C3dOperations.NextFreeName(copy.Name, used);
                     copy.Placement = Next(copy.Placement);
+                    allExact &= C3dWires.BakePlacement(copy);      // brief-em3d-50: a wire carries its points
                     names.Add(copy.Name);
                     slots.Add(new C3dEditSlot(false, nextObject++, null, C3dPersistence.SerializeObject(copy)));
                 }
@@ -472,6 +477,7 @@ public sealed partial class C3dEditorViewModel
                 string before = C3dPersistence.SerializeObject(Document.Objects[t.Index]);
                 var copy = C3dPersistence.DeserializeObject(before);
                 copy.Placement = copy.Placement.Translated(by);
+                C3dWires.BakePlacement(copy);
                 slots.Add(new C3dEditSlot(false, t.Index, before, C3dPersistence.SerializeObject(copy)));
             }
         }
@@ -799,6 +805,7 @@ public sealed partial class C3dEditorViewModel
             case "Rotate": StartRotate(); break;
             case "Duplicate": StartDuplicate(); break;
             case "Array": OpenArray(); break;
+            case "ReseatWires": ReseatWireEnds(); break;
             case "Front": Order(OrderMove.ToFront); break;
             case "Forward": Order(OrderMove.Forward); break;
             case "Backward": Order(OrderMove.Backward); break;

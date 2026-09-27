@@ -304,6 +304,24 @@ model circuitRF built, and after a run it also shows what the solver made.
   and *Delete*. A wrong polarity turns every transmission term by 180°, so check the arrow before a run.
   A **wave** port must lie on a face of the active setup's air box. Every setup uses every port, and a
   placed cell's own ports are never used: only the parent says where a signal enters.
+- **Bond wires** (the 3D editor, **W** in the Shift+A popup, or *3D ▸ Draw ▸ Wire*). A wire runs from the top of
+  one pad to the top of another — a die pad inside a placed cell to a lead in the package is the usual case, which
+  a `.wBond` cannot do because it belongs to one layout. Click the first pad's top (a face-centre snap lands in
+  its middle; any point on the top of a conductor will do, and anything else is refused with *a wire starts on
+  the top of a pad*), then the second's, then move to set the **loop height** and click, or type it (`8mil`). The
+  loop height is the assembly one: from the top of the lower pad to the top of the wire at its highest point.
+  The status line shows it and the wire's centre-line loop height side by side, and **the height you type is
+  the height the wire measures**. Before the first click the toolbar sets the diameter, the metal, how each end
+  is bonded (a **wedge** lays a foot on the pad, a **ball** sits on it) and the section (a flat-bottomed
+  hexagon, or round); they start from the last wire drawn. A wire's points are its whole shape: in Vertex mode
+  its centre-line points are shown and **G** moves one, and its feet are put back on the pads when you let go
+  — an end moved to where there is no pad is refused. When the pad under a wire moves, the wire does **not**
+  follow, because re-routing it would change its inductance: the wire is flagged in the tree, drawn in red,
+  and a run says which end (`w3's start is no longer on a pad`). *Re-Seat Wire Ends* (right-click the wire, or
+  select it in the tree and use *3D ▸ Modify*) moves each end up or down onto the pad now under it; a pad that moved sideways has to be reconnected by
+  hand. *Duplicate* and *Array…* copy wires at a pitch, and a copy whose end misses a pad is still made and
+  flagged, so a pitch error shows at once. Foot length and ball size come from the workspace's assembly rules
+  (`.wasm`) unless the wire's end states a foot length, and the run says when a built-in first guess was used.
 - **The air box** (the box button). The active setup's air box, its faces tinted by boundary: **PEC** grey,
   **PMC** orange, **symmetry** hatched, and **absorbing** clear. It starts shown when a face is not
   absorbing. In Face mode its faces can be picked, but only where no solid is under the cursor (**B** reaches

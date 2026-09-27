@@ -238,6 +238,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         ApplyHiddenFlags();
         RefreshTreeVisibility();
         RebuildInstanceChildren();
+        RefreshWireFlags();
         RememberInstanceBounds();
         if (_fitOnAdopt && Viewer.Scene.Objects.Length > 0)
         {
@@ -264,7 +265,15 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     public Scene3DObject? SceneObject(string name) => Viewer.Scene.Objects.FirstOrDefault(o => o.Name == name);
 
     /// <summary>The document index of a scene object that is the document's own, or −1.</summary>
-    public int DocumentIndex(Scene3DObject o) => InstanceOf(o) is null ? Document.Objects.FindIndex(d => d.Name == o.Name) : -1;
+    public int DocumentIndex(Scene3DObject o)
+    {
+        if (InstanceOf(o) is not null) return -1;
+        int i = Document.Objects.FindIndex(d => d.Name == o.Name);
+        // brief-em3d-50 — a wire's ball is a solid of its own, and belongs to the wire it was made for.
+        if (i < 0 && Elaboration?.Provenance.TryGetValue(o.Name, out var p) == true && p.ObjectName != o.Name)
+            i = Document.Objects.FindIndex(d => d.Name == p.ObjectName);
+        return i;
+    }
 
     // ── IViewer3DEditHost ────────────────────────────────────────────────────────────────────
 
@@ -676,6 +685,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     [
         (typeof(C3dBox), "Boxes"), (typeof(C3dPrism), "Prisms"), (typeof(C3dCylinder), "Cylinders"),
         (typeof(C3dPolyhedron), "Polyhedra"), (typeof(C3dSheet), "Sheets"), (typeof(C3dPolyline), "Polylines"),
+        (typeof(C3dWire), "Wires"),
     ];
 
     /// <summary>Objects in construction order, grouped by kind; then instances, each expandable to its
@@ -696,6 +706,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
             var instances = Document.Instances.Select((inst, i) => new C3dTreeItem(this, inst.Name, "Instance", inst.CellRef, -1, i, true)).ToList();
             if (instances.Count > 0) Tree.Add(new C3dTreeGroup("Instances", instances));
             RebuildInstanceChildren();
+            RefreshWireFlags();
             RebuildRecordsTree();
             SelectedTreeItem = keep is null ? null : AllTreeItems().FirstOrDefault(t => t.Name == keep);
         }
@@ -809,6 +820,9 @@ public sealed partial class C3dTreeItem(C3dEditorViewModel owner, string name, s
     public ObservableCollection<C3dTreeItem> Children { get; } = [];
 
     [ObservableProperty] private bool _isVisible = visible;
+
+    /// <summary>brief-em3d-50 R-em3d50-4 — why a drawn wire does not elaborate (an end on no pad), or null: the tree flags it.</summary>
+    [ObservableProperty] private string? _refusal;
 
     partial void OnIsVisibleChanged(bool value) => owner.TreeVisibilityChanged(this, value);
 

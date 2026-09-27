@@ -9,6 +9,11 @@
 //   foot length    wire, then array, then the assembly rules' DefaultFootLengthNm, then built in;
 //   ball diameter  the assembly rules' DefaultBallDiameterNm, then built in;
 //   ball height    the assembly rules' DefaultBallHeightNm, then built in.
+//
+// brief-em3d-50 — a .c3d's drawn Wire has no array and no .wBond: its chain is the wire's own field, then the
+// .wasm its workspace's DefaultAssemblyRef names, then built in. The brief called that level "the .c3d's
+// technology"; no .ctech states a bond value (series 1's D2 put them in the .wasm), so it is the same .wasm a
+// .wBond in that workspace would bond under with no AssemblyRef of its own.
 
 using CircuitRF.Design.Layout.Assembly;
 using CircuitRF.Design.Workspace;
@@ -70,9 +75,16 @@ public sealed class WireBondWorkspace
     /// <summary>No files at all: nothing resolves, and every default is the built-in one.</summary>
     public static WireBondWorkspace None => new(null, null);
 
-    internal WasmResolution RulesFor(WBondDesign design)
+    internal WasmResolution RulesFor(WBondDesign design) => RulesFor(design.AssemblyRef);
+
+    /// <summary>brief-em3d-50 — the assembly rules a document with no AssemblyRef of its own bonds under: the workspace's
+    /// DefaultAssemblyRef, resolved. The Wire tool reads its first allowed diameter.</summary>
+    public WasmResolution WorkspaceRules() => RulesFor((string?)null);
+
+    /// <summary>The assembly rules a design stating <paramref name="assemblyRef"/> (null: none) bonds under.</summary>
+    internal WasmResolution RulesFor(string? assemblyRef)
     {
-        string key = design.AssemblyRef ?? "";
+        string key = assemblyRef ?? "";
         if (_byRef.TryGetValue(key, out var hit)) return hit;
 
         string? defaultRef = null;
@@ -81,7 +93,7 @@ public sealed class WireBondWorkspace
             catch { /* a corrupt .cws states no default — ResolveWorkspaceAssemblyRules' rule */ }
 
         var resolved = WasmResolver.Resolve(
-            design.AssemblyRef, _wbondPath is null ? null : Path.GetDirectoryName(_wbondPath),
+            assemblyRef, _wbondPath is null ? null : Path.GetDirectoryName(_wbondPath),
             _cwsPath is null ? null : Path.GetDirectoryName(_cwsPath), defaultRef, _cache);
         _byRef[key] = resolved;
         return resolved;
@@ -139,5 +151,24 @@ public static class WireBondProcess
             Chain(wasm?.DefaultBallDiameterNm, BuiltInBallDiameterDiameters),
             Chain(wasm?.DefaultBallHeightNm, BuiltInBallHeightDiameters),
             rules);
+    }
+
+    /// <summary>
+    /// brief-em3d-50 — a drawn wire's values: <paramref name="footLengthNm"/> (the wire's own, for one end) when stated,
+    /// then the workspace's <c>.wasm</c>, then built in. <paramref name="workspace"/> is anchored at the <c>.c3d</c>.
+    /// </summary>
+    public static WireBondProcessValues Resolve(long diameterNm, long? footLengthNm, WireBondWorkspace workspace)
+    {
+        ArgumentNullException.ThrowIfNull(workspace);
+        var rules = workspace.RulesFor((string?)null);
+        var wasm  = rules.Rules;
+        static long? Stated(long? v) => v is > 0 ? v : null;
+        WireBondValue Chain(long? fromWasm, double builtInDiameters) =>
+            Stated(fromWasm) is { } w ? new(w, WireBondValueSource.AssemblyRules)
+                                      : new((long)Math.Round(builtInDiameters * diameterNm), WireBondValueSource.BuiltIn);
+        var foot = Stated(footLengthNm) is { } f ? new WireBondValue(f, WireBondValueSource.Wire)
+                 : Chain(wasm?.DefaultFootLengthNm, BuiltInFootLengthDiameters);
+        return new WireBondProcessValues(foot, Chain(wasm?.DefaultBallDiameterNm, BuiltInBallDiameterDiameters),
+                                         Chain(wasm?.DefaultBallHeightNm, BuiltInBallHeightDiameters), rules);
     }
 }

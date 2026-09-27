@@ -1,0 +1,3 @@
+refusal Wire wire/G1/1's end at (900, 0) µm is over no conductor in this problem, so there is no pad for it to be bonded to. A 3D model does not put a foot on nothing: move the end onto its pad, or draw the pad.
+no-alpha 
+unknown-temperature 

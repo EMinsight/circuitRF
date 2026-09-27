@@ -1,0 +1,3 @@
+refusal Wire wire/G1/1 is made of 'Unobtainium', which neither technology 'F0 case A' nor the .wBond defines. Known metals: Gold, Aluminium, Copper, Silver. A 3D model does not substitute a metal; set the wire's Material to one of them, or define it.
+no-alpha 
+unknown-temperature 

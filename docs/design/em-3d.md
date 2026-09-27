@@ -656,6 +656,20 @@ defaults in the `.wasm` (D2), the foot length overridable per array or per wire.
 removed from wBond on 2026-08-18 because nothing read it** (`src/WBond/LoopShape.cs`); it returns
 here because the 3D generator does, and a `.wBond` written in between reads as wedge–wedge.
 
+**A wire drawn in a `.c3d` (brief-em3d-50).** A `.wBond` belongs to one layout, so it cannot join a die pad
+inside a placed cell to a lead in its package. A `.c3d` therefore has its own `Wire` object: an axis in the
+document's DBU (world points — a wire has no placement, because it spans things that each have their own),
+a diameter, a section, and a style and optional foot length per end; `Points` are the only truth about its
+shape, as in wBond. Each end lies on its pad's top surface, and **the pad is looked up, not stored**: the
+elaborated conductor whose top contains the end's plan point at the end's z, within 1 DBU, the highest where
+tops stack. The wire then goes through the same resolution a `.wBond`'s wires do (`Em3dWires.Resolve`, split
+from the `.wBond` reader and held byte-identical to it), so the same points give the same rings. When a pad
+moves, the wire keeps its points and elaboration refuses it by name and end — re-routing it silently would
+change its inductance — and *Re-Seat Wire Ends* is the explicit vertical fix. The loop height typed when
+drawing is the assembly one above, solved against the resolved solid, so the number typed is the number
+measured. Its foot length and ball size resolve as a `.wBond`'s do less the array level: the end's own field,
+then the `.wasm` the workspace's `DefaultAssemblyRef` names, then built in (no `.ctech` states a bond value).
+
 **For openEMS** the hexagon becomes a polyhedron (circuitRF generates the mitred prisms itself; it
 does not rely on a sweep in CSXCAD). Where the grid's cells are much larger than the wire, the
 cross-section is below the grid's resolution and the backend models the wire as a thin conductor with
