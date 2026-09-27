@@ -236,8 +236,8 @@ type the expression's unit after it. The example uses names for every constant i
 Four kinds of object are built by **OpenCASCADE**, the geometry kernel that ships inside circuitRF, rather
 than by the editor itself: a **Boolean** (subtract, unite or intersect), a **Fillet**, a **Chamfer** and a
 **Step** part (one solid of an imported STEP file). **Settings ▸ 3D EM** says whether this installation has
-the kernel. The editor's commands for making them arrive in later releases; the format is complete now, and
-a `.c3d` written by hand with one of them in it is drawn, checked, explained and elaborated.
+the kernel. **Booleans are made in the editor** (below); fillets, chamfers and STEP parts are written in the
+file for now, and a `.c3d` holding any of them is drawn, checked, explained and elaborated.
 
 A boolean owns its operands. This one subtracts a bore from a lid:
 
@@ -281,6 +281,51 @@ A boolean owns its operands. This one subtracts a bore from a lid:
 - **An operation the kernel cannot build** — a fillet larger than the faces beside it, a subtraction that
   leaves nothing — is refused by name, and the rest of the document still elaborates. The edit stays; fix it or
   undo it.
+
+### Making a boolean {#boolean-panel}
+
+Select two or more solids in **Object** mode — **the first one you select is a Tool, the last is the Blank** —
+then right-click ▸ **Boolean ▸ Subtract…**, **Unite…** or **Intersect…** (also under **3D ▸ Boolean**). A panel
+opens at the view's top right, as *Array…*'s does, and the camera stays free:
+
+- **One row per selected solid**, in the order you selected them. Its radio makes that row the **Blank**; every
+  other row is a **Tool**. With two rows, **Swap** exchanges them.
+- **The operation** can be changed in the panel's combo. **Keep tools** (Subtract only, off until you tick it,
+  remembered while the editor is open) keeps each Tool as a solid of its own beside the result — subtract a
+  dielectric slug from a lid and keep the slug as the fill.
+- **One line says what the result keeps**: its name and material, and — for a Unite — every material it
+  replaces, by name (*"'pin' (Copper) becomes Gold"*).
+- **The preview is live.** The result is drawn as it will be, the operands as translucent ghosts (a subtraction's
+  Tools in red); a small busy mark shows while the kernel works, and **OK** waits for it. Changing anything asks
+  again, and only the newest answer is drawn. A result in several pieces is one object and the panel says so; one
+  that leaves nothing, or that the kernel cannot build, is said in red and OK stays disabled.
+- **OK** (or **Enter**) is one undo entry — *Subtract bore from lid* — and costs nothing more: the preview already
+  built exactly what is committed. **Cancel** (or **Esc**) changes nothing.
+
+Sheets, polylines, bond wires and placed cells are not operands, and the disabled menu item says why for each
+(a placed cell's solids belong to its own cell: push into it, or flatten it).
+
+**In the object tree** a boolean is a node with its operation's icon; its **Blank** and then its **Tools** are
+beneath it, and a boolean inside a boolean is a node inside a node. By material, a boolean is listed under its
+Blank's material and its operands only under it; by type, booleans have a group of their own. Right-click a
+boolean for *Edit Operands*, *Dissolve Boolean* (its operands become top-level objects again, the Blank under the
+boolean's name) and *Enabled*; right-click a Tool for *Make Blank* and *Remove from Boolean*.
+
+**In Properties** a selected boolean shows its **Operation**, **Enabled**, **Keep tools** and **Blank** (and
+**Swap** for two operands), and its material — the Blank's, changed on the Blank. Each change is one undo entry
+and is built at once; a change the kernel cannot build is **kept**, and the node is flagged with the reason, so
+undo is one keystroke away rather than the combo snapping back.
+
+**Editing an operand.** Double-click a boolean's result (or select it and press **Ctrl/Cmd+]**) to enter it: the
+result is drawn as a ghost and its operands solid, and the status line says *Editing operands of 'lid' — Esc to
+leave*. An operand then moves, rotates, mirrors, duplicates (the copy is a top-level object), takes a material,
+and has its faces and vertices edited, exactly as any object does; a drag moves only its drawing, and the boolean
+is built again once, on the release. **Esc** or **Ctrl/Cmd+[** leaves. Clicking an operand's row in the tree
+enters its boolean too.
+
+**A result's faces are for reading**: a port, a boundary, Measure, snapping and *Drawing Plane from Face* all use
+them, but moving or extruding one is refused — *"'lid' is made by a boolean: edit its operands (double-click it)
+or the operation in Properties."*
 
 <div class="callout warn">
 <span class="label">Without the geometry kernel</span>
@@ -455,7 +500,7 @@ Every step above has a command-line spelling, and none of them needs a solver ex
 | **Alt** (**Option**) | Suspend geometry snapping while held |
 | **Ctrl/Cmd**-click a face | Draw on that face's plane |
 | **Ctrl/Cmd** while placing | The bottom-centre (die-attach) handle |
-| **Ctrl/Cmd+]**, **Ctrl/Cmd+[** | Push into a placed cell; pop out |
+| **Ctrl/Cmd+]**, **Ctrl/Cmd+[** | Push into a placed cell, or enter a boolean to edit its operands; pop out, or leave it |
 | **Home**, **1**–**7**, **P**, **C** | Fit; standard views; perspective; clip plane |
 
 ## Every control, in detail {#reference}

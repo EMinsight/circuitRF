@@ -898,7 +898,7 @@ public sealed partial class C3dEditorViewModel
             r.Resolved is { } p ? $"{C3dPorts.Label(r.Port)} {(p.Kind == Em3dPortKind.Wave ? "wave" : "lumped")}: {p.NegativeObject} → {p.PositiveObject}"
                                 : $"{C3dPorts.Label(r.Port)}: refused", -1, -1, true) { IsReadOnly = true }).ToList();
         if (ports.Count > 0) Tree.Add(new C3dTreeGroup("Ports", ports, C3dTreeGroupRole.Ports));
-        foreach (var item in Tree.Where(g => g.Role is C3dTreeGroupRole.Objects or C3dTreeGroupRole.Construction).SelectMany(g => g.Items))
+        foreach (var item in Tree.Where(g => g.Role is C3dTreeGroupRole.Objects or C3dTreeGroupRole.Construction or C3dTreeGroupRole.Booleans).SelectMany(g => g.Items))
         {
             foreach (var c in item.Children.Where(c => c.Kind == "Boundary").ToList()) item.Children.Remove(c);
             foreach (var b in Document.FaceBoundaries.Where(b => b.Object == item.Name))

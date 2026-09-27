@@ -209,6 +209,12 @@ public sealed partial class C3dEditorViewModel
     /// </summary>
     public string? SetFieldText(int index, string path, string text)
     {
+        // brief-em3d-66 — an operand's field is its top-level object's, named under the operand's path (Blank.Size[0]).
+        if (IsOperandIndex(index))
+        {
+            int top = TopOf(index, out string operand);
+            return top < 0 ? null : SetFieldText(top, operand + path, text);
+        }
         string name = Document.Objects[index].Name;
         text = text.Trim();
         if (text.Length == 0) return "Type a number or an expression.";
@@ -462,11 +468,11 @@ public sealed partial class C3dEditorViewModel
     private string? OperationGrabRefusal(C3dOperationTool op)
     {
         var res = Resolution;
-        var targetNames = op.Targets.Select(t => t.Instance ? Document.Instances[t.Index].Name : Document.Objects[t.Index].Name).ToHashSet(StringComparer.Ordinal);
+        var targetNames = op.Targets.Select(t => t.Instance ? Document.Instances[t.Index].Name : ObjectLabel(t.Index)).ToHashSet(StringComparer.Ordinal);
         var fields = new List<(string, string)>();
         foreach (var t in op.Targets)
         {
-            object item = t.Instance ? Document.Instances[t.Index] : Document.Objects[t.Index];
+            object item = t.Instance ? Document.Instances[t.Index] : ObjectAt(t.Index)!;
             string name = t.Instance ? ((C3dInstance)item).Name : ((C3dObject)item).Name;
             foreach (var f in C3dBindings.BoundOf(name, item))
             {

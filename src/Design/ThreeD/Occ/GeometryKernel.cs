@@ -503,8 +503,11 @@ public sealed class GeometryKernel : IDisposable
 
     /// <summary>The face table of <paramref name="tree"/>'s shape, in the order a tessellation's face indices use.</summary>
     public IReadOnlyList<GeometryKernelFace> Faces(GeometryKernelTree tree, GeometryKernelBuildOptions? options = null, RunControl? control = null)
+        => Faces(_model, tree, options ?? GeometryKernelBuildOptions.Default, control);
+
+    private IReadOnlyList<GeometryKernelFace> Faces(GeometryKernelSession s, GeometryKernelTree tree, GeometryKernelBuildOptions options,
+                                                    RunControl? control)
     {
-        options ??= GeometryKernelBuildOptions.Default;
         var (path, id) = Require($"Reading the faces of '{tree.Object}'");
         string key = Key("faces", HandleOf(tree, options), "", id);
         if (_cache.TryMemory(key, out IReadOnlyList<GeometryKernelFace> hit))
@@ -514,8 +517,8 @@ public sealed class GeometryKernel : IDisposable
         }
         var reply = Guard(key, () =>
         {
-            string handle = EnsureHeld(_model, path, id, tree, options, control);
-            var r = _model.Send(path, new GeometryKernelMessage(new JsonObject { ["op"] = "faces", ["shape"] = handle }),
+            string handle = EnsureHeld(s, path, id, tree, options, control);
+            var r = s.Send(path, new GeometryKernelMessage(new JsonObject { ["op"] = "faces", ["shape"] = handle }),
                                 Deadlines.Other, control, "reading the faces of", tree.Object);
             return r.Ok ? r : throw Refused(r, tree.Object);
         });
@@ -534,8 +537,11 @@ public sealed class GeometryKernel : IDisposable
     /// <summary>The feature edges of <paramref name="tree"/>'s shape, each with a polyline at <paramref name="deflectionUm"/>.</summary>
     public IReadOnlyList<GeometryKernelEdge> Edges(GeometryKernelTree tree, double deflectionUm, GeometryKernelBuildOptions? options = null,
                                                    RunControl? control = null)
+        => Edges(_model, tree, deflectionUm, options ?? GeometryKernelBuildOptions.Default, control);
+
+    private IReadOnlyList<GeometryKernelEdge> Edges(GeometryKernelSession s, GeometryKernelTree tree, double deflectionUm,
+                                                    GeometryKernelBuildOptions options, RunControl? control)
     {
-        options ??= GeometryKernelBuildOptions.Default;
         var (path, id) = Require($"Reading the edges of '{tree.Object}'");
         string key = Key("edges", HandleOf(tree, options), deflectionUm.ToString("R", CultureInfo.InvariantCulture), id);
         if (_cache.TryMemory(key, out IReadOnlyList<GeometryKernelEdge> hit))
@@ -545,8 +551,8 @@ public sealed class GeometryKernel : IDisposable
         }
         var reply = Guard(key, () =>
         {
-            string handle = EnsureHeld(_model, path, id, tree, options, control);
-            var r = _model.Send(path, new GeometryKernelMessage(new JsonObject { ["op"] = "edges", ["shape"] = handle, ["deflection_um"] = deflectionUm }),
+            string handle = EnsureHeld(s, path, id, tree, options, control);
+            var r = s.Send(path, new GeometryKernelMessage(new JsonObject { ["op"] = "edges", ["shape"] = handle, ["deflection_um"] = deflectionUm }),
                                 Deadlines.Other, control, "reading the edges of", tree.Object);
             return r.Ok ? r : throw Refused(r, tree.Object);
         });
@@ -627,6 +633,7 @@ public sealed class GeometryKernel : IDisposable
     {
         ["tree.invalid"] = o => $"'{o}' is not a solid the geometry kernel can build",
         ["build.failed"] = o => $"The geometry kernel could not build '{o}'",
+        ["build.empty"] = o => $"'{o}' is empty",
         ["build.invalid-result"] = o => $"The geometry kernel built '{o}', but the result is not a valid solid",
         ["shape.unknown"] = o => $"The geometry kernel no longer held '{o}'",
         ["export.failed"] = o => $"The geometry kernel could not export {o}",
@@ -650,13 +657,10 @@ public sealed class GeometryKernel : IDisposable
 
     // ── previews (R-em3d63-8) ────────────────────────────────────────────────────────────────────
 
-    private sealed class PreviewRequest(GeometryKernelTree tree, GeometryKernelBuildOptions options, double linearUm, double angularRad)
+    private sealed class PreviewRequest(Func<GeometryKernelShapes, Func<bool>, object?> work)
     {
-        public GeometryKernelTree Tree { get; } = tree;
-        public GeometryKernelBuildOptions Options { get; } = options;
-        public double LinearUm { get; } = linearUm;
-        public double AngularRad { get; } = angularRad;
-        public TaskCompletionSource<GeometryKernelPreview?> Done { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public Func<GeometryKernelShapes, Func<bool>, object?> Work { get; } = work;
+        public TaskCompletionSource<object?> Done { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public bool Superseded { get; set; }
     }
 
@@ -672,7 +676,23 @@ public sealed class GeometryKernel : IDisposable
     public Task<GeometryKernelPreview?> RequestPreview(GeometryKernelTree tree, double linearUm, double angularRad = 0.5,
                                                        GeometryKernelBuildOptions? options = null)
     {
-        var req = new PreviewRequest(tree, options ?? GeometryKernelBuildOptions.Default, linearUm, angularRad);
+        options ??= GeometryKernelBuildOptions.Default;
+        return RequestPreview((shapes, superseded) =>
+        {
+            var build = shapes.Build(tree, options);
+            return superseded() ? null : new GeometryKernelPreview(build, shapes.Tessellate(tree, linearUm, angularRad, options));
+        });
+    }
+
+    /// <summary>
+    /// brief-em3d-66 R-em3d66-2e — a preview that asks for whatever <paramref name="work"/> asks for, on the PREVIEW session,
+    /// with <see cref="RequestPreview(GeometryKernelTree, double, double, GeometryKernelBuildOptions?)"/>'s supersession. Every
+    /// answer is cached under the key the model session reads, so a commit asking the same questions of the same tree is
+    /// answered from memory. <paramref name="work"/>'s second argument says whether a newer request has superseded this one.
+    /// </summary>
+    public async Task<T?> RequestPreview<T>(Func<GeometryKernelShapes, Func<bool>, T?> work) where T : class
+    {
+        var req = new PreviewRequest((shapes, superseded) => work(shapes, superseded));
         lock (_previewGate)
         {
             _pending?.Done.TrySetResult(null);
@@ -684,7 +704,7 @@ public sealed class GeometryKernel : IDisposable
                 _ = Task.Run(PreviewLoop);
             }
         }
-        return req.Done.Task;
+        return (T?)await req.Done.Task.ConfigureAwait(false);
     }
 
     /// <summary>Closing a dialog, or Esc: the pending preview is dropped and the in-flight one stopped — which kills the
@@ -703,6 +723,7 @@ public sealed class GeometryKernel : IDisposable
 
     private void PreviewLoop()
     {
+        var shapes = new GeometryKernelShapes(this, _previewSession);
         while (true)
         {
             PreviewRequest req;
@@ -718,13 +739,11 @@ public sealed class GeometryKernel : IDisposable
                 _inFlight = req;
             }
 
-            GeometryKernelPreview? result = null;
+            object? result = null;
             Exception? error = null;
             try
             {
-                var build = Build(_previewSession, req.Tree, req.Options, null);
-                if (!IsSuperseded(req))
-                    result = new GeometryKernelPreview(build, Tessellate(_previewSession, req.Tree, req.LinearUm, req.AngularRad, req.Options, null));
+                result = req.Work(shapes, () => IsSuperseded(req));
             }
             catch (Exception e) when (e is GeometryKernelException or OperationCanceledException)
             {
@@ -744,6 +763,17 @@ public sealed class GeometryKernel : IDisposable
             }
         }
     }
+
+    /// <summary>The model session's questions, for code written once against either session.</summary>
+    public GeometryKernelShapes Model => new(this, _model);
+
+    // The session-bound halves GeometryKernelShapes forwards to.
+    internal GeometryKernelBuild BuildOn(GeometryKernelSession s, GeometryKernelTree tree, GeometryKernelBuildOptions o) => Build(s, tree, o, null);
+    internal GeometryKernelMesh TessellateOn(GeometryKernelSession s, GeometryKernelTree tree, double linearUm, double angularRad, GeometryKernelBuildOptions o)
+        => Tessellate(s, tree, linearUm, angularRad, o, null);
+    internal IReadOnlyList<GeometryKernelFace> FacesOn(GeometryKernelSession s, GeometryKernelTree tree, GeometryKernelBuildOptions o) => Faces(s, tree, o, null);
+    internal IReadOnlyList<GeometryKernelEdge> EdgesOn(GeometryKernelSession s, GeometryKernelTree tree, double deflectionUm, GeometryKernelBuildOptions o)
+        => Edges(s, tree, deflectionUm, o, null);
 
     private bool IsSuperseded(PreviewRequest req)
     {
@@ -767,4 +797,34 @@ public sealed class GeometryKernel : IDisposable
         _model.Dispose();
         _previewSession.Dispose();
     }
+}
+
+/// <summary>
+/// brief-em3d-66 — the four questions a shape is asked (build, faces, tessellation, edges), bound to ONE of the kernel's
+/// sessions: <see cref="GeometryKernel.Model"/>, or the preview session inside
+/// <c>GeometryKernel.RequestPreview/// <see cref="GeometryKernel.RequestPreview{T}(Func{GeometryKernelShapes, Func{bool}, T})"/>. Both sessions share one cache, keyedlt;T/// <see cref="GeometryKernel.RequestPreview{T}(Func{GeometryKernelShapes, Func{bool}, T})"/>. Both sessions share one cache, keyedgt;</c>. Both sessions share one cache, keyed
+/// by the question and the tree, so an answer the preview received is the model's answer too.
+/// </summary>
+public sealed class GeometryKernelShapes
+{
+    private readonly GeometryKernel _kernel;
+    private readonly GeometryKernelSession _session;
+
+    internal GeometryKernelShapes(GeometryKernel kernel, GeometryKernelSession session)
+    {
+        _kernel = kernel;
+        _session = session;
+    }
+
+    public GeometryKernelBuild Build(GeometryKernelTree tree, GeometryKernelBuildOptions? options = null)
+        => _kernel.BuildOn(_session, tree, options ?? GeometryKernelBuildOptions.Default);
+
+    public GeometryKernelMesh Tessellate(GeometryKernelTree tree, double linearUm, double angularRad = 0.5, GeometryKernelBuildOptions? options = null)
+        => _kernel.TessellateOn(_session, tree, linearUm, angularRad, options ?? GeometryKernelBuildOptions.Default);
+
+    public IReadOnlyList<GeometryKernelFace> Faces(GeometryKernelTree tree, GeometryKernelBuildOptions? options = null)
+        => _kernel.FacesOn(_session, tree, options ?? GeometryKernelBuildOptions.Default);
+
+    public IReadOnlyList<GeometryKernelEdge> Edges(GeometryKernelTree tree, double deflectionUm, GeometryKernelBuildOptions? options = null)
+        => _kernel.EdgesOn(_session, tree, deflectionUm, options ?? GeometryKernelBuildOptions.Default);
 }

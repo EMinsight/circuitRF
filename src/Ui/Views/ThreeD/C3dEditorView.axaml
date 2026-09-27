@@ -426,6 +426,9 @@
                             <StackPanel Orientation="Horizontal" Spacing="4">
                                 <CheckBox IsChecked="{Binding IsVisible}" MinWidth="0" Padding="0"
                                           ToolTip.Tip="Visible — a drawn object's visibility is saved with the document and undoable"/>
+                                <!-- brief-em3d-66 R-em3d66-3a — an operation's icon; dimmed while it is disabled. -->
+                                <mi:MaterialIcon Kind="{Binding IconKind}" Width="14" Height="14" VerticalAlignment="Center"
+                                                 IsVisible="{Binding HasIcon}" Opacity="{Binding IconOpacity}"/>
                                 <TextBlock Text="{Binding Name}" VerticalAlignment="Center" ToolTip.Tip="{Binding OrderTip}"/>
                                 <TextBlock Text="{Binding Detail}" Opacity="0.6" FontSize="11" VerticalAlignment="Center"/>
                                 <!-- brief-em3d-50 R-em3d50-4 — a wire whose end is on no pad: flagged, with the refusal's words. -->
@@ -485,6 +488,54 @@
                         <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Right">
                             <Button Content="Cancel" Command="{Binding ViewModel.CloseArrayCommand}"/>
                             <Button Content="Accept" Command="{Binding ViewModel.AcceptArrayCommand}" Classes="accent"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+                <!-- brief-em3d-66 R-em3d66-2 — the Boolean panel: a popover like Array…, not a modal dialog. The camera stays free
+                     and the preview is live and asynchronous: a busy mark while a request is outstanding, OK only once a reply is
+                     drawn. One row per selected solid in selection order; exactly one is the Blank, every other a Tool. -->
+                <Border IsVisible="{Binding ViewModel.BooleanOpen}" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="12"
+                        Padding="10,8" CornerRadius="4" BorderThickness="1" Width="340"
+                        Background="{DynamicResource SystemControlBackgroundAltHighBrush}"
+                        BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
+                    <Border.KeyBindings>
+                        <KeyBinding Gesture="Escape" Command="{Binding ViewModel.CancelBooleanCommand}"/>
+                        <KeyBinding Gesture="Enter" Command="{Binding ViewModel.AcceptBooleanCommand}"/>
+                    </Border.KeyBindings>
+                    <StackPanel Spacing="5">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <TextBlock Text="{Binding ViewModel.BooleanTitle}" FontWeight="SemiBold"/>
+                            <ProgressBar Grid.Column="1" IsIndeterminate="True" Width="48" MinWidth="0" Height="4" VerticalAlignment="Center"
+                                         IsVisible="{Binding ViewModel.BooleanBusy}" ToolTip.Tip="Previewing: OK waits for the result."/>
+                        </Grid>
+                        <ComboBox ItemsSource="{x:Static t3:C3dEditorViewModel.BooleanOps}" SelectedItem="{Binding ViewModel.BooleanOp}"
+                                  HorizontalAlignment="Stretch"/>
+                        <ItemsControl ItemsSource="{Binding ViewModel.BooleanRows}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="t3:C3dBooleanRow">
+                                    <Grid ColumnDefinitions="Auto,*,Auto" ToolTip.Tip="{Binding Tip}" Margin="0,1">
+                                        <RadioButton IsChecked="{Binding IsBlank}" Content="{Binding Role}" MinWidth="72"/>
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold"/>
+                                            <TextBlock Text="{Binding Kind}" Opacity="0.6" FontSize="11" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                        <TextBlock Grid.Column="2" Text="{Binding MaterialText}" Opacity="0.75" FontSize="11" VerticalAlignment="Center"/>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <Button Content="Swap" Command="{Binding ViewModel.SwapBooleanCommand}" IsVisible="{Binding ViewModel.BooleanCanSwap}"
+                                HorizontalAlignment="Left" ToolTip.Tip="The Tool becomes the Blank, and the Blank the Tool."/>
+                        <CheckBox Content="Keep tools" IsChecked="{Binding ViewModel.BooleanKeepTools}" IsEnabled="{Binding ViewModel.BooleanKeepToolsEnabled}"
+                                  ToolTip.Tip="{x:Static t3:C3dEditorViewModel.BooleanKeepToolsTip}"/>
+                        <TextBlock Text="{Binding ViewModel.BooleanKeeps}" FontSize="11" TextWrapping="Wrap"/>
+                        <TextBlock Text="{Binding ViewModel.BooleanNote}" FontSize="11" Opacity="0.8" TextWrapping="Wrap"
+                                   IsVisible="{Binding ViewModel.BooleanNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                        <TextBlock Text="{Binding ViewModel.BooleanError}" Foreground="IndianRed" FontSize="11" TextWrapping="Wrap"
+                                   IsVisible="{Binding ViewModel.BooleanError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                        <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Right">
+                            <Button Content="Cancel" Command="{Binding ViewModel.CancelBooleanCommand}"/>
+                            <Button Content="OK" Command="{Binding ViewModel.AcceptBooleanCommand}" Classes="accent"/>
                         </StackPanel>
                     </StackPanel>
                 </Border>

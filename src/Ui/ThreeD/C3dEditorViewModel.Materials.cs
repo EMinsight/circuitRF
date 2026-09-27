@@ -37,11 +37,11 @@ public sealed partial class C3dEditorViewModel
 
     /// <summary>IViewer3DEditHost — the canvas menu's Assign Material….</summary>
     public void AssignMaterial(IReadOnlyList<Scene3DObject> objects)
-        => RequestMaterialPicker([.. objects.Select(DocumentIndex).Where(i => i >= 0).Distinct()], startNew: false);
+        => RequestMaterialPicker([.. objects.Select(EditableIndex).Where(i => i >= 0).Distinct()], startNew: false);
 
     /// <summary>IViewer3DEditHost — Material ▸ New Material….</summary>
     public void NewMaterial(IReadOnlyList<Scene3DObject> objects)
-        => RequestMaterialPicker([.. objects.Select(DocumentIndex).Where(i => i >= 0).Distinct()], startNew: true);
+        => RequestMaterialPicker([.. objects.Select(EditableIndex).Where(i => i >= 0).Distinct()], startNew: true);
 
     /// <summary>The picker's answer: <paramref name="material"/> onto <paramref name="indices"/> as ONE edit, or, with
     /// none, the toolbar's current material.</summary>
@@ -49,8 +49,8 @@ public sealed partial class C3dEditorViewModel
     {
         _pendingMaterial = material;
         if (indices.Count == 0) { CurrentMaterial = material; return; }
-        ChangeObjects(indices.Count == 1 ? $"Material of {Document.Objects[indices[0]].Name}" : $"Material of {indices.Count} objects",
-                      indices, o => o.Material = material);
+        ChangeObjects(indices.Count == 1 ? $"Material of {ObjectLabel(indices[0])}" : $"Material of {indices.Count} objects",
+                      indices, o => SetMaterialOf(o, material));
     }
 
     /// <summary>The toolbar combo's last item is a command, not a material: open the picker and keep what was current.</summary>

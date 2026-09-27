@@ -54,6 +54,8 @@ namespace CircuitRF.Render.Scene3D;
 /// <param name="FaceTints">brief-em3d-49 R-em3d49-4d — the face boundaries, each drawn tinted just off its face.</param>
 /// <param name="Wireframe">3D editor bugs round 1 — true for an object with no material: drawn as a wireframe
 /// (<see cref="Scene3DObject.Wireframe"/>), never taken for the outermost dielectric.</param>
+/// <param name="Ghost">brief-em3d-66 R-em3d66-2e — how an object draws while a boolean is previewed or entered: a ghost is
+/// translucent and never hovered or selected; a Tool of a subtraction is a ghost in the overlay's red.</param>
 public sealed record Scene3DBuildOptions(
     Func<string, IReadOnlyList<string>?>? FaceNames = null,
     Scene3DTessellationCache? Cache = null,
@@ -64,7 +66,19 @@ public sealed record Scene3DBuildOptions(
     Func<string, bool>? Context = null,
     bool EditorBoundaries = false,
     IReadOnlyList<Scene3DFaceTint>? FaceTints = null,
-    Func<string, bool>? Wireframe = null);
+    Func<string, bool>? Wireframe = null,
+    Func<string, Scene3DGhost>? Ghost = null);
+
+/// <summary>brief-em3d-66 — an object's draw state while a boolean is previewed or entered.</summary>
+public enum Scene3DGhost
+{
+    /// <summary>Drawn as it always is.</summary>
+    None,
+    /// <summary>Translucent, and never hovered or selected: an operand under a preview, or a result whose operands are being edited.</summary>
+    Ghost,
+    /// <summary>A ghost in the overlay's red: what a subtraction takes away.</summary>
+    Taken,
+}
 
 /// <summary>brief-em3d-49 R-em3d49-4d — one face boundary to draw: its name (<c>object/face</c>), its kind and its pieces.</summary>
 public sealed record Scene3DFaceTint(string Name, Em3dFaceBoundaryKind Kind, IReadOnlyList<Em3dFacePolygon> Pieces);
@@ -244,6 +258,8 @@ public static class Scene3DBuilder
             bool dim = Dim(s.Name);
             if (dim) (rgba, translucent) = (Dimmed(rgba, dark), true);
             if (wire) (rgba, translucent) = (wireFill, true);
+            var ghost = options.Ghost?.Invoke(s.Name) ?? Scene3DGhost.None;
+            if (ghost != Scene3DGhost.None) (rgba, translucent, dim) = (Ghosted(rgba, ghost == Scene3DGhost.Taken, dark), true, true);
             var solid = s;
             var mesh = Tessellate(s.Primitive, () => Em3dTessellation.Of(solid));
             var (m, slot) = materials.TryGetValue(s.Material, out var mt) ? (mt.m, mt.i) : ((Em3dMaterial?)null, -1);
@@ -385,6 +401,19 @@ public static class Scene3DBuilder
 
     /// <summary>Opacity of the parent drawn around a pushed-in child.</summary>
     public const byte ContextAlpha = 70;
+
+    /// <summary>Opacity of a ghost (brief-em3d-66).</summary>
+    public const byte GhostAlpha = 60;
+
+    /// <summary>brief-em3d-66 R-em3d66-2e — a ghost: the object's colour pulled toward the background's grey, or the overlay's
+    /// red for what a subtraction takes away, at <see cref="GhostAlpha"/>.</summary>
+    private static uint Ghosted(uint rgba, bool taken, bool dark)
+    {
+        if (taken) return Scene3DVertex.Pack(225, 70, 70, GhostAlpha);
+        byte g = dark ? (byte)110 : (byte)170;
+        byte Mix(uint c) => (byte)((c + 2 * g) / 3);
+        return Scene3DVertex.Pack(Mix(rgba & 0xFF), Mix((rgba >> 8) & 0xFF), Mix((rgba >> 16) & 0xFF), GhostAlpha);
+    }
 
     /// <summary>brief-em3d-48 R-em3d48-4a — a colour pulled halfway to the background's grey and made translucent: the
     /// parent around a pushed-in child reads as surroundings, not as something to edit.</summary>

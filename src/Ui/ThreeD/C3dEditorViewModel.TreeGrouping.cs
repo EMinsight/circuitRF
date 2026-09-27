@@ -14,6 +14,11 @@
 // type alone.
 //
 // Both choices are editor state for this editor's lifetime: nothing is written to the document or the workspace.
+//
+// brief-em3d-66 R-em3d66-3 — A BOOLEAN IS A NODE, AND EVERY OBJECT APPEARS ONCE. Its Blank and then its Tools are its
+// children, at any depth; by material the boolean is a solid of its BLANK's material and its operands are never listed
+// again under their own; by type booleans have their own group, found by its role. The filter hides whole top-level rows
+// only, so an operand is never filtered out of a boolean that is shown.
 
 using System.Collections.ObjectModel;
 using CircuitRF.Design.ThreeD;
@@ -26,7 +31,7 @@ namespace CircuitRF.Ui.ThreeD;
 public enum C3dTreeGrouping { Material, Primitive }
 
 /// <summary>What a group of the editor's tree holds — what code finds a group by (a header may be any material's name).</summary>
-public enum C3dTreeGroupRole { Objects, Construction, Instances, Ports, AirBox }
+public enum C3dTreeGroupRole { Objects, Construction, Instances, Ports, AirBox, Booleans }
 
 public sealed partial class C3dEditorViewModel
 {
@@ -90,7 +95,7 @@ public sealed partial class C3dEditorViewModel
     }
 
     /// <summary>The material group an object belongs to (its header by material, and its material-filter name).</summary>
-    private static string MaterialHeaderOf(C3dObject o) => o.Material is { Length: > 0 } m ? m : NoMaterialHeader;
+    private static string MaterialHeaderOf(C3dObject o) => C3dValidation.EffectiveMaterial(o) is { Length: > 0 } m ? m : NoMaterialHeader;
 
     private bool PassesTreeFilter(C3dObject o)
         => !_hiddenTypes.Contains(TypeHeaderOf(o)) && (o is C3dPolyline || !_hiddenMaterials.Contains(MaterialHeaderOf(o)));
@@ -101,14 +106,22 @@ public sealed partial class C3dEditorViewModel
         var rows = Document.Objects.Select((o, i) => (o, i)).Where(t => PassesTreeFilter(t.o)).ToList();
         // Round 3: by material the group's header already names each row's material, so the row does not repeat it.
         bool byMaterial = TreeGrouping == C3dTreeGrouping.Material;
-        C3dTreeItem Item((C3dObject o, int i) t) => new(this, t.o.Name, C3dObject.KindOf(t.o), byMaterial ? null : t.o.Material, t.i, -1, !t.o.Hidden);
+        C3dTreeItem Item((C3dObject o, int i) t)
+        {
+            var item = new C3dTreeItem(this, t.o.Name, C3dObject.KindOf(t.o), byMaterial ? null : C3dValidation.EffectiveMaterial(t.o), t.i, -1, !t.o.Hidden)
+            {
+                Icon = IconOf(t.o), IconOpacity = t.o is C3dOperation { Enabled: false } ? 0.4 : 1,
+            };
+            AddOperands(item, t.o, t.i, "", t.o.Name);
+            return item;
+        }
 
         if (TreeGrouping == C3dTreeGrouping.Primitive)
         {
             foreach (var (type, header) in Groups)
             {
                 var items = rows.Where(t => t.o.GetType() == type).Select(Item).ToList();
-                if (items.Count > 0) yield return new C3dTreeGroup(header, items);
+                if (items.Count > 0) yield return new C3dTreeGroup(header, items, type == typeof(C3dBoolean) ? C3dTreeGroupRole.Booleans : C3dTreeGroupRole.Objects);
             }
             yield break;
         }
@@ -119,12 +132,41 @@ public sealed partial class C3dEditorViewModel
         var bare = solids.Where(t => MaterialHeaderOf(t.o) == NoMaterialHeader).Select(Item).ToList();
         if (bare.Count > 0) yield return new C3dTreeGroup(NoMaterialHeader, bare);
         foreach (var g in solids.Where(t => MaterialHeaderOf(t.o) != NoMaterialHeader)
-                                .GroupBy(t => t.o.Material!, StringComparer.Ordinal)
+                                .GroupBy(t => MaterialHeaderOf(t.o), StringComparer.Ordinal)
                                 .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase))
             yield return new C3dTreeGroup(g.Key, g.Select(Item));
         var lines = rows.Where(t => t.o is C3dPolyline).Select(Item).ToList();
         if (lines.Count > 0) yield return new C3dTreeGroup("Polylines", lines, C3dTreeGroupRole.Construction);
     }
+
+    /// <summary>brief-em3d-66 R-em3d66-3a — a boolean's operands beneath its row: the Blank first, then the Tools in order, each
+    /// labelled in the detail, at any depth. Each row addresses its operand by path under the top-level object.</summary>
+    private void AddOperands(C3dTreeItem parent, C3dObject o, int top, string path, string topName)
+    {
+        if (o is not C3dBoolean) return;
+        foreach (var (prefix, operand) in C3dOperands.Of(o))
+        {
+            bool blank = prefix == "Blank.";
+            string? material = C3dValidation.EffectiveMaterial(operand);
+            var child = new C3dTreeItem(this, blank ? C3dObject.KindOf(operand) : operand.Name, C3dObject.KindOf(operand),
+                                        (blank ? "Blank" : "Tool") + (material is { Length: > 0 } ? " · " + material : ""), top, -1, !operand.Hidden)
+            {
+                OperandPath = path + prefix, TopName = topName, Icon = IconOf(operand),
+                IconOpacity = operand is C3dOperation { Enabled: false } ? 0.4 : 1,
+            };
+            AddOperands(child, operand, top, path + prefix, topName);
+            parent.Children.Add(child);
+        }
+    }
+
+    /// <summary>An operation's icon — the toolbar's set — or null for anything else.</summary>
+    private static Material.Icons.MaterialIconKind? IconOf(C3dObject o) => o switch
+    {
+        C3dBoolean { Op: C3dBooleanOp.Subtract } => Material.Icons.MaterialIconKind.VectorDifferenceBa,
+        C3dBoolean { Op: C3dBooleanOp.Unite } => Material.Icons.MaterialIconKind.VectorUnion,
+        C3dBoolean => Material.Icons.MaterialIconKind.VectorIntersection,
+        _ => null,
+    };
 
     /// <summary>Instances, unless the type filter hides them.</summary>
     private C3dTreeGroup? InstanceGroup()

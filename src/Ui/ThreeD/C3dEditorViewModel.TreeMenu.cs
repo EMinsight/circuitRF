@@ -3,6 +3,7 @@
 // the 3D menu call — Duplicate, Delete, Rename, Material, Hide, Isolate, Show All, Properties — never a second copy.
 // What a node cannot do is shown disabled with the reason, so the answer is readable (the air box, an instance's part).
 
+using CircuitRF.Design.ThreeD;
 using CircuitRF.Render.Scene3D;
 using CircuitRF.Ui.Viewer3D;
 
@@ -41,6 +42,8 @@ public sealed partial class C3dEditorViewModel
             items.Add(new Viewer3DMenuItem("Delete", b is null ? null : () => StatusMessage = SetFaceBoundary(b.Object, b.Face, null) ?? "",
                                            Enabled: b is not null));
         }
+        else if (item.OperandPath is { } path && item.ObjectIndex >= 0 && item.ObjectIndex < Document.Objects.Count)
+            items.AddRange(OperandTreeItems(item, path));
         else if (item.IsReadOnly)
         {
             const string why = "Part of an instance: it belongs to its own cell. Push into the cell to edit it.";
@@ -63,11 +66,17 @@ public sealed partial class C3dEditorViewModel
             if (item.ObjectIndex >= 0)
             {
                 int index = item.ObjectIndex;
+                // brief-em3d-66 R-em3d66-3d — a boolean's own items first, the functions the canvas and the inspector call.
+                if (Document.Objects[index] is C3dBoolean)
+                {
+                    items.AddRange(BooleanTreeItems(item));
+                    items.Add(Viewer3DMenuItem.Separator);
+                }
                 items.Add(new Viewer3DMenuItem("Rename…", () => ShowProperties(rename: true)));
                 var mats = Materials;
                 // brief-em3d-53 — the list ends in New Material…, so a technology with none is not a dead end.
                 items.Add(new Viewer3DMenuItem("Material",
-                    Children: [.. mats.Select(m => new Viewer3DMenuItem(m, () => ChangeObjects($"Material of {Document.Objects[index].Name}", [index], o => o.Material = m))),
+                    Children: [.. mats.Select(m => new Viewer3DMenuItem(m, () => ChangeObjects($"Material of {Document.Objects[index].Name}", [index], o => SetMaterialOf(o, m)))),
                                .. mats.Count > 0 ? [Viewer3DMenuItem.Separator] : Array.Empty<Viewer3DMenuItem>(),
                                new Viewer3DMenuItem(NewMaterialItem, () => RequestMaterialPicker([index], startNew: true),
                                    Tip: "Make a material in the technology or one of its libraries, and give it to this object.")]));
@@ -84,6 +93,44 @@ public sealed partial class C3dEditorViewModel
         items.Add(Viewer3DMenuItem.Separator);
         items.Add(new Viewer3DMenuItem("Properties", () => ShowProperties(rename: false)));
         return items;
+    }
+
+    /// <summary>brief-em3d-66 R-em3d66-3d — an operand's row: Rename…, Material, Make Blank (a Tool), Remove from Boolean (a
+    /// Tool, when more than one remains), Hide — and, when the operand is itself a boolean, that boolean's items.</summary>
+    private IEnumerable<Viewer3DMenuItem> OperandTreeItems(C3dTreeItem item, string path)
+    {
+        int top = item.ObjectIndex;
+        var root = Document.Objects[top];
+        if (C3dBooleans.At(root, path) is not { } operand || C3dBooleans.At(root, C3dBooleans.ParentPath(path)) is not C3dBoolean parent) yield break;
+        int step = C3dBooleans.LastStep(path);
+        foreach (var b in BooleanTreeItems(item)) yield return b;
+        yield return new Viewer3DMenuItem("Rename…", () => { SelectOperand(top, path); ShowProperties(rename: true); }, Enabled: step >= 0,
+            Tip: step >= 0 ? null : "A Blank takes its boolean's name: rename the boolean.");
+        var mats = Materials;
+        yield return new Viewer3DMenuItem("Material",
+            Children: [.. mats.Select(m => new Viewer3DMenuItem(m, () => ChangeOperand($"Material of {item.Name}", top, path, o => SetMaterialOf(o, m))))]);
+        if (step >= 0)
+        {
+            yield return new Viewer3DMenuItem("Make Blank", () => MakeBlank(top, C3dBooleans.ParentPath(path), step),
+                Tip: "This Tool becomes the Blank, and the Blank a Tool in its place: the boolean takes this one's name.");
+            bool more = parent.Tools.Count > 1;
+            yield return new Viewer3DMenuItem("Remove from Boolean", () => RemoveFromBoolean(top, path), Enabled: more,
+                Tip: more ? "It becomes a top-level object right after the boolean, where the boolean put it."
+                          : "A boolean needs a Tool: this is its last one. Dissolve it instead.");
+        }
+        yield return new Viewer3DMenuItem(operand.Hidden ? "Show" : "Hide",
+            () => ChangeOperand($"{(operand.Hidden ? "Show" : "Hide")} {item.Name}", top, path, o => o.Hidden = !operand.Hidden));
+        yield return Viewer3DMenuItem.Separator;
+        yield return new Viewer3DMenuItem("Delete", step >= 0 && parent.Tools.Count > 1 ? () => DeleteTool(top, path) : null,
+            Enabled: step >= 0 && parent.Tools.Count > 1,
+            Tip: step < 0 ? C3dBooleans.BlankNeeded : parent.Tools.Count > 1 ? "Removed from the boolean and deleted." : "A boolean needs a Tool: this is its last one. Dissolve it instead.");
+    }
+
+    /// <summary>brief-em3d-66 — a material given to an operation is its Blank's (or Target's): the result is made of it.</summary>
+    internal static void SetMaterialOf(C3dObject o, string material)
+    {
+        if (o is C3dOperation && C3dOperands.Inner(o) is { } inner) SetMaterialOf(inner, material);
+        else o.Material = material;
     }
 
     /// <summary>The scene objects a tree node stands for: an instance's parts, or the node's own object.</summary>

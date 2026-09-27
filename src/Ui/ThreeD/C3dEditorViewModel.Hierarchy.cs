@@ -295,6 +295,8 @@ public sealed partial class C3dEditorViewModel
     {
         var targets = Targets();
         if (targets.Count == 0) return StatusMessage = "Select the objects and instances to group first.";
+        if (targets.Any(t => !t.Instance && IsOperandIndex(t.Index)))
+            return StatusMessage = "A boolean's operands stay in their boolean: leave it (Esc) and group the boolean.";
         var bounds = BoundsDbu(targets);
         var anchor = bounds is { } b ? new C3dPoint3((long)Math.Floor(b.X0), (long)Math.Floor(b.Y0), (long)Math.Floor(b.Z0)) : default;
         string docDir = Path.GetDirectoryName(FilePath)!;
@@ -423,6 +425,8 @@ public sealed partial class C3dEditorViewModel
         Viewer.SetSelection([]);
         SetTool(null);
         CloseArray();
+        CancelBoolean();
+        LeaveBooleanFully();                // brief-em3d-66 — an entered boolean is the frame's editor state, not the next one's
         ApplyLengthFormat();
         _plane = f.Plane;
         ApplySnapGrid();

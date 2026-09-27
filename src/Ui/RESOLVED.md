@@ -36842,3 +36842,33 @@ screen: the GUI cannot be launched from this session, so it is verified by compi
 `std::exception` and has no `DynamicType()` — use `ExceptionType()` and `what()`
 (`GetMessageString()` is deprecated); and the `TopTools_IndexedMapOfShape` typedef is gone — write
 `NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher>`, as the spike harness does.
+
+## brief-em3d-66 — booleans in the editor (2026-09-27)
+
+The panel, the tree, the inspector, entering a boolean, and D13 are `src/Ui/ThreeD/C3dEditorViewModel.Boolean.cs`
+plus small hooks in the partials they touch; every rule is `C3dBooleans` (`src/Design`, see its RESOLVED entry).
+
+- **The by-material tree grouped on `o.Material`**, which is null for any operation (the material is its Blank's),
+  so a boolean went to a group with a null header and its Blank's material group never appeared. Grouping, the
+  material filter and the header now read `C3dValidation.EffectiveMaterial`. The same trap is in any code that
+  writes a material "onto" a boolean: `SetMaterialOf` puts it on the Blank.
+- **The preview is drawn by the ordinary scene path, not a new GPU draw type.** A reply regenerates ONE scene from
+  the document OK would write, with the operands appended as ghosts (`Scene3DBuildOptions.Ghost`: translucent,
+  `Context` so never hovered or selected, a subtraction's Tools in red). The patch uploads only what changed, once
+  per reply; a transient batch type would have meant three backends' worth of draw code nobody can see from here.
+- **An operand is addressed by an OPERAND INDEX** (`OperandBase + k`, k into the entered boolean's operands):
+  `ObjectAt` gives its world form and `ReplacementSlots` writes any edit of it back as ONE replacement of its
+  top-level object (several operands of one boolean merge into one slot). That is why Move, Rotate, Mirror, Align,
+  Duplicate, material, rename and the face/vertex edits needed only their `Document.Objects[i]` reads swapped —
+  and why `Targets()`, `SelectedWires`, `GroupIntoCell` and `Order` had to learn to skip or refuse an operand index.
+  Entered operands draw as `<boolean>:<tool>` / `<boolean>:Blank`, names no document object can have (`:` is
+  forbidden), which is what lets a kept Tool (`KeepTools`) and its operand be drawn side by side.
+- **An operand drag is brief 46's preview of its own batch**: 50 moves, zero worker requests; the release is one
+  undo entry and ONE tree re-evaluated (`KernelTreesBuilt` +1 — four requests: build, faces, tessellate, edges).
+- **Making, dissolving and removing a Tool are `C3dListsEdit`s**, not `C3dEdit`s: each replaces one object AND
+  inserts or removes others, which `C3dEdit`'s one-shape rule cannot state. One undo entry either way.
+- **A test that opens the panel must wait for the preview.** The app posts each reply to the UI thread; a test's
+  inline `post` runs it on the pool, concurrently with the test thread, so a reply could land after Cancel and draw
+  a stale preview scene (1 run in 3 before `Quiet` was added; 10 in 10 after).
+- Tool names are unique across the whole document (R-em3d64-1d): `NextName`, `Rename` and a Duplicate of a whole
+  boolean (whose Tools are renamed too) now count the names inside booleans.

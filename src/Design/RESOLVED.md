@@ -14155,3 +14155,33 @@ staged by `OpenEmsRun.Stage`, checked by `OpenEmsRun.CheckKernelFiles` before ea
   conductor-model warning: 100 µm is ~48 skin depths of copper at 1 GHz. So on this launch the unrepresented
   fillet costs openEMS little — the warning says the geometry is not the grid's, not that the answer is far off;
   the grid (24 × 23 × 16) was set by the ports and the pin, never refined for the fillet, which is FDTD's nature.
+
+## brief-em3d-66 — booleans in the editor: what the Design side had to grow (2026-09-27)
+
+`C3dBooleans` (new) holds every rule the editor makes a boolean by — operand legality and its sentences, the
+last-selected Blank, what the result keeps, `Make`, `Dissolve`, and operand PATHS (`Blank.`, `Tools[1].`, the
+spelling `C3dBindings` already names an operand's fields with). Gate: `tests/Ui.Tests/ThreeD/BooleansInTheEditorTests.cs`.
+
+- **A preview that is exactly the commit is four questions, not two.** Brief 63's `RequestPreview` asked build and
+  tessellate; the elaboration of the committed document asks build, faces, tessellate (at a deflection derived from
+  the faces) and edges. The preview now takes any work against the preview session
+  (`RequestPreview<T>(Func<GeometryKernelShapes, Func<bool>, T?>)`), and `C3dElaborator.ShapeSolid` is written once
+  against `GeometryKernelShapes`, so `PreviewShape` asks the very questions of the very tree
+  (`C3dElaborator.KernelTreeOf` resolves a copy exactly as `Elaborate` does). Both sessions share one cache keyed by
+  question and tree, so OK's elaboration is all memory hits: **measured, zero worker requests at commit, undo and
+  redo**. The root's NAME is in the tree (and so in its hash), so the preview must use the Blank's name — a preview
+  under another name would build the same solid and still miss.
+- **The worker refused an empty result as `build.failed`**, indistinguishable from any other failure, so the only
+  way to say that two solids share nothing would have been matching OCCT's text. It is now **`build.empty`**
+  (worker + README + the client's sentence table); the elaborator marks it `Empty` and words it through
+  `C3dBooleans.EmptyResult`, as it does a build that holds no solid. Rebuild the worker after pulling
+  (`tools/geometry-worker/ensure-built.sh`, seconds).
+- **A wire bonded to a Blank stopped landing after a Subtract.** `C3dWires.Pads` had no case for `Em3dShapeSolid`,
+  so the result offered no pad at all and every wire on it became a refusal. `UpwardFaces` reads each flat, upward
+  face's boundary loops off its display triangles (an edge used by one triangle of the face is boundary; the winding
+  makes the outer loop CCW and each hole CW). Ports needed nothing: `C3dPortContext` already reads any solid through
+  its tessellation.
+- **`KeepTools` is a Subtract's only**, because the elaborator keeps Tools for Subtract alone (R-em3d64-3c); the panel
+  greys the box for Unite and Intersect and `Make` never writes it for them.
+- `C3dKernelBuild` gained `Solids` (the inspector's piece count). An internal-invariant throw in `C3dBooleans.With`
+  carries no sentence, so the user-facing-text gate does not have to list it.

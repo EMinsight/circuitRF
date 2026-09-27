@@ -103,6 +103,12 @@ public static class C3dWires
                     pads.Add(new(s.Name, new PlanarPolygon(ring), Math.Max(c.AxisStart.Z, c.AxisEnd.Z)));
                     break;
                 }
+                // brief-em3d-66 R-em3d66-5d — a kernel solid (a boolean's result) is a pad wherever it has a flat face looking
+                // up: a wire bonded to the lid before a bore was subtracted from it still lands on the lid afterwards.
+                case Em3dShapeSolid k:
+                    foreach (var (outline, holes, z) in UpwardFaces(k))
+                        pads.Add(new(s.Name, new PlanarPolygon(outline, holes), z));
+                    break;
                 case Em3dPolyhedron p:
                     foreach (var f in p.Faces)
                         if (UpwardZ(p.Vertices, f.Outer) is { } z)
@@ -115,6 +121,77 @@ public static class C3dWires
         foreach (var sh in sheets)
             if (sh.Frame is null && Take(sh.Name)) pads.Add(new(sh.Name, Poly(sh.Outline, sh.Holes), sh.Z));
         return pads;
+    }
+
+    /// <summary>
+    /// brief-em3d-66 — every flat face of a kernel solid that looks straight up, as outline and holes (world metres) at its
+    /// height: the face's boundary loops, read off its display triangles — an edge used by one triangle of the face is on
+    /// its boundary, and the triangles' own winding makes the outer loop counter-clockwise and each hole clockwise.
+    /// </summary>
+    internal static IEnumerable<(IReadOnlyList<EmPoint> Outline, IReadOnlyList<IReadOnlyList<EmPoint>> Holes, double Z)> UpwardFaces(Em3dShapeSolid k)
+    {
+        var v = k.Display.Vertices;
+        var tris = k.Display.Triangles;
+        for (int f = 0; f < k.Faces.Count; f++)
+        {
+            var box = k.Faces[f].Box;
+            double size = Math.Max(box.X1 - box.X0, box.Y1 - box.Y0);
+            if (!(size > 0) || box.Z1 - box.Z0 > 1e-9 * Math.Max(size, 1e-9)) continue;
+            // Welded by position: a vertex shared by two triangles is one point whatever its index.
+            var ids = new Dictionary<(double, double), int>();
+            int Id(Point3 p) => ids.TryGetValue((p.X, p.Y), out int i) ? i : ids[(p.X, p.Y)] = ids.Count;
+            var at = new List<EmPoint>();
+            var edges = new Dictionary<(int, int), int>();
+            bool up = true, any = false;
+            foreach (var t in tris)
+            {
+                if (t.Face != f) continue;
+                any = true;
+                Point3 a = v[t.A], b = v[t.B], c = v[t.C];
+                double nz = (b.X - a.X) * (c.Y - a.Y) - (b.Y - a.Y) * (c.X - a.X);
+                if (nz < 0) { up = false; break; }
+                if (nz == 0) continue;                       // a sliver: no area, no boundary
+                int ia = Id(a), ib = Id(b), ic = Id(c);
+                while (at.Count < ids.Count) at.Add(default);
+                at[ia] = new(a.X, a.Y); at[ib] = new(b.X, b.Y); at[ic] = new(c.X, c.Y);
+                foreach (var (p, q) in new[] { (ia, ib), (ib, ic), (ic, ia) })
+                {
+                    if (edges.Remove((q, p))) continue;      // the other triangle's half: interior
+                    edges[(p, q)] = 1;
+                }
+            }
+            if (!any || !up || edges.Count < 3) continue;
+            var next = new Dictionary<int, int>();
+            foreach (var (p, q) in edges.Keys) next[p] = q;
+            var loops = new List<List<EmPoint>>();
+            var seen = new HashSet<int>();
+            foreach (int start in next.Keys)
+            {
+                if (!seen.Add(start)) continue;
+                var loop = new List<EmPoint> { at[start] };
+                int cur = next[start];
+                while (cur != start && seen.Add(cur) && next.ContainsKey(cur))
+                {
+                    loop.Add(at[cur]);
+                    cur = next[cur];
+                }
+                if (loop.Count >= 3) loops.Add(loop);
+            }
+            static double Area(List<EmPoint> l)
+            {
+                double s = 0;
+                for (int i = 0, j = l.Count - 1; i < l.Count; j = i++) s += l[j].X * l[i].Y - l[i].X * l[j].Y;
+                return s / 2;
+            }
+            var outers = loops.Where(l => Area(l) > 0).ToList();
+            var holes = loops.Where(l => Area(l) < 0).ToList();
+            foreach (var o in outers)
+            {
+                var poly = new PlanarPolygon(o);
+                var mine = holes.Where(h => poly.Contains(h[0].X, h[0].Y)).Select(h => (IReadOnlyList<EmPoint>)h).ToList();
+                yield return (o, mine, box.Z1);
+            }
+        }
     }
 
     private static PlanarPolygon Poly(IReadOnlyList<Point2> outline, IReadOnlyList<IReadOnlyList<Point2>> holes)

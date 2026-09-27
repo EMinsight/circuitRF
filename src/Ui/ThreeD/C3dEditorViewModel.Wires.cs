@@ -194,7 +194,7 @@ public sealed partial class C3dEditorViewModel : IC3dWireHost
     /// wire that lands on no pad has no solid to pick in the view, and that is the wire Re-Seat is for.</summary>
     private List<int> SelectedWires()
     {
-        var list = Targets().Where(t => !t.Instance && Document.Objects[t.Index] is C3dWire).Select(t => t.Index).ToList();
+        var list = Targets().Where(t => !t.Instance && !IsOperandIndex(t.Index) && Document.Objects[t.Index] is C3dWire).Select(t => t.Index).ToList();
         if (SelectedTreeItem is { ObjectIndex: >= 0 and var i } && i < Document.Objects.Count && Document.Objects[i] is C3dWire && !list.Contains(i))
             list.Add(i);
         return list;

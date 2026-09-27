@@ -530,10 +530,20 @@ public partial class WorkspaceViewModel
     /// <summary>The 3D menu's rule, on the dockable the shell's commands resolve to.</summary>
     internal static bool ShowsThreeDMenu(object? activeDocument) => activeDocument is C3dEditorDocument or Viewer3DDocument;
 
+    /// <summary>brief-em3d-66 R-em3d66-7 — 3D ▸ Boolean: shown always, disabled without the kernel.</summary>
+    public bool ThreeDBooleanAvailable => CircuitRF.Ui.ThreeD.GeometryKernelAvailability.IsAvailable;
+
+    /// <summary>3D ▸ Boolean's tooltip: the capability's own sentence when that is why it is disabled, then what every 3D ▸
+    /// item says.</summary>
+    public string ThreeDBooleanTip
+        => (CircuitRF.Ui.ThreeD.GeometryKernelAvailability.DisabledReason("Boolean") is { } why ? why + " " : "") + "Requires an active 3D editor.";
+
     /// <summary>Re-evaluates every 3D menu item — called from both of the shell's enablement fan-outs.</summary>
     private void RaiseThreeDMenuChanged()
     {
         OnPropertyChanged(nameof(IsThreeDMenuVisible));
+        OnPropertyChanged(nameof(ThreeDBooleanAvailable));
+        OnPropertyChanged(nameof(ThreeDBooleanTip));
         ThreeDSelectModeCommand.NotifyCanExecuteChanged();
         ThreeDFitCommand.NotifyCanExecuteChanged();
         ThreeDStandardViewCommand.NotifyCanExecuteChanged();

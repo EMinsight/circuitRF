@@ -43,8 +43,10 @@ public sealed partial class C3dEditorViewModel : IC3dFaceHost
         refusal = null;
         var scene = Viewer.Scene;
         if (scene.Object(objectId) is not { } o || face < 0) { refusal = "There is no face under the cursor."; return null; }
-        // The document's own object: its B-rep through its placement — exact where both are.
-        if (DocumentIndex(o) is int i and >= 0) return C3dFaceCommands.PlaneOf(Document.Objects[i], o.FaceName(face), out refusal);
+        // The document's own object (or an entered operand): its B-rep through its placement — exact where both are. A
+        // kernel-made solid has no B-rep here: its face is read from the scene, as an instance's part is.
+        if (EditableIndex(o) is int i and >= 0 && ObjectAt(i) is { } own && !C3dOperands.IsKernel(own))
+            return C3dFaceCommands.PlaneOf(own, o.FaceName(face), out refusal);
         // An instance's part: the scene's own doubles (the elaboration's metres), exact when they are whole DBU.
         var (_, normal) = Scene3DFaces.AreaAndNormal(scene, objectId, face);
         if (normal is not { } n) { refusal = $"Face {o.FaceName(face)} is curved: align to a flat face."; return null; }
@@ -66,8 +68,8 @@ public sealed partial class C3dEditorViewModel : IC3dFaceHost
     public (int Index, C3dObject Obj, string Face, Scene3DObject Scene, int SceneFace)? FaceSelection()
     {
         if (Viewer.SelectMode != Scene3DSelectMode.Face || Viewer.Selection is not [{ Face: >= 0 } item]) return null;
-        if (Viewer.Scene.Object(item.Object) is not { } o || DocumentIndex(o) is not (>= 0 and var i)) return null;
-        return (i, Document.Objects[i], o.FaceName(item.Face), o, item.Face);
+        if (Viewer.Scene.Object(item.Object) is not { } o || EditableIndex(o) is not (>= 0 and var i) || ObjectAt(i) is not { } obj) return null;
+        return (i, obj, o.FaceName(item.Face), o, item.Face);
     }
 
     /// <summary>The one selected vertex: its object's index, the object, the vertex's index among the object's editable
@@ -75,8 +77,9 @@ public sealed partial class C3dEditorViewModel : IC3dFaceHost
     public (int Index, C3dObject Obj, int Vertex, C3dPoint3 World, bool Exact)? VertexSelection()
     {
         if (Viewer.SelectMode != Scene3DSelectMode.Vertex || Viewer.Selection is not [{ Face: < 0 } item]) return null;
-        if (Viewer.Scene.Object(item.Object) is not { } o || DocumentIndex(o) is not (>= 0 and var i)) return null;
-        var obj = Document.Objects[i];
+        if (Viewer.Scene.Object(item.Object) is not { } o || EditableIndex(o) is not (>= 0 and var i) || ObjectAt(i) is not { } obj) return null;
+        // brief-em3d-66 D13 — a kernel-made solid's vertices are the kernel's, not a document's: nothing here edits them.
+        if (C3dOperands.IsKernel(obj)) return null;
         var (wx, wy, wz) = Viewer.Scene.ToWorld(item.Point);
         double per = C3dLowering.Metres(1, Document.DbuPerMicron);
         var t = obj.Placement.ToTransform();
@@ -104,9 +107,23 @@ public sealed partial class C3dEditorViewModel : IC3dFaceHost
 
     private static long R(double v) => (long)Math.Round(v, MidpointRounding.AwayFromZero);
 
+    /// <summary>brief-em3d-66 D13 — the refusal for a vertex selected on a kernel-made solid, or null.</summary>
+    private string? SelectedKernelVertex()
+        => Viewer.SelectMode == Scene3DSelectMode.Vertex && Viewer.Selection is [{ Face: < 0 } item] &&
+           Viewer.Scene.Object(item.Object) is { } o && EditableIndex(o) is >= 0 and var i && ObjectAt(i) is { } obj
+            ? ResultEditRefusal(obj)
+            : null;
+
     private bool HaveFace(out (int Index, C3dObject Obj, string Face, Scene3DObject Scene, int SceneFace) f)
     {
-        if (FaceSelection() is { } s) { f = s; return true; }
+        if (FaceSelection() is { } s)
+        {
+            f = s;
+            // brief-em3d-66 D13 — a result's faces are read (a port, a boundary, Measure, a snap, a drawing plane), never
+            // edited: the refusal names what to edit instead.
+            if (ResultEditRefusal(s.Obj) is { } why) { StatusMessage = why; return false; }
+            return true;
+        }
         f = default;
         StatusMessage = Viewer.SelectMode != Scene3DSelectMode.Face
             ? "Face operations act on a face: switch to Face mode (F) and select one."
@@ -142,6 +159,7 @@ public sealed partial class C3dEditorViewModel : IC3dFaceHost
     /// <summary>R-em3d47-3e — Move (G) in Vertex mode: the vertex follows base → target, from where it is.</summary>
     public void StartVertexMove()
     {
+        if (SelectedKernelVertex() is { } refused) { StatusMessage = refused; return; }
         if (VertexSelection() is not { } v)
         {
             StatusMessage = "Select one vertex of this document's own objects (Vertex mode, V).";
@@ -288,7 +306,8 @@ public sealed partial class C3dEditorViewModel : IC3dFaceHost
         _facePreviewText = null;
         _namePreview = null;
         int index = ft.Index;
-        string before = C3dPersistence.SerializeObject(Document.Objects[index]);
+        bool operand = IsOperandIndex(index);
+        string before = C3dPersistence.SerializeObject(operand ? ObjectAt(index)! : Document.Objects[index]);
         string after = C3dPersistence.SerializeObject(obj);
         string? selectFace = ft switch
         {
@@ -304,7 +323,7 @@ public sealed partial class C3dEditorViewModel : IC3dFaceHost
             return;
         }
         // brief-em3d-50 R-em3d50-3c — a wire's feet are re-seated on release; an end moved off every pad is refused.
-        if (obj is C3dWire movedWire && Document.Objects[index] is C3dWire was)
+        if (!operand && obj is C3dWire movedWire && Document.Objects[index] is C3dWire was)
         {
             if (SeatEditedWire(was, ref movedWire) is { } refusal)
             {
@@ -316,8 +335,11 @@ public sealed partial class C3dEditorViewModel : IC3dFaceHost
             obj = movedWire;
             after = C3dPersistence.SerializeObject(obj);
         }
-        var boundaries = BoundariesFollowing(obj.Name, r.Folds);
-        if (!Push(new C3dEdit(ft.Describe, [new C3dEditSlot(false, index, before, after)], ApplySlots, faceBoundaries: boundaries, setBoundaries: SetBoundaries)))
+        // brief-em3d-66 — an entered operand's edit is its boolean's replacement (a fold's names are the operand's, which no
+        // record names: a reference to a result's face names the result).
+        var boundaries = operand ? null : BoundariesFollowing(obj.Name, r.Folds);
+        var slots = operand ? ReplacementSlots([(index, obj)]) : [new C3dEditSlot(false, index, before, after)];
+        if (slots.Count == 0 || !Push(new C3dEdit(ft.Describe, slots, ApplySlots, faceBoundaries: boundaries, setBoundaries: SetBoundaries)))
         {
             string why = StatusMessage;               // the drag rule's refusal (brief-em3d-51)
             SetTool(null);
@@ -412,8 +434,9 @@ public sealed partial class C3dEditorViewModel : IC3dFaceHost
         if (r is not { Object: { } obj }) return r.Refusal;
         string before = C3dPersistence.SerializeObject(v.Obj), after = C3dPersistence.SerializeObject(obj);
         if (before == after) return null;
-        if (!Push(new C3dEdit($"Set a vertex of {v.Obj.Name}", [new C3dEditSlot(false, v.Index, before, after)], ApplySlots,
-                              faceBoundaries: BoundariesFollowing(obj.Name, r.Folds), setBoundaries: SetBoundaries)))
+        bool operand = IsOperandIndex(v.Index);
+        if (!Push(new C3dEdit($"Set a vertex of {ObjectLabel(v.Index)}", operand ? ReplacementSlots([(v.Index, obj)]) : [new C3dEditSlot(false, v.Index, before, after)],
+                              ApplySlots, faceBoundaries: operand ? null : BoundariesFollowing(obj.Name, r.Folds), setBoundaries: SetBoundaries)))
             return StatusMessage;
         FaceEdits++;
         StatusMessage = r.Converted ? $"'{obj.Name}' is now a polyhedron (undo to keep it a {editor.Kind})." : $"Moved a vertex of '{obj.Name}'.";
@@ -425,17 +448,19 @@ public sealed partial class C3dEditorViewModel : IC3dFaceHost
     public void ConvertToPolyhedron(int? facets = null)
     {
         var objects = Viewer.SelectMode == Scene3DSelectMode.Object ? Viewer.SelectedObjects() : [];
-        if (objects is not [var o] || DocumentIndex(o) is not (>= 0 and var i))
+        if (objects is not [var o] || EditableIndex(o) is not (>= 0 and var i) || ObjectAt(i) is not { } source)
         {
             StatusMessage = "Convert to Polyhedron acts on one selected object of this document (Object mode, O).";
             return;
         }
-        var source = Document.Objects[i];
+        if (ResultEditRefusal(source) is { } refused) { StatusMessage = refused; return; }
         var r = C3dFaceEditor.ConvertToPolyhedron(source, facets);
         if (r is not { Object: { } obj }) { StatusMessage = r.Refusal!; return; }
-        if (!Push(new C3dEdit($"Convert {source.Name} to a polyhedron",
-                              [new C3dEditSlot(false, i, C3dPersistence.SerializeObject(source), C3dPersistence.SerializeObject(obj))], ApplySlots,
-                              faceBoundaries: BoundariesFollowing(obj.Name, r.Folds), setBoundaries: SetBoundaries)))
+        bool operand = IsOperandIndex(i);
+        if (!Push(new C3dEdit($"Convert {ObjectLabel(i)} to a polyhedron",
+                              operand ? ReplacementSlots([(i, obj)])
+                                      : [new C3dEditSlot(false, i, C3dPersistence.SerializeObject(source), C3dPersistence.SerializeObject(obj))], ApplySlots,
+                              faceBoundaries: operand ? null : BoundariesFollowing(obj.Name, r.Folds), setBoundaries: SetBoundaries)))
             return;
         FaceEdits++;
         string kind = C3dObject.KindOf(source).ToLowerInvariant();
@@ -464,7 +489,16 @@ public sealed partial class C3dEditorViewModel : IC3dFaceHost
     private IEnumerable<Viewer3DMenuItem> FaceMenuItems()
     {
         const string Ports = "Comes with simulating from the document (brief 49).";
-        if (FaceSelection() is { } f)
+        if (FaceSelection() is { } kf && ResultEditRefusal(kf.Obj) is { } d13)
+        {
+            // brief-em3d-66 D13 — every edit of a result's face disabled, with what to edit instead; what reads it stays.
+            yield return new Viewer3DMenuItem("Move Along Normal  (N)", Enabled: false, Tip: d13);
+            yield return new Viewer3DMenuItem("Move  (G)", Enabled: false, Tip: d13);
+            yield return new Viewer3DMenuItem("Extrude to New Solid  (E)", Enabled: false, Tip: d13);
+            yield return new Viewer3DMenuItem("Align to Face…", Enabled: false, Tip: d13);
+            yield return new Viewer3DMenuItem("Measure", MeasureFace, Tip: "Area, perimeter and normal in Properties; Shift-click a parallel face for the distance.");
+        }
+        else if (FaceSelection() is { } f)
         {
             bool cyl = f.Obj is C3dCylinder;
             string? copyWhy = null;
@@ -481,6 +515,11 @@ public sealed partial class C3dEditorViewModel : IC3dFaceHost
             yield return new Viewer3DMenuItem("Make Port…", Enabled: false, Tip: Ports);
             yield return new Viewer3DMenuItem("Boundary", Enabled: false, Tip: Ports);
         }
+        else if (SelectedKernelVertex() is { } vd13)
+        {
+            yield return new Viewer3DMenuItem("Move  (G)", Enabled: false, Tip: vd13);
+            yield return new Viewer3DMenuItem("Measure From", MeasureFromVertex);
+        }
         else if (VertexSelection() is { } v)
         {
             bool fixedPoint = v.Vertex < 0;
@@ -491,9 +530,10 @@ public sealed partial class C3dEditorViewModel : IC3dFaceHost
         }
         else if (Viewer.SelectMode == Scene3DSelectMode.Vertex && Viewer.Selection.Count == 1)
             yield return new Viewer3DMenuItem("Measure From", MeasureFromVertex);
-        else if (Viewer.SelectMode == Scene3DSelectMode.Object && Viewer.SelectedObjects() is [var o] && DocumentIndex(o) is >= 0 and var i)
+        else if (Viewer.SelectMode == Scene3DSelectMode.Object && Viewer.SelectedObjects() is [var o] && EditableIndex(o) is >= 0 and var i
+                 && ObjectAt(i) is { } selected)
         {
-            switch (Document.Objects[i])
+            switch (selected)
             {
                 case C3dBox or C3dPrism:
                     yield return new Viewer3DMenuItem("Convert to Polyhedron", () => ConvertToPolyhedron(),

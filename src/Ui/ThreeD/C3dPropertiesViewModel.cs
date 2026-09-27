@@ -145,6 +145,25 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
     /// <summary>The selected wire's points, start to end.</summary>
     public ObservableCollection<C3dWirePointRow> WirePoints { get; } = [];
 
+    // ── a boolean (brief-em3d-66 R-em3d66-4) ────────────────────────────────────────────────
+
+    [ObservableProperty] private bool _isBoolean;
+    [ObservableProperty] private CircuitRF.Design.ThreeD.C3dBooleanOp _booleanOperation;
+    [ObservableProperty] private bool _booleanEnabled;
+    [ObservableProperty] private bool _booleanKeepTools;
+    [ObservableProperty] private string? _booleanBlank;
+    [ObservableProperty] private bool _booleanCanSwap;
+    /// <summary>False without the kernel: every boolean field is shown, disabled, with the capability's sentence.</summary>
+    [ObservableProperty] private bool _booleanEditable;
+    [ObservableProperty] private string? _booleanTip;
+    /// <summary>False for a boolean: its material is its Blank's, changed on the Blank.</summary>
+    [ObservableProperty] private bool _isMaterialEditable = true;
+
+    /// <summary>The Blank combo's choices: the Blank (under the boolean's name), then each Tool.</summary>
+    public ObservableCollection<string> BooleanOperands { get; } = [];
+
+    public bool BooleanKeepToolsEnabled => BooleanEditable && BooleanOperation == CircuitRF.Design.ThreeD.C3dBooleanOp.Subtract;
+
     /// <summary>brief-em3d-47 R-em3d47-3e — the selected vertex's world coordinates, editable (Set Coordinates).</summary>
     [ObservableProperty] private bool _isVertexEditable;
     [ObservableProperty] private string _vertexX = "";
@@ -182,6 +201,9 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         WirePoints.Clear();
         MaterialPlaceholder = NoMaterialPlaceholder;
         IsVertexEditable = false;
+        IsBoolean = false;
+        IsMaterialEditable = true;
+        BooleanOperands.Clear();
         IsAirBox = false;
         IsAirBoxRow = false;
         AirBoxFaces.Clear();
@@ -250,20 +272,22 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
             return;
         }
 
-        int index = editor.DocumentIndex(o);
+        int index = editor.EditableIndex(o);
         if (index < 0) return;
         LoadObject(index, inScene: true);
     }
 
     private bool OneDocumentObject(IReadOnlyList<Scene3DItem> sel)
         => editor.Viewer.SelectMode == Scene3DSelectMode.Object &&
-           sel.Select(i => editor.Viewer.Scene.Object(i.Object) is { } o ? editor.DocumentIndex(o) : -1).Distinct().ToList() is [>= 0];
+           sel.Select(i => editor.Viewer.Scene.Object(i.Object) is { } o ? editor.EditableIndex(o) : -1).Distinct().ToList() is [>= 0];
 
     /// <summary>A document object's editable fields — <paramref name="inScene"/> false when elaboration refused it, whose
     /// reason is then the first row.</summary>
     private void LoadObject(int index, bool inScene)
     {
-        var obj = editor.Document.Objects[index];
+        // brief-em3d-66 — an entered boolean's operand is edited through its operand index, in its world form.
+        if (editor.ObjectAt(index) is not { } obj) return;
+        bool operand = C3dEditorViewModel.IsOperandIndex(index);
         // A refused object is either not drawn at all, or — with a material its technology lacks — drawn as a wireframe
         // the solver never sees; either way the refusal Simulate will give is shown on the object it names. One with NO
         // material is drawn the same way and is not a refusal: the solver ignores it (3D editor bugs round 2), and this row
@@ -278,8 +302,8 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         else if (why is not null) Rows.Add(new C3dPropertyRow("Not simulated", why));
         ObjectIndex = index;
         IsEditable = true;
-        NameText = obj.Name;
-        Material = obj.Material;
+        NameText = editor.ObjectLabel(index);
+        Material = C3dValidation.EffectiveMaterial(obj);
         Role = obj.Role?.ToString() ?? RoleFromMaterial;
         var pl = obj.Placement;
         RotateText = string.Join(", ", pl.Rotate.Select(r => $"{r.Axis.ToString().ToLowerInvariant()} {r.Deg.ToString("G", CultureInfo.InvariantCulture)}"));
@@ -288,11 +312,87 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         if (obj is C3dWire wire) LoadWire(wire);
         Rows.Add(new C3dPropertyRow("Kind", C3dObject.KindOf(obj)));
         // brief-em3d-46 R-em3d46-4d — construction order is invisible unless it is shown: it decides overlap.
-        Rows.Add(new C3dPropertyRow("Construction order",
-            $"{index + 1} of {editor.Document.Objects.Count} — a later object wins where solids overlap (Modify ▸ Order)"));
+        if (!operand)
+            Rows.Add(new C3dPropertyRow("Construction order",
+                $"{index + 1} of {editor.Document.Objects.Count} — a later object wins where solids overlap (Modify ▸ Order)"));
+        else
+        {
+            var (top, path) = editor.AddressOf(index);
+            Rows.Add(new C3dPropertyRow("In", $"{(C3dBooleans.LastStep(path) < 0 ? "the Blank" : "a Tool")} of '{editor.Document.Objects[top].Name}'"));
+        }
+        if (obj is C3dBoolean b) { LoadBoolean(index, b); return; }
         foreach (var row in Dimensions(obj)) Rows.Add(row);
         foreach (var f in editor.DimensionFields(obj)) Fields.Add(f);
         foreach (var row in RowsOf(Fields)) FieldRows.Add(row);
+    }
+
+    /// <summary>
+    /// brief-em3d-66 R-em3d66-4 — a boolean: its Operation, Enabled, Keep tools, its Blank (and Swap for two operands), the
+    /// result's material — the Blank's, read-only here — and its piece count. Its own placement only, never its operands'
+    /// fields (they are edited on the operands).
+    /// </summary>
+    private void LoadBoolean(int index, C3dBoolean b)
+    {
+        IsBoolean = true;
+        IsMaterialEditable = false;
+        BooleanTip = editor.KernelMissing("Boolean");
+        BooleanEditable = BooleanTip is null;
+        BooleanOperation = b.Op;
+        BooleanEnabled = b.Enabled;
+        BooleanKeepTools = b.KeepTools;
+        string blankName = editor.ObjectLabel(index);
+        BooleanOperands.Add(blankName);
+        foreach (var t in b.Tools) BooleanOperands.Add(t.Name);
+        BooleanBlank = blankName;
+        BooleanCanSwap = b.Tools.Count == 1 && BooleanEditable;
+        OnPropertyChanged(nameof(BooleanKeepToolsEnabled));
+        string? material = C3dValidation.EffectiveMaterial(b);
+        Rows.Add(new C3dPropertyRow("Material", (material is { Length: > 0 } ? material : "none") + " — the Blank's: change it on the Blank"));
+        var build = editor.Elaboration?.KernelBuilds.FirstOrDefault(k => k.Name == blankName && k.Refusal is null);
+        if (build is { Solids: > 0 }) Rows.Add(new C3dPropertyRow("Pieces", build.Solids == 1 ? "1" : $"{build.Solids} — one object"));
+        foreach (var f in editor.DimensionFields(b).Where(f => !f.Path.StartsWith("Blank.", StringComparison.Ordinal)
+                                                             && !f.Path.StartsWith("Tools[", StringComparison.Ordinal)))
+            Fields.Add(f);
+        foreach (var row in RowsOf(Fields)) FieldRows.Add(row);
+    }
+
+    partial void OnBooleanOperationChanged(C3dBooleanOp value)
+    {
+        OnPropertyChanged(nameof(BooleanKeepToolsEnabled));
+        if (_loading || !IsBoolean || ObjectIndex < 0) return;
+        int i = ObjectIndex;
+        editor.SetBooleanSwitch(i, $"{value} {editor.ObjectLabel(i)}", b => { b.Op = value; if (value != C3dBooleanOp.Subtract) b.KeepTools = false; });
+    }
+
+    partial void OnBooleanEnabledChanged(bool value)
+    {
+        if (_loading || !IsBoolean) return;
+        editor.SetOperationEnabled(ObjectIndex, value);
+    }
+
+    partial void OnBooleanKeepToolsChanged(bool value)
+    {
+        if (_loading || !IsBoolean) return;
+        int i = ObjectIndex;
+        editor.SetBooleanSwitch(i, $"{(value ? "Keep" : "Do not keep")} the Tools of {editor.ObjectLabel(i)}", b => b.KeepTools = value);
+    }
+
+    partial void OnBooleanBlankChanged(string? value)
+    {
+        if (_loading || !IsBoolean || value is null) return;
+        int k = BooleanOperands.IndexOf(value) - 1;
+        if (k < 0) return;
+        var (top, path) = editor.AddressOf(ObjectIndex);
+        Error = editor.MakeBlank(top, path, k) ?? "";
+    }
+
+    /// <summary>Swap (two operands): the Tool becomes the Blank.</summary>
+    [CommunityToolkit.Mvvm.Input.RelayCommand]
+    private void SwapBoolean()
+    {
+        if (!IsBoolean || BooleanOperands.Count != 2) return;
+        var (top, path) = editor.AddressOf(ObjectIndex);
+        Error = editor.MakeBlank(top, path, 0) ?? "";
     }
 
     /// <summary>3D editor round 4 — consecutive components of one vector share a line; every other field has its own.</summary>
@@ -648,7 +748,7 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
     {
         if (ObjectIndex < 0) return;
         Error = editor.Rename(ObjectIndex, NameText) ?? "";
-        if (Error.Length > 0) NameText = editor.Document.Objects[ObjectIndex].Name;
+        if (Error.Length > 0) NameText = editor.ObjectLabel(ObjectIndex);
     }
 
     partial void OnMaterialChanged(string? value)
@@ -659,12 +759,13 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         {
             // A command, not a material: the picker opens on a new row; the field keeps what the object states.
             _loading = true;
-            Material = editor.Document.Objects[i].Material;
+            Material = editor.ObjectAt(i) is { } was ? C3dValidation.EffectiveMaterial(was) : null;
             _loading = false;
             editor.RequestMaterialPicker([i], startNew: true);
             return;
         }
-        editor.ChangeObjects($"Material of {editor.Document.Objects[i].Name}", [i], o => o.Material = value);
+        if (!IsMaterialEditable) return;
+        editor.ChangeObjects($"Material of {editor.ObjectLabel(i)}", [i], o => C3dEditorViewModel.SetMaterialOf(o, value));
     }
 
     partial void OnRoleChanged(string value)
@@ -672,14 +773,14 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         if (_loading || ObjectIndex < 0) return;
         Em3dRole? role = Enum.TryParse<Em3dRole>(value, out var r) ? r : null;
         int i = ObjectIndex;
-        editor.ChangeObjects($"Role of {editor.Document.Objects[i].Name}", [i], o => o.Role = role);
+        editor.ChangeObjects($"Role of {editor.ObjectLabel(i)}", [i], o => o.Role = role);
     }
 
     partial void OnMirrorXChanged(bool value)
     {
         if (_loading || ObjectIndex < 0) return;
         int i = ObjectIndex;
-        editor.ChangeObjects($"Mirror {editor.Document.Objects[i].Name}", [i], o => o.Placement.MirrorX = value);
+        editor.ChangeObjects($"Mirror {editor.ObjectLabel(i)}", [i], o => o.Placement.MirrorX = value);
     }
 
     /// <summary>The rotations field: <c>z 30, x 90</c> — each an axis and degrees, applied in order.</summary>
@@ -693,7 +794,7 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         }
         Error = "";
         int i = ObjectIndex;
-        editor.ChangeObjects($"Rotate {editor.Document.Objects[i].Name}", [i], o => o.Placement.Rotate = list);
+        editor.ChangeObjects($"Rotate {editor.ObjectLabel(i)}", [i], o => o.Placement.Rotate = list);
     }
 
     /// <summary>Parses <c>z 30, x 90</c>; null when it is not that shape. An empty text is no rotation.</summary>

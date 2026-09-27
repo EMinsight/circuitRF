@@ -370,7 +370,9 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
     /// <summary>The smallest <c>&lt;prefix&gt;&lt;n&gt;</c> no object or instance is called — unique and renamable.</summary>
     public string NextName(string prefix)
     {
-        var used = new HashSet<string>(Document.Objects.Select(o => o.Name).Concat(Document.Instances.Select(i => i.Name)), StringComparer.Ordinal);
+        // brief-em3d-66 — a Tool's name inside a boolean is taken too: names are unique across the document.
+        var used = new HashSet<string>(Document.Objects.Select(o => o.Name).Concat(Document.Instances.Select(i => i.Name)).Concat(NestedNames()),
+                                       StringComparer.Ordinal);
         for (int n = 1; ; n++)
             if (!used.Contains(prefix + n)) return prefix + n;
     }
@@ -458,7 +460,8 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
                 return true;
             }
         }
-        if (_tool is null) return false;
+        // brief-em3d-66 R-em3d66-5a — a double-click on a boolean's result, with no tool armed, enters it.
+        if (_tool is null) return clickCount >= 2 && modifiers == KeyModifiers.None && DoubleClickEnter();
         CloseField();
         var input = CursorInput();
         if (Command(modifiers)) input = input with { Command = true };
@@ -469,6 +472,8 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
     public bool DrawKey(Key key, KeyModifiers modifiers)
     {
         if (key == Key.A && modifiers == KeyModifiers.Shift) { DrawMenuRequested?.Invoke(); return true; }
+        // brief-em3d-66 — the panel's Esc and Enter; entering and leaving a boolean.
+        if (_tool is not { InProgress: true } && BooleanKey(key, modifiers)) return true;
         // brief-em3d-48 — Ctrl/Cmd+] and Ctrl/Cmd+[: Push In and Pop Out, the layout editor's keys.
         if (_tool is not { InProgress: true } && HierarchyKey(key, modifiers)) return true;
         // brief-em3d-46 — G, R and Ctrl/Cmd+D start an operation on the selection (no gesture in progress).
@@ -594,6 +599,7 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
     public IEnumerable<Viewer3DMenuItem> DrawMenuItems()
     {
         foreach (var item in OperationMenuItems()) yield return item;
+        foreach (var item in BooleanMenuItems()) yield return item;
         foreach (var item in FaceMenuItems()) yield return item;
         foreach (var item in HierarchyMenuItems()) yield return item;
         foreach (var item in SimulateMenuItems()) yield return item;

@@ -88,12 +88,20 @@ public sealed record C3dProvenance(string InstancePath, string DocumentPath, str
     public C3dTransform? Element { get; init; }
 }
 
+/// <summary>brief-em3d-66 — a preview's answer: the tree it was asked for, the shape as elaboration would lower it, the build
+/// (its solid count is the result's piece count) and how many faces it has.</summary>
+public sealed record C3dShapePreview(GeometryKernelTree Tree, Em3dShapeSolid Solid, GeometryKernelBuild Build, int Faces);
+
 /// <summary>brief-em3d-64 R-em3d64-6b — one kernel object's build as <c>explain</c> reports it.</summary>
 /// <param name="Operands">The operand tree, one line per node, indented two spaces per level.</param>
 /// <param name="Built">True when the worker was asked; false when a cache answered.</param>
 /// <param name="MinRadiusM">The smallest radius of curvature on any face or edge, metres; null when every one is flat.</param>
 public sealed record C3dKernelBuild(string Name, string Kind, IReadOnlyList<string> Operands, bool Built, int Faces, int Edges,
-                                    double? MinRadiusM, IReadOnlyList<string> Notes, string? Refusal);
+                                    double? MinRadiusM, IReadOnlyList<string> Notes, string? Refusal)
+{
+    /// <summary>brief-em3d-66 — how many solids the result is: a lid cut in two is 2 pieces and still one object.</summary>
+    public int Solids { get; init; }
+}
 
 /// <summary>One step of the walk <c>explain</c> reports (R-em3d42-6): what, and how it was decided.</summary>
 public sealed record C3dWalkStep(string Subject, string Detail);
@@ -274,7 +282,8 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
     }
 
     /// <summary>A kernel object's build, lowered — or its refusal. Kept by the tree's hash, which is the resolved inputs'.</summary>
-    private sealed record KernelLowered(C3dLowered? Lowered, string? Refusal, IReadOnlyList<string> Notes, bool Built, int Edges, double? MinRadiusM);
+    private sealed record KernelLowered(C3dLowered? Lowered, string? Refusal, IReadOnlyList<string> Notes, bool Built, int Edges, double? MinRadiusM,
+                                        bool Empty = false, int Solids = 1);
 
     /// <summary>
     /// brief-em3d-64 R-em3d64-3a — <paramref name="tree"/> built by the kernel and lowered to an <see cref="Em3dShapeSolid"/>:
@@ -292,12 +301,17 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
         {
             var (solid, build, faces, edges) = ShapeSolid(k, tree, name);
             var radii = faces.Select(f => f.MinRadius).Concat(edges.Select(e => e.MinRadius)).Where(r => r > 0).ToList();
-            made = new KernelLowered(new C3dLowered(solid, null, [.. faces.Select(f => f.Name)], KindKernel), null, build.Notes,
-                                     k.RequestsSent > before, edges.Count, radii.Count > 0 ? radii.Min() * 1e-6 : null);
+            // brief-em3d-66 R-em3d66-2f — a build that holds no solid (an intersection of disjoint solids) is this object's
+            // refusal, worded by the caller, which knows the operation; never an empty solid handed on to a solver.
+            made = build.Solids == 0
+                ? new KernelLowered(null, $"'{name}' is empty: the operation leaves no solid.", build.Notes, k.RequestsSent > before, 0, null, Empty: true, Solids: 0)
+                : new KernelLowered(new C3dLowered(solid, null, [.. faces.Select(f => f.Name)], KindKernel), null, build.Notes,
+                                    k.RequestsSent > before, edges.Count, radii.Count > 0 ? radii.Min() * 1e-6 : null, Solids: build.Solids);
         }
         catch (GeometryKernelException e)
         {
-            made = new KernelLowered(null, e.Message, [], k.RequestsSent > before, 0, null);
+            // brief-em3d-66 — the worker's own "leaves nothing" (build.empty) is worded by the caller, as an empty build is.
+            made = new KernelLowered(null, e.Message, [], k.RequestsSent > before, 0, null, Empty: e.Code == EmptyCode, Solids: 0);
         }
         return _kernelSolids[tree.Hash] = made;
     }
@@ -310,9 +324,18 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
     /// <exception cref="GeometryKernelException">The kernel refused, crashed or is absent.</exception>
     public static (Em3dShapeSolid Solid, GeometryKernelBuild Build, IReadOnlyList<GeometryKernelFace> Faces, IReadOnlyList<GeometryKernelEdge> Edges)
         ShapeSolid(GeometryKernel k, GeometryKernelTree tree, string name)
+        => ShapeSolid(k.Model, k, tree, name);
+
+    /// <summary>
+    /// brief-em3d-66 R-em3d66-2g — <see cref="ShapeSolid(GeometryKernel, GeometryKernelTree, string)"/> asking its four questions
+    /// of <paramref name="shapes"/>: the preview session's inside a preview, so the answers a commit's elaboration asks for —
+    /// the same questions of the same tree — are already in the cache the two sessions share, and the commit makes no call.
+    /// </summary>
+    public static (Em3dShapeSolid Solid, GeometryKernelBuild Build, IReadOnlyList<GeometryKernelFace> Faces, IReadOnlyList<GeometryKernelEdge> Edges)
+        ShapeSolid(GeometryKernelShapes shapes, GeometryKernel k, GeometryKernelTree tree, string name)
     {
-        var build = k.Build(tree);
-        var faces = k.Faces(tree);
+        var build = shapes.Build(tree);
+        var faces = shapes.Faces(tree);
         double diag = 0;
         if (faces.Count > 0)
         {
@@ -322,8 +345,8 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
         }
         // Relative to the object's size (overview §1j): a thousandth of its diagonal, never below a nanometre.
         double linearUm = Math.Max(diag * 1e-3, 1e-3);
-        var mesh = k.Tessellate(tree, linearUm, DisplayAngularRad);
-        var edges = k.Edges(tree, linearUm);
+        var mesh = shapes.Tessellate(tree, linearUm, DisplayAngularRad);
+        var edges = shapes.Edges(tree, linearUm);
         const double M = 1e-6;
         var display = Metres(mesh, name);
         var triangles = display.Triangles;
@@ -365,8 +388,34 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
         return new Em3dTriangleMesh(vertices, triangles);
     }
 
+    /// <summary>The worker's refusal code for an operation that leaves no solid (brief-em3d-66).</summary>
+    public const string EmptyCode = "build.empty";
+
     /// <summary>The display tessellation's angular deflection, radians.</summary>
     public const double DisplayAngularRad = 0.5;
+
+    /// <summary>
+    /// brief-em3d-66 R-em3d66-2g — the tree elaboration hands the kernel for TOP-LEVEL object <paramref name="index"/> of
+    /// <paramref name="document"/>: a copy resolved exactly as <see cref="Elaborate"/> resolves it, the object's placement
+    /// under the identity. The Boolean panel previews this tree, so its hash is the committed document's.
+    /// </summary>
+    public static GeometryKernelTree KernelTreeOf(C3dDocument document, int index, string path, C3dCell? cell = null)
+    {
+        var copy = C3dPersistence.Deserialize(C3dPersistence.Serialize(document));
+        C3dResolver.Resolve(copy, cell ?? C3dCell.Of(Path.GetFullPath(path)));
+        return GeometryKernelTree.From(copy.Objects[index], copy.DbuPerMicron, C3dTransform.Identity, Path.GetDirectoryName(Path.GetFullPath(path)));
+    }
+
+    /// <summary>
+    /// brief-em3d-66 R-em3d66-2e — <paramref name="tree"/>'s preview: the shape elaboration would lower it to, asked of the
+    /// kernel's preview session, the newest request superseding the older (null when superseded). A refusal is thrown.
+    /// </summary>
+    public static Task<C3dShapePreview?> PreviewShape(GeometryKernel k, GeometryKernelTree tree, string name)
+        => k.RequestPreview<C3dShapePreview>((shapes, superseded) =>
+        {
+            var (solid, build, faces, _) = ShapeSolid(shapes, k, tree, name);
+            return superseded() ? null : new C3dShapePreview(tree, solid, build, faces.Count);
+        });
 
     /// <summary>The lowering table's row a kernel object takes.</summary>
     public const string KindKernel = "kernel-solid";
@@ -747,6 +796,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
             var worldUm = world with { Tx = world.Tx * 1e6, Ty = world.Ty * 1e6, Tz = world.Tz * 1e6 };
             var tree = GeometryKernelTree.From(obj, doc.DbuPerMicron, worldUm, Path.GetDirectoryName(path));
             var built = owner.KernelCached(tree, name);
+            if (built.Empty) built = built with { Refusal = C3dBooleans.EmptyResult(obj, name) };
             Kernel(name, built.Refusal, obj, built);
             if (built.Lowered is not { } lowered) { KeptTools(obj, world, doc, tech, prefix, path, exact); return; }
 
@@ -794,7 +844,8 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
             }
             var faces = built?.Lowered?.Solid is Em3dShapeSolid k ? k.Faces.Count : 0;
             _kernelBuilds.Add(new C3dKernelBuild(name, C3dObject.KindOf(obj), OperandTree(obj, name), built?.Built ?? false, faces,
-                                                 built?.Edges ?? 0, built?.MinRadiusM, built?.Notes ?? [], refusal));
+                                                 built?.Edges ?? 0, built?.MinRadiusM, built?.Notes ?? [], refusal)
+                              { Solids = built?.Lowered is null ? 0 : built.Solids });
             if (built?.Lowered is { } l) _walkLowering.Add(new C3dWalkStep(name, $"{l.Kind} ({C3dObject.KindOf(obj)}, built by the geometry kernel)"));
         }
 

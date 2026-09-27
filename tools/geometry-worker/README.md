@@ -155,7 +155,8 @@ A face of the result keeps the first name that claims it, the blank's before a t
 one face of the result — a split face, including one an operand had already split — is numbered `#1…#n` in the
 geometric order, so a reference to `zmax` means every `zmax#k`. A fillet's and chamfer's faces are named from
 EVERY edge of each contour OCCT built (`Edge(contour, i)`), not only the edges listed: a tangent chain
-propagates. An empty result, or a fillet OCCT cannot build, is refused (`build.failed`), naming the object. A
+propagates. An empty result is refused as `build.empty` (brief 66: the editor words it in the operation's own terms —
+*"'lid' and 'pin' share nothing"*), and a fillet OCCT cannot build as `build.failed`, each naming the object. A
 `step` node reads its file once per (path, hash) for the life of the worker.
 
 ### Test nodes

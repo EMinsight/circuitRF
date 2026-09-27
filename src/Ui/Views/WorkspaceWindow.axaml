@@ -337,6 +337,19 @@
                                 </NativeMenu>
                             </NativeMenuItem.Menu>
                         </NativeMenuItem>
+                        <!-- brief-em3d-66 R-em3d66-7 — mirrored by the in-window 3D menu below (brief 43 §1m). -->
+                        <NativeMenuItem Header="Boolean" ToolTip="{Binding ThreeDBooleanTip}" IsEnabled="{Binding ThreeDBooleanAvailable}">
+                            <NativeMenuItem.Menu>
+                                <NativeMenu>
+                                    <NativeMenuItem Header="Subtract…" ToolTip="The Blank, less every Tool: the first object you select is a Tool, the last the Blank. Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="BooleanSubtract"/>
+                                    <NativeMenuItem Header="Unite…" ToolTip="The Blank and every Tool as one solid, with the Blank's name and material. Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="BooleanUnite"/>
+                                    <NativeMenuItem Header="Intersect…" ToolTip="What the Blank and every Tool have in common. Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="BooleanIntersect"/>
+                                    <NativeMenuItemSeparator/>
+                                    <NativeMenuItem Header="Dissolve Boolean" ToolTip="The selected boolean's operands become top-level objects again. Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="BooleanDissolve"/>
+                                    <NativeMenuItem Header="Edit Operands  (Ctrl/Cmd+])" ToolTip="Enter the selected boolean to edit its operands; Esc or Ctrl/Cmd+[ leaves. Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="BooleanEnter"/>
+                                </NativeMenu>
+                            </NativeMenuItem.Menu>
+                        </NativeMenuItem>
                         <NativeMenuItem Header="Measure" ToolTip="Two snapped points: x, y, z, the deltas and the distance, every number copyable (M). Requires an active 3D document." Command="{Binding ThreeDMeasureCommand}"/>
                         <NativeMenuItem Header="Materials…" ToolTip="The active 3D view's technology, opened on its Materials tab: its own materials and the libraries it names. Requires an active 3D document." Command="{Binding ThreeDMaterialsCommand}"/>
                         <NativeMenuItem Header="Triangle Budget…" ToolTip="How many triangles a frame draws before array elements, farthest first, are drawn as their bounding boxes. Stored per user." Command="{Binding ThreeDTriangleBudgetCommand}"/>
@@ -1115,6 +1128,15 @@
                         <MenuItem Header="Measure From" Command="{Binding ThreeDModifyCommand}" CommandParameter="MeasureFrom" ToolTip.Tip="Measure, starting at the selected vertex. Requires an active 3D editor."/>
                     </MenuItem>
                     <MenuItem Header="_Convert to Polyhedron" Command="{Binding ThreeDModifyCommand}" CommandParameter="ConvertPoly" ToolTip.Tip="Object mode: the selected box, prism or cylinder, with every vertex editable and the face names kept. Requires an active 3D editor."/>
+                </MenuItem>
+                <!-- brief-em3d-66 R-em3d66-7 — mirrors the macOS menu's 3D ▸ Boolean above. -->
+                <MenuItem Header="_Boolean" ToolTip.Tip="{Binding ThreeDBooleanTip}" IsEnabled="{Binding ThreeDBooleanAvailable}">
+                    <MenuItem Header="_Subtract…" Command="{Binding ThreeDModifyCommand}" CommandParameter="BooleanSubtract" ToolTip.Tip="The Blank, less every Tool: the first object you select is a Tool, the last the Blank. Requires an active 3D editor."/>
+                    <MenuItem Header="_Unite…" Command="{Binding ThreeDModifyCommand}" CommandParameter="BooleanUnite" ToolTip.Tip="The Blank and every Tool as one solid, with the Blank's name and material. Requires an active 3D editor."/>
+                    <MenuItem Header="_Intersect…" Command="{Binding ThreeDModifyCommand}" CommandParameter="BooleanIntersect" ToolTip.Tip="What the Blank and every Tool have in common. Requires an active 3D editor."/>
+                    <Separator/>
+                    <MenuItem Header="_Dissolve Boolean" Command="{Binding ThreeDModifyCommand}" CommandParameter="BooleanDissolve" ToolTip.Tip="The selected boolean's operands become top-level objects again. Requires an active 3D editor."/>
+                    <MenuItem Header="_Edit Operands  (Ctrl/Cmd+])" Command="{Binding ThreeDModifyCommand}" CommandParameter="BooleanEnter" ToolTip.Tip="Enter the selected boolean to edit its operands; Esc or Ctrl/Cmd+[ leaves. Requires an active 3D editor."/>
                 </MenuItem>
                 <MenuItem Header="Mea_sure" Command="{Binding ThreeDMeasureCommand}"
                           ToolTip.Tip="Two snapped points: x, y, z, the deltas and the distance, every number copyable (M). Requires an active 3D document.">

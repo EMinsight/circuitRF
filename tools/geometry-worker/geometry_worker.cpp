@@ -1113,7 +1113,8 @@ static Named BuildBoolean(const NodeReader& r)
       throw Refuse{"build.failed", r.name, "the " + opv.text + " failed" + (text.empty() ? "" : ": " + text)};
     }
     if (!HasSolid(op.Shape()))
-      throw Refuse{"build.failed", r.name, "the " + opv.text + " leaves nothing: the result has no volume"};
+      // brief-em3d-66: its own code, so the client can say it in the operation's words ("'lid' and 'pin' share nothing").
+      throw Refuse{"build.empty", r.name, "the " + opv.text + " leaves nothing: the result has no volume"};
     return NameResult(op.Shape(), claims, op);
   };
   if (opv.text == "subtract") { BRepAlgoAPI_Cut op; return run(op); }

@@ -28,9 +28,10 @@
                 <TextBox x:Name="NameBox" Text="{Binding NameText}" KeyDown="OnNameKey" LostFocus="OnNameLostFocus"/>
                 <TextBlock Text="Material" FontSize="11" Opacity="0.7"/>
                 <ComboBox ItemsSource="{Binding Materials}" SelectedItem="{Binding Material}" HorizontalAlignment="Stretch"
-                          PlaceholderText="{Binding MaterialPlaceholder}"/>
+                          PlaceholderText="{Binding MaterialPlaceholder}" IsEnabled="{Binding IsMaterialEditable}"/>
                 <TextBlock Text="Role" FontSize="11" Opacity="0.7"/>
                 <ComboBox ItemsSource="{x:Static t3:C3dPropertiesViewModel.Roles}" SelectedItem="{Binding Role}" HorizontalAlignment="Stretch"
+                          IsEnabled="{Binding IsMaterialEditable}"
                           ToolTip.Tip="What the solver treats the object as. From material: the material decides."/>
                 <!-- 3D editor round 3 — a bond wire has no placement: its points are world points (below). Round 4: the
                      placement origin is edited on its one line among the dimensions below, not twice. -->
@@ -39,6 +40,26 @@
                     <TextBox Text="{Binding RotateText}" PlaceholderText="z 30, x 90" KeyDown="OnRotateKey" LostFocus="OnRotateLostFocus"/>
                     <CheckBox IsChecked="{Binding MirrorX}" Content="Mirror x"/>
                 </StackPanel>
+            </StackPanel>
+
+            <!-- brief-em3d-66 R-em3d66-4 — a boolean: each field one undo entry, re-evaluated at once. An evaluation that
+                 fails is not rolled back: the node carries the refusal, and undo is one keystroke away. -->
+            <StackPanel Spacing="4" IsVisible="{Binding IsBoolean}">
+                <TextBlock Text="Operation" FontSize="11" Opacity="0.7"/>
+                <ComboBox ItemsSource="{x:Static t3:C3dEditorViewModel.BooleanOps}" SelectedItem="{Binding BooleanOperation}"
+                          HorizontalAlignment="Stretch" IsEnabled="{Binding BooleanEditable}" ToolTip.Tip="{Binding BooleanTip}"/>
+                <CheckBox IsChecked="{Binding BooleanEnabled}" Content="Enabled" IsEnabled="{Binding BooleanEditable}"
+                          ToolTip.Tip="Unticked, the Blank and the Tools are objects of their own — drawn, edited and simulated — as Dissolve would write them."/>
+                <CheckBox IsChecked="{Binding BooleanKeepTools}" Content="Keep tools" IsEnabled="{Binding BooleanKeepToolsEnabled}"
+                          ToolTip.Tip="{x:Static t3:C3dEditorViewModel.BooleanKeepToolsTip}"/>
+                <TextBlock Text="Blank" FontSize="11" Opacity="0.7"/>
+                <Grid ColumnDefinitions="*,Auto">
+                    <ComboBox ItemsSource="{Binding BooleanOperands}" SelectedItem="{Binding BooleanBlank}" HorizontalAlignment="Stretch"
+                              IsEnabled="{Binding BooleanEditable}"
+                              ToolTip.Tip="The object the Tools act on. The boolean takes its name; the old Blank becomes a Tool."/>
+                    <Button Grid.Column="1" Content="Swap" Margin="4,0,0,0" Command="{Binding SwapBooleanCommand}" IsVisible="{Binding BooleanCanSwap}"
+                            ToolTip.Tip="The Tool becomes the Blank, and the Blank the Tool."/>
+                </Grid>
             </StackPanel>
 
             <!-- 3D editor round 3 — a bond wire: its bonds, its section, and every point of its axis in world coordinates.

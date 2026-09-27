@@ -40,9 +40,11 @@ namespace CircuitRF.Ui.ThreeD;
 /// ports are resolved against it.</para>
 /// <para>brief-em3d-51 — <paramref name="Cell"/> is the cell as a gesture's preview would leave it (a drag writing a
 /// parameter's default); null reads the cell from disk.</para>
+/// <para>brief-em3d-66 — <paramref name="Ghosts"/>: the objects a boolean's preview or an entered boolean draws as ghosts.</para>
 public sealed record C3dSceneInputs(string DocumentText, string Path, string? WorkspaceCws, ColorTheme Theme, ColorVariant Variant,
                                     (string Text, string Path, string Exclude, C3dTransform ToTop)? Context = null,
-                                    string? SetupJson = null, C3dCell? Cell = null);
+                                    string? SetupJson = null, C3dCell? Cell = null,
+                                    IReadOnlyDictionary<string, Scene3DGhost>? Ghosts = null);
 
 public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEditHost, IDisposable
 {
@@ -89,6 +91,10 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     /// <summary>Objects the elaborator lowered because its cache missed — gate 6's counter.</summary>
     public long ObjectsElaborated { get { lock (_elaborating) return _elaborator.ObjectsElaborated; } }
 
+    /// <summary>brief-em3d-66 — kernel trees the elaborator handed the kernel because its cache missed: an operand's drag
+    /// re-evaluates its boolean once, on the release.</summary>
+    public long KernelTreesBuilt { get { lock (_elaborating) return _elaborator.KernelTreesBuilt; } }
+
     /// <summary>brief-em3d-46 gate 2 — placed cells read and built because the child cache missed: moving, rotating or
     /// arraying an instance must leave it where it was.</summary>
     public long ChildrenElaborated { get { lock (_elaborating) return _elaborator.ChildrenElaborated; } }
@@ -110,15 +116,17 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     private readonly Action<Action> _post;
 
     public C3dEditorViewModel(string path, C3dDocument document, Func<Viewer3DBackend> backend, Func<string?> workspaceCws,
-                              Action<Action> post, TechnologyCache? technologies = null, bool scratch = false)
+                              Action<Action> post, TechnologyCache? technologies = null, bool scratch = false,
+                              CircuitRF.Design.ThreeD.Occ.GeometryKernel? kernel = null)
     {
+        _kernel = kernel;
         FilePath = Path.GetFullPath(path);
         IsScratch = scratch;
         Document = document;
         _workspaceCws = workspaceCws;
         _post = post;
-        _elaborator = new C3dElaborator(technologies);
-        _contextElaborator = new C3dElaborator(technologies);
+        _elaborator = new C3dElaborator(technologies, kernel);
+        _contextElaborator = new C3dElaborator(technologies, kernel);
         _savedStamp = Stamp(FilePath);
         Viewer = new Viewer3DViewModel(FilePath, Path.GetFileName(FilePath), Snapshot, Build, backend, () => ResultsRootProvider?.Invoke(), post)
         {
@@ -156,8 +164,12 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     // ── the scene: elaboration → problem → scene ─────────────────────────────────────────────
 
     private object Snapshot()
-        => new C3dSceneInputs(DocumentText(), FilePath, _workspaceCws(), ThemeService.Active, ThemeService.CurrentVariant, ContextSnapshot(),
-                              SceneSetupJson(), _namePreview?.Cell);
+    {
+        // brief-em3d-66 — a boolean previewed or entered draws its own document, with ghosts.
+        var boolean = BooleanScene();
+        return new C3dSceneInputs(boolean?.Text ?? DocumentText(), FilePath, _workspaceCws(), ThemeService.Active, ThemeService.CurrentVariant,
+                                  ContextSnapshot(), SceneSetupJson(), _namePreview?.Cell, boolean?.Ghosts);
+    }
 
     /// <summary>
     /// The document as its file would say it — with, while a face or vertex gesture runs, the gesture's edited object
@@ -242,6 +254,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
                                         Wireframe: unassigned.Count > 0 ? unassigned.Contains : null,
                                         Context: inputs.Context is null ? null : IsContext,
                                         EditorBoundaries: true,
+                                        Ghost: inputs.Ghosts is { Count: > 0 } ghosts ? n => ghosts.TryGetValue(n, out var g) ? g : Scene3DGhost.None : null,
                                         FaceTints: [.. records.Boundaries.Where(b => b.Refusal is null)
                                                            .Select(b => new Scene3DFaceTint(b.Boundary.Object + "/" + b.Boundary.Face, b.Boundary.Kind, b.Pieces))]));
         }
@@ -273,6 +286,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         RefreshTreeVisibility();
         RebuildInstanceChildren();
         RefreshWireFlags();
+        RefreshKernelFlags();
         RememberInstanceBounds();
         if (_fitOnAdopt && Viewer.Scene.Objects.Length > 0)
         {
@@ -306,7 +320,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     /// into a placed cell — which frame the coordinates are in. The full text is the pane's (CRF_3D_STATUS_PANE=1).
     /// </summary>
     public string ViewportLine
-        => StatusMessage is { Length: > 0 } m ? m : ToolPrompt is { Length: > 0 } p ? p : FrameText;
+        => StatusMessage is { Length: > 0 } m ? m : ToolPrompt is { Length: > 0 } p ? p : BooleanBreadcrumb is { Length: > 0 } b ? b : FrameText;
 
     protected override void OnPropertyChanged(System.ComponentModel.PropertyChangedEventArgs e)
     {
@@ -349,6 +363,11 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     {
         foreach (var o in Document.Objects)
             foreach (var s in SceneObjectsFor(o, balls: true)) Viewer.SetVisibleEverywhere(s.Id, !o.Hidden);
+        // brief-em3d-66 — an entered operand's own Hidden.
+        if (EnteredTop is >= 0 and var top)
+            foreach (var op in _enteredOperands)
+                if (SceneObject(op.SceneName) is { } s && C3dBooleans.At(Document.Objects[top], op.Path) is { } local)
+                    Viewer.SetVisibleEverywhere(s.Id, !local.Hidden);
     }
 
     /// <summary>The scene object a document object became, by its name, or null (a polyline, a refusal).</summary>
@@ -363,6 +382,10 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         if (balls) names = names.SelectMany(n => new[] { n, n + "/ball/start", n + "/ball/end" });
         return names.Select(SceneObject).OfType<Scene3DObject>().ToList();
     }
+
+    /// <summary>brief-em3d-66 — the index a scene object is edited through: the document's own object's, or an entered
+    /// boolean's operand's (<see cref="OperandIndexOf"/>); −1 for neither.</summary>
+    public int EditableIndex(Scene3DObject o) => DocumentIndex(o) is >= 0 and var i ? i : OperandIndexOf(o);
 
     /// <summary>The document index of a scene object that is the document's own, or −1.</summary>
     public int DocumentIndex(Scene3DObject o)
@@ -380,6 +403,9 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     public string KindOf(Scene3DObject o)
     {
         if (InstanceOf(o) is { } inst) return $"Part of instance {inst}";
+        // brief-em3d-66 — an entered boolean's operand says what it is in its boolean.
+        if (OperandIndexOf(o) is >= 0 and var oi && ObjectAt(oi) is { } operand)
+            return $"{C3dObject.KindOf(operand)} ({(C3dBooleans.LastStep(_enteredOperands[oi - OperandBase].Path) < 0 ? "Blank" : "Tool")})";
         return Document.Objects.FirstOrDefault(d => d.Name == o.Name) is { } obj ? C3dObject.KindOf(obj) : o.Kind.ToString();
     }
 
@@ -391,11 +417,11 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
 
     public bool SetHidden(IReadOnlyList<Scene3DObject> objects, bool hidden, string description)
     {
-        var indices = objects.Select(DocumentIndex).Where(i => i >= 0).Distinct().ToList();
+        var indices = objects.Select(EditableIndex).Where(i => i >= 0).Distinct().ToList();
         if (indices.Count == 0) return false;
         ChangeObjects(description, indices, o => o.Hidden = hidden);
         // An instance's contents are not the document's to hide: the view hides them for this session.
-        foreach (var o in objects.Where(o => DocumentIndex(o) < 0)) Viewer.SetVisibleEverywhere(o.Id, !hidden);
+        foreach (var o in objects.Where(o => EditableIndex(o) < 0)) Viewer.SetVisibleEverywhere(o.Id, !hidden);
         if (hidden) Viewer.SetSelection([]);
         return true;
     }
@@ -416,10 +442,10 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
 
     public void SetMaterial(IReadOnlyList<Scene3DObject> objects, string material)
     {
-        var indices = objects.Select(DocumentIndex).Where(i => i >= 0).Distinct().ToList();
+        var indices = objects.Select(EditableIndex).Where(i => i >= 0).Distinct().ToList();
         if (indices.Count == 0) return;
-        ChangeObjects(indices.Count == 1 ? $"Material of {Document.Objects[indices[0]].Name}" : $"Material of {indices.Count} objects",
-                      indices, o => o.Material = material);
+        ChangeObjects(indices.Count == 1 ? $"Material of {ObjectLabel(indices[0])}" : $"Material of {indices.Count} objects",
+                      indices, o => SetMaterialOf(o, material));
     }
 
     public bool DeleteSelection()
@@ -428,6 +454,8 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         // brief-em3d-49 — a selected port is a document record: deleted as one.
         if (SelectedPorts() is { Count: > 0 } ports) { DeletePorts(ports); return true; }
         var objects = Viewer.SelectedObjects();
+        // brief-em3d-66 R-em3d66-6 — an entered operand: a Tool is removed from its boolean; the Blank is refused.
+        if (objects.Select(OperandIndexOf).Where(i => i >= 0).Distinct().ToList() is { Count: > 0 } operands) return DeleteOperands(operands);
         var indices = objects.Select(DocumentIndex).Where(i => i >= 0).Distinct().OrderBy(i => i).ToList();
         if (indices.Count == 0)
         {
@@ -470,7 +498,12 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     public void ChangeObjects(string description, IReadOnlyList<int> indices, Action<C3dObject> mutate)
     {
         var slots = new List<C3dEditSlot>();
-        foreach (int i in indices.Distinct().OrderBy(i => i))
+        // brief-em3d-66 — an entered operand is changed in its world form and written back into its top-level object.
+        var operands = new List<(int, C3dObject)>();
+        foreach (int i in indices.Where(IsOperandIndex).Distinct())
+            if (ObjectAt(i) is { } w) { mutate(w); operands.Add((i, w)); }
+        slots.AddRange(ReplacementSlots(operands));
+        foreach (int i in indices.Where(i => !IsOperandIndex(i)).Distinct().OrderBy(i => i))
         {
             string before = C3dPersistence.SerializeObject(Document.Objects[i]);
             var copy = C3dPersistence.DeserializeObject(before);
@@ -485,15 +518,38 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     public string? Rename(int index, string name)
     {
         name = name.Trim();
+        if (IsOperandIndex(index)) return RenameOperand(index, name);
         var obj = Document.Objects[index];
         if (name == obj.Name) return null;
         if (name.Length == 0) return "A name cannot be empty.";
         if (string.Equals(name, "airbox", StringComparison.OrdinalIgnoreCase)) return "'airbox' is reserved: the air box's faces are named after it.";
         if (name.Contains('/')) return "A name cannot hold '/': an instance's contents are named '<instance>/<object>'.";
-        if (Document.Objects.Any(o => o != obj && o.Name == name) || Document.Instances.Any(i => i.Name == name))
+        if (Document.Objects.Any(o => o != obj && o.Name == name) || Document.Instances.Any(i => i.Name == name) || NestedNames().Contains(name))
             return $"'{name}' is already the name of something in this 3D view.";
         Viewer.ExpectRename(obj.Name, name);
+        bool entered = _entered is { } e0 && e0.Top == obj.Name;
         ChangeObjects($"Rename {obj.Name} to {name}", [index], o => o.Name = name);
+        if (entered && _entered is { } e1) { _entered = (name, e1.Path); RefreshEntered(); Viewer.Regenerate(); }
+        return null;
+    }
+
+    /// <summary>brief-em3d-66 — every Tool's name inside a boolean, at any depth: unique across the document with the
+    /// top-level names (R-em3d64-1d).</summary>
+    private HashSet<string> NestedNames()
+        => [.. Document.Objects.SelectMany(o => C3dOperands.SelfAndDescendants(o).Skip(1)).Select(o => o.Name).Where(n => n.Length > 0)];
+
+    /// <summary>A rename of an entered operand: a Tool takes the name; a Blank has none of its own.</summary>
+    private string? RenameOperand(int index, string name)
+    {
+        int top = TopOf(index, out string path);
+        if (top < 0 || C3dBooleans.At(Document.Objects[top], path) is not { } local) return null;
+        if (C3dBooleans.LastStep(path) < 0) return name == ObjectLabel(index) ? null : "A Blank takes its boolean's name: rename the boolean instead.";
+        if (name == local.Name) return null;
+        if (name.Length == 0) return "A name cannot be empty.";
+        if (name.Contains('/') || name.Contains(':') || name.Contains('|')) return "A name cannot hold '/', ':' or '|'.";
+        if (Document.Objects.Any(o => o.Name == name) || Document.Instances.Any(i => i.Name == name) || NestedNames().Contains(name))
+            return $"'{name}' is already the name of something in this 3D view.";
+        ChangeObjects($"Rename {local.Name} to {name}", [index], o => o.Name = name);
         return null;
     }
 
@@ -536,6 +592,10 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     /// bring the tree and the panel up to date.</summary>
     private void DocumentChanged()
     {
+        // brief-em3d-66 — the panel previews the document as it was when it opened: any other change closes it; an entered
+        // boolean follows the document (and is left when it is gone).
+        CancelBoolean();
+        RefreshEntered();
         ResolveDocument();
         Viewer.Regenerate();
         RebuildTree();
@@ -799,6 +859,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         ApplyLengthFormat();
         Viewer.SetSelection([]);
         SetTool(null);
+        LeaveBooleanFully();                // brief-em3d-66 — the document it was entered in is gone
         ApplySnapGrid();
         SyncPlaneTexts();
         DocumentChanged();
@@ -835,6 +896,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     private void RebuildTree()
     {
         string? keep = SelectedTreeItem?.Name;
+        string? keepPath = SelectedTreeItem?.OperandPath;
         bool keepAirBox = SelectedTreeItem?.IsAirBox == true;
         _syncingTree = true;
         try
@@ -846,8 +908,9 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
             if (InstanceGroup() is { } instances) Tree.Add(instances);
             RebuildInstanceChildren();
             RefreshWireFlags();
+            RefreshKernelFlags();
             RebuildRecordsTree();
-            SelectedTreeItem = keep is null ? null : AllTreeItems().FirstOrDefault(t => t.Name == keep && t.IsAirBox == keepAirBox);
+            SelectedTreeItem = keep is null ? null : AllTreeItems().FirstOrDefault(t => t.Name == keep && t.IsAirBox == keepAirBox && t.OperandPath == keepPath);
         }
         finally { _syncingTree = false; }
     }
@@ -864,6 +927,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         {
             n.Memory = null;
             if (n is C3dTreeGroup g) DetachExpansion(g.Items);
+            if (n is C3dTreeItem i) DetachExpansion(i.Children);
         }
     }
 
@@ -873,7 +937,14 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         foreach (var g in Tree)
         {
             Restore(g, open: true);
-            foreach (var i in g.Items) Restore(i, open: false);
+            foreach (var i in g.Items) RestoreItem(i);
+        }
+
+        // brief-em3d-66 — a boolean's operands are nodes inside its node, at any depth.
+        void RestoreItem(C3dTreeItem i)
+        {
+            Restore(i, open: false);
+            foreach (var c in i.Children) RestoreItem(c);
         }
 
         void Restore(C3dTreeNode n, bool open)
@@ -885,7 +956,10 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     }
 
     private IEnumerable<C3dTreeItem> AllTreeItems()
-        => Tree.SelectMany(g => g.Items).SelectMany(i => i.Children.Prepend(i));
+        => Tree.SelectMany(g => g.Items).SelectMany(Walk);
+
+    /// <summary>A node and every node beneath it — a boolean's operands at any depth.</summary>
+    private static IEnumerable<C3dTreeItem> Walk(C3dTreeItem i) => i.Children.SelectMany(Walk).Prepend(i);
 
     /// <summary>Each instance's children, from the elaboration: what the placed cell contributed.</summary>
     private void RebuildInstanceChildren()
@@ -905,7 +979,9 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     private void RefreshTreeVisibility()
     {
         foreach (var item in AllTreeItems())
-            if (item.ObjectIndex >= 0 && item.ObjectIndex < Document.Objects.Count) item.Sync(!Document.Objects[item.ObjectIndex].Hidden);
+            if (item.OperandPath is { } op && item.ObjectIndex >= 0 && item.ObjectIndex < Document.Objects.Count)
+                item.Sync(C3dBooleans.At(Document.Objects[item.ObjectIndex], op)?.Hidden != true);
+            else if (item.ObjectIndex >= 0 && item.ObjectIndex < Document.Objects.Count) item.Sync(!Document.Objects[item.ObjectIndex].Hidden);
             else if (SceneObject(item.Name) is { } s) item.Sync(Viewer.View.IsVisible(s.Id));
     }
 
@@ -917,6 +993,11 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         if (item.IsAirBox)
         {
             AirBoxShown = visible;
+            return;
+        }
+        if (item.OperandPath is { } path && item.ObjectIndex >= 0)
+        {
+            ChangeOperand($"{(visible ? "Show" : "Hide")} {item.Name}", item.ObjectIndex, path, o => o.Hidden = !visible);
             return;
         }
         if (item.ObjectIndex >= 0)
@@ -939,6 +1020,13 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     partial void OnSelectedTreeItemChanged(C3dTreeItem? value)
     {
         if (_syncingTree || value is null) return;
+        // brief-em3d-66 R-em3d66-5a — an operand's row enters its boolean and selects it there, once that scene is up.
+        if (value.OperandPath is { } operandPath && value.ObjectIndex >= 0 && value.ObjectIndex < Document.Objects.Count)
+        {
+            SelectOperand(value.ObjectIndex, operandPath);
+            Properties.Reload();
+            return;
+        }
         _syncingTree = true;
         try
         {
@@ -973,6 +1061,9 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
                 var first = Viewer.SelectedObjects().FirstOrDefault();
                 SelectedTreeItem = first is null ? null
                     : BoxFaceOf(first) is not null ? AllTreeItems().FirstOrDefault(t => t.IsAirBox)
+                    // brief-em3d-66 — an entered operand is its row under its boolean.
+                    : OperandIndexOf(first) is >= 0 and var oi && TopOf(oi, out string op) is >= 0 and var top
+                      ? AllTreeItems().FirstOrDefault(t => t.ObjectIndex == top && t.OperandPath == op)
                     : AllTreeItems().FirstOrDefault(t => t.Name == first.Name && !t.IsAirBox)
                       // 3D editor round 4 — an element of a wire array (w1[2]) is its wire's row.
                       ?? (DocumentIndex(first) is >= 0 and var di ? AllTreeItems().FirstOrDefault(t => t.ObjectIndex == di && !t.IsAirBox) : null)
@@ -1037,7 +1128,7 @@ public sealed partial class C3dTreeItem(C3dEditorViewModel owner, string name, s
     /// <summary>The kind of the air box's node (3D editor round 1): selectable, never deletable.</summary>
     public const string AirBoxKind = "Air box";
 
-    public override string ExpansionKey => "item:" + Kind + ":" + Name;
+    public override string ExpansionKey => "item:" + Kind + ":" + Name + (OperandPath is { } p ? "@" + TopName + "/" + p : "");
 
     /// <summary>The active setup's air box.</summary>
     public bool IsAirBox => Kind == AirBoxKind;
@@ -1051,9 +1142,24 @@ public sealed partial class C3dTreeItem(C3dEditorViewModel owner, string name, s
     /// <summary>brief-em3d-46 R-em3d46-4d — a document object's place in construction order (1-based), which decides
     /// which solid wins an overlap; null for an instance and its parts. 3D editor round 3: the row's tooltip, no longer a
     /// "#n" in front of every name — the tree lists in construction order within a group anyway.</summary>
-    public string? OrderTip => ObjectIndex >= 0
+    public string? OrderTip => ObjectIndex >= 0 && OperandPath is null
         ? $"Construction order {ObjectIndex + 1}: a later object wins where solids overlap (3D ▸ Modify ▸ Order)"
         : null;
+
+    /// <summary>brief-em3d-66 R-em3d66-3c — an operand's path under its top-level object (<see cref="ObjectIndex"/>):
+    /// <c>Blank.</c>, <c>Tools[1].</c>, <c>Tools[0].Blank.</c>; null for a top-level row.</summary>
+    public string? OperandPath { get; init; }
+
+    /// <summary>The top-level object's name, for an operand's row: what its expansion is remembered under.</summary>
+    public string TopName { get; init; } = "";
+
+    /// <summary>brief-em3d-66 R-em3d66-3a — an operation's icon (the toolbar's), or null.</summary>
+    public Material.Icons.MaterialIconKind? Icon { get; init; }
+    public bool HasIcon => Icon is not null;
+    public Material.Icons.MaterialIconKind IconKind => Icon ?? default;
+
+    /// <summary>A disabled operation's icon is dimmed (R-em3d66-4a).</summary>
+    public double IconOpacity { get; init; } = 1;
     public bool IsReadOnly { get; init; }
     public ObservableCollection<C3dTreeItem> Children { get; } = [];
 

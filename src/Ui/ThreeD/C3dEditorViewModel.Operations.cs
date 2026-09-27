@@ -50,20 +50,22 @@ public sealed partial class C3dEditorViewModel
         {
             C3dTarget? t = InstanceOf(o) is { } path
                 ? Document.Instances.FindIndex(i => i.Name == path.Split('/', '[')[0]) is int ii and >= 0 ? new C3dTarget(true, ii) : null
-                : DocumentIndex(o) is int oi and >= 0 ? new C3dTarget(false, oi) : null;
+                : EditableIndex(o) is int oi and >= 0 ? new C3dTarget(false, oi) : null;
             if (t is { } tt && !list.Contains(tt)) list.Add(tt);
         }
         _targetsCache = (sel, AdoptedGeneration, list);
         return list;
     }
 
-    private string NameOf(C3dTarget t) => t.Instance ? Document.Instances[t.Index].Name : Document.Objects[t.Index].Name;
+    private string NameOf(C3dTarget t) => t.Instance ? Document.Instances[t.Index].Name : ObjectLabel(t.Index);
 
-    private C3dPlacement PlacementOf(C3dTarget t) => t.Instance ? Document.Instances[t.Index].Placement : Document.Objects[t.Index].Placement;
+    private C3dPlacement PlacementOf(C3dTarget t) => t.Instance ? Document.Instances[t.Index].Placement : ObjectAt(t.Index)!.Placement;
 
     /// <summary>The scene objects a target became: an object's one, an instance's every part (of every array element).</summary>
     private IEnumerable<Scene3DObject> SceneObjectsOf(C3dTarget t)
     {
+        // brief-em3d-66 — an entered operand is drawn under its own scene name.
+        if (!t.Instance && OperandSceneName(t.Index) is { } scene) return SceneObject(scene) is { } s ? [s] : [];
         string name = NameOf(t);
         // brief-em3d-50 — a wire is its sweep and its balls.
         if (!t.Instance) return SceneObjectsFor(Document.Objects[t.Index], balls: true);
@@ -83,7 +85,7 @@ public sealed partial class C3dEditorViewModel
         foreach (var t in targets)
         {
             if (t.Instance) roots.Add(NameOf(t));
-            else names.Add(NameOf(t));
+            else names.Add(ElaboratedName(t.Index));
         }
         bool Mine(string n) => names.Contains(n) || roots.Contains(n.Split('/', '[')[0]) && n.Contains('/');
         double x0 = double.PositiveInfinity, y0 = x0, z0 = x0, x1 = double.NegativeInfinity, y1 = x1, z1 = x1;
@@ -295,7 +297,9 @@ public sealed partial class C3dEditorViewModel
         int oi = Document.Objects.FindIndex(o => o.Name == name);
         if (oi >= 0) return SceneObjectsOf(new C3dTarget(false, oi));
         int ii = Document.Instances.FindIndex(i => i.Name == name);
-        return ii >= 0 ? SceneObjectsOf(new C3dTarget(true, ii)) : [];
+        if (ii >= 0) return SceneObjectsOf(new C3dTarget(true, ii));
+        // brief-em3d-66 — an entered boolean's operand, by the name the scene draws it under.
+        return SceneObject(name) is { } s ? [s] : [];
     }
 
     // ── committing ───────────────────────────────────────────────────────────────────────────
@@ -338,6 +342,7 @@ public sealed partial class C3dEditorViewModel
             allExact &= ex;
             return q;
         }
+        var moved = new List<(int, C3dObject)>();
         foreach (var target in targets.OrderBy(x => x.Instance).ThenBy(x => x.Index))
         {
             if (target.Instance)
@@ -348,16 +353,16 @@ public sealed partial class C3dEditorViewModel
                 string after = C3dPersistence.SerializeInstance(copy);
                 if (after != before) slots.Add(new C3dEditSlot(true, target.Index, before, after));
             }
-            else
+            else if (ObjectAt(target.Index) is { } obj)
             {
-                string before = C3dPersistence.SerializeObject(Document.Objects[target.Index]);
-                var copy = C3dPersistence.DeserializeObject(before);
+                // brief-em3d-66 — an entered operand moves in its world form and is written back into its boolean.
+                var copy = C3dBooleans.Copy(obj);
                 copy.Placement = Next(copy.Placement);
                 allExact &= C3dWires.BakePlacement(copy);          // brief-em3d-50: a wire carries its points
-                string after = C3dPersistence.SerializeObject(copy);
-                if (after != before) slots.Add(new C3dEditSlot(false, target.Index, before, after));
+                moved.Add((target.Index, copy));
             }
         }
+        slots.AddRange(ReplacementSlots(moved));
         if (slots.Count == 0) { StatusMessage = $"{description}: nothing moved."; return false; }
         if (!Push(new C3dEdit(description, slots, ApplySlots))) return false;
         OperationCommits++;
@@ -371,7 +376,8 @@ public sealed partial class C3dEditorViewModel
     /// </summary>
     public bool InsertCopies(IReadOnlyList<C3dTarget> targets, IReadOnlyList<C3dTransform> transforms, string description, bool exact = true)
     {
-        var used = new HashSet<string>(Document.Objects.Select(o => o.Name).Concat(Document.Instances.Select(i => i.Name)), StringComparer.Ordinal);
+        var used = new HashSet<string>(Document.Objects.Select(o => o.Name).Concat(Document.Instances.Select(i => i.Name)).Concat(NestedNames()),
+                                       StringComparer.Ordinal);
         var slots = new List<C3dEditSlot>();
         int nextObject = Document.Objects.Count, nextInstance = Document.Instances.Count;
         var names = new List<string>();
@@ -399,8 +405,12 @@ public sealed partial class C3dEditorViewModel
                 }
                 else
                 {
-                    var copy = C3dPersistence.DeserializeObject(C3dPersistence.SerializeObject(Document.Objects[target.Index]));
-                    copy.Name = C3dOperations.NextFreeName(copy.Name, used);
+                    // brief-em3d-66 R-em3d66-5b — a copy of an operand is a new top-level object, where the operand is.
+                    var copy = C3dBooleans.Copy(ObjectAt(target.Index)!);
+                    copy.Name = C3dOperations.NextFreeName(IsOperandIndex(target.Index) ? CopyBaseName(target.Index) : copy.Name, used);
+                    // A copied boolean's Tools are named too, and a name is unique across the whole document (R-em3d64-1d).
+                    foreach (var operand in C3dOperands.SelfAndDescendants(copy).Skip(1).Where(o => o.Name.Length > 0))
+                        operand.Name = C3dOperations.NextFreeName(operand.Name, used);
                     copy.Placement = Next(copy.Placement);
                     allExact &= C3dWires.BakePlacement(copy);      // brief-em3d-50: a wire carries its points
                     names.Add(copy.Name);
@@ -475,13 +485,12 @@ public sealed partial class C3dEditorViewModel
                 copy.Placement = copy.Placement.Translated(by);
                 slots.Add(new C3dEditSlot(true, t.Index, before, C3dPersistence.SerializeInstance(copy)));
             }
-            else
+            else if (ObjectAt(t.Index) is { } obj)
             {
-                string before = C3dPersistence.SerializeObject(Document.Objects[t.Index]);
-                var copy = C3dPersistence.DeserializeObject(before);
+                var copy = C3dBooleans.Copy(obj);
                 copy.Placement = copy.Placement.Translated(by);
                 C3dWires.BakePlacement(copy);
-                slots.Add(new C3dEditSlot(false, t.Index, before, C3dPersistence.SerializeObject(copy)));
+                slots.AddRange(ReplacementSlots([(t.Index, copy)]));
             }
         }
         string word = at switch { AlignAt.Min => "min", AlignAt.Max => "max", _ => "centre" };
@@ -503,8 +512,14 @@ public sealed partial class C3dEditorViewModel
     public void Order(OrderMove move)
     {
         if (!HaveTargets(out var targets)) return;
-        var chosen = targets.Where(t => !t.Instance).Select(t => t.Index).ToHashSet();
-        if (chosen.Count == 0) { StatusMessage = "Order moves objects; an instance's contents follow the document's own objects."; return; }
+        var chosen = targets.Where(t => !t.Instance && !IsOperandIndex(t.Index)).Select(t => t.Index).ToHashSet();
+        if (chosen.Count == 0)
+        {
+            StatusMessage = targets.Any(t => !t.Instance && IsOperandIndex(t.Index))
+                ? "Order moves top-level objects: a boolean's operands are ordered as Blank, then Tools."
+                : "Order moves objects; an instance's contents follow the document's own objects.";
+            return;
+        }
         var order = Enumerable.Range(0, Document.Objects.Count).ToList();
         switch (move)
         {
@@ -871,7 +886,7 @@ public sealed partial class C3dEditorViewModel
     /// <summary>3D ▸ Modify's items, by name — the same functions the context menu and the keys call.</summary>
     public void RunModify(string which)
     {
-        if (RunFaceModify(which)) return;
+        if (RunFaceModify(which) || RunBooleanModify(which)) return;
         switch (which)
         {
             case "Move" when Viewer.SelectMode == Scene3DSelectMode.Face: StartFaceMove(); break;
