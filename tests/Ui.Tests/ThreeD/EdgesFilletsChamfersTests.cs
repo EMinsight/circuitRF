@@ -395,6 +395,53 @@ public sealed class EdgesFilletsChamfersTests : IDisposable
         Assert.Equal(0, absent.RequestsSent);
     }
 
+    // ── 3D editor round 5 (kernel) ──────────────────────────────────────────────────────────────
+
+    [KernelFact]
+    public void Gate13_Round5_AnInspectorEditOfAFillet_KeepsItsRowSelected_ThroughTheRebuild()
+    {
+        var vm = Open(Write([Fillet("lid", Box("", "Alumina", 0, 0, 0, 400, 300, 100), 20, "xmax|zmax")]), Kernel(KernelForTests.New()));
+        vm.SelectedTreeItem = vm.Tree.SelectMany(g => g.Items).Single(i => i.Name == "lid").Children.Single(c => c.IsFeature);
+        Assert.True(vm.Properties.IsFeature);
+        foreach (bool enabled in (bool[])[false, true])
+        {
+            vm.Properties.FeatureEnabled = enabled;
+            Settle(vm);
+            Assert.Equal(enabled, ((C3dOperation)vm.Document.Objects[0]).Enabled);
+            Assert.True(vm.SelectedTreeItem?.IsFeature, vm.SelectedTreeItem?.Name);
+            Assert.True(vm.Properties.IsFeature, vm.Properties.Heading);
+        }
+    }
+
+    [KernelFact]
+    public void Gate14_Round5_ASecondFillet_IsTheOneEnabled_AndEnablingTheFirst_SwitchesTheSecondOff()
+    {
+        var vm = Open(Write([Fillet("lid", Box("", "Alumina", 0, 0, 0, 400, 300, 100), 20, "xmax|zmax")]), Kernel(KernelForTests.New()));
+        SelectEdges(vm, "lid", "xmin|zmax");
+        vm.OpenFillet(C3dEdgeOp.Fillet);
+        Assert.True(vm.FilletOpen, vm.StatusMessage);
+        vm.FilletSizeText = "10";
+        WaitForFillet(vm);
+        Assert.True(vm.CanAcceptFillet, vm.FilletError);
+        int entries = vm.UndoEntries;
+        vm.AcceptFillet();
+        Settle(vm);
+        Assert.Equal(entries + 1, vm.UndoEntries);
+        Assert.Equal([("", true), ("Target.", false)], C3dFillets.Chain(vm.Document.Objects[0]).Select(c => (c.Path, c.Feature.Enabled)));
+        // The kernel builds the switched-off fillet as what it wraps: only the new one's face exists.
+        var faces = vm.Elaboration!.Provenance["lid"].FaceNames;
+        Assert.Contains("fillet(xmin|zmax)", faces);
+        Assert.DoesNotContain("fillet(xmax|zmax)", faces);
+
+        vm.SetFeatureEnabled(0, "Target.", true);
+        Settle(vm);
+        Assert.Equal(entries + 2, vm.UndoEntries);
+        Assert.Equal([("", false), ("Target.", true)], C3dFillets.Chain(vm.Document.Objects[0]).Select(c => (c.Path, c.Feature.Enabled)));
+        faces = vm.Elaboration!.Provenance["lid"].FaceNames;
+        Assert.Contains("fillet(xmax|zmax)", faces);
+        Assert.DoesNotContain("fillet(xmin|zmax)", faces);
+    }
+
     // ── helpers ────────────────────────────────────────────────────────────────────────────────────
 
     private GeometryKernel Kernel(GeometryKernel k)

@@ -460,8 +460,10 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
                 return true;
             }
         }
-        // brief-em3d-66 R-em3d66-5a — a double-click on a boolean's result, with no tool armed, enters it.
-        if (_tool is null) return clickCount >= 2 && modifiers == KeyModifiers.None && DoubleClickEnter();
+        // brief-em3d-66 R-em3d66-5a — a double-click on a boolean's result, with no tool armed, enters it. 3D editor bugs
+        // round 5 — and a click away from its operands leaves it.
+        if (_tool is null)
+            return clickCount >= 2 && modifiers == KeyModifiers.None ? DoubleClickEnter() : clickCount == 1 && ClickAwayLeaves(modifiers);
         CloseField();
         var input = CursorInput();
         if (Command(modifiers)) input = input with { Command = true };

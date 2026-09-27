@@ -844,12 +844,40 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
             KeptTools(obj, world, doc, tech, prefix, path, exact);
         }
 
-        /// <summary>R-em3d64-3c — a Subtract's Tools with <c>KeepTools</c>: each its own object right after the result.</summary>
+        /// <summary>
+        /// 3D editor round 5 — a DISABLED Boolean inside an enabled operation is as if it were not there (R-em3d64-4), as at
+        /// the top level: the kernel tree carries its Blank in its place (GeometryKernelTree.WriteNode), and each of its Tools
+        /// is its own object here, right after the result, carried by every placement on the way down. Nested deeper than
+        /// the first disabled one too — a disabled Boolean's Blank may itself hold one.
+        /// </summary>
+        private void NestedTools(C3dObject node, C3dTransform parent, C3dDocument doc, TechResolution tech, string prefix,
+                                 string path, bool exact)
+        {
+            if (node is not C3dOperation op) return;
+            var frame = C3dLowering.InMetres(op.Placement.ToTransform(), doc.DbuPerMicron).Then(parent);
+            bool integral = exact && op.Placement.ToTransform().IsIntegral;
+            if (op.Enabled)
+            {
+                foreach (var (_, operand) in C3dOperands.Of(op)) NestedTools(operand, frame, doc, tech, prefix, path, integral);
+                return;
+            }
+            // A Tool is a whole object in its own right: Object elaborates anything nested inside it.
+            if (op is C3dBoolean b)
+                foreach (var tool in b.Tools) Object(tool, prefix + tool.Name, frame, doc, tech, prefix, path, integral);
+            if (C3dOperands.Inner(op) is { } inner) NestedTools(inner, frame, doc, tech, prefix, path, integral);
+        }
+
+        /// <summary>R-em3d64-3c — a Subtract's Tools with <c>KeepTools</c>: each its own object right after the result. 3D editor
+        /// round 5: and then the Tools of every disabled Boolean inside it (<see cref="NestedTools"/>) — a kept Tool's own
+        /// are its <see cref="Object"/>'s to elaborate, so they are not walked twice.</summary>
         private void KeptTools(C3dObject obj, C3dTransform world, C3dDocument doc, TechResolution tech, string prefix, string path, bool exact)
         {
-            if (obj is not C3dBoolean { Op: C3dBooleanOp.Subtract, KeepTools: true } b) return;
-            var carried = C3dLowering.InMetres(b.Placement.ToTransform(), doc.DbuPerMicron).Then(world);
-            foreach (var tool in b.Tools) Object(tool, prefix + tool.Name, carried, doc, tech, prefix, path, exact && b.Placement.ToTransform().IsIntegral);
+            var carried = C3dLowering.InMetres(obj.Placement.ToTransform(), doc.DbuPerMicron).Then(world);
+            bool integral = exact && obj.Placement.ToTransform().IsIntegral;
+            List<C3dObject> kept = obj is C3dBoolean { Op: C3dBooleanOp.Subtract, KeepTools: true } b ? b.Tools : [];
+            foreach (var tool in kept) Object(tool, prefix + tool.Name, carried, doc, tech, prefix, path, integral);
+            foreach (var (_, operand) in C3dOperands.Of(obj))
+                if (!kept.Contains(operand)) NestedTools(operand, carried, doc, tech, prefix, path, integral);
         }
 
         /// <summary>A kernel object's refusal (when it has one) and its report for <c>explain</c>.</summary>

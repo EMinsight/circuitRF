@@ -49,10 +49,13 @@ public sealed record GeometryKernelCapability(
     public GeometryKernelRoute? Route { get; init; }
 }
 
-/// <summary>What a handshake established: the kernel's identity, which every cache key carries (R-em3d63-6a).</summary>
-public sealed record GeometryKernelIdentity(int Protocol, string Occt, string Worker, string Rid)
+/// <summary>What a handshake established: the kernel's identity, which every cache key carries (R-em3d63-6a).
+/// <paramref name="Results"/> is the worker's revision of what it ANSWERS (3D editor bugs round 5): development builds
+/// share one version, so without it a disk cache written by an older worker is read back by a newer one. A worker that
+/// reports none is revision 1, and its keys are the ones it always had.</summary>
+public sealed record GeometryKernelIdentity(int Protocol, string Occt, string Worker, string Rid, int Results = 1)
 {
-    public string Key => $"protocol {Protocol}; occt {Occt}; worker {Worker}; rid {Rid}";
+    public string Key => $"protocol {Protocol}; occt {Occt}; worker {Worker}; rid {Rid}" + (Results > 1 ? $"; results {Results}" : "");
 }
 
 /// <summary>Where <see cref="GeometryKernelLocator.Locate"/> looked and what it found: a worker to start, or an absence.</summary>

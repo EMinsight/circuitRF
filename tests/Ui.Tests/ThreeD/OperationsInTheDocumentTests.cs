@@ -292,6 +292,31 @@ public sealed class OperationsInTheDocumentTests : IDisposable
         }
     }
 
+    // ── 10. 3D editor round 5: a disabled Boolean INSIDE an enabled operation is as if it were not there ────
+
+    [KernelFact]
+    public void Gate10_Round5_ADisabledBooleanInsideAUnite_IsItsBlank_AndItsToolStandsAlone()
+    {
+        using var kernel = KernelForTests.New();
+        var inner = Subtract("", Box("", "Alumina", 0, 0, 0, 1000, 1000, 200), Box("cav", "Copper", 300, 300, 100, 400, 400, 200));
+        var doc = new C3dDocument
+        {
+            Objects = [new C3dBoolean { Name = "u", Op = C3dBooleanOp.Unite, Blank = inner, Tools = [Box("wing", "Alumina", 900, 0, 0, 600, 1000, 200)] }],
+        };
+        string path = WriteC3d(Workspace(), "Nest", doc);
+
+        var on = new C3dElaborator(null, kernel).Elaborate(doc, path, null);
+        Assert.True(on.Ok, string.Join(" ", on.Refusals));
+        Assert.Equal(["u"], on.Solids.Select(s => s.Name));
+        Assert.Contains(on.Provenance["u"].FaceNames, f => f.StartsWith("cav:", StringComparison.Ordinal));
+
+        inner.Enabled = false;
+        var off = new C3dElaborator(null, kernel).Elaborate(doc, path, null);
+        Assert.True(off.Ok, string.Join(" ", off.Refusals));
+        Assert.Equal([("u", "Alumina"), ("cav", "Copper")], off.Solids.Select(s => (s.Name, s.Material)));
+        Assert.DoesNotContain(off.Provenance["u"].FaceNames, f => f.StartsWith("cav:", StringComparison.Ordinal));
+    }
+
     // ── the format's examples, in the writer's own spelling (R-em3d64-1a) ─────────────────────
 
     private static string Example(string which) => which switch

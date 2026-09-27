@@ -46,7 +46,7 @@ public sealed partial class C3dEditorViewModel
 
     /// <summary>
     /// Why Fillet… or Chamfer… is disabled for the selection now, or null when it is enabled: the kernel first, then an edge
-    /// selection, one object, a document's own solid, and no disabled feature already on it.
+    /// selection, one object, and a document's own solid.
     /// </summary>
     public string? EdgeOpRefusal(C3dEdgeOp op)
     {
@@ -61,10 +61,8 @@ public sealed partial class C3dEditorViewModel
         int i = DocumentIndex(o);
         if (i < 0) return "Select edges of this document's own objects.";
         var obj = Document.Objects[i];
-        if (C3dFillets.TargetRefusal(obj) is { } why) return why;
-        if (C3dFillets.Chain(obj).FirstOrDefault(f => !f.Feature.Enabled).Feature is { } off)
-            return $"'{obj.Name}' has a disabled {(off is C3dChamfer ? "chamfer" : "fillet")}: enable it first, so the edges you pick are the ones it rounds.";
-        return null;
+        // 3D editor round 5 — a solid already rounded, its features enabled or not, takes another (C3dFillets.SoleEnabled).
+        return C3dFillets.TargetRefusal(obj);
     }
 
     // ── the panel (R-em3d67-5b) ────────────────────────────────────────────────────────────────
@@ -141,6 +139,9 @@ public sealed partial class C3dEditorViewModel
         var picked = Viewer.SelectedEdgeNames();
         double shortest = Viewer.Selection.Where(i => i.IsEdge).Select(i => Viewer.EdgeOf(i)?.Edge.Length ?? 0).Where(l => l > 0).DefaultIfEmpty(0).Min();
         OpenPanel(op, picked[0].Object, null, [.. picked.Select(p => p.Edge)], DefaultSize(shortest), "", false, false);
+        // 3D editor round 5 — one feature of a solid enabled at a time: the one on it now is kept, switched off.
+        if (Document.Objects.FirstOrDefault(o => o.Name == _filletTarget) is { } t && C3dFillets.Chain(t).FirstOrDefault(c => c.Feature.Enabled).Feature is { } on)
+            StatusMessage = $"'{t.Name}' keeps its {(on is C3dChamfer ? "chamfer" : "fillet")}, switched off while this one is enabled: one at a time.";
     }
 
     /// <summary>R-em3d67-6b — Edit… on a feature row: the panel on that feature's edges and sizes; OK rewrites it in place.</summary>
@@ -266,7 +267,9 @@ public sealed partial class C3dEditorViewModel
         }
         else
         {
-            feature = chamfer ? C3dFillets.MakeChamfer(doc.Objects[top], edges, d1, d2) : C3dFillets.MakeFillet(doc.Objects[top], edges, d1);
+            // 3D editor round 5 — the new feature is the one enabled; those already on the solid stay, switched off.
+            var target = C3dFillets.SoleEnabled(doc.Objects[top], null);
+            feature = chamfer ? C3dFillets.MakeChamfer(target, edges, d1, d2) : C3dFillets.MakeFillet(target, edges, d1);
             doc.Objects[top] = feature;
         }
         void Size(string field, long dbu, C3dExpr? expr)
@@ -447,7 +450,7 @@ public sealed partial class C3dEditorViewModel
             foreach (var (p, f) in C3dFillets.Chain(root).Where(c => c.Path.Length <= path.Length).Reverse())
                 if (!f.Placement.IsDefault) target.Placement = target.Placement.Then(f.Placement.ToTransform(), out _);
         }
-        else target = C3dBooleans.Copy(root);
+        else target = C3dFillets.SoleEnabled(root, null);   // round 5: what a new feature wraps — the solid, its features off
         target.Name = _filletTarget + FilletTargetSuffix;
         target.Hidden = false;
         doc.Objects.Add(target);
@@ -550,16 +553,24 @@ public sealed partial class C3dEditorViewModel
     // ── the feature rows' edits (R-em3d67-6b) ──────────────────────────────────────────────────
 
     /// <summary>Enabled on a feature at <paramref name="path"/> under top-level object <paramref name="top"/>: one undo entry,
-    /// re-evaluated through the client; a failure is not rolled back — the row carries the refusal.</summary>
+    /// re-evaluated through the client; a failure is not rolled back — the row carries the refusal. 3D editor round 5 —
+    /// enabling one switches every other feature of the solid off in the same entry: one at a time.</summary>
     public void SetFeatureEnabled(int top, string path, bool enabled)
     {
         if (top < 0 || top >= Document.Objects.Count || C3dFillets.At(Document.Objects[top], path) is not C3dOperation f) return;
         var root = Document.Objects[top];
-        var copy = (C3dOperation)C3dBooleans.Copy(f);
-        copy.Enabled = enabled;
+        C3dObject after;
+        if (enabled) after = C3dFillets.SoleEnabled(root, path);
+        else
+        {
+            var copy = (C3dOperation)C3dBooleans.Copy(f);
+            copy.Enabled = false;
+            after = C3dFillets.With(root, path, copy);
+        }
+        string before = C3dPersistence.SerializeObject(root), written = C3dPersistence.SerializeObject(after);
+        if (written == before) return;
         Push(new C3dEdit($"{(enabled ? "Enable" : "Disable")} the {(f is C3dChamfer ? "chamfer" : "fillet")} of {root.Name}",
-                         [new C3dEditSlot(false, top, C3dPersistence.SerializeObject(root), C3dPersistence.SerializeObject(C3dFillets.With(root, path, copy)))],
-                         ApplySlots));
+                         [new C3dEditSlot(false, top, before, written)], ApplySlots));
     }
 
     /// <summary>One undo entry changing the feature at <paramref name="path"/> under top-level object <paramref name="top"/>.</summary>

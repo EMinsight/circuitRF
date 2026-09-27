@@ -44,7 +44,10 @@ public partial class C3dEditorView : UserControl
             // 3D editor bugs round 4 — Copy (the picture, to the clipboard) on anything or nothing, as the read-only
             // viewer has had it; this menu had been filled with no picture commands at all.
             var copy = Viewer3DPictureCopy.Item(Pane, () => _vm?.Viewer, text => { if (_vm is not null) _vm.StatusMessage = text; });
-            Viewer3DContextMenu.Fill(_menu, _vm.Viewer.OpenContextMenu(), [copy]);
+            // 3D editor bugs round 5 — Export Picture…, the read-only viewer's, for both.
+            var export = new MenuItem { Header = "Export Picture…" };
+            export.Click += OnExportPicture;
+            Viewer3DContextMenu.Fill(_menu, _vm.Viewer.OpenContextMenu(), [copy, export]);
             _menu.Open(Pane);
         };
         Pane.FaultChanged += why =>
@@ -62,6 +65,8 @@ public partial class C3dEditorView : UserControl
             _vm.DrawMenuRequested -= OnDrawMenuRequested;
             _vm.FieldFocusRequested -= OnFieldFocusRequested;
             _vm.TextRequested -= OnTextRequested;
+            _vm.PropertyChanged -= OnVmPropertyChanged;
+            _vm.TreeRevealRequested -= OnTreeReveal;
         }
         var doc = DataContext as C3dEditorDocument;
         _vm = doc?.ViewModel;
@@ -69,6 +74,9 @@ public partial class C3dEditorView : UserControl
         _vm.DrawMenuRequested += OnDrawMenuRequested;
         _vm.FieldFocusRequested += OnFieldFocusRequested;
         _vm.TextRequested += OnTextRequested;
+        _vm.PropertyChanged += OnVmPropertyChanged;
+        MirrorTreeSelection();
+        _vm.TreeRevealRequested += OnTreeReveal;
         ApplyBackground();
         if (doc!.ConsumeActivationFocus()) Dispatcher.UIThread.Post(() => Pane.Focus(), DispatcherPriority.Loaded);
     }
@@ -111,14 +119,97 @@ public partial class C3dEditorView : UserControl
         _vm.Viewer.View.Background = ThemeService.CurrentVariant == ColorVariant.Dark ? (0.12f, 0.13f, 0.15f) : (0.93f, 0.94f, 0.96f);
     }
 
-    /// <summary>3D editor round 1 — a right-click on a tree node selects it, then opens its menu (the canvas's commands).</summary>
+    /// <summary>
+    /// 3D editor bugs round 5 — the read-only viewer's reveal, carried over: a node the scene selected is brought into view,
+    /// its group (and, for an instance's part, its instance) opened first. A container is realized only once its parent
+    /// is expanded and laid out, so the scroll waits for layout.
+    /// </summary>
+    private void OnTreeReveal(C3dTreeItem item)
+    {
+        if (_vm is null) return;
+        foreach (var g in _vm.Tree)
+        {
+            if (g.Items.Contains(item)) g.IsExpanded = true;
+            else if (g.Items.FirstOrDefault(i => i.Children.Contains(item)) is { } parent) { g.IsExpanded = true; parent.IsExpanded = true; }
+            else continue;
+            break;
+        }
+        Dispatcher.UIThread.Post(() => ObjectTree.TreeContainerFromItem(item)?.BringIntoView(), DispatcherPriority.Loaded);
+    }
+
+    /// <summary>
+    /// brief-em3d-29 R-em3d29-5 — Export picture…: the view drawn offscreen by the GPU at the chosen multiple of the pane's
+    /// DEVICE-pixel size, read back, and written as PNG where the user says (3D editor bugs round 5: the read-only viewer's).
+    /// </summary>
+    private async void OnExportPicture(object? sender, RoutedEventArgs e)
+    {
+        if (_vm is null || TopLevel.GetTopLevel(this) is not Window owner) return;
+        var viewer = _vm.Viewer;
+        var (w, h) = Viewer3DPictureCopy.PanePixels(Pane);
+        var png = viewer.ExportPng(w, h, out string? error);
+        if (png is null) { _vm.StatusMessage = "The picture could not be made: " + error; return; }
+        var file = await owner.StorageProvider.SaveFilePickerAsync(new Avalonia.Platform.Storage.FilePickerSaveOptions
+        {
+            Title = "Export Picture",
+            SuggestedFileName = System.IO.Path.GetFileNameWithoutExtension(_vm.FilePath) + "-3d.png",
+            DefaultExtension = "png",
+            ShowOverwritePrompt = true,
+            FileTypeChoices = [new Avalonia.Platform.Storage.FilePickerFileType("PNG image") { Patterns = ["*.png"] }],
+        });
+        if (file is null) return;
+        await using var stream = await file.OpenWriteAsync();
+        await stream.WriteAsync(png);
+        _vm.StatusMessage = $"Exported the view as {file.Name}.";
+    }
+
+    /// <summary>3D editor round 1 — a right-click on a tree node selects it, then opens its menu (the canvas's commands).
+    /// Round 5: on one of several selected rows it keeps them all, and the menu is the canvas's for that selection — the
+    /// one builder, so a boolean is offered exactly as it is there.</summary>
     private void OnTreeContextRequested(object? sender, ContextRequestedEventArgs e)
     {
         if (_vm is null || (e.Source as Control)?.FindAncestorOfType<TreeViewItem>(includeSelf: true)?.DataContext is not C3dTreeItem item) return;
-        _vm.SelectedTreeItem = item;
-        Viewer3DContextMenu.Fill(_treeMenu, _vm.TreeMenuItems(item), []);
+        if (_vm.SelectedTreeItems.Count > 1 && _vm.SelectedTreeItems.Contains(item))
+            Viewer3DContextMenu.Fill(_treeMenu, _vm.Viewer.ContextMenuItems(), []);
+        else
+        {
+            _vm.SelectedTreeItem = item;
+            Viewer3DContextMenu.Fill(_treeMenu, _vm.TreeMenuItems(item), []);
+        }
         if (_treeMenu.Items.Count > 0) _treeMenu.Open(ObjectTree);
         e.Handled = true;
+    }
+
+    // ── 3D editor round 5: the tree's multiple selection ─────────────────────────────────────
+
+    private bool _mirroringTree;
+
+    /// <summary>The user changed the tree's selection: the view model keeps the order and selects in the scene.</summary>
+    private void OnTreeSelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (_mirroringTree || _vm is null) return;
+        _vm.TreeSelectionChanged(e.RemovedItems.OfType<C3dTreeItem>(), e.AddedItems.OfType<C3dTreeItem>());
+        // The view model may have settled on something else (a row it cannot select alongside others): show that.
+        MirrorTreeSelection();
+    }
+
+    private void OnVmPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(C3dEditorViewModel.SelectedTreeItems)) MirrorTreeSelection();
+    }
+
+    /// <summary>The tree shows the view model's selection — every row of a canvas multi-selection highlighted.</summary>
+    private void MirrorTreeSelection()
+    {
+        if (_vm is null || ObjectTree.SelectedItems is not { } selected) return;
+        var want = _vm.SelectedTreeItems;
+        if (selected.Count == want.Count && want.All(selected.Contains)) return;
+        _mirroringTree = true;
+        try
+        {
+            selected.Clear();
+            foreach (var row in want) selected.Add(row);
+        }
+        finally { _mirroringTree = false; }
     }
 
     // ── 3D round 1: Esc ─────────────────────────────────────────────────────────────────────

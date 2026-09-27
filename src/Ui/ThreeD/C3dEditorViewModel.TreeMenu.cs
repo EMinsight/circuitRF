@@ -14,6 +14,7 @@ public sealed partial class C3dEditorViewModel
     /// <summary>The tree's menu for <paramref name="item"/>, which the caller has just made the selection.</summary>
     public IReadOnlyList<Viewer3DMenuItem> TreeMenuItems(C3dTreeItem item)
     {
+        if (IsViewOnly) return ViewTreeMenuItems(item);
         var items = new List<Viewer3DMenuItem> { new(item.Name, Enabled: false), Viewer3DMenuItem.Separator };
         var scene = SceneObjectsOfNode(item);
 

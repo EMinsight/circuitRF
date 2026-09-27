@@ -358,7 +358,9 @@ reason, and Edge mode still works.
   than 30 µm."* — and a corner the kernel cannot blend names the edges that meet there.
 - **OK** is one undo entry (*Fillet 4 edges of lid*). The fillet **wraps** the solid and **takes its name and its
   place**: every port, boundary and wire on the solid's faces still lands, the faces keep their names, and each new
-  face is `fillet(<edge>)` or `chamfer(<edge>)`. A second Fillet… on the same solid wraps it again.
+  face is `fillet(<edge>)` or `chamfer(<edge>)`. A second Fillet… or Chamfer… on the same solid is added beside the
+  first: a solid carries any number of them, **one enabled at a time** — the new one is enabled and the others are kept,
+  switched off, and switching one on switches the rest off, each in the same undo entry.
 
 **In the object tree** a rounded solid is **one node**, listed as the solid it rounds, with its fillets and
 chamfers as rows beneath it, innermost first (*Fillet 50 µm — 4 edges*). **In Properties** a row shows its

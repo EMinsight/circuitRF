@@ -54,7 +54,18 @@ public sealed class Viewer3DOverlay : Control
     private static readonly IBrush YBrush = new SolidColorBrush(Color.FromRgb(60, 170, 70));
     private static readonly IBrush ZBrush = new SolidColorBrush(Color.FromRgb(60, 110, 230));
 
-    public Viewer3DOverlay() => IsHitTestVisible = false;
+    /// <summary>
+    /// 3D editor bugs round 5 — CLIPPED to its own bounds, which are the pane's. Everything here is projected from the
+    /// camera, and a projection has no reason to land inside the pane: a selected wire or edge running off screen, or the
+    /// gizmo of an object panned half out of view, projects to points beyond the edge. An Avalonia control draws wherever
+    /// its geometry goes unless it clips, so those strokes were painted over the object tree and the toolbar. The pane
+    /// under it already clipped; the overlay never did.
+    /// </summary>
+    public Viewer3DOverlay()
+    {
+        IsHitTestVisible = false;
+        ClipToBounds = true;
+    }
 
     private Viewer3DViewModel? Vm => DataContext as Viewer3DViewModel;
 

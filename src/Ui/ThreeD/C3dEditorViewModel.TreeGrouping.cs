@@ -80,6 +80,49 @@ public sealed partial class C3dEditorViewModel
         RebuildTree();
     }
 
+    /// <summary>3D editor round 5 — the header's Show all: every row the tree lists is shown.</summary>
+    [RelayCommand]
+    private void ShowAllTreeObjects() => SetListedVisibility(true);
+
+    /// <summary>3D editor round 5 — the header's Hide all: every row the tree lists is hidden.</summary>
+    [RelayCommand]
+    private void HideAllTreeObjects() => SetListedVisibility(false);
+
+    /// <summary>
+    /// Every top-level row the tree lists, shown or hidden — as the <c>.ctech</c> Layers switch does, a row the filter hid
+    /// is left as it is. The document's objects and the air box are one undo entry; an instance's contents are the view's
+    /// to hide, for this session, as its own tick does. A boolean's operands and a feature follow their object.
+    /// </summary>
+    private void SetListedVisibility(bool visible)
+    {
+        var rows = Tree.SelectMany(g => g.Items).ToList();
+        if (IsViewOnly)
+        {
+            // A setup's view lists the scene's objects: each tick is the view's own visibility, never an edit.
+            foreach (var r in rows) { ViewTreeVisibilityChanged(r, visible); r.Sync(visible); }
+            return;
+        }
+        string description = visible ? "Show all" : "Hide all";
+        BeginGroup(description);
+        try
+        {
+            var indices = rows.Where(r => r.ObjectIndex >= 0 && r.ObjectIndex < Document.Objects.Count && r.OperandPath is null && !r.IsFeature)
+                              .Select(r => r.ObjectIndex).Distinct().ToList();
+            ChangeObjects(description, indices, o => o.Hidden = !visible);
+            if (rows.Any(r => r.IsAirBox)) AirBoxShown = visible;
+        }
+        finally { EndGroup(); }
+        foreach (var inst in rows.Where(r => r.InstanceIndex >= 0))
+        {
+            foreach (var c in inst.Children)
+            {
+                if (SceneObject(c.Name) is { } s) Viewer.SetVisibleEverywhere(s.Id, visible);
+                c.Sync(visible);
+            }
+            inst.Sync(visible);
+        }
+    }
+
     internal void TreeFilterChanged(C3dTreeFilterEntry entry)
     {
         var set = entry.IsMaterial ? _hiddenMaterials : _hiddenTypes;
@@ -203,11 +246,17 @@ public sealed partial class C3dEditorViewModel
     /// <summary>The filter's rows, from what the document holds now, each checked unless the user unchecked it.</summary>
     private void RebuildTreeFilters()
     {
-        var types = Groups.Select(g => g.Header).Where(h => Document.Objects.Any(o => TypeHeaderOf(o) == h)).ToList();
-        if (Document.Instances.Count > 0) types.Add(InstancesHeader);
-        var materials = Document.Objects.Where(o => o is not C3dPolyline).Select(MaterialHeaderOf)
-                                        .Distinct(StringComparer.Ordinal)
-                                        .OrderBy(m => m == NoMaterialHeader ? 0 : 1).ThenBy(m => m, StringComparer.OrdinalIgnoreCase).ToList();
+        List<string> types, materials;
+        // 3D editor bugs round 5 — a setup's view filters the scene it draws; it has no document objects.
+        if (IsViewOnly) (types, materials) = ViewFilterNames();
+        else
+        {
+            types = [.. Groups.Select(g => g.Header).Where(h => Document.Objects.Any(o => TypeHeaderOf(o) == h))];
+            if (Document.Instances.Count > 0) types.Add(InstancesHeader);
+            materials = [.. Document.Objects.Where(o => o is not C3dPolyline).Select(MaterialHeaderOf)
+                                            .Distinct(StringComparer.Ordinal)
+                                            .OrderBy(m => m == NoMaterialHeader ? 0 : 1).ThenBy(m => m, StringComparer.OrdinalIgnoreCase)];
+        }
         Refill(TypeFilters, types, _hiddenTypes, material: false);
         Refill(MaterialFilters, materials, _hiddenMaterials, material: true);
         OnPropertyChanged(nameof(IsTreeFilterActive));

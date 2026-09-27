@@ -9,6 +9,11 @@
 // fillet(<edge>) and chamfer(<edge>). A second Fillet… on the same solid wraps again: it never merges silently into the
 // first, whose edge list is edited in Properties.
 //
+// ONE FEATURE OF A CHAIN IS ENABLED AT A TIME (3D editor round 5). A solid may carry any number of fillets and chamfers as
+// alternatives: a new one is made enabled with every other switched off, and enabling one switches the others off, each in
+// the same undo entry (SoleEnabled). A file holding a chain with several enabled — written before the rule — still reads
+// and builds as it always did, each rounding the one inside it; the rule is the editor's, not the reader's.
+//
 // AN EDGE IS NAMED, NEVER NUMBERED BY INDEX (em-3d.md §6.4). An edge name resolves through an edit by the fold rule on both
 // sides (the worker's EdgeLookup, R-em3d67-2d); one that resolves to nothing is a refusal naming it and the face it lost,
 // and is never mapped to a nearby edge by guess.
@@ -124,6 +129,15 @@ public static class C3dFillets
             if (at is null) break;
         }
         return list;
+    }
+
+    /// <summary>3D editor round 5 — a copy of <paramref name="top"/> with the feature at <paramref name="path"/> the one enabled
+    /// and every other feature of its chain disabled; a null path disables them all (what a new feature wraps).</summary>
+    public static C3dObject SoleEnabled(C3dObject top, string? path)
+    {
+        var copy = C3dBooleans.Copy(top);
+        foreach (var (p, f) in Chain(copy)) f.Enabled = p == path;
+        return copy;
     }
 
     /// <summary>What <paramref name="o"/>'s features round: the object under every Fillet and Chamfer, and its path.</summary>

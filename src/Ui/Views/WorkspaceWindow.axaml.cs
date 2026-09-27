@@ -251,6 +251,7 @@ public partial class WorkspaceWindow : Window
             _vm.WindowMenuChanged       -= RebuildNativeWindowMenu;
             _vm.SaveScopeChanged        -= UpdateNativeSaveHeader;
             _vm.DockersCollapsedChanged -= UpdateNativeDockersHeader;
+            _vm.ThreeDMenuVisibilityChanged -= RepaintMenuBarForThreeDMenu;
         }
         if (_vm is not null) _vm.AutoGenSymbolPrompt = null;
         _vm = DataContext as WorkspaceViewModel;
@@ -266,6 +267,7 @@ public partial class WorkspaceWindow : Window
             _vm.WindowMenuChanged       += RebuildNativeWindowMenu;
             _vm.SaveScopeChanged        += UpdateNativeSaveHeader;
             _vm.DockersCollapsedChanged += UpdateNativeDockersHeader;
+            _vm.ThreeDMenuVisibilityChanged += RepaintMenuBarForThreeDMenu;
             RebuildNativeRecentMenu();
             RebuildNativeExamplesMenu();
         }
@@ -636,6 +638,24 @@ public partial class WorkspaceWindow : Window
     {
         if (_dockersNativeItem is not null || _vm is null) return;
         _dockersNativeItem = FindNativeItemByCommand(_vm.HideShowDockersCommand, "View");
+    }
+
+    /// <summary>
+    /// 3D editor bugs round 5 — the 3D menu has just been shown or hidden: have AppKit draw the bar now. The item's
+    /// hidden flag is already set (Avalonia forwards <c>NativeMenuItem.IsVisible</c> to <c>setHidden:</c> synchronously,
+    /// read from its exporter), but a change to a top-level item's CONTENTS is drawn at AppKit's leisure — the 3D title
+    /// reached the bar about half a second after the menus beside it. Only a different menu OBJECT repaints the bar,
+    /// which is what <see cref="MacOsAppMenu.RedrawMenuBar"/> swaps through, in one run-loop pass.
+    ///
+    /// <para>Only while circuitRF is the frontmost application: in the background the bar is another application's,
+    /// and on the way back macOS redraws it itself (<see cref="MenuBarRepairGate"/> records what a swap during a
+    /// reactivation costs). The flip comes from the active document changing, not from a reactivation alone.</para>
+    /// </summary>
+    private void RepaintMenuBarForThreeDMenu()
+    {
+        if (!MacOsAppMenu.ApplicationIsActive()) return;
+        Diagnostics.MenuBarProbe.Note("3D menu shown or hidden: repainting the menu bar");
+        MacOsAppMenu.RedrawMenuBar();
     }
 
     private void UpdateNativeDockersHeader()

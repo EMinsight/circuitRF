@@ -91,12 +91,19 @@ public sealed class GeometryKernelTree
 
     /// <summary>Writes one object as a node; returns the face names it listed.</summary>
     internal static IReadOnlyList<string> WriteNode(CanonicalJson w, C3dObject obj, int dbuPerMicron, C3dTransform worldUm,
-                                                    string? documentDir = null)
+                                                    string? documentDir = null, bool operand = false)
     {
         double U(long dbu) => Um(dbu, dbuPerMicron);
         var placement = obj.Placement.ToTransform();
         var t = placement with { Tx = U((long)placement.Tx), Ty = U((long)placement.Ty), Tz = U((long)placement.Tz) };
         t = Canonical(t.Then(worldUm));
+
+        // 3D editor round 5 — a DISABLED operation inside another operation is what it wraps, carried by its own placement,
+        // exactly as the elaborator draws a disabled one. Written as an operation node it was built as one under an enabled
+        // one wrapping it, so a solid's switched-off fillet still rounded the solid and a switched-off boolean still cut.
+        // A disabled Boolean's Tools are not in the tree at all: they are the elaborator's standalone solids (NestedTools).
+        if (operand && obj is C3dOperation { Enabled: false } && C3dOperands.Inner(obj) is { } inner)
+            return WriteNode(w, inner, dbuPerMicron, t, documentDir, operand: true);
 
         if (obj is C3dOperation or C3dStep)
         {
@@ -186,7 +193,7 @@ public sealed class GeometryKernelTree
          .Key("transform").BeginArr();
         foreach (double v in (double[])[t.M00, t.M01, t.M02, t.Tx, t.M10, t.M11, t.M12, t.Ty, t.M20, t.M21, t.M22, t.Tz]) w.Num(v);
         w.EndArr();
-        void Operand(C3dObject o) => WriteNode(w, o, dbuPerMicron, C3dTransform.Identity, documentDir);
+        void Operand(C3dObject o) => WriteNode(w, o, dbuPerMicron, C3dTransform.Identity, documentDir, operand: true);
         void Edges(List<string> edges)
         {
             w.Key("edges").BeginArr();

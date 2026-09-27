@@ -165,6 +165,7 @@ public sealed partial class C3dEditorViewModel
 
     private void RecordsChanged()
     {
+        ApplyAirBoxShown();
         DocumentChanged();
         RebuildSetupItems();
         ReloadSetupEditor();
@@ -471,16 +472,24 @@ public sealed partial class C3dEditorViewModel
 
     /// <summary>
     /// 3D editor round 3 — whether the air box is drawn (faces and edges): the toolbar switch and the tree tick. The user's
-    /// choice, kept by the editor and put back on every scene it adopts, so a rebuild never turns a hidden box back on.
-    /// On by default: the box is drawn once there is a shape to size it (absorbing faces are clear in the editor, so only
-    /// its outline and any wall show).
+    /// choice, put back on every scene the editor adopts, so a rebuild never turns a hidden box back on. On by default: the
+    /// box is drawn once there is a shape to size it (absorbing faces are clear in the editor, so only its outline and any
+    /// wall show). Round 5: it is the document's <see cref="C3dDocument.AirBoxHidden"/>, one undoable records edit — held
+    /// by the editor alone, it was lost on close and a reopened document showed the box again.
     /// </summary>
-    [ObservableProperty] private bool _airBoxShown = true;
-
-    partial void OnAirBoxShownChanged(bool value) => ApplyAirBoxShown();
+    public bool AirBoxShown
+    {
+        get => !Document.AirBoxHidden;
+        set
+        {
+            if (value == AirBoxShown) return;
+            ChangeRecords($"{(value ? "Show" : "Hide")} {AirBoxName}", d => d.AirBoxHidden = !value);
+        }
+    }
 
     private void ApplyAirBoxShown()
     {
+        OnPropertyChanged(nameof(AirBoxShown));
         if (Viewer.ShowBoundaryFaces != AirBoxShown) Viewer.ShowBoundaryFaces = AirBoxShown;
         if (AllTreeItems().FirstOrDefault(t => t.IsAirBox) is { } box) box.Sync(AirBoxShown);
     }

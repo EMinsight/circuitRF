@@ -655,6 +655,14 @@ public sealed class C3dDocument
     /// </summary>
     public string? AirBoxMaterial { get; set; }
 
+    /// <summary>
+    /// 3D editor round 5 — the air box is hidden in the editor (its faces and its edges). Document state exactly as an
+    /// object's <see cref="C3dObject.Hidden"/> is: saved with the file and undoable, so a reopened document shows what it
+    /// was saved showing. Drawing only — a run solves in the box whether or not it is drawn.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool AirBoxHidden { get; set; }
+
     /// <summary>Brief 42's embedded EM setups (the <c>.cem</c> schema minus <c>LayoutRef</c>), each read by the
     /// <c>.cem</c> reader (<see cref="C3dSetups.Read"/>).</summary>
     public List<JsonElement> Setups         { get; set; } = [];

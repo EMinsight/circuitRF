@@ -1172,6 +1172,13 @@ As `src/Render` is today: tessellation buffers, the scene model, colour maps, ca
 geometry live below the UI firewall (no Avalonia); only the GPU device and the composition surface
 live in `src/Ui`. That keeps a headless `render` of a 3D view possible later without a second renderer.
 
+**One 3D view (3D editor bugs round 5).** A setup's Show 3D view is the 3D editor's own view
+(`C3dEditorView`) over the editor's view model built in a VIEW-ONLY mode around the setup's
+`Viewer3DViewModel` — whose scene still comes from the setup's generator. Nothing can edit by construction:
+the pane has no edit host, the editor's document is an empty one that is never saved, and the dock document
+stays the non-undoable, never-dirty `Viewer3DDocument`. Its tree lists the scene's objects, and a tick is the
+view's visibility. There is one set of chrome, so what the editor gains, the viewer has.
+
 **What it shows, in order:** the generated geometry (Tier A preview), the mesh — Palace's tetrahedra
 or openEMS's grid lines, which is where an FDTD user sees whether the grid landed on the metal edges —
 then fields read from either solver's output (Palace's VTK XML, openEMS's VTK or HDF5 dumps) — |E|,
@@ -1337,7 +1344,8 @@ shared geometry are cross-checks, not references — all of them are circuitRF-d
 - **A 3D view's air box is filled with Air by default** (the technology's, else built in), and the user changes it —
   to Vacuum, say — through the box's material (`AirBoxMaterial` in the `.c3d`; both solvers' background reads
   `Em3dAirBox.Material`). The box is drawn once a solid or a sheet exists, with no setup too (a new setup's default);
-  never before.
+  never before. Whether it is shown is document state like an object's `Hidden` (`AirBoxHidden` in the `.c3d`, written
+  only when true; drawing only — a run solves in the box either way).
 
 **Open:**
 1. The run verb's shape — `em` with a 3D setup, or a sibling verb (§5.3; §4.6 leans towards `em`).

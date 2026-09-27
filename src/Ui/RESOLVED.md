@@ -36889,3 +36889,147 @@ plus small hooks in the partials they touch; every rule is `C3dBooleans` (`src/D
   refuse it as a field that disappeared.
 - **Menu tooltips may not word the kernel's absence themselves** (`GeometryKernelBoundaryTests`): 3D ▸ Modify ▸ Edge ▸
   Fillet… / Chamfer… bind `ThreeDFilletTip` / `ThreeDChamferTip`, which take the capability's sentence.
+
+## 3D editor bugs round 5 — overlay clipping and menu timing
+
+### Selected wires, selected edges and the gizmo were painted over the object tree and toolbar
+
+- **Root cause (confident): `Viewer3DOverlay` never clipped.** Everything it draws is projected from the camera, and a
+  projection has no reason to land inside the pane — a selected wire (the draw host's `Selected` segments) or edge
+  (Edge mode's polyline) running off screen, or the move gizmo of an object panned half out of view, lands beyond the
+  pane's edge. An Avalonia `Control` draws wherever its geometry goes unless `ClipToBounds` is set, and the overlay sits
+  in the same grid cell as the pane, so the strokes spilled into the tree column and the toolbar row. The PANE was
+  already `ClipToBounds = true` (and its GPU surface is pane-sized anyway); the overlay was the only unclipped layer.
+- Fixed once, in the overlay's constructor, so the read-only `Viewer3DView` (which hosts the same class) has it too.
+  It is the only `Render(DrawingContext)` override in the 3D views besides the pane.
+- Not changed: a point barely in front of the eye in perspective still projects to a very large coordinate, so a
+  segment to it can streak ACROSS the pane. That is inside the pane now and was not reported.
+
+### The macOS 3D menu reached the bar about half a second after the other menus
+
+- **Our side is synchronous, read rather than assumed.** Both enablement fan-outs raise `IsThreeDMenuVisible` in the
+  same call as the document change; Avalonia 12.0.3's native item proxy subscribes to `NativeMenuItem.IsVisible` and
+  calls `SetIsVisible` at once, and `AvnAppMenuItem::SetIsVisible` (disassembled) is a bare `setHidden:` on the
+  `NSMenuItem`. So the model is right immediately; what is late is AppKit drawing a CONTENT change on a top-level item.
+  That is the same class as the September About-dialog fault (the menu right, the bar not repainted), and
+  `setMainMenu:` with the menu it already holds does nothing, so only a menu-object swap forces the draw.
+- **Fix:** `WorkspaceViewModel.ThreeDMenuVisibilityChanged` fires only when the answer FLIPS (never on the fan-outs'
+  many re-raises), and `WorkspaceWindow` answers it with `MacOsAppMenu.RedrawMenuBar()`, synchronously, only while
+  `[NSApp isActive]`. The flip comes from a document change inside a frontmost application, which is not the
+  reactivation path whose swap once ate a menu-bar click (`MenuBarRepairGate`).
+- **Unverified on screen** — no display from the agent's shell, and no in-process probe sees paint. To check:
+  switch between a `.c3d` tab and a schematic tab and watch the 3D title; `CRF_MENU_DIAG=<log>` notes each repaint.
+  If the half-second remains, the swap is not what AppKit waits on, and the change can be reverted with no other
+  effect. Gate: `tests/Ui.Tests/ThreeD/EditorRound5ChromeTests.cs`.
+
+## 3D editor bugs round 5 — object tree
+
+Owner's fifth list, the object-tree items (2026-09-27). Gate `tests/Ui.Tests/ThreeD/EditorRound5TreeTests.cs`; pixels
+were not seen (verified by compiler and view-model tests).
+
+- **The air box's tick did not survive a close and reopen.** Round 3 made `AirBoxShown` the one state, but it was an
+  editor field defaulting to true, while every object's visibility was already DOCUMENT state (`C3dObject.Hidden`, saved
+  and undoable). It is now `C3dDocument.AirBoxHidden` (written only when true), and `AirBoxShown` reads and writes it
+  through `ChangeRecords` — the air box's material already lived in that records entry, so hiding it is one undo entry
+  of the same kind. `RecordsChanged` re-applies it, so an undo or a redo reaches the pane and the tick.
+- **Show all / Hide all** in the tree header (left of the filter, the `.ctech` Layers switch's Eye / EyeOff glyphs) act
+  on every top-level row the tree LISTS — a row the filter hid is left alone, as the Layers switch does with a filter.
+  The document's objects and the air box are ONE entry (`BeginGroup`/`EndGroup`: two different edit kinds, objects and
+  records); an instance's contents are hidden in the view only, as its own tick does. Operands and fillet rows follow
+  their object.
+- **The tree could select one row.** It is `SelectionMode="Multiple"` now (Shift range, Ctrl/Cmd toggle — Avalonia's
+  own), and its selection is MIRRORED in code, never bound: a two-way `SelectedItem` binding in multiple mode makes the
+  control clear the other rows whenever the view model pushes its primary row. The view model keeps the rows in the
+  ORDER they were selected (`SelectedTreeItems`, from the tree's added/removed deltas, not from `SelectedItems`' order),
+  because that order becomes the canvas's selection order and a boolean's Blank is the last-selected (D4).
+  `SelectedTreeItem` stays, as the first row, so every existing single-row path is unchanged.
+- **Right-click on one of several selected rows** keeps them and opens `Viewer.ContextMenuItems()` — the canvas's own
+  builder, whose host adds the Boolean submenu — rather than a second menu for the tree.
+- **A canvas multi-selection highlighted one row** (`OnViewerSelectionChanged` looked up the FIRST selected object's row
+  only). The lookup is `RowOf(Scene3DObject)` now, applied to every selected object; `RebuildTree` restores the whole
+  list, not just the primary row.
+
+## 3D editor bugs round 5 — fillets and chamfers (2026-09-27)
+
+Owner-reported: an Inspector interaction on a fillet or chamfer (Enabled, Flip, a size) left its OBJECT selected, so the
+fields vanished mid-edit; and a second fillet could not be added to a solid carrying a disabled one.
+
+- **The selection jump was the scene's remap, not the Inspector.** Every edit regenerates the scene; `RemapSelection`
+  re-selects the same object under its new id and raises `SelectionChanged`, and `OnViewerSelectionChanged` mapped the
+  viewer's object back to a tree row BY NAME — the object's row, since a feature row selects its object in the view but
+  is named `Fillet 20 µm — 1 edge`. `RebuildTree` had already kept the feature row (by `FeaturePath` + `TopName`); the
+  remap undid it one adoption later. Fix, general rather than per button: `TreeRowStillSelected` — a row whose scene
+  objects (`SceneObjectsOfRow`, now the one mapping `OnSelectedTreeItemChanged` also uses) are exactly the view's
+  selection stays the row. Only rows sharing their object's scene objects behave differently, which is feature rows.
+- **The "enable it first" refusal was hiding a kernel-tree bug.** `GeometryKernelTree.WriteNode` wrote a disabled
+  fillet/chamfer nested inside an enabled one as a fillet node, so the worker built it ROUNDED; the elaborator only
+  honours `Enabled` at the top level. The refusal kept users from making that shape. Nested disabled fillets/chamfers
+  are now written as what they wrap, carried by their placement (booleans untouched — a disabled boolean operand is
+  still built as a boolean; not reported, not changed here).
+- **Rule chosen (owner asked for several per solid, one enabled): a new feature is created ENABLED and the others on
+  the solid are kept, switched off**, in the Fillet… commit's one undo entry (`C3dFillets.SoleEnabled`); the panel's
+  pickable target is the solid with its features off, so the picked edges name what the new one rounds, and the status
+  line says the old one is kept. Adding it disabled was rejected — the user would see nothing happen on OK. Enabling
+  any feature (Inspector, tree menu) disables the others in the same entry. A file with several enabled in one chain
+  (possible before the rule) still reads and builds unchanged; the rule is the editor's, not the reader's.
+- Gate: `EdgesFilletsChamfersTests.Gate13_Round5_…` / `Gate14_Round5_…` (kernel facts) — both fail with the fix removed.
+  Pixels were not seen.
+
+## 3D editor bugs round 5 — boolean rendering (2026-09-27)
+
+- **A union drew its operands' seams because the RESULT had them.** OCCT's boolean keeps faces the operands shared a
+  plane on as separate pieces: two 40×40×10 boxes of one height united came back with 14 faces (the top in three —
+  `zmax#1`, `zmax#2`, `b:zmax` — and the bottom likewise), and the scene draws a feature edge wherever two faces meet,
+  so every seam was an outline segment when selected, a separately pickable face and an edge a fillet could name. The
+  fix is in the worker, not the renderer: `BuildBoolean` runs `ShapeUpgrade_UnifySameDomain` on every boolean's result
+  (all three ops) and names the merged faces through BOTH histories (`ThenMerged`), so a merged face keeps the first
+  claim — the Blank's. The union is now 10 faces and 24 edges. A merge that throws leaves the unmerged result.
+  Suppressing coplanar edges in the scene builder was the alternative and was not taken: it would have hidden the line
+  and left the pieces pickable in Face and Edge mode, and handed the solvers the same split faces.
+- **Consequence for names:** a face of a Tool that merged into the Blank's is gone (`b:zmax` above is now `zmax`), so
+  an edge name built on it (`b:zmax|b:xmax`) no longer resolves. Pieces that do not touch (`zmax#1…#3` of a slab cut
+  by two grooves) are not merged and keep their numbers.
+- **A changed ANSWER needs a new cache key, and the version could not give one.** Every cached reply is filed under
+  the handshake's identity, and the worker's version is the repo's `VERSION`, shared by every development build — so
+  the disk cache would have served the old, seamed union to the new worker. The handshake now reports `results`
+  (`kResults`, raised whenever the same tree gets a different reply), carried in `GeometryKernelIdentity.Key` only when
+  above 1, so a worker that reports none keeps the keys it always had. Appending it to the version string was tried
+  first and rejected: that string is what the About box shows.
+- **The subtract "showing its Tool after a click away" was the entered-boolean mode, not the renderer.** A click on an
+  operand's TREE row enters its boolean (R-em3d66-5a), which draws the operands as objects and the result as a ghost;
+  only Esc or Ctrl/Cmd+[ left, and a click away merely cleared the selection. Now a plain click on anything that is
+  not an operand (nothing, the ghosted result, another object) leaves every level — another object is selected once
+  the result's scene is up — and so does selecting any tree row that is not an operand.
+- Gates: `BooleansInTheEditorTests.Round5_*` (kernel tests; they skip with a reason where the worker is not built).
+  Pixels were not seen — the GUI cannot be launched from this session.
+
+## 3D editor bugs round 5 — one 3D view (2026-09-27)
+
+The owner asked that a setup's **Show 3D View** stop drifting from the 3D editor: it should BE the editor's view,
+without the editing, so an editor improvement reaches it with no second change.
+
+- **The view model was never the drift.** The editor already wraps a `Viewer3DViewModel` as its pane (brief 43);
+  the drift was two sets of CHROME — `Viewer3DView.axaml` (toolbar, `Viewer3DTreeItem` tree, fields bar, status)
+  beside `C3dEditorView.axaml`. So the seam is the editor view model built a second way:
+  `C3dEditorViewModel(Viewer3DViewModel)` (`C3dEditorViewModel.ViewOnly.cs`) takes the setup's viewer as its pane and
+  supplies the editor's tree and chrome. `Viewer3DDocument.Editor` holds it; `Viewer3DView.axaml` is now one line
+  hosting `C3dEditorView` on it.
+- **Read-only by construction, not by guards.** The pane's `EditHost` stays null (no tool arms, no gizmo, no Delete, no
+  drop places anything — the viewer's rule since brief 43); the editor's `Document` is an empty `C3dDocument` that is
+  never saved, so every document path finds nothing; and the DOCK document is still `Viewer3DDocument` (not
+  `IUndoableDocument`, no Save route), so the shell's Undo/Save/Simulate/3D ▸ Draw never resolve to it. The editing
+  chrome is hidden by `IsEditable` bindings. Only three editor paths needed a view-only branch: the tree's rows
+  (`ViewObjectGroups` — the SCENE's objects, grouped by material or by the viewer's kind groups, filtered like the
+  editor's), a row's tick (a view-held visibility through `SetVisibleEverywhere`), and the row menu
+  (Hide/Isolate/Show All).
+- **Ticks follow the view through one new event**, `Viewer3DViewModel.VisibilityChanged(id, visible)`, raised in
+  `SetVisible` and `SetKindVisible` — every view-held visibility change goes through one of the two. A per-row name
+  lookup (`SceneObject(name)`, a linear scan) would have made Isolate O(n²) on a large layout; the rows are keyed by id.
+- **Viewer-only features carried INTO the editor rather than dropped:** Export Picture (toolbar flyout and canvas
+  menu), the field bar's percentile and phase animation (play, phase, seconds per cycle), the Mesh/Field/Picture
+  status lines, and the reveal — a scene click expands the row's group and scrolls it into view
+  (`C3dEditorViewModel.TreeRevealRequested`). Shown in the setup's view only: the Dielectrics/Air/Air-box-faces
+  switches and the Mesh/FDTD-grid toggles on the toolbar, and the status pane (the editor's stays behind
+  `CRF_3D_STATUS_PANE=1`; a setup's refusals and notes are the point of its view).
+- Gate: `tests/Ui.Tests/ThreeD/EditorRound5ViewOnlyTests.cs`. `EditorRound4MenuTests`' Copy check now scans the one
+  view. Pixels were not seen (the GUI cannot be launched from this session).

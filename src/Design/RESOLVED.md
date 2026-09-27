@@ -14268,3 +14268,33 @@ verb), `PlanReload`/`ApplyReload` (Reload from Source). Gates: `tests/Ui.Tests/T
 - **The save removes only what this session wrote.** `C3dEditorViewModel.RemoveUnnamedStepCopies` deletes a copy an
   import or reload wrote in this session that no open frame's Step objects name; a file it did not write is never
   touched.
+
+## 3D editor bugs round 5 — fillets and chamfers (2026-09-27)
+
+`GeometryKernelTree.WriteNode` ignored `Enabled` below the root: a disabled fillet or chamfer wrapped by an enabled one
+was sent to the worker as a fillet node and built rounded, while the elaborator (which honours `Enabled` only for the
+top-level object) and the tree row both said it was off. Nested disabled fillets/chamfers now write their target,
+carried by their own placement — the tree hash changes only for a document holding such a chain. The root is left
+alone so an Edit preview of a disabled outermost feature still shows the edit. New `C3dFillets.SoleEnabled` states the
+editor's one-enabled-per-solid rule; the reader enforces nothing, so older files with several enabled still build.
+Detail in `src/Ui/RESOLVED.md`, same heading.
+
+## 3D editor bugs round 5 — a disabled Boolean inside another operation (2026-09-27)
+
+The disabled-fillet defect above had a twin: a DISABLED Boolean nested as an operand of an ENABLED operation was still
+written into the kernel tree as a Boolean, so it still cut (or united) under the operation wrapping it. Nothing in the
+tree carries `Enabled`, so toggling it did not even change the cache key — the switch did nothing at all. R-em3d64-4's
+rule ("as if the operation were not there") now holds at every depth, the way it always held at the top:
+- `GeometryKernelTree.WriteNode` writes any disabled operation operand as its `Inner` (a Boolean's Blank), carried by
+  its own placement — one condition, `C3dOperation { Enabled: false }`, replacing the fillet/chamfer-only one.
+- A disabled Boolean's Tools are NOT in the tree; `C3dElaborator.NestedTools` elaborates each as its own object after
+  the result, carried by every placement on the way down, exactly as a disabled top-level Boolean's Tools are. It
+  walks through enabled operations and down a disabled one's Blank, so a disabled Boolean nested deeper is found too.
+- It runs from `KeptTools`, which already ran on every exit of `KernelObject` (success, build failure, no kernel), so
+  the Tools stand whether or not the outer operation built. A kept Tool (`KeepTools`) is skipped by the walk: its own
+  `Object` call elaborates what is inside it, and walking it too made its nested Tools twice.
+- The outer result's faces lose the disabled Boolean's `tool:face` names, so a reference to one (an outer fillet's
+  edge, a face boundary) resolves to nothing while it is off — the same trade the disabled fillet makes, reported by
+  the existing refusal rather than hidden. Not changed: an ENABLED nested Subtract with `KeepTools` still keeps
+  nothing (only a top-level one does), as before.
+Gate: `OperationsInTheDocumentTests.Gate10_Round5_…` (fails with the tree condition put back to fillet/chamfer only).

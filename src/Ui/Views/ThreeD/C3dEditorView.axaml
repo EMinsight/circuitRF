@@ -99,88 +99,91 @@
                 <!-- brief-em3d-45 R-em3d45-3 — the tools (Shift+A opens them at the cursor, one letter each). Arming one keeps
                      the selection mode; Esc disarms. Icon kinds verified in Material.Icons 3.0.2: there is no Cylinder
                      kind, so the cylinder is Database (a stack of discs). -->
-                <ToggleButton IsChecked="{Binding ViewModel.IsBoxArmed}" ToolTip.Tip="Box: corner, opposite corner, height  (Shift+A, B)">
+                <ToggleButton IsVisible="{Binding ViewModel.IsEditable}" IsChecked="{Binding ViewModel.IsBoxArmed}" ToolTip.Tip="Box: corner, opposite corner, height  (Shift+A, B)">
                     <mi:MaterialIcon Kind="CubeUnfolded" Width="16" Height="16"/>
                 </ToggleButton>
-                <ToggleButton IsChecked="{Binding ViewModel.IsSheetArmed}" ToolTip.Tip="Sheet: a rectangle, two clicks  (Shift+A, S)">
+                <ToggleButton IsVisible="{Binding ViewModel.IsEditable}" IsChecked="{Binding ViewModel.IsSheetArmed}" ToolTip.Tip="Sheet: a rectangle, two clicks  (Shift+A, S)">
                     <mi:MaterialIcon Kind="VectorRectangle" Width="16" Height="16"/>
                 </ToggleButton>
-                <ToggleButton IsChecked="{Binding ViewModel.IsPolygonArmed}" ToolTip.Tip="Polygon: a closed sheet, a click per vertex  (Shift+A, G)">
+                <ToggleButton IsVisible="{Binding ViewModel.IsEditable}" IsChecked="{Binding ViewModel.IsPolygonArmed}" ToolTip.Tip="Polygon: a closed sheet, a click per vertex  (Shift+A, G)">
                     <mi:MaterialIcon Kind="VectorPolygon" Width="16" Height="16"/>
                 </ToggleButton>
-                <ToggleButton IsChecked="{Binding ViewModel.IsPolylineArmed}" ToolTip.Tip="Polyline: construction geometry, a click per vertex  (Shift+A, L)">
+                <ToggleButton IsVisible="{Binding ViewModel.IsEditable}" IsChecked="{Binding ViewModel.IsPolylineArmed}" ToolTip.Tip="Polyline: construction geometry, a click per vertex  (Shift+A, L)">
                     <mi:MaterialIcon Kind="VectorPolyline" Width="16" Height="16"/>
                 </ToggleButton>
-                <ToggleButton IsChecked="{Binding ViewModel.IsCylinderArmed}" ToolTip.Tip="Cylinder: centre, radius, height  (Shift+A, Y)">
+                <ToggleButton IsVisible="{Binding ViewModel.IsEditable}" IsChecked="{Binding ViewModel.IsCylinderArmed}" ToolTip.Tip="Cylinder: centre, radius, height  (Shift+A, Y)">
                     <mi:MaterialIcon Kind="Database" Width="16" Height="16"/>
                 </ToggleButton>
                 <!-- brief-em3d-49 R-em3d49-2d — a port, drawn like a sheet; its polarity is inferred from what it touches. -->
-                <ToggleButton IsChecked="{Binding ViewModel.IsPortArmed}" ToolTip.Tip="Port: two corners on the drawing plane, between two conductors. The arrow runs from − to +; right-click it to flip  (Shift+A, P)">
+                <ToggleButton IsVisible="{Binding ViewModel.IsEditable}" IsChecked="{Binding ViewModel.IsPortArmed}" ToolTip.Tip="Port: two corners on the drawing plane, between two conductors. The arrow runs from − to +; right-click it to flip  (Shift+A, P)">
                     <mi:MaterialIcon Kind="ArrowUpBoldBoxOutline" Width="16" Height="16"/>
                 </ToggleButton>
                 <!-- brief-em3d-50 R-em3d50-3 — a bond wire, pad to pad, then its loop height (assembly: lower foot to apex top). -->
-                <ToggleButton IsChecked="{Binding ViewModel.IsWireArmed}" ToolTip.Tip="Wire: click any face of a metal object or a sheet, then another (inside a placed cell too) — each end attaches to that object's top — then set the loop height — measured from the lower foot to the top of the wire — with the mouse or by typing it  (Shift+A, W)">
+                <ToggleButton IsVisible="{Binding ViewModel.IsEditable}" IsChecked="{Binding ViewModel.IsWireArmed}" ToolTip.Tip="Wire: click any face of a metal object or a sheet, then another (inside a placed cell too) — each end attaches to that object's top — then set the loop height — measured from the lower foot to the top of the wire — with the mouse or by typing it  (Shift+A, W)">
                     <mi:MaterialIcon Kind="VectorCurve" Width="16" Height="16"/>
                 </ToggleButton>
-                <ComboBox MinWidth="90" VerticalAlignment="Center" ItemsSource="{Binding ViewModel.MaterialChoices}" SelectedItem="{Binding ViewModel.CurrentMaterial}"
-                          IsVisible="{Binding !ViewModel.IsWireArmed}"
-                          ToolTip.Tip="The material every new object gets, from the technology's materials"/>
-                <!-- brief-em3d-50 R-em3d50-3b — the next wire's values, changeable before the first click. -->
-                <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center" IsVisible="{Binding ViewModel.IsWireArmed}">
-                    <TextBox Width="64" VerticalAlignment="Center" Text="{Binding ViewModel.WireDiameterText}"
-                             Classes.error="{Binding ViewModel.WireDiameterError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
-                             ToolTip.Tip="The wire's diameter, in the display unit (25.4um, 1mil …)"/>
-                    <ComboBox MinWidth="80" ItemsSource="{Binding ViewModel.WireMetals}" SelectedItem="{Binding ViewModel.WireMaterial}"
-                              ToolTip.Tip="The wire's metal, from the technology's materials with a conductivity"/>
-                    <ComboBox ItemsSource="{x:Static t3:C3dEditorViewModel.BondStyles}" SelectedItem="{Binding ViewModel.WireStartStyle}"
-                              ToolTip.Tip="How the start is bonded: a wedge's foot, or a ball"/>
-                    <ComboBox ItemsSource="{x:Static t3:C3dEditorViewModel.BondStyles}" SelectedItem="{Binding ViewModel.WireEndStyle}"
-                              ToolTip.Tip="How the end is bonded: a wedge's foot, or a ball"/>
-                    <ComboBox ItemsSource="{x:Static t3:C3dEditorViewModel.WireSections}" SelectedItem="{Binding ViewModel.WireSection}"
-                              ToolTip.Tip="The swept section: a flat-bottomed hexagon (a foot lands face to face), or round"/>
-                </StackPanel>
+                <!-- 3D editor bugs round 5 — both are editing chrome; one of the two shows at a time. -->
+                <Panel VerticalAlignment="Center" IsVisible="{Binding ViewModel.IsEditable}">
+                    <ComboBox MinWidth="90" VerticalAlignment="Center" ItemsSource="{Binding ViewModel.MaterialChoices}" SelectedItem="{Binding ViewModel.CurrentMaterial}"
+                              IsVisible="{Binding !ViewModel.IsWireArmed}"
+                              ToolTip.Tip="The material every new object gets, from the technology's materials"/>
+                    <!-- brief-em3d-50 R-em3d50-3b — the next wire's values, changeable before the first click. -->
+                    <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center" IsVisible="{Binding ViewModel.IsWireArmed}">
+                        <TextBox Width="64" VerticalAlignment="Center" Text="{Binding ViewModel.WireDiameterText}"
+                                 Classes.error="{Binding ViewModel.WireDiameterError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                 ToolTip.Tip="The wire's diameter, in the display unit (25.4um, 1mil …)"/>
+                        <ComboBox MinWidth="80" ItemsSource="{Binding ViewModel.WireMetals}" SelectedItem="{Binding ViewModel.WireMaterial}"
+                                  ToolTip.Tip="The wire's metal, from the technology's materials with a conductivity"/>
+                        <ComboBox ItemsSource="{x:Static t3:C3dEditorViewModel.BondStyles}" SelectedItem="{Binding ViewModel.WireStartStyle}"
+                                  ToolTip.Tip="How the start is bonded: a wedge's foot, or a ball"/>
+                        <ComboBox ItemsSource="{x:Static t3:C3dEditorViewModel.BondStyles}" SelectedItem="{Binding ViewModel.WireEndStyle}"
+                                  ToolTip.Tip="How the end is bonded: a wedge's foot, or a ball"/>
+                        <ComboBox ItemsSource="{x:Static t3:C3dEditorViewModel.WireSections}" SelectedItem="{Binding ViewModel.WireSection}"
+                                  ToolTip.Tip="The swept section: a flat-bottomed hexagon (a foot lands face to face), or round"/>
+                    </StackPanel>
+                </Panel>
 
-                <Border Width="1" Margin="2,3" Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+                <Border IsVisible="{Binding ViewModel.IsEditable}" Width="1" Margin="2,3" Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
 
                 <!-- brief-em3d-45 R-em3d45-1a — the drawing plane and its offset along the normal, in the display unit (a
                      suffix is honoured). Editor state, saved in the workspace's window state. One small combo rather than three
                      buttons (3D editor round 1: fewer toolbar buttons). -->
-                <ComboBox MinWidth="58" VerticalAlignment="Center" FontSize="11"
+                <ComboBox IsVisible="{Binding ViewModel.IsEditable}" MinWidth="58" VerticalAlignment="Center" FontSize="11"
                           ItemsSource="{x:Static t3:C3dEditorViewModel.PlaneChoices}" SelectedItem="{Binding ViewModel.PlaneKind}"
                           ToolTip.Tip="The drawing plane: XY (normal z), YZ (normal x) or XZ (normal y). Ctrl/Cmd-click a face with a tool armed to draw on it."/>
-                <TextBox x:Name="PlaneOffsetBox" Width="72" VerticalAlignment="Center" Text="{Binding ViewModel.PlaneOffsetText}"
+                <TextBox IsVisible="{Binding ViewModel.IsEditable}" x:Name="PlaneOffsetBox" Width="72" VerticalAlignment="Center" Text="{Binding ViewModel.PlaneOffsetText}"
                          Classes.error="{Binding ViewModel.PlaneOffsetError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
                          KeyDown="OnPlaneOffsetKey" LostFocus="OnPlaneOffsetLostFocus"
                          ToolTip.Tip="The plane's offset along its normal, in the display unit (25um, 10mil …). Ctrl/Cmd+Shift-click a snapped point to move it there."/>
-                <ToggleButton IsChecked="{Binding ViewModel.ShowDrawingGrid}" ToolTip.Tip="The drawing grid on the plane">
+                <ToggleButton IsVisible="{Binding ViewModel.IsEditable}" IsChecked="{Binding ViewModel.ShowDrawingGrid}" ToolTip.Tip="The drawing grid on the plane">
                     <mi:MaterialIcon Kind="GridLarge" Width="16" Height="16"/>
                 </ToggleButton>
 
-                <Border Width="1" Margin="2,3" Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+                <Border IsVisible="{Binding ViewModel.IsEditable}" Width="1" Margin="2,3" Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
 
                 <!-- brief-em3d-44 R-em3d44-5 — snapping: the master switch, then one per kind (each glyph is the
                      marker's), saved per user. Hold Alt / Option to suspend geometry snap; the grid remains. -->
-                <ToggleButton IsChecked="{Binding ViewModel.Viewer.SnapEnabled}"
+                <ToggleButton IsVisible="{Binding ViewModel.IsEditable}" IsChecked="{Binding ViewModel.Viewer.SnapEnabled}"
                               ToolTip.Tip="Snap to vertices, midpoints, edges, face centres and the grid. S or F3 turns geometry snap off and on (the grid still applies), F9 the grid — the layout editor's keys. Hold Alt / Option to suspend geometry snap.">
                     <mi:MaterialIcon Kind="Magnet" Width="16" Height="16"/>
                 </ToggleButton>
-                <ToggleButton IsChecked="{Binding ViewModel.Viewer.SnapVertex}" IsEnabled="{Binding ViewModel.Viewer.SnapEnabled}" ToolTip.Tip="Snap to vertices">
+                <ToggleButton IsVisible="{Binding ViewModel.IsEditable}" IsChecked="{Binding ViewModel.Viewer.SnapVertex}" IsEnabled="{Binding ViewModel.Viewer.SnapEnabled}" ToolTip.Tip="Snap to vertices">
                     <mi:MaterialIcon Kind="SquareOutline" Width="16" Height="16"/>
                 </ToggleButton>
-                <ToggleButton IsChecked="{Binding ViewModel.Viewer.SnapMidpoint}" IsEnabled="{Binding ViewModel.Viewer.SnapEnabled}" ToolTip.Tip="Snap to edge midpoints">
+                <ToggleButton IsVisible="{Binding ViewModel.IsEditable}" IsChecked="{Binding ViewModel.Viewer.SnapMidpoint}" IsEnabled="{Binding ViewModel.Viewer.SnapEnabled}" ToolTip.Tip="Snap to edge midpoints">
                     <mi:MaterialIcon Kind="TriangleOutline" Width="16" Height="16"/>
                 </ToggleButton>
-                <ToggleButton IsChecked="{Binding ViewModel.Viewer.SnapEdge}" IsEnabled="{Binding ViewModel.Viewer.SnapEnabled}" ToolTip.Tip="Snap to the nearest point on an edge">
+                <ToggleButton IsVisible="{Binding ViewModel.IsEditable}" IsChecked="{Binding ViewModel.Viewer.SnapEdge}" IsEnabled="{Binding ViewModel.Viewer.SnapEnabled}" ToolTip.Tip="Snap to the nearest point on an edge">
                     <mi:MaterialIcon Kind="Close" Width="16" Height="16"/>
                 </ToggleButton>
-                <ToggleButton IsChecked="{Binding ViewModel.Viewer.SnapFaceCentre}" IsEnabled="{Binding ViewModel.Viewer.SnapEnabled}" ToolTip.Tip="Snap to face centres">
+                <ToggleButton IsVisible="{Binding ViewModel.IsEditable}" IsChecked="{Binding ViewModel.Viewer.SnapFaceCentre}" IsEnabled="{Binding ViewModel.Viewer.SnapEnabled}" ToolTip.Tip="Snap to face centres">
                     <mi:MaterialIcon Kind="CircleOutline" Width="16" Height="16"/>
                 </ToggleButton>
-                <ToggleButton IsChecked="{Binding ViewModel.Viewer.SnapGridOn}" IsEnabled="{Binding ViewModel.Viewer.SnapEnabled}" ToolTip.Tip="Snap to the drawing grid when no geometry is in range  (F9)">
+                <ToggleButton IsVisible="{Binding ViewModel.IsEditable}" IsChecked="{Binding ViewModel.Viewer.SnapGridOn}" IsEnabled="{Binding ViewModel.Viewer.SnapEnabled}" ToolTip.Tip="Snap to the drawing grid when no geometry is in range  (F9)">
                     <mi:MaterialIcon Kind="Grid" Width="16" Height="16"/>
                 </ToggleButton>
 
-                <Border Width="1" Margin="2,3" Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+                <Border IsVisible="{Binding ViewModel.IsEditable}" Width="1" Margin="2,3" Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
 
                 <!-- brief-em3d-46 R-em3d46-6 — Measure: two snapped points, their deltas and distance; nothing is written. -->
                 <ToggleButton IsChecked="{Binding ViewModel.Viewer.IsMeasureArmed}" ToolTip.Tip="Measure: two snapped points — x, y, z, the deltas and the distance, every number copyable  (M)">
@@ -192,38 +195,38 @@
                 </ToggleButton>
                 <!-- 3D editor round 1 — the selection's fields are in the application's Properties Inspector: this brings it
                      forward, opening it when it was closed. -->
-                <Button Command="{Binding ViewModel.ShowPropertiesPanelCommand}" ToolTip.Tip="Properties: bring the Properties Inspector forward (it opens if it was closed)">
+                <Button IsVisible="{Binding ViewModel.IsEditable}" Command="{Binding ViewModel.ShowPropertiesPanelCommand}" ToolTip.Tip="Properties: bring the Properties Inspector forward (it opens if it was closed)">
                     <mi:MaterialIcon Kind="CardTextOutline" Width="16" Height="16"/>
                 </Button>
 
-                <Border Width="1" Margin="2,3" Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+                <Border IsVisible="{Binding ViewModel.IsEditable}" Width="1" Margin="2,3" Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
 
                 <!-- brief-em3d-49 — the active setup's air box, the setups (Simulate ▸ Setup Analyses…), and Simulate. -->
-                <ToggleButton IsChecked="{Binding ViewModel.AirBoxShown}"
+                <ToggleButton IsVisible="{Binding ViewModel.IsEditable}" IsChecked="{Binding ViewModel.AirBoxShown}"
                               ToolTip.Tip="Air box: the active setup's, each face tinted by its boundary (PEC grey, PMC orange, symmetry hatched, absorbing clear). In Face mode its faces are picked last; right-click one to set its boundary or padding.">
                     <mi:MaterialIcon Kind="BorderOutside" Width="16" Height="16"/>
                 </ToggleButton>
-                <Button Command="{Binding ViewModel.OpenSetupAnalysesCommand}" ToolTip.Tip="Setups: the EM setups this 3D view carries, and which one is active (Simulate ▸ Setup Analyses…)">
+                <Button IsVisible="{Binding ViewModel.IsEditable}" Command="{Binding ViewModel.OpenSetupAnalysesCommand}" ToolTip.Tip="Setups: the EM setups this 3D view carries, and which one is active (Simulate ▸ Setup Analyses…)">
                     <mi:MaterialIcon Kind="TuneVariant" Width="16" Height="16"/>
                 </Button>
                 <!-- brief-em3d-51 R-em3d51-4a — the Variables panel. -->
-                <ToggleButton IsChecked="{Binding ViewModel.ShowVariables}" ToolTip.Tip="Variables: this 3D view's VARs and its cell's parameters — the names its dimensions may use">
+                <ToggleButton IsVisible="{Binding ViewModel.IsEditable}" IsChecked="{Binding ViewModel.ShowVariables}" ToolTip.Tip="Variables: this 3D view's VARs and its cell's parameters — the names its dimensions may use">
                     <mi:MaterialIcon Kind="Variable" Width="16" Height="16"/>
                 </ToggleButton>
                 <!-- 3D editor bugs round 2 — the workspace toolbar's Run button, glyph and look alike: here it runs the active
                      setup, as Simulate ▸ Run (Ctrl/Cmd+R) does with a 3D view in front. The workspace's Stop does not reach an EM
                      run (it stops a schematic run); an EM run is cancelled from its progress row in the Messages panel, so
                      there is no Stop beside this one. -->
-                <Button Command="{Binding ViewModel.SimulateActiveCommand}" ToolTip.Tip="Run Analysis: the active setup (Ctrl+R)"
+                <Button IsVisible="{Binding ViewModel.IsEditable}" Command="{Binding ViewModel.SimulateActiveCommand}" ToolTip.Tip="Run Analysis: the active setup (Ctrl+R)"
                         Background="Transparent" BorderThickness="0" Padding="4,2">
                     <mi:MaterialIcon Kind="PlayCircleOutline" Width="18" Height="18"/>
                 </Button>
 
-                <Border Width="1" Margin="2,3" Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+                <Border IsVisible="{Binding ViewModel.IsEditable}" Width="1" Margin="2,3" Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
 
                 <!-- Owner decision D4: the layout editor's Unit control. A document preference, not geometry:
                      it dirties the document and is saved, adds no undo entry, and moves nothing. -->
-                <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                <StackPanel IsVisible="{Binding ViewModel.IsEditable}" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
                     <TextBlock Text="Unit:" VerticalAlignment="Center"/>
                     <ComboBox MinWidth="64" ItemsSource="{x:Static t3:C3dEditorViewModel.AllUnits}"
                               SelectedItem="{Binding ViewModel.DisplayUnit, Mode=TwoWay}"
@@ -237,7 +240,7 @@
                 </StackPanel>
                 <!-- 3D editor bugs round 2 — the layout editor's Snap control (its ladder is SnapLadder, shared): the snap
                      step on the drawing plane, a document preference like the unit. -->
-                <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                <StackPanel IsVisible="{Binding ViewModel.IsEditable}" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
                     <TextBlock Text="Snap:" VerticalAlignment="Center"/>
                     <ComboBox MinWidth="90" ItemsSource="{Binding ViewModel.SnapLadderOptions}" IsEditable="True"
                               Text="{Binding ViewModel.SnapDistanceText, Mode=TwoWay}"
@@ -245,6 +248,30 @@
                               SelectionChanged="OnSnapDistanceSelectionChanged"
                               ToolTip.Tip="Snap distance: the step a point snaps to on the drawing plane when no geometry is in range. Pick a rung or type a length (2.5mil, 10um). F9 turns grid snap off and on."/>
                 </StackPanel>
+
+                <!-- 3D editor bugs round 5 — a setup's 3D view (IsViewOnly): the switches the read-only viewer had and the editor
+                     does not need — the kinds its scene is built of, and the solver's mesh and FDTD grid. -->
+                <Border Width="1" Margin="2,3" Background="{DynamicResource SystemControlForegroundBaseLowBrush}" IsVisible="{Binding ViewModel.IsViewOnly}"/>
+                <ToggleButton IsChecked="{Binding ViewModel.Viewer.ShowDielectrics}" IsVisible="{Binding ViewModel.IsViewOnly}" ToolTip.Tip="Dielectrics">
+                    <mi:MaterialIcon Kind="LayersOutline" Width="16" Height="16"/>
+                </ToggleButton>
+                <ToggleButton IsChecked="{Binding ViewModel.Viewer.ShowAir}" IsVisible="{Binding ViewModel.IsViewOnly}" ToolTip.Tip="Air">
+                    <mi:MaterialIcon Kind="CubeScan" Width="16" Height="16"/>
+                </ToggleButton>
+                <ToggleButton IsChecked="{Binding ViewModel.Viewer.ShowBoundaryFaces}" IsVisible="{Binding ViewModel.IsViewOnly}"
+                              ToolTip.Tip="Air-box faces, coloured by boundary kind (grey PEC, blue absorbing, orange PMC, violet symmetry)">
+                    <mi:MaterialIcon Kind="TextureBox" Width="16" Height="16"/>
+                </ToggleButton>
+                <Border Width="1" Margin="2,3" Background="{DynamicResource SystemControlForegroundBaseLowBrush}" IsVisible="{Binding ViewModel.IsViewOnly}"/>
+                <!-- Disabled until the mesher has run, with the tooltip saying so (R-em3d28-3b). -->
+                <ToggleButton IsChecked="{Binding ViewModel.Viewer.ShowMesh}" IsEnabled="{Binding ViewModel.Viewer.MeshAvailable}" IsVisible="{Binding ViewModel.IsViewOnly}"
+                              ToolTip.Tip="{Binding ViewModel.Viewer.MeshTip}" ToolTip.ShowOnDisabled="True">
+                    <mi:MaterialIcon Kind="VectorTriangle" Width="16" Height="16"/>
+                </ToggleButton>
+                <ToggleButton IsChecked="{Binding ViewModel.Viewer.ShowGrid}" IsEnabled="{Binding ViewModel.Viewer.GridAvailable}" IsVisible="{Binding ViewModel.IsViewOnly}"
+                              ToolTip.Tip="{Binding ViewModel.Viewer.GridTip}" ToolTip.ShowOnDisabled="True">
+                    <mi:MaterialIcon Kind="GridLarge" Width="16" Height="16"/>
+                </ToggleButton>
 
                 <!-- 3D editor bugs round 2 — the clip plane's controls, moved to the end of the toolbar, after Snap. -->
                 <Border Width="1" Margin="2,3" Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
@@ -261,6 +288,31 @@
                               ToolTip.Tip="Keep the other side of the plane">
                     <mi:MaterialIcon Kind="SetSplit" Width="16" Height="16"/>
                 </ToggleButton>
+
+                <!-- brief-em3d-29 R-em3d29-5 — the GPU's own pixels, read back at up to 4x the window. 3D editor bugs round 5:
+                     the read-only viewer's, now the editor's too. -->
+                <Border Width="1" Margin="2,3" Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+                <Button ToolTip.Tip="Export picture… (PNG of this view, read back from the GPU)">
+                    <mi:MaterialIcon Kind="CameraOutline" Width="16" Height="16"/>
+                    <Button.Flyout>
+                        <Flyout Placement="BottomEdgeAlignedLeft">
+                            <StackPanel Spacing="6" MinWidth="200">
+                                <TextBlock Text="Export picture" FontWeight="SemiBold"/>
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <TextBlock Text="Size" VerticalAlignment="Center"/>
+                                    <ComboBox ItemsSource="{Binding ViewModel.Viewer.ExportScales}" SelectedItem="{Binding ViewModel.Viewer.ExportScale}">
+                                        <ComboBox.ItemTemplate>
+                                            <DataTemplate><TextBlock Text="{Binding StringFormat='{}{0}× the window'}"/></DataTemplate>
+                                        </ComboBox.ItemTemplate>
+                                    </ComboBox>
+                                </StackPanel>
+                                <CheckBox IsChecked="{Binding ViewModel.Viewer.ExportLegend}" Content="Legend"/>
+                                <CheckBox IsChecked="{Binding ViewModel.Viewer.ExportCaption}" Content="Frequency or mode caption"/>
+                                <Button Content="Save PNG…" Click="OnExportPicture" HorizontalAlignment="Right"/>
+                            </StackPanel>
+                        </Flyout>
+                    </Button.Flyout>
+                </Button>
             </WrapPanel>
         </Border>
 
@@ -317,7 +369,26 @@
                     </ToggleButton>
                     <ToggleButton IsChecked="{Binding ViewModel.Viewer.FieldDb}" IsEnabled="{Binding ViewModel.Viewer.ShowField}" Content="dB"
                                   ToolTip.Tip="Decibels (20·log10 of the amplitude), 40 dB below the top of the range"/>
+                    <ComboBox ItemsSource="{Binding ViewModel.Viewer.FieldPercentiles}" SelectedItem="{Binding ViewModel.Viewer.FieldPercentile}"
+                              IsEnabled="{Binding ViewModel.Viewer.ShowField}" VerticalAlignment="Center"
+                              ToolTip.Tip="The top of the colour range: this percentile of the values drawn, so one singular edge does not wash out the picture. Beyond it, the end colour.">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate><TextBlock Text="{Binding StringFormat='{}{0} %'}"/></DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                    <!-- 3D editor bugs round 5 — the phase animation: the read-only viewer's, now here for both. -->
+                    <ToggleButton IsChecked="{Binding ViewModel.Viewer.FieldPlaying}" IsEnabled="{Binding ViewModel.Viewer.FieldCanAnimate}"
+                                  ToolTip.Tip="Play the phase: Re{v·e^jφ} through one cycle (choose an animated quantity)" ToolTip.ShowOnDisabled="True">
+                        <mi:MaterialIcon Kind="PlayPause" Width="16" Height="16"/>
+                    </ToggleButton>
+                    <Slider Width="120" Minimum="0" Maximum="360" Value="{Binding ViewModel.Viewer.FieldPhaseDegrees}"
+                            IsEnabled="{Binding ViewModel.Viewer.FieldCanAnimate}" VerticalAlignment="Center" ToolTip.Tip="Phase φ, degrees"/>
+                    <NumericUpDown Value="{Binding ViewModel.Viewer.FieldLoopSeconds}" Minimum="0.2" Maximum="30" Increment="0.5" FormatString="0.#"
+                                   IsEnabled="{Binding ViewModel.Viewer.FieldCanAnimate}" Width="100" VerticalAlignment="Center"
+                                   ToolTip.Tip="Seconds per cycle on screen — a display choice; the frequency is the legend's"/>
+                    <TextBlock Text="s / cycle" VerticalAlignment="Center" Opacity="0.7"/>
                     <ToggleButton IsChecked="{Binding ViewModel.Viewer.ShowMesh}" IsEnabled="{Binding ViewModel.Viewer.MeshAvailable}"
+                                  IsVisible="{Binding ViewModel.IsEditable}"
                                   ToolTip.Tip="{Binding ViewModel.Viewer.MeshTip}" ToolTip.ShowOnDisabled="True">
                         <mi:MaterialIcon Kind="VectorTriangle" Width="16" Height="16"/>
                     </ToggleButton>
@@ -332,7 +403,7 @@
         <!-- 3D editor bugs round 2 — hidden: the text under the viewport is kept for debugging only, and comes back with
              CRF_3D_STATUS_PANE=1 in the environment (C3dEditorViewModel.ShowStatusPane). -->
         <Border DockPanel.Dock="Bottom" Padding="6,2" BorderThickness="0,1,0,0"
-                IsVisible="{x:Static t3:C3dEditorViewModel.ShowStatusPane}"
+                IsVisible="{Binding ViewModel.ShowsStatusPane}"
                 BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
             <StackPanel Spacing="1">
                 <DockPanel>
@@ -349,6 +420,9 @@
                 </DockPanel>
                 <SelectableTextBlock FontSize="11" Text="{Binding ViewModel.Viewer.SelectionText}" TextWrapping="Wrap"
                                      IsVisible="{Binding ViewModel.Viewer.SelectionText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                <SelectableTextBlock FontSize="11" Text="{Binding ViewModel.Viewer.MeshText}" IsVisible="{Binding ViewModel.Viewer.MeshText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                <SelectableTextBlock FontSize="11" Text="{Binding ViewModel.Viewer.FieldText}" IsVisible="{Binding ViewModel.Viewer.FieldText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                <SelectableTextBlock FontSize="11" Text="{Binding ViewModel.Viewer.PictureText}" IsVisible="{Binding ViewModel.Viewer.PictureText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                 <SelectableTextBlock FontSize="11" Text="{Binding ViewModel.ToolPrompt}" TextWrapping="Wrap"
                                      IsVisible="{Binding ViewModel.ToolPrompt, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                 <DockPanel IsVisible="{Binding ViewModel.StatusMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
@@ -374,12 +448,23 @@
                 <!-- 3D editor round 2 — the panel's header: its name, how its objects are grouped (by material, the
                      default, or by primitive type), and at the top right the filter, whose icon changes while it hides
                      anything. The filter hides tree rows only; the 3D view still draws every object. -->
-                <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto,Auto" Margin="6,3,3,3">
+                <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto,Auto,Auto,Auto" Margin="6,3,3,3">
                     <TextBlock Grid.Column="0" Text="Objects" FontWeight="SemiBold" VerticalAlignment="Center"/>
                     <ComboBox Grid.Column="1" x:Name="TreeGroupingCombo" FontSize="11" MinHeight="0" Padding="6,1" VerticalAlignment="Center"
                               ItemsSource="{x:Static t3:C3dEditorViewModel.TreeGroupingChoices}" SelectedItem="{Binding ViewModel.TreeGroupingText}"
                               ToolTip.Tip="List the objects by material or by primitive type"/>
+                    <!-- 3D editor round 5 — every listed row shown or hidden at once: the .ctech Layers switch's eye glyphs. -->
                     <Button Grid.Column="2" Margin="3,0,0,0" Padding="3" Background="Transparent" BorderThickness="0" VerticalAlignment="Center"
+                            Command="{Binding ViewModel.ShowAllTreeObjectsCommand}"
+                            ToolTip.Tip="Show every object the tree lists. With a filter active, the rows it hides are left as they are.">
+                        <mi:MaterialIcon Kind="Eye" Width="15" Height="15" Opacity="0.7"/>
+                    </Button>
+                    <Button Grid.Column="3" Padding="3" Background="Transparent" BorderThickness="0" VerticalAlignment="Center"
+                            Command="{Binding ViewModel.HideAllTreeObjectsCommand}"
+                            ToolTip.Tip="Hide every object the tree lists. With a filter active, the rows it hides are left as they are.">
+                        <mi:MaterialIcon Kind="EyeOff" Width="15" Height="15" Opacity="0.7"/>
+                    </Button>
+                    <Button Grid.Column="4" Padding="3" Background="Transparent" BorderThickness="0" VerticalAlignment="Center"
                             ToolTip.Tip="Filter the tree by object type or material. The 3D view still draws everything.">
                         <Panel>
                             <mi:MaterialIcon Kind="Filter" Width="15" Height="15" Opacity="0.7" IsVisible="{Binding !ViewModel.IsTreeFilterActive}"/>
@@ -413,8 +498,10 @@
                         </Button.Flyout>
                     </Button>
                 </Grid>
-                <TreeView x:Name="ObjectTree" ItemsSource="{Binding ViewModel.Tree}"
-                          SelectedItem="{Binding ViewModel.SelectedTreeItem, Mode=TwoWay}"
+                <!-- 3D editor round 5 — Shift selects a range, Ctrl/Cmd adds or removes a row, as on the canvas. The
+                     selection is mirrored in code (SelectedTreeItems, in the order it was made), never bound. -->
+                <TreeView x:Name="ObjectTree" ItemsSource="{Binding ViewModel.Tree}" SelectionMode="Multiple"
+                          SelectionChanged="OnTreeSelectionChanged"
                           ContextRequested="OnTreeContextRequested">
                     <TreeView.Styles>
                         <!-- 3D editor round 1 — expansion is the node's, so it survives the rebuild every edit makes. -->
@@ -429,7 +516,7 @@
                         <TreeDataTemplate DataType="t3:C3dTreeItem" ItemsSource="{Binding Children}">
                             <StackPanel Orientation="Horizontal" Spacing="4">
                                 <CheckBox IsChecked="{Binding IsVisible}" MinWidth="0" Padding="0" IsVisible="{Binding !IsFeature}"
-                                          ToolTip.Tip="Visible — a drawn object's visibility is saved with the document and undoable"/>
+                                          ToolTip.Tip="{Binding VisibleTip}"/>
                                 <!-- brief-em3d-66 R-em3d66-3a — an operation's icon; dimmed while it is disabled. -->
                                 <mi:MaterialIcon Kind="{Binding IconKind}" Width="14" Height="14" VerticalAlignment="Center"
                                                  IsVisible="{Binding HasIcon}" Opacity="{Binding IconOpacity}"/>

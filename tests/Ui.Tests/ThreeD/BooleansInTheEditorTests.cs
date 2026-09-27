@@ -388,6 +388,55 @@ public sealed class BooleansInTheEditorTests : IDisposable
         Assert.Equal(["other"], vm.Tree.Single(g => g.Header == "Boxes").Items.Select(i => i.Name));
     }
 
+    // ── 3D editor bugs round 5 ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>Two boxes of one height united are ONE solid: its top is one face, not the operands' three pieces, and no
+    /// edge is drawn where they met — the worker merges a result's same-domain faces.</summary>
+    [KernelFact]
+    public void Round5_AUnionOfTwoBoxesOfOneHeight_HasOneTopFace_AndNoSeamEdges()
+    {
+        var kernel = Kernel(KernelForTests.New());
+        var u = new C3dBoolean { Name = "u", Op = C3dBooleanOp.Unite, Blank = Box("", "Gold", 0, 0, 0, 40, 40, 10), Tools = [Box("b", "Gold", 20, 20, 0, 40, 40, 10)] };
+        var vm = Open(Write([u]), kernel);
+        var o = vm.SceneObject("u")!;
+        // The Blank's names win a merged face; the Tool keeps only the four walls that are its alone.
+        Assert.Equal(["b:xmax", "b:xmin", "b:ymax", "b:ymin", "xmax", "xmin", "ymax", "ymin", "zmax", "zmin"], o.FaceNames.Order(StringComparer.Ordinal));
+        // An L-shaped octagon's prism: 8 vertical edges, 8 around the top, 8 around the bottom.
+        var edges = vm.Viewer.Scene.EdgeBatches.Single(e => e.ObjectId == o.Id);
+        Assert.Equal(24, edges.VertexCount / 2);
+    }
+
+    /// <summary>A click on an operand's tree row enters its boolean; a click away — on nothing, or on another row — leaves
+    /// it, so the result is drawn again in place of its Tools.</summary>
+    [KernelFact]
+    public void Round5_AnOperandRowEntersItsBoolean_AndAClickAwayOrAnotherRowLeavesIt()
+    {
+        var kernel = Kernel(KernelForTests.New());
+        var vm = Open(Write([Subtract("lid", Box("", "Gold", 0, 0, 0, 100, 60, 20), Cyl("bore", "Copper", 50, 30, -10, 40, 10))]), kernel);
+        C3dTreeItem Bore() => TreeRow(vm, "lid").Children.Single(c => c.Name == "bore");
+
+        vm.SelectedTreeItem = Bore();
+        Settle(vm);
+        Assert.True(vm.IsInBoolean);
+        Assert.NotNull(vm.SceneObject("lid:bore"));                   // the Tool drawn as an object of its own
+
+        HoverVm(vm.Viewer, 2, 2);                                     // nothing under the cursor
+        vm.Viewer.Click(false);
+        Settle(vm);
+        Assert.False(vm.IsInBoolean);
+        Assert.Null(vm.SceneObject("lid:bore"));
+        Assert.True(vm.SceneObject("lid")!.Selectable);               // the result, no longer a ghost
+        Assert.Empty(vm.Viewer.View.Selection);
+
+        vm.SelectedTreeItem = Bore();
+        Settle(vm);
+        Assert.True(vm.IsInBoolean);
+        vm.SelectedTreeItem = TreeRow(vm, "lid");
+        Settle(vm);
+        Assert.False(vm.IsInBoolean);
+        Assert.Equal(["lid"], vm.Viewer.SelectedObjects().Select(x => x.Name));
+    }
+
     // ── helpers ────────────────────────────────────────────────────────────────────────────────────
 
     private GeometryKernel Kernel(GeometryKernel k)

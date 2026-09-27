@@ -373,7 +373,8 @@ public sealed class GeometryKernel : IDisposable
             return WrongVersion(path, loc, $"The geometry kernel at {path} is Open CASCADE Technology {occt}; this build of circuitRF was made with {_options.ExpectedOcct}.");
         if (rid != _options.ExpectedRid)
             return WrongVersion(path, loc, $"The geometry kernel at {path} was built for {rid}; this circuitRF runs as {_options.ExpectedRid}.");
-        return new GeometryKernelIdentity(protocol, occt, worker, rid);
+        int results = hello.Json["results"] is JsonValue rv && rv.TryGetValue(out int rn) ? rn : 1;
+        return new GeometryKernelIdentity(protocol, occt, worker, rid, results);
     }
 
     private GeometryKernelIdentity? WrongVersion(string path, GeometryKernelLocation loc, string reason)

@@ -149,10 +149,12 @@ public sealed class C3dRecordsEdit(string description, string before, string aft
 
     public void Undo() => apply(Before);
 
-    /// <summary>The records as one text: ports, face boundaries, setups — and (3D editor round 3) the air box's material.</summary>
+    /// <summary>The records as one text: ports, face boundaries, setups — and (3D editor round 3) the air box's material,
+    /// (round 5) whether it is hidden.</summary>
     public static string Of(C3dDocument doc)
         => C3dPersistence.SerializePorts(doc.Ports) + "\u0001" + C3dPersistence.SerializeFaceBoundaries(doc.FaceBoundaries) +
-           "\u0001" + C3dPersistence.SerializeSetups(doc.Setups) + "\u0001" + (doc.AirBoxMaterial ?? "");
+           "\u0001" + C3dPersistence.SerializeSetups(doc.Setups) + "\u0001" + (doc.AirBoxMaterial ?? "") +
+           "\u0001" + (doc.AirBoxHidden ? "hidden" : "");
 
     /// <summary>Writes the three lists of <paramref name="text"/> into <paramref name="doc"/>.</summary>
     public static void Apply(C3dDocument doc, string text)
@@ -162,6 +164,7 @@ public sealed class C3dRecordsEdit(string description, string before, string aft
         doc.FaceBoundaries = C3dPersistence.DeserializeFaceBoundaries(parts[1]);
         doc.Setups = C3dPersistence.DeserializeSetups(parts[2]);
         doc.AirBoxMaterial = parts.Length > 3 && parts[3].Length > 0 ? parts[3] : null;
+        doc.AirBoxHidden = parts.Length > 4 && parts[4].Length > 0;
     }
 }
 

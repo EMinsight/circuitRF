@@ -43,7 +43,8 @@ public sealed class EditorRound4MenuTests
     public void TheCanvasMenus_OfferPlainCopy_InTheEditorAsInTheViewer()
     {
         Assert.Equal("Copy", Viewer3DPictureCopy.Header);
-        foreach (string view in new[] { "src/Ui/Views/ThreeD/C3dEditorView.axaml.cs", "src/Ui/Views/Viewer3D/Viewer3DView.axaml.cs" })
+        // 3D editor bugs round 5 — the viewer IS the editor's view now, so one source holds both menus.
+        foreach (string view in new[] { "src/Ui/Views/ThreeD/C3dEditorView.axaml.cs" })
         {
             string source = ReadRepoFile(view);
             Assert.Contains("Viewer3DPictureCopy.Item(", source, StringComparison.Ordinal);

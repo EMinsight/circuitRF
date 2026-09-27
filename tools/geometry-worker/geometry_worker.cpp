@@ -116,6 +116,7 @@
 #include <XCAFDoc_DimTolTool.hxx>
 #include <XSControl_Reader.hxx>
 #include <ShapeFix_Shape.hxx>
+#include <ShapeUpgrade_UnifySameDomain.hxx>
 #include <Standard_ErrorHandler.hxx>
 #include <Standard_Failure.hxx>
 #include <Standard_Version.hxx>
@@ -148,6 +149,7 @@
 #include <fstream>
 #include <iostream>
 #include <map>
+#include <type_traits>
 #include <memory>
 #include <sstream>
 #include <stdexcept>
@@ -176,6 +178,12 @@
 #endif
 
 static const int kProtocol = 1;
+
+// What this worker ANSWERS, as distinct from the protocol it speaks: raised whenever the same tree gets a different
+// reply (3D editor bugs round 5 -- a boolean's coplanar pieces merged). The handshake reports it as "results" and the
+// client files every cached reply under it, so a reply an older worker cached is never read back by this one --
+// development builds share one VERSION, so the version alone would have served the old answer from the disk cache.
+static const int kResults = 2;
 static const double kPi = 3.14159265358979323846;
 
 // What this build can do, by feature rather than by toolkit.
@@ -1107,6 +1115,38 @@ static Named NameResult(const TopoDS_Shape& result, const std::vector<FacePiece>
   return n;
 }
 
+// 3D editor bugs round 5 -- a boolean's history, then the same-domain merge's after it: what NameResult reads for a
+// result whose coplanar pieces were merged. A source face's images are the boolean's images (or itself, unchanged),
+// each followed through the merge; a face the merge folded into its neighbour is claimed as the merged face, so the
+// merged face keeps the FIRST name that claims it -- the blank's, which claims before any tool's.
+template <class Op>
+struct ThenMerged
+{
+  Op& first;
+  Handle(BRepTools_History) merge;
+  NCollection_List<TopoDS_Shape> images;
+
+  bool IsDeleted(const TopoDS_Shape& f) { return first.IsDeleted(f); }
+
+  const NCollection_List<TopoDS_Shape>& Modified(const TopoDS_Shape& f)
+  {
+    images.Clear();
+    auto follow = [&](const TopoDS_Shape& g) {
+      if (merge.IsNull()) { images.Append(g); return; }
+      if (merge->IsRemoved(g)) return;
+      const NCollection_List<TopoDS_Shape>& m = merge->Modified(g);
+      if (m.IsEmpty()) images.Append(g);
+      else
+        for (const TopoDS_Shape& h : m) images.Append(h);
+    };
+    const NCollection_List<TopoDS_Shape>& mod = first.Modified(f);
+    if (mod.IsEmpty()) follow(f);
+    else
+      for (const TopoDS_Shape& g : mod) follow(g);
+    return images;
+  }
+};
+
 static bool HasSolid(const TopoDS_Shape& s)
 {
   return !s.IsNull() && TopExp_Explorer(s, TopAbs_SOLID).More();
@@ -1155,7 +1195,23 @@ static Named BuildBoolean(const NodeReader& r)
     if (!HasSolid(op.Shape()))
       // brief-em3d-66: its own code, so the client can say it in the operation's words ("'lid' and 'pin' share nothing").
       throw Refuse{"build.empty", r.name, "the " + opv.text + " leaves nothing: the result has no volume"};
-    return NameResult(op.Shape(), claims, op);
+    // 3D editor bugs round 5 -- ONE solid, not its operands' faces cut where they met: OCCT's boolean keeps a
+    // face the operands shared a plane on as separate pieces (two boxes of one height united have a top in three),
+    // and every seam between them was a drawn edge, a pickable face and an edge a fillet could name. The merge
+    // joins same-domain neighbours (a plane with a coplanar plane, a cylinder with its coaxial continuation) and
+    // nothing else, so a real crease is never lost; a merge that fails leaves the unmerged result, as it was.
+    TopoDS_Shape result = op.Shape();
+    Handle(BRepTools_History) merged;
+    try
+    {
+      OCC_CATCH_SIGNALS
+      ShapeUpgrade_UnifySameDomain unify(result, Standard_True, Standard_True, Standard_False);
+      unify.Build();
+      if (HasSolid(unify.Shape())) { result = unify.Shape(); merged = unify.History(); }
+    }
+    catch (const Standard_Failure&) { /* the unmerged result */ }
+    ThenMerged<std::remove_reference_t<decltype(op)>> history{op, merged, {}};
+    return NameResult(result, claims, history);
   };
   if (opv.text == "subtract") { BRepAlgoAPI_Cut op; return run(op); }
   if (opv.text == "unite") { BRepAlgoAPI_Fuse op; return run(op); }
@@ -1508,7 +1564,7 @@ static Frame OpHello(const Json& req)
     if (p->kind != Json::Number || p->number != kProtocol)
       throw Refuse{"protocol.mismatch", "", "this geometry worker speaks protocol " + std::to_string(kProtocol) + " only"};
   Reply r;
-  r.j.Str("worker", CRF_WORKER_VERSION).Str("occt", LoadedOcct()).Int("protocol", kProtocol).Str("rid", CompiledRid());
+  r.j.Str("worker", CRF_WORKER_VERSION).Str("occt", LoadedOcct()).Int("protocol", kProtocol).Int("results", kResults).Str("rid", CompiledRid());
   r.j.Key("modules").BeginArr();
   for (const char* m : kModules) r.j.Str(m);
   r.j.EndArr();

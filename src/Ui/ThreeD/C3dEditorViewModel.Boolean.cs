@@ -550,6 +550,30 @@ public sealed partial class C3dEditorViewModel
         Viewer.Regenerate();
     }
 
+    /// <summary>
+    /// 3D editor bugs round 5 — a plain click, with a boolean entered, on anything that is not one of its operands: on
+    /// nothing (its ghosted result included, which is not selectable) or on another object. Entering is a mode the tree
+    /// puts the editor in by a single click on an operand's row, so leaving it by clicking away is what makes it one a
+    /// user can get out of without knowing its key — before this, a click away cleared the selection and left the Tools
+    /// drawn in place of the result until Esc. Leaves every level; another object clicked is selected once the result's
+    /// scene is up. True when the click was taken here (the object's selection is this call's, not the viewer's).
+    /// </summary>
+    private bool ClickAwayLeaves(Avalonia.Input.KeyModifiers modifiers)
+    {
+        if (_entered is null || modifiers != Avalonia.Input.KeyModifiers.None) return false;
+        var hovered = Viewer.HoveredItem is { } h ? Viewer.Scene.Object(h.Object) : null;
+        if (hovered is not null && OperandIndexOf(hovered) >= 0) return false;
+        string? other = hovered is null || Viewer.SelectMode != Scene3DSelectMode.Object ? null
+            : DocumentIndex(hovered) is >= 0 and var di ? Document.Objects[di].Name
+            : InstanceOf(hovered)?.Split('/', '[')[0];
+        LeaveBooleanFully();
+        StatusMessage = "";
+        Viewer.SetSelection([]);
+        _selectAfterAdopt = other is null ? null : [other];
+        Viewer.Regenerate();
+        return true;
+    }
+
     /// <summary>Leaves every level at once (a Dissolve, a reload).</summary>
     private void LeaveBooleanFully()
     {

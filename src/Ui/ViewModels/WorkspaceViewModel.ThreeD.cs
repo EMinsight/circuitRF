@@ -596,10 +596,25 @@ public partial class WorkspaceViewModel
     /// <summary>The 3D menu's items again — when the geometry kernel's probe answers.</summary>
     internal void RefreshThreeDMenu() => RaiseThreeDMenuChanged();
 
+    /// <summary>
+    /// 3D editor bugs round 5 — raised once the 3D menu has actually been shown or hidden (its binding has already run),
+    /// never on the fan-outs' many re-raises of an unchanged answer. The macOS shell repaints the menu bar on it: AppKit
+    /// draws a top-level item's hidden flag late, so the 3D menu reached the bar about half a second after the menus
+    /// beside it.
+    /// </summary>
+    public event Action? ThreeDMenuVisibilityChanged;
+
+    private bool _threeDMenuShown;
+
     /// <summary>Re-evaluates every 3D menu item — called from both of the shell's enablement fan-outs.</summary>
     private void RaiseThreeDMenuChanged()
     {
         OnPropertyChanged(nameof(IsThreeDMenuVisible));
+        if (IsThreeDMenuVisible != _threeDMenuShown)
+        {
+            _threeDMenuShown = !_threeDMenuShown;
+            ThreeDMenuVisibilityChanged?.Invoke();
+        }
         OnPropertyChanged(nameof(ThreeDBooleanAvailable));
         OnPropertyChanged(nameof(ThreeDBooleanTip));
         OnPropertyChanged(nameof(ThreeDFilletTip));

@@ -185,12 +185,16 @@ unchanged model reuses its mesh.
 ## The 3D view {#view}
 
 **Show 3D** on a setup's panel opens the 3D view beside it, drawn by the graphics card. It shows the
-model circuitRF built, and after a run it also shows what the solver made.
+model circuitRF built, and after a run it also shows what the solver made. It is the
+[3D editor](drawing-in-3d.html)'s own view with nothing to edit — the same toolbar, tree, keys and menus, without
+the drawing tools, the setups, Simulate, the unit and the snap step — and its status lines under the view (the
+setup's refusals and notes, the mesh, the field) are always shown.
 
 - **Model.** Every solid, coloured by its layer, with the dielectrics, the air and the air box's faces
   each switchable. The faces are coloured by boundary kind: grey metal, blue absorbing, orange PMC,
-  violet symmetry. The **object tree** lists every solid, and a click in the view picks one and names it.
-  In the 3D editor the tree is headed **Objects** and lists the document's objects **by material** (the
+  violet symmetry. The **object tree** lists every solid, and a click in the view picks one, names it and
+  brings its row into sight; a row's tick hides that solid in this view only. The tree is headed **Objects**
+  and lists the objects **by material** (the
   default — objects with no material come first, in their own group) or **by type** (boxes, sheets,
   cylinders, …), chosen in its header. By material a row does not repeat the material its group is headed
   by; an object's construction order is its name's tooltip. The **air box** appears — drawn and listed — once

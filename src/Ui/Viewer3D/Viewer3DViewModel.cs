@@ -291,21 +291,23 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
 
     private readonly Dictionary<uint, Viewer3DTreeItem> _items = [];
 
+    /// <summary>The tree's groups by kind — the 3D editor's tree, hosting this view read-only, lists by the same ones.</summary>
+    internal static readonly (string Header, Scene3DKind[] Kinds)[] TreeGroups =
+    [
+        ("Conductors", [Scene3DKind.Conductor, Scene3DKind.Via, Scene3DKind.Sheet]),
+        ("Wires", [Scene3DKind.Wire]),
+        ("Dielectrics", [Scene3DKind.Dielectric]),
+        ("Bodies", [Scene3DKind.Body]),
+        ("Air", [Scene3DKind.Air]),
+        ("Ports", [Scene3DKind.Port]),
+        ("Boundary", [Scene3DKind.Boundary]),
+    ];
+
     private void RebuildTree()
     {
         Tree.Clear();
         _items.Clear();
-        (string Header, Scene3DKind[] Kinds)[] groups =
-        [
-            ("Conductors", [Scene3DKind.Conductor, Scene3DKind.Via, Scene3DKind.Sheet]),
-            ("Wires", [Scene3DKind.Wire]),
-            ("Dielectrics", [Scene3DKind.Dielectric]),
-            ("Bodies", [Scene3DKind.Body]),
-            ("Air", [Scene3DKind.Air]),
-            ("Ports", [Scene3DKind.Port]),
-            ("Boundary", [Scene3DKind.Boundary]),
-        ];
-        foreach (var (header, kinds) in groups)
+        foreach (var (header, kinds) in TreeGroups)
         {
             var items = Scene.Objects.Where(o => kinds.Contains(o.Kind)).Select(o =>
             {
@@ -319,11 +321,16 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
         SyncKindToggles();
     }
 
+    /// <summary>3D editor bugs round 5 — an object's view-held visibility changed (its id, and whether it is now shown):
+    /// the 3D editor's tree, hosting this view read-only, follows it.</summary>
+    public event Action<uint, bool>? VisibilityChanged;
+
     internal void SetVisible(uint id, bool visible)
     {
         if (id < 1 || id > View.Visible.Length || View.Visible[id - 1] == visible) return;
         View.Visible[id - 1] = visible;
         SyncKindToggles();
+        VisibilityChanged?.Invoke(id, visible);
         FrameRequested?.Invoke();
     }
 
@@ -333,6 +340,7 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
         {
             View.Visible[o.Id - 1] = visible;
             if (_items.TryGetValue(o.Id, out var it)) it.Sync(visible);
+            VisibilityChanged?.Invoke(o.Id, visible);
         }
         FrameRequested?.Invoke();
     }

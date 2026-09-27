@@ -919,29 +919,29 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     /// instances, each expandable to its cell's objects (read-only).</summary>
     private void RebuildTree()
     {
-        string? keep = SelectedTreeItem?.Name;
-        string? keepPath = SelectedTreeItem?.OperandPath;
-        string? keepFeature = SelectedTreeItem?.FeaturePath;
-        bool keepAirBox = SelectedTreeItem?.IsAirBox == true;
-        string? keepTop = SelectedTreeItem?.TopName;
+        // 3D editor round 5 — every selected row, in its order, not only SelectedTreeItem.
+        var keep = _selectedTreeItems.ToList();
         _syncingTree = true;
         try
         {
             DetachExpansion(Tree);
             Tree.Clear();
             RebuildTreeFilters();
-            foreach (var g in ObjectGroups()) Tree.Add(g);
+            foreach (var g in IsViewOnly ? ViewObjectGroups() : ObjectGroups()) Tree.Add(g);
             if (InstanceGroup() is { } instances) Tree.Add(instances);
             RebuildInstanceChildren();
             RefreshWireFlags();
             RefreshKernelFlags();
             RebuildRecordsTree();
-            SelectedTreeItem = keep is null ? null
-                : keepFeature is not null ? AllTreeItems().FirstOrDefault(t => t.FeaturePath == keepFeature && t.TopName == keepTop)
-                : AllTreeItems().FirstOrDefault(t => t.Name == keep && t.IsAirBox == keepAirBox && t.OperandPath == keepPath);
+            SetTreeRows([.. keep.Select(RebuiltRow).OfType<C3dTreeItem>().Distinct()]);
         }
         finally { _syncingTree = false; }
     }
+
+    /// <summary>The rebuilt tree's row that stands where <paramref name="old"/> stood, or null.</summary>
+    private C3dTreeItem? RebuiltRow(C3dTreeItem old)
+        => old.FeaturePath is { } feature ? AllTreeItems().FirstOrDefault(t => t.FeaturePath == feature && t.TopName == old.TopName)
+         : AllTreeItems().FirstOrDefault(t => t.Name == old.Name && t.IsAirBox == old.IsAirBox && t.OperandPath == old.OperandPath);
 
     // 3D editor round 1 — each node's expansion, by key, across rebuilds: written as the user opens and closes nodes,
     // read when a rebuilt node takes its place. A group starts expanded; everything else closed.
@@ -1018,6 +1018,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     internal void TreeVisibilityChanged(C3dTreeItem item, bool visible)
     {
         if (_syncingTree) return;
+        if (IsViewOnly) { ViewTreeVisibilityChanged(item, visible); return; }
         if (item.IsAirBox)
         {
             AirBoxShown = visible;
@@ -1048,6 +1049,11 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     /// </summary>
     partial void OnSelectedTreeItemChanged(C3dTreeItem? value)
     {
+        if (!_settingTreeRows && !(value is null ? _selectedTreeItems.Count == 0 : _selectedTreeItems is [var only] && only == value))
+        {
+            _selectedTreeItems = value is null ? [] : [value];
+            OnPropertyChanged(nameof(SelectedTreeItems));
+        }
         if (_syncingTree || value is null) return;
         // brief-em3d-66 R-em3d66-5a — an operand's row enters its boolean and selects it there, once that scene is up.
         if (value.OperandPath is { } operandPath && value.ObjectIndex >= 0 && value.ObjectIndex < Document.Objects.Count)
@@ -1056,23 +1062,20 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
             Properties.Reload();
             return;
         }
+        // 3D editor bugs round 5 — any other row leaves an entered boolean: the operand row put the editor there with one
+        // click, so one click elsewhere takes it out, and the result is drawn again. Its object is selected once that
+        // scene is up (this scene holds it as a ghost, or not at all).
+        if (_entered is not null)
+        {
+            LeaveBooleanFully();
+            _selectAfterAdopt = value.ObjectIndex >= 0 && value.ObjectIndex < Document.Objects.Count ? [Document.Objects[value.ObjectIndex].Name]
+                              : value.InstanceIndex >= 0 ? [value.Name] : null;
+            Viewer.Regenerate();
+        }
         _syncingTree = true;
         try
         {
-            List<Scene3DItem> ids;
-            if (value.IsAirBox)
-            {
-                // Round 3: selecting it never switches it on — a click on its tick selects the row too, and turned a box
-                // the user had just hidden straight back on.
-                ids = [.. AirBoxFaceObjects().Select(o => Scene3DItem.OfObject(o.Id))];
-            }
-            else
-            {
-                var objects = value.InstanceIndex >= 0 ? value.Children.Select(c => c.Name).Select(SceneObject).OfType<Scene3DObject>()
-                    : value.ObjectIndex >= 0 && value.ObjectIndex < Document.Objects.Count ? SceneObjectsFor(Document.Objects[value.ObjectIndex])
-                    : [.. new[] { SceneObject(value.Name) }.OfType<Scene3DObject>()];
-                ids = [.. objects.Select(s => Scene3DItem.OfObject(s.Id))];
-            }
+            List<Scene3DItem> ids = [.. SceneObjectsOfRow(value).Select(o => Scene3DItem.OfObject(o.Id))];
             if (Viewer.SelectMode != Scene3DSelectMode.Object) Viewer.SelectMode = Scene3DSelectMode.Object;
             Viewer.SetSelection(ids);
         }
@@ -1080,30 +1083,110 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         Properties.Reload();
     }
 
+    /// <summary>The scene objects selecting a tree row selects: the air box's faces (Round 3: selecting it never switches it
+    /// on — a click on its tick selects the row too, and turned a box the user had just hidden straight back on), an
+    /// instance's parts, a document object's — a feature row's too, since it rounds that object — or the named object.</summary>
+    private IEnumerable<Scene3DObject> SceneObjectsOfRow(C3dTreeItem row)
+        => row.IsAirBox ? AirBoxFaceObjects()
+            : row.InstanceIndex >= 0 ? row.Children.Select(c => c.Name).Select(SceneObject).OfType<Scene3DObject>()
+            : row.ObjectIndex >= 0 && row.ObjectIndex < Document.Objects.Count ? SceneObjectsFor(Document.Objects[row.ObjectIndex])
+            : new[] { SceneObject(row.Name) }.OfType<Scene3DObject>();
+
+    /// <summary>3D editor round 5 — the tree's row still selects exactly the view's selection: a regenerated scene
+    /// re-selecting the same objects under new ids (after any edit) leaves the row alone. Without this a fillet's row gave
+    /// way to its object's the moment an Inspector edit of it regenerated the scene.</summary>
+    private bool TreeRowStillSelected()
+    {
+        if (SelectedTreeItem is not { OperandPath: null } row) return false;
+        var selected = Viewer.SelectedObjects().Select(o => o.Id).ToHashSet();
+        return selected.Count > 0 && SceneObjectsOfRow(row).Select(o => o.Id).ToHashSet().SetEquals(selected);
+    }
+
     private void OnViewerSelectionChanged()
     {
         FilletSelectionChanged();
-        if (!_syncingTree)
+        if (!_syncingTree && !TreeRowStillSelected())
         {
             _syncingTree = true;
             try
             {
-                var first = Viewer.SelectedObjects().FirstOrDefault();
-                SelectedTreeItem = first is null ? null
-                    : BoxFaceOf(first) is not null ? AllTreeItems().FirstOrDefault(t => t.IsAirBox)
-                    // brief-em3d-66 — an entered operand is its row under its boolean.
-                    : OperandIndexOf(first) is >= 0 and var oi && TopOf(oi, out string op) is >= 0 and var top
-                      ? AllTreeItems().FirstOrDefault(t => t.ObjectIndex == top && t.OperandPath == op)
-                    : AllTreeItems().FirstOrDefault(t => t.Name == first.Name && !t.IsAirBox)
-                      // 3D editor round 4 — an element of a wire array (w1[2]) is its wire's row.
-                      ?? (DocumentIndex(first) is >= 0 and var di ? AllTreeItems().FirstOrDefault(t => t.ObjectIndex == di && !t.IsAirBox) : null)
-                      ?? (InstanceOf(first) is { } inst ? AllTreeItems().FirstOrDefault(t => t.InstanceIndex >= 0 && t.Name == inst.Split('/', '[')[0]) : null);
+                // 3D editor round 5 — every selected object's row is selected in the tree, not only the first's.
+                var rows = Viewer.SelectedObjects().Select(o => IsViewOnly ? ViewTreeItemOf(o) : RowOf(o)).OfType<C3dTreeItem>().Distinct().ToList();
+                SetTreeRows(rows);
             }
             finally { _syncingTree = false; }
+            if (SelectedTreeItem is { } shown) TreeRevealRequested?.Invoke(shown);
         }
         // After the tree: the Inspector falls back to the tree's node when the scene holds nothing selected.
         Properties.Reload();
     }
+
+    /// <summary>The tree row a scene object is listed under, or null.</summary>
+    private C3dTreeItem? RowOf(Scene3DObject o)
+        => BoxFaceOf(o) is not null ? AllTreeItems().FirstOrDefault(t => t.IsAirBox)
+           // brief-em3d-66 — an entered operand is its row under its boolean.
+           : OperandIndexOf(o) is >= 0 and var oi && TopOf(oi, out string op) is >= 0 and var top
+             ? AllTreeItems().FirstOrDefault(t => t.ObjectIndex == top && t.OperandPath == op)
+           : AllTreeItems().FirstOrDefault(t => t.Name == o.Name && !t.IsAirBox)
+             // 3D editor round 4 — an element of a wire array (w1[2]) is its wire's row.
+             ?? (DocumentIndex(o) is >= 0 and var di ? AllTreeItems().FirstOrDefault(t => t.ObjectIndex == di && !t.IsAirBox) : null)
+             ?? (InstanceOf(o) is { } inst ? AllTreeItems().FirstOrDefault(t => t.InstanceIndex >= 0 && t.Name == inst.Split('/', '[')[0]) : null);
+
+    // ── 3D editor round 5: the tree's multiple selection ─────────────────────────────────────
+
+    private IReadOnlyList<C3dTreeItem> _selectedTreeItems = [];
+    private bool _settingTreeRows;
+
+    /// <summary>
+    /// 3D editor round 5 — every row the tree has selected, in the order they were selected: a click selects one, Shift a
+    /// range, Ctrl/Cmd adds or removes one, exactly as the canvas's Shift-click does. The order is the canvas's selection
+    /// order too, so a boolean opened on it takes its Tool and Blank from it (D4). <see cref="SelectedTreeItem"/> is the
+    /// first of them. The view mirrors this list; it never binds the tree's own selection.
+    /// </summary>
+    public IReadOnlyList<C3dTreeItem> SelectedTreeItems => _selectedTreeItems;
+
+    /// <summary>The rows selected, <see cref="SelectedTreeItem"/> the first — set without selecting in the scene.</summary>
+    private void SetTreeRows(IReadOnlyList<C3dTreeItem> rows)
+    {
+        _settingTreeRows = true;
+        try { SelectedTreeItem = rows.Count > 0 ? rows[0] : null; }
+        finally { _settingTreeRows = false; }
+        if (rows.SequenceEqual(_selectedTreeItems)) return;
+        _selectedTreeItems = rows;
+        OnPropertyChanged(nameof(SelectedTreeItems));
+    }
+
+    /// <summary>
+    /// The tree's own selection changed: <paramref name="removed"/> left it and <paramref name="added"/> joined it, in the
+    /// order the tree raised them. One row selects as a click on it always has; several select every object they stand
+    /// for in the scene, in the order the rows were selected, and the canvas's menu is then theirs.
+    /// </summary>
+    public void TreeSelectionChanged(IEnumerable<C3dTreeItem> removed, IEnumerable<C3dTreeItem> added)
+    {
+        var rows = _selectedTreeItems.Except(removed).ToList();
+        foreach (var a in added) if (!rows.Contains(a)) rows.Add(a);
+        if (rows.Count <= 1)
+        {
+            var one = rows.FirstOrDefault();
+            if (ReferenceEquals(one, SelectedTreeItem)) OnSelectedTreeItemChanged(one);   // the same row, re-applied: the scene follows
+            else SelectedTreeItem = one;
+            return;
+        }
+        _syncingTree = true;
+        try
+        {
+            SetTreeRows(rows);
+            if (Viewer.SelectMode != Scene3DSelectMode.Object) Viewer.SelectMode = Scene3DSelectMode.Object;
+            Viewer.SetSelection(rows.SelectMany(r => r.OperandPath is null && !r.IsFeature ? SceneObjectsOfNode(r) : [])
+                                    .Select(s => Scene3DItem.OfObject(s.Id)));
+        }
+        finally { _syncingTree = false; }
+        Properties.Reload();
+    }
+
+    /// <summary>3D editor bugs round 5 — a click in the scene selected this node: the view brings it into sight (the read-only
+    /// viewer's reveal, which the editor lacked).</summary>
+    public event Action<C3dTreeItem>? TreeRevealRequested;
 
     /// <summary>The document object the tree has selected that the scene does not hold (elaboration refused it), or −1.</summary>
     public int TreeOnlyObjectIndex()
@@ -1169,6 +1252,11 @@ public sealed partial class C3dTreeItem(C3dEditorViewModel owner, string name, s
     public string? Detail { get; } = detail;
     public int ObjectIndex { get; } = objectIndex;
     public int InstanceIndex { get; } = instanceIndex;
+
+    /// <summary>The tick's tooltip: in a setup's view (3D editor round 5) a tick is the view's alone, never saved.</summary>
+    public string VisibleTip => owner.IsViewOnly
+        ? "Visible — in this view only; nothing is saved"
+        : "Visible — a drawn object's visibility is saved with the document and undoable";
 
     /// <summary>brief-em3d-46 R-em3d46-4d — a document object's place in construction order (1-based), which decides
     /// which solid wins an overlap; null for an instance and its parts. 3D editor round 3: the row's tooltip, no longer a
