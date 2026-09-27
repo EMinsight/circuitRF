@@ -808,14 +808,50 @@ The dialog asks:
   rather than a fail &mdash; see [electrically short](#impedance-findings).
 - **Layers** &mdash; every copper layer of the stackup, all ticked by default. A layer with no copper
   on it is shown but cannot be ticked.
+- **Traces** &mdash; the trace widths on each ticked layer, to say which traces are under review. See
+  [Choosing the traces](#impedance-scope).
 
 **Export…** asks where to save the `.pdf`, then runs. A bar shows the layer being analysed and how far
 through it the run is; a whole eight-layer board of about 300 traces takes a couple of minutes, a
 single outer layer a few seconds. **Cancel** stops the run and still writes the report for **every
-layer that finished**, with a note on its first page saying it was cancelled. The target, both bands,
-the frequency and the layer choice are remembered until you close circuitRF. The Messages panel gets
+layer that finished**, with a note on its first page saying it was cancelled. The Messages panel gets
 one line with the counts that pass, warn and fail, and a link to the file; it is a warning line only
 when something **failed** or the run was cancelled.
+
+**The review is saved in the layout.** Closing the dialog &mdash; after Export or with Cancel &mdash;
+stores the target, both bands, the frequency, the layers and the trace widths ticked in the `.clay`,
+beside the layout's design-rule waivers, so the next Impedance Analysis opens on them and
+[`circuitrf impedance`](cli.html#impedance) reviews the same traces headlessly. Like a waiver, it is a
+statement about this artwork: saving it marks the layout modified, and it is not undone by **Undo**.
+
+### Choosing the traces {#impedance-scope}
+
+A board carries far more traces than are meant to be controlled, and holding the routing to 50 Ω makes a
+report that is mostly FAIL for traces nobody meant to be 50 Ω. The **Traces** section says which ones are
+under review, by **width** &mdash; which is how a fabrication drawing's impedance note is written
+(*457 µm on L1: 50 Ω controlled*), and which works on imported Gerber artwork with no nets.
+
+When the dialog opens it surveys the board in the background (closing the dialog stops it) and lists,
+under each ticked layer, every **width class** on it:
+
+*457 µm &nbsp; 1 trace &nbsp; 18.3 mm · typical Z₀ 55.4 Ω*
+
+- A trace's width is the width over **most of its length**, so a trace that tapers into a pad is listed
+  at the width it mostly has. Widths within 1 % (or 1 µm) of each other are one class.
+- **Typical Z₀** is one cut at the middle of the class's longest trace &mdash; a guide to which class is
+  which, not the class's result. The analysis measures every trace in full.
+- **Nothing is ticked for you**, not even the widths already near the target: a trace drawn at the wrong
+  width is exactly what the review exists to catch. Once you have ticked some, the saved choice is what
+  the dialog opens on.
+- **No width ticked on a layer reviews every width on it.** Unticking a layer hides its widths.
+- A saved width the artwork no longer has is kept, struck through, with *no traces at this width now*;
+  untick it to drop it.
+
+Traces outside the choice are **not cut, not solved and not listed** &mdash; on a large board that is most
+of the run time &mdash; but they are still **copper**: a trace under review still sees its out-of-scope
+neighbour as grounded copper beside it, exactly as without a choice. The report says what was reviewed
+and counts what was not, for example *Top Copper at 457 µm (1 trace). 21 traces on Top Copper and 19 on
+Inner 1 are outside the scope and were not analysed.*
 
 ### What counts as a trace {#impedance-traces}
 
@@ -865,15 +901,16 @@ blank, the rule is off and the report says nothing about it.
 
 ### The report {#impedance-report}
 
-- **A summary page** &mdash; always one page: the target and pass band, the technology and its `.ctech`
-  file, the layers, the counts of traces that pass, warn and fail, and per layer the worst excursion from the
-  target. With a highest frequency given, *How it was measured* states the λ/20 rule and the frequency. On the right is the **stackup** the traces were solved against, drawn exactly as the
+- **A summary page** &mdash; always one page: the target and pass band, the **scope** &mdash; which traces
+  were reviewed and how many on each layer were outside it &mdash; the technology and its `.ctech`
+  file, the layers, the counts of traces that pass, warn and fail, and per layer the traces outside the
+  scope and the worst excursion from the target. With a highest frequency given, *How it was measured* states the λ/20 rule and the frequency. On the right is the **stackup** the traces were solved against, drawn exactly as the
   technology editor's Stackup tab draws it, with each layer's thickness, εr, tanδ and conductivity.
 - **A map page per layer**: the layer's copper in grey with every trace drawn over it **coloured by its
   Z0** &mdash; green inside the pass band, blue below, red above &mdash; its id, and a numbered marker at
   every finding: **filled** for a fail, **hollow** for a warning, orange for Z0 and purple for the
   return path. The colour scale marks the pass band, and the warning band's edges as a lighter pair of
-  ticks.
+  ticks. A trace outside the scope is plain grey copper &mdash; no colour, no label, no marker.
 - **A table per layer**: each trace's start and end, what each end is, its length and width, its line
   **type**, Z0 min, max and average, the share of its length inside the band, its reference layers,
   PASS, WARN or FAIL, and then the numbered findings in full, each with its severity.

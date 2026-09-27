@@ -726,13 +726,15 @@ internal static class ToolCatalog
           + "and every finding: Z0 out of band, a return path that breaks or steps to another layer. "
           + "Each trace is PASS, WARNING or FAIL, and each finding a warning or a fail. "
           + "Exit 0 when no trace fails (warnings are reported and still exit 0 unless severity is "
-          + "warning), 1 when one fails or is unsolved. Writes nothing unless output is given.",
+          + "warning), 1 when one fails or is unsolved. Writes nothing unless output is given. "
+          + "The review saved on the layout in the editor (settings, layers and scope) applies unless an "
+          + "argument overrides it.",
             null, null,
             [
                 new("", [ "impedance" ],
                     [new("path", true, "A .clay, or a cell folder holding one.")],
                     [
-                        new("target", "--target", OptKind.Number, "The target Z0 in ohms. Default 50."),
+                        new("target", "--target", OptKind.Number, "The target Z0 in ohms. Default the saved value, else 50."),
                         new("tolerance", "--tol", OptKind.Number,
                             "The tolerance, percent either side of the target. Default 10."),
                         new("warn", "--warn", OptKind.Number,
@@ -745,10 +747,21 @@ internal static class ToolCatalog
                         new("severity", "--severity", OptKind.Str,
                             "What decides the exit code: warning or fail. Default fail; warnings are reported either way."),
                         new("layers", "--layers", OptKind.StrList,
-                            "The copper layers to analyse, by the technology's layer names. Default every "
-                          + "copper layer. A name that is not a copper layer is refused with the names that are."),
+                            "The copper layers to analyse, by the technology's layer names. Default the saved "
+                          + "layers, else every copper layer. A name that is not a copper layer is refused with the names that are."),
                         new("maxWidth", "--max-width", OptKind.Number,
                             "The widest copper read as a trace, in um. Default from the stackup."),
+                        new("width", "--width", OptKind.StrRepeat,
+                            "Review only the traces of these widths on one layer: \"<layer>=<width>[,<width>...]\", "
+                          + "a bare width in um or with a unit (18mil). Replaces the saved width classes for that "
+                          + "layer for this run; a layer given none is reviewed at every width. A trace's width is "
+                          + "the width over most of its length. Out-of-scope traces are not cut, solved or listed, "
+                          + "only counted, and still count as grounded neighbours."),
+                        new("noScope", "--no-scope", OptKind.Flag,
+                            "Ignore the scope saved on the layout and review every trace."),
+                        new("survey", "--survey", OptKind.Flag,
+                            "List the trace widths per layer — count, total length and one typical Z0 per width "
+                          + "class — and analyse nothing. The way to choose width."),
                         new("output", "-o", OptKind.Path,
                             "Write the PDF report here (the one the layout editor exports). Must end in .pdf."),
                         Summary,

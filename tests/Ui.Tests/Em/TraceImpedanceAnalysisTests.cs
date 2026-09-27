@@ -3,7 +3,9 @@
 // slot in the plane under it is flagged where it is; a cancelled run keeps the layers it finished;
 // and the headless verb writes the report and decides its exit code by the verdicts. The warning tier
 // (brief-impedance-1): a stretch inside the warning band warns, an electrically short one warns, a
-// broken return never does, a reference step alone warns, and the verb exits 0 on warnings.
+// broken return never does, a reference step alone warns, and the verb exits 0 on warnings. The scope
+// (brief-impedance-2): it saves solves, it never removes copper, the survey solves one cut per width
+// class, the review round-trips in the .clay, and the verb applies the saved scope by default.
 
 using System.Text.Json;
 using CircuitRF.Cli;
@@ -351,6 +353,134 @@ public class TraceImpedanceAnalysisTests
 
             Assert.Equal(1, InProcess("impedance", clay, "--layers", "Silk", "--json"));
             Assert.Contains("impedance.layers.unknown", _last, StringComparison.Ordinal);
+        }
+        finally { try { Directory.Delete(dir, true); } catch (IOException) { } }
+    }
+
+    // ── the scope (brief-impedance-2) ───────────────────────────────────────────────────────────
+
+    /// <summary>One 450 µm trace and five 100 µm traces on Top — the first 100 µm one 200 µm beside the
+    /// 450 µm trace, so it is a coplanar neighbour of it — over a plane.</summary>
+    private static List<LayoutShape> WidthBoard(bool withNeighbour = true)
+    {
+        var shapes = new List<LayoutShape> { Rect(Top, -6000, -225, 6000, 225), Rect(Gnd, -8000, -8000, 8000, 8000) };
+        if (withNeighbour) shapes.Add(Rect(Top, -6000, 425, 6000, 525));
+        foreach (double y in (double[])[2500, 3500, 4500, 5500])
+            shapes.Add(Rect(Top, -6000, y, 6000, y + 100));
+        return shapes;
+    }
+
+    private static TraceImpedanceScope Wide() => new() { Widths = [TraceWidthSelector.Around("Top", 450)] };
+
+    private static TraceImpedanceReport AnalyzeScoped(IReadOnlyList<LayoutShape> shapes, TraceImpedanceScope? scope) =>
+        TraceImpedanceAnalysis.Analyze(shapes, Tech(), LayoutUnits.DefaultDbuPerMicron,
+            new TraceImpedanceOptions { Layers = [Top], Scope = scope });
+
+    /// <summary>The scope is applied before cutting, so it saves the SOLVES, not just the rows — counted,
+    /// never timed: the scoped run solves no more cuts than the one trace it reports has stations, and
+    /// fewer than the run over all six; the trace under review is T1 and the other five are counted.</summary>
+    [Fact]
+    public void AScopedRun_SolvesOnlyTheTracesInScope()
+    {
+        var all = AnalyzeScoped(WidthBoard(), null);
+        var scoped = AnalyzeScoped(WidthBoard(), Wide());
+
+        Assert.Equal(6, all.TraceCount);
+        var trace = Assert.Single(Assert.Single(scoped.Layers).Traces);
+        Assert.Equal("T1", trace.Id);
+        Assert.Equal(5, scoped.Layers[0].OutOfScope);
+        Assert.True(scoped.SolveCount <= trace.Stations.Count, $"{scoped.SolveCount} solves for {trace.Stations.Count} stations");
+        Assert.True(scoped.SolveCount < all.SolveCount, $"scoped {scoped.SolveCount}, all {all.SolveCount}");
+        Assert.Equal("Top at 450 µm (1 trace). 5 traces on Top are outside the scope and were not analysed.", scoped.ScopeText);
+    }
+
+    /// <summary>Scope selects TRACES, never COPPER: the 450 µm trace reads the same Z0 to the last digit
+    /// with its 100 µm neighbour out of scope as in scope — and the neighbour does move it (the trace
+    /// alone reads differently), so the equality is not vacuous.</summary>
+    [Fact]
+    public void AnOutOfScopeNeighbour_IsStillGroundedCopper()
+    {
+        double? Wide450(TraceImpedanceReport r) =>
+            r.AllTraces.Single(t => Math.Abs(t.WidthMax / LayoutUnits.DefaultDbuPerMicron - 450) < 5).Z0Mean;
+
+        double? unscoped = Wide450(AnalyzeScoped(WidthBoard(), null));
+        double? scoped = Wide450(AnalyzeScoped(WidthBoard(), Wide()));
+        double? alone = Wide450(AnalyzeScoped(WidthBoard(withNeighbour: false), Wide()));
+
+        Assert.Equal(unscoped, scoped);
+        Assert.NotEqual(alone!.Value, scoped!.Value, 3);
+    }
+
+    /// <summary>The survey groups the traces by width — 450 µm × 1 and 100 µm × 5, with their lengths —
+    /// and solves exactly one cut per class.</summary>
+    [Fact]
+    public void TheSurvey_GroupsByWidth_WithOneSolvePerClass()
+    {
+        var survey = TraceImpedanceAnalysis.Survey(WidthBoard(), Tech(), LayoutUnits.DefaultDbuPerMicron,
+                                                   new TraceImpedanceOptions { Layers = [Top] });
+
+        var classes = Assert.Single(survey.Layers).Classes;
+        Assert.Equal(2, classes.Count);
+        Assert.Equal(100, classes[0].NominalMicrons, 1);
+        Assert.Equal(5, classes[0].TraceCount);
+        Assert.Equal(5 * 12000, classes[0].TotalLengthMicrons, 5 * 12000 * 0.01);
+        Assert.Equal(450, classes[1].NominalMicrons, 1);
+        Assert.Equal(1, classes[1].TraceCount);
+        Assert.All(classes, c => Assert.NotNull(c.TypicalZ0));
+        Assert.Equal(2, survey.SolveCount);
+    }
+
+    /// <summary>A <c>.clay</c> with no review writes no key for it, so every existing file round-trips
+    /// byte-identical; one with a review round-trips its settings and scope.</summary>
+    [Fact]
+    public void TheReview_RoundTripsInTheClay_AndIsAbsentWhenNull()
+    {
+        var view = new LayoutView { TechRef = "board.ctech" };
+        view.Shapes.Add(Rect(Top, -6000, -225, 6000, 225));
+        string plain = LayoutPersistence.Serialize(view);
+        Assert.DoesNotContain("ImpedanceReview", plain, StringComparison.Ordinal);
+        Assert.Equal(plain, LayoutPersistence.Serialize(LayoutPersistence.Deserialize(plain)));
+
+        view.ImpedanceReview = new TraceImpedanceReview
+        {
+            TargetOhms = 55, TolerancePercent = 5, WarningPercent = 12, MaxFrequencyHz = 6e9, Layers = ["Top"], Scope = Wide(),
+        };
+        var back = LayoutPersistence.Deserialize(LayoutPersistence.Serialize(view)).ImpedanceReview;
+        Assert.NotNull(back);
+        Assert.True(back.SameAs(view.ImpedanceReview));
+        Assert.Equal(Wide().Widths, back.Scope!.Widths);
+    }
+
+    /// <summary>The verb applies the scope saved on the layout by default, so a headless run reports what
+    /// the editor reports; <c>--no-scope</c> reviews all six traces, <c>--width</c> replaces the saved
+    /// classes for its layer, and <c>--survey</c> lists the widths.</summary>
+    [Fact]
+    public void TheVerb_AppliesTheSavedScope_UnlessToldNot()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "crf-impedance-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            TechPersistence.SaveToFile(Path.Combine(dir, "board.ctech"), Tech());
+            var view = new LayoutView { TechRef = "board.ctech", ImpedanceReview = new TraceImpedanceReview { Scope = Wide() } };
+            view.Shapes.AddRange(WidthBoard());
+            string clay = Path.Combine(dir, "board.clay");
+            LayoutPersistence.SaveToFile(clay, view);
+
+            int Traces(params string[] extra)
+            {
+                InProcess(["impedance", clay, "--layers", "Top", "--json", .. extra]);
+                return JsonDocument.Parse(_last).RootElement.GetProperty("result").GetProperty("impedance")
+                                   .GetProperty("traces").GetInt32();
+            }
+            Assert.Equal(1, Traces());
+            Assert.Equal(6, Traces("--no-scope"));
+            Assert.Equal(5, Traces("--width", "Top=100um"));
+
+            Assert.Equal(0, InProcess("impedance", clay, "--survey", "--json"));
+            var classes = JsonDocument.Parse(_last).RootElement.GetProperty("result").GetProperty("impedanceSurvey")
+                                      .GetProperty("layers")[0].GetProperty("classes");
+            Assert.Equal(2, classes.GetArrayLength());
         }
         finally { try { Directory.Delete(dir, true); } catch (IOException) { } }
     }

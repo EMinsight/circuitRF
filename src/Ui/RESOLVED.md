@@ -36400,3 +36400,24 @@ failed still fits when its content arrives. A stored camera is applied at that m
   its edges are near-black in light mode. The drawing grid's lines went from 0.24 to 0.5 alpha and its axis lines from
   0.6 to 0.85, light mode only.
 - **Toolbar**: the clip-plane controls moved after Snap; the tools and the snap switches swapped places.
+
+## Impedance review brief 2 — the Impedance Analysis dialog's TRACES section (2026-09-26)
+
+The dialog gains a TRACES card under LAYERS. `OnOpened` starts `LayoutEditorViewModel.SurveyTraceWidthsAsync` (the
+artwork flattened on the UI thread, the survey on a worker); closing the window cancels it. Rows come from
+`TraceWidthRows.Merge` in `src/Design`, and the scope from `TraceWidthRows.ScopeOf`, so brief 3's panel takes the logic
+as is — the code-behind only lays the rows out.
+
+- **The session-static memory (`s_target`, `s_unticked`, …) is gone.** The layout's `ImpedanceReview` is now the one
+  place the settings live; keeping both would have let a second layout opened in the same session inherit the first
+  one's target over its own saved review.
+- **Closing saves only when something changed** (`TraceImpedanceReview.SameAs`, null counting as the default review),
+  so opening the dialog on a fresh layout and pressing Cancel does not mark it modified. A field that does not parse
+  keeps the saved review rather than writing a half-typed value. The save is `IsDirty = true` and no undo entry, on
+  `DrcWaivers`' terms.
+- **Export before the survey has finished uses the saved scope untouched**, and a saved width on a layer this window
+  does not list is kept, unseen, rather than dropped — both follow R-imp2-3c's "never silently dropped".
+- Layers are saved as null when every layer with copper is ticked, so a layer that gains copper later is analysed.
+
+Not seen: the GUI cannot be launched from this session; the dialog was verified by the compiler and the Design-side
+tests only.

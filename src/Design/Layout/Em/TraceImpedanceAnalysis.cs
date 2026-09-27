@@ -73,6 +73,10 @@ public sealed record TraceImpedanceOptions
     /// about that layout must speak (owner, 2026-09-25); µm where there is no layout to ask.</summary>
     public LayoutUnit? DisplayUnit { get; init; }
 
+    /// <summary>Which traces are reviewed; null — or an empty scope — for every trace, as before
+    /// there was a scope (brief-impedance-2).</summary>
+    public TraceImpedanceScope? Scope { get; init; }
+
     public const double DefaultTargetOhms = 50;
     public const double DefaultTolerancePercent = 10;
     public const double DefaultWarningPercent = 20;
@@ -230,6 +234,9 @@ public sealed record TraceLayerResult
     /// <summary>Copper islands read as pours or planes and not analysed.</summary>
     public int PoursSkipped { get; init; }
 
+    /// <summary>Traces found on this layer and left out by the scope — counted, never listed.</summary>
+    public int OutOfScope { get; init; }
+
     /// <summary>The widest copper read as a trace on this layer, DBU.</summary>
     public double MaxWidth { get; init; }
 }
@@ -280,6 +287,16 @@ public sealed record TraceImpedanceReport
     public Bbox Extent { get; init; } = Bbox.Empty;
 
     public IReadOnlyList<string> Notes { get; init; } = [];
+
+    /// <summary>The scope the run reviewed, or null for every trace.</summary>
+    public TraceImpedanceScope? Scope { get; init; }
+
+    /// <summary>The scope in words — built here so the PDF, the CLI and the panel say the same sentence:
+    /// "Top Copper at 457 µm (1 trace). 21 traces on Top Copper and 19 on Inner 1 are outside the scope
+    /// and were not analysed."</summary>
+    public string ScopeText { get; init; } = "";
+
+    public int OutOfScopeCount => Layers.Sum(l => l.OutOfScope);
 
     public DateTime CreatedUtc { get; init; } = DateTime.UtcNow;
     public int StationCount { get; init; }
@@ -383,13 +400,27 @@ public static class TraceImpedanceAnalysis
     public static TraceImpedanceReport AnalyzeFile(
         string clayPath, TraceImpedanceOptions options, RunControl? control = null)
     {
+        var source = LoadLayout(clayPath);
+        return source.Refusal is { } why ? TraceImpedanceReport.Refused(why) : Analyze(source, options, control);
+    }
+
+    /// <summary>A layout on disk read for analysis: the view (whose saved
+    /// <see cref="LayoutView.ImpedanceReview"/> the caller may apply), its technology resolved as the
+    /// editor resolves it, and its placed cells flattened as a DRC run flattens them — read ONCE, so a
+    /// caller that needs the saved review and the analysis does not read a large board twice.</summary>
+    public sealed record LayoutSource(
+        string Path, LayoutView View, Technology? Technology, string? TechnologyPath,
+        IReadOnlyList<LayoutShape> Shapes, string? Refusal);
+
+    public static LayoutSource LoadLayout(string clayPath)
+    {
         ArgumentException.ThrowIfNullOrWhiteSpace(clayPath);
         string full = Path.GetFullPath(clayPath);
         var view = LayoutPersistence.LoadFromFile(full);
         var cache = new TechnologyCache();
         var (resolved, _) = TechnologyResolver.ResolveForDocument(view.TechRef, full, null, cache);
         if (resolved.Tech is not { } tech)
-            return TraceImpedanceReport.Refused(
+            return new LayoutSource(full, view, null, null, [],
                 $"'{Path.GetFileName(full)}' resolves no technology, so it has no stackup: an impedance needs " +
                 "the heights and the dielectric. Give the layout a technology, or open it in a workspace that has one.");
 
@@ -400,15 +431,30 @@ public static class TraceImpedanceAnalysis
                 techRef, Path.Combine(subLayoutDir, "x.clay"), null, cache).Resolution,
             resolvedCrossTechMappings: null);
         IReadOnlyList<LayoutShape> shapes = flat.ExceedsCeiling ? view.Shapes : flat.Shapes;
+        return new LayoutSource(full, view, tech, resolved.ResolvedPath, shapes, null);
+    }
 
-        var report = Analyze(shapes, tech, view.DbuPerMicron,
-                             options with { DisplayUnit = options.DisplayUnit ?? view.DisplayUnit }, control);
+    /// <summary>The analysis of a layout read by <see cref="LoadLayout"/>.</summary>
+    public static TraceImpedanceReport Analyze(LayoutSource source, TraceImpedanceOptions options, RunControl? control = null)
+    {
+        if (source.Technology is null)
+            return TraceImpedanceReport.Refused(source.Refusal ?? "The layout resolves no technology.");
+        var report = Analyze(source.Shapes, source.Technology, source.View.DbuPerMicron,
+                             options with { DisplayUnit = options.DisplayUnit ?? source.View.DisplayUnit }, control);
         return report with
         {
-            Title = CellTitle(full),
-            SourcePath = full,
-            TechnologyPath = resolved.ResolvedPath,
+            Title = CellTitle(source.Path),
+            SourcePath = source.Path,
+            TechnologyPath = source.TechnologyPath,
         };
+    }
+
+    /// <summary>The survey of a layout read by <see cref="LoadLayout"/>.</summary>
+    public static TraceWidthSurvey Survey(LayoutSource source, TraceImpedanceOptions options, RunControl? control = null)
+    {
+        if (source.Technology is null)
+            return TraceWidthSurvey.Refused(source.Refusal ?? "The layout resolves no technology.");
+        return Survey(source.Shapes, source.Technology, source.View.DbuPerMicron, options, control);
     }
 
     /// <summary>The cell's name for a layout inside a cell folder, the file's name otherwise.</summary>
@@ -448,10 +494,324 @@ public static class TraceImpedanceAnalysis
         var clock = Stopwatch.StartNew();
         var ct = control?.Token ?? CancellationToken.None;
 
+        var (prep, refusal) = Prepare(shapes, tech, dbuPerMicron, options, control, ct);
+        if (prep is null) return TraceImpedanceReport.Refused(refusal!);
+        var ctx = prep.Ctx;
+        var analysed = prep.Analysed;
+        var notes = prep.Notes;
+        var scope = options.Scope is { IsEmpty: false } s ? s : null;
+
+        // ── layer by layer ──────────────────────────────────────────────────────────────────────
+        // Each layer is found, cut, solved and assembled before the next is started, so a run that
+        // is cancelled still has every layer it FINISHED — and the report is written for those
+        // (owner, 2026-09-25: a long run cancelled part-way must not throw away what it has done).
+        // Progress: Completed/Total counts layers; the stage counts the layer's solves.
+        int id = 0, stationCount = 0, solveCount = 0;
+        var layers = new List<TraceLayerResult>();
+        bool cancelled = false;
+        for (int li = 0; li < analysed.Count; li++)
+        {
+            var (key, band) = analysed[li];
+            string name = prep.LayerName(key);
+            string tag = $"{name} ({li + 1} of {analysed.Count})";
+            try
+            {
+                ct.ThrowIfCancellationRequested();
+                control?.BeginStage($"{tag}: finding traces");
+                var lw = prep.FindLayer(key, name, band, options, ct);
+
+                // The scope, BEFORE cutting, so an out-of-scope trace is never cut or solved — that is
+                // the solve time saved, not just the rows. It selects TRACES, never COPPER: the chains
+                // dropped here leave the layer's copper (lw.Copper) and every other layer's (ctx.Copper)
+                // untouched, so the out-of-scope trace running beside a trace under review is still a
+                // grounded neighbour in that trace's cross-section, exactly as without a scope.
+                int outOfScope = 0;
+                if (scope is not null)
+                {
+                    var kept = lw.Chains.Where(c => scope.Includes(name, DominantWidth(c, dbuPerMicron) / dbuPerMicron)).ToList();
+                    outOfScope = lw.Chains.Count - kept.Count;
+                    lw = lw with { Chains = kept };
+                }
+
+                control?.BeginStage($"{tag}: cutting");
+                var solves = new Dictionary<string, TraceCut>();
+                stationCount += Cut(lw, ctx, solves, dbuPerMicron, ct);
+
+                var keys = solves.Keys.ToArray();
+                control?.BeginStage($"{tag}: solving", keys.Length, "cross-sections");
+                var answers = new System.Collections.Concurrent.ConcurrentDictionary<string, (double C, double C0, string? Refusal)>();
+                Parallel.ForEach(keys,
+                    new ParallelOptions { CancellationToken = ct, MaxDegreeOfParallelism = Environment.ProcessorCount },
+                    k =>
+                    {
+                        answers[k] = TraceCrossSection.Solve(ctx, solves[k], ct);
+                        control?.TickStage();
+                    });
+                ct.ThrowIfCancellationRequested();
+                solveCount += keys.Length;
+
+                var runs = new List<TraceRun>();
+                foreach (var chain in lw.Chains)
+                    runs.Add(Assemble(chain, lw, answers, options, dbuPerMicron, ref id));
+                layers.Add(new TraceLayerResult
+                {
+                    Layer = lw.Key,
+                    Name = lw.Name,
+                    Traces = runs,
+                    PoursSkipped = lw.Pours,
+                    OutOfScope = outOfScope,
+                    MaxWidth = lw.MaxWidth,
+                    Copper = lw.Copper is null ? [] : [.. lw.Copper.Paths.Select(p =>
+                    {
+                        var xy = new long[p.Count * 2];
+                        for (int i = 0; i < p.Count; i++) { xy[2 * i] = p[i].X; xy[2 * i + 1] = p[i].Y; }
+                        return xy;
+                    })],
+                });
+                control?.Tick();
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                cancelled = true;
+                var rest = analysed.Skip(li).Select(a => $"'{prep.LayerName(a.Key)}'");
+                notes.Add($"Cancelled after {li} of {analysed.Count} layer{(analysed.Count == 1 ? "" : "s")}; " +
+                          $"not analysed: {string.Join(", ", rest)}.");
+                break;
+            }
+        }
+
+        if (!cancelled && layers.All(l => l.Traces.Count == 0 && l.OutOfScope == 0))
+            notes.Add("No traces were found on the layers analysed: no copper there has two long parallel " +
+                      "edges facing each other outside a pour.");
+
+        var report = new TraceImpedanceReport
+        {
+            TechnologyName = tech.Name,
+            Technology = tech,
+            TargetOhms = options.TargetOhms,
+            TolerancePercent = options.TolerancePercent,
+            WarningPercent = options.WarningPercent,
+            MaxFrequencyHz = options.MaxFrequencyHz,
+            DbuPerMicron = dbuPerMicron,
+            DisplayUnit = options.DisplayUnit ?? LayoutUnit.Um,
+            Layers = layers,
+            LayersRequested = [.. analysed.Select(a => prep.LayerName(a.Key))],
+            Cancelled = cancelled,
+            Extent = prep.Extent,
+            Notes = notes,
+            Scope = scope,
+            StationCount = stationCount,
+            SolveCount = solveCount,
+            Elapsed = clock.Elapsed,
+        };
+        return report with { ScopeText = DescribeScope(report) };
+    }
+
+    /// <summary>
+    /// The traces on the chosen layers grouped into width classes, with nothing solved but ONE typical
+    /// cut per class (brief-impedance-2 R-imp2-1) — what a reviewer chooses a scope from. The copper is
+    /// read and the traces found by the same code <see cref="Analyze(IReadOnlyList{LayoutShape},
+    /// Technology, int, TraceImpedanceOptions, RunControl?)"/> runs; it then stops short of cutting.
+    /// The scope in <paramref name="options"/> is ignored: a survey shows every width, so a class the
+    /// scope leaves out can be ticked. Cancelling throws <see cref="OperationCanceledException"/>.
+    /// </summary>
+    public static TraceWidthSurvey Survey(
+        IReadOnlyList<LayoutShape> shapes, Technology tech, int dbuPerMicron,
+        TraceImpedanceOptions options, RunControl? control = null)
+    {
+        ArgumentNullException.ThrowIfNull(shapes);
+        ArgumentNullException.ThrowIfNull(tech);
+        ArgumentNullException.ThrowIfNull(options);
+        if (dbuPerMicron <= 0) dbuPerMicron = LayoutUnits.DefaultDbuPerMicron;
+        var clock = Stopwatch.StartNew();
+        var ct = control?.Token ?? CancellationToken.None;
+
+        var (prep, refusal) = Prepare(shapes, tech, dbuPerMicron, options, control, ct);
+        if (prep is null) return TraceWidthSurvey.Refused(refusal!);
+
+        var layers = new List<TraceWidthLayer>();
+        int solveCount = 0;
+        for (int li = 0; li < prep.Analysed.Count; li++)
+        {
+            var (key, band) = prep.Analysed[li];
+            string name = prep.LayerName(key);
+            string tag = $"{name} ({li + 1} of {prep.Analysed.Count})";
+            ct.ThrowIfCancellationRequested();
+            control?.BeginStage($"{tag}: finding traces");
+            var lw = prep.FindLayer(key, name, band, options, ct);
+
+            var widths = lw.Chains.Select(c => DominantWidth(c, dbuPerMicron)).ToArray();
+            var lengths = lw.Chains.Select(ChainLength).ToArray();
+            var clusters = Cluster(widths, lengths, dbuPerMicron);
+
+            control?.BeginStage($"{tag}: typical Z0", clusters.Count, "cross-sections");
+            var classes = new List<TraceWidthClass>();
+            foreach (var members in clusters)
+            {
+                ct.ThrowIfCancellationRequested();
+                double total = members.Sum(i => lengths[i]);
+                var (z0, why) = TypicalZ0(lw with { Chains = [lw.Chains[members.MaxBy(i => lengths[i])]] },
+                                          prep.Ctx, dbuPerMicron, ct, ref solveCount);
+                classes.Add(new TraceWidthClass
+                {
+                    NominalMicrons = members.Sum(i => widths[i] * lengths[i]) / total / dbuPerMicron,
+                    MinMicrons = members.Min(i => widths[i]) / dbuPerMicron,
+                    MaxMicrons = members.Max(i => widths[i]) / dbuPerMicron,
+                    TraceCount = members.Count,
+                    TotalLengthMicrons = total / dbuPerMicron,
+                    TypicalZ0 = z0,
+                    TypicalRefusal = why,
+                });
+                control?.TickStage();
+            }
+            layers.Add(new TraceWidthLayer { Layer = key, Name = name, Classes = classes, PoursSkipped = lw.Pours });
+            control?.Tick();
+        }
+        return new TraceWidthSurvey
+        {
+            Layers = layers, Notes = prep.Notes, SolveCount = solveCount, Elapsed = clock.Elapsed,
+        };
+    }
+
+    /// <summary>One cut at the middle of the one chain in <paramref name="lw"/> — the nearest station to
+    /// the middle whose cut is solvable — solved. Cutting the chain is <see cref="Cut"/>'s own work.</summary>
+    private static (double? Z0, string? Refusal) TypicalZ0(LayerWork lw, TraceStack ctx, int dbuPerMicron,
+                                                          CancellationToken ct, ref int solveCount)
+    {
+        var chain = lw.Chains[0];
+        Cut(lw, ctx, new Dictionary<string, TraceCut>(), dbuPerMicron, ct);
+        double mid = 0.5 * chain.Length;
+        var station = chain.Stations.Where(s => s.Cut is { Refusal: null })
+                                    .OrderBy(s => Math.Abs(s.S - mid)).FirstOrDefault();
+        if (station is null)
+            return (null, chain.Stations.Select(s => s.Cut?.Refusal).FirstOrDefault(r => r is not null)
+                          ?? "the cut left the copper");
+        var (c, c0, refusal) = TraceCrossSection.Solve(ctx, station.Cut!, ct);
+        solveCount++;
+        return refusal is null ? (TraceCrossSection.Z0(c, c0), null) : (null, refusal);
+    }
+
+    /// <summary>Two widths merge into one class within this: max(1 %, 1 µm).</summary>
+    public static double MergeToleranceMicrons(double widthMicrons) => Math.Max(0.01 * widthMicrons, 1.0);
+
+    /// <summary>
+    /// Widths grouped into classes: sorted, and a width joins the class of the narrowest width within
+    /// <see cref="MergeToleranceMicrons"/> of it. Each class is its members' indices. DBU in.
+    /// </summary>
+    private static List<List<int>> Cluster(double[] widths, double[] weights, int dbuPerMicron)
+    {
+        var order = Enumerable.Range(0, widths.Length).OrderBy(i => widths[i]).ToArray();
+        var classes = new List<List<int>>();
+        int a = 0;
+        while (a < order.Length)
+        {
+            double w0 = widths[order[a]];
+            double tol = MergeToleranceMicrons(w0 / dbuPerMicron) * dbuPerMicron;
+            var members = new List<int>();
+            while (a < order.Length && widths[order[a]] - w0 <= tol) members.Add(order[a++]);
+            classes.Add(members);
+        }
+        return classes;
+    }
+
+    /// <summary>
+    /// A chain's DOMINANT width, DBU: the width over the largest share of its length, its pieces'
+    /// widths grouped as a survey groups traces — a 99–650 µm taper is classed by the width most of it
+    /// has, not by its narrowest or widest end.
+    /// </summary>
+    private static double DominantWidth(ChainWork chain, int dbuPerMicron)
+    {
+        var widths = chain.Pieces.Select(p => p.Piece.Width).ToArray();
+        var lengths = chain.Pieces.Select(p => p.Piece.Length).ToArray();
+        var best = Cluster(widths, lengths, dbuPerMicron).MaxBy(m => m.Sum(i => lengths[i]))!;
+        return best.Sum(i => widths[i] * lengths[i]) / best.Sum(i => lengths[i]);
+    }
+
+    /// <summary>A chain's length along its centre line, DBU — its pieces and the joins between them,
+    /// as <see cref="Cut"/> measures it.</summary>
+    private static double ChainLength(ChainWork chain)
+    {
+        double s = 0;
+        for (int i = 0; i < chain.Pieces.Count; i++)
+        {
+            var (p, reversed) = chain.Pieces[i];
+            s += p.Length;
+            if (i == 0) continue;
+            var (q, qReversed) = chain.Pieces[i - 1];
+            var (qx, qy) = qReversed ? (q.Ax, q.Ay) : (q.Bx, q.By);
+            var (ax, ay) = reversed ? (p.Bx, p.By) : (p.Ax, p.Ay);
+            s += Math.Sqrt(Sq(ax - qx) + Sq(ay - qy));
+        }
+        return s;
+    }
+
+    /// <summary>
+    /// The scope in words: per analysed layer what was reviewed and how many traces that is, then the
+    /// traces left out, counted — never listed (the series rule: what was not reviewed is said, not
+    /// hidden).
+    /// </summary>
+    private static string DescribeScope(TraceImpedanceReport r)
+    {
+        static string Traces(int n) => n == 1 ? "1 trace" : $"{n} traces";
+        if (r.Layers.Count == 0) return "";
+        if (r.Scope is null)
+            return $"Every trace on {JoinAnd([.. r.Layers.Select(l => l.Name)])}.";
+
+        var clauses = new List<string>();
+        foreach (var l in r.Layers)
+        {
+            var widths = r.Scope.WidthsOn(l.Name).Select(w => w.NominalMicrons).Distinct().OrderBy(w => w).ToList();
+            clauses.Add(widths.Count == 0
+                ? $"{l.Name}, every width ({Traces(l.Traces.Count)})"
+                : $"{l.Name} at {JoinAnd([.. widths.Select(w => r.Num(w * r.DbuPerMicron))])} {r.Unit} ({Traces(l.Traces.Count)})");
+        }
+        string text = string.Join("; ", clauses) + ".";
+
+        var outside = r.Layers.Where(l => l.OutOfScope > 0).ToList();
+        if (outside.Count > 0)
+        {
+            var parts = outside.Select((l, i) => i == 0 ? $"{Traces(l.OutOfScope)} on {l.Name}" : $"{l.OutOfScope} on {l.Name}").ToList();
+            bool one = outside.Count == 1 && outside[0].OutOfScope == 1;
+            text += $" {JoinAnd(parts)} {(one ? "is" : "are")} outside the scope and {(one ? "was" : "were")} not analysed.";
+        }
+        return text;
+    }
+
+    private static string JoinAnd(IReadOnlyList<string> items) => items.Count switch
+    {
+        0 => "",
+        1 => items[0],
+        _ => string.Join(", ", items.Take(items.Count - 1)) + " and " + items[^1],
+    };
+
+    /// <summary>What <see cref="Analyze(IReadOnlyList{LayoutShape}, Technology, int, TraceImpedanceOptions,
+    /// RunControl?)"/> and <see cref="Survey(IReadOnlyList{LayoutShape}, Technology, int,
+    /// TraceImpedanceOptions, RunControl?)"/> both start from: the whole artwork's copper, per band, and
+    /// the layers to look at.</summary>
+    private sealed class Prepared
+    {
+        public required TraceStack Ctx { get; init; }
+        public required List<(LayerKey Key, CrossSectionExtractor.Band Band)> Analysed { get; init; }
+        public required List<string> Notes { get; init; }
+        public required Bbox Extent { get; init; }
+        public required Func<LayerKey, string> LayerName { get; init; }
+        public required Dictionary<int, (int[] IslandOfRing, double[] IslandArea, int[] HoleCount)> IslandsOf { get; init; }
+        public required Dictionary<int, List<(double X, double Y, double R)>> Vias { get; init; }
+        public required int DbuPerMicron { get; init; }
+
+        public LayerWork FindLayer(LayerKey key, string name, CrossSectionExtractor.Band band,
+                                   TraceImpedanceOptions options, CancellationToken ct) =>
+            TraceImpedanceAnalysis.FindLayer(key, name, band, Ctx.Copper, IslandsOf, Vias, options, Ctx.Bands, DbuPerMicron, ct);
+    }
+
+    private static (Prepared? Prep, string? Refusal) Prepare(
+        IReadOnlyList<LayoutShape> shapes, Technology tech, int dbuPerMicron,
+        TraceImpedanceOptions options, RunControl? control, CancellationToken ct)
+    {
         var (stack, bands, bandOf, stackRefusal) = TraceStack.StackOf(tech);
-        if (stackRefusal is not null) return TraceImpedanceReport.Refused(stackRefusal);
+        if (stackRefusal is not null) return (null, stackRefusal);
         if (bands.Count == 0)
-            return TraceImpedanceReport.Refused(
+            return (null,
                 $"The technology '{tech.Name}' has no conductor in its stackup, so there is no copper to analyse. " +
                 "Add the stackup on the technology's Stackup tab.");
 
@@ -506,8 +866,7 @@ public static class TraceImpedanceAnalysis
         // Top of the stack first, as the stackup lists them and as a reviewer reads a board.
         analysed.Sort((a, b) => a.Band.Index.CompareTo(b.Band.Index));
         if (analysed.Count == 0)
-            return TraceImpedanceReport.Refused(
-                "None of the layers asked for is a copper layer bound to the stackup, so there is nothing to analyse.");
+            return (null, "None of the layers asked for is a copper layer bound to the stackup, so there is nothing to analyse.");
 
         var copper = new Dictionary<int, TraceCopper>();
         var islandsOf = new Dictionary<int, (int[] IslandOfRing, double[] IslandArea, int[] HoleCount)>();
@@ -556,95 +915,11 @@ public static class TraceImpedanceAnalysis
         {
             Stack = stack, Bands = bands, BandOf = bandOf, Copper = copper, Tech = tech, DbuPerMicron = dbuPerMicron,
         };
-
-        // ── layer by layer ──────────────────────────────────────────────────────────────────────
-        // Each layer is found, cut, solved and assembled before the next is started, so a run that
-        // is cancelled still has every layer it FINISHED — and the report is written for those
-        // (owner, 2026-09-25: a long run cancelled part-way must not throw away what it has done).
-        // Progress: Completed/Total counts layers; the stage counts the layer's solves.
-        int id = 0, stationCount = 0, solveCount = 0;
-        var layers = new List<TraceLayerResult>();
-        bool cancelled = false;
-        for (int li = 0; li < analysed.Count; li++)
+        return (new Prepared
         {
-            var (key, band) = analysed[li];
-            string name = LayerName(key);
-            string tag = $"{name} ({li + 1} of {analysed.Count})";
-            try
-            {
-                ct.ThrowIfCancellationRequested();
-                control?.BeginStage($"{tag}: finding traces");
-                var lw = FindLayer(key, name, band, copper, islandsOf, vias, options, bands, dbuPerMicron, ct);
-
-                control?.BeginStage($"{tag}: cutting");
-                var solves = new Dictionary<string, TraceCut>();
-                stationCount += Cut(lw, ctx, solves, dbuPerMicron, ct);
-
-                var keys = solves.Keys.ToArray();
-                control?.BeginStage($"{tag}: solving", keys.Length, "cross-sections");
-                var answers = new System.Collections.Concurrent.ConcurrentDictionary<string, (double C, double C0, string? Refusal)>();
-                Parallel.ForEach(keys,
-                    new ParallelOptions { CancellationToken = ct, MaxDegreeOfParallelism = Environment.ProcessorCount },
-                    k =>
-                    {
-                        answers[k] = TraceCrossSection.Solve(ctx, solves[k], ct);
-                        control?.TickStage();
-                    });
-                ct.ThrowIfCancellationRequested();
-                solveCount += keys.Length;
-
-                var runs = new List<TraceRun>();
-                foreach (var chain in lw.Chains)
-                    runs.Add(Assemble(chain, lw, answers, options, dbuPerMicron, ref id));
-                layers.Add(new TraceLayerResult
-                {
-                    Layer = lw.Key,
-                    Name = lw.Name,
-                    Traces = runs,
-                    PoursSkipped = lw.Pours,
-                    MaxWidth = lw.MaxWidth,
-                    Copper = lw.Copper is null ? [] : [.. lw.Copper.Paths.Select(p =>
-                    {
-                        var xy = new long[p.Count * 2];
-                        for (int i = 0; i < p.Count; i++) { xy[2 * i] = p[i].X; xy[2 * i + 1] = p[i].Y; }
-                        return xy;
-                    })],
-                });
-                control?.Tick();
-            }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
-            {
-                cancelled = true;
-                var rest = analysed.Skip(li).Select(a => $"'{LayerName(a.Key)}'");
-                notes.Add($"Cancelled after {li} of {analysed.Count} layer{(analysed.Count == 1 ? "" : "s")}; " +
-                          $"not analysed: {string.Join(", ", rest)}.");
-                break;
-            }
-        }
-
-        if (!cancelled && layers.All(l => l.Traces.Count == 0))
-            notes.Add("No traces were found on the layers analysed: no copper there has two long parallel " +
-                      "edges facing each other outside a pour.");
-
-        return new TraceImpedanceReport
-        {
-            TechnologyName = tech.Name,
-            Technology = tech,
-            TargetOhms = options.TargetOhms,
-            TolerancePercent = options.TolerancePercent,
-            WarningPercent = options.WarningPercent,
-            MaxFrequencyHz = options.MaxFrequencyHz,
-            DbuPerMicron = dbuPerMicron,
-            DisplayUnit = options.DisplayUnit ?? LayoutUnit.Um,
-            Layers = layers,
-            LayersRequested = [.. analysed.Select(a => LayerName(a.Key))],
-            Cancelled = cancelled,
-            Extent = extent,
-            Notes = notes,
-            StationCount = stationCount,
-            SolveCount = solveCount,
-            Elapsed = clock.Elapsed,
-        };
+            Ctx = ctx, Analysed = analysed, Notes = notes, Extent = extent, LayerName = LayerName,
+            IslandsOf = islandsOf, Vias = vias, DbuPerMicron = dbuPerMicron,
+        }, null);
     }
 
     /// <summary>Pieces, pours and chains on one layer.</summary>

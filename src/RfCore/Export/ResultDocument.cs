@@ -156,7 +156,9 @@ namespace RfCore.Export
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         LvsReportJson? Lvs = null,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        ImpedanceReportJson? Impedance = null);
+        ImpedanceReportJson? Impedance = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        ImpedanceSurveyJson? ImpedanceSurvey = null);
 
     /// <summary>
     /// What an <c>NDF=yes</c> run found (brief-wsprobe-6 R-wsp6-2): the right-half-plane pole count
@@ -602,6 +604,7 @@ namespace RfCore.Export
         double                             TolerancePercent,
         double                             WarningPercent,
         double?                            MaxFrequencyHz,
+        string                             Scope,
         bool                               Cancelled,
         int                                Traces,
         int                                Pass,
@@ -609,9 +612,12 @@ namespace RfCore.Export
         int                                Fail,
         IReadOnlyList<ImpedanceLayerJson>  Layers);
 
+    /// <param name="OutOfScope">Traces found on the layer and left out by the scope — counted, not
+    /// listed.</param>
     public sealed record ImpedanceLayerJson(
         string                             Layer,
         int                                PoursSkipped,
+        int                                OutOfScope,
         IReadOnlyList<ImpedanceTraceJson>  Traces);
 
     /// <param name="Verdict"><c>pass</c>, <c>warning</c>, <c>fail</c> or <c>unsolved</c>.</param>
@@ -650,6 +656,35 @@ namespace RfCore.Export
     /// <c>reference-step</c>, <c>no-reference</c> or <c>unsolved</c>.</param>
     /// <param name="Severity"><c>warning</c> or <c>fail</c>.</param>
     public sealed record ImpedanceIssueJson(string Kind, string Severity, double[] From, double[] To, string Message);
+
+    /// <summary>
+    /// What <c>impedance --survey</c> found: the traces on each layer grouped by width, with nothing
+    /// solved but one typical cut per class — the headless way to choose <c>--width</c>. Widths and
+    /// lengths in µm.
+    /// </summary>
+    public sealed record ImpedanceSurveyJson(
+        string                                 Title,
+        string                                 Technology,
+        int                                    Solves,
+        IReadOnlyList<ImpedanceSurveyLayerJson> Layers);
+
+    public sealed record ImpedanceSurveyLayerJson(
+        string                                 Layer,
+        int                                    PoursSkipped,
+        IReadOnlyList<ImpedanceWidthClassJson> Classes);
+
+    /// <param name="Width">The class's nominal width — the length-weighted mean of its traces'
+    /// dominant widths.</param>
+    /// <param name="TypicalZ0">ONE cross-section at the middle of the class's longest trace: typical,
+    /// not the class's Z0.</param>
+    public sealed record ImpedanceWidthClassJson(
+        double  Width,
+        double  WidthMin,
+        double  WidthMax,
+        int     Traces,
+        double  Length,
+        double? TypicalZ0,
+        string? TypicalRefusal);
 
     /// <summary>
     /// What <c>lvs</c> compared, and what it concluded.

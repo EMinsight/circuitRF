@@ -14,9 +14,14 @@ namespace CircuitRF.Cli;
 /// one breaks. <c>-o report.pdf</c> writes the report the layout editor's Impedance Analysis exports.
 ///
 /// <para><b>It owns no analysis and no page</b>, on <c>src/Cli/Authoring.cs</c>' terms: every number
-/// comes out of <see cref="TraceImpedanceAnalysis.AnalyzeFile"/> and every pixel of the PDF out of
+/// comes out of <see cref="TraceImpedanceAnalysis.LoadLayout"/> and <c>TraceImpedanceAnalysis.Analyze</c> and every pixel of the PDF out of
 /// <see cref="TraceImpedanceReportDocument.Pdf"/> — the two calls the editor's dialog makes — so a
 /// board that passes headlessly passes when it is opened, and the two PDFs are the same document.</para>
+///
+/// <para><b>The review saved on the layout applies by default</b> (brief-impedance-2): the target, bands,
+/// frequency, layers and scope the editor's dialog last saved, each overridden by its flag, so a headless
+/// run reviews the traces the editor reviews. <c>--no-scope</c> drops the saved scope, <c>--width</c>
+/// replaces it for the layers it names, and <c>--survey</c> lists the width classes and analyses nothing.</para>
 ///
 /// <para><b>Exit codes</b>, on <c>check</c>'s convention: 0 when no trace fails — warnings are always
 /// reported and still exit 0 — 1 when one fails or is unsolved or the run is refused (and, with
@@ -30,13 +35,17 @@ internal static class Impedance
     {
         public string? Path;
         public string? Output;
-        public double Target = TraceImpedanceOptions.DefaultTargetOhms;
-        public double Tolerance = TraceImpedanceOptions.DefaultTolerancePercent;
-        public double Warn = TraceImpedanceOptions.DefaultWarningPercent;
+        // Null = not given: the value saved on the layout applies, and the default where none is.
+        public double? Target;
+        public double? Tolerance;
+        public double? Warn;
         public double? MaxFrequencyHz;
         public bool WarningsFail;
         public readonly List<string> Layers = [];
         public double? MaxWidthMicrons;
+        public bool NoScope;
+        public bool Survey;
+        public readonly List<(string Layer, List<double> Microns)> Widths = [];
     }
 
     public static int Run(string[] args)
@@ -55,32 +64,74 @@ internal static class Impedance
         if (ResolveLayout(o.Path) is not { } clay)
             return JsonRun.Fail(CliDiagnostics.ImpedanceNotALayout(o.Path, DocumentKinds.Name(DocumentKinds.Classify(o.Path))));
 
+        // Read ONCE: the saved review and the analysis come from the same read of the file.
+        TraceImpedanceAnalysis.LayoutSource source;
+        try { source = TraceImpedanceAnalysis.LoadLayout(clay); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException or System.Text.Json.JsonException)
+        {
+            return JsonRun.Fail(CliDiagnostics.ImpedanceLayoutUnreadable(clay, ex.Message));
+        }
+        if (source.Technology is not { } tech)
+            return o.Layers.Count > 0 || o.Widths.Count > 0
+                ? JsonRun.Fail(CliDiagnostics.ImpedanceNoTechnology(clay))
+                : JsonRun.Fail(CliDiagnostics.ImpedanceRefused(clay, source.Refusal ?? ""));
+
+        // The review saved on the layout applies by default, so a headless run reports what the
+        // editor reports (brief-impedance-2 R-imp2-4c); a flag overrides it, and it overrides the
+        // defaults.
+        var saved = source.View.ImpedanceReview;
+        var copperNames = CopperLayers(tech);
+
         // The layer names, against the technology the layout resolves — a name that is not one of its
-        // copper layers is a refusal listing the ones that are, never a silent skip.
+        // copper layers is a refusal listing the ones that are, never a silent skip. A SAVED name the
+        // technology no longer has is said on stderr and skipped: the flag is the caller's, the saved
+        // review is last session's.
         IReadOnlyList<LayerKey>? layers = null;
         if (o.Layers.Count > 0)
         {
-            var (tech, copperNames) = CopperLayers(clay);
-            if (tech is null) return JsonRun.Fail(CliDiagnostics.ImpedanceNoTechnology(clay));
             var keys = new List<LayerKey>();
             foreach (string name in o.Layers)
             {
-                var def = tech.Layers.FirstOrDefault(l => string.Equals(l.Name, name, StringComparison.OrdinalIgnoreCase));
-                if (def is null || !copperNames.Contains(def.Name))
+                if (CopperLayer(tech, copperNames, name) is not { } def)
                     return JsonRun.Fail(CliDiagnostics.ImpedanceUnknownLayer(name, string.Join(", ", copperNames)));
                 keys.Add(def.Key);
             }
             layers = keys;
         }
+        else if (saved?.Layers is { Count: > 0 } savedLayers)
+        {
+            var keys = new List<LayerKey>();
+            foreach (string name in savedLayers)
+            {
+                if (CopperLayer(tech, copperNames, name) is { } def) keys.Add(def.Key);
+                else Console.Error.WriteLine($"[circuitRF] The saved review names '{name}', which is not a copper layer of this technology now; it was skipped.");
+            }
+            if (keys.Count > 0) layers = keys;
+        }
+
+        TraceImpedanceScope? scope = null;
+        if (!o.NoScope)
+        {
+            scope = saved?.Scope?.Clone() ?? new TraceImpedanceScope();
+            foreach (var (layerName, microns) in o.Widths)
+            {
+                if (CopperLayer(tech, copperNames, layerName) is not { } def)
+                    return JsonRun.Fail(CliDiagnostics.ImpedanceUnknownLayer(layerName, string.Join(", ", copperNames)));
+                // --width REPLACES the saved classes for that layer, for this run.
+                scope.Widths.RemoveAll(w => string.Equals(w.LayerName, def.Name, StringComparison.OrdinalIgnoreCase));
+                foreach (double um in microns) scope.Widths.Add(TraceWidthSelector.Around(def.Name, um));
+            }
+        }
 
         var options = new TraceImpedanceOptions
         {
-            TargetOhms = o.Target,
-            TolerancePercent = o.Tolerance,
-            WarningPercent = o.Warn,
-            MaxFrequencyHz = o.MaxFrequencyHz,
+            TargetOhms = o.Target ?? saved?.TargetOhms ?? TraceImpedanceOptions.DefaultTargetOhms,
+            TolerancePercent = o.Tolerance ?? saved?.TolerancePercent ?? TraceImpedanceOptions.DefaultTolerancePercent,
+            WarningPercent = o.Warn ?? saved?.WarningPercent ?? TraceImpedanceOptions.DefaultWarningPercent,
+            MaxFrequencyHz = o.MaxFrequencyHz ?? saved?.MaxFrequencyHz,
             Layers = layers,
             MaxWidthMicrons = o.MaxWidthMicrons,
+            Scope = scope,
         };
 
         // Progress: one stderr line per stage (a layer's finding, cutting, solving), and whatever a
@@ -100,19 +151,17 @@ internal static class Impedance
             }),
         };
 
+        if (o.Survey) return RunSurvey(source, options, control, clay);
+
         TraceImpedanceReport report;
         try
         {
-            report = TraceImpedanceAnalysis.AnalyzeFile(clay, options, control);
+            report = TraceImpedanceAnalysis.Analyze(source, options, control);
         }
         catch (OperationCanceledException)
         {
             JsonRun.Report(CliDiagnostics.ImpedanceCancelled());
             return 130;
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException or System.Text.Json.JsonException)
-        {
-            return JsonRun.Fail(CliDiagnostics.ImpedanceLayoutUnreadable(clay, ex.Message));
         }
 
         if (report.Refusal is { } why) return JsonRun.Fail(CliDiagnostics.ImpedanceRefused(clay, why));
@@ -156,8 +205,10 @@ internal static class Impedance
         Console.Error.WriteLine(
             "Usage: circuitrf impedance <layout> [--target 50] [--tol 10] [--warn 20] [--max-freq 6GHz]\n" +
             "                           [--layers \"Top Copper,Inner 2\"] [--max-width <um>]\n" +
+            "                           [--width \"Top Copper=457\"]... [--no-scope] [--survey]\n" +
             "                           [--severity warning|fail] [-o report.pdf]\n" +
-            "  <layout> is a .clay or a cell folder holding one.");
+            "  <layout> is a .clay or a cell folder holding one. The review saved on the layout applies\n" +
+            "  unless a flag overrides it; --survey lists the trace widths per layer and analyses nothing.");
         return 1;
     }
 
@@ -170,19 +221,28 @@ internal static class Impedance
             {
                 case "-o" or "--output" when i + 1 < args.Length: o.Output = args[++i]; continue;
                 case "--target" when i + 1 < args.Length:
-                    if (!TryOhms(args[++i], out o.Target) || !(o.Target > 0))
+                {
+                    if (!TryOhms(args[++i], out double target) || !(target > 0))
                         return JsonRun.Fail(CliDiagnostics.ImpedanceBadNumber("--target", args[i], "a positive number of ohms"));
+                    o.Target = target;
                     continue;
+                }
                 case "--tol" or "--tolerance" when i + 1 < args.Length:
-                    if (!double.TryParse(args[++i].TrimEnd('%'), NumberStyles.Float, CultureInfo.InvariantCulture, out o.Tolerance)
-                        || !(o.Tolerance > 0) || o.Tolerance >= 100)
+                {
+                    if (!double.TryParse(args[++i].TrimEnd('%'), NumberStyles.Float, CultureInfo.InvariantCulture, out double tol)
+                        || !(tol > 0) || tol >= 100)
                         return JsonRun.Fail(CliDiagnostics.ImpedanceBadNumber("--tol", args[i], "a percentage above 0 and below 100"));
+                    o.Tolerance = tol;
                     continue;
+                }
                 case "--warn" when i + 1 < args.Length:
-                    if (!double.TryParse(args[++i].TrimEnd('%'), NumberStyles.Float, CultureInfo.InvariantCulture, out o.Warn)
-                        || !(o.Warn > 0) || o.Warn >= 100)
+                {
+                    if (!double.TryParse(args[++i].TrimEnd('%'), NumberStyles.Float, CultureInfo.InvariantCulture, out double warn)
+                        || !(warn > 0) || warn >= 100)
                         return JsonRun.Fail(CliDiagnostics.ImpedanceBadNumber("--warn", args[i], "a percentage above 0 and below 100"));
+                    o.Warn = warn;
                     continue;
+                }
                 case "--max-freq" when i + 1 < args.Length:
                 {
                     // The unit is REQUIRED, the rule every CLI frequency follows: a bare 6 is 6 Hz to
@@ -215,6 +275,27 @@ internal static class Impedance
                         return JsonRun.Fail(CliDiagnostics.ImpedanceBadNumber("--max-width", args[i], "a positive width in µm"));
                     o.MaxWidthMicrons = mw;
                     continue;
+                case "--width" when i + 1 < args.Length:
+                {
+                    // <layer>=<width>[,<width>…]; a width takes a unit suffix, and a bare number is µm
+                    // as --max-width reads it.
+                    string text = args[++i];
+                    int eq = text.IndexOf('=');
+                    var microns = new List<double>();
+                    if (eq > 0)
+                        foreach (string w in text[(eq + 1)..].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                        {
+                            if (!LayoutUnits.TryParse(w, LayoutUnit.Um, 1000, out long nm) || nm <= 0) { microns.Clear(); break; }
+                            microns.Add(nm / 1000.0);
+                        }
+                    if (microns.Count == 0)
+                        return JsonRun.Fail(CliDiagnostics.ImpedanceBadNumber("--width", text,
+                            "a copper layer and one or more widths, e.g. \"Top Copper=457\" or \"Top Copper=18mil,10mil\""));
+                    o.Widths.Add((text[..eq].Trim(), microns));
+                    continue;
+                }
+                case "--no-scope": o.NoScope = true; continue;
+                case "--survey": o.Survey = true; continue;
                 default:
                     if (a.StartsWith('-')) { JsonRun.Report(CliDiagnostics.ImpedanceUnknownOption(a)); return Usage(); }
                     if (o.Path is not null) { JsonRun.Report(CliDiagnostics.ImpedanceMultiplePaths()); return Usage(); }
@@ -244,15 +325,61 @@ internal static class Impedance
         return null;
     }
 
-    /// <summary>The technology a layout resolves, and the names of its drawing layers bound to a
-    /// conductor of the stackup.</summary>
-    private static (Technology? Tech, List<string> Names) CopperLayers(string clay)
+    /// <summary>The names of the technology's drawing layers bound to a conductor of the stackup.</summary>
+    private static List<string> CopperLayers(Technology tech)
     {
-        var view = LayoutPersistence.LoadFromFile(clay);
-        var (resolved, _) = TechnologyResolver.ResolveForDocument(view.TechRef, clay, null, new TechnologyCache());
-        if (resolved.Tech is not { } tech) return (null, []);
         var bound = tech.Stackup.Layers.Where(l => l.Kind == StackupKind.Conductor).SelectMany(l => l.DrawingLayers).ToHashSet();
-        return (tech, [.. tech.Layers.Where(l => bound.Contains(l.Key)).Select(l => l.Name)]);
+        return [.. tech.Layers.Where(l => bound.Contains(l.Key)).Select(l => l.Name)];
+    }
+
+    /// <summary>The copper layer <paramref name="name"/> names, ignoring case, or null.</summary>
+    private static LayerDef? CopperLayer(Technology tech, List<string> copperNames, string name)
+    {
+        var def = tech.Layers.FirstOrDefault(l => string.Equals(l.Name, name, StringComparison.OrdinalIgnoreCase));
+        return def is not null && copperNames.Contains(def.Name) ? def : null;
+    }
+
+    // ── --survey ─────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>The width classes per layer, and nothing solved but one typical cut per class — the
+    /// headless way to choose <c>--width</c> (R-imp2-4d). Exit 0 unless it is refused or cancelled.</summary>
+    private static int RunSurvey(TraceImpedanceAnalysis.LayoutSource source, TraceImpedanceOptions options,
+                                 RunControl control, string clay)
+    {
+        TraceWidthSurvey survey;
+        try { survey = TraceImpedanceAnalysis.Survey(source, options, control); }
+        catch (OperationCanceledException)
+        {
+            JsonRun.Report(CliDiagnostics.ImpedanceCancelled());
+            return 130;
+        }
+        if (survey.Refusal is { } why) return JsonRun.Fail(CliDiagnostics.ImpedanceRefused(clay, why));
+        foreach (string note in survey.Notes) Console.Error.WriteLine($"[circuitRF] {note}");
+
+        string title = TraceImpedanceAnalysis.CellTitle(clay);
+        var sb = new StringBuilder();
+        sb.AppendLine($"Trace widths: {title} — typical Z0 is one cut at the middle of each class's longest trace");
+        foreach (var layer in survey.Layers)
+        {
+            sb.AppendLine();
+            sb.AppendLine($"{layer.Name}: {layer.Classes.Sum(c => c.TraceCount)} trace(s) in {layer.Classes.Count} width class(es)" +
+                          (layer.PoursSkipped > 0 ? $", {layer.PoursSkipped} pour(s) not analysed" : ""));
+            foreach (var c in layer.Classes)
+            {
+                string z0 = c.TypicalZ0 is { } z ? z.ToString("0.0", CultureInfo.InvariantCulture) + " Ω" : $"— ({c.TypicalRefusal})";
+                sb.AppendLine(string.Create(CultureInfo.InvariantCulture,
+                    $"  {c.WidthText,-16} {c.TraceCount,4} trace(s)  {c.TotalLengthMicrons / 1000:0.###} mm  typical Z0 {z0}"));
+            }
+        }
+        Console.Write(sb.ToString());
+
+        JsonRun.ImpedanceSurvey = new ImpedanceSurveyJson(
+            title, source.Technology?.Name ?? "", survey.SolveCount,
+            [.. survey.Layers.Select(l => new ImpedanceSurveyLayerJson(l.Name, l.PoursSkipped,
+                [.. l.Classes.Select(c => new ImpedanceWidthClassJson(
+                    c.NominalMicrons, c.MinMicrons, c.MaxMicrons, c.TraceCount, c.TotalLengthMicrons,
+                    c.TypicalZ0, c.TypicalRefusal))]))]);
+        return 0;
     }
 
     // ── the text report (stdout) ─────────────────────────────────────────────────────────────
@@ -263,6 +390,7 @@ internal static class Impedance
         sb.AppendLine($"Trace impedance: {r.Title} — target {r.TargetOhms:0.##} Ω ± {r.TolerancePercent:0.##} % " +
                       $"(pass {r.LowOhms:0.0}–{r.HighOhms:0.0} Ω, warning {r.WarnLowOhms:0.0}–{r.WarnHighOhms:0.0} Ω)" +
                       (r.MaxFrequencyHz is { } f ? $"; under λ/{TraceImpedanceAnalysis.ShortFraction:0} at {TraceImpedanceReport.Hz(f)} is electrically short" : ""));
+        if (r.ScopeText.Length > 0) sb.AppendLine(r.ScopeText);
         foreach (var layer in r.Layers)
         {
             sb.AppendLine();
@@ -295,9 +423,9 @@ internal static class Impedance
         double Um(double dbu) => dbu / r.DbuPerMicron;
         return new ImpedanceReportJson(
             r.Title, r.TechnologyName, r.TargetOhms, r.TolerancePercent, r.WarningPercent, r.MaxFrequencyHz,
-            r.Cancelled, r.TraceCount, r.PassCount, r.WarningCount, r.FailCount,
+            r.ScopeText, r.Cancelled, r.TraceCount, r.PassCount, r.WarningCount, r.FailCount,
             [.. r.Layers.Select(l => new ImpedanceLayerJson(
-                l.Name, l.PoursSkipped,
+                l.Name, l.PoursSkipped, l.OutOfScope,
                 [.. l.Traces.Select(t => new ImpedanceTraceJson(
                     t.Id, t.Verdict.ToString().ToLowerInvariant(),
                     [Um(t.StartX), Um(t.StartY)], [Um(t.EndX), Um(t.EndY)], t.StartsAt, t.EndsAt,

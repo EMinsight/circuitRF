@@ -741,7 +741,8 @@ example workspace.
 ## `impedance` — every trace against a target Z0 {#impedance}
 
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf impedance &lt;layout&gt; [--target 50] [--tol 10] [--warn 20] [--max-freq 6GHz]
-<span class="prompt">  </span>[--layers "Top Copper,Inner 2"] [--max-width &lt;um&gt;] [--severity warning|fail] [-o report.pdf]</code></pre>
+<span class="prompt">  </span>[--layers "Top Copper,Inner 2"] [--max-width &lt;um&gt;] [--width "Top Copper=457"]… [--no-scope]
+<span class="prompt">  </span>[--survey] [--severity warning|fail] [-o report.pdf]</code></pre>
 
 `impedance` is the layout editor's [Impedance Analysis](layout-editor.html#impedance-analysis): it finds
 every trace on the chosen copper layers, cuts it along its length with the same quasi-static
@@ -753,6 +754,11 @@ layer. `-o` writes the **same PDF** the dialog exports.
 The path is a **`.clay`** or a **cell folder** holding one. The technology resolves exactly as the editor
 resolves it, and placed cells are flattened as a design-rule check flattens them.
 
+**The review saved in the layout applies by default**, so a headless run reports what the editor
+reports: the target, bands, frequency, layers and [trace widths](layout-editor.html#impedance-scope) last
+chosen in the Impedance Analysis dialog. A flag overrides the saved value, and the saved value overrides
+the default. A saved layer the technology no longer has is skipped with a line on stderr.
+
 | Option | Meaning |
 |---|---|
 | `--target <ohms>` | The target Z0. Default `50`. `50`, `50ohm` and `50R` all read as 50 Ω. |
@@ -762,15 +768,23 @@ resolves it, and placed cells are flattened as a design-rule check flattens them
 | `--severity warning\|fail` | What decides the exit code. Default `fail`; `warning` makes a warning exit 1 too. Warnings are reported either way. |
 | `--layers "A,B"` | The copper layers, by the technology's layer names. Default every copper layer. A name that is not a copper layer is refused with the names that are. |
 | `--max-width <um>` | The widest copper read as a trace. Default ten times the distance to the nearest other copper layer, between 1 and 8 mm. |
+| `--width <layer>=<w>[,<w>…]` | Review only the traces of these widths on that layer; repeat it for another layer. A bare width is µm, as `--max-width` reads it, or give a unit (`18mil`, `0.457mm`). It **replaces** the saved widths for that layer for this run; a layer with no widths is reviewed at every width. A trace's width is the width over most of its length, and a width matches within 1 % (or 1 µm). |
+| `--no-scope` | Ignore the saved trace widths and review every trace. The saved target, bands and layers still apply. |
+| `--survey` | List the width classes per layer &mdash; width, trace count, total length and one **typical** Z0 (a single cut at the middle of the class's longest trace) &mdash; and analyse nothing. The way to choose `--width`. |
 | `-o report.pdf` | The PDF report. With no `-o` it writes nothing. |
 
-stdout is one line per trace &mdash; `PASS`, `WARN` or `FAIL` &mdash; its findings under it (`!` a fail,
-`?` a warning), and a closing line *N pass, W warning, F fail*; stderr says which layer is being
-analysed. Lengths
+stdout starts with the target and, on the next line, the **scope in words** &mdash; *Top Copper at 457 µm
+(1 trace). 21 traces on Top Copper are outside the scope and were not analysed.* &mdash; then one line per
+trace &mdash; `PASS`, `WARN` or `FAIL` &mdash; its findings under it (`!` a fail, `?` a warning), and a
+closing line *N pass, W warning, F fail*; stderr says which layer is being analysed. Traces outside the
+scope are not cut, solved or listed, only counted, and they still count as grounded copper beside the
+traces under review. Lengths
 and coordinates are in **the layout's own unit**. With `--json` the result carries every layer, trace and
 finding, with coordinates and lengths in **µm** whatever the layout's unit, so a script reads one unit;
 `warningCount` sits beside `pass` and `fail`, a trace's verdict can be `"warning"`, and every finding
-carries `"severity": "warning"` or `"fail"`.
+carries `"severity": "warning"` or `"fail"`. `scope` is the scope sentence and each layer's `outOfScope`
+its count of traces left out. With `--survey`, the result is `impedanceSurvey` instead: per layer its
+`classes`, each with `width`, `widthMin`, `widthMax`, `traces`, `length` (µm) and `typicalZ0`.
 
 **Exit codes follow [`check`](#check)'s convention.** **0** when no trace fails &mdash; warnings are
 always reported and still exit 0 &mdash; **1** when one fails (or no part of it could be solved) or the

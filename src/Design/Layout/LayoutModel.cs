@@ -1125,6 +1125,16 @@ public sealed class LayoutView
     /// </summary>
     public List<Lvs.LvsWaiver> LvsWaivers { get; } = [];
 
+    /// <summary>
+    /// brief-impedance-2 R-imp2-3: the Impedance Analysis settings and scope last used on this layout —
+    /// see <see cref="Em.TraceImpedanceReview"/> — so a re-run, in the editor or through
+    /// <c>circuitrf impedance</c>, reviews what the last one reviewed. Null until a review is made.
+    /// Beside <see cref="DrcWaivers"/> and on its terms: a statement about THIS artwork, never about the
+    /// technology; it marks the document dirty and is <b>not undoable</b> — review state, not artwork,
+    /// so Ctrl+Z after an unrelated edit must not revoke it.
+    /// </summary>
+    public Em.TraceImpedanceReview? ImpedanceReview { get; set; }
+
     public List<LayoutShape> Shapes { get; } = [];
     public List<LayoutInstance> Instances { get; } = [];
 

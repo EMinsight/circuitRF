@@ -93,6 +93,43 @@ public partial class LayoutEditorViewModel
         return list;
     }
 
+    /// <summary>The Impedance Analysis settings and scope saved on this layout, or null.</summary>
+    public TraceImpedanceReview? SavedImpedanceReview => Model.ImpedanceReview;
+
+    /// <summary>
+    /// Saves the review on the layout (brief-impedance-2 R-imp2-3) when it says something the saved one
+    /// does not. Dirty, and deliberately NOT undoable — review state, not artwork; see
+    /// <see cref="LayoutView.ImpedanceReview"/>. Returns whether anything changed.
+    /// </summary>
+    public bool SaveImpedanceReview(TraceImpedanceReview review)
+    {
+        if (review.SameAs(Model.ImpedanceReview)) return false;
+        Model.ImpedanceReview = review;
+        IsDirty = true;
+        return true;
+    }
+
+    /// <summary>
+    /// The trace widths on every copper layer (<see cref="TraceImpedanceAnalysis.Survey(IReadOnlyList{LayoutShape},
+    /// Technology, int, TraceImpedanceOptions, RunControl?)"/>), on a worker thread; the artwork is
+    /// flattened here, on the caller's thread, as the analysis flattens it. Null with no technology;
+    /// cancelling throws.
+    /// </summary>
+    public async Task<TraceWidthSurvey?> SurveyTraceWidthsAsync(RunControl control)
+    {
+        if (Technology is not { } tech) return null;
+        var flat = LayoutDesignFlatten.Flatten(
+            Model, CurrentCellDir ?? "", tech, ResolveTechAt, resolvedCrossTechMappings: null);
+        IReadOnlyList<LayoutShape> shapes = flat.ExceedsCeiling ? Model.Shapes : flat.Shapes;
+        int dbu = Model.DbuPerMicron;
+        return await Task.Run(() => TraceImpedanceAnalysis.Survey(shapes, tech, dbu, new TraceImpedanceOptions(), control));
+    }
+
+    /// <summary>A length in µm as this layout displays lengths, with its unit.</summary>
+    public string FormatMicrons(double microns) =>
+        $"{LayoutUnits.Format((long)Math.Round(microns * Model.DbuPerMicron), DisplayUnit, Model.DbuPerMicron, 3)} " +
+        LayoutUnits.Suffix(DisplayUnit);
+
     /// <summary>
     /// Runs the analysis on a worker thread and writes the PDF. The artwork is flattened HERE, on the
     /// caller's (UI) thread, because the model is the editor's and not the worker's. A cancelled run

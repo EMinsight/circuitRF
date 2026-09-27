@@ -86,6 +86,11 @@ public sealed class ClayFile
     /// <see cref="FormatVersion"/> bump.</summary>
     public List<Lvs.LvsWaiver>? LvsWaivers { get; set; }
 
+    /// <summary>See <see cref="LayoutView.ImpedanceReview"/> (brief-impedance-2 R-imp2-3). Additive —
+    /// omitted when null, so every existing <c>.clay</c> re-serializes byte-for-byte and needs no
+    /// <see cref="FormatVersion"/> bump.</summary>
+    public Em.TraceImpedanceReview? ImpedanceReview { get; set; }
+
     /// <summary>See <see cref="LayoutView.Rulers"/> (docs/design/layout-view.md §9B.7, R-rul-15).
     /// Additive — omitted when empty, so every existing ruler-free <c>.clay</c> re-serializes
     /// byte-for-byte and needs no <see cref="FormatVersion"/> bump.</summary>
@@ -418,6 +423,7 @@ public static class LayoutPersistence
         Pins          = view.Pins.Count > 0 ? [.. view.Pins] : null,
         DrcWaivers    = view.DrcWaivers.Count > 0 ? [.. view.DrcWaivers] : null,
         LvsWaivers    = view.LvsWaivers.Count > 0 ? [.. view.LvsWaivers] : null,
+        ImpedanceReview = view.ImpedanceReview,
         Rulers        = view.Rulers.Count > 0 ? [.. view.Rulers] : null,
         Shapes        = [.. view.Shapes],
         Instances     = [.. view.Instances],
@@ -474,6 +480,7 @@ public static class LayoutPersistence
         if (file.Pins is not null) view.Pins.AddRange(file.Pins);
         if (file.DrcWaivers is not null) view.DrcWaivers.AddRange(file.DrcWaivers);
         if (file.LvsWaivers is not null) view.LvsWaivers.AddRange(file.LvsWaivers);
+        view.ImpedanceReview = file.ImpedanceReview;
         if (file.Rulers is not null) view.Rulers.AddRange(file.Rulers);
         view.LoadFindings = [.. degenerate.Findings()];
 

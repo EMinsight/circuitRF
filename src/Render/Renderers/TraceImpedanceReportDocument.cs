@@ -11,7 +11,9 @@
 //     target ± tolerance, blue below, red above, with each trace's id and a numbered marker at every
 //     finding — FILLED for a fail, HOLLOW for a warning, so the kind colours (orange = Z0, purple =
 //     return path) keep their meaning across both tiers. The colour scale, the pass band and the
-//     warning band are on the page.
+//     warning band are on the page. A trace outside the review's scope (brief-impedance-2) is plain
+//     copper — no colour, no label, no marker — because it is not in the report at all; the summary
+//     counts it.
 //   * Per layer, the TABLE of its traces and the numbered FINDINGS, continued over as many pages as
 //     they need. A marker's number on the map is the finding's number in this list.
 //
@@ -266,12 +268,22 @@ public static class TraceImpedanceReportDocument
                 ("Created", $"{report.CreatedUtc.ToLocalTime():yyyy-MM-dd HH:mm}  ·  {report.StationCount:N0} cross-sections, " +
                             $"{report.SolveCount:N0} solved, {report.Elapsed.TotalSeconds:0.#} s"),
             };
+            // The scope in words, under Target (brief-impedance-2): what was reviewed, and how many traces
+            // were left out. The one fact allowed more than a line, because it is the sentence that says
+            // what a report of "1 trace, 1 pass" is a report OF.
+            if (report.ScopeText.Length > 0) facts.Insert(1, ("Scope", report.ScopeText));
             float y = columnsTop;
             foreach (var (k, v) in facts)
             {
                 y += 13;
                 C.DrawText(k, x0, y, SKTextAlign.Left, _bold, muted);
-                C.DrawText(Clip(v, _body, leftW - 72), x0 + 72, y, SKTextAlign.Left, _body, ink);
+                var lines = k == "Scope" ? Wrap(v, _body, leftW - 72) : [Clip(v, _body, leftW - 72)];
+                for (int i = 0; i < Math.Min(lines.Count, 3); i++)
+                {
+                    if (i > 0) y += 11;
+                    C.DrawText(i == 2 && lines.Count > 3 ? Clip(lines[i] + " …", _body, leftW - 72) : lines[i],
+                               x0 + 72, y, SKTextAlign.Left, _body, ink);
+                }
             }
             _y = y + 12;
 
@@ -309,8 +321,8 @@ public static class TraceImpedanceReportDocument
             // Per-layer table — every layer, however many; a layer is one short row.
             C.DrawText("By layer", x0, _y, SKTextAlign.Left, _h2, ink);
             _y += 5;
-            float[] cols = [x0, x0 + 110, x0 + 150, x0 + 184, x0 + 228, x0 + 262, x0 + 298];
-            string[] heads = ["Layer", "Traces", "Pass", "Warning", "Fail", "Pours", "Worst Z0 excursion"];
+            float[] cols = [x0, x0 + 100, x0 + 138, x0 + 168, x0 + 210, x0 + 240, x0 + 274, x0 + 330];
+            string[] heads = ["Layer", "Traces", "Pass", "Warning", "Fail", "Pours", "Out of scope", "Worst Z0 excursion"];
             Header(cols, heads, x0 + leftW);
             foreach (var l in report.Layers)
             {
@@ -324,8 +336,9 @@ public static class TraceImpedanceReportDocument
                            l.Traces.Count(t => t.Verdict == TraceVerdict.Warning).ToString(),
                            l.Traces.Count(t => t.Verdict == TraceVerdict.Fail).ToString(),
                            l.PoursSkipped.ToString(),
+                           l.OutOfScope.ToString(),
                            worst is { } w ? $"{w:0.0} Ω ({(w - report.TargetOhms) / report.TargetOhms:+0%;-0%})" : "—"],
-                    [Ink, Ink, PassInk, WarnInk, FailInk, Muted, Ink], right: x0 + leftW);
+                    [Ink, Ink, PassInk, WarnInk, FailInk, Muted, Muted, Ink], right: x0 + leftW);
             }
             _y += 16;
 
@@ -474,7 +487,8 @@ public static class TraceImpedanceReportDocument
             int warn = layer.Traces.Count(t => t.Verdict == TraceVerdict.Warning);
             int fail = layer.Traces.Count(t => t.Verdict == TraceVerdict.Fail);
             C.DrawText($"{layer.Traces.Count} traces  ·  {pass} pass  ·  {warn} warning  ·  {fail} fail" +
-                       (layer.PoursSkipped > 0 ? $"  ·  {layer.PoursSkipped} pours not analysed" : ""),
+                       (layer.PoursSkipped > 0 ? $"  ·  {layer.PoursSkipped} pours not analysed" : "") +
+                       (layer.OutOfScope > 0 ? $"  ·  {layer.OutOfScope} outside the scope" : ""),
                        Margin + _h1.MeasureText(layer.Name) + 12, _y, SKTextAlign.Left, _body, muted);
             _y += 8;
 

@@ -13829,3 +13829,39 @@ a warning finding), `--json` (`warningCount`, per-issue `severity`, verdict `"wa
   3D-EM series. This brief's one new id, `impedance.args.unknown-severity`, is registered.
 
 Gate: `tests/Ui.Tests/Em/TraceImpedanceAnalysisTests.cs`.
+
+## Impedance review brief 2 — the scope model, and choosing traces by width (2026-09-26)
+
+`TraceImpedanceScope` (`Layout/Em/TraceImpedanceScope.cs`) holds per-layer width classes; `TraceImpedanceOptions.Scope`
+applies it in `Analyze` after `FindLayer` and before `Cut`, so an out-of-scope chain is never cut or solved and is not
+numbered. `TraceLayerResult.OutOfScope` counts them; `TraceImpedanceReport.ScopeText` says the scope in words for the
+PDF, the CLI and the dialog alike. `Survey` returns the width classes with one typical-Z0 solve each.
+`LayoutView.ImpedanceReview` (`TraceImpedanceReview`: target, bands, frequency, layers by name, scope) is saved in the
+`.clay` beside `LvsWaivers`, omitted when null. The CLI applies it by default; `--width`, `--no-scope`, `--survey`.
+No new diagnostic id: a bad `--width` reuses `impedance.args.bad-number`, an unknown layer in it `impedance.layers.unknown`.
+
+**Findings worth keeping:**
+- **`Analyze` and `Survey` share one preparation stage** (`Prepare`: stackup, copper reading, layer choice, island
+  tree) and one `FindLayer`; the survey's typical Z0 runs `Cut` itself on a one-chain copy of the layer and solves the
+  station nearest the middle whose cut is solvable. Nothing in the finding or cutting code was copied.
+- **Dominant width and class merging are the same clustering**: widths sorted, and a width joins the class of the
+  narrowest within max(1 %, 1 µm) of it — anchored to the class's narrowest member, not chained through neighbours, so a
+  slow taper cannot walk one class across a whole range of widths. A chain's dominant width is its pieces' widths
+  clustered by length; a board's classes are chains' dominant widths clustered by length. A class's saved selector
+  carries a tolerance wide enough to cover everything merged into it, so re-surveying the same artwork re-ticks it.
+- **`AnalyzeFile` now goes through `LoadLayout`**, which returns the view, the resolved technology and the flattened
+  shapes, read once. The CLI needs the saved review BEFORE it builds the options, and a second read of a large board
+  costs seconds (one `.clay` read was 575 ms Release / 4.8 s Debug on a real board); `--layers` already read the file
+  twice before this brief, and no longer does.
+- **R-imp2-1d, measured on a 4.7 MB Gerber-imported two-signal-layer board (68 traces; Release CLI, wall clock
+  including the process start and the `.clay` read):** `--survey` 1.13 s (4 typical-Z0 solves); the full unscoped run
+  27.1 s; the run scoped to two Top-layer width classes (Bottom left at every width) 8.9 s. **The survey is ~4 % of a
+  full run.** `FindLayer` is not the slow stage on that board's pour layers — the whole survey, reading included, is
+  about a second. The largest fixture in the repository is a few kB, so the measurement was made on a local board that is
+  not committed.
+- **ScopeText lists a layer with no width class as "every width"** even when it holds no traces ("gnd, every width
+  (0 traces)"): a plane layer that is analysed but carries nothing is still a layer the run looked at, and saying so is
+  cheaper than a reader wondering whether it was skipped.
+
+Gate: `tests/Ui.Tests/Em/TraceImpedanceAnalysisTests.cs` — the five scope tests (solves counted, the neighbour still
+copper, one solve per class, the `.clay` round trip, the verb's saved-scope default).

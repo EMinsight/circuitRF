@@ -8,7 +8,7 @@
         WindowStartupLocation="CenterOwner"
         ShowInTaskbar="False">
 
-    <!-- Trace Impedance Analysis (round 8). Target, tolerance, warning band and layers, then Export: a save picker,
+    <!-- Trace Impedance Analysis (round 8). Target, tolerance, warning band, layers and trace widths, then Export: a save picker,
          then the run with a per-layer progress bar and Cancel. A cancelled run still writes the
          layers it finished. The work is TraceImpedanceAnalysis; this window only asks and reports. -->
     <Window.Styles>
@@ -114,6 +114,24 @@
                 </Grid>
                 <ScrollViewer MaxHeight="210" VerticalScrollBarVisibility="Auto">
                     <StackPanel x:Name="LayerList" Spacing="2"/>
+                </ScrollViewer>
+            </StackPanel>
+        </Border>
+
+        <!-- Traces (brief-impedance-2): the trace widths on each ticked layer, from a survey run in the
+             background on open. None ticked on a layer reviews every width there. Nothing is ticked
+             from its Z0: a trace drawn at the wrong width is what the review exists to catch. -->
+        <Border Classes="card" x:Name="TracesCard">
+            <StackPanel Spacing="6">
+                <TextBlock Classes="section" Text="TRACES"/>
+                <TextBlock FontSize="10" Opacity="0.6" TextWrapping="Wrap"
+                           Text="Tick the widths to review on each layer; none ticked reviews every width there. A trace's width is the width over most of its length. Typical Z₀ is one cut at the middle of the class's longest trace."/>
+                <StackPanel x:Name="SurveyProgress" Spacing="4">
+                    <TextBlock x:Name="SurveyText" FontSize="11" Opacity="0.7" TextWrapping="Wrap" Text="Surveying the trace widths…"/>
+                    <ProgressBar x:Name="SurveyBar" IsIndeterminate="True" Height="4" CornerRadius="2"/>
+                </StackPanel>
+                <ScrollViewer MaxHeight="220" VerticalScrollBarVisibility="Auto">
+                    <StackPanel x:Name="TraceList" Spacing="6"/>
                 </ScrollViewer>
             </StackPanel>
         </Border>
