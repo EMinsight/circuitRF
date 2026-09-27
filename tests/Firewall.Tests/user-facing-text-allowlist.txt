@@ -269,6 +269,7 @@ src/Design/RailRf/PartLibraryIo.cs|.crlib format_version {file.FormatVersion} is
 src/Design/RailRf/PartLibraryIo.cs|Failed to deserialize .crlib file.
 src/Design/Layout/Interchange/PlacementFile.cs|A landing check needs an origin, and this table has none — which is the refusal 
 src/Design/Layout/Em/EmSetupPersistence.cs|This .cem states its mesh current model twice and the two disagree: 
+src/Design/Layout/Em/TraceImpedanceAcceptance.cs|An acceptance needs a reason.
 src/Design/Layout/Interchange/DxfUnits.cs|Unsupported/unset $INSUNITS value {insunits}.
 src/Design/Layout/Interchange/DxfWriter.cs|DXF export does not support shape type {shape.GetType().Name}.
 src/Design/Layout/Interchange/GdsiiReader.cs|GDSII BOUNDARY is missing its ENDEL record.

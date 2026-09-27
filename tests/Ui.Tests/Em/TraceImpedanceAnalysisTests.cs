@@ -9,7 +9,9 @@
 // the canvas (brief-impedance-4): a region selects the traces it touches, whole; a pick selects one
 // trace, or every trace joined to it through a via; a net selects its traces and the netless ones are
 // counted; a pick on bare board is kept and said; all three round-trip; and the verb refuses a bare
-// --region coordinate.
+// --region coordinate. Accepted findings (brief-impedance-5): an accepted warning passes until the trace
+// moves; a tolerance change keeps it; a worse finding shows again with both numbers; acceptances
+// round-trip and are absent when none; and the verb's exit code counts un-accepted findings only.
 
 using System.Text.Json;
 using CircuitRF.Cli;
@@ -645,6 +647,133 @@ public class TraceImpedanceAnalysisTests
             InProcess("impedance", clay, "--layers", "Top", "--region", "-7mm,2.4mm,7mm,2.7mm", "--json");
             Assert.Equal(1, JsonDocument.Parse(_last).RootElement.GetProperty("result").GetProperty("impedance")
                                         .GetProperty("traces").GetInt32());
+        }
+        finally { try { Directory.Delete(dir, true); } catch (IOException) { } }
+    }
+
+    // ── accepted findings (brief-impedance-5) ───────────────────────────────────────────────────
+
+    /// <summary>A 1 mm trace over the plane — <paramref name="halfWidth"/> and <paramref name="dx"/> in µm
+    /// narrow it and move it — and a target that puts the 1 mm trace's Z0 1 % above the pass band's top
+    /// edge: board A's 55.4 Ω against 55.0 Ω.</summary>
+    private static LayoutShape[] AcceptBoard(double halfWidth = 500, double dx = 0) =>
+        [Rect(Top, -6000 + dx, -halfWidth, 6000 + dx, halfWidth), Rect(Gnd, -8000, -8000, 8000, 8000)];
+
+    private static readonly Lazy<double> AcceptTarget =
+        new(() => Assert.Single(Analyze(AcceptBoard()).Layers[0].Traces).Z0Min!.Value / (1.01 * 1.10));
+
+    private static TraceImpedanceAcceptance AcceptOnly(TraceImpedanceReport report) =>
+        TraceImpedanceAcceptance.For(report, report.AllTraces.Single(), report.AllTraces.Single().Issues.Single(),
+                                     "connector launch", new DateTime(2026, 9, 26, 0, 0, 0, DateTimeKind.Utc));
+
+    /// <summary>Accepting the warning makes the trace PASS with the finding still there, marked; the same
+    /// trace moved 10 µm is not the trace that was reviewed, so it warns again and the acceptance is
+    /// listed stale.</summary>
+    [Fact]
+    public void AnAcceptedWarning_Passes_UntilTheTraceMoves()
+    {
+        var report = Analyze(AcceptBoard(), target: AcceptTarget.Value);
+        var accepted = AcceptOnly(report);
+
+        var applied = TraceImpedanceAcceptance.Apply(report, [accepted]);
+        var trace = applied.AllTraces.Single();
+        Assert.Equal(TraceVerdict.Pass, trace.Verdict);
+        Assert.Equal(1, trace.AcceptedCount);
+        Assert.Same(accepted, trace.Issues.Single().Accepted);
+        Assert.Empty(applied.StaleAcceptances);
+        Assert.StartsWith("PASS — 1 trace reviewed, 1 pass (1 with an accepted finding), 0 warnings, 0 failures",
+                          applied.VerdictSentence, StringComparison.Ordinal);
+
+        var moved = TraceImpedanceAcceptance.Apply(Analyze(AcceptBoard(dx: 10), target: AcceptTarget.Value), [accepted]);
+        Assert.Equal(TraceVerdict.Warning, moved.AllTraces.Single().Verdict);
+        Assert.Same(accepted, Assert.Single(moved.StaleAcceptances));
+    }
+
+    /// <summary>The key is the trace, not the stretch: a trace that steps from 950 to 1000 µm, accepted at
+    /// ± 10 % where only its narrow half is out, stays accepted at ± 5 %, where the finding's stretch has
+    /// grown to cover the whole trace.</summary>
+    [Fact]
+    public void ChangingTheTolerance_KeepsTheAcceptance()
+    {
+        LayoutShape[] shapes =
+        [
+            Rect(Top, -6000, -475, 0, 475), Rect(Top, 0, -500, 6000, 500), Rect(Gnd, -8000, -8000, 8000, 8000),
+        ];
+        double target = Assert.Single(Analyze(shapes).Layers[0].Traces).Z0Max!.Value / (1.01 * 1.10);
+        var wide = Analyze(shapes, target: target, tol: 10);
+        var narrow = Analyze(shapes, target: target, tol: 5);
+        var before = wide.AllTraces.Single().Issues.Single();
+        var after = narrow.AllTraces.Single().Issues.Single();
+        Assert.NotEqual((before.X0, before.X1), (after.X0, after.X1));    // the stretch did move
+
+        var applied = TraceImpedanceAcceptance.Apply(narrow, [AcceptOnly(wide)]);
+
+        Assert.Equal(TraceVerdict.Pass, applied.AllTraces.Single().Verdict);
+        Assert.Empty(applied.StaleAcceptances);
+    }
+
+    /// <summary>An acceptance does not cover a WORSE finding: the same trace narrowed reads a higher Z0, and
+    /// its finding is shown again, un-accepted, with the accepted and the new worst Z0 in its text.</summary>
+    [Fact]
+    public void AWorseFinding_IsShownAgain_WithBothNumbers()
+    {
+        var accepted = AcceptOnly(Analyze(AcceptBoard(), target: AcceptTarget.Value));
+
+        var worse = TraceImpedanceAcceptance.Apply(Analyze(AcceptBoard(halfWidth: 470), target: AcceptTarget.Value), [accepted]);
+
+        var trace = worse.AllTraces.Single();
+        var issue = trace.Issues.Single();
+        Assert.Null(issue.Accepted);
+        Assert.NotEqual(TraceVerdict.Pass, trace.Verdict);
+        Assert.EndsWith($"Accepted at {accepted.WorstOhms:0.0} Ω, now {trace.Z0Max:0.0} Ω.", issue.Text, StringComparison.Ordinal);
+        Assert.True(trace.Z0Max > accepted.WorstOhms + 0.05, $"{trace.Z0Max} vs {accepted.WorstOhms}");
+        Assert.Empty(worse.StaleAcceptances);
+    }
+
+    /// <summary>An acceptance round-trips through the <c>.clay</c>; a layout with none writes no key for
+    /// them, so every existing file stays byte-identical.</summary>
+    [Fact]
+    public void Acceptances_RoundTripInTheClay_AndAreAbsentWhenNone()
+    {
+        var view = new LayoutView { TechRef = "board.ctech" };
+        view.Shapes.AddRange(AcceptBoard());
+        string plain = LayoutPersistence.Serialize(view);
+        Assert.DoesNotContain("ImpedanceAcceptances", plain, StringComparison.Ordinal);
+        Assert.Equal(plain, LayoutPersistence.Serialize(LayoutPersistence.Deserialize(plain)));
+
+        var accepted = AcceptOnly(Analyze(AcceptBoard(), target: AcceptTarget.Value));
+        view.ImpedanceAcceptances.Add(accepted);
+        var back = Assert.Single(LayoutPersistence.Deserialize(LayoutPersistence.Serialize(view)).ImpedanceAcceptances);
+        Assert.Equal((accepted.Key, accepted.Kind, accepted.Reason, accepted.AcceptedUtc, accepted.LayerName, accepted.Summary, accepted.WorstOhms),
+                     (back.Key, back.Kind, back.Reason, back.AcceptedUtc, back.LayerName, back.Summary, back.WorstOhms));
+    }
+
+    /// <summary>The verb applies the acceptances saved on the layout: a layout whose only failure is
+    /// accepted exits 0 and says why in <c>--json</c>; <c>--ignore-accepted</c> counts it, and exits 1.</summary>
+    [Fact]
+    public void TheVerb_ExitsOnUnacceptedFindingsOnly()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "crf-impedance-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            TechPersistence.SaveToFile(Path.Combine(dir, "board.ctech"), Tech());
+            double target = AcceptTarget.Value / 1.2;     // far outside the warning band: a fail
+            string targetText = target.ToString("R", System.Globalization.CultureInfo.InvariantCulture);
+            var report = Analyze(AcceptBoard(), target: double.Parse(targetText, System.Globalization.CultureInfo.InvariantCulture));
+            Assert.Equal(TraceVerdict.Fail, report.AllTraces.Single().Verdict);
+
+            var view = new LayoutView { TechRef = "board.ctech" };
+            view.Shapes.AddRange(AcceptBoard());
+            view.ImpedanceAcceptances.Add(AcceptOnly(report));
+            string clay = Path.Combine(dir, "board.clay");
+            LayoutPersistence.SaveToFile(clay, view);
+
+            Assert.Equal(0, InProcess("impedance", clay, "--layers", "Top", "--target", targetText, "--json"));
+            var issue = JsonDocument.Parse(_last).RootElement.GetProperty("result").GetProperty("impedance")
+                                    .GetProperty("layers")[0].GetProperty("traces")[0].GetProperty("issues")[0];
+            Assert.Equal("connector launch", issue.GetProperty("accepted").GetProperty("reason").GetString());
+            Assert.Equal(1, InProcess("impedance", clay, "--layers", "Top", "--target", targetText, "--ignore-accepted"));
         }
         finally { try { Directory.Delete(dir, true); } catch (IOException) { } }
     }

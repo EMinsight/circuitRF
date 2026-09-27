@@ -743,7 +743,7 @@ example workspace.
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf impedance &lt;layout&gt; [--target 50] [--tol 10] [--warn 20] [--max-freq 6GHz]
 <span class="prompt">  </span>[--layers "Top Copper,Inner 2"] [--max-width &lt;um&gt;] [--width "Top Copper=457"]… [--no-scope]
 <span class="prompt">  </span>[--region x0,y0,x1,y1]… [--net &lt;name&gt;]… [--pick &lt;layer&gt;@&lt;x&gt;,&lt;y&gt;[:connected]]…
-<span class="prompt">  </span>[--survey] [--severity warning|fail] [-o report.pdf]</code></pre>
+<span class="prompt">  </span>[--survey] [--severity warning|fail] [--ignore-accepted] [-o report.pdf]</code></pre>
 
 `impedance` is the layout editor's [Impedance Analysis](layout-editor.html#impedance-analysis): it finds
 every trace on the chosen copper layers, cuts it along its length with the same quasi-static
@@ -775,8 +775,17 @@ the default. A saved layer the technology no longer has is skipped with a line o
 | `--net <name>` | Review the traces on copper carrying this net. Repeatable. |
 | `--pick <layer>@<x>,<y>[:connected]` | Review the trace whose copper holds this point on that layer, coordinates with their units; `:connected` takes every trace joined to it through vias. A pick with no copper under it is reported on stderr and selects nothing. Repeatable. |
 | `--no-scope` | Ignore the saved scope and review every trace. The saved target, bands and layers still apply. |
+| `--ignore-accepted` | Report as if no finding had been [accepted](layout-editor.html#impedance-accept): every finding counts against its trace, and against the exit code. |
 | `--survey` | List the width classes per layer &mdash; width, trace count, total length and one **typical** Z0 (a single cut at the middle of the class's longest trace) &mdash; and analyse nothing. The way to choose `--width`. |
 | `-o report.pdf` | The PDF report. With no `-o` it writes nothing. |
+
+**Accepted findings apply by default.** A finding accepted in the editor's panel is saved in the
+`.clay`, and the verb reports it marked `✓ ACCEPTED` with its reason and date; it does not count against
+its trace's verdict or the exit code. Acceptances that matched nothing in this run are listed before the
+closing line. There is deliberately **no `--accept`**: a run's trace ids (`T1`, `T2`…) are that run's,
+and an acceptance is a decision made reading the finding. A script that must accept one headlessly adds
+it to the `.clay`'s `ImpedanceAcceptances`; [`reference layout`](#reference) documents the key &mdash;
+the trace's two end points in whole µm and the finding's kind.
 
 **Regions, nets and picks choose; widths filter.** A trace any `--region`, `--net` or `--pick` chooses
 is reviewed (with none, every trace is), and `--width` then filters what they chose. Each of the three
@@ -793,12 +802,14 @@ traces under review. Lengths
 and coordinates are in **the layout's own unit**. With `--json` the result carries every layer, trace and
 finding, with coordinates and lengths in **µm** whatever the layout's unit, so a script reads one unit;
 `warningCount` sits beside `pass` and `fail`, a trace's verdict can be `"warning"`, and every finding
-carries `"severity": "warning"` or `"fail"`. `scope` is the scope sentence and each layer's `outOfScope`
+carries `"severity": "warning"` or `"fail"` &mdash; and an accepted one `"accepted": { "reason", "date" }`.
+`accepted` counts the accepted findings and `staleAcceptances` lists the saved acceptances that matched
+nothing (`key`, `kind`, `layer`, `summary`, `reason`, `date`). `scope` is the scope sentence and each layer's `outOfScope`
 its count of traces left out. With `--survey`, the result is `impedanceSurvey` instead: per layer its
 `classes`, each with `width`, `widthMin`, `widthMax`, `traces`, `length` (µm) and `typicalZ0`.
 
-**Exit codes follow [`check`](#check)'s convention.** **0** when no trace fails &mdash; warnings are
-always reported and still exit 0 &mdash; **1** when one fails (or no part of it could be solved) or the
+**Exit codes follow [`check`](#check)'s convention**, counting **un-accepted** findings only. **0** when
+no trace fails &mdash; warnings are always reported and still exit 0 &mdash; **1** when one fails (or no part of it could be solved) or the
 run is refused, and with `--severity warning` when one warns; **130** on a cancellation. A cancelled run still writes the report for the layers that **finished**,
 and says on its first page that it was cancelled.
 

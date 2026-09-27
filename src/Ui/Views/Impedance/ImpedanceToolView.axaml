@@ -255,7 +255,7 @@
             </ScrollViewer>
         </Expander>
 
-        <Grid Grid.Row="1" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,*,Auto" Margin="8,0,8,6">
+        <Grid Grid.Row="1" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,*,Auto,Auto" Margin="8,0,8,6">
 
             <!-- Run / Cancel -->
             <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="6" Margin="0,4,0,2">
@@ -307,6 +307,11 @@
                         <StackPanel><TextBlock Classes="pass" Text="{Binding Panel.PassCount}" FontSize="16" FontWeight="SemiBold"/>
                                     <TextBlock Text="Pass" FontSize="10" Opacity="0.7"/></StackPanel>
                     </Border>
+                    <Border Classes="tile" Margin="0,0,6,4" IsVisible="{Binding Panel.HasAccepted}"
+                            ToolTip.Tip="Findings accepted with a reason: still listed, no longer counted against their trace">
+                        <StackPanel><TextBlock Text="{Binding Panel.AcceptedCount}" FontSize="16" FontWeight="SemiBold" Opacity="0.7"/>
+                                    <TextBlock Text="Accepted" FontSize="10" Opacity="0.7"/></StackPanel>
+                    </Border>
                     <Border Classes="tile" Margin="0,0,6,4">
                         <StackPanel><TextBlock Classes="warn" Text="{Binding Panel.WarningCount}" FontSize="16" FontWeight="SemiBold"/>
                                     <TextBlock Text="Warning" FontSize="10" Opacity="0.7"/></StackPanel>
@@ -328,6 +333,8 @@
                                  IsChecked="{Binding Panel.FilterWarningsAndFailures}"/>
                     <RadioButton GroupName="ImpedanceFilter" Content="Failures" FontSize="11"
                                  IsChecked="{Binding Panel.FilterFailures}"/>
+                    <RadioButton GroupName="ImpedanceFilter" Content="Accepted" FontSize="11"
+                                 IsChecked="{Binding Panel.FilterAccepted}"/>
                 </StackPanel>
             </StackPanel>
 
@@ -337,7 +344,8 @@
                 <ListBox ItemsSource="{Binding Panel.Rows}"
                          SelectedItem="{Binding Panel.SelectedRow, Mode=TwoWay}"
                          DoubleTapped="OnRowDoubleTapped"
-                         Background="Transparent" BorderThickness="0" SelectionMode="Single"
+                         SelectionChanged="OnRowsSelectionChanged"
+                         Background="Transparent" BorderThickness="0" SelectionMode="Multiple"
                          IsVisible="{Binding Panel.HasResults}"
                          ScrollViewer.VerticalScrollBarVisibility="Auto">
                     <ListBox.DataTemplates>
@@ -372,9 +380,17 @@
                         <DataTemplate DataType="imp:ImpedanceFindingResultRow">
                             <StackPanel Orientation="Horizontal" Spacing="6" Margin="60,0,0,1">
                                 <TextBlock Text="{Binding SeverityText}" FontSize="10" FontWeight="SemiBold" Width="32"
-                                           Classes.fail="{Binding Fails}" Classes.warn="{Binding !Fails}"
-                                           VerticalAlignment="Top"/>
-                                <TextBlock Text="{Binding Text}" FontSize="11" TextWrapping="Wrap" MaxWidth="560"/>
+                                           Classes.fail="{Binding Fails}" Classes.warn="{Binding Warns}"
+                                           Opacity="{Binding TextOpacity}" VerticalAlignment="Top"/>
+                                <StackPanel Spacing="1">
+                                    <TextBlock Text="{Binding Text}" FontSize="11" TextWrapping="Wrap" MaxWidth="560"
+                                               Opacity="{Binding TextOpacity}"/>
+                                    <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding IsAccepted}">
+                                        <mi:MaterialIcon Kind="CheckCircle" Width="12" Height="12" Opacity="0.7"/>
+                                        <TextBlock Text="{Binding AcceptedText}" FontSize="11" FontWeight="SemiBold"
+                                                   TextWrapping="Wrap" MaxWidth="540" Opacity="0.8"/>
+                                    </StackPanel>
+                                </StackPanel>
                             </StackPanel>
                         </DataTemplate>
                         <DataTemplate DataType="imp:ImpedanceNoteResultRow">
@@ -387,8 +403,61 @@
                 </ListBox>
             </Panel>
 
+            <!-- Accepting findings (brief-impedance-5): select finding rows, Accept…, give the reason. -->
+            <StackPanel Grid.Row="7" Spacing="4" Margin="0,4,0,0" IsVisible="{Binding Panel.HasResults}">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <Button Command="{Binding Panel.BeginAcceptCommand}" Padding="10,3" FontSize="12"
+                            ToolTip.Tip="Accept the selected findings with a reason: they stay listed, marked ACCEPTED, and stop counting against their trace. Saved with the layout.">
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <mi:MaterialIcon Kind="CheckCircleOutline" Width="14" Height="14"/>
+                            <TextBlock Text="Accept…" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+                    <Button Command="{Binding Panel.UnacceptCommand}" Content="Un-accept" Padding="10,3" FontSize="12"
+                            ToolTip.Tip="Count the selected accepted findings again"/>
+                    <TextBlock Text="Select one or more findings (expand a trace) to accept them." FontSize="11" Opacity="0.55"
+                               VerticalAlignment="Center" IsVisible="{Binding !Panel.IsAccepting}"/>
+                </StackPanel>
+                <Border CornerRadius="4" Padding="8,6" Background="#14808080" IsVisible="{Binding Panel.IsAccepting}">
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="{Binding Panel.AcceptTargetText}" FontSize="11" FontWeight="SemiBold"/>
+                        <TextBox Text="{Binding Panel.AcceptReason, Mode=TwoWay}" FontSize="12" AcceptsReturn="False"
+                                 PlaceholderText="Why this is fine — printed on the report beside the finding"/>
+                        <TextBlock Text="A reason is required: it is what a reader of a passing report relies on." FontSize="11"
+                                   Foreground="{DynamicResource CrfWarningBrush}" TextWrapping="Wrap"
+                                   IsVisible="{Binding Panel.AcceptReasonMissing}"/>
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <Button Command="{Binding Panel.ConfirmAcceptCommand}" Content="Accept" Classes="accent" Padding="10,3" FontSize="12"/>
+                            <Button Command="{Binding Panel.CancelAcceptCommand}" Content="Cancel" Padding="10,3" FontSize="12"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+                <!-- Stale acceptances (R-imp5-3c): listed with their saved text; removed only by hand. -->
+                <StackPanel Spacing="2" IsVisible="{Binding Panel.HasStaleAcceptances}">
+                    <TextBlock Classes="section" Text="Accepted, but matched nothing in this run"/>
+                    <TextBlock FontSize="11" Opacity="0.65" TextWrapping="Wrap"
+                               Text="The trace was moved or re-routed, or the finding no longer occurs. Kept on the layout until removed."/>
+                    <ItemsControl ItemsSource="{Binding Panel.StaleAcceptances}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="imp:ImpedanceStaleAcceptanceRow">
+                                <Grid ColumnDefinitions="*,Auto" Margin="0,1">
+                                    <StackPanel Grid.Column="0" Spacing="1">
+                                        <TextBlock Text="{Binding Text}" FontSize="11" TextWrapping="Wrap"/>
+                                        <TextBlock Text="{Binding ReasonText}" FontSize="11" Opacity="0.65" TextWrapping="Wrap"/>
+                                    </StackPanel>
+                                    <Button Grid.Column="1" Classes="link" Command="{Binding RemoveCommand}" VerticalAlignment="Top"
+                                            ToolTip.Tip="Remove this acceptance from the layout">
+                                        <mi:MaterialIcon Kind="Close" Width="14" Height="14"/>
+                                    </Button>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </StackPanel>
+
             <!-- Export: the report already held, never a second run. -->
-            <StackPanel Grid.Row="7" Orientation="Horizontal" Spacing="8" Margin="0,4,0,0">
+            <StackPanel Grid.Row="8" Orientation="Horizontal" Spacing="8" Margin="0,4,0,0">
                 <Button Click="OnExportPdfClick" IsEnabled="{Binding Panel.CanExport}" Padding="10,3" FontSize="12"
                         ToolTip.Tip="Write these results as a PDF review — no second run">
                     <StackPanel Orientation="Horizontal" Spacing="4">

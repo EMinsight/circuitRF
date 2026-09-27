@@ -610,7 +610,20 @@ namespace RfCore.Export
         int                                Pass,
         int                                WarningCount,
         int                                Fail,
-        IReadOnlyList<ImpedanceLayerJson>  Layers);
+        IReadOnlyList<ImpedanceLayerJson>  Layers,
+        int                                Accepted = 0,
+        IReadOnlyList<ImpedanceStaleAcceptanceJson>? StaleAcceptances = null);
+
+    /// <summary>An acceptance saved on the layout that matched no finding in this run — the trace was
+    /// moved or re-routed, or the finding is gone. Listed, never removed by a run.</summary>
+    /// <param name="Key">The stored key: <c>layer|x,y|x,y|Kind</c>, the trace's end points in whole µm.</param>
+    /// <param name="Summary">The finding's text when it was accepted.</param>
+    public sealed record ImpedanceStaleAcceptanceJson(
+        string Key, string Kind, string Layer, string Summary, string Reason, DateTime Date);
+
+    /// <summary>Why a finding was accepted in the editor, and when (brief-impedance-5). An accepted finding is
+    /// still listed; it does not count against its trace's verdict or the exit code.</summary>
+    public sealed record ImpedanceAcceptedJson(string Reason, DateTime Date);
 
     /// <param name="OutOfScope">Traces found on the layer and left out by the scope — counted, not
     /// listed.</param>
@@ -655,7 +668,11 @@ namespace RfCore.Export
     /// <param name="Kind"><c>out-of-tolerance</c>, <c>return-broken</c>, <c>partial-reference</c>,
     /// <c>reference-step</c>, <c>no-reference</c> or <c>unsolved</c>.</param>
     /// <param name="Severity"><c>warning</c> or <c>fail</c>.</param>
-    public sealed record ImpedanceIssueJson(string Kind, string Severity, double[] From, double[] To, string Message);
+    /// <param name="Accepted">The acceptance covering this finding, or absent.</param>
+    public sealed record ImpedanceIssueJson(
+        string Kind, string Severity, double[] From, double[] To, string Message,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        ImpedanceAcceptedJson? Accepted = null);
 
     /// <summary>
     /// What <c>impedance --survey</c> found: the traces on each layer grouped by width, with nothing

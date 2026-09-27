@@ -202,10 +202,58 @@ public partial class LayoutEditorViewModel
             return null;
         }
 
-        ImpedanceReport = report with { Title = title, SourcePath = source, TechnologyPath = ResolvedTechPath };
+        ImpedanceReport = TraceImpedanceAcceptance.Apply(
+            report with { Title = title, SourcePath = source, TechnologyPath = ResolvedTechPath }, Model.ImpedanceAcceptances);
         IsImpedanceStale = false;
         PostImpedanceVerdict(ImpedanceReport, pdfPath: null);
         return ImpedanceReport;
+    }
+
+    // ── accepted findings (brief-impedance-5) ────────────────────────────────────────────────
+
+    /// <summary>The acceptances saved on this layout.</summary>
+    public IReadOnlyList<TraceImpedanceAcceptance> ImpedanceAcceptances => Model.ImpedanceAcceptances;
+
+    /// <summary>
+    /// Accepts each finding with <paramref name="reason"/> (R-imp5-3a) — one reason for all of them, as a
+    /// multi-select accepts — replacing an acceptance already saved under the same key, and re-applies to
+    /// the report held, so the counts and verdicts update with no re-run. Dirty, deliberately NOT undoable
+    /// (<see cref="LayoutView.ImpedanceAcceptances"/>' rule). Returns false for an empty reason, which is
+    /// refused, or nothing to accept.
+    /// </summary>
+    public bool AcceptImpedanceFindings(IEnumerable<(TraceRun Trace, TraceIssue Issue)> findings, string reason)
+    {
+        if (ImpedanceReport is not { } r || string.IsNullOrWhiteSpace(reason)) return false;
+        var now = DateTime.UtcNow;
+        bool any = false;
+        foreach (var (trace, issue) in findings)
+        {
+            var a = TraceImpedanceAcceptance.For(r, trace, issue, reason, now);
+            Model.ImpedanceAcceptances.RemoveAll(x => string.Equals(x.Key, a.Key, StringComparison.OrdinalIgnoreCase));
+            Model.ImpedanceAcceptances.Add(a);
+            any = true;
+        }
+        if (!any) return false;
+        IsDirty = true;
+        ReapplyImpedanceAcceptances();
+        return true;
+    }
+
+    /// <summary>Removes the acceptance covering each finding given (Un-accept), and a stale one given
+    /// directly (R-imp5-3c) — both are one removal by key.</summary>
+    public void RemoveImpedanceAcceptances(IEnumerable<TraceImpedanceAcceptance> acceptances)
+    {
+        var keys = acceptances.Select(a => a.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (Model.ImpedanceAcceptances.RemoveAll(a => keys.Contains(a.Key)) == 0) return;
+        IsDirty = true;
+        ReapplyImpedanceAcceptances();
+    }
+
+    /// <summary>Re-marks the report in hand rather than re-running it — an acceptance is a statement about
+    /// a finding ALREADY found (LVS's <c>ReapplyLvsWaivers</c>, for the same reason).</summary>
+    private void ReapplyImpedanceAcceptances()
+    {
+        if (ImpedanceReport is { } r) ImpedanceReport = TraceImpedanceAcceptance.Apply(r, Model.ImpedanceAcceptances);
     }
 
     /// <summary>The held report as Export PDF writes it: stale when the layout has changed since.</summary>
@@ -239,6 +287,7 @@ public partial class LayoutEditorViewModel
         string verdict = $"{report.TraceCount} trace{(report.TraceCount == 1 ? "" : "s")} on {report.Layers.Count} " +
                          $"layer{(report.Layers.Count == 1 ? "" : "s")} against {report.TargetOhms:0.##} Ω ± " +
                          $"{report.TolerancePercent:0.##} %: {report.PassCount} pass, {report.WarningCount} warning, {report.FailCount} fail" +
+                         (report.AcceptedCount > 0 ? $", {report.AcceptedCount} finding{(report.AcceptedCount == 1 ? "" : "s")} accepted" : "") +
                          (report.Cancelled ? $" (cancelled after {report.Layers.Count} of {report.LayersRequested.Count} layers)" : "") +
                          (report.Stale ? $" — stale: {TraceImpedanceReport.StaleText.ToLowerInvariant()}" : "");
         string text = pdfPath is null ? $"Impedance Analysis: {verdict}." : $"Impedance Analysis exported: {verdict}.";
@@ -303,7 +352,7 @@ public partial class LayoutEditorViewModel
                 ReferenceEquals(t, _impedanceSelectedTrace) && _impedanceSelectedIssue is null));
             foreach (var i in t.Issues)
                 findings.Add(new ImpedanceFindingMarker(i.X, i.Y, i.Kind != TraceIssueKind.OutOfTolerance, i.Fails,
-                    ReferenceEquals(i, _impedanceSelectedIssue)));
+                    ReferenceEquals(i, _impedanceSelectedIssue)) { Accepted = i.Accepted is not null });
         }
         return new ImpedanceOverlay(r.TargetOhms, r.TolerancePercent, traces, findings);
     }

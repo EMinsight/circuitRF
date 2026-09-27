@@ -57,12 +57,28 @@ public static partial class LayoutRenderer
             float r = DevicePixelsToPathSpace(scaleUm, f.Selected ? ImpedanceSelectedMarkerRadius : ImpedanceMarkerRadiusDevicePixels);
             float cx = ps.X(f.X), cy = ps.Y(f.Y);
 
-            // Filled for a fail; hollow — white inside a ring of the kind colour — for a warning.
-            fill.Color = f.Fails ? colour : SKColors.White;
-            canvas.DrawCircle(cx, cy, r, fill);
-            ring.Color = f.Fails ? SKColors.White : colour;
-            ring.StrokeWidth = DevicePixelsToPathSpace(scaleUm, f.Fails ? 1.2 : 2.0);
-            canvas.DrawCircle(cx, cy, r, ring);
+            // Filled for a fail; hollow — white inside a ring of the kind colour — for a warning; grey with
+            // a white check for an accepted finding, whatever its severity.
+            if (f.Accepted)
+            {
+                fill.Color = TraceImpedanceReportDocument.AcceptedMark;
+                canvas.DrawCircle(cx, cy, r, fill);
+                ring.Color = SKColors.White;
+                ring.StrokeWidth = DevicePixelsToPathSpace(scaleUm, 1.2);
+                using var tick = new SKPath();
+                tick.MoveTo(cx - 0.45f * r, cy);
+                tick.LineTo(cx - 0.1f * r, cy + 0.4f * r);     // path space is Y-down, as the screen is
+                tick.LineTo(cx + 0.5f * r, cy - 0.4f * r);
+                canvas.DrawPath(tick, ring);
+            }
+            else
+            {
+                fill.Color = f.Fails ? colour : SKColors.White;
+                canvas.DrawCircle(cx, cy, r, fill);
+                ring.Color = f.Fails ? SKColors.White : colour;
+                ring.StrokeWidth = DevicePixelsToPathSpace(scaleUm, f.Fails ? 1.2 : 2.0);
+                canvas.DrawCircle(cx, cy, r, ring);
+            }
             if (f.Selected)
             {
                 ring.Color = new SKColor(0x10, 0x14, 0x18);

@@ -13903,3 +13903,34 @@ board has yet shown one is needed.
 Gate: `tests/Ui.Tests/Em/TraceImpedanceAnalysisTests.cs` — six tests (a region selects whole traces; a trace pick vs a
 connected pick through a via; a net selects and the netless are counted; a pick on bare board is kept and said; all
 three kinds round-trip in the `.clay`; `--region` refuses a bare number).
+
+## Impedance review brief 5 — accepted findings (2026-09-26)
+
+`TraceImpedanceAcceptance` (`src/Design/Layout/Em/TraceImpedanceAcceptance.cs`) is the record, its key and
+`Apply(report, acceptances)`; `LayoutView.ImpedanceAcceptances` stores the list beside `DrcWaivers`, omitted when
+empty, so a `.clay` without one is byte-identical to before.
+
+- **The key is `layer|x,y|x,y|Kind`, the TRACE's end points in whole µm, order-normalised.** Trace ids renumber with
+  the scope and a finding's stretch moves with the tolerance, so neither can key a decision meant to outlive both —
+  the tolerance-change gate proves it on a 950/1000 µm step, where ± 5 % grows the finding's stretch over the whole
+  trace and the acceptance still holds. The end points are `TraceRun.StartX…EndY`, now produced by one
+  `ChainEnds` helper so a trace the scope dropped is keyed by exactly the same arithmetic as one it kept.
+- **One key covers every finding of that kind on the trace**, so an `OutOfTolerance` acceptance records the TRACE's
+  worst Z0 (the farther of `Z0Min`/`Z0Max` from target), not one stretch's. A run further from target shows the
+  finding again with "Accepted at X Ω, now Y Ω." appended — and that acceptance is NOT stale: it matched.
+- **`Apply` is re-entrant.** The panel re-applies after every Accept with no re-run, to a report that already carries
+  acceptances, so each finding is first put back to what the analysis wrote: `TraceIssue.Finding` holds the analysis's
+  own sentence whenever `Text` carries the lapse sentence, and `FindingText` is what an acceptance's `Summary` saves.
+- **Out of scope is neither applied nor stale.** `TraceLayerResult.OutOfScopeTraceKeys` records the keys of the chains
+  the scope dropped (computed before cutting, so it costs no solve); an acceptance on one of them, or on a layer the
+  run did not finish or analyse, is not reported at all.
+- **The verdict comes from un-accepted findings only** — `TraceRun.VerdictOf`, used by `Assemble` and `Apply` alike —
+  so the CLI's exit code, which reads verdicts, needed no change of its own beyond applying the list.
+- **`For(...)` throws on an empty reason**, an internal invariant (the panel refuses first), allow-listed in
+  `tests/Firewall.Tests/user-facing-text-allowlist.txt`.
+- The `.clay` reference (`reference layout`, `DocumentSchema.ClayPreamble`) documents the key, since there is
+  deliberately no `--accept`: a headless caller writes the `.clay`.
+
+Gate: `tests/Ui.Tests/Em/TraceImpedanceAnalysisTests.cs` — five tests (accept passes until the trace moves; tolerance
+change keeps it; a worse finding shows both numbers; round-trip and absent-when-none; the verb exits 0 / 1 with
+`--ignore-accepted`).

@@ -118,6 +118,18 @@ public sealed record TraceIssue(
 
     /// <summary>Whether this finding fails the trace.</summary>
     public bool Fails => Severity == IssueSeverity.Fail;
+
+    /// <summary>The acceptance this finding is covered by, or null (brief-impedance-5 R-imp5-2a). An
+    /// accepted finding is still reported, marked ACCEPTED; it only stops counting against the verdict.
+    /// Set by <see cref="TraceImpedanceAcceptance.Apply"/>, never by the analysis.</summary>
+    public TraceImpedanceAcceptance? Accepted { get; init; }
+
+    /// <summary>The finding's own sentence when <see cref="Text"/> carries more — an acceptance that no
+    /// longer covers it adds "Accepted at 55.5 Ω, now 58.1 Ω." — or null when it carries nothing more.</summary>
+    public string? Finding { get; init; }
+
+    /// <summary>The finding's own sentence, as the analysis wrote it.</summary>
+    public string FindingText => Finding ?? Text;
 }
 
 /// <summary>One cut along a trace. Coordinates and lengths in DBU.</summary>
@@ -218,6 +230,18 @@ public sealed record TraceRun
     public IReadOnlyList<string> Notes { get; init; } = [];
 
     public TraceVerdict Verdict { get; init; }
+
+    /// <summary>The findings on this trace covered by an acceptance.</summary>
+    public int AcceptedCount => Issues.Count(i => i.Accepted is not null);
+
+    /// <summary>A trace's verdict, from its UN-accepted findings only (R-imp5-2a): unsolved when no cut
+    /// was solved, else fail, warning or pass by the worst of them.</summary>
+    public static TraceVerdict VerdictOf(bool anySolved, IEnumerable<TraceIssue> issues)
+    {
+        if (!anySolved) return TraceVerdict.Unsolved;
+        var counted = issues.Where(i => i.Accepted is null).ToList();
+        return counted.Any(i => i.Fails) ? TraceVerdict.Fail : counted.Count > 0 ? TraceVerdict.Warning : TraceVerdict.Pass;
+    }
 }
 
 /// <summary>One analysed layer.</summary>
@@ -236,6 +260,10 @@ public sealed record TraceLayerResult
 
     /// <summary>Traces found on this layer and left out by the scope — counted, never listed.</summary>
     public int OutOfScope { get; init; }
+
+    /// <summary>Those traces' keys (<see cref="TraceImpedanceAcceptance.TraceKeyOf"/>), so an acceptance
+    /// of one is neither applied nor called stale (R-imp5-2c).</summary>
+    public IReadOnlyList<string> OutOfScopeTraceKeys { get; init; } = [];
 
     /// <summary>Traces found on this layer whose copper carries no net, or two (R-imp4-3b) — which no
     /// net selector can choose. Zero when the artwork carries no nets.</summary>
@@ -329,6 +357,34 @@ public sealed record TraceImpedanceReport
     public int PassCount => AllTraces.Count(t => t.Verdict == TraceVerdict.Pass);
     public int WarningCount => AllTraces.Count(t => t.Verdict == TraceVerdict.Warning);
     public int FailCount => AllTraces.Count(t => t.Verdict == TraceVerdict.Fail);
+
+    /// <summary>Findings covered by an acceptance (brief-impedance-5).</summary>
+    public int AcceptedCount => AllTraces.Sum(t => t.AcceptedCount);
+
+    /// <summary>Acceptances saved on the layout that matched no finding in this run — the trace was moved
+    /// or fixed. Listed, never deleted automatically (R-imp5-2c). One whose trace was out of scope is not
+    /// here: it was not reviewed, so it is neither applied nor stale.</summary>
+    public IReadOnlyList<TraceImpedanceAcceptance> StaleAcceptances { get; init; } = [];
+
+    /// <summary>
+    /// The verdict first, then the counts (R-imp5-4a) — "PASS — 3 traces reviewed, 3 pass (1 with an
+    /// accepted finding), 0 warnings, 0 failures". A review is FAIL when a trace fails or could not be
+    /// solved, WARN when one warns, PASS otherwise.
+    /// </summary>
+    public string VerdictSentence
+    {
+        get
+        {
+            int unsolved = AllTraces.Count(t => t.Verdict == TraceVerdict.Unsolved);
+            int passAccepted = AllTraces.Count(t => t.Verdict == TraceVerdict.Pass && t.AcceptedCount > 0);
+            string verdict = FailCount > 0 || unsolved > 0 ? "FAIL" : WarningCount > 0 ? "WARN" : "PASS";
+            static string N(int n, string one, string many) => $"{n} {(n == 1 ? one : many)}";
+            return $"{verdict} — {N(TraceCount, "trace", "traces")} reviewed, {PassCount} pass" +
+                   (passAccepted > 0 ? $" ({passAccepted} with an accepted finding)" : "") +
+                   $", {N(WarningCount, "warning", "warnings")}, {N(FailCount, "failure", "failures")}" +
+                   (unsolved > 0 ? $", {unsolved} unsolved" : "");
+        }
+    }
 
     // ── the strings a trace row prints — the PDF's table and the panel's rows share them (R-imp3-2c) ──
 
@@ -573,6 +629,7 @@ public static partial class TraceImpedanceAnalysis
                 // grounded neighbour in that trace's cross-section, exactly as without a scope.
                 // The selectors (regions, picks, nets) choose; the widths then filter what they chose.
                 int outOfScope = 0;
+                var outOfScopeKeys = new List<string>();
                 int netless = selection.HasNets ? lw.Chains.Count(c => selection.NetOf(lw, c) is null) : 0;
                 if (scope is not null)
                 {
@@ -580,6 +637,11 @@ public static partial class TraceImpedanceAnalysis
                     var kept = lw.Chains.Where((c, i) => (chosen is null || chosen[i])
                                                          && scope.Includes(name, DominantWidth(c, dbuPerMicron) / dbuPerMicron)).ToList();
                     outOfScope = lw.Chains.Count - kept.Count;
+                    foreach (var c in lw.Chains.Except(kept))
+                    {
+                        var (sx, sy, ex, ey) = ChainEnds(c);
+                        outOfScopeKeys.Add(TraceImpedanceAcceptance.TraceKeyOf(name, sx, sy, ex, ey, dbuPerMicron));
+                    }
                     lw = lw with { Chains = kept };
                 }
 
@@ -610,6 +672,7 @@ public static partial class TraceImpedanceAnalysis
                     Traces = runs,
                     PoursSkipped = lw.Pours,
                     OutOfScope = outOfScope,
+                    OutOfScopeTraceKeys = outOfScopeKeys,
                     NetlessTraces = netless,
                     MaxWidth = lw.MaxWidth,
                     Copper = lw.Copper is null ? [] : [.. lw.Copper.Paths.Select(p =>
@@ -1397,6 +1460,17 @@ public static partial class TraceImpedanceAnalysis
         return "continues";
     }
 
+    /// <summary>A chain's two end points as its <see cref="TraceRun"/> reports them, DBU — the first
+    /// piece's start and the last piece's end, walked in chain order. What an acceptance's key is made of,
+    /// for a trace in scope and one left out alike.</summary>
+    private static (long X0, long Y0, long X1, long Y1) ChainEnds(ChainWork chain)
+    {
+        var first = chain.Pieces[0]; var last = chain.Pieces[^1];
+        var (sx, sy) = first.Reversed ? (first.Piece.Bx, first.Piece.By) : (first.Piece.Ax, first.Piece.Ay);
+        var (ex, ey) = last.Reversed ? (last.Piece.Ax, last.Piece.Ay) : (last.Piece.Bx, last.Piece.By);
+        return ((long)Math.Round(sx), (long)Math.Round(sy), (long)Math.Round(ex), (long)Math.Round(ey));
+    }
+
     private static TraceRun Assemble(
         ChainWork chain, LayerWork lw,
         System.Collections.Concurrent.ConcurrentDictionary<string, (double C, double C0, string? Refusal)> answers,
@@ -1433,6 +1507,7 @@ public static partial class TraceImpedanceAnalysis
             });
         }
 
+        var ends = ChainEnds(chain);
         var first = chain.Pieces[0]; var last = chain.Pieces[^1];
         var (sx, sy, sdx, sdy) = first.Reversed
             ? (first.Piece.Bx, first.Piece.By, first.Piece.Bx - first.Piece.Ax, first.Piece.By - first.Piece.Ay)
@@ -1614,8 +1689,7 @@ public static partial class TraceImpedanceAnalysis
             Pieces = [.. chain.Pieces.Select(p => p.Reversed
                 ? ((long)Math.Round(p.Piece.Bx), (long)Math.Round(p.Piece.By), (long)Math.Round(p.Piece.Ax), (long)Math.Round(p.Piece.Ay), p.Piece.Width)
                 : ((long)Math.Round(p.Piece.Ax), (long)Math.Round(p.Piece.Ay), (long)Math.Round(p.Piece.Bx), (long)Math.Round(p.Piece.By), p.Piece.Width))],
-            StartX = (long)Math.Round(sx), StartY = (long)Math.Round(sy),
-            EndX = (long)Math.Round(ex), EndY = (long)Math.Round(ey),
+            StartX = ends.X0, StartY = ends.Y0, EndX = ends.X1, EndY = ends.Y1,
             StartsAt = startsAt, EndsAt = endsAt,
             Length = chain.Length,
             WidthMin = chain.Pieces.Min(p => p.Piece.Width),
@@ -1629,9 +1703,7 @@ public static partial class TraceImpedanceAnalysis
             References = references,
             Issues = issues,
             Notes = runNotes,
-            Verdict = solved.Count == 0 ? TraceVerdict.Unsolved
-                    : issues.Any(x => x.Fails) ? TraceVerdict.Fail
-                    : issues.Count > 0 ? TraceVerdict.Warning : TraceVerdict.Pass,
+            Verdict = TraceRun.VerdictOf(solved.Count > 0, issues),
         };
     }
 }

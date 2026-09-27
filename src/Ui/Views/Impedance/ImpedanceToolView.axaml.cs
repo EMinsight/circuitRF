@@ -61,6 +61,14 @@ public partial class ImpedanceToolView : UserControl
         await panel.ExportPdfAsync(path);
     }
 
+    /// <summary>The list selects several rows so one reason can accept several findings (R-imp5-3a); the
+    /// panel is handed them all. <c>SelectedItem</c> stays bound for the one the canvas emphasises.</summary>
+    private void OnRowsSelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (sender is ListBox list && DataContext is ImpedanceTool { Panel: { } panel })
+            panel.SetSelectedRows([.. (list.SelectedItems ?? Array.Empty<object>()).OfType<CircuitRF.Ui.Layout.Impedance.ImpedanceResultRow>()]);
+    }
+
     /// <summary>
     /// R-imp3-2d's zoom. Double-click rather than single, as in the DRC panel: a single click selects
     /// the row (which emphasises it on the canvas), and yanking the viewport on every arrow-key walk

@@ -210,7 +210,7 @@ internal static class DocumentSchema
             circuitrf check  ws/thru/layout/thru.clay
             circuitrf render ws/thru/layout/thru.clay -o thru.svg
 
-        Six things that are not obvious from the field list:
+        Seven things that are not obvious from the field list:
 
           * Every coordinate and size is an integer DBU. DbuPerMicron says what one is worth: at the
             default 1000, one DBU is one nanometre, so 1.1 mm is 1100000. y is UP.
@@ -225,6 +225,14 @@ internal static class DocumentSchema
             R180 = -x, R270 = -y); omitted, it is inferred from the geometry, and an ambiguous
             inference is refused at run time rather than guessed.
           * DisplayUnit and SnapDbu are editor conveniences. Nothing is computed from them.
+          * ImpedanceReview and ImpedanceAcceptances are the Impedance Analysis's review state: the
+            settings and scope last used, and the findings a designer accepted. Both are omitted when
+            unset, and `impedance` applies both. An acceptance's Key is
+            "<layer name>|<x>,<y>|<x>,<y>|<Kind>": the trace's two end points in whole um (the
+            start and end `impedance --json` reports for it, rounded), the lower one by x then y
+            first, and the finding's Kind. Moving the trace stops it matching. Reason is required.
+            For OutOfTolerance, WorstOhms is the trace's worst Z0 when it was accepted; a run that
+            finds it further from target counts the finding again.
 
         Every field the reader understands follows, with its default. Shapes are listed once per
         kind, each with the "$type" value that selects it.

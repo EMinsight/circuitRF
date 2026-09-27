@@ -728,7 +728,9 @@ internal static class ToolCatalog
           + "Exit 0 when no trace fails (warnings are reported and still exit 0 unless severity is "
           + "warning), 1 when one fails or is unsolved. Writes nothing unless output is given. "
           + "The review saved on the layout in the editor (settings, layers and scope) applies unless an "
-          + "argument overrides it.",
+          + "argument overrides it, and so do the findings accepted there: each is reported accepted with its "
+          + "reason and does not count against its trace or the exit code. To accept one headlessly, add it to "
+          + "the .clay's ImpedanceAcceptances (reference topic layout); there is no accept argument.",
             null, null,
             [
                 new("", [ "impedance" ],
@@ -773,6 +775,8 @@ internal static class ToolCatalog
                           + "picks SELECT (a trace any one chooses is in); widths then FILTER what they chose."),
                         new("noScope", "--no-scope", OptKind.Flag,
                             "Ignore the scope saved on the layout and review every trace."),
+                        new("ignoreAccepted", "--ignore-accepted", OptKind.Flag,
+                            "Report as if nothing had been accepted: every finding counts, and the exit code with it."),
                         new("survey", "--survey", OptKind.Flag,
                             "List the trace widths per layer — count, total length and one typical Z0 per width "
                           + "class — and analyse nothing. The way to choose width."),

@@ -23,6 +23,12 @@ namespace CircuitRF.Cli;
 /// run reviews the traces the editor reviews. <c>--no-scope</c> drops the saved scope, <c>--width</c>
 /// replaces it for the layers it names, and <c>--survey</c> lists the width classes and analyses nothing.</para>
 ///
+/// <para><b>Accepted findings apply by default</b> (brief-impedance-5): the <c>.clay</c> is the record of
+/// what the designer accepted, and a finding it covers is reported ACCEPTED with its reason and does not
+/// count against its trace. <c>--ignore-accepted</c> reports as if there were none. There is deliberately no
+/// <c>--accept</c>: a run's trace ids are that run's, and an acceptance is a decision made reading the
+/// finding — a headless caller edits the <c>.clay</c>, whose key the file-format reference documents.</para>
+///
 /// <para><b>Exit codes</b>, on <c>check</c>'s convention: 0 when no trace fails — warnings are always
 /// reported and still exit 0 — 1 when one fails or is unsolved or the run is refused (and, with
 /// <c>--severity warning</c>, when one warns), 130 when it is cancelled. A cancelled run still writes the report for the layers that FINISHED
@@ -45,6 +51,7 @@ internal static class Impedance
         public double? MaxWidthMicrons;
         public bool NoScope;
         public bool Survey;
+        public bool IgnoreAccepted;
         public readonly List<(string Layer, List<double> Microns)> Widths = [];
         // brief-impedance-4: the selectors, as typed — a coordinate needs the layout's DBU to read.
         public readonly List<string> Regions = [];
@@ -215,6 +222,9 @@ internal static class Impedance
         }
 
         if (report.Refusal is { } why) return JsonRun.Fail(CliDiagnostics.ImpedanceRefused(clay, why));
+        // The exit code below counts un-accepted findings only, because the verdicts it reads are
+        // computed from them (R-imp5-4b).
+        if (!o.IgnoreAccepted) report = TraceImpedanceAcceptance.Apply(report, source.View.ImpedanceAcceptances);
 
         foreach (string note in report.Notes) Console.Error.WriteLine($"[circuitRF] {note}");
         Console.Write(Text(report));
@@ -279,11 +289,12 @@ internal static class Impedance
             "                           [--layers \"Top Copper,Inner 2\"] [--max-width <um>]\n" +
             "                           [--width \"Top Copper=457\"]... [--no-scope] [--survey]\n" +
             "                           [--region x0,y0,x1,y1]... [--net <name>]... [--pick <layer>@<x>,<y>[:connected]]...\n" +
-            "                           [--severity warning|fail] [-o report.pdf]\n" +
+            "                           [--severity warning|fail] [--ignore-accepted] [-o report.pdf]\n" +
             "  <layout> is a .clay or a cell folder holding one. The review saved on the layout applies\n" +
             "  unless a flag overrides it; --survey lists the trace widths per layer and analyses nothing.\n" +
             "  --region, --net and --pick select traces and each replaces the saved selectors of its kind;\n" +
-            "  every coordinate carries a unit (12.5mm, 400um, 50mil).");
+            "  every coordinate carries a unit (12.5mm, 400um, 50mil). Findings accepted in the editor are\n" +
+            "  reported ACCEPTED and do not count; --ignore-accepted counts them.");
         return 1;
     }
 
@@ -374,6 +385,7 @@ internal static class Impedance
                 case "--pick" when i + 1 < args.Length: o.Picks.Add(args[++i]); continue;
                 case "--no-scope": o.NoScope = true; continue;
                 case "--survey": o.Survey = true; continue;
+                case "--ignore-accepted": o.IgnoreAccepted = true; continue;
                 default:
                     if (a.StartsWith('-')) { JsonRun.Report(CliDiagnostics.ImpedanceUnknownOption(a)); return Usage(); }
                     if (o.Path is not null) { JsonRun.Report(CliDiagnostics.ImpedanceMultiplePaths()); return Usage(); }
@@ -478,12 +490,22 @@ internal static class Impedance
             {
                 sb.AppendLine(string.Create(CultureInfo.InvariantCulture,
                     $"  {t.Id,-5} {Verdict(t.Verdict),-4}  Z0 {Z(t.Z0Min)}–{Z(t.Z0Max)} Ω (avg {Z(t.Z0Mean)}), {t.InTolerance:0%} in band, {t.TypeSummary}, {r.Len(t.Length)}, {r.Pt(t.StartX, t.StartY)} → {r.Pt(t.EndX, t.EndY)} [{t.StartsAt} / {t.EndsAt}]"));
-                foreach (var issue in t.Issues) sb.AppendLine($"        {(issue.Fails ? '!' : '?')} {issue.Text}");
+                foreach (var issue in t.Issues)
+                    sb.AppendLine(issue.Accepted is { } a
+                        ? $"        ✓ ACCEPTED ({a.Reason}; {a.AcceptedUtc:yyyy-MM-dd}): {issue.Text}"
+                        : $"        {(issue.Fails ? '!' : '?')} {issue.Text}");
                 foreach (var note in t.Notes) sb.AppendLine($"        · {note}");
             }
         }
         sb.AppendLine();
+        if (r.StaleAcceptances.Count > 0)
+        {
+            sb.AppendLine($"Accepted on the layout but matched nothing in this run ({r.StaleAcceptances.Count}) — the trace moved, or the finding is gone:");
+            foreach (var a in r.StaleAcceptances) sb.AppendLine($"  {a.LayerName}: {a.Summary} (reason: {a.Reason})");
+            sb.AppendLine();
+        }
         sb.AppendLine($"{r.TraceCount} trace(s) on {r.Layers.Count} layer(s): {r.PassCount} pass, {r.WarningCount} warning, {r.FailCount} fail." +
+                      (r.AcceptedCount > 0 ? $" {r.AcceptedCount} finding(s) accepted." : "") +
                       (r.Cancelled ? $" Cancelled after {r.Layers.Count} of {r.LayersRequested.Count} layers." : ""));
         return sb.ToString();
 
@@ -511,8 +533,12 @@ internal static class Impedance
                     t.Z0Min, t.Z0Max, t.Z0Mean, t.InTolerance, t.Configuration,
                     [.. t.Configurations.Select(c => new ImpedanceTypeJson(c.Name, c.Share))], t.References,
                     [.. t.Issues.Select(i => new ImpedanceIssueJson(
-                        IssueId(i.Kind), i.Fails ? "fail" : "warning", [Um(i.X0), Um(i.Y0)], [Um(i.X1), Um(i.Y1)], i.Text))],
-                    t.Notes))]))]);
+                        IssueId(i.Kind), i.Fails ? "fail" : "warning", [Um(i.X0), Um(i.Y0)], [Um(i.X1), Um(i.Y1)], i.Text,
+                        i.Accepted is { } a ? new ImpedanceAcceptedJson(a.Reason, a.AcceptedUtc) : null))],
+                    t.Notes))]))],
+            r.AcceptedCount,
+            [.. r.StaleAcceptances.Select(a => new ImpedanceStaleAcceptanceJson(
+                a.Key, IssueId(a.Kind), a.LayerName, a.Summary, a.Reason, a.AcceptedUtc))]);
     }
 
     private static string IssueId(TraceIssueKind k) => k switch

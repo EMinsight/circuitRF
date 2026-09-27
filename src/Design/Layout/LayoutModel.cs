@@ -1135,6 +1135,15 @@ public sealed class LayoutView
     /// </summary>
     public Em.TraceImpedanceReview? ImpedanceReview { get; set; }
 
+    /// <summary>
+    /// brief-impedance-5: Impedance Analysis findings the designer has accepted, each with its reason —
+    /// see <see cref="Em.TraceImpedanceAcceptance"/>. Beside <see cref="DrcWaivers"/> and on its terms: on
+    /// the LAYOUT, still reported and merely not counted, dirty but <b>not undoable</b>. The key names a
+    /// trace by its end points, so moving the trace makes its acceptance stale rather than silently
+    /// carrying it over. The RUN never writes this; it reads the list.
+    /// </summary>
+    public List<Em.TraceImpedanceAcceptance> ImpedanceAcceptances { get; } = [];
+
     public List<LayoutShape> Shapes { get; } = [];
     public List<LayoutInstance> Instances { get; } = [];
 

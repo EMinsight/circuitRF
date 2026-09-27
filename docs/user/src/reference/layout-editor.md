@@ -826,9 +826,12 @@ cancelled.
 
 **The results** stay in the panel until you run again:
 
-- **Tiles** count the traces that **pass**, **warn** and **fail**, and those **out of scope**.
-- A **filter** lists **All**, **Warnings and failures** (the default) or **Failures**. A trace that
-  could not be solved at all was not reviewed, and is listed with the failures.
+- **Tiles** count the traces that **pass**, **warn** and **fail**, the findings **accepted**, and the
+  traces **out of scope**.
+- A **filter** lists **All**, **Warnings and failures** (the default), **Failures** or **Accepted**. A
+  trace that could not be solved at all was not reviewed, and is listed with the failures. The
+  warning and failure filters leave [accepted findings](#impedance-accept) out; **Accepted** lists only
+  them.
 - **One row per trace**: its id, layer, verdict, width, Z0 min–max, the share of it inside the pass
   band, and its line type &mdash; the same text the PDF's table prints. The arrow beside a row opens its
   findings, each with its severity, and its notes.
@@ -838,7 +841,8 @@ cancelled.
 **On the canvas**, while the panel has results, every reviewed trace's centre line is drawn in its Z0
 colour &mdash; the PDF map's scale: green inside the pass band, blue below, red above &mdash; with a
 marker at each finding: **filled** for a fail, **hollow** for a warning, orange for Z0 and purple for the
-return path. A trace outside the scope is not drawn. **Show on canvas** turns this off. It is never part
+return path, and **grey with a check** for an accepted finding. A trace outside the scope is not
+drawn. **Show on canvas** turns this off. It is never part
 of the artwork: no export, Gerber, GDSII or `render` picture carries it.
 
 **Editing the layout keeps the results** and marks them stale &mdash; *The layout has changed since this
@@ -853,7 +857,8 @@ pass as a review of the board as it is now. The Messages line for an export link
 the trace widths ticked, and the regions, picks and nets are stored in the `.clay`, beside the layout's design-rule waivers, so the
 panel opens on them next time and [`circuitrf impedance`](cli.html#impedance) reviews the same traces
 headlessly. Like a waiver, it is a statement about this artwork: changing it marks the layout modified,
-and it is not undone by **Undo**. The results themselves are not saved.
+and it is not undone by **Undo**. The results themselves are not saved; the findings you
+[accept](#impedance-accept) are, on the same terms.
 
 ### Choosing the traces {#impedance-scope}
 
@@ -968,10 +973,40 @@ finding says how long the stretch is in wavelengths, for example *0.018 λ at 6 
 electrically short*. It applies to Z0 only: a broken return is never softened by being short. Left
 blank, the rule is off and the report says nothing about it.
 
+### Accepting a finding {#impedance-accept}
+
+Some findings are known and fine: a connector trace 0.4 Ω past the band edge, a reference that steps
+to an inner layer under a via fence on purpose, a ground clearance a launch was designed around.
+Widening the tolerance to clear one of them clears it for **every** trace. **Accepting** it clears only
+that one, with the reason on the record.
+
+Expand a trace, select one or more of its findings (Ctrl- or Shift-click for several, across traces if
+you like) and click **Accept…**. The panel asks **why** &mdash; a reason is required, because it is the
+sentence a reader of a passing report relies on &mdash; and applies it at once: the counts and the
+trace's verdict change without running again. The finding stays in the list, marked **ACCEPTED** with
+the reason and the date; it simply no longer counts against its trace. **Un-accept** on a selected
+accepted finding counts it again.
+
+- **An acceptance belongs to the trace, not to the stretch.** It is stored against the trace's two end
+  points and the kind of finding, so changing the tolerance, the warning band or the scope does not
+  undo it. **Moving or re-routing the trace does**: a moved trace has not been reviewed.
+- **It does not cover a worse finding.** A Z0 finding is accepted at the trace's worst Z0 at the time;
+  a later run further from the target shows the finding again, un-accepted, saying both &mdash;
+  *Accepted at 55.5 Ω, now 58.1 Ω*.
+- **An acceptance that matches nothing** in a run &mdash; the trace moved, or the finding is gone
+  &mdash; is listed under **Accepted, but matched nothing in this run** with the finding's text as it
+  was, and stays on the layout until you remove it with its **✕**. One whose trace is outside this
+  run's scope is neither applied nor listed.
+
+Acceptances are saved in the `.clay` beside the design-rule waivers, mark the layout modified, and are
+not undone by **Undo**. [`circuitrf impedance`](cli.html#impedance) applies them too.
+
 ### The report {#impedance-report}
 
-- **A summary page** &mdash; always one page: first, when the results were stale when exported, a line
-  saying the layout had changed since the run; then the target and pass band, the **scope** &mdash; which traces
+- **A summary page** &mdash; always one page. It leads with the **verdict** and its counts &mdash; for
+  example *PASS &mdash; 3 traces reviewed, 3 pass (1 with an accepted finding), 0 warnings, 0 failures*
+  &mdash; then, when the results were stale when exported, a line saying the layout had changed since
+  the run; then the **scope**, the target and pass band &mdash; which traces
   were reviewed and how many on each layer were outside it &mdash; the technology and its `.ctech`
   file, the layers, the counts of traces that pass, warn and fail, and per layer the traces outside the
   scope and the worst excursion from the target. With a highest frequency given, *How it was measured* states the λ/20 rule and the frequency. On the right is the **stackup** the traces were solved against, drawn exactly as the
@@ -983,7 +1018,11 @@ blank, the rule is off and the report says nothing about it.
   ticks. A trace outside the scope is plain grey copper &mdash; no colour, no label, no marker.
 - **A table per layer**: each trace's start and end, what each end is, its length and width, its line
   **type**, Z0 min, max and average, the share of its length inside the band, its reference layers,
-  PASS, WARN or FAIL, and then the numbered findings in full, each with its severity.
+  PASS, WARN or FAIL, and then the numbered findings in full, each with its severity &mdash; or
+  **ACCEPTED** and its reason.
+- **Accepted findings**, when there are any: each accepted finding with its trace, its text, the reason
+  and the date, and any acceptance that matched nothing in this run. An accepted finding is also still
+  on its layer's map, **grey with a check** where its number would be.
 
 The **type** is microstrip, **GCPW** (grounded coplanar waveguide: a plane below and ground beside it on
 both sides), **GCPW 1-side**, stripline or CPW. A trace that is **both** along its run &mdash; grounded CPW

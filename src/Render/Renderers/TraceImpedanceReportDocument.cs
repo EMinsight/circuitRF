@@ -16,6 +16,10 @@
 //     counts it.
 //   * Per layer, the TABLE of its traces and the numbered FINDINGS, continued over as many pages as
 //     they need. A marker's number on the map is the finding's number in this list.
+//   * ACCEPTED FINDINGS (brief-impedance-5), when there are any: each one's trace, finding, reason and
+//     date, and the saved acceptances that matched nothing in this run. An accepted finding stays on
+//     the map and in the lists — grey, with a check — because a report that passes by hiding findings
+//     is not one anybody can rely on.
 //
 // Every number and sentence arrives from TraceImpedanceReport; nothing is recomputed here.
 
@@ -45,6 +49,8 @@ public static class TraceImpedanceReportDocument
     internal static readonly SKColor Unsolved   = new(0x9a, 0xa0, 0xa6);
     internal static readonly SKColor GroundMark = new(0x7b, 0x2c, 0xbf);
     internal static readonly SKColor ZMark      = new(0xd9, 0x6c, 0x06);
+    /// <summary>An accepted finding's marker (brief-impedance-5): grey, with a check — kept, not removed.</summary>
+    internal static readonly SKColor AcceptedMark = new(0x8a, 0x91, 0x99);
 
     /// <summary>The whole report as PDF bytes. Complete before the caller writes anything, so a
     /// failed or cancelled export leaves no half-written file.</summary>
@@ -67,6 +73,7 @@ public static class TraceImpedanceReportDocument
                 writer.LayerMap(layer);
                 writer.LayerTable(layer);
             }
+            writer.Accepted();
             writer.Finish();
             document.Close();
         }
@@ -248,7 +255,14 @@ public static class TraceImpedanceReportDocument
             C.DrawText("Trace Impedance Analysis", x0, _y, SKTextAlign.Left, _title, ink);
             _y += 18;
             C.DrawText(Clip(report.Title, _h1, leftW), x0, _y, SKTextAlign.Left, _h1, accent);
-            float columnsTop = _y + 8;
+
+            // The verdict leads (R-imp5-4a), then the scope: what a reviewer filing the page needs first is
+            // whether it passed, and then what "it" was.
+            _y += 18;
+            using (var verdictInk = Fill(report.FailCount > 0 || report.AllTraces.Any(t => t.Verdict == TraceVerdict.Unsolved) ? FailInk
+                                         : report.WarningCount > 0 ? WarnInk : PassInk))
+                C.DrawText(Clip(report.VerdictSentence, _h2, leftW), x0, _y, SKTextAlign.Left, _h2, verdictInk);
+            float columnsTop = _y + 4;
 
             // ── left: the facts ─────────────────────────────────────────────────────────────────
             var facts = new List<(string, string)>
@@ -267,7 +281,7 @@ public static class TraceImpedanceReportDocument
             // The scope in words, under Target (brief-impedance-2): what was reviewed, and how many traces
             // were left out. The one fact allowed more than a line, because it is the sentence that says
             // what a report of "1 trace, 1 pass" is a report OF.
-            if (report.ScopeText.Length > 0) facts.Insert(1, ("Scope", report.ScopeText));
+            if (report.ScopeText.Length > 0) facts.Insert(0, ("Scope", report.ScopeText));
             float y = columnsTop;
             foreach (var (k, v) in facts)
             {
@@ -573,7 +587,7 @@ public static class TraceImpedanceReportDocument
                 // An out-of-band stretch is already in its colour, so only the number marks it; a
                 // return-path finding has no colour of its own and gets its stretch outlined.
                 bool ground = issue.Kind != TraceIssueKind.OutOfTolerance;
-                var color = ground ? GroundMark : ZMark;
+                var color = issue.Accepted is not null ? AcceptedMark : ground ? GroundMark : ZMark;
                 if (ground)
                 {
                     var a = P(issue.X0, issue.Y0); var b = P(issue.X1, issue.Y1);
@@ -593,7 +607,8 @@ public static class TraceImpedanceReportDocument
                     }
                 }
                 var m = P(issue.X, issue.Y);
-                Marker(new SKPoint(m.X + 5, m.Y - 5), 4.3f, n, color, issue.Fails, n >= 100 ? 3.4f : 4.6f);
+                if (issue.Accepted is not null) Check(new SKPoint(m.X + 5, m.Y - 5), 4.3f);
+                else Marker(new SKPoint(m.X + 5, m.Y - 5), 4.3f, n, color, issue.Fails, n >= 100 ? 3.4f : 4.6f);
             }
 
             // Trace ids, at each trace's longest piece, with a white halo.
@@ -648,6 +663,21 @@ public static class TraceImpedanceReportDocument
                 using var ink = Fill(color);
                 C.DrawText(n.ToString(), c.X, c.Y + 0.35f * textSize, SKTextAlign.Center, f, ink);
             }
+        }
+
+        /// <summary>An accepted finding's marker: a grey disc with a white check, where its number was —
+        /// kept on the map, not removed (R-imp5-4a).</summary>
+        private void Check(SKPoint c, float radius)
+        {
+            using var disc = Fill(AcceptedMark);
+            C.DrawCircle(c, radius, disc);
+            using var tick = Stroke(SKColors.White, Math.Max(0.8f, radius * 0.28f));
+            tick.StrokeCap = SKStrokeCap.Round;
+            using var path = new SKPath();
+            path.MoveTo(c.X - 0.45f * radius, c.Y);
+            path.LineTo(c.X - 0.1f * radius, c.Y + 0.4f * radius);
+            path.LineTo(c.X + 0.5f * radius, c.Y - 0.4f * radius);
+            C.DrawPath(path, tick);
         }
 
         private void DrawLegend(SKRect r, TraceLayerResult layer)
@@ -714,6 +744,13 @@ public static class TraceImpedanceReportDocument
                 Marker(new SKPoint(r.Left + 16, top + 5.5f), 4.5f, 2, Muted, false, 4.6f);
                 y = Paragraph("filled: a fail; hollow: a warning", r.Left + 27, top - 1.5f, r.Width - 27, _small, Muted, 1.35f) + 6;
             }
+            if (layer.Traces.Any(t => t.AcceptedCount > 0))
+            {
+                float top = y;
+                Check(new SKPoint(r.Left + 5, top + 5.5f), 4.5f);
+                y = Paragraph("grey, checked: an accepted finding — listed, with its reason, under Accepted findings",
+                              r.Left + 16, top - 1.5f, r.Width - 16, _small, Muted, 1.35f) + 6;
+            }
             y += 10;
 
             // The worst findings on this page, briefly; the full list follows the table.
@@ -724,7 +761,7 @@ public static class TraceImpedanceReportDocument
                 y += 3;
                 foreach (var (n, trace, issue) in findings)
                 {
-                    string text = $"{n}. {trace.Id} {SeverityText(issue)} — {Brief(issue)}";
+                    string text = $"{n}. {trace.Id} {Tier(issue)} — {Brief(issue)}";
                     var lines = Wrap(text, _small, r.Width);
                     if (y + lines.Count * 9.5f > r.Bottom - 12)
                     {
@@ -740,6 +777,10 @@ public static class TraceImpedanceReportDocument
                            r.Left, y + 2, SKTextAlign.Left, _body, layer.Traces.Count == 0 ? muted : Fill(PassInk));
             }
         }
+
+        /// <summary>A finding's tier as its line prints it: "ACCEPTED" for an accepted one, whose severity
+        /// no longer counts, else WARN or FAIL.</summary>
+        private static string Tier(TraceIssue i) => i.Accepted is not null ? "ACCEPTED" : SeverityText(i);
 
         private static string Brief(TraceIssue i) => i.Kind switch
         {
@@ -817,11 +858,13 @@ public static class TraceImpedanceReportDocument
             _y += 2;
             foreach (var (n, trace, issue) in findings)
             {
-                string line = $"{trace.Id} {SeverityText(issue)}: {issue.Text}";
+                string line = $"{trace.Id} {Tier(issue)}: {issue.Text}" +
+                              (issue.Accepted is { } a ? $" Accepted: {a.Reason}" : "");
                 var lines = Wrap(line, _body, PageW - 2 * Margin - 24);
                 if (_y + lines.Count * 12 + 2 > Bottom) { NewPage(section + " (continued)"); _y += 6; }
                 var color = issue.Kind == TraceIssueKind.OutOfTolerance ? ZMark : GroundMark;
-                Marker(new SKPoint(Margin + 6, _y + 8.5f), 5.5f, n, color, issue.Fails, n >= 100 ? 4.5f : 6f);
+                if (issue.Accepted is not null) Check(new SKPoint(Margin + 6, _y + 8.5f), 5.5f);
+                else Marker(new SKPoint(Margin + 6, _y + 8.5f), 5.5f, n, color, issue.Fails, n >= 100 ? 4.5f : 6f);
                 _y = Paragraph(line, Margin + 18, _y - 1, PageW - 2 * Margin - 24, _body, Ink) + 4;
             }
             if (notes.Count > 0)
@@ -834,6 +877,54 @@ public static class TraceImpedanceReportDocument
                     if (_y + 24 > Bottom) { NewPage(section + " (continued)"); _y += 6; }
                     _y = Paragraph($"{tid}: {note}", Margin, _y, PageW - 2 * Margin, _body, Muted) + 2;
                 }
+            }
+        }
+
+        // ── accepted findings (brief-impedance-5 R-imp5-4a) ─────────────────────────────────────
+
+        /// <summary>Every accepted finding — trace, finding, reason, date — then the saved acceptances that
+        /// matched nothing in this run. No page at all when there are neither.</summary>
+        public void Accepted()
+        {
+            var accepted = report.Layers.SelectMany(l => l.Traces.SelectMany(t => t.Issues
+                                  .Where(i => i.Accepted is not null).Select(i => (Layer: l.Name, Trace: t, Issue: i)))).ToList();
+            if (accepted.Count == 0 && report.StaleAcceptances.Count == 0) return;
+
+            const string section = "Accepted findings";
+            NewPage(section);
+            using var ink = Fill(Ink);
+            _y += 14;
+            C.DrawText(section, Margin, _y, SKTextAlign.Left, _h1, ink);
+            _y += 4;
+            _y = Paragraph("Each finding below is still true, and is still on the map and in its layer's list. The designer " +
+                           "accepted it, for the reason given, so it does not count against its trace's result. An acceptance " +
+                           "names the trace by its end points: a trace that is moved or re-routed is reviewed again.",
+                           Margin, _y, PageW - 2 * Margin, _small, Muted, 1.35f) + 6;
+
+            float width = PageW - 2 * Margin - 24;
+            foreach (var (layer, trace, issue) in accepted)
+            {
+                var a = issue.Accepted!;
+                string line = $"{trace.Id} ({layer}, {SeverityText(issue)}): {issue.Text}\nReason: {a.Reason}  ·  " +
+                              $"accepted {a.AcceptedUtc.ToLocalTime():yyyy-MM-dd}";
+                var lines = Wrap(line, _body, width);
+                if (_y + lines.Count * 12 + 4 > Bottom) { NewPage(section + " (continued)"); _y += 6; }
+                Check(new SKPoint(Margin + 6, _y + 8.5f), 5.5f);
+                _y = Paragraph(line, Margin + 18, _y - 1, width, _body, Ink) + 6;
+            }
+
+            if (report.StaleAcceptances.Count == 0) return;
+            if (_y + 40 > Bottom) NewPage(section + " (continued)");
+            _y += 10;
+            C.DrawText("Accepted, but matched nothing in this run", Margin, _y, SKTextAlign.Left, _h2, ink);
+            _y = Paragraph("The trace was moved or re-routed, or the finding no longer occurs. Kept on the layout until it is " +
+                           "removed.", Margin, _y, PageW - 2 * Margin, _small, Muted, 1.35f) + 4;
+            foreach (var a in report.StaleAcceptances)
+            {
+                string line = $"{a.LayerName}: {a.Summary}\nReason: {a.Reason}  ·  accepted {a.AcceptedUtc.ToLocalTime():yyyy-MM-dd}";
+                var lines = Wrap(line, _body, PageW - 2 * Margin);
+                if (_y + lines.Count * 12 + 4 > Bottom) { NewPage(section + " (continued)"); _y += 6; }
+                _y = Paragraph(line, Margin, _y, PageW - 2 * Margin, _body, Muted) + 6;
             }
         }
 

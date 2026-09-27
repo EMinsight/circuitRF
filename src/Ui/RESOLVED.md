@@ -36482,3 +36482,19 @@ The canvas's right-click menu has **Add to impedance review** beside Trace Imped
   whose panel is not on screen to say so.
 
 Not seen: the GUI cannot be launched from this session; checked by the compiler and the analysis tests only.
+
+## Impedance review brief 5 — Accept in the Impedance panel (2026-09-26)
+
+- **Accepting re-applies to the HELD report, never re-runs** — `LayoutEditorViewModel.AcceptImpedanceFindings` /
+  `RemoveImpedanceAcceptances` edit `Model.ImpedanceAcceptances`, set dirty (not undoable, the waiver rule), and assign
+  `ImpedanceReport = TraceImpedanceAcceptance.Apply(...)`, LVS's `ReapplyLvsWaivers` pattern. A run applies them too.
+- **Every row is rebuilt on each re-apply**, so `RebuildResults` carries the expanded traces over by id — otherwise
+  accepting a finding would collapse the trace the reviewer was working in.
+- **The list is `SelectionMode="Multiple"`** so one reason accepts several findings; the view hands the panel
+  `SelectedItems` on `SelectionChanged`, and `SelectedItem` stays bound for the canvas emphasis.
+- **`ImpedanceResultFilter.Accepted` is appended**, not inserted. The warning and failure filters hide accepted
+  findings among an expanded trace's children as well as hiding the traces they made pass.
+- The reason box is inline in the panel (not a dialog); Accept is disabled on a blank reason and the panel says why.
+- The canvas marker for an accepted finding is grey with a check (`ImpedanceFindingMarker.Accepted`), the PDF map's.
+
+GUI not seen (this shell cannot launch Avalonia); verified by the compiler and the impedance test classes.

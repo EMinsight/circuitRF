@@ -245,8 +245,12 @@ public readonly record struct ImpedanceStretch(long X0, long Y0, long X1, long Y
 public sealed record ImpedanceTraceMarker(IReadOnlyList<ImpedanceStretch> Stretches, bool Selected);
 
 /// <summary>One finding at the middle of its stretch: FILLED for a fail, HOLLOW for a warning, purple for
-/// a return-path kind and orange for Z0 — the PDF map's rule, so the two read alike.</summary>
-public readonly record struct ImpedanceFindingMarker(long X, long Y, bool ReturnPath, bool Fails, bool Selected);
+/// a return-path kind and orange for Z0 — the PDF map's rule, so the two read alike. An ACCEPTED finding
+/// (brief-impedance-5) is grey with a check, not removed.</summary>
+public readonly record struct ImpedanceFindingMarker(long X, long Y, bool ReturnPath, bool Fails, bool Selected)
+{
+    public bool Accepted { get; init; }
+}
 
 /// <summary>
 /// One parameter grip, ready to draw — world DBU, with its travel direction already expressed in

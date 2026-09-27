@@ -7,6 +7,8 @@
 // 2's width classes, from a background survey), the Scope line, Run / Cancel and progress, the results
 // (verdict tiles, a filter, one row per trace expandable to its findings), and Export PDF. Settings and
 // scope are saved on the layout AS THEY ARE EDITED (R-imp3-1c), through the one SaveImpedanceReview.
+// Accepted findings (brief-impedance-5): Accept… on selected finding rows asks for a reason and applies
+// at once, through the layout's AcceptImpedanceFindings — no re-run.
 
 using System.Collections.ObjectModel;
 using System.ComponentModel;
@@ -20,8 +22,9 @@ using CircuitRF.Engine;
 
 namespace CircuitRF.Ui.Layout.Impedance;
 
-/// <summary>Which result rows the panel lists (R-imp3-2b).</summary>
-public enum ImpedanceResultFilter { All, WarningsAndFailures, Failures }
+/// <summary>Which result rows the panel lists (R-imp3-2b). <see cref="Accepted"/> is appended, not
+/// inserted, so a stored number keeps its meaning.</summary>
+public enum ImpedanceResultFilter { All, WarningsAndFailures, Failures, Accepted }
 
 public sealed partial class ImpedancePanelViewModel : ObservableObject
 {
@@ -640,6 +643,8 @@ public sealed partial class ImpedancePanelViewModel : ObservableObject
     public int PassCount => Report?.PassCount ?? 0;
     public int WarningCount => Report?.WarningCount ?? 0;
     public int FailCount => Report?.FailCount ?? 0;
+    public int AcceptedCount => Report?.AcceptedCount ?? 0;
+    public bool HasAccepted => AcceptedCount > 0;
     public int OutOfScopeCount => Report?.OutOfScopeCount ?? 0;
     public bool HasOutOfScope => OutOfScopeCount > 0;
 
@@ -653,6 +658,7 @@ public sealed partial class ImpedancePanelViewModel : ObservableObject
         {
             ImpedanceResultFilter.Failures => "No trace fails.",
             ImpedanceResultFilter.WarningsAndFailures => "No trace warns or fails.",
+            ImpedanceResultFilter.Accepted => "No finding has been accepted.",
             _ => "No traces were found in the scope.",
         };
 
@@ -676,20 +682,37 @@ public sealed partial class ImpedancePanelViewModel : ObservableObject
         set { if (value) Filter = ImpedanceResultFilter.Failures; }
     }
 
+    public bool FilterAccepted
+    {
+        get => Filter == ImpedanceResultFilter.Accepted;
+        set { if (value) Filter = ImpedanceResultFilter.Accepted; }
+    }
+
     partial void OnFilterChanged(ImpedanceResultFilter value)
     {
         OnPropertyChanged(nameof(FilterAll));
         OnPropertyChanged(nameof(FilterWarningsAndFailures));
         OnPropertyChanged(nameof(FilterFailures));
+        OnPropertyChanged(nameof(FilterAccepted));
         ApplyFilter();
     }
 
     /// <summary>Whether a trace of <paramref name="v"/> is listed under <paramref name="filter"/>. A trace
     /// that could not be solved at all was not reviewed, so it is listed with the failures.</summary>
-    internal static bool Shows(ImpedanceResultFilter filter, TraceVerdict v) => filter switch
+    internal static bool Shows(ImpedanceResultFilter filter, TraceRun t) => filter switch
     {
-        ImpedanceResultFilter.Failures => v is TraceVerdict.Fail or TraceVerdict.Unsolved,
-        ImpedanceResultFilter.WarningsAndFailures => v is not TraceVerdict.Pass,
+        ImpedanceResultFilter.Failures => t.Verdict is TraceVerdict.Fail or TraceVerdict.Unsolved,
+        ImpedanceResultFilter.WarningsAndFailures => t.Verdict is not TraceVerdict.Pass,
+        ImpedanceResultFilter.Accepted => t.AcceptedCount > 0,
+        _ => true,
+    };
+
+    /// <summary>Whether an expanded trace lists <paramref name="child"/> under <paramref name="filter"/>:
+    /// the warning and failure filters hide accepted findings (R-imp5-3b), Accepted lists only them.</summary>
+    internal static bool ShowsChild(ImpedanceResultFilter filter, ImpedanceResultRow child) => filter switch
+    {
+        ImpedanceResultFilter.WarningsAndFailures or ImpedanceResultFilter.Failures => child.Issue?.Accepted is null,
+        ImpedanceResultFilter.Accepted => child.Issue?.Accepted is not null,
         _ => true,
     };
 
@@ -713,17 +736,24 @@ public sealed partial class ImpedancePanelViewModel : ObservableObject
 
     private void RebuildResults()
     {
+        // A re-applied acceptance rebuilds every row; the traces the reviewer had open stay open.
+        var expanded = _traceRows.Where(t => t.IsExpanded).Select(t => t.Id).ToHashSet(StringComparer.Ordinal);
         foreach (var t in _traceRows) t.PropertyChanged -= OnTraceRowChanged;
         _traceRows = [];
         if (Report is { } r)
             foreach (var layer in r.Layers)
                 foreach (var t in layer.Traces)
                 {
-                    var row = new ImpedanceTraceResultRow(r, layer, t);
+                    var row = new ImpedanceTraceResultRow(r, layer, t) { IsExpanded = expanded.Contains(t.Id) };
                     row.PropertyChanged += OnTraceRowChanged;
                     _traceRows.Add(row);
                 }
         ApplyFilter();
+        CancelAccept();
+        StaleAcceptances.Clear();
+        foreach (var a in Report?.StaleAcceptances ?? [])
+            StaleAcceptances.Add(new ImpedanceStaleAcceptanceRow(a, row => Editor?.RemoveImpedanceAcceptances([row.Acceptance])));
+        OnPropertyChanged(nameof(HasStaleAcceptances));
 
         OnPropertyChanged(nameof(Report));
         OnPropertyChanged(nameof(HasResults));
@@ -731,6 +761,8 @@ public sealed partial class ImpedancePanelViewModel : ObservableObject
         OnPropertyChanged(nameof(PassCount));
         OnPropertyChanged(nameof(WarningCount));
         OnPropertyChanged(nameof(FailCount));
+        OnPropertyChanged(nameof(AcceptedCount));
+        OnPropertyChanged(nameof(HasAccepted));
         OnPropertyChanged(nameof(OutOfScopeCount));
         OnPropertyChanged(nameof(HasOutOfScope));
         OnPropertyChanged(nameof(ResultSummaryText));
@@ -748,13 +780,93 @@ public sealed partial class ImpedancePanelViewModel : ObservableObject
         Rows.Clear();
         foreach (var t in _traceRows)
         {
-            if (!Shows(Filter, t.Trace.Verdict)) continue;
+            if (!Shows(Filter, t.Trace)) continue;
             Rows.Add(t);
-            if (t.IsExpanded) foreach (var child in t.Children) Rows.Add(child);
+            if (t.IsExpanded) foreach (var child in t.Children) if (ShowsChild(Filter, child)) Rows.Add(child);
         }
         SelectedRow = keep is not null && Rows.Contains(keep) ? keep : null;
+        SetSelectedRows(_selectedRows.Where(Rows.Contains).ToList());
         OnPropertyChanged(nameof(EmptyRowsText));
     }
+
+    // ── accepting findings (brief-impedance-5 R-imp5-3) ─────────────────────────────────────
+
+    private IReadOnlyList<ImpedanceResultRow> _selectedRows = [];
+    private List<ImpedanceFindingResultRow> _accepting = [];
+
+    /// <summary>Every selected row — the list selects several, so one reason can accept several findings.
+    /// Set by the view from the list's selection.</summary>
+    public void SetSelectedRows(IReadOnlyList<ImpedanceResultRow> rows)
+    {
+        _selectedRows = rows;
+        BeginAcceptCommand.NotifyCanExecuteChanged();
+        UnacceptCommand.NotifyCanExecuteChanged();
+    }
+
+    private IEnumerable<ImpedanceFindingResultRow> SelectedFindings => _selectedRows.OfType<ImpedanceFindingResultRow>();
+
+    /// <summary>The reason box is open, asking why for <see cref="AcceptTargetText"/>.</summary>
+    [ObservableProperty] private bool _isAccepting;
+
+    /// <summary>The reason being typed. Required: an empty one is refused, not saved (R-imp5-1d).</summary>
+    [ObservableProperty] private string _acceptReason = "";
+
+    partial void OnAcceptReasonChanged(string value)
+    {
+        ConfirmAcceptCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(AcceptReasonMissing));
+    }
+
+    public bool AcceptReasonMissing => string.IsNullOrWhiteSpace(AcceptReason);
+
+    /// <summary>"Accept 1 finding on T3" — what the reason is for.</summary>
+    [ObservableProperty] private string _acceptTargetText = "";
+
+    private bool CanBeginAccept() => !IsAccepting && SelectedFindings.Any(f => f.Issue!.Accepted is null);
+
+    [RelayCommand(CanExecute = nameof(CanBeginAccept))]
+    private void BeginAccept()
+    {
+        _accepting = [.. SelectedFindings.Where(f => f.Issue!.Accepted is null)];
+        if (_accepting.Count == 0) return;
+        var ids = _accepting.Select(f => f.Trace.Id).Distinct().ToList();
+        AcceptTargetText = $"Accept {(_accepting.Count == 1 ? "1 finding" : $"{_accepting.Count} findings")} on {string.Join(", ", ids)}";
+        AcceptReason = "";
+        IsAccepting = true;
+        BeginAcceptCommand.NotifyCanExecuteChanged();
+    }
+
+    private bool CanConfirmAccept() => IsAccepting && !AcceptReasonMissing;
+
+    [RelayCommand(CanExecute = nameof(CanConfirmAccept))]
+    private void ConfirmAccept()
+    {
+        if (!CanConfirmAccept() || Editor is not { } vm) return;
+        var findings = _accepting.Select(f => (f.Trace, f.Issue!)).ToList();
+        string reason = AcceptReason;
+        CancelAccept();
+        vm.AcceptImpedanceFindings(findings, reason);
+    }
+
+    [RelayCommand]
+    private void CancelAccept()
+    {
+        _accepting = [];
+        IsAccepting = false;
+        AcceptReason = "";
+        BeginAcceptCommand.NotifyCanExecuteChanged();
+        ConfirmAcceptCommand.NotifyCanExecuteChanged();
+    }
+
+    private bool CanUnaccept() => SelectedFindings.Any(f => f.Issue!.Accepted is not null);
+
+    [RelayCommand(CanExecute = nameof(CanUnaccept))]
+    private void Unaccept() =>
+        Editor?.RemoveImpedanceAcceptances([.. SelectedFindings.Select(f => f.Issue!.Accepted).OfType<TraceImpedanceAcceptance>()]);
+
+    /// <summary>Acceptances that matched nothing in the last run (R-imp5-3c), each with a remove button.</summary>
+    public ObservableCollection<ImpedanceStaleAcceptanceRow> StaleAcceptances { get; } = [];
+    public bool HasStaleAcceptances => StaleAcceptances.Count > 0;
 
     // ── export ───────────────────────────────────────────────────────────────────────────────
 
@@ -879,12 +991,12 @@ public sealed partial class ImpedanceTraceResultRow : ImpedanceResultRow
     public bool HasChildren => Children.Count > 0;
 
     /// <summary>"3 findings" — what expanding shows.</summary>
-    public string ChildCountText => Trace.Issues.Count switch
+    public string ChildCountText => (Trace.Issues.Count switch
     {
         0 => Trace.Notes.Count == 0 ? "" : "notes",
         1 => "1 finding",
         int n => $"{n} findings",
-    };
+    }) + (Trace.AcceptedCount > 0 ? $" ({Trace.AcceptedCount} accepted)" : "");
 
     [ObservableProperty] private bool _isExpanded;
 
@@ -892,13 +1004,33 @@ public sealed partial class ImpedanceTraceResultRow : ImpedanceResultRow
     private void ToggleExpanded() => IsExpanded = !IsExpanded;
 }
 
-/// <summary>One finding, with its severity, in the sentence the PDF's findings list prints.</summary>
+/// <summary>One finding, with its severity, in the sentence the PDF's findings list prints — and, when it
+/// is accepted, marked so with the reason (R-imp5-2b): an accepted finding is never removed.</summary>
 public sealed class ImpedanceFindingResultRow(TraceRun trace, TraceIssue issue) : ImpedanceResultRow(trace)
 {
     public override TraceIssue? Issue => issue;
     public string SeverityText => TraceImpedanceReport.SeverityText(issue);
-    public bool Fails => issue.Fails;
+    public bool IsAccepted => issue.Accepted is not null;
+    public bool Fails => issue.Fails && !IsAccepted;
+    public bool Warns => !issue.Fails && !IsAccepted;
+    public double TextOpacity => IsAccepted ? 0.6 : 1;
     public string Text => issue.Text;
+
+    /// <summary>"ACCEPTED — reason · 2026-09-26", or empty.</summary>
+    public string AcceptedText => issue.Accepted is { } a
+        ? $"ACCEPTED — {a.Reason} · {a.AcceptedUtc.ToLocalTime():yyyy-MM-dd}" : "";
+}
+
+/// <summary>A saved acceptance that matched nothing in the last run (R-imp5-3c): its layer, the finding's
+/// text when it was accepted, its reason, and a remove button.</summary>
+public sealed partial class ImpedanceStaleAcceptanceRow(TraceImpedanceAcceptance acceptance, Action<ImpedanceStaleAcceptanceRow> remove)
+{
+    public TraceImpedanceAcceptance Acceptance { get; } = acceptance;
+    public string Text { get; } = $"{acceptance.LayerName}: {acceptance.Summary}";
+    public string ReasonText { get; } = $"Reason: {acceptance.Reason} · accepted {acceptance.AcceptedUtc.ToLocalTime():yyyy-MM-dd}";
+
+    [RelayCommand]
+    private void Remove() => remove(this);
 }
 
 /// <summary>One note on a trace — said about it, not a fault.</summary>
