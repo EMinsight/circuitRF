@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — 3D EM</title>
+<link rel="icon" href="../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: docs/user/src/reference/em-3d.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../index.html"><img class="logo" src="../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <span class="doc-kind">Reference Guide</span>
+  <div class="doc-search" data-crf-search data-root="../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <p class="breadcrumb"><a href="../index.html">Docs</a> › <a href="index.html">Reference</a> › 3D EM</p>
+
+  <h1>3D EM</h1>
+  <p class="lede">What circuitRF&#39;s 3D solvers are for, how to get them, how to set one up and read the answer, and a worked example you can open.</p>
+
+<p>circuitRF can hand a layout to a 3D solver: <strong>Palace</strong>, a finite-element (FEM) solver, or <strong>openEMS</strong>, a
+finite-difference time-domain (FDTD) solver. It builds the 3D model itself, from the layout, its
+technology and its bond wires. It meshes the model with <strong>Gmsh</strong>, runs the solver, and reads the answer
+back as an ordinary result. The same <code>.cem</code> setup document drives it. You choose a 3D solver in that
+setup's <strong>Solver</strong> group, and nothing else about the workflow changes.</p>
+<p>This page is the guide. The setup panel's 3D controls, and every <code>.cem</code> field they write, are described
+control by control in <a href="em-setup.html#solver-3d">EM Setup ▸ Solver — planar or 3D</a>. This page links into
+that one rather than repeating it.</p>
+<nav class="toc">
+<h2>On this page</h2>
+<ol>
+<li><a href="#when">When to use 3D, and when not</a></li>
+<li><a href="#getting">Getting the solvers</a></li>
+<li><a href="#setting-up">Setting one up</a></li>
+<li><a href="#running">Watching it run, and reading the answer</a></li>
+<li><a href="#view">The 3D view</a></li>
+<li><a href="#example">Walking through the example</a></li>
+</ol>
+</nav>
+<h2 id="when">When to use 3D, and when not</h2>
+<p><strong>The planar solvers stay the default wherever they fit.</strong> circuitRF's planar method-of-moments solver
+(see <a href="mom-engine.html">the MoM engine</a>) and the bond-wire kernel in <a href="wbond.html">wBond</a> put their
+unknowns on the metal only. A 3D solver meshes the volume, including the air around the structure. A
+3D run therefore costs minutes and gigabytes where a planar run costs seconds. A 3D solver is also a
+separate program you install. Use 3D for what the planar solvers <strong>cannot represent</strong>, and as an
+independent check on them. Do not use it as a replacement.</p>
+<table>
+<thead>
+<tr>
+<th>Structure</th>
+<th>Use</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Planar metal on a layered board or die, and vias that stitch to ground</td>
+<td>The planar solver. A 3D run is an independent cross-check only</td>
+</tr>
+<tr>
+<td>A signal via <strong>through</strong> a reference plane: a line on each side of the same plane</td>
+<td><strong>3D.</strong> The planar solver refuses it: its return plane must lie beneath every conductor it solves</td>
+</tr>
+<tr>
+<td>Bond-wire arrays</td>
+<td>wBond's kernel. A 3D run is the independent reference it is validated against</td>
+</tr>
+<tr>
+<td>Leadframes, lids, cavities, stepped metal, connectors, package-to-board transitions</td>
+<td><strong>3D.</strong> Nothing planar represents them</td>
+</tr>
+<tr>
+<td>A package's capacitance and inductance matrices</td>
+<td><strong>3D (Palace).</strong> Electrostatic and magnetostatic solves</td>
+</tr>
+<tr>
+<td>Resonances of a cavity or a lid: &quot;is there a mode inside my band?&quot;</td>
+<td><strong>3D (Palace).</strong> An eigenmode solve finds them directly</td>
+</tr>
+<tr>
+<td>A radiator that is not planar</td>
+<td><strong>3D.</strong> See <a href="antennas.html#3d">Antennas ▸ From a 3D solver</a></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Which 3D solver.</strong> Palace (FEM) and openEMS (FDTD) suit different geometry. The setup panel says which
+fits your model when you choose one. This is advice, not a restriction. The full comparison of FEM,
+FDTD and the planar MoM solver — cost, memory, and which problems suit each — is
+<a href="em-solvers.html">EM Solvers: MoM, FEM and FDTD</a>.</p>
+<ul>
+<li><strong>FEM (Palace)</strong> fits curved and diagonal metal: bond wires, round vias. Its tetrahedra follow a
+surface, and its adaptive refinement puts small elements only where the error is. It is the only one
+of the two that computes capacitance and inductance matrices, and it finds a cavity's resonances
+directly. FDTD would have to ring a high-Q cavity down for a long time.</li>
+<li><strong>FDTD (openEMS)</strong> fits Manhattan geometry on a stackup, because metal aligned with its grid costs
+nothing. One pulse covers a whole band. Its absorbing boundaries let the air box around a radiator
+stay small. One fine feature sets its cell size, and through that its time step, so a single thin
+wire in a large model is expensive.</li>
+</ul>
+<p>Running <strong>both</strong> on one setup (<strong>FEM &amp; FDTD - Compare</strong>) gives two answers from methods that share nothing
+numerically, and their agreement is strong evidence that each has converged. It is a cross-check, not a
+reference: both solvers read the same generated model, so a mistake in building that model would appear
+in both.</p>
+<h2 id="getting">Getting the solvers</h2>
+<p>circuitRF ships no solver and no mesher. Opening a workspace, editing a 3D setup and looking at its model
+need none of them. <strong>Simulate</strong> is the first step that does. On a machine without them it is refused,
+naming what is missing, and the message offers <strong>Install Palace …</strong> (or Gmsh, or openEMS). <strong>Settings ▸
+3D EM</strong> has the same <strong>Install …</strong> buttons, and <code>circuitrf solver install palace --yes</code> does the same from
+a terminal. <a href="em-setup.html#install-assistant">EM Setup ▸ Letting circuitRF install the 3D solvers</a> is the
+full description: what is shown before anything downloads, where each program goes, and what happens
+when an install fails.</p>
+<p><strong>What it costs</strong>, as measured. Each figure is one machine's measurement, and yours will differ:</p>
+<table>
+<thead>
+<tr>
+<th>Install</th>
+<th>Measured</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Palace, macOS on Apple silicon</td>
+<td>52 min, 1.9 GB, on an Apple M4 (10 cores, 16 GB). Built from source</td>
+</tr>
+<tr>
+<td>Palace, Linux arm64</td>
+<td>29 min, 2.1 GB: three clean installs of Ubuntu 24.04 in a container on an Apple M4 (8 GB, 4 build jobs)</td>
+</tr>
+<tr>
+<td>Palace, Windows (in the Linux subsystem)</td>
+<td>Not yet measured. Reported upstream as most of a day</td>
+</tr>
+<tr>
+<td>Gmsh, macOS</td>
+<td>Under a minute, 0.13 GB</td>
+</tr>
+<tr>
+<td>openEMS, macOS</td>
+<td>8 min, 0.27 GB, built by openEMS's own script</td>
+</tr>
+</tbody>
+</table>
+<p>Palace is always built from source, because no ready-built Palace exists for macOS or for the Linux
+subsystem. The build is long but runs in the background, with its progress in the Messages panel, and
+<strong>Cancel</strong> stops it at any point.</p>
+<div class="callout note">
+<span class="label">Palace's licence note</span>
+<p>A default Palace build includes ParMETIS, whose licence allows commercial use for evaluation only. If
+you build Palace, you accept those terms. circuitRF distributes no copy of Palace, so it passes on none.</p>
+</div>
+<p><strong>On Windows</strong>, Palace runs inside your own Windows Subsystem for Linux distribution, and circuitRF treats
+it like a Palace on this computer. Gmsh and openEMS run natively. What you need first, and what each
+missing piece's message says, is in
+<a href="em-setup.html#palace-windows">EM Setup ▸ Palace on Windows</a>.</p>
+<p><strong>By hand.</strong> If you prefer to build the solvers yourself, circuitRF finds them on <code>PATH</code>, in a Spack
+install tree, in a conda environment, or where you name them in <strong>Settings ▸ 3D EM</strong>. It runs only the
+versions it has validated. The exact validated versions and the three build problems met on macOS are in
+<a href="em-setup.html#install-3d-solvers">EM Setup ▸ Installing the 3D solvers by hand</a>.</p>
+<p><strong>Removing them.</strong> <strong>Uninstall …</strong> in <strong>Settings ▸ 3D EM</strong>, or <code>circuitrf solver remove palace --yes</code>.
+circuitRF removes only what it installed, and never touches your documents or results. See
+<a href="em-setup.html#uninstall-solvers">EM Setup ▸ Removing the 3D solvers</a>.</p>
+<h2 id="setting-up">Setting one up</h2>
+<p>A 3D setup is an ordinary EM setup whose <strong>Solver</strong> is not <em>Planar</em>. Create one as any other (<strong>New ▸ EM
+Setup</strong> on a layout, see <a href="em-setup.html#creating">EM Setup</a>), then choose the solver. Every control
+writes a field of the <code>.cem</code>, so a setup can equally be written as text. The fields below link to their
+full description.</p>
+<ul>
+<li><strong>Solver</strong> (<code>Solver3D</code>): <code>Palace</code>, <code>OpenEms</code>, or <code>Both</code> to run the two and compare them.
+<a href="em-setup.html#solver-3d">More</a>.</li>
+<li><strong>Problem</strong> (<code>Problem3D</code>, Palace only): <em>Driven</em> for S-parameters (the default), <em>Electrostatic</em> for a
+capacitance matrix, <em>Magnetostatic</em> for an inductance matrix, <em>Eigenmode</em> for resonant frequencies and
+<ol type="A" start="17">
+<li><a href="em-setup.html#package-rlc">Package RLC</a>, <a href="em-setup.html#eigenmodes">Eigenmodes</a>.</li>
+</ol>
+</li>
+<li><strong>Ports.</strong> A layout's port labels become ports. In 3D a port is <strong>lumped</strong> by default: a sheet from the
+line down to its return, with the port's Z₀ across it. A <strong>wave port</strong> (<code>Ports3D</code>, Palace only) is fed
+by the line's own mode on the air box's face instead, and has no sheet parasitic.
+<a href="em-setup.html#wave-ports">Wave ports</a>.</li>
+<li><strong>Terminals</strong> (<code>Terminals3D</code>, static solves): the matrix's rows and columns, each named by a net.
+Every conductor on that net belongs to the terminal. A magnetostatic terminal also names the port its
+current enters by.</li>
+<li><strong>The air box</strong> (<code>AirBox</code>): how far each face of the solved region lies beyond the geometry, and what
+the face does to the field. It can be <em>Absorbing</em> (open space), <em>Pec</em> (a metal wall), <em>Pmc</em> or
+<em>Symmetry</em>. By default the floor sits on the lowest ground plane and the other five faces are
+absorbing, a fraction of a wavelength out. A closed box of <code>Pec</code> faces is a shielded enclosure, and it
+is how the example models a package lid.</li>
+<li><strong>Quality</strong> (<code>Quality</code> in the <code>Palace</code> section): <em>Draft</em>, <em>Standard</em> (the default) or <em>Accurate</em>.
+These set the element order, the refinement passes and the sweep tolerance together, and any one of
+those can be overridden on its own. The measured cost of each preset is in
+<a href="em-setup.html#solver-3d">EM Setup ▸ Solver</a>. <strong>Which one is enough depends on the structure, not on a
+rule</strong>: the example below uses both Draft and Standard, and says why for each.</li>
+<li><strong>Fields</strong> (<code>SaveFieldsGHz</code>): which frequencies' fields are saved for the 3D view. By default only the
+sweep's centre is saved, because fields are large.
+<a href="em-setup.html#palace-fields">Fields for the 3D view</a>.</li>
+</ul>
+<p><strong>Look before you solve.</strong> <strong>Show 3D</strong> on the setup's panel opens the 3D view on the model circuitRF
+built. It works before any solver is installed. <code>circuitrf explain</code> on the <code>.cem</code> prints the same model as
+text: every solid, its material and its extent, the ports, the air box and its faces, and an estimate of
+the problem's size. <code>circuitrf render x.cem --section xz@y=0um -o cut.svg</code> draws a section through it.</p>
+<h2 id="running">Watching it run, and reading the answer</h2>
+<p><strong>Before anything runs</strong>, circuitRF checks whether the run fits in this machine's memory. The first check
+uses the model's volumes. A second check, once Gmsh has reported how many tetrahedra it made, uses the
+real count. On a model with small metal the second is the one that counts, because refinement around the
+metal is nearly the whole mesh. Past 75 % of memory the run carries a warning naming the estimate and
+what would shrink it. Past 150 %, Simulate asks before going on.</p>
+<p><strong>While it runs</strong>, the progress row names the solver's own stages, read from its own log: <em>Meshing
+(Gmsh)</em>; <em>Solving: refinement pass k of N</em> with the unknown count; <em>Sweep: sampling</em>, with the sweep's
+error converging on its tolerance; <em>Reading results</em>. The memory the solver is using is beside it. A 3D
+run cannot stop early and keep a partial result, so the button reads <strong>Cancel</strong>.</p>
+<p><strong>When it finishes</strong>, one line states what the run cost: the wall time, the solver's own peak memory,
+the tetrahedra before and after refinement, the unknowns, and the preset. The same line is recorded in
+the result's header.</p>
+<p><strong>Where the answer lands.</strong> A result is named after its solver, so a 3D run never replaces a planar one or
+the other solver's:</p>
+<table>
+<thead>
+<tr>
+<th>Problem</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Driven</td>
+<td><code>results/&lt;setup&gt;.palace.sNp</code> and <code>&lt;setup&gt;.palace_em.npy</code>, opened in the Data Display like any S-parameters</td>
+</tr>
+<tr>
+<td>Electrostatic</td>
+<td><code>results/&lt;setup&gt;.palace_es.npy</code>: <code>C</code> (Maxwell) and <code>C_mutual</code> (the capacitors you would draw). Printed by <code>circuitrf em</code></td>
+</tr>
+<tr>
+<td>Magnetostatic</td>
+<td><code>results/&lt;setup&gt;.palace_ms.npy</code>: <code>L</code> and <code>L_mutual</code>. Printed by <code>circuitrf em</code></td>
+</tr>
+<tr>
+<td>Eigenmode</td>
+<td><code>results/&lt;setup&gt;.palace_eig.npy</code>: each mode's <code>f</code>, <code>Q</code>, and where its energy is. Printed by <code>circuitrf em</code> and shown on the panel</td>
+</tr>
+<tr>
+<td>openEMS</td>
+<td><code>results/&lt;setup&gt;.openems.sNp</code></td>
+</tr>
+<tr>
+<td>Both</td>
+<td>the two above, and <code>results/&lt;setup&gt;.compare_em.npy</code> holding their difference</td>
+</tr>
+</tbody>
+</table>
+<p><code>results/&lt;setup&gt;.palace/</code> keeps everything the run made: the Gmsh script, the mesh, the Palace
+configuration, both programs' logs, and the saved fields. The run can be repeated by hand from it. An
+unchanged model reuses its mesh.</p>
+<h2 id="view">The 3D view</h2>
+<p><strong>Show 3D</strong> on a setup's panel opens the 3D view beside it, drawn by the graphics card. It shows the
+model circuitRF built, and after a run it also shows what the solver made.</p>
+<ul>
+<li><strong>Model.</strong> Every solid, coloured by its layer, with the dielectrics, the air and the air box's faces
+each switchable. The faces are coloured by boundary kind: grey metal, blue absorbing, orange PMC,
+violet symmetry. The <strong>object tree</strong> lists every solid, and a click in the view picks one and names it.
+In the 3D editor the tree is headed <strong>Objects</strong> and lists the document's objects <strong>by material</strong> (the
+default — objects with no material come first, in their own group) or <strong>by type</strong> (boxes, sheets,
+cylinders, …), chosen in its header. By material a row does not repeat the material its group is headed
+by; an object's construction order is its name's tooltip. The <strong>air box</strong> appears — drawn and listed — once
+there is a solid or a sheet to size it: with no setup yet it is the box a new setup would solve in. By
+material it is listed under the material that fills it, first under Boxes by type, and says which setup it
+belongs to. It is filled with <strong>Air</strong> unless you choose otherwise: select it and pick its <strong>Material</strong> in the
+Properties panel (<strong>Vacuum</strong> for free space, or any material of the technology). Its tick hides it — faces
+and outline — and it stays hidden until you show it again. The filter at the header's right hides tree rows by type or by
+material, and its icon changes while it hides anything; it never hides an object in the view.</li>
+<li><strong>Camera.</strong> Drag to orbit; right-drag, middle-drag, Alt-drag or Shift-drag to pan; scroll to zoom. <strong>Home</strong>
+fits the model. <strong>1</strong> is isometric, <strong>2</strong>–<strong>7</strong> are the six orthographic views, and <strong>P</strong> switches between
+perspective and orthographic. Double-click the axis indicator for the same views: an axis looks straight
+down it — <strong>Z</strong> the top view, <strong>Y</strong> the front, <strong>X</strong> the right — and again turns to the opposite side; anywhere
+else inside its ring is isometric. While you orbit or pan nothing is highlighted and nothing snaps.
+These are the 3D editor's keys too: every 3D pane uses the same ones.</li>
+<li><strong>Selecting.</strong> <strong>O</strong>, <strong>F</strong> and <strong>V</strong> choose what a click selects: a whole <strong>object</strong>, one <strong>face</strong>, or one
+<strong>vertex</strong> (the toolbar has a button for each). What is under the cursor is highlighted. A click
+selects it; Shift-click adds to or removes from the selection; <strong>Esc</strong> clears it. A selected face's area
+and normal, or a vertex's coordinates, are shown under the view, in the layout's unit. <strong>B</strong> steps to the
+next thing <em>behind</em> the selection along the line of sight through the cursor, and <strong>Shift+B</strong> steps back
+toward you — the status line says where you are (<code>Face zmin · &quot;trace&quot; · 2 of 5</code>). A face selected
+behind others is drawn through what is in front of it. Right-click opens the menu for what is selected:
+<em>Hide</em>, <em>Isolate</em>, <em>Show All</em>, and <em>Select Owning Object</em>. Nothing here changes the setup.</li>
+<li><strong>The 3D editor.</strong> A 3D view (<code>.c3d</code>) opens in this same pane with drawing added: boxes, cylinders, sheets,
+faces pushed and pulled, placed cells, bond wires, ports, setups and the air box, all with these keys. It is
+circuitRF's own and needs no solver. <a href="drawing-in-3d.html">The 3D Editor</a> is its chapter, and describes every
+control.</li>
+<li><strong>Measure</strong> (<strong>M</strong>, the ruler button, <em>3D ▸ Measure</em>; in the editor and in this view). Click two points,
+snapped as drawing is; after the first a line follows the cursor. A card in the corner of the view gives
+both points' x, y and z, their differences (the second minus the first) and the distance, in the
+document's unit — changing the unit re-spells them. Every number can be selected and copied; hover one for
+its copy button, or <strong>Copy All</strong> for the whole card as a table that pastes into a spreadsheet. A copied
+value carries its unit (<code>12.5mil</code>) and pastes back into any dimension box as exactly the same length.
+<strong>≈</strong> marks a point that is not exactly on the database-unit grid. A third click starts a new
+measurement; <strong>Esc</strong> ends it. Measuring changes nothing and adds no undo step.</li>
+<li><strong>Clip plane</strong> (<strong>C</strong>). A plane along an axis or the view direction, dragged through the model. It
+shows inside a package, under a lid, or through a via's clearance.</li>
+<li><strong>Mesh.</strong> After a Palace run, the mesh Gmsh made: the boundary triangles, and the tetrahedra the clip
+plane cuts.</li>
+<li><strong>Grid.</strong> For an openEMS setup, the FDTD grid on the clip plane and where it meets the metal.</li>
+<li><strong>Fields.</strong> After a run that saved them: the field at each saved frequency, eigenmode or terminal,
+drawn on the clip plane or on the surfaces. The quantities offered are only those in the solver's
+files: the electric field |E|, the surface current J_s on the conductors, and for a static solve the
+potential. A <strong>dB</strong> scale and a <strong>range</strong> percentile keep one singular edge from washing out the
+picture.</li>
+<li><strong>Animation.</strong> The play button sweeps the phase through one cycle and draws the instantaneous field
+Re{E·e^jφ}. That is the standing wave in a cavity, or the current running along a wire.</li>
+<li><strong>Pictures.</strong> <strong>Export picture …</strong> saves a PNG of the view at a multiple of the window's size, with or
+without the legend and caption. Right-click in the view for <strong>Copy Picture</strong>.</li>
+</ul>
+<p><strong>What the mesh tells you about trusting the answer.</strong> Look at where the small elements are. After
+refinement they gather where Palace's own error estimate said the answer needed them: along the edges of
+strips, around a wire, in a port sheet. If the refined region is on the metal you care about, the
+refinement did its work. If a feature you care about sits among large elements, the answer at that
+feature is the coarse mesh's, and a <em>Standard</em> run (with refinement) is the one to trust. Palace also
+saves its <strong>error indicator</strong> per element, which the view offers as a field: it shows the error
+directly, where the mesh shows it only by implication. On an openEMS setup, the grid is the whole
+accuracy story. A wire much thinner than the cells around it has too much inductance, and the run's
+notes say so.</p>
+<div class="callout note">
+<span class="label">Pictures of the 3D view</span>
+<p>The 3D view draws on the graphics card, so its pictures cannot be made by the documentation's
+headless generator. The four below are to be exported from the example with <b>Export picture …</b> at 2×,
+with the legend on.</p>
+</div>
+<!-- FIGURE PLACEHOLDER em3d-view-bond-wire-model — 1600 x 1000 PNG, Export picture at 2x, legend on:
+     Bond wire/em/Bond wire 3D.cem after a run, isometric (1), dielectrics and air hidden, mesh ON.
+     Caption: "The bond wire after a Standard run: the wire, its feet and the pads, with the mesh Palace
+     refined around them." -->
+<!-- FIGURE PLACEHOLDER em3d-view-bond-wire-current — 1600 x 1000 PNG, Export picture at 2x, legend on:
+     the same view, mesh off, Field = the saved 20.5 GHz frequency, J_s on surfaces, dB on.
+     Caption: "Surface current J_s on the bond wire and its pads at 20.5 GHz, in dB." -->
+<!-- FIGURE PLACEHOLDER em3d-view-via-field — 1600 x 1000 PNG, Export picture at 2x, legend on:
+     Via through a plane/em/Via 3D.cem after a run, front view (3), clip plane C on y (normal along y) at
+     0, Field = 10.05 GHz, |E| on the clip plane, dB on.
+     Caption: "|E| at 10.05 GHz in a vertical cut along both lines and through the via, in dB." -->
+<!-- FIGURE PLACEHOLDER em3d-view-package-mode — 1600 x 1000 PNG, Export picture at 2x, legend on:
+     Package/em/Package lid modes.cem after a run, top view (2), clip plane on z just below the lid,
+     Field = mode 3, |E| on the clip plane.
+     Caption: "|E| of the lid's first cavity mode in a plane just below the lid." -->
+<h2 id="example">Walking through the example</h2>
+<p><strong>Tools ▸ Examples ▸ 3D EM</strong> copies a workspace with three cells to a folder you choose and opens it.
+Each cell is something a planar solver cannot do, or can do only as a comparison. Every setup runs in
+minutes on a 16 GB laptop. Its <code>README.md</code> opens first and carries the same numbers as this section. The
+numbers also live in <code>expected-numbers.json</code> beside it, which circuitRF's own tests re-run against, so the
+two cannot drift apart.</p>
+<p><strong>Every time and memory figure below was measured once</strong>, on an Apple M4 with 10 cores and 16 GB,
+running macOS 27.0, Palace 0.18.1 on 10 processes, and Gmsh 4.15.2. Times are wall clock for the whole
+run. Memory is Palace's own peak over all its processes.</p>
+<p><strong>Without Palace, start anyway.</strong> Open any setup and press <strong>Show 3D</strong> to see the model. Press
+<strong>Simulate</strong>, and the refusal offering <strong>Install Palace …</strong> is the expected first step.</p>
+<h3 id="example-bond-wire">Bond wire</h3>
+<p>A 1 mil (25.4 µm) gold wire with a hexagonal section and a wedge foot at each end, between two 100 µm pads
+on 100 µm of alumina, inside a closed metal box 3 × 2 × 1.1 mm. Its loop is not symmetric: it rises steeply
+from the left pad to 290 µm above the pads about a third of the way across, then falls in a long slope to
+the right pad. A port sheet runs
+from each pad's outer edge down to the ground.</p>
+<figure class="figure"><span class="frame">
+<span class="sym-light"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="960" height="540" viewBox="0 0 960 540"><defs><path id="em3d-bond-wire-section_d0" d="M-208.57 362.8L957.37 362.8L957.37 323.93L-208.57 323.93L-208.57 362.8Z" /><path id="em3d-bond-wire-section_d1" d="M160.65 323.93L199.51 323.93L199.51 322.77L160.65 322.77L160.65 323.93Z" /><path id="em3d-bond-wire-section_d2" d="M549.29 323.93L588.15 323.93L588.15 322.77L549.29 322.77L549.29 323.93Z" /><path id="em3d-bond-wire-section_d3" d="M170.05 322.77L180.93 322.77L191.81 322.77L221.11 289.67L250.41 256.58L279.09 233.8L307.77 211.02L339.17 215.96L370.57 220.9L412.8 245.29L455.03 269.68L506.48 296.23L557.92 322.77L568.33 322.77L578.75 322.77L578.75 318.29L578.75 318.29L578.75 318.29L578.75 313.82L569.42 313.82L560.09 313.82L509.71 287.82L459.33 261.83L416.47 237.07L373.6 212.31L339.44 206.94L305.28 201.56L274.75 225.81L244.22 250.06L216 281.94L187.78 313.82L178.92 313.82L170.05 313.82L170.05 318.29L170.05 318.29L170.05 318.29L170.05 322.77Z" /><path id="em3d-bond-wire-section_d4" d="M157.65 323.93L163.65 323.93L163.65 362.8L157.65 362.8L157.65 323.93Z" /><path id="em3d-bond-wire-section_d5" d="M585.15 323.93L591.15 323.93L591.15 362.8L585.15 362.8L585.15 323.93Z" /></defs><rect fill="white" width="960" height="540" /><rect fill="#F6F8FA" width="960" height="540" /><clipPath id="em3d-bond-wire-section_cl_0"><rect x="96.52" y="137.44" width="555.76" height="225.36" /></clipPath><g clip-path="url(#em3d-bond-wire-section_cl_0)"><use xlink:href="#em3d-bond-wire-section_d0" fill="#6E7C91" fill-opacity="0.2353" fill-rule="evenodd" /><use xlink:href="#em3d-bond-wire-section_d0" fill="none" stroke="#424A57" stroke-width="1" stroke-miterlimit="4" fill-rule="evenodd" /><use xlink:href="#em3d-bond-wire-section_d1" fill="#D4AF37" fill-rule="evenodd" /><use xlink:href="#em3d-bond-wire-section_d1" fill="none" stroke="#7F6921" stroke-width="1" stroke-miterlimit="4" fill-rule="evenodd" /><use xlink:href="#em3d-bond-wire-section_d2" fill="#D4AF37" fill-rule="evenodd" /><use xlink:href="#em3d-bond-wire-section_d2" fill="none" stroke="#7F6921" stroke-width="1" stroke-miterlimit="4" fill-rule="evenodd" /><use xlink:href="#em3d-bond-wire-section_d3" fill="#A54082" fill-rule="evenodd" /><use xlink:href="#em3d-bond-wire-section_d3" fill="none" stroke="#63264E" stroke-width="1" stroke-miterlimit="4" fill-rule="evenodd" /></g><path fill="none" stroke="#3C3C42" stroke-width="1.5" stroke-miterlimit="4" d="M96.52 362.8L652.28 362.8" /><path fill="#3C3C42" fill-opacity="0.5647" d="M651.78 362.8L651.78 356.8L652.78 356.8L652.78 362.8M651.78 352.8L651.78 346.8L652.78 346.8L652.78 352.8M651.78 342.8L651.78 336.8L652.78 336.8L652.78 342.8M651.78 332.8L651.78 326.8L652.78 326.8L652.78 332.8M651.78 322.8L651.78 316.8L652.78 316.8L652.78 322.8M651.78 312.8L651.78 306.8L652.78 306.8L652.78 312.8M651.78 302.8L651.78 296.8L652.78 296.8L652.78 302.8M651.78 292.8L651.78 286.8L652.78 286.8L652.78 292.8M651.78 282.8L651.78 276.8L652.78 276.8L652.78 282.8M651.78 272.8L651.78 266.8L652.78 266.8L652.78 272.8M651.78 262.8L651.78 256.8L652.78 256.8L652.78 262.8M651.78 252.8L651.78 246.8L652.78 246.8L652.78 252.8M651.78 242.8L651.78 236.8L652.78 236.8L652.78 242.8M651.78 232.8L651.78 226.8L652.78 226.8L652.78 232.8M651.78 222.8L651.78 216.8L652.78 216.8L652.78 222.8M651.78 212.8L651.78 206.8L652.78 206.8L652.78 212.8M651.78 202.8L651.78 196.8L652.78 196.8L652.78 202.8M651.78 192.8L651.78 186.8L652.78 186.8L652.78 192.8M651.78 182.8L651.78 176.8L652.78 176.8L652.78 182.8M651.78 172.8L651.78 166.8L652.78 166.8L652.78 172.8M651.78 162.8L651.78 156.8L652.78 156.8L652.78 162.8M651.78 152.8L651.78 146.8L652.78 146.8L652.78 152.8M651.78 142.8L651.78 137.44L652.78 137.44L652.78 142.8" /><path fill="#3C3C42" fill-opacity="0.5647" d="M652.28 137.94L646.28 137.94L646.28 136.94L652.28 136.94M642.28 137.94L636.28 137.94L636.28 136.94L642.28 136.94M632.28 137.94L626.28 137.94L626.28 136.94L632.28 136.94M622.28 137.94L616.28 137.94L616.28 136.94L622.28 136.94M612.28 137.94L606.28 137.94L606.28 136.94L612.28 136.94M602.28 137.94L596.28 137.94L596.28 136.94L602.28 136.94M592.28 137.94L586.28 137.94L586.28 136.94L592.28 136.94M582.28 137.94L576.28 137.94L576.28 136.94L582.28 136.94M572.28 137.94L566.28 137.94L566.28 136.94L572.28 136.94M562.28 137.94L556.28 137.94L556.28 136.94L562.28 136.94M552.28 137.94L546.28 137.94L546.28 136.94L552.28 136.94M542.28 137.94L536.28 137.94L536.28 136.94L542.28 136.94M532.28 137.94L526.28 137.94L526.28 136.94L532.28 136.94M522.28 137.94L516.28 137.94L516.28 136.94L522.28 136.94M512.28 137.94L506.28 137.94L506.28 136.94L512.28 136.94M502.28 137.94L496.28 137.94L496.28 136.94L502.28 136.94M492.28 137.94L486.28 137.94L486.28 136.94L492.28 136.94M482.28 137.94L476.28 137.94L476.28 136.94L482.28 136.94M472.28 137.94L466.28 137.94L466.28 136.94L472.28 136.94M462.28 137.94L456.28 137.94L456.28 136.94L462.28 136.94M452.28 137.94L446.28 137.94L446.28 136.94L452.28 136.94M442.28 137.94L436.28 137.94L436.28 136.94L442.28 136.94M432.28 137.94L426.28 137.94L426.28 136.94L432.28 136.94M422.28 137.94L416.28 137.94L416.28 136.94L422.28 136.94M412.28 137.94L406.28 137.94L406.28 136.94L412.28 136.94M402.28 137.94L396.28 137.94L396.28 136.94L402.28 136.94M392.28 137.94L386.28 137.94L386.28 136.94L392.28 136.94M382.28 137.94L376.28 137.94L376.28 136.94L382.28 136.94M372.28 137.94L366.28 137.94L366.28 136.94L372.28 136.94M362.28 137.94L356.28 137.94L356.28 136.94L362.28 136.94M352.28 137.94L346.28 137.94L346.28 136.94L352.28 136.94M342.28 137.94L336.28 137.94L336.28 136.94L342.28 136.94M332.28 137.94L326.28 137.94L326.28 136.94L332.28 136.94M322.28 137.94L316.28 137.94L316.28 136.94L322.28 136.94M312.28 137.94L306.28 137.94L306.28 136.94L312.28 136.94M302.28 137.94L296.28 137.94L296.28 136.94L302.28 136.94M292.28 137.94L286.28 137.94L286.28 136.94L292.28 136.94M282.28 137.94L276.28 137.94L276.28 136.94L282.28 136.94M272.28 137.94L266.28 137.94L266.28 136.94L272.28 136.94M262.28 137.94L256.28 137.94L256.28 136.94L262.28 136.94M252.28 137.94L246.28 137.94L246.28 136.94L252.28 136.94M242.28 137.94L236.28 137.94L236.28 136.94L242.28 136.94M232.28 137.94L226.28 137.94L226.28 136.94L232.28 136.94M222.28 137.94L216.28 137.94L216.28 136.94L222.28 136.94M212.28 137.94L206.28 137.94L206.28 136.94L212.28 136.94M202.28 137.94L196.28 137.94L196.28 136.94L202.28 136.94M192.28 137.94L186.28 137.94L186.28 136.94L192.28 136.94M182.28 137.94L176.28 137.94L176.28 136.94L182.28 136.94M172.28 137.94L166.28 137.94L166.28 136.94L172.28 136.94M162.28 137.94L156.28 137.94L156.28 136.94L162.28 136.94M152.28 137.94L146.28 137.94L146.28 136.94L152.28 136.94M142.28 137.94L136.28 137.94L136.28 136.94L142.28 136.94M132.28 137.94L126.28 137.94L126.28 136.94L132.28 136.94M122.28 137.94L116.28 137.94L116.28 136.94L122.28 136.94M112.28 137.94L106.28 137.94L106.28 136.94L112.28 136.94M102.28 137.94L96.52 137.94L96.52 136.94L102.28 136.94" /><path fill="#3C3C42" fill-opacity="0.5647" d="M97.02 137.44L97.02 143.44L96.02 143.44L96.02 137.44M97.02 147.44L97.02 153.44L96.02 153.44L96.02 147.44M97.02 157.44L97.02 163.44L96.02 163.44L96.02 157.44M97.02 167.44L97.02 173.44L96.02 173.44L96.02 167.44M97.02 177.44L97.02 183.44L96.02 183.44L96.02 177.44M97.02 187.44L97.02 193.44L96.02 193.44L96.02 187.44M97.02 197.44L97.02 203.44L96.02 203.44L96.02 197.44M97.02 207.44L97.02 213.44L96.02 213.44L96.02 207.44M97.02 217.44L97.02 223.44L96.02 223.44L96.02 217.44M97.02 227.44L97.02 233.44L96.02 233.44L96.02 227.44M97.02 237.44L97.02 243.44L96.02 243.44L96.02 237.44M97.02 247.44L97.02 253.44L96.02 253.44L96.02 247.44M97.02 257.44L97.02 263.44L96.02 263.44L96.02 257.44M97.02 267.44L97.02 273.44L96.02 273.44L96.02 267.44M97.02 277.44L97.02 283.44L96.02 283.44L96.02 277.44M97.02 287.44L97.02 293.44L96.02 293.44L96.02 287.44M97.02 297.44L97.02 303.44L96.02 303.44L96.02 297.44M97.02 307.44L97.02 313.44L96.02 313.44L96.02 307.44M97.02 317.44L97.02 323.44L96.02 323.44L96.02 317.44M97.02 327.44L97.02 333.44L96.02 333.44L96.02 327.44M97.02 337.44L97.02 343.44L96.02 343.44L96.02 337.44M97.02 347.44L97.02 353.44L96.02 353.44L96.02 347.44M97.02 357.44L97.02 362.8L96.02 362.8L96.02 357.44" /><text fill="#3C3C42" transform="matrix(0 -1 1 0 -158.24 342)" font-size="8.35" font-family="IBM Plex Sans" x="41.4, 45.63, 52.92, 55, 59.74, 62.18, 64.15, 69.21, 74.07, 79.25, 81.52, 83.49, 88.5, 93.51, 98.51, 100.48, 105.27, 112.55, 114.52, 119.36, 123.94, 128.11, 132.78, 137.52" y="250.12">
+					xmin: PEC, 785 µm beyond
+			</text><text fill="#3C3C42" transform="matrix(0 1 -1 0 907.04 -406.8)" font-size="8.35" font-family="IBM Plex Sans" x="605.51, 609.74, 617.02, 621.48, 625.71, 628.15, 630.12, 635.18, 640.04, 645.22, 647.49, 649.46, 654.47, 659.48, 664.49, 666.45, 671.24, 678.52, 680.49, 685.33, 689.91, 694.08, 698.75, 703.49" y="250.12">
+					xmax: PEC, 785 µm beyond
+			</text><text fill="#3C3C42" font-size="8.35" font-family="IBM Plex Sans" x="355.65, 359.52, 366.81, 368.9, 373.64, 376.07, 378.04, 383.1, 387.97" y="376.05">
+					zmin: PEC
+			</text><text fill="#3C3C42" font-size="8.35" font-family="IBM Plex Sans" x="319.53, 323.4, 330.69, 335.14, 339.37, 341.81, 343.78, 348.84, 353.7, 358.89, 361.16, 363.13, 368.13, 373.14, 378.15, 380.42, 385.42, 387.39, 392.18, 399.46, 401.43, 406.27, 410.85, 415.02, 419.69, 424.43" y="132.8">
+					zmax: PEC, 660.8 µm beyond
+			</text><use xlink:href="#em3d-bond-wire-section_d4" fill="#00966E" fill-opacity="0.1882" /><clipPath id="em3d-bond-wire-section_cl_1"><rect x="157.65" y="323.93" width="6" height="38.86" /></clipPath><g clip-path="url(#em3d-bond-wire-section_cl_1)"><path fill="none" stroke="#00966E" stroke-width="1" stroke-miterlimit="4" d="M118.78 362.8L157.65 323.93" /><path fill="none" stroke="#00966E" stroke-width="1" stroke-miterlimit="4" d="M123.78 362.8L162.65 323.93" /><path fill="none" stroke="#00966E" stroke-width="1" stroke-miterlimit="4" d="M128.78 362.8L167.65 323.93" /><path fill="none" stroke="#00966E" stroke-width="1" stroke-miterlimit="4" d="M133.78 362.8L172.65 323.93" /><path fill="none" stroke="#00966E" stroke-width="1" stroke-miterlimit="4" d="M138.78 362.8L177.65 323.93" /><path fill="none" stroke="#00966E" stroke-width="1" stroke-miterlimit="4" d="M143.78 362.8L182.65 323.93" /><path fill="none" stroke="#00966E" stroke-width="1" stroke-miterlimit="4" d="M148.78 362.8L187.65 323.93" /><path fill="none" stroke="#00966E" stroke-width="1" stroke-miterlimit="4" d="M153.78 362.8L192.65 323.93" /><path fill="none" stroke="#00966E" stroke-width="1" stroke-miterlimit="4" d="M158.78 362.8L197.65 323.93" /></g><use xlink:href="#em3d-bond-wire-section_d4" fill="none" stroke="#00966E" stroke-width="1.25" stroke-miterlimit="4" /><text fill="#00966E" font-size="9.82" font-weight="600" font-family="IBM Plex Sans" x="166.59, 172.88" y="332.77">
+					P1
+			</text><use xlink:href="#em3d-bond-wire-section_d5" fill="#00966E" fill-opacity="0.1882" /><clipPath id="em3d-bond-wire-section_cl_2"><rect x="585.15" y="323.93" width="6" height="38.86" /></clipPath><g clip-path="url(#em3d-bond-wire-section_cl_2)"><path fill="none" stroke="#00966E" stroke-width="1" stroke-miterlimit="4" d="M546.29 362.8L585.15 323.93" /><path fill="none" stroke="#00966E" stroke-width="1" stroke-miterlimit="4" d="M551.29 362.8L590.15 323.93" /><path fill="none" stroke="#00966E" stroke-width="1" stroke-miterlimit="4" d="M556.29 362.8L595.15 323.93" /><path fill="none" stroke="#00966E" stroke-width="1" stroke-miterlimit="4" d="M561.29 362.8L600.15 323.93" /><path fill="none" stroke="#00966E" stroke-width="1" stroke-miterlimit="4" d="M566.29 362.8L605.15 323.93" /><path fill="none" stroke="#00966E" stroke-width="1" stroke-miterlimit="4" d="M571.29 362.8L610.15 323.93" /><path fill="none" stroke="#00966E" stroke-width="1" stroke-miterlimit="4" d="M576.29 362.8L615.15 323.93" /><path fill="none" stroke="#00966E" stroke-width="1" stroke-miterlimit="4" d="M581.29 362.8L620.15 323.93" /><path fill="none" stroke="#00966E" stroke-width="1" stroke-miterlimit="4" d="M586.29 362.8L625.15 323.93" /></g><use xlink:href="#em3d-bond-wire-section_d5" fill="none" stroke="#00966E" stroke-width="1.25" stroke-miterlimit="4" /><text fill="#00966E" font-size="9.82" font-weight="600" font-family="IBM Plex Sans" x="594.1, 600.39" y="332.77">
+					P2
+			</text><text fill="#3C3C42" font-size="9.82" font-weight="600" font-family="IBM Plex Sans" x="748.8, 756.82, 762.31, 765.98, 771.46, 775.32, 778.02, 783.51, 786.39" y="36.87">
+					Materials
+			</text><rect fill="#6E7C91" fill-opacity="0.2353" x="748.8" y="45.61" width="9.82" height="9.82" /><rect fill="none" stroke="#424A57" stroke-width="1" stroke-miterlimit="4" x="748.8" y="45.61" width="9.82" height="9.82" /><text fill="#3C3C42" font-size="9.82" font-family="IBM Plex Sans" x="763.53, 769.82, 772.49, 778.07, 786.64, 789.09, 794.67" y="53.95">
+					Alumina
+			</text><rect fill="#F8F8F6" x="748.8" y="58.86" width="9.82" height="9.82" /><rect fill="none" stroke="#3C3C42" stroke-width="1" stroke-miterlimit="4" stroke-opacity="0.5647" x="748.8" y="58.86" width="9.82" height="9.82" /><text fill="#3C3C42" font-size="9.82" font-family="IBM Plex Sans" x="763.53, 769.82, 772.28, 775.88, 778.2, 781.48, 787.06, 792.56, 796.01, 798.32, 801.5, 803.96, 806.63, 809.3, 814.69, 820.38" y="67.21">
+					Air (not filled)
+			</text><rect fill="#D4AF37" x="748.8" y="72.11" width="9.82" height="9.82" /><rect fill="none" stroke="#7F6921" stroke-width="1" stroke-miterlimit="4" x="748.8" y="72.11" width="9.82" height="9.82" /><text fill="#3C3C42" font-size="9.82" font-family="IBM Plex Sans" x="763.53, 770.35, 775.85, 778.52" y="80.46">
+					Gold
+			</text><rect fill="#A54082" x="748.8" y="85.37" width="9.82" height="9.82" /><rect fill="none" stroke="#63264E" stroke-width="1" stroke-miterlimit="4" x="748.8" y="85.37" width="9.82" height="9.82" /><text fill="#3C3C42" font-size="9.82" font-family="IBM Plex Sans" x="763.53, 770.35, 775.85, 778.52" y="93.71">
+					Gold
+			</text><clipPath id="em3d-bond-wire-section_cl_3"><rect x="748.8" y="103.93" width="9.82" height="9.82" /></clipPath><g clip-path="url(#em3d-bond-wire-section_cl_3)"><path fill="none" stroke="#00966E" stroke-width="1" stroke-miterlimit="4" d="M738.98 113.74L748.8 103.93" /><path fill="none" stroke="#00966E" stroke-width="1" stroke-miterlimit="4" d="M743.98 113.74L753.8 103.93" /><path fill="none" stroke="#00966E" stroke-width="1" stroke-miterlimit="4" d="M748.98 113.74L758.8 103.93" /><path fill="none" stroke="#00966E" stroke-width="1" stroke-miterlimit="4" d="M753.98 113.74L763.8 103.93" /></g><path fill="none" stroke="#00966E" stroke-width="1" stroke-miterlimit="4" d="M748.8 103.93L758.62 103.93L758.62 113.74L748.8 113.74L748.8 103.93Z" /><text fill="#3C3C42" font-size="9.82" font-family="IBM Plex Sans" x="763.53, 769.48, 774.98, 778.58, 782.02, 784.34, 787.63, 790.09, 793.53, 798.31, 800.63, 805.41, 810.99, 816.38, 821.77, 825.21, 827.89, 830.2, 835.9, 839.5, 845, 847.45, 852.84, 857.78, 861.23, 866.62, 872.31" y="112.27">
+					Port (its sheet, projected)
+			</text><text fill="#3C3C42" font-size="9.82" font-weight="600" font-family="IBM Plex Sans" x="9.82, 16.25, 22.13, 24.45, 29.35, 34.83, 39.86, 43.53, 46.23, 51.76, 57.53, 59.85, 65.34, 69.01, 71.33, 76.47, 78.79, 84.68, 87, 92.89, 95.21, 101.03" y="503.67">
+					XZ section at y = 0 µm
+			</text><text fill="#3C3C42" font-size="8.35" font-family="IBM Plex Sans" x="9.82, 15.17, 17.14, 21.2, 25.87, 28.14, 30.23, 35.07, 37.04, 39.13, 43.19, 45.16, 50, 53.06, 57.52, 63.93, 68.67, 70.64, 77.05, 81.79, 86.37, 89.43, 94.02, 95.99, 98.07, 101, 105.06, 107.03, 111.87, 116.55, 119.48, 122.41, 127.08, 134.37, 136.34, 141.34, 143.31, 147.48, 149.45, 154.45, 156.42, 158.51, 161.44, 165.5, 167.47, 170.4, 175.07, 179.92, 182.35, 184.32, 188.78, 190.75, 194.81, 199.55, 204.13, 208.72, 211.64, 213.61, 220.02, 222.11, 225.04, 229.78, 231.87, 236.61, 238.58, 243.58, 245.85, 250.86, 255.87, 260.87, 262.84, 267.58, 274.87, 276.84, 281.51, 284.22, 286.19, 288.27, 291.2, 295.27, 297.24, 302.08, 304.35, 308.8, 313.54, 318.12, 320.39, 322.36, 327.42, 332.09, 335.16, 338.09, 342.15, 344.12, 348.58, 351.64, 356.22, 358.19, 363.03, 366.09, 370.55, 376.96, 381.7, 383.67, 388.51, 391.57, 396.25, 398.33, 402.91, 407.11, 410.04, 414.62, 419.46, 421.43, 426.11, 430.85, 433.78, 438.45, 440.42, 443.35, 448.09, 452.67, 454.64, 459.48, 461.75, 466.21, 470.95, 475.53" y="516.93">
+					A solid is drawn where its bottom ≤ y &lt; its top; a sheet within 0.003 nm of its plane. Ports are drawn projected onto the plane.
+			</text><text fill="#3C3C42" font-size="8.35" font-family="IBM Plex Sans" x="9.82, 15.17, 17.25, 20.32, 22.29, 27.13, 31.8, 36.03, 38.47, 40.44, 44.6, 51.89, 53.97, 58.71, 60.98, 62.95, 67.12, 74.4, 78.86, 83.09, 85.53, 87.5, 92.56, 97.42, 102.6, 104.87, 106.84, 111.85, 116.86, 121.86, 123.83, 128.62, 135.9, 137.87, 142.71, 147.29, 151.46, 156.13, 160.87" y="530.18">
+					Air box: ymin, ymax: PEC, 785 µm beyond
+			</text></svg></span>
+<span class="sym-dark"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="960" height="540" viewBox="0 0 960 540"><defs><path id="em3d-bond-wire-section-dark_d0" d="M-208.57 362.8L957.37 362.8L957.37 323.93L-208.57 323.93L-208.57 362.8Z" /><path id="em3d-bond-wire-section-dark_d1" d="M160.65 323.93L199.51 323.93L199.51 322.77L160.65 322.77L160.65 323.93Z" /><path id="em3d-bond-wire-section-dark_d2" d="M549.29 323.93L588.15 323.93L588.15 322.77L549.29 322.77L549.29 323.93Z" /><path id="em3d-bond-wire-section-dark_d3" d="M170.05 322.77L180.93 322.77L191.81 322.77L221.11 289.67L250.41 256.58L279.09 233.8L307.77 211.02L339.17 215.96L370.57 220.9L412.8 245.29L455.03 269.68L506.48 296.23L557.92 322.77L568.33 322.77L578.75 322.77L578.75 318.29L578.75 318.29L578.75 318.29L578.75 313.82L569.42 313.82L560.09 313.82L509.71 287.82L459.33 261.83L416.47 237.07L373.6 212.31L339.44 206.94L305.28 201.56L274.75 225.81L244.22 250.06L216 281.94L187.78 313.82L178.92 313.82L170.05 313.82L170.05 318.29L170.05 318.29L170.05 318.29L170.05 322.77Z" /><path id="em3d-bond-wire-section-dark_d4" d="M157.65 323.93L163.65 323.93L163.65 362.8L157.65 362.8L157.65 323.93Z" /><path id="em3d-bond-wire-section-dark_d5" d="M585.15 323.93L591.15 323.93L591.15 362.8L585.15 362.8L585.15 323.93Z" /></defs><rect fill="#010101" width="960" height="540" /><rect fill="#15222D" width="960" height="540" /><clipPath id="em3d-bond-wire-section-dark_cl_0"><rect x="96.52" y="137.44" width="555.76" height="225.36" /></clipPath><g clip-path="url(#em3d-bond-wire-section-dark_cl_0)"><use xlink:href="#em3d-bond-wire-section-dark_d0" fill="#8595AF" fill-opacity="0.2353" fill-rule="evenodd" /><use xlink:href="#em3d-bond-wire-section-dark_d0" fill="none" stroke="#4F5969" stroke-width="1" stroke-miterlimit="4" fill-rule="evenodd" /><use xlink:href="#em3d-bond-wire-section-dark_d1" fill="#D4AF37" fill-rule="evenodd" /><use xlink:href="#em3d-bond-wire-section-dark_d1" fill="none" stroke="#7F6921" stroke-width="1" stroke-miterlimit="4" fill-rule="evenodd" /><use xlink:href="#em3d-bond-wire-section-dark_d2" fill="#D4AF37" fill-rule="evenodd" /><use xlink:href="#em3d-bond-wire-section-dark_d2" fill="none" stroke="#7F6921" stroke-width="1" stroke-miterlimit="4" fill-rule="evenodd" /><use xlink:href="#em3d-bond-wire-section-dark_d3" fill="#D67AB6" fill-rule="evenodd" /><use xlink:href="#em3d-bond-wire-section-dark_d3" fill="none" stroke="#80496D" stroke-width="1" stroke-miterlimit="4" fill-rule="evenodd" /></g><path fill="none" stroke="#D4D4D8" stroke-width="1.5" stroke-miterlimit="4" d="M96.52 362.8L652.28 362.8" /><path fill="#D4D4D8" fill-opacity="0.5647" d="M651.78 362.8L651.78 356.8L652.78 356.8L652.78 362.8M651.78 352.8L651.78 346.8L652.78 346.8L652.78 352.8M651.78 342.8L651.78 336.8L652.78 336.8L652.78 342.8M651.78 332.8L651.78 326.8L652.78 326.8L652.78 332.8M651.78 322.8L651.78 316.8L652.78 316.8L652.78 322.8M651.78 312.8L651.78 306.8L652.78 306.8L652.78 312.8M651.78 302.8L651.78 296.8L652.78 296.8L652.78 302.8M651.78 292.8L651.78 286.8L652.78 286.8L652.78 292.8M651.78 282.8L651.78 276.8L652.78 276.8L652.78 282.8M651.78 272.8L651.78 266.8L652.78 266.8L652.78 272.8M651.78 262.8L651.78 256.8L652.78 256.8L652.78 262.8M651.78 252.8L651.78 246.8L652.78 246.8L652.78 252.8M651.78 242.8L651.78 236.8L652.78 236.8L652.78 242.8M651.78 232.8L651.78 226.8L652.78 226.8L652.78 232.8M651.78 222.8L651.78 216.8L652.78 216.8L652.78 222.8M651.78 212.8L651.78 206.8L652.78 206.8L652.78 212.8M651.78 202.8L651.78 196.8L652.78 196.8L652.78 202.8M651.78 192.8L651.78 186.8L652.78 186.8L652.78 192.8M651.78 182.8L651.78 176.8L652.78 176.8L652.78 182.8M651.78 172.8L651.78 166.8L652.78 166.8L652.78 172.8M651.78 162.8L651.78 156.8L652.78 156.8L652.78 162.8M651.78 152.8L651.78 146.8L652.78 146.8L652.78 152.8M651.78 142.8L651.78 137.44L652.78 137.44L652.78 142.8" /><path fill="#D4D4D8" fill-opacity="0.5647" d="M652.28 137.94L646.28 137.94L646.28 136.94L652.28 136.94M642.28 137.94L636.28 137.94L636.28 136.94L642.28 136.94M632.28 137.94L626.28 137.94L626.28 136.94L632.28 136.94M622.28 137.94L616.28 137.94L616.28 136.94L622.28 136.94M612.28 137.94L606.28 137.94L606.28 136.94L612.28 136.94M602.28 137.94L596.28 137.94L596.28 136.94L602.28 136.94M592.28 137.94L586.28 137.94L586.28 136.94L592.28 136.94M582.28 137.94L576.28 137.94L576.28 136.94L582.28 136.94M572.28 137.94L566.28 137.94L566.28 136.94L572.28 136.94M562.28 137.94L556.28 137.94L556.28 136.94L562.28 136.94M552.28 137.94L546.28 137.94L546.28 136.94L552.28 136.94M542.28 137.94L536.28 137.94L536.28 136.94L542.28 136.94M532.28 137.94L526.28 137.94L526.28 136.94L532.28 136.94M522.28 137.94L516.28 137.94L516.28 136.94L522.28 136.94M512.28 137.94L506.28 137.94L506.28 136.94L512.28 136.94M502.28 137.94L496.28 137.94L496.28 136.94L502.28 136.94M492.28 137.94L486.28 137.94L486.28 136.94L492.28 136.94M482.28 137.94L476.28 137.94L476.28 136.94L482.28 136.94M472.28 137.94L466.28 137.94L466.28 136.94L472.28 136.94M462.28 137.94L456.28 137.94L456.28 136.94L462.28 136.94M452.28 137.94L446.28 137.94L446.28 136.94L452.28 136.94M442.28 137.94L436.28 137.94L436.28 136.94L442.28 136.94M432.28 137.94L426.28 137.94L426.28 136.94L432.28 136.94M422.28 137.94L416.28 137.94L416.28 136.94L422.28 136.94M412.28 137.94L406.28 137.94L406.28 136.94L412.28 136.94M402.28 137.94L396.28 137.94L396.28 136.94L402.28 136.94M392.28 137.94L386.28 137.94L386.28 136.94L392.28 136.94M382.28 137.94L376.28 137.94L376.28 136.94L382.28 136.94M372.28 137.94L366.28 137.94L366.28 136.94L372.28 136.94M362.28 137.94L356.28 137.94L356.28 136.94L362.28 136.94M352.28 137.94L346.28 137.94L346.28 136.94L352.28 136.94M342.28 137.94L336.28 137.94L336.28 136.94L342.28 136.94M332.28 137.94L326.28 137.94L326.28 136.94L332.28 136.94M322.28 137.94L316.28 137.94L316.28 136.94L322.28 136.94M312.28 137.94L306.28 137.94L306.28 136.94L312.28 136.94M302.28 137.94L296.28 137.94L296.28 136.94L302.28 136.94M292.28 137.94L286.28 137.94L286.28 136.94L292.28 136.94M282.28 137.94L276.28 137.94L276.28 136.94L282.28 136.94M272.28 137.94L266.28 137.94L266.28 136.94L272.28 136.94M262.28 137.94L256.28 137.94L256.28 136.94L262.28 136.94M252.28 137.94L246.28 137.94L246.28 136.94L252.28 136.94M242.28 137.94L236.28 137.94L236.28 136.94L242.28 136.94M232.28 137.94L226.28 137.94L226.28 136.94L232.28 136.94M222.28 137.94L216.28 137.94L216.28 136.94L222.28 136.94M212.28 137.94L206.28 137.94L206.28 136.94L212.28 136.94M202.28 137.94L196.28 137.94L196.28 136.94L202.28 136.94M192.28 137.94L186.28 137.94L186.28 136.94L192.28 136.94M182.28 137.94L176.28 137.94L176.28 136.94L182.28 136.94M172.28 137.94L166.28 137.94L166.28 136.94L172.28 136.94M162.28 137.94L156.28 137.94L156.28 136.94L162.28 136.94M152.28 137.94L146.28 137.94L146.28 136.94L152.28 136.94M142.28 137.94L136.28 137.94L136.28 136.94L142.28 136.94M132.28 137.94L126.28 137.94L126.28 136.94L132.28 136.94M122.28 137.94L116.28 137.94L116.28 136.94L122.28 136.94M112.28 137.94L106.28 137.94L106.28 136.94L112.28 136.94M102.28 137.94L96.52 137.94L96.52 136.94L102.28 136.94" /><path fill="#D4D4D8" fill-opacity="0.5647" d="M97.02 137.44L97.02 143.44L96.02 143.44L96.02 137.44M97.02 147.44L97.02 153.44L96.02 153.44L96.02 147.44M97.02 157.44L97.02 163.44L96.02 163.44L96.02 157.44M97.02 167.44L97.02 173.44L96.02 173.44L96.02 167.44M97.02 177.44L97.02 183.44L96.02 183.44L96.02 177.44M97.02 187.44L97.02 193.44L96.02 193.44L96.02 187.44M97.02 197.44L97.02 203.44L96.02 203.44L96.02 197.44M97.02 207.44L97.02 213.44L96.02 213.44L96.02 207.44M97.02 217.44L97.02 223.44L96.02 223.44L96.02 217.44M97.02 227.44L97.02 233.44L96.02 233.44L96.02 227.44M97.02 237.44L97.02 243.44L96.02 243.44L96.02 237.44M97.02 247.44L97.02 253.44L96.02 253.44L96.02 247.44M97.02 257.44L97.02 263.44L96.02 263.44L96.02 257.44M97.02 267.44L97.02 273.44L96.02 273.44L96.02 267.44M97.02 277.44L97.02 283.44L96.02 283.44L96.02 277.44M97.02 287.44L97.02 293.44L96.02 293.44L96.02 287.44M97.02 297.44L97.02 303.44L96.02 303.44L96.02 297.44M97.02 307.44L97.02 313.44L96.02 313.44L96.02 307.44M97.02 317.44L97.02 323.44L96.02 323.44L96.02 317.44M97.02 327.44L97.02 333.44L96.02 333.44L96.02 327.44M97.02 337.44L97.02 343.44L96.02 343.44L96.02 337.44M97.02 347.44L97.02 353.44L96.02 353.44L96.02 347.44M97.02 357.44L97.02 362.8L96.02 362.8L96.02 357.44" /><text fill="#D4D4D8" transform="matrix(0 -1 1 0 -158.24 342)" font-size="8.35" font-family="IBM Plex Sans" x="41.4, 45.63, 52.92, 55, 59.74, 62.18, 64.15, 69.21, 74.07, 79.25, 81.52, 83.49, 88.5, 93.51, 98.51, 100.48, 105.27, 112.55, 114.52, 119.36, 123.94, 128.11, 132.78, 137.52" y="250.12">
+					xmin: PEC, 785 µm beyond
+			</text><text fill="#D4D4D8" transform="matrix(0 1 -1 0 907.04 -406.8)" font-size="8.35" font-family="IBM Plex Sans" x="605.51, 609.74, 617.02, 621.48, 625.71, 628.15, 630.12, 635.18, 640.04, 645.22, 647.49, 649.46, 654.47, 659.48, 664.49, 666.45, 671.24, 678.52, 680.49, 685.33, 689.91, 694.08, 698.75, 703.49" y="250.12">
+					xmax: PEC, 785 µm beyond
+			</text><text fill="#D4D4D8" font-size="8.35" font-family="IBM Plex Sans" x="355.65, 359.52, 366.81, 368.9, 373.64, 376.07, 378.04, 383.1, 387.97" y="376.05">
+					zmin: PEC
+			</text><text fill="#D4D4D8" font-size="8.35" font-family="IBM Plex Sans" x="319.53, 323.4, 330.69, 335.14, 339.37, 341.81, 343.78, 348.84, 353.7, 358.89, 361.16, 363.13, 368.13, 373.14, 378.15, 380.42, 385.42, 387.39, 392.18, 399.46, 401.43, 406.27, 410.85, 415.02, 419.69, 424.43" y="132.8">
+					zmax: PEC, 660.8 µm beyond
+			</text><use xlink:href="#em3d-bond-wire-section-dark_d4" fill="#3CD2AA" fill-opacity="0.1882" /><clipPath id="em3d-bond-wire-section-dark_cl_1"><rect x="157.65" y="323.93" width="6" height="38.86" /></clipPath><g clip-path="url(#em3d-bond-wire-section-dark_cl_1)"><path fill="none" stroke="#3CD2AA" stroke-width="1" stroke-miterlimit="4" d="M118.78 362.8L157.65 323.93" /><path fill="none" stroke="#3CD2AA" stroke-width="1" stroke-miterlimit="4" d="M123.78 362.8L162.65 323.93" /><path fill="none" stroke="#3CD2AA" stroke-width="1" stroke-miterlimit="4" d="M128.78 362.8L167.65 323.93" /><path fill="none" stroke="#3CD2AA" stroke-width="1" stroke-miterlimit="4" d="M133.78 362.8L172.65 323.93" /><path fill="none" stroke="#3CD2AA" stroke-width="1" stroke-miterlimit="4" d="M138.78 362.8L177.65 323.93" /><path fill="none" stroke="#3CD2AA" stroke-width="1" stroke-miterlimit="4" d="M143.78 362.8L182.65 323.93" /><path fill="none" stroke="#3CD2AA" stroke-width="1" stroke-miterlimit="4" d="M148.78 362.8L187.65 323.93" /><path fill="none" stroke="#3CD2AA" stroke-width="1" stroke-miterlimit="4" d="M153.78 362.8L192.65 323.93" /><path fill="none" stroke="#3CD2AA" stroke-width="1" stroke-miterlimit="4" d="M158.78 362.8L197.65 323.93" /></g><use xlink:href="#em3d-bond-wire-section-dark_d4" fill="none" stroke="#3CD2AA" stroke-width="1.25" stroke-miterlimit="4" /><text fill="#3CD2AA" font-size="9.82" font-weight="600" font-family="IBM Plex Sans" x="166.59, 172.88" y="332.77">
+					P1
+			</text><use xlink:href="#em3d-bond-wire-section-dark_d5" fill="#3CD2AA" fill-opacity="0.1882" /><clipPath id="em3d-bond-wire-section-dark_cl_2"><rect x="585.15" y="323.93" width="6" height="38.86" /></clipPath><g clip-path="url(#em3d-bond-wire-section-dark_cl_2)"><path fill="none" stroke="#3CD2AA" stroke-width="1" stroke-miterlimit="4" d="M546.29 362.8L585.15 323.93" /><path fill="none" stroke="#3CD2AA" stroke-width="1" stroke-miterlimit="4" d="M551.29 362.8L590.15 323.93" /><path fill="none" stroke="#3CD2AA" stroke-width="1" stroke-miterlimit="4" d="M556.29 362.8L595.15 323.93" /><path fill="none" stroke="#3CD2AA" stroke-width="1" stroke-miterlimit="4" d="M561.29 362.8L600.15 323.93" /><path fill="none" stroke="#3CD2AA" stroke-width="1" stroke-miterlimit="4" d="M566.29 362.8L605.15 323.93" /><path fill="none" stroke="#3CD2AA" stroke-width="1" stroke-miterlimit="4" d="M571.29 362.8L610.15 323.93" /><path fill="none" stroke="#3CD2AA" stroke-width="1" stroke-miterlimit="4" d="M576.29 362.8L615.15 323.93" /><path fill="none" stroke="#3CD2AA" stroke-width="1" stroke-miterlimit="4" d="M581.29 362.8L620.15 323.93" /><path fill="none" stroke="#3CD2AA" stroke-width="1" stroke-miterlimit="4" d="M586.29 362.8L625.15 323.93" /></g><use xlink:href="#em3d-bond-wire-section-dark_d5" fill="none" stroke="#3CD2AA" stroke-width="1.25" stroke-miterlimit="4" /><text fill="#3CD2AA" font-size="9.82" font-weight="600" font-family="IBM Plex Sans" x="594.1, 600.39" y="332.77">
+					P2
+			</text><text fill="#D4D4D8" font-size="9.82" font-weight="600" font-family="IBM Plex Sans" x="748.8, 756.82, 762.31, 765.98, 771.46, 775.32, 778.02, 783.51, 786.39" y="36.87">
+					Materials
+			</text><rect fill="#8595AF" fill-opacity="0.2353" x="748.8" y="45.61" width="9.82" height="9.82" /><rect fill="none" stroke="#4F5969" stroke-width="1" stroke-miterlimit="4" x="748.8" y="45.61" width="9.82" height="9.82" /><text fill="#D4D4D8" font-size="9.82" font-family="IBM Plex Sans" x="763.53, 769.82, 772.49, 778.07, 786.64, 789.09, 794.67" y="53.95">
+					Alumina
+			</text><rect fill="#222224" x="748.8" y="58.86" width="9.82" height="9.82" /><rect fill="none" stroke="#D4D4D8" stroke-width="1" stroke-miterlimit="4" stroke-opacity="0.5647" x="748.8" y="58.86" width="9.82" height="9.82" /><text fill="#D4D4D8" font-size="9.82" font-family="IBM Plex Sans" x="763.53, 769.82, 772.28, 775.88, 778.2, 781.48, 787.06, 792.56, 796.01, 798.32, 801.5, 803.96, 806.63, 809.3, 814.69, 820.38" y="67.21">
+					Air (not filled)
+			</text><rect fill="#D4AF37" x="748.8" y="72.11" width="9.82" height="9.82" /><rect fill="none" stroke="#7F6921" stroke-width="1" stroke-miterlimit="4" x="748.8" y="72.11" width="9.82" height="9.82" /><text fill="#D4D4D8" font-size="9.82" font-family="IBM Plex Sans" x="763.53, 770.35, 775.85, 778.52" y="80.46">
+					Gold
+			</text><rect fill="#D67AB6" x="748.8" y="85.37" width="9.82" height="9.82" /><rect fill="none" stroke="#80496D" stroke-width="1" stroke-miterlimit="4" x="748.8" y="85.37" width="9.82" height="9.82" /><text fill="#D4D4D8" font-size="9.82" font-family="IBM Plex Sans" x="763.53, 770.35, 775.85, 778.52" y="93.71">
+					Gold
+			</text><clipPath id="em3d-bond-wire-section-dark_cl_3"><rect x="748.8" y="103.93" width="9.82" height="9.82" /></clipPath><g clip-path="url(#em3d-bond-wire-section-dark_cl_3)"><path fill="none" stroke="#3CD2AA" stroke-width="1" stroke-miterlimit="4" d="M738.98 113.74L748.8 103.93" /><path fill="none" stroke="#3CD2AA" stroke-width="1" stroke-miterlimit="4" d="M743.98 113.74L753.8 103.93" /><path fill="none" stroke="#3CD2AA" stroke-width="1" stroke-miterlimit="4" d="M748.98 113.74L758.8 103.93" /><path fill="none" stroke="#3CD2AA" stroke-width="1" stroke-miterlimit="4" d="M753.98 113.74L763.8 103.93" /></g><path fill="none" stroke="#3CD2AA" stroke-width="1" stroke-miterlimit="4" d="M748.8 103.93L758.62 103.93L758.62 113.74L748.8 113.74L748.8 103.93Z" /><text fill="#D4D4D8" font-size="9.82" font-family="IBM Plex Sans" x="763.53, 769.48, 774.98, 778.58, 782.02, 784.34, 787.63, 790.09, 793.53, 798.31, 800.63, 805.41, 810.99, 816.38, 821.77, 825.21, 827.89, 830.2, 835.9, 839.5, 845, 847.45, 852.84, 857.78, 861.23, 866.62, 872.31" y="112.27">
+					Port (its sheet, projected)
+			</text><text fill="#D4D4D8" font-size="9.82" font-weight="600" font-family="IBM Plex Sans" x="9.82, 16.25, 22.13, 24.45, 29.35, 34.83, 39.86, 43.53, 46.23, 51.76, 57.53, 59.85, 65.34, 69.01, 71.33, 76.47, 78.79, 84.68, 87, 92.89, 95.21, 101.03" y="503.67">
+					XZ section at y = 0 µm
+			</text><text fill="#D4D4D8" font-size="8.35" font-family="IBM Plex Sans" x="9.82, 15.17, 17.14, 21.2, 25.87, 28.14, 30.23, 35.07, 37.04, 39.13, 43.19, 45.16, 50, 53.06, 57.52, 63.93, 68.67, 70.64, 77.05, 81.79, 86.37, 89.43, 94.02, 95.99, 98.07, 101, 105.06, 107.03, 111.87, 116.55, 119.48, 122.41, 127.08, 134.37, 136.34, 141.34, 143.31, 147.48, 149.45, 154.45, 156.42, 158.51, 161.44, 165.5, 167.47, 170.4, 175.07, 179.92, 182.35, 184.32, 188.78, 190.75, 194.81, 199.55, 204.13, 208.72, 211.64, 213.61, 220.02, 222.11, 225.04, 229.78, 231.87, 236.61, 238.58, 243.58, 245.85, 250.86, 255.87, 260.87, 262.84, 267.58, 274.87, 276.84, 281.51, 284.22, 286.19, 288.27, 291.2, 295.27, 297.24, 302.08, 304.35, 308.8, 313.54, 318.12, 320.39, 322.36, 327.42, 332.09, 335.16, 338.09, 342.15, 344.12, 348.58, 351.64, 356.22, 358.19, 363.03, 366.09, 370.55, 376.96, 381.7, 383.67, 388.51, 391.57, 396.25, 398.33, 402.91, 407.11, 410.04, 414.62, 419.46, 421.43, 426.11, 430.85, 433.78, 438.45, 440.42, 443.35, 448.09, 452.67, 454.64, 459.48, 461.75, 466.21, 470.95, 475.53" y="516.93">
+					A solid is drawn where its bottom ≤ y &lt; its top; a sheet within 0.003 nm of its plane. Ports are drawn projected onto the plane.
+			</text><text fill="#D4D4D8" font-size="8.35" font-family="IBM Plex Sans" x="9.82, 15.17, 17.25, 20.32, 22.29, 27.13, 31.8, 36.03, 38.47, 40.44, 44.6, 51.89, 53.97, 58.71, 60.98, 62.95, 67.12, 74.4, 78.86, 83.09, 85.53, 87.5, 92.56, 97.42, 102.6, 104.87, 106.84, 111.85, 116.86, 121.86, 123.83, 128.62, 135.9, 137.87, 142.71, 147.29, 151.46, 156.13, 160.87" y="530.18">
+					Air box: ymin, ymax: PEC, 785 µm beyond
+			</text></svg></span>
+</span><figcaption>The bond-wire cell cut along the wire: two gold pads on 100 um of alumina, the 1 mil wire&#39;s loop between them, and a port sheet from each pad&#39;s outer edge down to the ground. The box around it is the closed metal box the setup states.</figcaption></figure>
+<p><code>Bond wire 3D.cem</code> runs Palace at <strong>Standard</strong>. (Measured on the wire's earlier, symmetric 150 µm loop; the Palace figures in this section have not been re-run for the loop above. Kernel W's have.) It takes <strong>179 s</strong>, with a peak of <strong>3.1 GB</strong>, and gives
+|S21| = <strong>−0.765 dB</strong> at 10 GHz and a series inductance of <strong>906 pH</strong> at 1 GHz. (The inductance is the
+π-model's series term, −Im(1/Y21)/ω, from the S-parameters.)</p>
+<ul>
+<li><strong>Draft is not enough here.</strong> It takes 5 s, but reads <strong>813 pH</strong> and <strong>−0.514 dB</strong>. The starting mesh
+around a 25 µm wire is exactly what refinement exists to fix. A wire is small metal in a big box, so
+it is the case where the preset matters most.</li>
+<li><strong>Accurate</strong> (three refinement passes and tighter tolerances) took 8.5 min at 7.0 GB and reads 908 pH
+and −0.772 dB: within 2 pH and 0.01 dB of Standard, for nearly three times the time.</li>
+<li><strong>Kernel W</strong>, the wire kernel in wBond, reads <strong>768 pH</strong> and <strong>−0.800 dB</strong> from the same <code>.wBond</code>
+(open it and <strong>Export Touchstone …</strong> with the <em>Distributed</em> model). The difference between the two answers
+is <strong>where the terminals are</strong>, not a disagreement between the solvers. Kernel W's terminals are the
+wire's own ends. Palace's ports are at the pads' outer edges, so its answer also contains the pad between
+each port and the wire, and the 100 µm drop from the pad to ground.</li>
+</ul>
+<h3 id="example-via">Via through a plane</h3>
+<p>A 400 µm microstrip on top of a four-layer board, a via through a 900 µm clearance in the middle ground
+plane, and an inverted microstrip underneath leaving the other way. The laminate has εr 3.66 and tanδ
+0.004, and the metal is copper. Both lines return through the same plane, one from above and one from
+below.</p>
+<figure class="figure"><span class="frame">
+<span class="sym-light"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="960" height="540" viewBox="0 0 960 540"><defs><path id="em3d-via-section_d0" d="M96.52 259.42L652.28 259.42L652.28 250.87L96.52 250.87L96.52 259.42Z" /><path id="em3d-via-section_d1" d="M96.52 250.87L652.28 250.87L652.28 240.82L96.52 240.82L96.52 250.87Z" /><path id="em3d-via-section_d2" d="M361.62 260.91L588.15 260.91L588.15 259.42L361.62 259.42L361.62 260.91Z" /><path id="em3d-via-section_d3" d="M160.65 250.87L355.16 250.87L355.16 249.37L160.65 249.37L160.65 250.87Z" /><path id="em3d-via-section_d4" d="M393.64 250.87L588.15 250.87L588.15 249.37L393.64 249.37L393.64 250.87Z" /><path id="em3d-via-section_d5" d="M160.65 240.82L387.23 240.82L387.23 239.32L160.65 239.32L160.65 240.82Z" /><path id="em3d-via-section_d6" d="M367.99 260.91L380.81 260.91L380.81 239.32L367.99 239.32L367.99 260.91Z" /><path id="em3d-via-section_d7" d="M157.65 240.82L163.65 240.82L163.65 249.37L157.65 249.37L157.65 240.82Z" /><path id="em3d-via-section_d8" d="M585.15 250.87L591.15 250.87L591.15 259.42L585.15 259.42L585.15 250.87Z" /></defs><rect fill="white" width="960" height="540" /><rect fill="#F6F8FA" width="960" height="540" /><clipPath id="em3d-via-section_cl_0"><rect x="96.52" y="175.2" width="555.76" height="149.84" /></clipPath><g clip-path="url(#em3d-via-section_cl_0)"><use xlink:href="#em3d-via-section_d0" fill="#6E7C91" fill-opacity="0.2353" fill-rule="evenodd" /><use xlink:href="#em3d-via-section_d0" fill="none" stroke="#424A57" stroke-width="1" stroke-miterlimit="4" fill-rule="evenodd" /><use xlink:href="#em3d-via-section_d1" fill="#6E7C91" fill-opacity="0.2353" fill-rule="evenodd" /><use xlink:href="#em3d-via-section_d1" fill="none" stroke="#424A57" stroke-width="1" stroke-miterlimit="4" fill-rule="evenodd" /><use xlink:href="#em3d-via-section_d2" fill="#8A5028" fill-rule="evenodd" /><use xlink:href="#em3d-via-section_d2" fill="none" stroke="#523018" stroke-width="1" stroke-miterlimit="4" fill-rule="evenodd" /><use xlink:href="#em3d-via-section_d3" fill="#9B8A46" fill-rule="evenodd" /><use xlink:href="#em3d-via-section_d3" fill="none" stroke="#5D522A" stroke-width="1" stroke-miterlimit="4" fill-rule="evenodd" /><use xlink:href="#em3d-via-section_d4" fill="#9B8A46" fill-rule="evenodd" /><use xlink:href="#em3d-via-section_d4" fill="none" stroke="#5D522A" stroke-width="1" stroke-miterlimit="4" fill-rule="evenodd" /><use xlink:href="#em3d-via-section_d5" fill="#C87A3E" fill-rule="evenodd" /><use xlink:href="#em3d-via-section_d5" fill="none" stroke="#784925" stroke-width="1" stroke-miterlimit="4" fill-rule="evenodd" /><use xlink:href="#em3d-via-section_d6" fill="#202020" fill-rule="evenodd" /><use xlink:href="#em3d-via-section_d6" fill="none" stroke="#131313" stroke-width="1" stroke-miterlimit="4" fill-rule="evenodd" /></g><path fill="none" stroke="#3C3C42" stroke-width="1.5" stroke-miterlimit="4" d="M96.52 325.04L652.28 325.04" /><path fill="none" stroke="#3C3C42" stroke-width="1.5" stroke-miterlimit="4" d="M652.28 325.04L652.28 175.2" /><path fill="none" stroke="#3C3C42" stroke-width="1.5" stroke-miterlimit="4" d="M652.28 175.2L96.52 175.2" /><path fill="none" stroke="#3C3C42" stroke-width="1.5" stroke-miterlimit="4" d="M96.52 175.2L96.52 325.04" /><text fill="#3C3C42" transform="matrix(0 -1 1 0 -158.24 342)" font-size="8.35" font-family="IBM Plex Sans" x="61.92, 66.15, 73.44, 75.52, 80.26, 82.7, 84.67, 89.13, 93.97, 98.03, 102.7, 105.77, 110.61, 112.69, 117.43" y="250.12">
+					xmin: absorbing
+			</text><text fill="#3C3C42" transform="matrix(0 1 -1 0 907.04 -406.8)" font-size="8.35" font-family="IBM Plex Sans" x="626.03, 630.26, 637.55, 642, 646.23, 648.67, 650.64, 655.1, 659.94, 664, 668.67, 671.74, 676.58, 678.66, 683.4" y="250.12">
+					xmax: absorbing
+			</text><text fill="#3C3C42" font-size="8.35" font-family="IBM Plex Sans" x="344.62, 348.49, 355.78, 357.86, 362.6, 365.04, 367.01, 371.47, 376.31, 380.37, 385.04, 388.11, 392.95, 395.03, 399.77" y="338.29">
+					zmin: absorbing
+			</text><text fill="#3C3C42" font-size="8.35" font-family="IBM Plex Sans" x="343.69, 347.56, 354.85, 359.3, 363.53, 365.97, 367.94, 372.4, 377.24, 381.3, 385.98, 389.04, 393.88, 395.96, 400.7" y="170.56">
+					zmax: absorbing
+			</text><use xlink:href="#em3d-via-section_d7" fill="#00966E" fill-opacity="0.1882" /><clipPath id="em3d-via-section_cl_1"><rect x="157.65" y="240.82" width="6" height="8.55" /></clipPath><g clip-path="url(#em3d-via-section_cl_1)"><path fill="none" stroke="#00966E" stroke-width="1" stroke-miterlimit="4" d="M149.1 249.37L157.65 240.82" /><path fill="none" stroke="#00966E" stroke-width="1" stroke-miterlimit="4" d="M154.1 249.37L162.65 240.82" /><path fill="none" stroke="#00966E" stroke-width="1" stroke-miterlimit="4" d="M159.1 249.37L167.65 240.82" /></g><use xlink:href="#em3d-via-section_d7" fill="none" stroke="#00966E" stroke-width="1.25" stroke-miterlimit="4" /><text fill="#00966E" font-size="9.82" font-weight="600" font-family="IBM Plex Sans" x="166.59, 172.88" y="249.66">
+					P1
+			</text><use xlink:href="#em3d-via-section_d8" fill="#00966E" fill-opacity="0.1882" /><clipPath id="em3d-via-section_cl_2"><rect x="585.15" y="250.87" width="6" height="8.55" /></clipPath><g clip-path="url(#em3d-via-section_cl_2)"><path fill="none" stroke="#00966E" stroke-width="1" stroke-miterlimit="4" d="M576.6 259.42L585.15 250.87" /><path fill="none" stroke="#00966E" stroke-width="1" stroke-miterlimit="4" d="M581.6 259.42L590.15 250.87" /><path fill="none" stroke="#00966E" stroke-width="1" stroke-miterlimit="4" d="M586.6 259.42L595.15 250.87" /></g><use xlink:href="#em3d-via-section_d8" fill="none" stroke="#00966E" stroke-width="1.25" stroke-miterlimit="4" /><text fill="#00966E" font-size="9.82" font-weight="600" font-family="IBM Plex Sans" x="594.1, 600.39" y="259.7">
+					P2
+			</text><text fill="#3C3C42" font-size="9.82" font-weight="600" font-family="IBM Plex Sans" x="748.8, 756.82, 762.31, 765.98, 771.46, 775.32, 778.02, 783.51, 786.39" y="36.87">
+					Materials
+			</text><rect fill="#6E7C91" fill-opacity="0.2353" x="748.8" y="45.61" width="9.82" height="9.82" /><rect fill="none" stroke="#424A57" stroke-width="1" stroke-miterlimit="4" x="748.8" y="45.61" width="9.82" height="9.82" /><text fill="#3C3C42" font-size="9.82" font-family="IBM Plex Sans" x="763.53, 768.45, 773.69, 782.26, 784.71, 790.29, 795.53, 798.98" y="53.95">
+					Laminate
+			</text><rect fill="#F8F8F6" x="748.8" y="58.86" width="9.82" height="9.82" /><rect fill="none" stroke="#3C3C42" stroke-width="1" stroke-miterlimit="4" stroke-opacity="0.5647" x="748.8" y="58.86" width="9.82" height="9.82" /><text fill="#3C3C42" font-size="9.82" font-family="IBM Plex Sans" x="763.53, 769.82, 772.28, 775.88, 778.2, 781.48, 787.06, 792.56, 796.01, 798.32, 801.5, 803.96, 806.63, 809.3, 814.69, 820.38" y="67.21">
+					Air (not filled)
+			</text><rect fill="#8A5028" x="748.8" y="72.11" width="9.82" height="9.82" /><rect fill="none" stroke="#523018" stroke-width="1" stroke-miterlimit="4" x="748.8" y="72.11" width="9.82" height="9.82" /><text fill="#3C3C42" font-size="9.82" font-family="IBM Plex Sans" x="763.53, 769.62, 775.12, 780.82, 786.51, 791.9" y="80.46">
+					Copper
+			</text><rect fill="#9B8A46" x="748.8" y="85.37" width="9.82" height="9.82" /><rect fill="none" stroke="#5D522A" stroke-width="1" stroke-miterlimit="4" x="748.8" y="85.37" width="9.82" height="9.82" /><text fill="#3C3C42" font-size="9.82" font-family="IBM Plex Sans" x="763.53, 769.62, 775.12, 780.82, 786.51, 791.9" y="93.71">
+					Copper
+			</text><rect fill="#C87A3E" x="748.8" y="98.62" width="9.82" height="9.82" /><rect fill="none" stroke="#784925" stroke-width="1" stroke-miterlimit="4" x="748.8" y="98.62" width="9.82" height="9.82" /><text fill="#3C3C42" font-size="9.82" font-family="IBM Plex Sans" x="763.53, 769.62, 775.12, 780.82, 786.51, 791.9" y="106.97">
+					Copper
+			</text><rect fill="#202020" x="748.8" y="111.88" width="9.82" height="9.82" /><rect fill="none" stroke="#131313" stroke-width="1" stroke-miterlimit="4" x="748.8" y="111.88" width="9.82" height="9.82" /><text fill="#3C3C42" font-size="9.82" font-family="IBM Plex Sans" x="763.53, 769.62, 775.12, 780.82, 786.51, 791.9" y="120.22">
+					Copper
+			</text><clipPath id="em3d-via-section_cl_3"><rect x="748.8" y="130.43" width="9.82" height="9.82" /></clipPath><g clip-path="url(#em3d-via-section_cl_3)"><path fill="none" stroke="#00966E" stroke-width="1" stroke-miterlimit="4" d="M738.98 140.25L748.8 130.44" /><path fill="none" stroke="#00966E" stroke-width="1" stroke-miterlimit="4" d="M743.98 140.25L753.8 130.44" /><path fill="none" stroke="#00966E" stroke-width="1" stroke-miterlimit="4" d="M748.98 140.25L758.8 130.44" /><path fill="none" stroke="#00966E" stroke-width="1" stroke-miterlimit="4" d="M753.98 140.25L763.8 130.44" /></g><path fill="none" stroke="#00966E" stroke-width="1" stroke-miterlimit="4" d="M748.8 130.44L758.62 130.44L758.62 140.25L748.8 140.25L748.8 130.44Z" /><text fill="#3C3C42" font-size="9.82" font-family="IBM Plex Sans" x="763.53, 769.48, 774.98, 778.58, 782.02, 784.34, 787.63, 790.09, 793.53, 798.31, 800.63, 805.41, 810.99, 816.38, 821.77, 825.21, 827.89, 830.2, 835.9, 839.5, 845, 847.45, 852.84, 857.78, 861.23, 866.62, 872.31" y="138.78">
+					Port (its sheet, projected)
+			</text><text fill="#3C3C42" font-size="9.82" font-weight="600" font-family="IBM Plex Sans" x="9.82, 16.25, 22.13, 24.45, 29.35, 34.83, 39.86, 43.53, 46.23, 51.76, 57.53, 59.85, 65.34, 69.01, 71.33, 76.47, 78.79, 84.68, 87, 92.89, 95.21, 101.03" y="503.67">
+					XZ section at y = 0 µm
+			</text><text fill="#3C3C42" font-size="8.35" font-family="IBM Plex Sans" x="9.82, 15.17, 17.14, 21.2, 25.87, 28.14, 30.23, 35.07, 37.04, 39.13, 43.19, 45.16, 50, 53.06, 57.52, 63.93, 68.67, 70.64, 77.05, 81.79, 86.37, 89.43, 94.02, 95.99, 98.07, 101, 105.06, 107.03, 111.87, 116.55, 119.48, 122.41, 127.08, 134.37, 136.34, 141.34, 143.31, 147.48, 149.45, 154.45, 156.42, 158.51, 161.44, 165.5, 167.47, 170.4, 175.07, 179.92, 182.35, 184.32, 188.78, 190.75, 194.81, 199.55, 204.13, 208.72, 211.64, 213.61, 220.02, 222.11, 225.04, 229.78, 231.87, 236.61, 238.58, 243.58, 245.85, 250.86, 255.87, 260.87, 262.84, 267.58, 274.87, 276.84, 281.51, 284.22, 286.19, 288.27, 291.2, 295.27, 297.24, 302.08, 304.35, 308.8, 313.54, 318.12, 320.39, 322.36, 327.42, 332.09, 335.16, 338.09, 342.15, 344.12, 348.58, 351.64, 356.22, 358.19, 363.03, 366.09, 370.55, 376.96, 381.7, 383.67, 388.51, 391.57, 396.25, 398.33, 402.91, 407.11, 410.04, 414.62, 419.46, 421.43, 426.11, 430.85, 433.78, 438.45, 440.42, 443.35, 448.09, 452.67, 454.64, 459.48, 461.75, 466.21, 470.95, 475.53" y="516.93">
+					A solid is drawn where its bottom ≤ y &lt; its top; a sheet within 0.013 nm of its plane. Ports are drawn projected onto the plane.
+			</text><text fill="#3C3C42" font-size="8.35" font-family="IBM Plex Sans" x="9.82, 15.17, 17.25, 20.32, 22.29, 27.13, 31.8, 36.03, 38.47, 40.44, 44.6, 51.89, 53.97, 58.71, 60.98, 62.95, 67.12, 74.4, 78.86, 83.09, 85.53, 87.5, 91.95, 96.79, 100.86, 105.53, 108.6, 113.44, 115.52, 120.26" y="530.18">
+					Air box: ymin, ymax: absorbing
+			</text></svg></span>
+<span class="sym-dark"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="960" height="540" viewBox="0 0 960 540"><defs><path id="em3d-via-section-dark_d0" d="M96.52 259.42L652.28 259.42L652.28 250.87L96.52 250.87L96.52 259.42Z" /><path id="em3d-via-section-dark_d1" d="M96.52 250.87L652.28 250.87L652.28 240.82L96.52 240.82L96.52 250.87Z" /><path id="em3d-via-section-dark_d2" d="M361.62 260.91L588.15 260.91L588.15 259.42L361.62 259.42L361.62 260.91Z" /><path id="em3d-via-section-dark_d3" d="M160.65 250.87L355.16 250.87L355.16 249.37L160.65 249.37L160.65 250.87Z" /><path id="em3d-via-section-dark_d4" d="M393.64 250.87L588.15 250.87L588.15 249.37L393.64 249.37L393.64 250.87Z" /><path id="em3d-via-section-dark_d5" d="M160.65 240.82L387.23 240.82L387.23 239.32L160.65 239.32L160.65 240.82Z" /><path id="em3d-via-section-dark_d6" d="M367.99 260.91L380.81 260.91L380.81 239.32L367.99 239.32L367.99 260.91Z" /><path id="em3d-via-section-dark_d7" d="M157.65 240.82L163.65 240.82L163.65 249.37L157.65 249.37L157.65 240.82Z" /><path id="em3d-via-section-dark_d8" d="M585.15 250.87L591.15 250.87L591.15 259.42L585.15 259.42L585.15 250.87Z" /></defs><rect fill="#010101" width="960" height="540" /><rect fill="#15222D" width="960" height="540" /><clipPath id="em3d-via-section-dark_cl_0"><rect x="96.52" y="175.2" width="555.76" height="149.84" /></clipPath><g clip-path="url(#em3d-via-section-dark_cl_0)"><use xlink:href="#em3d-via-section-dark_d0" fill="#8595AF" fill-opacity="0.2353" fill-rule="evenodd" /><use xlink:href="#em3d-via-section-dark_d0" fill="none" stroke="#4F5969" stroke-width="1" stroke-miterlimit="4" fill-rule="evenodd" /><use xlink:href="#em3d-via-section-dark_d1" fill="#8595AF" fill-opacity="0.2353" fill-rule="evenodd" /><use xlink:href="#em3d-via-section-dark_d1" fill="none" stroke="#4F5969" stroke-width="1" stroke-miterlimit="4" fill-rule="evenodd" /><use xlink:href="#em3d-via-section-dark_d2" fill="#8A5028" fill-rule="evenodd" /><use xlink:href="#em3d-via-section-dark_d2" fill="none" stroke="#523018" stroke-width="1" stroke-miterlimit="4" fill-rule="evenodd" /><use xlink:href="#em3d-via-section-dark_d3" fill="#9B8A46" fill-rule="evenodd" /><use xlink:href="#em3d-via-section-dark_d3" fill="none" stroke="#5D522A" stroke-width="1" stroke-miterlimit="4" fill-rule="evenodd" /><use xlink:href="#em3d-via-section-dark_d4" fill="#9B8A46" fill-rule="evenodd" /><use xlink:href="#em3d-via-section-dark_d4" fill="none" stroke="#5D522A" stroke-width="1" stroke-miterlimit="4" fill-rule="evenodd" /><use xlink:href="#em3d-via-section-dark_d5" fill="#C87A3E" fill-rule="evenodd" /><use xlink:href="#em3d-via-section-dark_d5" fill="none" stroke="#784925" stroke-width="1" stroke-miterlimit="4" fill-rule="evenodd" /><use xlink:href="#em3d-via-section-dark_d6" fill="#202020" fill-rule="evenodd" /><use xlink:href="#em3d-via-section-dark_d6" fill="none" stroke="#131313" stroke-width="1" stroke-miterlimit="4" fill-rule="evenodd" /></g><path fill="none" stroke="#D4D4D8" stroke-width="1.5" stroke-miterlimit="4" d="M96.52 325.04L652.28 325.04" /><path fill="none" stroke="#D4D4D8" stroke-width="1.5" stroke-miterlimit="4" d="M652.28 325.04L652.28 175.2" /><path fill="none" stroke="#D4D4D8" stroke-width="1.5" stroke-miterlimit="4" d="M652.28 175.2L96.52 175.2" /><path fill="none" stroke="#D4D4D8" stroke-width="1.5" stroke-miterlimit="4" d="M96.52 175.2L96.52 325.04" /><text fill="#D4D4D8" transform="matrix(0 -1 1 0 -158.24 342)" font-size="8.35" font-family="IBM Plex Sans" x="61.92, 66.15, 73.44, 75.52, 80.26, 82.7, 84.67, 89.13, 93.97, 98.03, 102.7, 105.77, 110.61, 112.69, 117.43" y="250.12">
+					xmin: absorbing
+			</text><text fill="#D4D4D8" transform="matrix(0 1 -1 0 907.04 -406.8)" font-size="8.35" font-family="IBM Plex Sans" x="626.03, 630.26, 637.55, 642, 646.23, 648.67, 650.64, 655.1, 659.94, 664, 668.67, 671.74, 676.58, 678.66, 683.4" y="250.12">
+					xmax: absorbing
+			</text><text fill="#D4D4D8" font-size="8.35" font-family="IBM Plex Sans" x="344.62, 348.49, 355.78, 357.86, 362.6, 365.04, 367.01, 371.47, 376.31, 380.37, 385.04, 388.11, 392.95, 395.03, 399.77" y="338.29">
+					zmin: absorbing
+			</text><text fill="#D4D4D8" font-size="8.35" font-family="IBM Plex Sans" x="343.69, 347.56, 354.85, 359.3, 363.53, 365.97, 367.94, 372.4, 377.24, 381.3, 385.98, 389.04, 393.88, 395.96, 400.7" y="170.56">
+					zmax: absorbing
+			</text><use xlink:href="#em3d-via-section-dark_d7" fill="#3CD2AA" fill-opacity="0.1882" /><clipPath id="em3d-via-section-dark_cl_1"><rect x="157.65" y="240.82" width="6" height="8.55" /></clipPath><g clip-path="url(#em3d-via-section-dark_cl_1)"><path fill="none" stroke="#3CD2AA" stroke-width="1" stroke-miterlimit="4" d="M149.1 249.37L157.65 240.82" /><path fill="none" stroke="#3CD2AA" stroke-width="1" stroke-miterlimit="4" d="M154.1 249.37L162.65 240.82" /><path fill="none" stroke="#3CD2AA" stroke-width="1" stroke-miterlimit="4" d="M159.1 249.37L167.65 240.82" /></g><use xlink:href="#em3d-via-section-dark_d7" fill="none" stroke="#3CD2AA" stroke-width="1.25" stroke-miterlimit="4" /><text fill="#3CD2AA" font-size="9.82" font-weight="600" font-family="IBM Plex Sans" x="166.59, 172.88" y="249.66">
+					P1
+			</text><use xlink:href="#em3d-via-section-dark_d8" fill="#3CD2AA" fill-opacity="0.1882" /><clipPath id="em3d-via-section-dark_cl_2"><rect x="585.15" y="250.87" width="6" height="8.55" /></clipPath><g clip-path="url(#em3d-via-section-dark_cl_2)"><path fill="none" stroke="#3CD2AA" stroke-width="1" stroke-miterlimit="4" d="M576.6 259.42L585.15 250.87" /><path fill="none" stroke="#3CD2AA" stroke-width="1" stroke-miterlimit="4" d="M581.6 259.42L590.15 250.87" /><path fill="none" stroke="#3CD2AA" stroke-width="1" stroke-miterlimit="4" d="M586.6 259.42L595.15 250.87" /></g><use xlink:href="#em3d-via-section-dark_d8" fill="none" stroke="#3CD2AA" stroke-width="1.25" stroke-miterlimit="4" /><text fill="#3CD2AA" font-size="9.82" font-weight="600" font-family="IBM Plex Sans" x="594.1, 600.39" y="259.7">
+					P2
+			</text><text fill="#D4D4D8" font-size="9.82" font-weight="600" font-family="IBM Plex Sans" x="748.8, 756.82, 762.31, 765.98, 771.46, 775.32, 778.02, 783.51, 786.39" y="36.87">
+					Materials
+			</text><rect fill="#8595AF" fill-opacity="0.2353" x="748.8" y="45.61" width="9.82" height="9.82" /><rect fill="none" stroke="#4F5969" stroke-width="1" stroke-miterlimit="4" x="748.8" y="45.61" width="9.82" height="9.82" /><text fill="#D4D4D8" font-size="9.82" font-family="IBM Plex Sans" x="763.53, 768.45, 773.69, 782.26, 784.71, 790.29, 795.53, 798.98" y="53.95">
+					Laminate
+			</text><rect fill="#222224" x="748.8" y="58.86" width="9.82" height="9.82" /><rect fill="none" stroke="#D4D4D8" stroke-width="1" stroke-miterlimit="4" stroke-opacity="0.5647" x="748.8" y="58.86" width="9.82" height="9.82" /><text fill="#D4D4D8" font-size="9.82" font-family="IBM Plex Sans" x="763.53, 769.82, 772.28, 775.88, 778.2, 781.48, 787.06, 792.56, 796.01, 798.32, 801.5, 803.96, 806.63, 809.3, 814.69, 820.38" y="67.21">
+					Air (not filled)
+			</text><rect fill="#8A5028" x="748.8" y="72.11" width="9.82" height="9.82" /><rect fill="none" stroke="#523018" stroke-width="1" stroke-miterlimit="4" x="748.8" y="72.11" width="9.82" height="9.82" /><text fill="#D4D4D8" font-size="9.82" font-family="IBM Plex Sans" x="763.53, 769.62, 775.12, 780.82, 786.51, 791.9" y="80.46">
+					Copper
+			</text><rect fill="#9B8A46" x="748.8" y="85.37" width="9.82" height="9.82" /><rect fill="none" stroke="#5D522A" stroke-width="1" stroke-miterlimit="4" x="748.8" y="85.37" width="9.82" height="9.82" /><text fill="#D4D4D8" font-size="9.82" font-family="IBM Plex Sans" x="763.53, 769.62, 775.12, 780.82, 786.51, 791.9" y="93.71">
+					Copper
+			</text><rect fill="#C87A3E" x="748.8" y="98.62" width="9.82" height="9.82" /><rect fill="none" stroke="#784925" stroke-width="1" stroke-miterlimit="4" x="748.8" y="98.62" width="9.82" height="9.82" /><text fill="#D4D4D8" font-size="9.82" font-family="IBM Plex Sans" x="763.53, 769.62, 775.12, 780.82, 786.51, 791.9" y="106.97">
+					Copper
+			</text><rect fill="#202020" x="748.8" y="111.88" width="9.82" height="9.82" /><rect fill="none" stroke="#131313" stroke-width="1" stroke-miterlimit="4" x="748.8" y="111.88" width="9.82" height="9.82" /><text fill="#D4D4D8" font-size="9.82" font-family="IBM Plex Sans" x="763.53, 769.62, 775.12, 780.82, 786.51, 791.9" y="120.22">
+					Copper
+			</text><clipPath id="em3d-via-section-dark_cl_3"><rect x="748.8" y="130.43" width="9.82" height="9.82" /></clipPath><g clip-path="url(#em3d-via-section-dark_cl_3)"><path fill="none" stroke="#3CD2AA" stroke-width="1" stroke-miterlimit="4" d="M738.98 140.25L748.8 130.44" /><path fill="none" stroke="#3CD2AA" stroke-width="1" stroke-miterlimit="4" d="M743.98 140.25L753.8 130.44" /><path fill="none" stroke="#3CD2AA" stroke-width="1" stroke-miterlimit="4" d="M748.98 140.25L758.8 130.44" /><path fill="none" stroke="#3CD2AA" stroke-width="1" stroke-miterlimit="4" d="M753.98 140.25L763.8 130.44" /></g><path fill="none" stroke="#3CD2AA" stroke-width="1" stroke-miterlimit="4" d="M748.8 130.44L758.62 130.44L758.62 140.25L748.8 140.25L748.8 130.44Z" /><text fill="#D4D4D8" font-size="9.82" font-family="IBM Plex Sans" x="763.53, 769.48, 774.98, 778.58, 782.02, 784.34, 787.63, 790.09, 793.53, 798.31, 800.63, 805.41, 810.99, 816.38, 821.77, 825.21, 827.89, 830.2, 835.9, 839.5, 845, 847.45, 852.84, 857.78, 861.23, 866.62, 872.31" y="138.78">
+					Port (its sheet, projected)
+			</text><text fill="#D4D4D8" font-size="9.82" font-weight="600" font-family="IBM Plex Sans" x="9.82, 16.25, 22.13, 24.45, 29.35, 34.83, 39.86, 43.53, 46.23, 51.76, 57.53, 59.85, 65.34, 69.01, 71.33, 76.47, 78.79, 84.68, 87, 92.89, 95.21, 101.03" y="503.67">
+					XZ section at y = 0 µm
+			</text><text fill="#D4D4D8" font-size="8.35" font-family="IBM Plex Sans" x="9.82, 15.17, 17.14, 21.2, 25.87, 28.14, 30.23, 35.07, 37.04, 39.13, 43.19, 45.16, 50, 53.06, 57.52, 63.93, 68.67, 70.64, 77.05, 81.79, 86.37, 89.43, 94.02, 95.99, 98.07, 101, 105.06, 107.03, 111.87, 116.55, 119.48, 122.41, 127.08, 134.37, 136.34, 141.34, 143.31, 147.48, 149.45, 154.45, 156.42, 158.51, 161.44, 165.5, 167.47, 170.4, 175.07, 179.92, 182.35, 184.32, 188.78, 190.75, 194.81, 199.55, 204.13, 208.72, 211.64, 213.61, 220.02, 222.11, 225.04, 229.78, 231.87, 236.61, 238.58, 243.58, 245.85, 250.86, 255.87, 260.87, 262.84, 267.58, 274.87, 276.84, 281.51, 284.22, 286.19, 288.27, 291.2, 295.27, 297.24, 302.08, 304.35, 308.8, 313.54, 318.12, 320.39, 322.36, 327.42, 332.09, 335.16, 338.09, 342.15, 344.12, 348.58, 351.64, 356.22, 358.19, 363.03, 366.09, 370.55, 376.96, 381.7, 383.67, 388.51, 391.57, 396.25, 398.33, 402.91, 407.11, 410.04, 414.62, 419.46, 421.43, 426.11, 430.85, 433.78, 438.45, 440.42, 443.35, 448.09, 452.67, 454.64, 459.48, 461.75, 466.21, 470.95, 475.53" y="516.93">
+					A solid is drawn where its bottom ≤ y &lt; its top; a sheet within 0.013 nm of its plane. Ports are drawn projected onto the plane.
+			</text><text fill="#D4D4D8" font-size="8.35" font-family="IBM Plex Sans" x="9.82, 15.17, 17.25, 20.32, 22.29, 27.13, 31.8, 36.03, 38.47, 40.44, 44.6, 51.89, 53.97, 58.71, 60.98, 62.95, 67.12, 74.4, 78.86, 83.09, 85.53, 87.5, 91.95, 96.79, 100.86, 105.53, 108.6, 113.44, 115.52, 120.26" y="530.18">
+					Air box: ymin, ymax: absorbing
+			</text></svg></span>
+</span><figcaption>The via cell cut along the lines: a microstrip on top, the via through a clearance in the ground plane, and an inverted microstrip underneath leaving the other way. The plane is the return for both lines, which is what the planar solver cannot state.</figcaption></figure>
+<p><strong>First, the planar solver.</strong> <code>Via planar.cem</code> is the same structure for the planar solver, and it is
+refused:</p>
+<blockquote>
+<p>This EM setup names 'Ground Plane' as its return plane, but its top surface is at 270 µm, which is NOT below the lowest analysis level 'Bottom Copper' at 0 µm. A return plane must lie BENEATH the conductor it feeds, or there is no dielectric slab between them to solve on. Name a conductor below 0 µm, or restrict this setup's analysis levels to conductors above 'Ground Plane'.</p>
+</blockquote>
+<p><code>circuitrf check</code> reports the same sentence as an error on that setup. It is the only error in the
+workspace, and it is there on purpose.</p>
+<p><strong>Then Palace.</strong> <code>Via 3D.cem</code> runs at <strong>Draft</strong> over 0.1–20 GHz, with 1.5 mm of air on every side of the
+board and absorbing walls. It takes <strong>62 s</strong>, with a peak of <strong>4.8 GB</strong>, and gives |S21| = <strong>−0.228 dB</strong>
+at 10 GHz and <strong>−0.430 dB</strong> at 20 GHz.</p>
+<ul>
+<li><strong>What Draft trades away is phase.</strong> Against an independent hand-built Palace model of the same via
+(element order 2, 155,883 tetrahedra), Draft's |S21| is within 0.1 dB, but its phase is <strong>12° off at
+10 GHz and 23° off at 20 GHz</strong>.</li>
+<li><strong>Element order 2</strong>, with Draft's other values (<code>&quot;ElementOrder&quot;: 2</code> in the <code>Palace</code> section), takes
+<strong>6.5 min</strong> at <strong>9.2 GB</strong> and lands within 0.02 dB and 5° of that model.</li>
+<li><strong>Standard</strong> took <strong>35 min</strong> at 9.3 GB on this structure, when the presets were measured. <strong>Accurate</strong>
+has never finished on it: it was stopped after 23 minutes in its third solve.</li>
+</ul>
+<h3 id="example-package">Package</h3>
+<p>A ceramic package with its lid on. The 8 × 8 mm cavity has a 254 µm alumina base on a metal floor. Two
+200 µm gold leads stop 100 µm short of the side walls, and a 1 mil bond wire runs from each lead to a die
+pad inside. The lid and seal ring are the closed metal box around it: side walls 100 µm beyond the leads,
+and a lid 700 µm above the wires, 1.13 mm above the floor. The die itself is not in the model.</p>
+<figure class="figure"><span class="frame">
+<span class="sym-light"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="960" height="540" viewBox="0 0 960 540"><defs><path id="em3d-package-section_d0" d="M96.52 289.42L652.28 289.42L652.28 271.78L96.52 271.78L96.52 289.42Z" /><path id="em3d-package-section_d1" d="M103.47 271.78L318.82 271.78L318.82 271.43L103.47 271.43L103.47 271.78Z" /><path id="em3d-package-section_d2" d="M348.35 271.78L358.77 271.78L358.77 271.43L348.35 271.43L348.35 271.78Z" /><path id="em3d-package-section_d3" d="M390.03 271.78L400.45 271.78L400.45 271.43L390.03 271.43L390.03 271.78Z" /><path id="em3d-package-section_d4" d="M429.98 271.78L645.33 271.78L645.33 271.43L429.98 271.43L429.98 271.78Z" /><path id="em3d-package-section_d5" d="M311.82 271.43L313.8 271.43L315.78 271.43L319.25 266.24L322.73 261.04L334.46 261.04L346.19 261.04L349.66 266.24L353.13 271.43L355.11 271.43L357.09 271.43L357.09 270.63L357.09 270.63L357.09 270.63L357.09 269.83L355.54 269.83L353.99 269.83L350.51 264.64L347.04 259.44L334.46 259.44L321.87 259.44L318.4 264.64L314.92 269.83L313.37 269.83L311.82 269.83L311.82 270.63L311.82 270.63L311.82 270.63L311.82 271.43Z" /><path id="em3d-package-section_d6" d="M436.98 271.43L435 271.43L433.02 271.43L429.55 266.24L426.08 261.04L414.35 261.04L402.62 261.04L399.14 266.24L395.67 271.43L393.69 271.43L391.71 271.43L391.71 270.63L391.71 270.63L391.71 270.63L391.71 269.83L393.26 269.83L394.81 269.83L398.29 264.64L401.76 259.44L414.35 259.44L426.93 259.44L430.4 264.64L433.88 269.83L435.43 269.83L436.98 269.83L436.98 270.63L436.98 270.63L436.98 270.63L436.98 271.43Z" /><path id="em3d-package-section_d7" d="M100.47 271.78L106.47 271.78L106.47 289.42L100.47 289.42L100.47 271.78Z" /><path id="em3d-package-section_d8" d="M642.33 271.78L648.33 271.78L648.33 289.42L642.33 289.42L642.33 271.78Z" /></defs><rect fill="white" width="960" height="540" /><rect fill="#F6F8FA" width="960" height="540" /><clipPath id="em3d-package-section_cl_0"><rect x="96.52" y="210.81" width="555.76" height="78.61" /></clipPath><g clip-path="url(#em3d-package-section_cl_0)"><use xlink:href="#em3d-package-section_d0" fill="#6E7C91" fill-opacity="0.2353" fill-rule="evenodd" /><use xlink:href="#em3d-package-section_d0" fill="none" stroke="#424A57" stroke-width="1" stroke-miterlimit="4" fill-rule="evenodd" /><use xlink:href="#em3d-package-section_d1" fill="#D4AF37" fill-rule="evenodd" /><use xlink:href="#em3d-package-section_d1" fill="none" stroke="#7F6921" stroke-width="1" stroke-miterlimit="4" fill-rule="evenodd" /><use xlink:href="#em3d-package-section_d2" fill="#D4AF37" fill-rule="evenodd" /><use xlink:href="#em3d-package-section_d2" fill="none" stroke="#7F6921" stroke-width="1" stroke-miterlimit="4" fill-rule="evenodd" /><use xlink:href="#em3d-package-section_d3" fill="#D4AF37" fill-rule="evenodd" /><use xlink:href="#em3d-package-section_d3" fill="none" stroke="#7F6921" stroke-width="1" stroke-miterlimit="4" fill-rule="evenodd" /><use xlink:href="#em3d-package-section_d4" fill="#D4AF37" fill-rule="evenodd" /><use xlink:href="#em3d-package-section_d4" fill="none" stroke="#7F6921" stroke-width="1" stroke-miterlimit="4" fill-rule="evenodd" /><use xlink:href="#em3d-package-section_d5" fill="#A54082" fill-rule="evenodd" /><use xlink:href="#em3d-package-section_d5" fill="none" stroke="#63264E" stroke-width="1" stroke-miterlimit="4" fill-rule="evenodd" /><use xlink:href="#em3d-package-section_d6" fill="#A54082" fill-rule="evenodd" /><use xlink:href="#em3d-package-section_d6" fill="none" stroke="#63264E" stroke-width="1" stroke-miterlimit="4" fill-rule="evenodd" /></g><path fill="none" stroke="#3C3C42" stroke-width="1.5" stroke-miterlimit="4" d="M96.52 289.42L652.28 289.42" /><path fill="none" stroke="#3C3C42" stroke-width="1.5" stroke-miterlimit="4" d="M652.28 289.42L652.28 210.82" /><path fill="none" stroke="#3C3C42" stroke-width="1.5" stroke-miterlimit="4" d="M652.28 210.82L96.52 210.82" /><path fill="none" stroke="#3C3C42" stroke-width="1.5" stroke-miterlimit="4" d="M96.52 210.82L96.52 289.42" /><text fill="#3C3C42" transform="matrix(0 -1 1 0 -158.24 342)" font-size="8.35" font-family="IBM Plex Sans" x="72.95, 77.18, 84.47, 86.56, 91.3, 93.73, 95.7, 100.76, 105.63" y="250.12">
+					xmin: PEC
+			</text><text fill="#3C3C42" transform="matrix(0 1 -1 0 907.04 -406.8)" font-size="8.35" font-family="IBM Plex Sans" x="637.06, 641.29, 648.58, 653.04, 657.27, 659.7, 661.67, 666.73, 671.6" y="250.12">
+					xmax: PEC
+			</text><text fill="#3C3C42" font-size="8.35" font-family="IBM Plex Sans" x="355.65, 359.52, 366.81, 368.9, 373.64, 376.07, 378.04, 383.1, 387.97" y="302.68">
+					zmin: PEC
+			</text><text fill="#3C3C42" font-size="8.35" font-family="IBM Plex Sans" x="354.72, 358.59, 365.88, 370.34, 374.57, 377, 378.97, 384.03, 388.9" y="206.18">
+					zmax: PEC
+			</text><use xlink:href="#em3d-package-section_d7" fill="#00966E" fill-opacity="0.1882" /><clipPath id="em3d-package-section_cl_1"><rect x="100.47" y="271.78" width="6" height="17.65" /></clipPath><g clip-path="url(#em3d-package-section_cl_1)"><path fill="none" stroke="#00966E" stroke-width="1" stroke-miterlimit="4" d="M82.82 289.42L100.47 271.78" /><path fill="none" stroke="#00966E" stroke-width="1" stroke-miterlimit="4" d="M87.82 289.42L105.47 271.78" /><path fill="none" stroke="#00966E" stroke-width="1" stroke-miterlimit="4" d="M92.82 289.42L110.47 271.78" /><path fill="none" stroke="#00966E" stroke-width="1" stroke-miterlimit="4" d="M97.82 289.42L115.47 271.78" /><path fill="none" stroke="#00966E" stroke-width="1" stroke-miterlimit="4" d="M102.82 289.42L120.47 271.78" /></g><use xlink:href="#em3d-package-section_d7" fill="none" stroke="#00966E" stroke-width="1.25" stroke-miterlimit="4" /><text fill="#00966E" font-size="9.82" font-weight="600" font-family="IBM Plex Sans" x="109.41, 115.71" y="280.61">
+					P1
+			</text><use xlink:href="#em3d-package-section_d8" fill="#00966E" fill-opacity="0.1882" /><clipPath id="em3d-package-section_cl_2"><rect x="642.33" y="271.78" width="6" height="17.65" /></clipPath><g clip-path="url(#em3d-package-section_cl_2)"><path fill="none" stroke="#00966E" stroke-width="1" stroke-miterlimit="4" d="M624.69 289.42L642.33 271.78" /><path fill="none" stroke="#00966E" stroke-width="1" stroke-miterlimit="4" d="M629.69 289.42L647.33 271.78" /><path fill="none" stroke="#00966E" stroke-width="1" stroke-miterlimit="4" d="M634.69 289.42L652.33 271.78" /><path fill="none" stroke="#00966E" stroke-width="1" stroke-miterlimit="4" d="M639.69 289.42L657.33 271.78" /><path fill="none" stroke="#00966E" stroke-width="1" stroke-miterlimit="4" d="M644.69 289.42L662.33 271.78" /></g><use xlink:href="#em3d-package-section_d8" fill="none" stroke="#00966E" stroke-width="1.25" stroke-miterlimit="4" /><text fill="#00966E" font-size="9.82" font-weight="600" font-family="IBM Plex Sans" x="651.28, 657.57" y="280.61">
+					P2
+			</text><text fill="#3C3C42" font-size="9.82" font-weight="600" font-family="IBM Plex Sans" x="748.8, 756.82, 762.31, 765.98, 771.46, 775.32, 778.02, 783.51, 786.39" y="36.87">
+					Materials
+			</text><rect fill="#6E7C91" fill-opacity="0.2353" x="748.8" y="45.61" width="9.82" height="9.82" /><rect fill="none" stroke="#424A57" stroke-width="1" stroke-miterlimit="4" x="748.8" y="45.61" width="9.82" height="9.82" /><text fill="#3C3C42" font-size="9.82" font-family="IBM Plex Sans" x="763.53, 769.82, 772.49, 778.07, 786.64, 789.09, 794.67" y="53.95">
+					Alumina
+			</text><rect fill="#F8F8F6" x="748.8" y="58.86" width="9.82" height="9.82" /><rect fill="none" stroke="#3C3C42" stroke-width="1" stroke-miterlimit="4" stroke-opacity="0.5647" x="748.8" y="58.86" width="9.82" height="9.82" /><text fill="#3C3C42" font-size="9.82" font-family="IBM Plex Sans" x="763.53, 769.82, 772.28, 775.88, 778.2, 781.48, 787.06, 792.56, 796.01, 798.32, 801.5, 803.96, 806.63, 809.3, 814.69, 820.38" y="67.21">
+					Air (not filled)
+			</text><rect fill="#D4AF37" x="748.8" y="72.11" width="9.82" height="9.82" /><rect fill="none" stroke="#7F6921" stroke-width="1" stroke-miterlimit="4" x="748.8" y="72.11" width="9.82" height="9.82" /><text fill="#3C3C42" font-size="9.82" font-family="IBM Plex Sans" x="763.53, 770.35, 775.85, 778.52" y="80.46">
+					Gold
+			</text><rect fill="#A54082" x="748.8" y="85.37" width="9.82" height="9.82" /><rect fill="none" stroke="#63264E" stroke-width="1" stroke-miterlimit="4" x="748.8" y="85.37" width="9.82" height="9.82" /><text fill="#3C3C42" font-size="9.82" font-family="IBM Plex Sans" x="763.53, 770.35, 775.85, 778.52" y="93.71">
+					Gold
+			</text><clipPath id="em3d-package-section_cl_3"><rect x="748.8" y="103.93" width="9.82" height="9.82" /></clipPath><g clip-path="url(#em3d-package-section_cl_3)"><path fill="none" stroke="#00966E" stroke-width="1" stroke-miterlimit="4" d="M738.98 113.74L748.8 103.93" /><path fill="none" stroke="#00966E" stroke-width="1" stroke-miterlimit="4" d="M743.98 113.74L753.8 103.93" /><path fill="none" stroke="#00966E" stroke-width="1" stroke-miterlimit="4" d="M748.98 113.74L758.8 103.93" /><path fill="none" stroke="#00966E" stroke-width="1" stroke-miterlimit="4" d="M753.98 113.74L763.8 103.93" /></g><path fill="none" stroke="#00966E" stroke-width="1" stroke-miterlimit="4" d="M748.8 103.93L758.62 103.93L758.62 113.74L748.8 113.74L748.8 103.93Z" /><text fill="#3C3C42" font-size="9.82" font-family="IBM Plex Sans" x="763.53, 769.48, 774.98, 778.58, 782.02, 784.34, 787.63, 790.09, 793.53, 798.31, 800.63, 805.41, 810.99, 816.38, 821.77, 825.21, 827.89, 830.2, 835.9, 839.5, 845, 847.45, 852.84, 857.78, 861.23, 866.62, 872.31" y="112.27">
+					Port (its sheet, projected)
+			</text><text fill="#3C3C42" font-size="9.82" font-weight="600" font-family="IBM Plex Sans" x="9.82, 16.25, 22.13, 24.45, 29.35, 34.83, 39.86, 43.53, 46.23, 51.76, 57.53, 59.85, 65.34, 69.01, 71.33, 76.47, 78.79, 84.68, 87, 92.89, 95.21, 101.03" y="503.67">
+					XZ section at y = 0 µm
+			</text><text fill="#3C3C42" font-size="8.35" font-family="IBM Plex Sans" x="9.82, 15.17, 17.14, 21.2, 25.87, 28.14, 30.23, 35.07, 37.04, 39.13, 43.19, 45.16, 50, 53.06, 57.52, 63.93, 68.67, 70.64, 77.05, 81.79, 86.37, 89.43, 94.02, 95.99, 98.07, 101, 105.06, 107.03, 111.87, 116.55, 119.48, 122.41, 127.08, 134.37, 136.34, 141.34, 143.31, 147.48, 149.45, 154.45, 156.42, 158.51, 161.44, 165.5, 167.47, 170.4, 175.07, 179.92, 182.35, 184.32, 188.78, 190.75, 194.81, 199.55, 204.13, 208.72, 211.64, 213.61, 220.02, 222.11, 225.04, 229.78, 231.87, 236.61, 238.58, 243.58, 245.85, 250.86, 255.87, 260.87, 262.84, 267.58, 274.87, 276.84, 281.51, 284.22, 286.19, 288.27, 291.2, 295.27, 297.24, 302.08, 304.35, 308.8, 313.54, 318.12, 320.39, 322.36, 327.42, 332.09, 335.16, 338.09, 342.15, 344.12, 348.58, 351.64, 356.22, 358.19, 363.03, 366.09, 370.55, 376.96, 381.7, 383.67, 388.51, 391.57, 396.25, 398.33, 402.91, 407.11, 410.04, 414.62, 419.46, 421.43, 426.11, 430.85, 433.78, 438.45, 440.42, 443.35, 448.09, 452.67, 454.64, 459.48, 461.75, 466.21, 470.95, 475.53" y="516.93">
+					A solid is drawn where its bottom ≤ y &lt; its top; a sheet within 0.008 nm of its plane. Ports are drawn projected onto the plane.
+			</text><text fill="#3C3C42" font-size="8.35" font-family="IBM Plex Sans" x="9.82, 15.17, 17.25, 20.32, 22.29, 27.13, 31.8, 36.03, 38.47, 40.44, 44.6, 51.89, 53.97, 58.71, 60.98, 62.95, 67.12, 74.4, 78.86, 83.09, 85.53, 87.5, 92.56, 97.42, 102.6, 104.87, 106.84, 111.85, 114.12, 119.13, 124.13, 126.1, 133.39, 140.67, 142.64, 147.48, 152.07, 156.23, 160.9, 165.64" y="530.18">
+					Air box: ymin, ymax: PEC, 2.73 mm beyond
+			</text></svg></span>
+<span class="sym-dark"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="960" height="540" viewBox="0 0 960 540"><defs><path id="em3d-package-section-dark_d0" d="M96.52 289.42L652.28 289.42L652.28 271.78L96.52 271.78L96.52 289.42Z" /><path id="em3d-package-section-dark_d1" d="M103.47 271.78L318.82 271.78L318.82 271.43L103.47 271.43L103.47 271.78Z" /><path id="em3d-package-section-dark_d2" d="M348.35 271.78L358.77 271.78L358.77 271.43L348.35 271.43L348.35 271.78Z" /><path id="em3d-package-section-dark_d3" d="M390.03 271.78L400.45 271.78L400.45 271.43L390.03 271.43L390.03 271.78Z" /><path id="em3d-package-section-dark_d4" d="M429.98 271.78L645.33 271.78L645.33 271.43L429.98 271.43L429.98 271.78Z" /><path id="em3d-package-section-dark_d5" d="M311.82 271.43L313.8 271.43L315.78 271.43L319.25 266.24L322.73 261.04L334.46 261.04L346.19 261.04L349.66 266.24L353.13 271.43L355.11 271.43L357.09 271.43L357.09 270.63L357.09 270.63L357.09 270.63L357.09 269.83L355.54 269.83L353.99 269.83L350.51 264.64L347.04 259.44L334.46 259.44L321.87 259.44L318.4 264.64L314.92 269.83L313.37 269.83L311.82 269.83L311.82 270.63L311.82 270.63L311.82 270.63L311.82 271.43Z" /><path id="em3d-package-section-dark_d6" d="M436.98 271.43L435 271.43L433.02 271.43L429.55 266.24L426.08 261.04L414.35 261.04L402.62 261.04L399.14 266.24L395.67 271.43L393.69 271.43L391.71 271.43L391.71 270.63L391.71 270.63L391.71 270.63L391.71 269.83L393.26 269.83L394.81 269.83L398.29 264.64L401.76 259.44L414.35 259.44L426.93 259.44L430.4 264.64L433.88 269.83L435.43 269.83L436.98 269.83L436.98 270.63L436.98 270.63L436.98 270.63L436.98 271.43Z" /><path id="em3d-package-section-dark_d7" d="M100.47 271.78L106.47 271.78L106.47 289.42L100.47 289.42L100.47 271.78Z" /><path id="em3d-package-section-dark_d8" d="M642.33 271.78L648.33 271.78L648.33 289.42L642.33 289.42L642.33 271.78Z" /></defs><rect fill="#010101" width="960" height="540" /><rect fill="#15222D" width="960" height="540" /><clipPath id="em3d-package-section-dark_cl_0"><rect x="96.52" y="210.81" width="555.76" height="78.61" /></clipPath><g clip-path="url(#em3d-package-section-dark_cl_0)"><use xlink:href="#em3d-package-section-dark_d0" fill="#8595AF" fill-opacity="0.2353" fill-rule="evenodd" /><use xlink:href="#em3d-package-section-dark_d0" fill="none" stroke="#4F5969" stroke-width="1" stroke-miterlimit="4" fill-rule="evenodd" /><use xlink:href="#em3d-package-section-dark_d1" fill="#D4AF37" fill-rule="evenodd" /><use xlink:href="#em3d-package-section-dark_d1" fill="none" stroke="#7F6921" stroke-width="1" stroke-miterlimit="4" fill-rule="evenodd" /><use xlink:href="#em3d-package-section-dark_d2" fill="#D4AF37" fill-rule="evenodd" /><use xlink:href="#em3d-package-section-dark_d2" fill="none" stroke="#7F6921" stroke-width="1" stroke-miterlimit="4" fill-rule="evenodd" /><use xlink:href="#em3d-package-section-dark_d3" fill="#D4AF37" fill-rule="evenodd" /><use xlink:href="#em3d-package-section-dark_d3" fill="none" stroke="#7F6921" stroke-width="1" stroke-miterlimit="4" fill-rule="evenodd" /><use xlink:href="#em3d-package-section-dark_d4" fill="#D4AF37" fill-rule="evenodd" /><use xlink:href="#em3d-package-section-dark_d4" fill="none" stroke="#7F6921" stroke-width="1" stroke-miterlimit="4" fill-rule="evenodd" /><use xlink:href="#em3d-package-section-dark_d5" fill="#D67AB6" fill-rule="evenodd" /><use xlink:href="#em3d-package-section-dark_d5" fill="none" stroke="#80496D" stroke-width="1" stroke-miterlimit="4" fill-rule="evenodd" /><use xlink:href="#em3d-package-section-dark_d6" fill="#D67AB6" fill-rule="evenodd" /><use xlink:href="#em3d-package-section-dark_d6" fill="none" stroke="#80496D" stroke-width="1" stroke-miterlimit="4" fill-rule="evenodd" /></g><path fill="none" stroke="#D4D4D8" stroke-width="1.5" stroke-miterlimit="4" d="M96.52 289.42L652.28 289.42" /><path fill="none" stroke="#D4D4D8" stroke-width="1.5" stroke-miterlimit="4" d="M652.28 289.42L652.28 210.82" /><path fill="none" stroke="#D4D4D8" stroke-width="1.5" stroke-miterlimit="4" d="M652.28 210.82L96.52 210.82" /><path fill="none" stroke="#D4D4D8" stroke-width="1.5" stroke-miterlimit="4" d="M96.52 210.82L96.52 289.42" /><text fill="#D4D4D8" transform="matrix(0 -1 1 0 -158.24 342)" font-size="8.35" font-family="IBM Plex Sans" x="72.95, 77.18, 84.47, 86.56, 91.3, 93.73, 95.7, 100.76, 105.63" y="250.12">
+					xmin: PEC
+			</text><text fill="#D4D4D8" transform="matrix(0 1 -1 0 907.04 -406.8)" font-size="8.35" font-family="IBM Plex Sans" x="637.06, 641.29, 648.58, 653.04, 657.27, 659.7, 661.67, 666.73, 671.6" y="250.12">
+					xmax: PEC
+			</text><text fill="#D4D4D8" font-size="8.35" font-family="IBM Plex Sans" x="355.65, 359.52, 366.81, 368.9, 373.64, 376.07, 378.04, 383.1, 387.97" y="302.68">
+					zmin: PEC
+			</text><text fill="#D4D4D8" font-size="8.35" font-family="IBM Plex Sans" x="354.72, 358.59, 365.88, 370.34, 374.57, 377, 378.97, 384.03, 388.9" y="206.18">
+					zmax: PEC
+			</text><use xlink:href="#em3d-package-section-dark_d7" fill="#3CD2AA" fill-opacity="0.1882" /><clipPath id="em3d-package-section-dark_cl_1"><rect x="100.47" y="271.78" width="6" height="17.65" /></clipPath><g clip-path="url(#em3d-package-section-dark_cl_1)"><path fill="none" stroke="#3CD2AA" stroke-width="1" stroke-miterlimit="4" d="M82.82 289.42L100.47 271.78" /><path fill="none" stroke="#3CD2AA" stroke-width="1" stroke-miterlimit="4" d="M87.82 289.42L105.47 271.78" /><path fill="none" stroke="#3CD2AA" stroke-width="1" stroke-miterlimit="4" d="M92.82 289.42L110.47 271.78" /><path fill="none" stroke="#3CD2AA" stroke-width="1" stroke-miterlimit="4" d="M97.82 289.42L115.47 271.78" /><path fill="none" stroke="#3CD2AA" stroke-width="1" stroke-miterlimit="4" d="M102.82 289.42L120.47 271.78" /></g><use xlink:href="#em3d-package-section-dark_d7" fill="none" stroke="#3CD2AA" stroke-width="1.25" stroke-miterlimit="4" /><text fill="#3CD2AA" font-size="9.82" font-weight="600" font-family="IBM Plex Sans" x="109.41, 115.71" y="280.61">
+					P1
+			</text><use xlink:href="#em3d-package-section-dark_d8" fill="#3CD2AA" fill-opacity="0.1882" /><clipPath id="em3d-package-section-dark_cl_2"><rect x="642.33" y="271.78" width="6" height="17.65" /></clipPath><g clip-path="url(#em3d-package-section-dark_cl_2)"><path fill="none" stroke="#3CD2AA" stroke-width="1" stroke-miterlimit="4" d="M624.69 289.42L642.33 271.78" /><path fill="none" stroke="#3CD2AA" stroke-width="1" stroke-miterlimit="4" d="M629.69 289.42L647.33 271.78" /><path fill="none" stroke="#3CD2AA" stroke-width="1" stroke-miterlimit="4" d="M634.69 289.42L652.33 271.78" /><path fill="none" stroke="#3CD2AA" stroke-width="1" stroke-miterlimit="4" d="M639.69 289.42L657.33 271.78" /><path fill="none" stroke="#3CD2AA" stroke-width="1" stroke-miterlimit="4" d="M644.69 289.42L662.33 271.78" /></g><use xlink:href="#em3d-package-section-dark_d8" fill="none" stroke="#3CD2AA" stroke-width="1.25" stroke-miterlimit="4" /><text fill="#3CD2AA" font-size="9.82" font-weight="600" font-family="IBM Plex Sans" x="651.28, 657.57" y="280.61">
+					P2
+			</text><text fill="#D4D4D8" font-size="9.82" font-weight="600" font-family="IBM Plex Sans" x="748.8, 756.82, 762.31, 765.98, 771.46, 775.32, 778.02, 783.51, 786.39" y="36.87">
+					Materials
+			</text><rect fill="#8595AF" fill-opacity="0.2353" x="748.8" y="45.61" width="9.82" height="9.82" /><rect fill="none" stroke="#4F5969" stroke-width="1" stroke-miterlimit="4" x="748.8" y="45.61" width="9.82" height="9.82" /><text fill="#D4D4D8" font-size="9.82" font-family="IBM Plex Sans" x="763.53, 769.82, 772.49, 778.07, 786.64, 789.09, 794.67" y="53.95">
+					Alumina
+			</text><rect fill="#222224" x="748.8" y="58.86" width="9.82" height="9.82" /><rect fill="none" stroke="#D4D4D8" stroke-width="1" stroke-miterlimit="4" stroke-opacity="0.5647" x="748.8" y="58.86" width="9.82" height="9.82" /><text fill="#D4D4D8" font-size="9.82" font-family="IBM Plex Sans" x="763.53, 769.82, 772.28, 775.88, 778.2, 781.48, 787.06, 792.56, 796.01, 798.32, 801.5, 803.96, 806.63, 809.3, 814.69, 820.38" y="67.21">
+					Air (not filled)
+			</text><rect fill="#D4AF37" x="748.8" y="72.11" width="9.82" height="9.82" /><rect fill="none" stroke="#7F6921" stroke-width="1" stroke-miterlimit="4" x="748.8" y="72.11" width="9.82" height="9.82" /><text fill="#D4D4D8" font-size="9.82" font-family="IBM Plex Sans" x="763.53, 770.35, 775.85, 778.52" y="80.46">
+					Gold
+			</text><rect fill="#D67AB6" x="748.8" y="85.37" width="9.82" height="9.82" /><rect fill="none" stroke="#80496D" stroke-width="1" stroke-miterlimit="4" x="748.8" y="85.37" width="9.82" height="9.82" /><text fill="#D4D4D8" font-size="9.82" font-family="IBM Plex Sans" x="763.53, 770.35, 775.85, 778.52" y="93.71">
+					Gold
+			</text><clipPath id="em3d-package-section-dark_cl_3"><rect x="748.8" y="103.93" width="9.82" height="9.82" /></clipPath><g clip-path="url(#em3d-package-section-dark_cl_3)"><path fill="none" stroke="#3CD2AA" stroke-width="1" stroke-miterlimit="4" d="M738.98 113.74L748.8 103.93" /><path fill="none" stroke="#3CD2AA" stroke-width="1" stroke-miterlimit="4" d="M743.98 113.74L753.8 103.93" /><path fill="none" stroke="#3CD2AA" stroke-width="1" stroke-miterlimit="4" d="M748.98 113.74L758.8 103.93" /><path fill="none" stroke="#3CD2AA" stroke-width="1" stroke-miterlimit="4" d="M753.98 113.74L763.8 103.93" /></g><path fill="none" stroke="#3CD2AA" stroke-width="1" stroke-miterlimit="4" d="M748.8 103.93L758.62 103.93L758.62 113.74L748.8 113.74L748.8 103.93Z" /><text fill="#D4D4D8" font-size="9.82" font-family="IBM Plex Sans" x="763.53, 769.48, 774.98, 778.58, 782.02, 784.34, 787.63, 790.09, 793.53, 798.31, 800.63, 805.41, 810.99, 816.38, 821.77, 825.21, 827.89, 830.2, 835.9, 839.5, 845, 847.45, 852.84, 857.78, 861.23, 866.62, 872.31" y="112.27">
+					Port (its sheet, projected)
+			</text><text fill="#D4D4D8" font-size="9.82" font-weight="600" font-family="IBM Plex Sans" x="9.82, 16.25, 22.13, 24.45, 29.35, 34.83, 39.86, 43.53, 46.23, 51.76, 57.53, 59.85, 65.34, 69.01, 71.33, 76.47, 78.79, 84.68, 87, 92.89, 95.21, 101.03" y="503.67">
+					XZ section at y = 0 µm
+			</text><text fill="#D4D4D8" font-size="8.35" font-family="IBM Plex Sans" x="9.82, 15.17, 17.14, 21.2, 25.87, 28.14, 30.23, 35.07, 37.04, 39.13, 43.19, 45.16, 50, 53.06, 57.52, 63.93, 68.67, 70.64, 77.05, 81.79, 86.37, 89.43, 94.02, 95.99, 98.07, 101, 105.06, 107.03, 111.87, 116.55, 119.48, 122.41, 127.08, 134.37, 136.34, 141.34, 143.31, 147.48, 149.45, 154.45, 156.42, 158.51, 161.44, 165.5, 167.47, 170.4, 175.07, 179.92, 182.35, 184.32, 188.78, 190.75, 194.81, 199.55, 204.13, 208.72, 211.64, 213.61, 220.02, 222.11, 225.04, 229.78, 231.87, 236.61, 238.58, 243.58, 245.85, 250.86, 255.87, 260.87, 262.84, 267.58, 274.87, 276.84, 281.51, 284.22, 286.19, 288.27, 291.2, 295.27, 297.24, 302.08, 304.35, 308.8, 313.54, 318.12, 320.39, 322.36, 327.42, 332.09, 335.16, 338.09, 342.15, 344.12, 348.58, 351.64, 356.22, 358.19, 363.03, 366.09, 370.55, 376.96, 381.7, 383.67, 388.51, 391.57, 396.25, 398.33, 402.91, 407.11, 410.04, 414.62, 419.46, 421.43, 426.11, 430.85, 433.78, 438.45, 440.42, 443.35, 448.09, 452.67, 454.64, 459.48, 461.75, 466.21, 470.95, 475.53" y="516.93">
+					A solid is drawn where its bottom ≤ y &lt; its top; a sheet within 0.008 nm of its plane. Ports are drawn projected onto the plane.
+			</text><text fill="#D4D4D8" font-size="8.35" font-family="IBM Plex Sans" x="9.82, 15.17, 17.25, 20.32, 22.29, 27.13, 31.8, 36.03, 38.47, 40.44, 44.6, 51.89, 53.97, 58.71, 60.98, 62.95, 67.12, 74.4, 78.86, 83.09, 85.53, 87.5, 92.56, 97.42, 102.6, 104.87, 106.84, 111.85, 114.12, 119.13, 124.13, 126.1, 133.39, 140.67, 142.64, 147.48, 152.07, 156.23, 160.9, 165.64" y="530.18">
+					Air box: ymin, ymax: PEC, 2.73 mm beyond
+			</text></svg></span>
+</span><figcaption>The package cell cut along its leads: a lead on each side, a bond wire from each lead to a die pad, the alumina base, and the lid - the top face of the closed box - above them.</figcaption></figure>
+<ul>
+<li><strong>Capacitance</strong> (<code>Package C.cem</code>, electrostatic, <strong>Standard</strong>): <strong>8 s</strong>, <strong>1.1 GB</strong>. Each lead with its
+wire and die pad has <strong>586 fF</strong> to ground, and the two leads couple through <strong>0.74 fF</strong>.</li>
+<li><strong>Inductance</strong> (<code>Package L.cem</code>, magnetostatic, <strong>Standard</strong>): <strong>22 s</strong>, <strong>1.8 GB</strong>. Each path has
+<strong>1.98 nH</strong>, and the mutual inductance is <strong>0.032 nH</strong>. It runs on <code>Package shorted.clay</code>, a copy of
+the layout with a via from each die pad to the floor. Shorting the far end gives each terminal's
+current a loop, which is the ordinary way to read a series inductance. This is <strong>external</strong>
+inductance, the RF value: conductors carry current on their surfaces only.</li>
+<li><strong>Draft is not enough for either.</strong> It runs in 2–3 s but reads <strong>831 fF</strong> (42 % high) and <strong>1.66 nH</strong>
+(16 % low). A static solve has no frequency to size its elements by, so its first mesh is coarse, and
+refinement is what finds the field around the metal.</li>
+<li><strong>The lid's modes</strong> (<code>Package lid modes.cem</code>, eigenmode, the three modes above 5 GHz, at <strong>Draft with
+element order 2</strong>): <strong>166 s</strong>, <strong>1.7 GB</strong>. <strong>Mode 3, at 23.65 GHz, is the lid's first cavity mode</strong>,
+with 94 % of its energy in the air under the lid and a Q of <strong>1,662</strong>. That Q counts the gold's loss
+and the two ports' 50 Ω as loads. The estimate for a cavity much thinner than a wavelength, with the
+base and the air in series under the lid, puts the empty cavity at 23.7 GHz. <strong>Modes 1 and 2, at
+14.3 GHz, are not the lid</strong>: they are the leads ringing as lines into their ports, with a Q below 1.
+For a band that reaches 20 GHz, the lid is clear, and a cavity 20 % larger each way would bring its
+mode to about 19.7 GHz, inside the band.</li>
+<li><strong>The eigenmode preset.</strong> <em>Draft</em> takes 13 s and finds the lid mode at 23.39 GHz, but reads its Q as
+176, ten times too low: order 1 cannot resolve the loss. Element order 2 fixes that without a
+refinement pass. <em>Standard</em> adds refinement passes to Palace's nonlinear eigenvalue solve, and was
+stopped after 28 minutes in its last pass.</li>
+</ul>
+<p><strong>What the example does not show.</strong> Every setup is Palace's. The via and the bond wire can also be run
+with <strong>FEM &amp; FDTD - Compare</strong>, to see how far openEMS lands from Palace on the same model. That is a
+cross-check, not a reference.</p>
+
+<nav class="page-nav">
+  <a class="prev" href="em-solvers.html"><span class="dir">Previous</span><span class="name">EM Solvers: MoM, FEM and FDTD</span></a>
+  <a class="next" href="drawing-in-3d.html"><span class="dir">Next</span><span class="name">The 3D Editor</span></a>
+</nav>
+</main>
+
+<footer class="doc-footer">
+  <img src="../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../index.html">Documentation home</a>
+</footer>
+
+<script src="../assets/js/search-index.js" defer></script>
+<script src="../assets/js/docs-search.js" defer></script>
+</body>
+</html>

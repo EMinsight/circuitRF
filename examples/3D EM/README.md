@@ -40,11 +40,13 @@ design rules to check. That is expected. The one error, on the planar via setup,
 
 ## Bond wire
 
-A 1 mil (25.4 µm) gold wire with a hexagonal section and a wedge foot at each end. It loops 150 µm high
-between two 100 µm pads on 100 µm of alumina, inside a closed metal box 3 × 2 × 1.1 mm. A port sheet runs
+A 1 mil (25.4 µm) gold wire with a hexagonal section and a wedge foot at each end, between two 100 µm pads
+on 100 µm of alumina, inside a closed metal box 3 × 2 × 1.1 mm. Its loop is not symmetric: it rises steeply
+from the left pad to 290 µm above the pads about a third of the way across, then falls in a long slope to
+the right pad. A port sheet runs
 from each pad's outer edge down to the ground.
 
-`Bond wire/em/Bond wire 3D.cem`, Palace at the **Standard** preset, 1–40 GHz:
+`Bond wire/em/Bond wire 3D.cem`, Palace at the **Standard** preset, 1–40 GHz. (Measured on the wire's earlier, symmetric 150 µm loop; the Palace figures in this section have not been re-run for the loop above. Kernel W's have.)
 
 - Took **179 s**, with a peak of **3.1 GB**.
 - |S21| is **−0.765 dB** at 10 GHz.
@@ -57,8 +59,8 @@ around a 25 µm wire is exactly what refinement exists to fix, so on a wire Draf
 the memory. Standard is the setting for a wire.
 
 **The same wire through kernel W.** `Bond wire/layout/Bond wire.wBond` holds the wire, and wBond's wire
-kernel solves it: open it and **Export Touchstone …** with the *Distributed* model. It reads **704 pH**
-and **−0.680 dB**. The 202 pH between the two answers is **where the terminals are**, not a disagreement
+kernel solves it: open it and **Export Touchstone …** with the *Distributed* model. It reads **768 pH**
+and **−0.800 dB**. The 202 pH between the two answers is **where the terminals are**, not a disagreement
 between the solvers. Kernel W's terminals are the wire's own ends. Palace's ports are at the pads' outer
 edges, so its answer also contains the pad between each port and the wire, and the 100 µm drop from the pad
 to ground.

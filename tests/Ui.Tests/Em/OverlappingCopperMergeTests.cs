@@ -44,4 +44,20 @@ public sealed class OverlappingCopperMergeTests
         Assert.Equal(2, Assert.Single(x.Problem!.Layers).Polygons.Count);
         Assert.DoesNotContain(x.Notes, n => n.Contains("were merged", StringComparison.Ordinal));
     }
+
+    /// <summary>brief-em3d-52 — the 3D generator's merge also joins shapes that share an EDGE (a line ending exactly on a
+    /// pad), which as separate solids leave the mesher a fused face no conductor claims; a corner-only touch stays two.</summary>
+    [Fact]
+    public void TheThreeDMerge_JoinsShapesSharingAnEdge_ButNotACornerOnlyTouch()
+    {
+        var tech = StarterTechnologies.Pcb2Layer();
+        List<(LayoutShape, int)> Shapes(params RectShape[] r) => [.. r.Select(x => ((LayoutShape)x, 0))];
+        var line = new RectShape { Layer = TopCopper, X1 = 0,      Y1 = Mm(0.5), X2 = Mm(20), Y2 = Mm(1.5) };
+        var pad  = new RectShape { Layer = TopCopper, X1 = Mm(20), Y1 = 0,       X2 = Mm(22), Y2 = Mm(2) };
+        var corner = new RectShape { Layer = TopCopper, X1 = Mm(22), Y1 = Mm(2), X2 = Mm(24), Y2 = Mm(4) };
+
+        Assert.Single(PlanarExtractor.MergeOverlapping(Shapes(line, pad), tech, out _, out _, touching: true));
+        Assert.Equal(2, PlanarExtractor.MergeOverlapping(Shapes(line, pad), tech, out _, out _).Count);
+        Assert.Equal(2, PlanarExtractor.MergeOverlapping(Shapes(pad, corner), tech, out _, out _, touching: true).Count);
+    }
 }

@@ -9,10 +9,27 @@
       "Setup": "Bond wire/em/Bond wire 3D.cem",
       "Solver": "Palace",
       "PeakGB": 3.1,
-      "Readme": [ "179 s", "3.1 GB" ],
+      "Readme": [
+        "179 s",
+        "3.1 GB"
+      ],
       "Values": [
-        { "Quantity": "S21_dB", "Label": "|S21| at 10 GHz", "AtGHz": 10, "Expected": -0.7652, "Tolerance": 0.01, "Readme": "−0.765 dB" },
-        { "Quantity": "Lseries_pH", "Label": "series L at 1 GHz", "AtGHz": 1, "Expected": 906.1, "Tolerance": 5, "Readme": "906 pH" }
+        {
+          "Quantity": "S21_dB",
+          "Label": "|S21| at 10 GHz",
+          "AtGHz": 10,
+          "Expected": -0.7652,
+          "Tolerance": 0.01,
+          "Readme": "−0.765 dB"
+        },
+        {
+          "Quantity": "Lseries_pH",
+          "Label": "series L at 1 GHz",
+          "AtGHz": 1,
+          "Expected": 906.1,
+          "Tolerance": 5,
+          "Readme": "906 pH"
+        }
       ]
     },
     {
@@ -21,49 +38,142 @@
       "PeakGB": 0,
       "Readme": [],
       "Values": [
-        { "Quantity": "S21_dB", "Label": "|S21| at 10 GHz", "AtGHz": 10, "Expected": -0.6796, "Tolerance": 0.002, "Readme": "−0.680 dB" },
-        { "Quantity": "Lseries_pH", "Label": "series L at 1 GHz", "AtGHz": 1, "Expected": 704.1, "Tolerance": 1, "Readme": "704 pH" }
+        {
+          "Quantity": "S21_dB",
+          "Label": "|S21| at 10 GHz",
+          "AtGHz": 10,
+          "Expected": -0.7999,
+          "Tolerance": 0.002,
+          "Readme": "−0.800 dB"
+        },
+        {
+          "Quantity": "Lseries_pH",
+          "Label": "series L at 1 GHz",
+          "AtGHz": 1,
+          "Expected": 768.5,
+          "Tolerance": 1,
+          "Readme": "768 pH"
+        }
       ]
     },
     {
       "Setup": "Via through a plane/em/Via 3D.cem",
       "Solver": "Palace",
       "PeakGB": 4.8,
-      "Readme": [ "62 s", "4.8 GB" ],
+      "Readme": [
+        "62 s",
+        "4.8 GB"
+      ],
       "Values": [
-        { "Quantity": "S21_dB", "Label": "|S21| at 10 GHz", "AtGHz": 10, "Expected": -0.2278, "Tolerance": 0.01, "Readme": "−0.228 dB" },
-        { "Quantity": "S21_dB", "Label": "|S21| at 20 GHz", "AtGHz": 20, "Expected": -0.4297, "Tolerance": 0.01, "Readme": "−0.430 dB" }
+        {
+          "Quantity": "S21_dB",
+          "Label": "|S21| at 10 GHz",
+          "AtGHz": 10,
+          "Expected": -0.2278,
+          "Tolerance": 0.01,
+          "Readme": "−0.228 dB"
+        },
+        {
+          "Quantity": "S21_dB",
+          "Label": "|S21| at 20 GHz",
+          "AtGHz": 20,
+          "Expected": -0.4297,
+          "Tolerance": 0.01,
+          "Readme": "−0.430 dB"
+        }
       ]
     },
     {
       "Setup": "Package/em/Package C.cem",
       "Solver": "Palace",
       "PeakGB": 1.1,
-      "Readme": [ "8 s", "1.1 GB" ],
+      "Readme": [
+        "8 s",
+        "1.1 GB"
+      ],
       "Values": [
-        { "Quantity": "C_fF", "Label": "C[RF_IN][RF_IN]", "Row": "RF_IN", "Column": "RF_IN", "Expected": 585.86, "Tolerance": 6, "Readme": "586 fF" },
-        { "Quantity": "C_fF", "Label": "C[RF_IN][RF_OUT]", "Row": "RF_IN", "Column": "RF_OUT", "Expected": -0.736, "Tolerance": 0.1, "Readme": "0.74 fF" }
+        {
+          "Quantity": "C_fF",
+          "Label": "C[RF_IN][RF_IN]",
+          "Row": "RF_IN",
+          "Column": "RF_IN",
+          "Expected": 585.86,
+          "Tolerance": 6,
+          "Readme": "586 fF"
+        },
+        {
+          "Quantity": "C_fF",
+          "Label": "C[RF_IN][RF_OUT]",
+          "Row": "RF_IN",
+          "Column": "RF_OUT",
+          "Expected": -0.736,
+          "Tolerance": 0.1,
+          "Readme": "0.74 fF"
+        }
       ]
     },
     {
       "Setup": "Package/em/Package L.cem",
       "Solver": "Palace",
       "PeakGB": 1.8,
-      "Readme": [ "22 s", "1.8 GB" ],
+      "Readme": [
+        "22 s",
+        "1.8 GB"
+      ],
       "Values": [
-        { "Quantity": "L_nH", "Label": "L[RF_IN][RF_IN]", "Row": "RF_IN", "Column": "RF_IN", "Expected": 1.9785, "Tolerance": 0.02, "Readme": "1.98 nH" },
-        { "Quantity": "L_nH", "Label": "L[RF_IN][RF_OUT]", "Row": "RF_IN", "Column": "RF_OUT", "Expected": 0.0321, "Tolerance": 0.002, "Readme": "0.032 nH" }
+        {
+          "Quantity": "L_nH",
+          "Label": "L[RF_IN][RF_IN]",
+          "Row": "RF_IN",
+          "Column": "RF_IN",
+          "Expected": 1.9785,
+          "Tolerance": 0.02,
+          "Readme": "1.98 nH"
+        },
+        {
+          "Quantity": "L_nH",
+          "Label": "L[RF_IN][RF_OUT]",
+          "Row": "RF_IN",
+          "Column": "RF_OUT",
+          "Expected": 0.0321,
+          "Tolerance": 0.002,
+          "Readme": "0.032 nH"
+        }
       ]
     },
     {
       "Setup": "Package/em/Package lid modes.cem",
       "Solver": "Palace",
       "PeakGB": 1.7,
-      "Readme": [ "166 s", "1.7 GB" ],
+      "Readme": [
+        "166 s",
+        "1.7 GB"
+      ],
       "Values": [
-        { "Quantity": "Mode_GHz", "Label": "mode 1 f", "Mode": 1, "Expected": 14.316, "Tolerance": 0.1, "Readme": "14.3 GHz" },
-        { "Quantity": "Mode_GHz", "Label": "mode 3 f (the lid)", "Mode": 3, "Expected": 23.655, "Tolerance": 0.05, "Readme": "23.65 GHz" },
-        { "Quantity": "Mode_Q", "Label": "mode 3 Q (the lid)", "Mode": 3, "Expected": 1662, "Tolerance": 80, "Readme": "1,662" }
+        {
+          "Quantity": "Mode_GHz",
+          "Label": "mode 1 f",
+          "Mode": 1,
+          "Expected": 14.316,
+          "Tolerance": 0.1,
+          "Readme": "14.3 GHz"
+        },
+        {
+          "Quantity": "Mode_GHz",
+          "Label": "mode 3 f (the lid)",
+          "Mode": 3,
+          "Expected": 23.655,
+          "Tolerance": 0.05,
+          "Readme": "23.65 GHz"
+        },
+        {
+          "Quantity": "Mode_Q",
+          "Label": "mode 3 Q (the lid)",
+          "Mode": 3,
+          "Expected": 1662,
+          "Tolerance": 80,
+          "Readme": "1,662"
+        }
       ]
     }
   ]

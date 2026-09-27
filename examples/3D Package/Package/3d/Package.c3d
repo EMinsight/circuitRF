@@ -1,0 +1,365 @@
+{
+	"FormatVersion": 1,
+	"DbuPerMicron": 1000,
+	"DisplayUnit": "Mil",
+	"SnapDbu": 12700,
+	"Objects": [
+		{
+			"$type": "Box",
+			"Name": "floor",
+			"Material": "Gold",
+			"Min": [{ "Expr": "-cav_w/2 - wall", "Unit": "Mil" }, { "Expr": "-cav_l/2 - wall", "Unit": "Mil" }, { "Expr": "-floor_t", "Unit": "Mil" }],
+			"Size": [{ "Expr": "cav_w + 2*wall", "Unit": "Mil" }, { "Expr": "cav_l + 2*wall", "Unit": "Mil" }, { "Expr": "floor_t", "Unit": "Mil" }]
+		},
+		{
+			"$type": "Box",
+			"Name": "base",
+			"Material": "Alumina",
+			"Min": [{ "Expr": "-cav_w/2", "Unit": "Mil" }, { "Expr": "-cav_l/2", "Unit": "Mil" }, 0],
+			"Size": [{ "Expr": "cav_w", "Unit": "Mil" }, { "Expr": "cav_l", "Unit": "Mil" }, 127000]
+		},
+		{
+			"$type": "Box",
+			"Name": "attach",
+			"Material": "Gold",
+			"Min": [-584200, -381000, 127000],
+			"Size": [1168400, 762000, 12700]
+		},
+		{
+			"$type": "Cylinder",
+			"Name": "via1",
+			"Material": "Gold",
+			"Base": [-457200, -254000, 0],
+			"Axis": "Z",
+			"Length": 127000,
+			"Radius": 50800
+		},
+		{
+			"$type": "Cylinder",
+			"Name": "via2",
+			"Material": "Gold",
+			"Base": [-457200, -254000, 0],
+			"Axis": "Z",
+			"Length": 127000,
+			"Radius": 50800,
+			"Placement": {
+				"Origin": [0, 508000, 0]
+			}
+		},
+		{
+			"$type": "Cylinder",
+			"Name": "via3",
+			"Material": "Gold",
+			"Base": [-457200, -254000, 0],
+			"Axis": "Z",
+			"Length": 127000,
+			"Radius": 50800,
+			"Placement": {
+				"Origin": [914400, 0, 0]
+			}
+		},
+		{
+			"$type": "Cylinder",
+			"Name": "via4",
+			"Material": "Gold",
+			"Base": [-457200, -254000, 0],
+			"Axis": "Z",
+			"Length": 127000,
+			"Radius": 50800,
+			"Placement": {
+				"Origin": [914400, 508000, 0]
+			}
+		},
+		{
+			"$type": "Box",
+			"Name": "lead1",
+			"Material": "Gold",
+			"Min": [-4978400, -63500, 127000],
+			"Size": [4318000, 127000, 5080]
+		},
+		{
+			"$type": "Box",
+			"Name": "lead2",
+			"Material": "Gold",
+			"Min": [660400, -63500, 127000],
+			"Size": [4318000, 127000, 5080]
+		},
+		{
+			"$type": "Wire",
+			"Name": "w1",
+			"Material": "Gold",
+			"Points": [
+				[-400000, 0, 245700],
+				[-447633, 0, 315397],
+				[-495267, 0, 323207],
+				[-542900, 0, 293136],
+				[-590533, 0, 248652],
+				[-638167, 0, 193288],
+				[-685800, 0, 132080]
+			],
+			"DiameterUm": 25.4,
+			"Start": {
+				"Style": "Ball"
+			},
+			"End": {
+				"Style": "Wedge"
+			}
+		},
+		{
+			"$type": "Wire",
+			"Name": "w2",
+			"Material": "Gold",
+			"Points": [
+				[400000, 0, 245700],
+				[447633, 0, 315397],
+				[495267, 0, 323207],
+				[542900, 0, 293136],
+				[590533, 0, 248652],
+				[638167, 0, 193288],
+				[685800, 0, 132080]
+			],
+			"DiameterUm": 25.4,
+			"Start": {
+				"Style": "Ball"
+			},
+			"End": {
+				"Style": "Wedge"
+			}
+		},
+		{
+			"$type": "Box",
+			"Name": "wall_w",
+			"Material": "Gold",
+			"Min": [{ "Expr": "-cav_w/2 - wall", "Unit": "Mil" }, { "Expr": "-cav_l/2 - wall", "Unit": "Mil" }, 0],
+			"Size": [{ "Expr": "wall", "Unit": "Mil" }, { "Expr": "cav_l + 2*wall", "Unit": "Mil" }, { "Expr": "cav_h", "Unit": "Mil" }]
+		},
+		{
+			"$type": "Box",
+			"Name": "wall_e",
+			"Material": "Gold",
+			"Min": [{ "Expr": "cav_w/2", "Unit": "Mil" }, { "Expr": "-cav_l/2 - wall", "Unit": "Mil" }, 0],
+			"Size": [{ "Expr": "wall", "Unit": "Mil" }, { "Expr": "cav_l + 2*wall", "Unit": "Mil" }, { "Expr": "cav_h", "Unit": "Mil" }]
+		},
+		{
+			"$type": "Box",
+			"Name": "wall_s",
+			"Material": "Gold",
+			"Min": [{ "Expr": "-cav_w/2", "Unit": "Mil" }, { "Expr": "-cav_l/2 - wall", "Unit": "Mil" }, 0],
+			"Size": [{ "Expr": "cav_w", "Unit": "Mil" }, { "Expr": "wall", "Unit": "Mil" }, { "Expr": "cav_h", "Unit": "Mil" }]
+		},
+		{
+			"$type": "Box",
+			"Name": "wall_n",
+			"Material": "Gold",
+			"Min": [{ "Expr": "-cav_w/2", "Unit": "Mil" }, { "Expr": "cav_l/2", "Unit": "Mil" }, 0],
+			"Size": [{ "Expr": "cav_w", "Unit": "Mil" }, { "Expr": "wall", "Unit": "Mil" }, { "Expr": "cav_h", "Unit": "Mil" }]
+		},
+		{
+			"$type": "Box",
+			"Name": "lid",
+			"Material": "Lid alloy",
+			"Min": [{ "Expr": "-cav_w/2 - wall", "Unit": "Mil" }, { "Expr": "-cav_l/2 - wall", "Unit": "Mil" }, { "Expr": "cav_h", "Unit": "Mil" }],
+			"Size": [{ "Expr": "cav_w + 2*wall", "Unit": "Mil" }, { "Expr": "cav_l + 2*wall", "Unit": "Mil" }, { "Expr": "lid_t", "Unit": "Mil" }]
+		}
+	],
+	"Instances": [
+		{
+			"Name": "U1",
+			"CellRef": "../../Thru die",
+			"View": "Layout",
+			"Placement": {
+				"Origin": [0, 0, 139700]
+			}
+		}
+	],
+	"Variables": [
+		{
+			"Name": "cav_w",
+			"Expression": "400",
+			"Unit": "Mil",
+			"Linked": true
+		},
+		{
+			"Name": "cav_l",
+			"Expression": "320",
+			"Unit": "Mil",
+			"Linked": true
+		},
+		{
+			"Name": "cav_h",
+			"Expression": "40",
+			"Unit": "Mil",
+			"Linked": true
+		},
+		{
+			"Name": "wall",
+			"Expression": "20",
+			"Unit": "Mil"
+		},
+		{
+			"Name": "floor_t",
+			"Expression": "2",
+			"Unit": "Mil"
+		},
+		{
+			"Name": "lid_t",
+			"Expression": "5",
+			"Unit": "Mil"
+		}
+	],
+	"Ports": [
+		{
+			"Number": 1,
+			"Name": "P1",
+			"Kind": "Lumped",
+			"Plane": "YZ",
+			"Offset": -4978400,
+			"Rect": {
+				"Min": [-63500, 0],
+				"Size": [127000, 127000]
+			},
+			"Z0": "50"
+		},
+		{
+			"Number": 2,
+			"Name": "P2",
+			"Kind": "Lumped",
+			"Plane": "YZ",
+			"Offset": 4978400,
+			"Rect": {
+				"Min": [-63500, 0],
+				"Size": [127000, 127000]
+			},
+			"Z0": "50"
+		}
+	],
+	"Setups": [
+		{
+			"FormatVersion": 1,
+			"Name": "Driven",
+			"Frequency": {
+				"StartExpr": "2",
+				"StopExpr": "30",
+				"StepExpr": "",
+				"NumPoints": 1121,
+				"Mode": "PointCount",
+				"Kind": "Linear",
+				"StartUnit": "GHz",
+				"StopUnit": "GHz",
+				"StepUnit": "Hz"
+			},
+			"Port1Z0Real": 50,
+			"Port1Z0Imag": 0,
+			"Port2Z0Real": 50,
+			"Port2Z0Imag": 0,
+			"Mesh": {
+				"MinCellsAcrossWidth": 6,
+				"EdgeCells": 3,
+				"EdgeFractionOfWidth": 0.03,
+				"EdgeGrowthRatio": 1.7,
+				"TruncationHeights": 20,
+				"TruncationTailCells": 12
+			},
+			"DispersionCorrection": true,
+			"Solver3D": "Palace",
+			"AirBox": {
+				"XMin": {
+					"PaddingUm": 0,
+					"Boundary": "Pec"
+				},
+				"XMax": {
+					"PaddingUm": 0,
+					"Boundary": "Pec"
+				},
+				"YMin": {
+					"PaddingUm": 0,
+					"Boundary": "Pec"
+				},
+				"YMax": {
+					"PaddingUm": 0,
+					"Boundary": "Pec"
+				},
+				"ZMin": {
+					"PaddingUm": 0,
+					"Boundary": "Pec"
+				},
+				"ZMax": {
+					"PaddingUm": 0,
+					"Boundary": "Pec"
+				}
+			},
+			"Palace": {
+				"Quality": "Draft",
+				"EdgeRefinement": 1,
+				"ElementOrder": 2,
+				"LinearSolver": "Direct"
+			}
+		},
+		{
+			"FormatVersion": 1,
+			"Name": "Lid modes",
+			"Frequency": {
+				"StartExpr": "1",
+				"StopExpr": "20",
+				"StepExpr": "",
+				"NumPoints": 101,
+				"Mode": "PointCount",
+				"Kind": "Linear",
+				"StartUnit": "GHz",
+				"StopUnit": "GHz",
+				"StepUnit": "Hz"
+			},
+			"Port1Z0Real": 50,
+			"Port1Z0Imag": 0,
+			"Port2Z0Real": 50,
+			"Port2Z0Imag": 0,
+			"Mesh": {
+				"MinCellsAcrossWidth": 6,
+				"EdgeCells": 3,
+				"EdgeFractionOfWidth": 0.03,
+				"EdgeGrowthRatio": 1.7,
+				"TruncationHeights": 20,
+				"TruncationTailCells": 12
+			},
+			"DispersionCorrection": true,
+			"Solver3D": "Palace",
+			"AirBox": {
+				"XMin": {
+					"PaddingUm": 0,
+					"Boundary": "Pec"
+				},
+				"XMax": {
+					"PaddingUm": 0,
+					"Boundary": "Pec"
+				},
+				"YMin": {
+					"PaddingUm": 0,
+					"Boundary": "Pec"
+				},
+				"YMax": {
+					"PaddingUm": 0,
+					"Boundary": "Pec"
+				},
+				"ZMin": {
+					"PaddingUm": 0,
+					"Boundary": "Pec"
+				},
+				"ZMax": {
+					"PaddingUm": 0,
+					"Boundary": "Pec"
+				}
+			},
+			"Palace": {
+				"Quality": "Draft",
+				"EdgeRefinement": 1,
+				"ElementOrder": 2,
+				"LinearSolver": "Direct"
+			},
+			"Problem3D": "Eigenmode",
+			"Eigenmode": {
+				"Count": 1,
+				"TargetGHz": 20
+			}
+		}
+	]
+}

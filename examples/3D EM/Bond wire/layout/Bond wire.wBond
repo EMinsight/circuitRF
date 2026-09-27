@@ -3,7 +3,34 @@
   "GroundPlaneEnabled": true,
   "IncludeCapacitance": true,
   "OvermoldEr": 1,
+  "ReadoutFrequencyGHz": 10,
   "OperatingTempC": 20,
+  "Materials": [
+    {
+      "Name": "Gold",
+      "Sigma20": 41000000,
+      "Alpha20": 0.0034,
+      "DensityKgM3": 19300
+    },
+    {
+      "Name": "Aluminium",
+      "Sigma20": 37700000,
+      "Alpha20": 0.0039,
+      "DensityKgM3": 2700
+    },
+    {
+      "Name": "Copper",
+      "Sigma20": 58000000,
+      "Alpha20": 0.0039,
+      "DensityKgM3": 8960
+    },
+    {
+      "Name": "Silver",
+      "Sigma20": 63000000,
+      "Alpha20": 0.0038,
+      "DensityKgM3": 10490
+    }
+  ],
   "Arrays": [
     {
       "Name": "G1",
@@ -19,14 +46,24 @@
               112700
             ],
             [
-              -325000,
+              -327000,
               0,
-              262700
+              281700
             ],
             [
-              325000,
+              -174652,
               0,
-              262700
+              402700
+            ],
+            [
+              -5956,
+              0,
+              376165
+            ],
+            [
+              213000,
+              0,
+              249700
             ],
             [
               475000,

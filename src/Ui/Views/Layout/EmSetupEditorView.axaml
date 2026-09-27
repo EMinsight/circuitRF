@@ -653,6 +653,12 @@
                                   ItemsSource="{x:Static em:EmSetupEditorViewModel.PalaceQualityChoices}"
                                   SelectedItem="{Binding ViewModel.PalaceQualityChoice}"
                                   ToolTip.Tip="{x:Static em:EmSetupEditorViewModel.PalaceQualityTip}"/>
+                        <!-- brief-em3d-52: the linear solver. Not a preset's field: every preset solves the same systems. -->
+                        <TextBlock Classes="colhdr" Text="Linear solver" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                        <ComboBox Classes="cell" MinWidth="100"
+                                  ItemsSource="{x:Static em:EmSetupEditorViewModel.PalaceLinearSolverChoices}"
+                                  SelectedItem="{Binding ViewModel.PalaceLinearSolverChoice}"
+                                  ToolTip.Tip="{x:Static em:EmSetupEditorViewModel.PalaceLinearSolverTip}"/>
                     </StackPanel>
                     <Grid IsVisible="{Binding ViewModel.IsPalaceSetup}" Margin="0,6,0,0"
                           ColumnDefinitions="Auto,90" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"

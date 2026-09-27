@@ -13961,3 +13961,32 @@ change keeps it; a worse finding shows both numbers; round-trip and absent-when-
   now states **Role Air** with its εr = 2 material — an air-role solid keeps construction order against metal, which is
   the documented way to bore a conductor — and the box states its own fill (Air) so that solid is not taken for the
   background. C +0.13 %, L −0.08 %.
+
+
+## brief-em3d-52 — a drawn package flush with its air box; abutting layout shapes (2026-09-27)
+
+- **An air-box face covered by SEVERAL conductor boxes was refused.** `GmshGeoWriter.Covered` accepted a face only
+  when ONE conductor box spanned it. A package drawn in the 3D editor has sides made of three: the floor's edge, a wall
+  and the lid's edge. With the box flush against the metal (every face PEC, padding 0 — the natural setup for a
+  closed package) each side face selected nothing in the mesh and the run was refused ("'airbox/xmin' … selected
+  nothing"). `Covered` now also accepts a face that conductor boxes reaching it cover TOGETHER: the face rectangle is
+  cut at every such box's edges and each cell must lie inside one (`CoveredBy`). A problem that ran before cannot
+  change — the new branch only turns a face that expected one surface into one that expects none, which was a
+  refusal. The alternative, padding the box out, meshes a thin air shell around the metal at the conductors' fine
+  size: on the 3D Package example 666k tetrahedra against 27k, an estimated 51 GB.
+- **Abutting same-layer layout shapes became separate conductors, and Gmsh fused their tops** — FIXED. A placed
+  layout's conductors are merged by `PlanarExtractor.MergeOverlapping`, which merged only OVERLAPPING shapes; a line
+  ending exactly on a pad's edge stayed a separate solid, Gmsh's boolean made the coplanar tops one surface no single
+  conductor's group claimed, and the entity check refused the mesh ("1 surface(s) bound the meshed space and belong to
+  no named conductor"). The 3D generator now passes `touching: true`: shapes whose union has fewer outer rings than
+  they have between them (an edge of positive length shared; a corner alone is not) are merged too. The PLANAR call
+  leaves it off — its mesher joins cells across a shared edge already, and `OverlappingCopperMergeTests` holds that no
+  planar answer moved. Generator dumps rewritten, each for this reason: the patch antenna's inset feed abuts the
+  patch, and the spiral's pieces abut, so each is one conductor now (the note's wording is unchanged, so the dumps
+  moved only where geometry did). The Bond wire dump moved with the owner's new wire shape, not this.
+- **An embedded setup wrote `"IsEmpty": false`** into the `.c3d`: `CemPalace.IsEmpty` / `CemOpenEms.IsEmpty` are
+  get-only, and the embedded serialiser writes by reflection. `[JsonIgnore]` on both.
+- **The generator refines at EVERY conductor surface** (`EdgeRefinement`, a fifth of the smallest material's size by
+  default). In a cavity whose floor, walls and lid are all metal and whose height is a fraction of its width, that is
+  the whole volume: 2.16 M second-order unknowns for the example's lid modes at the defaults, against 128 k with
+  `"EdgeRefinement": 1`. The wires keep their curvature sizing and the ports their own floor either way.

@@ -49,7 +49,9 @@ independent check on them. Do not use it as a replacement.
 | A radiator that is not planar | **3D.** See [Antennas ▸ From a 3D solver](antennas.html#3d) |
 
 **Which 3D solver.** Palace (FEM) and openEMS (FDTD) suit different geometry. The setup panel says which
-fits your model when you choose one. This is advice, not a restriction.
+fits your model when you choose one. This is advice, not a restriction. The full comparison of FEM,
+FDTD and the planar MoM solver — cost, memory, and which problems suit each — is
+[EM Solvers: MoM, FEM and FDTD](em-solvers.html).
 
 - **FEM (Palace)** fits curved and diagonal metal: bond wires, round vias. Its tetrahedra follow a
   surface, and its adaptive refinement puts small elements only where the error is. It is the only one
@@ -204,9 +206,6 @@ model circuitRF built, and after a run it also shows what the solver made.
   down it — **Z** the top view, **Y** the front, **X** the right — and again turns to the opposite side; anywhere
   else inside its ring is isometric. While you orbit or pan nothing is highlighted and nothing snaps.
   These are the 3D editor's keys too: every 3D pane uses the same ones.
-- **The line on the view** (the 3D editor). One line at the bottom of the view is the editor's status line: what
-  the armed tool wants next, or the last message — a refusal and its reason, or what an edit did. Where this page
-  says *the status line* in the 3D editor, it means that line. The clip plane cuts the model, never the drawing grid.
 - **Selecting.** **O**, **F** and **V** choose what a click selects: a whole **object**, one **face**, or one
   **vertex** (the toolbar has a button for each). What is under the cursor is highlighted. A click
   selects it; Shift-click adds to or removes from the selection; **Esc** clears it. A selected face's area
@@ -215,176 +214,10 @@ model circuitRF built, and after a run it also shows what the solver made.
   toward you — the status line says where you are (`Face zmin · "trace" · 2 of 5`). A face selected
   behind others is drawn through what is in front of it. Right-click opens the menu for what is selected:
   *Hide*, *Isolate*, *Show All*, and *Select Owning Object*. Nothing here changes the setup.
-- **Snapping** (the 3D editor). The cursor snaps to a **vertex** (a square marker), an edge's **midpoint**
-  (a triangle), the nearest point on an **edge** (an ×), a face's **centre** (a circle) and, when nothing is
-  within reach, the **grid** (a small +) — the document's snap step on the drawing plane. A marker is drawn in
-  the colour of the material it snaps to, and in amber on the grid or on an object with no material. A vertex wins over
-  anything else in reach, even a nearer midpoint. Snapping reaches into placed cells, so a die's pad corner
-  is a target in its package. Only what you can see is a target: a corner hidden behind a surface is not,
-  except inside a translucent object or with the clip plane on. The snap distance is the layout editor's,
-  in screen pixels, so it feels the same at every zoom. The magnet on the toolbar, and *3D ▸ Snap*, turn
-  snapping on and off, and the buttons beside it turn each kind on and off; these are your settings, not the
-  document's. Hold **Alt** (**Option** on a Mac) to suspend geometry snapping while it is held; the grid
-  still applies. The marker's shape says what the cursor snapped to; the point itself is read with Measure (**M**).
-  A **≈** before a point means it is not exactly a point of the document's database-unit grid: a corner of
-  an object rotated by an angle that is not a multiple of 90°, or of a cell drawn at another scale.
-- **Drawing** (the 3D editor). Shapes are drawn on the **drawing plane** — XY, YZ or XZ, at an offset along
-  its normal — chosen with the **XY / YZ / XZ** buttons and the offset box on the toolbar (a bare number is the
-  document's unit; `25um` or `10mil` says its own), from *3D ▸ Drawing Plane*, from a face (*Drawing Plane
-  from Face* on a face's menu in Face mode, or **Ctrl**-click a face — **Cmd**-click on a Mac — with a tool
-  armed), or through a snapped point (**Ctrl/Cmd+Shift**-click moves the offset there and keeps the plane).
-  Only axis-aligned faces make a plane; a tilted face is refused, naming its normal. Moving the camera never
-  moves the plane, and a plane seen edge-on is refused rather than drawn on. The plane is remembered for the
-  document in the workspace's window state, not in the `.c3d`. A faint **grid** lies on it, behind the
-  objects, in steps of the document's unit — major lines every 10 minor ones, every 5 in mil and inch —
-  spaced to stay readable at every zoom and fading away from the view's centre and when the plane is seen
-  at a grazing angle; the lines through the origin are in the axis colours. The snap step is the **Snap** box beside **Unit** on
-  the toolbar — the layout editor's control, with the same steps off the technology's default: pick one or type
-  a length (`2.5mil`). It is saved in the document, and changing it moves nothing already drawn. The tools are on the toolbar, under *3D ▸ Draw*, and at the cursor with
-  **Shift+A** — then one letter: **B**ox (corner, opposite corner, then its height), **S**heet (a rectangle,
-  two clicks), Poly**g**on (a closed sheet, a click per vertex; click the first vertex, press Enter or
-  double-click to close — an outline that crosses itself is refused and the crossing shown), Poly**l**ine
-  (construction geometry; Enter or a double-click ends it, a click on its first vertex closes it) and
-  C**y**linder (centre, radius, height). A box or cylinder rises along the plane's normal; near a
-  neighbour's feature its height snaps to that feature, so a box rises to exactly the top of a pad. Every
-  click snaps. While a shape is in progress, type a digit to enter a dimension instead of clicking — the
-  box that opens at the cursor shows the width, depth, height or radius the next click would set; **Tab**
-  moves between them, **Enter** accepts, **Esc** goes back to the mouse. An entry that is not a length stays
-  in the box, in red, and nothing changes. **Esc** cancels a shape in progress; pressed again it puts the
-  tool down. Each new object takes the material chosen on the toolbar and a name you can change
-  (`box1`, `sheet1`, …); each is one undo step. **Extrude** (a sheet's menu, *3D ▸ Modify*, or a polyline
-  selected in the tree) pulls a closed polyline, a polygon or a rectangle into a prism — move to set the
-  distance and click, or type it — and consumes the source unless **K** says keep it. An open polyline
-  extrudes to a flat ribbon when it is a straight line along an axis of its plane.
-- **Moving and copying** (the 3D editor, Object mode). The selection — objects, placed cells, or both — is
-  moved, rotated and copied from its right-click menu or *3D ▸ Modify*. **G** moves it: click a **base
-  point**, then a **target point**, both snapped, and the selection moves by the difference — two clicks
-  put a pad's corner exactly on a trace's corner. Pressed with the cursor over the selection, **G** takes the
-  snapped point under the cursor as the base at once. While moving, **X**, **Y** or **Z** holds the move to
-  that axis (a snap still decides how far) and **Shift+X/Y/Z** to the plane across it; press the same key to
-  let go. Type a digit to enter the distance (`dx`, `dy`, `dz`, or one distance along a held axis). **R**
-  rotates about the drawing plane's normal (X, Y or Z changes the axis) through the selection's centre, or
-  through a snapped point Ctrl/Cmd-clicked first, in 15° steps — hold **Shift** to turn freely, or type the
-  angle. *Rotate 90°* and *Mirror* (across XY, YZ or XZ through the centre) act at once. **Ctrl+D**
-  (**Cmd+D**) duplicates the selection and moves the copies; **Esc** cancels both. *Array…* makes copies
-  along up to three axes at a pitch, shown as you type. *Align* lines the others up with the last one
-  selected, by their minimum, centre or maximum on an axis. *Order* moves objects in the construction
-  order — where two solids overlap, the later one wins, except that **metal always wins over a dielectric**
-  whatever the order (an air object drawn after a metal still cuts a hole in it) — and the tree and the
-  Properties panel show each object's place in it. The **gizmo** at the selection's centre moves it too: drag an arrow to move along
-  that axis, or a square to move in that plane. While any of these runs nothing is changed yet; the
-  selection moves on screen, and the document changes once, as one undo step, when you click or release. A
-  rotation keeps an object what it was — a rotated box is still a box — and the file stores it as at most
-  three turns. A result that is not a whole number of database units is rounded and the status line says
-  **≈**.
-- **Editing faces and vertices** (the 3D editor, Face and Vertex modes). Right-click a face, or use *3D ▸
-  Modify ▸ Face*. **N** (*Move Along Normal*) pushes or pulls the face: its plane moves and the faces around
-  it keep theirs, stretching to meet it — push a box's top up and it is still a box, only taller. It stops
-  just before a neighbour would shrink to nothing, and the status line names that neighbour (`'side2' would
-  vanish at 1.2 mil`); a typed distance past that point is refused rather than shortened. **G** moves the face
-  freely, base point to target point, with **X/Y/Z** and typed distances as for objects; the faces around it
-  tilt to follow. **E** (*Extrude to New Solid*) grows a new solid from the face along its normal — a bump
-  from a pad, a wall from a floor — in the toolbar's material, or the source's with **M**; the source is
-  unchanged. *Align to Face…* then a click on another face moves the object until the two are in one plane:
-  *Touching* (facing each other, a die on its substrate) or *Flush* (the same way), **T** switches, and the
-  result is shown before the click; faces that are not parallel are refused (rotate first). *Copy as Sheet*
-  makes a sheet exactly on the face. *Measure* puts the face's area, perimeter and outward normal in
-  Properties; Shift-click a second, parallel face for the distance between them. In Vertex mode **G** moves the
-  selected vertex, Properties' *Set coordinates* types where it goes, and *Measure From* starts a measurement
-  there. **Every edit keeps the solid closed**: no face is ever removed, so there is no Delete in Face mode. A
-  face that can no longer be flat is split into flat triangles, named after it (`top.0`, `top.1`), and anything
-  attached to the face goes to every piece. An edit that would make the solid pass through itself is drawn in
-  red and refused, naming the faces (`'top' would pass through 'bottom'`); nothing changes. A shape keeps its
-  kind for as long as it can say the result with its own dimensions — a pushed box stays a box, a prism's top
-  moved sideways is a slanted prism — and otherwise becomes a **polyhedron** with the same face names; the
-  status line says so, and Undo takes it back. A cylinder's ends move only along its axis and its side only
-  in radius, and in Vertex mode it offers just its two cap centres, which measure but do not move: *Convert to
-  Polyhedron* (Object mode; for a cylinder, choose how many flat sides) makes every vertex editable. While a
-  face or vertex is dragged only that object is redrawn, and the document changes once, as one undo step,
-  when you click.
-- **Dimensions as expressions** (the 3D editor). Wherever a dimension is typed — the box at the cursor while
-  drawing, Properties, the Array panel — you may type a name or an expression instead of a number: `w`,
-  `2*w`, `h_sub + t_met`, optionally followed by a unit (`2*w mil`); with none, the display unit is the
-  expression's unit, and it is stored with the expression, so changing the display unit later moves nothing.
-  The box shows the value as you type (`= 0.254 mm`), or `unknown: w`. Press Enter with an unknown name and a
-  **Define** strip opens under the box, one row per name: a value (for a bare `w`, the size the rubber band
-  shows now), a unit, and whether it becomes a **VAR of this 3D view** or a **cell parameter**; Enter defines
-  them and the shape carries on, and the definitions and the new object are one undo step. A width, depth,
-  height, radius or extrude distance keeps its expression; a polygon's points and a move's distance are
-  evaluated once and stored as numbers, and the box says so. **Beware one trap:** in `2*w + 5` with `w` in mil,
-  the `5` is five **metres** — a literal beside a name that has its own unit is in metres — and the preview
-  shows `5.000508 m` before you press Enter; `check` warns about any dimension over 1 m.
-  The **Variables** panel (the *x* button) lists each VAR with its expression, unit, value and how many fields
-  use it, then the cell's parameters: *Set*, *Rename* (every use is rewritten; `ww` is not touched by renaming
-  `w`), *Delete* (refused while anything uses it — *Inline* writes the current numbers into those fields
-  first), and *Promote to Cell Parameter*. A VAR with the same name as a cell parameter is **linked** to it:
-  it takes the parameter's value — an instance's override, else the cell's default — and editing it edits the
-  parameter, so the cell has one default for the name. *Unlink* makes it keep its own value, which then hides
-  the parameter from this 3D view (`check` warns). Placing a cell's 3D view, an instance can override its
-  parameters in the file (`"Params"`); two instances with the same values are elaborated once.
-  **Dragging** a face whose size is an expression changes the *name*, never the field: a bare VAR is given the
-  new value, a parameter (or linked VAR) gets a new default, and an expression linear in one name (`2*w + gap`)
-  solves for that name — and every other object using it moves with it, in the preview too. A drag of
-  anything else (`2*w*l`) is refused, with *Replace with Number* offered. A move or rotation is refused when
-  it would change a name another object uses, because only the selection moves while you drag.
-- **Setups** (*Simulate ▸ Setup Analyses…* with a 3D view active, or the editor's tune button). A 3D view
-  carries its own EM setups, in the same form a `.cem` has, and the dialog lists them as a schematic's
-  analyses are listed — one card each, with its kind (SP, ES, MS or EIG) and its solver and sweep: *Add*,
-  *Edit*, *Duplicate*, *Rename*, *Remove* and *Make Active*, also on each card's right-click menu with *Run*.
-  The **active** setup (the filled radio mark) is the one *Simulate ▸ Run* runs and whose air box is drawn;
-  which one is active is remembered per user, not saved in the `.c3d`. **Double-click** a card to edit that
-  setup in the same panel a `.cem` opens, less the layout row (the 3D view is the geometry) and the planar
-  analyses (a 3D view is solved by Palace or openEMS). Every change is an edit of the 3D view: Undo takes it
-  back and Save writes it. A static setup's terminals name their conductors by **object** (`top`, or `U1/pad3` inside a
-  placed cell), because a drawn object has no net. *Show 3D* on a `.cem` whose geometry is a `.c3d` opens this
-  editor, with that `.cem` listed read-only and active, so its ports and boundaries can be seen.
-- **Ports** (the 3D editor, **P** in the Shift+A popup, or *3D ▸ Draw ▸ Port*). A port is drawn like a sheet —
-  two corners on the drawing plane — or made from a face: right-click a flat, rectangular face and choose
-  *Make Port ▸ Lumped* or *Wave*. It takes the next free number and the last port's Z0. **Which way round it
-  is comes from what it touches**: each edge of the rectangle is tested against every conductor, and exactly
-  one pair of opposite edges must each touch exactly one conductor. The end that is ground — the setup's
-  Ground net, a placed layout's ground plane, or a PEC face of the air box — is **−**; otherwise the larger
-  conductor is. The port is drawn with its number and an arrow from − to +, and while it is being drawn the
-  arrow, or the reason it cannot be one, follows the cursor. Right-click a port for *Flip*, its kind, *Z0…*
-  and *Delete*. A wrong polarity turns every transmission term by 180°, so check the arrow before a run.
-  A **wave** port must lie on a face of the active setup's air box. Every setup uses every port, and a
-  placed cell's own ports are never used: only the parent says where a signal enters.
-- **Bond wires** (the 3D editor, **W** in the Shift+A popup, or *3D ▸ Draw ▸ Wire*). A wire runs between two metal
-  objects or sheets — a die's pad inside a placed cell to a lead in the package is the usual case, which a `.wBond`
-  cannot do because it belongs to one layout. Click any face of the object the wire starts on: each end attaches to
-  its object's **top**, above the point you clicked (a side face lands just inside the top's edge; a snapped corner or
-  face centre on a top is taken exactly). An object with no material, or an insulator, is refused with the reason.
-  Then click the object it ends on, then move to set the **loop height** and click, or type it (`8mil`). The
-  loop height is the assembly one: from the top of the lower pad to the top of the wire at its highest point.
-  The status line shows it and the wire's centre-line loop height side by side, and **the height you type is
-  the height the wire measures**. Before the first click the toolbar sets the diameter, the metal, how each end
-  is bonded (a **wedge** lays a foot on the pad, a **ball** sits on it) and the section (a flat-bottomed
-  hexagon, or round); they start from the last wire drawn. A wire's points are its whole shape: in Vertex mode
-  its centre-line points are shown and **G** moves one, and its feet are put back on the pads when you let go
-  — an end moved to where there is no pad is refused. When the pad under a wire moves, the wire does **not**
-  follow, because re-routing it would change its inductance: the wire is flagged in the tree, drawn in red,
-  and a run says which end (`w3's start is no longer on a pad`). *Re-Seat Wire Ends* (right-click the wire, or
-  select it in the tree and use *3D ▸ Modify*) moves each end up or down onto the pad now under it; a pad that moved sideways has to be reconnected by
-  hand. *Duplicate* and *Array…* copy wires at a pitch, and a copy whose end misses a pad is still made and
-  flagged, so a pitch error shows at once. Foot length and ball size come from the workspace's assembly rules
-  (`.wasm`) unless the wire's end states a foot length, and the run says when a built-in first guess was used.
-- **The air box** (the box button). The active setup's air box, its faces tinted by boundary: **PEC** grey,
-  **PMC** orange, **symmetry** hatched, and **absorbing** clear. It is shown until you hide it. In Face mode its faces can be picked, but only where no solid is under the cursor (**B** reaches
-  one behind a solid). Right-click one for *Boundary ▸ Absorbing / PEC / PMC / Symmetry* and *Padding…*:
-  these change the **setup**, not the geometry, and the status line says which setup they wrote.
-- **Boundaries on faces** (the 3D editor, Face mode). Right-click a face of a dielectric or air object for
-  *Boundary ▸ Perfect Conductor*, *Conductive Surface* (choose the metal) or *None*. The face is drawn tinted
-  and listed in the tree under its object. A boundary stays with its face through every edit, and a face
-  that is split into pieces hands it to each. A conductor's face takes none — it is already metal — and
-  absorbing, PMC and symmetry boundaries belong to the air box, because both solvers can state them only on
-  the outside of the problem. Palace finds a boundary's surfaces by the face's extent and counts them, so a
-  neighbour's face lying in the same plane and overlapping it is refused rather than guessed.
-- **Simulate** (*Simulate ▸ Run* with the 3D view active, or the toolbar's Run button — the workspace toolbar's). Runs the active setup with the
-  same progress, Cancel and messages as a `.cem`, and opens its results in the Data Display. Afterwards the
-  **Field** bar above the view shows the run's fields, drawn on the geometry the run solved; if the 3D view has
-  changed since, a line says so (`Fields are from the run at 14:02; the model has changed since`) and they are
-  still shown. An object with **no material** yet — drawn as a wireframe — does not stop the run: the solver
-  ignores it and the run's messages say so. One whose material the technology does not define does stop it.
+- **The 3D editor.** A 3D view (`.c3d`) opens in this same pane with drawing added: boxes, cylinders, sheets,
+  faces pushed and pulled, placed cells, bond wires, ports, setups and the air box, all with these keys. It is
+  circuitRF's own and needs no solver. [The 3D Editor](drawing-in-3d.html) is its chapter, and describes every
+  control.
 - **Measure** (**M**, the ruler button, *3D ▸ Measure*; in the editor and in this view). Click two points,
   snapped as drawing is; after the first a line follows the cursor. A card in the corner of the view gives
   both points' x, y and z, their differences (the second minus the first) and the distance, in the
@@ -461,13 +294,15 @@ run. Memory is Palace's own peak over all its processes.
 
 ### Bond wire {#example-bond-wire}
 
-A 1 mil (25.4 µm) gold wire with a hexagonal section and a wedge foot at each end. It loops 150 µm high
-between two 100 µm pads on 100 µm of alumina, inside a closed metal box 3 × 2 × 1.1 mm. A port sheet runs
+A 1 mil (25.4 µm) gold wire with a hexagonal section and a wedge foot at each end, between two 100 µm pads
+on 100 µm of alumina, inside a closed metal box 3 × 2 × 1.1 mm. Its loop is not symmetric: it rises steeply
+from the left pad to 290 µm above the pads about a third of the way across, then falls in a long slope to
+the right pad. A port sheet runs
 from each pad's outer edge down to the ground.
 
 {{ui: em3d-bond-wire-section}}
 
-`Bond wire 3D.cem` runs Palace at **Standard**. It takes **179 s**, with a peak of **3.1 GB**, and gives
+`Bond wire 3D.cem` runs Palace at **Standard**. (Measured on the wire's earlier, symmetric 150 µm loop; the Palace figures in this section have not been re-run for the loop above. Kernel W's have.) It takes **179 s**, with a peak of **3.1 GB**, and gives
 |S21| = **−0.765 dB** at 10 GHz and a series inductance of **906 pH** at 1 GHz. (The inductance is the
 π-model's series term, −Im(1/Y21)/ω, from the S-parameters.)
 
@@ -476,8 +311,8 @@ from each pad's outer edge down to the ground.
   it is the case where the preset matters most.
 - **Accurate** (three refinement passes and tighter tolerances) took 8.5 min at 7.0 GB and reads 908 pH
   and −0.772 dB: within 2 pH and 0.01 dB of Standard, for nearly three times the time.
-- **Kernel W**, the wire kernel in wBond, reads **704 pH** and **−0.680 dB** from the same `.wBond`
-  (open it and **Export Touchstone …** with the *Distributed* model). The 202 pH between the two answers
+- **Kernel W**, the wire kernel in wBond, reads **768 pH** and **−0.800 dB** from the same `.wBond`
+  (open it and **Export Touchstone …** with the *Distributed* model). The difference between the two answers
   is **where the terminals are**, not a disagreement between the solvers. Kernel W's terminals are the
   wire's own ends. Palace's ports are at the pads' outer edges, so its answer also contains the pad between
   each port and the wire, and the 100 µm drop from the pad to ground.

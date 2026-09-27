@@ -270,9 +270,24 @@ public partial class Em3dSolverSettingsView : UserControl
     /// </summary>
     private static void ShowStatus(TextBlock status, string text)
     {
+        if (AnonymizeHomeForCapture) text = AnonymizeHome(text);
         status.Text = FoldSpackPadding(text);
         status.Tag  = text;   // the unfolded line, which Copy puts on the clipboard
         ToolTip.SetTip(status, status.Text == text ? null : text);
+    }
+
+    /// <summary>
+    /// The docs seam (brief-em3d-52): the user guide's picture of this tab is captured on whatever machine runs DocGen,
+    /// and its status lines are that machine's real discovery — paths under the author's home directory, which must
+    /// never reach the repository. Set only by the figure fixture; a user always sees their own paths.
+    /// </summary>
+    internal static bool AnonymizeHomeForCapture { get; set; }
+
+    /// <summary>The home directory written as <c>~</c>, keeping the path's shape.</summary>
+    internal static string AnonymizeHome(string text)
+    {
+        string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        return home.Length > 1 ? text.Replace(home, "~", StringComparison.Ordinal) : text;
     }
 
     /// <summary>Right-click ▸ Copy on a status line: the selection when there is one, otherwise the

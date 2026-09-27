@@ -427,7 +427,8 @@ folder are in [The Command Line](cli.html#em).
 ## Solver — planar or 3D {#solver-3d}
 
 *When 3D is the right tool, how to get the solvers, the 3D view, and a worked example to open are in
-[3D EM](em-3d.html). This section is the panel's 3D controls, one by one.*
+[3D EM](em-3d.html). How the planar, FEM and FDTD solvers differ, and which suits which problem, is in
+[EM Solvers: MoM, FEM and FDTD](em-solvers.html). This section is the panel's 3D controls, one by one.*
 
 The **Solver** group at the top of the panel picks who solves the setup: circuitRF's own planar and
 cross-section kernels (the default), **FEM 3D (Palace)**, **FDTD 3D (openEMS)**, or **FEM & FDTD -
@@ -468,6 +469,7 @@ Accurate has not been measured.
 | Refinement tolerance | `AdaptiveTol` | 0.01 | The error at which Palace stops refining the mesh |
 | Refinement passes | `AdaptiveMaxIterations` | 2 | The most refinement passes; 0 solves the starting mesh only. Each pass costs a solve and memory |
 | Sweep tolerance | `SweepAdaptiveTol` | 0.0001 | The tolerance of Palace's adaptive frequency sweep; 0 solves every frequency |
+| Linear solver | `LinearSolver` | `Iterative` | How Palace solves each linear system. *Iterative* (GMRES with multigrid) needs the least memory. *Direct* factors it with SuperLU_DIST: more memory, and far faster for an **eigenmode** solve, whose shifted operator an iterative solver converges on slowly. On the 3D Package example's lid mode (128 k unknowns) Direct took 35 s and 4.0 GB; Iterative had not finished after ten minutes. Not part of any preset |
 | — (written in the `.cem`) | `SaveFieldsGHz` | the sweep's centre | The frequencies, GHz, whose fields Palace saves for the 3D view; `[]` saves none. See [Fields for the 3D view](#palace-fields) — they are large |
 
 The settings above size only the **starting** mesh; Palace's adaptive refinement adds elements where its

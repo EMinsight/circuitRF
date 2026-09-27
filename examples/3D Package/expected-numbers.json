@@ -1,0 +1,25 @@
+{
+  "About": "The key numbers README.md and the 3D Editor chapter state, in one place. circuitRF's tests re-run each setup and compare each value within its tolerance, and check that each value's Readme text appears in both pages. Measured once on an Apple M4 (10 cores, 16 GB), macOS 27.0, Palace 0.18.1 on 10 processes, Gmsh 4.15.2. PeakGB is Palace's own peak memory over all its processes.",
+  "ClosedForm": {
+    "WidthMil": 400, "LengthMil": 320, "HeightMil": 40, "SlabMil": 5, "SlabEpsr": 9.8,
+    "Expected": 22.2306, "Readme": "22.23 GHz"
+  },
+  "Runs": [
+    {
+      "Setup": "Driven", "Variant": null, "Preset": "Draft, element order 2, EdgeRefinement 1, Direct",
+      "PeakGB": 6.4, "Readme": [ "4 min 46 s", "6.4 GB" ],
+      "Values": [
+        { "Quantity": "S21_dB", "Label": "|S21| at the band centre", "AtGHz": 16, "Expected": -0.4063, "Tolerance": 0.02, "Readme": "−0.41 dB" },
+        { "Quantity": "S21_dB", "Label": "|S21| at the lid resonance", "AtGHz": 22.15, "Expected": -5.352, "Tolerance": 0.5, "Readme": "−5.35 dB" }
+      ]
+    },
+    {
+      "Setup": "Lid modes", "Variant": null, "Preset": "Draft, element order 2, EdgeRefinement 1, Direct",
+      "PeakGB": 4.0, "Readme": [ "35 s", "4.0 GB" ],
+      "Values": [
+        { "Quantity": "Mode_GHz", "Label": "the lid mode", "Mode": 1, "Expected": 22.161, "Tolerance": 0.02, "Readme": "22.16 GHz" },
+        { "Quantity": "Mode_Q", "Label": "the lid mode's Q", "Mode": 1, "Expected": 317.5, "Tolerance": 15, "Readme": "318" }
+      ]
+    }
+  ]
+}

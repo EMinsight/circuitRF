@@ -11,6 +11,11 @@ using CommunityToolkit.Mvvm.ComponentModel;
 namespace CircuitRF.Ui.Layout.Em;
 
 /// <summary>One row of the Palace preset picker (brief-em3d-21 R-em3d21-4).</summary>
+public sealed record PalaceLinearSolverChoice(PalaceLinearSolver Value, string Label)
+{
+    public override string ToString() => Label;
+}
+
 public sealed record PalaceQualityChoice(PalaceQuality Value, string Label)
 {
     public override string ToString() => Label;
@@ -160,6 +165,34 @@ public sealed partial class EmSetupEditorViewModel
         CommitEdit(before, "Change Palace preset");
     }
 
+    // ── brief-em3d-52: the linear solver ─────────────────────────────────────────────────────
+
+    public static IReadOnlyList<PalaceLinearSolverChoice> PalaceLinearSolverChoices { get; } =
+    [
+        new(PalaceLinearSolver.Iterative, "Iterative"),
+        new(PalaceLinearSolver.Direct,    "Direct"),
+    ];
+
+    public const string PalaceLinearSolverTip =
+        "How Palace solves each linear system. Iterative (the default) needs the least memory. Direct factors it " +
+        "with SuperLU_DIST: more memory, and far faster for an eigenmode solve, whose shifted operator an iterative " +
+        "solver converges on slowly — the 3D Package example's lid mode took 35 s Direct, and had not finished " +
+        "after ten minutes Iterative.";
+
+    [ObservableProperty] private PalaceLinearSolverChoice _palaceLinearSolverChoice = PalaceLinearSolverChoices[0];
+
+    partial void OnPalaceLinearSolverChoiceChanged(PalaceLinearSolverChoice value)
+    {
+        if (_suppressCommit) return;
+        var section = Working.Palace?.Clone() ?? new CemPalace();
+        // Iterative is written as no field at all, as Standard is.
+        section.LinearSolver = value.Value == PalaceLinearSolver.Iterative ? null : value.Value;
+        var before = SnapshotJson();
+        Working.Palace = section.IsEmpty ? null : section;
+        if (SnapshotJson() == before) return;
+        CommitEdit(before, "Change Palace linear solver");
+    }
+
     private PalaceSettings PresetShown => PalaceSettings.Preset(PalaceQualityChoice.Value);
 
     /// <summary>What a blank box stands for — the chosen preset's value, the one the writers read.</summary>
@@ -189,6 +222,7 @@ public sealed partial class EmSetupEditorViewModel
                          ?? new Em3dSolverChoice(Working.Solver3D, Working.Solver3D.ToString());
         var p = Working.Palace;
         PalaceQualityChoice = PalaceQualityChoices.First(c => c.Value == (p?.Quality ?? PalaceQuality.Standard));
+        PalaceLinearSolverChoice = PalaceLinearSolverChoices.First(c => c.Value == (p?.LinearSolver ?? PalaceLinearSolver.Iterative));
         PalaceMaxElementWavelengthsText = G(p?.MaxElementWavelengths);
         PalaceEdgeRefinementText        = G(p?.EdgeRefinement);
         PalaceGradingText               = G(p?.Grading);

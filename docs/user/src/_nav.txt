@@ -64,7 +64,9 @@ reference/pdk-authoring.html   | Authoring a kit: the OpenPDK layout, Python PCe
 reference/stackup.html         | The layers your board is made of - and which conductor is ground.
 reference/mom-engine.html      | The planar method-of-moments solver: what it does, what it will not do, and how.
 reference/em-setup.html        | The EM Setup panel, control by control, and where the results land.
+reference/em-solvers.html      | MoM, FEM and FDTD: what each solver is, what it costs, and which to use for which problem.
 reference/em-3d.html           | 3D EM with Palace and openEMS: when to use it, getting the solvers, the 3D view, and a worked example.
+reference/drawing-in-3d.html   | The 3D editor: drawing a cell in 3D — solids, placed cells, bond wires and ports — with no solver needed to draw.
 reference/antennas.html        | Patch antennas: the pattern, the numbers that go with it, and the limits that bound both.
 
 == Tools

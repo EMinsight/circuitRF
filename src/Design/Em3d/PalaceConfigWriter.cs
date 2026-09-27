@@ -319,7 +319,7 @@ public static class PalaceConfigWriter
             w.WriteNumber("Target", problem.EigenmodeTargetHz / 1e9);
             if (SavesFields(settings)) w.WriteNumber("Save", problem.EigenmodeCount);     // R-em3d29-1a: every mode
             w.WriteEndObject();
-            WriteLinear(w);
+            WriteLinear(w, settings);
             w.WriteEndObject();
             return;
         }
@@ -361,7 +361,7 @@ public static class PalaceConfigWriter
         w.WriteEndArray();
         w.WriteNumber("AdaptiveTol", settings.SweepAdaptiveTol);
         w.WriteEndObject();
-        WriteLinear(w);
+        WriteLinear(w, settings);
         w.WriteEndObject();
 
     }
@@ -423,14 +423,17 @@ public static class PalaceConfigWriter
         return null;
     }
 
-    /// <summary>F0's linear solver, which every reference ran with.</summary>
-    private static void WriteLinear(Utf8JsonWriter w)
+    /// <summary>F0's linear solver, which every reference ran with — or, when the setup asks for it, SuperLU_DIST's
+    /// factorisation as the whole preconditioner (one multigrid level, so the direct solve is not only the coarse
+    /// grid's). The writer is otherwise byte-identical, so no golden moves (brief-em3d-52).</summary>
+    private static void WriteLinear(Utf8JsonWriter w, PalaceSettings settings)
     {
         w.WriteStartObject("Linear");
-        w.WriteString("Type", "Default");
+        w.WriteString("Type", settings.LinearSolver == PalaceLinearSolver.Direct ? "SuperLU" : "Default");
         w.WriteString("KSPType", "GMRES");
         w.WriteNumber("Tol", 1e-8);
         w.WriteNumber("MaxIts", 400);
+        if (settings.LinearSolver == PalaceLinearSolver.Direct) w.WriteNumber("MGMaxLevels", 1);
         w.WriteEndObject();
     }
 

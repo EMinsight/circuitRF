@@ -571,6 +571,25 @@ public static class FigureCatalog
           + "to a die pad, the alumina base, and the lid - the top face of the closed box - above "
           + "them."),
 
+        // ── The 3D Editor chapter: the 3D Package example's drawn package (brief-em3d-52) ─────
+        // Drawn by Em3dSectionRenderer from the example's own .c3d through its Driven setup, as
+        // `render --iso` / `--section` draw it. The editor's own pane needs a GPU and is not here.
+
+        new("em3d-package-3d-closed", DocEm3dFixtures.PackageClosed, 960, 600, null,
+            "The 3D Package example's package, closed: a gold floor, four gold walls and a lid of a "
+          + "lid alloy, 400 x 320 x 40 mil inside, drawn in the 3D editor. Through it, the leads and "
+          + "the die."),
+
+        new("em3d-package-3d-open", DocEm3dFixtures.PackageOpen, 960, 600, null,
+            "The same package with the lid and two walls lifted off: the alumina base, the die-attach "
+          + "pad on four vias, the MMIC die placed from its layout, a bond wire from each die pad to a "
+          + "lead, and the two leads running out to the walls."),
+
+        new("em3d-package-3d-section", DocEm3dFixtures.PackageThreeDSide, 960, 540, null,
+            "The package cut along its leads: floor, alumina base, the die on its attach pad, the two "
+          + "wires down to the leads, the walls and the lid. The cavity is ten times wider than it is "
+          + "tall."),
+
         new("cv-editor", DocCvFixtures.Editor, 620, 500,
             WindowFrame.Titled("C-V Editor - C1"),
             "The C-V Editor: a measured C(V) table, the fit order, and the polynomial it fits."),

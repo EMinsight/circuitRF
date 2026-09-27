@@ -232,7 +232,7 @@ public static class Em3dLayoutSolids
                           "no region; only closed shapes there give the board its outline.");
 
             // ── Merge (R-em3d3-5b): the planar extractor's union, per stackup entry ───────────
-            var merged = PlanarExtractor.MergeOverlapping(conductorShapes, tech, out int mergedShapes, out int mergedInto);
+            var merged = PlanarExtractor.MergeOverlapping(conductorShapes, tech, out int mergedShapes, out int mergedInto, touching: true);
             if (mergedShapes > 0)
                 Notes.Add($"{mergedShapes} overlapping conductor shape(s) were merged into {mergedInto} — " +
                           "copper that overlaps on one level is one conductor, in 3D as in the planar model.");

@@ -2632,9 +2632,14 @@ public static class PlanarExtractor
     /// level that genuinely OVERLAP (common area &gt; 0) are replaced by their union; everything else
     /// passes through untouched, in its original order. The planar extractor's own merge, and the one
     /// the 3D generator calls (brief-em3d-3 R-em3d3-5b) so the two models agree on what is connected.
+    /// <para><paramref name="touching"/> (the 3D generator's, brief-em3d-52) also merges shapes that share an EDGE
+    /// without overlapping — a line ending exactly on a pad. As separate solids their coplanar faces fuse in the
+    /// mesher into one surface no single conductor claims, and the mesh is refused. The planar mesher joins cells
+    /// across a shared edge already, so its own call leaves this off and no planar answer moves.</para>
     /// </summary>
     internal static List<(LayoutShape Shape, int Level)> MergeOverlapping(
-        List<(LayoutShape Shape, int Level)> shapes, Technology tech, out int mergedShapes, out int mergedInto)
+        List<(LayoutShape Shape, int Level)> shapes, Technology tech, out int mergedShapes, out int mergedInto,
+        bool touching = false)
     {
         mergedShapes = 0;
         mergedInto = 0;
@@ -2665,13 +2670,25 @@ public static class PlanarExtractor
                 if (boxes[j].MaxY < boxes[i].MinY || boxes[i].MaxY < boxes[j].MinY) continue;
                 if (Find(i) == Find(j)) continue;
                 var common = Clipper2Lib.Clipper.Intersect(PathsOf(i), PathsOf(j), Clipper2Lib.FillRule.NonZero);
-                if (common.Sum(p => System.Math.Abs(Clipper2Lib.Clipper.Area(p))) <= 0) continue;
+                if (common.Sum(p => System.Math.Abs(Clipper2Lib.Clipper.Area(p))) <= 0 && !(touching && ShareAnEdge(i, j))) continue;
                 parent[Find(i)] = Find(j);
                 any = true;
             }
             active.Add(i);
         }
         if (!any) return shapes;
+
+        // Two shapes with no common area share an edge exactly when their union has fewer outer rings than the two
+        // have between them: an edge of positive length joins them, a corner alone does not.
+        bool ShareAnEdge(int i, int j)
+        {
+            static int Outer(Clipper2Lib.Paths64 p) => p.Count(q => Clipper2Lib.Clipper.IsPositive(q));
+            var both = new Clipper2Lib.Paths64(PathsOf(i));
+            both.AddRange(PathsOf(j));
+            var u = Clipper2Lib.Clipper.Union(both, Clipper2Lib.FillRule.NonZero);
+            return Outer(u) < Outer(Clipper2Lib.Clipper.Union(PathsOf(i), Clipper2Lib.FillRule.NonZero))
+                            + Outer(Clipper2Lib.Clipper.Union(PathsOf(j), Clipper2Lib.FillRule.NonZero));
+        }
 
         var groups = Enumerable.Range(0, n).GroupBy(Find).ToDictionary(g => g.Key, g => g.ToList());
         var result = new List<(LayoutShape Shape, int Level)>(n);

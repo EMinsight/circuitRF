@@ -73,6 +73,9 @@ this worth having rather than a curiosity — see <a href="#cosim">Co-simulation
 </ul>
 <p>It is not free. A circuit model answers in microseconds; a full-wave solve of a small structure takes
 seconds per frequency point. Use the model where the model is valid, and the solver where it is not.</p>
+<p>This planar solver is one of three circuitRF can use. How it compares with the 3D FEM and FDTD
+solvers, and when to reach for one of them instead, is in
+<a href="em-solvers.html">EM Solvers: MoM, FEM and FDTD</a>.</p>
 <h2 id="can-cannot">What can and cannot be simulated</h2>
 <p>This is a <strong>planar (2.5D) solver</strong>. It solves conductors embedded in a <strong>laterally infinite, vertically
 stratified</strong> medium: metal is horizontal and thin, current flows in-plane, and z-directed current flows

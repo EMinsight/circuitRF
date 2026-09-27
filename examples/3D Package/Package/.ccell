@@ -1,0 +1,29 @@
+{
+  "FormatVersion": 1,
+  "Parameters": [
+    {
+      "Name": "cav_w",
+      "DefaultExpression": "400",
+      "Unit": "mil",
+      "Dimension": "Length",
+      "ShowOnSchematic": true
+    },
+    {
+      "Name": "cav_l",
+      "DefaultExpression": "320",
+      "Unit": "mil",
+      "Dimension": "Length",
+      "ShowOnSchematic": true
+    },
+    {
+      "Name": "cav_h",
+      "DefaultExpression": "40",
+      "Unit": "mil",
+      "Dimension": "Length",
+      "ShowOnSchematic": true
+    }
+  ],
+  "IsTestBench": false,
+  "Terminals": [],
+  "NumPorts": 0
+}

@@ -286,7 +286,7 @@
       "Index": 28,
       "Slot": 39,
       "Id": "",
-      "Tooltip": "Impedance Analysis\u2026 \u2014 every trace against a target Z0 and its return path, exported as a PDF report",
+      "Tooltip": "Impedance Analysis \u2014 every trace against a target Z0 and its return path, in the Impedance panel",
       "Icon": "none",
       "Command": null,
       "Kind": "button"

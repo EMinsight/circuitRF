@@ -1079,8 +1079,10 @@ slow is a <code>check</code> people stop running. What <code>check</code> does c
 <p>See <a href="lvs.html">the LVS chapter</a> for what the findings mean and a worked example on the shipped
 example workspace.</p>
 <h2 id="impedance"><code>impedance</code> — every trace against a target Z0</h2>
-<pre><code class="cmd"><span class="prompt">$ </span>circuitrf impedance &lt;layout&gt; [--target 50] [--tol 10] [--layers "Top Copper,Inner 2"]
-<span class="prompt">  </span>[--max-width &lt;um&gt;] [-o report.pdf]</code></pre>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf impedance &lt;layout&gt; [--target 50] [--tol 10] [--warn 20] [--max-freq 6GHz]
+<span class="prompt">  </span>[--layers "Top Copper,Inner 2"] [--max-width &lt;um&gt;] [--width "Top Copper=457"]… [--no-scope]
+<span class="prompt">  </span>[--region x0,y0,x1,y1]… [--net &lt;name&gt;]… [--pick &lt;layer&gt;@&lt;x&gt;,&lt;y&gt;[:connected]]…
+<span class="prompt">  </span>[--survey] [--severity warning|fail] [--ignore-accepted] [-o report.pdf]</code></pre>
 <p><code>impedance</code> is the layout editor's <a href="layout-editor.html#impedance-analysis">Impedance Analysis</a>: it finds
 every trace on the chosen copper layers, cuts it along its length with the same quasi-static
 cross-section solve the canvas's <strong>Trace Impedance</strong> uses, and reports per trace Z0 min, max and
@@ -1089,6 +1091,11 @@ out of band, a return path that breaks, copper only partly under it, a reference
 layer. <code>-o</code> writes the <strong>same PDF</strong> the dialog exports.</p>
 <p>The path is a <strong><code>.clay</code></strong> or a <strong>cell folder</strong> holding one. The technology resolves exactly as the editor
 resolves it, and placed cells are flattened as a design-rule check flattens them.</p>
+<p><strong>The review saved in the layout applies by default</strong>, so a headless run reports what the editor
+reports: the target, bands, frequency, layers, <a href="layout-editor.html#impedance-scope">trace widths</a> and
+<a href="layout-editor.html#impedance-scope-board">regions, picks and nets</a> last chosen in the editor's Impedance
+panel. A flag overrides the saved value, and the saved value overrides
+the default. A saved layer the technology no longer has is skipped with a line on stderr.</p>
 <table>
 <thead>
 <tr>
@@ -1106,6 +1113,18 @@ resolves it, and placed cells are flattened as a design-rule check flattens them
 <td>± this many percent passes. Default <code>10</code>.</td>
 </tr>
 <tr>
+<td><code>--warn &lt;percent&gt;</code></td>
+<td>± this many percent is a <strong>warning</strong> rather than a fail. Default <code>20</code>; it must be wider than <code>--tol</code>, so a <code>--tol</code> of 20 or more needs a wider <code>--warn</code> too.</td>
+</tr>
+<tr>
+<td><code>--max-freq &lt;freq&gt;</code></td>
+<td>The highest frequency the traces carry. A stretch outside the warning band shorter than <strong>λ/20</strong> there warns rather than fails — see <a href="layout-editor.html#impedance-findings">electrically short</a>. <strong>The unit is required</strong> (<code>6GHz</code>); a bare number is refused. Default off.</td>
+</tr>
+<tr>
+<td><code>--severity warning\|fail</code></td>
+<td>What decides the exit code. Default <code>fail</code>; <code>warning</code> makes a warning exit 1 too. Warnings are reported either way.</td>
+</tr>
+<tr>
 <td><code>--layers &quot;A,B&quot;</code></td>
 <td>The copper layers, by the technology's layer names. Default every copper layer. A name that is not a copper layer is refused with the names that are.</td>
 </tr>
@@ -1114,16 +1133,68 @@ resolves it, and placed cells are flattened as a design-rule check flattens them
 <td>The widest copper read as a trace. Default ten times the distance to the nearest other copper layer, between 1 and 8 mm.</td>
 </tr>
 <tr>
+<td><code>--width &lt;layer&gt;=&lt;w&gt;[,&lt;w&gt;…]</code></td>
+<td>Review only the traces of these widths on that layer; repeat it for another layer. A bare width is µm, as <code>--max-width</code> reads it, or give a unit (<code>18mil</code>, <code>0.457mm</code>). It <strong>replaces</strong> the saved widths for that layer for this run; a layer with no widths is reviewed at every width. A trace's width is the width over most of its length, and a width matches within 1 % (or 1 µm).</td>
+</tr>
+<tr>
+<td><code>--region x0,y0,x1,y1</code></td>
+<td>Review the traces any part of whose centre line lies inside this rectangle, <strong>whole</strong>. <strong>Every coordinate carries its unit</strong> (<code>10mm,5mm,30mm,20mm</code>, <code>400um</code>, <code>50mil</code>) and a bare number is refused, as for <a href="#render"><code>render --window</code></a>: a layout coordinate could be DBU, µm or mm. <a href="#explain"><code>explain --extents</code></a> prints a layout's <code>window</code> in exactly this spelling. Repeatable.</td>
+</tr>
+<tr>
+<td><code>--net &lt;name&gt;</code></td>
+<td>Review the traces on copper carrying this net. Repeatable.</td>
+</tr>
+<tr>
+<td><code>--pick &lt;layer&gt;@&lt;x&gt;,&lt;y&gt;[:connected]</code></td>
+<td>Review the trace whose copper holds this point on that layer, coordinates with their units; <code>:connected</code> takes every trace joined to it through vias. A pick with no copper under it is reported on stderr and selects nothing. Repeatable.</td>
+</tr>
+<tr>
+<td><code>--no-scope</code></td>
+<td>Ignore the saved scope and review every trace. The saved target, bands and layers still apply.</td>
+</tr>
+<tr>
+<td><code>--ignore-accepted</code></td>
+<td>Report as if no finding had been <a href="layout-editor.html#impedance-accept">accepted</a>: every finding counts against its trace, and against the exit code.</td>
+</tr>
+<tr>
+<td><code>--survey</code></td>
+<td>List the width classes per layer — width, trace count, total length and one <strong>typical</strong> Z0 (a single cut at the middle of the class's longest trace) — and analyse nothing. The way to choose <code>--width</code>.</td>
+</tr>
+<tr>
 <td><code>-o report.pdf</code></td>
 <td>The PDF report. With no <code>-o</code> it writes nothing.</td>
 </tr>
 </tbody>
 </table>
-<p>stdout is one line per trace, its findings under it; stderr says which layer is being analysed. Lengths
+<p><strong>Accepted findings apply by default.</strong> A finding accepted in the editor's panel is saved in the
+<code>.clay</code>, and the verb reports it marked <code>✓ ACCEPTED</code> with its reason and date; it does not count against
+its trace's verdict or the exit code. Acceptances that matched nothing in this run are listed before the
+closing line. There is deliberately <strong>no <code>--accept</code></strong>: a run's trace ids (<code>T1</code>, <code>T2</code>…) are that run's,
+and an acceptance is a decision made reading the finding. A script that must accept one headlessly adds
+it to the <code>.clay</code>'s <code>ImpedanceAcceptances</code>; <a href="#reference"><code>reference layout</code></a> documents the key —
+the trace's two end points in whole µm and the finding's kind.</p>
+<p><strong>Regions, nets and picks choose; widths filter.</strong> A trace any <code>--region</code>, <code>--net</code> or <code>--pick</code> chooses
+is reviewed (with none, every trace is), and <code>--width</code> then filters what they chose. Each of the three
+<strong>replaces the saved selectors of its kind</strong> for this run and leaves the other kinds as saved —
+so a lasso drawn in the editor, which has no command-line spelling, still applies unless <code>--region</code>
+replaces it.</p>
+<p>stdout starts with the target and, on the next line, the <strong>scope in words</strong> — <em>Top Copper at 457 µm
+(1 trace). 21 traces on Top Copper are outside the scope and were not analysed.</em> — then one line per
+trace — <code>PASS</code>, <code>WARN</code> or <code>FAIL</code> — its findings under it (<code>!</code> a fail, <code>?</code> a warning), and a
+closing line <em>N pass, W warning, F fail</em>; stderr says which layer is being analysed. Traces outside the
+scope are not cut, solved or listed, only counted, and they still count as grounded copper beside the
+traces under review. Lengths
 and coordinates are in <strong>the layout's own unit</strong>. With <code>--json</code> the result carries every layer, trace and
-finding, with coordinates and lengths in <strong>µm</strong> whatever the layout's unit, so a script reads one unit.</p>
-<p><strong>Exit 0</strong> when every trace passes, <strong>1</strong> when one fails (or cannot be solved) or the run is refused,
-<strong>130</strong> on a cancellation. A cancelled run still writes the report for the layers that <strong>finished</strong>,
+finding, with coordinates and lengths in <strong>µm</strong> whatever the layout's unit, so a script reads one unit;
+<code>warningCount</code> sits beside <code>pass</code> and <code>fail</code>, a trace's verdict can be <code>&quot;warning&quot;</code>, and every finding
+carries <code>&quot;severity&quot;: &quot;warning&quot;</code> or <code>&quot;fail&quot;</code> — and an accepted one <code>&quot;accepted&quot;: { &quot;reason&quot;, &quot;date&quot; }</code>.
+<code>accepted</code> counts the accepted findings and <code>staleAcceptances</code> lists the saved acceptances that matched
+nothing (<code>key</code>, <code>kind</code>, <code>layer</code>, <code>summary</code>, <code>reason</code>, <code>date</code>). <code>scope</code> is the scope sentence and each layer's <code>outOfScope</code>
+its count of traces left out. With <code>--survey</code>, the result is <code>impedanceSurvey</code> instead: per layer its
+<code>classes</code>, each with <code>width</code>, <code>widthMin</code>, <code>widthMax</code>, <code>traces</code>, <code>length</code> (µm) and <code>typicalZ0</code>.</p>
+<p><strong>Exit codes follow <a href="#check"><code>check</code></a>'s convention</strong>, counting <strong>un-accepted</strong> findings only. <strong>0</strong> when
+no trace fails — warnings are always reported and still exit 0 — <strong>1</strong> when one fails (or no part of it could be solved) or the
+run is refused, and with <code>--severity warning</code> when one warns; <strong>130</strong> on a cancellation. A cancelled run still writes the report for the layers that <strong>finished</strong>,
 and says on its first page that it was cancelled.</p>
 <h2 id="smith"><code>smith</code> — a matching network, headless</h2>
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf smith &lt;match.csmith&gt; [--at &lt;freq&gt;] [-o out.{s1p,svg,pdf,png}]</code></pre>

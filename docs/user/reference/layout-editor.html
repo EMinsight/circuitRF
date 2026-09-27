@@ -1489,27 +1489,132 @@ Gerber stroke was split, is not a bend: the direction is taken from the trace's 
 the one edge beside the click. And where the coplanar ground beside the trace <strong>is not straight</strong>
 — a pour that juts in toward the trace for part of its run — the answer is for the gap at the
 point you clicked, and the line adds <em>G right varies 184–259 µm along the run</em> so you know the number
-is local. The <a href="#impedance-analysis">Impedance Analysis</a> report shows Z0 along the whole trace.</p>
+is local. The <a href="#impedance-analysis">Impedance Analysis</a> shows Z0 along the whole trace.</p>
 <h2 id="impedance-analysis">Impedance Analysis</h2>
-<p>The <strong>Impedance Analysis</strong> button on the toolbar (the <strong>Z₀</strong> tile beside Check Design Rules) checks
-<strong>every trace on the layers you choose</strong> against a target impedance and writes the review as a PDF
-— the document you file with a board you send out with an impedance-control note. It is
-<a href="#trace-impedance">Trace impedance</a> run end to end along every trace, from the same cross-section
-solve, so a trace's number in the report is the number you get by right-clicking it.</p>
-<p>The dialog asks three things:</p>
+<p>The <strong>Impedance</strong> panel checks <strong>every trace on the layers you choose</strong> against a target impedance,
+shows the result on the board, and exports the review as a PDF — the document you file with a
+board you send out with an impedance-control note. It is <a href="#trace-impedance">Trace impedance</a> run end
+to end along every trace, from the same cross-section solve, so a trace's number in the panel is the
+number you get by right-clicking it.</p>
+<p>The <strong>Z₀</strong> tile on the toolbar (beside Check Design Rules) opens the panel for the layout you are in,
+docked beside Properties; it is also under <strong>View ▸ Panels ▸ Impedance</strong>. Like the DRC panel it follows
+the layout you are working in, and each layout keeps its own results.</p>
+<p><strong>Settings and scope</strong>, at the top of the panel:</p>
 <ul>
-<li><strong>Impedance Z₀</strong> — the target, in ohms. 50 Ω by default.</li>
-<li><strong>Tolerance</strong> — ± this many percent passes, 10 % by default. The dialog shows the pass band it
-gives you, for example <em>45.0 – 55.0 Ω</em>.</li>
+<li><strong>Target Z₀</strong> — the target, in ohms. 50 Ω by default.</li>
+<li><strong>Tolerance</strong> — ± this many percent passes, 10 % by default.</li>
+<li><strong>Warning</strong> — ± this many percent is a warning rather than a fail, 20 % by default. It must be
+wider than the tolerance. The panel shows both bands it gives you, for example
+<em>Pass 45.0–55.0 Ω · Warning 40.0–60.0 Ω</em>.</li>
+<li><strong>Highest frequency</strong> — optional, blank by default. When given (<em>6 GHz</em>; a bare number is GHz),
+a stretch outside the warning band that is <strong>shorter than λ/20</strong> at that frequency is a warning
+rather than a fail — see <a href="#impedance-findings">electrically short</a>.</li>
 <li><strong>Layers</strong> — every copper layer of the stackup, all ticked by default. A layer with no copper
 on it is shown but cannot be ticked.</li>
+<li><strong>Traces</strong> — the trace widths on each ticked layer, to say which traces are under review. See
+<a href="#impedance-scope">Choosing the traces</a>.</li>
+<li><strong>Regions, picks and nets</strong> — the traces under review pointed at on the board itself: an area
+drawn round them, the traces clicked, or their net. See <a href="#impedance-scope-board">On the board</a>.</li>
+<li><strong>Scope</strong> — the traces that will be reviewed, in one sentence, updated as you tick and untick.</li>
 </ul>
-<p><strong>Export…</strong> asks where to save the <code>.pdf</code>, then runs. A bar shows the layer being analysed and how far
-through it the run is; a whole eight-layer board of about 300 traces takes a couple of minutes, a
-single outer layer a few seconds. <strong>Cancel</strong> stops the run and still writes the report for <strong>every
-layer that finished</strong>, with a note on its first page saying it was cancelled. The target, tolerance
-and layer choice are remembered until you close circuitRF. The Messages panel gets one line with the
-verdict and a link to the file.</p>
+<p><strong>Run</strong> analyses them. A bar shows the layer being analysed and how far through it the run is; a whole
+eight-layer board of about 300 traces takes a couple of minutes, a single outer layer a few seconds.
+<strong>Cancel</strong> stops the run and keeps <strong>every layer that finished</strong>. The Messages panel gets one line with
+the counts that pass, warn and fail; it is a warning line only when something <strong>failed</strong> or the run was
+cancelled.</p>
+<p><strong>The results</strong> stay in the panel until you run again:</p>
+<ul>
+<li><strong>Tiles</strong> count the traces that <strong>pass</strong>, <strong>warn</strong> and <strong>fail</strong>, the findings <strong>accepted</strong>, and the
+traces <strong>out of scope</strong>.</li>
+<li>A <strong>filter</strong> lists <strong>All</strong>, <strong>Warnings and failures</strong> (the default), <strong>Failures</strong> or <strong>Accepted</strong>. A
+trace that could not be solved at all was not reviewed, and is listed with the failures. The
+warning and failure filters leave <a href="#impedance-accept">accepted findings</a> out; <strong>Accepted</strong> lists only
+them.</li>
+<li><strong>One row per trace</strong>: its id, layer, verdict, width, Z0 min–max, the share of it inside the pass
+band, and its line type — the same text the PDF's table prints. The arrow beside a row opens its
+findings, each with its severity, and its notes.</li>
+<li><strong>Selecting a row</strong> marks that trace, or that finding, on the canvas; <strong>double-clicking</strong> it zooms to
+the trace, or to the stretch the finding is about.</li>
+</ul>
+<p><strong>On the canvas</strong>, while the panel has results, every reviewed trace's centre line is drawn in its Z0
+colour — the PDF map's scale: green inside the pass band, blue below, red above — with a
+marker at each finding: <strong>filled</strong> for a fail, <strong>hollow</strong> for a warning, orange for Z0 and purple for the
+return path, and <strong>grey with a check</strong> for an accepted finding. A trace outside the scope is not
+drawn. <strong>Show on canvas</strong> turns this off. It is never part
+of the artwork: no export, Gerber, GDSII or <code>render</code> picture carries it.</p>
+<p><strong>Editing the layout keeps the results</strong> and marks them stale — <em>The layout has changed since this
+run</em> — because you are usually part-way through fixing what they found. Run again to review the
+artwork as it is now.</p>
+<p><strong>Export PDF…</strong> writes the results the panel holds as a PDF, without running again. It is available once
+there are results; a PDF exported from stale results says so at the top of its first page, so it cannot
+pass as a review of the board as it is now. The Messages line for an export links to the file.</p>
+<p><strong>The review is saved in the layout</strong> as you edit it: the target, both bands, the frequency, the layers
+the trace widths ticked, and the regions, picks and nets are stored in the <code>.clay</code>, beside the layout's design-rule waivers, so the
+panel opens on them next time and <a href="cli.html#impedance"><code>circuitrf impedance</code></a> reviews the same traces
+headlessly. Like a waiver, it is a statement about this artwork: changing it marks the layout modified,
+and it is not undone by <strong>Undo</strong>. The results themselves are not saved; the findings you
+<a href="#impedance-accept">accept</a> are, on the same terms.</p>
+<h3 id="impedance-scope">Choosing the traces</h3>
+<p>A board carries far more traces than are meant to be controlled, and holding the routing to 50 Ω makes a
+report that is mostly FAIL for traces nobody meant to be 50 Ω. The <strong>Traces</strong> section says which ones are
+under review, by <strong>width</strong> — which is how a fabrication drawing's impedance note is written
+(<em>457 µm on L1: 50 Ω controlled</em>), and which works on imported Gerber artwork with no nets.</p>
+<p>When the panel is on screen it surveys the board in the background and lists, under each ticked layer,
+every <strong>width class</strong> on it (the refresh button beside <strong>Traces</strong> surveys again after the artwork has
+changed):</p>
+<p><em>457 µm   1 trace   18.3 mm · typical Z₀ 55.4 Ω</em></p>
+<ul>
+<li>A trace's width is the width over <strong>most of its length</strong>, so a trace that tapers into a pad is listed
+at the width it mostly has. Widths within 1 % (or 1 µm) of each other are one class.</li>
+<li><strong>Typical Z₀</strong> is one cut at the middle of the class's longest trace — a guide to which class is
+which, not the class's result. The analysis measures every trace in full.</li>
+<li><strong>Nothing is ticked for you</strong>, not even the widths already near the target: a trace drawn at the wrong
+width is exactly what the review exists to catch. Once you have ticked some, the saved choice is what
+the panel opens on.</li>
+<li><strong>No width ticked on a layer reviews every width on it.</strong> Unticking a layer hides its widths.</li>
+<li>A saved width the artwork no longer has is kept, struck through, with <em>no traces at this width now</em>;
+untick it to drop it.</li>
+</ul>
+<p>Traces outside the choice are <strong>not cut, not solved and not listed</strong> — on a large board that is most
+of the run time — but they are still <strong>copper</strong>: a trace under review still sees its out-of-scope
+neighbour as grounded copper beside it, exactly as without a choice. The report says what was reviewed
+and counts what was not, for example <em>Top Copper at 457 µm (1 trace). 21 traces on Top Copper and 19 on
+Inner 1 are outside the scope and were not analysed.</em></p>
+<h3 id="impedance-scope-board">On the board: regions, picks and nets</h3>
+<p>Width fails when an RF trace shares its width with other traces — a 50 Ω line and a digital bus
+drawn at the same width — or when the RF path changes width along its way. The <strong>Regions, picks and
+nets</strong> section says which traces are under review by pointing at them:</p>
+<ul>
+<li><strong>Add region ▸ Rectangle</strong> — drag a rectangle on the canvas. <strong>Add region ▸ Lasso</strong> — drag
+round the area freehand; the outline closes when you let go. <strong>Escape</strong> cancels.</li>
+<li><strong>Pick traces</strong> — while it is on, <strong>click</strong> a trace to add it, or <strong>Shift-click</strong> to add it
+<strong>and every trace joined to it</strong> through vias, on any layer. Escape, or clicking the button again,
+stops. The canvas's right-click menu also has <strong>Add to impedance review</strong> beside <strong>Trace Impedance</strong>.</li>
+<li><strong>Nets</strong> — when the artwork carries net names (a Gerber X2 file's net attributes, or a board
+netlist applied on import), a searchable list of them; tick the nets to review. The section is not
+there at all for artwork with no nets. A trace's net is the net of the copper under its middle; the
+panel counts the traces whose copper carries no net (or two), because no net can choose them.</li>
+</ul>
+<p><strong>Any one of them chooses a trace, and the widths then filter what they chose.</strong> With none set, every
+trace is reviewed, as before.</p>
+<ul>
+<li><strong>A region takes a trace any part of which lies inside it</strong>, and reviews it <strong>whole</strong>: a region that
+clips the end of the RF trace does not drop it, and never cuts it short. A region is a board area, so
+it applies to every layer. Regions are listed in the panel, where you can name one (the name appears
+in the report) or remove it; selecting one highlights it on the canvas. To change a region, remove it
+and draw it again.</li>
+<li><strong>A pick is a point, not a list of shapes</strong>: it is looked up again at every run, so it survives edits
+and a re-import as long as copper is still there. A pick with no copper under it any more is kept and
+listed as <em>no copper here now</em> until you remove it.</li>
+<li><strong>Joined copper stops at a part.</strong> A capacitor or resistor in series is not copper, so a path through a
+DC-block capacitor is two picks, one each side of it.</li>
+</ul>
+<p>While the panel is open, regions are drawn on the canvas as a dashed outline over a light tint and picks
+as a ring and a cross (two rings for a joined pick, grey when there is no copper under it). The PDF's
+maps draw the regions dashed too, and its scope sentence names each selector: <em>Selected by 2 regions
+('RF front end', 'antenna'); 1 pick (Top Copper, connected); net RF_OUT. Top Copper, every width (3
+traces).</em> Before a run the panel's Scope line names the selectors but cannot count what they choose;
+the run counts it.</p>
 <h3 id="impedance-traces">What counts as a trace</h3>
 <p>The analysis works on the copper as drawn, so it reads imported Gerber artwork as well as a layout
 you drew:</p>
@@ -1529,27 +1634,102 @@ than about ten times the distance to the nearest other copper layer is not read 
 <a href="#trace-impedance">Trace impedance</a> describes: the reference is found from the copper, and every
 other conductor near the trace is held at ground.</p>
 <h3 id="impedance-findings">What it flags</h3>
-<p>A trace <strong>fails</strong> when any of these is found on it, and each is numbered on the layer's map:</p>
+<p>Every trace is <strong>PASS</strong>, <strong>WARN</strong> or <strong>FAIL</strong>. Each finding is a warning or a fail, and a trace takes
+the worst of its findings: <em>look at this</em> is kept apart from <em>this is wrong</em>. Each is numbered on the
+layer's map.</p>
+<table>
+<thead>
+<tr>
+<th>Finding</th>
+<th>Severity</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Z0 outside target ± tolerance</strong> but inside ± the warning band, with the stretch it is out over and its range</td>
+<td>Warning</td>
+</tr>
+<tr>
+<td><strong>Z0 outside the warning band</strong></td>
+<td>Fail — or a warning when it is electrically short (below)</td>
+</tr>
+<tr>
+<td><strong>A broken return path</strong> — the nearest layer under (or over) the trace stops covering it part of the way, while covering it elsewhere along the same trace</td>
+<td>Fail, however short</td>
+</tr>
+<tr>
+<td><strong>No return at all</strong> — no copper covers the trace and nothing is beside it</td>
+<td>Fail</td>
+</tr>
+<tr>
+<td><strong>Copper only partly under the trace</strong> — a plane edge running beneath it</td>
+<td>Warning</td>
+</tr>
+<tr>
+<td><strong>A reference step</strong> — the reference changes from one layer to another along the trace; often a designed transition</td>
+<td>Warning</td>
+</tr>
+<tr>
+<td><strong>Part of the trace could not be solved</strong> — not checked, which is not the same as wrong</td>
+<td>Warning</td>
+</tr>
+</tbody>
+</table>
+<p>A layer cleared under the <strong>whole</strong> trace is not a fault; it is noted, with the deeper layer that
+became the reference.</p>
+<p><strong>Electrically short.</strong> With a <strong>Highest frequency</strong> given, a stretch outside the warning band whose
+electrical length is under <strong>λ/20</strong> there — a neck-down into a pad, a width step at a launch
+— is a warning, not a fail. λ is taken from each cut's own effective permittivity, and the
+finding says how long the stretch is in wavelengths, for example <em>0.018 λ at 6 GHz —
+electrically short</em>. It applies to Z0 only: a broken return is never softened by being short. Left
+blank, the rule is off and the report says nothing about it.</p>
+<h3 id="impedance-accept">Accepting a finding</h3>
+<p>Some findings are known and fine: a connector trace 0.4 Ω past the band edge, a reference that steps
+to an inner layer under a via fence on purpose, a ground clearance a launch was designed around.
+Widening the tolerance to clear one of them clears it for <strong>every</strong> trace. <strong>Accepting</strong> it clears only
+that one, with the reason on the record.</p>
+<p>Expand a trace, select one or more of its findings (Ctrl- or Shift-click for several, across traces if
+you like) and click <strong>Accept…</strong>. The panel asks <strong>why</strong> — a reason is required, because it is the
+sentence a reader of a passing report relies on — and applies it at once: the counts and the
+trace's verdict change without running again. The finding stays in the list, marked <strong>ACCEPTED</strong> with
+the reason and the date; it simply no longer counts against its trace. <strong>Un-accept</strong> on a selected
+accepted finding counts it again.</p>
 <ul>
-<li><strong>Z0 outside target ± tolerance</strong>, with the stretch it is out over and its range.</li>
-<li><strong>A broken return path</strong> — the nearest layer under (or over) the trace stops covering it part
-of the way, while covering it elsewhere along the same trace. A layer cleared under the <strong>whole</strong>
-trace is not a fault; it is noted, with the deeper layer that became the reference.</li>
-<li><strong>Copper only partly under the trace</strong> — a plane edge running beneath it.</li>
-<li><strong>A reference step</strong> — the reference itself changes from one layer to another along the trace.</li>
+<li><strong>An acceptance belongs to the trace, not to the stretch.</strong> It is stored against the trace's two end
+points and the kind of finding, so changing the tolerance, the warning band or the scope does not
+undo it. <strong>Moving or re-routing the trace does</strong>: a moved trace has not been reviewed.</li>
+<li><strong>It does not cover a worse finding.</strong> A Z0 finding is accepted at the trace's worst Z0 at the time;
+a later run further from the target shows the finding again, un-accepted, saying both —
+<em>Accepted at 55.5 Ω, now 58.1 Ω</em>.</li>
+<li><strong>An acceptance that matches nothing</strong> in a run — the trace moved, or the finding is gone
+— is listed under <strong>Accepted, but matched nothing in this run</strong> with the finding's text as it
+was, and stays on the layout until you remove it with its <strong>✕</strong>. One whose trace is outside this
+run's scope is neither applied nor listed.</li>
 </ul>
+<p>Acceptances are saved in the <code>.clay</code> beside the design-rule waivers, mark the layout modified, and are
+not undone by <strong>Undo</strong>. <a href="cli.html#impedance"><code>circuitrf impedance</code></a> applies them too.</p>
 <h3 id="impedance-report">The report</h3>
 <ul>
-<li><strong>A summary page</strong> — always one page: the target and pass band, the technology and its <code>.ctech</code>
-file, the layers, the counts of traces that pass and fail, and per layer the worst excursion from the
-target. On the right is the <strong>stackup</strong> the traces were solved against, drawn exactly as the
+<li><strong>A summary page</strong> — always one page. It leads with the <strong>verdict</strong> and its counts — for
+example <em>PASS — 3 traces reviewed, 3 pass (1 with an accepted finding), 0 warnings, 0 failures</em>
+— then, when the results were stale when exported, a line saying the layout had changed since
+the run; then the <strong>scope</strong>, the target and pass band — which traces
+were reviewed and how many on each layer were outside it — the technology and its <code>.ctech</code>
+file, the layers, the counts of traces that pass, warn and fail, and per layer the traces outside the
+scope and the worst excursion from the target. With a highest frequency given, <em>How it was measured</em> states the λ/20 rule and the frequency. On the right is the <strong>stackup</strong> the traces were solved against, drawn exactly as the
 technology editor's Stackup tab draws it, with each layer's thickness, εr, tanδ and conductivity.</li>
 <li><strong>A map page per layer</strong>: the layer's copper in grey with every trace drawn over it <strong>coloured by its
 Z0</strong> — green inside the pass band, blue below, red above — its id, and a numbered marker at
-every finding. The colour scale and the pass band are on the page.</li>
+every finding: <strong>filled</strong> for a fail, <strong>hollow</strong> for a warning, orange for Z0 and purple for the
+return path. The colour scale marks the pass band, and the warning band's edges as a lighter pair of
+ticks. A trace outside the scope is plain grey copper — no colour, no label, no marker.</li>
 <li><strong>A table per layer</strong>: each trace's start and end, what each end is, its length and width, its line
 <strong>type</strong>, Z0 min, max and average, the share of its length inside the band, its reference layers,
-PASS or FAIL, and then the numbered findings in full.</li>
+PASS, WARN or FAIL, and then the numbered findings in full, each with its severity — or
+<strong>ACCEPTED</strong> and its reason.</li>
+<li><strong>Accepted findings</strong>, when there are any: each accepted finding with its trace, its text, the reason
+and the date, and any acceptance that matched nothing in this run. An accepted finding is also still
+on its layer's map, <strong>grey with a check</strong> where its number would be.</li>
 </ul>
 <p>The <strong>type</strong> is microstrip, <strong>GCPW</strong> (grounded coplanar waveguide: a plane below and ground beside it on
 both sides), <strong>GCPW 1-side</strong>, stripline or CPW. A trace that is <strong>both</strong> along its run — grounded CPW
@@ -1758,7 +1938,7 @@ page's footer says which, beside Z0 in Ω.</p>
 							Z₀
 					</text></g></svg></span><span class="toolbar-glyph sym-dark"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="30" height="24" viewBox="0 0 30 24"><rect fill="#010101" width="30" height="24" /><rect fill="#15222D" width="30" height="24" /><path fill="white" fill-opacity="0.2" d="M0.5 20.5L0.5 3.5Q0.5 3.35 0.5144 3.21Q0.5289 3.06 0.5576 2.91Q0.5864 2.77 0.6292 2.63Q0.672 2.49 0.7284 2.35Q0.7848 2.22 0.8542 2.09Q0.9237 1.96 1.01 1.83Q1.09 1.71 1.18 1.6Q1.27 1.48 1.38 1.38Q1.48 1.27 1.6 1.18Q1.71 1.09 1.83 1.01Q1.96 0.9237 2.09 0.8542Q2.22 0.7848 2.35 0.7284Q2.49 0.672 2.63 0.6292Q2.77 0.5864 2.91 0.5576Q3.06 0.5289 3.21 0.5144Q3.35 0.5 3.5 0.5L26.5 0.5Q26.65 0.5 26.79 0.5144Q26.94 0.5289 27.09 0.5576Q27.23 0.5864 27.37 0.6292Q27.51 0.672 27.65 0.7284Q27.78 0.7848 27.91 0.8542Q28.04 0.9237 28.17 1.01Q28.29 1.09 28.4 1.18Q28.52 1.27 28.62 1.38Q28.73 1.48 28.82 1.6Q28.91 1.71 28.99 1.83Q29.08 1.96 29.15 2.09Q29.22 2.22 29.27 2.35Q29.33 2.49 29.37 2.63Q29.41 2.77 29.44 2.91Q29.47 3.06 29.49 3.21Q29.5 3.35 29.5 3.5L29.5 20.5Q29.5 20.65 29.49 20.79Q29.47 20.94 29.44 21.09Q29.41 21.23 29.37 21.37Q29.33 21.51 29.27 21.65Q29.22 21.78 29.15 21.91Q29.08 22.04 28.99 22.17Q28.91 22.29 28.82 22.4Q28.73 22.52 28.62 22.62Q28.52 22.73 28.4 22.82Q28.29 22.91 28.17 22.99Q28.04 23.08 27.91 23.15Q27.78 23.22 27.65 23.27Q27.51 23.33 27.37 23.37Q27.23 23.41 27.09 23.44Q26.94 23.47 26.79 23.49Q26.65 23.5 26.5 23.5L3.5 23.5Q3.35 23.5 3.21 23.49Q3.06 23.47 2.91 23.44Q2.77 23.41 2.63 23.37Q2.49 23.33 2.35 23.27Q2.22 23.22 2.09 23.15Q1.96 23.08 1.83 22.99Q1.71 22.91 1.6 22.82Q1.48 22.73 1.38 22.62Q1.27 22.52 1.18 22.4Q1.09 22.29 1.01 22.17Q0.9237 22.04 0.8542 21.91Q0.7848 21.78 0.7284 21.65Q0.672 21.51 0.6292 21.37Q0.5864 21.23 0.5576 21.09Q0.5289 20.94 0.5144 20.79Q0.5 20.65 0.5 20.5Z" /><path fill="none" stroke="white" stroke-width="1" stroke-miterlimit="10" transform="translate(7 6)" d="M0.5 9.5L0.5 2.5Q0.5 2.4 0.5096 2.3Q0.5193 2.21 0.5384 2.11Q0.5576 2.01 0.5861 1.92Q0.6146 1.83 0.6522 1.73Q0.6898 1.64 0.7362 1.56Q0.7825 1.47 0.8371 1.39Q0.8916 1.31 0.954 1.23Q1.02 1.16 1.09 1.09Q1.16 1.02 1.23 0.954Q1.31 0.8916 1.39 0.8371Q1.47 0.7825 1.56 0.7362Q1.64 0.6898 1.73 0.6522Q1.83 0.6146 1.92 0.5861Q2.01 0.5576 2.11 0.5384Q2.21 0.5193 2.3 0.5096Q2.4 0.5 2.5 0.5L13.5 0.5Q13.6 0.5 13.7 0.5096Q13.79 0.5193 13.89 0.5384Q13.99 0.5576 14.08 0.5861Q14.17 0.6146 14.27 0.6522Q14.36 0.6898 14.44 0.7362Q14.53 0.7825 14.61 0.8371Q14.69 0.8916 14.77 0.954Q14.84 1.02 14.91 1.09Q14.98 1.16 15.05 1.23Q15.11 1.31 15.16 1.39Q15.22 1.47 15.26 1.56Q15.31 1.64 15.35 1.73Q15.39 1.83 15.41 1.92Q15.44 2.01 15.46 2.11Q15.48 2.21 15.49 2.3Q15.5 2.4 15.5 2.5L15.5 9.5Q15.5 9.6 15.49 9.7Q15.48 9.79 15.46 9.89Q15.44 9.99 15.41 10.08Q15.39 10.17 15.35 10.27Q15.31 10.36 15.26 10.44Q15.22 10.53 15.16 10.61Q15.11 10.69 15.05 10.77Q14.98 10.84 14.91 10.91Q14.84 10.98 14.77 11.05Q14.69 11.11 14.61 11.16Q14.53 11.22 14.44 11.26Q14.36 11.31 14.27 11.35Q14.17 11.39 14.08 11.41Q13.99 11.44 13.89 11.46Q13.79 11.48 13.7 11.49Q13.6 11.5 13.5 11.5L2.5 11.5Q2.4 11.5 2.3 11.49Q2.21 11.48 2.11 11.46Q2.01 11.44 1.92 11.41Q1.83 11.39 1.73 11.35Q1.64 11.31 1.56 11.26Q1.47 11.22 1.39 11.16Q1.31 11.11 1.23 11.05Q1.16 10.98 1.09 10.91Q1.02 10.84 0.954 10.77Q0.8916 10.69 0.8371 10.61Q0.7825 10.53 0.7362 10.44Q0.6898 10.36 0.6522 10.27Q0.6146 10.17 0.5861 10.08Q0.5576 9.99 0.5384 9.89Q0.5193 9.79 0.5096 9.7Q0.5 9.6 0.5 9.5Z" /><clipPath id="toolbar-layout-btn-28-dark_cl_0"><rect x="10" y="7" width="10" height="10" /></clipPath><g clip-path="url(#toolbar-layout-btn-28-dark_cl_0)"><text fill="white" transform="translate(10 7)" font-size="8" font-weight="600" font-family="Inter" x="0, 5.34" y="7.75">
 							Z₀
-					</text></g></svg></span></td><td>Impedance Analysis… — every trace against a target Z0 and its return path, exported as a PDF report</td></tr>
+					</text></g></svg></span></td><td>Impedance Analysis — every trace against a target Z0 and its return path, in the Impedance panel</td></tr>
 <tr><td>29</td><td class="glyph-cell"><span class="toolbar-glyph sym-light"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="30" height="24" viewBox="0 0 30 24"><rect fill="white" width="30" height="24" /><rect fill="#F6F8FA" width="30" height="24" /><path fill="#010101" fill-opacity="0.2" d="M0.5 20.5L0.5 3.5Q0.5 3.35 0.5144 3.21Q0.5289 3.06 0.5576 2.91Q0.5864 2.77 0.6292 2.63Q0.672 2.49 0.7284 2.35Q0.7848 2.22 0.8542 2.09Q0.9237 1.96 1.01 1.83Q1.09 1.71 1.18 1.6Q1.27 1.48 1.38 1.38Q1.48 1.27 1.6 1.18Q1.71 1.09 1.83 1.01Q1.96 0.9237 2.09 0.8542Q2.22 0.7848 2.35 0.7284Q2.49 0.672 2.63 0.6292Q2.77 0.5864 2.91 0.5576Q3.06 0.5289 3.21 0.5144Q3.35 0.5 3.5 0.5L26.5 0.5Q26.65 0.5 26.79 0.5144Q26.94 0.5289 27.09 0.5576Q27.23 0.5864 27.37 0.6292Q27.51 0.672 27.65 0.7284Q27.78 0.7848 27.91 0.8542Q28.04 0.9237 28.17 1.01Q28.29 1.09 28.4 1.18Q28.52 1.27 28.62 1.38Q28.73 1.48 28.82 1.6Q28.91 1.71 28.99 1.83Q29.08 1.96 29.15 2.09Q29.22 2.22 29.27 2.35Q29.33 2.49 29.37 2.63Q29.41 2.77 29.44 2.91Q29.47 3.06 29.49 3.21Q29.5 3.35 29.5 3.5L29.5 20.5Q29.5 20.65 29.49 20.79Q29.47 20.94 29.44 21.09Q29.41 21.23 29.37 21.37Q29.33 21.51 29.27 21.65Q29.22 21.78 29.15 21.91Q29.08 22.04 28.99 22.17Q28.91 22.29 28.82 22.4Q28.73 22.52 28.62 22.62Q28.52 22.73 28.4 22.82Q28.29 22.91 28.17 22.99Q28.04 23.08 27.91 23.15Q27.78 23.22 27.65 23.27Q27.51 23.33 27.37 23.37Q27.23 23.41 27.09 23.44Q26.94 23.47 26.79 23.49Q26.65 23.5 26.5 23.5L3.5 23.5Q3.35 23.5 3.21 23.49Q3.06 23.47 2.91 23.44Q2.77 23.41 2.63 23.37Q2.49 23.33 2.35 23.27Q2.22 23.22 2.09 23.15Q1.96 23.08 1.83 22.99Q1.71 22.91 1.6 22.82Q1.48 22.73 1.38 22.62Q1.27 22.52 1.18 22.4Q1.09 22.29 1.01 22.17Q0.9237 22.04 0.8542 21.91Q0.7848 21.78 0.7284 21.65Q0.672 21.51 0.6292 21.37Q0.5864 21.23 0.5576 21.09Q0.5289 20.94 0.5144 20.79Q0.5 20.65 0.5 20.5Z" /><path fill="none" stroke="#010101" stroke-width="1" stroke-miterlimit="10" transform="translate(7 6)" d="M0.5 9.5L0.5 2.5Q0.5 2.4 0.5096 2.3Q0.5193 2.21 0.5384 2.11Q0.5576 2.01 0.5861 1.92Q0.6146 1.83 0.6522 1.73Q0.6898 1.64 0.7362 1.56Q0.7825 1.47 0.8371 1.39Q0.8916 1.31 0.954 1.23Q1.02 1.16 1.09 1.09Q1.16 1.02 1.23 0.954Q1.31 0.8916 1.39 0.8371Q1.47 0.7825 1.56 0.7362Q1.64 0.6898 1.73 0.6522Q1.83 0.6146 1.92 0.5861Q2.01 0.5576 2.11 0.5384Q2.21 0.5193 2.3 0.5096Q2.4 0.5 2.5 0.5L13.5 0.5Q13.6 0.5 13.7 0.5096Q13.79 0.5193 13.89 0.5384Q13.99 0.5576 14.08 0.5861Q14.17 0.6146 14.27 0.6522Q14.36 0.6898 14.44 0.7362Q14.53 0.7825 14.61 0.8371Q14.69 0.8916 14.77 0.954Q14.84 1.02 14.91 1.09Q14.98 1.16 15.05 1.23Q15.11 1.31 15.16 1.39Q15.22 1.47 15.26 1.56Q15.31 1.64 15.35 1.73Q15.39 1.83 15.41 1.92Q15.44 2.01 15.46 2.11Q15.48 2.21 15.49 2.3Q15.5 2.4 15.5 2.5L15.5 9.5Q15.5 9.6 15.49 9.7Q15.48 9.79 15.46 9.89Q15.44 9.99 15.41 10.08Q15.39 10.17 15.35 10.27Q15.31 10.36 15.26 10.44Q15.22 10.53 15.16 10.61Q15.11 10.69 15.05 10.77Q14.98 10.84 14.91 10.91Q14.84 10.98 14.77 11.05Q14.69 11.11 14.61 11.16Q14.53 11.22 14.44 11.26Q14.36 11.31 14.27 11.35Q14.17 11.39 14.08 11.41Q13.99 11.44 13.89 11.46Q13.79 11.48 13.7 11.49Q13.6 11.5 13.5 11.5L2.5 11.5Q2.4 11.5 2.3 11.49Q2.21 11.48 2.11 11.46Q2.01 11.44 1.92 11.41Q1.83 11.39 1.73 11.35Q1.64 11.31 1.56 11.26Q1.47 11.22 1.39 11.16Q1.31 11.11 1.23 11.05Q1.16 10.98 1.09 10.91Q1.02 10.84 0.954 10.77Q0.8916 10.69 0.8371 10.61Q0.7825 10.53 0.7362 10.44Q0.6898 10.36 0.6522 10.27Q0.6146 10.17 0.5861 10.08Q0.5576 9.99 0.5384 9.89Q0.5193 9.79 0.5096 9.7Q0.5 9.6 0.5 9.5Z" /><clipPath id="toolbar-layout-btn-29_cl_0"><rect x="9" y="7" width="12" height="10" /></clipPath><g clip-path="url(#toolbar-layout-btn-29_cl_0)"><text fill="#010101" transform="translate(9 7)" font-size="8" font-weight="600" font-family="Inter" x="0, 4.6" y="7.75">
 							EM
 					</text></g></svg></span><span class="toolbar-glyph sym-dark"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="30" height="24" viewBox="0 0 30 24"><rect fill="#010101" width="30" height="24" /><rect fill="#15222D" width="30" height="24" /><path fill="white" fill-opacity="0.2" d="M0.5 20.5L0.5 3.5Q0.5 3.35 0.5144 3.21Q0.5289 3.06 0.5576 2.91Q0.5864 2.77 0.6292 2.63Q0.672 2.49 0.7284 2.35Q0.7848 2.22 0.8542 2.09Q0.9237 1.96 1.01 1.83Q1.09 1.71 1.18 1.6Q1.27 1.48 1.38 1.38Q1.48 1.27 1.6 1.18Q1.71 1.09 1.83 1.01Q1.96 0.9237 2.09 0.8542Q2.22 0.7848 2.35 0.7284Q2.49 0.672 2.63 0.6292Q2.77 0.5864 2.91 0.5576Q3.06 0.5289 3.21 0.5144Q3.35 0.5 3.5 0.5L26.5 0.5Q26.65 0.5 26.79 0.5144Q26.94 0.5289 27.09 0.5576Q27.23 0.5864 27.37 0.6292Q27.51 0.672 27.65 0.7284Q27.78 0.7848 27.91 0.8542Q28.04 0.9237 28.17 1.01Q28.29 1.09 28.4 1.18Q28.52 1.27 28.62 1.38Q28.73 1.48 28.82 1.6Q28.91 1.71 28.99 1.83Q29.08 1.96 29.15 2.09Q29.22 2.22 29.27 2.35Q29.33 2.49 29.37 2.63Q29.41 2.77 29.44 2.91Q29.47 3.06 29.49 3.21Q29.5 3.35 29.5 3.5L29.5 20.5Q29.5 20.65 29.49 20.79Q29.47 20.94 29.44 21.09Q29.41 21.23 29.37 21.37Q29.33 21.51 29.27 21.65Q29.22 21.78 29.15 21.91Q29.08 22.04 28.99 22.17Q28.91 22.29 28.82 22.4Q28.73 22.52 28.62 22.62Q28.52 22.73 28.4 22.82Q28.29 22.91 28.17 22.99Q28.04 23.08 27.91 23.15Q27.78 23.22 27.65 23.27Q27.51 23.33 27.37 23.37Q27.23 23.41 27.09 23.44Q26.94 23.47 26.79 23.49Q26.65 23.5 26.5 23.5L3.5 23.5Q3.35 23.5 3.21 23.49Q3.06 23.47 2.91 23.44Q2.77 23.41 2.63 23.37Q2.49 23.33 2.35 23.27Q2.22 23.22 2.09 23.15Q1.96 23.08 1.83 22.99Q1.71 22.91 1.6 22.82Q1.48 22.73 1.38 22.62Q1.27 22.52 1.18 22.4Q1.09 22.29 1.01 22.17Q0.9237 22.04 0.8542 21.91Q0.7848 21.78 0.7284 21.65Q0.672 21.51 0.6292 21.37Q0.5864 21.23 0.5576 21.09Q0.5289 20.94 0.5144 20.79Q0.5 20.65 0.5 20.5Z" /><path fill="none" stroke="white" stroke-width="1" stroke-miterlimit="10" transform="translate(7 6)" d="M0.5 9.5L0.5 2.5Q0.5 2.4 0.5096 2.3Q0.5193 2.21 0.5384 2.11Q0.5576 2.01 0.5861 1.92Q0.6146 1.83 0.6522 1.73Q0.6898 1.64 0.7362 1.56Q0.7825 1.47 0.8371 1.39Q0.8916 1.31 0.954 1.23Q1.02 1.16 1.09 1.09Q1.16 1.02 1.23 0.954Q1.31 0.8916 1.39 0.8371Q1.47 0.7825 1.56 0.7362Q1.64 0.6898 1.73 0.6522Q1.83 0.6146 1.92 0.5861Q2.01 0.5576 2.11 0.5384Q2.21 0.5193 2.3 0.5096Q2.4 0.5 2.5 0.5L13.5 0.5Q13.6 0.5 13.7 0.5096Q13.79 0.5193 13.89 0.5384Q13.99 0.5576 14.08 0.5861Q14.17 0.6146 14.27 0.6522Q14.36 0.6898 14.44 0.7362Q14.53 0.7825 14.61 0.8371Q14.69 0.8916 14.77 0.954Q14.84 1.02 14.91 1.09Q14.98 1.16 15.05 1.23Q15.11 1.31 15.16 1.39Q15.22 1.47 15.26 1.56Q15.31 1.64 15.35 1.73Q15.39 1.83 15.41 1.92Q15.44 2.01 15.46 2.11Q15.48 2.21 15.49 2.3Q15.5 2.4 15.5 2.5L15.5 9.5Q15.5 9.6 15.49 9.7Q15.48 9.79 15.46 9.89Q15.44 9.99 15.41 10.08Q15.39 10.17 15.35 10.27Q15.31 10.36 15.26 10.44Q15.22 10.53 15.16 10.61Q15.11 10.69 15.05 10.77Q14.98 10.84 14.91 10.91Q14.84 10.98 14.77 11.05Q14.69 11.11 14.61 11.16Q14.53 11.22 14.44 11.26Q14.36 11.31 14.27 11.35Q14.17 11.39 14.08 11.41Q13.99 11.44 13.89 11.46Q13.79 11.48 13.7 11.49Q13.6 11.5 13.5 11.5L2.5 11.5Q2.4 11.5 2.3 11.49Q2.21 11.48 2.11 11.46Q2.01 11.44 1.92 11.41Q1.83 11.39 1.73 11.35Q1.64 11.31 1.56 11.26Q1.47 11.22 1.39 11.16Q1.31 11.11 1.23 11.05Q1.16 10.98 1.09 10.91Q1.02 10.84 0.954 10.77Q0.8916 10.69 0.8371 10.61Q0.7825 10.53 0.7362 10.44Q0.6898 10.36 0.6522 10.27Q0.6146 10.17 0.5861 10.08Q0.5576 9.99 0.5384 9.89Q0.5193 9.79 0.5096 9.7Q0.5 9.6 0.5 9.5Z" /><clipPath id="toolbar-layout-btn-29-dark_cl_0"><rect x="9" y="7" width="12" height="10" /></clipPath><g clip-path="url(#toolbar-layout-btn-29-dark_cl_0)"><text fill="white" transform="translate(9 7)" font-size="8" font-weight="600" font-family="Inter" x="0, 4.6" y="7.75">

@@ -82,6 +82,9 @@ public static class DocSettingsFixtures
         // pictures depending on the generating machine's toolchain, which is not a reproducible
         // figure. This is the docs seam and nothing a user runs.
         RevisionControlSettingsView.ShowAsAvailableForCapture = true;
+        // The 3D EM tab's status lines are this machine's solver discovery: its home directory is written as ~ so no
+        // author's path reaches a committed figure.
+        Em3dSolverSettingsView.AnonymizeHomeForCapture = true;
 
         var dialog = new SettingsView(null);
         dialog.PopulateForCapture();

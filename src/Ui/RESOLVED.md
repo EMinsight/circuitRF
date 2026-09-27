@@ -36670,3 +36670,12 @@ Gate: `tests/Ui.Tests/Em3d/MaterialsTableInPlaceTests.cs`.
   `AirBoxShown` (toolbar and tick), re-applied on every adopted scene; the old "starts shown when a face is not
   absorbing" rule is gone — absorbing faces are clear in the editor, so shown means outline plus any wall.
 - Gate: `EditorRound2TreeTests.Round3_*` and `tests/Ui.Tests/ThreeD/AirBoxFillTests.cs`.
+
+
+## brief-em3d-52 — the Settings ▸ 3D EM figure carried the author's paths (2026-09-27)
+
+- `settings-3d-em(-dark).svg` and `settings.html` are captures of the real Settings dialog on the machine running
+  DocGen, and the 3D EM tab's status lines are that machine's solver discovery: "Found at /Users/<author>/opt/…". Two
+  such paths were already committed. `Em3dSolverSettingsView.AnonymizeHomeForCapture` (set only by
+  `DocSettingsFixtures`, beside the Revision Control capture seam) writes the home directory as `~` in every status
+  line, keeping the path's shape. A user's own dialog is unchanged.

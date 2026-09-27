@@ -52,6 +52,10 @@ What that buys you, concretely:
 It is not free. A circuit model answers in microseconds; a full-wave solve of a small structure takes
 seconds per frequency point. Use the model where the model is valid, and the solver where it is not.
 
+This planar solver is one of three circuitRF can use. How it compares with the 3D FEM and FDTD
+solvers, and when to reach for one of them instead, is in
+[EM Solvers: MoM, FEM and FDTD](em-solvers.html).
+
 ## What can and cannot be simulated {#can-cannot}
 
 This is a **planar (2.5D) solver**. It solves conductors embedded in a **laterally infinite, vertically

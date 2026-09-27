@@ -216,6 +216,21 @@ public enum PalaceQuality
     Accurate,
 }
 
+/// <summary>
+/// brief-em3d-52 — how Palace solves each linear system. <see cref="Iterative"/> (GMRES preconditioned by
+/// p-multigrid and the auxiliary-space AMS, F0's choice, every reference's) is the default: its memory grows
+/// gently with the mesh. <see cref="Direct"/> factors the operator with SuperLU_DIST, which every Palace
+/// circuitRF installs is built with: it takes more memory, and it is the one that makes a shift-and-invert
+/// EIGENMODE solve fast, because there the shifted operator is near-singular and GMRES needs a hundred
+/// iterations or more per solve. On the 3D Package example's lid mode, 128 k unknowns: GMRES had not
+/// finished after ten minutes; Direct took 35 s and 4.0 GB.
+/// </summary>
+public enum PalaceLinearSolver
+{
+    Iterative,
+    Direct,
+}
+
 /// <summary>Palace's own settings (em-3d.md §4.2). Every field may be omitted, and an omitted field
 /// takes the preset's value for it (<see cref="Quality"/>, Standard when omitted); an omitted section
 /// takes every default. The initial mesh these size is only a starting point: Palace's adaptive
@@ -261,6 +276,10 @@ public sealed class CemPalace
     /// </summary>
     public List<double>? SaveFieldsGHz { get; set; }
 
+    /// <summary>brief-em3d-52 — Iterative (the default) or Direct: see <see cref="PalaceLinearSolver"/>. Not a
+    /// preset's concern: every preset solves the same systems.</summary>
+    public PalaceLinearSolver? LinearSolver { get; set; }
+
     /// <summary>A copy, so an editor can change one without touching a setup that shares it.</summary>
     public CemPalace Clone()
     {
@@ -269,10 +288,13 @@ public sealed class CemPalace
         return c;
     }
 
-    /// <summary>True when no field is set: the same run as an omitted section.</summary>
+    /// <summary>True when no field is set: the same run as an omitted section. Never written: an embedded setup
+    /// (a .c3d's) is serialised by reflection, which writes a get-only property too (brief-em3d-52).</summary>
+    [JsonIgnore]
     public bool IsEmpty =>
         Quality is null && MaxElementWavelengths is null && EdgeRefinement is null && Grading is null && ElementOrder is null &&
-        AdaptiveTol is null && AdaptiveMaxIterations is null && SweepAdaptiveTol is null && SaveFieldsGHz is null;
+        AdaptiveTol is null && AdaptiveMaxIterations is null && SweepAdaptiveTol is null && SaveFieldsGHz is null &&
+        LinearSolver is null;
 }
 
 /// <summary>
@@ -307,6 +329,9 @@ public sealed record PalaceSettings(
     /// Never set from a .cem; a gate sets it.</summary>
     public IReadOnlyList<Point3> ProbesM { get; init; } = [];
 
+    /// <summary>brief-em3d-52 — how each linear system is solved (<see cref="PalaceLinearSolver"/>).</summary>
+    public PalaceLinearSolver LinearSolver { get; init; } = PalaceLinearSolver.Iterative;
+
     /// <summary>
     /// brief-em3d-21 R-em3d21-4 — a preset's values. <b>Standard is <see cref="Default"/></b>, so no
     /// golden and no existing answer moves. Draft and Accurate change only the element order, the
@@ -334,7 +359,11 @@ public sealed record PalaceSettings(
             section.ElementOrder          ?? p.ElementOrder,
             section.AdaptiveTol           ?? p.AdaptiveTol,
             section.AdaptiveMaxIterations ?? p.AdaptiveMaxIterations,
-            section.SweepAdaptiveTol      ?? p.SweepAdaptiveTol) { SaveFieldsGHz = section.SaveFieldsGHz };
+            section.SweepAdaptiveTol      ?? p.SweepAdaptiveTol)
+        {
+            SaveFieldsGHz = section.SaveFieldsGHz,
+            LinearSolver  = section.LinearSolver ?? PalaceLinearSolver.Iterative,
+        };
     }
 
     /// <summary>Every value that cannot be run, as sentences naming the field — empty when all can.</summary>
@@ -416,7 +445,9 @@ public sealed class CemOpenEms
         return c;
     }
 
-    /// <summary>True when no field is set: the same run as an omitted section.</summary>
+    /// <summary>True when no field is set: the same run as an omitted section. Never written: an embedded setup
+    /// (a .c3d's) is serialised by reflection, which writes a get-only property too (brief-em3d-52).</summary>
+    [JsonIgnore]
     public bool IsEmpty =>
         CellsPerWavelength is null && GradingRatio is null && ThirdsRule is null && MinCellUm is null && PmlCells is null &&
         EndCriterionDb is null && MaxTimeSteps is null && SaveFieldsGHz is null;

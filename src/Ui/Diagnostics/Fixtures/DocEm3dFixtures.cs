@@ -9,6 +9,7 @@ using Avalonia.Styling;
 using CircuitRF.Design.Layout;
 using CircuitRF.Design.Layout.Em;
 using CircuitRF.Design.Layout.Em3d;
+using CircuitRF.Design.ThreeD;
 using CircuitRF.Design.Workspace;
 using CircuitRF.Render;
 
@@ -43,6 +44,36 @@ public static class DocEm3dFixtures
     public static FigureScene PackageSide() => Section("Package/em/Package lid modes.cem", Side);
 
     private static readonly Em3dView Side = new(Em3dViewKind.SectionY, 0);
+
+    // ── The 3D Editor chapter (brief-em3d-52): the 3D Package example's drawn package ───────────────────────
+
+    /// <summary>The package, closed: floor, walls and lid around everything.</summary>
+    public static FigureScene PackageClosed() => ThreeDView(Em3dView.Iso, []);
+
+    /// <summary>The package with its lid and two walls lifted off: the base, the attach pad on its vias, the die,
+    /// the wires and the leads.</summary>
+    public static FigureScene PackageOpen() => ThreeDView(Em3dView.Iso, ["lid", "wall_s", "wall_e"]);
+
+    /// <summary>The package cut along its leads.</summary>
+    public static FigureScene PackageThreeDSide() => ThreeDView(Side, []);
+
+    /// <summary>The example's .c3d through its Driven setup — what <c>render --iso</c> / <c>--section</c> draw for
+    /// it — less the named objects, for a picture that shows inside.</summary>
+    private static FigureScene ThreeDView(Em3dView view, string[] leaveOut)
+    {
+        string root = ExampleWorkspaces.ResolveRoot()
+            ?? throw new InvalidOperationException("No examples/ tree beside the generator or above it, so the 3D Package figures have no document.");
+        string ws = Path.Combine(root, "3D Package");
+        string path = Path.Combine(ws, "Package", "3d", "Package.c3d");
+        var doc = C3dPersistence.LoadFromFile(path);
+        var (embedded, why) = C3dSetups.Select(doc, "Driven");
+        if (embedded is null) throw new InvalidOperationException(why);
+        var generated = C3dProblemAssembly.Assemble(C3dSetups.ForRun(embedded, path), doc, path, Path.Combine(ws, ".cws"));
+        if (!generated.Ok) throw new InvalidOperationException($"Package.c3d: {generated.Refusal}");
+        var problem = generated.Problem! with { Solids = [.. generated.Problem!.Solids.Where(s => !leaveOut.Contains(s.Name))] };
+        var tech = TechPersistence.LoadFromFile(Path.Combine(ws, "tech", "ceramic-package.ctech"));
+        return new FigureScene(new SectionView(generated with { Problem = problem }, tech, view, ws));
+    }
 
     private static FigureScene Section(string cem, Em3dView view)
     {

@@ -488,7 +488,7 @@ public sealed class ExampleWorkspacesTests(ITestOutputHelper output) : IDisposab
             {
                 string ext = Path.GetExtension(doc);
                 if (ext is not (".csch" or ".cem" or ".clay" or ".cws" or ".ccell"
-                                      or ".crail" or ".crlib" or ".ctech" or ".csmith")) continue;
+                                      or ".crail" or ".crlib" or ".ctech" or ".csmith" or ".c3d")) continue;
 
                 string text = File.ReadAllText(doc);
                 Assert.DoesNotContain("/Users/", text, StringComparison.Ordinal);
@@ -496,6 +496,9 @@ public sealed class ExampleWorkspacesTests(ITestOutputHelper output) : IDisposab
                 Assert.DoesNotContain("/home/", text, StringComparison.Ordinal);
 
                 if (ext is ".cem") runnable = true;
+                // A 3D view carries its own EM setups (brief-em3d-42): `circuitrf em view.c3d` runs them.
+                if (ext is ".c3d" && CircuitRF.Design.ThreeD.C3dSetups.Read(CircuitRF.Design.ThreeD.C3dPersistence.LoadFromFile(doc)).Count > 0)
+                    runnable = true;
 
                 // A .crail runs on its own — `circuitrf rail` needs no analysis card, because the
                 // rail set IS the thing to run. A .csmith is the same shape: `circuitrf smith`

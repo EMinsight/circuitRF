@@ -1,0 +1,298 @@
+---
+title: EM Solvers: MoM, FEM and FDTD
+slug: reference/em-solvers.html
+doc-kind: Reference Guide
+breadcrumb: Docs > Reference > EM solvers
+lede: circuitRF can solve a structure three ways — its own planar method of moments (MoM), Palace's finite element method (FEM) and openEMS's finite-difference time-domain method (FDTD). What each one is, why there are three, and which to use for what.
+keywords: EM solver, electromagnetic solver, FEM, finite element, finite element method, FDTD, finite-difference time-domain, finite difference time domain, MoM, method of moments, planar, 2.5D, 3D, full-wave, full wave, Palace, openEMS, Gmsh, mesh, tetrahedra, Yee grid, time step, CFL, eigenmode, cavity resonance, electrostatic, magnetostatic, capacitance matrix, inductance matrix, which solver, compare solvers, speed, memory, open source
+---
+
+circuitRF can solve an electromagnetic problem in three different ways, and each is a different
+method, not a faster or slower version of the same one:
+
+- **MoM**, the **method of moments**: circuitRF's own planar solver, built into the application.
+- **FEM**, the **finite element method**: **Palace**, a separate open-source program that circuitRF runs.
+- **FDTD**, the **finite-difference time-domain** method: **openEMS**, another separate open-source
+  program that circuitRF runs.
+
+They are chosen in one place, the **Solver** group of an EM setup: *Planar* (MoM), **FEM 3D (Palace)**,
+**FDTD 3D (openEMS)**, or **FEM & FDTD - Compare**. The setup, the layout and the result are the same
+kind of document whichever solves it. This page explains the three methods, and which problems each
+one is good at and bad at. How to set each one up is in [EM Setup](em-setup.html#solver-3d),
+[The MoM engine](mom-engine.html) and [3D EM](em-3d.html).
+
+<nav class="toc">
+<h2>On this page</h2>
+<ol>
+<li><a href="#short">The short answer</a></li>
+<li><a href="#methods">Three ways to discretise Maxwell's equations</a>
+  <ul><li><a href="#mom">MoM: unknowns on the metal only</a></li>
+      <li><a href="#fem">FEM: a tetrahedral mesh of the volume</a></li>
+      <li><a href="#fdtd">FDTD: a grid, stepped through time</a></li></ul></li>
+<li><a href="#programs">Palace and openEMS: the two programs</a></li>
+<li><a href="#compare">Side by side</a></li>
+<li><a href="#speed-memory">Is it speed? Is it memory?</a></li>
+<li><a href="#choosing">Choosing, by problem</a></li>
+<li><a href="#why-three">Why not just one?</a></li>
+</ol>
+</nav>
+
+## The short answer {#short}
+
+**Use the planar MoM solver whenever the structure is planar metal on a layered board or die.** That
+covers most layout work. It is the fastest of the three and needs nothing installed. Go to 3D only for
+what it cannot represent.
+
+**Use FEM (Palace)** for curved or small metal in a 3D volume: bond wires, round vias, packages and
+lids. Use it too when you need something only FEM gives you: a cavity's resonances (eigenmode), or a
+capacitance or inductance matrix (electrostatic and magnetostatic).
+
+**Use FDTD (openEMS)** for Manhattan metal on a stackup over a wide band, and for radiators whose air
+box you want to keep small. It needs far less memory than FEM.
+
+**Use both** (*FEM & FDTD - Compare*) when an answer matters and you want a second opinion. The two
+methods share no numerics, so when they agree, each has probably converged.
+
+## Three ways to discretise Maxwell's equations {#methods}
+
+Every EM solver replaces the continuous field with a finite number of unknowns and solves for those.
+The three methods differ in **where the unknowns are** and **whether they solve one frequency at a time
+or step through time**. Almost every practical difference between them follows from those two choices.
+
+<svg viewBox="0 0 650 205" role="img" aria-label="The same microstrip cross-section discretised three ways: MoM cells on the strip only; FEM triangles filling a box, finer near the strip; FDTD a graded rectilinear grid" style="width:100%;height:auto">
+  <rect x="15" y="125" width="190" height="45" fill="var(--surface)" stroke="none"/>
+  <line x1="15" y1="170" x2="205" y2="170" stroke="var(--text)" stroke-width="3"/>
+  <rect x="90" y="121" width="40" height="4" fill="var(--accent)"/>
+  <path d="M95 121V125 M100 121V125 M105 121V125 M110 121V125 M115 121V125 M120 121V125 M125 121V125" stroke="var(--surface)" stroke-width="0.8"/>
+  <text x="110" y="80" text-anchor="middle" font-size="11" fill="var(--muted)" font-family="var(--font-sans)">no mesh in the</text>
+  <text x="110" y="94" text-anchor="middle" font-size="11" fill="var(--muted)" font-family="var(--font-sans)">air or the substrate</text>
+  <text x="110" y="24" text-anchor="middle" font-size="12.5" font-weight="600" fill="var(--text)" font-family="var(--font-sans)">MoM — cells on the metal only</text>
+  <text x="110" y="192" text-anchor="middle" font-size="11" fill="var(--muted)" font-family="var(--font-sans)">layers are infinite; ground is exact</text>
+  <rect x="230" y="40" width="180" height="130" fill="none" stroke="var(--border)" stroke-width="1.2"/>
+  <rect x="230" y="125" width="180" height="45" fill="var(--surface)" stroke="none"/>
+  <path d="M230 40L251.0 62.0 M251.0 62.0L230 86.0 M230 86.0L251.0 102.4 M251.0 102.4L230 112.6 M230 112.6L251.0 119 M251.0 119L230 123 M230 123L251.0 127 M251.0 127L230 133.4 M230 133.4L251.0 143.6 M251.0 143.6L230 160.0 M230 160.0L251.0 170 M275.0 40L251.0 62.0 M251.0 62.0L275.0 86.0 M275.0 86.0L251.0 102.4 M251.0 102.4L275.0 112.6 M275.0 112.6L251.0 119 M251.0 119L275.0 123 M275.0 123L251.0 127 M251.0 127L275.0 133.4 M275.0 133.4L251.0 143.6 M251.0 143.6L275.0 160.0 M275.0 160.0L251.0 170 M275.0 40L290.4 62.0 M290.4 62.0L275.0 86.0 M275.0 86.0L290.4 102.4 M290.4 102.4L275.0 112.6 M275.0 112.6L290.4 119 M290.4 119L275.0 123 M275.0 123L290.4 127 M290.4 127L275.0 133.4 M275.0 133.4L290.4 143.6 M290.4 143.6L275.0 160.0 M275.0 160.0L290.4 170 M300 40L290.4 62.0 M290.4 62.0L300 86.0 M300 86.0L290.4 102.4 M290.4 102.4L300 112.6 M300 112.6L290.4 119 M290.4 119L300 123 M300 123L290.4 127 M290.4 127L300 133.4 M300 133.4L290.4 143.6 M290.4 143.6L300 160.0 M300 160.0L290.4 170 M300 40L306 62.0 M306 62.0L300 86.0 M300 86.0L306 102.4 M306 102.4L300 112.6 M300 112.6L306 119 M306 119L300 123 M300 123L306 127 M306 127L300 133.4 M300 133.4L306 143.6 M306 143.6L300 160.0 M300 160.0L306 170 M312 40L306 62.0 M306 62.0L312 86.0 M312 86.0L306 102.4 M306 102.4L312 112.6 M312 112.6L306 119 M306 119L312 123 M312 123L306 127 M306 127L312 133.4 M312 133.4L306 143.6 M306 143.6L312 160.0 M312 160.0L306 170 M312 40L318 62.0 M318 62.0L312 86.0 M312 86.0L318 102.4 M318 102.4L312 112.6 M312 112.6L318 119 M318 119L312 123 M312 123L318 127 M318 127L312 133.4 M312 133.4L318 143.6 M318 143.6L312 160.0 M312 160.0L318 170 M324 40L318 62.0 M318 62.0L324 86.0 M324 86.0L318 102.4 M318 102.4L324 112.6 M324 112.6L318 119 M318 119L324 123 M324 123L318 127 M318 127L324 133.4 M324 133.4L318 143.6 M318 143.6L324 160.0 M324 160.0L318 170 M324 40L330 62.0 M330 62.0L324 86.0 M324 86.0L330 102.4 M330 102.4L324 112.6 M324 112.6L330 119 M330 119L324 123 M324 123L330 127 M330 127L324 133.4 M324 133.4L330 143.6 M330 143.6L324 160.0 M324 160.0L330 170 M336 40L330 62.0 M330 62.0L336 86.0 M336 86.0L330 102.4 M330 102.4L336 112.6 M336 112.6L330 119 M330 119L336 123 M336 123L330 127 M330 127L336 133.4 M336 133.4L330 143.6 M330 143.6L336 160.0 M336 160.0L330 170 M336 40L349.6 62.0 M349.6 62.0L336 86.0 M336 86.0L349.6 102.4 M349.6 102.4L336 112.6 M336 112.6L349.6 119 M349.6 119L336 123 M336 123L349.6 127 M349.6 127L336 133.4 M336 133.4L349.6 143.6 M349.6 143.6L336 160.0 M336 160.0L349.6 170 M365.0 40L349.6 62.0 M349.6 62.0L365.0 86.0 M365.0 86.0L349.6 102.4 M349.6 102.4L365.0 112.6 M365.0 112.6L349.6 119 M349.6 119L365.0 123 M365.0 123L349.6 127 M349.6 127L365.0 133.4 M365.0 133.4L349.6 143.6 M349.6 143.6L365.0 160.0 M365.0 160.0L349.6 170 M365.0 40L389.0 62.0 M389.0 62.0L365.0 86.0 M365.0 86.0L389.0 102.4 M389.0 102.4L365.0 112.6 M365.0 112.6L389.0 119 M389.0 119L365.0 123 M365.0 123L389.0 127 M389.0 127L365.0 133.4 M365.0 133.4L389.0 143.6 M389.0 143.6L365.0 160.0 M365.0 160.0L389.0 170 M410 40L389.0 62.0 M389.0 62.0L410 86.0 M410 86.0L389.0 102.4 M389.0 102.4L410 112.6 M410 112.6L389.0 119 M389.0 119L410 123 M410 123L389.0 127 M389.0 127L410 133.4 M410 133.4L389.0 143.6 M389.0 143.6L410 160.0 M410 160.0L389.0 170 M251.0 40V170 M275.0 40V170 M290.4 40V170 M300 40V170 M306 40V170 M312 40V170 M318 40V170 M324 40V170 M330 40V170 M336 40V170 M349.6 40V170 M365.0 40V170 M389.0 40V170 M230 62.0H410 M230 86.0H410 M230 102.4H410 M230 112.6H410 M230 119H410 M230 123H410 M230 127H410 M230 133.4H410 M230 143.6H410 M230 160.0H410" fill="none" stroke="var(--muted)" stroke-width="0.5"/>
+  <line x1="230" y1="170" x2="410" y2="170" stroke="var(--text)" stroke-width="3"/>
+  <rect x="300" y="121" width="40" height="4" fill="var(--accent)"/>
+  <text x="320" y="24" text-anchor="middle" font-size="12.5" font-weight="600" fill="var(--text)" font-family="var(--font-sans)">FEM — elements fill the volume</text>
+  <text x="320" y="192" text-anchor="middle" font-size="11" fill="var(--muted)" font-family="var(--font-sans)">smaller elements where the field changes</text>
+  <rect x="440" y="40" width="180" height="130" fill="none" stroke="var(--border)" stroke-width="1.2"/>
+  <rect x="440" y="125" width="180" height="45" fill="var(--surface)" stroke="none"/>
+  <path d="M461.0 40V170 M485.0 40V170 M500.4 40V170 M510 40V170 M516 40V170 M522 40V170 M528 40V170 M534 40V170 M540 40V170 M546 40V170 M559.6 40V170 M575.0 40V170 M599.0 40V170 M440 62.0H620 M440 86.0H620 M440 102.4H620 M440 112.6H620 M440 119H620 M440 123H620 M440 127H620 M440 133.4H620 M440 143.6H620 M440 160.0H620" fill="none" stroke="var(--muted)" stroke-width="0.5"/>
+  <line x1="440" y1="170" x2="620" y2="170" stroke="var(--text)" stroke-width="3"/>
+  <rect x="510" y="121" width="40" height="4" fill="var(--accent)"/>
+  <text x="530" y="24" text-anchor="middle" font-size="12.5" font-weight="600" fill="var(--text)" font-family="var(--font-sans)">FDTD — a rectilinear grid</text>
+  <text x="530" y="192" text-anchor="middle" font-size="11" fill="var(--muted)" font-family="var(--font-sans)">time steps set by the smallest cell</text>
+</svg>
+
+### MoM: unknowns on the metal only {#mom}
+
+The **method of moments** puts its unknowns on the **conductors only**: the current on each small cell
+of metal. The air, the substrate and the ground plane are not meshed at all. They are built into the
+**Green's function**, the formula for the field one piece of current makes everywhere else. circuitRF's
+Green's function is for a **stack of laterally infinite layers over an infinite ground plane**, which is
+what makes the method planar (often called 2.5D).
+
+- **Every cell talks to every other cell**, so the matrix is **dense**: N unknowns cost N² numbers.
+  Small N is the whole point: a microstrip bend needs a few hundred unknowns, where a volume mesh of
+  the same bend needs hundreds of thousands.
+- It solves **one frequency at a time**, and circuitRF's adaptive sampling picks which frequencies to
+  solve.
+- **Radiation into open space and the infinite substrate are exact**, with no box and no absorbing
+  wall to place.
+- It **cannot** represent anything the layer stack cannot: a board edge, a lid, a cavity wall, a wire
+  arcing through air, a signal via passing through a reference plane, or a dielectric that stops
+  somewhere. [The MoM engine ▸ Cannot](mom-engine.html#can-cannot) is the full list. circuitRF refuses
+  such a structure by name rather than solving the wrong one.
+
+### FEM: a tetrahedral mesh of the volume {#fem}
+
+The **finite element method** fills the whole solved region — dielectrics, air, the space inside a
+package — with **tetrahedra**, and solves for the field on each one. Metal is a boundary of that volume.
+circuitRF builds the 3D model, **Gmsh** meshes it, and **Palace** solves it.
+
+- **The mesh follows the geometry.** Tetrahedra fit a round wire, a slanted face or a curved via
+  barrel. There is no staircase.
+- **Each element talks only to its neighbours**, so the matrix is **sparse**. It is also far larger
+  than a MoM matrix: hundreds of thousands to a million or more unknowns is normal.
+- **Adaptive refinement.** After a solve, Palace estimates where the error is and subdivides only
+  those elements, then solves again. Small elements end up where the answer needs them — around a
+  wire, along a strip's edge — without anyone placing them by hand.
+- It works **in the frequency domain**. A driven run's adaptive sweep solves a few frequencies in full
+  and builds the rest of the band from them.
+- **The same mesh answers other questions.** An **eigenmode** solve finds a structure's resonant
+  frequencies and Q directly. **Electrostatic** and **magnetostatic** solves give capacitance and
+  inductance matrices. Neither of the other two methods offers these in circuitRF.
+- The volume must end somewhere, so the model sits in an **air box** whose faces are metal walls,
+  symmetry planes or absorbing boundaries. Palace's absorbing boundaries are first order, so an open
+  structure needs the box kept well away from it.
+
+### FDTD: a grid, stepped through time {#fdtd}
+
+The **finite-difference time-domain** method divides the region into a **rectilinear grid** of
+rectangular cells and **steps the fields forward in time**: an electric-field update, then a
+magnetic-field update, over and over. circuitRF builds the model and writes the grid itself; **openEMS**
+runs the time stepping.
+
+- **One run covers a whole band.** A short pulse contains every frequency in the sweep. After it has
+  died away, the port voltages and currents are transformed into S-parameters at every frequency at
+  once.
+- **Memory is small.** A cell stores six field values and a few coefficients. There is no matrix to
+  hold and nothing to factor.
+- **The smallest cell sets the time step.** The **CFL condition** (Courant–Friedrichs–Lewy) says a wave
+  may not cross a cell in one time step, so one fine feature shrinks the time step of the entire model.
+  A 25 µm wire in a 3 mm package means a small time step everywhere, and many more steps to cover the
+  same time.
+- **Metal aligned with the grid costs nothing; anything else is a staircase.** A diagonal edge or a
+  round wire is approximated by grid cells, and matching a curved surface accurately takes a fine grid.
+- **It has to wait for the energy to leave.** A run ends when the signals have died away. A lossy or
+  well-matched structure rings down quickly. A **high-Q** cavity rings for a very long time, which is
+  why a cavity's resonances are FEM's job, not FDTD's.
+- **Absorbing boundaries are good.** openEMS's PML (perfectly matched layer) soaks up an outgoing wave
+  over a few cells, so a radiator's air box can stay small.
+- openEMS drives **one port per run**, so an N-port setup is N runs, one after another.
+
+## Palace and openEMS: the two programs {#programs}
+
+circuitRF **ships neither 3D solver and contains no code from either.** It runs them as separate
+programs you install. The install assistant can do that for you (see
+[3D EM ▸ Getting the solvers](em-3d.html#getting)), and so can `circuitrf solver install palace`.
+Opening, editing and looking at a 3D model needs neither program. Only **Simulate** does.
+
+| | Palace | openEMS |
+|---|---|---|
+| Method | FEM, frequency domain | FDTD |
+| Source | [Palace on GitHub](https://github.com/awslabs/palace) | [openEMS on GitHub](https://github.com/thliebig/openEMS), and its site [openems.de](https://openems.de) |
+| Licence | Apache 2.0 | GPL v3 |
+| Mesh | Tetrahedra, made by [Gmsh](https://gmsh.info) from circuitRF's model | A rectilinear grid, written by circuitRF |
+| Parallel | Across processes (MPI): one per physical core by default | Across the cores of one machine |
+| What circuitRF runs on it | Driven S-parameters, eigenmode, electrostatic, magnetostatic; lumped and wave ports; radiation pattern | Driven S-parameters with lumped ports; radiation pattern |
+| Install, as measured on one Apple M4 | Built from source: 52 min, 1.9 GB | 8 min, 0.27 GB |
+| On Windows | Inside your Windows Subsystem for Linux | Native |
+
+**Palace** is a parallel finite-element code for full-wave 3D electromagnetics. It also has a
+time-domain solver, which circuitRF does not use. **openEMS** is an FDTD solver. It is written for use
+with its own geometry library, and circuitRF writes that library's model file directly. **Gmsh** is
+the open-source mesh generator that turns circuitRF's 3D model into Palace's tetrahedra.
+
+What circuitRF adds around both programs is the same: it **builds the 3D model** from your layout, its
+technology and bond wires (or from a drawn [3D view](drawing-in-3d.html)), checks that the run fits in
+memory, runs the solver, follows its progress from its log, and reads the answer back as an ordinary
+result. [EM Setup](em-setup.html#solver-3d) has every setting.
+
+<div class="callout note">
+<span class="label">What FDTD cannot say that FEM can</span>
+<p>Two material limits of openEMS appear in every openEMS run's notes. A loss tangent is exact at one
+frequency only, because openEMS holds a material's conductivity constant. And solid metal is a perfect
+conductor, because a grid cannot resolve a skin depth; thin metal drawn as a sheet keeps its loss. On a
+lossy substrate these are the largest expected differences between the two solvers. See
+<a href="em-setup.html#openems-run">EM Setup ▸ Running openEMS</a>.</p>
+</div>
+
+## Side by side {#compare}
+
+| | **MoM** (planar, built in) | **FEM** (Palace) | **FDTD** (openEMS) |
+|---|---|---|---|
+| Unknowns live on | The metal surfaces | Every tetrahedron of the volume | Every grid cell of the volume |
+| Matrix | Dense, N² | Sparse, very large | None: explicit time stepping |
+| Frequency | One frequency per solve; adaptive sampling | Frequency domain; adaptive sweep | Time domain: one pulse covers the band |
+| Geometry it fits | Planar metal and vias in a layered stack | Anything: curved, slanted, small metal in a large volume | Manhattan metal; curves are staircased |
+| What sets the cost | The metal area, and how finely it is cut | The volume, the highest frequency, and how much refinement the small features need | The number of cells × the number of time steps; the smallest cell sets the time step |
+| Memory | 84 MB at 2,000 unknowns, growing as N² | The largest: gigabytes | Small: tens to hundreds of megabytes |
+| Open space, radiation | Exact, with no box | An air box with first-order absorbing faces, kept well away | An air box with PML, which can stay close |
+| Enclosures, lids, cavities | Not representable | Yes, and eigenmodes find their resonances | Yes, but a high-Q cavity rings for a long time |
+| Capacitance and inductance matrices | No | Yes (electrostatic, magnetostatic) | No |
+| Metal loss | Yes | Yes (conductivity on every metal surface) | Sheets only; solid metal is lossless |
+| Dielectric loss | Yes, tanδ at every frequency | Yes, tanδ at every frequency | Exact at the band centre only |
+| Installed | Always | You install it | You install it |
+
+## Is it speed? Is it memory? {#speed-memory}
+
+**Both, and which one binds depends on the problem.** These are the figures circuitRF has measured.
+Each is one machine's measurement — an Apple M4 with 10 cores and 16 GB — and yours will differ.
+
+**MoM is fastest where it applies.** At 2,000 unknowns a frequency point solves in under a second and
+holds 84 MB. At 5,000 it holds 527 MB, and that is the dense solver's ceiling: a larger mesh is refused
+before it runs. The optional accelerated solve raises the ceiling to 12,000 on a single metal level
+with no vias, using about four times less memory. Its cost grows fastest with **metal area and mesh
+density**, not with the size of the box around the metal, because there is no box. See
+[The MoM engine ▸ What makes a run infeasible](mom-engine.html#budget).
+
+**FEM uses the most memory, and the memory is usually what limits it.** The shipped example's runs:
+
+| Palace run (from [3D EM ▸ Walking through the example](em-3d.html#example)) | Wall time | Peak memory |
+|---|---|---|
+| A package's capacitance matrix, Standard | 8 s | 1.1 GB |
+| A package's inductance matrix, Standard | 22 s | 1.8 GB |
+| A via through a ground plane, 0.1–20 GHz, Draft | 62 s | 4.8 GB |
+| One bond wire, Standard | 179 s | 3.1 GB |
+| A package lid's resonances, eigenmode | 166 s | 1.7 GB |
+| The same via, Standard | 35 min | 9.3 GB |
+
+While the solvers were being chosen, hand-built Palace models found the practical limit of a 16 GB
+machine at about **1.2 million second-order unknowns**. circuitRF checks a run's memory twice before it
+solves: once from the model's volumes, and again from the element count Gmsh reports.
+
+**FDTD uses far less memory than FEM, and the time step is usually what limits it.** In the same
+solver-choice measurements, hand-built openEMS models of one bond wire reached Palace's answer to
+within 0.1 dB at 10 GHz with **400,000 cells in 13 s and 67 MB**, where the Palace run of the same wire
+took 108.5 s and 7.7 GB. That grid had cells of **half the wire's radius** around the wire, and at that
+size the wire set the time step for the whole model. The same wire on a coarser grid read 26 % too much
+inductance. A package with many wires is therefore FDTD's worst case: every wire needs a fine grid
+around it, and the finest cell anywhere slows every step.
+
+So the honest summary is:
+
+- **Small metal in a large volume** (wires, a die in a package): FEM's adaptive mesh spends elements
+  only where the field changes. FDTD's grid refines along whole lines and planes through the model, and
+  its time step falls with the finest cell.
+- **Large, simple, Manhattan structures over a wide band**: FDTD's one pulse and small memory win, and
+  there is no matrix to factor.
+- **Planar structures**: MoM wins both, often by orders of magnitude, because it does not mesh the
+  volume at all.
+- **Narrow resonances**: FEM, by eigenmode, finds a resonance directly. FDTD has to wait for it to ring
+  down, and MoM cannot represent the enclosure.
+
+## Choosing, by problem {#choosing}
+
+| Problem | Use | Why |
+|---|---|---|
+| Lines, bends, couplers, filters, spirals, MIM capacitors on a board or die | **MoM** | Planar metal in a layered stack is exactly what it models, in seconds |
+| Vias stitching metal to ground | **MoM** | Vias are part of the planar model |
+| A patch antenna on a large ground | **MoM**, or FDTD for a finite board | MoM's ground is infinite and exact; a real board's finite ground needs 3D — see [Antennas](antennas.html) |
+| A signal via **through** a reference plane | **FEM** or **FDTD** | MoM refuses it: its return plane must lie below every conductor |
+| Bond wires | **FEM**, or wBond's own kernel | Curved, thin metal is FEM's strength; [wBond](wbond.html) is faster and FEM is its independent check |
+| A die in a package, leads, lids, connectors | **FEM** | Small features in an enclosed volume |
+| "Is there a cavity resonance in my band?" | **FEM, eigenmode** | Finds each mode's frequency and Q directly |
+| A package's capacitance or inductance matrix | **FEM, electrostatic or magnetostatic** | Only Palace computes them |
+| A broadband Manhattan board structure: a transition, a launch, a stripline | **FDTD**, or FEM | One pulse covers the band, at little memory |
+| A radiator that is not planar | **FDTD** or FEM | FDTD's PML keeps the box small; both give a pattern — [Antennas ▸ From a 3D solver](antennas.html#3d) |
+| Any 3D answer you are about to rely on | **FEM & FDTD - Compare** | Two independent methods; agreement means each has converged |
+
+When a 3D solver is chosen, the setup panel says which of the two suits the model's geometry. That is
+advice, not a restriction.
+
+<div class="callout note">
+<span class="label">Agreement is a cross-check, not a reference</span>
+<p><b>FEM &amp; FDTD - Compare</b> runs both solvers on one model and writes their difference. Both read
+the same model that circuitRF built, so a mistake in building it would appear in both answers. It checks
+the solving, not the model. See <a href="em-setup.html#run-both">EM Setup ▸ Running both</a>.</p>
+</div>
+
+## Why not just one? {#why-three}
+
+Because **no one method is best at everything**, and the problems an RF designer meets span all three.
+
+- **Why MoM, when a 3D solver can do everything a planar one can?** Because on planar structures —
+  most of layout work — it is seconds against minutes and megabytes against gigabytes, and it needs
+  nothing installed. A 3D solver has to mesh the air and the substrate that MoM gets for free from its
+  Green's function. MoM is the default; 3D is for what it cannot represent.
+- **Why FEM?** For geometry that is neither planar nor Manhattan, where adaptive refinement puts
+  elements only where they are needed. And for the questions only it answers in circuitRF: resonances,
+  and capacitance and inductance matrices.
+- **Why FDTD as well?** Because on the structures it suits — broadband and Manhattan — it is fast and
+  uses very little memory. It is also the independent check on FEM. The two share no numerics, so
+  their agreement means something that re-running one solver on a finer mesh cannot.
+
+The three also check each other. circuitRF's solvers were validated this way: wBond's wire kernel
+against Palace, the planar patch against a 3D run of the same patch, and Palace and openEMS against each
+other and against closed forms. [3D EM](em-3d.html) and [Antennas](antennas.html#3d) give the numbers.

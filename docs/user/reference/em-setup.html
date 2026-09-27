@@ -1112,13 +1112,18 @@ workspace and let each schematic pick up its new Touchstone.</p>
 <p>The verb, its options, the three message lists, the exit codes and a worked example from an empty
 folder are in <a href="cli.html#em">The Command Line</a>.</p>
 <h2 id="solver-3d">Solver — planar or 3D</h2>
+<p><em>When 3D is the right tool, how to get the solvers, the 3D view, and a worked example to open are in
+<a href="em-3d.html">3D EM</a>. How the planar, FEM and FDTD solvers differ, and which suits which problem, is in
+<a href="em-solvers.html">EM Solvers: MoM, FEM and FDTD</a>. This section is the panel's 3D controls, one by one.</em></p>
 <p>The <strong>Solver</strong> group at the top of the panel picks who solves the setup: circuitRF's own planar and
 cross-section kernels (the default), <strong>FEM 3D (Palace)</strong>, <strong>FDTD 3D (openEMS)</strong>, or <strong>FEM &amp; FDTD -
 Compare</strong>. A 3D setup builds a 3D model from the layout, its technology and any bond wires. The
-settings a 3D run does not read — the surface mesh, adaptive sampling, the port type, the planar
-solver options and the radiation pattern — are hidden while a 3D solver is chosen; they stay in the
+settings a 3D run does not read — the surface mesh, adaptive sampling, the port type and the planar
+solver options — are hidden while a 3D solver is chosen; they stay in the
 <code>.cem</code> and come back when you switch to Planar. What a 3D run does read stays: the frequency sweep,
-each port's Z₀ (set in the Solver group's port table), the return plane, the solve region and the core count. Palace and openEMS each have their own section below, and a setup keeps
+each port's Z₀ (set in the Solver group's port table), the return plane, the solve region, the core count
+and the <strong>radiation pattern</strong>, which a driven 3D run produces too — see
+<a href="antennas.html#3d">Antennas ▸ From a 3D solver</a>. Palace and openEMS each have their own section below, and a setup keeps
 both, so switching solver never loses the other's settings.</p>
 <p>With Palace chosen the panel shows Palace's own settings. <strong>A blank box is the default shown in it</strong>, and
 every box is a field of the <code>.cem</code> — nothing here lives only in the panel.</p>
@@ -1216,6 +1221,18 @@ Accurate has not been measured.</p>
 <td>0.0001</td>
 <td>The tolerance of Palace's adaptive frequency sweep; 0 solves every frequency</td>
 </tr>
+<tr>
+<td>Linear solver</td>
+<td><code>LinearSolver</code></td>
+<td><code>Iterative</code></td>
+<td>How Palace solves each linear system. <em>Iterative</em> (GMRES with multigrid) needs the least memory. <em>Direct</em> factors it with SuperLU_DIST: more memory, and far faster for an <strong>eigenmode</strong> solve, whose shifted operator an iterative solver converges on slowly. On the 3D Package example's lid mode (128 k unknowns) Direct took 35 s and 4.0 GB; Iterative had not finished after ten minutes. Not part of any preset</td>
+</tr>
+<tr>
+<td>— (written in the <code>.cem</code>)</td>
+<td><code>SaveFieldsGHz</code></td>
+<td>the sweep's centre</td>
+<td>The frequencies, GHz, whose fields Palace saves for the 3D view; <code>[]</code> saves none. See <a href="#palace-fields">Fields for the 3D view</a> — they are large</td>
+</tr>
 </tbody>
 </table>
 <p>The settings above size only the <strong>starting</strong> mesh; Palace's adaptive refinement adds elements where its
@@ -1307,7 +1324,7 @@ not fit in memory is refused, naming the feature behind the smallest cell and th
 relax it.</p>
 <h3 id="openems-run">Running openEMS</h3>
 <p>With openEMS chosen the panel shows the grid settings above and two of its own, each a field of the
-<code>.cem</code>'s <code>OpenEms</code> section; a blank box is the default.</p>
+<code>.cem</code>'s <code>OpenEms</code> section; a blank box is the default. <code>SaveFieldsGHz</code> is written in the <code>.cem</code> itself.</p>
 <table>
 <thead>
 <tr>
@@ -1326,6 +1343,11 @@ relax it.</p>
 <td><code>MaxTimeSteps</code></td>
 <td>ten times the grid's own estimate</td>
 <td>The most time steps one run may take</td>
+</tr>
+<tr>
+<td><code>SaveFieldsGHz</code></td>
+<td>the sweep's centre</td>
+<td>The frequencies, GHz, whose electric field openEMS records over the air box for the 3D view; <code>[]</code> records none</td>
 </tr>
 </tbody>
 </table>
@@ -1356,6 +1378,12 @@ the wire's radius around it matched Palace within 0.1 dB in circuitRF's own vali
 one is continued through it. The result lands beside a Palace one without replacing it —
 <code>results/&lt;name&gt;.openems.sNp</code> and <code>&lt;name&gt;.openems_em.npy</code> — and <code>results/&lt;name&gt;.openems/</code> keeps the model
 and, per port, openEMS's log and probe files, so a run can be repeated by hand.</p>
+<p><strong>Fields.</strong> For the 3D view, each run also records the electric field over the air box at the
+<code>SaveFieldsGHz</code> frequencies (the sweep's centre by default; a frequency outside the sweep is refused,
+because the pulse carries no energy there). openEMS computes it during the run itself, at every grid
+cell's centre, and writes it in each port's folder as <code>efield&lt;k&gt;_f=&lt;Hz&gt;_abs.vtr</code> and <code>…_arg.vtr</code> — the
+magnitude and phase of each component, which is the complex field exactly — plus 21 snapshots at fixed
+phases that the view does not need. The 3D view shows it for each excited port at each frequency.</p>
 <h3 id="run-both">Running both, and the difference</h3>
 <p><strong>FEM &amp; FDTD - Compare</strong> (<code>Solver3D: Both</code>, or <code>circuitrf em x.cem --solver both</code>) builds the 3D model
 once and runs Palace and then openEMS on it, one after the other. Each result lands where it would
@@ -1455,6 +1483,28 @@ says where a mode lives.</li>
 </ul>
 <p>The result is <code>results/&lt;name&gt;.palace_eig.npy</code> and no Touchstone file; <code>circuitrf em</code> prints the mode
 table and the panel shows it after a run. Palace's own files stay in the run folder.</p>
+<h3 id="palace-fields">Fields for the 3D view</h3>
+<p>A Palace run also saves the solved <strong>fields</strong>, which the 3D view draws on its clip plane and on surfaces.
+<code>SaveFieldsGHz</code> in the Palace section says which frequencies:</p>
+<pre><code>&quot;Palace&quot;: { &quot;SaveFieldsGHz&quot;: [2.4, 5.8] }
+</code></pre>
+<ul>
+<li><strong>Omitted</strong>, it saves the sweep's <strong>centre</strong> frequency only: the middle of a linear sweep, the geometric
+middle of a logarithmic one.</li>
+<li><strong><code>[]</code></strong> saves no field at all.</li>
+<li><strong>A frequency that is not one of the sweep's points is solved as an extra point.</strong> Palace 0.18.1 refuses
+to save a field at a frequency it did not sample (checked on a real run), so circuitRF adds each save
+frequency to Palace's samples. Its S-parameters are left out of the <code>.sNp</code>, which holds the sweep's
+frequencies and nothing else. A save frequency outside the sweep is refused before anything runs,
+because sampling it would change the sweep's answer at every other frequency.</li>
+<li>An <strong>eigenmode</strong> run saves every mode it computes and a <strong>static</strong> run every terminal's solution,
+unless <code>SaveFieldsGHz</code> is <code>[]</code> (their fields are not per frequency, so the list's values are not used).</li>
+</ul>
+<p><strong>Fields are large.</strong> Measured on the bond-wire test case (146,769 tetrahedra, element order 2): <strong>137 MB
+per saved frequency per driven port</strong> (127 MB inside the volume, 9.8 MB on the surfaces), plus 33 MB
+once for Palace's error map. Palace runs one excitation per port, so a two-port setup saving twenty
+frequencies writes about <strong>5.5 GB</strong>. The size grows with the mesh, so a larger model or more refinement
+passes costs more. When a run finishes, its summary line states what its field files took.</p>
 <h2 id="install-assistant">Letting circuitRF install the 3D solvers</h2>
 <p>circuitRF can install Palace, Gmsh and openEMS for you. It downloads each one from its own upstream
 and installs it for your user account only. It never needs administrator rights.</p>
@@ -1601,7 +1651,7 @@ record.</p>
 <p>A Palace built from source takes gigabytes. When you are done with 3D EM you can get that space back.
 circuitRF removes <strong>only what it installed</strong>. A solver you installed yourself, or one it finds on
 <code>PATH</code>, in Spack or in conda, has no Uninstall, and circuitRF never deletes it.</p>
-<p>There are four ways, and they all do the same thing:</p>
+<p>There are three ways, and they all do the same thing:</p>
 <ul>
 <li><strong>Uninstall …</strong> under the solver's row in <a href="settings.html#em3d">Settings ▸ 3D EM</a>. There is one
 button for each version circuitRF installed.</li>
@@ -1609,7 +1659,6 @@ button for each version circuitRF installed.</li>
 confirmation.</li>
 <li><code>circuitrf solver remove palace --yes</code>, or <code>circuitrf solver remove --all --yes</code>, from a terminal.
 Without <code>--yes</code> it only shows what it would remove.</li>
-<li><strong>Help ▸ Uninstall circuitRF …</strong>, which removes the solvers and then circuitRF itself (see below).</li>
 </ul>
 <p><strong>The confirmation shows the space it frees</strong>, measured at that moment. It also says that removal is
 permanent, and how long the install took on your computer, because getting a solver back means
@@ -1626,40 +1675,45 @@ remains. Close whatever holds it and remove again, and circuitRF finishes the jo
 it lists any older version it installed, with its size, and offers to remove it. It never removes one
 by itself, because you may want to compare older results against it.</p>
 <h3 id="uninstall-circuitrf">Uninstalling circuitRF</h3>
-<p><strong>Help ▸ Uninstall circuitRF …</strong> removes the 3D solvers circuitRF installed for you, then circuitRF
-itself. It warns you first, because reinstalling circuitRF later means reinstalling the solvers too.</p>
+<p>Remove circuitRF the way you remove any application. What happens to the 3D solvers depends on how:</p>
 <table>
 <thead>
 <tr>
 <th>How circuitRF was installed</th>
-<th>What Uninstall circuitRF … does after removing the solvers</th>
+<th>How you remove it</th>
+<th>The 3D solvers circuitRF installed</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>Windows <code>.msi</code></td>
-<td>Runs the Windows uninstall, which asks you to confirm once more. The Apps list's <strong>Uninstall</strong> runs this same command.</td>
+<td><strong>Uninstall</strong> in the Apps list (Add or Remove Programs)</td>
+<td>Removed too. circuitRF warns you first, then runs the Windows uninstall, which asks you to confirm once more.</td>
 </tr>
 <tr>
 <td>macOS</td>
-<td>Moves circuitRF to the Trash.</td>
+<td>Drag circuitRF to the Trash</td>
+<td>Stay.</td>
 </tr>
 <tr>
 <td>Linux <code>.tar.gz</code></td>
-<td>Runs its own <code>install.sh --uninstall</code>. Running <code>~/.local/share/circuitRF/current/install.sh --uninstall</code> yourself does the same, solvers and warning included.</td>
+<td><code>~/.local/share/circuitRF/current/install.sh --uninstall</code></td>
+<td>Removed too, after a warning.</td>
 </tr>
 <tr>
 <td>Linux <code>.deb</code></td>
-<td>Tells you the command that removes it, <code>sudo apt remove circuitrf</code>. The package manager removes a <code>.deb</code>.</td>
+<td><code>sudo apt remove circuitrf</code></td>
+<td>Stay.</td>
 </tr>
 </tbody>
 </table>
-<p>It reaches only your own account. Solvers another person installed on the same computer stay in their
-folder; their own <strong>Remove all 3D solvers</strong> removes them.</p>
-<p><strong>If you remove circuitRF some other way</strong>, such as dragging it to the Trash or using the package
-manager, the solvers stay where they are. When you install circuitRF again it finds them and uses them
-without reinstalling, and their Settings rows still offer <strong>Uninstall …</strong>. To get the space back
-instead, run <strong>Uninstall circuitRF …</strong> first.</p>
+<p>The warning is there because reinstalling circuitRF later means reinstalling the solvers too. It
+reaches only your own account: solvers another person installed on the same computer stay in their
+folder, and their own <strong>Remove all 3D solvers</strong> removes them.</p>
+<p><strong>Where the solvers stay</strong>, they wait in your user folder. When you install circuitRF again it finds
+them and uses them without reinstalling, and their Settings rows still offer <strong>Uninstall …</strong>. To get
+the space back instead, use <strong>Remove all 3D solvers …</strong> in
+<a href="settings.html#em3d">Settings ▸ 3D EM</a> before you remove circuitRF.</p>
 <p><strong>Updating circuitRF never removes a solver.</strong></p>
 <h2 id="install-3d-solvers">Installing the 3D solvers by hand</h2>
 <p>A 3D setup (one whose <code>Solver3D</code> names Palace or openEMS) runs a solver circuitRF does not include. You
@@ -1770,7 +1824,7 @@ geometry looks like it still matches, which is worse than showing nothing.</p>
 
 <nav class="page-nav">
   <a class="prev" href="mom-engine.html"><span class="dir">Previous</span><span class="name">The MoM Engine</span></a>
-  <a class="next" href="antennas.html"><span class="dir">Next</span><span class="name">Antennas</span></a>
+  <a class="next" href="em-solvers.html"><span class="dir">Next</span><span class="name">EM Solvers: MoM, FEM and FDTD</span></a>
 </nav>
 </main>
 

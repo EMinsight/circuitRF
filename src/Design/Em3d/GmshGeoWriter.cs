@@ -544,10 +544,21 @@ public static class GmshGeoWriter
             if (p.Kind == Em3dPortKind.Wave && problem.FaceOf(p.Min, p.Max) == key &&
                 Spans(p.Min.X, p.Min.Y, p.Min.Z, p.Max.X, p.Max.Y, p.Max.Z))
                 return true;
+        // brief-em3d-52 — or conductor boxes cover it TOGETHER: a drawn package's side is its floor's edge, its wall and
+        // its lid's edge, three boxes, none of which spans the face alone. The face's rectangle is cut at every box edge
+        // on it, and each cell must lie inside a box that reaches the face.
+        int u = axis == 0 ? 1 : 0, v = axis == 2 ? 1 : 2;
+        var rects = new List<(double U0, double V0, double U1, double V1)>();
         foreach (var s in problem.Solids)
-            if (s.Role == Em3dRole.Conductor && s.Primitive is Em3dBox &&
-                Em3dProblem.Bounds(s.Primitive) is var (x0, y0, z0, x1, y1, z1) && Spans(x0, y0, z0, x1, y1, z1))
-                return true;
+        {
+            if (s.Role != Em3dRole.Conductor || s.Primitive is not Em3dBox) continue;
+            var (x0, y0, z0, x1, y1, z1) = Em3dProblem.Bounds(s.Primitive);
+            double[] lo = [x0, y0, z0], hi = [x1, y1, z1];
+            if (high ? hi[axis] < at - tol : lo[axis] > at + tol) continue;
+            if (Spans(x0, y0, z0, x1, y1, z1)) return true;
+            rects.Add((lo[u], lo[v], hi[u], hi[v]));
+        }
+        if (rects.Count > 1 && CoveredBy(rects, Get(b.Min, u), Get(b.Min, v), Get(b.Max, u), Get(b.Max, v), tol)) return true;
         // brief-em3d-49 — or a face boundary's own piece lies on the box face and covers it whole: the surface is the
         // boundary's, claimed before the face.
         foreach (var (_, pieces) in problem.FaceBoundaryPieces())
@@ -558,6 +569,30 @@ public static class GmshGeoWriter
         return false;
 
         static double Get(Point3 q, int a) => a == 0 ? q.X : a == 1 ? q.Y : q.Z;
+    }
+
+    /// <summary>Whether the rectangles together cover [u0, u1] × [v0, v1]: every cell of the grid their edges cut it into
+    /// lies inside one of them.</summary>
+    private static bool CoveredBy(List<(double U0, double V0, double U1, double V1)> rects, double u0, double v0, double u1, double v1, double tol)
+    {
+        List<double> Cuts(Func<(double U0, double V0, double U1, double V1), double> lo, Func<(double U0, double V0, double U1, double V1), double> hi,
+                          double a, double b)
+            => [.. rects.SelectMany(r => new[] { lo(r), hi(r) }).Append(a).Append(b)
+                        .Where(c => c >= a - tol && c <= b + tol).Order().Distinct()];
+        var us = Cuts(r => r.U0, r => r.U1, u0, u1);
+        var vs = Cuts(r => r.V0, r => r.V1, v0, v1);
+        for (int i = 0; i + 1 < us.Count; i++)
+        {
+            double cu = (us[i] + us[i + 1]) / 2;
+            if (us[i + 1] - us[i] <= tol) continue;
+            for (int j = 0; j + 1 < vs.Count; j++)
+            {
+                double cv = (vs[j] + vs[j + 1]) / 2;
+                if (vs[j + 1] - vs[j] <= tol) continue;
+                if (!rects.Any(r => r.U0 <= cu && cu <= r.U1 && r.V0 <= cv && cv <= r.V1)) return false;
+            }
+        }
+        return true;
     }
 
     /// <summary>brief-em3d-22 — a static problem's largest initial element, metres: the Palace section's
