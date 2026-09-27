@@ -1,0 +1,29 @@
+# brief-em3d-61 Q2 -- dependency closure of occt_probe on osx-arm64 (otool -L, recursive; closure.py beside this file)
+# library                                   bytes
+libTKBO.8.0.1.dylib                         2716896
+libTKBRep.8.0.1.dylib                       2618376
+libTKBool.8.0.1.dylib                       4364408
+libTKCAF.8.0.1.dylib                         658888
+libTKCDF.8.0.1.dylib                         375768
+libTKDE.8.0.1.dylib                          222768
+libTKDESTEP.8.0.1.dylib                     8858488
+libTKFillet.8.0.1.dylib                     2435912
+libTKG2d.8.0.1.dylib                         528504
+libTKG3d.8.0.1.dylib                        1569240
+libTKGeomAlgo.8.0.1.dylib                   4891432
+libTKGeomBase.8.0.1.dylib                   5456952
+libTKHLR.8.0.1.dylib                        1181192
+libTKLCAF.8.0.1.dylib                        963640
+libTKMath.8.0.1.dylib                       2026152
+libTKMesh.8.0.1.dylib                       1101160
+libTKPrim.8.0.1.dylib                        394184
+libTKService.8.0.1.dylib                    1153464
+libTKShHealing.8.0.1.dylib                  2946360
+libTKTopAlgo.8.0.1.dylib                    3186600
+libTKV3d.8.0.1.dylib                        3102648
+libTKVCAF.8.0.1.dylib                        313992
+libTKXCAF.8.0.1.dylib                        973464
+libTKXSBase.8.0.1.dylib                     2080040
+libTKernel.8.0.1.dylib                      1875624
+TOTAL (25 libraries)                       55996152
+system: /System/Library/Frameworks/AppKit.framework/Versions/C/AppKit /System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation /System/Library/Frameworks/CoreGraphics.framework/Versions/A/CoreGraphics /System/Library/Frameworks/Foundation.framework/Versions/C/Foundation /System/Library/Frameworks/IOKit.framework/Versions/A/IOKit /usr/lib/libSystem.B.dylib /usr/lib/libc++.1.dylib /usr/lib/libobjc.A.dylib

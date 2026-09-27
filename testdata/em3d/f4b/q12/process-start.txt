@@ -1,0 +1,2 @@
+noop (process start + load of 25 OCCT libraries): median 39.6 ms (min 38.8, max 40.1)
+selftest (start + boolean + fillet + STEP write/read in memory): median 48.1 ms

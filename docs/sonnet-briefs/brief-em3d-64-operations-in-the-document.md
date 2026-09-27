@@ -114,10 +114,14 @@ operand's. Both stay integer-exact at 90° multiples (brief 40 §1d).
 **`R-em3d64-2b` Edges** are named **relative to the object** by the two faces they separate, ordinal-sorted,
 joined by `|`: `xmax|zmax`, or with a Tool's face `bore:side|zmax`. Seam edges (a face meeting itself, as a
 cylinder's side does) and degenerate edges are not named and cannot be filleted. Where two faces share more
-than one edge, each takes `#n`; **brief 67 pins that order** (and §2d is its default until it does).
+than one edge, each takes a **third `|` field, its number** — `trench:side|zmax|1`, `trench:side|zmax|2` —
+not `#n`, which a split face already uses (brief 61 Q7 / overview §1g: `x|zmax#2` was ambiguous between a
+repeated edge and an edge of piece 2); **brief 67 pins that order** (and §2d is its default until it does).
 
 **`R-em3d64-2c` Faces a fillet or chamfer creates** are `fillet(<edge>)` / `chamfer(<edge>)` with the edge's
-name — `fillet(xmax|zmax)`. Faces the operation trims keep their names.
+name — `fillet(xmax|zmax)`. Faces the operation trims keep their names. The worker names from **every edge of
+each contour** OCCT builds (`MakeFillet::Edge(contour, i)`), not only the edges the object lists: a tangent
+chain propagates, and brief 61 Q7 left 7 of 18 faces unnamed when it named from the listed edge alone.
 
 **`R-em3d64-2d` The `#n` order, pinned.** Pieces of a split face and edges sharing a face pair are numbered
 by their centroid in the **object's own frame** (before its `Placement`), compared x, then y, then z, each

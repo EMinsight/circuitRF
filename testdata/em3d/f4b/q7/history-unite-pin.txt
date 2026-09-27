@@ -1,0 +1,46 @@
+# unite-pin (lid + pin)
+# valid 1, counts 1/1/10/18/12, faces unnamed 0, faces with >1 name 0
+# edges 18, seam edges 2, degenerate 0, face pairs shared by >1 edge: 0 (0 edges)
+
+## history (operand face -> result faces)
+  xmin                 unchanged -> F1=xmin
+  xmax                 unchanged -> F6=xmax
+  ymin                 unchanged -> F2=ymin
+  ymax                 unchanged -> F4=ymax
+  zmin                 modified into 1, generated 2 -> F5=zmin
+  zmax                 modified into 1, generated 2 -> F3=zmax
+  pin:side             modified into 2, generated 2 (Modified order != geometric order) -> F8=pin:side#1 F7=pin:side#2
+  pin:top              unchanged -> F9=pin:top
+  pin:bottom           unchanged -> F10=pin:bottom
+
+## result faces
+  F1 plane xmin  box [0,0,0 .. 0,800,500]
+  F2 plane ymin  box [0,0,0 .. 1000,0,500]
+  F3 plane zmax  box [0,0,500 .. 1000,800,500]
+  F4 plane ymax  box [0,800,0 .. 1000,800,500]
+  F5 plane zmin  box [0,0,0 .. 1000,800,0]
+  F6 plane xmax  box [1000,0,0 .. 1000,800,500]
+  F7 cylinder pin:side#2  box [400,300,500 .. 600,500,700]
+  F8 cylinder pin:side#1  box [400,300,-100 .. 600,500,0]
+  F9 plane pin:top  box [400,300,700 .. 600,500,700]
+  F10 plane pin:bottom  box [400,300,-100 .. 600,500,-100]
+
+## edges
+  pin:bottom|pin:side#1
+  pin:side#1|pin:side#1
+  pin:side#1|zmin
+  pin:side#2|pin:side#2
+  pin:side#2|pin:top
+  pin:side#2|zmax
+  xmax|ymax
+  xmax|ymin
+  xmax|zmax
+  xmax|zmin
+  xmin|ymax
+  xmin|ymin
+  xmin|zmax
+  xmin|zmin
+  ymax|zmax
+  ymax|zmin
+  ymin|zmax
+  ymin|zmin

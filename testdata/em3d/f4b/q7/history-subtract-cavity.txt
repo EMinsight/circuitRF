@@ -1,0 +1,40 @@
+# subtract-cavity (lid - cavity: a bore)
+# valid 1, counts 1/1/7/15/10, faces unnamed 0, faces with >1 name 0
+# edges 15, seam edges 1, degenerate 0, face pairs shared by >1 edge: 0 (0 edges)
+
+## history (operand face -> result faces)
+  xmin                 unchanged -> F1=xmin
+  xmax                 unchanged -> F6=xmax
+  ymin                 unchanged -> F2=ymin
+  ymax                 unchanged -> F4=ymax
+  zmin                 modified into 1, generated 2 -> F5=zmin
+  zmax                 modified into 1, generated 2 -> F3=zmax
+  cavity:side          modified into 1, generated 2 -> F7=cavity:side
+  cavity:top           deleted ->
+  cavity:bottom        deleted ->
+
+## result faces
+  F1 plane xmin  box [0,0,0 .. 0,800,500]
+  F2 plane ymin  box [0,0,0 .. 1000,0,500]
+  F3 plane zmax  box [0,0,500 .. 1000,800,500]
+  F4 plane ymax  box [0,800,0 .. 1000,800,500]
+  F5 plane zmin  box [0,0,0 .. 1000,800,0]
+  F6 plane xmax  box [1000,0,0 .. 1000,800,500]
+  F7 cylinder cavity:side  box [350,250,0 .. 650,550,500]
+
+## edges
+  cavity:side|cavity:side
+  cavity:side|zmax
+  cavity:side|zmin
+  xmax|ymax
+  xmax|ymin
+  xmax|zmax
+  xmax|zmin
+  xmin|ymax
+  xmin|ymin
+  xmin|zmax
+  xmin|zmin
+  ymax|zmax
+  ymax|zmin
+  ymin|zmax
+  ymin|zmin

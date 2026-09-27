@@ -1,0 +1,44 @@
+# fillet-chain (a rounded rectangle; fillet r=30 given ONE edge, ymin|zmax)
+# valid 1, counts 1/1/18/40/24, contour edges 8
+# naming from the LISTED edge only: faces unnamed 7
+# naming from every edge in the contour (mf.Edge(1, i)): faces unnamed 0, faces with >1 name 0
+
+## history (every contour edge)
+  xmin                 modified into 1 -> F1=xmin
+  zmax                 modified into 1 -> F9=zmax
+  fillet(xmin|ymin)    modified into 1 -> F2=fillet(xmin|ymin)
+  fillet(xmin|ymax)    modified into 1 -> F5=fillet(xmin|ymax)
+  zmin                 unchanged -> F4=zmin
+  ymin                 modified into 1 -> F7=ymin
+  ymax                 modified into 1 -> F10=ymax
+  fillet(xmax|ymin)    modified into 1 -> F11=fillet(xmax|ymin)
+  fillet(xmax|ymax)    modified into 1 -> F12=fillet(xmax|ymax)
+  xmax                 modified into 1 -> F13=xmax
+  edge ymin|zmax: Generated 1 shape(s), 1 result face(s) -> F14=fillet(ymin|zmax)
+  edge fillet(xmax|ymin)|zmax: Generated 1 shape(s), 1 result face(s) -> F16=fillet(fillet(xmax|ymin)|zmax)
+  edge xmax|zmax: Generated 1 shape(s), 1 result face(s) -> F17=fillet(xmax|zmax)
+  edge fillet(xmax|ymax)|zmax: Generated 1 shape(s), 1 result face(s) -> F18=fillet(fillet(xmax|ymax)|zmax)
+  edge ymax|zmax: Generated 1 shape(s), 1 result face(s) -> F15=fillet(ymax|zmax)
+  edge fillet(xmin|ymax)|zmax: Generated 1 shape(s), 1 result face(s) -> F8=fillet(fillet(xmin|ymax)|zmax)
+  edge xmin|zmax: Generated 1 shape(s), 1 result face(s) -> F3=fillet(xmin|zmax)
+  edge fillet(xmin|ymin)|zmax: Generated 1 shape(s), 1 result face(s) -> F6=fillet(fillet(xmin|ymin)|zmax)
+
+## result faces
+  F1 plane xmin  box [-2.842171e-14,100,0 .. 0,500,170]
+  F2 cylinder fillet(xmin|ymin)  box [-2.842171e-14,-2.842171e-14,0 .. 100,100,170]
+  F3 cylinder fillet(xmin|zmax)  box [-2.842171e-14,100,170 .. 30,500,200]
+  F4 plane zmin  box [-2.842171e-14,-2.842171e-14,0 .. 1000,600,0]
+  F5 cylinder fillet(xmin|ymax)  box [-2.842171e-14,500,0 .. 100,600,170]
+  F6 torus fillet(fillet(xmin|ymin)|zmax)  box [-2.842171e-14,-2.842171e-14,170 .. 100,100,200]
+  F7 plane ymin  box [100,-2.842171e-14,0 .. 900,0,170]
+  F8 torus fillet(fillet(xmin|ymax)|zmax)  box [-2.842171e-14,500,170 .. 100,600,200]
+  F9 plane zmax  box [30,30,200 .. 970,570,200]
+  F10 plane ymax  box [100,600,0 .. 900,600,170]
+  F11 cylinder fillet(xmax|ymin)  box [900,-2.842171e-14,0 .. 1000,100,170]
+  F12 cylinder fillet(xmax|ymax)  box [900,500,0 .. 1000,600,170]
+  F13 plane xmax  box [1000,100,0 .. 1000,500,170]
+  F14 cylinder fillet(ymin|zmax)  box [100,-7.105427e-15,170 .. 900,30,200]
+  F15 cylinder fillet(ymax|zmax)  box [100,570,170 .. 900,600,200]
+  F16 torus fillet(fillet(xmax|ymin)|zmax)  box [900,-2.842171e-14,170 .. 1000,100,200]
+  F17 cylinder fillet(xmax|zmax)  box [970,100,170 .. 1000,500,200]
+  F18 torus fillet(fillet(xmax|ymax)|zmax)  box [900,500,170 .. 1000,600,200]

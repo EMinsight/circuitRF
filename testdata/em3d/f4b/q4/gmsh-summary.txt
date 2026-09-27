@@ -1,0 +1,5 @@
+brep-v1                exit=0  4.46s  Info    : 22988 nodes 19644 elements
+brep-v2                exit=0  4.40s  Info    : 22988 nodes 19644 elements
+brep-v3                exit=0  3.88s  Info    : 22988 nodes 19644 elements
+step-um-target-um      exit=0  4.62s  Info    : 22908 nodes 19590 elements
+step-um-default-unit   exit=0  4.75s  Info    : 23727 nodes 19439 elements

@@ -1,0 +1,45 @@
+# subtract-trench (lid - a half-sunk horizontal cylinder: one face pair, two edges)
+# valid 1, counts 1/1/9/18/12, faces unnamed 0, faces with >1 name 0
+# edges 18, seam edges 0, degenerate 0, face pairs shared by >1 edge: 1 (2 edges)
+
+## history (operand face -> result faces)
+  xmin                 unchanged -> F1=xmin
+  xmax                 unchanged -> F6=xmax
+  ymin                 unchanged -> F2=ymin
+  ymax                 unchanged -> F4=ymax
+  zmin                 unchanged -> F5=zmin
+  zmax                 modified into 1, generated 8 -> F3=zmax
+  trench:side          modified into 1, generated 2 -> F8=trench:side
+  trench:top           modified into 1, generated 1 -> F9=trench:top
+  trench:bottom        modified into 1, generated 1 -> F7=trench:bottom
+
+## result faces
+  F1 plane xmin  box [0,0,0 .. 0,800,500]
+  F2 plane ymin  box [0,0,0 .. 1000,0,500]
+  F3 plane zmax  box [0,0,500 .. 1000,800,500]
+  F4 plane ymax  box [0,800,0 .. 1000,800,500]
+  F5 plane zmin  box [0,0,0 .. 1000,800,0]
+  F6 plane xmax  box [1000,0,0 .. 1000,800,500]
+  F7 plane trench:bottom  box [400,200,400 .. 600,200,500]
+  F8 cylinder trench:side  box [400,200,400 .. 600,600,500]
+  F9 plane trench:top  box [400,600,400 .. 600,600,500]
+
+## edges
+  trench:bottom|trench:side
+  trench:bottom|zmax
+  trench:side|trench:top
+  trench:side|zmax|1
+  trench:side|zmax|2
+  trench:top|zmax
+  xmax|ymax
+  xmax|ymin
+  xmax|zmax
+  xmax|zmin
+  xmin|ymax
+  xmin|ymin
+  xmin|zmax
+  xmin|zmin
+  ymax|zmax
+  ymax|zmin
+  ymin|zmax
+  ymin|zmin

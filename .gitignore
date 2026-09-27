@@ -88,3 +88,20 @@ examples/*/results/
 # F0 case A mesh (data/case.msh, ~15 MB, rebuilt by Gmsh from testdata/em3d/f0/A-bondwire/palace-round/case.geo)
 tools/Viewer3dSpike/native/
 tools/Viewer3dSpike/data/
+
+# OpenCASCADE never enters this repository (brief-em3d-61/62, owner decision 2026-09-27): not its source
+# archive, not its source tree, not a build tree, not a library. A spike build is ~5 GB. Building
+# circuitRF from source fetches OCCT with the recipe (tools/geometry-worker/occt/) into the per-user cache
+# outside the working tree. This is the backstop for the day someone builds it in here.
+OCCT-*.tar.gz
+occt-*.tar.gz
+OCCT-[0-9]*/
+tools/geometry-worker/build/
+tools/geometry-worker/occt/build/
+tools/geometry-worker/occt/install/
+libTK*.dylib
+libTK*.so
+libTK*.so.*
+TK*.dll
+TK*.lib
+TK*.pdb

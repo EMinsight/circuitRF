@@ -1,0 +1,27 @@
+== fillet-too-big  exit=0
+q9 fillet-too-big: IsDone=0 (no exception)
+
+== self-intersecting  exit=0
+q9 self-intersecting: input valid=0 counts=1/1/6/12/8 volume=-2.9802322e-08
+q9 self-intersecting: Cut IsDone=1 HasErrors=0 HasWarnings=1 valid=0 counts=2/3/17/30/18
+
+== zero-thickness  exit=0
+q9 zero-thickness: Standard_Failure Standard_DomainError: 
+
+== tool-misses  exit=0
+q9 tool-misses: IsDone=1 HasErrors=0 HasWarnings=0 valid=1 counts=1/1/6/12/8 volume=1000000000
+
+== segv-no-handler  exit=139
+
+== segv-with-handler  exit=0
+q9 segv-with-handler: caught OSD_SIGSEGV: SIGSEGV 'segmentation violation' detected. Address 0.
+q9 segv-with-handler: afterwards a boolean + fillet: valid=1 counts=1/1/8/17/11
+
+== break-boolean  exit=0
+q9 break-boolean: no break      : 336.68 ms, IsDone=1, user-break alert=0, UserBreak polled 86590 times
+q9 break-boolean: break at 50 ms: 50.421 ms, IsDone=0, user-break alert=1, UserBreak polled 3474 times
+
+== break-fillet  exit=0
+q9 break-fillet: no break      : 1044.3 ms, IsDone=1, user-break alert=0, UserBreak polled 0 times
+q9 break-fillet: break at 50 ms: 1040.6 ms, IsDone=1, user-break alert=0, UserBreak polled 0 times
+

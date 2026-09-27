@@ -1,0 +1,42 @@
+# fillet-rim (fillet r=25 on cavity:side|zmax)
+# valid 1, counts 1/1/8/17/11, faces unnamed 0, faces with >1 name 0
+# edges 17, seam edges 2, face pairs shared by >1 edge: 0 (0 edges)
+
+## history
+  xmin                 unchanged -> F3=xmin
+  ymin                 unchanged -> F5=ymin
+  zmax                 modified into 1 -> F1=zmax
+  ymax                 unchanged -> F4=ymax
+  zmin                 unchanged -> F8=zmin
+  xmax                 unchanged -> F6=xmax
+  cavity:side          modified into 1 -> F7=cavity:side
+  edge cavity:side|zmax: Generated 1 shape(s), 1 result face(s) -> F2=fillet(cavity:side|zmax)
+
+## result faces
+  F1 plane zmax  box [0,0,500 .. 1000,800,500]
+  F2 torus fillet(cavity:side|zmax)  box [325,225,475 .. 675,575,500]
+  F3 plane xmin  box [0,0,0 .. 0,800,500]
+  F4 plane ymax  box [0,800,0 .. 1000,800,500]
+  F5 plane ymin  box [0,0,0 .. 1000,0,500]
+  F6 plane xmax  box [1000,0,0 .. 1000,800,500]
+  F7 cylinder cavity:side  box [350,250,0 .. 650,550,475]
+  F8 plane zmin  box [0,0,0 .. 1000,800,0]
+
+## edges
+  cavity:side|cavity:side
+  cavity:side|fillet(cavity:side|zmax)
+  cavity:side|zmin
+  fillet(cavity:side|zmax)|fillet(cavity:side|zmax)
+  fillet(cavity:side|zmax)|zmax
+  xmax|ymax
+  xmax|ymin
+  xmax|zmax
+  xmax|zmin
+  xmin|ymax
+  xmin|ymin
+  xmin|zmax
+  xmin|zmin
+  ymax|zmax
+  ymax|zmin
+  ymin|zmax
+  ymin|zmin

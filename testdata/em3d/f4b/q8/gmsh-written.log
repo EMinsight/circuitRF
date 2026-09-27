@@ -1,0 +1,18 @@
+Info    : Running 'gmsh gmsh-written.geo -0' [Gmsh 4.15.2-git, 1 node, max. 1 thread]
+Info    : Started on Sun Sep 27 02:05:15 2026
+Info    : Reading 'gmsh-written.geo'...
+Info    : Writing 'gmsh-written.step'...
+[32;1m
+*******************************************************************
+******        Statistics on Transfer (Write)                 ******[0m
+[32;1m
+*******************************************************************
+******        Transfer Mode = 0  I.E.  As Is       ******[0m
+[32;1m******        Transferring Shape, ShapeType = 0                      ******[0m
+[32;1m** WorkSession : Sending all data[0m
+[32;1m Step File Name : gmsh-written.step(632 ents)  Write  Done[0m
+Info    : Done writing 'gmsh-written.step'
+Info    : Done reading 'gmsh-written.geo'
+Info    : Writing 'gmsh-written.geo_unrolled'...
+Info    : Done writing 'gmsh-written.geo_unrolled'
+Info    : Stopped on Sun Sep 27 02:05:15 2026 (From start: Wall 0.0278885s, CPU 0.098516s)

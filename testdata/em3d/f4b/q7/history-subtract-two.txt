@@ -1,0 +1,77 @@
+# subtract-two (lid - cavity - slot)
+# valid 1, counts 1/1/14/39/26, faces unnamed 0, faces with >1 name 0
+# edges 39, seam edges 1, degenerate 0, face pairs shared by >1 edge: 1 (2 edges)
+
+## history (operand face -> result faces)
+  xmin                 unchanged -> F1=xmin
+  xmax                 unchanged -> F6=xmax
+  ymin                 modified into 1, generated 5 -> F2=ymin
+  ymax                 modified into 1, generated 5 -> F4=ymax
+  zmin                 modified into 1, generated 2 -> F5=zmin
+  zmax                 modified into 2, generated 8 (Modified order = geometric order) -> F3=zmax#1 F7=zmax#2
+  cavity:side          modified into 1, generated 14 -> F12=cavity:side
+  cavity:top           deleted ->
+  cavity:bottom        deleted ->
+  slot:xmin            modified into 2, generated 8 (Modified order = geometric order) -> F10=slot:xmin#1 F11=slot:xmin#2
+  slot:xmax            modified into 2, generated 8 (Modified order = geometric order) -> F8=slot:xmax#1 F13=slot:xmax#2
+  slot:ymin            deleted ->
+  slot:ymax            deleted ->
+  slot:zmin            modified into 2, generated 4 (Modified order = geometric order) -> F9=slot:zmin#1 F14=slot:zmin#2
+  slot:zmax            deleted ->
+
+## result faces
+  F1 plane xmin  box [0,0,0 .. 0,800,500]
+  F2 plane ymin  box [0,0,0 .. 1000,0,500]
+  F3 plane zmax#1  box [0,0,500 .. 400,800,500]
+  F4 plane ymax  box [0,800,0 .. 1000,800,500]
+  F5 plane zmin  box [0,0,0 .. 1000,800,0]
+  F6 plane xmax  box [1000,0,0 .. 1000,800,500]
+  F7 plane zmax#2  box [600,0,500 .. 1000,800,500]
+  F8 plane slot:xmax#1  box [600,0,300 .. 600,288.1966,500]
+  F9 plane slot:zmin#1  box [400,0,300 .. 600,288.1966,300]
+  F10 plane slot:xmin#1  box [400,0,300 .. 400,288.1966,500]
+  F11 plane slot:xmin#2  box [400,511.8034,300 .. 400,800,500]
+  F12 cylinder cavity:side  box [350,250,0 .. 650,550,500]
+  F13 plane slot:xmax#2  box [600,511.8034,300 .. 600,800,500]
+  F14 plane slot:zmin#2  box [400,511.8034,300 .. 600,800,300]
+
+## edges
+  cavity:side|cavity:side
+  cavity:side|slot:xmax#1
+  cavity:side|slot:xmax#2
+  cavity:side|slot:xmin#1
+  cavity:side|slot:xmin#2
+  cavity:side|slot:zmin#1
+  cavity:side|slot:zmin#2
+  cavity:side|zmax#1
+  cavity:side|zmax#2|1
+  cavity:side|zmax#2|2
+  cavity:side|zmin
+  slot:xmax#1|slot:zmin#1
+  slot:xmax#1|ymin
+  slot:xmax#1|zmax#2
+  slot:xmax#2|slot:zmin#2
+  slot:xmax#2|ymax
+  slot:xmax#2|zmax#2
+  slot:xmin#1|slot:zmin#1
+  slot:xmin#1|ymin
+  slot:xmin#1|zmax#1
+  slot:xmin#2|slot:zmin#2
+  slot:xmin#2|ymax
+  slot:xmin#2|zmax#1
+  slot:zmin#1|ymin
+  slot:zmin#2|ymax
+  xmax|ymax
+  xmax|ymin
+  xmax|zmax#2
+  xmax|zmin
+  xmin|ymax
+  xmin|ymin
+  xmin|zmax#1
+  xmin|zmin
+  ymax|zmax#1
+  ymax|zmax#2
+  ymax|zmin
+  ymin|zmax#1
+  ymin|zmax#2
+  ymin|zmin

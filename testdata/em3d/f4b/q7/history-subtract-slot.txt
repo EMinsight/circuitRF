@@ -1,0 +1,55 @@
+# subtract-slot (lid - slot: zmax split in two)
+# valid 1, counts 1/1/10/24/16, faces unnamed 0, faces with >1 name 0
+# edges 24, seam edges 0, degenerate 0, face pairs shared by >1 edge: 0 (0 edges)
+
+## history (operand face -> result faces)
+  xmin                 unchanged -> F1=xmin
+  xmax                 unchanged -> F6=xmax
+  ymin                 modified into 1, generated 5 -> F2=ymin
+  ymax                 modified into 1, generated 5 -> F4=ymax
+  zmin                 unchanged -> F5=zmin
+  zmax                 modified into 2, generated 2 (Modified order = geometric order) -> F3=zmax#1 F7=zmax#2
+  slot:xmin            modified into 1, generated 5 -> F10=slot:xmin
+  slot:xmax            modified into 1, generated 5 -> F8=slot:xmax
+  slot:ymin            deleted ->
+  slot:ymax            deleted ->
+  slot:zmin            modified into 1, generated 2 -> F9=slot:zmin
+  slot:zmax            deleted ->
+
+## result faces
+  F1 plane xmin  box [0,0,0 .. 0,800,500]
+  F2 plane ymin  box [0,0,0 .. 1000,0,500]
+  F3 plane zmax#1  box [0,0,500 .. 400,800,500]
+  F4 plane ymax  box [0,800,0 .. 1000,800,500]
+  F5 plane zmin  box [0,0,0 .. 1000,800,0]
+  F6 plane xmax  box [1000,0,0 .. 1000,800,500]
+  F7 plane zmax#2  box [600,0,500 .. 1000,800,500]
+  F8 plane slot:xmax  box [600,0,300 .. 600,800,500]
+  F9 plane slot:zmin  box [400,0,300 .. 600,800,300]
+  F10 plane slot:xmin  box [400,0,300 .. 400,800,500]
+
+## edges
+  slot:xmax|slot:zmin
+  slot:xmax|ymax
+  slot:xmax|ymin
+  slot:xmax|zmax#2
+  slot:xmin|slot:zmin
+  slot:xmin|ymax
+  slot:xmin|ymin
+  slot:xmin|zmax#1
+  slot:zmin|ymax
+  slot:zmin|ymin
+  xmax|ymax
+  xmax|ymin
+  xmax|zmax#2
+  xmax|zmin
+  xmin|ymax
+  xmin|ymin
+  xmin|zmax#1
+  xmin|zmin
+  ymax|zmax#1
+  ymax|zmax#2
+  ymax|zmin
+  ymin|zmax#1
+  ymin|zmax#2
+  ymin|zmin

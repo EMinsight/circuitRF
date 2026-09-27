@@ -1,0 +1,7 @@
+selftest PASS  OCCT 8.0.1  osx-arm64
+  box-cylinder   ok  valid=1 solids/shells/faces/edges/vertices=1/1/7/15/10 volume=364657082.647 (ref 364657082.647)
+  fillet r=50um  ok  valid=1 counts=1/1/8/17/11 volume=364113790.788 (Pappus 364113790.788)
+  STEP in memory ok  bytes=22192 parts=1 name=lid colour=1
+  brep v3 sha256 53acdaaef9759759fe77f0486dde68a2ae80ad7ffec80443174ea762a3cd89ae (4156 bytes)  -- compare across RIDs (Q7)
+  STEP export left the shape's B-rep CHANGED (4156 bytes after)
+  elapsed 7.91 ms

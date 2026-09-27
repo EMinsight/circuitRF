@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!-- brief-em3d-61 Q10 control -- spike material, written by hand. Does openEMS read the harness's STL tessellation
+     of q4's part as a polyhedron? 10 timesteps, only to see it parse. Units: micrometres. -->
+<openEMS>
+    <FDTD NumberOfTimesteps="10" endCriteria="0" OverSampling="4">
+        <Excitation Type="0" f0="1e+10" fc="1e+10" />
+        <BoundaryCond xmin="PEC" xmax="PEC" ymin="PEC" ymax="PEC" zmin="PEC" zmax="PEC" />
+    </FDTD>
+    <ContinuousStructure CoordSystem="0">
+        <RectilinearGrid DeltaUnit="1e-06" CoordSystem="0">
+            <XLines>-200,-150,-100,-50,0,50,100,150,200,250,300,350,400,450,500,550,600,650,700,750,800,850,900,950,1000,1050,1100,1150,1200</XLines>
+            <YLines>-200,-150,-100,-50,0,50,100,150,200,250,300,350,400,450,500,550,600,650,700,750,800,850,900,950,1000</YLines>
+            <ZLines>-200,-150,-100,-50,0,50,100,150,200,250,300,350,400,450,500,550,600,650,700,750,800</ZLines>
+        </RectilinearGrid>
+        <BackgroundMaterial Epsilon="1" Mue="1" Kappa="0" Sigma="0" />
+        <Properties>
+            <Metal ID="0" Name="part">
+                <Primitives>
+                    <PolyhedronReader FileName="part-missing.stl" FileType="STL" Priority="10" />
+                </Primitives>
+            </Metal>
+            <Excitation ID="1" Name="drive" Number="0" Type="0" Excite="0,0,1">
+                <Primitives>
+                    <Box Priority="0">
+                        <P1 X="100" Y="100" Z="500" />
+                        <P2 X="100" Y="100" Z="700" />
+                    </Box>
+                </Primitives>
+            </Excitation>
+        </Properties>
+    </ContinuousStructure>
+</openEMS>

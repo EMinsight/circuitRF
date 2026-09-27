@@ -49,8 +49,14 @@ for: *this program uses facilities provided by Open CASCADE Technology*. It incl
 OCCT's shared libraries **dynamically**; nothing of OCCT's is copied into `tools/`.
 
 **`R-em3d62-1b` No OCCT in the repository.** Source archive, build tree and libraries live in the per-user
-build cache (§3) and in publish trees, never under version control. `.gitignore` covers
-`tools/geometry-worker/build/`.
+build cache (§3) and in publish trees, never under version control — **not one OCCT file, ever, in the
+working tree or its history** (owner, 2026-09-27; brief 61's spike build alone was ~5 GB). **Anyone
+compiling circuitRF from source obtains OCCT's source themselves**: the recipe fetches the upstream archive
+into the cache, and nothing in the repository substitutes for it. This holds in particular for the eight
+`TKGeomBase` files whose header contradicts the licence (brief 61 Q11, upstream issue
+[OCCT#1564](https://github.com/Open-Cascade-SAS/OCCT/issues/1564)). `.gitignore` already carries the
+backstop — OCCT archives and source trees, `tools/geometry-worker/{build,occt/build,occt/install}/`, and
+`libTK*` / `TK*.dll` anywhere.
 
 ---
 
@@ -108,6 +114,17 @@ senior-worker and osdi-worker steps, in **both** a Windows-conditioned and a non
 - **never fail the build** (senior-worker's `ensure-built.sh`: *THIS SCRIPT MUST NEVER FAIL A BUILD*),
   except under `--strict`, which the packaging scripts pass;
 - skippable with `-p:CrfSkipGeometryWorker=true`.
+
+**`R-em3d62-3f` circuitRF builds, tests and runs with no OCCT anywhere** (owner, 2026-09-27). A machine
+that has never had OCCT's source, its archive, the cache, or network access to any of them runs
+`dotnet build`, `dotnet test` and `dotnet run` to success: the `dotnet build` step **reads the cache and
+nothing else** — it never downloads, unpacks or configures OCCT, and it needs no C++ toolchain when the
+cache is empty. The **only** thing that fetches OCCT is `tools/geometry-worker/build.sh`/`build.cmd`, run
+deliberately. Every test that needs the worker skips **with a reason** (overview §1d); nothing fails for
+its absence. A `PackagingScriptTests` fact reads the `ensure-built` scripts and the `.csproj` step and
+fails if either names a download tool (`curl`, `wget`, `Invoke-WebRequest`, `Start-BitsTransfer`) or the
+recipe's `OCCT_URL`. A packaging script with no kernel stops by default and builds a kernel-less installer
+with `CRF_ALLOW_NO_KERNEL=1` (§5) — the absent path, not a broken build.
 
 **`R-em3d62-3e` The publish target** (`CrfPublishHelperPrograms`) publishes the whole `geometry-kernel/`
 directory, and a `PackagingScriptTests` fact reads the file list from the build script, the way
@@ -178,20 +195,36 @@ Written from brief 61's Q11 checklist, not from memory.
 version, copyright holder (Q11's exact line), *LGPL-2.1 only, with the Open CASCADE Exception 1.0*, the
 licence texts, the upstream source, **used by** `tools/geometry-worker`, and a *What this means if you
 redistribute a circuitRF binary* paragraph: the libraries are unmodified and dynamically linked, they sit in
-one replaceable folder, the corresponding source is the archive published with the release plus
-`tools/geometry-worker/occt/RECIPE.md`, and anyone redistributing inherits those obligations. The document's
+one replaceable folder, the corresponding source is available under the **written offer** of §6c (with
+`tools/geometry-worker/occt/RECIPE.md` saying how it was built), and anyone redistributing inherits those
+obligations. The document's
 opening count — *"Two of these are copyleft"* — becomes three. Any third-party library Q2's closure shows
 linked gets its own row under §3 with its licence.
 
 **`R-em3d62-6b` `licenses/OCCT-exception-1.0.txt`** is added, verbatim from OCCT's source tree.
 `licenses/LGPL-2.1.txt` already exists and is referenced, not duplicated.
 
-**`R-em3d62-6c` Corresponding source, published with every release.** The release process attaches the
-exact upstream archive (`occt-<version>.tar.gz`, the SHA-256 in the recipe) beside the installers.
-`BUILDING.md`'s release checklist gains that step, and the notices entry names where it is. Publishing the
-archive beside the binaries is "equivalent access to copy the source from the same place", so no written
-offer is needed. **If OCCT is ever patched** (brief 61 `R-em3d61-1c` forbids it now), the patch is published
-the same way.
+**`R-em3d62-6c` Corresponding source: a written offer, not a published archive** (owner, 2026-09-27).
+Eight files in OCCT's archive carry a header that contradicts its licence (brief 61 Q11; upstream asked in
+[OCCT#1564](https://github.com/Open-Cascade-SAS/OCCT/issues/1564)), so **circuitRF publishes OCCT's source
+nowhere** — not in the repository (`R-em3d62-1b`) and not as a release asset. It meets LGPL-2.1 §6(c)
+instead: the OCCT entry in `THIRD-PARTY-NOTICES.md`, which every installer carries, includes this offer,
+word for word:
+
+> *circuitRF binaries include Open CASCADE Technology <version>, unmodified, as shared libraries. For at
+> least three years after the last circuitRF release that includes this version, the circuitRF project will
+> give anyone who received such a binary a complete machine-readable copy of the corresponding source code
+> of Open CASCADE Technology <version>, for a charge no more than the cost of providing it. To request it,
+> open an issue on the circuitRF project's issue tracker titled "OCCT source request".*
+
+The entry also gives the upstream tag and the recipe's SHA-256, **as a convenience, not as the
+fulfilment**. No personal name or address appears in the offer; the issue tracker is the contact.
+
+**Honouring it:** the owner keeps the exact verified archive (the recipe's SHA-256) **outside the
+repository** for the offer's lifetime, and `BUILDING.md`'s release checklist gains the step *"the OCCT
+archive for this version is retained for the written offer"* — never *"attached"*. **If OCCT is ever
+patched** (brief 61 `R-em3d61-1c` forbids it now), the patch falls under the same offer. When OCCT#1564 is
+answered the owner may revisit publishing the archive; until then this section stands.
 
 **`R-em3d62-6d` The prominent notice.** The About box names Open CASCADE Technology and its version, reading
 the version from the worker's `--version` when the kernel is present, and links to
@@ -212,8 +245,9 @@ planted-violation twin for each rule (that file's own rule, R-em3d6-6b):
 
 ## 7. Gate
 
-**`R-em3d62-7a`** From a clean clone with the kernel cache empty, `dotnet build` succeeds and prints the
-one warning; `dotnet test tests/Firewall.Tests` passes. With the cache filled for the host RID,
+**`R-em3d62-7a`** From a clean clone with the kernel cache empty **and no OCCT source, archive or network
+access on the machine** (`R-em3d62-3f`), `dotnet build` succeeds and prints the one warning;
+`dotnet test tests/Firewall.Tests` passes; the worker-dependent tests report *skipped* with their reason. With the cache filled for the host RID,
 `dotnet build` puts `geometry-kernel/` in `bin/` and `geometry-worker --version` answers from there.
 
 **`R-em3d62-7b`** The worker, driven by a test over stdin/stdout, answers `hello`, `box`, `selftest` and
@@ -239,7 +273,8 @@ the owner's Mac.
    never built OCCT; `circuitRF --version` and `geometry-kernel/geometry-worker --version` both answer.
 3. On macOS: open a notarised `.dmg` on a second Mac that has never seen a build; Gatekeeper opens the app
    with no prompt beyond the usual first-launch one.
-4. Confirm the release checklist step that publishes the OCCT source archive.
+4. Confirm the release checklist step that **retains** the OCCT archive (outside the repository) for the
+   written offer, and read the offer in the installed `THIRD-PARTY-NOTICES.md`.
 
 ---
 

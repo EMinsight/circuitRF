@@ -1,0 +1,11 @@
+RID:            osx-arm64
+Host:           macOS 27.0 (26A428), Apple M4, 10 cores, 16 GB
+Toolchain:      Apple clang 21.0.0 (clang-2100.3.34.2), macOS SDK 27.0, CMake 4.4.3, generator Unix Makefiles (GNU Make 3.81)
+Native/cross:   native
+OCCT:           8.0.1, archive SHA-256 0d6913eae4bcc09a3653ceced6dda1aec11c35a1513d4c06762c9b002092c68a
+CMake line:     q2/cmake-options.txt + -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0
+                (the spike's run also passed -DBUILD_MODULE_DETools=OFF, which CMake reported unused; dropped)
+Configure:      0:03    Build: 4:54 (-j10; 44:16 CPU user+sys)    Install: 0:22
+Closure size:   55,996,152 bytes uncompressed (25 libraries); 20,634,852 as a UDZO .dmg (SIZES.md)
+selftest:       PASS (selftest-osx-arm64.txt)
+Failures met:   none -- zero compiler warnings, zero errors, first attempt

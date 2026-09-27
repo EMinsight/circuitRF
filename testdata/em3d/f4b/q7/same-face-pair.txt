@@ -1,0 +1,11 @@
+# edges sharing one face pair (by face identity), in the Q5 and Q6 shapes
+  q4/q10 part (bored lid, filleted rim): 0 face pair(s) bound more than one edge (0 edges)
+  q5 rot30-vs-axis Unite: 1 face pair(s) bound more than one edge (2 edges)
+  q5 rot30-vs-axis Subtract: 1 face pair(s) bound more than one edge (2 edges)
+  q5 partial-face-int Unite: 1 face pair(s) bound more than one edge (2 edges)
+  q6 pin-fillet: 0 face pair(s) bound more than one edge (0 edges)
+  q6 pin-chamfer: 0 face pair(s) bound more than one edge (0 edges)
+  q6 lid-fillet: 0 face pair(s) bound more than one edge (0 edges)
+  q6 lid-chamfer: 0 face pair(s) bound more than one edge (0 edges)
+  q6 chain-fillet: 0 face pair(s) bound more than one edge (0 edges)
+  q6 chain-chamfer: 0 face pair(s) bound more than one edge (0 edges)

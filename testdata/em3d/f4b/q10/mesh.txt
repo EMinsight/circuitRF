@@ -1,0 +1,4 @@
+tessellation of q4's part: linear deflection 5 um (absolute), angular 0.5 rad
+  per-face nodes 346, triangles 484
+  merged by edge polygons (topological): 242 vertices; edges used once 0, used >2 times 0, degenerate triangles 0 -> WATERTIGHT
+  merged by exact coordinate: 242 vertices; edges used once 0, used >2 times 0 -> watertight

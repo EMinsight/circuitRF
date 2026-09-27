@@ -1,0 +1,28 @@
+ ---------------------------------------------------------------------- 
+ | openEMS 64bit -- version 67d3784
+ | (C) 2010-2026 Thorsten Liebig <thorsten.liebig@gmx.de>  GPL license
+ ---------------------------------------------------------------------- 
+	Used external libraries:
+		CSXCAD -- Version: dcdb62b
+		hdf5   -- Version: 2.2.0
+		          compiled against: HDF5 library version: 2.2.0
+		tinyxml -- compiled against: 2.6.2
+		fparser
+		boost  -- compiled against: 1_92
+		vtk -- Version: 9.7.0
+		       compiled against: 9.7.0
+
+Create FDTD operator (compressed SSE + multi-threading)
+Operator::CalcGaussianPulsExcitation: Requested excitation pusle would be 2976 timesteps or 2.86564e-10 s long. Cutting to max number of timesteps!
+FDTD simulation size: 29x25x21 --> 15225 FDTD cells 
+FDTD timestep is: 9.62917e-14 s; Nyquist rate: 259 timesteps @2.00485e+10 Hz
+Excitation signal length is: 10 timesteps (9.62917e-13s)
+Max. number of timesteps: 10 ( --> 1 * Excitation signal length)
+openEMS::SetupFDTD: Warning, max. number of timesteps is smaller than three times the excitation. 
+	You may want to choose a higher number of max. timesteps... 
+Create FDTD engine (compressed SSE + multi-threading)
+Running FDTD engine... this may take a while... grab a cup of coffee?!?
+RunFDTD: Warning: Max. number of timesteps was reached before the end-criteria of -60dB was reached... 
+	You may want to choose a higher number of max. timesteps... 
+Time for 10 iterations with 15225 cells : 0.00127 sec
+Speed: 119.882 MCells/s 

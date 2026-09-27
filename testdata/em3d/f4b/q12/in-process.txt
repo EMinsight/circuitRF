@@ -1,0 +1,6 @@
+Q12 (occt_probe q12), OCCT 8.0.1, osx-arm64, Release build, median of 10 in one process
+  box - cylinder + 50 um fillet (boolean + fillet): 1.01 ms
+  display tessellation (relative 0.001, 20 deg):   6.034 ms, 3388 triangles, 1904 per-face vertices (1694 merged); float32 xyz + uint32 index buffer: 63504 bytes per-face, 60984 bytes merged
+  FDTD tessellation (1 um absolute, 0.5 rad):       1.792 ms, 1018 triangles, 658 per-face vertices (509 merged); buffer 20112 bytes per-face, 18324 bytes merged
+  B-rep text (v3, no triangles) write:             0.09329 ms, 4156 bytes
+  STEP (XCAF, one named part) write to memory:     0.7466 ms, 22192 bytes

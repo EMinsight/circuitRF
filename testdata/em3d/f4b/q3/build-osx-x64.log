@@ -1,0 +1,12 @@
+RID:            osx-x64
+Host:           macOS 27.0 (26A428), Apple M4, 10 cores, 16 GB
+Toolchain:      Apple clang 21.0.0 (clang-2100.3.34.2), macOS SDK 27.0, CMake 4.4.3, generator Unix Makefiles (GNU Make 3.81)
+Native/cross:   cross from osx-arm64 (CMAKE_OSX_ARCHITECTURES=x86_64; Apple clang targets both natively)
+OCCT:           8.0.1, archive SHA-256 0d6913eae4bcc09a3653ceced6dda1aec11c35a1513d4c06762c9b002092c68a
+CMake line:     q2/cmake-options.txt + -DCMAKE_OSX_ARCHITECTURES=x86_64 -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0
+Configure:      0:03    Build: 4:55 (-j10)    Install: 0:23
+Closure size:   58,512,944 bytes uncompressed (25 libraries); 23,535,653 as a UDZO .dmg (SIZES.md)
+selftest:       NOT RUN -- the harness built for x86_64 (Mach-O 64-bit executable x86_64) and the host refused it:
+                "bad CPU type in executable". Rosetta is not installed on this machine; installing it
+                (softwareupdate --install-rosetta) needs an administrator and was not done unasked.
+Failures met:   none in the build -- zero warnings; the only failure is running the result (above)

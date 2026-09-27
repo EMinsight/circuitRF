@@ -91,7 +91,7 @@ What that licence allows, and what it asks:
 |---|---|
 | Ship OCCT inside circuitRF's installers | **Yes**, as **unmodified shared libraries** the user can replace |
 | circuitRF stays MIT | **Yes.** An LGPL library used through its interface does not reach the program using it. The exception goes further: object code that incorporates material from OCCT's **headers** (inline functions, templates — unavoidable in C++) may be distributed on terms of our choosing, *provided circuitRF gives prominent notice that it uses OCCT* |
-| Obligations | Ship the LGPL-2.1 text and the exception text; give **prominent notice** (About box and `THIRD-PARTY-NOTICES.md`); make the **corresponding source** of the exact OCCT build available (a copy of the upstream source archive published with each circuitRF release, plus the build recipe); **link dynamically**, so a user can substitute a modified OCCT; do not forbid reverse engineering for that purpose (MIT does not) |
+| Obligations | Ship the LGPL-2.1 text and the exception text; give **prominent notice** (About box and `THIRD-PARTY-NOTICES.md`); make the **corresponding source** of the exact OCCT build available — by a **written offer** in `THIRD-PARTY-NOTICES.md`, not a published archive (owner, 2026-09-27, while [OCCT#1564](https://github.com/Open-Cascade-SAS/OCCT/issues/1564) is open; brief 62 §6c), plus the build recipe; **link dynamically**, so a user can substitute a modified OCCT; do not forbid reverse engineering for that purpose (MIT does not) |
 | Static linking | **Not done.** It would require shipping relinkable object files. Shared libraries make the obligation trivial |
 | macOS signing | Replacing a signed dylib breaks the bundle's signature; the user can re-sign it. **LGPL-2.1 has no "installation information" clause** (that is GPLv3/LGPLv3), so this is compliant |
 
@@ -238,10 +238,19 @@ experiment ("does this fillet change S21?").
   (`airbox/zmin`). `NameValidator` forbids `:`, `|` and `/` in names, so no separator here can collide
   with a name.
 - **Edges** are named, relative to their object, by the **two faces they separate**, sorted and joined by
-  `|`: `xmax|zmax`, or `cavity:xmin|zmax`. Where two faces share more than one edge the name takes `#n`
-  in a deterministic order (brief 67 pins it). A fillet stores edge names, so resizing the box keeps the
-  fillet on the same edge.
-- **Faces a fillet creates** are `fillet(<edge>)`; a chamfer's, `chamfer(<edge>)`.
+  `|`: `xmax|zmax`, or `cavity:xmin|zmax`. Where two faces share more than one edge the name takes a
+  **third field, the edge's number**: `trench:side|zmax|1`, `trench:side|zmax|2`. *(Corrected by brief 61
+  Q7: this was a `#n` suffix, which collides with a split face's — `x|zmax#2` would mean the second edge
+  between `x` and `zmax` in one document and the edge between `x` and piece 2 of `zmax` in another, so a
+  stored edge could silently land elsewhere after an edit split `zmax`. `|` is forbidden in names and no
+  face name is a bare number, so the third field is unambiguous.)* Split pieces and repeated edges are
+  numbered in a **geometric** order (brief 64 §2d), never in OCCT's list order, which Q7 measured to differ.
+  A seam edge (a face meeting itself, as a cylinder's side does) is not named. A fillet stores edge names,
+  so resizing the box keeps the fillet on the same edge.
+- **Faces a fillet creates** are `fillet(<edge>)`; a chamfer's, `chamfer(<edge>)` — for **every** edge
+  OCCT rounds, including the tangent edges it propagates to from the ones listed. *(Brief 61 Q7: naming
+  from the listed edge alone left 7 of 18 faces of a tangent-chain fillet unnamed; the worker names from
+  each contour's edges, `MakeFillet::Edge(contour, i)`.)*
 - **A STEP part's faces** are `face<n>` in the file's topological order, valid for the file's **content
   hash**, which the object records. A changed file with references into it is re-validated, and a reference
   that no longer lands is a refusal (brief 68).
@@ -311,7 +320,7 @@ there.
 | # | Brief | Delivers | Depends on |
 |---|---|---|---|
 | 61 | [the kernel spike](brief-em3d-61-kernel-spike.md) | OCCT pinned; the module set; build time and **size per RID**; which RIDs ship (D2); booleans on coincident DBU faces; fillet on a curved edge; STEP round trip; Gmsh reads our B-rep (D12); openEMS reads our tessellation; licence checklist verified against the built tree. Findings note | — |
-| 62 | [the worker, built and shipped](brief-em3d-62-geometry-worker-and-shipping.md) | `tools/geometry-worker` (C++, MIT); the pinned OCCT recipe and its build cache; the three packaging scripts ship it; `CliSmoke` exercises it; `THIRD-PARTY-NOTICES.md`, `licenses/`, the published OCCT source; About's notice; firewall tests | 61 |
+| 62 | [the worker, built and shipped](brief-em3d-62-geometry-worker-and-shipping.md) | `tools/geometry-worker` (C++, MIT); the pinned OCCT recipe and its build cache; the three packaging scripts ship it; `CliSmoke` exercises it; `THIRD-PARTY-NOTICES.md`, `licenses/`, the written offer of OCCT source (no archive published); About's notice; firewall tests | 61 |
 | 63 | [the managed client](brief-em3d-63-kernel-client.md) | `src/Design/ThreeD/Occ/`: discovery, handshake and version check, the protocol, crash/timeout/cancel, the cache, async preview; the **capability** (§1d) every UI and CLI surface reads; `KernelFact` test attribute | 62 |
 | 64 | [operations in the document](brief-em3d-64-operations-in-the-document.md) | `Boolean`, `Fillet`, `Chamfer`, `Step` in the `.c3d`; naming (§1g); resolution and elaboration to `Em3dShapeSolid`; refusal on open without the kernel; `check`/`explain`; the reference page | 63 |
 | 65 | [both solvers, and what they cannot respect](brief-em3d-65-solvers-and-fidelity.md) | Palace via B-rep import (existing curvature sizing); openEMS via tessellation + the face-node offset + grid notes; the fidelity warnings in notes, `check` and the Setups panel; every existing golden byte-identical | 64 |

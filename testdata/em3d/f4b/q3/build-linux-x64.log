@@ -1,0 +1,4 @@
+RID:            linux-x64
+NOT DONE -- owed by the owner (brief 61 section 1). Build OCCT with the recipe in
+docs/design/em-3d-f4b-spike-findings.md, build testdata/em3d/f4b/harness, run occt_probe selftest and
+q9/run.sh, and replace this file with the section 4 log.

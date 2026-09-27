@@ -1,0 +1,14 @@
+part: 1000 x 800 x 500 um lid, r = 150 um bore, bore rim filleted at 50 um. Volume 364113790.788, valid 1, counts 1/1/8/17/11
+faces (tight boxes, um):
+  plane [0,0,500 .. 1000,800,500]
+  torus [300,200,450 .. 700,600,500]
+  plane [0,0,0 .. 0,800,500]
+  plane [0,800,0 .. 1000,800,500]
+  plane [0,0,0 .. 1000,0,500]
+  plane [1000,0,0 .. 1000,800,500]
+  cylinder [350,250,0 .. 650,550,450]
+  plane [0,0,0 .. 1000,800,0]
+part-v1.brep: 4160 bytes, sha256 69a905dd64a7abcd5f9569558675b3103e660cafb001d206ab7e47a060955631, header: CASCADE Topology V1, (c) Matra-Datavision
+part-v2.brep: 4711 bytes, sha256 84d1934efb493a43defe51d1d99b6207da4b64501879c433137816be1244c6c0, header: CASCADE Topology V2, (c) Matra-Datavision
+part-v3.brep: 4156 bytes, sha256 53acdaaef9759759fe77f0486dde68a2ae80ad7ffec80443174ea762a3cd89ae, header: CASCADE Topology V3, (c) Open Cascade
+part-um.step written 1
