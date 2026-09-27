@@ -485,6 +485,13 @@ internal static class DocumentSchema
             technologies' same-named materials merge when equal and become <name>@<technology stem>
             otherwise. A 3D view that reaches itself through its instances is refused — judged by cell
             AND view: a cell's 3D view may hold that cell's own layout, which is not a cycle.
+          * A Wire's Array makes it a ROW of identical wires: {"Count": 4, "Pitch": [0, 101600, 0]}
+            is the drawn wire and three copies, each moved by one more Pitch (a vector, DBU, so a row
+            may run in any direction). Omitted, it is one wire. Each copy is a wire of its own in the
+            model, named <wire>[k] (k from 0, the drawn one), its ends looked up on the pads under
+            them and refused by that name like any wire's. A row is one-dimensional on purpose: a
+            bonded row is a number of wires and a pitch. A rotation or mirror of the wire turns its
+            Pitch with it.
           * Setups hold EM setups in the .cem schema (see the em-setup topic) without LayoutRef, each
             with a unique Name and Solver3D Palace or OpenEms. `em view.c3d` runs the one there is;
             with several, `--setup <name>`. Its result is named "<file stem> <setup name>". A static
@@ -528,7 +535,8 @@ internal static class DocumentSchema
           * A NAMED DIMENSION may hold an expression instead of a number: Min and Size (box,
             rectangle), Offset, Height and Shear (prism, sheet, polyline), Base, Length and Radius
             (cylinder), ThicknessUm, a placement's Origin and each Rotate angle, an array's Counts and
-            Pitch, a port's Rect, a wire's DiameterUm. It is an object that ALWAYS carries the unit it
+            Pitch, a port's Rect, a wire's DiameterUm and its Array's Count and Pitch. It is an object
+            that ALWAYS carries the unit it
             was typed in, component by component:
 
                 "Size": [{ "Expr": "w", "Unit": "Mil" }, 1270000, { "Expr": "h_sub + t_met", "Unit": "Um" }]

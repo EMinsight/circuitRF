@@ -475,11 +475,14 @@ public partial class WorkspaceViewModel
 
     // ── the 3D menu (owner decision D9, overview §1m) ─────────────────────────────────────────
     //
-    // ONE top-level menu, always present: on macOS a window's NativeMenu is fixed for its lifetime, so a
-    // menu that came and went with the active document would be the fragile path. Every item acts on the
-    // active 3D pane — the editor's or the read-only viewer's, which share their view model — and is
-    // enabled only when there is one. Nothing here is a second implementation: each item calls the
-    // command the pane's own toolbar and keys call.
+    // ONE top-level menu. Every item acts on the active 3D pane — the editor's or the read-only viewer's,
+    // which share their view model — and is enabled only when there is one. Nothing here is a second
+    // implementation: each item calls the command the pane's own toolbar and keys call.
+    //
+    // 3D editor bugs round 4 — the menu is SHOWN only while a 3D pane is the active document; with any other
+    // document active it is hidden, not merely disabled. On macOS a window's NativeMenu is fixed for its
+    // lifetime, so the menu is never added or removed: its item's IsVisible is bound (IsThreeDMenuVisible),
+    // on the NativeMenuItem and on the in-window MenuItem alike, and re-raised from both enablement fan-outs.
 
     /// <summary>The active 3D pane's view model, or null.</summary>
     private Viewer3DViewModel? Active3DPane() => ResolveActiveDocumentForCommands() switch
@@ -491,9 +494,17 @@ public partial class WorkspaceViewModel
 
     private bool HasActive3DPane() => Active3DPane() is not null;
 
+    /// <summary>3D editor bugs round 4 — whether the top-level 3D menu is shown: a 3D document (the editor or the
+    /// read-only viewer) is the one the shell's commands act on.</summary>
+    public bool IsThreeDMenuVisible => ShowsThreeDMenu(ResolveActiveDocumentForCommands());
+
+    /// <summary>The 3D menu's rule, on the dockable the shell's commands resolve to.</summary>
+    internal static bool ShowsThreeDMenu(object? activeDocument) => activeDocument is C3dEditorDocument or Viewer3DDocument;
+
     /// <summary>Re-evaluates every 3D menu item — called from both of the shell's enablement fan-outs.</summary>
     private void RaiseThreeDMenuChanged()
     {
+        OnPropertyChanged(nameof(IsThreeDMenuVisible));
         ThreeDSelectModeCommand.NotifyCanExecuteChanged();
         ThreeDFitCommand.NotifyCanExecuteChanged();
         ThreeDStandardViewCommand.NotifyCanExecuteChanged();

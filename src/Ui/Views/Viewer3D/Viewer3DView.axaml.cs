@@ -2,7 +2,6 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Threading;
 using CircuitRF.Render;
-using CircuitRF.Render.Scene3D.Fields;
 using CircuitRF.Ui.Viewer3D;
 
 namespace CircuitRF.Ui.Views.Viewer3D;
@@ -27,8 +26,7 @@ public partial class Viewer3DView : UserControl
         Pane.ContextMenuRequested += () =>
         {
             if (_vm is null) return;
-            var copy = new MenuItem { Header = $"Copy Picture ({Viewer3DViewModel.CopyScale}× the window)" };
-            copy.Click += OnCopyPicture;
+            var copy = Viewer3DPictureCopy.Item(Pane, () => _vm, text => { if (_vm is not null) _vm.PictureText = text; });
             var export = new MenuItem { Header = "Export Picture…" };
             export.Click += OnExportPicture;
             Viewer3DContextMenu.Fill(_menu, _vm.OpenContextMenu(), [copy, export]);
@@ -90,44 +88,6 @@ public partial class Viewer3DView : UserControl
         _vm.View.Background = ThemeService.CurrentVariant == ColorVariant.Dark ? (0.12f, 0.13f, 0.15f) : (0.93f, 0.94f, 0.96f);
     }
 
-    /// <summary>The pane's size in DEVICE pixels — what a picture's multiple is of.</summary>
-    private (int W, int H) PanePixels()
-    {
-        double scale = TopLevel.GetTopLevel(this)?.RenderScaling ?? 1;
-        return ((int)Math.Ceiling(Pane.Bounds.Width * scale), (int)Math.Ceiling(Pane.Bounds.Height * scale));
-    }
-
-    /// <summary>
-    /// The context menu's Copy: the view drawn offscreen by the GPU at 4× the pane's device pixels, read
-    /// back (Export picture's own path), the legend and caption painted on as the export options say, and
-    /// put on the clipboard as an image. The composing runs off the UI thread; only the read-back holds it.
-    /// </summary>
-    private async void OnCopyPicture(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        if (_vm is null) return;
-        var (w, h) = PanePixels();
-        var shot = _vm.CapturePicture(w, h, Viewer3DViewModel.CopyScale, out string? error);
-        if (shot is null) { _vm.PictureText = "The picture could not be copied: " + error; return; }
-        _vm.PictureText = "Copying the picture…";
-        try
-        {
-            var bitmap = await Task.Run(() =>
-            {
-                using var pixels = shot.Compose();
-                return Clipboard.ImageClipboard.FromSkia(pixels);
-            });
-            bool done = await Clipboard.ImageClipboard.SetAsync(this, bitmap);
-            _vm.PictureText = done
-                ? $"Copied the view at {shot.Width:N0} × {shot.Height:N0} pixels" +
-                  (shot.Scale < Viewer3DViewModel.CopyScale ? $" ({shot.Scale:0.##}× the window: a picture's side is at most {FieldPicture.MaxSide:N0} pixels)." : ".")
-                : "The picture could not be copied: this window has no clipboard.";
-        }
-        catch (Exception ex) when (ex is OutOfMemoryException or InvalidOperationException or System.Runtime.InteropServices.ExternalException)
-        {
-            _vm.PictureText = "The picture could not be copied: " + ex.Message;
-        }
-    }
-
     /// <summary>
     /// brief-em3d-29 R-em3d29-5 — Export picture…: the view drawn offscreen by the GPU at the chosen multiple
     /// of the pane's DEVICE-pixel size, read back, and written as PNG where the user says.
@@ -135,7 +95,7 @@ public partial class Viewer3DView : UserControl
     private async void OnExportPicture(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (_vm is null || TopLevel.GetTopLevel(this) is not Window owner) return;
-        var (w, h) = PanePixels();
+        var (w, h) = Viewer3DPictureCopy.PanePixels(Pane);
         var png = _vm.ExportPng(w, h, out string? error);
         if (png is null) { _vm.PictureText = "The picture could not be made: " + error; return; }
         var file = await owner.StorageProvider.SaveFilePickerAsync(new Avalonia.Platform.Storage.FilePickerSaveOptions

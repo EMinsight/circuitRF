@@ -36679,3 +36679,129 @@ Gate: `tests/Ui.Tests/Em3d/MaterialsTableInPlaceTests.cs`.
   such paths were already committed. `Em3dSolverSettingsView.AnonymizeHomeForCapture` (set only by
   `DocSettingsFixtures`, beside the Revision Control capture seam) writes the home directory as `~` in every status
   line, keeping the path's shape. A user's own dialog is unchanged.
+
+## 3D editor bugs round 4 — menus
+
+### The 3D menu showed with no 3D document active
+
+- **Not a lost focus signal — a design choice being reversed.** Brief 43 (owner decision D9) made the top-level 3D
+  menu ALWAYS present and merely disabled every item without a 3D pane, reasoning that a NativeMenu item coming and
+  going was the fragile path on macOS. The owner has now asked for it to be hidden when no 3D document is active.
+- **The fix keeps the NativeMenu invariant**: nothing is added or removed. `NativeMenuItem.IsVisible` (Avalonia 12
+  has it) and the in-window `MenuItem.IsVisible` are both bound to `WorkspaceViewModel.IsThreeDMenuVisible`, which is
+  `ShowsThreeDMenu(ResolveActiveDocumentForCommands())` — the same "active document" every other document-specific
+  command uses (a torn-off window's focused document first, then the tracked pane's, then the primary dock's), so a
+  tool panel such as Properties taking focus does NOT hide it while a 3D tab is the active document. Re-raised from
+  `RaiseThreeDMenuChanged`, which both enablement fan-outs already call.
+- **The read-only 3D viewer keeps the menu too**: its Select Mode, View, Snap and Measure items are the same commands
+  (`HasActive3DPane`), and hiding the menu there would leave those with no menu spelling.
+- **Unverified on screen**: the GUI cannot be launched from the agent's shell. The macOS menu bar has a known
+  repaint quirk on macOS 27 (the About-dialog bare bar) — if the 3D menu lingers until the next menu-bar redraw,
+  that is the place to look, not the binding.
+
+### No Copy on the 3D editor's canvas
+
+- **Root cause: the .c3d editor's context menu was filled with NO picture commands.** `C3dEditorView` called
+  `Viewer3DContextMenu.Fill(_menu, …, [])`; only the read-only `Viewer3DView` passed its Copy/Export extras. The
+  owner had seen Copy in the viewer (labelled "Copy Picture (4× the window)") and not in the editor.
+- The copy now lives once, in `Views/Viewer3D/Viewer3DPictureCopy` (the viewer's former `OnCopyPicture` and
+  `PanePixels`, unchanged), and both views add its item. It is labelled plain **Copy**; the 4× multiple and any clamp
+  are reported on the status line after the copy (the editor's `StatusMessage`, the viewer's `PictureText`). The
+  editor's menu is now always opened — it always has Copy — where before an empty item list opened nothing.
+- Gate: `tests/Ui.Tests/ThreeD/EditorRound4MenuTests.cs` (3 tests: the visibility rule, both menu spellings bound, both
+  canvases wired to the one Copy). The copy itself (GPU read-back to clipboard) was not exercised — no display.
+
+## 3D editor bugs round 4 — the Properties Inspector and Make Port
+
+### A wire's diameter ignored the display unit
+
+- **Root cause: `C3dFieldKind.Microns` was a unit of its own on screen.** A wire's `DiameterUm` and a sheet's
+  `ThicknessUm` are stored in µm (the file format, unchanged), and the Inspector spelled, parsed and labelled them in
+  µm too ("Diameter (µm)"), so switching the display unit changed every other length and left these alone.
+- Now a Microns field is a length like any other in the Inspector: spelled in the display unit
+  (`SpellNumber`: µm × 1e-6 ÷ the unit's metres), a bare typed number read in the display unit and stored in µm
+  (rounded to 1e-9 µm so 1 mil stores 25.4, not 25.400000000000002), a bare expression bound at the display unit as
+  a length's is, and an expression's resolved value spelled by `C3dUnits.Spell`. Labels lost "(µm)".
+- The drag rule (`PlanNames`) needed nothing: its Microns target was already metres ÷ 1e-6 and its site unit
+  already fell back to the display unit.
+
+### Duplicated and sprawling dimension rows
+
+- **The placement origin WAS on screen twice** for every placed object: the round-1 `OriginX/Y/Z` boxes, and brief
+  51's bound `Placement.Origin[k]` fields (the same numbers, expression-capable). The boxes and `CommitOrigin` are
+  gone; the bound fields are the one spelling. The read-only `Rows` also repeated every editable dimension (a box's
+  Corner and Size, a cylinder's Base/Length/Radius, a sheet's Offset/Corner/Size/Thickness, a prism's
+  Offset/Height/Shear, a polyline's Offset) — `Dimensions` now yields only what no field shows (plane, axis,
+  outline and point counts).
+- **One line per vector**: `C3dPropertiesViewModel.FieldGroup` derives a field's line and letter from its existing
+  label ("X size" → Size/x, "Placement origin z" → Placement origin/z, "Shear u" → Shear/u), and `FieldRows` groups
+  consecutive components. Each line is `Label: x [ ] y [ ] z [ ] unit`, the labels aligned by a shared-size column;
+  resolved values and errors are listed under the line naming their component. `Fields` is unchanged, so every
+  existing caller and test still addresses one component by path. A `TextBox.dim` style drops Fluent's MinWidth.
+- Gate 10 (every length follows the display unit) read lengths from `Rows`; it now reads the field lines with
+  their unit, because a box has no length left in `Rows`.
+
+### A wire's loop height and span
+
+- The owner's request for a wire-spacing property is read as wBond's and the Layout editor's **Span** — the wire panel's other length beside Loop height; the pitch
+  between wires is the array's (item 3). Both are in `C3dEditorViewModel.WireShape.cs`, on wBond's own primitives
+  over the axis in DBU (`WireEdits` is whole-number arithmetic, unit-free): **loop height** keeps every x and y and
+  scales the rise above the chord (`SetLoopHeightPreservingPath`); **span** moves the END foot along the chord in plan,
+  the start pinned (`ScaleSpan`), then re-seats it exactly as a Vertex-mode drag does, so an end moved off every pad
+  is refused with the drag's sentence. One undo entry each.
+- **The loop height is the 3D one** (em-3d.md §6.6, decided: lower pad's top to the wire's top at its apex), which
+  is what the Wire tool takes — not wBond's axis max z − min z. The axis is scaled, the resolved solid measured by
+  `MeasureAssembly`, and the axis target corrected by the difference until they agree to half a DBU, as
+  `C3dWires.ForAssemblyHeight` does for the tool's arch. A wire that lands on no pad has nothing to measure from:
+  the field is empty ("no pad") and a commit says so. A straight wire and a height below the foot drop are refused
+  as wBond refuses them.
+
+### Make Port offered both kinds on every face
+
+- **Neither assignment the owner questioned is invalid in itself**: which kind a face can take is decided by WHERE
+  its rectangle lies, not by what object it came from. A wave port is a region of an air-box face — a sheet drawn
+  on that face is the usual way to state one. A lumped port bridges two conductors on opposite edges — a face of a
+  small gap block between a trace and ground does exactly that. What was wrong was that the menu offered both and
+  only refused afterwards (the port was added, drawn "refused", and the status line said why).
+- `MakePortItem` now builds the port each kind would add (`PortFromFace`, the former body of `MakePortFromFace`)
+  and resolves it with `C3dPorts.Resolve` against the scene's port context — the resolver a run uses — so an item is
+  enabled only when that port would resolve, and the refusal is the disabled item's tip.
+- Worth knowing: a face can only be ON an air-box face where that face's padding is zero — the box is sized around
+  the content, so anything drawn is inside it otherwise. That is why a wave port on an ordinary sheet is disabled.
+
+Gate: `tests/Ui.Tests/ThreeD/EditorRound4PropertiesTests.cs` (4 tests).
+
+## 3D editor bugs round 4 — wire arrays
+
+The owner asked for arrays of bond wires, the number of wires and the pitch as parameters, modelled on how a placed
+cell is arrayed. A drawn `C3dWire` now carries an optional `Array` (`C3dWireArray`: `Count`, `Pitch`) and stands for a
+ROW: the drawn wire and `Count − 1` copies, each moved one more pitch.
+
+- **Its own class, not `C3dArray`.** An instance array is three counts with a per-axis pitch; a bonded row is a number
+  of wires and one pitch, and a per-axis pitch cannot express a row along a die edge that is not an axis. So the wire's
+  array is one `Count` and a VECTOR `Pitch`. It is bindable exactly as an instance's (both fields take expressions,
+  resolved by the same resolver: `Array.Count` is `C3dFieldKind.Count`, never rounded; `Array.Pitch[k]` a length).
+  Null is omitted, so a wire without a row serialises byte-identically to before.
+- **Each element is a wire in the model** (`C3dWires.Elements`): named `w1[k]` (k from 0, the drawn one) when the count
+  is above 1, resolved on its own pads and refused by that name — a copy whose end misses a pad does not stop its
+  siblings. Provenance's `ObjectName` is the drawn wire, which is what makes a click on any element select, edit and
+  operate on the one document object (`DocumentIndex` already followed provenance for a wire's balls).
+- **Name-based scene lookups had to learn about elements.** `SceneObject(o.Name)` finds nothing for `w1` once the solids
+  are `w1[0]…`. `SceneObjectsFor(obj, balls)` is the one place that answers "what did this object become", used by
+  Hidden flags, tree selection (selects every element), `TreeOnlyObjectIndex`, the operations' moving set and the
+  selection-to-tree sync (which now falls back to `DocumentIndex`, so a ball click also finds its wire's row).
+- **The Inspector treats a whole row as one object**: several selected scene objects mapping to ONE document index are
+  that object, not "N selected" (`C3dPropertiesViewModel.OneDocumentObject`). A wire with no row is offered
+  "Number of wires" = 1; typing more creates the row at the default pitch (four diameters, across the wire's run in
+  plan), after which "Pitch x/y/z" show. The tree flags a row with the first refusal among its elements.
+- **Array… on ONE wire sets the wire's own row** (one entry, no copies written), as it does for one instance. The panel
+  opens on the row across the wire's run, or on the wire's existing row with the other elements hidden so the preview
+  is the new row; counts on two axes are refused ("one row"). Several wires, or a wire among other objects, still get
+  independent copies.
+- **A rotation or mirror turns the pitch** (`C3dWires.BakePlacement`, where every operation lands on a wire), and a
+  flatten's DBU rescale scales it — so a rotated row stays a row of the rotated wire. An instance array's pitch, by
+  contrast, stays in the parent frame; the difference is deliberate — a wire has no placement to carry it.
+- Left as is: Vertex mode and Re-Seat Wire Ends edit the DRAWN wire (element 0); every copy follows its shape. A copy
+  whose end misses its pad is fixed by moving the drawn wire or changing the pitch, not per copy.
+
+Gate: `tests/Ui.Tests/ThreeD/WireArrayTests.cs` (5 tests).

@@ -287,6 +287,50 @@ public static class C3dWires
         return (m / per).ToString("0.####", CultureInfo.InvariantCulture);
     }
 
+    // ── arrays (3D editor round 4) ─────────────────────────────────────────────────────────────
+
+    /// <summary>The name of element <paramref name="k"/> of <paramref name="w"/>: its own name when it is one wire,
+    /// <c>w1[k]</c> in an array of more than one.</summary>
+    public static string ElementName(C3dWire w, long k) => w.Array is { Count: > 1 } ? $"{w.Name}[{k}]" : w.Name;
+
+    /// <summary>
+    /// Every wire <paramref name="w"/> stands for: itself when it is no array, else each element — a copy with its points
+    /// moved by k × pitch, named <see cref="ElementName"/>, and no array of its own. The drawn wire is element 0. A count
+    /// below 1 is one wire (validation refuses it).
+    /// </summary>
+    public static IEnumerable<(string Name, C3dWire Wire)> Elements(C3dWire w)
+    {
+        if (w.Array is not { Count: > 1 } a) { yield return (w.Name, w); yield break; }
+        string text = C3dPersistence.SerializeObject(w);
+        for (long k = 0; k < a.Count; k++)
+        {
+            var copy = (C3dWire)C3dPersistence.DeserializeObject(text);
+            copy.Array = null;
+            copy.Name = ElementName(w, k);
+            var d = a.Offset(k);
+            copy.Points = [.. w.Points.Select(q => new C3dPoint3(q.X + d.X, q.Y + d.Y, q.Z + d.Z))];
+            yield return (copy.Name, copy);
+        }
+    }
+
+    /// <summary>Each element's name and axis, without copying the wire — what an overlay drawn every frame reads.</summary>
+    public static IEnumerable<(string Name, IReadOnlyList<C3dPoint3> Points)> ElementAxes(C3dWire w)
+    {
+        if (w.Array is not { Count: > 1 } a) { yield return (w.Name, w.Points); yield break; }
+        for (long k = 0; k < a.Count; k++)
+        {
+            var d = a.Offset(k);
+            yield return (ElementName(w, k), [.. w.Points.Select(q => new C3dPoint3(q.X + d.X, q.Y + d.Y, q.Z + d.Z))]);
+        }
+    }
+
+    /// <summary>The elaborated names <paramref name="w"/> stands for (see <see cref="ElementName"/>).</summary>
+    public static IEnumerable<string> ElementNames(C3dWire w)
+    {
+        long n = w.Array is { Count: > 1 } a ? a.Count : 1;
+        for (long k = 0; k < n; k++) yield return ElementName(w, k);
+    }
+
     // ── re-seating and editing ─────────────────────────────────────────────────────────────────
 
     /// <summary>
@@ -326,6 +370,15 @@ public static class C3dWires
             long rx = R(x), ry = R(y), rz = R(z);
             if (Math.Abs(x - rx) > 1e-6 || Math.Abs(y - ry) > 1e-6 || Math.Abs(z - rz) > 1e-6) exact = false;
             w.Points[i] = new C3dPoint3(rx, ry, rz);
+        }
+        // 3D editor round 4 — a wire array's pitch turns with the wire (rotation and mirror, never the translation), so a
+        // rotated row stays a row of the rotated wire.
+        if (w.Array is { } wa)
+        {
+            var (px, py, pz) = (t with { Tx = 0, Ty = 0, Tz = 0 }).Apply(wa.Pitch);
+            long rx = R(px), ry = R(py), rz = R(pz);
+            if (Math.Abs(px - rx) > 1e-6 || Math.Abs(py - ry) > 1e-6 || Math.Abs(pz - rz) > 1e-6) exact = false;
+            wa.Pitch = new C3dPoint3(rx, ry, rz);
         }
         // A mirror reverses the handedness of nothing a wire has: the axis is the shape, so the points are all of it.
         w.Placement = new C3dPlacement();

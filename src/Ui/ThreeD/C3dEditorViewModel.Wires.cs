@@ -282,7 +282,12 @@ public sealed partial class C3dEditorViewModel : IC3dWireHost
     {
         var refusals = Elaboration?.WireRefusals;
         foreach (var item in Tree.Where(g => g.Role == C3dTreeGroupRole.Objects).SelectMany(g => g.Items).Where(i => i.Kind == C3dObject.KindOf(typeof(C3dWire))))
-            item.Refusal = refusals is not null && refusals.TryGetValue(item.Name, out var why) ? why : null;
+        {
+            // 3D editor round 4 — a wire array's row carries the first refusal among its elements (w1[2]).
+            var names = item.ObjectIndex >= 0 && item.ObjectIndex < Document.Objects.Count && Document.Objects[item.ObjectIndex] is C3dWire w
+                ? C3dWires.ElementNames(w) : [item.Name];
+            item.Refusal = refusals is null ? null : names.Select(n => refusals.TryGetValue(n, out var why) ? why : null).FirstOrDefault(x => x is not null);
+        }
     }
 
     /// <summary>A refused wire's axis in red (it has no solid to draw), and in Vertex mode every wire's axis and points —
@@ -295,9 +300,14 @@ public sealed partial class C3dEditorViewModel : IC3dWireHost
         foreach (var w in Document.Objects.OfType<C3dWire>())
         {
             if (w.Hidden || w.Points.Count < 2) continue;
-            bool bad = refused?.ContainsKey(w.Name) == true;
-            if (bad) DrawGeometry.Chain(w.Points, false, dbu, overlay.Crossing);
-            else if (vertex) DrawGeometry.Chain(w.Points, false, dbu, overlay.Construction);
+            // 3D editor round 4 — every element of a wire array; Vertex mode edits the drawn one (element 0), so only its
+            // points are marked.
+            foreach (var (name, axis) in C3dWires.ElementAxes(w))
+            {
+                bool bad = refused?.ContainsKey(name) == true;
+                if (bad) DrawGeometry.Chain(axis, false, dbu, overlay.Crossing);
+                else if (vertex) DrawGeometry.Chain(axis, false, dbu, overlay.Construction);
+            }
             if (vertex) foreach (var p in w.Points) overlay.Fixed.Add(DrawGeometry.Metres(p, dbu));
         }
     }

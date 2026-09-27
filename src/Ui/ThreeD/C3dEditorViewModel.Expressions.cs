@@ -140,21 +140,43 @@ public sealed partial class C3dEditorViewModel
                     if (res.FieldValues.TryGetValue((obj.Name, path), out double si))
                         value = "= " + spec.Kind switch
                         {
-                            C3dFieldKind.Length => C3dUnits.Spell(si, unit),
+                            // 3D editor round 4 — a µm field (a wire's diameter, a sheet's thickness) is a length like any
+                            // other on screen: the file keeps µm, the Inspector speaks the display unit.
+                            C3dFieldKind.Length or C3dFieldKind.Microns => C3dUnits.Spell(si, unit),
                             C3dFieldKind.Angle => (si * 180 / Math.PI).ToString("0.######", System.Globalization.CultureInfo.InvariantCulture) + "°",
-                            C3dFieldKind.Microns => (si * 1e6).ToString("0.######", System.Globalization.CultureInfo.InvariantCulture) + " µm",
                             _ => si.ToString("0", System.Globalization.CultureInfo.InvariantCulture),
                         };
                 }
                 else text = SpellNumber(spec.Kind, wireDefault ? C3dWires.DefaultDiameterUm : C3dBindings.GetNumber(owner, spec, k) ?? 0);
                 if (e is null && wireDefault) value = "The default (1 mil)";
+                var (group, axis) = C3dPropertiesViewModel.FieldGroup(obj, path);
                 string? error = res.FieldErrors.FirstOrDefault(x => x.Item == obj.Name && x.Path == path)?.Message;
                 yield return new C3dDimensionField
                 {
-                    Path = path, Label = C3dPropertiesViewModel.FieldLabel(obj, path), ValueText = value, Error = error,
+                    Path = path, Label = C3dPropertiesViewModel.FieldLabel(obj, path), Group = group, Axis = axis, Kind = spec.Kind,
+                    ValueText = value, Error = error,
                     IsExpression = e is not null, Text = text, Loaded = text,
                 };
             }
+        // 3D editor round 4 — a wire with no array is a row of one: its count is offered, and typing more makes the row.
+        if (obj is C3dWire { Array: null })
+        {
+            const string countPath = "Array." + nameof(C3dWireArray.Count);
+            yield return new C3dDimensionField
+            {
+                Path = countPath, Label = C3dPropertiesViewModel.FieldLabel(obj, countPath), Text = "1", Loaded = "1",
+                ValueText = "One wire. More makes a row, side by side across its run (its pitch then shows here).",
+            };
+        }
+    }
+
+    /// <summary>3D editor round 4 — a new wire row's pitch: across the wire's run in plan, four diameters apart.</summary>
+    internal C3dPoint3 DefaultWirePitch(C3dWire w)
+    {
+        long pitch = Math.Max(1, (long)Math.Round(4 * (w.DiameterUm ?? C3dWires.DefaultDiameterUm) * Document.DbuPerMicron));
+        if (w.Points.Count < 2) return new C3dPoint3(0, pitch, 0);
+        var (s, e) = (w.Points[0], w.Points[^1]);
+        return Math.Abs(e.X - s.X) >= Math.Abs(e.Y - s.Y) ? new C3dPoint3(0, pitch, 0) : new C3dPoint3(pitch, 0, 0);
     }
 
     /// <summary>The unit a field's text is written with when it is not the one a bare number would be read in.</summary>
@@ -163,8 +185,7 @@ public sealed partial class C3dEditorViewModel
         string? engine = C3dUnits.Engine(stored, out _);
         return kind switch
         {
-            C3dFieldKind.Length => engine is null || engine == LayoutUnits.AsciiSuffix(Document.DisplayUnit) ? null : engine,
-            C3dFieldKind.Microns => engine is null || engine == "um" ? null : engine,
+            C3dFieldKind.Length or C3dFieldKind.Microns => engine is null || engine == LayoutUnits.AsciiSuffix(Document.DisplayUnit) ? null : engine,
             _ => null,
         };
     }
@@ -172,14 +193,19 @@ public sealed partial class C3dEditorViewModel
     private string SpellNumber(C3dFieldKind kind, double n) => kind switch
     {
         C3dFieldKind.Length => Tools.C3dDimension.Spell((long)n, Document.DisplayUnit, Document.DbuPerMicron),
+        C3dFieldKind.Microns => (n * 1e-6 / MetresPerDisplayUnit).ToString("0.##########", System.Globalization.CultureInfo.InvariantCulture),
         C3dFieldKind.Count => ((long)n).ToString(System.Globalization.CultureInfo.InvariantCulture),
         _ => n.ToString("G", System.Globalization.CultureInfo.InvariantCulture),
     };
 
+    /// <summary>One display unit in metres.</summary>
+    private double MetresPerDisplayUnit => CircuitRF.Core.Expressions.Units.Scale(LayoutUnits.AsciiSuffix(Document.DisplayUnit)) ?? 1e-6;
+
     /// <summary>
     /// Properties' commit of one dimension (R-em3d51-4b): a number is written as the number (the expression it held, if
     /// any, is replaced); anything else is bound as an expression at its site unit — a trailing unit, else the display unit
-    /// (µm for a thickness or diameter, degrees for an angle). One entry. The refusal, or null.
+    /// (degrees for an angle). A thickness or diameter is stored in µm but typed and read in the display unit like any
+    /// length (3D editor round 4). One entry. The refusal, or null.
     /// </summary>
     public string? SetFieldText(int index, string path, string text)
     {
@@ -189,6 +215,9 @@ public sealed partial class C3dEditorViewModel
         return EditNames($"Set {name} {path} = {text}", (doc, _) =>
         {
             var obj = doc.Objects[index];
+            // 3D editor round 4 — a wire's count typed with no array yet makes the row, at the default pitch.
+            if (obj is C3dWire { Array: null } nw && path.StartsWith("Array.", StringComparison.Ordinal))
+                nw.Array = new C3dWireArray { Pitch = DefaultWirePitch(nw) };
             if (C3dBindings.Find(obj, path) is not { } f) return $"'{name}' has no {path}.";
             C3dResolver.Resolve(doc, Cell);
             switch (f.Spec.Kind)
@@ -202,16 +231,18 @@ public sealed partial class C3dEditorViewModel
                     var (expr, unit) = SplitUnit(text, Document.DisplayUnit);
                     return Bind(f, expr, C3dUnits.Stored(unit));
                 case C3dFieldKind.Microns:
-                    // A bare number is µm; a length with a unit written against it ("1mil") is that length, in µm.
+                    // A bare number is in the display unit; a length with a unit written against it ("1mil") is that
+                    // length. Either is stored in µm.
                     bool isUm = double.TryParse(text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double um);
-                    if (!isUm && LayoutUnits.TryParse(text, LayoutUnit.Um, Document.DbuPerMicron, out long umDbu))
+                    if (isUm) um = Math.Round(um * MetresPerDisplayUnit * 1e6, 9);
+                    else if (LayoutUnits.TryParse(text, Document.DisplayUnit, Document.DbuPerMicron, out long umDbu))
                         (isUm, um) = (true, (double)LayoutUnits.FromDbu(umDbu, LayoutUnit.Um, Document.DbuPerMicron));
                     if (isUm)
                     {
                         if (um <= 0 || !double.IsFinite(um)) return $"{C3dPropertiesViewModel.FieldLabel(obj, path)} is a positive length.";
                         C3dBindings.SetExpr(f.Owner, f.Spec, f.Component, null); C3dBindings.SetNumber(f.Owner, f.Spec, f.Component, um); return null;
                     }
-                    var (e2, u2) = SplitUnit(text, LayoutUnit.Um);
+                    var (e2, u2) = SplitUnit(text, Document.DisplayUnit);
                     return Bind(f, e2, C3dUnits.Stored(u2));
                 case C3dFieldKind.Angle:
                     if (double.TryParse(text.TrimEnd('°'), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double deg))

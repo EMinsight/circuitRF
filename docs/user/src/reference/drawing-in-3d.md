@@ -271,6 +271,10 @@ one layout.
   pad to the top of the wire at its highest point. The example's are **8 mil**, typed.
 - In Vertex mode a wire's centre-line points are handles; **G** moves one, and the feet are put back on the
   pads when you let go. Properties lists every point, editable.
+- Properties also takes a wire's **loop height** and **span**, as a wBond or Layout wire does: a loop height
+  scales the wire's rise above its feet and keeps every x and y; a span moves the end foot along the wire's
+  direction, the start staying put, and the end must land on a pad. Its **diameter** is in the display unit,
+  like every other length there.
 - **A wire does not follow its pad.** Re-routing would change its inductance without telling you, so a
   wire whose pad has moved is drawn red, flagged in the tree, and refused by a run. *Re-Seat Wire Ends*
   puts each end back on the pad now under it.
@@ -286,7 +290,10 @@ sweep from 2 to 30 GHz, and **Lid modes**, a Palace eigenmode solve. The **activ
 **Run** runs and whose air box is drawn.
 
 **Ports.** **Shift+A P** draws one on the drawing plane, two corners; or right-click a flat rectangular
-face, *Make Port ▸ Lumped* or *Wave*. **Which way round a lumped port is comes from what it touches**: each
+face, *Make Port ▸ Lumped* or *Wave*. **Which kind a face can take depends on where it lies, not on what it
+was drawn as**: a wave port is a region of an air-box face (a sheet drawn there is the usual way to state one),
+and a lumped port bridges two conductors on opposite edges (a face of a small gap block does exactly that). The
+menu offers only the kind that would resolve, and the other's tip says why. **Which way round a lumped port is comes from what it touches**: each
 edge is tested against every conductor, one opposite pair must touch one conductor each, and the one that
 is ground — or failing that, the larger — is **−**. The port is drawn with its number and an arrow from −
 to +, and while it is drawn the arrow (or the reason there cannot be one) follows the cursor. The example's

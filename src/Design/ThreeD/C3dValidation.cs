@@ -166,6 +166,10 @@ public static class C3dValidation
         foreach (var (end, which) in new[] { (w.Start, "start"), (w.End, "end") })
             if (end.FootLengthUm is { } f && !(f > 0))
                 found.Add(C3dDiagnostics.WireShape(w.Name, $"has a foot length at its {which} that is not positive"));
+        if (w.Array is { Count: < 1 })
+            found.Add(C3dDiagnostics.WireShape(w.Name, "is an array of fewer than one wire; an array's count is at least 1"));
+        if (w.Array is { Count: > 1, Pitch: var p } && p == default)
+            found.Add(C3dDiagnostics.WireShape(w.Name, "is an array with no pitch: every copy would lie on the first"));
         if (w.Role is { } role && role != CircuitRF.Engine.Em3d.Em3dRole.Conductor)
             found.Add(C3dDiagnostics.WireShape(w.Name, $"has the role {role}; a wire is a conductor"));
     }

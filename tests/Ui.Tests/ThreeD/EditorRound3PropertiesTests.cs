@@ -67,7 +67,7 @@ public sealed class EditorRound3PropertiesTests : IDisposable
         Assert.False(p.IsPlaced);
         Assert.Equal(["Start", "1", "End"], p.WirePoints.Select(r => r.Label));
         Assert.DoesNotContain(p.Fields, f => f.Path.StartsWith("Placement.", StringComparison.Ordinal));
-        var d = p.Fields.Single(f => f.Label == "Diameter (µm)");       // unstated: offered at the default it is built with
+        var d = p.Fields.Single(f => f.Label == "Diameter");            // unstated: offered at the default it is built with
         Assert.Equal(25.4, double.Parse(d.Text, System.Globalization.CultureInfo.InvariantCulture), 6);
 
         d.Text = "1.5mil";

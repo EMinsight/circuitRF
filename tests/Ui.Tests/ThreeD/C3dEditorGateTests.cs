@@ -353,7 +353,7 @@ public sealed class C3dEditorGateTests : IDisposable
         ClickCentre(v);
         v.OnPicked(v.Selection[0].Object, 5, new Vector3(1e-5f, 2e-5f, 3e-5f), hit: true);
         Assert.Equal(LayoutUnit.Um, vm.DisplayUnit);
-        string cursor = v.CursorText, rows = string.Join("|", vm.Properties.Rows);
+        string cursor = v.CursorText, rows = PropertiesText(vm);
         Assert.Contains("µm", cursor);
 
         long elaborated = vm.ObjectsElaborated, builds = v.Source.Builds, tessellated = vm.TessellationMisses;
@@ -369,13 +369,18 @@ public sealed class C3dEditorGateTests : IDisposable
         Assert.Equal(tessellated, vm.TessellationMisses);
         Assert.NotEqual(cursor, v.CursorText);
         Assert.Contains("mil", v.CursorText);
-        Assert.NotEqual(rows, string.Join("|", vm.Properties.Rows));
-        Assert.Contains("mil", string.Join("|", vm.Properties.Rows));
+        Assert.NotEqual(rows, PropertiesText(vm));
+        Assert.Contains("mil", PropertiesText(vm));
 
         Assert.Null(vm.Save());
         Assert.False(vm.IsDirty);
         Assert.Equal(LayoutUnit.Mil, C3dPersistence.LoadFromFile(vm.FilePath).DisplayUnit);
     }
+
+    /// <summary>Every length the Inspector shows: its read-only rows and its fields' lines, each with its unit.</summary>
+    private static string PropertiesText(C3dEditorViewModel vm)
+        => string.Join("|", vm.Properties.Rows) + "|" +
+           string.Join("|", vm.Properties.FieldRows.Select(r => $"{r.Label} {string.Join(",", r.Fields.Select(f => f.Text))} {r.Unit}"));
 
     // ── the real Metal backend: the face half of the pair, the selection's passes, and a patch ──
 

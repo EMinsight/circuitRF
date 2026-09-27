@@ -280,7 +280,8 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         }
         // 3D editor round 1 — a node selected while the scene did not hold its object (a box given its first material)
         // becomes the scene's selection the moment the scene does.
-        if (Viewer.Selection.Count == 0 && SelectedTreeItem is { ObjectIndex: >= 0 } pending && SceneObject(pending.Name) is { } now)
+        if (Viewer.Selection.Count == 0 && SelectedTreeItem is { ObjectIndex: >= 0 and var pi } && pi < Document.Objects.Count &&
+            SceneObjectsFor(Document.Objects[pi]).FirstOrDefault() is { } now)
         {
             _syncingTree = true;
             try { Viewer.SetSelection([Scene3DItem.OfObject(now.Id)]); }
@@ -346,11 +347,21 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     private void ApplyHiddenFlags()
     {
         foreach (var o in Document.Objects)
-            if (SceneObject(o.Name) is { } s) Viewer.SetVisibleEverywhere(s.Id, !o.Hidden);
+            foreach (var s in SceneObjectsFor(o, balls: true)) Viewer.SetVisibleEverywhere(s.Id, !o.Hidden);
     }
 
     /// <summary>The scene object a document object became, by its name, or null (a polyline, a refusal).</summary>
     public Scene3DObject? SceneObject(string name) => Viewer.Scene.Objects.FirstOrDefault(o => o.Name == name);
+
+    /// <summary>3D editor round 4 — the scene objects a document object became: itself, or every element of a wire array
+    /// (<c>w1[k]</c>) — and, with <paramref name="balls"/>, each wire's balls.</summary>
+    public IEnumerable<Scene3DObject> SceneObjectsFor(C3dObject o, bool balls = false)
+    {
+        if (o is not C3dWire w) return SceneObject(o.Name) is { } s ? [s] : [];
+        var names = C3dWires.ElementNames(w);
+        if (balls) names = names.SelectMany(n => new[] { n, n + "/ball/start", n + "/ball/end" });
+        return names.Select(SceneObject).OfType<Scene3DObject>().ToList();
+    }
 
     /// <summary>The document index of a scene object that is the document's own, or −1.</summary>
     public int DocumentIndex(Scene3DObject o)
@@ -937,8 +948,10 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
             }
             else
             {
-                var names = value.InstanceIndex >= 0 ? value.Children.Select(c => c.Name).ToList() : [value.Name];
-                ids = [.. names.Select(SceneObject).OfType<Scene3DObject>().Select(s => Scene3DItem.OfObject(s.Id))];
+                var objects = value.InstanceIndex >= 0 ? value.Children.Select(c => c.Name).Select(SceneObject).OfType<Scene3DObject>()
+                    : value.ObjectIndex >= 0 && value.ObjectIndex < Document.Objects.Count ? SceneObjectsFor(Document.Objects[value.ObjectIndex])
+                    : [.. new[] { SceneObject(value.Name) }.OfType<Scene3DObject>()];
+                ids = [.. objects.Select(s => Scene3DItem.OfObject(s.Id))];
             }
             if (Viewer.SelectMode != Scene3DSelectMode.Object) Viewer.SelectMode = Scene3DSelectMode.Object;
             Viewer.SetSelection(ids);
@@ -958,6 +971,8 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
                 SelectedTreeItem = first is null ? null
                     : BoxFaceOf(first) is not null ? AllTreeItems().FirstOrDefault(t => t.IsAirBox)
                     : AllTreeItems().FirstOrDefault(t => t.Name == first.Name && !t.IsAirBox)
+                      // 3D editor round 4 — an element of a wire array (w1[2]) is its wire's row.
+                      ?? (DocumentIndex(first) is >= 0 and var di ? AllTreeItems().FirstOrDefault(t => t.ObjectIndex == di && !t.IsAirBox) : null)
                       ?? (InstanceOf(first) is { } inst ? AllTreeItems().FirstOrDefault(t => t.InstanceIndex >= 0 && t.Name == inst.Split('/', '[')[0]) : null);
             }
             finally { _syncingTree = false; }
@@ -968,7 +983,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
 
     /// <summary>The document object the tree has selected that the scene does not hold (elaboration refused it), or −1.</summary>
     public int TreeOnlyObjectIndex()
-        => SelectedTreeItem is { ObjectIndex: >= 0 and var i } item && i < Document.Objects.Count && SceneObject(item.Name) is null ? i : -1;
+        => SelectedTreeItem is { ObjectIndex: >= 0 and var i } && i < Document.Objects.Count && !SceneObjectsFor(Document.Objects[i]).Any() ? i : -1;
 
     /// <summary>A camera move changes the drawn grid spacing: the status line follows (cheap arithmetic, no geometry).</summary>
     private void OnViewerFrame()

@@ -553,7 +553,10 @@ public static class C3dHierarchy
                 if (l.Points3 is { } p3) l.Points3 = [.. p3.Select(q => Mul(q, k))];
                 break;
             case C3dPolyhedron ph: ph.Vertices = [.. ph.Vertices.Select(q => Mul(q, k))]; break;
-            case C3dWire w: w.Points = [.. w.Points.Select(q => Mul(q, k))]; break;
+            case C3dWire w:
+                w.Points = [.. w.Points.Select(q => Mul(q, k))];
+                if (w.Array is { } wa) wa.Pitch = Mul(wa.Pitch, k);
+                break;
         }
     }
 

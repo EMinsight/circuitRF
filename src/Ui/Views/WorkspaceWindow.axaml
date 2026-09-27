@@ -171,11 +171,11 @@
                 </NativeMenuItem.Menu>
             </NativeMenuItem>
 
-            <!-- brief-em3d-43 R-em3d43-6c (owner decision D9) — ONE top-level 3D menu, always present: a
-                 window's NativeMenu is fixed for its lifetime, so a menu that came and went with the active
-                 document would be the fragile path. Every item needs an active 3D document (the editor or
-                 the read-only viewer). Hand-mirrored with the in-window menu below. -->
-            <NativeMenuItem Header="3D">
+            <!-- brief-em3d-43 R-em3d43-6c (owner decision D9) — ONE top-level 3D menu. A window's NativeMenu
+                 is fixed for its lifetime, so the item is never added or removed: 3D editor bugs round 4 binds
+                 its IsVisible, so it shows only while a 3D document (the editor or the read-only viewer) is the
+                 active one. Hand-mirrored with the in-window menu below. -->
+            <NativeMenuItem Header="3D" IsVisible="{Binding IsThreeDMenuVisible}">
                 <NativeMenuItem.Menu>
                     <NativeMenu>
                         <NativeMenuItem Header="Select Mode" ToolTip="Requires an active 3D document.">
@@ -953,8 +953,8 @@
                 </MenuItem>
             </MenuItem>
 
-            <!-- brief-em3d-43 — the 3D menu, hand-mirrored with the macOS NativeMenu above. -->
-            <MenuItem Header="_3D" Padding="8,4">
+            <!-- brief-em3d-43 — the 3D menu, hand-mirrored with the macOS NativeMenu above (its visibility too). -->
+            <MenuItem Header="_3D" Padding="8,4" IsVisible="{Binding IsThreeDMenuVisible}">
                 <MenuItem Header="Select _Mode" ToolTip.Tip="Requires an active 3D document.">
                     <MenuItem Header="_Object" Command="{Binding ThreeDSelectModeCommand}" CommandParameter="Object"
                               InputGesture="O" ToolTip.Tip="Select whole solids, sheets and instances. Requires an active 3D document.">

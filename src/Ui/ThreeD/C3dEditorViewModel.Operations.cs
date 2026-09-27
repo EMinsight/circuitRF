@@ -66,8 +66,7 @@ public sealed partial class C3dEditorViewModel
     {
         string name = NameOf(t);
         // brief-em3d-50 — a wire is its sweep and its balls.
-        if (!t.Instance)
-            return new[] { name, name + "/ball/start", name + "/ball/end" }.Select(SceneObject).OfType<Scene3DObject>();
+        if (!t.Instance) return SceneObjectsFor(Document.Objects[t.Index], balls: true);
         return Viewer.Scene.Objects.Where(o => InstanceOf(o) is { } p && (p == name || p.StartsWith(name + "/", StringComparison.Ordinal)
                                                                           || p.StartsWith(name + "[", StringComparison.Ordinal)));
     }
@@ -222,7 +221,8 @@ public sealed partial class C3dEditorViewModel
 
     /// <summary>The targets drawn under <paramref name="transforms"/> (world DBU), and also where they are when
     /// <paramref name="keepOriginal"/>. Allocates the moving mask once per operation; a move rewrites matrices.</summary>
-    private void ShowPreview(IReadOnlyList<C3dTarget> targets, IReadOnlyList<C3dTransform> transforms, bool keepOriginal)
+    private void ShowPreview(IReadOnlyList<C3dTarget> targets, IReadOnlyList<C3dTransform> transforms, bool keepOriginal,
+                             Func<C3dTarget, IEnumerable<Scene3DObject>>? movingOf = null)
     {
         var scene = Viewer.Scene;
         var current = Viewer.View.Preview;
@@ -236,7 +236,7 @@ public sealed partial class C3dEditorViewModel
         else
         {
             var moving = new bool[scene.Objects.Length];
-            foreach (var o in targets.SelectMany(SceneObjectsOf)) moving[o.Id - 1] = true;
+            foreach (var o in targets.SelectMany(movingOf ?? SceneObjectsOf)) moving[o.Id - 1] = true;
             preview = new Scene3DPreview(moving, new Matrix4x4[transforms.Count], keepOriginal);
             _previewTargets = targets;
         }
@@ -565,10 +565,89 @@ public sealed partial class C3dEditorViewModel
         ArrayPitchX = b is { } bx ? P(bx.X0, bx.X1) : "0";
         ArrayPitchY = b is { } by ? P(by.Y0, by.Y1) : "0";
         ArrayPitchZ = b is { } bz ? P(bz.Z0, bz.Z1) : "0";
+        if (ArrayWire(targets) is { } wire) OpenWireArray(wire);
         _arrayLoading = false;
         ArrayOpen = true;
         UpdateArrayPreview();
     }
+
+    // ── a wire's own array (3D editor round 4) ─────────────────────────────────────────────
+
+    /// <summary>The one wire the panel acts on, or null when the selection is anything else.</summary>
+    private C3dWire? ArrayWire(IReadOnlyList<C3dTarget> targets)
+        => targets is [{ Instance: false } t] && t.Index < Document.Objects.Count && Document.Objects[t.Index] is C3dWire w ? w : null;
+
+    /// <summary>
+    /// The panel on one wire: its own row when it has one (the count on the axis its pitch runs along), else two wires side
+    /// by side — across the wire's run in plan, four diameters apart, the usual bonding pitch. The other elements of an
+    /// existing row are hidden while the panel is open, so the preview is the row as it will be.
+    /// </summary>
+    private void OpenWireArray(C3dWire w)
+    {
+        string L(long dbu) => C3dDimension.Spell(dbu, Document.DisplayUnit, Document.DbuPerMicron);
+        ArrayCountX = ArrayCountY = ArrayCountZ = "1";
+        ArrayPitchX = ArrayPitchY = ArrayPitchZ = "0";
+        if (w.Array is { Count: > 1 } a)
+        {
+            var p = a.Pitch;
+            int axis = Math.Abs(p.X) >= Math.Abs(p.Y) && Math.Abs(p.X) >= Math.Abs(p.Z) ? 0 : Math.Abs(p.Y) >= Math.Abs(p.Z) ? 1 : 2;
+            string n = a.Count.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            (axis == 0 ? (Action)(() => ArrayCountX = n) : axis == 1 ? () => ArrayCountY = n : () => ArrayCountZ = n)();
+            (ArrayPitchX, ArrayPitchY, ArrayPitchZ) = (L(p.X), L(p.Y), L(p.Z));
+            foreach (var o in SceneObjectsFor(w, balls: true).Except(WireElementZero(w))) Viewer.SetVisibleEverywhere(o.Id, false);
+            return;
+        }
+        long pitch = Math.Max(1, (long)Math.Round(4 * (w.DiameterUm ?? C3dWires.DefaultDiameterUm) * Document.DbuPerMicron));
+        var (s, e) = (w.Points[0], w.Points[^1]);
+        bool alongX = Math.Abs(e.X - s.X) >= Math.Abs(e.Y - s.Y);
+        if (alongX) { ArrayCountY = "2"; ArrayPitchY = L(pitch); }
+        else { ArrayCountX = "2"; ArrayPitchX = L(pitch); }
+    }
+
+    /// <summary>The drawn wire's own scene objects — element 0 of a row, its sweep and balls.</summary>
+    private IEnumerable<Scene3DObject> WireElementZero(C3dWire w)
+    {
+        string n = C3dWires.ElementName(w, 0);
+        return new[] { n, n + "/ball/start", n + "/ball/end" }.Select(SceneObject).OfType<Scene3DObject>();
+    }
+
+    /// <summary>
+    /// Accept on one wire: the wire's OWN array — one row, the count and the pitch — rather than copies, so the row is one
+    /// object whose count and pitch stay editable (and may be expressions). A wire row is one-dimensional: counts on two
+    /// axes are refused, and a count of 1 everywhere removes the array.
+    /// </summary>
+    private bool AcceptWireArray(IReadOnlyList<C3dTarget> targets)
+    {
+        if (ArrayWire(targets) is not { } wire) return false;
+        if (!ArrayValues(out var n, out var pitch, out var exprs, out var why)) { ArrayError = why; return true; }
+        int[] axes = [.. Enumerable.Range(0, 3).Where(k => n[k] > 1)];
+        if (axes.Length > 1) { ArrayError = WireRowRefusal; return true; }
+        int index = targets[0].Index;
+        int count = axes.Length == 0 ? 1 : n[axes[0]];
+        var vector = axes.Length == 0 ? default : axes[0] switch
+        {
+            0 => new C3dPoint3(pitch[0], 0, 0), 1 => new C3dPoint3(0, pitch[1], 0), _ => new C3dPoint3(0, 0, pitch[2]),
+        };
+        if (count > 1 && vector == default) { ArrayError = "A row of wires needs a pitch: every copy would lie on the first."; return true; }
+        ChangeObjects($"Array {wire.Name} ×{count}", [index], o =>
+        {
+            if (o is not C3dWire w) return;
+            w.Array = count == 1 ? null : new C3dWireArray { Count = count, Pitch = vector };
+            if (w.Array is not { } a) return;
+            // A count or a pitch typed as an expression is bound on the wire's own array, as on an instance's.
+            foreach (var (field, k, e) in exprs)
+            {
+                if (axes.Length == 0 || k != axes[0]) continue;
+                if (field == nameof(C3dArray.Counts)) C3dBindings.SetExpr(a, C3dBindings.SpecOf(typeof(C3dWireArray), nameof(C3dWireArray.Count))!, 0, e);
+                else C3dBindings.SetExpr(a, C3dBindings.SpecOf(typeof(C3dWireArray), nameof(C3dWireArray.Pitch))!, k, e);
+            }
+        });
+        OperationCommits++;
+        StatusMessage = count == 1 ? $"{wire.Name} is one wire again." : $"{wire.Name} is now a row of {count} wires, each its own wire in the model.";
+        return true;
+    }
+
+    private const string WireRowRefusal = "A wire array is one row — a number of wires and a pitch: give a count on one axis only.";
 
     private bool _arrayLoading;
 
@@ -584,6 +663,7 @@ public sealed partial class C3dEditorViewModel
     {
         why = null;
         if (ArrayValues(out var n, out var pitch, out _, out why) is false) return null;
+        if (_arrayTargets is { } at && ArrayWire(at) is not null && n.Count(c => c > 1) > 1) { why = WireRowRefusal; return null; }
         long total = (long)n[0] * n[1] * n[2];
         if (total > 100_000) { why = $"{total:N0} copies is more than an array here holds."; return null; }
         var list = new List<C3dTransform>((int)total - 1);
@@ -606,7 +686,7 @@ public sealed partial class C3dEditorViewModel
             : null;
         if (copies.Count > Scene3DFramePlan.MaxPreviewCopies)
             ArrayNote = (ArrayNote is null ? "" : ArrayNote + " ") + $"The preview shows the first {Scene3DFramePlan.MaxPreviewCopies}.";
-        ShowPreview(targets, copies, keepOriginal: true);
+        ShowPreview(targets, copies, keepOriginal: true, ArrayWire(targets) is { } w ? _ => WireElementZero(w) : null);
     }
 
     /// <summary>Accept: the copies, independent, as ONE undo entry.</summary>
@@ -616,6 +696,16 @@ public sealed partial class C3dEditorViewModel
         if (_arrayTargets is not { } targets) return;
         var copies = ArrayCopies(out var why);
         if (copies is null) { ArrayError = why; return; }
+        // 3D editor round 4 — one wire: its OWN row, not copies.
+        if (ArrayWire(targets) is not null)
+        {
+            ArrayError = null;
+            if (!AcceptWireArray(targets) || ArrayError is not null) return;
+            ArrayOpen = false;
+            _arrayTargets = null;
+            HoldPreviewForCommit();
+            return;
+        }
         // brief-em3d-48 — one instance: its OWN array, not copies (one child, drawn as transforms).
         if (targets is [{ Instance: true }])
         {
@@ -640,6 +730,7 @@ public sealed partial class C3dEditorViewModel
         _arrayTargets = null;
         ArrayError = ArrayNote = null;
         if (_holdPreviewUntil < 0) Viewer.SetPreview(null);
+        ApplyHiddenFlags();                                  // a wire row's other elements, hidden while the panel was open
     }
 
     // ── the gizmo (IViewer3DEditHost, R-em3d46-5) ────────────────────────────────────────────

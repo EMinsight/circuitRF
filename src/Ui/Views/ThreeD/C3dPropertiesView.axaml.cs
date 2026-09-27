@@ -62,13 +62,22 @@ public partial class C3dPropertiesView : UserControl
 
     private void OnNameLostFocus(object? sender, RoutedEventArgs e) => _vm?.CommitName();
 
-    private void OnOriginKey(object? sender, KeyEventArgs e)
+    // 3D editor round 4 — a bond wire's loop height and span.
+    private void OnWireLoopHeightKey(object? sender, KeyEventArgs e)
     {
-        if (e.Key == Key.Enter) { _vm?.CommitOrigin(); e.Handled = true; }
+        if (e.Key == Key.Enter) { _vm?.CommitWireLoopHeight(); e.Handled = true; }
         else if (e.Key == Key.Escape) { _vm?.Reload(); e.Handled = true; }
     }
 
-    private void OnOriginLostFocus(object? sender, RoutedEventArgs e) => _vm?.CommitOrigin();
+    private void OnWireLoopHeightLostFocus(object? sender, RoutedEventArgs e) => _vm?.CommitWireLoopHeight();
+
+    private void OnWireSpanKey(object? sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter) { _vm?.CommitWireSpan(); e.Handled = true; }
+        else if (e.Key == Key.Escape) { _vm?.Reload(); e.Handled = true; }
+    }
+
+    private void OnWireSpanLostFocus(object? sender, RoutedEventArgs e) => _vm?.CommitWireSpan();
 
     private void OnRotateKey(object? sender, KeyEventArgs e)
     {

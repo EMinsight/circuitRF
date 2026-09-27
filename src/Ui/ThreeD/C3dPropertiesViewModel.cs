@@ -48,11 +48,34 @@ public sealed partial class C3dDimensionField : ObservableObject
     public required string Path { get; init; }
     /// <summary>3D editor round 3 — what the field is called on screen ("X size", "Radius"); the path is the file's name for it.</summary>
     public string Label { get; init; } = "";
+    /// <summary>3D editor round 4 — the row the field shares with its sibling components ("Size"), and its own letter in
+    /// that row ("x"); an empty axis is a field alone on its row.</summary>
+    public string Group { get; init; } = "";
+    public string Axis { get; init; } = "";
+    public C3dFieldKind Kind { get; init; }
     public required string ValueText { get; init; }
     public string? Error { get; init; }
     public bool IsExpression { get; init; }
     [ObservableProperty] private string _text = "";
     internal string Loaded { get; set; } = "";
+}
+
+/// <summary>
+/// 3D editor round 4 — one line of the Inspector's dimensions: a vector's components side by side ("Size: x [ ] y [ ] z [ ]")
+/// or one field alone, with the unit its numbers are read in. What an expression resolves to and what refused it are
+/// listed under the line, each naming its component.
+/// </summary>
+public sealed class C3dDimensionRow(string label, string unit, IReadOnlyList<C3dDimensionField> fields)
+{
+    public string Label { get; } = label;
+    public string Unit { get; } = unit;
+    public IReadOnlyList<C3dDimensionField> Fields { get; } = fields;
+
+    public string Notes { get; } = string.Join("\n", fields.Where(f => f.ValueText.Length > 0)
+                                                        .Select(f => (f.Axis.Length > 0 ? f.Axis + " " : "") + f.ValueText));
+
+    public string Errors { get; } = string.Join("\n", fields.Where(f => !string.IsNullOrEmpty(f.Error))
+                                                         .Select(f => (f.Axis.Length > 0 ? f.Axis + ": " : "") + f.Error));
 }
 
 /// <summary>
@@ -85,6 +108,9 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
 
     /// <summary>brief-em3d-51 — the selected object's named dimensions, editable as a number or an expression.</summary>
     public ObservableCollection<C3dDimensionField> Fields { get; } = [];
+
+    /// <summary>3D editor round 4 — <see cref="Fields"/> as the Inspector lays them out: a vector's components on one line.</summary>
+    public ObservableCollection<C3dDimensionRow> FieldRows { get; } = [];
     /// <summary>The technology's materials and, last, New Material… (brief-em3d-53 R-em3d53-5).</summary>
     public IReadOnlyList<string> Materials => editor.MaterialChoices;
 
@@ -93,9 +119,6 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
     [ObservableProperty] private string _nameText = "";
     [ObservableProperty] private string? _material;
     [ObservableProperty] private string _role = RoleFromMaterial;
-    [ObservableProperty] private string _originX = "";
-    [ObservableProperty] private string _originY = "";
-    [ObservableProperty] private string _originZ = "";
     [ObservableProperty] private string _rotateText = "";
     [ObservableProperty] private bool _mirrorX;
     [ObservableProperty] private string _error = "";
@@ -112,6 +135,12 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
     [ObservableProperty] private WireCrossSection _wireSection;
     [ObservableProperty] private BondStyle _wireStartStyle;
     [ObservableProperty] private BondStyle _wireEndStyle;
+
+    /// <summary>3D editor round 4 — the wire's loop height (pad top to wire top, em-3d.md §6.6) and its foot-to-foot span in
+    /// plan, in the display unit: the two a wBond or Layout wire offers, edited the same way.</summary>
+    [ObservableProperty] private string _wireLoopHeight = "";
+    [ObservableProperty] private string _wireSpan = "";
+    private (string LoopHeight, string Span) _wireLoaded;
 
     /// <summary>The selected wire's points, start to end.</summary>
     public ObservableCollection<C3dWirePointRow> WirePoints { get; } = [];
@@ -134,12 +163,17 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         try { Load(); }
         finally { _loading = false; }
         OnPropertyChanged(nameof(Materials));
+        OnPropertyChanged(nameof(LengthUnit));
     }
+
+    /// <summary>The display unit's suffix — what a bare length in the panel is read in.</summary>
+    public string LengthUnit => LayoutUnits.Suffix(editor.Document.DisplayUnit);
 
     private void Load()
     {
         Rows.Clear();
         Fields.Clear();
+        FieldRows.Clear();
         Error = "";
         ObjectIndex = -1;
         IsEditable = false;
@@ -169,7 +203,8 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
             return;
         }
         if (sel.Count == 2 && viewer.SelectMode == Scene3DSelectMode.Face && sel[0].Face >= 0 && sel[1].Face >= 0) { TwoFaces(sel[0], sel[1]); return; }
-        if (sel.Count > 1) { Heading = $"{sel.Count} selected"; return; }
+        // 3D editor round 4 — every element of one wire row selected (the tree selects them all) is that one wire.
+        if (sel.Count > 1 && !OneDocumentObject(sel)) { Heading = $"{sel.Count} selected"; return; }
         var item = sel[0];
         if (viewer.Scene.Object(item.Object) is not { } o) { Heading = "Nothing selected"; return; }
         Heading = viewer.Name(item);
@@ -220,6 +255,10 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         LoadObject(index, inScene: true);
     }
 
+    private bool OneDocumentObject(IReadOnlyList<Scene3DItem> sel)
+        => editor.Viewer.SelectMode == Scene3DSelectMode.Object &&
+           sel.Select(i => editor.Viewer.Scene.Object(i.Object) is { } o ? editor.DocumentIndex(o) : -1).Distinct().ToList() is [>= 0];
+
     /// <summary>A document object's editable fields — <paramref name="inScene"/> false when elaboration refused it, whose
     /// reason is then the first row.</summary>
     private void LoadObject(int index, bool inScene)
@@ -243,7 +282,6 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         Material = obj.Material;
         Role = obj.Role?.ToString() ?? RoleFromMaterial;
         var pl = obj.Placement;
-        OriginX = Len(pl.Origin.X); OriginY = Len(pl.Origin.Y); OriginZ = Len(pl.Origin.Z);
         RotateText = string.Join(", ", pl.Rotate.Select(r => $"{r.Axis.ToString().ToLowerInvariant()} {r.Deg.ToString("G", CultureInfo.InvariantCulture)}"));
         MirrorX = pl.MirrorX;
         IsPlaced = obj is not C3dWire;
@@ -254,6 +292,42 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
             $"{index + 1} of {editor.Document.Objects.Count} — a later object wins where solids overlap (Modify ▸ Order)"));
         foreach (var row in Dimensions(obj)) Rows.Add(row);
         foreach (var f in editor.DimensionFields(obj)) Fields.Add(f);
+        foreach (var row in RowsOf(Fields)) FieldRows.Add(row);
+    }
+
+    /// <summary>3D editor round 4 — consecutive components of one vector share a line; every other field has its own.</summary>
+    private IEnumerable<C3dDimensionRow> RowsOf(IReadOnlyList<C3dDimensionField> fields)
+    {
+        for (int i = 0; i < fields.Count;)
+        {
+            var f = fields[i];
+            int j = i + 1;
+            if (f.Axis.Length > 0)
+                while (j < fields.Count && fields[j].Axis.Length > 0 && fields[j].Group == f.Group) j++;
+            string unit = f.Kind switch
+            {
+                C3dFieldKind.Length or C3dFieldKind.Microns => LayoutUnits.Suffix(editor.Document.DisplayUnit),
+                _ => "",                                        // an angle's label says °; a count has no unit
+            };
+            yield return new C3dDimensionRow(f.Axis.Length > 0 ? f.Group : f.Label, unit, [.. fields.Skip(i).Take(j - i)]);
+            i = j;
+        }
+    }
+
+    /// <summary>
+    /// 3D editor round 4 — the line a field sits on and its letter there: "Corner x" is ("Corner", "x"), "X size" is
+    /// ("Size", "x"), "Placement origin z" is ("Placement origin", "z"). A field that is no component of a vector is
+    /// (its label, "").
+    /// </summary>
+    public static (string Group, string Axis) FieldGroup(C3dObject obj, string path)
+    {
+        string label = FieldLabel(obj, path);
+        if (label.Length == 6 && label.EndsWith(" size", StringComparison.Ordinal))
+            return ("Size", label[..1].ToLowerInvariant());
+        int space = label.LastIndexOf(' ');
+        if (space > 0 && label.Length - space == 2 && "xyzuv".Contains(label[^1], StringComparison.Ordinal))
+            return (label[..space], label[^1..]);
+        return (label, "");
     }
 
     private void LoadWire(C3dWire wire)
@@ -264,6 +338,9 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         WireStartStyle = wire.Start.Style;
         WireEndStyle = wire.End.Style;
         string L(long dbu) => Tools.C3dDimension.Spell(dbu, editor.Document.DisplayUnit, editor.Document.DbuPerMicron);
+        WireLoopHeight = editor.WireLoopHeightDbu(wire) is { } h ? L(h) : "";
+        WireSpan = L(C3dEditorViewModel.WireSpanDbu(wire));
+        _wireLoaded = (WireLoopHeight, WireSpan);
         for (int k = 0; k < wire.Points.Count; k++)
         {
             var p = wire.Points[k];
@@ -289,6 +366,20 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
             return;
         }
         Error = editor.SetWirePoint(ObjectIndex, row.Index, new C3dPoint3(x, y, z)) ?? "";
+    }
+
+    /// <summary>3D editor round 4 — the loop height's Enter or lost focus: one undo entry, or the refusal.</summary>
+    public void CommitWireLoopHeight()
+    {
+        if (!IsWire || ObjectIndex < 0 || WireLoopHeight == _wireLoaded.LoopHeight) return;
+        Error = editor.SetWireLoopHeight(ObjectIndex, WireLoopHeight) ?? "";
+    }
+
+    /// <summary>3D editor round 4 — the span's Enter or lost focus: the end foot moves, one undo entry, or the refusal.</summary>
+    public void CommitWireSpan()
+    {
+        if (!IsWire || ObjectIndex < 0 || WireSpan == _wireLoaded.Span) return;
+        Error = editor.SetWireSpan(ObjectIndex, WireSpan) ?? "";
     }
 
     partial void OnWireSectionChanged(WireCrossSection value) => ChangeWire("Section", w => w.Section = value);
@@ -343,7 +434,7 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
                 if (head == "Offset") return $"Offset ({n})";
                 if (head == "Rect.Min") return $"Corner {(k == 0 ? u : v)}";
                 if (head == "Rect.Size") return $"{Up(k == 0 ? u : v)} size";
-                if (head == "ThicknessUm") return "Thickness (µm)";
+                if (head == "ThicknessUm") return "Thickness";
                 break;
             }
             case C3dPolyline pl:
@@ -355,7 +446,10 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
                 if (head == "Radius") return "Radius";
                 break;
             case C3dWire:
-                if (head == "DiameterUm") return "Diameter (µm)";
+                if (head == "DiameterUm") return "Diameter";
+                // 3D editor round 4 — a wire row.
+                if (head == "Array.Count") return "Number of wires";
+                if (head == "Array.Pitch") return $"Pitch {Xyz(k)}";
                 break;
         }
         return path;
@@ -505,48 +599,25 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
 
     // ── read-only dimensions, per kind ──────────────────────────────────────────────────────
 
-    private string Len(long dbu)
-        => LayoutUnits.Format(dbu, editor.Document.DisplayUnit, editor.Document.DbuPerMicron);
-
-    private string P3(C3dPoint3 p) => $"({editor.Length(p.X)}, {editor.Length(p.Y)}, {editor.Length(p.Z)})";
-
-    private string P2(C3dPoint2 p) => $"({editor.Length(p.U)}, {editor.Length(p.V)})";
-
+    /// <summary>What the editable fields do not already show (3D editor round 4: a corner, a size, a radius were listed
+    /// twice — once to edit and once to read).</summary>
     private IEnumerable<C3dPropertyRow> Dimensions(C3dObject obj)
     {
         switch (obj)
         {
-            case C3dBox b:
-                yield return new("Corner", P3(b.Min));
-                yield return new("Size", P3(b.Size));
-                break;
             case C3dPrism p:
                 yield return new("Plane", p.Plane.ToString());
-                yield return new("Offset", editor.Length(p.Offset));
-                yield return new("Height", editor.Length(p.Height));
                 yield return new("Outline", $"{p.Outline.Count} points" + (p.Holes.Count > 0 ? $", {p.Holes.Count} hole(s)" : ""));
-                if (p.Shear != default) yield return new("Shear", P2(p.Shear));
                 break;
             case C3dCylinder c:
                 yield return new("Axis", c.Axis.ToString());
-                yield return new("Base", P3(c.Base));
-                yield return new("Length", editor.Length(c.Length));
-                yield return new("Radius", editor.Length(c.Radius));
                 break;
             case C3dSheet s:
                 yield return new("Plane", s.Plane.ToString());
-                yield return new("Offset", editor.Length(s.Offset));
-                if (s.Rect is { } r)
-                {
-                    yield return new("Corner", P2(r.Min));
-                    yield return new("Size", P2(r.Size));
-                }
-                else yield return new("Outline", $"{s.Outline.Count} points" + (s.Holes.Count > 0 ? $", {s.Holes.Count} hole(s)" : ""));
-                if (s.ThicknessUm is { } t) yield return new("Thickness", t.ToString("G6", CultureInfo.InvariantCulture) + " µm");
+                if (s.Rect is null) yield return new("Outline", $"{s.Outline.Count} points" + (s.Holes.Count > 0 ? $", {s.Holes.Count} hole(s)" : ""));
                 break;
             case C3dPolyline l:
                 yield return new("Plane", l.Plane.ToString());
-                yield return new("Offset", editor.Length(l.Offset));
                 yield return new("Points", l.VertexCount + (l.Closed ? ", closed" : "") + (l.Points3 is not null ? ", leaving its plane (stored in 3D)" : ""));
                 yield return new("In the problem", "No: a polyline is construction geometry.");
                 break;
@@ -609,25 +680,6 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         if (_loading || ObjectIndex < 0) return;
         int i = ObjectIndex;
         editor.ChangeObjects($"Mirror {editor.Document.Objects[i].Name}", [i], o => o.Placement.MirrorX = value);
-    }
-
-    /// <summary>The origin fields' Enter or lost focus: each a length in the display unit (a suffix may
-    /// name another unit), exact to the DBU.</summary>
-    public void CommitOrigin()
-    {
-        if (ObjectIndex < 0) return;
-        var doc = editor.Document;
-        long x = 0, y = 0, z = 0;
-        if (!LayoutUnits.TryParse(OriginX, doc.DisplayUnit, doc.DbuPerMicron, out x) ||
-            !LayoutUnits.TryParse(OriginY, doc.DisplayUnit, doc.DbuPerMicron, out y) ||
-            !LayoutUnits.TryParse(OriginZ, doc.DisplayUnit, doc.DbuPerMicron, out z))
-        {
-            Error = $"The origin is three lengths, in {LayoutUnits.Suffix(doc.DisplayUnit)} unless a unit is written.";
-            return;
-        }
-        Error = "";
-        int i = ObjectIndex;
-        editor.ChangeObjects($"Move {doc.Objects[i].Name}", [i], o => o.Placement.Origin = new C3dPoint3(x, y, z));
     }
 
     /// <summary>The rotations field: <c>z 30, x 90</c> — each an axis and degrees, applied in order.</summary>

@@ -10,6 +10,13 @@
         <Style Selector="TextBox.error">
             <Setter Property="BorderBrush" Value="IndianRed"/>
         </Style>
+        <!-- 3D editor round 4 — a dimension's box: narrow enough for x, y and z to share a line. -->
+        <Style Selector="TextBox.dim">
+            <Setter Property="MinWidth" Value="0"/>
+            <Setter Property="MinHeight" Value="0"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Padding" Value="3,2"/>
+        </Style>
     </UserControl.Styles>
 
     <ScrollViewer HorizontalScrollBarVisibility="Disabled">
@@ -25,14 +32,9 @@
                 <TextBlock Text="Role" FontSize="11" Opacity="0.7"/>
                 <ComboBox ItemsSource="{x:Static t3:C3dPropertiesViewModel.Roles}" SelectedItem="{Binding Role}" HorizontalAlignment="Stretch"
                           ToolTip.Tip="What the solver treats the object as. From material: the material decides."/>
-                <!-- 3D editor round 3 — a bond wire has no placement: its points are world points (below). -->
+                <!-- 3D editor round 3 — a bond wire has no placement: its points are world points (below). Round 4: the
+                     placement origin is edited on its one line among the dimensions below, not twice. -->
                 <StackPanel Spacing="4" IsVisible="{Binding IsPlaced}">
-                    <TextBlock Text="Placement origin (x, y, z)" FontSize="11" Opacity="0.7"/>
-                    <Grid ColumnDefinitions="*,4,*,4,*">
-                        <TextBox Grid.Column="0" Text="{Binding OriginX}" KeyDown="OnOriginKey" LostFocus="OnOriginLostFocus"/>
-                        <TextBox Grid.Column="2" Text="{Binding OriginY}" KeyDown="OnOriginKey" LostFocus="OnOriginLostFocus"/>
-                        <TextBox Grid.Column="4" Text="{Binding OriginZ}" KeyDown="OnOriginKey" LostFocus="OnOriginLostFocus"/>
-                    </Grid>
                     <TextBlock Text="Rotations, in order" FontSize="11" Opacity="0.7"/>
                     <TextBox Text="{Binding RotateText}" PlaceholderText="z 30, x 90" KeyDown="OnRotateKey" LostFocus="OnRotateLostFocus"/>
                     <CheckBox IsChecked="{Binding MirrorX}" Content="Mirror x"/>
@@ -54,6 +56,18 @@
                 </Grid>
                 <TextBlock Text="Section" FontSize="11" Opacity="0.7"/>
                 <ComboBox ItemsSource="{x:Static t3:C3dEditorViewModel.WireSections}" SelectedItem="{Binding WireSection}" HorizontalAlignment="Stretch"/>
+                <!-- 3D editor round 4 — loop height and span, as a wBond or Layout wire offers them. -->
+                <Grid ColumnDefinitions="Auto,*,8,Auto,*,Auto" Margin="0,2,0,0">
+                    <TextBlock Grid.Column="0" Text="Loop height:" FontSize="11" Opacity="0.7" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                    <TextBox Grid.Column="1" Text="{Binding WireLoopHeight}" Classes="dim" PlaceholderText="no pad"
+                             KeyDown="OnWireLoopHeightKey" LostFocus="OnWireLoopHeightLostFocus"
+                             ToolTip.Tip="From the top of the lower pad to the top of the wire at its apex. Every x and y is kept; the rise above the feet scales."/>
+                    <TextBlock Grid.Column="3" Text="Span:" FontSize="11" Opacity="0.7" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                    <TextBox Grid.Column="4" Text="{Binding WireSpan}" Classes="dim"
+                             KeyDown="OnWireSpanKey" LostFocus="OnWireSpanLostFocus"
+                             ToolTip.Tip="Foot to foot, in plan. The end moves along the wire's direction and lands on the pad under it; the start stays."/>
+                    <TextBlock Grid.Column="5" Text="{Binding LengthUnit}" FontSize="11" Opacity="0.7" VerticalAlignment="Center" Margin="4,0,0,0"/>
+                </Grid>
                 <TextBlock Text="Points (x, y, z)" FontSize="11" Opacity="0.7" Margin="0,4,0,0"
                            ToolTip.Tip="The wire's axis, start to end, in world coordinates. Each end sits on the top of its pad."/>
                 <ItemsControl ItemsSource="{Binding WirePoints}">
@@ -118,18 +132,43 @@
             <SelectableTextBlock Text="{Binding Error}" Foreground="IndianRed" TextWrapping="Wrap"
                                  IsVisible="{Binding Error, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
 
-            <!-- brief-em3d-51 R-em3d51-4b — each named dimension: its expression and resolved value, editable as either. -->
-            <ItemsControl ItemsSource="{Binding Fields}" IsVisible="{Binding IsEditable}">
+            <!-- brief-em3d-51 R-em3d51-4b — each named dimension: its expression and resolved value, editable as either.
+                 3D editor round 4 — a vector's components share one line ("Size: x [ ] y [ ] z [ ]"), labels aligned. -->
+            <ItemsControl ItemsSource="{Binding FieldRows}" IsVisible="{Binding IsEditable}" Grid.IsSharedSizeScope="True">
                 <ItemsControl.ItemTemplate>
-                    <DataTemplate DataType="t3:C3dDimensionField">
+                    <DataTemplate DataType="t3:C3dDimensionRow">
                         <StackPanel Margin="0,2" Spacing="1">
-                            <TextBlock Text="{Binding Label}" FontSize="11" Opacity="0.7" ToolTip.Tip="{Binding Path}"/>
-                            <TextBox Text="{Binding Text}" KeyDown="OnDimensionKey" LostFocus="OnDimensionLostFocus"
-                                     Classes.error="{Binding Error, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
-                            <SelectableTextBlock Text="{Binding ValueText}" FontSize="11" Opacity="0.8"
-                                                 IsVisible="{Binding ValueText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
-                            <SelectableTextBlock Text="{Binding Error}" FontSize="11" Foreground="IndianRed" TextWrapping="Wrap"
-                                                 IsVisible="{Binding Error, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" SharedSizeGroup="DimLabel"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto" SharedSizeGroup="DimUnit"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="{Binding Label, StringFormat='{}{0}:'}" FontSize="11" Opacity="0.7"
+                                           VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                <ItemsControl Grid.Column="1" ItemsSource="{Binding Fields}">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate><UniformGrid Rows="1"/></ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="t3:C3dDimensionField">
+                                            <DockPanel Margin="0,0,4,0">
+                                                <TextBlock DockPanel.Dock="Left" Text="{Binding Axis, StringFormat='{}{0}:'}" FontSize="11" Opacity="0.7"
+                                                           VerticalAlignment="Center" Margin="0,0,2,0"
+                                                           IsVisible="{Binding Axis, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                                                <TextBox Text="{Binding Text}" Classes="dim" ToolTip.Tip="{Binding Path}"
+                                                         KeyDown="OnDimensionKey" LostFocus="OnDimensionLostFocus"
+                                                         Classes.error="{Binding Error, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                                            </DockPanel>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <TextBlock Grid.Column="2" Text="{Binding Unit}" FontSize="11" Opacity="0.7" VerticalAlignment="Center"/>
+                            </Grid>
+                            <SelectableTextBlock Text="{Binding Notes}" FontSize="11" Opacity="0.8" TextWrapping="Wrap"
+                                                 IsVisible="{Binding Notes, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                            <SelectableTextBlock Text="{Binding Errors}" FontSize="11" Foreground="IndianRed" TextWrapping="Wrap"
+                                                 IsVisible="{Binding Errors, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                         </StackPanel>
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>

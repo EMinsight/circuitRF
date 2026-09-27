@@ -7,6 +7,7 @@ using Avalonia.VisualTree;
 using CircuitRF.Render;
 using CircuitRF.Ui.ThreeD;
 using CircuitRF.Ui.Viewer3D;
+using CircuitRF.Ui.Views.Viewer3D;
 
 namespace CircuitRF.Ui.Views.ThreeD;
 
@@ -40,8 +41,11 @@ public partial class C3dEditorView : UserControl
         Pane.ContextMenuRequested += () =>
         {
             if (_vm is null) return;
-            Viewer3DContextMenu.Fill(_menu, _vm.Viewer.OpenContextMenu(), []);
-            if (_menu.Items.Count > 0) _menu.Open(Pane);
+            // 3D editor bugs round 4 — Copy (the picture, to the clipboard) on anything or nothing, as the read-only
+            // viewer has had it; this menu had been filled with no picture commands at all.
+            var copy = Viewer3DPictureCopy.Item(Pane, () => _vm?.Viewer, text => { if (_vm is not null) _vm.StatusMessage = text; });
+            Viewer3DContextMenu.Fill(_menu, _vm.Viewer.OpenContextMenu(), [copy]);
+            _menu.Open(Pane);
         };
         Pane.FaultChanged += why =>
         {

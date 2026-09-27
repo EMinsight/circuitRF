@@ -329,8 +329,30 @@ public sealed class C3dWire : C3dObject
     public C3dWireEnd Start { get; set; } = new();
     public C3dWireEnd End   { get; set; } = new();
 
+    /// <summary>3D editor round 4 — a row of identical wires: this one and copies <see cref="C3dWireArray.Pitch"/> apart.
+    /// Omitted: one wire.</summary>
+    public C3dWireArray? Array { get; set; }
+
     /// <summary>A wire is a swept solid with no named faces.</summary>
     public override IReadOnlyList<string> FaceNames() => [];
+}
+
+/// <summary>
+/// 3D editor round 4 — a wire array: <see cref="Count"/> wires, the drawn one first and each next one moved by
+/// <see cref="Pitch"/> (a vector, DBU, so a row may run in any direction). Every copy is a wire of its own in the model —
+/// its ends looked up on the pads under them and refused by name (<c>w1[2]</c>) like any wire's. One-dimensional on
+/// purpose, unlike an instance's <see cref="C3dArray"/>: a bonded row is a number of wires and a pitch.
+/// </summary>
+public sealed class C3dWireArray : IC3dBindable
+{
+    [JsonIgnore] public Dictionary<string, C3dExpr?[]>? Exprs { get; set; }
+
+    /// <summary>How many wires, at least 1.</summary>
+    public long      Count { get; set; } = 1;
+    public C3dPoint3 Pitch { get; set; }
+
+    /// <summary>Element <paramref name="k"/>'s offset from the drawn wire.</summary>
+    public C3dPoint3 Offset(long k) => new(k * Pitch.X, k * Pitch.Y, k * Pitch.Z);
 }
 
 // ── Instances ─────────────────────────────────────────────────────────────────────────────────

@@ -13990,3 +13990,13 @@ change keeps it; a worse finding shows both numbers; round-trip and absent-when-
   default). In a cavity whose floor, walls and lid are all metal and whose height is a fraction of its width, that is
   the whole volume: 2.16 M second-order unknowns for the example's lid modes at the defaults, against 128 k with
   `"EdgeRefinement": 1`. The wires keep their curvature sizing and the ports their own floor either way.
+
+## 3D editor bugs round 4 — wire arrays
+
+`C3dWire.Array` (`C3dWireArray`: `Count`, vector `Pitch`) makes a drawn wire a row. `C3dElaborator.Wires` expands it
+through `C3dWires.Elements` — one resolved wire per element, named `w1[k]`, refused by that name, provenance naming the
+drawn wire — and excludes every element name from the pad list. `C3dValidation` refuses a count below 1 and a row with
+no pitch. `C3dWires.BakePlacement` turns the pitch with a placement's rotation/mirror (translation never) and reports a
+non-integral result as inexact; `C3dHierarchy.Scale` scales it with the points. `C3dBindings.OwnersOf` yields the
+row as `Array.` so its count and pitch take expressions. The `.c3d` reference page (`DocumentSchema`) and em-3d.md §6.6
+say so. Detail in `src/Ui/RESOLVED.md`, same heading.

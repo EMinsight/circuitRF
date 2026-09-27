@@ -517,6 +517,15 @@ public sealed partial class C3dEditorViewModel
     /// </summary>
     public string? MakePortFromFace(uint objectId, int face, Em3dPortKind kind)
     {
+        if (PortFromFace(objectId, face, kind, out var port) is { } why) return why;
+        AddPort(port!);
+        return null;
+    }
+
+    /// <summary>The port Make Port would add on a face, not added — or why the face cannot take one.</summary>
+    private string? PortFromFace(uint objectId, int face, Em3dPortKind kind, out C3dPort? port)
+    {
+        port = null;
         var scene = Viewer.Scene;
         if (scene.Object(objectId) is not { } o || face < 0) return "Select a face first.";
         var (area, normal) = Scene3DFaces.AreaAndNormal(scene, objectId, face);
@@ -536,12 +545,30 @@ public sealed partial class C3dEditorViewModel
         double rectArea = (u1 - u0) * per * ((v1 - v0) * per);
         if (u1 <= u0 || v1 <= v0 || Math.Abs(rectArea - area) > 1e-6 * rectArea)
             return $"Face {o.FaceName(face)} is not a rectangle: a port takes a rectangular face.";
-        var port = NewPortTemplate(kind);
+        port = NewPortTemplate(kind);
         port.Plane = plane;
         port.Offset = D(Get(pts[0], axis));
         port.Rect = new C3dRect { Min = new C3dPoint2(u0, v0), Size = new C3dPoint2(u1 - u0, v1 - v0) };
-        AddPort(port);
         return null;
+    }
+
+    /// <summary>
+    /// 3D editor round 4 — one kind of Make Port on a face, offered only when the port it would add resolves. Which kind a
+    /// face can take is decided by WHERE its rectangle lies, never by what it was drawn as: a wave port is a region of an
+    /// air-box face (a sheet drawn there is the usual way to state one), and a lumped port bridges two conductors on
+    /// opposite edges (a face of a small gap block does exactly that). So the resolver the run uses answers, and its
+    /// refusal is the item's tip.
+    /// </summary>
+    private Viewer3DMenuItem MakePortItem(Scene3DItem item, Em3dPortKind kind)
+    {
+        string word = kind == Em3dPortKind.Wave ? "Wave" : "Lumped";
+        string? why = PortFromFace(item.Object, item.Face, kind, out var port)
+                      ?? C3dPorts.Resolve(port!, Document.DbuPerMicron, CurrentPortContext()).Refusal;
+        string tip = kind == Em3dPortKind.Wave
+            ? "A wave port lies on a face of the active setup's air box — the end of a line that reaches the box."
+            : "A lumped port bridges two conductors, one on each of two opposite edges of the face.";
+        return new Viewer3DMenuItem(word, () => Report(MakePortFromFace(item.Object, item.Face, kind)), Enabled: why is null,
+                                    Tip: why ?? tip);
     }
 
     // ── the air box (R-em3d49-3) ─────────────────────────────────────────────────────────────
@@ -731,12 +758,7 @@ public sealed partial class C3dEditorViewModel
                 new Viewer3DMenuItem((existing is null ? "● " : "") + "None", () => Report(SetFaceBoundary(o.Name, faceName, null))),
             ]);
         }
-        yield return new Viewer3DMenuItem("Make Port", Children:
-        [
-            new Viewer3DMenuItem("Lumped", () => Report(MakePortFromFace(item.Object, item.Face, Em3dPortKind.Lumped))),
-            new Viewer3DMenuItem("Wave", () => Report(MakePortFromFace(item.Object, item.Face, Em3dPortKind.Wave)),
-                                 Tip: "A wave port lies on a face of the active setup's air box — the end of a line that reaches the box."),
-        ]);
+        yield return new Viewer3DMenuItem("Make Port", Children: [MakePortItem(item, Em3dPortKind.Lumped), MakePortItem(item, Em3dPortKind.Wave)]);
         yield return Viewer3DMenuItem.Separator;
     }
 

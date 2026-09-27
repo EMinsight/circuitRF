@@ -564,11 +564,13 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null)
         private void Wires(C3dDocument doc, string path, TechResolution tech, C3dTransform world, string prefix)
         {
             string techName = TechName(tech);
-            var wireNames = new HashSet<string>(doc.Objects.OfType<C3dWire>().Select(w => prefix + w.Name), StringComparer.Ordinal);
+            var elements = doc.Objects.OfType<C3dWire>().SelectMany(src => C3dWires.Elements(src).Select(e => (Source: src, e.Wire))).ToList();
+            var wireNames = new HashSet<string>(elements.Select(e => prefix + e.Wire.Name), StringComparer.Ordinal);
             var pads = C3dWires.Pads(_solids, _sheets, prefix, wireNames);
             double tol = C3dLowering.Metres(1, _topDbu);
             var workspace = new WireBondWorkspace(path, WorkspaceRootFinder.FindAncestorCws(Path.GetDirectoryName(path)) ?? workspaceCws);
-            foreach (var w in doc.Objects.OfType<C3dWire>())
+            // 3D editor round 4 — a wire array is one wire per element, each resolved and refused on its own (w1[2]).
+            foreach (var (drawn, w) in elements)
             {
                 string name = prefix + w.Name;
                 string matName = C3dWires.MaterialOf(w);
@@ -606,7 +608,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null)
                 {
                     _uses.Add((_solids.Count, false, techName, material.Name));
                     _solids.Add(new Em3dSolid(solidName, key, Em3dRole.Conductor, primitive, ++_order));
-                    _provenance[solidName] = new C3dProvenance(prefix.TrimEnd('/'), path, w.Name, []) { Exact = false, Element = prefix.Length > 0 ? world : null };
+                    _provenance[solidName] = new C3dProvenance(prefix.TrimEnd('/'), path, drawn.Name, []) { Exact = false, Element = prefix.Length > 0 ? world : null };
                     _origins[solidName] = new Em3dObjectOrigin(Em3dObjectKind.Wire, null, null, null);
                     Net(solidName, name);
                 }

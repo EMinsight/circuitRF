@@ -747,6 +747,14 @@ drawing is the assembly one above, solved against the resolved solid, so the num
 measured. Its foot length and ball size resolve as a `.wBond`'s do less the array level: the end's own field,
 then the `.wasm` the workspace's `DefaultAssemblyRef` names, then built in (no `.ctech` states a bond value).
 
+**A row of wires (3D editor round 4).** A drawn wire may carry an `Array` — a `Count` and a `Pitch`
+vector — and is then that many identical wires, each moved one more pitch from the drawn one. It is one
+object to edit (Array… on one wire sets it; the Properties Inspector edits the number of wires and the
+pitch, either as an expression) and N wires to the solver: each element is resolved on its own, named
+`w1[k]`, and refused by that name when its ends miss a pad. It is one-dimensional, unlike an instance's
+three-count array, because a bonded row is a number of wires and a pitch — and the vector pitch lets the
+row run along a die edge that is not an axis.
+
 **For openEMS** the hexagon becomes a polyhedron (circuitRF generates the mitred prisms itself; it
 does not rely on a sweep in CSXCAD). Where the grid's cells are much larger than the wire, the
 cross-section is below the grid's resolution and the backend models the wire as a thin conductor with

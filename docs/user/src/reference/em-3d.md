@@ -239,7 +239,8 @@ model circuitRF built, and after a run it also shows what the solver made.
 - **Animation.** The play button sweeps the phase through one cycle and draws the instantaneous field
   Re{E·e^jφ}. That is the standing wave in a cavity, or the current running along a wire.
 - **Pictures.** **Export picture …** saves a PNG of the view at a multiple of the window's size, with or
-  without the legend and caption. Right-click in the view for **Copy Picture**.
+  without the legend and caption. Right-click in the view — on anything or nothing — for **Copy**, which puts
+  the view on the clipboard at four times the window's size (the 3D editor's canvas offers it too).
 
 **What the mesh tells you about trusting the answer.** Look at where the small elements are. After
 refinement they gather where Palace's own error estimate said the answer needed them: along the edges of
