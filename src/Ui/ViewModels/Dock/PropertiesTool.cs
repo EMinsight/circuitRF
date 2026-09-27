@@ -59,6 +59,15 @@ public partial class PropertiesTool : Tool
     [ObservableProperty]
     private bool _isRailActive;
 
+    /// <summary>3D editor round 1 — a <c>.c3d</c> editor is active: its selection's fields (the same view model the editor
+    /// fills) are shown here, as a layout's are, rather than in a panel of the editor's own.</summary>
+    [ObservableProperty]
+    private bool _isC3dActive;
+
+    /// <summary>The active 3D view's Properties view model, or null.</summary>
+    [ObservableProperty]
+    private CircuitRF.Ui.ThreeD.C3dPropertiesViewModel? _c3dInspectorVm;
+
     /// <summary>The summary panel for the selected <c>.crail</c>, or null.</summary>
     [ObservableProperty]
     private CircuitRF.Ui.RailRf.RailPropertiesPanelViewModel _railInspectorVm = new();
@@ -113,7 +122,7 @@ public partial class PropertiesTool : Tool
     /// </summary>
     public bool IsSchematicContextActive =>
         !IsSymbolEditorActive && !IsCellActive && !IsDataDisplayActive && !IsFileInfoActive
-        && !IsLayoutActive && !IsWireActive && !IsRailActive;
+        && !IsLayoutActive && !IsWireActive && !IsRailActive && !IsC3dActive;
 
     partial void OnIsSymbolEditorActiveChanged(bool value)  => OnPropertyChanged(nameof(IsSchematicContextActive));
     partial void OnIsCellActiveChanged(bool value)          => OnPropertyChanged(nameof(IsSchematicContextActive));
@@ -123,6 +132,7 @@ public partial class PropertiesTool : Tool
     partial void OnIsRailActiveChanged(bool value) => OnPropertyChanged(nameof(IsSchematicContextActive));
 
     partial void OnIsLayoutActiveChanged(bool value)        => OnPropertyChanged(nameof(IsSchematicContextActive));
+    partial void OnIsC3dActiveChanged(bool value)           => OnPropertyChanged(nameof(IsSchematicContextActive));
 
     public PropertiesTool()
     {
@@ -159,6 +169,7 @@ public partial class PropertiesTool : Tool
         SymbolInspectorVm.SetContext(null);
         LayoutInspectorVm.SetContext(null);
         WireInspectorVm.SetContext(null);
+        ClearC3d();
         HeaderText = EditorVm.IsEmptyState ? "Properties" : "Component";
     }
 
@@ -179,6 +190,7 @@ public partial class PropertiesTool : Tool
         SymbolInspectorVm.SetContext(vm);
         LayoutInspectorVm.SetContext(null);
         WireInspectorVm.SetContext(null);
+        ClearC3d();
         HeaderText = vm is not null ? "Symbol" : "Properties";
     }
 
@@ -199,6 +211,7 @@ public partial class PropertiesTool : Tool
         SymbolInspectorVm.SetContext(null);
         LayoutInspectorVm.SetContext(null);
         WireInspectorVm.SetContext(null);
+        ClearC3d();
         HeaderText = vm is not null ? "Cell" : "Properties";
     }
 
@@ -226,6 +239,7 @@ public partial class PropertiesTool : Tool
         SymbolInspectorVm.SetContext(null);
         LayoutInspectorVm.SetContext(null);
         WireInspectorVm.SetContext(null);
+        ClearC3d();
         DatasetsVm.SetWindow(window);
         HeaderText = window is not null ? "Plot" : "Properties";
     }
@@ -246,6 +260,7 @@ public partial class PropertiesTool : Tool
         SymbolInspectorVm.SetContext(null);
         LayoutInspectorVm.SetContext(null);
         WireInspectorVm.SetContext(null);
+        ClearC3d();
         IsWireActive          = false;
         IsRailActive          = false;
         IsFileInfoActive      = vm is not null;
@@ -283,6 +298,7 @@ public partial class PropertiesTool : Tool
         SymbolInspectorVm.SetContext(null);
         LayoutInspectorVm.SetContext(null);
         WireInspectorVm.SetContext(null);
+        ClearC3d();
 
         RailInspectorVm.SetContext(crailPath);
 
@@ -306,6 +322,7 @@ public partial class PropertiesTool : Tool
         SymbolInspectorVm.SetContext(null);
         LayoutInspectorVm.SetContext(vm);
         WireInspectorVm.SetContext(null);
+        ClearC3d();
         HeaderText = vm is not null ? "Layout" : "Properties";
     }
 }
@@ -341,9 +358,46 @@ public partial class PropertiesTool
         EditorVm.SetContext(null);
         SymbolInspectorVm.SetContext(null);
         LayoutInspectorVm.SetContext(null);
+        ClearC3d();
 
         WireInspectorVm.SetContext(vm);
 
         HeaderText = vm is not null ? "Wire" : "Properties";
+    }
+
+    /// <summary>
+    /// 3D editor round 1 — shows the active <c>.c3d</c> editor's selection, clearing every other context. Mirrors
+    /// <see cref="SetActiveWire"/>, own flag set LAST for the reason recorded on <see cref="SetActiveRail"/>.
+    /// </summary>
+    public void SetActiveC3d(CircuitRF.Ui.ThreeD.C3dEditorViewModel? vm)
+    {
+        IsLayoutActive       = false;
+        IsSymbolEditorActive = false;
+        IsCellActive         = false;
+        IsDataDisplayActive  = false;
+        IsFileInfoActive     = false;
+        IsWireActive         = false;
+        IsRailActive         = false;
+
+        FileInfoVm      = null;
+        CellEditorVm    = null;
+        PlotInspectorVm = null;
+
+        EditorVm.SetContext(null);
+        SymbolInspectorVm.SetContext(null);
+        LayoutInspectorVm.SetContext(null);
+        WireInspectorVm.SetContext(null);
+
+        C3dInspectorVm = vm?.Properties;
+        IsC3dActive    = vm is not null;
+        vm?.Properties.Reload();
+
+        HeaderText = vm is not null ? "3D View" : "Properties";
+    }
+
+    private void ClearC3d()
+    {
+        IsC3dActive    = false;
+        C3dInspectorVm = null;
     }
 }

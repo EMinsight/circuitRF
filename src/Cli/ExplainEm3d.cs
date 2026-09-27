@@ -108,7 +108,8 @@ internal static class ExplainEm3d
         var stated = setup.AirBox;
         Em3dFaceJson Face(string name, Em3dBoundaryKind kind, EmAirBoxFace? face) => new(
             name, Boundary(kind),
-            face is not null ? "setup"
+            face?.PaddingPercent is { } pct ? $"setup (padding {pct.ToString("G6", CultureInfo.InvariantCulture)} % of the content's extent)"
+            : face is not null ? "setup"
             : name == "zmin" && kind == Em3dBoundaryKind.Pec ? "floor"
             : "default");
         var airBox = new Em3dAirBoxJson(V(box.Min), V(box.Max),

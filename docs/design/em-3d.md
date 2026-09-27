@@ -1,6 +1,6 @@
 # circuitRF — 3D full-wave EM (FEM and FDTD) and thermal (design draft)
 
-**Status:** Draft — rev 6, scoping only · **Date:** 2026-09-26 (rev 0: 2026-09-23, as `fem-3d.md`) ·
+**Status:** Draft — rev 7, scoping only · **Date:** 2026-09-26 (rev 0: 2026-09-23, as `fem-3d.md`) ·
 **Target:** **v2 at the earliest; parts of it are v3** (PRD §2, §17 v1.4). Nothing here is v1 scope and
 nothing in v1 depends on it.
 
@@ -44,6 +44,16 @@ nothing in v1 depends on it.
 > **the user installs**, which unlocks booleans, rounded edges and STEP import (§6.2). §6.3's
 > construction history is narrowed to a flat, ordered object list; §8.6's drag gate is restated for an
 > in-process kernel. Open 3 is closed.
+>
+> **rev 6 → rev 7 (2026-09-26), material libraries decided by the owner:** §4.1a's *"no 3D materials
+> file"* is narrowed. A technology may now **name `.cmat` material libraries** — JSON files holding
+> records in exactly the schema of the technology's own `Materials` block — resolved relative to the
+> `.ctech`, so a technology gives the same materials everywhere it is used and several technologies can
+> share one library. Nothing else names a library: not the workspace, not a `.cem`, not a `.c3d`; they
+> reach one only through the technology they already resolve. A name defined twice with different values
+> is refused, never shadowed. A **generic library ships** with circuitRF, named by every shipped
+> technology and copied into a new workspace (§4.1a). Briefed as
+> `docs/sonnet-briefs/brief-em3d-53-materials-editor.md`.
 
 > **This is a dated survey of a fast-moving landscape — re-survey before building anything.**
 > Every tool choice below reflects what the open-source ecosystem offered on the dates given, and is
@@ -231,8 +241,9 @@ nothing in it names a mesh entity (§6.4). Tier A's generator (§6.3) produces i
 
 ### 4.1a Materials — the technology, extended, not a second file
 
-**There is no 3D materials file.** A 3D problem takes its materials from the same `.ctech` the layout
-and the planar solvers already read. The format grows; nothing is duplicated. Today a material exists
+**There is no separate 3D materials table.** A 3D problem takes its materials from the same `.ctech` the layout
+and the planar solvers already read. *(rev 7: that technology may name `.cmat` material libraries —
+see the end of this section — which are the same records in a file of their own, not a second table.)* The format grows; nothing is duplicated. Today a material exists
 only as the four numbers written into each stackup entry (`Epsr`, `TanD`, `Mur`, `SigmaSm`), the
 bond-wire metals are a list fixed in code (`src/WBond/Materials.cs`), and a `.wBond` carries its own
 list beside that — three tables, none able to name a mould compound, a lid or a die attach, and none
@@ -271,6 +282,29 @@ The fields are additive and nullable, following the pattern of every field the t
 gained since the stackup existed (`SheetAt`, `Fill`, `PresentWithLayer`), so there is no `FormatVersion`
 bump. The generated reference page (`circuitrf reference technology`) describes them the day they
 exist, with no page to write.
+
+**Material libraries (`.cmat`) — rev 7, decided 2026-09-26.** A technology may name **material
+libraries**: `MaterialLibraries`, a list of paths resolved against the `.ctech`'s own directory. A `.cmat` is
+JSON — a `FormatVersion` and a `Materials` list in **exactly** the record schema above, read by the same
+reader, unknown keys kept — so a record moves between a `.ctech` and a `.cmat` unchanged. It exists so that
+custom materials (a mould compound, a plated finish, a lab-characterised laminate) can be written once and
+shared by several technologies.
+
+- **Only a technology names a library.** Not the workspace, not a `.cem`, not a `.c3d`: those reach a
+  library only through the technology they already resolve. So one technology resolves identically in
+  every workspace and every solver, planar included — its stackup entries, bodies and wires may name a
+  library material, and it is resolved on read like any other named material.
+- **The technology's own list stays.** A foundry's σ for its gold is process truth; a library adds names.
+- **A name defined twice** — in the technology's list and a library, or in two libraries — is fine when the
+  resolved values are equal and is a **`check` error and a refusal to load** when they differ. Nothing is
+  silently shadowed. Between two *technologies* the §1j rule of the third series is unchanged (merge equal
+  values, otherwise qualify `Name@technology`).
+- **A missing or unreadable library is a refusal naming its path**, never an empty list.
+- **A generic library ships** (decided 2026-09-26): `generic-materials.cmat`, an embedded resource of generic
+  metals, ceramics, semiconductors and laminates with a cited `Source` on every record. Every shipped technology
+  names it; New Workspace copies it beside the technology it copies, and the copy is the workspace's own file
+  from then on — an upgrade never moves a result through it. Names it shares with a shipped technology carry
+  identical values, so nothing is shadowed and no answer moves (brief-em3d-53 §8a).
 
 ### 4.2 What is shared and what is per solver
 

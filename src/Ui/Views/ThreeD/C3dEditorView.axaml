@@ -102,7 +102,7 @@
                 <!-- brief-em3d-44 R-em3d44-5 — snapping: the master switch, then one per kind (each glyph is the
                      marker's), saved per user. Hold Alt / Option to suspend geometry snap; the grid remains. -->
                 <ToggleButton IsChecked="{Binding ViewModel.Viewer.SnapEnabled}"
-                              ToolTip.Tip="Snap to vertices, midpoints, edges, face centres and the grid. Hold Alt / Option to suspend geometry snap (the grid still applies).">
+                              ToolTip.Tip="Snap to vertices, midpoints, edges, face centres and the grid. S or F3 turns geometry snap off and on (the grid still applies), F9 the grid — the layout editor's keys. Hold Alt / Option to suspend geometry snap.">
                     <mi:MaterialIcon Kind="Magnet" Width="16" Height="16"/>
                 </ToggleButton>
                 <ToggleButton IsChecked="{Binding ViewModel.Viewer.SnapVertex}" IsEnabled="{Binding ViewModel.Viewer.SnapEnabled}" ToolTip.Tip="Snap to vertices">
@@ -117,23 +117,18 @@
                 <ToggleButton IsChecked="{Binding ViewModel.Viewer.SnapFaceCentre}" IsEnabled="{Binding ViewModel.Viewer.SnapEnabled}" ToolTip.Tip="Snap to face centres">
                     <mi:MaterialIcon Kind="CircleOutline" Width="16" Height="16"/>
                 </ToggleButton>
-                <ToggleButton IsChecked="{Binding ViewModel.Viewer.SnapGridOn}" IsEnabled="{Binding ViewModel.Viewer.SnapEnabled}" ToolTip.Tip="Snap to the drawing grid when no geometry is in range">
+                <ToggleButton IsChecked="{Binding ViewModel.Viewer.SnapGridOn}" IsEnabled="{Binding ViewModel.Viewer.SnapEnabled}" ToolTip.Tip="Snap to the drawing grid when no geometry is in range  (F9)">
                     <mi:MaterialIcon Kind="Grid" Width="16" Height="16"/>
                 </ToggleButton>
 
                 <Border Width="1" Margin="2,3" Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
 
-                <!-- brief-em3d-45 R-em3d45-1a — the drawing plane: three exclusive buttons and its offset along the normal,
-                     in the display unit (a suffix is honoured). Editor state, saved in the workspace's window state. -->
-                <ToggleButton IsChecked="{Binding ViewModel.IsPlaneXY}" ToolTip.Tip="Draw on the XY plane (normal z). Ctrl/Cmd-click a face with a tool armed to draw on it.">
-                    <TextBlock Text="XY" FontSize="11" FontWeight="SemiBold"/>
-                </ToggleButton>
-                <ToggleButton IsChecked="{Binding ViewModel.IsPlaneYZ}" ToolTip.Tip="Draw on the YZ plane (normal x)">
-                    <TextBlock Text="YZ" FontSize="11" FontWeight="SemiBold"/>
-                </ToggleButton>
-                <ToggleButton IsChecked="{Binding ViewModel.IsPlaneXZ}" ToolTip.Tip="Draw on the XZ plane (normal y)">
-                    <TextBlock Text="XZ" FontSize="11" FontWeight="SemiBold"/>
-                </ToggleButton>
+                <!-- brief-em3d-45 R-em3d45-1a — the drawing plane and its offset along the normal, in the display unit (a
+                     suffix is honoured). Editor state, saved in the workspace's window state. One small combo rather than three
+                     buttons (3D editor round 1: fewer toolbar buttons). -->
+                <ComboBox MinWidth="58" VerticalAlignment="Center" FontSize="11"
+                          ItemsSource="{x:Static t3:C3dEditorViewModel.PlaneChoices}" SelectedItem="{Binding ViewModel.PlaneKind}"
+                          ToolTip.Tip="The drawing plane: XY (normal z), YZ (normal x) or XZ (normal y). Ctrl/Cmd-click a face with a tool armed to draw on it."/>
                 <TextBox x:Name="PlaneOffsetBox" Width="72" VerticalAlignment="Center" Text="{Binding ViewModel.PlaneOffsetText}"
                          Classes.error="{Binding ViewModel.PlaneOffsetError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
                          KeyDown="OnPlaneOffsetKey" LostFocus="OnPlaneOffsetLostFocus"
@@ -198,20 +193,22 @@
                 <ToggleButton IsChecked="{Binding ViewModel.ShowTree}" ToolTip.Tip="Object tree">
                     <mi:MaterialIcon Kind="FileTreeOutline" Width="16" Height="16"/>
                 </ToggleButton>
-                <ToggleButton IsChecked="{Binding ViewModel.PropertiesVisible}" ToolTip.Tip="Properties">
+                <!-- 3D editor round 1 — the selection's fields are in the application's Properties Inspector: this brings it
+                     forward, opening it when it was closed. -->
+                <Button Command="{Binding ViewModel.ShowPropertiesPanelCommand}" ToolTip.Tip="Properties: bring the Properties Inspector forward (it opens if it was closed)">
                     <mi:MaterialIcon Kind="CardTextOutline" Width="16" Height="16"/>
-                </ToggleButton>
+                </Button>
 
                 <Border Width="1" Margin="2,3" Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
 
-                <!-- brief-em3d-49 — the active setup's air box, the Setups panel, and Simulate. -->
+                <!-- brief-em3d-49 — the active setup's air box, the setups (Simulate ▸ Setup Analyses…), and Simulate. -->
                 <ToggleButton IsChecked="{Binding ViewModel.Viewer.ShowBoundaryFaces}"
                               ToolTip.Tip="Air box: the active setup's, each face tinted by its boundary (PEC grey, PMC orange, symmetry hatched, absorbing clear). In Face mode its faces are picked last; right-click one to set its boundary or padding.">
                     <mi:MaterialIcon Kind="BorderOutside" Width="16" Height="16"/>
                 </ToggleButton>
-                <ToggleButton IsChecked="{Binding ViewModel.ShowSetups}" ToolTip.Tip="Setups: the EM setups this 3D view carries, and which one is active">
+                <Button Command="{Binding ViewModel.OpenSetupAnalysesCommand}" ToolTip.Tip="Setups: the EM setups this 3D view carries, and which one is active (Simulate ▸ Setup Analyses…)">
                     <mi:MaterialIcon Kind="TuneVariant" Width="16" Height="16"/>
-                </ToggleButton>
+                </Button>
                 <!-- brief-em3d-51 R-em3d51-4a — the Variables panel. -->
                 <ToggleButton IsChecked="{Binding ViewModel.ShowVariables}" ToolTip.Tip="Variables: this 3D view's VARs and its cell's parameters — the names its dimensions may use">
                     <mi:MaterialIcon Kind="Variable" Width="16" Height="16"/>
@@ -343,7 +340,14 @@
             <Border Grid.Column="0" Width="230" IsVisible="{Binding ViewModel.ShowTree}" BorderThickness="0,0,1,0"
                     BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
                 <TreeView x:Name="ObjectTree" ItemsSource="{Binding ViewModel.Tree}"
-                          SelectedItem="{Binding ViewModel.SelectedTreeItem, Mode=TwoWay}">
+                          SelectedItem="{Binding ViewModel.SelectedTreeItem, Mode=TwoWay}"
+                          ContextRequested="OnTreeContextRequested">
+                    <TreeView.Styles>
+                        <!-- 3D editor round 1 — expansion is the node's, so it survives the rebuild every edit makes. -->
+                        <Style Selector="TreeViewItem" x:DataType="t3:C3dTreeNode">
+                            <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
+                        </Style>
+                    </TreeView.Styles>
                     <TreeView.DataTemplates>
                         <TreeDataTemplate DataType="t3:C3dTreeGroup" ItemsSource="{Binding Items}">
                             <TextBlock Text="{Binding Header}" FontWeight="SemiBold"/>
@@ -454,104 +458,6 @@
                                      HorizontalAlignment="Center" VerticalAlignment="Center"/>
             </Panel>
 
-            <!-- ── Properties (R-em3d43-6b) ────────────────────────────────────── -->
-            <Border Grid.Column="2" Width="260" IsVisible="{Binding ViewModel.PropertiesVisible}" BorderThickness="1,0,0,0"
-                    BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" Padding="8,6">
-                <ScrollViewer>
-                    <StackPanel Spacing="6" DataContext="{Binding ViewModel.Properties}" x:DataType="t3:C3dPropertiesViewModel">
-                        <SelectableTextBlock Text="{Binding Heading}" FontWeight="SemiBold" TextWrapping="Wrap"/>
-
-                        <StackPanel Spacing="4" IsVisible="{Binding IsEditable}">
-                            <TextBlock Text="Name" FontSize="11" Opacity="0.7"/>
-                            <TextBox x:Name="NameBox" Text="{Binding NameText}" KeyDown="OnNameKey" LostFocus="OnNameLostFocus"/>
-                            <TextBlock Text="Material" FontSize="11" Opacity="0.7"/>
-                            <ComboBox ItemsSource="{Binding Materials}" SelectedItem="{Binding Material}" HorizontalAlignment="Stretch"/>
-                            <TextBlock Text="Role" FontSize="11" Opacity="0.7"/>
-                            <ComboBox ItemsSource="{x:Static t3:C3dPropertiesViewModel.Roles}" SelectedItem="{Binding Role}" HorizontalAlignment="Stretch"
-                                      ToolTip.Tip="What the solver treats the object as. From material: the material decides."/>
-                            <TextBlock Text="Placement origin (x, y, z)" FontSize="11" Opacity="0.7"/>
-                            <Grid ColumnDefinitions="*,4,*,4,*">
-                                <TextBox Grid.Column="0" Text="{Binding OriginX}" KeyDown="OnOriginKey" LostFocus="OnOriginLostFocus"/>
-                                <TextBox Grid.Column="2" Text="{Binding OriginY}" KeyDown="OnOriginKey" LostFocus="OnOriginLostFocus"/>
-                                <TextBox Grid.Column="4" Text="{Binding OriginZ}" KeyDown="OnOriginKey" LostFocus="OnOriginLostFocus"/>
-                            </Grid>
-                            <TextBlock Text="Rotations, in order" FontSize="11" Opacity="0.7"/>
-                            <TextBox Text="{Binding RotateText}" Watermark="z 30, x 90" KeyDown="OnRotateKey" LostFocus="OnRotateLostFocus"/>
-                            <CheckBox IsChecked="{Binding MirrorX}" Content="Mirror x"/>
-                        </StackPanel>
-
-                        <!-- brief-em3d-47 R-em3d47-3e — Set Coordinates: the typed Vertex Move, world, in the display unit. -->
-                        <StackPanel Spacing="4" IsVisible="{Binding IsVertexEditable}">
-                            <TextBlock Text="Set coordinates (x, y, z)" FontSize="11" Opacity="0.7"/>
-                            <Grid ColumnDefinitions="*,4,*,4,*">
-                                <TextBox Grid.Column="0" Text="{Binding VertexX}" KeyDown="OnVertexKey" LostFocus="OnVertexLostFocus"/>
-                                <TextBox Grid.Column="2" Text="{Binding VertexY}" KeyDown="OnVertexKey" LostFocus="OnVertexLostFocus"/>
-                                <TextBox Grid.Column="4" Text="{Binding VertexZ}" KeyDown="OnVertexKey" LostFocus="OnVertexLostFocus"/>
-                            </Grid>
-                        </StackPanel>
-
-                        <SelectableTextBlock Text="{Binding Error}" Foreground="IndianRed" TextWrapping="Wrap"
-                                             IsVisible="{Binding Error, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
-
-                        <!-- brief-em3d-51 R-em3d51-4b — each named dimension: its expression and resolved value, editable as either. -->
-                        <ItemsControl ItemsSource="{Binding Fields}" IsVisible="{Binding IsEditable}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate DataType="t3:C3dDimensionField">
-                                    <StackPanel Margin="0,2" Spacing="1">
-                                        <TextBlock Text="{Binding Path}" FontSize="11" Opacity="0.7"/>
-                                        <TextBox Text="{Binding Text}" KeyDown="OnDimensionKey" LostFocus="OnDimensionLostFocus"
-                                                 Classes.error="{Binding Error, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
-                                        <SelectableTextBlock Text="{Binding ValueText}" FontSize="11" Opacity="0.8"
-                                                             IsVisible="{Binding ValueText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
-                                        <SelectableTextBlock Text="{Binding Error}" FontSize="11" Foreground="IndianRed" TextWrapping="Wrap"
-                                                             IsVisible="{Binding Error, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
-                                    </StackPanel>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-
-                        <ItemsControl ItemsSource="{Binding Rows}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate DataType="t3:C3dPropertyRow">
-                                    <StackPanel Margin="0,2">
-                                        <TextBlock Text="{Binding Label}" FontSize="11" Opacity="0.7"/>
-                                        <SelectableTextBlock Text="{Binding Value}" TextWrapping="Wrap"/>
-                                    </StackPanel>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </StackPanel>
-                </ScrollViewer>
-            </Border>
-
-            <!-- ── brief-em3d-49 R-em3d49-1: the Setups panel — the embedded setups, the active one, and the .cem panel on the
-                 selected one (the same view a .cem opens; the geometry row and the planar choices are hidden there). ── -->
-            <Border Grid.Column="3" Width="460" IsVisible="{Binding ViewModel.ShowSetups}" BorderThickness="1,0,0,0"
-                    BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
-                <DockPanel>
-                    <StackPanel DockPanel.Dock="Top" Spacing="4" Margin="8,6">
-                        <TextBlock Text="{Binding ViewModel.SetupsHeading}" FontWeight="SemiBold" TextWrapping="Wrap"/>
-                        <ListBox ItemsSource="{Binding ViewModel.SetupItems}" SelectedItem="{Binding ViewModel.SelectedSetupItem}"
-                                 MaxHeight="140" IsVisible="{Binding ViewModel.HasSetups}">
-                            <ListBox.ItemTemplate>
-                                <DataTemplate x:DataType="t3:C3dSetupItem">
-                                    <TextBlock Text="{Binding Label}" ToolTip.Tip="{Binding Refusal}"/>
-                                </DataTemplate>
-                            </ListBox.ItemTemplate>
-                        </ListBox>
-                        <WrapPanel Orientation="Horizontal" ItemSpacing="4" LineSpacing="4">
-                            <Button Content="Add" FontSize="11" Command="{Binding ViewModel.AddSetupCommand}" ToolTip.Tip="A new Palace setup, embedded in this 3D view"/>
-                            <Button Content="Duplicate" FontSize="11" Command="{Binding ViewModel.DuplicateSetupCommand}"/>
-                            <Button Content="Rename…" FontSize="11" Click="OnRenameSetupClick"/>
-                            <Button Content="Remove" FontSize="11" Command="{Binding ViewModel.RemoveSetupCommand}"/>
-                            <Button Content="Make Active" FontSize="11" Command="{Binding ViewModel.MakeSelectedActiveCommand}"
-                                    ToolTip.Tip="The active setup is the one Simulate runs and whose air box is drawn"/>
-                            <Button Content="Run" FontSize="11" Command="{Binding ViewModel.SimulateActiveCommand}" ToolTip.Tip="Simulate the active setup"/>
-                        </WrapPanel>
-                    </StackPanel>
-                    <vl:EmSetupEditorView DataContext="{Binding ViewModel.SetupEditor}" IsVisible="{Binding $parent[Border].((t3:C3dEditorDocument)DataContext).ViewModel.SetupEditor, Converter={x:Static ObjectConverters.IsNotNull}}"/>
-                </DockPanel>
-            </Border>
 
             <!-- ── brief-em3d-51 R-em3d51-4a: the Variables panel — the VARs (name, expression, unit, value, link, uses), then the
                  cell's parameters, read-only. Every action is one undo entry. ── -->

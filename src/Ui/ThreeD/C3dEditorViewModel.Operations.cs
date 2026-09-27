@@ -93,8 +93,9 @@ public sealed partial class C3dEditorViewModel
             x0 = Math.Min(x0, b.Item1); y0 = Math.Min(y0, b.Item2); z0 = Math.Min(z0, b.Item3);
             x1 = Math.Max(x1, b.Item4); y1 = Math.Max(y1, b.Item5); z1 = Math.Max(z1, b.Item6);
         }
-        foreach (var s in e.Solids) if (Mine(s.Name)) Grow(Em3dProblem.Bounds(s.Primitive));
-        foreach (var s in e.Sheets) if (Mine(s.Name)) Grow(s.WorldBounds());
+        // An object with no material is not in the solver's lists, but it is selected and moved all the same.
+        foreach (var s in e.Solids.Concat(e.UnassignedSolids)) if (Mine(s.Name)) Grow(Em3dProblem.Bounds(s.Primitive));
+        foreach (var s in e.Sheets.Concat(e.UnassignedSheets)) if (Mine(s.Name)) Grow(s.WorldBounds());
         if (double.IsInfinity(x0)) return null;
         double per = C3dLowering.Metres(1, Document.DbuPerMicron);
         bool exact = true;

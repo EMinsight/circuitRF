@@ -404,6 +404,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         ResetPCellGenerators(dir);
 
         NewCellInWorkspaceCommand.NotifyCanExecuteChanged();
+        NewThreeDDesignCommand.NotifyCanExecuteChanged();
         NewFolderInWorkspaceCommand.NotifyCanExecuteChanged();
         ExportDataCommand.NotifyCanExecuteChanged();
         CloseWorkspaceCommand.NotifyCanExecuteChanged();
@@ -4100,6 +4101,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     [RelayCommand]
     private async Task SetupAnalyses(Window? owner)
     {
+        // A 3D view's analyses are its embedded EM setups (the 3D menu has no Setups item of its own).
+        if (ActiveC3dEditor() is { } c3d) { await ShowC3dSetupAnalysesAsync(c3d, owner); return; }
         var listVm = _factory.AnalysesTool?.ListVm;
         if (listVm is null) return;
         var window = ResolveOwner(owner);
@@ -4457,6 +4460,25 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         OpenScratchLayout();
     }
+
+    // ---- New 3D Design (File menu) — a new cell holding one .c3d ----------------
+
+    /// <summary>
+    /// File ▸ New ▸ New 3D Design: a new cell at the workspace root holding one <c>.c3d</c>, opened —
+    /// New Layout's workspace path, through the same <see cref="CreateCellHoldingViewAsync"/>. There is
+    /// no scratch form: the 3D editor edits a file in a cell folder (its hierarchy and technology walks
+    /// start there), so without a workspace the command is disabled rather than half-working.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanNewThreeDDesign))]
+    private async Task NewThreeDDesign()
+    {
+        var owner = ResolveOwner(null);
+        if (owner is null) return;
+        var name = await new InputNameDialog("New 3D Design", "Cell name:").ShowDialog<string?>(owner);
+        if (name is not null) await CreateCellHoldingViewAsync(name, ViewType.ThreeD);
+    }
+
+    private bool CanNewThreeDDesign() => CurrentWorkspacePath is not null;
 
     /// <summary>The scratch layout itself — also what the launch action opens.</summary>
     private void OpenScratchLayout()
@@ -10923,6 +10945,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     public void OpenCellSchematic(ProjectTreeNodeViewModel cellNode) => OpenCellPrimary(cellNode, ViewType.Schematic);
     public void OpenCellSymbol(ProjectTreeNodeViewModel cellNode)    => OpenCellPrimary(cellNode, ViewType.Symbol);
     public void OpenCellLayout(ProjectTreeNodeViewModel cellNode)    => OpenCellPrimary(cellNode, ViewType.Layout);
+    public void OpenCellThreeD(ProjectTreeNodeViewModel cellNode)    => OpenCellPrimary(cellNode, ViewType.ThreeD);
 
     private void OpenCellPrimary(ProjectTreeNodeViewModel cellNode, ViewType viewType)
     {
@@ -10937,6 +10960,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         var path = Path.Combine(CellFolder.SubFolderPath(cellDir, viewType), pr.ResolvedName);
         if (viewType == ViewType.Schematic)    OpenOrActivateSchematic(path);
         else if (viewType == ViewType.Layout)  _ = OpenOrActivateLayoutAsync(path);
+        else if (viewType == ViewType.ThreeD)  OpenOrActivateC3dEditor(path);
         else                                    OpenOrActivateSymbol(path);
     }
 
@@ -14675,6 +14699,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         }
 
         if (view == ViewType.Layout) CreateAndOpenLayoutFile(newCellDir, name);
+        else if (view == ViewType.ThreeD)
+        {
+            if (CreateThreeDViewFile(newCellDir, name) is { } created) OpenOrActivateC3dEditor(created, newlyCreated: true);
+        }
         else await CreateAndOpenSchematicFileAsync(newCellDir, name, name, template);
         return newCellDir;
     }
@@ -14890,22 +14918,23 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             return;
         }
 
-        CreateThreeDViewFile(cellDir, name);
+        if (CreateThreeDViewFile(cellDir, name) is { } created) OpenOrActivateC3dEditor(created, newlyCreated: true);
     }
 
     /// <summary>
     /// Writes an empty <c>.c3d</c> named <paramref name="name"/> into the cell's <c>3d/</c> sub-folder,
-    /// creating the sub-folder if this is the cell's first 3D view (brief-em3d-41, D10). Nothing opens:
-    /// the 3D editor is brief 43's. Reports its own failures.
+    /// creating the sub-folder if this is the cell's first 3D view (brief-em3d-41, D10). Returns the
+    /// written path, or null when nothing was written — the caller opens it, as New Layout does its own.
+    /// Reports its own failures.
     /// </summary>
-    private bool CreateThreeDViewFile(string cellDir, string name)
+    private string? CreateThreeDViewFile(string cellDir, string name)
     {
         var ext      = CellFolder.ViewExtension(ViewType.ThreeD);
         var filePath = Path.Combine(CellFolder.SubFolderPath(cellDir, ViewType.ThreeD), name + ext);
         if (File.Exists(filePath))
         {
             Messages.Error($"A file named '{name}{ext}' already exists.");
-            return false;
+            return null;
         }
 
         try
@@ -14918,12 +14947,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             _factory.ProjectTreeTool?.Refresh();
             RefreshCellEditorFileLists(cellDir);
             Messages.Success("Created", filePath);
-            return true;
+            return filePath;
         }
         catch (Exception ex)
         {
             Messages.Error($"Failed to create 3D view: {ex.Message}");
-            return false;
+            return null;
         }
     }
 
@@ -15665,6 +15694,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         {
             RouteDataDisplayProperties(null);
             ActivateWBondDocumentForProperties(wbDocForProps);
+        }
+        else if (activeDockable is ThreeD.C3dEditorDocument c3dForProps)
+        {
+            // 3D editor round 1 — a 3D view's selection is shown in this panel, as a layout's is.
+            RouteDataDisplayProperties(null);
+            _factory.PropertiesTool?.SetActiveC3d(c3dForProps.ViewModel);
         }
         else
         {

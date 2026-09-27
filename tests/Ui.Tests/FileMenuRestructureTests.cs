@@ -188,10 +188,10 @@ public class FileMenuRestructureTests
     // two lists stay EXACT and ORDERED on purpose: that is what keeps the hand-mirrored in-window
     // and macOS menus from drifting apart, so an addition updates them rather than loosening them.
     private static readonly string[] ExpectedNewSubmenuInWindow =
-        ["New _Cell…", "New _Schematic", "New S_ymbol", "New _Layout", "New _Data Display",
+        ["New _Cell…", "New _Schematic", "New S_ymbol", "New _Layout", "New _3D Design…", "New _Data Display",
          "New _Technology…", "New _EM Setup…"];
     private static readonly string[] ExpectedNewSubmenuNative =
-        ["New Cell…", "New Schematic", "New Symbol", "New Layout", "New Data Display",
+        ["New Cell…", "New Schematic", "New Symbol", "New Layout", "New 3D Design…", "New Data Display",
          "New Technology…", "New EM Setup…"];
 
     [Fact]
@@ -493,6 +493,7 @@ public class FileMenuRestructureTests
         yield return ["New _Schematic", false];
         yield return ["New S_ymbol", false];
         yield return ["New _Layout", false];
+        yield return ["New _3D Design…", true];
         yield return ["New _Data Display", false];
         yield return ["New _Technology…", true];
         yield return ["New _Workspace…", true];

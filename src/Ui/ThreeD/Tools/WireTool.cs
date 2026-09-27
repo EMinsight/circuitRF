@@ -207,4 +207,11 @@ public sealed class WireTool(IC3dDrawHost host, IC3dWireHost wires) : C3dDrawToo
         base.Reset();
         _shown = null;
     }
+
+    /// <summary>Back from the loop height to the second pad drops the arch the height was tracking.</summary>
+    public override bool StepBack()
+    {
+        _shown = null;
+        return base.StepBack();
+    }
 }

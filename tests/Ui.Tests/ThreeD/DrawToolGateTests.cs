@@ -272,7 +272,8 @@ public sealed class DrawToolGateTests : IDisposable
         vm.Arm(C3dToolKind.Box);
         ClickAt(vm, 0, 0, 0);
         ClickAt(vm, 20, 20, 0);
-        vm.Viewer.HandleKey(Key.Escape, KeyModifiers.None, false);               // cancelled mid-gesture
+        vm.Viewer.HandleKey(Key.Escape, KeyModifiers.None, false);               // cancelled mid-gesture, one stage
+        vm.Viewer.HandleKey(Key.Escape, KeyModifiers.None, false);               // at a time (3D round 1)
         Assert.Equal(0, vm.Tool!.Step);
         Assert.Equal(0, vm.UndoEntries);
 
@@ -294,6 +295,95 @@ public sealed class DrawToolGateTests : IDisposable
 
         for (int k = 0; k < 5; k++) vm.UndoRedo.Undo();
         Assert.Single(vm.Document.Objects);                                      // only the pad
+    }
+
+    // ── 3D round 1: Esc steps back one stage; the drag is the tool's; the layout's snap keys ───
+
+    private static void Esc(Viewer3DViewModel v) => Assert.True(v.HandleKey(Key.Escape, KeyModifiers.None, false));
+
+    [Fact]
+    public void Esc1_ABoxStepsBackOneStageAtATime_ThenTheToolIsPutAway()
+    {
+        var vm = Open();
+        var v = vm.Viewer;
+        vm.Arm(C3dToolKind.Box);
+        Assert.True(v.OrbitNeedsCommand);                     // armed: a plain drag is the tool's click, Ctrl/Cmd + drag orbits
+        ClickAt(vm, 0, 0, 0);
+        ClickAt(vm, 40, 30, 0);
+        Assert.Equal(2, vm.Tool!.Step);                        // at the height
+        Esc(v);
+        Assert.Equal(1, vm.Tool!.Step);                        // back at the sheet's second corner, which can be placed again
+        ClickAt(vm, 20, 10, 0);
+        Assert.Equal(2, vm.Tool!.Step);
+        Esc(v);
+        Esc(v);
+        Assert.IsType<BoxTool>(vm.Tool);                       // back at the first point, still armed
+        Assert.Equal(0, vm.Tool!.Step);
+        Esc(v);
+        Assert.Null(vm.Tool);
+        Assert.False(v.OrbitNeedsCommand);
+        Assert.Equal(0, vm.UndoEntries);
+    }
+
+    [Fact]
+    public void Esc2_AMoveGoesBackToItsBasePoint_ThenEnds_ThenTheSelectionClears()
+    {
+        var vm = Open();
+        var v = vm.Viewer;
+        var pad = v.Scene.Objects.Single(o => o.Name == "pad");
+        v.SetSelection([Scene3DItem.OfObject(pad.Id)]);
+        HoverVm(v, 2, 2);                                      // off the pad: the move waits for its base point
+        vm.StartMove();
+        var move = Assert.IsType<CircuitRF.Ui.ThreeD.Operations.MoveTool>(vm.Tool);
+        Assert.Equal(0, move.Step);
+        ClickAt(vm, 0, 0, 0);
+        Assert.Equal(1, move.Step);
+        HoverVm(v, W / 2, H / 2);
+        Assert.NotNull(v.View.Preview);
+        Esc(v);
+        Assert.Same(move, vm.Tool);                            // choosing the base point again; nothing follows the cursor
+        Assert.Equal(0, move.Step);
+        Assert.Null(v.View.Preview);
+        Esc(v);
+        Assert.Null(vm.Tool);
+        Assert.Single(v.View.Selection);                       // the tool went first ...
+        Esc(v);
+        Assert.Empty(v.View.Selection);                        // ... then the selection
+        Assert.Equal(0, vm.UndoEntries);
+    }
+
+    [Fact]
+    public void Esc3_AMeasurementGoesBeforeMeasureItself()
+    {
+        var vm = Open();
+        var v = vm.Viewer;
+        v.StartMeasure();
+        Assert.True(v.OrbitNeedsCommand);
+        ClickAt(vm, 0, 0, 0);
+        ClickAt(vm, 40, 0, 0);
+        Assert.NotNull(v.MeasureReadout);
+        Esc(v);
+        Assert.True(v.MeasureActive);
+        Assert.Null(v.MeasureP1);
+        Assert.Null(v.MeasureReadout);
+        Esc(v);
+        Assert.False(v.MeasureActive);
+    }
+
+    [Fact]
+    public void Snap1_SOrF3TogglesGeometrySnap_AndF9TheGrid_AsInALayout()
+    {
+        var vm = Open();
+        var v = vm.Viewer;
+        v.SnapEnabled = true;
+        v.SnapKinds = Snap3DKinds.Vertex | Snap3DKinds.Edge | Snap3DKinds.Grid;
+        Assert.True(v.HandleKey(Key.S, KeyModifiers.None, false));
+        Assert.Equal(Snap3DKinds.Grid, v.SnapKinds);           // geometry off; the grid still applies
+        Assert.True(v.HandleKey(Key.F3, KeyModifiers.None, false));
+        Assert.Equal(Snap3DKinds.Vertex | Snap3DKinds.Edge | Snap3DKinds.Grid, v.SnapKinds);   // back as it was
+        Assert.True(v.HandleKey(Key.F9, KeyModifiers.None, false));
+        Assert.Equal(Snap3DKinds.Vertex | Snap3DKinds.Edge, v.SnapKinds);
+        Assert.False(v.HandleKey(Key.S, KeyModifiers.Meta, false));                       // Cmd+S stays Save's
     }
 
     // ── fixtures ─────────────────────────────────────────────────────────────────────────────

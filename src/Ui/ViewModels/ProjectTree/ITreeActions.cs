@@ -96,6 +96,9 @@ public interface ITreeActions
     /// <summary>Open (or activate) the cell's primary layout in a Content tab.</summary>
     void OpenCellLayout(ProjectTreeNodeViewModel cellNode);
 
+    /// <summary>Open (or activate) the cell's primary 3D view in the 3D editor.</summary>
+    void OpenCellThreeD(ProjectTreeNodeViewModel cellNode);
+
     /// <summary>
     /// Remove a removable file or directory — a view file, a results dir, a <c>.cdd</c>, <c>.cem</c>,
     /// <c>.charm</c>, <c>.wBond</c> or <c>.ccolor</c> — to the Trash. Confirms first.

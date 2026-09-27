@@ -81,6 +81,16 @@ public sealed partial class Viewer3DViewModel
         FrameRequested?.Invoke();
     }
 
+    /// <summary>3D round 1 — the first Esc: the measurement's points go, Measure stays armed for the next one.</summary>
+    public void ClearMeasurement()
+    {
+        if (MeasureP1 is null) return;
+        MeasureP1 = MeasureP2 = null;
+        MeasureP2Fixed = false;
+        MeasureReadout = null;
+        FrameRequested?.Invoke();
+    }
+
     /// <summary>A click: the first point, the second, or — with both fixed — a new first point.</summary>
     public void MeasureClick()
     {

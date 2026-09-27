@@ -329,11 +329,19 @@ public sealed class Viewer3DPane : Control
             e.Handled = true;
             return;
         }
-        _shiftPress = p.Properties.IsLeftButtonPressed && e.KeyModifiers.HasFlag(KeyModifiers.Shift);
-        _panning = p.Properties.IsMiddleButtonPressed || (p.Properties.IsLeftButtonPressed && (_shiftPress || e.KeyModifiers.HasFlag(KeyModifiers.Alt)))
-                   || p.Properties.IsRightButtonPressed;
-        _orbiting = !_panning && p.Properties.IsLeftButtonPressed;
-        _rightPressed = p.Properties.IsRightButtonPressed;
+        // 3D round 1 — while a tool, an operation or Measure waits for a click, a plain left drag does NOT orbit: the press
+        // is that gesture's click however far it wobbles, and only Ctrl/Cmd + drag orbits. macOS reports Control + left
+        // as a RIGHT press carrying Control (AppKit's one-button convention), so that is read as the left press it is.
+        bool drawing = _vm?.OrbitNeedsCommand == true;
+        bool command = (e.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Meta)) != 0;
+        bool controlLeft = drawing && p.Properties.IsRightButtonPressed && e.KeyModifiers.HasFlag(KeyModifiers.Control);
+        bool left = p.Properties.IsLeftButtonPressed || controlLeft;
+        bool right = p.Properties.IsRightButtonPressed && !controlLeft;
+        _shiftPress = left && e.KeyModifiers.HasFlag(KeyModifiers.Shift);
+        _panning = p.Properties.IsMiddleButtonPressed || (left && (_shiftPress || e.KeyModifiers.HasFlag(KeyModifiers.Alt))) || right;
+        _drawPress = !_panning && left && drawing && !command;
+        _orbiting = !_panning && left && !_drawPress;
+        _rightPressed = right;
         _pressModifiers = e.KeyModifiers;
         _pressClicks = e.ClickCount;
         _moved = false;
@@ -342,6 +350,8 @@ public sealed class Viewer3DPane : Control
     }
 
     private bool _moved, _rightPressed, _shiftPress;
+    /// <summary>3D round 1 — a plain left press while something waits for a click: its release is the click, moved or not.</summary>
+    private bool _drawPress;
     // brief-em3d-45 — what the press carried, for the drawing: Ctrl/Cmd for a plane gesture, 2 for a double-click.
     private KeyModifiers _pressModifiers;
     private int _pressClicks = 1;
@@ -380,10 +390,10 @@ public sealed class Viewer3DPane : Control
             _vm?.ReleaseGizmo();
             return;
         }
-        if (_orbiting && !_moved) _vm?.Click(shift: false, _pressModifiers, _pressClicks);
+        if (_drawPress || (_orbiting && !_moved)) _vm?.Click(shift: false, _pressModifiers, _pressClicks);
         else if (_shiftPress && !_moved) _vm?.Click(shift: true, _pressModifiers, _pressClicks);
         bool menu = _rightPressed && !_moved && e.InitialPressMouseButton == MouseButton.Right;
-        _orbiting = _panning = _rightPressed = _shiftPress = false;
+        _orbiting = _panning = _rightPressed = _shiftPress = _drawPress = false;
         _last = _pressedAt = null;
         e.Pointer.Capture(null);
         if (menu) ContextMenuRequested?.Invoke();
@@ -394,7 +404,7 @@ public sealed class Viewer3DPane : Control
     protected override void OnPointerCaptureLost(PointerCaptureLostEventArgs e)
     {
         base.OnPointerCaptureLost(e);
-        _orbiting = _panning = _rightPressed = false;
+        _orbiting = _panning = _rightPressed = _drawPress = false;
         _last = _pressedAt = null;
         if (_gizmoDrag) { _gizmoDrag = false; _vm?.CancelGizmo(); }
     }
@@ -425,13 +435,9 @@ public sealed class Viewer3DPane : Control
     {
         base.OnKeyDown(e);
         if (_vm is null) return;
-        // Esc with a drag under way cancels the drag: the camera stays where the drag left it (a camera
-        // move is not an edit), and the button's release is no longer a click.
-        if (e.Key == Key.Escape && GestureInProgress && !_gizmoDrag)
+        if (e.Key == Key.Escape)
         {
-            _orbiting = _panning = _rightPressed = _shiftPress = false;
-            _last = _pressedAt = null;
-            e.Handled = true;
+            if (Escape()) e.Handled = true;
             return;
         }
         if (e.Key is Key.LeftAlt or Key.RightAlt) _vm.SetGeometrySnapSuspended(true);
@@ -445,6 +451,33 @@ public sealed class Viewer3DPane : Control
             return;
         }
         if (_vm.HandleKey(e.Key, e.KeyModifiers, GestureInProgress)) e.Handled = true;
+    }
+
+    /// <summary>
+    /// 3D round 1 — one Esc, one step back. The workspace window binds Escape to a command and a window key binding
+    /// marks the key handled before routing reaches the focused control, so this pane's own key handler never sees
+    /// Esc in a docked view: the view hosting the pane claims it (tunnel, handled events too) and calls this. A drag
+    /// under way is cancelled first (the camera stays where the drag left it — a camera move is not an edit — and the
+    /// release is no longer a click); a gizmo drag's move is cancelled; otherwise the view model's ladder runs:
+    /// the tool steps back or disarms, then a measurement goes, then Measure, then the selection.
+    /// </summary>
+    public bool Escape()
+    {
+        if (_vm is null) return false;
+        if (_gizmoDrag)
+        {
+            _vm.HandleKey(Key.Escape, KeyModifiers.None, gestureInProgress: false);
+            _gizmoDrag = false;
+            _vm.CancelGizmo();
+            return true;
+        }
+        if (GestureInProgress)
+        {
+            _orbiting = _panning = _rightPressed = _shiftPress = _drawPress = false;
+            _last = _pressedAt = null;
+            return true;
+        }
+        return _vm.HandleKey(Key.Escape, KeyModifiers.None, gestureInProgress: false);
     }
 
     /// <summary>brief-em3d-44 — Alt / Option released: geometry snap resumes.</summary>

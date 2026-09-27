@@ -13704,3 +13704,22 @@ the tokenizer, delete/inline, link, promote, the drag rule's `Classify`/`Solve`)
 - **Not built:** a drag of a bare parameter while pushed into an instance's context writes the `.ccell` DEFAULT, not
   that instance's override in the parent (a cross-frame undo entry); a Setup field referencing a `.c3d` VAR (§3a, out of
   scope); SL3's interface-change report is not triggered by Promote.
+
+
+## 3D editor bugs round 1 (owner, 2026-09-26)
+
+### 3D editor round 1 — an air-box face's padding as a percentage of the extent (2026-09-26)
+
+`EmAirBoxFace`/`CemAirBoxFace` gained `PaddingPercent`: the padding as a percentage of the CONTENT's extent along the
+face's axis (10 on XMin and XMax pads a tenth of the x-extent on each side), resolved in the one shared
+`Em3dGenerator.PaddedAirBox`, so a `.cem`, a `.c3d` run, `check`, `explain` (`source` names the percentage) and the
+editor's drawn box all agree. Rules: a face states `PaddingUm` or `PaddingPercent`, never both (refused, naming the
+face); a negative percentage is refused; an axis the content is FLAT along (a sheet-only design's z) has no extent to
+take a share of, so its faces take the default padding with a note rather than landing on the geometry; a wave port's
+face still pads by zero and says the stated percentage is not used. The memory check's "half the padding" remedy halves
+a percentage as a percentage. `WhenWritingNull` keeps every existing `.cem` byte-identical. The `3d-view` reference page
+names the key.
+
+### Objects with no material are elaborated as UnassignedSolids/UnassignedSheets (drawn wireframe, never solved)
+
+`C3dElaborator` still refuses a material-less object for Simulate, but now also lowers it into `UnassignedSolids`/`UnassignedSheets` (provenance recorded; the solver lists are unchanged) so the editor can draw, pick and snap it. Detail in `src/Render/RESOLVED.md` §3D editor bugs round 1.

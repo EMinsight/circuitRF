@@ -212,7 +212,7 @@ overwrites silently on every subsequent run under that same name."/>
         <Grid Grid.Row="2">
 
             <!-- No active schematic -->
-            <TextBlock Text="Open a schematic to set up analyses."
+            <TextBlock Text="Open a schematic or 3D Design to set up analyses."
                        IsVisible="{Binding NoActiveSchematic}"
                        Foreground="{DynamicResource SystemBaseMediumColor}"
                        FontSize="11" TextWrapping="Wrap"

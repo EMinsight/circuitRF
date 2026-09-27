@@ -1,0 +1,112 @@
+using Avalonia.Controls;
+using Avalonia.Input;
+using Avalonia.Interactivity;
+using Avalonia.Threading;
+using Avalonia.VisualTree;
+using CircuitRF.Ui.ThreeD;
+
+namespace CircuitRF.Ui.Views.ThreeD;
+
+/// <summary>
+/// brief-em3d-43 R-em3d43-6b — a 3D view's selection in the Properties Inspector. Each typed field commits on Enter or
+/// when it loses focus (one undo entry), and Esc puts the field back. 3D editor round 1: moved out of the editor's own
+/// panel into the application's Properties Inspector, which follows the active 3D view as it follows a layout.
+/// </summary>
+public partial class C3dPropertiesView : UserControl
+{
+    private C3dPropertiesViewModel? _vm;
+    private (TextBox Box, string? Text)? _focusText;
+
+    public C3dPropertiesView()
+    {
+        InitializeComponent();
+        Focusable = true;
+        // 3D editor round 1 — Esc in a field cancels the edit and leaves the field. The window binds Esc to a command that
+        // marks it handled before a focused control sees it, so this listens on the tunnel with handled events too.
+        AddHandler(GotFocusEvent, OnAnyGotFocus, RoutingStrategies.Bubble, handledEventsToo: true);
+        AddHandler(KeyDownEvent, OnEscapeTunnel, RoutingStrategies.Tunnel, handledEventsToo: true);
+    }
+
+    private void OnAnyGotFocus(object? sender, FocusChangedEventArgs e)
+    {
+        if (e.Source is TextBox tb) _focusText = (tb, tb.Text);
+    }
+
+    /// <summary>The field gets back the text it had when it took focus, THEN loses focus — so its lost-focus commit finds
+    /// nothing changed and writes nothing.</summary>
+    private void OnEscapeTunnel(object? sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Escape || _focusText is not { } f || !f.Box.IsFocused || !this.IsVisualAncestorOf(f.Box)) return;
+        f.Box.Text = f.Text;
+        _focusText = null;
+        Focus();
+        e.Handled = true;
+    }
+
+    protected override void OnDataContextChanged(EventArgs e)
+    {
+        base.OnDataContextChanged(e);
+        if (_vm is not null) _vm.RenameRequested -= OnRenameRequested;
+        _vm = DataContext as C3dPropertiesViewModel;
+        if (_vm is not null) _vm.RenameRequested += OnRenameRequested;
+    }
+
+    private void OnRenameRequested()
+        => Dispatcher.UIThread.Post(() => { NameBox.Focus(); NameBox.SelectAll(); }, DispatcherPriority.Loaded);
+
+    private void OnNameKey(object? sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter) { _vm?.CommitName(); e.Handled = true; }
+        else if (e.Key == Key.Escape) { _vm?.Reload(); e.Handled = true; }
+    }
+
+    private void OnNameLostFocus(object? sender, RoutedEventArgs e) => _vm?.CommitName();
+
+    private void OnOriginKey(object? sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter) { _vm?.CommitOrigin(); e.Handled = true; }
+        else if (e.Key == Key.Escape) { _vm?.Reload(); e.Handled = true; }
+    }
+
+    private void OnOriginLostFocus(object? sender, RoutedEventArgs e) => _vm?.CommitOrigin();
+
+    private void OnRotateKey(object? sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter) { _vm?.CommitRotate(); e.Handled = true; }
+        else if (e.Key == Key.Escape) { _vm?.Reload(); e.Handled = true; }
+    }
+
+    private void OnRotateLostFocus(object? sender, RoutedEventArgs e) => _vm?.CommitRotate();
+
+    private void OnVertexKey(object? sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter) { _vm?.CommitVertex(); e.Handled = true; }
+        else if (e.Key == Key.Escape) { _vm?.Reload(); e.Handled = true; }
+    }
+
+    private void OnVertexLostFocus(object? sender, RoutedEventArgs e) => _vm?.CommitVertex();
+
+    private void OnDimensionKey(object? sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Escape) { _vm?.Reload(); e.Handled = true; return; }
+        if (e.Key != Key.Enter || (sender as Control)?.DataContext is not C3dDimensionField f) return;
+        _vm?.CommitField(f);
+        e.Handled = true;
+    }
+
+    private void OnDimensionLostFocus(object? sender, RoutedEventArgs e)
+    {
+        if ((sender as Control)?.DataContext is C3dDimensionField f) _vm?.CommitField(f);
+    }
+
+    // 3D editor round 1 — the air box's padding per axis.
+    private static char AxisOf(object? sender) => (sender as Control)?.Tag is string { Length: 1 } a ? a[0] : 'x';
+
+    private void OnPadKey(object? sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter) { _vm?.CommitAirBoxPercent(AxisOf(sender)); e.Handled = true; }
+        else if (e.Key == Key.Escape) { _vm?.Reload(); e.Handled = true; }
+    }
+
+    private void OnPadLostFocus(object? sender, RoutedEventArgs e) => _vm?.CommitAirBoxPercent(AxisOf(sender));
+}

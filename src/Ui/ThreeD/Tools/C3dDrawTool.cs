@@ -119,6 +119,19 @@ public abstract class C3dDrawTool(IC3dDrawHost host)
     /// <summary>Esc: the gesture ends, nothing made.</summary>
     public virtual void Reset() => Step = 0;
 
+    /// <summary>
+    /// 3D round 1 — Esc mid-gesture goes back ONE stage, not to the start: a box at its height goes back to the
+    /// sheet's second corner, then to its first point; only then does Esc disarm. True when it stepped back (the
+    /// gesture may now be at step 0, the tool still armed); false when the gesture has no earlier stage and ends.
+    /// A stage's state is simply overwritten when the stage is done again, so stepping back is a decrement here.
+    /// </summary>
+    public virtual bool StepBack()
+    {
+        if (Step == 0) return false;
+        Step--;
+        return true;
+    }
+
     /// <summary>brief-em3d-46 — the typed field's parse of dimension <paramref name="index"/>: a length, unless the tool
     /// types something else (a rotation's angle).</summary>
     public virtual C3dDimension ParseField(int index, string text, LayoutUnit unit, int dbuPerMicron) => C3dDimension.Parse(text, unit, dbuPerMicron);

@@ -88,6 +88,12 @@ public sealed class Scene3DObject
     /// hovered or selected.</summary>
     public bool Context { get; init; }
 
+    /// <summary>3D editor bugs round 1 — an object with no material (or one its technology does not define): drawn as its
+    /// feature edges only. Its triangles are still in the scene, fully transparent (alpha 0), so the ID pass, the CPU
+    /// pick, the snap and the selection reach its faces as they reach any other object's; the shader fills a face only
+    /// to show hover or a selected face.</summary>
+    public bool Wireframe { get; init; }
+
     /// <summary>The name of face <paramref name="face"/>: its stored name, else <c>face&lt;n&gt;</c>.</summary>
     public string FaceName(int face) => face >= 0 && face < FaceNames.Count ? FaceNames[face]
         : face == Scene3DBuilder.FaceUnknown ? "surface" : $"face{face}";

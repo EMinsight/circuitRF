@@ -13,6 +13,7 @@
 using System.Collections.ObjectModel;
 using System.Globalization;
 using CircuitRF.Design.Layout;
+using CircuitRF.Design.Layout.Em;
 using CircuitRF.Design.ThreeD;
 using CircuitRF.Engine.Em3d;
 using CircuitRF.Render.Scene3D;
@@ -23,6 +24,17 @@ namespace CircuitRF.Ui.ThreeD;
 
 /// <summary>One read-only line of the panel; its value is selectable, so it can be copied.</summary>
 public sealed record C3dPropertyRow(string Label, string Value);
+
+/// <summary>3D editor round 1 — one face of the air box in the Inspector: its boundary, editable, and its padding now.</summary>
+public sealed partial class C3dAirBoxFaceRow(string face, Em3dBoundaryKind kind, string padding, Action<string, Em3dBoundaryKind> set)
+    : ObservableObject
+{
+    public string Face { get; } = face;
+    public string Padding { get; } = padding;
+    [ObservableProperty] private Em3dBoundaryKind _kind = kind;
+
+    partial void OnKindChanged(Em3dBoundaryKind value) => set(Face, value);
+}
 
 /// <summary>
 /// brief-em3d-51 R-em3d51-4b — one named dimension of the selected object: its text (a number in the display unit, or an
@@ -75,6 +87,11 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
     [ObservableProperty] private string _vertexY = "";
     [ObservableProperty] private string _vertexZ = "";
 
+    /// <summary>Raised when the Name field should take the caret (Rename… from a menu); the Inspector's view handles it.</summary>
+    public event Action? RenameRequested;
+
+    internal void RequestRename() => RenameRequested?.Invoke();
+
     /// <summary>Shows the current selection.</summary>
     public void Reload()
     {
@@ -92,9 +109,25 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         ObjectIndex = -1;
         IsEditable = false;
         IsVertexEditable = false;
+        IsAirBox = false;
+        AirBoxFaces.Clear();
         var viewer = editor.Viewer;
         var sel = viewer.Selection;
-        if (sel.Count == 0) { Heading = "Nothing selected"; return; }
+        if (sel.Count == 0)
+        {
+            // 3D editor round 1 — the tree's node when the scene holds nothing selected: an object elaboration refused
+            // (its fields are where the refusal is put right), or the air box.
+            if (editor.TreeOnlyObjectIndex() is >= 0 and var only) { LoadObject(only, inScene: false); return; }
+            if (editor.SelectedTreeItem is { IsAirBox: true }) { LoadAirBox(); return; }
+            Heading = "Nothing selected";
+            return;
+        }
+        if (viewer.SelectMode == Scene3DSelectMode.Object &&
+            sel.All(i => viewer.Scene.Object(i.Object) is { } b && C3dEditorViewModel.BoxFaceOf(b) is not null))
+        {
+            LoadAirBox();
+            return;
+        }
         if (sel.Count == 2 && viewer.SelectMode == Scene3DSelectMode.Face && sel[0].Face >= 0 && sel[1].Face >= 0) { TwoFaces(sel[0], sel[1]); return; }
         if (sel.Count > 1) { Heading = $"{sel.Count} selected"; return; }
         var item = sel[0];
@@ -144,7 +177,23 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
 
         int index = editor.DocumentIndex(o);
         if (index < 0) return;
+        LoadObject(index, inScene: true);
+    }
+
+    /// <summary>A document object's editable fields — <paramref name="inScene"/> false when elaboration refused it, whose
+    /// reason is then the first row.</summary>
+    private void LoadObject(int index, bool inScene)
+    {
         var obj = editor.Document.Objects[index];
+        // A refused object is either not drawn at all, or — with no material — drawn as a wireframe the solver never
+        // sees; either way the refusal Simulate will give is shown on the object it names.
+        string? why = editor.Elaboration?.Refusals.FirstOrDefault(r => r.Contains($"'{obj.Name}'", StringComparison.Ordinal));
+        if (!inScene)
+        {
+            Heading = obj.Name;
+            Rows.Add(new C3dPropertyRow("Not drawn", why ?? "It is not in the 3D model."));
+        }
+        else if (why is not null) Rows.Add(new C3dPropertyRow("Not simulated", why));
         ObjectIndex = index;
         IsEditable = true;
         NameText = obj.Name;
@@ -160,6 +209,64 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
             $"{index + 1} of {editor.Document.Objects.Count} — a later object wins where solids overlap (Modify ▸ Order)"));
         foreach (var row in Dimensions(obj)) Rows.Add(row);
         foreach (var f in editor.DimensionFields(obj)) Fields.Add(f);
+    }
+
+    // ── the air box (3D editor round 1) ─────────────────────────────────────────────────────
+
+    /// <summary>The active setup's air box is what is shown: its padding per axis and each face's boundary.</summary>
+    [ObservableProperty] private bool _isAirBox;
+    [ObservableProperty] private string _padXPercent = "";
+    [ObservableProperty] private string _padYPercent = "";
+    [ObservableProperty] private string _padZPercent = "";
+
+    /// <summary>One row per face: its boundary (editable) and the padding it has now.</summary>
+    public ObservableCollection<C3dAirBoxFaceRow> AirBoxFaces { get; } = [];
+
+    public static IReadOnlyList<Em3dBoundaryKind> BoundaryKinds { get; } = Enum.GetValues<Em3dBoundaryKind>();
+
+    private void LoadAirBox()
+    {
+        IsAirBox = true;
+        var setup = editor.ActiveSetup;
+        Heading = "Air box";
+        if (setup is null || editor.ShownAirBox is not { } box)
+        {
+            Rows.Add(new C3dPropertyRow("Setup", "No setup is active: the air box is a setup's."));
+            IsAirBox = false;
+            return;
+        }
+        Rows.Add(new C3dPropertyRow("Setup", editor.ActiveSetupLabel));
+        var stated = setup.AirBox;
+        string Pct(EmAirBoxFace? a, EmAirBoxFace? b)
+            => a?.PaddingPercent is { } p && b?.PaddingPercent == p ? p.ToString("G6", CultureInfo.InvariantCulture) : "";
+        PadXPercent = Pct(stated?.XMin, stated?.XMax);
+        PadYPercent = Pct(stated?.YMin, stated?.YMax);
+        PadZPercent = Pct(stated?.ZMin, stated?.ZMax);
+        var f = box.Faces;
+        foreach (var (face, kind, s) in new[]
+                 {
+                     ("xmin", f.XMin, stated?.XMin), ("xmax", f.XMax, stated?.XMax), ("ymin", f.YMin, stated?.YMin),
+                     ("ymax", f.YMax, stated?.YMax), ("zmin", f.ZMin, stated?.ZMin), ("zmax", f.ZMax, stated?.ZMax),
+                 })
+        {
+            string pad = editor.AirBoxPaddingText(face) + " " + LayoutUnits.Suffix(editor.Document.DisplayUnit)
+                       + (s?.PaddingPercent is { } p ? $" ({p.ToString("G6", CultureInfo.InvariantCulture)} %)"
+                          : s?.PaddingUm is not null ? " (stated)" : " (default)");
+            AirBoxFaces.Add(new C3dAirBoxFaceRow(face, kind, pad, (fc, k) => Error = editor.SetAirBoxBoundary(fc, k) ?? ""));
+        }
+        Rows.Add(new C3dPropertyRow("Size", $"{editor.Viewer.FormatLength(box.Max.X - box.Min.X)} × " +
+                                            $"{editor.Viewer.FormatLength(box.Max.Y - box.Min.Y)} × {editor.Viewer.FormatLength(box.Max.Z - box.Min.Z)}"));
+        Rows.Add(new C3dPropertyRow("Editing", "The air box is the active setup's, not the geometry's: it cannot be deleted or duplicated."));
+    }
+
+    /// <summary>An axis's padding percentage — Enter or lost focus: both faces of the axis pad by that share of the
+    /// content's extent along it; empty keeps the faces as they are. One undo entry.</summary>
+    public void CommitAirBoxPercent(char axis)
+    {
+        if (!IsAirBox) return;
+        string text = axis switch { 'x' => PadXPercent, 'y' => PadYPercent, _ => PadZPercent };
+        if (string.IsNullOrWhiteSpace(text)) return;
+        Error = editor.SetAirBoxPaddingPercent(axis, text) ?? "";
     }
 
     /// <summary>A dimension's Enter or lost focus: a number replaces the expression; an expression is bound (and kept even

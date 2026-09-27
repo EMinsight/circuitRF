@@ -3992,3 +3992,73 @@ Gates 1, 2 (CPU, software AND a real Metal ID pass) and 9 in `tests/Ui.Tests/Thr
   primitives on the face); the read-only viewer keeps brief 28's tints. `FaceTints`: each face boundary drawn as a
   translucent sheet lifted 1e-4 of the box's size along the face's outward normal — coplanar would z-fight the solid.
   Tints are named `boundary:<object>/<face>` and the air-box toggle leaves them alone.
+
+
+## 3D editor bugs round 1 (owner, 2026-09-26) — the drawing grid was a patch, not a plane
+
+**Two causes, and fixing the obvious one alone would not have been enough.** Brief 45's grid was a quad on the plane
+centred on the focus with a half-size of 0.6 × the view's diagonal at the focus, alpha faded to zero from 0.45 to 1.0
+of that radius — a patch by construction. But the quad was also drawn through the camera's projection, whose near
+and far planes BRACKET THE SCENE'S SPHERE (`Camera3D.DepthRange`); so even a bigger quad would have been cut off just
+past the scene, and a small scene gets a small grid. A larger quad also costs precision: the fragment's world point is
+interpolated from vertices ~1e4 × the camera distance away, which puts ~7 % of a minor cell of jitter on the lines
+near the focus.
+
+**What it is now (`PlaneGrid.Fill`/`WriteRay`, `vs_grid`/`fs_grid`):** the six vertices cover the VIEWPORT (clip
+±1, z 0.5 w — never depth-clipped), and each fragment casts its own ray at the plane: origin `gq + x·gox + y·goy`,
+direction `gd + x·gdx + y·gdy` (perspective: from the eye; orthographic: along the view from the view plane), built
+from the camera's own frustum (`ProjectionMatrix`'s fov, aspect and ortho half-height, with `flipY` applied to the y
+terms exactly as `WriteViewProjection` applies it). The hit is exact per pixel at any distance. The fragment writes
+its own depth, `clamp(vp·hit)`, so the plane in front of the near plane or beyond the far plane still draws and still
+hides behind a solid. Uniform block 1,072 → 1,152 bytes (five vec4s; Vulkan's 1,280 stride still covers it).
+
+**Decimation is per fragment, not per frame.** Level k is every `majorEvery^k` minor lines; a level's weight depends
+only on its cell's size in pixels THERE (0 below 4 px, the minor alpha by 10 px, full by `majorEvery` × that), and a
+fragment evaluates the three levels from the finest that reaches 4 px — anything coarser is a subset already at full
+weight. Because the weight is a continuous function of cell size, the change of level across the plane is seamless,
+and far away it fades where even the coarsest drawn level crowds. The CPU-chosen minor spacing at the focus is
+unchanged (status line, gate 7). Fine phase (mod one major cell) for levels 0–1; a coarse phase (mod `majorEvery⁶`
+minor cells, in the unused `gax.zw`) for the rest, so coarse lines still pass through the world origin's multiples.
+
+**The obliqueness fade had to shrink** from `smoothstep(0.01, 0.12, cos)` to `smoothstep(0, 0.035, cos)`. At the old
+value a 26°-pitch perspective view (default fov 0.7 rad) lost the top quarter of the viewport even with the plane
+reaching it — the density weights already thin the lines where they crowd, so the fade only has to cover the last two
+degrees before the horizon. An exactly edge-on plane (orthographic Front) draws nothing, as the degenerate quad did.
+
+**Trap for a pixel test:** `DrawingGridSettings.Dark` comes from the app's theme variant; headless it is false (light
+lines) while `Viewer3DViewState.Background` defaults DARK — dark-grey lines on a dark-grey ground read as "no grid" in
+a Metal read-back. The Metal gate sets `Dark = true`.
+
+Gate: `tests/Ui.Tests/ThreeD/GridAndWireframeTests.cs` — every sampled clip position's ray lands on the plane where
+the written view-projection maps it back (perspective both y conventions, orthographic), perspective hits beyond the
+far plane exist; on Metal the top and bottom tenths of a perspective view both hold grid pixels.
+
+## 3D editor bugs round 1 (owner, 2026-09-26) — an object with no material was invisible
+
+It was not a rendering fault: `C3dElaborator.Run.Document` REFUSES an object with no material (or one its technology
+does not define) and `continue`s before lowering it, so it never reached `Em3dProblem`, the scene, the ID pass or the
+snap — the tree listed it and nothing else could touch it. The refusal is right for a solver and stays.
+
+**Now:** the elaborator still refuses it, but lowers it into `C3dElaboration.UnassignedSolids`/`UnassignedSheets`
+(material "", order 0, no net, no material key — the solver lists are untouched) and records its PROVENANCE, which
+is what the editor's face names, exactness and instance lookups read. `DisplayExtent()` adds them for the editor's
+framing; `Extent()` (what an air box pads) does not. The editor appends them to the scene's problem LAST and gives them
+no instancing (so no run of array elements is broken), and passes `Scene3DBuildOptions.Wireframe`.
+
+**How the pick pass sees a wireframe (the choice):** its triangles stay in the scene as a TRANSLUCENT batch whose
+vertex colour has alpha exactly 0, so the GPU ID pass, the CPU pick, `RayHits`, B-cycling and the snap all reach its
+faces exactly as any object's. The consequence, accepted: an invisible face in front occludes a pick behind it (B
+cycles past it, as it does past a dielectric). `fs_color` treats alpha 0 as "draw only to show hover (Object mode,
+cyan 0.18), a hovered face (white 0.25) or a selected face (magenta 0.4)"; otherwise it discards. The edges are an
+always-drawn `Lines` batch of the object's own FEATURE edges in the theme's ink colour (`Accumulator.Object`'s new
+`wireEdges`), plus four side generators for a cylinder, whose only feature edges are its two rims. Kind is `Body`, not
+`Dielectric` — otherwise the Dielectrics visibility toggle would hide it and `OutermostDielectric` could pick it
+and start it hidden.
+
+**A second place that assumed "selectable ⇒ in `e.Solids`":** `BoundsDbu` (the Move/Rotate/gizmo pivot) looked only at
+the solver lists and returned null for a selected wireframe; it now includes the unassigned lists.
+
+Gate: same file — a box, a cylinder, a sheet with no material and a box of an undefined material are wireframes in the
+scene (alpha-0 translucent triangles, 12/4 edge lines), still in `Refusals` and absent from `Solids`; a click selects
+one in Object and Face mode and `BoundsDbu` answers for it; on Metal edges are drawn, faces are not filled (drawn
+pixels < ¼ of the silhouette) and the ID pass names it at a pixel inside a face.

@@ -92,12 +92,11 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     /// <summary>Raised when the file changed on disk while the document is dirty — the shell asks.</summary>
     public event Action? ExternalChangeWhileDirty;
 
-    /// <summary>Raised when the Properties panel should show, and focus its name for a rename.</summary>
+    /// <summary>Raised when the Properties Inspector should come forward (true: for a rename). The shell handles it.</summary>
     public event Action<bool>? PropertiesRequested;
 
     [ObservableProperty] private string _statusMessage = "";
     [ObservableProperty] private LayoutUnit _displayUnit;
-    [ObservableProperty] private bool _propertiesVisible = true;
     [ObservableProperty] private bool _showTree = true;
 
     public static IReadOnlyList<LayoutUnit> AllUnits => Layout.LayoutEditorViewModel.AllUnits;
@@ -124,6 +123,13 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         Viewer.SnapTogglesChanged += () => Snap3DPreference.Preferred = (Viewer.SnapEnabled, Viewer.SnapKinds);
         Viewer.FrameRequested += OnViewerFrame;
         Viewer.CursorResolved += OnCursorResolvedForOperation;
+        // 3D editor round 1 — the air box's tree tick is the toolbar's air-box switch.
+        Viewer.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(Viewer3DViewModel.ShowBoundaryFaces) &&
+                AllTreeItems().FirstOrDefault(t => t.IsAirBox) is { } box)
+                box.Sync(Viewer.ShowBoundaryFaces);
+        };
         ApplySnapGrid();
         Properties = new C3dPropertiesViewModel(this);
         Variables = new C3dVariablesViewModel(this);
@@ -184,7 +190,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
             ct.ThrowIfCancellationRequested();
             var e = _elaborator.Elaborate(doc, inputs.Path, inputs.WorkspaceCws, new C3dElaborationOptions { Cell = inputs.Cell });
             _elaborations[generation] = e;
-            var extent = e.Extent() ?? (-5e-4, -5e-4, -5e-4, 5e-4, 5e-4, 5e-4);
+            var extent = e.DisplayExtent() ?? (-5e-4, -5e-4, -5e-4, 5e-4, 5e-4, 5e-4);
             if (_origin is not { } o || !NearEnough(o, extent))
                 _origin = ((extent.X0 + extent.X1) / 2, (extent.Y0 + extent.Y1) / 2, (extent.Z0 + extent.Z1) / 2);
             var a = Em3dBoundaryKind.Absorbing;
@@ -205,6 +211,15 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
                 sheets = [.. e.Sheets, .. csh];
                 materials = [.. e.Materials, .. cm.Where(m => !e.Materials.Any(x => x.Name == m.Name))];
             }
+            // 3D editor bugs round 1 — what has no material is drawn as a wireframe, last (never an instance run's
+            // element), so it can still be seen, picked and edited; the refusal still stops a run.
+            var unassigned = new HashSet<string>(e.UnassignedSolids.Select(s => s.Name).Concat(e.UnassignedSheets.Select(s => s.Name)), StringComparer.Ordinal);
+            if (unassigned.Count > 0)
+            {
+                solids = [.. solids, .. e.UnassignedSolids];
+                sheets = [.. sheets, .. e.UnassignedSheets];
+            }
+            var instancing = InstancingFor(doc, e);
             var problem = new Em3dProblem(solids, sheets, materials, [.. records.Ports.Select(r => r.Resolved).OfType<Em3dPort>()], box,
                                           new Em3dFrequency(1e9, 1e9, 1, Em3dSweepKind.Linear), EmSetup.DefaultOperatingTempC);
             var notes = new List<string>(e.Refusals);
@@ -214,7 +229,8 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
                 new Scene3DBuildOptions(name => e.Provenance.TryGetValue(name, out var p) ? p.FaceNames : null,
                                         _tessellations, DrawAirBox: records.Box is not null, Origin: _origin,
                                         FeatureShare: name => e.Provenance.TryGetValue(name, out var p) ? ShareOf(p) : null,
-                                        Instancing: InstancingFor(doc, e),
+                                        Instancing: name => unassigned.Contains(name) ? null : instancing(name),
+                                        Wireframe: unassigned.Count > 0 ? unassigned.Contains : null,
                                         Context: inputs.Context is null ? null : IsContext,
                                         EditorBoundaries: true,
                                         FaceTints: [.. records.Boundaries.Where(b => b.Refusal is null)
@@ -252,6 +268,14 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         {
             _fitOnAdopt = false;
             Viewer.FitCommand.Execute(null);
+        }
+        // 3D editor round 1 — a node selected while the scene did not hold its object (a box given its first material)
+        // becomes the scene's selection the moment the scene does.
+        if (Viewer.Selection.Count == 0 && SelectedTreeItem is { ObjectIndex: >= 0 } pending && SceneObject(pending.Name) is { } now)
+        {
+            _syncingTree = true;
+            try { Viewer.SetSelection([Scene3DItem.OfObject(now.Id)]); }
+            finally { _syncingTree = false; }
         }
         Properties.Reload();
         OnPropertyChanged(nameof(Materials));
@@ -342,18 +366,34 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
             if (objects.Count > 0) StatusMessage = "Nothing deletable is selected: an instance's contents belong to its own cell.";
             return objects.Count > 0;
         }
-        var slots = indices.Select(i => new C3dEditSlot(false, i, C3dPersistence.SerializeObject(Document.Objects[i]), null)).ToList();
-        Viewer.SetSelection([]);
-        Push(new C3dEdit(indices.Count == 1 ? $"Delete {Document.Objects[indices[0]].Name}" : $"Delete {indices.Count} objects",
-                         slots, ApplySlots));
+        DeleteObjects(indices);
         return true;
     }
 
+    /// <summary>Deletes the document objects at <paramref name="indices"/>: one undo entry. The one delete, for the scene's
+    /// selection and for the tree's node alike (a node the scene does not draw can be deleted too).</summary>
+    public void DeleteObjects(IReadOnlyList<int> indices)
+    {
+        var sorted = indices.Where(i => i >= 0 && i < Document.Objects.Count).Distinct().OrderBy(i => i).ToList();
+        if (sorted.Count == 0) return;
+        var slots = sorted.Select(i => new C3dEditSlot(false, i, C3dPersistence.SerializeObject(Document.Objects[i]), null)).ToList();
+        Viewer.SetSelection([]);
+        Push(new C3dEdit(sorted.Count == 1 ? $"Delete {Document.Objects[sorted[0]].Name}" : $"Delete {sorted.Count} objects",
+                         slots, ApplySlots));
+    }
+
+    /// <summary>3D editor round 1 — the selection's fields are in the application's Properties Inspector (the one a
+    /// schematic and a layout use): the shell brings it forward, opening it if it was closed; a rename also puts the
+    /// caret in its Name field.</summary>
     public void ShowProperties(bool rename)
     {
-        PropertiesVisible = true;
         PropertiesRequested?.Invoke(rename);
+        if (rename) Properties.RequestRename();
     }
+
+    /// <summary>The toolbar's Properties button.</summary>
+    [CommunityToolkit.Mvvm.Input.RelayCommand]
+    private void ShowPropertiesPanel() => ShowProperties(rename: false);
 
     // ── edits ────────────────────────────────────────────────────────────────────────────────
 
@@ -722,6 +762,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         _syncingTree = true;
         try
         {
+            DetachExpansion(Tree);
             Tree.Clear();
             foreach (var (type, header) in Groups)
             {
@@ -737,6 +778,38 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
             SelectedTreeItem = keep is null ? null : AllTreeItems().FirstOrDefault(t => t.Name == keep);
         }
         finally { _syncingTree = false; }
+    }
+
+    // 3D editor round 1 — each node's expansion, by key, across rebuilds: written as the user opens and closes nodes,
+    // read when a rebuilt node takes its place. A group starts expanded; everything else closed.
+    private readonly Dictionary<string, bool> _expansion = new(StringComparer.Ordinal);
+
+    /// <summary>Stops nodes about to be thrown away from writing their expansion: a container torn down with its node
+    /// may push "closed" back through the binding, which is not the user closing it.</summary>
+    private static void DetachExpansion(IEnumerable<C3dTreeNode> nodes)
+    {
+        foreach (var n in nodes)
+        {
+            n.Memory = null;
+            if (n is C3dTreeGroup g) DetachExpansion(g.Items);
+        }
+    }
+
+    /// <summary>Gives every node of the tree the expansion its namesake had, and lets it record its changes.</summary>
+    private void RestoreExpansion()
+    {
+        foreach (var g in Tree)
+        {
+            Restore(g, open: true);
+            foreach (var i in g.Items) Restore(i, open: false);
+        }
+
+        void Restore(C3dTreeNode n, bool open)
+        {
+            if (n.Memory is not null) return;
+            n.IsExpanded = _expansion.TryGetValue(n.ExpansionKey, out bool o) ? o : open;
+            n.Memory = _expansion;
+        }
     }
 
     private IEnumerable<C3dTreeItem> AllTreeItems()
@@ -769,6 +842,11 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     internal void TreeVisibilityChanged(C3dTreeItem item, bool visible)
     {
         if (_syncingTree) return;
+        if (item.IsAirBox)
+        {
+            Viewer.ShowBoundaryFaces = visible;
+            return;
+        }
         if (item.ObjectIndex >= 0)
         {
             ChangeObjects($"{(visible ? "Show" : "Hide")} {item.Name}", [item.ObjectIndex], o => o.Hidden = !visible);
@@ -780,34 +858,58 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         foreach (var c in item.Children) c.Sync(visible);
     }
 
+    /// <summary>
+    /// A tree click selects in the scene (Object mode) and the Properties Inspector follows. 3D editor round 1: a node
+    /// whose object the scene does not hold — refused by elaboration, say a box with no material yet — is still the
+    /// selection: the Inspector shows its document fields, which is where the missing material is given. The air box's
+    /// node selects its six faces, and shows them.
+    /// </summary>
     partial void OnSelectedTreeItemChanged(C3dTreeItem? value)
     {
         if (_syncingTree || value is null) return;
         _syncingTree = true;
         try
         {
-            var names = value.InstanceIndex >= 0 ? value.Children.Select(c => c.Name).ToList() : [value.Name];
-            var ids = names.Select(SceneObject).OfType<Scene3DObject>().Select(s => Scene3DItem.OfObject(s.Id)).ToList();
+            List<Scene3DItem> ids;
+            if (value.IsAirBox)
+            {
+                Viewer.ShowBoundaryFaces = true;
+                ids = [.. AirBoxFaceObjects().Select(o => Scene3DItem.OfObject(o.Id))];
+            }
+            else
+            {
+                var names = value.InstanceIndex >= 0 ? value.Children.Select(c => c.Name).ToList() : [value.Name];
+                ids = [.. names.Select(SceneObject).OfType<Scene3DObject>().Select(s => Scene3DItem.OfObject(s.Id))];
+            }
             if (Viewer.SelectMode != Scene3DSelectMode.Object) Viewer.SelectMode = Scene3DSelectMode.Object;
             Viewer.SetSelection(ids);
         }
         finally { _syncingTree = false; }
+        Properties.Reload();
     }
 
     private void OnViewerSelectionChanged()
     {
-        Properties.Reload();
-        if (_syncingTree) return;
-        _syncingTree = true;
-        try
+        if (!_syncingTree)
         {
-            var first = Viewer.SelectedObjects().FirstOrDefault();
-            SelectedTreeItem = first is null ? null
-                : AllTreeItems().FirstOrDefault(t => t.Name == first.Name)
-                  ?? (InstanceOf(first) is { } inst ? AllTreeItems().FirstOrDefault(t => t.InstanceIndex >= 0 && t.Name == inst.Split('/', '[')[0]) : null);
+            _syncingTree = true;
+            try
+            {
+                var first = Viewer.SelectedObjects().FirstOrDefault();
+                SelectedTreeItem = first is null ? null
+                    : BoxFaceOf(first) is not null ? AllTreeItems().FirstOrDefault(t => t.IsAirBox)
+                    : AllTreeItems().FirstOrDefault(t => t.Name == first.Name && !t.IsAirBox)
+                      ?? (InstanceOf(first) is { } inst ? AllTreeItems().FirstOrDefault(t => t.InstanceIndex >= 0 && t.Name == inst.Split('/', '[')[0]) : null);
+            }
+            finally { _syncingTree = false; }
         }
-        finally { _syncingTree = false; }
+        // After the tree: the Inspector falls back to the tree's node when the scene holds nothing selected.
+        Properties.Reload();
     }
+
+    /// <summary>The document object the tree has selected that the scene does not hold (elaboration refused it), or −1.</summary>
+    public int TreeOnlyObjectIndex()
+        => SelectedTreeItem is { ObjectIndex: >= 0 and var i } item && i < Document.Objects.Count && SceneObject(item.Name) is null ? i : -1;
 
     /// <summary>A camera move changes the drawn grid spacing: the status line follows (cheap arithmetic, no geometry).</summary>
     private void OnViewerFrame()
@@ -822,17 +924,45 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
 /// not <paramref name="Exact"/>) and the metres it came from.</summary>
 public readonly record struct C3dSnapPoint(C3dPoint3 Dbu, Point3 Metres, bool Exact);
 
+/// <summary>3D editor round 1 — what every node of the editor's tree has: whether it is expanded. The tree is rebuilt on
+/// every document change, so the editor remembers the state across rebuilds (a visibility tick used to collapse the
+/// ticked object's group).</summary>
+public abstract partial class C3dTreeNode : ObservableObject
+{
+    [ObservableProperty] private bool _isExpanded;
+
+    /// <summary>The key the editor remembers this node's expansion under.</summary>
+    public abstract string ExpansionKey { get; }
+
+    /// <summary>Where a change of <see cref="IsExpanded"/> is recorded; null while the node is not (or no longer) shown.</summary>
+    internal Dictionary<string, bool>? Memory { get; set; }
+
+    partial void OnIsExpandedChanged(bool value)
+    {
+        if (Memory is { } m) m[ExpansionKey] = value;
+    }
+}
+
 /// <summary>A group of the editor's tree.</summary>
-public sealed class C3dTreeGroup(string header, IEnumerable<C3dTreeItem> items)
+public sealed class C3dTreeGroup(string header, IEnumerable<C3dTreeItem> items) : C3dTreeNode
 {
     public string Header { get; } = header;
     public ObservableCollection<C3dTreeItem> Items { get; } = [.. items];
+    public override string ExpansionKey => "group:" + Header;
 }
 
 /// <summary>One node of the editor's tree: a document object, an instance, or (read-only) an instance's part.</summary>
 public sealed partial class C3dTreeItem(C3dEditorViewModel owner, string name, string kind, string? detail,
-                                        int objectIndex, int instanceIndex, bool visible) : ObservableObject
+                                        int objectIndex, int instanceIndex, bool visible) : C3dTreeNode
 {
+    /// <summary>The kind of the air box's node (3D editor round 1): selectable, never deletable.</summary>
+    public const string AirBoxKind = "Air box";
+
+    public override string ExpansionKey => "item:" + Kind + ":" + Name;
+
+    /// <summary>The active setup's air box.</summary>
+    public bool IsAirBox => Kind == AirBoxKind;
+
     public string Name { get; } = name;
     public string Kind { get; } = kind;
     public string? Detail { get; } = detail;

@@ -1,9 +1,9 @@
-// brief-em3d-49 — simulate from the document: the Setups panel on the embedded setups, ports drawn and inferred by
+// brief-em3d-49 — simulate from the document: the Setup Analyses dialog on the embedded setups, ports drawn and inferred by
 // contact, the active setup's air box drawn and edited, boundaries on the faces of solids, Simulate, and the fields over
 // the run's geometry.
 //
 // EVERY EDIT HERE IS A DOCUMENT EDIT (R-em3d49-1b): one undo entry (C3dRecordsEdit — the ports, face boundaries and
-// setups as the file spells them, before and after), the document dirty, saved with the .c3d. The Setups panel is the
+// setups as the file spells them, before and after), the document dirty, saved with the .c3d. The setup editor is the
 // .cem panel itself (EmSetupEditorViewModel), bound to an embedded setup with its commit handed here: one editor, two
 // containers, and its own undo stack stays empty.
 //
@@ -30,9 +30,48 @@ using CommunityToolkit.Mvvm.Input;
 
 namespace CircuitRF.Ui.ThreeD;
 
-/// <summary>One row of the Setups panel: an embedded setup (by its index in the document), or the external <c>.cem</c>.</summary>
-public sealed partial class C3dSetupItem(string name, int index, string? refusal, string? externalPath) : ObservableObject
+/// <summary>
+/// One row of the 3D view's Setup Analyses dialog: an embedded setup (by its index in the document), or the external
+/// <c>.cem</c>. Drawn as a schematic's analysis card is — a type badge, the name, a one-line summary — with the ACTIVE
+/// mark where a schematic card has its Enabled box: a 3D view runs one setup, not every enabled one.
+/// </summary>
+public sealed partial class C3dSetupItem(string name, int index, string? refusal, string? externalPath, EmSetup? setup = null) : ObservableObject
 {
+    /// <summary>The card's badge: what the setup solves, in the analysis cards' two- or three-letter spelling.</summary>
+    public string TypeLabel => setup is null ? "?" : setup.Problem3D switch
+    {
+        Em3dProblemType.Electrostatic => "ES",
+        Em3dProblemType.Magnetostatic => "MS",
+        Em3dProblemType.Eigenmode     => "EIG",
+        _                             => "SP",
+    };
+
+    /// <summary>The card's second line: solver, problem and sweep — or why it cannot run, which is all that matters then.</summary>
+    public string Summary
+    {
+        get
+        {
+            if (Refusal is { } why) return why;
+            if (setup is null) return "";
+            string solver = setup.Solver3D switch { Em3dSolver.OpenEms => "openEMS", Em3dSolver.Both => "Palace + openEMS", _ => "Palace" };
+            var f = setup.Frequency;
+            string body = setup.Problem3D switch
+            {
+                Em3dProblemType.Electrostatic => "electrostatic",
+                Em3dProblemType.Magnetostatic => "magnetostatic",
+                Em3dProblemType.Eigenmode     => $"eigenmodes above {f.StartExpr} {f.StartUnit}",
+                _ => f.NumPoints is { } n
+                    ? $"{f.StartExpr}–{f.StopExpr} {f.StopUnit}, {n} pts"
+                    : $"{f.StartExpr}–{f.StopExpr} {f.StopUnit}, step {f.StepExpr} {f.StepUnit}",
+            };
+            return $"{solver} · {body}" + (IsExternal ? $" · read-only, from {Path.GetFileName(ExternalPath)}" : "");
+        }
+    }
+
+    /// <summary>The card menu names the card it acts on, as a schematic card's does.</summary>
+    public string RunLabel => $"Run {Name}";
+    public string RemoveLabel => $"Remove {Name}";
+
     public string Name { get; } = name;
     public int Index { get; } = index;
     public string? Refusal { get; } = refusal;
@@ -84,11 +123,20 @@ public sealed partial class C3dEditorViewModel
 
     // ── setups (R-em3d49-1) ──────────────────────────────────────────────────────────────────
 
-    /// <summary>The Setups panel's rows: the embedded setups, in file order, then the external one.</summary>
+    /// <summary>The Setup Analyses dialog's rows: the embedded setups, in file order, then the external one.</summary>
     public ObservableCollection<C3dSetupItem> SetupItems { get; } = [];
 
     [ObservableProperty] private C3dSetupItem? _selectedSetupItem;
-    [ObservableProperty] private bool _showSetups;
+
+    /// <summary>
+    /// The shell opens Simulate ▸ Setup Analyses… on this 3D view — the toolbar's tune button asks through here, so
+    /// the button and the menu open the one dialog. Set by the workspace.
+    /// </summary>
+    public Action<C3dEditorViewModel>? SetupAnalysesRequested { get; set; }
+
+    /// <summary>The toolbar's tune button: Simulate ▸ Setup Analyses… for this 3D view.</summary>
+    [RelayCommand]
+    public void OpenSetupAnalyses() => SetupAnalysesRequested?.Invoke(this);
 
     /// <summary>The active setup's name — editor state, per user (the shell stores it in the <c>.cwsuser</c>).</summary>
     public string? ActiveSetupName { get; private set; }
@@ -128,7 +176,6 @@ public sealed partial class C3dEditorViewModel
         RebuildSetupItems();
         SetActiveSetup(ExternalItemName);
         SelectedSetupItem = SetupItems.FirstOrDefault(i => i.IsExternal);
-        ShowSetups = true;
     }
 
     private string ExternalItemName => ExternalSetup is { } x ? (x.Setup.Name is { Length: > 0 } n ? n : Path.GetFileNameWithoutExtension(x.Path)) : "";
@@ -139,9 +186,9 @@ public sealed partial class C3dEditorViewModel
         bool keepExternal = SelectedSetupItem?.IsExternal == true;
         SetupItems.Clear();
         foreach (var s in C3dSetups.Read(Document))
-            SetupItems.Add(new C3dSetupItem(s.Name, s.Index, s.Refusal, null) { IsActive = !IsExternalActive && s.Name == ActiveSetupName });
+            SetupItems.Add(new C3dSetupItem(s.Name, s.Index, s.Refusal, null, s.Setup) { IsActive = !IsExternalActive && s.Name == ActiveSetupName });
         if (ExternalSetup is { } x)
-            SetupItems.Add(new C3dSetupItem(ExternalItemName, -1, x.Setup.Is3D ? null : C3dSetups.PlanarRefusal, x.Path) { IsActive = IsExternalActive });
+            SetupItems.Add(new C3dSetupItem(ExternalItemName, -1, x.Setup.Is3D ? null : C3dSetups.PlanarRefusal, x.Path, x.Setup) { IsActive = IsExternalActive });
         _syncingSetups = true;
         try { SelectedSetupItem = SetupItems.FirstOrDefault(i => i.Name == keep && i.IsExternal == keepExternal) ?? SetupItems.FirstOrDefault(i => i.IsActive); }
         finally { _syncingSetups = false; }
@@ -256,7 +303,6 @@ public sealed partial class C3dEditorViewModel
         ChangeRecords($"Add setup {name}", d => d.Setups.Add(EmSetupPersistence.ToEmbedded(setup)));
         if (ActiveSetupName is null || ActiveSetup is null) SetActiveSetup(name);
         SelectedSetupItem = SetupItems.FirstOrDefault(i => i.Name == name && !i.IsExternal);
-        ShowSetups = true;
     }
 
     /// <summary>Duplicate: the selected setup, named "&lt;name&gt; copy" (then 2, 3 …).</summary>
@@ -315,7 +361,7 @@ public sealed partial class C3dEditorViewModel
         if (CanPopOut) return "Pop out to the top 3D view to simulate it: a run solves the document the tab holds.";
         if (IsExternalActive) return null;
         if (ActiveSetupName is null)
-            return SetupItems.Count == 0 ? "This 3D view has no setup. Add one in the Setups panel (3D ▸ Setups…)." : "No setup is active: choose one in the Setups panel.";
+            return SetupItems.Count == 0 ? "This 3D view has no setup. Add one in Simulate ▸ Setup Analyses…" : "No setup is active: make one active in Simulate ▸ Setup Analyses…";
         var read = C3dSetups.Read(Document).FirstOrDefault(s => s.Name == ActiveSetupName);
         return read is null ? $"The active setup '{ActiveSetupName}' is no longer in this 3D view." : read.Refusal;
     }
@@ -496,7 +542,7 @@ public sealed partial class C3dEditorViewModel
 
     /// <summary>R-em3d49-3b — a box face's boundary, written to the ACTIVE setup's AirBox; null on success, else why not.</summary>
     public string? SetAirBoxBoundary(string face, Em3dBoundaryKind kind)
-        => EditActiveAirBox(face, f => new EmAirBoxFace(f?.PaddingUm, kind), $"Air box {face}: {kind}");
+        => EditActiveAirBox(face, f => f is null ? new EmAirBoxFace(null, kind) : f with { Boundary = kind }, $"Air box {face}: {kind}");
 
     /// <summary>R-em3d49-3b — a box face's padding, typed in the display unit; null on success, else why not.</summary>
     public string? SetAirBoxPadding(string face, string text)
@@ -521,18 +567,39 @@ public sealed partial class C3dEditorViewModel
         return C3dDimension.Spell(dbu, Document.DisplayUnit, Document.DbuPerMicron);
     }
 
+    /// <summary>3D editor round 1 — an axis's padding as a percentage of the content's extent along it, on both of the axis's
+    /// faces (10 pads a tenth of the extent on each side); one undo entry. Null on success, else why not.</summary>
+    public string? SetAirBoxPaddingPercent(char axis, string text)
+    {
+        string t = text.Trim().TrimEnd('%').Trim();
+        if (!double.TryParse(t, NumberStyles.Float, CultureInfo.InvariantCulture, out double pct) || !double.IsFinite(pct))
+            return $"'{text}' is not a percentage: a number such as 10.";
+        if (pct < 0) return "A padding is a distance from the geometry: zero or more.";
+        string lo = axis + "min", hi = axis + "max";
+        return EditActiveAirBox([lo, hi], f => new EmAirBoxFace(null, f?.Boundary, pct),
+                                $"Air box {char.ToUpperInvariant(axis)} padding {pct.ToString("G6", CultureInfo.InvariantCulture)} %");
+    }
+
+    /// <summary>The active setup as the Inspector names it.</summary>
+    public string ActiveSetupLabel => IsExternalActive ? $"{ExternalItemName} ({Path.GetFileName(ExternalSetup!.Value.Path)}, read-only here)"
+                                                       : ActiveSetupName ?? "none";
+
     private string? EditActiveAirBox(string face, Func<EmAirBoxFace?, EmAirBoxFace> change, string description)
+        => EditActiveAirBox([face], change, description);
+
+    private string? EditActiveAirBox(IReadOnlyList<string> faces, Func<EmAirBoxFace?, EmAirBoxFace> change, string description)
     {
         if (IsExternalActive) return $"The active setup is the .cem {Path.GetFileName(ExternalSetup!.Value.Path)}: edit its air box in its own panel.";
         if (ActiveSetupName is not { } name || C3dSetups.Read(Document).FirstOrDefault(s => s.Name == name) is not { Setup: { } setup } read)
-            return "No setup is active: the air box is a setup's. Add or choose one in the Setups panel.";
+            return "No setup is active: the air box is a setup's. Add or make one active in Simulate ▸ Setup Analyses…";
         var box = setup.AirBox ?? new EmAirBox();
-        box = face switch
-        {
-            "xmin" => box with { XMin = change(box.XMin) }, "xmax" => box with { XMax = change(box.XMax) },
-            "ymin" => box with { YMin = change(box.YMin) }, "ymax" => box with { YMax = change(box.YMax) },
-            "zmin" => box with { ZMin = change(box.ZMin) }, _ => box with { ZMax = change(box.ZMax) },
-        };
+        foreach (string face in faces)
+            box = face switch
+            {
+                "xmin" => box with { XMin = change(box.XMin) }, "xmax" => box with { XMax = change(box.XMax) },
+                "ymin" => box with { YMin = change(box.YMin) }, "ymax" => box with { YMax = change(box.YMax) },
+                "zmin" => box with { ZMin = change(box.ZMin) }, _ => box with { ZMax = change(box.ZMax) },
+            };
         setup.AirBox = box;
         ChangeRecords(description, d => d.Setups[read.Index] = EmSetupPersistence.ToEmbedded(setup));
         StatusMessage = $"Writes setup '{name}': the air box is the setup's, not the geometry's.";
@@ -711,7 +778,12 @@ public sealed partial class C3dEditorViewModel
 
     private void RebuildRecordsTree()
     {
-        foreach (var g in Tree.Where(g => g.Header == "Ports").ToList()) Tree.Remove(g);
+        foreach (var g in Tree.Where(g => g.Header == "Ports").ToList())
+        {
+            DetachExpansion([g]);
+            Tree.Remove(g);
+        }
+        RebuildAirBoxItem();
         var ports = PortResults.Select(r => new C3dTreeItem(this, C3dPorts.ProblemName(r.Port.Number), "Port",
             r.Resolved is { } p ? $"{C3dPorts.Label(r.Port)} {(p.Kind == Em3dPortKind.Wave ? "wave" : "lumped")}: {p.NegativeObject} → {p.PositiveObject}"
                                 : $"{C3dPorts.Label(r.Port)}: refused", -1, -1, true) { IsReadOnly = true }).ToList();
@@ -724,7 +796,40 @@ public sealed partial class C3dEditorViewModel
                     $"{b.Face}: {(b.Kind == Em3dFaceBoundaryKind.Conductive ? $"Conductive ({b.Material})" : b.Kind.ToString())}", -1, -1, true)
                     { IsReadOnly = true });
         }
+        RestoreExpansion();
     }
+
+    /// <summary>
+    /// 3D editor round 1 — the active setup's air box, first under Boxes: selectable (the Properties Inspector shows its
+    /// boundaries and padding), never deletable or duplicable — it is the setup's, not the geometry's. Its tick is the
+    /// toolbar's air-box switch. No setup active, no node.
+    /// </summary>
+    private void RebuildAirBoxItem()
+    {
+        var boxes = Tree.FirstOrDefault(g => g.Header == "Boxes");
+        if (boxes?.Items.FirstOrDefault(i => i.IsAirBox) is { } old)
+        {
+            if (ActiveSetup is not null && ShownAirBox is not null)
+            {
+                old.Sync(Viewer.ShowBoundaryFaces);
+                return;
+            }
+            boxes.Items.Remove(old);
+            if (boxes.Items.Count == 0) { DetachExpansion([boxes]); Tree.Remove(boxes); }
+        }
+        if (ActiveSetup is null || ShownAirBox is null) return;
+        var item = new C3dTreeItem(this, AirBoxName, C3dTreeItem.AirBoxKind, $"setup {(IsExternalActive ? ExternalItemName : ActiveSetupName)}",
+                                   -1, -1, Viewer.ShowBoundaryFaces) { IsReadOnly = true };
+        if (boxes is null) Tree.Insert(0, new C3dTreeGroup("Boxes", [item]));
+        else boxes.Items.Insert(0, item);
+    }
+
+    /// <summary>The air box's name in the tree and in the scene (its faces are <c>airbox/xmin</c> …).</summary>
+    public const string AirBoxName = "airbox";
+
+    /// <summary>The scene objects that are the air box's faces.</summary>
+    public IReadOnlyList<Scene3DObject> AirBoxFaceObjects()
+        => [.. Viewer.Scene.Objects.Where(o => BoxFaceOf(o) is not null)];
 
     // ── fields: from the run's own directory, and a banner when the model has moved on (R-em3d49-5b) ──
 

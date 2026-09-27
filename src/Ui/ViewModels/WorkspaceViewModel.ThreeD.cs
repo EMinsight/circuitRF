@@ -36,8 +36,11 @@ public partial class WorkspaceViewModel
     /// <summary>Extensions whose change on disk re-elaborates an open 3D editor (a placed cell, a technology).</summary>
     private static readonly string[] C3dInputs = [".c3d", ".clay", ".ctech", ".wbond"];
 
-    /// <summary>Opens (or focuses) the 3D editor on <paramref name="path"/>.</summary>
-    public void OpenOrActivateC3dEditor(string path)
+    /// <summary>Opens (or focuses) the 3D editor on <paramref name="path"/>. A view opened straight after
+    /// it was CREATED (<paramref name="newlyCreated"/>) starts orthographic: a new view is drawn on a
+    /// plane, and perspective foreshortens the grid being drawn on. Every later open keeps the viewer's
+    /// own default, since the editor persists no projection.</summary>
+    public void OpenOrActivateC3dEditor(string path, bool newlyCreated = false)
     {
         string full = Path.GetFullPath(path);
         string key = C3dEditorDocument.KeyFor(full);
@@ -56,6 +59,7 @@ public partial class WorkspaceViewModel
             var vm = new C3dEditorViewModel(full, document, Viewer3DBackends.Create, () => CurrentWorkspacePath,
                                             a => Dispatcher.UIThread.Post(a), _techCache);
             var doc = new C3dEditorDocument(vm);
+            if (newlyCreated) vm.Viewer.IsPerspective = false;
             // brief-em3d-45 R-em3d45-1a — the drawing plane is window state: put back where it was left.
             if (StoredDrawingPlane(full) is { } plane) vm.SetPlane(plane);
             vm.DrawingPlaneChanged += () => RememberDrawingPlane(vm);
@@ -64,7 +68,15 @@ public partial class WorkspaceViewModel
             vm.RestoreActiveSetup(StoredActiveSetup(full));
             vm.ActiveSetupChanged += () => RememberActiveSetup(vm);
             vm.RunRequested = (c3d, setupName) => RunC3dSetupAsync(c3d, setupName);
+            vm.SetupAnalysesRequested = c3d => _ = ShowC3dSetupAnalysesAsync(c3d, null);
             vm.ExternalChangeWhileDirty += () => _ = AskReloadC3dAsync(doc);
+            // 3D editor round 1 — the selection's fields are the application's Properties Inspector: Properties (the
+            // toolbar button, the menus) brings it forward, opening it when it was closed.
+            vm.PropertiesRequested += _ =>
+            {
+                ShowToolPanel(CircuitRF.Ui.Docking.DockPanelIds.Properties);
+                _factory.PropertiesTool?.SetActiveC3d(vm);
+            };
             vm.PropertyChanged += (_, e) =>
             {
                 if (e.PropertyName is nameof(C3dEditorViewModel.CanPopOut)) NotifyHierarchyCanExecuteChanged();
@@ -244,7 +256,7 @@ public partial class WorkspaceViewModel
         Messages.Success("Created", path);
         if (made.SetupsCopied.Count > 0) Messages.Info($"Copied {made.SetupsCopied.Count} 3D setup(s) as embedded setups: {string.Join(", ", made.SetupsCopied)}.");
         if (made.PortsLeftOut.Count > 0) Messages.Warning($"Ports left out (each must be one rectangle to become a parent-level port): {string.Join("; ", made.PortsLeftOut)}.");
-        OpenOrActivateC3dEditor(path);
+        OpenOrActivateC3dEditor(path, newlyCreated: true);
     }
 
     /// <summary>Design ▸ New 3D View from Layout — the active layout's cell.</summary>
@@ -355,6 +367,16 @@ public partial class WorkspaceViewModel
         if (ok) c3d.RunFinished(setup, text);
     }
 
+    /// <summary>
+    /// Simulate ▸ Setup Analyses… with a 3D view active (and the editor's tune button): the analysis list a schematic
+    /// gets, on the 3D view's embedded setups. Every change in it is an edit of the 3D view — its undo, its dirty mark.
+    /// </summary>
+    internal async Task ShowC3dSetupAnalysesAsync(C3dEditorViewModel c3d, Window? owner)
+    {
+        if (ResolveOwner(owner) is not { } window) return;
+        await new Views.Dialogs.C3dSetupAnalysesDialog(c3d).ShowDialog(window);
+    }
+
     private Dictionary<string, CwsDrawingPlane>? DrawingPlanesToPersist()
     {
         _drawingPlanes ??= LoadStoredDrawingPlanes();
@@ -406,15 +428,7 @@ public partial class WorkspaceViewModel
         ThreeDExtrudeCommand.NotifyCanExecuteChanged();
         ThreeDModifyCommand.NotifyCanExecuteChanged();
         ThreeDMeasureCommand.NotifyCanExecuteChanged();
-        ThreeDSetupsCommand.NotifyCanExecuteChanged();
         RunAnalysisCommand.NotifyCanExecuteChanged();
-    }
-
-    /// <summary>brief-em3d-49 — 3D ▸ Setups…: the Setups panel, shown.</summary>
-    [RelayCommand(CanExecute = nameof(HasActiveC3dEditor))]
-    private void ThreeDSetups()
-    {
-        if (ActiveC3dEditor() is { } e) e.ShowSetups = true;
     }
 
     // brief-em3d-45 — drawing needs the editor, not the read-only viewer.

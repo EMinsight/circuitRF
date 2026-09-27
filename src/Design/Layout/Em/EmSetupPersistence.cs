@@ -124,6 +124,11 @@ public sealed class CemAirBoxFace
     /// <summary>Distance from the outermost geometry to this face, micrometres.</summary>
     public double? PaddingUm { get; set; }
 
+    /// <summary>The same distance as a percentage of the design's extent along this face's axis: 10 on
+    /// XMin and XMax pads a tenth of the x-extent on each side. A face states PaddingUm or PaddingPercent,
+    /// not both. A design with no extent along the axis (a flat sheet's z) pads by the default there.</summary>
+    public double? PaddingPercent { get; set; }
+
     /// <summary>What this face does to the field.</summary>
     public CircuitRF.Engine.Em3d.Em3dBoundaryKind? Boundary { get; set; }
 }
@@ -820,10 +825,10 @@ public static class EmSetupPersistence
     };
 
     private static CemAirBoxFace? ToFace(EmAirBoxFace? f)
-        => f is null ? null : new CemAirBoxFace { PaddingUm = f.PaddingUm, Boundary = f.Boundary };
+        => f is null ? null : new CemAirBoxFace { PaddingUm = f.PaddingUm, Boundary = f.Boundary, PaddingPercent = f.PaddingPercent };
 
     private static EmAirBoxFace? FromFace(CemAirBoxFace? f)
-        => f is null ? null : new EmAirBoxFace(f.PaddingUm, f.Boundary);
+        => f is null ? null : new EmAirBoxFace(f.PaddingUm, f.Boundary, f.PaddingPercent);
 
     private static EmSetup FromFileModel(CemFile f) => new()
     {

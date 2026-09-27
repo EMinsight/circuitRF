@@ -52,6 +52,8 @@ namespace CircuitRF.Render.Scene3D;
 /// absorbing face untinted, a PEC face metal grey, a PMC face its own hue, a symmetry face hatched, and every face
 /// pickable last (<see cref="Scene3DObject.PickLast"/>). False — the read-only viewer — keeps brief 28's tints.</param>
 /// <param name="FaceTints">brief-em3d-49 R-em3d49-4d — the face boundaries, each drawn tinted just off its face.</param>
+/// <param name="Wireframe">3D editor bugs round 1 — true for an object with no material: drawn as a wireframe
+/// (<see cref="Scene3DObject.Wireframe"/>), never taken for the outermost dielectric.</param>
 public sealed record Scene3DBuildOptions(
     Func<string, IReadOnlyList<string>?>? FaceNames = null,
     Scene3DTessellationCache? Cache = null,
@@ -61,7 +63,8 @@ public sealed record Scene3DBuildOptions(
     Func<string, Scene3DInstancing?>? Instancing = null,
     Func<string, bool>? Context = null,
     bool EditorBoundaries = false,
-    IReadOnlyList<Scene3DFaceTint>? FaceTints = null);
+    IReadOnlyList<Scene3DFaceTint>? FaceTints = null,
+    Func<string, bool>? Wireframe = null);
 
 /// <summary>brief-em3d-49 R-em3d49-4d — one face boundary to draw: its name (<c>object/face</c>), its kind and its pieces.</summary>
 public sealed record Scene3DFaceTint(string Name, Em3dFaceBoundaryKind Kind, IReadOnlyList<Em3dFacePolygon> Pieces);
@@ -181,7 +184,7 @@ public static class Scene3DBuilder
         var conductorColours = Em3dSectionRenderer.ObjectColours(problem, origins, tech, theme, variant);
         var pin = theme.Resolve(ColorRole.LayoutPCellPin, variant);
         var ink = dark ? (R: (byte)205, G: (byte)210, B: (byte)215) : (R: (byte)60, G: (byte)64, B: (byte)70);
-        var dielectrics = problem.Solids.Where(s => s.Role == Em3dRole.Dielectric)
+        var dielectrics = problem.Solids.Where(s => s.Role == Em3dRole.Dielectric && options.Wireframe?.Invoke(s.Name) != true)
                                  .Select(s => s.Material).Distinct(StringComparer.Ordinal).ToList();
         var materials = problem.Materials.Select((m, i) => (m, i)).ToDictionary(t => t.m.Name, t => t, StringComparer.Ordinal);
 
@@ -191,12 +194,16 @@ public static class Scene3DBuilder
         bool Dim(string name) => options.Context?.Invoke(name) == true;
 
         // ── solids ───────────────────────────────────────────────────────────────────────────
-        string? outermost = OutermostDielectric(problem);
+        bool Wire(string name) => options.Wireframe?.Invoke(name) == true;
+        string? outermost = OutermostDielectric(problem, Wire);
+        // 3D editor bugs round 1 — a wireframe object's triangles: the ink colour at alpha 0; its edges: the ink, opaque.
+        uint wireFill = Scene3DVertex.Pack(ink.R, ink.G, ink.B, 0), wireEdge = Scene3DVertex.Pack(ink.R, ink.G, ink.B, 255);
         foreach (var s in problem.Solids)
         {
             var place = options.Instancing?.Invoke(s.Name);
             if (place is { } pl && solidRuns.Element(pl, s.Name)) continue;
-            var kind = KindOf(s, origins);
+            bool wire = Wire(s.Name);
+            var kind = wire ? Scene3DKind.Body : KindOf(s, origins);
             uint rgba;
             bool translucent = false;
             switch (s.Role)
@@ -222,6 +229,7 @@ public static class Scene3DBuilder
             }
             bool dim = Dim(s.Name);
             if (dim) (rgba, translucent) = (Dimmed(rgba, dark), true);
+            if (wire) (rgba, translucent) = (wireFill, true);
             var solid = s;
             var mesh = Tessellate(s.Primitive, () => Em3dTessellation.Of(solid));
             var (m, slot) = materials.TryGetValue(s.Material, out var mt) ? (mt.m, mt.i) : ((Em3dMaterial?)null, -1);
@@ -229,11 +237,12 @@ public static class Scene3DBuilder
             {
                 Id = 0, Name = s.Name, Kind = kind, Material = s.Material, MaterialValues = m, MaterialSlot = slot,
                 Rgba = rgba, Translucent = translucent,
-                InitiallyVisible = s.Role != Em3dRole.Air && s.Name != outermost,
+                InitiallyVisible = wire || (s.Role != Em3dRole.Air && s.Name != outermost),
                 FaceNames = FacesOf(s.Name),
                 CapCentres = s.Primitive is Em3dCylinder cyl ? [cyl.AxisStart, cyl.AxisEnd] : null,
-                Context = dim,
-            }, mesh, faces: true, features: Features(s.Name, mesh, sheet: false));
+                Context = dim, Wireframe = wire,
+            }, mesh, wire && s.Primitive is Em3dCylinder c0 ? CylinderGenerators(c0).Select(q => (q, wireEdge)) : null,
+               faces: true, features: Features(s.Name, mesh, sheet: false), wireEdges: wire ? wireEdge : null);
             if (place is { } p0) solidRuns.Prototype(p0, s.Name);
             else solidRuns.Break();
         }
@@ -249,13 +258,14 @@ public static class Scene3DBuilder
             var (m, slot) = materials.TryGetValue(sh.Material, out var mt) ? (mt.m, mt.i) : ((Em3dMaterial?)null, -1);
             var names = FacesOf(sh.Name);
             bool dim = Dim(sh.Name);
+            bool wire = Wire(sh.Name);
             uint rgba = Scene3DVertex.Pack(c.Red, c.Green, c.Blue, 255);
             b.Object(new Scene3DObject
             {
                 Id = 0, Name = sh.Name, Kind = Scene3DKind.Sheet, Material = sh.Material, MaterialValues = m,
-                MaterialSlot = slot, Rgba = dim ? Dimmed(rgba, dark) : rgba, Translucent = dim,
-                FaceNames = names.Count > 0 ? names : SheetFaceNames, Context = dim,
-            }, mesh, faces: true, sheet: true, features: Features(sh.Name, mesh, sheet: true));
+                MaterialSlot = slot, Rgba = wire ? wireFill : dim ? Dimmed(rgba, dark) : rgba, Translucent = dim || wire,
+                FaceNames = names.Count > 0 ? names : SheetFaceNames, Context = dim, Wireframe = wire,
+            }, mesh, faces: true, sheet: true, features: Features(sh.Name, mesh, sheet: true), wireEdges: wire ? wireEdge : null);
             if (place is { } p0) sheetRuns.Prototype(p0, sh.Name);
             else sheetRuns.Break();
         }
@@ -421,11 +431,13 @@ public static class Scene3DBuilder
 
     /// <summary>The dielectric that encloses the most volume — the substrate a user looks through.
     /// Ties go to the first in problem order.</summary>
-    public static string? OutermostDielectric(Em3dProblem problem)
+    public static string? OutermostDielectric(Em3dProblem problem) => OutermostDielectric(problem, null);
+
+    private static string? OutermostDielectric(Em3dProblem problem, Func<string, bool>? skip)
     {
         string? best = null;
         double vol = -1;
-        foreach (var s in problem.Solids.Where(s => s.Role == Em3dRole.Dielectric))
+        foreach (var s in problem.Solids.Where(s => s.Role == Em3dRole.Dielectric && skip?.Invoke(s.Name) != true))
         {
             double v = Em3dSizeEstimate.Volume(s.Primitive);
             if (v > vol) { vol = v; best = s.Name; }
@@ -434,6 +446,23 @@ public static class Scene3DBuilder
     }
 
     // ── geometry of ports and the box ────────────────────────────────────────────────────────
+
+    /// <summary>3D editor bugs round 1 — four lines along a wireframe cylinder's side, a quarter turn apart: its feature
+    /// edges are only the two rims, which alone read as two circles, not a solid.</summary>
+    private static IEnumerable<Point3> CylinderGenerators(Em3dCylinder c)
+    {
+        var a = new Vector3((float)(c.AxisEnd.X - c.AxisStart.X), (float)(c.AxisEnd.Y - c.AxisStart.Y), (float)(c.AxisEnd.Z - c.AxisStart.Z));
+        if (a.LengthSquared() == 0) yield break;
+        a = Vector3.Normalize(a);
+        var u = Vector3.Normalize(Vector3.Cross(a, MathF.Abs(a.Z) < 0.9f ? Vector3.UnitZ : Vector3.UnitX));
+        var w = Vector3.Cross(a, u);
+        foreach (var d in new[] { u, w, -u, -w })
+        {
+            double dx = d.X * c.Radius, dy = d.Y * c.Radius, dz = d.Z * c.Radius;
+            yield return new Point3(c.AxisStart.X + dx, c.AxisStart.Y + dy, c.AxisStart.Z + dz);
+            yield return new Point3(c.AxisEnd.X + dx, c.AxisEnd.Y + dy, c.AxisEnd.Z + dz);
+        }
+    }
 
     private static (List<Point3>, List<Em3dTriangle>) PortSheet(Em3dPort p)
     {
@@ -574,8 +603,9 @@ public static class Scene3DBuilder
         /// <summary><paramref name="faces"/>: tag each vertex with its triangle's face (un-welding a vertex
         /// shared by two faces) and collect the feature edges. <paramref name="sheet"/>: the whole mesh is
         /// face 0.</summary>
+        /// <paramref name="wireEdges"/>: also draw the feature edges, always, in that colour — a wireframe object.
         public void Object(Scene3DObject o, Em3dTriangleMesh? mesh, IEnumerable<(Point3 P, uint Rgba)>? lines = null,
-                           bool faces = false, bool sheet = false, Scene3DFeatureRef features = default)
+                           bool faces = false, bool sheet = false, Scene3DFeatureRef features = default, uint? wireEdges = null)
         {
             _features.Add(features);
             uint id = (uint)(_objects.Count + 1);
@@ -585,8 +615,10 @@ public static class Scene3DBuilder
                 MaterialSlot = o.MaterialSlot, Rgba = o.Rgba, Translucent = o.Translucent,
                 InitiallyVisible = o.InitiallyVisible, PortNumber = o.PortNumber, Boundary = o.Boundary,
                 FaceNames = o.FaceNames, CapCentres = o.CapCentres, Context = o.Context, PickLast = o.PickLast,
+                Wireframe = o.Wireframe,
             };
             var min = new Vector3(float.MaxValue);
+            List<Scene3DVertex>? featureEdges = null;
             var max = new Vector3(float.MinValue);
             uint[] idx = [];
             obj.FirstVertex = _verts.Count;
@@ -651,17 +683,20 @@ public static class Scene3DBuilder
                     edges.Add(new Scene3DVertex(q[c].X, q[c].Y, q[c].Z, id, o.Rgba, packed));
                 }
                 if (edges.Count > 0) _edges.Add((id, edges));
+                featureEdges = edges;
             }
             obj.VertexCount = _verts.Count - obj.FirstVertex;
-            if (lines is not null)
+            if (lines is not null || (wireEdges is not null && featureEdges is { Count: > 0 }))
             {
                 int first = _lines.Count;
-                foreach (var (p, rgba) in lines)
+                foreach (var (p, rgba) in lines ?? [])
                 {
                     var q = local(p);
                     min = Vector3.Min(min, q); max = Vector3.Max(max, q);
                     _lines.Add(new Scene3DVertex(q.X, q.Y, q.Z, id, rgba));
                 }
+                if (wireEdges is uint wr && featureEdges is not null)
+                    foreach (var e in featureEdges) _lines.Add(new Scene3DVertex(e.X, e.Y, e.Z, id, wr));
                 if (_lines.Count > first) _lineBatches.Add(new Scene3DLineBatch(id, first, _lines.Count - first));
             }
             if (min.X > max.X) { min = max = Vector3.Zero; }
@@ -766,6 +801,7 @@ public static class Scene3DBuilder
                         Id = id, Name = d.Name, Kind = proto.Kind, Material = proto.Material, MaterialValues = proto.MaterialValues,
                         MaterialSlot = proto.MaterialSlot, Rgba = proto.Rgba, Translucent = proto.Translucent,
                         InitiallyVisible = proto.InitiallyVisible, FaceNames = proto.FaceNames, Context = proto.Context,
+                        Wireframe = proto.Wireframe,
                         CapCentres = proto.CapCentres?.Select(c => new Point3(c.X + d.Dx, c.Y + d.Dy, c.Z + d.Dz)).ToArray(),
                         Element = index, Prototype = proto.Id,
                         FirstVertex = proto.FirstVertex, VertexCount = proto.VertexCount,

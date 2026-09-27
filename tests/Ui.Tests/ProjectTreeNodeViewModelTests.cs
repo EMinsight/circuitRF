@@ -425,4 +425,21 @@ public class ProjectTreeNodeViewModelLayoutTests : IDisposable
         var cellVm = vm.Children.Single(c => c.Name == "HasLayout");
         Assert.True(cellVm.CanOpenLayout);
     }
+
+    /// <summary>3D editor round 1: a cell's primary 3D view is offered as Open 3D View, resolved the same
+    /// way as the other three views — enabled only once there is one.</summary>
+    [Fact]
+    public void Cell_Sole3dView_CanOpenThreeD()
+    {
+        var cellDir = CellFolder.CreateCellFolder(_root, "Has3d");
+        var cellVm  = new ProjectTreeNodeViewModel(WorkspaceScanner.Scan(_root), AllOn()).Children.Single(c => c.Name == "Has3d");
+        Assert.False(cellVm.CanOpenThreeD);
+
+        var threeDDir = CellFolder.SubFolderPath(cellDir, ViewType.ThreeD);
+        Directory.CreateDirectory(threeDDir);
+        File.WriteAllText(Path.Combine(threeDDir, "pkg.c3d"), "{}");
+
+        cellVm = new ProjectTreeNodeViewModel(WorkspaceScanner.Scan(_root), AllOn()).Children.Single(c => c.Name == "Has3d");
+        Assert.True(cellVm.CanOpenThreeD);
+    }
 }

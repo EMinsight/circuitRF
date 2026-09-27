@@ -680,12 +680,42 @@ public static class Em3dGenerator
             if (setup.AirBox is { } stated && FaceOf(stated, face) is { PaddingUm: > 0 } padded)
                 notes.Add($"Port {port} is a wave port, so the air box's {face} face lies on its line's end: the " +
                           $"setup's {Fmt(padded.PaddingUm!.Value)} µm padding there is not used.");
+            else if (setup.AirBox is { } statedPct && FaceOf(statedPct, face) is { PaddingPercent: > 0 } paddedPct)
+                notes.Add($"Port {port} is a wave port, so the air box's {face} face lies on its line's end: the " +
+                          $"setup's {Fmt(paddedPct.PaddingPercent!.Value)} % padding there is not used.");
         }
-        double Pad(EmAirBoxFace? f) => f?.PaddingUm is { } um ? um * 1e-6 : pad;
+        // 3D editor round 1 — a face may state its padding as a percentage of the content's extent along its axis.
+        foreach (var (name, f) in new[] { ("xmin", box.XMin), ("xmax", box.XMax), ("ymin", box.YMin),
+                                          ("ymax", box.YMax), ("zmin", box.ZMin), ("zmax", box.ZMax) })
+        {
+            if (f is { PaddingUm: not null, PaddingPercent: not null })
+            {
+                refusal = $"The air box's {name} face states both PaddingUm and PaddingPercent; state one of them.";
+                return null;
+            }
+            if (f?.PaddingPercent is < 0)
+            {
+                refusal = $"The air box's {name} face has a negative PaddingPercent; a padding is a distance from the geometry, zero or more.";
+                return null;
+            }
+        }
+        var flatAxes = new SortedSet<char>();
+        double Pad(EmAirBoxFace? f, char axis, double span)
+        {
+            if (f?.PaddingUm is { } um) return um * 1e-6;
+            if (f?.PaddingPercent is not { } pct) return pad;
+            if (span > 0) return pct / 100 * span;
+            flatAxes.Add(axis);
+            return pad;
+        }
         Em3dBoundaryKind Kind(EmAirBoxFace? f) => f?.Boundary ?? Em3dBoundaryKind.Absorbing;
 
-        var boxMin = new Point3(cx0 - Pad(box.XMin), cy0 - Pad(box.YMin), floorZ is { } fz ? fz : zLow - Pad(box.ZMin));
-        var boxMax = new Point3(cx1 + Pad(box.XMax), cy1 + Pad(box.YMax), zHigh + Pad(box.ZMax));
+        double sx = cx1 - cx0, sy = cy1 - cy0, sz = zHigh - zLow;
+        var boxMin = new Point3(cx0 - Pad(box.XMin, 'x', sx), cy0 - Pad(box.YMin, 'y', sy), floorZ is { } fz ? fz : zLow - Pad(box.ZMin, 'z', sz));
+        var boxMax = new Point3(cx1 + Pad(box.XMax, 'x', sx), cy1 + Pad(box.YMax, 'y', sy), zHigh + Pad(box.ZMax, 'z', sz));
+        foreach (char a in flatAxes)
+            notes.Add($"The air box's padding along {a} is stated as a percentage of the content's extent along {a}, which is " +
+                      $"zero (the content is flat there), so those faces take the default padding ({Fmt(pad * 1e3)} mm) instead.");
         var faces = new Em3dFaces(Kind(box.XMin), Kind(box.XMax), Kind(box.YMin), Kind(box.YMax),
                                   floorZ is not null ? Em3dBoundaryKind.Pec : Kind(box.ZMin), Kind(box.ZMax));
         return new Em3dAirBox(boxMin, boxMax, faces);

@@ -5,7 +5,8 @@
 // click moves the offset through it). It is saved per document in the workspace's window state, never in the .c3d.
 // The camera never moves it; drawing on it edge-on is refused (R-em3d45-1c).
 //
-// THE GRID (R-em3d45-2) is the pane's (Viewer3DViewState.DrawingGrid, a shader over one quad). The SNAP grid is
+// THE GRID (R-em3d45-2) is the pane's (Viewer3DViewState.DrawingGrid, a shader over the viewport that
+// casts each pixel's ray at the plane, so it runs to the horizon). The SNAP grid is
 // the same plane at the document's SnapDbu — which is not necessarily the drawn minor spacing, so the status line
 // shows both when they differ (R-em3d45-2d).
 //
@@ -87,6 +88,16 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
     public bool IsPlaneYZ { get => _plane.Plane == C3dPlane.YZ; set { if (value) SetPlane(_plane with { Plane = C3dPlane.YZ }); else OnPropertyChanged(); } }
     public bool IsPlaneXZ { get => _plane.Plane == C3dPlane.XZ; set { if (value) SetPlane(_plane with { Plane = C3dPlane.XZ }); else OnPropertyChanged(); } }
 
+    /// <summary>3D editor round 1 — the toolbar's plane combo: the three planes in one control.</summary>
+    public static IReadOnlyList<C3dPlane> PlaneChoices { get; } = [C3dPlane.XY, C3dPlane.YZ, C3dPlane.XZ];
+
+    /// <summary>The drawing plane's orientation, for the toolbar's combo (its offset is kept).</summary>
+    public C3dPlane PlaneKind
+    {
+        get => _plane.Plane;
+        set { if (value != _plane.Plane) SetPlane(_plane with { Plane = value }); }
+    }
+
     /// <summary>The offset field, in the display unit (a suffix is honoured). Committed with <see cref="CommitPlaneOffset"/>.</summary>
     [ObservableProperty] private string _planeOffsetText = "0";
     [ObservableProperty] private string? _planeOffsetError;
@@ -107,6 +118,7 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
         OnPropertyChanged(nameof(IsPlaneXY));
         OnPropertyChanged(nameof(IsPlaneYZ));
         OnPropertyChanged(nameof(IsPlaneXZ));
+        OnPropertyChanged(nameof(PlaneKind));
         OnPropertyChanged(nameof(PlaneText));
         RefreshGridText();
     }
@@ -421,21 +433,7 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
         switch (key)
         {
             case Key.Escape:
-                if (tool.InProgress && !gesture)
-                {
-                    tool.Reset();
-                    _typedExpressions.Clear();
-                    EndGroup();
-                    _crossing = null;
-                    StatusMessage = $"{tool.Name} cancelled.";
-                    OnPropertyChanged(nameof(ToolPrompt));
-                    Viewer.RequestFrame();
-                }
-                else
-                {
-                    StatusMessage = gesture ? $"{tool.Name} cancelled." : "";
-                    Disarm();
-                }
+                EscapeTool(tool, gesture);
                 return true;
             case Key.Enter when tool.InProgress:
                 Apply(tool.Enter(CursorInput()));
@@ -453,6 +451,38 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
         if (TypedChar(key, modifiers) is { } c) { OpenField(c.ToString()); return true; }
         return false;
     }
+
+    /// <summary>
+    /// 3D round 1 — Esc with a tool armed steps back ONE stage (C3dDrawTool.StepBack): a box at its height goes back
+    /// to the second corner, then to the first point, and only an Esc with nothing in progress disarms. A gesture
+    /// with no earlier stage (an extrude, a rotation, a face edit) ends at once, as before. Stepping back keeps the
+    /// typed expressions of the stages still standing and drops the rest; a Define group stays open, since its
+    /// definitions are still the gesture's.
+    /// </summary>
+    private void EscapeTool(C3dDrawTool tool, bool gesture)
+    {
+        if (tool.InProgress && tool.StepBack())
+        {
+            CloseField();
+            _typedExpressions.RemoveAll(t => t.Step >= tool.Step);
+            _crossing = null;
+            if (tool is C3dOperationTool)
+            {
+                // A Move back at its base point: nothing follows the cursor, and the selection attracts the snap again.
+                EndOperation();
+                OperationChanged();
+            }
+            StatusMessage = tool.InProgress ? $"{tool.Name}: back one step." : $"{tool.Name}: back to the first point. Esc again puts the tool away.";
+            OnPropertyChanged(nameof(ToolPrompt));
+            Viewer.RequestFrame();
+            return;
+        }
+        StatusMessage = tool.InProgress || gesture ? $"{tool.Name} cancelled." : "";
+        Disarm();
+    }
+
+    /// <summary>3D round 1 — a tool or an operation is armed: the pane orbits on Ctrl/Cmd + drag only.</summary>
+    public bool DrawArmed => _tool is not null;
 
     /// <summary>A key that starts a typed value: a digit, a decimal point or a minus sign.</summary>
     private static char? TypedChar(Key key, KeyModifiers modifiers)

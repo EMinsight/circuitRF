@@ -38,7 +38,8 @@ public enum Scene3DPipeline
     /// opacity (fs_top), so a face behind others is seen through them.</summary>
     OnTop,
     /// <summary>brief-em3d-45 R-em3d45-2 — the drawing plane's grid: six vertices made by the vertex shader
-    /// (vs_grid) from the uniform block, no vertex buffer, depth test without write, blend (fs_grid).</summary>
+    /// (vs_grid) covering the viewport, no vertex buffer, depth test without write, blend; fs_grid casts each
+    /// fragment's ray at the plane and writes its depth.</summary>
     Grid,
 }
 
@@ -172,7 +173,7 @@ public sealed class Scene3DFramePlan
     /// <summary>Floats in the uniform block — the WGSL <c>U</c>: vp (16), eye (4), clip (4), the hovered
     /// (object, face), flags, the mode, the selection's count and three pads (128 bytes), the selection's
     /// (object, face) pairs (512 bytes), brief 29's field block (<see cref="Fields.FieldUniforms"/>,
-    /// 288 bytes), then brief 45's grid block (<see cref="PlaneGrid.Floats"/>, 144 bytes). 1,072 bytes.</summary>
+    /// 288 bytes), then brief 45's grid block (<see cref="PlaneGrid.Floats"/>, 224 bytes). 1,152 bytes.</summary>
     public const int UniformFloats = GridAt + PlaneGrid.Floats;
     public const int UniformBytes = UniformFloats * 4;
 
@@ -323,7 +324,7 @@ public sealed class Scene3DFramePlan
         GridSpacing = default;
         if (view.DrawingGrid is { Visible: true } dg)
         {
-            GridSpacing = PlaneGrid.Fill(Uniforms.AsSpan(GridAt), scene, view.Camera, dg, width, height);
+            GridSpacing = PlaneGrid.Fill(Uniforms.AsSpan(GridAt), scene, view.Camera, dg, width, height, flipY);
             if (GridSpacing.MinorDbu > 0)
             {
                 Add(ref Draws, ref DrawCount, Scene3DPipeline.Grid, Scene3DBuffer.None, 0, 6);

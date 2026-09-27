@@ -39,6 +39,15 @@ public partial class Viewer3DView : UserControl
             FaultText.Text = why is null ? "" : "The 3D view cannot draw here: " + why;
             FaultText.IsVisible = why is not null;
         };
+        // 3D round 1 — the workspace window's Escape key binding marks the key handled before the pane sees it, so the
+        // view claims Esc first (handled events too) and hands it to the pane's ladder: a measurement, Measure, the
+        // selection. A text box or an open drop-down keeps its own Esc.
+        AddHandler(KeyDownEvent, (_, e) =>
+        {
+            if (e.Key != Avalonia.Input.Key.Escape || e.Source is TextBox or ComboBox { IsDropDownOpen: true }) return;
+            Pane.Escape();
+            e.Handled = true;
+        }, Avalonia.Interactivity.RoutingStrategies.Tunnel, handledEventsToo: true);
     }
 
     protected override void OnDataContextChanged(EventArgs e)

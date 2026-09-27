@@ -41,7 +41,11 @@ public enum Em3dSolver { None, Palace, OpenEms, Both }
 /// omitted, and an omitted half takes the generator's default for that face.</summary>
 /// <param name="PaddingUm">Distance from the outermost geometry to this face, micrometres.</param>
 /// <param name="Boundary">What the face does to the field.</param>
-public sealed record EmAirBoxFace(double? PaddingUm, CircuitRF.Engine.Em3d.Em3dBoundaryKind? Boundary);
+/// <param name="PaddingPercent">3D editor round 1 — the padding as a percentage of the content's extent along
+/// this face's axis (10 on an x face pads a tenth of the x-extent). A face states this or
+/// <paramref name="PaddingUm"/>, never both.</param>
+public sealed record EmAirBoxFace(double? PaddingUm, CircuitRF.Engine.Em3d.Em3dBoundaryKind? Boundary,
+                                  double? PaddingPercent = null);
 
 /// <summary>
 /// A 3D setup's air box, per face (R-em3d3-6). A null face is the generator's default for it

@@ -91,6 +91,10 @@ public interface IViewer3DEditHost
 
     /// <summary>A measurement started: the editor disarms its tool (one gesture at a time).</summary>
     void MeasureStarted() { }
+
+    /// <summary>3D round 1 — a drawing tool or an operation is armed: a plain left drag must not orbit (only
+    /// Ctrl/Cmd + drag does), so a press that wobbles past the click slop still places its point.</summary>
+    bool DrawArmed => false;
 }
 
 /// <summary>brief-em3d-45 — the drawing's 2D chrome for one frame, in world metres: the overlay projects it.</summary>
@@ -352,6 +356,10 @@ public sealed partial class Viewer3DViewModel
 
     // ── keys (owner decision D3) ────────────────────────────────────────────────────────────
 
+    /// <summary>3D round 1 — a plain left drag orbits only when nothing is waiting for a click: while a tool, an operation
+    /// or Measure is armed, Ctrl/Cmd + drag orbits and a plain press is always that gesture's click.</summary>
+    public bool OrbitNeedsCommand => MeasureActive || EditHost?.DrawArmed == true;
+
     /// <summary>
     /// R-em3d43-2a — every 3D pane's keys. Mode keys act only with no modifier and no gesture in progress
     /// (<paramref name="gestureInProgress"/>), so Cmd+V is still paste. Esc with a gesture is the pane's to
@@ -379,13 +387,18 @@ public sealed partial class Viewer3DViewModel
             case Key.F when !gestureInProgress: SelectMode = Scene3DSelectMode.Face; return true;
             case Key.V when !gestureInProgress: SelectMode = Scene3DSelectMode.Vertex; return true;
             case Key.Home: FitCommand.Execute(null); return true;
+            // 3D round 1 — the layout editor's snap keys: S or F3 geometry snap, F9 the grid.
+            case Key.S or Key.F3: ToggleGeometrySnap(); return true;
+            case Key.F9: ToggleGridSnap(); return true;
             case Key.M when !gestureInProgress: ToggleMeasure(); return true;
             case Key.P: IsPerspective = !IsPerspective; return true;
             case Key.C: ClipEnabled = !ClipEnabled; return true;
             case Key.A: ShowAxisIndicator = !ShowAxisIndicator; return true;
             case Key.Escape:
                 if (gestureInProgress) return false;
-                // brief-em3d-46 R-em3d46-6a — Esc ends a measurement before it clears a selection.
+                // 3D round 1 — Esc unwinds one step at a time: a measurement's points go first (Measure stays armed),
+                // then Measure itself, and only then the selection.
+                if (MeasureActive && MeasureP1 is not null) { ClearMeasurement(); return true; }
                 if (MeasureActive || MeasureP1 is not null) { EndMeasure(); return true; }
                 HitCycle.Reset();
                 CycleText = "";

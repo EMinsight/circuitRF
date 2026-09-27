@@ -95,6 +95,27 @@ public sealed class SimulateEditorGateTests : IDisposable
         Assert.Equal(["S1"], vm.SetupItems.Select(i => i.Name));
     }
 
+    /// <summary>3D editor round 1 — Simulate ▸ Setup Analyses… replaced 3D ▸ Setups…: the toolbar's tune button asks
+    /// the shell for that one dialog, and each setup is an analysis card (badge + summary, or why it cannot run).</summary>
+    [Fact]
+    public void SetupAnalyses_TheTuneButtonAsksTheShell_AndEachSetupIsACard()
+    {
+        var planar = new EmSetup { Name = "Flat" };
+        var eig = Setup("Modes");
+        eig.Problem3D = Em3dProblemType.Eigenmode;
+        var vm = Open(Microstrip(Setup("S1"), eig, planar));
+        C3dEditorViewModel? asked = null;
+        vm.SetupAnalysesRequested = c => asked = c;
+        vm.OpenSetupAnalysesCommand.Execute(null);
+        Assert.Same(vm, asked);
+
+        Assert.Equal(["SP", "EIG", "?"], vm.SetupItems.Select(i => i.TypeLabel));
+        Assert.Equal("Palace · 1–20 GHz, 101 pts", vm.SetupItems[0].Summary);
+        Assert.StartsWith("Palace · eigenmodes", vm.SetupItems[1].Summary);
+        Assert.Contains(C3dSetups.PlanarRefusal, vm.SetupItems[2].Summary);
+        Assert.Equal("Run S1", vm.SetupItems[0].RunLabel);
+    }
+
     // ── 6. an air-box edit writes only the active setup ─────────────────────────────────────
 
     [Fact]

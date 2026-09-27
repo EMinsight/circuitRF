@@ -89,6 +89,46 @@ public sealed partial class Viewer3DViewModel
 
     private bool _applyingKinds;
 
+    private const Snap3DKinds GeometryKinds = Snap3DKinds.All & ~Snap3DKinds.Grid;
+
+    /// <summary>The geometry kinds that were on when <see cref="ToggleGeometrySnap"/> last turned them off.</summary>
+    private Snap3DKinds _geometryKindsBeforeOff = GeometryKinds;
+
+    /// <summary>
+    /// 3D round 1 — S or F3, the layout editor's geometry-snap keys: the geometry kinds (vertex, midpoint, edge, face
+    /// centre) go off together and the grid still applies, as geometry snap off does in a layout; pressed again they
+    /// come back as they were. With snapping off altogether it turns snapping on with them. The toolbar's own toggles
+    /// show the result, and the per-user store keeps it (it is the same toggles).
+    /// </summary>
+    public void ToggleGeometrySnap()
+    {
+        var kinds = SnapKinds;
+        var restore = _geometryKindsBeforeOff == 0 ? GeometryKinds : _geometryKindsBeforeOff;
+        if (!SnapEnabled)
+        {
+            SnapKinds = kinds | ((kinds & GeometryKinds) == 0 ? restore : 0);
+            SnapEnabled = true;
+        }
+        else if ((kinds & GeometryKinds) != 0)
+        {
+            _geometryKindsBeforeOff = kinds & GeometryKinds;
+            SnapKinds = kinds & ~GeometryKinds;
+        }
+        else SnapKinds = kinds | restore;
+    }
+
+    /// <summary>3D round 1 — F9, the layout editor's grid-snap key: the grid kind on or off (with snapping off
+    /// altogether, snapping on with the grid).</summary>
+    public void ToggleGridSnap()
+    {
+        if (!SnapEnabled)
+        {
+            SnapGridOn = true;
+            SnapEnabled = true;
+        }
+        else SnapGridOn = !SnapGridOn;
+    }
+
     private void SnapToggled()
     {
         if (_applyingKinds) return;

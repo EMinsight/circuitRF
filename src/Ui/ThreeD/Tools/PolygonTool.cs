@@ -118,6 +118,9 @@ public abstract class C3dChainTool(IC3dDrawHost host) : C3dDrawTool(host)
         Points.Clear();
     }
 
+    /// <summary>A chain's stages are its vertices: Esc takes back the last one, as Backspace does.</summary>
+    public override bool StepBack() => Backspace();
+
     protected abstract C3dToolStep Finish(bool closed);
 
     public override void Preview(in C3dDrawInput input, List<DrawSegment> rubber, List<Point3> fixedPoints)

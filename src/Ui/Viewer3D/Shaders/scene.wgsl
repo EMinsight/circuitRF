@@ -6,7 +6,7 @@
 // The uniform block is Scene3DFramePlan's: vp, eye, clip, the hovered (object, face), flags, the selection
 // mode, the selection (brief-em3d-43 R-em3d43-5: up to 64 (object, face) pairs), then brief 29's field block
 // (FieldUniforms: phase, range, mode, dB, the colour map's stops), then brief 45's drawing grid (PlaneGrid.Fill)
-// — 1,072 bytes.
+// — 1,152 bytes.
 // A vertex is Scene3DVertex: position, object id, RGBA8 colour, face (24 bytes); a FIELD vertex is
 // FieldVertex: position, the value's real part, its imaginary part (36 bytes).
 
@@ -32,9 +32,11 @@ struct U {
     fmode: vec4f,
     // (t, r, g, b) per stop
     stops: array<vec4f, 16>,
-    // brief-em3d-45 — the drawing grid (PlaneGrid.Fill): the plane's u and v axes with each one's phase, its
-    // normal and offset, the quad's centre and half-size, (minor, major every, fade radius, on), the line
-    // colour, where the world origin's lines are (local u, v), and the colours of the lines along u and v.
+    // brief-em3d-45 — the drawing grid (PlaneGrid.Fill): the plane's u and v axes with each one's fine phase, its
+    // normal and offset, the ray's origin (w: 1 perspective, 0 orthographic), (minor, major every, -, on), the line
+    // colour, where the world origin's lines are (local u, v) and the coarse phases, the colours of the lines along u
+    // and v; then (3D editor bugs round 1) the ray per clip position: origin = gq + x gox + y goy, direction =
+    // gd + x gdx + y gdy.
     gu: vec4f,
     gv: vec4f,
     gn: vec4f,
@@ -44,6 +46,11 @@ struct U {
     gax: vec4f,
     gcu: vec4f,
     gcv: vec4f,
+    gox: vec4f,
+    goy: vec4f,
+    gd: vec4f,
+    gdx: vec4f,
+    gdy: vec4f,
 };
 @group(0) @binding(0) var<uniform> u: U;
 
@@ -124,8 +131,16 @@ fn highlight(rgb: vec3f, id: u32, face: u32) -> vec3f {
 }
 
 @fragment fn fs_color(i: VO, @builtin(front_facing) front: bool) -> @location(0) vec4f {
-    if (clipped(i.world)) { discard; }
     let n = normalize(cross(dpdx(i.world), dpdy(i.world)));
+    if (clipped(i.world)) { discard; }
+    // 3D editor bugs round 1 — alpha 0 is a WIREFRAME object's face (no material): drawn only while hovered (Object
+    // mode: the whole object; Face mode: the face) or selected (Face mode); its edges are the line pass's.
+    if (i.col.a == 0.0) {
+        if (i.id != 0u && u.mode == 0u && i.id == u.hover) { return vec4f(0.2, 0.9, 1.0, 0.18); }
+        if (i.id != 0u && u.mode == 1u && is_selected(i.id, i.face)) { return vec4f(1.0, 0.35, 1.0, 0.4); }
+        if (i.id != 0u && u.mode == 1u && i.id == u.hover && i.face == u.hover_face) { return vec4f(1.0, 1.0, 1.0, 0.25); }
+        discard;
+    }
     let d = abs(dot(n, normalize(u.eye.xyz - i.world)));
     var rgb = i.col.rgb * (0.3 + 0.7 * d);
     if (!front && (u.flags & 2u) != 0u) { rgb = i.col.rgb * 0.8; }
@@ -230,52 +245,91 @@ fn colour_map(t: f32) -> vec3f {
 }
 
 // ── brief-em3d-45: the drawing grid ────────────────────────────────────────────────────────────────
-// One quad on the plane, made here from six vertex indices and the uniform block — no vertex buffer, so an
-// orbit uploads nothing. The lines are found per fragment: minor lines where the plane coordinate is a
-// multiple of the spacing, major ones every gs.y of them, the origin's axis lines in the axis colours. Minor
-// lines fade where a cell would be under a few pixels (perspective's distance); everything fades with the
-// distance from the focus and with obliqueness, so a plane seen nearly edge-on is a faint line, not a slab.
+// An INFINITE plane (3D editor bugs round 1). The vertex shader covers the whole viewport with one quad made from
+// six vertex indices — no vertex buffer, so an orbit uploads nothing — and the fragment shader casts the fragment's
+// own ray at the plane: the plane is found wherever it is, not only inside a quad around the focus, and never cut
+// by the scene's near and far planes (the fragment writes its true depth, clamped into [0, 1]).
+//
+// The lines are found per fragment at the spacing the FRAGMENT needs: level k is every gs.y^k minor lines, and a
+// level's weight grows with how many pixels its cell spans there — nothing under 4 px, the minor lines' faint
+// alpha by 10 px, full alpha by gs.y times that. So near the focus the minor lines show with every gs.y-th one
+// heavier, and toward the horizon the coarser levels take over one after another until even they would crowd,
+// where the grid fades out. A weight depends only on the cell's size on screen, so the change of level is seamless.
+// The world origin's lines are drawn in the axis colours. A plane seen nearly edge-on fades.
 
 struct GVO {
     @builtin(position) pos: vec4f,
-    @location(0) world: vec3f,
+    @location(0) ndc: vec2f,
 };
 
 @vertex fn vs_grid(@builtin(vertex_index) k: u32) -> GVO {
     // Two triangles: (-1,-1) (1,-1) (1,1) and (-1,-1) (1,1) (-1,1). Bit k of 0x16 is x > 0; of 0x34, y > 0.
     let cx = f32((0x16u >> k) & 1u) * 2.0 - 1.0;
     let cy = f32((0x34u >> k) & 1u) * 2.0 - 1.0;
-    let p = u.gq.xyz + (u.gu.xyz * cx + u.gv.xyz * cy) * u.gq.w;
     var o: GVO;
-    o.pos = u.vp * vec4f(p, 1.0);
-    o.world = p;
+    o.pos = vec4f(cx, cy, 0.5, 1.0);
+    o.ndc = vec2f(cx, cy);
     return o;
 }
 
-@fragment fn fs_grid(i: GVO) -> @location(0) vec4f {
-    if (clipped(i.world)) { discard; }
-    let pu = dot(i.world, u.gu.xyz);
-    let pv = dot(i.world, u.gv.xyz);
-    let a = (vec2f(pu, pv) + vec2f(u.gu.w, u.gv.w)) / u.gs.x;
-    let fw = max(fwidth(a), vec2f(1e-7, 1e-7));
-    let cell_px = 1.0 / max(fw.x, fw.y);
-    let minor_fade = clamp((cell_px - 4.0) / 6.0, 0.0, 1.0);
-    let dm = abs(fract(a - 0.5) - 0.5) / fw;
-    let line_minor = 1.0 - min(min(dm.x, dm.y), 1.0);
-    let am = a / u.gs.y;
-    let dmaj = abs(fract(am - 0.5) - 0.5) / (fw / u.gs.y);
-    let line_major = 1.0 - min(min(dmaj.x, dmaj.y), 1.0);
-    let r = length(i.world - u.gq.xyz);
-    let view = normalize(u.eye.xyz - i.world);
-    let fade = (1.0 - smoothstep(0.45 * u.gs.z, u.gs.z, r)) * smoothstep(0.03, 0.35, abs(dot(u.gn.xyz, view)));
-    var alpha = max(line_minor * 0.45 * minor_fade, line_major) * u.gcol.w;
+struct GOut {
+    @location(0) col: vec4f,
+    @builtin(frag_depth) depth: f32,
+};
+
+// The alpha of a line of cell size c pixels: 0 under 4 px, the faint minor alpha (0.45) by 10 px, 1 by m times that.
+fn grid_weight(c: f32, m: f32) -> f32 {
+    return 0.45 * clamp((c - 4.0) / 6.0, 0.0, 1.0) + 0.55 * clamp((c - 4.0 * m) / (6.0 * m), 0.0, 1.0);
+}
+
+// How much the fragment at p (metres per pixel pf) lies on a line every s metres, phase ph.
+fn grid_on(p: vec2f, pf: vec2f, s: f32, ph: vec2f) -> f32 {
+    let a = (p + ph) / s;
+    let d = abs(fract(a - 0.5) - 0.5) / max(pf / s, vec2f(1e-12, 1e-12));
+    return 1.0 - min(min(d.x, d.y), 1.0);
+}
+
+@fragment fn fs_grid(i: GVO) -> GOut {
+    let ro = u.gq.xyz + u.gox.xyz * i.ndc.x + u.goy.xyz * i.ndc.y;
+    let rd = u.gd.xyz + u.gdx.xyz * i.ndc.x + u.gdy.xyz * i.ndc.y;
+    let dn = dot(rd, u.gn.xyz);
+    let t = (u.gn.w - dot(ro, u.gn.xyz)) / select(dn, 1e-30, dn == 0.0);
+    let w = ro + rd * t;
+    // Derivatives before any discard: uniform control flow.
+    let pu = dot(w, u.gu.xyz);
+    let pv = dot(w, u.gv.xyz);
+    let p = vec2f(pu, pv);
+    let pf = max(fwidth(p), vec2f(1e-30, 1e-30));
+    let cosine = abs(dn) / max(length(rd), 1e-30);
+    if (cosine < 1e-4 || (u.gq.w > 0.5 && t <= 0.0) || clipped(w)) { discard; }
+
+    let mpp = max(pf.x, pf.y);
+    let m = max(u.gs.y, 2.0);
+    let c0 = u.gs.x / mpp;
+    // The finest level whose cell spans 4 px; finer ones weigh nothing. Three levels from it: any coarser one's
+    // lines are among the third's, which is already at full weight.
+    let k0 = clamp(ceil(log(4.0 / c0) / log(m)), 0.0, 24.0);
+    var alpha = 0.0;
+    for (var j = 0; j < 3; j = j + 1) {
+        let k = k0 + f32(j);
+        let s = u.gs.x * pow(m, k);
+        // Levels 0 and 1 use the fine phase (world less whole major cells); coarser ones the coarse phase.
+        let ph = select(u.gax.zw, vec2f(u.gu.w, u.gv.w), k < 1.5);
+        alpha = max(alpha, grid_on(p, pf, s, ph) * grid_weight(s / mpp, m));
+    }
+    alpha = alpha * u.gcol.w;
     var rgb = u.gcol.rgb;
     // The line u = 0 runs along v, so it is v's colour; v = 0 runs along u.
-    let on_v = 1.0 - min(abs(pu - u.gax.x) / max(fwidth(pu), 1e-12) / 1.2, 1.0);
-    let on_u = 1.0 - min(abs(pv - u.gax.y) / max(fwidth(pv), 1e-12) / 1.2, 1.0);
+    let on_v = 1.0 - min(abs(pu - u.gax.x) / pf.x / 1.2, 1.0);
+    let on_u = 1.0 - min(abs(pv - u.gax.y) / pf.y / 1.2, 1.0);
     if (on_v * u.gcv.w > alpha) { alpha = on_v * u.gcv.w; rgb = u.gcv.rgb; }
     if (on_u * u.gcu.w > alpha) { alpha = on_u * u.gcu.w; rgb = u.gcu.rgb; }
-    alpha = alpha * fade;
+    // Only the last two degrees or so before the horizon: the levels already thin the lines out where they crowd.
+    alpha = alpha * smoothstep(0.0, 0.035, cosine);
     if (alpha <= 0.002) { discard; }
-    return vec4f(rgb, alpha);
+    var o: GOut;
+    o.col = vec4f(rgb, alpha);
+    let c = u.vp * vec4f(w, 1.0);
+    o.depth = clamp(c.z / c.w, 0.0, 1.0);
+    return o;
 }

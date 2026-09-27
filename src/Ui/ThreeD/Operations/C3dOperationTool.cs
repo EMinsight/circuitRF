@@ -48,6 +48,10 @@ public abstract class C3dOperationTool(IC3dDrawHost host, IReadOnlyList<C3dTarge
     /// <summary>A key while it runs (an axis lock); true when it took it.</summary>
     public virtual bool Key(Key key, KeyModifiers modifiers) => false;
 
+    /// <summary>An operation starts already under way (its targets are the stage before), so Esc ends it — except a
+    /// Move's target point, which steps back to its base point.</summary>
+    public override bool StepBack() => false;
+
     /// <summary>A Ctrl/Cmd-click: the pivot, where the operation has one.</summary>
     public virtual bool SetPivot(in C3dDrawInput input) => false;
 

@@ -1,0 +1,109 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:t3="using:CircuitRF.Ui.ThreeD"
+             x:Class="CircuitRF.Ui.Views.ThreeD.C3dPropertiesView"
+             x:DataType="t3:C3dPropertiesViewModel">
+
+    <!-- brief-em3d-43 R-em3d43-6b — a 3D view's selection, in the document's display unit. 3D editor round 1: hosted by the
+         application's Properties Inspector (the dock panel a schematic and a layout use), not by a panel of the editor's own. -->
+    <UserControl.Styles>
+        <Style Selector="TextBox.error">
+            <Setter Property="BorderBrush" Value="IndianRed"/>
+        </Style>
+    </UserControl.Styles>
+
+    <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Spacing="6" Margin="8,6">
+            <SelectableTextBlock Text="{Binding Heading}" FontWeight="SemiBold" TextWrapping="Wrap"/>
+
+            <StackPanel Spacing="4" IsVisible="{Binding IsEditable}">
+                <TextBlock Text="Name" FontSize="11" Opacity="0.7"/>
+                <TextBox x:Name="NameBox" Text="{Binding NameText}" KeyDown="OnNameKey" LostFocus="OnNameLostFocus"/>
+                <TextBlock Text="Material" FontSize="11" Opacity="0.7"/>
+                <ComboBox ItemsSource="{Binding Materials}" SelectedItem="{Binding Material}" HorizontalAlignment="Stretch"
+                          PlaceholderText="None — a solver needs one"/>
+                <TextBlock Text="Role" FontSize="11" Opacity="0.7"/>
+                <ComboBox ItemsSource="{x:Static t3:C3dPropertiesViewModel.Roles}" SelectedItem="{Binding Role}" HorizontalAlignment="Stretch"
+                          ToolTip.Tip="What the solver treats the object as. From material: the material decides."/>
+                <TextBlock Text="Placement origin (x, y, z)" FontSize="11" Opacity="0.7"/>
+                <Grid ColumnDefinitions="*,4,*,4,*">
+                    <TextBox Grid.Column="0" Text="{Binding OriginX}" KeyDown="OnOriginKey" LostFocus="OnOriginLostFocus"/>
+                    <TextBox Grid.Column="2" Text="{Binding OriginY}" KeyDown="OnOriginKey" LostFocus="OnOriginLostFocus"/>
+                    <TextBox Grid.Column="4" Text="{Binding OriginZ}" KeyDown="OnOriginKey" LostFocus="OnOriginLostFocus"/>
+                </Grid>
+                <TextBlock Text="Rotations, in order" FontSize="11" Opacity="0.7"/>
+                <TextBox Text="{Binding RotateText}" PlaceholderText="z 30, x 90" KeyDown="OnRotateKey" LostFocus="OnRotateLostFocus"/>
+                <CheckBox IsChecked="{Binding MirrorX}" Content="Mirror x"/>
+            </StackPanel>
+
+            <!-- brief-em3d-47 R-em3d47-3e — Set Coordinates: the typed Vertex Move, world, in the display unit. -->
+            <StackPanel Spacing="4" IsVisible="{Binding IsVertexEditable}">
+                <TextBlock Text="Set coordinates (x, y, z)" FontSize="11" Opacity="0.7"/>
+                <Grid ColumnDefinitions="*,4,*,4,*">
+                    <TextBox Grid.Column="0" Text="{Binding VertexX}" KeyDown="OnVertexKey" LostFocus="OnVertexLostFocus"/>
+                    <TextBox Grid.Column="2" Text="{Binding VertexY}" KeyDown="OnVertexKey" LostFocus="OnVertexLostFocus"/>
+                    <TextBox Grid.Column="4" Text="{Binding VertexZ}" KeyDown="OnVertexKey" LostFocus="OnVertexLostFocus"/>
+                </Grid>
+            </StackPanel>
+
+            <!-- 3D editor round 1 — the air box: padding per axis as a share of the content's extent, and each face's boundary. -->
+            <StackPanel Spacing="4" IsVisible="{Binding IsAirBox}">
+                <TextBlock Text="Padding, % of the content's extent (each side)" FontSize="11" Opacity="0.7"
+                           ToolTip.Tip="10 on X pads a tenth of the design's x-extent beyond it on each side. Empty: the faces keep their own padding (a stated distance, or the default)."/>
+                <Grid ColumnDefinitions="Auto,*,6,Auto,*,6,Auto,*">
+                    <TextBlock Grid.Column="0" Text="X" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                    <TextBox Grid.Column="1" Text="{Binding PadXPercent}" Tag="x" PlaceholderText="—" KeyDown="OnPadKey" LostFocus="OnPadLostFocus"/>
+                    <TextBlock Grid.Column="3" Text="Y" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                    <TextBox Grid.Column="4" Text="{Binding PadYPercent}" Tag="y" PlaceholderText="—" KeyDown="OnPadKey" LostFocus="OnPadLostFocus"/>
+                    <TextBlock Grid.Column="6" Text="Z" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                    <TextBox Grid.Column="7" Text="{Binding PadZPercent}" Tag="z" PlaceholderText="—" KeyDown="OnPadKey" LostFocus="OnPadLostFocus"/>
+                </Grid>
+                <TextBlock Text="Faces" FontSize="11" Opacity="0.7" Margin="0,4,0,0"/>
+                <ItemsControl ItemsSource="{Binding AirBoxFaces}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="t3:C3dAirBoxFaceRow">
+                            <Grid ColumnDefinitions="44,*,Auto" Margin="0,1">
+                                <TextBlock Grid.Column="0" Text="{Binding Face}" VerticalAlignment="Center"/>
+                                <ComboBox Grid.Column="1" ItemsSource="{x:Static t3:C3dPropertiesViewModel.BoundaryKinds}"
+                                          SelectedItem="{Binding Kind}" HorizontalAlignment="Stretch" FontSize="11"/>
+                                <SelectableTextBlock Grid.Column="2" Text="{Binding Padding}" FontSize="11" Opacity="0.8"
+                                                     VerticalAlignment="Center" Margin="6,0,0,0"/>
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+
+            <SelectableTextBlock Text="{Binding Error}" Foreground="IndianRed" TextWrapping="Wrap"
+                                 IsVisible="{Binding Error, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+
+            <!-- brief-em3d-51 R-em3d51-4b — each named dimension: its expression and resolved value, editable as either. -->
+            <ItemsControl ItemsSource="{Binding Fields}" IsVisible="{Binding IsEditable}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="t3:C3dDimensionField">
+                        <StackPanel Margin="0,2" Spacing="1">
+                            <TextBlock Text="{Binding Path}" FontSize="11" Opacity="0.7"/>
+                            <TextBox Text="{Binding Text}" KeyDown="OnDimensionKey" LostFocus="OnDimensionLostFocus"
+                                     Classes.error="{Binding Error, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                            <SelectableTextBlock Text="{Binding ValueText}" FontSize="11" Opacity="0.8"
+                                                 IsVisible="{Binding ValueText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                            <SelectableTextBlock Text="{Binding Error}" FontSize="11" Foreground="IndianRed" TextWrapping="Wrap"
+                                                 IsVisible="{Binding Error, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                        </StackPanel>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <ItemsControl ItemsSource="{Binding Rows}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="t3:C3dPropertyRow">
+                        <StackPanel Margin="0,2">
+                            <TextBlock Text="{Binding Label}" FontSize="11" Opacity="0.7"/>
+                            <SelectableTextBlock Text="{Binding Value}" TextWrapping="Wrap"/>
+                        </StackPanel>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

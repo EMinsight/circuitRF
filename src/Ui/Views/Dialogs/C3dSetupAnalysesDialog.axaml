@@ -1,0 +1,141 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:t3="using:CircuitRF.Ui.ThreeD"
+        xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+        x:Class="CircuitRF.Ui.Views.Dialogs.C3dSetupAnalysesDialog"
+        x:DataType="t3:C3dEditorViewModel"
+        Title="Setup Analyses"
+        Width="520" Height="420"
+        WindowStartupLocation="CenterOwner"
+        CanResize="True"
+        ShowInTaskbar="False">
+
+    <!-- Simulate ▸ Setup Analyses… with a 3D view active: SetupAnalysesDialog's list, on the 3D view's embedded EM
+         setups. Toolbar, card and empty state are AnalysesListView's, so the two read as one dialog; the card's
+         Enabled box becomes the ACTIVE mark (a 3D view runs one setup, not every enabled one), and double-click
+         opens that one setup in the .cem panel. Every change is an edit of the 3D view: its undo, its dirty mark. -->
+    <Window.Styles>
+        <Style Selector="ListBox.AnalysisRows ListBoxItem">
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="MinHeight" Value="0"/>
+        </Style>
+    </Window.Styles>
+
+    <Grid RowDefinitions="Auto,Auto,*,Auto,Auto" Background="{DynamicResource SystemChromeLowColor}">
+
+        <!-- Header: Run (the active setup) + the heading -->
+        <Grid Grid.Row="0" ColumnDefinitions="Auto,*" Margin="4,4,4,1">
+            <Button Grid.Column="0" Command="{Binding SimulateActiveCommand}"
+                    ToolTip.Tip="Simulate the active setup (Simulate ▸ Run)"
+                    Padding="3,2" Background="Transparent" BorderThickness="0" Margin="0,0,5,0">
+                <mi:MaterialIcon Kind="Play" Width="15" Height="15" Foreground="{DynamicResource SystemBaseMediumColor}"/>
+            </Button>
+            <TextBlock Grid.Column="1" Text="{Binding SetupsHeading}" FontWeight="SemiBold" FontSize="12"
+                       TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+        </Grid>
+
+        <!-- Toolbar -->
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="0" Margin="4,0,4,2">
+            <Button Command="{Binding AddSetupCommand}"
+                    ToolTip.Tip="Add a setup: a new Palace setup, embedded in this 3D view"
+                    Padding="3,2" Background="Transparent" BorderThickness="0" Margin="0,0,1,0">
+                <mi:MaterialIcon Kind="Plus" Width="14" Height="14" Foreground="{DynamicResource SystemBaseMediumColor}"/>
+            </Button>
+            <Button Click="OnEditClick" ToolTip.Tip="Edit the selected setup (or double-click it)"
+                    Padding="3,2" Background="Transparent" BorderThickness="0" Margin="0,0,1,0">
+                <mi:MaterialIcon Kind="Pencil" Width="14" Height="14" Foreground="{DynamicResource SystemBaseMediumColor}"/>
+            </Button>
+            <Button Command="{Binding DuplicateSetupCommand}" ToolTip.Tip="Duplicate the selected setup"
+                    Padding="3,2" Background="Transparent" BorderThickness="0" Margin="0,0,1,0">
+                <mi:MaterialIcon Kind="ContentCopy" Width="14" Height="14" Foreground="{DynamicResource SystemBaseMediumColor}"/>
+            </Button>
+            <Button Click="OnRenameClick" ToolTip.Tip="Rename the selected setup"
+                    Padding="3,2" Background="Transparent" BorderThickness="0" Margin="0,0,1,0">
+                <mi:MaterialIcon Kind="FormTextbox" Width="14" Height="14" Foreground="{DynamicResource SystemBaseMediumColor}"/>
+            </Button>
+            <Button Command="{Binding RemoveSetupCommand}" ToolTip.Tip="Remove the selected setup"
+                    Padding="3,2" Background="Transparent" BorderThickness="0" Margin="0,0,2,0">
+                <mi:MaterialIcon Kind="Delete" Width="14" Height="14" Foreground="{DynamicResource SystemBaseMediumColor}"/>
+            </Button>
+            <Border Width="1" Height="12" Margin="0,0,4,0" VerticalAlignment="Center" Background="{DynamicResource SystemBaseLowColor}"/>
+            <Button Command="{Binding MakeSelectedActiveCommand}"
+                    ToolTip.Tip="Make the selected setup the active one: the one Simulate ▸ Run runs and whose air box is drawn"
+                    Padding="3,2" Background="Transparent" BorderThickness="0">
+                <mi:MaterialIcon Kind="RadioboxMarked" Width="14" Height="14" Foreground="{DynamicResource SystemBaseMediumColor}"/>
+            </Button>
+        </StackPanel>
+
+        <Grid Grid.Row="2">
+            <!-- Empty state -->
+            <StackPanel IsVisible="{Binding !HasSetups}" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8" Margin="12">
+                <TextBlock Text="No setups yet." Foreground="{DynamicResource SystemBaseMediumColor}" FontSize="12" TextAlignment="Center"/>
+                <TextBlock Text="Add one to simulate this 3D view." Foreground="{DynamicResource SystemBaseMediumColor}"
+                           FontSize="11" TextAlignment="Center" TextWrapping="Wrap"/>
+                <Button Command="{Binding AddSetupCommand}" HorizontalAlignment="Center" HorizontalContentAlignment="Center" Padding="12,6">
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <mi:MaterialIcon Kind="Plus" Width="14" Height="14"/>
+                        <TextBlock Text="Add Setup" FontSize="12"/>
+                    </StackPanel>
+                </Button>
+            </StackPanel>
+
+            <!-- The cards -->
+            <ListBox Name="Rows" Classes="AnalysisRows"
+                     ItemsSource="{Binding SetupItems}"
+                     SelectedItem="{Binding SelectedSetupItem, Mode=TwoWay}"
+                     IsVisible="{Binding HasSetups}"
+                     DoubleTapped="OnRowDoubleTapped"
+                     Background="Transparent" BorderThickness="0">
+                <ListBox.ItemTemplate>
+                    <DataTemplate x:DataType="t3:C3dSetupItem">
+                        <Border Padding="4,3" Background="Transparent">
+                            <!-- Every item names and acts on THIS card: a right-click does not move the selection. -->
+                            <Border.ContextMenu>
+                                <ContextMenu>
+                                    <MenuItem Header="{Binding RunLabel}" Click="OnMenuRun"/>
+                                    <MenuItem Header="Make Active" Click="OnMenuMakeActive"/>
+                                    <MenuItem Header="Edit…" Click="OnMenuEdit"/>
+                                    <MenuItem Header="Rename…" Click="OnMenuRename" IsEnabled="{Binding !IsExternal}"/>
+                                    <MenuItem Header="Duplicate" Click="OnMenuDuplicate" IsEnabled="{Binding !IsExternal}"/>
+                                    <Separator/>
+                                    <MenuItem Header="{Binding RemoveLabel}" Click="OnMenuRemove" IsEnabled="{Binding !IsExternal}"/>
+                                </ContextMenu>
+                            </Border.ContextMenu>
+                            <Grid ColumnDefinitions="Auto,Auto,*">
+                                <!-- The active mark, where a schematic card has its Enabled box. -->
+                                <Button Grid.Column="0" Click="OnActiveClick" Padding="0" Margin="0,0,6,0"
+                                        Background="Transparent" BorderThickness="0" VerticalAlignment="Center"
+                                        ToolTip.Tip="Active: the setup Simulate ▸ Run runs and whose air box is drawn. Click to make this one active.">
+                                    <Panel>
+                                        <mi:MaterialIcon Kind="RadioboxMarked" Width="15" Height="15" IsVisible="{Binding IsActive}"/>
+                                        <mi:MaterialIcon Kind="RadioboxBlank" Width="15" Height="15" IsVisible="{Binding !IsActive}"
+                                                         Foreground="{DynamicResource SystemBaseMediumColor}"/>
+                                    </Panel>
+                                </Button>
+                                <Border Grid.Column="1" Background="{DynamicResource SystemListLowColor}" CornerRadius="3"
+                                        Padding="4,1" Margin="0,0,6,0" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding TypeLabel}" FontSize="10" FontWeight="SemiBold"
+                                               Foreground="{DynamicResource SystemBaseMediumHighColor}"/>
+                                </Border>
+                                <StackPanel Grid.Column="2" VerticalAlignment="Center" Spacing="1">
+                                    <TextBlock Text="{Binding Name}" FontSize="12" TextTrimming="CharacterEllipsis"/>
+                                    <TextBlock Text="{Binding Summary}" FontSize="10" TextTrimming="CharacterEllipsis"
+                                               Foreground="{DynamicResource SystemBaseMediumColor}" ToolTip.Tip="{Binding Summary}"/>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+        </Grid>
+
+        <!-- A refusal from Rename, and the footer -->
+        <TextBlock Grid.Row="3" Name="ErrorText" Foreground="IndianRed" FontSize="11" TextWrapping="Wrap" Margin="6,2" IsVisible="False"/>
+        <Grid Grid.Row="4" ColumnDefinitions="*,Auto" Margin="6,2,12,8">
+            <TextBlock Grid.Column="0" Text="The active setup is the one Simulate ▸ Run runs and whose air box is drawn."
+                       Foreground="{DynamicResource SystemBaseMediumLowColor}" FontSize="10" TextWrapping="Wrap" VerticalAlignment="Center"/>
+            <Button Grid.Column="1" Content="Close" IsDefault="True" IsCancel="True" HorizontalContentAlignment="Center"
+                    Padding="20,6" Click="OnCloseClick"/>
+        </Grid>
+    </Grid>
+</Window>

@@ -440,6 +440,11 @@
                                                   IsVisible="{Binding IsCell}">
                                             <MenuItem.Icon><mi:MaterialIcon Kind="LayersOutline" Width="14" Height="14"/></MenuItem.Icon>
                                         </MenuItem>
+                                        <MenuItem Header="Open 3D View"
+                                                  Command="{Binding OpenThreeDCommand}"
+                                                  IsVisible="{Binding IsCell}">
+                                            <MenuItem.Icon><mi:MaterialIcon Kind="CubeOutline" Width="14" Height="14"/></MenuItem.Icon>
+                                        </MenuItem>
 
                                         <!-- Save dirty node — visible only when IsSaveable (resolved at menu-open) -->
                                         <MenuItem Header="{Binding SaveHeader}"

@@ -5,6 +5,7 @@
              xmlns:symInsp="using:CircuitRF.Ui.Views.Properties"
              xmlns:body="using:CircuitRF.Ui.Views.Content"
              xmlns:ddv="using:CircuitRF.Ui.Views.DataDisplay"
+             xmlns:threeD="using:CircuitRF.Ui.Views.ThreeD"
              x:Class="CircuitRF.Ui.Views.Properties.PropertiesView"
              x:DataType="vm:PropertiesTool"
              Background="{DynamicResource SystemChromeLowColor}">
@@ -41,6 +42,12 @@
                  tell which one an edit lands in. -->
             <Panel IsVisible="{Binding IsWireActive}">
                 <symInsp:WBondWirePropertiesView DataContext="{Binding WireInspectorVm}"/>
+            </Panel>
+
+            <!-- A 3D view (.c3d) — 3D editor round 1: its selection's fields live here, as a layout's do, not in a panel
+                 of the editor's own. -->
+            <Panel IsVisible="{Binding IsC3dActive}">
+                <threeD:C3dPropertiesView DataContext="{Binding C3dInspectorVm}"/>
             </Panel>
 
             <!-- railRF (railrf.md §11.4) — the rail, its reference, its branch counts, the worst

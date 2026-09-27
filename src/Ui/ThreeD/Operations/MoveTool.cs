@@ -62,6 +62,16 @@ public sealed class MoveTool : C3dOperationTool
         Step = 1;
     }
 
+    /// <summary>Esc at the target point goes back to choosing the base point. A Duplicate's base is the pivot by
+    /// construction and a gizmo drag's is the handle, so neither has a base-point stage to go back to.</summary>
+    public override bool StepBack()
+    {
+        if (Step == 0 || _duplicate || FromGizmo) return false;
+        Step = 0;
+        Committed = null;
+        return true;
+    }
+
     private static readonly string[] Xyz = ["dx", "dy", "dz"];
     private static readonly string[] Distance = ["distance"];
     private static readonly string[] None = [];

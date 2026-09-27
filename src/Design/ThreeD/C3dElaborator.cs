@@ -125,6 +125,12 @@ public sealed record C3dElaboration(
     /// instance path: what the editor draws as a dashed box with the cell's name.</summary>
     public IReadOnlyList<(string InstancePath, string CellRef)> Unresolved { get; init; } = [];
 
+    /// <summary>3D editor bugs round 1 — the objects with no material, or one their technology does not define: each is a
+    /// refusal and none reaches a solver, but each is lowered all the same, under the name it would have had, so the
+    /// editor can draw it (as a wireframe) and keep it selectable and editable. Material is empty; order 0.</summary>
+    public IReadOnlyList<Em3dSolid> UnassignedSolids { get; init; } = [];
+    public IReadOnlyList<Em3dSheet> UnassignedSheets { get; init; } = [];
+
     /// <summary>The walk: instances resolved, units converted, materials merged, objects lowered.</summary>
     public IReadOnlyList<C3dWalkStep> WalkInstances { get; init; } = [];
     public IReadOnlyList<C3dWalkStep> WalkUnits { get; init; } = [];
@@ -151,6 +157,18 @@ public sealed record C3dElaboration(
         foreach (var s in Solids) Grow(Em3dProblem.Bounds(s.Primitive));
         foreach (var s in Sheets) Grow(s.WorldBounds());
         return double.IsInfinity(x0) ? null : (x0, y0, z0, x1, y1, z1);
+    }
+
+    /// <summary>What the editor frames: <see cref="Extent"/> and the <see cref="UnassignedSolids"/> and
+    /// <see cref="UnassignedSheets"/> it draws beside what a solver gets.</summary>
+    public (double X0, double Y0, double Z0, double X1, double Y1, double Z1)? DisplayExtent()
+    {
+        var e = Extent();
+        foreach (var b in UnassignedSolids.Select(s => Em3dProblem.Bounds(s.Primitive)).Concat(UnassignedSheets.Select(s => s.WorldBounds())))
+            e = e is not { } x ? b
+                : (Math.Min(x.X0, b.Item1), Math.Min(x.Y0, b.Item2), Math.Min(x.Z0, b.Item3),
+                   Math.Max(x.X1, b.Item4), Math.Max(x.Y1, b.Item5), Math.Max(x.Z1, b.Item6));
+        return e;
     }
 }
 
@@ -333,6 +351,8 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null)
     {
         private readonly List<Em3dSolid> _solids = [];
         private readonly List<Em3dSheet> _sheets = [];
+        private readonly List<Em3dSolid> _unassignedSolids = [];
+        private readonly List<Em3dSheet> _unassignedSheets = [];
         private readonly Dictionary<string, C3dProvenance> _provenance = new(StringComparer.Ordinal);
         private readonly List<string> _notes = [];
         private readonly List<string> _warnings = [];
@@ -413,6 +433,8 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null)
                 WalkUnits = _walkUnits,
                 WalkMaterials = walkMaterials,
                 WalkLowering = _walkLowering,
+                UnassignedSolids = _unassignedSolids,
+                UnassignedSheets = _unassignedSheets,
                 Technology = tech.Tech,
                 TechnologyPath = tech.ResolvedPath,
                 Resolution = resolution,
@@ -443,11 +465,13 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null)
                 if (obj.Material is not { Length: > 0 } matName)
                 {
                     _refusals.Add($"'{name}' has no material, so nothing says what it is to a solver.");
+                    Unassigned(obj, name, world, doc.DbuPerMicron, prefix, path, exact);
                     continue;
                 }
                 if (tech.Tech?.FindMaterial(matName) is not { } material)
                 {
                     _refusals.Add($"'{name}' is made of '{matName}', which its technology ({techName}) does not define.");
+                    Unassigned(obj, name, world, doc.DbuPerMicron, prefix, path, exact);
                     continue;
                 }
                 if (Role(obj, material, name) is not { } role) continue;
@@ -491,6 +515,25 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null)
             string baseDir = Path.GetDirectoryName(path)!;
             foreach (var inst in doc.Instances) Instance(doc, resolution, inst, baseDir, world, prefix, stack, exact);
             if (doc.Objects.Any(o => o is C3dWire)) Wires(doc, path, tech, world, prefix);
+        }
+
+        /// <summary>3D editor bugs round 1 — an object refused for its material, lowered for the editor alone (see
+        /// <see cref="C3dElaboration.UnassignedSolids"/>): it takes no order, no net and no material key, but it keeps its
+        /// provenance, which is what the editor's picking, faces and edits read.</summary>
+        private void Unassigned(C3dObject obj, string name, C3dTransform world, int dbuPerMicron, string prefix, string path, bool exact)
+        {
+            if (owner.LowerCached(obj, world, dbuPerMicron) is not { } lowered) return;
+            if (lowered.Sheet is { } g)
+            {
+                double t = (obj as C3dSheet)?.ThicknessUm is { } um ? um * 1e-6 : 0;
+                _unassignedSheets.Add(new Em3dSheet(name, "", g.Outline, g.Holes, g.Z, t, 0) { Frame = g.Frame });
+            }
+            else _unassignedSolids.Add(new Em3dSolid(name, "", Em3dRole.Dielectric, lowered.Solid!, 0));
+            _provenance[name] = new C3dProvenance(prefix.TrimEnd('/'), path, obj.Name, lowered.FaceNames)
+            {
+                Exact = exact && obj.Placement.ToTransform().IsIntegral,
+                Element = prefix.Length > 0 ? world : null,
+            };
         }
 
         /// <summary>brief-em3d-50 — the document's drawn wires, landed on the conductors of this document and everything

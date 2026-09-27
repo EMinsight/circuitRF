@@ -36053,3 +36053,170 @@ Variables panel), `C3dDocumentEdit` and `C3dGroupEdit`, and each drawing tool's 
   make every name edit rewrite the cell file.
 - Owner check (§9) not run: pixels not seen. The panel's layout, the Define strip under the field and the Replace with
   Number button compile and are bound; the Variables icon is `Variable`.
+
+
+## 3D editor bugs round 1 (owner, 2026-09-26)
+
+The owner's first hands-on pass over the `.c3d` editor (briefs 41-51). Built in parallel pieces and merged;
+the materials-editor item became `docs/sonnet-briefs/brief-em3d-53-materials-editor.md` (a `.cmat` named by the `.ctech`).
+
+### 3D editor round 1 — New 3D View opens, Open 3D View, new views start orthographic (owner, 2026-09-26)
+
+- **New 3D View (tree) wrote the `.c3d` and opened nothing** — on purpose when brief 41 wrote it ("the 3D
+  editor is brief 43's"), and brief 43 never came back to it. `CreateThreeDViewFile` now returns the written
+  path (null on refusal) and `New3DViewAsync` opens it, the shape New Layout's `CreateAndOpenLayoutFile` has.
+  New 3D View from Layout already opened its view. There is no File/Design ▸ New 3D View path to fix:
+  `CreateCellHoldingViewAsync` only ever creates a schematic or a layout.
+- **The cell menu had Open Schematic/Symbol/Layout and no 3D** — `OpenCellPrimary` now dispatches
+  `ViewType.ThreeD` to `OpenOrActivateC3dEditor`, and the node carries `CanOpenThreeD`/`OpenThreeDCommand`
+  resolved by `CellFolder.ResolvePrimary`, exactly as the other three. Like them the item is always shown on
+  a cell and disabled when there is no primary 3D view.
+- **Orthographic on creation only.** The 3D editor persists NO projection (camera persistence,
+  `CwsCamera3D`, is the read-only `.cem` viewer's alone), so `Viewer3DViewModel.IsPerspective` starts `true`
+  on every open. `OpenOrActivateC3dEditor(path, newlyCreated: true)` — passed by both creation paths —
+  turns it off before the first frame; a later open of the same file is perspective again, because nothing
+  records that it was ever ortho. The owner's "other view mode" was read as orthographic; if it meant
+  something else (a Top standard view, or Object select mode, which is already the default) this is the one
+  line to change.
+- Gate: `ProjectTreeNodeViewModelTests.Cell_Sole3dView_CanOpenThreeD` (behaviour) and
+  `ThreeD/NewThreeDViewOpensTests` (source scan — the open path needs a live dock and a GPU backend).
+
+### 3D round 1 — Esc never reached the 3D editor; one stage back per Esc; no orbit mid-draw; the layout's snap keys
+
+The owner reported getting stuck in the 3D editor's toolbar text box, and asked for Esc to step a drawing back one
+stage at a time, then disarm the tool, then clear the selection (with Measure unwinding the same way).
+
+#### Esc had never worked in a docked 3D editor, anywhere
+
+**`WorkspaceWindow.axaml` binds `Escape` to `DisarmPlacementCommand`, whose CanExecute is always true, and a window
+key binding marks the key handled before routing reaches the focused control.** This is the fifth view to hit it
+(schematic, symbol, layout and the tree's search box carry the same fix and comment). In `C3dEditorView` it meant:
+`Viewer3DPane.OnKeyDown`'s Esc (a class handler, not called for handled events), the typed field's tunnel handler,
+the plane-offset box's and every Properties box's `KeyDown="…"` Esc branch — none of them ever ran in the app. The
+brief 45-51 gates drive `HandleKey`/`DrawKey` directly, so they passed throughout. A floated editor (a
+`CrfHostWindow`, which has no Escape binding) would have behaved; the docked one could not.
+
+**Fix:** `C3dEditorView` claims Esc on a Tunnel handler with `handledEventsToo: true` (`OnViewKeyTunnel`) and marks it
+handled, so a floated editor does not run the ladder twice. In a text box it CANCELS: the text the box had when it
+took focus (recorded by a bubble `GotFocus` handler) is written back through its binding, the plane-offset box and
+the Properties boxes also re-sync from their model, the LostFocus commits are suppressed for that refocus
+(`_cancellingEdit` — otherwise Rotate's commit pushes an undo entry even for an unchanged list), and focus returns to
+the canvas. The typed field closes; a Define row goes back to the field. An open drop-down just closes. Anywhere
+else in the view, `Viewer3DPane.Escape()` runs one step of the ladder. The dead per-box Esc branches were removed —
+one handler, not two. `Viewer3DView` (the read-only viewer) got the same claim for its pane.
+
+**Anything new hosted in a docked document that wants Escape needs `handledEventsToo: true`.** A test at the view
+model cannot see this; only the app can. Ui.Tests has no Avalonia headless platform, so the routing half is
+unverified here — it follows the four views that already work this way.
+
+#### The ladder
+
+`C3dDrawTool.StepBack()` (virtual; decrement by default, since a stage's state is overwritten when the stage is
+done again). Box/Sheet/Port/Cylinder/Wire: back one step (Wire also drops its cached arch). Polygon/Polyline: a
+stage is a vertex, so Esc = Backspace. Move: target → base point (the preview and the snap exclusion are ended, so
+the selection attracts the snap again), except a Duplicate (its base is the pivot) or a gizmo drag. Rotate, Extrude,
+the face/vertex edits and Align return false — their only earlier stage is the pick that started them — so Esc ends
+them as before. Place never has a step in progress, so Esc disarms. Stepping back drops typed expressions of the
+stages being redone and leaves an open Define group open (its definitions still belong to the gesture).
+
+Then, in `Viewer3DViewModel.HandleKey`: a measurement's points go first with Measure still armed
+(`ClearMeasurement`), then Measure itself, then the selection.
+
+#### No orbit mid-draw
+
+While a tool, an operation or Measure is armed (`OrbitNeedsCommand`), a plain left press never orbits: its release
+is the gesture's click however far it wobbled past the click slop (the wobble is what had been turning clicks into
+orbits). Ctrl/Cmd + drag orbits; Ctrl/Cmd + click without a drag stays the plane gesture. **macOS reports
+Control + left-click as a RIGHT press carrying Control** (AppKit's one-button convention — recorded for the layout
+canvas in HISTORY.md, L1d round 2); the pane reads that as the left press it is while something is armed, otherwise
+right-button pan and the context menu are unchanged. That also makes the 3D Ctrl-click plane gesture reachable on
+macOS with Control (it was only ever reachable with Cmd). Pan (middle, right, Shift/Alt + left) is unchanged.
+
+#### Snap keys
+
+The layout editor's keys: **S or F3 toggles geometry snap, F9 the grid.** 3D has no separate geometry switch, so
+S/F3 turns the four geometry kinds off together (grid still applies, as in a layout) and back on as they were; F9
+toggles the grid kind. With snapping off altogether either key turns it on with its kinds. Bare S only — Cmd/Ctrl+S
+stays Save. S, F3 and F9 were unused in every 3D key path (the Shift+A popup's S is the popup's own).
+
+### 3D editor round 1 — the object tree, the Properties Inspector and the air box (2026-09-26)
+
+Owner feedback on the first build of the 3D editor, the tree-and-Properties half.
+
+**A visibility tick collapsed the ticked object's group.** Every document edit rebuilds the whole tree
+(`RebuildTree` clears `Tree`), and a hide is a document edit (`Hidden` is undoable document state), so the group's
+`TreeViewItem` was a new container with the default `IsExpanded = false`. Expansion is now a node property
+(`C3dTreeNode.IsExpanded`, bound two-way by a `TreeViewItem` style) remembered by key in the editor
+(`_expansion`), written LIVE as the user opens and closes nodes rather than harvested before a rebuild — a harvest
+would miss a change made between two rebuilds and `RestoreExpansion` would then put the stale value back.
+**Nodes about to be thrown away are detached first** (`DetachExpansion`): a container torn down with its node may push
+"closed" back through the binding, which is not the user closing it. Groups start open, everything else closed.
+
+**"Clicking a tree node selects nothing" was a refused object, not the sync.** Tree → scene selection worked for a
+drawn object. The owner's box had no material, so `C3dElaborator` refused it and the scene held no object of that
+name: the selection was empty and Properties read the (empty) scene selection. Properties now falls back to the tree's
+node when the scene holds nothing selected (`C3dEditorViewModel.TreeOnlyObjectIndex`), shows the elaboration's refusal
+as the first row ("Not drawn"), and keeps every field editable — which is where the missing material is given. When the
+next scene holds the object, `OnSceneAdopted` makes it the scene's selection. `OnViewerSelectionChanged` now updates
+the tree BEFORE reloading Properties, or the fallback read the previous node. (A sibling change draws material-less
+objects as wireframe; the fallback still covers every other refusal — an unknown material, an unresolved expression.)
+
+**The tree's context menu calls the canvas's functions** (`C3dEditorViewModel.TreeMenu.cs`): Duplicate is
+`StartDuplicate`, Delete is `DeleteObjects` — factored out of `DeleteSelection` so a node the scene does not draw can
+be deleted too — Rename is `ShowProperties(rename: true)`, Isolate/Show All are the viewer's. What a node cannot do is
+shown DISABLED with the reason (the air box, an instance's part, a port's Duplicate). Instances had no delete at all;
+`DeleteInstance` is one `C3dEditSlot(true, i, before, null)` entry, which `C3dEdit.Apply` already handled.
+
+**The 3D editor's own Properties panel is gone; the Properties Inspector hosts it.** Nothing in the 3D editor needed
+its own panel — brief 43 built it inside the editor view following the read-only viewer's layout. The same
+`C3dPropertiesViewModel` is now shown by `PropertiesTool` (`IsC3dActive` / `C3dInspectorVm` / `SetActiveC3d`,
+own flag set last, cleared by every other setter), routed from `ActivateDocument` like a layout, so a `.c3d` in a
+floating window is followed the same way. The view moved to `Views/ThreeD/C3dPropertiesView.axaml` with its commit
+handlers. The toolbar's Properties toggle is a button (`ShowPropertiesPanelCommand`) that brings the dock panel
+forward through `ShowToolPanel(DockPanelIds.Properties)`, which re-opens a closed panel. **Esc in one of its fields**
+restores the text the field had when it took focus and THEN moves focus off it — tunnel + `handledEventsToo`, because
+the window's Esc binding marks the key handled first; restoring before leaving is what makes the lost-focus commit a
+no-op (reloading first would tear down a dimension field whose lost-focus handler then committed the edited text).
+
+**The air box is a tree node** — first under Boxes, only while a setup is active, `IsReadOnly`, its tick is the
+toolbar's air-box switch (`ShowBoundaryFaces`, both directions). Selecting it selects its six face objects (and shows
+them); a canvas click on an air-box face selects the node. The Inspector shows its setup, size, each face's boundary (a
+combo, `SetAirBoxBoundary`) and padding, and an X/Y/Z padding **percentage** that writes both faces of the axis in one
+entry (`SetAirBoxPaddingPercent`). `SetAirBoxBoundary` used to rebuild the face from `PaddingUm` alone — it would have
+dropped a percentage; it now changes only the boundary.
+
+The drawing plane's XY/YZ/XZ toggle buttons are one combo (`PlaneKind`, `PlaneChoices`); `IsPlaneXY/YZ/XZ` stay for
+the tests and menus that use them.
+
+Gate: `tests/Ui.Tests/ThreeD/EditorRound1TreeTests.cs`. Pixels were not seen.
+
+### 3D editor round 1 — Simulate ▸ Setup Analyses… replaces 3D ▸ Setups… (2026-09-26)
+
+The owner asked for one place to configure a 3D view's EM setups: the Simulate menu's Setup Analyses…, as for a
+schematic, with a double-click opening one setup in the `.cem`-style editor. 3D ▸ Setups… and the editor's
+side panel are gone; the toolbar's tune button now opens the same dialog (`C3dEditorViewModel.OpenSetupAnalyses`
+→ `SetupAnalysesRequested`, set by the shell → `WorkspaceViewModel.ShowC3dSetupAnalysesAsync`).
+`SetupAnalysesCommand` branches on `ActiveC3dEditor()` first.
+
+- **Reuse is at the dialog and card level, not the view model.** `AnalysesListViewModel` is a schematic
+  TestBench's list (corners, results-file override, templates, sweep chains, `SchematicViewModel` undo), so an
+  adapter would have been a second implementation hiding inside the first. `C3dSetupAnalysesDialog` copies
+  `AnalysesListView`'s toolbar, card (badge + name + summary) and empty state, and drives the setup edits the
+  panel already had (`AddSetup`, `DuplicateSetup`, `RenameSetup`, `RemoveSetup`, `SetActiveSetup`) — so undo and
+  the dirty mark are still the `.c3d`'s (`C3dRecordsEdit`), unchanged.
+- **The card's Enabled box became the ACTIVE mark** (radio icon): a 3D view runs one setup, not every enabled one.
+  Badges: SP (driven), ES, MS, EIG; `?` for a setup that cannot be read, whose summary line is the refusal.
+- **Double-click opens a modal window hosting `EmSetupEditorView`**, its DataContext BOUND to
+  `C3dEditorViewModel.SetupEditor` rather than assigned — `ReloadSetupEditor` replaces that document after an
+  undo, and an assigned one would keep editing the stale copy.
+- **Not adapted:** the Analyses DOCK panel does not list a `.c3d`'s setups; its empty-state text now reads "Open a
+  schematic or 3D Design to set up analyses." so it points at both. As with the schematic's modal dialog, the main window's Undo is unreachable while the dialog is open.
+
+### File ▸ New ▸ New 3D Design… (2026-09-26)
+
+A new cell holding one `.c3d`, opened orthographic — `CreateCellHoldingViewAsync` gained a `ViewType.ThreeD` arm that
+calls the tree's own `CreateThreeDViewFile` and `OpenOrActivateC3dEditor(…, newlyCreated: true)`, so the three
+creation paths share one writer and one open. **There is no scratch form** (New Layout opens an unsaved scratch
+layout with no workspace): the 3D editor's hierarchy and technology walks start from a file in a cell folder, so the
+command is disabled with no workspace rather than half-working. It carries the ellipsis because it always prompts
+(R-menu-1). Mirrored in all three File menus (in-window, native, torn-off); `FileMenuRestructureTests` holds the order.

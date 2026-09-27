@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using CircuitRF.Render;
 using CircuitRF.Ui.ThreeD;
 using CircuitRF.Ui.Viewer3D;
@@ -11,8 +12,8 @@ namespace CircuitRF.Ui.Views.ThreeD;
 
 /// <summary>
 /// brief-em3d-43 — the 3D editor's shell. Wires the pane's frames to the overlay, shows a present fault in
-/// the pane's place, opens the selection's context menu (the view model's, per mode), commits the Properties
-/// panel's typed fields on Enter or lost focus, and follows the application theme (a switch regenerates the
+/// the pane's place, opens the selection's context menu (the view model's, per mode) and the tree's,
+/// and follows the application theme (a switch regenerates the
 /// scene, because colours are baked into the vertices).
 /// </summary>
 public partial class C3dEditorView : UserControl
@@ -20,13 +21,21 @@ public partial class C3dEditorView : UserControl
     private C3dEditorViewModel? _vm;
     private readonly ContextMenu _menu = new();
     private readonly ContextMenu _drawMenu = new();
+    private readonly ContextMenu _treeMenu = new();
 
     public C3dEditorView()
     {
         InitializeComponent();
-        // brief-em3d-45 — the typed field sees Tab, Enter and Esc before the TextBox (and focus navigation) does.
+        // brief-em3d-45 — the typed field sees Tab and Enter before the TextBox (and focus navigation) does; its Esc is
+        // the view's (OnViewKeyTunnel).
         FieldInput.AddHandler(KeyDownEvent, OnFieldKey, RoutingStrategies.Tunnel);
         _drawMenu.AddHandler(KeyDownEvent, OnDrawMenuKey, RoutingStrategies.Tunnel);
+        // 3D round 1 — the workspace window binds Escape to a command, and a window key binding marks the key handled
+        // before routing reaches the focused control: no bubble handler in this view (the pane's, a text box's) ever
+        // saw Esc while the view was docked. The view claims it first, with handled events too — the fix the layout,
+        // schematic and symbol editors already carry.
+        AddHandler(KeyDownEvent, OnViewKeyTunnel, RoutingStrategies.Tunnel, handledEventsToo: true);
+        AddHandler(GotFocusEvent, OnViewGotFocus, RoutingStrategies.Bubble, handledEventsToo: true);
         Pane.FramePresented += () => Overlay.InvalidateVisual();
         Pane.ContextMenuRequested += () =>
         {
@@ -46,7 +55,6 @@ public partial class C3dEditorView : UserControl
         base.OnDataContextChanged(e);
         if (_vm is not null)
         {
-            _vm.PropertiesRequested -= OnPropertiesRequested;
             _vm.DrawMenuRequested -= OnDrawMenuRequested;
             _vm.FieldFocusRequested -= OnFieldFocusRequested;
             _vm.TextRequested -= OnTextRequested;
@@ -54,7 +62,6 @@ public partial class C3dEditorView : UserControl
         var doc = DataContext as C3dEditorDocument;
         _vm = doc?.ViewModel;
         if (_vm is null) return;
-        _vm.PropertiesRequested += OnPropertiesRequested;
         _vm.DrawMenuRequested += OnDrawMenuRequested;
         _vm.FieldFocusRequested += OnFieldFocusRequested;
         _vm.TextRequested += OnTextRequested;
@@ -70,14 +77,6 @@ public partial class C3dEditorView : UserControl
         var text = await new Dialogs.InputNameDialog(title, prompt, current).ShowDialog<string?>(window);
         if (text is null) return;
         if (commit(text) is { } why) _vm.StatusMessage = why;
-    }
-
-    private async void OnRenameSetupClick(object? sender, RoutedEventArgs e)
-    {
-        if (_vm?.SelectedSetupItem is not { IsExternal: false } item || TopLevel.GetTopLevel(this) is not Window window) return;
-        var text = await new Dialogs.InputNameDialog("Rename Setup", "Setup name:", item.Name).ShowDialog<string?>(window);
-        if (text is null) return;
-        if (_vm.RenameSetup(text) is { } why) _vm.StatusMessage = why;
     }
 
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
@@ -108,10 +107,54 @@ public partial class C3dEditorView : UserControl
         _vm.Viewer.View.Background = ThemeService.CurrentVariant == ColorVariant.Dark ? (0.12f, 0.13f, 0.15f) : (0.93f, 0.94f, 0.96f);
     }
 
-    private void OnPropertiesRequested(bool rename)
+    /// <summary>3D editor round 1 — a right-click on a tree node selects it, then opens its menu (the canvas's commands).</summary>
+    private void OnTreeContextRequested(object? sender, ContextRequestedEventArgs e)
     {
-        if (!rename) return;
-        Dispatcher.UIThread.Post(() => { NameBox.Focus(); NameBox.SelectAll(); }, DispatcherPriority.Loaded);
+        if (_vm is null || (e.Source as Control)?.FindAncestorOfType<TreeViewItem>(includeSelf: true)?.DataContext is not C3dTreeItem item) return;
+        _vm.SelectedTreeItem = item;
+        Viewer3DContextMenu.Fill(_treeMenu, _vm.TreeMenuItems(item), []);
+        if (_treeMenu.Items.Count > 0) _treeMenu.Open(ObjectTree);
+        e.Handled = true;
+    }
+
+    // ── 3D round 1: Esc ─────────────────────────────────────────────────────────────────────
+
+    private TextBox? _editBox;
+    private string? _editText;
+    private bool _cancellingEdit;
+
+    /// <summary>A text box took focus: what it said then is what Esc puts back.</summary>
+    private void OnViewGotFocus(object? sender, FocusChangedEventArgs e)
+    {
+        if (e.Source is not TextBox box) return;
+        _editBox = box;
+        _editText = box.Text;
+    }
+
+    /// <summary>
+    /// Esc anywhere in the view. In a text box it CANCELS the edit — the text it had when it took focus comes back
+    /// (through its binding, so the view model's copy too), nothing is committed on the way out, and focus returns
+    /// to the canvas; the typed field closes, and a Define row goes back to the field, as their own keys said. An open
+    /// drop-down just closes. Anywhere else it is one step of the pane's ladder.
+    /// </summary>
+    private void OnViewKeyTunnel(object? sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Escape || _vm is null) return;
+        e.Handled = true;
+        if (e.Source is ComboBox { IsDropDownOpen: true } combo) { combo.IsDropDownOpen = false; return; }
+        if (e.Source is not TextBox box) { Pane.Escape(); return; }
+        if (ReferenceEquals(box, FieldInput)) _vm.FieldEscape();
+        else if (box.DataContext is C3dDefineRow) { _vm.DefineEscape(); return; }
+        else
+        {
+            if (ReferenceEquals(box, _editBox)) box.Text = _editText;
+            if (ReferenceEquals(box, PlaneOffsetBox)) _vm.SetPlane(_vm.Plane);
+            else if (box.DataContext is C3dPropertiesViewModel or C3dDimensionField) _vm.Properties.Reload();
+        }
+        _cancellingEdit = true;
+        try { Pane.Focus(); }
+        finally { _cancellingEdit = false; }
+        _editBox = null;
     }
 
     // ── brief-em3d-45: the drawing ──────────────────────────────────────────────────────────
@@ -169,70 +212,19 @@ public partial class C3dEditorView : UserControl
                 if (!_vm.FieldOpen) Pane.Focus();
                 e.Handled = true;
                 break;
-            case Key.Escape: _vm.FieldEscape(); Pane.Focus(); e.Handled = true; break;
         }
     }
 
     private void OnPlaneOffsetKey(object? sender, KeyEventArgs e)
     {
         if (e.Key == Key.Enter) { _vm?.CommitPlaneOffset(); Pane.Focus(); e.Handled = true; }
-        else if (e.Key == Key.Escape) { if (_vm is not null) _vm.SetPlane(_vm.Plane); Pane.Focus(); e.Handled = true; }
     }
 
-    private void OnPlaneOffsetLostFocus(object? sender, RoutedEventArgs e) => _vm?.CommitPlaneOffset();
-
-    // ── the Properties panel's typed fields: committed on Enter or lost focus ───────────────
-
-    private void OnNameKey(object? sender, KeyEventArgs e)
-    {
-        if (e.Key == Key.Enter) { _vm?.Properties.CommitName(); e.Handled = true; }
-        else if (e.Key == Key.Escape) { _vm?.Properties.Reload(); e.Handled = true; }
-    }
-
-    private void OnNameLostFocus(object? sender, RoutedEventArgs e) => _vm?.Properties.CommitName();
-
-    private void OnOriginKey(object? sender, KeyEventArgs e)
-    {
-        if (e.Key == Key.Enter) { _vm?.Properties.CommitOrigin(); e.Handled = true; }
-        else if (e.Key == Key.Escape) { _vm?.Properties.Reload(); e.Handled = true; }
-    }
-
-    private void OnOriginLostFocus(object? sender, RoutedEventArgs e) => _vm?.Properties.CommitOrigin();
-
-    private void OnRotateKey(object? sender, KeyEventArgs e)
-    {
-        if (e.Key == Key.Enter) { _vm?.Properties.CommitRotate(); e.Handled = true; }
-        else if (e.Key == Key.Escape) { _vm?.Properties.Reload(); e.Handled = true; }
-    }
-
-    private void OnRotateLostFocus(object? sender, RoutedEventArgs e) => _vm?.Properties.CommitRotate();
-
-    private void OnVertexKey(object? sender, KeyEventArgs e)
-    {
-        if (e.Key == Key.Enter) { _vm?.Properties.CommitVertex(); e.Handled = true; }
-        else if (e.Key == Key.Escape) { _vm?.Properties.Reload(); e.Handled = true; }
-    }
-
-    private void OnVertexLostFocus(object? sender, RoutedEventArgs e) => _vm?.Properties.CommitVertex();
-
-    // ── brief-em3d-51: a dimension in Properties, the Define strip, the Variables panel ──
-
-    private void OnDimensionKey(object? sender, KeyEventArgs e)
-    {
-        if (e.Key != Key.Enter || (sender as Control)?.DataContext is not C3dDimensionField f) return;
-        _vm?.Properties.CommitField(f);
-        e.Handled = true;
-    }
-
-    private void OnDimensionLostFocus(object? sender, RoutedEventArgs e)
-    {
-        if ((sender as Control)?.DataContext is C3dDimensionField f) _vm?.Properties.CommitField(f);
-    }
+    private void OnPlaneOffsetLostFocus(object? sender, RoutedEventArgs e) { if (!_cancellingEdit) _vm?.CommitPlaneOffset(); }
 
     private void OnDefineKey(object? sender, KeyEventArgs e)
     {
         if (e.Key == Key.Enter) { _vm?.DefineEnter(); e.Handled = true; }
-        else if (e.Key == Key.Escape) { _vm?.DefineEscape(); FieldInput.Focus(); e.Handled = true; }
     }
 
     private C3dVariableRow? RowOf(object? sender) => (sender as Control)?.DataContext as C3dVariableRow;

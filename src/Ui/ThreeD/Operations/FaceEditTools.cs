@@ -118,6 +118,10 @@ public abstract class C3dFaceEditTool(IC3dFaceHost host, int index, C3dObject so
     /// <summary>A key while it runs; true when it took it.</summary>
     public virtual bool Key(Key key, KeyModifiers modifiers) => false;
 
+    /// <summary>A face or vertex gesture starts on the picked face or vertex — that pick is its only earlier stage — so
+    /// Esc ends it.</summary>
+    public override bool StepBack() => false;
+
     /// <summary>A world vector (DBU) in the object's own frame: exact when the placement is a composition of quarter
     /// turns and mirrors, else rounded once.</summary>
     protected (C3dPoint3 Local, bool Exact) ToLocal(C3dPoint3 world)

@@ -463,7 +463,10 @@ internal static class DocumentSchema
             Material. A boundary follows its face through every edit, and a fold hands it to each
             piece. A conductor already is a void bounded by its metal, so a boundary on one is
             refused; Absorbing, Pmc and Symmetry are the air box's (both solvers state them only on
-            the outer boundary), set in a setup's AirBox. Palace finds a face's surfaces by its
+            the outer boundary), set in a setup's AirBox. An AirBox face's padding is PaddingUm, or
+            PaddingPercent — a percentage of the content's extent along that face's axis, so
+            {"XMin": {"PaddingPercent": 10}, "XMax": {"PaddingPercent": 10}} pads a tenth of the
+            x-extent on each side; never both on one face. Palace finds a face's surfaces by its
             bounding box and counts them exactly: a neighbour's face lying in the same plane and
             overlapping it is refused, never merged. A curved face (a cylinder's side) is refused.
           * A NAMED DIMENSION may hold an expression instead of a number: Min and Size (box,

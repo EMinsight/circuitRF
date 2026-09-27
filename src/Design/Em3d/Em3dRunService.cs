@@ -1477,7 +1477,9 @@ public static class Em3dRunService
         {
             double defaultPadUm = Em3dGenerator.DefaultPaddingFractionOfLongestWavelength * 299_792_458.0 /
                                   problem.Frequency.StartHz * 1e6;
-            EmAirBoxFace Half(EmAirBoxFace? f) => new((f?.PaddingUm ?? defaultPadUm) / 2, f?.Boundary);
+            EmAirBoxFace Half(EmAirBoxFace? f) => f?.PaddingPercent is { } pct
+                ? new(null, f.Boundary, pct / 2)
+                : new((f?.PaddingUm ?? defaultPadUm) / 2, f?.Boundary);
             var box = setup.AirBox ?? new EmAirBox();
             var smaller = setup.Clone();
             smaller.AirBox = new EmAirBox(Half(box.XMin), Half(box.XMax), Half(box.YMin), Half(box.YMax),

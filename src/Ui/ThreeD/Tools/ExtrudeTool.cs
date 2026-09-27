@@ -183,6 +183,9 @@ public sealed class ExtrudeTool : C3dDrawTool
         return C3dToolStep.Done(result);
     }
 
+    /// <summary>Extrude starts on the chosen outline — its only earlier stage — so Esc ends it.</summary>
+    public override bool StepBack() => false;
+
     public override void Preview(in C3dDrawInput input, List<DrawSegment> rubber, List<Point3> fixedPoints)
     {
         if (Step == 0) return;

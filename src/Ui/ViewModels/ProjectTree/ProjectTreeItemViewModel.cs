@@ -530,6 +530,9 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
     /// <summary>Open this cell's primary layout in a Content tab.</summary>
     public IRelayCommand OpenLayoutCommand { get; }
 
+    /// <summary>Open this cell's primary 3D view in the 3D editor.</summary>
+    public IRelayCommand OpenThreeDCommand { get; }
+
     /// <summary>New Layout — prompts for a name, creates .clay in this cell's layout/ folder, opens it.</summary>
     public IAsyncRelayCommand NewLayoutCommand { get; }
 
@@ -581,6 +584,7 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
     public bool CanOpenSchematic { get; }
     public bool CanOpenSymbol    { get; }
     public bool CanOpenLayout    { get; }
+    public bool CanOpenThreeD    { get; }
 
     // ── Tree state ─────────────────────────────────────────────────────────────
 
@@ -685,6 +689,8 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
             CanOpenSymbol = CellFolder.ResolvePrimary(node.AbsolutePath, ViewType.Symbol).State
                 is PrimaryState.SoleFile or PrimaryState.NamedPresent;
             CanOpenLayout = CellFolder.ResolvePrimary(node.AbsolutePath, ViewType.Layout).State
+                is PrimaryState.SoleFile or PrimaryState.NamedPresent;
+            CanOpenThreeD = CellFolder.ResolvePrimary(node.AbsolutePath, ViewType.ThreeD).State
                 is PrimaryState.SoleFile or PrimaryState.NamedPresent;
         }
 
@@ -814,6 +820,10 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
         OpenLayoutCommand = new RelayCommand(
             () => _actions?.OpenCellLayout(this),
             () => _actions is not null && IsCell && CanOpenLayout);
+
+        OpenThreeDCommand = new RelayCommand(
+            () => _actions?.OpenCellThreeD(this),
+            () => _actions is not null && IsCell && CanOpenThreeD);
 
         RemoveFileCommand = new RelayCommand(
             () => _actions?.RemoveFile(this),

@@ -309,13 +309,15 @@ model circuitRF built, and after a run it also shows what the solver made.
   solves for that name — and every other object using it moves with it, in the preview too. A drag of
   anything else (`2*w*l`) is refused, with *Replace with Number* offered. A move or rotation is refused when
   it would change a name another object uses, because only the selection moves while you drag.
-- **Setups** (the 3D editor, the tune button or *3D ▸ Setups…*). A 3D view carries its own EM setups, in the
-  same form a `.cem` has, and the panel beside the view lists them: *Add*, *Duplicate*, *Rename…*, *Remove*,
-  and *Make Active*. The **active** setup (●) is the one *Simulate ▸ Run* runs and whose air box is drawn;
-  which one is active is remembered per user, not saved in the `.c3d`. Selecting a setup shows the same panel
-  a `.cem` opens, less the layout row (the 3D view is the geometry) and the planar analyses (a 3D view is
-  solved by Palace or openEMS). Every change in it is an edit of the 3D view: Undo takes it back and Save
-  writes it. A static setup's terminals name their conductors by **object** (`top`, or `U1/pad3` inside a
+- **Setups** (*Simulate ▸ Setup Analyses…* with a 3D view active, or the editor's tune button). A 3D view
+  carries its own EM setups, in the same form a `.cem` has, and the dialog lists them as a schematic's
+  analyses are listed — one card each, with its kind (SP, ES, MS or EIG) and its solver and sweep: *Add*,
+  *Edit*, *Duplicate*, *Rename*, *Remove* and *Make Active*, also on each card's right-click menu with *Run*.
+  The **active** setup (the filled radio mark) is the one *Simulate ▸ Run* runs and whose air box is drawn;
+  which one is active is remembered per user, not saved in the `.c3d`. **Double-click** a card to edit that
+  setup in the same panel a `.cem` opens, less the layout row (the 3D view is the geometry) and the planar
+  analyses (a 3D view is solved by Palace or openEMS). Every change is an edit of the 3D view: Undo takes it
+  back and Save writes it. A static setup's terminals name their conductors by **object** (`top`, or `U1/pad3` inside a
   placed cell), because a drawn object has no net. *Show 3D* on a `.cem` whose geometry is a `.c3d` opens this
   editor, with that `.cem` listed read-only and active, so its ports and boundaries can be seen.
 - **Ports** (the 3D editor, **P** in the Shift+A popup, or *3D ▸ Draw ▸ Port*). A port is drawn like a sheet —
