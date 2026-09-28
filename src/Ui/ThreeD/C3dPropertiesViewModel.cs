@@ -118,7 +118,17 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
     [ObservableProperty] private bool _isEditable;
     [ObservableProperty] private string _nameText = "";
     [ObservableProperty] private string? _material;
-    [ObservableProperty] private string _role = RoleFromMaterial;
+    [ObservableProperty] private string? _role = RoleFromMaterial;
+
+    /// <summary>What the Role combo shows when it holds no choice: a group whose members' roles differ.</summary>
+    [ObservableProperty] private string _rolePlaceholder = "";
+
+    /// <summary>3D editor groups — the selection is one group: its name, a material and a role for all of it, and its corner.</summary>
+    [ObservableProperty] private bool _isGroup;
+    private string _groupPath = "";
+
+    /// <summary>The Material and Role combos' text when a group's members differ.</summary>
+    public const string Various = "Various";
     [ObservableProperty] private string _rotateText = "";
     [ObservableProperty] private bool _mirrorX;
     [ObservableProperty] private string _error = "";
@@ -219,6 +229,8 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         WirePoints.Clear();
         MaterialPlaceholder = NoMaterialPlaceholder;
         IsVertexEditable = false;
+        IsGroup = false;
+        RolePlaceholder = "";
         IsBoolean = false;
         IsFeature = false;
         FeatureEdges.Clear();
@@ -248,6 +260,7 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
             // 3D editor round 1 — the tree's node when the scene holds nothing selected: an object elaboration refused
             // (its fields are where the refusal is put right), or the air box.
             if (editor.TreeOnlyObjectIndex() is >= 0 and var only) { LoadObject(only, inScene: false); return; }
+            if (editor.SelectedTreeItem is { IsGroup: true, GroupPath: { } undrawn }) { LoadGroup(undrawn); return; }
             if (editor.SelectedTreeItem is { IsAirBox: true }) { LoadAirBox(); return; }
             Heading = "Nothing selected";
             return;
@@ -259,6 +272,8 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
             return;
         }
         if (sel.Count == 2 && viewer.SelectMode == Scene3DSelectMode.Face && sel[0].Face >= 0 && sel[1].Face >= 0) { TwoFaces(sel[0], sel[1]); return; }
+        // 3D editor groups — a group selected whole is one thing here, however many objects it is.
+        if (viewer.SelectMode == Scene3DSelectMode.Object && editor.SelectedGroupPath() is { } group) { LoadGroup(group); return; }
         // 3D editor round 4 — every element of one wire row selected (the tree selects them all) is that one wire.
         if (sel.Count > 1 && !OneDocumentObject(sel)) { Heading = $"{sel.Count} selected"; return; }
         var item = sel[0];
@@ -359,6 +374,61 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         foreach (var f in editor.DimensionFields(obj)) Fields.Add(f);
         foreach (var row in RowsOf(Fields)) FieldRows.Add(row);
     }
+
+    /// <summary>
+    /// 3D editor groups — a group: its Name; one Material and one Role for every member that has one (the combo reads
+    /// Various while they differ); its Corner, which moves every member by the same step; and its Size, read from the
+    /// members' box. A group has no placement of its own, so there is none to type.
+    /// </summary>
+    private void LoadGroup(string path)
+    {
+        var doc = editor.Document;
+        string name = C3dGroups.NameOf(path);
+        IsGroup = true;
+        _groupPath = path;
+        IsEditable = true;
+        IsPlaced = false;
+        Heading = $"Group '{name}'";
+        NameText = name;
+        var members = C3dGroups.MembersOf(doc, path);
+        var solids = members.Where(m => !m.Instance).Select(m => doc.Objects[m.Index]).Where(o => o is not C3dPolyline).ToList();
+        IsMaterialEditable = solids.Count > 0;
+        var materials = solids.Select(o => o is C3dWire w ? C3dWires.MaterialOf(w) : C3dValidation.EffectiveMaterial(o)).Distinct().ToList();
+        Material = materials.Count == 1 ? materials[0] : null;
+        MaterialPlaceholder = materials.Count > 1 ? Various : solids.Count == 0 ? "None — the group holds no solid" : NoMaterialPlaceholder;
+        var roles = solids.Select(C3dValidation.EffectiveRole).Distinct().ToList();
+        Role = roles.Count == 1 ? roles[0]?.ToString() ?? RoleFromMaterial : null;
+        RolePlaceholder = roles.Count > 1 ? Various : "";
+        Rows.Add(new C3dPropertyRow("Kind", "Group"));
+        int objects = members.Count(m => !m.Instance), instances = members.Count - objects;
+        var subgroups = C3dGroups.All(doc).Count(g => g.Parent == path);
+        Rows.Add(new C3dPropertyRow("Holds", string.Join(", ", new[] { (objects, "object"), (instances, "instance"), (subgroups, "group") }
+                                                              .Where(t => t.Item1 > 0).Select(t => t.Item1 == 1 ? $"1 {t.Item2}" : $"{t.Item1} {t.Item2}s"))));
+        if (C3dGroups.ParentOf(path) is { } parent) Rows.Add(new C3dPropertyRow("In", $"the group '{C3dGroups.NameOf(parent)}'"));
+        if (editor.GroupBoundsDbu(path) is not { } b)
+        {
+            Rows.Add(new C3dPropertyRow("Corner", "None of it is drawn."));
+            return;
+        }
+        string Spell(double dbu) => Tools.C3dDimension.Spell((long)Math.Round(dbu, MidpointRounding.AwayFromZero), doc.DisplayUnit, doc.DbuPerMicron);
+        string Axis(int k) => k switch { 0 => "x", 1 => "y", _ => "z" };
+        double[] corner = [b.X0, b.Y0, b.Z0];
+        for (int k = 0; k < 3; k++)
+        {
+            string text = Spell(corner[k]);
+            Fields.Add(new C3dDimensionField
+            {
+                Path = GroupCornerPath + k, Label = "Corner " + Axis(k), Group = "Corner", Axis = Axis(k), Kind = C3dFieldKind.Length,
+                ValueText = "", Text = text, Loaded = text,
+            });
+        }
+        foreach (var row in RowsOf(Fields)) FieldRows.Add(row);
+        Rows.Add(new C3dPropertyRow("Size", $"{Spell(b.X1 - b.X0)} × {Spell(b.Y1 - b.Y0)} × {Spell(b.Z1 - b.Z0)} {LengthUnit}" +
+                                            (b.Exact ? "" : " (≈)") + " — the members' box; each member keeps its own size"));
+    }
+
+    /// <summary>A group's Corner field's path: <c>Group.Corner[k]</c> is no field of any object.</summary>
+    private const string GroupCornerPath = "Group.Corner";
 
     /// <summary>brief-em3d-67 R-em3d67-3f — what Properties shows for selected edges, every value selectable and copyable.</summary>
     private void LoadEdges(IReadOnlyList<Scene3DItem> sel)
@@ -763,6 +833,11 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
     /// when it does not resolve — the field then says why). One undo entry.</summary>
     public void CommitField(C3dDimensionField field)
     {
+        if (IsGroup && field.Path.StartsWith(GroupCornerPath, StringComparison.Ordinal))
+        {
+            if (field.Text != field.Loaded) Error = editor.SetGroupCorner(_groupPath, field.Path[^1] - '0', field.Text) ?? "";
+            return;
+        }
         if (ObjectIndex < 0 || field.Text == field.Loaded) return;
         Error = editor.SetFieldText(ObjectIndex, field.Path, field.Text) ?? "";
     }
@@ -873,6 +948,12 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
     /// <summary>The Name field's Enter or lost focus.</summary>
     public void CommitName()
     {
+        if (IsGroup)
+        {
+            Error = editor.RenameGroup(_groupPath, NameText) ?? "";
+            if (Error.Length > 0) NameText = C3dGroups.NameOf(_groupPath);
+            return;
+        }
         if (ObjectIndex < 0) return;
         Error = editor.Rename(ObjectIndex, NameText) ?? "";
         if (Error.Length > 0) NameText = editor.ObjectLabel(ObjectIndex);
@@ -880,7 +961,14 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
 
     partial void OnMaterialChanged(string? value)
     {
-        if (_loading || ObjectIndex < 0 || value is null) return;
+        if (_loading || value is null) return;
+        if (IsGroup)
+        {
+            if (value == C3dEditorViewModel.NewMaterialItem) { _loading = true; Material = null; _loading = false; }
+            editor.SetGroupMaterial(_groupPath, value);
+            return;
+        }
+        if (ObjectIndex < 0) return;
         int i = ObjectIndex;
         if (value == C3dEditorViewModel.NewMaterialItem)
         {
@@ -895,10 +983,13 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         editor.ChangeObjects($"Material of {editor.ObjectLabel(i)}", [i], o => C3dEditorViewModel.SetMaterialOf(o, value));
     }
 
-    partial void OnRoleChanged(string value)
+    partial void OnRoleChanged(string? value)
     {
-        if (_loading || ObjectIndex < 0) return;
+        // A combo cleared by its items (Various, which is no choice) writes null back: that is not an edit.
+        if (_loading || value is null) return;
         Em3dRole? role = Enum.TryParse<Em3dRole>(value, out var r) ? r : null;
+        if (IsGroup) { editor.SetGroupRole(_groupPath, role); return; }
+        if (ObjectIndex < 0) return;
         int i = ObjectIndex;
         editor.ChangeObjects($"Role of {editor.ObjectLabel(i)}", [i], o => o.Role = role);
     }

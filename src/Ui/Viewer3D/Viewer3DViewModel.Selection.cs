@@ -67,6 +67,10 @@ public interface IViewer3DEditHost
     /// selection. <paramref name="clickCount"/> 2 is the second click of a double-click.</summary>
     bool DrawClick(KeyModifiers modifiers, int clickCount) => false;
 
+    /// <summary>3D editor groups — what a click on <paramref name="item"/> selects: the item, or (Object mode, in the editor)
+    /// every member of the top-most group it is in, the item first.</summary>
+    IReadOnlyList<Scene3DItem> PickGroup(Scene3DItem item) => [item];
+
     /// <summary>brief-em3d-45 — a key the drawing takes before the pane's own keys: Shift+A, and while a tool is armed
     /// its Esc, Enter, Tab and the digits that open the typed field.</summary>
     bool DrawKey(Key key, KeyModifiers modifiers) => false;
@@ -291,9 +295,11 @@ public sealed partial class Viewer3DViewModel
             SelectTangentChain(it, add: shift);
             return;
         }
+        // 3D editor groups — a click on any of a group takes all of it, and Shift adds or removes all of it.
+        var picked = EditHost?.PickGroup(it) ?? [it];
         if (shift)
-            SetSelection(View.Selection.Contains(it) ? View.Selection.Where(s => s != it) : [.. View.Selection, it]);
-        else SetSelection([it]);
+            SetSelection(View.Selection.Contains(it) ? View.Selection.Where(s => !picked.Contains(s)) : [.. View.Selection, .. picked]);
+        else SetSelection(picked);
         if (_items.TryGetValue(it.Object, out var treeItem)) RevealRequested?.Invoke(treeItem);
     }
 
@@ -590,7 +596,7 @@ public sealed partial class Viewer3DViewModel
     /// </summary>
     public IReadOnlyList<Viewer3DMenuItem> OpenContextMenu()
     {
-        if (!HitCycle.Active && HoveredItem is { } h && !View.Selection.Contains(h)) SetSelection([h]);
+        if (!HitCycle.Active && HoveredItem is { } h && !View.Selection.Contains(h)) SetSelection(EditHost?.PickGroup(h) ?? [h]);
         return ContextMenuItems();
     }
 

@@ -1,6 +1,7 @@
 // 3D editor round 1 — the object tree's context menu. Right-clicking a node selects it (the scene and the Properties
 // Inspector follow), then offers what the canvas offers for it, through the SAME functions the canvas menu, the keys and
-// the 3D menu call — Duplicate, Delete, Rename, Material, Hide, Isolate, Show All, Properties — never a second copy.
+// the 3D menu call — Duplicate, Delete, Rename, Material, Hide, Isolate, Show All, Properties, and a group's Ungroup — never a
+// second copy.
 // What a node cannot do is shown disabled with the reason, so the answer is readable (the air box, an instance's part).
 
 using CircuitRF.Design.ThreeD;
@@ -43,6 +44,7 @@ public sealed partial class C3dEditorViewModel
             items.Add(new Viewer3DMenuItem("Delete", b is null ? null : () => StatusMessage = SetFaceBoundary(b.Object, b.Face, null) ?? "",
                                            Enabled: b is not null));
         }
+        else if (item.IsGroup) items.AddRange(GroupTreeItems(item));
         else if (item.OperandPath is { } path && item.ObjectIndex >= 0 && item.ObjectIndex < Document.Objects.Count)
             items.AddRange(OperandTreeItems(item, path));
         // brief-em3d-67 R-em3d67-6b — a fillet's or chamfer's row: the inspector's own functions.
@@ -72,6 +74,8 @@ public sealed partial class C3dEditorViewModel
             items.Add(new Viewer3DMenuItem("Duplicate  (Ctrl/Cmd+D)", StartDuplicate, Enabled: drawn,
                 Tip: drawn ? "A copy in place, then a Move: click where it goes, or Esc to leave it where it is."
                            : "Not drawn (elaboration refused it — see Properties): there is nothing to place yet."));
+            // 3D editor groups — disabled for this row alone (a group holds two things or more), with the reason.
+            items.Add(GroupObjectsItem());
             items.Add(Viewer3DMenuItem.Separator);
             if (item.ObjectIndex >= 0)
                 items.Add(new Viewer3DMenuItem("Delete", () => DeleteObjects([item.ObjectIndex])));
@@ -158,6 +162,7 @@ public sealed partial class C3dEditorViewModel
     private IReadOnlyList<Scene3DObject> SceneObjectsOfNode(C3dTreeItem item)
     {
         if (item.IsAirBox) return AirBoxFaceObjects();
+        if (item.IsGroup) return SceneObjectsOfGroup(item.GroupPath!);
         var names = item.InstanceIndex >= 0 ? item.Children.Select(c => c.Name) : [item.Name];
         return [.. names.Select(SceneObject).OfType<Scene3DObject>()];
     }

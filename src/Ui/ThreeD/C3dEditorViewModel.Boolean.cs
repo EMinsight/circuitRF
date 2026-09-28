@@ -398,6 +398,7 @@ public sealed partial class C3dEditorViewModel
         var world = C3dBooleans.Copy(parent.Tools[k]);
         var carry = C3dBooleans.ParentTransform(root, path);
         if (!IsIdentity(carry)) world.Placement = world.Placement.Then(carry, out _);
+        world.Group = root.Group;                    // out of the boolean, into the boolean's group (C3dGroups)
         var newRoot = WithoutTool(root, path);
         var before = C3dListsEdit.Of(Document);
         var objects = before.Objects.ToList();

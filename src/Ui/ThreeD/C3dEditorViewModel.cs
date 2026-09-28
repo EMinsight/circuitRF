@@ -479,6 +479,12 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         var objects = Viewer.SelectedObjects();
         // brief-em3d-66 R-em3d66-6 — an entered operand: a Tool is removed from its boolean; the Blank is refused.
         if (objects.Select(OperandIndexOf).Where(i => i >= 0).Distinct().ToList() is { Count: > 0 } operands) return DeleteOperands(operands);
+        // A group selected whole is deleted whole, its instances with its objects (C3dGroups).
+        if (SelectedUnits().Where(u => u.IsGroup).ToList() is { Count: > 0 } groups && groups.SelectMany(u => C3dGroups.MembersOf(Document, u.GroupPath!)).Any(m => m.Instance))
+        {
+            DeleteMembers(SelectedMembers(), groups.Count == 1 ? $"Delete {C3dGroups.NameOf(groups[0].GroupPath!)}" : $"Delete {groups.Count} groups");
+            return true;
+        }
         var indices = objects.Select(DocumentIndex).Where(i => i >= 0).Distinct().OrderBy(i => i).ToList();
         if (indices.Count == 0)
         {
@@ -930,13 +936,18 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
             DetachExpansion(Tree);
             Tree.Clear();
             RebuildTreeFilters();
+            if (GroupsSection() is { } groups) Tree.Add(groups);
             foreach (var g in IsViewOnly ? ViewObjectGroups() : ObjectGroups()) Tree.Add(g);
             if (InstanceGroup() is { } instances) Tree.Add(instances);
             RebuildInstanceChildren();
             RefreshWireFlags();
             RefreshKernelFlags();
             RebuildRecordsTree();
-            SetTreeRows([.. keep.Select(RebuiltRow).OfType<C3dTreeItem>().Distinct()]);
+            List<C3dTreeItem> rows = [.. keep.Select(RebuiltRow).OfType<C3dTreeItem>().Distinct()];
+            // A group's row that is gone (ungrouped, or its grouping undone): the rows of what the view has selected.
+            if (rows.Count < keep.Count && keep.Any(k => k.IsGroup))
+                rows = [.. Viewer.SelectedObjects().Select(RowOf).OfType<C3dTreeItem>().Distinct()];
+            SetTreeRows(CollapseToGroups(rows));
         }
         finally { _syncingTree = false; }
     }
@@ -944,7 +955,8 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     /// <summary>The rebuilt tree's row that stands where <paramref name="old"/> stood, or null.</summary>
     private C3dTreeItem? RebuiltRow(C3dTreeItem old)
         => old.FeaturePath is { } feature ? AllTreeItems().FirstOrDefault(t => t.FeaturePath == feature && t.TopName == old.TopName)
-         : AllTreeItems().FirstOrDefault(t => t.Name == old.Name && t.IsAirBox == old.IsAirBox && t.OperandPath == old.OperandPath);
+         : old.IsGroup ? AllTreeItems().FirstOrDefault(t => t.IsGroup && t.GroupPath == old.GroupPath)
+         : AllTreeItems().FirstOrDefault(t => t.Name == old.Name && !t.IsGroup && t.IsAirBox == old.IsAirBox && t.OperandPath == old.OperandPath);
 
     // 3D editor round 1 — each node's expansion, by key, across rebuilds: written as the user opens and closes nodes,
     // read when a rebuilt node takes its place. A group starts expanded; everything else closed.
@@ -996,7 +1008,8 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     private void RebuildInstanceChildren()
     {
         if (Elaboration is not { } e) return;
-        foreach (var inst in Tree.Where(g => g.Role == C3dTreeGroupRole.Instances).SelectMany(g => g.Items))
+        // An instance in a group is a row under the group's (C3dGroups), not in the Instances section.
+        foreach (var inst in AllTreeItems().Where(t => t.InstanceIndex >= 0 && !t.IsReadOnly).ToList())
         {
             inst.Children.Clear();
             foreach (var (name, p) in e.Provenance.Where(kv => kv.Value.InstancePath == inst.Name ||
@@ -1010,7 +1023,8 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     private void RefreshTreeVisibility()
     {
         foreach (var item in AllTreeItems())
-            if (item.OperandPath is { } op && item.ObjectIndex >= 0 && item.ObjectIndex < Document.Objects.Count)
+            if (item.IsGroup) item.Sync(GroupVisible(item.GroupPath!));
+            else if (item.OperandPath is { } op && item.ObjectIndex >= 0 && item.ObjectIndex < Document.Objects.Count)
                 item.Sync(C3dBooleans.At(Document.Objects[item.ObjectIndex], op)?.Hidden != true);
             else if (item.ObjectIndex >= 0 && item.ObjectIndex < Document.Objects.Count) item.Sync(!Document.Objects[item.ObjectIndex].Hidden);
             else if (SceneObject(item.Name) is { } s) item.Sync(Viewer.View.IsVisible(s.Id));
@@ -1028,6 +1042,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
             return;
         }
         if (item.IsFeature) return;           // brief-em3d-67 — a feature row's switch is Enabled, not visibility
+        if (item.IsGroup) { SetGroupVisible(item.GroupPath!, visible); return; }
         if (item.OperandPath is { } path && item.ObjectIndex >= 0)
         {
             ChangeOperand($"{(visible ? "Show" : "Hide")} {item.Name}", item.ObjectIndex, path, o => o.Hidden = !visible);
@@ -1072,7 +1087,8 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         {
             LeaveBooleanFully();
             _selectAfterAdopt = value.ObjectIndex >= 0 && value.ObjectIndex < Document.Objects.Count ? [Document.Objects[value.ObjectIndex].Name]
-                              : value.InstanceIndex >= 0 ? [value.Name] : null;
+                              : value.InstanceIndex >= 0 ? [value.Name]
+                              : value.IsGroup ? [.. C3dGroups.MembersOf(Document, value.GroupPath!).Select(MemberName)] : null;
             Viewer.Regenerate();
         }
         _syncingTree = true;
@@ -1091,6 +1107,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     /// instance's parts, a document object's — a feature row's too, since it rounds that object — or the named object.</summary>
     private IEnumerable<Scene3DObject> SceneObjectsOfRow(C3dTreeItem row)
         => row.IsAirBox ? AirBoxFaceObjects()
+            : row.IsGroup ? SceneObjectsOfGroup(row.GroupPath!)
             : row.InstanceIndex >= 0 ? row.Children.Select(c => c.Name).Select(SceneObject).OfType<Scene3DObject>()
             : row.ObjectIndex >= 0 && row.ObjectIndex < Document.Objects.Count ? SceneObjectsFor(Document.Objects[row.ObjectIndex])
             : new[] { SceneObject(row.Name) }.OfType<Scene3DObject>();
@@ -1115,7 +1132,8 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
             {
                 // 3D editor round 5 — every selected object's row is selected in the tree, not only the first's.
                 var rows = Viewer.SelectedObjects().Select(o => IsViewOnly ? ViewTreeItemOf(o) : RowOf(o)).OfType<C3dTreeItem>().Distinct().ToList();
-                SetTreeRows(rows);
+                // A group selected whole is its own row (C3dGroups).
+                SetTreeRows(CollapseToGroups(rows));
             }
             finally { _syncingTree = false; }
             if (SelectedTreeItem is { } shown) TreeRevealRequested?.Invoke(shown);
@@ -1130,9 +1148,9 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
            // brief-em3d-66 — an entered operand is its row under its boolean.
            : OperandIndexOf(o) is >= 0 and var oi && TopOf(oi, out string op) is >= 0 and var top
              ? AllTreeItems().FirstOrDefault(t => t.ObjectIndex == top && t.OperandPath == op)
-           : AllTreeItems().FirstOrDefault(t => t.Name == o.Name && !t.IsAirBox)
+           : AllTreeItems().FirstOrDefault(t => t.Name == o.Name && !t.IsAirBox && !t.IsGroup)
              // 3D editor round 4 — an element of a wire array (w1[2]) is its wire's row.
-             ?? (DocumentIndex(o) is >= 0 and var di ? AllTreeItems().FirstOrDefault(t => t.ObjectIndex == di && !t.IsAirBox) : null)
+             ?? (DocumentIndex(o) is >= 0 and var di ? AllTreeItems().FirstOrDefault(t => t.ObjectIndex == di && !t.IsAirBox && t.OperandPath is null && !t.IsFeature) : null)
              ?? (InstanceOf(o) is { } inst ? AllTreeItems().FirstOrDefault(t => t.InstanceIndex >= 0 && t.Name == inst.Split('/', '[')[0]) : null);
 
     // ── 3D editor round 5: the tree's multiple selection ─────────────────────────────────────
@@ -1246,7 +1264,7 @@ public sealed partial class C3dTreeItem(C3dEditorViewModel owner, string name, s
     /// <summary>The kind of the air box's node (3D editor round 1): selectable, never deletable.</summary>
     public const string AirBoxKind = "Air box";
 
-    public override string ExpansionKey => "item:" + Kind + ":" + Name + (OperandPath is { } p ? "@" + TopName + "/" + p : "")
+    public override string ExpansionKey => "item:" + Kind + ":" + (GroupPath ?? Name) + (OperandPath is { } p ? "@" + TopName + "/" + p : "")
                                            + (FeaturePath is { } fp ? "@" + TopName + "#" + fp : "");
 
     /// <summary>The active setup's air box.</summary>
@@ -1280,6 +1298,12 @@ public sealed partial class C3dTreeItem(C3dEditorViewModel owner, string name, s
 
     /// <summary>A feature row has no visibility of its own: its switch is Enabled, in the inspector.</summary>
     public bool IsFeature => FeaturePath is not null;
+
+    /// <summary>A group's row (C3dGroups): the group's path; null for any other row.</summary>
+    public string? GroupPath { get; init; }
+
+    /// <summary>The row of a group of the document's objects — not a section of the tree (<see cref="C3dTreeGroup"/>).</summary>
+    public bool IsGroup => GroupPath is not null;
 
     /// <summary>The top-level object's name, for an operand's row: what its expansion is remembered under.</summary>
     public string TopName { get; init; } = "";

@@ -229,9 +229,13 @@ public static class C3dHierarchy
             return C3dFlattenResult.Refuse(MissingView(cellDir, inst.View)!);
         var used = new HashSet<string>(doc.Objects.Select(o => o.Name).Concat(doc.Instances.Where(i => i != inst).Select(i => i.Name)),
                                        StringComparer.Ordinal);
-        return inst.View == C3dInstanceView.ThreeD
+        var flat = inst.View == C3dInstanceView.ThreeD
             ? FlattenThreeD(doc, inst, file, baseDir, used, tech, cache, workspaceCws, tempC)
             : FlattenLayout(doc, inst, elaboration, used, tech);
+        // 3D editor groups — what the instance held lands in the instance's group; the child's own groups were the child's.
+        foreach (var o in flat.Objects) o.Group = inst.Group;
+        foreach (var i in flat.Instances) i.Group = inst.Group;
+        return flat;
     }
 
     /// <summary>Each element of an instance: its suffix for names (empty for a plain instance) and its placement in the
@@ -614,6 +618,18 @@ public static class C3dHierarchy
         string newPath = Path.Combine(CellFolder.SubFolderPath(cellDir, ViewType.ThreeD), cellName + C3dPersistence.Extension);
         string newDir = Path.GetDirectoryName(newPath)!;
         var minus = new C3dPoint3(-anchor.X, -anchor.Y, -anchor.Z);
+        // 3D editor groups — the new instance takes the group everything grouped shared, and the child keeps only the
+        // groups below it: moving a group's contents into a cell leaves the cell where the group was.
+        var paths = objectIndices.Select(i => doc.Objects[i].Group).Concat(instanceIndices.Select(i => doc.Instances[i].Group)).ToList();
+        var shared = C3dGroups.Segments(paths[0]).ToList();
+        foreach (var p in paths.Skip(1))
+        {
+            var segs = C3dGroups.Segments(p);
+            int k = 0;
+            while (k < shared.Count && k < segs.Length && shared[k] == segs[k]) k++;
+            shared.RemoveRange(k, shared.Count - k);
+        }
+        string? Below(string? path) => C3dGroups.Join(C3dGroups.Segments(path).Skip(shared.Count));
         var child = new C3dDocument
         {
             DbuPerMicron = doc.DbuPerMicron,
@@ -627,6 +643,7 @@ public static class C3dHierarchy
         {
             var o = C3dPersistence.DeserializeObject(C3dPersistence.SerializeObject(doc.Objects[i]));
             o.Placement = o.Placement.Translated(minus);
+            o.Group = Below(o.Group);
             C3dWires.BakePlacement(o);
             child.Objects.Add(o);
         }
@@ -636,6 +653,7 @@ public static class C3dHierarchy
             if (!ExternalCellRef.IsExternalRef(inst.CellRef) && ExternalCellRef.ResolveCellDir(inst.CellRef, baseDir) is { } abs)
                 inst.CellRef = Path.GetRelativePath(newDir, abs).Replace('\\', '/');
             inst.Placement = inst.Placement.Translated(minus);
+            inst.Group = Below(inst.Group);
             child.Instances.Add(inst);
         }
         try
@@ -651,6 +669,7 @@ public static class C3dHierarchy
         {
             Name = NextInstanceName(doc),
             CellRef = ExternalCellRef.MakeCellRef(baseDir, cellDir),
+            Group = C3dGroups.Join(shared),
             Placement = new C3dPlacement { Origin = anchor },
         };
         return (placed, cellDir, newPath, null);

@@ -314,6 +314,9 @@
                                         </NativeMenuItem.Menu>
                                     </NativeMenuItem>
                                     <NativeMenuItemSeparator/>
+                                    <NativeMenuItem Header="Group Objects  (Ctrl/Cmd+G)" ToolTip="The selection becomes one group: a click on any of it then selects all of it. Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="Group"/>
+                                    <NativeMenuItem Header="Ungroup  (Ctrl/Cmd+Shift+G)" ToolTip="The selected group's members, and the groups inside it, go back to where it was. Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="Ungroup"/>
+                                    <NativeMenuItemSeparator/>
                                     <NativeMenuItem Header="Extrude" ToolTip="A selected sheet, or a polyline selected in the tree, into a prism. Requires an active 3D editor." Command="{Binding ThreeDExtrudeCommand}"/>
                                     <NativeMenuItemSeparator/>
                                     <NativeMenuItem Header="Face" ToolTip="Face mode (F): the selected face. Requires an active 3D editor.">
@@ -1140,6 +1143,11 @@
                         <MenuItem Header="Send Backward" Command="{Binding ThreeDModifyCommand}" CommandParameter="Backward"/>
                         <MenuItem Header="Send to Back" Command="{Binding ThreeDModifyCommand}" CommandParameter="Back"/>
                     </MenuItem>
+                    <Separator/>
+                    <MenuItem Header="Group Objects  (Ctrl+G)" Command="{Binding ThreeDModifyCommand}" CommandParameter="Group"
+                              ToolTip.Tip="The selection becomes one group: a click on any of it then selects all of it. Requires an active 3D editor."/>
+                    <MenuItem Header="Ungroup  (Ctrl+Shift+G)" Command="{Binding ThreeDModifyCommand}" CommandParameter="Ungroup"
+                              ToolTip.Tip="The selected group's members, and the groups inside it, go back to where it was. Requires an active 3D editor."/>
                     <Separator/>
                     <MenuItem Header="_Extrude" Command="{Binding ThreeDExtrudeCommand}"
                               ToolTip.Tip="A selected sheet, or a polyline selected in the tree, into a prism. Requires an active 3D editor."/>

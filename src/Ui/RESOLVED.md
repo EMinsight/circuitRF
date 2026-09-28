@@ -37234,3 +37234,54 @@ Two kinds are deliberately left and named in the gate: the board companion table
 picker that appends only to an extensionless name could then drop `.csv`; and the loadpull export's
 `.lpcwave`, whose own comment records the opposite finding (a non-standard extension NOT appended). The
 agent that made this change could not open a picker from its shell, so none of the nine was seen.
+
+### .c3d groups: membership lives on the member, not in a list (2026-09-27)
+
+The owner asked for groups in the 3D editor: several objects and instances gathered under a name, nestable,
+selected whole by a click in the view, edited as one in the Inspector, ungrouped one level at a time, undoable,
+and saved in the `.c3d`.
+
+- **Each object and instance carries its group PATH** (`"Group": "stage1/match"`, outermost first); there is no
+  list of groups (`src/Design/ThreeD/C3dGroups.cs`). A group is the set of members whose path runs through it, so it
+  can neither be empty nor dangle, and rename, delete, undo, copy and the elaborator's cache carry membership with
+  no extra bookkeeping. The alternative — a `Groups` list naming its members — needed a pruning pass after every
+  edit that removes or renames an object (a deleted `box1` would otherwise be re-captured by the next box drawn
+  and auto-named `box1`). A group's name is unique among GROUPS only; nothing attaches to a group by name.
+- **An operation carries the path for its result**, exactly as it carries `Name` and `Hidden`: `C3dBooleans.Make`,
+  `C3dFillets.MakeFillet/MakeChamfer`, `Unwrap`, `DisabledCore`/`WithCore`, `C3dBrepBuild.ToPolyhedron`,
+  `Dissolve` and Remove from Boolean all move it between wrapper and operand. A new constructor of a top-level
+  object from another one must copy `Group` too, or the object silently leaves its group.
+- **A group has no placement.** The Inspector's Corner moves every member by one whole-DBU step; Size is shown,
+  not typed, because scaling a mixture of boxes, cylinders (radius) and wires (diameter) has no single meaning.
+- **Selection is read back as units** (`C3dGroups.Units`): a group whose every member is selected is one unit, the
+  top-most such group. The tree, the Inspector, Align and Duplicate/Array all go through it, so a group selected
+  member by member in the tree behaves exactly like one clicked in the view.
+- **Trap: `OperationsGateTests` posts scene adoption inline (`a => a()`), so `Properties.Load` runs on the build
+  thread while the test thread runs it too.** Any extra work in `Load` widens that window: the first version of
+  the group check turned `Gate7_OrderMoves…` into an in-class failure (NRE inside `RowsOf`, the Fields list being
+  cleared by the other thread) while it still passed alone. `SelectedGroupPath` now returns at once for a document
+  with no groups. The race in the harness itself is unchanged.
+
+### The "crash" on opening a workspace with a .c3d open was a hang: a window-wide radio group (2026-09-27)
+
+Reported by the owner as three crashes in a day, the last on opening a workspace that reopens a `.c3d`. None was a
+crash: macOS wrote `.hang` reports (`/Library/Logs/DiagnosticReports/CircuitRF.Ui_*.hang`), and circuitRF's own
+crash log said the process was killed with no managed exception and an empty trail — the signature of a
+force-quit after the UI thread stopped answering. The hang report's managed frames are unsymbolicated addresses,
+so it named nothing; a headless reopen of the same workspace (DocGen's `HeadlessHost`, geometry worker copied
+beside it) did not hang either. What named it was `~/.dotnet/tools/dotnet-stack report -p <pid>` taken every few
+seconds while the owner reproduced it: the UI thread was cycling through
+`RadioButtonGroupManager.OnCheckedChanged` → the `ChamferTwoDistances` setter → `OnPropertyChanged` → the other
+radio's binding.
+
+- **A `GroupName` is shared by the whole window** (Avalonia groups named radio buttons per visual root). The Chamfer
+  panel's "Equal distances" (`!ChamferTwoDistances`) and "Two distances" (`ChamferTwoDistances`) were in the group
+  `chamfer`, so with two 3D editor views in one window each view's check unchecked the other view's button, whose
+  write-back to ITS view model checked its partner, which unchecked the first view's again — without end. The pair
+  inside one view converges; it takes two views bound to two view models.
+- **Fix: no `GroupName` on a view that can appear twice.** Unnamed radio buttons group with their siblings, which
+  is all any of these pairs needed. Removed from `C3dEditorView`, `AxesLimitsView` (per-plot flyout, same latent
+  defect), `ImpedanceToolView` and `HarmonicaAppearanceSettingsView`. `tests/Ui.Tests/RadioGroupNameGateTests.cs`
+  refuses a named group in any `.axaml` whose root is not a `Window`.
+- **For the next hang:** take `dotnet-stack` snapshots of the live process (it attaches from a shell with no
+  window-server session); the `.hang` report alone never names a managed method.

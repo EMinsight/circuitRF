@@ -31,7 +31,7 @@ namespace CircuitRF.Ui.ThreeD;
 public enum C3dTreeGrouping { Material, Primitive }
 
 /// <summary>What a group of the editor's tree holds — what code finds a group by (a header may be any material's name).</summary>
-public enum C3dTreeGroupRole { Objects, Construction, Instances, Ports, AirBox, Booleans }
+public enum C3dTreeGroupRole { Objects, Construction, Instances, Ports, AirBox, Booleans, Groups }
 
 public sealed partial class C3dEditorViewModel
 {
@@ -95,7 +95,9 @@ public sealed partial class C3dEditorViewModel
     /// </summary>
     private void SetListedVisibility(bool visible)
     {
-        var rows = Tree.SelectMany(g => g.Items).ToList();
+        // A group's row stands for its members: each is shown or hidden as its own row would be.
+        static IEnumerable<C3dTreeItem> Members(C3dTreeItem r) => r.IsGroup ? r.Children.SelectMany(Members) : [r];
+        var rows = Tree.SelectMany(g => g.Items).SelectMany(Members).ToList();
         if (IsViewOnly)
         {
             // A setup's view lists the scene's objects: each tick is the view's own visibility, never an edit.
@@ -145,26 +147,34 @@ public sealed partial class C3dEditorViewModel
     private bool PassesTreeFilter(C3dObject o)
         => !_hiddenTypes.Contains(TypeHeaderOf(o)) && (o is C3dPolyline || !_hiddenMaterials.Contains(MaterialHeaderOf(o)));
 
-    /// <summary>The object groups, by the current grouping, filtered; construction order within each group.</summary>
+    /// <summary>
+    /// One document object's row. brief-em3d-67 R-em3d67-6a — a solid with fillets and chamfers is ONE node, of the solid it
+    /// rounds: its own children (a boolean's operands) first, then its feature rows, innermost first. Round 3: by material
+    /// the section's header already names the material, so the row does not repeat it (<paramref name="byMaterial"/>).
+    /// </summary>
+    private C3dTreeItem ObjectRow(C3dObject o, int i, bool byMaterial)
+    {
+        var (core, corePath) = C3dFillets.Core(o);
+        var solid = core ?? o;
+        var item = new C3dTreeItem(this, o.Name, C3dObject.KindOf(solid), byMaterial ? null : C3dValidation.EffectiveMaterial(o), i, -1, !o.Hidden)
+        {
+            Icon = IconOf(solid), IconOpacity = solid is C3dOperation { Enabled: false } ? 0.4 : 1,
+        };
+        AddOperands(item, solid, i, corePath, o.Name);
+        AddFeatures(item, o, i);
+        return item;
+    }
+
+    /// <summary>One placed instance's row; its parts are filled in from the elaboration.</summary>
+    private C3dTreeItem InstanceRow(C3dInstance inst, int i) => new(this, inst.Name, "Instance", inst.CellRef, -1, i, true);
+
+    /// <summary>The object groups, by the current grouping, filtered; construction order within each group. An object in a
+    /// group (C3dGroups) is listed under its group's row instead.</summary>
     private IEnumerable<C3dTreeGroup> ObjectGroups()
     {
-        var rows = Document.Objects.Select((o, i) => (o, i)).Where(t => PassesTreeFilter(t.o)).ToList();
-        // Round 3: by material the group's header already names each row's material, so the row does not repeat it.
+        var rows = Document.Objects.Select((o, i) => (o, i)).Where(t => t.o.Group is null && PassesTreeFilter(t.o)).ToList();
         bool byMaterial = TreeGrouping == C3dTreeGrouping.Material;
-        C3dTreeItem Item((C3dObject o, int i) t)
-        {
-            // brief-em3d-67 R-em3d67-6a — a solid with fillets and chamfers is ONE node, of the solid it rounds: its own
-            // children (a boolean's operands) first, then its feature rows, innermost first.
-            var (core, corePath) = C3dFillets.Core(t.o);
-            var solid = core ?? t.o;
-            var item = new C3dTreeItem(this, t.o.Name, C3dObject.KindOf(solid), byMaterial ? null : C3dValidation.EffectiveMaterial(t.o), t.i, -1, !t.o.Hidden)
-            {
-                Icon = IconOf(solid), IconOpacity = solid is C3dOperation { Enabled: false } ? 0.4 : 1,
-            };
-            AddOperands(item, solid, t.i, corePath, t.o.Name);
-            AddFeatures(item, t.o, t.i);
-            return item;
-        }
+        C3dTreeItem Item((C3dObject o, int i) t) => ObjectRow(t.o, t.i, byMaterial);
 
         if (TreeGrouping == C3dTreeGrouping.Primitive)
         {
@@ -233,11 +243,11 @@ public sealed partial class C3dEditorViewModel
         _ => null,
     };
 
-    /// <summary>Instances, unless the type filter hides them.</summary>
+    /// <summary>Instances not in a group, unless the type filter hides them.</summary>
     private C3dTreeGroup? InstanceGroup()
     {
         if (_hiddenTypes.Contains(InstancesHeader)) return null;
-        var instances = Document.Instances.Select((inst, i) => new C3dTreeItem(this, inst.Name, "Instance", inst.CellRef, -1, i, true)).ToList();
+        var instances = Document.Instances.Select((inst, i) => (inst, i)).Where(t => t.inst.Group is null).Select(t => InstanceRow(t.inst, t.i)).ToList();
         return instances.Count > 0 ? new C3dTreeGroup(InstancesHeader, instances, C3dTreeGroupRole.Instances) : null;
     }
 

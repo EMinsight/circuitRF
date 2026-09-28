@@ -146,7 +146,7 @@ it, **Shift**-click adds or removes, **Esc** clears.
 - **Right-click** opens the menu for what is selected: *Hide*, *Isolate*, *Show All*, *Select Owning
   Object*, and the commands this page describes. **Hide** the lid and the walls to work inside the package;
   **Show All** brings them back. Hiding changes only the picture — the solver still sees everything.
-- The **Objects** tree lists everything by material or by type; a click there selects in the view, and the
+- The **Objects** tree lists everything by material or by type — and your [groups](#groups) first; a click there selects in the view, and the
   **Properties** panel shows the selection's name, material, dimensions and position, every one of them
   editable.
 
@@ -238,6 +238,36 @@ reported. A shape keeps its kind as long as its own dimensions can say the resul
 
 **Measure** (**M**): two snapped clicks give both points, their differences and the distance, in the display
 unit; every number copies, and pastes back into a dimension box exactly.
+
+### Groups {#groups}
+
+A **group** gathers objects and placed cells under one name, so the whole of a part — a stage, a lid and its
+walls, a row of pads — is picked, moved and changed as one thing.
+
+- **Group Objects** (**Ctrl+G**, **Cmd+G** on a Mac; the right-click menu, in the view or the tree; *3D ▸ Modify*)
+  makes one group of the selection, named `Group1`, `Group2` and so on. Select the members first — two or more
+  objects, instances or groups — in the view or with **Shift**/**Ctrl**-click in the tree; with one thing selected
+  (a single object, or a group on its own) it is greyed out, and its tooltip says why. Placed cells can be members too, and so can other groups: a group
+  inside a group stays a group of its own.
+- **A click in the view on any member selects the whole group** — the outermost one it is in — and every
+  Object-mode command acts on all of it: Move, Rotate, Mirror, Duplicate, Array, Align (which lines the group up by
+  its own box and moves it as one), Order, Hide, Isolate, Delete, a material, and a boolean — whose panel lists
+  every member, so the Blank is chosen there as usual; the result stays in its Blank's group. To pick one member out
+  of a group, click its row in the tree, or press **B** in the view.
+- **In the object tree** groups are listed first, under **Groups**; open one to see the groups and then the objects
+  and instances inside it. A member is listed there and nowhere else. The tick beside a group shows or hides all of it.
+- **Properties** shows a group as one thing: its **Name** (rename it there), one **Material** and one **Role** for
+  every member — the box reads **Various** while they differ, and a choice applies to all of them — and its
+  **Corner**: type one and every member moves by the same step. The **Size** is the members' box, for reading; a
+  group has no placement or size of its own, and each member keeps its own.
+- **Ungroup** (**Ctrl+Shift+G**, **Cmd+Shift+G**; *Ungroup Group1* on the right-click menu) takes apart only the
+  outermost group: the groups that were inside it stay groups, to be ungrouped in turn if you want.
+- **Duplicate** or **Array** a whole group and each copy is a new group (`Group2`, and each group inside it
+  renamed the same way); a member copied on its own stays in its group.
+- Grouping, ungrouping and renaming are each **one undo step**, and the groups are saved in the `.c3d`: each member
+  names its group — `"Group": "stage1/match"` — so a group can never be left empty or point at nothing.
+  **Flatten** puts a placed cell's contents in that instance's group, and **Group into Cell** gives the new instance
+  the group its contents were in. Groups are only organisation: the solver never sees them.
 
 ## Dimensions as expressions {#expressions}
 
@@ -652,6 +682,7 @@ Every step above has a command-line spelling, and none of them needs a solver ex
 | **Esc** | Back one step: the typed box, the shape, the tool, the selection |
 | **G**, **R**, **X/Y/Z** | Move, rotate; hold to an axis |
 | **Ctrl/Cmd+D** | Duplicate and move |
+| **Ctrl/Cmd+G**, **Ctrl/Cmd+Shift+G** | Group the selection; ungroup the outermost selected group |
 | **N**, **Shift+E**, **T** | Push/pull a face; extrude a face into a new solid; Touching/Flush while aligning |
 | double-click an edge | Its tangent chain (**Shift** adds it) |
 | **M** | Measure |

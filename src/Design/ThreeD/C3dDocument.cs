@@ -140,6 +140,12 @@ public abstract class C3dObject : IC3dBindable
     [JsonPropertyOrder(-8)]
     public Em3dRole? Role { get; set; }
 
+    /// <summary>The group the object is in, as a path from the outermost group: <c>pa</c>, <c>pa/match</c>
+    /// (<see cref="C3dGroups"/>). Omitted: in none. Organisation only — nothing it says reaches a solver. An operation
+    /// carries it for its result; the object it wraps has none.</summary>
+    [JsonPropertyOrder(-7)]
+    public string? Group { get; set; }
+
     [JsonPropertyOrder(10)]
     public C3dPlacement Placement { get; set; } = new();
 
@@ -501,6 +507,9 @@ public sealed class C3dInstance
 {
     public string Name    { get; set; } = "";
     public string CellRef { get; set; } = "";
+
+    /// <summary>The group the instance is in, as an object's <see cref="C3dObject.Group"/> is. Omitted: in none.</summary>
+    public string? Group { get; set; }
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public C3dInstanceView View { get; set; }

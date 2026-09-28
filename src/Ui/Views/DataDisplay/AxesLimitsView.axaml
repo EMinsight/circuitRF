@@ -45,12 +45,12 @@
                            VerticalAlignment="Center"
                            FontSize="11"
                            Width="32"/>
-                <RadioButton GroupName="XAxisScale"
+                <RadioButton
                              Content="Linear"
                              FontSize="11"
                              IsChecked="{Binding !XLogScale}"
                              VerticalAlignment="Center"/>
-                <RadioButton GroupName="XAxisScale"
+                <RadioButton
                              Content="Log"
                              FontSize="11"
                              IsChecked="{Binding XLogScale, Mode=TwoWay}"

@@ -65,7 +65,8 @@ public static class C3dFillets
         string name = t.Name;
         t.Name = "";
         t.Hidden = false;
-        return new C3dFillet { Name = name, Hidden = target.Hidden, Radius = radius, Edges = [.. edges], Target = t };
+        t.Group = null;
+        return new C3dFillet { Name = name, Hidden = target.Hidden, Group = target.Group, Radius = radius, Edges = [.. edges], Target = t };
     }
 
     /// <summary>A Chamfer, as <see cref="MakeFillet"/>: <paramref name="distance2"/> 0 is a symmetric chamfer.</summary>
@@ -75,7 +76,8 @@ public static class C3dFillets
         string name = t.Name;
         t.Name = "";
         t.Hidden = false;
-        return new C3dChamfer { Name = name, Hidden = target.Hidden, Distance = distance, Distance2 = distance2, Edges = [.. edges], Target = t };
+        t.Group = null;
+        return new C3dChamfer { Name = name, Hidden = target.Hidden, Group = target.Group, Distance = distance, Distance2 = distance2, Edges = [.. edges], Target = t };
     }
 
     /// <summary>R-em3d67-6b — Remove: the feature's target back in its place under its name, carried by the feature's
@@ -86,6 +88,7 @@ public static class C3dFillets
         var c = C3dBooleans.Carried(inner, feature);
         c.Name = feature.Name;
         c.Hidden = feature.Hidden;
+        c.Group = feature.Group;
         return c;
     }
 
@@ -191,6 +194,7 @@ public static class C3dFillets
             if (!chain[k].Feature.Placement.IsDefault) w.Placement = w.Placement.Then(chain[k].Feature.Placement.ToTransform(), out _);
         w.Name = top.Name;
         w.Hidden = top.Hidden;
+        w.Group = top.Group;
         return w;
     }
 
@@ -206,6 +210,7 @@ public static class C3dFillets
         if (t != C3dTransform.Identity) local.Placement = local.Placement.Then(t.Inverse(), out _);
         local.Name = "";
         local.Hidden = false;
+        local.Group = null;
         return With(top, Core(top).Path, local);
     }
 

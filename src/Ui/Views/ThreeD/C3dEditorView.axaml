@@ -677,9 +677,11 @@
                             <ProgressBar Grid.Column="1" IsIndeterminate="True" Width="48" MinWidth="0" Height="4" VerticalAlignment="Center"
                                          IsVisible="{Binding ViewModel.FilletBusy}" ToolTip.Tip="Previewing: OK waits for the result."/>
                         </Grid>
+                        <!-- No GroupName: a named group is shared by the whole window, and two 3D editors' pairs then unchecked each
+                             other forever (a hang). Unnamed, the two group with each other only (RadioGroupNameGateTests). -->
                         <StackPanel Orientation="Horizontal" Spacing="10" IsVisible="{Binding ViewModel.IsChamferPanel}">
-                            <RadioButton Content="Equal distances" IsChecked="{Binding !ViewModel.ChamferTwoDistances}" GroupName="chamfer"/>
-                            <RadioButton Content="Two distances" IsChecked="{Binding ViewModel.ChamferTwoDistances}" GroupName="chamfer"/>
+                            <RadioButton Content="Equal distances" IsChecked="{Binding !ViewModel.ChamferTwoDistances}"/>
+                            <RadioButton Content="Two distances" IsChecked="{Binding ViewModel.ChamferTwoDistances}"/>
                         </StackPanel>
                         <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="6">
                             <TextBlock Text="{Binding ViewModel.FilletSizeLabel}" VerticalAlignment="Center" FontSize="11" Opacity="0.75"/>

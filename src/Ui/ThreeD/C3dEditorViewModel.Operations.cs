@@ -382,8 +382,12 @@ public sealed partial class C3dEditorViewModel
         int nextObject = Document.Objects.Count, nextInstance = Document.Instances.Count;
         var names = new List<string>();
         bool allExact = exact;
+        // 3D editor groups — a group copied whole is a new group per set of copies; a member copied alone stays in its group.
+        var copiedGroups = CopiedGroupUnits(targets);
+        var usedGroups = C3dGroups.Names(Document);
         foreach (var t in transforms)
         {
+            var groupOf = C3dGroups.CopyPaths(Document, copiedGroups, usedGroups);
             bool translation = t.M00 == 1 && t.M11 == 1 && t.M22 == 1 && t.M01 == 0 && t.M02 == 0 && t.M10 == 0 && t.M12 == 0 && t.M20 == 0 && t.M21 == 0;
             var d = new C3dPoint3((long)Math.Round(t.Tx), (long)Math.Round(t.Ty), (long)Math.Round(t.Tz));
             C3dPlacement Next(C3dPlacement p)
@@ -400,6 +404,7 @@ public sealed partial class C3dEditorViewModel
                     var copy = C3dPersistence.DeserializeInstance(C3dPersistence.SerializeInstance(Document.Instances[target.Index]));
                     copy.Name = C3dOperations.NextFreeName(copy.Name, used);
                     copy.Placement = Next(copy.Placement);
+                    copy.Group = groupOf(copy.Group);
                     names.Add(copy.Name);
                     slots.Add(new C3dEditSlot(true, nextInstance++, null, C3dPersistence.SerializeInstance(copy)));
                 }
@@ -413,6 +418,9 @@ public sealed partial class C3dEditorViewModel
                         operand.Name = C3dOperations.NextFreeName(operand.Name, used);
                     copy.Placement = Next(copy.Placement);
                     allExact &= C3dWires.BakePlacement(copy);      // brief-em3d-50: a wire carries its points
+                    // An operand's copy is a top-level object in its boolean's group; anything else's, in its own (or the copy's).
+                    copy.Group = IsOperandIndex(target.Index) ? (TopOf(target.Index, out _) is >= 0 and var top ? Document.Objects[top].Group : null)
+                                                              : groupOf(copy.Group);
                     names.Add(copy.Name);
                     slots.Add(new C3dEditSlot(false, nextObject++, null, C3dPersistence.SerializeObject(copy)));
                 }
@@ -451,13 +459,16 @@ public sealed partial class C3dEditorViewModel
     public enum AlignAt { Min, Centre, Max }
 
     /// <summary>Every target but the LAST-selected moved along <paramref name="axis"/> so its min, centre or max meets the
-    /// last-selected's. One entry; exact in DBU when both bounds are.</summary>
+    /// last-selected's. One entry; exact in DBU when both bounds are. A group selected whole is one target (C3dGroups): it is
+    /// lined up by its own box and every member moves by the same step.</summary>
     public void Align(C3dAxis axis, AlignAt at)
     {
-        if (!HaveTargets(out var targets)) return;
-        if (targets.Count < 2) { StatusMessage = "Align needs two or more selected: the others line up with the last one selected."; return; }
-        var reference = targets[^1];
-        if (BoundsDbu([reference]) is not { } rb) { StatusMessage = $"'{NameOf(reference)}' has no elaborated geometry to align to."; return; }
+        if (!HaveTargets(out var all)) return;
+        var units = TargetUnits(all);
+        if (units.Count < 2) { StatusMessage = "Align needs two or more selected: the others line up with the last one selected."; return; }
+        var (referenceGroup, reference) = units[^1];
+        string referenceName = referenceGroup is { } rg ? C3dGroups.NameOf(rg) : NameOf(reference[0]);
+        if (BoundsDbu(reference) is not { } rb) { StatusMessage = $"'{referenceName}' has no elaborated geometry to align to."; return; }
         var slots = new List<C3dEditSlot>();
         bool exact = rb.Exact;
         double Key((double X0, double Y0, double Z0, double X1, double Y1, double Z1, bool Exact) b)
@@ -466,13 +477,16 @@ public sealed partial class C3dEditorViewModel
             return at switch { AlignAt.Min => lo, AlignAt.Max => hi, _ => (lo + hi) / 2 };
         }
         var moves = new List<(C3dTarget Target, long D)>();
-        foreach (var t in targets.Take(targets.Count - 1))
+        int movedUnits = 0;
+        foreach (var (_, unit) in units.Take(units.Count - 1))
         {
-            if (BoundsDbu([t]) is not { } b) continue;
+            if (BoundsDbu(unit) is not { } b) continue;
             double want = Key(rb) - Key(b);
             long d = (long)Math.Round(want, MidpointRounding.AwayFromZero);
             if (Math.Abs(want - d) > 1e-6 || !b.Exact) exact = false;
-            if (d != 0) moves.Add((t, d));
+            if (d == 0) continue;
+            movedUnits++;
+            foreach (var t in unit) moves.Add((t, d));
         }
         if (moves.Count == 0) { StatusMessage = "Already aligned."; return; }
         foreach (var (t, d) in moves)
@@ -494,9 +508,9 @@ public sealed partial class C3dEditorViewModel
             }
         }
         string word = at switch { AlignAt.Min => "min", AlignAt.Max => "max", _ => "centre" };
-        if (!Push(new C3dEdit($"Align {axis} {word} to {NameOf(reference)}", slots, ApplySlots))) return;
+        if (!Push(new C3dEdit($"Align {axis} {word} to {referenceName}", slots, ApplySlots))) return;
         OperationCommits++;
-        StatusMessage = $"Aligned {moves.Count} to the {axis} {word} of '{NameOf(reference)}'." +
+        StatusMessage = $"Aligned {movedUnits} to the {axis} {word} of '{referenceName}'." +
                         (exact ? "" : " ≈ Not a whole number of database units: rounded to the nearest one.");
     }
 
@@ -898,6 +912,8 @@ public sealed partial class C3dEditorViewModel
             case "Rotate": StartRotate(); break;
             case "Duplicate": StartDuplicate(); break;
             case "Array": OpenArray(); break;
+            case "Group": GroupSelection(); break;
+            case "Ungroup": UngroupSelection(); break;
             case "ReseatWires": ReseatWireEnds(); break;
             case "Front": Order(OrderMove.ToFront); break;
             case "Forward": Order(OrderMove.Forward); break;

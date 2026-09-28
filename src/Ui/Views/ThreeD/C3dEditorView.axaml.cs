@@ -40,6 +40,8 @@ public partial class C3dEditorView : UserControl
         Pane.FramePresented += () => Overlay.InvalidateVisual();
         ObjectTree.TemplateApplied += OnObjectTreeTemplateApplied;
         ObjectTree.AddHandler(PointerPressedEvent, OnTreePointerPressedTunnel, RoutingStrategies.Tunnel);
+        // 3D editor groups — Ctrl/Cmd+G and Ctrl/Cmd+Shift+G on the tree's rows, as on the view (only the pane sees its keys).
+        ObjectTree.AddHandler(KeyDownEvent, OnTreeGroupKey, RoutingStrategies.Tunnel);
         Pane.ContextMenuRequested += () =>
         {
             if (_vm is null) return;
@@ -178,6 +180,13 @@ public partial class C3dEditorView : UserControl
             Viewer3DContextMenu.Fill(_treeMenu, _vm.TreeMenuItems(item), []);
         }
         if (_treeMenu.Items.Count > 0) _treeMenu.Open(ObjectTree);
+        e.Handled = true;
+    }
+
+    private void OnTreeGroupKey(object? sender, KeyEventArgs e)
+    {
+        if (_vm is null || e.Key != Key.G || (e.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Meta)) == 0 || e.KeyModifiers.HasFlag(KeyModifiers.Alt)) return;
+        if (e.KeyModifiers.HasFlag(KeyModifiers.Shift)) _vm.UngroupSelection(); else _vm.GroupSelection();
         e.Handled = true;
     }
 

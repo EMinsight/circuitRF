@@ -101,6 +101,12 @@ public static class C3dDiagnostics
         "so every name must be unique in the document.",
         ("name", name), ("count", count));
 
+    /// <summary>A group's name is unique among groups: <c>Ungroup match</c> must name one group (<see cref="C3dGroups"/>).</summary>
+    public static Diagnostic GroupInTwoPlaces(string name, string paths) => Diagnostic.Create(
+        "c3d.group.duplicate", DiagnosticSeverity.Error,
+        "The group '{name}' is in more than one place ({paths}). A group's name must be unique among the document's groups.",
+        ("name", name), ("paths", paths));
+
     /// <summary>A warning (3D editor bugs round 2): an object with no material yet is ignored by the solver, so a
     /// half-finished design still runs. The words are <see cref="C3dElaborator.NoMaterialWarning"/>'s.</summary>
     public static Diagnostic NoMaterial(string name) => Diagnostic.Create(

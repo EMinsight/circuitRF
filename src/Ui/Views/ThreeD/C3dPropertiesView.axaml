@@ -31,7 +31,7 @@
                           PlaceholderText="{Binding MaterialPlaceholder}" IsEnabled="{Binding IsMaterialEditable}"/>
                 <TextBlock Text="Role" FontSize="11" Opacity="0.7"/>
                 <ComboBox ItemsSource="{x:Static t3:C3dPropertiesViewModel.Roles}" SelectedItem="{Binding Role}" HorizontalAlignment="Stretch"
-                          IsEnabled="{Binding IsMaterialEditable}"
+                          PlaceholderText="{Binding RolePlaceholder}" IsEnabled="{Binding IsMaterialEditable}"
                           ToolTip.Tip="What the solver treats the object as. From material: the material decides."/>
                 <!-- 3D editor round 3 — a bond wire has no placement: its points are world points (below). Round 4: the
                      placement origin is edited on its one line among the dimensions below, not twice. -->

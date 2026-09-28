@@ -479,6 +479,8 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
         if (_tool is not { InProgress: true } && BooleanKey(key, modifiers)) return true;
         // brief-em3d-48 — Ctrl/Cmd+] and Ctrl/Cmd+[: Push In and Pop Out, the layout editor's keys.
         if (_tool is not { InProgress: true } && HierarchyKey(key, modifiers)) return true;
+        // 3D editor groups — Ctrl/Cmd+G and Ctrl/Cmd+Shift+G.
+        if (_tool is not { InProgress: true } && GroupKey(key, modifiers)) return true;
         // brief-em3d-46 — G, R and Ctrl/Cmd+D start an operation on the selection (no gesture in progress).
         if (_tool is not { InProgress: true } && OperationKey(key, modifiers)) return true;
         if (_tool is not { } tool) return false;
@@ -601,6 +603,10 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
 
     public IEnumerable<Viewer3DMenuItem> DrawMenuItems()
     {
+        // 3D editor groups — Group Objects and Ungroup first: a click selects a whole group, so they are what it is for.
+        var groups = GroupMenuItems().ToList();
+        foreach (var item in groups) yield return item;
+        if (groups.Count > 0) yield return Viewer3DMenuItem.Separator;
         foreach (var item in OperationMenuItems()) yield return item;
         foreach (var item in BooleanMenuItems()) yield return item;
         foreach (var item in StepMenuItems()) yield return item;

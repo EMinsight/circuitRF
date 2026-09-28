@@ -41,6 +41,7 @@ public static class C3dValidation
         var found = new List<Diagnostic>();
 
         Names(doc, found);
+        found.AddRange(C3dGroups.Findings(doc));
 
         foreach (var o in doc.Objects)
         {
