@@ -345,7 +345,7 @@ public sealed class OpenEmsBackendTests(ITestOutputHelper output) : IDisposable
 
     /// <summary>A lossy substrate, two solid pads, and a 25 µm wire between them — built directly, so the
     /// gate depends on nothing but the writer and the grid.</summary>
-    private static Em3dProblem WireProblem()
+    internal static Em3dProblem WireProblem()
     {
         const double mm = 1e-3;
         var sq = new[] { (-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0) };

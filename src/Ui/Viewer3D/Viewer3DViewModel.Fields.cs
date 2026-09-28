@@ -31,6 +31,10 @@ public sealed record FieldSolutionItem(FieldSolution Solution, string Label, Fie
     public override string ToString() => Label;
 }
 
+/// <summary>brief-em3d-82 — a face painted with the EM field: the object's name, its face index in the scene, and — on a
+/// sheet, for a volume quantity — the side shown (+1 along the sheet's own normal, −1 against it; 0 otherwise).</summary>
+public readonly record struct PaintedFieldFace(string Object, int Face, int Side = 0);
+
 public sealed partial class Viewer3DViewModel
 {
     /// <summary>The loop period the phase animation starts at, seconds — a display choice, not the frequency.</summary>
@@ -230,6 +234,8 @@ public sealed partial class Viewer3DViewModel
                 }
                 _fieldRuns = runs;
                 _fieldRun = runs.FirstOrDefault();
+                _fieldFaces.Clear();                       // brief-em3d-82 — a new run: the faces were painted on another
+                _fieldFacePaints = [];
                 _thermalTable = table;
                 _temperature = null;
                 _fieldRunDir = dir;
@@ -309,6 +315,9 @@ public sealed partial class Viewer3DViewModel
                 _post(() =>
                 {
                     if (cts.IsCancellationRequested || _disposed) return;
+                    // brief-em3d-82 — a solution on another mesh (the other solver's, a re-meshed run): the painted faces go.
+                    if (_fieldVolume is { } was && vol is not null &&
+                        (was.Mesh.NodeCount != vol.Mesh.NodeCount || was.Mesh.CellCount != vol.Mesh.CellCount)) _fieldFaces.Clear();
                     _fieldVolume = vol;
                     _fieldBoundary = bnd;
                     _fieldLoaded = sol;
@@ -347,6 +356,68 @@ public sealed partial class Viewer3DViewModel
                 if (ReferenceEquals(_fieldBoundary, bnd)) _boundarySampler = bs;
             });
         });
+    }
+
+    // ── painted faces (brief-em3d-82) ───────────────────────────────────────────────────────
+
+    private readonly List<PaintedFieldFace> _fieldFaces = [];
+    private IReadOnlyList<(PaintedFieldFace Face, FieldFacePaint Paint)> _fieldFacePaints = [];
+
+    /// <summary>The faces painted with the EM field one by one, in the order they were asked for.</summary>
+    public IReadOnlyList<PaintedFieldFace> PaintedFieldFaces => _fieldFaces;
+
+    /// <summary>
+    /// R-em3d82-1 — right-click a face ▸ Plot Field: face <paramref name="face"/> of scene object <paramref name="obj"/> painted
+    /// with the quantity shown (the field turned on when it was off), or taken away when it was already painted on that side.
+    /// Asking for the OTHER side of a painted sheet moves it there. Several faces accumulate; they stand beside the clip plane
+    /// and the selected region, never instead of them.
+    /// </summary>
+    public void ToggleFieldFace(string obj, int face, int side = 0)
+    {
+        int at = _fieldFaces.FindIndex(f => f.Object == obj && f.Face == face);
+        if (at >= 0 && _fieldFaces[at].Side == side) _fieldFaces.RemoveAt(at);
+        else if (at >= 0) _fieldFaces[at] = new PaintedFieldFace(obj, face, side);
+        else _fieldFaces.Add(new PaintedFieldFace(obj, face, side));
+        if (!ShowField && _fieldFaces.Count > 0) ShowField = true;
+        else ScheduleFieldGeometry();
+    }
+
+    /// <summary>The side face <paramref name="face"/> of <paramref name="obj"/> is painted on (0 for a face with no side), or
+    /// null when it is not painted.</summary>
+    public int? FieldFaceSide(string obj, int face)
+        => _fieldFaces.FindIndex(f => f.Object == obj && f.Face == face) is var i and >= 0 ? _fieldFaces[i].Side : null;
+
+    /// <summary>Takes every painted face away (the clip plane and the selected region stay).</summary>
+    public void ClearFieldFaces()
+    {
+        if (_fieldFaces.Count == 0) return;
+        _fieldFaces.Clear();
+        ScheduleFieldGeometry();
+    }
+
+    /// <summary>The painted faces as the painter takes them: each face's triangles and normal off the scene, its role from
+    /// the object's kind, and the tolerance a mesh triangle is matched to it with (a sheet's is tight — its mesh faces lie
+    /// exactly on it, and a thin tetrahedron just off it must not count).</summary>
+    private List<(PaintedFieldFace Face, FieldFaceTarget Target)> FieldFaceTargets(Scene3DModel scene)
+    {
+        var list = new List<(PaintedFieldFace, FieldFaceTarget)>();
+        foreach (var f in _fieldFaces)
+        {
+            if (scene.Objects.FirstOrDefault(o => o.Name == f.Object) is not { } so) continue;
+            var tris = CircuitRF.Render.Scene3D.Edit.Scene3DFaces.Triangles(scene, so.Id, f.Face);
+            if (tris.Count == 0) continue;
+            var (_, normal) = CircuitRF.Render.Scene3D.Edit.Scene3DFaces.AreaAndNormal(scene, so.Id, f.Face);
+            var role = so.Kind switch
+            {
+                Scene3DKind.Conductor or Scene3DKind.Via or Scene3DKind.Wire => FieldFaceRole.Conductor,
+                Scene3DKind.Sheet => FieldFaceRole.Sheet,
+                _ => FieldFaceRole.Solid,
+            };
+            double tol = role == FieldFaceRole.Sheet ? 1e-6 * (scene.BoundsMax - scene.BoundsMin).Length() : 0.01 * (so.Max - so.Min).Length();
+            string label = $"'{so.Name}/{so.FaceName(f.Face)}'" + (f.Side switch { 1 => " (top side)", -1 => " (bottom side)", _ => "" });
+            list.Add((f, new FieldFaceTarget(so.Name, label, role, tris, normal, tol, f.Side)));
+        }
+        return list;
     }
 
     // ── geometry ────────────────────────────────────────────────────────────────────────────
@@ -412,6 +483,10 @@ public sealed partial class Viewer3DViewModel
             });
             return;
         }
+        // brief-em3d-82 — the painted faces, resolved against the scene here (cheap) and painted off the UI thread.
+        var targets = FieldFaceTargets(scene);
+        FieldSampler? sampler = _fieldLoaded?.Solver == "openEMS" ? _volumeSampler : null;
+        bool sampled = _fieldLoaded?.Solver == "openEMS";
         Task.Run(() =>
         {
             try
@@ -420,7 +495,9 @@ public sealed partial class Viewer3DViewModel
                 var surfaces = new List<FieldSurface>();
                 var nudges = new List<Vector3>();
                 var covered = new HashSet<string>(StringComparer.Ordinal);
-                string? note = null;
+                // A surface lies ON its face or plane; it moves a hair toward the eye's side so nothing it lies on hides it.
+                float eps = 1e-4f * (scene.BoundsMax - scene.BoundsMin).Length();
+                string? hint = null;
                 if (!q.OnBoundary && vol?.Load(q.Array.Name) is { } array)
                 {
                     if (onPlane && clip.Enabled)
@@ -429,7 +506,6 @@ public sealed partial class Viewer3DViewModel
                         surfaces.Add(FieldSlicer.Slice(new FieldMeshTets(vol.Mesh, array, origin), new Vector3D(e.X, e.Y, e.Z), e.W, cts.Token));
                         // The slice lies ON the plane; the plane's own discard would eat half of it, so it
                         // moves a hair to the kept side (n·p + d ≤ 0).
-                        float eps = 1e-4f * (scene.BoundsMax - scene.BoundsMin).Length();
                         nudges.Add(-eps * new Vector3(e.X, e.Y, e.Z));
                     }
                     if (onSurfaces && selected is { Kind: Scene3DKind.Dielectric or Scene3DKind.Air or Scene3DKind.Body } s &&
@@ -439,8 +515,7 @@ public sealed partial class Viewer3DViewModel
                         nudges.Add(Vector3.Zero);
                         covered.Add(s.Name);
                     }
-                    if (surfaces.Count == 0)
-                        note = "Turn the clip plane on, or select a dielectric or the air in the tree, to show the field on it.";
+                    hint = "Turn the clip plane on, select a dielectric or the air in the tree, or right-click a face ▸ Plot Field, to show the field on it.";
                 }
                 else if (q.OnBoundary && bnd?.Load(q.Array.Name) is { } barray)
                 {
@@ -451,23 +526,44 @@ public sealed partial class Viewer3DViewModel
                         nudges.Add(Vector3.Zero);
                         foreach (var g in metal) covered.Add(g.Name);
                     }
-                    if (surfaces.Count == 0)
-                        note = metal.Count == 0 ? $"{FieldNames.Friendly(q.Array.Name)} is drawn on conductors, and this problem has none."
-                                                : "Turn surfaces on to show the field on the conductors.";
+                    hint = metal.Count == 0 ? $"{FieldNames.Friendly(q.Array.Name)} is drawn on conductors, and this problem has none."
+                                            : "Turn surfaces on to show the field on the conductors, or right-click one of their faces ▸ Plot Field.";
+                }
+                // brief-em3d-82 — the fourth source: each painted face, drawn a hair in front of its own face.
+                var paints = new List<(PaintedFieldFace Face, FieldFacePaint Paint)>();
+                var refused = new List<string>();
+                if (targets.Count > 0)
+                {
+                    var painter = new FieldFacePainter(q, vol, bnd, groups, origin,
+                        sampled && vol is not null ? sampler ?? new FieldSampler(vol.Mesh, cts.Token) : null, cts.Token);
+                    foreach (var (face, target) in targets)
+                    {
+                        if (painter.Paint(target, out string? why) is { } paint)
+                        {
+                            surfaces.Add(paint.Surface);
+                            nudges.Add(eps * paint.Toward);
+                            paints.Add((face, paint));
+                        }
+                        else if (why is not null) refused.Add(why);
+                    }
                 }
                 cts.Token.ThrowIfCancellationRequested();
                 var scale = FieldColorScale.Auto(q, surfaces, db, pct);
                 var packed = Scene3DFieldGeometry.Pack(q, surfaces, nudges);
+                string text = surfaces.Count == 0 && hint is not null ? hint : $"{q.Label}: {surfaces.Sum(x => x.TriangleCount):N0} triangles.";
+                if (refused.Count > 0) text += " " + string.Join(" ", refused);
                 _post(() =>
                 {
                     if (cts.IsCancellationRequested || _disposed || !ReferenceEquals(Scene, scene)) return;
+                    FieldGeometryBuilds++;
                     _fieldSurfaces = surfaces;
+                    _fieldFacePaints = paints;
                     FieldScale = scale;
                     FieldGeometry = new Scene3DFieldGeometry(packed, ++_fieldVersion);
                     var cov = new bool[scene.Objects.Length];
                     for (int i = 0; i < cov.Length; i++) cov[i] = covered.Contains(scene.Objects[i].Name);
                     View.FieldCovered = cov;
-                    FieldText = note ?? $"{q.Label}: {surfaces.Sum(x => x.TriangleCount):N0} triangles.";
+                    FieldText = text;
                     WriteFieldUniforms();
                     OnPropertyChanged(nameof(FieldLegendVisible));
                     FrameRequested?.Invoke();
@@ -586,6 +682,18 @@ public sealed partial class Viewer3DViewModel
             double tol = 1e-3 * (Scene.BoundsMax - Scene.BoundsMin).Length() * toUnits;
             found = q.OnBoundary ? Sample(_boundarySampler, _fieldBoundary, point, tol, ch)
                                  : Sample(_volumeSampler, _fieldVolume, point, 0, ch);
+        }
+        // brief-em3d-82 — a painted face: read where its paint was read, on the side it shows.
+        if (!found && hit && View.IsVisible(id) && LastPick.Object == id && Scene.Object(id) is { } po &&
+            _fieldFacePaints.FirstOrDefault(p => p.Face.Object == po.Name && p.Face.Face == LastPick.Face).Paint is { } paint)
+        {
+            double diag = (Scene.BoundsMax - Scene.BoundsMin).Length();
+            if (paint.OnBoundary) found = Sample(_boundarySampler, _fieldBoundary, point, 1e-3 * diag * toUnits, ch);
+            else if (paint.Sampled)
+                found = _volumeSampler is { } vs && _fieldVolume?.Load(q.Array.Name) is { } va &&
+                        FieldFaces.SampleOffFace(vs, va, Vector3D.From(point), Vector3D.From(paint.ReadToward), Scene.Origin, ch);
+            // Palace: a hair off the face into the tetrahedron on the side shown (a sheet's two sides differ).
+            else found = Sample(_volumeSampler, _fieldVolume, point + (float)(1e-6 * diag) * paint.ReadToward, 0, ch);
         }
         if (!found) return "";
         double phase = q.Animated ? FieldPhaseDegrees * Math.PI / 180 : 0;

@@ -417,6 +417,84 @@ public static class FieldSurfaces
         return parts.ToDictionary(kv => kv.Key, kv => FieldSurface.From(ch, kv.Value.Xyz, kv.Value.Val, kv.Value.Recipe.Build()));
     }
 
+    /// <summary>
+    /// brief-em3d-82 R-em3d82-2 — the field on a SHEET, from one side. A sheet is imprinted inside a volume, so both
+    /// tetrahedra sharing one of its triangles belong to the same region and <see cref="RegionBoundary"/> never returns it.
+    /// Here every tetrahedron face whose three corners lie within <paramref name="tol"/> (scene-local metres) of the sheet's
+    /// scene triangles is kept — with the values of the tetrahedron on side <paramref name="side"/> (+1 the side the sheet's
+    /// own normal points to, −1 the other), so each sheet triangle comes back once. The side is not cosmetic: E's normal
+    /// component jumps across a sheet carrying surface charge (on a PEC sheet it flips sign), so the two sides are two
+    /// different pictures. The recipe is kept, so the result revalues.
+    /// </summary>
+    public static FieldSurface OnSheet(FieldMesh tets, FieldArray? a, IReadOnlyList<(Vector3 A, Vector3 B, Vector3 C)> sheetTriangles,
+                                       int side, double tol, (double X, double Y, double Z) origin, CancellationToken ct = default)
+    {
+        if (tets.Shape != FieldCellShape.Tetrahedron) throw new ArgumentException("a volume holds tetrahedra", nameof(tets));
+        if (side is not (1 or -1)) throw new ArgumentOutOfRangeException(nameof(side), "a sheet's side is +1 or −1");
+        int npc = tets.NodesPerCell, ch = a?.Info.Channels ?? 1;
+        if (sheetTriangles.Count == 0) return FieldSurface.Empty(ch);
+        // The sheet's own normal (area-weighted: a sheet is planar), and its bounding box grown by the tolerance.
+        var sum = Vector3.Zero;
+        var lo = new Vector3(float.MaxValue);
+        var hi = new Vector3(float.MinValue);
+        var tris = new (Vector3D A, Vector3D B, Vector3D C)[sheetTriangles.Count];
+        for (int i = 0; i < tris.Length; i++)
+        {
+            var (ta, tb, tc) = sheetTriangles[i];
+            sum += Vector3.Cross(tb - ta, tc - ta);
+            lo = Vector3.Min(lo, Vector3.Min(ta, Vector3.Min(tb, tc)));
+            hi = Vector3.Max(hi, Vector3.Max(ta, Vector3.Max(tb, tc)));
+            tris[i] = (Vector3D.From(ta), Vector3D.From(tb), Vector3D.From(tc));
+        }
+        if (!(sum.Length() > 0)) return FieldSurface.Empty(ch);
+        var n = Vector3.Normalize(sum);
+        var xyz = new List<double>();
+        var val = new List<double>();
+        var recipe = new FieldRecipe.Builder(tets.NodeCount, tets.CellCount);
+        Span<double> p = stackalloc double[12];
+        Span<double> v = stackalloc double[Math.Max(ch, 1)];
+        Span<double> at = stackalloc double[3];
+        var faceCorners = FieldSubCells.TetFaces2;
+        var tri = FieldSubCells.TriSub(tets.Order).ToArray();
+        bool Near(ReadOnlySpan<double> q)
+        {
+            if (q[0] < lo.X - tol || q[0] > hi.X + tol || q[1] < lo.Y - tol || q[1] > hi.Y + tol || q[2] < lo.Z - tol || q[2] > hi.Z + tol)
+                return false;
+            var pd = new Vector3D(q[0], q[1], q[2]);
+            foreach (var (ta, tb, tc) in tris) if (FieldFaces.DistanceToTriangle(pd, ta, tb, tc) <= tol) return true;
+            return false;
+        }
+        for (int c = 0; c < tets.CellCount; c++)
+        {
+            if ((c & 0xFFFF) == 0) ct.ThrowIfCancellationRequested();
+            for (int k = 0; k < 4; k++) FieldSampling.Position(tets, tets.Cells[c * npc + k], origin, p.Slice(3 * k, 3));
+            // Most tetrahedra are nowhere near the sheet: two corners outside its grown box settle it.
+            int inBox = 0;
+            for (int k = 0; k < 4; k++)
+                if (p[3 * k] >= lo.X - tol && p[3 * k] <= hi.X + tol && p[3 * k + 1] >= lo.Y - tol && p[3 * k + 1] <= hi.Y + tol &&
+                    p[3 * k + 2] >= lo.Z - tol && p[3 * k + 2] <= hi.Z + tol) inBox++;
+            if (inBox < 3) continue;
+            for (int f = 0; f < 4; f++)
+            {
+                int c0 = faceCorners[6 * f], c1 = faceCorners[6 * f + 1], c2 = faceCorners[6 * f + 2], opposite = 6 - c0 - c1 - c2;
+                if (!Near(p.Slice(3 * c0, 3)) || !Near(p.Slice(3 * c1, 3)) || !Near(p.Slice(3 * c2, 3))) continue;
+                // The tetrahedron's side of the sheet is where its fourth corner is.
+                double s = n.X * (p[3 * opposite] - p[3 * c0]) + n.Y * (p[3 * opposite + 1] - p[3 * c0 + 1]) + n.Z * (p[3 * opposite + 2] - p[3 * c0 + 2]);
+                if (Math.Sign(s) != side) continue;
+                foreach (int local in tri)
+                {
+                    int node = tets.Cells[c * npc + faceCorners[6 * f + local]];
+                    FieldSampling.Position(tets, node, origin, at);
+                    FieldSampling.Channels(a, node, c, v[..ch]);
+                    xyz.Add(at[0]); xyz.Add(at[1]); xyz.Add(at[2]);
+                    for (int k = 0; k < ch; k++) val.Add(v[k]);
+                    recipe.Add(node, -1, 0, c);
+                }
+            }
+        }
+        return FieldSurface.From(ch, xyz, val, recipe.Build());
+    }
+
     private static (int, int, int) Sorted(int a, int b, int c)
     {
         if (a > b) (a, b) = (b, a);

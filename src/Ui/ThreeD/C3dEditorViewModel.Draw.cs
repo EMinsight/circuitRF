@@ -668,6 +668,7 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
         foreach (var item in FaceMenuItems()) yield return item;
         foreach (var item in HierarchyMenuItems()) yield return item;
         foreach (var item in SimulateMenuItems()) yield return item;
+        foreach (var item in FieldMenuItems()) yield return item;         // brief-em3d-82 — beside Plot Temperature
         foreach (var item in ThermalMenuItems()) yield return item;
         foreach (var item in WireMenuItems()) yield return item;
         if (Viewer.SelectMode == Scene3DSelectMode.Face && Viewer.Selection is [{ Face: >= 0 } f])

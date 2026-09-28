@@ -543,13 +543,14 @@ relax it.
 ### Running openEMS {#openems-run}
 
 With openEMS chosen the panel shows the grid settings above and two of its own, each a field of the
-`.cem`'s `OpenEms` section; a blank box is the default. `SaveFieldsGHz` is written in the `.cem` itself.
+`.cem`'s `OpenEms` section; a blank box is the default. `SaveFieldsGHz` and `SaveH` are written in the `.cem` itself.
 
 | `.cem` field (in `OpenEms`) | Default | What it does |
 |---|---|---|
 | `EndCriterionDb` | −50 | A run stops when every port's voltage and current has fallen this far below its peak |
 | `MaxTimeSteps` | ten times the grid's own estimate | The most time steps one run may take |
 | `SaveFieldsGHz` | the sweep's centre | The frequencies, GHz, whose electric field openEMS records over the air box for the 3D view; `[]` records none |
+| `SaveH` | off | Also record the magnetic field H at those frequencies, so the 3D view offers \|H\|. It doubles the field files on disk |
 
 **openEMS excites one port per simulation, so an N-port setup is N runs**, one after another, each
 using every core — a 4-port takes about four times as long as a 2-port, and the progress line says
@@ -587,6 +588,8 @@ because the pulse carries no energy there). openEMS computes it during the run i
 cell's centre, and writes it in each port's folder as `efield<k>_f=<Hz>_abs.vtr` and `…_arg.vtr` — the
 magnitude and phase of each component, which is the complex field exactly — plus 21 snapshots at fixed
 phases that the view does not need. The 3D view shows it for each excited port at each frequency.
+With `"SaveH": true` it records the magnetic field too, as `hfield<k>_…` beside each `efield<k>_…` pair —
+twice the disk per saved frequency, which is why it is asked for rather than always on.
 
 ### Running both, and the difference {#run-both}
 

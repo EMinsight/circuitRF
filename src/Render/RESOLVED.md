@@ -4286,3 +4286,41 @@ array `material` is bookkeeping like `attribute`. No second reader.
   index-based ring map would be wrong; position is exact.
 - `FieldFaces.OnFace` cuts a region's boundary down to one face by matching the mesher's triangles to the display's (the
   centroid within 1 % of the object's size of a display triangle whose normal agrees) — two tessellations of one face.
+
+## brief-em3d-82 — E and H on a picked face or sheet (2026-09-28)
+
+A picked face is a fourth place an EM field is drawn, beside the clip plane, the selected region and the conductors.
+`FieldFacePainter` (`FieldFacePaint.cs`) routes each face by what the MESH knows about it, not only by its scene kind: a
+name with a 3-D group is a region (its own side, `RegionBoundary` → `OnFace`, exactly temperature's path) even when the
+scene calls it a conductor; a sheet goes to `OnSheet`; a name with only a 2-D `Conductor` group is a void.
+
+- **A void's face is cut from the boundary of the UNION of every region, not from each neighbour's own boundary.** The two
+  differ exactly at a coplanar interface beside the metal — a substrate's top where the trace is not. That interface is on a
+  region's own boundary, and near the trace's edge its triangles' centroids are within `OnFace`'s 1 %-of-the-object
+  tolerance, so the per-region version would paint a strip of the substrate/air interface onto the trace. In the union it is
+  an interior face and never reaches `OnFace`.
+- **`OnSheet` matches tet faces by CORNERS, with a tight tolerance** (1e-6 of the scene's diagonal from the view model), not
+  `OnFace`'s centroid-within-1 %: a thin tetrahedron just off the sheet has all three corners within 1 % of a small sheet
+  and would be taken. The sheet's corners are imprinted, so they lie on it to Float32. Its side is the side of the tet's
+  fourth corner along the sheet's own (area-weighted) normal; each sheet triangle is emitted once, from the side asked for.
+  A cell with fewer than three corners in the sheet's grown box is rejected before any distance is computed.
+- **openEMS has no regions**, so every face is SAMPLED (`FieldFaces.Sampled`): split in four until its longest edge is within
+  the grid's IN-PLANE spacing (a substrate's thin cell across the face says nothing about how finely to split it), each vertex
+  read by `SampleOffFace`. **The nudge leaves the whole dump cell the face is in, not one ULP**: the dump is at cell centres
+  (DumpMode 2) and the grid puts a line on every metal face, so a face lies midway between an air-side and a metal-side dump
+  node, and a point a hair off it interpolates halfway to the metal's value. `FieldSampler.CellBounds` gives the located
+  tetrahedron's box, which on `VtrReader.Mesh`'s six-tets-about-the-diagonal split IS the grid cell's; the point moves to
+  where it leaves that box along the chosen side, i.e. onto the first dump node's plane. Gate 5 reads E(z = 2.5) off a face at
+  z = 2 with dump nodes at 1.5 and 2.5, to a few Float32 ULPs.
+- **Which side of a solid openEMS reads is a deviation from the brief's wording.** The brief says "a face of a solid:
+  outward". That is right for a conductor, but for a dielectric, the air or a body it would show the NEIGHBOUR's side, while
+  Palace's picture of the same face (`RegionBoundary`) is the region's own — the two solvers would disagree on one face by
+  the permittivity ratio in E_n. `Paint` reads outward from a conductor and INWARD into a region; the draw nudge is outward in
+  both cases, so the paint sits in front of its face.
+- **H from openEMS is an opt-in (owner: `OpenEms.SaveH`, off by default — twice the disk).** `CsxcadWriter` writes an
+  `hfield<k>` DumpBox (DumpType 11) beside each `efield<k>`, same box, DumpMode 2 and FileType; a setup without it writes the
+  bytes it wrote before (the goldens under `testdata/em3d/openems-goldens` are untouched). `FieldStep.OpenOpenEms` reads the
+  H pair beside the E pair into the same step — refusing by name an H dump on a different grid — so
+  `FieldQuantity.Offered` lists |H| with no change of its own.
+- `FieldStep.InMemory` (internal) builds a step from a synthetic mesh with its arrays loaded — the gates use it rather than
+  reach into `_loaded`.

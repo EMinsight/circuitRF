@@ -84,6 +84,10 @@ public static class CsxcadWriter
     /// <summary>brief-em3d-29 — the <paramref name="k"/>-th field dump's name, and so the stem of its files.</summary>
     public static string FieldDump(int k) => $"efield{k + 1}";
 
+    /// <summary>brief-em3d-82 R-em3d82-4 — the <paramref name="k"/>-th H dump's name (<c>OpenEms.SaveH</c>): the E dump's, with
+    /// <c>h</c> for <c>e</c>, so each H file sits beside its E file.</summary>
+    public static string HFieldDump(int k) => $"hfield{k + 1}";
+
     /// <summary>
     /// brief-em3d-29 R-em3d29-6a — the frequencies, Hz, the field is dumped at: the setup's list, or the sweep's
     /// centre (the arithmetic middle of a linear sweep, the geometric of a logarithmic one); empty for none.
@@ -284,17 +288,21 @@ public static class CsxcadWriter
         if (saves.FirstOrDefault(s => s < fMin * (1 - 1e-9) || s > fMax * (1 + 1e-9)) is var outside && outside > 0)
             return No($"OpenEms.SaveFieldsGHz asks for the field at {G(outside / 1e9)} GHz, outside the sweep ({G(fMin / 1e9)} to " +
                       $"{G(fMax / 1e9)} GHz): the excitation carries no energy there to show. Choose a frequency inside the sweep.");
+        // brief-em3d-82 R-em3d82-4 — with OpenEms.SaveH, one H dump (DumpType 11) beside each E dump: the same box, mode
+        // and file type, so the two share a grid and the view reads them as one step. Off by default (twice the disk); a
+        // setup that saves no field (SaveFieldsGHz: []) writes neither, and a setup without SaveH writes exactly what it did.
         for (int k = 0; k < saves.Count; k++)
-        {
-            props.Append($"            <DumpBox ID=\"{id++}\" Name=\"{FieldDump(k)}\" Visible=\"0\" Number=\"0\" Type=\"0\" Weight=\"1\" " +
-                         "NormDir=\"-1\" StartTime=\"0\" StopTime=\"0\" DumpType=\"10\" DumpMode=\"2\" FileType=\"0\" MultiGridLevel=\"0\">\n");
-            var c = Colors.Probe;
-            props.Append($"                <FillColor R=\"{c.R}\" G=\"{c.G}\" B=\"{c.B}\" a=\"{c.A}\" />\n");
-            props.Append($"                <EdgeColor R=\"{c.R}\" G=\"{c.G}\" B=\"{c.B}\" a=\"{c.A}\" />\n");
-            props.Append($"                <FD_Samples>{R(saves[k])}</FD_Samples>\n");
-            AppendPrimitives(props, Box(0, problem.Boundary.Min, problem.Boundary.Max));
-            props.Append("            </DumpBox>\n");
-        }
+            foreach (var (name, type) in run.SaveH ? new[] { (FieldDump(k), 10), (HFieldDump(k), 11) } : [(FieldDump(k), 10)])
+            {
+                props.Append($"            <DumpBox ID=\"{id++}\" Name=\"{name}\" Visible=\"0\" Number=\"0\" Type=\"0\" Weight=\"1\" " +
+                             $"NormDir=\"-1\" StartTime=\"0\" StopTime=\"0\" DumpType=\"{type}\" DumpMode=\"2\" FileType=\"0\" MultiGridLevel=\"0\">\n");
+                var c = Colors.Probe;
+                props.Append($"                <FillColor R=\"{c.R}\" G=\"{c.G}\" B=\"{c.B}\" a=\"{c.A}\" />\n");
+                props.Append($"                <EdgeColor R=\"{c.R}\" G=\"{c.G}\" B=\"{c.B}\" a=\"{c.A}\" />\n");
+                props.Append($"                <FD_Samples>{R(saves[k])}</FD_Samples>\n");
+                AppendPrimitives(props, Box(0, problem.Boundary.Min, problem.Boundary.Max));
+                props.Append("            </DumpBox>\n");
+            }
 
         // ── brief-em3d-31 R-em3d31-2 — the radiation pattern's equivalence surface ──────────────────
         // One E and one H frequency-domain dump per face (DumpType 10/11), node-interpolated (DumpMode 1) so E

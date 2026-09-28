@@ -437,6 +437,13 @@ public sealed class CemOpenEms
     /// </summary>
     public List<double>? SaveFieldsGHz { get; set; }
 
+    /// <summary>
+    /// brief-em3d-82 R-em3d82-4 — also dump the MAGNETIC field H at each saved frequency, beside E, so the 3D view offers
+    /// |H| for an openEMS run. Off unless set: it doubles the field files on disk per saved frequency (the owner's choice —
+    /// an opt-in, not a default). Nothing is dumped when <c>SaveFieldsGHz</c> is <c>[]</c>, whatever this says.
+    /// </summary>
+    public bool? SaveH { get; set; }
+
     /// <summary>A copy, so an editor can change one without touching a setup that shares it.</summary>
     public CemOpenEms Clone()
     {
@@ -450,7 +457,7 @@ public sealed class CemOpenEms
     [JsonIgnore]
     public bool IsEmpty =>
         CellsPerWavelength is null && GradingRatio is null && ThirdsRule is null && MinCellUm is null && PmlCells is null &&
-        EndCriterionDb is null && MaxTimeSteps is null && SaveFieldsGHz is null;
+        EndCriterionDb is null && MaxTimeSteps is null && SaveFieldsGHz is null && SaveH is null;
 
     /// <summary>
     /// brief-em3d-8 R-em3d8-6 — the section's grid fields RESOLVED, each omitted one taking
@@ -476,6 +483,7 @@ public sealed class CemOpenEms
         return section is null ? d : new(section.EndCriterionDb ?? d.EndCriterionDb, section.MaxTimeSteps ?? d.MaxTimeSteps)
         {
             SaveFieldsGHz = section.SaveFieldsGHz,
+            SaveH = section.SaveH ?? d.SaveH,
         };
     }
 }
@@ -499,6 +507,9 @@ public sealed record OpenEmsRunSettings(double EndCriterionDb, long? MaxTimeStep
     /// <summary>brief-em3d-29 R-em3d29-6a — the field-dump frequencies, GHz: null is the sweep's centre,
     /// empty dumps none.</summary>
     public IReadOnlyList<double>? SaveFieldsGHz { get; init; }
+
+    /// <summary>brief-em3d-82 R-em3d82-4 — dump H beside E at each saved frequency. Off by default: twice the disk.</summary>
+    public bool SaveH { get; init; }
 
     /// <summary>The default ceiling as a multiple of the grid's step estimate.</summary>
     public const int DefaultStepsFactor = 10;

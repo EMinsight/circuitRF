@@ -15,6 +15,9 @@ namespace CircuitRF.Render.Scene3D.Fields;
 public sealed class FieldSampler
 {
     private readonly FieldMesh _m;
+
+    /// <summary>The mesh this sampler indexes.</summary>
+    public FieldMesh Mesh => _m;
     private readonly double[] _lo = new double[3], _cell = new double[3];
     private readonly int[] _dim = new int[3];
     private readonly int[] _start;     // CSR: bucket b's cells are _items[_start[b] .. _start[b+1])
@@ -111,6 +114,26 @@ public sealed class FieldSampler
     {
         if (!Locate(x, y, z, out int c, out double l1, out double l2, out double l3, surfaceTol)) return false;
         Evaluate(a, c, l1, l2, l3, channels);
+        return true;
+    }
+
+    /// <summary>
+    /// brief-em3d-82 R-em3d82-3 — the bounding box (mesh units) of the cell containing the point, from its corners; false when
+    /// the point is in no cell. On openEMS's grid (<see cref="VtrReader.Mesh"/>: six tetrahedra about each grid cell's main
+    /// diagonal) every tetrahedron spans its grid cell's two opposite corners, so this is the GRID cell's box — the local
+    /// spacing a sampled face is subdivided to, and the cell a nudge off a metal face has to leave.
+    /// </summary>
+    public bool CellBounds(double x, double y, double z, Span<double> lo, Span<double> hi)
+    {
+        if (!Locate(x, y, z, out int c, out _, out _, out _)) return false;
+        Span<double> p = stackalloc double[3];
+        for (int k = 0; k < 3; k++) { lo[k] = double.MaxValue; hi[k] = double.MinValue; }
+        int corners = _m.Shape == FieldCellShape.Tetrahedron ? 4 : 3;
+        for (int j = 0; j < corners; j++)
+        {
+            Node(c, j, p);
+            for (int k = 0; k < 3; k++) { lo[k] = Math.Min(lo[k], p[k]); hi[k] = Math.Max(hi[k], p[k]); }
+        }
         return true;
     }
 

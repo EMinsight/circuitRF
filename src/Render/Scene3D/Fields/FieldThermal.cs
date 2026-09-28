@@ -92,6 +92,113 @@ public static class FieldFaces
         return new FieldSurface { Channels = ch, Xyz = [.. xyz], Values = [.. val], Recipe = recipe };
     }
 
+    /// <summary>The deepest a sampled face triangle is split (4^n pieces): a face far larger than the grid is still bounded.</summary>
+    public const int MaxSampledDepth = 8;
+
+    /// <summary>
+    /// brief-em3d-82 R-em3d82-3 — a face painted by SAMPLING, for a field that carries no regions (openEMS's rectilinear dump,
+    /// which <see cref="VtrReader.Mesh"/> turns into six tetrahedra per cell with attribute 0 throughout, so no region boundary
+    /// or conductor group exists to cut down). Each of <paramref name="faceTriangles"/> (scene-local metres) is split into
+    /// four until its longest edge is within the grid's local spacing, and every vertex is sampled
+    /// (<see cref="SampleOffFace"/>) a nudge along <paramref name="direction"/> — the side of the face being shown. A vertex
+    /// the field does not reach drops its triangle, never a guessed value. Positions stay ON the face; only the values are
+    /// read off it. No recipe: the values are not the mesh's nodes.
+    /// </summary>
+    public static FieldSurface Sampled(FieldSampler sampler, FieldArray a, IReadOnlyList<(Vector3 A, Vector3 B, Vector3 C)> faceTriangles,
+                                       Vector3D direction, (double X, double Y, double Z) origin, CancellationToken ct = default)
+    {
+        int ch = a.Info.Channels;
+        double toMetres = sampler.Mesh.ToMetres;
+        var xyz = new List<double>();
+        var val = new List<double>();
+        Span<double> lo = stackalloc double[3], hi = stackalloc double[3];
+        var memo = new Dictionary<Vector3D, double[]?>();
+        double[]? At(Vector3D p)
+        {
+            if (memo.TryGetValue(p, out var have)) return have;
+            var v = new double[ch];
+            return memo[p] = SampleOffFace(sampler, a, p, direction, origin, v) ? v : null;
+        }
+        void Emit(Vector3D p0, Vector3D p1, Vector3D p2)
+        {
+            var v0 = At(p0); var v1 = At(p1); var v2 = At(p2);
+            if (v0 is null || v1 is null || v2 is null) return;
+            foreach (var (p, v) in new[] { (p0, v0), (p1, v1), (p2, v2) })
+            {
+                xyz.Add(p.X); xyz.Add(p.Y); xyz.Add(p.Z);
+                val.AddRange(v);
+            }
+        }
+        // The grid's spacing IN THE FACE's plane: the smallest extent of the cell there along an axis the face runs along
+        // (a thin cell across the face — a substrate's — says nothing about how finely to split the face).
+        double[] dir = [direction.X, direction.Y, direction.Z];
+        double Spacing(Vector3D c, Span<double> l, Span<double> h)
+        {
+            double k = 1 / toMetres;
+            if (!sampler.CellBounds((c.X + origin.X) * k, (c.Y + origin.Y) * k, (c.Z + origin.Z) * k, l, h)) return double.PositiveInfinity;
+            double s = double.PositiveInfinity;
+            for (int i = 0; i < 3; i++) if (Math.Abs(dir[i]) < 0.9 && h[i] > l[i]) s = Math.Min(s, h[i] - l[i]);
+            return toMetres * s;
+        }
+        void Split(Vector3D p0, Vector3D p1, Vector3D p2, int depth, Span<double> l, Span<double> h)
+        {
+            var centroid = new Vector3D((p0.X + p1.X + p2.X) / 3, (p0.Y + p1.Y + p2.Y) / 3, (p0.Z + p1.Z + p2.Z) / 3);
+            double longest = Math.Max(Dist(p0, p1), Math.Max(Dist(p1, p2), Dist(p2, p0)));
+            if (depth >= MaxSampledDepth || longest <= Spacing(centroid, l, h)) { Emit(p0, p1, p2); return; }
+            var m01 = Mid(p0, p1); var m12 = Mid(p1, p2); var m20 = Mid(p2, p0);
+            Split(p0, m01, m20, depth + 1, l, h);
+            Split(m01, p1, m12, depth + 1, l, h);
+            Split(m20, m12, p2, depth + 1, l, h);
+            Split(m01, m12, m20, depth + 1, l, h);
+        }
+        foreach (var (fa, fb, fc) in faceTriangles)
+        {
+            ct.ThrowIfCancellationRequested();
+            Split(Vector3D.From(fa), Vector3D.From(fb), Vector3D.From(fc), 0, lo, hi);
+        }
+        return new FieldSurface { Channels = ch, Xyz = [.. xyz], Values = [.. val] };
+
+        static double Dist(Vector3D p, Vector3D q) => Math.Sqrt((p.X - q.X) * (p.X - q.X) + (p.Y - q.Y) * (p.Y - q.Y) + (p.Z - q.Z) * (p.Z - q.Z));
+        static Vector3D Mid(Vector3D p, Vector3D q) => new((p.X + q.X) / 2, (p.Y + q.Y) / 2, (p.Z + q.Z) / 2);
+    }
+
+    /// <summary>
+    /// brief-em3d-82 R-em3d82-3 — array <paramref name="a"/>'s channels just off a face at <paramref name="p"/> (scene-local
+    /// metres), on the side <paramref name="direction"/> (a unit vector) points to; false when the field reaches neither there
+    /// nor at <paramref name="p"/> itself (a face on the dump's own edge).
+    /// <para>
+    /// THE NUDGE LEAVES THE WHOLE CELL THE FACE IS IN, not one ULP. openEMS's dump is at the grid's CELL CENTRES (DumpMode 2 —
+    /// CsxcadWriter chose it because a node ON a metal face averages E across the metal), and the grid puts a line on every
+    /// metal face, so a face lies midway between two dump nodes: one in the air, one in the metal. A point a hair off the face
+    /// is still inside that dump cell and interpolates half-way to the metal's value. So the point moves along
+    /// <paramref name="direction"/> to where it leaves the dump cell containing the face — the plane of the first dump node on
+    /// the chosen side, half a simulation cell off the face — and the field is read there.
+    /// </para>
+    /// </summary>
+    public static bool SampleOffFace(FieldSampler sampler, FieldArray a, Vector3D p, Vector3D direction, (double X, double Y, double Z) origin,
+                                     Span<double> channels)
+    {
+        double k = 1 / sampler.Mesh.ToMetres;
+        double x = (p.X + origin.X) * k, y = (p.Y + origin.Y) * k, z = (p.Z + origin.Z) * k;
+        Span<double> lo = stackalloc double[3], hi = stackalloc double[3];
+        if (sampler.CellBounds(x, y, z, lo, hi))
+        {
+            double[] q = [x, y, z], d = [direction.X, direction.Y, direction.Z];
+            double t = double.PositiveInfinity, size = 0;
+            for (int i = 0; i < 3; i++)
+            {
+                size = Math.Max(size, hi[i] - lo[i]);
+                if (Math.Abs(d[i]) > 1e-9) t = Math.Min(t, ((d[i] > 0 ? hi[i] : lo[i]) - q[i]) / d[i]);
+            }
+            if (double.IsFinite(t))
+            {
+                t = Math.Max(0, t) + 1e-6 * size;       // onto the node plane, and a hair past it into the next cell
+                if (sampler.Sample(a, x + t * d[0], y + t * d[1], z + t * d[2], channels)) return true;
+            }
+        }
+        return sampler.Sample(a, x, y, z, channels);
+    }
+
     private static Vector3D? Normal(Vector3D a, Vector3D b, Vector3D c)
     {
         double ux = b.X - a.X, uy = b.Y - a.Y, uz = b.Z - a.Z, vx = c.X - a.X, vy = c.Y - a.Y, vz = c.Z - a.Z;

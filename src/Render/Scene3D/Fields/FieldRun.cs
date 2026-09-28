@@ -144,6 +144,14 @@ public sealed class FieldRun
     /// <summary>The phase file beside an openEMS <c>_abs.vtr</c>.</summary>
     public static string ArgFile(string absFile) => absFile[..^"_abs.vtr".Length] + "_arg.vtr";
 
+    /// <summary>brief-em3d-82 R-em3d82-4 — the H dump's <c>_abs.vtr</c> beside an E dump's (<c>efield1_f=…</c> →
+    /// <c>hfield1_f=…</c>, CsxcadWriter.HFieldDump), whether or not the run wrote one.</summary>
+    public static string HFile(string eAbsFile)
+    {
+        string name = Path.GetFileName(eAbsFile);
+        return Path.Combine(Path.GetDirectoryName(eAbsFile) ?? "", name.StartsWith("efield", StringComparison.Ordinal) ? "h" + name[1..] : name);
+    }
+
     private static readonly Regex DataSet = new(@"<DataSet\b[^>]*?\btimestep=""([^""]+)""[^>]*?\bfile=""([^""]+)""", RegexOptions.CultureInvariant);
     private static readonly Regex Piece = new(@"<Piece\b[^>]*?\bSource=""([^""]+)""", RegexOptions.CultureInvariant);
 
@@ -281,9 +289,35 @@ public sealed class FieldStep
     /// <summary>
     /// brief-em3d-29 R-em3d29-6 — an openEMS dump: the magnitude and phase files read, the complex field
     /// rebuilt from them (Re = |E|·cos∠E, Im = |E|·sin∠E per component — exactly the solver's complex value,
-    /// to Float32), on the grid as tetrahedra. Named E, like Palace's, so the same quantities are offered.
+    /// to Float32), on the grid as tetrahedra. Named E, like Palace's, so the same quantities are offered — and H
+    /// beside it when the run dumped H too (brief-em3d-82).
     /// </summary>
     private static FieldStep OpenOpenEms(string absFile, double toMetres)
+    {
+        var (mag, e) = OpenEmsArray(absFile, "E");
+        // brief-em3d-82 R-em3d82-4 — H, when the setup asked for it (OpenEms.SaveH): its own dump of the same box, mode and
+        // file type, so it is on the same grid, node for node — refused by name if it is not.
+        FieldArray? h = null;
+        string hFile = FieldRun.HFile(absFile);
+        if (hFile != absFile && File.Exists(hFile) && File.Exists(FieldRun.ArgFile(hFile)))
+        {
+            var (hGrid, ha) = OpenEmsArray(hFile, "H");
+            if (!hGrid.X.AsSpan().SequenceEqual(mag.X) || !hGrid.Y.AsSpan().SequenceEqual(mag.Y) || !hGrid.Z.AsSpan().SequenceEqual(mag.Z))
+                throw new FieldReadException($"'{hFile}' is not on the grid of '{absFile}'.");
+            h = ha;
+        }
+        var step = new FieldStep
+        {
+            Pvtu = absFile, Pieces = [], Mesh = VtrReader.Mesh(mag, toMetres), Arrays = h is null ? [e.Info] : [e.Info, h.Info],
+        };
+        step._loaded["E"] = e;
+        if (h is not null) step._loaded["H"] = h;
+        return step;
+    }
+
+    /// <summary>One openEMS dump's magnitude and phase files as the complex array <paramref name="name"/>
+    /// (Re = |F|·cos∠F, Im = |F|·sin∠F per component), and the grid it is on.</summary>
+    private static (VtrField Grid, FieldArray Array) OpenEmsArray(string absFile, string name)
     {
         var mag = VtrReader.Read(absFile);
         var arg = VtrReader.Read(FieldRun.ArgFile(absFile));
@@ -297,10 +331,8 @@ public sealed class FieldStep
             re[i] = (float)(a * Math.Cos(t));
             im[i] = (float)(a * Math.Sin(t));
         }
-        var info = new FieldArrayInfo("E", mag.Components, true, false);
-        var step = new FieldStep { Pvtu = absFile, Pieces = [], Mesh = VtrReader.Mesh(mag, toMetres), Arrays = [info] };
-        step._loaded["E"] = new FieldArray { Info = info, Re = re, Im = im };
-        return step;
+        var info = new FieldArrayInfo(name, mag.Components, true, false);
+        return (mag, new FieldArray { Info = info, Re = re, Im = im });
     }
 
     /// <summary>
@@ -317,6 +349,14 @@ public sealed class FieldStep
                                                                           p.First.NumberOfCells != p.Second.NumberOfCells))
             throw new FieldReadException($"'{pvtu}' is not a step of the mesh '{Pvtu}' was read on.");
         return new FieldStep { Pvtu = pvtu, Pieces = pieces, Mesh = Mesh, Arrays = List(pieces[0]) };
+    }
+
+    /// <summary>A step held in memory — a synthetic mesh with its arrays already loaded, for the tests that build one.</summary>
+    internal static FieldStep InMemory(FieldMesh mesh, params FieldArray[] arrays)
+    {
+        var step = new FieldStep { Pvtu = "", Pieces = [], Mesh = mesh, Arrays = [.. arrays.Select(a => a.Info)] };
+        foreach (var a in arrays) step._loaded[a.Name] = a;
+        return step;
     }
 
     private static VtuArray Need(VtuPiece p, string name)

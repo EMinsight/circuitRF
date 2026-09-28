@@ -66,7 +66,8 @@ public sealed partial class Viewer3DViewModel
         if (ShowsTemperature) ScheduleFieldGeometry();
     }
 
-    /// <summary>Gate 7 — how many times the temperature's triangles were cut or gathered from the mesh.</summary>
+    /// <summary>Gate 7 — how many times the drawn field's triangles were cut or gathered from the mesh: a temperature's, and
+    /// (brief-em3d-82 gate 6) an EM field's, painted faces included — a phase step moves neither.</summary>
     public long FieldGeometryBuilds { get; private set; }
 
     /// <summary>Gate 7 — how many times drawn triangles were given another step's values and nothing else.</summary>

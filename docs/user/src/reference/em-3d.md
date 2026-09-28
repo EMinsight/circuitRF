@@ -241,6 +241,14 @@ setup's refusals and notes, the mesh, the field) are always shown.
   files: the electric field |E|, the surface current J_s on the conductors, and for a static solve the
   potential. A **dB** scale and a **range** percentile keep one singular edge from washing out the
   picture.
+- **One face.** In the 3D editor, right-click a face, *Plot Field*, to paint the field shown on that face
+  alone — the top of one trace, one face of a substrate — beside the clip plane and the surfaces; again to
+  take it off, and several faces accumulate. A conductor has no inside to read, so its face shows the field
+  in the material next to it (or J_s, when that is the quantity chosen). A **sheet** asks *Top side* or
+  *Bottom side*: the field's normal part jumps across a sheet that carries charge, so the two sides are two
+  different pictures. The quantity is never changed for you — a face that cannot show the chosen one says
+  why under the view. On an openEMS run the face is read half a grid cell off the metal, where openEMS
+  records the field.
 - **Animation.** The play button sweeps the phase through one cycle and draws the instantaneous field
   Re{E·e^jφ}. That is the standing wave in a cavity, or the current running along a wire.
 - **Pictures.** **Export picture …** saves a PNG of the view at a multiple of the window's size, with or
