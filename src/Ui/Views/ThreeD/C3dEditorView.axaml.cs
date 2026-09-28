@@ -88,7 +88,6 @@ public partial class C3dEditorView : UserControl
         _vm.PropertyChanged += OnVmPropertyChanged;
         MirrorTreeSelection();
         _vm.TreeRevealRequested += OnTreeReveal;
-        ApplyBackground();
         if (doc!.ConsumeActivationFocus()) Dispatcher.UIThread.Post(() => Pane.Focus(), DispatcherPriority.Loaded);
     }
 
@@ -100,34 +99,6 @@ public partial class C3dEditorView : UserControl
         var text = await new Dialogs.InputNameDialog(title, prompt, current).ShowDialog<string?>(window);
         if (text is null) return;
         if (commit(text) is { } why) _vm.StatusMessage = why;
-    }
-
-    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
-    {
-        base.OnAttachedToVisualTree(e);
-        ThemeService.ThemeChanged += OnThemeChanged;
-        ActualThemeVariantChanged += OnVariantChanged;
-    }
-
-    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
-    {
-        base.OnDetachedFromVisualTree(e);
-        ThemeService.ThemeChanged -= OnThemeChanged;
-        ActualThemeVariantChanged -= OnVariantChanged;
-    }
-
-    private void OnThemeChanged(object? sender, EventArgs e) => _vm?.Viewer.Invalidate();
-
-    private void OnVariantChanged(object? sender, EventArgs e)
-    {
-        ApplyBackground();
-        _vm?.Viewer.Invalidate();
-    }
-
-    private void ApplyBackground()
-    {
-        if (_vm is null) return;
-        _vm.Viewer.View.Background = ThemeService.CurrentVariant == ColorVariant.Dark ? (0.12f, 0.13f, 0.15f) : (0.93f, 0.94f, 0.96f);
     }
 
     /// <summary>

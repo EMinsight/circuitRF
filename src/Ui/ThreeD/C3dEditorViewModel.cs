@@ -148,6 +148,8 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         // 3D editor round 1 — the air box's tree tick is the toolbar's air-box switch. Round 3: both are AirBoxShown, the
         // user's choice, which the editor re-applies to every scene it adopts.
         ApplySnapGrid();
+        ApplyThemeVariant();
+        ThemeService.ThemeChanged += OnThemeChanged;
         Properties = new C3dPropertiesViewModel(this);
         Variables = new C3dVariablesViewModel(this);
         ResolveDocument();
@@ -1226,7 +1228,11 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         if (ShowDrawingGrid) RefreshGridText();
     }
 
-    public void Dispose() => Viewer.Dispose();
+    public void Dispose()
+    {
+        ThemeService.ThemeChanged -= OnThemeChanged;
+        Viewer.Dispose();
+    }
 }
 
 /// <summary>brief-em3d-44 R-em3d44-4 — a snapped point in the document: <paramref name="Dbu"/> (rounded when

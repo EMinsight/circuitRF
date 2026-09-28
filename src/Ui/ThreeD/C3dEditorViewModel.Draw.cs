@@ -181,6 +181,26 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
         Viewer.View.DrawingGrid = _grid;
     }
 
+    /// <summary>
+    /// The pane's background and the grid's line colour, from the variant being rendered. Driven by
+    /// <see cref="ThemeService.ThemeChanged"/> and never by a control's <c>ActualThemeVariantChanged</c>: App assigns
+    /// <see cref="ThemeService.CurrentVariant"/> in a POSTED callback, so a control's own variant event runs first and reads
+    /// the old variant — which left the background in one theme and the grid in the other.
+    /// </summary>
+    private void ApplyThemeVariant()
+    {
+        Viewer.View.Background = ThemeService.CurrentVariant == ColorVariant.Dark ? (0.12f, 0.13f, 0.15f) : (0.93f, 0.94f, 0.96f);
+        ApplyDrawingGrid();
+        Viewer.RequestFrame();
+    }
+
+    /// <summary>A palette or variant switch: the pane recolours now; the scene, whose palette is per variant, is rebuilt.</summary>
+    private void OnThemeChanged(object? sender, EventArgs e) => _post(() =>
+    {
+        ApplyThemeVariant();
+        Viewer.Invalidate();
+    });
+
     /// <summary>The snap step: the document's, or its technology's default when it states none.</summary>
     public long SnapPitch => Document.SnapDbu > 0 ? Document.SnapDbu : Elaboration?.Technology?.DefaultSnapDbu ?? 0;
 

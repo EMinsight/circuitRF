@@ -37414,3 +37414,19 @@ part's two terminals, as a real kit cell does. The production behaviour is left 
 cell persisted with zero pins cannot be told from one written before pins were persisted, so a genuinely
 pinless generated cell (a logo, a fiducial) costs one extra generator call per pin resolve — an
 out-of-process script, for a kit. Telling them apart needs a persisted marker, which is a format change.
+
+## .c3d editor: grid and background in opposite themes after a light/dark switch (2026-09-27)
+
+The drawing grid's `Dark` flag was read once, when the editor set the grid up, so a switch left its lines in
+the old theme's colour. The background was re-read on a switch, but it read the WRONG variant.
+`C3dEditorView` re-read it on the control's own `ActualThemeVariantChanged`. `App` assigns
+`ThemeService.CurrentVariant` in a `Dispatcher.Post` from the application's handler, so the control's
+handler always runs first and sees the old variant. Fixing the grid alone therefore made the pair look
+backwards: the grid followed the new theme and the background stayed in the old one.
+
+Both now come from one place, `C3dEditorViewModel.ApplyThemeVariant`, driven by `ThemeService.ThemeChanged`.
+That event fires when the posted assignment lands, so it always sees the variant being rendered. **Any view
+that reads `ThemeService.CurrentVariant` from inside an `ActualThemeVariantChanged` handler has the same
+race.** Gate: `GridAndWireframeTests.Grid_ThemeVariantSwitch_RecoloursGridAndBackgroundTogether_AndRebuildsTheScene`.
+`Grid_OnMetal_LinesReachTheFarEdgeOfTheView` used to set `DrawingGrid.Dark = true` by hand, assuming the
+background was always dark. It now sets the variant instead.

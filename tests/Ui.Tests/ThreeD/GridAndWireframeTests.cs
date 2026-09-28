@@ -77,19 +77,53 @@ public sealed class GridAndWireframeTests : IDisposable
         if (projection == Projection3D.Perspective) Assert.True(beyondFar > 20, $"only {beyondFar} hits lie beyond the far plane");
     }
 
+    /// <summary>
+    /// A light/dark switch with a .c3d open recolours its drawing grid AND its background together. The grid's flag was
+    /// read once, at open; the background was re-read on the control's own variant event, which runs before App assigns
+    /// <c>ThemeService.CurrentVariant</c> — so it took the OLD variant, and the two ended up in opposite themes. The scene
+    /// is rebuilt too: its palette is per variant.
+    /// </summary>
+    [Fact]
+    public void Grid_ThemeVariantSwitch_RecoloursGridAndBackgroundTogether_AndRebuildsTheScene()
+    {
+        var entry = CircuitRF.Render.ThemeService.CurrentVariant;
+        try
+        {
+            CircuitRF.Render.ThemeService.CurrentVariant = CircuitRF.Render.ColorVariant.Light;
+            var vm = Open(Write([Box("b", "Gold", 0, 0, 0, 50, 50, 20)]));
+            var v = vm.Viewer;
+            Assert.False(v.View.DrawingGrid!.Dark);
+            Assert.True(v.View.Background.R > 0.5f, "a light theme opened on a dark background");
+            long before = v.Source.Requested;
+
+            CircuitRF.Render.ThemeService.CurrentVariant = CircuitRF.Render.ColorVariant.Dark;
+
+            Assert.True(v.View.DrawingGrid!.Dark);
+            Assert.True(v.View.Background.R < 0.5f, "the background stayed light");
+            Assert.True(SpinWait.SpinUntil(() => v.Source.Requested > before, TimeSpan.FromSeconds(10)), "the scene was not rebuilt");
+        }
+        finally { CircuitRF.Render.ThemeService.CurrentVariant = entry; }
+    }
+
     /// <summary>On Metal, the far part of a perspective view — the top rows, all of them beyond the scene — shows grid
     /// lines, and a small scene still has its grid across the whole bottom of the view.</summary>
     [Fact]
     public void Grid_OnMetal_LinesReachTheFarEdgeOfTheView()
     {
         if (!OperatingSystem.IsMacOS()) return;
-        var vm = Open(Write([Box("b", "Gold", 0, 0, 0, 50, 50, 20)]));
-        var scene = vm.Viewer.Scene;
-        var view = vm.Viewer.View;
-        view.Camera = Camera3D.Fit(scene.ContentMin, scene.ContentMax, W / H);
-        view.Camera.Yaw = -0.7f; view.Camera.Pitch = 0.45f;
-        view.DrawingGrid!.Dark = true;                  // the viewer's background is dark; headless, no theme says so
-        var (px, clear) = RenderMetal(vm, view, "grid-perspective");
+        var entry = CircuitRF.Render.ThemeService.CurrentVariant;
+        CircuitRF.Render.ThemeService.CurrentVariant = CircuitRF.Render.ColorVariant.Dark;   // background and grid both follow it
+        byte[] px; (float R, float G, float B) clear;
+        try
+        {
+            var vm = Open(Write([Box("b", "Gold", 0, 0, 0, 50, 50, 20)]));
+            var scene = vm.Viewer.Scene;
+            var view = vm.Viewer.View;
+            view.Camera = Camera3D.Fit(scene.ContentMin, scene.ContentMax, W / H);
+            view.Camera.Yaw = -0.7f; view.Camera.Pitch = 0.45f;
+            (px, clear) = RenderMetal(vm, view, "grid-perspective");
+        }
+        finally { CircuitRF.Render.ThemeService.CurrentVariant = entry; }
         int w = (int)W, h = (int)H;
         int Band(int y0, int y1)
         {
