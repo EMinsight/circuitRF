@@ -20,6 +20,7 @@ namespace CircuitRF.Core.Tests.Devices.External;
 /// rule for native workers is that a missing compiler warns and the build still succeeds. A machine
 /// without one must report these Skipped with a reason, not red.</para>
 /// </summary>
+[Collection(DeviceWorkerToolsDirectoryCollection.Name)]
 public sealed class OsdiWorkerTests
 {
     private const string WorkerRel = "tools/osdi-worker/osdi-worker";

@@ -21,6 +21,7 @@ namespace CircuitRF.Core.Tests.Devices.External;
 /// <para><b>The fixture <c>.va</c> is circuitRF's own and is MIT</b>, like the rest of this
 /// repository. No model family, no vendor source, and no compiled artefact is committed.</para>
 /// </summary>
+[Collection(DeviceWorkerToolsDirectoryCollection.Name)]
 public sealed class VerilogACompileTests : IDisposable
 {
     /// <summary>circuitRF's own test-only artefact, built by the worker's build script. Its absence

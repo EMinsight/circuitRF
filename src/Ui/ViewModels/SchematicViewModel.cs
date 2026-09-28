@@ -4819,16 +4819,14 @@ public sealed partial class SchematicViewModel : ObservableObject
         return (raw, "");
     }
 
+    // Lifts only a WHOLE `<number><unit>` value (Units.TrySplitGluedNumber, the shape the .cnl reader lifts too). A
+    // trailing-run splitter tore `10um + 1mil` into `10um + 1` and a unit `mil` once unit literals existed; an expression
+    // with literals in it is left whole, where the engine reads each literal itself.
     private static bool TrySplitTrailingUnit(string raw, EditableParameter p,
                                              out string expr, out string unit)
     {
         expr = raw; unit = "";
-        int i = raw.Length;
-        while (i > 0 && IsUnitGlyph(raw[i - 1])) i--;      // trailing run of unit chars
-        if (i == raw.Length || i == 0) return false;        // no run, or no numeric part
-        char before = raw[i - 1];
-        if (!(char.IsDigit(before) || before == ')' || before == '.')) return false;
-        string run = raw[i..];
+        if (!Units.TrySplitGluedNumber(raw, out var number, out var run)) return false;
 
         bool matchesParam = !string.IsNullOrEmpty(p.Unit)
             && string.Equals(run, p.Unit, StringComparison.OrdinalIgnoreCase);
@@ -4836,13 +4834,10 @@ public sealed partial class SchematicViewModel : ObservableObject
             && !(run.Length == 1 && IsBareSiPrefix(run[0]));
         if (!matchesParam && !recognized) return false;
 
-        expr = raw[..i].Trim();
+        expr = number;
         unit = matchesParam ? p.Unit : run;                  // canonical casing from the param
         return true;
     }
-
-    private static bool IsUnitGlyph(char c)
-        => char.IsLetter(c) || c is '%' or '°';
 
     private static bool IsBareSiPrefix(char c)
         => "TGMkmunpf".IndexOf(c) >= 0;

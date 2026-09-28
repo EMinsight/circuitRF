@@ -5,8 +5,12 @@ namespace CircuitRF.Core.Expressions;
 
 public abstract record Expr;
 
-/// <summary>Real numeric literal.</summary>
-public sealed record NumberExpr(double Value) : Expr;
+/// <summary>
+/// Real numeric literal. <paramref name="Unit"/> is set for a unit LITERAL (<c>10um</c>) and is its engine spelling;
+/// <paramref name="Value"/> is then ALREADY in base SI, so every consumer that only needs the number reads it
+/// unchanged. A literal with a unit is unit-bearing (<see cref="Evaluator.IsUnitBearing(Expr, Scope)"/>).
+/// </summary>
+public sealed record NumberExpr(double Value, string? Unit = null) : Expr;
 
 /// <summary>Reserved constant: j, pi, e.</summary>
 public sealed record ConstExpr(string Name) : Expr;

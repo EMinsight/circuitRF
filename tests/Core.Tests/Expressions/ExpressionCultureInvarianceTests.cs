@@ -212,26 +212,21 @@ public sealed class ExpressionCultureInvarianceTests
     }
 
     /// <summary>
-    /// §6's "record the interaction that already bites": a UNIT SUFFIX is a row FIELD, not part of
-    /// the expression grammar, which is why <c>60u</c> is a parse error in circuitRF and <c>60</c>
-    /// in a row whose unit is µm is not. That is unrelated to locale and localization must not be
-    /// used as an excuse to revisit it — but it is worth pinning here, because the obvious "fix" for
-    /// a comma-decimal user ("just make the parser more forgiving about what follows a number")
-    /// would quietly change it.
-    ///
-    /// <para>The suffix stays a parse error in every locale, so nobody can conclude from a foreign
-    /// locale that the rule is softer there.</para>
+    /// A unit suffix glued to a number is a unit LITERAL (brief-units-in-expressions): <c>60u</c> is 60e-6. It was a
+    /// parse error until then, and this test pinned that. What it guarded is unchanged: the literal reads the SAME in
+    /// every locale — the decimal point is <c>.</c> (§15A), and a suffix is not a licence for the parser to be
+    /// forgiving about anything else that follows a number.
     /// </summary>
     [Theory]
-    [InlineData("60u")]
-    [InlineData("1.5k")]
-    [InlineData("2.5G")]
-    public void AUnitSuffixIsNotPartOfTheGrammar_InAnyLocale(string expr)
+    [InlineData("60u", 60e-6)]
+    [InlineData("1.5k", 1.5e3)]
+    [InlineData("2.5G", 2.5e9)]
+    public void AUnitLiteral_ReadsTheSameInEveryLocale(string expr, double expected)
     {
         foreach (var culture in new[] { "en-US", "de-DE", "fi-FI" })
             InCulture(culture, () =>
             {
-                Assert.ThrowsAny<Exception>(() => new Evaluator().Eval(expr, new Scope("test")));
+                Assert.Equal(expected, new Evaluator().Eval(expr, new Scope("test")).AsReal(), 1e-12 * expected);
                 return 0;
             });
     }

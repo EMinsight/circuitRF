@@ -697,15 +697,14 @@ public sealed class Elaborator
             {
                 // Inlining already applied the unit of every binding it absorbed, so re-applying a
                 // site unit here would apply it twice — the same var-unit-wins rule Eval() follows,
-                // enforced through Eval's own predicate rather than a second copy of it.
-                string? siteUnit = Evaluator.ReferencesUnitBearingVariable(ov.Expression, parentScope)
-                    ? null
-                    : ov.Unit;
+                // enforced through Eval's own predicate rather than a second copy of it. The site unit
+                // goes to the bare additive operands instead, as Eval gives it to them.
+                bool unitBearing = Evaluator.IsUnitBearing(ov.Expression, parentScope);
 
                 cellScope.Bind(
                     ov.Name,
-                    _freq.InlineForCellBoundary(ov.Expression, parentScope, _evaluator),
-                    siteUnit);
+                    _freq.InlineForCellBoundary(ov.Expression, parentScope, _evaluator, unitBearing ? ov.Unit : null),
+                    unitBearing ? null : ov.Unit);
                 continue;
             }
 
@@ -1848,7 +1847,13 @@ public sealed class Elaborator
                         // come back in degrees after starting life in radians. 1.0 under the
                         // var-unit-wins rule, where the referenced variable brought its own unit and
                         // the site unit was never applied (Evaluator.Eval).
-                        result[$"_expr_{ov.Name}"] = new Value(ov.Expression);
+                        // Under var-unit-wins the bare additive operands took the site unit instead
+                        // (`V=vd + 100 mV`'s 100); the stored text carries that as unit literals, so the
+                        // model's re-evaluation — in plain numbers — lands where Eval did.
+                        result[$"_expr_{ov.Name}"] = new Value(
+                            !string.IsNullOrEmpty(ov.Unit) && Evaluator.IsUnitBearing(ast, parentScope)
+                                ? FreqDeferral.Render(Evaluator.ScaleBareOperands(ast, parentScope, ov.Unit))
+                                : ov.Expression);
                         result[$"_scale_{ov.Name}"] = new Value(ToneParamUnitScale(ov, parentScope));
                         InjectToneScopeVars(ast, parentScope, scopeVarCache, result);
                     }
@@ -1878,7 +1883,7 @@ public sealed class Elaborator
     private static double ToneParamUnitScale(ParameterAssignment ov, Scope scope)
     {
         if (string.IsNullOrEmpty(ov.Unit)) return 1.0;
-        if (Evaluator.ReferencesUnitBearingVariable(ov.Expression, scope)) return 1.0;
+        if (Evaluator.IsUnitBearing(ov.Expression, scope)) return 1.0;
         return Units.Scale(ov.Unit) ?? 1.0;
     }
 

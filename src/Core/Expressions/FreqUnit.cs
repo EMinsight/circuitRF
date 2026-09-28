@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 
 namespace CircuitRF.Core.Expressions;
 
@@ -32,16 +33,16 @@ public static class FreqUnit
         IReadOnlyCollection<string>? globalsWithUnit)
     {
         var ast  = Parser.Parse(expr);
-        double v = EvalReal(ast, globals);
 
-        if (globalsWithUnit is { Count: > 0 })
-        {
-            foreach (var name in AstWalker.CollectRefs(ast))
-                if (globalsWithUnit.Contains(name))
-                    return v;   // var-unit-wins: resolved value is already in Hz
-        }
+        // var-unit-wins: a unit literal (`2.4GHz`) or a variable declared with a unit is already in Hz, so the field
+        // unit is not applied to the result — it goes to the bare additive operands instead (`RFfreq + 100` in MHz).
+        bool unitBearing = Evaluator.ContainsUnitLiteral(ast)
+            || (globalsWithUnit is { Count: > 0 } && AstWalker.CollectRefs(ast).Any(globalsWithUnit.Contains));
+        if (unitBearing)
+            return EvalReal(Evaluator.ScaleBareOperands(ast, n => globalsWithUnit?.Contains(n) == true ? 1 : null,
+                                                        string.IsNullOrEmpty(fieldUnit) ? null : fieldUnit), globals);
 
-        return v * Multiplier(fieldUnit);
+        return EvalReal(ast, globals) * Multiplier(fieldUnit);
     }
 
     /// <summary>

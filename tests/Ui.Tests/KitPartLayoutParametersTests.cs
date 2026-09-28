@@ -116,8 +116,14 @@ public sealed class KitPartLayoutParametersTests : IDisposable
             return (parameters, _, _) =>
             {
                 seen.Add(new Dictionary<string, PCellValue>(parameters, StringComparer.Ordinal));
+                // The part's two terminals, as a real kit cell declares them. A generated cell persisted
+                // with NO pins is indistinguishable from one written before pins were persisted, so
+                // Update Layout's pin alignment (CellPins.Resolve) asks the generator a second time —
+                // which every _seen assertion below would then count.
                 return new PCellResult(
-                    [new RectShape { Layer = new LayerKey(1, 0), X1 = 0, Y1 = 0, X2 = 100, Y2 = 100 }], []);
+                    [new RectShape { Layer = new LayerKey(1, 0), X1 = 0, Y1 = 0, X2 = 100, Y2 = 100 }],
+                    [new PCellPin("a", 0, 50, new LayerKey(1, 0), 100, 180.0),
+                     new PCellPin("b", 100, 50, new LayerKey(1, 0), 100, 0.0)]);
             };
         }
     }
@@ -253,26 +259,37 @@ public sealed class KitPartLayoutParametersTests : IDisposable
     }
 
     /// <summary>
-    /// A kit spells its values the way its own simulator does — <c>60u</c> — and circuitRF's
-    /// expression engine does not read engineering suffixes (measured: <c>60u</c> is
-    /// <c>Parse error at position 2</c>; <c>60</c> with the unit µm resolves). The cell's own parser
-    /// DOES read it, so the artwork comes out right and the instance must not lose its layout over it.
-    ///
-    /// <para>But the same row goes to the simulator as an expression and fails there, a long way from
-    /// here. So it is said once, at the point the value is used, and it is a note rather than a
-    /// failure — which is the difference between a fixable row and a mystery at Run.</para>
+    /// A kit spells its values the way its own simulator does — <c>60u</c> — and since
+    /// brief-units-in-expressions that is a circuitRF unit literal: it evaluates, reaches the cell in
+    /// metres like any other expression, and draws no note, because it will simulate too.
     /// </summary>
     [Fact]
-    public void AKitsOwnSuffixSpelling_ReachesTheCellVerbatim_AndIsReportedNotSwallowed()
+    public void AKitsOwnSuffixSpelling_IsAUnitLiteral_AndReachesTheCellInMetres()
     {
         var result = Run(ModelWith(("w", "60u")));
 
-        Assert.Empty(result.NoLayoutWarnings);              // the artwork was still produced
-        Assert.Equal("60u", Assert.Single(_seen)["w"].AsText());
+        Assert.Empty(result.NoLayoutWarnings);
+        Assert.Equal(6E-05, double.Parse(Assert.Single(_seen)["w"].AsText(), System.Globalization.CultureInfo.InvariantCulture), 15);
+        Assert.DoesNotContain(result.Lines, l => l.Text.Contains("60u"));
+    }
 
-        var line = Assert.Single(result.Lines, l => l.Text.Contains("60u"));
+    /// <summary>
+    /// A suffix circuitRF does NOT know (<c>60meg</c>, a SPICE spelling) cannot be evaluated. The cell's own
+    /// parser may still read it, so the artwork comes out right and the instance must not lose its layout
+    /// over it — but the same row goes to the simulator as an expression and fails there, a long way from
+    /// here. So it is said once, at the point the value is used, and it is a note rather than a failure.
+    /// </summary>
+    [Fact]
+    public void AnUnknownSuffix_ReachesTheCellVerbatim_AndIsReportedNotSwallowed()
+    {
+        var result = Run(ModelWith(("w", "60meg")));
+
+        Assert.Empty(result.NoLayoutWarnings);              // the artwork was still produced
+        Assert.Equal("60meg", Assert.Single(_seen)["w"].AsText());
+
+        var line = Assert.Single(result.Lines, l => l.Text.Contains("60meg"));
         Assert.Equal(SchematicToLayoutGenerator.ReportSeverity.Warning, line.Severity);
-        Assert.Contains("unit field", line.Text);
+        Assert.Contains("not a unit it knows", line.Text);
         Assert.Contains("simulated", line.Text);
     }
 

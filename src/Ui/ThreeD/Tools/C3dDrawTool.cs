@@ -188,19 +188,23 @@ public readonly record struct C3dDimension(C3dDimensionKind Kind, long Dbu, stri
         string t = (text ?? "").Trim();
         if (t.Length == 0) return new(C3dDimensionKind.Invalid, 0, "Type a length.");
         if (LayoutUnits.TryParse(t, unit, dbuPerMicron, out long dbu)) return new(C3dDimensionKind.Value, dbu, null);
-        // A number with a word after it is a length with a unit this build does not know — not an expression.
-        if (char.IsDigit(t[0]) || t[0] is '.' or ',' || (t.Length > 1 && t[0] is '+' or '-' && char.IsDigit(t[1])))
-            if (t.All(c => char.IsLetterOrDigit(c) || c is '.' or ',' or '+' or '-' or ' ' or 'µ' or 'μ'))
-                return new(C3dDimensionKind.Invalid, 0, $"'{t}' is not a length: the units are nm, um, mm, mil and in.");
+        // `2m` is two MILLI to the engine (m is the SI prefix everywhere), and in a length a reader very likely meant metres.
+        // As a whole typed value it is refused with both spellings; inside an expression the resolver warns instead.
+        if (Units.TrySplitGluedNumber(t, out var n, out var suffix) && suffix == "m")
+            return new(C3dDimensionKind.Invalid, 0, $"'{t}': a bare 'm' is MILLI, not the metre. Write {n}mm or {n}metre.");
+        // Anything the engine reads is an expression — including a sum of unit literals, `10um + 1mil`, which the word
+        // test below would otherwise take for a length with an unknown unit.
         try
         {
             Parser.Parse(t);
             return new(C3dDimensionKind.Expression, 0, null);
         }
-        catch (Exception ex) when (ex is ExpressionException or FormatException or ArgumentException)
-        {
-            return new(C3dDimensionKind.Invalid, 0, $"'{t}' is not a length.");
-        }
+        catch (Exception ex) when (ex is ExpressionException or FormatException or ArgumentException) { }
+        // A number with a word after it is a length with a unit this build does not know — not an expression.
+        if (char.IsDigit(t[0]) || t[0] is '.' or ',' || (t.Length > 1 && t[0] is '+' or '-' && char.IsDigit(t[1])))
+            if (t.All(c => char.IsLetterOrDigit(c) || c is '.' or ',' or '+' or '-' or ' ' or 'µ' or 'μ'))
+                return new(C3dDimensionKind.Invalid, 0, $"'{t}' is not a length: the units are nm, um, mm, mil and in.");
+        return new(C3dDimensionKind.Invalid, 0, $"'{t}' is not a length.");
     }
 
     /// <summary>A length as the field is prefilled with it: the display unit's number, lossless (it parses back to

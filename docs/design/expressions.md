@@ -35,7 +35,18 @@ An expression is **parsed once** into an AST and cached; evaluation re-runs the 
 
 ## 3. Lexical grammar (tokens)
 
-- **Number** — decimal, optional exponent: `50`, `1.0`, `1e-9`, `2.5E3`.
+- **Number** — decimal, optional exponent: `50`, `1.0`, `1e-9`, `2.5E3`. An exponent is taken only when digits
+  follow it, so `2e` is a number with an unknown suffix, not an empty exponent.
+- **Quantity (unit literal)** — a number with a unit glued to it, **no whitespace**: `10um`, `1mil`, `2.4GHz`,
+  `1.5nH`, `50Ω`, `10µm`, `1e-3mm`, `2u`, `48V`. It is ONE token (so a rename of a variable called `mil` can never
+  touch the `mil` in `10mil`), the suffix being the whole identifier run after the number — `10mils` is the unknown
+  suffix `mils`, never `10mil` and a name `s`. The suffix is normalised (`Ω`→`Ohm`, `µ`/`μ`→`u`) and must be a
+  linear-scale unit of §8's table — including the bare SI prefixes — or one of the scale-1 base symbols `V`, `A`,
+  `W`. An unknown suffix is a parse error naming it and the length units; a logarithmic one (`0dBm`, `3dB`) is a parse
+  error saying a dB value is not a multiplier. `10j` keeps its meaning (the implicit imaginary unit is checked first;
+  no unit starts with `j`). **Whitespace separates:** `2 GHz` is not a literal — it stays the assignment-level
+  spelling of §8. A name that spells a unit is still a name where it is not glued to a number: `2*mil` references a
+  variable `mil`. Brief: `brief-units-in-expressions.md`.
 - **String literal** — a double-quoted run of characters: `"touchstone"`, `"path/to/file.s2p"`, `"spline"`. Lexes to a `String` value (§6); **storage only**, no string operators. Used for component parameters that are genuinely textual (the SnP block's `File`, `Type`, `InterpMode`, `InterpDom`, `ExtrapMode`).
 
   **SnP `File` path resolution:** `File` may be a relative or absolute path. The Elaborator resolves a relative path against the **workspace root** (`Path.GetDirectoryName(CurrentWorkspacePath)`) — the same directory that holds the `.cws` and the `results/` folder. Absolute paths are used unchanged. Cross-platform: `Path.IsPathRooted`/`Combine`/`GetFullPath`, with `\`→`/` separator tolerance so a Windows-authored netlist ports to macOS/Linux without edits. When no workspace is open (CLI runs or in-memory elaboration with `BaseDirectory = null`), a relative path is left as-authored and resolves against the process CWD (legacy behavior).
@@ -48,7 +59,7 @@ An expression is **parsed once** into an AST and cached; evaluation re-runs the 
 - **Operators** — `+ - * / ^`, `< <= > >= == !=`, `&& || !`, `? :`, and `( ) ,`.
 - **Whitespace** separates tokens and is otherwise ignored.
 
-Units are **not** lexical tokens of the expression grammar — they attach at the assignment level (§8).
+A unit attaches in two places: glued to a number as a **Quantity** token (above), or at the assignment level (§8).
 
 ---
 
@@ -75,7 +86,9 @@ A **Pratt (precedence-climbing) parser** is the recommended implementation — i
 
 ## 5. AST node types
 
-- `Number(double)` — real literal.
+- `Number(double, unit?)` — real literal. A unit literal carries its unit, and its value is **already base SI**
+  (`10um` is `Number(1e-5, "um")`), so every consumer that only needs the number reads it unchanged. The unit is read
+  by the unit-bearing test (§8) and by printers that write an expression back (`FreqDeferral.Render` writes `10um`).
 - `Const(name)` — `j`, `pi`, `e`.
 - `Ref(name)` — a variable, parameter, or function argument; resolved against the scope (§9). In measurements, also an accessor call like `V(path)` (§13).
 - `Unary(op, x)` — `-x`, `+x`, `!x`.
@@ -161,7 +174,7 @@ The set is intentionally close to what other tools' equation-defined devices pro
 
 ## 8. Units
 
-Units attach at the **assignment level**, not inside the expression grammar: an assignment is `name = <expression> [unit]`, and the unit **scales the resolved value** by a linear factor. This matches the prototype (`Parameter.UnitString` scaling the evaluated expression) and the `.cnl`/imported-netlist lines (`L=L1 nH`, `Z=50 Ohm`, `M=0.5 pH`).
+Units attach at the **assignment level** — an assignment is `name = <expression> [unit]`, and the unit **scales the resolved value** by a linear factor — and, since 2026-09-27, **inside an expression as unit literals** (§3: `10um + 1mil`), scaled to base SI at parse time. This matches the prototype (`Parameter.UnitString` scaling the evaluated expression) and the `.cnl`/imported-netlist lines (`L=L1 nH`, `Z=50 Ohm`, `M=0.5 pH`).
 
 A representative scale table (extensible):
 
@@ -201,9 +214,34 @@ numeric conversion.
 
 **Logarithmic units are not unit-suffixes.** `dB`/`dBm` are not linear scale factors, so they are handled by functions (`dB(...)`, `dBm(...)`), never as a trailing unit on a value.
 
-**Var-unit-wins (no double-scaling).** A unit applies *once*. When an evaluation **site** carries a unit (e.g. a tone field `Freq = RFfreq GHz`, or a swept override injected with a base unit) **and** the expression references a variable that already declares its own unit, the site unit is **skipped** — the variable's unit was already applied when it resolved. Without this, `Freq = RFfreq GHz` where `RFfreq = 2 GHz` would scale by 1e9 twice. The rule is implemented in `Evaluator.Eval(expr, scope, unit)`: it skips the site `unit` when the expression references any unit-bearing name in scope; literals and unit-less references still take the site unit. This is what makes a mixed-unit compound resolve exactly (each reference contributes its own unit). **A binding's own unit is a site too** (fixed 2026-09-27): `Evaluator.Resolve` — and `FreqDeferral`, which inlines a binding the way `Resolve` would have evaluated it — skip a variable's declared unit when its expression references a unit-bearing name, so `b = 2*a [mil]` with `a = 10 [mil]` is 20 mil. Until then `Resolve` applied a binding's unit unconditionally and `b` came out 2.54e-5 times too small, on a schematic VAR and a `.c3d` VAR alike.
+**Var-unit-wins (no double-scaling).** A unit applies *once*. When an evaluation **site** carries a unit (e.g. a tone field `Freq = RFfreq GHz`, or a swept override injected with a base unit) **and** the expression references a variable that already declares its own unit, the site unit is **skipped** — the variable's unit was already applied when it resolved. Without this, `Freq = RFfreq GHz` where `RFfreq = 2 GHz` would scale by 1e9 twice. The rule is implemented in `Evaluator.Eval(expr, scope, unit)`: it skips the site `unit` when the expression references any unit-bearing name in scope; a bare number and a unit-less reference still take the site unit — on the result when nothing in the expression is unit-bearing, or as operands beside a unit-bearing term (below). This is what makes a mixed-unit compound resolve exactly (each reference contributes its own unit). **A binding's own unit is a site too** (fixed 2026-09-27): `Evaluator.Resolve` — and `FreqDeferral`, which inlines a binding the way `Resolve` would have evaluated it — skip a variable's declared unit when its expression references a unit-bearing name, so `b = 2*a [mil]` with `a = 10 [mil]` is 20 mil. Until then `Resolve` applied a binding's unit unconditionally and `b` came out 2.54e-5 times too small, on a schematic VAR and a `.c3d` VAR alike.
 
-**Deferred:** units *inside* expressions (per-term units, unit algebra/checking). v1 uses a single assignment-level unit. This is the PRD §7 "units-in-expressions … grows later" item.
+**Unit literals are unit-bearing** (2026-09-27, `brief-units-in-expressions.md`). An expression is UNIT-BEARING —
+and its site unit is skipped — when it contains a unit literal (§3) or references a unit-bearing name. A name is
+unit-bearing when it declares a unit, or when it declares none and its own expression holds a literal (followed through
+other unit-less names): `w = 10mil` with no unit field is base SI all the same. A unit-less name that merely references
+a unit-bearing name is still NOT unit-bearing — that was the rule before literals existed, and following it would change
+the value of existing documents. The test is `Evaluator.IsUnitBearing`; every var-unit-wins site calls it.
+
+**A bare operand beside a unit-bearing one takes the site unit** (owner decision, Q1 (b)). In `cav_w + 40` typed in mil,
+the 40 is forty MIL. Until 2026-09-27 it was forty metres — "the unit trap" — and the only advice was to write the 40 as
+a name. The rule is applied as an AST transform before evaluation (`Evaluator.ScaleBareOperands`), never a text rewrite,
+to the operands of `+`, `-`, a comparison, the two branches of a conditional, and `min`/`max`. A **multiplicative**
+operand stays dimensionless: `2*w` is twice w, `w/4` a quarter of it. **Powers are tracked**: a literal or a
+unit-bearing name is power 1, `*` adds powers, `/` subtracts them, `^` and `pow` by a constant multiply, `sqrt` halves,
+`abs`/`real` keep — and a bare operand is scaled by `site^power`. So `sqrt(w*w + 25)` adds 25 square mil and
+`w/h + 1` adds exactly 1 (power 0). Refusing every bare literal beside a non-unit power was the alternative; it would
+refuse the ordinary `w/h + 1`, which tracking gets right. Where the power cannot be known (a unit-bearing argument of
+any other function, `w^n` with a non-constant `n`) the bare operand is left in base SI, which is what it meant before.
+The transform applies only where var-unit-wins has already decided not to scale the result, and only for a linear
+site unit other than 1 (a site in `metre`, `Hz`, `V` or `dBm` has nothing to scale by). With **no** site unit a bare
+number is base SI, as it always was.
+
+**`m` is milli here too.** `2m` is 2e-3 — in a length, two millimetres. That is deliberate (brief-core-length-units §5
+q1) and has a cost a reader must know: the metre is `2metre`. The 3D view refuses a whole typed `2m` in a length field
+(naming `2mm` and `2metre`), and warns about an `m` literal inside a length expression.
+
+**Not this phase:** unit algebra and dimension checking across dimensions — `1GHz + 1mil` is accepted and meaningless.
 
 ---
 

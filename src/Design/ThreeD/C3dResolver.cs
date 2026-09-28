@@ -174,9 +174,9 @@ public sealed class C3dResolution
     /// <summary>True when <paramref name="name"/> is bound in this scope.</summary>
     public bool IsDefined(string name) => _scope.Lookup(name) is not null;
 
-    /// <summary>True when <paramref name="expression"/> references a name that carries its own unit, so its site unit is
-    /// skipped (var-unit-wins) — the engine's own test.</summary>
-    public bool SkipsSiteUnit(string expression) => Evaluator.ReferencesUnitBearingVariable(expression, _scope);
+    /// <summary>True when <paramref name="expression"/> is unit-bearing — it holds a unit literal (<c>10mil</c>) or references
+    /// a name that carries its own unit — so its site unit is skipped (var-unit-wins) — the engine's own test.</summary>
+    public bool SkipsSiteUnit(string expression) => Evaluator.IsUnitBearing(expression, _scope);
 
     /// <summary>
     /// R-em3d51-2e — <paramref name="inst"/>'s overrides of the child's parameters, evaluated in THIS scope. A name that
@@ -308,6 +308,7 @@ public static class C3dResolver
 
         // 3. Every field, at its own site unit.
         foreach (var f in C3dBindings.Bound(doc)) Field(doc, f, ev, scope, r);
+        foreach (var v in doc.Variables) MilliLiteralWarning(r, $"VAR '{v.Name}'", v.Expression);
 
         // Overrides reference the parent's names too — they are uses.
         foreach (var inst in doc.Instances)
@@ -335,7 +336,7 @@ public static class C3dResolver
                 bool fromText = n.Source is C3dNameSource.Var or C3dNameSource.CellDefault
                                 || n is { Source: C3dNameSource.LinkedVar, ParameterSource: C3dNameSource.CellDefault };
                 if (n.Unit is not null || !fromText) continue;
-                if (!Evaluator.ReferencesUnitBearingVariable(n.Expression, scope)) continue;
+                if (!Evaluator.IsUnitBearing(n.Expression, scope)) continue;
                 scope.Bind(n.Name, n.Expression, BaseUnit);
                 r.Names[n.Name] = n with { Unit = BaseUnit };
                 changed = true;
@@ -352,8 +353,9 @@ public static class C3dResolver
         switch (f.Spec.Kind)
         {
             case C3dFieldKind.Length or C3dFieldKind.Microns:
+                MilliLiteralWarning(r, $"'{f.Item}' {f.Path}", e.Expr);
                 unit = C3dUnits.Engine(e.Unit, out error);
-                if (error is null && unit is null && !Evaluator.ReferencesUnitBearingVariable(e.Expr, scope))
+                if (error is null && unit is null && !Evaluator.IsUnitBearing(e.Expr, scope))
                     error = "it states no unit. An expression in a dimension carries the unit it was typed in.";
                 break;
             case C3dFieldKind.Angle:
@@ -377,6 +379,39 @@ public static class C3dResolver
         r.Errors.Add($"'{f.Item}' {f.Path} = {e.Expr}: {error}");
     }
 
+    /// <summary>
+    /// A unit literal glued with a bare <c>m</c> — <c>2m</c> — is two MILLI (the SI prefix), which in a length is 2 mm, not
+    /// the two metres a reader may have meant. It is legal and deliberate (brief-core-length-units: <c>m</c> stays milli
+    /// everywhere), so it is warned about in a length, never refused.
+    /// </summary>
+    internal static void MilliLiteralWarning(C3dResolution r, string where, string expression)
+    {
+        if (!HasMilliLiteral(expression)) return;
+        AddOnce(r.Warnings, $"{where} = {expression}: a number followed by a bare 'm' is MILLI, so it is millimetres in a length. " +
+                            "Write 'mm' to say so, or 'metre' for metres.");
+    }
+
+    /// <summary>True when <paramref name="expression"/> holds a unit literal glued with a bare <c>m</c> (<c>2m</c>).</summary>
+    public static bool HasMilliLiteral(string expression)
+    {
+        Expr ast;
+        try { ast = Parser.Parse(expression); }
+        catch (ExpressionException) { return false; }
+        return ContainsMilli(ast);
+
+        static bool ContainsMilli(Expr e) => e switch
+        {
+            NumberExpr n      => n.Unit == "m",
+            UnaryExpr u       => ContainsMilli(u.Operand),
+            BinaryExpr b      => ContainsMilli(b.Left) || ContainsMilli(b.Right),
+            CompareExpr c     => ContainsMilli(c.Left) || ContainsMilli(c.Right),
+            LogicExpr l       => ContainsMilli(l.Left) || ContainsMilli(l.Right),
+            ConditionalExpr d => ContainsMilli(d.Condition) || ContainsMilli(d.Then) || ContainsMilli(d.Else),
+            CallExpr cl       => cl.Args.Any(ContainsMilli),
+            _                 => false,
+        };
+    }
+
     /// <summary>The value into the field's number, by kind — or the reason it cannot go there.</summary>
     private static string? Store(C3dDocument doc, C3dBoundField f, double si, C3dResolution r)
     {
@@ -392,7 +427,7 @@ public static class C3dResolver
                         $"'{f.Item}' {f.Path} = {f.Expr.Expr} is {raw:0.###} DBU, rounded to {rounded:0}: two expressions meant to meet exactly may not."));
                 if (Math.Abs(si) > LargeMetres)
                     r.Warnings.Add(string.Create(CultureInfo.InvariantCulture,
-                        $"'{f.Item}' {f.Path} = {f.Expr.Expr} is {si:0.######} m, above 1 m. A literal in an expression that references a name with its own unit is in METRES (var-unit-wins), so `2*w + 5` adds five metres."));
+                        $"'{f.Item}' {f.Path} = {f.Expr.Expr} is {si:0.######} m, above 1 m. A MULTIPLIER is not scaled by the field's unit (`2*w` is twice w), and a name with no unit is in metres; the metre itself is spelled `metre` — a bare `m` is milli."));
                 if (rounded < 0 && IsSize(f)) return string.Create(CultureInfo.InvariantCulture, $"it is {rounded:0} DBU; a size is positive.");
                 // brief-em3d-64 R-em3d64-1c — a fillet's radius and a chamfer's distances round or cut something: zero is as
                 // meaningless as negative, and the kernel would refuse it far from the field that caused it.

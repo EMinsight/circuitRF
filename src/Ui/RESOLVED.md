@@ -37392,3 +37392,25 @@ because it moves the Boolean and the Tool is inside it. `C3dProvenance.TopObject
 object each solid was elaborated from, and an operation's target includes every scene object whose `TopObject` is it —
 Move, Rotate, Mirror, Duplicate, Array and the gizmo share that one mapping. Gate:
 `tests/Ui.Tests/ThreeD/SelectAllMovePreviewTests.cs` (fails without the change).
+
+## Unit literals reach the editors (2026-09-27, brief-units-in-expressions)
+
+The schematic parameter editor's glued-unit splitter lifted any trailing letter run after a digit, so
+once `10um + 1mil` became a legal expression it would have been saved as `10um + 1` with unit `mil`. It
+now lifts only a whole `<number><unit>` (`Units.TrySplitGluedNumber`, shared with the `.cnl` reader).
+The 3D typed field asked its "number followed by a word" guard before the parser, which classified
+`10um + 1mil` as an unknown length unit; the parser is asked first now. A whole `2m` in a length box is
+refused (milli, not metre), and the preview says so when an `m` literal sits inside an expression.
+
+`SchematicToLayoutGenerator.TextForDeclaredString`: a kit's `60u` now EVALUATES (it is a unit literal)
+and reaches a text-declared cell parameter in metres, which the kit reads as it read `7e-06`; the
+"cannot evaluate" note is left for suffixes circuitRF does not know (`60meg`).
+
+**Nine `KitPartLayoutParametersTests` had failed since aa434ed6 (2026-09-21)** on `Assert.Single(_seen)`:
+`SchematicToLayoutGenerator.PinAlignment` → `CellPins.Resolve` re-invokes a generator for any generated cell
+with NO persisted pins, and the fixture's generator returned none. The second call was identical and
+involved no expression (the `30e-6` case failed the same way). Fixed in the FIXTURE — it now returns the
+part's two terminals, as a real kit cell does. The production behaviour is left alone and worth knowing: a
+cell persisted with zero pins cannot be told from one written before pins were persisted, so a genuinely
+pinless generated cell (a logo, a fiducial) costs one extra generator call per pin resolve — an
+out-of-process script, for a kit. Telling them apart needs a persisted marker, which is a format change.

@@ -1881,10 +1881,6 @@ public sealed class CnlReader
     /// stays a separate token, and quoted values (already atomic from TokeniseLine) are never split.
     /// Applied only on the generic component path (expression lines use dedicated parsers).
     /// </summary>
-    // Matches a numeric literal (incl. scientific) glued directly to a trailing alpha suffix:
-    // "1uF" → ("1","uF"), "300pH" → ("300","pH"). "2e9"/"2e-9" leave no alpha tail → no match.
-    private static readonly Regex GluedNumericUnit = new(
-        @"^([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)([A-Za-z]+)$", RegexOptions.Compiled);
 
     /// <summary>
     /// Splits a value with a glued unit suffix ("1uF") into ("1","uF") — but only when the suffix
@@ -1897,14 +1893,14 @@ public sealed class CnlReader
     internal static bool TrySplitGluedUnit(string s, out string value, out string unit)
     {
         value = s; unit = "";
-        var m = GluedNumericUnit.Match(s);
-        if (!m.Success) return false;
-        string u = m.Groups[2].Value;
+        if (!Units.TrySplitGluedNumber(s, out var number, out var u)) return false;
+        // ASCII letters only, as this reader always required: a glyph (Ω, µ) or '%' is not a netlist unit spelling.
+        if (!u.All(char.IsAsciiLetter)) return false;
         // IsRecognizedUnit covers identity/measurement units (V, A, W, dBm, …) in addition
         // to linear-scale units, so "48V" and "0dBm" split correctly. The regex already
         // requires a numeric head, so identifiers like "Pin" and "Vs_mag" never reach here.
         if (!Units.IsRecognizedUnit(u)) return false;
-        value = m.Groups[1].Value;
+        value = number;
         unit  = u;
         return true;
     }

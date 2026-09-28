@@ -362,11 +362,11 @@ way.</p>
 </div>
 
 <div class="callout warn">
-<span class="label">A unit belongs in the row's unit field, not in the value</span>
-<p>circuitRF's expression parser has no unit-suffix production, so a value written as
-<code>60u</code> in an expression is a <em>parse error</em> — and an unresolvable value is skipped rather
-than reported at the point you typed it. Some kits' own scripting accepts that spelling, which means the
-difference does not show up until Run. See <a href="units.html#unit-field">Units</a>.</p>
+<span class="label">A glued unit is a literal; a spaced one is not</span>
+<p><code>60u</code> — the unit glued to the number — is a unit literal in circuitRF, 60 × 10<sup>-6</sup>, as
+it is in most kits' own scripting. <code>60 u</code>, with a space, is not an expression, and an unresolvable
+value is skipped rather than reported at the point you typed it, so the difference does not show up until
+Run. A lone <code>m</code> is milli in both spellings. See <a href="units.html#unit-field">Units</a>.</p>
 </div>
 
 **Non-determinism poisons the cache silently.** It is worth repeating because it is the failure with no

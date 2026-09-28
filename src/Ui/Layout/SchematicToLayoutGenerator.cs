@@ -1208,14 +1208,13 @@ public static class SchematicToLayoutGenerator
     /// genuine word-valued parameter (a display mode, a model name, a calculation route) is.</para>
     ///
     /// <para><b><paramref name="note"/> is set for the third case, and it is the one worth saying out
-    /// loud.</b> A kit spells its values the way its own simulator does — <c>60u</c>, <c>1.5p</c> —
-    /// and circuitRF's expression engine does not read engineering suffixes: a value's unit is a
-    /// FIELD on the row, not a letter on the number (measured: <c>60u</c> is
-    /// <c>Parse error at position 2</c>, while <c>60</c> with the unit µm resolves). Such a row still
-    /// reaches the cell verbatim and the artwork still comes out right, because the kit's own cell
-    /// parses its own spelling — so this is not a failure and must not cost the instance its layout.
-    /// But nothing else in circuitRF can read it: the same row goes to the simulator as an expression
-    /// and fails there, a long way from here, with a message about a token. Saying it at the point the
+    /// loud.</b> A kit spells its values the way its own simulator does — <c>60u</c>, <c>1.5p</c> — and
+    /// since brief-units-in-expressions those ARE circuitRF unit literals: they evaluate above, like any
+    /// expression, and reach the cell in metres. What is left is a suffix circuitRF does not know
+    /// (<c>60meg</c>, <c>1.5mils</c>). Such a row still reaches the cell verbatim and the artwork still
+    /// comes out right, because the kit's own cell parses its own spelling — so this is not a failure and
+    /// must not cost the instance its layout. But nothing else in circuitRF can read it: the same row goes
+    /// to the simulator as an expression and fails there, a long way from here. Saying it at the point the
     /// value is used is the difference between a fixable row and a mystery at Run.</para>
     /// </summary>
     internal static string TextForDeclaredString(
@@ -1228,14 +1227,14 @@ public static class SchematicToLayoutGenerator
         string raw = p.Expression.Trim();
         if (LooksLikeASuffixedNumber(raw))
             note = $"\"{raw}\" was passed to the kit's cell as written — circuitRF cannot evaluate it, " +
-                   "because a unit belongs in the row's own unit field rather than as a letter after " +
-                   "the number. The artwork is correct; the same value will fail when this design is " +
-                   "simulated. Enter it as a number with a unit instead.";
+                   "because the letters after the number are not a unit it knows. The artwork is correct; " +
+                   "the same value will fail when this design is simulated. Enter it with a unit circuitRF " +
+                   "knows (60u, 60um), or as a number with the unit in the row's unit field.";
         return raw;
     }
 
-    /// <summary>A number with an engineering suffix stuck to it — the spelling a SPICE-dialect kit
-    /// uses and circuitRF's expression engine does not read. Deliberately shape-based rather than a
+    /// <summary>A number with a suffix stuck to it that the expression engine did not read — a
+    /// SPICE-dialect spelling such as <c>60meg</c>. Deliberately shape-based rather than a
     /// list of suffixes: the point is to tell a MISTYPED DIMENSION apart from a word-valued parameter
     /// ("Selected", a model name), not to decode the suffix.</summary>
     private static bool LooksLikeASuffixedNumber(string text)

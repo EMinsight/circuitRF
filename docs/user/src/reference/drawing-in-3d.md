@@ -292,14 +292,20 @@ floor, the base, the east and west walls and the lid all move; the die and the l
 Dragging a face whose size is an expression (**N**) writes the **name**, not the field, so every other
 object using that name follows too.
 
-<div class="callout warn">
-<span class="label">The unit trap</span>
-<p>A number written beside a name that has its own unit is in <b>metres</b>: <code>cav_w + 40</code> is
-<code>cav_w</code> plus forty metres. The box shows the value as you type — over a million and a half mil — and
-<code>check</code> warns about any dimension over 1 m. Write the forty as a name (<code>2*wall</code>), or
-type the expression's unit after it. The example uses names for every constant it adds for this reason.</p>
+<div class="callout">
+<span class="label">Units in an expression</span>
+<p>A number may carry its own unit, written straight after it with no space: <code>cav_w + 40mil</code>,
+<code>10um + 1mil</code>, <code>2*wall + 0.5mm</code>. A number with no unit that is <b>added to</b>, subtracted from
+or compared with a name that has a unit takes the <b>box's</b> unit: <code>cav_w + 40</code> typed in mil is
+<code>cav_w</code> plus forty mil. A number that <b>multiplies</b> or divides stays a plain number:
+<code>2*wall</code> is twice the wall.</p>
+<p>A lone <code>m</code> is <b>milli</b>, not the metre, exactly as in a netlist: <code>2m</code> is 2 mm. Write
+<code>mm</code> to say so, or <code>metre</code> for metres; the box refuses a bare <code>2m</code> and
+<code>check</code> warns about an <code>m</code> inside a length. <code>check</code> also warns about any dimension
+over 1 m, the mark a unit slip leaves.</p>
 <p>A VAR follows the same rule: its unit scales its expression only when the expression names nothing with a unit of
-its own. <code>w2 = 2*w</code> in mil, with <code>w</code> = 10 mil, is 20 mil.</p>
+its own. <code>w2 = 2*w</code> in mil, with <code>w</code> = 10 mil, is 20 mil, and <code>w3 = w + 5</code> in mil is
+15 mil. A VAR written <code>w = 10mil</code> needs no unit of its own.</p>
 </div>
 
 ## Booleans, fillets, chamfers and STEP parts {#operations}
@@ -849,9 +855,10 @@ order a pane presents them, with the rules each one follows.
   shows now), a unit, and whether it becomes a **VAR of this 3D view** or a **cell parameter**; Enter defines
   them and the shape carries on, and the definitions and the new object are one undo step. A width, depth,
   height, radius or extrude distance keeps its expression; a polygon's points and a move's distance are
-  evaluated once and stored as numbers, and the box says so. **Beware one trap:** in `2*w + 5` with `w` in mil,
-  the `5` is five **metres** — a literal beside a name that has its own unit is in metres — and the preview
-  shows `5.000508 m` before you press Enter; `check` warns about any dimension over 1 m.
+  evaluated once and stored as numbers, and the box says so. A number may carry its own unit (`2*w + 0.5mm`);
+  one without that is added to a name with a unit takes the box's unit, so `2*w + 5` with `w` in mil is 25 mil,
+  and a multiplier stays a number. A lone `m` is milli (`2mm` or `2metre`, never `2m`); `check` warns about any
+  dimension over 1 m.
   The **Variables** panel (the *x* button) lists each VAR with its expression, unit, value and how many fields
   use it, then the cell's parameters: *Set*, *Rename* (every use is rewritten; `ww` is not touched by renaming
   `w`), *Delete* (refused while anything uses it — *Inline* writes the current numbers into those fields

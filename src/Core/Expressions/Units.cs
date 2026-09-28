@@ -144,6 +144,41 @@ public static class Units
     public static bool IsRecognizedUnit(string unit)
         => IsKnown(unit) || _identityUnits.Contains(unit);
 
+    /// <summary>
+    /// True when <paramref name="unit"/> (engine spelling) may be glued to a number as a unit LITERAL — <c>10um</c>,
+    /// <c>2.4GHz</c>, <c>2u</c>, <c>48V</c>: every linear-scale unit, including the bare SI prefixes (so <c>2m</c> is
+    /// two MILLI, never two metres — the metre is <c>metre</c>), and the three scale-1 base symbols V, A and W.
+    /// <c>2W</c> is two watts: it did not parse before literals existed, so no existing text changes meaning, but a
+    /// user who meant <c>2*W</c> (a microstrip width) must write the <c>*</c>. The logarithmic units are refused by the
+    /// tokenizer with their own message (<see cref="IsLogarithmic"/>).
+    /// </summary>
+    public static bool IsSuffixUnit(string unit) => IsKnown(unit) || unit is "V" or "A" or "W";
+
+    /// <summary>dB, dBm, dBc, dBW — measurement units that are not multipliers (expressions.md §8: they are functions).</summary>
+    public static bool IsLogarithmic(string unit) => unit is "dB" or "dBm" or "dBc" or "dBW";
+
+    /// <summary>The multiplier a unit literal's number is scaled by: the linear scale, or 1 for V, A and W.</summary>
+    public static double SuffixScale(string unit) => Scale(unit) ?? 1.0;
+
+    private static readonly System.Text.RegularExpressions.Regex _gluedNumber = new(
+        @"^([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)([A-Za-zΩµμ%°]+)$",
+        System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    /// <summary>
+    /// Splits a WHOLE value written as one number with a unit glued to it — <c>1uF</c>, <c>2.5nH</c>, <c>1Ω</c> — into the
+    /// number and the suffix as written (not normalised, not checked against the table: the caller decides which
+    /// suffixes it lifts). Anything else — <c>10um + 1mil</c>, <c>2*w</c>, <c>Vs_mag</c> — is not split. This is the one
+    /// home of the shape both the <c>.cnl</c> reader and the schematic's parameter editor lift; a splitter that looked
+    /// only at a trailing run would tear <c>10um + 1mil</c> into <c>10um + 1</c> and <c>mil</c>.
+    /// </summary>
+    public static bool TrySplitGluedNumber(string s, out string number, out string suffix)
+    {
+        var m = _gluedNumber.Match(s);
+        number = m.Success ? m.Groups[1].Value : s;
+        suffix = m.Success ? m.Groups[2].Value : "";
+        return m.Success;
+    }
+
     // Maps prefixed units to their scale-1 base symbol.
     private static readonly Dictionary<string, string> _baseUnitMap = new(StringComparer.Ordinal)
     {
@@ -201,8 +236,8 @@ public static class Units
     /// is concerned, so a variable may legitimately be named with one.</para>
     ///
     /// <para>This is the single home for that rule. A unit properly belongs in the row's own unit
-    /// FIELD and the parser has no unit-suffix production — <c>Parser.Parse("2 GHz")</c> is a parse
-    /// error at the 'GHz'. A netlist has no separate field to put it in, so the .cnl reader has
+    /// FIELD, and the parser reads a unit only GLUED to a number (<c>2GHz</c>, a unit literal) —
+    /// <c>Parser.Parse("2 GHz")</c> is a parse error at the 'GHz'. A netlist has no separate field to put it in, so the .cnl reader has
     /// always accepted the inline spelling and lifted it into <c>Variable.Unit</c>; the schematic
     /// VAR editor has a real unit column and did not, which made the identical text mean two
     /// different things in the two entry points — and the schematic one meant "silently no
@@ -232,10 +267,11 @@ public static class Units
     /// makes the wide table safe. Every bare SI prefix is a unit name here, so a purely token-based
     /// rule tears <c>2 * f</c> into <c>2 *</c> + femto and <c>R * m</c> into <c>R *</c> + milli —
     /// expressions that are perfectly legal. So: leave anything that already parses completely alone,
-    /// and accept a split only when it turns text the parser rejects into text it accepts. A unit
-    /// suffix always produces a parse error (juxtaposition is not an operator in this grammar), so
+    /// and accept a split only when it turns text the parser rejects into text it accepts. A SPACED
+    /// unit always produces a parse error (juxtaposition is not an operator in this grammar), so
     /// this is reachable by exactly the assignments it is for and unreachable by every one that was
-    /// already working.</para>
+    /// already working. A GLUED unit (<c>2GHz</c>) is a unit literal since 2026-09-27: it parses, so it
+    /// is kept as written — the same value, still unit-bearing.</para>
     ///
     /// <para><b>Why the two entry points share it (AUT-8 R-aut8-6).</b> The reference page states,
     /// without qualification, that a variable may carry a unit, and <c>RFfreq = 2 GHz</c> is its own

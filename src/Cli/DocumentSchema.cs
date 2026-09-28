@@ -610,16 +610,18 @@ internal static class DocumentSchema
                 "Size": [{ "Expr": "w", "Unit": "Mil" }, 1270000, { "Expr": "h_sub + t_met", "Unit": "Um" }]
 
             The unit is stored so that changing DisplayUnit never changes what an expression means.
-            There are no units inside an expression (`2*w + 5um` does not parse). An angle's unit is
+            A number may carry its own unit, glued to it (`2*w + 5um`, `10um + 1mil`). An angle's unit is
             Deg; a count has none and must come out a whole number of at least 1 — never rounded.
             Point lists (Outline, Holes, Points, Points3, Vertices, a wire's Points) hold numbers
             only. Everything resolves BEFORE any geometry is built; a length is rounded to the DBU
             once, and `check` notes a rounding that moved it by more than 1e-9.
-          * THE UNIT TRAP. A field's unit is its SITE unit, and it is skipped when the expression
-            references a name that carries a unit of its own (var-unit-wins). So in `2*w + 5`, with
-            w in mil, the literal 5 is FIVE METRES — 5.000508 m. The editor's field previews that
-            as it is typed, and `check` warns on any dimension above 1 m, the mark a unit slip
-            leaves.
+          * UNITS. A field's unit is its SITE unit. It is skipped when the expression is
+            unit-bearing — it holds a unit literal (`10mil`) or references a name that carries a
+            unit of its own (var-unit-wins) — and it then goes to the bare numbers ADDED to,
+            subtracted from or compared with a unit-bearing term: in `2*w + 5`, with w in mil, the
+            5 is five mil and the 2 stays a multiplier (25 mil). A bare `m` is MILLI (`2m` is 2 mm;
+            the metre is `metre`), and `check` warns about one in a length and about any dimension
+            above 1 m, the mark a unit slip leaves.
           * Variables are the 3D view's VARs, the record a schematic VAR row holds:
 
                 { "Name": "w", "Expression": "10", "Unit": "Mil" }

@@ -103,9 +103,15 @@ may not shadow them.
 
 ## Units {#units}
 
-A unit attaches at the **assignment** level (after the expression), and scales the value by a
-linear factor — `L = L1 nH`, `Z = 50 Ohm`, `M = 0.5 pH`. Units are not part of the expression
-grammar.
+A unit attaches in two places. At the **assignment** level (after the expression, or in the row's unit
+column) it scales the value by a linear factor — `L = L1 nH`, `Z = 50 Ohm`, `M = 0.5 pH`. And **glued to
+a number** inside the expression, with no space, it makes a unit literal — `10um + 1mil`, `2.4GHz`,
+`10V + 100mV` — scaled to base SI as it is read. `2 GHz`, with a space, is not a literal.
+
+An expression holding a unit literal, or naming a variable declared with a unit, is already in base units,
+so the assignment's unit is not applied to its result; a bare number **added to**, subtracted from or
+compared with such a term takes that unit instead (`w + 5` in mil is 5 mil more than `w`), and a bare
+number that multiplies or divides stays a number (`2*w`). See [Units](units.html#unit-field).
 
 <table>
     <thead><tr><th>Domain</th><th>Units</th></tr></thead>
@@ -114,8 +120,8 @@ grammar.
       <tr><td>Frequency</td><td><code>Hz kHz MHz GHz THz</code></td></tr>
       <tr><td>Inductance</td><td><code>H mH uH nH pH fH</code></td></tr>
       <tr><td>Capacitance</td><td><code>F mF uF nF pF fF</code></td></tr>
-      <tr><td>Resistance</td><td><code>Ohm kOhm MOhm</code></td></tr>
-      <tr><td>Length</td><td><code>m mm um mil</code></td></tr>
+      <tr><td>Resistance</td><td><code>Ohm mOhm kOhm MOhm GOhm TOhm</code></td></tr>
+      <tr><td>Length</td><td><code>metre mm um cm nm mil in inch</code> — <code>m</code> is the prefix milli, never the metre</td></tr>
       <tr><td>Angle</td><td><code>deg rad</code></td></tr>
     </tbody>
   </table>
@@ -123,7 +129,7 @@ grammar.
 <div class="callout warn">
     <span class="label">dB and dBm are not units</span>
     <p>They are logarithmic, not linear scale factors, so they are <em>functions</em> — <code>dB(...)</code>,
-    <code>dBm(...)</code> — never a trailing unit on a value.</p>
+    <code>dBm(...)</code> — never a unit literal: <code>0dBm</code> is refused.</p>
   </div>
 
 ## Variables, scope & cell parameters {#vars}

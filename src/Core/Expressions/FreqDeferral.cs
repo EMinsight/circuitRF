@@ -104,9 +104,14 @@ public sealed class FreqDeferral
     /// reference. Returns the text unchanged when nothing is frequency-dependent, so every existing
     /// design takes byte-for-byte the path it always did.
     /// </summary>
-    public string InlineForCellBoundary(string expression, Scope scope, Evaluator evaluator)
+    /// <param name="bareOperandUnit">The site unit when the caller has decided, by var-unit-wins, not to apply it to
+    /// the result — the bare additive operands beside a unit-bearing term take it instead
+    /// (<see cref="Evaluator.ScaleBareOperands(Expr, Scope, string?)"/>), before the names they sit beside are folded
+    /// to literals and the distinction is lost.</param>
+    public string InlineForCellBoundary(string expression, Scope scope, Evaluator evaluator, string? bareOperandUnit = null)
         => IsFreqDependent(expression, scope)
-            ? Render(Inline(Parser.Parse(expression), scope, evaluator, [], 0, foldFreeNames: true))
+            ? Render(Inline(Evaluator.ScaleBareOperands(Parser.Parse(expression), scope, bareOperandUnit),
+                            scope, evaluator, [], 0, foldFreeNames: true))
             : expression;
 
     /// <summary>
@@ -231,10 +236,12 @@ public sealed class FreqDeferral
         {
             // Always folds from here down — see the note on Inline.
             var parsed = Parser.Parse(expression);
-            var inlined = Inline(parsed, owner, evaluator, visiting, depth + 1, foldFreeNames: true);
-            // var-unit-wins, exactly as Evaluator.Resolve applies it: a binding that references a unit-bearing
-            // name does not take its own unit again.
-            return Evaluator.ReferencesUnitBearingVariable(expression, owner) ? inlined : ApplyUnitScale(inlined, unit);
+            // var-unit-wins, exactly as Evaluator.Resolve applies it: a unit-bearing binding does not take its own unit
+            // again, and its bare additive operands take it instead — decided on the PARSED text, before inlining folds
+            // the unit-bearing names into plain numbers.
+            if (Evaluator.IsUnitBearing(parsed, owner))
+                return Inline(Evaluator.ScaleBareOperands(parsed, owner, unit), owner, evaluator, visiting, depth + 1, foldFreeNames: true);
+            return ApplyUnitScale(Inline(parsed, owner, evaluator, visiting, depth + 1, foldFreeNames: true), unit);
         }
         finally { visiting.Remove(key); }
     }
@@ -281,6 +288,11 @@ public sealed class FreqDeferral
     {
         switch (e)
         {
+            case NumberExpr { Unit: { } unit } q:
+                // A unit literal is written back AS one, so the deferred text stays unit-bearing and a site unit is not
+                // applied on top of it after re-parsing.
+                sb.Append(UnitLiteralText(q.Value, unit));
+                break;
             case NumberExpr n:
                 sb.Append(n.Value.ToString("R", CultureInfo.InvariantCulture));
                 break;
@@ -325,6 +337,34 @@ public sealed class FreqDeferral
             default:
                 throw new FrequencyDependentValueException(
                     $"Cannot render {e.GetType().Name} back to expression text.");
+        }
+    }
+
+    /// <summary>
+    /// A unit literal's text that re-parses to exactly <paramref name="value"/>: the number in <paramref name="unit"/>,
+    /// chosen among the doubles next to value/scale so that number × scale — what the parser computes — is value to the
+    /// bit. A literal's own number is always one of them, since the parser made value from it by that product.
+    /// </summary>
+    public static string UnitLiteralText(double value, string unit)
+    {
+        double scale = Units.SuffixScale(unit);
+        double m = value / scale;
+        for (int step = 0; step <= 8; step++)
+        {
+            foreach (double c in new[] { Nudge(m, step), Nudge(m, -step) })
+            {
+                string text = c.ToString("R", CultureInfo.InvariantCulture);
+                if (double.Parse(text, CultureInfo.InvariantCulture) * scale == value)
+                    return text + unit;
+            }
+        }
+        return m.ToString("R", CultureInfo.InvariantCulture) + unit;
+
+        static double Nudge(double x, int n)
+        {
+            for (; n > 0; n--) x = Math.BitIncrement(x);
+            for (; n < 0; n++) x = Math.BitDecrement(x);
+            return x;
         }
     }
 

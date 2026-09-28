@@ -18,6 +18,7 @@ namespace CircuitRF.Core.Tests.Devices.External;
 /// asserting against a file this repository produced would only prove our writer and our reader
 /// agree. A literal 0x8664 at the documented offset is an independent statement of the contract.</para>
 /// </summary>
+[Collection(DeviceWorkerToolsDirectoryCollection.Name)]
 public class OsdiWorkerArchitectureTests : IDisposable
 {
     private readonly string _dir;

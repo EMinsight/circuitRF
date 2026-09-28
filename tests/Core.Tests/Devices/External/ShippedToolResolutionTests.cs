@@ -12,6 +12,7 @@ namespace CircuitRF.Core.Tests.Devices.External;
 /// name falls through to the system path, finds nothing, and the user is told a program is missing
 /// that they never installed and should not have to.
 /// </summary>
+[Collection(DeviceWorkerToolsDirectoryCollection.Name)]
 public sealed class ShippedToolResolutionTests : IDisposable
 {
     private readonly string _dir     = Directory.CreateTempSubdirectory("crf-tools").FullName;

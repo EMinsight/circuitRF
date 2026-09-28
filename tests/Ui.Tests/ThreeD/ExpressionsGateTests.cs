@@ -119,17 +119,52 @@ public sealed class ExpressionsGateTests : IDisposable
 
     // ── gate 6 ────────────────────────────────────────────────────────────────────────────────
 
+    /// <summary>brief-units-in-expressions Q1 (b): a bare literal ADDED to a unit-bearing name takes the field's unit — in
+    /// `2*w + 5` typed in mil, with w = 10 mil, the 5 is five mil and the 2 stays a multiplier. It was five METRES until
+    /// then, which this gate pinned, with a "above 1 m" warning as the only guard.</summary>
     [Fact]
-    public void Gate6_ALiteralBesideAUnitBearingName_IsMetres_AndIsWarnedAbout()
+    public void Gate6_ALiteralBesideAUnitBearingName_TakesTheFieldsUnit()
     {
         var doc = new C3dDocument { Variables = [new C3dVariable { Name = "w", Expression = "10", Unit = "Mil" }] };
         var b = Box("slab", 0, 0, 0, 1, 1, 1);
         Bind(b, "Size", 0, "2*w + 5", "Mil");
         doc.Objects.Add(b);
         var r = C3dResolver.Resolve(doc, C3dCell.None);
-        Assert.Equal(5.000508, r.FieldValues[("slab", "Size[0]")], 1e-12);
-        Assert.Equal(5.000508, r.Evaluate("2*w + 5", "Mil").AsReal(), 1e-12);        // what the typed field previews
-        Assert.Contains(r.Warnings, w => w.Contains("above 1 m", StringComparison.Ordinal));
+        Assert.Equal(25 * Mil, r.FieldValues[("slab", "Size[0]")], 1e-15);
+        Assert.Equal(25 * Mil, r.Evaluate("2*w + 5", "Mil").AsReal(), 1e-15);          // what the typed field previews
+        Assert.DoesNotContain(r.Warnings, w => w.Contains("above 1 m", StringComparison.Ordinal));
+    }
+
+    /// <summary>A unit literal is unit-bearing: a VAR `w = 10mil` with no unit field drives a field typed in mil to exactly
+    /// 10 mil (not 10 mil re-scaled by mil), and a field `10um + 1mil` needs no unit of its own.</summary>
+    [Fact]
+    public void Gate6c_AVarHoldingAUnitLiteral_IsNotRescaledByTheField()
+    {
+        var doc = new C3dDocument { Variables = [new C3dVariable { Name = "w", Expression = "10mil" }] };
+        var b = Box("slab", 0, 0, 0, 1, 1, 1);
+        Bind(b, "Size", 0, "w", "Mil");
+        Bind(b, "Size", 1, "10um + 1mil", null);
+        doc.Objects.Add(b);
+        var r = C3dResolver.Resolve(doc, C3dCell.None);
+        Assert.True(r.Ok, string.Join(" | ", r.Errors));
+        Assert.Equal(10 * Mil, r.FieldValues[("slab", "Size[0]")], 1e-15);
+        Assert.Equal(10e-6 + Mil, r.FieldValues[("slab", "Size[1]")], 1e-15);
+    }
+
+    /// <summary>`2m` is two MILLI: legal in an expression, warned about in a length, and refused as a whole typed value.</summary>
+    [Fact]
+    public void Gate6d_ABareMInALength_IsMilli_AndSaysSo()
+    {
+        var doc = new C3dDocument();
+        var b = Box("slab", 0, 0, 0, 1, 1, 1);
+        Bind(b, "Size", 0, "2m + 1mm", "Mil");
+        doc.Objects.Add(b);
+        var r = C3dResolver.Resolve(doc, C3dCell.None);
+        Assert.Equal(3e-3, r.FieldValues[("slab", "Size[0]")], 1e-15);
+        Assert.Contains(r.Warnings, w => w.Contains("bare 'm' is MILLI", StringComparison.Ordinal));
+        var typed = CircuitRF.Ui.ThreeD.Tools.C3dDimension.Parse("2m", LayoutUnit.Mil, 1000);
+        Assert.Equal(CircuitRF.Ui.ThreeD.Tools.C3dDimensionKind.Invalid, typed.Kind);
+        Assert.Contains("2metre", typed.Why);
     }
 
     /// <summary>A VAR with its own unit that references another unit-bearing VAR takes neither unit twice: `w2 = 2*w` in
@@ -229,6 +264,19 @@ public sealed class ExpressionsGateTests : IDisposable
         Assert.True(C3dResolver.Resolve(doc, C3dCell.None).Ok);
     }
 
+    /// <summary>A literal's unit is part of the NUMBER's token, so renaming a VAR that happens to be called `mil` leaves
+    /// `10mil` alone.</summary>
+    [Fact]
+    public void Gate9b_RenamingAVarNamedLikeAUnit_LeavesTheLiteralAlone()
+    {
+        var doc = new C3dDocument { Variables = [new C3dVariable { Name = "mil", Expression = "3", Unit = "Mil" }] };
+        var b = Box("b", 0, 0, 0, 1, 1, 1);
+        Bind(b, "Size", 0, "10mil + mil", "Mil");
+        doc.Objects.Add(b);
+        Assert.Null(C3dVariableEdits.Rename(doc, C3dCell.None, "mil", "t"));
+        Assert.Equal("10mil + t", C3dBindings.GetExpr(b, "Size", 0)!.Expr);
+    }
+
     // ── gate 10 ───────────────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -283,7 +331,7 @@ public sealed class ExpressionsGateTests : IDisposable
                 new C3dVariable { Name = "spare", Expression = "1", Unit = "Mil" },
             ],
         };
-        var big = Box("big", 0, 0, 0, 1, 1, 1); Bind(big, "Size", 0, "2*w + 5", "Mil");
+        var big = Box("big", 0, 0, 0, 1, 1, 1); Bind(big, "Size", 0, "2*w + 2metre", "Mil");
         var lost = Box("lost", 0, 0, 0, 1, 1, 1); Bind(lost, "Size", 1, "nowhere", "Mil");
         doc.Objects.AddRange([big, lost]);
         string path = WriteC3d(ws, "Lid", doc);

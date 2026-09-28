@@ -99,6 +99,12 @@ public sealed class Parser
                     return new BinaryExpr("*", new NumberExpr(numVal), new ConstExpr("j"));
                 }
                 return new NumberExpr(numVal);
+            case TokenKind.Quantity:
+                // A unit literal: the value is scaled to base SI HERE, once, and the node keeps its unit so that
+                // var-unit-wins can see it (Evaluator.IsUnitBearing) and a printer can write it back.
+                Advance();
+                var qNumber = double.Parse(t.Text[..t.UnitStart], System.Globalization.CultureInfo.InvariantCulture);
+                return new NumberExpr(qNumber * Units.SuffixScale(t.Unit!), t.Unit);
             case TokenKind.Identifier:
                 Advance();
                 // reserved constants

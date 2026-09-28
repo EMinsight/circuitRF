@@ -91,10 +91,12 @@ public sealed class ExpressionsEditorGateTests : IDisposable
         Assert.False(vm.DefineOpen);
         Assert.Equal(2, vm.Tool!.Step);                                                 // the gesture went on
 
-        // Gate 6's preview: a literal beside a unit-bearing name is metres, and the field says so as it is typed.
+        // Gate 6's preview: a literal added to a unit-bearing name takes the field's unit (brief-units-in-expressions
+        // Q1), so 2*w + 5 in µm is 85 µm, and a slip that does land above 1 m is still said as it is typed.
         vm.OpenField(null);
         vm.FieldText = "2*w + 5";
-        Assert.StartsWith("= 5.00008E+06 µm", vm.FieldPreview);                        // 5.00008 m, in µm
+        Assert.StartsWith("= 85 µm", vm.FieldPreview);
+        vm.FieldText = "2*w + 2metre";
         Assert.Contains("above 1 m", vm.FieldPreview);
         vm.FieldText = "20";
         vm.FieldEnter();

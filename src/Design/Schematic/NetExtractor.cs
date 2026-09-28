@@ -365,8 +365,8 @@ public static class NetExtractor
                 string  expr = p.Expression;
                 // A VAR row whose unit column is empty may still carry the unit INLINE — "2 GHz" —
                 // because that is the spelling a .cnl uses and the one the schematic renders the
-                // row back as ("RFfreq = 2 GHz"). The expression parser has no unit-suffix
-                // production, so leaving it there makes the whole variable VANISH: Elaborator skips
+                // row back as ("RFfreq = 2 GHz"). The expression parser reads a unit only when it
+                // is GLUED to a number (`2GHz`), so leaving a spaced one there makes the whole variable VANISH: Elaborator skips
                 // a global it cannot resolve and does it silently, after which every reader of that
                 // variable falls back or fails somewhere else entirely. Lift it into the unit
                 // column's meaning instead. The row's own unit column still wins when it is set.

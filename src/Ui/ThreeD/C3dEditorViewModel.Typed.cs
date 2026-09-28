@@ -116,11 +116,12 @@ public sealed partial class C3dEditorViewModel
                 string unit = LayoutUnits.AsciiSuffix(Document.DisplayUnit);
                 double inDisplay = si / (Units.Scale(unit) ?? 1);
                 FieldPreview = AnalysisPreviewHelper.FormatValueHonest(new Value(inDisplay)) + " " + LayoutUnits.Suffix(Document.DisplayUnit);
+                if (C3dResolver.HasMilliLiteral(ex.Expr))
+                    FieldPreview += " — a bare 'm' is milli: write mm, or metre for metres";
                 if (Math.Abs(si) > C3dResolver.LargeMetres)
-                    FieldPreview += $" — above 1 m: a literal beside a name with its own unit is METRES";
+                    FieldPreview += " — above 1 m: a name with no unit is in metres, and a bare 'm' is milli";
                 if (tool.FieldFor(tool.Step, i) is null)
                     FieldPreview += " — " + (tool.Kind is C3dToolKind.Polygon or C3dToolKind.Polyline ? "outline points hold numbers — evaluated once" : "this holds a number — evaluated once");
-                _ = ex;
             }
         }
         _fieldValues = values;

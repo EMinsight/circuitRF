@@ -20,7 +20,7 @@ it is shown to you**, and **what grid new geometry lands on**. Keeping them sepa
 <li><a href="#snap">Layout units and the snap grid</a></li>
 <li><a href="#wbond">wBond units</a></li>
 <li><a href="#typing">Typing a value into a field</a></li>
-<li><a href="#unit-field">A unit is a field, not part of an expression</a></li>
+<li><a href="#unit-field">Units in an expression, and in the unit field</a></li>
 </ol>
 </nav>
 
@@ -185,27 +185,34 @@ nothing anywhere reporting it. The logarithmic units are measurement functions r
 factors, so <code>dBm</code> carries no multiplier.</p>
 </div>
 
-## A unit is a field, not part of an expression {#unit-field}
+## Units in an expression, and in the unit field {#unit-field}
 
-**The expression parser has no unit-suffix production**: `2 GHz` is not an expression, and asking the
-parser for one is an error at the `GHz`. What saves you is that nothing asks it to. A VAR row whose unit
-column is empty has any trailing unit token lifted out of the expression first, so writing
-`RFfreq = 2 GHz` in the schematic VAR editor gives you the variable you meant — the `2` becomes the
-expression and `GHz` the unit — and a `.cnl`, which has no unit column at all, has always been read the
-same way. The two entry points cannot make identical text mean two different things.
+**A number may carry its own unit, glued to it with no space**: `10um + 1mil`, `2.4GHz`, `1.5nH`, `50Ω`,
+`10V + 100mV`, `2u`. Each is scaled to base SI as it is read, so `10V + 100mV` is 10.1 V and `10um + 1mil` is
+35.4 µm. Any unit in the table above may be written this way, including a bare prefix and `V`, `A` and `W`
+— except the logarithmic ones: `0dBm` is refused, because a dB value is not a multiplier (use `dBm(…)`).
+An unknown suffix is refused by name (`10mils`). `10j` is still ten times the imaginary unit.
 
-The lift is applied *only* when the text does not already parse and the split makes it parse. That
-restraint is the point: because every bare SI prefix is a valid unit, a token-based rule would tear
-`2 * f` into `2 *` plus femto and `R * m` into `R *` plus milli — expressions that are legal and common.
-Those parse as they stand, so nothing is lifted from them.
+**The row's unit column still works as it always has**, and the two meet by one rule. When the value
+holds a unit of its own — a unit literal, or a variable declared with a unit — the column's unit is not
+applied to the result, since the value is already in base units. A plain number **added to**, subtracted
+from or compared with such a term takes the column's unit instead: `RFfreq + 100` with the column in MHz
+is 100 MHz above `RFfreq`. A number that multiplies or divides stays a plain number: `2*RFfreq` is twice
+it. With nothing unit-bearing in the value, the column's unit scales the whole result, as before.
+
+**Whitespace separates**: `2 GHz` is not a literal. A VAR row whose unit column is empty has a trailing,
+spaced unit lifted out of the expression into the unit, so `RFfreq = 2 GHz` in the schematic VAR editor
+gives the variable you meant, and a `.cnl`, which has no unit column, is read the same way. The lift is
+applied *only* when the text does not already parse, which is why `2 * f` and `R * m` — legal
+expressions ending in a name — are never torn into an expression plus femto or milli. `2GHz` needs no
+lift at all; it is a literal.
 
 <div class="callout warn">
-<span class="label">Where it still does not help</span>
-<p>The lift needs a <strong>separate token</strong>. <code>2GHz</code>, with no space, is one word to
-the splitter and stays a parse error — and because an unresolvable global is skipped during elaboration,
-that leaves <strong>no variable at all</strong> rather than a wrong value. The same is true of a bare
-<code>60u</code> in a PCell parameter. When in doubt, put the number in the expression and the unit in
-the row's unit column, which is unambiguous everywhere.</p>
+<span class="label">A glued "m" is milli too</span>
+<p><code>2m</code> is 2 × 10<sup>-3</sup> — in a length, two <b>millimetres</b>. Write <code>2mm</code> to
+say so, or <code>2metre</code> for metres. The 3D editor refuses a bare <code>2m</code> in a length box and
+<code>check</code> warns about one inside a length expression. A name that spells a unit is still a name
+where it is not glued to a number: <code>2*mil</code> is twice a variable called <code>mil</code>.</p>
 </div>
 
 <p class="small">See also: <a href="expressions.html">Expressions</a> ·

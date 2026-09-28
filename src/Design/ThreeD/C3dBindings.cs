@@ -28,9 +28,9 @@ namespace CircuitRF.Design.ThreeD;
 
 /// <summary>
 /// An expression in a dimension field: its text, and the unit in force when it was typed (<c>Mil</c>, <c>Um</c> …, or
-/// <c>Deg</c> for an angle). The unit is the SITE unit: it scales a bare literal and is skipped when the expression
-/// references a unit-bearing name (var-unit-wins, expressions.md §8) — so in <c>2*w + 5</c>, with <c>w</c> in mil, the
-/// literal 5 is five METRES.
+/// <c>Deg</c> for an angle). The unit is the SITE unit: it scales a bare expression, and is skipped when the expression is
+/// unit-bearing — a unit literal (<c>10mil</c>) or a unit-bearing name (var-unit-wins, expressions.md §8) — where it goes
+/// to the bare ADDITIVE operands instead: in <c>2*w + 5</c>, with <c>w</c> in mil, the 5 is five mil.
 /// </summary>
 [JsonConverter(typeof(C3dExprJsonConverter))]
 [System.ComponentModel.Description("{ \"Expr\": expression, \"Unit\": unit }")]

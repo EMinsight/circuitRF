@@ -57,12 +57,11 @@ public sealed partial class Evaluator
         _resolving.Add(name);
         try
         {
-            var ast  = Parser.Parse(expression);
-            var raw  = EvalExpr(ast, owningScope);
             // A binding's own unit is a site unit like any other, and var-unit-wins applies to it: `b = 2*a`
             // declared in mil, with `a` in mil, is 20 mil — `a` is already scaled, and scaling it again made b
-            // 2.54e-5 times too small. Only a binding with no unit-bearing reference takes its unit.
-            var val  = !string.IsNullOrEmpty(unit) && ReferencesUnitBearingVar(ast, owningScope) ? raw : ApplyUnit(raw, unit);
+            // 2.54e-5 times too small. Only a binding that is not unit-bearing takes its unit on the result; one
+            // that is gives it to its bare additive operands instead (`b = a + 5` in mil is a + 5 mil).
+            var val  = EvalAtSite(Parser.Parse(expression), owningScope, unit);
             _memo[key] = val;
             return val;
         }
@@ -94,37 +93,16 @@ public sealed partial class Evaluator
 
     /// <summary>Parse and evaluate an expression string in the given scope.</summary>
     public Value Eval(string expression, Scope scope, string? unit = null)
-    {
-        var ast = Parser.Parse(expression);
-        var raw = EvalExpr(ast, scope);
-        // var-unit-wins: if any referenced variable declares its own unit, that unit was already
-        // applied when the variable resolved (Resolve → ApplyUnit with the binding's unit); do NOT
-        // re-apply the site unit. Matches FreqUnit.ResolveHz, using per-binding scope units.
-        if (!string.IsNullOrEmpty(unit) && ReferencesUnitBearingVar(ast, scope))
-            return raw;
-        return ApplyUnit(raw, unit);
-    }
+        => EvalAtSite(Parser.Parse(expression), scope, unit);
 
-    /// <summary>
-    /// The var-unit-wins test, for a caller that must apply the same rule without going through
-    /// <see cref="Eval(string, Scope, string?)"/> — notably <see cref="FreqDeferral"/>, which binds
-    /// an expression rather than evaluating it and would otherwise apply a unit twice.
-    /// </summary>
-    public static bool ReferencesUnitBearingVariable(string expression, Scope scope)
+    // var-unit-wins (expressions.md §8): a unit-bearing expression — a unit literal, or a name that carries a unit and
+    // was scaled when it resolved — is already base SI, so the site unit is not applied to the result; its bare additive
+    // operands take it instead (Evaluator.SiteUnit.cs). Anything else takes the site unit on its result, as always.
+    private Value EvalAtSite(Expr ast, Scope scope, string? unit)
     {
-        try { return ReferencesUnitBearingVar(Parser.Parse(expression), scope); }
-        catch { return false; }
-    }
-
-    private static bool ReferencesUnitBearingVar(Expr ast, Scope scope)
-    {
-        foreach (var name in AstWalker.CollectRefs(ast))
-        {
-            var found = scope.Lookup(name);
-            if (found is not null && !string.IsNullOrEmpty(found.Value.Unit))
-                return true;
-        }
-        return false;
+        if (!string.IsNullOrEmpty(unit) && IsUnitBearing(ast, scope))
+            return EvalExpr(ScaleBareOperands(ast, scope, unit), scope);
+        return ApplyUnit(EvalExpr(ast, scope), unit);
     }
 
     // ── Nodes ────────────────────────────────────────────────────────────────

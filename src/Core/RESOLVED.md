@@ -3258,3 +3258,75 @@ bare literal beside a unit-bearing name is in base SI (`w + 5` in mil is w plus 
 
 Gates: `tests/Core.Tests/Expressions/EvaluatorVarUnitWinsTests.cs` (T6 `Resolve`, T7 `FreqDeferral`)
 and `tests/Ui.Tests/ThreeD/ExpressionsGateTests.Gate6b_AVarWithItsOwnUnit_DoesNotRescaleTheNamesItReferences`.
+
+## Units inside expressions — unit literals (2026-09-27, brief-units-in-expressions)
+
+**The token rule.** A number followed with no whitespace by an identifier run is ONE `Quantity` token
+(`Tokenizer.ReadQuantity`) whose suffix is the whole run: `10mils` is the unknown suffix `mils`, never
+`10mil` + a name `s`. The suffix is normalised (`Ω`→`Ohm`, `µ`/`μ`→`u`) and must pass
+`Units.IsSuffixUnit` — every linear-scale `_scales` entry plus V, A, W. Unknown suffixes and the
+logarithmic ones (`Units.IsLogarithmic`: dB/dBm/dBc/dBW) are parse errors with their own messages. `10j`
+is checked first and unchanged. An exponent is now taken only when digits follow it: `2e` used to reach
+`double.Parse` and throw a `FormatException` no caller catches as an expression error; it is now a
+`ParseException` naming the suffix. `NumberExpr` gained `Unit`; its `Value` is already base SI, so no
+consumer that reads only the number changed (Evaluator, the SDD compilers, the SPICE printers, SDD
+differentiation all verified by build + an SDD-with-`1pF` gate).
+
+**Q1 — owner chose (b):** a bare operand beside a unit-bearing one takes the site unit. Implemented as an
+AST transform (`Evaluator.ScaleBareOperands`, `Evaluator.SiteUnit.cs`), not a rewrite of text, on `+`,
+`-`, comparisons, conditional branches and `min`/`max`. Powers are TRACKED, not refused: refusing a
+bare literal beside any non-unit power would have refused the ordinary `w/h + 1`, which power tracking
+gets right (power 0, so the 1 stays 1). An unknowable power (a unit-bearing argument of any other
+function, `w^n` with non-constant `n`) leaves the bare operand in base SI — its old meaning.
+**Q2 — yes, bare SI prefixes are suffixes**, with `m` still milli. The owner flagged the m/metre
+confusion, so the 3D view refuses a WHOLE typed `2m` in a length (naming `2mm`/`2metre`) and
+`C3dResolver` warns about an `m` literal in any length field or VAR. **Q3 — V, A and W all allowed**;
+`2W` is two watts, and `2*W` must be written with the `*`.
+
+**Unit-bearing** (`Evaluator.IsUnitBearing`, which replaces `ReferencesUnitBearingVar(iable)`): a unit
+literal, or a name that states a unit, or a unit-LESS name whose own text holds a literal (followed
+through unit-less names). A unit-less name that merely references a unit-bearing one is still NOT
+followed — following it would fix the old `.cnl` double-scale case but change existing documents'
+values, which G1 forbids; the `.c3d` side already covers it with `MarkDerivedUnits`.
+
+**Every consumer that changed:** `Evaluator.Resolve`/`Eval` (one `EvalAtSite`); `FreqDeferral.InlineRef`
+(scale bare operands on the PARSED text before inlining folds unit-bearing names into plain numbers) and
+`InlineForCellBoundary` (new `bareOperandUnit`, passed by `Elaborator`'s freq-dependent override path);
+`FreqDeferral.Render` writes a literal back as a literal, picking among the doubles next to value/scale
+the one whose product re-parses bit-exact; `Elaborator.ResolveToneSourceParameters` stores the
+TRANSFORMED text in `_expr_` so the tone model's plain-number re-evaluation lands where `Eval` did;
+`Elaborator.ToneParamUnitScale`; `FreqUnit.ResolveHz` (literals + the transform, with the globals-with-unit
+set as the unit-bearing names); `C3dResolver` (field, `MarkDerivedUnits`, `SkipsSiteUnit`).
+**Splitters:** `CnlReader.TrySplitGluedUnit` and `SchematicViewModel.TrySplitTrailingUnit` now share
+`Units.TrySplitGluedNumber` (a WHOLE `<number><suffix>` only); the schematic one tore `10um + 1mil` into
+`10um + 1` + `mil`. The `.cnl` reader keeps its ASCII-letters-only rule so `50%` stays an error there.
+`LiftInlineUnit`, `C3dEditorViewModel.SplitUnit` and `LayoutUnits.TryParse` are unchanged by design.
+`C3dDimension.Parse` needed a reorder: its "digit, then only letters/digits/+/-/space" guard classified
+`10um + 1mil` as a length with an unknown unit before the parser was ever asked.
+
+**G1 scan** (scratch harness over every `.cnl` line value/VAR and every JSON Expression/Expr/Value/Default
+string in `examples/` and `testdata/`: 8,464 expressions, 8,221 parse): exactly ONE holds a literal —
+`C=1m` in `testdata/PhantomNodes`, which the `.cnl` reader splits into `1` + `m` before the parser sees
+it (same value either way). Twelve were Q1 candidates when every name is ASSUMED unit-bearing; none is in
+fact: the SDD equations are evaluated with no site unit, the Hero `Pavl_w = 10^((Pavl_dbm - 30)/10)`
+VARs have no unit, and TxDirectConversion's `Phase = 90+IQphase [deg]` references a unit-LESS
+`IQphase`, so the whole result still takes deg. **No shipped document changes value.**
+
+**Not the same rule, left alone:** RfCore's `read --at` narrowing (`DataSetNarrowing`) reads `5m` as
+five METRES on a metre axis. It is a separate parser for a different question (an axis value, not an
+expression), but a reader who learns "m is milli" here will be surprised there.
+
+Gates: `tests/Core.Tests/Expressions/UnitLiteralTests.cs`, `ExpressionCultureInvarianceTests` (the old
+"a suffix is not grammar" theory is now "a literal reads the same in every locale"),
+`tests/Ui.Tests/ThreeD/ExpressionsGateTests.cs` Gate6 (rewritten: `2*w + 5` in mil is 25 mil), 6c, 6d,
+9b, and `tests/Ui.Tests/UnitLiteralEntryPointTests.cs` (schematic editor, 3D field and `.cnl` agree).
+
+## `OsdiWorkerArchitectureTests` failed under a whole `Core.Tests` run (2026-09-27)
+
+`DeviceWorkerManifest.ToolsDirectory` is process-wide static state, and four Core test classes each point
+it at a scratch folder of their own (`OsdiWorkerArchitectureTests`, `OsdiWorkerTests`,
+`VerilogACompileTests`, `ShippedToolResolutionTests`) with nothing serialising them. Under load another
+class's folder is swapped in between writing a fake worker and asking the resolver, so the expected
+refusal never comes; alone it passes in 7 ms. They now share `DeviceWorkerToolsDirectoryCollection`
+(`DisableParallelization = true`), the same remedy `ExternalProviderRegistryCollection` applies to the
+registry. Engine.Tests' two such classes were already grouped.
