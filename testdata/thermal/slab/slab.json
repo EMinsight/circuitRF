@@ -1,0 +1,35 @@
+{
+ "versions": {
+  "python": "3.13.1",
+  "numpy": "2.5.3",
+  "scipy": "1.18.1"
+ },
+ "cases": {
+  "S1a": {
+   "lateral_size_m": [
+    0.001,
+    0.001
+   ],
+   "thickness_L_m": 0.001,
+   "k_W_mK": 150.0,
+   "T_bottom_degC": 25.0,
+   "flux_top_W_m2": 1000000.0,
+   "q_volume_W_m3": 0.0,
+   "T_top_degC": 31.666666666666668,
+   "total_power_W": 1.0
+  },
+  "S1b": {
+   "lateral_size_m": [
+    0.001,
+    0.001
+   ],
+   "thickness_L_m": 0.001,
+   "k_W_mK": 150.0,
+   "T_bottom_degC": 25.0,
+   "flux_top_W_m2": 1000000.0,
+   "q_volume_W_m3": 1000000000.0,
+   "T_top_degC": 35.0,
+   "total_power_W": 2.0
+  }
+ }
+}

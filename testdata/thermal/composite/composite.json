@@ -1,0 +1,81 @@
+{
+ "versions": {
+  "python": "3.13.1",
+  "numpy": "2.5.3",
+  "scipy": "1.18.1"
+ },
+ "cases": {
+  "S2a": {
+   "lateral_size_m": [
+    0.001,
+    0.001
+   ],
+   "T_bottom_degC": 25.0,
+   "flux_top_W_m2": 1000000.0,
+   "layers": [
+    {
+     "name": "base",
+     "thickness_m": 0.001,
+     "k_W_mK": 390.0
+    },
+    {
+     "name": "attach",
+     "thickness_m": 5e-05,
+     "k_W_mK": 57.0
+    },
+    {
+     "name": "die",
+     "thickness_m": 0.0001,
+     "k_W_mK": 150.0
+    }
+   ],
+   "interface": {
+    "between": [
+     "attach",
+     "die"
+    ],
+    "resistance_m2K_W": 1e-05
+   },
+   "interface_T_below_degC": 28.441295546558706,
+   "interface_T_above_degC": 38.441295546558706,
+   "interface_jump_K": 10.0,
+   "T_top_degC": 39.10796221322537
+  },
+  "S2b": {
+   "lateral_size_m": [
+    0.001,
+    0.001
+   ],
+   "T_bottom_degC": 25.0,
+   "flux_top_W_m2": 1000000.0,
+   "layers": [
+    {
+     "name": "base",
+     "thickness_m": 0.001,
+     "k_W_mK": 390.0
+    },
+    {
+     "name": "attach",
+     "thickness_m": 5e-05,
+     "k_W_mK": 57.0
+    },
+    {
+     "name": "die",
+     "thickness_m": 0.0001,
+     "k_W_mK": 150.0
+    }
+   ],
+   "interface": {
+    "between": [
+     "attach",
+     "die"
+    ],
+    "resistance_m2K_W": 0.0
+   },
+   "interface_T_below_degC": 28.441295546558706,
+   "interface_T_above_degC": 28.441295546558706,
+   "interface_jump_K": 0.0,
+   "T_top_degC": 29.107962213225374
+  }
+ }
+}

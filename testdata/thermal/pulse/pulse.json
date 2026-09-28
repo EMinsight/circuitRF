@@ -1,0 +1,237 @@
+{
+ "versions": {
+  "python": "3.13.1",
+  "numpy": "2.5.3",
+  "scipy": "1.18.1"
+ },
+ "cases": {
+  "Z2a": {
+   "P_W": 10.0,
+   "period_s": 0.001,
+   "t_on_s": 0.0001,
+   "foster": [
+    {
+     "R_K_W": 0.5,
+     "tau_s": 1e-06
+    },
+    {
+     "R_K_W": 1.0,
+     "tau_s": 0.0001
+    },
+    {
+     "R_K_W": 2.0,
+     "tau_s": 0.01
+    }
+   ],
+   "dT_peak_closed_form_K": 13.412685580993653,
+   "dT_at_t_on_from_waveform_K": 13.412685580955078,
+   "dT_mean_K": 3.5,
+   "dT_min_K": 1.911986628895704,
+   "fourier_N100000_vs_closed_form_max_abs_K": 0.002584701192618999,
+   "truncation": [
+    {
+     "N": 10,
+     "relative_error": -0.233780923544831,
+     "tail_corrected_relative_error": 1.614388249260383
+    },
+    {
+     "N": 30,
+     "relative_error": -0.18291600834652588,
+     "tail_corrected_relative_error": 0.455931895843482
+    },
+    {
+     "N": 100,
+     "relative_error": -0.12497621693665277,
+     "tail_corrected_relative_error": 0.06763226849110239
+    },
+    {
+     "N": 300,
+     "relative_error": -0.05929345296997905,
+     "tail_corrected_relative_error": 0.004938223836836387
+    },
+    {
+     "N": 1000,
+     "relative_error": -0.019117930075493856,
+     "tail_corrected_relative_error": 0.00015256036139407554
+    },
+    {
+     "N": 3000,
+     "relative_error": -0.0064178007635362425,
+     "tail_corrected_relative_error": 5.724993071661214e-06
+    },
+    {
+     "N": 10000,
+     "relative_error": -0.001926903906756328,
+     "tail_corrected_relative_error": 1.5480797651893276e-07
+    },
+    {
+     "N": 30000,
+     "relative_error": -0.0006423471994669013,
+     "tail_corrected_relative_error": 5.7343875250285445e-09
+    },
+    {
+     "N": 100000,
+     "relative_error": -0.0001927057263134651,
+     "tail_corrected_relative_error": 1.5483551632402112e-10
+    },
+    {
+     "N": 300000,
+     "relative_error": -6.423528800848984e-05,
+     "tail_corrected_relative_error": 5.733000628369418e-12
+    },
+    {
+     "N": 1000000,
+     "relative_error": -1.92705879686065e-05,
+     "tail_corrected_relative_error": 1.578667702138317e-13
+    }
+   ]
+  },
+  "Z2b": {
+   "P_W": 100.0,
+   "period_s": 0.001,
+   "t_on_s": 1e-05,
+   "foster": [
+    {
+     "R_K_W": 0.2,
+     "tau_s": 3e-07
+    },
+    {
+     "R_K_W": 0.4,
+     "tau_s": 5e-06
+    },
+    {
+     "R_K_W": 0.8,
+     "tau_s": 0.0002
+    },
+    {
+     "R_K_W": 1.5,
+     "tau_s": 0.05
+    }
+   ],
+   "dT_peak_closed_form_K": 60.02960063554627,
+   "dT_at_t_on_from_waveform_K": 60.02960063408025,
+   "dT_mean_K": 2.9,
+   "dT_min_K": 1.513022948526002,
+   "fourier_N100000_vs_closed_form_max_abs_K": 0.03803038979026874,
+   "truncation": [
+    {
+     "N": 10,
+     "relative_error": -0.731651355645298,
+     "tail_corrected_relative_error": 4.223701070093798
+    },
+    {
+     "N": 30,
+     "relative_error": -0.4114189543947167,
+     "tail_corrected_relative_error": 2.3888742307386917
+    },
+    {
+     "N": 100,
+     "relative_error": -0.2312097495389472,
+     "tail_corrected_relative_error": 0.3764088131074344
+    },
+    {
+     "N": 300,
+     "relative_error": -0.13971937876207513,
+     "tail_corrected_relative_error": 0.07030679338827611
+    },
+    {
+     "N": 1000,
+     "relative_error": -0.05916914161834723,
+     "tail_corrected_relative_error": 0.00415216742877658
+    },
+    {
+     "N": 3000,
+     "relative_error": -0.020941832933259238,
+     "tail_corrected_relative_error": 0.00017474788586250073
+    },
+    {
+     "N": 10000,
+     "relative_error": -0.006330504130518579,
+     "tail_corrected_relative_error": 4.794513605710945e-06
+    },
+    {
+     "N": 30000,
+     "relative_error": -0.0021115978957791733,
+     "tail_corrected_relative_error": 1.7782828445371788e-07
+    },
+    {
+     "N": 100000,
+     "relative_error": -0.0006335282395904545,
+     "tail_corrected_relative_error": 4.802142880233842e-09
+    },
+    {
+     "N": 300000,
+     "relative_error": -0.00021117751222699335,
+     "tail_corrected_relative_error": 1.7785785390473116e-10
+    },
+    {
+     "N": 1000000,
+     "relative_error": -6.335330254724152e-05,
+     "tail_corrected_relative_error": 4.801965687238357e-12
+    }
+   ]
+  },
+  "Z2c": {
+   "slab": {
+    "material": "silicon (zth-slab/)",
+    "k_W_mK": 148.0,
+    "density_kg_m3": 2329.0,
+    "cp_J_kgK": 705.0,
+    "thickness_m": 0.0001,
+    "heated_area_m2": 1e-06
+   },
+   "P_W": 1.0,
+   "period_s": 0.001,
+   "t_on_s": 0.0001,
+   "foster_terms_summed": 200000,
+   "foster_tail_added_K": 6.846025921765318e-07,
+   "dT_peak_closed_form_K": 0.6164323232373241,
+   "truncation": [
+    {
+     "N": 10,
+     "relative_error": -0.19843364346398443
+    },
+    {
+     "N": 30,
+     "relative_error": -0.11036638469878554
+    },
+    {
+     "N": 100,
+     "relative_error": -0.0595419393839169
+    },
+    {
+     "N": 300,
+     "relative_error": -0.034207564602227125
+    },
+    {
+     "N": 1000,
+     "relative_error": -0.01870306683142943
+    },
+    {
+     "N": 3000,
+     "relative_error": -0.010792704310939422
+    },
+    {
+     "N": 10000,
+     "relative_error": -0.005910347732947422
+    },
+    {
+     "N": 30000,
+     "relative_error": -0.0034121658906789967
+    },
+    {
+     "N": 100000,
+     "relative_error": -0.0018688866797148672
+    },
+    {
+     "N": 300000,
+     "relative_error": -0.0010789966931308056
+    },
+    {
+     "N": 1000000,
+     "relative_error": -0.0005909897673003224
+    }
+   ]
+  }
+ }
+}

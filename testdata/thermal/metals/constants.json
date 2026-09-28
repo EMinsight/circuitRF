@@ -1,0 +1,38 @@
+{
+ "gold": {
+  "melting_point_degC": 1064.18,
+  "density_kg_m3": 19300,
+  "cp_J_kgK": 129,
+  "rho20_Ohm_m": 2.2152214285714286e-08,
+  "alpha20_per_K": 0.003698734832751468,
+  "k20_W_mK": 318.202,
+  "table_end_degC": 1064.43
+ },
+ "copper": {
+  "melting_point_degC": 1084.62,
+  "density_kg_m3": 8960,
+  "cp_J_kgK": 385,
+  "rho20_Ohm_m": 1.6790071428571427e-08,
+  "alpha20_per_K": 0.004027530444179897,
+  "k20_W_mK": 401.404,
+  "table_end_degC": 1084.45
+ },
+ "aluminium": {
+  "melting_point_degC": 660.323,
+  "density_kg_m3": 2700,
+  "cp_J_kgK": 897,
+  "rho20_Ohm_m": 2.651778571428571e-08,
+  "alpha20_per_K": 0.004444860706977142,
+  "k20_W_mK": 236.798,
+  "table_end_degC": 660.37
+ },
+ "silver": {
+  "melting_point_degC": 961.78,
+  "density_kg_m3": 10490,
+  "cp_J_kgK": 235,
+  "rho20_Ohm_m": 1.5879e-08,
+  "alpha20_per_K": 0.0037935038959893332,
+  "k20_W_mK": 429.0,
+  "table_end_degC": 961.93
+ }
+}

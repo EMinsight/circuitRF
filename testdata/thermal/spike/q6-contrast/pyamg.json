@@ -1,0 +1,53 @@
+{
+ "pyamg": "5.3.0",
+ "runs": [
+  {
+   "file": "c6-0.bin",
+   "n": 22891,
+   "theta": 0.0,
+   "iterations": 29,
+   "levels": 3,
+   "operator_complexity": 1.0193264782080007
+  },
+  {
+   "file": "c6-0.bin",
+   "n": 22891,
+   "theta": 0.08,
+   "iterations": 15,
+   "levels": 5,
+   "operator_complexity": 1.4672968624954381
+  },
+  {
+   "file": "c6-1.bin",
+   "n": 67094,
+   "theta": 0.0,
+   "iterations": 34,
+   "levels": 3,
+   "operator_complexity": 1.021318485048562
+  },
+  {
+   "file": "c6-1.bin",
+   "n": 67094,
+   "theta": 0.08,
+   "iterations": 17,
+   "levels": 6,
+   "operator_complexity": 1.5828091365246704
+  },
+  {
+   "file": "c6-2.bin",
+   "n": 230097,
+   "theta": 0.0,
+   "iterations": 38,
+   "levels": 4,
+   "operator_complexity": 1.0203759738385325
+  },
+  {
+   "file": "c6-2.bin",
+   "n": 230097,
+   "theta": 0.08,
+   "iterations": 17,
+   "levels": 6,
+   "operator_complexity": 1.7033398197547713
+  }
+ ]
+}

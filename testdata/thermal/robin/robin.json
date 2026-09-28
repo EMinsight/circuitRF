@@ -1,0 +1,47 @@
+{
+ "versions": {
+  "python": "3.13.1",
+  "numpy": "2.5.3",
+  "scipy": "1.18.1"
+ },
+ "cases": {
+  "S3a": {
+   "lateral_size_m": [
+    0.001,
+    0.001
+   ],
+   "thickness_L_m": 0.002,
+   "k_W_mK": 20.0,
+   "flux_top_W_m2": 10000.0,
+   "bottom": {
+    "h_W_m2K": 1000.0,
+    "T_amb_degC": 25.0
+   },
+   "T_bottom_degC": 35.0,
+   "T_top_degC": 36.0,
+   "T_max_degC": 36.0,
+   "balance_residual_W_m2": 0.0
+  },
+  "S3b": {
+   "lateral_size_m": [
+    0.001,
+    0.001
+   ],
+   "thickness_L_m": 0.002,
+   "k_W_mK": 20.0,
+   "q_volume_W_m3": 50000000.0,
+   "bottom": {
+    "h_W_m2K": 2000.0,
+    "T_amb_degC": 25.0
+   },
+   "top": {
+    "h_W_m2K": 200.0,
+    "T_amb_degC": 40.0
+   },
+   "T_bottom_degC": 71.42857142857143,
+   "T_top_degC": 75.71428571428572,
+   "T_max_degC": 75.73979591835715,
+   "balance_residual_W_m2": 0.0
+  }
+ }
+}

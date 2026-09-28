@@ -1,0 +1,22 @@
+# silver: pure bulk metal, solid, 0 degC to the melting point. Sources and method: README.md.
+# Interpolated rows are piecewise-linear in T between the two neighbouring tabulated rows.
+T [degC],rho [Ohm m],k [W/(m K)],rho origin,k origin
+0,1.467e-08,429,tabulated,interpolated
+0.05,1.467302267e-08,429,interpolated,tabulated
+19.85,1.587e-08,429,tabulated,interpolated
+20,1.5879e-08,429,interpolated,interpolated
+25.05,1.6182e-08,429,interpolated,tabulated
+26.85,1.629e-08,429,tabulated,tabulated
+76.85,1.932e-08,427,tabulated,tabulated
+85,1.982367e-08,426.674,interpolated,interpolated
+125,2.229567e-08,425.074,interpolated,interpolated
+126.85,2.241e-08,425,tabulated,tabulated
+226.85,2.875e-08,419,tabulated,tabulated
+326.85,3.531e-08,412,tabulated,tabulated
+426.85,4.209e-08,404,tabulated,tabulated
+526.85,4.912e-08,396,tabulated,tabulated
+626.85,5.638e-08,388,tabulated,tabulated
+726.85,6.396e-08,379,tabulated,tabulated
+826.85,7.215e-08,370,tabulated,estimated-by-source
+926.85,8.089e-08,361,tabulated,estimated-by-source
+961.93,8.415e-08,358,tabulated,estimated-by-source

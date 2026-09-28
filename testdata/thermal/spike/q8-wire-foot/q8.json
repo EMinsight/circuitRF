@@ -1,0 +1,107 @@
+[
+ {
+  "variant": "centred-no-field",
+  "foot_corner_um": [
+   -25,
+   -12.5
+  ],
+  "h_far_um": 100,
+  "h_foot_um": null,
+  "exit": 0,
+  "seconds": 0.11162590980529785,
+  "tetrahedra": 618,
+  "corner_vertices": 219,
+  "p2_nodes": 1255,
+  "foot_triangles": 4,
+  "min_tet_edge_um": 10.0,
+  "median_tet_edge_um": 58.99849342859777,
+  "foot_min_edge_um": 25.0,
+  "foot_max_edge_um": 50.0,
+  "min_tet_quality": 0.3147940551777732,
+  "tets_below_quality_0.2": 0
+ },
+ {
+  "variant": "near-edge-no-field",
+  "foot_corner_um": [
+   -25,
+   20
+  ],
+  "h_far_um": 100,
+  "h_foot_um": null,
+  "exit": 0,
+  "seconds": 0.11172270774841309,
+  "tetrahedra": 630,
+  "corner_vertices": 222,
+  "p2_nodes": 1276,
+  "foot_triangles": 4,
+  "min_tet_edge_um": 10.0,
+  "median_tet_edge_um": 58.90828765620537,
+  "foot_min_edge_um": 25.0,
+  "foot_max_edge_um": 50.0,
+  "min_tet_quality": 0.1894526054535836,
+  "tets_below_quality_0.2": 3
+ },
+ {
+  "variant": "centred-4-across",
+  "foot_corner_um": [
+   -25,
+   -12.5
+  ],
+  "h_far_um": 100,
+  "h_foot_um": 6.25,
+  "exit": 0,
+  "seconds": 0.12656903266906738,
+  "tetrahedra": 1392,
+  "corner_vertices": 384,
+  "p2_nodes": 2439,
+  "foot_triangles": 84,
+  "min_tet_edge_um": 4.419666997058014,
+  "median_tet_edge_um": 16.691070975356116,
+  "foot_min_edge_um": 4.419666997058014,
+  "foot_max_edge_um": 7.0908917118689505,
+  "min_tet_quality": 0.3951231940625076,
+  "tets_below_quality_0.2": 0
+ },
+ {
+  "variant": "near-edge-4-across",
+  "foot_corner_um": [
+   -25,
+   20
+  ],
+  "h_far_um": 100,
+  "h_foot_um": 6.25,
+  "exit": 0,
+  "seconds": 0.12845277786254883,
+  "tetrahedra": 1456,
+  "corner_vertices": 407,
+  "p2_nodes": 2572,
+  "foot_triangles": 86,
+  "min_tet_edge_um": 3.780804989883164,
+  "median_tet_edge_um": 15.665337845675115,
+  "foot_min_edge_um": 4.4196669970580125,
+  "foot_max_edge_um": 7.0908917118689425,
+  "min_tet_quality": 0.39419348115131103,
+  "tets_below_quality_0.2": 0
+ },
+ {
+  "variant": "centred-8-across",
+  "foot_corner_um": [
+   -25,
+   -12.5
+  ],
+  "h_far_um": 100,
+  "h_foot_um": 3.125,
+  "exit": 0,
+  "seconds": 0.14942383766174316,
+  "tetrahedra": 3005,
+  "corner_vertices": 759,
+  "p2_nodes": 5011,
+  "foot_triangles": 320,
+  "min_tet_edge_um": 2.035650143959278,
+  "median_tet_edge_um": 6.525028252033825,
+  "foot_min_edge_um": 2.0687735682671775,
+  "foot_max_edge_um": 3.712039002338961,
+  "min_tet_quality": 0.40311779086747007,
+  "tets_below_quality_0.2": 0
+ }
+]

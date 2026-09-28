@@ -1,0 +1,15 @@
+SetFactory("OpenCASCADE");
+Box(1) = {0, 0, 0, 2000, 1000, 800};
+Point(1101) = {200, 500, 0}; Point(1102) = {400, 500, 500}; Point(1103) = {1600, 500, 500}; Point(1104) = {1800, 500, 0};
+Line(1001) = {1101, 1102}; Line(1002) = {1102, 1103}; Line(1003) = {1103, 1104};
+f[] = BooleanFragments{ Volume{1}; Delete; }{ Curve{1001, 1002, 1003}; Delete; };
+Printf("fragment returned %g entities", #f[]);
+v[] = Volume{:}; c[] = Curve In BoundingBox{199, 499, -1, 1801, 501, 501};
+Printf("volumes %g, wire curves %g", #v[], #c[]);
+Physical Volume("mould") = {v[]};
+Physical Curve("wire") = {c[]};
+Mesh.MeshSizeMax = 120;
+Field[1] = Distance; Field[1].CurvesList = {c[]}; Field[1].Sampling = 100;
+Field[2] = Threshold; Field[2].InField = 1; Field[2].SizeMin = 20; Field[2].SizeMax = 120; Field[2].DistMin = 20; Field[2].DistMax = 400;
+Background Field = 2;
+Mesh.MeshSizeFromPoints = 0; Mesh.MeshSizeExtendFromBoundary = 0;

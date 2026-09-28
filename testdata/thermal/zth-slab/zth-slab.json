@@ -1,0 +1,29 @@
+{
+ "versions": {
+  "python": "3.13.1",
+  "numpy": "2.5.3",
+  "scipy": "1.18.1"
+ },
+ "materials": {
+  "silicon": {
+   "k_W_mK": 148.0,
+   "density_kg_m3": 2329.0,
+   "cp_J_kgK": 705.0,
+   "thickness_m": 0.0001,
+   "Zth_dc_K_m2_W": 6.756756756756758e-07,
+   "diffusion_time_rho_c_L2_over_k_s": 0.00011094222972972974,
+   "corner_Hz_1_over_2pi_tau": 1434.5749448124332,
+   "finite_difference_vs_closed_form_max_relative": 7.149610979500814e-06
+  },
+  "copper": {
+   "k_W_mK": 401.0,
+   "density_kg_m3": 8960.0,
+   "cp_J_kgK": 385.0,
+   "thickness_m": 0.001,
+   "Zth_dc_K_m2_W": 2.4937655860349126e-06,
+   "diffusion_time_rho_c_L2_over_k_s": 0.008602493765586035,
+   "corner_Hz_1_over_2pi_tau": 18.501023938963947,
+   "finite_difference_vs_closed_form_max_relative": 3.911416229646592e-06
+  }
+ }
+}

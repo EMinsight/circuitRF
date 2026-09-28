@@ -1,0 +1,6 @@
+variant,h foot [um],tetrahedra,P2 nodes,foot triangles,min tet edge [um],foot edge min [um],foot edge max [um],min tet quality [1],tets with quality < 0.2
+centred-no-field,,618,1255,4,10,25,50,0.314794055178,0
+near-edge-no-field,,630,1276,4,10,25,50,0.189452605454,3
+centred-4-across,6.25,1392,2439,84,4.41966699706,4.41966699706,7.09089171187,0.395123194063,0
+near-edge-4-across,6.25,1456,2572,86,3.78080498988,4.41966699706,7.09089171187,0.394193481151,0
+centred-8-across,3.125,3005,5011,320,2.03565014396,2.06877356827,3.71203900234,0.403117790867,0

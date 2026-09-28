@@ -1,0 +1,77 @@
+{
+ "versions": {
+  "python": "3.13.1",
+  "numpy": "2.5.3",
+  "scipy": "1.18.1"
+ },
+ "gold": {
+  "rho20_table_Ohm_m": 2.2152214285714286e-08,
+  "rho20_cmat_Ohm_m": 2.4390243902439023e-08,
+  "rho20_cmat_vs_table_percent": 10.102961211277275,
+  "alpha20_table_per_K": 0.003698734832751468,
+  "alpha20_cmat_per_K": 0.0034,
+  "alpha20_cmat_vs_table_percent": -8.076676113849476,
+  "drho_dT_table_Ohm_m_per_K": 8.193516660114611e-11,
+  "drho_dT_cmat_Ohm_m_per_K": 8.292682926829267e-11,
+  "drho_dT_cmat_vs_table_percent": 1.2103016424850888,
+  "linearity_max_dev_from_20C_tangent_percent": 19.53408997688281,
+  "linearity_max_dev_at_degC": 1064.43,
+  "linearity_max_dev_from_least_squares_line_percent": 17.45028619109736,
+  "owner_k": [
+   {
+    "T_degC": 125.0,
+    "owner_W_mK": 312.0,
+    "table_W_mK": 311.111,
+    "table_vs_owner_percent": -0.28493589743590064
+   },
+   {
+    "T_degC": 927.0,
+    "owner_W_mK": 262.0,
+    "table_W_mK": 254.988,
+    "table_vs_owner_percent": -2.6763358778625954
+   }
+  ]
+ },
+ "copper": {
+  "rho20_table_Ohm_m": 1.6790071428571427e-08,
+  "rho20_cmat_Ohm_m": 1.724137931034483e-08,
+  "rho20_cmat_vs_table_percent": 2.687944978038733,
+  "alpha20_table_per_K": 0.004027530444179897,
+  "alpha20_cmat_per_K": 0.0039,
+  "alpha20_cmat_vs_table_percent": -3.166467540032856,
+  "drho_dT_table_Ohm_m_per_K": 6.762252383852648e-11,
+  "drho_dT_cmat_Ohm_m_per_K": 6.724137931034483e-11,
+  "drho_dT_cmat_vs_table_percent": -0.5636354672176477,
+  "linearity_max_dev_from_20C_tangent_percent": 12.721593817234368,
+  "linearity_max_dev_at_degC": 1084.45,
+  "linearity_max_dev_from_least_squares_line_percent": 12.113115047940974
+ },
+ "aluminium": {
+  "rho20_table_Ohm_m": 2.651778571428571e-08,
+  "rho20_cmat_Ohm_m": 2.6525198938992043e-08,
+  "rho20_cmat_vs_table_percent": 0.027955670153636272,
+  "alpha20_table_per_K": 0.004444860706977142,
+  "alpha20_cmat_per_K": 0.0039,
+  "alpha20_cmat_vs_table_percent": -12.25821781370716,
+  "drho_dT_table_Ohm_m_per_K": 1.1786786375746833e-10,
+  "drho_dT_cmat_Ohm_m_per_K": 1.0344827586206897e-10,
+  "drho_dT_cmat_vs_table_percent": -12.233689010492235,
+  "linearity_max_dev_from_20C_tangent_percent": 3.4578044215279644,
+  "linearity_max_dev_at_degC": 660.37,
+  "linearity_max_dev_from_least_squares_line_percent": 4.968776506816093
+ },
+ "silver": {
+  "rho20_table_Ohm_m": 1.5879e-08,
+  "rho20_cmat_Ohm_m": 1.5873015873015872e-08,
+  "rho20_cmat_vs_table_percent": -0.037685792456245384,
+  "alpha20_table_per_K": 0.0037935038959893332,
+  "alpha20_cmat_per_K": 0.0038,
+  "alpha20_cmat_vs_table_percent": 0.17124284536875645,
+  "drho_dT_table_Ohm_m_per_K": 6.023704836441462e-11,
+  "drho_dT_cmat_Ohm_m_per_K": 6.031746031746031e-11,
+  "drho_dT_cmat_vs_table_percent": 0.13349251868920814,
+  "linearity_max_dev_from_20C_tangent_percent": 13.704001228885248,
+  "linearity_max_dev_at_degC": 961.93,
+  "linearity_max_dev_from_least_squares_line_percent": 10.064204896658746
+ }
+}

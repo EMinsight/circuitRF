@@ -1,0 +1,13 @@
+# Silicon, Ho, Powell & Liley, J. Phys. Chem. Ref. Data 3 Suppl. 1 (1974). Interpolate linearly in T.
+T [degC],k [W/(m K)]
+0.05,168
+25.05,149
+26.85,148
+76.85,119
+126.85,98.9
+226.85,76.2
+326.85,61.9
+426.85,50.8
+526.85,42.2
+626.85,35.9
+726.85,31.2

@@ -1,0 +1,18 @@
+# aluminium: pure bulk metal, solid, 0 degC to the melting point. Sources and method: README.md.
+# Interpolated rows are piecewise-linear in T between the two neighbouring tabulated rows.
+T [degC],rho [Ohm m],k [W/(m K)],rho origin,k origin
+0.05,2.41933e-08,236,interpolated,tabulated
+19.85,2.65e-08,236.792,tabulated,interpolated
+20,2.65177857143e-08,236.798,interpolated,interpolated
+25.05,2.71165714286e-08,237,interpolated,tabulated
+26.85,2.733e-08,237,tabulated,tabulated
+76.85,3.304e-08,240,interpolated,tabulated
+85,3.397073e-08,240,interpolated,interpolated
+125,3.853873e-08,240,interpolated,interpolated
+126.85,3.875e-08,240,tabulated,tabulated
+226.85,5.02e-08,236,tabulated,tabulated
+326.85,6.122e-08,231,tabulated,tabulated
+426.85,7.322e-08,225,tabulated,tabulated
+526.85,8.614e-08,218,tabulated,tabulated
+626.85,1.0005e-07,210,tabulated,tabulated
+660.37,1.0565e-07,208,tabulated,tabulated

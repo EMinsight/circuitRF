@@ -1,0 +1,1 @@
+strip 1 surfaces (tag 1010), foot 1 surfaces (tag 1011), volumes die 1 pad 1 mould 1, all volumes 3

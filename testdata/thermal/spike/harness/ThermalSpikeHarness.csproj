@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- brief-em3d-72 Q5/Q6 — SPIKE MATERIAL, a scratch harness, not part of circuitRF: it is in no
+       solution file, nothing references it, and no test runs it. It times CSparse's Cholesky (the
+       version src/Engine already uses) against CG with a minimal smoothed-aggregation AMG, and counts
+       CG iterations under Jacobi, IC(0) and AMG. Build it in Release only and run the built binary (the
+       exact commands are in testdata/thermal/spike/README.md). Timings here are a measurement for a
+       design decision, never a test. -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <ServerGarbageCollection>false</ServerGarbageCollection>
+    <TieredPGO>true</TieredPGO>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CSparse" Version="4.3.0" />
+  </ItemGroup>
+
+</Project>

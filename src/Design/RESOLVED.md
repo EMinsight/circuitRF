@@ -14513,3 +14513,28 @@ inverse case (`axis_z - 1.5` in a field: a literal beside a name with its own un
 The working spelling names every length and gives the combining VAR no unit of its own:
 `axis_z = sub_h + cu_t/2 + pin_d/2`, Unit empty. A `check` warning for a unit-bearing VAR whose expression
 references a unit-bearing name would have caught it; not added here.
+
+## brief-em3d-72 — what the thermal spike learned about Gmsh that the Palace lowering also wants (2026-09-28)
+
+Measured with Gmsh 4.15.2 on hand-written `.geo` files; the files, and the scripts that read the meshes back, are in
+`testdata/thermal/spike/q1-*`, `q2-*`, `q3-*`, `q7-*`, `q8-*`. Detail in `docs/design/em-3d-f3-spike-findings.md`.
+
+**The one fragment already handles embedded geometry.** A curve (`BooleanFragments{ Volume{…}; Delete; }{ Curve{…};
+Delete; }`) and a surface lying INSIDE a volume both come through `GmshGeoWriter`'s single fragment conformally: every
+line element is an edge of the tetrahedra, every triangle a tetrahedron face, nodes (order-2 mid-nodes too) shared. A
+surface inside a volume does not split it — the same volume lies on both sides. An entity the fragment does not split
+keeps its construction tag (`OCCBooleanPreserveNumbering`), so it can be followed by tag as well as by bounding box.
+
+**A spline THROUGH points is not a polyline.** A five-point `Spline` wire bulged to 40 µm outside its own end point, so
+a tight `In BoundingBox` query built from the points missed the curve entirely. Anything that must be found by box
+afterwards is safer written as `Line` segments (the resolved wire centreline is a polyline anyway).
+
+**The two sides of a contact are recoverable from what is already written.** Inverting `Abs(Boundary{ Volume{v}; })`
+over `Volume{:}` in the script prints each surface bounded by two volumes — one more loop in the entity table the
+lowering prints. From the MSH 2.2 file alone (no adjacency in it), matching each group triangle to the tetrahedra that
+have it as a face gives exactly one tetrahedron per side, whose elementary tag names the volume.
+
+**Gmsh never refines for a small feature by itself.** A 50 × 25 µm patch with no size field is four triangles, and 5 µm
+from its pad's edge it leaves sliver tetrahedra (mean-ratio quality 0.19). Every small feature needs its own
+Distance/Threshold. And the Threshold's growth — (SizeMax − SizeMin)/(DistMax − DistMin) — must stay near 0.3 or below:
+at 1.0 a 0.25 µm → 1 mm grading left 52 slivers (quality 0.011); at 0.3 it left none, with the same Box field.

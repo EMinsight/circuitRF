@@ -1,0 +1,12 @@
+SetFactory("OpenCASCADE");
+Box(1) = {0, 0, 0, 2000, 1000, 800};
+Point(1101) = {200, 500, 100}; Point(1102) = {400, 500, 500}; Point(1103) = {1600, 500, 500}; Point(1104) = {1800, 500, 100};
+Line(1001) = {1101, 1102}; Line(1002) = {1102, 1103}; Line(1003) = {1103, 1104};
+Curve{1001, 1002, 1003} In Volume{1};
+Physical Volume("mould") = {1};
+Physical Curve("wire") = {1001, 1002, 1003};
+Mesh.MeshSizeMax = 120;
+Field[1] = Distance; Field[1].CurvesList = {1001, 1002, 1003}; Field[1].Sampling = 100;
+Field[2] = Threshold; Field[2].InField = 1; Field[2].SizeMin = 20; Field[2].SizeMax = 120; Field[2].DistMin = 20; Field[2].DistMax = 400;
+Background Field = 2;
+Mesh.MeshSizeFromPoints = 0; Mesh.MeshSizeExtendFromBoundary = 0;

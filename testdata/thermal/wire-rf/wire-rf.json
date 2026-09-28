@@ -1,0 +1,952 @@
+{
+ "versions": {
+  "python": "3.13.1",
+  "numpy": "2.5.3",
+  "scipy": "1.18.1"
+ },
+ "L_m": 0.001,
+ "T_end_degC": 25.0,
+ "metals": {
+  "gold": {
+   "parameters": {
+    "rho0_Ohm_m": 2.2152214285714286e-08,
+    "alpha_per_K": 0.003698734832751468,
+    "k_W_mK": 318.202
+   },
+   "skin_corner_Hz_by_diameter_m": {
+    "2.54e-05": 34789642.44105765,
+    "5.08e-05": 8697410.610264413
+   },
+   "profiles": [
+    {
+     "d_m": 2.54e-05,
+     "excitation": "dc-0.25",
+     "harmonics": [
+      {
+       "f_Hz": 0.0,
+       "I_peak_A": 0.7842661630823409
+      }
+     ],
+     "I_rms_total_A": 0.7842661630823409,
+     "I_star_W1_A": 3.1370646523293635,
+     "heat_per_m_at_T_end_W_m": 27.387041570558498,
+     "heat_per_m_if_treated_as_DC_at_T_end_W_m": 27.387041570558498,
+     "T_centre_degC": 47.687740157845184,
+     "centre_above_melting": false,
+     "bvp_vs_shooting_max_abs_K": 7.489120434911456e-12,
+     "dc_vs_W1_closed_form_max_abs_K": 8.100187187665142e-12
+    },
+    {
+     "d_m": 2.54e-05,
+     "excitation": "1GHz-rms0.10",
+     "harmonics": [
+      {
+       "f_Hz": 1000000000.0,
+       "I_peak_A": 0.4436479377365425
+      }
+     ],
+     "I_rms_total_A": 0.3137064652329364,
+     "I_star_W1_A": 3.1370646523293635,
+     "heat_per_m_at_T_end_W_m": 12.809349548978597,
+     "heat_per_m_if_treated_as_DC_at_T_end_W_m": 4.38192665128936,
+     "T_centre_degC": 35.09593956891209,
+     "centre_above_melting": false,
+     "bvp_vs_shooting_max_abs_K": 8.874678769643651e-11
+    },
+    {
+     "d_m": 2.54e-05,
+     "excitation": "1GHz-rms0.25",
+     "harmonics": [
+      {
+       "f_Hz": 1000000000.0,
+       "I_peak_A": 1.1091198443413561
+      }
+     ],
+     "I_rms_total_A": 0.7842661630823409,
+     "I_star_W1_A": 3.1370646523293635,
+     "heat_per_m_at_T_end_W_m": 80.05843468111622,
+     "heat_per_m_if_treated_as_DC_at_T_end_W_m": 27.387041570558498,
+     "T_centre_degC": 93.8659649102744,
+     "centre_above_melting": false,
+     "bvp_vs_shooting_max_abs_K": 4.354774318926502e-10
+    },
+    {
+     "d_m": 2.54e-05,
+     "excitation": "10GHz-rms0.10",
+     "harmonics": [
+      {
+       "f_Hz": 10000000000.0,
+       "I_peak_A": 0.4436479377365425
+      }
+     ],
+     "I_rms_total_A": 0.3137064652329364,
+     "I_star_W1_A": 3.1370646523293635,
+     "heat_per_m_at_T_end_W_m": 37.926917546161114,
+     "heat_per_m_if_treated_as_DC_at_T_end_W_m": 4.38192665128936,
+     "T_centre_degC": 55.78171895466162,
+     "centre_above_melting": false,
+     "bvp_vs_shooting_max_abs_K": 3.665192593871325e-10
+    },
+    {
+     "d_m": 2.54e-05,
+     "excitation": "10GHz-rms0.25",
+     "harmonics": [
+      {
+       "f_Hz": 10000000000.0,
+       "I_peak_A": 1.1091198443413561
+      }
+     ],
+     "I_rms_total_A": 0.7842661630823409,
+     "I_star_W1_A": 3.1370646523293635,
+     "heat_per_m_at_T_end_W_m": 237.04323466350695,
+     "heat_per_m_if_treated_as_DC_at_T_end_W_m": 27.387041570558498,
+     "T_centre_degC": 269.0071390975252,
+     "centre_above_melting": false,
+     "bvp_vs_shooting_max_abs_K": 9.153765745395503e-09
+    },
+    {
+     "d_m": 2.54e-05,
+     "excitation": "2GHz-h123",
+     "harmonics": [
+      {
+       "f_Hz": 2000000000.0,
+       "I_peak_A": 0.941119395698809
+      },
+      {
+       "f_Hz": 4000000000.0,
+       "I_peak_A": 0.4705596978494045
+      },
+      {
+       "f_Hz": 6000000000.0,
+       "I_peak_A": 0.35073449062101014
+      }
+     ],
+     "I_rms_total_A": 0.7842661630823408,
+     "I_star_W1_A": 3.1370646523293635,
+     "heat_per_m_at_T_end_W_m": 125.23268608160305,
+     "heat_per_m_if_treated_as_DC_at_T_end_W_m": 27.387041570558488,
+     "T_centre_degC": 138.50097729118914,
+     "centre_above_melting": false,
+     "bvp_vs_shooting_max_abs_K": 3.252679903198441e-09
+    },
+    {
+     "d_m": 5.08e-05,
+     "excitation": "dc-0.25",
+     "harmonics": [
+      {
+       "f_Hz": 0.0,
+       "I_peak_A": 3.1370646523293635
+      }
+     ],
+     "I_rms_total_A": 3.1370646523293635,
+     "I_star_W1_A": 12.548258609317454,
+     "heat_per_m_at_T_end_W_m": 109.54816628223399,
+     "heat_per_m_if_treated_as_DC_at_T_end_W_m": 109.54816628223399,
+     "T_centre_degC": 47.68774015784519,
+     "centre_above_melting": false,
+     "bvp_vs_shooting_max_abs_K": 7.482015007553855e-12,
+     "dc_vs_W1_closed_form_max_abs_K": 8.093081760307541e-12
+    },
+    {
+     "d_m": 5.08e-05,
+     "excitation": "1GHz-rms0.10",
+     "harmonics": [
+      {
+       "f_Hz": 1000000000.0,
+       "I_peak_A": 1.77459175094617
+      }
+     ],
+     "I_rms_total_A": 1.2548258609317455,
+     "I_star_W1_A": 12.548258609317454,
+     "heat_per_m_at_T_end_W_m": 97.65080391319826,
+     "heat_per_m_if_treated_as_DC_at_T_end_W_m": 17.52770660515744,
+     "T_centre_degC": 44.50323753667357,
+     "centre_above_melting": false,
+     "bvp_vs_shooting_max_abs_K": 1.6139622971422796e-10
+    },
+    {
+     "d_m": 5.08e-05,
+     "excitation": "1GHz-rms0.25",
+     "harmonics": [
+      {
+       "f_Hz": 1000000000.0,
+       "I_peak_A": 4.4364793773654245
+      }
+     ],
+     "I_rms_total_A": 3.1370646523293635,
+     "I_star_W1_A": 12.548258609317454,
+     "heat_per_m_at_T_end_W_m": 610.3175244574891,
+     "heat_per_m_if_treated_as_DC_at_T_end_W_m": 109.54816628223399,
+     "T_centre_degC": 167.7065638841996,
+     "centre_above_melting": false,
+     "bvp_vs_shooting_max_abs_K": 3.0309266207950714e-09
+    },
+    {
+     "d_m": 5.08e-05,
+     "excitation": "10GHz-rms0.10",
+     "harmonics": [
+      {
+       "f_Hz": 10000000000.0,
+       "I_peak_A": 1.77459175094617
+      }
+     ],
+     "I_rms_total_A": 1.2548258609317455,
+     "I_star_W1_A": 12.548258609317454,
+     "heat_per_m_at_T_end_W_m": 298.8871672444169,
+     "heat_per_m_if_treated_as_DC_at_T_end_W_m": 17.52770660515744,
+     "T_centre_degC": 88.29954329262993,
+     "centre_above_melting": false,
+     "bvp_vs_shooting_max_abs_K": 2.0346462292764045e-09
+    },
+    {
+     "d_m": 5.08e-05,
+     "excitation": "10GHz-rms0.25",
+     "harmonics": [
+      {
+       "f_Hz": 10000000000.0,
+       "I_peak_A": 4.4364793773654245
+      }
+     ],
+     "I_rms_total_A": 3.1370646523293635,
+     "I_star_W1_A": 12.548258609317454,
+     "heat_per_m_at_T_end_W_m": 1868.0447952776055,
+     "heat_per_m_if_treated_as_DC_at_T_end_W_m": 109.54816628223399,
+     "T_centre_degC": 639.674449827082,
+     "centre_above_melting": false,
+     "bvp_vs_shooting_max_abs_K": 5.198899089009501e-10
+    },
+    {
+     "d_m": 5.08e-05,
+     "excitation": "2GHz-h123",
+     "harmonics": [
+      {
+       "f_Hz": 2000000000.0,
+       "I_peak_A": 3.764477582795236
+      },
+      {
+       "f_Hz": 4000000000.0,
+       "I_peak_A": 1.882238791397618
+      },
+      {
+       "f_Hz": 6000000000.0,
+       "I_peak_A": 1.4029379624840406
+      }
+     ],
+     "I_rms_total_A": 3.137064652329363,
+     "I_star_W1_A": 12.548258609317454,
+     "heat_per_m_at_T_end_W_m": 972.6482818179804,
+     "heat_per_m_if_treated_as_DC_at_T_end_W_m": 109.54816628223395,
+     "T_centre_degC": 277.0303956261696,
+     "centre_above_melting": false,
+     "bvp_vs_shooting_max_abs_K": 8.047891242313199e-10
+    }
+   ]
+  },
+  "copper": {
+   "parameters": {
+    "rho0_Ohm_m": 1.6790071428571427e-08,
+    "alpha_per_K": 0.004027530444179897,
+    "k_W_mK": 401.404
+   },
+   "skin_corner_Hz_by_diameter_m": {
+    "2.54e-05": 26368496.351017643,
+    "5.08e-05": 6592124.087754411
+   },
+   "profiles": [
+    {
+     "d_m": 2.54e-05,
+     "excitation": "dc-0.25",
+     "harmonics": [
+      {
+       "f_Hz": 0.0,
+       "I_peak_A": 0.9695994402454523
+      }
+     ],
+     "I_rms_total_A": 0.9695994402454523,
+     "I_star_W1_A": 3.878397760981809,
+     "heat_per_m_at_T_end_W_m": 31.778889620264625,
+     "heat_per_m_if_treated_as_DC_at_T_end_W_m": 31.77888962026462,
+     "T_centre_degC": 45.86921177444051,
+     "centre_above_melting": false,
+     "bvp_vs_shooting_max_abs_K": 7.311484750971431e-12,
+     "dc_vs_W1_closed_form_max_abs_K": 7.879918939579511e-12
+    },
+    {
+     "d_m": 2.54e-05,
+     "excitation": "1GHz-rms0.10",
+     "harmonics": [
+      {
+       "f_Hz": 1000000000.0,
+       "I_peak_A": 0.5484882713857921
+      }
+     ],
+     "I_rms_total_A": 0.387839776098181,
+     "I_star_W1_A": 3.878397760981809,
+     "heat_per_m_at_T_end_W_m": 16.848193865172917,
+     "heat_per_m_if_treated_as_DC_at_T_end_W_m": 5.084622339242341,
+     "T_centre_degC": 35.54758835354474,
+     "centre_above_melting": false,
+     "bvp_vs_shooting_max_abs_K": 1.403392957399774e-10
+    },
+    {
+     "d_m": 2.54e-05,
+     "excitation": "1GHz-rms0.25",
+     "harmonics": [
+      {
+       "f_Hz": 1000000000.0,
+       "I_peak_A": 1.37122067846448
+      }
+     ],
+     "I_rms_total_A": 0.9695994402454523,
+     "I_star_W1_A": 3.878397760981809,
+     "heat_per_m_at_T_end_W_m": 105.30121165733068,
+     "heat_per_m_if_treated_as_DC_at_T_end_W_m": 31.77888962026462,
+     "T_centre_degC": 97.68999326098586,
+     "centre_above_melting": false,
+     "bvp_vs_shooting_max_abs_K": 4.567297651192348e-10
+    },
+    {
+     "d_m": 2.54e-05,
+     "excitation": "10GHz-rms0.10",
+     "harmonics": [
+      {
+       "f_Hz": 10000000000.0,
+       "I_peak_A": 0.5484882713857921
+      }
+     ],
+     "I_rms_total_A": 0.387839776098181,
+     "I_star_W1_A": 3.878397760981809,
+     "heat_per_m_at_T_end_W_m": 50.31394905462918,
+     "heat_per_m_if_treated_as_DC_at_T_end_W_m": 5.084622339242341,
+     "T_centre_degC": 57.57685817776263,
+     "centre_above_melting": false,
+     "bvp_vs_shooting_max_abs_K": 9.000231671052461e-10
+    },
+    {
+     "d_m": 2.54e-05,
+     "excitation": "10GHz-rms0.25",
+     "harmonics": [
+      {
+       "f_Hz": 10000000000.0,
+       "I_peak_A": 1.37122067846448
+      }
+     ],
+     "I_rms_total_A": 0.9695994402454523,
+     "I_star_W1_A": 3.878397760981809,
+     "heat_per_m_at_T_end_W_m": 314.46218159143217,
+     "heat_per_m_if_treated_as_DC_at_T_end_W_m": 31.77888962026462,
+     "T_centre_degC": 291.48967921099415,
+     "centre_above_melting": false,
+     "bvp_vs_shooting_max_abs_K": 4.5543231408373686e-09
+    },
+    {
+     "d_m": 2.54e-05,
+     "excitation": "2GHz-h123",
+     "harmonics": [
+      {
+       "f_Hz": 2000000000.0,
+       "I_peak_A": 1.1635193282945426
+      },
+      {
+       "f_Hz": 4000000000.0,
+       "I_peak_A": 0.5817596641472713
+      },
+      {
+       "f_Hz": 6000000000.0,
+       "I_peak_A": 0.43361805186691543
+      }
+     ],
+     "I_rms_total_A": 0.9695994402454522,
+     "I_star_W1_A": 3.878397760981809,
+     "heat_per_m_at_T_end_W_m": 165.50929610288114,
+     "heat_per_m_if_treated_as_DC_at_T_end_W_m": 31.778889620264618,
+     "T_centre_degC": 146.32221382382173,
+     "centre_above_melting": false,
+     "bvp_vs_shooting_max_abs_K": 3.7050540413474664e-09
+    },
+    {
+     "d_m": 5.08e-05,
+     "excitation": "dc-0.25",
+     "harmonics": [
+      {
+       "f_Hz": 0.0,
+       "I_peak_A": 3.878397760981809
+      }
+     ],
+     "I_rms_total_A": 3.878397760981809,
+     "I_star_W1_A": 15.513591043927237,
+     "heat_per_m_at_T_end_W_m": 127.1155584810585,
+     "heat_per_m_if_treated_as_DC_at_T_end_W_m": 127.11555848105849,
+     "T_centre_degC": 45.869211774440494,
+     "centre_above_melting": false,
+     "bvp_vs_shooting_max_abs_K": 7.318590178329032e-12,
+     "dc_vs_W1_closed_form_max_abs_K": 7.894129794294713e-12
+    },
+    {
+     "d_m": 5.08e-05,
+     "excitation": "1GHz-rms0.10",
+     "harmonics": [
+      {
+       "f_Hz": 1000000000.0,
+       "I_peak_A": 2.1939530855431686
+      }
+     ],
+     "I_rms_total_A": 1.551359104392724,
+     "I_star_W1_A": 15.513591043927237,
+     "heat_per_m_at_T_end_W_m": 129.247309180265,
+     "heat_per_m_if_treated_as_DC_at_T_end_W_m": 20.338489356969365,
+     "T_centre_degC": 45.54542858689838,
+     "centre_above_melting": false,
+     "bvp_vs_shooting_max_abs_K": 2.2659918386125355e-10
+    },
+    {
+     "d_m": 5.08e-05,
+     "excitation": "1GHz-rms0.25",
+     "harmonics": [
+      {
+       "f_Hz": 1000000000.0,
+       "I_peak_A": 5.48488271385792
+      }
+     ],
+     "I_rms_total_A": 3.878397760981809,
+     "I_star_W1_A": 15.513591043927237,
+     "heat_per_m_at_T_end_W_m": 807.7956823766559,
+     "heat_per_m_if_treated_as_DC_at_T_end_W_m": 127.11555848105849,
+     "T_centre_degC": 178.4559505010231,
+     "centre_above_melting": false,
+     "bvp_vs_shooting_max_abs_K": 1.5853771628826507e-09
+    },
+    {
+     "d_m": 5.08e-05,
+     "excitation": "10GHz-rms0.10",
+     "harmonics": [
+      {
+       "f_Hz": 10000000000.0,
+       "I_peak_A": 2.1939530855431686
+      }
+     ],
+     "I_rms_total_A": 1.551359104392724,
+     "I_star_W1_A": 15.513591043927237,
+     "heat_per_m_at_T_end_W_m": 397.2789909089901,
+     "heat_per_m_if_treated_as_DC_at_T_end_W_m": 20.338489356969365,
+     "T_centre_degC": 92.54372826003728,
+     "centre_above_melting": false,
+     "bvp_vs_shooting_max_abs_K": 2.0977566350666166e-09
+    },
+    {
+     "d_m": 5.08e-05,
+     "excitation": "10GHz-rms0.25",
+     "harmonics": [
+      {
+       "f_Hz": 10000000000.0,
+       "I_peak_A": 5.48488271385792
+      }
+     ],
+     "I_rms_total_A": 3.878397760981809,
+     "I_star_W1_A": 15.513591043927237,
+     "heat_per_m_at_T_end_W_m": 2482.993693181187,
+     "heat_per_m_if_treated_as_DC_at_T_end_W_m": 127.11555848105849,
+     "T_centre_degC": 718.003738904453,
+     "centre_above_melting": false,
+     "bvp_vs_shooting_max_abs_K": 4.644107320928015e-10
+    },
+    {
+     "d_m": 5.08e-05,
+     "excitation": "2GHz-h123",
+     "harmonics": [
+      {
+       "f_Hz": 2000000000.0,
+       "I_peak_A": 4.6540773131781705
+      },
+      {
+       "f_Hz": 4000000000.0,
+       "I_peak_A": 2.3270386565890853
+      },
+      {
+       "f_Hz": 6000000000.0,
+       "I_peak_A": 1.7344722074676617
+      }
+     ],
+     "I_rms_total_A": 3.8783977609818088,
+     "I_star_W1_A": 15.513591043927237,
+     "heat_per_m_at_T_end_W_m": 1290.441787295428,
+     "heat_per_m_if_treated_as_DC_at_T_end_W_m": 127.11555848105847,
+     "T_centre_degC": 300.52954849739194,
+     "centre_above_melting": false,
+     "bvp_vs_shooting_max_abs_K": 1.3204157767177094e-09
+    }
+   ]
+  },
+  "aluminium": {
+   "parameters": {
+    "rho0_Ohm_m": 2.651778571428571e-08,
+    "alpha_per_K": 0.004444860706977142,
+    "k_W_mK": 236.798
+   },
+   "skin_corner_Hz_by_diameter_m": {
+    "2.54e-05": 41645691.55163531,
+    "5.08e-05": 10411422.887908828
+   },
+   "profiles": [
+    {
+     "d_m": 2.54e-05,
+     "excitation": "dc-0.25",
+     "harmonics": [
+      {
+       "f_Hz": 0.0,
+       "I_peak_A": 0.5640771465706035
+      }
+     ],
+     "I_rms_total_A": 0.5640771465706035,
+     "I_star_W1_A": 2.256308586282414,
+     "heat_per_m_at_T_end_W_m": 17.021708697354246,
+     "heat_per_m_if_treated_as_DC_at_T_end_W_m": 17.021708697354246,
+     "T_centre_degC": 43.94846995506359,
+     "centre_above_melting": false,
+     "bvp_vs_shooting_max_abs_K": 7.005951374594588e-12,
+     "dc_vs_W1_closed_form_max_abs_K": 7.595701845275471e-12
+    },
+    {
+     "d_m": 2.54e-05,
+     "excitation": "1GHz-rms0.10",
+     "harmonics": [
+      {
+       "f_Hz": 1000000000.0,
+       "I_peak_A": 0.3190902203619455
+      }
+     ],
+     "I_rms_total_A": 0.22563085862824142,
+     "I_star_W1_A": 2.256308586282414,
+     "heat_per_m_at_T_end_W_m": 7.3318623920403985,
+     "heat_per_m_if_treated_as_DC_at_T_end_W_m": 2.7234733915766793,
+     "T_centre_degC": 32.756399579844654,
+     "centre_above_melting": false,
+     "bvp_vs_shooting_max_abs_K": 5.519140700016578e-11
+    },
+    {
+     "d_m": 2.54e-05,
+     "excitation": "1GHz-rms0.25",
+     "harmonics": [
+      {
+       "f_Hz": 1000000000.0,
+       "I_peak_A": 0.7977255509048636
+      }
+     ],
+     "I_rms_total_A": 0.5640771465706035,
+     "I_star_W1_A": 2.256308586282414,
+     "heat_per_m_at_T_end_W_m": 45.82413995025248,
+     "heat_per_m_if_treated_as_DC_at_T_end_W_m": 17.021708697354246,
+     "T_centre_degC": 77.59080301954315,
+     "centre_above_melting": false,
+     "bvp_vs_shooting_max_abs_K": 3.830109562841244e-10
+    },
+    {
+     "d_m": 2.54e-05,
+     "excitation": "10GHz-rms0.10",
+     "harmonics": [
+      {
+       "f_Hz": 10000000000.0,
+       "I_peak_A": 0.3190902203619455
+      }
+     ],
+     "I_rms_total_A": 0.22563085862824142,
+     "I_star_W1_A": 2.256308586282414,
+     "heat_per_m_at_T_end_W_m": 21.568078553459507,
+     "heat_per_m_if_treated_as_DC_at_T_end_W_m": 2.7234733915766793,
+     "T_centre_degC": 48.4339900905858,
+     "centre_above_melting": false,
+     "bvp_vs_shooting_max_abs_K": 2.4913759943956393e-10
+    },
+    {
+     "d_m": 2.54e-05,
+     "excitation": "10GHz-rms0.25",
+     "harmonics": [
+      {
+       "f_Hz": 10000000000.0,
+       "I_peak_A": 0.7977255509048636
+      }
+     ],
+     "I_rms_total_A": 0.5640771465706035,
+     "I_star_W1_A": 2.256308586282414,
+     "heat_per_m_at_T_end_W_m": 134.80049095912187,
+     "heat_per_m_if_treated_as_DC_at_T_end_W_m": 17.021708697354246,
+     "T_centre_degC": 207.28687073437501,
+     "centre_above_melting": false,
+     "bvp_vs_shooting_max_abs_K": 8.331582534992776e-09
+    },
+    {
+     "d_m": 2.54e-05,
+     "excitation": "2GHz-h123",
+     "harmonics": [
+      {
+       "f_Hz": 2000000000.0,
+       "I_peak_A": 0.6768925758847242
+      },
+      {
+       "f_Hz": 4000000000.0,
+       "I_peak_A": 0.3384462879423621
+      },
+      {
+       "f_Hz": 6000000000.0,
+       "I_peak_A": 0.2522629688571964
+      }
+     ],
+     "I_rms_total_A": 0.5640771465706035,
+     "I_star_W1_A": 2.256308586282414,
+     "heat_per_m_at_T_end_W_m": 71.41777182522011,
+     "heat_per_m_if_treated_as_DC_at_T_end_W_m": 17.021708697354246,
+     "T_centre_degC": 110.94595459487184,
+     "centre_above_melting": false,
+     "bvp_vs_shooting_max_abs_K": 1.5627001914708671e-09
+    },
+    {
+     "d_m": 5.08e-05,
+     "excitation": "dc-0.25",
+     "harmonics": [
+      {
+       "f_Hz": 0.0,
+       "I_peak_A": 2.256308586282414
+      }
+     ],
+     "I_rms_total_A": 2.256308586282414,
+     "I_star_W1_A": 9.025234345129656,
+     "heat_per_m_at_T_end_W_m": 68.08683478941698,
+     "heat_per_m_if_treated_as_DC_at_T_end_W_m": 68.08683478941698,
+     "T_centre_degC": 43.94846995506359,
+     "centre_above_melting": false,
+     "bvp_vs_shooting_max_abs_K": 6.998845947236987e-12,
+     "dc_vs_W1_closed_form_max_abs_K": 7.58859641791787e-12
+    },
+    {
+     "d_m": 5.08e-05,
+     "excitation": "1GHz-rms0.10",
+     "harmonics": [
+      {
+       "f_Hz": 1000000000.0,
+       "I_peak_A": 1.276360881447782
+      }
+     ],
+     "I_rms_total_A": 0.9025234345129657,
+     "I_star_W1_A": 9.025234345129656,
+     "heat_per_m_at_T_end_W_m": 55.626868909521896,
+     "heat_per_m_if_treated_as_DC_at_T_end_W_m": 10.893893566306717,
+     "T_centre_degC": 39.893857279116034,
+     "centre_above_melting": false,
+     "bvp_vs_shooting_max_abs_K": 2.3589734610141022e-09
+    },
+    {
+     "d_m": 5.08e-05,
+     "excitation": "1GHz-rms0.25",
+     "harmonics": [
+      {
+       "f_Hz": 1000000000.0,
+       "I_peak_A": 3.1909022036194545
+      }
+     ],
+     "I_rms_total_A": 2.256308586282414,
+     "I_star_W1_A": 9.025234345129656,
+     "heat_per_m_at_T_end_W_m": 347.66793068451176,
+     "heat_per_m_if_treated_as_DC_at_T_end_W_m": 68.08683478941698,
+     "T_centre_degC": 132.65100127150427,
+     "centre_above_melting": false,
+     "bvp_vs_shooting_max_abs_K": 2.945931498743448e-09
+    },
+    {
+     "d_m": 5.08e-05,
+     "excitation": "10GHz-rms0.10",
+     "harmonics": [
+      {
+       "f_Hz": 10000000000.0,
+       "I_peak_A": 1.276360881447782
+      }
+     ],
+     "I_rms_total_A": 0.9025234345129657,
+     "I_star_W1_A": 9.025234345129656,
+     "heat_per_m_at_T_end_W_m": 169.72159247236482,
+     "heat_per_m_if_treated_as_DC_at_T_end_W_m": 10.893893566306717,
+     "T_centre_degC": 72.94020695826221,
+     "centre_above_melting": false,
+     "bvp_vs_shooting_max_abs_K": 9.148344304321654e-10
+    },
+    {
+     "d_m": 5.08e-05,
+     "excitation": "10GHz-rms0.25",
+     "harmonics": [
+      {
+       "f_Hz": 10000000000.0,
+       "I_peak_A": 3.1909022036194545
+      }
+     ],
+     "I_rms_total_A": 2.256308586282414,
+     "I_star_W1_A": 9.025234345129656,
+     "heat_per_m_at_T_end_W_m": 1060.75995295228,
+     "heat_per_m_if_treated_as_DC_at_T_end_W_m": 68.08683478941698,
+     "T_centre_degC": 475.06347766498516,
+     "centre_above_melting": false,
+     "bvp_vs_shooting_max_abs_K": 2.047727321041748e-09
+    },
+    {
+     "d_m": 5.08e-05,
+     "excitation": "2GHz-h123",
+     "harmonics": [
+      {
+       "f_Hz": 2000000000.0,
+       "I_peak_A": 2.7075703035388967
+      },
+      {
+       "f_Hz": 4000000000.0,
+       "I_peak_A": 1.3537851517694484
+      },
+      {
+       "f_Hz": 6000000000.0,
+       "I_peak_A": 1.0090518754287856
+      }
+     ],
+     "I_rms_total_A": 2.256308586282414,
+     "I_star_W1_A": 9.025234345129656,
+     "heat_per_m_at_T_end_W_m": 553.0809255434766,
+     "heat_per_m_if_treated_as_DC_at_T_end_W_m": 68.08683478941698,
+     "T_centre_degC": 213.16267563693742,
+     "centre_above_melting": false,
+     "bvp_vs_shooting_max_abs_K": 2.4840858259267407e-09
+    }
+   ]
+  },
+  "silver": {
+   "parameters": {
+    "rho0_Ohm_m": 1.5879e-08,
+    "alpha_per_K": 0.0037935038959893332,
+    "k_W_mK": 429.0
+   },
+   "skin_corner_Hz_by_diameter_m": {
+    "2.54e-05": 24937675.53872964,
+    "5.08e-05": 6234418.88468241
+   },
+   "profiles": [
+    {
+     "d_m": 2.54e-05,
+     "excitation": "dc-0.25",
+     "harmonics": [
+      {
+       "f_Hz": 0.0,
+       "I_peak_A": 1.0620476455661163
+      }
+     ],
+     "I_rms_total_A": 1.0620476455661163,
+     "I_star_W1_A": 4.248190582264465,
+     "heat_per_m_at_T_end_W_m": 36.01755066775843,
+     "heat_per_m_if_treated_as_DC_at_T_end_W_m": 36.01755066775843,
+     "T_centre_degC": 47.1312481173926,
+     "centre_above_melting": false,
+     "bvp_vs_shooting_max_abs_K": 7.425171588693047e-12,
+     "dc_vs_W1_closed_form_max_abs_K": 7.993605777301127e-12
+    },
+    {
+     "d_m": 2.54e-05,
+     "excitation": "1GHz-rms0.10",
+     "harmonics": [
+      {
+       "f_Hz": 1000000000.0,
+       "I_peak_A": 0.6007848736984064
+      }
+     ],
+     "I_rms_total_A": 0.4248190582264466,
+     "I_star_W1_A": 4.248190582264465,
+     "heat_per_m_at_T_end_W_m": 19.600546291906106,
+     "heat_per_m_if_treated_as_DC_at_T_end_W_m": 5.762808106841351,
+     "T_centre_degC": 36.4864761391831,
+     "centre_above_melting": false,
+     "bvp_vs_shooting_max_abs_K": 1.6558487914153375e-10
+    },
+    {
+     "d_m": 2.54e-05,
+     "excitation": "1GHz-rms0.25",
+     "harmonics": [
+      {
+       "f_Hz": 1000000000.0,
+       "I_peak_A": 1.5019621842460156
+      }
+     ],
+     "I_rms_total_A": 1.0620476455661163,
+     "I_star_W1_A": 4.248190582264465,
+     "heat_per_m_at_T_end_W_m": 122.5034143244131,
+     "heat_per_m_if_treated_as_DC_at_T_end_W_m": 36.01755066775843,
+     "T_centre_degC": 104.34533010890061,
+     "centre_above_melting": false,
+     "bvp_vs_shooting_max_abs_K": 5.176801209927362e-10
+    },
+    {
+     "d_m": 2.54e-05,
+     "excitation": "10GHz-rms0.10",
+     "harmonics": [
+      {
+       "f_Hz": 10000000000.0,
+       "I_peak_A": 0.6007848736984064
+      }
+     ],
+     "I_rms_total_A": 0.4248190582264466,
+     "I_star_W1_A": 4.248190582264465,
+     "heat_per_m_at_T_end_W_m": 58.628385075150774,
+     "heat_per_m_if_treated_as_DC_at_T_end_W_m": 5.762808106841351,
+     "T_centre_degC": 60.568942646584084,
+     "centre_above_melting": false,
+     "bvp_vs_shooting_max_abs_K": 1.193683374367538e-09
+    },
+    {
+     "d_m": 2.54e-05,
+     "excitation": "10GHz-rms0.25",
+     "harmonics": [
+      {
+       "f_Hz": 10000000000.0,
+       "I_peak_A": 1.5019621842460156
+      }
+     ],
+     "I_rms_total_A": 1.0620476455661163,
+     "I_star_W1_A": 4.248190582264465,
+     "heat_per_m_at_T_end_W_m": 366.42740671969216,
+     "heat_per_m_if_treated_as_DC_at_T_end_W_m": 36.01755066775843,
+     "T_centre_degC": 318.0082521097989,
+     "centre_above_melting": false,
+     "bvp_vs_shooting_max_abs_K": 4.690264177042991e-09
+    },
+    {
+     "d_m": 2.54e-05,
+     "excitation": "2GHz-h123",
+     "harmonics": [
+      {
+       "f_Hz": 2000000000.0,
+       "I_peak_A": 1.2744571746793396
+      },
+      {
+       "f_Hz": 4000000000.0,
+       "I_peak_A": 0.6372285873396698
+      },
+      {
+       "f_Hz": 6000000000.0,
+       "I_peak_A": 0.47496214616588794
+      }
+     ],
+     "I_rms_total_A": 1.0620476455661163,
+     "I_star_W1_A": 4.248190582264465,
+     "heat_per_m_at_T_end_W_m": 192.722159950747,
+     "heat_per_m_if_treated_as_DC_at_T_end_W_m": 36.01755066775843,
+     "T_centre_degC": 157.77774513155728,
+     "centre_above_melting": false,
+     "bvp_vs_shooting_max_abs_K": 4.27356638965648e-09
+    },
+    {
+     "d_m": 5.08e-05,
+     "excitation": "dc-0.25",
+     "harmonics": [
+      {
+       "f_Hz": 0.0,
+       "I_peak_A": 4.248190582264465
+      }
+     ],
+     "I_rms_total_A": 4.248190582264465,
+     "I_star_W1_A": 16.99276232905786,
+     "heat_per_m_at_T_end_W_m": 144.0702026710337,
+     "heat_per_m_if_treated_as_DC_at_T_end_W_m": 144.0702026710337,
+     "T_centre_degC": 47.1312481173926,
+     "centre_above_melting": false,
+     "bvp_vs_shooting_max_abs_K": 7.453593298123451e-12,
+     "dc_vs_W1_closed_form_max_abs_K": 8.022027486731531e-12
+    },
+    {
+     "d_m": 5.08e-05,
+     "excitation": "1GHz-rms0.10",
+     "harmonics": [
+      {
+       "f_Hz": 1000000000.0,
+       "I_peak_A": 2.4031394947936255
+      }
+     ],
+     "I_rms_total_A": 1.6992762329057864,
+     "I_star_W1_A": 16.99276232905786,
+     "heat_per_m_at_T_end_W_m": 150.5401213233185,
+     "heat_per_m_if_treated_as_DC_at_T_end_W_m": 23.051232427365402,
+     "T_centre_degC": 47.411001626719525,
+     "centre_above_melting": false,
+     "bvp_vs_shooting_max_abs_K": 2.4143531618392444e-10
+    },
+    {
+     "d_m": 5.08e-05,
+     "excitation": "1GHz-rms0.25",
+     "harmonics": [
+      {
+       "f_Hz": 1000000000.0,
+       "I_peak_A": 6.007848736984062
+      }
+     ],
+     "I_rms_total_A": 4.248190582264465,
+     "I_star_W1_A": 16.99276232905786,
+     "heat_per_m_at_T_end_W_m": 940.8757582707401,
+     "heat_per_m_if_treated_as_DC_at_T_end_W_m": 144.0702026710337,
+     "T_centre_degC": 193.16125471052266,
+     "centre_above_melting": false,
+     "bvp_vs_shooting_max_abs_K": 1.416765371686779e-09
+    },
+    {
+     "d_m": 5.08e-05,
+     "excitation": "10GHz-rms0.10",
+     "harmonics": [
+      {
+       "f_Hz": 10000000000.0,
+       "I_peak_A": 2.4031394947936255
+      }
+     ],
+     "I_rms_total_A": 1.6992762329057864,
+     "I_star_W1_A": 16.99276232905786,
+     "heat_per_m_at_T_end_W_m": 463.101240398705,
+     "heat_per_m_if_treated_as_DC_at_T_end_W_m": 23.051232427365402,
+     "T_centre_degC": 98.87825231839139,
+     "centre_above_melting": false,
+     "bvp_vs_shooting_max_abs_K": 2.0946231416019145e-09
+    },
+    {
+     "d_m": 5.08e-05,
+     "excitation": "10GHz-rms0.25",
+     "harmonics": [
+      {
+       "f_Hz": 10000000000.0,
+       "I_peak_A": 6.007848736984062
+      }
+     ],
+     "I_rms_total_A": 4.248190582264465,
+     "I_star_W1_A": 16.99276232905786,
+     "heat_per_m_at_T_end_W_m": 2894.3827524919047,
+     "heat_per_m_if_treated_as_DC_at_T_end_W_m": 144.0702026710337,
+     "T_centre_degC": 792.167865400979,
+     "centre_above_melting": false,
+     "bvp_vs_shooting_max_abs_K": 1.3408225640887395e-09
+    },
+    {
+     "d_m": 5.08e-05,
+     "excitation": "2GHz-h123",
+     "harmonics": [
+      {
+       "f_Hz": 2000000000.0,
+       "I_peak_A": 5.097828698717358
+      },
+      {
+       "f_Hz": 4000000000.0,
+       "I_peak_A": 2.548914349358679
+      },
+      {
+       "f_Hz": 6000000000.0,
+       "I_peak_A": 1.8998485846635518
+      }
+     ],
+     "I_rms_total_A": 4.248190582264465,
+     "I_star_W1_A": 16.99276232905786,
+     "heat_per_m_at_T_end_W_m": 1503.7162563684133,
+     "heat_per_m_if_treated_as_DC_at_T_end_W_m": 144.0702026710337,
+     "T_centre_degC": 328.0138336997225,
+     "centre_above_melting": false,
+     "bvp_vs_shooting_max_abs_K": 7.571259175165324e-10
+    }
+   ]
+  }
+ },
+ "worst_bvp_vs_shooting_K": 9.153765745395503e-09
+}

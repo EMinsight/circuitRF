@@ -1,0 +1,23 @@
+# gold: pure bulk metal, solid, 0 degC to the melting point. Sources and method: README.md.
+# Interpolated rows are piecewise-linear in T between the two neighbouring tabulated rows.
+T [degC],rho [Ohm m],k [W/(m K)],rho origin,k origin
+0,2.051e-08,319.004310345,tabulated,interpolated
+0.05,2.05141057935e-08,319,interpolated,tabulated
+19.85,2.214e-08,318.208,tabulated,interpolated
+20,2.21522142857e-08,318.202,interpolated,interpolated
+25.05,2.25634285714e-08,318,interpolated,tabulated
+26.85,2.271e-08,317,tabulated,tabulated
+76.85,2.685e-08,314,tabulated,tabulated
+85,2.753786e-08,313.511,interpolated,interpolated
+125,3.091386e-08,311.111,interpolated,interpolated
+126.85,3.107e-08,311,tabulated,tabulated
+226.85,3.974e-08,304,tabulated,tabulated
+326.85,4.875e-08,298,tabulated,tabulated
+426.85,5.816e-08,291,tabulated,tabulated
+526.85,6.808e-08,284,tabulated,tabulated
+626.85,7.862e-08,277,tabulated,tabulated
+726.85,8.986e-08,270,tabulated,tabulated
+826.85,1.0191e-07,262,tabulated,tabulated
+926.85,1.1486e-07,255,tabulated,tabulated
+1026.85,1.2854e-07,247,tabulated,estimated-by-source
+1064.43,1.3388e-07,244,tabulated,estimated-by-source

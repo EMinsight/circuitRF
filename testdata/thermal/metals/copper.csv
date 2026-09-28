@@ -1,0 +1,23 @@
+# copper: pure bulk metal, solid, 0 degC to the melting point. Sources and method: README.md.
+# Interpolated rows are piecewise-linear in T between the two neighbouring tabulated rows.
+T [degC],rho [Ohm m],k [W/(m K)],rho origin,k origin
+0,1.543e-08,403.006465517,tabulated,interpolated
+0.05,1.54334005038e-08,403,interpolated,tabulated
+19.85,1.678e-08,401.416,tabulated,interpolated
+20,1.67900714286e-08,401.404,interpolated,interpolated
+25.05,1.71291428571e-08,401,interpolated,tabulated
+26.85,1.725e-08,401,tabulated,tabulated
+76.85,2.063e-08,396,tabulated,tabulated
+85,2.118257e-08,395.511,interpolated,interpolated
+125,2.389457e-08,393.111,interpolated,interpolated
+126.85,2.402e-08,393,tabulated,tabulated
+226.85,3.09e-08,386,tabulated,tabulated
+326.85,3.792e-08,379,tabulated,tabulated
+426.85,4.514e-08,373,tabulated,tabulated
+526.85,5.262e-08,366,tabulated,tabulated
+626.85,6.041e-08,359,tabulated,tabulated
+726.85,6.858e-08,352,tabulated,tabulated
+826.85,7.717e-08,346,tabulated,tabulated
+926.85,8.626e-08,339,tabulated,tabulated
+1026.85,9.592e-08,332,tabulated,tabulated
+1084.45,1.0171e-07,328,tabulated,tabulated

@@ -1,0 +1,115 @@
+{
+ "parameters": {
+  "L_um": 1000.0,
+  "r_outer_um": 500.0,
+  "d_um": 25.4,
+  "k_mould": 0.8,
+  "k_wire": 318.0,
+  "rho": 2.215e-08,
+  "I_A": 1.25,
+  "T_amb_degC": 25.0,
+  "q_per_m_W": 68.30247515123153
+ },
+ "runs": [
+  {
+   "order": 1,
+   "h_at_wire_um": 80,
+   "dofs": 669,
+   "wire_segments": 13,
+   "T_centre_discrete_degC": 49.33959383903704,
+   "T_centre_coax_model_degC": 52.858034250579486,
+   "r_eff_um": 29.52281852226714,
+   "r_eff_over_h": 0.3690352315283393
+  },
+  {
+   "order": 1,
+   "h_at_wire_um": 40,
+   "dofs": 1377,
+   "wire_segments": 25,
+   "T_centre_discrete_degC": 52.14654873725243,
+   "T_centre_coax_model_degC": 52.858034250579486,
+   "r_eff_um": 15.342677688319808,
+   "r_eff_over_h": 0.3835669422079952
+  },
+  {
+   "order": 1,
+   "h_at_wire_um": 20,
+   "dofs": 2736,
+   "wire_segments": 50,
+   "T_centre_discrete_degC": 54.583997304690534,
+   "T_centre_coax_model_degC": 52.858034250579486,
+   "r_eff_um": 7.655428530642656,
+   "r_eff_over_h": 0.3827714265321328
+  },
+  {
+   "order": 1,
+   "h_at_wire_um": 10,
+   "dofs": 5330,
+   "wire_segments": 100,
+   "T_centre_discrete_degC": 56.475509721086475,
+   "T_centre_coax_model_degC": 52.858034250579486,
+   "r_eff_um": 4.005317428691695,
+   "r_eff_over_h": 0.40053174286916954
+  },
+  {
+   "order": 1,
+   "h_at_wire_um": 5,
+   "dofs": 10443,
+   "wire_segments": 200,
+   "T_centre_discrete_degC": 58.15530626200399,
+   "T_centre_coax_model_degC": 52.858034250579486,
+   "r_eff_um": 2.0318208586970923,
+   "r_eff_over_h": 0.40636417173941847
+  },
+  {
+   "order": 2,
+   "h_at_wire_um": 80,
+   "dofs": 4600,
+   "wire_segments": 13,
+   "T_centre_discrete_degC": 54.0824275870051,
+   "T_centre_coax_model_degC": 52.858034250579486,
+   "r_eff_um": 8.935468621348459,
+   "r_eff_over_h": 0.11169335776685574
+  },
+  {
+   "order": 2,
+   "h_at_wire_um": 40,
+   "dofs": 10184,
+   "wire_segments": 25,
+   "T_centre_discrete_degC": 56.054745909914786,
+   "T_centre_coax_model_degC": 52.858034250579486,
+   "r_eff_um": 4.670972597574416,
+   "r_eff_over_h": 0.11677431493936039
+  },
+  {
+   "order": 2,
+   "h_at_wire_um": 20,
+   "dofs": 21044,
+   "wire_segments": 50,
+   "T_centre_discrete_degC": 57.871983050131035,
+   "T_centre_coax_model_degC": 52.858034250579486,
+   "r_eff_um": 2.296392712121305,
+   "r_eff_over_h": 0.11481963560606526
+  },
+  {
+   "order": 2,
+   "h_at_wire_um": 10,
+   "dofs": 42042,
+   "wire_segments": 100,
+   "T_centre_discrete_degC": 59.30080554917926,
+   "T_centre_coax_model_degC": 52.858034250579486,
+   "r_eff_um": 1.1927183776804091,
+   "r_eff_over_h": 0.11927183776804091
+  },
+  {
+   "order": 2,
+   "h_at_wire_um": 5,
+   "dofs": 83688,
+   "wire_segments": 200,
+   "T_centre_discrete_degC": 60.59512394796417,
+   "T_centre_coax_model_degC": 52.858034250579486,
+   "r_eff_um": 0.6004862710666198,
+   "r_eff_over_h": 0.12009725421332396
+  }
+ ]
+}

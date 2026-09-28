@@ -1,0 +1,42 @@
+{
+ "versions": {
+  "python": "3.13.1",
+  "numpy": "2.5.3",
+  "scipy": "1.18.1"
+ },
+ "cases": {
+  "S4a": {
+   "lateral_size_m": [
+    0.001,
+    0.001
+   ],
+   "T_bottom_degC": 25.0,
+   "thickness_L_m": 0.0005,
+   "flux_top_W_m2": 40000000.0,
+   "k": {
+    "form": "k0/(1+beta*(T-T0))",
+    "k0_W_mK": 150.0,
+    "T0_degC": 25.0,
+    "beta_per_K": 0.004
+   },
+   "T_top_degC": 201.1512163306883,
+   "T_top_if_k_constant_k0_degC": 158.33333333333334
+  },
+  "S4b": {
+   "lateral_size_m": [
+    0.001,
+    0.001
+   ],
+   "T_bottom_degC": 25.0,
+   "thickness_L_m": 0.0005,
+   "flux_top_W_m2": 40000000.0,
+   "k": {
+    "form": "table",
+    "table": "silicon-k.csv",
+    "interpolation": "piecewise-linear in T, clamped"
+   },
+   "T_top_degC": 212.05465176392804,
+   "bvp_vs_kirchhoff_max_abs_K": 2.688977929210523e-10
+  }
+ }
+}
