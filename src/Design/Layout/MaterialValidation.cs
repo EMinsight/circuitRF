@@ -60,6 +60,18 @@ public static class MaterialValidation
                     string.Create(CultureInfo.InvariantCulture,
                         $"Material \"{m.Name}\" states ThermalKVsTemp, which gives {kd.Table:G5} W/(m·K) at 20 °C, and ThermalK = {kd.Constant:G5} W/(m·K) — {Percent(kd.Table, kd.Constant)} apart. A thermal run uses the table. Make them agree, or remove the one that is wrong.")));
 
+            if (m.ThermalKTensor is { } kt)
+            {
+                if (kt.Length != 3 || kt.Any(v => !(v > 0 && double.IsFinite(v))))
+                    problems.Add(Problem(TechValidation.Ids.MaterialInvalid, DiagnosticSeverity.Error,
+                        $"Material \"{m.Name}\" states a thermal conductivity tensor (ThermalKTensor) that is not three positive " +
+                        "numbers of W/(m·K) (xx, yy, zz)."));
+                else if (m.ThermalK is null && m.ThermalKVsTemp is not { Count: > 0 })
+                    problems.Add(Problem(TechValidation.Ids.MaterialInvalid, DiagnosticSeverity.Error,
+                        $"Material \"{m.Name}\" states ThermalKTensor but neither ThermalK nor ThermalKVsTemp. The tensor refines " +
+                        "the scalar, which a bond wire and an effective block still read: state ThermalK as well."));
+            }
+
             if (m.ThermalK is { } k && !(k > 0 && double.IsFinite(k)))
                 problems.Add(Problem(TechValidation.Ids.MaterialInvalid, DiagnosticSeverity.Error,
                     $"Material \"{m.Name}\" states a thermal conductivity (ThermalK) of {k}; it must be a positive number of W/(m·K)."));

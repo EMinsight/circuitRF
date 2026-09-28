@@ -14769,3 +14769,20 @@ HEAD for it. The circuit kinds fall through to the workspace walk again.
 
 **Not done:** `explain --ref` resolves CELL references, and the link's schematic is a file path relative to the `.c3d`; so the
 link is reported by `explain x.c3d --analysis <setup>` (resolved path, chain, instance, port ↔ pin ↔ net) rather than by `--ref`.
+
+## Anisotropic thermal conductivity — `ThermalKTensor` (2026-09-28)
+
+- **The solver already had it.** Brief 76's effective blocks made `ThermalConductivity` a diagonal tensor, and
+  `ThermalAssembly` multiplies k(T) by the axes (tangent included). All that was missing was a way for a MATERIAL to
+  state one, so the change is the material field plus `ThermalRunService.Conductivities`, nothing in `src/Thermal`
+  beyond letting `Varying` carry axes.
+- **It refines the scalar, never replaces it** — `EpsrTensor`'s rule. A bond wire, an effective block's mixing and
+  `explain` have no direction and keep reading `ThermalK`/`ThermalKVsTemp` through `ThermalKAt`, so a tensor with
+  no scalar is a check error rather than a null deep inside a wire or block lowering.
+- **With a k(T) table each component follows the table's change from 25 °C**, k_i(T) = t_i·k(T)/k(25 °C): the table
+  says how k changes, the tensor how it is directed. 25 °C because that is the nominal every run's first solve uses.
+- **Along the 3D view's axes; a rotated solid's tensor does not rotate.** The run note says so every time. Rotating
+  it would need a full (off-diagonal) tensor in the assembly — not needed for the laminate in-plane/through-plane
+  case, where k_xx = k_yy.
+- **Mesh regions are NOT thermal-only** (the premise of a proposed rename): brief 74 writes them into Palace's Gmsh
+  mesh too (`GmshGeoWriter.cs`, one `Box` field each); only openEMS ignores them. The tooltips now say so instead.

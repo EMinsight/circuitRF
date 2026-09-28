@@ -47,11 +47,15 @@ public sealed class ThermalConductivity
     }
 
     /// <summary>A temperature-dependent conductivity; <paramref name="nominal"/> is what the first (constant-k) solve
-    /// uses, and what the whole run uses when k(T) is switched off.</summary>
-    public static ThermalConductivity Varying(double nominal, Func<double, (double K, double Slope)> ofT)
+    /// uses, and what the whole run uses when k(T) is switched off. With <paramref name="axes"/> it is a diagonal tensor whose
+    /// components all follow the one function: k_i(T) = k(T) · axes_i.</summary>
+    public static ThermalConductivity Varying(double nominal, Func<double, (double K, double Slope)> ofT,
+                                              (double X, double Y, double Z)? axes = null)
     {
         ArgumentNullException.ThrowIfNull(ofT);
-        return new(nominal, ofT);
+        if (axes is { } a && new[] { a.X, a.Y, a.Z }.Any(v => !(v > 0) || !double.IsFinite(v)))
+            throw new ArgumentOutOfRangeException(nameof(axes), "every component positive and finite");
+        return new(nominal, ofT, axes);
     }
 }
 

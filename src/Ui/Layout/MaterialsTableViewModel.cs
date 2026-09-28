@@ -398,6 +398,51 @@ public sealed partial class MaterialRowViewModel : ObservableObject
                     $"Set εr {"xyz"[i]}{"xyz"[i]} of {name}");
     }
 
+    // ── the thermal k tensor: the εr tensor's twin, seeded from ThermalK ───────────
+
+    public bool IsThermalAnisotropic
+    {
+        get => Material.ThermalKTensor is not null;
+        set
+        {
+            if (value == IsThermalAnisotropic || Refuse()) return;
+            string name = Material.Name;
+            double k0 = ThermalProperties.ThermalKAt(Material, 25)?.Value ?? 0;
+            if (value && !(k0 > 0))
+            {
+                _table.Refusal = $"State k for {name} first: the tensor refines it, and a bond wire or effective block still reads it.";
+                OnPropertyChanged(string.Empty);
+                return;
+            }
+            if (!_table.Edit(() => Material.ThermalKTensor = value ? [k0, k0, k0] : null,
+                             value ? $"Make k of {name} anisotropic" : $"Make k of {name} isotropic"))
+                OnPropertyChanged();
+        }
+    }
+
+    public string KTensorXxText { get => KTensor(0); set => SetKTensor(0, value); }
+    public string KTensorYyText { get => KTensor(1); set => SetKTensor(1, value); }
+    public string KTensorZzText { get => KTensor(2); set => SetKTensor(2, value); }
+
+    private string KTensor(int i) => Material.ThermalKTensor is { Length: 3 } t ? MaterialsTableViewModel.Show(t[i]) : "";
+
+    private void SetKTensor(int i, string? text)
+    {
+        if (Material.ThermalKTensor is not { Length: 3 } t) return;
+        bool parsed = MaterialsTableViewModel.TryParse(text, out double? v) && v is > 0;
+        if (parsed && t[i] == v!.Value) return;
+        if (Refuse()) return;
+        if (!parsed)
+        {
+            _table.Refusal = "Each k tensor component needs a positive number; untick Anisotropic k to remove the tensor.";
+            OnPropertyChanged(string.Empty);
+            return;
+        }
+        string name = Material.Name;
+        _table.Edit(() => { var copy = (double[])t.Clone(); copy[i] = v!.Value; Material.ThermalKTensor = copy; },
+                    $"Set k {"xyz"[i]}{"xyz"[i]} of {name}");
+    }
+
     // ── text fields ───────────────────────────────────────────────────────────
 
     public string ColorText

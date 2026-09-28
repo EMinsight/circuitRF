@@ -305,7 +305,7 @@ public static class MaterialLibraries
     /// receives it (an unstated εr is 1, tanδ 0, μr 1, σ 0), plus α₂₀, which decides σ at every other
     /// temperature. Display fields — <see cref="TechMaterial.Source"/>, <see cref="TechMaterial.Color"/> — take no part.
     ///
-    /// <para>brief-em3d-73 — the thermal values (k, the two tables, density, specific heat) take part <b>only when both
+    /// <para>brief-em3d-73 — the thermal values (k, the two tables, the k tensor, density, specific heat) take part <b>only when both
     /// records state them</b>: a technology's own copy of a metal written before the library gained its thermal values
     /// says nothing about them, and that silence must not turn every such workspace into a refusal to load. Two records
     /// that each state a different k are two answers, and refuse.</para>
@@ -313,7 +313,8 @@ public static class MaterialLibraries
     public static bool SameValues(TechMaterial a, TechMaterial b)
         => ElectricalSame(a, b)
         && BothOrNone(a.ThermalK, b.ThermalK) && BothOrNone(a.DensityKgM3, b.DensityKgM3) && BothOrNone(a.SpecificHeat, b.SpecificHeat)
-        && TablesAgree(a.SigmaVsTemp, b.SigmaVsTemp) && TablesAgree(a.ThermalKVsTemp, b.ThermalKVsTemp);
+        && TablesAgree(a.SigmaVsTemp, b.SigmaVsTemp) && TablesAgree(a.ThermalKVsTemp, b.ThermalKVsTemp)
+        && (a.ThermalKTensor is null || b.ThermalKTensor is null || a.ThermalKTensor.SequenceEqual(b.ThermalKTensor));
 
     private static bool BothOrNone(double? x, double? y) => x is null || y is null || x == y;
 
@@ -341,6 +342,7 @@ public static class MaterialLibraries
         if (m.Alpha20 is { } a) parts.Add($"α₂₀ {Num(a)} 1/K");
         if (m.ThermalK is { } k) parts.Add($"k {Num(k)} W/(m·K)");
         if (m.ThermalKVsTemp is { Count: > 0 } kt) parts.Add($"a {kt.Count}-point k(T) table");
+        if (m.ThermalKTensor is { Length: 3 } ktt) parts.Add($"k tensor {Num(ktt[0])}/{Num(ktt[1])}/{Num(ktt[2])} W/(m·K)");
         if (m.SigmaVsTemp is { Count: > 0 } st) parts.Add($"a {st.Count}-point σ(T) table");
         return parts.Count == 0 ? "states nothing" : string.Join(", ", parts);
 

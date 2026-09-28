@@ -795,11 +795,33 @@ public static partial class ThermalRunService
             records.Add(rec);
             var m = rec.Material;
             double nominal = ThermalProperties.ThermalKAt(m, 25)!.Value.Value;
+            if (m.ThermalKTensor is { Length: 3 } t)
+            {
+                conductivity.Add(Tensor(m, t, nominal));
+                string note = $"Material '{m.Name}' is anisotropic: k = {G(t[0])} / {G(t[1])} / {G(t[2])} W/(m·K) along x / y / z at 25 °C " +
+                    "(ThermalKTensor, along the 3D view's axes; a rotated solid's tensor does not rotate with it)" +
+                    (m.ThermalKVsTemp is { Count: > 0 } ? ", each component following its ThermalKVsTemp table." : ".");
+                if (!notes.Contains(note)) notes.Add(note);
+                continue;
+            }
             conductivity.Add(m.ThermalKVsTemp is { Count: > 0 }
                 ? ThermalConductivity.Varying(nominal, T => { var v = ThermalProperties.ThermalKAt(m, T)!.Value; return (v.Value, v.Slope); })
                 : ThermalConductivity.Constant(nominal));
         }
         return (records, conductivity);
+    }
+
+    /// <summary>A material's ThermalKTensor as the solver's diagonal tensor: constant, or — with a ThermalKVsTemp table — every
+    /// component scaled by the table's k(T)/k(25 °C), so the table states how k changes and the tensor how it is directed.</summary>
+    internal static ThermalConductivity Tensor(TechMaterial m, double[] t, double k25)
+    {
+        if (m.ThermalKVsTemp is not { Count: > 0 }) return ThermalConductivity.Diagonal(t[0], t[1], t[2]);
+        double n = Math.Max(t[0], Math.Max(t[1], t[2]));
+        return ThermalConductivity.Varying(n, T =>
+        {
+            var v = ThermalProperties.ThermalKAt(m, T)!.Value;
+            return (n * v.Value / k25, n * v.Slope / k25);
+        }, (t[0] / n, t[1] / n, t[2] / n));
     }
 
     /// <summary>The setup's sweep axes, resolved; null with the reason.</summary>

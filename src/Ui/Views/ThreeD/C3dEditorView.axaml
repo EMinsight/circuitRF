@@ -158,7 +158,7 @@
                     <mi:MaterialIcon Kind="ThermometerProbe" Width="16" Height="16"/>
                 </ToggleButton>
                 <ToggleButton IsVisible="{Binding ViewModel.IsEditable}" IsChecked="{Binding ViewModel.IsMeshRegionArmed}"
-                              ToolTip.Tip="Mesh Region: a box drawn as the Box tool draws one; then its element size. Fine mesh goes where you put it  (Shift+A, M)">
+                              ToolTip.Tip="Mesh Region: a box drawn as the Box tool draws one; then its element size. Refines the Gmsh mesh that Palace and thermal runs use; openEMS builds its own grid and ignores it  (Shift+A, M)">
                     <mi:MaterialIcon Kind="CubeScan" Width="16" Height="16"/>
                 </ToggleButton>
                 <!-- 3D editor bugs round 5 — both are editing chrome; one of the two shows at a time. -->

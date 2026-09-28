@@ -307,7 +307,7 @@ public sealed class TechMaterialsTests(ITestOutputHelper output) : IDisposable
     public void Gate8_ReferenceTechnologyDescribesTheNewFields()
     {
         string page = CircuitRF.Cli.DocumentSchema.Render(CircuitRF.Cli.DocumentSchema.Find("technology")!);
-        foreach (string field in new[] { "Materials", "Material", "Bodies", "SigmaVsTemp", "ThermalKVsTemp" })
+        foreach (string field in new[] { "Materials", "Material", "Bodies", "SigmaVsTemp", "ThermalKVsTemp", "ThermalKTensor" })
             Assert.Contains(field, page, StringComparison.Ordinal);
     }
 

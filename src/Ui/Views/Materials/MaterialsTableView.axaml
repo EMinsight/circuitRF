@@ -69,7 +69,8 @@
                 </StackPanel>
                 <TextBlock Text="{Binding TemperatureTablesNote}" IsVisible="{Binding HasTemperatureTables}" FontSize="11"
                            Foreground="{DynamicResource SystemBaseMediumColor}"/>
-                <Expander Header="Thermal — not read by any solver yet" IsExpanded="False" FontSize="11">
+                <Expander Header="Thermal" IsExpanded="False" FontSize="11">
+                    <StackPanel Spacing="4">
                     <StackPanel Orientation="Horizontal" Spacing="6">
                         <TextBlock Classes="colhdr" Text="k (W/(m·K))" VerticalAlignment="Center"/>
                         <TextBox Classes="cell" Width="80" IsReadOnly="{Binding !IsEditable}" KeyDown="OnCellKeyDown"
@@ -80,6 +81,22 @@
                         <TextBlock Classes="colhdr" Text="specific heat (J/(kg·K))" VerticalAlignment="Center"/>
                         <TextBox Classes="cell" Width="80" IsReadOnly="{Binding !IsEditable}" KeyDown="OnCellKeyDown"
                                  Text="{Binding SpecificHeatText, UpdateSourceTrigger=LostFocus}"/>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <CheckBox Content="Anisotropic k" FontSize="11" IsChecked="{Binding IsThermalAnisotropic}" IsEnabled="{Binding IsEditable}"
+                                  ToolTip.Tip="State k as xx / yy / zz along the 3D view's axes, W/(m·K) at 25 °C. A thermal run's volume solve reads the tensor; a bond wire or an effective block still reads k. Untick to remove the tensor."/>
+                        <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding IsThermalAnisotropic}">
+                            <TextBlock Classes="colhdr" Text="xx" VerticalAlignment="Center"/>
+                            <TextBox Classes="cell" Width="70" IsReadOnly="{Binding !IsEditable}" KeyDown="OnCellKeyDown"
+                                     Text="{Binding KTensorXxText, UpdateSourceTrigger=LostFocus}"/>
+                            <TextBlock Classes="colhdr" Text="yy" VerticalAlignment="Center"/>
+                            <TextBox Classes="cell" Width="70" IsReadOnly="{Binding !IsEditable}" KeyDown="OnCellKeyDown"
+                                     Text="{Binding KTensorYyText, UpdateSourceTrigger=LostFocus}"/>
+                            <TextBlock Classes="colhdr" Text="zz" VerticalAlignment="Center"/>
+                            <TextBox Classes="cell" Width="70" IsReadOnly="{Binding !IsEditable}" KeyDown="OnCellKeyDown"
+                                     Text="{Binding KTensorZzText, UpdateSourceTrigger=LostFocus}"/>
+                        </StackPanel>
+                    </StackPanel>
                     </StackPanel>
                 </Expander>
             </StackPanel>

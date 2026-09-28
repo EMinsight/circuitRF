@@ -180,7 +180,8 @@ internal static class ExplainThermal
                 var tm = tech?.FindMaterial(material);
                 var k = tm is null ? null : ThermalProperties.ThermalKAt(tm, 25);
                 walks.Add(new ResolutionStepJson($"{at}: material {material}", e.TechnologyPath,
-                    k is { } kv ? $"k(25 °C) = {G(kv.Value)} W/(m·K)" + (tm!.ThermalKVsTemp is { Count: > 0 } ? " from its ThermalKVsTemp table" : " (ThermalK, constant)")
+                    k is { } kv ? $"k(25 °C) = {G(kv.Value)} W/(m·K)" + (tm!.ThermalKVsTemp is { Count: > 0 } ? " from its ThermalKVsTemp table" : " (ThermalK, constant)") +
+                                  (tm.ThermalKTensor is { Length: 3 } kt ? $"; the volume solve reads its ThermalKTensor {G(kt[0])} / {G(kt[1])} / {G(kt[2])} along x / y / z" : "")
                                 : "states no thermal conductivity (check refuses this)",
                     "the table wins over the constant when both are stated"));
             }

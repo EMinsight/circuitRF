@@ -280,7 +280,7 @@
                                             </NativeMenu>
                                         </NativeMenuItem.Menu>
                                     </NativeMenuItem>
-                                    <NativeMenuItem Header="Mesh Region" ToolTip="A box drawn as a Box is; then its element size. Requires an active 3D editor." Command="{Binding ThreeDDrawCommand}" CommandParameter="MeshRegion"/>
+                                    <NativeMenuItem Header="Mesh Region" ToolTip="A box drawn as a Box is; then its element size. Refines the Gmsh mesh that Palace and thermal runs use; openEMS ignores it. Requires an active 3D editor." Command="{Binding ThreeDDrawCommand}" CommandParameter="MeshRegion"/>
                                     <NativeMenuItem Header="Effective Block" ToolTip="A box over a via field, drawn as a Box is and made disabled: enabled, a thermal run replaces the board, planes and vias inside it with one anisotropic block. Requires an active 3D editor." Command="{Binding ThreeDDrawCommand}" CommandParameter="EffectiveBlock"/>
                                 </NativeMenu>
                             </NativeMenuItem.Menu>
@@ -1180,7 +1180,7 @@
                         <MenuItem Header="_Line" Command="{Binding ThreeDDrawCommand}" CommandParameter="ProbeLine" ToolTip.Tip="Two points: T along the segment. Requires an active 3D editor."/>
                     </MenuItem>
                     <MenuItem Header="_Mesh Region" Command="{Binding ThreeDDrawCommand}" CommandParameter="MeshRegion"
-                              ToolTip.Tip="A box drawn as a Box is; then its element size. Requires an active 3D editor.">
+                              ToolTip.Tip="A box drawn as a Box is; then its element size. Refines the Gmsh mesh that Palace and thermal runs use; openEMS ignores it. Requires an active 3D editor.">
                         <MenuItem.Icon><mi:MaterialIcon Kind="CubeScan" Width="16" Height="16"/></MenuItem.Icon>
                     </MenuItem>
                     <MenuItem Header="_Effective Block" Command="{Binding ThreeDDrawCommand}" CommandParameter="EffectiveBlock"

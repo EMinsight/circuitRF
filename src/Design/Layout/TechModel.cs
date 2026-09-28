@@ -876,6 +876,16 @@ public sealed class TechMaterial
     /// </summary>
     public List<TechTemperaturePoint>? ThermalKVsTemp { get; set; }
 
+    /// <summary>
+    /// Optional direction-dependent thermal conductivity, xx/yy/zz W/(m·K) at 25 °C along the 3D view's own axes — a
+    /// laminate's in-plane against through-plane k. Like <see cref="EpsrTensor"/> it refines a scalar the material still
+    /// states: a thermal run's volume solve reads this and not <see cref="ThermalK"/>, while everything with no direction
+    /// (a bond wire, an effective block's mixing, <c>explain</c>) keeps reading <see cref="ThermalK"/> or
+    /// <see cref="ThermalKVsTemp"/>. With a <see cref="ThermalKVsTemp"/> table each component follows the table's change
+    /// from its 25 °C value, k_i(T) = t_i · k(T) / k(25 °C). The tensor does not rotate with a rotated solid.
+    /// </summary>
+    public double[]? ThermalKTensor { get; set; }
+
     /// <summary>Mass density, kg/m³ — for the thermal solver and for parity with a bond-wire
     /// metal.</summary>
     public double? DensityKgM3 { get; set; }

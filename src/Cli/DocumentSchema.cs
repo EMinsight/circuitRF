@@ -380,6 +380,12 @@ internal static class DocumentSchema
             linear between its (TempC, Value) points and held at its ends beyond them. Every EM
             solver still reads Sigma20. `check` warns when a table and its constant disagree at 20 °C
             by more than 1 %. A solid a thermal run meshes must state ThermalK or ThermalKVsTemp.
+          * ThermalKTensor [xx, yy, zz] (W/(m·K) at 25 °C, along the 3D view's axes) makes k
+            anisotropic, as EpsrTensor does εr: the volume solve reads it instead of ThermalK, and
+            with a ThermalKVsTemp table each component follows the table's k(T)/k(25 °C). It refines
+            the scalar, never replaces it — ThermalK or ThermalKVsTemp must still be stated, because
+            a bond wire and an effective block have no direction. A rotated solid's tensor does not
+            rotate. Omitted: isotropic, exactly as before.
           * ThermalInterfaces (here or in a .ctech) are thermal boundary resistances between two
             materials wherever they touch: { "MaterialA": "Gallium nitride", "MaterialB": ...,
             "ResistanceM2KW": 3.3e-8, "Source": ... }. The pair is unordered; the duplicate rule is
