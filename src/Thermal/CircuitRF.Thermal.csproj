@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    brief-em3d-74 R-em3d74-1a — the thermal solver: numeric layer, below the firewall, no UI.
+
+    IT REFERENCES NOTHING OF OURS. Its input is its own ThermalProblem (nodes, elements, per-region conductivity
+    functions, sources, boundary terms), so it knows nothing of a .c3d, of Gmsh or of a material's name; the lowering
+    and the run live in src/Design/Thermal (the Em3dRunService pattern). CSparse is the one dependency — the same
+    package src/Engine already uses, for the direct factorisations.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>14</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CSparse" Version="4.3.0" />
+  </ItemGroup>
+
+</Project>

@@ -6,6 +6,7 @@
 // an overlay slot; the frame loop only draws them.
 
 using System.Numerics;
+using CircuitRF.Engine.Em3d;
 
 namespace CircuitRF.Render.Scene3D;
 

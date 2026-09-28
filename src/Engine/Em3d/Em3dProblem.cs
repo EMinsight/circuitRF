@@ -369,6 +369,12 @@ public sealed record Em3dAirBox(Point3 Min, Point3 Max, Em3dFaces Faces)
 public sealed record Em3dFrequency(double StartHz, double StopHz, int Points, Em3dSweepKind Kind);
 
 /// <summary>
+/// brief-em3d-74 R-em3d74-4b — a named box, metres, inside which the mesh's elements are at most <paramref name="SizeM"/>;
+/// they grow by <paramref name="Grading"/> leaving it (null: the lowering's own grading).
+/// </summary>
+public sealed record Em3dMeshRegion(string Name, Point3 Min, Point3 Max, double SizeM, double? Grading);
+
+/// <summary>
 /// <b>The resolved 3D problem.</b> Immutable, SI, and complete: a backend reads nothing else.
 /// Call <see cref="Validate"/> first.
 /// </summary>
@@ -410,6 +416,10 @@ public sealed record Em3dProblem(
 
     /// <summary>True when any port is a wave port.</summary>
     public bool HasWavePorts => Ports.Any(p => p.Kind == Em3dPortKind.Wave);
+
+    /// <summary>brief-em3d-74 R-em3d74-4b — boxes with a target element size, honoured by every lowering that meshes with Gmsh
+    /// (Palace and thermal). Empty — every problem written before them — lowers byte for byte as before.</summary>
+    public IReadOnlyList<Em3dMeshRegion> MeshRegions { get; init; } = [];
 
     /// <summary>brief-em3d-49 R-em3d49-4c — boundaries on named faces of dielectric and air solids. Empty — every
     /// problem written before them — lowers to exactly what it lowered before (overview §1h).</summary>

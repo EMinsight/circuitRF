@@ -661,6 +661,27 @@ MSBuild inside a `dotnet test` that already holds the build locks and does not f
 no CPU and no child process. Drain both of the child's pipes concurrently too: `em` says enough on
 stderr to fill that pipe's buffer and deadlock a sequential reader.
 
+### 8.7 A thermal setup (brief-em3d-74)
+
+`circuitrf em x.c3d --setup Hot` runs an embedded thermal setup (`Problem3D: Thermal`) — the same verb, no new one
+(overview D2). It goes through the same door, `EmRunService.RunThreeDView`, which hands a thermal setup to
+`ThermalRunService.Run` (`src/Design/Thermal`) — the function the GUI's Simulate reaches the same way. What differs
+from an EM run:
+
+- **What it writes.** The `DataSet` as `results/<key>.thermal.npy` and the run directory `results/<key>.thermal/`,
+  kept: `model.geo`, `model.msh` and `postpro/paraview/thermal/thermal.pvd` (one step per sweep point, Palace's layout
+  and encoding). **`-o` moves the `DataSet` only**, as it moves only the Touchstone for EM; the extension is forced to
+  `.npy`.
+- **What it prints.** Each probe statistic and measure at the sweep's last point on stdout; every cube is in `--json`.
+  The energy balance, the solver, its iterations and residual are notes on stderr.
+- **What refuses it.** Every error `check` reports for the setup (`C3dThermal`'s one validator), and a missing Gmsh —
+  the Palace run's refusal, with the same install offer. `--solver` names an EM solver and is refused on a thermal
+  setup. Exit codes as §7.
+
+`explain x.c3d --analysis Hot` reports the size before any mesher runs: the estimated tetrahedra and unknowns, the
+solver that count selects (direct below 5,000 unknowns — brief 72's crossover) and the memory.
+Gate: `tests/Ui.Tests/ThreeD/ThermalRunTests.cs`.
+
 ## 9. Adding a verb
 
 1. Add the case to the dispatch switch and a line to `PrintHelp`.

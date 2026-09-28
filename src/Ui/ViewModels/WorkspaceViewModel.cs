@@ -8756,8 +8756,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             //    is on screen, and each of those is tens of seconds. It says what it will do rather
             //    than only that it heard, for the reason Cancel does.
             // brief-em3d-21 R-em3d21-6b — a 3D run cannot finish early and keep what it has, so it
-            // offers no Stop at all: the panel's button reads Cancel and cancels.
-            stop: setup.Is3D ? null : () =>
+            // offers no Stop at all: the panel's button reads Cancel and cancels. brief-em3d-74 — nor can a thermal run.
+            stop: setup.Is3D || setup.IsThermal ? null : () =>
             {
                 Messages.Info(adaptive
                     ? "Stopping the EM analysis at the next work boundary. Everything solved so far " +
@@ -8783,7 +8783,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 // every surface and the ordering rule (a cancel outranks a stop, never the reverse)
                 // is enforced in one place.
                 vm.StopRequested   = cancellation.Stop;
-                vm.StopIsCancel    = setup.Is3D;
+                vm.StopIsCancel    = setup.Is3D || setup.IsThermal;
                 vm.IsRunning       = true;
                 // The workspace-level record of this run, for the gestures that would otherwise
                 // close the workspace out from under it (RefusedWhileEmWorkInFlight). Added on the
@@ -8813,7 +8813,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 vm.StopRequested   = null;
                 vm.StopIsCancel    = false;
                 // brief-em3d-28 R-em3d28-3b: a Palace run leaves a mesh; an open 3D view offers it now.
-                if (setup.Is3D) Refresh3DViewOverlays(vm.FilePath);
+                if (setup.Is3D || setup.IsThermal) Refresh3DViewOverlays(vm.FilePath);
             }
         }
 
@@ -8970,7 +8970,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             // A 3D result is named after its solver (`<key>.palace_em`, brief-em3d-7 R-em3d7-5a), so its
             // display is keyed on the file it shows. Keyed on `<key>_em`, it reopened whatever display
             // that name already had — a planar run's, or the other solver's — bound to the old file.
-            string displayKey = setup.Is3D ? Path.GetFileNameWithoutExtension(npy) : EmRunService.ResolveNpyKey(setup);
+            string displayKey = setup.Is3D || setup.IsThermal ? Path.GetFileNameWithoutExtension(npy) : EmRunService.ResolveNpyKey(setup);
             await AutoOpenOrCreateDataDisplayAsync(baseDir, displayKey, npy);
         }
         return true;

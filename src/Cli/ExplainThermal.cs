@@ -53,8 +53,37 @@ internal static class ExplainThermal
 
         walks.Add(new ResolutionStepJson(at, full,
             $"{doc.HeatSources.Count} heat source(s), {(t.Boundaries ?? []).Count} boundary(ies), {doc.Probes.Count} probe(s), " +
-            $"{sweep.Count} sweep axis(es), {(t.Measures ?? []).Count} measure(s); solved by circuitRF's thermal solver ({C3dThermal.NotBuiltYet})",
+            $"{sweep.Count} sweep axis(es), {(t.Measures ?? []).Count} measure(s); solved by circuitRF's thermal solver",
             "an embedded setup with Problem3D: Thermal; its places are the document's, its values the setup's"));
+
+        // ── brief-em3d-74 R-em3d74-6 — the size: from the lowering a run would write, before any mesher runs ──
+        if (e.Ok)
+        {
+            var low = CircuitRF.Design.Thermal.ThermalLowerings.Build(doc, e, t, 1, out string? lowWhy);
+            if (low is null)
+                walks.Add(new ResolutionStepJson($"{at}: size", null, $"not estimated: {lowWhy}", "the run refuses the same"));
+            else
+            {
+                var options = new CircuitRF.Thermal.ThermalSolveOptions
+                {
+                    Solver = t.Mesh?.Solver switch
+                    {
+                        ThermalMeshSolver.Direct => CircuitRF.Thermal.ThermalSolverKind.Direct,
+                        ThermalMeshSolver.Iterative => CircuitRF.Thermal.ThermalSolverKind.Iterative,
+                        _ => CircuitRF.Thermal.ThermalSolverKind.Auto,
+                    },
+                };
+                var size = CircuitRF.Design.Thermal.ThermalSizeEstimate.Of(low.Input, options);
+                walks.Add(new ResolutionStepJson($"{at}: size", null,
+                    $"about {size.Elements.ToString("N0", CultureInfo.InvariantCulture)} tetrahedra of order {low.Input.Sizing.Order}, " +
+                    $"{size.Unknowns.ToString("N0", CultureInfo.InvariantCulture)} unknowns; the " +
+                    $"{(size.Solver == CircuitRF.Thermal.ThermalSolverKind.Direct ? "direct (Cholesky)" : "iterative (PCG + AMG)")} solver; " +
+                    $"about {size.MemoryBytes / 1048576.0:F0} MB for the solve",
+                    "an estimate from the sizing rules (each solid at its own element size, each heat source's graded shell, each " +
+                    "mesh region's box); the direct solver below 5,000 unknowns (brief 72's crossover), unless the setup's " +
+                    "Mesh.Solver says otherwise"));
+            }
+        }
 
         // ── the sweep: base SI, with the variable's unit and scale (CLAUDE.md: a mark read without its scale ran at 2 Hz) ──
         foreach (var s in sweep)

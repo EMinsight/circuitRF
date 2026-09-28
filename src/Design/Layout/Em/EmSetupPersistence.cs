@@ -601,6 +601,23 @@ public sealed class CemThermalMesh
 
     /// <summary>How fast elements may grow away from a refined region: the ratio between neighbours.</summary>
     public double? Grading { get; set; }
+
+    /// <summary>brief-em3d-74 — <c>Direct</c> or <c>Iterative</c>; omitted, chosen by the number of unknowns (direct below
+    /// 5,000).</summary>
+    public ThermalMeshSolver? Solver { get; set; }
+
+    /// <summary>brief-em3d-74 R-em3d74-5e — mesh a second time with every size × 0.7, solve the first sweep point, and report
+    /// how far each probe moved. Off when omitted.</summary>
+    public bool? Check { get; set; }
+}
+
+/// <summary>brief-em3d-74 — the thermal solve's linear solver.</summary>
+public enum ThermalMeshSolver
+{
+    /// <summary>A sparse Cholesky (LU for a Newton step).</summary>
+    Direct,
+    /// <summary>Conjugate gradients with smoothed-aggregation multigrid (BiCGStab for a Newton step).</summary>
+    Iterative,
 }
 
 /// <summary>Conductive balance: the Newton loop over σ(T) and k(T). Each switch defaults on.</summary>

@@ -14581,3 +14581,52 @@ Contacts are "touching" by bounding box. Both are brief 74's to make exact from 
 **The user-facing-text gate.** `C3dThermal.Evaluate` returns its error instead of throwing, so no new sentence joined the
 backlog allowlist. The gate currently fails on two `src/Core/Expressions/Token.cs` sentences from 997bfe30 (units in
 expressions), not from this brief.
+
+## brief-em3d-74 — the thermal lowering and the run (2026-09-28)
+
+**k looks through a technology record that states none, and `check` uses the same rule.** brief 73's handover:
+`FindMaterial("Gold")` in an older workspace answers with its own `.ctech` Gold, written before ThermalK existed.
+`ThermalMaterials.Find` (src/Design/Thermal) takes the technology's own record when it states k, else a same-name record
+of its libraries, else of the shipped generic library — and the run posts a note naming which. `C3dThermal.Setup`'s
+missing-k finding now calls the same function, so a setup `check` passes is one the run meshes; a material that states
+k nowhere is still refused by name.
+
+**A named face in the thermal script is intersected with its own solid's `Boundary{}`.** The Palace lowering recovers a
+face boundary by its pieces' boxes and REFUSES a coplanar neighbour (brief 49). Thermal cannot refuse that case — a die
+on a flange puts the die's zmin inside the flange's zmax box by construction — so each face group is the box query minus
+everything that is not `Abs(Boundary{ Volume{s_i[]}; })` of the named solid (the volume tags survive the fragment under
+`OCCBooleanPreserveNumbering`). A boundary condition's face is further cut to its single-sided surfaces, so a FixedT on a
+top face half-covered by another solid holds only the exposed half; a probe's face keeps every piece. `*exposed*` is
+every single-sided surface no boundary face claimed — a source sheet lying on an exterior face included.
+
+**The entity table's unclassified count is 0 by definition in thermal mode.** For Palace an unnamed single-sided surface
+would be a silent PMC; in a thermal run it is insulated, which is what the user asked for by naming no condition there.
+
+**Defaults the brief left open.** Order 2 (brief 72 Q4); `SizeFromSources` 4; `MinThroughThickness` 2; `Grading` 1.3 —
+brief 72 Q7 saw slivers once a Threshold's growth passed ~0.3 per unit distance, and 1.3 is that slope; the largest
+element is 0.1 of the problem's largest side. Direct solver below 5,000 unknowns (Q5).
+
+**`<key>.thermal.npy`, not `<key>.thermal_em.npy`.** The brief's path is followed literally. The `_em` suffix exists
+because an EM setup named after its cell collided with that cell's schematic results; `.thermal` already makes the key
+distinct, and the run directory `<key>.thermal/` sits beside it.
+
+**A sweep point resolves the document in place.** `C3dResolver.Resolve(doc, cell, null, sets)` writes resolved numbers
+into the document's fields; a thermal sweep's variables are refused if any geometry reads them, so the numbers written
+are the ones already there. The GUI passes `RunDocument()`'s copy and the CLI its own loaded document, so no open editor
+sees the writes either way.
+
+**Measures are evaluated by rewriting the AST, not the text.** `Tmax(p)` etc. are replaced by `NumberExpr` nodes of the
+point's readings and the tree is evaluated in the point's scope through the new `C3dResolution.EvaluateParsed` — the one
+expression engine, no string substitution (CLAUDE.md).
+
+**The GUI treated a thermal run as PLANAR in three places.** `RunEmSetupAsync` keyed "offer Stop", "refresh the 3D view's
+mesh overlay" and "name the Data Display after the file" on `setup.Is3D`, which is false for a thermal setup (it names no
+`Solver3D`). A Stop would have been offered and ignored. All three now read `Is3D || IsThermal`.
+
+**Not applied yet, and said.** Interface resistances (brief 76) — every contact conducts perfectly and a note says so
+whenever the technology or the document states one; bond wires (brief 77) — left out of the mesh with a note; sheet
+objects carry no heat. A wire probe reads nothing until brief 77.
+
+**A spot probe is the face's triangles clipped to the disk by subdivision**, not an exact circle–triangle clip: each
+triangle the disk reaches is split until its pieces are an eighth of the radius, a piece wholly inside is integrated
+and a rim piece counts by its centroid.

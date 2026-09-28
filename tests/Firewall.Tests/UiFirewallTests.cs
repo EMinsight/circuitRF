@@ -54,6 +54,9 @@ public class UiFirewallTests
         // A diagnostic is an id, typed arguments and an English template; it references no
         // framework, and the day it does, the wall has a hole in it that reaches everywhere.
         { "CircuitRF.Diagnostics", "CircuitRF.Diagnostics.dll" },
+        // brief-em3d-74 R-em3d74-1a — the thermal solver: numeric, referencing nothing of ours, CSparse only. Gated from the
+        // day it exists, for the reason every row here is: a project that starts clean and is not gated does not stay clean.
+        { "CircuitRF.Thermal", "CircuitRF.Thermal.dll" },
     };
 
     [Theory, MemberData(nameof(NonUiAssemblies))]

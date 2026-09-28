@@ -33,6 +33,9 @@
   <Folder Name="/src/WBond/">
     <Project Path="src/WBond/CircuitRF.WBond.csproj" />
   </Folder>
+  <Folder Name="/src/Thermal/">
+    <Project Path="src/Thermal/CircuitRF.Thermal.csproj" />
+  </Folder>
   <Folder Name="/tools/" />
   <Folder Name="/tools/DeviceWorkerExample/">
     <Project Path="tools/DeviceWorkerExample/DeviceWorkerExample.csproj" />
@@ -58,5 +61,8 @@
   </Folder>
   <Folder Name="/tests/WBond.Tests/">
     <Project Path="tests/WBond.Tests/CircuitRF.WBond.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tests/Thermal.Tests/">
+    <Project Path="tests/Thermal.Tests/CircuitRF.Thermal.Tests.csproj" />
   </Folder>
 </Solution>

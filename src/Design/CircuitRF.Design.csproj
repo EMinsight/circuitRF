@@ -34,6 +34,8 @@
     <ProjectReference Include="../Core/CircuitRF.Core.csproj" />
     <ProjectReference Include="../Engine/CircuitRF.Engine.csproj" />
     <ProjectReference Include="../RfCore/RfCore.csproj" />
+    <!-- brief-em3d-74: the thermal solver, which Design/Thermal's run service lowers a .c3d for and calls. -->
+    <ProjectReference Include="../Thermal/CircuitRF.Thermal.csproj" />
   </ItemGroup>
 
   <ItemGroup>

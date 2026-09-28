@@ -34,6 +34,7 @@
     <ProjectReference Include="../../src/Cli/CircuitRF.Cli.csproj" />
     <ProjectReference Include="../../src/Harmonica/CircuitRF.Harmonica.csproj" />
     <ProjectReference Include="../../src/WBond/CircuitRF.WBond.csproj" />
+    <ProjectReference Include="../../src/Thermal/CircuitRF.Thermal.csproj" />
   </ItemGroup>
 
   <ItemGroup>

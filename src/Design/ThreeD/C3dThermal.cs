@@ -28,9 +28,6 @@ namespace CircuitRF.Design.ThreeD;
 /// <summary>The thermal setup's sentences and rules.</summary>
 public static class C3dThermal
 {
-    /// <summary>What <c>em</c> says to a thermal setup until brief 74 builds the solver (R-em3d73-0).</summary>
-    public const string NotBuiltYet = "the thermal solver is not built yet (brief 74)";
-
     /// <summary>D1 — a thermal setup lives in the <c>.c3d</c> it solves; a <c>.cem</c> naming one is refused.</summary>
     public const string CemRefusal =
         "A .cem cannot hold a thermal setup (Problem3D: Thermal): a thermal setup lives in the 3D view it solves, among its " +
@@ -41,8 +38,9 @@ public static class C3dThermal
         $"Embedded setup '{name}' is a thermal setup and states Solver3D: {solver}. The thermal solver is circuitRF's own, so " +
         "a thermal setup names no EM solver: remove Solver3D.";
 
-    /// <summary>The refusal a run of a thermal setup gets.</summary>
-    public static string RunRefusal(string setupName) => $"Setup '{setupName}' is a thermal setup, and {NotBuiltYet}.";
+    /// <summary>What an EM path says to a thermal setup that reached it: brief 74's run service solves it, never an EM solver.</summary>
+    public static string RunRefusal(string setupName)
+        => $"Setup '{setupName}' is a thermal setup, which circuitRF's own thermal solver runs; no EM solver takes it.";
 
     /// <summary>The functions a measure may call over a probe.</summary>
     public static readonly string[] ProbeFunctions = ["Tmax", "Tmin", "Tavg", "T"];
@@ -346,18 +344,17 @@ public static class C3dThermal
             if (h.Power is null && !(t.Sources ?? []).Any(s => s.Name == h.Name))
                 found.Add(D.SetupSource(name, $"gives heat source '{h.Name}' no power, and the source states no default Power"));
 
-        // Every meshed solid's material states k (R-em3d73-1c): never a default. Air is not meshed.
+        // Every meshed solid's material states k (R-em3d73-1c): never a default. Air is not meshed. brief-em3d-74 — the run's
+        // own lookup, which looks through a technology record stating no k to a same-name library record that does.
         if (e is { Ok: true, Technology: { } tech })
         {
             var missing = new Dictionary<string, List<string>>(StringComparer.Ordinal);
             foreach (var s in e.Solids)
             {
-                if (s.Role == Em3dRole.Air) continue;
-                string baseName = s.Material.Split('@')[0];
-                if (string.Equals(baseName, Em3dGenerator.AirMaterial, StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(baseName, C3dProblemAssembly.VacuumMaterial, StringComparison.OrdinalIgnoreCase)) continue;
+                if (Thermal.ThermalMaterials.NotMeshed(s.Role, s.Material)) continue;
+                string baseName = Thermal.ThermalMaterials.BaseName(s.Material);
                 if (tech.FindMaterial(baseName) is not { } tm) continue;       // another technology's; its own check says
-                if (tm.ThermalK is null && tm.ThermalKVsTemp is not { Count: > 0 })
+                if (Thermal.ThermalMaterials.Find(tech, baseName) is null)
                     (missing.TryGetValue(tm.Name, out var l) ? l : missing[tm.Name] = []).Add(s.Name);
             }
             foreach (var (material, objects) in missing)

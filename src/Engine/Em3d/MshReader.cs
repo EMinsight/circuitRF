@@ -1,6 +1,11 @@
 // brief-em3d-28 R-em3d28-3a — a Gmsh MSH 2.2 reader: nodes, tetrahedra, and boundary triangles with
 // their physical tags. Below the firewall, so a headless picture of a mesh stays possible.
 //
+// brief-em3d-74 R-em3d74-1b — MOVED here from src/Render/Scene3D: the thermal solver reads the same meshes, and one
+// reader serves both. It has no dependencies. For the solver it also keeps each second-order element's FULL
+// connectivity (ten nodes per tetrahedron, six per triangle, in Gmsh's order) beside the corner-only arrays the viewer
+// draws from, and each tetrahedron's elementary (entity) tag.
+//
 // BOTH ENCODINGS. The brief names ASCII, but GmshGeoWriter asks Gmsh for BINARY (`Mesh.Binary = 1`,
 // the format Palace was validated reading in F0), so a run directory holds binary and this reads it;
 // ASCII is read too, since it is what a user hand-meshing a .geo gets by default.
@@ -8,7 +13,8 @@
 // IT STREAMS. A 1.5 M-tetrahedron mesh is ~150 MB of text; nothing here reads the file into a string
 // or splits it into an array of lines. One buffered pass, one line at a time for text, raw little-endian
 // words for binary. Second-order elements (Palace runs at order 2: 10-node tetrahedra, 6-node
-// triangles) keep their CORNER nodes only — a picture of the mesh draws straight edges.
+// triangles) keep their CORNER nodes in Tets/Triangles — a picture of the mesh draws straight edges —
+// and all of their nodes in TetsHigh/TrianglesHigh, which the thermal solver reads.
 //
 // A MALFORMED FILE REFUSES WITH ITS PLACE: the line number for text, the byte offset inside a binary
 // section, and what was expected there.
@@ -17,7 +23,7 @@ using System.Buffers.Binary;
 using System.Globalization;
 using System.Text;
 
-namespace CircuitRF.Render.Scene3D;
+namespace CircuitRF.Engine.Em3d;
 
 /// <summary>A mesh as read: packed node coordinates and corner-node connectivity.</summary>
 public sealed class MshMesh
@@ -31,6 +37,15 @@ public sealed class MshMesh
     public int[] Triangles = [];
     public int[] TrianglePhysical = [];
     public int[] TriangleEntity = [];
+    /// <summary>brief-em3d-74 — each tetrahedron's elementary (entity) tag.</summary>
+    public int[] TetEntity = [];
+    /// <summary>brief-em3d-74 — 2 when every tetrahedron and triangle is second-order, 1 when every one is first-order, 0 for
+    /// a mix (or no elements).</summary>
+    public int Order;
+    /// <summary>brief-em3d-74 — ten node indices per tetrahedron (Gmsh's order) for a second-order mesh; empty otherwise.</summary>
+    public int[] TetsHigh = [];
+    /// <summary>brief-em3d-74 — six node indices per triangle for a second-order mesh; empty otherwise.</summary>
+    public int[] TrianglesHigh = [];
     /// <summary>Every element in the file, whatever its type — the count Gmsh's log prints.</summary>
     public long ElementCount;
     public bool Binary;
@@ -59,8 +74,10 @@ public static class MshReader
         var m = new MshMesh();
         int[] idToIndex = [];
         bool sawFormat = false;
-        var tets = new IntList(); var tetPhys = new IntList();
+        var tets = new IntList(); var tetPhys = new IntList(); var tetEnt = new IntList();
         var tris = new IntList(); var triPhys = new IntList(); var triEnt = new IntList();
+        var tetsHigh = new IntList(); var trisHigh = new IntList();
+        int first = 0, second = 0;
 
         while (r.TryReadLine(out string? raw))
         {
@@ -179,8 +196,10 @@ public static class MshReader
         }
         if (!sawFormat) throw r.Bad("a $MeshFormat section — this is not a Gmsh mesh");
 
-        m.Tets = tets.ToArray(); m.TetPhysical = tetPhys.ToArray();
+        m.Tets = tets.ToArray(); m.TetPhysical = tetPhys.ToArray(); m.TetEntity = tetEnt.ToArray();
         m.Triangles = tris.ToArray(); m.TrianglePhysical = triPhys.ToArray(); m.TriangleEntity = triEnt.ToArray();
+        m.Order = first > 0 && second == 0 ? 1 : second > 0 && first == 0 ? 2 : 0;
+        if (m.Order == 2) { m.TetsHigh = tetsHigh.ToArray(); m.TrianglesHigh = trisHigh.ToArray(); }
         return m;
 
         int Node(int id)
@@ -197,11 +216,13 @@ public static class MshReader
             {
                 case 4: case 11:
                     tets.Add(Node(nd[0])); tets.Add(Node(nd[1])); tets.Add(Node(nd[2])); tets.Add(Node(nd[3]));
-                    tetPhys.Add(phys);
+                    tetPhys.Add(phys); tetEnt.Add(ent);
+                    if (type == 11) { second++; for (int k = 0; k < 10; k++) tetsHigh.Add(Node(nd[k])); } else first++;
                     break;
                 case 2: case 9:
                     tris.Add(Node(nd[0])); tris.Add(Node(nd[1])); tris.Add(Node(nd[2]));
                     triPhys.Add(phys); triEnt.Add(ent);
+                    if (type == 9) { second++; for (int k = 0; k < 6; k++) trisHigh.Add(Node(nd[k])); } else first++;
                     break;
             }
         }

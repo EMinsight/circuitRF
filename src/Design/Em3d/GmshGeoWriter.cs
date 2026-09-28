@@ -87,7 +87,7 @@ public sealed record GmshLowering(string? Geo, IReadOnlyList<Em3dGroup> Groups, 
     public bool Ok => Refusal is null;
 }
 
-public static class GmshGeoWriter
+public static partial class GmshGeoWriter
 {
     public const string GeoFile      = "model.geo";
     public const string MeshFile     = "model.msh";
@@ -517,6 +517,9 @@ public static class GmshGeoWriter
         Refine([.. conductors.Select(i => $"c{i}[]"), .. Enumerable.Range(0, problem.Sheets.Count).Select(k => $"w{k}[]"),
                 .. Enumerable.Range(0, boundaryGroups.Count).Select(k => $"b{k}[]")], sizeEdge);
         Refine([.. Enumerable.Range(0, problem.Ports.Count).Select(k => $"q{k}[]")], sizePort);
+        // brief-em3d-74 R-em3d74-4b — each mesh region a Box field in the same Min; none present, not a byte changes.
+        foreach (var region in problem.MeshRegions)
+            L(BoxField(++field, region, sizeMax, settings.Grading, fields));
         int min = ++field;
         L($"Field[{min}] = Min; Field[{min}].FieldsList = {{{string.Join(", ", fields)}}};");
         L($"Background Field = {min};");
@@ -528,6 +531,24 @@ public static class GmshGeoWriter
         L("Mesh.Binary = 1;");
 
         return new GmshLowering(g.ToString(), groups, GroupsJson(groups), null, kernelFiles);
+    }
+
+    /// <summary>
+    /// brief-em3d-74 R-em3d74-4b — a mesh region as a Gmsh <c>Box</c> field: <c>VIn</c> its size, <c>VOut</c> the script's
+    /// largest, and a transition <c>Thickness</c> over which the size may grow from one to the other at the grading's rate,
+    /// (VOut − VIn)/(grading − 1). Adds the field to <paramref name="fields"/> (the Min field's list).
+    /// </summary>
+    private static string BoxField(int field, Em3dMeshRegion region, double sizeMaxUm, double defaultGrading, List<int> fields)
+    {
+        fields.Add(field);
+        double vin = Math.Min(region.SizeM * 1e6, sizeMaxUm);
+        double grading = region.Grading is { } gr && gr > 1 ? gr : defaultGrading;
+        double thickness = (sizeMaxUm - vin) / (grading - 1);
+        return $"Field[{field}] = Box; Field[{field}].VIn = {Num(Round(vin))}; Field[{field}].VOut = {Num(Round(sizeMaxUm))}; " +
+               $"Field[{field}].XMin = {Um(region.Min.X)}; Field[{field}].XMax = {Um(region.Max.X)}; " +
+               $"Field[{field}].YMin = {Um(region.Min.Y)}; Field[{field}].YMax = {Um(region.Max.Y)}; " +
+               $"Field[{field}].ZMin = {Um(region.Min.Z)}; Field[{field}].ZMax = {Um(region.Max.Z)}; " +
+               $"Field[{field}].Thickness = {Num(Round(thickness))};  // mesh region {Comment(region.Name)}";
     }
 
     /// <summary>brief-em3d-65 R-em3d65-2a — the file a kernel solid's B-rep is handed to Gmsh in: named by its hash, so the

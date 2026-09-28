@@ -324,6 +324,11 @@ public static class Em3dRunService
             palacePlan = null;
         }
         if (RadiationPatternIgnored(setup) is { } noPattern) log.Notes.Add(noPattern);
+        // brief-em3d-74 R-em3d74-4b — openEMS meshes on its own grid: a mesh region is Gmsh's, and said to be ignored.
+        if (openEms)
+            foreach (var region in problem.MeshRegions)
+                log.Notes.Add($"openEMS ignores mesh region '{region.Name}': it sizes the Gmsh mesh Palace and a thermal run use, " +
+                              "and openEMS builds its own grid.");
         if (openEms && openEmsStop is null)
             openEmsPlan = PrepareOpenEms(problem, gridSettings!, runSettings!, readiness, control, log, out openEmsStop,
                                          FarFieldFrequencies(setup, problem));

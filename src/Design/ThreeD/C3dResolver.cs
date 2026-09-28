@@ -171,6 +171,11 @@ public sealed class C3dResolution
         return _evaluator.Eval(expression, _scope, engine);
     }
 
+    /// <summary>brief-em3d-74 R-em3d74-5d — evaluates an already-parsed expression in this document's scope: a thermal
+    /// measure whose probe calls have been replaced by the probe's values (the AST is rewritten, never the text).</summary>
+    /// <exception cref="ExpressionException">It does not resolve; the message is the engine's.</exception>
+    public Value EvaluateParsed(Expr expression) => _evaluator.EvalExpr(expression, _scope);
+
     /// <summary>True when <paramref name="name"/> is bound in this scope.</summary>
     public bool IsDefined(string name) => _scope.Lookup(name) is not null;
 

@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>14</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.4" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- brief-em3d-74: the solver's own loop, meant to cost seconds. src/Engine only for the one .msh reader
+         (src/Engine/Em3d/MshReader.cs), which the S5 and Q6 gates read Gmsh's meshes with. -->
+    <ProjectReference Include="../../src/Thermal/CircuitRF.Thermal.csproj" />
+    <ProjectReference Include="../../src/Engine/CircuitRF.Engine.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Pins this assembly to en-US before any test runs, so assertions stop depending on the
+         runner's OS locale (brief-localization-groundwork.md R-loc-4). Shared by all test
+         projects; see tests/TestCulture.cs for why it is a ModuleInitializer. -->
+    <Compile Include="../TestCulture.cs" Link="TestCulture.cs" />
+  </ItemGroup>
+
+</Project>

@@ -1529,9 +1529,12 @@ static int RunEm(string[] args)
 
     Console.WriteLine($"EM setup:  {(setup.Name.Length > 0 ? setup.Name : Path.GetFileNameWithoutExtension(cemPath))}");
     // A 3D run has no planar kernel; its KernelName is the solver and version (brief-em3d-7).
-    Console.WriteLine(setup.Is3D ? $"Solver:    {result.KernelName}" : $"Kernel:    {result.KernelName} ({result.Kind})");
+    Console.WriteLine(setup.Is3D || setup.IsThermal ? $"Solver:    {result.KernelName}" : $"Kernel:    {result.KernelName} ({result.Kind})");
 
     JsonRun.Data = result.Data;
+
+    // brief-em3d-74 — a thermal run's probes and measures on stdout (the last sweep point); --json carries every cube.
+    if (setup.IsThermal && result.Data is { } thermalSet) PrintThermal(thermalSet);
 
     // brief-em3d-22 R-em3d22-3c/4c — a static run's result is a matrix, printed; --json carries the cube.
     if (setup.IsStatic3D && result.Data is { } matrixSet) PrintStaticMatrix(matrixSet, setup);
@@ -1564,6 +1567,25 @@ static int RunEm(string[] args)
     }
 
     return 0;
+}
+
+/// <summary>
+/// brief-em3d-74 — a thermal run's readings on stdout: each probe statistic and measure at the sweep's LAST point (the only
+/// one without a sweep), with how many points there were. The whole sweep is in the .npy and in --json.
+/// </summary>
+static void PrintThermal(RfCore.Data.DataSet data)
+{
+    var inv = System.Globalization.CultureInfo.InvariantCulture;
+    foreach (string group in new[] { CircuitRF.Design.Thermal.ThermalRunService.Group, RfCore.Data.DataSet.MeasurementsGroup }
+                                 .Where(data.Groups.Contains))
+        foreach (var (name, cube) in data.CubesIn(group))
+        {
+            if (cube.DataKind != RfCore.Data.DataKind.Real || name.EndsWith("(s)", StringComparison.Ordinal)) continue;
+            double[] v = cube.RealValues;
+            if (v.Length == 0) continue;
+            string at = v.Length > 1 ? $"   (last of {v.Length} points)" : "";
+            Console.WriteLine($"{name + ":",-28} {v[^1].ToString("G6", inv)} {cube.Unit}{at}");
+        }
 }
 
 /// <summary>

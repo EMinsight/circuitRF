@@ -526,12 +526,13 @@ public static class EmRunService
         bool               fromCem = false)
     {
         if (control is { Token: var t } && t.CanBeCanceled) ct = t;
-        // brief-em3d-73 R-em3d73-5a — a thermal setup is never run as an EM one: from a .cem it is refused outright (D1),
-        // embedded it waits for the thermal solver.
+        // brief-em3d-73 R-em3d73-5a — a thermal setup is never run as an EM one: from a .cem it is refused outright (D1).
+        // brief-em3d-74 — embedded, circuitRF's own thermal solver runs it, behind this same door (D2).
         if (setup.IsThermal)
         {
-            var d = EmDiagnostics.Forwarded("thermal", fromCem ? CircuitRF.Design.ThreeD.C3dThermal.CemRefusal
-                                                               : CircuitRF.Design.ThreeD.C3dThermal.RunRefusal(setup.Name));
+            if (!fromCem)
+                return CircuitRF.Design.Thermal.ThermalRunService.Run(setup, document, documentPath, workspaceCws, resultsRoot, ct, control);
+            var d = EmDiagnostics.Forwarded("thermal", CircuitRF.Design.ThreeD.C3dThermal.CemRefusal);
             return new EmRunResult(EmRunStatus.Refused, null, null, null, null, null, d.Render(), [], Diagnostic: d);
         }
         if (!setup.Is3D)

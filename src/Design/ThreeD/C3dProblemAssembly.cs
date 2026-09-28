@@ -346,6 +346,7 @@ public static class C3dProblemAssembly
         {
             Type = setup.Problem3D,
             FaceBoundaries = faceBoundaries,
+            MeshRegions = MeshRegions(document),
             Terminals = terminals,
             GroundObjects = ground,
             EigenmodeCount = setup.Eigenmode?.Count ?? EmEigenmode3D.DefaultCount,
@@ -358,6 +359,25 @@ public static class C3dProblemAssembly
             Origins = e.Origins,
             MaterialSources = materialSources,
         };
+    }
+
+    /// <summary>
+    /// brief-em3d-74 R-em3d74-4b — the document's mesh regions in world metres, as their fields resolved (elaboration resolves
+    /// the document in place). A region whose box or size is not positive is left out: <c>check</c> reports it
+    /// (<see cref="C3dThermal.Places(C3dDocument)"/>).
+    /// </summary>
+    public static IReadOnlyList<Em3dMeshRegion> MeshRegions(C3dDocument document)
+    {
+        double m = 1e-6 / document.DbuPerMicron;
+        var list = new List<Em3dMeshRegion>();
+        foreach (var r in document.MeshRegions)
+        {
+            if (r.Size.X <= 0 || r.Size.Y <= 0 || r.Size.Z <= 0 || !(r.SizeUm > 0)) continue;
+            list.Add(new Em3dMeshRegion(r.Name, new Point3(r.Min.X * m, r.Min.Y * m, r.Min.Z * m),
+                                        new Point3((r.Min.X + r.Size.X) * m, (r.Min.Y + r.Size.Y) * m, (r.Min.Z + r.Size.Z) * m),
+                                        r.SizeUm * 1e-6, r.Grading));
+        }
+        return list;
     }
 
     /// <summary>The material name Vacuum — built in, like Air, when the technology does not define it.</summary>

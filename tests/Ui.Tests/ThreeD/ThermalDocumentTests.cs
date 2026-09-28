@@ -264,11 +264,11 @@ public sealed class ThermalDocumentTests : IDisposable
         var doc = Clean(withSetup: true);
         string path = WriteC3d(ws, "Cell", doc);
 
+        // brief-em3d-74: an EMBEDDED thermal setup now runs (ThermalRunTests); the EM assembly still refuses one by type.
         var (s, why) = C3dSetups.Select(doc, "Hot");
         Assert.Null(why);
-        var run = EmRunService.RunThreeDView(C3dSetups.ForRun(s!, path), doc, path, null, Path.Combine(ws, "results"));
-        Assert.Equal(EmRunStatus.Refused, run.Status);
-        Assert.Contains(C3dThermal.NotBuiltYet, run.Error);
+        var assembled = C3dProblemAssembly.Assemble(C3dSetups.ForRun(s!, path), doc, path, null);
+        Assert.Contains("circuitRF's own thermal solver runs", assembled.Refusal);
 
         var cem = HotSetup();
         Assert.Contains(C3dThermal.CemRefusal, EmRunService.Run(cem, null, Path.Combine(ws, "results")).Error);
