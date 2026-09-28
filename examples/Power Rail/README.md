@@ -158,8 +158,8 @@ the two differ.
 Half the budget is one trace. That is the finding this example exists for: on a compact board
 with thin copper the artwork is not a rounding error on the parts, it is the largest single term
 after the parts you already knew about. Widen the BOT run from 0.20 mm to 0.40 mm in the layout
-editor, re-run, and the drop falls to **39.724 mV** — the copper term halves and the FET becomes the
-thing worth arguing about.
+editor, re-run, and the drop falls to **39.724 mV** — eight millivolts back from one change to the
+artwork, and the budget has room in it again.
 
 Three via transitions, none over its current limit.
 
