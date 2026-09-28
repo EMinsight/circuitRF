@@ -497,6 +497,13 @@ public sealed class EmSetup
     /// <summary>True for an electrostatic or magnetostatic setup.</summary>
     public bool IsStatic3D => Problem3D is Em3dProblemType.Electrostatic or Em3dProblemType.Magnetostatic;
 
+    /// <summary>brief-em3d-73 R-em3d73-5a — true for a thermal setup (<c>Problem3D: Thermal</c>): solved by circuitRF's own
+    /// thermal solver, never by Palace or openEMS, and embedded in a <c>.c3d</c> only (D1).</summary>
+    public bool IsThermal => Problem3D == Em3dProblemType.Thermal;
+
+    /// <summary>brief-em3d-73 R-em3d73-5b — a thermal setup's section; null when the setup states none.</summary>
+    public CemThermal? Thermal { get; set; }
+
     /// <summary>R-em3d22-2a — a static solve's terminals, in matrix order.</summary>
     public List<EmTerminal3D> Terminals3D { get; set; } = [];
 
@@ -597,6 +604,7 @@ public sealed class EmSetup
         Ground3D               = Ground3D,
         Ports3D                = [.. Ports3D],       // records, immutable
         Eigenmode              = Eigenmode,
+        Thermal                = Thermal?.Clone(),
     };
 
     /// <summary>The extraction settings this setup implies — the one place the two are married,

@@ -43,6 +43,7 @@ public sealed partial class C3dSetupItem(string name, int index, string? refusal
         Em3dProblemType.Electrostatic => "ES",
         Em3dProblemType.Magnetostatic => "MS",
         Em3dProblemType.Eigenmode     => "EIG",
+        Em3dProblemType.Thermal       => "TH",
         _                             => "SP",
     };
 
@@ -53,13 +54,16 @@ public sealed partial class C3dSetupItem(string name, int index, string? refusal
         {
             if (Refusal is { } why) return why;
             if (setup is null) return "";
-            string solver = setup.Solver3D switch { Em3dSolver.OpenEms => "openEMS", Em3dSolver.Both => "Palace + openEMS", _ => "Palace" };
+            // brief-em3d-73 — a thermal setup names no EM solver: circuitRF's own solves it.
+            string solver = setup.IsThermal ? "circuitRF thermal"
+                          : setup.Solver3D switch { Em3dSolver.OpenEms => "openEMS", Em3dSolver.Both => "Palace + openEMS", _ => "Palace" };
             var f = setup.Frequency;
             string body = setup.Problem3D switch
             {
                 Em3dProblemType.Electrostatic => "electrostatic",
                 Em3dProblemType.Magnetostatic => "magnetostatic",
                 Em3dProblemType.Eigenmode     => $"eigenmodes above {f.StartExpr} {f.StartUnit}",
+                Em3dProblemType.Thermal       => "thermal",
                 _ => f.NumPoints is { } n
                     ? $"{f.StartExpr}–{f.StopExpr} {f.StopUnit}, {n} pts"
                     : $"{f.StartExpr}–{f.StopExpr} {f.StopUnit}, step {f.StepExpr} {f.StepUnit}",

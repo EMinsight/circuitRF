@@ -239,6 +239,13 @@ internal static class Explain
             expr = null;
         }
 
+        // brief-em3d-73 R-em3d73-6b — a 3D view's analyses are its thermal setups, resolved against its own scope.
+        if (wantAnalyses && kind == DocumentKind.ThreeD)
+        {
+            exit |= ExplainThermal.Walk(path, analysisName, sets, walks);
+            wantAnalyses = false;
+        }
+
         if (expr is not null || wantAnalyses)
         {
             var circuit = ReadCircuit(path, kind);

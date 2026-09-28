@@ -657,6 +657,18 @@ public sealed class C3dDocument
     /// <summary>brief-em3d-49 — boundaries on named faces of dielectric and air objects.</summary>
     public List<C3dFaceBoundary> FaceBoundaries { get; set; } = [];
 
+    /// <summary>brief-em3d-73 R-em3d73-4a — where heat is put. Read by thermal setups only; no EM lowering sees one.</summary>
+    public List<C3dHeatSource> HeatSources { get; set; } = [];
+
+    /// <summary>brief-em3d-73 R-em3d73-4b — where temperature is read.</summary>
+    public List<C3dProbe> Probes { get; set; } = [];
+
+    /// <summary>brief-em3d-73 R-em3d73-4c — boxes with a target element size, for every setup that meshes with Gmsh.</summary>
+    public List<C3dMeshRegion> MeshRegions { get; set; } = [];
+
+    /// <summary>brief-em3d-73 R-em3d73-4d — per-contact overrides of the technology's thermal interface resistances.</summary>
+    public List<C3dContactResistance> ContactResistances { get; set; } = [];
+
     /// <summary>
     /// 3D editor round 3 — the material that fills the air box where no object is: a technology material's name. Absent
     /// means Air (the common case; the technology's Air, else a built-in one with free space's values) — the user makes the

@@ -406,7 +406,7 @@ public sealed class MaterialLibraryTests(ITestOutputHelper output) : IDisposable
     public void Gate14_TheGenericLibraryShips_EveryRecordCitesItsSource_AndAgreesWithEveryShippedTechnology()
     {
         var generic = MaterialLibraries.LoadGeneric();
-        Assert.Equal(14, generic.Count);
+        Assert.Equal(24, generic.Count);                   // brief-em3d-73 added ten (thermal §1b)
         foreach (var m in generic)
         {
             Assert.False(string.IsNullOrWhiteSpace(m.Source), m.Name);

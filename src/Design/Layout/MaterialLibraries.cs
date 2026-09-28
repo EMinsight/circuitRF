@@ -11,9 +11,12 @@ namespace CircuitRF.Design.Layout;
 /// <param name="Locate">A stored reference → the library's identity (an absolute path, or a shipped
 /// library's <c>shipped:</c> name).</param>
 /// <param name="Read">That identity → its records. Throws for a library that cannot be read.</param>
+/// <param name="ReadInterfaces">brief-em3d-73 — that identity → its thermal interfaces (none for null, or for a loader
+/// that does not say).</param>
 public sealed record MaterialLibraryLoader(
     Func<string, string> Locate,
-    Func<string, IReadOnlyList<TechMaterial>> Read);
+    Func<string, IReadOnlyList<TechMaterial>> Read,
+    Func<string, IReadOnlyList<TechThermalInterface>?>? ReadInterfaces = null);
 
 /// <summary>One thing wrong with a technology's libraries — its <c>check</c> rule id and sentence.</summary>
 public sealed record MaterialLibraryProblem(string Id, string Message);
@@ -45,6 +48,8 @@ public static class MaterialLibraries
     public const string LibraryMissingId    = "material.library-unreadable";
     public const string LibraryAbsoluteId   = "material.library-absolute";
     public const string ReservedCharacterId = "material.reserved-character";
+    /// <summary>brief-em3d-73 R-em3d73-3a — a material pair two sources give different interface resistances.</summary>
+    public const string InterfaceConflictId = "material.interface-conflict";
 
     /// <summary>The shipped library's file name — the same in the assembly and in a workspace's
     /// <c>tech/</c> folder, so a shipped technology's reference to it is true in both places.</summary>
@@ -73,14 +78,16 @@ public static class MaterialLibraries
                 if (Directory.Exists(path)) throw new IOException("it is a directory, not a .cmat file.");
                 if (!File.Exists(path)) throw new FileNotFoundException("the file does not exist.");
                 return MaterialLibraryPersistence.LoadFromFile(path);
-            });
+            },
+            path => File.Exists(path) ? MaterialLibraryPersistence.LoadInterfacesFromFile(path) : null);
     }
 
     /// <summary>The loader for a technology shipped inside the assembly: a reference resolves against
     /// the resources beside it, exactly as the same reference resolves beside the workspace copy.</summary>
     public static MaterialLibraryLoader Shipped { get; } = new(
         reference => ShippedPrefix + Path.GetFileName(Core.RefPath.ToNative(reference)),
-        name => MaterialLibraryPersistence.Deserialize(ShippedRawJson(name[ShippedPrefix.Length..])));
+        name => MaterialLibraryPersistence.Deserialize(ShippedRawJson(name[ShippedPrefix.Length..])),
+        name => MaterialLibraryPersistence.DeserializeInterfaces(ShippedRawJson(name[ShippedPrefix.Length..])));
 
     // ── The shipped generic library (R-em3d53-8) ──────────────────────────────
 
@@ -193,10 +200,12 @@ public static class MaterialLibraries
     {
         tech.LibraryMaterials = [];
         tech.ResolvedLibraryPaths = [];
+        tech.LibraryThermalInterfaces = [];
         if (tech.MaterialLibraries is not { Count: > 0 } refs) return;
 
         var problems = new List<MaterialLibraryProblem>();
         var sources = new List<(string Source, IReadOnlyList<TechMaterial> Materials)>();
+        var interfaceSources = new List<(string Source, IReadOnlyList<TechThermalInterface> Interfaces)>();
         var paths = new List<string>();
         foreach (string reference in refs)
         {
@@ -210,7 +219,11 @@ public static class MaterialLibraries
             }
             if (paths.Contains(path, StringComparer.OrdinalIgnoreCase)) continue;
             paths.Add(path);
-            try { sources.Add((path, loader.Read(path))); }
+            try
+            {
+                sources.Add((path, loader.Read(path)));
+                if (loader.ReadInterfaces?.Invoke(path) is { Count: > 0 } found) interfaceSources.Add((path, found));
+            }
             catch (Exception ex)
             {
                 problems.Add(new(LibraryMissingId,
@@ -219,6 +232,7 @@ public static class MaterialLibraries
         }
 
         problems.AddRange(Conflicts(ctechLabel, tech.Materials, sources));
+        problems.AddRange(InterfaceConflicts(ctechLabel, tech.ThermalInterfaces ?? [], interfaceSources));
         if (problems.Count > 0) throw new MaterialLibraryException(ctechLabel, problems);
 
         var list = new List<LibraryMaterial>();
@@ -226,6 +240,33 @@ public static class MaterialLibraries
             foreach (var m in materials) list.Add(new LibraryMaterial(m, source));
         tech.LibraryMaterials = list;
         tech.ResolvedLibraryPaths = paths;
+        tech.LibraryThermalInterfaces = [.. interfaceSources.SelectMany(s => s.Interfaces.Select(i => new LibraryThermalInterface(i, s.Source)))];
+    }
+
+    /// <summary>
+    /// brief-em3d-73 R-em3d73-3a — a material pair two sources of ONE technology give different resistances: the
+    /// materials' own rule (§3), applied to the unordered pair. Equal values merge. A pair stated twice inside one file is
+    /// <see cref="MaterialValidation.ValidateInterfaces"/>' business, so only each source's first record of a pair takes part.
+    /// </summary>
+    public static IEnumerable<MaterialLibraryProblem> InterfaceConflicts(
+        string ctechLabel, IReadOnlyList<TechThermalInterface> own,
+        IReadOnlyList<(string Source, IReadOnlyList<TechThermalInterface> Interfaces)> libraries)
+    {
+        var all = new List<(string Source, TechThermalInterface I)>();
+        foreach (var i in own.GroupBy(i => i.PairKey).Select(g => g.First())) all.Add(($"technology '{ctechLabel}'", i));
+        foreach (var (source, list) in libraries)
+            foreach (var i in list.GroupBy(i => i.PairKey).Select(g => g.First())) all.Add(($"library '{Display(source)}'", i));
+
+        foreach (var group in all.GroupBy(x => x.I.PairKey, StringComparer.Ordinal))
+        {
+            var entries = group.ToList();
+            if (entries.Count < 2 || entries.All(e => e.I.ResistanceM2KW == entries[0].I.ResistanceM2KW)) continue;
+            var first = entries[0].I;
+            yield return new MaterialLibraryProblem(InterfaceConflictId,
+                $"The thermal interface between '{first.MaterialA}' and '{first.MaterialB}' is given different resistances by " +
+                string.Join(" and by ", entries.Select(e => $"{e.Source} ({e.I.ResistanceM2KW.ToString("G6", CultureInfo.InvariantCulture)} m²·K/W)")) +
+                ". A technology must have one answer for a pair: make the values equal, or remove one.");
+        }
     }
 
     /// <summary>
@@ -262,10 +303,25 @@ public static class MaterialLibraries
     /// Whether two records are the same material to a solver — the comparison the 3D elaborator makes
     /// between technologies (overview §1j): εr, the εr tensor, tanδ, μr and σ, each as the solver
     /// receives it (an unstated εr is 1, tanδ 0, μr 1, σ 0), plus α₂₀, which decides σ at every other
-    /// temperature. Display fields — <see cref="TechMaterial.Source"/>, <see cref="TechMaterial.Color"/>,
-    /// the thermal placeholders — take no part.
+    /// temperature. Display fields — <see cref="TechMaterial.Source"/>, <see cref="TechMaterial.Color"/> — take no part.
+    ///
+    /// <para>brief-em3d-73 — the thermal values (k, the two tables, density, specific heat) take part <b>only when both
+    /// records state them</b>: a technology's own copy of a metal written before the library gained its thermal values
+    /// says nothing about them, and that silence must not turn every such workspace into a refusal to load. Two records
+    /// that each state a different k are two answers, and refuse.</para>
     /// </summary>
     public static bool SameValues(TechMaterial a, TechMaterial b)
+        => ElectricalSame(a, b)
+        && BothOrNone(a.ThermalK, b.ThermalK) && BothOrNone(a.DensityKgM3, b.DensityKgM3) && BothOrNone(a.SpecificHeat, b.SpecificHeat)
+        && TablesAgree(a.SigmaVsTemp, b.SigmaVsTemp) && TablesAgree(a.ThermalKVsTemp, b.ThermalKVsTemp);
+
+    private static bool BothOrNone(double? x, double? y) => x is null || y is null || x == y;
+
+    private static bool TablesAgree(List<TechTemperaturePoint>? x, List<TechTemperaturePoint>? y)
+        => x is not { Count: > 0 } || y is not { Count: > 0 }
+        || x.Count == y.Count && x.Zip(y).All(p => p.First.TempC == p.Second.TempC && p.First.Value == p.Second.Value);
+
+    private static bool ElectricalSame(TechMaterial a, TechMaterial b)
         => (a.Epsr ?? 1) == (b.Epsr ?? 1)
         && (a.TanD ?? 0) == (b.TanD ?? 0)
         && (a.Mur ?? 1) == (b.Mur ?? 1)
@@ -283,6 +339,9 @@ public static class MaterialLibraries
         if (m.Mur is { } u) parts.Add($"μr {Num(u)}");
         if (m.Sigma20 is { } s) parts.Add($"σ₂₀ {Num(s)} S/m");
         if (m.Alpha20 is { } a) parts.Add($"α₂₀ {Num(a)} 1/K");
+        if (m.ThermalK is { } k) parts.Add($"k {Num(k)} W/(m·K)");
+        if (m.ThermalKVsTemp is { Count: > 0 } kt) parts.Add($"a {kt.Count}-point k(T) table");
+        if (m.SigmaVsTemp is { Count: > 0 } st) parts.Add($"a {st.Count}-point σ(T) table");
         return parts.Count == 0 ? "states nothing" : string.Join(", ", parts);
 
         static string Num(double v) => v.ToString("G6", CultureInfo.InvariantCulture);

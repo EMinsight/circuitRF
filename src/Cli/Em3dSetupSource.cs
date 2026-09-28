@@ -49,7 +49,8 @@ internal sealed record Em3dSetupSource(
         string? cws = DocumentKinds.AncestorCws(full);
         var embedded = C3dSetups.Read(doc);
         var elaborator = new C3dElaborator();
-        bool one = setupName is not null || embedded.Count(s => s.Setup is not null) == 1 && embedded.Count == 1;
+        // brief-em3d-73 — a lone THERMAL setup makes no EM problem to draw or explain; the elaboration is what there is.
+        bool one = setupName is not null || embedded.Count(s => s.Setup is { IsThermal: false }) == 1 && embedded.Count == 1;
         if (one)
         {
             var (chosen, why) = C3dSetups.Select(doc, setupName);

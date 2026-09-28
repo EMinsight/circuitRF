@@ -525,6 +525,133 @@ public sealed record OpenEmsRunSettings(double EndCriterionDb, long? MaxTimeStep
     }
 }
 
+// ── brief-em3d-73 R-em3d73-5 — the thermal setup's file types ──────────────────────────────────────
+//
+// Declared here for R-em3d3-3c's reason: the generated reference page expands a type only when it lives in CemFile's own
+// assembly. EVERY VALUE THE USER SWEEPS IS AN EXPRESSION in the document's variables (brief 51's machinery), so a power, a
+// temperature or an h sweeps like any other variable; the solver's own controls (Mesh, Balance) are numbers.
+
+/// <summary>What a thermal boundary does to its face.</summary>
+public enum ThermalBoundaryKind
+{
+    /// <summary>The face is held at <c>TempC</c>.</summary>
+    FixedT,
+    /// <summary>Heat leaves the face at <c>H</c>·(T − <c>AmbientC</c>).</summary>
+    Convection,
+}
+
+/// <summary>One heat source's power in this setup, overriding the document's default for it.</summary>
+public sealed class CemThermalSource
+{
+    /// <summary>A heat source of the document, by name.</summary>
+    public string Name { get; set; } = "";
+
+    /// <summary>The power, an expression (<c>Pdiss</c>, <c>0.5 W</c>), in the source's own Density unit.</summary>
+    public string Power { get; set; } = "";
+}
+
+/// <summary>A condition on a face. Every face no boundary names is insulated (adiabatic).</summary>
+public sealed class CemThermalBoundary
+{
+    /// <summary>A named face, <c>object/face</c>, or <c>*exposed*</c>: every face that touches no other solid and no other
+    /// boundary names.</summary>
+    public string Face { get; set; } = "";
+
+    /// <summary><c>FixedT</c> or <c>Convection</c>.</summary>
+    public ThermalBoundaryKind Kind { get; set; }
+
+    /// <summary>FixedT: the face's temperature, °C, an expression.</summary>
+    public string? TempC { get; set; }
+
+    /// <summary>Convection: the heat-transfer coefficient, W/(m²·K), an expression.</summary>
+    public string? H { get; set; }
+
+    /// <summary>Convection: the ambient temperature, °C, an expression.</summary>
+    public string? AmbientC { get; set; }
+}
+
+/// <summary>One sweep axis: a document variable from <c>Start</c> to <c>Stop</c> in <c>Points</c> linear steps. A variable
+/// any geometry expression reads is refused in this version (a geometric sweep re-meshes per point).</summary>
+public sealed class CemThermalSweep
+{
+    /// <summary>The variable, a VAR (or cell parameter) of the document.</summary>
+    public string Var { get; set; } = "";
+
+    /// <summary>The first value, an expression.</summary>
+    public string Start { get; set; } = "";
+
+    /// <summary>The last value, an expression.</summary>
+    public string Stop { get; set; } = "";
+
+    /// <summary>How many values, at least 1.</summary>
+    public int Points { get; set; } = 1;
+}
+
+/// <summary>The thermal mesh's controls. Every field may be omitted; brief 74 states the defaults.</summary>
+public sealed class CemThermalMesh
+{
+    /// <summary>The element order, 1 or 2.</summary>
+    public int? Order { get; set; }
+
+    /// <summary>Elements across a heat source's smallest dimension.</summary>
+    public double? SizeFromSources { get; set; }
+
+    /// <summary>Elements through the thinnest solid's thickness, at least.</summary>
+    public int? MinThroughThickness { get; set; }
+
+    /// <summary>How fast elements may grow away from a refined region: the ratio between neighbours.</summary>
+    public double? Grading { get; set; }
+}
+
+/// <summary>Conductive balance: the Newton loop over σ(T) and k(T). Each switch defaults on.</summary>
+public sealed class CemThermalBalance
+{
+    /// <summary>Electrical conductivity follows temperature. Off: the 20 °C value everywhere.</summary>
+    public bool? SigmaOfT { get; set; }
+
+    /// <summary>Thermal conductivity follows temperature. Off: the nominal value everywhere.</summary>
+    public bool? KOfT { get; set; }
+
+    /// <summary>The relative residual at which the loop stops.</summary>
+    public double? Tolerance { get; set; }
+
+    /// <summary>The most Newton steps.</summary>
+    public int? MaxIterations { get; set; }
+}
+
+/// <summary>
+/// brief-em3d-73 R-em3d73-5b — a thermal setup's section: its values, over the document's places. Only a setup whose
+/// <c>Problem3D</c> is <c>Thermal</c> reads it, and only a <c>.c3d</c> embeds one (D1).
+/// </summary>
+public sealed class CemThermal
+{
+    /// <summary>Power overrides by source name. A source this list does not name uses its own default.</summary>
+    public List<CemThermalSource>? Sources { get; set; }
+
+    /// <summary>Fixed-temperature and convection faces; at least one is required — a problem with neither has no steady
+    /// state.</summary>
+    public List<CemThermalBoundary>? Boundaries { get; set; }
+
+    /// <summary>Currents at the ports (briefs 77/78). Carried as written; nothing in this version reads them.</summary>
+    public List<JsonElement>? Currents { get; set; }
+
+    /// <summary>Up to two axes, a product.</summary>
+    public List<CemThermalSweep>? Sweep { get; set; }
+
+    /// <summary>Named expressions over probe results — <c>Rth = (Tmax(die_top) - Tavg(flange_bot)) / Pdiss</c> — using
+    /// <c>Tmax</c>, <c>Tmin</c>, <c>Tavg</c> and <c>T</c> of a probe, and any variable.</summary>
+    public List<string>? Measures { get; set; }
+
+    /// <summary>The mesh's controls.</summary>
+    public CemThermalMesh? Mesh { get; set; }
+
+    /// <summary>Conductive balance's switches and tolerances.</summary>
+    public CemThermalBalance? Balance { get; set; }
+
+    /// <summary>A deep copy, through the setup's own serializer.</summary>
+    public CemThermal Clone() => JsonSerializer.Deserialize<CemThermal>(JsonSerializer.Serialize(this))!;
+}
+
 public sealed class CemFile
 {
     public int    FormatVersion { get; set; } = 1;
@@ -699,6 +826,10 @@ public sealed class CemFile
 
     /// <summary>brief-em3d-23 — an eigenmode solve's mode count and target. Null takes both defaults.</summary>
     public CemEigenmode? Eigenmode { get; set; }
+
+    /// <summary>brief-em3d-73 — a thermal setup's section (read when <c>Problem3D</c> is <c>Thermal</c>). Null when there is
+    /// none.</summary>
+    public CemThermal? Thermal { get; set; }
 }
 
 /// <summary>Reads and writes <c>.cem</c> files. Framework-free (no Avalonia / Skia).</summary>
@@ -853,6 +984,7 @@ public static class EmSetupPersistence
             : null,
         Eigenmode      = s.Eigenmode is { } e && (e.Count is not null || e.TargetGHz is not null)
             ? new CemEigenmode { Count = e.Count, TargetGHz = e.TargetGHz } : null,
+        Thermal        = s.Thermal,
     };
 
     private static CemAirBoxFace? ToFace(EmAirBoxFace? f)
@@ -921,6 +1053,7 @@ public static class EmSetupPersistence
             ? [.. ps.Select(p => new EmPort3D(p.Port, p.Kind ?? CircuitRF.Engine.Em3d.Em3dPortKind.Lumped, p.Width, p.Height, p.OffsetUm))]
             : [],
         Eigenmode             = f.Eigenmode is { } em ? new EmEigenmode3D(em.Count, em.TargetGHz) : null,
+        Thermal               = f.Thermal,
     };
 
     /// <summary>

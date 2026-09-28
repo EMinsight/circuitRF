@@ -139,6 +139,7 @@ public static class GmshGeoWriter
         ArgumentNullException.ThrowIfNull(problem);
         ArgumentNullException.ThrowIfNull(settings);
 
+        if (problem.Type == Em3dProblemType.Thermal) return No(Em3dProblem.ThermalIsNotEm);
         var problems = problem.Validate().Concat(settings.Problems()).ToList();
         if (problems.Count > 0)
             return No("The 3D problem cannot be lowered for Palace: " + string.Join(" ", problems));

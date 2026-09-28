@@ -45,6 +45,7 @@ public static class PalaceConfigWriter
         ArgumentNullException.ThrowIfNull(groups);
         ArgumentNullException.ThrowIfNull(settings);
 
+        if (problem.Type == Em3dProblemType.Thermal) return new(null, Em3dProblem.ThermalIsNotEm);
         var materials = problem.Materials.ToDictionary(m => m.Name, StringComparer.Ordinal);
         materials.TryAdd(GmshGeoWriter.FreeSpace.Name, GmshGeoWriter.FreeSpace);
 

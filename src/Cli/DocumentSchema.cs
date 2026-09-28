@@ -339,8 +339,8 @@ internal static class DocumentSchema
 
     private const string CmatPreamble = """
         A material library is a list of named materials a technology can use, in a file of its own so
-        several technologies can share it. It is JSON with exactly two keys, and both are always
-        written — an EMPTY library is this, and nothing more:
+        several technologies can share it. It is JSON with two keys that are always written — an EMPTY
+        library is this, and nothing more — and an optional third, ThermalInterfaces:
 
             { "FormatVersion": 1, "Materials": [] }
 
@@ -358,7 +358,7 @@ internal static class DocumentSchema
         A record here is EXACTLY a record of a .ctech's own Materials list — one type, one reader — so
         one cut from either file and pasted into the other reads identically.
 
-        Four things that are not obvious from the field list:
+        Six things that are not obvious from the field list:
 
           * ONLY A TECHNOLOGY NAMES A LIBRARY. A .ctech lists it in MaterialLibraries, as a path
             relative to the .ctech's own directory; a workspace, a .cem and a .c3d never do. They
@@ -375,8 +375,18 @@ internal static class DocumentSchema
             object made of it must state its own Role. A material named Air is air.
           * '@' may not appear in a Name: `Name@technology` is how a 3D view tells two technologies'
             same-name materials apart. Keys this build does not know are kept on save.
+          * A thermal run reads ThermalK (W/(m·K)), or ThermalKVsTemp when stated — THE TABLE WINS —
+            and σ(T) from SigmaVsTemp when stated, else Sigma20 / (1 + Alpha20·(T − 20)). A table is
+            linear between its (TempC, Value) points and held at its ends beyond them. Every EM
+            solver still reads Sigma20. `check` warns when a table and its constant disagree at 20 °C
+            by more than 1 %. A solid a thermal run meshes must state ThermalK or ThermalKVsTemp.
+          * ThermalInterfaces (here or in a .ctech) are thermal boundary resistances between two
+            materials wherever they touch: { "MaterialA": "Gallium nitride", "MaterialB": ...,
+            "ResistanceM2KW": 3.3e-8, "Source": ... }. The pair is unordered; the duplicate rule is
+            the materials' own (`material.interface-conflict`).
 
-        circuitRF ships generic-materials.cmat — metals, ceramics, semiconductors and laminates, each
+        circuitRF ships generic-materials.cmat — metals (with σ(T) and k(T) tables to below their
+        melting points), ceramics, semiconductors, laminates, die attaches and package alloys, each
         record with its Source — and every shipped technology names it; `new workspace` copies it
         into tech/ beside the technology. `check <file.cmat>` checks a library on its own.
 
@@ -497,6 +507,23 @@ internal static class DocumentSchema
             with several, `--setup <name>`. Its result is named "<file stem> <setup name>". A static
             setup's Terminals3D name their conductors with Objects (["top"], U1/... allowed) — a drawn
             object carries no net — instead of Net; stating both is refused.
+          * A THERMAL setup is an embedded setup with "Problem3D": "Thermal", no Solver3D (stating one
+            is refused: the thermal solver is circuitRF's own) and a "Thermal" section — Sources (a
+            power per heat source, overriding its default), Boundaries (FixedT with TempC, or
+            Convection with H and AmbientC, on a face "object/face" or on "*exposed*"; at least one),
+            Sweep (up to two axes over document variables no geometry reads), Measures ("Rth =
+            (Tmax(die_top) - Tavg(flange_bot)) / Pdiss", over probes with Tmax, Tmin, Tavg and T),
+            Mesh and Balance. Every value is an expression in the document's variables; temperatures
+            are °C. A .cem never holds one. The places it reads are the document's own lists:
+            HeatSources (a Sheet on a Plane at an Offset with a Rect or an Outline, lying inside ONE
+            solid — or a Solid, by name — with a default Power), Probes (exactly one of Point, Face,
+            Solid, Spot, Line, Wire; a Stat of Max, Min or Avg; an optional LimitC), MeshRegions (a
+            box and a target SizeUm, for every Gmsh-meshed setup) and ContactResistances (two
+            touching objects and a resistance, m²·K/W, overriding the technology's material pair).
+            None of them reaches an EM solver. `check` reports every thermal finding
+            (c3d.thermal.*); `explain view.c3d --analysis [setup]` lists what a thermal setup would
+            solve. The thermal solver itself arrives in a later build: `em` refuses a thermal setup
+            until then.
           * Ports belong to the document, and every setup uses all of them (choosing a subset per
             setup is a later build). A placed cell's ports are never used: only the parent says where
             a signal enters. A port is a Rect on a drawing Plane at an Offset, with a Number, a Name,

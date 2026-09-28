@@ -1,11 +1,12 @@
+using System.Globalization;
 using CircuitRF.Diagnostics;
 
 namespace CircuitRF.Design.Layout;
 
 /// <summary>
 /// A list of materials' OWN rules — the ones that need no stackup, body or object to be broken
-/// (brief-em3d-53 R-em3d53-4): duplicate names, a malformed εr tensor, the temperature-table
-/// placeholders, and the reserved <c>@</c>. One function, so a <c>.ctech</c>'s <c>Materials</c> block and a
+/// (brief-em3d-53 R-em3d53-4): duplicate names, a malformed εr tensor, a malformed temperature table and — brief-em3d-73
+/// R-em3d73-2b — a table that disagrees with its own constant at 20 °C, and the reserved <c>@</c>. One function, so a <c>.ctech</c>'s <c>Materials</c> block and a
 /// <c>.cmat</c> are checked by the same code, and the Materials editor shows exactly what <c>check</c>
 /// reports. <b>No material rule lives in a view model.</b> The ids and sentences of the rules that
 /// existed before this brief are unchanged.
@@ -44,12 +45,24 @@ public static class MaterialValidation
                 problems.Add(Problem(TechValidation.Ids.MaterialInvalid, DiagnosticSeverity.Error,
                     $"Material \"{m.Name}\" states the colour \"{colour}\", which is not #rrggbb."));
 
-            ValidateTemperatureTable(m, m.SigmaVsTemp, "conductivity against temperature (SigmaVsTemp)",
-                "every solver uses its conductivity at 20 °C (Sigma20)" +
-                (m.Alpha20 is not null ? " and, for a bond wire, its temperature coefficient (Alpha20)" : ""),
-                problems);
-            ValidateTemperatureTable(m, m.ThermalKVsTemp, "thermal conductivity against temperature (ThermalKVsTemp)",
-                "no thermal solver exists yet", problems);
+            bool sigmaOk = ValidateTemperatureTable(m, m.SigmaVsTemp, "conductivity against temperature (SigmaVsTemp)", problems);
+            bool kOk = ValidateTemperatureTable(m, m.ThermalKVsTemp, "thermal conductivity against temperature (ThermalKVsTemp)", problems);
+
+            // R-em3d73-2b — the table wins (owner decision, 2026-09-27), so a constant beside it that says something else
+            // at 20 °C is a second answer nobody reads in a thermal run: said, never resolved. It retires the info this rule
+            // replaced, which reported every stated table as "read by nothing yet".
+            if (sigmaOk && ThermalProperties.SigmaDisagreementAt20(m) is { } sd)
+                problems.Add(Problem(TechValidation.Ids.MaterialTableDisagrees, DiagnosticSeverity.Warning,
+                    string.Create(CultureInfo.InvariantCulture,
+                        $"Material \"{m.Name}\" states SigmaVsTemp, which gives {sd.Table:G5} S/m at 20 °C, and Sigma20 = {sd.Constant:G5} S/m — {Percent(sd.Table, sd.Constant)} apart. A thermal run uses the table; every EM solver uses Sigma20. Make them agree, or remove the one that is wrong.")));
+            if (kOk && ThermalProperties.ThermalKDisagreementAt20(m) is { } kd)
+                problems.Add(Problem(TechValidation.Ids.MaterialTableDisagrees, DiagnosticSeverity.Warning,
+                    string.Create(CultureInfo.InvariantCulture,
+                        $"Material \"{m.Name}\" states ThermalKVsTemp, which gives {kd.Table:G5} W/(m·K) at 20 °C, and ThermalK = {kd.Constant:G5} W/(m·K) — {Percent(kd.Table, kd.Constant)} apart. A thermal run uses the table. Make them agree, or remove the one that is wrong.")));
+
+            if (m.ThermalK is { } k && !(k > 0 && double.IsFinite(k)))
+                problems.Add(Problem(TechValidation.Ids.MaterialInvalid, DiagnosticSeverity.Error,
+                    $"Material \"{m.Name}\" states a thermal conductivity (ThermalK) of {k}; it must be a positive number of W/(m·K)."));
         }
         return problems;
     }
@@ -71,17 +84,17 @@ public static class MaterialValidation
     private static TechProblem Problem(string id, DiagnosticSeverity severity, string message)
         => new(TechProblemArea.Materials, message, Id: id, Severity: severity);
 
+    private static string Percent(double a, double b)
+        => (Math.Abs(a - b) / Math.Abs(b) * 100).ToString("0.#", CultureInfo.InvariantCulture) + " %";
+
     /// <summary>
-    /// The owner's placeholders for temperature-dependent conductivity (2026-09-25): a table is
-    /// validated as a table — finite, above absolute zero, positive, strictly increasing in
-    /// temperature — and, being read by nothing yet, is reported at info so a stated table never
-    /// looks as though it were in force.
+    /// A temperature table is validated as a table — finite, above absolute zero, positive, strictly increasing in
+    /// temperature. Returns whether it is sound (an absent table is), so the 20 °C comparison reads only a sound one.
     /// </summary>
-    private static void ValidateTemperatureTable(
-        TechMaterial m, List<TechTemperaturePoint>? table, string what, string instead,
-        List<TechProblem> problems)
+    private static bool ValidateTemperatureTable(TechMaterial m, List<TechTemperaturePoint>? table, string what,
+                                                 List<TechProblem> problems)
     {
-        if (table is not { Count: > 0 }) return;
+        if (table is not { Count: > 0 }) return true;
 
         string? fault = null;
         for (int i = 0; i < table.Count && fault is null; i++)
@@ -98,12 +111,44 @@ public static class MaterialValidation
                         $"follows {table[i - 1].TempC} °C)";
         }
 
-        if (fault is not null)
-            problems.Add(Problem(TechValidation.Ids.MaterialInvalid, DiagnosticSeverity.Error,
-                $"Material \"{m.Name}\" states {what}, but {fault}."));
-
-        problems.Add(Problem(TechValidation.Ids.MaterialNotReadYet, DiagnosticSeverity.Info,
-            $"Material \"{m.Name}\" states {what} ({table.Count} point{(table.Count == 1 ? "" : "s")}). " +
-            $"It is carried in the file and read by nothing yet: {instead}."));
+        if (fault is null) return true;
+        problems.Add(Problem(TechValidation.Ids.MaterialInvalid, DiagnosticSeverity.Error,
+            $"Material \"{m.Name}\" states {what}, but {fault}."));
+        return false;
     }
+
+    /// <summary>
+    /// brief-em3d-73 R-em3d73-3a — a list of thermal interfaces' OWN rules, for a <c>.ctech</c>'s list and a <c>.cmat</c>'s
+    /// alike: both materials named, a positive finite resistance, and one value per pair within the file (a pair stated
+    /// twice with equal values is said at info; with different values it is an error — the library rule, inside one file).
+    /// Whether the two names are materials is a question only a technology can answer, and <c>check</c> of a technology
+    /// asks it.
+    /// </summary>
+    public static IReadOnlyList<TechProblem> ValidateInterfaces(IReadOnlyList<TechThermalInterface>? interfaces)
+    {
+        var problems = new List<TechProblem>();
+        if (interfaces is not { Count: > 0 }) return problems;
+        foreach (var i in interfaces)
+        {
+            if (string.IsNullOrWhiteSpace(i.MaterialA) || string.IsNullOrWhiteSpace(i.MaterialB))
+                problems.Add(Problem(TechValidation.Ids.InterfaceInvalid, DiagnosticSeverity.Error,
+                    $"A thermal interface names {(string.IsNullOrWhiteSpace(i.MaterialA) && string.IsNullOrWhiteSpace(i.MaterialB) ? "no material" : "only one material")}; " +
+                    "it is between two (MaterialA and MaterialB)."));
+            else if (!(i.ResistanceM2KW > 0) || !double.IsFinite(i.ResistanceM2KW))
+                problems.Add(Problem(TechValidation.Ids.InterfaceInvalid, DiagnosticSeverity.Error,
+                    string.Create(CultureInfo.InvariantCulture,
+                        $"The thermal interface between \"{i.MaterialA}\" and \"{i.MaterialB}\" states a resistance of {i.ResistanceM2KW} m²·K/W; it must be positive. Two materials in perfect contact need no interface record.")));
+        }
+        foreach (var g in interfaces.Where(i => !string.IsNullOrWhiteSpace(i.MaterialA) && !string.IsNullOrWhiteSpace(i.MaterialB))
+                                    .GroupBy(i => i.PairKey, StringComparer.Ordinal).Where(g => g.Count() > 1))
+        {
+            var first = g.First();
+            bool same = g.All(i => i.ResistanceM2KW == first.ResistanceM2KW);
+            problems.Add(Problem(TechValidation.Ids.InterfaceDuplicate, same ? DiagnosticSeverity.Info : DiagnosticSeverity.Error,
+                $"The thermal interface between \"{first.MaterialA}\" and \"{first.MaterialB}\" is stated {g.Count()} times" +
+                (same ? " with the same resistance; one record is enough." : " with different resistances; a pair has one answer.")));
+        }
+        return problems;
+    }
+
 }

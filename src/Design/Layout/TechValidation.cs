@@ -398,7 +398,15 @@ public static class TechValidation
         public const string MaterialPartial         = "tech.material.partial";
         public const string MaterialDisagrees       = "tech.material.disagrees";
         public const string MaterialInvalid         = "tech.material.invalid";
-        public const string MaterialNotReadYet      = "tech.material.not-read-yet";
+        /// <summary>brief-em3d-73 R-em3d73-2b — a σ(T) or k(T) table disagreeing with its own constant at 20 °C (warning).
+        /// It retires <c>tech.material.not-read-yet</c>, which reported every stated table at info.</summary>
+        public const string MaterialTableDisagrees  = "tech.material.table-disagrees";
+        /// <summary>brief-em3d-73 R-em3d73-3 — a thermal interface with a missing name or a non-positive resistance.</summary>
+        public const string InterfaceInvalid        = "tech.interface.invalid";
+        /// <summary>brief-em3d-73 R-em3d73-3 — one pair stated twice in one file.</summary>
+        public const string InterfaceDuplicate      = "tech.interface.duplicate";
+        /// <summary>brief-em3d-73 R-em3d73-3 — a pair naming a material the technology does not define (warning).</summary>
+        public const string InterfaceUnknownMaterial = "tech.interface.unknown-material";
         public const string BodySitsOnUnknown       = "tech.body.sits-on-unknown";
         public const string BodyNameClash           = "tech.body.name-clash";
         public const string BodyOutlineLayerUnknown = "tech.body.outline-layer-unknown";
@@ -416,6 +424,16 @@ public static class TechValidation
     {
         // ── the materials' own shape (brief-em3d-53 R-em3d53-4: one function for .ctech and .cmat) ──
         problems.AddRange(MaterialValidation.Validate(tech.Materials));
+        problems.AddRange(MaterialValidation.ValidateInterfaces(tech.ThermalInterfaces));
+        // brief-em3d-73 — a pair naming a material this technology cannot resolve applies nowhere: said, not refused,
+        // because a library may be shared by technologies that each define one half.
+        foreach (var i in tech.ResolvedThermalInterfaces)
+            foreach (string name in new[] { i.MaterialA, i.MaterialB }.Distinct(StringComparer.OrdinalIgnoreCase))
+                if (!string.IsNullOrWhiteSpace(name) && tech.FindMaterial(name) is null)
+                    problems.Add(new(TechProblemArea.Materials,
+                        $"The thermal interface between \"{i.MaterialA}\" and \"{i.MaterialB}\" names \"{name}\", which this " +
+                        "technology does not define, so it applies nowhere. " + MaterialList(tech),
+                        Id: Ids.InterfaceUnknownMaterial, Severity: DiagnosticSeverity.Warning));
 
         // ── a library named by an absolute path (R-em3d53-1a): accepted, and warned about ─────────
         foreach (string reference in tech.MaterialLibraries ?? [])

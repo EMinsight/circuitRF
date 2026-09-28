@@ -226,7 +226,7 @@ public sealed class TechMaterialsTests(ITestOutputHelper output) : IDisposable
     [InlineData(TechValidation.Ids.MaterialMissingProperty, DiagnosticSeverity.Error)]
     [InlineData(TechValidation.Ids.MaterialPartial,         DiagnosticSeverity.Info)]
     [InlineData(TechValidation.Ids.MaterialInvalid,         DiagnosticSeverity.Error)]
-    [InlineData(TechValidation.Ids.MaterialNotReadYet,      DiagnosticSeverity.Info)]
+    [InlineData(TechValidation.Ids.MaterialTableDisagrees,  DiagnosticSeverity.Warning)]
     [InlineData(TechValidation.Ids.BodySitsOnUnknown,       DiagnosticSeverity.Error)]
     [InlineData(TechValidation.Ids.BodyNameClash,           DiagnosticSeverity.Error)]
     [InlineData(TechValidation.Ids.BodyOutlineLayerUnknown, DiagnosticSeverity.Error)]
@@ -251,9 +251,9 @@ public sealed class TechMaterialsTests(ITestOutputHelper output) : IDisposable
             case TechValidation.Ids.MaterialInvalid:
                 tech.FindMaterial("Gold")!.SigmaVsTemp =
                     [new() { TempC = 85, Value = 3.3e7 }, new() { TempC = 20, Value = 4.1e7 }]; break;
-            case TechValidation.Ids.MaterialNotReadYet:
+            case TechValidation.Ids.MaterialTableDisagrees:           // brief-em3d-73: 300 against ThermalK 318.2, 5.7 % apart
                 tech.FindMaterial("Gold")!.ThermalKVsTemp =
-                    [new() { TempC = 20, Value = 317 }, new() { TempC = 200, Value = 309 }]; break;
+                    [new() { TempC = 20, Value = 300 }, new() { TempC = 200, Value = 290 }]; break;
             case TechValidation.Ids.BodySitsOnUnknown:
                 tech.Bodies.Add(new TechBody { Name = "Lid", Material = "Gold", SitsOn = "Nowhere", ThicknessDbu = 1 }); break;
             case TechValidation.Ids.BodyNameClash:

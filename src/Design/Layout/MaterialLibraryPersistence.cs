@@ -18,6 +18,11 @@ public sealed class CmatFile
 {
     public int FormatVersion { get; set; } = MaterialLibraryPersistence.CurrentFormatVersion;
     public List<TechMaterial> Materials { get; set; } = [];
+
+    /// <summary>brief-em3d-73 R-em3d73-3a — thermal boundary resistances between material pairs, read by the same reader
+    /// and resolved with the same duplicate rule as the materials. Omitted when null, so every <c>.cmat</c> written before
+    /// it round-trips byte for byte.</summary>
+    public List<TechThermalInterface>? ThermalInterfaces { get; set; }
 }
 
 /// <summary>Reads and writes <c>.cmat</c> material libraries. Framework-free.</summary>
@@ -32,18 +37,49 @@ public static class MaterialLibraryPersistence
     /// Both keys are written even for an empty library — as with a <c>.c3d</c>, that is how a
     /// <c>.cmat</c> is told from another program's file of the same extension.
     /// </summary>
-    public static string Serialize(IReadOnlyList<TechMaterial> materials)
-        => JsonSerializer.Serialize(new CmatFile { Materials = [.. materials] }, TechPersistence.JsonOpts);
+    public static string Serialize(IReadOnlyList<TechMaterial> materials,
+                                   IReadOnlyList<TechThermalInterface>? thermalInterfaces = null)
+        => JsonSerializer.Serialize(new CmatFile
+        {
+            Materials = [.. materials],
+            ThermalInterfaces = thermalInterfaces is null ? null : [.. thermalInterfaces],
+        }, TechPersistence.JsonOpts);
 
-    public static void SaveToFile(string path, IReadOnlyList<TechMaterial> materials)
-        => AtomicFile.WriteAllText(path, Serialize(materials));
+    /// <summary>
+    /// Writes the library. <paramref name="thermalInterfaces"/> null <b>keeps the interfaces the file at
+    /// <paramref name="path"/> already holds</b> (brief-em3d-73): the Materials editor edits the materials list only, and a
+    /// save of it must not delete a list it never showed.
+    /// </summary>
+    public static void SaveToFile(string path, IReadOnlyList<TechMaterial> materials,
+                                  IReadOnlyList<TechThermalInterface>? thermalInterfaces = null)
+    {
+        if (thermalInterfaces is null && File.Exists(path))
+        {
+            try { thermalInterfaces = LoadInterfacesFromFile(path); }
+            catch { /* an unreadable file has no interfaces to keep */ }
+        }
+        AtomicFile.WriteAllText(path, Serialize(materials, thermalInterfaces));
+    }
 
     /// <summary>
     /// Reads a library. Throws <see cref="InvalidDataException"/> for JSON that is not a <c>.cmat</c>
     /// (no <c>FormatVersion</c> or no <c>Materials</c>) and for a newer <c>FormatVersion</c> than this
     /// build knows, naming it.
     /// </summary>
-    public static List<TechMaterial> Deserialize(string json)
+    public static List<TechMaterial> Deserialize(string json) => DeserializeFile(json).Materials;
+
+    /// <summary>The library's thermal interfaces (brief-em3d-73), or null when it states none. Throws as
+    /// <see cref="Deserialize"/> does.</summary>
+    public static List<TechThermalInterface>? DeserializeInterfaces(string json) => DeserializeFile(json).ThermalInterfaces;
+
+    /// <summary>The whole file at <paramref name="path"/>: its materials and its thermal interfaces.</summary>
+    public static CmatFile LoadFileFromFile(string path) => DeserializeFile(GzipTextFile.ReadAllTextAutoGzip(path));
+
+    public static List<TechThermalInterface>? LoadInterfacesFromFile(string path)
+        => DeserializeInterfaces(GzipTextFile.ReadAllTextAutoGzip(path));
+
+    /// <summary>The whole file: its materials and its thermal interfaces. Throws as <see cref="Deserialize"/> does.</summary>
+    public static CmatFile DeserializeFile(string json)
     {
         using (var doc = JsonDocument.Parse(json))
         {
@@ -59,7 +95,8 @@ public static class MaterialLibraryPersistence
             throw new InvalidDataException(
                 $".cmat FormatVersion {file.FormatVersion} is newer than this build reads " +
                 $"({CurrentFormatVersion}). Update the application.");
-        return file.Materials ?? [];
+        file.Materials ??= [];
+        return file;
 
         static bool HasKey(JsonElement e, string key)
         {

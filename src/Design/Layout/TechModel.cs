@@ -668,6 +668,41 @@ public sealed class Technology
     public IReadOnlyList<string> ResolvedLibraryPaths { get; set; } = [];
 
     /// <summary>
+    /// brief-em3d-73 R-em3d73-3a — the thermal boundary resistances between material pairs this technology states. Null,
+    /// the ordinary case, states none; additive and omitted from the file when null, so every <c>.ctech</c> written before
+    /// it round-trips byte for byte (em-3d.md §4.1a's pattern). A <c>.cmat</c> may carry the same list; the duplicate rule
+    /// is the materials' own — equal values merge, different values refuse the load.
+    /// </summary>
+    public List<TechThermalInterface>? ThermalInterfaces { get; set; }
+
+    /// <summary>What the named libraries contributed to <see cref="ThermalInterfaces"/>, each with its file — filled by
+    /// the loader, never persisted, for <see cref="LibraryMaterials"/>' reason.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public IReadOnlyList<LibraryThermalInterface> LibraryThermalInterfaces { get; set; } = [];
+
+    /// <summary>Every thermal interface this technology states: its own, then each library pair its own list (or an
+    /// earlier library) does not already state. A pair two sources state is known to carry one value by then.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public IReadOnlyList<TechThermalInterface> ResolvedThermalInterfaces
+    {
+        get
+        {
+            var own = ThermalInterfaces ?? [];
+            if (LibraryThermalInterfaces.Count == 0) return own;
+            var list = new List<TechThermalInterface>(own);
+            var seen = new HashSet<string>(own.Select(i => i.PairKey), StringComparer.Ordinal);
+            foreach (var li in LibraryThermalInterfaces)
+                if (seen.Add(li.Interface.PairKey)) list.Add(li.Interface);
+            return list;
+        }
+    }
+
+    /// <summary>The interface this technology states between materials <paramref name="a"/> and <paramref name="b"/>, in
+    /// either order, or null for none.</summary>
+    public TechThermalInterface? FindThermalInterface(string? a, string? b)
+        => ResolvedThermalInterfaces.FirstOrDefault(i => i.IsPair(a, b));
+
+    /// <summary>
     /// <b>Every material this technology can name</b>: its own list, then each library record whose name
     /// the own list (or an earlier library) does not already hold. A name two sources define is known to
     /// carry equal values by the time this exists — different values refuse the load (§3) — so the first
@@ -816,27 +851,28 @@ public sealed class TechMaterial
     public double? Alpha20 { get; set; }
 
     /// <summary>
-    /// <b>A placeholder: carried and validated, read by nothing yet.</b> Electrical conductivity
-    /// against temperature, as (°C, S/m) points in increasing temperature — for the thermal solver
-    /// (em-3d.md §9) and for any electrical solve that later wants more than the linear
-    /// <see cref="Alpha20"/> model.
+    /// Electrical conductivity against temperature, as (°C, S/m) points in increasing temperature.
     ///
-    /// <para>Every solver today reads <see cref="Sigma20"/> (and, for bond wires, <see cref="Alpha20"/>).
-    /// How the table and the α₂₀ pair relate when both are stated — which wins, and whether they must
-    /// agree at 20 °C — is deliberately undecided, and <c>check</c> says so at info rather than
-    /// letting a stated table look like it is in force.</para>
+    /// <para><b>When stated it wins over <see cref="Sigma20"/>/<see cref="Alpha20"/> for the thermal solver</b> (owner
+    /// decision, 2026-09-27; brief-em3d-73 R-em3d73-2): <see cref="ThermalProperties.SigmaAt"/> interpolates it
+    /// piecewise-linearly and holds its end values beyond it, saying so. Every EM solver still reads
+    /// <see cref="Sigma20"/> (a 3D setup with <see cref="Alpha20"/>), so stating a table moves no EM answer.
+    /// <c>check</c> warns when the table and <see cref="Sigma20"/> disagree at 20 °C by more than 1 %.</para>
     /// </summary>
     public List<TechTemperaturePoint>? SigmaVsTemp { get; set; }
 
-    /// <summary>Thermal conductivity, W/(m·K), for the thermal solver (em-3d.md §9). Carried, read
-    /// by nothing yet.</summary>
+    /// <summary>Thermal conductivity, W/(m·K) — the constant a thermal run uses when
+    /// <see cref="ThermalKVsTemp"/> is not stated. A solid in a thermal run whose material states neither is refused,
+    /// naming both; Air needs neither, because it is not meshed.</summary>
     public double? ThermalK { get; set; }
 
     /// <summary>
-    /// <b>A placeholder: carried and validated, read by nothing yet.</b> Thermal conductivity
-    /// against temperature, as (°C, W/(m·K)) points in increasing temperature — the k(T) a
-    /// substrate's loss of conductivity as it heats needs (em-3d.md §9.2). How it relates to
-    /// <see cref="ThermalK"/> is decided with the thermal solver, not here.
+    /// Thermal conductivity against temperature, as (°C, W/(m·K)) points in increasing temperature — the k(T) a
+    /// substrate's loss of conductivity as it heats needs (em-3d.md §9.2).
+    ///
+    /// <para><b>When stated it wins over <see cref="ThermalK"/></b> (owner decision, 2026-09-27; brief-em3d-73
+    /// R-em3d73-2): <see cref="ThermalProperties.ThermalKAt"/> interpolates it piecewise-linearly and holds its end
+    /// values beyond it, saying so. <c>check</c> warns when the two disagree at 20 °C by more than 1 %.</para>
     /// </summary>
     public List<TechTemperaturePoint>? ThermalKVsTemp { get; set; }
 
@@ -844,7 +880,8 @@ public sealed class TechMaterial
     /// metal.</summary>
     public double? DensityKgM3 { get; set; }
 
-    /// <summary>Specific heat, J/(kg·K), for the thermal solver. Carried, read by nothing yet.</summary>
+    /// <summary>Specific heat, J/(kg·K) — with <see cref="DensityKgM3"/>, the heat capacity a thermal impedance
+    /// (Z_th(jω), brief-em3d-80) reads. Carried; no steady-state run reads it.</summary>
     public double? SpecificHeat { get; set; }
 
     /// <summary>
@@ -879,6 +916,52 @@ public sealed class TechTemperaturePoint
     /// <summary>The property's value at <see cref="TempC"/>, in the property's own unit.</summary>
     public double Value { get; set; }
 }
+
+/// <summary>
+/// brief-em3d-73 R-em3d73-3 — a thermal boundary resistance between two materials wherever they touch: GaN on SiC, a die
+/// attach, a solder layer. A <b>surface condition, not a meshed layer</b> (em-3d.md §9.2) — the resistance is what a user
+/// knows, and a 1 µm layer under a 5 mm flange is the sliver that breaks a mesher. The pair is UNORDERED and compared
+/// ordinal and case-insensitive, as material names are. A <c>.c3d</c> may override one contact between two named objects
+/// (<c>ContactResistances</c>).
+/// </summary>
+public sealed class TechThermalInterface
+{
+    /// <summary>One material of the pair, by name.</summary>
+    public string MaterialA { get; set; } = "";
+
+    /// <summary>The other material of the pair, by name. The order of the two means nothing.</summary>
+    public string MaterialB { get; set; } = "";
+
+    /// <summary>The resistance across the interface, m²·K/W — a temperature step of <c>R″·q″</c> for a heat flux q″
+    /// through it. Positive.</summary>
+    public double ResistanceM2KW { get; set; }
+
+    /// <summary>Where the value comes from, free text. Such values vary by process by several times; say whose it is.</summary>
+    public string? Source { get; set; }
+
+    /// <summary>Keys this build does not read, kept and written back.</summary>
+    [System.Text.Json.Serialization.JsonExtensionData]
+    public Dictionary<string, System.Text.Json.JsonElement>? Unread { get; set; }
+
+    /// <summary>True when this record is about the pair (<paramref name="a"/>, <paramref name="b"/>), in either order.</summary>
+    public bool IsPair(string? a, string? b)
+        => Same(MaterialA, a) && Same(MaterialB, b) || Same(MaterialA, b) && Same(MaterialB, a);
+
+    /// <summary>The pair as one key, independent of order: <c>a|b</c> with the two lower-cased and sorted.</summary>
+    public string PairKey => Key(MaterialA, MaterialB);
+
+    /// <summary>The unordered key of two material names.</summary>
+    public static string Key(string? a, string? b)
+    {
+        string x = (a ?? "").ToLowerInvariant(), y = (b ?? "").ToLowerInvariant();
+        return string.CompareOrdinal(x, y) <= 0 ? x + "|" + y : y + "|" + x;
+    }
+
+    private static bool Same(string? x, string? y) => string.Equals(x, y, StringComparison.OrdinalIgnoreCase);
+}
+
+/// <summary>A thermal interface a technology reaches through one of its libraries, and the file it came from.</summary>
+public sealed record LibraryThermalInterface(TechThermalInterface Interface, string SourcePath);
 
 /// <summary>
 /// A 3D-only solid (brief-em3d-2 R-em3d2-3): something that exists in a package but has no row in

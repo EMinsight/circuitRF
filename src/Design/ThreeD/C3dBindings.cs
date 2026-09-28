@@ -123,6 +123,16 @@ public static class C3dBindings
         new(typeof(C3dFillet), nameof(C3dFillet.Radius), 1, C3dFieldKind.Length),
         new(typeof(C3dChamfer), nameof(C3dChamfer.Distance), 1, C3dFieldKind.Length),
         new(typeof(C3dChamfer), nameof(C3dChamfer.Distance2), 1, C3dFieldKind.Length),
+        // brief-em3d-73 R-em3d73-4 — the thermal places' dimensions. A heat sheet's Rect is a C3dRect, already above.
+        new(typeof(C3dHeatSheet), nameof(C3dHeatSheet.Offset), 1, C3dFieldKind.Length),
+        new(typeof(C3dProbe), nameof(C3dProbe.Point), 3, C3dFieldKind.Length),
+        new(typeof(C3dProbeSpot), nameof(C3dProbeSpot.Center), 3, C3dFieldKind.Length),
+        new(typeof(C3dProbeSpot), nameof(C3dProbeSpot.Diameter), 1, C3dFieldKind.Length),
+        new(typeof(C3dProbeLine), nameof(C3dProbeLine.From), 3, C3dFieldKind.Length),
+        new(typeof(C3dProbeLine), nameof(C3dProbeLine.To), 3, C3dFieldKind.Length),
+        new(typeof(C3dMeshRegion), nameof(C3dMeshRegion.Min), 3, C3dFieldKind.Length),
+        new(typeof(C3dMeshRegion), nameof(C3dMeshRegion.Size), 3, C3dFieldKind.Length),
+        new(typeof(C3dMeshRegion), nameof(C3dMeshRegion.SizeUm), 1, C3dFieldKind.Microns),
     ];
 
     public static C3dFieldSpec? SpecOf(Type owner, string property)
@@ -209,6 +219,19 @@ public static class C3dBindings
             case C3dPort port:
                 yield return ("Rect.", port.Rect);
                 break;
+            // brief-em3d-73 — the thermal places, named as check and the panels name them.
+            case C3dHeatSource h when h.Sheet is { } sheet:
+                yield return ("Sheet.", sheet);
+                if (sheet.Rect is { } hr) yield return ("Sheet.Rect.", hr);
+                break;
+            case C3dProbe probe:
+                yield return ("", probe);
+                if (probe.Spot is { } spot) yield return ("Spot.", spot);
+                if (probe.Line is { } line) yield return ("Line.", line);
+                break;
+            case C3dMeshRegion region:
+                yield return ("", region);
+                break;
         }
 
         static IEnumerable<(string, IC3dBindable)> Placement(C3dPlacement p)
@@ -236,6 +259,9 @@ public static class C3dBindings
         foreach (var o in doc.Objects) yield return (o.Name, o);
         foreach (var i in doc.Instances) yield return (i.Name, i);
         foreach (var p in doc.Ports) yield return ($"port {p.Number}", p);
+        foreach (var h in doc.HeatSources) yield return (h.Name, h);
+        foreach (var p in doc.Probes) yield return (p.Name, p);
+        foreach (var m in doc.MeshRegions) yield return (m.Name, m);
     }
 
     /// <summary>Every bound component in the document.</summary>
@@ -335,7 +361,12 @@ public static class C3dBindings
             if (raw is not RawComponents) throw new JsonException(C3dDiagnostics.ArrayExpected(shape).Render());
             if (parts.Length != n) throw new JsonException(C3dDiagnostics.WrongArity(shape, n, parts.Length).Render());
         }
-        if (type == typeof(C3dPoint3)) { Arity(3, "[x, y, z]"); return new C3dPoint3(Int(parts[0]), Int(parts[1]), Int(parts[2])); }
+        if (type == typeof(C3dPoint3) || type == typeof(C3dPoint3?))
+        {
+            if (raw is null && type == typeof(C3dPoint3?)) return null;
+            Arity(3, "[x, y, z]");
+            return new C3dPoint3(Int(parts[0]), Int(parts[1]), Int(parts[2]));
+        }
         if (type == typeof(C3dPoint2)) { Arity(2, "[u, v]"); return new C3dPoint2(Int(parts[0]), Int(parts[1])); }
         if (type == typeof(List<int>))
         {

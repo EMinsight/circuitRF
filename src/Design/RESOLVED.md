@@ -14538,3 +14538,46 @@ have it as a face gives exactly one tetrahedron per side, whose elementary tag n
 from its pad's edge it leaves sliver tetrahedra (mean-ratio quality 0.19). Every small feature needs its own
 Distance/Threshold. And the Threshold's growth — (SizeMax − SizeMin)/(DistMax − DistMin) — must stay near 0.3 or below:
 at 1.0 a 0.25 µm → 1 mm grading left 52 slivers (quality 0.011); at 0.3 it left none, with the same Box field.
+
+## brief-em3d-73 — thermal materials and the document (2026-09-28)
+
+**The pure-metal σ(T) tables disagreed with the shipped Sigma20 — shifted, not replaced (owner decision).** Brief 72's
+ρ(T) tables are the pure annealed metal; the shipped Gold and Copper records carry a less pure metal's ρ₂₀ (10.1 % and
+2.7 % higher). Shipping the tables as they are, beside an unmoved Sigma20, would have made the new 1 % table/constant
+warning fire on Gold and Copper in EVERY workspace `check` (each shipped `.ctech` repeats them), and a thermal run would
+have used a gold σ 10 % above wBond's. The owner chose Matthiessen's rule: each σ(T) table is brief 72's ρ(T) plus ONE
+constant Δρ = 1/Sigma20 − ρ_table(20 °C), so it equals Sigma20 at 20 °C and keeps the pure metal's dρ/dT (which agrees
+with Sigma20·Alpha20 to 1.2 % for gold and 0.6 % for copper — brief 72's own finding). Gold's shifted table gives
+33.58 MS/m at 85 °C against wBond's 33.58 (0.02 %). Aluminium keeps its 12 % steeper slope than Alpha20 says: the table
+wins in a thermal run, and the table is the pure metal. The k(T) tables are brief 72's unchanged. Every table stops at
+the last tabulated row BELOW the ITS-90 melting point, so gold, aluminium and silver lose their melting-point row (which
+the source puts up to 0.25 K above the fixed point); the resolver holds the end value beyond and says so. The generator
+was a scratch script; `ThermalDocumentTests.Gate6` recomputes every row from `testdata/thermal/metals/*.csv`.
+
+**The material conflict rule compares thermal values only when BOTH records state them.** `MaterialLibraries.SameValues`
+decided nothing thermal before this brief. Comparing k/tables/density/cp unconditionally would have turned every
+existing workspace — whose `.ctech` copy of Gold predates the library's thermal values — into a refusal to load. A
+record that says nothing about k is compatible with one that does; two different k values are two answers and refuse.
+Consequence for brief 74: in such an older workspace `FindMaterial("Gold")` returns the technology's own record, which
+has no ThermalK, even though its library's Gold does — the thermal lowering should look through to a same-name library
+record that states k (the merge rule already says they are the same material), or the run will refuse Gold by name.
+
+**`.cmat` saves keep a list the editor never shows.** `MaterialLibraryPersistence.SaveToFile(path, materials)` with no
+interfaces argument now re-reads the target's `ThermalInterfaces` and writes them back: the Materials editor edits only
+the materials list, and a plain save would otherwise have deleted a library's interfaces. *Save As* to a new path does
+not carry them (the editor holds no interface list) — brief 75 or later, when interfaces get an editor.
+
+**A lone thermal setup is not an EM problem to draw.** `Em3dSetupSource.ForThreeDView` assembled the one embedded setup
+there was, so `explain`/`render` of a `.c3d` whose only setup is thermal exited 1 with the "not built yet" refusal. It
+now takes the drawing path unless the setup is named. And `C3dResolver`'s unused-VAR info counts a name a heat source's
+Power or a thermal setup reads as used — otherwise every power and heat-sink temperature VAR was reported unused.
+
+**What is exact and what is not in `check`'s thermal geometry.** A sheet source's containment is tested at its corners
+and centroid: exact for boxes, z-extruded polygons and cylinders, bounding-box for sweeps, polyhedra and kernel solids
+(which can only accept a sheet that is really outside a curved solid, never refuse one inside). A sheet ON the shared
+face of two solids is inside both and is accepted — "inside or on one solid" — which is the fingers-on-the-die-top case.
+Contacts are "touching" by bounding box. Both are brief 74's to make exact from the mesh.
+
+**The user-facing-text gate.** `C3dThermal.Evaluate` returns its error instead of throwing, so no new sentence joined the
+backlog allowlist. The gate currently fails on two `src/Core/Expressions/Token.cs` sentences from 997bfe30 (units in
+expressions), not from this brief.

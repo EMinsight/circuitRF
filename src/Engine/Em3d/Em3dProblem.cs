@@ -40,9 +40,11 @@ public enum Em3dSection { Hexagon, Circle }
 /// <summary>
 /// brief-em3d-22 R-em3d22-1a — what a 3D problem asks: S over a sweep (<see cref="Driven"/>), or a
 /// capacitance or inductance matrix over named terminals; brief-em3d-23 R-em3d23-4a — or the resonant
-/// frequencies and Q of the structure (<see cref="Eigenmode"/>).
+/// frequencies and Q of the structure (<see cref="Eigenmode"/>). brief-em3d-73 R-em3d73-5a — or the temperature
+/// (<see cref="Thermal"/>), which circuitRF's own thermal solver answers and no EM solver ever sees: every lowering
+/// refuses a problem of that type with <see cref="Em3dProblem.ThermalIsNotEm"/>.
 /// </summary>
-public enum Em3dProblemType { Driven, Electrostatic, Magnetostatic, Eigenmode }
+public enum Em3dProblemType { Driven, Electrostatic, Magnetostatic, Eigenmode, Thermal }
 
 /// <summary>
 /// brief-em3d-23 R-em3d23-2a — how a port is fed. <see cref="Lumped"/> is a sheet between two conductors
@@ -392,6 +394,12 @@ public sealed record Em3dProblem(
 
     /// <summary>True for an electrostatic or magnetostatic problem.</summary>
     public bool IsStatic => Type is Em3dProblemType.Electrostatic or Em3dProblemType.Magnetostatic;
+
+    /// <summary>brief-em3d-73 R-em3d73-5a — what every EM lowering says to a <see cref="Em3dProblemType.Thermal"/>
+    /// problem. The run service never sends one there; this is the second line, so a thermal problem can never be
+    /// written as an EM input by a path that forgot to ask.</summary>
+    public const string ThermalIsNotEm =
+        "A thermal problem is solved by circuitRF's own thermal solver, never by an EM solver: it cannot be lowered for Palace or openEMS.";
 
     /// <summary>brief-em3d-23 R-em3d23-4a — how many modes an eigenmode problem finds.</summary>
     public int EigenmodeCount { get; init; } = 1;

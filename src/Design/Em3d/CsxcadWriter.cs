@@ -124,6 +124,7 @@ public static class CsxcadWriter
         ArgumentNullException.ThrowIfNull(run);
         CsxcadLowering No(string why) => new(null, [], [], 0, 0, 0, 0, [], [], [], why);
 
+        if (problem.Type == Em3dProblemType.Thermal) return No(Em3dProblem.ThermalIsNotEm);
         // ── What openEMS cannot be told ──────────────────────────────────────────────────────────
         var f = problem.Boundary.Faces;
         var faceKinds = new[] { f.XMin, f.XMax, f.YMin, f.YMax, f.ZMin, f.ZMax };

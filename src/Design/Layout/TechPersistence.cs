@@ -54,6 +54,10 @@ public sealed class CtechFile
     /// <summary>3D-only solids (brief-em3d-2 R-em3d2-3b, additive), omitted when empty — an older
     /// build ignores the key and the planar extractors never see one.</summary>
     public List<TechBody>? Bodies { get; set; }
+
+    /// <summary>brief-em3d-73 R-em3d73-3a — thermal boundary resistances between material pairs (additive), omitted when
+    /// null.</summary>
+    public List<TechThermalInterface>? ThermalInterfaces { get; set; }
 }
 
 /// <summary>Reads and writes .ctech files. Framework-free (no Avalonia / Skia).</summary>
@@ -148,6 +152,7 @@ public static class TechPersistence
         var clone = DeserializeUnresolved(Serialize(tech));
         clone.LibraryMaterials = tech.LibraryMaterials;
         clone.ResolvedLibraryPaths = tech.ResolvedLibraryPaths;
+        clone.LibraryThermalInterfaces = tech.LibraryThermalInterfaces;
         ResolveMaterials(clone);
         return clone;
     }
@@ -244,6 +249,7 @@ public static class TechPersistence
         MaterialLibraries    = tech.MaterialLibraries is { Count: > 0 } ml ? [.. ml] : null,
         Materials            = tech.Materials.Count > 0 ? [.. tech.Materials] : null,
         Bodies               = tech.Bodies.Count > 0 ? [.. tech.Bodies] : null,
+        ThermalInterfaces    = tech.ThermalInterfaces is { } ti ? [.. ti] : null,
     };
 
     private static Technology FromFileModel(CtechFile file)
@@ -290,5 +296,6 @@ public static class TechPersistence
         MaterialLibraries    = file.MaterialLibraries is { Count: > 0 } fml ? [.. fml] : null,
         Materials            = file.Materials is { Count: > 0 } tm ? [.. tm] : [],
         Bodies               = file.Bodies is { Count: > 0 } tb ? [.. tb] : [],
+        ThermalInterfaces    = file.ThermalInterfaces is { } fti ? [.. fti] : null,
     };
 }

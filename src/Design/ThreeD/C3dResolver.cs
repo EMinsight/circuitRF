@@ -474,6 +474,10 @@ public static class C3dResolver
     private static HashSet<string> Closure(C3dResolution r, C3dDocument doc, C3dCell cell)
     {
         var used = new HashSet<string>(r.Uses.Keys, StringComparer.Ordinal);
+        // brief-em3d-73 — a VAR a heat source's power or a thermal setup reads is used, though no dimension reads it.
+        foreach (string text in ThermalExpressions(doc))
+            try { used.UnionWith(AstWalker.CollectRefs(Parser.Parse(Units.LiftInlineUnit(text).Expression))); }
+            catch (ExpressionException) { }
         var stack = new Stack<string>(used);
         while (stack.Count > 0)
         {
@@ -492,6 +496,34 @@ public static class C3dResolver
             }
         }
         return used;
+    }
+
+    /// <summary>brief-em3d-73 — every expression the document's thermal content reads: heat sources' default powers and
+    /// each thermal setup's powers, boundary values, sweep ends and sweep variables, and measures' right-hand sides.</summary>
+    private static IEnumerable<string> ThermalExpressions(C3dDocument doc)
+    {
+        foreach (var h in doc.HeatSources)
+            if (h.Power is { Length: > 0 } p) yield return p;
+        foreach (var element in doc.Setups)
+        {
+            // Only a thermal setup is read here, and cheaply told apart: the resolver runs on every edit.
+            if (element.ValueKind != System.Text.Json.JsonValueKind.Object ||
+                !element.EnumerateObject().Any(p => string.Equals(p.Name, "Problem3D", StringComparison.OrdinalIgnoreCase) &&
+                                                     p.Value.ValueKind == System.Text.Json.JsonValueKind.String &&
+                                                     string.Equals(p.Value.GetString(), "Thermal", StringComparison.OrdinalIgnoreCase)))
+                continue;
+            CircuitRF.Design.Layout.Em.CemThermal? t;
+            try { t = CircuitRF.Design.Layout.Em.EmSetupPersistence.FromEmbedded(element).Thermal; }
+            catch { continue; }
+            if (t is null) continue;
+            foreach (var src in t.Sources ?? []) yield return src.Power;
+            foreach (var b in t.Boundaries ?? [])
+                foreach (string? v in new[] { b.TempC, b.H, b.AmbientC })
+                    if (v is { Length: > 0 }) yield return v;
+            foreach (var w in t.Sweep ?? []) { yield return w.Var; yield return w.Start; yield return w.Stop; }
+            foreach (string m in t.Measures ?? [])
+                if (m.IndexOf('=') is > 0 and var eq) yield return m[(eq + 1)..];
+        }
     }
 
     private static double? Real(Value v) => v.Kind == ValueKind.Real ? v.AsReal() : null;

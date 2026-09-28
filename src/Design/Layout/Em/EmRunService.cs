@@ -256,6 +256,8 @@ public static class EmRunService
         EmSetup setup, EmLayoutSource? source, RunControl? control = null)
     {
         ArgumentNullException.ThrowIfNull(setup);
+        if (setup.IsThermal)
+            return new EmPreflightResult(EmAnalysisKind.CrossSection, "", [], CircuitRF.Design.ThreeD.C3dThermal.CemRefusal);
 
         if (source is null)
             return new EmPreflightResult(EmAnalysisKind.CrossSection, "", [],
@@ -524,6 +526,14 @@ public static class EmRunService
         bool               fromCem = false)
     {
         if (control is { Token: var t } && t.CanBeCanceled) ct = t;
+        // brief-em3d-73 R-em3d73-5a — a thermal setup is never run as an EM one: from a .cem it is refused outright (D1),
+        // embedded it waits for the thermal solver.
+        if (setup.IsThermal)
+        {
+            var d = EmDiagnostics.Forwarded("thermal", fromCem ? CircuitRF.Design.ThreeD.C3dThermal.CemRefusal
+                                                               : CircuitRF.Design.ThreeD.C3dThermal.RunRefusal(setup.Name));
+            return new EmRunResult(EmRunStatus.Refused, null, null, null, null, null, d.Render(), [], Diagnostic: d);
+        }
         if (!setup.Is3D)
         {
             var d = EmDiagnostics.Forwarded("c3d-planar", $"This setup is a planar analysis, and {CircuitRF.Design.ThreeD.C3dSetups.PlanarRefusal}.");
@@ -561,6 +571,13 @@ public static class EmRunService
         var warnings = new List<string>();
         var notes    = new List<string>();
         var errors   = new List<string>();
+
+        // brief-em3d-73 D1 — a .cem holds no thermal setup.
+        if (setup.IsThermal)
+        {
+            var d = EmDiagnostics.Forwarded("thermal", CircuitRF.Design.ThreeD.C3dThermal.CemRefusal);
+            return new EmRunResult(EmRunStatus.Refused, null, null, null, null, null, d.Render(), warnings, Diagnostic: d);
+        }
 
         if (source is null)
         {

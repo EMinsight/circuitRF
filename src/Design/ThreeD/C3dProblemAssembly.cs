@@ -33,7 +33,7 @@ public static class C3dSetups
     public const string PlanarRefusal = "a .c3d is solved by the 3D solvers; set Solver3D to Palace or openEMS";
 
     /// <summary>Every embedded setup, in file order, each read by the .cem reader and checked: a name,
-    /// unique, and a 3D solver.</summary>
+    /// unique, and a 3D solver — or, brief-em3d-73, a thermal setup, which names none.</summary>
     public static IReadOnlyList<C3dEmbeddedSetup> Read(C3dDocument doc)
     {
         var read = new List<C3dEmbeddedSetup>();
@@ -54,6 +54,11 @@ public static class C3dSetups
             else if (names.TryGetValue(name, out int first))
                 read.Add(new C3dEmbeddedSetup(i, name, null,
                     $"Embedded setups #{first + 1} and #{i + 1} are both named '{name}'; a setup's name is unique in its document."));
+            // brief-em3d-73 R-em3d73-5a — a thermal setup names no EM solver, and is no planar analysis either.
+            else if (setup.IsThermal && setup.Solver3D != Em3dSolver.None)
+                read.Add(new C3dEmbeddedSetup(i, name, null, C3dThermal.SolverStated(name, setup.Solver3D)));
+            else if (setup.IsThermal)
+                read.Add(new C3dEmbeddedSetup(i, name, setup, null));
             else if (!setup.Is3D)
                 read.Add(new C3dEmbeddedSetup(i, name, null, $"Embedded setup '{name}' is a planar analysis: {PlanarRefusal}."));
             else
@@ -252,6 +257,7 @@ public static class C3dProblemAssembly
         Em3dGenerationResult No(string why, IReadOnlyList<string>? warnings = null)
             => new(null, why, notes) { Warnings = warnings ?? [] };
 
+        if (setup.IsThermal) return No(fromCem ? C3dThermal.CemRefusal : C3dThermal.RunRefusal(setup.Name));
         if (!setup.Is3D) return No($"This setup is a planar analysis, and {C3dSetups.PlanarRefusal}.");
 
         // ── The sweep and the temperature, as the generator reads them ──────────────────────────
@@ -402,7 +408,8 @@ public static class C3dPortReports
     {
         var reports = new List<C3dPortReport>();
         if (doc.Ports.Count == 0 || !e.Ok) return reports;
-        var setups = C3dSetups.Read(doc).Where(s => s.Setup is not null).ToList();
+        // brief-em3d-73 — a thermal setup drives no port and puts no air box round anything: it has no port to report.
+        var setups = C3dSetups.Read(doc).Where(s => s.Setup is { IsThermal: false }).ToList();
         if (setups.Count == 0)
         {
             var ctx = C3dProblemAssembly.PortContext(null, doc, e, null);

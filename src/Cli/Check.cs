@@ -562,6 +562,8 @@ internal static class Check
         // editor refuses to open the document with. The kernel is asked only when the document holds such an object.
         if (C3dKernelUse.Of(doc).Count > 0)
             findings.AddRange(C3dValidation.KernelFindings(doc, CircuitRF.Design.ThreeD.Occ.GeometryKernel.Shared.Capability));
+        // brief-em3d-73 R-em3d73-6a — the thermal places' own shape, from the one thermal validator.
+        findings.AddRange(C3dThermal.Places(doc));
         foreach (var finding in findings)
             f.Add(CliDiagnostics.CheckThreeDFinding(path, finding));
 
@@ -585,6 +587,14 @@ internal static class Check
             f.Add(port.Result.Refusal is null ? CliDiagnostics.CheckThreeDPort(path, port.Text) : CliDiagnostics.CheckThreeDPortRefused(path, port.Text));
         foreach (string why in C3dPortReports.FaceBoundaryRefusals(doc, e))
             f.Add(CliDiagnostics.CheckThreeDFaceBoundary(path, why));
+
+        // brief-em3d-73 R-em3d73-6a — the thermal places against the solids, and every thermal setup: through the
+        // validator the editor and the run use.
+        foreach (var d in C3dThermal.Places(doc, e)) f.Add(CliDiagnostics.CheckThreeDFinding(path, d));
+        foreach (var embedded in C3dSetups.Read(doc))
+            if (embedded.Setup is { IsThermal: true } thermal)
+                foreach (var d in C3dThermal.Setup(embedded.Name, thermal, doc, e, resolution))
+                    f.Add(CliDiagnostics.CheckThreeDFinding(path, d));
 
         // brief-em3d-65 R-em3d65-4d — what each embedded setup's solver will not respect of a kernel solid, at the row's own
         // severity. Only a document holding a kernel object assembles anything here.
@@ -694,7 +704,7 @@ internal static class Check
             foreach (var p in ex.Problems)
                 f.Add(CliDiagnostics.CheckTechProblem(path, nameof(TechProblemArea.Materials), p.Message,
                                                       DiagnosticSeverity.Error, p.Id));
-            foreach (var p in MaterialValidation.Validate(raw.Materials))
+            foreach (var p in MaterialValidation.Validate(raw.Materials).Concat(MaterialValidation.ValidateInterfaces(raw.ThermalInterfaces)))
                 f.Add(CliDiagnostics.CheckTechProblem(path, p.Area.ToString(), p.Message, p.Severity, p.Id));
             return;
         }
@@ -711,11 +721,11 @@ internal static class Check
     /// </summary>
     private static void CheckMaterialLibrary(string path, Findings f)
     {
-        List<TechMaterial> materials;
-        try { materials = MaterialLibraryPersistence.LoadFromFile(path); }
+        CmatFile file;
+        try { file = MaterialLibraryPersistence.LoadFileFromFile(path); }
         catch (Exception ex) { f.Add(CliDiagnostics.CheckUnreadable(path, ex.Message)); return; }
 
-        foreach (var p in MaterialValidation.Validate(materials))
+        foreach (var p in MaterialValidation.Validate(file.Materials).Concat(MaterialValidation.ValidateInterfaces(file.ThermalInterfaces)))
             f.Add(CliDiagnostics.CheckTechProblem(path, p.Area.ToString(), p.Message, p.Severity, p.Id));
     }
 
@@ -724,6 +734,9 @@ internal static class Check
         EmSetup setup;
         try { setup = EmSetupPersistence.LoadFromFile(path); }
         catch (Exception ex) { f.Add(CliDiagnostics.CheckUnreadable(path, ex.Message)); return; }
+
+        // brief-em3d-73 D1 — a thermal setup lives in its .c3d; the run refuses a .cem holding one, and so does check.
+        if (setup.IsThermal) { f.Add(CliDiagnostics.CheckEmRefused(path, C3dThermal.CemRefusal)); return; }
 
         string full = Path.GetFullPath(path);
         // The same walk-up `circuitrf em` performs, and for the same reason (cli.md §8.1). No flag

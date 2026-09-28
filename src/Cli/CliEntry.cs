@@ -1406,6 +1406,12 @@ static int RunEm(string[] args)
         }
     }
 
+    // brief-em3d-73 — nor a thermal one an EM one: the thermal solver is circuitRF's own.
+    if (solver is not null && setup.IsThermal)
+        return JsonRun.Fail(CliDiagnostics.EmThreeDSetup(cemPath, isC3d
+            ? CircuitRF.Design.ThreeD.C3dThermal.RunRefusal(setup.Name) + " --solver names an EM solver, which a thermal setup never uses."
+            : CircuitRF.Design.ThreeD.C3dThermal.CemRefusal));
+
     // brief-em3d-21 R-em3d21-6a — --solver chooses between 3D solvers; it never makes a planar setup 3D.
     if (solver is not null && !setup.Is3D)
         return JsonRun.Fail(CliDiagnostics.EmSolverOnPlanar(solverName!, Path.GetFileName(cemPath)));
