@@ -287,12 +287,18 @@ public sealed class PalaceBackendTests(ITestOutputHelper output) : IDisposable
             Assert.Equal(expected + ".s2p", EmRunService.ResolveSnpPath(results, setup, 2));
             Assert.Equal(key + "_em", EmRunService.ResolveNpyKey(setup));
 
+            // briefs em3d-22/23: a static or eigenmode setup's run and group carry their own suffix, beside a driven one's.
+            string kind = setup.Problem3D switch
+            {
+                Em3dProblemType.Electrostatic => "_es", Em3dProblemType.Magnetostatic => "_ms", Em3dProblemType.Eigenmode => "_eig", _ => "",
+            };
+            string group = kind.Length > 0 ? kind : "_em";
             Assert.Equal(key + ".palace", Em3dRunService.ResultKey(setup, Em3dSolver.Palace));
-            Assert.Equal(key + ".palace_em", Em3dRunService.NpyKey(setup, Em3dSolver.Palace));
-            Assert.Equal(Path.Combine(results, key + ".palace"), Em3dRunService.RunDirectory(results, setup, Em3dSolver.Palace));
+            Assert.Equal(key + ".palace" + group, Em3dRunService.NpyKey(setup, Em3dSolver.Palace));
+            Assert.Equal(Path.Combine(results, key + ".palace" + kind), Em3dRunService.RunDirectory(results, setup, Em3dSolver.Palace));
             // brief-em3d-9 R-em3d9-5a: openEMS lands by the same rule, beside Palace, never over it.
             Assert.Equal(key + ".openems", Em3dRunService.ResultKey(setup, Em3dSolver.OpenEms));
-            Assert.Equal(key + ".openems_em", Em3dRunService.NpyKey(setup, Em3dSolver.OpenEms));
+            Assert.Equal(key + ".openems" + group, Em3dRunService.NpyKey(setup, Em3dSolver.OpenEms));
         }
     }
 

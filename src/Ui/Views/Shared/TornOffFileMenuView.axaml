@@ -183,6 +183,10 @@
                           Command="{Binding ExportStepCommand}"
                           CommandParameter="{Binding $parent[Window]}"
                           ToolTip.Tip="{Binding ThreeDExportStepTip}"/>
+                <MenuItem Header="Dra_wing…"
+                          Command="{Binding ExportDrawingCommand}"
+                          CommandParameter="{Binding $parent[Window]}"
+                          ToolTip.Tip="A drawing of the active 3D document: isometric, top, front and other views, and sections, at one scale, as SVG or PDF. Requires an active 3D document."/>
                 <MenuItem Header="Board _netlist (IPC-D-356)…"
                           Command="{Binding ExportBoardNetlistCommand}"
                           ToolTip.Tip="Requires an active layout document."/>

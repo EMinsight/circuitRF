@@ -504,9 +504,9 @@ public sealed partial class C3dEditorViewModel : IC3dFaceHost
         if (FaceSelection() is { } kf && ResultEditRefusal(kf.Obj) is { } d13)
         {
             // brief-em3d-66 D13 — every edit of a result's face disabled, with what to edit instead; what reads it stays.
-            yield return new Viewer3DMenuItem("Move Along Normal  (N)", Enabled: false, Tip: d13);
-            yield return new Viewer3DMenuItem("Move  (G)", Enabled: false, Tip: d13);
-            yield return new Viewer3DMenuItem("Extrude to New Solid  (Shift+E)", Enabled: false, Tip: d13);
+            yield return new Viewer3DMenuItem("Move Along Normal", Enabled: false, Tip: d13, Gesture: Viewer3DMenuItem.Plain(Key.N));
+            yield return new Viewer3DMenuItem("Move", Enabled: false, Tip: d13, Gesture: Viewer3DMenuItem.Plain(Key.G));
+            yield return new Viewer3DMenuItem("Extrude to New Solid", Enabled: false, Tip: d13, Gesture: Viewer3DMenuItem.Plain(Key.E, KeyModifiers.Shift));
             yield return new Viewer3DMenuItem("Align to Face…", Enabled: false, Tip: d13);
             yield return new Viewer3DMenuItem("Measure", MeasureFace, Tip: "Area, perimeter and normal in Properties; Shift-click a parallel face for the distance.");
         }
@@ -516,9 +516,9 @@ public sealed partial class C3dEditorViewModel : IC3dFaceHost
             string? copyWhy = null;
             if (C3dFaceCommands.Polygon(f.Obj, f.Face, out var why) is not var (_, aligned)) copyWhy = why;
             else if (aligned is null) copyWhy = "A tilted face: sheets lie on XY, YZ or XZ in this version.";
-            yield return new Viewer3DMenuItem("Move Along Normal  (N)", StartPushPull);
-            yield return new Viewer3DMenuItem("Move  (G)", StartFaceMove, Enabled: !cyl, Tip: cyl ? C3dFaceEditor.CylinderFreeMove : null);
-            yield return new Viewer3DMenuItem("Extrude to New Solid  (Shift+E)", StartExtrudeFace, Enabled: !(cyl && f.Face == "side"),
+            yield return new Viewer3DMenuItem("Move Along Normal", StartPushPull, Gesture: Viewer3DMenuItem.Plain(Key.N));
+            yield return new Viewer3DMenuItem("Move", StartFaceMove, Enabled: !cyl, Tip: cyl ? C3dFaceEditor.CylinderFreeMove : null, Gesture: Viewer3DMenuItem.Plain(Key.G));
+            yield return new Viewer3DMenuItem("Extrude to New Solid", StartExtrudeFace, Gesture: Viewer3DMenuItem.Plain(Key.E, KeyModifiers.Shift), Enabled: !(cyl && f.Face == "side"),
                                               Tip: cyl && f.Face == "side" ? "A cylinder's side is curved." : "Grows a new solid from the face; the source is unchanged.");
             yield return new Viewer3DMenuItem("Align to Face…", StartAlignToFace, Enabled: !(cyl && f.Face == "side"),
                                               Tip: "Then click the face to align with: T toggles Touching and Flush.");
@@ -529,13 +529,13 @@ public sealed partial class C3dEditorViewModel : IC3dFaceHost
         }
         else if (SelectedKernelVertex() is { } vd13)
         {
-            yield return new Viewer3DMenuItem("Move  (G)", Enabled: false, Tip: vd13);
+            yield return new Viewer3DMenuItem("Move", Enabled: false, Tip: vd13, Gesture: Viewer3DMenuItem.Plain(Key.G));
             yield return new Viewer3DMenuItem("Measure From", MeasureFromVertex);
         }
         else if (VertexSelection() is { } v)
         {
             bool fixedPoint = v.Vertex < 0;
-            yield return new Viewer3DMenuItem("Move  (G)", StartVertexMove, Enabled: !fixedPoint, Tip: fixedPoint ? C3dFaceEditor.CylinderVertexMove : null);
+            yield return new Viewer3DMenuItem("Move", StartVertexMove, Enabled: !fixedPoint, Tip: fixedPoint ? C3dFaceEditor.CylinderVertexMove : null, Gesture: Viewer3DMenuItem.Plain(Key.G));
             yield return new Viewer3DMenuItem("Set Coordinates…", () => ShowProperties(rename: false), Enabled: !fixedPoint,
                                               Tip: fixedPoint ? C3dFaceEditor.CylinderVertexMove : "Typed, in Properties.");
             yield return new Viewer3DMenuItem("Measure From", MeasureFromVertex);

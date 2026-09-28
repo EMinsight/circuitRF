@@ -130,7 +130,7 @@ public sealed partial class C3dEditorViewModel
     {
         string? why = _entered is not null ? "Leave the boolean first (Esc): its operands are grouped with it, not on their own."
                     : GroupRefusal(SelectedUnits());
-        return new Viewer3DMenuItem("Group Objects  (Ctrl/Cmd+G)", why is null ? GroupSelection : null, Enabled: why is null,
+        return new Viewer3DMenuItem("Group Objects", why is null ? GroupSelection : null, Enabled: why is null, Gesture: Viewer3DMenuItem.Command(Key.G),
                                     Tip: why ?? "One group of the selection: a click on any of it then selects all of it.");
     }
 
@@ -372,8 +372,9 @@ public sealed partial class C3dEditorViewModel
         yield return GroupObjectsItem();
         var groups = units.Where(u => u.IsGroup).Select(u => u.GroupPath!).ToList();
         if (groups.Count > 0)
-            yield return new Viewer3DMenuItem(groups.Count == 1 ? $"Ungroup {C3dGroups.NameOf(groups[0])}  (Ctrl/Cmd+Shift+G)" : $"Ungroup {groups.Count} groups  (Ctrl/Cmd+Shift+G)",
-                () => Ungroup(groups), Tip: "Only the outermost group: the groups inside it stay groups.");
+            yield return new Viewer3DMenuItem(groups.Count == 1 ? $"Ungroup {C3dGroups.NameOf(groups[0])}" : $"Ungroup {groups.Count} groups",
+                () => Ungroup(groups), Tip: "Only the outermost group: the groups inside it stay groups.",
+                Gesture: Viewer3DMenuItem.Command(Key.G, KeyModifiers.Shift));
     }
 
     /// <summary>A group's row in the tree: the canvas's functions for all of it.</summary>
@@ -382,11 +383,11 @@ public sealed partial class C3dEditorViewModel
         string path = item.GroupPath!;
         var scene = SceneObjectsOfGroup(path);
         bool drawn = scene.Count > 0;
-        yield return new Viewer3DMenuItem($"Ungroup {item.Name}  (Ctrl/Cmd+Shift+G)", () => Ungroup(path),
+        yield return new Viewer3DMenuItem($"Ungroup {item.Name}", () => Ungroup(path), Gesture: Viewer3DMenuItem.Command(Key.G, KeyModifiers.Shift),
             Tip: "This group only: the groups inside it stay groups.");
         yield return GroupObjectsItem();
         yield return Viewer3DMenuItem.Separator;
-        yield return new Viewer3DMenuItem("Duplicate  (Ctrl/Cmd+D)", StartDuplicate, Enabled: drawn,
+        yield return new Viewer3DMenuItem("Duplicate", StartDuplicate, Enabled: drawn, Gesture: Viewer3DMenuItem.Command(Key.D),
             Tip: drawn ? "A copy of the group — a new group — in place, then a Move." : "None of it is drawn.");
         yield return new Viewer3DMenuItem("Delete", () => DeleteMembers(C3dGroups.MembersOf(Document, path), $"Delete {item.Name}"),
             Tip: "The group and everything in it.");

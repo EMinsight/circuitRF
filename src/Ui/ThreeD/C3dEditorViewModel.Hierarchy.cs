@@ -702,8 +702,8 @@ public sealed partial class C3dEditorViewModel
         }
         var inst = Document.Instances[index];
         yield return Viewer3DMenuItem.Separator;
-        yield return new Viewer3DMenuItem(inst.View == C3dInstanceView.Layout ? "Push Into Cell (opens the layout)  (Ctrl/Cmd+])" : "Push Into Cell  (Ctrl/Cmd+])",
-                                          () => PushIntoSelected());
+        yield return new Viewer3DMenuItem(inst.View == C3dInstanceView.Layout ? "Push Into Cell (opens the layout)" : "Push Into Cell",
+                                          () => PushIntoSelected(), Tip: "Ctrl/Cmd+]. Ctrl/Cmd+[ pops back out.");
         string? swap = C3dHierarchy.SwapRefusal(FilePath, inst);
         yield return new Viewer3DMenuItem(inst.View == C3dInstanceView.Layout ? "Swap View to 3D" : "Swap View to Layout", () => SwapView(index),
                                           Enabled: swap is null, Tip: swap);

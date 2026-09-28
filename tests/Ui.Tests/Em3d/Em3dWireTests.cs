@@ -274,10 +274,12 @@ public sealed class Em3dWireTests
     {
         foreach (string file in RepoWBonds())
         {
+            string text = File.ReadAllText(file);
             string written = WBondIo.Write(WBondIo.ReadFile(file));
             Assert.Equal(written, WBondIo.Write(WBondIo.Read(written)));
+            // Only a key the file did not state: a wBond drawn for 3D states its wire shape on purpose.
             foreach (string key in new[] { "CrossSection", "StartBond", "EndBond", "FootLengthNm" })
-                Assert.DoesNotContain($"\"{key}\"", written, StringComparison.Ordinal);
+                if (!text.Contains($"\"{key}\"", StringComparison.Ordinal)) Assert.DoesNotContain($"\"{key}\"", written, StringComparison.Ordinal);
         }
 
         var design = OneWire(new WPoint3(0, 0, 0), new WPoint3(100_000, 0, 0));

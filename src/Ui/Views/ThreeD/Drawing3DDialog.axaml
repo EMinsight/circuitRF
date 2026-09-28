@@ -1,0 +1,77 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:t3="using:CircuitRF.Ui.ThreeD"
+        x:Class="CircuitRF.Ui.Views.ThreeD.Drawing3DDialog"
+        x:DataType="t3:Drawing3DDialogViewModel"
+        Title="{Binding Title}"
+        Width="520" SizeToContent="Height" MinWidth="440"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        ShowInTaskbar="False">
+
+    <!-- 3D vector copy and drawing export (2026-09-27): the views, the sections, then how the sheet is drawn. -->
+    <StackPanel Margin="16,12,16,12" Spacing="6">
+        <TextBlock Text="Views" FontWeight="SemiBold" FontSize="12"/>
+        <WrapPanel Orientation="Horizontal">
+            <CheckBox Content="Isometric" IsChecked="{Binding Isometric}" Margin="0,0,14,0"/>
+            <CheckBox Content="Top" IsChecked="{Binding Top}" Margin="0,0,14,0"/>
+            <CheckBox Content="Front" IsChecked="{Binding Front}" Margin="0,0,14,0"/>
+            <CheckBox Content="Right" IsChecked="{Binding Right}" Margin="0,0,14,0"/>
+            <CheckBox Content="Left" IsChecked="{Binding Left}" Margin="0,0,14,0"/>
+            <CheckBox Content="Back" IsChecked="{Binding Back}" Margin="0,0,14,0"/>
+            <CheckBox Content="Bottom" IsChecked="{Binding Bottom}" Margin="0,0,14,0"/>
+        </WrapPanel>
+        <TextBlock Text="Each is an orthographic outline, looking along the direction the 3D view's Standard Views name. All views share one scale."
+                   FontSize="11" TextWrapping="Wrap" Foreground="{DynamicResource SystemBaseMediumColor}"/>
+
+        <DockPanel Margin="0,8,0,0">
+            <Button DockPanel.Dock="Right" Content="Add Section" Command="{Binding AddSectionCommand}"
+                    ToolTip.Tip="A cut through the model, drawn filled: XY at a height, XZ at a y, YZ at an x. It starts at the model's centre."/>
+            <TextBlock Text="Sections" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center"/>
+        </DockPanel>
+        <ItemsControl ItemsSource="{Binding Sections}">
+            <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="t3:Drawing3DSectionRow">
+                    <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,2,0,2">
+                        <ComboBox ItemsSource="{x:Static t3:Drawing3DSectionRow.Planes}" SelectedIndex="{Binding Plane}" MinWidth="70"/>
+                        <TextBlock Text="{Binding Axis}" VerticalAlignment="Center" FontSize="12"/>
+                        <TextBox Text="{Binding Position}" Width="140"
+                                 ToolTip.Tip="Where the plane cuts, with its unit: 1.2mm, 350um, 40mil."/>
+                        <Button Content="Remove" Command="{Binding $parent[Window].((t3:Drawing3DDialogViewModel)DataContext).RemoveSectionCommand}"
+                                CommandParameter="{Binding}"/>
+                    </StackPanel>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <TextBlock Text="Drawing" FontWeight="SemiBold" FontSize="12" Margin="0,8,0,0"/>
+        <StackPanel Orientation="Horizontal" Spacing="8">
+            <TextBlock Text="Hidden edges" VerticalAlignment="Center" FontSize="12" Width="90"/>
+            <ComboBox ItemsSource="{x:Static t3:Drawing3DDialogViewModel.HiddenModes}" SelectedIndex="{Binding HiddenIndex}" MinWidth="170"
+                      ToolTip.Tip="Removed: what a shaded view shows. Dashed: behind a surface, drawn dashed. Shown: every edge, a wire-frame."/>
+        </StackPanel>
+        <CheckBox Content="Material legend" IsChecked="{Binding Legend}"/>
+        <CheckBox Content="Leave out what the 3D view hides" IsChecked="{Binding OmitHidden}"/>
+        <CheckBox Content="Text as outlines" IsChecked="{Binding TextAsOutlines}"
+                  ToolTip.Tip="On: every label is drawn as its letters' shapes, so it looks the same wherever the file is opened. Off: the labels are text you can select and edit, and a reader without IBM Plex Sans installed sees another font."/>
+
+        <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,4,0,0">
+            <TextBlock Text="Page" VerticalAlignment="Center" FontSize="12" Width="90"/>
+            <ComboBox ItemsSource="{x:Static t3:Drawing3DDialogViewModel.Pages}" SelectedIndex="{Binding PageIndex}" MinWidth="100"/>
+            <CheckBox Content="Landscape" IsChecked="{Binding Landscape}"/>
+        </StackPanel>
+        <StackPanel Orientation="Horizontal" Spacing="8">
+            <TextBlock Text="Format" VerticalAlignment="Center" FontSize="12" Width="90"/>
+            <ComboBox ItemsSource="{x:Static t3:Drawing3DDialogViewModel.Formats}" SelectedIndex="{Binding FormatIndex}" MinWidth="100"/>
+        </StackPanel>
+
+        <SelectableTextBlock Text="{Binding Error}" IsVisible="{Binding Error, Converter={x:Static ObjectConverters.IsNotNull}}"
+                             Foreground="{DynamicResource SystemErrorTextColor}" TextWrapping="Wrap" FontSize="12"/>
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,10,0,0">
+            <Button Content="Cancel" Width="90" HorizontalContentAlignment="Center" Command="{Binding CancelCommand}"/>
+            <Button Content="Export…" Width="90" HorizontalContentAlignment="Center" IsDefault="True" Command="{Binding ExportCommand}"
+                    ToolTip.Tip="Choose where to write the drawing."/>
+        </StackPanel>
+    </StackPanel>
+</Window>

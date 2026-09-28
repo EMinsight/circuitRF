@@ -67,10 +67,28 @@ public sealed partial class C3dEditorViewModel
         // brief-em3d-66 — an entered operand is drawn under its own scene name.
         if (!t.Instance && OperandSceneName(t.Index) is { } scene) return SceneObject(scene) is { } s ? [s] : [];
         string name = NameOf(t);
-        // brief-em3d-50 — a wire is its sweep and its balls.
-        if (!t.Instance) return SceneObjectsFor(Document.Objects[t.Index], balls: true);
+        // brief-em3d-50 — a wire is its sweep and its balls. A Boolean is also every Tool it draws as an object of its own (a
+        // kept Tool, a disabled operation's Tool): they move with it on the commit, so its preview moves them too — Select All
+        // then a gizmo drag left a kept bore standing where it was until the drop.
+        if (!t.Instance) return SceneObjectsFor(Document.Objects[t.Index], balls: true).Concat(StandaloneToolsOf(Document.Objects[t.Index].Name));
         return Viewer.Scene.Objects.Where(o => InstanceOf(o) is { } p && (p == name || p.StartsWith(name + "/", StringComparison.Ordinal)
                                                                           || p.StartsWith(name + "[", StringComparison.Ordinal)));
+    }
+
+    private (C3dElaboration Of, ILookup<string, string> Names)? _standaloneTools;
+
+    /// <summary>The scene objects the document's top-level object <paramref name="name"/> draws besides itself: the solids the
+    /// elaboration records it as the <see cref="C3dProvenance.TopObject"/> of. Looked up once per elaboration.</summary>
+    private IEnumerable<Scene3DObject> StandaloneToolsOf(string name)
+    {
+        if (Elaboration is not { } e) return [];
+        if (_standaloneTools is not { } c || !ReferenceEquals(c.Of, e))
+        {
+            var names = e.Provenance.Where(kv => kv.Value is { TopObject: { } top, InstancePath.Length: 0 } && top != kv.Key)
+                                    .ToLookup(kv => kv.Value.TopObject!, kv => kv.Key, StringComparer.Ordinal);
+            _standaloneTools = c = (e, names);
+        }
+        return c.Names[name].Select(SceneObject).OfType<Scene3DObject>();
     }
 
     /// <summary>
@@ -856,12 +874,12 @@ public sealed partial class C3dEditorViewModel
     {
         if (Viewer.SelectMode != Scene3DSelectMode.Object || Targets() is not { Count: > 0 } targets) yield break;
         bool objects = targets.Any(t => !t.Instance);
-        yield return new Viewer3DMenuItem("Move  (G)", () => StartMove());
+        yield return new Viewer3DMenuItem("Move", () => StartMove(), Gesture: Viewer3DMenuItem.Plain(Key.G));
         yield return new Viewer3DMenuItem("Move Along", Children:
         [
             new("X", () => StartMove(C3dMoveLock.AxisX)), new("Y", () => StartMove(C3dMoveLock.AxisY)), new("Z", () => StartMove(C3dMoveLock.AxisZ)),
         ]);
-        yield return new Viewer3DMenuItem("Rotate  (R)", StartRotate);
+        yield return new Viewer3DMenuItem("Rotate", StartRotate, Gesture: Viewer3DMenuItem.Plain(Key.R));
         yield return new Viewer3DMenuItem("Rotate 90°", Children:
         [
             new("+90° about X", () => RotateQuick(C3dAxis.X, 90)), new("−90° about X", () => RotateQuick(C3dAxis.X, -90)),
@@ -873,7 +891,7 @@ public sealed partial class C3dEditorViewModel
             new("Across XY", () => MirrorAcross(C3dPlane.XY)), new("Across YZ", () => MirrorAcross(C3dPlane.YZ)),
             new("Across XZ", () => MirrorAcross(C3dPlane.XZ)),
         ]);
-        yield return new Viewer3DMenuItem("Duplicate  (Ctrl/Cmd+D)", StartDuplicate);
+        yield return new Viewer3DMenuItem("Duplicate", StartDuplicate, Gesture: Viewer3DMenuItem.Command(Key.D));
         yield return new Viewer3DMenuItem("Array…", OpenArray);
         yield return new Viewer3DMenuItem("Align", Enabled: targets.Count >= 2,
             Tip: targets.Count >= 2 ? "To the last one selected." : "Select two or more: the others line up with the last one selected.",

@@ -28,9 +28,11 @@ namespace CircuitRF.Render;
 /// <param name="Margin">The fraction of the drawing area left around the frame.</param>
 /// <param name="Transparent">Leave the page unpainted. Air is then left unpainted too, so a plated
 /// via's bore shows the barrel behind it rather than a hole.</param>
+/// <param name="TextAsPaths">Every label drawn as its glyphs' outlines rather than as text (<see cref="Em3dText"/>): an
+/// SVG that looks the same wherever it is opened, at the cost of text a reader can select. Off for `render`.</param>
 public sealed record Em3dRenderStyle(
     IReadOnlyDictionary<string, SKColor> ObjectColours,
-    ColorTheme Theme, ColorVariant Variant, double Margin, bool Transparent);
+    ColorTheme Theme, ColorVariant Variant, double Margin, bool Transparent, bool TextAsPaths = false);
 
 /// <summary>Where everything goes on the page: the frame's device rectangle, the scale from metres
 /// to device units, and the text metrics. One function computes it, so the picture and the report of
@@ -115,14 +117,7 @@ public static class Em3dSectionRenderer
 
         var st   = StackupRenderTheme.FromTheme(style.Theme, style.Variant);
         var port = Sk(style.Theme.Resolve(ColorRole.LayoutPCellPin, style.Variant));
-        SKColor MaterialFill(string material)
-        {
-            int k = Math.Max(0, IndexOf(scene.DielectricMaterials, material));
-            st.DielectricFill.ToHsv(out float h, out float s, out float v);
-            // A floor on saturation, or a grey base turns in hue and stays grey: two substrates would
-            // be the same fill.
-            return SKColor.FromHsv((h + 47f * k) % 360f, Math.Max(s, 24f), v).WithAlpha(st.DielectricFill.Alpha);
-        }
+        SKColor MaterialFill(string material) => DielectricFill(st, scene.DielectricMaterials, material);
         SKColor Fill(string obj, Em3dRole role, string material) => role switch
         {
             Em3dRole.Conductor => style.ObjectColours.TryGetValue(obj, out var c) ? c : st.BandEdge,
@@ -203,19 +198,19 @@ public static class Em3dSectionRenderer
             switch (f.Side)
             {
                 case Em3dFaceSide.Bottom:
-                    canvas.DrawText(label, frame.MidX, frame.Bottom + lineH, SKTextAlign.Center, small, text); break;
+                    Em3dText.Draw(canvas, style.TextAsPaths, label, frame.MidX, frame.Bottom + lineH, SKTextAlign.Center, small, text); break;
                 case Em3dFaceSide.Top:
-                    canvas.DrawText(label, frame.MidX, frame.Top - lineH * 0.35f, SKTextAlign.Center, small, text); break;
+                    Em3dText.Draw(canvas, style.TextAsPaths, label, frame.MidX, frame.Top - lineH * 0.35f, SKTextAlign.Center, small, text); break;
                 case Em3dFaceSide.Left:
                     canvas.Save();
                     canvas.RotateDegrees(-90, frame.Left - lineH * 0.35f, frame.MidY);
-                    canvas.DrawText(label, frame.Left - lineH * 0.35f, frame.MidY, SKTextAlign.Center, small, text);
+                    Em3dText.Draw(canvas, style.TextAsPaths, label, frame.Left - lineH * 0.35f, frame.MidY, SKTextAlign.Center, small, text);
                     canvas.Restore();
                     break;
                 case Em3dFaceSide.Right:
                     canvas.Save();
                     canvas.RotateDegrees(90, frame.Right + lineH * 0.35f, frame.MidY);
-                    canvas.DrawText(label, frame.Right + lineH * 0.35f, frame.MidY, SKTextAlign.Center, small, text);
+                    Em3dText.Draw(canvas, style.TextAsPaths, label, frame.Right + lineH * 0.35f, frame.MidY, SKTextAlign.Center, small, text);
                     canvas.Restore();
                     break;
             }
@@ -238,13 +233,13 @@ public static class Em3dSectionRenderer
             stroke.StrokeWidth = 1.25f;
             canvas.DrawPath(path, stroke);
             text.Color = port;
-            canvas.DrawText($"P{p.Number}", bounds.Right + fs * 0.3f, bounds.Top + fs * 0.9f, SKTextAlign.Left, bold, text);
+            Em3dText.Draw(canvas, style.TextAsPaths, $"P{p.Number}", bounds.Right + fs * 0.3f, bounds.Top + fs * 0.9f, SKTextAlign.Left, bold, text);
             text.Color = st.LabelInk;
         }
 
         // ── the legend ─────────────────────────────────────────────────────────────────────────
         float lx = width - legendW, ly = pad + band;
-        canvas.DrawText("Materials", lx, ly + fs, SKTextAlign.Left, bold, text);
+        Em3dText.Draw(canvas, style.TextAsPaths, "Materials", lx, ly + fs, SKTextAlign.Left, bold, text);
         ly += lineH * 1.4f;
         var rows = new List<(string Material, SKColor Colour, Em3dRole Role)>();
         var seen = new HashSet<(string, SKColor)>();
@@ -263,13 +258,13 @@ public static class Em3dSectionRenderer
             stroke.Color = role == Em3dRole.Air ? st.LabelInk.WithAlpha(0x90) : Darker(colour);
             stroke.StrokeWidth = 1f;
             canvas.DrawRect(swatch, stroke);
-            canvas.DrawText(role == Em3dRole.Air ? material + " (not filled)" : material,
+            Em3dText.Draw(canvas, style.TextAsPaths, role == Em3dRole.Air ? material + " (not filled)" : material,
                             lx + fs * 1.5f, ly + fs * 0.85f, SKTextAlign.Left, font, text);
             ly += lineH;
         }
         if (rows.Count > fit)
         {
-            canvas.DrawText($"+{rows.Count - Math.Max(0, fit - 1)} more", lx, ly + fs * 0.85f, SKTextAlign.Left, font, text);
+            Em3dText.Draw(canvas, style.TextAsPaths, $"+{rows.Count - Math.Max(0, fit - 1)} more", lx, ly + fs * 0.85f, SKTextAlign.Left, font, text);
             ly += lineH;
         }
         if (scene.Ports.Count > 0)
@@ -288,29 +283,44 @@ public static class Em3dSectionRenderer
                 canvas.Restore();
                 canvas.DrawPath(p, stroke);
             }
-            canvas.DrawText("Port (its sheet, projected)", lx + fs * 1.5f, ly + fs * 0.85f, SKTextAlign.Left, font, text);
+            Em3dText.Draw(canvas, style.TextAsPaths, "Port (its sheet, projected)", lx + fs * 1.5f, ly + fs * 0.85f, SKTextAlign.Left, font, text);
         }
 
         // ── the caption ────────────────────────────────────────────────────────────────────────
         float cy0 = height - captionH + lineH;
-        canvas.DrawText(Title(scene), pad, cy0, SKTextAlign.Left, bold, text);
-        canvas.DrawText(Convention(scene), pad, cy0 + lineH, SKTextAlign.Left, small, text);
+        Em3dText.Draw(canvas, style.TextAsPaths, Title(scene), pad, cy0, SKTextAlign.Left, bold, text);
+        Em3dText.Draw(canvas, style.TextAsPaths, Convention(scene), pad, cy0 + lineH, SKTextAlign.Left, small, text);
         // Faces that read the same are said once — six absorbing faces at one distance are one fact.
         var unlabelled = scene.Faces.Where(f => f.Side == Em3dFaceSide.None)
                               .GroupBy(f => FaceText(f with { Face = "" }))
                               .Select(g => string.Join(", ", g.Select(f => f.Face)) + g.Key);
-        canvas.DrawText("Air box: " + string.Join("  ·  ", unlabelled), pad, cy0 + 2 * lineH, SKTextAlign.Left, small, text);
+        Em3dText.Draw(canvas, style.TextAsPaths, "Air box: " + string.Join("  ·  ", unlabelled), pad, cy0 + 2 * lineH, SKTextAlign.Left, small, text);
+    }
+
+    /// <summary>A dielectric's fill: the stackup's dielectric base, turned in hue by the material's index in
+    /// <paramref name="dielectrics"/> (the problem's order), so a material keeps its colour from one view to the next.</summary>
+    internal static SKColor DielectricFill(StackupRenderTheme st, IReadOnlyList<string> dielectrics, string material)
+    {
+        int k = Math.Max(0, IndexOf(dielectrics, material));
+        st.DielectricFill.ToHsv(out float h, out float s, out float v);
+        // A floor on saturation, or a grey base turns in hue and stays grey: two substrates would
+        // be the same fill.
+        return SKColor.FromHsv((h + 47f * k) % 360f, Math.Max(s, 24f), v).WithAlpha(st.DielectricFill.Alpha);
     }
 
     /// <summary>The caption's first line: what this picture is.</summary>
     public static string Title(Em3dScene scene) => scene.View.Kind == Em3dViewKind.Iso
         ? "Isometric outline, viewed from +x +y +z"
+        : scene.View.Kind == Em3dViewKind.Projection
+        ? $"{scene.View.Projection?.Name ?? "Outline"} outline, orthographic"
         : $"{scene.View.Plane.ToUpperInvariant()} section at {scene.View.Axis} = {Em3dSectionScene.FormatLength(scene.At)}";
 
     /// <summary>The caption's second line: the rule the picture was drawn by — for an outline, that it
     /// hides nothing, because a wire-frame that looks like a shaded model misleads.</summary>
     public static string Convention(Em3dScene scene) => scene.View.Kind == Em3dViewKind.Iso
         ? "Silhouettes and sharp edges, orthographic. NO hidden-line removal: edges behind a surface are drawn too."
+        : scene.View.Kind == Em3dViewKind.Projection
+        ? "Silhouettes and sharp edges, orthographic."
         : $"A solid is drawn where its bottom ≤ {scene.View.Axis} < its top; a sheet within " +
           $"{Em3dSectionScene.FormatLength(scene.SnapTolerance)} of its plane. Ports are drawn projected onto the plane.";
 
@@ -328,7 +338,7 @@ public static class Em3dSectionRenderer
 
     /// <summary>A port's projected outline, widened to <see cref="MinPortWidth"/> across whichever
     /// device axis it is thinner than that on.</summary>
-    private static SKPath PortPath(List<SKPoint> pts)
+    internal static SKPath PortPath(List<SKPoint> pts)
     {
         float x0 = pts.Min(p => p.X), x1 = pts.Max(p => p.X), y0 = pts.Min(p => p.Y), y1 = pts.Max(p => p.Y);
         var path = new SKPath();
@@ -343,14 +353,14 @@ public static class Em3dSectionRenderer
         return path;
     }
 
-    private static int IndexOf(IReadOnlyList<string> list, string item)
+    internal static int IndexOf(IReadOnlyList<string> list, string item)
     {
         for (int i = 0; i < list.Count; i++) if (list[i] == item) return i;
         return -1;
     }
 
-    private static SKColor Darker(SKColor c)
+    internal static SKColor Darker(SKColor c)
         => new((byte)(c.Red * 0.6), (byte)(c.Green * 0.6), (byte)(c.Blue * 0.6), 0xFF);
 
-    private static SKColor Sk(Rgba c) => new(c.R, c.G, c.B, c.A);
+    internal static SKColor Sk(Rgba c) => new(c.R, c.G, c.B, c.A);
 }

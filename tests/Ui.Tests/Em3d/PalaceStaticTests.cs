@@ -236,10 +236,11 @@ public sealed class PalaceStaticTests(ITestOutputHelper output) : IDisposable
             // Writer to writer, as brief 3's gate 6 does: not every .cem in the repo is in the writer's own
             // spelling, so the bytes on disk were never the fixed point. What this brief's fields could
             // change is what the writer EMITS for an existing file, and the only way is a key it did not state.
-            string written = EmSetupPersistence.Serialize(EmSetupPersistence.Deserialize(File.ReadAllText(cem)));
+            string text = File.ReadAllText(cem);
+            string written = EmSetupPersistence.Serialize(EmSetupPersistence.Deserialize(text));
             Assert.Equal(written, EmSetupPersistence.Serialize(EmSetupPersistence.Deserialize(written)));
             foreach (string key in new[] { "\"Problem3D\"", "\"Terminals3D\"", "\"Ground3D\"" })
-                Assert.DoesNotContain(key, written, StringComparison.Ordinal);
+                if (!text.Contains(key, StringComparison.Ordinal)) Assert.DoesNotContain(key, written, StringComparison.Ordinal);
         }
 
         var (setup, _) = TwoLines(Em3dProblemType.Magnetostatic);

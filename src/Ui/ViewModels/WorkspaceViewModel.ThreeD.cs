@@ -160,6 +160,8 @@ public partial class WorkspaceViewModel
             vm.ExternalChangeWhileDirty += () => _ = AskReloadC3dAsync(doc);
             // 3D editor round 1 — the selection's fields are the application's Properties Inspector: Properties (the
             // toolbar button, the menus) brings it forward, opening it when it was closed.
+            // 3D menu cleanup — the 3D menu's Modify items follow this editor's selection while it is the active document.
+            vm.MenuStateChanged += () => { if (ReferenceEquals(ActiveC3dEditor(), vm)) RaiseThreeDSelectionChanged(); };
             vm.PropertiesRequested += _ =>
             {
                 ShowToolPanel(CircuitRF.Ui.Docking.DockPanelIds.Properties);
@@ -558,7 +560,7 @@ public partial class WorkspaceViewModel
 
     // ── Import STEP (brief-em3d-68) ────────────────────────────────────────────────────────────
 
-    /// <summary>File ▸ Import ▸ STEP… and 3D ▸ Import STEP…: shown always, disabled without the kernel or a 3D editor.</summary>
+    /// <summary>File ▸ Import ▸ STEP…: shown always, disabled without the kernel or a 3D editor.</summary>
     public bool ThreeDImportStepAvailable => CircuitRF.Ui.ThreeD.GeometryKernelAvailability.IsAvailable && HasActiveC3dEditor();
 
     /// <summary>The Import STEP items' tooltip: the capability's own sentence when that is why they are disabled.</summary>
@@ -603,7 +605,7 @@ public partial class WorkspaceViewModel
 
     // ── Export STEP (brief-em3d-69) ────────────────────────────────────────────────────────────
 
-    /// <summary>File ▸ Export ▸ STEP… and 3D ▸ Export STEP…: shown always, enabled with the kernel and an active 3D or layout
+    /// <summary>File ▸ Export ▸ STEP…: shown always, enabled with the kernel and an active 3D or layout
     /// document (R-em3d69-4b).</summary>
     public bool ThreeDExportStepAvailable => CircuitRF.Ui.ThreeD.GeometryKernelAvailability.IsAvailable && StepExportSource() is not null;
 
@@ -701,6 +703,7 @@ public partial class WorkspaceViewModel
         OnPropertyChanged(nameof(ThreeDExportStepAvailable));
         OnPropertyChanged(nameof(ThreeDExportStepTip));
         ExportStepCommand.NotifyCanExecuteChanged();
+        ExportDrawingCommand.NotifyCanExecuteChanged();
         ThreeDSelectModeCommand.NotifyCanExecuteChanged();
         ThreeDFitCommand.NotifyCanExecuteChanged();
         ThreeDStandardViewCommand.NotifyCanExecuteChanged();
@@ -712,10 +715,56 @@ public partial class WorkspaceViewModel
         ThreeDDrawCommand.NotifyCanExecuteChanged();
         ThreeDDrawingPlaneCommand.NotifyCanExecuteChanged();
         ThreeDExtrudeCommand.NotifyCanExecuteChanged();
-        ThreeDModifyCommand.NotifyCanExecuteChanged();
+        ThreeDSelectAllCommand.NotifyCanExecuteChanged();
         ThreeDMeasureCommand.NotifyCanExecuteChanged();
         ThreeDMaterialsCommand.NotifyCanExecuteChanged();
         RunAnalysisCommand.NotifyCanExecuteChanged();
+        RaiseThreeDSelectionChanged();
+    }
+
+    // ── 3D menu cleanup (2026-09-27): what the selection can do ──────────────────────────────
+    //
+    // Each Modify / Boolean item is enabled exactly when the active editor's CanRunModify says its operation would act — the
+    // predicates the canvas context menu is built from. A submenu is enabled when at least its reason to exist holds.
+
+    /// <summary>3D ▸ Modify: something is selected (in the view, or a polyline or wire in the tree).</summary>
+    public bool ThreeDModifyMenuEnabled => ActiveC3dEditor()?.HasModifySelection == true;
+
+    /// <summary>Move Along, Rotate 90° and Mirror: an object or instance is selected (Object mode).</summary>
+    public bool ThreeDTransformMenuEnabled => ActiveC3dEditor()?.CanRunModify("MoveX") == true;
+
+    /// <summary>Align: two or more selected — the others line up with the last.</summary>
+    public bool ThreeDAlignMenuEnabled => ActiveC3dEditor()?.CanRunModify("AlignXMin") == true;
+
+    /// <summary>Order: an object (not an instance) is selected.</summary>
+    public bool ThreeDOrderMenuEnabled => ActiveC3dEditor()?.CanRunModify("Front") == true;
+
+    /// <summary>Face: one face of this document's own objects is selected (Face mode).</summary>
+    public bool ThreeDFaceMenuEnabled => ActiveC3dEditor()?.CanRunModify("MeasureFace") == true;
+
+    /// <summary>Edge: an edge is selected (Edge mode).</summary>
+    public bool ThreeDEdgeMenuEnabled => ActiveC3dEditor()?.CanRunModify("TangentChain") == true;
+
+    /// <summary>Vertex: one vertex is selected (Vertex mode).</summary>
+    public bool ThreeDVertexMenuEnabled => ActiveC3dEditor()?.CanRunModify("MeasureFrom") == true;
+
+    /// <summary>3D ▸ Boolean: the kernel, and an object selected in Object mode — Subtract… and the rest say why not.</summary>
+    public bool ThreeDBooleanMenuEnabled
+        => ThreeDBooleanAvailable && ActiveC3dEditor() is { } e && e.Viewer.SelectMode == Scene3DSelectMode.Object && e.Targets().Count > 0;
+
+    private static readonly string[] ThreeDSelectionProperties =
+    [
+        nameof(ThreeDModifyMenuEnabled), nameof(ThreeDTransformMenuEnabled), nameof(ThreeDAlignMenuEnabled),
+        nameof(ThreeDOrderMenuEnabled), nameof(ThreeDFaceMenuEnabled), nameof(ThreeDEdgeMenuEnabled),
+        nameof(ThreeDVertexMenuEnabled), nameof(ThreeDBooleanMenuEnabled),
+    ];
+
+    /// <summary>Re-asks every item that depends on the active editor's selection.</summary>
+    private void RaiseThreeDSelectionChanged()
+    {
+        foreach (string p in ThreeDSelectionProperties) OnPropertyChanged(p);
+        ThreeDModifyCommand.NotifyCanExecuteChanged();
+        ThreeDExtrudeCommand.NotifyCanExecuteChanged();
     }
 
     // brief-em3d-45 — drawing needs the editor, not the read-only viewer.
@@ -739,14 +788,23 @@ public partial class WorkspaceViewModel
         if (Enum.TryParse<CircuitRF.Design.ThreeD.C3dPlane>(which, out var p)) e.SetPlane(e.Plane with { Plane = p });
     }
 
-    /// <summary>3D ▸ Modify ▸ Extrude.</summary>
-    [RelayCommand(CanExecute = nameof(HasActiveC3dEditor))]
+    /// <summary>3D ▸ Modify ▸ Extrude — enabled on a sheet (or a tree-selected polyline) it can extrude.</summary>
+    [RelayCommand(CanExecute = nameof(CanThreeDExtrude))]
     private void ThreeDExtrude() => ActiveC3dEditor()?.Extrude();
 
+    private bool CanThreeDExtrude() => ActiveC3dEditor()?.CanExtrude == true;
+
     /// <summary>brief-em3d-46 — 3D ▸ Modify's object operations, by name: the same functions the context menu and the
-    /// keys call (C3dEditorViewModel.RunModify).</summary>
-    [RelayCommand(CanExecute = nameof(HasActiveC3dEditor))]
+    /// keys call (C3dEditorViewModel.RunModify). 3D menu cleanup — each enabled only when it can act on the selection.</summary>
+    [RelayCommand(CanExecute = nameof(CanThreeDModify))]
     private void ThreeDModify(string which) => ActiveC3dEditor()?.RunModify(which);
+
+    private bool CanThreeDModify(string? which) => ActiveC3dEditor()?.CanRunModify(which) == true;
+
+    /// <summary>3D menu cleanup — 3D ▸ Select All Objects: every shown object, in the editor and the read-only viewer alike
+    /// (Ctrl/Cmd+A on the pane is the same call).</summary>
+    [RelayCommand(CanExecute = nameof(HasActive3DPane))]
+    private void ThreeDSelectAll() => Active3DPane()?.SelectAllObjects();
 
     /// <summary>brief-em3d-46 R-em3d46-6 — 3D ▸ Measure, in the editor and the read-only viewer alike.</summary>
     [RelayCommand(CanExecute = nameof(HasActive3DPane))]

@@ -59,7 +59,10 @@ public sealed partial class Evaluator
         {
             var ast  = Parser.Parse(expression);
             var raw  = EvalExpr(ast, owningScope);
-            var val  = ApplyUnit(raw, unit);
+            // A binding's own unit is a site unit like any other, and var-unit-wins applies to it: `b = 2*a`
+            // declared in mil, with `a` in mil, is 20 mil — `a` is already scaled, and scaling it again made b
+            // 2.54e-5 times too small. Only a binding with no unit-bearing reference takes its unit.
+            var val  = !string.IsNullOrEmpty(unit) && ReferencesUnitBearingVar(ast, owningScope) ? raw : ApplyUnit(raw, unit);
             _memo[key] = val;
             return val;
         }

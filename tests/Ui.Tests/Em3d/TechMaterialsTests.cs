@@ -200,6 +200,9 @@ public sealed class TechMaterialsTests(ITestOutputHelper output) : IDisposable
             // brief-em3d-53: a material's uses (the Used-by column, Delete's refusal) and a rename across files.
             "CircuitRF.Ui.Layout.TechEditorViewModel",
             "CircuitRF.Ui.ViewModels.WorkspaceViewModel",
+            // brief-em3d-45/47: a new sheet's default thickness is the conductor layer's of the SAME NAME — the name read
+            // to find a layer, never to pick an electrical value (R-em3d2-2b's rule).
+            "CircuitRF.Ui.ThreeD.C3dEditorViewModel",
         ];
 
         var readers = new List<string>();

@@ -135,6 +135,9 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         };
         Viewer.SceneAdopted += OnSceneAdopted;
         Viewer.SelectionChanged += OnViewerSelectionChanged;
+        // 3D menu cleanup — the menu bar's Modify items follow the selection and the select mode.
+        Viewer.SelectionChanged += RaiseMenuStateChanged;
+        Viewer.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(Viewer3DViewModel.SelectMode)) RaiseMenuStateChanged(); };
         // brief-em3d-44 R-em3d44-5 — the editor snaps; its switches are the user's, stored per user.
         var (snapOn, kinds) = Snap3DPreference.Preferred;
         Viewer.SnapKinds = kinds;
@@ -335,6 +338,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         // Published LAST: a reader that waits for this generation (a test's settle) must find the adoption finished — the
         // held preview released and the face reselected — not half done.
         Interlocked.Exchange(ref _adoptedGeneration, gen);
+        RaiseMenuStateChanged();
     }
 
     /// <summary>
@@ -1067,6 +1071,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     /// </summary>
     partial void OnSelectedTreeItemChanged(C3dTreeItem? value)
     {
+        RaiseMenuStateChanged();
         if (!_settingTreeRows && !(value is null ? _selectedTreeItems.Count == 0 : _selectedTreeItems is [var only] && only == value))
         {
             _selectedTreeItems = value is null ? [] : [value];

@@ -281,6 +281,12 @@ public sealed class AppPreferences
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public int? Snap3DKinds { get; set; }
 
+    // 3D vector copy and drawing export (2026-09-27): Export Drawing…'s last choices (views, hidden edges, legend, text,
+    // page, format). Per USER — a working habit, like the snap. Null until the first export. See Drawing3DPreference.
+    [JsonPropertyName("drawing3d")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public CircuitRF.Ui.ThreeD.Drawing3DChoices? Drawing3D { get; set; }
+
     // brief-em3d-48 R-em3d48-3c: the 3D view's triangle budget — beyond it, array elements farthest from the eye are
     // drawn as their bounding boxes (and the status line says so). Per USER, a property of the machine it runs on. Null
     // means the shipped default (Scene3DFramePlan.DefaultTriangleBudget). See Lod3DPreference.

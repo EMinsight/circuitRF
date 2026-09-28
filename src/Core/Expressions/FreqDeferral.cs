@@ -230,9 +230,11 @@ public sealed class FreqDeferral
         try
         {
             // Always folds from here down — see the note on Inline.
-            var inlined = Inline(Parser.Parse(expression), owner, evaluator, visiting, depth + 1,
-                                 foldFreeNames: true);
-            return ApplyUnitScale(inlined, unit);
+            var parsed = Parser.Parse(expression);
+            var inlined = Inline(parsed, owner, evaluator, visiting, depth + 1, foldFreeNames: true);
+            // var-unit-wins, exactly as Evaluator.Resolve applies it: a binding that references a unit-bearing
+            // name does not take its own unit again.
+            return Evaluator.ReferencesUnitBearingVariable(expression, owner) ? inlined : ApplyUnitScale(inlined, unit);
         }
         finally { visiting.Remove(key); }
     }

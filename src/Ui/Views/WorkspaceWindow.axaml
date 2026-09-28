@@ -129,6 +129,8 @@
                                     <NativeMenuItem Header="Gerber" Command="{Binding ExportGerberCommand}"/>
                                     <NativeMenuItem Header="Board…" Command="{Binding ExportBoardCommand}"/>
                                     <NativeMenuItem Header="STEP…" ToolTip="{Binding ThreeDExportStepTip}" Command="{Binding ExportStepCommand}" CommandParameter="{Binding $parent[Window]}"/>
+                                    <!-- 3D vector copy and drawing export (2026-09-27) — the 3D pane's own Export Drawing…; mirrored below and in the torn-off File menu. -->
+                                    <NativeMenuItem Header="Drawing…" ToolTip="A drawing of the active 3D document: isometric, top, front and other views, and sections, at one scale, as SVG or PDF. Requires an active 3D document." Command="{Binding ExportDrawingCommand}" CommandParameter="{Binding $parent[Window]}"/>
                                     <NativeMenuItem Header="Board netlist (IPC-D-356)…" Command="{Binding ExportBoardNetlistCommand}"/>
                                     <NativeMenuItem Header="Placement…" Command="{Binding ExportPlacementCommand}"/>
                                     <NativeMenuItem Header="Bill of materials…" Command="{Binding ExportBomCommand}"/>
@@ -190,6 +192,9 @@
                                 </NativeMenu>
                             </NativeMenuItem.Menu>
                         </NativeMenuItem>
+                        <!-- 3D menu cleanup — no key equivalent: on macOS one is taken by the menu before any control sees it, so
+                             Cmd+A would stop selecting a text box's text while a 3D view is active. The pane answers Cmd+A itself. -->
+                        <NativeMenuItem Header="Select All Objects" ToolTip="Every shown object; hidden ones are left out. Cmd+A in the view. Requires an active 3D document." Command="{Binding ThreeDSelectAllCommand}"/>
                         <NativeMenuItem Header="View" ToolTip="Requires an active 3D document.">
                             <NativeMenuItem.Menu>
                                 <NativeMenu>
@@ -250,11 +255,11 @@
                                 </NativeMenu>
                             </NativeMenuItem.Menu>
                         </NativeMenuItem>
-                        <NativeMenuItem Header="Modify" ToolTip="Requires an active 3D editor.">
+                        <NativeMenuItem Header="Modify" ToolTip="Select something first. Requires an active 3D editor." IsEnabled="{Binding ThreeDModifyMenuEnabled}">
                             <NativeMenuItem.Menu>
                                 <NativeMenu>
-                                    <NativeMenuItem Header="Move  (G)" ToolTip="Base point, then target point, both snapped. X/Y/Z locks an axis. Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="Move"/>
-                                    <NativeMenuItem Header="Move Along" ToolTip="Requires an active 3D editor.">
+                                    <NativeMenuItem Header="Move" ToolTip="G. Base point, then target point, both snapped. X/Y/Z locks an axis. Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="Move"/>
+                                    <NativeMenuItem Header="Move Along" ToolTip="Requires an active 3D editor." IsEnabled="{Binding ThreeDTransformMenuEnabled}">
                                         <NativeMenuItem.Menu>
                                             <NativeMenu>
                                                 <NativeMenuItem Header="X" ToolTip="Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="MoveX"/>
@@ -263,8 +268,8 @@
                                             </NativeMenu>
                                         </NativeMenuItem.Menu>
                                     </NativeMenuItem>
-                                    <NativeMenuItem Header="Rotate  (R)" ToolTip="About the drawing plane's normal through the pivot; 15° steps, Shift free, or typed. Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="Rotate"/>
-                                    <NativeMenuItem Header="Rotate 90°" ToolTip="Requires an active 3D editor.">
+                                    <NativeMenuItem Header="Rotate" ToolTip="R. About the drawing plane's normal through the pivot; 15° steps, Shift free, or typed. Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="Rotate"/>
+                                    <NativeMenuItem Header="Rotate 90°" ToolTip="Requires an active 3D editor." IsEnabled="{Binding ThreeDTransformMenuEnabled}">
                                         <NativeMenuItem.Menu>
                                             <NativeMenu>
                                                 <NativeMenuItem Header="+90° about X" ToolTip="Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="RotX+"/>
@@ -276,7 +281,7 @@
                                             </NativeMenu>
                                         </NativeMenuItem.Menu>
                                     </NativeMenuItem>
-                                    <NativeMenuItem Header="Mirror" ToolTip="Requires an active 3D editor.">
+                                    <NativeMenuItem Header="Mirror" ToolTip="Requires an active 3D editor." IsEnabled="{Binding ThreeDTransformMenuEnabled}">
                                         <NativeMenuItem.Menu>
                                             <NativeMenu>
                                                 <NativeMenuItem Header="Across XY" ToolTip="Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="MirrorXY"/>
@@ -285,10 +290,10 @@
                                             </NativeMenu>
                                         </NativeMenuItem.Menu>
                                     </NativeMenuItem>
-                                    <NativeMenuItem Header="Duplicate  (Ctrl/Cmd+D)" ToolTip="Copies in place, then moves them. Esc cancels both. Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="Duplicate"/>
+                                    <NativeMenuItem Header="Duplicate" Gesture="Meta+D" ToolTip="Copies in place, then moves them. Esc cancels both. Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="Duplicate"/>
                                     <NativeMenuItem Header="Array…" ToolTip="Copies along up to three axes at a pitch, previewed live. Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="Array"/>
                                     <NativeMenuItem Header="Re-Seat Wire Ends" ToolTip="Each selected wire's ends moved up or down onto the pad now under them. Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="ReseatWires"/>
-                                    <NativeMenuItem Header="Align" ToolTip="Requires an active 3D editor.">
+                                    <NativeMenuItem Header="Align" ToolTip="Select two or more: the others line up with the last one selected. Requires an active 3D editor." IsEnabled="{Binding ThreeDAlignMenuEnabled}">
                                         <NativeMenuItem.Menu>
                                             <NativeMenu>
                                                 <NativeMenuItem Header="X min" ToolTip="Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="AlignXMin"/>
@@ -303,7 +308,7 @@
                                             </NativeMenu>
                                         </NativeMenuItem.Menu>
                                     </NativeMenuItem>
-                                    <NativeMenuItem Header="Order" ToolTip="Requires an active 3D editor.">
+                                    <NativeMenuItem Header="Order" ToolTip="Construction order: a later object wins where solids overlap. Requires an active 3D editor." IsEnabled="{Binding ThreeDOrderMenuEnabled}">
                                         <NativeMenuItem.Menu>
                                             <NativeMenu>
                                                 <NativeMenuItem Header="Bring to Front" ToolTip="Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="Front"/>
@@ -314,17 +319,17 @@
                                         </NativeMenuItem.Menu>
                                     </NativeMenuItem>
                                     <NativeMenuItemSeparator/>
-                                    <NativeMenuItem Header="Group Objects  (Ctrl/Cmd+G)" ToolTip="The selection becomes one group: a click on any of it then selects all of it. Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="Group"/>
-                                    <NativeMenuItem Header="Ungroup  (Ctrl/Cmd+Shift+G)" ToolTip="The selected group's members, and the groups inside it, go back to where it was. Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="Ungroup"/>
+                                    <NativeMenuItem Header="Group Objects" Gesture="Meta+G" ToolTip="The selection becomes one group: a click on any of it then selects all of it. Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="Group"/>
+                                    <NativeMenuItem Header="Ungroup" Gesture="Meta+Shift+G" ToolTip="The selected group's members, and the groups inside it, go back to where it was. Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="Ungroup"/>
                                     <NativeMenuItemSeparator/>
                                     <NativeMenuItem Header="Extrude" ToolTip="A selected sheet, or a polyline selected in the tree, into a prism. Requires an active 3D editor." Command="{Binding ThreeDExtrudeCommand}"/>
                                     <NativeMenuItemSeparator/>
-                                    <NativeMenuItem Header="Face" ToolTip="Face mode (F): the selected face. Requires an active 3D editor.">
+                                    <NativeMenuItem Header="Face" ToolTip="Face mode (F): the selected face. Requires an active 3D editor." IsEnabled="{Binding ThreeDFaceMenuEnabled}">
                                         <NativeMenuItem.Menu>
                                             <NativeMenu>
-                                                <NativeMenuItem Header="Move Along Normal  (N)" ToolTip="Push or pull the selected face; its neighbours keep their planes. Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="PushPull"/>
-                                                <NativeMenuItem Header="Move  (G)" ToolTip="The face's corners follow base point to target point; its neighbours tilt, or fold. Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="FaceMove"/>
-                                                <NativeMenuItem Header="Extrude to New Solid  (Shift+E)" ToolTip="A new solid grows from the face along its normal. Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="ExtrudeFace"/>
+                                                <NativeMenuItem Header="Move Along Normal" ToolTip="N. Push or pull the selected face; its neighbours keep their planes. Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="PushPull"/>
+                                                <NativeMenuItem Header="Move" ToolTip="G. The face's corners follow base point to target point; its neighbours tilt, or fold. Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="FaceMove"/>
+                                                <NativeMenuItem Header="Extrude to New Solid" ToolTip="Shift+E. A new solid grows from the face along its normal. Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="ExtrudeFace"/>
                                                 <NativeMenuItem Header="Align to Face…" ToolTip="Then click a parallel face: the object moves until they are coplanar. T toggles Touching and Flush. Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="AlignFace"/>
                                                 <NativeMenuItem Header="Copy as Sheet" ToolTip="A new sheet exactly on the face. Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="CopySheet"/>
                                                 <NativeMenuItem Header="Measure" ToolTip="Area, perimeter and normal in Properties; Shift-click a parallel face for the distance. Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="MeasureFace"/>
@@ -332,19 +337,19 @@
                                         </NativeMenuItem.Menu>
                                     </NativeMenuItem>
                                     <!-- brief-em3d-67 R-em3d67-5a — mirrored by the in-window menu's Modify ▸ Edge below. -->
-                                    <NativeMenuItem Header="Edge" ToolTip="Edge mode (E): the selected edges of one solid. Requires an active 3D editor.">
+                                    <NativeMenuItem Header="Edge" ToolTip="Edge mode (E): the selected edges of one solid. Requires an active 3D editor." IsEnabled="{Binding ThreeDEdgeMenuEnabled}">
                                         <NativeMenuItem.Menu>
                                             <NativeMenu>
-                                                <NativeMenuItem Header="Fillet…" ToolTip="{Binding ThreeDFilletTip}" IsEnabled="{Binding ThreeDBooleanAvailable}" Command="{Binding ThreeDModifyCommand}" CommandParameter="Fillet"/>
-                                                <NativeMenuItem Header="Chamfer…" ToolTip="{Binding ThreeDChamferTip}" IsEnabled="{Binding ThreeDBooleanAvailable}" Command="{Binding ThreeDModifyCommand}" CommandParameter="Chamfer"/>
+                                                <NativeMenuItem Header="Fillet…" ToolTip="{Binding ThreeDFilletTip}" Command="{Binding ThreeDModifyCommand}" CommandParameter="Fillet"/>
+                                                <NativeMenuItem Header="Chamfer…" ToolTip="{Binding ThreeDChamferTip}" Command="{Binding ThreeDModifyCommand}" CommandParameter="Chamfer"/>
                                                 <NativeMenuItem Header="Select Tangent Chain" ToolTip="Every edge that continues the selected one smoothly (or double-click the edge). Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="TangentChain"/>
                                             </NativeMenu>
                                         </NativeMenuItem.Menu>
                                     </NativeMenuItem>
-                                    <NativeMenuItem Header="Vertex" ToolTip="Vertex mode (V): the selected vertex. Requires an active 3D editor.">
+                                    <NativeMenuItem Header="Vertex" ToolTip="Vertex mode (V): the selected vertex. Requires an active 3D editor." IsEnabled="{Binding ThreeDVertexMenuEnabled}">
                                         <NativeMenuItem.Menu>
                                             <NativeMenu>
-                                                <NativeMenuItem Header="Move  (G)" ToolTip="The vertex follows base point to target point; the faces on it tilt, or fold. Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="VertexMove"/>
+                                                <NativeMenuItem Header="Move" ToolTip="G. The vertex follows base point to target point; the faces on it tilt, or fold. Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="VertexMove"/>
                                                 <NativeMenuItem Header="Measure From" ToolTip="Measure, starting at the selected vertex. Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="MeasureFrom"/>
                                             </NativeMenu>
                                         </NativeMenuItem.Menu>
@@ -354,7 +359,7 @@
                             </NativeMenuItem.Menu>
                         </NativeMenuItem>
                         <!-- brief-em3d-66 R-em3d66-7 — mirrored by the in-window 3D menu below (brief 43 §1m). -->
-                        <NativeMenuItem Header="Boolean" ToolTip="{Binding ThreeDBooleanTip}" IsEnabled="{Binding ThreeDBooleanAvailable}">
+                        <NativeMenuItem Header="Boolean" ToolTip="{Binding ThreeDBooleanTip}" IsEnabled="{Binding ThreeDBooleanMenuEnabled}">
                             <NativeMenuItem.Menu>
                                 <NativeMenu>
                                     <NativeMenuItem Header="Subtract…" ToolTip="The Blank, less every Tool: the first object you select is a Tool, the last the Blank. Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="BooleanSubtract"/>
@@ -362,14 +367,12 @@
                                     <NativeMenuItem Header="Intersect…" ToolTip="What the Blank and every Tool have in common. Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="BooleanIntersect"/>
                                     <NativeMenuItemSeparator/>
                                     <NativeMenuItem Header="Dissolve Boolean" ToolTip="The selected boolean's operands become top-level objects again. Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="BooleanDissolve"/>
-                                    <NativeMenuItem Header="Edit Operands  (Ctrl/Cmd+])" ToolTip="Enter the selected boolean to edit its operands; Esc or Ctrl/Cmd+[ leaves. Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="BooleanEnter"/>
+                                    <NativeMenuItem Header="Edit Operands" ToolTip="Cmd+], or double-click it: enter the selected boolean to edit its operands; Esc or Cmd+[ leaves. Requires an active 3D editor." Command="{Binding ThreeDModifyCommand}" CommandParameter="BooleanEnter"/>
                                 </NativeMenu>
                             </NativeMenuItem.Menu>
                         </NativeMenuItem>
-                        <!-- brief-em3d-68 — mirrored by the in-window 3D menu below, and by File ▸ Import ▸ STEP…. -->
-                        <NativeMenuItem Header="Import STEP…" ToolTip="{Binding ThreeDImportStepTip}" Command="{Binding ImportStepCommand}" CommandParameter="{Binding $parent[Window]}"/>
-                        <!-- brief-em3d-69 — mirrored by the in-window 3D menu below, and by File ▸ Export ▸ STEP…. -->
-                        <NativeMenuItem Header="Export STEP…" ToolTip="{Binding ThreeDExportStepTip}" Command="{Binding ExportStepCommand}" CommandParameter="{Binding $parent[Window]}"/>
+                        <!-- 3D menu cleanup — Import STEP… and Export STEP… are File ▸ Import / Export ▸ STEP… only: the 3D menu's
+                             copies were the same commands twice. -->
                         <NativeMenuItem Header="Measure" ToolTip="Two snapped points: x, y, z, the deltas and the distance, every number copyable (M). Requires an active 3D document." Command="{Binding ThreeDMeasureCommand}"/>
                         <NativeMenuItem Header="Materials…" ToolTip="The active 3D view's technology, opened on its Materials tab: its own materials and the libraries it names. Requires an active 3D document." Command="{Binding ThreeDMaterialsCommand}"/>
                         <NativeMenuItem Header="Triangle Budget…" ToolTip="How many triangles a frame draws before array elements, farthest first, are drawn as their bounding boxes. Stored per user." Command="{Binding ThreeDTriangleBudgetCommand}"/>
@@ -874,6 +877,10 @@
                               Command="{Binding ExportStepCommand}"
                               CommandParameter="{Binding $parent[Window]}"
                               ToolTip.Tip="{Binding ThreeDExportStepTip}"/>
+                    <MenuItem Header="Dra_wing…"
+                              Command="{Binding ExportDrawingCommand}"
+                              CommandParameter="{Binding $parent[Window]}"
+                              ToolTip.Tip="A drawing of the active 3D document: isometric, top, front and other views, and sections, at one scale, as SVG or PDF. Requires an active 3D document."/>
                     <MenuItem Header="Board _netlist (IPC-D-356)…"
                               Command="{Binding ExportBoardNetlistCommand}"
                               ToolTip.Tip="Write the net at every pad and via this board draws, as IPC-D-356. Projected from the artwork itself — railRF never needs it. Requires an active layout document."/>
@@ -1014,6 +1021,11 @@
                         <MenuItem.Icon><mi:MaterialIcon Kind="VectorPoint" Width="16" Height="16"/></MenuItem.Icon>
                     </MenuItem>
                 </MenuItem>
+                <!-- 3D menu cleanup — mirrors the macOS menu's Select All Objects. InputGesture is display-only: the pane answers Ctrl+A. -->
+                <MenuItem Header="Select A_ll Objects" Command="{Binding ThreeDSelectAllCommand}" InputGesture="Ctrl+A"
+                          ToolTip.Tip="Every shown object; hidden ones are left out. Requires an active 3D document.">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="SelectAll" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
                 <MenuItem Header="_View" ToolTip.Tip="Requires an active 3D document.">
                     <MenuItem Header="_Fit" Command="{Binding ThreeDFitCommand}" InputGesture="Home"
                               ToolTip.Tip="Frame everything. Requires an active 3D document.">
@@ -1102,15 +1114,15 @@
                         <MenuItem.Icon><mi:MaterialIcon Kind="GridLarge" Width="16" Height="16"/></MenuItem.Icon>
                     </MenuItem>
                 </MenuItem>
-                <MenuItem Header="_Modify" ToolTip.Tip="Requires an active 3D editor.">
-                    <MenuItem Header="_Move  (G)" Command="{Binding ThreeDModifyCommand}" CommandParameter="Move" ToolTip.Tip="Base point, then target point, both snapped. X/Y/Z locks an axis. Requires an active 3D editor."/>
-                    <MenuItem Header="Move _Along" ToolTip.Tip="Requires an active 3D editor.">
+                <MenuItem Header="_Modify" ToolTip.Tip="Select something first. Requires an active 3D editor." IsEnabled="{Binding ThreeDModifyMenuEnabled}">
+                    <MenuItem Header="_Move" Command="{Binding ThreeDModifyCommand}" CommandParameter="Move" InputGesture="G" ToolTip.Tip="Base point, then target point, both snapped. X/Y/Z locks an axis. Requires an active 3D editor."/>
+                    <MenuItem Header="Move _Along" ToolTip.Tip="Requires an active 3D editor." IsEnabled="{Binding ThreeDTransformMenuEnabled}">
                         <MenuItem Header="_X" Command="{Binding ThreeDModifyCommand}" CommandParameter="MoveX"/>
                         <MenuItem Header="_Y" Command="{Binding ThreeDModifyCommand}" CommandParameter="MoveY"/>
                         <MenuItem Header="_Z" Command="{Binding ThreeDModifyCommand}" CommandParameter="MoveZ"/>
                     </MenuItem>
-                    <MenuItem Header="_Rotate  (R)" Command="{Binding ThreeDModifyCommand}" CommandParameter="Rotate" ToolTip.Tip="About the drawing plane's normal through the pivot; 15° steps, Shift free, or typed. Requires an active 3D editor."/>
-                    <MenuItem Header="Rotate _90°" ToolTip.Tip="Requires an active 3D editor.">
+                    <MenuItem Header="_Rotate" Command="{Binding ThreeDModifyCommand}" CommandParameter="Rotate" InputGesture="R" ToolTip.Tip="About the drawing plane's normal through the pivot; 15° steps, Shift free, or typed. Requires an active 3D editor."/>
+                    <MenuItem Header="Rotate _90°" ToolTip.Tip="Requires an active 3D editor." IsEnabled="{Binding ThreeDTransformMenuEnabled}">
                         <MenuItem Header="+90° about X" Command="{Binding ThreeDModifyCommand}" CommandParameter="RotX+"/>
                         <MenuItem Header="−90° about X" Command="{Binding ThreeDModifyCommand}" CommandParameter="RotX-"/>
                         <MenuItem Header="+90° about Y" Command="{Binding ThreeDModifyCommand}" CommandParameter="RotY+"/>
@@ -1118,15 +1130,15 @@
                         <MenuItem Header="+90° about Z" Command="{Binding ThreeDModifyCommand}" CommandParameter="RotZ+"/>
                         <MenuItem Header="−90° about Z" Command="{Binding ThreeDModifyCommand}" CommandParameter="RotZ-"/>
                     </MenuItem>
-                    <MenuItem Header="M_irror" ToolTip.Tip="Requires an active 3D editor.">
+                    <MenuItem Header="M_irror" ToolTip.Tip="Requires an active 3D editor." IsEnabled="{Binding ThreeDTransformMenuEnabled}">
                         <MenuItem Header="Across XY" Command="{Binding ThreeDModifyCommand}" CommandParameter="MirrorXY"/>
                         <MenuItem Header="Across YZ" Command="{Binding ThreeDModifyCommand}" CommandParameter="MirrorYZ"/>
                         <MenuItem Header="Across XZ" Command="{Binding ThreeDModifyCommand}" CommandParameter="MirrorXZ"/>
                     </MenuItem>
-                    <MenuItem Header="_Duplicate  (Ctrl+D)" Command="{Binding ThreeDModifyCommand}" CommandParameter="Duplicate" ToolTip.Tip="Copies in place, then moves them. Esc cancels both. Requires an active 3D editor."/>
+                    <MenuItem Header="_Duplicate" Command="{Binding ThreeDModifyCommand}" CommandParameter="Duplicate" InputGesture="Ctrl+D" ToolTip.Tip="Copies in place, then moves them. Esc cancels both. Requires an active 3D editor."/>
                     <MenuItem Header="Arra_y…" Command="{Binding ThreeDModifyCommand}" CommandParameter="Array" ToolTip.Tip="Copies along up to three axes at a pitch, previewed live. Requires an active 3D editor."/>
                     <MenuItem Header="Re-_Seat Wire Ends" Command="{Binding ThreeDModifyCommand}" CommandParameter="ReseatWires" ToolTip.Tip="Each selected wire's ends moved up or down onto the pad now under them. Requires an active 3D editor."/>
-                    <MenuItem Header="Ali_gn" ToolTip.Tip="Requires an active 3D editor.">
+                    <MenuItem Header="Ali_gn" ToolTip.Tip="Select two or more: the others line up with the last one selected. Requires an active 3D editor." IsEnabled="{Binding ThreeDAlignMenuEnabled}">
                         <MenuItem Header="X min" Command="{Binding ThreeDModifyCommand}" CommandParameter="AlignXMin"/>
                         <MenuItem Header="X centre" Command="{Binding ThreeDModifyCommand}" CommandParameter="AlignXCentre"/>
                         <MenuItem Header="X max" Command="{Binding ThreeDModifyCommand}" CommandParameter="AlignXMax"/>
@@ -1137,56 +1149,50 @@
                         <MenuItem Header="Z centre" Command="{Binding ThreeDModifyCommand}" CommandParameter="AlignZCentre"/>
                         <MenuItem Header="Z max" Command="{Binding ThreeDModifyCommand}" CommandParameter="AlignZMax"/>
                     </MenuItem>
-                    <MenuItem Header="_Order" ToolTip.Tip="Requires an active 3D editor.">
+                    <MenuItem Header="_Order" ToolTip.Tip="Construction order: a later object wins where solids overlap. Requires an active 3D editor." IsEnabled="{Binding ThreeDOrderMenuEnabled}">
                         <MenuItem Header="Bring to Front" Command="{Binding ThreeDModifyCommand}" CommandParameter="Front"/>
                         <MenuItem Header="Bring Forward" Command="{Binding ThreeDModifyCommand}" CommandParameter="Forward"/>
                         <MenuItem Header="Send Backward" Command="{Binding ThreeDModifyCommand}" CommandParameter="Backward"/>
                         <MenuItem Header="Send to Back" Command="{Binding ThreeDModifyCommand}" CommandParameter="Back"/>
                     </MenuItem>
                     <Separator/>
-                    <MenuItem Header="Group Objects  (Ctrl+G)" Command="{Binding ThreeDModifyCommand}" CommandParameter="Group"
+                    <MenuItem Header="Group Objects" Command="{Binding ThreeDModifyCommand}" CommandParameter="Group" InputGesture="Ctrl+G"
                               ToolTip.Tip="The selection becomes one group: a click on any of it then selects all of it. Requires an active 3D editor."/>
-                    <MenuItem Header="Ungroup  (Ctrl+Shift+G)" Command="{Binding ThreeDModifyCommand}" CommandParameter="Ungroup"
+                    <MenuItem Header="Ungroup" Command="{Binding ThreeDModifyCommand}" CommandParameter="Ungroup" InputGesture="Ctrl+Shift+G"
                               ToolTip.Tip="The selected group's members, and the groups inside it, go back to where it was. Requires an active 3D editor."/>
                     <Separator/>
                     <MenuItem Header="_Extrude" Command="{Binding ThreeDExtrudeCommand}"
                               ToolTip.Tip="A selected sheet, or a polyline selected in the tree, into a prism. Requires an active 3D editor."/>
                     <Separator/>
-                    <MenuItem Header="_Face" ToolTip.Tip="Face mode (F): the selected face. Requires an active 3D editor.">
-                        <MenuItem Header="Move Along Normal  (N)" Command="{Binding ThreeDModifyCommand}" CommandParameter="PushPull" ToolTip.Tip="Push or pull the selected face; its neighbours keep their planes. Requires an active 3D editor."/>
-                        <MenuItem Header="Move  (G)" Command="{Binding ThreeDModifyCommand}" CommandParameter="FaceMove" ToolTip.Tip="The face's corners follow base point to target point; its neighbours tilt, or fold. Requires an active 3D editor."/>
-                        <MenuItem Header="Extrude to New Solid  (Shift+E)" Command="{Binding ThreeDModifyCommand}" CommandParameter="ExtrudeFace" ToolTip.Tip="A new solid grows from the face along its normal. Requires an active 3D editor."/>
+                    <MenuItem Header="_Face" ToolTip.Tip="Face mode (F): the selected face. Requires an active 3D editor." IsEnabled="{Binding ThreeDFaceMenuEnabled}">
+                        <MenuItem Header="Move Along Normal" Command="{Binding ThreeDModifyCommand}" CommandParameter="PushPull" InputGesture="N" ToolTip.Tip="Push or pull the selected face; its neighbours keep their planes. Requires an active 3D editor."/>
+                        <MenuItem Header="Move" Command="{Binding ThreeDModifyCommand}" CommandParameter="FaceMove" InputGesture="G" ToolTip.Tip="The face's corners follow base point to target point; its neighbours tilt, or fold. Requires an active 3D editor."/>
+                        <MenuItem Header="Extrude to New Solid" Command="{Binding ThreeDModifyCommand}" CommandParameter="ExtrudeFace" InputGesture="Shift+E" ToolTip.Tip="A new solid grows from the face along its normal. Requires an active 3D editor."/>
                         <MenuItem Header="Align to Face…" Command="{Binding ThreeDModifyCommand}" CommandParameter="AlignFace" ToolTip.Tip="Then click a parallel face: the object moves until they are coplanar. T toggles Touching and Flush. Requires an active 3D editor."/>
                         <MenuItem Header="Copy as Sheet" Command="{Binding ThreeDModifyCommand}" CommandParameter="CopySheet" ToolTip.Tip="A new sheet exactly on the face. Requires an active 3D editor."/>
                         <MenuItem Header="Measure" Command="{Binding ThreeDModifyCommand}" CommandParameter="MeasureFace" ToolTip.Tip="Area, perimeter and normal in Properties; Shift-click a parallel face for the distance. Requires an active 3D editor."/>
                     </MenuItem>
                     <!-- brief-em3d-67 R-em3d67-5a — mirrors the macOS menu's Modify ▸ Edge above. -->
-                    <MenuItem Header="E_dge" ToolTip.Tip="Edge mode (E): the selected edges of one solid. Requires an active 3D editor.">
-                        <MenuItem Header="_Fillet…" Command="{Binding ThreeDModifyCommand}" CommandParameter="Fillet" ToolTip.Tip="{Binding ThreeDFilletTip}" IsEnabled="{Binding ThreeDBooleanAvailable}"/>
-                        <MenuItem Header="_Chamfer…" Command="{Binding ThreeDModifyCommand}" CommandParameter="Chamfer" ToolTip.Tip="{Binding ThreeDChamferTip}" IsEnabled="{Binding ThreeDBooleanAvailable}"/>
+                    <MenuItem Header="E_dge" ToolTip.Tip="Edge mode (E): the selected edges of one solid. Requires an active 3D editor." IsEnabled="{Binding ThreeDEdgeMenuEnabled}">
+                        <MenuItem Header="_Fillet…" Command="{Binding ThreeDModifyCommand}" CommandParameter="Fillet" ToolTip.Tip="{Binding ThreeDFilletTip}"/>
+                        <MenuItem Header="_Chamfer…" Command="{Binding ThreeDModifyCommand}" CommandParameter="Chamfer" ToolTip.Tip="{Binding ThreeDChamferTip}"/>
                         <MenuItem Header="Select _Tangent Chain" Command="{Binding ThreeDModifyCommand}" CommandParameter="TangentChain" ToolTip.Tip="Every edge that continues the selected one smoothly (or double-click the edge). Requires an active 3D editor."/>
                     </MenuItem>
-                    <MenuItem Header="_Vertex" ToolTip.Tip="Vertex mode (V): the selected vertex. Requires an active 3D editor.">
-                        <MenuItem Header="Move  (G)" Command="{Binding ThreeDModifyCommand}" CommandParameter="VertexMove" ToolTip.Tip="The vertex follows base point to target point; the faces on it tilt, or fold. Requires an active 3D editor."/>
+                    <MenuItem Header="_Vertex" ToolTip.Tip="Vertex mode (V): the selected vertex. Requires an active 3D editor." IsEnabled="{Binding ThreeDVertexMenuEnabled}">
+                        <MenuItem Header="Move" Command="{Binding ThreeDModifyCommand}" CommandParameter="VertexMove" InputGesture="G" ToolTip.Tip="The vertex follows base point to target point; the faces on it tilt, or fold. Requires an active 3D editor."/>
                         <MenuItem Header="Measure From" Command="{Binding ThreeDModifyCommand}" CommandParameter="MeasureFrom" ToolTip.Tip="Measure, starting at the selected vertex. Requires an active 3D editor."/>
                     </MenuItem>
                     <MenuItem Header="_Convert to Polyhedron" Command="{Binding ThreeDModifyCommand}" CommandParameter="ConvertPoly" ToolTip.Tip="Object mode: the selected box, prism or cylinder, with every vertex editable and the face names kept. Requires an active 3D editor."/>
                 </MenuItem>
                 <!-- brief-em3d-66 R-em3d66-7 — mirrors the macOS menu's 3D ▸ Boolean above. -->
-                <MenuItem Header="_Boolean" ToolTip.Tip="{Binding ThreeDBooleanTip}" IsEnabled="{Binding ThreeDBooleanAvailable}">
+                <MenuItem Header="_Boolean" ToolTip.Tip="{Binding ThreeDBooleanTip}" IsEnabled="{Binding ThreeDBooleanMenuEnabled}">
                     <MenuItem Header="_Subtract…" Command="{Binding ThreeDModifyCommand}" CommandParameter="BooleanSubtract" ToolTip.Tip="The Blank, less every Tool: the first object you select is a Tool, the last the Blank. Requires an active 3D editor."/>
                     <MenuItem Header="_Unite…" Command="{Binding ThreeDModifyCommand}" CommandParameter="BooleanUnite" ToolTip.Tip="The Blank and every Tool as one solid, with the Blank's name and material. Requires an active 3D editor."/>
                     <MenuItem Header="_Intersect…" Command="{Binding ThreeDModifyCommand}" CommandParameter="BooleanIntersect" ToolTip.Tip="What the Blank and every Tool have in common. Requires an active 3D editor."/>
                     <Separator/>
                     <MenuItem Header="_Dissolve Boolean" Command="{Binding ThreeDModifyCommand}" CommandParameter="BooleanDissolve" ToolTip.Tip="The selected boolean's operands become top-level objects again. Requires an active 3D editor."/>
-                    <MenuItem Header="_Edit Operands  (Ctrl/Cmd+])" Command="{Binding ThreeDModifyCommand}" CommandParameter="BooleanEnter" ToolTip.Tip="Enter the selected boolean to edit its operands; Esc or Ctrl/Cmd+[ leaves. Requires an active 3D editor."/>
+                    <MenuItem Header="_Edit Operands" Command="{Binding ThreeDModifyCommand}" CommandParameter="BooleanEnter" ToolTip.Tip="Ctrl+], or double-click it: enter the selected boolean to edit its operands; Esc or Ctrl+[ leaves. Requires an active 3D editor."/>
                 </MenuItem>
-                <!-- brief-em3d-68 — mirrors the macOS menu's 3D ▸ Import STEP… above. -->
-                <MenuItem Header="_Import STEP…" Command="{Binding ImportStepCommand}" CommandParameter="{Binding $parent[Window]}"
-                          ToolTip.Tip="{Binding ThreeDImportStepTip}"/>
-                <!-- brief-em3d-69 — mirrors the macOS menu's 3D ▸ Export STEP… above. -->
-                <MenuItem Header="E_xport STEP…" Command="{Binding ExportStepCommand}" CommandParameter="{Binding $parent[Window]}"
-                          ToolTip.Tip="{Binding ThreeDExportStepTip}"/>
                 <MenuItem Header="Mea_sure" Command="{Binding ThreeDMeasureCommand}"
                           ToolTip.Tip="Two snapped points: x, y, z, the deltas and the distance, every number copyable (M). Requires an active 3D document.">
                     <MenuItem.Icon><mi:MaterialIcon Kind="RulerSquare" Width="16" Height="16"/></MenuItem.Icon>

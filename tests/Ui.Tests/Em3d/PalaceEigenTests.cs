@@ -312,9 +312,11 @@ public sealed class PalaceEigenTests(ITestOutputHelper output) : IDisposable
                      .SelectMany(d => Directory.EnumerateFiles(Path.Combine(PalaceBackendTests.RepoRoot(), d), "*.cem",
                                                                SearchOption.AllDirectories)))
         {
-            string written = EmSetupPersistence.Serialize(EmSetupPersistence.Deserialize(File.ReadAllText(cem)));
+            string text = File.ReadAllText(cem);
+            string written = EmSetupPersistence.Serialize(EmSetupPersistence.Deserialize(text));
+            // Only a key the file did not state: the shipped 3D EM examples state these on purpose.
             foreach (string key in new[] { "\"Ports3D\"", "\"Eigenmode\"", "\"Kind\": \"Wave\"" })
-                Assert.DoesNotContain(key, written, StringComparison.Ordinal);
+                if (!text.Contains(key, StringComparison.Ordinal)) Assert.DoesNotContain(key, written, StringComparison.Ordinal);
         }
         foreach (string golden in Directory.EnumerateFiles(Path.Combine(PalaceBackendTests.RepoRoot(), "testdata", "em3d", "palace-goldens"),
                                                            "config.json", SearchOption.AllDirectories))

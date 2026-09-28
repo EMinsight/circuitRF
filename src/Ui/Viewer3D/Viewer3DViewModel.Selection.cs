@@ -150,12 +150,21 @@ public sealed class Viewer3DDrawOverlay
     }
 }
 
-/// <summary>One context-menu entry. <see cref="Run"/> null and no children is a heading or a disabled item.</summary>
+/// <summary>One context-menu entry. <see cref="Run"/> null and no children is a heading or a disabled item.
+/// <see cref="Gesture"/> is its shortcut, shown in the menu's own shortcut column (display only: the pane's keys do the
+/// work) — never spelled into <see cref="Header"/>.</summary>
 public sealed record Viewer3DMenuItem(string Header, Action? Run = null, bool Enabled = true, string? Tip = null,
-                                      IReadOnlyList<Viewer3DMenuItem>? Children = null)
+                                      IReadOnlyList<Viewer3DMenuItem>? Children = null, KeyGesture? Gesture = null)
 {
     public static readonly Viewer3DMenuItem Separator = new("-");
     public bool IsSeparator => Header == "-";
+
+    /// <summary>A bare key, e.g. G.</summary>
+    public static KeyGesture Plain(Key key, KeyModifiers modifiers = KeyModifiers.None) => new(key, modifiers);
+
+    /// <summary>The platform's command key with <paramref name="key"/>: Cmd on macOS, Ctrl elsewhere.</summary>
+    public static KeyGesture Command(Key key, KeyModifiers more = KeyModifiers.None)
+        => new(key, (OperatingSystem.IsMacOS() ? KeyModifiers.Meta : KeyModifiers.Control) | more);
 }
 
 public sealed partial class Viewer3DViewModel
@@ -473,6 +482,13 @@ public sealed partial class Viewer3DViewModel
         if (!gestureInProgress && EditHost?.DrawKey(key, modifiers) == true) return true;
         bool plain = modifiers == KeyModifiers.None;
         if (key == Key.B && (plain || modifiers == KeyModifiers.Shift)) return Cycle(plain ? +1 : -1);
+        // 3D menu cleanup — Ctrl/Cmd+A on the pane is 3D ▸ Select All Objects (the menu carries no key equivalent of its own:
+        // on macOS one would take Cmd+A from every text box while a 3D view is active).
+        if (key == Key.A && (modifiers == KeyModifiers.Control || modifiers == KeyModifiers.Meta) && !gestureInProgress)
+        {
+            SelectAllObjects();
+            return true;
+        }
         if (!plain) return false;
         StandardView3D? standard = key switch
         {
@@ -652,7 +668,7 @@ public sealed partial class Viewer3DViewModel
         }
         items.Add(new Viewer3DMenuItem("Show All", ShowAll));
         // brief-em3d-46 R-em3d46-6 — in the read-only viewer as in the editor, on anything or nothing.
-        items.Add(new Viewer3DMenuItem(MeasureActive ? "End Measure  (M)" : "Measure  (M)", ToggleMeasure));
+        items.Add(new Viewer3DMenuItem(MeasureActive ? "End Measure" : "Measure", ToggleMeasure, Gesture: Viewer3DMenuItem.Plain(Key.M)));
         if (SelectMode == Scene3DSelectMode.Object && own && host is not null)
             items.Add(new Viewer3DMenuItem("Delete", () => host.DeleteSelection()));
         // brief-em3d-67 R-em3d67-4 / -5a — on an edge: its tangent chain, and the editor's Fillet… and Chamfer….
@@ -705,6 +721,22 @@ public sealed partial class Viewer3DViewModel
         if (EditHost?.ShowAll(objects) == true) return;
         var keep = objects.Select(o => o.Id).ToHashSet();
         foreach (var o in Scene.Objects.Where(o => o.Pickable)) SetVisibleEverywhere(o.Id, keep.Contains(o.Id));
+    }
+
+    /// <summary>
+    /// 3D menu cleanup — 3D ▸ Select All Objects, and Ctrl/Cmd+A on the pane: Object mode, then every object that is SHOWN —
+    /// solids, sheets, wires and instances' parts. A hidden object is left out (Select All is what a marquee over the whole
+    /// view would take); ports, the air box's faces and air are not objects to act on, so they are left out too.
+    /// </summary>
+    public void SelectAllObjects()
+    {
+        SelectMode = Scene3DSelectMode.Object;
+        HitCycle.Reset();
+        CycleText = "";
+        SetSelection(Scene.Objects
+            .Where(o => o.Pickable && !o.PickLast && o.Kind is not (Scene3DKind.Port or Scene3DKind.Boundary or Scene3DKind.Air)
+                        && View.IsVisible(o.Id))
+            .Select(o => Scene3DItem.OfObject(o.Id)));
     }
 
     public void ShowAll()

@@ -23,6 +23,8 @@ public static class Viewer3DContextMenu
     {
         if (i.IsSeparator) return new Separator();
         var m = new MenuItem { Header = i.Header, IsEnabled = i.Enabled && (i.Run is not null || i.Children is { Count: > 0 }) };
+        // 3D menu cleanup — the shortcut goes in the menu's shortcut column, never in the header's text.
+        if (i.Gesture is { } g) m.InputGesture = g;
         if (i.Tip is { } tip)
         {
             ToolTip.SetTip(m, tip);

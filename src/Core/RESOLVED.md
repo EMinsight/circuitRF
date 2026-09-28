@@ -3236,3 +3236,25 @@ Nothing on the circuit side changed. The 3D view (`.c3d`) deliberately does NOT 
 same-name VAR there is LINKED by default and a linked VAR takes the parameter's value, default
 included, so a cell keeps one default per name (the reference page's `3d-view` topic says how and
 why). Gate: `tests/Core.Tests/Elaboration/SameNameVarAndParameterTests.cs`.
+
+## A variable's own unit re-scaled the unit-bearing names it referenced (2026-09-27)
+
+Reported on a `.c3d`: a VAR declared with a unit scaled the names it referenced a second time. The
+cause was in the ONE expression engine, not in the 3D view, so a schematic VAR had it too:
+`Evaluator.Eval` applied var-unit-wins (skip the site unit when the expression names a unit-bearing
+variable), but `Evaluator.Resolve` — which evaluates a NAMED binding — applied the binding's own unit
+unconditionally. With `a = 10 [mil]` and `b = 2*a [mil]`, `a` resolved to metres and `b` then
+multiplied those metres by 2.54e-5 again. `FreqDeferral.InlineRef` copied the same rule when inlining a
+frequency-dependent binding, so it changed with it: a deferred expression must agree with `Resolve`.
+
+The `.c3d` resolver had already met half of this: `C3dResolver.MarkDerivedUnits` marks a UNIT-LESS VAR
+that references a unit-bearing name with the scale-1 `metre`, so that a field typed in mil does not
+re-scale it. It could not help a VAR that stated its own unit, which is the case reported.
+
+No shipped document changes value: every VAR in `examples/` and `testdata/` was scanned, and the only
+unit-bearing expressions that reference unit-bearing names are instance PARAMETERS — use sites, which
+already went through `Eval`. The rule's cost is unchanged and still documented as the "unit trap": a
+bare literal beside a unit-bearing name is in base SI (`w + 5` in mil is w plus five metres).
+
+Gates: `tests/Core.Tests/Expressions/EvaluatorVarUnitWinsTests.cs` (T6 `Resolve`, T7 `FreqDeferral`)
+and `tests/Ui.Tests/ThreeD/ExpressionsGateTests.Gate6b_AVarWithItsOwnUnit_DoesNotRescaleTheNamesItReferences`.

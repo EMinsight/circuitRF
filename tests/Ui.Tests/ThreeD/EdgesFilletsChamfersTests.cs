@@ -272,10 +272,12 @@ public sealed class EdgesFilletsChamfersTests : IDisposable
         Assert.True(vm.Viewer.HandleKey(Key.Escape, KeyModifiers.None, false));
 
         SelectFace(vm, "b", "zmax");
-        Assert.Contains(vm.DrawMenuItems(), i => i.Header == "Extrude to New Solid  (Shift+E)");
+        // 3D menu cleanup — the key is the item's gesture (the menu's shortcut column), never text in its header.
+        Assert.Contains(vm.DrawMenuItems(), i => i.Header == "Extrude to New Solid" && i.Gesture == new KeyGesture(Key.E, KeyModifiers.Shift));
         string window = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Ui", "Views", "WorkspaceWindow.axaml"));
-        Assert.Equal(2, CountOf(window, "Extrude to New Solid  (Shift+E)"));
-        Assert.Equal(0, CountOf(window, "Extrude to New Solid  (E)"));
+        Assert.Equal(1, CountOf(window, "CommandParameter=\"ExtrudeFace\" InputGesture=\"Shift+E\""));
+        Assert.Equal(1, CountOf(window, "ToolTip=\"Shift+E. A new solid"));
+        Assert.Equal(0, CountOf(window, "InputGesture=\"E\" ToolTip.Tip=\"A new solid"));
     }
 
     // ── 8. the commit (kernel) ──────────────────────────────────────────────────────────────────

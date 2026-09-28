@@ -37285,3 +37285,110 @@ radio's binding.
   refuses a named group in any `.axaml` whose root is not a `Window`.
 - **For the next hang:** take `dotnet-stack` snapshots of the live process (it attaches from a shell with no
   window-server session); the `.hang` report alone never names a managed method.
+
+## 3D menu cleanup (2026-09-27)
+
+The owner asked for the 3D menu to lose its STEP items, gain Select All Objects, enable each item only when the
+selection can take it, and show shortcuts as shortcuts rather than as text in the header.
+
+- **Import STEP… / Export STEP… are File ▸ Import / Export only.** The 3D menu's copies were the same two commands; the
+  comments and `StepExportTests` that counted four menu sites now count two.
+- **Select All Objects** (`Viewer3DViewModel.SelectAllObjects`) switches to Object mode and takes every SHOWN pickable
+  object — hidden ones, ports, air-box faces and air are left out. Ctrl/Cmd+A on the pane is the same call
+  (`HandleKey`). **The native item carries no key equivalent on purpose**: a `NativeMenuItem.Gesture` is taken by the
+  menu before any control sees it, so Cmd+A would stop selecting a text box's text (Properties, Variables) whenever a 3D
+  view is the active document. The in-window item shows `Ctrl+A` as display-only `InputGesture`.
+- **Enablement comes from the context menu's own predicates.** `C3dEditorViewModel.CanRunModify(which)` (new
+  `MenuState.cs`, beside `RunModify`) answers per operation from `Targets`, `GroupRefusal`, `BooleanRefusal`,
+  `EdgeOpRefusal`, `FaceSelection`/`ResultEditRefusal`, `VertexSelection`, `SelectedWires`, `ExtrudeSource`, so the bar
+  and the right-click menu cannot drift. `ThreeDModifyCommand`'s CanExecute takes the parameter; the submenu parents bind
+  `ThreeD*MenuEnabled` (Modify: anything selected, incl. a tree-selected polyline or wire; Move Along / Rotate 90° /
+  Mirror: a target; Align: two or more; Order: an object, not an instance; Face / Edge / Vertex: that mode's selection;
+  Boolean: the kernel plus a target). Fillet…/Chamfer… lost their `IsEnabled="{Binding ThreeDBooleanAvailable}"` — the
+  command's CanExecute holds the kernel now, and on a `NativeMenuItem` a bound `IsEnabled` fights the command's.
+- **The shell only re-asked on an active-document change.** The editor now raises `MenuStateChanged` on a selection
+  change, a select-mode change (which can clear an already-empty selection and so raise no `SelectionChanged`), a tree
+  row change and every adopted generation; the workspace re-raises only for the ACTIVE editor. On macOS this is not
+  cosmetic: a key equivalent is validated against its item's enabled state, so a stale "disabled" would swallow ⌘G.
+- **Shortcuts.** Native: `Meta+D` (Duplicate), `Meta+G` (Group Objects), `Meta+Shift+G` (Ungroup) — each audited as the
+  only native item on that keystroke; they call the same `RunModify` the pane's own keys call. No bare-key native
+  gesture (G, R, N, Shift+E …): it would take those letters from every text box. Edit Operands gets no native gesture
+  either — Cmd+] is already Push Into's, and one keystroke on two items is two handlers. Those keys ride on the
+  tooltip. In-window: display-only `InputGesture` for every key incl. bare ones, except `]`/`[` (a `KeyGesture` renders
+  them as `OemCloseBrackets`, see the Pop Out entry above). Context menus: `Viewer3DMenuItem.Gesture` →
+  `MenuItem.InputGesture`, Cmd on macOS and Ctrl elsewhere (`Viewer3DMenuItem.Command`).
+- **Uncertain, not seen:** that a key equivalent on an item inside the HIDDEN 3D menu (another document active) passes
+  the keystroke through — AppKit documents hidden items as ignoring key equivalents unless
+  `allowsKeyEquivalentWhenHidden`, and the commands are disabled then anyway, but the layout canvas's own Ctrl/Cmd+D is
+  the thing to try if Duplicate there ever stops answering. Pixels were not seen.
+- Gate: `tests/Ui.Tests/ThreeD/MenuCleanupTests.cs`.
+
+
+
+## 3D vector copy and drawing export (2026-09-27)
+
+The 3D canvas context menu is now Copy, **Copy as Vector**, Export Picture…, **Export as Vector…**, **Export Drawing…**;
+*File ▸ Export ▸ Drawing…* (native menu, in-window menu and the torn-off File menu) opens the same dialog on the active 3D
+document. All of it is `Views/Viewer3D/Viewer3DVectorExport.cs`; the drawing itself is `CircuitRF.Render` (see
+`src/Render/RESOLVED.md`).
+
+- **What is drawn is the pane's own problem**, `Viewer3DViewModel.Scene.Problem` — for the .c3d editor and a setup's
+  read-only view alike — not a second elaboration. So the problem-from-a-.c3d builder in `src/Cli/Em3dSetupSource` did
+  not need to move to `src/Design`: nothing in the GUI builds one. What the view hides (its `View.Visible` flags, and a
+  pushed-in view's dimmed context) is left out by name; a name any shown object also carries is kept. Conductors take
+  the scene's colours (`Scene3DObject.Rgba`).
+- **Copy as Vector reuses the proven clipboard routes unchanged.** Windows: `WindowsClipboard.SetClipboard` with the SVG
+  (the EMF is built from it, CF_ENHMETAFILE first), the PDF and a PNG, and `json: null` — the recipe already skips the
+  text slot for null, as the 3D picture Copy does. macOS/Linux: one `DataTransfer` with the native PDF and SVG types and a
+  PNG, as `WBondClipboardWriter` writes. Labels are outlines, so the EMF path's font registration is not even exercised.
+  Not verified on Windows from this machine.
+- **Export Drawing… remembers its choices per user** (`AppPreferences.Drawing3D`, `Drawing3DPreference`, Snap3DPreference's
+  shape with its test seam) — views, hidden edges, legend, text, what is hidden, page, format; not the sections, whose
+  positions belong to one model. Enum values are stored as NAMES.
+- A section's position must carry a unit, parsed as `render --section` parses one (`LayoutUnits.TryParse`); a bare number
+  is refused with the two spellings that would have answered it.
+
+## Twelve pre-existing Ui.Tests failures in the 3D, EM3D and example namespaces (2026-09-27)
+
+All twelve predated this round's changes; each was a gate that had gone stale against a deliberate change, except the
+last two, which were real.
+
+- **"Every .cem in the repo gains no new key" (four gates: `Em3dGeneratorTests.Gate6`, `PalaceEigenTests.Gate9`,
+  `PalaceStaticTests.Gate8`, `Em3dWireTests.Gate8` for `.wBond`) and `Em3dGeneratorTests.Gate5`** were written before
+  `examples/3D EM` and `examples/3D Package` shipped setups that STATE `Solver3D`, `Problem3D`, `Eigenmode`,
+  `FootLengthNm`. Their own comments give the invariant as "a key the file did not state", so each now asserts exactly
+  that — a key absent from the file on disk must be absent from what the writer emits — and Gate5 accepts a 3D setup
+  only when its file states `Solver3D` (Auto still never resolves to 3D).
+- **`PalaceBackendTests.Gate8`** asserted `<key>.palace_em` for every setup; briefs em3d-22/23 give a static or
+  eigenmode setup its own suffix (`_es`, `_ms`, `_eig`) on the group and the run directory. The gate restates that rule.
+- **`TechMaterialsTests.Gate5`** (one door for `StackupLayer.Material`): `C3dEditorViewModel.ThicknessUmFor` reads the
+  layer's material NAME to find the conductor layer a new sheet takes its default thickness from — never to pick an
+  electrical value, which is what R-em3d2-2b forbids. Allow-listed with that reason, as brief 53's name reads were.
+- **`WireSplitDumpTests` on `Bond wire 3D.cem`**: brief 52 gave the example a new loop shape after brief 50 recorded the
+  dump. Regenerated with `CRF_WRITE_WIRE_DUMPS=1`; every other dump came back byte-identical.
+- **`PowerRailFootprintCells`**: the `.clay` writer went to tab indentation and one vertex per line on 2026-09-23
+  (137e0aa0); the four shipped footprint cells were written on 09-20. Regenerated with
+  `CIRCUITRF_WRITE_EXAMPLE_FOOTPRINTS=1`; each parses to the identical JSON — formatting only.
+- **`GeometryKernelWorkerTests.AStepExport_ReadsBack_WithNamesAndColours`** was real: OCCT holds a colour LINEAR and the
+  worker re-encodes it to the file's sRGB, so an exact 1 came back 0.99999999999999989. `GeometryKernel`'s import reader
+  now rounds each component to 12 places, which no colour needs and a `#rrggbb` match must not see.
+- **`SettingsDialogHelpAndTooltipsTests.Em3dTab_EveryVisibleStringIsSelectable`** was real: the Windows-only
+  "Location:" label (brief em3d-26) was a plain `TextBlock`.
+- **`PowerRailExampleTests.EveryNumberTheReadmePublishesIsWhatTheExampleProduces`**: three DC figures had moved since the
+  README was measured (2026-09-22), all AC figures had not. Bisected, not just re-published: the widened-run what-if
+  (36.542 → 39.724 mV) moved at 15f3e1c4 (a port anchored on a pad seeds the pad's own land), and the Fast drop
+  (47.616 → 47.656 mV) and Accuracy (49.096 → 49.165 mV) at 15180311 (a pad is on its own land) — both deliberate
+  modelling changes. Re-published, and Fast/Accuracy restated as 3.1 % apart. **Open question left in the README's
+  prose:** widening the BOT run is said to halve the copper term; halving the 22.05 mV row would put the drop near
+  36.6 mV, and it now falls only to 39.7 mV.
+
+## A kept Tool stood still under a move's live preview (2026-09-27)
+
+Select All, then a gizmo drag: every object followed the cursor except the 3D Connector's `bore`, which jumped into place
+only on the drop. `bore` is a Tool of the `housing` Boolean with `KeepTools`, so it is elaborated as a solid of its own
+(as is a disabled operation's Tool, `NestedTools`) — but nothing recorded which top-level object it came from, and
+`SceneObjectsOf(target)` marked only the scene object named after the target as moving. The commit was always right,
+because it moves the Boolean and the Tool is inside it. `C3dProvenance.TopObject` now names the top-level document
+object each solid was elaborated from, and an operation's target includes every scene object whose `TopObject` is it —
+Move, Rotate, Mirror, Duplicate, Array and the gizmo share that one mapping. Gate:
+`tests/Ui.Tests/ThreeD/SelectAllMovePreviewTests.cs` (fails without the change).

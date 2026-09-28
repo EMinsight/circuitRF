@@ -205,7 +205,9 @@ source.
 
 ## Moving and editing {#editing}
 
-**Whole objects** (Object mode; right-click, or *3D ▸ Modify*):
+**Whole objects** (Object mode; right-click, or *3D ▸ Modify*). *3D ▸ Modify* is greyed out until something is
+selected, and each item in it is enabled only when it can act on the selection — the same rule the right-click menu
+follows, where a greyed-out item's tooltip says why:
 
 - **G** moves the selection: click a base point, then a target point, both snapped — two clicks put one
   corner exactly on another. **X**, **Y** or **Z** holds the move to that axis, **Shift+X/Y/Z** to the plane
@@ -296,6 +298,8 @@ object using that name follows too.
 <code>cav_w</code> plus forty metres. The box shows the value as you type — over a million and a half mil — and
 <code>check</code> warns about any dimension over 1 m. Write the forty as a name (<code>2*wall</code>), or
 type the expression's unit after it. The example uses names for every constant it adds for this reason.</p>
+<p>A VAR follows the same rule: its unit scales its expression only when the expression names nothing with a unit of
+its own. <code>w2 = 2*w</code> in mil, with <code>w</code> = 10 mil, is 20 mil.</p>
 </div>
 
 ## Booleans, fillets, chamfers and STEP parts {#operations}
@@ -474,7 +478,7 @@ housing's designer and a CAD package all read and write it. circuitRF reads its 
 and writes a 3D view — or a layout — **out as one**. The geometry kernel does both, so without it both
 commands are disabled with the reason.
 
-**Import STEP…** (*File ▸ Import ▸ STEP…*, or *3D ▸ Import STEP…*) reads the file, off the editor's thread
+**Import STEP…** (*File ▸ Import ▸ STEP…*) reads the file, off the editor's thread
 and cancellable, and opens a table of its parts:
 
 - **Units.** The first line says what the file is in and that it is imported exactly — *File is in
@@ -503,7 +507,7 @@ revision from the maker), **Reload from Source** on the object's menu reads it a
 port, boundary and fillet on it **by geometry**, then says what moved; a part the new file no longer has is
 said by name. A part the new file adds is offered in the import table, unchecked.
 
-**Export STEP…** (*File ▸ Export ▸ STEP…*, or *3D ▸ Export STEP…*) writes the active 3D view or layout:
+**Export STEP…** (*File ▸ Export ▸ STEP…*) writes the active 3D view or layout:
 
 - **Structure**: **Flattened** writes one product per solid; **As assembly** writes each placed cell as a
   sub-assembly, once, however many times it is placed.
@@ -519,6 +523,53 @@ said by name. A part the new file adds is offered in the import table, unchecked
 
 The **3D Connector** example's flange was made this way: drawn in its own cell, exported, and imported into
 the launch — see [the second example](#connector).
+
+## Pictures and drawings {#drawings}
+
+Right-click the view (on anything, or on nothing) for five ways to take it out of circuitRF:
+
+- **Copy** puts a picture of the view on the clipboard, drawn by the graphics card at a multiple of the
+  window's size. **Export Picture…** saves the same picture as a PNG.
+- **Copy as Vector** puts the view on the clipboard as **lines**: every silhouette and sharp edge, seen
+  along the camera's direction, with the edges behind a surface removed — what the shaded view shows, drawn
+  as a line drawing. It pastes into a slide or a document as a picture that stays sharp at any size: on
+  Windows as a metafile, on macOS and Linux as PDF and SVG, with a PNG beside them for anything that takes
+  neither. **Export as Vector…** saves the same drawing as an SVG or PDF file.
+- **Export Drawing…** (also *File ▸ Export ▸ Drawing…* while a 3D view is the active document) lays several
+  views out on one sheet, as SVG or PDF.
+
+A vector picture is always **orthographic**, even when the view is in perspective, and it leaves out what you
+have hidden. Conductors keep the colours the view draws them in; dielectrics are outlined in grey.
+
+### Export Drawing… {#export-drawing}
+
+The dialog chooses what goes on the sheet:
+
+- **Views**: *Isometric*, *Top*, *Front*, *Right*, *Left*, *Back*, *Bottom* — each an outline looking along
+  the direction the matching *Standard View* looks, so *Top* on paper is *Top* on screen. Top comes first, so
+  on two columns it sits above Front with Right beside it.
+- **Sections**: **Add Section** adds a cut through the model — **XY** at a height *z*, **XZ** at a *y*,
+  **YZ** at an *x* — starting at the model's centre. Type the position **with its unit** (`1.2mm`, `350um`,
+  `40mil`); a bare number is refused, as `render --section` refuses one, because nanometres, micrometres and
+  millimetres are all plausible. A section is drawn filled, each material in its colour, and lettered
+  *Section A–A*, *B–B* … in order.
+- **Hidden edges**: **Removed** (the default) draws only what faces you; **Dashed** draws the edges behind a
+  surface as thin dashed lines, the drafting convention; **Shown** draws every edge, a wire-frame. Sections
+  show the inside of a closed part better than dashed lines do, which is why Removed is the default.
+- **Material legend**, and **Leave out what the 3D view hides** (on by default).
+- **Text as outlines** (on by default): every label is drawn as the shapes of its letters, so the file looks
+  the same on every machine and in every program. Turned off, the labels are real text you can select and
+  edit — but they name the font *IBM Plex Sans*, and a reader without it installed sees another font in its
+  place.
+- **Page** (A4, Letter, A3, Tabloid, portrait or landscape) and **Format** (PDF or SVG).
+
+**Every view is at one scale**, a round one — *5:1*, *2:1*, *1:10* — chosen as the largest that fits every
+view, and stated in the title block with the document's name. A length measured on one view can be compared
+with another, and with a ruler on the printed page. The dialog remembers its choices (not its sections) for
+next time.
+
+Working out which edges are hidden takes a moment on a large model; above 400,000 triangles it is skipped,
+the edges are all drawn, and the message that reports the export says so.
 
 ## Hierarchy: placing cells {#hierarchy}
 
@@ -677,6 +728,7 @@ Every step above has a command-line spelling, and none of them needs a solver ex
 |---|---|
 | **O**, **E**, **F**, **V** | Select objects, edges (Edge mode, for Fillet… and Chamfer…), faces, vertices |
 | **B**, **Shift+B** | The next thing behind the selection; back toward you |
+| **Ctrl/Cmd+A** | Select every shown object (*3D ▸ Select All Objects*); hidden ones are left out |
 | **Shift+A** then a letter | Box, Sheet, polyGon, polyLine, cYlinder, Port, Wire |
 | digits, **Tab**, **Enter** | Type a dimension instead of clicking |
 | **Esc** | Back one step: the typed box, the shape, the tool, the selection |

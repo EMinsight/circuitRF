@@ -1,5 +1,5 @@
-// brief-em3d-68 — STEP import: the ONE function File ▸ Import ▸ STEP…, 3D ▸ Import STEP… and `circuitrf convert x.step`
-// all call. Nothing here interprets STEP: the worker reads the file (OCCT's reader, with names, colours, units and
+// brief-em3d-68 — STEP import: the ONE function File ▸ Import ▸ STEP… and `circuitrf convert x.step`
+// both call. Nothing here interprets STEP: the worker reads the file (OCCT's reader, with names, colours, units and
 // healing) and answers with a description; this file decides what becomes an object, and writes it.
 //
 //   Read        the file → a plan: one row per part, its proposed name, its material and WHY, whether it can be imported

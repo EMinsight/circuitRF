@@ -158,7 +158,7 @@ the two differ.
 Half the budget is one trace. That is the finding this example exists for: on a compact board
 with thin copper the artwork is not a rounding error on the parts, it is the largest single term
 after the parts you already knew about. Widen the BOT run from 0.20 mm to 0.40 mm in the layout
-editor, re-run, and the drop falls to **36.542 mV** — the copper term halves and the FET becomes the
+editor, re-run, and the drop falls to **39.724 mV** — the copper term halves and the FET becomes the
 thing worth arguing about.
 
 Three via transitions, none over its current limit.
@@ -290,10 +290,10 @@ Run both. On this board they agree closely:
 
 | | Drop at U1 |
 |---|---|
-| Fast (the default) | 47.616 mV |
-| Accuracy | 49.096 mV |
+| Fast (the default) | 47.656 mV |
+| Accuracy | 49.165 mV |
 
-**3.0 % apart, and the Fast answer is the optimistic one** — which is the direction it is always
+**3.1 % apart, and the Fast answer is the optimistic one** — which is the direction it is always
 wrong in, and the reason the two are worth running once on any board you intend to trust. The
 difference is in the rail's copper rather than its return: Fast prices each trace section from its
 own length and width and leaves out the constriction where current enters it, about a square at

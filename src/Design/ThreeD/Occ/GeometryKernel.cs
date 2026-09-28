@@ -722,7 +722,9 @@ public sealed class GeometryKernel : IDisposable
         foreach (var p in reply.Json["parts"] as JsonArray ?? [])
         {
             if (p is null) continue;
-            double[]? colour = p["colour"] is JsonArray c ? [.. c.Select(x => x?.GetValue<double>() ?? 0)] : null;
+            // Rounded to 12 places: OCCT holds a colour LINEAR and the worker re-encodes it to the file's sRGB, a round trip
+            // that turns an exact 1 into 0.99999999999999989 — noise no colour carries, and a #rrggbb match must not see.
+            double[]? colour = p["colour"] is JsonArray c ? [.. c.Select(x => Math.Round(x?.GetValue<double>() ?? 0, 12))] : null;
             parts.Add(new GeometryKernelImportPart(p["shape"]?.GetValue<string>() ?? "", p["name"]?.GetValue<string>() ?? "",
                 p["path"]?.GetValue<string>() ?? "", colour, p["solids"]?.GetValue<int>() ?? 0, p["faces"]?.GetValue<int>() ?? 0,
                 p["valid"]?.GetValue<bool>() ?? false)

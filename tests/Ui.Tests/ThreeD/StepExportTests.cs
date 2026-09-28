@@ -288,12 +288,13 @@ public sealed class StepExportTests : IDisposable
     }
 
     [Fact]
-    public void ExportStep_IsInAllThreeFileMenus_AndBothThreeDMenus_OnOneCommandAndOneTooltip()
+    public void ExportStep_IsInAllThreeFileMenus_OnOneCommandAndOneTooltip()
     {
         string window = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Ui", "Views", "WorkspaceWindow.axaml"));
         string torn = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Ui", "Views", "Shared", "TornOffFileMenuView.axaml"));
-        Assert.Equal(4, Regex.Matches(window, @"ExportStepCommand").Count);          // native File + 3D, in-window File + 3D
-        Assert.Equal(4, Regex.Matches(window, @"ThreeDExportStepTip").Count);
+        // 3D menu cleanup — File ▸ Export ▸ STEP… only: the 3D menu's copy was the same command a second time.
+        Assert.Equal(2, Regex.Matches(window, @"ExportStepCommand").Count);          // native File, in-window File
+        Assert.Equal(2, Regex.Matches(window, @"ThreeDExportStepTip").Count);
         Assert.Single(Regex.Matches(torn, "ExportStepCommand"));
         Assert.Contains("ThreeDExportStepTip", torn, StringComparison.Ordinal);
     }

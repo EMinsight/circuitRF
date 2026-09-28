@@ -155,7 +155,7 @@ public sealed class C3dGroupsTests : IDisposable
 
         int entries = vm.UndoEntries;
         p.Material = "Copper";                                           // every member, one entry
-        Assert.Equal(["Copper", "Copper"], new[] { vm.Document.Objects[0].Material, vm.Document.Objects[3].Material });
+        Assert.Equal(new[] { "Copper", "Copper" }, new[] { vm.Document.Objects[0].Material, vm.Document.Objects[3].Material });
         Assert.Equal(entries + 1, vm.UndoEntries);
         Settle(vm);
 
@@ -167,7 +167,7 @@ public sealed class C3dGroupsTests : IDisposable
 
         vm.Properties.NameText = "Stage1";
         vm.Properties.CommitName();
-        Assert.Equal(["Stage1", "Stage1"], new[] { vm.Document.Objects[0].Group, vm.Document.Objects[3].Group });
+        Assert.Equal(new[] { "Stage1", "Stage1" }, new[] { vm.Document.Objects[0].Group, vm.Document.Objects[3].Group });
     }
 
     [Fact]
@@ -185,7 +185,7 @@ public sealed class C3dGroupsTests : IDisposable
 
         Click(vm, "d");                                                   // any of it: the top-most group
         Assert.Equal(4, vm.Viewer.SelectedObjects().Count);
-        Assert.Contains(vm.Viewer.ContextMenuItems(), m => m.Header == "Ungroup Group3  (Ctrl/Cmd+Shift+G)");
+        Assert.Contains(vm.Viewer.ContextMenuItems(), m => m.Header == "Ungroup Group3" && m.Gesture!.KeyModifiers.HasFlag(Avalonia.Input.KeyModifiers.Shift));
         vm.UngroupSelection();
         Assert.Equal(["Group1", "Group1", "Group2", "Group2"], vm.Document.Objects.Select(o => o.Group));
 

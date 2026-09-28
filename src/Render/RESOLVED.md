@@ -4224,3 +4224,36 @@ contributed nothing. `MeshCut` now welds by exact coordinate first — the kerne
 identical coordinates, which is the same weld `CsxcadWriter` already does for openEMS's PLY. An analytic primitive
 (the bore, an `Em3dCylinder`) was always cut by formula, which is why it alone survived. Gate:
 `tests/Ui.Tests/Em3d/Em3dSectionMeshCutTests.cs`.
+
+
+## 3D vector copy and drawing export (2026-09-27)
+
+The owner asked for the 3D view in vector form: Copy as Vector and Export as Vector beside the picture commands, and an
+Export Drawing… that puts several views and sections on one sheet. `Em3dSectionScene.Outline`
+(`Renderers/Em3dOutline.cs`), `Em3dDrawingSheet` (`Em3dDrawing.cs`), `Em3dDrawingExport` and `Em3dText` are the new code.
+
+- **The isometric beside it is untouched, on purpose.** `Em3dSectionScene.Iso` (`render --iso`, the doc figures) is a
+  fixed +x +y +z viewer drawn as an isometric DRAWING (true projection × 1.2247) and wire-framed. The new outline is a
+  separate function over any `Em3dProjection`; `Em3dView.Iso` still comes out byte for byte as before (checked by
+  rendering iso and sections of the 3D Package and the Via example to SVG, PDF and PNG before and after — identical — and by
+  `Em3dRenderExplainTests`). The app's own Standard View *Isometric* is NOT the CLI's: the camera's iso looks from
+  +x −y +z. A drawing's views use the camera's angles (`Em3dProjection.Standard` mirrors `Camera3D.SetStandardView`), so
+  *Top* on paper is *Top* on screen.
+- **One edge rule for every primitive.** The outline takes every solid and sheet as `Em3dTessellation` triangles, WELDS
+  them by position (a kernel solid's display mesh repeats a vertex per face; unwelded, every triangle edge reads as open
+  and is drawn), and draws an edge when it is open, turns more than 30°, or is a silhouette. A box is clipped to the frame
+  first, as the isometric clips it.
+- **Hidden edges** are found by sampling each edge against the projected triangles in a bucket grid and bisecting each
+  change of state. The containment test INCLUDES the triangle's boundary: strict containment let an edge that lies exactly
+  under the diagonal of the face in front of it leak through, and let a box's bottom outline show through its own top in
+  a Top view. What keeps an edge from hiding behind the faces it bounds is the depth tolerance (1e-7 of the picture's
+  span), not the boundary. Above 400,000 triangles nothing is hidden and the caller gets a note.
+- **Text as outlines** (`Em3dText.Draw`): every label of a 3D picture now goes through one helper. Off, it is exactly
+  `SKCanvas.DrawText` (the CLI's bytes are unchanged); on, it draws `SKFont.GetTextPath` placed by the same advance-width
+  alignment. That is the fix for SVGs opening in a substitute font: Skia's SVG device writes `font-family` and the reader's
+  machine supplies the face. Drawings and vector copies default to outlines; the dialog can turn it off.
+- **One round scale per sheet.** `Em3dDrawingSheet.Layout` sizes each grid column to its widest view and each row to its
+  tallest (uniform cells left a flat package's side views as thin strips in cells as tall as its top view), picks the
+  column count giving the largest scale, and rounds DOWN to 1, 2 or 5 × 10ⁿ paper to model (`RoundScale`).
+- The legend lists a material once: conductors are drawn in their LAYER colours, and one material on three layers read as
+  three materials.

@@ -4,6 +4,7 @@
 // second copy.
 // What a node cannot do is shown disabled with the reason, so the answer is readable (the air box, an instance's part).
 
+using Avalonia.Input;
 using CircuitRF.Design.ThreeD;
 using CircuitRF.Render.Scene3D;
 using CircuitRF.Ui.Viewer3D;
@@ -71,7 +72,7 @@ public sealed partial class C3dEditorViewModel
         else
         {
             bool drawn = scene.Count > 0;
-            items.Add(new Viewer3DMenuItem("Duplicate  (Ctrl/Cmd+D)", StartDuplicate, Enabled: drawn,
+            items.Add(new Viewer3DMenuItem("Duplicate", StartDuplicate, Enabled: drawn, Gesture: Viewer3DMenuItem.Command(Key.D),
                 Tip: drawn ? "A copy in place, then a Move: click where it goes, or Esc to leave it where it is."
                            : "Not drawn (elaboration refused it — see Properties): there is nothing to place yet."));
             // 3D editor groups — disabled for this row alone (a group holds two things or more), with the reason.

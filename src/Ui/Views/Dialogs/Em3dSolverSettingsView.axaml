@@ -68,7 +68,7 @@
       <!-- brief-em3d-26 R-em3d26-1d — where Palace is looked for. Windows only: elsewhere there is one location. -->
       <StackPanel Grid.Row="3" Grid.ColumnSpan="2" Name="PalaceLocationRow" Orientation="Horizontal" Spacing="6"
                   Margin="0,6,0,0" IsVisible="False">
-        <TextBlock Text="Location:" FontSize="11" VerticalAlignment="Center"/>
+        <SelectableTextBlock Text="Location:" FontSize="11" VerticalAlignment="Center"/>
         <ComboBox Name="PalaceLocationBox" FontSize="11" MinWidth="220" SelectionChanged="OnLocationChanged">
           <ToolTip.Tip>
             <TextBlock TextWrapping="Wrap" MaxWidth="360"

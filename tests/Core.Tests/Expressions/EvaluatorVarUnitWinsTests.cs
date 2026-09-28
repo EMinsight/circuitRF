@@ -88,4 +88,33 @@ public class EvaluatorVarUnitWinsTests
         // Site GHz applies → 50e9
         Assert.Equal(50e9, ev.Eval("Rval", scope, "GHz").AsReal());
     }
+
+    // T6 — a VARIABLE's own unit follows the same rule as a site's. `b = 2*a` declared in mil, with `a`
+    // in mil, is 20 mil: a was already scaled when it resolved, so b's unit must not scale it again.
+    // Resolve applied a binding's unit unconditionally, so b came out 2.54e-5 times too small.
+    [Fact]
+    public void Resolve_VariableUnit_DoesNotRescaleAUnitBearingReference()
+    {
+        var (ev, scope) = MakeScope(("a", "10", "mil"), ("b", "2*a", "mil"), ("c", "a/4", null), ("d", "2", "mil"));
+
+        Assert.Equal(20 * 2.54e-5, ev.Resolve("b", scope).AsReal(), 15);
+        Assert.Equal(10 * 2.54e-5 / 4, ev.Resolve("c", scope).AsReal(), 15);  // unit-less: unchanged
+        Assert.Equal(2 * 2.54e-5, ev.Resolve("d", scope).AsReal(), 15);       // a literal still takes its unit
+        Assert.Equal(20 * 2.54e-5, ev.Eval("b", scope, "mil").AsReal(), 15);  // and a site in mil takes it once
+    }
+
+    // T7 — a frequency-dependent binding inlined across a cell boundary follows the same rule as Resolve.
+    [Fact]
+    public void FreqDeferral_VariableUnit_DoesNotRescaleAUnitBearingReference()
+    {
+        var scope = new Scope("cell");
+        scope.Bind("L", "1", "nH");
+        scope.Bind("x", "L * freq", "nH");   // x references L, which already carries nH
+
+        string inlined = new FreqDeferral().InlineForCellBoundary("x", scope, new Evaluator());
+
+        var at = new Scope("stamp");
+        at.Bind("freq", "2");
+        Assert.Equal(2e-9, new Evaluator().Eval(inlined, at).AsReal(), tolerance: 1e-21);
+    }
 }

@@ -191,7 +191,8 @@ public sealed class Em3dGeneratorTests
         foreach (string cem in cems)
         {
             var setup = EmSetupPersistence.LoadFromFile(cem);
-            Assert.False(setup.Is3D, cem);
+            // A 3D setup is one its FILE states (the shipped 3D EM examples); Auto never resolves to one.
+            if (setup.Is3D) { Assert.Contains("\"Solver3D\"", File.ReadAllText(cem), StringComparison.Ordinal); continue; }
             var choice = EmKernelRegistry.Choose(setup.AnalysisKind, EmExtractorVerdict.Yes, EmExtractorVerdict.Yes);
             Assert.Contains(choice.Kind, new[] { EmAnalysisKind.CrossSection, EmAnalysisKind.Planar });
         }
@@ -211,10 +212,12 @@ public sealed class Em3dGeneratorTests
         // EMITS for a planar file, and the only way is a key the file did not state.
         foreach (string cem in RepoCems())
         {
-            string written = EmSetupPersistence.Serialize(EmSetupPersistence.Deserialize(File.ReadAllText(cem)));
+            string text = File.ReadAllText(cem);
+            string written = EmSetupPersistence.Serialize(EmSetupPersistence.Deserialize(text));
             Assert.Equal(written, EmSetupPersistence.Serialize(EmSetupPersistence.Deserialize(written)));
+            // A key the file did not state — a 3D EM example states these, a planar file must not gain them.
             foreach (string key in new[] { "\"Solver3D\"", "\"OperatingTempC\"", "\"AirBox\"", "\"Palace\"", "\"OpenEms\"" })
-                Assert.DoesNotContain(key, written, StringComparison.Ordinal);
+                if (!text.Contains(key, StringComparison.Ordinal)) Assert.DoesNotContain(key, written, StringComparison.Ordinal);
         }
 
         var (setup, _) = Microstrip();

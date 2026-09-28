@@ -132,6 +132,25 @@ public sealed class ExpressionsGateTests : IDisposable
         Assert.Contains(r.Warnings, w => w.Contains("above 1 m", StringComparison.Ordinal));
     }
 
+    /// <summary>A VAR with its own unit that references another unit-bearing VAR takes neither unit twice: `w2 = 2*w` in
+    /// mil, `w` = 10 mil, is 20 mil wherever it is used — the value, the field and the preview agree.</summary>
+    [Fact]
+    public void Gate6b_AVarWithItsOwnUnit_DoesNotRescaleTheNamesItReferences()
+    {
+        var doc = new C3dDocument
+        {
+            Variables = [new C3dVariable { Name = "w", Expression = "10", Unit = "Mil" }, new C3dVariable { Name = "w2", Expression = "2*w", Unit = "Mil" }],
+        };
+        var b = Box("slab", 0, 0, 0, 1, 1, 1);
+        Bind(b, "Size", 0, "w2", "Mil");
+        doc.Objects.Add(b);
+        var r = C3dResolver.Resolve(doc, C3dCell.None);
+        Assert.True(r.Ok, string.Join(" | ", r.Errors));
+        Assert.Equal(20 * Mil, r.Names["w2"].Value!.Value, 1e-15);
+        Assert.Equal(20 * Mil, r.FieldValues[("slab", "Size[0]")], 1e-15);
+        Assert.Equal(20 * Mil, r.Evaluate("w2", "Mil").AsReal(), 1e-15);
+    }
+
     // ── gate 7 ────────────────────────────────────────────────────────────────────────────────
 
     [Fact]

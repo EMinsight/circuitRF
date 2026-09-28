@@ -86,6 +86,11 @@ public sealed record C3dProvenance(string InstancePath, string DocumentPath, str
     /// document's metres to world metres); null for the document's own objects. Two objects of one child
     /// under transforms with the same rotation are the same mesh moved by the difference of translations.</summary>
     public C3dTransform? Element { get; init; }
+
+    /// <summary>The document's top-level object this solid was elaborated from: itself for an ordinary object, the Boolean for
+    /// a Tool it keeps (<c>KeepTools</c>) or a disabled operation's Tool, which are drawn as objects of their own and move,
+    /// rotate and duplicate with it. Null where no top-level object applies (a wire, a layout instance's part).</summary>
+    public string? TopObject { get; init; }
 }
 
 /// <summary>brief-em3d-66 — a preview's answer: the tree it was asked for, the shape as elaboration would lower it, the build
@@ -577,6 +582,9 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
         private readonly List<Em3dSolid> _unassignedSolids = [];
         private readonly List<Em3dSheet> _unassignedSheets = [];
         private readonly Dictionary<string, C3dProvenance> _provenance = new(StringComparer.Ordinal);
+
+        /// <summary>The top-level object being elaborated, for <see cref="C3dProvenance.TopObject"/>.</summary>
+        private string? _topObject;
         private readonly List<string> _notes = [];
         private readonly List<string> _warnings = [];
         private readonly List<string> _refusals = [];
@@ -691,7 +699,9 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
             {
                 if (obj is C3dPolyline) { _polylines++; continue; }
                 if (obj is C3dWire) continue;                       // after the instances: see Wires
+                _topObject = obj.Name;
                 Object(obj, prefix + obj.Name, world, doc, tech, prefix, path, exact);
+                _topObject = null;
             }
 
             string baseDir = Path.GetDirectoryName(path)!;
@@ -777,6 +787,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
             }
             _provenance[name] = new C3dProvenance(prefix.TrimEnd('/'), path, name[prefix.Length..], lowered.FaceNames)
             {
+                TopObject = _topObject,
                 Exact = exact && obj.Placement.ToTransform().IsIntegral,
                 Element = prefix.Length > 0 ? world : null,
             };
@@ -845,6 +856,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
                 _unassignedSolids.Add(new Em3dSolid(name, "", Em3dRole.Dielectric, lowered.Solid!, 0));
                 _provenance[name] = new C3dProvenance(prefix.TrimEnd('/'), path, name[prefix.Length..], lowered.FaceNames)
                 {
+                    TopObject = _topObject,
                     Exact = exact && obj.Placement.ToTransform().IsIntegral,
                     Element = prefix.Length > 0 ? world : null,
                 };
@@ -948,6 +960,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
             else _unassignedSolids.Add(new Em3dSolid(name, "", Em3dRole.Dielectric, lowered.Solid!, 0));
             _provenance[name] = new C3dProvenance(prefix.TrimEnd('/'), path, name[prefix.Length..], lowered.FaceNames)
             {
+                TopObject = _topObject,
                 Exact = exact && obj.Placement.ToTransform().IsIntegral,
                 Element = prefix.Length > 0 ? world : null,
             };

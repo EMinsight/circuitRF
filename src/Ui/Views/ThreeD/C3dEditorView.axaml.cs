@@ -47,11 +47,18 @@ public partial class C3dEditorView : UserControl
             if (_vm is null) return;
             // 3D editor bugs round 4 — Copy (the picture, to the clipboard) on anything or nothing, as the read-only
             // viewer has had it; this menu had been filled with no picture commands at all.
-            var copy = Viewer3DPictureCopy.Item(Pane, () => _vm?.Viewer, text => { if (_vm is not null) _vm.StatusMessage = text; });
+            void Report(string text) { if (_vm is not null) _vm.StatusMessage = text; }
+            var copy = Viewer3DPictureCopy.Item(Pane, () => _vm?.Viewer, Report);
+            // 3D vector copy and drawing export (2026-09-27) — the view as lines, beside each picture command.
+            var copyVector = Viewer3DVectorExport.CopyItem(Pane, () => _vm?.Viewer, Report);
             // 3D editor bugs round 5 — Export Picture…, the read-only viewer's, for both.
             var export = new MenuItem { Header = "Export Picture…" };
             export.Click += OnExportPicture;
-            Viewer3DContextMenu.Fill(_menu, _vm.Viewer.OpenContextMenu(), [copy, export]);
+            Window? Owner() => TopLevel.GetTopLevel(this) as Window;
+            string DocumentPath() => _vm?.FilePath ?? "";
+            var exportVector = Viewer3DVectorExport.ExportItem(Owner, () => _vm?.Viewer, DocumentPath, Report);
+            var drawing = Viewer3DVectorExport.DrawingItem(Owner, () => _vm?.Viewer, DocumentPath, Report);
+            Viewer3DContextMenu.Fill(_menu, _vm.Viewer.OpenContextMenu(), [copy, copyVector, export, exportVector, drawing]);
             _menu.Open(Pane);
         };
         Pane.FaultChanged += why =>

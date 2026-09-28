@@ -1,5 +1,5 @@
-// brief-em3d-69 — STEP export: the ONE function File ▸ Export ▸ STEP…, 3D ▸ Export STEP… and `circuitrf convert … -o x.step`
-// all call. Nothing here writes STEP: the worker does (OCCT's writer, with names and colours). This file decides what is IN
+// brief-em3d-69 — STEP export: the ONE function File ▸ Export ▸ STEP… and `circuitrf convert … -o x.step`
+// both call. Nothing here writes STEP: the worker does (OCCT's writer, with names and colours). This file decides what is IN
 // the file, and hands the worker resolved numbers.
 //
 //   Plan    a .c3d, a .clay or a cell folder → what would be written: the parts, their cuts, the assemblies, the counts

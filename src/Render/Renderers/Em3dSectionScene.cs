@@ -32,12 +32,21 @@ using CircuitRF.Engine.Em3d;
 namespace CircuitRF.Render;
 
 /// <summary>Which picture of a 3D problem: a section normal to one axis, or the isometric outline.</summary>
-public enum Em3dViewKind { SectionZ, SectionY, SectionX, Iso }
+public enum Em3dViewKind
+{
+    SectionZ, SectionY, SectionX, Iso,
+    /// <summary>An orthographic outline along any direction (Em3dSectionScene.Outline) — a drawing's Top, Front …
+    /// or the 3D view's own camera. Never handed to <see cref="Em3dSectionScene.Build"/>.</summary>
+    Projection,
+}
 
 /// <summary>A view: its kind and, for a section, where the plane is along its normal, metres.</summary>
 public readonly record struct Em3dView(Em3dViewKind Kind, double At)
 {
     public static Em3dView Iso => new(Em3dViewKind.Iso, 0);
+
+    /// <summary>For <see cref="Em3dViewKind.Projection"/>, the direction it looks along; null otherwise.</summary>
+    public Em3dProjection? Projection { get; init; }
 
     /// <summary>The plane's normal axis, lower-case, or null for the isometric view.</summary>
     public string? Axis => Kind switch
@@ -63,8 +72,9 @@ public sealed record Em3dSceneRegion(
 
 /// <summary>A stroked line: a sheet crossing a vertical section (<see cref="WidthM"/> is its real
 /// thickness), or one edge of an isometric outline.</summary>
+/// <param name="Hidden">An outline's edge behind a surface, kept to be drawn dashed (Em3dHiddenEdges.Dashed).</param>
 public sealed record Em3dSceneLine(string Object, Em3dRole Role, string Material, int Order, bool IsSheet,
-                                   Uv A, Uv B, double WidthM);
+                                   Uv A, Uv B, double WidthM, bool Hidden = false);
 
 /// <summary>A port's sheet projected onto the picture's plane.</summary>
 public sealed record Em3dScenePort(int Number, IReadOnlyList<Uv> Outline);
@@ -100,7 +110,7 @@ public sealed record Em3dScene(
         Regions.Select(r => r.Object).Concat(Lines.Select(l => l.Object)).Distinct(StringComparer.Ordinal);
 }
 
-public static class Em3dSectionScene
+public static partial class Em3dSectionScene
 {
     /// <summary>The content's padding on every side, as a fraction of its largest dimension.</summary>
     public const double ContentPadFraction = 0.15;

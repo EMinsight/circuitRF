@@ -882,8 +882,8 @@ public sealed partial class C3dEditorViewModel
         yield return new Viewer3DMenuItem("Dissolve Boolean", () => DissolveBoolean(boolean), Enabled: one is null,
             Tip: one ?? "Its operands become top-level objects again: the Blank under the boolean's name, then the Tools.");
         string? enter = KernelMissing("Edit Operands") ?? (boolean < 0 ? "Select one boolean." : null);
-        yield return new Viewer3DMenuItem("Edit Operands  (Ctrl/Cmd+])", () => EnterBoolean(boolean), Enabled: enter is null,
-            Tip: enter ?? "Or double-click it. Esc or Ctrl/Cmd+[ leaves.");
+        yield return new Viewer3DMenuItem("Edit Operands", () => EnterBoolean(boolean), Enabled: enter is null,
+            Tip: enter ?? "Ctrl/Cmd+], or double-click it. Esc or Ctrl/Cmd+[ leaves.");
     }
 
     /// <summary>3D ▸ Boolean's items, by name — the functions the context menu calls.</summary>
