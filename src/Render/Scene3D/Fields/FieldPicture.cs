@@ -15,11 +15,19 @@ namespace CircuitRF.Render.Scene3D.Fields;
 public sealed record FieldPictureShot(byte[] Rgba, int Width, int Height, float Scale, IReadOnlyList<string> Legend,
                                       ColorMap3D? Map, FieldColorScale? Range, string? Caption, bool Dark)
 {
-    /// <summary>The pixels with the legend and caption painted on (the caller disposes it).</summary>
-    public SKBitmap Compose() => FieldPicture.Compose(Rgba, Width, Height, Scale, Legend, Map, Range, Caption, Dark);
+    /// <summary>3D editor bugs round 6 — the view's 2D chrome (the axis indicator, the scale bar, a measurement, the
+    /// selection's highlight), drawn at this picture's size to lay over the GPU's pixels; null for none.</summary>
+    public FieldPictureLayer? Layer { get; init; }
 
-    public byte[] Png() => FieldPicture.Png(Rgba, Width, Height, Scale, Legend, Map, Range, Caption, Dark);
+    /// <summary>The pixels with the layer, the legend and the caption painted on (the caller disposes it).</summary>
+    public SKBitmap Compose() => FieldPicture.Compose(Rgba, Width, Height, Scale, Legend, Map, Range, Caption, Dark, Layer);
+
+    public byte[] Png() => FieldPicture.Png(Rgba, Width, Height, Scale, Legend, Map, Range, Caption, Dark, Layer);
 }
+
+/// <summary>A picture-sized layer to paint over a <see cref="FieldPictureShot"/>: premultiplied, rows top first, BGRA when
+/// <paramref name="Bgra"/> and RGBA otherwise (the byte order of whatever drew it).</summary>
+public sealed record FieldPictureLayer(byte[] Pixels, bool Bgra);
 
 public static class FieldPicture
 {
@@ -33,22 +41,35 @@ public static class FieldPicture
     /// export's multiple of the window, so the text is the size it is on screen).
     /// </summary>
     public static byte[] Png(byte[] rgba, int width, int height, float scale, IReadOnlyList<string> legend, ColorMap3D? map,
-                             FieldColorScale? range, string? caption, bool dark)
+                             FieldColorScale? range, string? caption, bool dark, FieldPictureLayer? layer = null)
     {
-        using var bmp = Compose(rgba, width, height, scale, legend, map, range, caption, dark);
+        using var bmp = Compose(rgba, width, height, scale, legend, map, range, caption, dark, layer);
         using var image = SKImage.FromBitmap(bmp);
         using var data = image.Encode(SKEncodedImageFormat.Png, 100);
         return data.ToArray();
     }
 
-    /// <summary>As <see cref="Png"/>, unencoded: the composed pixels, RGBA8 premultiplied (opaque).</summary>
+    /// <summary>As <see cref="Png"/>, unencoded: the composed pixels, RGBA8 premultiplied (opaque). <paramref name="layer"/>,
+    /// when given, is painted first, under the legend and the caption.</summary>
     public static SKBitmap Compose(byte[] rgba, int width, int height, float scale, IReadOnlyList<string> legend, ColorMap3D? map,
-                                   FieldColorScale? range, string? caption, bool dark)
+                                   FieldColorScale? range, string? caption, bool dark, FieldPictureLayer? layer = null)
     {
         var bmp = new SKBitmap(new SKImageInfo(width, height, SKColorType.Rgba8888, SKAlphaType.Premul));
         System.Runtime.InteropServices.Marshal.Copy(rgba, 0, bmp.GetPixels(), Math.Min(rgba.Length, width * height * 4));
         using (var canvas = new SKCanvas(bmp))
         {
+            if (layer is not null && layer.Pixels.Length >= width * height * 4)
+            {
+                var info = new SKImageInfo(width, height, layer.Bgra ? SKColorType.Bgra8888 : SKColorType.Rgba8888, SKAlphaType.Premul);
+                using var over = new SKBitmap();
+                var handle = System.Runtime.InteropServices.GCHandle.Alloc(layer.Pixels, System.Runtime.InteropServices.GCHandleType.Pinned);
+                try
+                {
+                    over.InstallPixels(info, handle.AddrOfPinnedObject(), width * 4);
+                    canvas.DrawBitmap(over, 0, 0);
+                }
+                finally { handle.Free(); }
+            }
             var ink = dark ? new SKColor(235, 235, 240) : new SKColor(30, 32, 38);
             var box = dark ? new SKColor(28, 30, 34, 215) : new SKColor(250, 250, 252, 225);
             using var font = new SKFont(SKTypeface.Default, 12 * scale);

@@ -215,6 +215,7 @@
                                     <NativeMenuItem Header="Perspective" ToolTip="Requires an active 3D document."    Command="{Binding ThreeDPerspectiveCommand}"/>
                                     <NativeMenuItem Header="Clip Plane" ToolTip="Requires an active 3D document."     Command="{Binding ThreeDClipPlaneCommand}"/>
                                     <NativeMenuItem Header="Axis Indicator" ToolTip="Requires an active 3D document." Command="{Binding ThreeDAxisIndicatorCommand}"/>
+                                    <NativeMenuItem Header="Scale Legend" ToolTip="Requires an active 3D document." Command="{Binding ThreeDScaleLegendCommand}"/>
                                     <NativeMenuItemSeparator/>
                                     <!-- brief-em3d-75 R-em3d75-4 — greyed, with the reason, without a current thermal result. -->
                                     <NativeMenuItem Header="Temperature" ToolTip="{Binding ThreeDTemperatureTip}" IsEnabled="{Binding ThreeDTemperatureMenuEnabled}">
@@ -1086,6 +1087,8 @@
                               ToolTip.Tip="Toggle the clip plane. Requires an active 3D document."/>
                     <MenuItem Header="_Axis Indicator" Command="{Binding ThreeDAxisIndicatorCommand}" InputGesture="A"
                               ToolTip.Tip="Toggle the axis indicator. Requires an active 3D document."/>
+                    <MenuItem Header="Scale _Legend" Command="{Binding ThreeDScaleLegendCommand}"
+                              ToolTip.Tip="Toggle the scale bar. Requires an active 3D document."/>
                     <Separator/>
                     <!-- brief-em3d-75 R-em3d75-4 — mirrors the macOS menu's View ▸ Temperature; greyed, with the reason, without a
                          current thermal result for the active setup. -->

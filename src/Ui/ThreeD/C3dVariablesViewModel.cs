@@ -30,6 +30,12 @@ public sealed partial class C3dVariableRow : ObservableObject
     public bool CanPromote { get; init; }
     public string? Error { get; init; }
 
+    /// <summary>3D editor bugs round 6 — why Delete would be refused (what uses the VAR), or null. The button is disabled
+    /// and says this as its tooltip: a refusal written below the panel's rows went unseen when they scrolled.</summary>
+    public string? DeleteRefusal { get; init; }
+    public bool CanDelete => DeleteRefusal is null;
+    public string DeleteTip => DeleteRefusal ?? "Delete";
+
     /// <summary>The edit fields, prefilled with what the row holds.</summary>
     [ObservableProperty] private string _editExpression = "";
     [ObservableProperty] private string _editUnit = "";
@@ -86,6 +92,7 @@ public sealed partial class C3dVariablesViewModel(C3dEditorViewModel editor) : O
                 CanUnlink = linked,
                 CanPromote = cell.InCell && param is null,
                 Error = n?.Error,
+                DeleteRefusal = C3dVariableEdits.DeleteRefusal(editor.Document, v.Name),
                 EditExpression = linked ? param!.DefaultExpression : v.Expression,
                 EditUnit = linked ? param!.Unit : v.Unit ?? "",
                 EditName = v.Name,

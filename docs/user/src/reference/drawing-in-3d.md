@@ -548,7 +548,14 @@ Right-click the view (on anything, or on nothing) for five ways to take it out o
   views out on one sheet, as SVG or PDF.
 
 A vector picture is always **orthographic**, even when the view is in perspective, and it leaves out what you
-have hidden. Conductors keep the colours the view draws them in; dielectrics are outlined in grey.
+have hidden. It is framed as the view is, at the view's zoom — zoom in for a close-up. Conductors keep the
+colours the view draws them in; dielectrics are outlined in grey.
+
+Every picture carries what the toolbar's middle group shows: the **axis indicator**, the **drawing grid** and
+the **scale legend** (the scale bar, bottom right; also *3D ▸ View ▸ Scale Legend*) — turn one off and it
+leaves the pictures too. *Copy* and *Export Picture…* also keep a measurement with its numbers and the
+selection's highlight; neither keeps the cursor's hover label, the snap marker or the move handles. A vector
+picture has no drawing grid.
 
 ### Export Drawing… {#export-drawing}
 
@@ -951,9 +958,10 @@ order a pane presents them, with the rules each one follows.
   and a multiplier stays a number. A lone `m` is milli (`2mm` or `2metre`, never `2m`); `check` warns about any
   dimension over 1 m.
   The **Variables** panel (the *x* button) lists each VAR with its expression, unit, value and how many fields
-  use it, then the cell's parameters: *Set*, *Rename* (every use is rewritten; `ww` is not touched by renaming
-  `w`), *Delete* (refused while anything uses it — *Inline* writes the current numbers into those fields
-  first), and *Promote to Cell Parameter*. A VAR with the same name as a cell parameter is **linked** to it:
+  use it, then the cell's parameters. Each row's buttons are glyphs, named by their tooltips: *Set*, *Rename*
+  (every use is rewritten; `ww` is not touched by renaming `w`), *Inline* (writes the current numbers into the
+  fields that use it, then deletes it), *Promote to Cell Parameter*, and *Delete*, last — greyed while anything
+  uses the VAR, its tooltip naming what does. Drag the panel's left edge to widen it. A VAR with the same name as a cell parameter is **linked** to it:
   it takes the parameter's value — an instance's override, else the cell's default — and editing it edits the
   parameter, so the cell has one default for the name. *Unlink* makes it keep its own value, which then hides
   the parameter from this 3D view (`check` warns). Placing a cell's 3D view, an instance can override its

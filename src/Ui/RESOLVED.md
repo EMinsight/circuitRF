@@ -37455,3 +37455,45 @@ background was always dark. It now sets the variant instead.
   Object mode.
 - **Pre-existing failure, not this brief:** `EmFrameworkFreeTests.NothingUnderLayoutEm_ReferencesAvaloniaOrSkia` fails on
   `SolverInstallRunner.cs` and `SolverRemovalRunner.cs` (both last changed in 2eeedbe9, 2026-09-26).
+
+## 3D editor bugs round 6 — pictures of the view, the Variables panel, the Setups tooltip (2026-09-28)
+
+**A picture was the GPU's pixels and nothing else.** The axis indicator, the scale bar, a measurement, an Edge- or
+Vertex-mode selection and the hot-spot ring are all drawn by `Viewer3DOverlay` (Avalonia, over the pane), so Copy and
+Export Picture… never had them. The overlay's `Render` became `Paint(…, picture)`, and `Viewer3DOverlay.PictureLayer`
+paints it into a `RenderTargetBitmap` whose DPI is the picture's pixels per DIP — one drawing, at the picture's
+resolution, laid over the read-back by `FieldPicture.Compose` (`FieldPictureShot.Layer`). Picture mode leaves out
+what the POINTER is doing (hover label and ring, snap marker, move gizmo, cycle prompt) and the field legend, which
+`FieldPicture` already paints per the export options; it adds the Measure card's numbers, because the card is a
+control, not overlay. **The layer's byte order is not fixed**: the headless Skia platform returned RGBA where the
+desktop returns BGRA, so `FieldPictureLayer` carries it.
+
+**The Object/Face selection outline WAS in the picture, just invisible.** The GPU draws it as four one-pixel passes a
+DEVICE pixel apart (`Scene3DFramePlan.EdgePasses`) — two pixels whatever the picture's multiple, so half a window pixel
+at Copy's 4×. Thickening it on the GPU needs a per-draw pixel pitch the shaders do not take (and no shader toolchain
+is installed here), so the picture layer redraws the selected objects' edge batches from the CPU line buffer at the
+screen's width in DIPs, with fs_edge's rules: no depth test, the clip plane's discarded side cut off
+(`ClipSegment`), and in Face mode only a selected face's edges.
+
+**Copy as Vector framed the model's extents at every zoom.** `Em3dDrawingExport.Picture` now takes an
+`Em3dPictureWindow` — the camera's target and the orthographic half-height `Distance·tan(fov/2)`
+(`Camera3D.ProjectionMatrix`), times the pane's aspect — and culls what lies wholly outside it, so a close-up of a
+board does not carry the board into the SVG behind a clip. A perspective view gets the window at the orbit centre.
+`Em3dPictureChrome` draws the axis indicator and the scale bar in vector, sized in the view's DIPs. The drawing grid
+is still not drawn in vector.
+
+**Scale legend toggle**: `Viewer3DViewModel.ShowScaleLegend` (toolbar, and 3D ▸ View ▸ Scale Legend), grouped with
+the axis indicator and the drawing grid; every picture follows all three.
+
+**The Setups button's tooltip flashed over the dialog it opened**: the click lands while the tip is up (or its delay
+running) and the modal dialog takes the pointer with the tip still assigned to the button. `OnDialogButtonClick`
+closes it and disables the tooltip service on that button until the window is activated again. The menu route never
+had a tip to leave behind.
+
+**Delete on a VAR in use** wrote its refusal below the panel's rows, out of sight once they scrolled; the refusal is
+now asked first (`C3dVariableEdits.DeleteRefusal`, the sentence `Delete` itself returns), and the button is disabled
+with it as the tooltip. The Variables panel has the tree's grip (`Thumb.panelGrip`, one style for both).
+
+Gates: `tests/Ui.Tests/ThreeD/EditorRound6PictureTests.cs`. The raster composite was checked in a scratch headless
+harness (axis indicator, scale bar with the legend on and off, the measurement and its table at 4×); no GUI pixels
+were seen.

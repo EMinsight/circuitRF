@@ -710,6 +710,7 @@ public partial class WorkspaceViewModel
         ThreeDPerspectiveCommand.NotifyCanExecuteChanged();
         ThreeDClipPlaneCommand.NotifyCanExecuteChanged();
         ThreeDAxisIndicatorCommand.NotifyCanExecuteChanged();
+        ThreeDScaleLegendCommand.NotifyCanExecuteChanged();
         ThreeDShowAllCommand.NotifyCanExecuteChanged();
         ThreeDSnapCommand.NotifyCanExecuteChanged();
         ThreeDDrawCommand.NotifyCanExecuteChanged();
@@ -846,6 +847,10 @@ public partial class WorkspaceViewModel
 
     [RelayCommand(CanExecute = nameof(HasActive3DPane))]
     private void ThreeDAxisIndicator() { if (Active3DPane() is { } p) p.ShowAxisIndicator = !p.ShowAxisIndicator; }
+
+    /// <summary>3D editor bugs round 6 — 3D ▸ View ▸ Scale Legend: the toolbar's toggle for the scale bar.</summary>
+    [RelayCommand(CanExecute = nameof(HasActive3DPane))]
+    private void ThreeDScaleLegend() { if (Active3DPane() is { } p) p.ShowScaleLegend = !p.ShowScaleLegend; }
 
     [RelayCommand(CanExecute = nameof(HasActive3DPane))]
     private void ThreeDShowAll() => Active3DPane()?.ShowAll();

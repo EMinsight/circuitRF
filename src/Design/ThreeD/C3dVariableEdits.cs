@@ -253,11 +253,19 @@ public static class C3dVariableEdits
     /// <summary>Deletes VAR <paramref name="name"/> — refused while anything uses it, listing what does.</summary>
     public static string? Delete(C3dDocument doc, string name)
     {
-        var uses = UsesOf(doc, name);
-        if (uses.Count > 0)
-            return $"VAR '{name}' is used by {Describe(uses)}. Inline its value to write numbers into those fields, or change them first.";
+        if (DeleteRefusal(doc, name) is { } refusal) return refusal;
         doc.Variables.RemoveAll(v => v.Name == name);
         return null;
+    }
+
+    /// <summary>Why <see cref="Delete"/> would refuse VAR <paramref name="name"/> — what uses it — or null when it would not.
+    /// Asked before the gesture, so a Delete that cannot act says why before it is pressed.</summary>
+    public static string? DeleteRefusal(C3dDocument doc, string name)
+    {
+        var uses = UsesOf(doc, name);
+        return uses.Count > 0
+            ? $"VAR '{name}' is used by {Describe(uses)}. Inline its value to write numbers into those fields, or change them first."
+            : null;
     }
 
     /// <summary>

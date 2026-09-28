@@ -57,7 +57,7 @@ public partial class C3dEditorView : UserControl
             export.Click += OnExportPicture;
             Window? Owner() => TopLevel.GetTopLevel(this) as Window;
             string DocumentPath() => _vm?.FilePath ?? "";
-            var exportVector = Viewer3DVectorExport.ExportItem(Owner, () => _vm?.Viewer, DocumentPath, Report);
+            var exportVector = Viewer3DVectorExport.ExportItem(Owner, Pane, () => _vm?.Viewer, DocumentPath, Report);
             var drawing = Viewer3DVectorExport.DrawingItem(Owner, () => _vm?.Viewer, DocumentPath, Report);
             Viewer3DContextMenu.Fill(_menu, _vm.Viewer.OpenContextMenu(), [copy, copyVector, export, exportVector, drawing]);
             _menu.Open(Pane);
@@ -134,9 +134,9 @@ public partial class C3dEditorView : UserControl
     {
         if (_vm is null || TopLevel.GetTopLevel(this) is not Window owner) return;
         var viewer = _vm.Viewer;
-        var (w, h) = Viewer3DPictureCopy.PanePixels(Pane);
-        var png = viewer.ExportPng(w, h, out string? error);
-        if (png is null) { _vm.StatusMessage = "The picture could not be made: " + error; return; }
+        var shot = Viewer3DPictureCopy.Capture(Pane, viewer, viewer.ExportScale, out string? error);
+        if (shot is null) { _vm.StatusMessage = "The picture could not be made: " + error; return; }
+        var png = await Task.Run(shot.Png);
         var file = await owner.StorageProvider.SaveFilePickerAsync(new Avalonia.Platform.Storage.FilePickerSaveOptions
         {
             Title = "Export Picture",
@@ -243,6 +243,16 @@ public partial class C3dEditorView : UserControl
     }
 
     private const double TreeMinWidth = 150;
+
+    /// <summary>3D editor bugs round 6 — the Variables panel's grip, the tree's on the other side: a drag LEFT widens it.
+    /// Not saved.</summary>
+    private void OnVariablesGripDrag(object? sender, VectorEventArgs e)
+    {
+        double max = Math.Max(VariablesMinWidth, Bounds.Width * 0.7);
+        VariablesPanel.Width = Math.Clamp(VariablesPanel.Width - e.Vector.X, VariablesMinWidth, max);
+    }
+
+    private const double VariablesMinWidth = 200;
 
     private ScrollViewer? _treeScroll;
 
@@ -413,6 +423,26 @@ public partial class C3dEditorView : UserControl
     private void OnVariableUnlink(object? sender, RoutedEventArgs e) { if (RowOf(sender) is { } r) _vm?.Variables?.Link(r, false); }
     private void OnVariablePromote(object? sender, RoutedEventArgs e) { if (RowOf(sender) is { } r) _vm?.Variables?.Promote(r); }
     private void OnVariableAdd(object? sender, RoutedEventArgs e) => _vm?.Variables?.Add();
+
+    /// <summary>
+    /// 3D editor bugs round 6 — a toolbar button that opens a modal dialog (Setups): its tooltip closed, and held off until
+    /// this window is active again. The click lands while the tip is showing (or its delay is running), and the dialog took
+    /// the pointer with the tip still assigned to the button, so moving over the dialog opened and closed it over and over.
+    /// The same dialog from the menu bar never had a tip to leave behind.
+    /// </summary>
+    private void OnDialogButtonClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Control button) return;
+        ToolTip.SetIsOpen(button, false);
+        ToolTip.SetServiceEnabled(button, false);
+        if (TopLevel.GetTopLevel(this) is not WindowBase window) { ToolTip.SetServiceEnabled(button, true); return; }
+        void Restore(object? s, EventArgs a)
+        {
+            window.Activated -= Restore;
+            ToolTip.SetServiceEnabled(button, true);
+        }
+        window.Activated += Restore;
+    }
 
     // brief-em3d-48 — the breadcrumb and the Pop Out button: the view model asks about a dirty child.
     private void OnPopOutClick(object? sender, RoutedEventArgs e) => _ = _vm?.PopOutAsync();

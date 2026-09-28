@@ -50,10 +50,41 @@ public sealed record Em3dDrawingRequest
     }
 }
 
+/// <summary>
+/// 3D editor bugs round 6 — the part of the picture plane a vector picture shows: the 3D view's window, its centre and
+/// half-extents in metres. Without one a picture is framed on everything it draws, which is what Copy as Vector did at
+/// every zoom — so a close-up could not be copied.
+/// </summary>
+public readonly record struct Em3dPictureWindow(Uv Centre, double HalfWidth, double HalfHeight);
+
+/// <summary>
+/// 3D editor bugs round 6 — what a vector picture of the 3D view carries beside the model, as the view's toolbar has it:
+/// the axis indicator (bottom left) and the scale bar (bottom right). Sized in the view's DIPs times
+/// <see cref="PagePerDip"/>, so each is the size on the page it is on the screen, relative to the view.
+/// </summary>
+public sealed record Em3dPictureChrome
+{
+    /// <summary>Page units per DIP of the view the picture was made from.</summary>
+    public double PagePerDip { get; init; } = 1;
+    public bool AxisIndicator { get; init; }
+    /// <summary>The scale bar: its length in metres and its label, or null for none.</summary>
+    public (double Metres, string Label)? ScaleBar { get; init; }
+}
+
 /// <summary>One view as a picture, ready to encode: Copy as Vector and Export as Vector.</summary>
 public sealed record Em3dVectorPicture(Em3dScene Scene, float Width, float Height, double Scale, Em3dDrawingStyle Style, string? Note)
 {
-    public void Draw(SKCanvas canvas) => Em3dDrawingSheet.DrawPicture(canvas, Width, Height, Scale, Scene, Style);
+    /// <summary>The picture-plane point at the page's centre; null centres the page on what the scene draws.</summary>
+    public Uv? Centre { get; init; }
+    /// <summary>The direction it looks along, for the axis indicator.</summary>
+    public Em3dProjection? Projection { get; init; }
+    public Em3dPictureChrome? Chrome { get; init; }
+
+    public void Draw(SKCanvas canvas)
+    {
+        Em3dDrawingSheet.DrawPicture(canvas, Width, Height, Scale, Scene, Style, Centre);
+        if (Chrome is { } c) Em3dDrawingSheet.DrawChrome(canvas, Width, Height, Scale, Projection, c, Style.TextAsPaths);
+    }
     public string Svg() => Em3dDrawingSheet.Svg(Width, Height, Draw);
     public byte[] Pdf() => Em3dDrawingSheet.Pdf(Width, Height, Draw);
     public byte[] Png(float pixelsPerUnit) => Em3dDrawingSheet.Png(Width, Height, pixelsPerUnit, Draw);
@@ -123,15 +154,26 @@ public static class Em3dDrawingExport
             : Em3dDrawingSheet.Pdf(w, h, Draw);
     }
 
-    /// <summary>One outline along <paramref name="projection"/>, framed on its own content: what Copy as Vector copies.
-    /// No legend, no title, labels as outlines, a transparent page.</summary>
+    /// <summary>One outline along <paramref name="projection"/>: what Copy as Vector copies. Framed on
+    /// <paramref name="window"/> — the 3D view's, so the picture is what the camera sees at its zoom — or, without one, on
+    /// its own content. No legend, no title, labels as outlines, a transparent page; <paramref name="chrome"/>'s axis
+    /// indicator and scale bar when given.</summary>
     public static Em3dVectorPicture Picture(Em3dProblem problem, Em3dProjection projection, IReadOnlyDictionary<string, SKColor> colours,
                                             ColorTheme theme, IReadOnlySet<string>? omit, Em3dHiddenEdges hidden = Em3dHiddenEdges.Removed,
-                                            float maxSide = 720f)
+                                            float maxSide = 720f, Em3dPictureWindow? window = null, Em3dPictureChrome? chrome = null)
     {
         var scene = Em3dSectionScene.Outline(Without(problem, omit), projection, new Em3dOutlineOptions { Hidden = hidden }, out string? note);
-        var (w, h, scale) = Em3dDrawingSheet.PictureSize(scene, maxSide);
         var style = new Em3dDrawingStyle(colours, theme, ColorVariant.Light) { Legend = false, Transparent = true };
-        return new Em3dVectorPicture(scene, w, h, scale, style, note);
+        if (window is not { HalfWidth: > 0, HalfHeight: > 0 } win)
+        {
+            var (w, h, scale) = Em3dDrawingSheet.PictureSize(scene, maxSide);
+            return new Em3dVectorPicture(scene, w, h, scale, style, note) { Projection = projection, Chrome = chrome };
+        }
+        double aspect = win.HalfWidth / win.HalfHeight;
+        float pw = aspect >= 1 ? maxSide : (float)(maxSide * aspect), ph = aspect >= 1 ? (float)(maxSide / aspect) : maxSide;
+        return new Em3dVectorPicture(scene, pw, ph, pw / (2 * win.HalfWidth), style, note)
+        {
+            Centre = win.Centre, Projection = projection, Chrome = chrome,
+        };
     }
 }

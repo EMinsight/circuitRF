@@ -227,13 +227,79 @@ public static class Em3dDrawingSheet
         return (Math.Max(w, 2 * margin + 1), Math.Max(h, 2 * margin + 1), scale);
     }
 
-    /// <summary>Paints <paramref name="scene"/> alone on a page made by <see cref="PictureSize"/>.</summary>
-    public static void DrawPicture(SKCanvas canvas, float w, float h, double scale, Em3dScene scene, Em3dDrawingStyle style)
+    /// <summary>Paints <paramref name="scene"/> alone on a page made by <see cref="PictureSize"/> — or, with
+    /// <paramref name="centre"/>, on a WINDOW of the picture plane centred there (3D editor bugs round 6: what the 3D view's
+    /// camera sees), clipped to the page.</summary>
+    public static void DrawPicture(SKCanvas canvas, float w, float h, double scale, Em3dScene scene, Em3dDrawingStyle style, Uv? centre = null)
     {
         var st = StackupRenderTheme.FromTheme(style.Theme, style.Variant);
         if (!style.Transparent) canvas.Clear(SKColors.White);
         var (lo, hi) = Extent(scene);
-        PaintView(canvas, scene, new SKRect(0, 0, w, h), scale, new Uv((lo.U + hi.U) / 2, (lo.V + hi.V) / 2), style, st);
+        canvas.Save();
+        if (centre is not null) canvas.ClipRect(new SKRect(0, 0, w, h));
+        PaintView(canvas, scene, new SKRect(0, 0, w, h), scale, centre ?? new Uv((lo.U + hi.U) / 2, (lo.V + hi.V) / 2), style, st,
+                  cull: centre is not null);
+        canvas.Restore();
+    }
+
+    /// <summary>The 3D view's axis indicator's colours (Viewer3DOverlay's).</summary>
+    private static readonly SKColor[] AxisColours = [new(220, 60, 60), new(60, 170, 70), new(60, 110, 230)];
+
+    /// <summary>
+    /// 3D editor bugs round 6 — the 3D view's chrome on a vector picture, as the overlay draws it on screen: the axis
+    /// indicator bottom left (a dotted ring, the three axes farthest first so the one toward the viewer is on top, each
+    /// lettered past its tip) and the scale bar bottom right (a bar with end ticks, its length above it). In DIPs of the
+    /// view times <see cref="Em3dPictureChrome.PagePerDip"/>; a length on the bar is <paramref name="scale"/> page units per metre.
+    /// </summary>
+    public static void DrawChrome(SKCanvas canvas, float w, float h, double scale, Em3dProjection? projection, Em3dPictureChrome chrome,
+                                  bool textAsPaths)
+    {
+        float k = (float)chrome.PagePerDip;
+        var ink = new SKColor(35, 38, 44);
+        using var font = new SKFont(SkiaFonts.PlexRegular, 11 * k);
+        using var text = new SKPaint { IsAntialias = true, Color = ink, Style = SKPaintStyle.Fill };
+        using var stroke = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeCap = SKStrokeCap.Round };
+        if (chrome.AxisIndicator && projection is { } p)
+        {
+            const float arm = 30, inset = 46;
+            var o = new SKPoint(inset * k, h - inset * k);
+            stroke.Color = ink;
+            stroke.StrokeWidth = 0.6f * k;
+            using (var dots = SKPathEffect.CreateDash([0.6f * k, 2f * k], 0))
+            {
+                stroke.PathEffect = dots;
+                canvas.DrawCircle(o, (arm + 8) * k, stroke);
+                stroke.PathEffect = null;
+            }
+            Point3[] axes = [new(1, 0, 0), new(0, 1, 0), new(0, 0, 1)];
+            string[] names = ["X", "Y", "Z"];
+            // Farthest first: the axis pointing at the viewer (largest along Toward) is drawn last, on top.
+            foreach (int a in Enumerable.Range(0, 3).OrderBy(i => Em3dProjection.Dot(p.Toward, axes[i])))
+            {
+                var d = new SKPoint((float)Em3dProjection.Dot(p.Right, axes[a]), -(float)Em3dProjection.Dot(p.Up, axes[a]));
+                var tip = new SKPoint(o.X + arm * k * d.X, o.Y + arm * k * d.Y);
+                stroke.Color = AxisColours[a];
+                stroke.StrokeWidth = 2.5f * k;
+                canvas.DrawLine(o, tip, stroke);
+                float len = MathF.Max(1e-6f, d.Length);
+                var at = new SKPoint(tip.X + d.X / len * 8 * k, tip.Y + d.Y / len * 8 * k + font.Size * 0.35f);
+                text.Color = AxisColours[a];
+                Em3dText.Draw(canvas, textAsPaths, names[a], at.X, at.Y, SKTextAlign.Center, font, text);
+            }
+            text.Color = ink;
+        }
+        if (chrome.ScaleBar is { } bar && scale > 0)
+        {
+            float len = (float)(bar.Metres * scale);
+            var right = new SKPoint(w - 20 * k, h - 22 * k);
+            var left = new SKPoint(right.X - len, right.Y);
+            stroke.Color = ink;
+            stroke.StrokeWidth = 1.5f * k;
+            canvas.DrawLine(left, right, stroke);
+            canvas.DrawLine(left.X, left.Y - 5 * k, left.X, left.Y + 5 * k, stroke);
+            canvas.DrawLine(right.X, right.Y - 5 * k, right.X, right.Y + 5 * k, stroke);
+            Em3dText.Draw(canvas, textAsPaths, bar.Label, (left.X + right.X) / 2, right.Y - 7 * k, SKTextAlign.Center, font, text);
+        }
     }
 
     // ── painting ──────────────────────────────────────────────────────────────────────────────
@@ -246,8 +312,10 @@ public static class Em3dDrawingSheet
             _                  => Em3dSectionRenderer.DielectricFill(st, scene.DielectricMaterials, material),
         };
 
+    /// <param name="cull">Leave out what lies wholly outside <paramref name="rect"/> — a window on a large model (a close-up
+    /// of a board) would otherwise carry every line of it into the file, clipped but still there.</param>
     private static void PaintView(SKCanvas canvas, Em3dScene scene, SKRect rect, double scale, Uv centre,
-                                  Em3dDrawingStyle style, StackupRenderTheme st)
+                                  Em3dDrawingStyle style, StackupRenderTheme st, bool cull = false)
     {
         SKPoint Map(Uv q) => new((float)(rect.MidX + (q.U - centre.U) * scale), (float)(rect.MidY - (q.V - centre.V) * scale));
         bool outline = scene.View.Kind is Em3dViewKind.Projection or Em3dViewKind.Iso;
@@ -262,6 +330,7 @@ public static class Em3dDrawingSheet
             using var path = new SKPath { FillType = SKPathFillType.EvenOdd };
             if (r.CircleCentre is { } c) { var m = Map(c); path.AddCircle(m.X, m.Y, (float)(r.CircleRadius * scale)); }
             foreach (var ring in r.Rings) if (ring.Count >= 2) path.AddPoly([.. ring.Select(Map)], close: true);
+            if (cull && !path.Bounds.IntersectsWithInclusive(rect)) continue;
             var colour = Fill(style, st, scene, r.Object, r.Role, r.Material);
             fill.Color = colour;
             canvas.DrawPath(path, fill);
@@ -289,7 +358,10 @@ public static class Em3dDrawingSheet
                 stroke.StrokeWidth = !outline && l.IsSheet ? Math.Max(1.5f, (float)(l.WidthM * scale))
                                    : l.Role == Em3dRole.Conductor ? 1f : 0.75f;
             }
-            canvas.DrawLine(Map(l.A), Map(l.B), stroke);
+            var (a, b) = (Map(l.A), Map(l.B));
+            if (cull && !SKRect.Create(MathF.Min(a.X, b.X), MathF.Min(a.Y, b.Y), MathF.Abs(a.X - b.X), MathF.Abs(a.Y - b.Y))
+                               .IntersectsWithInclusive(rect)) continue;
+            canvas.DrawLine(a, b, stroke);
         }
     }
 

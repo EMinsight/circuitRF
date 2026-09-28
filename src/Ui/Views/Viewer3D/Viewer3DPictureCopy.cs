@@ -32,11 +32,22 @@ public static class Viewer3DPictureCopy
         return ((int)Math.Ceiling(pane.Bounds.Width * scale), (int)Math.Ceiling(pane.Bounds.Height * scale));
     }
 
-    /// <summary>The composing runs off the UI thread; only the read-back holds it.</summary>
-    public static async Task CopyAsync(Control pane, Viewer3DViewModel vm, Action<string> report)
+    /// <summary>
+    /// The view at <paramref name="scale"/> × the pane: the GPU's pixels, with the overlay's chrome — the axis indicator and
+    /// the scale bar as the toolbar has them, a measurement, the selection's highlight — painted at the picture's size to
+    /// lay over them (3D editor bugs round 6: a picture had been the GPU's pixels alone). Copy and Export Picture… both.
+    /// </summary>
+    public static FieldPictureShot? Capture(Control pane, Viewer3DViewModel vm, int scale, out string? error)
     {
         var (w, h) = PanePixels(pane);
-        var shot = vm.CapturePicture(w, h, Viewer3DViewModel.CopyScale, out string? error);
+        var shot = vm.CapturePicture(w, h, scale, out error);
+        return shot is null ? null : shot with { Layer = Viewer3DOverlay.PictureLayer(vm, pane.Bounds.Width, shot.Width, shot.Height) };
+    }
+
+    /// <summary>The composing runs off the UI thread; only the read-back and the overlay hold it.</summary>
+    public static async Task CopyAsync(Control pane, Viewer3DViewModel vm, Action<string> report)
+    {
+        var shot = Capture(pane, vm, Viewer3DViewModel.CopyScale, out string? error);
         if (shot is null) { report("The picture could not be copied: " + error); return; }
         report("Copying the picture…");
         try

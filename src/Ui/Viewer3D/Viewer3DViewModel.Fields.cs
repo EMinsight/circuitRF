@@ -511,10 +511,6 @@ public sealed partial class Viewer3DViewModel
     /// <summary>What Copy puts on the clipboard: the view at this multiple of the window (brief-em3d-29 follow-up).</summary>
     public const int CopyScale = 4;
 
-    /// <summary>The view as a PNG at <see cref="ExportScale"/> × the window (Export picture…).</summary>
-    public byte[]? ExportPng(int windowPixelsW, int windowPixelsH, out string? error)
-        => CapturePicture(windowPixelsW, windowPixelsH, ExportScale, out error)?.Png();
-
     /// <summary>
     /// The view drawn by the GPU offscreen at <paramref name="scale"/> × the window's DEVICE-pixel size
     /// (1-4), reduced when needed so neither side passes <see cref="FieldPicture.MaxSide"/>, and read back;

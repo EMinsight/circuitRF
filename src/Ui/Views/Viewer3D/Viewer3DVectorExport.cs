@@ -71,20 +71,49 @@ public static class Viewer3DVectorExport
         return Em3dProjection.FromVectors(new Point3(b.X, b.Y, b.Z), new Point3(r.X, r.Y, r.Z), new Point3(u.X, u.Y, u.Z), "View");
     }
 
-    /// <summary>The current view as a vector picture, or null with <paramref name="why"/>.</summary>
-    public static Em3dVectorPicture? Picture(Viewer3DViewModel vm, out string? why)
+    /// <summary>
+    /// 3D editor bugs round 6 — what the camera sees, in the picture plane: the window about its target, as tall as the
+    /// orthographic projection's (Camera3D.ProjectionMatrix) and as wide as the pane's aspect makes it. For a perspective
+    /// camera it is the window at the orbit centre — the plane the scale bar is measured in.
+    /// </summary>
+    internal static Em3dPictureWindow Window(Viewer3DViewModel vm, double aspect)
+    {
+        var c = vm.View.Camera;
+        var (x, y, z) = vm.Scene.ToWorld(c.Target);
+        double half = c.Distance * Math.Tan((c.FovY > 0 && c.FovY < MathF.PI ? c.FovY : Camera3D.DefaultFovY) * 0.5);
+        return new Em3dPictureWindow(CameraProjection(vm).Project(new Point3(x, y, z)), half * aspect, half);
+    }
+
+    /// <summary>The page's longer side, in points (≈10 in, the size a pasted picture lands at).</summary>
+    private const float MaxSide = 720f;
+
+    /// <summary>The current view — what the pane (<paramref name="paneW"/> × <paramref name="paneH"/> DIPs) shows, at its
+    /// zoom, with the axis indicator and the scale bar as the toolbar has them — as a vector picture, or null with
+    /// <paramref name="why"/>.</summary>
+    public static Em3dVectorPicture? Picture(Viewer3DViewModel vm, double paneW, double paneH, out string? why)
     {
         var (problem, refusal) = ProblemOf(vm);
         why = refusal;
         if (problem is null) return null;
         var theme = ThemeService.Active;
-        return Em3dDrawingExport.Picture(problem, CameraProjection(vm), Colours(vm.Scene), theme, HiddenNames(vm));
+        paneW = Math.Max(1, paneW); paneH = Math.Max(1, paneH);
+        var window = Window(vm, paneW / paneH);
+        double metresPerDip = 2 * window.HalfHeight / paneH;
+        double bar = Viewer3DOverlay.ScaleBarLength(Viewer3DOverlay.ScaleBarTarget * metresPerDip, vm.MeasureUnit, vm.MeasureDbuPerMicron);
+        var chrome = new Em3dPictureChrome
+        {
+            PagePerDip = MaxSide / Math.Max(paneW, paneH),
+            AxisIndicator = vm.ShowAxisIndicator,
+            ScaleBar = vm.ShowScaleLegend && bar > 0 ? (bar, vm.FormatLength(bar)) : null,
+        };
+        return Em3dDrawingExport.Picture(problem, CameraProjection(vm), Colours(vm.Scene), theme, HiddenNames(vm), maxSide: MaxSide,
+                                         window: window, chrome: chrome);
     }
 
     public static MenuItem CopyItem(Control pane, Func<Viewer3DViewModel?> vm, Action<string> report)
     {
         var item = new MenuItem { Header = CopyHeader };
-        ToolTip.SetTip(item, "The view as lines — silhouettes and sharp edges, hidden edges removed — for a document or a slide. On Windows it pastes as a metafile.");
+        ToolTip.SetTip(item, "The view as lines — silhouettes and sharp edges, hidden edges removed — framed as the view is, for a document or a slide. On Windows it pastes as a metafile.");
         item.Click += async (_, _) => { if (vm() is { } v) await CopyAsync(pane, v, report); };
         return item;
     }
@@ -97,7 +126,7 @@ public static class Viewer3DVectorExport
         string? svg = null; byte[]? pdf = null; Bitmap? bitmap = null; string? why = null;
         try
         {
-            picture = Picture(vm, out why);
+            picture = Picture(vm, pane.Bounds.Width, pane.Bounds.Height, out why);
             if (picture is not null)
             {
                 var p = picture;
@@ -138,18 +167,18 @@ public static class Viewer3DVectorExport
                (picture.Note is { } note ? " " + note : ""));
     }
 
-    public static MenuItem ExportItem(Func<Window?> owner, Func<Viewer3DViewModel?> vm, Func<string> documentPath, Action<string> report)
+    public static MenuItem ExportItem(Func<Window?> owner, Control pane, Func<Viewer3DViewModel?> vm, Func<string> documentPath, Action<string> report)
     {
         var item = new MenuItem { Header = ExportHeader };
         ToolTip.SetTip(item, "The view as lines, to an SVG or PDF file.");
-        item.Click += async (_, _) => { if (owner() is { } w && vm() is { } v) await ExportAsync(w, v, documentPath(), report); };
+        item.Click += async (_, _) => { if (owner() is { } w && vm() is { } v) await ExportAsync(w, pane, v, documentPath(), report); };
         return item;
     }
 
     /// <summary>Export as Vector….</summary>
-    public static async Task ExportAsync(Window owner, Viewer3DViewModel vm, string documentPath, Action<string> report)
+    public static async Task ExportAsync(Window owner, Control pane, Viewer3DViewModel vm, string documentPath, Action<string> report)
     {
-        var picture = Picture(vm, out string? why);
+        var picture = Picture(vm, pane.Bounds.Width, pane.Bounds.Height, out string? why);
         if (picture is null) { report("The view could not be exported: " + why); return; }
         var file = await owner.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {

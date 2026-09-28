@@ -71,16 +71,27 @@ public sealed class Viewer3DOverlay : Control
 
     public override void Render(DrawingContext ctx)
     {
-        if (Vm is not { } vm) return;
+        if (Vm is { } vm) Paint(ctx, vm, Bounds.Width, Bounds.Height, _draw, picture: false);
+    }
+
+    /// <summary>
+    /// The overlay, <paramref name="w"/> × <paramref name="h"/> DIPs. <paramref name="picture"/> paints it for a PICTURE of
+    /// the view (3D editor bugs round 6: Copy and Export Picture… carried the GPU's pixels alone, so the measurement, the
+    /// axis indicator, the scale bar and an Edge- or Vertex-mode selection were missing): what the view SHOWS — those, the
+    /// selection's outline and the measurement's numbers (the card is a control, not overlay) — and none of what the POINTER
+    /// is doing (the hover label and ring, the snap marker, the move gizmo's handles, the cycle prompt). The field's legend
+    /// is left to FieldPicture, which paints it as the export options say.
+    /// </summary>
+    internal static void Paint(DrawingContext ctx, Viewer3DViewModel vm, double w, double h, Viewer3DDrawOverlay draw, bool picture)
+    {
         bool dark = ThemeService.CurrentVariant == ColorVariant.Dark;
         IBrush ink = dark ? Brushes.WhiteSmoke : new SolidColorBrush(Color.FromRgb(35, 38, 44));
         var inkPen = new Pen(ink, 1.5);
         var cam = vm.View.Camera;
-        double w = Bounds.Width, h = Bounds.Height;
         if (w < 10 || h < 10) return;
 
         if (vm.View.ShowAxisIndicator) AxisIndicator(ctx, cam, AxisIndicatorCentre(h), ink);
-        ScaleBar(ctx, cam, vm, w, h, inkPen, ink);
+        if (vm.ShowScaleLegend) ScaleBar(ctx, cam, vm, w, h, inkPen, ink);
 
         foreach (var label in vm.GridLabels)
         {
@@ -89,7 +100,7 @@ public sealed class Viewer3DOverlay : Control
             Text(ctx, label.Text, new Point(x + 6, y - 18), ink, 11, dark);
         }
 
-        if (vm.FieldLegendVisible) Legend(ctx, vm, w, ink, dark);
+        if (!picture && vm.FieldLegendVisible) Legend(ctx, vm, w, ink, dark);
 
         // brief-em3d-75 R-em3d75-4c — the hot spot: a ring at the maximum of what is drawn, its temperature and its object.
         if (vm.ShowsTemperature && vm.HotSpot is { } hot && cam.Project(hot.At, (float)w, (float)h) is (var hx0, var hy0, true))
@@ -112,7 +123,7 @@ public sealed class Viewer3DOverlay : Control
                 var (x, y, visible) = cam.Project(item.Point, (float)w, (float)h);
                 if (visible) ctx.DrawEllipse(accent, ring, new Point(x, y), 6, 6);
             }
-            if (vm.HoveredVertex is { } hv && cam.Project(hv, (float)w, (float)h) is (var hx, var hy, true))
+            if (!picture && vm.HoveredVertex is { } hv && cam.Project(hv, (float)w, (float)h) is (var hx, var hy, true))
                 ctx.DrawEllipse(Brushes.Transparent, new Pen(accent, 2), new Point(hx, hy), 4, 4);
         }
         // brief-em3d-67 R-em3d67-3c — Edge mode: each selected edge, then the hovered one, as a thick polyline projected from
@@ -123,25 +134,146 @@ public sealed class Viewer3DOverlay : Control
             var selected = new Pen(accent, 3, lineCap: PenLineCap.Round, lineJoin: PenLineJoin.Round);
             foreach (var item in vm.Selection)
                 if (vm.EdgePoints(item) is { } pts) Polyline(ctx, vm, pts, w, h, halo, selected);
-            if (vm.HoveredItem is { IsEdge: true } he && !vm.Selection.Contains(he) && vm.EdgePoints(he) is { } hp)
+            if (!picture && vm.HoveredItem is { IsEdge: true } he && !vm.Selection.Contains(he) && vm.EdgePoints(he) is { } hp)
                 Polyline(ctx, vm, hp, w, h, halo, new Pen(RubberBrush, 2.5, lineCap: PenLineCap.Round, lineJoin: PenLineJoin.Round));
         }
-        if (vm.CycleText.Length > 0) Text(ctx, vm.CycleText, new Point(10, 8), ink, 12, dark);
+        if (picture) SelectionOutline(ctx, vm, w, h);
+        if (!picture && vm.CycleText.Length > 0) Text(ctx, vm.CycleText, new Point(10, 8), ink, 12, dark);
 
         if (vm.EditHost is { } host)
         {
-            _draw.Clear();
-            host.FillDrawOverlay(_draw);
-            Drawing(ctx, vm, _draw, w, h, dark);
+            draw.Clear();
+            host.FillDrawOverlay(draw);
+            Drawing(ctx, vm, draw, w, h, dark);
         }
 
         Measurement(ctx, vm, w, h, dark);
+        if (picture) MeasureTable(ctx, vm, h, ink, dark);
+        if (picture) return;
         if (vm.GizmoNow() is { } gizmo) Gizmo(ctx, gizmo, vm.GizmoHover, vm.GizmoActive, dark);
 
         if (vm.Snap.IsSnap) SnapMarker(ctx, vm.Snap.Kind, new Point(vm.Snap.ScreenX, vm.Snap.ScreenY), dark, SnapColour(vm.Scene, vm.Snap));
 
         if (vm.HoverText.Length > 0 && vm.View.CursorX >= 0)
             Text(ctx, vm.HoverText, new Point(vm.View.CursorX + 14, vm.View.CursorY + 14), ink, 12, dark);
+    }
+
+    /// <summary>fs_edge's colour: what the GPU outlines a selection in.</summary>
+    private static readonly Color OutlineColour = Color.FromRgb(255, 89, 255);
+
+    /// <summary>
+    /// 3D editor bugs round 6 — an Object- or Face-mode selection's outline, for a picture. On screen the GPU draws it
+    /// (Scene3DFramePlan's edge passes, a pixel apart) two DEVICE pixels wide, whatever the picture's multiple: at Copy's 4×
+    /// that is half a pixel of the window, and in a picture pasted at the window's size it had all but vanished. Here it is
+    /// the same lines at the screen's width in DIPs, so it scales with the picture. As fs_edge draws them: no depth test,
+    /// nothing on the clipped side, and in Face mode only the edges of a selected face.
+    /// </summary>
+    private static void SelectionOutline(DrawingContext ctx, Viewer3DViewModel vm, double w, double h)
+    {
+        var mode = vm.SelectMode;
+        if (mode is not (CircuitRF.Render.Scene3D.Edit.Scene3DSelectMode.Object or CircuitRF.Render.Scene3D.Edit.Scene3DSelectMode.Face)) return;
+        var view = vm.View;
+        var scene = vm.Scene;
+        if (view.Selection.Length == 0 || scene.EdgeBatches.Length == 0) return;
+        var cam = view.Camera;
+        var pen = new Pen(new SolidColorBrush(OutlineColour), 2, lineCap: PenLineCap.Round);
+        var clip = view.Clip.Enabled ? view.Clip.Equation : (Vector4?)null;
+        int limit = Math.Min(view.Selection.Length, Scene3DFramePlan.SelectionLimit);
+        var done = new HashSet<uint>();
+        for (int k = 0; k < limit; k++)
+        {
+            uint id = view.Selection[k].Object;
+            if (!view.IsDrawn(id) || !done.Add(id)) continue;
+            foreach (var eb in scene.EdgeBatches)
+            {
+                if (eb.ObjectId != id) continue;
+                var offset = eb.Element >= 0 && eb.Element < scene.Elements.Length ? scene.Elements[eb.Element].Offset : Vector3.Zero;
+                int end = Math.Min(eb.FirstVertex + eb.VertexCount, scene.LineVertices.Length);
+                for (int i = eb.FirstVertex; i + 1 < end; i += 2)
+                {
+                    var va = scene.LineVertices[i];
+                    if (mode == CircuitRF.Render.Scene3D.Edit.Scene3DSelectMode.Face && !OnSelectedFace(view, id, va.Face)) continue;
+                    var vb = scene.LineVertices[i + 1];
+                    var a = new Vector3(va.X, va.Y, va.Z) + offset;
+                    var b = new Vector3(vb.X, vb.Y, vb.Z) + offset;
+                    if (clip is { } c && !ClipSegment(c, ref a, ref b)) continue;
+                    var (ax, ay, fa) = cam.Project(a, (float)w, (float)h);
+                    var (bx, by, fb) = cam.Project(b, (float)w, (float)h);
+                    if (fa && fb) ctx.DrawLine(pen, new Point(ax, ay), new Point(bx, by));
+                }
+            }
+        }
+    }
+
+    /// <summary>fs_edge's Face-mode test: an edge vertex carries its two faces packed, low and high 16 bits.</summary>
+    private static bool OnSelectedFace(Viewer3DViewState view, uint id, uint packed)
+    {
+        foreach (var item in view.Selection)
+            if (item.Object == id && item.Face >= 0 && ((packed & 0xFFFF) == (uint)item.Face || (packed >> 16) == (uint)item.Face)) return true;
+        return false;
+    }
+
+    /// <summary>The part of segment a–b the clip plane keeps (fs_edge discards where dot(n, p) + d &gt; 0); false for none.</summary>
+    internal static bool ClipSegment(Vector4 plane, ref Vector3 a, ref Vector3 b)
+    {
+        var n = new Vector3(plane.X, plane.Y, plane.Z);
+        float da = Vector3.Dot(n, a) + plane.W, db = Vector3.Dot(n, b) + plane.W;
+        if (da > 0 && db > 0) return false;
+        if (da <= 0 && db <= 0) return true;
+        var cut = a + (b - a) * (da / (da - db));
+        if (da > 0) a = cut; else b = cut;
+        return true;
+    }
+
+    /// <summary>
+    /// 3D editor bugs round 6 — the Measure card's numbers, for a picture, where the card sits (bottom left, above the axis
+    /// indicator): the card is a control over the pane, not overlay, so a picture of the view never had it.
+    /// </summary>
+    private static void MeasureTable(DrawingContext ctx, Viewer3DViewModel vm, double h, IBrush ink, bool dark)
+    {
+        if (vm.MeasureReadout is not { } r) return;
+        const double pad = 8, label = 64, col = 100, line = 17;
+        var rows = new List<string[]> { new[] { "Measure", "x", "y", "z" } };
+        foreach (var row in r.Rows) rows.Add([row.Heading, row.X.Text, row.Y.Text, row.Z.Text]);
+        if (r.Distance is { } d) rows.Add([r.DistanceHeading, d.Text]);
+        double bw = 2 * pad + label + 3 * col, bh = 2 * pad + line * rows.Count;
+        double x0 = 12, y0 = h - 104 - bh;
+        ctx.DrawRectangle(new SolidColorBrush(dark ? Color.FromArgb(242, 40, 42, 46) : Color.FromArgb(242, 252, 252, 253)),
+                          new Pen(new SolidColorBrush(dark ? Color.FromArgb(90, 255, 255, 255) : Color.FromArgb(70, 0, 0, 0)), 1),
+                          new Rect(x0, y0, bw, bh), 4, 4);
+        for (int i = 0; i < rows.Count; i++)
+        {
+            double y = y0 + pad + i * line;
+            for (int c = 0; c < rows[i].Length; c++)
+            {
+                bool heading = i == 0;
+                var ft = new FormattedText(rows[i][c], CultureInfo.InvariantCulture, FlowDirection.LeftToRight,
+                                           heading && c == 0 ? new Typeface(FontFamily.Default, weight: FontWeight.SemiBold) : Typeface.Default,
+                                           heading && c > 0 ? 11 : 12, ink);
+                double x = x0 + pad + (c == 0 ? 0 : label + (c - 1) * col);
+                using (ctx.PushOpacity(heading && c > 0 ? 0.7 : 1)) ctx.DrawText(ft, new Point(x, y));
+            }
+        }
+    }
+
+    /// <summary>
+    /// 3D editor bugs round 6 — the overlay for a picture <paramref name="pixelW"/> × <paramref name="pixelH"/> of a pane
+    /// <paramref name="dipW"/> DIPs wide, painted at the picture's own resolution (its DPI is the picture's pixels per
+    /// DIP), so a line is as thick and a label as large, relative to the view, as on screen. Premultiplied, rows top first,
+    /// in the platform's byte order (<see cref="FieldPictureLayer.Bgra"/>), for FieldPicture to lay over the GPU's pixels.
+    /// </summary>
+    public static FieldPictureLayer PictureLayer(Viewer3DViewModel vm, double dipW, int pixelW, int pixelH)
+    {
+        double k = pixelW / Math.Max(1, dipW);
+        using var bitmap = new Avalonia.Media.Imaging.RenderTargetBitmap(new PixelSize(pixelW, pixelH), new Avalonia.Vector(96 * k, 96 * k));
+        using (var ctx = bitmap.CreateDrawingContext())
+            Paint(ctx, vm, pixelW / k, pixelH / k, new Viewer3DDrawOverlay(), picture: true);
+        var bytes = new byte[pixelW * pixelH * 4];
+        unsafe
+        {
+            fixed (byte* p = bytes) bitmap.CopyPixels(new PixelRect(0, 0, pixelW, pixelH), (nint)p, bytes.Length, pixelW * 4);
+        }
+        return new FieldPictureLayer(bytes, bitmap.Format != Avalonia.Platform.PixelFormats.Rgba8888);
     }
 
     private readonly Viewer3DDrawOverlay _draw = new();

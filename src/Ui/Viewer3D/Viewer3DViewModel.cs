@@ -629,6 +629,11 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
     [ObservableProperty] private bool _showAxisIndicator = true;
     partial void OnShowAxisIndicatorChanged(bool value) { View.ShowAxisIndicator = value; FrameRequested?.Invoke(); }
 
+    /// <summary>3D editor bugs round 6 — the scale bar at the bottom right (the "scale legend"), on screen and in every picture
+    /// made of the view (Copy, Export Picture…, Copy as Vector, Export as Vector…), as the axis indicator is.</summary>
+    [ObservableProperty] private bool _showScaleLegend = true;
+    partial void OnShowScaleLegendChanged(bool value) => FrameRequested?.Invoke();
+
     [ObservableProperty] private bool _showTree = true;
 
     // Clip plane (R-em3d28-4d).
