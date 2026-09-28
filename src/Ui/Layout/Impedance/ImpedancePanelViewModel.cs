@@ -173,7 +173,8 @@ public sealed partial class ImpedancePanelViewModel : ObservableObject
             {
                 var row = new ImpedanceLayerRow(choice,
                     choice.HasCopper && (saved.Layers is null ||
-                                         saved.Layers.Contains(choice.Name, StringComparer.OrdinalIgnoreCase)));
+                                         saved.Layers.Contains(choice.Name, StringComparer.OrdinalIgnoreCase)),
+                    WholeLayerTicked);
                 row.PropertyChanged += OnLayerRowChanged;
                 Layers.Add(row);
             }
@@ -190,6 +191,7 @@ public sealed partial class ImpedancePanelViewModel : ObservableObject
         if (e.PropertyName != nameof(ImpedanceLayerRow.IsChecked)) return;
         ShowGroups();
         SettingEdited();
+        UpdateLayerScope();
     }
 
     [RelayCommand]
@@ -293,6 +295,7 @@ public sealed partial class ImpedancePanelViewModel : ObservableObject
             scope.Regions = [.. saved.Regions];
             scope.Picks = [.. saved.Picks];
             scope.Nets = [.. saved.Nets];
+            scope.WholeLayers = [.. saved.WholeLayers];
         }
         return scope;
     }
@@ -472,6 +475,40 @@ public sealed partial class ImpedancePanelViewModel : ObservableObject
         Editor?.EditImpedanceScope(s => s.Picks.Remove(row.Pick));
     }
 
+    /// <summary>R-imp6-1: the region list's layer column — a layer by name, or every layer.</summary>
+    internal void SetRegionLayer(ImpedanceRegionRow row, string? layerName)
+    {
+        int i = Regions.IndexOf(row);
+        if (i < 0) return;
+        EditSelectors(s => { if (i < s.Regions.Count) s.Regions[i] = s.Regions[i] with { LayerName = layerName }; });
+        UpdateLayerScope();
+        UpdateScopeText();
+    }
+
+    /// <summary>A layer row's "Whole layer" box: review every trace there while regions, picks or nets
+    /// narrow the rest.</summary>
+    private void WholeLayerTicked(ImpedanceLayerRow row, bool whole)
+    {
+        EditSelectors(s =>
+        {
+            s.WholeLayers.RemoveAll(n => string.Equals(n, row.Name, StringComparison.OrdinalIgnoreCase));
+            if (whole) s.WholeLayers.Add(row.Name);
+        });
+        UpdateLayerScope();
+        UpdateScopeText();
+    }
+
+    /// <summary>
+    /// Each layer row's scope line (brief-impedance-6). Once a region, pick or net is set only what they
+    /// choose is reviewed — a region belongs to one layer, so a layer nothing points at drops out — and
+    /// the row says so, and offers "Whole layer" as the one-click way to keep all of it.
+    /// </summary>
+    private void UpdateLayerScope()
+    {
+        var scope = Editor?.ImpedanceScope ?? new TraceImpedanceScope();
+        foreach (var row in Layers) row.Refresh(scope);
+    }
+
     internal void RenameRegion(ImpedanceRegionRow row, string name)
     {
         int i = Regions.IndexOf(row);
@@ -496,7 +533,8 @@ public sealed partial class ImpedancePanelViewModel : ObservableObject
 
         var selected = SelectedRegion is { } sel ? Regions.IndexOf(sel) : -1;
         Regions.Clear();
-        for (int i = 0; i < scope.Regions.Count; i++) Regions.Add(new ImpedanceRegionRow(this, scope.Regions[i], i));
+        var layerChoices = RegionLayerChoices(scope);
+        for (int i = 0; i < scope.Regions.Count; i++) Regions.Add(new ImpedanceRegionRow(this, scope.Regions[i], i, layerChoices));
         SelectedRegion = selected >= 0 && selected < Regions.Count ? Regions[selected] : null;
 
         Picks.Clear();
@@ -522,6 +560,18 @@ public sealed partial class ImpedancePanelViewModel : ObservableObject
         OnPropertyChanged(nameof(HasRegions));
         OnPropertyChanged(nameof(HasPicks));
         OnPropertyChanged(nameof(HasNets));
+        UpdateLayerScope();
+    }
+
+    /// <summary>What a region's layer column offers: every layer, then each copper layer — and a layer a
+    /// saved region names that this technology no longer has, so it shows rather than going blank.</summary>
+    private List<string> RegionLayerChoices(TraceImpedanceScope scope)
+    {
+        var list = new List<string> { ImpedanceRegionRow.AllLayers };
+        list.AddRange(Layers.Where(l => l.HasCopper).Select(l => l.Name));
+        foreach (var r in scope.Regions)
+            if (r.LayerName is { } n && !list.Contains(n, StringComparer.OrdinalIgnoreCase)) list.Add(n);
+        return list;
     }
 
     private void OnNetRowChanged(object? sender, PropertyChangedEventArgs e)
@@ -898,8 +948,10 @@ public sealed partial class ImpedancePanelViewModel : ObservableObject
     }
 }
 
-/// <summary>One copper layer the panel offers.</summary>
-public sealed partial class ImpedanceLayerRow(LayoutEditorViewModel.TraceImpedanceLayerChoice choice, bool isChecked)
+/// <summary>One copper layer the panel offers — and, once regions, picks or nets narrow the review
+/// (brief-impedance-6), what is reviewed on it and a "Whole layer" box.</summary>
+public sealed partial class ImpedanceLayerRow(LayoutEditorViewModel.TraceImpedanceLayerChoice choice, bool isChecked,
+                                              Action<ImpedanceLayerRow, bool>? wholeTicked = null)
     : ObservableObject
 {
     public LayoutEditorViewModel.TraceImpedanceLayerChoice Choice { get; } = choice;
@@ -908,6 +960,56 @@ public sealed partial class ImpedanceLayerRow(LayoutEditorViewModel.TraceImpedan
     public IBrush Swatch { get; } = new SolidColorBrush(Color.FromRgb(choice.Color.R, choice.Color.G, choice.Color.B));
 
     [ObservableProperty] private bool _isChecked = isChecked;
+
+    /// <summary>Review every trace on this layer, whatever the regions say.</summary>
+    [ObservableProperty] private bool _isWhole;
+
+    /// <summary>The box and the scope line show only while selectors narrow the review and the layer
+    /// is ticked: with none, every ticked layer is reviewed whole already.</summary>
+    [ObservableProperty] private bool _showScope;
+
+    /// <summary>"2 regions", "whole layer", "nothing selected — not reviewed".</summary>
+    [ObservableProperty] private string _scopeNote = "";
+
+    /// <summary>Nothing selects a trace here, so this ticked layer is not reviewed.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(NoteOpacity), nameof(NoteFontStyle))]
+    private bool _isLeftOut;
+
+    /// <summary>A left-out layer's line reads louder than a reviewed one's.</summary>
+    public double NoteOpacity => IsLeftOut ? 0.95 : 0.6;
+    public FontStyle NoteFontStyle => IsLeftOut ? FontStyle.Italic : FontStyle.Normal;
+
+    private bool _showing;
+
+    partial void OnIsWholeChanged(bool value)
+    {
+        if (!_showing) wholeTicked?.Invoke(this, value);
+    }
+
+    internal void Refresh(TraceImpedanceScope scope)
+    {
+        _showing = true;
+        try { IsWhole = scope.IsWhole(Name); }
+        finally { _showing = false; }
+
+        ShowScope = scope.HasSelectors && HasCopper && IsChecked;
+        IsLeftOut = ShowScope && !scope.Reaches(Name);
+        if (!ShowScope) { ScopeNote = ""; return; }
+        if (IsWhole) { ScopeNote = "every trace"; return; }
+        if (IsLeftOut) { ScopeNote = "nothing selected — not reviewed"; return; }
+
+        int regions = scope.Regions.Count(r => r.LayerName is not null && r.IsOn(Name));
+        int everyLayer = scope.Regions.Count(r => r.LayerName is null);
+        int picks = scope.Picks.Count(p => string.Equals(p.LayerName, Name, StringComparison.OrdinalIgnoreCase));
+        var parts = new List<string>();
+        if (regions > 0) parts.Add(regions == 1 ? "1 region" : $"{regions} regions");
+        if (everyLayer > 0) parts.Add(everyLayer == 1 ? "1 all-layer region" : $"{everyLayer} all-layer regions");
+        if (picks > 0) parts.Add(picks == 1 ? "1 pick" : $"{picks} picks");
+        if (scope.Nets.Count > 0) parts.Add(scope.Nets.Count == 1 ? "1 net" : $"{scope.Nets.Count} nets");
+        if (parts.Count == 0) parts.Add("connected picks");
+        ScopeNote = string.Join(", ", parts);
+    }
 }
 
 /// <summary>One layer's width classes, listed while the layer is ticked.</summary>
@@ -1052,16 +1154,37 @@ public sealed partial class ImpedanceRegionRow : ObservableObject
 {
     private readonly ImpedancePanelViewModel _panel;
 
-    public ImpedanceRegionRow(ImpedancePanelViewModel panel, TraceScopeRegion region, int index)
+    /// <summary>The layer column's entry for a region on every layer.</summary>
+    public const string AllLayers = "All layers";
+
+    public ImpedanceRegionRow(ImpedancePanelViewModel panel, TraceScopeRegion region, int index, IReadOnlyList<string> layerChoices)
     {
         _panel = panel;
         _name = region.Name ?? "";
         Placeholder = $"Region {index + 1}";
         ShapeText = region.VertexCount == 4 && IsAxisAligned(region) ? "rectangle" : $"lasso, {region.VertexCount} vertices";
+        // Items first, then the selection it must be found in (src/Ui/CLAUDE.md's ComboBox rule).
+        LayerChoices = layerChoices;
+        _layer = region.LayerName is { } n
+            ? layerChoices.FirstOrDefault(c => string.Equals(c, n, StringComparison.OrdinalIgnoreCase)) ?? n
+            : AllLayers;
     }
 
     public string Placeholder { get; }
     public string ShapeText { get; }
+
+    /// <summary>"All layers", then each copper layer (R-imp6-1).</summary>
+    public IReadOnlyList<string> LayerChoices { get; }
+
+    /// <summary>The layer this region selects on; <see cref="AllLayers"/> for every layer.</summary>
+    [ObservableProperty] private string _layer;
+    partial void OnLayerChanged(string value)
+    {
+        // A combo re-binding can push null through; that is not a choice.
+        if (value is null) return;
+        _panel.SetRegionLayer(this, value == AllLayers ? null : value);
+    }
+
 
     [RelayCommand]
     private void Delete() => _panel.DeleteRegion(this);

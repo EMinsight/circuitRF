@@ -910,11 +910,23 @@ nets** section says which traces are under review by pointing at them:
 **Any one of them chooses a trace, and the widths then filter what they chose.** With none set, every
 trace is reviewed, as before.
 
+**Once you point at anything, only what you pointed at is reviewed &mdash; on every layer.** A region
+belongs to one layer, so if you draw regions on Top only, no other layer is reviewed. That is the
+reduced review a region asks for. Each ticked layer in the **Layers** list then says what is reviewed
+on it (*1 region*, *every trace*, or *nothing selected &mdash; not reviewed*). To keep a whole layer
+without drawing round it, tick **Whole layer** beside it.
+
 - **A region takes a trace any part of which lies inside it**, and reviews it **whole**: a region that
-  clips the end of the RF trace does not drop it, and never cuts it short. A region is a board area, so
-  it applies to every layer. Regions are listed in the panel, where you can name one (the name appears
-  in the report) or remove it; selecting one highlights it on the canvas. To change a region, remove it
-  and draw it again.
+  clips the end of the RF trace does not drop it, and never cuts it short.
+- **A region belongs to the layer you draw it on**: the layout's current layer, when that is a copper
+  layer under review; otherwise the one layer under review, when only one is ticked; otherwise every
+  layer. It selects traces on that layer only, and is drawn only while that layer is shown and ticked.
+  A region on **All layers** selects on every layer, is always drawn, and has an amber dash-dot outline
+  so it is not mistaken for one left over from another layer. Regions saved before regions had layers
+  open as **All layers** and review exactly what they reviewed before.
+- Regions are listed in the panel, where you can name one (the name appears in the report), change its
+  layer (including to **All layers**) or remove it; selecting one highlights it on the canvas. To change
+  a region's shape, remove it and draw it again.
 - **A pick is a point, not a list of shapes**: it is looked up again at every run, so it survives edits
   and a re-import as long as copper is still there. A pick with no copper under it any more is kept and
   listed as *no copper here now* until you remove it.
@@ -923,7 +935,7 @@ trace is reviewed, as before.
 
 While the panel is open, regions are drawn on the canvas as a dashed outline over a light tint and picks
 as a ring and a cross (two rings for a joined pick, grey when there is no copper under it). The PDF's
-maps draw the regions dashed too, and its scope sentence names each selector: *Selected by 2 regions
+maps draw the regions dashed too, each on its own layer's map, and its scope sentence names each selector: *Selected by 2 regions
 ('RF front end', 'antenna'); 1 pick (Top Copper, connected); net RF_OUT. Top Copper, every width (3
 traces).* Before a run the panel's Scope line names the selectors but cannot count what they choose;
 the run counts it.

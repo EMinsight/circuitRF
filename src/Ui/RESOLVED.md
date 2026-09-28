@@ -37585,3 +37585,27 @@ Gate: `WorkspaceArchiveTests.TheNewDocumentKinds_TheirOutsideReferences_AreFound
   holds Turn for the whole of it. Turn's own file write re-stamps, so it is not read back as an edit
   from elsewhere. Not covered by a test (the view-model seams exist; the brief's minimal list did not
   ask for one) and not seen in a running window — the GUI cannot be launched from this shell.
+
+## Impedance review brief 6 — regions per layer in the Impedance panel (2026-09-28)
+
+- **A region takes the layer the reviewer is on** (`ImpedanceRegionLayer`): the current drawing layer
+  when it is a conductor the review analyses, else the single analysed layer, else every layer. The
+  arming message names it ("… on Bottom"). The region list gains a layer column (**All layers** first);
+  its items are set before its selection, per this folder's ComboBox rule.
+- **The owner's UX rule**: once a region, pick or net is set, only what they choose is reviewed, on every
+  layer — so each ticked layer row shows what is reviewed on it (*1 region*, *every trace*, *nothing
+  selected — not reviewed*, the last louder) and a **Whole layer** box, the one-click way to keep an
+  entire layer without lassoing it. Both appear only while selectors are set: with none, every ticked
+  layer is whole already and the box would mean nothing.
+- **The canvas draws a region only while its layer is analysed and visible**; an all-layers region is
+  always drawn, dash-dot amber, so it is not read as a leftover of whichever layer was showing.
+  `SaveImpedanceReview` rebuilds the overlay because the analysed layers now decide what is drawn.
+- **§2, "cannot lasso on the bottom layer"**: not a separate defect. The scope gesture owns the press
+  ahead of every tool and never consulted a layer; driven through `OnPointerPressed/Moved/Released` with
+  only Bottom analysed and Bottom current, it makes a Bottom region that selects the Bottom trace inside
+  it. The likeliest reading of the report is §1 itself: the Top regions — board areas under brief 4 —
+  were still drawn over the same area and already selected the Bottom traces there, so a new lasso on
+  Bottom changed nothing visible. Inferred, not proven on the reporter's board.
+- Not seen in a running window — the GUI cannot be launched from this shell; covered by
+  `ImpedancePanelTests.ALassoOnBottom_IsABottomRegion_SelectingAndDrawnThereOnly` and
+  `ALayerNothingPointsAt_SaysSo_AndWholeLayerKeepsIt`.

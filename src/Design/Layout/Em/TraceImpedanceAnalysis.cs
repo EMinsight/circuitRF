@@ -956,6 +956,13 @@ public static partial class TraceImpedanceAnalysis
         var clauses = new List<string>();
         foreach (var l in layers)
         {
+            // brief-impedance-6: while selectors are set, a layer none of them reaches is not reviewed —
+            // said by name, because "0 traces" reads as a layer with no copper.
+            if (!scope.Reaches(l.Name))
+            {
+                clauses.Add($"{l.Name}, nothing selected");
+                continue;
+            }
             var widths = scope.WidthsOn(l.Name).Select(w => w.NominalMicrons).Distinct().OrderBy(w => w).ToList();
             string count = counted ? $" ({Traces(l.InScope)})" : "";
             clauses.Add(widths.Count == 0
@@ -985,14 +992,17 @@ public static partial class TraceImpedanceAnalysis
         if (scope.Regions.Count > 0)
         {
             var names = scope.Regions.Where(r => !string.IsNullOrWhiteSpace(r.Name)).Select(r => $"'{r.Name}'").ToList();
+            var onLayers = scope.Regions.Select(r => r.LayerName ?? "every layer").Distinct(StringComparer.OrdinalIgnoreCase).ToList();
             parts.Add((scope.Regions.Count == 1 ? "1 region" : $"{scope.Regions.Count} regions") +
-                      (names.Count > 0 ? $" ({string.Join(", ", names)})" : ""));
+                      (names.Count > 0 ? $" ({string.Join(", ", names)})" : "") + " on " + JoinAnd(onLayers));
         }
         if (scope.Picks.Count > 0)
             parts.Add((scope.Picks.Count == 1 ? "1 pick" : $"{scope.Picks.Count} picks") + " (" +
                       string.Join("; ", scope.Picks.Select(p => p.Extent == TracePickExtent.Connected ? $"{p.LayerName}, connected" : p.LayerName)) + ")");
         if (scope.Nets.Count > 0)
             parts.Add((scope.Nets.Count == 1 ? "net " : "nets ") + JoinAnd(scope.Nets));
+        if (parts.Count > 0 && scope.WholeLayers.Count > 0)
+            parts.Add("all of " + JoinAnd(scope.WholeLayers));
         return string.Join("; ", parts);
     }
 

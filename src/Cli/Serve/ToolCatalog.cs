@@ -761,10 +761,10 @@ internal static class ToolCatalog
                           + "only counted, and still count as grounded neighbours."),
                         new("region", "--region", OptKind.StrRepeat,
                             "Review only the traces any part of whose centre line lies inside this rectangle, "
-                          + "\"x0,y0,x1,y1\", EVERY coordinate with its unit (10mm,5mm,30mm,20mm); a bare number "
-                          + "is refused. A trace crossing the edge is reviewed whole. Replaces the saved regions "
-                          + "(saved lasso polygons included) for this run. explain --extents prints coordinates in "
-                          + "this spelling."),
+                          + "\"[<layer>@]x0,y0,x1,y1\", EVERY coordinate with its unit (Bottom@10mm,5mm,30mm,20mm); "
+                          + "a bare number is refused. With a layer it selects on that layer only; without, on every "
+                          + "layer. A trace crossing the edge is reviewed whole. Replaces the saved regions (saved "
+                          + "lasso polygons included) for this run. explain --extents prints coordinates in this spelling."),
                         new("net", "--net", OptKind.StrRepeat,
                             "Review only the traces on copper carrying this net name (from Gerber X2 attributes or "
                           + "a board netlist). Replaces the saved nets for this run."),
@@ -773,6 +773,10 @@ internal static class ToolCatalog
                           + "\":connected\" appended takes every trace galvanically joined to it through vias "
                           + "(a series part breaks it). Replaces the saved picks for this run. Regions, nets and "
                           + "picks SELECT (a trace any one chooses is in); widths then FILTER what they chose."),
+                        new("wholeLayer", "--whole-layer", OptKind.StrRepeat,
+                            "Review every trace on this copper layer while regions, picks or nets narrow the others. "
+                          + "With any of those set, a layer none of them reaches is not reviewed at all; this is how "
+                          + "to keep a whole layer without drawing round it. Replaces the saved whole layers for this run."),
                         new("noScope", "--no-scope", OptKind.Flag,
                             "Ignore the scope saved on the layout and review every trace."),
                         new("ignoreAccepted", "--ignore-accepted", OptKind.Flag,

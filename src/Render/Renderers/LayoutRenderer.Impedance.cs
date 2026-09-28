@@ -92,6 +92,7 @@ public static partial class LayoutRenderer
     // artwork under it stays readable; a pick is a ring with a cross (a double ring when it takes the
     // connected copper, grey when there is no copper under it now). Device-pixel widths, as above.
     private static readonly SKColor ImpedanceScopeInk = new(0x2f, 0x7f, 0xd8);
+    private static readonly SKColor ImpedanceScopeAllLayersInk = new(0xd0, 0x8a, 0x1c);
 
     internal static void DrawImpedanceScopeOverlay(SKCanvas canvas, ImpedanceScopeOverlay overlay, PathSpace ps, double scaleUm)
     {
@@ -103,14 +104,23 @@ public static partial class LayoutRenderer
         };
         using var tint = new SKPaint { IsStroke = false, IsAntialias = true };
 
-        foreach (var (xy, selected) in overlay.Regions)
+        // A region on every layer (brief-impedance-6) is drawn dash-dot in amber, so it is never read as
+        // a leftover of the layer that was showing when it was drawn.
+        using var allOutline = new SKPaint
+        {
+            IsStroke = true, IsAntialias = true, Color = ImpedanceScopeAllLayersInk,
+            PathEffect = SKPathEffect.CreateDash([2 * dash, 0.5f * dash, 0.3f * dash, 0.5f * dash], 0),
+        };
+        foreach (var (xy, selected, allLayers) in overlay.Regions)
         {
             if (xy.Length < 6) continue;
             using var path = Polyline(xy, ps, close: true);
-            tint.Color = ImpedanceScopeInk.WithAlpha(selected ? (byte)0x38 : (byte)0x18);
+            var ink = allLayers ? ImpedanceScopeAllLayersInk : ImpedanceScopeInk;
+            tint.Color = ink.WithAlpha(selected ? (byte)0x38 : (byte)0x18);
             canvas.DrawPath(path, tint);
-            outline.StrokeWidth = DevicePixelsToPathSpace(scaleUm, selected ? 2.5 : 1.5);
-            canvas.DrawPath(path, outline);
+            var stroke = allLayers ? allOutline : outline;
+            stroke.StrokeWidth = DevicePixelsToPathSpace(scaleUm, selected ? 2.5 : 1.5);
+            canvas.DrawPath(path, stroke);
         }
 
         if (overlay.Drawing is { Length: >= 4 } drawing)

@@ -289,6 +289,37 @@ public class TraceImpedanceProbeTests
         Assert.Contains(r.Notes, n => n.StartsWith("'Plane' has no straight trace", StringComparison.Ordinal));
     }
 
+    /// <summary>brief-impedance-6 §3: copper TOUCHING the trace is part of it, never its ground. A pad
+    /// the trace runs into, drawn one DBU off its edge (a hairline the union does not close), read 0.01 Ω
+    /// at the neck; a pad on a plating layer stacked on the trace read 0.00 Ω, the degenerate end of which
+    /// is "no capacitance". Both now price within 1 % of the same trace two widths away, and say why.</summary>
+    [Fact]
+    public void CopperTouchingTheTrace_IsPartOfIt_NotItsGround()
+    {
+        var plating = new LayerKey(3, 0);
+        var tech = Tech(35, 500, 4.4);
+        tech.Layers.Add(new LayerDef { Key = plating, Name = "Plating", Purpose = "conductor" });
+        tech.Stackup.Layers.Insert(0, new StackupLayer
+        {
+            Kind = StackupKind.Conductor, Name = "Plating", ThicknessDbu = Um(5), SigmaSm = 5.8e7, DrawingLayers = [plating],
+        });
+        var trace = Rect(Top, -6000, -475, 6000, 475);
+        var plane = Rect(Gnd, -8000, -8000, 8000, 8000);
+
+        foreach (var pad in new[] { new RectShape { Layer = Top, X1 = 0, Y1 = Um(475) + 1, X2 = Um(3000), Y2 = Um(2500) },
+                                    Rect(plating, 0, -1500, 3000, 1500) })
+        {
+            LayoutShape[] shapes = [trace, pad, plane];
+            var away = Probe(shapes, tech, 1500 - 2 * 950, 0);
+            var neck = Probe(shapes, tech, 1500, 0);
+
+            Assert.True(away.Ok, away.Refusal);
+            Assert.True(neck.Ok, neck.Refusal);
+            Assert.Equal(away.Z0Ohms, neck.Z0Ohms, away.Z0Ohms * 0.01);
+            Assert.Contains(neck.Notes, n => n.StartsWith("Copper touching the trace", StringComparison.Ordinal));
+        }
+    }
+
     /// <summary>A straight strip of width <paramref name="w"/> from (x1, y1) to (x2, y2), µm.</summary>
     private static long[] Line(double x1, double y1, double x2, double y2, double w)
     {

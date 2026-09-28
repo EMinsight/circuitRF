@@ -86,6 +86,11 @@ internal sealed class TraceCut
     public double? GapR { get; init; }
     public int Grounded { get; init; }
 
+    /// <summary>Pieces of copper TOUCHING the signal — on its own layer within a sliver of its edge, or
+    /// on a conductor stacked on it with no dielectric between — taken as part of it rather than as
+    /// ground (brief-impedance-6 §3).</summary>
+    public int Joined { get; init; }
+
     /// <summary>Why this cut has no answer, or null.</summary>
     public string? Refusal { get; init; }
 
@@ -132,8 +137,10 @@ internal static class TraceCrossSection
                                double reachLimit, double quantumDbu)
     {
         double w = sb - sa;
-        var below = s.Bands.Where(b => b.TopM <= signal.BottomM).OrderByDescending(b => b.TopM).ToList();
-        var above = s.Bands.Where(b => b.BottomM >= signal.TopM).OrderBy(b => b.BottomM).ToList();
+        // A conductor stacked ON the signal with no dielectric between (a plating layer) is in contact
+        // with it wherever both are drawn, so it can never be the reference (brief-impedance-6 §3).
+        var below = s.Bands.Where(b => b.TopM <= signal.BottomM && !Stacked(b, signal)).OrderByDescending(b => b.TopM).ToList();
+        var above = s.Bands.Where(b => b.BottomM >= signal.TopM && !Stacked(b, signal)).OrderBy(b => b.BottomM).ToList();
 
         (CrossSectionExtractor.Band? Ref, List<(CrossSectionExtractor.Band Band, double Cov)> Skipped)
             FindReference(List<CrossSectionExtractor.Band> side)
@@ -204,6 +211,7 @@ internal static class TraceCrossSection
             {
                 double a = Math.Max(t0, -reach), b = Math.Min(t1, reach);
                 if (b - a < sliver || (a <= mid && b >= mid)) continue;
+                if (a < sb + sliver && b > sa - sliver) continue;       // touching: part of the signal
                 if (b <= sa) nl = Math.Min(nl ?? double.MaxValue, sa - b);
                 if (a >= sb) nr = Math.Min(nr ?? double.MaxValue, a - sb);
             }
@@ -253,7 +261,7 @@ internal static class TraceCrossSection
         key.Append(signal.Index).Append(':').Append(Q(sb - sa)).Append('/').Append((long)Math.Round(q));
         key.Append(plane ? "|P" : "|N").Append(groundM.ToString("R", CultureInfo.InvariantCulture));
 
-        int grounded = 0;
+        int grounded = 0, joined = 0;
         var candidates = new List<(double Distance, CrossSectionExtractor.Band Band, double A, double B)>();
         foreach (var band in s.Bands)
         {
@@ -278,6 +286,17 @@ internal static class TraceCrossSection
 
             foreach (var (a, b) in kept)
             {
+                // Copper TOUCHING the signal is part of it, never its ground (brief-impedance-6 §3). A
+                // pad drawn a hair off the trace's edge, which the union does not close, or a pad on a
+                // plating layer stacked on the trace, was priced as a ground conductor at no distance:
+                // 0.01 Ω at a 1 nm slit, or a degenerate solve and "no capacitance". Galvanically it is
+                // the signal, so it carries the signal's potential — leaving it out of the ground set is
+                // the one reading that is right, and the trace's own width is what is priced.
+                if ((band.Index == signal.Index || Stacked(band, signal)) && a < sb + sliver && b > sa - sliver)
+                {
+                    joined++;
+                    continue;
+                }
                 if (band.Index == signal.Index)
                 {
                     if (b <= sa) gapL = Math.Min(gapL ?? double.MaxValue, sa - b);
@@ -327,12 +346,18 @@ internal static class TraceCrossSection
             Plane = plane, GroundM = groundM, HBelow = hBelow, HAbove = hAbove, HDbu = hDbu, Reach = reach,
             StackupBottomUsed = stackupBottom,
             ImpliedBelow = impliedBelow,
-            Conductors = conductors, GapL = gapL, GapR = gapR, Grounded = grounded,
+            Conductors = conductors, GapL = gapL, GapR = gapR, Grounded = grounded, Joined = joined,
             Configuration = config,
             Refusal = !plane && grounded == 0 ? "no return conductor" : null,
             Key = key.ToString(),
         };
     }
+
+    /// <summary>Whether <paramref name="band"/> sits directly on <paramref name="signal"/>, above or below,
+    /// with no dielectric between.</summary>
+    private static bool Stacked(CrossSectionExtractor.Band band, CrossSectionExtractor.Band signal) =>
+        band.Index != signal.Index
+        && (Math.Abs(band.TopM - signal.BottomM) < 1e-12 || Math.Abs(band.BottomM - signal.TopM) < 1e-12);
 
     /// <summary>C and C₀ of the cut (F/m), or the solver's own reason there are none.</summary>
     public static (double C, double C0, string? Refusal) Solve(TraceStack s, TraceCut cut, CancellationToken ct = default)

@@ -111,15 +111,27 @@
                     <ItemsControl ItemsSource="{Binding Panel.Layers}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate x:DataType="imp:ImpedanceLayerRow">
-                                <CheckBox IsChecked="{Binding IsChecked}" IsEnabled="{Binding HasCopper}" MinHeight="22">
-                                    <StackPanel Orientation="Horizontal" Spacing="6">
-                                        <Border Width="11" Height="11" CornerRadius="2" Background="{Binding Swatch}"
-                                                VerticalAlignment="Center"/>
-                                        <TextBlock Text="{Binding Name}" FontSize="12" VerticalAlignment="Center"/>
-                                        <TextBlock Text="no copper" FontSize="10" Opacity="0.5" VerticalAlignment="Center"
-                                                   IsVisible="{Binding !HasCopper}"/>
-                                    </StackPanel>
-                                </CheckBox>
+                                <!-- brief-impedance-6: once regions, picks or nets narrow the review, each
+                                     ticked layer says what is reviewed on it, and "Whole layer" keeps all of
+                                     it without drawing round it. -->
+                                <StackPanel Spacing="0">
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <CheckBox Grid.Column="0" IsChecked="{Binding IsChecked}" IsEnabled="{Binding HasCopper}" MinHeight="22">
+                                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                                <Border Width="11" Height="11" CornerRadius="2" Background="{Binding Swatch}"
+                                                        VerticalAlignment="Center"/>
+                                                <TextBlock Text="{Binding Name}" FontSize="12" VerticalAlignment="Center"/>
+                                                <TextBlock Text="no copper" FontSize="10" Opacity="0.5" VerticalAlignment="Center"
+                                                           IsVisible="{Binding !HasCopper}"/>
+                                            </StackPanel>
+                                        </CheckBox>
+                                        <CheckBox Grid.Column="1" FontSize="11" MinHeight="20" Content="Whole layer"
+                                                  IsChecked="{Binding IsWhole}" IsVisible="{Binding ShowScope}"
+                                                  ToolTip.Tip="Review every trace on this layer, without drawing round it. The regions, picks and nets still choose on the other layers."/>
+                                    </Grid>
+                                    <TextBlock Margin="24,0,0,2" FontSize="10" Text="{Binding ScopeNote}" IsVisible="{Binding ShowScope}"
+                                               Opacity="{Binding NoteOpacity}" FontStyle="{Binding NoteFontStyle}"/>
+                                </StackPanel>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
@@ -171,10 +183,10 @@
                          while this panel is open. -->
                     <TextBlock Classes="section" Text="REGIONS, PICKS AND NETS"/>
                     <TextBlock FontSize="10" Opacity="0.6" TextWrapping="Wrap"
-                               Text="Point at the RF path on the board: a trace any region, pick or net chooses is reviewed, and the widths above then filter what they chose. With none set, every trace is reviewed."/>
+                               Text="Point at the RF path on the board: a trace any region, pick or net chooses is reviewed, and the widths above then filter what they chose. A region belongs to the layer that is current when you draw it. Once any is set, a layer nothing points at is not reviewed — tick Whole layer beside it to keep all of it. With none set, every trace is reviewed."/>
                     <StackPanel Orientation="Horizontal" Spacing="6">
                         <DropDownButton FontSize="11" Padding="8,2" Content="Add region"
-                                        ToolTip.Tip="Draw round the traces to review. A trace any part of which lies inside is reviewed whole.">
+                                        ToolTip.Tip="Draw round the traces to review, on the layer that is current (or the one layer analysed). A trace any part of which lies inside is reviewed whole.">
                             <DropDownButton.Flyout>
                                 <MenuFlyout>
                                     <MenuItem Header="Rectangle" Command="{Binding Panel.AddRectangleRegionCommand}"/>
@@ -195,11 +207,13 @@
                              SelectionMode="Single" MaxHeight="120">
                         <ListBox.ItemTemplate>
                             <DataTemplate x:DataType="imp:ImpedanceRegionRow">
-                                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+                                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6" ToolTip.Tip="{Binding ShapeText}">
                                     <TextBox Grid.Column="0" FontSize="11" MinHeight="22" Padding="4,1"
                                              Text="{Binding Name}" PlaceholderText="{Binding Placeholder}"/>
-                                    <TextBlock Grid.Column="1" FontSize="10" Opacity="0.6" VerticalAlignment="Center"
-                                               Text="{Binding ShapeText}"/>
+                                    <!-- R-imp6-1: the layer this region selects on. Items before the selection. -->
+                                    <ComboBox Grid.Column="1" FontSize="11" MinHeight="22" Padding="4,0" MaxWidth="130"
+                                              ItemsSource="{Binding LayerChoices}" SelectedItem="{Binding Layer}"
+                                              ToolTip.Tip="The layer this region selects traces on, or All layers"/>
                                     <Button Grid.Column="2" Classes="link" Command="{Binding DeleteCommand}"
                                             ToolTip.Tip="Remove this region">
                                         <mi:MaterialIcon Kind="Close" Width="12" Height="12"/>

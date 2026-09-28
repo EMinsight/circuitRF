@@ -57,6 +57,7 @@ internal static class Impedance
         public readonly List<string> Regions = [];
         public readonly List<string> Nets = [];
         public readonly List<string> Picks = [];
+        public readonly List<string> WholeLayers = [];
     }
 
     public static int Run(string[] args)
@@ -140,13 +141,33 @@ internal static class Impedance
                 scope.Regions.Clear();
                 foreach (string text in o.Regions)
                 {
-                    var parts = text.Split(',');
+                    // [<layer>@]x0,y0,x1,y1 — brief-impedance-6: a region belongs to a layer, or to every
+                    // layer with none named, which is what a saved region with no layer means too.
+                    int at = text.LastIndexOf('@');
+                    string? layerName = null;
+                    if (at > 0)
+                    {
+                        if (CopperLayer(tech, copperNames, text[..at].Trim()) is not { } def)
+                            return JsonRun.Fail(CliDiagnostics.ImpedanceUnknownLayer(text[..at].Trim(), string.Join(", ", copperNames)));
+                        layerName = def.Name;
+                    }
+                    var parts = text[(at + 1)..].Split(',');
                     if (parts.Length != 4) return JsonRun.Fail(CliDiagnostics.ImpedanceBadRegion(text));
                     var v = new long[4];
                     for (int k = 0; k < 4; k++)
                         if (Coordinate(parts[k], "--region", source.View, out v[k]) is { } refused) return refused;
                     if (v[0] == v[2] || v[1] == v[3]) return JsonRun.Fail(CliDiagnostics.ImpedanceBadRegion(text));
-                    scope.Regions.Add(TraceScopeRegion.Rectangle(null, v[0], v[1], v[2], v[3]));
+                    scope.Regions.Add(TraceScopeRegion.Rectangle(null, v[0], v[1], v[2], v[3], layerName));
+                }
+            }
+            if (o.WholeLayers.Count > 0)
+            {
+                scope.WholeLayers.Clear();
+                foreach (string name in o.WholeLayers)
+                {
+                    if (CopperLayer(tech, copperNames, name) is not { } def)
+                        return JsonRun.Fail(CliDiagnostics.ImpedanceUnknownLayer(name, string.Join(", ", copperNames)));
+                    scope.WholeLayers.Add(def.Name);
                 }
             }
             if (o.Nets.Count > 0)
@@ -288,11 +309,13 @@ internal static class Impedance
             "Usage: circuitrf impedance <layout> [--target 50] [--tol 10] [--warn 20] [--max-freq 6GHz]\n" +
             "                           [--layers \"Top Copper,Inner 2\"] [--max-width <um>]\n" +
             "                           [--width \"Top Copper=457\"]... [--no-scope] [--survey]\n" +
-            "                           [--region x0,y0,x1,y1]... [--net <name>]... [--pick <layer>@<x>,<y>[:connected]]...\n" +
+            "                           [--region [<layer>@]x0,y0,x1,y1]... [--net <name>]... [--pick <layer>@<x>,<y>[:connected]]...\n" +
+            "                           [--whole-layer <layer>]...\n" +
             "                           [--severity warning|fail] [--ignore-accepted] [-o report.pdf]\n" +
             "  <layout> is a .clay or a cell folder holding one. The review saved on the layout applies\n" +
             "  unless a flag overrides it; --survey lists the trace widths per layer and analyses nothing.\n" +
-            "  --region, --net and --pick select traces and each replaces the saved selectors of its kind;\n" +
+            "  --region, --net, --pick and --whole-layer select traces and each replaces the saved selectors\n" +
+            "  of its kind; with any of the first three set, a layer none of them reaches is not reviewed;\n" +
             "  every coordinate carries a unit (12.5mm, 400um, 50mil). Findings accepted in the editor are\n" +
             "  reported ACCEPTED and do not count; --ignore-accepted counts them.");
         return 1;
@@ -383,6 +406,7 @@ internal static class Impedance
                 case "--region" when i + 1 < args.Length: o.Regions.Add(args[++i]); continue;
                 case "--net" when i + 1 < args.Length: o.Nets.Add(args[++i]); continue;
                 case "--pick" when i + 1 < args.Length: o.Picks.Add(args[++i]); continue;
+                case "--whole-layer" when i + 1 < args.Length: o.WholeLayers.Add(args[++i]); continue;
                 case "--no-scope": o.NoScope = true; continue;
                 case "--survey": o.Survey = true; continue;
                 case "--ignore-accepted": o.IgnoreAccepted = true; continue;

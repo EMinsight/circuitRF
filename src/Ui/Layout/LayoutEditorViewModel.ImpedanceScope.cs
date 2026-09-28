@@ -9,6 +9,11 @@
 //
 // The gestures follow the EM solve-region drag (LayoutEditorViewModel.EmRegion.cs): armed from outside
 // the canvas, they own the press whatever tool is active, and Escape puts them back.
+//
+// A region belongs to a LAYER (brief-impedance-6): the one the reviewer is working on when it is drawn
+// (ImpedanceRegionLayer), shown only while that layer is, and selecting only there. One that names no
+// layer — every region saved before — is drawn always, in its own outline, so it is not read as a
+// leftover from another layer.
 
 using Avalonia.Input;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -75,13 +80,14 @@ public sealed partial class LayoutEditorViewModel
     public void ArmImpedanceScopeTool(ImpedanceScopeTool tool)
     {
         ImpedanceScopeTool = tool;
+        string on = ImpedanceRegionLayer() is { } layer ? $" on {layer}" : " on every analysed layer";
         switch (tool)
         {
             case ImpedanceScopeTool.Rectangle:
-                ReportMessage("Impedance scope: drag a rectangle round the traces to review. Escape cancels.");
+                ReportMessage($"Impedance scope: drag a rectangle round the traces to review{on}. Escape cancels.");
                 break;
             case ImpedanceScopeTool.Lasso:
-                ReportMessage("Impedance scope: drag round the traces to review; the outline closes when you let go. Escape cancels.");
+                ReportMessage($"Impedance scope: drag round the traces to review{on}; the outline closes when you let go. Escape cancels.");
                 break;
             case ImpedanceScopeTool.Pick:
                 ReportMessage("Impedance scope: click a trace to review it; Shift-click adds every trace joined to it " +
@@ -91,6 +97,33 @@ public sealed partial class LayoutEditorViewModel
     }
 
     public void CancelImpedanceScopeTool() => ImpedanceScopeTool = ImpedanceScopeTool.None;
+
+    /// <summary>
+    /// The copper layer a region drawn now belongs to (R-imp6-1), by name: the CURRENT drawing layer
+    /// where it is a conductor the review analyses — that is the layer the reviewer is looking at; else
+    /// the one layer analysed, where only one is; else null, every layer.
+    /// </summary>
+    public string? ImpedanceRegionLayer()
+    {
+        if (Technology is not { } tech) return null;
+        var analysed = ImpedanceAnalysedLayers();
+        foreach (var layer in tech.Stackup.Layers)
+            if (layer.Kind == StackupKind.Conductor && layer.DrawingLayers.Contains(CurrentLayerKey)
+                && TraceImpedanceLayers().FirstOrDefault(c => layer.DrawingLayers.Contains(c.Key)) is { } current
+                && analysed.Contains(current.Name, StringComparer.OrdinalIgnoreCase))
+                return current.Name;
+        return analysed.Count == 1 ? analysed[0] : null;
+    }
+
+    /// <summary>The copper layers the saved review analyses, by name — every one with copper when it
+    /// names none, as the panel ticks them.</summary>
+    public IReadOnlyList<string> ImpedanceAnalysedLayers()
+    {
+        var saved = Model.ImpedanceReview?.Layers;
+        return [.. TraceImpedanceLayers()
+                   .Where(c => c.HasCopper && (saved is null || saved.Count == 0 || saved.Contains(c.Name, StringComparer.OrdinalIgnoreCase)))
+                   .Select(c => c.Name)];
+    }
 
     /// <summary>Focus left the canvas mid-gesture: the release may never arrive here, so a drag in
     /// progress is dropped (the tool stays armed) rather than left latched.</summary>
@@ -166,13 +199,14 @@ public sealed partial class LayoutEditorViewModel
         {
             var (sx, sy) = LayoutSnapping.SnapPoint(wx, wy, Model.SnapDbu, suspend: false);
             if (sx != drag[0].X && sy != drag[0].Y)
-                region = TraceScopeRegion.Rectangle(null, drag[0].X, drag[0].Y, sx, sy);
+                region = TraceScopeRegion.Rectangle(null, drag[0].X, drag[0].Y, sx, sy, ImpedanceRegionLayer());
         }
         else
         {
             drag.Add(((long)Math.Round(wx), (long)Math.Round(wy)));
             var simple = SimplifyLasso(drag, 3 * PixelDbu());
-            if (simple.Count >= 3) region = new TraceScopeRegion(null, [.. simple.SelectMany(p => new[] { p.X, p.Y })]);
+            if (simple.Count >= 3)
+                region = new TraceScopeRegion(null, [.. simple.SelectMany(p => new[] { p.X, p.Y })], ImpedanceRegionLayer());
         }
 
         if (region is null)
@@ -248,9 +282,19 @@ public sealed partial class LayoutEditorViewModel
                   ? [.. r, r[0], r[1]] : null
                 : [.. drag.SelectMany(p => new[] { p.X, p.Y })];
 
-        if (scope.Regions.Count == 0 && scope.Picks.Count == 0 && drawing is null) return null;
+        // A region on a layer is drawn while that layer is both shown and analysed (R-imp6-1); one on
+        // every layer always, marked so.
+        var analysed = ImpedanceAnalysedLayers();
+        bool Shown(TraceScopeRegion r) =>
+            r.LayerName is null
+            || (analysed.Contains(r.LayerName, StringComparer.OrdinalIgnoreCase)
+                && TraceImpedanceLayers().FirstOrDefault(c => string.Equals(c.Name, r.LayerName, StringComparison.OrdinalIgnoreCase)) is { } c
+                && ResolveLayerDef(c.Key).Visible);
+        var regions = scope.Regions.Select((r, i) => (Region: r, Index: i)).Where(p => Shown(p.Region)).ToList();
+
+        if (regions.Count == 0 && scope.Picks.Count == 0 && drawing is null) return null;
         return new ImpedanceScopeOverlay(
-            [.. scope.Regions.Select((r, i) => (r.Xy, i == SelectedImpedanceRegion))],
+            [.. regions.Select(p => (p.Region.Xy, p.Index == SelectedImpedanceRegion, p.Region.LayerName is null))],
             [.. scope.Picks.Select(p => (p.X, p.Y, p.Extent == TracePickExtent.Connected, missing.Contains(p)))],
             drawing);
     }

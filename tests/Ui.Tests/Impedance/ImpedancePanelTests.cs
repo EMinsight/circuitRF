@@ -261,4 +261,95 @@ public class ImpedancePanelTests
         Assert.Same(documents, Assert.Single(DockLayoutCapture.EnumerateDocumentPanes(root)));
         Assert.Same(layout, documents.ActiveDockable);
     }
+
+    // ── brief-impedance-6: a region belongs to a layer ───────────────────────────────────────
+
+    private static readonly LayerKey Bottom = new(3, 0);
+
+    /// <summary>Top and Bottom either side of an inner plane; a trace on Top and two on Bottom.</summary>
+    private static LayoutEditorViewModel TwoSided()
+    {
+        var tech = new Technology
+        {
+            Name = "two-sided",
+            Layers =
+            [
+                new LayerDef { Key = Top, Name = "Top", Purpose = "conductor" },
+                new LayerDef { Key = Gnd, Name = "Plane", Purpose = "conductor" },
+                new LayerDef { Key = Bottom, Name = "Bottom", Purpose = "conductor" },
+            ],
+            Stackup = new Stackup
+            {
+                Top = BoundaryCondition.Open,
+                Bottom = BoundaryCondition.Open,
+                Layers =
+                [
+                    new StackupLayer { Kind = StackupKind.Conductor, Name = "Top", ThicknessDbu = Um(35), SigmaSm = 5.8e7, DrawingLayers = [Top] },
+                    new StackupLayer { Kind = StackupKind.Dielectric, Name = "Core 1", ThicknessDbu = Um(500), Epsr = 4.4 },
+                    new StackupLayer { Kind = StackupKind.Conductor, Name = "Plane", ThicknessDbu = Um(35), SigmaSm = 5.8e7, DrawingLayers = [Gnd] },
+                    new StackupLayer { Kind = StackupKind.Dielectric, Name = "Core 2", ThicknessDbu = Um(500), Epsr = 4.4 },
+                    new StackupLayer { Kind = StackupKind.Conductor, Name = "Bottom", ThicknessDbu = Um(35), SigmaSm = 5.8e7, DrawingLayers = [Bottom] },
+                ],
+            },
+        };
+        var view = new LayoutView();
+        view.Shapes.Add(Rect(Top, -6000, -475, 6000, 475));
+        view.Shapes.Add(Rect(Bottom, -6000, -475, 6000, 475));
+        view.Shapes.Add(Rect(Bottom, -6000, 3000, 6000, 3950));
+        view.Shapes.Add(Rect(Gnd, -8000, -8000, 8000, 8000));
+        return new LayoutEditorViewModel(view) { Technology = tech };
+    }
+
+    /// <summary>§2 and gate 2, through the canvas's own pointer calls: with only Bottom analysed and
+    /// Bottom current, a lasso round a trace makes a Bottom region that selects the Bottom trace inside
+    /// it and no Top trace — and it is drawn only while Bottom is analysed.</summary>
+    [Fact]
+    public async Task ALassoOnBottom_IsABottomRegion_SelectingAndDrawnThereOnly()
+    {
+        var vm = TwoSided();
+        vm.SaveImpedanceReview(new TraceImpedanceReview { Layers = ["Bottom"] });
+        vm.CurrentLayerKey = Bottom;
+        vm.ShowImpedanceScope = true;
+
+        vm.ArmImpedanceScopeTool(ImpedanceScopeTool.Lasso);
+        (double X, double Y)[] path = [(-7000, -800), (7000, -800), (7000, 800), (-7000, 800), (-7000, -790)];
+        vm.OnPointerPressed(Um(path[0].X), Um(path[0].Y), Avalonia.Input.KeyModifiers.None);
+        foreach (var (x, y) in path[1..]) vm.OnPointerMoved(Um(x), Um(y), leftDown: true, Avalonia.Input.KeyModifiers.None);
+        vm.OnPointerReleased(Um(path[^1].X), Um(path[^1].Y), Avalonia.Input.KeyModifiers.None);
+
+        var region = Assert.Single(vm.ImpedanceScope.Regions);
+        Assert.Equal("Bottom", region.LayerName);
+        Assert.Single(vm.Overlay.ImpedanceScope!.Regions);
+
+        var report = await vm.RunTraceImpedanceAsync(
+            new TraceImpedanceOptions { Layers = [Top, Bottom], Scope = vm.ImpedanceScope }, new RunControl());
+        Assert.Empty(report!.Layers.Single(l => l.Name == "Top").Traces);
+        var bottom = Assert.Single(report.Layers.Single(l => l.Name == "Bottom").Traces);
+        Assert.True(Math.Abs(bottom.StartY) < Um(100));
+
+        vm.SaveImpedanceReview(new TraceImpedanceReview { Layers = ["Top"], Scope = vm.ImpedanceScope });
+        Assert.Null(vm.Overlay.ImpedanceScope);
+    }
+
+    /// <summary>The owner's rule, on the panel: once a region is drawn on Bottom, the Top row says it is
+    /// not reviewed and offers Whole layer; ticking it keeps all of Top.</summary>
+    [Fact]
+    public void ALayerNothingPointsAt_SaysSo_AndWholeLayerKeepsIt()
+    {
+        var vm = TwoSided();
+        var panel = new ImpedancePanelViewModel();
+        panel.SetEditor(vm);
+        var top = panel.Layers.Single(l => l.Name == "Top");
+        Assert.False(top.ShowScope);
+
+        vm.EditImpedanceScope(s => s.Regions.Add(TraceScopeRegion.Rectangle(null, Um(-7000), Um(-800), Um(7000), Um(800), "Bottom")));
+        Assert.True(top.ShowScope);
+        Assert.True(top.IsLeftOut);
+        Assert.Equal("1 region", panel.Layers.Single(l => l.Name == "Bottom").ScopeNote);
+
+        top.IsWhole = true;
+        Assert.Equal(["Top"], vm.ImpedanceScope.WholeLayers);
+        Assert.False(top.IsLeftOut);
+        Assert.Equal("every trace", top.ScopeNote);
+    }
 }

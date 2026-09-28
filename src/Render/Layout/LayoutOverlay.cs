@@ -219,11 +219,12 @@ public sealed record class LayoutOverlay
 }
 
 /// <summary>The review's scope ready to draw — world DBU.</summary>
-/// <param name="Regions">Each region's vertices as flat x,y pairs, and whether the panel has it selected.</param>
+/// <param name="Regions">Each region's vertices as flat x,y pairs, whether the panel has it selected, and
+/// whether it names no layer and so applies to every one (brief-impedance-6) — drawn in its own outline.</param>
 /// <param name="Picks">Each pick's point, whether it takes the connected copper, and whether it found none.</param>
 /// <param name="Drawing">The region being drawn — a rectangle's corners or a lasso's path so far — or null.</param>
 public sealed record ImpedanceScopeOverlay(
-    IReadOnlyList<(long[] Xy, bool Selected)> Regions,
+    IReadOnlyList<(long[] Xy, bool Selected, bool AllLayers)> Regions,
     IReadOnlyList<(long X, long Y, bool Connected, bool Missing)> Picks,
     long[]? Drawing);
 

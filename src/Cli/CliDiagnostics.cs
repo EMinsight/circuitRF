@@ -3121,8 +3121,8 @@ internal static class CliDiagnostics
 
     public static Diagnostic ImpedanceBadRegion(string text) => Diagnostic.Create(
         "impedance.args.bad-region", DiagnosticSeverity.Error,
-        "impedance: --region takes two opposite corners of a rectangle, x0,y0,x1,y1, each with its unit "
-      + "(e.g. 10mm,5mm,30mm,20mm), got '{text}'.", ("text", text));
+        "impedance: --region takes two opposite corners of a rectangle, x0,y0,x1,y1, each with its unit, "
+      + "after an optional layer (e.g. \"Bottom@10mm,5mm,30mm,20mm\"), got '{text}'.", ("text", text));
 
     public static Diagnostic ImpedanceBadPick(string text) => Diagnostic.Create(
         "impedance.args.bad-pick", DiagnosticSeverity.Error,

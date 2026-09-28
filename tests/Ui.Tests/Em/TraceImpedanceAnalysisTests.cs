@@ -623,7 +623,9 @@ public class TraceImpedanceAnalysisTests
         Assert.Equal(0, report.TraceCount);
     }
 
-    /// <summary>A scope with all three selector kinds round-trips through the .clay.</summary>
+    /// <summary>A scope with every selector kind — a region on a layer, whole layers — round-trips
+    /// through the .clay; one saved before regions had layers writes neither key, so it is read back
+    /// as every-layer regions and written back unchanged (brief-impedance-6 gate 1).</summary>
     [Fact]
     public void EverySelectorKind_RoundTripsInTheClay()
     {
@@ -634,10 +636,39 @@ public class TraceImpedanceAnalysisTests
             Nets = ["RF_OUT"],
         };
         var view = new LayoutView { TechRef = "board.ctech", ImpedanceReview = new TraceImpedanceReview { Scope = scope } };
+        string before = LayoutPersistence.Serialize(view);
+        var savedScope = JsonDocument.Parse(before).RootElement.GetProperty("ImpedanceReview").GetProperty("Scope");
+        Assert.All(savedScope.GetProperty("Regions").EnumerateArray(), r => Assert.False(r.TryGetProperty("LayerName", out _)));
+        Assert.False(savedScope.TryGetProperty("WholeLayers", out _));
+        Assert.All(LayoutPersistence.Deserialize(before).ImpedanceReview!.Scope!.Regions, r => Assert.Null(r.LayerName));
 
+        scope.Regions[1] = scope.Regions[1] with { LayerName = "Mid" };
+        scope.WholeLayers = ["Top"];
         var back = LayoutPersistence.Deserialize(LayoutPersistence.Serialize(view)).ImpedanceReview!.Scope;
         Assert.True(TraceImpedanceScope.Same(scope, back));
         Assert.True(back!.HasSelectors);
+    }
+
+    /// <summary>brief-impedance-6: a region selects on its own layer only, and a layer nothing points at
+    /// is not reviewed — the scope line says so; a region naming no layer (every region saved before)
+    /// selects on every layer, as it did; and a whole layer keeps all of that layer beside a region.</summary>
+    [Fact]
+    public void ARegion_SelectsOnItsOwnLayer_AndAWholeLayerKeepsTheRest()
+    {
+        TraceImpedanceReport Run(TraceImpedanceScope scope) => TraceImpedanceAnalysis.Analyze(ViaBoard(), ViaTech(),
+            LayoutUnits.DefaultDbuPerMicron, new TraceImpedanceOptions { Layers = [Top, Mid], Scope = scope });
+        int On(TraceImpedanceReport r, string layer) => r.Layers.Single(l => l.Name == layer).Traces.Count;
+        var box = Box(-7000, -500, 7000, 500);
+
+        var mid = Run(new() { Regions = [box with { LayerName = "Mid" }] });
+        Assert.Equal((0, 1), (On(mid, "Top"), On(mid, "Mid")));
+        Assert.Contains("Top, nothing selected", mid.ScopeText, StringComparison.Ordinal);
+
+        var every = Run(new() { Regions = [box] });
+        Assert.Equal((1, 1), (On(every, "Top"), On(every, "Mid")));
+
+        var whole = Run(new() { Regions = [box with { LayerName = "Mid" }], WholeLayers = ["Top"] });
+        Assert.Equal((2, 1), (On(whole, "Top"), On(whole, "Mid")));
     }
 
     /// <summary>The verb's --region takes a unit on every coordinate and refuses a bare number; with

@@ -109,6 +109,8 @@ public partial class LayoutEditorViewModel
         if (review.SameAs(Model.ImpedanceReview)) return false;
         Model.ImpedanceReview = review;
         IsDirty = true;
+        // The analysed layers decide which regions are drawn (brief-impedance-6).
+        if (ShowImpedanceScope) RebuildOverlay();
         return true;
     }
 

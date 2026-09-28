@@ -556,10 +556,11 @@ public static class TraceImpedanceReportDocument
             }
 
             // The scope's regions (brief-impedance-4 R-imp4-4a), dashed, so a reader sees what was
-            // reviewed. A region is a board area, so it is on every layer's map.
+            // reviewed. A region is on its own layer's map, or every layer's when it names none
+            // (brief-impedance-6).
             foreach (var region in report.Scope?.Regions ?? [])
             {
-                if (region.VertexCount < 3) continue;
+                if (region.VertexCount < 3 || !region.IsOn(layer.Name)) continue;
                 using var outline = new SKPath();
                 outline.MoveTo(P(region.Xy[0], region.Xy[1]));
                 for (int i = 2; i < region.Xy.Length; i += 2) outline.LineTo(P(region.Xy[i], region.Xy[i + 1]));

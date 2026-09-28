@@ -2,9 +2,12 @@
 // and nets. Widths are a filter and are matched in Analyze by a number; these are geometry, so they are
 // matched here, trace by trace, BEFORE cutting — a trace no selector chooses is never cut or solved.
 //
-// Three rules hold them together:
+// Four rules hold them together:
 //  - A region matches when ANY part of a trace's centre line lies inside it (R-imp4-1b): a lasso that
-//    clips the end of the RF trace must not drop it, and the whole trace is reviewed either way.
+//    clips the end of the RF trace must not drop it, and the whole trace is reviewed either way. It
+//    matches only on its own layer, or on every layer when it names none (brief-impedance-6).
+//  - A whole layer matches every trace on it — but only while another selector is set; with none,
+//    every analysed layer is whole already and the scope never reaches here.
 //  - A pick is a POINT, resolved at every run (R-imp4-2a). `Connected` reads the galvanic partition DRC
 //    and railRF read (CopperPieces over DrcConnectivity), never a second walk; it is built only when a
 //    connected pick exists, because on a large board it is the expensive part.
@@ -96,10 +99,17 @@ public static partial class TraceImpedanceAnalysis
         {
             if (_scope is null) return null;
             var chosen = new bool[lw.Chains.Count];
+            if (_scope.WholeLayers.Any(n => BandIndexOf(n) == lw.Band.Index))
+            {
+                // As with no scope on this layer: a SHORT chain stays a pad unless something points at it.
+                for (int i = 0; i < chosen.Length; i++) chosen[i] = !lw.Chains[i].Short;
+                return chosen;
+            }
+            var regions = _scope.Regions.Where(r => r.LayerName is null || BandIndexOf(r.LayerName) == lw.Band.Index).ToList();
             for (int i = 0; i < lw.Chains.Count; i++)
             {
                 var chain = lw.Chains[i];
-                if (_scope.Regions.Any(r => InRegion(chain, r))) chosen[i] = true;
+                if (regions.Any(r => InRegion(chain, r))) chosen[i] = true;
                 if (_netNames.Count > 0 && NetOf(lw, chain) is { } net && _netNames.Contains(net)) chosen[i] = true;
             }
 
@@ -122,6 +132,20 @@ public static partial class TraceImpedanceAnalysis
             }
             return chosen;
         }
+
+        /// <summary>The conductor band a layer NAME is on — a drawing layer of the technology, as the
+        /// panel and the CLI name them — or −1 when it names no copper layer, which then selects
+        /// nothing.</summary>
+        private int BandIndexOf(string layerName)
+        {
+            if (_bandByName.TryGetValue(layerName, out int index)) return index;
+            index = _tech.Layers.FirstOrDefault(l => string.Equals(l.Name, layerName, StringComparison.OrdinalIgnoreCase)) is { } def
+                    && _prep.Ctx.BandOf.TryGetValue(def.Key, out var band) ? band.Index : -1;
+            _bandByName[layerName] = index;
+            return index;
+        }
+
+        private readonly Dictionary<string, int> _bandByName = new(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>Any part of the centre line — a piece, or the join between two — inside the region.</summary>
         private static bool InRegion(ChainWork chain, TraceScopeRegion region)

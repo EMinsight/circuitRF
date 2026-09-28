@@ -631,6 +631,10 @@ public static class TraceImpedanceProbe
         Report(nearestBelow, cut.LowerRef, cut.SkippedBelow, "below", cut.HBelow);
         Report(nearestAbove, cut.UpperRef, cut.SkippedAbove, "above", cut.HAbove);
 
+        if (cut.Joined > 0)
+            notes.Add($"Copper touching the trace at the cut ({(cut.Joined == 1 ? "1 piece" : $"{cut.Joined} pieces")}: a pad " +
+                      "or land it enters, or copper stacked on it) was taken as part of the trace, not as ground; " +
+                      "the trace's own width was priced.");
         if (cut.Grounded > 0)
             notes.Add($"{cut.Grounded} other conductor{(cut.Grounded == 1 ? "" : "s")} within {Len(cut.Reach)} of the " +
                       "trace's edges held at ground in the solve.");

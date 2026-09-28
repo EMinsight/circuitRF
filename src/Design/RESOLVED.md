@@ -15006,3 +15006,50 @@ fixture was inferred).
   rule 3; the unit fixtures do.
 
 Gates: `RailAnchorSidesTests`, `PdnAnchorLayerTests` (gate 3), `SeriesChainTests.AChainOnARailWithNoNetName_…`.
+
+## Impedance review brief 6 — a region belongs to a layer; copper touching a trace is part of it (2026-09-28)
+
+**Regions are per layer, and pointing at anything narrows every layer.** `TraceScopeRegion` carries an
+optional `LayerName`; null is "every layer", which is what a region saved before this brief reads as,
+and the reader needs nothing for it (a positional record parameter defaulted to null). A region selects
+only on its own band (`Selection.BandIndexOf`, the drawing-layer name resolved to a band once per run, as
+a pick's is). The selector clause itself is unchanged: with any region, pick or net set, a trace nothing
+chooses is out — and since a region now belongs to one layer, a layer nothing points at drops out
+entirely. That is the owner's rule (a lasso on Top alone means only Top is reviewed), and it fell out of
+the existing clause rather than needing one. `TraceImpedanceScope.WholeLayers` is the escape hatch: a
+layer reviewed whole while the other selectors narrow the rest. It is **not a selector on its own**
+(`HasSelectors` ignores it), because with no region, pick or net every analysed layer is whole already
+and a stray whole-layer entry would otherwise silently narrow the review to that one layer. A whole
+layer keeps a SHORT chain a pad, as a run with no scope does — `Array.Fill(true)` would have promoted
+every pad-length stub on the layer into a reviewed trace. `Reaches(layer)` is the one question the
+scope sentence ("Top, nothing selected") and the panel's layer rows both ask.
+
+**Byte identity of an existing review.** `WholeLayers` serialises through a nullable shadow property
+(`WholeLayersSaved`, absent when empty) and `LayerName` is omitted when null, so a `.clay` saved before
+this brief writes back byte for byte. The first version of the gate asserted `"LayerName"` absent from
+the whole file and failed on a PICK's `LayerName` — it now checks the region objects only.
+
+**§3 — "solved to no capacitance", the cause.** Not reproduced on a trace simply entering a pad or via
+land: at the neck the probe refuses first (width step, or an edge across the trace within half a width),
+and the analysis cuts clean — the union makes the pad and the trace one interval, and an interval
+containing the cut's middle is the signal. What IS reproducible is **copper touching the trace priced as
+a separate ground conductor at no distance**: a pad drawn one DBU off the trace's edge (a hairline the
+union does not close) read **0.01 Ω** at the neck (0.11 Ω at 10 nm, 7.6 Ω at 1 µm); a pad on a
+plating layer stacked on the trace with no dielectric between read **0.00 Ω**, and the plating layer was
+also taken as the trace's upper REFERENCE at 0 µm. A degenerate mesh at that coincidence is what
+returns C ≤ 0. Fix, in `TraceCrossSection.Cut`: on the signal's own band, or a band stacked directly on
+it, an interval within a sliver (max(1 µm, 1 % of the width)) of the signal's span is part of the
+signal — counted in `TraceCut.Joined`, never grounded — and a stacked band is never the reference.
+The probe says so in a note. Deliberately NOT extended to bands separated by dielectric, however thin:
+a MIM plate 0.2 µm under a trace is a real conductor. The reporter's own point was not among the files
+sent, so the refusal's cause for that board is still inferred, not proven.
+
+**Two things seen along the way, not fixed (not this brief's):** a 950 µm trace running 6 mm into a
+3 mm square pad produced NO trace at all in the analysis (the same trace alone is one trace) — worth a
+look under "what counts as a trace"; and a pad polygon wound the opposite way to the trace it overlaps
+gave different probe answers from the same pad wound the same way (NonZero union: +1 and −1 cancel in the
+overlap), so imported artwork with mixed winding may lose copper where shapes overlap.
+
+Gates: `TraceImpedanceAnalysisTests.EverySelectorKind_RoundTripsInTheClay` (gate 1),
+`ARegion_SelectsOnItsOwnLayer_AndAWholeLayerKeepsTheRest` (gate 2),
+`TraceImpedanceProbeTests.CopperTouchingTheTrace_IsPartOfIt_NotItsGround` (gate 3).

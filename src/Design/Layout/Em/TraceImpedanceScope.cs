@@ -4,7 +4,9 @@
 // a fabrication drawing's impedance note is written ("457 µm on L1: 50 Ω controlled"), so width is the
 // first thing a scope can say.
 
+using System.ComponentModel;
 using System.Globalization;
+using System.Text.Json.Serialization;
 
 namespace CircuitRF.Design.Layout.Em;
 
@@ -16,6 +18,11 @@ namespace CircuitRF.Design.Layout.Em;
 /// a FILTER; <see cref="Regions"/>, <see cref="Picks"/> and <see cref="Nets"/> (brief-impedance-4) are
 /// SELECTORS — the three ways a reviewer points at a board: draw round the RF area, mark these traces,
 /// name the net.</para>
+///
+/// <para><b>Pointing at anything narrows EVERY layer</b> (brief-impedance-6): a region belongs to one
+/// layer, so with regions drawn on Top alone no other layer is reviewed. <see cref="WholeLayers"/> is
+/// how a reviewer says "and all of this one" without lassoing a whole layer; it chooses only while
+/// some other selector is set, because with none every analysed layer is reviewed whole anyway.</para>
 ///
 /// <para><b>Scope selects TRACES, never COPPER.</b> Every cross-section still sees every conductor on
 /// every layer; scope decides only which traces are cut, solved and reported.</para>
@@ -30,8 +37,8 @@ public sealed class TraceImpedanceScope
     /// <summary>The width classes under review, per layer; empty means every width on every layer.</summary>
     public List<TraceWidthSelector> Widths { get; set; } = [];
 
-    /// <summary>Board areas (R-imp4-1): a trace any part of whose centre line lies inside one is
-    /// selected, whole. A region applies to every layer.</summary>
+    /// <summary>Areas (R-imp4-1): a trace any part of whose centre line lies inside one is selected,
+    /// whole — on the region's own layer (brief-impedance-6), or on every layer when it names none.</summary>
     public List<TraceScopeRegion> Regions { get; set; } = [];
 
     /// <summary>Points on copper (R-imp4-2), resolved to traces at every run — never a stored list of
@@ -41,11 +48,38 @@ public sealed class TraceImpedanceScope
     /// <summary>Net names (R-imp4-3): a trace on copper carrying one of them is selected.</summary>
     public List<string> Nets { get; set; } = [];
 
-    /// <summary>Whether any selector is set — with none, every trace passes the selector clause.</summary>
+    /// <summary>Layers reviewed whole while other selectors narrow the rest (brief-impedance-6), by
+    /// name. Inert with no region, pick or net set — kept, so deleting the last region and drawing
+    /// another does not lose the reviewer's choice.</summary>
+    [JsonIgnore]
+    public List<string> WholeLayers { get; set; } = [];
+
+    /// <summary><see cref="WholeLayers"/> as the <c>.clay</c> holds it: absent when empty, so a review
+    /// saved before brief-impedance-6 is written back byte for byte.</summary>
+    [JsonPropertyName("WholeLayers"), EditorBrowsable(EditorBrowsableState.Never)]
+    public List<string>? WholeLayersSaved
+    {
+        get => WholeLayers.Count == 0 ? null : WholeLayers;
+        set => WholeLayers = value ?? [];
+    }
+
+    /// <summary>Whether any selector is set — with none, every trace passes the selector clause.
+    /// <see cref="WholeLayers"/> is not one on its own: it widens what the others narrow.</summary>
     public bool HasSelectors => Regions.Count > 0 || Picks.Count > 0 || Nets.Count > 0;
 
     /// <summary>Whether nothing is selected or filtered — the same as no scope at all.</summary>
-    public bool IsEmpty => Widths.Count == 0 && !HasSelectors;
+    public bool IsEmpty => Widths.Count == 0 && !HasSelectors && WholeLayers.Count == 0;
+
+    /// <summary>Whether <paramref name="layerName"/> is reviewed whole.</summary>
+    public bool IsWhole(string layerName) => WholeLayers.Contains(layerName, StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Whether any selector can choose a trace on <paramref name="layerName"/> — false means that
+    /// layer is not reviewed at all while selectors are set (the panel says so on the layer's row). A
+    /// net or a connected pick can reach any layer, so either counts for every one.</summary>
+    public bool Reaches(string layerName) =>
+        !HasSelectors || IsWhole(layerName) || Nets.Count > 0
+        || Regions.Any(r => r.IsOn(layerName))
+        || Picks.Any(p => p.Extent == TracePickExtent.Connected || string.Equals(p.LayerName, layerName, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>The width classes set for <paramref name="layerName"/>, by name, ignoring case.</summary>
     public IEnumerable<TraceWidthSelector> WidthsOn(string layerName) =>
@@ -71,6 +105,7 @@ public sealed class TraceImpedanceScope
         Regions = [.. Regions.Select(r => r with { Xy = [.. r.Xy] })],
         Picks = [.. Picks],
         Nets = [.. Nets],
+        WholeLayers = [.. WholeLayers],
     };
 
     /// <summary>Whether <paramref name="other"/> selects and filters the same traces — list by list, in
@@ -81,19 +116,28 @@ public sealed class TraceImpedanceScope
         b ??= new TraceImpedanceScope();
         return a.Widths.SequenceEqual(b.Widths) && a.Picks.SequenceEqual(b.Picks)
             && a.Nets.SequenceEqual(b.Nets, StringComparer.Ordinal)
+            && a.WholeLayers.SequenceEqual(b.WholeLayers, StringComparer.Ordinal)
             && a.Regions.Count == b.Regions.Count
-            && a.Regions.Zip(b.Regions).All(p => p.First.Name == p.Second.Name && p.First.Xy.SequenceEqual(p.Second.Xy));
+            && a.Regions.Zip(b.Regions).All(p => p.First.Name == p.Second.Name && p.First.LayerName == p.Second.LayerName
+                                                 && p.First.Xy.SequenceEqual(p.Second.Xy));
     }
 }
 
 /// <summary>
-/// One board area under review (R-imp4-1a): a polygon in DBU, as flat x,y pairs, with an optional name.
-/// It is a BOARD area and applies to every layer; a region never cuts a trace short — a trace crossing
-/// its edge is reviewed whole, because cutting it there would invent an open end at the region's edge.
+/// One area under review (R-imp4-1a): a polygon in DBU, as flat x,y pairs, with an optional name, on the
+/// copper layer <paramref name="LayerName"/> names (brief-impedance-6) — null for every layer, which is
+/// what a region saved before regions had layers reads as. A region never cuts a trace short — a trace
+/// crossing its edge is reviewed whole, because cutting it there would invent an open end at the
+/// region's edge.
 /// </summary>
-public sealed record TraceScopeRegion(string? Name, long[] Xy)
+public sealed record TraceScopeRegion(string? Name, long[] Xy, string? LayerName = null)
 {
     public int VertexCount => Xy.Length / 2;
+
+    /// <summary>Whether this region selects on <paramref name="layerName"/>: its own layer, or any
+    /// layer when it names none.</summary>
+    public bool IsOn(string layerName) =>
+        LayerName is null || string.Equals(LayerName, layerName, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>Whether (<paramref name="x"/>, <paramref name="y"/>) is inside — even-odd, which for the
     /// simple polygons a rectangle or a simplified lasso makes is plain inside.</summary>
@@ -130,9 +174,9 @@ public sealed record TraceScopeRegion(string? Name, long[] Xy)
     }
 
     /// <summary>The rectangle between two corners, DBU.</summary>
-    public static TraceScopeRegion Rectangle(string? name, long x0, long y0, long x1, long y1) =>
+    public static TraceScopeRegion Rectangle(string? name, long x0, long y0, long x1, long y1, string? layerName = null) =>
         new(name, [Math.Min(x0, x1), Math.Min(y0, y1), Math.Max(x0, x1), Math.Min(y0, y1),
-                   Math.Max(x0, x1), Math.Max(y0, y1), Math.Min(x0, x1), Math.Max(y0, y1)]);
+                   Math.Max(x0, x1), Math.Max(y0, y1), Math.Min(x0, x1), Math.Max(y0, y1)], layerName);
 }
 
 /// <summary>How much a <see cref="TracePick"/> selects.</summary>

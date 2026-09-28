@@ -49,6 +49,7 @@ to accept a known finding with a reason — so that a correct board produces a r
 | 4 | [Scope on the canvas](brief-impedance-4-scope-on-the-canvas.md) | regions (rectangle / lasso), picked copper, nets | 2, 3 |
 | 5 | [Accepted findings](brief-impedance-5-accepted-findings.md) | accept a finding with a reason, persisted on the layout like a DRC waiver | 1, 3 |
 | 6 | [Regions per layer](brief-impedance-6-regions-per-layer.md) | a lasso/rectangle region belongs to the layer it was drawn on; the "no capacitance" neck probe | 4 |
+| 7 | [Pads and winding](brief-impedance-7-pads-and-winding.md) | a trace into a pad is found as a trace; polygon winding is normalised once, in `LayoutClipper` | 6 |
 
 Briefs 1 and 2 alone turn both boards' reports into "the RF trace passes (board B) / warns (board A)".
 Brief 3 is enabling: the dialog is modal and ends in a PDF, so there is nowhere to draw a region or
