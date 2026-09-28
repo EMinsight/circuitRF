@@ -193,8 +193,8 @@ $smokeDll = Join-Path $root 'tools\CliSmoke\bin\Release\net10.0\CliSmoke.dll'
 # COPIES it out of the per-user cache and warns when the cache is empty - right for a build, wrong
 # for a release - so this script BUILDS it per architecture with --strict, and fails at the end when
 # an architecture that ships it (recipe.env's KERNEL_RIDS, decision D2) came out without it. The
-# first run on a machine builds OCCT itself: minutes per architecture, once, with Visual Studio's
-# C++ workload and CMake. An architecture D2 leaves out gets no kernel even if the cache has one.
+# first run on a machine builds OCCT itself: minutes per architecture, once, with llvm-mingw, CMake
+# and Ninja - no Visual Studio. An architecture D2 leaves out gets no kernel even if the cache has one.
 #
 # Set CRF_ALLOW_NO_KERNEL=1 to package without it on purpose (nothing is fetched or built then).
 $kernelRecipe = Join-Path $root 'tools\geometry-worker\occt\recipe.env'
@@ -204,6 +204,65 @@ $kernelRids   = (($recipeLines | Where-Object { $_ -match '^KERNEL_RIDS=' }) -re
 $noKernel     = @()
 $kernelLeftOut = @()
 $kernelFail   = $false
+
+# == The kernel's toolchain, checked once, and offered for install ================
+#
+# tools\geometry-worker\find-toolchain.cmd is the one place that looks for llvm-mingw, CMake and Ninja
+# (and says why those, not Visual Studio); this asks it rather than looking a second way. When any is
+# missing and someone is at the keyboard, it offers to install exactly those with winget, instead of
+# letting every architecture fail the same way minutes later. Declined, or with nobody to ask, the run
+# carries on: build.cmd refuses per architecture, and the summary at the end says so.
+$kernelArches = @($arches | Where-Object { $kernelRids -contains "win-$_" })
+if ($kernelArches.Count -gt 0 -and $env:CRF_ALLOW_NO_KERNEL -ne '1') {
+    $findToolchain = Join-Path $root 'tools\geometry-worker\find-toolchain.cmd'
+    $toolRid = "win-$($kernelArches[0])"
+    function Get-KernelToolGaps {
+        $gaps = @{ missing = ''; winget = '' }
+        foreach ($line in (& $findToolchain $toolRid --report)) {
+            if ($line -match '^(missing|winget)=(.*)$') { $gaps[$Matches[1]] = $Matches[2].Trim() }
+        }
+        return $gaps
+    }
+
+    $gaps = Get-KernelToolGaps
+    if ($gaps.missing) {
+        $ids = @($gaps.winget -split ' ' | Where-Object { $_ })
+        Write-Host ''
+        Write-Host "The geometry kernel needs tools this machine does not have: $($gaps.missing)."
+        Write-Host '  It builds with llvm-mingw, CMake and Ninja - no Visual Studio.'
+        $canAsk = [Environment]::UserInteractive -and -not [Console]::IsInputRedirected
+        $haveWinget = [bool](Get-Command winget -ErrorAction SilentlyContinue)
+        $answer = 'n'
+        if ($canAsk -and $haveWinget) {
+            $answer = Read-Host "  Install them now with winget ($($ids -join ', '))? [Y/n]"
+        }
+        if ($answer -eq '' -or $answer -match '^[Yy]') {
+            # 'Continue' while winget runs: under Windows PowerShell 5.1 a native command's stderr line
+            # is otherwise a TERMINATING error (the WiX section above says why).
+            $previousEap = $ErrorActionPreference
+            $ErrorActionPreference = 'Continue'
+            foreach ($id in $ids) {
+                Write-Host "winget install -e --id $id"
+                & winget install -e --id $id --accept-package-agreements --accept-source-agreements
+                if ($LASTEXITCODE -ne 0) { Write-Host "  winget exited $LASTEXITCODE for $id (already installed is one such case)." }
+            }
+            $ErrorActionPreference = $previousEap
+            # winget changes the STORED PATH, not this session's. Append it, so build.cmd sees the tools.
+            $env:Path = $env:Path + ';' + [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('Path', 'User')
+            $gaps = Get-KernelToolGaps
+            if ($gaps.missing) {
+                Write-Host "Still not found: $($gaps.missing). The kernel will not build; reported again at the end."
+            } else {
+                Write-Host 'The kernel toolchain is installed.'
+            }
+        } else {
+            Write-Host '  Not installing. To install them yourself, then open a new terminal:'
+            foreach ($id in $ids) { Write-Host "    winget install -e --id $id" }
+            Write-Host '  Continuing; the kernel will not build, and that is reported again at the end.'
+        }
+        Write-Host ''
+    }
+}
 
 # Which of the three this machine can EXECUTE. Windows on ARM runs all three (x64 and x86 under
 # emulation); an x64 machine runs x64 and x86 but has no way to run arm64 at all.
@@ -726,7 +785,7 @@ if ($noKernel.Count -gt 0) {
         Write-Host '  CRF_ALLOW_NO_KERNEL=1 says that is intended.'
     } else {
         Write-Host '  Build it and run this again - tools\geometry-worker\build.cmd --rid win-<arch> (needs'
-        Write-Host '  CMake and Visual Studio with the C++ workload; minutes per architecture, once) - or'
+        Write-Host '  llvm-mingw, CMake and Ninja; minutes per architecture, once) - or'
         Write-Host '  set CRF_ALLOW_NO_KERNEL=1 to ship without it knowingly.'
         $kernelFail = $true
     }

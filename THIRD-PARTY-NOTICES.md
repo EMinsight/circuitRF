@@ -201,6 +201,7 @@ None of these impose obligations beyond retaining their notices.
 | PureHDF | MIT | https://github.com/Apollo3zehn/PureHDF |
 | Svg.Skia | MIT | https://github.com/wieslawsoltes/Svg.Skia |
 | Clipper2 | Boost Software License 1.0 | https://github.com/AngusJohnson/Clipper2 |
+| libc++ and libunwind (`libc++.dll`, `libunwind.dll`) — the C++ runtime the Windows geometry worker and its OCCT libraries share, from llvm-mingw; licence text [`licenses/Apache-2.0-with-LLVM-exceptions.txt`](licenses/Apache-2.0-with-LLVM-exceptions.txt) | Apache-2.0 WITH LLVM-exception | https://github.com/mstorsjo/llvm-mingw |
 | Markdig | BSD-2-Clause | https://github.com/xoofx/markdig |
 | Svg (svg-net) | Microsoft Public License (MS-PL) | https://github.com/svg-net/SVG |
 | xunit, Microsoft.NET.Test.Sdk, coverlet.collector | MIT / Apache-2.0 | *(test-time only; not shipped)* |

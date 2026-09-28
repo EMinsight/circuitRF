@@ -2,7 +2,7 @@
 rem Windows counterpart of build.sh: OpenCASCADE into the per-user cache (if it lacks it), then the worker.
 rem
 rem     tools\geometry-worker\build.cmd                    this machine's own RID
-rem     tools\geometry-worker\build.cmd --rid win-arm64    another Windows RID (Visual Studio targets all three)
+rem     tools\geometry-worker\build.cmd --rid win-arm64    another Windows RID (llvm-mingw targets all three)
 rem     tools\geometry-worker\build.cmd --arch x64         the same, by architecture
 rem     tools\geometry-worker\build.cmd --strict           fail rather than warn (the packaging script)
 rem
@@ -14,9 +14,9 @@ rem
 rem     %LOCALAPPDATA%\circuitRF-build\occt\<version>\          the verified archive and the source
 rem     %LOCALAPPDATA%\circuitRF-build\occt\<version>\<rid>\    build\, install\, install.json (LAST)
 rem
-rem or under CRF_OCCT_CACHE. Needs: CMake, and Visual Studio 2022 or later with the C++ workload (the
-rem ARM64 and x86 compilers too, for those RIDs). curl.exe, tar.exe and certutil are part of Windows.
-rem The generator is the recipe's "Visual Studio 17 2022"; name another with CRF_CMAKE_GENERATOR.
+rem or under CRF_OCCT_CACHE. Needs llvm-mingw, CMake and Ninja -- no Visual Studio; find-toolchain.cmd
+rem finds them and says which winget ids install what is missing. llvm-mingw targets all three RIDs from
+rem any Windows machine. curl.exe, tar.exe and certutil are part of Windows.
 setlocal EnableDelayedExpansion
 set "here=%~dp0"
 set "recipe=%here%occt\recipe.env"
@@ -101,7 +101,10 @@ if exist "%rdir%\install.json" (
     goto worker
 )
 
-for %%T in (cmake curl tar certutil) do (
+call "%here%find-toolchain.cmd" %rid%
+if errorlevel 1 exit /b 1
+if defined crf_missing goto notools
+for %%T in (curl tar certutil) do (
     where %%T >nul 2>&1
     if errorlevel 1 (
         echo geometry-worker: ERROR: '%%T' is not on PATH; building OCCT needs it ^(see tools\geometry-worker\README.md^)
@@ -150,19 +153,21 @@ if not exist "%vroot%\source\.unpacked" (
     type nul > "%vroot%\source\.unpacked"
 )
 
-set "generator=Visual Studio 17 2022"
-if defined CRF_CMAKE_GENERATOR set "generator=%CRF_CMAKE_GENERATOR%"
-
 echo geometry-worker: building OCCT %OCCT_VERSION% for %rid%, once: about 5 minutes on 10 cores ^(measured on macOS; Windows is not yet measured^)
 if exist "%rdir%" rmdir /s /q "%rdir%"
 mkdir "%rdir%"
 set "log=%rdir%\build.log"
 
-cmake -S "%src%" -B "%rdir%\build" -G "%generator%" -A %platform% "-DCMAKE_INSTALL_PREFIX=%rdir%\install" %OCCT_CMAKE_OPTIONS% %OCCT_CMAKE_OPTIONS_WINDOWS% >"%log%" 2>&1
+rem Two declarations OCCT assumes and a MinGW toolchain lacks, force-included (the header says which).
+rem Copied into the cache because the repository's path may hold a space and a compiler flag may not.
+copy /Y "%here%occt\mingw-compat.h" "%rdir%\mingw-compat.h" >nul
+set "compat=%rdir:\=/%/mingw-compat.h"
+
+cmake -S "%src%" -B "%rdir%\build" %crf_cmake_args% "-DCMAKE_INSTALL_PREFIX=%rdir%\install" "-DCMAKE_CXX_FLAGS=-include %compat%" %OCCT_CMAKE_OPTIONS% %OCCT_CMAKE_OPTIONS_WINDOWS% >"%log%" 2>&1
 if errorlevel 1 goto occtfailed
-cmake --build "%rdir%\build" --config Release --parallel >>"%log%" 2>&1
+cmake --build "%rdir%\build" --parallel >>"%log%" 2>&1
 if errorlevel 1 goto occtfailed
-cmake --install "%rdir%\build" --config Release >>"%log%" 2>&1
+cmake --install "%rdir%\build" >>"%log%" 2>&1
 if errorlevel 1 goto occtfailed
 
 rem install.json LAST: its presence is what says the RID is built.
@@ -171,6 +176,7 @@ rem install.json LAST: its presence is what says the RID is built.
     echo   "occt": "%OCCT_VERSION%",
     echo   "rid": "%rid%",
     echo   "sha256": "%OCCT_SHA256%",
+    echo   "toolchain": "llvm-mingw %crf_triple%",
     echo   "built": "%DATE% %TIME%",
     echo   "recipe": "tools/geometry-worker/occt/recipe.env"
     echo }
@@ -182,6 +188,13 @@ set "passon=--rid %rid% %strict%"
 if defined dest set "passon=%passon% --dest "%dest%""
 call "%here%ensure-built.cmd" %passon%
 exit /b %errorlevel%
+
+:notools
+echo geometry-worker: ERROR: not found: %crf_missing%. Building OCCT needs llvm-mingw, CMake and Ninja
+echo geometry-worker: ^(no Visual Studio^). Install what is missing, then open a new terminal:
+for %%W in (%crf_winget%) do echo     winget install -e --id %%W
+echo geometry-worker: or run packaging\windows\build-windows.ps1, which offers to install them.
+exit /b 1
 
 :occtfailed
 powershell -NoProfile -Command "Get-Content -Tail 30 '%log%'"

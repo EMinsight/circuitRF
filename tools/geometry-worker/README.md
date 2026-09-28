@@ -17,6 +17,8 @@ boundary is a file boundary; and headless use (`check`, `em`, the MCP server) is
 | `CMakeLists.txt` | finds the OCCT the cache holds; sets the run path to the worker's own folder |
 | `build.sh` / `build.cmd` | builds OCCT into the per-user cache if it lacks it, then the worker. **The only thing that fetches OCCT** |
 | `ensure-built.sh` / `.cmd` | what `dotnet build` runs: reads the cache and nothing else; compiles the worker if stale and copies `geometry-kernel/` beside the assemblies, or warns once |
+| `find-toolchain.cmd` | Windows: finds llvm-mingw, CMake and Ninja for a RID and names the winget ids of whatever is missing |
+| `occt/mingw-compat.h` | Windows: two declarations OCCT 8.0.1 assumes and MinGW lacks, force-included into OCCT's build |
 | `occt/recipe.env` | the recipe as data: version, URL, SHA-256, CMake options, and D2's `KERNEL_RIDS` |
 | `occt/RECIPE.md` | the same recipe for people, and what ships |
 
@@ -30,8 +32,10 @@ tools/geometry-worker/build.sh --rid osx-x64   # the other Mac architecture
 tools\geometry-worker\build.cmd                # Windows; --rid win-arm64 | win-x86 for the others
 ```
 
-Needs CMake and a C++ compiler — Xcode's command line tools, `build-essential`, or Visual Studio 2022+
-with the C++ workload. The first build of a RID takes about 5 minutes on 10 cores and leaves ~1.5 GB of
+Needs CMake and a C++ compiler — Xcode's command line tools or `build-essential`. On Windows, llvm-mingw
+and Ninja instead of Visual Studio (`winget install -e --id MartinStorsjo.LLVM-MinGW.UCRT`,
+`Kitware.CMake`, `Ninja-build.Ninja`); `find-toolchain.cmd` finds them without a new terminal, and
+`packaging\windows\build-windows.ps1` offers to install whichever is missing. The first build of a RID takes about 5 minutes on 10 cores and leaves ~1.5 GB of
 build tree in the cache (deletable); every later run finds the cache's `install.json` and only compiles
 the worker, in seconds.
 
@@ -50,7 +54,7 @@ shipping RID lacks the kernel, unless `CRF_ALLOW_NO_KERNEL=1`.
 
 **Cross-building.** macOS builds both architectures from either Mac. Linux builds its own architecture;
 the other needs `CRF_OCCT_TOOLCHAIN_FILE` naming a CMake toolchain file (used for OCCT and the worker
-alike). Windows' Visual Studio generator targets x64, ARM64 and Win32 from any Windows machine.
+alike). llvm-mingw targets x64, ARM64 and x86 from any Windows machine.
 
 ## Where it sits
 
@@ -62,7 +66,7 @@ names they are asked for, symlinks dereferenced. It finds them beside itself and
 |---|---|---|
 | macOS | install names `@rpath/libTK*.8.0.dylib`, worker `LC_RPATH` = `@loader_path` | `CMakeLists.txt`; `PackagingScriptTests` |
 | Linux | worker and libraries `RUNPATH` = `$ORIGIN` (`recipe.env`'s Linux line) | the same |
-| Windows | DLLs beside `geometry-worker.exe`; the MSVC runtime app-local | — |
+| Windows | DLLs beside `geometry-worker.exe`; llvm-mingw's `libc++.dll` and `libunwind.dll` app-local | `PackagingScriptTests` |
 
 The run path is set on the build-tree binary too, so a worker that could only find OCCT because the cache
 happened to be on the machine is impossible by construction; `ensure-built` runs `--version` from the

@@ -1496,8 +1496,9 @@ public class PackagingScriptTests
         Assert.DoesNotContain("BUILD_RPATH", cmake.Replace("BUILD_WITH_INSTALL_RPATH", ""), StringComparison.Ordinal);
         // Linux: each OCCT library finds its siblings too - an ELF's RUNPATH covers only its own dependencies.
         Assert.Matches(@"(?m)^OCCT_CMAKE_OPTIONS_LINUX=.*-DCMAKE_INSTALL_RPATH=\$ORIGIN", recipe);
-        // Windows: the DLLs are copied beside the executable, which the loader searches first.
-        Assert.Contains(@"(TK*.dll) do copy /Y ""%%D"" ""%stage%\""", cmd, StringComparison.Ordinal);
+        // Windows: the DLLs are copied beside the executable, which the loader searches first. MinGW names
+        // OCCT's libraries lib-first (libTKernel.dll), and a pattern without the prefix stages none of them.
+        Assert.Contains(@"(libTK*.dll) do copy /Y ""%%D"" ""%stage%\""", cmd, StringComparison.Ordinal);
     }
 
     /// <summary>

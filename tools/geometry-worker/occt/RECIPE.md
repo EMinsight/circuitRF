@@ -40,20 +40,32 @@ cmake --install build
 | osx-arm64 | `-DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0` | built by `build.sh`, 4 m 49 s; worker `selftest` passes |
 | osx-x64 | `-DCMAKE_OSX_ARCHITECTURES=x86_64 -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0` | built by `build.sh` (cross, from arm64), 4 m 53 s; **not yet run** (no Rosetta on the building Mac) |
 | linux-x64, linux-arm64 | `-DCMAKE_INSTALL_RPATH=$ORIGIN` | owed |
-| win-x64 / win-arm64 / win-x86 | `-G "Visual Studio 17 2022" -A x64` / `ARM64` / `Win32`; build and install `--config Release` | owed; win-x86 not shipped (below) |
+| win-x64 / win-arm64 / win-x86 | llvm-mingw's `<triple>-clang`/`-clang++`/`-windres` with `-G Ninja -DCMAKE_SYSTEM_NAME=Windows`, and `-include occt/mingw-compat.h` | x64 and arm64 built by llvm-mingw (cross, from macOS; 25 toolkits, worker links); **not yet run** on Windows; win-x86 not shipped (below) |
 
 **The Linux line is not brief 61's.** Brief 61 verified macOS, where the libraries name each other as
 `@rpath/…` and inherit the worker's own run path. An ELF's `DT_RUNPATH` covers only that object's own
 dependencies, so on Linux each OCCT library also needs `$ORIGIN` to find its siblings in the shipped
 folder. It is a CMake option — the same sources, compiled identically — not a patch.
 
+**Nor is the Windows line.** Windows builds with llvm-mingw (clang, lld, libc++), not Visual Studio, so
+OCCT takes its own MinGW path, whose `-Wl,--export-all-symbols` is what exports a C++ vtable one toolkit
+needs from another. OCCT 8.0.1 assumes two things MinGW does not supply, and `mingw-compat.h` — our
+file, force-included, not a change to any OCCT file — declares them: `<mutex>`, which
+`NCollection_IncAllocator.cxx` uses having included only `<shared_mutex>`; and, on ARM64 only,
+`posix_memalign`, which `Standard::AllocateAligned` falls through to because its MinGW branch is x86-only.
+That one returns plain `malloc` memory, because `Standard::FreeAligned` releases with `free()` on the
+same path; 64-bit Windows' `malloc` is 16-byte aligned, every caller in the 25 toolkits asks for 16, and
+anything larger is refused rather than returned misaligned. The worker ships llvm-mingw's `libc++.dll`
+and `libunwind.dll` beside it — one copy each, shared by every toolkit.
+
 ## What ships
 
 The worker and the libraries it loads, read recursively from the binaries themselves (`otool -L`,
 `readelf -d`), each copied under the name it is asked for (`libTKernel.8.0.dylib`, `libTKernel.so.8.0`)
 with symlinks dereferenced, into one folder, `geometry-kernel/`. On macOS that is the 25 libraries,
-56.0 MB uncompressed per architecture, about 20 MB in a `.dmg`. On Windows, every `TK*.dll` the install
-holds plus the MSVC runtime the build used, app-local (the Windows closure is owed, brief 61 Q2). The
+56.0 MB uncompressed per architecture, about 20 MB in a `.dmg`. On Windows, every `libTK*.dll` the
+install holds plus llvm-mingw's `libc++.dll` and `libunwind.dll`, app-local — read from the x64 build's
+import tables, that is the whole closure beyond Windows' own DLLs and the UCRT. The
 installed `share/opencascade/resources` tree is not needed and does not ship.
 
 ## Which RIDs ship it (D2)

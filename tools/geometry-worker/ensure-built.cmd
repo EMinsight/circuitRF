@@ -10,7 +10,7 @@ rem configures OpenCASCADE, and with an empty cache it needs no C++ toolchain: i
 rem succeeds. Only tools\geometry-worker\build.cmd fetches OCCT, and only when someone runs it.
 rem
 rem   cache has OCCT for the RID   compile the worker if its source is newer than it, stage it with the
-rem                                OCCT DLLs and the MSVC runtime it was built with in
+rem                                OCCT DLLs and the llvm-mingw C++ runtime it was built with in
 rem                                build\<rid>\geometry-kernel\, and copy that folder to <dest>
 rem   cache does not               one warning, and success
 rem
@@ -89,7 +89,7 @@ rem install.json (which changes when the kernel under it is rebuilt) -- any newe
 set "stale=1"
 if exist "%worker%" (
     set "stale=0"
-    for %%F in ("%here%geometry_worker.cpp" "%here%CMakeLists.txt" "%here%ensure-built.cmd" "%here%..\..\VERSION" "%cache%\install.json") do (
+    for %%F in ("%here%geometry_worker.cpp" "%here%CMakeLists.txt" "%here%ensure-built.cmd" "%here%find-toolchain.cmd" "%here%..\..\VERSION" "%cache%\install.json") do (
         for /f %%R in ('powershell -NoProfile -Command ^
             "if ((Get-Item '%%~fF').LastWriteTime -gt (Get-Item '%worker%').LastWriteTime) {1} else {0}" 2^>nul') do (
             if "%%R"=="1" set "stale=1"
@@ -98,53 +98,46 @@ if exist "%worker%" (
 )
 if "%stale%"=="0" goto publish
 
-where cmake >nul 2>&1
+rem The worker is compiled by the toolchain OCCT was (build.cmd): llvm-mingw, CMake, Ninja.
+call "%here%find-toolchain.cmd" %rid%
 if errorlevel 1 (
-    set "why=OCCT is in the cache but cmake is not on PATH, so the worker cannot be compiled; the geometry kernel is not built."
+    set "why=find-toolchain.cmd refused %rid%; the geometry kernel is not built."
+    goto skip
+)
+if defined crf_missing (
+    set "why=OCCT is in the cache but !crf_missing! was not found, so the worker cannot be compiled; the geometry kernel is not built. Install with: winget install -e --id !crf_winget!"
     goto skip
 )
 
 echo geometry-worker: building the worker for %rid%
 if not exist "%work%" mkdir "%work%" >nul 2>&1
-rem A generator named in the environment (CMAKE_GENERATOR) is honoured; otherwise CMake's default on
-rem Windows is Visual Studio, which takes the platform through -A.
-set "platformflag=-A %platform%"
-if defined CMAKE_GENERATOR set "platformflag="
-cmake -S "%here%." -B "%work%\cmake" %platformflag% "-DCMAKE_PREFIX_PATH=%install%" >"%log%" 2>&1
+rem Configured afresh every time: it compiles in seconds, and a tree another generator configured is refused.
+if exist "%work%\cmake" rmdir /s /q "%work%\cmake"
+cmake -S "%here%." -B "%work%\cmake" %crf_cmake_args% "-DCMAKE_PREFIX_PATH=%install%" >"%log%" 2>&1
 if errorlevel 1 goto compilefailed
-cmake --build "%work%\cmake" --config Release >>"%log%" 2>&1
+cmake --build "%work%\cmake" >>"%log%" 2>&1
 if errorlevel 1 goto compilefailed
 
-set "built=%work%\cmake\Release\geometry-worker.exe"
-if not exist "%built%" set "built=%work%\cmake\geometry-worker.exe"
+set "built=%work%\cmake\geometry-worker.exe"
 if not exist "%built%" goto compilefailed
 
-rem -- Stage: the worker, the OCCT DLLs, and the MSVC runtime app-local -------------------------------
+rem -- Stage: the worker, the OCCT DLLs, and the C++ runtime app-local -------------------------------
 rem
-rem Every TK*.dll the install holds: the recipe builds exactly the worker's closure (25 toolkits, brief
-rem 61 Q2), so there is nothing extra to leave out. The MSVC runtime the build used ships beside them
-rem rather than being assumed present -- a machine with no Visual C++ redistributable installed is
-rem common, and the failure would be the worker not starting at all.
+rem Every libTK*.dll the install holds (MinGW names them lib-first): the recipe builds exactly the
+rem worker's closure (25 toolkits, brief 61 Q2), so there is nothing extra to leave out. Beyond them and
+rem Windows' own DLLs (the UCRT is part of Windows 10 and later) the closure is llvm-mingw's libc++.dll
+rem and libunwind.dll -- ONE copy each, shared by the worker and every toolkit, which is what lets an
+rem OCCT exception thrown in one DLL be caught in another.
 if exist "%stage%" rmdir /s /q "%stage%"
 mkdir "%stage%" >nul 2>&1
 copy /Y "%built%" "%worker%" >nul
-for /r "%install%" %%D in (TK*.dll) do copy /Y "%%D" "%stage%\" >nul
-
-set "crtarch=%platform%"
-if /I "%platform%"=="Win32" set "crtarch=x86"
-if /I "%platform%"=="ARM64" set "crtarch=arm64"
-set "vswhere=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
-set "crt="
-if exist "%vswhere%" (
-    for /f "usebackq delims=" %%C in (`"%vswhere%" -latest -products * -find "VC\Redist\MSVC\*\%crtarch%\Microsoft.VC*.CRT"`) do set "crt=%%C"
-)
-if defined crt (
-    for %%N in (msvcp140.dll msvcp140_1.dll msvcp140_2.dll vcruntime140.dll vcruntime140_1.dll concrt140.dll) do (
-        if exist "!crt!\%%N" copy /Y "!crt!\%%N" "%stage%\" >nul
+for /r "%install%" %%D in (libTK*.dll) do copy /Y "%%D" "%stage%\" >nul
+for %%N in (libc++.dll libunwind.dll) do (
+    if not exist "%crf_llvm_mingw%\%crf_triple%\bin\%%N" (
+        set "why=llvm-mingw has no %crf_triple%\bin\%%N; the geometry kernel is not built."
+        goto skip
     )
-) else (
-    echo geometry-worker: the MSVC runtime redistributable was not found ^(vswhere^); the worker will need
-    echo geometry-worker: the Visual C++ runtime installed on any machine it runs on.
+    copy /Y "%crf_llvm_mingw%\%crf_triple%\bin\%%N" "%stage%\" >nul
 )
 
 rem Answering proves the DLLs beside it are enough. Skipped for an architecture this machine cannot run.

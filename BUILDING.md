@@ -174,8 +174,8 @@ tools/geometry-worker/build.sh --rid osx-x64     # macOS builds either architect
 tools\geometry-worker\build.cmd                  # Windows (--rid win-arm64 / win-x86 for the others)
 ```
 
-It needs CMake and a C++ compiler (Xcode's command line tools; `build-essential`; Visual Studio 2022
-or later with the C++ workload), about **5 minutes per architecture** the first time on a 10-core
+It needs CMake and a C++ compiler (Xcode's command line tools; `build-essential`; on Windows,
+llvm-mingw and Ninja — no Visual Studio, and `build-windows.ps1` offers to install them with winget), about **5 minutes per architecture** the first time on a 10-core
 machine (brief 61 measured 4 m 54 s on an M4), and ~1.5 GB of build tree you may delete afterwards.
 The cache is `~/.circuitRF-build/occt/<version>/<rid>/` (`%LOCALAPPDATA%\circuitRF-build\...` on
 Windows; `CRF_OCCT_CACHE` moves it; no space in the path).
