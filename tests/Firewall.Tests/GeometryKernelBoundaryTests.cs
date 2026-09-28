@@ -91,7 +91,7 @@ public sealed class GeometryKernelBoundaryTests : IDisposable
         var found = Wording(files);
         Assert.True(found.Count == 0,
             "These words the geometry kernel's absence (or its name) outside GeometryKernel; take the sentence from " +
-            "GeometryKernel.NeedsKernel / SettingsStatus / AboutNotice instead:\n" + string.Join("\n", found));
+            "GeometryKernel.NeedsKernel / SettingsStatus instead:\n" + string.Join("\n", found));
     }
 
     [Theory]

@@ -170,7 +170,7 @@
          Read-only: it is circuitRF's own program, shipped with it, so there is no path to set (a path
          field would only be a way to run a mismatched build). Every word of its status comes from
          GeometryKernel — the one place its absence is worded — so the title and status are set in code.
-         This row is also the prominent notice brief 62 needs beyond the About box. -->
+         The prominent notice itself lives in THIRD-PARTY-NOTICES.md and the Acknowledgments dialog. -->
     <SelectableTextBlock Name="KernelTitle" FontSize="12" FontWeight="SemiBold" Margin="0,20,0,4"/>
     <SelectableTextBlock Name="KernelStatus" FontSize="11" Opacity="0.75" TextWrapping="Wrap"/>
     <SelectableTextBlock Name="KernelPath" FontSize="11" Opacity="0.6" TextWrapping="Wrap" Margin="0,2,0,0"/>

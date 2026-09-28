@@ -342,17 +342,6 @@ public sealed class GeometryKernel : IDisposable
         _ => $"{c.Reason} {c.Action}",
     };
 
-    /// <summary>The About box's line — the prominent notice the Open CASCADE Exception asks for (brief 62). It names the
-    /// version the worker REPORTED, and never a library that is not there.</summary>
-    public static string AboutNotice(GeometryKernelCapability? c) => c switch
-    {
-        null => "Geometry kernel: checking…",
-        { Available: true } => $"Uses Open CASCADE Technology {c.OcctVersion} (LGPL-2.1 with the Open CASCADE Exception).",
-        { Absence: GeometryKernelAbsence.NotBuilt or GeometryKernelAbsence.NotShippedOnThisPlatform or GeometryKernelAbsence.Missing } =>
-            "Geometry kernel: not included in this installation, so booleans, fillets and STEP are unavailable.",
-        _ => $"Uses Open CASCADE Technology (LGPL-2.1 with the Open CASCADE Exception). Its geometry kernel did not start: {c.Reason}",
-    };
-
     // ── handshake and start failures, called by a session ────────────────────────────────────────
 
     internal GeometryKernelException? LastStartFailure { get; private set; }

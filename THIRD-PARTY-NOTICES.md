@@ -57,7 +57,8 @@ component can replace it without touching the rest of the engine.
 **circuitRF uses facilities provided by Open CASCADE Technology.** That sentence is the prominent notice
 the Open CASCADE Exception asks for: the geometry worker's object code includes material from OCCT's
 header files, which the exception lets circuitRF distribute on terms of its own choosing — the MIT
-License — provided this notice is given. It is also shown in circuitRF's **About** box.
+License — provided this notice is given. It is also shown in circuitRF's **Acknowledgments** dialog
+(About ▸ Acknowledgments…).
 
 ### What this means if you redistribute a circuitRF binary
 

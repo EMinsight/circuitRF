@@ -2,8 +2,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="CircuitRF.Ui.Views.Dialogs.AboutWindow"
         Title="About circuitRF"
-        Width="400"
-        Height="420"
+        Width="480"
+        SizeToContent="Height"
         CanResize="False"
         WindowStartupLocation="CenterOwner"
         ShowInTaskbar="False">
@@ -64,21 +64,11 @@
                              FontSize="12"
                              HorizontalAlignment="Center"
                              Opacity="0.7"
-                             Margin="0,2,0,8"/>
+                             Margin="0,2,0,24"/>
 
-        <!-- THE PROMINENT NOTICE the Open CASCADE Exception asks for (brief-em3d-62 R-em3d62-6d). Filled
-             in by the code-behind from the geometry worker's own version report, so it names the version
-             this installation actually carries - and says the kernel is absent, rather than naming a
-             library that is not there, when it is. -->
-        <SelectableTextBlock x:Name="GeometryKernelText"
-                             FontSize="11"
-                             HorizontalAlignment="Center"
-                             Opacity="0.6"
-                             TextWrapping="Wrap"
-                             TextAlignment="Center"
-                             Margin="0,0,0,24"/>
-
-        <!-- Action row -->
+        <!-- Action row. The window is wide enough for all three buttons at their natural size: at 400
+             the row measured wider than the content area, and a centred StackPanel that overflows
+             clips on the right rather than shrinking. -->
         <StackPanel Orientation="Horizontal"
                     HorizontalAlignment="Center"
                     Spacing="12">

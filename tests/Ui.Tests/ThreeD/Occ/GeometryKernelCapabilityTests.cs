@@ -37,10 +37,6 @@ public sealed class GeometryKernelCapabilityTests
         var here = new GeometryKernelCapability(true, null, "/k/geometry-worker", "8.0.1", "included with circuitRF", "", "");
         Assert.Null(GeometryKernel.DisabledReason("Boolean", here));
         Assert.Equal("Open CASCADE Technology 8.0.1, included with circuitRF", GeometryKernel.SettingsStatus(here));
-        Assert.Contains("Uses Open CASCADE Technology 8.0.1", GeometryKernel.AboutNotice(here), StringComparison.Ordinal);
-        // The About box never names a library that is not there.
-        var absent = here with { Available = false, Absence = GeometryKernelAbsence.Missing, OcctVersion = null };
-        Assert.DoesNotContain("Open CASCADE", GeometryKernel.AboutNotice(absent), StringComparison.Ordinal);
     }
 
     /// <summary>R-em3d63-2b: a different OCCT, protocol or architecture is WrongVersion, naming both sides — and it is

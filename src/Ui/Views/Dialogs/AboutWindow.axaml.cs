@@ -2,8 +2,6 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
-using Avalonia.Threading;
-using CircuitRF.Design.ThreeD.Occ;
 
 namespace CircuitRF.Ui.Views.Dialogs;
 
@@ -17,23 +15,11 @@ public partial class AboutWindow : Window
         VersionText.Text  = $"Version {AppVersion.Display}";
         PlatformText.Text = AppVersion.Platform;
 
-        // The kernel names ITSELF (brief-em3d-62 R-em3d62-6d): the line is the capability the one client
-        // established — the version the worker REPORTED in its handshake (brief-em3d-63) — asked off the UI
-        // thread when nothing has asked yet, so the dialog opens at once and the line fills in.
-        GeometryKernelText.Text = GeometryKernel.AboutNotice(GeometryKernel.Shared.Known);
-        if (GeometryKernel.Shared.Known is null) _ = FillGeometryKernelAsync();
-
         NoticesButton.IsEnabled = File.Exists(NoticesPath);
     }
 
     /// <summary>The notices file every installer carries beside the executable (the .csproj copies it).</summary>
     private static string NoticesPath => Path.Combine(AppContext.BaseDirectory, "THIRD-PARTY-NOTICES.md");
-
-    private async Task FillGeometryKernelAsync()
-    {
-        var cap = await GeometryKernel.Shared.ProbeAsync();
-        await Dispatcher.UIThread.InvokeAsync(() => GeometryKernelText.Text = GeometryKernel.AboutNotice(cap));
-    }
 
     private async void OnAcknowledgmentsClicked(object? sender, RoutedEventArgs e)
     {
