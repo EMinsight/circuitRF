@@ -542,6 +542,47 @@ public sealed class WorkspaceArchiveTests : IDisposable
         Assert.Equal("external/board.clay", crail["ArtworkCellRef"]!.GetValue<string>());
     }
 
+    /// <summary>
+    /// <b>A part library's model files, an EM setup's layout, a Smith design's file element and a
+    /// harmonicaRF document's model file are found and repointed</b> (field report, 2026-09-28: a
+    /// `.crlib` whose model files sat above the workspace arrived without them).
+    /// </summary>
+    [Theory]
+    [InlineData("ws/lib.crlib", """{"FormatVersion":1,"Parts":[{"PartNumber":"P1","ModelRef":"../elsewhere/part.s2p"}]}""",
+                "ModelRef", "external/part.s2p")]
+    [InlineData("ws/cells/em.cem", """{"FormatVersion":1,"LayoutRef":"../elsewhere/part.s2p"}""",
+                "LayoutRef", "external/part.s2p")]
+    [InlineData("ws/match.csmith", """{"FormatVersion":1,"Elements":[{"Name":"X","FileRef":"../elsewhere/part.s2p"}]}""",
+                "FileRef", "external/part.s2p")]
+    [InlineData("ws/pa.charm", """{"FormatVersion":1,"ModelFile":"../elsewhere/part.s2p"}""",
+                "ModelFile", "external/part.s2p")]
+    public void TheNewDocumentKinds_TheirOutsideReferences_AreFoundAndRepointed(
+        string docPath, string json, string property, string expected)
+    {
+        var outside = File_("elsewhere/part.s2p", "# GHz S RI R 50\n1 0 0 1 0 1 0 0 0\n");
+        var ws = BuildWorkspace();
+        File_(docPath, json);
+
+        var plan = WorkspaceArchiveScanner.Scan(ws);
+        Assert.Single(plan.ExternalFiles, e => e.SourcePath == outside);
+
+        var zip = Path.Combine(_root, "out.zip");
+        WorkspaceArchiveWriter.Write(plan, zip);
+
+        Assert.Contains("ws/external/part.s2p", EntryNames(zip));
+        // Each read back against its own base: the .cem's is the workspace root, even from a
+        // sub-folder, so it is "external/…" and not "../external/…".
+        var doc = JsonNode.Parse(ReadEntry(zip, docPath))!;
+        string? Stored(JsonNode? n) => n switch
+        {
+            JsonObject o => o.TryGetPropertyValue(property, out var v) && v is JsonValue jv
+                ? jv.GetValue<string>() : o.Select(kv => Stored(kv.Value)).FirstOrDefault(x => x is not null),
+            JsonArray a => a.Select(Stored).FirstOrDefault(x => x is not null),
+            _ => null,
+        };
+        Assert.Equal(expected, Stored(doc));
+    }
+
     [Fact]
     public void AResultTheUserUnticked_ButADisplayPlots_IsReportedRatherThanSilentlyMissing()
     {

@@ -59,9 +59,16 @@ public sealed partial class SchematicViewModel
                 // footprint policy.
                 var fp = comp.Parameters.FirstOrDefault(p => p.Name.Equals(
                     ArtworkParameters.FootprintName, StringComparison.OrdinalIgnoreCase));
-                if (fp is not null) fp.Expression = FootprintRef.For(smtCase).ToString();
+                if (fp is not null)
+                {
+                    fp.Expression = FootprintRef.For(smtCase).ToString();
+                    // Owner decision (round 9): a case the TABLE named is shown on the sheet, so the
+                    // reading can be checked at a glance; a default footprint stays hidden.
+                    comp.ShowFootprintLabel = true;
+                }
                 else footprintsDropped = true;
             }
+            else comp.ShowFootprintLabel = false;
             comps.Add(comp);
         }
 

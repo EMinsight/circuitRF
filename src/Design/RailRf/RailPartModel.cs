@@ -87,6 +87,21 @@ public sealed record RailMeasuredPart(
     double? SelfResonanceHz,
     TouchstoneHealthReport? Health = null)
 {
+    /// <summary>The fixture the file was read in — one-port, shunt-thru or series-thru.</summary>
+    public PassiveExtraction Fixture { get; init; } = PassiveExtraction.ShuntThrough;
+
+    /// <summary>True where <see cref="Fixture"/> was read off the data
+    /// (<see cref="PassiveMetrics.InferExtraction"/>) rather than assumed or forced.</summary>
+    public bool FixtureInferred { get; init; }
+
+    /// <summary>The fixture in the parts table's words.</summary>
+    public string FixtureText => Fixture switch
+    {
+        PassiveExtraction.SeriesThrough => "series-thru",
+        PassiveExtraction.ShuntThrough  => "shunt-thru",
+        _                               => "1-port",
+    };
+
     /// <summary>The band this file actually covers. A vendor part file routinely starts above a PDN
     /// sweep's bottom decade, so <b>out of band is the ordinary case and not an error</b>.</summary>
     public (double LowHz, double HighHz)? Band =>

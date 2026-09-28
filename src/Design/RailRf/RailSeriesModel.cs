@@ -167,6 +167,7 @@ public sealed record RailSeriesModel(RailPart Row, RailSourceModel Impedance)
     {
         string z = IsMeasured
             ? $"its own measured impedance, {System.IO.Path.GetFileName(TouchstonePath ?? "")}" +
+              (Impedance.Measured is { } m ? $" read {m.FixtureText}" : "") +
               (ImpedanceFrom == RailSeriesValueSource.Library ? " (from the part library)" : "")
             : $"R-L, {Row.SeriesResistanceOhms ?? 0:0.###} Ω + " +
               $"{(Row.SeriesInductanceHenries ?? 0) * 1e9:0.###} nH";

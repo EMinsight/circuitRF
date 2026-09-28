@@ -167,6 +167,18 @@ public partial class LayoutEditorViewModel
     }
 
     /// <summary>
+    /// Drops the held report, so the canvas shows the artwork alone and the next Run starts from
+    /// nothing (field report, 2026-09-28: there was no way to clear a run before a second, clean one).
+    /// The review — target, layers, scope — and the accepted findings are the DOCUMENT's and are kept;
+    /// only the result goes.
+    /// </summary>
+    public void ClearTraceImpedance()
+    {
+        ImpedanceReport = null;
+        IsImpedanceStale = false;
+    }
+
+    /// <summary>
     /// Runs the analysis on a worker thread and holds the report (R-imp3-2a). The artwork is flattened
     /// HERE, on the caller's (UI) thread, because the model is the editor's and not the worker's. A
     /// cancelled run keeps the layers it finished (owner, 2026-09-25); one cancelled before the first

@@ -262,7 +262,8 @@ public sealed class PdnRefusalCauseTests
         Assert.NotNull(refused);
         string first = refused.Split('\n')[0];
         Assert.Contains("Run Accuracy", first, StringComparison.Ordinal);
-        Assert.Contains("Trace on the Class tab", first, StringComparison.Ordinal);
+        Assert.Contains("Class view", first, StringComparison.Ordinal);
+        Assert.Contains("Copper: treat as a trace", first, StringComparison.Ordinal);
         Assert.Contains("on Top Copper at", refused, StringComparison.Ordinal);
         Assert.DoesNotContain($"layer {Top.Layer}/{Top.Datatype}", refused, StringComparison.Ordinal);
     }

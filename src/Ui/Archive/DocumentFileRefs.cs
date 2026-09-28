@@ -68,9 +68,20 @@ public static class DocumentFileRefs
     /// is a <c>File.Exists</c> test with an extension length floor, so a folder-shaped ref resolves
     /// to nothing and is left untouched. Every reference circuitRF WRITES is the file, so this bites
     /// only a hand-edited document whose artwork also sits outside the workspace.</para>
+    ///
+    /// <para><b><c>.crlib</c>, <c>.cem</c>, <c>.csmith</c> and <c>.charm</c> joined on 2026-09-28</b>,
+    /// the same omission again. A field report's archive carried a railRF part library whose four
+    /// <c>ModelRef</c>s named vendor Touchstone files one level above the workspace; only the one the
+    /// <c>.crail</c> ALSO named reached <c>external/</c>, and the other three had to be sent by hand.
+    /// A <c>.cem</c> names its layout (<c>LayoutRef</c>, WORKSPACE-relative — see
+    /// <see cref="BaseForOpaqueRef"/>), a <c>.csmith</c> its S1P/S2P elements (<c>FileRef</c>,
+    /// document-relative), and a <c>.charm</c> its netlist and model files (document-relative).
+    /// <c>.cmat</c> is deliberately absent: it holds materials and thermal interfaces and no path, and
+    /// the <c>.ctech</c>/<c>.c3d</c> that names a <c>.cmat</c> is already here.</para>
     /// </remarks>
     public static readonly string[] Extensions =
-        [".csch", ".csym", ".clay", ".cdd", ".ccell", ".cnl", ".crail", ".c3d", ".ctech"];
+        [".csch", ".csym", ".clay", ".cdd", ".ccell", ".cnl", ".crail", ".c3d", ".ctech",
+         ".crlib", ".cem", ".csmith", ".charm"];
 
     public static bool IsDocument(string path) =>
         Array.Exists(Extensions, e => string.Equals(Path.GetExtension(path), e, StringComparison.OrdinalIgnoreCase));
@@ -214,6 +225,12 @@ public static class DocumentFileRefs
 
         if (string.Equals(ctx.Extension, ".cdd", StringComparison.OrdinalIgnoreCase))
             return RefBase.Results;                                     // a Data Display data source
+
+        // An EM setup's LayoutRef is relative to the WORKSPACE ROOT (EmSetupResolver.ResolveLayoutPath),
+        // and it is the only reference a .cem stores; written back document-relative it would name a
+        // path the resolver never looks at.
+        if (string.Equals(ctx.Extension, ".cem", StringComparison.OrdinalIgnoreCase))
+            return RefBase.Workspace;
 
         return RefBase.Document;
     }

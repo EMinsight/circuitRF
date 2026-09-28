@@ -240,12 +240,18 @@ public sealed class RailPartResolver
     public RailPartResolver(PartLibrary library) => _library = library;
 
     /// <summary>
-    /// The fixture a vendor part file was measured in. <b>Shunt-through, because that is what nearly
-    /// every vendor decoupling-capacitor file is</b> — and because it is a statement about the
-    /// FIXTURE rather than about the data, nothing in a Touchstone file records it, which is why it
-    /// is a setting here rather than an inference (see <see cref="PassiveExtraction"/>).
+    /// The fixture a vendor part file was measured in, <b>when it is to be FORCED</b>; null (the
+    /// default) reads it off the file.
     /// </summary>
-    public PassiveExtraction Extraction { get; init; } = PassiveExtraction.ShuntThrough;
+    /// <remarks>
+    /// A two-terminal part's two-port data carries its fixture as an identity (S11 + S21 = 1 in
+    /// series, S21 − S11 = 1 in shunt — <see cref="PassiveMetrics.InferExtraction"/>). Unset, the
+    /// file says which; where it does not say, shunt-thru is taken, because that is what nearly
+    /// every vendor decoupling-capacitor file is. Until 2026-09-28 shunt-thru was FIXED here, and a
+    /// vendor's series-thru capacitor files read a 10 µF part as 4.6 pF and a 100 nF one as 184 fF,
+    /// each with a plausible-looking ESR and resonance beside it.
+    /// </remarks>
+    public PassiveExtraction? Extraction { get; init; }
 
     /// <summary>
     /// How an attached file is read. <b>Substitutable so a test needs no disk</b>; unset, it is
@@ -529,7 +535,9 @@ public sealed class RailPartResolver
     /// a part.
     /// </remarks>
     public RailMeasuredPart? ReadMeasured(string path, out string? failure) =>
-        ReadMeasured(path, Extraction, out failure);
+        Extraction is { } forced
+            ? ReadMeasured(path, forced, out failure)
+            : ReadMeasured(path, PassiveExtraction.ShuntThrough, out failure, inferFixture: true);
 
     /// <summary>
     /// The same read, in a fixture this resolver was not configured for — <b>a series element's
@@ -544,7 +552,12 @@ public sealed class RailPartResolver
     /// how the part was MEASURED, and a series element is not measured the way a decoupling
     /// capacitor is.
     /// </remarks>
-    public RailMeasuredPart? ReadMeasured(string path, PassiveExtraction extraction, out string? failure)
+    /// <param name="extraction">The fixture to read the file in — or, with
+    /// <paramref name="inferFixture"/>, the one taken where the data does not say.</param>
+    /// <param name="inferFixture">Read the fixture off the data first
+    /// (<see cref="PassiveMetrics.InferExtraction"/>); which one was used rides on the result.</param>
+    public RailMeasuredPart? ReadMeasured(string path, PassiveExtraction extraction, out string? failure,
+                                          bool inferFixture = false)
     {
         failure = null;
 
@@ -555,7 +568,8 @@ public sealed class RailPartResolver
         if (snp is null || snp.IsEmpty) return null;
 
         int portA = 1, portB = snp.Ports >= 2 ? 2 : 1;
-        var mode = snp.Ports >= 2 ? extraction : PassiveExtraction.OnePort;
+        var inferred = inferFixture && snp.Ports == 2 ? PassiveMetrics.InferExtraction(snp) : null;
+        var mode = snp.Ports >= 2 ? inferred ?? extraction : PassiveExtraction.OnePort;
 
         Mat<Complex>[] matrices = snp.Matrices;
         Complex[] z0 = snp.Z0PerPort ?? [.. Enumerable.Repeat(snp.Z0, snp.Ports)];
@@ -565,7 +579,11 @@ public sealed class RailPartResolver
         return new RailMeasuredPart(
             path, snp.Frequencies, z,
             PassiveMetrics.SelfResonance(snp.Frequencies, z),
-            MeasureFileHealth ? TryHealth(snp) : null);
+            MeasureFileHealth ? TryHealth(snp) : null)
+        {
+            Fixture         = mode,
+            FixtureInferred = inferred is not null,
+        };
     }
 
     private static TouchstoneHealthReport? TryHealth(SNP snp)

@@ -285,7 +285,10 @@ public sealed class RailPartRowViewModel
         null                                                 => UnresolvedText,
         { Row: null }                                        => UnresolvedText,
         { Source: PartModelSource.AttachedFile, FilePath: { } f }
-            => $"file — {System.IO.Path.GetFileName(f)}",
+            => $"file — {System.IO.Path.GetFileName(f)}" +
+               (Model?.Measured is { } m && m.Fixture != RfCore.Data.PassiveExtraction.OnePort
+                    ? $" ({m.FixtureText}{(m.FixtureInferred ? "" : ", assumed")})"
+                    : ""),
         _                                                    => "library row",
     };
 

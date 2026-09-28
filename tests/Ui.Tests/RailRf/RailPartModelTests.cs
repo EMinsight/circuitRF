@@ -168,6 +168,46 @@ public class RailPartModelTests
 
         // And the self-resonance came out of the file's own reactance crossing.
         Assert.Equal(5.31e6, model.Measured!.SelfResonanceHz!.Value, 5e4);
+
+        // The shunt-thru fixture was read off the data, not assumed.
+        Assert.Equal(PassiveExtraction.ShuntThrough, model.Measured.Fixture);
+        Assert.True(model.Measured.FixtureInferred);
+    }
+
+    /// <summary>
+    /// Field report, 2026-09-28: a vendor's SERIES-thru capacitor file read through the fixed shunt-thru
+    /// relation turned a 10 µF part into 4.6 pF with a 128 kΩ "ESR". The data says which fixture it is
+    /// (S11 + S21 = 1 in series), so the part now reads as the part.
+    /// </summary>
+    [Fact]
+    public void ASeriesThroughFileIsReadInItsOwnFixture()
+    {
+        var row = Ceramic10u(withCurve: false);
+        row.ModelRef = "PN-10U-0402_series.s2p";
+
+        var freqs = new double[401];
+        for (int i = 0; i < freqs.Length; i++) freqs[i] = 100 * Math.Pow(6e9 / 100, i / 400.0);
+        var z0 = new Complex(50, 0);
+        var mats = freqs.Select(f =>
+        {
+            double w = 2 * Math.PI * f;
+            var z = new Complex(3e-3, w * 400e-12 - 1.0 / (w * 10e-6));
+            var s11 = z / (z + 2 * z0);
+            var s21 = 2 * z0 / (z + 2 * z0);
+            var m = new Mat<Complex>(2, 2);
+            m[0, 0] = s11; m[0, 1] = s21; m[1, 0] = s21; m[1, 1] = s11;
+            return m;
+        }).ToArray();
+
+        var model = new RailPartResolver(LibraryOf(row))
+        {
+            FileReader        = _ => new SNP(freqs, mats, z0: z0),
+            MeasureFileHealth = false,
+        }.Resolve(row.PartNumber, railVoltageV: null);
+
+        Assert.Equal(PassiveExtraction.SeriesThrough, model.Measured!.Fixture);
+        Assert.Equal(10e-6, model.CapacitanceFarads, 1e-7);
+        Assert.Equal(3e-3, model.EsrOhms, 1e-4);
     }
 
     // ── R-rail11-3: the class default IS the basis; no class means no ESR ────

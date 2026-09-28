@@ -37497,3 +37497,33 @@ with it as the tooltip. The Variables panel has the tree's grip (`Thumb.panelGri
 Gates: `tests/Ui.Tests/ThreeD/EditorRound6PictureTests.cs`. The raster composite was checked in a scratch headless
 harness (axis indicator, scale bar with the legend on and off, the measurement and its table at 4×); no GUI pixels
 were seen.
+
+## Impedance Analysis: Clear (field report, 2026-09-28)
+
+A designer wanted a clean second run and had no way to drop the first one's results. **Clear** sits
+beside Run, visible when there are results: `LayoutEditorViewModel.ClearTraceImpedance` nulls the
+report and the stale flag, which empties the table and the canvas overlay through the existing
+`ImpedanceReport` change path. The review (target, layers, scope) and the accepted findings are the
+document's and are kept — the next run reads them. Gate:
+`ImpedancePanelTests.Clear_DropsTheResultsAndTheOverlay_AndKeepsTheReview`.
+
+## Archive: four document kinds whose outside references were never followed (2026-09-28)
+
+`DocumentFileRefs.Extensions` gained `.crlib`, `.cem`, `.csmith` and `.charm` — the `.crail` omission
+of 2026-09-21 again. The field report that found it: a railRF part library whose four `ModelRef`s named
+vendor Touchstone files one level ABOVE the workspace arrived with one of them (the one the `.crail`
+also named, via its own `TouchstoneRef`) and without the other three, which then had to be sent by hand.
+The scanner already copied every file INSIDE the workspace whatever its kind, so a `.cmat` or `.c3d`
+in the workspace always travelled; what the list controls is whether a document's references to files
+OUTSIDE it are offered, copied to `external/` and repointed.
+
+- `.cem` is the one with a different base: its `LayoutRef` is WORKSPACE-relative
+  (`EmSetupResolver.ResolveLayoutPath`), so `BaseForOpaqueRef` returns `Workspace` for it — resolved
+  and written back that way, including from a `.cem` in a sub-folder.
+- `.cmat` is deliberately not in the list: it stores materials and thermal interfaces and no path; the
+  `.ctech`/`.c3d` that names a `.cmat` already is.
+- A `.csmith` generator's `SourcePath` is provenance only (the import copied the values in) but still
+  resolves to a file, so it is offered like any other reference — harmless, and the dialog lets the
+  sender untick it.
+
+Gate: `WorkspaceArchiveTests.TheNewDocumentKinds_TheirOutsideReferences_AreFoundAndRepointed`.

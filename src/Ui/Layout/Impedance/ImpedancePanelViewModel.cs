@@ -603,6 +603,13 @@ public sealed partial class ImpedancePanelViewModel : ObservableObject
         RunStageText = "Cancelling — keeping the layers that finished…";
     }
 
+    private bool CanClear() => HasResults && !IsRunning;
+
+    /// <summary>Clears the results — the table, the canvas colours and the markers — keeping the
+    /// review's settings, scope and accepted findings, so the next Run is a clean one.</summary>
+    [RelayCommand(CanExecute = nameof(CanClear))]
+    private void Clear() => Editor?.ClearTraceImpedance();
+
     private static readonly Regex StageShape = new(@"^(?<layer>.*) \((?<i>\d+) of (?<n>\d+)\): (?<what>.*)$");
 
     private void OnProgress(RunProgress p)
@@ -885,6 +892,7 @@ public sealed partial class ImpedancePanelViewModel : ObservableObject
     {
         RunCommand.NotifyCanExecuteChanged();
         CancelCommand.NotifyCanExecuteChanged();
+        ClearCommand.NotifyCanExecuteChanged();
         ZoomToSelectedCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(CanExport));
     }

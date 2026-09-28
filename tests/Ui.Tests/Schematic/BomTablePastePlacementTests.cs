@@ -61,6 +61,18 @@ public sealed class BomTablePastePlacementTests : IDisposable
     }
 
     [Fact]
+    public void TheFootprintLabel_IsShownOnlyWhereTheTableNamedTheCase()
+    {
+        var vm = VmOnABoard();
+        const string table = "Reference\tValue\tSize\nC1\t100 pF\t0603\nC2\t10 nF\t\n";
+
+        Assert.True(vm.PlaceBomTable(table, "the clipboard"));
+
+        Assert.True(vm.EditModel.Components.Single(c => c.InstanceName == "C1").ShowFootprintLabel);
+        Assert.False(vm.EditModel.Components.Single(c => c.InstanceName == "C2").ShowFootprintLabel);
+    }
+
+    [Fact]
     public void TextThatIsNotATable_IsNotPlaced_AndTheSheetIsUntouched()
     {
         var vm = VmOnABoard();

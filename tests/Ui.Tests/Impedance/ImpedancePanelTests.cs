@@ -162,6 +162,26 @@ public class ImpedancePanelTests
         Assert.True(vm.ImpedanceReportForExport!.Stale);
     }
 
+    /// <summary>Clear (field report, 2026-09-28) drops the results and the canvas colours, and keeps
+    /// the review the next run reads.</summary>
+    [Fact]
+    public void Clear_DropsTheResultsAndTheOverlay_AndKeepsTheReview()
+    {
+        var vm = Board();
+        vm.ImpedanceReport = OneOfEach();
+        vm.Model.Shapes.Add(Rect(Top, -6000, 5000, 6000, 5100));
+        vm.Model.NotifyChanged();
+        Assert.True(vm.IsImpedanceStale);
+        var review = vm.Model.ImpedanceReview;
+
+        vm.ClearTraceImpedance();
+
+        Assert.Null(vm.ImpedanceReport);
+        Assert.False(vm.IsImpedanceStale);
+        Assert.Null(vm.Overlay.Impedance);
+        Assert.Same(review, vm.Model.ImpedanceReview);
+    }
+
     /// <summary>§5.4 — the overlay is drawn from the editor's overlay and nowhere else: a render of the
     /// document (the `render` verb's options, <c>Overlay = null</c>) is the same picture before and
     /// after a run, while the canvas's own overlay does carry the results.</summary>

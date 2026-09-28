@@ -1493,13 +1493,19 @@ internal sealed class GraphBuild(
             // region, the measurement and the reason follow as their own lines, every length in
             // the board's own unit and the layer by its technology name. The REFUSAL is unchanged:
             // still no number, because the number the closed form would give here is optimistic.
+            //
+            // (2026-09-28) "the Class tab" named a control that carries no word — the four overlay
+            // buttons above the board are glyphs, the word only on a tooltip — and a designer asked
+            // what it was. The remedy now says where the button is and names the context-menu row
+            // that performs it (RailLayoutOverlay.BuildContextMenuItems), word for word.
             var tech = request.Technology;
             var lines = new List<string>
             {
                 $"Rail '{request.Rail.Name}' reaches {load.Anchor.Describe(fmt)} only through " +
                 "spreading copper, which the fast model does not price. Run Accuracy, or — if you " +
-                "know the current follows a path across that copper — set the region's class to " +
-                "Trace on the Class tab.",
+                "know the current follows a path across that copper — open the board's Class view " +
+                "(the last of the four overlay buttons above the board), right-click that copper and " +
+                "choose \"Copper: treat as a trace\".",
             };
 
             if (onPath is not null)

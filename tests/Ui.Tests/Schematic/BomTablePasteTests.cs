@@ -121,6 +121,79 @@ public class BomTablePasteTests
         Assert.Equal("C6:Capacitor:120pF:1111; C7:Capacitor:2pF:0805", Summary(r!));
     }
 
+    // ── Round-9 field report: three tables whose values all fell to the default ───────────
+
+    // A spreadsheet with no type column: kind from the reference, "100k" with the ohm left off, a
+    // zero-ohm link fitted where an inductor was drawn, and "Not assembled" rows.
+    private const string NoTypeColumn =
+        "Reference\tValue\tNote\tPackage\n" +
+        "C9\t100nF\tDecoupling cap\tSM/C_0402\n" +
+        "R1, R2, R3\t100k\t\tSM/R_0402\n" +
+        "L1, L6\t0R0 (resistor)\tTX LPF first series ind\tSM/L_0402\n" +
+        "C15, C26\tNot assembled\tTX LPF first cap shunt\tSM/C_0402\n";
+
+    [Fact]
+    public void KindFromTheReference_IsKnownBeforeTheValue_SoAMultiplierWithoutItsUnitReads()
+    {
+        var r = BomTablePaste.TryParse(NoTypeColumn)!;
+        Assert.Equal(["100kΩ"], r.Parts.Where(p => p.Refdes.StartsWith('R')).Select(p => p.Value + p.Unit).Distinct());
+    }
+
+    [Fact]
+    public void ATypeWordInTheValueCell_WinsOverTheReferencePrefix()
+    {
+        var r = BomTablePaste.TryParse(NoTypeColumn)!;
+        var l1 = r.Parts.Single(p => p.Refdes == "L1");
+        Assert.Equal((SymbolKind.Resistor, "0", "Ω"), (l1.Kind, l1.Value, l1.Unit));
+    }
+
+    [Fact]
+    public void NotAssembled_IsDoNotPopulate_AndADielectricCodeIsNot()
+    {
+        var r = BomTablePaste.TryParse(NoTypeColumn)!;
+        Assert.Equal("C15, C26", Assert.Single(r.Skipped).What);
+        Assert.DoesNotContain(r.Parts, p => p.Refdes is "C15" or "C26");
+
+        var np0 = BomTablePaste.TryParse("Reference\tValue\tType\nC1\t10 pF\tNP0\nC2\tNM\tCapacitor\n")!;
+        Assert.Equal("C1", Assert.Single(np0.Parts).Refdes);
+        Assert.Equal("C2", Assert.Single(np0.Skipped).What);
+    }
+
+    // Values written in the shorthand a board tool exports: R for the ohm, a bare SI prefix on C.
+    [Fact]
+    public void ShorthandValues_ReadAgainstTheReferencesKind()
+    {
+        const string table =
+            "Qty\tReference\tValue\tManufacturer\n" +
+            "1\tC101\t10U\tMfrA\n" +
+            "4\tC124,C200\t100N\tMfrA\n" +
+            "1\tRP200\t100R\tMfrB\n" +
+            "1\tR1\t0R\tMfrB\n" +
+            "1\tR103\t330K\tMfrB\n";
+
+        var r = BomTablePaste.TryParse(table)!;
+
+        Assert.Equal("C101:Capacitor:10µF:; C124:Capacitor:100nF:; C200:Capacitor:100nF:; " +
+                     "RP200:Resistor:100Ω:; R1:Resistor:0Ω:; R103:Resistor:330kΩ:", Summary(r));
+    }
+
+    // No Value column: the value is inside the description; a Z prefix names no kind.
+    [Fact]
+    public void AValueInsideTheDescription_IsRead_WithTheCaseBesideIt()
+    {
+        const string table =
+            "Ref.\tPart name\tPcs/unit\tDescription\tManufacturer\tPart number\n" +
+            "R21, R22\tR_100_0402_F\t2\tResistor, 100 ohms, 0402, ±1%\tMfrA\tPN-001\n" +
+            "Z113, Z132\tL_27N_0402_J\t2\tInductor, 27n, 0402, ±5%\tMfrB\tPN-002\n" +
+            "Z43\tC_8P2_0402_NP0_C_50\t1\tCapacitor, 8p2, 0402, NP0, +-0.25pF, 50V\tMfrB\tPN-003\n" +
+            "Z52\tL_5N6_0402_S\t1\tInductor, 5n6, 0402, Monolithic type, +/-0.3 nH\tMfrB\tPN-004\n";
+
+        var r = BomTablePaste.TryParse(table)!;
+
+        Assert.Equal("R21:Resistor:100Ω:0402; R22:Resistor:100Ω:0402; Z113:Inductor:27nH:0402; " +
+                     "Z132:Inductor:27nH:0402; Z43:Capacitor:8.2pF:0402; Z52:Inductor:5.6nH:0402", Summary(r));
+    }
+
     [Theory]
     [InlineData("Remember to check the bias network, then re-run the sweep.")]
     [InlineData("C1 10 nF 0402")]                                   // one line is not a table

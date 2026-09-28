@@ -14786,3 +14786,62 @@ link is reported by `explain x.c3d --analysis <setup>` (resolved path, chain, in
   case, where k_xx = k_yy.
 - **Mesh regions are NOT thermal-only** (the premise of a proposed rename): brief 74 writes them into Palace's Gmsh
   mesh too (`GmshGeoWriter.cs`, one `Box` field each); only openEMS ignores them. The tooltips now say so instead.
+## BOM paste: values that fell to the default — round-9 field report (2026-09-28)
+
+A designer pasted three real parts tables into a schematic. Every part was created with the right
+reference and case, but most values fell to the palette default (1 Ω / 1 nH / 1 pF). Causes, all in
+`BomTablePaste`:
+
+- **The kind was decided AFTER the value was parsed.** With no type column, the reference prefix only
+  supplied the kind at the end, so a multiplier with its unit left off ("100k", "330K" on R; "10U",
+  "100N" on C) had nothing to read against. The prefix kind is now the parse-time kind.
+- **"100R" / "0R" were not ohms.** A bare "R" word stays excluded (in PDF text it is the wrapped tail of
+  "Capacitor"), but an R glued to its digits reads as Ω unless the part is known to be a C or L.
+  0 Ω is legal — `ResistorModel` stamps a near-short with a warning.
+- **"0R0 (resistor)" on L1** — a zero-ohm link fitted where an inductor was drawn. A type word in the
+  VALUE cell now wins over both the type column and the prefix, and the parenthetical is dropped
+  before the value is read. The instance keeps its L1 name.
+- **"Not assembled", NM, DNM, not mounted/placed/populated, unpopulated, no pop** are now
+  do-not-populate, in the Value column or any type/description column. A cell holding a digit is never a
+  marker, which also stops a dielectric "NP0" reading as "NP" (it previously would have, as a whole
+  word in PDF text).
+- **A table with no Value column carries the value in its description** ("Resistor, 100 ohms, 0402",
+  "Inductor, 27n, 0402", "Capacitor, 8p2, …"). The description is now tried piece by piece and word by
+  word, and a bare SI prefix ("27n", "22p") takes F or H from the known kind. Its four-digit case code is
+  read when no other cell had one.
+
+Owner decision, same report: a pasted part whose case came from the table has its footprint label
+SHOWN on the sheet; one that kept the default footprint has it hidden (`SchematicViewModel.PlaceBomTable`).
+Gates: `BomTablePasteTests` (the three tables, vendor columns replaced by placeholders) and
+`BomTablePastePlacementTests.TheFootprintLabel_IsShownOnlyWhereTheTableNamedTheCase`.
+
+
+## railRF read every attached part file shunt-thru (field report, 2026-09-28)
+
+`RailPartResolver.Extraction` was FIXED at shunt-thru, on the stated ground that nothing in a
+Touchstone file records the fixture. A vendor's series-thru capacitor files (the vendor's own
+`_series` naming) therefore read as a 10 µF part at 4.6 pF, 128 kΩ ESR, f₀ 1.56 MHz, L 2.25 mH, and
+a 100 nF one at 184 fF — each plausible-looking in its row. The data does record it for a
+two-terminal part (`PassiveMetrics.InferExtraction`, see `src/RfCore/RESOLVED.md`). `Extraction` is
+now nullable: null (the default) infers from the file and falls back to shunt-thru; set, it forces.
+The series-element reader (`RailRfViewModel.SeriesModels`) infers too, falling back to series-thru —
+a bead file measured shunt-thru was the mirror-image defect. `RailMeasuredPart` carries `Fixture` and
+`FixtureInferred`; the parts table's model-source column reads "file — x.s2p (series-thru)" and adds
+", assumed" when the data did not decide; the series row's `Describe()` names the fixture.
+**Left:** the Data Display's passive-readout trace stores an explicit fixture in the `.cdd` and has
+no "auto" choice — adding one is a document-format change, not done here. Gate:
+`RailPartModelTests.ASeriesThroughFileIsReadInItsOwnFixture` (and the shunt test now asserts the
+fixture was inferred).
+
+## Two refusals a board designer could not act on (field report, 2026-09-28)
+
+- **railRF's spreading-copper refusal named "the Class tab".** The four overlay buttons above the board
+  are glyphs with the word only on a tooltip, so the remedy pointed at a control that carries no name.
+  The sentence now says where the button is and names the context-menu row that performs the change
+  (`Copper: treat as a trace`, `RailLayoutOverlay.BuildContextMenuItems`) word for word. Gate:
+  `PdnRefusalCauseTests.TheSpreadingRefusalLeadsWithTheRemediesAndNamesTheLayer`.
+- **"The cross-section at (x, y) solved to no capacitance."** was the whole Impedance refusal. It now
+  says what that means (no charge between the trace and its reference) and what usually causes it — a
+  cut running into copper that touches the trace (a pad or via land, or where it joins a pour) — and
+  that a point a few widths along the trace answers it. The cause is stated as the usual one, not
+  proven for the reporter's point: his workspace for that picture was not among the files sent.

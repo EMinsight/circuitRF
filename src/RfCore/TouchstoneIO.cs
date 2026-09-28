@@ -12,6 +12,8 @@
 //    • 2-port data order:  freq  S11 S21 S12 S22
 //    • N>2 data order:     row-major, one matrix row per output line
 //    • Comments:  ! to end of line (inline or full-line)
+//    • 2-port noise block: after the network data, starting on a frequency ≤ the last one
+//      (or after [Noise Data]); read into SNP.NoiseParameters, never written back
 //
 //  Touchstone 1.1 compatibility mode (WriteFile/Write):
 //    • Renormalizes data to a single uniform real Z0
@@ -80,6 +82,15 @@ namespace RfCore
             var blockTokens    = new List<double>();
             int completedBlocks = 0;
 
+            // A two-port file may carry a NOISE block after its network data: five numbers per row
+            // (freq, NFmin dB, |Γopt|, ∠Γopt°, rn). Touchstone 1.x marks its start only by a
+            // frequency not above the last network frequency; Touchstone 2 by [Noise Data]. Before
+            // this was read, its first row was folded into the next network block and the whole file
+            // was refused as a token overflow.
+            bool inNoise     = false;
+            var  noiseTokens = new List<double>();
+            var  noise       = new List<NoiseParameterPoint>();
+
             string? line;
             while ((line = reader.ReadLine()) != null)
             {
@@ -104,6 +115,13 @@ namespace RfCore
                         int tag = completedBlocks == 0 ? -1 : completedBlocks - 1;
                         comments.Add(new CommentEntry(tag, text));
                     }
+                    continue;
+                }
+
+                // ---- Touchstone 2's explicit noise keyword ----
+                if (trimmed.StartsWith("[Noise Data]", StringComparison.OrdinalIgnoreCase))
+                {
+                    inNoise = true;
                     continue;
                 }
 
@@ -137,6 +155,7 @@ namespace RfCore
                 var tokens = dataLine.Split(
                     (char[]?)null, StringSplitOptions.RemoveEmptyEntries);
 
+                var lineValues = new List<double>(tokens.Length);
                 foreach (var tok in tokens)
                 {
                     if (double.TryParse(tok,
@@ -144,9 +163,34 @@ namespace RfCore
                             System.Globalization.CultureInfo.InvariantCulture,
                             out double val))
                     {
-                        blockTokens.Add(val);
+                        lineValues.Add(val);
                     }
                 }
+
+                // A 1.x noise block starts, at a block boundary of a two-port, on a five-number row
+                // whose frequency does not advance past the last network frequency (the spec's own
+                // marker). The five is what keeps a mis-inferred N-port — whose continuation lines
+                // also "go backwards" — failing loudly rather than reading as one point plus noise.
+                if (!inNoise && ports == 2 && blockTokens.Count == 0 && freqs.Count > 0 &&
+                    lineValues.Count == 5 && lineValues[0] * freqScale <= freqs[^1])
+                    inNoise = true;
+
+                if (inNoise)
+                {
+                    noiseTokens.AddRange(lineValues);
+                    while (noiseTokens.Count >= 5)
+                    {
+                        noise.Add(new NoiseParameterPoint(
+                            noiseTokens[0] * freqScale,
+                            noiseTokens[1],
+                            Complex.FromPolarCoordinates(noiseTokens[2], noiseTokens[3] * Math.PI / 180.0),
+                            noiseTokens[4]));
+                        noiseTokens.RemoveRange(0, 5);
+                    }
+                    continue;
+                }
+
+                blockTokens.AddRange(lineValues);
 
                 // ---- Infer port count once we have enough data ----
                 if (ports is null && blockTokens.Count >= 3)
@@ -244,6 +288,8 @@ namespace RfCore
             if (perPortNote.Count > 0 && perPortNote.Count == snp.Ports &&
                 perPortNote.Keys.First() == 1 && perPortNote.Keys.Last() == snp.Ports)
                 snp.Z0PerPort = perPortNote.Values.ToArray();
+
+            snp.NoiseParameters.AddRange(noise);
 
             if (readComments)
                 snp.Comments.AddRange(comments);

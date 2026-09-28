@@ -58,6 +58,21 @@ namespace RfCore
     }
 
     // ============================================================
+    //  NoiseParameterPoint — one row of a two-port noise block
+    // ============================================================
+
+    /// <summary>
+    /// One row of a Touchstone two-port noise-parameter block.
+    /// </summary>
+    /// <param name="FrequencyHz">Frequency, Hz.</param>
+    /// <param name="NFminDb">Minimum noise figure, dB.</param>
+    /// <param name="GammaOpt">Optimum source reflection coefficient (the file writes it as magnitude
+    /// and angle in degrees whatever the network data's format).</param>
+    /// <param name="RnNormalized">Effective noise resistance, normalized to the reference impedance
+    /// (Touchstone 1.x); Ω in a Touchstone 2 file.</param>
+    public sealed record NoiseParameterPoint(double FrequencyHz, double NFminDb, Complex GammaOpt, double RnNormalized);
+
+    // ============================================================
     //  SNP — the unified data container
     // ============================================================
 
@@ -173,6 +188,16 @@ namespace RfCore
 
         /// <summary>Comments read from the source file (optional).</summary>
         public List<CommentEntry> Comments { get; } = new();
+
+        /// <summary>
+        /// The two-port NOISE PARAMETER rows a Touchstone file carried after its network data —
+        /// empty for every other file. <b>Read and kept, used by nothing yet</b>: before these were
+        /// recognised, a measured amplifier file that carried them failed to load at all (its first
+        /// noise row was folded into the next network block and reported as a token overflow). They
+        /// are kept rather than skipped so the file's content is not silently narrowed, and so a
+        /// later noise analysis has them. Not written back by <see cref="TouchstoneIO"/>.
+        /// </summary>
+        public List<NoiseParameterPoint> NoiseParameters { get; } = new();
 
         // ---- File provenance -------------------------------------------
 
@@ -325,6 +350,8 @@ namespace RfCore
             SolvedMask  = source.SolvedMask;
             Comments.Clear();
             Comments.AddRange(source.Comments);
+            NoiseParameters.Clear();
+            NoiseParameters.AddRange(source.NoiseParameters);
             // FilePath intentionally not overwritten
         }
 

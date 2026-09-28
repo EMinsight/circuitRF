@@ -277,6 +277,9 @@
                 <Button Command="{Binding Panel.CancelCommand}" Content="Cancel" Padding="10,3" FontSize="12"
                         IsVisible="{Binding Panel.IsRunning}"
                         ToolTip.Tip="Stop the run; the layers that finished are kept"/>
+                <Button Command="{Binding Panel.ClearCommand}" Content="Clear" Padding="10,3" FontSize="12"
+                        IsVisible="{Binding Panel.HasResults}"
+                        ToolTip.Tip="Clear the results from the table and the canvas. The target, the layers, the scope and any accepted findings are kept, so the next Run starts clean."/>
                 <CheckBox Content="Show on canvas" FontSize="11" Margin="8,0,0,0"
                           IsVisible="{Binding Panel.HasResults}"
                           IsChecked="{Binding Panel.Editor.ShowImpedanceOverlay, Mode=TwoWay, FallbackValue=True}"

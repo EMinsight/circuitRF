@@ -26,8 +26,9 @@ namespace RfCore.Data
 {
     /// <summary>
     /// How the two-terminal impedance is recovered from the measured S-parameters. <b>This is a
-    /// statement about the FIXTURE, not about the data</b>, and nothing in a Touchstone file
-    /// records it — which is why it is an explicit choice rather than an inference.
+    /// statement about the FIXTURE</b>, and no Touchstone header records it — but for a two-terminal
+    /// part the data does: see <see cref="PassiveMetrics.InferExtraction"/>, which reads the
+    /// series or shunt identity off the matrix and is null where it cannot tell.
     ///
     /// <para><b>Getting this wrong is the standard failure in this corner of the field, and the
     /// error is not where intuition puts it.</b> A vendor's 2-port capacitor file is measured
@@ -205,6 +206,60 @@ namespace RfCore.Data
                 s11[f] = RFNetwork.SToS(sub, z0Old, z0New)[0, 0];
             }
             return (s11, target.Real);
+        }
+
+        // ── which fixture the data was measured in ───────────────────────────
+
+        /// <summary>
+        /// The fixture a two-port file of a TWO-TERMINAL part was measured in, read off the data —
+        /// or null where the data does not say.
+        ///
+        /// <para><b>The fixture leaves an identity in the S-matrix.</b> A lumped impedance in SERIES
+        /// between two ports at the same real reference gives S11 = Z/(Z + 2Z0) and
+        /// S21 = 2Z0/(Z + 2Z0), so <c>S11 + S21 = 1</c> at every frequency, whatever Z is. A SHUNT
+        /// impedance across a through line gives S11 = −Z0/(2Z + Z0) and S21 = 2Z/(2Z + Z0), so
+        /// <c>S21 − S11 = 1</c>. A file satisfies one and misses the other by order one, so the
+        /// test does not depend on the part's value. (Field report 2026-09-28: a vendor's
+        /// series-thru capacitor files, read through the shunt-thru default, turned a 10 µF part
+        /// into 4.6 pF; the series residual on them was 4e-16 and the shunt residual ≈ 2.)</para>
+        ///
+        /// <para>Measured data carries fixture and calibration residue, so the MEDIAN residual over
+        /// the sweep is compared, and an answer is given only when one identity holds to
+        /// <paramref name="tolerance"/> and the other misses by at least ten times as much. A
+        /// one-port, a non-S file, a file of anything that is not a two-terminal part, and a file
+        /// that is neither decisively are all null — the caller keeps its own default.</para>
+        /// </summary>
+        public static PassiveExtraction? InferExtraction(SNP snp, double tolerance = 0.1)
+        {
+            if (snp is null || snp.IsEmpty || snp.Ports != 2 || snp.Type != MatrixType.S) return null;
+
+            Complex[] z0 = snp.Z0PerPort ?? new[] { snp.Z0, snp.Z0 };
+            Mat<Complex>[] mats;
+            try { mats = NetworkMetrics.TwoPortUniformReal(snp.Matrices, z0, 1, 2); }
+            catch { return null; }
+
+            int n = mats.Length;
+            var series = new double[n];
+            var shunt  = new double[n];
+            for (int f = 0; f < n; f++)
+            {
+                Complex s11 = mats[f][0, 0], s21 = mats[f][1, 0];
+                series[f] = (s11 + s21 - Complex.One).Magnitude;
+                shunt[f]  = (s21 - s11 - Complex.One).Magnitude;
+            }
+            double rs = Median(series), rp = Median(shunt);
+            if (double.IsNaN(rs) || double.IsNaN(rp)) return null;
+
+            if (rs < tolerance && rs * 10.0 <= rp) return PassiveExtraction.SeriesThrough;
+            if (rp < tolerance && rp * 10.0 <= rs) return PassiveExtraction.ShuntThrough;
+            return null;
+
+            static double Median(double[] v)
+            {
+                var sorted = (double[])v.Clone();
+                Array.Sort(sorted);
+                return sorted.Length == 0 ? double.NaN : sorted[sorted.Length / 2];
+            }
         }
 
         // ── the readouts ─────────────────────────────────────────────────────

@@ -200,6 +200,8 @@ unusable.
 | [33 — the fast model and the return plane](brief-railrf-33-the-fast-model-and-the-return-plane.md) | a return plane is never a ribbon; the coarse mesh resolves the return or Fast refuses | Fast within 5 % of converged Accurate on the field board, or a refusal |
 | [34 — an anchor over two nets](brief-railrf-34-an-anchor-over-two-nets.md) | a pad anchor seeds its land; a coordinate over two nets states its layer or is refused | two supplies never become one rail |
 | [35 — series parts from the window](brief-railrf-35-series-parts-from-the-window.md) | a gesture to make a part series, a library `Other` row as its model, and a TREE of series elements rather than one | a hand-built chain oracle, and every existing answer unchanged bit for bit |
+| [36 — a six-layer board in seconds](brief-railrf-36-a-six-layer-board-in-seconds.md) | via-to-copper touch test by local index, one connectivity per artwork, no board read on the UI thread, the `RebuildParts` race | netlists identical; counters, not timers |
+| [37 — anchors on the mounting side](brief-railrf-37-anchors-on-the-mounting-side.md) | bare anchors resolve on outer copper (pad side wins, Top on a tie); offer the IPC-D-356 file beside the Gerbers; series terminals after a re-import | the field-report rail solves with no layer typed |
 
 **19-24 are window-level and independent of each other.** 25 is a model change and is the largest
 of the seven; it blocks

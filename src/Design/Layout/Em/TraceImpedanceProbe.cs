@@ -514,8 +514,16 @@ public static class TraceImpedanceProbe
 
         var (c, c0, solveRefusal) = TraceCrossSection.Solve(ctx, cut, ct);
         if (solveRefusal is not null)
+            // "solved to no capacitance" was the whole sentence until 2026-09-28, and a designer asked
+            // what it meant. It means the field solve gave no positive C between the trace and its
+            // reference, which in practice is a cut that runs into copper touching the trace — the pad
+            // or via land it enters, or the neck where it joins a pour — rather than across a plain run.
             return TraceImpedanceResult.Refused(solveRefusal == "solved to no capacitance"
-                ? $"The cross-section at {Pt(cx, cy)} solved to no capacitance."
+                ? $"No impedance at {Pt(cx, cy)}: the cross-section there held no charge between the trace " +
+                  "and its reference, so there is no capacitance to price. This usually means the cut runs " +
+                  "into copper that touches the trace — the pad or via it enters, or where it joins a " +
+                  "pour — rather than across a plain run of trace. Probe a point a few trace widths along " +
+                  "the trace, away from where it meets that copper."
                 : $"The cross-section at {Pt(cx, cy)} could not be solved: {solveRefusal}");
 
         double z0 = TraceCrossSection.Z0(c, c0);

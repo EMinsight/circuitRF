@@ -398,7 +398,8 @@ public sealed partial class RailRfViewModel
     internal IReadOnlyList<RailSeriesModel> SeriesModels(RailSpec rail, RailPartResolver resolver) =>
         [.. rail.SeriesElements.Select(e => RailSeriesModel.Resolve(
             e, PartLibrary,
-            path => resolver.ReadMeasured(path, RfCore.Data.PassiveExtraction.SeriesThrough, out _),
+            path => resolver.ReadMeasured(path, RfCore.Data.PassiveExtraction.SeriesThrough, out _,
+                                          inferFixture: true),
             ResolveRelative)!)];
 
     /// <summary>A document-relative reference, against the <c>.crail</c>'s own folder.</summary>

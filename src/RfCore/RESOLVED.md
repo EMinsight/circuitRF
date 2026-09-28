@@ -891,3 +891,27 @@ keeps its OWN starting admittance, which is not an approximation and never was: 
 whatever that matrix's probe sees on that side and installs `yS`, so both land on the same absolute
 termination whatever they started from — which is also why the precondition being checked against the
 active cube only is sound.
+
+## Two-port noise blocks, and the fixture read off the data (field report, 2026-09-28)
+
+**A measured amplifier `.s2p` carrying a noise-parameter block was refused outright.** Touchstone 1.x
+marks the noise block only by a frequency that does not advance past the last network frequency; the
+reader had no notion of it, so the first noise row (5 numbers) was folded into the next 9-number
+network block and the file failed with "Token overflow: got 10 tokens, expected 9 for 2-port. Check
+that the file extension matches the data." — advice that was wrong, since the extension was right.
+`TouchstoneIO.Read` now switches to noise mode at a two-port block boundary on a **five-number row
+whose frequency does not advance** (or after a Touchstone 2 `[Noise Data]` line), and keeps the rows
+in `SNP.NoiseParameters` (freq, NFmin dB, Γopt, rn) — kept rather than skipped so the file is not
+silently narrowed; nothing consumes them yet and the writer does not emit them. **The "exactly five"
+is load-bearing:** without it, a 4-port stream read with no port count (whose continuation lines also
+"go backwards") read as one 2-port point plus noise instead of failing —
+`TouchstonePortInferenceTests.Read_FourPortStream_WithoutKnownPorts_Fails` caught it.
+`RefreshFrom` copies the list, per its own every-field rule.
+
+**`PassiveMetrics.InferExtraction(SNP)`**: a lumped two-terminal impedance leaves its fixture in the
+S-matrix as an identity independent of its value — series-thru S11 + S21 = 1, shunt-thru
+S21 − S11 = 1. The median residual over the sweep is compared; an answer is given only when one is
+below 0.1 and ten times below the other, else null (a one-port, a non-S file, an amplifier). On the
+reporter's four vendor `_series.s2p` part files the residuals were ~4e-16 against ~2. The enum's
+doc comment used to say the fixture is "not about the data" and cannot be inferred; it now points
+here. Gate: `tests/RfCore.Tests/TouchstoneNoiseBlockTests.cs`.

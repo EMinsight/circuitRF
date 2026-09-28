@@ -342,30 +342,59 @@ public static class BomTablePaste
             }
         }
 
-        // Do-not-populate: stated as a type, or as a value of "--"/"DNP".
-        if (!dnp && rec.Delimited && columns.TryGetValue(Role.Value, out var vcols))
-            dnp = vcols.Any(v => v < cells.Count && IsDnpWord(cells[v]));
+        // Do-not-populate: stated as a type, or as a value of "--"/"DNP"/"Not assembled" — in the
+        // Value column or in any type/description column ("Not assembled" is often written there).
+        if (!dnp && rec.Delimited)
+            dnp = new[] { Role.Value, Role.Type }.Any(role =>
+                columns.TryGetValue(role, out var cols) &&
+                cols.Any(v => v < cells.Count && IsDnpWord(cells[v])));
         if (dnp)
         {
             skipped.Add(new BomPasteSkip(refsLabel, "marked do-not-populate", rec.Line));
             return;
         }
 
+        int valueAt = rec.Delimited ? FirstColumn(columns, Role.Value, cells, _ => true) : -1;
+
+        // A type word IN THE VALUE CELL names the part actually fitted, and wins over both the
+        // type column and the reference prefix: "0R0 (resistor)" on L1 is a zero-ohm link placed
+        // where the layout allowed an inductor (round-9 field report). The parenthetical is then
+        // dropped so the value reads on its own.
+        string? valueCell = valueAt >= 0 ? cells[valueAt] : null;
+        if (valueCell is not null)
+        {
+            foreach (string w in Regex.Split(valueCell, @"[^\p{L}]+"))
+            {
+                if (w.Length < 3) continue;
+                if (ClassifyType(w, allowSingleLetter: false) is { Kind: { } vk })
+                {
+                    kind = vk;
+                    unknownType = null;
+                    break;
+                }
+            }
+            valueCell = Regex.Replace(valueCell, @"\([^)]*\)", " ").Trim();
+        }
+
+        // The kind a value is read against: the type word, else the reference prefix. Known BEFORE
+        // the value is parsed, so "100k" on R1, "100R", "10U" and "100N" on a C read with the
+        // multiplier the prefix implies (round-9 field report: every one of them fell to default).
+        SymbolKind? parseKind = kind ?? KindFromRefdes(refs[0]);
+
         // The value.
         string? value = null, unit = null;
         UnitDimension valueDim = UnitDimension.None;
         int valueEnd = -1;
-        int valueAt = rec.Delimited ? FirstColumn(columns, Role.Value, cells, _ => true) : -1;
         if (valueAt >= 0)
         {
             used.Add(valueAt);
-            if (TryParseValue(cells[valueAt], kind, out value, out unit, out valueDim))
+            if (TryParseValue(valueCell!, parseKind, out value, out unit, out valueDim))
                 valueEnd = valueAt;
-            else if (Number.IsMatch(cells[valueAt].Trim()))
+            else if (Number.IsMatch(valueCell!))
             {
                 // The unit in a cell of its own: a stated Unit column, else the cell to the right —
                 // a spreadsheet that split "100 pF" into two cells under one header.
-                string number = cells[valueAt].Trim();
+                string number = valueCell!;
                 int unitAt = FirstColumn(columns, Role.Unit, cells, c => ParseUnit(c) is not null);
                 if (unitAt < 0 && valueAt + 1 < cells.Count && ParseUnit(cells[valueAt + 1]) is not null)
                     unitAt = valueAt + 1;
@@ -375,7 +404,7 @@ public static class BomTablePaste
                     used.Add(unitAt);
                     valueEnd = unitAt;
                 }
-                else if (kind == SymbolKind.Resistor)
+                else if (parseKind == SymbolKind.Resistor)
                 {
                     (value, unit, valueDim) = (number, "Ω", UnitDimension.Resistance);
                     valueEnd = valueAt;
@@ -387,7 +416,7 @@ public static class BomTablePaste
             for (int i = 0; i < cells.Count && value is null; i++)
             {
                 if (used.Contains(i)) continue;
-                if (TryParseValue(cells[i], kind, out value, out unit, out valueDim))
+                if (TryParseValue(cells[i], parseKind, out value, out unit, out valueDim))
                 {
                     used.Add(i);
                     valueEnd = i;
@@ -399,6 +428,16 @@ public static class BomTablePaste
                     used.Add(i + 1);
                     valueEnd = i + 1;
                 }
+            }
+
+            // No Value column and no value cell: a description often carries it — "Resistor,
+            // 100 ohms, 0402, ±1%", "Inductor, 27n, 0402". Its comma-separated pieces are tried,
+            // then their words; only against a known kind, so a bare "27n" has a unit to take.
+            if (value is null && typeAt >= 0 && parseKind is not null &&
+                DescriptionValue(cells[typeAt], parseKind) is { } dv)
+            {
+                (value, unit, valueDim) = dv;
+                valueEnd = typeAt;
             }
         }
 
@@ -458,6 +497,17 @@ public static class BomTablePaste
                 }
             }
         }
+        if (smtCase is null && typeAt >= 0)
+        {
+            // A description's own case — "Resistor, 100 ohms, 0402, ±1%" — when no other cell had one.
+            foreach (string piece in cells[typeAt].Split([',', ';', ' ', '\t'], StringSplitOptions.RemoveEmptyEntries))
+            {
+                if (!Regex.IsMatch(piece, @"^\d{4,5}$") || !TryParseCase(piece, out smtCase, out bool imperial)) continue;
+                if (imperial) imperialReadings.Add(smtCase!.Code);
+                caseToken = null;
+                break;
+            }
+        }
         if (smtCase is null && caseToken is not null && !IsDnpWord(caseToken))
             unknownCases.Add(caseToken);
 
@@ -492,13 +542,35 @@ public static class BomTablePaste
         return pieces.Length > 0 && pieces.All(IsRefsWord);
     }
 
+    /// <summary>
+    /// A do-not-populate marker: DNP, NM, "Not assembled", a dash-only cell. The whole cell must be
+    /// the marker — or every piece of a "DNP/NM" style list — and a cell holding a digit never is,
+    /// so a dielectric "NP0" or a value "27 nm" is not read as one.
+    /// </summary>
     private static bool IsDnpWord(string s)
     {
-        string n = LettersOnly(s);
         string t = s.Trim();
-        return n is "dnp" or "dnf" or "dni" or "nofit" or "notfitted" or "donotpopulate" or "donotfit"
-                 or "nc" or "np"
-            || (t.Length > 0 && t.All(ch => ch is '-' or '–' or '—'));
+        if (t.Length == 0) return false;
+        if (t.All(ch => ch is '-' or '–' or '—')) return true;
+        if (t.Any(char.IsDigit)) return false;
+        var pieces = t.Split(['/', ',', ';'], StringSplitOptions.RemoveEmptyEntries);
+        return pieces.Length > 0 && pieces.All(p => LettersOnly(p) is
+            "dnp" or "dnf" or "dni" or "dnm" or "nofit" or "notfitted" or "donotpopulate" or "donotfit"
+            or "donotmount" or "nc" or "np" or "nm" or "notassembled" or "notmounted" or "notplaced"
+            or "notpopulated" or "unpopulated" or "nopop" or "nopopulate");
+    }
+
+    /// <summary>A value named inside a description cell — "Resistor, 100 ohms, 0402, ±1%",
+    /// "Inductor, 27n, 0402" — tried piece by piece (comma-separated), then word by word.</summary>
+    private static (string Value, string Unit, UnitDimension Dim)? DescriptionValue(string cell, SymbolKind? kind)
+    {
+        foreach (string piece in cell.Split([',', ';'], StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (TryParseValue(piece, kind, out var v, out var u, out var d)) return (v!, u!, d);
+            foreach (string word in piece.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries))
+                if (TryParseValue(word, kind, out v, out u, out d)) return (v!, u!, d);
+        }
+        return null;
     }
 
     /// <summary>A type word → its kind, or the do-not-populate marker. Prefix matching, so a PDF's
@@ -618,7 +690,7 @@ public static class BomTablePaste
     {
         value = unit = null;
         dim = UnitDimension.None;
-        string t = cell.Trim();
+        string t = cell.Trim().TrimEnd(',', ';').Trim();
         if (t.Length == 0) return false;
 
         // "100 pF" in one cell.
@@ -642,6 +714,22 @@ public static class BomTablePaste
             if (kind == SymbolKind.Resistor && ParseUnit(tail + "Ω") is { } u3)
             {
                 (value, unit, dim) = (Trim(m.Groups[1].Value), u3.Unit, u3.Dim);
+                return true;
+            }
+            // "100R", "0R": R written for the ohm, glued to its digits. Unlike a bare "R" word in PDF
+            // text, a glued R is not the wrapped tail of "Capacitor" — so it reads as ohms unless
+            // the part is known to be a capacitor or inductor.
+            if (tail is "R" or "r" && kind is null or SymbolKind.Resistor)
+            {
+                (value, unit, dim) = (Trim(m.Groups[1].Value), "Ω", UnitDimension.Resistance);
+                return true;
+            }
+            // "10U", "100N", "27n", "22p" on a capacitor or inductor: the SI prefix with the F or H
+            // left off, which only the part's kind can supply.
+            if (kind is SymbolKind.Capacitor or SymbolKind.Inductor && tail.Length == 1 &&
+                ParseUnit(tail + (kind == SymbolKind.Capacitor ? "F" : "H")) is { } u5)
+            {
+                (value, unit, dim) = (Trim(m.Groups[1].Value), u5.Unit, u5.Dim);
                 return true;
             }
         }
