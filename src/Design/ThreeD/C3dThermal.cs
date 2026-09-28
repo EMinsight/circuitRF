@@ -417,6 +417,16 @@ public static class C3dThermal
         {
             bool harmonics = c.Harmonics is { Count: > 0 };
             string who = c.Subject;
+            // brief-em3d-79 R-em3d79-1 — a circuit link states the circuit and nothing else: the ports' currents are its pins'
+            if (c.FromCircuit is { } fc)
+            {
+                if (string.IsNullOrWhiteSpace(fc.Schematic))
+                    found.Add(D.Current(name, "has a FromCircuit current naming no Schematic: name the .csch or .cnl whose HB drives the ports"));
+                if (c.Port is not null || c.Array is not null || c.Dc is not null || c.F0 is not null || harmonics || c.EnterFace is not null || c.LeaveFace is not null)
+                    found.Add(D.Current(name, "has a FromCircuit current that also states a Port, Array, Dc, F0, Harmonics or contact face: the circuit " +
+                                              "gives every port its currents — port p is pin p of the instance — so the entry states the circuit only"));
+                continue;
+            }
             if (c.Port is not null && c.Array is not null)
                 found.Add(D.Current(name, $"has a current naming both port {c.Port} and array '{c.Array}'; an entry is one or the other"));
             else if (c.Port is null && c.Array is null)
@@ -465,6 +475,16 @@ public static class C3dThermal
             }
             foreach (var dupN in c.Harmonics.GroupBy(h => h.N).Where(g => g.Count() > 1))
                 found.Add(D.Current(name, $"gives {who} harmonic {dupN.Key} {dupN.Count()} times; state each harmonic once"));
+        }
+        if (currents.Count(c => c.FromCircuit is not null) is var links and > 0)
+        {
+            if (links > 1) found.Add(D.Current(name, $"has {links} FromCircuit currents; one circuit drives the ports"));
+            if (currents.Any(c => c.FromCircuit is null && (c.Dc is not null || c.Harmonics is { Count: > 0 })))
+                found.Add(D.Current(name, "takes its currents from a circuit and also states a Dc or Harmonics per port: the circuit gives every " +
+                                          "port its currents, so remove the per-port entries (or the FromCircuit one)"));
+            if (t.Sweep is { Count: > 0 })
+                found.Add(D.Current(name, "takes its currents from a circuit and states a Sweep of its own: the run is solved at every point of the " +
+                                          "circuit's HB sweep, on its axes — sweep the circuit instead"));
         }
         foreach (var dup in currents.Where(c => c.Port is not null).GroupBy(c => c.Port).Where(g => g.Count() > 1))
             found.Add(D.Current(name, $"gives port {dup.Key} {dup.Count()} currents; a port carries one"));

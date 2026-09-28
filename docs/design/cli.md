@@ -682,6 +682,13 @@ from an EM run:
 solver that count selects (direct below 5,000 unknowns — brief 72's crossover) and the memory.
 Gate: `tests/Ui.Tests/ThreeD/ThermalRunTests.cs`.
 
+**A thermal setup driven from a circuit (brief-em3d-79).** A `Currents` entry `{ "FromCircuit": { "Schematic": …,
+"Analysis": …, "Instance": … } }` makes `em` run the circuit's HB power sweep first — through `HbCircuitRun`
+(`src/Design/Circuit`), the function the `hb` verb calls, with the chain chosen by `ChainSelector`, which moved there
+for this — and then the thermal run at every HB point, on the HB's own axes. **`--set var=expr` sets a global of the
+CIRCUIT**, before it is elaborated, as `hb` sets it; the thermal setup's own values are the document's. An HB that
+cannot run is the refusal, verbatim; exit codes as above. Gate: `tests/Ui.Tests/ThreeD/ThermalCircuitLinkTests.cs`.
+
 ## 9. Adding a verb
 
 1. Add the case to the dispatch switch and a line to `PrintHelp`.
@@ -789,7 +796,7 @@ rather than missing; what `src/Cli/Check.cs` adds is the WALK and the reporting,
 | `CellSymbolResolver` | `src/Design/Schematic` | every cell reference on a schematic |
 | `NetExtractor` | `src/Design/Schematic` | naming conflicts — two labels on one physical net |
 | `Elaborator.Elaborate` | `src/Core/Elaboration` | parameters, expressions, cycles, node numbering |
-| `ChainSelector` | `src/Cli/ChainSelection.cs` | whether a declared analysis chain will dispatch |
+| `ChainSelector` | `src/Design/Circuit/ChainSelection.cs` | whether a declared analysis chain will dispatch |
 | `DrcPredicateParser` | `src/Design/Layout/Drc` | a `.wasm` rule that will not parse |
 | `DrcEngine` | `src/Design/Layout/Drc` | layout design rules |
 | `TerminalMap.Validate` | `src/Design/Layout` | which layout pin is which schematic port — a declared map that names a pin the `.clay` does not have, a port outside range, a duplicate, a pin claimed twice, an unmapped port or pin, a map DERIVED by order, or one that cannot be derived at all |

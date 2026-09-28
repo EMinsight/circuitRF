@@ -830,6 +830,39 @@
                     <TextBlock Classes="colhdr" FontWeight="SemiBold" Margin="0,6,0,0" Text="Currents"/>
                     <TextBlock Classes="colhdr" TextWrapping="Wrap"
                                Text="A port's current enters its positive conductor and leaves its negative one, through the faces its edges lie on unless named; bond wires carry it as 1D elements. Harmonics go to the wire array on the port's positive conductor (or name an array instead of a port) and heat the wires by skin effect. A port not listed carries nothing."/>
+                    <!-- brief-em3d-79 R-em3d79-4: Currents ▸ From circuit… — the ports' currents from a circuit's HB power sweep -->
+                    <CheckBox IsChecked="{Binding ViewModel.ThermalFromCircuit}" Content="From circuit…"
+                              ToolTip.Tip="Run a schematic's harmonic-balance power sweep and take each port's DC and harmonic currents from the pins of the instance whose S-parameter model is this 3D view's EM result — port p is pin p — at every drive level. One way: nothing goes back into the circuit."/>
+                    <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto,Auto,Auto" Margin="18,0,0,0" RowSpacing="2" ColumnSpacing="6"
+                          IsVisible="{Binding ViewModel.ThermalFromCircuit}">
+                        <TextBlock Grid.Row="0" Classes="colhdr" VerticalAlignment="Center" Text="Circuit"/>
+                        <TextBox Grid.Row="0" Grid.Column="1" Classes="cell" Text="{Binding ViewModel.ThermalCircuitSchematic}" PlaceholderText="../schematic/pa.csch"
+                                 ToolTip.Tip="A .csch or .cnl, relative to this 3D view's folder" LostFocus="OnThermalLostFocus" KeyDown="OnThermalKey"/>
+                        <Button Grid.Row="0" Grid.Column="2" FontSize="11" Padding="6,1" Content="Browse…" Click="OnBrowseCircuitClick"/>
+                        <TextBlock Grid.Row="1" Classes="colhdr" VerticalAlignment="Center" Text="HB analysis"/>
+                        <ComboBox Grid.Row="1" Grid.Column="1" MinWidth="160" ItemsSource="{Binding ViewModel.ThermalCircuitAnalyses}"
+                                  SelectedItem="{Binding ViewModel.ThermalCircuitAnalysis}"
+                                  ToolTip.Tip="Only HB analyses and the sweeps wrapping them; empty: the circuit's one HB chain. An inner analysis runs its sweep."/>
+                        <TextBlock Grid.Row="2" Classes="colhdr" VerticalAlignment="Center" Text="Instance"/>
+                        <ComboBox Grid.Row="2" Grid.Column="1" MinWidth="160" ItemsSource="{Binding ViewModel.ThermalCircuitInstances}"
+                                  SelectedItem="{Binding ViewModel.ThermalCircuitInstance}"
+                                  ToolTip.Tip="Only instances whose model is this 3D view's EM result; empty: the one there is"/>
+                        <TextBlock Grid.Row="3" Classes="colhdr" VerticalAlignment="Center" Text="Carry"/>
+                        <TextBox Grid.Row="3" Grid.Column="1" Classes="cell" Text="{Binding ViewModel.ThermalCircuitCarry}" PlaceholderText="every scalar measure"
+                                 ToolTip.Tip="HB measures copied into the result on the sweep's axes, comma separated (Pout, PAE) — plot a wire's temperature against them"
+                                 LostFocus="OnThermalLostFocus" KeyDown="OnThermalKey"/>
+                    </Grid>
+                    <TextBlock Classes="colhdr" TextWrapping="Wrap" Margin="18,0,0,0" Foreground="{DynamicResource CrfWarningBrush}"
+                               Text="{Binding ViewModel.ThermalCircuitProblem}"
+                               IsVisible="{Binding ViewModel.ThermalCircuitProblem, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                    <ItemsControl Margin="18,0,0,0" ItemsSource="{Binding ViewModel.ThermalCircuitMapping}" IsVisible="{Binding ViewModel.ThermalFromCircuit}"
+                                  ToolTip.Tip="Read-only: port p is pin p of the instance. Check each port lands on the net you expect.">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="em:ThermalCircuitMapRow">
+                                <SelectableTextBlock FontSize="11" Text="{Binding Text}"/>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
                     <ItemsControl ItemsSource="{Binding ViewModel.ThermalCurrents}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate x:DataType="em:ThermalCurrentRow">

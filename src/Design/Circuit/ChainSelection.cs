@@ -1,6 +1,6 @@
 using CircuitRF.Core.Design;
 
-namespace CircuitRF.Cli;
+namespace CircuitRF.Design.Circuit;
 
 /// <summary>
 /// What chain selection DECIDED, as data rather than as a side effect
@@ -33,7 +33,7 @@ namespace CircuitRF.Cli;
 /// chain — the three cases where no promotion happened.
 /// </param>
 /// <param name="Why">Why nothing was selected. Null when something was.</param>
-internal sealed record ChainSelection(
+public sealed record ChainSelection(
     Analysis?               Selected,
     IReadOnlyList<Analysis> Candidates,
     Analysis?               Requested,
@@ -44,8 +44,12 @@ internal sealed record ChainSelection(
 /// Chooses which analysis a run verb dispatches — shared by <c>hb</c>, <c>lp</c> and <c>lpp</c>,
 /// which differ only in the base analysis type they are looking for, and read without running by
 /// <c>explain --analysis</c>.
+///
+/// <para>In <c>src/Design</c> since brief-em3d-79: a thermal setup driven from a circuit runs that
+/// circuit's HB chain, and must promote a named inner analysis exactly as the <c>hb</c> verb does —
+/// so the rule moved to where both can reach it, rather than being copied.</para>
 /// </summary>
-internal static class ChainSelector
+public static class ChainSelector
 {
     /// <param name="isBase">True for the analysis type this verb runs.</param>
     /// <param name="kindLabel">What to call it in a message ("HB", "loadpull", "loadpull-pursuit").</param>

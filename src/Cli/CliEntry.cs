@@ -32,6 +32,7 @@ using System.Linq;
 using System.Numerics;
 using System.Text;
 using CircuitRF.Core.Design;
+using CircuitRF.Design.Circuit;
 using CircuitRF.Core.Devices.External;
 using CircuitRF.Core.Elaboration;
 using CircuitRF.Core.Netlist;
@@ -588,8 +589,7 @@ static int RunHb(string[] args)
         // from it re-derives. Overriding Pavl_dbm has to move the source amplitude computed from it.
         foreach (var (name, expr) in sets)
         {
-            tb.GlobalVariables.RemoveAll(v => v.Name == name);
-            tb.GlobalVariables.Add(new Variable(name, expr));
+            HbCircuitRun.ApplySet(tb, name, expr);
             Console.Error.WriteLine($"[circuitRF] set {name} = {expr}");
         }
 
@@ -607,37 +607,12 @@ static int RunHb(string[] args)
         var settings = SolverSettingsFrom(maxIter, diag);
         top = ApplyHbOverrides(tb, top, maxHarm, maxMixOrder, tol, maxIter);
 
-        DataSet       ds;
-        HbRunResult?  run = null;
-        if (top is ParametricSweepAnalysis psa)
-        {
-            Console.Error.WriteLine(
-                $"HB sweep '{psa.Name}': {psa.SweepValues.Length} point(s) over {psa.SweepVarName}");
-            ds = ParametricSweepEngine.Run(psa, lib, tb, settings,
-                                           baseDirectory: Path.GetDirectoryName(Path.GetFullPath(input)),
-                                           control: RunHost.Control,
-                                           // Every point elaborates a netlist of its own and throws it
-                                           // away; without this the warnings printed below are those of
-                                           // a netlist nothing ever stamped.
-                                           diagnosticsInto: nl);
-        }
-        else
-        {
-            var hba = (HarmonicBalanceAnalysis)top;
-            var p   = HbEngine.Resolve(hba, nl.ResolvedGlobals, nl.GlobalsWithExplicitUnit);
-            Console.Error.WriteLine(
-                $"HB '{hba.Name}': {DescribeTones(p)}, MaxHarm={p.MaxHarmonic}" +
-                (p.IsMultiTone ? $", MaxMixOrder={p.MaxMixOrder}" : "") +
-                $", tol={p.Tol:G3}");
-            // The library and base directory are handed over so a long WSProbe tickle grid can be
-            // split across workers (brief-wsprobe-8 R-wsp8-9) — each worker needs a netlist copy of
-            // its own, and a copy needs the library it was elaborated from. Nothing else uses them,
-            // and a run with no small-signal sweep is unaffected.
-            run = new HbEngine(nl, tb, settings, wspCache: null, lib: lib,
-                               baseDirectory: Path.GetDirectoryName(Path.GetFullPath(input)))
-                  .Run(p);
-            ds  = run.DataSet;
-        }
+        // brief-em3d-79: the dispatch is HbCircuitRun.Solve — the function a thermal setup driven from this circuit
+        // calls too, so the two cannot run the chain differently. The announcement is the line this verb always printed.
+        var solved = HbCircuitRun.Solve(lib, tb, nl, top, settings, Path.GetDirectoryName(Path.GetFullPath(input)),
+                                        RunHost.Control, Console.Error.WriteLine);
+        DataSet      ds  = solved.Data;
+        HbRunResult? run = solved.Run;
 
         // AGAIN, AFTER THE RUN — same reason as `dc`: the engine adds warnings while assembling and
         // solving, long after elaboration finished.
@@ -656,8 +631,7 @@ static int RunHb(string[] args)
         // A measurement qualifies its cube accessor with the analysis name — and the GUI names a
         // swept result after the INNER analysis, not the sweep. Match that exactly, so the same
         // `measure` line works in both places rather than only in whichever one it was written for.
-        var resultName = BaseOfChain(top, tb)?.Name ?? top.Name;
-        var measDs     = EvaluateMeasurements(tb, nl, resultName, ds, run);
+        var measDs     = EvaluateMeasurements(tb, nl, solved.ResultName, ds, run);
 
         // The chain that ACTUALLY ran, after SelectTop's promotion — a caller that asked for an
         // inner analysis and got its wrapper can see that from the document alone, which matters
@@ -1325,6 +1299,7 @@ static int RunEm(string[] args)
     string? input = null, output = null, workspace = null, solverName = null, setupName = null;
     Em3dSolver? solver = null;
     bool force = false;
+    var emSets = new List<(string Name, string Expr)>();
 
     for (int i = 0; i < args.Length; i++)
     {
@@ -1359,6 +1334,17 @@ static int RunEm(string[] args)
             case "--setup" when i + 1 < args.Length:
                 setupName = args[++i];
                 break;
+            // brief-em3d-79 R-em3d79-4 — a thermal setup driven from a circuit: a global of the CIRCUIT, set before it is
+            // elaborated, as `hb` sets it.
+            case "--set" when i + 1 < args.Length:
+            {
+                var kvText = args[++i];
+                int eq = kvText.IndexOf('=');
+                if (eq <= 0)
+                    return JsonRun.Fail(CliDiagnostics.SetMalformed("em", kvText));
+                emSets.Add((kvText[..eq].Trim(), kvText[(eq + 1)..].Trim()));
+                break;
+            }
             default:
                 if (args[i].StartsWith('-'))
                     return JsonRun.Fail(CliDiagnostics.RunUnknownOption("em", args[i]));
@@ -1370,7 +1356,7 @@ static int RunEm(string[] args)
     if (input is null)
     {
         int code = JsonRun.Fail(CliDiagnostics.InputRequired("em", ".cem"));
-        Console.Error.WriteLine("Usage: circuitrf em <setup.cem | view.c3d> [--setup <name>] [-o out.sNp] [--workspace <file.cws>] [--solver palace|openems|both] [--force]");
+        Console.Error.WriteLine("Usage: circuitrf em <setup.cem | view.c3d> [--setup <name>] [-o out.sNp] [--workspace <file.cws>] [--solver palace|openems|both] [--force] [--set var=expr]");
         return code;
     }
     JsonRun.InputPath = input;
@@ -1476,13 +1462,18 @@ static int RunEm(string[] args)
     string resultsBase = cwsPath is { } cws ? Path.GetDirectoryName(cws)! : Path.GetDirectoryName(cemPath)!;
     string resultsRoot = Path.Combine(resultsBase, "results");
 
+    // brief-em3d-79 — --set reaches a thermal setup's circuit only; an EM run has none to apply it to, so say so
+    if (emSets.Count > 0 && !setup.IsThermal)
+        Console.Error.WriteLine($"[circuitRF] --set {string.Join(", ", emSets.Select(x => x.Name))} is not applied: it sets a global of " +
+                                "the circuit a thermal setup takes its currents from, and this setup is an EM one.");
+
     EmRunResult result;
     try
     {
         result = threeD is not null
             ? EmRunService.RunThreeDView(setup, threeD, threeDPath!, DocumentKinds.AncestorCws(threeDPath!), resultsRoot,
                                          RunHost.Cancellation, EmProgressToStderr(), confirmMemory: force ? _ => true : null,
-                                         fromCem: !isC3d)
+                                         fromCem: !isC3d, circuitSets: emSets)
             : EmRunService.Run(setup, resolution.Source, resultsRoot, RunHost.Cancellation, EmProgressToStderr(),
                                confirmMemory: force ? _ => true : null);
     }
@@ -1776,7 +1767,7 @@ static void PrintWorkerOutput()
 static Analysis? SelectTop(TestBench tb, string? requested, Func<Analysis, bool> isBase,
                            string kindLabel, string directiveHint, out string? why)
 {
-    // The rule itself lives in ChainSelector (src/Cli/ChainSelection.cs), because
+    // The rule itself lives in ChainSelector (src/Design/Circuit/ChainSelection.cs), because
     // `explain --analysis` has to report the same decision without making it. What stays here is
     // the two sentences a RUN writes to stderr — unchanged, character for character, because a
     // script watching stderr must not be able to tell this moved (R-aut0-3).
@@ -1841,22 +1832,8 @@ static Analysis ApplyHbOverrides(TestBench tb, Analysis top,
     return tb.Analyses.First(a => a.Name == top.Name);
 }
 
-static AnalysisSettings SolverSettingsFrom(int? maxIter, bool diag)
-{
-    var d = AnalysisSettings.Default;
-    return new AnalysisSettings
-    {
-        HbMaxIter            = maxIter ?? d.HbMaxIter,
-        NonlinearMaxIter     = maxIter ?? d.NonlinearMaxIter,
-        HbConsoleDiagnostics = diag,
-        ConductanceRegularization = RegularizationMode.Always,
-    };
-}
+static AnalysisSettings SolverSettingsFrom(int? maxIter, bool diag) => HbCircuitRun.Settings(maxIter, diag);
 
-static string DescribeTones(HbAnalysisParams p)
-    => p.IsMultiTone
-        ? "tones " + string.Join(", ", p.ToneFreqsHz.Select(f => $"{f / 1e9:G6} GHz"))
-        : $"f0={p.ToneHz / 1e9:G6} GHz";
 
 /// <summary>
 /// Evaluates the TestBench's measurements against the run, exactly as the GUI does — including the
@@ -1866,17 +1843,9 @@ static string DescribeTones(HbAnalysisParams p)
 static DataSet? EvaluateMeasurements(TestBench tb, ElaboratedNetlist nl, string analysisName,
                                      DataSet ds, HbRunResult? run)
 {
-    if (tb.Measurements.Count == 0) return null;
-
-    var results = new Dictionary<string, DataSet>(StringComparer.OrdinalIgnoreCase) { [analysisName] = ds };
-
-    Dictionary<string, CircuitRF.Core.Expressions.ILinearBackSolver>? solvers = null;
-    if (run?.BackSolver is not null)
-        solvers = new Dictionary<string, CircuitRF.Core.Expressions.ILinearBackSolver>(StringComparer.OrdinalIgnoreCase)
-            { [analysisName] = run.BackSolver };
-
-    var measDs = new DataSet();
-    var errors = new MeasurementEvaluator(tb, nl, results, solvers).EvaluateInto(measDs);
+    // brief-em3d-79: the evaluation is HbCircuitRun.Measure's, shared with the thermal circuit link; what stays here is
+    // reporting each failure the way this verb always has.
+    var measDs = HbCircuitRun.Measure(tb, nl, analysisName, ds, run, out var errors);
     foreach (var e in errors)
     {
         Console.Error.WriteLine($"[circuitRF] measurement: {e}");
@@ -1887,16 +1856,7 @@ static DataSet? EvaluateMeasurements(TestBench tb, ElaboratedNetlist nl, string 
 
 /// Combines the analysis cubes and the measurement cubes into one DataSet for export, mirroring the
 /// GUI's grouped run DataSet (analysis group + "measurements" group).
-static DataSet MergeForExport(DataSet ds, DataSet measDs)
-{
-    var merged = new DataSet();
-    foreach (var group in ds.Groups)
-        foreach (var (name, cube) in ds.CubesIn(group))
-            merged.AddToGroup(group, name, cube);
-    foreach (var (name, cube) in measDs.Cubes)
-        merged.AddToGroup(DataSet.MeasurementsGroup, name, cube);
-    return merged;
-}
+static DataSet MergeForExport(DataSet ds, DataSet measDs) => HbCircuitRun.Merge(ds, measDs);
 
 static ExportFormat FormatFromExtension(string path) => Path.GetExtension(path).ToLowerInvariant() switch
 {

@@ -22,8 +22,16 @@ using CommunityToolkit.Mvvm.Input;
 
 namespace CircuitRF.Ui.Layout.Em;
 
-/// <summary>What the thermal page reads of the document it is embedded in: the document, its resolution and elaboration.</summary>
-public sealed record EmThermalContext(Func<C3dDocument> Document, Func<C3dResolution?> Resolution, Func<C3dElaboration?> Elaboration);
+/// <summary>What the thermal page reads of the document it is embedded in: the document, its resolution and elaboration; and
+/// (brief-em3d-79) its path and the results folder, which a circuit link resolves against.</summary>
+public sealed record EmThermalContext(Func<C3dDocument> Document, Func<C3dResolution?> Resolution, Func<C3dElaboration?> Elaboration,
+                                      Func<string?>? Path = null, Func<string?>? ResultsRoot = null);
+
+/// <summary>brief-em3d-79 R-em3d79-1 — one row of a circuit link's read-only mapping: port p is pin p, on this net.</summary>
+public sealed record ThermalCircuitMapRow(int Port, string PortName, string Net)
+{
+    public string Text => $"port {Port} ({PortName}) ↔ pin {Port} ↔ net '{Net}'";
+}
 
 /// <summary>One heat source on the page: its document default, and this setup's override (empty: the default).</summary>
 public sealed partial class ThermalSourceRow : ObservableObject
@@ -110,6 +118,60 @@ public sealed partial class EmSetupEditorViewModel
     public ObservableCollection<ThermalBoundaryRow> ThermalBoundaries { get; } = [];
     public ObservableCollection<ThermalSweepRow> ThermalSweeps { get; } = [];
     public ObservableCollection<ThermalCurrentRow> ThermalCurrents { get; } = [];
+
+    // ── brief-em3d-79 R-em3d79-4 — Currents ▸ From circuit… ─────────────────────────────────────────────
+
+    /// <summary>The ports' currents come from a circuit's HB power sweep.</summary>
+    [ObservableProperty] private bool _thermalFromCircuit;
+    /// <summary>The circuit, relative to the .c3d.</summary>
+    [ObservableProperty] private string _thermalCircuitSchematic = "";
+    /// <summary>Its HB analysis (or the sweep wrapping one); empty: the circuit's one HB chain.</summary>
+    [ObservableProperty] private string _thermalCircuitAnalysis = "";
+    /// <summary>The instance whose model is this view's result; empty: the one there is.</summary>
+    [ObservableProperty] private string _thermalCircuitInstance = "";
+    /// <summary>The HB cubes carried into the result, comma separated; empty: every scalar measure.</summary>
+    [ObservableProperty] private string _thermalCircuitCarry = "";
+    /// <summary>What does not resolve yet, or empty.</summary>
+    [ObservableProperty] private string _thermalCircuitProblem = "";
+
+    /// <summary>Only HB analyses and the sweeps wrapping them: "" first (the circuit's one chain).</summary>
+    [ObservableProperty] private IReadOnlyList<string> _thermalCircuitAnalyses = [""];
+    /// <summary>Only instances whose model is this view's result: "" first (the one there is).</summary>
+    [ObservableProperty] private IReadOnlyList<string> _thermalCircuitInstances = [""];
+    public ObservableCollection<ThermalCircuitMapRow> ThermalCircuitMapping { get; } = [];
+
+    /// <summary>The link as the page reads it now, for the survey and the commit.</summary>
+    private CemThermalFromCircuit CircuitLink() => new()
+    {
+        Schematic = ThermalCircuitSchematic.Trim(),
+        Analysis = Blank(ThermalCircuitAnalysis),
+        Instance = Blank(ThermalCircuitInstance),
+        Carry = ThermalCircuitCarry.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries) is { Length: > 0 } c ? [.. c] : null,
+    };
+
+    /// <summary>Resolves the link without running anything (ThermalCircuitLink.Describe): the pickers' choices and the mapping.</summary>
+    public void RefreshCircuitSurvey()
+    {
+        ThermalCircuitMapping.Clear();
+        if (!ThermalFromCircuit || ThermalContext is not { } ctx || ctx.Path?.Invoke() is not { } path || ctx.ResultsRoot?.Invoke() is not { } root)
+        {
+            ThermalCircuitProblem = ThermalFromCircuit ? "Save the 3D view in a workspace first: the link resolves against its folder and results." : "";
+            return;
+        }
+        var survey = ThermalCircuitLink.Describe(CircuitLink(), ctx.Document(), path, root);
+        ThermalCircuitAnalyses = ["", .. survey.Analyses];
+        ThermalCircuitInstances = ["", .. survey.Instances];
+        foreach (var (port, name, net) in survey.Mapping) ThermalCircuitMapping.Add(new ThermalCircuitMapRow(port, name, net));
+        ThermalCircuitProblem = survey.Problem ?? "";
+    }
+
+    /// <summary>R-em3d79-4 — a picked file, as the link stores it: relative to the .c3d's folder.</summary>
+    public void SetCircuitSchematic(string absolutePath)
+    {
+        string? dir = ThermalContext?.Path?.Invoke() is { } p ? Path.GetDirectoryName(Path.GetFullPath(p)) : null;
+        ThermalCircuitSchematic = dir is null ? absolutePath : Path.GetRelativePath(dir, absolutePath).Replace('\\', '/');
+        CommitThermal();
+    }
 
     /// <summary>brief-em3d-77 R-em3d77-3 — a bond wire's heat loss in air (h and its ambient), and a bond's interface resistances.</summary>
     [ObservableProperty] private string _thermalWireConvectionH = "";
@@ -208,7 +270,13 @@ public sealed partial class EmSetupEditorViewModel
             foreach (var s in t.Sweep ?? [])
                 ThermalSweeps.Add(new ThermalSweepRow { Var = s.Var, Start = s.Start, Stop = s.Stop, Points = s.Points.ToString(CultureInfo.InvariantCulture) });
             ThermalCurrents.Clear();
-            foreach (var c in t.Currents ?? [])
+            var link = (t.Currents ?? []).FirstOrDefault(c => c.FromCircuit is not null)?.FromCircuit;
+            ThermalFromCircuit = link is not null;
+            ThermalCircuitSchematic = link?.Schematic ?? "";
+            ThermalCircuitAnalysis = link?.Analysis ?? "";
+            ThermalCircuitInstance = link?.Instance ?? "";
+            ThermalCircuitCarry = link?.Carry is { } carry ? string.Join(", ", carry) : "";
+            foreach (var c in (t.Currents ?? []).Where(c => c.FromCircuit is null))
                 ThermalCurrents.Add(new ThermalCurrentRow
                 {
                     Port = c.Port?.ToString(CultureInfo.InvariantCulture) ?? "", Dc = c.Dc ?? "", EnterFace = c.EnterFace ?? "", LeaveFace = c.LeaveFace ?? "",
@@ -241,6 +309,7 @@ public sealed partial class EmSetupEditorViewModel
         OnPropertyChanged(nameof(ThermalSubmodelFromChoices));
         OnPropertyChanged(nameof(ThermalSubmodelRegionChoices));
         OnPropertyChanged(nameof(IsThermalSubmodel));
+        RefreshCircuitSurvey();
         RefreshThermalChecks();
     }
 
@@ -296,6 +365,9 @@ public sealed partial class EmSetupEditorViewModel
         // brief-em3d-77 — a row keeps what a later version wrote beside its port; brief-em3d-78 — or names an array, and states
         // harmonics, each Peak or Rms
         var currents = new List<CemThermalCurrent>();
+        // brief-em3d-79 — the circuit link is one entry, first, keeping what a later version wrote beside it
+        if (ThermalFromCircuit)
+            currents.Add(new CemThermalCurrent { FromCircuit = CircuitLink(), More = t.Currents?.FirstOrDefault(c => c.FromCircuit is not null)?.More });
         foreach (var r in ThermalCurrents)
         {
             string? array = Blank(r.Array);
@@ -320,7 +392,7 @@ public sealed partial class EmSetupEditorViewModel
             {
                 Port = port, Array = array, Dc = Blank(r.Dc), EnterFace = Blank(r.EnterFace), LeaveFace = Blank(r.LeaveFace),
                 F0 = Blank(r.F0), Harmonics = harmonics.Count > 0 ? harmonics : null,
-                More = t.Currents?.FirstOrDefault(c => c.Port == port && c.Array == array)?.More,
+                More = t.Currents?.FirstOrDefault(c => c.FromCircuit is null && c.Port == port && c.Array == array)?.More,
             };
             currents.Add(current);
             r.DcEquivalent = DcEquivalentText(current);
@@ -374,6 +446,7 @@ public sealed partial class EmSetupEditorViewModel
             : null;
         Working.Thermal = t;
         CommitEdit(before, "Change the thermal setup");
+        RefreshCircuitSurvey();
         RefreshThermalChecks();
     }
 
@@ -442,6 +515,9 @@ public sealed partial class EmSetupEditorViewModel
     partial void OnThermalSigmaOfTChanged(bool value) => CommitThermal();
     partial void OnThermalSubmodelFromChanged(string value) { OnPropertyChanged(nameof(IsThermalSubmodel)); CommitThermal(); }
     partial void OnThermalSubmodelRegionChanged(string value) => CommitThermal();
+    partial void OnThermalFromCircuitChanged(bool value) => CommitThermal();
+    partial void OnThermalCircuitAnalysisChanged(string value) => CommitThermal();
+    partial void OnThermalCircuitInstanceChanged(string value) => CommitThermal();
 
     /// <summary>R-em3d75-3 — the measures, parsed as they are typed: each error beside the list, nothing written.</summary>
     partial void OnThermalMeasuresTextChanged(string value)

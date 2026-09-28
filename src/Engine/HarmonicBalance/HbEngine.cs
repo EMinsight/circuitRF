@@ -726,6 +726,27 @@ public sealed class HbEngine
             probeCurrents[ec.InstancePath] = spec;
         }
 
+        // brief-em3d-79 R-em3d79-2a — the pin currents of a LINEAR instance a caller asked for, appended to the I cube
+        // after the device ports. Opt-in (AnalysisSettings.HbPinCurrents, empty by default), so every other run's I
+        // cube is unchanged. An S-parameter block stamps one branch per pin (SnpModel), carrying the current INTO the
+        // pin from the circuit; the back-solve reads it exactly as it reads an IProbe's.
+        foreach (string path in _settings.HbPinCurrents)
+        {
+            if (_netlist.Components.FirstOrDefault(c => c.InstancePath == path)?.Model is not SnpModel snp) continue;
+            for (int pin = 0; pin < snp.PortCount; pin++)
+            {
+                int row = snp.PortBranchIndices[pin];
+                if (row < 0) continue;
+                var spec = new Complex[K + 1];
+                for (int k = 0; k <= K; k++)
+                {
+                    var x = backSolver.GetSolution(k, 0);
+                    spec[k] = row < x.Length ? x[row] : Complex.Zero;
+                }
+                portCurrentsByBranch[$"{path}:{pin + 1}"] = [spec];
+            }
+        }
+
         // Operating-point read-back, at the converged spectrum and nowhere else. One evaluation per
         // reporting external device over the whole time grid, so a model's own quantities come back
         // as waveforms on the same harmonic axis V and INl already use. Empty — and free — for a

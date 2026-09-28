@@ -62,8 +62,11 @@ public static partial class ThermalRunService
 
     /// <summary>Runs thermal setup <paramref name="setup"/> (as <see cref="C3dSetups.ForRun"/> names it) over
     /// <paramref name="document"/>. <c>setup.SnpOutputPathOverride</c>, when set, is where the DataSet goes (<c>-o</c>).</summary>
+    /// <param name="circuitSets">brief-em3d-79 — <c>--set var=expr</c> for a setup driven from a circuit: applied to the
+    /// circuit's globals before it is elaborated, as a run verb applies it.</param>
     public static EmRunResult Run(EmSetup setup, C3dDocument document, string documentPath, string? workspaceCws, string resultsRoot,
-                                  CancellationToken ct = default, RunControl? control = null)
+                                  CancellationToken ct = default, RunControl? control = null,
+                                  IReadOnlyList<(string Name, string Expr)>? circuitSets = null)
     {
         ArgumentNullException.ThrowIfNull(setup);
         ArgumentNullException.ThrowIfNull(document);
@@ -101,6 +104,23 @@ public static partial class ThermalRunService
             notes.Add($"Solver: circuitRF thermal (steady conduction, second-order tetrahedra by default); mesher: Gmsh " +
                       $"{gmsh.Installation!.DescribeVersion()} at {gmsh.Installation.Path}.");
 
+            // ── brief-em3d-79: a setup driven from a circuit runs the circuit's HB first; its pins' currents become the ports' ──
+            ThermalCircuitDrive? circuit = null;
+            var link0 = (t.Currents ?? []).FirstOrDefault(c => c.FromCircuit is not null)?.FromCircuit;
+            if (link0 is null && circuitSets is { Count: > 0 })
+                warnings.Add($"--set {string.Join(", ", circuitSets.Select(x => x.Name))} was not applied: it sets a global of the circuit a " +
+                             "thermal setup takes its currents from, and this setup takes none from a circuit.");
+            if (link0 is { } link)
+            {
+                control?.BeginStage("running the circuit's harmonic balance");
+                circuit = ThermalCircuitLink.Run(link, document, path, resultsRoot, circuitSets, control, out string? circuitWhy);
+                if (circuit is null) return Refuse(circuitWhy!);
+                if (!circuit.Converged.Any(c => c)) return Refuse($"The circuit's HB '{circuit.Analysis}' converged at no point, so no point has currents to solve.");
+                notes.AddRange(circuit.Notes);
+                notes.Add(CircuitNote(circuit));
+                t = circuit.Setup(t);
+            }
+
             // ── 3. lower and mesh, once ──
             var lowering = ThermalLowerings.Build(document, e, t, 1, out string? why);
             if (lowering is null) return Refuse(why!);
@@ -120,7 +140,8 @@ public static partial class ThermalRunService
 
             // ── the sweep ──
             var baseRes = e.Resolution!;
-            var axes = Axes(t, baseRes, out string? sweepError);
+            string? sweepError = null;
+            var axes = circuit is not null ? [.. circuit.Axes] : Axes(t, baseRes, out sweepError);
             if (axes is null) return Refuse(sweepError!);
 
             // ── brief-em3d-76 R-em3d76-3: a submodel's whole-model solution, and the points it carries ──
@@ -159,12 +180,15 @@ public static partial class ThermalRunService
                     return Refuse("A submodel carries no port currents in this version: run the currents in the whole-model setup.");
                 (ThermalProblem?, C3dResolution?, string?) ThermalAt(IReadOnlyList<(string Var, double Value)> point)
                 {
-                    var sets = point.Select(q => (q.Var, q.Value.ToString("R", CultureInfo.InvariantCulture))).ToList();
+                    // a circuit-driven point's names are the circuit's, bound by the point itself — none is the document's
+                    var sets = point.Where(q => !ThermalCircuitLink.IsReserved(q.Var))
+                                    .Select(q => (q.Var, q.Value.ToString("R", CultureInfo.InvariantCulture))).ToList();
                     var r = sets.Count == 0 ? baseRes : C3dResolver.Resolve(document, C3dCell.Of(path), null, sets);
                     var pr = Problem(t, document, lowering, conductivity, mesh, zero, r, out string? err);
                     return (pr, r, err);
                 }
-                et = Electro(lowering, e, t, mesh, ThermalAt, options, notes, points[0], out string? electroWhy);
+                var first = circuit is not null ? circuit.Point(Array.IndexOf(circuit.Converged, true)) : points[0];
+                et = Electro(lowering, e, t, mesh, ThermalAt, options, notes, first, out string? electroWhy, circuit is null ? null : circuit.Say);
                 if (et is null) return Refuse(electroWhy!);
                 if (et.System.Notes.Count > 0) notes.AddRange(et.System.Notes);
                 if (lowering.Wires.Count > 0)
@@ -184,11 +208,13 @@ public static partial class ThermalRunService
             var balances = new List<(double In, double Balance)>();
             double[]? previous = null;
             var summary = new List<string>();
+            var skipped = new bool[points.Count];
             for (int pi = 0; pi < points.Count; pi++)
             {
                 ct.ThrowIfCancellationRequested();
                 control?.BeginStage($"solving point {pi + 1} of {points.Count}");
-                var sets = points[pi].Select(p => (p.Var, p.Value.ToString("R", CultureInfo.InvariantCulture))).ToList();
+                // brief-em3d-79: the HB's sweep variables are the circuit's, never the document's — its scope is the base one
+                var sets = circuit is not null ? [] : points[pi].Select(p => (p.Var, p.Value.ToString("R", CultureInfo.InvariantCulture))).ToList();
                 var res = sets.Count == 0 ? baseRes : C3dResolver.Resolve(document, C3dCell.Of(path), null, sets);
                 ThermalField? globalField = global is null ? null : new ThermalField(global.Mesh, global.Temperatures[pi]);
                 var problem = Problem(t, document, lowering, conductivity, mesh, zero, res, out string? valueError, globalField);
@@ -197,9 +223,17 @@ public static partial class ThermalRunService
                     return Refuse(At(axes, points[pi]) + mismatch);
                 ThermalSolution sol;
                 ElectroPoint? ep = null;
-                if (et is not null)
+                if (circuit is not null && !circuit.Converged[pi])
                 {
-                    try { ep = et.Solve(points[pi], pi, axes.Count > 0 ? axes[^1].Values.Length : 0); }
+                    // R-em3d79-3 — a point the HB did not converge at is skipped, and its neighbours still solve
+                    skipped[pi] = true;
+                    ep = et?.Skip();
+                    sol = ep?.Thermal ?? NanSolution(mesh);
+                    runaway.Add(false);
+                }
+                else if (et is not null)
+                {
+                    try { ep = et.Solve(circuit is not null ? circuit.Point(pi) : points[pi], pi, axes.Count > 0 ? axes[^1].Values.Length : 0); }
                     catch (ElectrothermalException x) { return Refuse(At(axes, points[pi]) + x.Message); }
                     catch (InvalidOperationException x) { return Stop(EmRunStatus.EngineError, EmDiagnostics.SolveFailed(At(axes, points[pi]) + x.Message)); }
                     if (ep.Failure is not null)
@@ -208,7 +242,7 @@ public static partial class ThermalRunService
                     runaway.Add(ep.Runaway);
                 }
                 else sol = ThermalSolver.Solve(problem, options with { InitialGuess = previous }, assembly);
-                previous = sol.Temperature;
+                if (!skipped[pi]) previous = sol.Temperature;
                 fields.Add(sol.Temperature);
                 balances.Add((sol.SourcePowerW, sol.BalanceRelative));
                 var field = new ThermalField(mesh, sol.Temperature);
@@ -225,6 +259,11 @@ public static partial class ThermalRunService
                 }
 
                 string where = points.Count > 1 ? At(axes, points[pi]) : "";
+                if (skipped[pi])
+                {
+                    summary.Add($"{where}{HbNotConverged}: the circuit's HB did not converge at this point, so it was skipped.");
+                    continue;
+                }
                 if (ep is { Runaway: true })
                 {
                     summary.Add($"{where}no steady state (thermal runaway): the point has no temperature.");
@@ -243,6 +282,9 @@ public static partial class ThermalRunService
             }
             notes.AddRange(summary.Count <= 12 ? summary : [.. summary.Take(6), $"… and {summary.Count - 6} more line(s) in the result's Notes."]);
             if (et?.RunawayLine is { } runawayLine) warnings.Add(runawayLine);
+            if (skipped.Count(x => x) is var nskip and > 0)
+                warnings.Add($"The circuit's HB did not converge at {nskip} of {points.Count} point(s) ({string.Join("; ", Enumerable.Range(0, points.Count).Where(i => skipped[i]).Select(i => At(axes, points[i]).TrimEnd(':', ' ')))}): " +
+                             $"{(nskip == 1 ? "it was" : "they were")} skipped ({HbNotConverged}), and the points either side still solved.");
 
             // ── limits (D11) ──
             foreach (var p in probes)
@@ -263,9 +305,24 @@ public static partial class ThermalRunService
                                                 options, control, ct, global is null ? null : new ThermalField(global.Mesh, global.Temperatures[0])));
             }
 
+            // ── brief-em3d-79 R-em3d79-3a: where in the HB's sweep each limit is first crossed ──
+            List<(string Name, DataCube Cube)>? crossings = null;
+            if (circuit is not null)
+            {
+                crossings = LimitCrossings(probes, reads, axes, circuit, out var sentences);
+                notes.AddRange(sentences);
+                summary.AddRange(sentences);
+            }
+
             // ── 5. the result ──
             var data = Build(axes, probes, reads, measures, balances, t, summary);
             if (et is not null) AddElectro(data, axes, et, lowering, runaway);
+            if (circuit is not null)
+            {
+                AddCircuit(data, axes, circuit, skipped, crossings!);
+                try { ThermalCircuitLink.WriteStamp(runDir, circuit); }
+                catch (Exception x) when (x is IOException or UnauthorizedAccessException) { errors.Add($"The circuit's stamp could not be written: {x.Message}"); }
+            }
             if (cutChecks.Count == points.Count && cutChecks.Count > 0)
             {
                 data.AddToGroup(Group, "Submodel:cut_W", Cube(axes, cutChecks.Select(c => c.SubmodelW), "W"));

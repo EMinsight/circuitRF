@@ -37,8 +37,10 @@ public sealed record C3dProbeTableRow(string Name, string Unit, string Value, IR
     public string AllPoints => string.Join("   ", PerPoint);
 }
 
-/// <summary>R-em3d75-4d — a line of temperature: a line probe's, or Temperature Along's.</summary>
-public sealed record C3dThermalLine(string Title, double[] DistanceM, double[] ValuesC)
+/// <summary>R-em3d75-4d — a line of temperature: a line probe's, or Temperature Along's. brief-em3d-79: or a probe row against the
+/// sweep, or against a carried circuit cube — then <see cref="XLabel"/> names the x axis, and the x values are plotted as they are
+/// (a distance is metres, drawn in µm).</summary>
+public sealed record C3dThermalLine(string Title, double[] DistanceM, double[] ValuesC, string? XLabel = null, string YLabel = "T (°C)")
 {
     public double FromC => ValuesC.FirstOrDefault(double.IsFinite, double.NaN);
     public double ToC => ValuesC.LastOrDefault(double.IsFinite, double.NaN);
@@ -514,7 +516,7 @@ public sealed partial class C3dEditorViewModel
 
     /// <summary>The line panel's readout: distance, both ends and their difference.</summary>
     public string ThermalLineText => ThermalLine is { } l
-        ? $"{l.Title}: {Viewer.FormatLength(l.LengthM)} long; {C(l.FromC)} → {C(l.ToC)}, ΔT = {C(l.DeltaC)}"
+        ? l.XLabel is null ? $"{l.Title}: {Viewer.FormatLength(l.LengthM)} long; {C(l.FromC)} → {C(l.ToC)}, ΔT = {C(l.DeltaC)}" : l.Title
         : "";
 
     public bool HasThermalLine => ThermalLine is not null;
@@ -571,6 +573,43 @@ public sealed partial class C3dEditorViewModel
     /// <summary>The table's heading: the step shown, and how many probes crossed their limit.</summary>
     [ObservableProperty] private string _probeTableHeading = "";
 
+    /// <summary>brief-em3d-79 R-em3d79-4 — what a row is plotted against: the sweep's variable (the innermost axis), or a circuit
+    /// cube the run carried (Pout, PAE, a pin current).</summary>
+    [ObservableProperty] private IReadOnlyList<string> _probeTableXChoices = [];
+    [ObservableProperty] private string? _probeTableX;
+
+    public bool HasProbeTableX => ProbeTableXChoices.Count > 0;
+
+    partial void OnProbeTableXChoicesChanged(IReadOnlyList<string> value) => OnPropertyChanged(nameof(HasProbeTableX));
+
+    /// <summary>R-em3d79-4 — row <paramref name="name"/> against <see cref="ProbeTableX"/>, over the sweep row holding the step
+    /// shown, into the line panel. Null on success, else why not.</summary>
+    public string? PlotProbeRow(string name)
+    {
+        if (Viewer.ThermalTable is not { } t) return "No thermal result: run the active thermal setup.";
+        if (t.Axes.Count == 0) return "The run has one point: there is nothing to plot it against.";
+        if (t.Rows.FirstOrDefault(r => r.Name == name) is not { } row) return $"The result has no row '{name}'.";
+        var inner = t.Axes[^1];
+        int n = inner.Length, start = Math.Clamp(Viewer.TemperatureStep, 0, Math.Max(0, t.Points - 1)) / n * n;
+        string xName = ProbeTableX ?? inner.Name;
+        double[] x;
+        string xLabel;
+        if (xName == inner.Name) { x = inner.Values; xLabel = inner.Name + (inner.Unit is { Length: > 0 } u ? $" ({u})" : ""); }
+        else if (t.Circuit.FirstOrDefault(c => c.Name == xName) is { } c)
+        {
+            x = c.Values.AsSpan(start, n).ToArray();
+            xLabel = c.Name + (c.Unit is { Length: > 0 } cu && cu != "1" ? $" ({cu})" : "");
+        }
+        else return $"The result has no '{xName}' to plot against.";
+        var y = row.Values.AsSpan(start, n).ToArray();
+        string where = t.Axes.Count > 1 ? $" ({t.PointLabel(start).Split(", ")[0]})" : "";
+        ThermalLine = new C3dThermalLine($"{name} against {xName}{where}", x, y, xLabel, row.Name + (row.Unit is { Length: > 0 } ru && ru != "1" ? $" ({ru})" : ""));
+        return null;
+    }
+
+    [RelayCommand]
+    private void PlotProbeTableRow(string? name) { if (name is not null) StatusMessage = PlotProbeRow(name) ?? StatusMessage; }
+
     partial void OnProbeTableAllPointsChanged(bool value) => RefreshProbeTable();
     partial void OnProbeTableOpenChanged(bool value) { if (value) RefreshProbeTable(); }
 
@@ -587,6 +626,10 @@ public sealed partial class C3dEditorViewModel
             return;
         }
         int step = Math.Clamp(Viewer.TemperatureStep, 0, Math.Max(0, t.Points - 1));
+        // R-em3d79-4 — the x axis: the sweep variable, then each circuit cube the run carried
+        List<string> xs = t.Axes.Count > 0 ? [t.Axes[^1].Name, .. t.Circuit.Select(c => c.Name)] : [];
+        if (!xs.SequenceEqual(ProbeTableXChoices)) ProbeTableXChoices = xs;
+        if (ProbeTableX is null || !xs.Contains(ProbeTableX)) ProbeTableX = xs.FirstOrDefault();
         static string V(double v, string unit) => double.IsFinite(v) ? v.ToString("G6", CultureInfo.InvariantCulture) + (unit.Length > 0 && unit != "1" ? " " + unit : "") : "—";
         foreach (var r in t.Rows)
         {
@@ -946,8 +989,12 @@ public static class ThermalPlots
             CustomXLabelOn = true, CustomXLabel = "Distance (µm)",
             CustomYLabelOn = true, CustomYLabel = "T (°C)",
         };
-        var keep = Enumerable.Range(0, line.DistanceM.Length).Where(i => double.IsFinite(line.ValuesC[i])).ToList();
-        double[] x = [.. keep.Select(i => line.DistanceM[i] * 1e6)], y = [.. keep.Select(i => line.ValuesC[i])];
+        // brief-em3d-79: a probe row against the sweep (or a carried cube) names its own axes and plots x as it is
+        if (line.XLabel is not null) { plot.CustomXLabel = line.XLabel; plot.CustomYLabel = line.YLabel; }
+        double xScale = line.XLabel is null ? 1e6 : 1;
+        var keep = Enumerable.Range(0, line.DistanceM.Length).Where(i => double.IsFinite(line.ValuesC[i]) && double.IsFinite(line.DistanceM[i]))
+                             .OrderBy(i => line.DistanceM[i]).ToList();
+        double[] x = [.. keep.Select(i => line.DistanceM[i] * xScale)], y = [.. keep.Select(i => line.ValuesC[i])];
         if (x.Length < 2) return plot;
         var t = new CircuitRF.Render.DataDisplay.Trace(new RfCore.SNP([1e9], 1), RfCore.MatrixType.S, 0, 0, CircuitRF.Render.DataDisplay.DependentVarFormat.Real);
         t.Properties.LineColorStorage = new SkiaSharp.SKColor(230, 90, 40);

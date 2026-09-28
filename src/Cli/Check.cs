@@ -3,6 +3,7 @@ using CircuitRF.Core.Design;
 using CircuitRF.Core.Elaboration;
 using CircuitRF.Core.Netlist;
 using CircuitRF.Design.Cells;
+using CircuitRF.Design.Circuit;
 using CircuitRF.Design.Layout;
 using CircuitRF.Design.Layout.Assembly;
 using CircuitRF.Design.Layout.Drc;

@@ -2657,3 +2657,17 @@ lines (`KernelLines`). Gates: `tests/Engine.Tests/Em3d/Em3dFidelityTests.cs` (5 
   away from the metal its neighbour runs back over (read from the neighbour's box and the face's winding); a concave
   edge keeps only its face line, as `bordersMetal` does for an outline. The local cell is `MaxCellAt` and 3/5 of the
   neighbour face's extent across the edge; the gap clamp to separate metal is not applied to a kernel solid.
+
+## brief-em3d-79 — pin currents of an S-parameter block in HB (2026-09-28)
+
+**They were not in the `I` cube, and now are only on request.** HB's `I` rows are IProbes (back-solved) and the terminals of
+NONLINEAR devices (`ComputeDevicePortCurrents`); an `SnP` is linear and never appeared. `AnalysisSettings.HbPinCurrents` (empty
+by default) names instances whose pins a single-tone run appends as `<path>:<pin>` — read from the back-solver's solution at
+`SnpModel.PortBranchIndices[p]`, the branch the block stamps per pin (current INTO the pin from the circuit), exactly as an
+IProbe's branch is read. Nothing else asks, so no other result moved: of `Engine.Tests`' HarmonicBalance, Hero and
+golden-file tests, 417 of 418 passed unmodified; the one failure was a load-dependent `CnlReader` race
+(`HbDirectiveTests.Hero5_ParsesNumFreqs2_AndToneExprs` — a concurrent collection write while parsing), which passes alone. Multi-tone runs do not honour the list.
+
+**HB phasors are PEAK.** `HbFft`'s frozen convention (X[k] = raw[k]/(N/2)) gives a cosine of amplitude A the phasor magnitude A;
+`ThermalCircuitLinkTests.Gate1` pins it by inverting a pin's spectrum on a fine grid and reading the waveform's maximum. A
+purely linear circuit (no nonlinear device, N = 0 interface nodes) runs and converges in HB, which is what that gate uses.

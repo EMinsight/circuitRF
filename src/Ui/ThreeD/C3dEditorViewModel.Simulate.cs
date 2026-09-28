@@ -322,7 +322,9 @@ public sealed partial class C3dEditorViewModel
             IsReadOnly = item.IsExternal,
         };
         // brief-em3d-75 R-em3d75-3 — the thermal page reads this document's heat sources, probes and variables.
-        if (!item.IsExternal) vm.ThermalContext = new EmThermalContext(() => Document, () => Resolution, () => Elaboration);
+        // brief-em3d-79: and its path and results folder, which a circuit link resolves against
+        if (!item.IsExternal)
+            vm.ThermalContext = new EmThermalContext(() => Document, () => Resolution, () => Elaboration, () => FilePath, () => ResultsRootProvider?.Invoke());
         if (!item.IsExternal)
         {
             string name = item.Name;
@@ -1066,6 +1068,10 @@ public sealed partial class C3dEditorViewModel
                        "geometry that run solved.";
             break;
         }
+        // brief-em3d-79 R-em3d79-3b — a thermal result driven from a circuit is stale when the circuit (as extracted) or the
+        // S-parameter file it used no longer hashes as it did. Each file is re-hashed only when it changes on disk.
+        if (text is null && ActiveRunSetup is { IsThermal: true } thermal && ResultsRootProvider?.Invoke() is { } resultsRoot)
+            text = CircuitRF.Design.Thermal.ThermalCircuitLink.Staleness(CircuitRF.Design.Thermal.ThermalRunService.RunDirectory(resultsRoot, thermal));
         FieldsStaleText = text;
     }
 }

@@ -14730,3 +14730,42 @@ which is re-read through `Em3dWireSource.ForLayout` from the instance's `.clay` 
 (from EnterFace, or the EM port's positive object); asking for a negative face it does not use would refuse setups that are
 fine. A port with both keeps brief 77's contacts. `CemThermalCurrent.Port` became `int?` for the Array form; `Harmonics[].As`
 is a nullable enum so a missing statement is visible to `check` rather than defaulting to Peak.
+
+## brief-em3d-79 — a thermal setup driven from a circuit's HB power sweep (2026-09-28)
+
+**The `hb` verb's run moved here rather than being copied.** `HbCircuitRun` (`src/Design/Circuit`) is the dispatch (at the
+SWEEP when a `parametric_sweep` wraps the HB), the measurement evaluation and the merge the verb used to do inline, and
+`ChainSelector` moved beside it from `src/Cli` — the thermal link must promote a named inner analysis exactly as `hb` does,
+and `src/Design` cannot reference `src/Cli`. The verb keeps its printing between the two halves (`Solve`, then `Measure`), so
+its stderr is unchanged; `SolverSettingsFrom` is `HbCircuitRun.Settings` now, which is where the pin-current opt-in rides.
+
+**The link hands the thermal run an ordinary brief-78 setup.** `ThermalCircuitDrive.Setup` writes one current per pin whose
+`Dc`, `F0` and each harmonic's `Amp` are names in a reserved `circuit:` space (a colon is never a document identifier), and
+`ThermalCircuitDrive.Point(i)` binds them per HB point — the electrothermal problem builder resolves a reserved name from the
+point before the document's scope. So the array share, both-ends driving and conductive balance are brief 77/78's untouched,
+and the continuation between two HB points interpolates the currents themselves (the point vector also carries the sweep
+coordinates, which is how a runaway is placed "above about Iamp ≈ 1.2" rather than in amperes). A pin whose DC is zero at every
+point gets no Dc, so a purely RF link needs no negative contact face — the brief-78 harmonics-only rule.
+
+**The instance is found by its Touchstone PATH**, against every EM setup's predictable result path (`ResolveSnpBasePath` of
+`C3dSetups.ForRun`); `SnpModel.FilePath` was made public for it. The embedded setup's run name is "`<stem> <setup>`", so the
+path has a space in it: a `.cnl` must quote it (`File="…/Thru EM.s2p"`), which the reader supports.
+
+**A multi-tone HB is refused**, not approximated: its mixing products are not harmonics of one F0, and brief 78's RF heat is per
+harmonic number. **A non-converged HB point is skipped** — NaN everywhere, `circuit.HbSkipped` = 1, `hb-not-converged` in the
+notes — and the continuation carries on from the last point that solved. The run refuses only when NO point converged.
+
+**`LimitAt:<probe>` interpolates Tmax linearly between the bracketing points** on the innermost axis (one value per row of the
+outer axes), and every carried real scalar at the same fraction; a limit already exceeded at the first point is said so rather
+than extrapolated. Only a circuit-driven run writes these (a plain thermal run keeps brief 74's `Limit:` flags alone).
+
+**Staleness is by content hash**, not time: `circuit.json` in the run directory records SHA-256 of the circuit AS EXTRACTED (for
+a `.csch`, the `.cnl` text its Simulate would run) and of the S-parameter file. The editor asks on every edit, so each file is re-hashed only when its time or size moves.
+
+**Found on the way, fixed:** brief 53 (`4ba901be`) inserted `case DocumentKind.Technology` into the middle of `Explain`'s
+`Netlist/Schematic/Cell → workspace walk` fall-through, so `explain` on every `.cnl`, `.csch` and cell read it as a `.ctech`
+("';' is an invalid start of a value") and exited 1 — `WsProbeMarginCliTests` and one `CliStructuredOutputTests` row were red at
+HEAD for it. The circuit kinds fall through to the workspace walk again.
+
+**Not done:** `explain --ref` resolves CELL references, and the link's schematic is a file path relative to the `.c3d`; so the
+link is reported by `explain x.c3d --analysis <setup>` (resolved path, chain, instance, port ↔ pin ↔ net) rather than by `--ref`.

@@ -37,6 +37,10 @@ public sealed class SnpModel : ComponentModel
     /// </summary>
     public int[] PortBranchIndices { get; private set; }
 
+    /// <summary>The Touchstone file this block reads, as the factory resolved it (absolute; blank when none was set).
+    /// brief-em3d-79 reads it to find the instance whose model is a 3D view's EM result.</summary>
+    public string FilePath => _filePath;
+
     public SnpModel(
         int                  portCount,
         string               absoluteFilePath,

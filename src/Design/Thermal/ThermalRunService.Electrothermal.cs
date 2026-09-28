@@ -42,6 +42,9 @@ public static partial class ThermalRunService
         public required ThermalMesh Mesh { get; init; }
         public required IReadOnlyList<ThermalWirePlan> Wires { get; init; }
         public required ThermalRfPlan Rf { get; init; }
+        /// <summary>brief-em3d-79 — a circuit-driven run's sweep coordinates of a drive vector (<c>Pin ≈ 31.2 dBm</c>), so a
+        /// runaway is placed in the sweep's own unit rather than in amperes; null otherwise.</summary>
+        public Func<IReadOnlyList<(string Var, double Value)>, string>? Say { get; init; }
         /// <summary>brief-em3d-78 — per point, per wire, each harmonic's peak current in the wire (the plan's labels' order).</summary>
         public readonly List<double[][]> RfPeaks = [];
         public ElectrothermalSolution? Last;
@@ -98,6 +101,15 @@ public static partial class ThermalRunService
             return Record(point, index, r, false, null);
         }
 
+        /// <summary>brief-em3d-79 R-em3d79-3 — a point the circuit's HB did not converge at: no solve, NaN everywhere, and the
+        /// continuation carries on from the last point that did solve.</summary>
+        public ElectroPoint Skip()
+        {
+            RfPeaks.Add([.. Rf.WireLabels.Select(l => Enumerable.Repeat(double.NaN, l.Length).ToArray())]);
+            Solutions.Add(null);
+            return new ElectroPoint(NanSolution(Mesh), null, false, null);
+        }
+
         private string? _runaway;
 
         /// <summary>The first runaway's sentence, once.</summary>
@@ -118,22 +130,36 @@ public static partial class ThermalRunService
                         : p.Wires.SelectMany(w => w.Harmonics).Select(h => h.PeakA).DefaultIfEmpty(double.NaN).Max();
                 }
                 int hot = Enumerable.Range(0, lc.WireTemperature.Length).DefaultIfEmpty(-1).MaxBy(w => w < 0 ? 0 : lc.WireTemperature[w].Max());
-                RunawayLine = RunawaySentence(I(r.FailedAt), I(r.ConvergedAt), hot >= 0 ? Wires[hot].Name : "(none)",
-                                              hot >= 0 ? lc.WireTemperature[hot].Max() : lc.Thermal.Temperature.Max());
+                string wire = hot >= 0 ? Wires[hot].Name : "(none)";
+                double tempC = hot >= 0 ? lc.WireTemperature[hot].Max() : lc.Thermal.Temperature.Max();
+                // brief-em3d-79: a circuit-driven run between two of its points says where in the HB's sweep, as brief 77 says it
+                if (Say is not null && LastPoint is not null)
+                {
+                    List<(string, double)> Along(double l) => [.. point.Select((q, k) => (q.Var, from[k].Value + l * (q.Value - from[k].Value)))];
+                    RunawayLine = string.Create(CultureInfo.InvariantCulture,
+                        $"No steady state above about {Say(Along(r.FailedAt))}: thermal runaway. The last converged point is {Say(Along(r.ConvergedAt))} " +
+                        $"(wire {wire} at {tempC:F0} °C).");
+                }
+                else RunawayLine = RunawaySentence(I(r.FailedAt), I(r.ConvergedAt), wire, tempC);
             }
             var sol = runaway || failure is not null ? null : r?.Solution;
             Solutions.Add(sol);
             if (sol is not null) return new ElectroPoint(sol.Thermal, sol, false, null);
-            var nan = new double[Mesh.NodeCount];
-            Array.Fill(nan, double.NaN);
-            var empty = new ThermalSolution
-            {
-                Temperature = nan, Unknowns = 0, Solver = ThermalSolverKind.Auto, LinearIterations = 0, LinearResidual = 0, Converged = false,
-                SourcePowerW = double.NaN, FixedHeatOutW = double.NaN, ConvectionHeatOutW = double.NaN, FixedHeatOutByTag = new Dictionary<int, double>(),
-                BalanceRelative = 0, AmgLevels = 0, Notes = [],
-            };
-            return new ElectroPoint(empty, null, runaway, failure);
+            return new ElectroPoint(NanSolution(Mesh), null, runaway, failure);
         }
+    }
+
+    /// <summary>A point with no temperature (a runaway, or a circuit point skipped): NaN at every node.</summary>
+    private static ThermalSolution NanSolution(ThermalMesh mesh)
+    {
+        var nan = new double[mesh.NodeCount];
+        Array.Fill(nan, double.NaN);
+        return new ThermalSolution
+        {
+            Temperature = nan, Unknowns = 0, Solver = ThermalSolverKind.Auto, LinearIterations = 0, LinearResidual = 0, Converged = false,
+            SourcePowerW = double.NaN, FixedHeatOutW = double.NaN, ConvectionHeatOutW = double.NaN, FixedHeatOutByTag = new Dictionary<int, double>(),
+            BalanceRelative = 0, AmgLevels = 0, Notes = [],
+        };
     }
 
     /// <summary>
@@ -144,7 +170,7 @@ public static partial class ThermalRunService
     private static ElectroRun? Electro(ThermalLowering lowering, C3dElaboration e, CemThermal t, ThermalMesh mesh,
                                        Func<IReadOnlyList<(string Var, double Value)>, (ThermalProblem? Problem, C3dResolution? Res, string? Error)> thermal,
                                        ThermalSolveOptions options, List<string> notes, IReadOnlyList<(string Var, double Value)> first,
-                                       out string? refusal)
+                                       out string? refusal, Func<IReadOnlyList<(string Var, double Value)>, string>? say = null)
     {
         refusal = null;
         bool currents = lowering.PortContacts.Count > 0;
@@ -195,9 +221,14 @@ public static partial class ThermalRunService
         {
             var (tp, res, error) = thermal(point);
             string? bad = tp is null || res is null ? error ?? "the point does not resolve." : null;
+            // brief-em3d-79 — a circuit-driven run's currents are names in the reserved space, bound by the point itself
+            Dictionary<string, double>? drive = null;
+            foreach (var q in point)
+                if (ThermalCircuitLink.IsReserved(q.Var)) (drive ??= new(StringComparer.Ordinal))[q.Var] = q.Value;
             double Opt(string? text, string what)
             {
                 if (bad is not null || string.IsNullOrWhiteSpace(text)) return double.NaN;
+                if (drive is not null && drive.TryGetValue(text.Trim(), out double bound)) return bound;
                 double v = C3dThermal.Evaluate(res!, text, out string? err) ?? double.NaN;
                 if (err is not null || !double.IsFinite(v)) bad = $"{what} '{text}' does not resolve{(err is null ? "" : ": " + err)}.";
                 return v;
@@ -266,7 +297,7 @@ public static partial class ThermalRunService
                 ThermalMaterials.For(e, lowering.Regions[r].Solid, lowering.Regions[r].Material)?.Material.Epsr ?? 1).DefaultIfEmpty(1).Max()).ToList();
             notes.AddRange(ThermalRfPlan.ElectricallyLong(lowering.Wires, [.. p1.Wires.Select(w => w.Harmonics)], epsr));
         }
-        return new ElectroRun { System = system, At = At, Options = options, Mesh = mesh, Wires = lowering.Wires, Rf = rf };
+        return new ElectroRun { System = system, At = At, Options = options, Mesh = mesh, Wires = lowering.Wires, Rf = rf, Say = say };
     }
 
     private static ElectricalConductivity Conductivity(TechMaterial m, double at20)

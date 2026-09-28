@@ -523,7 +523,8 @@ public static class EmRunService
         RunControl?        control = null,
         int?               maxCores = null,
         Func<string, bool>? confirmMemory = null,
-        bool               fromCem = false)
+        bool               fromCem = false,
+        IReadOnlyList<(string Name, string Expr)>? circuitSets = null)
     {
         if (control is { Token: var t } && t.CanBeCanceled) ct = t;
         // brief-em3d-73 R-em3d73-5a — a thermal setup is never run as an EM one: from a .cem it is refused outright (D1).
@@ -531,7 +532,7 @@ public static class EmRunService
         if (setup.IsThermal)
         {
             if (!fromCem)
-                return CircuitRF.Design.Thermal.ThermalRunService.Run(setup, document, documentPath, workspaceCws, resultsRoot, ct, control);
+                return CircuitRF.Design.Thermal.ThermalRunService.Run(setup, document, documentPath, workspaceCws, resultsRoot, ct, control, circuitSets);
             var d = EmDiagnostics.Forwarded("thermal", CircuitRF.Design.ThreeD.C3dThermal.CemRefusal);
             return new EmRunResult(EmRunStatus.Refused, null, null, null, null, null, d.Render(), [], Diagnostic: d);
         }

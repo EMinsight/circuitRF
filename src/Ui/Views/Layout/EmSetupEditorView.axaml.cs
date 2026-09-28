@@ -165,6 +165,22 @@ public partial class EmSetupEditorView : UserControl
             doc.ViewModel.SetLayoutRef(path);
     }
 
+    /// <summary>brief-em3d-79 R-em3d79-4 — Currents ▸ From circuit…: the schematic (or netlist) whose HB drives the ports.</summary>
+    private async void OnBrowseCircuitClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not EmSetupDocument doc) return;
+        var top = TopLevel.GetTopLevel(this);
+        if (top?.StorageProvider is not { } sp) return;
+        var files = await sp.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title         = "Choose the circuit whose harmonic balance drives the ports",
+            AllowMultiple = false,
+            FileTypeFilter = [new FilePickerFileType("Schematic or netlist") { Patterns = ["*.csch", "*.cnl"] }],
+        });
+        if (files.Count > 0 && files[0].TryGetLocalPath() is { Length: > 0 } path)
+            doc.ViewModel.SetCircuitSchematic(path);
+    }
+
     private void OnFieldLostFocus(object? sender, RoutedEventArgs e) => CommitField(sender);
 
     // brief-em3d-75 R-em3d75-3 — the thermal page: text commits on Enter or lost focus, a picker when it changes.

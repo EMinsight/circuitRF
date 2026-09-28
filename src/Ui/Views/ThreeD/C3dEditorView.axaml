@@ -508,6 +508,12 @@
                 <DockPanel DockPanel.Dock="Top">
                     <ToggleButton DockPanel.Dock="Right" IsChecked="{Binding ViewModel.ProbeTableAllPoints}" Content="Every point" FontSize="11" Padding="4,1"
                                   ToolTip.Tip="A column per sweep point (⚠ where a probe reached its limit)"/>
+                    <!-- brief-em3d-79 R-em3d79-4: what ▶ plots a row against — the sweep variable, or a circuit cube the run carried -->
+                    <ComboBox DockPanel.Dock="Right" FontSize="11" Margin="0,0,6,0" MinWidth="90" ItemsSource="{Binding ViewModel.ProbeTableXChoices}"
+                              SelectedItem="{Binding ViewModel.ProbeTableX}" IsVisible="{Binding ViewModel.HasProbeTableX}"
+                              ToolTip.Tip="What ▶ plots a row against: the sweep's variable, or a cube the circuit's HB carried (wire temperature against Pout)"/>
+                    <TextBlock DockPanel.Dock="Right" FontSize="11" Margin="0,0,4,0" VerticalAlignment="Center" Text="against"
+                               IsVisible="{Binding ViewModel.HasProbeTableX}"/>
                     <SelectableTextBlock Text="{Binding ViewModel.ProbeTableHeading}" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center"/>
                 </DockPanel>
                 <ScrollViewer HorizontalScrollBarVisibility="Auto">
@@ -516,15 +522,19 @@
                             <DataTemplate DataType="t3:C3dProbeTableRow">
                                 <Grid Margin="0,1">
                                     <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
                                         <ColumnDefinition Width="Auto" SharedSizeGroup="ProbeName"/>
                                         <ColumnDefinition Width="Auto" SharedSizeGroup="ProbeValue"/>
                                         <ColumnDefinition Width="*"/>
                                     </Grid.ColumnDefinitions>
-                                    <SelectableTextBlock Grid.Column="0" Text="{Binding Name}" FontSize="11" Margin="0,0,12,0"
+                                    <Button Grid.Column="0" Content="▶" FontSize="9" Padding="3,0" Margin="0,0,6,0"
+                                            Command="{Binding $parent[ItemsControl].((t3:C3dEditorDocument)DataContext).ViewModel.PlotProbeTableRowCommand, FallbackValue={x:Null}}"
+                                            CommandParameter="{Binding Name}" ToolTip.Tip="Plot this row against the sweep (or the cube picked above)"/>
+                                    <SelectableTextBlock Grid.Column="1" Text="{Binding Name}" FontSize="11" Margin="0,0,12,0"
                                                          FontStyle="{Binding IsMeasure, Converter={x:Static t3:C3dProbeTableStyle.Italic}}"/>
-                                    <SelectableTextBlock Grid.Column="1" Text="{Binding Value}" FontSize="11" Margin="0,0,12,0"
+                                    <SelectableTextBlock Grid.Column="2" Text="{Binding Value}" FontSize="11" Margin="0,0,12,0"
                                                          Foreground="{Binding Crossed, Converter={x:Static t3:C3dProbeTableStyle.Flag}}"/>
-                                    <SelectableTextBlock Grid.Column="2" Text="{Binding AllPoints}" FontSize="11" Opacity="0.8"/>
+                                    <SelectableTextBlock Grid.Column="3" Text="{Binding AllPoints}" FontSize="11" Opacity="0.8"/>
                                 </Grid>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>

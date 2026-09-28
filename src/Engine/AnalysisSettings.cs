@@ -340,6 +340,21 @@ public sealed class AnalysisSettings
     /// </summary>
     public int WspCacheBudgetMB { get; init; } = 512;
 
+    // ── Pin currents of a linear instance (brief-em3d-79 R-em3d79-2a) ────────────
+
+    /// <summary>
+    /// The instances (elaborated paths, <c>X3</c> or <c>X1.X3</c>) whose PIN currents a single-tone
+    /// harmonic-balance run adds to its <c>I</c> cube, as rows <c>&lt;path&gt;:&lt;pin&gt;</c> (pin 1 …
+    /// N, the current INTO the pin from the circuit), recovered through the linear back-solver.
+    ///
+    /// <para><b>Opt-in, and empty by default</b>, so no existing result changes: HB already publishes
+    /// the terminal currents of every NONLINEAR device, but an S-parameter block is linear and was
+    /// never among them. Only the thermal run's circuit link asks (it needs the current each pin of
+    /// a 3D view's S-parameter result carries at every drive level). An instance this names that is
+    /// not an S-parameter block, or is not in the design, adds nothing.</para>
+    /// </summary>
+    public IReadOnlyList<string> HbPinCurrents { get; init; } = [];
+
     // ── The WSProbe stability-margin threshold (WSP-9 R-wsp9-3) ─────────────────
 
     /// <summary>

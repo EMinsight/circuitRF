@@ -33,6 +33,10 @@ public sealed class ThermalResultTable
     public required IReadOnlyList<ThermalResultLine> Lines { get; init; }
     public required IReadOnlyList<ThermalResultWire> Wires { get; init; }
 
+    /// <summary>brief-em3d-79 — a circuit-driven run's circuit cubes on the sweep's axes (the carried HB measures, the pin
+    /// currents used, F0): what a probe can be plotted AGAINST besides the sweep variable (wire temperature against Pout).</summary>
+    public IReadOnlyList<ThermalResultRow> Circuit { get; init; } = [];
+
     /// <summary>The run's .npy read into a table, or null with the reason.</summary>
     public static ThermalResultTable? Read(string npyPath, out string? error)
     {
@@ -90,7 +94,12 @@ public sealed class ThermalResultTable
                     ? name["Twire:".Length..^"(s)".Length] : name;
                 wires.Add(new ThermalResultWire(wire, s.Values, [.. Enumerable.Range(0, points).Select(p => v.AsSpan(p * n, n).ToArray())]));
             }
-        return new ThermalResultTable { Axes = axes, Points = points, Rows = rows, Lines = lines, Wires = wires };
+        var circuit = new List<ThermalResultRow>();
+        if (ds.ContainsGroup(ThermalRunService.CircuitGroup))
+            foreach (var (name, cube) in ds.CubesIn(ThermalRunService.CircuitGroup))
+                if (cube.DataKind == DataKind.Real && cube.Axes.Count == axes.Count && cube.Axes.Select((a, i) => a.Name == axes[i].Name && a.Length == axes[i].Length).All(x => x))
+                    circuit.Add(new ThermalResultRow(name, true, cube.Unit, cube.RealValues, null));
+        return new ThermalResultTable { Axes = axes, Points = points, Rows = rows, Lines = lines, Wires = wires, Circuit = circuit };
     }
 
     /// <summary>Point <paramref name="point"/>'s index along each axis (last axis fastest).</summary>

@@ -670,13 +670,41 @@ public sealed class CemThermalCurrent
     /// <summary>The face the current leaves through; omitted, inferred on the negative conductor as <see cref="EnterFace"/> is.</summary>
     public string? LeaveFace { get; set; }
 
+    /// <summary>brief-em3d-79 R-em3d79-1 — every port's currents from a circuit's harmonic-balance run instead: the pins of the
+    /// instance whose S-parameter model is this 3D view's EM result, at every point of the HB's sweep. An entry with this
+    /// states nothing else, and no other entry of the setup states a Dc or Harmonics.</summary>
+    public CemThermalFromCircuit? FromCircuit { get; set; }
+
     /// <summary>What a later version states here, carried as written.</summary>
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? More { get; set; }
 
-    /// <summary>What the entry names: <c>port 2</c> or <c>array 'D1'</c>.</summary>
+    /// <summary>What the entry names: <c>port 2</c>, <c>array 'D1'</c> or <c>the circuit 'pa.csch'</c>.</summary>
     [JsonIgnore]
-    public string Subject => Array is { } a ? $"array '{a}'" : $"port {Port}";
+    public string Subject => FromCircuit is { } fc ? $"the circuit '{fc.Schematic}'" : Array is { } a ? $"array '{a}'" : $"port {Port}";
+}
+
+/// <summary>
+/// brief-em3d-79 R-em3d79-1 — a thermal setup's link to a circuit: run <see cref="Analysis"/> of <see cref="Schematic"/> (a
+/// harmonic-balance analysis, or the <c>parametric_sweep</c> wrapping one — a named inner analysis is promoted to its wrapper,
+/// as the <c>hb</c> verb promotes it), and take the pin currents of <see cref="Instance"/> — the instance whose S-parameter
+/// model is this 3D view's EM result. <b>Port p is pin p.</b> The thermal run is solved at every point of the HB's sweep, on
+/// the HB's own axes. One way only: nothing goes back into the circuit.
+/// </summary>
+public sealed class CemThermalFromCircuit
+{
+    /// <summary>A <c>.csch</c> or <c>.cnl</c>, relative to the <c>.c3d</c>.</summary>
+    public string Schematic { get; set; } = "";
+
+    /// <summary>The HB analysis, or its <c>parametric_sweep</c> wrapper; omitted, the circuit's one HB chain.</summary>
+    public string? Analysis { get; set; }
+
+    /// <summary>The instance whose S-parameter model is this 3D view's EM result; omitted, the one such instance.</summary>
+    public string? Instance { get; set; }
+
+    /// <summary>HB cubes (measurements first, then the engine's) copied into the thermal result on the HB's axes; omitted,
+    /// every scalar measure of the HB testbench.</summary>
+    public List<string>? Carry { get; set; }
 }
 
 /// <summary>brief-em3d-78 R-em3d78-1 — how a harmonic's amplitude is stated. Internally every harmonic is a peak phasor.</summary>

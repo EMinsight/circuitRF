@@ -5,6 +5,7 @@ using CircuitRF.Core.Stability;
 using CircuitRF.Core.Expressions;
 using CircuitRF.Core.Netlist;
 using CircuitRF.Design.Cells;
+using CircuitRF.Design.Circuit;
 using CircuitRF.Design.Layout;
 using CircuitRF.Design.Layout.Em;
 using CircuitRF.Design.ThreeD;
@@ -168,11 +169,13 @@ internal static class Explain
             case DocumentKind.Layout:   ExplainLayout(path, walks); break;
             case DocumentKind.EmSetup:  exit |= ExplainEmSetup(path, walks, out em3d); break;
             case DocumentKind.ThreeD:   exit |= ExplainThreeD(path, walks, out em3d, sets); break;
+            case DocumentKind.Technology:      exit |= ExplainTechnology(path, walks); break;
+            case DocumentKind.MaterialLibrary: ExplainMaterialLibrary(path, walks); break;
+            // A circuit reports its workspace walk here; its analyses are --analysis's. (Brief 53 had put the technology case
+            // between these and the walk, so every .cnl, .csch and cell was read as a .ctech — "';' is an invalid start".)
             case DocumentKind.Netlist:
             case DocumentKind.Schematic:
             case DocumentKind.Cell:
-            case DocumentKind.Technology:      exit |= ExplainTechnology(path, walks); break;
-            case DocumentKind.MaterialLibrary: ExplainMaterialLibrary(path, walks); break;
             case DocumentKind.Workspace:
             case DocumentKind.Symbol:
             case DocumentKind.AssemblyRules:

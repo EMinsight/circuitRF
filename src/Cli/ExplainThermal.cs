@@ -56,6 +56,20 @@ internal static class ExplainThermal
             $"{sweep.Count} sweep axis(es), {(t.Measures ?? []).Count} measure(s); solved by circuitRF's thermal solver",
             "an embedded setup with Problem3D: Thermal; its places are the document's, its values the setup's"));
 
+        // ── brief-em3d-79 R-em3d79-1 — a circuit link, resolved as far as it goes with nothing run: the file, the chain, the
+        //    instance and port ↔ pin ↔ net. `em` resolves it exactly so (ThermalCircuitLink.Describe / Run share the rules). ──
+        if ((t.Currents ?? []).FirstOrDefault(c => c.FromCircuit is not null)?.FromCircuit is { } link)
+        {
+            string root = Path.Combine(DocumentKinds.AncestorCws(full) is { } cws ? Path.GetDirectoryName(cws)! : Path.GetDirectoryName(full)!, "results");
+            var s = CircuitRF.Design.Thermal.ThermalCircuitLink.Describe(link, doc, full, root);
+            string answer = s.Problem is { } why ? $"does not resolve: {why}"
+                : $"runs '{s.Analysis}' and takes instance '{s.Instance}': " +
+                  string.Join(", ", s.Mapping.Select(m => $"port {m.Port} ({m.PortName}) ↔ pin {m.Port} ↔ net '{m.Net}'"));
+            walks.Add(new ResolutionStepJson($"{at}: currents from a circuit", s.SchematicPath, answer,
+                "the schematic relative to the .c3d's folder; the HB chain as `hb` selects it (an inner analysis runs its sweep); the " +
+                "instance whose SnP file is one of this view's EM result paths; port p is pin p"));
+        }
+
         // ── brief-em3d-74 R-em3d74-6 — the size: from the lowering a run would write, before any mesher runs ──
         if (e.Ok)
         {
