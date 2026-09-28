@@ -125,10 +125,29 @@ public sealed partial class RailRfViewModel
         static (request, _) => RailDcRun.Run(request);
 
     /// <summary>
-    /// How work leaves the UI thread. <c>Task.Run</c> in the application.
+    /// How work leaves the UI thread. <c>Task.Run</c> in the application, set by the WINDOW beside
+    /// <see cref="PostToUi"/>; inline by default.
     /// </summary>
+    /// <remarks>
+    /// <b>Inline by default because <see cref="PostToUi"/> is</b> (brief-railrf-36 R-rail36-5). A job
+    /// on the thread pool whose completion is "posted" inline completes ON the pool — so with no
+    /// dispatcher, every completion that rebuilt the parts table raced the thread that owns the view
+    /// model, and <c>ObservableCollection.Insert</c> threw under load. A view model with no dispatcher
+    /// has one thread; the window, which has both, installs both.
+    /// </remarks>
     internal Func<Func<RailResultView>, CancellationToken, Task<RailResultView>> RunOffThread { get; set; } =
-        static (work, token) => Task.Run(work, token);
+        static (work, token) => Inline(work, token);
+
+    /// <summary>Runs <paramref name="work"/> now and hands back a task carrying its outcome — what
+    /// <c>Task.Run</c> would, with no second thread: an exception or a cancellation is the task's,
+    /// never the caller's.</summary>
+    internal static Task<T> Inline<T>(Func<T> work, CancellationToken token)
+    {
+        if (token.IsCancellationRequested) return Task.FromCanceled<T>(token);
+        try { return Task.FromResult(work()); }
+        catch (OperationCanceledException oce) { return Task.FromCanceled<T>(oce.CancellationToken.IsCancellationRequested ? oce.CancellationToken : new CancellationToken(true)); }
+        catch (Exception ex) { return Task.FromException<T>(ex); }
+    }
 
     /// <summary>
     /// How a finished result gets back to the UI thread.

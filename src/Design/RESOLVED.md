@@ -1,5 +1,108 @@
 # src/Design — resolved findings (detail, off the CLAUDE.md growth path)
 
+## A six-layer board in seconds: the via test asked locally, one partition per artwork (2026-09-28, brief-railrf-36)
+
+The round-9 field board (six layers, Gerber-imported, held outside the repo) read its pads for 607 s
+in the designer's window and ran its rail for minutes. Measured headlessly with a scratch harness, one
+process per configuration, on this Mac.
+
+### Where the time was
+
+| Phase (field board, 9,469 flattened shapes) | Release before | Release after | Debug after |
+|---|---|---|---|
+| read `.clay` + technology | 0.83 s | 0.82 s | 1.22 s |
+| flatten | 0.01 s | 0.01 s | 0.02 s |
+| `LayerRegions.Build` (8 copper layers) | 0.62 s | 0.64 s | 0.61 s |
+| `DrcRegions.Components` (3,671 pieces, 893,563 vertices) | 2.75 s | 2.77 s | 2.77 s |
+| **one `DrcConnectivity.Extract`** | **224.4 s** | **2.98 s** | — |
+| the open's pad read (`RailArtwork.PadsFor`, 4 pads, one extraction) | ≈224 s (same counter) | **4.05 s** | **4.34 s** |
+| the Fast run after it (`RailDcRun.Run`) | 221.1 s (its own extraction) | **0.66 s** (cache hit) | 0.74 s |
+
+| Counter, one extraction | before | after |
+|---|---|---|
+| barrel-vs-piece touch tests | 15,831 | 15,831 |
+| Clipper intersections run | 15,831 | 108 |
+| piece vertices handed to Clipper | 630,884,682 | 26,385 |
+
+The before-column pad read is inferred from the identical extraction counter (the footprint cells were
+not regenerated for the first measurement), not timed. Debug before was not run: it is two
+extractions of well over 224 s each. Of what is left, ~2.8 s is the union that splits each layer into
+pieces (`Components`), which the brief did not ask about and nothing here changed. The
+`PieceIndex.IndexAt` fallback is in the ~0.4 s the pad read spends outside the extraction and layer
+build, so it was left alone.
+
+### R-rail36-2 — the barrel test is local, with the whole-piece clip's answer
+
+`FirstTouching` clipped every grown barrel against the WHOLE of every candidate whose bounding box it
+met, and a plane's box is the board: every barrel against every plane, 40,000 vertices a time.
+
+`PieceEdgeGrid` (new, `Layout/Drc`) indexes a piece's edges on a uniform grid, built lazily per
+extraction for a piece of 64+ vertices (a smaller one is still clipped whole, exactly as before). For
+the grown barrel's box it splits the piece's rings into the ones with an edge meeting the box and the
+rest. The rest have a constant winding over the box, read by one exact ray cast from its centre
+(Sunday's rule, integer cross products, the sign `Regions.Contains` uses). No near ring and winding 0
+means untouched and no ring and winding ≠ 0 means covered, both without a clip. Otherwise the near rings,
+UNMODIFIED, plus the constant as a rectangle two DBU larger than the box, are intersected with the
+grown barrel.
+
+**Why that is the same answer, including at the dilation boundary.** Inside the box that subject is the
+same point set as the piece, built from the same original edges, and the grown barrel lies inside the
+box. So Clipper sees the same edge pairs near the barrel and rounds the same intersections. The
+rectangle's own edges are two DBU outside the barrel and meet nothing it produces. **`RectClip` was
+rejected** for exactly this. It cuts a diagonal edge at the box and ROUNDS the cut, which moves that
+edge by up to half a DBU, and a diagonal antipad edge one DBU from a barrel is the case the brief says
+must decide as it did.
+
+**The meet polygon** is computed only for a join between two pieces on ONE layer, because it is the
+only one `JoinOf` reads. A via-to-conductor join is located at the via, as before. So the joins are now
+recorded on every extraction at no measurable cost.
+
+**Verified against the old code kept as a named reference** (copied verbatim into the scratch harness):
+
+- The field board: pieces, nets, joins (with coordinates) and ground reach are **identical**. That is
+  3,671 pieces, 325 nets and 3,346 joins, 220.7 s old against 2.95 s new.
+- 3,000 random boards (three seeds). Each holds holed planes whose antipads are squares, diamonds
+  (45° and arbitrary rotations) and 8-64-gons, with ~198,000 barrels at offsets of −3 to +3 DBU (and
+  ±50) from an antipad edge, straight and diagonal: **0 differing boards**. That includes ~73,000
+  plane joins, and both the no-clip and the local-clip branch.
+- The shipped Power Rail example: `circuitrf rail --json` from a build of the previous commit against
+  this one, Fast (492 KB) and Accurate (23 MB): **byte-identical**, stderr identical too.
+
+### R-rail36-3 — one partition per artwork
+
+`ConnectivityCache` (new, `Layout/Drc`) now sits behind every `DrcConnectivity` form. The key is a
+128-bit digest of every vertex in the dictionary's own ENUMERATION ORDER (piece and net numbers follow
+it), plus the vertex count and every stackup field `Compute` reads, spelled out. It is never keyed on
+object identity: `TechnologyCache` hands back shared instances, and every caller builds its own
+`layerRegions`. It keeps four entries (LRU). A partition holds the board's copper once more (~14 MB
+on the field board), and what repeats is one artwork asked by several readers in a row. Two readers
+asking at once share one `Lazy` computation. A failed computation is not kept.
+
+No caller changed: `Regions.Walk`, `ResolveReturnNet`, `ReferenceNetOn`, the refusal sentences,
+`CopperPieces.Build` and the window's net preview all hit it through the forms they already call. On
+the field board the run after the pad read is a hit (0.66 s). Two rails run twice extract once (the gate
+asserts at least three hits beside it).
+
+**The trap: a counter read against a shared four-entry cache measures the test run, not the test.**
+The first version of the two-rails test passed alone and failed under the filtered run: parallel
+tests' boards evicted its entry between its own two runs. `ConnectivityCache.BeginIsolated()` gives a
+logical call path an empty cache of its own, with the same keying and eviction. The three tests use it,
+and the shared cache has no `Clear()`.
+
+`ConnectivityCounters` (AsyncLocal-scoped, so parallel tests each see their own) counts extractions,
+cache hits, touch tests, clips and vertices clipped.
+
+### Not this brief's, and still there
+
+The run on the field board now refuses in seconds rather than minutes, with R-rail34-2's ambiguity:
+source and load are bare coordinates standing on Top Copper and on the 3,140 mm² Inner 2 plane. That
+refusal is brief 37's. The pad read also reports FB8 at 180° to its schematic, on the file as sent.
+
+Gate: `tests/Ui.Tests/RailRf/BoardScaleConnectivityTests.cs` (the dilation boundary against the
+whole-plane clip, straight and diagonal; vertices clipped against a 200-antipad plane below one
+whole-plane clip; two rails and a re-run extracting once). `PdnFastExtractorTests`,
+`PdnRefusalCauseTests`, the RailRf and Lvs folders and `PowerRailExampleTests` pass.
+
 ## A parts table pasted into a schematic places its parts (2026-09-27)
 
 A field report asked to create a schematic from a parts table instead of typing each part — the

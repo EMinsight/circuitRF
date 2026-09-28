@@ -91,7 +91,10 @@ public sealed partial class RailRfViewModel
             return;
 
         TurnPartsProblem = "";
-        RefreshBoardPads();
+
+        // Off the UI thread (R-rail36-4): the pad funnel is a galvanic partition of the whole board,
+        // and Turn held the window for all of it. IsReadingParts holds the button until it lands.
+        ReadPadsNow(reflatten: true);
     }
 
     /// <summary>
@@ -131,28 +134,6 @@ public sealed partial class RailRfViewModel
         a.X == b.X && a.Y == b.Y && a.RotationDegrees == b.RotationDegrees && a.MirrorX == b.MirrorX
         && string.Equals(a.CellRef, b.CellRef, StringComparison.Ordinal)
         && string.Equals(a.SchematicId, b.SchematicId, StringComparison.Ordinal);
-
-    /// <summary>
-    /// Re-reads the board's pads off the artwork this window holds — now, on the UI thread, for a
-    /// gesture that moved parts and must show the answer before anything else can be pressed.
-    /// </summary>
-    /// <remarks>
-    /// The Turn gesture's route. An edit made in the layout window next door takes the DEBOUNCED one
-    /// (<c>RailRfViewModel.PadRead.cs</c>), because one galvanic partition per keystroke is the shape
-    /// R-rail19-2c forbids; both end in the same <see cref="RefreshBoardPads(RailBoardInputs, IReadOnlyList{LayoutShape}, RailArtwork.RailPadResolution, PinSignature)"/>.
-    /// A read already settling is abandoned: this one answers the same question about a newer model.
-    /// </remarks>
-    internal void RefreshBoardPads()
-    {
-        if (Board is not { View: { } view } board) return;
-        CancelPadRead();
-
-        var shapes = RailArtwork.FlattenedShapes(view, board.ArtworkCellRef, board.Technology);
-        PadReadsPerformed++;
-        var resolved = RailArtwork.PadsFor(
-            view, board.ArtworkCellRef, board.Technology, BoardNetlist, null, shapes, _document.DisplayUnit);
-        RefreshBoardPads(board, shapes, resolved, PinSignature.Of(view));
-    }
 
     /// <summary>
     /// <b>What a pad refresh re-states — the ONE copy</b>, which both the Turn gesture and the

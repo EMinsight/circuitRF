@@ -152,6 +152,50 @@ public sealed partial class RailRfViewModel
         _padReadCts?.Dispose();
         _padReadCts = null;
         IsReadingParts = false;
+        if (_padReadQueued is { } queued) { _padReadQueued = null; queued.Done.TrySetResult(); }
+    }
+
+    // ── ONE FULL READ AT A TIME (brief-railrf-36 R-rail36-4) ─────────────────────────────────────
+    //
+    // The pad funnel cannot be interrupted once it is running, so cancelling its token only drops
+    // its ANSWER. A Turn or a rotate while one was running therefore started a second full read beside
+    // the first — on the six-layer field board, two partitions of minutes each, which is part of what
+    // "thinks forever" was. A newer request now waits for the one running and then reads the board
+    // as it is THEN; a still newer one replaces it in the queue rather than joining it.
+
+    /// <summary>True from a pad job's start until its answer is back on the UI thread.</summary>
+    private bool _padJobInFlight;
+
+    /// <summary>The read waiting for <see cref="_padJobInFlight"/> to clear — at most one.</summary>
+    private (CancellationTokenSource Cts, bool Reflatten, TaskCompletionSource Done)? _padReadQueued;
+
+    /// <summary>
+    /// The pad funnel off the UI thread NOW, with no settle — the Turn gesture's route. It supersedes
+    /// a read that is settling, and queues behind one that is running.
+    /// </summary>
+    /// <param name="reflatten">Re-flatten inside the job: Turn with no layout session open edits the
+    /// instances directly, and nothing else re-flattens the copper for it.</param>
+    private void ReadPadsNow(bool reflatten)
+    {
+        _padReadCts?.Cancel();
+        _padReadCts?.Dispose();
+
+        var cts = new CancellationTokenSource();
+        _padReadCts = cts;
+        IsReadingParts = true;
+        PadRead = BeginPadRead(cts, reflatten) ?? Task.CompletedTask;
+    }
+
+    /// <summary>Starts the queued read, if any — called when a job's answer has been handled.</summary>
+    private void StartQueuedPadRead()
+    {
+        if (_padReadQueued is not { } queued) return;
+        _padReadQueued = null;
+
+        if (BeginPadRead(queued.Cts, queued.Reflatten) is { } job)
+            job.ContinueWith(_ => queued.Done.TrySetResult(), TaskScheduler.Default);
+        else
+            queued.Done.TrySetResult();
     }
 
     private async Task SettleThenReadPads(CancellationTokenSource cts, CancellationToken token)
@@ -170,10 +214,19 @@ public sealed partial class RailRfViewModel
     /// Captures the board as it is NOW and runs the pad funnel on the copy, off the UI thread.
     /// Returns the job, or null where there is nothing to read.
     /// </summary>
-    private Task? BeginPadRead(CancellationTokenSource cts)
+    private Task? BeginPadRead(CancellationTokenSource cts, bool reflatten = false)
     {
         if (!ReferenceEquals(_padReadCts, cts)) return null;                    // superseded while settling
         if (Board is not { View: { } live } board) { CancelPadRead(); return null; }
+
+        if (_padJobInFlight)
+        {
+            var previous = _padReadQueued;
+            var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            _padReadQueued = (cts, reflatten || previous is { Reflatten: true }, done);
+            previous?.Done.TrySetResult();
+            return done.Task;
+        }
 
         // A COPY of the placements, not the live model: the layout editor goes on mutating that one
         // while this runs, and a list edited under an enumeration throws. The instances are cloned
@@ -195,13 +248,28 @@ public sealed partial class RailRfViewModel
         var netlist = BoardNetlist;
         var unit = _document.DisplayUnit;   // captured here: the document is the UI thread's
 
+        var shapesAtStart = board.Shapes;
+
+        _padJobInFlight = true;
         return ReadCopperOffThread(() =>
         {
             RailArtwork.RailPadResolution? resolved = null;
-            try { resolved = RailArtwork.PadsFor(view, clay, tech, netlist, null, shapes, unit); }
+            IReadOnlyList<LayoutShape>? flattened = null;
+            try
+            {
+                if (reflatten) shapes = flattened = RailArtwork.FlattenedShapes(view, clay, tech);
+                resolved = RailArtwork.PadsFor(view, clay, tech, netlist, null, shapes, unit);
+            }
             catch (Exception) { /* dropped below: the board keeps the reading it had */ }
-
-            PostToUi(() => FinishPadRead(cts, live, tech, signature, resolved));
+            finally
+            {
+                PostToUi(() =>
+                {
+                    _padJobInFlight = false;
+                    FinishPadRead(cts, live, tech, signature, resolved, flattened, shapesAtStart);
+                    StartQueuedPadRead();
+                });
+            }
         });
     }
 
@@ -230,7 +298,8 @@ public sealed partial class RailRfViewModel
     /// <summary>Publishes one pad read, unless it has been superseded.</summary>
     private void FinishPadRead(
         CancellationTokenSource cts, LayoutView readFrom, Technology tech,
-        PinSignature signature, RailArtwork.RailPadResolution? resolved)
+        PinSignature signature, RailArtwork.RailPadResolution? resolved,
+        IReadOnlyList<LayoutShape>? flattened = null, IReadOnlyList<LayoutShape>? shapesAtStart = null)
     {
         // An edit after the job started is a newer model, and its own read is already settling.
         if (!ReferenceEquals(_padReadCts, cts)) return;
@@ -250,7 +319,9 @@ public sealed partial class RailRfViewModel
 
         // The board's copper AS IT IS NOW, not the flatten captured when the job began: a shape-only
         // edit during the read re-flattened it without superseding the job (it moves no pin), and
-        // publishing the captured list put the deleted trace back under the next run.
-        RefreshBoardPads(board, board.Shapes, resolved, signature);
+        // publishing the captured list put the deleted trace back under the next run. The job's own
+        // flatten (a Turn with no layout session) is newer only where nothing re-flattened since.
+        var shapes = flattened is not null && ReferenceEquals(board.Shapes, shapesAtStart) ? flattened : board.Shapes;
+        RefreshBoardPads(board, shapes, resolved, signature);
     }
 }

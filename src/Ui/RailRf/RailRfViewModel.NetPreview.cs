@@ -114,15 +114,16 @@ public sealed partial class RailRfViewModel
     // ── The copper jobs ────────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// How a copper read leaves the UI thread. <c>Task.Run</c> in the application.
+    /// How a copper read leaves the UI thread. <c>Task.Run</c> in the application, set by the window;
+    /// inline by default, for <see cref="RunOffThread"/>'s reason (R-rail36-5).
     /// </summary>
     /// <remarks>
     /// The same seam, and for the same reason, as <see cref="RunOffThread"/> next door — a test that
-    /// wants the answer in hand replaces it with an inline call, and <see cref="CopperRead"/> is what
-    /// one that wants the real threading awaits.
+    /// wants to hold a read replaces it, and <see cref="CopperRead"/> is what one that wants the real
+    /// threading awaits.
     /// </remarks>
     internal Func<Action, Task> ReadCopperOffThread { get; set; } =
-        static work => Task.Run(work);
+        static work => Inline(() => { work(); return true; }, CancellationToken.None);
 
     /// <summary>The copper read in flight, or null. <b>Awaitable</b>, so a test can wait for the
     /// deferred answer rather than sleeping for it.</summary>

@@ -105,6 +105,49 @@ internal readonly record struct GroundReach(
 }
 
 /// <summary>
+/// brief-railrf-36 — what one connectivity extraction COST, counted rather than timed (a timing test
+/// measures the machine). Collected only inside <see cref="Begin"/>'s scope, which flows into the
+/// tasks it starts, so parallel tests each see their own numbers.
+/// </summary>
+internal sealed class ConnectivityCounters
+{
+    private static readonly AsyncLocal<ConnectivityCounters?> Current = new();
+
+    /// <summary>Partitions actually computed — a cache hit is not one.</summary>
+    public int Extractions;
+
+    /// <summary>Partitions answered from <see cref="ConnectivityCache"/>.</summary>
+    public int CacheHits;
+
+    /// <summary>Barrel-against-piece questions that survived the bounding-box rejection.</summary>
+    public long TouchTests;
+
+    /// <summary>Clipper boolean operations those questions ran.</summary>
+    public long Clips;
+
+    /// <summary>Piece vertices handed to those operations — the number that was tens of thousands
+    /// per barrel when every barrel was clipped against a whole plane.</summary>
+    public long VerticesClipped;
+
+    internal static ConnectivityCounters? Active => Current.Value;
+
+    /// <summary>Counts every extraction made on this logical call path until disposed.</summary>
+    public static Scope Begin()
+    {
+        var counters = new ConnectivityCounters();
+        var previous = Current.Value;
+        Current.Value = counters;
+        return new Scope(counters, previous);
+    }
+
+    internal sealed class Scope(ConnectivityCounters counters, ConnectivityCounters? previous) : IDisposable
+    {
+        public ConnectivityCounters Counters { get; } = counters;
+        public void Dispose() => Current.Value = previous;
+    }
+}
+
+/// <summary>
 /// Extracts net identity from flat geometry plus the technology's own stackup.
 ///
 /// <para>Two pieces of metal are the same net when they touch on one layer, or when a via joins
@@ -132,26 +175,27 @@ internal static class DrcConnectivity
     /// </returns>
     public static IReadOnlyList<DrcNetPiece> Extract(
         IReadOnlyDictionary<LayerKey, Paths64> layerRegions,
-        Technology tech) => Extract(layerRegions, tech, null);
+        Technology tech) => ConnectivityCache.Get(layerRegions, tech).Pieces;
 
     /// <summary>
     /// The same partition, and <b>the spanning forest it was built from</b> — R-lvs2-4b.
     /// </summary>
-    /// <param name="joins">Filled with one record per successful union.</param>
+    /// <param name="joins">One record per successful union.</param>
     /// <remarks>
-    /// <b>An additive OVERLOAD, not a change to the existing return.</b> The DRC does not ask for
-    /// the joins and pays nothing for them: locating a join costs a Clipper intersection that the
-    /// two-argument form never performs.
+    /// <b>An additive OVERLOAD, not a change to the existing return.</b> Since brief-railrf-36 the
+    /// forest is recorded on every extraction, because one extraction now serves every question
+    /// asked of the same artwork (<see cref="ConnectivityCache"/>). It costs nearly nothing: a join
+    /// between two different layers is located at the via, with no clip at all, and only a
+    /// same-layer join clips — locally.
     /// </remarks>
     public static IReadOnlyList<DrcNetPiece> Extract(
         IReadOnlyDictionary<LayerKey, Paths64> layerRegions,
         Technology tech,
         out IReadOnlyList<PieceJoin> joins)
     {
-        var found = new List<PieceJoin>();
-        var pieces = Extract(layerRegions, tech, found);
-        joins = found;
-        return pieces;
+        var partition = ConnectivityCache.Get(layerRegions, tech);
+        joins = partition.Joins;
+        return partition.Pieces;
     }
 
     /// <summary>
@@ -159,9 +203,8 @@ internal static class DrcConnectivity
     /// R-lvs3-6. See <see cref="GroundReach"/> for why only an UNDRAWN reference is inferred.
     /// </summary>
     /// <remarks>
-    /// <b>An additive form, for <see cref="PieceJoin"/>'s reason.</b> The DRC does not ask and
-    /// pays nothing: the walk is the same walk, and what this form keeps is a set of integers the
-    /// other forms discard.
+    /// <b>An additive form, for <see cref="PieceJoin"/>'s reason.</b> The walk is the same walk,
+    /// and what this form keeps is a set of integers the other forms discard.
     ///
     /// <para><b>A different NAME rather than a third overload</b>, because two <c>Extract</c>
     /// overloads differing only in their out-parameter type make <c>out var</c> ambiguous, and
@@ -171,7 +214,11 @@ internal static class DrcConnectivity
         IReadOnlyDictionary<LayerKey, Paths64> layerRegions,
         Technology tech,
         out GroundReach ground)
-        => Extract(layerRegions, tech, null, out ground);
+    {
+        var partition = ConnectivityCache.Get(layerRegions, tech);
+        ground = partition.Ground;
+        return partition.Pieces;
+    }
 
     /// <summary>
     /// The partition, the ground reading <b>and</b> the spanning forest — the one form
@@ -190,23 +237,29 @@ internal static class DrcConnectivity
         out GroundReach ground,
         out IReadOnlyList<PieceJoin> joins)
     {
-        var found = new List<PieceJoin>();
-        var pieces = Extract(layerRegions, tech, found, out ground);
-        joins = found;
-        return pieces;
+        var partition = ConnectivityCache.Get(layerRegions, tech);
+        ground = partition.Ground;
+        joins = partition.Joins;
+        return partition.Pieces;
     }
 
-    private static IReadOnlyList<DrcNetPiece> Extract(
-        IReadOnlyDictionary<LayerKey, Paths64> layerRegions,
-        Technology tech,
-        List<PieceJoin>? joins) => Extract(layerRegions, tech, joins, out _);
+    /// <summary>A piece with fewer vertices than this is clipped whole, exactly as before
+    /// brief-railrf-36 — a grid over a via pad or a trace costs more than the clip it saves.</summary>
+    private const int LocalTestMinVertices = 64;
 
-    private static IReadOnlyList<DrcNetPiece> Extract(
+    /// <summary>
+    /// The partition itself — every form above reads it through <see cref="ConnectivityCache"/>.
+    /// Always records the joins and the ground reading, because the cached answer serves every form.
+    /// </summary>
+    internal static ConnectivityPartition Compute(
         IReadOnlyDictionary<LayerKey, Paths64> layerRegions,
-        Technology tech,
-        List<PieceJoin>? joins,
-        out GroundReach ground)
+        Technology tech)
     {
+        var counters = ConnectivityCounters.Active;
+        if (counters is not null) Interlocked.Increment(ref counters.Extractions);
+
+        var joins = new List<PieceJoin>();
+
         // ── Every connected piece on every layer, before any via is considered ──────────────────
         var pieces = new List<(LayerKey Layer, Paths64 Paths, Bbox Bounds)>();
         var byLayer = new Dictionary<LayerKey, List<int>>();
@@ -221,10 +274,11 @@ internal static class DrcConnectivity
             }
         }
 
-        if (pieces.Count == 0) { ground = GroundReach.None; return []; }
+        if (pieces.Count == 0) return new ConnectivityPartition([], joins, GroundReach.None);
 
         var uf = new UnionFind(pieces.Count);
         var meets = new Dictionary<int, Paths64>();
+        var local = new LocalTouch(pieces, counters);
 
         // ── R-lvs3-6: the ground reference, collected as the via walk goes past it ──────────────
         //
@@ -292,10 +346,10 @@ internal static class DrcConnectivity
                 {
                     var touched = new List<int>();
                     foreach (var layers in spanned)
-                        if (FirstTouching(pieces, byLayer, layers, pieces[v], out var meet) is { } hit)
+                        if (FirstTouching(pieces, byLayer, layers, v, local, out var meet) is { } hit)
                         {
                             touched.Add(hit);
-                            if (joins is not null) meets[hit] = meet;
+                            meets[hit] = meet;
                         }
 
                     // R-lvs3-6c, and it must be read BEFORE the bail-out below: the whole point of
@@ -320,7 +374,7 @@ internal static class DrcConnectivity
                         // two sets, so what is retained is a spanning forest rather than every
                         // adjacency.
                         if (!uf.Union(v, hit)) continue;
-                        joins?.Add(JoinOf(pieces, v, hit, meets.GetValueOrDefault(hit)));
+                        joins.Add(JoinOf(pieces, v, hit, meets.GetValueOrDefault(hit)));
                     }
                 }
             }
@@ -346,23 +400,27 @@ internal static class DrcConnectivity
 
         var groundNets = new HashSet<int>();
         foreach (int piece in groundPieces) groundNets.Add(result[piece].Net);
-        ground = new GroundReach(groundName, groundDraws, groundNets, groundVias);
 
-        return result;
+        return new ConnectivityPartition(
+            result, joins, new GroundReach(groundName, groundDraws, groundNets, groundVias));
     }
 
-    /// <summary>The first piece on any of <paramref name="layers"/> that touches
+    /// <summary>The first piece on any of <paramref name="layers"/> that touches the piece at
     /// <paramref name="probe"/>, or null.</summary>
+    /// <param name="meet">The two pieces' overlap — computed only where they are on ONE layer,
+    /// because that is the only join <see cref="JoinOf"/> reads it for.</param>
     private static int? FirstTouching(
         List<(LayerKey Layer, Paths64 Paths, Bbox Bounds)> pieces,
         Dictionary<LayerKey, List<int>> byLayer,
         IReadOnlyList<LayerKey> layers,
-        (LayerKey Layer, Paths64 Paths, Bbox Bounds) probe,
+        int probe,
+        LocalTouch local,
         out Paths64 meet)
     {
         meet = [];
-        var grown = Clipper.InflatePaths(probe.Paths, TouchDilationDbu, JoinType.Miter, EndType.Polygon, 2.0);
-        var probeBounds = DrcRegions.Grow(probe.Bounds, (long)Math.Ceiling(TouchDilationDbu));
+        var grown = Clipper.InflatePaths(pieces[probe].Paths, TouchDilationDbu, JoinType.Miter, EndType.Polygon, 2.0);
+        var probeBounds = DrcRegions.Grow(pieces[probe].Bounds, (long)Math.Ceiling(TouchDilationDbu));
+        var reach = DrcRegions.BoundsOf(grown);
 
         foreach (var layer in layers)
         {
@@ -372,12 +430,92 @@ internal static class DrcConnectivity
             {
                 if (!probeBounds.Intersects(pieces[i].Bounds)) continue;   // cheap rejection first
 
-                var hit = Clipper.BooleanOp(ClipType.Intersection, grown, pieces[i].Paths, LayoutClipper.Rule);
-                if (hit.Count > 0) { meet = hit; return i; }
+                bool wantMeet = pieces[i].Layer == pieces[probe].Layer;
+                if (local.Touches(i, grown, reach, wantMeet, out var hit)) { meet = hit; return i; }
             }
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// R-rail36-2 — "does this grown barrel meet this piece", with the answer a whole-piece
+    /// <c>Clipper.BooleanOp(Intersection)</c> gives and the cost of the barrel's neighbourhood.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>The same answer, including at the dilation boundary.</b> A barrel exactly
+    /// <see cref="TouchDilationDbu"/> from a piece's edge meets it along a line, which Clipper
+    /// reports as nothing, and a barrel on the edge meets it with area — so the decision is Clipper's
+    /// and must stay Clipper's wherever an edge is near. <see cref="PieceEdgeGrid"/> says which of the
+    /// piece's rings have an edge within the grown barrel's box; the rest have a constant winding
+    /// there, read by one exact ray cast. Where no ring is near, that winding IS the answer — inside
+    /// means the whole grown barrel is covered. Otherwise the near rings, unmodified, plus the
+    /// constant as a rectangle just larger than the box, are clipped: the same point set within the
+    /// box, from the same edges, so the same answer.</para>
+    ///
+    /// <para><b>What it replaced</b> clipped every barrel against the whole of every candidate: on
+    /// the six-layer field board every plane is a candidate for every barrel, 15,831 clips over
+    /// 631 million vertices, 224 s for one extraction.</para>
+    /// </remarks>
+    private sealed class LocalTouch(
+        List<(LayerKey Layer, Paths64 Paths, Bbox Bounds)> pieces, ConnectivityCounters? counters)
+    {
+        private readonly PieceEdgeGrid?[] _grids = new PieceEdgeGrid?[pieces.Count];
+        private readonly int[] _vertices = new int[pieces.Count];
+        private readonly List<int> _near = [];
+
+        public bool Touches(int piece, Paths64 grown, Bbox reach, bool wantMeet, out Paths64 meet)
+        {
+            meet = [];
+            if (counters is not null) Interlocked.Increment(ref counters.TouchTests);
+
+            var paths = pieces[piece].Paths;
+            if (_vertices[piece] == 0) foreach (var p in paths) _vertices[piece] += p.Count;
+
+            if (_vertices[piece] < LocalTestMinVertices || reach.IsEmpty)
+                return Clip(grown, paths, _vertices[piece], out meet);
+
+            var grid = _grids[piece] ??= PieceEdgeGrid.Build(paths);
+            grid.Local(reach, _near, out int winding);
+
+            // Nothing of the piece's outline is anywhere near: the grown barrel is wholly inside the
+            // piece, or wholly outside it.
+            if (_near.Count == 0 && winding == 0) return false;
+            if (_near.Count == 0 && !wantMeet) return true;
+
+            var subject = new Paths64(_near.Count + Math.Abs(winding));
+            long vertices = 0;
+            foreach (int r in _near) { subject.Add(paths[r]); vertices += paths[r].Count; }
+
+            // The rest's constant winding, as a rectangle a little larger than the box so none of
+            // its edges meets the grown barrel. Counter-clockwise is +1, Sunday's sign.
+            var box = DrcRegions.Grow(reach, 2);
+            for (int k = 0; k < Math.Abs(winding); k++)
+            {
+                var rect = new Path64
+                {
+                    new Point64(box.MinX, box.MinY), new Point64(box.MaxX, box.MinY),
+                    new Point64(box.MaxX, box.MaxY), new Point64(box.MinX, box.MaxY),
+                };
+                if (winding < 0) rect.Reverse();
+                subject.Add(rect);
+                vertices += 4;
+            }
+
+            return Clip(grown, subject, vertices, out meet);
+        }
+
+        private bool Clip(Paths64 grown, Paths64 subject, long vertices, out Paths64 meet)
+        {
+            if (counters is not null)
+            {
+                Interlocked.Increment(ref counters.Clips);
+                Interlocked.Add(ref counters.VerticesClipped, vertices);
+            }
+
+            meet = Clipper.BooleanOp(ClipType.Intersection, grown, subject, LayoutClipper.Rule);
+            return meet.Count > 0;
+        }
     }
 
     /// <summary>

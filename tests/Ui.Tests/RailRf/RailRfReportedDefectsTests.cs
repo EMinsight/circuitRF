@@ -178,7 +178,7 @@ public sealed class RailRfReportedDefectsTests
     /// </summary>
     /// <remarks>
     /// This is the freeze, stated as a fact about WHERE the work happens rather than as a timing
-    /// assertion (which would measure the machine). The seam is left at its production default here,
+    /// assertion (which would measure the machine). The seams are the window's here (<see cref="Example"/>),
     /// on purpose: what is asserted is that the answer is NOT in hand when the command returns and
     /// IS in hand once the task completes, which is the whole of the behaviour change.
     ///
@@ -191,10 +191,8 @@ public sealed class RailRfReportedDefectsTests
     [Fact]
     public async Task ConfirmingTheReferenceDefersTheCopperReadInsteadOfMeasuringInline()
     {
-        var vm = Example(inlineCopperRead: false);
-
         var posted = new System.Collections.Concurrent.ConcurrentQueue<Action>();
-        vm.PostToUi = posted.Enqueue;
+        var vm = Example(posted.Enqueue);
 
         vm.PickRail("+3V3");
         vm.ConfirmReferenceCommand.Execute(null);
@@ -240,15 +238,21 @@ public sealed class RailRfReportedDefectsTests
 
     // ── fixture ─────────────────────────────────────────────────────────────────────────────────
 
-    private static RailRfViewModel Example(bool inlineCopperRead = true)
+    /// <param name="postToUi">Where there is one, the WINDOW's configuration: completions posted to
+    /// it and copper reads on the thread pool, installed before the board is read — the view model's
+    /// own defaults are inline since brief-railrf-36 (R-rail36-5).</param>
+    private static RailRfViewModel Example(Action<Action>? postToUi = null)
     {
         string crail = Path.Combine(
             RepoRoot(), "examples", "Power Rail", "Sensor board", "Sensor board.crail");
         Assert.True(File.Exists(crail), $"The shipped example is not at {crail}.");
 
         var vm = new RailRfViewModel(RailDocumentIo.LoadFromFile(crail), crail);
-        if (inlineCopperRead)
-            vm.ReadCopperOffThread = work => { work(); return Task.CompletedTask; };
+        if (postToUi is not null)
+        {
+            vm.PostToUi = postToUi;
+            vm.ReadCopperOffThread = work => Task.Run(work);
+        }
 
         Assert.Empty(vm.LoadDocumentReferences());
         return vm;

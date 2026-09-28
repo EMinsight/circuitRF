@@ -1,5 +1,42 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## railRF brief 36 — the window half: Turn off the UI thread, one pad read at a time, and the RebuildParts race (2026-09-28)
+
+The engine half (a six-layer board's partition from 224 s to 3 s, and one partition per artwork) is in
+`src/Design/RESOLVED.md`. These are the window's.
+
+- **The brief's premise about the open was wrong, and the crash trail says so.** `t12!ui` means NOT
+  the UI thread (`CrashReporter.ThreadTag`: `!ui` marks every thread except the UI one). The round-5
+  fix had already moved the open's pad read off it (`BeginLoadDocumentReferences`). The 607 s was the
+  extraction, on a pool thread. The window stayed usable and slow; nothing in the open blocked it.
+- **What DID hold the UI thread was Turn.** `TurnParts` ended in a synchronous `RefreshBoardPads()`,
+  a full pad funnel (one galvanic partition of the board) on the UI thread. It now calls `ReadPadsNow`,
+  which is the debounced read's own off-thread job with no settle. It re-flattens inside the job,
+  because a Turn with no layout session edits the instances directly and nothing else re-flattens for
+  it. `IsReadingParts` holds the button and says so in the strip. The synchronous method is deleted,
+  so nothing can put the read back on the UI thread.
+- **One full read at a time.** The pad funnel cannot be interrupted, so cancelling its token only drops
+  its answer. A rotate or a Turn while one ran started a SECOND full read beside it. A newer request
+  now waits for the running one and then reads the board as it is then. A still newer one replaces it
+  in the queue (`_padJobInFlight`, `_padReadQueued`). The awaitable `PadRead` completes when the
+  queued read does.
+- **The `RebuildParts` race (R-rail36-5).** The second caller is `FinishCopperJob`, which rebuilds the
+  parts table when the measured return changed. It was reached by reading `ReferenceReturnNet` during
+  a rebuild, which starts a copper job. `ReadCopperOffThread` defaulted to `Task.Run` and `PostToUi`
+  to an inline call, so with no dispatcher the completion ran ON THE POOL, beside the test thread's own
+  Run, and `ObservableCollection.Insert` threw. Production was safe, because the window posts to the
+  dispatcher. Every view model without a window (tests, the doc fixtures, Compare's reference model)
+  was not. **Both job seams now default to inline** (`RailRfViewModel.Inline`, which hands back a task
+  carrying the exception or cancellation as `Task.Run` would). A view model with no dispatcher has one
+  thread. The window installs `Task.Run` for both beside its dispatcher, as it already did for
+  `RunOffThread`. `SeriesChainTests.TheFirstRunSweepsOnThePartitionMeasuredOffTheArtwork` stays in the
+  routine gate.
+- **One test had depended on the old default.**
+  `RailRfReportedDefectsTests.ConfirmingTheReferenceDefersTheCopperReadInsteadOfMeasuringInline` says
+  it runs "the seam at its production default". That default is the WINDOW's now, so its fixture installs the window's
+  pair (a posting queue and `Task.Run`) BEFORE the board is read. Otherwise the load's own inline job
+  published the answer before the test's queue existed.
+
 ## Field report 7: railRF and workspace files (2026-09-24)
 
 - **Tools ▸ railRF ▸ Open showed the document and closed it again.** `RailRfWindow.Show` places a
