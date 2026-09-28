@@ -242,6 +242,114 @@ public sealed class ThermalAssembly
         return new AssembledSystem { Secant = secant, Tangent = tan, Load = load, SourcePowerW = sourceW, AnyNonFinite = nonFinite };
     }
 
+    /// <summary>
+    /// brief-em3d-80 R-em3d80-2a — the consistent heat-capacity matrix ∫ρc·NᵢNⱼ on <see cref="Pattern"/>, with
+    /// <paramref name="rhoC"/> the volumetric heat capacity ρc of each region, J/(m³·K). Coloured like <see cref="Assemble"/>, so
+    /// the same mesh gives the same bits at any thread count. Interface elements carry none (a contact has no volume).
+    /// </summary>
+    public double[] Mass(IReadOnlyList<double> rhoC)
+    {
+        ArgumentNullException.ThrowIfNull(rhoC);
+        var m = _mesh;
+        int nn = m.NodesPerTet;
+        var mass = new double[Pattern.Nnz];
+        var shapes = TetShapes.For(m.Order);
+        int nq = ReferenceElement.TetQuadraturePoints;
+        var po = new ParallelOptions { MaxDegreeOfParallelism = _dop ?? -1 };
+        foreach (var colour in _colours)
+        {
+            Parallel.For(0, colour.Length, po, ci =>
+            {
+                int e = colour[ci];
+                double rc = rhoC[m.TetRegion[e]];
+                if (rc == 0) return;
+                Span<double> xyz = stackalloc double[30];
+                Span<double> gx = stackalloc double[10], gy = stackalloc double[10], gz = stackalloc double[10];
+                Span<double> me = stackalloc double[100];
+                Span<int> nodes = stackalloc int[10];
+                me.Clear();
+                for (int i = 0; i < nn; i++)
+                {
+                    int v = m.Tets[nn * e + i];
+                    nodes[i] = v;
+                    xyz[3 * i] = m.Nodes[3 * v]; xyz[3 * i + 1] = m.Nodes[3 * v + 1]; xyz[3 * i + 2] = m.Nodes[3 * v + 2];
+                }
+                for (int qp = 0; qp < nq; qp++)
+                {
+                    var nqp = shapes.N(qp);
+                    if (!ReferenceElement.TetGradients(xyz, nn, shapes.Dx(qp), shapes.Dy(qp), shapes.Dz(qp), gx, gy, gz, out double det)) continue;
+                    double w = ReferenceElement.TetW[qp] * det * rc;
+                    for (int i = 0; i < nn; i++)
+                        for (int j = 0; j < nn; j++) me[10 * i + j] += w * nqp[i] * nqp[j];
+                }
+                for (int i = 0; i < nn; i++)
+                    for (int j = 0; j < nn; j++) mass[Pattern.Slot(nodes[i], nodes[j])] += me[10 * i + j];
+            });
+        }
+        return mass;
+    }
+
+    /// <summary>
+    /// brief-em3d-80 — the load of heat sources alone: ∫qNᵢ over each volume source's region and ∫q″Nᵢ over each surface
+    /// source's triangles, with no conductivity, boundary or matrix. What a small-signal right-hand side is.
+    /// </summary>
+    public double[] SourceLoad(IReadOnlyList<VolumeSource> volumes, IReadOnlyList<SurfaceSource> surfaces)
+    {
+        ArgumentNullException.ThrowIfNull(volumes);
+        ArgumentNullException.ThrowIfNull(surfaces);
+        var m = _mesh;
+        var load = new double[m.NodeCount];
+        int nn = m.NodesPerTet;
+        if (volumes.Count > 0)
+        {
+            var q = new Dictionary<int, double>();
+            foreach (var s in volumes) q[s.Region] = q.GetValueOrDefault(s.Region) + s.PowerDensityWm3;
+            var shapes = TetShapes.For(m.Order);
+            Span<double> xyz = stackalloc double[30];
+            Span<double> gx = stackalloc double[10], gy = stackalloc double[10], gz = stackalloc double[10];
+            for (int e = 0; e < m.TetCount; e++)
+            {
+                if (!q.TryGetValue(m.TetRegion[e], out double qe) || qe == 0) continue;
+                for (int i = 0; i < nn; i++)
+                {
+                    int v = m.Tets[nn * e + i];
+                    xyz[3 * i] = m.Nodes[3 * v]; xyz[3 * i + 1] = m.Nodes[3 * v + 1]; xyz[3 * i + 2] = m.Nodes[3 * v + 2];
+                }
+                for (int qp = 0; qp < ReferenceElement.TetQuadraturePoints; qp++)
+                {
+                    if (!ReferenceElement.TetGradients(xyz, nn, shapes.Dx(qp), shapes.Dy(qp), shapes.Dz(qp), gx, gy, gz, out double det)) continue;
+                    var nqp = shapes.N(qp);
+                    double w = ReferenceElement.TetW[qp] * det * qe;
+                    for (int i = 0; i < nn; i++) load[m.Tets[nn * e + i]] += w * nqp[i];
+                }
+            }
+        }
+        if (surfaces.Count > 0)
+        {
+            var flux = new Dictionary<int, double>();
+            foreach (var s in surfaces) flux[s.Tag] = flux.GetValueOrDefault(s.Tag) + s.FluxWm2;
+            int nf = m.NodesPerTriangle;
+            var tri = TriShapes.For(m.Order);
+            Span<double> xyz = stackalloc double[18];
+            for (int t = 0; t < m.TriangleCount; t++)
+            {
+                if (!flux.TryGetValue(m.TriangleTag[t], out double qf) || qf == 0) continue;
+                for (int i = 0; i < nf; i++)
+                {
+                    int v = m.Triangles[nf * t + i];
+                    xyz[3 * i] = m.Nodes[3 * v]; xyz[3 * i + 1] = m.Nodes[3 * v + 1]; xyz[3 * i + 2] = m.Nodes[3 * v + 2];
+                }
+                for (int qp = 0; qp < ReferenceElement.TriQuadraturePoints; qp++)
+                {
+                    var nqp = tri.N(qp);
+                    double w = ReferenceElement.TriW[qp] * ReferenceElement.TriJacobian(xyz, nf, tri.Du(qp), tri.Dv(qp)) * qf;
+                    for (int i = 0; i < nf; i++) load[m.Triangles[nf * t + i]] += w * nqp[i];
+                }
+            }
+        }
+        return load;
+    }
+
     /// <summary>∫h(T − T∞) over each convection condition's triangles: the heat leaving by convection, W.</summary>
     public double ConvectionOut(ThermalProblem problem, double[] temperature)
     {

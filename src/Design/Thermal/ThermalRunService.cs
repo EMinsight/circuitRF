@@ -206,6 +206,8 @@ public static partial class ThermalRunService
             var reads = new List<Dictionary<string, ProbeRead>>();
             var measures = new List<Dictionary<string, double>>();
             var balances = new List<(double In, double Balance)>();
+            var problemsAt = new List<ThermalProblem?>();                      // brief-em3d-80: what the small-signal step reads
+            var resolutionsAt = new List<C3dResolution>();
             double[]? previous = null;
             var summary = new List<string>();
             var skipped = new bool[points.Count];
@@ -219,6 +221,8 @@ public static partial class ThermalRunService
                 ThermalField? globalField = global is null ? null : new ThermalField(global.Mesh, global.Temperatures[pi]);
                 var problem = Problem(t, document, lowering, conductivity, mesh, zero, res, out string? valueError, globalField);
                 if (problem is null) return Refuse(At(axes, points[pi]) + valueError);
+                problemsAt.Add(problem);
+                resolutionsAt.Add(res);
                 if (global is not null && SourceMismatch(t, global.Setup.Thermal!, document, lowering, res) is { } mismatch)
                     return Refuse(At(axes, points[pi]) + mismatch);
                 ThermalSolution sol;
@@ -314,8 +318,20 @@ public static partial class ThermalRunService
                 summary.AddRange(sentences);
             }
 
+            // ── brief-em3d-80: the Rth matrix, Z_th, the Foster networks and the pulse train ──
+            var small = SmallSignal(new SmallSignalInput(setup, t, document, e, lowering, mesh, assembly, conductivity, problemsAt, resolutionsAt,
+                                                         fields, skipped, axes, options, kOfT, et is not null, resultsRoot), ct, control);
+            if (small is { Refusal: { } smallWhy }) return Refuse(smallWhy);
+            if (small is not null)
+            {
+                notes.AddRange(small.Notes);
+                warnings.AddRange(small.Warnings);
+                summary.AddRange(small.Notes);
+            }
+
             // ── 5. the result ──
             var data = Build(axes, probes, reads, measures, balances, t, summary);
+            foreach (var (g, n, c) in small?.Cubes ?? []) data.AddToGroup(g, n, c);
             if (et is not null) AddElectro(data, axes, et, lowering, runaway);
             if (circuit is not null)
             {
@@ -336,6 +352,7 @@ public static partial class ThermalRunService
             var outputs = new List<EmRunOutput>();
             if (npy is not null) outputs.Add(new EmRunOutput("npy", npy));
             outputs.Add(new EmRunOutput("fields", pvd));
+            foreach (string f in small?.Files ?? []) outputs.Add(new EmRunOutput("foster", f));
             return new EmRunResult(EmRunStatus.Ok, data, null, null, npy, null, null, warnings,
                 KernelName: "circuitRF thermal", Notes: notes, Errors: errors, Outputs: outputs);
         }

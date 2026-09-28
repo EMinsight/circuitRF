@@ -3,6 +3,7 @@
 // face menu writes, and All exposed faces), Currents (brief-em3d-77: a DC current per port, and the wires' convection and bond;
 // brief-em3d-78: harmonics per port or per array, each Peak or Rms, and the DC-equivalent RMS as a readout, never an input),
 // Sweep (up to two variables), Measures (parsed as typed, each error beside it), Mesh, Balance (k(T), and σ(T) from brief 77),
+// the Rth matrix, Z_th and a pulse train (brief-em3d-80),
 // and the size estimate `explain` gives (brief 74 §6).
 //
 // NOTHING LIVES ONLY HERE (R-em-11): every control writes the setup's Thermal section through the panel's one CommitEdit, so
@@ -222,6 +223,31 @@ public sealed partial class EmSetupEditorViewModel
 
     public bool IsThermalSubmodel => ThermalSubmodelFrom.Length > 0;
 
+    // brief-em3d-80 — the Rth matrix, Z_th and the pulse train. A name list reads as typed, comma-separated; empty is "*".
+    [ObservableProperty] private bool _thermalRthOn;
+    [ObservableProperty] private string _thermalRthSources = "";
+    [ObservableProperty] private bool _thermalRthMax;
+    [ObservableProperty] private bool _thermalZthOn;
+    [ObservableProperty] private string _thermalZthSources = "";
+    [ObservableProperty] private string _thermalZthProbes = "";
+    [ObservableProperty] private string _thermalZthStart = "";
+    [ObservableProperty] private string _thermalZthStop = "";
+    [ObservableProperty] private string _thermalZthPerDecade = "";
+    [ObservableProperty] private bool _thermalPulseOn;
+    [ObservableProperty] private string _thermalPulsePeriod = "";
+    [ObservableProperty] private string _thermalPulseDuty = "";
+    [ObservableProperty] private string _thermalPulsePeak = "";
+
+    /// <summary>brief-em3d-80 — a name list as the page shows it: comma-separated, and empty for "*".</summary>
+    private static string NamesText(List<string>? names) => names is null or [ThermalNamesConverter.All] ? "" : string.Join(", ", names);
+
+    /// <summary>brief-em3d-80 — the typed list back: null (every source) when empty or "*".</summary>
+    private static List<string>? Names(string text)
+    {
+        var list = text.Split(',').Select(n => n.Trim()).Where(n => n.Length > 0).ToList();
+        return list.Count == 0 || list is [ThermalNamesConverter.All] ? null : list;
+    }
+
     /// <summary>The page's refusal of what it was just given (a bad number), or null.</summary>
     [ObservableProperty] private string? _thermalError;
 
@@ -301,6 +327,19 @@ public sealed partial class EmSetupEditorViewModel
             ThermalMaxIterations = t.Balance?.MaxIterations?.ToString(CultureInfo.InvariantCulture) ?? "";
             ThermalSubmodelFrom = t.Submodel?.From ?? "";
             ThermalSubmodelRegion = t.Submodel?.Region ?? "";
+            ThermalRthOn = t.Rth is not null;
+            ThermalRthSources = NamesText(t.Rth?.Sources);
+            ThermalRthMax = t.Rth?.Stat == ThermalRthStat.Max;
+            ThermalZthOn = t.Zth is not null;
+            ThermalZthSources = NamesText(t.Zth?.Sources);
+            ThermalZthProbes = string.Join(", ", t.Zth?.Probes ?? []);
+            ThermalZthStart = t.Zth?.StartHz ?? "";
+            ThermalZthStop = t.Zth?.StopHz ?? "";
+            ThermalZthPerDecade = t.Zth?.PerDecade?.ToString(CultureInfo.InvariantCulture) ?? "";
+            ThermalPulseOn = t.Pulse is not null;
+            ThermalPulsePeriod = t.Pulse?.Period ?? "";
+            ThermalPulseDuty = t.Pulse?.Duty ?? "";
+            ThermalPulsePeak = t.Pulse?.PeakPower ?? "";
             ThermalError = null;
         }
         finally { _syncingThermal = false; }
@@ -444,6 +483,21 @@ public sealed partial class EmSetupEditorViewModel
         t.Submodel = ThermalSubmodelFrom.Trim().Length > 0
             ? new CemThermalSubmodel { From = ThermalSubmodelFrom.Trim(), Region = ThermalSubmodelRegion.Trim() }
             : null;
+        // brief-em3d-80 — the switches make or remove each section; what the page does not show is carried as written
+        t.Rth = ThermalRthOn ? new CemThermalRth { Sources = Names(ThermalRthSources), Stat = ThermalRthMax ? ThermalRthStat.Max : null } : null;
+        int? perDecade = I(ThermalZthPerDecade, "Z_th's frequencies per decade");
+        if (ThermalError is not null) return;
+        var probes = ThermalZthProbes.Split(',').Select(n => n.Trim()).Where(n => n.Length > 0).ToList();
+        t.Zth = ThermalZthOn
+            ? new CemThermalZth
+            {
+                Sources = Names(ThermalZthSources), Probes = probes.Count > 0 ? probes : null, StartHz = Blank(ThermalZthStart),
+                StopHz = Blank(ThermalZthStop), PerDecade = perDecade,
+            }
+            : null;
+        t.Pulse = ThermalPulseOn
+            ? new CemThermalPulse { Period = ThermalPulsePeriod.Trim(), Duty = ThermalPulseDuty.Trim(), PeakPower = Blank(ThermalPulsePeak) }
+            : null;
         Working.Thermal = t;
         CommitEdit(before, "Change the thermal setup");
         RefreshCircuitSurvey();
@@ -515,6 +569,10 @@ public sealed partial class EmSetupEditorViewModel
     partial void OnThermalSigmaOfTChanged(bool value) => CommitThermal();
     partial void OnThermalSubmodelFromChanged(string value) { OnPropertyChanged(nameof(IsThermalSubmodel)); CommitThermal(); }
     partial void OnThermalSubmodelRegionChanged(string value) => CommitThermal();
+    partial void OnThermalRthOnChanged(bool value) => CommitThermal();
+    partial void OnThermalRthMaxChanged(bool value) => CommitThermal();
+    partial void OnThermalZthOnChanged(bool value) => CommitThermal();
+    partial void OnThermalPulseOnChanged(bool value) => CommitThermal();
     partial void OnThermalFromCircuitChanged(bool value) => CommitThermal();
     partial void OnThermalCircuitAnalysisChanged(string value) => CommitThermal();
     partial void OnThermalCircuitInstanceChanged(string value) => CommitThermal();

@@ -746,6 +746,99 @@ public sealed class CemThermalBalance
     public int? MaxIterations { get; set; }
 }
 
+/// <summary>brief-em3d-80 R-em3d80-1a — which statistic of a source's own place its rise in the Rth matrix is read as.</summary>
+public enum ThermalRthStat
+{
+    /// <summary>The mean over the source's place: the matrix is symmetric.</summary>
+    Avg,
+    /// <summary>The hottest point of the source's place: not symmetric in general.</summary>
+    Max,
+}
+
+/// <summary>
+/// brief-em3d-80 R-em3d80-1 — the Rth matrix across heat sources: R_ij, the rise of source i's place per watt in source j, with
+/// every boundary made homogeneous (fixed temperatures and ambients 0), so it is a property of the structure.
+/// </summary>
+public sealed class CemThermalRth
+{
+    /// <summary>The heat sources, by name, or <c>"*"</c> (also when omitted): every heat source of the document.</summary>
+    [JsonConverter(typeof(ThermalNamesConverter))]
+    public List<string>? Sources { get; set; }
+
+    /// <summary><c>Avg</c> (omitted) or <c>Max</c>.</summary>
+    public ThermalRthStat? Stat { get; set; }
+}
+
+/// <summary>
+/// brief-em3d-80 R-em3d80-2 — Z_th(jω) from (K + jωC)·T = q: every source's own impedance, and each probe's per watt in each
+/// source. Every meshed material needs DensityKgM3 and SpecificHeat. A Foster network is fitted to each and written as a
+/// <c>.cnl</c> subcircuit per source.
+/// </summary>
+public sealed class CemThermalZth
+{
+    /// <summary>The heat sources driven, by name, or <c>"*"</c> (also when omitted).</summary>
+    [JsonConverter(typeof(ThermalNamesConverter))]
+    public List<string>? Sources { get; set; }
+
+    /// <summary>Probes read per watt in each source (their mean — a phasor has no maximum); omitted, the sources' own places only.</summary>
+    public List<string>? Probes { get; set; }
+
+    /// <summary>The lowest frequency, Hz, an expression; omitted, 0.01.</summary>
+    public string? StartHz { get; set; }
+
+    /// <summary>The highest frequency, Hz, an expression; omitted, 1e6.</summary>
+    public string? StopHz { get; set; }
+
+    /// <summary>Frequencies per decade, logarithmic; omitted, 10. DC is always the first point.</summary>
+    public int? PerDecade { get; set; }
+}
+
+/// <summary>
+/// brief-em3d-80 R-em3d80-4 — a periodic rectangular pulse train through the fitted Z_th: the peak, single-pulse and average
+/// temperature of every Z_th place. Needs <see cref="CemThermal.Zth"/>. Every field is an expression, so a duty or a period
+/// sweeps like any value.
+/// </summary>
+public sealed class CemThermalPulse
+{
+    /// <summary>The total power during the pulse, W; the sources share it in proportion to their own powers. Omitted, every
+    /// source at its own power.</summary>
+    public string? PeakPower { get; set; }
+
+    /// <summary>The period, seconds: an expression, optionally ending in a spaced <c>s</c>, <c>ms</c>, <c>us</c> or <c>ns</c>
+    /// (<c>1 ms</c>).</summary>
+    public string Period { get; set; } = "";
+
+    /// <summary>The on-fraction of the period, 0 to 1.</summary>
+    public string Duty { get; set; } = "";
+}
+
+/// <summary>brief-em3d-80 — a list of names that may be written as the one string <c>"*"</c>.</summary>
+public sealed class ThermalNamesConverter : JsonConverter<List<string>?>
+{
+    /// <summary>The spelling of "every heat source".</summary>
+    public const string All = "*";
+
+    public override List<string>? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType == JsonTokenType.Null) return null;
+        if (reader.TokenType == JsonTokenType.String) return [reader.GetString() ?? ""];
+        if (reader.TokenType != JsonTokenType.StartArray) throw new JsonException("expected a name list or \"*\"");
+        var list = new List<string>();
+        while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
+            list.Add(reader.TokenType == JsonTokenType.String ? reader.GetString() ?? "" : throw new JsonException("a name is a string"));
+        return list;
+    }
+
+    public override void Write(Utf8JsonWriter writer, List<string>? value, JsonSerializerOptions options)
+    {
+        if (value is null) { writer.WriteNullValue(); return; }
+        if (value is [All]) { writer.WriteStringValue(All); return; }
+        writer.WriteStartArray();
+        foreach (string s in value) writer.WriteStringValue(s);
+        writer.WriteEndArray();
+    }
+}
+
 /// <summary>
 /// brief-em3d-73 R-em3d73-5b — a thermal setup's section: its values, over the document's places. Only a setup whose
 /// <c>Problem3D</c> is <c>Thermal</c> reads it, and only a <c>.c3d</c> embeds one (D1).
@@ -793,6 +886,15 @@ public sealed class CemThermal
     /// <summary>brief-em3d-76 R-em3d76-3a — a two-step solve: this setup solves only a mesh region's box, finely, with its cut
     /// faces fixed to another thermal setup's solution. Omitted: the whole model.</summary>
     public CemThermalSubmodel? Submodel { get; set; }
+
+    /// <summary>brief-em3d-80 R-em3d80-1 — the Rth matrix across heat sources. Omitted: none.</summary>
+    public CemThermalRth? Rth { get; set; }
+
+    /// <summary>brief-em3d-80 R-em3d80-2 — Z_th(jω), its Foster fits and their <c>.cnl</c> networks. Omitted: none.</summary>
+    public CemThermalZth? Zth { get; set; }
+
+    /// <summary>brief-em3d-80 R-em3d80-4 — a radar pulse train's temperatures, from the Z_th fits. Omitted: none.</summary>
+    public CemThermalPulse? Pulse { get; set; }
 
     /// <summary>A deep copy, through the setup's own serializer.</summary>
     public CemThermal Clone() => JsonSerializer.Deserialize<CemThermal>(JsonSerializer.Serialize(this))!;

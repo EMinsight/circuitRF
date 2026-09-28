@@ -40,7 +40,8 @@ public sealed record C3dProbeTableRow(string Name, string Unit, string Value, IR
 /// <summary>R-em3d75-4d — a line of temperature: a line probe's, or Temperature Along's. brief-em3d-79: or a probe row against the
 /// sweep, or against a carried circuit cube — then <see cref="XLabel"/> names the x axis, and the x values are plotted as they are
 /// (a distance is metres, drawn in µm).</summary>
-public sealed record C3dThermalLine(string Title, double[] DistanceM, double[] ValuesC, string? XLabel = null, string YLabel = "T (°C)")
+public sealed record C3dThermalLine(string Title, double[] DistanceM, double[] ValuesC, string? XLabel = null, string YLabel = "T (°C)",
+                                    bool LogX = false)
 {
     public double FromC => ValuesC.FirstOrDefault(double.IsFinite, double.NaN);
     public double ToC => ValuesC.LastOrDefault(double.IsFinite, double.NaN);
@@ -607,6 +608,24 @@ public sealed partial class C3dEditorViewModel
         return null;
     }
 
+    /// <summary>
+    /// brief-em3d-80 R-em3d80-2c — Z_th of <paramref name="place"/> (a heat source's own place, or a probe) per watt in
+    /// <paramref name="source"/>, from the run's table, into the line panel: |Z_th| in K/W, or its phase in degrees, against a
+    /// logarithmic frequency. Null on success, else why not.
+    /// </summary>
+    public string? PlotZth(string place, string source, bool phase)
+    {
+        if (Viewer.ThermalTable is not { } t) return "No thermal result: run the active thermal setup.";
+        if (t.Zth.FirstOrDefault(z => z.Place == place && z.Source == source) is not { } zth)
+            return $"The result has no Z_th of '{place}' per watt in '{source}': state it in the setup's Zth and run it.";
+        var keep = Enumerable.Range(0, zth.FrequencyHz.Length).Where(i => zth.FrequencyHz[i] > 0).ToList();
+        double[] f = [.. keep.Select(i => zth.FrequencyHz[i])];
+        double[] y = [.. keep.Select(i => phase ? zth.Z[i].Phase * 180 / Math.PI : zth.Z[i].Magnitude)];
+        string who = place == source ? $"'{place}'" : $"'{place}' per watt in '{source}'";
+        ThermalLine = new C3dThermalLine($"Z_th of {who}{(phase ? " — phase" : "")}", f, y, "Frequency (Hz)", phase ? "arg Z_th (°)" : "|Z_th| (K/W)", LogX: true);
+        return null;
+    }
+
     [RelayCommand]
     private void PlotProbeTableRow(string? name) { if (name is not null) StatusMessage = PlotProbeRow(name) ?? StatusMessage; }
 
@@ -911,6 +930,15 @@ public sealed partial class C3dEditorViewModel
         if (item.Kind == ProbeKind && Document.Probes.FirstOrDefault(p => p.Name == name) is { Line: not null })
             items.Add(new Viewer3DMenuItem("Plot T(s)", () => Report(PlotLineProbe(name)), Enabled: Viewer.ThermalTable is not null,
                 Tip: Viewer.ThermalTable is null ? "Run the active thermal setup first." : "The line's temperature at the step shown."));
+        // brief-em3d-80 — a place the run computed Z_th of: its magnitude and phase, per watt in each source (a source's own first)
+        if (item.Kind is HeatSourceKind or ProbeKind && Viewer.ThermalTable?.Zth.Where(z => z.Place == name).OrderBy(z => z.Source == name ? 0 : 1).Take(8).ToList() is { Count: > 0 } zs)
+            foreach (var z in zs)
+            {
+                string per = z.Source == name ? "" : $" per watt in '{z.Source}'";
+                items.Add(new Viewer3DMenuItem($"Plot |Z_th|{per}", () => Report(PlotZth(name, z.Source, phase: false)),
+                    Tip: "The thermal impedance's magnitude against frequency, from the active setup's run."));
+                items.Add(new Viewer3DMenuItem($"Plot Z_th phase{per}", () => Report(PlotZth(name, z.Source, phase: true))));
+            }
         if (item.Kind == EffectiveBlockKind && Document.EffectiveBlocks.FirstOrDefault(b => b.Name == name) is { } block)
             items.Add(new Viewer3DMenuItem(block.Enabled ? "Disable" : "Enable", () => Report(SetPlaceText(name, "Enabled", block.Enabled ? "false" : "true")),
                 Tip: block.Enabled ? "Solve the geometry under it as drawn." : "Replace the board, planes and vias inside it with one anisotropic block (an approximation)."));
@@ -991,6 +1019,8 @@ public static class ThermalPlots
         };
         // brief-em3d-79: a probe row against the sweep (or a carried cube) names its own axes and plots x as it is
         if (line.XLabel is not null) { plot.CustomXLabel = line.XLabel; plot.CustomYLabel = line.YLabel; }
+        // brief-em3d-80: Z_th against a logarithmic frequency
+        if (line.LogX) plot.Axes.XScale = CircuitRF.Render.DataDisplay.AxisScale.Log;
         double xScale = line.XLabel is null ? 1e6 : 1;
         var keep = Enumerable.Range(0, line.DistanceM.Length).Where(i => double.IsFinite(line.ValuesC[i]) && double.IsFinite(line.DistanceM[i]))
                              .OrderBy(i => line.DistanceM[i]).ToList();

@@ -269,6 +269,9 @@ src/Design/RailRf/PartLibraryIo.cs|.crlib format_version {file.FormatVersion} is
 src/Design/RailRf/PartLibraryIo.cs|Failed to deserialize .crlib file.
 src/Design/Layout/Interchange/PlacementFile.cs|A landing check needs an origin, and this table has none — which is the refusal 
 src/Design/Layout/Em/EmSetupPersistence.cs|This .cem states its mesh current model twice and the two disagree: 
+src/Design/Layout/Em/EmSetupPersistence.cs|a name is a string
+src/Design/Layout/Em/EmSetupPersistence.cs|expected a name list or \"*\"
+src/Design/Thermal/ThermalFosterNetlist.cs|an empty network
 src/Design/Layout/Em/TraceImpedanceAcceptance.cs|An acceptance needs a reason.
 src/Design/Layout/Interchange/DxfUnits.cs|Unsupported/unset $INSUNITS value {insunits}.
 src/Design/Layout/Interchange/DxfWriter.cs|DXF export does not support shape type {shape.GetType().Name}.
@@ -795,6 +798,8 @@ src/RfCore/Stability/WspMatrix.cs|the probe list is empty.
 # WSP-9 (2026-09-08) — the stability margin and its envelope. Both are shape refusals on a
 # derived-metric call, the series' own convention (see the WSP-2/WSP-3 blocks above).
 src/Core/Expressions/Evaluator.Wsp.cs|{cl.Name}: the two immittance cubes must have the same shape — {what} is 
+src/Core/Expressions/Token.cs|'{_source[start.._pos]}': a {unit} value is not a multiplier, so it cannot be a unit suffix; use {(unit == 
+src/Core/Expressions/Token.cs|'{written}' in '{_source[start.._pos]}' is not a unit this build knows. The length units are 
 src/RfCore/Stability/WspEnvelope.cs|the active and passive runs must cover the same sweep ({nf} vs {wspPassive.Count} points).
 
 # WSP-5 (2026-09-08) — the large-signal small-signal (conversion-matrix) solve. Every one of these

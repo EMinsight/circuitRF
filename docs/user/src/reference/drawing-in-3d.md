@@ -786,7 +786,8 @@ says so.
 **Boundaries** (the list the menu writes, and *All exposed faces: convection* at an h and an ambient), **Sweep** (up to two
 variables), **Measures** (one per line — `Rth = (Tmax(die) - Tavg(flange)) / Pdiss` — checked as you type), **Mesh** (order,
 elements across a source and through the thinnest solid, grading, the solver, the convergence check), and **Balance** (k(T)
-on or off), and **Submodel** (above). Under Mesh, the size of the run is estimated before anything is meshed.
+on or off), **Submodel** (above), and the three small-signal sections below — **Rth matrix**, **Thermal impedance** and
+**Pulse train**. Under Mesh, the size of the run is estimated before anything is meshed.
 
 **Plot Temperature.** After a run of the active thermal setup, right-click a face, *Plot Temperature*, to paint that face
 (again to take it off; several faces accumulate); *3D ▸ View ▸ Temperature ▸ All Faces* paints every exposed face, and
@@ -803,6 +804,31 @@ the temperature between them, with both end temperatures and their difference �
 document. A line probe's row in the tree plots its own, *Plot T(s)*. **Probes** on the Field bar lists every probe
 statistic and every measure at the sweep point shown, a column per point on request, with any probe past its limit in
 orange.
+
+**The Rth matrix, Z_th and pulses** {#thermal-rth} are read off the same mesh after the sweep, at its first point, each
+with **every boundary made homogeneous** (fixed temperatures and ambients 0) — so they are properties of the structure,
+not of the heatsink temperature. With k(T) on they are the small-signal response about that point's temperatures, and the
+notes say so.
+
+- **Rth matrix**: R_ij is the rise of heat source i's place per watt in source j (every source, or the ones named). *Mean*
+  (the default) reads each source's average rise, and the matrix is symmetric — the run reports its largest asymmetry as a
+  check on the solve; *Hottest point* reads each source's maximum, which is not symmetric. The run also gives each
+  source's rise under the setup's own powers, R·P. `circuitrf em` prints the matrix, rows and columns named.
+- **Thermal impedance** Z_th(jω), from DC over a logarithmic band (0.01 Hz to 1 MHz, 10 per decade, unless stated): every
+  source's own place per watt in each source, and each named probe (its mean) per watt in each. **Every meshed material
+  must state DensityKgM3 and SpecificHeat**; one that does not is refused, named with its objects. Right-click a heat
+  source's or a probe's row, *Plot |Z_th|* or *Plot Z_th phase*, for the curve against log frequency.
+- **Foster networks.** Each Z_th is fitted as Σ Rᵢ/(1 + jωτᵢ) with every Rᵢ ≥ 0 (so the network is passive) and ΣRᵢ equal
+  to the Rth; the fit's largest error over the band is in the notes, and above 2 % the run warns — raise *per decade*. Each
+  source's own network is written beside the result as `<result>.<source>.foster.cnl`: Rᵢ ∥ Cᵢ stages between a thermal
+  pin and a reference pin, power as current and temperature rise as voltage. Its internal nodes are not temperatures, and
+  it is not attached to any device. The file carries a one-port bench, so `circuitrf sparam` on it reads the network's
+  Z_th back.
+- **Pulse train**: a period (`1 ms`, `100 us`), a duty, and optionally the total power during the pulse (shared by the
+  sources in proportion to their own; empty, each at its own power). There is no transient solver: the periodic peak, the
+  rise at the end of one pulse and the average come in closed form from the Foster networks, each added to the place's
+  temperature with no power, for every Z_th place at every sweep point — the duty and period are expressions, so they
+  sweep. They are rows of the Probes table; the waveform over one period is in the result.
 
 ## Headless {#headless}
 

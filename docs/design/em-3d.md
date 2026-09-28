@@ -1242,6 +1242,10 @@ The FET models already expose a **thermal node**, and the network behind it is t
 
 That coupling is the reason thermal belongs in circuitRF rather than in a separate thermal tool.
 
+**Built (brief-em3d-80, 2026-09-28):** the matrix, Z_th(jω), a non-negative **Foster** fit (Cauer is not built) and a
+radar pulse train's peak in closed form from it, all with homogeneous boundaries; each source's network is **written** as a
+`.cnl` subcircuit, not yet attached to a thermal node (owner: later). Findings in `src/Thermal/RESOLVED.md`.
+
 ---
 
 ## 10. Phases

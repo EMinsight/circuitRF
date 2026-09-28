@@ -563,8 +563,90 @@ public static class C3dThermal
         foreach (string measure in t.Measures ?? [])
             if (MeasureProblem(measure, doc, resolution) is { } why) found.Add(D.Measure(name, measure, why));
 
+        // brief-em3d-80 — the Rth matrix, Z_th and the pulse train name what exists, and Z_th's materials state a heat capacity
+        SmallSignal(name, t, doc, e, resolution, found);
+
         return found;
     }
+
+    /// <summary>brief-em3d-80 R-em3d80-1a/-2a/-2b/-4a — what <see cref="Setup"/> checks of a setup's Rth, Zth and Pulse.</summary>
+    private static void SmallSignal(string name, CemThermal t, C3dDocument doc, C3dElaboration? e, C3dResolution resolution, List<Diagnostic> found)
+    {
+        var sources = doc.HeatSources.Select(h => h.Name).ToList();
+        string Have() => sources.Count == 0 ? " (it has none)" : $" (it has {string.Join(", ", sources.Select(n => $"'{n}'"))})";
+        void Names(List<string>? names, string key)
+        {
+            if (sources.Count == 0) { found.Add(D.SmallSignal(name, $"states {key}, and this 3D view has no heat source to drive")); return; }
+            var list = names ?? [ThermalNamesConverter.All];
+            if (list.Count == 0) found.Add(D.SmallSignal(name, $"lists no source in {key}.Sources: name them, or write \"*\" for every one"));
+            if (list.Contains(ThermalNamesConverter.All) && list.Count > 1)
+                found.Add(D.SmallSignal(name, $"lists \"*\" and names in {key}.Sources: \"*\" already means every heat source"));
+            foreach (string n in list.Where(n => n != ThermalNamesConverter.All && !sources.Contains(n)))
+                found.Add(D.SmallSignal(name, $"lists '{n}' in {key}.Sources, which is no heat source of this 3D view{Have()}"));
+            foreach (var dup in list.GroupBy(n => n, StringComparer.Ordinal).Where(g => g.Count() > 1))
+                found.Add(D.SmallSignal(name, $"lists '{dup.Key}' {dup.Count()} times in {key}.Sources"));
+        }
+        if (t.Rth is { } rth) Names(rth.Sources, "Rth");
+        if (t.Zth is { } z)
+        {
+            Names(z.Sources, "Zth");
+            foreach (string probe in z.Probes ?? [])
+            {
+                var p = doc.Probes.FirstOrDefault(x => x.Name == probe);
+                if (p is null)
+                    found.Add(D.SmallSignal(name, $"reads the probe '{probe}' in Zth.Probes, which is no probe of this 3D view" +
+                                                  (doc.Probes.Count == 0 ? " (it has none)" : $" (it has {string.Join(", ", doc.Probes.Select(x => $"'{x.Name}'"))})")));
+                else if (p.Wire is not null)
+                    found.Add(D.SmallSignal(name, $"reads the wire probe '{probe}' in Zth.Probes: a bond wire has no heat capacity in the frequency-domain " +
+                                                  "solve, so Z_th reads only places in the meshed solids"));
+            }
+            double? lo = null, hi = null;
+            foreach (var (key, text) in new[] { ("StartHz", z.StartHz), ("StopHz", z.StopHz) })
+            {
+                if (text is null) continue;
+                double? v = Evaluate(resolution, text, out string? err);
+                if (err is not null) { found.Add(D.SmallSignal(name, $"has Zth.{key} '{text}', which does not resolve: {err}")); continue; }
+                if (!(v > 0)) found.Add(D.SmallSignal(name, $"has Zth.{key} '{text}' = {Num(v ?? double.NaN)}; a frequency here is a positive number of Hz (DC is always included)"));
+                if (key == "StartHz") lo = v; else hi = v;
+            }
+            if ((lo ?? ZthDefaultStartHz) >= (hi ?? ZthDefaultStopHz))
+                found.Add(D.SmallSignal(name, $"has a Zth band from {Num(lo ?? ZthDefaultStartHz)} Hz to {Num(hi ?? ZthDefaultStopHz)} Hz; StopHz must exceed StartHz"));
+            if (z.PerDecade is < 1) found.Add(D.SmallSignal(name, $"has Zth.PerDecade {z.PerDecade}; at least 1"));
+
+            // R-em3d80-2a — every meshed solid's material states ρ and c: never assumed
+            if (e is { Ok: true, Technology: not null })
+            {
+                var missing = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+                foreach (var sol in e.Solids)
+                {
+                    if (Thermal.ThermalMaterials.NotMeshed(sol.Role, sol.Material)) continue;
+                    var (tech, baseName) = Thermal.ThermalMaterials.Source(e, sol.Name, sol.Material);
+                    if (tech?.FindMaterial(baseName) is not { } tm) continue;
+                    if (Thermal.ThermalMaterials.HeatCapacity(e, sol.Name, sol.Material) is null)
+                        (missing.TryGetValue(tm.Name, out var l) ? l : missing[tm.Name] = []).Add(sol.Name);
+                }
+                foreach (var (material, objects) in missing) found.Add(D.MaterialHeat(name, material, objects));
+            }
+        }
+        if (t.Pulse is { } pulse)
+        {
+            if (t.Zth is null)
+                found.Add(D.SmallSignal(name, "states a Pulse and no Zth: a pulse train is answered from Z_th's Foster fit (there is no transient " +
+                                              "solver) — add a Zth section"));
+            foreach (var (key, text, required) in new[] { ("Period", pulse.Period, true), ("Duty", pulse.Duty, true), ("PeakPower", pulse.PeakPower, false) })
+            {
+                if (string.IsNullOrWhiteSpace(text)) { if (required) found.Add(D.SmallSignal(name, $"states a Pulse with no {key}")); continue; }
+                if ((key == "Period" ? UnparsableTime(text) : Unparsable(text)) is { } err)
+                    found.Add(D.SmallSignal(name, $"has Pulse.{key} '{text}', which does not parse: {err}"));
+            }
+        }
+    }
+
+    /// <summary>brief-em3d-80 — Z_th's band when the setup states none: a package's seconds to a channel's microseconds.</summary>
+    public const double ZthDefaultStartHz = 0.01, ZthDefaultStopHz = 1e6;
+
+    /// <summary>brief-em3d-80 — Z_th's frequencies per decade when the setup states none.</summary>
+    public const int ZthDefaultPerDecade = 10;
 
     /// <summary>
     /// R-em3d73-5b — the first dimension that reads <paramref name="variable"/>, directly or through a VAR whose expression
@@ -676,6 +758,33 @@ public static class C3dThermal
         return v.AsReal() * scale;
     }
 
+    /// <summary>brief-em3d-80 — the time units a pulse's Period may end in (spaced), and their scale to seconds. The expression
+    /// engine's unit table has no time units, so the pulse reads them itself.</summary>
+    private static readonly Dictionary<string, double> TimeUnits = new(StringComparer.Ordinal)
+    {
+        ["s"] = 1, ["ms"] = 1e-3, ["us"] = 1e-6, ["µs"] = 1e-6, ["ns"] = 1e-9,
+    };
+
+    /// <summary>brief-em3d-80 — <paramref name="text"/> without a trailing spaced time unit, and that unit's scale to seconds (1
+    /// when there is none).</summary>
+    private static (string Expr, double Scale) SplitTime(string text)
+    {
+        string trimmed = text.Trim();
+        int sp = trimmed.LastIndexOfAny([' ', '\t']);
+        return sp > 0 && TimeUnits.TryGetValue(trimmed[(sp + 1)..], out double scale) ? (trimmed[..sp].TrimEnd(), scale) : (trimmed, 1);
+    }
+
+    /// <summary>brief-em3d-80 — a time in seconds: an expression, optionally followed by a spaced <c>s</c>, <c>ms</c>, <c>us</c>
+    /// (<c>µs</c>) or <c>ns</c>.</summary>
+    public static double? EvaluateTime(C3dResolution resolution, string text, out string? error)
+    {
+        var (expr, scale) = SplitTime(text);
+        return Evaluate(resolution, expr, out error) * scale;
+    }
+
+    /// <summary>brief-em3d-80 — why <paramref name="text"/> cannot be a time here, or null.</summary>
+    public static string? UnparsableTime(string text) => string.IsNullOrWhiteSpace(text) ? "it is empty" : Unparsable(SplitTime(text).Expr);
+
     private static (string Expr, string? Unit) SplitUnit(string text)
     {
         var (expr, unit) = Units.LiftInlineUnit(text.Trim());
@@ -726,6 +835,8 @@ public static class C3dThermal
         public const string SymmetryId       = "c3d.thermal.symmetry";
         public const string SubmodelId       = "c3d.thermal.submodel";
         public const string CurrentId        = "c3d.thermal.current";
+        public const string SmallSignalId    = "c3d.thermal.small-signal";
+        public const string MaterialHeatId   = "c3d.thermal.material-heat";
 
         private static Diagnostic E(string id, string template, params (string, object?)[] args)
             => Diagnostic.Create(id, DiagnosticSeverity.Error, template, args);
@@ -789,6 +900,13 @@ public static class C3dThermal
             => E(SubmodelId, "Thermal setup '{setup}' is a submodel that {what}.", ("setup", setup), ("what", what));
         public static Diagnostic Current(string setup, string what)
             => E(CurrentId, "Thermal setup '{setup}' {what}.", ("setup", setup), ("what", what));
+        public static Diagnostic SmallSignal(string setup, string what)
+            => E(SmallSignalId, "Thermal setup '{setup}' {what}.", ("setup", setup), ("what", what));
+        public static Diagnostic MaterialHeat(string setup, string material, IReadOnlyList<string> objects)
+            => E(MaterialHeatId, "Thermal setup '{setup}' computes Z_th, and meshes {objects}, made of '{material}', which states no heat " +
+                 "capacity (DensityKgM3 and SpecificHeat). A thermal impedance never assumes one: add both to the material.",
+                 ("setup", setup), ("material", material),
+                 ("objects", List(objects.Take(4)) + (objects.Count > 4 ? $" and {objects.Count - 4} more" : "")));
         public static Diagnostic Measure(string setup, string measure, string why)
             => E(MeasureId, "Thermal setup '{setup}' has the measure '{measure}', which cannot be evaluated: {why}.",
                  ("setup", setup), ("measure", measure), ("why", why));

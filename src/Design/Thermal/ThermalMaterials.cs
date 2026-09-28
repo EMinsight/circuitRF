@@ -94,6 +94,33 @@ public static class ThermalMaterials
 
     public static bool StatesK(TechMaterial m) => m.ThermalK is not null || m.ThermalKVsTemp is { Count: > 0 };
 
+    /// <summary>brief-em3d-80 — true when <paramref name="m"/> states both halves of a heat capacity.</summary>
+    public static bool StatesHeatCapacity(TechMaterial m) => m.DensityKgM3 is > 0 && m.SpecificHeat is > 0;
+
+    /// <summary>
+    /// brief-em3d-80 R-em3d80-2a — solid <paramref name="solid"/>'s volumetric heat capacity ρ·c, J/(m³·K), and the note when it
+    /// was read through to a library: the solid's own record when it states DensityKgM3 and SpecificHeat, else a same-name record
+    /// of its technology's libraries, then of the shipped generic library, that states both (<see cref="Find"/>'s look-through,
+    /// for the same reason). Null when no record of the name states both — the Z_th refusal.
+    /// </summary>
+    public static (double RhoC, string? Note)? HeatCapacity(C3dElaboration e, string solid, string elaboratedMaterial)
+    {
+        var (tech, name) = Source(e, solid, elaboratedMaterial);
+        var own = tech?.FindMaterial(name);
+        if (own is null) return null;
+        if (StatesHeatCapacity(own)) return (own.DensityKgM3!.Value * own.SpecificHeat!.Value, null);
+        foreach (var lm in tech!.LibraryMaterials)
+            if (string.Equals(lm.Material.Name, name, StringComparison.OrdinalIgnoreCase) && StatesHeatCapacity(lm.Material))
+                return (lm.Material.DensityKgM3!.Value * lm.Material.SpecificHeat!.Value, HeatNote(name, "its technology's material library"));
+        foreach (var gm in Generic.Value)
+            if (string.Equals(gm.Name, name, StringComparison.OrdinalIgnoreCase) && StatesHeatCapacity(gm))
+                return (gm.DensityKgM3!.Value * gm.SpecificHeat!.Value, HeatNote(name, "circuitRF's shipped generic material library"));
+        return null;
+    }
+
+    private static string HeatNote(string name, string where)
+        => $"Material '{name}' states no density and specific heat in the technology; Z_th reads them from the same-name record in {where}.";
+
     private static string Note(string name, string where)
         => $"Material '{name}' states no thermal conductivity in the technology; the thermal run reads it from the same-name record " +
            $"in {where}. Add ThermalK to the technology's own record to use a different value.";

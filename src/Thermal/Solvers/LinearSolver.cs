@@ -131,7 +131,7 @@ public static class LinearSolver
         return new(ThermalSolverKind.Direct, 0, den > 0 ? Math.Sqrt(num / den) : Math.Sqrt(num), true, null);
     }
 
-    private static int Pcg(SparseRows a, double[] b, double[] x, Action<double[], double[]> m, ThermalSolveOptions o, out double rel)
+    internal static int Pcg(SparseRows a, double[] b, double[] x, Action<double[], double[]> m, ThermalSolveOptions o, out double rel)
     {
         int n = b.Length;
         var r = new double[n];
@@ -165,7 +165,7 @@ public static class LinearSolver
     }
 
     /// <summary>Right-preconditioned BiCGStab (van der Vorst 1992).</summary>
-    private static int BiCgStab(SparseRows a, double[] b, double[] x, Action<double[], double[]> m, ThermalSolveOptions o, out double rel)
+    internal static int BiCgStab(SparseRows a, double[] b, double[] x, Action<double[], double[]> m, ThermalSolveOptions o, out double rel)
     {
         int n = b.Length;
         var r = new double[n];

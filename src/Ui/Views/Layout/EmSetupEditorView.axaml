@@ -980,6 +980,60 @@
                                  ToolTip.Tip="The most Newton steps" LostFocus="OnThermalLostFocus" KeyDown="OnThermalKey"/>
                     </StackPanel>
 
+                    <!-- brief-em3d-80 — the Rth matrix, Z_th(jω) and its Foster networks, a pulse train -->
+                    <TextBlock Classes="colhdr" FontWeight="SemiBold" Margin="0,6,0,0" Text="Rth matrix"/>
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <CheckBox IsChecked="{Binding ViewModel.ThermalRthOn}" Content="Compute"
+                                  ToolTip.Tip="R_ij: the rise of source i's place per watt in source j, every boundary made homogeneous — a property of the structure, not of the heatsink temperature"/>
+                        <TextBox Classes="cell" Width="180" Text="{Binding ViewModel.ThermalRthSources}" PlaceholderText="* (every source)"
+                                 IsEnabled="{Binding ViewModel.ThermalRthOn}" LostFocus="OnThermalLostFocus" KeyDown="OnThermalKey"
+                                 ToolTip.Tip="The heat sources, comma-separated; empty or * for every one"/>
+                        <CheckBox IsChecked="{Binding ViewModel.ThermalRthMax}" Content="Hottest point" IsEnabled="{Binding ViewModel.ThermalRthOn}"
+                                  ToolTip.Tip="Off: each source's mean rise (a symmetric matrix). On: its hottest point's (not symmetric)"/>
+                    </StackPanel>
+
+                    <TextBlock Classes="colhdr" FontWeight="SemiBold" Margin="0,6,0,0" Text="Thermal impedance Z_th(jω)"/>
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <CheckBox IsChecked="{Binding ViewModel.ThermalZthOn}" Content="Compute"
+                                  ToolTip.Tip="(K + jωC)T = q from DC over a logarithmic band; each source's own impedance is fitted with a Foster network, written beside the result as a .cnl subcircuit. Every material needs DensityKgM3 and SpecificHeat"/>
+                        <TextBox Classes="cell" Width="140" Text="{Binding ViewModel.ThermalZthSources}" PlaceholderText="* (every source)"
+                                 IsEnabled="{Binding ViewModel.ThermalZthOn}" LostFocus="OnThermalLostFocus" KeyDown="OnThermalKey"
+                                 ToolTip.Tip="The heat sources driven, comma-separated; empty or * for every one"/>
+                        <TextBox Classes="cell" Width="140" Text="{Binding ViewModel.ThermalZthProbes}" PlaceholderText="probes (optional)"
+                                 IsEnabled="{Binding ViewModel.ThermalZthOn}" LostFocus="OnThermalLostFocus" KeyDown="OnThermalKey"
+                                 ToolTip.Tip="Probes read per watt in each source (their mean), comma-separated"/>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="8" IsEnabled="{Binding ViewModel.ThermalZthOn}">
+                        <TextBlock Classes="colhdr" VerticalAlignment="Center" Text="from"/>
+                        <TextBox Classes="cell" Width="70" Text="{Binding ViewModel.ThermalZthStart}" PlaceholderText="0.01"
+                                 LostFocus="OnThermalLostFocus" KeyDown="OnThermalKey" ToolTip.Tip="The lowest frequency, Hz (DC is always included)"/>
+                        <TextBlock Classes="colhdr" VerticalAlignment="Center" Text="to"/>
+                        <TextBox Classes="cell" Width="70" Text="{Binding ViewModel.ThermalZthStop}" PlaceholderText="1e6"
+                                 LostFocus="OnThermalLostFocus" KeyDown="OnThermalKey" ToolTip.Tip="The highest frequency, Hz"/>
+                        <TextBlock Classes="colhdr" VerticalAlignment="Center" Text="Hz,"/>
+                        <TextBox Classes="cell" Width="50" Text="{Binding ViewModel.ThermalZthPerDecade}" PlaceholderText="10"
+                                 LostFocus="OnThermalLostFocus" KeyDown="OnThermalKey" ToolTip.Tip="Frequencies per decade"/>
+                        <TextBlock Classes="colhdr" VerticalAlignment="Center" Text="per decade"/>
+                    </StackPanel>
+
+                    <TextBlock Classes="colhdr" FontWeight="SemiBold" Margin="0,6,0,0" Text="Pulse train"/>
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <CheckBox IsChecked="{Binding ViewModel.ThermalPulseOn}" Content="Compute"
+                                  ToolTip.Tip="The periodic peak, single-pulse and average temperature of every Z_th place, in closed form from the Foster fits (there is no transient solver). Needs Z_th"/>
+                        <TextBlock Classes="colhdr" VerticalAlignment="Center" Text="period"/>
+                        <TextBox Classes="cell" Width="80" Text="{Binding ViewModel.ThermalPulsePeriod}" PlaceholderText="1 ms"
+                                 IsEnabled="{Binding ViewModel.ThermalPulseOn}" LostFocus="OnThermalLostFocus" KeyDown="OnThermalKey"
+                                 ToolTip.Tip="An expression, optionally ending in s, ms, us or ns"/>
+                        <TextBlock Classes="colhdr" VerticalAlignment="Center" Text="duty"/>
+                        <TextBox Classes="cell" Width="60" Text="{Binding ViewModel.ThermalPulseDuty}" PlaceholderText="0.1"
+                                 IsEnabled="{Binding ViewModel.ThermalPulseOn}" LostFocus="OnThermalLostFocus" KeyDown="OnThermalKey"
+                                 ToolTip.Tip="The on-fraction of the period, 0 to 1 — an expression, so it sweeps"/>
+                        <TextBlock Classes="colhdr" VerticalAlignment="Center" Text="peak power"/>
+                        <TextBox Classes="cell" Width="80" Text="{Binding ViewModel.ThermalPulsePeak}" PlaceholderText="sources' own"
+                                 IsEnabled="{Binding ViewModel.ThermalPulseOn}" LostFocus="OnThermalLostFocus" KeyDown="OnThermalKey"
+                                 ToolTip.Tip="The total power during the pulse, W, shared by the sources in proportion to their own; empty, each at its own power"/>
+                    </StackPanel>
+
                     <SelectableTextBlock FontSize="11" Foreground="IndianRed" TextWrapping="Wrap" Text="{Binding ViewModel.ThermalError}"
                                          IsVisible="{Binding ViewModel.ThermalError, Converter={x:Static ObjectConverters.IsNotNull}}"/>
                     <SelectableTextBlock FontSize="11" TextWrapping="Wrap" Foreground="{DynamicResource CrfWarningBrush}" Text="{Binding ViewModel.ThermalFindings}"

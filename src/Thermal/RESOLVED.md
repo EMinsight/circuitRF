@@ -128,3 +128,45 @@ exactly −(dL/dx)·v — the RF slope alone.
 table (SciPy's Bessel functions, independent of circuitRF's) is within 3.0e-7 at every tabulated frequency (1 MHz – 31.6 GHz)
 and temperature — the asymptotic branch's ~1e-7 above q = 25, as `InternalImpedance` documents. With σ(T) and k(T) off,
 harmonics at F0 and 2F0 superpose to 2e-14 of the rise.
+
+## brief-em3d-80 — the Rth matrix, Z_th(jω), Foster fits and pulses (2026-09-28)
+
+**One system, homogeneous.** `ThermalSmallSignal` takes the steady problem, keeps its matrix (the fixed nodes eliminated, the
+convection faces' h·∫NᵢNⱼ, the interface elements) and drops every offset: fixed temperatures, fixed fields and ambients are
+0, sources are replaced by one unit load per source. A source's load is scaled to sum to 1 W, so its "Avg" rise is fᵢᵀT —
+the load-weighted mean, which for a uniform source IS the area (volume) mean — and R_ij = fᵢᵀK⁻¹fⱼ is symmetric exactly when
+K is. "Max" is nodal over the source's triangles or tetrahedra. With k(T) on, the matrix is the Newton tangent about the
+given field, nonsymmetric: LU / BiCGStab, and Z_th's iterative path becomes complex BiCGStab.
+
+**The preconditioner is AMG of K + ωC, not of K.** The brief proposed the real AMG of K for COCG. At high ω, K⁻¹(K + jωC) =
+I + jωK⁻¹C has eigenvalues growing with ω without bound; with P = K + ωC every preconditioned eigenvalue (k + jωc)/(k + ωc)
+lies between 1/√2 and 1 in modulus at every frequency. The hierarchy is rebuilt per frequency (1.2 s of a 26 s sweep below).
+
+**Where a Z_th sweep's time goes (Debug build, what the owner runs).** 22 frequencies × 2 sources on 10,624 unknowns: 24 s of
+solves, 1.2 s of AMG builds, 0.1 s of probe reads. COCG needed ≤ 50 iterations (PCG on the real Rth, 25), and each iteration
+costs two V-cycles (the real and imaginary parts). Moving COCG's vector loops off `System.Numerics.Complex` onto split
+real/imaginary arrays saved only ~10 % — the V-cycles dominate, not the complex arithmetic. CSparse's complex LU (Release-built
+even in a Debug run) was WORSE on that mesh: 1.6 s per factorisation, 35 s for the sweep. So the crossover stays the real
+one's. The end-to-end gate runs at first order (1.5k unknowns, direct, 1 s) for that reason; gate 3 holds the iterative path.
+
+**The Foster fit's floor on a distributed Z is ~0.9 % at 4 τ per decade.** Z1's silicon slab (an infinite Foster network,
+Z ∝ ω^−½ past its corner) fitted by relative-weighted NNLS on the brief's fixed grid gave 1.02 % max error — least squares
+minimises the RMS, and the brief's gate is the max. Lawson's reweighting (each frequency's weight × its share of the error,
+the best of N passes, still NNLS on the same grid, still Rᵢ ≥ 0) brings it to 0.94 % at 12 passes and 0.90 % at 40. The 1 %
+gate therefore sits just above the grid's own floor; a denser τ grid is the lever, not more passes. NNLS solutions are
+sparse — 8 of ~45 grid terms survive on Z1. ΣRᵢ = Rth is imposed by a DC row weighted 10⁴ harder and a final rescale of
+order 1e-8. A mutual fit is data only, so it gets one pass; a self fit becomes a network and gets the refinement.
+
+**What the gates measured.** S6 at brief 72's 4 µm / 100 µm rung (33,677 unknowns, PCG + AMG): 0.46 % from the finest rung's
+matrix, 4.8e-5 from brief 72's own FEM on the same rung (meshed from the same .geo text; not bit-identical meshes), Avg
+asymmetry 3.4e-12. Superposition: R·P against a direct solve with every power on, less the zero-power one, 3e-15 on a
+two-layer block with a convection face. Z1 on a geometrically graded column (h₀ = 5e-4 L, ×1.15): 1.1e-6 (silicon) and 7.2e-6
+(copper) over 30 frequencies from 0.1 Hz to 10 MHz, both paths identical. Z2a/Z2b closed form against the reference: peak
+and 2,000-point waveform within 1e-9. The written `.cnl`'s own sparam bench against the network: 2.6e-15.
+
+**A Period needs time units the expression engine does not have.** `1 ms` failed to parse — the unit table carries no time.
+Rather than widen the core's table for one field, `C3dThermal.EvaluateTime` lifts a spaced s / ms / us / µs / ns itself.
+
+**PeakPower shares, it does not replace.** The brief's `"PeakPower": "Pdiss"` beside "every source with its own power scaled
+by the same waveform" reads as: the stated total is split among the driven sources in proportion to their own powers.
+Omitted, each source pulses at its own power. Sources a Z_th does not name are not pulsed and not in the baseline.

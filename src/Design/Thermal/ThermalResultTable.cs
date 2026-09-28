@@ -7,6 +7,7 @@
 // fields, and the viewer's sweep slider and this table can never disagree about which point is shown.
 
 using System.Globalization;
+using System.Numerics;
 using RfCore.Data;
 using RfCore.Export;
 
@@ -25,6 +26,9 @@ public sealed record ThermalResultLine(string Probe, double[] Fraction, double[]
 /// <summary>A wire's T(s) at every point (brief 77 writes these under <see cref="ThermalRunService.WireGroup"/>): s in metres.</summary>
 public sealed record ThermalResultWire(string Wire, double[] S, double[][] PerPoint);
 
+/// <summary>brief-em3d-80 — Z_th of one place (a source's own, or a probe) per watt in one source, over frequency (DC first).</summary>
+public sealed record ThermalResultZth(string Place, string Source, double[] FrequencyHz, Complex[] Z);
+
 public sealed class ThermalResultTable
 {
     public required IReadOnlyList<Axis> Axes { get; init; }
@@ -36,6 +40,9 @@ public sealed class ThermalResultTable
     /// <summary>brief-em3d-79 — a circuit-driven run's circuit cubes on the sweep's axes (the carried HB measures, the pin
     /// currents used, F0): what a probe can be plotted AGAINST besides the sweep variable (wire temperature against Pout).</summary>
     public IReadOnlyList<ThermalResultRow> Circuit { get; init; } = [];
+
+    /// <summary>brief-em3d-80 — every Z_th the run computed, from its <see cref="ThermalRunService.SmallSignalGroup"/> group.</summary>
+    public IReadOnlyList<ThermalResultZth> Zth { get; init; } = [];
 
     /// <summary>The run's .npy read into a table, or null with the reason.</summary>
     public static ThermalResultTable? Read(string npyPath, out string? error)
@@ -99,7 +106,16 @@ public sealed class ThermalResultTable
             foreach (var (name, cube) in ds.CubesIn(ThermalRunService.CircuitGroup))
                 if (cube.DataKind == DataKind.Real && cube.Axes.Count == axes.Count && cube.Axes.Select((a, i) => a.Name == axes[i].Name && a.Length == axes[i].Length).All(x => x))
                     circuit.Add(new ThermalResultRow(name, true, cube.Unit, cube.RealValues, null));
-        return new ThermalResultTable { Axes = axes, Points = points, Rows = rows, Lines = lines, Wires = wires, Circuit = circuit };
+        var zth = new List<ThermalResultZth>();
+        if (ds.ContainsGroup(ThermalRunService.SmallSignalGroup))
+            foreach (var (name, cube) in ds.CubesIn(ThermalRunService.SmallSignalGroup))
+            {
+                if (!name.StartsWith("Zth:", StringComparison.Ordinal) || cube.DataKind != DataKind.Complex || cube.Rank != 1) continue;
+                int colon = name.LastIndexOf(':');
+                if (colon <= "Zth:".Length) continue;
+                zth.Add(new ThermalResultZth(name["Zth:".Length..colon], name[(colon + 1)..], cube.Axes[0].Values, cube.ComplexValues));
+            }
+        return new ThermalResultTable { Axes = axes, Points = points, Rows = rows, Lines = lines, Wires = wires, Circuit = circuit, Zth = zth };
     }
 
     /// <summary>Point <paramref name="point"/>'s index along each axis (last axis fastest).</summary>

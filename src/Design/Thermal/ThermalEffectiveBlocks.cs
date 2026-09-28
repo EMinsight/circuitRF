@@ -39,13 +39,19 @@ namespace CircuitRF.Design.Thermal;
 
 /// <summary>One layer of an effective block: its thickness, its phase fractions over the box's footprint and their k.</summary>
 public sealed record EffectiveLayer(string Name, double ThicknessM, double CopperFraction, double KCopper, double DielectricFraction,
-                                    double KDielectric, int Vias = 0)
+                                    double KDielectric, int Vias = 0, double? RhoC = null)
 {
     public double VoidFraction => Math.Max(0, 1 - CopperFraction - DielectricFraction);
 }
 
 /// <summary>The block's tensor and each layer's own (k_xy, k_z), W/(m·K).</summary>
-public sealed record EffectiveMixture(double KXy, double KZ, IReadOnlyList<(EffectiveLayer Layer, double KXy, double KZ)> Layers);
+public sealed record EffectiveMixture(double KXy, double KZ, IReadOnlyList<(EffectiveLayer Layer, double KXy, double KZ)> Layers)
+{
+    /// <summary>brief-em3d-80 — the block's volumetric heat capacity, J/(m³·K): each layer's area-weighted ρc (a void holds none),
+    /// thickness-weighted over the layers — heat capacity adds by volume. Null when a replaced material states no ρ or c.</summary>
+    public double? RhoC => Layers.Count == 0 || Layers.Any(l => l.Layer.RhoC is null)
+        ? null : Layers.Sum(l => l.Layer.ThicknessM * l.Layer.RhoC!.Value) / Layers.Sum(l => l.Layer.ThicknessM);
+}
 
 /// <summary>What an enabled block does to a run: the solid added, the solids it replaced whole, its tensor and via count.</summary>
 public sealed record EffectiveBlockLowering(string Name, Em3dSolid Solid, IReadOnlyList<string> Removed, EffectiveMixture Mixture, int Vias)
@@ -200,6 +206,7 @@ public static class ThermalEffectiveBlocks
                 }
             }
             double cu = 0, cuK = 0, di = 0, diK = 0;
+            double? rhoC = 0;
             string? name = null;
             double largest = 0;
             foreach (var (s, area) in painted)
@@ -210,6 +217,7 @@ public static class ThermalEffectiveBlocks
                 if (rec is null) { refusal = $"{label} replaces '{s.Name}', whose material '{s.Material}' states no thermal conductivity."; return null; }
                 double kk = ThermalProperties.ThermalKAt(rec.Material, 25)!.Value.Value;
                 if (s.Role == Em3dRole.Conductor) { cu += a; cuK += a * kk; } else { di += a; diK += a * kk; }
+                rhoC = ThermalMaterials.HeatCapacity(e, s.Name, s.Material) is { } hc ? rhoC + a * hc.RhoC : null;
                 if (a > largest && e.Origins.TryGetValue(s.Name, out var o2)) { largest = a; name = o2.StackupEntry; }
             }
             if (cu + di <= 1e-12)
@@ -219,7 +227,7 @@ public static class ThermalEffectiveBlocks
                 return null;
             }
             var layer = new EffectiveLayer(name ?? $"z {Um(z0)}–{Um(z1)} µm", z1 - z0, Math.Min(cu, 1), cu > 0 ? cuK / cu : 0,
-                                           Math.Min(di, 1), di > 0 ? diK / di : 0, layerVias);
+                                           Math.Min(di, 1), di > 0 ? diK / di : 0, layerVias, rhoC);
             if (LayerK(layer).KZ <= 0)
             {
                 refusal = $"{label}'s layer '{layer.Name}' conducts nothing through its thickness inside the box, so the block would be an " +

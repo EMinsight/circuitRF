@@ -1525,7 +1525,7 @@ static int RunEm(string[] args)
     JsonRun.Data = result.Data;
 
     // brief-em3d-74 — a thermal run's probes and measures on stdout (the last sweep point); --json carries every cube.
-    if (setup.IsThermal && result.Data is { } thermalSet) PrintThermal(thermalSet);
+    if (setup.IsThermal && result.Data is { } thermalSet) { PrintThermal(thermalSet); PrintRth(thermalSet); }
 
     // brief-em3d-22 R-em3d22-3c/4c — a static run's result is a matrix, printed; --json carries the cube.
     if (setup.IsStatic3D && result.Data is { } matrixSet) PrintStaticMatrix(matrixSet, setup);
@@ -1577,6 +1577,25 @@ static void PrintThermal(RfCore.Data.DataSet data)
             string at = v.Length > 1 ? $"   (last of {v.Length} points)" : "";
             Console.WriteLine($"{name + ":",-28} {v[^1].ToString("G6", inv)} {cube.Unit}{at}");
         }
+}
+
+/// <summary>
+/// brief-em3d-80 R-em3d80-1d — a thermal run's Rth matrix on stdout, K/W, rows (the rise) and columns (the watt) labelled with
+/// the sources' names; --json carries the cube.
+/// </summary>
+static void PrintRth(RfCore.Data.DataSet data)
+{
+    string group = CircuitRF.Design.Thermal.ThermalRunService.SmallSignalGroup;
+    if (!data.Groups.Contains(group) || !data.CubesIn(group).TryGetValue(CircuitRF.Design.Thermal.ThermalRunService.RthCube, out var cube) ||
+        cube.Axes.Count != 2 || cube.Axes[0].Labels is not { } names) return;
+    int n = names.Length;
+    double[] v = cube.RealValues;
+    var inv = System.Globalization.CultureInfo.InvariantCulture;
+    Console.WriteLine("Rth matrix (K/W): the rise of each row's source per watt in each column's");
+    int width = Math.Max(10, names.Max(x => x.Length) + 2);
+    Console.WriteLine(new string(' ', width) + string.Concat(names.Select(x => x.PadLeft(width))));
+    for (int i = 0; i < n; i++)
+        Console.WriteLine(("  " + names[i]).PadRight(width) + string.Concat(Enumerable.Range(0, n).Select(j => v[i * n + j].ToString("G5", inv).PadLeft(width))));
 }
 
 /// <summary>
