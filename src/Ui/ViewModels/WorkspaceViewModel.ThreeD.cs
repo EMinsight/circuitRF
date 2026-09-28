@@ -713,6 +713,7 @@ public partial class WorkspaceViewModel
         ThreeDShowAllCommand.NotifyCanExecuteChanged();
         ThreeDSnapCommand.NotifyCanExecuteChanged();
         ThreeDDrawCommand.NotifyCanExecuteChanged();
+        ThreeDTemperatureCommand.NotifyCanExecuteChanged();
         ThreeDDrawingPlaneCommand.NotifyCanExecuteChanged();
         ThreeDExtrudeCommand.NotifyCanExecuteChanged();
         ThreeDSelectAllCommand.NotifyCanExecuteChanged();
@@ -752,11 +753,20 @@ public partial class WorkspaceViewModel
     public bool ThreeDBooleanMenuEnabled
         => ThreeDBooleanAvailable && ActiveC3dEditor() is { } e && e.Viewer.SelectMode == Scene3DSelectMode.Object && e.Targets().Count > 0;
 
+    /// <summary>brief-em3d-75 gate 2 — 3D ▸ View ▸ Temperature: enabled only with a current thermal result for the active
+    /// setup; greyed, with the reason, when there is none or it is stale.</summary>
+    public bool ThreeDTemperatureMenuEnabled => ActiveC3dEditor()?.PlotTemperatureRefusal() is null && ActiveC3dEditor() is not null;
+
+    public string ThreeDTemperatureTip => ActiveC3dEditor() is { } e
+        ? e.PlotTemperatureRefusal() ?? "Temperature from the active thermal setup's run."
+        : "Requires an active 3D editor.";
+
     private static readonly string[] ThreeDSelectionProperties =
     [
         nameof(ThreeDModifyMenuEnabled), nameof(ThreeDTransformMenuEnabled), nameof(ThreeDAlignMenuEnabled),
         nameof(ThreeDOrderMenuEnabled), nameof(ThreeDFaceMenuEnabled), nameof(ThreeDEdgeMenuEnabled),
         nameof(ThreeDVertexMenuEnabled), nameof(ThreeDBooleanMenuEnabled),
+        nameof(ThreeDTemperatureMenuEnabled), nameof(ThreeDTemperatureTip),
     ];
 
     /// <summary>Re-asks every item that depends on the active editor's selection.</summary>
@@ -778,6 +788,11 @@ public partial class WorkspaceViewModel
     {
         if (ActiveC3dEditor() is { } e && Enum.TryParse<CircuitRF.Ui.ThreeD.Tools.C3dToolKind>(kind, out var k)) e.Arm(k);
     }
+
+    /// <summary>brief-em3d-75 — 3D ▸ View ▸ Temperature's items and the thermal places' visibility switches, by name
+    /// (C3dEditorViewModel.RunTemperature).</summary>
+    [RelayCommand(CanExecute = nameof(HasActiveC3dEditor))]
+    private void ThreeDTemperature(string which) => ActiveC3dEditor()?.RunTemperature(which);
 
     /// <summary>3D ▸ Drawing Plane ▸ XY / YZ / XZ (keeping the offset), and Show Grid.</summary>
     [RelayCommand(CanExecute = nameof(HasActiveC3dEditor))]

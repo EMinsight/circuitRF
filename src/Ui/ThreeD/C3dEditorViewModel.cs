@@ -138,6 +138,13 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         // 3D menu cleanup — the menu bar's Modify items follow the selection and the select mode.
         Viewer.SelectionChanged += RaiseMenuStateChanged;
         Viewer.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(Viewer3DViewModel.SelectMode)) RaiseMenuStateChanged(); };
+        // brief-em3d-75 — the probe table and the menus follow the thermal result and the sweep step.
+        Viewer.ThermalResultsChanged += () => { if (ProbeTableOpen) RefreshProbeTable(); RaiseMenuStateChanged(); };
+        Viewer.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(Viewer3DViewModel.TemperatureStep) && ProbeTableOpen) RefreshProbeTable();
+            if (e.PropertyName is nameof(Viewer3DViewModel.FieldsAvailable) or nameof(Viewer3DViewModel.IsThermalRun)) RaiseMenuStateChanged();
+        };
         // brief-em3d-44 R-em3d44-5 — the editor snaps; its switches are the user's, stored per user.
         var (snapOn, kinds) = Snap3DPreference.Preferred;
         Viewer.SnapKinds = kinds;
@@ -263,7 +270,8 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
                                         OwnFrame: name => OwnFrameOf(doc, e, name),
                                         HideOutermostDielectric: false,
                                         FaceTints: [.. records.Boundaries.Where(b => b.Refusal is null)
-                                                           .Select(b => new Scene3DFaceTint(b.Boundary.Object + "/" + b.Boundary.Face, b.Boundary.Kind, b.Pieces))]));
+                                                           .Select(b => new Scene3DFaceTint(b.Boundary.Object + "/" + b.Boundary.Face, b.Boundary.Kind, b.Pieces)),
+                                                    .. records.ThermalTints]));
         }
     }
 
@@ -1048,6 +1056,9 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
             return;
         }
         if (item.IsFeature) return;           // brief-em3d-67 — a feature row's switch is Enabled, not visibility
+        // brief-em3d-75 — a thermal place's tick is the view's (a place has no Hidden in the file).
+        if (item.Kind is HeatSourceKind or ProbeKind or MeshRegionKind) { SetPlaceShown(item.Name, visible); return; }
+        if (item.Kind == ThermalBoundaryKindName) return;
         if (item.IsGroup) { SetGroupVisible(item.GroupPath!, visible); return; }
         if (item.OperandPath is { } path && item.ObjectIndex >= 0)
         {

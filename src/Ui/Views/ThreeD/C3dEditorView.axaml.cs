@@ -27,6 +27,7 @@ public partial class C3dEditorView : UserControl
     public C3dEditorView()
     {
         InitializeComponent();
+        ActualThemeVariantChanged += (_, _) => SyncPlotTheme();
         // brief-em3d-45 — the typed field sees Tab and Enter before the TextBox (and focus navigation) does; its Esc is
         // the view's (OnViewKeyTunnel).
         FieldInput.AddHandler(KeyDownEvent, OnFieldKey, RoutingStrategies.Tunnel);
@@ -88,8 +89,14 @@ public partial class C3dEditorView : UserControl
         _vm.PropertyChanged += OnVmPropertyChanged;
         MirrorTreeSelection();
         _vm.TreeRevealRequested += OnTreeReveal;
+        SyncPlotTheme();
         if (doc!.ConsumeActivationFocus()) Dispatcher.UIThread.Post(() => Pane.Focus(), DispatcherPriority.Loaded);
     }
+
+    /// <summary>brief-em3d-75 — the line plot follows the application's light or dark variant, as every PlotControl must.</summary>
+    private void SyncPlotTheme()
+        => ThermalLinePlot.PlotTheme = ActualThemeVariant == Avalonia.Styling.ThemeVariant.Dark
+            ? CircuitRF.Render.DataDisplay.RenderTheme.Dark : CircuitRF.Render.DataDisplay.RenderTheme.Light;
 
     /// <summary>brief-em3d-49 — a value the view model asks for (a port's Z0, a box face's padding): asked, then committed;
     /// a refusal goes to the status line.</summary>

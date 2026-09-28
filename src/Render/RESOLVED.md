@@ -4257,3 +4257,32 @@ Export Drawing… that puts several views and sections on one sheet. `Em3dSectio
   column count giving the largest scale, and rounds DOWN to 1, 2 or 5 × 10ⁿ paper to model (`RoundScale`).
 - The legend lists a material once: conductors are drawn in their LAYER colours, and one material on three layers read as
   three materials.
+
+## brief-em3d-75 — temperature on the field path (2026-09-28)
+
+A thermal run's field is one more quantity on brief 29's path: `FieldRun` lists `postpro/paraview/thermal` as
+`FieldProblemKind.Thermal` (timestep = the 0-based sweep point), `T_C` is the known array "Temperature, °C", and the cell
+array `material` is bookkeeping like `attribute`. No second reader.
+
+- **The temperature is not a signed quantity.** A real scalar in `Value` mode was `Signed` (a potential, drawn on a
+  diverging map about zero); `FieldQuantity.IsTemperature` excludes `T_C`, so it takes a sequential map (`ColorMap3D.Inferno`,
+  new) between `FieldColorScale.MinMax` — the TRUE minimum and maximum (percentile 100, "maximum" in the legend, D9). The EM
+  default stays the 99th percentile; the gate draws both on one field to show the percentile would have clipped the hot node.
+- **Choosing the hot node for that gate takes care.** On the six-tetrahedra-per-cube block a corner on the cube diagonal is
+  in six drawn triangles, 1.04 % of a 4 × 4 × 4 block's exterior vertices — so the 99th percentile WAS that node. A corner off
+  the diagonal is in four (0.69 %).
+- **Recipes (gate 7).** A slice (`FieldSlicer`) or a gather (`RegionBoundary`, `Boundary`, the new `Exterior`) now records,
+  per drawn vertex, the mesh nodes it came from and the slice's edge fraction (`FieldRecipe`). `FieldSurface.Revalue` re-reads
+  another array of the same mesh through it, so a thermal sweep step reads one array (`FieldStep.WithArraysOf` keeps the mesh
+  already read) and cuts nothing. `ILinearTets` gained two default members (`Nodes`, `MeshSize`) so a synthetic set of
+  tetrahedra needs no change; `FieldMeshTets` implements them, and a constrained call on the struct does not box.
+  `Scene3DFieldGeometry.GeometryVersion` stays put across a revalue.
+- **What gate 7 does not claim.** `FieldVertex` interleaves position and value (36 bytes) and all three backends bind one
+  field stream, so a revalued step re-uploads the unchanged positions with the new values. Splitting the stream touches
+  every backend's pipeline and the compiled SPIR-V; not done here.
+- **Wires (R-em3d75-5).** `FieldWires.Colour` colours the scene's OWN triangles of a wire: each vertex is matched to its ring
+  by its exact scene-local float position (the scene converts the ring's doubles the same way), an end cap's centre to its
+  ring, and ring k takes the 3D arc length of path vertex k. The scene re-orders a solid's vertices per (vertex, face), so an
+  index-based ring map would be wrong; position is exact.
+- `FieldFaces.OnFace` cuts a region's boundary down to one face by matching the mesher's triangles to the display's (the
+  centroid within 1 % of the object's size of a display triangle whose normal agrees) — two tessellations of one face.

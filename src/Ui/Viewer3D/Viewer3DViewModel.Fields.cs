@@ -17,6 +17,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Numerics;
 using CircuitRF.Design.Em3d;
+using CircuitRF.Design.Thermal;
 using CircuitRF.Engine.Em3d;
 using CircuitRF.Render.Scene3D;
 using CircuitRF.Render.Scene3D.Fields;
@@ -56,7 +57,12 @@ public sealed partial class Viewer3DViewModel
     /// <summary>The colour range of what is drawn (null while nothing is).</summary>
     public FieldColorScale? FieldScale { get; private set; }
 
-    public ColorMap3D FieldMap => SelectedFieldQuantity is { Signed: true } ? ColorMap3D.CoolWarm : ColorMap3D.Viridis;
+    public ColorMap3D FieldMap => SelectedFieldQuantity switch
+    {
+        { IsTemperature: true } => ColorMap3D.Inferno,     // brief-em3d-75 — hot reads as hot
+        { Signed: true } => ColorMap3D.CoolWarm,
+        _ => ColorMap3D.Viridis,
+    };
 
     public ObservableCollection<FieldSolutionItem> FieldSolutions { get; } = [];
     public ObservableCollection<FieldQuantity> FieldQuantities { get; } = [];
@@ -92,14 +98,24 @@ public sealed partial class Viewer3DViewModel
         if (!value) FieldPlaying = false;
         FrameRequested?.Invoke();
         OnPropertyChanged(nameof(FieldLegendVisible));
+        OnPropertyChanged(nameof(ShowsTemperature));
     }
 
-    partial void OnSelectedFieldSolutionChanged(FieldSolutionItem? value) { if (ShowField) EnsureFieldLoaded(); }
+    partial void OnSelectedFieldSolutionChanged(FieldSolutionItem? value)
+    {
+        // brief-em3d-75 — the sweep slider follows the picker, and the picker the slider.
+        if (value is not null && FieldSolutions.IndexOf(value) is var at and >= 0 && at != TemperatureStep) TemperatureStep = at;
+        OnPropertyChanged(nameof(TemperatureStepLabel));
+        // Gate 7 — a thermal step on the same run re-reads its temperature alone.
+        if (ShowField && value is not null && TryRevalueTemperature(value)) return;
+        if (ShowField) EnsureFieldLoaded();
+    }
 
     partial void OnSelectedFieldQuantityChanged(FieldQuantity? value)
     {
         OnPropertyChanged(nameof(FieldCanAnimate));
         OnPropertyChanged(nameof(FieldMap));
+        OnPropertyChanged(nameof(ShowsTemperature));
         if (value is not { Animated: true }) FieldPlaying = false;
         ScheduleFieldGeometry();
     }
@@ -107,6 +123,7 @@ public sealed partial class Viewer3DViewModel
     partial void OnFieldOnClipPlaneChanged(bool value) => ScheduleFieldGeometry();
     partial void OnFieldOnSurfacesChanged(bool value) => ScheduleFieldGeometry();
     partial void OnFieldDbChanged(bool value) => RescaleField();
+    // brief-em3d-75 — the temperature's range is its own (D9): dB and the percentile are an EM field's.
     partial void OnFieldPercentileChanged(double value) => RescaleField();
 
     partial void OnFieldPhaseDegreesChanged(double value)
@@ -140,6 +157,14 @@ public sealed partial class Viewer3DViewModel
     public IReadOnlyList<string> FieldLegendLines()
     {
         if (SelectedFieldQuantity is not { } q || FieldScale is not { } s) return [];
+        // brief-em3d-75 R-em3d75-4b — °C, the true range (the peak is never clipped), and the sweep point.
+        if (q.IsTemperature)
+        {
+            var t = new List<string> { "Temperature (°C)", s.Describe() + (FixRangeAcrossSweep && FieldSolutions.Count > 1 ? ", fixed across the sweep" : "") };
+            if (TemperatureStepLabel.Length > 0) t.Add(TemperatureStepLabel);
+            if (HotSpotLabel.Length > 0) t.Add("Hot spot: " + HotSpotLabel);
+            return t;
+        }
         string unit = FieldNames.Unit(q.Array.Name);
         var lines = new List<string>
         {
@@ -153,6 +178,9 @@ public sealed partial class Viewer3DViewModel
         return lines;
     }
 
+    /// <summary>brief-em3d-75 — the thermal run's fields (and its table) were read again: the probe table and the menus follow.</summary>
+    public event Action? ThermalResultsChanged;
+
     // ── discovery ───────────────────────────────────────────────────────────────────────────
 
     /// <summary>The run directories of this setup's 3D solvers — Palace's for its current problem type,
@@ -160,6 +188,8 @@ public sealed partial class Viewer3DViewModel
     private (string? Palace, string? OpenEms) FieldRunDirectories()
     {
         if (_lastSetup is not { } setup || _resultsRoot() is not { } root) return (null, null);
+        // brief-em3d-75 — a thermal setup's fields are its own run's (brief 74's <key>.thermal directory).
+        if (setup.IsThermal) return (ThermalRunService.RunDirectory(root, setup), null);
         return (setup.Solver3D is Em3dSolver.Palace or Em3dSolver.Both ? Em3dRunService.RunDirectory(root, setup, Em3dSolver.Palace) : null,
                 setup.Solver3D is Em3dSolver.OpenEms or Em3dSolver.Both ? Em3dRunService.RunDirectory(root, setup, Em3dSolver.OpenEms) : null);
     }
@@ -169,10 +199,13 @@ public sealed partial class Viewer3DViewModel
     {
         var (dir, openEmsDir) = FieldRunDirectories();
         var scene = Scene;
+        var thermalSetup = _lastSetup is { IsThermal: true } ts ? ts : null;
+        string? root = _resultsRoot();
         Task.Run(() =>
         {
             FieldRun? run = null, openEms = null;
             string? why = null;
+            var table = thermalSetup is not null && root is not null ? ReadThermalTable(thermalSetup, root) : null;
             try
             {
                 run = dir is null ? null : FieldRun.OpenPalace(dir, MeshToMetres);
@@ -189,9 +222,16 @@ public sealed partial class Viewer3DViewModel
                 bool same = runs.Length > 0 && runs.Length == _fieldRuns.Count && dir == _fieldRunDir &&
                             runs.Zip(_fieldRuns).All(p => p.First.Solutions.Select(x => x.VolumePvtu).SequenceEqual(p.Second.Solutions.Select(x => x.VolumePvtu)) &&
                                                           StampOf(p.First) == StampOf(p.Second));
-                if (same) { if (ShowField) ScheduleFieldGeometry(); return; }
+                if (same)
+                {
+                    _thermalTable = table ?? _thermalTable;
+                    if (ShowField) ScheduleFieldGeometry();
+                    return;
+                }
                 _fieldRuns = runs;
                 _fieldRun = runs.FirstOrDefault();
+                _thermalTable = table;
+                _temperature = null;
                 _fieldRunDir = dir;
                 _fieldGroups = groups;
                 _fieldVolume = _fieldBoundary = null;
@@ -200,8 +240,16 @@ public sealed partial class Viewer3DViewModel
                 FieldSolutions.Clear();
                 foreach (var r in runs)
                     foreach (var x in r.Solutions)
-                        FieldSolutions.Add(new FieldSolutionItem(x, SolutionLabel(x, modes, scene.Problem) + (runs.Length > 1 ? $" ({r.Solver})" : ""), r));
+                        FieldSolutions.Add(new FieldSolutionItem(x, (x.Kind == FieldProblemKind.Thermal
+                            ? table is { } tt && x.Index < tt.Points ? tt.PointLabel(x.Index) : $"Point {x.Index + 1}"
+                            : SolutionLabel(x, modes, scene.Problem)) + (runs.Length > 1 ? $" ({r.Solver})" : ""), r));
                 FieldsAvailable = FieldSolutions.Count > 0;
+                OnPropertyChanged(nameof(IsThermalRun));
+                OnPropertyChanged(nameof(ThermalTable));
+                OnPropertyChanged(nameof(TemperatureStepMax));
+                OnPropertyChanged(nameof(HasTemperatureSweep));
+                OnPropertyChanged(nameof(TemperatureStepLabel));
+                ThermalResultsChanged?.Invoke();
                 SelectedFieldSolution = FieldSolutions.FirstOrDefault();
                 if (!FieldsAvailable)
                 {
@@ -231,6 +279,7 @@ public sealed partial class Viewer3DViewModel
                 $"Mode {s.Index + 1}: {G(m.FrequencyHz / 1e9)} GHz, Q {m.Q.ToString("G3", CultureInfo.InvariantCulture)}",
             FieldProblemKind.Eigenmode => $"Mode {s.Index + 1}",
             FieldProblemKind.Electrostatic => $"Terminal {TerminalName(s.Index, problem)} at 1 V, the others at 0 V",
+            FieldProblemKind.Thermal => $"Point {s.Index + 1}",
             _ => $"Terminal {TerminalName(s.Index, problem)} carrying 1 A",
         };
     }
@@ -270,6 +319,7 @@ public sealed partial class Viewer3DViewModel
                     foreach (var q in offered) FieldQuantities.Add(q);
                     // Keep the reading across solutions when the new one offers it; |E| otherwise.
                     SelectedFieldQuantity = FieldQuantities.FirstOrDefault(q => q == keep)
+                        ?? FieldQuantities.FirstOrDefault(q => q.IsTemperature)
                         ?? FieldQuantities.FirstOrDefault(q => q.Array.Name == "E" && q.Mode == FieldMode.Peak)
                         ?? FieldQuantities.FirstOrDefault();
                     ScheduleFieldGeometry();
@@ -305,6 +355,9 @@ public sealed partial class Viewer3DViewModel
     {
         FieldGeometry = new Scene3DFieldGeometry([], ++_fieldVersion);
         _fieldSurfaces = [];
+        _temperature = null;
+        HotSpot = null;
+        HotSpotLabel = "";
         FieldScale = null;
         View.FieldCovered = [];
         OnPropertyChanged(nameof(FieldLegendVisible));
@@ -326,6 +379,38 @@ public sealed partial class Viewer3DViewModel
         var selected = Scene.Object(View.Selected);
         _fieldCts?.Cancel();
         var cts = _fieldCts = new CancellationTokenSource();
+        if (q.IsTemperature)
+        {
+            // brief-em3d-75 — the temperature's own targets, range and hot spot; the triangles carry recipes for a step.
+            var faces = _temperatureFaces.ToList();
+            bool all = TemperatureAllFaces, onClip = TemperatureOnClip, fix = FixRangeAcrossSweep;
+            var table = _thermalTable;
+            int step = _fieldLoaded?.Index ?? 0;
+            var steps = _fieldRun?.Solutions ?? [];
+            long version = ++_geometryVersion;
+            Task.Run(() =>
+            {
+                try
+                {
+                    if (vol?.Load(q.Array.Name) is not { } array) return;
+                    var (parts, scale, note, covered) = BuildTemperature(q, vol, array, scene, clip, groups, faces, all, onClip, table, step,
+                                                                         steps, fix, version, cts.Token);
+                    cts.Token.ThrowIfCancellationRequested();
+                    _post(() =>
+                    {
+                        if (cts.IsCancellationRequested || _disposed || !ReferenceEquals(Scene, scene)) return;
+                        FieldGeometryBuilds++;
+                        AdoptTemperature(parts, q, scale, covered, note, scene);
+                    });
+                }
+                catch (OperationCanceledException) { }
+                catch (Exception e) when (e is FieldReadException or IOException or UnauthorizedAccessException or ArgumentException)
+                {
+                    _post(() => FieldText = "The temperature could not be drawn: " + e.Message);
+                }
+            });
+            return;
+        }
         Task.Run(() =>
         {
             try
@@ -398,7 +483,7 @@ public sealed partial class Viewer3DViewModel
     /// <summary>A new percentile or dB choice: a new range over the SAME triangles — uniforms only.</summary>
     private void RescaleField()
     {
-        if (SelectedFieldQuantity is not { } q || _fieldSurfaces.Count == 0) return;
+        if (SelectedFieldQuantity is not { } q || _fieldSurfaces.Count == 0 || q.IsTemperature) return;
         FieldScale = FieldColorScale.Auto(q, _fieldSurfaces, FieldDb, FieldPercentile);
         WriteFieldUniforms();
         OnPropertyChanged(nameof(FieldLegendVisible));
@@ -476,6 +561,7 @@ public sealed partial class Viewer3DViewModel
     internal string FieldValueUnderCursor(uint id, Vector3 point, bool hit)
     {
         if (!ShowField || SelectedFieldQuantity is not { } q || _fieldRun is not { } run || View.CursorX < 0) return "";
+        if (q.IsTemperature) return TemperatureUnderCursor(id, point, hit, q, run);
         Span<double> ch = stackalloc double[6];
         double toUnits = 1 / run.ToMetres;
         bool Sample(FieldSampler? sampler, FieldStep? step, Vector3 local, double tol, Span<double> into)

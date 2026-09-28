@@ -26,7 +26,14 @@ public sealed class ColorMap3D
         (0.0f, 0x3b, 0x4c, 0xc0), (0.25f, 0x8d, 0xb0, 0xfe), (0.5f, 0xdd, 0xdd, 0xdd), (0.75f, 0xf4, 0x9a, 0x7b),
         (1.0f, 0xb4, 0x04, 0x26));
 
-    public static IReadOnlyList<ColorMap3D> All { get; } = [Viridis, CoolWarm];
+    /// <summary>brief-em3d-75 — perceptually uniform, black through red and orange to pale yellow: temperature, where the
+    /// hot end should read as hot. The published inferno map's stops at tenths.</summary>
+    public static ColorMap3D Inferno { get; } = new("inferno",
+        (0.0f, 0x00, 0x00, 0x04), (0.1f, 0x16, 0x0b, 0x39), (0.2f, 0x42, 0x0a, 0x68), (0.3f, 0x6a, 0x17, 0x6e),
+        (0.4f, 0x93, 0x26, 0x67), (0.5f, 0xbc, 0x37, 0x54), (0.6f, 0xdd, 0x51, 0x3a), (0.7f, 0xf3, 0x77, 0x1a),
+        (0.8f, 0xfc, 0xa5, 0x0a), (0.9f, 0xf6, 0xd7, 0x46), (1.0f, 0xfc, 0xff, 0xa4));
+
+    public static IReadOnlyList<ColorMap3D> All { get; } = [Viridis, CoolWarm, Inferno];
 
     /// <summary>The colour at <paramref name="t"/>, clamped to [0, 1].</summary>
     public (byte R, byte G, byte B) Sample(float t)

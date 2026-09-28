@@ -37,6 +37,15 @@ public sealed partial class C3dEditorViewModel
             items.Add(Viewer3DMenuItem.Separator);
             items.Add(new Viewer3DMenuItem("Delete", port is null ? null : () => DeletePorts([port]), Enabled: port is not null));
         }
+        // brief-em3d-75 R-em3d75-1b — a thermal place's row: rename, hide, delete (and a line probe's plot); a thermal
+        // boundary's row: delete, from the active thermal setup.
+        else if (item.Kind is HeatSourceKind or ProbeKind or MeshRegionKind or ThermalBoundaryKindName)
+        {
+            items.AddRange(ThermalTreeItems(item));
+            items.Add(Viewer3DMenuItem.Separator);
+            items.Add(new Viewer3DMenuItem("Properties", () => ShowProperties(rename: false)));
+            return items;
+        }
         else if (item.Kind == "Boundary")
         {
             var b = Document.FaceBoundaries.FirstOrDefault(f => Scene3DBuilder.FaceTintPrefix + f.Object + "/" + f.Face == item.Name);

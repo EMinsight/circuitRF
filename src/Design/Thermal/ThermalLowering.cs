@@ -59,6 +59,45 @@ public static class ThermalLowerings
                m?.Grading ?? DefaultGrading, m?.Order ?? DefaultOrder, scale);
 
     /// <summary>
+    /// brief-em3d-75 — the pieces of the face spelled <paramref name="spelled"/> (<c>object/face</c>) on its solid in
+    /// <paramref name="solids"/> (index <paramref name="solid"/>), world metres — where a thermal boundary or a face probe
+    /// lies. The ONE placement both the mesher's face groups and the editor's tint use, so what is tinted is what is meshed.
+    /// Null with the reason.
+    /// </summary>
+    public static List<Em3dFacePolygon>? FacePieces(C3dDocument doc, C3dElaboration e, IReadOnlyList<Em3dSolid> solids, string spelled,
+                                                    out int solid, out string? refusal)
+    {
+        solid = -1;
+        refusal = null;
+        int slash = spelled.LastIndexOf('/');
+        if (slash <= 0 || slash == spelled.Length - 1) { refusal = $"'{spelled}' is not a face: a face is spelled object/face."; return null; }
+        var (target, targetFace) = C3dKernelUse.Resolve(doc, spelled[..slash], spelled[(slash + 1)..]);
+        int si = -1;
+        for (int i = 0; i < solids.Count; i++) if (solids[i].Name == target) { si = i; break; }
+        if (si < 0 || !e.Provenance.TryGetValue(target, out var prov))
+        {
+            refusal = $"The face '{spelled}' is on '{target}', which is not a meshed solid of this thermal run.";
+            return null;
+        }
+        var primNames = Em3dFaceGeometry.FaceNames(solids[si].Primitive);
+        var mine = Enumerable.Range(0, Math.Min(prov.FaceNames.Count, primNames.Count))
+                             .Where(i => C3dKernelUse.Covers(targetFace, prov.FaceNames[i])).Select(i => primNames[i]).Distinct().ToList();
+        if (mine.Count == 0) { refusal = $"'{target}' has no face '{targetFace}'."; return null; }
+        var pieces = new List<Em3dFacePolygon>();
+        foreach (string f in mine)
+        {
+            if (Em3dFaceGeometry.Pieces(solids[si].Primitive, f, out string? why) is not { } p)
+            {
+                refusal = $"The face '{spelled}' cannot be placed in the mesh: {why}.";
+                return null;
+            }
+            pieces.AddRange(p);
+        }
+        solid = si;
+        return pieces;
+    }
+
+    /// <summary>
     /// The lowering of <paramref name="doc"/> (resolved in place by its elaboration <paramref name="e"/>) for thermal setup
     /// <paramref name="t"/>, or null with the reason. <paramref name="scale"/> multiplies every element size.
     /// </summary>
@@ -124,23 +163,7 @@ public static class ThermalLowerings
         string? Face(string spelled, bool exteriorOnly)
         {
             if (faces.Any(f => f.Name == spelled && f.ExteriorOnly == exteriorOnly)) return null;
-            int slash = spelled.LastIndexOf('/');
-            if (slash <= 0 || slash == spelled.Length - 1) return $"'{spelled}' is not a face: a face is spelled object/face.";
-            var (target, targetFace) = C3dKernelUse.Resolve(doc, spelled[..slash], spelled[(slash + 1)..]);
-            int si = solids.FindIndex(s => s.Name == target);
-            if (si < 0 || !e.Provenance.TryGetValue(target, out var prov))
-                return $"The face '{spelled}' is on '{target}', which is not a meshed solid of this thermal run.";
-            var primNames = Em3dFaceGeometry.FaceNames(solids[si].Primitive);
-            var mine = Enumerable.Range(0, Math.Min(prov.FaceNames.Count, primNames.Count))
-                                 .Where(i => C3dKernelUse.Covers(targetFace, prov.FaceNames[i])).Select(i => primNames[i]).Distinct().ToList();
-            if (mine.Count == 0) return $"'{target}' has no face '{targetFace}'.";
-            var pieces = new List<Em3dFacePolygon>();
-            foreach (string f in mine)
-            {
-                if (Em3dFaceGeometry.Pieces(solids[si].Primitive, f, out string? why) is not { } p)
-                    return $"The face '{spelled}' cannot be placed in the mesh: {why}.";
-                pieces.AddRange(p);
-            }
+            if (FacePieces(doc, e, solids, spelled, out int si, out string? why) is not { } pieces) return why;
             faces.Add(new GmshThermalFace(spelled, si, pieces, exteriorOnly));
             return null;
         }

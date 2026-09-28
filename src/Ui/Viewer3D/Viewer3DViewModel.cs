@@ -695,6 +695,12 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
     public string? MeshPath()
     {
         if (_lastSetup is not { } setup || _resultsRoot() is not { } root) return null;
+        // brief-em3d-75 — a thermal run keeps its Gmsh mesh in its own directory.
+        if (setup.IsThermal)
+        {
+            string tm = Path.Combine(CircuitRF.Design.Thermal.ThermalRunService.RunDirectory(root, setup), GmshGeoWriter.MeshFile);
+            return File.Exists(tm) ? tm : null;
+        }
         if (setup.Solver3D is not (Em3dSolver.Palace or Em3dSolver.Both)) return null;
         string p = Path.Combine(Em3dRunService.RunDirectory(root, setup, Em3dSolver.Palace), GmshGeoWriter.MeshFile);
         return File.Exists(p) ? p : null;

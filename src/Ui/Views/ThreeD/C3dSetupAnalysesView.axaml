@@ -37,6 +37,12 @@
                     Padding="3,2" Background="Transparent" BorderThickness="0" Margin="0,0,1,0">
                 <mi:MaterialIcon Kind="Plus" Width="14" Height="14" Foreground="{DynamicResource SystemBaseMediumColor}"/>
             </Button>
+            <!-- brief-em3d-75 R-em3d75-3 — a thermal setup beside the EM ones: circuitRF's own solver, Gmsh meshes it. -->
+            <Button Command="{Binding AddThermalSetupCommand}"
+                    ToolTip.Tip="Add a thermal setup: temperature from heat sources, solved by circuitRF's own thermal solver (Gmsh meshes it)"
+                    Padding="3,2" Background="Transparent" BorderThickness="0" Margin="0,0,1,0">
+                <mi:MaterialIcon Kind="ThermometerPlus" Width="14" Height="14" Foreground="{DynamicResource SystemBaseMediumColor}"/>
+            </Button>
             <Button Click="OnEditClick" ToolTip.Tip="Edit the selected setup (or double-click it)"
                     Padding="3,2" Background="Transparent" BorderThickness="0" Margin="0,0,1,0">
                 <mi:MaterialIcon Kind="Pencil" Width="14" Height="14" Foreground="{DynamicResource SystemBaseMediumColor}"/>

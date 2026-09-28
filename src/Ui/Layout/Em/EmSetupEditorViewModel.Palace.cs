@@ -42,7 +42,7 @@ public sealed partial class EmSetupEditorViewModel
     [ObservableProperty] private Em3dSolverChoice _solver3DChoice = Solver3DChoices[0];
 
     /// <summary>True when this setup is a 3D one: the planar controls below are kept but not read.</summary>
-    public bool Is3DSetup => Solver3DChoice.Value != Em3dSolver.None;
+    public bool Is3DSetup => Solver3DChoice.Value != Em3dSolver.None || IsThermalSetup;
 
     // What a 3D run does NOT read is hidden while one is chosen, rather than shown and ignored. What
     // it DOES read stays: the frequency sweep, each port's Z0 (EmSetup.ResolvePortZ0), the return
@@ -57,7 +57,7 @@ public sealed partial class EmSetupEditorViewModel
     public bool ShowCrossSectionControls => !IsPlanarAnalysis && !Is3DSetup;
 
     /// <summary>The return plane: read by the planar kernel and by the 3D generator's ports.</summary>
-    public bool ShowReturnPlane => IsPlanarAnalysis || Is3DSetup;
+    public bool ShowReturnPlane => (IsPlanarAnalysis || Is3DSetup) && !IsThermalSetup;
 
     /// <summary>Controls every circuitRF-kernel run reads and no 3D run does (the analysis kind and
     /// kernel beside the solver, the Notes group, the signal conductor, the planar/cross-section

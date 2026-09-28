@@ -91,6 +91,17 @@ public sealed class Viewer3DOverlay : Control
 
         if (vm.FieldLegendVisible) Legend(ctx, vm, w, ink, dark);
 
+        // brief-em3d-75 R-em3d75-4c — the hot spot: a ring at the maximum of what is drawn, its temperature and its object.
+        if (vm.ShowsTemperature && vm.HotSpot is { } hot && cam.Project(hot.At, (float)w, (float)h) is (var hx0, var hy0, true))
+        {
+            var at = new Point(hx0, hy0);
+            ctx.DrawEllipse(null, new Pen(dark ? Brushes.Black : Brushes.White, 4), at, 7, 7);
+            ctx.DrawEllipse(null, new Pen(HotBrush, 2), at, 7, 7);
+            ctx.DrawLine(new Pen(HotBrush, 1.5), new Point(at.X - 11, at.Y), new Point(at.X - 4, at.Y));
+            ctx.DrawLine(new Pen(HotBrush, 1.5), new Point(at.X + 4, at.Y), new Point(at.X + 11, at.Y));
+            Text(ctx, vm.HotSpotLabel, new Point(at.X + 12, at.Y - 20), ink, 12, dark);
+        }
+
         // Vertex mode: a dot for the candidate, a larger one for each selected vertex.
         var accent = new SolidColorBrush(Color.FromRgb(255, 90, 255));
         var ring = new Pen(dark ? Brushes.Black : Brushes.White, 1.5);
@@ -134,6 +145,11 @@ public sealed class Viewer3DOverlay : Control
     }
 
     private readonly Viewer3DDrawOverlay _draw = new();
+
+    private static readonly IBrush HotBrush = new SolidColorBrush(Color.FromRgb(255, 70, 40));
+    private static readonly IBrush HeatBrush = new SolidColorBrush(Color.FromRgb(240, 120, 40));
+    private static readonly IBrush ProbeBrush = new SolidColorBrush(Color.FromRgb(40, 200, 220));
+    private static readonly IBrush RegionBrush = new SolidColorBrush(Color.FromRgb(170, 120, 230));
 
     /// <summary>brief-em3d-67 — a world polyline, projected, drawn twice: a halo, then the stroke.</summary>
     private static void Polyline(DrawingContext ctx, Viewer3DViewModel vm, IReadOnlyList<CircuitRF.Engine.Em3d.Point3> pts, double w, double h,
@@ -187,6 +203,22 @@ public sealed class Viewer3DOverlay : Control
             DashStyle = new DashStyle([4, 3], 0),
         };
         Lines(d.Construction, construction);
+        // brief-em3d-75 R-em3d75-1b — the thermal places: never solids, never faces to snap onto; drawn here only.
+        Lines(d.HeatSources, new Pen(HeatBrush, 1.4));
+        Lines(d.MeshRegions, new Pen(RegionBrush, 1.3) { DashStyle = new DashStyle([6, 4], 0) });
+        Lines(d.Probes, new Pen(ProbeBrush, 1.6));
+        foreach (var p in d.ProbeMarks)
+            if (Screen(p) is (var pp, true))
+            {
+                var diamond = new StreamGeometry();
+                using (var g = diamond.Open())
+                {
+                    g.BeginFigure(new Point(pp.X, pp.Y - 5), true);
+                    g.LineTo(new Point(pp.X + 5, pp.Y)); g.LineTo(new Point(pp.X, pp.Y + 5)); g.LineTo(new Point(pp.X - 5, pp.Y));
+                    g.EndFigure(true);
+                }
+                ctx.DrawGeometry(ProbeBrush, new Pen(dark ? Brushes.Black : Brushes.White, 1), diamond);
+            }
         // brief-em3d-48 R-em3d48-6b — a cell that resolves to nothing: its last known box, dashed, and its name.
         Lines(d.Missing, new Pen(CrossingBrush, 1.4) { DashStyle = new DashStyle([5, 4], 0) });
         foreach (var (at, text) in d.Labels)

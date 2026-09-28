@@ -167,6 +167,18 @@ public partial class EmSetupEditorView : UserControl
 
     private void OnFieldLostFocus(object? sender, RoutedEventArgs e) => CommitField(sender);
 
+    // brief-em3d-75 R-em3d75-3 — the thermal page: text commits on Enter or lost focus, a picker when it changes.
+    private void OnThermalLostFocus(object? sender, RoutedEventArgs e) => Vm?.CommitThermal();
+
+    private void OnThermalKey(object? sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter) return;
+        Vm?.CommitThermal();
+        e.Handled = true;
+    }
+
+    private void OnThermalSelection(object? sender, SelectionChangedEventArgs e) => Vm?.CommitThermal();
+
     private void OnFieldKeyDown(object? sender, KeyEventArgs e)
     {
         if (e.Key is Key.Enter or Key.Return)

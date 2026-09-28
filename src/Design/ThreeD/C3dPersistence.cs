@@ -144,6 +144,24 @@ public static class C3dPersistence
 
     public static List<C3dPort> DeserializePorts(string json) => JsonSerializer.Deserialize<List<C3dPort>>(json, ItemOpts) ?? [];
 
+    /// <summary>brief-em3d-75 — the thermal places (heat sources, probes, mesh regions, contact overrides) as one text, in the
+    /// in-memory spelling (each bound component keeps its number): what an undo entry of a thermal edit holds.</summary>
+    public static string SerializeThermalPlaces(C3dDocument doc)
+        => JsonSerializer.Serialize(new ThermalPlaces(doc.HeatSources, doc.Probes, doc.MeshRegions, doc.ContactResistances), ItemOpts);
+
+    /// <summary>Writes <see cref="SerializeThermalPlaces"/>' text back into <paramref name="doc"/>.</summary>
+    public static void ApplyThermalPlaces(C3dDocument doc, string json)
+    {
+        var t = JsonSerializer.Deserialize<ThermalPlaces>(json, ItemOpts);
+        doc.HeatSources = t?.HeatSources ?? [];
+        doc.Probes = t?.Probes ?? [];
+        doc.MeshRegions = t?.MeshRegions ?? [];
+        doc.ContactResistances = t?.ContactResistances ?? [];
+    }
+
+    private sealed record ThermalPlaces(List<C3dHeatSource> HeatSources, List<C3dProbe> Probes, List<C3dMeshRegion> MeshRegions,
+                                        List<C3dContactResistance> ContactResistances);
+
     /// <summary>brief-em3d-49 — an embedded setup list, as the file spells it.</summary>
     public static string SerializeSetups(IReadOnlyList<JsonElement> list) => JsonSerializer.Serialize(list, JsonOpts);
 

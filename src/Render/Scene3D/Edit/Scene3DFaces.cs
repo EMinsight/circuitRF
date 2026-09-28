@@ -34,6 +34,23 @@ public static class Scene3DFaces
         return (0, 0, default);
     }
 
+    /// <summary>brief-em3d-75 — the triangles of face <paramref name="face"/> of object <paramref name="id"/>, scene-local
+    /// metres (every face when <paramref name="face"/> is negative).</summary>
+    public static List<(Vector3 A, Vector3 B, Vector3 C)> Triangles(Scene3DModel scene, uint id, int face)
+    {
+        var (first, count, offset) = TrianglesAt(scene, id);
+        var list = new List<(Vector3, Vector3, Vector3)>();
+        for (int i = first; i + 2 < first + count; i += 3)
+        {
+            var a = scene.Vertices[scene.Indices[i]];
+            if ((int)a.Face != face && !(face < 0)) continue;
+            var b = scene.Vertices[scene.Indices[i + 1]];
+            var c = scene.Vertices[scene.Indices[i + 2]];
+            list.Add((new Vector3(a.X, a.Y, a.Z) + offset, new Vector3(b.X, b.Y, b.Z) + offset, new Vector3(c.X, c.Y, c.Z) + offset));
+        }
+        return list;
+    }
+
     /// <summary>The distinct corners of face <paramref name="face"/> of object <paramref name="id"/>.</summary>
     public static List<Vector3> Vertices(Scene3DModel scene, uint id, int face)
     {

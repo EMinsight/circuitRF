@@ -143,10 +143,19 @@ public sealed class Viewer3DDrawOverlay
     /// <summary>brief-em3d-48 — chrome text at a world point: a missing cell's name, an external instance's
     /// <c>[alias]</c> tag. Marking is chrome, never geometry (layout-view §7.1).</summary>
     public List<(CircuitRF.Engine.Em3d.Point3 At, string Text)> Labels { get; } = [];
+    /// <summary>brief-em3d-75 R-em3d75-1b — heat sources: outline and hatch, in a warm colour.</summary>
+    public List<DrawSegment> HeatSources { get; } = [];
+    /// <summary>Probes' lines and spot rings.</summary>
+    public List<DrawSegment> Probes { get; } = [];
+    /// <summary>A probe's marker, at the point it reads (a line's two ends).</summary>
+    public List<CircuitRF.Engine.Em3d.Point3> ProbeMarks { get; } = [];
+    /// <summary>Mesh regions: dashed wireframe boxes.</summary>
+    public List<DrawSegment> MeshRegions { get; } = [];
 
     public void Clear()
     {
         Rubber.Clear(); Construction.Clear(); Selected.Clear(); Crossing.Clear(); Fixed.Clear(); Pivots.Clear(); Missing.Clear(); Labels.Clear();
+        HeatSources.Clear(); Probes.Clear(); ProbeMarks.Clear(); MeshRegions.Clear();
     }
 }
 

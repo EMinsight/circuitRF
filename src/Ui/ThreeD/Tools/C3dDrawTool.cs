@@ -24,7 +24,10 @@ namespace CircuitRF.Ui.ThreeD.Tools;
 /// Solid and Align to Face.</para>
 /// <para>brief-em3d-48 — Place: an instance of a cell, following the cursor until the click.</para>
 /// <para>brief-em3d-50 — Wire: a bond wire from pad to pad, then its loop height.</para>
-public enum C3dToolKind { Box, Sheet, Polygon, Polyline, Cylinder, Extrude, Move, Rotate, PushPull, FaceMove, VertexMove, ExtrudeFace, AlignFace, Place, Port, Wire }
+/// <para>brief-em3d-75 — the thermal places (a heat source, as a rectangle or a polygon; a point, spot or line probe; a mesh
+/// region) and Temperature Along's two-point pick.</para>
+public enum C3dToolKind { Box, Sheet, Polygon, Polyline, Cylinder, Extrude, Move, Rotate, PushPull, FaceMove, VertexMove, ExtrudeFace, AlignFace, Place, Port, Wire,
+                          HeatSource, HeatSourcePolygon, ProbePoint, ProbeSpot, ProbeLine, MeshRegion, TemperatureAlong }
 
 /// <summary>
 /// Where the cursor is, as a tool reads it: the snap in force (a DBU point, and whether it is exact and on geometry
@@ -72,6 +75,10 @@ public interface IC3dDrawHost
 
     /// <summary>A conductor sheet's thickness from the technology, µm, or null when it states none.</summary>
     double? ThicknessUmFor(string? material);
+
+    /// <summary>brief-em3d-75 — the cursor's point ON a face (a geometry snap, or the surface under the cursor) and that face
+    /// as the document names it (<c>object/face</c>); null, with the reason, off every face.</summary>
+    C3dPoint3? SurfacePoint(in C3dDrawInput input, out string? face, out string? refusal);
 }
 
 public abstract class C3dDrawTool(IC3dDrawHost host)

@@ -49,6 +49,10 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
         (C3dToolKind.Port, 'P', "ArrowUpBoldBoxOutline"),
         // brief-em3d-50 R-em3d50-3a — a bond wire, pad to pad.
         (C3dToolKind.Wire, 'W', "VectorCurve"),
+        // brief-em3d-75 R-em3d75-1a — the thermal places: a heat source, a probe, a mesh region.
+        (C3dToolKind.HeatSource, 'H', "FireCircle"),
+        (C3dToolKind.ProbePoint, 'T', "ThermometerProbe"),
+        (C3dToolKind.MeshRegion, 'M', "CubeScan"),
     ];
 
     public const string EdgeOnFormat = "the {0} plane is edge-on; orbit or choose another plane";
@@ -273,11 +277,16 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
     public bool IsPolylineArmed { get => ArmedTool == C3dToolKind.Polyline; set => ArmToggle(C3dToolKind.Polyline, value); }
     public bool IsCylinderArmed { get => ArmedTool == C3dToolKind.Cylinder; set => ArmToggle(C3dToolKind.Cylinder, value); }
     public bool IsPortArmed { get => ArmedTool == C3dToolKind.Port; set => ArmToggle(C3dToolKind.Port, value); }
+    // brief-em3d-75 — the thermal tools' toolbar toggles.
+    public bool IsHeatSourceArmed { get => ArmedTool is C3dToolKind.HeatSource or C3dToolKind.HeatSourcePolygon; set => ArmToggle(C3dToolKind.HeatSource, value); }
+    public bool IsProbeArmed { get => ArmedTool is C3dToolKind.ProbePoint or C3dToolKind.ProbeSpot or C3dToolKind.ProbeLine; set => ArmToggle(C3dToolKind.ProbePoint, value); }
+    public bool IsMeshRegionArmed { get => ArmedTool == C3dToolKind.MeshRegion; set => ArmToggle(C3dToolKind.MeshRegion, value); }
 
     private void ArmToggle(C3dToolKind kind, bool on)
     {
         if (on) Arm(kind);
-        else if (ArmedTool == kind) Disarm();
+        else if (ArmedTool == kind || (_tool is HeatSourcePolygonTool && kind == C3dToolKind.HeatSource)
+                 || (_tool is ProbeTool && kind == C3dToolKind.ProbePoint)) Disarm();
     }
 
     /// <summary>Arms a tool (from the toolbar, 3D ▸ Draw or the Shift+A popup). The selection mode is kept.</summary>
@@ -293,6 +302,13 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
             C3dToolKind.Polyline => new PolylineTool(this),
             C3dToolKind.Port => new PortTool(this, () => NewPortTemplate()),
             C3dToolKind.Wire => WireToolArmed(),
+            C3dToolKind.HeatSource => new HeatSourceTool(this),
+            C3dToolKind.HeatSourcePolygon => new HeatSourcePolygonTool(this),
+            C3dToolKind.ProbePoint => new ProbeTool(this, C3dProbeShape.Point),
+            C3dToolKind.ProbeSpot => new ProbeTool(this, C3dProbeShape.Spot),
+            C3dToolKind.ProbeLine => new ProbeTool(this, C3dProbeShape.Line),
+            C3dToolKind.MeshRegion => new MeshRegionTool(this),
+            C3dToolKind.TemperatureAlong => new TemperatureAlongTool(this),
             _ => new CylinderTool(this),
         });
     }
@@ -320,7 +336,8 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
         // brief-em3d-46 — one gesture at a time: arming a tool ends a measurement.
         if (tool is not null) Viewer.EndMeasure();
         foreach (string p in new[] { nameof(ArmedTool), nameof(Tool), nameof(IsBoxArmed), nameof(IsSheetArmed), nameof(IsPolygonArmed),
-                                     nameof(IsPolylineArmed), nameof(IsCylinderArmed), nameof(IsPortArmed), nameof(IsWireArmed), nameof(ToolPrompt) })
+                                     nameof(IsPolylineArmed), nameof(IsCylinderArmed), nameof(IsPortArmed), nameof(IsWireArmed), nameof(ToolPrompt),
+                                     nameof(IsHeatSourceArmed), nameof(IsProbeArmed), nameof(IsMeshRegionArmed) })
             OnPropertyChanged(p);
         Viewer.RequestFrame();
     }
@@ -391,8 +408,9 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
     public string NextName(string prefix)
     {
         // brief-em3d-66 — a Tool's name inside a boolean is taken too: names are unique across the document.
-        var used = new HashSet<string>(Document.Objects.Select(o => o.Name).Concat(Document.Instances.Select(i => i.Name)).Concat(NestedNames()),
-                                       StringComparer.Ordinal);
+        // brief-em3d-75 — and a thermal place's: brief 73 makes names unique across objects, instances and places.
+        var used = new HashSet<string>(Document.Objects.Select(o => o.Name).Concat(Document.Instances.Select(i => i.Name)).Concat(NestedNames())
+                                               .Concat(ThermalPlaceNames()), StringComparer.Ordinal);
         for (int n = 1; ; n++)
             if (!used.Contains(prefix + n)) return prefix + n;
     }
@@ -428,6 +446,21 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
         }
         else if (step.Advanced) StatusMessage = "";
         if (step.Finished && _tool is Hierarchy.PlaceInstanceTool place) { CommitPlacement(place); return; }
+        // brief-em3d-75 — a thermal place is a record, inserted as a port is; Temperature Along makes nothing but a plot.
+        if (step.Finished && _tool is IC3dRecordTool recordTool)
+        {
+            CommitRecordTool(recordTool);
+            OnPropertyChanged(nameof(ToolPrompt));
+            Viewer.RequestFrame();
+            return;
+        }
+        if (step.Finished && _tool is TemperatureAlongTool along && along.Take() is { } ends)
+        {
+            if (PlotTemperatureAlong(ends.From, ends.To) is { } alongWhy) StatusMessage = alongWhy;
+            OnPropertyChanged(nameof(ToolPrompt));
+            Viewer.RequestFrame();
+            return;
+        }
         if (step.Finished && _tool is PortTool portTool && portTool.Made is { } port)
         {
             AddPort(port);
@@ -612,6 +645,7 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
         if (_tool is C3dOperationTool { ShowsPivot: true } op) overlay.Pivots.Add(DrawGeometry.Metres(op.Pivot, dbu));
         if (_crossing is { } x) { overlay.Crossing.Add(x.A); overlay.Crossing.Add(x.B); }
         FillSimulateOverlay(overlay);
+        FillThermalOverlay(overlay);
     }
 
     private static List<C3dPoint3> Points3Of(C3dPolyline l)
@@ -633,6 +667,7 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
         foreach (var item in FaceMenuItems()) yield return item;
         foreach (var item in HierarchyMenuItems()) yield return item;
         foreach (var item in SimulateMenuItems()) yield return item;
+        foreach (var item in ThermalMenuItems()) yield return item;
         foreach (var item in WireMenuItems()) yield return item;
         if (Viewer.SelectMode == Scene3DSelectMode.Face && Viewer.Selection is [{ Face: >= 0 } f])
             yield return new Viewer3DMenuItem("Drawing Plane from Face", () => { if (PlaneFromFace(f.Object, f.Face) is { } why) StatusMessage = why; });

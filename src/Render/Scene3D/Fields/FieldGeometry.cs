@@ -33,8 +33,64 @@ public sealed class FieldSurface
 
     public static FieldSurface Empty(int channels) => new() { Channels = channels, Xyz = [], Values = [] };
 
-    internal static FieldSurface From(int channels, List<double> xyz, List<double> values)
-        => new() { Channels = channels, Xyz = [.. xyz], Values = [.. values] };
+    /// <summary>brief-em3d-75 R-em3d75-4c — how each vertex's values were made from the mesh's nodes, when the surface was
+    /// cut or gathered from a <see cref="FieldMesh"/>; null otherwise (a synthetic set of tetrahedra, a wire).</summary>
+    public FieldRecipe? Recipe { get; init; }
+
+    internal static FieldSurface From(int channels, List<double> xyz, List<double> values, FieldRecipe? recipe = null)
+        => new() { Channels = channels, Xyz = [.. xyz], Values = [.. values], Recipe = recipe };
+
+    /// <summary>
+    /// brief-em3d-75 R-em3d75-4c / gate 7 — the SAME triangles with <paramref name="a"/>'s values: every vertex re-read
+    /// through its recipe, nothing cut or gathered again. A thermal run writes every sweep point on one mesh (brief 74), so
+    /// stepping the sweep is this and nothing else. Null when the surface has no recipe, or <paramref name="a"/> is not an
+    /// array of the mesh the recipe was made on.
+    /// </summary>
+    public FieldSurface? Revalue(FieldArray a)
+    {
+        if (Recipe is not { } r) return null;
+        int ch = a.Info.Channels;
+        int count = a.Info.PerCell ? r.CellCount : r.NodeCount;
+        if (ch != Channels || a.Re.Length != a.Components * count) return null;
+        var values = new double[VertexCount * ch];
+        Span<double> va = stackalloc double[ch], vb = stackalloc double[ch];
+        for (int v = 0; v < VertexCount; v++)
+        {
+            FieldSampling.Channels(a, r.A[v], r.Cell[v], va);
+            if (r.B[v] >= 0 && !a.Info.PerCell)
+            {
+                FieldSampling.Channels(a, r.B[v], r.Cell[v], vb);
+                double t = r.T[v];
+                for (int k = 0; k < ch; k++) values[v * ch + k] = va[k] + t * (vb[k] - va[k]);
+            }
+            else for (int k = 0; k < ch; k++) values[v * ch + k] = va[k];
+        }
+        return new FieldSurface { Channels = ch, Xyz = Xyz, Values = values, Recipe = r };
+    }
+}
+
+/// <summary>
+/// brief-em3d-75 — a surface's vertex values as the mesh made them: vertex v is node <see cref="A"/>[v], or — where a slice
+/// cut an edge — <see cref="A"/>[v] + <see cref="T"/>[v]·(<see cref="B"/>[v] − <see cref="A"/>[v]); a per-cell array reads
+/// cell <see cref="Cell"/>[v]. <see cref="NodeCount"/> and <see cref="CellCount"/> are the mesh's, so an array of another
+/// mesh is refused rather than misread.
+/// </summary>
+public sealed class FieldRecipe
+{
+    public required int[] A { get; init; }
+    public required int[] B { get; init; }
+    public required double[] T { get; init; }
+    public required int[] Cell { get; init; }
+    public required int NodeCount { get; init; }
+    public required int CellCount { get; init; }
+
+    internal sealed class Builder(int nodes, int cells)
+    {
+        private readonly List<int> _a = [], _b = [], _cell = [];
+        private readonly List<double> _t = [];
+        public void Add(int a, int b, double t, int cell) { _a.Add(a); _b.Add(b); _t.Add(t); _cell.Add(cell); }
+        public FieldRecipe Build() => new() { A = [.. _a], B = [.. _b], T = [.. _t], Cell = [.. _cell], NodeCount = nodes, CellCount = cells };
+    }
 }
 
 /// <summary>Linear tetrahedra with values at their corners — what the slicer cuts.</summary>
@@ -45,6 +101,14 @@ public interface ILinearTets
     /// <summary>Tetrahedron <paramref name="tet"/>'s four corners (12 values) and its corner values
     /// (4 × <see cref="Channels"/>, corner by corner).</summary>
     void Get(int tet, Span<double> xyz, Span<double> values);
+
+    /// <summary>brief-em3d-75 — tetrahedron <paramref name="tet"/>'s four corners as MESH NODES and the cell it lies in,
+    /// so a slice can be re-read on another step of the same mesh (<see cref="FieldSurface.Revalue"/>); false when these
+    /// tetrahedra are not a mesh's.</summary>
+    bool Nodes(int tet, Span<int> nodes, out int cell) { cell = -1; return false; }
+
+    /// <summary>The mesh's node and cell counts, for a recipe; (0, 0) when these tetrahedra are not a mesh's.</summary>
+    (int Nodes, int Cells) MeshSize => (0, 0);
 }
 
 /// <summary>The local node indices of a cell's linear sub-cells, in VTK's Lagrange node order.</summary>
@@ -91,6 +155,16 @@ public readonly struct FieldMeshTets(FieldMesh mesh, FieldArray? array, (double 
             FieldSampling.Channels(array, node, cell, values.Slice(k * ch, ch));
         }
     }
+
+    public bool Nodes(int tet, Span<int> nodes, out int cell)
+    {
+        cell = tet / _sub;
+        var local = FieldSubCells.TetSub(mesh.Order).Slice(4 * (tet % _sub), 4);
+        for (int k = 0; k < 4; k++) nodes[k] = mesh.Cells[cell * mesh.NodesPerCell + local[k]];
+        return true;
+    }
+
+    public (int Nodes, int Cells) MeshSize => (mesh.NodeCount, mesh.CellCount);
 }
 
 /// <summary>Reading a node's position and values.</summary>
@@ -132,10 +206,15 @@ public static class FieldSlicer
         Span<double> s = stackalloc double[4];
         Span<int> pos = stackalloc int[4];
         Span<int> neg = stackalloc int[4];
+        Span<int> nodes = stackalloc int[4];
+        var (meshNodes, meshCells) = tets.MeshSize;
+        var recipe = meshNodes > 0 ? new FieldRecipe.Builder(meshNodes, meshCells) : null;
+        int cell = -1;
         for (int t = 0; t < tets.Count; t++)
         {
             if ((t & 0xFFFF) == 0) ct.ThrowIfCancellationRequested();
             tets.Get(t, p, v);
+            if (recipe is not null && !tets.Nodes(t, nodes, out cell)) recipe = null;
             int np = 0, nn = 0;
             for (int k = 0; k < 4; k++)
             {
@@ -148,25 +227,28 @@ public static class FieldSlicer
                 // One corner apart: a triangle on its three edges.
                 int apex = np == 1 ? pos[0] : neg[0];
                 Span<int> other = np == 1 ? neg : pos;
-                for (int k = 0; k < 3; k++) Cut(p, v, s, ch, apex, other[k], xyzOut, valOut);
+                for (int k = 0; k < 3; k++) Cut(p, v, s, ch, apex, other[k], xyzOut, valOut, recipe, nodes, cell);
             }
             else
             {
                 // Two and two: the quadrilateral (a,c) (a,d) (b,d) (b,c), as two triangles.
                 int a = pos[0], b = pos[1], c = neg[0], e = neg[1];
-                Cut(p, v, s, ch, a, c, xyzOut, valOut); Cut(p, v, s, ch, a, e, xyzOut, valOut); Cut(p, v, s, ch, b, e, xyzOut, valOut);
-                Cut(p, v, s, ch, a, c, xyzOut, valOut); Cut(p, v, s, ch, b, e, xyzOut, valOut); Cut(p, v, s, ch, b, c, xyzOut, valOut);
+                Cut(p, v, s, ch, a, c, xyzOut, valOut, recipe, nodes, cell); Cut(p, v, s, ch, a, e, xyzOut, valOut, recipe, nodes, cell);
+                Cut(p, v, s, ch, b, e, xyzOut, valOut, recipe, nodes, cell);
+                Cut(p, v, s, ch, a, c, xyzOut, valOut, recipe, nodes, cell); Cut(p, v, s, ch, b, e, xyzOut, valOut, recipe, nodes, cell);
+                Cut(p, v, s, ch, b, c, xyzOut, valOut, recipe, nodes, cell);
             }
         }
-        return FieldSurface.From(ch, xyzOut, valOut);
+        return FieldSurface.From(ch, xyzOut, valOut, recipe?.Build());
     }
 
     private static void Cut(ReadOnlySpan<double> p, ReadOnlySpan<double> v, ReadOnlySpan<double> s, int ch, int i, int j,
-                            List<double> xyz, List<double> val)
+                            List<double> xyz, List<double> val, FieldRecipe.Builder? recipe, ReadOnlySpan<int> nodes, int cell)
     {
         double t = s[i] / (s[i] - s[j]);
         for (int k = 0; k < 3; k++) xyz.Add(p[3 * i + k] + t * (p[3 * j + k] - p[3 * i + k]));
         for (int k = 0; k < ch; k++) val.Add(v[i * ch + k] + t * (v[j * ch + k] - v[i * ch + k]));
+        recipe?.Add(nodes[i], nodes[j], t, cell);
     }
 }
 
@@ -189,6 +271,7 @@ public static class FieldSurfaces
         var sub = FieldSubCells.TriSub(tris.Order).ToArray();
         var xyz = new List<double>();
         var val = new List<double>();
+        var recipe = new FieldRecipe.Builder(tris.NodeCount, tris.CellCount);
         Span<double> p = stackalloc double[3];
         Span<double> v = stackalloc double[Math.Max(ch, 1)];
         for (int c = 0; c < tris.CellCount; c++)
@@ -201,9 +284,10 @@ public static class FieldSurfaces
                 FieldSampling.Channels(a, node, c, v[..ch]);
                 xyz.Add(p[0]); xyz.Add(p[1]); xyz.Add(p[2]);
                 for (int k = 0; k < ch; k++) val.Add(v[k]);
+                recipe.Add(node, -1, 0, c);
             }
         }
-        return FieldSurface.From(ch, xyz, val);
+        return FieldSurface.From(ch, xyz, val, recipe.Build());
     }
 
     /// <summary>
@@ -240,6 +324,7 @@ public static class FieldSurfaces
         }
         var xyz = new List<double>();
         var val = new List<double>();
+        var recipe = new FieldRecipe.Builder(tets.NodeCount, tets.CellCount);
         Span<double> p = stackalloc double[3];
         Span<double> v = stackalloc double[Math.Max(ch, 1)];
         var tri = FieldSubCells.TriSub(tets.Order).ToArray();
@@ -253,9 +338,55 @@ public static class FieldSurfaces
                 FieldSampling.Channels(a, node, e.Cell, v[..ch]);
                 xyz.Add(p[0]); xyz.Add(p[1]); xyz.Add(p[2]);
                 for (int k = 0; k < ch; k++) val.Add(v[k]);
+                recipe.Add(node, -1, 0, e.Cell);
             }
         }
-        return FieldSurface.From(ch, xyz, val);
+        return FieldSurface.From(ch, xyz, val, recipe.Build());
+    }
+
+    /// <summary>
+    /// brief-em3d-75 R-em3d75-4a — every EXPOSED face of the volume (no cell on its other side), grouped by the attribute of
+    /// the cell that owns it: <i>All Faces</i> of a thermal run, one surface per solid so the hot spot can name its object. A
+    /// face between two solids is inside the model and is not drawn. One pass over the cells, whatever the solid count.
+    /// </summary>
+    public static Dictionary<int, FieldSurface> Exterior(FieldMesh tets, FieldArray? a, (double X, double Y, double Z) origin,
+                                                         CancellationToken ct = default)
+    {
+        if (tets.Shape != FieldCellShape.Tetrahedron) throw new ArgumentException("a volume holds tetrahedra", nameof(tets));
+        int npc = tets.NodesPerCell, ch = a?.Info.Channels ?? 1;
+        var ids = CornerIds(tets);
+        var faces = new Dictionary<(int, int, int), (int Cell, int Face, int Count)>();
+        var faceCorners = FieldSubCells.TetFaces2;
+        for (int c = 0; c < tets.CellCount; c++)
+        {
+            if ((c & 0xFFFF) == 0) ct.ThrowIfCancellationRequested();
+            for (int f = 0; f < 4; f++)
+            {
+                var key = Sorted(ids[4 * c + faceCorners[6 * f]], ids[4 * c + faceCorners[6 * f + 1]], ids[4 * c + faceCorners[6 * f + 2]]);
+                faces[key] = faces.TryGetValue(key, out var e) ? e with { Count = e.Count + 1 } : (c, f, 1);
+            }
+        }
+        var parts = new Dictionary<int, (List<double> Xyz, List<double> Val, FieldRecipe.Builder Recipe)>();
+        Span<double> p = stackalloc double[3];
+        Span<double> v = stackalloc double[Math.Max(ch, 1)];
+        var tri = FieldSubCells.TriSub(tets.Order).ToArray();
+        foreach (var e in faces.Values)
+        {
+            if (e.Count != 1) continue;
+            int attr = tets.Attribute[e.Cell];
+            if (!parts.TryGetValue(attr, out var part))
+                parts[attr] = part = ([], [], new FieldRecipe.Builder(tets.NodeCount, tets.CellCount));
+            foreach (int local in tri)
+            {
+                int node = tets.Cells[e.Cell * npc + faceCorners[6 * e.Face + local]];
+                FieldSampling.Position(tets, node, origin, p);
+                FieldSampling.Channels(a, node, e.Cell, v[..ch]);
+                part.Xyz.Add(p[0]); part.Xyz.Add(p[1]); part.Xyz.Add(p[2]);
+                for (int k = 0; k < ch; k++) part.Val.Add(v[k]);
+                part.Recipe.Add(node, -1, 0, e.Cell);
+            }
+        }
+        return parts.ToDictionary(kv => kv.Key, kv => FieldSurface.From(ch, kv.Value.Xyz, kv.Value.Val, kv.Value.Recipe.Build()));
     }
 
     private static (int, int, int) Sorted(int a, int b, int c)

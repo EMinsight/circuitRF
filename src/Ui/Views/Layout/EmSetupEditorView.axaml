@@ -474,7 +474,7 @@
                          than a WrapPanel for the reason the old group gave: a WrapPanel reflows to one
                          column in a docked panel and comes out taller. -->
                     <Grid ColumnDefinitions="*,*" ColumnSpacing="16">
-                        <StackPanel Grid.Column="0" Spacing="2">
+                        <StackPanel Grid.Column="0" Spacing="2" IsVisible="{Binding ViewModel.IsNotThermalSetup}">
                             <ComboBox Classes="cell" MaxWidth="220" HorizontalAlignment="Left"
                                       ItemsSource="{Binding ViewModel.Solver3DChoiceList}"
                                       SelectedItem="{Binding ViewModel.Solver3DChoice}"/>
@@ -509,7 +509,7 @@
                     <StackPanel IsVisible="{Binding ViewModel.Is3DSetup}" Orientation="Horizontal" Spacing="8" Margin="0,6,0,0">
                         <TextBlock Classes="colhdr" Text="Problem" VerticalAlignment="Center"/>
                         <ComboBox Classes="cell" MinWidth="180"
-                                  ItemsSource="{x:Static em:EmSetupEditorViewModel.Problem3DChoices}"
+                                  ItemsSource="{Binding ViewModel.Problem3DChoiceList}"
                                   SelectedItem="{Binding ViewModel.Problem3DChoice}"/>
                     </StackPanel>
                     <TextBlock IsVisible="{Binding ViewModel.Is3DSetup}" Classes="colhdr" TextWrapping="Wrap" Margin="0,3,0,0"
@@ -763,6 +763,134 @@
                   </StackPanel>
                 </Border>
 
+                <!-- ── brief-em3d-75 R-em3d75-3: the THERMAL page — a thermal setup's Thermal section, every control
+                     writing it through the panel's one undoable commit. Text commits on Enter or lost focus. ── -->
+                <Border Classes="group" IsVisible="{Binding ViewModel.IsThermalSetup}">
+                  <StackPanel Spacing="3">
+                    <TextBlock Classes="grouphdr" Text="Thermal"/>
+                    <TextBlock Classes="colhdr" TextWrapping="Wrap"
+                               Text="Steady conduction through every solid (air is not meshed), solved by circuitRF's own thermal solver after Gmsh meshes it. Temperatures are °C; every value may be an expression in the document's variables."/>
+
+                    <TextBlock Classes="colhdr" FontWeight="SemiBold" Margin="0,6,0,0" Text="Sources"/>
+                    <TextBlock Classes="colhdr" IsVisible="{Binding !ViewModel.HasThermalSources}"
+                               Text="No heat sources: draw one with 3D ▸ Draw ▸ Heat Source, or right-click a solid ▸ Heat Source from Solid."/>
+                    <ItemsControl ItemsSource="{Binding ViewModel.ThermalSources}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="em:ThermalSourceRow">
+                                <Grid ColumnDefinitions="110,120,*" ColumnSpacing="6" Margin="0,1">
+                                    <TextBlock Grid.Column="0" FontSize="11" Text="{Binding Name}" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="1" FontSize="11" Opacity="0.7" Text="{Binding Default, StringFormat='default {0}'}"
+                                               VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                    <TextBox Grid.Column="2" Classes="cell" Text="{Binding Override}" PlaceholderText="the default"
+                                             ToolTip.Tip="This setup's power for the source; empty uses the document's default"
+                                             LostFocus="OnThermalLostFocus" KeyDown="OnThermalKey"/>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <TextBlock Classes="colhdr" FontWeight="SemiBold" Margin="0,6,0,0" Text="Boundaries"/>
+                    <TextBlock Classes="colhdr" TextWrapping="Wrap"
+                               Text="A face nothing names is insulated. Right-click a face (Face mode) ▸ Thermal to add one; at least one fixed-temperature or convection face is needed."/>
+                    <ItemsControl ItemsSource="{Binding ViewModel.ThermalBoundaries}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="em:ThermalBoundaryRow">
+                                <Grid ColumnDefinitions="150,100,*,Auto" ColumnSpacing="6" Margin="0,1">
+                                    <TextBox Grid.Column="0" Classes="cell" Text="{Binding Face}" PlaceholderText="object/face"
+                                             LostFocus="OnThermalLostFocus" KeyDown="OnThermalKey"/>
+                                    <ComboBox Grid.Column="1" Classes="cell" ItemsSource="{x:Static em:EmSetupEditorViewModel.ThermalBoundaryKinds}"
+                                              SelectedItem="{Binding Kind}" SelectionChanged="OnThermalSelection"/>
+                                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4">
+                                        <TextBox Classes="cell" Width="80" Text="{Binding TempC}" PlaceholderText="°C" IsVisible="{Binding IsFixed}"
+                                                 LostFocus="OnThermalLostFocus" KeyDown="OnThermalKey"/>
+                                        <TextBox Classes="cell" Width="80" Text="{Binding H}" PlaceholderText="h W/(m²·K)" IsVisible="{Binding IsConvection}"
+                                                 LostFocus="OnThermalLostFocus" KeyDown="OnThermalKey"/>
+                                        <TextBox Classes="cell" Width="80" Text="{Binding AmbientC}" PlaceholderText="ambient °C" IsVisible="{Binding IsConvection}"
+                                                 LostFocus="OnThermalLostFocus" KeyDown="OnThermalKey"/>
+                                    </StackPanel>
+                                    <Button Grid.Column="3" FontSize="11" Padding="4,0" Content="×" ToolTip.Tip="Remove this boundary"
+                                            Command="{Binding $parent[ItemsControl].((em:EmSetupDocument)DataContext).ViewModel.RemoveThermalBoundaryCommand, FallbackValue={x:Null}}"
+                                            CommandParameter="{Binding}"/>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <Button FontSize="11" Padding="6,1" Content="Add boundary" Command="{Binding ViewModel.AddThermalBoundaryCommand}"/>
+                        <CheckBox IsChecked="{Binding ViewModel.ThermalExposed}" Content="All exposed faces: convection"
+                                  ToolTip.Tip="Every face that touches no other solid and that no other boundary names"/>
+                        <TextBox Classes="cell" Width="80" Text="{Binding ViewModel.ThermalExposedH}" PlaceholderText="h W/(m²·K)"
+                                 IsEnabled="{Binding ViewModel.ThermalExposed}" LostFocus="OnThermalLostFocus" KeyDown="OnThermalKey"/>
+                        <TextBox Classes="cell" Width="80" Text="{Binding ViewModel.ThermalExposedAmbient}" PlaceholderText="T_amb °C"
+                                 IsEnabled="{Binding ViewModel.ThermalExposed}" LostFocus="OnThermalLostFocus" KeyDown="OnThermalKey"/>
+                    </StackPanel>
+
+                    <TextBlock Classes="colhdr" FontWeight="SemiBold" Margin="0,6,0,0" Text="Sweep"/>
+                    <ItemsControl ItemsSource="{Binding ViewModel.ThermalSweeps}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="em:ThermalSweepRow">
+                                <Grid ColumnDefinitions="100,90,90,60,Auto" ColumnSpacing="6" Margin="0,1">
+                                    <TextBox Grid.Column="0" Classes="cell" Text="{Binding Var}" PlaceholderText="variable" LostFocus="OnThermalLostFocus" KeyDown="OnThermalKey"/>
+                                    <TextBox Grid.Column="1" Classes="cell" Text="{Binding Start}" PlaceholderText="start" LostFocus="OnThermalLostFocus" KeyDown="OnThermalKey"/>
+                                    <TextBox Grid.Column="2" Classes="cell" Text="{Binding Stop}" PlaceholderText="stop" LostFocus="OnThermalLostFocus" KeyDown="OnThermalKey"/>
+                                    <TextBox Grid.Column="3" Classes="cell" Text="{Binding Points}" PlaceholderText="points" LostFocus="OnThermalLostFocus" KeyDown="OnThermalKey"/>
+                                    <Button Grid.Column="4" FontSize="11" Padding="4,0" Content="×" ToolTip.Tip="Remove this sweep axis"
+                                            Command="{Binding $parent[ItemsControl].((em:EmSetupDocument)DataContext).ViewModel.RemoveThermalSweepCommand, FallbackValue={x:Null}}"
+                                            CommandParameter="{Binding}"/>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <Button FontSize="11" Padding="6,1" HorizontalAlignment="Left" Content="Add sweep axis" Command="{Binding ViewModel.AddThermalSweepCommand}"
+                            IsEnabled="{Binding ViewModel.CanAddThermalSweep}" ToolTip.Tip="Up to two variables, a product; a variable any geometry reads is refused"/>
+
+                    <TextBlock Classes="colhdr" FontWeight="SemiBold" Margin="0,6,0,0" Text="Measures"/>
+                    <TextBox Classes="cell" AcceptsReturn="True" MinHeight="48" TextWrapping="NoWrap" Text="{Binding ViewModel.ThermalMeasuresText}"
+                             PlaceholderText="Rth = (Tmax(die_top) - Tavg(flange_bottom)) / Pdiss"
+                             LostFocus="OnThermalLostFocus"
+                             ToolTip.Tip="One per line: a name, =, and an expression using Tmax, Tmin, Tavg or T of a probe, and any variable"/>
+                    <SelectableTextBlock FontSize="11" Foreground="IndianRed" TextWrapping="Wrap" Text="{Binding ViewModel.ThermalMeasureErrors}"
+                                         IsVisible="{Binding ViewModel.ThermalMeasureErrors, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+
+                    <TextBlock Classes="colhdr" FontWeight="SemiBold" Margin="0,6,0,0" Text="Mesh"/>
+                    <Grid ColumnDefinitions="Auto,90,Auto,90" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="6" RowSpacing="3">
+                        <TextBlock Grid.Row="0" Grid.Column="0" Classes="colhdr" Text="Order" VerticalAlignment="Center"/>
+                        <ComboBox Grid.Row="0" Grid.Column="1" Classes="cell" ItemsSource="{x:Static em:EmSetupEditorViewModel.ThermalOrders}"
+                                  SelectedItem="{Binding ViewModel.ThermalOrder}"/>
+                        <TextBlock Grid.Row="0" Grid.Column="2" Classes="colhdr" Text="Solver" VerticalAlignment="Center"/>
+                        <ComboBox Grid.Row="0" Grid.Column="3" Classes="cell" ItemsSource="{x:Static em:EmSetupEditorViewModel.ThermalSolverChoices}"
+                                  SelectedItem="{Binding ViewModel.ThermalSolver}"/>
+                        <TextBlock Grid.Row="1" Grid.Column="0" Classes="colhdr" Text="Across a source" VerticalAlignment="Center"/>
+                        <TextBox Grid.Row="1" Grid.Column="1" Classes="cell" Text="{Binding ViewModel.ThermalSizeFromSources}" PlaceholderText="4"
+                                 ToolTip.Tip="Elements across a heat source's smallest dimension" LostFocus="OnThermalLostFocus" KeyDown="OnThermalKey"/>
+                        <TextBlock Grid.Row="1" Grid.Column="2" Classes="colhdr" Text="Through thickness" VerticalAlignment="Center"/>
+                        <TextBox Grid.Row="1" Grid.Column="3" Classes="cell" Text="{Binding ViewModel.ThermalMinThroughThickness}" PlaceholderText="2"
+                                 ToolTip.Tip="Elements through the thinnest solid, at least" LostFocus="OnThermalLostFocus" KeyDown="OnThermalKey"/>
+                        <TextBlock Grid.Row="2" Grid.Column="0" Classes="colhdr" Text="Grading" VerticalAlignment="Center"/>
+                        <TextBox Grid.Row="2" Grid.Column="1" Classes="cell" Text="{Binding ViewModel.ThermalGrading}" PlaceholderText="1.3"
+                                 ToolTip.Tip="How fast elements grow away from a refined region" LostFocus="OnThermalLostFocus" KeyDown="OnThermalKey"/>
+                        <CheckBox Grid.Row="2" Grid.Column="2" Grid.ColumnSpan="2" IsChecked="{Binding ViewModel.ThermalCheck}" Content="Convergence check"
+                                  ToolTip.Tip="Mesh again with every size × 0.7, solve the first point, and report how far each probe moved"/>
+                    </Grid>
+                    <SelectableTextBlock FontSize="11" TextWrapping="Wrap" Opacity="0.85" Text="{Binding ViewModel.ThermalEstimate}"/>
+
+                    <TextBlock Classes="colhdr" FontWeight="SemiBold" Margin="0,6,0,0" Text="Balance"/>
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <CheckBox IsChecked="{Binding ViewModel.ThermalKOfT}" Content="k(T)"
+                                  ToolTip.Tip="Thermal conductivity follows temperature (a Newton loop); off, the nominal value everywhere"/>
+                        <TextBox Classes="cell" Width="80" Text="{Binding ViewModel.ThermalTolerance}" PlaceholderText="1e-6"
+                                 ToolTip.Tip="The relative residual at which the loop stops" LostFocus="OnThermalLostFocus" KeyDown="OnThermalKey"/>
+                        <TextBox Classes="cell" Width="60" Text="{Binding ViewModel.ThermalMaxIterations}" PlaceholderText="30"
+                                 ToolTip.Tip="The most Newton steps" LostFocus="OnThermalLostFocus" KeyDown="OnThermalKey"/>
+                    </StackPanel>
+
+                    <SelectableTextBlock FontSize="11" Foreground="IndianRed" TextWrapping="Wrap" Text="{Binding ViewModel.ThermalError}"
+                                         IsVisible="{Binding ViewModel.ThermalError, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+                    <SelectableTextBlock FontSize="11" TextWrapping="Wrap" Foreground="{DynamicResource CrfWarningBrush}" Text="{Binding ViewModel.ThermalFindings}"
+                                         IsVisible="{Binding ViewModel.ThermalFindings, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                  </StackPanel>
+                </Border>
+
                 <!-- The extraction's OUTCOME, one full-width column (owner request, 2026-09-25): the
                      analysis-type picker it used to share this group with moved up beside the
                      solver. Hidden for a 3D setup — every note and warning here is the PLANAR /
@@ -825,7 +953,7 @@
                 </Border>
 
                 <!-- ── Signal layer (R-em-4b) ──────────────────────────────── -->
-                <Border Classes="group">
+                <Border Classes="group" IsVisible="{Binding ViewModel.IsNotThermalSetup}">
                   <StackPanel Spacing="2">
                 <TextBlock Classes="grouphdr" Text="Conductors"/>
                 <TextBlock Classes="colhdr" Text="Signal conductor"
@@ -915,7 +1043,7 @@
                   </StackPanel>
                 </Border>
 
-                <Border Classes="group">
+                <Border Classes="group" IsVisible="{Binding ViewModel.IsNotThermalSetup}">
                   <StackPanel Spacing="2">
                 <TextBlock Classes="grouphdr" Text="Frequency"/>
                 <TextBlock Classes="colhdr" Text="Sweep"/>
@@ -1312,7 +1440,7 @@
                 </Border>
 
                 <!-- ── Solver options ─────────────────────────────────────────────────────── -->
-                <Border Classes="group">
+                <Border Classes="group" IsVisible="{Binding ViewModel.IsNotThermalSetup}">
                   <StackPanel Spacing="2">
                 <TextBlock Classes="grouphdr" Text="Solver options"/>
                 <!-- Everything above Cores is the planar/cross-section kernels' own; a 3D run reads only

@@ -174,6 +174,8 @@ public sealed partial class C3dEditorViewModel
         RebuildSetupItems();
         ReloadSetupEditor();
         RefreshFieldsStale();
+        // brief-em3d-75 — the thermal rows follow at once (the scene's tints follow its rebuild).
+        RebuildThermalTree();
     }
 
     // ── setups (R-em3d49-1) ──────────────────────────────────────────────────────────────────
@@ -311,11 +313,16 @@ public sealed partial class C3dEditorViewModel
         // in the panel does not tear the panel down under the user's cursor.
         if (SetupEditor?.ViewModel is { } shown && _editorFor == (item.Name, item.IsExternal) &&
             EmSetupPersistence.Serialize(shown.Working) == EmSetupPersistence.Serialize(setup))
+        {
+            shown.RefreshThermal();          // brief-em3d-75 — the page lists the document's heat sources
             return;
+        }
         var vm = new EmSetupEditorViewModel(item.IsExternal ? item.ExternalPath! : FilePath, setup, embedded: true)
         {
             IsReadOnly = item.IsExternal,
         };
+        // brief-em3d-75 R-em3d75-3 — the thermal page reads this document's heat sources, probes and variables.
+        if (!item.IsExternal) vm.ThermalContext = new EmThermalContext(() => Document, () => Resolution, () => Elaboration);
         if (!item.IsExternal)
         {
             string name = item.Name;
@@ -358,6 +365,19 @@ public sealed partial class C3dEditorViewModel
         string name = Enumerable.Range(1, 10_000).Select(n => $"S{n}").First(n => !names.Contains(n));
         var setup = new EmSetup { Name = name, Solver3D = Em3dSolver.Palace };
         ChangeRecords($"Add setup {name}", d => d.Setups.Add(EmSetupPersistence.ToEmbedded(setup)));
+        if (ActiveSetupName is null || ActiveSetup is null) SetActiveSetup(name);
+        SelectedSetupItem = SetupItems.FirstOrDefault(i => i.Name == name && !i.IsExternal);
+    }
+
+    /// <summary>brief-em3d-75 R-em3d75-3 — Add Thermal: a new thermal setup (no EM solver; brief 73 D1), named T1, T2 …, with
+    /// its Thermal section to fill in on its page; the first setup added becomes the active one.</summary>
+    [RelayCommand]
+    public void AddThermalSetup()
+    {
+        var names = C3dSetups.Read(Document).Select(s => s.Name).ToHashSet(StringComparer.Ordinal);
+        string name = Enumerable.Range(1, 10_000).Select(n => $"T{n}").First(n => !names.Contains(n));
+        var setup = new EmSetup { Name = name, Solver3D = Em3dSolver.None, Problem3D = Em3dProblemType.Thermal, Thermal = new CemThermal() };
+        ChangeRecords($"Add thermal setup {name}", d => d.Setups.Add(EmSetupPersistence.ToEmbedded(setup)));
         if (ActiveSetupName is null || ActiveSetup is null) SetActiveSetup(name);
         SelectedSetupItem = SetupItems.FirstOrDefault(i => i.Name == name && !i.IsExternal);
     }
@@ -444,7 +464,11 @@ public sealed partial class C3dEditorViewModel
     /// <summary>What a scene build resolved for the records: the box, each port, each face boundary (keyed by generation).</summary>
     private sealed record RecordsView(Em3dAirBox? Box, IReadOnlyList<C3dPortResult> Ports,
                                       IReadOnlyList<(C3dFaceBoundary Boundary, IReadOnlyList<Em3dFacePolygon> Pieces, string? Refusal)> Boundaries,
-                                      C3dPortContext Context);
+                                      C3dPortContext Context)
+    {
+        /// <summary>brief-em3d-75 R-em3d75-2 — the active thermal setup's conditioned faces, tinted by kind.</summary>
+        public IReadOnlyList<Scene3DFaceTint> ThermalTints { get; init; } = [];
+    }
 
     private readonly System.Collections.Concurrent.ConcurrentDictionary<long, RecordsView> _records = new();
     private RecordsView? _recordsView;
@@ -474,7 +498,7 @@ public sealed partial class C3dEditorViewModel
         var ctx = C3dProblemAssembly.PortContext(setup, doc, e, box);
         var ports = e.Ok ? C3dPorts.Resolve(doc, ctx) : [];
         var boundaries = e.Ok ? C3dProblemAssembly.FaceBoundaryPreview(doc, e) : [];
-        return new RecordsView(box, ports, boundaries, ctx);
+        return new RecordsView(box, ports, boundaries, ctx) { ThermalTints = ThermalTints(doc, e, setup) };
     }
 
     /// <summary>
@@ -914,6 +938,7 @@ public sealed partial class C3dEditorViewModel
             r.Resolved is { } p ? $"{C3dPorts.Label(r.Port)} {(p.Kind == Em3dPortKind.Wave ? "wave" : "lumped")}: {p.NegativeObject} → {p.PositiveObject}"
                                 : $"{C3dPorts.Label(r.Port)}: refused", -1, -1, true) { IsReadOnly = true }).ToList();
         if (ports.Count > 0) Tree.Add(new C3dTreeGroup("Ports", ports, C3dTreeGroupRole.Ports));
+        RebuildThermalTree();
         foreach (var item in Tree.Where(g => g.Role is C3dTreeGroupRole.Objects or C3dTreeGroupRole.Construction or C3dTreeGroupRole.Booleans).SelectMany(g => g.Items))
         {
             foreach (var c in item.Children.Where(c => c.Kind == "Boundary").ToList()) item.Children.Remove(c);
@@ -997,6 +1022,8 @@ public sealed partial class C3dEditorViewModel
     private IEnumerable<string> ActiveRunDirectories()
     {
         if (ActiveRunSetup is not { } s || ResultsRootProvider?.Invoke() is not { } root) yield break;
+        // brief-em3d-75 — a thermal setup's run keeps its own directory (brief 74), and only that one.
+        if (s.IsThermal) { yield return CircuitRF.Design.Thermal.ThermalRunService.RunDirectory(root, s); yield break; }
         if (s.Solver3D is Em3dSolver.Palace or Em3dSolver.Both) yield return Em3dRunService.RunDirectory(root, s, Em3dSolver.Palace);
         if (s.Solver3D is Em3dSolver.OpenEms or Em3dSolver.Both) yield return Em3dRunService.RunDirectory(root, s, Em3dSolver.OpenEms);
     }
@@ -1005,10 +1032,12 @@ public sealed partial class C3dEditorViewModel
     public void RunFinished(EmSetup runSetup, string documentText)
     {
         if (ResultsRootProvider?.Invoke() is { } root)
-            foreach (var solver in new[] { Em3dSolver.Palace, Em3dSolver.OpenEms })
-                if (runSetup.Solver3D == solver || runSetup.Solver3D == Em3dSolver.Both)
+            foreach (var solver in runSetup.IsThermal ? [Em3dSolver.None] : new[] { Em3dSolver.Palace, Em3dSolver.OpenEms })
+                if (runSetup.IsThermal || runSetup.Solver3D == solver || runSetup.Solver3D == Em3dSolver.Both)
                 {
-                    string dir = Em3dRunService.RunDirectory(root, runSetup, solver);
+                    // brief-em3d-75 — a thermal run's directory is its own (ThermalRunService.RunDirectory).
+                    string dir = runSetup.IsThermal ? CircuitRF.Design.Thermal.ThermalRunService.RunDirectory(root, runSetup)
+                                                    : Em3dRunService.RunDirectory(root, runSetup, solver);
                     if (!Directory.Exists(dir)) continue;
                     try { File.WriteAllText(Path.Combine(dir, RunDocumentFile), documentText); }
                     catch (Exception e) when (e is IOException or UnauthorizedAccessException) { StatusMessage = $"The run's document could not be kept: {e.Message}"; }

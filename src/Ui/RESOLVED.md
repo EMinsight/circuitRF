@@ -37430,3 +37430,28 @@ that reads `ThemeService.CurrentVariant` from inside an `ActualThemeVariantChang
 race.** Gate: `GridAndWireframeTests.Grid_ThemeVariantSwitch_RecoloursGridAndBackgroundTogether_AndRebuildsTheScene`.
 `Grid_OnMetal_LinesReachTheFarEdgeOfTheView` used to set `DrawingGrid.Dark = true` by hand, assuming the
 background was always dark. It now sets the variant instead.
+
+## brief-em3d-75 — the thermal editor and Plot Temperature (2026-09-28)
+
+- **A thermal place is a record, drawn in the overlay.** Heat sources, probes and mesh regions are never scene objects:
+  `Viewer3DDrawOverlay` gained `HeatSources` (outline and a 45° hatch clipped even-odd), `Probes`/`ProbeMarks` and
+  `MeshRegions` (dashed). They are therefore never picked, never snapped to, and never meshed by an EM lowering. Their
+  edits go through `C3dRecordsEdit`, which now carries the four thermal lists (`C3dPersistence.SerializeThermalPlaces`), so
+  every edit is one entry and undo restores the file byte for byte. `ApplyDocumentText` (the name-edit entry) now puts the
+  thermal lists back too — before, a rename that rewrote a probe's bound expression would not have been undone.
+- **A place's dimensions reuse the object field editor.** Brief 73 had already made them `C3dBindings` fields;
+  `SetFieldText`'s body became `WriteField(doc, item, …)`, called for objects and for places alike, and `DimensionFields`
+  takes any item. A place's hide is the view's (`_hiddenPlaces`): the format has no `Hidden` for a place.
+- **A thermal setup names no EM solver, which the setup panel did not expect.** `Solver3D` is `None` for a thermal setup
+  (brief 73), so `Is3DSetup` was false and the panel showed the planar controls; `Is3DSetup` now includes `IsThermalSetup`,
+  the problem picker offers Thermal only when embedded (`Problem3DChoiceList`), and choosing Thermal sets `Solver3D: None`
+  (leaving it restores Palace). `SyncStaticFields` looked the problem up with `First` over the four EM choices and would
+  have thrown on any thermal setup; it looks through the instance list now.
+- **The stale banner reads a thermal run's own directory.** `ActiveRunDirectories` and `RunFinished` were Palace/openEMS
+  only; a thermal setup's `document.c3d` is written to and compared in `ThermalRunService.RunDirectory`. Plot Temperature's
+  refusal (`PlotTemperatureRefusal`) is the one predicate the context menu, 3D ▸ View ▸ Temperature and the toolbar read:
+  no thermal result, a stale one, or none.
+- **The hover's face is `LastPick.Face`.** `View.HoveredFace` is set in Face mode only, so a painted face read nothing in
+  Object mode.
+- **Pre-existing failure, not this brief:** `EmFrameworkFreeTests.NothingUnderLayoutEm_ReferencesAvaloniaOrSkia` fails on
+  `SolverInstallRunner.cs` and `SolverRemovalRunner.cs` (both last changed in 2eeedbe9, 2026-09-26).

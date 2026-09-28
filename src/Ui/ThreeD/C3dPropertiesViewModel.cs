@@ -27,6 +27,17 @@ namespace CircuitRF.Ui.ThreeD;
 /// <summary>One read-only line of the panel; its value is selectable, so it can be copied.</summary>
 public sealed record C3dPropertyRow(string Label, string Value);
 
+/// <summary>brief-em3d-75 R-em3d75-1c — one of a thermal place's fields that is not a dimension: a heat source's power, a
+/// probe's statistic or limit, a mesh region's grading. Its choices, when it has a fixed set.</summary>
+public sealed partial class C3dThermalTextField : ObservableObject
+{
+    public required string Label { get; init; }
+    public required string Key { get; init; }
+    public string Hint { get; init; } = "";
+    [ObservableProperty] private string _text = "";
+    internal string Loaded { get; set; } = "";
+}
+
 /// <summary>3D editor round 1 — one face of the air box in the Inspector: its boundary, editable, and its padding now.</summary>
 public sealed partial class C3dAirBoxFaceRow(string face, Em3dBoundaryKind kind, string padding, Action<string, Em3dBoundaryKind> set)
     : ObservableObject
@@ -188,7 +199,60 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
     private string _featurePath = "";
 
     /// <summary>The dimension lines: an object's, or a feature row's size fields.</summary>
-    public bool FieldsVisible => IsEditable || IsFeature;
+    public bool FieldsVisible => IsEditable || IsFeature || IsThermalPlace;
+
+    /// <summary>brief-em3d-75 R-em3d75-1c — a heat source, probe or mesh region is shown: its name, its dimensions (through
+    /// the same field editor as an object's, expressions included) and its other fields.</summary>
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(FieldsVisible))] private bool _isThermalPlace;
+
+    private string _placeName = "";
+
+    public ObservableCollection<C3dThermalTextField> ThermalFields { get; } = [];
+
+    private void LoadThermalPlace(string name)
+    {
+        if (editor.ThermalPlace(name) is not { } item) { Heading = "Nothing selected"; return; }
+        _placeName = name;
+        IsThermalPlace = true;
+        NameText = name;
+        string kind = item switch { C3dHeatSource => "Heat source", C3dProbe => "Probe", _ => "Mesh region" };
+        Heading = $"{kind} {name}";
+        void Text(string label, string key, string? value, string hint = "")
+            => ThermalFields.Add(new C3dThermalTextField { Label = label, Key = key, Text = value ?? "", Loaded = value ?? "", Hint = hint });
+        switch (item)
+        {
+            case C3dHeatSource h:
+                Rows.Add(new C3dPropertyRow("Spread over", h.Solid is { } s ? $"the solid {s} (volumetric)" : "a sheet on the drawing plane"));
+                Text("Default power", "Power", h.Power, "W unless Density says otherwise; an expression sweeps");
+                Text("Density", "Density", h.Density.ToString(), "Total, PerArea or PerVolume");
+                if (h.Solid is not null) Text("Solid", "Solid", h.Solid);
+                break;
+            case C3dProbe p:
+                Rows.Add(new C3dPropertyRow("Reads", string.Join(", ", p.Kinds())));
+                if (p.Face is not null) Text("Face", "Face", p.Face, "object/face");
+                if (p.Solid is not null) Text("Solid", "Solid", p.Solid);
+                if (p.Wire is not null) Text("Wire", "Wire", p.Wire, "a wire, or one element: w1[3]");
+                if (p.Spot is not null) Text("On face", "SpotFace", p.Spot.Face, "object/face the spot lies on");
+                if (p.Point is null && p.Line is null) Text("Statistic", "Stat", p.Stat?.ToString(), "Max, Min or Avg");
+                Text("Limit, °C", "LimitC", p.LimitC?.ToString("G6", CultureInfo.InvariantCulture), "flagged where crossed; empty for none");
+                break;
+            case C3dMeshRegion m:
+                Text("Grading", "Grading", m.Grading?.ToString("G6", CultureInfo.InvariantCulture), "empty takes the setup's");
+                break;
+        }
+        foreach (var f in editor.DimensionFields(item, name, path => C3dEditorViewModel.PlaceFieldLabel(item, path),
+                                                 path => C3dEditorViewModel.PlaceFieldGroup(item, path)))
+            Fields.Add(f);
+        foreach (var r in RowsOf(Fields)) FieldRows.Add(r);
+    }
+
+    /// <summary>R-em3d75-1c — a thermal place's text field committed: one undo entry, or the refusal and the field put back.</summary>
+    public void CommitThermalField(C3dThermalTextField field)
+    {
+        if (!IsThermalPlace || field.Text == field.Loaded) return;
+        Error = editor.SetPlaceText(_placeName, field.Key, field.Text) ?? "";
+        if (Error.Length > 0) field.Text = field.Loaded;
+    }
     partial void OnIsEditableChanged(bool value) => OnPropertyChanged(nameof(FieldsVisible));
     partial void OnIsFeatureChanged(bool value) => OnPropertyChanged(nameof(FieldsVisible));
 
@@ -239,6 +303,8 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         IsAirBox = false;
         IsAirBoxRow = false;
         AirBoxFaces.Clear();
+        IsThermalPlace = false;
+        ThermalFields.Clear();
         var viewer = editor.Viewer;
         var sel = viewer.Selection;
         // brief-em3d-67 R-em3d67-6b — a fillet's or chamfer's row: its own fields, not its object's.
@@ -262,6 +328,12 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
             if (editor.TreeOnlyObjectIndex() is >= 0 and var only) { LoadObject(only, inScene: false); return; }
             if (editor.SelectedTreeItem is { IsGroup: true, GroupPath: { } undrawn }) { LoadGroup(undrawn); return; }
             if (editor.SelectedTreeItem is { IsAirBox: true }) { LoadAirBox(); return; }
+            // brief-em3d-75 — a heat source's, probe's or mesh region's row: the place is in no scene, only the tree.
+            if (editor.SelectedTreeItem is { Kind: C3dEditorViewModel.HeatSourceKind or C3dEditorViewModel.ProbeKind or C3dEditorViewModel.MeshRegionKind } place)
+            {
+                LoadThermalPlace(place.Name);
+                return;
+            }
             Heading = "Nothing selected";
             return;
         }
@@ -838,6 +910,11 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
             if (field.Text != field.Loaded) Error = editor.SetGroupCorner(_groupPath, field.Path[^1] - '0', field.Text) ?? "";
             return;
         }
+        if (IsThermalPlace)
+        {
+            if (field.Text != field.Loaded) Error = editor.SetPlaceFieldText(_placeName, field.Path, field.Text) ?? "";
+            return;
+        }
         if (ObjectIndex < 0 || field.Text == field.Loaded) return;
         Error = editor.SetFieldText(ObjectIndex, field.Path, field.Text) ?? "";
     }
@@ -948,6 +1025,13 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
     /// <summary>The Name field's Enter or lost focus.</summary>
     public void CommitName()
     {
+        if (IsThermalPlace)
+        {
+            if (NameText.Trim() == _placeName) return;
+            Error = editor.RenameThermalPlace(_placeName, NameText) ?? "";
+            if (Error.Length > 0) NameText = _placeName;
+            return;
+        }
         if (IsGroup)
         {
             Error = editor.RenameGroup(_groupPath, NameText) ?? "";

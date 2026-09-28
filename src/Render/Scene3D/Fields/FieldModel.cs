@@ -80,7 +80,12 @@ public static class FieldNames
         ["U_m"]       = ("Magnetic energy density", "J/m³"),
         ["Indicator"] = ("Error indicator", ""),
         ["Rank"]      = ("MPI rank", ""),
+        // brief-em3d-75 — the thermal run's temperature, °C at every boundary a user or a file touches (overview §1i).
+        [TemperatureArray] = ("Temperature", "°C"),
     };
+
+    /// <summary>brief-em3d-75 — the array a thermal run writes its temperature in (ThermalFieldFiles).</summary>
+    public const string TemperatureArray = "T_C";
 
     private static readonly Regex PortMode = new(@"^E0_(\d+)$", RegexOptions.CultureInvariant);
 
@@ -94,5 +99,5 @@ public static class FieldNames
         => Known.TryGetValue(name, out var k) ? k.Unit : PortMode.IsMatch(name) ? "V/m" : "";
 
     /// <summary>Geometry and bookkeeping, never a quantity to draw.</summary>
-    public static bool IsBookkeeping(string name) => name is "attribute" or "Rank";
+    public static bool IsBookkeeping(string name) => name is "attribute" or "Rank" or "material";
 }

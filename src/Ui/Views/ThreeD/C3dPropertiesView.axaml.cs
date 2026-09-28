@@ -123,6 +123,19 @@ public partial class C3dPropertiesView : UserControl
     }
 
     // 3D editor round 1 — the air box's padding per axis.
+    // brief-em3d-75 R-em3d75-1c — a thermal place's field: Enter or lost focus commits it, one undo entry.
+    private void OnThermalFieldKey(object? sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter || (sender as Control)?.DataContext is not C3dThermalTextField f) return;
+        _vm?.CommitThermalField(f);
+        e.Handled = true;
+    }
+
+    private void OnThermalFieldLostFocus(object? sender, RoutedEventArgs e)
+    {
+        if ((sender as Control)?.DataContext is C3dThermalTextField f) _vm?.CommitThermalField(f);
+    }
+
     private static char AxisOf(object? sender) => (sender as Control)?.Tag is string { Length: 1 } a ? a[0] : 'x';
 
     private void OnPadKey(object? sender, KeyEventArgs e)

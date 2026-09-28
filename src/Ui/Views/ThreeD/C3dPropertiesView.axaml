@@ -176,6 +176,25 @@
                 </ItemsControl>
             </StackPanel>
 
+            <!-- brief-em3d-75 R-em3d75-1c — a heat source, probe or mesh region: its name and its other fields (its
+                 dimensions are the ordinary dimension lines below, expressions included). -->
+            <StackPanel Spacing="4" IsVisible="{Binding IsThermalPlace}">
+                <TextBlock Text="Name" FontSize="11" Opacity="0.7"/>
+                <TextBox Text="{Binding NameText}" KeyDown="OnNameKey" LostFocus="OnNameLostFocus"
+                         ToolTip.Tip="A measure names a probe by it; a setup names a heat source by it. Renaming rewrites both."/>
+                <ItemsControl ItemsSource="{Binding ThermalFields}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="t3:C3dThermalTextField">
+                            <StackPanel Margin="0,2" Spacing="1">
+                                <TextBlock Text="{Binding Label}" FontSize="11" Opacity="0.7"/>
+                                <TextBox Text="{Binding Text}" PlaceholderText="{Binding Hint}" ToolTip.Tip="{Binding Hint}"
+                                         KeyDown="OnThermalFieldKey" LostFocus="OnThermalFieldLostFocus"/>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+
             <SelectableTextBlock Text="{Binding Error}" Foreground="IndianRed" TextWrapping="Wrap"
                                  IsVisible="{Binding Error, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
 

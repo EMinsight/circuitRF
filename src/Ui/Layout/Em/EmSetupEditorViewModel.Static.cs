@@ -77,13 +77,27 @@ public sealed partial class EmSetupEditorViewModel
         if (_suppressCommit) return;
         if (value.Value == Working.Problem3D) return;
         var before = SnapshotJson();
+        bool wasThermal = Working.Problem3D == Em3dProblemType.Thermal;
         Working.Problem3D = value.Value;
+        // brief-em3d-75 R-em3d75-3 — a thermal setup names no EM solver (brief 73); leaving Thermal takes Palace back.
+        if (value.Value == Em3dProblemType.Thermal) { Working.Solver3D = Em3dSolver.None; Working.Thermal ??= new CircuitRF.Design.Layout.Em.CemThermal(); }
+        else if (wasThermal && Working.Solver3D == Em3dSolver.None) Working.Solver3D = Em3dSolver.Palace;
         CommitEdit(before, "Change 3D problem");
+        if (wasThermal != (value.Value == Em3dProblemType.Thermal))
+        {
+            _suppressCommit = true;
+            try { Solver3DChoice = Solver3DChoices.FirstOrDefault(c => c.Value == Working.Solver3D) ?? Solver3DChoice; }
+            finally { _suppressCommit = false; }
+            SyncThermalFields();
+        }
+        RaiseThermalVisibility();
         Refresh();
     }
 
     private void RaiseStaticVisibility()
     {
+        OnPropertyChanged(nameof(IsThermalSetup));
+        OnPropertyChanged(nameof(IsNotThermalSetup));
         OnPropertyChanged(nameof(IsStaticSetup));
         OnPropertyChanged(nameof(IsMagnetostaticSetup));
         OnPropertyChanged(nameof(Problem3DDescription));
@@ -94,7 +108,7 @@ public sealed partial class EmSetupEditorViewModel
 
     private void SyncStaticFields()
     {
-        Problem3DChoice = Problem3DChoices.First(c => c.Value == Working.Problem3D);
+        Problem3DChoice = Problem3DChoiceList.FirstOrDefault(c => c.Value == Working.Problem3D) ?? Problem3DChoices[0];
         TerminalRows.Clear();
         foreach (var t in Working.Terminals3D)
             TerminalRows.Add(new Em3dTerminalRow

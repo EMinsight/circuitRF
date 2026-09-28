@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:v3="using:CircuitRF.Ui.Viewer3D"
              xmlns:t3="using:CircuitRF.Ui.ThreeD"
+             xmlns:ddc="using:CircuitRF.Ui.DataDisplay.Controls"
              xmlns:vv3="using:CircuitRF.Ui.Views.Viewer3D"
              xmlns:s3="using:CircuitRF.Render.Scene3D"
              xmlns:converters="using:CircuitRF.Ui.Converters"
@@ -121,6 +122,19 @@
                 <!-- brief-em3d-50 R-em3d50-3 — a bond wire, pad to pad, then its loop height (assembly: lower foot to apex top). -->
                 <ToggleButton IsVisible="{Binding ViewModel.IsEditable}" IsChecked="{Binding ViewModel.IsWireArmed}" ToolTip.Tip="Wire: click any face of a metal object or a sheet, then another (inside a placed cell too) — each end attaches to that object's top — then set the loop height — measured from the lower foot to the top of the wire — with the mouse or by typing it  (Shift+A, W)">
                     <mi:MaterialIcon Kind="VectorCurve" Width="16" Height="16"/>
+                </ToggleButton>
+                <!-- brief-em3d-75 R-em3d75-1a — the thermal places: records beside the ports, drawn in the overlay only. -->
+                <ToggleButton IsVisible="{Binding ViewModel.IsEditable}" IsChecked="{Binding ViewModel.IsHeatSourceArmed}"
+                              ToolTip.Tip="Heat Source: a rectangle on the drawing plane, as a port's sheet is drawn; then its name and power (3D ▸ Draw ▸ Heat Source for a polygon)  (Shift+A, H)">
+                    <mi:MaterialIcon Kind="FireCircle" Width="16" Height="16"/>
+                </ToggleButton>
+                <ToggleButton IsVisible="{Binding ViewModel.IsEditable}" IsChecked="{Binding ViewModel.IsProbeArmed}"
+                              ToolTip.Tip="Probe: click the point on a face where temperature is read (3D ▸ Draw ▸ Probe for a spot or a line; right-click a face, solid or wire for those)  (Shift+A, T)">
+                    <mi:MaterialIcon Kind="ThermometerProbe" Width="16" Height="16"/>
+                </ToggleButton>
+                <ToggleButton IsVisible="{Binding ViewModel.IsEditable}" IsChecked="{Binding ViewModel.IsMeshRegionArmed}"
+                              ToolTip.Tip="Mesh Region: a box drawn as the Box tool draws one; then its element size. Fine mesh goes where you put it  (Shift+A, M)">
+                    <mi:MaterialIcon Kind="CubeScan" Width="16" Height="16"/>
                 </ToggleButton>
                 <!-- 3D editor bugs round 5 — both are editing chrome; one of the two shows at a time. -->
                 <Panel VerticalAlignment="Center" IsVisible="{Binding ViewModel.IsEditable}">
@@ -368,8 +382,10 @@
                         <mi:MaterialIcon Kind="CubeOutline" Width="16" Height="16"/>
                     </ToggleButton>
                     <ToggleButton IsChecked="{Binding ViewModel.Viewer.FieldDb}" IsEnabled="{Binding ViewModel.Viewer.ShowField}" Content="dB"
+                                  IsVisible="{Binding !ViewModel.Viewer.IsThermalRun}"
                                   ToolTip.Tip="Decibels (20·log10 of the amplitude), 40 dB below the top of the range"/>
                     <ComboBox ItemsSource="{Binding ViewModel.Viewer.FieldPercentiles}" SelectedItem="{Binding ViewModel.Viewer.FieldPercentile}"
+                              IsVisible="{Binding !ViewModel.Viewer.IsThermalRun}"
                               IsEnabled="{Binding ViewModel.Viewer.ShowField}" VerticalAlignment="Center"
                               ToolTip.Tip="The top of the colour range: this percentile of the values drawn, so one singular edge does not wash out the picture. Beyond it, the end colour.">
                         <ComboBox.ItemTemplate>
@@ -377,16 +393,52 @@
                         </ComboBox.ItemTemplate>
                     </ComboBox>
                     <!-- 3D editor bugs round 5 — the phase animation: the read-only viewer's, now here for both. -->
+                    <!-- brief-em3d-75 R-em3d75-4 — a thermal run: where temperature is painted, the range, the sweep. -->
+                    <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding ViewModel.Viewer.IsThermalRun}">
+                        <ToggleButton IsChecked="{Binding ViewModel.Viewer.TemperatureAllFaces}"
+                                      ToolTip.Tip="Temperature on every exposed face (View ▸ Temperature ▸ All Faces). Right-click a face ▸ Plot Temperature for one face.">
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <mi:MaterialIcon Kind="CubeOutline" Width="16" Height="16"/>
+                                <TextBlock Text="All faces" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </ToggleButton>
+                        <ToggleButton IsChecked="{Binding ViewModel.Viewer.TemperatureOnClip}"
+                                      ToolTip.Tip="Temperature on the clip plane's section — the view to see a channel under a field plate (turn the plane on with C)">
+                            <mi:MaterialIcon Kind="ContentCut" Width="16" Height="16"/>
+                        </ToggleButton>
+                        <ToggleButton IsChecked="{Binding ViewModel.Viewer.FixRangeAcrossSweep}" Content="Fix range"
+                                      ToolTip.Tip="The colour range is the minimum and maximum over EVERY sweep point, so stepping the sweep never rescales. Off: each point its own true minimum and maximum."/>
+                        <Slider Width="140" Minimum="0" Maximum="{Binding ViewModel.Viewer.TemperatureStepMax}" TickFrequency="1" IsSnapToTickEnabled="True"
+                                Value="{Binding ViewModel.Viewer.TemperatureStep}" IsVisible="{Binding ViewModel.Viewer.HasTemperatureSweep}"
+                                VerticalAlignment="Center" ToolTip.Tip="The sweep point shown"/>
+                        <TextBlock Text="{Binding ViewModel.Viewer.TemperatureStepLabel}" VerticalAlignment="Center" FontSize="11"/>
+                        <Button Command="{Binding ViewModel.StartTemperatureAlongCommand}"
+                                ToolTip.Tip="Temperature Along… — pick two points: T between them, both ends and ΔT (Rth by hand). Nothing is added to the document.">
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <mi:MaterialIcon Kind="ChartLine" Width="16" Height="16"/>
+                                <TextBlock Text="Along…" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+                        <ToggleButton IsChecked="{Binding ViewModel.ProbeTableOpen}" ToolTip.Tip="Every probe statistic and every measure at the sweep point shown; a probe past its limit is flagged">
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <mi:MaterialIcon Kind="TableLarge" Width="16" Height="16"/>
+                                <TextBlock Text="Probes" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </ToggleButton>
+                    </StackPanel>
                     <ToggleButton IsChecked="{Binding ViewModel.Viewer.FieldPlaying}" IsEnabled="{Binding ViewModel.Viewer.FieldCanAnimate}"
+                                  IsVisible="{Binding !ViewModel.Viewer.IsThermalRun}"
                                   ToolTip.Tip="Play the phase: Re{v·e^jφ} through one cycle (choose an animated quantity)" ToolTip.ShowOnDisabled="True">
                         <mi:MaterialIcon Kind="PlayPause" Width="16" Height="16"/>
                     </ToggleButton>
                     <Slider Width="120" Minimum="0" Maximum="360" Value="{Binding ViewModel.Viewer.FieldPhaseDegrees}"
+                            IsVisible="{Binding !ViewModel.Viewer.IsThermalRun}"
                             IsEnabled="{Binding ViewModel.Viewer.FieldCanAnimate}" VerticalAlignment="Center" ToolTip.Tip="Phase φ, degrees"/>
                     <NumericUpDown Value="{Binding ViewModel.Viewer.FieldLoopSeconds}" Minimum="0.2" Maximum="30" Increment="0.5" FormatString="0.#"
+                                   IsVisible="{Binding !ViewModel.Viewer.IsThermalRun}"
                                    IsEnabled="{Binding ViewModel.Viewer.FieldCanAnimate}" Width="100" VerticalAlignment="Center"
                                    ToolTip.Tip="Seconds per cycle on screen — a display choice; the frequency is the legend's"/>
-                    <TextBlock Text="s / cycle" VerticalAlignment="Center" Opacity="0.7"/>
+                    <TextBlock Text="s / cycle" VerticalAlignment="Center" Opacity="0.7" IsVisible="{Binding !ViewModel.Viewer.IsThermalRun}"/>
                     <ToggleButton IsChecked="{Binding ViewModel.Viewer.ShowMesh}" IsEnabled="{Binding ViewModel.Viewer.MeshAvailable}"
                                   IsVisible="{Binding ViewModel.IsEditable}"
                                   ToolTip.Tip="{Binding ViewModel.Viewer.MeshTip}" ToolTip.ShowOnDisabled="True">
@@ -397,6 +449,51 @@
                                      Text="{Binding ViewModel.FieldsStaleText}"
                                      IsVisible="{Binding ViewModel.FieldsStaleText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
             </StackPanel>
+        </Border>
+
+        <!-- ── brief-em3d-75 R-em3d75-4d / -4e: the line plot and the probe table ──────────── -->
+        <Border DockPanel.Dock="Bottom" Padding="6,4" BorderThickness="0,1,0,0" IsVisible="{Binding ViewModel.HasThermalLine}"
+                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
+            <DockPanel>
+                <DockPanel DockPanel.Dock="Top">
+                    <Button DockPanel.Dock="Right" Command="{Binding ViewModel.CloseThermalLineCommand}" Padding="4,1" ToolTip.Tip="Close the plot">
+                        <mi:MaterialIcon Kind="Close" Width="14" Height="14"/>
+                    </Button>
+                    <SelectableTextBlock Text="{Binding ViewModel.ThermalLineText}" FontSize="11" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                </DockPanel>
+                <ddc:PlotControl x:Name="ThermalLinePlot" Height="200" Plot="{Binding ViewModel.ThermalLinePlot}"
+                                 CanDeletePlot="False" CanEditPlotProperties="False"/>
+            </DockPanel>
+        </Border>
+        <Border DockPanel.Dock="Bottom" Padding="6,4" BorderThickness="0,1,0,0" IsVisible="{Binding ViewModel.ProbeTableOpen}" MaxHeight="260"
+                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
+            <DockPanel>
+                <DockPanel DockPanel.Dock="Top">
+                    <ToggleButton DockPanel.Dock="Right" IsChecked="{Binding ViewModel.ProbeTableAllPoints}" Content="Every point" FontSize="11" Padding="4,1"
+                                  ToolTip.Tip="A column per sweep point (⚠ where a probe reached its limit)"/>
+                    <SelectableTextBlock Text="{Binding ViewModel.ProbeTableHeading}" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                </DockPanel>
+                <ScrollViewer HorizontalScrollBarVisibility="Auto">
+                    <ItemsControl ItemsSource="{Binding ViewModel.ProbeTable}" Grid.IsSharedSizeScope="True">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="t3:C3dProbeTableRow">
+                                <Grid Margin="0,1">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" SharedSizeGroup="ProbeName"/>
+                                        <ColumnDefinition Width="Auto" SharedSizeGroup="ProbeValue"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <SelectableTextBlock Grid.Column="0" Text="{Binding Name}" FontSize="11" Margin="0,0,12,0"
+                                                         FontStyle="{Binding IsMeasure, Converter={x:Static t3:C3dProbeTableStyle.Italic}}"/>
+                                    <SelectableTextBlock Grid.Column="1" Text="{Binding Value}" FontSize="11" Margin="0,0,12,0"
+                                                         Foreground="{Binding Crossed, Converter={x:Static t3:C3dProbeTableStyle.Flag}}"/>
+                                    <SelectableTextBlock Grid.Column="2" Text="{Binding AllPoints}" FontSize="11" Opacity="0.8"/>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </DockPanel>
         </Border>
 
         <!-- ── Status ──────────────────────────────────────────────────────────── -->

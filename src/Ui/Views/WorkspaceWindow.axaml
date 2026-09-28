@@ -215,6 +215,25 @@
                                     <NativeMenuItem Header="Perspective" ToolTip="Requires an active 3D document."    Command="{Binding ThreeDPerspectiveCommand}"/>
                                     <NativeMenuItem Header="Clip Plane" ToolTip="Requires an active 3D document."     Command="{Binding ThreeDClipPlaneCommand}"/>
                                     <NativeMenuItem Header="Axis Indicator" ToolTip="Requires an active 3D document." Command="{Binding ThreeDAxisIndicatorCommand}"/>
+                                    <NativeMenuItemSeparator/>
+                                    <!-- brief-em3d-75 R-em3d75-4 — greyed, with the reason, without a current thermal result. -->
+                                    <NativeMenuItem Header="Temperature" ToolTip="{Binding ThreeDTemperatureTip}" IsEnabled="{Binding ThreeDTemperatureMenuEnabled}">
+                                        <NativeMenuItem.Menu>
+                                            <NativeMenu>
+                                                <NativeMenuItem Header="All Faces" ToolTip="Temperature on every exposed face." Command="{Binding ThreeDTemperatureCommand}" CommandParameter="AllFaces"/>
+                                                <NativeMenuItem Header="On Clip Plane" ToolTip="Temperature on the clip plane's section." Command="{Binding ThreeDTemperatureCommand}" CommandParameter="OnClip"/>
+                                                <NativeMenuItem Header="Fix Range Across Sweep" ToolTip="One colour range for every sweep point." Command="{Binding ThreeDTemperatureCommand}" CommandParameter="FixRange"/>
+                                                <NativeMenuItemSeparator/>
+                                                <NativeMenuItem Header="Temperature Along…" ToolTip="Pick two points: T between them, both ends and ΔT." Command="{Binding ThreeDTemperatureCommand}" CommandParameter="Along"/>
+                                                <NativeMenuItem Header="Probe Table" ToolTip="Every probe statistic and measure at the step shown." Command="{Binding ThreeDTemperatureCommand}" CommandParameter="Table"/>
+                                                <NativeMenuItemSeparator/>
+                                                <NativeMenuItem Header="Clear" ToolTip="Take the temperature off every face and the clip plane." Command="{Binding ThreeDTemperatureCommand}" CommandParameter="Clear"/>
+                                            </NativeMenu>
+                                        </NativeMenuItem.Menu>
+                                    </NativeMenuItem>
+                                    <NativeMenuItem Header="Heat Sources" ToolTip="Show or hide the heat sources. Requires an active 3D editor." Command="{Binding ThreeDTemperatureCommand}" CommandParameter="HeatSources"/>
+                                    <NativeMenuItem Header="Probes" ToolTip="Show or hide the probes. Requires an active 3D editor." Command="{Binding ThreeDTemperatureCommand}" CommandParameter="Probes"/>
+                                    <NativeMenuItem Header="Mesh Regions" ToolTip="Show or hide the mesh regions. Requires an active 3D editor." Command="{Binding ThreeDTemperatureCommand}" CommandParameter="MeshRegions"/>
                                 </NativeMenu>
                             </NativeMenuItem.Menu>
                         </NativeMenuItem>
@@ -241,6 +260,25 @@
                                     <NativeMenuItem Header="Cylinder" ToolTip="Centre, radius, height. Requires an active 3D editor."          Command="{Binding ThreeDDrawCommand}" CommandParameter="Cylinder"/>
                                     <NativeMenuItem Header="Port" ToolTip="A port between two conductors, two clicks; its polarity is inferred from what it touches. Requires an active 3D editor." Command="{Binding ThreeDDrawCommand}" CommandParameter="Port"/>
                                     <NativeMenuItem Header="Wire" ToolTip="A bond wire between two metal objects or sheets (click any face of each), then its loop height. Requires an active 3D editor." Command="{Binding ThreeDDrawCommand}" CommandParameter="Wire"/>
+                                    <NativeMenuItemSeparator/>
+                                    <NativeMenuItem Header="Heat Source" ToolTip="Where heat is put: a sheet (a record, not an object). Requires an active 3D editor.">
+                                        <NativeMenuItem.Menu>
+                                            <NativeMenu>
+                                                <NativeMenuItem Header="Rectangle" ToolTip="Two corners on the drawing plane, as a port's sheet; then its name and power. Requires an active 3D editor." Command="{Binding ThreeDDrawCommand}" CommandParameter="HeatSource"/>
+                                                <NativeMenuItem Header="Polygon" ToolTip="A click per vertex on the drawing plane; then its name and power. Requires an active 3D editor." Command="{Binding ThreeDDrawCommand}" CommandParameter="HeatSourcePolygon"/>
+                                            </NativeMenu>
+                                        </NativeMenuItem.Menu>
+                                    </NativeMenuItem>
+                                    <NativeMenuItem Header="Probe" ToolTip="Where temperature is read. A face, solid or wire probe: right-click it. Requires an active 3D editor.">
+                                        <NativeMenuItem.Menu>
+                                            <NativeMenu>
+                                                <NativeMenuItem Header="Point" ToolTip="One click on a face. Requires an active 3D editor." Command="{Binding ThreeDDrawCommand}" CommandParameter="ProbePoint"/>
+                                                <NativeMenuItem Header="Spot" ToolTip="A centre on a face, then a diameter — an IR spot. Requires an active 3D editor." Command="{Binding ThreeDDrawCommand}" CommandParameter="ProbeSpot"/>
+                                                <NativeMenuItem Header="Line" ToolTip="Two points: T along the segment. Requires an active 3D editor." Command="{Binding ThreeDDrawCommand}" CommandParameter="ProbeLine"/>
+                                            </NativeMenu>
+                                        </NativeMenuItem.Menu>
+                                    </NativeMenuItem>
+                                    <NativeMenuItem Header="Mesh Region" ToolTip="A box drawn as a Box is; then its element size. Requires an active 3D editor." Command="{Binding ThreeDDrawCommand}" CommandParameter="MeshRegion"/>
                                 </NativeMenu>
                             </NativeMenuItem.Menu>
                         </NativeMenuItem>
@@ -1046,6 +1084,23 @@
                               ToolTip.Tip="Toggle the clip plane. Requires an active 3D document."/>
                     <MenuItem Header="_Axis Indicator" Command="{Binding ThreeDAxisIndicatorCommand}" InputGesture="A"
                               ToolTip.Tip="Toggle the axis indicator. Requires an active 3D document."/>
+                    <Separator/>
+                    <!-- brief-em3d-75 R-em3d75-4 — mirrors the macOS menu's View ▸ Temperature; greyed, with the reason, without a
+                         current thermal result for the active setup. -->
+                    <MenuItem Header="_Temperature" ToolTip.Tip="{Binding ThreeDTemperatureTip}" IsEnabled="{Binding ThreeDTemperatureMenuEnabled}"
+                              ToolTip.ShowOnDisabled="True">
+                        <MenuItem Header="_All Faces" Command="{Binding ThreeDTemperatureCommand}" CommandParameter="AllFaces" ToolTip.Tip="Temperature on every exposed face."/>
+                        <MenuItem Header="On _Clip Plane" Command="{Binding ThreeDTemperatureCommand}" CommandParameter="OnClip" ToolTip.Tip="Temperature on the clip plane's section."/>
+                        <MenuItem Header="_Fix Range Across Sweep" Command="{Binding ThreeDTemperatureCommand}" CommandParameter="FixRange" ToolTip.Tip="One colour range for every sweep point."/>
+                        <Separator/>
+                        <MenuItem Header="Temperature _Along…" Command="{Binding ThreeDTemperatureCommand}" CommandParameter="Along" ToolTip.Tip="Pick two points: T between them, both ends and ΔT."/>
+                        <MenuItem Header="_Probe Table" Command="{Binding ThreeDTemperatureCommand}" CommandParameter="Table" ToolTip.Tip="Every probe statistic and measure at the step shown."/>
+                        <Separator/>
+                        <MenuItem Header="C_lear" Command="{Binding ThreeDTemperatureCommand}" CommandParameter="Clear" ToolTip.Tip="Take the temperature off every face and the clip plane."/>
+                    </MenuItem>
+                    <MenuItem Header="_Heat Sources" Command="{Binding ThreeDTemperatureCommand}" CommandParameter="HeatSources" ToolTip.Tip="Show or hide the heat sources. Requires an active 3D editor."/>
+                    <MenuItem Header="_Probes" Command="{Binding ThreeDTemperatureCommand}" CommandParameter="Probes" ToolTip.Tip="Show or hide the probes. Requires an active 3D editor."/>
+                    <MenuItem Header="_Mesh Regions" Command="{Binding ThreeDTemperatureCommand}" CommandParameter="MeshRegions" ToolTip.Tip="Show or hide the mesh regions. Requires an active 3D editor."/>
                 </MenuItem>
                 <MenuItem Header="S_nap" ToolTip.Tip="Requires an active 3D document.">
                     <MenuItem Header="_Snap On / Off" Command="{Binding ThreeDSnapCommand}" CommandParameter="All"
@@ -1102,6 +1157,25 @@
                     <MenuItem Header="_Wire" Command="{Binding ThreeDDrawCommand}" CommandParameter="Wire"
                               ToolTip.Tip="A bond wire between two metal objects or sheets (click any face of each), then its loop height. Requires an active 3D editor.">
                         <MenuItem.Icon><mi:MaterialIcon Kind="VectorCurve" Width="16" Height="16"/></MenuItem.Icon>
+                    </MenuItem>
+                    <Separator/>
+                    <!-- brief-em3d-75 R-em3d75-1a — mirrors the macOS menu's Draw ▸ Heat Source / Probe / Mesh Region above. -->
+                    <MenuItem Header="_Heat Source" ToolTip.Tip="Where heat is put: a sheet (a record, not an object). Requires an active 3D editor.">
+                        <MenuItem.Icon><mi:MaterialIcon Kind="FireCircle" Width="16" Height="16"/></MenuItem.Icon>
+                        <MenuItem Header="_Rectangle" Command="{Binding ThreeDDrawCommand}" CommandParameter="HeatSource"
+                                  ToolTip.Tip="Two corners on the drawing plane, as a port's sheet; then its name and power. Requires an active 3D editor."/>
+                        <MenuItem Header="_Polygon" Command="{Binding ThreeDDrawCommand}" CommandParameter="HeatSourcePolygon"
+                                  ToolTip.Tip="A click per vertex on the drawing plane; then its name and power. Requires an active 3D editor."/>
+                    </MenuItem>
+                    <MenuItem Header="Pro_be" ToolTip.Tip="Where temperature is read. A face, solid or wire probe: right-click it. Requires an active 3D editor.">
+                        <MenuItem.Icon><mi:MaterialIcon Kind="ThermometerProbe" Width="16" Height="16"/></MenuItem.Icon>
+                        <MenuItem Header="_Point" Command="{Binding ThreeDDrawCommand}" CommandParameter="ProbePoint" ToolTip.Tip="One click on a face. Requires an active 3D editor."/>
+                        <MenuItem Header="_Spot" Command="{Binding ThreeDDrawCommand}" CommandParameter="ProbeSpot" ToolTip.Tip="A centre on a face, then a diameter — an IR spot. Requires an active 3D editor."/>
+                        <MenuItem Header="_Line" Command="{Binding ThreeDDrawCommand}" CommandParameter="ProbeLine" ToolTip.Tip="Two points: T along the segment. Requires an active 3D editor."/>
+                    </MenuItem>
+                    <MenuItem Header="_Mesh Region" Command="{Binding ThreeDDrawCommand}" CommandParameter="MeshRegion"
+                              ToolTip.Tip="A box drawn as a Box is; then its element size. Requires an active 3D editor.">
+                        <MenuItem.Icon><mi:MaterialIcon Kind="CubeScan" Width="16" Height="16"/></MenuItem.Icon>
                     </MenuItem>
                 </MenuItem>
                 <MenuItem Header="Drawing _Plane" ToolTip.Tip="Requires an active 3D editor.">

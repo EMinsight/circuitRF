@@ -96,7 +96,10 @@ public enum Scene3DGhost
 }
 
 /// <summary>brief-em3d-49 R-em3d49-4d — one face boundary to draw: its name (<c>object/face</c>), its kind and its pieces.</summary>
-public sealed record Scene3DFaceTint(string Name, Em3dFaceBoundaryKind Kind, IReadOnlyList<Em3dFacePolygon> Pieces);
+/// <para>brief-em3d-75 — <paramref name="Colour"/> overrides the kind's: a thermal boundary is tinted by ITS kind (blue for a
+/// fixed temperature, green for convection), which no EM kind names.</para>
+public sealed record Scene3DFaceTint(string Name, Em3dFaceBoundaryKind Kind, IReadOnlyList<Em3dFacePolygon> Pieces,
+                                     (byte R, byte G, byte B)? Colour = null);
 
 /// <summary>
 /// brief-em3d-48 R-em3d48-3a — an object's place in a RUN: the objects one placement of one child document puts in the
@@ -341,7 +344,7 @@ public static class Scene3DBuilder
             double lift = 1e-4 * Math.Max(box.Max.X - box.Min.X, Math.Max(box.Max.Y - box.Min.Y, box.Max.Z - box.Min.Z));
             foreach (var t in tints)
             {
-                var (r, g, bl) = t.Kind == Em3dFaceBoundaryKind.Pec ? ((byte)150, (byte)150, (byte)158) : ((byte)214, (byte)168, (byte)64);
+                var (r, g, bl) = t.Colour ?? (t.Kind == Em3dFaceBoundaryKind.Pec ? ((byte)150, (byte)150, (byte)158) : ((byte)214, (byte)168, (byte)64));
                 uint fill = Scene3DVertex.Pack(r, g, bl, BoundaryTintAlpha), edge = Scene3DVertex.Pack(r, g, bl, 255);
                 var verts = new List<Point3>();
                 var tris = new List<Em3dTriangle>();

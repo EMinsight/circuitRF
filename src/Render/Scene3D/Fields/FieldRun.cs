@@ -5,8 +5,10 @@
 //   postpro/paraview/<problem>/excitation_<k>/excitation_<k>.pvd   a driven run exciting several ports
 //   postpro/paraview/<problem>_boundary/…                          the same, on the boundary faces
 //
-// <problem> is driven, eigenmode, electrostatic or magnetostatic. A step's "timestep" is the frequency in
-// GHz for a driven run, the 0-based mode for an eigenmode run and the 0-based terminal for a static one;
+// <problem> is driven, eigenmode, electrostatic or magnetostatic — or thermal, which circuitRF's own thermal run writes in
+// the same layout (brief-em3d-74 R-em3d74-5b, brief-em3d-75 R-em3d75-4). A step's "timestep" is the frequency in
+// GHz for a driven run, the 0-based mode for an eigenmode run, the 0-based terminal for a static one and the 0-based
+// sweep point for a thermal one;
 // Palace also writes one ERROR-INDICATOR step (timestep 99 or 999), recognised by its content — it has no
 // point data, only per-cell "Indicator" and "Rank" — rather than by its number.
 
@@ -17,7 +19,7 @@ using System.Text.RegularExpressions;
 namespace CircuitRF.Render.Scene3D.Fields;
 
 /// <summary>Which Palace problem wrote the fields.</summary>
-public enum FieldProblemKind { Driven, Eigenmode, Electrostatic, Magnetostatic }
+public enum FieldProblemKind { Driven, Eigenmode, Electrostatic, Magnetostatic, Thermal }
 
 /// <summary>
 /// One solution the view can show: a driven run's field at one saved frequency with one port excited, an
@@ -29,7 +31,7 @@ public sealed record FieldSolution(FieldProblemKind Kind, int Excitation, double
 {
     /// <summary>The saved frequency, Hz, for a driven solution.</summary>
     public double FrequencyHz => Kind == FieldProblemKind.Driven ? Timestep * 1e9 : double.NaN;
-    /// <summary>The 0-based mode or terminal of an eigenmode or static solution.</summary>
+    /// <summary>The 0-based mode or terminal of an eigenmode or static solution, or the sweep point of a thermal one.</summary>
     public int Index => (int)Math.Round(Timestep);
 }
 
@@ -51,6 +53,8 @@ public sealed class FieldRun
     [
         ("driven", FieldProblemKind.Driven), ("eigenmode", FieldProblemKind.Eigenmode),
         ("electrostatic", FieldProblemKind.Electrostatic), ("magnetostatic", FieldProblemKind.Magnetostatic),
+        // brief-em3d-75 — the thermal run's folder (ThermalFieldFiles.Problem); its own run directory holds nothing else.
+        ("thermal", FieldProblemKind.Thermal),
     ];
 
     /// <summary>
@@ -297,6 +301,22 @@ public sealed class FieldStep
         var step = new FieldStep { Pvtu = absFile, Pieces = [], Mesh = VtrReader.Mesh(mag, toMetres), Arrays = [info] };
         step._loaded["E"] = new FieldArray { Info = info, Re = re, Im = im };
         return step;
+    }
+
+    /// <summary>
+    /// brief-em3d-75 gate 7 — another step of the SAME mesh (a thermal run's next sweep point): the pieces of
+    /// <paramref name="pvtu"/> are read for their headers and arrays only, and this step's <see cref="Mesh"/> is kept — no
+    /// point, connectivity or cell type is read again. Pieces that do not match this step's, node for node and cell for
+    /// cell, are refused by name.
+    /// </summary>
+    public FieldStep WithArraysOf(string pvtu)
+    {
+        if (pvtu == Pvtu) return this;
+        var pieces = FieldRun.Pieces(pvtu).Select(VtuReader.ReadPiece).ToList();
+        if (pieces.Count != Pieces.Count || pieces.Zip(Pieces).Any(p => p.First.NumberOfPoints != p.Second.NumberOfPoints ||
+                                                                          p.First.NumberOfCells != p.Second.NumberOfCells))
+            throw new FieldReadException($"'{pvtu}' is not a step of the mesh '{Pvtu}' was read on.");
+        return new FieldStep { Pvtu = pvtu, Pieces = pieces, Mesh = Mesh, Arrays = List(pieces[0]) };
     }
 
     private static VtuArray Need(VtuPiece p, string name)

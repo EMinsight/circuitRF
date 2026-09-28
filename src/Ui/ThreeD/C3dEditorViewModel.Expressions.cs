@@ -113,17 +113,29 @@ public sealed partial class C3dEditorViewModel
         Document.Variables = d.Variables;
         Document.Ports = d.Ports;
         Document.FaceBoundaries = d.FaceBoundaries;
+        // brief-em3d-75 — a thermal place's field is written through this entry too, and a rename reaches its expressions.
+        Document.HeatSources = d.HeatSources;
+        Document.Probes = d.Probes;
+        Document.MeshRegions = d.MeshRegions;
+        Document.ContactResistances = d.ContactResistances;
         DocumentChanged();
+        RebuildThermalTree();
     }
 
     // ── Properties (R-em3d51-4b) ──────────────────────────────────────────────────────────────
 
     /// <summary>The object's named dimensions for the Properties panel: expression and resolved value, or the number.</summary>
-    public IEnumerable<C3dDimensionField> DimensionFields(C3dObject obj)
+    public IEnumerable<C3dDimensionField> DimensionFields(C3dObject obj) => DimensionFields(obj, obj.Name, path => C3dPropertiesViewModel.FieldLabel(obj, path),
+                                                                                             path => C3dPropertiesViewModel.FieldGroup(obj, path));
+
+    /// <summary>brief-em3d-75 R-em3d75-1c — any item's named dimensions (an object's, or a thermal place's), labelled by
+    /// <paramref name="label"/> and grouped by <paramref name="group"/>.</summary>
+    public IEnumerable<C3dDimensionField> DimensionFields(object item, string name, Func<string, string> label, Func<string, (string, string)> group)
     {
         var res = Resolution;
         var unit = Document.DisplayUnit;
-        foreach (var (prefix, owner) in C3dBindings.OwnersOf(obj))
+        var obj = item as C3dObject;
+        foreach (var (prefix, owner) in C3dBindings.OwnersOf(item))
             foreach (var (spec, k, path) in C3dBindings.FieldsOf(owner, prefix))
             {
                 // 3D editor round 3 — a wire has no placement (every operation bakes it into the points), so its placement
@@ -137,7 +149,7 @@ public sealed partial class C3dEditorViewModel
                 if (e is not null)
                 {
                     text = e.Expr + (SiteSuffix(spec.Kind, e.Unit) is { } s ? " " + s : "");
-                    if (res.FieldValues.TryGetValue((obj.Name, path), out double si))
+                    if (res.FieldValues.TryGetValue((name, path), out double si))
                         value = "= " + spec.Kind switch
                         {
                             // 3D editor round 4 — a µm field (a wire's diameter, a sheet's thickness) is a length like any
@@ -149,11 +161,11 @@ public sealed partial class C3dEditorViewModel
                 }
                 else text = SpellNumber(spec.Kind, wireDefault ? C3dWires.DefaultDiameterUm : C3dBindings.GetNumber(owner, spec, k) ?? 0);
                 if (e is null && wireDefault) value = "The default (1 mil)";
-                var (group, axis) = C3dPropertiesViewModel.FieldGroup(obj, path);
-                string? error = res.FieldErrors.FirstOrDefault(x => x.Item == obj.Name && x.Path == path)?.Message;
+                var (grp, axis) = group(path);
+                string? error = res.FieldErrors.FirstOrDefault(x => x.Item == name && x.Path == path)?.Message;
                 yield return new C3dDimensionField
                 {
-                    Path = path, Label = C3dPropertiesViewModel.FieldLabel(obj, path), Group = group, Axis = axis, Kind = spec.Kind,
+                    Path = path, Label = label(path), Group = grp, Axis = axis, Kind = spec.Kind,
                     ValueText = value, Error = error,
                     IsExpression = e is not null, Text = text, Loaded = text,
                 };
@@ -164,7 +176,7 @@ public sealed partial class C3dEditorViewModel
             const string countPath = "Array." + nameof(C3dWireArray.Count);
             yield return new C3dDimensionField
             {
-                Path = countPath, Label = C3dPropertiesViewModel.FieldLabel(obj, countPath), Text = "1", Loaded = "1",
+                Path = countPath, Label = label(countPath), Text = "1", Loaded = "1",
                 ValueText = "One wire. More makes a row, side by side across its run (its pitch then shows here).",
             };
         }
@@ -224,14 +236,26 @@ public sealed partial class C3dEditorViewModel
             // 3D editor round 4 — a wire's count typed with no array yet makes the row, at the default pitch.
             if (obj is C3dWire { Array: null } nw && path.StartsWith("Array.", StringComparison.Ordinal))
                 nw.Array = new C3dWireArray { Pitch = DefaultWirePitch(nw) };
-            if (C3dBindings.Find(obj, path) is not { } f) return $"'{name}' has no {path}.";
+            return WriteField(doc, obj, name, path, text, C3dPropertiesViewModel.FieldLabel(obj, path));
+        });
+    }
+
+    /// <summary>
+    /// The one write of a typed dimension into <paramref name="item"/> of <paramref name="doc"/> (a copy the caller commits):
+    /// an object's (SetFieldText), or — brief-em3d-75 R-em3d75-1c — a heat source's, a probe's or a mesh region's, whose
+    /// dimensions brief 73 made bindable exactly as an object's are. The refusal, or null.
+    /// </summary>
+    private string? WriteField(C3dDocument doc, object item, string name, string path, string text, string label)
+    {
+        {
+            if (C3dBindings.Find(item, path) is not { } f) return $"'{name}' has no {path}.";
             C3dResolver.Resolve(doc, Cell);
             switch (f.Spec.Kind)
             {
                 case C3dFieldKind.Length:
                     if (LayoutUnits.TryParse(text, Document.DisplayUnit, Document.DbuPerMicron, out long dbu))
                     {
-                        if (dbu <= 0 && MustBePositive(path)) return $"{C3dPropertiesViewModel.FieldLabel(obj, path)} is a positive length.";
+                        if (dbu <= 0 && MustBePositive(path)) return $"{label} is a positive length.";
                         C3dBindings.SetExpr(f.Owner, f.Spec, f.Component, null); C3dBindings.SetNumber(f.Owner, f.Spec, f.Component, dbu); return null;
                     }
                     var (expr, unit) = SplitUnit(text, Document.DisplayUnit);
@@ -245,7 +269,7 @@ public sealed partial class C3dEditorViewModel
                         (isUm, um) = (true, (double)LayoutUnits.FromDbu(umDbu, LayoutUnit.Um, Document.DbuPerMicron));
                     if (isUm)
                     {
-                        if (um <= 0 || !double.IsFinite(um)) return $"{C3dPropertiesViewModel.FieldLabel(obj, path)} is a positive length.";
+                        if (um <= 0 || !double.IsFinite(um)) return $"{label} is a positive length.";
                         C3dBindings.SetExpr(f.Owner, f.Spec, f.Component, null); C3dBindings.SetNumber(f.Owner, f.Spec, f.Component, um); return null;
                     }
                     var (e2, u2) = SplitUnit(text, Document.DisplayUnit);
@@ -262,11 +286,13 @@ public sealed partial class C3dEditorViewModel
                     }
                     return Bind(f, text, null);
             }
-        });
+        }
 
-        // A box's or a rectangle's size, a radius: what a zero or negative number would make is no solid at all.
+        // A box's or a rectangle's size, a radius: what a zero or negative number would make is no solid at all. A heat
+        // sheet's rectangle, a spot's diameter: no place at all.
         static bool MustBePositive(string path)
-            => path is "Size[0]" or "Size[1]" or "Size[2]" or "Rect.Size[0]" or "Rect.Size[1]" or "Radius";
+            => path is "Size[0]" or "Size[1]" or "Size[2]" or "Rect.Size[0]" or "Rect.Size[1]" or "Radius"
+                    or "Sheet.Rect.Size[0]" or "Sheet.Rect.Size[1]" or "Spot.Diameter";
 
         static string? Bind((IC3dBindable Owner, C3dFieldSpec Spec, int Component) f, string expr, string? unit)
         {

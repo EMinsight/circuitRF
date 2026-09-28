@@ -1801,6 +1801,8 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         RaiseSolveRegion();
         RefreshMeshText();
         _suppressCommit = false;
+        SyncThermalFields();
+        RaiseThermalVisibility();
         Refresh();
     }
 

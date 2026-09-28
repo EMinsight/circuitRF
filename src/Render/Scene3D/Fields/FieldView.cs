@@ -36,8 +36,14 @@ public enum FieldMode
 public sealed record FieldQuantity(FieldArrayInfo Array, bool OnBoundary, FieldMode Mode)
 {
     public bool IsVector => Array.Components == 3;
-    /// <summary>Signed: drawn on a diverging map with a symmetric range, never in dB.</summary>
-    public bool Signed => !IsVector && Mode is FieldMode.Instantaneous or FieldMode.Value;
+
+    /// <summary>brief-em3d-75 — a thermal run's temperature: a real scalar that is NOT signed about zero. Drawn on a
+    /// sequential map between the true minimum and maximum of what is drawn (D9), never in dB.</summary>
+    public bool IsTemperature => Array.Name == FieldNames.TemperatureArray && !IsVector && !Array.IsComplex;
+
+    /// <summary>Signed: drawn on a diverging map with a symmetric range, never in dB. A temperature is not: 25 °C is not
+    /// the mirror image of −25 °C.</summary>
+    public bool Signed => !IsVector && !IsTemperature && Mode is FieldMode.Instantaneous or FieldMode.Value;
     public bool Animated => Mode == FieldMode.Instantaneous;
 
     /// <summary>The shader's mode number (scene.wgsl fs_field).</summary>
@@ -148,6 +154,32 @@ public sealed record FieldColorScale(bool Db, double Lo, double Hi, double Perce
         return new(true, hi - dbSpan, hi, percentile, false, unit);
     }
 
+    /// <summary>
+    /// brief-em3d-75 R-em3d75-4b (D9) — the range of a temperature: the TRUE minimum and maximum of the values of
+    /// <paramref name="surfaces"/>, never a percentile. The peak is the answer a thermal run is asked for, so it is never
+    /// clipped away (an EM field's 99th percentile exists to clip a singular edge; a temperature has none). Stated in the
+    /// legend as "maximum". With nothing drawn, 0 to 1.
+    /// </summary>
+    public static FieldColorScale MinMax(FieldQuantity q, IEnumerable<FieldSurface> surfaces)
+    {
+        double lo = double.PositiveInfinity, hi = double.NegativeInfinity;
+        foreach (var s in surfaces)
+            for (int v = 0; v < s.VertexCount; v++)
+            {
+                double e = q.Evaluate(s.Values.AsSpan(v * s.Channels, s.Channels));
+                if (!double.IsFinite(e)) continue;
+                if (e < lo) lo = e;
+                if (e > hi) hi = e;
+            }
+        if (lo > hi) (lo, hi) = (0, 1);
+        return new(false, lo, hi, 100, false, FieldNames.Unit(q.Array.Name));
+    }
+
+    /// <summary>brief-em3d-75 R-em3d75-4b — the smallest range holding both: <i>Fix range across sweep</i> is the union of
+    /// every sweep point's own range, so stepping the sweep never rescales the colours.</summary>
+    public FieldColorScale Union(FieldColorScale other)
+        => this with { Lo = Math.Min(Lo, other.Lo), Hi = Math.Max(Hi, other.Hi), Percentile = Math.Max(Percentile, other.Percentile) };
+
     /// <summary>The <paramref name="p"/>-th percentile (0..100) of <paramref name="values"/>, nearest rank;
     /// 1 when there are none.</summary>
     public static double PercentileOf(List<double> values, double p)
@@ -192,10 +224,16 @@ public struct FieldVertex
 /// The field geometry a frame draws: the slice and the surfaces, one vertex buffer, uploaded once per
 /// <see cref="Version"/>. A phase step changes a uniform, never this.
 /// </summary>
-public sealed class Scene3DFieldGeometry(FieldVertex[] vertices, long version)
+public sealed class Scene3DFieldGeometry(FieldVertex[] vertices, long version, long geometryVersion = -1)
 {
     public FieldVertex[] Vertices { get; } = vertices;
     public long Version { get; } = version;
+
+    /// <summary>brief-em3d-75 gate 7 — which cut or gather of the model these triangles are: kept when only the VALUES
+    /// moved (a thermal sweep step re-reads a scalar per vertex through the surfaces' recipes), new when the triangles
+    /// themselves were made again. The buffer is uploaded per <see cref="Version"/>; the positions in it are unchanged
+    /// while this is.</summary>
+    public long GeometryVersion { get; } = geometryVersion < 0 ? version : geometryVersion;
     public long Bytes => (long)Vertices.Length * FieldVertex.Stride;
     public static readonly Scene3DFieldGeometry None = new([], 0);
 

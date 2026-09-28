@@ -183,6 +183,9 @@ offset there. A faint grid lies on the plane; moving the camera never moves it.
 | **Y** | Cylinder | the centre, the radius, then the height |
 | **P** | Port | two corners on the plane (see [Simulating](#simulate)) |
 | **W** | Wire | two pads, then the loop height (see [Bond wires](#wires)) |
+| **H** | Heat source | two corners on the plane, then its name and power (see [Temperature](#thermal)) |
+| **T** | Probe | a click on a face: the temperature there (see [Temperature](#thermal)) |
+| **M** | Mesh region | a box, then the element size inside it (see [Temperature](#thermal)) |
 
 **Typing instead of clicking.** While a shape is in progress, type a digit and a box opens at the cursor
 showing what the next click would set — width and depth, then height (or radius, then height). **Tab**
@@ -706,6 +709,55 @@ leaves out.
 die stays put. The closed form then says 20.87 GHz — a mode below 22 GHz, walking toward the band — and **Run**
 on *Lid modes* finds where the drawn package puts it.
 
+## Temperature {#thermal}
+
+The same model solves for heat. A **thermal setup** (*Simulate ▸ Setup Analyses…*, the thermometer button) is solved by
+circuitRF's own steady-conduction solver after Gmsh meshes every solid — air is not meshed. What it needs is drawn in the
+view, and what it is worth is typed in the setup, so one model carries several thermal setups beside its EM ones.
+
+**The places.** These are drawn in the view but are not objects: they are never solved as metal, never snapped to, and an
+EM setup ignores them. Each has a group in the object tree (*Heat sources*, *Probes*, *Mesh regions*) whose rows select,
+rename, hide and delete, and a switch under *3D ▸ View*. Selecting a row shows its fields in Properties, dimensions
+included, each a number or an expression.
+
+- **Heat source** (**Shift+A H**, or *3D ▸ Draw ▸ Heat Source ▸ Rectangle / Polygon*): drawn as a port's sheet is — put the
+  drawing plane on the face first (**Ctrl/Cmd**-click it) — then named and given a default power in W. Right-click a solid,
+  *Heat Source from Solid*, spreads the heat through its whole volume instead. Drawn hatched in orange.
+- **Probe** (**Shift+A T**, or *3D ▸ Draw ▸ Probe ▸ Point / Spot / Line*): a point on a face; a spot (its centre, then its
+  diameter — what an IR microscope averages); or a line (two points: temperature along it). Right-click a face (Face mode)
+  or a solid or a wire (Object mode), *Add Probe*, for a probe over the whole face, solid or wire. A probe may state a limit
+  in °C; the results flag where it is crossed.
+- **Mesh region** (**Shift+A M**, or *3D ▸ Draw ▸ Mesh Region*): a box, drawn as a Box is, with the element size inside it —
+  fine mesh where you put it. Drawn dashed.
+
+**Boundaries.** Every face nothing names is insulated. In Face mode, right-click a face, *Thermal ▸ Fixed Temperature…*,
+*Convection…*, *Insulated* or *Clear*: each writes the **active** thermal setup (greyed, saying why, when the active setup
+is not a thermal one). A conditioned face is tinted — **blue** a fixed temperature, **green** convection — and listed under
+*Thermal boundaries* in the tree. With two touching objects selected, *Thermal ▸ Contact Resistance…* overrides the
+technology's interface resistance for that contact, prefilled with the technology's value when it states one.
+
+**The setup's Thermal page**, top to bottom: **Sources** (each heat source's default, and this setup's override),
+**Boundaries** (the list the menu writes, and *All exposed faces: convection* at an h and an ambient), **Sweep** (up to two
+variables), **Measures** (one per line — `Rth = (Tmax(die) - Tavg(flange)) / Pdiss` — checked as you type), **Mesh** (order,
+elements across a source and through the thinnest solid, grading, the solver, the convergence check), and **Balance** (k(T)
+on or off). Under Mesh, the size of the run is estimated before anything is meshed.
+
+**Plot Temperature.** After a run of the active thermal setup, right-click a face, *Plot Temperature*, to paint that face
+(again to take it off; several faces accumulate); *3D ▸ View ▸ Temperature ▸ All Faces* paints every exposed face, and
+*On Clip Plane* the clip plane's section — the way to see a channel under a field plate. The items are greyed, with the
+reason, when there is no thermal result or the model has changed since it ran. The colour range is the **true** minimum
+and maximum of what is painted — the peak is the answer, so it is never clipped — and the legend reads °C; *Fix Range
+Across Sweep* makes it the minimum and maximum over every sweep point, so stepping the sweep never rescales the colours.
+The slider on the Field bar steps the sweep. Hover a painted face for the temperature there (interpolated, not the nearest
+node); a ring marks the **hot spot** with its temperature and its object. A bond wire whose run tabulated its temperature
+is coloured along its length, and hovering it names the wire and the distance along it.
+
+**Along a line.** *Along…* on the Field bar (or *3D ▸ View ▸ Temperature ▸ Temperature Along…*) takes two points and plots
+the temperature between them, with both end temperatures and their difference — Rth by hand, with nothing added to the
+document. A line probe's row in the tree plots its own, *Plot T(s)*. **Probes** on the Field bar lists every probe
+statistic and every measure at the sweep point shown, a column per point on request, with any probe past its limit in
+orange.
+
 ## Headless {#headless}
 
 Every step above has a command-line spelling, and none of them needs a solver except `em`:
@@ -735,7 +787,7 @@ Every step above has a command-line spelling, and none of them needs a solver ex
 | **O**, **E**, **F**, **V** | Select objects, edges (Edge mode, for Fillet… and Chamfer…), faces, vertices |
 | **B**, **Shift+B** | The next thing behind the selection; back toward you |
 | **Ctrl/Cmd+A** | Select every shown object (*3D ▸ Select All Objects*); hidden ones are left out |
-| **Shift+A** then a letter | Box, Sheet, polyGon, polyLine, cYlinder, Port, Wire |
+| **Shift+A** then a letter | Box, Sheet, polyGon, polyLine, cYlinder, Port, Wire, Heat source, Temperature probe, Mesh region |
 | digits, **Tab**, **Enter** | Type a dimension instead of clicking |
 | **Esc** | Back one step: the typed box, the shape, the tool, the selection |
 | **G**, **R**, **X/Y/Z** | Move, rotate; hold to an axis |

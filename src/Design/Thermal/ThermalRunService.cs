@@ -37,6 +37,10 @@ public static class ThermalRunService
     /// <summary>The DataSet's group of probe, energy and limit cubes.</summary>
     public const string Group = "thermal";
 
+    /// <summary>brief-em3d-75 R-em3d75-5 — the group a wire's T(s) is carried in (brief 77 writes it): one cube per wire element
+    /// (<c>w1[3]</c>), over the sweep's axes and then arc length <c>s</c> in metres, °C. The viewer colours each wire by it.</summary>
+    public const string WireGroup = "wires";
+
     /// <summary>The group the run's notes are carried in, as labels.</summary>
     public const string NotesGroup = "Notes";
 

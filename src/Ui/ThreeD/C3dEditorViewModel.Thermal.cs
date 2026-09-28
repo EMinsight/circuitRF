@@ -1,0 +1,908 @@
+// brief-em3d-75 — the thermal editor: drawing heat sources, probes and mesh regions (R-em3d75-1), boundaries and contacts
+// from faces (-2), Plot Temperature and its readouts (-4), and the probe table (-4e).
+//
+// A THERMAL PLACE IS A RECORD, NOT AN OBJECT (overview §1c): it is drawn in the overlay — never in the scene — so it is never
+// a solid, never a face to snap onto, and never seen by an EM lowering. Every edit of one is a records edit (C3dRecordsEdit
+// carries the four lists), one undo entry, and writes exactly brief 73's record. A place's hide is the view's alone: the
+// format has no Hidden for a place, and a hidden probe still reads.
+//
+// BOUNDARIES AND CONTACTS ARE THE ACTIVE THERMAL SETUP'S (-2): a face's Fixed Temperature… or Convection… writes that
+// setup's Boundaries; a contact override writes the document's ContactResistances (brief 73 R-em3d73-4d), prefilled with the
+// technology's pair value when it states one. Nothing here holds state a file does not: the Setups dialog's thermal page
+// (EmSetupEditorViewModel.Thermal) edits the same Thermal section.
+
+using System.Collections.ObjectModel;
+using System.Globalization;
+using System.Text.RegularExpressions;
+using CircuitRF.Core.Expressions;
+using CircuitRF.Design.Layout;
+using CircuitRF.Design.Layout.Em;
+using CircuitRF.Design.Thermal;
+using CircuitRF.Design.ThreeD;
+using CircuitRF.Engine.Em3d;
+using CircuitRF.Render.Scene3D;
+using CircuitRF.Render.Scene3D.Edit;
+using CircuitRF.Render.Scene3D.Fields;
+using CircuitRF.Ui.ThreeD.Tools;
+using CircuitRF.Ui.Viewer3D;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+
+namespace CircuitRF.Ui.ThreeD;
+
+/// <summary>R-em3d75-4e — one row of the probe table: a probe statistic or a measure, at the step shown and (on request) at
+/// every step.</summary>
+public sealed record C3dProbeTableRow(string Name, string Unit, string Value, IReadOnlyList<string> PerPoint, bool Crossed, bool IsMeasure)
+{
+    public string AllPoints => string.Join("   ", PerPoint);
+}
+
+/// <summary>R-em3d75-4d — a line of temperature: a line probe's, or Temperature Along's.</summary>
+public sealed record C3dThermalLine(string Title, double[] DistanceM, double[] ValuesC)
+{
+    public double FromC => ValuesC.FirstOrDefault(double.IsFinite, double.NaN);
+    public double ToC => ValuesC.LastOrDefault(double.IsFinite, double.NaN);
+    public double DeltaC => ToC - FromC;
+    public double LengthM => DistanceM.Length > 0 ? DistanceM[^1] : 0;
+}
+
+public sealed partial class C3dEditorViewModel
+{
+    /// <summary>The tree's kinds for the thermal rows.</summary>
+    public const string HeatSourceKind = "Heat source", ProbeKind = "Probe", MeshRegionKind = "Mesh region", ThermalBoundaryKindName = "Thermal boundary";
+
+    // ── visibility (R-em3d75-1b) ─────────────────────────────────────────────────────────────
+
+    /// <summary>View ▸ Heat Sources: the heat sources drawn in the overlay.</summary>
+    [ObservableProperty] private bool _showHeatSources = true;
+    /// <summary>View ▸ Probes.</summary>
+    [ObservableProperty] private bool _showProbes = true;
+    /// <summary>View ▸ Mesh Regions.</summary>
+    [ObservableProperty] private bool _showMeshRegions = true;
+
+    private readonly HashSet<string> _hiddenPlaces = new(StringComparer.Ordinal);
+
+    partial void OnShowHeatSourcesChanged(bool value) => Viewer.RequestFrame();
+    partial void OnShowProbesChanged(bool value) => Viewer.RequestFrame();
+    partial void OnShowMeshRegionsChanged(bool value) => Viewer.RequestFrame();
+
+    /// <summary>Whether the place <paramref name="name"/> is drawn: its kind's switch, and its own row's tick.</summary>
+    public bool IsPlaceShown(string name) => !_hiddenPlaces.Contains(name);
+
+    /// <summary>Every thermal place's name, which is unique across the document's names (brief 73 R-em3d73-4).</summary>
+    private IEnumerable<string> ThermalPlaceNames()
+        => Document.HeatSources.Select(h => h.Name).Concat(Document.Probes.Select(p => p.Name)).Concat(Document.MeshRegions.Select(m => m.Name));
+
+    // ── the tools (R-em3d75-1a) ──────────────────────────────────────────────────────────────
+
+    /// <summary>R-em3d75-1a — the cursor's point ON a face, and that face as the document names it (<c>object/face</c>): a
+    /// geometry snap where one is in force, else the surface under the cursor. Null, with the reason, off every face.</summary>
+    public C3dPoint3? SurfacePoint(in C3dDrawInput input, out string? face, out string? refusal)
+    {
+        face = null;
+        refusal = null;
+        uint id;
+        int f;
+        C3dPoint3 at;
+        if (input.Snap is { } s && input.SnapOnGeometry && Viewer.Snap.IsSnap)
+        {
+            (id, f, at) = (Viewer.Snap.Object, Viewer.Snap.Face, s);
+        }
+        else if (Viewer.CursorWorld is { } w && Viewer.LastPick is { Object: > 0 } pick)
+        {
+            double per = C3dLowering.Metres(1, Document.DbuPerMicron);
+            long R(double m) => (long)Math.Round(m / per, MidpointRounding.AwayFromZero);
+            (id, f, at) = (pick.Object, pick.Face, new C3dPoint3(R(w.X), R(w.Y), R(w.Z)));
+        }
+        else
+        {
+            refusal = "Click on a face of a solid.";
+            return null;
+        }
+        if (Viewer.Scene.Object(id) is { } o && f >= 0 && o.Kind is not (Scene3DKind.Port or Scene3DKind.Boundary or Scene3DKind.Air))
+            face = $"{o.Name}/{o.FaceName(f)}";
+        return at;
+    }
+
+    /// <summary>A record tool finished: its place inserted (one entry), and what it asks after — a heat source's name and
+    /// power, a mesh region's element size.</summary>
+    private void CommitRecordTool(IC3dRecordTool tool)
+    {
+        if (tool.TakeMade() is not { } made) return;
+        AddThermalPlace(made);
+        ToolCommits++;
+        switch (made)
+        {
+            case C3dHeatSource h:
+                AskHeatSource(h.Name);
+                break;
+            case C3dMeshRegion m:
+                TextRequested?.Invoke($"Mesh region {m.Name}", $"Target element size inside the box ({LayoutUnits.Suffix(Document.DisplayUnit)}, or an expression):",
+                    SpellMicrons(m.SizeUm), text => SetPlaceFieldText(m.Name, nameof(C3dMeshRegion.SizeUm), text));
+                break;
+        }
+    }
+
+    /// <summary>R-em3d75-1a — a new heat source's name, then its default power.</summary>
+    private void AskHeatSource(string name)
+        => TextRequested?.Invoke($"Heat source {name}", "Name:", name, text =>
+        {
+            string n = text.Trim();
+            if (RenameThermalPlace(name, n) is { } why) return why;
+            TextRequested?.Invoke($"Heat source {n}", "Default power, W (a number or an expression such as Pdiss; a thermal setup may override it):",
+                Document.HeatSources.FirstOrDefault(h => h.Name == n)?.Power ?? "1", p => SetPlaceText(n, "Power", p));
+            return null;
+        });
+
+    private string SpellMicrons(double um)
+        => (um * 1e-6 / (CircuitRF.Core.Expressions.Units.Scale(LayoutUnits.AsciiSuffix(Document.DisplayUnit)) ?? 1e-6))
+           .ToString("0.#######", CultureInfo.InvariantCulture);
+
+    /// <summary>Inserts a heat source, probe or mesh region: one undo entry.</summary>
+    public void AddThermalPlace(object place)
+    {
+        switch (place)
+        {
+            case C3dHeatSource h:
+                ChangeRecords($"Add heat source {h.Name}", d => d.HeatSources.Add(h));
+                StatusMessage = $"Added heat source '{h.Name}'. Its power is the document's default; a thermal setup may override it.";
+                break;
+            case C3dProbe p:
+                ChangeRecords($"Add probe {p.Name}", d => d.Probes.Add(p));
+                StatusMessage = $"Added probe '{p.Name}' ({string.Join(", ", p.Kinds()).ToLowerInvariant()}).";
+                break;
+            case C3dMeshRegion m:
+                ChangeRecords($"Add mesh region {m.Name}", d => d.MeshRegions.Add(m));
+                StatusMessage = $"Added mesh region '{m.Name}'.";
+                break;
+        }
+    }
+
+    /// <summary>Renames a thermal place, and every setup's reference to it: a source override's name, and a probe's name in
+    /// a measure. Null on success, else why not.</summary>
+    public string? RenameThermalPlace(string old, string name)
+    {
+        name = name.Trim();
+        if (name == old) return null;
+        if (name.Length == 0) return "A name cannot be empty.";
+        if (!Regex.IsMatch(name, @"^[A-Za-z_][A-Za-z0-9_]*$"))
+            return $"'{name}' cannot be a place's name: use letters, digits and _, starting with a letter — a measure names a probe by it.";
+        var used = Document.Objects.Select(o => o.Name).Concat(Document.Instances.Select(i => i.Name)).Concat(ThermalPlaceNames())
+                                   .Concat(NestedNames());
+        if (used.Contains(name, StringComparer.Ordinal)) return $"This 3D view already has something named '{name}'.";
+        var word = new Regex($@"(?<![A-Za-z0-9_]){Regex.Escape(old)}(?![A-Za-z0-9_])");
+        ChangeRecords($"Rename {old} to {name}", d =>
+        {
+            foreach (var h in d.HeatSources.Where(h => h.Name == old)) h.Name = name;
+            foreach (var p in d.Probes.Where(p => p.Name == old)) p.Name = name;
+            foreach (var m in d.MeshRegions.Where(m => m.Name == old)) m.Name = name;
+            for (int i = 0; i < d.Setups.Count; i++)
+            {
+                if (EmSetupPersistence.FromEmbedded(d.Setups[i]) is not { Thermal: { } t } s) continue;
+                bool changed = false;
+                foreach (var src in t.Sources ?? []) if (src.Name == old) { src.Name = name; changed = true; }
+                if (t.Measures is { } ms)
+                    for (int k = 0; k < ms.Count; k++)
+                        if (word.IsMatch(ms[k])) { ms[k] = word.Replace(ms[k], name); changed = true; }
+                if (changed) d.Setups[i] = EmSetupPersistence.ToEmbedded(s);
+            }
+        });
+        if (_hiddenPlaces.Remove(old)) _hiddenPlaces.Add(name);
+        return null;
+    }
+
+    /// <summary>Deletes a thermal place: one undo entry. A setup that still names it says so through <c>check</c>.</summary>
+    public void DeleteThermalPlace(string name)
+        => ChangeRecords($"Delete {name}", d =>
+        {
+            d.HeatSources.RemoveAll(h => h.Name == name);
+            d.Probes.RemoveAll(p => p.Name == name);
+            d.MeshRegions.RemoveAll(m => m.Name == name);
+        });
+
+    /// <summary>The place named <paramref name="name"/>, or null.</summary>
+    public object? ThermalPlace(string name)
+        => (object?)Document.HeatSources.FirstOrDefault(h => h.Name == name) ?? (object?)Document.Probes.FirstOrDefault(p => p.Name == name)
+           ?? Document.MeshRegions.FirstOrDefault(m => m.Name == name);
+
+    /// <summary>R-em3d75-1c — one DIMENSION of a place (a number in the display unit, or an expression bound to it), through
+    /// the one field write every object's dimension goes through. Null on success.</summary>
+    public string? SetPlaceFieldText(string name, string path, string text)
+    {
+        text = text.Trim();
+        if (text.Length == 0) return "Type a number or an expression.";
+        return EditNames($"Set {name} {path} = {text}", (doc, _) =>
+        {
+            object? item = (object?)doc.HeatSources.FirstOrDefault(h => h.Name == name) ?? (object?)doc.Probes.FirstOrDefault(p => p.Name == name)
+                           ?? doc.MeshRegions.FirstOrDefault(m => m.Name == name);
+            return item is null ? $"This 3D view has no thermal place named '{name}'." : WriteField(doc, item, name, path, text, PlaceFieldLabel(item, path));
+        });
+    }
+
+    /// <summary>The Inspector's label of a place's dimension: <c>Corner x</c>, <c>Diameter</c>, <c>Element size</c>.</summary>
+    public static string PlaceFieldLabel(object item, string path)
+    {
+        static string Xyz(char k) => k switch { '0' => "x", '1' => "y", _ => "z" };
+        int b = path.IndexOf('[');
+        char k = b >= 0 && b + 1 < path.Length ? path[b + 1] : '0';
+        string head = b >= 0 ? path[..b] : path;
+        return head switch
+        {
+            "Sheet.Offset" => "Plane offset",
+            "Sheet.Rect.Min" => $"Corner {(k == '0' ? "u" : "v")}",
+            "Sheet.Rect.Size" => $"{(k == '0' ? "U" : "V")} size",
+            "Point" => $"Point {Xyz(k)}",
+            "Spot.Center" => $"Centre {Xyz(k)}",
+            "Spot.Diameter" => "Diameter",
+            "Line.From" => $"From {Xyz(k)}",
+            "Line.To" => $"To {Xyz(k)}",
+            "Min" => $"Corner {Xyz(k)}",
+            "Size" => $"{Xyz(k).ToUpperInvariant()} size",
+            "SizeUm" => "Element size",
+            _ => path,
+        };
+    }
+
+    /// <summary>The Inspector's line and letter of a place's dimension (a vector's components share a line).</summary>
+    public static (string Group, string Axis) PlaceFieldGroup(object item, string path)
+    {
+        string label = PlaceFieldLabel(item, path);
+        if (label.EndsWith(" size", StringComparison.Ordinal) && label.Length == 6) return ("Size", label[..1].ToLowerInvariant());
+        int space = label.LastIndexOf(' ');
+        if (space > 0 && label.Length - space == 2 && "xyzuv".Contains(label[^1], StringComparison.Ordinal)) return (label[..space], label[^1..]);
+        return (label, "");
+    }
+
+    /// <summary>
+    /// R-em3d75-1c — a place's non-dimension field, as text: a heat source's <c>Power</c> (an expression) and <c>Density</c>;
+    /// a probe's <c>Stat</c>, <c>LimitC</c> and its <c>Face</c>, <c>Solid</c> or <c>Wire</c>; a mesh region's <c>Grading</c>.
+    /// Empty clears an optional one. One undo entry; null on success, else why not.
+    /// </summary>
+    public string? SetPlaceText(string name, string key, string text)
+    {
+        text = text.Trim();
+        // Everything is checked before anything is written: a refused value leaves no entry, and nothing to redo.
+        double? number = null;
+        if (key is "LimitC" or "Grading" && text.Length > 0)
+        {
+            bool positive = key == "Grading";
+            if (!double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double v) || !double.IsFinite(v) || (positive && v <= 0))
+                return $"{(key == "Grading" ? "The grading" : "A limit")} is {(positive ? "a positive number" : "a number")}.";
+            number = v;
+        }
+        C3dHeatDensity density = default;
+        C3dProbeStat? stat = null;
+        switch (key)
+        {
+            case "Power" when text.Length > 0 && !ParsesExpression(text):
+                return $"'{text}' is neither a number nor an expression the engine can read.";
+            case "Density" when !Enum.TryParse(text, true, out density):
+                return "The density is Total (W), PerArea (W/m²) or PerVolume (W/m³).";
+            case "Stat" when text.Length > 0:
+                if (!Enum.TryParse<C3dProbeStat>(text, true, out var st)) return "The statistic is Max, Min or Avg.";
+                stat = st;
+                break;
+            case "Face" or "Solid" or "Wire" or "SpotFace" when text.Length == 0 && !(key == "Solid" && Document.HeatSources.Any(h => h.Name == name)):
+                return $"A {key.Replace("SpotFace", "spot", StringComparison.Ordinal).ToLowerInvariant()} probe names what it reads.";
+        }
+        if (ThermalPlace(name) is not { } place) return $"This 3D view has no thermal place named '{name}'.";
+        bool applies = (place, key) switch
+        {
+            (C3dHeatSource, "Power" or "Density" or "Solid") => true,
+            (C3dProbe, "Stat" or "LimitC" or "Face" or "Solid" or "Wire") => true,
+            (C3dProbe p, "SpotFace") => p.Spot is not null,
+            (C3dMeshRegion, "Grading") => true,
+            _ => false,
+        };
+        if (!applies) return $"'{name}' has no {key}.";
+        ChangeRecords($"Set {name} {key}", d =>
+        {
+            if (d.HeatSources.FirstOrDefault(h => h.Name == name) is { } h)
+                switch (key)
+                {
+                    case "Power": h.Power = text.Length == 0 ? null : text; break;
+                    case "Density": h.Density = density; break;
+                    case "Solid":
+                        h.Solid = text.Length == 0 ? null : text;
+                        if (h.Solid is not null) h.Sheet = null;
+                        break;
+                }
+            else if (d.Probes.FirstOrDefault(p => p.Name == name) is { } p)
+                switch (key)
+                {
+                    case "Stat": p.Stat = stat; break;
+                    case "LimitC": p.LimitC = number; break;
+                    case "Face": p.Face = text; break;
+                    case "Solid": p.Solid = text; break;
+                    case "Wire": p.Wire = text; break;
+                    case "SpotFace": p.Spot!.Face = text; break;
+                }
+            else if (d.MeshRegions.FirstOrDefault(m => m.Name == name) is { } m) m.Grading = number;
+        });
+        return null;
+    }
+
+    private static bool ParsesExpression(string text)
+    {
+        try { Parser.Parse(text); return true; }
+        catch (Exception e) when (e is ExpressionException or FormatException or ArgumentException) { return false; }
+    }
+
+    // ── the active thermal setup (R-em3d75-2) ────────────────────────────────────────────────
+
+    /// <summary>The active setup, when it is an embedded thermal one: its index in the document and the setup.</summary>
+    private (int Index, EmSetup Setup)? ActiveThermalSetup()
+    {
+        if (IsExternalActive || ActiveSetupName is not { } name) return null;
+        return C3dSetups.Read(Document).FirstOrDefault(s => s.Name == name) is { Setup: { IsThermal: true } setup } read ? (read.Index, setup) : null;
+    }
+
+    /// <summary>Why the Thermal items are greyed: no thermal setup is active. Null when one is.</summary>
+    public string? ThermalSetupRefusal()
+        => ActiveThermalSetup() is not null ? null
+         : ActiveSetup is { } s ? $"The active setup '{ActiveSetupName}' is {s.Problem3D.ToString().ToLowerInvariant()}: make a thermal setup active (Simulate ▸ Setup Analyses…) to set thermal boundaries."
+         : "No setup is active: add a thermal setup in Simulate ▸ Setup Analyses… and make it active.";
+
+    /// <summary>One edit of the active thermal setup's Thermal section: one undo entry. Null on success, else why not.</summary>
+    private string? EditActiveThermal(string description, Func<CemThermal, string?> mutate)
+    {
+        if (ActiveThermalSetup() is not { } active) return ThermalSetupRefusal();
+        var t = active.Setup.Thermal ??= new CemThermal();
+        if (mutate(t) is { } why) return why;
+        ChangeRecords($"{description} ({ActiveSetupName})", d => d.Setups[active.Index] = EmSetupPersistence.ToEmbedded(active.Setup));
+        return null;
+    }
+
+    /// <summary>R-em3d75-2 — a face's thermal condition in the active thermal setup: Fixed Temperature, Convection, or (null)
+    /// none — insulated, which every face is unless a boundary names it.</summary>
+    public string? SetThermalBoundary(string face, ThermalBoundaryKind? kind, string? tempC = null, string? h = null, string? ambientC = null)
+    {
+        foreach (var (v, what) in new[] { (tempC, "The temperature"), (h, "h"), (ambientC, "The ambient temperature") })
+            if (v is { Length: > 0 } && !ParsesExpression(v)) return $"{what} '{v}' is neither a number nor an expression the engine can read.";
+        string what2 = kind switch { ThermalBoundaryKind.FixedT => $"{tempC} °C", ThermalBoundaryKind.Convection => $"convection {h} W/(m²·K) to {ambientC} °C", _ => "insulated" };
+        return EditActiveThermal($"Thermal boundary on {face}: {what2}", t =>
+        {
+            var list = t.Boundaries ??= [];
+            list.RemoveAll(b => b.Face == face);
+            if (kind is { } k)
+                list.Add(new CemThermalBoundary
+                {
+                    Face = face, Kind = k,
+                    TempC = k == ThermalBoundaryKind.FixedT ? tempC : null,
+                    H = k == ThermalBoundaryKind.Convection ? h : null,
+                    AmbientC = k == ThermalBoundaryKind.Convection ? ambientC : null,
+                });
+            if (list.Count == 0) t.Boundaries = null;
+            return null;
+        });
+    }
+
+    /// <summary>The active thermal setup's condition on <paramref name="face"/>, or null.</summary>
+    public CemThermalBoundary? ThermalBoundaryOn(string face)
+        => ActiveThermalSetup()?.Setup.Thermal?.Boundaries?.FirstOrDefault(b => b.Face == face);
+
+    /// <summary>R-em3d75-2 — the technology's interface resistance between two objects' materials, and where it comes from; null
+    /// when it states none.</summary>
+    public (double Value, string Source)? TechnologyContact(string a, string b)
+    {
+        if (Elaboration is not { Technology: { } tech } e) return null;
+        string? ma = e.Solids.FirstOrDefault(s => s.Name == a)?.Material, mb = e.Solids.FirstOrDefault(s => s.Name == b)?.Material;
+        return tech.FindThermalInterface(ma, mb) is { } i
+            ? (i.ResistanceM2KW, $"the technology's {i.MaterialA}–{i.MaterialB} interface{(i.Source is { Length: > 0 } src ? $" ({src})" : "")}")
+            : null;
+    }
+
+    /// <summary>R-em3d75-2 — the contact between <paramref name="a"/> and <paramref name="b"/> overridden (brief 73's
+    /// ContactResistances); an empty text removes the override. Null on success.</summary>
+    public string? SetContactResistance(string a, string b, string text)
+    {
+        text = text.Trim();
+        double? r = null;
+        if (text.Length > 0)
+        {
+            if (!double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double v) || !(v > 0) || !double.IsFinite(v))
+                return "A contact resistance is a positive number, m²·K/W (1e-5 is a thin solder).";
+            r = v;
+        }
+        static bool Same(C3dContactResistance c, string a, string b)
+            => c.Between.Count == 2 && (c.Between[0] == a && c.Between[1] == b || c.Between[0] == b && c.Between[1] == a);
+        ChangeRecords(r is null ? $"Clear the contact {a}–{b}" : $"Contact {a}–{b}: {text} m²·K/W", d =>
+        {
+            d.ContactResistances.RemoveAll(c => Same(c, a, b));
+            if (r is { } rv) d.ContactResistances.Add(new C3dContactResistance { Between = [a, b], ResistanceM2KW = rv });
+        });
+        return null;
+    }
+
+    // ── Plot Temperature (R-em3d75-4) ────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Gate 2 — why Plot Temperature is greyed, or null when it can plot: the active setup is thermal, its run left a
+    /// temperature field, and the model has not changed since that run (the stale banner is the same comparison).
+    /// </summary>
+    public string? PlotTemperatureRefusal()
+    {
+        if (ActiveSetup is not { IsThermal: true }) return "Plot Temperature reads a thermal run: make a thermal setup active.";
+        if (!Viewer.IsThermalRun || !Viewer.FieldsAvailable) return $"There is no thermal result for '{ActiveSetupName}': run it first (Simulate ▸ Run).";
+        if (FieldsStaleText is not null) return "The thermal result is stale — the model has changed since it was run. Run it again to plot it.";
+        return null;
+    }
+
+    /// <summary>Gate 2 — the stale banner changing changes what Plot Temperature can do: the menus re-ask.</summary>
+    partial void OnFieldsStaleTextChanged(string? value) => RaiseMenuStateChanged();
+
+    /// <summary>
+    /// 3D ▸ View ▸ Temperature and the visibility switches, by name — what the menu bar calls: <c>AllFaces</c>, <c>OnClip</c>,
+    /// <c>FixRange</c>, <c>Along</c>, <c>Table</c>, <c>Clear</c>; <c>HeatSources</c>, <c>Probes</c>, <c>MeshRegions</c>.
+    /// </summary>
+    public void RunTemperature(string which)
+    {
+        switch (which)
+        {
+            case "AllFaces": Report(SetTemperatureAllFaces(!Viewer.TemperatureAllFaces)); break;
+            case "OnClip": Report(SetTemperatureOnClip(!Viewer.TemperatureOnClip)); break;
+            case "FixRange": Viewer.FixRangeAcrossSweep = !Viewer.FixRangeAcrossSweep; break;
+            case "Along": StartTemperatureAlong(); break;
+            case "Table": ProbeTableOpen = !ProbeTableOpen; break;
+            case "Clear": Viewer.ClearTemperature(); break;
+            case "HeatSources": ShowHeatSources = !ShowHeatSources; break;
+            case "Probes": ShowProbes = !ShowProbes; break;
+            case "MeshRegions": ShowMeshRegions = !ShowMeshRegions; break;
+        }
+    }
+
+    /// <summary>R-em3d75-4a — right-click a face ▸ Plot Temperature: that face painted (a second time takes it away).</summary>
+    public string? PlotTemperatureOnFace(uint objectId, int face)
+    {
+        if (PlotTemperatureRefusal() is { } why) return why;
+        if (Viewer.Scene.Object(objectId) is not { } o || face < 0) return "There is no face under the cursor.";
+        Viewer.ToggleTemperatureFace(o.Name, face);
+        return null;
+    }
+
+    /// <summary>View ▸ Temperature ▸ All Faces.</summary>
+    public string? SetTemperatureAllFaces(bool on)
+    {
+        if (on && PlotTemperatureRefusal() is { } why) return why;
+        Viewer.TemperatureAllFaces = on;
+        return null;
+    }
+
+    /// <summary>View ▸ Temperature ▸ On Clip Plane: the clip plane's section painted (the clip plane is turned on).</summary>
+    public string? SetTemperatureOnClip(bool on)
+    {
+        if (on && PlotTemperatureRefusal() is { } why) return why;
+        if (on && !Viewer.View.Clip.Enabled) Viewer.ClipEnabled = true;
+        Viewer.TemperatureOnClip = on;
+        return null;
+    }
+
+    /// <summary>R-em3d75-4d — Temperature Along… ▸ pick two points: arms the two-point pick.</summary>
+    [RelayCommand]
+    public void StartTemperatureAlong()
+    {
+        if (PlotTemperatureRefusal() is { } why) { StatusMessage = why; return; }
+        Viewer.EnsureTemperatureLoaded();
+        SetTool(new TemperatureAlongTool(this));
+    }
+
+    /// <summary>The line panel: a line probe's T(s) or Temperature Along's; null closes it.</summary>
+    [ObservableProperty] private C3dThermalLine? _thermalLine;
+
+    /// <summary>The line panel's plot, built from <see cref="ThermalLine"/> for the existing plotting control.</summary>
+    public CircuitRF.Render.DataDisplay.Plot? ThermalLinePlot => ThermalLine is { } l ? ThermalPlots.Line(l) : null;
+
+    /// <summary>The line panel's readout: distance, both ends and their difference.</summary>
+    public string ThermalLineText => ThermalLine is { } l
+        ? $"{l.Title}: {Viewer.FormatLength(l.LengthM)} long; {C(l.FromC)} → {C(l.ToC)}, ΔT = {C(l.DeltaC)}"
+        : "";
+
+    public bool HasThermalLine => ThermalLine is not null;
+
+    partial void OnThermalLineChanged(C3dThermalLine? value)
+    {
+        OnPropertyChanged(nameof(ThermalLinePlot));
+        OnPropertyChanged(nameof(ThermalLineText));
+        OnPropertyChanged(nameof(HasThermalLine));
+    }
+
+    [RelayCommand]
+    private void CloseThermalLine() => ThermalLine = null;
+
+    private static string C(double v) => double.IsFinite(v) ? v.ToString("0.00", CultureInfo.InvariantCulture) + " °C" : "—";
+
+    /// <summary>Samples along a Temperature Along line.</summary>
+    public const int AlongSamples = 201;
+
+    /// <summary>R-em3d75-4d — T from <paramref name="a"/> to <paramref name="b"/> (DBU) on the step shown, into the line panel.
+    /// Null on success, else why not.</summary>
+    public string? PlotTemperatureAlong(C3dPoint3 a, C3dPoint3 b)
+    {
+        double M(long v) => C3dLowering.Metres(v, Document.DbuPerMicron);
+        var line = Viewer.TemperatureAlong((M(a.X), M(a.Y), M(a.Z)), (M(b.X), M(b.Y), M(b.Z)), AlongSamples, out string? why);
+        if (line is null) return why;
+        ThermalLine = new C3dThermalLine($"Temperature along ({Viewer.TemperatureStepLabel})", line.Distance, line.Values);
+        StatusMessage = ThermalLineText;
+        return null;
+    }
+
+    /// <summary>R-em3d75-4d — a line probe's T(s), from the run's table, at the step shown.</summary>
+    public string? PlotLineProbe(string probe)
+    {
+        if (Viewer.ThermalTable is not { } table || table.Lines.FirstOrDefault(l => l.Probe == probe) is not { } line)
+            return $"There is no line result for '{probe}': run the active thermal setup.";
+        if (Document.Probes.FirstOrDefault(p => p.Name == probe)?.Line is not { } seg) return $"'{probe}' is not a line probe.";
+        var d = seg.To - seg.From;
+        double length = C3dLowering.Metres(1, Document.DbuPerMicron) * Math.Sqrt((double)d.X * d.X + (double)d.Y * d.Y + (double)d.Z * d.Z);
+        int step = Math.Clamp(Viewer.TemperatureStep, 0, line.PerPoint.Length - 1);
+        ThermalLine = new C3dThermalLine($"{probe} ({table.PointLabel(step)})", [.. line.Fraction.Select(f => f * length)], line.PerPoint[step]);
+        return null;
+    }
+
+    // ── the probe table (R-em3d75-4e) ────────────────────────────────────────────────────────
+
+    public ObservableCollection<C3dProbeTableRow> ProbeTable { get; } = [];
+
+    /// <summary>A column per sweep point, on request.</summary>
+    [ObservableProperty] private bool _probeTableAllPoints;
+
+    [ObservableProperty] private bool _probeTableOpen;
+
+    /// <summary>The table's heading: the step shown, and how many probes crossed their limit.</summary>
+    [ObservableProperty] private string _probeTableHeading = "";
+
+    partial void OnProbeTableAllPointsChanged(bool value) => RefreshProbeTable();
+    partial void OnProbeTableOpenChanged(bool value) { if (value) RefreshProbeTable(); }
+
+    [RelayCommand]
+    private void ToggleProbeTable() => ProbeTableOpen = !ProbeTableOpen;
+
+    /// <summary>Re-reads the table from the run's .npy (through the viewer's reading of it) at the step shown.</summary>
+    public void RefreshProbeTable()
+    {
+        ProbeTable.Clear();
+        if (Viewer.ThermalTable is not { } t)
+        {
+            ProbeTableHeading = "No thermal result: run the active thermal setup.";
+            return;
+        }
+        int step = Math.Clamp(Viewer.TemperatureStep, 0, Math.Max(0, t.Points - 1));
+        static string V(double v, string unit) => double.IsFinite(v) ? v.ToString("G6", CultureInfo.InvariantCulture) + (unit.Length > 0 && unit != "1" ? " " + unit : "") : "—";
+        foreach (var r in t.Rows)
+        {
+            bool crossed = r.Crossed is { } c && step < c.Length && c[step];
+            var all = ProbeTableAllPoints ? r.Values.Select((v, i) => (r.Crossed is { } cc && i < cc.Length && cc[i] ? "⚠ " : "") + V(v, r.Unit)).ToList() : [];
+            ProbeTable.Add(new C3dProbeTableRow(r.Name, r.Unit, step < r.Values.Length ? V(r.Values[step], r.Unit) : "—", all, crossed, r.IsMeasure));
+        }
+        int flagged = t.Rows.Count(r => r.AnyCrossed);
+        ProbeTableHeading = $"{t.PointLabel(step)}" + (flagged > 0 ? $" · {flagged} probe(s) reach their limit somewhere in the sweep" : "");
+    }
+
+    // ── the context menu (R-em3d75-1a, -2, -4a) ──────────────────────────────────────────────
+
+    private IEnumerable<Viewer3DMenuItem> ThermalMenuItems()
+    {
+        var sel = Viewer.Selection;
+        string? thermalWhy = ThermalSetupRefusal();
+        string? plotWhy = PlotTemperatureRefusal();
+        if (Viewer.SelectMode == Scene3DSelectMode.Face && sel.Count == 1 && sel[0].Face >= 0 && Viewer.Scene.Object(sel[0].Object) is { } o
+            && o.Kind is not (Scene3DKind.Port or Scene3DKind.Boundary or Scene3DKind.Air) && BoxFaceOf(o) is null)
+        {
+            string face = $"{o.Name}/{o.FaceName(sel[0].Face)}";
+            uint id = o.Id;
+            int fi = sel[0].Face;
+            bool painted = Viewer.IsTemperatureFace(o.Name, fi);
+            yield return new Viewer3DMenuItem((painted ? "✓ " : "") + "Plot Temperature", () => Report(PlotTemperatureOnFace(id, fi)),
+                Enabled: plotWhy is null, Tip: plotWhy ?? (painted ? "Take the temperature off this face." : "Temperature on this face; again to take it off. Several faces accumulate."));
+            var now = ThermalBoundaryOn(face);
+            string tip = thermalWhy ?? $"Writes setup '{ActiveSetupName}': a face no boundary names is insulated.";
+            yield return new Viewer3DMenuItem("Thermal", Enabled: thermalWhy is null, Tip: tip, Children:
+            [
+                new Viewer3DMenuItem((now?.Kind == ThermalBoundaryKind.FixedT ? "● " : "") + "Fixed Temperature…", () => TextRequested?.Invoke(
+                    $"Fixed temperature on {face}", "Temperature, °C (a number or an expression):", now?.TempC ?? "25",
+                    text => SetThermalBoundary(face, ThermalBoundaryKind.FixedT, tempC: text.Trim())), Tip: tip),
+                new Viewer3DMenuItem((now?.Kind == ThermalBoundaryKind.Convection ? "● " : "") + "Convection…", () => TextRequested?.Invoke(
+                    $"Convection from {face}", "h in W/(m²·K), then the ambient in °C, separated by a comma (10, 25):",
+                    now?.Kind == ThermalBoundaryKind.Convection ? $"{now.H}, {now.AmbientC}" : "10, 25", text =>
+                    {
+                        var parts = text.Split(',', StringSplitOptions.TrimEntries);
+                        return parts.Length == 2 && parts[0].Length > 0 && parts[1].Length > 0
+                            ? SetThermalBoundary(face, ThermalBoundaryKind.Convection, h: parts[0], ambientC: parts[1])
+                            : "Type h and the ambient temperature, separated by a comma: 10, 25.";
+                    }), Tip: tip),
+                new Viewer3DMenuItem((now is null ? "● " : "") + "Insulated", () => Report(SetThermalBoundary(face, null)),
+                    Tip: "Every face no boundary names is insulated (adiabatic): this removes the face's condition."),
+                new Viewer3DMenuItem("Clear", () => Report(SetThermalBoundary(face, null)), Enabled: now is not null,
+                    Tip: now is null ? "This face has no thermal condition to clear." : "Remove this face's condition from the setup."),
+            ]);
+            yield return new Viewer3DMenuItem("Add Probe", Children:
+            [
+                new Viewer3DMenuItem("Face", () => AddThermalPlace(new C3dProbe { Name = NextName("probe"), Face = face, Stat = C3dProbeStat.Max }),
+                    Tip: "The face's maximum, minimum and average temperature."),
+            ]);
+            yield return Viewer3DMenuItem.Separator;
+        }
+        if (Viewer.SelectMode != Scene3DSelectMode.Object) yield break;
+        var objs = Viewer.SelectedObjects().Where(x => x.Kind is not (Scene3DKind.Port or Scene3DKind.Boundary)).ToList();
+        if (objs.Count == 1)
+        {
+            var only = objs[0];
+            bool wire = only.Kind == Scene3DKind.Wire;
+            var probes = new List<Viewer3DMenuItem>
+            {
+                wire ? new Viewer3DMenuItem("Wire", () => AddThermalPlace(new C3dProbe { Name = NextName("probe"), Wire = only.Name, Stat = C3dProbeStat.Max }),
+                                            Tip: "T along the wire and its maximum (its 1D solution, from a later version's wire results).")
+                     : new Viewer3DMenuItem("Solid", () => AddThermalPlace(new C3dProbe { Name = NextName("probe"), Solid = only.Name, Stat = C3dProbeStat.Max }),
+                                            Tip: "The solid's maximum, minimum and volume-average temperature."),
+            };
+            yield return new Viewer3DMenuItem("Add Probe", Children: probes);
+            if (!wire)
+                yield return new Viewer3DMenuItem("Heat Source from Solid", () =>
+                {
+                    string n = NextName("source");
+                    AddThermalPlace(new C3dHeatSource { Name = n, Solid = only.Name });
+                    AskHeatSource(n);
+                }, Tip: "Heat spread through the whole solid (a volumetric source): a channel, a resistor's film.");
+        }
+        if (objs.Count == 2)
+        {
+            string a = objs[0].Name, b = objs[1].Name;
+            var tech = TechnologyContact(a, b);
+            var have = Document.ContactResistances.FirstOrDefault(c => c.Between.Count == 2 && c.Between.Contains(a) && c.Between.Contains(b));
+            string prefill = have?.ResistanceM2KW.ToString("G6", CultureInfo.InvariantCulture) ?? tech?.Value.ToString("G6", CultureInfo.InvariantCulture) ?? "";
+            string says = have is not null ? "an override this document already holds" : tech is { } t ? t.Source : "no value: the technology states none for this pair";
+            yield return new Viewer3DMenuItem("Thermal", Children:
+            [
+                new Viewer3DMenuItem("Contact Resistance…", () => TextRequested?.Invoke($"Contact resistance {a}–{b}",
+                    $"m²·K/W, for this contact only (prefilled from {says}; empty removes the override):", prefill,
+                    text => SetContactResistance(a, b, text)), Tip: "The two must touch; the value overrides the technology's pair value for this contact."),
+            ]);
+        }
+    }
+
+    // ── drawing the places (R-em3d75-1b) ─────────────────────────────────────────────────────
+
+    private void FillThermalOverlay(Viewer3DDrawOverlay overlay)
+    {
+        int dbu = Document.DbuPerMicron;
+        double per = C3dLowering.Metres(1, dbu);
+        Point3 M(C3dPoint3 p) => new(p.X * per, p.Y * per, p.Z * per);
+        string? selected = SelectedTreeItem is { Kind: HeatSourceKind or ProbeKind or MeshRegionKind } row ? row.Name : null;
+        if (ShowHeatSources)
+            foreach (var h in Document.HeatSources)
+            {
+                if (!IsPlaceShown(h.Name)) continue;
+                var into = h.Name == selected ? overlay.Selected : overlay.HeatSources;
+                if (h.Sheet is { } s)
+                {
+                    var plane = new DrawingPlane(s.Plane, s.Offset);
+                    var outline = s.Rect is { } r
+                        ? new List<C3dPoint2> { r.Min, new(r.Min.U + r.Size.U, r.Min.V), new(r.Min.U + r.Size.U, r.Min.V + r.Size.V), new(r.Min.U, r.Min.V + r.Size.V) }
+                        : s.Outline;
+                    if (outline.Count < 3) continue;
+                    DrawGeometry.Chain([.. outline.Select(plane.FromUv)], true, dbu, into);
+                    foreach (var (a, b) in ThermalPlots.Hatch(outline))
+                        into.Add(new DrawSegment(M(plane.FromUvw(a.U, a.V, s.Offset)), M(plane.FromUvw(b.U, b.V, s.Offset))));
+                    overlay.Labels.Add((M(plane.FromUv(new C3dPoint2(outline.Sum(p => p.U) / outline.Count, outline.Sum(p => p.V) / outline.Count))), h.Name));
+                }
+                else if (h.Solid is { } solid && SceneObject(solid) is { } so)
+                {
+                    var (mn, mx) = Viewer.Scene.ToWorld(so.Min) is var w0 && Viewer.Scene.ToWorld(so.Max) is var w1 ? (w0, w1) : default;
+                    AddBox(into, new Point3(mn.X, mn.Y, mn.Z), new Point3(mx.X, mx.Y, mx.Z));
+                    overlay.Labels.Add((new Point3((mn.X + mx.X) / 2, (mn.Y + mx.Y) / 2, mx.Z), $"{h.Name} (in {solid})"));
+                }
+            }
+        if (ShowProbes)
+            foreach (var p in Document.Probes)
+            {
+                if (!IsPlaceShown(p.Name)) continue;
+                var into = p.Name == selected ? overlay.Selected : overlay.Probes;
+                Point3? at = null;
+                if (p.Point is { } pt) at = M(pt);
+                else if (p.Spot is { } spot)
+                {
+                    at = M(spot.Center);
+                    var n = FaceNormal(spot.Face) ?? new System.Numerics.Vector3(0, 0, 1);
+                    Ring(into, at.Value, n, spot.Diameter * per / 2);
+                }
+                else if (p.Line is { } line)
+                {
+                    into.Add(new DrawSegment(M(line.From), M(line.To)));
+                    at = M(line.From);
+                    overlay.ProbeMarks.Add(M(line.To));
+                }
+                else if ((p.Solid ?? p.Wire ?? p.Face?[..Math.Max(0, p.Face.LastIndexOf('/'))]) is { } target && SceneObject(target) is { } so)
+                {
+                    var c = Viewer.Scene.ToWorld(so.Centroid);
+                    at = new Point3(c.X, c.Y, c.Z);
+                }
+                if (at is { } a)
+                {
+                    overlay.ProbeMarks.Add(a);
+                    overlay.Labels.Add((a, p.Name + (p.LimitC is { } lim ? $" (≤ {lim.ToString("G4", CultureInfo.InvariantCulture)} °C)" : "")));
+                }
+            }
+        if (ShowMeshRegions)
+            foreach (var m in Document.MeshRegions)
+            {
+                if (!IsPlaceShown(m.Name)) continue;
+                var lo = M(m.Min);
+                var hi = M(m.Min + m.Size);
+                AddBox(m.Name == selected ? overlay.Selected : overlay.MeshRegions, lo, hi);
+                overlay.Labels.Add((hi, $"{m.Name}: {SpellMicrons(m.SizeUm)} {LayoutUnits.Suffix(Document.DisplayUnit)}"));
+            }
+    }
+
+    private System.Numerics.Vector3? FaceNormal(string face)
+    {
+        int slash = face.LastIndexOf('/');
+        if (slash <= 0 || SceneObject(face[..slash]) is not { } o) return null;
+        int fi = -1;
+        for (int k = 0; k < o.FaceNames.Count; k++) if (o.FaceNames[k] == face[(slash + 1)..]) { fi = k; break; }
+        return fi < 0 ? null : Scene3DFaces.AreaAndNormal(Viewer.Scene, o.Id, fi).Normal;
+    }
+
+    private static void AddBox(List<DrawSegment> into, Point3 lo, Point3 hi)
+    {
+        Point3 C(int k) => new((k & 1) == 0 ? lo.X : hi.X, (k & 2) == 0 ? lo.Y : hi.Y, (k & 4) == 0 ? lo.Z : hi.Z);
+        foreach (var (a, b) in new[] { (0, 1), (2, 3), (4, 5), (6, 7), (0, 2), (1, 3), (4, 6), (5, 7), (0, 4), (1, 5), (2, 6), (3, 7) })
+            into.Add(new DrawSegment(C(a), C(b)));
+    }
+
+    private static void Ring(List<DrawSegment> into, Point3 c, System.Numerics.Vector3 n, double r)
+    {
+        var nn = System.Numerics.Vector3.Normalize(n);
+        var u = System.Numerics.Vector3.Normalize(Math.Abs(nn.Z) < 0.9f ? System.Numerics.Vector3.Cross(nn, System.Numerics.Vector3.UnitZ)
+                                                                         : System.Numerics.Vector3.Cross(nn, System.Numerics.Vector3.UnitX));
+        var v = System.Numerics.Vector3.Cross(nn, u);
+        const int k = 32;
+        Point3 P(int i)
+        {
+            double t = 2 * Math.PI * i / k;
+            return new Point3(c.X + r * (Math.Cos(t) * u.X + Math.Sin(t) * v.X), c.Y + r * (Math.Cos(t) * u.Y + Math.Sin(t) * v.Y),
+                              c.Z + r * (Math.Cos(t) * u.Z + Math.Sin(t) * v.Z));
+        }
+        for (int i = 0; i < k; i++) into.Add(new DrawSegment(P(i), P(i + 1)));
+    }
+
+    // ── the tree (R-em3d75-1b) ───────────────────────────────────────────────────────────────
+
+    private static readonly C3dTreeGroupRole[] ThermalRoles =
+        [C3dTreeGroupRole.HeatSources, C3dTreeGroupRole.Probes, C3dTreeGroupRole.MeshRegions, C3dTreeGroupRole.ThermalBoundaries];
+
+    /// <summary>The thermal groups, rebuilt with the records: Heat sources, Probes, Mesh regions, and the active thermal
+    /// setup's boundaries (the tint legend: blue a fixed temperature, green convection).</summary>
+    private void RebuildThermalTree()
+    {
+        foreach (var g in Tree.Where(g => ThermalRoles.Contains(g.Role)).ToList())
+        {
+            DetachExpansion([g]);
+            Tree.Remove(g);
+        }
+        C3dTreeItem Row(string name, string kind, string detail) => new(this, name, kind, detail, -1, -1, IsPlaceShown(name));
+        var sources = Document.HeatSources.Select(h => Row(h.Name, HeatSourceKind,
+            (h.Solid is { } s ? $"in {s}" : "sheet") + $", {h.Power ?? "no default power"}{(h.Density == C3dHeatDensity.Total ? (h.Power is null ? "" : " W") : h.Density == C3dHeatDensity.PerArea ? " W/m²" : " W/m³")}")).ToList();
+        var probes = Document.Probes.Select(p => Row(p.Name, ProbeKind,
+            string.Join(", ", p.Kinds()).ToLowerInvariant() + (p.Stat is { } st ? $", {st.ToString().ToLowerInvariant()}" : "") +
+            (p.LimitC is { } l ? $", limit {l.ToString("G4", CultureInfo.InvariantCulture)} °C" : ""))).ToList();
+        var regions = Document.MeshRegions.Select(m => Row(m.Name, MeshRegionKind, $"{SpellMicrons(m.SizeUm)} {LayoutUnits.Suffix(Document.DisplayUnit)} elements")).ToList();
+        if (sources.Count > 0) Tree.Add(new C3dTreeGroup("Heat sources", sources, C3dTreeGroupRole.HeatSources));
+        if (probes.Count > 0) Tree.Add(new C3dTreeGroup("Probes", probes, C3dTreeGroupRole.Probes));
+        if (regions.Count > 0) Tree.Add(new C3dTreeGroup("Mesh regions", regions, C3dTreeGroupRole.MeshRegions));
+        if (ActiveThermalSetup()?.Setup.Thermal?.Boundaries is { Count: > 0 } bs)
+            Tree.Add(new C3dTreeGroup($"Thermal boundaries (blue fixed, green convection) · {ActiveSetupName}", [.. bs.Select(b => new C3dTreeItem(this,
+                ThermalTintPrefix + b.Face, ThermalBoundaryKindName, b.Kind == ThermalBoundaryKind.FixedT ? $"{b.Face}: {b.TempC} °C"
+                    : $"{b.Face}: h {b.H} W/(m²·K) to {b.AmbientC} °C", -1, -1, true) { IsReadOnly = true })], C3dTreeGroupRole.ThermalBoundaries));
+        RestoreExpansion();
+    }
+
+    /// <summary>A thermal boundary's tint is named this, then its face (<c>thermal:flange/zmin</c>).</summary>
+    public const string ThermalTintPrefix = "thermal:";
+
+    /// <summary>The tree's thermal row's menu: rename, hide, delete, and a line probe's plot.</summary>
+    private List<Viewer3DMenuItem> ThermalTreeItems(C3dTreeItem item)
+    {
+        var items = new List<Viewer3DMenuItem>();
+        if (item.Kind == ThermalBoundaryKindName)
+        {
+            string face = item.Name[ThermalTintPrefix.Length..];
+            items.Add(new Viewer3DMenuItem("Delete", () => Report(SetThermalBoundary(face, null))));
+            return items;
+        }
+        string name = item.Name;
+        items.Add(new Viewer3DMenuItem("Rename…", () => TextRequested?.Invoke($"Rename {name}", "Name:", name, text => RenameThermalPlace(name, text))));
+        if (item.Kind == HeatSourceKind)
+            items.Add(new Viewer3DMenuItem("Default Power…", () => TextRequested?.Invoke($"Heat source {name}", "Default power, W (a number or an expression):",
+                Document.HeatSources.FirstOrDefault(h => h.Name == name)?.Power ?? "", text => SetPlaceText(name, "Power", text))));
+        if (item.Kind == ProbeKind && Document.Probes.FirstOrDefault(p => p.Name == name) is { Line: not null })
+            items.Add(new Viewer3DMenuItem("Plot T(s)", () => Report(PlotLineProbe(name)), Enabled: Viewer.ThermalTable is not null,
+                Tip: Viewer.ThermalTable is null ? "Run the active thermal setup first." : "The line's temperature at the step shown."));
+        items.Add(new Viewer3DMenuItem(IsPlaceShown(name) ? "Hide" : "Show", () => SetPlaceShown(name, !IsPlaceShown(name))));
+        items.Add(Viewer3DMenuItem.Separator);
+        items.Add(new Viewer3DMenuItem("Delete", () => DeleteThermalPlace(name)));
+        return items;
+    }
+
+    /// <summary>A place's row tick: the view's alone (a place has no Hidden in the file, and a hidden probe still reads).</summary>
+    public void SetPlaceShown(string name, bool shown)
+    {
+        if (shown) _hiddenPlaces.Remove(name); else _hiddenPlaces.Add(name);
+        if (AllTreeItems().FirstOrDefault(t => t.Name == name && t.Kind is HeatSourceKind or ProbeKind or MeshRegionKind) is { } row) row.Sync(shown);
+        Viewer.RequestFrame();
+    }
+
+    // ── the scene's thermal tints (R-em3d75-2) ───────────────────────────────────────────────
+
+    /// <summary>On the build's thread: the active thermal setup's conditioned faces as tints — blue a fixed temperature, green
+    /// convection — placed by the lowering's own face placement.</summary>
+    private static IReadOnlyList<Scene3DFaceTint> ThermalTints(C3dDocument doc, C3dElaboration e, EmSetup? setup)
+    {
+        if (setup is not { IsThermal: true, Thermal.Boundaries: { Count: > 0 } bs } || !e.Ok) return [];
+        var list = new List<Scene3DFaceTint>();
+        var solids = e.Solids;
+        foreach (var b in bs)
+        {
+            if (b.Face == C3dThermal.ExposedFaces) continue;
+            if (ThermalLowerings.FacePieces(doc, e, solids, b.Face, out _, out _) is not { } pieces) continue;
+            var colour = b.Kind == ThermalBoundaryKind.FixedT ? ((byte)60, (byte)120, (byte)235) : ((byte)60, (byte)185, (byte)95);
+            list.Add(new Scene3DFaceTint(ThermalTintPrefix + b.Face, Em3dFaceBoundaryKind.Pec, pieces, colour));
+        }
+        return list;
+    }
+}
+
+/// <summary>Plots and hatches the thermal editor draws.</summary>
+public static class ThermalPlots
+{
+    /// <summary>A heat source's hatch: 45° lines across its outline (u, v), a tenth of its larger side apart, each clipped to
+    /// the outline by the even-odd rule.</summary>
+    public static IEnumerable<(C3dPoint2 A, C3dPoint2 B)> Hatch(IReadOnlyList<C3dPoint2> outline)
+    {
+        long u0 = outline.Min(p => p.U), u1 = outline.Max(p => p.U), v0 = outline.Min(p => p.V), v1 = outline.Max(p => p.V);
+        double step = Math.Max(1, Math.Max(u1 - u0, v1 - v0) / 10.0);
+        // Lines u − v = c.
+        for (double c = u0 - v1 + step / 2; c < u1 - v0; c += step)
+        {
+            var hits = new List<double>();   // the v of each crossing
+            for (int i = 0; i < outline.Count; i++)
+            {
+                var a = outline[i];
+                var b = outline[(i + 1) % outline.Count];
+                double fa = a.U - a.V - c, fb = b.U - b.V - c;
+                if ((fa < 0) == (fb < 0) || fa == fb) continue;
+                double t = fa / (fa - fb);
+                hits.Add(a.V + t * (b.V - a.V));
+            }
+            hits.Sort();
+            for (int k = 0; k + 1 < hits.Count; k += 2)
+            {
+                long R(double x) => (long)Math.Round(x);
+                yield return (new C3dPoint2(R(c + hits[k]), R(hits[k])), new C3dPoint2(R(c + hits[k + 1]), R(hits[k + 1])));
+            }
+        }
+    }
+
+    /// <summary>R-em3d75-4d — a temperature line as the existing plotting control draws a trace: distance against °C.</summary>
+    public static CircuitRF.Render.DataDisplay.Plot Line(C3dThermalLine line)
+    {
+        var plot = new CircuitRF.Render.DataDisplay.Plot(CircuitRF.Render.DataDisplay.PlotType.Rect, CircuitRF.Render.DataDisplay.FreqUnit.GHz)
+        {
+            ShowWatermark = false,
+            CustomTitleOn = true, CustomTitle = line.Title, CustomTitleBold = true,
+            CustomXLabelOn = true, CustomXLabel = "Distance (µm)",
+            CustomYLabelOn = true, CustomYLabel = "T (°C)",
+        };
+        var keep = Enumerable.Range(0, line.DistanceM.Length).Where(i => double.IsFinite(line.ValuesC[i])).ToList();
+        double[] x = [.. keep.Select(i => line.DistanceM[i] * 1e6)], y = [.. keep.Select(i => line.ValuesC[i])];
+        if (x.Length < 2) return plot;
+        var t = new CircuitRF.Render.DataDisplay.Trace(new RfCore.SNP([1e9], 1), RfCore.MatrixType.S, 0, 0, CircuitRF.Render.DataDisplay.DependentVarFormat.Real);
+        t.Properties.LineColorStorage = new SkiaSharp.SKColor(230, 90, 40);
+        t.Properties.LineWidth = 1.8;
+        t.Properties.LineEnabled = true;
+        t.SetCubeData(x, null, y, "x", null, CircuitRF.Render.DataDisplay.PlotType.Rect, CircuitRF.Render.DataDisplay.FreqUnit.GHz);
+        plot.Traces.Add(t);
+        double lo = y.Min(), hi = y.Max(), h = hi > lo ? hi - lo : 1;
+        plot.Axes.Window = new CircuitRF.Render.DataDisplay.PlotRect(x[0], lo - 0.05 * h, x[^1] - x[0], 1.1 * h);
+        return plot;
+    }
+}
