@@ -49,7 +49,8 @@ public sealed record C3dThermalLine(string Title, double[] DistanceM, double[] V
 public sealed partial class C3dEditorViewModel
 {
     /// <summary>The tree's kinds for the thermal rows.</summary>
-    public const string HeatSourceKind = "Heat source", ProbeKind = "Probe", MeshRegionKind = "Mesh region", ThermalBoundaryKindName = "Thermal boundary";
+    public const string HeatSourceKind = "Heat source", ProbeKind = "Probe", MeshRegionKind = "Mesh region", ThermalBoundaryKindName = "Thermal boundary",
+                        EffectiveBlockKind = "Effective block", SymmetryPlaneKind = "Symmetry plane";
 
     // ── visibility (R-em3d75-1b) ─────────────────────────────────────────────────────────────
 
@@ -71,7 +72,8 @@ public sealed partial class C3dEditorViewModel
 
     /// <summary>Every thermal place's name, which is unique across the document's names (brief 73 R-em3d73-4).</summary>
     private IEnumerable<string> ThermalPlaceNames()
-        => Document.HeatSources.Select(h => h.Name).Concat(Document.Probes.Select(p => p.Name)).Concat(Document.MeshRegions.Select(m => m.Name));
+        => Document.HeatSources.Select(h => h.Name).Concat(Document.Probes.Select(p => p.Name)).Concat(Document.MeshRegions.Select(m => m.Name))
+                   .Concat(Document.EffectiveBlocks.Select(b => b.Name));
 
     // ── the tools (R-em3d75-1a) ──────────────────────────────────────────────────────────────
 
@@ -116,6 +118,10 @@ public sealed partial class C3dEditorViewModel
             case C3dHeatSource h:
                 AskHeatSource(h.Name);
                 break;
+            case C3dEffectiveBlock b:
+                StatusMessage = $"Drew effective block '{b.Name}', DISABLED: the geometry is solved as drawn until you enable it (its row's menu, " +
+                                "or Properties). It replaces board dielectric, planes and via barrels only.";
+                break;
             case C3dMeshRegion m:
                 TextRequested?.Invoke($"Mesh region {m.Name}", $"Target element size inside the box ({LayoutUnits.Suffix(Document.DisplayUnit)}, or an expression):",
                     SpellMicrons(m.SizeUm), text => SetPlaceFieldText(m.Name, nameof(C3dMeshRegion.SizeUm), text));
@@ -155,6 +161,9 @@ public sealed partial class C3dEditorViewModel
                 ChangeRecords($"Add mesh region {m.Name}", d => d.MeshRegions.Add(m));
                 StatusMessage = $"Added mesh region '{m.Name}'.";
                 break;
+            case C3dEffectiveBlock b:
+                ChangeRecords($"Add effective block {b.Name}", d => d.EffectiveBlocks.Add(b));
+                break;
         }
     }
 
@@ -176,6 +185,7 @@ public sealed partial class C3dEditorViewModel
             foreach (var h in d.HeatSources.Where(h => h.Name == old)) h.Name = name;
             foreach (var p in d.Probes.Where(p => p.Name == old)) p.Name = name;
             foreach (var m in d.MeshRegions.Where(m => m.Name == old)) m.Name = name;
+            foreach (var b in d.EffectiveBlocks.Where(b => b.Name == old)) b.Name = name;
             for (int i = 0; i < d.Setups.Count; i++)
             {
                 if (EmSetupPersistence.FromEmbedded(d.Setups[i]) is not { Thermal: { } t } s) continue;
@@ -198,12 +208,13 @@ public sealed partial class C3dEditorViewModel
             d.HeatSources.RemoveAll(h => h.Name == name);
             d.Probes.RemoveAll(p => p.Name == name);
             d.MeshRegions.RemoveAll(m => m.Name == name);
+            d.EffectiveBlocks.RemoveAll(b => b.Name == name);
         });
 
     /// <summary>The place named <paramref name="name"/>, or null.</summary>
     public object? ThermalPlace(string name)
         => (object?)Document.HeatSources.FirstOrDefault(h => h.Name == name) ?? (object?)Document.Probes.FirstOrDefault(p => p.Name == name)
-           ?? Document.MeshRegions.FirstOrDefault(m => m.Name == name);
+           ?? (object?)Document.MeshRegions.FirstOrDefault(m => m.Name == name) ?? Document.EffectiveBlocks.FirstOrDefault(b => b.Name == name);
 
     /// <summary>R-em3d75-1c — one DIMENSION of a place (a number in the display unit, or an expression bound to it), through
     /// the one field write every object's dimension goes through. Null on success.</summary>
@@ -214,7 +225,7 @@ public sealed partial class C3dEditorViewModel
         return EditNames($"Set {name} {path} = {text}", (doc, _) =>
         {
             object? item = (object?)doc.HeatSources.FirstOrDefault(h => h.Name == name) ?? (object?)doc.Probes.FirstOrDefault(p => p.Name == name)
-                           ?? doc.MeshRegions.FirstOrDefault(m => m.Name == name);
+                           ?? (object?)doc.MeshRegions.FirstOrDefault(m => m.Name == name) ?? doc.EffectiveBlocks.FirstOrDefault(b => b.Name == name);
             return item is null ? $"This 3D view has no thermal place named '{name}'." : WriteField(doc, item, name, path, text, PlaceFieldLabel(item, path));
         });
     }
@@ -270,6 +281,12 @@ public sealed partial class C3dEditorViewModel
                 return $"{(key == "Grading" ? "The grading" : "A limit")} is {(positive ? "a positive number" : "a number")}.";
             number = v;
         }
+        bool enabled = false;
+        if (key == "Enabled")
+        {
+            if (text.ToLowerInvariant() is "true" or "on" or "yes" or "1") enabled = true;
+            else if (text.ToLowerInvariant() is not ("false" or "off" or "no" or "0")) return "Enabled is true or false.";
+        }
         C3dHeatDensity density = default;
         C3dProbeStat? stat = null;
         switch (key)
@@ -292,6 +309,7 @@ public sealed partial class C3dEditorViewModel
             (C3dProbe, "Stat" or "LimitC" or "Face" or "Solid" or "Wire") => true,
             (C3dProbe p, "SpotFace") => p.Spot is not null,
             (C3dMeshRegion, "Grading") => true,
+            (C3dEffectiveBlock, "Enabled") => true,
             _ => false,
         };
         if (!applies) return $"'{name}' has no {key}.";
@@ -318,6 +336,7 @@ public sealed partial class C3dEditorViewModel
                     case "SpotFace": p.Spot!.Face = text; break;
                 }
             else if (d.MeshRegions.FirstOrDefault(m => m.Name == name) is { } m) m.Grading = number;
+            else if (d.EffectiveBlocks.FirstOrDefault(b => b.Name == name) is { } b) b.Enabled = enabled;
         });
         return null;
     }
@@ -448,6 +467,7 @@ public sealed partial class C3dEditorViewModel
             case "HeatSources": ShowHeatSources = !ShowHeatSources; break;
             case "Probes": ShowProbes = !ShowProbes; break;
             case "MeshRegions": ShowMeshRegions = !ShowMeshRegions; break;
+            case "Mirror": Viewer.MirrorSymmetry = !Viewer.MirrorSymmetry; break;
         }
     }
 
@@ -620,6 +640,13 @@ public sealed partial class C3dEditorViewModel
                 new Viewer3DMenuItem("Face", () => AddThermalPlace(new C3dProbe { Name = NextName("probe"), Face = face, Stat = C3dProbeStat.Max }),
                     Tip: "The face's maximum, minimum and average temperature."),
             ]);
+            // brief-em3d-76 R-em3d76-4a — the face the modelled half was cut on
+            var (onPlane, symWhy) = SymmetryOfFace(id, fi);
+            bool declared = onPlane is { } sp0 && Document.SymmetryPlanes.Any(p => p.Axis == sp0.Axis && p.At == sp0.At);
+            yield return new Viewer3DMenuItem((declared ? "✓ " : "") + "Symmetry Plane", () => Report(ToggleSymmetryPlane(id, fi)),
+                Enabled: symWhy is null, Tip: symWhy ?? (declared ? "Remove the symmetry plane on this face." :
+                    "The modelled part is half the device, cut on this face: the face stays insulated, measures read SymmetryFactor, and a " +
+                    "plotted temperature is drawn mirrored."));
             yield return Viewer3DMenuItem.Separator;
         }
         if (Viewer.SelectMode != Scene3DSelectMode.Object) yield break;
@@ -667,7 +694,7 @@ public sealed partial class C3dEditorViewModel
         int dbu = Document.DbuPerMicron;
         double per = C3dLowering.Metres(1, dbu);
         Point3 M(C3dPoint3 p) => new(p.X * per, p.Y * per, p.Z * per);
-        string? selected = SelectedTreeItem is { Kind: HeatSourceKind or ProbeKind or MeshRegionKind } row ? row.Name : null;
+        string? selected = SelectedTreeItem is { Kind: HeatSourceKind or ProbeKind or MeshRegionKind or EffectiveBlockKind } row ? row.Name : null;
         if (ShowHeatSources)
             foreach (var h in Document.HeatSources)
             {
@@ -731,6 +758,16 @@ public sealed partial class C3dEditorViewModel
                 AddBox(m.Name == selected ? overlay.Selected : overlay.MeshRegions, lo, hi);
                 overlay.Labels.Add((hi, $"{m.Name}: {SpellMicrons(m.SizeUm)} {LayoutUnits.Suffix(Document.DisplayUnit)}"));
             }
+        // brief-em3d-76 — an effective block is drawn as a mesh region is, labelled with whether it is on
+        if (ShowMeshRegions)
+            foreach (var b in Document.EffectiveBlocks)
+            {
+                if (!IsPlaceShown(b.Name)) continue;
+                var lo = M(b.Min);
+                var hi = M(b.Min + b.Size);
+                AddBox(b.Name == selected ? overlay.Selected : overlay.MeshRegions, lo, hi);
+                overlay.Labels.Add((hi, $"{b.Name}: effective block, {(b.Enabled ? "enabled" : "disabled")}"));
+            }
     }
 
     private System.Numerics.Vector3? FaceNormal(string face)
@@ -768,7 +805,8 @@ public sealed partial class C3dEditorViewModel
     // ── the tree (R-em3d75-1b) ───────────────────────────────────────────────────────────────
 
     private static readonly C3dTreeGroupRole[] ThermalRoles =
-        [C3dTreeGroupRole.HeatSources, C3dTreeGroupRole.Probes, C3dTreeGroupRole.MeshRegions, C3dTreeGroupRole.ThermalBoundaries];
+        [C3dTreeGroupRole.HeatSources, C3dTreeGroupRole.Probes, C3dTreeGroupRole.MeshRegions, C3dTreeGroupRole.EffectiveBlocks,
+         C3dTreeGroupRole.SymmetryPlanes, C3dTreeGroupRole.ThermalBoundaries];
 
     /// <summary>The thermal groups, rebuilt with the records: Heat sources, Probes, Mesh regions, and the active thermal
     /// setup's boundaries (the tint legend: blue a fixed temperature, green convection).</summary>
@@ -789,6 +827,13 @@ public sealed partial class C3dEditorViewModel
         if (sources.Count > 0) Tree.Add(new C3dTreeGroup("Heat sources", sources, C3dTreeGroupRole.HeatSources));
         if (probes.Count > 0) Tree.Add(new C3dTreeGroup("Probes", probes, C3dTreeGroupRole.Probes));
         if (regions.Count > 0) Tree.Add(new C3dTreeGroup("Mesh regions", regions, C3dTreeGroupRole.MeshRegions));
+        // brief-em3d-76 — effective blocks (with whether each is on) and the symmetry planes
+        var blocks = Document.EffectiveBlocks.Select(b => Row(b.Name, EffectiveBlockKind, b.Enabled ? "enabled (an approximation)" : "disabled: solved as drawn")).ToList();
+        if (blocks.Count > 0) Tree.Add(new C3dTreeGroup("Effective blocks", blocks, C3dTreeGroupRole.EffectiveBlocks));
+        var planes = Document.SymmetryPlanes.Select(sp => new C3dTreeItem(this, SymmetryRowName(sp.Axis), SymmetryPlaneKind,
+            $"{sp.Axis} = {SpellMicrons(sp.At / (double)Document.DbuPerMicron)} {LayoutUnits.Suffix(Document.DisplayUnit)}", -1, -1, true) { IsReadOnly = true }).ToList();
+        if (planes.Count > 0)
+            Tree.Add(new C3dTreeGroup($"Symmetry planes (1/{1 << planes.Count} of the device is modelled)", planes, C3dTreeGroupRole.SymmetryPlanes));
         if (ActiveThermalSetup()?.Setup.Thermal?.Boundaries is { Count: > 0 } bs)
             Tree.Add(new C3dTreeGroup($"Thermal boundaries (blue fixed, green convection) · {ActiveSetupName}", [.. bs.Select(b => new C3dTreeItem(this,
                 ThermalTintPrefix + b.Face, ThermalBoundaryKindName, b.Kind == ThermalBoundaryKind.FixedT ? $"{b.Face}: {b.TempC} °C"
@@ -809,6 +854,12 @@ public sealed partial class C3dEditorViewModel
             items.Add(new Viewer3DMenuItem("Delete", () => Report(SetThermalBoundary(face, null))));
             return items;
         }
+        if (item.Kind == SymmetryPlaneKind)
+        {
+            var axis = Enum.Parse<C3dAxis>(item.Name[SymmetryRowPrefix.Length..]);
+            items.Add(new Viewer3DMenuItem("Delete", () => ClearSymmetryPlane(axis)));
+            return items;
+        }
         string name = item.Name;
         items.Add(new Viewer3DMenuItem("Rename…", () => TextRequested?.Invoke($"Rename {name}", "Name:", name, text => RenameThermalPlace(name, text))));
         if (item.Kind == HeatSourceKind)
@@ -817,6 +868,9 @@ public sealed partial class C3dEditorViewModel
         if (item.Kind == ProbeKind && Document.Probes.FirstOrDefault(p => p.Name == name) is { Line: not null })
             items.Add(new Viewer3DMenuItem("Plot T(s)", () => Report(PlotLineProbe(name)), Enabled: Viewer.ThermalTable is not null,
                 Tip: Viewer.ThermalTable is null ? "Run the active thermal setup first." : "The line's temperature at the step shown."));
+        if (item.Kind == EffectiveBlockKind && Document.EffectiveBlocks.FirstOrDefault(b => b.Name == name) is { } block)
+            items.Add(new Viewer3DMenuItem(block.Enabled ? "Disable" : "Enable", () => Report(SetPlaceText(name, "Enabled", block.Enabled ? "false" : "true")),
+                Tip: block.Enabled ? "Solve the geometry under it as drawn." : "Replace the board, planes and vias inside it with one anisotropic block (an approximation)."));
         items.Add(new Viewer3DMenuItem(IsPlaceShown(name) ? "Hide" : "Show", () => SetPlaceShown(name, !IsPlaceShown(name))));
         items.Add(Viewer3DMenuItem.Separator);
         items.Add(new Viewer3DMenuItem("Delete", () => DeleteThermalPlace(name)));
@@ -827,7 +881,7 @@ public sealed partial class C3dEditorViewModel
     public void SetPlaceShown(string name, bool shown)
     {
         if (shown) _hiddenPlaces.Remove(name); else _hiddenPlaces.Add(name);
-        if (AllTreeItems().FirstOrDefault(t => t.Name == name && t.Kind is HeatSourceKind or ProbeKind or MeshRegionKind) is { } row) row.Sync(shown);
+        if (AllTreeItems().FirstOrDefault(t => t.Name == name && t.Kind is HeatSourceKind or ProbeKind or MeshRegionKind or EffectiveBlockKind) is { } row) row.Sync(shown);
         Viewer.RequestFrame();
     }
 

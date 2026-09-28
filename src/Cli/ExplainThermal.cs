@@ -82,6 +82,27 @@ internal static class ExplainThermal
                     "an estimate from the sizing rules (each solid at its own element size, each heat source's graded shell, each " +
                     "mesh region's box); the direct solver below 5,000 unknowns (brief 72's crossover), unless the setup's " +
                     "Mesh.Solver says otherwise"));
+
+                // ── brief-em3d-76 — effective blocks, symmetry, a submodel: what the lowering decided ──
+                foreach (var block in low.Effective.Values)
+                    walks.Add(new ResolutionStepJson($"{at}: effective block {block.Name}", null, block.Note(),
+                        "an APPROXIMATION: per layer, k_z = f_Cu·k_Cu + f_d·k_d and k_xy by Rayleigh's formula for parallel cylinders; " +
+                        "k_z in series over the layers, k_xy in parallel. Disabled, the geometry is solved as drawn"));
+                foreach (var b in doc.EffectiveBlocks.Where(b => !b.Enabled))
+                    walks.Add(new ResolutionStepJson($"{at}: effective block {b.Name}", null, "disabled: the geometry under it is solved as drawn",
+                        "a block is never on by default"));
+                if (doc.SymmetryPlanes.Count > 0)
+                    walks.Add(new ResolutionStepJson($"{at}: symmetry", null,
+                        $"{string.Join(", ", doc.SymmetryPlanes.Select(p => $"{p.Axis} = {G(p.At / (double)doc.DbuPerMicron)} µm"))}; " +
+                        $"SymmetryFactor = {low.SymmetryFactor}",
+                        "the faces on a mirror plane are insulated; sources carry the modelled part's power; a measure multiplies by " +
+                        "SymmetryFactor itself — nothing is multiplied silently"));
+                if (t.Submodel is { } sm)
+                    walks.Add(new ResolutionStepJson($"{at}: submodel", null,
+                        $"the region '{sm.Region}' cut from the model, its cut faces fixed to setup '{sm.From}''s solution; " +
+                        $"{low.Regions.Count} solid(s) inside, {low.SourcesOutside.Count} heat source(s) outside",
+                        "the From result is reused when it is newer than the document, else solved first; the run compares the heat " +
+                        "crossing the cut faces with the whole model's"));
             }
         }
 
@@ -134,7 +155,9 @@ internal static class ExplainThermal
                     walks.Add(new ResolutionStepJson($"{at}: interface '{a.Name}' | '{b.Name}'", null,
                         over is not null ? $"{G(over.ResistanceM2KW)} m²·K/W, the document's ContactResistances override"
                                          : $"{G(pair!.ResistanceM2KW)} m²·K/W, the pair '{pair.MaterialA}' / '{pair.MaterialB}'",
-                        "a contact override wins over the technology's material pair, for that contact only (bounding boxes that touch)"));
+                        "applied: the contact's nodes are duplicated and the two sides joined through R″ (a contact override wins over " +
+                        "the technology's material pair, for that contact only). Listed where the bounding boxes touch; the run " +
+                        "reports the area the mesh actually shares"));
                 }
 
             // ── each meshed material's k at 25 °C ──

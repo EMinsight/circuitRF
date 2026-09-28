@@ -37,6 +37,34 @@ public sealed class FieldSurface
     /// cut or gathered from a <see cref="FieldMesh"/>; null otherwise (a synthetic set of tetrahedra, a wire).</summary>
     public FieldRecipe? Recipe { get; init; }
 
+    /// <summary>
+    /// brief-em3d-76 R-em3d76-4c — the same triangles reflected across the plane normal to <paramref name="axis"/> (0 x, 1 y,
+    /// 2 z) at <paramref name="at"/> (scene-local metres), each triangle's winding reversed so it still faces out, with the
+    /// same values — a symmetry plane's mirrored half. The recipe is reordered with the vertices, so a sweep step revalues
+    /// the mirror exactly as it does the original.
+    /// </summary>
+    public FieldSurface Mirrored(int axis, double at)
+    {
+        int n = VertexCount, ch = Channels;
+        var xyz = new double[Xyz.Length];
+        var values = new double[Values.Length];
+        FieldRecipe? recipe = Recipe is { } r
+            ? new FieldRecipe { A = new int[n], B = new int[n], T = new double[n], Cell = new int[n], NodeCount = r.NodeCount, CellCount = r.CellCount }
+            : null;
+        for (int v = 0; v < n; v++)
+        {
+            int k = v % 3, from = k == 1 ? v + 1 : k == 2 ? v - 1 : v;       // (a, b, c) → (a, c, b)
+            for (int c = 0; c < 3; c++) xyz[3 * v + c] = Xyz[3 * from + c];
+            xyz[3 * v + axis] = 2 * at - Xyz[3 * from + axis];
+            Array.Copy(Values, from * ch, values, v * ch, ch);
+            if (recipe is not null)
+            {
+                recipe.A[v] = Recipe!.A[from]; recipe.B[v] = Recipe.B[from]; recipe.T[v] = Recipe.T[from]; recipe.Cell[v] = Recipe.Cell[from];
+            }
+        }
+        return new FieldSurface { Channels = ch, Xyz = xyz, Values = values, Recipe = recipe };
+    }
+
     internal static FieldSurface From(int channels, List<double> xyz, List<double> values, FieldRecipe? recipe = null)
         => new() { Channels = channels, Xyz = [.. xyz], Values = [.. values], Recipe = recipe };
 

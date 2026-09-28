@@ -262,6 +262,8 @@ public static class C3dBindings
         foreach (var h in doc.HeatSources) yield return (h.Name, h);
         foreach (var p in doc.Probes) yield return (p.Name, p);
         foreach (var m in doc.MeshRegions) yield return (m.Name, m);
+        foreach (var b in doc.EffectiveBlocks) yield return (b.Name, b);
+        foreach (var s in doc.SymmetryPlanes) yield return ($"symmetry {s.Axis}", s);
     }
 
     /// <summary>Every bound component in the document.</summary>

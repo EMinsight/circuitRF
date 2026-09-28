@@ -50,6 +50,10 @@ public sealed class ThermalMesh
     /// <summary>Each triangle's surface tag, which sources, boundaries and probes name.</summary>
     public int[] TriangleTag { get; }
 
+    /// <summary>brief-em3d-76 R-em3d76-1b — the interface elements joining the two sides of each resistive contact, made by
+    /// <see cref="ThermalInterfaces.Split"/>; null when there are none.</summary>
+    public ThermalInterfaceElements? Interfaces { get; init; }
+
     public int NodeCount => Nodes.Length / 3;
     public int TetCount => TetRegion.Length;
     public int TriangleCount => TriangleTag.Length;
@@ -79,7 +83,10 @@ public sealed class ThermalMesh
                              .Where(t => Enumerable.Range(0, NodesPerTriangle).All(k => m[Triangles[t * NodesPerTriangle + k]] >= 0)).ToList();
         var tris = keep.SelectMany(t => Enumerable.Range(0, NodesPerTriangle).Select(k => m[Triangles[t * NodesPerTriangle + k]])).ToArray();
         var tags = keep.Select(t => TriangleTag[t]).ToArray();
-        return new ThermalMesh(nodes, Order, tets, (int[])TetRegion.Clone(), tris, tags);
+        return new ThermalMesh(nodes, Order, tets, (int[])TetRegion.Clone(), tris, tags)
+        {
+            Interfaces = Interfaces is { } f ? f with { Triangles = [.. f.Triangles.Select(v => m[v])] } : null,
+        };
     }
 
     /// <summary>
@@ -112,7 +119,21 @@ public sealed class ThermalMesh
             for (int k = 0; k < 3; k++) tris[6 * t + k] = Triangles[3 * t + k];
             for (int k = 0; k < 3; k++) tris[6 * t + 3 + k] = Mid(Triangles[3 * t + TriangleEdges[k].A], Triangles[3 * t + TriangleEdges[k].B]);
         }
-        return new ThermalMesh([.. nodes], 2, tets, (int[])TetRegion.Clone(), tris, (int[])TriangleTag.Clone());
+        ThermalInterfaceElements? faces = null;
+        if (Interfaces is { } f)
+        {
+            // each side's mid-edge nodes are that side's own: its corners are its own copies, so Mid keys them apart
+            var ft = new int[12 * f.Count];
+            for (int t = 0; t < f.Count; t++)
+                for (int side = 0; side < 2; side++)
+                {
+                    int src = 6 * t + 3 * side, dst = 12 * t + 6 * side;
+                    for (int k = 0; k < 3; k++) ft[dst + k] = f.Triangles[src + k];
+                    for (int k = 0; k < 3; k++) ft[dst + 3 + k] = Mid(f.Triangles[src + TriangleEdges[k].A], f.Triangles[src + TriangleEdges[k].B]);
+                }
+            faces = f with { Triangles = ft, NodesPerSide = 6 };
+        }
+        return new ThermalMesh([.. nodes], 2, tets, (int[])TetRegion.Clone(), tris, (int[])TriangleTag.Clone()) { Interfaces = faces };
     }
 
     /// <summary>The distinct surface tags, ascending.</summary>

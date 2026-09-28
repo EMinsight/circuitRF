@@ -308,6 +308,7 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
             C3dToolKind.ProbeSpot => new ProbeTool(this, C3dProbeShape.Spot),
             C3dToolKind.ProbeLine => new ProbeTool(this, C3dProbeShape.Line),
             C3dToolKind.MeshRegion => new MeshRegionTool(this),
+            C3dToolKind.EffectiveBlock => new MeshRegionTool(this, block: true),
             C3dToolKind.TemperatureAlong => new TemperatureAlongTool(this),
             _ => new CylinderTool(this),
         });

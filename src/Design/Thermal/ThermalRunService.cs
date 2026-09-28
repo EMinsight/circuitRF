@@ -113,33 +113,23 @@ public static class ThermalRunService
             // ── the problem's fixed parts: conductivities and the mesh's measures ──
             var tech = e.Technology;
             bool kOfT = t.Balance?.KOfT ?? true;
-            var records = new List<ThermalMaterialRecord>();
-            var conductivity = new List<ThermalConductivity>();
-            foreach (var r in lowering.Regions)
-            {
-                var rec = ThermalMaterials.Find(tech, ThermalMaterials.BaseName(r.Material))!;
-                if (rec.LookThroughNote is { } look && !notes.Contains(look)) notes.Add(look);
-                records.Add(rec);
-                var m = rec.Material;
-                double nominal = ThermalProperties.ThermalKAt(m, 25)!.Value.Value;
-                conductivity.Add(m.ThermalKVsTemp is { Count: > 0 }
-                    ? ThermalConductivity.Varying(nominal, T => { var v = ThermalProperties.ThermalKAt(m, T)!.Value; return (v.Value, v.Slope); })
-                    : ThermalConductivity.Constant(nominal));
-            }
+            var (records, conductivity) = Conductivities(lowering, e, notes);
             var zero = new ThermalField(mesh, new double[mesh.NodeCount]);
             var probes = document.Probes.ToList();
 
             // ── the sweep ──
             var baseRes = e.Resolution!;
-            var axes = new List<(string Var, double[] Values, string Unit)>();
-            foreach (var s in t.Sweep ?? [])
+            var axes = Axes(t, baseRes, out string? sweepError);
+            if (axes is null) return Refuse(sweepError!);
+
+            // ── brief-em3d-76 R-em3d76-3: a submodel's whole-model solution, and the points it carries ──
+            Global? global = null;
+            if (t.Submodel is { } sm)
             {
-                double a = C3dThermal.Evaluate(baseRes, s.Start, out string? ea) ?? double.NaN;
-                double b = C3dThermal.Evaluate(baseRes, s.Stop, out string? eb) ?? double.NaN;
-                if (ea is not null || eb is not null) return Refuse($"The sweep of '{s.Var}' does not resolve: {ea ?? eb}.");
-                int n = Math.Max(1, s.Points);
-                string unit = baseRes.Names.TryGetValue(s.Var, out var nm) && nm.Unit is { } u ? Units.BaseUnit(u) : "";
-                axes.Add((s.Var, [.. Enumerable.Range(0, n).Select(i => n == 1 ? a : a + (b - a) * i / (n - 1))], unit));
+                var g = LoadGlobal(sm, document, path, workspaceCws, resultsRoot, e, notes, ct, control, out string? globalError);
+                if (g is null) return globalError is null ? Stop(EmRunStatus.Cancelled, EmDiagnostics.Cancelled()) : Refuse(globalError);
+                global = g;
+                axes = g.Axes;
             }
             var points = Product(axes);
 
@@ -157,6 +147,7 @@ public static class ThermalRunService
 
             // ── 4. every point ──
             var fields = new List<double[]>();
+            var cutChecks = new List<CutFlux>();
             var reads = new List<Dictionary<string, ProbeRead>>();
             var measures = new List<Dictionary<string, double>>();
             var balances = new List<(double In, double Balance)>();
@@ -168,8 +159,11 @@ public static class ThermalRunService
                 control?.BeginStage($"solving point {pi + 1} of {points.Count}");
                 var sets = points[pi].Select(p => (p.Var, p.Value.ToString("R", CultureInfo.InvariantCulture))).ToList();
                 var res = sets.Count == 0 ? baseRes : C3dResolver.Resolve(document, C3dCell.Of(path), null, sets);
-                var problem = Problem(t, document, lowering, conductivity, mesh, zero, res, out string? valueError);
+                ThermalField? globalField = global is null ? null : new ThermalField(global.Mesh, global.Temperatures[pi]);
+                var problem = Problem(t, document, lowering, conductivity, mesh, zero, res, out string? valueError, globalField);
                 if (problem is null) return Refuse(At(axes, points[pi]) + valueError);
+                if (global is not null && SourceMismatch(t, global.Setup.Thermal!, document, lowering, res) is { } mismatch)
+                    return Refuse(At(axes, points[pi]) + mismatch);
                 var sol = ThermalSolver.Solve(problem, options with { InitialGuess = previous }, assembly);
                 previous = sol.Temperature;
                 fields.Add(sol.Temperature);
@@ -177,7 +171,15 @@ public static class ThermalRunService
                 var field = new ThermalField(mesh, sol.Temperature);
                 var read = ReadProbes(probes, lowering, field, document.DbuPerMicron);
                 reads.Add(read);
-                measures.Add(Measures(t, res, read, errors, At(axes, points[pi])));
+                measures.Add(Measures(t, res, read, errors, At(axes, points[pi]), lowering.SymmetryFactor));
+                if (global is not null)
+                {
+                    var check = CutCheck(lowering, mesh, field, conductivity, globalField!, global.Conductivity, sol, kOfT);
+                    cutChecks.Add(check);
+                    string where0 = points.Count > 1 ? At(axes, points[pi]) : "";
+                    summary.Add(where0 + check.Line);
+                    if (check.Mismatch > CutMismatchLimit) warnings.Add(where0 + check.Warning);
+                }
 
                 string where = points.Count > 1 ? At(axes, points[pi]) : "";
                 summary.Add($"{where}{sol.Unknowns:N0} unknowns, {Describe(sol)}; energy balance {sol.BalanceRelative:G3} " +
@@ -208,12 +210,19 @@ public static class ThermalRunService
                 ct.ThrowIfCancellationRequested();
                 control?.BeginStage("the mesh-convergence check");
                 notes.AddRange(ConvergenceCheck(document, e, t, gmsh.Installation.Path, runDir, conductivity, points[0], path, reads[0],
-                                                options, control, ct));
+                                                options, control, ct, global is null ? null : new ThermalField(global.Mesh, global.Temperatures[0])));
             }
 
             // ── 5. the result ──
             var data = Build(axes, probes, reads, measures, balances, t, summary);
+            if (cutChecks.Count == points.Count && cutChecks.Count > 0)
+            {
+                data.AddToGroup(Group, "Submodel:cut_W", Cube(axes, cutChecks.Select(c => c.SubmodelW), "W"));
+                data.AddToGroup(Group, "Submodel:global_W", Cube(axes, cutChecks.Select(c => c.GlobalW), "W"));
+                data.AddToGroup(Group, "Submodel:mismatch", Cube(axes, cutChecks.Select(c => c.Mismatch), "1"));
+            }
             string pvd = ThermalFieldFiles.Write(runDir, mesh, fields, [.. lowering.Regions.Select(r => r.Tag)]);
+            WriteTemperatures(runDir, axes, points, fields);
             string? npy = WriteNpy(resultsRoot, setup, data, errors);
             ct.ThrowIfCancellationRequested();
             var outputs = new List<EmRunOutput>();
@@ -250,7 +259,33 @@ public static class ThermalRunService
                               : $"Meshed with Gmsh in {runDir}.");
         try { mesh = ReadMesh(Path.Combine(runDir, GmshGeoWriter.MeshFile), lowering, out error); }
         catch (InvalidDataException x) { error = x.Message; }
+        if (mesh is not null) mesh = Split(mesh, lowering, notes);
         return step;
+    }
+
+    /// <summary>
+    /// brief-em3d-76 R-em3d76-1 — <paramref name="mesh"/> split at every contact the lowering gives a resistance, and the run
+    /// note listing each contact in force: its two solids, R″, where the value came from, and the area it covers. An override
+    /// whose two solids share no face in the mesh is said to apply nowhere.
+    /// </summary>
+    public static ThermalMesh Split(ThermalMesh mesh, ThermalLowering lowering, List<string> notes)
+    {
+        if (lowering.Contacts.Count == 0) return mesh;
+        var split = ThermalInterfaces.Split(mesh, [.. lowering.Contacts.Select(c => new InterfaceResistance(c.RegionA, c.RegionB, c.ResistanceM2KW))],
+                                            lowering.TagRegions);
+        var lines = new List<string>();
+        for (int i = 0; i < lowering.Contacts.Count; i++)
+        {
+            var c = lowering.Contacts[i];
+            if (split.Faces[i] > 0)
+                lines.Add($"'{c.SolidA}' | '{c.SolidB}': {G(c.ResistanceM2KW)} m²·K/W from {c.Source}, over " +
+                          $"{G(split.AreaM2[i] * 1e6)} mm² ({split.Faces[i]} face(s))");
+            else if (c.Source.Contains("override", StringComparison.Ordinal))
+                lines.Add($"'{c.SolidA}' | '{c.SolidB}': the override of {G(c.ResistanceM2KW)} m²·K/W applies nowhere — the two share no face in the mesh");
+        }
+        if (lines.Count > 0)
+            notes.Add($"Interface resistances in force ({split.CopiedNodes:N0} node(s) duplicated): " + string.Join("; ", lines) + ".");
+        return split.Mesh;
     }
 
     /// <summary>The solver's mesh from Gmsh's file and the lowering's tag table: tetrahedra with their region, triangles with
@@ -282,7 +317,8 @@ public static class ThermalRunService
 
     /// <summary>The problem at one point: every value resolved in <paramref name="res"/>.</summary>
     private static ThermalProblem? Problem(CemThermal t, C3dDocument doc, ThermalLowering lowering, List<ThermalConductivity> k,
-                                           ThermalMesh mesh, ThermalField zero, C3dResolution res, out string? error)
+                                           ThermalMesh mesh, ThermalField zero, C3dResolution res, out string? error,
+                                           ThermalField? global = null)
     {
         error = null;
         double Value(string text, string what, out string? err)
@@ -333,7 +369,14 @@ public static class ThermalRunService
                 conv.Add(new ConvectionCondition(tg, h, amb));
             }
         }
-        return new ThermalProblem { Mesh = mesh, Conductivity = k, SurfaceSources = sheets, VolumeSources = volumes, Fixed = fixedT, Convection = conv };
+        // brief-em3d-76 R-em3d76-3a — a submodel's cut faces take the whole model's solution at each of their nodes
+        var fields = new List<FixedField>();
+        if (lowering.CutTag is { } cut && global is not null)
+            fields.Add(new FixedField(cut, (x, y, z) => global.AtOrNearest(x, y, z) ?? double.NaN));
+        return new ThermalProblem
+        {
+            Mesh = mesh, Conductivity = k, SurfaceSources = sheets, VolumeSources = volumes, Fixed = fixedT, Convection = conv, FixedFields = fields,
+        };
     }
 
     /// <summary>Every probe's reading on <paramref name="field"/>. A wire probe waits for brief 77's 1D wires and reads
@@ -368,7 +411,7 @@ public static class ThermalRunService
     /// values, then evaluated by the one expression engine in the point's resolved scope. A measure that fails is a named
     /// error for that point.</summary>
     private static Dictionary<string, double> Measures(CemThermal t, C3dResolution res, Dictionary<string, ProbeRead> read,
-                                                       List<string> errors, string where)
+                                                       List<string> errors, string where, int symmetryFactor = 1)
     {
         var values = new Dictionary<string, double>(StringComparer.Ordinal);
         foreach (string measure in t.Measures ?? [])
@@ -378,7 +421,8 @@ public static class ThermalRunService
             string name = measure[..eq].Trim();
             try
             {
-                var ast = Rewrite(Parser.Parse(measure[(eq + 1)..].Trim()), read);
+                var ast = Rewrite(Parser.Parse(measure[(eq + 1)..].Trim()), read,
+                                  res.IsDefined(C3dThermal.SymmetryFactorName) ? null : symmetryFactor);
                 var v = res.EvaluateParsed(ast);
                 values[name] = v.Kind == ValueKind.Real ? v.AsReal() : double.NaN;
             }
@@ -403,23 +447,26 @@ public static class ThermalRunService
         public string Probe { get; } = probe;
     }
 
-    private static Expr Rewrite(Expr e, Dictionary<string, ProbeRead> read) => e switch
+    /// <summary>The measure's probe calls replaced by their values, and — brief-em3d-76 R-em3d76-4b — <c>SymmetryFactor</c> by
+    /// 2ⁿ (<paramref name="symmetry"/>; null where the document defines a variable of that name itself).</summary>
+    private static Expr Rewrite(Expr e, Dictionary<string, ProbeRead> read, int? symmetry) => e switch
     {
         CallExpr { Args: [RefExpr { Name: var probe }] } c when C3dThermal.ProbeFunctions.Contains(c.Name, StringComparer.Ordinal)
             => new NumberExpr(read.TryGetValue(probe, out var r)
                 ? c.Name switch { "Tmax" => r.Max, "Tmin" => r.Min, _ => r.Avg }
                 : throw new ProbeUnread(probe)),
-        CallExpr c => c with { Args = [.. c.Args.Select(a => Rewrite(a, read))] },
-        UnaryExpr u => u with { Operand = Rewrite(u.Operand, read) },
-        BinaryExpr b => b with { Left = Rewrite(b.Left, read), Right = Rewrite(b.Right, read) },
-        CompareExpr c => c with { Left = Rewrite(c.Left, read), Right = Rewrite(c.Right, read) },
-        LogicExpr l => l with { Left = Rewrite(l.Left, read), Right = Rewrite(l.Right, read) },
-        ConditionalExpr d => d with { Condition = Rewrite(d.Condition, read), Then = Rewrite(d.Then, read), Else = Rewrite(d.Else, read) },
+        RefExpr { Name: C3dThermal.SymmetryFactorName } when symmetry is { } f => new NumberExpr(f),
+        CallExpr c => c with { Args = [.. c.Args.Select(a => Rewrite(a, read, symmetry))] },
+        UnaryExpr u => u with { Operand = Rewrite(u.Operand, read, symmetry) },
+        BinaryExpr b => b with { Left = Rewrite(b.Left, read, symmetry), Right = Rewrite(b.Right, read, symmetry) },
+        CompareExpr c => c with { Left = Rewrite(c.Left, read, symmetry), Right = Rewrite(c.Right, read, symmetry) },
+        LogicExpr l => l with { Left = Rewrite(l.Left, read, symmetry), Right = Rewrite(l.Right, read, symmetry) },
+        ConditionalExpr d => d with { Condition = Rewrite(d.Condition, read, symmetry), Then = Rewrite(d.Then, read, symmetry), Else = Rewrite(d.Else, read, symmetry) },
         _ => e,
     };
 
     /// <summary>A table held at its end somewhere in the solved field, per region, as its note.</summary>
-    private static IEnumerable<string> Holds(ThermalLowering lowering, List<ThermalMaterialRecord> records, ThermalMesh mesh, double[] t, bool kOfT)
+    private static IEnumerable<string> Holds(ThermalLowering lowering, List<ThermalMaterialRecord?> records, ThermalMesh mesh, double[] t, bool kOfT)
     {
         if (!kOfT) yield break;
         int nn = mesh.NodesPerTet;
@@ -436,9 +483,9 @@ public static class ThermalRunService
             }
         for (int r = 0; r < records.Count; r++)
         {
-            if (records[r].Material.ThermalKVsTemp is not { Count: > 0 } || double.IsInfinity(hi[r])) continue;
+            if (records[r]?.Material.ThermalKVsTemp is not { Count: > 0 } || double.IsInfinity(hi[r])) continue;
             foreach (double at in new[] { hi[r], lo[r] })
-                if (ThermalProperties.ThermalKAt(records[r].Material, at)?.HeldNote is { } note)
+                if (ThermalProperties.ThermalKAt(records[r]!.Material, at)?.HeldNote is { } note)
                     yield return $"In '{lowering.Regions[r].Solid}': {note}";
         }
     }
@@ -542,7 +589,7 @@ public static class ThermalRunService
     private static IEnumerable<string> ConvergenceCheck(C3dDocument doc, C3dElaboration e, CemThermal t, string gmsh, string runDir,
                                                         List<ThermalConductivity> k, List<(string Var, double Value)> point, string path,
                                                         Dictionary<string, ProbeRead> coarse, ThermalSolveOptions options,
-                                                        RunControl? control, CancellationToken ct)
+                                                        RunControl? control, CancellationToken ct, ThermalField? global = null)
     {
         var fine = ThermalLowerings.Build(doc, e, t, CheckScale, out string? why);
         if (fine is null) return [$"The mesh-convergence check could not be lowered: {why}"];
@@ -553,7 +600,7 @@ public static class ThermalRunService
         var sets = point.Select(p => (p.Var, p.Value.ToString("R", CultureInfo.InvariantCulture))).ToList();
         var res = sets.Count == 0 ? e.Resolution! : C3dResolver.Resolve(doc, C3dCell.Of(path), null, sets);
         var zero = new ThermalField(mesh, new double[mesh.NodeCount]);
-        var problem = Problem(t, doc, fine, k, mesh, zero, res, out string? valueError);
+        var problem = Problem(t, doc, fine, k, mesh, zero, res, out string? valueError, global);
         if (problem is null) return [$"The mesh-convergence check could not be set up: {valueError}"];
         var sol = ThermalSolver.Solve(problem, options with { InitialGuess = null });
         var read = ReadProbes(doc.Probes, fine, new ThermalField(mesh, sol.Temperature), doc.DbuPerMicron);
@@ -566,5 +613,212 @@ public static class ThermalRunService
                       $"({(a != 0 ? 100 * (b - a) / Math.Abs(a) : 0):+0.000;-0.000} %).");
         }
         return lines;
+    }
+
+    // ── brief-em3d-76 — what a run shares with the next: conductivities, the sweep, the kept temperatures ─────────────────
+
+    /// <summary>The file in a thermal run directory holding every point's nodal temperatures, with the sweep they were solved
+    /// at: what a submodel reads its cut faces' values from (R-em3d76-3a).</summary>
+    public const string TemperaturesFile = "temperature.bin";
+
+    /// <summary>R-em3d76-3b — above this pointwise mismatch of the flux across the cut faces, the run says the region is too
+    /// small. Calibrated on S5 (RESOLVED): a region well clear of the source differs by under 1 %, one whose edge cuts the
+    /// source's neighbourhood by well over 10 %.</summary>
+    public const double CutMismatchLimit = 0.05;
+
+    private static string G(double v) => v.ToString("G6", CultureInfo.InvariantCulture);
+
+    /// <summary>Each region's k: its material's (k(T) where a table states one), or an effective block's tensor.</summary>
+    private static (List<ThermalMaterialRecord?> Records, List<ThermalConductivity> K) Conductivities(ThermalLowering lowering, C3dElaboration e,
+                                                                                                    List<string> notes)
+    {
+        var records = new List<ThermalMaterialRecord?>();
+        var conductivity = new List<ThermalConductivity>();
+        for (int i = 0; i < lowering.Regions.Count; i++)
+        {
+            if (lowering.Effective.TryGetValue(i, out var block))
+            {
+                records.Add(null);
+                conductivity.Add(block.Conductivity);
+                continue;
+            }
+            var rec = ThermalMaterials.For(e, lowering.Regions[i].Solid, lowering.Regions[i].Material)!;
+            if (rec.LookThroughNote is { } look && !notes.Contains(look)) notes.Add(look);
+            records.Add(rec);
+            var m = rec.Material;
+            double nominal = ThermalProperties.ThermalKAt(m, 25)!.Value.Value;
+            conductivity.Add(m.ThermalKVsTemp is { Count: > 0 }
+                ? ThermalConductivity.Varying(nominal, T => { var v = ThermalProperties.ThermalKAt(m, T)!.Value; return (v.Value, v.Slope); })
+                : ThermalConductivity.Constant(nominal));
+        }
+        return (records, conductivity);
+    }
+
+    /// <summary>The setup's sweep axes, resolved; null with the reason.</summary>
+    private static List<(string Var, double[] Values, string Unit)>? Axes(CemThermal t, C3dResolution res, out string? error)
+    {
+        error = null;
+        var axes = new List<(string Var, double[] Values, string Unit)>();
+        foreach (var s in t.Sweep ?? [])
+        {
+            double a = C3dThermal.Evaluate(res, s.Start, out string? ea) ?? double.NaN;
+            double b = C3dThermal.Evaluate(res, s.Stop, out string? eb) ?? double.NaN;
+            if (ea is not null || eb is not null) { error = $"The sweep of '{s.Var}' does not resolve: {ea ?? eb}."; return null; }
+            int n = Math.Max(1, s.Points);
+            axes.Add((s.Var, [.. Enumerable.Range(0, n).Select(i => n == 1 ? a : a + (b - a) * i / (n - 1))], UnitOf(res, s.Var)));
+        }
+        return axes;
+    }
+
+    private static string UnitOf(C3dResolution res, string variable)
+        => res.Names.TryGetValue(variable, out var nm) && nm.Unit is { } u ? Units.BaseUnit(u) : "";
+
+    private static DataCube Cube(List<(string Var, double[] Values, string Unit)> axes, IEnumerable<double> values, string unit)
+    {
+        var v = values.ToArray();
+        Axis[] sweep = [.. axes.Select(a => new Axis(a.Var, a.Values, a.Unit))];
+        return sweep.Length == 0 ? new DataCube([], v) { Unit = unit } : new DataCube(sweep, v) { Unit = unit };
+    }
+
+    /// <summary>Writes every point's nodal temperatures beside the run's mesh, with the sweep they belong to.</summary>
+    private static void WriteTemperatures(string runDir, List<(string Var, double[] Values, string Unit)> axes,
+                                          List<List<(string Var, double Value)>> points, List<double[]> fields)
+    {
+        string path = Path.Combine(runDir, TemperaturesFile);
+        using var w = new BinaryWriter(File.Create(path));
+        w.Write("CRFT1");
+        w.Write(axes.Count);
+        foreach (var (v, values, unit) in axes)
+        {
+            w.Write(v); w.Write(unit); w.Write(values.Length);
+            foreach (double x in values) w.Write(x);
+        }
+        w.Write(fields.Count);
+        w.Write(fields.Count == 0 ? 0 : fields[0].Length);
+        foreach (var f in fields) foreach (double x in f) w.Write(x);
+        _ = points;
+    }
+
+    private sealed record StoredTemperatures(List<(string Var, double[] Values, string Unit)> Axes, List<double[]> Fields);
+
+    private static StoredTemperatures? ReadTemperatures(string path)
+    {
+        try
+        {
+            using var r = new BinaryReader(File.OpenRead(path));
+            if (r.ReadString() != "CRFT1") return null;
+            var axes = new List<(string Var, double[] Values, string Unit)>();
+            int na = r.ReadInt32();
+            for (int a = 0; a < na; a++)
+            {
+                string v = r.ReadString(), unit = r.ReadString();
+                var values = new double[r.ReadInt32()];
+                for (int i = 0; i < values.Length; i++) values[i] = r.ReadDouble();
+                axes.Add((v, values, unit));
+            }
+            int np = r.ReadInt32(), nn = r.ReadInt32();
+            var fields = new List<double[]>();
+            for (int p = 0; p < np; p++)
+            {
+                var f = new double[nn];
+                for (int i = 0; i < nn; i++) f[i] = r.ReadDouble();
+                fields.Add(f);
+            }
+            return new StoredTemperatures(axes, fields);
+        }
+        catch (Exception x) when (x is IOException or EndOfStreamException or UnauthorizedAccessException) { return null; }
+    }
+
+    /// <summary>A submodel's whole-model solution: the From setup, its mesh (split as it was solved), a field per point, its
+    /// regions' k, and the sweep it was solved over.</summary>
+    private sealed record Global(EmSetup Setup, ThermalMesh Mesh, List<double[]> Temperatures, List<ThermalConductivity> Conductivity,
+                                 List<(string Var, double[] Values, string Unit)> Axes);
+
+    /// <summary>
+    /// R-em3d76-3a/-3c — the From setup's current result, solving it first when it has none as new as the document (and saying
+    /// which was used). Null with <paramref name="error"/> the reason, or with <paramref name="error"/> null when cancelled.
+    /// </summary>
+    private static Global? LoadGlobal(CemThermalSubmodel sm, C3dDocument document, string path, string? workspaceCws, string resultsRoot,
+                                      C3dElaboration e, List<string> notes, CancellationToken ct, RunControl? control, out string? error)
+    {
+        error = null;
+        var (from, why) = C3dSetups.Select(document, sm.From);
+        if (from is null) { error = $"The submodel's From setup '{sm.From}' is not a setup of this 3D view: {why}"; return null; }
+        if (from.Problem3D != Em3dProblemType.Thermal || from.Thermal is null) { error = $"The submodel's From setup '{sm.From}' is not a thermal setup."; return null; }
+        if (from.Thermal.Submodel is not null) { error = $"The submodel's From setup '{sm.From}' is itself a submodel; a submodel is cut from a whole-model setup."; return null; }
+        var runnable = C3dSetups.ForRun(from, path);
+        string dir = RunDirectory(resultsRoot, runnable);
+        string bin = Path.Combine(dir, TemperaturesFile);
+        var docTime = File.Exists(path) ? File.GetLastWriteTimeUtc(path) : DateTime.MaxValue;
+        var stored = File.Exists(bin) && File.GetLastWriteTimeUtc(bin) >= docTime ? ReadTemperatures(bin) : null;
+        if (stored is not null)
+            notes.Add($"Submodel: setup '{sm.From}''s result ({File.GetLastWriteTime(bin).ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)}) " +
+                      "is newer than the document, so it was reused.");
+        else
+        {
+            control?.BeginStage($"solving '{sm.From}' first");
+            var r = Run(runnable, document, path, workspaceCws, resultsRoot, ct, control);
+            if (r.Status == EmRunStatus.Cancelled) return null;
+            if (r.Status != EmRunStatus.Ok) { error = $"The submodel's From setup '{sm.From}' did not run: {r.Error}"; return null; }
+            notes.Add($"Submodel: setup '{sm.From}' had no result as new as the document, so it was solved first.");
+            stored = ReadTemperatures(bin);
+            if (stored is null) { error = $"Setup '{sm.From}' ran but left no {TemperaturesFile} in {dir}."; return null; }
+        }
+        var discard = new List<string>();
+        var low = ThermalLowerings.Build(document, e, from.Thermal, 1, out string? lowError);
+        if (low is null) { error = $"The submodel's From setup '{sm.From}' does not lower: {lowError}"; return null; }
+        var mesh = ReadMesh(Path.Combine(dir, GmshGeoWriter.MeshFile), low, out string? meshError);
+        if (mesh is null) { error = $"The mesh of setup '{sm.From}' could not be read: {meshError}"; return null; }
+        mesh = Split(mesh, low, discard);
+        if (stored.Fields.Count == 0 || stored.Fields.Any(f => f.Length != mesh.NodeCount))
+        { error = $"Setup '{sm.From}''s stored temperatures do not match its mesh; run it again."; return null; }
+        var (_, k) = Conductivities(low, e, discard);
+        return new Global(from, mesh, stored.Fields, k, stored.Axes);
+    }
+
+    /// <summary>R-em3d76-3b — a source inside the submodel carrying a different power there than in the whole model, as the
+    /// refusal; null when every one matches.</summary>
+    private static string? SourceMismatch(CemThermal sub, CemThermal from, C3dDocument doc, ThermalLowering lowering, C3dResolution res)
+    {
+        foreach (var h in doc.HeatSources)
+        {
+            if (lowering.SourcesOutside.Contains(h.Name)) continue;
+            string a = (sub.Sources ?? []).FirstOrDefault(s => s.Name == h.Name)?.Power ?? h.Power ?? "0";
+            string b = (from.Sources ?? []).FirstOrDefault(s => s.Name == h.Name)?.Power ?? h.Power ?? "0";
+            double pa = C3dThermal.Evaluate(res, a, out _) ?? double.NaN, pb = C3dThermal.Evaluate(res, b, out _) ?? double.NaN;
+            if (!(Math.Abs(pa - pb) <= 1e-9 * Math.Max(Math.Abs(pa), Math.Abs(pb))))
+                return $"Heat source '{h.Name}' carries {G(pa)} in this submodel and {G(pb)} in the whole model it is cut from: the sources " +
+                       "inside the region must carry what they carry in the whole model, or its cut faces are fixed to the wrong answer.";
+        }
+        return null;
+    }
+
+    /// <summary>R-em3d76-3b's check at one point.</summary>
+    private sealed record CutFlux(double SubmodelW, double GlobalW, double Mismatch, string Line, string Warning);
+
+    /// <summary>
+    /// R-em3d76-3b — the heat crossing the submodel's cut faces, in the submodel and in the whole model's solution over the
+    /// same faces: the totals, and the POINTWISE mismatch Σ|q_sub − q_whole| / Σ|q_whole| over the faces' triangles. The
+    /// totals agree by conservation whenever the heat leaves only through the cut; the pointwise figure is what says the fine
+    /// detail changed the temperature at the region's edge.
+    /// </summary>
+    private static CutFlux CutCheck(ThermalLowering lowering, ThermalMesh mesh, ThermalField field, IReadOnlyList<ThermalConductivity> k,
+                                    ThermalField global, IReadOnlyList<ThermalConductivity> gk, ThermalSolution sol, bool kOfT)
+    {
+        int cut = lowering.CutTag!.Value;
+        var patches = ThermalField.Patches(mesh, cut);
+        var qs = field.FluxAcross(patches, k, kOfT, out _);
+        var qg = global.FluxAcross(patches, gk, kOfT, out int missed);
+        double sub = sol.FixedHeatOutByTag.GetValueOrDefault(cut), whole = qg.Sum();
+        double l1 = 0, norm = 0;
+        for (int i = 0; i < qs.Length; i++) { l1 += Math.Abs(qs[i] - qg[i]); norm += Math.Abs(qg[i]); }
+        double mismatch = norm > 0 ? l1 / norm : 0;
+        string line = $"Cut faces: {G(sub)} W leave the submodel through them ({G(qs.Sum())} W by its own gradients); the whole model " +
+                      $"carries {G(whole)} W across the same faces; pointwise the two differ by {(100 * mismatch).ToString("F2", CultureInfo.InvariantCulture)} %" +
+                      (missed > 0 ? $" ({missed} point(s) of the faces lie outside the whole model's mesh and are not counted)." : ".");
+        string warning = $"The heat crossing the submodel's cut faces differs from the whole model's by {(100 * mismatch).ToString("F1", CultureInfo.InvariantCulture)} % " +
+                         $"pointwise (above {100 * CutMismatchLimit:G3} %): the region is too small — the fine detail changes the temperature at its " +
+                         "edge, so the whole model's temperature there is not the submodel's. Enlarge the region.";
+        return new CutFlux(sub, whole, mismatch, line, warning);
     }
 }

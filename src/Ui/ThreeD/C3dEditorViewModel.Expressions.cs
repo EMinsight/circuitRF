@@ -43,6 +43,9 @@ public sealed partial class C3dEditorViewModel
     {
         _resolution = C3dResolver.Resolve(Document, Cell);
         if (ShowVariables) Variables?.Reload();          // a hidden panel is brought up to date when it is shown
+        // brief-em3d-76 R-em3d76-4c — the viewer mirrors a shown temperature across the document's symmetry planes
+        double m = C3dLowering.Metres(1, Document.DbuPerMicron);
+        Viewer.SetSymmetryPlanes([.. Document.SymmetryPlanes.Select(p => ((int)p.Axis, p.At * m))]);
     }
 
     partial void OnShowVariablesChanged(bool value)
@@ -118,6 +121,8 @@ public sealed partial class C3dEditorViewModel
         Document.Probes = d.Probes;
         Document.MeshRegions = d.MeshRegions;
         Document.ContactResistances = d.ContactResistances;
+        Document.EffectiveBlocks = d.EffectiveBlocks;
+        Document.SymmetryPlanes = d.SymmetryPlanes;
         DocumentChanged();
         RebuildThermalTree();
     }

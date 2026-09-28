@@ -215,7 +215,7 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         _placeName = name;
         IsThermalPlace = true;
         NameText = name;
-        string kind = item switch { C3dHeatSource => "Heat source", C3dProbe => "Probe", _ => "Mesh region" };
+        string kind = item switch { C3dHeatSource => "Heat source", C3dProbe => "Probe", C3dEffectiveBlock => "Effective block", _ => "Mesh region" };
         Heading = $"{kind} {name}";
         void Text(string label, string key, string? value, string hint = "")
             => ThermalFields.Add(new C3dThermalTextField { Label = label, Key = key, Text = value ?? "", Loaded = value ?? "", Hint = hint });
@@ -238,6 +238,11 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
                 break;
             case C3dMeshRegion m:
                 Text("Grading", "Grading", m.Grading?.ToString("G6", CultureInfo.InvariantCulture), "empty takes the setup's");
+                break;
+            case C3dEffectiveBlock b:
+                // brief-em3d-76 — what it would replace, with its tensor, from the lowering a run would do
+                Rows.Add(new C3dPropertyRow("Effect", editor.EffectiveBlockSummary(b)));
+                Text("Enabled", "Enabled", b.Enabled ? "true" : "false", "true replaces what is inside with one anisotropic block (an approximation)");
                 break;
         }
         foreach (var f in editor.DimensionFields(item, name, path => C3dEditorViewModel.PlaceFieldLabel(item, path),
@@ -329,7 +334,7 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
             if (editor.SelectedTreeItem is { IsGroup: true, GroupPath: { } undrawn }) { LoadGroup(undrawn); return; }
             if (editor.SelectedTreeItem is { IsAirBox: true }) { LoadAirBox(); return; }
             // brief-em3d-75 — a heat source's, probe's or mesh region's row: the place is in no scene, only the tree.
-            if (editor.SelectedTreeItem is { Kind: C3dEditorViewModel.HeatSourceKind or C3dEditorViewModel.ProbeKind or C3dEditorViewModel.MeshRegionKind } place)
+            if (editor.SelectedTreeItem is { Kind: C3dEditorViewModel.HeatSourceKind or C3dEditorViewModel.ProbeKind or C3dEditorViewModel.MeshRegionKind or C3dEditorViewModel.EffectiveBlockKind } place)
             {
                 LoadThermalPlace(place.Name);
                 return;

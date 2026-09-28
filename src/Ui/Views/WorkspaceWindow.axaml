@@ -223,6 +223,7 @@
                                                 <NativeMenuItem Header="All Faces" ToolTip="Temperature on every exposed face." Command="{Binding ThreeDTemperatureCommand}" CommandParameter="AllFaces"/>
                                                 <NativeMenuItem Header="On Clip Plane" ToolTip="Temperature on the clip plane's section." Command="{Binding ThreeDTemperatureCommand}" CommandParameter="OnClip"/>
                                                 <NativeMenuItem Header="Fix Range Across Sweep" ToolTip="One colour range for every sweep point." Command="{Binding ThreeDTemperatureCommand}" CommandParameter="FixRange"/>
+                                                <NativeMenuItem Header="Mirror Symmetric Halves" ToolTip="Draw the temperature mirrored across the document's symmetry planes too (on by default)." Command="{Binding ThreeDTemperatureCommand}" CommandParameter="Mirror"/>
                                                 <NativeMenuItemSeparator/>
                                                 <NativeMenuItem Header="Temperature Along…" ToolTip="Pick two points: T between them, both ends and ΔT." Command="{Binding ThreeDTemperatureCommand}" CommandParameter="Along"/>
                                                 <NativeMenuItem Header="Probe Table" ToolTip="Every probe statistic and measure at the step shown." Command="{Binding ThreeDTemperatureCommand}" CommandParameter="Table"/>
@@ -279,6 +280,7 @@
                                         </NativeMenuItem.Menu>
                                     </NativeMenuItem>
                                     <NativeMenuItem Header="Mesh Region" ToolTip="A box drawn as a Box is; then its element size. Requires an active 3D editor." Command="{Binding ThreeDDrawCommand}" CommandParameter="MeshRegion"/>
+                                    <NativeMenuItem Header="Effective Block" ToolTip="A box over a via field, drawn as a Box is and made disabled: enabled, a thermal run replaces the board, planes and vias inside it with one anisotropic block. Requires an active 3D editor." Command="{Binding ThreeDDrawCommand}" CommandParameter="EffectiveBlock"/>
                                 </NativeMenu>
                             </NativeMenuItem.Menu>
                         </NativeMenuItem>
@@ -1092,6 +1094,7 @@
                         <MenuItem Header="_All Faces" Command="{Binding ThreeDTemperatureCommand}" CommandParameter="AllFaces" ToolTip.Tip="Temperature on every exposed face."/>
                         <MenuItem Header="On _Clip Plane" Command="{Binding ThreeDTemperatureCommand}" CommandParameter="OnClip" ToolTip.Tip="Temperature on the clip plane's section."/>
                         <MenuItem Header="_Fix Range Across Sweep" Command="{Binding ThreeDTemperatureCommand}" CommandParameter="FixRange" ToolTip.Tip="One colour range for every sweep point."/>
+                        <MenuItem Header="_Mirror Symmetric Halves" Command="{Binding ThreeDTemperatureCommand}" CommandParameter="Mirror" ToolTip.Tip="Draw the temperature mirrored across the document's symmetry planes too (on by default)."/>
                         <Separator/>
                         <MenuItem Header="Temperature _Along…" Command="{Binding ThreeDTemperatureCommand}" CommandParameter="Along" ToolTip.Tip="Pick two points: T between them, both ends and ΔT."/>
                         <MenuItem Header="_Probe Table" Command="{Binding ThreeDTemperatureCommand}" CommandParameter="Table" ToolTip.Tip="Every probe statistic and measure at the step shown."/>
@@ -1177,6 +1180,8 @@
                               ToolTip.Tip="A box drawn as a Box is; then its element size. Requires an active 3D editor.">
                         <MenuItem.Icon><mi:MaterialIcon Kind="CubeScan" Width="16" Height="16"/></MenuItem.Icon>
                     </MenuItem>
+                    <MenuItem Header="_Effective Block" Command="{Binding ThreeDDrawCommand}" CommandParameter="EffectiveBlock"
+                              ToolTip.Tip="A box over a via field, drawn as a Box is and made disabled: enabled, a thermal run replaces the board, planes and vias inside it with one anisotropic block. Requires an active 3D editor."/>
                 </MenuItem>
                 <MenuItem Header="Drawing _Plane" ToolTip.Tip="Requires an active 3D editor.">
                     <MenuItem Header="_XY" Command="{Binding ThreeDDrawingPlaneCommand}" CommandParameter="XY" ToolTip.Tip="Draw on the XY plane. Requires an active 3D editor."/>

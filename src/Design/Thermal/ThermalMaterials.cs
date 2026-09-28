@@ -58,6 +58,18 @@ public static class ThermalMaterials
         return null;
     }
 
+    /// <summary>
+    /// brief-em3d-76 — the record solid <paramref name="solid"/>'s k is read from: its OWN technology's (a placed layout's
+    /// materials are that layout's technology's, not the document's), by the name it has there; <see cref="Find"/>'s
+    /// look-through applies. Null when no record states k.
+    /// </summary>
+    public static ThermalMaterialRecord? For(C3dElaboration e, string solid, string elaboratedMaterial)
+        => e.SolidMaterials.TryGetValue(solid, out var own) ? Find(own.Technology, own.Material) : Find(e.Technology, BaseName(elaboratedMaterial));
+
+    /// <summary>The technology and material name <paramref name="solid"/> was built from, as <see cref="For"/> reads them.</summary>
+    public static (Technology? Technology, string Material) Source(C3dElaboration e, string solid, string elaboratedMaterial)
+        => e.SolidMaterials.TryGetValue(solid, out var own) ? (own.Technology, own.Material) : (e.Technology, BaseName(elaboratedMaterial));
+
     public static bool StatesK(TechMaterial m) => m.ThermalK is not null || m.ThermalKVsTemp is { Count: > 0 };
 
     private static string Note(string name, string where)

@@ -51,6 +51,11 @@ public static class C3dThermal
     /// <summary>How many sweep axes a thermal setup may state.</summary>
     public const int MaxSweepAxes = 2;
 
+    /// <summary>brief-em3d-76 R-em3d76-4b — the variable a measure reads for 2ⁿ, n the document's symmetry planes, so a
+    /// whole-device figure is explicit: <c>Rth_full = (Tmax(ch) - Ths) / (Pdiss * SymmetryFactor)</c>. Nothing is multiplied
+    /// silently. A document variable of the same name wins over it.</summary>
+    public const string SymmetryFactorName = "SymmetryFactor";
+
     // ── 1. The places, from the file alone ─────────────────────────────────────────────────────────────
 
     /// <summary>What is wrong with the document's thermal places that the file alone shows.</summary>
@@ -106,6 +111,17 @@ public static class C3dThermal
             Unread(m.Unread, $"Mesh region '{m.Name}'", found);
         }
 
+        // brief-em3d-76 — effective blocks and symmetry planes, from the file alone
+        foreach (var b in doc.EffectiveBlocks)
+        {
+            if ((b.Size.X <= 0 || b.Size.Y <= 0 || b.Size.Z <= 0) && b.Exprs?.ContainsKey(nameof(C3dEffectiveBlock.Size)) != true)
+                found.Add(D.BlockShape(b.Name, "has a size component that is not positive"));
+            Unread(b.Unread, $"Effective block '{b.Name}'", found);
+        }
+        foreach (var g in doc.SymmetryPlanes.GroupBy(p => p.Axis).Where(g => g.Count() > 1))
+            found.Add(D.Symmetry($"{g.Count()} symmetry planes are normal to {g.Key}; a model is cut at most once per axis"));
+        foreach (var sp in doc.SymmetryPlanes) Unread(sp.Unread, $"The symmetry plane normal to {sp.Axis}", found);
+
         for (int i = 0; i < doc.ContactResistances.Count; i++)
         {
             var c = doc.ContactResistances[i];
@@ -127,7 +143,8 @@ public static class C3dThermal
     {
         var thermal = doc.HeatSources.Select(h => (Kind: "heat source", h.Name))
             .Concat(doc.Probes.Select(p => (Kind: "probe", p.Name)))
-            .Concat(doc.MeshRegions.Select(m => (Kind: "mesh region", m.Name))).ToList();
+            .Concat(doc.MeshRegions.Select(m => (Kind: "mesh region", m.Name)))
+            .Concat(doc.EffectiveBlocks.Select(b => (Kind: "effective block", b.Name))).ToList();
         foreach (var (kind, name) in thermal)
             if (NameValidator.Validate(name) is { } why) found.Add(C3dDiagnostics.InvalidName(kind, name, why));
 
@@ -173,6 +190,21 @@ public static class C3dThermal
             if (p.Wire is { } w && !WireExists(e, w)) found.Add(D.ProbeWire(p.Name, w, e.Wires.Select(x => x.Name).Distinct().Take(8).ToList()));
         }
 
+        // brief-em3d-76 — an enabled block cuts only what it may replace; a symmetry plane lies on the model's own extent
+        foreach (var b in doc.EffectiveBlocks.Where(b => b.Enabled))
+            if (Thermal.ThermalEffectiveBlocks.Intruder(doc, e, b) is { } other)
+                found.Add(D.BlockShape(b.Name, $"cuts through '{other}', which is not board dielectric, a copper plane or a via barrel; a block " +
+                                               "replaces only those — shrink it so it stops at the other solid's face"));
+        if (doc.SymmetryPlanes.Count > 0 && MeshedExtent(e) is { } ext)
+            foreach (var sp in doc.SymmetryPlanes)
+            {
+                double at = sp.At * m, lo = sp.Axis switch { C3dAxis.X => ext.X0, C3dAxis.Y => ext.Y0, _ => ext.Z0 },
+                       hi = sp.Axis switch { C3dAxis.X => ext.X1, C3dAxis.Y => ext.Y1, _ => ext.Z1 };
+                if (Math.Abs(at - lo) > tol && Math.Abs(at - hi) > tol)
+                    found.Add(D.Symmetry($"The symmetry plane {sp.Axis} = {Num(at * 1e6)} µm does not lie on the model's extent ({Num(lo * 1e6)} to " +
+                                         $"{Num(hi * 1e6)} µm along {sp.Axis}): the plane is the face the modelled half was cut on, so it is one end of the model"));
+            }
+
         foreach (var c in doc.ContactResistances)
         {
             if (c.Between.Count != 2) continue;
@@ -188,6 +220,35 @@ public static class C3dThermal
                 found.Add(D.ContactApart(label, "the two do not touch, so there is no contact to override"));
         }
         return found;
+    }
+
+    /// <summary>The extent of every solid a thermal run meshes, metres; null with none.</summary>
+    private static (double X0, double Y0, double Z0, double X1, double Y1, double Z1)? MeshedExtent(C3dElaboration e)
+    {
+        var bounds = e.Solids.Where(s => !Thermal.ThermalMaterials.NotMeshed(s.Role, s.Material)).Select(s => Em3dProblem.Bounds(s.Primitive)).ToList();
+        if (bounds.Count == 0) return null;
+        return (bounds.Min(b => b.X0), bounds.Min(b => b.Y0), bounds.Min(b => b.Z0), bounds.Max(b => b.X1), bounds.Max(b => b.Y1), bounds.Max(b => b.Z1));
+    }
+
+    /// <summary>brief-em3d-76 R-em3d76-4a — the symmetry plane face <paramref name="spelled"/> lies in wholly, or null.</summary>
+    public static C3dSymmetryPlane? OnSymmetryPlane(C3dDocument doc, C3dElaboration e, string spelled)
+    {
+        if (doc.SymmetryPlanes.Count == 0) return null;
+        var solids = e.Solids.Where(s => !Thermal.ThermalMaterials.NotMeshed(s.Role, s.Material)).ToList();
+        if (Thermal.ThermalLowerings.FacePieces(doc, e, solids, spelled, out _, out _) is not { Count: > 0 } pieces) return null;
+        double m = 1e-6 / doc.DbuPerMicron;
+        foreach (var sp in doc.SymmetryPlanes)
+        {
+            double at = sp.At * m;
+            bool all = pieces.All(pc =>
+            {
+                var b = pc.Bounds();
+                var (lo, hi) = sp.Axis switch { C3dAxis.X => (b.X0, b.X1), C3dAxis.Y => (b.Y0, b.Y1), _ => (b.Z0, b.Z1) };
+                return Math.Abs(lo - at) <= m && Math.Abs(hi - at) <= m;
+            });
+            if (all) return sp;
+        }
+        return null;
     }
 
     /// <summary>The elaborated solid of that name, or null.</summary>
@@ -314,13 +375,17 @@ public static class C3dThermal
         var t = setup.Thermal ?? new CemThermal();
 
         // A sink: a problem with no fixed-temperature or convection face has no steady state (overview §1b).
+        // (a submodel's cut faces are its sink, so it may state none of its own)
         var boundaries = t.Boundaries ?? [];
-        if (boundaries.Count == 0) found.Add(D.NoSink(name));
+        if (boundaries.Count == 0 && t.Submodel is null) found.Add(D.NoSink(name));
         foreach (var b in boundaries)
         {
             string where = $"The {b.Kind} boundary on '{b.Face}'";
             if (b.Face != ExposedFaces && e is { Ok: true } && FaceProblem(doc, e, b.Face) is { } why)
                 found.Add(D.BoundaryFace(name, b.Face, why));
+            else if (b.Face != ExposedFaces && e is { Ok: true } && OnSymmetryPlane(doc, e, b.Face) is { } plane)
+                found.Add(D.Symmetry($"Thermal setup '{name}' puts a {b.Kind} boundary on '{b.Face}', which lies on the symmetry plane " +
+                                     $"{plane.Axis}: a mirror plane is insulated by definition. Remove the boundary, or the plane"));
             if (b.Kind == ThermalBoundaryKind.FixedT) Value(b.TempC, "TempC");
             else { Value(b.H, "H"); Value(b.AmbientC, "AmbientC"); }
 
@@ -346,14 +411,15 @@ public static class C3dThermal
 
         // Every meshed solid's material states k (R-em3d73-1c): never a default. Air is not meshed. brief-em3d-74 — the run's
         // own lookup, which looks through a technology record stating no k to a same-name library record that does.
-        if (e is { Ok: true, Technology: { } tech })
+        // brief-em3d-76: each solid against its OWN technology — a placed layout's materials are its technology's
+        if (e is { Ok: true, Technology: not null })
         {
             var missing = new Dictionary<string, List<string>>(StringComparer.Ordinal);
             foreach (var s in e.Solids)
             {
                 if (Thermal.ThermalMaterials.NotMeshed(s.Role, s.Material)) continue;
-                string baseName = Thermal.ThermalMaterials.BaseName(s.Material);
-                if (tech.FindMaterial(baseName) is not { } tm) continue;       // another technology's; its own check says
+                var (tech, baseName) = Thermal.ThermalMaterials.Source(e, s.Name, s.Material);
+                if (tech?.FindMaterial(baseName) is not { } tm) continue;      // undefined: elaboration's own refusal says
                 if (Thermal.ThermalMaterials.Find(tech, baseName) is null)
                     (missing.TryGetValue(tm.Name, out var l) ? l : missing[tm.Name] = []).Add(s.Name);
             }
@@ -377,6 +443,26 @@ public static class C3dThermal
         }
         foreach (var dup in sweep.GroupBy(s => s.Var, StringComparer.Ordinal).Where(g => g.Count() > 1))
             found.Add(D.Sweep(name, $"sweeps '{dup.Key}' on {dup.Count()} axes; a variable is one axis"));
+
+        // brief-em3d-76 R-em3d76-3a — a submodel names a whole-model thermal setup and a mesh region, and states no sweep
+        if (t.Submodel is { } sm)
+        {
+            var others = C3dSetups.Read(doc);
+            var from = others.FirstOrDefault(o => o.Setup?.Name == sm.From)?.Setup;
+            if (string.IsNullOrWhiteSpace(sm.From) || sm.From == name)
+                found.Add(D.Submodel(name, "names no other setup as its From; a submodel is cut from a whole-model thermal setup"));
+            else if (from is null)
+                found.Add(D.Submodel(name, $"is cut from '{sm.From}', which is no embedded setup of this 3D view"));
+            else if (from.Problem3D != Em3dProblemType.Thermal)
+                found.Add(D.Submodel(name, $"is cut from '{sm.From}', which is not a thermal setup"));
+            else if (from.Thermal?.Submodel is not null)
+                found.Add(D.Submodel(name, $"is cut from '{sm.From}', which is itself a submodel; cut from the whole-model setup"));
+            if (!doc.MeshRegions.Any(r => r.Name == sm.Region))
+                found.Add(D.Submodel(name, $"names the Region '{sm.Region}', which is no mesh region of this 3D view" +
+                                           (doc.MeshRegions.Count == 0 ? " (it has none)" : $" (it has {string.Join(", ", doc.MeshRegions.Select(r => $"'{r.Name}'"))})")));
+            if (sweep.Count > 0)
+                found.Add(D.Submodel(name, "states a Sweep; a submodel runs at the points its From setup's result carries"));
+        }
 
         // Measures parse, and name probes that exist.
         foreach (string measure in t.Measures ?? [])
@@ -430,7 +516,7 @@ public static class C3dThermal
         Walk(ast);
         if (problem is not null) return problem;
         foreach (string r in AstWalker.CollectRefs(ast))
-            if (!asProbe.Contains(r) && !resolution.IsDefined(r))
+            if (!asProbe.Contains(r) && !resolution.IsDefined(r) && r != SymmetryFactorName)
                 return probes.ContainsKey(r)
                     ? $"'{r}' is a probe; a probe is read through Tmax, Tmin, Tavg or T"
                     : $"'{r}' is neither a probe nor a variable of this 3D view";
@@ -541,6 +627,9 @@ public static class C3dThermal
         public const string SweepId          = "c3d.thermal.sweep";
         public const string SweepGeometryId  = "c3d.thermal.sweep-geometry";
         public const string MeasureId        = "c3d.thermal.measure";
+        public const string BlockShapeId     = "c3d.thermal.effective-block";
+        public const string SymmetryId       = "c3d.thermal.symmetry";
+        public const string SubmodelId       = "c3d.thermal.submodel";
 
         private static Diagnostic E(string id, string template, params (string, object?)[] args)
             => Diagnostic.Create(id, DiagnosticSeverity.Error, template, args);
@@ -596,6 +685,12 @@ public static class C3dThermal
             => E(SweepGeometryId, "Thermal setup '{setup}' sweeps '{variable}', which geometry reads — first {reader}. A geometric sweep " +
                  "re-meshes at every point, which this version does not do: sweep a variable only powers, temperatures and " +
                  "coefficients read.", ("setup", setup), ("variable", variable), ("reader", reader));
+        public static Diagnostic BlockShape(string name, string what)
+            => E(BlockShapeId, "Effective block '{name}' {what}.", ("name", name), ("what", what));
+        public static Diagnostic Symmetry(string what)
+            => E(SymmetryId, "{what}.", ("what", what));
+        public static Diagnostic Submodel(string setup, string what)
+            => E(SubmodelId, "Thermal setup '{setup}' is a submodel that {what}.", ("setup", setup), ("what", what));
         public static Diagnostic Measure(string setup, string measure, string why)
             => E(MeasureId, "Thermal setup '{setup}' has the measure '{measure}', which cannot be evaluated: {why}.",
                  ("setup", setup), ("measure", measure), ("why", why));

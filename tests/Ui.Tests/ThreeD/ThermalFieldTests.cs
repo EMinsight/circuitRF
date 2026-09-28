@@ -133,6 +133,26 @@ public sealed class ThermalFieldTests : IDisposable
         }
     }
 
+    /// <summary>brief-em3d-76 R-em3d76-4c — a symmetry plane's mirrored half: every vertex reflected, each triangle's winding
+    /// reversed (so it still faces out), the same values, and the recipe reordered with the vertices so a sweep step revalues
+    /// the mirror as it does the original.</summary>
+    [Fact]
+    public void Brief76_AMirroredSurface_ReflectsReversesAndKeepsItsValuesAndRecipe()
+    {
+        var s = new FieldSurface
+        {
+            Channels = 1, Xyz = [1, 0, 0, 2, 0, 0, 1, 1, 0], Values = [10, 20, 30],
+            Recipe = new FieldRecipe { A = [4, 5, 6], B = [-1, -1, -1], T = [0, 0, 0], Cell = [0, 0, 0], NodeCount = 7, CellCount = 1 },
+        };
+        var m = s.Mirrored(0, 0.5);
+        Assert.Equal([0, 0, 0, 0, 1, 0, -1, 0, 0], m.Xyz);          // (a, c, b), x → 1 − x
+        Assert.Equal([10, 30, 20], m.Values);
+        Assert.Equal([4, 6, 5], m.Recipe!.A);
+        static Vector3 N(double[] x) => Vector3.Cross(new((float)(x[3] - x[0]), (float)(x[4] - x[1]), (float)(x[5] - x[2])),
+                                                      new((float)(x[6] - x[0]), (float)(x[7] - x[1]), (float)(x[8] - x[2])));
+        Assert.Equal(N(s.Xyz).Z, N(m.Xyz).Z);                          // reflected AND reversed: the same side faces out
+    }
+
     // ── fixtures ─────────────────────────────────────────────────────────────────────────────────
 
     /// <summary>The steps of a thermal run written by brief 74's writer, opened by the viewer's reader.</summary>

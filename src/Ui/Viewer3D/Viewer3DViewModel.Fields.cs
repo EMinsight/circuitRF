@@ -384,6 +384,7 @@ public sealed partial class Viewer3DViewModel
             // brief-em3d-75 — the temperature's own targets, range and hot spot; the triangles carry recipes for a step.
             var faces = _temperatureFaces.ToList();
             bool all = TemperatureAllFaces, onClip = TemperatureOnClip, fix = FixRangeAcrossSweep;
+            var mirrors = MirrorSymmetry ? SymmetryPlanes : [];
             var table = _thermalTable;
             int step = _fieldLoaded?.Index ?? 0;
             var steps = _fieldRun?.Solutions ?? [];
@@ -394,7 +395,7 @@ public sealed partial class Viewer3DViewModel
                 {
                     if (vol?.Load(q.Array.Name) is not { } array) return;
                     var (parts, scale, note, covered) = BuildTemperature(q, vol, array, scene, clip, groups, faces, all, onClip, table, step,
-                                                                         steps, fix, version, cts.Token);
+                                                                         steps, fix, version, cts.Token, mirrors);
                     cts.Token.ThrowIfCancellationRequested();
                     _post(() =>
                     {

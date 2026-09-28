@@ -39,7 +39,7 @@ public sealed partial class C3dEditorViewModel
         }
         // brief-em3d-75 R-em3d75-1b — a thermal place's row: rename, hide, delete (and a line probe's plot); a thermal
         // boundary's row: delete, from the active thermal setup.
-        else if (item.Kind is HeatSourceKind or ProbeKind or MeshRegionKind or ThermalBoundaryKindName)
+        else if (item.Kind is HeatSourceKind or ProbeKind or MeshRegionKind or ThermalBoundaryKindName or EffectiveBlockKind or SymmetryPlaneKind)
         {
             items.AddRange(ThermalTreeItems(item));
             items.Add(Viewer3DMenuItem.Separator);

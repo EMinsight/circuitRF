@@ -44,12 +44,35 @@ public sealed record GmshThermalSizing(double MaxFraction, double SizeFromSource
 /// <c>*exposed*</c> is asked for, the mesh regions and the sizing.</summary>
 public sealed record GmshThermalInput(IReadOnlyList<Em3dSolid> Solids, IReadOnlyList<GmshThermalSheet> Sheets,
                                       IReadOnlyList<GmshThermalFace> Faces, bool Exposed, IReadOnlyList<Em3dMeshRegion> MeshRegions,
-                                      GmshThermalSizing Sizing);
+                                      GmshThermalSizing Sizing)
+{
+    /// <summary>
+    /// brief-em3d-76 — the air solids, which are never meshed but still cut what they outrank exactly as they do in an EM
+    /// lowering: a plated via's bore (the generator's higher-order air cylinder inside the barrel) leaves the barrel a
+    /// TUBE here too. Without them every hollow via conducted as solid copper.
+    /// </summary>
+    public IReadOnlyList<Em3dSolid> Voids { get; init; } = [];
+
+    /// <summary>brief-em3d-76 R-em3d76-3a — a submodel's box, metres: every solid is intersected with it (Gmsh's own boolean),
+    /// and the single-sided surfaces on its six planes that no boundary face claimed become the <c>*cut*</c> group.</summary>
+    public (Point3 Min, Point3 Max)? Clip { get; init; }
+
+    /// <summary>Which of the clip box's planes cut material (0 x-min, 1 x-max, 2 y-min, 3 y-max, 4 z-min, 5 z-max): a plane
+    /// flush with the model's own outer face is not a cut, and its faces keep their own condition.</summary>
+    public IReadOnlyList<int> CutPlanes { get; init; } = [0, 1, 2, 3, 4, 5];
+
+    /// <summary>brief-em3d-76 R-em3d76-4a — mirror planes (axis 0 x, 1 y, 2 z; coordinate in metres): their faces stay
+    /// insulated, so <c>*exposed*</c> never takes one.</summary>
+    public IReadOnlyList<(int Axis, double AtM)> Symmetry { get; init; } = [];
+}
 
 public static partial class GmshGeoWriter
 {
     /// <summary>The group name of every single-sided surface no boundary face claimed.</summary>
     public const string ExposedGroup = "*exposed*";
+
+    /// <summary>brief-em3d-76 — the group name of a submodel's cut faces.</summary>
+    public const string CutGroup = "*cut*";
 
     /// <summary>The largest element of a thermal mesh, metres, before <see cref="GmshThermalSizing.Scale"/>.</summary>
     public static double ThermalMaxElementM(GmshThermalInput input)
@@ -99,6 +122,8 @@ public static partial class GmshGeoWriter
         groups.AddRange(faceGroups);
         Em3dGroup? exposed = input.Exposed ? new Em3dGroup(ExposedGroup, ++attr, 2, Em3dGroupKind.FaceBoundary, 0, AtLeast: true) : null;
         if (exposed is not null) groups.Add(exposed);
+        Em3dGroup? cut = input.Clip is not null ? new Em3dGroup(CutGroup, ++attr, 2, Em3dGroupKind.FaceBoundary, 1, AtLeast: true) : null;
+        if (cut is not null) groups.Add(cut);
 
         var g = new StringBuilder();
         void L(string line = "") => g.Append(line).Append('\n');
@@ -126,20 +151,46 @@ public static partial class GmshGeoWriter
 
         L("// ---- disjoint by construction order: each solid loses what a higher-order solid takes -----");
         var bounds = input.Solids.Select(s => Em3dProblem.Bounds(s.Primitive)).ToList();
-        var precedence = Em3dPrecedence.Of(input.Solids.ToList(), []);
+        var precedence = Em3dPrecedence.Of([.. input.Solids, .. input.Voids], []);
         if (precedence.Shift > 0) L("// metal takes precedence over dielectric: every metal is ranked above every dielectric (em-3d.md §6.3a)");
+        // brief-em3d-76 — an air solid that outranks a meshed one it overlaps cuts it, as in EM, and is then deleted
+        var voidCuts = new List<(int Void, List<int> Of)>();
+        for (int k = 0; k < input.Voids.Count; k++)
+        {
+            var v = input.Voids[k];
+            int pv = precedence.Of(v);
+            var vb = Em3dProblem.Bounds(v.Primitive);
+            var of = Enumerable.Range(0, input.Solids.Count)
+                               .Where(i => (pv > precedence.Of(input.Solids[i]) || pv == precedence.Of(input.Solids[i]) && v.Order > input.Solids[i].Order)
+                                           && Overlap(bounds[i], vb)).ToList();
+            if (of.Count == 0) continue;
+            voidCuts.Add((k, of));
+            L($"// void {Comment(v.Name)}: {Comment(v.Material)}, never meshed; it cuts what it outranks");
+            EmitPrimitive(g, $"v{k}", v.Primitive);
+        }
         for (int i = 0; i < input.Solids.Count; i++)
         {
-            var tools = new List<int>();
+            var tools = new List<string>();
             int pi = precedence.Of(input.Solids[i]);
             for (int j = 0; j < input.Solids.Count; j++)
             {
                 if (j == i) continue;
                 int pj = precedence.Of(input.Solids[j]);
-                if ((pj > pi || (pj == pi && j > i)) && Overlap(bounds[i], bounds[j])) tools.Add(j);
+                if ((pj > pi || (pj == pi && j > i)) && Overlap(bounds[i], bounds[j])) tools.Add($"s{j}[]");
             }
+            tools.AddRange(voidCuts.Where(c => c.Of.Contains(i)).Select(c => $"v{c.Void}[]"));
             if (tools.Count == 0) continue;
-            L($"s{i}[] = BooleanDifference{{ Volume{{s{i}[]}}; Delete; }}{{ Volume{{{string.Join(", ", tools.Select(j => $"s{j}[]"))}}}; }};");
+            L($"s{i}[] = BooleanDifference{{ Volume{{s{i}[]}}; Delete; }}{{ Volume{{{string.Join(", ", tools)}}}; }};");
+        }
+        if (voidCuts.Count > 0) L($"Recursive Delete {{ Volume{{{string.Join(", ", voidCuts.Select(c => $"v{c.Void}[]"))}}}; }}");
+        if (input.Clip is { } clip)
+        {
+            L("// ---- a submodel: every solid cut to the region's box (brief-em3d-76) --------------------------");
+            L($"cb = newv; Box(cb) = {{{Um(clip.Min.X)}, {Um(clip.Min.Y)}, {Um(clip.Min.Z)}, {Um(clip.Max.X - clip.Min.X)}, " +
+              $"{Um(clip.Max.Y - clip.Min.Y)}, {Um(clip.Max.Z - clip.Min.Z)}}};");
+            for (int i = 0; i < input.Solids.Count; i++)
+                L($"s{i}[] = BooleanIntersection{{ Volume{{s{i}[]}}; Delete; }}{{ Volume{{cb}}; }};");
+            L("Recursive Delete { Volume{cb}; }");
         }
         L();
 
@@ -190,11 +241,46 @@ public static partial class GmshGeoWriter
                 L($"claimed[] += f{k}[];");
             }
         }
+        if (input.Clip is { } cc)
+        {
+            L("// a submodel's cut faces: the single-sided surfaces on the box's planes that cut material, no boundary face claimed");
+            L("cut[] = {};");
+            var (lo, hi) = cc;
+            var planes = new[]
+            {
+                (lo.X, lo.Y, lo.Z, lo.X, hi.Y, hi.Z), (hi.X, lo.Y, lo.Z, hi.X, hi.Y, hi.Z),
+                (lo.X, lo.Y, lo.Z, hi.X, lo.Y, hi.Z), (lo.X, hi.Y, lo.Z, hi.X, hi.Y, hi.Z),
+                (lo.X, lo.Y, lo.Z, hi.X, hi.Y, lo.Z), (lo.X, lo.Y, hi.Z, hi.X, hi.Y, hi.Z),
+            };
+            foreach (int k in input.CutPlanes) L($"cut[] += {Query(planes[k], 0)};");
+            L("x[] = cut[];");
+            L("x[] -= single[];");
+            L("cut[] -= x[];");
+            L("cut[] -= claimed[];");
+            L("claimed[] += cut[];");
+        }
         if (exposed is not null)
         {
             L("// every single-sided surface no boundary face claimed");
             L("exposed[] = single[];");
             L("exposed[] -= claimed[];");
+            if (input.Symmetry.Count > 0)
+            {
+                // brief-em3d-76 R-em3d76-4a — a mirror plane's faces are insulated: exposed never takes one
+                var (ex0, ey0, ez0, ex1, ey1, ez1) = Extent(input.Solids);
+                foreach (var (axis, at) in input.Symmetry)
+                {
+                    var b = axis switch
+                    {
+                        0 => (at, ey0, ez0, at, ey1, ez1),
+                        1 => (ex0, at, ez0, ex1, at, ez1),
+                        _ => (ex0, ey0, at, ex1, ey1, at),
+                    };
+                    L($"// symmetry plane {"XYZ"[axis]} = {Num(Round(at * 1e6))} um: insulated, never exposed");
+                    L($"x[] = {Query(b, 0)};");
+                    L("exposed[] -= x[];");
+                }
+            }
         }
         L();
 
@@ -207,6 +293,8 @@ public static partial class GmshGeoWriter
             L($"Physical Surface(\"{PhysicalName(faceGroups[k].Name)}\", {faceGroups[k].Attribute}) = {{f{k}[]}};");
         if (exposed is not null)
             L($"Physical Surface(\"{PhysicalName(exposed.Name)}\", {exposed.Attribute}) = {{exposed[]}};");
+        if (cut is not null)
+            L($"Physical Surface(\"{PhysicalName(cut.Name)}\", {cut.Attribute}) = {{cut[]}};");
         L();
 
         L("// ---- the entity table circuitRF checks before it believes this mesh ----------------------");
@@ -223,6 +311,8 @@ public static partial class GmshGeoWriter
             L($"Printf(\"group {faceGroups[k].Attribute} %g 0\", #f{k}[]) >> \"{EntitiesFile}\";");
         if (exposed is not null)
             L($"Printf(\"group {exposed.Attribute} %g 0\", #exposed[]) >> \"{EntitiesFile}\";");
+        if (cut is not null)
+            L($"Printf(\"group {cut.Attribute} %g 0\", #cut[]) >> \"{EntitiesFile}\";");
         for (int i = 0; i < input.Solids.Count; i++)
             if (input.Solids[i].Primitive is Em3dShapeSolid)
                 L($"If (ns{i} != 1) Printf(\"kernel_import_count {solidGroups[i].Attribute} %g\", ns{i}) >> \"{EntitiesFile}\"; EndIf");

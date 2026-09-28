@@ -1057,7 +1057,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         }
         if (item.IsFeature) return;           // brief-em3d-67 — a feature row's switch is Enabled, not visibility
         // brief-em3d-75 — a thermal place's tick is the view's (a place has no Hidden in the file).
-        if (item.Kind is HeatSourceKind or ProbeKind or MeshRegionKind) { SetPlaceShown(item.Name, visible); return; }
+        if (item.Kind is HeatSourceKind or ProbeKind or MeshRegionKind or EffectiveBlockKind) { SetPlaceShown(item.Name, visible); return; }
         if (item.Kind == ThermalBoundaryKindName) return;
         if (item.IsGroup) { SetGroupVisible(item.GroupPath!, visible); return; }
         if (item.OperandPath is { } path && item.ObjectIndex >= 0)

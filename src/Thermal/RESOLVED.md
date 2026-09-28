@@ -33,3 +33,30 @@ A step that does not lower the residual is halved up to ten times.
 
 **An iterative solve that stalls falls back to the direct one and says so** in the run's notes — a result is never the
 last iterate of a CG that did not converge.
+
+## brief-em3d-76 — interfaces and a diagonal conductivity (2026-09-28)
+
+**Contacts are found from the tetrahedra, not from tags.** After the lowering's one fragment two touching solids share the
+same triangles and nodes (brief 72 Q3), so `ThermalInterfaces.Split` finds a contact as a tetrahedron face two regions
+share. Nothing about a contact has to survive Gmsh as a physical group, and a contact the document never names (a
+technology material pair) is found the same way.
+
+**Which nodes split: the star, grouped across non-resistive faces.** A node on a resistive face takes the tetrahedra
+around it and unions any two that share a face through the node that is not resistive; each group after the first gets a
+copy. So at a triple junction a perfect contact among the three keeps the edge's nodes shared, and a node stays single
+wherever a perfect path already joins the two sides — gate 2 counts exactly the resistive face's nodes off the junction
+edge (20 of them), none on it. A zero resistance splits nothing.
+
+**The interface element is the consistent P2 mass, ∫h(T_A − T_B)(N_i^A − N_i^B).** Where a node was not split, its A and
+B entries are one node and its terms cancel exactly, so a partially split face needs no special case.
+
+**The iterative solver's default stop leaves ~1e-8 K at an interface.** S2's jump is exact to 3e-12 K with the direct
+solver; PCG + AMG at the default relative residual 1e-10 reads 1.0000000244e1 K. The contrast the interface adds (h = 1e5
+against k/Δz) is the cause. Gate 1 runs the iterative leg at 1e-13 and asserts it stayed iterative; the default was left
+alone — 1e-8 K is far below anything a user reads.
+
+**Anisotropy is a scalar times fixed axes** (`ThermalConductivity.Axes`), so the k(T) path and its Newton tangent carry it
+unchanged. Gate 3: z, x and the slab turned 90° are exact to machine precision.
+
+**`FixedField`** (a Dirichlet value per node from a function of position) is how a submodel's cut faces take the whole
+model's solution; it is applied after the ordinary fixed faces, so a node a named face already fixed keeps that value.

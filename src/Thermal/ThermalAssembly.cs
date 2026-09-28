@@ -9,6 +9,10 @@
 // Two elements sharing a mid-edge node share that edge's two corners, so colouring on the corners is enough.
 //
 // Dirichlet conditions are applied later, by elimination (ThermalSolver), not by penalty.
+//
+// brief-em3d-76: a region's conductivity may be a diagonal tensor (k·Axes), and a split mesh's interface elements
+// (ThermalInterfaces) add their consistent surface mass, h·∫NᵢNⱼ, to the pattern and to the matrix — sequentially, after
+// the surfaces, so the matrix stays bit-for-bit the same across thread counts.
 
 using CircuitRF.Thermal.Solvers;
 
@@ -119,14 +123,15 @@ public sealed class ThermalAssembly
                         if (!double.IsFinite(k) || !double.IsFinite(dk)) nonFinite = true;
                     }
                     double wk = w * k;
+                    var (ax, ay, az) = c.Axes;
                     for (int i = 0; i < nn; i++)
                     {
                         for (int j = 0; j < nn; j++)
-                            ke[10 * i + j] += wk * (gx[i] * gx[j] + gy[i] * gy[j] + gz[i] * gz[j]);
+                            ke[10 * i + j] += wk * (ax * gx[i] * gx[j] + ay * gy[i] * gy[j] + az * gz[i] * gz[j]);
                         if (q != 0) fe[i] += w * q * nq_[i];
                         if (withTangent && dk != 0)
                         {
-                            double gi = w * dk * (gx[i] * tx + gy[i] * ty + gz[i] * tz);
+                            double gi = w * dk * (ax * gx[i] * tx + ay * gy[i] * ty + az * gz[i] * tz);
                             for (int j = 0; j < nn; j++) je[10 * i + j] += gi * nq_[j];
                         }
                     }
@@ -194,6 +199,46 @@ public sealed class ThermalAssembly
                 }
             }
         }
+        // brief-em3d-76 R-em3d76-1b — interface elements, in element order: h times the consistent mass of the shared triangle,
+        // +M on each side's own block and −M across. Linear in T and independent of it, so the tangent takes the same values.
+        if (m.Interfaces is { } faces)
+        {
+            int nf = faces.NodesPerSide;
+            var tri = TriShapes.For(nf == 6 ? 2 : 1);
+            Span<double> xyz = stackalloc double[18];
+            Span<double> me = stackalloc double[36];
+            for (int t = 0; t < faces.Count; t++)
+            {
+                int a0 = 2 * nf * t, b0 = a0 + nf;
+                for (int i = 0; i < nf; i++)
+                {
+                    int v = faces.Triangles[a0 + i];
+                    xyz[3 * i] = m.Nodes[3 * v]; xyz[3 * i + 1] = m.Nodes[3 * v + 1]; xyz[3 * i + 2] = m.Nodes[3 * v + 2];
+                }
+                me.Clear();
+                for (int qp = 0; qp < ReferenceElement.TriQuadraturePoints; qp++)
+                {
+                    var nqp = tri.N(qp);
+                    double w = ReferenceElement.TriW[qp] * ReferenceElement.TriJacobian(xyz, nf, tri.Du(qp), tri.Dv(qp)) * faces.H[t];
+                    for (int i = 0; i < nf; i++)
+                        for (int j = 0; j < nf; j++) me[6 * i + j] += w * nqp[i] * nqp[j];
+                }
+                for (int i = 0; i < nf; i++)
+                    for (int j = 0; j < nf; j++)
+                    {
+                        double add = me[6 * i + j];
+                        int ai = faces.Triangles[a0 + i], aj = faces.Triangles[a0 + j], bi = faces.Triangles[b0 + i], bj = faces.Triangles[b0 + j];
+                        Add(ai, aj, add); Add(bi, bj, add); Add(ai, bj, -add); Add(bi, aj, -add);
+                    }
+            }
+            void Add(int r, int c, double v)
+            {
+                int s = Pattern.Slot(r, c);
+                if (s < 0) throw new InvalidOperationException("interface element outside the pattern");
+                secant[s] += v;
+                if (tan is not null) tan[s] += v;
+            }
+        }
         return new AssembledSystem { Secant = secant, Tangent = tan, Load = load, SourcePowerW = sourceW, AnyNonFinite = nonFinite };
     }
 
@@ -231,13 +276,20 @@ public sealed class ThermalAssembly
     private static SparseRows BuildPattern(ThermalMesh m, int? dop)
     {
         int n = m.NodeCount, nn = m.NodesPerTet, ne = m.TetCount;
+        // an element is a tetrahedron (index < ne) or an interface element (ne + t), whose 2·nf nodes all couple
+        var faces = m.Interfaces;
+        int nfi = faces is null ? 0 : 2 * faces.NodesPerSide;
+        int NodesOf(int e) => e < ne ? nn : nfi;
+        int NodeOf(int e, int k) => e < ne ? m.Tets[nn * e + k] : faces!.Triangles[nfi * (e - ne) + k];
+        int total = ne + (faces?.Count ?? 0);
         var start = new int[n + 1];
-        foreach (int v in m.Tets) start[v + 1]++;
+        for (int e = 0; e < total; e++)
+            for (int k = 0; k < NodesOf(e); k++) start[NodeOf(e, k) + 1]++;
         for (int i = 0; i < n; i++) start[i + 1] += start[i];
         var fill = (int[])start.Clone();
-        var elems = new int[m.Tets.Length];
-        for (int e = 0; e < ne; e++)
-            for (int k = 0; k < nn; k++) elems[fill[m.Tets[nn * e + k]]++] = e;
+        var elems = new int[start[n]];
+        for (int e = 0; e < total; e++)
+            for (int k = 0; k < NodesOf(e); k++) elems[fill[NodeOf(e, k)]++] = e;
 
         var rows = new int[n][];
         Parallel.For(0, n, new ParallelOptions { MaxDegreeOfParallelism = dop ?? -1 }, () => new List<int>(128), (i, _, cols) =>
@@ -246,7 +298,7 @@ public sealed class ThermalAssembly
             for (int p = start[i]; p < start[i + 1]; p++)
             {
                 int e = elems[p];
-                for (int k = 0; k < nn; k++) cols.Add(m.Tets[nn * e + k]);
+                for (int k = 0; k < NodesOf(e); k++) cols.Add(NodeOf(e, k));
             }
             cols.Sort();
             int u = 0;

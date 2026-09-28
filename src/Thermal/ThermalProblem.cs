@@ -9,15 +9,22 @@
 
 namespace CircuitRF.Thermal;
 
-/// <summary>A region's thermal conductivity, W/(m·K): a constant, or a function of temperature with its slope.</summary>
+/// <summary>A region's thermal conductivity, W/(m·K): a constant, or a function of temperature with its slope — isotropic, or
+/// (brief-em3d-76 R-em3d76-2c) a DIAGONAL tensor: the scalar times <see cref="Axes"/> along x, y and z.</summary>
 public sealed class ThermalConductivity
 {
-    private ThermalConductivity(double nominal, Func<double, (double K, double Slope)>? ofT)
+    private ThermalConductivity(double nominal, Func<double, (double K, double Slope)>? ofT, (double X, double Y, double Z)? axes = null)
     {
         if (!(nominal > 0) || !double.IsFinite(nominal)) throw new ArgumentOutOfRangeException(nameof(nominal));
         Nominal = nominal;
         OfT = ofT;
+        Axes = axes ?? (1, 1, 1);
     }
+
+    /// <summary>What the scalar conductivity is multiplied by along x, y and z: (1, 1, 1) for an isotropic material.</summary>
+    public (double X, double Y, double Z) Axes { get; }
+
+    public bool IsIsotropic => Axes == (1, 1, 1);
 
     /// <summary>The value a constant-k solve uses: the constant, or the function's nominal value.</summary>
     public double Nominal { get; }
@@ -28,6 +35,16 @@ public sealed class ThermalConductivity
     public bool IsConstant => OfT is null;
 
     public static ThermalConductivity Constant(double k) => new(k, null);
+
+    /// <summary>brief-em3d-76 R-em3d76-2c — a constant diagonal tensor (k_x, k_y, k_z), W/(m·K): an anisotropic region such
+    /// as a via field's effective block. <see cref="Nominal"/> is the largest of the three.</summary>
+    public static ThermalConductivity Diagonal(double kx, double ky, double kz)
+    {
+        foreach (double k in new[] { kx, ky, kz })
+            if (!(k > 0) || !double.IsFinite(k)) throw new ArgumentOutOfRangeException(nameof(kx), "every component positive and finite");
+        double n = Math.Max(kx, Math.Max(ky, kz));
+        return new(n, null, (kx / n, ky / n, kz / n));
+    }
 
     /// <summary>A temperature-dependent conductivity; <paramref name="nominal"/> is what the first (constant-k) solve
     /// uses, and what the whole run uses when k(T) is switched off.</summary>
@@ -51,6 +68,12 @@ public readonly record struct ConvectionCondition(int Tag, double HWm2K, double 
 public readonly record struct FixedTemperature(int Tag, double TempC);
 
 /// <summary>
+/// brief-em3d-76 R-em3d76-3a — a fixed temperature that VARIES over a surface tag: each of its nodes takes
+/// <paramref name="TempAt"/> at its own position (metres). A submodel's cut faces are fixed to the global solution this way.
+/// </summary>
+public sealed record FixedField(int Tag, Func<double, double, double, double> TempAt);
+
+/// <summary>
 /// One steady conduction problem. Every face not named by a condition is insulated. At least one fixed-temperature or
 /// convection condition is needed for a steady state; the solver refuses a problem without.
 /// </summary>
@@ -67,6 +90,9 @@ public sealed class ThermalProblem
 
     /// <summary>In order: a node on two fixed faces takes the first one's temperature.</summary>
     public IReadOnlyList<FixedTemperature> Fixed { get; init; } = [];
+
+    /// <summary>Fixed fields, applied after <see cref="Fixed"/>: a node a fixed face already took keeps that face's value.</summary>
+    public IReadOnlyList<FixedField> FixedFields { get; init; } = [];
 }
 
 /// <summary>Which linear solver a solve uses.</summary>

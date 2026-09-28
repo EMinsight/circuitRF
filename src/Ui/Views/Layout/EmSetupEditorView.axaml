@@ -874,6 +874,18 @@
                     </Grid>
                     <SelectableTextBlock FontSize="11" TextWrapping="Wrap" Opacity="0.85" Text="{Binding ViewModel.ThermalEstimate}"/>
 
+                    <!-- brief-em3d-76 R-em3d76-3a — a two-step solve -->
+                    <TextBlock Classes="colhdr" FontWeight="SemiBold" Margin="0,6,0,0" Text="Submodel"/>
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <TextBlock Classes="colhdr" VerticalAlignment="Center" Text="Cut from"/>
+                        <ComboBox MinWidth="120" ItemsSource="{Binding ViewModel.ThermalSubmodelFromChoices}" SelectedItem="{Binding ViewModel.ThermalSubmodelFrom}"
+                                  ToolTip.Tip="Empty: this setup solves the whole model. A setup: this one solves only a mesh region's box, finely, its cut faces fixed to that setup's solution (re-solved first when older than the document)"/>
+                        <TextBlock Classes="colhdr" VerticalAlignment="Center" Text="to region" IsVisible="{Binding ViewModel.IsThermalSubmodel}"/>
+                        <ComboBox MinWidth="120" ItemsSource="{Binding ViewModel.ThermalSubmodelRegionChoices}" SelectedItem="{Binding ViewModel.ThermalSubmodelRegion}"
+                                  IsVisible="{Binding ViewModel.IsThermalSubmodel}"
+                                  ToolTip.Tip="The mesh region whose box is the submodel, meshed at its size. It no longer refines the whole-model run."/>
+                    </StackPanel>
+
                     <TextBlock Classes="colhdr" FontWeight="SemiBold" Margin="0,6,0,0" Text="Balance"/>
                     <StackPanel Orientation="Horizontal" Spacing="8">
                         <CheckBox IsChecked="{Binding ViewModel.ThermalKOfT}" Content="k(T)"

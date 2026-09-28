@@ -195,3 +195,45 @@ public sealed class C3dContactResistance
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? Unread { get; set; }
 }
+
+/// <summary>
+/// brief-em3d-76 R-em3d76-2a — a box over a via field whose board dielectric, copper planes and via barrels a thermal run
+/// replaces, when <see cref="Enabled"/>, with ONE block of anisotropic effective conductivity (k_xy, k_xy, k_z) computed
+/// from what it replaced (<see cref="Thermal.ThermalEffectiveBlocks"/> states the mixture). An approximation, so it is
+/// never enabled by default: disabled, the geometry is solved as drawn, and the A/B comparison is one toggle.
+/// </summary>
+public sealed class C3dEffectiveBlock : IC3dBindable
+{
+    [JsonIgnore] public Dictionary<string, C3dExpr?[]>? Exprs { get; set; }
+
+    /// <summary>Unique across the document's objects, instances, ports and thermal places.</summary>
+    public string    Name { get; set; } = "";
+    public C3dPoint3 Min  { get; set; }
+    public C3dPoint3 Size { get; set; }
+
+    /// <summary>Replace what is inside the box. Off (the default, and omitted): the geometry is solved as drawn.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Enabled { get; set; }
+
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? Unread { get; set; }
+}
+
+/// <summary>
+/// brief-em3d-76 R-em3d76-4a — a mirror plane the user modelled HALF of the device across: normal to <see cref="Axis"/>,
+/// at <see cref="At"/>. It lies on the model's own extent (the cut face), the faces on it are insulated (exact for a mirror),
+/// and what is drawn is what is solved — a source carries the power in the modelled part. At most one per axis. Measures read
+/// <c>SymmetryFactor</c> (2ⁿ) so a whole-device figure is explicit; the viewer draws the mirrored halves.
+/// </summary>
+public sealed class C3dSymmetryPlane : IC3dBindable
+{
+    [JsonIgnore] public Dictionary<string, C3dExpr?[]>? Exprs { get; set; }
+
+    public C3dAxis Axis { get; set; }
+
+    /// <summary>The plane's coordinate along <see cref="Axis"/>, DBU (or an expression).</summary>
+    public long At { get; set; }
+
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? Unread { get; set; }
+}

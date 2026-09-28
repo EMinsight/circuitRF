@@ -215,20 +215,23 @@ public sealed class ProbeTool(IC3dDrawHost host, C3dProbeShape shape) : C3dDrawT
     }
 }
 
-/// <summary>R-em3d75-1a — a mesh region: a box drawn as the Box tool draws one.</summary>
-public sealed class MeshRegionTool(IC3dDrawHost host) : C3dRectangleTool(host), IC3dRecordTool
+/// <summary>R-em3d75-1a — a mesh region: a box drawn as the Box tool draws one. brief-em3d-76 R-em3d76-2a — with
+/// <paramref name="block"/>, an effective block over a via field, drawn the same way and made DISABLED.</summary>
+public sealed class MeshRegionTool(IC3dDrawHost host, bool block = false) : C3dRectangleTool(host), IC3dRecordTool
 {
     private static readonly string[] HeightOnly = ["height"];
     private object? _made;
 
-    public override C3dToolKind Kind => C3dToolKind.MeshRegion;
-    public override string Name => "Mesh region";
+    public override C3dToolKind Kind => block ? C3dToolKind.EffectiveBlock : C3dToolKind.MeshRegion;
+    public override string Name => block ? "Effective block" : "Mesh region";
+
+    private string Title => block ? "Effective Block" : "Mesh Region";
 
     public override string Prompt => Step switch
     {
-        0 => "Mesh Region: click the first corner on the drawing plane.",
-        1 => "Mesh Region: click the opposite corner (or type the width, Tab, the depth).",
-        _ => "Mesh Region: move to set the height and click (or type it). Esc cancels.",
+        0 => $"{Title}: click the first corner on the drawing plane.",
+        1 => $"{Title}: click the opposite corner (or type the width, Tab, the depth).",
+        _ => $"{Title}: move to set the height and click (or type it). Esc cancels.",
     };
 
     public object? TakeMade() { var m = _made; _made = null; return m; }
@@ -248,7 +251,7 @@ public sealed class MeshRegionTool(IC3dDrawHost host) : C3dRectangleTool(host), 
     public override C3dToolStep Click(in C3dDrawInput input)
     {
         if (RectangleClick(input) is { } step) return step;
-        if (Height(input) is not { } h) return C3dToolStep.Refuse("Mesh Region: the cursor is looking straight along the height; type the height instead.");
+        if (Height(input) is not { } h) return C3dToolStep.Refuse($"{Title}: the cursor is looking straight along the height; type the height instead.");
         return Finish(h);
     }
 
@@ -257,12 +260,12 @@ public sealed class MeshRegionTool(IC3dDrawHost host) : C3dRectangleTool(host), 
         if (Step == 1) return TypedRectangle(values, input);
         if (Step != 2) return new(false);
         long? h = (values.Length > 0 ? values[0] : null) ?? Height(input);
-        return h is { } hh ? Finish(hh) : C3dToolStep.Refuse("Mesh Region: type the height.");
+        return h is { } hh ? Finish(hh) : C3dToolStep.Refuse($"{Title}: type the height.");
     }
 
     private C3dToolStep Finish(long height)
     {
-        if (height == 0) return C3dToolStep.Refuse("A mesh region needs a height: move off the drawing plane, or type one.");
+        if (height == 0) return C3dToolStep.Refuse($"A{(block ? "n effective block" : " mesh region")} needs a height: move off the drawing plane, or type one.");
         var p = Plane.FromUvw(A.U, A.V, Plane.OffsetDbu);
         var q = Plane.FromUvw(B.U, B.V, Plane.OffsetDbu + height);
         var min = new C3dPoint3(Math.Min(p.X, q.X), Math.Min(p.Y, q.Y), Math.Min(p.Z, q.Z));
@@ -270,7 +273,8 @@ public sealed class MeshRegionTool(IC3dDrawHost host) : C3dRectangleTool(host), 
         // A starting element size: a tenth of the box's smallest side, in µm; the editor asks for the real one.
         double um = Math.Max(1e-3, Math.Round(Math.Min(size.X, Math.Min(size.Y, size.Z)) / 10.0 / Host.DbuPerMicron, 3));
         Step = 0;
-        _made = new C3dMeshRegion { Name = Host.NextName("region"), Min = min, Size = size, SizeUm = um };
+        _made = block ? new C3dEffectiveBlock { Name = Host.NextName("block"), Min = min, Size = size }
+                      : new C3dMeshRegion { Name = Host.NextName("region"), Min = min, Size = size, SizeUm = um };
         return C3dToolStep.Finish;
     }
 

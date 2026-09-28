@@ -513,17 +513,25 @@ internal static class DocumentSchema
             Convection with H and AmbientC, on a face "object/face" or on "*exposed*"; at least one),
             Sweep (up to two axes over document variables no geometry reads), Measures ("Rth =
             (Tmax(die_top) - Tavg(flange_bot)) / Pdiss", over probes with Tmax, Tmin, Tavg and T),
-            Mesh and Balance. Every value is an expression in the document's variables; temperatures
-            are °C. A .cem never holds one. The places it reads are the document's own lists:
+            Mesh, Balance and Submodel ({"From": "<whole-model setup>", "Region": "<mesh region>"}: solve
+            only that region's box, finely, its cut faces fixed to the From setup's solution — reused when
+            newer than the document, else solved first — and no Sweep of its own). Every value is an
+            expression in the document's variables; temperatures are °C; a measure may read SymmetryFactor
+            (2 per symmetry plane). A .cem never holds one. The places it reads are the document's own lists:
             HeatSources (a Sheet on a Plane at an Offset with a Rect or an Outline, lying inside ONE
             solid — or a Solid, by name — with a default Power), Probes (exactly one of Point, Face,
             Solid, Spot, Line, Wire; a Stat of Max, Min or Avg; an optional LimitC), MeshRegions (a
-            box and a target SizeUm, for every Gmsh-meshed setup) and ContactResistances (two
-            touching objects and a resistance, m²·K/W, overriding the technology's material pair).
+            box and a target SizeUm, for every Gmsh-meshed setup), ContactResistances (two
+            touching objects and a resistance, m²·K/W, overriding the technology's material pair; a run
+            splits the contact and joins its sides through it), EffectiveBlocks (Name, Min, Size and
+            Enabled, false when omitted: enabled, the board dielectric, planes and via barrels of a
+            layout instance inside the box become one block of diagonal conductivity — per layer
+            k_z = f_Cu·k_Cu + f_d·k_d and k_xy by Rayleigh's formula for parallel cylinders, layers in
+            series for k_z and in parallel for k_xy — an approximation) and SymmetryPlanes
+            ([{"Axis": "X", "At": 0}], at most one per axis, on the model's extent; insulated).
             None of them reaches an EM solver. `check` reports every thermal finding
             (c3d.thermal.*); `explain view.c3d --analysis [setup]` lists what a thermal setup would
-            solve. The thermal solver itself arrives in a later build: `em` refuses a thermal setup
-            until then.
+            solve; `em` runs it.
           * Ports belong to the document, and every setup uses all of them (choosing a subset per
             setup is a later build). A placed cell's ports are never used: only the parent says where
             a signal enters. A port is a Rect on a drawing Plane at an Offset, with a Number, a Name,

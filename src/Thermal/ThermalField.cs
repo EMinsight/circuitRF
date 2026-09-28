@@ -8,6 +8,11 @@
 
 namespace CircuitRF.Thermal;
 
+/// <summary>brief-em3d-76 — a straight triangle (world metres) and its outward unit normal: a piece of a surface a flux is
+/// measured across.</summary>
+public readonly record struct FluxPatch((double X, double Y, double Z) A, (double X, double Y, double Z) B, (double X, double Y, double Z) C,
+                                        (double X, double Y, double Z) Normal);
+
 /// <summary>A temperature statistic over a place.</summary>
 public readonly record struct ThermalStats(double MaxC, double MinC, double AvgC, double Measure);
 
@@ -34,6 +39,134 @@ public sealed class ThermalField(ThermalMesh mesh, double[] temperature)
             return t;
         }
         return null;
+    }
+
+    /// <summary>brief-em3d-76 — <see cref="At"/>, or where the point lies just outside every element (a curved boundary, a
+    /// rounding), the temperature of the nearest node. Null only for an empty mesh.</summary>
+    public double? AtOrNearest(double x, double y, double z)
+    {
+        if (At(x, y, z) is { } t) return t;
+        int best = -1;
+        double d2 = double.PositiveInfinity;
+        for (int i = 0; i < Mesh.NodeCount; i++)
+        {
+            double dx = Mesh.Nodes[3 * i] - x, dy = Mesh.Nodes[3 * i + 1] - y, dz = Mesh.Nodes[3 * i + 2] - z;
+            double d = dx * dx + dy * dy + dz * dz;
+            if (d < d2) { d2 = d; best = i; }
+        }
+        return best < 0 ? null : Temperature[best];
+    }
+
+    /// <summary>brief-em3d-76 — the temperature gradient (K/m) at (x, y, z), the temperature there and the element's region;
+    /// null outside every element.</summary>
+    public (double Gx, double Gy, double Gz, double T, int Region)? GradientAt(double x, double y, double z)
+    {
+        _grid ??= new Grid(Mesh);
+        int nn = Mesh.NodesPerTet;
+        Span<double> n = stackalloc double[10], dx = stackalloc double[10], dy = stackalloc double[10], dz = stackalloc double[10];
+        Span<double> gx = stackalloc double[10], gy = stackalloc double[10], gz = stackalloc double[10], xyz = stackalloc double[30];
+        foreach (int e in _grid.Candidates(x, y, z))
+        {
+            if (!Barycentric(e, x, y, z, out double l1, out double l2, out double l3)) continue;
+            ReferenceElement.Tet(Mesh.Order, l1, l2, l3, n, dx, dy, dz);
+            Gather(Mesh.Tets, nn * e, nn, xyz);
+            if (!ReferenceElement.TetGradients(xyz, nn, dx, dy, dz, gx, gy, gz, out _)) continue;
+            double t = 0, ax = 0, ay = 0, az = 0;
+            for (int i = 0; i < nn; i++)
+            {
+                double ti = Temperature[Mesh.Tets[nn * e + i]];
+                t += n[i] * ti; ax += gx[i] * ti; ay += gy[i] * ti; az += gz[i] * ti;
+            }
+            return (ax, ay, az, t, Mesh.TetRegion[e]);
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// brief-em3d-76 R-em3d76-3b — the heat THIS field conducts out across each patch, W: −k∇T·n integrated at the
+    /// surface quadrature points of the (straight) triangle, <paramref name="k"/> being this mesh's region conductivities
+    /// (at the local temperature when <paramref name="kOfT"/>). A quadrature point outside every element contributes
+    /// nothing, and is counted in <paramref name="missed"/>.
+    /// </summary>
+    public double[] FluxAcross(IReadOnlyList<FluxPatch> patches, IReadOnlyList<ThermalConductivity> k, bool kOfT, out int missed)
+    {
+        var shapes = TriShapes.For(1);
+        var q = new double[patches.Count];
+        missed = 0;
+        for (int p = 0; p < patches.Count; p++)
+        {
+            var (a, b, c, nrm) = patches[p];
+            double area = FlatArea(a, b, c);
+            for (int i = 0; i < ReferenceElement.TriQuadraturePoints; i++)
+            {
+                var w = shapes.N(i);
+                double x = w[0] * a.X + w[1] * b.X + w[2] * c.X, y = w[0] * a.Y + w[1] * b.Y + w[2] * c.Y, z = w[0] * a.Z + w[1] * b.Z + w[2] * c.Z;
+                // nudged a hair inward, so a point on a face shared by two elements reads the patch's own side
+                double h = 1e-9 * Math.Sqrt(area);
+                if (GradientAt(x - h * nrm.X, y - h * nrm.Y, z - h * nrm.Z) is not { } g) { missed++; continue; }
+                var cond = k[g.Region];
+                double kk = kOfT && cond.OfT is { } f ? f(g.T).K : cond.Nominal;
+                var (ax, ay, az) = cond.Axes;
+                q[p] -= 2 * area * ReferenceElement.TriW[i] * kk * (ax * g.Gx * nrm.X + ay * g.Gy * nrm.Y + az * g.Gz * nrm.Z);
+            }
+        }
+        return q;
+    }
+
+    /// <summary>brief-em3d-76 — the straight triangles of surface tag <paramref name="tag"/>, each with its unit normal pointing
+    /// OUT of the tetrahedron it bounds: what <see cref="FluxAcross"/> integrates over.</summary>
+    public static List<FluxPatch> Patches(ThermalMesh mesh, int tag)
+    {
+        int nf = mesh.NodesPerTriangle, nn = mesh.NodesPerTet;
+        var want = new Dictionary<(int, int, int), int>();
+        var patches = new List<FluxPatch>();
+        var tris = new List<int>();
+        for (int t = 0; t < mesh.TriangleCount; t++)
+        {
+            if (mesh.TriangleTag[t] != tag) continue;
+            want[Sorted(mesh.Triangles[nf * t], mesh.Triangles[nf * t + 1], mesh.Triangles[nf * t + 2])] = tris.Count;
+            tris.Add(t);
+        }
+        var inside = new (double X, double Y, double Z)?[tris.Count];
+        for (int e = 0; e < mesh.TetCount && want.Count > 0; e++)
+            for (int f = 0; f < 4; f++)
+            {
+                int[] c = [.. Enumerable.Range(0, 4).Where(i => i != f).Select(i => mesh.Tets[nn * e + i])];
+                if (!want.TryGetValue(Sorted(c[0], c[1], c[2]), out int k) || inside[k] is not null) continue;
+                int o = mesh.Tets[nn * e + f];
+                inside[k] = (mesh.Nodes[3 * o], mesh.Nodes[3 * o + 1], mesh.Nodes[3 * o + 2]);
+            }
+        for (int k = 0; k < tris.Count; k++)
+        {
+            if (inside[k] is not { } opp) continue;
+            int t = tris[k];
+            var p = Enumerable.Range(0, 3).Select(i => mesh.Triangles[nf * t + i])
+                              .Select(v => (X: mesh.Nodes[3 * v], Y: mesh.Nodes[3 * v + 1], Z: mesh.Nodes[3 * v + 2])).ToArray();
+            double ux = p[1].X - p[0].X, uy = p[1].Y - p[0].Y, uz = p[1].Z - p[0].Z;
+            double vx = p[2].X - p[0].X, vy = p[2].Y - p[0].Y, vz = p[2].Z - p[0].Z;
+            double nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+            double len = Math.Sqrt(nx * nx + ny * ny + nz * nz);
+            if (len == 0) continue;
+            nx /= len; ny /= len; nz /= len;
+            if ((opp.X - p[0].X) * nx + (opp.Y - p[0].Y) * ny + (opp.Z - p[0].Z) * nz > 0) { nx = -nx; ny = -ny; nz = -nz; }
+            patches.Add(new FluxPatch(p[0], p[1], p[2], (nx, ny, nz)));
+        }
+        return patches;
+
+        static (int, int, int) Sorted(int a, int b, int c)
+        {
+            if (a > b) (a, b) = (b, a);
+            if (b > c) (b, c) = (c, b);
+            if (a > b) (a, b) = (b, a);
+            return (a, b, c);
+        }
+    }
+
+    private static double FlatArea((double X, double Y, double Z) a, (double X, double Y, double Z) b, (double X, double Y, double Z) c)
+    {
+        double ux = b.X - a.X, uy = b.Y - a.Y, uz = b.Z - a.Z, vx = c.X - a.X, vy = c.Y - a.Y, vz = c.Z - a.Z;
+        double x = uy * vz - uz * vy, y = uz * vx - ux * vz, z = ux * vy - uy * vx;
+        return 0.5 * Math.Sqrt(x * x + y * y + z * z);
     }
 
     /// <summary>T at <paramref name="count"/> evenly spaced points from <paramref name="from"/> to <paramref name="to"/>

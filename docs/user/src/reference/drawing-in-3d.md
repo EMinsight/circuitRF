@@ -736,11 +736,50 @@ is not a thermal one). A conditioned face is tinted — **blue** a fixed tempera
 *Thermal boundaries* in the tree. With two touching objects selected, *Thermal ▸ Contact Resistance…* overrides the
 technology's interface resistance for that contact, prefilled with the technology's value when it states one.
 
+**Contacts.** Where two solids touch, heat crosses perfectly unless a resistance is stated: the technology's
+*ThermalInterfaces* give one for a pair of materials (GaN on SiC, a die attach), and a document's contact override
+replaces it for one contact only. The run splits the contact — each side keeps its own nodes — and joins the two through
+the resistance, so a clip plane through a die attach shows the temperature step. The run's notes list every contact in
+force, where its value came from and the area it covers.
+
+**Effective blocks** (*3D ▸ Draw ▸ Effective Block*): a box drawn over a via field, as a mesh region is. **Enabled**, a
+thermal run replaces the board dielectric, copper planes and via barrels inside it with one block conducting
+(k_xy, k_xy, k_z) — hundreds of thin barrels stop forcing tiny elements. It is an **approximation** and is drawn
+**disabled**: enable it from its row or in Properties, which show the tensor it would carry; disabled, the geometry is
+solved as drawn, so comparing the two is one toggle. A box that cuts into anything else (a flange, a die) is refused,
+naming it. The mixture, per layer of the box (every height a replaced solid starts or stops), from the area fractions of
+copper, dielectric and void measured exactly over the box's footprint:
+
+- through the layer, k_z = f_Cu·k_Cu + f_d·k_d;
+- in the plane, the layer's largest phase is the matrix and the rest are inclusions (parallel cylinders) at their
+  area-weighted k_i and fraction φ: k_xy = k_m·[(k_i + k_m) + φ(k_i − k_m)] / [(k_i + k_m) − φ(k_i − k_m)];
+- the layers stack: k_z in series over their thicknesses, k_xy in parallel.
+
+Each material's k at 25 °C is used, so the block's tensor is constant. It ignores how heat crowds into each barrel through
+a thin plane, which makes it run cooler than the vias drawn — measure the difference on your own board before trusting it.
+
+**Submodels.** A thermal setup whose Thermal page says *Submodel: cut from* another thermal setup, *to region* a mesh
+region, solves only that region's box, meshed at the region's size, with its cut faces fixed to the other setup's
+solution; every other boundary is as written. The whole-model result is reused when it is newer than the document, and
+solved first when it is not (the notes say which). A mesh region a submodel is cut to no longer refines the whole-model
+run — that is what keeps it coarse. The run compares the heat crossing the cut faces with the whole model's over the same
+faces and **warns when they differ by more than 5 %** point by point: the region is too small, the fine detail changes
+the temperature at its edge, enlarge it. A heat source straddling the box is refused; one inside must carry the same power
+as in the whole model.
+
+**Symmetry.** Model half (or a quarter) of a symmetric device: right-click the face you cut it on, *Symmetry Plane*. The
+face must lie on the model's extent; it stays insulated (a condition on it is refused), and *All exposed faces* never
+takes it. What is drawn is what is solved: give the sources the power of the modelled part. Measures read
+`SymmetryFactor` (2 per plane) so a whole-device figure is explicit — `Rth_full = (Tmax(ch) - 25) / (Pdiss *
+SymmetryFactor)`; nothing is multiplied silently. A plotted temperature is drawn mirrored across the planes (*3D ▸ View ▸
+Temperature ▸ Mirror Symmetric Halves* turns it off), and hovering the mirrored half reads the modelled point's value and
+says so.
+
 **The setup's Thermal page**, top to bottom: **Sources** (each heat source's default, and this setup's override),
 **Boundaries** (the list the menu writes, and *All exposed faces: convection* at an h and an ambient), **Sweep** (up to two
 variables), **Measures** (one per line — `Rth = (Tmax(die) - Tavg(flange)) / Pdiss` — checked as you type), **Mesh** (order,
 elements across a source and through the thinnest solid, grading, the solver, the convergence check), and **Balance** (k(T)
-on or off). Under Mesh, the size of the run is estimated before anything is meshed.
+on or off), and **Submodel** (above). Under Mesh, the size of the run is estimated before anything is meshed.
 
 **Plot Temperature.** After a run of the active thermal setup, right-click a face, *Plot Temperature*, to paint that face
 (again to take it off; several faces accumulate); *3D ▸ View ▸ Temperature ▸ All Faces* paints every exposed face, and

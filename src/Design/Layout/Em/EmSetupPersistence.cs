@@ -620,6 +620,21 @@ public enum ThermalMeshSolver
     Iterative,
 }
 
+/// <summary>
+/// brief-em3d-76 R-em3d76-3a — a submodel: solve (or reuse the current result of) setup <see cref="From"/>, cut the model to
+/// mesh region <see cref="Region"/>'s box, mesh it at that region's size, fix the CUT faces to the <see cref="From"/>
+/// solution interpolated at their nodes, keep every other boundary as written, and solve. It runs at the points the
+/// <see cref="From"/> result carries, so it states no Sweep of its own.
+/// </summary>
+public sealed class CemThermalSubmodel
+{
+    /// <summary>The thermal setup whose solution fixes the cut faces — the coarse, whole-model one.</summary>
+    public string From { get; set; } = "";
+
+    /// <summary>The mesh region whose box is the submodel.</summary>
+    public string Region { get; set; } = "";
+}
+
 /// <summary>Conductive balance: the Newton loop over σ(T) and k(T). Each switch defaults on.</summary>
 public sealed class CemThermalBalance
 {
@@ -664,6 +679,10 @@ public sealed class CemThermal
 
     /// <summary>Conductive balance's switches and tolerances.</summary>
     public CemThermalBalance? Balance { get; set; }
+
+    /// <summary>brief-em3d-76 R-em3d76-3a — a two-step solve: this setup solves only a mesh region's box, finely, with its cut
+    /// faces fixed to another thermal setup's solution. Omitted: the whole model.</summary>
+    public CemThermalSubmodel? Submodel { get; set; }
 
     /// <summary>A deep copy, through the setup's own serializer.</summary>
     public CemThermal Clone() => JsonSerializer.Deserialize<CemThermal>(JsonSerializer.Serialize(this))!;

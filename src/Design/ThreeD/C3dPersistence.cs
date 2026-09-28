@@ -147,7 +147,8 @@ public static class C3dPersistence
     /// <summary>brief-em3d-75 — the thermal places (heat sources, probes, mesh regions, contact overrides) as one text, in the
     /// in-memory spelling (each bound component keeps its number): what an undo entry of a thermal edit holds.</summary>
     public static string SerializeThermalPlaces(C3dDocument doc)
-        => JsonSerializer.Serialize(new ThermalPlaces(doc.HeatSources, doc.Probes, doc.MeshRegions, doc.ContactResistances), ItemOpts);
+        => JsonSerializer.Serialize(new ThermalPlaces(doc.HeatSources, doc.Probes, doc.MeshRegions, doc.ContactResistances,
+                                                      doc.EffectiveBlocks, doc.SymmetryPlanes), ItemOpts);
 
     /// <summary>Writes <see cref="SerializeThermalPlaces"/>' text back into <paramref name="doc"/>.</summary>
     public static void ApplyThermalPlaces(C3dDocument doc, string json)
@@ -157,10 +158,13 @@ public static class C3dPersistence
         doc.Probes = t?.Probes ?? [];
         doc.MeshRegions = t?.MeshRegions ?? [];
         doc.ContactResistances = t?.ContactResistances ?? [];
+        doc.EffectiveBlocks = t?.EffectiveBlocks ?? [];
+        doc.SymmetryPlanes = t?.SymmetryPlanes ?? [];
     }
 
     private sealed record ThermalPlaces(List<C3dHeatSource> HeatSources, List<C3dProbe> Probes, List<C3dMeshRegion> MeshRegions,
-                                        List<C3dContactResistance> ContactResistances);
+                                        List<C3dContactResistance> ContactResistances, List<C3dEffectiveBlock>? EffectiveBlocks = null,
+                                        List<C3dSymmetryPlane>? SymmetryPlanes = null);
 
     /// <summary>brief-em3d-49 — an embedded setup list, as the file spells it.</summary>
     public static string SerializeSetups(IReadOnlyList<JsonElement> list) => JsonSerializer.Serialize(list, JsonOpts);

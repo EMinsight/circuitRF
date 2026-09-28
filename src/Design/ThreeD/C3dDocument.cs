@@ -669,6 +669,12 @@ public sealed class C3dDocument
     /// <summary>brief-em3d-73 R-em3d73-4d — per-contact overrides of the technology's thermal interface resistances.</summary>
     public List<C3dContactResistance> ContactResistances { get; set; } = [];
 
+    /// <summary>brief-em3d-76 R-em3d76-2a — via-field boxes a thermal run may replace with an anisotropic effective block.</summary>
+    public List<C3dEffectiveBlock> EffectiveBlocks { get; set; } = [];
+
+    /// <summary>brief-em3d-76 R-em3d76-4a — the mirror planes the modelled part was cut on, at most one per axis.</summary>
+    public List<C3dSymmetryPlane> SymmetryPlanes { get; set; } = [];
+
     /// <summary>
     /// 3D editor round 3 — the material that fills the air box where no object is: a technology material's name. Absent
     /// means Air (the common case; the technology's Air, else a built-in one with free space's values) — the user makes the

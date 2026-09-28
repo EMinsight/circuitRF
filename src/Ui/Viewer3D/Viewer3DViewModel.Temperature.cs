@@ -41,7 +41,30 @@ public sealed partial class Viewer3DViewModel
     /// <summary>What the temperature geometry was built from: each mesh surface's object (for the hot spot's name), its nudge,
     /// the wires, and the steps it may be revalued on.</summary>
     private sealed record TemperatureParts(IReadOnlyList<FieldSurface> Surfaces, IReadOnlyList<Vector3> Nudges, IReadOnlyList<string> Objects,
-                                           IReadOnlyList<FieldWireSurface> Wires, IReadOnlyList<TemperatureFace> Faces, long GeometryVersion);
+                                           IReadOnlyList<FieldWireSurface> Wires, IReadOnlyList<TemperatureFace> Faces, long GeometryVersion)
+    {
+        /// <summary>brief-em3d-76 — per surface, the reflections that made it (scene-local), empty for a modelled one.</summary>
+        public IReadOnlyList<(int Axis, double At)[]> Reflections { get; init; } = [];
+    }
+
+    /// <summary>brief-em3d-76 R-em3d76-4a — the document's symmetry planes (axis 0 x, 1 y, 2 z; world metres).</summary>
+    public IReadOnlyList<(int Axis, double AtM)> SymmetryPlanes { get; private set; } = [];
+
+    /// <summary>brief-em3d-76 R-em3d76-4c — draw the mirrored halves' temperature too. On by default.</summary>
+    [ObservableProperty] private bool _mirrorSymmetry = true;
+
+    partial void OnMirrorSymmetryChanged(bool value)
+    {
+        if (ShowsTemperature && SymmetryPlanes.Count > 0) ScheduleFieldGeometry();
+    }
+
+    /// <summary>The editor's symmetry planes; a change redraws a shown temperature.</summary>
+    public void SetSymmetryPlanes(IReadOnlyList<(int Axis, double AtM)> planes)
+    {
+        if (planes.SequenceEqual(SymmetryPlanes)) return;
+        SymmetryPlanes = planes;
+        if (ShowsTemperature) ScheduleFieldGeometry();
+    }
 
     /// <summary>Gate 7 — how many times the temperature's triangles were cut or gathered from the mesh.</summary>
     public long FieldGeometryBuilds { get; private set; }
@@ -154,7 +177,8 @@ public sealed partial class Viewer3DViewModel
     private static (TemperatureParts Parts, FieldColorScale Scale, string? Note, HashSet<string> Covered) BuildTemperature(
         FieldQuantity q, FieldStep vol, FieldArray array, Scene3DModel scene, ClipPlane3D clip, IReadOnlyList<FieldGroup> groups,
         IReadOnlyList<TemperatureFace> faces, bool allFaces, bool onClip, ThermalResultTable? table, int step,
-        IReadOnlyList<FieldSolution> steps, bool fixRange, long geometryVersion, CancellationToken ct)
+        IReadOnlyList<FieldSolution> steps, bool fixRange, long geometryVersion, CancellationToken ct,
+        IReadOnlyList<(int Axis, double AtM)>? mirrors = null)
     {
         var origin = scene.Origin;
         var surfaces = new List<FieldSurface>();
@@ -196,6 +220,33 @@ public sealed partial class Viewer3DViewModel
             nudges.Add(normal is { } n ? eps * n : Vector3.Zero);
             objects.Add(f.Object);
         }
+        // brief-em3d-76 R-em3d76-4c — each modelled surface reflected across every combination of the symmetry planes: the
+        // same values, so the range and the peak are the modelled part's
+        var reflections = surfaces.Select(_ => Array.Empty<(int, double)>()).ToList();
+        if (mirrors is { Count: > 0 })
+        {
+            double[] o = [origin.X, origin.Y, origin.Z];
+            var local = mirrors.Select(m => (m.Axis, At: m.AtM - o[m.Axis])).ToList();
+            int modelled = surfaces.Count;
+            for (int mask = 1; mask < 1 << local.Count; mask++)
+            {
+                var set = local.Where((_, i) => (mask & (1 << i)) != 0).ToArray();
+                for (int i = 0; i < modelled; i++)
+                {
+                    var m = surfaces[i];
+                    var n = nudges[i];
+                    foreach (var (axis, at) in set)
+                    {
+                        m = m.Mirrored(axis, at);
+                        n = axis switch { 0 => n with { X = -n.X }, 1 => n with { Y = -n.Y }, _ => n with { Z = -n.Z } };
+                    }
+                    surfaces.Add(m);
+                    nudges.Add(n);
+                    objects.Add(objects[i] + " (mirrored)");
+                    reflections.Add(set);
+                }
+            }
+        }
         var wires = table is null ? [] : Wires(scene, table, step);
 
         var scale = Range(q, surfaces, wires);
@@ -213,7 +264,7 @@ public sealed partial class Viewer3DViewModel
         string? note = surfaces.Count == 0 && wires.Count == 0
             ? "Nothing is painted: right-click a face ▸ Plot Temperature, or View ▸ Temperature ▸ All Faces or On Clip Plane (turn the clip plane on)."
             : null;
-        return (new TemperatureParts(surfaces, nudges, objects, wires, faces, geometryVersion), scale, note, covered);
+        return (new TemperatureParts(surfaces, nudges, objects, wires, faces, geometryVersion) { Reflections = reflections }, scale, note, covered);
     }
 
     private static FieldColorScale Range(FieldQuantity q, IReadOnlyList<FieldSurface> surfaces, IReadOnlyList<FieldWireSurface> wires)
@@ -352,12 +403,61 @@ public sealed partial class Viewer3DViewModel
                 if (t > 0 && t <= hitT * 1.0001f && Sample(o + t * d)) return T(ch[0]) + " (clip plane)";
             }
         }
+        // brief-em3d-76 R-em3d76-4c — a mirrored half is not in the scene: the cursor's ray against its triangles, and the
+        // modelled point's value read at the reflection of the hit
+        if (_temperature is { Reflections.Count: > 0 } parts && MirroredHit(parts) is { } mh &&
+            (!hit || Vector3.Dot(point - mh.Origin, mh.Dir) > mh.T))
+        {
+            var p = mh.Origin + mh.T * mh.Dir;
+            foreach (var (axis, at) in parts.Reflections[mh.Surface].Reverse())
+                p = axis switch { 0 => p with { X = (float)(2 * at - p.X) }, 1 => p with { Y = (float)(2 * at - p.Y) }, _ => p with { Z = (float)(2 * at - p.Z) } };
+            return Sample(p) ? T(ch[0]) + " (the mirrored half: the modelled point's value)" : "";
+        }
         if (!hit || Scene.Object(id) is not { } obj) return "";
         if (_temperature?.Wires.FirstOrDefault(w => w.Wire == obj.Name) is { } wire && WireAt(wire, point) is { } ws)
             return $"{wire.Wire}, s = {FormatLength(ws.S)}: {T(ws.T)}";
         // The face the ID pass named, in any select mode (HoveredFace is Face mode's alone).
         bool painted = (id <= View.FieldCovered.Length && View.FieldCovered[id - 1]) || (LastPick.Object == id && IsTemperatureFace(obj.Name, LastPick.Face));
         return painted && Sample(point) ? T(ch[0]) : "";
+    }
+
+    /// <summary>The nearest hit of the cursor's ray on a mirrored surface: the surface, the ray and its parameter; null when the
+    /// ray meets none.</summary>
+    private (int Surface, Vector3 Origin, Vector3 Dir, float T)? MirroredHit(TemperatureParts parts)
+    {
+        var (o, d) = View.Camera.Ray(View.CursorX, View.CursorY, _viewW, _viewH);
+        (int, Vector3, Vector3, float)? best = null;
+        float bt = float.MaxValue;
+        for (int si = 0; si < parts.Surfaces.Count && si < parts.Reflections.Count; si++)
+        {
+            if (parts.Reflections[si].Length == 0) continue;
+            var s = parts.Surfaces[si];
+            for (int t = 0; t < s.TriangleCount; t++)
+            {
+                Vector3 V(int v) => new((float)s.Xyz[3 * v], (float)s.Xyz[3 * v + 1], (float)s.Xyz[3 * v + 2]);
+                if (RayTriangle(o, d, V(3 * t), V(3 * t + 1), V(3 * t + 2)) is { } h && h < bt) { bt = h; best = (si, o, d, h); }
+            }
+        }
+        return best;
+    }
+
+    /// <summary>Möller–Trumbore: the ray parameter of the hit, or null.</summary>
+    private static float? RayTriangle(Vector3 o, Vector3 d, Vector3 a, Vector3 b, Vector3 c)
+    {
+        var e1 = b - a;
+        var e2 = c - a;
+        var p = Vector3.Cross(d, e2);
+        float det = Vector3.Dot(e1, p);
+        if (Math.Abs(det) < 1e-20f) return null;
+        float inv = 1 / det;
+        var tv = o - a;
+        float u = Vector3.Dot(tv, p) * inv;
+        if (u < 0 || u > 1) return null;
+        var qv = Vector3.Cross(tv, e1);
+        float v = Vector3.Dot(d, qv) * inv;
+        if (v < 0 || u + v > 1) return null;
+        float t = Vector3.Dot(e2, qv) * inv;
+        return t > 0 ? t : null;
     }
 
     /// <summary>T and s at <paramref name="p"/> on a coloured wire: the triangle nearest the point, barycentric.</summary>

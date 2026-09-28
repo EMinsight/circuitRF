@@ -114,6 +114,23 @@ public sealed partial class EmSetupEditorViewModel
     [ObservableProperty] private string _thermalTolerance = "";
     [ObservableProperty] private string _thermalMaxIterations = "";
 
+    /// <summary>brief-em3d-76 R-em3d76-3a — a submodel: the whole-model thermal setup it is cut from ("" for none: this setup
+    /// solves the whole model) and the mesh region it is cut to.</summary>
+    [ObservableProperty] private string _thermalSubmodelFrom = "";
+    [ObservableProperty] private string _thermalSubmodelRegion = "";
+
+    /// <summary>The From picker's choices: "" (no submodel), then every OTHER thermal setup of the document that is not itself a
+    /// submodel.</summary>
+    public IReadOnlyList<string> ThermalSubmodelFromChoices
+        => ["", .. (ThermalContext?.Document() is { } d ? C3dSetups.Read(d) : [])
+                   .Where(s => s.Setup is { IsThermal: true } x && x.Name != Working.Name && x.Thermal?.Submodel is null).Select(s => s.Name)];
+
+    /// <summary>The Region picker's choices: the document's mesh regions.</summary>
+    public IReadOnlyList<string> ThermalSubmodelRegionChoices
+        => [.. ThermalContext?.Document().MeshRegions.Select(r => r.Name) ?? []];
+
+    public bool IsThermalSubmodel => ThermalSubmodelFrom.Length > 0;
+
     /// <summary>The page's refusal of what it was just given (a bad number), or null.</summary>
     [ObservableProperty] private string? _thermalError;
 
@@ -173,11 +190,16 @@ public sealed partial class EmSetupEditorViewModel
             ThermalSigmaOfT = t.Balance?.SigmaOfT ?? true;
             ThermalTolerance = G(t.Balance?.Tolerance);
             ThermalMaxIterations = t.Balance?.MaxIterations?.ToString(CultureInfo.InvariantCulture) ?? "";
+            ThermalSubmodelFrom = t.Submodel?.From ?? "";
+            ThermalSubmodelRegion = t.Submodel?.Region ?? "";
             ThermalError = null;
         }
         finally { _syncingThermal = false; }
         OnPropertyChanged(nameof(CanAddThermalSweep));
         OnPropertyChanged(nameof(HasThermalSources));
+        OnPropertyChanged(nameof(ThermalSubmodelFromChoices));
+        OnPropertyChanged(nameof(ThermalSubmodelRegionChoices));
+        OnPropertyChanged(nameof(IsThermalSubmodel));
         RefreshThermalChecks();
     }
 
@@ -268,6 +290,9 @@ public sealed partial class EmSetupEditorViewModel
         if (ThermalError is not null) return;
         t.Mesh = mesh is { Order: null, SizeFromSources: null, MinThroughThickness: null, Grading: null, Solver: null, Check: null } ? null : mesh;
         t.Balance = balance is { KOfT: null, SigmaOfT: null, Tolerance: null, MaxIterations: null } ? null : balance;
+        t.Submodel = ThermalSubmodelFrom.Trim().Length > 0
+            ? new CemThermalSubmodel { From = ThermalSubmodelFrom.Trim(), Region = ThermalSubmodelRegion.Trim() }
+            : null;
         Working.Thermal = t;
         CommitEdit(before, "Change the thermal setup");
         RefreshThermalChecks();
@@ -311,6 +336,8 @@ public sealed partial class EmSetupEditorViewModel
     partial void OnThermalCheckChanged(bool value) => CommitThermal();
     partial void OnThermalKOfTChanged(bool value) => CommitThermal();
     partial void OnThermalSigmaOfTChanged(bool value) => CommitThermal();
+    partial void OnThermalSubmodelFromChanged(string value) { OnPropertyChanged(nameof(IsThermalSubmodel)); CommitThermal(); }
+    partial void OnThermalSubmodelRegionChanged(string value) => CommitThermal();
 
     /// <summary>R-em3d75-3 — the measures, parsed as they are typed: each error beside the list, nothing written.</summary>
     partial void OnThermalMeasuresTextChanged(string value)

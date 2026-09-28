@@ -57,7 +57,7 @@ public static class ThermalSolver
         ArgumentNullException.ThrowIfNull(problem);
         ArgumentNullException.ThrowIfNull(options);
         var m = problem.Mesh;
-        if (problem.Fixed.Count == 0 && problem.Convection.Count == 0)
+        if (problem.Fixed.Count == 0 && problem.FixedFields.Count == 0 && problem.Convection.Count == 0)
             throw new InvalidOperationException("no fixed-temperature or convection condition: no steady state");
         if (m.TetRegion.Length > 0 && m.TetRegion.Max() >= problem.Conductivity.Count)
             throw new ArgumentException("a region has no conductivity", nameof(problem));
@@ -80,6 +80,21 @@ public static class ThermalSolver
                     int v = m.Triangles[nf * t + k];
                     if (double.IsNaN(fixedT[v])) { fixedT[v] = f.TempC; fixedTag[v] = f.Tag; }
                     else if (fixedT[v] != f.TempC && fixedTag[v] != f.Tag) conflicts++;
+                }
+            }
+        // brief-em3d-76 — fixed FIELDS after the fixed faces: each node at its own position's value
+        foreach (var f in problem.FixedFields)
+            for (int t = 0; t < m.TriangleCount; t++)
+            {
+                if (m.TriangleTag[t] != f.Tag) continue;
+                for (int k = 0; k < nf; k++)
+                {
+                    int v = m.Triangles[nf * t + k];
+                    if (!double.IsNaN(fixedT[v])) continue;
+                    double tv = f.TempAt(m.Nodes[3 * v], m.Nodes[3 * v + 1], m.Nodes[3 * v + 2]);
+                    if (!double.IsFinite(tv)) throw new InvalidOperationException($"a fixed field on tag {f.Tag} gave a node no temperature");
+                    fixedT[v] = tv;
+                    fixedTag[v] = f.Tag;
                 }
             }
         if (conflicts > 0)

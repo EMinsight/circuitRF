@@ -14630,3 +14630,62 @@ objects carry no heat. A wire probe reads nothing until brief 77.
 **A spot probe is the face's triangles clipped to the disk by subdivision**, not an exact circle–triangle clip: each
 triangle the disk reaches is split until its pieces are an eighth of the radius, a piece wholly inside is integrated
 and a rim piece counts by its centroid.
+
+## brief-em3d-76 — interfaces, via fields, submodels and symmetry (2026-09-28)
+
+**A layout instance's materials were invisible to the thermal run (a brief 74 gap).** The run and `check` looked every
+region's k up in the DOCUMENT's technology by base name. A placed board carries its own `.ctech` (its laminate is not the
+document's), so the lookup returned null and the run threw a NullReferenceException; `check` skipped the solid as
+"another technology's". `C3dElaboration.SolidMaterials` now records each solid's own technology and its material's name
+there (the elaborated name may be qualified when two technologies disagree), and `ThermalMaterials.For` reads it — the run,
+`check` and the effective block all go through it.
+
+**Every hollow via conducted as solid copper (also brief 74).** The thermal lowering dropped air solids before the writer
+ranked precedence, so the generator's higher-order air bore inside a plated barrel no longer cut it. Air solids now go to
+the writer as VOIDS: never meshed, but they cut what they outrank exactly as they do in an EM lowering (one rule, one
+meaning — the series' own). A void that outranks nothing is not written at all.
+
+**Contacts (R-em3d76-1).** `ThermalContacts.Resolve`: the document's override for that object pair, else the technology's
+material pair, else none. The run lists each contact the mesh actually shares, with its source and area, and says when an
+override applies nowhere. Two dies on one flange with the pair on one contact and an override (3× the pair) on the other
+run apart by 55.556 K — exactly ΔR″·P/A.
+
+**The effective block (R-em3d76-2) is measured, not assumed.** Per layer of the box, the copper / dielectric / void area
+fractions are clipped polygon by polygon (Clipper2, integer nm) in the model's own precedence, so a barrel counts as its
+annulus and its bore as void — faithful to what it replaces, which is why the void phase exists beside the brief's two.
+The in-plane formula is Rayleigh's for aligned cylinders with the layer's largest phase as the matrix. **The A/B, reported
+and not gated** (a 3 mm board, three planes, two 200 µm laminates, a 4 × 4 field of 300 µm plated vias with 50 µm walls
+under a 2 mm flange, 2 W on it, the sink below at 25 °C):
+
+| mesh | explicit | block | flange, explicit | flange, block | block − explicit |
+|---|---|---|---|---|---|
+| order 2, 35 µm copper | 321,010 tetrahedra | 189,326 | 29.3283 °C | 28.6611 °C | −0.667 K (−15.4 % of the rise) |
+| order 1, 70 µm copper (the gate's) | 112,074 | 61,664 | 29.3821 °C | 28.6247 °C | −0.757 K (−17.3 %) |
+
+The block runs COOLER: an effective medium spreads the flange's heat uniformly into the field, while the drawn board has
+to crowd it through the thin top plane to each barrel — a constriction resistance the mixture has no term for. That is the
+approximation's size on a sparse field; the docs say so and tell the user to measure it on their own board.
+
+**Submodels (R-em3d76-3).** The run cuts every solid to the region's box with Gmsh's own `BooleanIntersection` and fixes
+the cut faces to the whole model's field interpolated at their nodes (nearest node where a node falls a hair outside it).
+Three things the brief's words did not settle, decided here:
+
+- **A mesh region a submodel is cut to does NOT refine the whole-model run.** Mesh regions apply to every Gmsh setup, so
+  without this the whole model is as fine as the submodel and the two-step solve buys nothing.
+- **A box plane flush with the model's own outer face is not a cut.** On S5's quarter model two of the region's planes are
+  the symmetry faces; fixing them to the whole solution turned insulated faces into Dirichlet ones.
+- **The total flux across the cut is uninformative** when the heat leaves only through it: conservation makes the
+  submodel's and the whole model's totals agree for any region (0.25 W both, fine or tight). The check is therefore
+  POINTWISE, Σ|q_sub − q_whole| / Σ|q_whole| over the cut triangles. On S5 with the whole model deliberately coarse
+  (one element across the source, −0.148 % at the centre): a region 500 µm clear of the source reads 1.15 % and its centre
+  is −0.002 % of the series; one 30 µm clear reads 9.23 %. The warning limit is 5 %.
+
+The whole-model result is reused when its `temperature.bin` is newer than the `.c3d` file. That is the FILE's time: a
+document edited in the GUI and not yet saved is judged by its saved copy.
+
+**Symmetry (R-em3d76-4).** A plane must lie on the meshed solids' extent; a boundary on a face in it is refused; `*exposed*`
+never takes it (the Gmsh query subtracts it — gate 6 runs convection on every exposed face, so a mirror face that leaked
+into it would have shown). A centred source modelled whole at 1 W and as the half at 0.5 W: Rth through `SymmetryFactor`
+agrees to −0.011 %. The viewer mirrors the painted TEMPERATURE (every combination of the planes, the recipe kept so a
+sweep step only revalues); the solids themselves are not duplicated in the plain view, and hovering a mirrored half
+ray-casts its triangles on the CPU and reads the modelled point.
