@@ -47,6 +47,67 @@ public static class LinearSolver
         };
     }
 
+    /// <summary>
+    /// brief-em3d-77 R-em3d77-4a — a nonsymmetric system of two blocks, unknowns [0, <paramref name="split"/>) and the rest
+    /// (temperature and potential): LU on the direct path; on the iterative one BiCGStab preconditioned block-diagonally, one
+    /// smoothed-aggregation V-cycle on each diagonal block's symmetric part. Falls back to LU, and says so, as <see cref="Solve"/>.
+    /// </summary>
+    public static LinearSolveReport SolveBlocks(SparseRows a, double[] b, double[] x, int split, ThermalSolverKind kind,
+                                                ThermalSolveOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(a);
+        ArgumentNullException.ThrowIfNull(options);
+        if (kind == ThermalSolverKind.Auto) kind = a.Rows < options.DirectBelow ? ThermalSolverKind.Direct : ThermalSolverKind.Iterative;
+        if (a.Rows == 0) return new(kind, 0, 0, true, null);
+        if (kind == ThermalSolverKind.Direct || split <= 0 || split >= a.Rows) return split <= 0 || split >= a.Rows ? Solve(a, b, x, false, kind, options) : Direct(a, b, x, false);
+        options.Cancellation.ThrowIfCancellationRequested();
+        var first = Block(a, 0, split).SymmetricPart();
+        var second = Block(a, split, a.Rows).SymmetricPart();
+        var p1 = SmoothedAggregationAmg.Build(first, options.AmgTheta);
+        var p2 = SmoothedAggregationAmg.Build(second, options.AmgTheta);
+        var r1 = new double[split];
+        var z1 = new double[split];
+        var r2 = new double[a.Rows - split];
+        var z2 = new double[a.Rows - split];
+        void Apply(double[] r, double[] z)
+        {
+            Array.Copy(r, 0, r1, 0, split);
+            Array.Copy(r, split, r2, 0, r2.Length);
+            p1.Apply(r1, z1);
+            p2.Apply(r2, z2);
+            Array.Copy(z1, 0, z, 0, split);
+            Array.Copy(z2, 0, z, split, z2.Length);
+        }
+        int it = BiCgStab(a, b, x, Apply, options, out double rel);
+        if (rel <= options.RelativeTolerance) return new(ThermalSolverKind.Iterative, it, rel, true, null, p1.LevelCount, p1.OperatorComplexity);
+        var direct = Direct(a, b, x, false);
+        return direct with
+        {
+            FallbackNote = $"The iterative solve stopped at a relative residual of {rel:G3} after {it} iterations " +
+                           $"(asked for {options.RelativeTolerance:G3}); the direct solver was used instead.",
+        };
+    }
+
+    /// <summary>Rows and columns [<paramref name="lo"/>, <paramref name="hi"/>) of <paramref name="a"/>.</summary>
+    private static SparseRows Block(SparseRows a, int lo, int hi)
+    {
+        var ptr = new int[hi - lo + 1];
+        var idx = new List<int>();
+        var val = new List<double>();
+        for (int i = lo; i < hi; i++)
+        {
+            for (int k = a.Ptr[i]; k < a.Ptr[i + 1]; k++)
+            {
+                int c = a.Idx[k];
+                if (c < lo || c >= hi) continue;
+                idx.Add(c - lo);
+                val.Add(a.Val[k]);
+            }
+            ptr[i - lo + 1] = idx.Count;
+        }
+        return new SparseRows(hi - lo, hi - lo, ptr, [.. idx], [.. val]);
+    }
+
     private static LinearSolveReport Direct(SparseRows a, double[] b, double[] x, bool symmetric)
     {
         // CSparse is compressed-COLUMN: A's CSR arrays are Aᵀ's CSC arrays, so a symmetric matrix passes as it is and a

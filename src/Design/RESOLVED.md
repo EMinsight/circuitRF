@@ -14689,3 +14689,27 @@ into it would have shown). A centred source modelled whole at 1 W and as the hal
 agrees to −0.011 %. The viewer mirrors the painted TEMPERATURE (every combination of the planes, the recipe kept so a
 sweep step only revalues); the solids themselves are not duplicated in the plain view, and hovering a mirrored half
 ray-casts its triangles on the CPU and reads the modelled point.
+
+## brief-em3d-77 — bond wires and port currents in a thermal run (2026-09-28)
+
+**The chain is elaboration's resolved centreline, with one adjustment.** A wedge end's foot axis is at its pad's top plus
+half the SECTION's height, and the EM hexagon is 9 % lower than a round wire: two feet 1.2 µm lower make a hexagon wire and a
+round one different thermal problems, which gate 6 forbids (πd²/4 whatever the EM section). The thermal chain puts a wedge's
+two foot vertices at pad + d/2, where a round section's already are, so every vertex of a round wire is untouched and the two
+sections give the same chain bit for bit. The viewer takes its arc lengths from the displayed sweep, so on a hexagon wire the
+colour is placed up to ~0.05 d off along the first span segment.
+
+**s is 0 at the start heel, so the table's first s is negative along a start foot**, and the viewer (brief 75) measured s
+from the path's first vertex: FieldWires.Colour now shifts the path's arc length by the table's first s.
+
+**Which face a port's current enters by.** The port's conductors are the EM port's (C3dPorts, Flip honoured). An edge along a
+solid's own edge lies on two faces — a line's end and its underside — and taking the larger would short the line along its
+length; the SMALLEST face holding the edge is taken, and the run's notes name it with its area. EnterFace / LeaveFace override.
+
+**A wire's metal may live only in a .wBond's own list**, which states σ₂₀ and α₂₀ and no k. ThermalMaterials.ForWire reads such
+a metal from the shipped library's same-name record (which states both), and says so.
+
+**Wire probes read one wire or one array ELEMENT** (brief 73's rule: `w1[1]`, not `w1`), feet included; a .wBond array's name
+reads every wire in it. **The balls are part of their wire**: they are not meshed, and a ball end's contact carries the ball's
+height as a series resistance. **A submodel leaves the wires out** and refuses port currents: the currents belong to the
+whole-model setup.

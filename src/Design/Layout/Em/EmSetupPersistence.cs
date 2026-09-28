@@ -635,6 +635,31 @@ public sealed class CemThermalSubmodel
     public string Region { get; set; } = "";
 }
 
+/// <summary>
+/// brief-em3d-77 R-em3d77-1a — a port's current in a thermal setup: it enters the port's positive conductor and leaves its
+/// negative one, each through an equipotential contact (the face the port's edge lies on, or the one named here). A port no
+/// entry names carries nothing.
+/// </summary>
+public sealed class CemThermalCurrent
+{
+    /// <summary>The port's number.</summary>
+    public int Port { get; set; }
+
+    /// <summary>The DC current, amperes, an expression (<c>Id</c>, <c>2.5</c>): sweepable like any value.</summary>
+    public string? Dc { get; set; }
+
+    /// <summary>The face the current enters through, <c>object/face</c>; omitted, the smallest face of the positive conductor
+    /// the port's edge lies on.</summary>
+    public string? EnterFace { get; set; }
+
+    /// <summary>The face the current leaves through; omitted, inferred on the negative conductor as <see cref="EnterFace"/> is.</summary>
+    public string? LeaveFace { get; set; }
+
+    /// <summary>What a later version states here (brief 78's harmonics), carried as written.</summary>
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? More { get; set; }
+}
+
 /// <summary>Conductive balance: the Newton loop over σ(T) and k(T). Each switch defaults on.</summary>
 public sealed class CemThermalBalance
 {
@@ -664,8 +689,23 @@ public sealed class CemThermal
     /// state.</summary>
     public List<CemThermalBoundary>? Boundaries { get; set; }
 
-    /// <summary>Currents at the ports (briefs 77/78). Carried as written; nothing in this version reads them.</summary>
-    public List<JsonElement>? Currents { get; set; }
+    /// <summary>brief-em3d-77 — DC currents at the ports (brief 78 adds harmonics): each port's current flows through the model's
+    /// metal and its bond wires, which are solved as 1D elements, and heats them.</summary>
+    public List<CemThermalCurrent>? Currents { get; set; }
+
+    /// <summary>brief-em3d-77 R-em3d77-3e — heat a bond wire loses where it runs through AIR, W/(m²·K) over its surface, an
+    /// expression; omitted, none. A wire in a mould compound loses heat into it whatever this says.</summary>
+    public string? WireConvectionH { get; set; }
+
+    /// <summary>The ambient <see cref="WireConvectionH"/> loses heat to, °C, an expression; required with it.</summary>
+    public string? WireAmbientC { get; set; }
+
+    /// <summary>brief-em3d-77 R-em3d77-3d — a bond's interface resistance, m²·K/W, an expression; omitted, a perfect bond (the
+    /// heel takes its pad's temperature). Stated, the foot is coupled to its pad along its length.</summary>
+    public string? BondThermalResistance { get; set; }
+
+    /// <summary>A bond's specific contact resistance, Ω·m², an expression; omitted, a perfect bond.</summary>
+    public string? BondElectricalResistance { get; set; }
 
     /// <summary>Up to two axes, a product.</summary>
     public List<CemThermalSweep>? Sweep { get; set; }

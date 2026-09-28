@@ -66,37 +66,7 @@ public static class ThermalSolver
         int n = m.NodeCount;
 
         // ── the fixed nodes: the first condition naming a node gives its temperature ──
-        var fixedT = new double[n];
-        var fixedTag = new int[n];
-        Array.Fill(fixedT, double.NaN);
-        int conflicts = 0;
-        int nf = m.NodesPerTriangle;
-        foreach (var f in problem.Fixed)
-            for (int t = 0; t < m.TriangleCount; t++)
-            {
-                if (m.TriangleTag[t] != f.Tag) continue;
-                for (int k = 0; k < nf; k++)
-                {
-                    int v = m.Triangles[nf * t + k];
-                    if (double.IsNaN(fixedT[v])) { fixedT[v] = f.TempC; fixedTag[v] = f.Tag; }
-                    else if (fixedT[v] != f.TempC && fixedTag[v] != f.Tag) conflicts++;
-                }
-            }
-        // brief-em3d-76 — fixed FIELDS after the fixed faces: each node at its own position's value
-        foreach (var f in problem.FixedFields)
-            for (int t = 0; t < m.TriangleCount; t++)
-            {
-                if (m.TriangleTag[t] != f.Tag) continue;
-                for (int k = 0; k < nf; k++)
-                {
-                    int v = m.Triangles[nf * t + k];
-                    if (!double.IsNaN(fixedT[v])) continue;
-                    double tv = f.TempAt(m.Nodes[3 * v], m.Nodes[3 * v + 1], m.Nodes[3 * v + 2]);
-                    if (!double.IsFinite(tv)) throw new InvalidOperationException($"a fixed field on tag {f.Tag} gave a node no temperature");
-                    fixedT[v] = tv;
-                    fixedTag[v] = f.Tag;
-                }
-            }
+        var (fixedT, fixedTag, conflicts) = FixedNodes(problem);
         if (conflicts > 0)
             notes.Add($"{conflicts} node(s) lie on two fixed-temperature faces at different temperatures; each takes the first face's.");
         var free = new int[n];
@@ -218,6 +188,46 @@ public static class ThermalSolver
         };
     }
 
+    /// <summary>The temperature each fixed node takes (NaN for a free node), the tag that fixed it, and how many nodes two
+    /// fixed faces disagreed on: the first condition naming a node wins, fixed fields after fixed faces.</summary>
+    internal static (double[] FixedT, int[] FixedTag, int Conflicts) FixedNodes(ThermalProblem problem)
+    {
+        var m = problem.Mesh;
+        int n = m.NodeCount;
+        var fixedT = new double[n];
+        var fixedTag = new int[n];
+        Array.Fill(fixedT, double.NaN);
+        int conflicts = 0;
+        int nf = m.NodesPerTriangle;
+        foreach (var f in problem.Fixed)
+            for (int t = 0; t < m.TriangleCount; t++)
+            {
+                if (m.TriangleTag[t] != f.Tag) continue;
+                for (int k = 0; k < nf; k++)
+                {
+                    int v = m.Triangles[nf * t + k];
+                    if (double.IsNaN(fixedT[v])) { fixedT[v] = f.TempC; fixedTag[v] = f.Tag; }
+                    else if (fixedT[v] != f.TempC && fixedTag[v] != f.Tag) conflicts++;
+                }
+            }
+        // brief-em3d-76 — fixed FIELDS after the fixed faces: each node at its own position's value
+        foreach (var f in problem.FixedFields)
+            for (int t = 0; t < m.TriangleCount; t++)
+            {
+                if (m.TriangleTag[t] != f.Tag) continue;
+                for (int k = 0; k < nf; k++)
+                {
+                    int v = m.Triangles[nf * t + k];
+                    if (!double.IsNaN(fixedT[v])) continue;
+                    double tv = f.TempAt(m.Nodes[3 * v], m.Nodes[3 * v + 1], m.Nodes[3 * v + 2]);
+                    if (!double.IsFinite(tv)) throw new InvalidOperationException($"a fixed field on tag {f.Tag} gave a node no temperature");
+                    fixedT[v] = tv;
+                    fixedTag[v] = f.Tag;
+                }
+            }
+        return (fixedT, fixedTag, conflicts);
+    }
+
     private static double Span(double[] t)
     {
         double lo = double.PositiveInfinity, hi = double.NegativeInfinity;
@@ -247,7 +257,7 @@ public static class ThermalSolver
     }
 
     /// <summary>The free rows and columns of <paramref name="a"/>.</summary>
-    private static SparseRows Reduce(SparseRows a, int[] free, int nFree)
+    internal static SparseRows Reduce(SparseRows a, int[] free, int nFree)
     {
         var ptr = new int[nFree + 1];
         var idx = new List<int>(a.Nnz);

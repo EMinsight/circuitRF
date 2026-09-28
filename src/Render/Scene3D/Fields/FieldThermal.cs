@@ -202,11 +202,14 @@ public static class FieldWires
     /// solid) with T(s) at every vertex: a vertex of ring k of <paramref name="sweep"/> takes ring k's arc length, and an end
     /// cap's centre its ring's. <paramref name="origin"/> is the scene's origin, world metres. A vertex on no ring (a scene
     /// that is not this sweep's) is refused by returning null — nothing is guessed.
+    /// brief-em3d-77: the table's first row is the path's first vertex, and its s there is not 0 when the wire starts with a foot
+    /// (s is 0 at the start HEEL), so the path's own arc length is shifted by the table's first s.
     /// </summary>
     public static FieldWireSurface? Colour(string wire, Em3dSweep sweep, IReadOnlyList<Vector3> positions, IReadOnlyList<int> indices,
                                            (double X, double Y, double Z) origin, WireTemperature table)
     {
         var s = ArcLengths(sweep.Path);
+        if (table.S.Length > 0) for (int k = 0; k < s.Length; k++) s[k] += table.S[0];
         var ring = new Dictionary<Vector3, int>();
         Vector3 Local(Point3 p) => new((float)(p.X - origin.X), (float)(p.Y - origin.Y), (float)(p.Z - origin.Z));
         for (int r = 0; r < sweep.Rings.Count; r++)

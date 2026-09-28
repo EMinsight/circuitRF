@@ -129,6 +129,10 @@ public sealed record ThermalSolveOptions
     /// <summary>Follow each region's k(T) by Newton's method. Off: every region at its nominal k.</summary>
     public bool KOfT { get; init; } = true;
 
+    /// <summary>brief-em3d-77 R-em3d77-4b — follow each conductor's σ(T) in conductive balance. Off: σ at 20 °C everywhere.
+    /// Read only by the electrothermal solve.</summary>
+    public bool SigmaOfT { get; init; } = true;
+
     /// <summary>Newton stops when the largest nodal update is below this fraction of the temperature span (and the
     /// residual has fallen by 1e-8).</summary>
     public double NewtonTolerance { get; init; } = 1e-6;

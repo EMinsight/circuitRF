@@ -70,6 +70,28 @@ public static class ThermalMaterials
     public static (Technology? Technology, string Material) Source(C3dElaboration e, string solid, string elaboratedMaterial)
         => e.SolidMaterials.TryGetValue(solid, out var own) ? (own.Technology, own.Material) : (e.Technology, BaseName(elaboratedMaterial));
 
+    /// <summary>
+    /// brief-em3d-77 R-em3d77-3c — the record a bond wire's σ(T) and k(T) are read from: <see cref="For"/>'s (the technology, its
+    /// libraries, the shipped library — em-3d.md §4.1a's order) when it states both; else a metal a <c>.wBond</c> defines only in
+    /// its own list, which states no k, is read from the shipped library's record of the same name, and
+    /// <paramref name="note"/> says so. Null when no record states both.
+    /// </summary>
+    public static ThermalMaterialRecord? ForWire(C3dElaboration e, string solid, string elaboratedMaterial, out string? note)
+    {
+        note = null;
+        var rec = For(e, solid, elaboratedMaterial);
+        if (rec is not null && ThermalProperties.SigmaAt(rec.Material, 20) is not null) { note = rec.LookThroughNote; return rec; }
+        string name = BaseName(elaboratedMaterial);
+        foreach (var gm in Generic.Value)
+            if (string.Equals(gm.Name, name, StringComparison.OrdinalIgnoreCase) && StatesK(gm) && ThermalProperties.SigmaAt(gm, 20) is not null)
+            {
+                note = $"Wire metal '{name}' states no thermal conductivity where the wire is defined; the thermal run reads its σ(T) and k(T) " +
+                       "from the same-name record in circuitRF's shipped generic material library.";
+                return new(gm, note);
+            }
+        return null;
+    }
+
     public static bool StatesK(TechMaterial m) => m.ThermalK is not null || m.ThermalKVsTemp is { Count: > 0 };
 
     private static string Note(string name, string where)

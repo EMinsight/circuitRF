@@ -24,7 +24,12 @@ using CircuitRF.Engine.Em3d;
 namespace CircuitRF.Design.Em3d;
 
 /// <summary>A heat-source sheet to embed: its name and its geometry (a sheet's outline in its frame).</summary>
-public sealed record GmshThermalSheet(string Name, Em3dSheet Sheet);
+public sealed record GmshThermalSheet(string Name, Em3dSheet Sheet)
+{
+    /// <summary>brief-em3d-77 — elements across the sheet's smaller side, when not the sizing's SizeFromSources: a wire's
+    /// contact patch takes fewer (brief 72 Q8).</summary>
+    public double? ElementsAcross { get; init; }
+}
 
 /// <summary>A named face of solid <paramref name="Solid"/> (an index into the solids): its planar pieces, and whether only
 /// its exterior (single-sided) surfaces count — a boundary condition's face does; a probe's does not.</summary>
@@ -64,6 +69,10 @@ public sealed record GmshThermalInput(IReadOnlyList<Em3dSolid> Solids, IReadOnly
     /// <summary>brief-em3d-76 R-em3d76-4a — mirror planes (axis 0 x, 1 y, 2 z; coordinate in metres): their faces stay
     /// insulated, so <c>*exposed*</c> never takes one.</summary>
     public IReadOnlyList<(int Axis, double AtM)> Symmetry { get; init; } = [];
+
+    /// <summary>brief-em3d-77 R-em3d77-3 — each bond wire's centreline as points, and the element size wanted round it
+    /// (metres): a Distance field refines the solid a wire runs through. The wire itself is not geometry here.</summary>
+    public IReadOnlyList<(IReadOnlyList<Point3> Points, double SizeM)> WireLines { get; init; } = [];
 }
 
 public static partial class GmshGeoWriter
@@ -91,14 +100,15 @@ public static partial class GmshGeoWriter
         return thin > 0 ? Math.Min(max, thin / Math.Max(1, input.Sizing.MinThroughThickness)) : max;
     }
 
-    /// <summary>The element size at a heat-source sheet, metres (before the scale): its smaller side / SizeFromSources.</summary>
-    public static double ThermalSourceSizeM(GmshThermalInput input, Em3dSheet sheet)
+    /// <summary>The element size at a heat-source sheet, metres (before the scale): its smaller side / SizeFromSources (or
+    /// / <paramref name="across"/>, a contact patch's own count).</summary>
+    public static double ThermalSourceSizeM(GmshThermalInput input, Em3dSheet sheet, double? across = null)
     {
         var (x0, y0, z0, x1, y1, z1) = sheet.WorldBounds();
         double[] d = [x1 - x0, y1 - y0, z1 - z0];
         Array.Sort(d);
         double smaller = d[1] > 0 ? d[1] : d[2];          // the plane's smaller side: skip the zero thickness
-        return Math.Min(ThermalMaxElementM(input), smaller / Math.Max(1e-9, input.Sizing.SizeFromSources));
+        return Math.Min(ThermalMaxElementM(input), smaller / Math.Max(1e-9, across ?? input.Sizing.SizeFromSources));
     }
 
     /// <summary>
@@ -346,7 +356,7 @@ public static partial class GmshGeoWriter
         }
         for (int k = 0; k < input.Sheets.Count; k++)
         {
-            double near = Round(z.Scale * ThermalSourceSizeM(input, input.Sheets[k].Sheet) * 1e6);
+            double near = Round(z.Scale * ThermalSourceSizeM(input, input.Sheets[k].Sheet, input.Sheets[k].ElementsAcross) * 1e6);
             int d = ++field, t = ++field;
             fields.Add(t);
             L($"Field[{d}] = Distance; Field[{d}].SurfacesList = {{w{k}[]}}; Field[{d}].Sampling = 50;");
@@ -355,6 +365,20 @@ public static partial class GmshGeoWriter
         }
         foreach (var region in input.MeshRegions)
             L(BoxField(++field, region with { SizeM = region.SizeM * z.Scale }, sizeMax, z.Grading, fields));
+        // brief-em3d-77 — round each bond wire: points along its centreline, not in the fragment, only a Distance field's
+        for (int w = 0; w < input.WireLines.Count; w++)
+        {
+            var (points, size) = input.WireLines[w];
+            double near = Math.Min(sizeMax, Round(z.Scale * size * 1e6));
+            L($"// wire {w}: {points.Count} point(s) along its centreline");
+            L($"wp{w}[] = {{}};");
+            foreach (var q in points) L($"p = newp; Point(p) = {{{Um(q.X)}, {Um(q.Y)}, {Um(q.Z)}}}; wp{w}[] += p;");
+            int d = ++field, t = ++field;
+            fields.Add(t);
+            L($"Field[{d}] = Distance; Field[{d}].PointsList = {{wp{w}[]}};");
+            L($"Field[{t}] = Threshold; Field[{t}].InField = {d}; Field[{t}].SizeMin = {Num(near)}; Field[{t}].SizeMax = {Num(sizeMax)}; " +
+              $"Field[{t}].DistMin = {Num(near)}; Field[{t}].DistMax = {Num(Round(near + (sizeMax - near) / (z.Grading - 1)))};");
+        }
         int min = ++field;
         L($"Field[{min}] = Min; Field[{min}].FieldsList = {{{string.Join(", ", fields)}}};");
         L($"Background Field = {min};");

@@ -85,7 +85,10 @@ public sealed class ThermalResultTable
                 var s = cube.Axes[^1];
                 var v = cube.RealValues;
                 int n = s.Length;
-                wires.Add(new ThermalResultWire(name, s.Values, [.. Enumerable.Range(0, points).Select(p => v.AsSpan(p * n, n).ToArray())]));
+                // brief-em3d-77 writes Twire:<name>(s); the wire is <name>, the scene object it colours
+                string wire = name.StartsWith("Twire:", StringComparison.Ordinal) && name.EndsWith("(s)", StringComparison.Ordinal)
+                    ? name["Twire:".Length..^"(s)".Length] : name;
+                wires.Add(new ThermalResultWire(wire, s.Values, [.. Enumerable.Range(0, points).Select(p => v.AsSpan(p * n, n).ToArray())]));
             }
         return new ThermalResultTable { Axes = axes, Points = points, Rows = rows, Lines = lines, Wires = wires };
     }

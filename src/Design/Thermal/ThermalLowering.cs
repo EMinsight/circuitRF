@@ -5,7 +5,8 @@
 //
 // WHAT IS LEFT OUT, AND SAID: air (never meshed, overview §1b — but brief-em3d-76: an air solid still CUTS what it outranks,
 // exactly as in EM, so a plated via's bore leaves its barrel a tube); a sheet object (a surface has no volume to conduct
-// through); a bond wire (a 1D element from brief 77 — until then the problem is meshed without it, and a note says so).
+// through). A bond wire is not meshed either: brief-em3d-77 solves it as a 1D chain (ThermalWireLowering), and what the mesh
+// gets from it is a contact patch at each end and a refinement round its centreline.
 //
 // brief-em3d-76 adds: the resistive contacts (ThermalContacts), each ENABLED effective block in place of what it replaces
 // (ThermalEffectiveBlocks), a submodel's clip to its region's box with the planes that cut material, and the symmetry
@@ -59,7 +60,27 @@ public sealed record ThermalLowering(
     /// <summary>brief-em3d-76 — for each face tag, the region whose side its triangles take where they lie on a split contact:
     /// the face's own solid.</summary>
     public IReadOnlyDictionary<int, int> TagRegions
-        => Faces.Where(f => f.Tag > 0).GroupBy(f => f.Tag).ToDictionary(g => g.Key, g => Input.Faces.First(x => x.Name == g.First().Face).Solid);
+    {
+        get
+        {
+            var d = Faces.Where(f => f.Tag > 0).GroupBy(f => f.Tag).ToDictionary(g => g.Key, g => Input.Faces.First(x => x.Name == g.First().Face).Solid);
+            // brief-em3d-77 — a wire's contact patch takes its pad's side
+            foreach (var w in Wires)
+                foreach (var end in new[] { w.Start, w.End })
+                    if (PatchTags.TryGetValue(end.Patch, out int tag) && RegionOf(end.Pad) is var r and >= 0) d[tag] = r;
+            return d;
+        }
+    }
+
+    /// <summary>brief-em3d-77 — the bond wires, each as its 1D chain, and each end's contact patch tag by patch name.</summary>
+    public IReadOnlyList<ThermalWirePlan> Wires { get; init; } = [];
+    public IReadOnlyDictionary<string, int> PatchTags { get; init; } = new Dictionary<string, int>();
+
+    /// <summary>brief-em3d-77 R-em3d77-1 — each current's contact faces (by face-group name, whole faces).</summary>
+    public IReadOnlyList<ThermalPortContact> PortContacts { get; init; } = [];
+
+    /// <summary>brief-em3d-77 — per region, whether it is a conductor (it carries current where a port's current reaches it).</summary>
+    public IReadOnlyList<bool> Conductors { get; init; } = [];
 
     /// <summary>The region index of solid <paramref name="solid"/>, or −1.</summary>
     public int RegionOf(string solid)
@@ -135,8 +156,8 @@ public static class ThermalLowerings
         double m = 1e-6 / doc.DbuPerMicron;
         double tol = m;
 
-        // ── the solids: every one with a material, except air and (until brief 77) the bond wires ──
-        var wireNames = new HashSet<string>(e.Wires.Select(w => w.Name).Concat(e.DrawnWires.Keys), StringComparer.Ordinal);
+        // ── the solids: every one with a material, except air and the bond wires (and their balls: brief 77's 1D chains) ──
+        var wireNames = new HashSet<string>(e.Wires.SelectMany(ThermalWireLowering.SolidsOf).Concat(e.DrawnWires.Keys), StringComparer.Ordinal);
         var solids = new List<Em3dSolid>();
         var voids = new List<Em3dSolid>();
         int wires = 0, air = 0;
@@ -183,13 +204,21 @@ public static class ThermalLowerings
             notes.Add($"Submodel: the region '{sm.Region}' holds {solids.Count} of the model's {before} meshed solid(s), cut to its box; its cut " +
                       $"faces are fixed to setup '{sm.From}''s solution.");
         }
-        if (wires > 0)
-            notes.Add($"{wires} bond wire(s) are left out of this thermal run: a wire is a 1D conduction element, which a later " +
-                      "version adds. The rest of the problem is meshed and solved without them.");
         if (air > 0) notes.Add($"{air} air solid(s) are not meshed: a thermal run conducts through solids only.");
         if (e.Sheets.Count > 0)
             notes.Add($"{e.Sheets.Count} sheet object(s) have no volume, so they carry no heat in a thermal run.");
         if (solids.Count == 0) { refusal = "This 3D view holds no solid a thermal run meshes (air and bond wires are not meshed)."; return null; }
+
+        // ── brief-em3d-77 R-em3d77-3: the bond wires as 1D chains, their ends' contact patches ──
+        var patches = new List<GmshThermalSheet>();
+        List<ThermalWirePlan> plans = [];
+        if (wires > 0 && clip is not null)
+            notes.Add($"{wires} bond wire solid(s) are left out of this submodel: a submodel solves the region's solids only.");
+        else if (wires > 0)
+        {
+            plans = ThermalWireLowering.Plan(e, solids.Select(x => x.Name).ToHashSet(StringComparer.Ordinal), patches, notes, out string? wireWhy)!;
+            if (wireWhy is not null) { refusal = wireWhy; return null; }
+        }
 
         // ── heat sources: sheets embedded, solids by their region ──
         var sheets = new List<GmshThermalSheet>();
@@ -275,6 +304,9 @@ public static class ThermalLowerings
             string? spelled = p.Face ?? p.Spot?.Face;
             if (spelled is not null && Face(spelled, false) is { } why) { refusal = why; return null; }
         }
+        // brief-em3d-77 R-em3d77-1 — each current's contact faces
+        var ports = ThermalCurrents.Contacts(doc, e, t, solids, faces, out string? portWhy);
+        if (ports is null) { refusal = portWhy; return null; }
         if (dropped.Count > 0)
             notes.Add($"{dropped.Count} named face(s) lie outside the submodel's box and take no part in it: " +
                       string.Join(", ", dropped.Distinct().Select(d => $"'{d}'")) + ".");
@@ -315,9 +347,9 @@ public static class ThermalLowerings
                 return null;
             }
         }
-        var input = new GmshThermalInput(solids, sheets, faces, exposed, meshRegions, Sizing(t.Mesh, scale))
+        var input = new GmshThermalInput(solids, [.. sheets, .. patches], faces, exposed, meshRegions, Sizing(t.Mesh, scale))
         {
-            Voids = voids, Clip = clip, CutPlanes = cutPlanes, Symmetry = symmetry,
+            Voids = voids, Clip = clip, CutPlanes = cutPlanes, Symmetry = symmetry, WireLines = ThermalWireLowering.SizeLines(plans),
         };
         var gmsh = GmshGeoWriter.WriteThermal(input);
         if (!gmsh.Ok) { refusal = gmsh.Refusal; return null; }
@@ -327,6 +359,8 @@ public static class ThermalLowerings
         var regions = solids.Select(s => new ThermalRegionTag(s.Name, s.Material, gmsh.Groups[k++].Attribute)).ToList();
         var sheetTags = new Dictionary<string, int>(StringComparer.Ordinal);
         foreach (var s in sheets) sheetTags[s.Name] = gmsh.Groups[k++].Attribute;
+        var patchTags = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var s in patches) patchTags[s.Name] = gmsh.Groups[k++].Attribute;
         var faceTags = faces.Select(f => new ThermalFaceTag(f.Name, f.ExteriorOnly, gmsh.Groups[k++].Attribute)).ToList();
         int? exposedTag = exposed ? gmsh.Groups[k++].Attribute : null;
         int? cutTag = clip is not null ? gmsh.Groups[k].Attribute : null;
@@ -339,10 +373,13 @@ public static class ThermalLowerings
             notes.Add($"Symmetry: {string.Join(", ", doc.SymmetryPlanes.Select(p => $"{p.Axis} = {(p.At * m * 1e6).ToString("G6", System.Globalization.CultureInfo.InvariantCulture)} µm"))} " +
                       $"— the modelled part is 1/{1 << doc.SymmetryPlanes.Count} of the device; its faces on the plane(s) are insulated, " +
                       "and the sources carry the power of the modelled part. Measures read SymmetryFactor for the whole device.");
+        if (plans.Count > 0) notes.Add(ThermalWireLowering.Note(plans));
+        notes.AddRange(ports.Select(p => p.Note));
         return new ThermalLowering(input, gmsh, regions, sheetTags, solidSources, faceTags, exposedTag, notes)
         {
             Contacts = contacts, Effective = effective, Clip = clip, CutTag = cutTag, SourcesOutside = outside,
-            SymmetryFactor = 1 << doc.SymmetryPlanes.Count,
+            SymmetryFactor = 1 << doc.SymmetryPlanes.Count, Wires = plans, PatchTags = patchTags, PortContacts = ports,
+            Conductors = [.. solids.Select(x => x.Role == Em3dRole.Conductor && !blocks.Any(bl => bl.Solid == x))],
         };
     }
 

@@ -1,0 +1,294 @@
+// brief-em3d-77 — the thermal run's conductive-balance half: a setup with bond wires or port currents is solved by Newton over
+// temperature and potential (src/Thermal/Nonlinear), point by point from the last converged point, and a point past the
+// steady-state limit is a RUNAWAY — a result, not a failure (R-em3d77-5).
+//
+// WHAT IT ADDS TO THE RESULT (R-em3d77-6), per sweep point:
+//   * the "wires" group: T(s) of every wire, over the sweep's axes then s (metres, 0 at the start heel) — the table the viewer
+//     colours each wire from, named Twire:<name>(s);
+//   * the thermal group: per wire its hottest temperature and where (Twire:<name>:max, :smax), its DC current (Iwire:), its
+//     dissipated power (Pwire:) and its resistance at its solved temperature (Rwire:); per port its voltage (Vport:<n>); per
+//     conducting solid its Joule heat (Pjoule:<solid>); and Runaway, 1 at a point with no steady state.
+// A runaway point's temperatures are NaN, every cube's included, and its fields are NaN too: it has none.
+
+using System.Globalization;
+using CircuitRF.Design.Layout;
+using CircuitRF.Design.Layout.Em;
+using CircuitRF.Design.ThreeD;
+using CircuitRF.Thermal;
+using CircuitRF.Thermal.Electrothermal;
+using CircuitRF.Thermal.Nonlinear;
+using RfCore.Data;
+
+namespace CircuitRF.Design.Thermal;
+
+public static partial class ThermalRunService
+{
+    /// <summary>R-em3d77-5 — the sentence a runaway puts in the run's messages.</summary>
+    public static string RunawaySentence(double aboveA, double lastA, string wire, double tempC)
+        => string.Create(CultureInfo.InvariantCulture,
+            $"No steady state above about {aboveA:G4} A: thermal runaway. The last converged point is {lastA:G4} A (wire {wire} at {tempC:F0} °C).");
+
+    /// <summary>What conductive balance hands back for one point.</summary>
+    private sealed record ElectroPoint(ThermalSolution Thermal, ElectrothermalSolution? Solution, bool Runaway, string? Failure);
+
+    /// <summary>One run's conductive-balance state: the system, the last converged point, and each point's answer.</summary>
+    private sealed class ElectroRun
+    {
+        public required ElectrothermalSystem System { get; init; }
+        public required Func<IReadOnlyList<(string Var, double Value)>, double, ElectrothermalProblem> At { get; init; }
+        public required ThermalSolveOptions Options { get; init; }
+        public required ThermalMesh Mesh { get; init; }
+        public required IReadOnlyList<ThermalWirePlan> Wires { get; init; }
+        public ElectrothermalSolution? Last;
+        public IReadOnlyList<(string Var, double Value)>? LastPoint;
+        public ElectrothermalSolution? RowFirst;
+        public IReadOnlyList<(string Var, double Value)>? RowFirstPoint;
+        public bool RowRunaway;
+        public readonly List<ElectrothermalSolution?> Solutions = [];
+
+        /// <summary>Point <paramref name="point"/> (index <paramref name="index"/>; <paramref name="row"/> points per innermost row).</summary>
+        public ElectroPoint Solve(IReadOnlyList<(string Var, double Value)> point, int index, int row)
+        {
+            if (row > 0 && index % row == 0 && index > 0)
+            {
+                // a new row starts from the last row's first point, not from where the last row ran away
+                (Last, LastPoint, RowRunaway) = (RowFirst, RowFirstPoint, false);
+            }
+            if (RowRunaway) return Record(point, index, null, true, null);
+            var target = At(point, 1);
+            ContinuationResult r;
+            if (target.Currents.Count == 0)
+            {
+                var s = ConductiveBalance.Solve(target, Options, System, Last?.State);
+                r = new ContinuationResult(s.Converged ? s : null, false, s.Converged ? 1 : 0, 1, s.Converged ? s : Last, 1);
+                if (!s.Converged) return Record(point, index, null, false, string.Join(" ", s.Thermal.Notes));
+            }
+            else if (Last is null || LastPoint is null)
+            {
+                r = Continuation.Advance(l => At(point, l), System, null, Options, (lo, hi) => hi > 0 ? (hi - lo) / hi : 1);
+                if (r.Solution is null && !r.Runaway)
+                    return Record(point, index, null, false, "it did not converge even at zero current — " +
+                                  string.Join(" ", r.LastFailed?.Thermal.Notes ?? []));
+            }
+            else
+            {
+                var from = LastPoint;
+                List<(string, double)> Along(double l) => [.. point.Select((p, k) => (p.Var, from[k].Value + l * (p.Value - from[k].Value)))];
+                double Width(double lo, double hi) => point.Select((p, k) =>
+                {
+                    double d = p.Value - from[k].Value, v = from[k].Value + hi * d;
+                    return d == 0 ? 0 : Math.Abs((hi - lo) * d) / Math.Max(Math.Abs(v), 1e-300);
+                }).DefaultIfEmpty(0).Max();
+                r = Continuation.Advance(l => At(Along(l), 1), System, Last, Options, Width);
+            }
+            if (r.Runaway)
+            {
+                RowRunaway = true;
+                return Record(point, index, r, true, null);
+            }
+            Last = r.Solution;
+            LastPoint = point;
+            if (row <= 0 || index % row == 0) (RowFirst, RowFirstPoint) = (Last, point);
+            return Record(point, index, r, false, null);
+        }
+
+        private string? _runaway;
+
+        /// <summary>The first runaway's sentence, once.</summary>
+        public string? RunawayLine { get => _runaway; private set => _runaway ??= value; }
+
+        private ElectroPoint Record(IReadOnlyList<(string Var, double Value)> point, int index, ContinuationResult? r, bool runaway, string? failure)
+        {
+            if (runaway && r is { LastConverged: { } lc })
+            {
+                // the ports' current at each end of the bracket: the path's λ₀ and λ₁
+                var from = LastPoint ?? point;
+                double I(double l)
+                {
+                    var p = r.ConvergedAt == 0 && LastPoint is null ? At(point, l) :
+                            At([.. point.Select((q, k) => (q.Var, from[k].Value + l * (q.Value - from[k].Value)))], 1);
+                    return p.Currents.Count > 0 ? p.Currents[0].CurrentA : double.NaN;
+                }
+                int hot = Enumerable.Range(0, lc.WireTemperature.Length).DefaultIfEmpty(-1).MaxBy(w => w < 0 ? 0 : lc.WireTemperature[w].Max());
+                RunawayLine = RunawaySentence(I(r.FailedAt), I(r.ConvergedAt), hot >= 0 ? Wires[hot].Name : "(none)",
+                                              hot >= 0 ? lc.WireTemperature[hot].Max() : lc.Thermal.Temperature.Max());
+            }
+            var sol = runaway || failure is not null ? null : r?.Solution;
+            Solutions.Add(sol);
+            if (sol is not null) return new ElectroPoint(sol.Thermal, sol, false, null);
+            var nan = new double[Mesh.NodeCount];
+            Array.Fill(nan, double.NaN);
+            var empty = new ThermalSolution
+            {
+                Temperature = nan, Unknowns = 0, Solver = ThermalSolverKind.Auto, LinearIterations = 0, LinearResidual = 0, Converged = false,
+                SourcePowerW = double.NaN, FixedHeatOutW = double.NaN, ConvectionHeatOutW = double.NaN, FixedHeatOutByTag = new Dictionary<int, double>(),
+                BalanceRelative = 0, AmgLevels = 0, Notes = [],
+            };
+            return new ElectroPoint(empty, null, runaway, failure);
+        }
+    }
+
+    /// <summary>
+    /// The conductive-balance run of <paramref name="lowering"/>: each conducting region's σ(T), the wires as the solver takes them,
+    /// and the function that builds the problem at a point (<paramref name="thermal"/> gives its thermal half) with its currents
+    /// scaled by the second argument. Null with the refusal.
+    /// </summary>
+    private static ElectroRun? Electro(ThermalLowering lowering, C3dElaboration e, CemThermal t, ThermalMesh mesh,
+                                       Func<IReadOnlyList<(string Var, double Value)>, (ThermalProblem? Problem, C3dResolution? Res, string? Error)> thermal,
+                                       ThermalSolveOptions options, List<string> notes, IReadOnlyList<(string Var, double Value)> first,
+                                       out string? refusal)
+    {
+        refusal = null;
+        bool currents = lowering.PortContacts.Count > 0;
+        var sigma = new List<ElectricalConductivity?>();
+        for (int i = 0; i < lowering.Regions.Count; i++)
+        {
+            if (i >= lowering.Conductors.Count || !lowering.Conductors[i]) { sigma.Add(null); continue; }
+            var rec = ThermalMaterials.For(e, lowering.Regions[i].Solid, lowering.Regions[i].Material);
+            var m = rec?.Material;
+            if (m is null || ThermalProperties.SigmaAt(m, 20) is not { } s20)
+            {
+                if (currents)
+                {
+                    refusal = $"'{lowering.Regions[i].Solid}' is a conductor and its material states no electrical conductivity (Sigma20 or " +
+                              "SigmaVsTemp), so the current's path through it cannot be solved. State it in the material.";
+                    return null;
+                }
+                sigma.Add(null);
+                continue;
+            }
+            sigma.Add(Conductivity(m, s20.Value));
+        }
+
+        // the wires: their chains, their materials, their contacts (the geometry is the lowering's; values come per point)
+        var wireLaws = new List<(ThermalConductivity K, ElectricalConductivity S)>();
+        foreach (var w in lowering.Wires)
+        {
+            var rec = ThermalMaterials.ForWire(e, w.Name, w.Material, out string? lookNote);
+            if (lookNote is not null && !notes.Contains(lookNote)) notes.Add(lookNote);
+            if (rec is null || ThermalProperties.ThermalKAt(rec.Material, 25) is not { } k25 || ThermalProperties.SigmaAt(rec.Material, 20) is not { } s20)
+            {
+                refusal = $"Wire '{w.Name}' is made of '{ThermalMaterials.BaseName(w.Material)}', which states no thermal conductivity or no " +
+                          "electrical conductivity anywhere circuitRF looks (the technology, its libraries, the shipped materials).";
+                return null;
+            }
+            var m = rec.Material;
+            wireLaws.Add((m.ThermalKVsTemp is { Count: > 0 }
+                ? ThermalConductivity.Varying(k25.Value, T => { var v = ThermalProperties.ThermalKAt(m, T)!.Value; return (v.Value, v.Slope); })
+                : ThermalConductivity.Constant(k25.Value), Conductivity(m, s20.Value)));
+        }
+
+        ElectrothermalProblem At(IReadOnlyList<(string Var, double Value)> point, double scale)
+        {
+            var (tp, res, error) = thermal(point);
+            string? bad = tp is null || res is null ? error ?? "the point does not resolve." : null;
+            double Opt(string? text, string what)
+            {
+                if (bad is not null || string.IsNullOrWhiteSpace(text)) return double.NaN;
+                double v = C3dThermal.Evaluate(res!, text, out string? err) ?? double.NaN;
+                if (err is not null || !double.IsFinite(v)) bad = $"{what} '{text}' does not resolve{(err is null ? "" : ": " + err)}.";
+                return v;
+            }
+            double convH = Opt(t.WireConvectionH, "WireConvectionH"), convT = Opt(t.WireAmbientC, "WireAmbientC");
+            double bondT = Opt(t.BondThermalResistance, "BondThermalResistance"), bondE = Opt(t.BondElectricalResistance, "BondElectricalResistance");
+            var wires = new List<ThermalWire>();
+            for (int i = 0; i < lowering.Wires.Count; i++)
+            {
+                var w = lowering.Wires[i];
+                var contacts = new List<WireContact>();
+                foreach (var end in new[] { w.Start, w.End })
+                {
+                    if (!lowering.PatchTags.TryGetValue(end.Patch, out int tag) || lowering.RegionOf(end.Pad) is not (var pad and >= 0)) continue;
+                    bool distributed = end.FootFrom >= 0 && (double.IsFinite(bondT) || double.IsFinite(bondE));
+                    int a = distributed ? Math.Min(end.FootFrom, end.Node) : end.Node, b = distributed ? Math.Max(end.FootFrom, end.Node) : end.Node;
+                    contacts.Add(new WireContact(tag, a, b, pad, double.IsFinite(bondT) && bondT > 0 ? 1 / bondT : null,
+                                                 double.IsFinite(bondE) && bondE > 0 ? 1 / bondE : null)
+                    {
+                        SeriesThermalM2KW = end.BallHeightM > 0 ? end.BallHeightM / wireLaws[i].K.Nominal : 0,
+                        SeriesElectricalOhmM2 = end.BallHeightM > 0 ? end.BallHeightM / wireLaws[i].S.At20 : 0,
+                    });
+                }
+                wires.Add(new ThermalWire
+                {
+                    Name = w.Name, Points = w.Points, S = w.S, Area = Math.PI * w.DiameterM * w.DiameterM / 4, Diameter = w.DiameterM,
+                    K = wireLaws[i].K, Sigma = wireLaws[i].S, Contacts = contacts, OnPad = w.OnPad,
+                    ConvectionH = double.IsFinite(convH) ? convH : null, AmbientC = double.IsFinite(convT) ? convT : 0,
+                });
+            }
+            var terminals = new List<CurrentTerminal>();
+            foreach (var pc in lowering.PortContacts)
+            {
+                var c = (t.Currents ?? []).First(x => x.Port == pc.Port);
+                double amps = string.IsNullOrWhiteSpace(c.Dc) ? 0 : Opt(c.Dc, $"Port {pc.Port}'s Dc");
+                var pos = pc.Positive.Select(f => lowering.FaceTag(f, false)).OfType<int>().ToList();
+                var neg = pc.Negative.Select(f => lowering.FaceTag(f, false)).OfType<int>().ToList();
+                terminals.Add(new CurrentTerminal(pc.Port, pos, neg, scale * amps));
+            }
+            // the refusal is a value, like Problem's; the continuation that asked for this point is left through the exception
+            if (bad is not null) throw new ElectrothermalException(bad);
+            return new ElectrothermalProblem { Thermal = tp!, Wires = wires, Sigma = sigma, Currents = terminals };
+        }
+
+        ElectrothermalSystem system;
+        try { system = new ElectrothermalSystem(At(first, 0), options.MaxDegreeOfParallelism); }
+        catch (ElectrothermalException x) { refusal = x.Message; return null; }
+        return new ElectroRun { System = system, At = At, Options = options, Mesh = mesh, Wires = lowering.Wires };
+    }
+
+    private static ElectricalConductivity Conductivity(TechMaterial m, double at20)
+        => m.SigmaVsTemp is { Count: > 0 } || m.Alpha20 is { } a && a != 0
+            ? ElectricalConductivity.Varying(at20, T => { var v = ThermalProperties.SigmaAt(m, T)!.Value; return (v.Value, v.Slope); })
+            : ElectricalConductivity.Constant(at20);
+
+    /// <summary>R-em3d77-6 — the wire table, the port voltages, the Joule heat per conductor and the runaway flags, added to
+    /// <paramref name="ds"/>.</summary>
+    private static void AddElectro(DataSet ds, List<(string Var, double[] Values, string Unit)> axes, ElectroRun run, ThermalLowering lowering,
+                                   IReadOnlyList<bool> runaway)
+    {
+        Axis[] sweep = [.. axes.Select(a => new Axis(a.Var, a.Values, a.Unit))];
+        int points = run.Solutions.Count;
+        DataCube Cube(Func<int, double> at, string unit)
+        {
+            var v = new double[points];
+            for (int i = 0; i < points; i++) v[i] = at(i);
+            return sweep.Length == 0 ? new DataCube([], v) { Unit = unit } : new DataCube(sweep, v) { Unit = unit };
+        }
+        for (int w = 0; w < lowering.Wires.Count; w++)
+        {
+            var plan = lowering.Wires[w];
+            string name = plan.Name;
+            var s = new Axis("s", plan.S, "m");
+            var along = new double[points * plan.NodeCount];
+            for (int i = 0; i < points; i++)
+                for (int k = 0; k < plan.NodeCount; k++)
+                    along[i * plan.NodeCount + k] = run.Solutions[i] is { } sol ? sol.WireTemperature[w][k] : double.NaN;
+            ds.AddToGroup(WireGroup, $"Twire:{name}(s)", new DataCube([.. sweep, s], along) { Unit = "°C" });
+            int w0 = w;
+            double Max(int i) => run.Solutions[i] is { } sol ? sol.WireTemperature[w0].Max() : double.NaN;
+            double Where(int i)
+            {
+                if (run.Solutions[i] is not { } sol) return double.NaN;
+                var t = sol.WireTemperature[w0];
+                return plan.S[Array.IndexOf(t, t.Max())];
+            }
+            ds.AddToGroup(Group, $"Twire:{name}:max", Cube(Max, "°C"));
+            ds.AddToGroup(Group, $"Twire:{name}:smax", Cube(Where, "m"));
+            ds.AddToGroup(Group, $"Iwire:{name}", Cube(i => run.Solutions[i]?.WireCurrentA[w0] ?? double.NaN, "A"));
+            ds.AddToGroup(Group, $"Pwire:{name}", Cube(i => run.Solutions[i]?.JouleByWire[w0] ?? double.NaN, "W"));
+            ds.AddToGroup(Group, $"Rwire:{name}", Cube(i => run.Solutions[i]?.WireResistanceOhm[w0] ?? double.NaN, "Ω"));
+        }
+        for (int p = 0; p < lowering.PortContacts.Count; p++)
+        {
+            int p0 = p;
+            ds.AddToGroup(Group, $"Vport:{lowering.PortContacts[p].Port}", Cube(i => run.Solutions[i]?.PortVoltage[p0] ?? double.NaN, "V"));
+        }
+        if (lowering.PortContacts.Count > 0)
+            for (int r = 0; r < lowering.Regions.Count; r++)
+            {
+                if (r >= lowering.Conductors.Count || !lowering.Conductors[r]) continue;
+                int r0 = r;
+                ds.AddToGroup(Group, $"Pjoule:{lowering.Regions[r].Solid}", Cube(i => run.Solutions[i]?.JouleByRegion[r0] ?? double.NaN, "W"));
+            }
+        ds.AddToGroup(Group, "Runaway", Cube(i => runaway[i] ? 1 : 0, "1"));
+    }
+}

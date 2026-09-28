@@ -1,7 +1,8 @@
 // brief-em3d-75 R-em3d75-3 — the Setups dialog's THERMAL page: a 3D view's setup whose Problem is Thermal (brief 73 D1 — only a
 // .c3d embeds one). Top to bottom: Sources (each heat source's default and this setup's override), Boundaries (the list the
-// face menu writes, and All exposed faces), Sweep (up to two variables), Measures (parsed as typed, each error beside it),
-// Mesh, Balance, and the size estimate `explain` gives (brief 74 §6).
+// face menu writes, and All exposed faces), Currents (brief-em3d-77: a DC current per port, and the wires' convection and bond),
+// Sweep (up to two variables), Measures (parsed as typed, each error beside it), Mesh, Balance (k(T), and σ(T) from brief 77),
+// and the size estimate `explain` gives (brief 74 §6).
 //
 // NOTHING LIVES ONLY HERE (R-em-11): every control writes the setup's Thermal section through the panel's one CommitEdit, so
 // an edit is one undo entry of the .c3d and the dialog shows exactly what the file says. The document (its heat sources,
@@ -50,6 +51,16 @@ public sealed partial class ThermalBoundaryRow : ObservableObject
     }
 }
 
+/// <summary>brief-em3d-77 R-em3d77-1a — one port's current as typed: the port, the DC amperes (an expression), and the faces it
+/// enters and leaves by when not inferred.</summary>
+public sealed partial class ThermalCurrentRow : ObservableObject
+{
+    [ObservableProperty] private string _port = "1";
+    [ObservableProperty] private string _dc = "";
+    [ObservableProperty] private string _enterFace = "";
+    [ObservableProperty] private string _leaveFace = "";
+}
+
 /// <summary>One sweep axis as typed.</summary>
 public sealed partial class ThermalSweepRow : ObservableObject
 {
@@ -87,6 +98,13 @@ public sealed partial class EmSetupEditorViewModel
     public ObservableCollection<ThermalSourceRow> ThermalSources { get; } = [];
     public ObservableCollection<ThermalBoundaryRow> ThermalBoundaries { get; } = [];
     public ObservableCollection<ThermalSweepRow> ThermalSweeps { get; } = [];
+    public ObservableCollection<ThermalCurrentRow> ThermalCurrents { get; } = [];
+
+    /// <summary>brief-em3d-77 R-em3d77-3 — a bond wire's heat loss in air (h and its ambient), and a bond's interface resistances.</summary>
+    [ObservableProperty] private string _thermalWireConvectionH = "";
+    [ObservableProperty] private string _thermalWireAmbient = "";
+    [ObservableProperty] private string _thermalBondThermal = "";
+    [ObservableProperty] private string _thermalBondElectrical = "";
 
     public static IReadOnlyList<ThermalBoundaryKind> ThermalBoundaryKinds { get; } = [ThermalBoundaryKind.FixedT, ThermalBoundaryKind.Convection];
     public static IReadOnlyList<int> ThermalOrders { get; } = [1, 2];
@@ -109,7 +127,7 @@ public sealed partial class EmSetupEditorViewModel
     [ObservableProperty] private string _thermalSolver = "Auto";
     [ObservableProperty] private bool _thermalCheck;
     [ObservableProperty] private bool _thermalKOfT = true;
-    /// <summary>brief 77 adds σ(T); shown then.</summary>
+    /// <summary>brief-em3d-77 R-em3d77-4b — electrical conductivity follows temperature in conductive balance.</summary>
     [ObservableProperty] private bool _thermalSigmaOfT = true;
     [ObservableProperty] private string _thermalTolerance = "";
     [ObservableProperty] private string _thermalMaxIterations = "";
@@ -178,6 +196,16 @@ public sealed partial class EmSetupEditorViewModel
             ThermalSweeps.Clear();
             foreach (var s in t.Sweep ?? [])
                 ThermalSweeps.Add(new ThermalSweepRow { Var = s.Var, Start = s.Start, Stop = s.Stop, Points = s.Points.ToString(CultureInfo.InvariantCulture) });
+            ThermalCurrents.Clear();
+            foreach (var c in t.Currents ?? [])
+                ThermalCurrents.Add(new ThermalCurrentRow
+                {
+                    Port = c.Port.ToString(CultureInfo.InvariantCulture), Dc = c.Dc ?? "", EnterFace = c.EnterFace ?? "", LeaveFace = c.LeaveFace ?? "",
+                });
+            ThermalWireConvectionH = t.WireConvectionH ?? "";
+            ThermalWireAmbient = t.WireAmbientC ?? "";
+            ThermalBondThermal = t.BondThermalResistance ?? "";
+            ThermalBondElectrical = t.BondElectricalResistance ?? "";
             ThermalMeasuresText = string.Join("\n", t.Measures ?? []);
             var m = t.Mesh;
             ThermalOrder = m?.Order ?? ThermalLowerings.DefaultOrder;
@@ -252,6 +280,28 @@ public sealed partial class EmSetupEditorViewModel
         }
         t.Sweep = sweeps.Count > 0 ? sweeps : null;
 
+        // brief-em3d-77 — a row keeps what a later version wrote beside its port (brief 78's harmonics)
+        var currents = new List<CemThermalCurrent>();
+        foreach (var r in ThermalCurrents)
+        {
+            if (r.Port.Trim().Length == 0 && r.Dc.Trim().Length == 0) continue;
+            if (!int.TryParse(r.Port.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int port) || port < 1)
+            {
+                ThermalError = $"A current's port is a port number, at least 1; '{r.Port}' is not.";
+                return;
+            }
+            currents.Add(new CemThermalCurrent
+            {
+                Port = port, Dc = Blank(r.Dc), EnterFace = Blank(r.EnterFace), LeaveFace = Blank(r.LeaveFace),
+                More = t.Currents?.FirstOrDefault(c => c.Port == port)?.More,
+            });
+        }
+        t.Currents = currents.Count > 0 ? currents : null;
+        t.WireConvectionH = Blank(ThermalWireConvectionH);
+        t.WireAmbientC = Blank(ThermalWireAmbient);
+        t.BondThermalResistance = Blank(ThermalBondThermal);
+        t.BondElectricalResistance = Blank(ThermalBondElectrical);
+
         var measures = ThermalMeasuresText.Split('\n').Select(l => l.Trim()).Where(l => l.Length > 0).ToList();
         t.Measures = measures.Count > 0 ? measures : null;
 
@@ -310,6 +360,22 @@ public sealed partial class EmSetupEditorViewModel
     private void RemoveThermalBoundary(ThermalBoundaryRow? row)
     {
         if (row is null || !ThermalBoundaries.Remove(row)) return;
+        CommitThermal();
+    }
+
+    [RelayCommand]
+    private void AddThermalCurrent()
+    {
+        var doc = ThermalContext?.Document();
+        int port = doc?.Ports.Select(p => p.Number).Where(n => ThermalCurrents.All(r => r.Port.Trim() != n.ToString(CultureInfo.InvariantCulture)))
+                               .DefaultIfEmpty(1).Min() ?? 1;
+        ThermalCurrents.Add(new ThermalCurrentRow { Port = port.ToString(CultureInfo.InvariantCulture) });
+    }
+
+    [RelayCommand]
+    private void RemoveThermalCurrent(ThermalCurrentRow? row)
+    {
+        if (row is null || !ThermalCurrents.Remove(row)) return;
         CommitThermal();
     }
 

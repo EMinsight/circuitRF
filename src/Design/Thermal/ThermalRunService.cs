@@ -24,12 +24,13 @@ using CircuitRF.Diagnostics;
 using CircuitRF.Engine;
 using CircuitRF.Engine.Em3d;
 using CircuitRF.Thermal;
+using CircuitRF.Thermal.Electrothermal;
 using RfCore.Data;
 using RfCore.Export;
 
 namespace CircuitRF.Design.Thermal;
 
-public static class ThermalRunService
+public static partial class ThermalRunService
 {
     /// <summary>The token a thermal result's name carries, as <c>palace</c> and <c>openems</c> do.</summary>
     public const string SolverToken = "thermal";
@@ -145,6 +146,35 @@ public static class ThermalRunService
             notes.Add($"The mesh: {mesh.TetCount:N0} tetrahedra of order {mesh.Order}, {mesh.NodeCount:N0} nodes, " +
                       $"{lowering.Regions.Count} solid(s).");
 
+            // ── brief-em3d-77: bond wires or port currents make it conductive balance ──
+            bool sigmaOfT = t.Balance?.SigmaOfT ?? true;
+            options = options with { SigmaOfT = sigmaOfT };
+            notes.Add($"Conductive balance: σ(T) {(sigmaOfT ? "on" : "off (σ at 20 °C everywhere)")}, k(T) {(kOfT ? "on" : "off (k at its nominal value everywhere)")}.");
+            ElectroRun? et = null;
+            var runaway = new List<bool>();
+            if (lowering.Wires.Count > 0 || lowering.PortContacts.Count > 0)
+            {
+                if (global is not null && lowering.PortContacts.Count > 0)
+                    return Refuse("A submodel carries no port currents in this version: run the currents in the whole-model setup.");
+                (ThermalProblem?, C3dResolution?, string?) ThermalAt(IReadOnlyList<(string Var, double Value)> point)
+                {
+                    var sets = point.Select(q => (q.Var, q.Value.ToString("R", CultureInfo.InvariantCulture))).ToList();
+                    var r = sets.Count == 0 ? baseRes : C3dResolver.Resolve(document, C3dCell.Of(path), null, sets);
+                    var pr = Problem(t, document, lowering, conductivity, mesh, zero, r, out string? err);
+                    return (pr, r, err);
+                }
+                et = Electro(lowering, e, t, mesh, ThermalAt, options, notes, points[0], out string? electroWhy);
+                if (et is null) return Refuse(electroWhy!);
+                if (et.System.Notes.Count > 0) notes.AddRange(et.System.Notes);
+                if (lowering.Wires.Count > 0)
+                {
+                    // the lowering's note, now with where each span element lies
+                    notes.Remove(ThermalWireLowering.Note(lowering.Wires));
+                    notes.Add(ThermalWireLowering.Note(lowering.Wires, et.System.WireHosting));
+                }
+            }
+            var wireProbes = WireProbes(probes, lowering, e);
+
             // ── 4. every point ──
             var fields = new List<double[]>();
             var cutChecks = new List<CutFlux>();
@@ -164,12 +194,24 @@ public static class ThermalRunService
                 if (problem is null) return Refuse(At(axes, points[pi]) + valueError);
                 if (global is not null && SourceMismatch(t, global.Setup.Thermal!, document, lowering, res) is { } mismatch)
                     return Refuse(At(axes, points[pi]) + mismatch);
-                var sol = ThermalSolver.Solve(problem, options with { InitialGuess = previous }, assembly);
+                ThermalSolution sol;
+                ElectroPoint? ep = null;
+                if (et is not null)
+                {
+                    try { ep = et.Solve(points[pi], pi, axes.Count > 0 ? axes[^1].Values.Length : 0); }
+                    catch (ElectrothermalException x) { return Refuse(At(axes, points[pi]) + x.Message); }
+                    catch (InvalidOperationException x) { return Stop(EmRunStatus.EngineError, EmDiagnostics.SolveFailed(At(axes, points[pi]) + x.Message)); }
+                    if (ep.Failure is not null)
+                        return Stop(EmRunStatus.EngineError, EmDiagnostics.SolveFailed($"{At(axes, points[pi])}conductive balance did not converge: {ep.Failure}."));
+                    sol = ep.Thermal;
+                    runaway.Add(ep.Runaway);
+                }
+                else sol = ThermalSolver.Solve(problem, options with { InitialGuess = previous }, assembly);
                 previous = sol.Temperature;
                 fields.Add(sol.Temperature);
                 balances.Add((sol.SourcePowerW, sol.BalanceRelative));
                 var field = new ThermalField(mesh, sol.Temperature);
-                var read = ReadProbes(probes, lowering, field, document.DbuPerMicron);
+                var read = ReadProbes(probes, lowering, field, document.DbuPerMicron, wireProbes, ep?.Solution);
                 reads.Add(read);
                 measures.Add(Measures(t, res, read, errors, At(axes, points[pi]), lowering.SymmetryFactor));
                 if (global is not null)
@@ -182,8 +224,14 @@ public static class ThermalRunService
                 }
 
                 string where = points.Count > 1 ? At(axes, points[pi]) : "";
-                summary.Add($"{where}{sol.Unknowns:N0} unknowns, {Describe(sol)}; energy balance {sol.BalanceRelative:G3} " +
-                            $"(sources {sol.SourcePowerW:G6} W, out {sol.FixedHeatOutW:G6} W through fixed faces and {sol.ConvectionHeatOutW:G6} W by convection).");
+                if (ep is { Runaway: true })
+                {
+                    summary.Add($"{where}no steady state (thermal runaway): the point has no temperature.");
+                    continue;
+                }
+                summary.Add($"{where}{sol.Unknowns:N0} unknowns, {Describe(sol, et is not null)}; energy balance {sol.BalanceRelative:G3} " +
+                            $"({(et is null ? "sources" : "sources and Joule heat")} {sol.SourcePowerW:G6} W, out {sol.FixedHeatOutW:G6} W through fixed faces and " +
+                            $"{sol.ConvectionHeatOutW:G6} W by convection).");
                 foreach (string n in sol.Notes) summary.Add(where + n);
                 if (sol.BalanceRelative > ThermalSolver.BalanceTolerance)
                     warnings.Add($"{where}The energy balance does not close: {sol.BalanceRelative:G3} of the heat is unaccounted for " +
@@ -193,6 +241,7 @@ public static class ThermalRunService
                 foreach (string held in Holds(lowering, records, mesh, sol.Temperature, kOfT)) if (!notes.Contains(held)) notes.Add(held);
             }
             notes.AddRange(summary.Count <= 12 ? summary : [.. summary.Take(6), $"… and {summary.Count - 6} more line(s) in the result's Notes."]);
+            if (et?.RunawayLine is { } runawayLine) warnings.Add(runawayLine);
 
             // ── limits (D11) ──
             foreach (var p in probes)
@@ -215,6 +264,7 @@ public static class ThermalRunService
 
             // ── 5. the result ──
             var data = Build(axes, probes, reads, measures, balances, t, summary);
+            if (et is not null) AddElectro(data, axes, et, lowering, runaway);
             if (cutChecks.Count == points.Count && cutChecks.Count > 0)
             {
                 data.AddToGroup(Group, "Submodel:cut_W", Cube(axes, cutChecks.Select(c => c.SubmodelW), "W"));
@@ -379,10 +429,11 @@ public static class ThermalRunService
         };
     }
 
-    /// <summary>Every probe's reading on <paramref name="field"/>. A wire probe waits for brief 77's 1D wires and reads
-    /// nothing.</summary>
+    /// <summary>Every probe's reading on <paramref name="field"/>; a wire probe's (brief-em3d-77) over its wires' 1D temperatures,
+    /// feet included, from <paramref name="electro"/>.</summary>
     private static Dictionary<string, ProbeRead> ReadProbes(IReadOnlyList<C3dProbe> probes, ThermalLowering lowering, ThermalField field,
-                                                            int dbuPerMicron)
+                                                            int dbuPerMicron, IReadOnlyDictionary<string, int[]>? wireProbes = null,
+                                                            CircuitRF.Thermal.Nonlinear.ElectrothermalSolution? electro = null)
     {
         double m = 1e-6 / dbuPerMicron;
         var read = new Dictionary<string, ProbeRead>(StringComparer.Ordinal);
@@ -395,6 +446,11 @@ public static class ThermalRunService
             else if (p.Solid is { } solid && lowering.RegionOf(solid) is var ri and >= 0) r = Stats(field.Region(ri));
             else if (p.Spot is { } spot && lowering.FaceTag(spot.Face, false) is { } st)
                 r = Stats(field.Spot(new HashSet<int> { st }, (spot.Center.X * m, spot.Center.Y * m, spot.Center.Z * m), spot.Diameter * m / 2));
+            else if (p.Wire is not null && wireProbes is not null && wireProbes.TryGetValue(p.Name, out int[]? ws) && ws.Length > 0)
+            {
+                var all = ws.SelectMany(w => electro?.WireTemperature[w] ?? [double.NaN]).ToList();
+                r = new ProbeRead(all.Max(), all.Min(), all.Average());
+            }
             else if (p.Line is { } line)
             {
                 var samples = field.Line((line.From.X * m, line.From.Y * m, line.From.Z * m), (line.To.X * m, line.To.Y * m, line.To.Z * m), LineSamples);
@@ -490,12 +546,30 @@ public static class ThermalRunService
         }
     }
 
-    private static string Describe(ThermalSolution s)
+    /// <summary>brief-em3d-77 — each wire probe's wires, by index into the lowering's: the wire of that name, every element of an
+    /// array of that name (<c>w1</c> reads <c>w1[0]</c>, <c>w1[1]</c>, …), or every wire of a .wBond array of that name.</summary>
+    private static Dictionary<string, int[]> WireProbes(IReadOnlyList<C3dProbe> probes, ThermalLowering lowering, C3dElaboration e)
+    {
+        var map = new Dictionary<string, int[]>(StringComparer.Ordinal);
+        foreach (var p in probes)
+        {
+            if (p.Wire is not { } name) continue;
+            var arrays = e.Wires.Where(w => w.Array == name).Select(w => w.Name).ToHashSet(StringComparer.Ordinal);
+            map[p.Name] = [.. Enumerable.Range(0, lowering.Wires.Count).Where(i =>
+            {
+                string n = lowering.Wires[i].Name;
+                return n == name || n.StartsWith(name + "[", StringComparison.Ordinal) || arrays.Contains(n);
+            })];
+        }
+        return map;
+    }
+
+    private static string Describe(ThermalSolution s, bool balance = false)
     {
         string solver = s.Solver == ThermalSolverKind.Direct
             ? $"direct solver (relative residual {s.LinearResidual:G3})"
-            : $"PCG + AMG, {s.LinearIterations} iteration(s), {s.AmgLevels} level(s), relative residual {s.LinearResidual:G3}";
-        return s.NewtonIterations > 0 ? $"{solver}, {s.NewtonIterations} Newton step(s) over k(T)" : solver;
+            : $"{(balance ? "BiCGStab + block AMG" : "PCG + AMG")}, {s.LinearIterations} iteration(s), {s.AmgLevels} level(s), relative residual {s.LinearResidual:G3}";
+        return s.NewtonIterations > 0 ? $"{solver}, {s.NewtonIterations} Newton step(s) {(balance ? "of conductive balance" : "over k(T)")}" : solver;
     }
 
     private static List<List<(string Var, double Value)>> Product(List<(string Var, double[] Values, string Unit)> axes)
@@ -527,7 +601,6 @@ public static class ThermalRunService
         double Get(int i, string probe, Func<ProbeRead, double> f) => reads[i].TryGetValue(probe, out var r) ? f(r) : double.NaN;
         foreach (var p in probes)
         {
-            if (p.Wire is not null) continue;
             if (p.Line is not null)
             {
                 var first = reads.Select(r => r.GetValueOrDefault(p.Name)?.Line).FirstOrDefault(l => l is not null);

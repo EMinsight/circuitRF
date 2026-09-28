@@ -159,7 +159,7 @@ public sealed class ThermalDocumentTests : IDisposable
         C3dBindings.SetExpr(doc.MeshRegions[0], C3dBindings.SpecOf(typeof(C3dMeshRegion), nameof(C3dMeshRegion.SizeUm))!, 0,
                             new C3dExpr("fine", "Um"));
         var setup = HotSetup();
-        setup.Thermal!.Currents = [JsonDocument.Parse("""{ "Port": 1, "DcA": "0.5" }""").RootElement.Clone()];
+        setup.Thermal!.Currents = [new CemThermalCurrent { Port = 1, Dc = "0.5", EnterFace = "die/zmax" }];
         setup.Thermal.Mesh = new CemThermalMesh { Order = 2, SizeFromSources = 8, MinThroughThickness = 2, Grading = 1.4 };
         setup.Thermal.Balance = new CemThermalBalance { SigmaOfT = true, KOfT = false, Tolerance = 1e-6, MaxIterations = 30 };
         setup.Thermal.Boundaries!.Add(new CemThermalBoundary { Face = C3dThermal.ExposedFaces, Kind = ThermalBoundaryKind.Convection, H = "10", AmbientC = "25" });

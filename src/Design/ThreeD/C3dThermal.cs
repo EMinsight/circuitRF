@@ -409,6 +409,39 @@ public static class C3dThermal
             if (h.Power is null && !(t.Sources ?? []).Any(s => s.Name == h.Name))
                 found.Add(D.SetupSource(name, $"gives heat source '{h.Name}' no power, and the source states no default Power"));
 
+        // brief-em3d-77 R-em3d77-1 — each current names a port of this view, a Dc that parses, and faces that exist; a wire's
+        // convection names its ambient; a bond's resistances parse
+        var currents = t.Currents ?? [];
+        foreach (var c in currents)
+        {
+            if (!doc.Ports.Any(p => p.Number == c.Port))
+                found.Add(D.Current(name, $"gives port {c.Port} a current, and this 3D view has no port {c.Port}" +
+                                          (doc.Ports.Count == 0 ? " (it has none)" : $" (it has {string.Join(", ", doc.Ports.Select(p => p.Number))})")));
+            if (string.IsNullOrWhiteSpace(c.Dc))
+            {
+                if (c.More is not { Count: > 0 }) found.Add(D.Current(name, $"gives port {c.Port} no Dc current"));
+            }
+            else if (Unparsable(c.Dc) is { } err) found.Add(D.Current(name, $"gives port {c.Port} the Dc '{c.Dc}', which does not parse: {err}"));
+            foreach (var (key, face) in new[] { ("EnterFace", c.EnterFace), ("LeaveFace", c.LeaveFace) })
+                if (face is not null && e is { Ok: true } && FaceProblem(doc, e, face) is { } why)
+                    found.Add(D.Current(name, $"names '{face}' as port {c.Port}'s {key}, which does not exist: {why}"));
+        }
+        foreach (var dup in currents.GroupBy(c => c.Port).Where(g => g.Count() > 1))
+            found.Add(D.Current(name, $"gives port {dup.Key} {dup.Count()} currents; a port carries one"));
+        if (t.Submodel is not null && currents.Count > 0)
+            found.Add(D.Current(name, "is a submodel and gives ports currents; a submodel carries none in this version — run them in the whole-model setup"));
+        if (t.WireConvectionH is { } wh && Unparsable(wh) is { } whe) found.Add(D.Current(name, $"has WireConvectionH '{wh}', which does not parse: {whe}"));
+        if (t.WireConvectionH is not null && string.IsNullOrWhiteSpace(t.WireAmbientC))
+            found.Add(D.Current(name, "states WireConvectionH and no WireAmbientC: say what temperature a wire in air loses its heat to"));
+        else if (t.WireAmbientC is { } wa && Unparsable(wa) is { } wae) found.Add(D.Current(name, $"has WireAmbientC '{wa}', which does not parse: {wae}"));
+        foreach (var (key, text) in new[] { ("BondThermalResistance", t.BondThermalResistance), ("BondElectricalResistance", t.BondElectricalResistance) })
+            if (text is not null && Unparsable(text) is { } be) found.Add(D.Current(name, $"has {key} '{text}', which does not parse: {be}"));
+        if (currents.Count > 0 && e is { Ok: true })
+            foreach (var sol in e.Solids.Where(x => x.Role == Em3dRole.Conductor && !Thermal.ThermalMaterials.NotMeshed(x.Role, x.Material)))
+                if (Thermal.ThermalMaterials.For(e, sol.Name, sol.Material) is { } rec && ThermalProperties.SigmaAt(rec.Material, 20) is null)
+                    found.Add(D.Current(name, $"sends current through the conductors, and '{sol.Name}''s material '{rec.Material.Name}' states no electrical " +
+                                              "conductivity (Sigma20 or SigmaVsTemp)"));
+
         // Every meshed solid's material states k (R-em3d73-1c): never a default. Air is not meshed. brief-em3d-74 — the run's
         // own lookup, which looks through a technology record stating no k to a same-name library record that does.
         // brief-em3d-76: each solid against its OWN technology — a placed layout's materials are its technology's
@@ -630,6 +663,7 @@ public static class C3dThermal
         public const string BlockShapeId     = "c3d.thermal.effective-block";
         public const string SymmetryId       = "c3d.thermal.symmetry";
         public const string SubmodelId       = "c3d.thermal.submodel";
+        public const string CurrentId        = "c3d.thermal.current";
 
         private static Diagnostic E(string id, string template, params (string, object?)[] args)
             => Diagnostic.Create(id, DiagnosticSeverity.Error, template, args);
@@ -691,6 +725,8 @@ public static class C3dThermal
             => E(SymmetryId, "{what}.", ("what", what));
         public static Diagnostic Submodel(string setup, string what)
             => E(SubmodelId, "Thermal setup '{setup}' is a submodel that {what}.", ("setup", setup), ("what", what));
+        public static Diagnostic Current(string setup, string what)
+            => E(CurrentId, "Thermal setup '{setup}' {what}.", ("setup", setup), ("what", what));
         public static Diagnostic Measure(string setup, string measure, string why)
             => E(MeasureId, "Thermal setup '{setup}' has the measure '{measure}', which cannot be evaluated: {why}.",
                  ("setup", setup), ("measure", measure), ("why", why));

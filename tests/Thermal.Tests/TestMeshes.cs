@@ -130,3 +130,37 @@ public sealed class GmshFactAttribute : FactAttribute
         if (TestMeshes.Gmsh.Value is null) Skip = "needs Gmsh (on PATH, or CIRCUITRF_GMSH)";
     }
 }
+
+/// <summary>brief-em3d-77 — meshes put side by side, and a face's triangles retagged.</summary>
+internal static class MeshEdits
+{
+    /// <summary><paramref name="a"/> and <paramref name="b"/> as one mesh (sharing nothing), <paramref name="b"/>'s surface tags
+    /// moved up by <paramref name="tagOffset"/> and its regions by <paramref name="regionOffset"/>. First order.</summary>
+    public static ThermalMesh Merge(ThermalMesh a, ThermalMesh b, int tagOffset, int regionOffset = 0)
+    {
+        int na = a.NodeCount;
+        return new ThermalMesh([.. a.Nodes, .. b.Nodes], 1, [.. a.Tets, .. b.Tets.Select(v => v + na)],
+                               [.. a.TetRegion, .. b.TetRegion.Select(r => r + regionOffset)],
+                               [.. a.Triangles, .. b.Triangles.Select(v => v + na)], [.. a.TriangleTag, .. b.TriangleTag.Select(t => t + tagOffset)]);
+    }
+
+    /// <summary>The mesh with every triangle of tag <paramref name="from"/> whose centroid <paramref name="where"/> accepts
+    /// given tag <paramref name="to"/>.</summary>
+    public static ThermalMesh Retag(ThermalMesh m, int from, int to, Func<double, double, double, bool> where)
+    {
+        int nf = m.NodesPerTriangle;
+        var tags = (int[])m.TriangleTag.Clone();
+        for (int t = 0; t < m.TriangleCount; t++)
+        {
+            if (tags[t] != from) continue;
+            double x = 0, y = 0, z = 0;
+            for (int k = 0; k < 3; k++)
+            {
+                int v = m.Triangles[nf * t + k];
+                x += m.Nodes[3 * v] / 3; y += m.Nodes[3 * v + 1] / 3; z += m.Nodes[3 * v + 2] / 3;
+            }
+            if (where(x, y, z)) tags[t] = to;
+        }
+        return new ThermalMesh(m.Nodes, m.Order, m.Tets, m.TetRegion, m.Triangles, tags) { Interfaces = m.Interfaces };
+    }
+}

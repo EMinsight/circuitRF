@@ -825,6 +825,45 @@
                                  IsEnabled="{Binding ViewModel.ThermalExposed}" LostFocus="OnThermalLostFocus" KeyDown="OnThermalKey"/>
                     </StackPanel>
 
+                    <!-- brief-em3d-77 R-em3d77-1: a DC current per port; the wires' heat loss in air and their bonds -->
+                    <TextBlock Classes="colhdr" FontWeight="SemiBold" Margin="0,6,0,0" Text="Currents"/>
+                    <TextBlock Classes="colhdr" TextWrapping="Wrap"
+                               Text="A port's current enters its positive conductor and leaves its negative one, through the faces its edges lie on unless named; bond wires carry it as 1D elements. A port not listed carries nothing."/>
+                    <ItemsControl ItemsSource="{Binding ViewModel.ThermalCurrents}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="em:ThermalCurrentRow">
+                                <Grid ColumnDefinitions="50,*,*,*,Auto" Margin="0,1">
+                                    <TextBox Grid.Column="0" Classes="cell" Text="{Binding Port}" PlaceholderText="port" ToolTip.Tip="The port's number"
+                                             LostFocus="OnThermalLostFocus" KeyDown="OnThermalKey"/>
+                                    <TextBox Grid.Column="1" Classes="cell" Text="{Binding Dc}" PlaceholderText="DC A" ToolTip.Tip="The DC current, amperes: a number or a variable (sweepable)"
+                                             LostFocus="OnThermalLostFocus" KeyDown="OnThermalKey"/>
+                                    <TextBox Grid.Column="2" Classes="cell" Text="{Binding EnterFace}" PlaceholderText="enters (inferred)" ToolTip.Tip="object/face it enters through; empty: the face the port's positive edge lies on"
+                                             LostFocus="OnThermalLostFocus" KeyDown="OnThermalKey"/>
+                                    <TextBox Grid.Column="3" Classes="cell" Text="{Binding LeaveFace}" PlaceholderText="leaves (inferred)" ToolTip.Tip="object/face it leaves through; empty: the face the port's negative edge lies on"
+                                             LostFocus="OnThermalLostFocus" KeyDown="OnThermalKey"/>
+                                    <Button Grid.Column="4" FontSize="11" Padding="4,0" Content="✕" ToolTip.Tip="Remove this current"
+                                            Command="{Binding $parent[ItemsControl].((em:EmSetupDocument)DataContext).ViewModel.RemoveThermalCurrentCommand, FallbackValue={x:Null}}"
+                                            CommandParameter="{Binding}"/>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button FontSize="11" Padding="6,1" Content="Add current" Command="{Binding ViewModel.AddThermalCurrentCommand}"/>
+                        <TextBlock Classes="colhdr" VerticalAlignment="Center" Text="Wire in air: h"/>
+                        <TextBox Classes="cell" Width="70" Text="{Binding ViewModel.ThermalWireConvectionH}" PlaceholderText="none"
+                                 ToolTip.Tip="Heat a bond wire loses where it runs through air, W/(m²·K); a wire in a mould compound loses heat into it regardless"
+                                 LostFocus="OnThermalLostFocus" KeyDown="OnThermalKey"/>
+                        <TextBox Classes="cell" Width="60" Text="{Binding ViewModel.ThermalWireAmbient}" PlaceholderText="T °C"
+                                 ToolTip.Tip="The ambient a wire in air loses its heat to, °C" LostFocus="OnThermalLostFocus" KeyDown="OnThermalKey"/>
+                        <TextBlock Classes="colhdr" VerticalAlignment="Center" Text="Bond"/>
+                        <TextBox Classes="cell" Width="80" Text="{Binding ViewModel.ThermalBondThermal}" PlaceholderText="perfect"
+                                 ToolTip.Tip="A bond's interface thermal resistance, m²·K/W; empty: a perfect bond (the heel takes its pad's temperature)"
+                                 LostFocus="OnThermalLostFocus" KeyDown="OnThermalKey"/>
+                        <TextBox Classes="cell" Width="80" Text="{Binding ViewModel.ThermalBondElectrical}" PlaceholderText="perfect"
+                                 ToolTip.Tip="A bond's specific contact resistance, Ω·m²; empty: a perfect bond" LostFocus="OnThermalLostFocus" KeyDown="OnThermalKey"/>
+                    </StackPanel>
+
                     <TextBlock Classes="colhdr" FontWeight="SemiBold" Margin="0,6,0,0" Text="Sweep"/>
                     <ItemsControl ItemsSource="{Binding ViewModel.ThermalSweeps}">
                         <ItemsControl.ItemTemplate>
@@ -890,6 +929,8 @@
                     <StackPanel Orientation="Horizontal" Spacing="8">
                         <CheckBox IsChecked="{Binding ViewModel.ThermalKOfT}" Content="k(T)"
                                   ToolTip.Tip="Thermal conductivity follows temperature (a Newton loop); off, the nominal value everywhere"/>
+                        <CheckBox IsChecked="{Binding ViewModel.ThermalSigmaOfT}" Content="σ(T)"
+                                  ToolTip.Tip="Electrical conductivity follows temperature in conductive balance; off, its 20 °C value everywhere. Run twice to see each one's share"/>
                         <TextBox Classes="cell" Width="80" Text="{Binding ViewModel.ThermalTolerance}" PlaceholderText="1e-6"
                                  ToolTip.Tip="The relative residual at which the loop stops" LostFocus="OnThermalLostFocus" KeyDown="OnThermalKey"/>
                         <TextBox Classes="cell" Width="60" Text="{Binding ViewModel.ThermalMaxIterations}" PlaceholderText="30"
