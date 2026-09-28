@@ -23,8 +23,9 @@
 # takes seconds.
 #
 # Cross-building: macOS builds either architecture from either Mac (CMAKE_OSX_ARCHITECTURES). Linux
-# builds its own architecture; the other needs a CMake toolchain file named by CRF_OCCT_TOOLCHAIN_FILE
-# (used for OCCT and the worker alike). Windows uses build.cmd.
+# builds the other architecture with the distribution's cross g++ (crossbuild-essential-amd64/-arm64),
+# or with a CMake toolchain file named by CRF_OCCT_TOOLCHAIN_FILE (used for OCCT and the worker alike).
+# Windows uses build.cmd.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -101,13 +102,6 @@ case " $KERNEL_RIDS " in
   *) say "note: $rid is not in recipe.env's KERNEL_RIDS, so no installer ships what this builds." ;;
 esac
 
-toolchain=()
-if [ "$target_os" = linux ] && [ "${rid#linux-}" != "$host_arch" ]; then
-  [ -n "${CRF_OCCT_TOOLCHAIN_FILE:-}" ] \
-    || die "$rid is not this machine's architecture ($host_arch). Build it on a $rid machine, or name a CMake toolchain file for it with CRF_OCCT_TOOLCHAIN_FILE."
-  toolchain=("-DCMAKE_TOOLCHAIN_FILE=$CRF_OCCT_TOOLCHAIN_FILE")
-fi
-
 cache_root="${CRF_OCCT_CACHE:-$HOME/.circuitRF-build/occt}"
 # NO SPACE IN THE PATH: autotools and some CMake paths refuse one (em-3d.md 7.2 records it for the
 # solver installs), and a build that fails 4 minutes in over a path is worse than refusing here.
@@ -117,8 +111,37 @@ esac
 vroot="$cache_root/$OCCT_VERSION"
 rdir="$vroot/$rid"
 
+# The other Linux architecture. A toolchain file named by CRF_OCCT_TOOLCHAIN_FILE wins; otherwise the
+# Debian/Ubuntu cross compiler for the target (crossbuild-essential-amd64 / -arm64, which
+# packaging/linux/build-linux.sh offers to install) is found and a toolchain file is written for it --
+# into the cache, never the repository. Exported, so ensure-built.sh compiles the worker with it too.
+# The cross g++ carries its own sysroot, so the file names only the system and the compilers.
+toolchain=()
+if [ "$target_os" = linux ] && [ "${rid#linux-}" != "$host_arch" ]; then
+  if [ -z "${CRF_OCCT_TOOLCHAIN_FILE:-}" ]; then
+    case "$rid" in
+      linux-x64)   triple=x86_64-linux-gnu;  processor=x86_64;  cross_pkg=crossbuild-essential-amd64 ;;
+      linux-arm64) triple=aarch64-linux-gnu; processor=aarch64; cross_pkg=crossbuild-essential-arm64 ;;
+    esac
+    command -v "$triple-g++" >/dev/null 2>&1 \
+      || die "$rid is not this machine's architecture ($host_arch), and there is no $triple-g++ to cross-build it with. Install it (Debian/Ubuntu: sudo apt-get install $cross_pkg), or name a CMake toolchain file with CRF_OCCT_TOOLCHAIN_FILE."
+    mkdir -p "$vroot"
+    CRF_OCCT_TOOLCHAIN_FILE="$vroot/toolchain-$rid.cmake"
+    cat > "$CRF_OCCT_TOOLCHAIN_FILE" <<EOF
+# Written by tools/geometry-worker/build.sh for $rid on an $host_arch machine.
+set(CMAKE_SYSTEM_NAME Linux)
+set(CMAKE_SYSTEM_PROCESSOR $processor)
+set(CMAKE_C_COMPILER $triple-gcc)
+set(CMAKE_CXX_COMPILER $triple-g++)
+EOF
+    export CRF_OCCT_TOOLCHAIN_FILE
+    say "cross-building $rid with $triple-g++"
+  fi
+  toolchain=("-DCMAKE_TOOLCHAIN_FILE=$CRF_OCCT_TOOLCHAIN_FILE")
+fi
+
 if [ -f "$rdir/install.json" ]; then
-  say "OCCT $OCCT_VERSION for $rid is already in the cache ($rdir)"
+  say "OCCT $OCCT_VERSION for $rid is already in the cache ($rdir); not rebuilding it"
 else
   for tool in cmake make tar; do
     command -v "$tool" >/dev/null 2>&1 || die "'$tool' is not on PATH; building OCCT needs it (see tools/geometry-worker/README.md)"

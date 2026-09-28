@@ -188,8 +188,12 @@ Windows; `CRF_OCCT_CACHE` moves it; no space in the path).
   `CRF_ALLOW_NO_KERNEL=1` to package without it knowingly (nothing is fetched then).
 - **Windows x86 does not ship it** until brief 61's Q13 is answered; `build-windows.ps1` prints the
   sentence for that installer's release notes.
-- **Linux arm64 from an x64 machine** needs a CMake toolchain file named by `CRF_OCCT_TOOLCHAIN_FILE`,
-  or a run on an arm64 machine.
+- **The other Linux architecture** is cross-built with the distribution's cross g++
+  (`crossbuild-essential-amd64` on an arm64 machine, `-arm64` on an x64 one), which `build-linux.sh`
+  offers to install with `apt-get` along with anything else the kernel needs. `CRF_OCCT_TOOLCHAIN_FILE`
+  names a CMake toolchain file of your own instead.
+- **It is built once per architecture per machine.** Every later run finds OCCT in the cache and skips
+  it; the worker recompiles only when it is stale, in seconds.
 
 `tools/geometry-worker/README.md` has the protocol, the recipe and the licence position.
 

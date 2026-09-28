@@ -52,9 +52,10 @@ disabled, and every test that needs the worker skips with a reason. Skip the ste
 `-p:CrfSkipGeometryWorker=true`. The packaging scripts run `build.sh --strict` per RID and fail when a
 shipping RID lacks the kernel, unless `CRF_ALLOW_NO_KERNEL=1`.
 
-**Cross-building.** macOS builds both architectures from either Mac. Linux builds its own architecture;
-the other needs `CRF_OCCT_TOOLCHAIN_FILE` naming a CMake toolchain file (used for OCCT and the worker
-alike). llvm-mingw targets x64, ARM64 and x86 from any Windows machine.
+**Cross-building.** macOS builds both architectures from either Mac. Linux builds the other
+architecture with the distribution's cross g++ (`crossbuild-essential-amd64` / `-arm64` on Debian and
+Ubuntu), writing the CMake toolchain file into the cache itself; `CRF_OCCT_TOOLCHAIN_FILE` names one of
+your own instead (used for OCCT and the worker alike). llvm-mingw targets x64, ARM64 and x86 from any Windows machine.
 
 ## Where it sits
 

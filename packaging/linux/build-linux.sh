@@ -99,8 +99,9 @@ UNSMOKED=""
 # COPIES it out of the per-user cache and warns when the cache is empty - right for a build, wrong for
 # a release - so this script BUILDS it per RID with --strict, and fails at the end when a RID that
 # ships it (recipe.env's KERNEL_RIDS, decision D2) came out without it. The first run on a machine
-# builds OCCT itself (minutes, once per architecture). The other architecture needs a CMake toolchain
-# file named by CRF_OCCT_TOOLCHAIN_FILE, or a run on that architecture.
+# builds OCCT itself (minutes, once per architecture; every later run reuses the per-user cache and
+# only recompiles the worker when it is stale, in seconds). The other architecture is cross-built with
+# the distribution's cross g++, or a CMake toolchain file named by CRF_OCCT_TOOLCHAIN_FILE.
 #
 # Set CRF_ALLOW_NO_KERNEL=1 to package without it on purpose (nothing is fetched or built then).
 KERNEL_RECIPE="${ROOT}/tools/geometry-worker/occt/recipe.env"
@@ -113,6 +114,53 @@ case "$(uname -m)" in
     aarch64|arm64) HOST_ARCH=arm64 ;;
     *)             HOST_ARCH="$(uname -m)" ;;
 esac
+
+# -- The kernel's toolchain, checked once, and offered for install -------------
+#
+# What tools/geometry-worker/build.sh needs, as Debian/Ubuntu package names: CMake, a C++ compiler and
+# make, a downloader, and for the architecture this machine is not, the cross g++. When any is missing
+# and someone is at the keyboard, this offers to apt-get install exactly those, rather than letting the
+# kernel fail per architecture minutes later. Declined, or with nobody to ask, the run carries on:
+# build.sh refuses, and the summary at the end says so.
+KERNEL_PKGS=""
+need_pkg() { case " $KERNEL_PKGS " in *" $1 "*) ;; *) KERNEL_PKGS="${KERNEL_PKGS:+$KERNEL_PKGS }$1" ;; esac; }
+if [ "${CRF_ALLOW_NO_KERNEL:-}" != 1 ]; then
+    for ARCH in $ARCHES; do
+        case " $KERNEL_RIDS " in *" linux-${ARCH} "*) ;; *) continue ;; esac
+        command -v cmake >/dev/null 2>&1 || need_pkg cmake
+        { command -v make >/dev/null 2>&1 && command -v g++ >/dev/null 2>&1; } || need_pkg build-essential
+        command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1 || need_pkg curl
+        if [ "$ARCH" != "$HOST_ARCH" ] && [ -z "${CRF_OCCT_TOOLCHAIN_FILE:-}" ]; then
+            case "$ARCH" in
+                x64)   command -v x86_64-linux-gnu-g++  >/dev/null 2>&1 || need_pkg crossbuild-essential-amd64 ;;
+                arm64) command -v aarch64-linux-gnu-g++ >/dev/null 2>&1 || need_pkg crossbuild-essential-arm64 ;;
+            esac
+        fi
+    done
+fi
+if [ -n "$KERNEL_PKGS" ]; then
+    echo ""
+    echo "The geometry kernel needs packages this machine does not have: ${KERNEL_PKGS}"
+    ANSWER=n
+    if [ -t 0 ] && command -v apt-get >/dev/null 2>&1; then
+        read -r -p "  Install them now with apt-get (sudo)? [Y/n] " ANSWER || ANSWER=n
+    fi
+    case "$ANSWER" in
+        ""|[Yy]*)
+            # Unquoted on purpose: one argument per package.
+            # shellcheck disable=SC2086
+            if sudo apt-get update && sudo apt-get install -y $KERNEL_PKGS; then
+                echo "The kernel toolchain is installed."
+            else
+                echo "WARNING: apt-get did not install them; the kernel will not build, and that is reported again at the end."
+            fi ;;
+        *)
+            echo "  Not installing. To install them yourself (Debian/Ubuntu names):"
+            echo "    sudo apt-get install ${KERNEL_PKGS}"
+            echo "  Continuing; the kernel will not build, and that is reported again at the end." ;;
+    esac
+    echo ""
+fi
 
 for ARCH in $ARCHES; do
 
@@ -429,8 +477,8 @@ if [ -n "$NO_KERNEL" ]; then
         echo "  CRF_ALLOW_NO_KERNEL=1 says that is intended."
     else
         echo "  Build it and run this again - tools/geometry-worker/build.sh --rid linux-<arch> (needs cmake,"
-        echo "  make and a C++ compiler; minutes per architecture, once) - or set CRF_ALLOW_NO_KERNEL=1 to"
-        echo "  ship without it knowingly."
+        echo "  make and a C++ compiler, and for the other architecture crossbuild-essential-amd64 or -arm64;"
+        echo "  minutes per architecture, once) - or set CRF_ALLOW_NO_KERNEL=1 to ship without it knowingly."
         NO_KERNEL_FAIL=1
     fi
 fi
