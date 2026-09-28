@@ -40,15 +40,6 @@ circuitRF is for RF practitioners or researchers who can't justify the cost of t
 *Build hierarchical RF circuits on a virtualized canvas: drag from the palette, wire, label nets, set
 parameters and sweeps, and Run.*
 
-### Symbol editor
-![circuitRF symbol editor](docs/images/symbol-editor.png)
-<!-- IMAGE TO CREATE: docs/images/symbol-editor.png
-     The symbol editor with a custom cell symbol in progress — e.g. a two-port amplifier block: a body
-     rectangle, a few drawing primitives (lines/arc/text label), and two pins snapped to the connection
-     grid with their port numbers shown. Left toolbar: the drawing tools (line, rect, circle, arc, text,
-     pin). Show the fine authoring grid. -->
-*Draw the glyph for any cell and place its connection pins — the same renderer the schematic uses.*
-
 ### Data Display — loadpull contours
 ![circuitRF loadpull contours on a Smith chart](docs/images/data-display-loadpull-contour.png)
 <!-- IMAGE TO CREATE: docs/images/data-display-loadpull-contour.png
@@ -57,13 +48,18 @@ parameters and sweeps, and Run.*
      interactive markers reading off impedance/value. A trace inspector card on the right shows the
      metric/colormap selection. Optionally a second rectangular plot (power sweep) docked alongside. -->
 *Plot S-parameters, spectra, power sweeps, and loadpull contours; overlay measured Touchstone/`.spl`/
-`.lpcwave` data on simulated results.*
+`.lpcwave` data on simulated results; plot EM results from MoM, FEM and FDTD solvers (including radiation 
+patterns)*
 
 ### Layout editor
 ![circuitRF layout editor](docs/images/layout-editor.png)
 <!-- IMAGE PLACEHOLDER: docs/images/layout-editor.png — to be supplied by the repo owner. -->
 *Draw and edit physical geometry on a technology-defined layer stack: microstrip components generated from
-their schematic parameters, hierarchy with arrays, and export to GDSII, DXF and Gerber.*
+their schematic parameters, hierarchy with arrays, and export to GDSII, DXF and Gerber. MoM EM solver.*
+
+### 3D editor
+![circuitRF 3D editor](docs/images/3D-editor.png)
+*Draw and edit in 3D and send to FEM or FDTD solvers*
 
 ---
 
@@ -76,23 +72,23 @@ their schematic parameters, hierarchy with arrays, and export to GDSII, DXF and 
 
 | Platform | Download |
 |---|---|
-| Windows, Intel/AMD | [circuitRF-1.0.0-beta.34-win-x64-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.34/circuitRF-1.0.0-beta.34-win-x64-user.msi) |
-| Windows, ARM | [circuitRF-1.0.0-beta.34-win-arm64-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.34/circuitRF-1.0.0-beta.34-win-arm64-user.msi) |
-| Windows, 32-bit | [circuitRF-1.0.0-beta.34-win-x86-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.34/circuitRF-1.0.0-beta.34-win-x86-user.msi) |
+| Windows, Intel/AMD | [circuitRF-1.0.0-beta.35-win-x64-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.35/circuitRF-1.0.0-beta.35-win-x64-user.msi) |
+| Windows, ARM | [circuitRF-1.0.0-beta.35-win-arm64-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.35/circuitRF-1.0.0-beta.35-win-arm64-user.msi) |
+| Windows, 32-bit | [circuitRF-1.0.0-beta.35-win-x86-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.35/circuitRF-1.0.0-beta.35-win-x86-user.msi) |
 |  |  |
-| macOS, Apple Silicon | [circuitRF-1.0.0-beta.34-arm64.dmg](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.34/circuitRF-1.0.0-beta.34-arm64.dmg) |
-| macOS, Intel | [circuitRF-1.0.0-beta.34-x64.dmg](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.34/circuitRF-1.0.0-beta.34-x64.dmg) |
+| macOS, Apple Silicon | [circuitRF-1.0.0-beta.35-arm64.dmg](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.35/circuitRF-1.0.0-beta.35-arm64.dmg) |
+| macOS, Intel | [circuitRF-1.0.0-beta.35-x64.dmg](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.35/circuitRF-1.0.0-beta.35-x64.dmg) |
 |  |  |
-| Linux, Intel/AMD | [circuitRF-1.0.0-beta.34-linux-x64.tar.gz](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.34/circuitRF-1.0.0-beta.34-linux-x64.tar.gz) |
-| Linux, ARM | [circuitRF-1.0.0-beta.34-linux-arm64.tar.gz](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.34/circuitRF-1.0.0-beta.34-linux-arm64.tar.gz) |
+| Linux, Intel/AMD | [circuitRF-1.0.0-beta.35-linux-x64.tar.gz](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.35/circuitRF-1.0.0-beta.35-linux-x64.tar.gz) |
+| Linux, ARM | [circuitRF-1.0.0-beta.35-linux-arm64.tar.gz](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.35/circuitRF-1.0.0-beta.35-linux-arm64.tar.gz) |
 
 
 **Linux** — unpack and run `install.sh`. It writes only inside `~/.local`, puts `circuitrf` on your PATH
 and registers the menu entry and file types; `--uninstall` removes it and leaves your work alone.
 
 ```sh
-tar xzf circuitRF-1.0.0-beta.34-linux-x64.tar.gz
-./circuitRF-1.0.0-beta.34/install.sh
+tar xzf circuitRF-1.0.0-beta.35-linux-x64.tar.gz
+./circuitRF-1.0.0-beta.35/install.sh
 ```
 
 **Installing for everyone on the machine?** The Windows `.msi` files without `-user`, and the `.deb`
@@ -311,8 +307,7 @@ green fields, and each is a good place to contribute:
 - **Noise analysis** — no noise figure, no phase noise, no Fmin / Γopt / Rn extraction.
 - **Transient analysis** — circuitRF is frequency-domain by design; there is no time-domain solver.
 - **Envelope analysis** — no simulation of modulated waveforms.
-- **3D EM, and thermal** — the electromagnetic solver is 2.5D planar method-of-moments over a
-  layered stackup. There is no 3D FEM solver, and no thermal solver.
+- **Thermal** — there is currently no 3D thermal solver.
 
 Full roadmap and current status: [`docs/Development_Plan.md`](docs/Development_Plan.md).
 
