@@ -639,11 +639,26 @@ public sealed class CemThermalSubmodel
 /// brief-em3d-77 R-em3d77-1a — a port's current in a thermal setup: it enters the port's positive conductor and leaves its
 /// negative one, each through an equipotential contact (the face the port's edge lies on, or the one named here). A port no
 /// entry names carries nothing.
+///
+/// <para>brief-em3d-78 R-em3d78-1/-2 — and its HARMONIC currents: at RF a port's current is not solved through the metal but
+/// assigned to the one wire array with an end on the port's positive conductor, and shared among that array's wires by their
+/// inductance. <see cref="Array"/> in place of <see cref="Port"/> states an array's harmonics directly (no Dc: a DC current is
+/// a port's, and the conduction solve shares it).</para>
 /// </summary>
 public sealed class CemThermalCurrent
 {
-    /// <summary>The port's number.</summary>
-    public int Port { get; set; }
+    /// <summary>The port's number; null for an <see cref="Array"/> entry.</summary>
+    public int? Port { get; set; }
+
+    /// <summary>brief-em3d-78 R-em3d78-2 — a wire array's name, in place of <see cref="Port"/>: its harmonics go to that array.</summary>
+    public string? Array { get; set; }
+
+    /// <summary>brief-em3d-78 R-em3d78-1 — the fundamental frequency, Hz (an expression with a unit, or a bare number in Hz);
+    /// required when <see cref="Harmonics"/> is not empty.</summary>
+    public string? F0 { get; set; }
+
+    /// <summary>brief-em3d-78 R-em3d78-1 — the harmonic currents, each at N × F0, each stated Peak or Rms (never inferred).</summary>
+    public List<CemThermalHarmonic>? Harmonics { get; set; }
 
     /// <summary>The DC current, amperes, an expression (<c>Id</c>, <c>2.5</c>): sweepable like any value.</summary>
     public string? Dc { get; set; }
@@ -655,9 +670,36 @@ public sealed class CemThermalCurrent
     /// <summary>The face the current leaves through; omitted, inferred on the negative conductor as <see cref="EnterFace"/> is.</summary>
     public string? LeaveFace { get; set; }
 
-    /// <summary>What a later version states here (brief 78's harmonics), carried as written.</summary>
+    /// <summary>What a later version states here, carried as written.</summary>
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? More { get; set; }
+
+    /// <summary>What the entry names: <c>port 2</c> or <c>array 'D1'</c>.</summary>
+    [JsonIgnore]
+    public string Subject => Array is { } a ? $"array '{a}'" : $"port {Port}";
+}
+
+/// <summary>brief-em3d-78 R-em3d78-1 — how a harmonic's amplitude is stated. Internally every harmonic is a peak phasor.</summary>
+public enum ThermalAmplitude
+{
+    /// <summary>The phasor's peak magnitude.</summary>
+    Peak,
+    /// <summary>Its RMS: the peak ÷ √2.</summary>
+    Rms,
+}
+
+/// <summary>brief-em3d-78 R-em3d78-1 — one harmonic of a thermal current: at <see cref="N"/> × F0, amplitude <see cref="Amp"/>
+/// amperes stated <see cref="As"/>. Phase is not taken: harmonics are orthogonal and add in power.</summary>
+public sealed class CemThermalHarmonic
+{
+    /// <summary>The harmonic number, at least 1.</summary>
+    public int N { get; set; } = 1;
+
+    /// <summary>The amplitude, amperes, an expression.</summary>
+    public string? Amp { get; set; }
+
+    /// <summary>Peak or Rms — required; null is a missing statement, which <c>check</c> refuses.</summary>
+    public ThermalAmplitude? As { get; set; }
 }
 
 /// <summary>Conductive balance: the Newton loop over σ(T) and k(T). Each switch defaults on.</summary>
@@ -689,8 +731,8 @@ public sealed class CemThermal
     /// state.</summary>
     public List<CemThermalBoundary>? Boundaries { get; set; }
 
-    /// <summary>brief-em3d-77 — DC currents at the ports (brief 78 adds harmonics): each port's current flows through the model's
-    /// metal and its bond wires, which are solved as 1D elements, and heats them.</summary>
+    /// <summary>brief-em3d-77 — DC currents at the ports: each port's current flows through the model's metal and its bond wires,
+    /// which are solved as 1D elements, and heats them. brief-em3d-78: and harmonic currents, which heat the wires only.</summary>
     public List<CemThermalCurrent>? Currents { get; set; }
 
     /// <summary>brief-em3d-77 R-em3d77-3e — heat a bond wire loses where it runs through AIR, W/(m²·K) over its surface, an

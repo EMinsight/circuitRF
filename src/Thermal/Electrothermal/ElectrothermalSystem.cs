@@ -10,9 +10,10 @@
 // RESIDUALS (R-em3d77-4a). r = S(x)·x − L(x):
 //   φ rows: S = ∫σ(T)∇Nᵢ·∇Nⱼ (tetrahedra, and σA along the wires) + the contacts' G″; L = the ports' currents;
 //   T rows: S = ThermalAssembly's K(T) + the wires' kA + the contacts' h″ + the well couplings + wire convection;
-//           L = the sources, Robin's hT∞ + the Joule heat σ|∇φ|² (and σA φ′², and a contact's G″Δφ², half to each side).
+//           L = the sources, Robin's hT∞ + the Joule heat σ|∇φ|² (and σA φ′², and a contact's G″Δφ², half to each side)
+//               + brief-em3d-78's RF heat per unit length along each wire's span, Σₙ ½|Iₙ|²R′_ac(fₙ, σ(T)).
 // THE JACOBIAN is S plus every dependence S and L have on x: dk/dT, dσ/dT in the φ rows (∫σ′Nⱼ∇Nᵢ·∇φ), and the Joule heat's
-// dependence on T (σ′|∇φ|²NᵢNⱼ) and on φ (2σ∇φ·∇NⱼNᵢ).
+// dependence on T (σ′|∇φ|²NᵢNⱼ) and on φ (2σ∇φ·∇NⱼNᵢ), and the RF heat's on T (dq′/dT NᵢNⱼ, through σ(T) and the skin depth).
 //
 // THE WIRE'S COUPLINGS (R-em3d77-3d/-3e):
 //   * a CONTACT PATCH: at each quadrature point of each patch triangle, h″·(T_wire − T_pad) — T_wire at the point's projection
@@ -52,6 +53,10 @@ public sealed class ElectrothermalAssembled
     public required bool Invalid { get; init; }
     /// <summary>Heat lost by the wires to convection, W.</summary>
     public required double WireConvectionW { get; init; }
+    /// <summary>brief-em3d-78 — RF heat, W: per wire, and per wire per harmonic (in <see cref="ThermalWire.Harmonics"/>' order).</summary>
+    public double[] RfByWire { get; init; } = [];
+    public double[][] RfByHarmonic { get; init; } = [];
+    public double RfW => RfByWire.Sum();
 }
 
 /// <summary>R-em3d77-4a — the coupled system of one mesh and its wires.</summary>
@@ -105,6 +110,9 @@ public sealed class ElectrothermalSystem
 
     /// <summary>Per wire: the smallest and largest ring radius r_e its well coupling used, metres (0, 0 in air).</summary>
     public (double Min, double Max)[] WellRadius { get; private set; } = [];
+
+    /// <summary>brief-em3d-78 R-em3d78-4d — per wire, the regions its span runs through (none: all in air).</summary>
+    public int[][] WireHostRegions { get; private set; } = [];
 
     /// <summary>Notes the set-up makes (conductors with no current, rings a boundary cut).</summary>
     public IReadOnlyList<string> Notes => _notes;
@@ -188,6 +196,7 @@ public sealed class ElectrothermalSystem
         // ── the patches' and the wells' geometry ──
         WireHosting = new (int, int, int)[wires.Count];
         WellRadius = new (double, double)[wires.Count];
+        WireHostRegions = new int[wires.Count][];
         for (int w = 0; w < wires.Count; w++) Samples(problem, w);
 
         // ── which φ items conduct into which: tetrahedra, wire elements, electrical contacts ──
@@ -299,6 +308,7 @@ public sealed class ElectrothermalSystem
 
         // the span: a solid round it (the well), or air
         int inSolid = 0, inAir = 0, pads = 0;
+        var hosts = new SortedSet<int>();
         for (int e = 0; e < ne; e++)
         {
             if (onPad[e]) { pads++; continue; }
@@ -312,6 +322,7 @@ public sealed class ElectrothermalSystem
                 var at = Locator.Locate(x.X, x.Y, x.Z);
                 if (at is not { } host) { _air.Add(new AirSample(w, nodes, wn, wq)); continue; }
                 anySolid = true;
+                hosts.Add(host.Region);
                 double k = PerpendicularK(problem.Thermal.Conductivity[host.Region], tangent);
                 double h = Locator.Size(host.Element);
                 double r = Math.Max(RingSizes * h, 2 * wire.Radius);
@@ -341,6 +352,7 @@ public sealed class ElectrothermalSystem
             if (anySolid) inSolid++; else inAir++;
         }
         WireHosting[w] = (inSolid, inAir, pads);
+        WireHostRegions[w] = [.. hosts];
     }
 
     /// <summary>The wire's chain nodes and shape values at a patch point.</summary>
@@ -555,9 +567,15 @@ public sealed class ElectrothermalSystem
 
         // ── wires: kA, σA, Joule ──
         var jouleWire = new double[problem.Wires.Count];
+        var rfWire = new double[problem.Wires.Count];
+        var rfHarmonic = new double[problem.Wires.Count][];
         for (int w = 0; w < problem.Wires.Count; w++)
         {
             var wire = problem.Wires[w];
+            var rfPart = rfHarmonic[w] = new double[wire.Harmonics.Count];
+            var rfq = new double[wire.Harmonics.Count];
+            var rf3 = new double[3];
+            var rfdt = new double[9];
             int o = WireOffset[w];
             var ph = WirePhi[w];
             var t3 = new double[3];
@@ -575,6 +593,9 @@ public sealed class ElectrothermalSystem
                 bool conducts = ph[a0] >= 0;
                 for (int k = 0; k < 3; k++) { t3[k] = x[o + a0 + k]; f3[k] = conducts ? x[nT + ph[a0 + k]] : 0; }
                 Array.Clear(ke); Array.Clear(je); Array.Clear(ee); Array.Clear(edt); Array.Clear(q); Array.Clear(qdf); Array.Clear(qdt);
+                Array.Clear(rf3); Array.Clear(rfdt);
+                // R-em3d78-4a/-4c/-4d: RF heat along the span only (a foot on its pad hands its current to the pad), uniform along it
+                bool rf = wire.Harmonics.Count > 0 && !(wire.OnPad is { } pad && e < pad.Length && pad[e]);
                 for (int g = 0; g < GaussX.Length; g++)
                 {
                     var (_, _, jac) = Geometry(wire, e, GaussX[g]);
@@ -600,6 +621,18 @@ public sealed class ElectrothermalSystem
                             qdf[3 * i + j] += wq * 2 * sg * A * fp * dn[j] * nv[i];
                             qdt[3 * i + j] += wq * ds * A * fp * fp * nv[i] * nv[j];
                         }
+                    if (rf)
+                    {
+                        var (qr, dqr) = wire.RfHeat(tq, sigmaOfT, rfq);
+                        if (!double.IsFinite(qr) || !double.IsFinite(dqr)) invalid = true;
+                        rfWire[w] += wq * qr;
+                        for (int h = 0; h < rfq.Length; h++) rfPart[h] += wq * rfq[h];
+                        for (int i = 0; i < 3; i++)
+                        {
+                            rf3[i] += wq * qr * nv[i];
+                            for (int j = 0; j < 3; j++) rfdt[3 * i + j] += wq * dqr * nv[i] * nv[j];
+                        }
+                    }
                     if (conducts)
                     {
                         double qq = wq * sg * A * fp * fp;
@@ -610,11 +643,11 @@ public sealed class ElectrothermalSystem
                 for (int i = 0; i < 3; i++)
                 {
                     int ri = o + a0 + i;
-                    load[ri] += q[i];
+                    load[ri] += q[i] + rf3[i];
                     for (int j = 0; j < 3; j++)
                     {
                         int cj = o + a0 + j;
-                        Add(ri, cj, ke[3 * i + j], ke[3 * i + j] + (kOfT ? je[3 * i + j] : 0) - qdt[3 * i + j]);
+                        Add(ri, cj, ke[3 * i + j], ke[3 * i + j] + (kOfT ? je[3 * i + j] : 0) - qdt[3 * i + j] - rfdt[3 * i + j]);
                         if (!conducts) continue;
                         int pi = nT + ph[a0 + i], pj = nT + ph[a0 + j];
                         Add(pi, pj, ee[3 * i + j], ee[3 * i + j]);
@@ -717,6 +750,7 @@ public sealed class ElectrothermalSystem
         {
             Secant = secant, Tangent = tangent, Load = load, SourceW = th.SourcePowerW, JouleByRegion = jouleRegion,
             JouleByWire = jouleWire, JouleContactsW = jouleContacts, Invalid = invalid, WireConvectionW = wireConv,
+            RfByWire = rfWire, RfByHarmonic = rfHarmonic,
         };
     }
 

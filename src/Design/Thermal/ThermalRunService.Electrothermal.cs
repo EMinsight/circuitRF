@@ -8,6 +8,8 @@
 //   * the thermal group: per wire its hottest temperature and where (Twire:<name>:max, :smax), its DC current (Iwire:), its
 //     dissipated power (Pwire:) and its resistance at its solved temperature (Rwire:); per port its voltage (Vport:<n>); per
 //     conducting solid its Joule heat (Pjoule:<solid>); and Runaway, 1 at a point with no steady state.
+//   * brief-em3d-78 R-em3d78-4e: per wire carrying harmonics, its RF heat in all (Prf:<name>) and per harmonic (Prf:<name>:h2), and
+//     its peak current per harmonic (Irf:<name>:h2) — the share of its array's current, whatever the point's temperatures.
 // A runaway point's temperatures are NaN, every cube's included, and its fields are NaN too: it has none.
 
 using System.Globalization;
@@ -39,6 +41,9 @@ public static partial class ThermalRunService
         public required ThermalSolveOptions Options { get; init; }
         public required ThermalMesh Mesh { get; init; }
         public required IReadOnlyList<ThermalWirePlan> Wires { get; init; }
+        public required ThermalRfPlan Rf { get; init; }
+        /// <summary>brief-em3d-78 — per point, per wire, each harmonic's peak current in the wire (the plan's labels' order).</summary>
+        public readonly List<double[][]> RfPeaks = [];
         public ElectrothermalSolution? Last;
         public IReadOnlyList<(string Var, double Value)>? LastPoint;
         public ElectrothermalSolution? RowFirst;
@@ -54,10 +59,11 @@ public static partial class ThermalRunService
                 // a new row starts from the last row's first point, not from where the last row ran away
                 (Last, LastPoint, RowRunaway) = (RowFirst, RowFirstPoint, false);
             }
-            if (RowRunaway) return Record(point, index, null, true, null);
             var target = At(point, 1);
+            RfPeaks.Add([.. target.Wires.Select(w => w.Harmonics.Select(h => h.PeakA).ToArray())]);
+            if (RowRunaway) return Record(point, index, null, true, null);
             ContinuationResult r;
-            if (target.Currents.Count == 0)
+            if (target.Currents.Count == 0 && target.Wires.All(w => w.Harmonics.All(h => h.PeakA == 0)))
             {
                 var s = ConductiveBalance.Solve(target, Options, System, Last?.State);
                 r = new ContinuationResult(s.Converged ? s : null, false, s.Converged ? 1 : 0, 1, s.Converged ? s : Last, 1);
@@ -107,7 +113,9 @@ public static partial class ThermalRunService
                 {
                     var p = r.ConvergedAt == 0 && LastPoint is null ? At(point, l) :
                             At([.. point.Select((q, k) => (q.Var, from[k].Value + l * (q.Value - from[k].Value)))], 1);
-                    return p.Currents.Count > 0 ? p.Currents[0].CurrentA : double.NaN;
+                    // brief-em3d-78: a run with harmonic currents only reports its largest wire current (peak)
+                    return p.Currents.Count > 0 ? p.Currents[0].CurrentA
+                        : p.Wires.SelectMany(w => w.Harmonics).Select(h => h.PeakA).DefaultIfEmpty(double.NaN).Max();
                 }
                 int hot = Enumerable.Range(0, lc.WireTemperature.Length).DefaultIfEmpty(-1).MaxBy(w => w < 0 ? 0 : lc.WireTemperature[w].Max());
                 RunawayLine = RunawaySentence(I(r.FailedAt), I(r.ConvergedAt), hot >= 0 ? Wires[hot].Name : "(none)",
@@ -178,6 +186,11 @@ public static partial class ThermalRunService
                 : ThermalConductivity.Constant(k25.Value), Conductivity(m, s20.Value)));
         }
 
+        // brief-em3d-78 R-em3d78-2/-3: which array carries each port's harmonics, and how its wires share them (once: geometry)
+        var rf = ThermalRfPlan.Build(e, lowering, t, out string? rfWhy);
+        if (rf is null) { refusal = rfWhy; return null; }
+        List<string>? collect = null;
+
         ElectrothermalProblem At(IReadOnlyList<(string Var, double Value)> point, double scale)
         {
             var (tp, res, error) = thermal(point);
@@ -191,6 +204,12 @@ public static partial class ThermalRunService
             }
             double convH = Opt(t.WireConvectionH, "WireConvectionH"), convT = Opt(t.WireAmbientC, "WireAmbientC");
             double bondT = Opt(t.BondThermalResistance, "BondThermalResistance"), bondE = Opt(t.BondElectricalResistance, "BondElectricalResistance");
+            double Stated(string? text, string what)
+            {
+                if (string.IsNullOrWhiteSpace(text)) { bad ??= $"{what} is not stated."; return double.NaN; }
+                return Opt(text, what);
+            }
+            var harmonics = rf.At(Stated, scale, collect);
             var wires = new List<ThermalWire>();
             for (int i = 0; i < lowering.Wires.Count; i++)
             {
@@ -213,6 +232,7 @@ public static partial class ThermalRunService
                     Name = w.Name, Points = w.Points, S = w.S, Area = Math.PI * w.DiameterM * w.DiameterM / 4, Diameter = w.DiameterM,
                     K = wireLaws[i].K, Sigma = wireLaws[i].S, Contacts = contacts, OnPad = w.OnPad,
                     ConvectionH = double.IsFinite(convH) ? convH : null, AmbientC = double.IsFinite(convT) ? convT : 0,
+                    Harmonics = harmonics[i], AcResistance = harmonics[i].Count > 0 ? ThermalRfPlan.Bessel(w.DiameterM) : null,
                 });
             }
             var terminals = new List<CurrentTerminal>();
@@ -232,7 +252,21 @@ public static partial class ThermalRunService
         ElectrothermalSystem system;
         try { system = new ElectrothermalSystem(At(first, 0), options.MaxDegreeOfParallelism); }
         catch (ElectrothermalException x) { refusal = x.Message; return null; }
-        return new ElectroRun { System = system, At = At, Options = options, Mesh = mesh, Wires = lowering.Wires };
+        if (rf.Any)
+        {
+            // the first point's harmonics: both ends' comparison, and which wires are electrically long (R-em3d78-2, -4d)
+            collect = [];
+            ElectrothermalProblem p1;
+            try { p1 = At(first, 1); }
+            catch (ElectrothermalException x) { refusal = x.Message; return null; }
+            notes.AddRange(rf.Notes);
+            notes.AddRange(collect);
+            collect = null;
+            var epsr = system.WireHostRegions.Select(regions => regions.Select(r =>
+                ThermalMaterials.For(e, lowering.Regions[r].Solid, lowering.Regions[r].Material)?.Material.Epsr ?? 1).DefaultIfEmpty(1).Max()).ToList();
+            notes.AddRange(ThermalRfPlan.ElectricallyLong(lowering.Wires, [.. p1.Wires.Select(w => w.Harmonics)], epsr));
+        }
+        return new ElectroRun { System = system, At = At, Options = options, Mesh = mesh, Wires = lowering.Wires, Rf = rf };
     }
 
     private static ElectricalConductivity Conductivity(TechMaterial m, double at20)
@@ -276,6 +310,17 @@ public static partial class ThermalRunService
             ds.AddToGroup(Group, $"Iwire:{name}", Cube(i => run.Solutions[i]?.WireCurrentA[w0] ?? double.NaN, "A"));
             ds.AddToGroup(Group, $"Pwire:{name}", Cube(i => run.Solutions[i]?.JouleByWire[w0] ?? double.NaN, "W"));
             ds.AddToGroup(Group, $"Rwire:{name}", Cube(i => run.Solutions[i]?.WireResistanceOhm[w0] ?? double.NaN, "Ω"));
+            // R-em3d78-4e — the RF heat, in all and per harmonic, and the peak current per harmonic
+            var labels = run.Rf.WireLabels[w];
+            if (labels.Length == 0) continue;
+            ds.AddToGroup(Group, $"Prf:{name}", Cube(i => run.Solutions[i] is { } sol && sol.RfByWire.Length > w0 ? sol.RfByWire[w0] : double.NaN, "W"));
+            for (int h = 0; h < labels.Length; h++)
+            {
+                int h0 = h;
+                ds.AddToGroup(Group, $"Irf:{name}:{labels[h]}", Cube(i => i < run.RfPeaks.Count ? run.RfPeaks[i][w0][h0] : double.NaN, "A"));
+                ds.AddToGroup(Group, $"Prf:{name}:{labels[h]}",
+                              Cube(i => run.Solutions[i] is { } sol && sol.RfByHarmonic.Length > w0 ? sol.RfByHarmonic[w0][h0] : double.NaN, "W"));
+            }
         }
         for (int p = 0; p < lowering.PortContacts.Count; p++)
         {

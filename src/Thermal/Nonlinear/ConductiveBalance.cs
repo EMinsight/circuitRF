@@ -49,6 +49,10 @@ public sealed class ElectrothermalSolution
     public required double[] PortVoltage { get; init; }
     /// <summary>Σ V·I over the ports: the electrical power in, which the Joule heat must equal.</summary>
     public required double ElectricalPowerW { get; init; }
+    /// <summary>brief-em3d-78 — the RF heat, W: in all, per wire, and per wire per harmonic.</summary>
+    public double RfW { get; init; }
+    public double[] RfByWire { get; init; } = [];
+    public double[][] RfByHarmonic { get; init; } = [];
 }
 
 public static class ConductiveBalance
@@ -344,7 +348,7 @@ public static class ConductiveBalance
                 byTag[FixedTag[i]] = byTag.GetValueOrDefault(FixedTag[i]) + q;
             }
             double conv = S.Thermal.ConvectionOut(P.Thermal, x[..n]) + a.WireConvectionW;
-            double pin = a.SourceW + a.JouleW;
+            double pin = a.SourceW + a.JouleW + a.RfW;
             double flow = Math.Max(Math.Abs(pin), Math.Abs(fixedOut) + Math.Abs(conv));
             double balance = flow > 0 ? Math.Abs(pin - fixedOut - conv) / flow : 0;
             var volts = S.TerminalPhi.Select(t => x[S.TUnknowns + t.Positive] - x[S.TUnknowns + t.Negative]).ToArray();
@@ -356,6 +360,8 @@ public static class ConductiveBalance
                 notes.Add($"Electrical power in {pe:G6} W (Σ V·I over the ports); Joule heat {a.JouleW:G6} W ({a.JouleByWire.Sum():G6} W in the wires); " +
                           $"they differ by {gap:G3} of it.");
             }
+            if (a.RfByWire.Length > 0 && a.RfW > 0 && converged)
+                notes.Add($"RF heat {a.RfW:G6} W in the wires (their harmonic currents, at each wire's solved temperature).");
             var thermal = new ThermalSolution
             {
                 Temperature = x[..n], Unknowns = NFree, Solver = last?.Solver ?? Kind, LinearIterations = last?.Iterations ?? 0,
@@ -371,7 +377,7 @@ public static class ConductiveBalance
                 UpdateK = upd, Failure = failure, JouleW = a.JouleW, JouleByRegion = a.JouleByRegion, JouleByWire = a.JouleByWire,
                 WireCurrentA = [.. Enumerable.Range(0, P.Wires.Count).Select(w => S.WireCurrent(P, w, x, O.SigmaOfT))],
                 WireResistanceOhm = [.. Enumerable.Range(0, P.Wires.Count).Select(w => S.WireResistance(P, w, x, O.SigmaOfT))],
-                PortVoltage = volts, ElectricalPowerW = pe,
+                PortVoltage = volts, ElectricalPowerW = pe, RfW = a.RfW, RfByWire = a.RfByWire, RfByHarmonic = a.RfByHarmonic,
             };
         }
     }

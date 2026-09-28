@@ -168,3 +168,21 @@ the 3D generator. `tests/Ui.Tests/Em3d/Em3dWireTests.cs` gate 7 holds that with 
 `.wBond` with and without the fields set. `Wire.Reverse` swaps `StartBond`/`EndBond` with the points,
 because a ball stays on the pad it was bonded to. Duplicate, paste and the duplicate ghost carry the
 fields with the shape.
+
+## brief-em3d-78 — the array share, from a design or from centrelines (2026-09-28)
+
+**One path, and the design is it.** A thermal run needs each wire's share of its array's RF current — a column of X·L_arr
+(`ArrayReduction.CurrentShares` with one array driven), which for a single array is X = L⁻¹A scaled to unit current. `ArrayShare`
+gives it for a `WBondDesign` through the design's own `WireMesh.Build` → `InductanceMatrix.Fill` → `ArrayReduction.Reduce`,
+and for a `.c3d`'s drawn wires by BUILDING a design from their resolved axes (points rounded to the nanometre DBU, ground
+plane as the caller says) and calling the same function. A second entry point computing filaments from metres directly would
+have been the drift the brief warns about; rounding a drawn wire to the nanometre is physically nothing and is what makes a
+drawn wire on a `.wBond`'s points the SAME design, bit for bit (gate 2 compares with `Assert.Equal` on doubles).
+
+**Bit identity needs the same filament ORDER, not just the same wires.** The first version oriented every drawn wire of an
+array from the alphabetically first pad, so a whole array drawn pad → lead was reversed before the fill: the same physics, a
+different summation order in `Grover`'s pair loop, and shares 1 ulp apart. A drawn array is now oriented as its first wire
+runs, and only a wire running the other way is reversed (it must be: a reversed wire's mutuals change sign).
+
+`InternalImpedance` gained `NormalizedZSlope` and `ResistanceWithSigmaSlope` for the thermal Newton step. Nothing wBond itself
+computes moved: its 85 °C evaluation and every wBond test are unchanged.

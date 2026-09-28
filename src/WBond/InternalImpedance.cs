@@ -173,6 +173,47 @@ public static class InternalImpedance
     }
 
     /// <summary>
+    /// brief-em3d-78 R-em3d78-4b — <c>d(Z_int/R_dc)/dq</c>, analytic, in the same three regimes as
+    /// <see cref="NormalizedZ"/> so it is the derivative of THAT function (a thermal Newton step differentiates
+    /// what it evaluates).
+    ///
+    /// <para>With ρ = I₀/I₁ and z = (1+j)q: dρ/dz = 1 − ρ² + ρ/z, and N = zρ/2, so
+    /// dN/dz = 2N/z + z/2 − 2N²/z — the derivative from N alone. That form cancels at small z (N → 1), which is
+    /// why the ascending series is differentiated term by term below q = 0.4; above q = 25 it is the asymptotic
+    /// expansion's own derivative.</para>
+    /// </summary>
+    public static Complex NormalizedZSlope(double q)
+    {
+        if (q < 0.0) throw new ArgumentOutOfRangeException(nameof(q), q, "q = a/δ cannot be negative.");
+        var dz = new Complex(1, 1);   // dz/dq
+        if (q == 0.0) return Complex.Zero;
+        var z = new Complex(q, q);
+        if (q < SeriesLimit)
+        {
+            Complex u = z * z;                                   // du/dq = 2z·dz/dq
+            return (1.0 / 8.0 - u / 96.0 + u * u / 1024.0) * 2.0 * z * dz;
+        }
+        if (q > AsymptoticLimit)
+            return (0.5 - 3.0 / (16.0 * z * z) - 3.0 / (8.0 * z * z * z)) * dz;
+        Complex n = z / 2.0 / RatioI1OverI0(z);
+        return (2.0 * n / z + z / 2.0 - 2.0 * n * n / z) * dz;
+    }
+
+    /// <summary>
+    /// brief-em3d-78 R-em3d78-4a/-4b — the resistance per unit length at a frequency and a conductivity, and its
+    /// derivative with respect to the conductivity, Ω/m and Ω·m/S. R′ = R′_dc(σ)·Re N(q) with R′_dc ∝ 1/σ and
+    /// q ∝ √σ, so dR′/dσ = (R′_dc/σ)·(−Re N + (q/2)·Re N′(q)). At DC, dR′/dσ = −R′_dc/σ.
+    /// </summary>
+    public static (double ResistancePerMetre, double SigmaSlope) ResistanceWithSigmaSlope(double frequencyHz, double radiusM, double sigma)
+    {
+        double rdc = DcResistancePerMetre(radiusM, sigma);
+        if (frequencyHz <= 0.0) return (rdc, -rdc / sigma);
+        double q = QParameter(frequencyHz, radiusM, sigma);
+        double re = NormalizedZ(q).Real;
+        return (rdc * re, rdc / sigma * (-re + q / 2.0 * NormalizedZSlope(q).Real));
+    }
+
+    /// <summary>
     /// The small-q asymptote <c>R/R_dc = 1 + q⁴/48</c>. Public because tier 6 gates against it and a
     /// test that re-derives its own oracle proves nothing.
     /// </summary>

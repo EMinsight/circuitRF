@@ -23,7 +23,7 @@ public sealed class ElectrothermalGateTests(ITestOutputHelper output)
 
     /// <summary>A straight wire of diameter <paramref name="d"/> between heels L apart, a 50 µm foot on each copper pad, the pads'
     /// tops held at the ends' temperatures, the current in through pad A's bottom and out through pad B's.</summary>
-    private static ElectrothermalProblem Bench(double d, double l, double ta, double tb, double current, ThermalConductivity k,
+    internal static ElectrothermalProblem Bench(double d, double l, double ta, double tb, double current, ThermalConductivity k,
                                                ElectricalConductivity sigma, int span = 50, double footLen = 50 * Um)
     {
         double r = d / 2;
@@ -83,7 +83,7 @@ public sealed class ElectrothermalGateTests(ITestOutputHelper output)
         };
     }
 
-    private static ThermalWire With(ThermalWire w, IReadOnlyList<WireContact>? contacts = null, bool[]? onPad = null, double? h = null, double amb = 0)
+    internal static ThermalWire With(ThermalWire w, IReadOnlyList<WireContact>? contacts = null, bool[]? onPad = null, double? h = null, double amb = 0)
         => new()
         {
             Name = w.Name, Points = w.Points, S = w.S, Area = w.Area, Diameter = w.Diameter, K = w.K, Sigma = w.Sigma,

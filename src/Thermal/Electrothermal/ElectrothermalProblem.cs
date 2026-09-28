@@ -70,6 +70,14 @@ public sealed record WireContact(int Tag, int FirstNode, int LastNode, int HostR
     public double SeriesElectricalOhmM2 { get; init; }
 }
 
+/// <summary>brief-em3d-78 R-em3d78-4a — one harmonic this wire carries: its frequency and its PEAK phasor magnitude in the wire.</summary>
+/// <param name="Label">What the result names it by (<c>h2</c>).</param>
+public sealed record WireHarmonic(string Label, double FrequencyHz, double PeakA);
+
+/// <summary>R-em3d78-4a — a wire's AC resistance per unit length at a frequency (Hz) and a conductivity (S/m), with its derivative
+/// in the conductivity: Ω/m and Ω·m/S. The lowering supplies the exact Bessel solution; this project names no wire physics.</summary>
+public delegate (double R, double SigmaSlope) AcResistance(double frequencyHz, double sigma);
+
 /// <summary>R-em3d77-3 — one bond wire, as the solver takes it.</summary>
 public sealed class ThermalWire
 {
@@ -100,6 +108,35 @@ public sealed class ThermalWire
     /// <summary>R-em3d77-3e — heat lost by a span element in AIR: h·πd·(T − <see cref="AmbientC"/>) per unit length; null: none.</summary>
     public double? ConvectionH { get; init; }
     public double AmbientC { get; init; }
+
+    /// <summary>brief-em3d-78 R-em3d78-4 — the RF currents this wire carries, uniform along its span (heel to heel); a foot lying
+    /// on its pad takes no RF heat. Empty: none.</summary>
+    public IReadOnlyList<WireHarmonic> Harmonics { get; init; } = [];
+
+    /// <summary>R′_ac(f, σ); required when <see cref="Harmonics"/> is not empty.</summary>
+    public AcResistance? AcResistance { get; init; }
+
+    /// <summary>
+    /// R-em3d78-4a/-4b — the RF heat per unit length at <paramref name="tempC"/>, q′ = Σₙ ½|Iₙ|²R′_ac(fₙ, σ(T)), and dq′/dT through
+    /// dσ/dT (zero with σ(T) off). <paramref name="perHarmonic"/>, when given, receives each harmonic's part of q′.
+    /// </summary>
+    public (double Q, double Slope) RfHeat(double tempC, bool sigmaOfT, Span<double> perHarmonic = default)
+    {
+        if (Harmonics.Count == 0) return (0, 0);
+        var r = AcResistance ?? throw new InvalidOperationException($"Wire '{Name}' carries harmonics and states no AC resistance.");
+        var (sg, ds) = Sigma.At(tempC, sigmaOfT);
+        double q = 0, dq = 0;
+        for (int n = 0; n < Harmonics.Count; n++)
+        {
+            var h = Harmonics[n];
+            var (rac, slope) = r(h.FrequencyHz, sg);
+            double half = 0.5 * h.PeakA * h.PeakA;
+            q += half * rac;
+            dq += half * slope * ds;
+            if (perHarmonic.Length > n) perHarmonic[n] = half * rac;
+        }
+        return (q, dq);
+    }
 
     public int NodeCount => Points.Length / 3;
     public int Elements => (NodeCount - 1) / 2;

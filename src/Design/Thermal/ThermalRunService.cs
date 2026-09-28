@@ -152,9 +152,10 @@ public static partial class ThermalRunService
             notes.Add($"Conductive balance: σ(T) {(sigmaOfT ? "on" : "off (σ at 20 °C everywhere)")}, k(T) {(kOfT ? "on" : "off (k at its nominal value everywhere)")}.");
             ElectroRun? et = null;
             var runaway = new List<bool>();
-            if (lowering.Wires.Count > 0 || lowering.PortContacts.Count > 0)
+            bool harmonics = (t.Currents ?? []).Any(c => c.Harmonics is { Count: > 0 });
+            if (lowering.Wires.Count > 0 || lowering.PortContacts.Count > 0 || harmonics)
             {
-                if (global is not null && lowering.PortContacts.Count > 0)
+                if (global is not null && (lowering.PortContacts.Count > 0 || harmonics))
                     return Refuse("A submodel carries no port currents in this version: run the currents in the whole-model setup.");
                 (ThermalProblem?, C3dResolution?, string?) ThermalAt(IReadOnlyList<(string Var, double Value)> point)
                 {
@@ -230,7 +231,7 @@ public static partial class ThermalRunService
                     continue;
                 }
                 summary.Add($"{where}{sol.Unknowns:N0} unknowns, {Describe(sol, et is not null)}; energy balance {sol.BalanceRelative:G3} " +
-                            $"({(et is null ? "sources" : "sources and Joule heat")} {sol.SourcePowerW:G6} W, out {sol.FixedHeatOutW:G6} W through fixed faces and " +
+                            $"({(et is null ? "sources" : et.Rf.Any ? "sources, Joule and RF heat" : "sources and Joule heat")} {sol.SourcePowerW:G6} W, out {sol.FixedHeatOutW:G6} W through fixed faces and " +
                             $"{sol.ConvectionHeatOutW:G6} W by convection).");
                 foreach (string n in sol.Notes) summary.Add(where + n);
                 if (sol.BalanceRelative > ThermalSolver.BalanceTolerance)

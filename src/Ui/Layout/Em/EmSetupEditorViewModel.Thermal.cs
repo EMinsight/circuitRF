@@ -1,6 +1,7 @@
 // brief-em3d-75 R-em3d75-3 — the Setups dialog's THERMAL page: a 3D view's setup whose Problem is Thermal (brief 73 D1 — only a
 // .c3d embeds one). Top to bottom: Sources (each heat source's default and this setup's override), Boundaries (the list the
-// face menu writes, and All exposed faces), Currents (brief-em3d-77: a DC current per port, and the wires' convection and bond),
+// face menu writes, and All exposed faces), Currents (brief-em3d-77: a DC current per port, and the wires' convection and bond;
+// brief-em3d-78: harmonics per port or per array, each Peak or Rms, and the DC-equivalent RMS as a readout, never an input),
 // Sweep (up to two variables), Measures (parsed as typed, each error beside it), Mesh, Balance (k(T), and σ(T) from brief 77),
 // and the size estimate `explain` gives (brief 74 §6).
 //
@@ -59,6 +60,16 @@ public sealed partial class ThermalCurrentRow : ObservableObject
     [ObservableProperty] private string _dc = "";
     [ObservableProperty] private string _enterFace = "";
     [ObservableProperty] private string _leaveFace = "";
+
+    /// <summary>brief-em3d-78 R-em3d78-2 — a wire array's name, in place of the port.</summary>
+    [ObservableProperty] private string _array = "";
+
+    /// <summary>R-em3d78-1 — the fundamental, Hz, and the harmonics as <c>1: I1 Peak; 2: 0.12 Rms</c>.</summary>
+    [ObservableProperty] private string _f0 = "";
+    [ObservableProperty] private string _harmonics = "";
+
+    /// <summary>R-em3d78-1 — the DC-equivalent RMS, a readout (empty with no harmonics).</summary>
+    [ObservableProperty] private string _dcEquivalent = "";
 }
 
 /// <summary>One sweep axis as typed.</summary>
@@ -200,7 +211,9 @@ public sealed partial class EmSetupEditorViewModel
             foreach (var c in t.Currents ?? [])
                 ThermalCurrents.Add(new ThermalCurrentRow
                 {
-                    Port = c.Port.ToString(CultureInfo.InvariantCulture), Dc = c.Dc ?? "", EnterFace = c.EnterFace ?? "", LeaveFace = c.LeaveFace ?? "",
+                    Port = c.Port?.ToString(CultureInfo.InvariantCulture) ?? "", Dc = c.Dc ?? "", EnterFace = c.EnterFace ?? "", LeaveFace = c.LeaveFace ?? "",
+                    Array = c.Array ?? "", F0 = c.F0 ?? "", Harmonics = ThermalRfPlan.HarmonicsText(c.Harmonics),
+                    DcEquivalent = DcEquivalentText(c),
                 });
             ThermalWireConvectionH = t.WireConvectionH ?? "";
             ThermalWireAmbient = t.WireAmbientC ?? "";
@@ -280,21 +293,37 @@ public sealed partial class EmSetupEditorViewModel
         }
         t.Sweep = sweeps.Count > 0 ? sweeps : null;
 
-        // brief-em3d-77 — a row keeps what a later version wrote beside its port (brief 78's harmonics)
+        // brief-em3d-77 — a row keeps what a later version wrote beside its port; brief-em3d-78 — or names an array, and states
+        // harmonics, each Peak or Rms
         var currents = new List<CemThermalCurrent>();
         foreach (var r in ThermalCurrents)
         {
-            if (r.Port.Trim().Length == 0 && r.Dc.Trim().Length == 0) continue;
-            if (!int.TryParse(r.Port.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int port) || port < 1)
+            string? array = Blank(r.Array);
+            if (r.Port.Trim().Length == 0 && r.Dc.Trim().Length == 0 && array is null && r.Harmonics.Trim().Length == 0) continue;
+            int? port = null;
+            if (array is null || r.Port.Trim().Length > 0)
             {
-                ThermalError = $"A current's port is a port number, at least 1; '{r.Port}' is not.";
+                if (!int.TryParse(r.Port.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int p) || p < 1)
+                {
+                    ThermalError = $"A current's port is a port number, at least 1; '{r.Port}' is not. (An array's harmonics leave the port empty.)";
+                    return;
+                }
+                port = p;
+            }
+            var harmonics = ThermalRfPlan.ParseHarmonics(r.Harmonics, out string? harmonicError);
+            if (harmonics is null)
+            {
+                ThermalError = $"{(array is null ? $"Port {port}" : $"Array '{array}'")}'s harmonics: {harmonicError}";
                 return;
             }
-            currents.Add(new CemThermalCurrent
+            var current = new CemThermalCurrent
             {
-                Port = port, Dc = Blank(r.Dc), EnterFace = Blank(r.EnterFace), LeaveFace = Blank(r.LeaveFace),
-                More = t.Currents?.FirstOrDefault(c => c.Port == port)?.More,
-            });
+                Port = port, Array = array, Dc = Blank(r.Dc), EnterFace = Blank(r.EnterFace), LeaveFace = Blank(r.LeaveFace),
+                F0 = Blank(r.F0), Harmonics = harmonics.Count > 0 ? harmonics : null,
+                More = t.Currents?.FirstOrDefault(c => c.Port == port && c.Array == array)?.More,
+            };
+            currents.Add(current);
+            r.DcEquivalent = DcEquivalentText(current);
         }
         t.Currents = currents.Count > 0 ? currents : null;
         t.WireConvectionH = Blank(ThermalWireConvectionH);
@@ -349,6 +378,15 @@ public sealed partial class EmSetupEditorViewModel
     }
 
     private static string? Blank(string s) => s.Trim() is { Length: > 0 } t ? t : null;
+
+    /// <summary>R-em3d78-1 — the DC-equivalent RMS readout of a current with harmonics; empty without, "—" when it does not evaluate.</summary>
+    private string DcEquivalentText(CemThermalCurrent c)
+    {
+        if (c.Harmonics is not { Count: > 0 }) return "";
+        var res = ThermalContext?.Resolution();
+        string value = res is not null && ThermalRfPlan.DcEquivalentRms(res, c) is { } a ? $"{a.ToString("G4", CultureInfo.InvariantCulture)} A" : "—";
+        return $"DC-equivalent RMS {value} — for comparison only: RF heats more than this DC current would, because of skin effect.";
+    }
 
     [RelayCommand]
     private void AddThermalBoundary()

@@ -412,22 +412,64 @@ public static class C3dThermal
         // brief-em3d-77 R-em3d77-1 — each current names a port of this view, a Dc that parses, and faces that exist; a wire's
         // convection names its ambient; a bond's resistances parse
         var currents = t.Currents ?? [];
+        List<string>? arrayNames = null;
         foreach (var c in currents)
         {
-            if (!doc.Ports.Any(p => p.Number == c.Port))
-                found.Add(D.Current(name, $"gives port {c.Port} a current, and this 3D view has no port {c.Port}" +
+            bool harmonics = c.Harmonics is { Count: > 0 };
+            string who = c.Subject;
+            if (c.Port is not null && c.Array is not null)
+                found.Add(D.Current(name, $"has a current naming both port {c.Port} and array '{c.Array}'; an entry is one or the other"));
+            else if (c.Port is null && c.Array is null)
+                found.Add(D.Current(name, "has a current naming no Port and no Array"));
+            if (c.Port is { } number && !doc.Ports.Any(p => p.Number == number))
+                found.Add(D.Current(name, $"gives port {number} a current, and this 3D view has no port {number}" +
                                           (doc.Ports.Count == 0 ? " (it has none)" : $" (it has {string.Join(", ", doc.Ports.Select(p => p.Number))})")));
-            if (string.IsNullOrWhiteSpace(c.Dc))
+            // brief-em3d-78 R-em3d78-2 — an array entry states harmonics only, and names an array the model has
+            if (c.Array is { } array && c.Port is null)
             {
-                if (c.More is not { Count: > 0 }) found.Add(D.Current(name, $"gives port {c.Port} no Dc current"));
+                if (!harmonics) found.Add(D.Current(name, $"gives array '{array}' no Harmonics: an array entry states harmonic currents"));
+                if (c.Dc is not null || c.EnterFace is not null || c.LeaveFace is not null)
+                    found.Add(D.Current(name, $"gives array '{array}' a Dc or contact faces: a DC current is a port's, and the conduction solve shares it " +
+                                              "among the wires — state it on the port"));
+                if (e is { Ok: true })
+                {
+                    arrayNames ??= [.. Thermal.ThermalRfPlan.Group(e, [.. e.Wires.Select(w => w.Name)]).Select(a => a.Name)];
+                    if (!arrayNames.Contains(array))
+                        found.Add(D.Current(name, $"gives array '{array}' harmonic currents, and there is no such wire array " +
+                                                  (arrayNames.Count == 0 ? "(this 3D view has none)" : $"(it has {string.Join(", ", arrayNames.Select(a => $"'{a}'"))})")));
+                }
             }
-            else if (Unparsable(c.Dc) is { } err) found.Add(D.Current(name, $"gives port {c.Port} the Dc '{c.Dc}', which does not parse: {err}"));
+            else if (string.IsNullOrWhiteSpace(c.Dc))
+            {
+                if (!harmonics) found.Add(D.Current(name, $"gives {who} no Dc current"));
+            }
+            else if (Unparsable(c.Dc) is { } err) found.Add(D.Current(name, $"gives {who} the Dc '{c.Dc}', which does not parse: {err}"));
             foreach (var (key, face) in new[] { ("EnterFace", c.EnterFace), ("LeaveFace", c.LeaveFace) })
-                if (face is not null && e is { Ok: true } && FaceProblem(doc, e, face) is { } why)
-                    found.Add(D.Current(name, $"names '{face}' as port {c.Port}'s {key}, which does not exist: {why}"));
+                if (face is not null && c.Array is null && e is { Ok: true } && FaceProblem(doc, e, face) is { } why)
+                    found.Add(D.Current(name, $"names '{face}' as {who}'s {key}, which does not exist: {why}"));
+
+            // brief-em3d-78 R-em3d78-1 — the harmonics: an F0, and every one Peak or Rms, stated (D8: never inferred)
+            if (!harmonics) continue;
+            if (string.IsNullOrWhiteSpace(c.F0))
+                found.Add(D.Current(name, $"gives {who} harmonic currents and no F0: state the fundamental frequency, Hz"));
+            else if (Unparsable(c.F0) is { } fe) found.Add(D.Current(name, $"gives {who} the F0 '{c.F0}', which does not parse: {fe}"));
+            for (int i = 0; i < c.Harmonics!.Count; i++)
+            {
+                var h = c.Harmonics[i];
+                string entry = $"{who}'s harmonic entry {i + 1} (N = {h.N})";
+                if (h.N < 1) found.Add(D.Current(name, $"gives {entry} a harmonic number below 1"));
+                if (h.As is null)
+                    found.Add(D.Current(name, $"gives {entry} no As: state whether its Amp is Peak or Rms — an amplitude is never assumed to be either"));
+                if (string.IsNullOrWhiteSpace(h.Amp)) found.Add(D.Current(name, $"gives {entry} no Amp"));
+                else if (Unparsable(h.Amp) is { } ae) found.Add(D.Current(name, $"gives {entry} the Amp '{h.Amp}', which does not parse: {ae}"));
+            }
+            foreach (var dupN in c.Harmonics.GroupBy(h => h.N).Where(g => g.Count() > 1))
+                found.Add(D.Current(name, $"gives {who} harmonic {dupN.Key} {dupN.Count()} times; state each harmonic once"));
         }
-        foreach (var dup in currents.GroupBy(c => c.Port).Where(g => g.Count() > 1))
+        foreach (var dup in currents.Where(c => c.Port is not null).GroupBy(c => c.Port).Where(g => g.Count() > 1))
             found.Add(D.Current(name, $"gives port {dup.Key} {dup.Count()} currents; a port carries one"));
+        foreach (var dup in currents.Where(c => c.Array is not null && c.Port is null).GroupBy(c => c.Array).Where(g => g.Count() > 1))
+            found.Add(D.Current(name, $"gives array '{dup.Key}' {dup.Count()} currents; state its harmonics in one entry"));
         if (t.Submodel is not null && currents.Count > 0)
             found.Add(D.Current(name, "is a submodel and gives ports currents; a submodel carries none in this version — run them in the whole-model setup"));
         if (t.WireConvectionH is { } wh && Unparsable(wh) is { } whe) found.Add(D.Current(name, $"has WireConvectionH '{wh}', which does not parse: {whe}"));

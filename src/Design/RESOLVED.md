@@ -14713,3 +14713,20 @@ a metal from the shipped library's same-name record (which states both), and say
 reads every wire in it. **The balls are part of their wire**: they are not meshed, and a ball end's contact carries the ball's
 height as a series resistance. **A submodel leaves the wires out** and refuses port currents: the currents belong to the
 whole-model setup.
+
+## brief-em3d-78 — which array carries a port's harmonics, and how they are written (2026-09-28)
+
+**Arrays are grouped two ways, named so a user can type them back.** A `.wBond`'s wires keep its own arrays (its A matrix),
+named as their solids are, `<instance>/wire/<array>`; a `.c3d`'s drawn wires are grouped by their resolved end pads and named by
+the drawn wires they came from (`w1`, or `w1+w2` when two drawn objects land on the same pair). The refusal for two arrays on
+one positive conductor lists those names, and `Currents[].Array` takes them.
+
+**A drawn wire's share is taken from its AXIS, not its sweep.** `C3dWireResult.Axis` keeps the world-metre polyline resolution
+was handed; the sweep's path has a foot added and wedge ends moved onto their pads, which wBond's inductance never sees. The
+share is free-space for drawn wires (a `.c3d` states no ground plane) and the design's own for a placed layout's `.wBond`,
+which is re-read through `Em3dWireSource.ForLayout` from the instance's `.clay` — the run carries the reports, not the design.
+
+**A port with harmonics and no Dc has no DC contacts.** Its current is the wires', so only its positive conductor is resolved
+(from EnterFace, or the EM port's positive object); asking for a negative face it does not use would refuse setups that are
+fine. A port with both keeps brief 77's contacts. `CemThermalCurrent.Port` became `int?` for the Array form; `Harmonics[].As`
+is a nullable enum so a missing statement is visible to `check` rather than defaulting to Peak.

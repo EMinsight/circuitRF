@@ -47,6 +47,10 @@ public sealed record C3dWireResult(
     C3dWirePad? StartPad, C3dWirePad? EndPad, string? Refusal)
 {
     public bool Ok => Refusal is null && Resolution is { Ok: true };
+
+    /// <summary>brief-em3d-78 R-em3d78-3 — the wire's axis in world metres, as resolution was handed it (before a foot is added or a
+    /// wedge end moved onto its pad): the centreline wBond's inductance reads, which is what an RF current share is taken from.</summary>
+    public IReadOnlyList<Point3> Axis { get; init; } = [];
 }
 
 public static class C3dWires
@@ -344,7 +348,7 @@ public static class C3dWires
                               endProcess.FootLength.Nm, reported,
                               C3dLowering.Metres(zMax, dbuPerMicron) - C3dLowering.Metres(zMin, dbuPerMicron)),
             startPad!.ForResolution, endPad!.ForResolution);
-        return new(resolution, startProcess, endProcess, startPad, endPad, resolution.Refusal);
+        return new(resolution, startProcess, endProcess, startPad, endPad, resolution.Refusal) { Axis = axis };
     }
 
     /// <summary>R-em3d50-3c — the sentence an end that is on no pad gets: which wire, which end, and what is under it.</summary>

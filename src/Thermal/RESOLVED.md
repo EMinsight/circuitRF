@@ -104,3 +104,27 @@ on each diagonal block's symmetric part) converges in 16–36 iterations on ever
 unknowns included. A start that already IS the answer (no current, every fixed face at one temperature) takes no step: its
 residual is round-off against a reduced load of zero, and the first version, asking for a step down from there, failed
 the zero-current start of a continuation after minutes of stalled iterations and direct fallbacks.
+
+## brief-em3d-78 — RF harmonic currents in wires (2026-09-28)
+
+**The RF heat is a load with a temperature slope, and nothing else.** Σₙ ½|Iₙ|²R′_ac(fₙ, σ(T)) enters each wire element's T rows
+as a heat per unit length, and its derivative (through dσ/dT and the skin depth) enters the tangent as −dq′/dT NᵢNⱼ. It touches
+no φ row: the harmonic currents are prescribed per wire (the design layer computes them from wBond's share), so there is no
+electrical unknown to solve. A foot lying on its pad takes none: its current passes into the pad, which is what the DC solve
+says too, and the wire's current is taken as uniform heel to heel. This project still names no wire physics — R′_ac arrives
+as a delegate (`AcResistance`), which the lowering fills from `InternalImpedance`.
+
+**dR′/dσ from N alone.** With N = Z_int/R_dc and z = (1+j)q, dN/dz = 2N/z + z/2 − 2N²/z (from dρ/dz = 1 − ρ² + ρ/z, ρ = I₀/I₁),
+and since q ∝ √σ, dR′/dσ = (R′_dc/σ)(−Re N + (q/2) Re N′). The closed form cancels as N → 1, so below q = 0.4 the ascending
+series is differentiated term by term, and above q = 25 the asymptotic expansion; each regime is the derivative of the very
+function `NormalizedZ` evaluates there, which is what a Newton step needs. Against a central difference: 3e-11 to 1.4e-10 at
+5 and 50 skin depths; the assembled load's slope against a central difference of the load, 6e-8 to 3e-7 (the difference's
+own truncation). Checking J·v against Δr/2ε instead would have been vacuous: a perfect bond's penalty conductance in the same
+rows is ~10⁹ times the RF slope, so a missing slope passes. With k(T) off the secant does not move with T, and (J − S)·v is
+exactly −(dL/dx)·v — the RF slope alone.
+
+**What W3 measured.** Gold 1 mil, 1 mm, 25 °C ends, k constant: 5e-8 of the rise at 1 GHz (0.25 I* RMS, 68.9 K) and 5.2e-8 for
+2, 4 and 6 GHz together (113.5 K), in 3 Newton steps; the balance closes to 3e-10. wBond's R′_ac against the reference's own
+table (SciPy's Bessel functions, independent of circuitRF's) is within 3.0e-7 at every tabulated frequency (1 MHz – 31.6 GHz)
+and temperature — the asymptotic branch's ~1e-7 above q = 25, as `InternalImpedance` documents. With σ(T) and k(T) off,
+harmonics at F0 and 2F0 superpose to 2e-14 of the rise.

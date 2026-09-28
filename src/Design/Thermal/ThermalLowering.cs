@@ -79,6 +79,9 @@ public sealed record ThermalLowering(
     /// <summary>brief-em3d-77 R-em3d77-1 — each current's contact faces (by face-group name, whole faces).</summary>
     public IReadOnlyList<ThermalPortContact> PortContacts { get; init; } = [];
 
+    /// <summary>brief-em3d-78 R-em3d78-2 — the ports with harmonic currents, each with its positive conductor.</summary>
+    public IReadOnlyList<ThermalRfPort> RfPorts { get; init; } = [];
+
     /// <summary>brief-em3d-77 — per region, whether it is a conductor (it carries current where a port's current reaches it).</summary>
     public IReadOnlyList<bool> Conductors { get; init; } = [];
 
@@ -305,7 +308,8 @@ public static class ThermalLowerings
             if (spelled is not null && Face(spelled, false) is { } why) { refusal = why; return null; }
         }
         // brief-em3d-77 R-em3d77-1 — each current's contact faces
-        var ports = ThermalCurrents.Contacts(doc, e, t, solids, faces, out string? portWhy);
+        var rfPorts = new List<ThermalRfPort>();
+        var ports = ThermalCurrents.Contacts(doc, e, t, solids, faces, rfPorts, out string? portWhy);
         if (ports is null) { refusal = portWhy; return null; }
         if (dropped.Count > 0)
             notes.Add($"{dropped.Count} named face(s) lie outside the submodel's box and take no part in it: " +
@@ -378,7 +382,7 @@ public static class ThermalLowerings
         return new ThermalLowering(input, gmsh, regions, sheetTags, solidSources, faceTags, exposedTag, notes)
         {
             Contacts = contacts, Effective = effective, Clip = clip, CutTag = cutTag, SourcesOutside = outside,
-            SymmetryFactor = 1 << doc.SymmetryPlanes.Count, Wires = plans, PatchTags = patchTags, PortContacts = ports,
+            SymmetryFactor = 1 << doc.SymmetryPlanes.Count, Wires = plans, PatchTags = patchTags, PortContacts = ports, RfPorts = rfPorts,
             Conductors = [.. solids.Select(x => x.Role == Em3dRole.Conductor && !blocks.Any(bl => bl.Solid == x))],
         };
     }
