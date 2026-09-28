@@ -1,8 +1,9 @@
 // ================================================================
-//  PdnAnchorLayerTests.cs — brief-railrf-34
+//  PdnAnchorLayerTests.cs — brief-railrf-34, and brief-railrf-37's gate 3
 //
 //  An anchor seeds the copper it means and nothing under it. A pad seeds its land (§1); a coordinate
-//  states its layer, or — standing on more than one net — is refused, naming each candidate (§2).
+//  states its layer, or resolves on the outer copper — Top where both outer layers carry it, and
+//  said so (brief 37 R-rail37-1, which replaced brief 34's refusal for that case).
 // ================================================================
 
 using System;
@@ -76,24 +77,30 @@ public sealed class PdnAnchorLayerTests
 
     private static readonly RailPortAnchor OnThePad = new() { Point = (Mm(19.8), Mm(0.25)) };
 
+    /// <summary>
+    /// <b>Brief 37's gate 3, and the decision it asked for:</b> this fixture's two candidates are
+    /// the two OUTER layers, on different nets — the case brief 34 refused. Rule 4 settles it: a
+    /// bare coordinate takes Top and says Bottom was there too. Brief 34's refusal no longer fires
+    /// for any coordinate on a board with two outer conductors; it survives only where a stackup
+    /// has no mounting side to prefer. With the layer stated, only that net is priced, as before.
+    /// </summary>
     [Fact]
-    public void ACoordinateOverTwoNetsIsRefusedNamingBoth_AndWithItsLayerPricesOnlyThatNet()
+    public void ACoordinateOverTopAndBottom_TakesTopAndSaysSo_AndWithItsLayerPricesOnlyThatNet()
     {
-        foreach (var refused in new[] { PdnGraphExtractor.Extract(Request(OnThePad)),
-                                        PdnMeshExtractor.Extract(Request(OnThePad)) })
+        foreach (var x in new[] { PdnGraphExtractor.Extract(Request(OnThePad)), PdnMeshExtractor.Extract(Request(OnThePad)) })
         {
-            Assert.NotNull(refused.Refusal);
-            Assert.Contains("'VDD'", refused.Refusal);
-            Assert.Contains("'3V3'", refused.Refusal);
-            Assert.Contains("\"Layer\": 1", refused.Refusal);
-            var a = Assert.Single(refused.AnchorAmbiguities);
-            Assert.False(a.IsSource);
-            Assert.Equal([Top, Bot], a.Candidates.Select(c => c.Layer));
+            Assert.Null(x.Refusal);
+            Assert.Empty(x.AnchorAmbiguities);
+            Assert.All(x.Regions!.Power.SelectMany(i => i.Copper), c => Assert.Equal(Top, c.Layer));
+            Assert.Contains(x.Netlist!.Provenance.Notes,
+                n => n.Contains("resolved to layer 1/0", StringComparison.Ordinal) &&
+                     n.Contains("layer 2/0 also carries copper here", StringComparison.Ordinal));
         }
 
         var chosen = PdnGraphExtractor.Extract(Request(OnThePad with { Layer = Top }));
         Assert.Null(chosen.Refusal);
         Assert.All(chosen.Regions!.Power.SelectMany(i => i.Copper), c => Assert.Equal(Top, c.Layer));
+        Assert.DoesNotContain(chosen.Netlist!.Provenance.Notes, n => n.Contains("resolved to", StringComparison.Ordinal));
     }
 
     [Fact]

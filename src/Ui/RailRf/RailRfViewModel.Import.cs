@@ -61,6 +61,10 @@ public sealed partial class RailRfViewModel
 
         _document.ArtworkCellRef = board.ArtworkCellRef;
 
+        // R-rail37-2: where the Gerbers came FROM, so a document whose netlist row names the wrong
+        // file can be told about the one a CAD tool wrote beside them. Rebased at Save.
+        _document.ArtworkSourceRef = options.ArtworkPath is { Length: > 0 } source ? source : null;
+
         // ── THE COMPANIONS ARE RECORDED ON THE DOCUMENT, NOT ONLY ON THE SESSION ────────────────
         //
         // The netlist and the placement are what make a REFDES resolve to copper, and until they

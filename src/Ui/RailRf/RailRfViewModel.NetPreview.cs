@@ -335,12 +335,9 @@ public sealed partial class RailRfViewModel
         // Which copper is the rail's own — what ResolveReturnNet needs to pick the LARGEST other
         // copper on a mixed reference layer (PdnReturnNetBasis.Largest), exactly as the run does.
         string? railNet = SelectedRail?.NetName;
-        var railSeeds = new List<(long X, long Y, LayerKey? Layer)>();
-        if (SelectedRail is { } seedRail)
-        {
-            foreach (var src in seedRail.Sources) railSeeds.AddRange(PdnAttachments.ResolveLands(src.Anchor, board.Pads));
-            foreach (var load in seedRail.Loads) railSeeds.AddRange(PdnAttachments.ResolveLands(load.Anchor, board.Pads));
-        }
+        // A COPY of the rail's rows: the job runs off this thread and the rows are the user's.
+        var seedRail = SelectedRail?.WithAnchors((a, _) => a, (a, _) => a);
+        var pads = board.Pads;
         int dbuPerMicron = board.DbuPerMicron;
 
         CopperRead = ReadCopperOffThread(() =>
@@ -359,7 +356,24 @@ public sealed partial class RailRfViewModel
             if (needsPieces) pieces ??= DrcConnectivity.Extract(regions, tech);
 
             // R-rail31-1: THE SAME CALL THE EXTRACTION MAKES. The run and this row used to reach the
-            // return by two routes, and on a Gerber board only this one found it.
+            // return by two routes, and on a Gerber board only this one found it. And from the same
+            // seeds: the run's anchors are resolved to their mounting side first (R-rail37-1,
+            // PdnAnchorSides), so these are too — a return picked from different seeds is the
+            // two-routes defect back.
+            var railSeeds = new List<(long X, long Y, LayerKey? Layer)>();
+            if (seedRail is not null)
+            {
+                var seeded = job.MeasureReference is { } sideRef
+                    ? PdnAnchorSides.Resolve(new PdnExtractionRequest
+                      {
+                          Rail = seedRail, Shapes = shapes, Technology = tech, Pads = pads,
+                          NetPoints = netPoints, ReferenceNet = namedReturn, DbuPerMicron = dbuPerMicron,
+                      }, regions, sideRef).Request.Rail
+                    : seedRail;
+                foreach (var src in seeded.Sources) railSeeds.AddRange(PdnAttachments.ResolveLands(src.Anchor, pads));
+                foreach (var load in seeded.Loads) railSeeds.AddRange(PdnAttachments.ResolveLands(load.Anchor, pads));
+            }
+
             if (job.MeasureReference is { } layer)
                 measured = pieces is null
                     ? Regions.ResolveReturnNet(namedReturn, regions, tech, netPoints, layer, railNet, railSeeds, dbuPerMicron)

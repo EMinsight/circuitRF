@@ -84,6 +84,9 @@ internal static class PdnRailConnectivity
     /// board's galvanic partition is made once for both questions.
     /// </summary>
     /// <remarks>
+    /// <b>Since brief 37 this reaches only a stackup with no two outer conductors</b>: everywhere
+    /// else the extractor has already given each bare coordinate its mounting side
+    /// (<see cref="PdnAnchorSides"/>), so no anchor arrives here without a layer.
     /// <b>R-rail34-2: an anchor that does not say which copper it means is refused before the
     /// walk</b>, and <paramref name="ambiguous"/> says which and what it could mean. A bare
     /// coordinate standing on two galvanic nets off the reference layer seeds both, which makes one
@@ -103,9 +106,101 @@ internal static class PdnRailConnectivity
         ambiguous = Ambiguous(request, pieces, referenceLayer, returnNet);
         if (ambiguous.Count > 0) return null;
 
+        var chain = SeriesChainSeeds(request, pieces, referenceLayer, returnNet);
+        if (chain.Count > 0) anchorSeeds = [.. anchorSeeds, .. chain];
+
         return Regions.Walk(pieces, tech, request.NetPoints, request.Rail.NetName, referenceLayer,
                             returnNet.Net, anchorSeeds, bareCoordinateSeeds, returnNet.GalvanicNet)
             with { ReturnNet = returnNet };
+    }
+
+    /// <summary>
+    /// R-rail37-3 — one seed on each piece of copper that lies BETWEEN two series elements on the
+    /// way from a source to a load, where nothing else seeds it.
+    /// </summary>
+    /// <remarks>
+    /// <b>A rail with no net name is seeded only by its anchors.</b> Through one series part that is
+    /// enough — its two ends are the source's copper and the load's. Through a CHAIN it is not: the
+    /// copper between a ferrite and the resistor after it carries neither an anchor nor a name, so it
+    /// was never the rail's, the source's side and the load's were two regions nothing joined, and the
+    /// field report's rail (source → FB8 → R168 → load) was refused as unreachable with both parts
+    /// declared series.
+    ///
+    /// <para><b>Only copper ON a path, never copper hanging off one.</b> Reached from the sources
+    /// without passing a load's copper, AND from the loads without passing a source's. A link whose
+    /// far end is upstream of the source is reached from the source's side only, so it is still
+    /// refused by <see cref="PdnAttachments.SeriesEndOffTheRail"/>'s sentence rather than silently
+    /// becoming rail. Each seed is a terminal's own point ON ITS OWN LAYER, so the plane under a pad is
+    /// not seeded with it.</para>
+    /// </remarks>
+    private static List<(long X, long Y, LayerKey? Layer)> SeriesChainSeeds(
+        PdnExtractionRequest request, IReadOnlyList<DrcNetPiece> pieces, LayerKey referenceLayer,
+        PdnReturnNet returnNet)
+    {
+        if (request.SeriesElements.Count < 2) return [];
+
+        var rail = request.Rail;
+        var (returnNets, returnResolved) =
+            Regions.ReturnNets(pieces, request.NetPoints, rail.NetName, referenceLayer, returnNet.Net, returnNet.GalvanicNet);
+
+        // The rail's galvanic nets under an anchor, each with a point on it to seed from.
+        List<(int Net, long X, long Y, LayerKey Layer)> On(RailPortAnchor anchor)
+        {
+            var found = new List<(int, long, long, LayerKey)>();
+            foreach (var (x, y, land) in PdnAttachments.ResolveLands(anchor, request.Pads))
+            {
+                var layer = PdnAttachments.RailLand(land, rail.ReferenceLayer);
+                foreach (var piece in pieces)
+                {
+                    if (piece.Layer == referenceLayer || (layer is { } l && piece.Layer != l)) continue;
+                    if (returnResolved && returnNets.Contains(piece.Net)) continue;
+                    if (piece.Bounds.Contains(x, y) && Regions.Contains(piece.Paths, x, y))
+                        found.Add((piece.Net, x, y, piece.Layer));
+                }
+            }
+            return found;
+        }
+
+        var sources = rail.Sources.SelectMany(s => On(s.Anchor)).Select(e => e.Net).ToHashSet();
+        var loads = rail.Loads.SelectMany(l => On(l.Anchor)).Select(e => e.Net).ToHashSet();
+        if (sources.Count == 0 || loads.Count == 0) return [];
+
+        var ends = request.SeriesElements.Select(e => (A: On(e.A), B: On(e.B))).ToList();
+        var edges = new Dictionary<int, HashSet<int>>();
+        foreach (var (a, b) in ends)
+            foreach (var x in a)
+                foreach (var y in b)
+                {
+                    if (x.Net == y.Net) continue;
+                    (edges.TryGetValue(x.Net, out var fx) ? fx : edges[x.Net] = []).Add(y.Net);
+                    (edges.TryGetValue(y.Net, out var fy) ? fy : edges[y.Net] = []).Add(x.Net);
+                }
+
+        HashSet<int> Reach(HashSet<int> from, HashSet<int> stopAt)
+        {
+            var seen = new HashSet<int>(from);
+            var queue = new Queue<int>(from);
+            while (queue.Count > 0)
+            {
+                int n = queue.Dequeue();
+                if (stopAt.Contains(n) && !from.Contains(n)) continue;
+                if (!edges.TryGetValue(n, out var next)) continue;
+                foreach (int m in next) if (seen.Add(m)) queue.Enqueue(m);
+            }
+            return seen;
+        }
+
+        var between = Reach(sources, loads);
+        between.IntersectWith(Reach(loads, sources));
+        between.ExceptWith(sources);
+        between.ExceptWith(loads);
+        if (between.Count == 0) return [];
+
+        var seeds = new List<(long X, long Y, LayerKey? Layer)>();
+        foreach (var (a, b) in ends)
+            foreach (var e in a.Concat(b))
+                if (between.Remove(e.Net)) seeds.Add((e.X, e.Y, e.Layer));
+        return seeds;
     }
 
     /// <summary>

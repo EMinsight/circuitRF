@@ -49,6 +49,11 @@ public sealed record RailPortAnchor
     /// view is SHOWING under the click); an older document without it seeds as it always did where
     /// the point stands on one galvanic net, and is refused, naming the candidates, where it stands
     /// on more.
+    /// <para><b>Unstated, it now means the MOUNTING SIDE</b> (brief 37 R-rail37-1, owner decision
+    /// 2026-09-28): the pad of a placed part under the point, else the outer copper there — Top where
+    /// both outer layers carry it, with a note — and an inner layer only when this names it.
+    /// <c>PdnAnchorSides</c> resolves it once, before the walk; brief 34's refusal survives only on a
+    /// stackup with no two outer conductors.</para>
     /// </remarks>
     public LayerKey? Layer { get; init; }
 

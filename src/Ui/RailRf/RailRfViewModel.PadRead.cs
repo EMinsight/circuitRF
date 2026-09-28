@@ -27,6 +27,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -293,6 +294,75 @@ public sealed partial class RailRfViewModel
 
         _padsReadFrom = readFrom;
         SchedulePadRead();
+    }
+
+    // ── THE FILE HALF (brief-railrf-37 R-rail37-4) ───────────────────────────────────────────────
+    //
+    // A part turned by hand in a layout window follows here through the SESSION: the window adopts
+    // the session's model on Activated and every edit then arrives through NotifyArtworkChanged.
+    // What did not follow was a layout edited, SAVED and CLOSED before this window was looked at
+    // again — no session was left to adopt, the board held the copy read at open, and the "placed at
+    // 180°" notice went on naming a part the file already had turned. The file is then the only
+    // thing that changed, so it is what is asked.
+
+    /// <summary>When <paramref name="path"/> was last written, or null where it cannot be asked.</summary>
+    internal static DateTime? WrittenUtc(string? path)
+    {
+        if (path is not { Length: > 0 }) return null;
+        try { return File.Exists(path) ? File.GetLastWriteTimeUtc(path) : null; }
+        catch (IOException) { return null; }
+        catch (UnauthorizedAccessException) { return null; }
+    }
+
+    /// <summary>The file re-read in flight, or null. <b>Awaitable</b>, as <see cref="PadRead"/> is.</summary>
+    internal Task? ArtworkFileRead { get; private set; }
+
+    /// <summary>
+    /// Re-reads the board's <c>.clay</c> where it has been written since this board was read from it,
+    /// and re-reads the pads where that moved a pin. Called by the window on Activated when no layout
+    /// session holds the file; a stat and nothing more when the file is unchanged.
+    /// </summary>
+    /// <remarks>
+    /// <b>Turn is held until the answer is in</b> (<see cref="IsReadingParts"/>): the file may already
+    /// have the part turned, and turning it again would put it back the wrong way. Off the UI thread
+    /// through the pad read's own seams — a production board's <c>.clay</c> is tens of megabytes.
+    /// </remarks>
+    internal void ReadArtworkIfChangedOnDisk()
+    {
+        if (ArtworkFileRead is { IsCompleted: false }) return;
+        if (Board is not { ArtworkCellRef: { Length: > 0 } clay, View: { } held, ArtworkWrittenUtc: { } stamp } board)
+            return;
+        if (WrittenUtc(clay) is not { } now || now == stamp) return;
+
+        var tech = board.Technology;
+        IsReadingParts = true;
+        ArtworkFileRead = ReadCopperOffThread(() =>
+        {
+            LayoutView? view = null;
+            IReadOnlyList<LayoutShape>? shapes = null;
+            try
+            {
+                view = LayoutPersistence.LoadFromFile(clay);
+                shapes = RailArtwork.FlattenedShapes(view, clay, tech);
+            }
+            catch (Exception) { view = null; }   // mid-write, or gone: the next Activated asks again
+
+            PostToUi(() =>
+            {
+                // Superseded — another board, or a session adopted meanwhile — or unreadable.
+                if (view is null || Board is not { } current || !ReferenceEquals(current.View, held))
+                {
+                    IsReadingParts = _padReadCts is not null;
+                    return;
+                }
+
+#pragma warning disable MVVMTK0034
+                _board = current with { ArtworkWrittenUtc = now };
+#pragma warning restore MVVMTK0034
+                AdoptLiveView(view, shapes!);     // schedules the pad read where a pin moved
+                IsReadingParts = _padReadCts is not null;
+            });
+        });
     }
 
     /// <summary>Publishes one pad read, unless it has been superseded.</summary>

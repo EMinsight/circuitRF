@@ -148,6 +148,31 @@ public sealed class SeriesChainTests(ITestOutputHelper output)
         Assert.Equal(3, rail.Sections.Values.Distinct().Count());
     }
 
+    /// <summary>
+    /// brief-railrf-37: the same chain on a rail with NO net name — seeded by its anchors alone, as a
+    /// rail made by clicking the board is. The copper between R1 and R2 carries neither an anchor nor
+    /// a name; it is on the way from the source to the load, so it is the rail's, and the answer is
+    /// the named rail's to the last digit. It was refused as unreachable.
+    /// </summary>
+    [Fact]
+    public void AChainOnARailWithNoNetName_SolvesThroughTheCopperBetweenItsElements()
+    {
+        var named = RailDcRun.Run(ChainDcRequest(ChainRail(0.1, 0.2), ChainShapes()));
+
+        var rail = ChainRail(0.1, 0.2);
+        rail.NetName = null;
+        var doc = new RailDocument { Name = "a chain, unnamed" };
+        doc.Rails.Add(rail);
+        var unnamed = RailDcRun.Run(new RailDcRequest
+        {
+            Document = doc, Technology = Board(), Shapes = ChainShapes(), Pads = ChainPads(), NetPoints = [],
+        });
+
+        Assert.Null(named.Refusal);
+        Assert.Null(unnamed.Refusal);
+        Assert.Equal(named.Rails[0].Ports.Select(p => p.DropV), unnamed.Rails[0].Ports.Select(p => p.DropV));
+    }
+
     // ══ §5.4 / §5.5 — THE PARTITION, AND WHAT IT REFUSES ═════════════════════════════════════
 
     /// <summary>

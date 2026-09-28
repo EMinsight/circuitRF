@@ -14948,3 +14948,61 @@ fixture was inferred).
   cut running into copper that touches the trace (a pad or via land, or where it joins a pour) — and
   that a point a few widths along the trace answers it. The cause is stated as the usual one, not
   proven for the reporter's point: his workspace for that picture was not among the files sent.
+
+## brief-railrf-37 — anchors on the mounting side, and a board that brings its own netlist (2026-09-28)
+
+- **R-rail37-1 (owner decision).** A bare coordinate anchor (no refdes, no layer) is resolved ONCE, before
+  the walk, by `PdnAnchorSides.Resolve`, into a copy of the rail that every later stage reads — walk
+  seeds, return resolution and `PdnAttachments.RailNodes` agree because there is one answer. Order: a
+  stated layer; the pad of a placed part under the point; the outer conductor (stackup's first/last)
+  with copper; Top with a note where both have it; refused, naming the inner copper and the `.crail`
+  spelling, where only inner layers do (offered as `AnchorAmbiguities`). Copper joined to a RESOLVED
+  return is dropped from the two-outer choice before rule 4, so a Top ground pour over a Bottom supply
+  pad picks Bottom silently.
+- **"On a pad" needs no pad outline**: the smallest shape on the layer under the point is the pad when
+  it is also the smallest shape under a pad centre landed on that layer. A trace with no separate pad
+  shape passes that test for the part at its end, so where both sides read as a pad the side whose
+  land is under half the other's wins, else Top.
+- **Gate 3's decision, written down:** brief 34's two-supply fixture (Top VDD over a Bottom 3V3 pour)
+  now takes Top with the note — rule 4 applies. Brief 34's refusal survives only on a stackup without
+  two distinct outer conductors (`PdnAnchorSides.Outer` null).
+- `PdnExtractionRequest` became a `record` so the extractors can substitute the resolved rail with
+  `with`; a hand-written copy would drop the next property added. `RailSpec.WithAnchors` is the rail copy.
+- The window's net preview resolves its seeds through the same function before measuring the return —
+  a return chosen from different seeds is brief 31's two-routes defect.
+- **R-rail37-2.** `BoardNetlistFile.FindBeside` finds a netlist by CONTENT (the import's classifier)
+  and offers it only if it reads with at least one record. A file recognised as a BOM, or whose head
+  declares a part list / bill of materials, is refused with that as its first clause
+  (`LooksLikePartList`). The Gerber folder is not recorded anywhere else, so the `.crail` gained
+  `ArtworkSourceRef` (set by Import Board, rebased at save, in the move registry);
+  `RailArtwork.ResolveBoardNetlist` appends the found file to its error, so open and the `rail` verb
+  say it in the same words. An older document has no source recorded; only a re-import finds it.
+- **R-rail37-3, why two series rows lost their terminals.** Brief 35 wrote a series row's terminals only at
+  the moment it was MADE series, and only if the board then had exactly two pads for it. A Gerber
+  re-import lands in a NEW cell with no footprint instances, and without a board netlist the parts
+  have no pads — so the rows stayed terminal-less for good (and the import dialog, which never
+  pre-fills, cleared `PlacementRef`, hence "not placed"). Terminals are now derived at every run
+  (`RailSeriesPartition.TerminalsOf`/`WithTerminals`, used by the DC run, `RequestFor` and the
+  partition), and zero pads is refused as "*X* is not placed on the board".
+- **Found on the way, needed for gate 1 (two fixes):**
+  - A rail with NO net name was seeded only by its anchors, so the copper between two series parts in
+    a chain was never the rail's and the rail was refused as unreachable.
+    `PdnRailConnectivity.SeriesChainSeeds` seeds copper reached from a source without passing a load
+    AND from a load without passing a source — so a link hanging upstream of the source is still
+    refused by `SeriesEndOffTheRail`, not absorbed.
+  - Both railRF readings built barrels from `ViaShape` only; the walk (and the EM extractors) also
+    join through a CIRCLE on a via-bound drill layer (how a Gerber-format drill file draws holes). The
+    field rail changes layer through two such holes. `PdnBarrels.Of` gives both readings one list.
+    **This changes numbers** on a board with such circles (a barrel appears where none was priced).
+- **NOT fixed — owner's call.** `PdnAssembly.StampVias` stamps a barrel only between its span's two
+  END conductors and skips it if either end has no rail copper; the walk joins every conductor the
+  barrel passes. A rail routed Top → via → inner layer → via → Top (the field rail) therefore does
+  not join in the Accurate mesh. A scratch patch stamping a segment between each pair of passed
+  conductors solved the field rail (Accurate, 2.9 mV at 50 mA with 0 Ω series parts) — but it moves
+  numbers on every board with through vias touching inner rail copper, so it was reverted. Fast
+  refuses the field rail as pour-dominated (it crosses a 71 mm² inner piece), which is its design.
+- Gate 2: the shipped Power Rail example's `rail --json` is byte-identical before/after for Fast and
+  Accurate (HEAD built in a scratch worktree). Its anchors are all by refdes, so it does not exercise
+  rule 3; the unit fixtures do.
+
+Gates: `RailAnchorSidesTests`, `PdnAnchorLayerTests` (gate 3), `SeriesChainTests.AChainOnARailWithNoNetName_…`.

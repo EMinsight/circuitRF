@@ -262,7 +262,9 @@ public static class RailDcRun
                 continue;
             }
 
-            if (SeriesRefusal(spec) is { } seriesRefusal) { Refuse(railName, seriesRefusal); continue; }
+            // R-rail37-3: a series row with no terminals typed takes its part's own two pads.
+            spec = RailSeriesPartition.WithTerminals(spec, request.Pads);
+            if (SeriesRefusal(spec, request.Pads) is { } seriesRefusal) { Refuse(railName, seriesRefusal); continue; }
 
             var chained = ChainStart(spec, edges, results, out var solved);
             var toSolve = chained is null ? spec : WithSourceLevel(spec, chained);
@@ -705,7 +707,7 @@ public static class RailDcRun
     /// artwork, and a refdes with no pin resolves to EVERY pad of the part — which would tie the
     /// element's two ends into one node and model a short that is invisible in the answer.
     /// </remarks>
-    private static string? SeriesRefusal(RailSpec rail)
+    private static string? SeriesRefusal(RailSpec rail, IReadOnlyList<PlacedPin> pads)
     {
         foreach (var element in rail.SeriesElements)
         {
@@ -717,11 +719,7 @@ public static class RailDcRun
                        "the row to ask about a board that never had it.";
 
             if (element.TerminalA is null || element.TerminalB is null)
-                return $"Series element {element.Refdes} names no terminals, so railRF cannot tell " +
-                       "which two pieces of copper it bridges. Give both of its rail-side terminals — " +
-                       "the refdes and pin of each pad. A refdes on its own is not enough: it " +
-                       "resolves to EVERY pad of the part, which would tie the element's two ends " +
-                       "into one node and model a short.";
+                return RailSeriesPartition.NoTerminalsRefusal(element, rail.Name, pads);
         }
 
         return null;
@@ -744,12 +742,14 @@ public static class RailDcRun
     /// open, and stamping a defaulted milliohm figure would put a number in a ranked breakdown that
     /// nobody chose.</para>
     /// </remarks>
-    private static IReadOnlyList<PdnSeriesElement> SeriesElementsOf(RailSpec rail, PartLibrary? library)
+    private static IReadOnlyList<PdnSeriesElement> SeriesElementsOf(
+        RailSpec rail, PartLibrary? library, IReadOnlyList<PlacedPin> pads)
     {
         var found = new List<PdnSeriesElement>();
         foreach (var element in rail.SeriesElements)
         {
-            if (element is not { TerminalA: { } a, TerminalB: { } b }) continue;
+            if (RailSeriesPartition.TerminalsOf(element, pads) is not { } ends) continue;
+            var (a, b) = ends;
             var model = RailSeriesModel.Resolve(element, library)!;
 
             found.Add(new PdnSeriesElement(
@@ -801,7 +801,7 @@ public static class RailDcRun
         // element (brief 25). Appended rather than replacing: they answer different questions —
         // what bridges the gaps imported copper leaves at every pad, and what the designer put in
         // the rail on purpose.
-        SeriesElements  = [.. request.SeriesElements, .. SeriesElementsOf(rail, request.PartLibrary)],
+        SeriesElements  = [.. request.SeriesElements, .. SeriesElementsOf(rail, request.PartLibrary, request.Pads)],
         ShuntParts      = request.ShuntParts,
         Settings        = request.Document.Settings,
         Mesh            = mesh ?? request.Mesh,

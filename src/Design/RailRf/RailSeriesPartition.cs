@@ -237,6 +237,82 @@ public sealed record RailSeriesPartition(
             notes);
     }
 
+    // ── R-rail37-3: a series row's terminals are the part's own two pads ────────────────────────
+    //
+    // Brief 35 wrote them onto the row at the moment it was MADE series, and only where the board had
+    // exactly two pads for it at that moment. A row made series before its pads were known — a board
+    // re-imported from Gerbers with no netlist, whose footprint instances did not come with it — was
+    // left with none for good, and every later run said it "names no terminals" about a part whose
+    // two pads were by then on the board. Read at every run instead: the pads are the board's, and a
+    // re-import is exactly when they change.
+
+    /// <summary>
+    /// A series row's two terminals: as the row states them, else the part's own two pads where the
+    /// board places exactly two (<see cref="RailPartDiscovery.SeriesTerminals"/>) — or null.
+    /// </summary>
+    /// <remarks>A row stating ONE terminal is not completed from the board: which of the two pads the
+    /// stated one is, is exactly what a half-typed row leaves unsaid.</remarks>
+    public static (RailPortAnchor A, RailPortAnchor B)? TerminalsOf(RailPart element, IReadOnlyList<PlacedPin> pads)
+    {
+        ArgumentNullException.ThrowIfNull(element);
+        ArgumentNullException.ThrowIfNull(pads);
+        if (element is { TerminalA: { } a, TerminalB: { } b }) return (a, b);
+        return element.TerminalA is null && element.TerminalB is null
+            ? RailPartDiscovery.SeriesTerminals(element.Refdes, pads)
+            : null;
+    }
+
+    /// <summary><paramref name="rail"/> with each series row's terminals as <see cref="TerminalsOf"/>
+    /// reads them — the rail itself where nothing changes.</summary>
+    internal static RailSpec WithTerminals(RailSpec rail, IReadOnlyList<PlacedPin> pads)
+    {
+        RailSpec? copy = null;
+        for (int i = 0; i < rail.Parts.Count; i++)
+        {
+            var part = rail.Parts[i];
+            if (!part.IsSeries || part.TerminalA is not null || part.TerminalB is not null) continue;
+            if (TerminalsOf(part, pads) is not { } ends) continue;
+
+            copy ??= rail.WithAnchors((a, _) => a, (a, _) => a);
+            copy.Parts[i] = part with { TerminalA = ends.A, TerminalB = ends.B };
+        }
+        return copy ?? rail;
+    }
+
+    /// <summary>
+    /// Why a series row has no terminals — said by what the BOARD holds for it, because "names no
+    /// terminals" is the wrong sentence for a part that is simply not on the board (field report,
+    /// 2026-09-28).
+    /// </summary>
+    public static string NoTerminalsRefusal(RailPart element, string railName, IReadOnlyList<PlacedPin> pads)
+    {
+        ArgumentNullException.ThrowIfNull(element);
+        ArgumentNullException.ThrowIfNull(pads);
+        string refdes = element.Refdes;
+        int count = pads.Count(p => string.Equals(p.Refdes, refdes, StringComparison.OrdinalIgnoreCase));
+        const string give =
+            "give both of its rail-side terminals — the refdes and pin of each pad. A refdes on its own " +
+            "is not enough: it resolves to EVERY pad of the part, which would tie the element's two ends " +
+            "into one node and model a short.";
+
+        if (element.TerminalA is not null || element.TerminalB is not null)
+            return $"Series element {refdes} on rail '{railName}' names only one of its terminals, so " +
+                   $"railRF cannot tell which two pieces of copper it bridges. Name the other one too: {give}";
+
+        return count switch
+        {
+            0 => $"{refdes} is not placed on the board — it is a series element on rail '{railName}', and " +
+                 "no pad of it is on this artwork: no land-pattern instance in the layout carries that " +
+                 "reference and no board netlist names its pins. With no pads there is nothing to cut the " +
+                 $"rail at. Place {refdes} in the layout or load the board netlist that names its pins, " +
+                 $"or {give}",
+            1 => $"Series element {refdes} on rail '{railName}' has one pad on this board, so railRF " +
+                 $"cannot tell which two pieces of copper it bridges. Check its footprint, or {give}",
+            _ => $"Series element {refdes} on rail '{railName}' has {count} pads on this board, so " +
+                 "railRF cannot tell which two of them are its rail-side ends. Name them: " + give,
+        };
+    }
+
     /// <summary>
     /// <b>R-rail25-2a and R-rail35-3a — the measured route.</b> Each row lands in a section by which
     /// of the rail's own galvanic islands its pads are in, and each element joins the two islands its
@@ -254,6 +330,7 @@ public sealed record RailSeriesPartition(
         ArgumentNullException.ThrowIfNull(regions);
         ArgumentNullException.ThrowIfNull(pads);
 
+        rail = WithTerminals(rail, pads);
         var elements = rail.SeriesElements;
         if (elements.Count == 0) return None(rail);
 
@@ -262,12 +339,7 @@ public sealed record RailSeriesPartition(
         foreach (var element in elements)
         {
             if (element.TerminalA is not { } termA || element.TerminalB is not { } termB)
-                return Refused(
-                    $"Series element {element.Refdes} on rail '{rail.Name}' names no terminals, so " +
-                    "railRF cannot tell which two pieces of copper it bridges. Give both of its " +
-                    "rail-side terminals — the refdes and pin of each pad. A refdes on its own is not " +
-                    "enough: it resolves to EVERY pad of the part, which would tie the element's two " +
-                    "ends into one node and model a short.");
+                return Refused(NoTerminalsRefusal(element, rail.Name, pads));
 
             int? a = IslandOf(termA, regions, pads, rail.ReferenceLayer);
             int? b = IslandOf(termB, regions, pads, rail.ReferenceLayer);

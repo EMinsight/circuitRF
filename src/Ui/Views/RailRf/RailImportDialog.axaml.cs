@@ -170,6 +170,7 @@ public partial class RailImportDialog : Window
         // on, and the placement route can open a second dialog — so checking it first would make a
         // user who then hits the netlist refusal walk through the column mapping again on their
         // next press.
+        if (OfferNetlistBeside(options)) return;
         if (!CheckNetlist(options)) return;
 
         // Re-read from the file on every press: Build() constructs a fresh options record, so a
@@ -237,6 +238,49 @@ public partial class RailImportDialog : Window
             PlacementColumns = chosen.Columns,
             PlacementUnits   = chosen.Units,
         };
+    }
+
+    /// <summary>The netlist <see cref="OfferNetlistBeside"/> put in the row, so the second press
+    /// takes it rather than offering it again.</summary>
+    private string? _offeredNetlist;
+
+    /// <summary>
+    /// R-rail37-2 — a board netlist that reads, sitting beside the Gerbers, OFFERED where the row is
+    /// empty or names a file that is not one: put in the row, said, and taken on the next press.
+    /// </summary>
+    /// <remarks>
+    /// Found by content (<see cref="BoardNetlistFile.FindBeside"/>), never by extension. A field
+    /// report's document named a CAD tool's part list as its netlist while the IPC-D-356 file sat in
+    /// the Gerber folder; with it, the inner planes have net names, every anchor resolves by pad and
+    /// every series part knows its terminals. Clearing the row after the offer imports without one,
+    /// exactly as before.
+    /// </remarks>
+    /// <returns>True where the dialog stays open on the offer.</returns>
+    private bool OfferNetlistBeside(RailImportOptions options)
+    {
+        if (options.BoardNetlistPath is { Length: > 0 } named)
+        {
+            if (string.Equals(named, _offeredNetlist, StringComparison.Ordinal)) return false;
+            var read = BoardNetlistFile.ReadFile(named, CircuitRF.Design.Layout.LayoutUnits.DefaultDbuPerMicron);
+            if (read is { Refusal: null }) return false;
+        }
+        else if (_offeredNetlist is not null) return false;   // offered, and cleared: the user's answer
+
+        if (BoardNetlistFile.FindBeside(options.ArtworkPath, except: options.BoardNetlistPath) is not { } found)
+            return false;
+
+        _offeredNetlist = found;
+        NetlistBox.Text = found;
+        Refuse(
+            (options.BoardNetlistPath is { Length: > 0 } wrong
+                ? $"\u201c{System.IO.Path.GetFileName(wrong)}\u201d is not a board netlist, and "
+                : "No board netlist is named, and ")
+          + $"\u201c{System.IO.Path.GetFileName(found)}\u201d beside the Gerbers is one — a net name, "
+          + "reference designator and pin for every pad, which is what lets a source, a load or a series "
+          + "part be named by its pad. It is now in the Board netlist row: press Import to use it, or "
+          + "clear the row to import without one.",
+            NetlistBox);
+        return true;
     }
 
     /// <summary>

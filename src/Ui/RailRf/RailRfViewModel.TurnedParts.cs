@@ -127,6 +127,11 @@ public sealed partial class RailRfViewModel
         }
 
         foreach (var (index, _, after) in edits) view.Instances[index] = after;
+
+        // Our own write is not an edit from elsewhere (R-rail37-4): the copy held IS what was written.
+#pragma warning disable MVVMTK0034
+        if (_board is { } held) _board = held with { ArtworkWrittenUtc = WrittenUtc(clay) };
+#pragma warning restore MVVMTK0034
         return true;
     }
 

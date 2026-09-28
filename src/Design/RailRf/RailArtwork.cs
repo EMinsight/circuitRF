@@ -189,10 +189,35 @@ public static class RailArtwork
             // here: a netlist that did not read leaves every refdes unresolvable, and the report
             // that follows would otherwise look exactly like one for a board that never had a
             // netlist at all.
-            if (read is { Refusal: { Length: > 0 } why }) { error = why; return null; }
+            if (read is { Refusal: { Length: > 0 } why }) { error = why + FoundBeside(document, documentPath, path); return null; }
             return read;
         }
-        catch (Exception ex) { error = ex.Message; return null; }
+        catch (Exception ex) { error = ex.Message + FoundBeside(document, documentPath, path); return null; }
+    }
+
+    /// <summary>
+    /// R-rail37-2 — the clause naming a board netlist that DOES read, found beside the Gerbers the
+    /// board was imported from (<see cref="RailDocument.ArtworkSourceRef"/>) or beside the file that
+    /// did not read; empty where there is none. Appended to the reader's own refusal, so the window's
+    /// open and the <c>rail</c> verb say it in the same words.
+    /// </summary>
+    private static string FoundBeside(RailDocument document, string documentPath, string failed)
+    {
+        string dir = Path.GetDirectoryName(Path.GetFullPath(documentPath))!;
+        string? source = document.ArtworkSourceRef is { Length: > 0 } s ? Core.RefPath.Resolve(dir, s) : null;
+
+        string where = "beside the Gerbers this board was imported from";
+        string? found = BoardNetlistFile.FindBeside(source, except: failed);
+        if (found is null)
+        {
+            where = "in the same folder";
+            found = BoardNetlistFile.FindBeside(failed, except: failed);
+        }
+
+        return found is null
+            ? ""
+            : $" A board netlist that does read sits {where}: '{found}'. Name it as the board netlist — " +
+              "re-import the board with it in the Board netlist row, or set \"BoardNetlistRef\" in the .crail.";
     }
 
     /// <summary>
@@ -646,6 +671,7 @@ public static class RailArtwork
         string toDir = Path.GetDirectoryName(Path.GetFullPath(toDocumentPath)) ?? "";
 
         document.ArtworkCellRef  = Rebased(document.ArtworkCellRef,  fromDir, toDir);
+        document.ArtworkSourceRef = Rebased(document.ArtworkSourceRef, fromDir, toDir);
         document.TechnologyRef   = Rebased(document.TechnologyRef,   fromDir, toDir);
         document.PartLibraryRef  = Rebased(document.PartLibraryRef,  fromDir, toDir);
         document.BoardNetlistRef = Rebased(document.BoardNetlistRef, fromDir, toDir);

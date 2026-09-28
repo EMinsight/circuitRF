@@ -245,6 +245,15 @@ public static class PdnGraphExtractor
                 "This artwork flattens to no copper at all. Check that the layout view carries the " +
                 "board's shapes and that its technology names the layers they are on.");
 
+        // R-rail37-1: a bare coordinate resolves on the side parts are mounted on — the pad it is
+        // on, else outer copper, Top where both are — and every stage below reads that one answer.
+        var sides = PdnAnchorSides.Resolve(request, layerRegions, referenceLayer);
+        if (sides.Refusal is { } innerOnly)
+            return PdnExtraction.Refused(innerOnly) with { AnchorAmbiguities = sides.InnerOnly };
+        request = sides.Request;
+        rail = request.Rail;
+        notes.AddRange(sides.Notes);
+
         // R-rail34-1/2: each seed carries the layer its copper is on where that is known — a pad's
         // land, or the layer a coordinate anchor states — so it seeds that copper and nothing under it.
         var anchorLands = new List<(long X, long Y, LayerKey? Layer)>();
@@ -520,7 +529,7 @@ public static class PdnGraphExtractor
         void Add(long x, long y) { if (seen.Add((x, y))) points.Add((x, y)); }
 
         foreach (var pad in request.Pads) Add(pad.X, pad.Y);
-        foreach (var via in request.Shapes.OfType<ViaShape>()) Add(via.X, via.Y);
+        foreach (var via in PdnBarrels.Of(request.Shapes, request.Technology)) Add(via.X, via.Y);
 
         void AddAnchor(RailPortAnchor a)
         {
@@ -1565,7 +1574,7 @@ internal sealed class GraphBuild(
         // piece is. Read from the via COORDINATES rather than re-deriving the stackup's spans, which
         // PdnAssembly already owns; being permissive here can only ever make a refusal LESS likely,
         // and the connectivity it stands in for is the region walk's own.
-        foreach (var via in request.Shapes.OfType<ViaShape>())
+        foreach (var via in PdnBarrels.Of(request.Shapes, request.Technology))
         {
             if (!_railNodesAtPoint.TryGetValue((via.X, via.Y), out var at) || at.Count < 2) continue;
             for (int i = 1; i < at.Count; i++)

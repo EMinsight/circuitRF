@@ -96,6 +96,10 @@ public partial class RailRfWindow
                 // here would be the same sentence again each time the user came back to the window.
                 vm.AdoptLiveView(live, RailArtwork.FlattenedShapes(live, clay, board.Technology));
             }
+
+            // R-rail37-4: no session to adopt — a layout edited, saved and closed while this window
+            // was not looking. The file is then what changed.
+            if (live is null) vm.ReadArtworkIfChangedOnDisk();
         }
 
         // OUTSIDE the ArtworkCellRef gate: a board that names no workspace cell can still have

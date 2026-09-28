@@ -338,6 +338,16 @@ public static class BoardNetlistFile
     {
         var kind = GerberFileClassifier.ClassifyContent("", text);
 
+        // R-rail37-2: a PART LIST is the file most often put in this row by mistake — a CAD tool
+        // writes one beside its netlist, and both "list the parts". It names the parts and not the
+        // net each pad is on, and saying THAT first is the whole of what the reader needs to hear.
+        if (kind.Kind == GerberFileKind.Bom || LooksLikePartList(text))
+            return "it is a part list or bill of materials, not a board netlist: it names the parts "
+                 + "but not the net each pad is on. railRF reads a board netlist in the IPC-D-356/356A "
+                 + "interchange format — a net name, reference designator and pin for every pad. Most "
+                 + "CAD tools write it beside the Gerbers, commonly as .ipc, .d356, .356 or .net. "
+                 + "Naming no netlist at all is an ordinary state and imports fine.";
+
         // What it IS, where anything recognised it. A file the import can name is very often one
         // the user pointed at the wrong row of the dialog with, and saying so is the whole fix.
         string what = kind.Kind == GerberFileKind.Other
@@ -349,6 +359,66 @@ public static class BoardNetlistFile
              + "plating flag per hole and the reference designator and pin where there is one. Most "
              + "CAD tools export it beside the Gerbers; it is commonly written .ipc, .d356, .356 or "
              + ".net. Naming no netlist at all is an ordinary state and imports fine.";
+    }
+
+    /// <summary>
+    /// Whether <paramref name="text"/> announces itself as a part list or a bill of materials in its
+    /// opening lines — a file-type declaration or a title a CAD tool writes at the top of one.
+    /// </summary>
+    /// <remarks>Letters only and upper-cased before the test, so <c>PART_LIST</c>, <c>Part List</c>
+    /// and a declared <c>…PARTLIST</c> file type all read as one. Only the head is looked at: a
+    /// netlist that happens to mention a part list further down is still a netlist, and is read as
+    /// one before this is ever asked.</remarks>
+    internal static bool LooksLikePartList(string text)
+    {
+        int seen = 0;
+        foreach (string line in Lines(text))
+        {
+            if (line.Trim().Length == 0) continue;
+            if (++seen > 12) break;
+            var letters = new string([.. line.Where(char.IsLetter).Select(char.ToUpperInvariant)]);
+            if (letters.Contains("PARTLIST") || letters.Contains("BILLOFMATERIAL")) return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// A board netlist sitting beside <paramref name="artworkPath"/> — in that folder, or in the
+    /// folder holding that file — found by CONTENT through the import's own classifier, never by
+    /// extension. Null where none reads as one (R-rail37-2).
+    /// </summary>
+    /// <remarks>
+    /// <b>Why this exists.</b> A CAD tool writes its IPC-D-356 netlist into the same folder as its
+    /// Gerbers, and a field report's document named that tool's PART LIST as its netlist instead —
+    /// with the real one a folder away the whole time. With it the inner planes have net names,
+    /// every anchor resolves by pad and every series part knows its terminals. Only a file that
+    /// READS — at least one feature record and no refusal — is offered: offering a file railRF then
+    /// refuses would be worse than offering nothing.
+    /// </remarks>
+    /// <param name="artworkPath">The Gerber folder, or a file in it.</param>
+    /// <param name="except">A file not to offer — the one that just failed to read.</param>
+    public static string? FindBeside(string? artworkPath, string? except = null)
+    {
+        if (artworkPath is not { Length: > 0 }) return null;
+        try
+        {
+            string full = Path.GetFullPath(artworkPath);
+            string? dir = Directory.Exists(full) ? full : Path.GetDirectoryName(full);
+            if (dir is null || !Directory.Exists(dir)) return null;
+            string? skip = except is { Length: > 0 } ? Path.GetFullPath(except) : null;
+
+            foreach (var found in GerberFileClassifier.ClassifyFolder(dir))
+            {
+                if (found.Kind != GerberFileKind.Netlist) continue;
+                string path = Path.GetFullPath(found.Path);
+                if (skip is not null && string.Equals(path, skip, StringComparison.OrdinalIgnoreCase)) continue;
+                if (ReadFile(path, LayoutUnits.DefaultDbuPerMicron) is { Refusal: null, Records.Count: > 0 })
+                    return path;
+            }
+        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+        return null;
     }
 
     /// <summary>Reads a netlist from disk. A netlist that cannot be read is not a reason to fail an

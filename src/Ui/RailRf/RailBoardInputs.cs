@@ -121,4 +121,12 @@ public sealed record RailBoardInputs
     /// <summary>The cell the artwork lives in, as the <c>.crail</c> refers to it, or null for the
     /// throwaway path. Shown on the window so a user can tell the two apart at a glance.</summary>
     public string? ArtworkCellRef { get; init; }
+
+    /// <summary>
+    /// When the <c>.clay</c> named by <see cref="ArtworkCellRef"/> had last been written, as of the
+    /// moment this board was READ from it — null where it was not read from a file (R-rail37-4).
+    /// </summary>
+    /// <remarks>What tells the window that a layout edited, saved and closed elsewhere is no longer the
+    /// one it holds: with no session left to adopt, the file is the only thing that changed.</remarks>
+    public DateTime? ArtworkWrittenUtc { get; init; }
 }

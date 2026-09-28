@@ -60,6 +60,12 @@ public sealed partial class RailRfViewModel
     /// <para>The rail's REFERENCE layer is never the answer: the walk seeds nothing there (a conductor
     /// cannot be its own return), so recording it made an anchor over an inner plane seed nothing at
     /// all, where the same click with no layer seeded the copper under the plane.</para>
+    /// <para><b>Only OUTER copper is a candidate</b> (R-rail37-1, owner decision 2026-09-28) — the
+    /// extraction's own rule for a coordinate that states no layer, so a click and an unstated anchor
+    /// at the same place mean the same copper. A source or a load is where a part is soldered; an
+    /// inner layer is anchored on only by naming it. Hiding Top still means "not that one": the
+    /// click then lands on Bottom where Bottom has copper, and on nothing recorded where no shown
+    /// outer layer does, which leaves the choice to the extraction.</para>
     /// </remarks>
     internal LayerKey? ShownCopperLayerAt(long xDbu, long yDbu, LayerKey? reference = null)
     {
@@ -76,8 +82,11 @@ public sealed partial class RailRfViewModel
             return int.MaxValue;
         }
 
+        var outer = PdnAnchorSides.Outer(tech);
+
         return Regions.CopperLayersAt(board.Shapes, tech, xDbu, yDbu)
             .Where(k => k != reference)
+            .Where(k => outer is null || outer.Top.Contains(k) || outer.Bottom.Contains(k))
             .Where(k => !hidden.Contains(k))
             .OrderByDescending(k => defs.TryGetValue(k, out var d) ? d.ZOrder : int.MinValue)
             .ThenBy(StackRank)

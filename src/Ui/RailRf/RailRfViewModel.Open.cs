@@ -330,6 +330,7 @@ public sealed partial class RailRfViewModel
                     TechPath       = found.TechnologyPath,
                     DbuPerMicron   = view.DbuPerMicron,
                     ArtworkCellRef = found.ClayPath,
+                    ArtworkWrittenUtc = WrittenUtc(found.ClayPath),
                     Pads           = resolvedPads.Pads,
                     NetPoints      = resolvedPads.NetPoints,
                     Nets           = resolvedPads.Nets,

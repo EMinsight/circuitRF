@@ -187,6 +187,35 @@ public sealed class RailSpec
     /// reports three ports.</summary>
     public IEnumerable<RailLoad> DcInjections => Loads.Where(l => l.DcCurrentA is not null);
 
+    /// <summary>
+    /// A copy of this rail whose source and load anchors are <paramref name="source"/>'s and
+    /// <paramref name="load"/>'s answers (the row's index is the second argument); every other member
+    /// is carried as it is. The extraction's view of the rail with its bare coordinates resolved to a
+    /// layer (R-rail37-1) — the document's own rail is never edited by a run.
+    /// </summary>
+    internal RailSpec WithAnchors(
+        Func<RailPortAnchor, int, RailPortAnchor> source, Func<RailPortAnchor, int, RailPortAnchor> load)
+    {
+        var copy = new RailSpec
+        {
+            Name            = Name,
+            NetName         = NetName,
+            ReferenceLayer  = ReferenceLayer,
+            ReferenceExtent = ReferenceExtent,
+            DropBudget      = DropBudget,
+            ImpedanceTarget = ImpedanceTarget,
+            Band            = Band,
+        };
+        for (int i = 0; i < Sources.Count; i++)
+            copy.Sources.Add(Sources[i] with { Anchor = source(Sources[i].Anchor, i) });
+        for (int i = 0; i < Loads.Count; i++)
+            copy.Loads.Add(Loads[i] with { Anchor = load(Loads[i].Anchor, i) });
+        copy.Aggressors.AddRange(Aggressors);
+        copy.Markers.AddRange(Markers);
+        copy.Parts.AddRange(Parts);
+        return copy;
+    }
+
     /// <summary>Null when this rail is well formed, or the first refusal sentence.</summary>
     /// <param name="format">
     /// The artwork's own units, so a coordinate anchor in a refusal reads as a place on the board.

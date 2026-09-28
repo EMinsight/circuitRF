@@ -58,7 +58,7 @@ Three buttons on its title bar get a board into it, and they do different things
 | | |
 |---|---|
 | **Open** | Points the window at something that already exists &mdash; a `.crail` anywhere on disk, or a bare `.clay` layout from any workspace. A `.clay` brings its own technology with it: the stackup is the one that layout references, not whichever workspace happens to be open. |
-| **Import a board** | *Creates.* It runs the same Gerber/drill import **File &rsaquo; Import** runs, lands the artwork in a workspace as an ordinary cell with a layout view, mints a technology from the set's own layers, and reads the placement, BOM and netlist you point it at. |
+| **Import a board** | *Creates.* It runs the same Gerber/drill import **File &rsaquo; Import** runs, lands the artwork in a workspace as an ordinary cell with a layout view, mints a technology from the set's own layers, and reads the placement, BOM and netlist you point it at. Where the **Board netlist** row is empty, or names a file that is not a board netlist (a part list, most often), railRF looks in the Gerber folder for the IPC-D-356 netlist a CAD tool writes beside its Gerbers &mdash; by what the file holds, not its extension &mdash; puts it in the row and says so; press **Import** again to use it, or clear the row to go without. A document whose netlist does not read names that file too, when it opens. |
 | **Help** | This chapter. |
 
 Opening a `.crail` resolves what the document itself names &mdash; its artwork, that artwork's stackup and
@@ -114,6 +114,19 @@ list's header, <b>Follow the technology</b>, clears your choices so every layer 
 | **The band and the aggressors** | The frequency span to sweep, and the things on your board that actually generate energy &mdash; the crystal, the converter, the radio reference. |
 
 <div class="callout note">
+<span class="label">Where a source or a load lands</span>
+<p>A source or a load named by <b>refdes and pin</b> is on that pad, on the side the part is mounted.
+One placed by <b>coordinate</b> is on the copper parts are soldered to: the pad of a placed part under
+the point, and otherwise the <b>outer</b> copper there &mdash; Top, or Bottom where only Bottom has copper.
+An inner layer is never chosen for you. Where Top and Bottom both have copper at the point (a via pad, a
+part on each side), railRF takes Top and says so in the run's notes; where only inner layers do, the run
+is refused, naming them, and the <b>Which copper?</b> card offers each as one click. To anchor on an inner
+layer, give the anchor that layer (<code>"Layer"</code> and <code>"LayerDatatype"</code> in the
+<code>.crail</code>). Right-clicking the board places on the topmost <b>outer</b> layer the board is
+showing, so hiding Top places on Bottom.</p>
+</div>
+
+<div class="callout note">
 <span class="label">Picking a net shows it on the board</span>
 <p>Selecting a net in the pick list outlines its copper on the board, dashed, before anything is made a
 rail. The first net you pick after a board loads has to read the board's copper first, which can take a
@@ -128,8 +141,10 @@ lands can easily sit with its pin 1 on the copper its pin 2 belongs to. railRF r
 one really is from the copper it sits on, and names every part it read as turned under the pick list.
 <b>Turn them in the layout</b> turns those parts 180° about their own lands, so the layout says what
 the copper shows. With the layout open in its own window it is one undoable edit there; otherwise railRF
-writes the <code>.clay</code> itself. Where the copper cannot tell which way round a part is, nothing is
-turned, and picking the net says which other nets' pins are standing on its copper.</p>
+writes the <code>.clay</code> itself. A part you turn by hand is read again too &mdash; as you edit, when the
+layout is open, or when railRF's window is next brought forward after the layout was saved and closed
+&mdash; and <b>Turn</b> waits until that reading is in. Where the copper cannot tell which way round a part
+is, nothing is turned, and picking the net says which other nets' pins are standing on its copper.</p>
 </div>
 
 <div class="callout note">
@@ -312,7 +327,8 @@ archived copy. Untick it to send the design without the library.
 A ferrite bead, a sense resistor or a switch standing in for its on-resistance is not decoupling: the
 rail runs **through** it. Right-click its row in the parts table and choose **Make series element**
 (**Make decoupling (shunt)** takes it back; each is one undo step). On a board, its two pads become its
-terminals, and a part that the board shows with both pads on the rail's copper is offered directly &mdash;
+terminals &mdash; read from the board at every run, so a re-import is followed &mdash; and a part with no
+pad on the board is refused as **not placed**, naming it. A part that the board shows with both pads on the rail's copper is offered directly &mdash;
 **Add *refdes* as series element** on the same menu, or **Add as series** under the table.
 
 To edit a series part's model, right-click its row and choose **Edit Model Source…**, or double-click its

@@ -127,7 +127,10 @@ public sealed class PdnMeshSettings
 }
 
 /// <summary>Everything one extraction reads. <b>One rail</b> — see R-rail3-13.</summary>
-public sealed class PdnExtractionRequest
+/// <remarks>A record so an extractor can hand the rest of itself the same request with the rail's
+/// anchors RESOLVED (R-rail37-1, <see cref="PdnAnchorSides"/>) — a copy that names every member
+/// would silently drop the next one added here.</remarks>
+public sealed record PdnExtractionRequest
 {
     /// <summary>The rail to extract. The extractor has no concept of a second one.</summary>
     public required RailSpec Rail { get; init; }
@@ -339,6 +342,15 @@ public static class PdnMeshExtractor
                 "board's shapes and that its technology names the layers they are on.");
 
         // ── which copper is this rail (R-rail3-3) ──────────────────────────────────────────────
+        // R-rail37-1: a bare coordinate resolves on the side parts are mounted on — the pad it is
+        // on, else outer copper, Top where both are — and every stage below reads that one answer.
+        var sides = PdnAnchorSides.Resolve(request, layerRegions, referenceLayer);
+        if (sides.Refusal is { } innerOnly)
+            return PdnExtraction.Refused(innerOnly) with { AnchorAmbiguities = sides.InnerOnly };
+        request = sides.Request;
+        rail = request.Rail;
+        notes.AddRange(sides.Notes);
+
         // R-rail34-1/2: each seed carries the layer its copper is on where that is known — a pad's
         // land, or the layer a coordinate anchor states — so it seeds that copper and nothing under it.
         var anchorLands = new List<(long X, long Y, LayerKey? Layer)>();

@@ -181,6 +181,7 @@ public partial class RailRfWindow
             TechPath       = result.TechPath,
             DbuPerMicron   = view.DbuPerMicron,
             ArtworkCellRef = options.LandInWorkspace ? clay : null,
+            ArtworkWrittenUtc = options.LandInWorkspace ? RailRfViewModel.WrittenUtc(clay) : null,
         };
     }
 

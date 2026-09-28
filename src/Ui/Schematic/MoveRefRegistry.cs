@@ -300,6 +300,7 @@ public static class MoveRefRegistry
         // table until a field report: a `.crail` dragged one folder up in the tree kept
         // `layout/board.clay` and opened on no board at all, and the fix was to re-point it by hand.
         new("crail/ArtworkCellRef",  Ext(".crail"), n => One(RefSlot.For(n, "ArtworkCellRef")),  OwnDir, PlainResolve, PlainStore),
+        new("crail/ArtworkSourceRef", Ext(".crail"), n => One(RefSlot.For(n, "ArtworkSourceRef")), OwnDir, PlainResolve, PlainStore),
         new("crail/TechnologyRef",   Ext(".crail"), n => One(RefSlot.For(n, "TechnologyRef")),   OwnDir, PlainResolve, PlainStore),
         new("crail/PartLibraryRef",  Ext(".crail"), n => One(RefSlot.For(n, "PartLibraryRef")),  OwnDir, PlainResolve, PlainStore),
         new("crail/BoardNetlistRef", Ext(".crail"), n => One(RefSlot.For(n, "BoardNetlistRef")), OwnDir, PlainResolve, PlainStore),

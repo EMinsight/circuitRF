@@ -113,6 +113,7 @@ public static class RailDocumentIo
         FormatVersion  = CurrentFormatVersion,
         Name           = NullIfEmpty(d.Name),
         ArtworkCellRef = NullIfEmpty(d.ArtworkCellRef),
+        ArtworkSourceRef = NullIfEmpty(d.ArtworkSourceRef),
         TechnologyRef  = NullIfEmpty(d.TechnologyRef),
         PartLibraryRef = NullIfEmpty(d.PartLibraryRef),
         BoardNetlistRef = NullIfEmpty(d.BoardNetlistRef),
@@ -308,6 +309,7 @@ public static class RailDocumentIo
         {
             Name           = f.Name ?? "",
             ArtworkCellRef = f.ArtworkCellRef,
+            ArtworkSourceRef = f.ArtworkSourceRef,
             TechnologyRef  = f.TechnologyRef,
             PartLibraryRef = f.PartLibraryRef,
             BoardNetlistRef = f.BoardNetlistRef,
@@ -483,6 +485,10 @@ public static class RailDocumentIo
         public int              FormatVersion  { get; set; }
         public string?          Name           { get; set; }
         public string?          ArtworkCellRef { get; set; }
+
+        /// <summary>Where the artwork was imported from (R-rail37-2). Absent on every document
+        /// imported before it was recorded.</summary>
+        public string?          ArtworkSourceRef { get; set; }
         public string?          TechnologyRef  { get; set; }
         public string?          PartLibraryRef { get; set; }
 

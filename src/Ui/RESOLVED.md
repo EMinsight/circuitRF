@@ -37564,3 +37564,24 @@ OUTSIDE it are offered, copied to `external/` and repointed.
   sender untick it.
 
 Gate: `WorkspaceArchiveTests.TheNewDocumentKinds_TheirOutsideReferences_AreFoundAndRepointed`.
+
+## brief-railrf-37 — the window half: placement, the netlist offer, a layout turned elsewhere (2026-09-28)
+
+- **Placement follows the extraction's rule.** `ShownCopperLayerAt` considers only the OUTER conductors
+  (`PdnAnchorSides.Outer`), topmost shown first; none shown with copper records no layer and leaves the
+  choice to the run. So a right-click and an unstated anchor at the same point mean the same copper,
+  and hiding Top still means "not that one". The pour-pick route goes through the same call.
+- **The netlist offer** is in `RailImportDialog.OfferNetlistBeside`: an empty row, or one naming a file
+  that does not read, gets the netlist found beside the Gerbers put in it and a sentence in the refusal
+  line; the next press takes it, and clearing the row after the offer imports without one (the offer
+  is remembered in `_offeredNetlist`, so it is made once). `ApplyImport` records `ArtworkSourceRef`.
+- **R-rail37-4, the gap that was real.** A turn made in an open layout session already reached railRF
+  (adoption on Activated, then `NotifyArtworkChanged` → the debounced pad read, and `CanTurnParts` is
+  false while `IsReadingParts`). A layout edited, SAVED and CLOSED before railRF was looked at again
+  was not followed at all: no session was left to adopt, and the board held the copy read at open.
+  `RailBoardInputs.ArtworkWrittenUtc` stamps the file as read; on Activated with no session,
+  `ReadArtworkIfChangedOnDisk` stats it and, when it moved, re-reads the `.clay` off the UI thread and
+  hands it to `AdoptLiveView`, which schedules the pad read only where a pin moved. `IsReadingParts`
+  holds Turn for the whole of it. Turn's own file write re-stamps, so it is not read back as an edit
+  from elsewhere. Not covered by a test (the view-model seams exist; the brief's minimal list did not
+  ask for one) and not seen in a running window — the GUI cannot be launched from this shell.

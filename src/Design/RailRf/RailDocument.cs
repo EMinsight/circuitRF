@@ -131,6 +131,19 @@ public sealed class RailDocument
     public string? ArtworkCellRef { get; set; }
 
     /// <summary>
+    /// Where the artwork was imported FROM — the Gerber folder, or the file chosen inside it — as
+    /// Import Board was given it (R-rail37-2).
+    /// </summary>
+    /// <remarks>
+    /// <b>Read for one thing: the board netlist a CAD tool writes beside its Gerbers.</b> A document
+    /// naming a file that does not read as a netlist — a part list, most often — is told about the
+    /// IPC-D-356 file sitting in this folder, which is the file that gives every pad its net, refdes
+    /// and pin. Nothing else resolves through it, and an import made before it existed leaves it
+    /// null. Document-relative, for <see cref="ArtworkCellRef"/>'s reason.
+    /// </remarks>
+    public string? ArtworkSourceRef { get; set; }
+
+    /// <summary>
     /// The stackup — layer order, copper and dielectric thicknesses, ε_r and tan δ — as a reference to
     /// a <c>.ctech</c>. circuitRF's existing technology model, the same one the EM solver reads and
     /// edited in the same place (§2.2), so railRF adds no stackup format of its own.

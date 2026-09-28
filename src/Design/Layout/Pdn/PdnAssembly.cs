@@ -342,7 +342,7 @@ internal sealed class PdnAssembly
         var tech = _req.Technology;
         var z = ZOf(tech, _req.DbuPerMicron);
 
-        var vias = _req.Shapes.OfType<ViaShape>().ToList();
+        var vias = PdnBarrels.Of(_req.Shapes, tech);
         vias.Sort((p, q) => p.X != q.X ? p.X.CompareTo(q.X) : p.Y.CompareTo(q.Y));
 
         double rho = PdnMeshExtractor.ResistivityAt(CopperSigma(tech), _celsius);
