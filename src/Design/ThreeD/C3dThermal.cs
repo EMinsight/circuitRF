@@ -216,15 +216,8 @@ public static class C3dThermal
             if (Thermal.ThermalEffectiveBlocks.Intruder(doc, e, b) is { } other)
                 found.Add(D.BlockShape(b.Name, $"cuts through '{other}', which is not board dielectric, a copper plane or a via barrel; a block " +
                                                "replaces only those — shrink it so it stops at the other solid's face"));
-        if (doc.SymmetryPlanes.Count > 0 && MeshedExtent(e) is { } ext)
-            foreach (var sp in doc.SymmetryPlanes)
-            {
-                double at = sp.At * m, lo = sp.Axis switch { C3dAxis.X => ext.X0, C3dAxis.Y => ext.Y0, _ => ext.Z0 },
-                       hi = sp.Axis switch { C3dAxis.X => ext.X1, C3dAxis.Y => ext.Y1, _ => ext.Z1 };
-                if (Math.Abs(at - lo) > tol && Math.Abs(at - hi) > tol)
-                    found.Add(D.Symmetry($"The symmetry plane {sp.Axis} = {Num(at * 1e6)} µm does not lie on the model's extent ({Num(lo * 1e6)} to " +
-                                         $"{Num(hi * 1e6)} µm along {sp.Axis}): the plane is the face the modelled half was cut on, so it is one end of the model"));
-            }
+        foreach (var sp in doc.SymmetryPlanes)
+            if (SymmetryPlaneRefusal(e, sp.Axis, sp.At * m, doc.DbuPerMicron, out _) is { } why) found.Add(D.Symmetry(why));
 
         // brief-em3d-86 R-em3d86-2 — the drawn wires' ground plane resolves, and lies below every drawn wire (its image would
         // otherwise sit above the wire it mirrors)
@@ -254,6 +247,29 @@ public static class C3dThermal
         }
         return found;
     }
+
+    /// <summary>
+    /// brief-em3d-90 R-em3d90-4 — THE rule a symmetry plane obeys, written once: it is the face the modelled half was cut on,
+    /// so it lies on one end of the meshed model's extent along its axis (within a DBU, or a millionth of the extent). Null
+    /// when <paramref name="atM"/> (metres) does, with <paramref name="end"/> the end it lies on; else the sentence saying
+    /// why not. <c>check</c>, the face's Symmetry Plane gesture and the Inspector's At field all ask this. A model that meshes
+    /// nothing has no extent to lie on, and nothing is said.
+    /// </summary>
+    public static string? SymmetryPlaneRefusal(C3dElaboration e, C3dAxis axis, double atM, int dbuPerMicron, out double end)
+    {
+        end = atM;
+        if (MeshedExtent(e) is not { } ext) return null;
+        double lo = axis switch { C3dAxis.X => ext.X0, C3dAxis.Y => ext.Y0, _ => ext.Z0 }, hi = axis switch { C3dAxis.X => ext.X1, C3dAxis.Y => ext.Y1, _ => ext.Z1 };
+        double tol = Math.Max(1e-6 / dbuPerMicron, 1e-6 * (hi - lo));
+        if (Math.Abs(atM - lo) <= tol) { end = lo; return null; }
+        if (Math.Abs(atM - hi) <= tol) { end = hi; return null; }
+        return $"The symmetry plane {axis} = {Num(atM * 1e6)} µm does not lie on the model's extent ({Num(lo * 1e6)} to {Num(hi * 1e6)} µm " +
+               $"along {axis}): the plane is the face the modelled half was cut on, so it is one end of the model";
+    }
+
+    /// <summary>brief-em3d-90 — the meshed model's extent (metres), which a symmetry plane lies on one end of and the editor
+    /// draws a declared plane across; null when nothing is meshed.</summary>
+    public static (double X0, double Y0, double Z0, double X1, double Y1, double Z1)? SymmetryExtent(C3dElaboration e) => MeshedExtent(e);
 
     /// <summary>The extent of every solid a thermal run meshes, metres; null with none.</summary>
     private static (double X0, double Y0, double Z0, double X1, double Y1, double Z1)? MeshedExtent(C3dElaboration e)

@@ -658,6 +658,12 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
 
     public IEnumerable<Viewer3DMenuItem> DrawMenuItems()
     {
+        // brief-em3d-90 — a boundary's tint selected: the boundary's menu alone (the face under it is one B away)
+        if (TintMenuItems() is { Count: > 0 } tint)
+        {
+            foreach (var item in tint) yield return item;
+            yield break;
+        }
         // 3D editor groups — Group Objects and Ungroup first: a click selects a whole group, so they are what it is for.
         var groups = GroupMenuItems().ToList();
         foreach (var item in groups) yield return item;

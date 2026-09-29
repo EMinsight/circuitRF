@@ -282,6 +282,8 @@ public sealed class Viewer3DOverlay : Control
     private static readonly IBrush HeatBrush = new SolidColorBrush(Color.FromRgb(240, 120, 40));
     private static readonly IBrush ProbeBrush = new SolidColorBrush(Color.FromRgb(40, 200, 220));
     private static readonly IBrush RegionBrush = new SolidColorBrush(Color.FromRgb(170, 120, 230));
+    /// <summary>brief-em3d-90 — a thermal symmetry plane: the colour the air box hatches a symmetry face in (Scene3DBuilder).</summary>
+    private static readonly IBrush SymmetryBrush = new SolidColorBrush(Color.FromRgb(160, 80, 210));
 
     /// <summary>brief-em3d-67 — a world polyline, projected, drawn twice: a halo, then the stroke.</summary>
     private static void Polyline(DrawingContext ctx, Viewer3DViewModel vm, IReadOnlyList<CircuitRF.Engine.Em3d.Point3> pts, double w, double h,
@@ -339,6 +341,7 @@ public sealed class Viewer3DOverlay : Control
         Lines(d.HeatSources, new Pen(HeatBrush, 1.4));
         Lines(d.MeshRegions, new Pen(RegionBrush, 1.3) { DashStyle = new DashStyle([6, 4], 0) });
         Lines(d.Probes, new Pen(ProbeBrush, 1.6));
+        Lines(d.SymmetryPlanes, new Pen(SymmetryBrush, 1.1));
         foreach (var p in d.ProbeMarks)
             if (Screen(p) is (var pp, true))
             {

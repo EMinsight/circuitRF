@@ -37941,3 +37941,44 @@ measures by token, only as a probe function's argument (it was a regex over the 
   (`AttachSharedNativeMenuIfMacOS`), so choosing Examples from a float asks about the float's owning shell. That shell
   has a torn-off document, so the copy goes to a new window, as intended. Pixels not seen: Avalonia cannot start from this
   machine's shell.
+
+## brief-em3d-90 — the tree's record rows: Hide all reaches them, their ticks work, they select both ways (2026-09-29)
+
+**The field plot still showing after Hide all was the SECTION, not the field (candidate a).** `SetPlot(null)` did take the
+field away (FieldPlotTests gate 6 already held `Viewer.Plot == null`), but a ClipPlane plot turns the view's clip plane on
+when it is drawn (`SyncSectionTo`), and nothing turned it off again: the model stayed cut open on the plot's plane, which
+reads as a plot. `ApplyVisiblePlot` now remembers whether the plot OPENED the section and closes it when no ClipPlane plot
+is drawn; a section the user had open before the plot stays open. (b) — a temperature drawn outside the plot records — was
+ruled out by reading: every temperature gesture writes a `FieldPlots` record (brief 83). (c) — a setup's view keeping its
+plots elsewhere — likewise: a view-only editor's session plots live in its own empty document's `FieldPlots`.
+`TreeRecordsTests.Gate2` failed with the close disabled and passes with it.
+- **A second fault under it:** `_sectionSyncedTo` was recorded even when `SyncSectionTo` returned early on an empty scene,
+  and the first `ApplyVisiblePlot` of a document opening with a ClipPlane plot drawn runs before there is a scene — so that
+  plot never cut the section at all. The sync is now recorded only once it happened.
+
+**One visibility function, `SetRowsVisible`.** The tick, Hide all / Show all and every tree menu's Hide / Show call it; it
+dispatches by row kind to the writers that already existed (ChangeObjects, ChangeOperand, SetGroupVisible, AirBoxShown,
+SetPlaceShown, the plots' ChangePlots) and the two new view states. Everything saved is inside ONE `BeginGroup`, so Hide
+all is one undo entry (the plots used to push their own entry first — two per press). The view's states are applied
+BEFORE the saved edits, because each saved edit rebuilds the tree and the rebuilt rows read those states.
+
+**A thermal boundary's and a symmetry plane's tick are view state**, keyed so they cannot leak: a boundary by its tint
+name qualified by the active setup's name (switching setups never hides another setup's boundary on the same face), a
+plane by its axis (one plane per axis). The build thread gets the active setup's hidden tints as DATA in
+`C3dSceneInputs.HiddenTints`; `ThermalTints` never reads the editor.
+
+**A record row the scene holds nothing of stays selected when the view's selection empties** (`TreeRowStillSelected`):
+unticking a selected boundary regenerates the scene without its tint, the selection remap drops it, and the row used to go
+with it — taking the Inspector page the user was editing.
+
+**The symmetry-plane rule is written once, in `src/Design`** (`C3dThermal.SymmetryPlaneRefusal`), and `check`, the face's
+Symmetry Plane gesture and the Inspector's At all ask it. The two copies had drifted: the editor measured the extent of
+EVERY solid (`Extent()`), `check` only what a thermal run meshes (air and vacuum left out), with different tolerances. The
+meshed extent is the one the run uses, so it won; a face on an air solid's outer extent is now refused by the gesture as
+`check` already refused it.
+
+**The Inspector's At goes through `EditNames` + `WriteField`** — the place fields' binding, so an expression works — not
+`ChangeRecords` as the brief suggested; it is still one entry, and a refusal leaves the document byte for byte as it was.
+
+**A boundary's Kind switch keeps the other kind's values** in the Inspector's memory while that row stays selected (the
+memory survives the reload each write causes, and is dropped when another row is selected). It is never written anywhere.

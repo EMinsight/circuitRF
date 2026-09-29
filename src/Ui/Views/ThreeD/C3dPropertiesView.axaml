@@ -200,6 +200,34 @@
                 </ItemsControl>
             </StackPanel>
 
+            <!-- brief-em3d-90 R-em3d90-4 — a thermal boundary of the active thermal setup: each commit is right-click ▸ Thermal's
+                 own write (one undo entry). Switching the kind keeps the other kind's values while the row stays selected. -->
+            <StackPanel Spacing="4" IsVisible="{Binding IsThermalBoundary}">
+                <TextBlock Text="Kind" FontSize="11" Opacity="0.7"/>
+                <ComboBox ItemsSource="{x:Static t3:C3dPropertiesViewModel.ThermalBoundaryKinds}" SelectedItem="{Binding BoundaryKind}"
+                          HorizontalAlignment="Stretch" IsEnabled="{Binding BoundaryEditable}"
+                          ToolTip.Tip="A fixed temperature, or convection to an ambient. Every face no boundary names is insulated."/>
+                <StackPanel Spacing="4" IsVisible="{Binding BoundaryIsFixed}">
+                    <TextBlock Text="T, °C" FontSize="11" Opacity="0.7"/>
+                    <TextBox Text="{Binding BoundaryT}" IsEnabled="{Binding BoundaryEditable}" KeyDown="OnBoundaryKey" LostFocus="OnBoundaryLostFocus"
+                             ToolTip.Tip="A number or an expression, in °C"/>
+                </StackPanel>
+                <StackPanel Spacing="4" IsVisible="{Binding !BoundaryIsFixed}">
+                    <TextBlock Text="h, W/(m²·K)" FontSize="11" Opacity="0.7"/>
+                    <TextBox Text="{Binding BoundaryH}" IsEnabled="{Binding BoundaryEditable}" KeyDown="OnBoundaryKey" LostFocus="OnBoundaryLostFocus"
+                             ToolTip.Tip="The heat transfer coefficient: a number or an expression"/>
+                    <TextBlock Text="Ambient, °C" FontSize="11" Opacity="0.7"/>
+                    <TextBox Text="{Binding BoundaryAmbient}" IsEnabled="{Binding BoundaryEditable}" KeyDown="OnBoundaryKey" LostFocus="OnBoundaryLostFocus"
+                             ToolTip.Tip="A number or an expression, in °C"/>
+                </StackPanel>
+                <TextBlock Text="Face" FontSize="11" Opacity="0.7"/>
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="4">
+                    <SelectableTextBlock Text="{Binding BoundaryFace}" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                    <Button Grid.Column="1" Content="Select face" FontSize="11" Padding="8,3" Command="{Binding SelectBoundaryFaceCommand}"
+                            ToolTip.Tip="Select the face this boundary lies on, in Face mode (B from the boundary in the view reaches it too)."/>
+                </Grid>
+            </StackPanel>
+
             <!-- brief-em3d-83 R-em3d83-4 — a field plot: every field one undo entry. The Solution picker lists what the run
                  saved, by value; the Quantity picker only what the step offers. The phase controls at the foot are the view's. -->
             <StackPanel Spacing="4" IsVisible="{Binding IsFieldPlot}">

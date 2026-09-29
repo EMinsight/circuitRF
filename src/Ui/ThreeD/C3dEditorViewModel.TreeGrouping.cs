@@ -83,49 +83,79 @@ public sealed partial class C3dEditorViewModel
 
     /// <summary>3D editor round 5 — the header's Show all: every row the tree lists is shown.</summary>
     [RelayCommand]
-    private void ShowAllTreeObjects() => SetListedVisibility(true);
+    private void ShowAllTreeObjects() => SetRowsVisible(ListedRows(), true, "Show all");
 
     /// <summary>3D editor round 5 — the header's Hide all: every row the tree lists is hidden.</summary>
     [RelayCommand]
-    private void HideAllTreeObjects() => SetListedVisibility(false);
+    private void HideAllTreeObjects() => SetRowsVisible(ListedRows(), false, "Hide all");
 
     /// <summary>
-    /// Every top-level row the tree lists, shown or hidden — as the <c>.ctech</c> Layers switch does, a row the filter hid
-    /// is left as it is. The document's objects and the air box are one undo entry; an instance's contents are the view's
-    /// to hide, for this session, as its own tick does. A boolean's operands and a feature follow their object.
+    /// brief-em3d-90 R-em3d90-1 — every row the tree lists, for Hide all / Show all: each section's rows — the records too (heat
+    /// sources, probes, mesh regions, effective blocks, symmetry planes, thermal boundaries, field plots) — with a group's row
+    /// standing for its members, and an object's EM face boundaries beneath it. As the <c>.ctech</c> Layers switch does, a row
+    /// the filter hid is not listed, so it is left as it is.
     /// </summary>
-    private void SetListedVisibility(bool visible)
+    private List<C3dTreeItem> ListedRows()
     {
-        // A group's row stands for its members: each is shown or hidden as its own row would be.
-        static IEnumerable<C3dTreeItem> Members(C3dTreeItem r) => r.IsGroup ? r.Children.SelectMany(Members) : [r];
-        // brief-em3d-83 — the field plots too, one drawn at a time; their rows are records, not the scene's.
-        SetPlotsVisibility(visible);
-        var rows = Tree.Where(g => g.Role != C3dTreeGroupRole.FieldPlots).SelectMany(g => g.Items).SelectMany(Members).ToList();
+        static IEnumerable<C3dTreeItem> Members(C3dTreeItem r)
+            => r.IsGroup ? r.Children.SelectMany(Members) : r.Children.Where(c => c.Kind == EmBoundaryKind).Prepend(r);
+        return [.. Tree.SelectMany(g => g.Items).SelectMany(Members)];
+    }
+
+    /// <summary>The kind of an EM face boundary's row, beneath its object (brief-em3d-49).</summary>
+    public const string EmBoundaryKind = "Boundary";
+
+    /// <summary>
+    /// brief-em3d-90 R-em3d90-1 — THE visibility function: the tick, Hide all / Show all, a row menu's Hide / Show (and brief 91's
+    /// H key and button) all call this. Each row goes to its kind's own writer, never a second copy of one:
+    /// <list type="bullet">
+    /// <item>saved, and ONE undo entry for the whole gesture — an object's <c>Hidden</c> (ChangeObjects; an operand's through
+    /// ChangeOperand; a group's through SetGroupVisible), the field plots' <c>Hidden</c> (one drawn at a time), the air box;</item>
+    /// <item>the view's alone, never undoable — a thermal place (SetPlaceShown), a thermal boundary and a symmetry plane (the
+    /// hidden sets beside it), an instance's parts and an EM face boundary's tint (the scene's visibility).</item>
+    /// </list>
+    /// A feature row has no visibility (its switch is Enabled). In a setup's view every tick is the view's, never an edit.
+    /// </summary>
+    public void SetRowsVisible(IReadOnlyList<C3dTreeItem> rows, bool visible, string description)
+    {
+        var plots = rows.Where(r => r.Kind == FieldPlotKind).Select(r => r.Name).Distinct().ToList();
         if (IsViewOnly)
         {
             // A setup's view lists the scene's objects: each tick is the view's own visibility, never an edit.
-            foreach (var r in rows) { ViewTreeVisibilityChanged(r, visible); r.Sync(visible); }
+            foreach (var r in rows.Where(r => r.Kind != FieldPlotKind)) { ViewTreeVisibilityChanged(r, visible); r.Sync(visible); }
+            SetPlotsVisible(plots, visible, description);
             return;
         }
-        string description = visible ? "Show all" : "Hide all";
+        // The view's own states first: a saved edit below rebuilds the tree, and the rebuilt rows read these.
+        foreach (var r in rows)
+        {
+            if (r.Kind is HeatSourceKind or ProbeKind or MeshRegionKind or EffectiveBlockKind) SetPlaceShown(r.Name, visible);
+            else if (r.Kind == ThermalBoundaryKindName) SetBoundaryShown(r.Name, visible);
+            else if (r.Kind == SymmetryPlaneKind) SetSymmetryPlaneShown(r.Name, visible);
+            else if (r.InstanceIndex >= 0 || (r.ObjectIndex < 0 && !r.IsAirBox && !r.IsGroup && r.Kind != FieldPlotKind))
+            {
+                // an instance's contents, an instance's part, an EM face boundary's tint: the view hides them for this session
+                var names = r.InstanceIndex >= 0 ? r.Children.Select(c => c.Name) : [r.Name];
+                foreach (string n in names)
+                    if (SceneObject(n) is { } s) Viewer.SetVisibleEverywhere(s.Id, visible);
+                foreach (var c in r.Children) c.Sync(visible);
+                r.Sync(visible);
+            }
+        }
         BeginGroup(description);
         try
         {
-            var indices = rows.Where(r => r.ObjectIndex >= 0 && r.ObjectIndex < Document.Objects.Count && r.OperandPath is null && !r.IsFeature)
-                              .Select(r => r.ObjectIndex).Distinct().ToList();
-            ChangeObjects(description, indices, o => o.Hidden = !visible);
+            SetPlotsVisible(plots, visible, description);
             if (rows.Any(r => r.IsAirBox)) AirBoxShown = visible;
+            foreach (var g in rows.Where(r => r.IsGroup).Select(r => r.GroupPath!).Distinct().ToList()) SetGroupVisible(g, visible);
+            foreach (var r in rows.Where(r => r.OperandPath is not null && r.ObjectIndex >= 0 && !r.IsFeature).ToList())
+                ChangeOperand($"{(visible ? "Show" : "Hide")} {r.Name}", r.ObjectIndex, r.OperandPath!, o => o.Hidden = !visible);
+            var indices = rows.Where(r => r.ObjectIndex >= 0 && r.ObjectIndex < Document.Objects.Count && r.OperandPath is null && !r.IsFeature && !r.IsGroup)
+                              .Select(r => r.ObjectIndex).Distinct().ToList();
+            if (indices.Count > 0)
+                ChangeObjects(rows.Count == 1 ? $"{(visible ? "Show" : "Hide")} {rows[0].Name}" : description, indices, o => o.Hidden = !visible);
         }
         finally { EndGroup(); }
-        foreach (var inst in rows.Where(r => r.InstanceIndex >= 0))
-        {
-            foreach (var c in inst.Children)
-            {
-                if (SceneObject(c.Name) is { } s) Viewer.SetVisibleEverywhere(s.Id, visible);
-                c.Sync(visible);
-            }
-            inst.Sync(visible);
-        }
     }
 
     internal void TreeFilterChanged(C3dTreeFilterEntry entry)

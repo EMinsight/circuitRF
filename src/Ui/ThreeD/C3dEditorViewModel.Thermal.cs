@@ -75,6 +75,48 @@ public sealed partial class C3dEditorViewModel
     /// <summary>Whether the place <paramref name="name"/> is drawn: its kind's switch, and its own row's tick.</summary>
     public bool IsPlaceShown(string name) => !_hiddenPlaces.Contains(name);
 
+    // brief-em3d-90 R-em3d90-2 — a thermal boundary's and a symmetry plane's tick are the VIEW's, as a place's is: neither
+    // record has a Hidden in its file and should not gain one, so nothing is saved and nothing is undoable. A boundary's key
+    // is its tint's name qualified by the active setup's, so one setup's hidden boundary never hides another setup's on the
+    // same face.
+    private readonly HashSet<string> _hiddenBoundaries = new(StringComparer.Ordinal);
+    private readonly HashSet<C3dAxis> _hiddenPlanes = [];
+
+    private string BoundaryKey(string row) => (ActiveSetupName ?? "") + "\n" + row;
+
+    /// <summary>Whether the active setup's boundary <paramref name="row"/> (<c>thermal:die/zmin</c>) is drawn.</summary>
+    public bool IsBoundaryShown(string row) => !_hiddenBoundaries.Contains(BoundaryKey(row));
+
+    /// <summary>A thermal boundary's tick: its tint is left out of the next build (ThermalTints), or put back.</summary>
+    public void SetBoundaryShown(string row, bool shown)
+    {
+        bool changed = shown ? _hiddenBoundaries.Remove(BoundaryKey(row)) : _hiddenBoundaries.Add(BoundaryKey(row));
+        if (AllTreeItems().FirstOrDefault(t => t.Kind == ThermalBoundaryKindName && t.Name == row) is { } r) r.Sync(shown);
+        if (changed) Viewer.Regenerate();
+    }
+
+    /// <summary>The active setup's hidden boundaries, by tint name, for the build's snapshot (data: the build thread never
+    /// reads the editor's sets); null for none.</summary>
+    private IReadOnlySet<string>? HiddenTintsOfActiveSetup()
+    {
+        if (_hiddenBoundaries.Count == 0) return null;
+        string prefix = (ActiveSetupName ?? "") + "\n";
+        var set = _hiddenBoundaries.Where(k => k.StartsWith(prefix, StringComparison.Ordinal)).Select(k => k[prefix.Length..]).ToHashSet(StringComparer.Ordinal);
+        return set.Count > 0 ? set : null;
+    }
+
+    /// <summary>Whether the symmetry plane normal to <paramref name="axis"/> is drawn.</summary>
+    public bool IsSymmetryPlaneShown(C3dAxis axis) => !_hiddenPlanes.Contains(axis);
+
+    /// <summary>A symmetry plane's tick (its row is <c>symmetry:X</c>): the overlay draws it, or not.</summary>
+    public void SetSymmetryPlaneShown(string row, bool shown)
+    {
+        if (!row.StartsWith(SymmetryRowPrefix, StringComparison.Ordinal) || !Enum.TryParse<C3dAxis>(row[SymmetryRowPrefix.Length..], out var axis)) return;
+        if (shown) _hiddenPlanes.Remove(axis); else _hiddenPlanes.Add(axis);
+        if (AllTreeItems().FirstOrDefault(t => t.Kind == SymmetryPlaneKind && t.Name == row) is { } r) r.Sync(shown);
+        Viewer.RequestFrame();
+    }
+
     /// <summary>Every thermal place's name, which is unique across the document's names (brief 73 R-em3d73-4).</summary>
     private IEnumerable<string> ThermalPlaceNames()
         => Document.HeatSources.Select(h => h.Name).Concat(Document.Probes.Select(p => p.Name)).Concat(Document.MeshRegions.Select(m => m.Name))
@@ -915,6 +957,64 @@ public sealed partial class C3dEditorViewModel
                 AddBox(b.Name == selected ? overlay.Selected : overlay.MeshRegions, lo, hi);
                 overlay.Labels.Add((hi, $"{b.Name}: effective block, {(b.Enabled ? "enabled" : "disabled")}"));
             }
+        FillSymmetryPlanes(overlay);
+        FillSelectedTint(overlay);
+    }
+
+    /// <summary>
+    /// brief-em3d-90 R-em3d90-2 — each declared symmetry plane, drawn: a rectangle across the meshed model's extent in its two
+    /// other axes, at its coordinate, outlined and hatched as the air box draws a symmetry face (Scene3DBuilder.Hatch), and
+    /// labelled <c>Symmetry X = 120 µm</c>. Its row selected, it is drawn in the selection's colour. An overlay, never a scene
+    /// object: it is selected from the tree.
+    /// </summary>
+    private void FillSymmetryPlanes(Viewer3DDrawOverlay overlay)
+    {
+        if (Document.SymmetryPlanes.Count == 0 || Elaboration is not { Ok: true } e || C3dThermal.SymmetryExtent(e) is not { } ext) return;
+        double per = C3dLowering.Metres(1, Document.DbuPerMicron);
+        C3dAxis? selected = SelectedTreeItem is { Kind: SymmetryPlaneKind } row && Enum.TryParse<C3dAxis>(row.Name[SymmetryRowPrefix.Length..], out var a) ? a : null;
+        foreach (var sp in Document.SymmetryPlanes)
+        {
+            if (!IsSymmetryPlaneShown(sp.Axis)) continue;
+            var c = SymmetryPlaneCorners(sp.Axis, sp.At * per, ext);
+            var into = sp.Axis == selected ? overlay.Selected : overlay.SymmetryPlanes;
+            for (int k = 0; k < 4; k++) into.Add(new DrawSegment(c[k], c[(k + 1) % 4]));
+            var hatch = Scene3DBuilder.Hatch(c);
+            for (int k = 0; k + 1 < hatch.Count; k += 2) into.Add(new DrawSegment(hatch[k], hatch[k + 1]));
+            overlay.Labels.Add((c[2], $"Symmetry {sp.Axis} = {SpellMicrons(sp.At / (double)Document.DbuPerMicron)} {LayoutUnits.Suffix(Document.DisplayUnit)}"));
+        }
+    }
+
+    /// <summary>A symmetry plane's rectangle (metres, corners in order) across <paramref name="ext"/>, at <paramref name="at"/>.</summary>
+    internal static Point3[] SymmetryPlaneCorners(C3dAxis axis, double at, (double X0, double Y0, double Z0, double X1, double Y1, double Z1) ext)
+        => axis switch
+        {
+            C3dAxis.X => [new(at, ext.Y0, ext.Z0), new(at, ext.Y1, ext.Z0), new(at, ext.Y1, ext.Z1), new(at, ext.Y0, ext.Z1)],
+            C3dAxis.Y => [new(ext.X0, at, ext.Z0), new(ext.X1, at, ext.Z0), new(ext.X1, at, ext.Z1), new(ext.X0, at, ext.Z1)],
+            _ => [new(ext.X0, ext.Y0, at), new(ext.X1, ext.Y0, at), new(ext.X1, ext.Y1, at), new(ext.X0, ext.Y1, at)],
+        };
+
+    /// <summary>brief-em3d-90 R-em3d90-3 — a boundary's row selected (thermal, or an EM face boundary): its tint's outline in the
+    /// selection's colour, as a selected heat source is drawn. A hidden tint is in no scene, and is not drawn.</summary>
+    private void FillSelectedTint(Viewer3DDrawOverlay overlay)
+    {
+        string? name = SelectedTreeItem switch
+        {
+            { Kind: ThermalBoundaryKindName } r => Scene3DBuilder.FaceTintPrefix + r.Name,
+            { Kind: EmBoundaryKind } r => r.Name,
+            _ => null,
+        };
+        if (name is null || SceneObject(name) is not { } tint || !Viewer.View.IsVisible(tint.Id)) return;
+        var scene = Viewer.Scene;
+        foreach (var b in scene.LineBatches)
+        {
+            if (b.ObjectId != tint.Id) continue;
+            for (int k = b.FirstVertex; k + 1 < b.FirstVertex + b.VertexCount; k += 2)
+            {
+                var (ax, ay, az) = scene.ToWorld(new System.Numerics.Vector3(scene.LineVertices[k].X, scene.LineVertices[k].Y, scene.LineVertices[k].Z) + b.Offset);
+                var (bx, by, bz) = scene.ToWorld(new System.Numerics.Vector3(scene.LineVertices[k + 1].X, scene.LineVertices[k + 1].Y, scene.LineVertices[k + 1].Z) + b.Offset);
+                overlay.Selected.Add(new DrawSegment(new Point3(ax, ay, az), new Point3(bx, by, bz)));
+            }
+        }
     }
 
     private System.Numerics.Vector3? FaceNormal(string face)
@@ -977,34 +1077,47 @@ public sealed partial class C3dEditorViewModel
         // brief-em3d-76 — effective blocks (with whether each is on) and the symmetry planes
         var blocks = Document.EffectiveBlocks.Select(b => Row(b.Name, EffectiveBlockKind, b.Enabled ? "enabled (an approximation)" : "disabled: solved as drawn")).ToList();
         if (blocks.Count > 0) Tree.Add(new C3dTreeGroup("Effective blocks", blocks, C3dTreeGroupRole.EffectiveBlocks));
+        // brief-em3d-90 — a plane is drawn in the overlay and ticked in the view; it is selected here, not in the view
         var planes = Document.SymmetryPlanes.Select(sp => new C3dTreeItem(this, SymmetryRowName(sp.Axis), SymmetryPlaneKind,
-            $"{sp.Axis} = {SpellMicrons(sp.At / (double)Document.DbuPerMicron)} {LayoutUnits.Suffix(Document.DisplayUnit)}", -1, -1, true) { IsReadOnly = true }).ToList();
+            $"{sp.Axis} = {SpellMicrons(sp.At / (double)Document.DbuPerMicron)} {LayoutUnits.Suffix(Document.DisplayUnit)}", -1, -1, IsSymmetryPlaneShown(sp.Axis))
+        {
+            IsReadOnly = true,
+            RowTip = "Drawn hatched across the model where it cuts it; select it from the tree (the view does not pick it). Properties edits where it lies.",
+        }).ToList();
         if (planes.Count > 0)
             Tree.Add(new C3dTreeGroup($"Symmetry planes (1/{1 << planes.Count} of the device is modelled)", planes, C3dTreeGroupRole.SymmetryPlanes));
         RebuildFieldPlotTree();                    // brief-em3d-83 — after Probes, before the regions
         if (ActiveThermalSetup()?.Setup.Thermal?.Boundaries is { Count: > 0 } bs)
             Tree.Add(new C3dTreeGroup($"Thermal boundaries (blue fixed, green convection) · {ActiveSetupName}", [.. bs.Select(b => new C3dTreeItem(this,
                 ThermalTintPrefix + b.Face, ThermalBoundaryKindName, b.Kind == ThermalBoundaryKind.FixedT ? $"{b.Face}: {b.TempC} °C"
-                    : $"{b.Face}: h {b.H} W/(m²·K) to {b.AmbientC} °C", -1, -1, true) { IsReadOnly = true })], C3dTreeGroupRole.ThermalBoundaries));
+                    : $"{b.Face}: h {b.H} W/(m²·K) to {b.AmbientC} °C", -1, -1, IsBoundaryShown(ThermalTintPrefix + b.Face)) { IsReadOnly = true })],
+                C3dTreeGroupRole.ThermalBoundaries));
         RestoreExpansion();
     }
 
     /// <summary>A thermal boundary's tint is named this, then its face (<c>thermal:flange/zmin</c>).</summary>
-    public const string ThermalTintPrefix = "thermal:";
+    public const string ThermalTintPrefix = Scene3DBuilder.ThermalTintPrefix;
 
     /// <summary>The tree's thermal row's menu: rename, hide, delete, and a line probe's plot.</summary>
     private List<Viewer3DMenuItem> ThermalTreeItems(C3dTreeItem item)
     {
         var items = new List<Viewer3DMenuItem>();
+        // brief-em3d-90 — every row's Hide / Show is the tick's own function
+        var hideShow = new Viewer3DMenuItem(item.IsVisible ? "Hide" : "Show", () => SetRowsVisible([item], !item.IsVisible, $"{(item.IsVisible ? "Hide" : "Show")} {item.Name}"));
         if (item.Kind == ThermalBoundaryKindName)
         {
             string face = item.Name[ThermalTintPrefix.Length..];
+            items.Add(new Viewer3DMenuItem("Select Face", () => Report(SelectBoundaryFace(face)), Tip: "The face this boundary conditions, in Face mode."));
+            items.Add(hideShow);
+            items.Add(Viewer3DMenuItem.Separator);
             items.Add(new Viewer3DMenuItem("Delete", () => Report(SetThermalBoundary(face, null))));
             return items;
         }
         if (item.Kind == SymmetryPlaneKind)
         {
             var axis = Enum.Parse<C3dAxis>(item.Name[SymmetryRowPrefix.Length..]);
+            items.Add(hideShow);
+            items.Add(Viewer3DMenuItem.Separator);
             items.Add(new Viewer3DMenuItem("Delete", () => ClearSymmetryPlane(axis)));
             return items;
         }
@@ -1028,7 +1141,7 @@ public sealed partial class C3dEditorViewModel
         if (item.Kind == EffectiveBlockKind && Document.EffectiveBlocks.FirstOrDefault(b => b.Name == name) is { } block)
             items.Add(new Viewer3DMenuItem(block.Enabled ? "Disable" : "Enable", () => Report(SetPlaceText(name, "Enabled", block.Enabled ? "false" : "true")),
                 Tip: block.Enabled ? "Solve the geometry under it as drawn." : "Replace the board, planes and vias inside it with one anisotropic block (an approximation)."));
-        items.Add(new Viewer3DMenuItem(IsPlaceShown(name) ? "Hide" : "Show", () => SetPlaceShown(name, !IsPlaceShown(name))));
+        items.Add(hideShow);
         items.Add(Viewer3DMenuItem.Separator);
         items.Add(new Viewer3DMenuItem("Delete", () => DeleteThermalPlace(name)));
         return items;
@@ -1046,14 +1159,16 @@ public sealed partial class C3dEditorViewModel
 
     /// <summary>On the build's thread: the active thermal setup's conditioned faces as tints — blue a fixed temperature, green
     /// convection — placed by the lowering's own face placement.</summary>
-    private static IReadOnlyList<Scene3DFaceTint> ThermalTints(C3dDocument doc, C3dElaboration e, EmSetup? setup)
+    /// <para>brief-em3d-90 R-em3d90-2 — a boundary whose row is unticked (<paramref name="hidden"/>, by tint name, handed in as
+    /// data by the snapshot) is left out: its tint is neither drawn nor picked.</para>
+    private static IReadOnlyList<Scene3DFaceTint> ThermalTints(C3dDocument doc, C3dElaboration e, EmSetup? setup, IReadOnlySet<string>? hidden = null)
     {
         if (setup is not { IsThermal: true, Thermal.Boundaries: { Count: > 0 } bs } || !e.Ok) return [];
         var list = new List<Scene3DFaceTint>();
         var solids = e.Solids;
         foreach (var b in bs)
         {
-            if (b.Face == C3dThermal.ExposedFaces) continue;
+            if (b.Face == C3dThermal.ExposedFaces || hidden?.Contains(ThermalTintPrefix + b.Face) == true) continue;
             if (ThermalLowerings.FacePieces(doc, e, solids, b.Face, out _, out _) is not { } pieces) continue;
             var colour = b.Kind == ThermalBoundaryKind.FixedT ? ((byte)60, (byte)120, (byte)235) : ((byte)60, (byte)185, (byte)95);
             list.Add(new Scene3DFaceTint(ThermalTintPrefix + b.Face, Em3dFaceBoundaryKind.Pec, pieces, colour));

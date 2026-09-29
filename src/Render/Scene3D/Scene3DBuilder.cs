@@ -345,6 +345,7 @@ public static class Scene3DBuilder
         if (options.FaceTints is { Count: > 0 } tints)
         {
             double lift = 1e-4 * Math.Max(box.Max.X - box.Min.X, Math.Max(box.Max.Y - box.Min.Y, box.Max.Z - box.Min.Z));
+            b.TintLift = (float)lift;
             foreach (var t in tints)
             {
                 var (r, g, bl) = t.Colour ?? (t.Kind == Em3dFaceBoundaryKind.Pec ? ((byte)150, (byte)150, (byte)158) : ((byte)214, (byte)168, (byte)64));
@@ -383,7 +384,7 @@ public static class Scene3DBuilder
                 }
                 b.Object(new Scene3DObject
                 {
-                    Id = 0, Name = FaceTintPrefix + t.Name, Kind = Scene3DKind.Boundary, Rgba = fill, Translucent = true,
+                    Id = 0, Name = FaceTintPrefix + t.Name, Kind = Scene3DKind.Boundary, Rgba = fill, Translucent = true, Tint = true,
                 }, new Em3dTriangleMesh(verts, tris), lines);
             }
         }
@@ -626,11 +627,25 @@ public static class Scene3DBuilder
     /// <summary>brief-em3d-49 — the name prefix of a face boundary's tint object; the air-box toggle does not hide these.</summary>
     public const string FaceTintPrefix = "boundary:";
 
+    /// <summary>brief-em3d-75 — a thermal setup's boundary tint is named <c>boundary:thermal:&lt;object&gt;/&lt;face&gt;</c>: this
+    /// is the part after <see cref="FaceTintPrefix"/>.</summary>
+    public const string ThermalTintPrefix = "thermal:";
+
+    /// <summary>brief-em3d-90 — what a tint is called where a user reads it (B's readout, the Inspector's heading):
+    /// <c>Thermal boundary die/zmin</c>, or <c>Boundary lid/zmax</c> for an EM face boundary.</summary>
+    public static string TintLabel(string sceneName)
+    {
+        string rest = sceneName.StartsWith(FaceTintPrefix, StringComparison.Ordinal) ? sceneName[FaceTintPrefix.Length..] : sceneName;
+        return rest.StartsWith(ThermalTintPrefix, StringComparison.Ordinal) ? "Thermal boundary " + rest[ThermalTintPrefix.Length..] : "Boundary " + rest;
+    }
+
     /// <summary>Opacity of a face boundary's tint.</summary>
     public const byte BoundaryTintAlpha = 110;
 
-    /// <summary>Hatch lines across a rectangle (corners in order): a symmetry face, which states neither wall.</summary>
-    private static List<Point3> Hatch(Point3[] c)
+    /// <summary>Hatch lines across a rectangle (corners in order), as point pairs: a symmetry face, which states neither
+    /// wall. brief-em3d-90 — the editor draws a declared thermal symmetry plane with the same hatch, so the two read as one
+    /// kind of thing.</summary>
+    public static List<Point3> Hatch(Point3[] c)
     {
         var lines = new List<Point3>();
         const int n = 12;
@@ -666,6 +681,9 @@ public static class Scene3DBuilder
 
     private sealed class Accumulator(Func<Point3, Vector3> local)
     {
+        /// <summary>brief-em3d-90 — how far the face tints were lifted off their faces (metres), or 0 with none.</summary>
+        public float TintLift;
+
         private readonly List<Scene3DObject> _objects = [];
         private readonly List<Scene3DVertex> _verts = [];
         private readonly List<uint[]> _objIndices = [];
@@ -704,7 +722,7 @@ public static class Scene3DBuilder
                 MaterialSlot = o.MaterialSlot, Rgba = o.Rgba, Translucent = o.Translucent,
                 InitiallyVisible = o.InitiallyVisible, PortNumber = o.PortNumber, Boundary = o.Boundary,
                 FaceNames = o.FaceNames, CapCentres = o.CapCentres, Context = o.Context, PickLast = o.PickLast,
-                Wireframe = o.Wireframe,
+                Wireframe = o.Wireframe, Tint = o.Tint,
             };
             var min = new Vector3(float.MaxValue);
             List<Scene3DVertex>? featureEdges = null;
@@ -937,7 +955,7 @@ public static class Scene3DBuilder
                 GeometryObjectCount = ownedObjects, GeometryBatchCount = ownedBatches, GeometryEdgeBatchCount = ownedEdges,
                 UnitBox = unitBox,
                 BoundsMin = bmin, BoundsMax = bmax, ContentMin = cmin, ContentMax = cmax,
-                Problem = problem, Notes = notes ?? [],
+                Problem = problem, Notes = notes ?? [], TintLift = TintLift,
             };
         }
     }

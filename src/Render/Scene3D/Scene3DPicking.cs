@@ -130,6 +130,45 @@ public static class Scene3DPicking
     }
 
     /// <summary>
+    /// brief-em3d-90 R-em3d90-3 — every visible face-boundary tint (<see cref="Scene3DObject.Tint"/>) the ray through pixel
+    /// (<paramref name="px"/>, <paramref name="py"/>) crosses on the kept side of <paramref name="clip"/>, nearest first. The
+    /// tints are not in the ID pass (the snap reads it, and must land on the face beneath), so hover asks this: a handful of
+    /// small sheets, and nothing when the scene has none.
+    /// </summary>
+    public static List<(uint Id, float Depth, Vector3 Point)> TintHits(Scene3DModel scene, in Camera3D camera, float px, float py,
+                                                                      float width, float height, ReadOnlySpan<bool> visible,
+                                                                      in ClipPlane3D clip = default)
+    {
+        var hits = new List<(uint, float, Vector3)>();
+        if (!scene.HasTints) return hits;
+        var (o, d) = camera.Ray(px, py, width, height);
+        var verts = scene.Vertices;
+        foreach (var b in scene.Batches)
+        {
+            if (!scene.Objects[b.ObjectId - 1].Tint || !Visible(visible, b.ObjectId)) continue;
+            float best = float.MaxValue;
+            for (int i = b.FirstIndex; i < b.FirstIndex + b.IndexCount; i += 3)
+            {
+                var v0 = P(verts[scene.Indices[i]]) + b.Offset; var v1 = P(verts[scene.Indices[i + 1]]) + b.Offset; var v2 = P(verts[scene.Indices[i + 2]]) + b.Offset;
+                if (Intersect(o, d, v0, v1, v2, out float t) && t < best && clip.Keeps(o + d * t)) best = t;
+            }
+            if (best < float.MaxValue) hits.Add((b.ObjectId, best, o + d * best));
+        }
+        hits.Sort((a, c) => a.Item2.CompareTo(c.Item2));
+        return hits;
+    }
+
+    /// <summary>
+    /// brief-em3d-90 — how far BEHIND another hit along a ray a tint may lie and still count as the same place, where the tint
+    /// ranks first. A tint on the face it conditions is in front of that face by construction (the builder's lift), so it wins
+    /// whatever the tie; the tie only decides the equal-depth case BY KIND rather than by rounding. It is the lift itself, so a
+    /// tint hidden behind a solid more than that is never taken — a millionth of the scene's diagonal stands in when nothing
+    /// was lifted.
+    /// </summary>
+    public static float TintTie(Scene3DModel scene)
+        => MathF.Max(scene.TintLift, 1e-6f * Vector3.Distance(scene.BoundsMin, scene.BoundsMax));
+
+    /// <summary>
     /// 3D editor round 5 — the <paramref name="accept"/>ed object whose drawn triangles come nearest the cursor ON SCREEN,
     /// within <paramref name="radiusPx"/>, and its vertex nearest the cursor (scene-local); null for none. The ID pass reads
     /// one pixel, and a bond wire a few tens of microns across is under a pixel wide on a board-sized view: the click has

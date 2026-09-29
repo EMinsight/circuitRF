@@ -4410,3 +4410,30 @@ scene calls it a conductor; a sheet goes to `OnSheet`; a name with only a 2-D `C
   the chrome's dark ink vanished. `ScaleBarLength` moved from `Viewer3DOverlay` (Ui) to `Em3dDrawingSheet`, so the view's
   bar and `render`'s round the same way; one DIP of the view is the page's text size / 11. A section looks along its
   normal (XZ looks along +y, so y points into the page).
+
+## brief-em3d-90 — a face boundary's tint is picked, in front of its face, without entering the ID pass (2026-09-29)
+
+**Tints are NOT drawn in the GPU's ID pass, deliberately.** That pass is also the snap's patch (`Scene3DIdPatch`) and the
+face a drawing tool lands on (`LastPick`). Made pickable there, a tinted face would snap to the tint's corners — lifted off
+the face, so every snapped point on a tinted face would come back inexact (≈) — and a heat source drawn on it would find
+no face. So `Scene3DObject.Pickable` still excludes them, and a new flag, `Scene3DObject.Tint`, lets the CPU reach them:
+- **hover** (`Viewer3DViewModel.TintUnderCursor`, Object and Face mode) ray-tests only the tints (`Scene3DPicking.TintHits`,
+  gated on `Scene3DModel.HasTints`) and takes the nearest when it stands at or in front of the ID pass's object;
+- **B** (`RayHits.Collect`) lists tints in Object and Face mode (face 0: a tint has no faces of its own) and
+  `TintsFirst` moves a tint ahead of any non-tint hit it trails by no more than the tie.
+
+**The priority is by kind, not by the lift.** The builder lifts each tint 1e-4 of the BOX's size off its face so it never
+z-fights; the tie (`Scene3DPicking.TintTie`) is that lift, recorded on the scene (`Scene3DModel.TintLift`), so equal depth
+resolves to the tint by rule, and a tint hidden behind a solid by more than the lift is never taken. A first version tied
+at 2e-3 of the scene's diagonal — 260 µm in the test scene, larger than its 40 µm model — which would have let a tint
+BEHIND a solid win. The lift has to be the measure because the scene's bounds include the air box.
+
+**Observed, not changed:** because the lift is relative to the air box, a small model in a large box floats its tints
+visibly off the face — 7.5 µm above a 20 µm part in the test fixture, whose thermal setup still builds an EM-sized box. A
+camera fitted to the CONTENT alone can put its near plane between the face and its tint, and then neither draws nor picks
+the tint. The owner may want the lift taken from the content instead; that trades against z-fighting when the box is
+drawn, and was left for a decision.
+
+**An EM face boundary's tint and a thermal one are built by the same code** (`FaceTints` → one `Scene3DObject` each), so
+both follow the same rule; their rows differ only in name (`boundary:obj/face` is the EM row's own name, a thermal row is
+`thermal:obj/face` and its tint `boundary:thermal:obj/face`). `Scene3DBuilder.TintLabel` names either for B's readout.

@@ -202,7 +202,7 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
     private string _featurePath = "";
 
     /// <summary>The dimension lines: an object's, or a feature row's size fields.</summary>
-    public bool FieldsVisible => IsEditable || IsFeature || IsThermalPlace;
+    public bool FieldsVisible => IsEditable || IsFeature || IsThermalPlace || IsSymmetryPlane;
 
     /// <summary>brief-em3d-75 R-em3d75-1c — a heat source, probe or mesh region is shown: its name, its dimensions (through
     /// the same field editor as an object's, expressions included) and its other fields.</summary>
@@ -314,6 +314,7 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         IsThermalPlace = false;
         ThermalFields.Clear();
         ClearFieldPlot();
+        ClearRecords();
         var viewer = editor.Viewer;
         var sel = viewer.Selection;
         // brief-em3d-67 R-em3d67-6b — a fillet's or chamfer's row: its own fields, not its object's.
@@ -330,6 +331,8 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
             LoadEdges(sel);
             return;
         }
+        // brief-em3d-90 R-em3d90-4 — a symmetry plane's or a thermal boundary's row, or a boundary's tint picked in the view
+        if (LoadRecord()) return;
         if (sel.Count == 0)
         {
             // 3D editor round 1 — the tree's node when the scene holds nothing selected: an object elaboration refused
@@ -924,6 +927,13 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         if (IsThermalPlace)
         {
             if (field.Text != field.Loaded) Error = editor.SetPlaceFieldText(_placeName, field.Path, field.Text) ?? "";
+            return;
+        }
+        // brief-em3d-90 — a symmetry plane's At: refused off the model's extent, with the rule's own sentence
+        if (IsSymmetryPlane)
+        {
+            if (field.Text != field.Loaded) Error = editor.SetSymmetryPlaneAt(_planeAxis, field.Text) ?? "";
+            if (Error.Length > 0) field.Text = field.Loaded;
             return;
         }
         if (ObjectIndex < 0 || field.Text == field.Loaded) return;

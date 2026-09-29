@@ -146,13 +146,17 @@ it, **Shift**-click adds or removes, **Esc** clears.
   **Shift+B** steps back toward you; the status line says where you are (`Face zmin · "base" · 2 of 5`).
   In the example: select the lid in Object mode, press **B**, and the selection passes through the lid to
   the wire, the die and the floor in turn — the way to reach something inside a closed package without
-  hiding anything.
+  hiding anything. A face's **boundary** — the blue or green tint of a thermal one, the tint of an EM one — is what a
+  click on it selects (its row, and its fields in Properties); **B** from it steps to the solid, or in Face mode the
+  face, under it.
 - **Right-click** opens the menu for what is selected: *Hide*, *Isolate*, *Show All*, *Select Owning
   Object*, and the commands this page describes. **Hide** the lid and the walls to work inside the package;
   **Show All** brings them back. Hiding changes only the picture — the solver still sees everything.
 - The **Objects** tree lists everything by material or by type — and your [groups](#groups) first; a click there selects in the view, and the
   **Properties** panel shows the selection's name, material, dimensions and position, every one of them
-  editable.
+  editable. The eye buttons in its header **hide or show every row it lists**, records included — heat sources,
+  probes, mesh regions, effective blocks, symmetry planes, thermal boundaries and field plots — as one undo step. An
+  object's tick is saved with the document; a record's tick (a place, a boundary, a plane) is this view's alone.
 
 ## Snapping {#snapping}
 
@@ -752,7 +756,9 @@ included, each a number or an expression.
 **Boundaries.** Every face nothing names is insulated. In Face mode, right-click a face, *Thermal ▸ Fixed Temperature…*,
 *Convection…*, *Insulated* or *Clear*: each writes the **active** thermal setup (greyed, saying why, when the active setup
 is not a thermal one). A conditioned face is tinted — **blue** a fixed temperature, **green** convection — and listed under
-*Thermal boundaries* in the tree. With two touching objects selected, *Thermal ▸ Contact Resistance…* overrides the
+*Thermal boundaries* in the tree. Untick a boundary's row to stop drawing its tint (in this view only: the boundary still
+applies). Click the tint, or its row, and Properties edits it — *Kind*, *T* or *h* and *Ambient*, each a number or an
+expression, and *Select face* for the face under it. With two touching objects selected, *Thermal ▸ Contact Resistance…* overrides the
 technology's interface resistance for that contact, prefilled with the technology's value when it states one.
 
 **Contacts.** Where two solids touch, heat crosses perfectly unless a resistance is stated: the technology's
@@ -788,7 +794,9 @@ the temperature at its edge, enlarge it. A heat source straddling the box is ref
 as in the whole model.
 
 **Symmetry.** Model half (or a quarter) of a symmetric device: right-click the face you cut it on, *Symmetry Plane*. The
-face must lie on the model's extent; it stays insulated (a condition on it is refused), and *All exposed faces* never
+plane is drawn hatched across the model where it cuts it, labelled `Symmetry X = …`, and listed under *Symmetry planes*,
+whose tick shows or hides it; select its row to move it in Properties (*At*, a length or an expression). It must lie on the
+model's extent; it stays insulated (a condition on it is refused), and *All exposed faces* never
 takes it. What is drawn is what is solved: give the sources the power of the modelled part. Measures read
 `SymmetryFactor` (2 per plane) so a whole-device figure is explicit — `Rth_full = (Tmax(ch) - 25) / (Pdiss *
 SymmetryFactor)`; nothing is multiplied silently. A plotted temperature is drawn mirrored across the planes (*3D ▸ View ▸

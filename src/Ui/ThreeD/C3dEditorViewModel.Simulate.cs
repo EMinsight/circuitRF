@@ -493,6 +493,10 @@ public sealed partial class C3dEditorViewModel
     /// <summary>The ports as the current scene resolved them (each resolved or refused).</summary>
     public IReadOnlyList<C3dPortResult> PortResults => _recordsView?.Ports ?? [];
 
+    /// <summary>brief-em3d-90 — the thermal boundary tints the current scene was built with, by tint name
+    /// (<c>thermal:die/zmin</c>): a boundary whose row is unticked is not among them.</summary>
+    public IReadOnlyList<string> ThermalTintNames => [.. (_recordsView?.ThermalTints ?? []).Select(t => t.Name)];
+
     /// <summary>The active setup's air box as the current scene drew it, or null.</summary>
     public Em3dAirBox? ShownAirBox => _recordsView?.Box;
 
@@ -500,7 +504,7 @@ public sealed partial class C3dEditorViewModel
     private string? SceneSetupJson() => ActiveSetup is { } s ? EmSetupPersistence.Serialize(s) : null;
 
     /// <summary>Runs on the build's thread: the box, the ports and the face boundaries for this elaboration.</summary>
-    private RecordsView ResolveRecords(C3dDocument doc, C3dElaboration e, string? setupJson)
+    private RecordsView ResolveRecords(C3dDocument doc, C3dElaboration e, string? setupJson, IReadOnlySet<string>? hiddenTints = null)
     {
         EmSetup? setup = null;
         if (setupJson is not null)
@@ -515,7 +519,7 @@ public sealed partial class C3dEditorViewModel
         var ctx = C3dProblemAssembly.PortContext(setup, doc, e, box);
         var ports = e.Ok ? C3dPorts.Resolve(doc, ctx) : [];
         var boundaries = e.Ok ? C3dProblemAssembly.FaceBoundaryPreview(doc, e) : [];
-        return new RecordsView(box, ports, boundaries, ctx) { ThermalTints = ThermalTints(doc, e, setup) };
+        return new RecordsView(box, ports, boundaries, ctx) { ThermalTints = ThermalTints(doc, e, setup, hiddenTints) };
     }
 
     /// <summary>

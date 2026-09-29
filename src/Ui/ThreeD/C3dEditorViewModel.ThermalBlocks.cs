@@ -44,14 +44,36 @@ public sealed partial class C3dEditorViewModel
         if (tris.Count == 0) return (null, "The face has no triangles.");
         var p = Viewer.Scene.ToWorld(tris[0].A);
         double at = axis switch { 0 => p.X, 1 => p.Y, _ => p.Z };
-        if (Elaboration?.Extent() is not { } ext) return (null, "The model does not elaborate.");
-        double lo = axis switch { 0 => ext.X0, 1 => ext.Y0, _ => ext.Z0 }, hi = axis switch { 0 => ext.X1, 1 => ext.Y1, _ => ext.Z1 };
-        double per = C3dLowering.Metres(1, Document.DbuPerMicron), tol = Math.Max(per, 1e-6 * (hi - lo));
-        if (Math.Abs(at - lo) > tol && Math.Abs(at - hi) > tol)
-            return (null, "A symmetry plane is the face the modelled half was cut on, so it lies on the model's extent: this face is inside it.");
-        long dbu = (long)Math.Round((Math.Abs(at - lo) <= tol ? lo : hi) / per, MidpointRounding.AwayFromZero);
+        if (Elaboration is not { Ok: true } e || C3dThermal.SymmetryExtent(e) is null) return (null, "The model does not elaborate.");
+        // brief-em3d-90 — the one rule (src/Design), which check and the Inspector's At field ask too
+        if (C3dThermal.SymmetryPlaneRefusal(e, (C3dAxis)axis, at, Document.DbuPerMicron, out double end) is { } why) return (null, why);
+        long dbu = (long)Math.Round(end / C3dLowering.Metres(1, Document.DbuPerMicron), MidpointRounding.AwayFromZero);
         return (new C3dSymmetryPlane { Axis = (C3dAxis)axis, At = dbu }, null);
     }
+
+    /// <summary>
+    /// brief-em3d-90 R-em3d90-4 — the Inspector's At: the plane normal to <paramref name="axis"/> moved to <paramref name="text"/>
+    /// (a length in the display unit, or an expression bound to it), as ONE undo entry. A value off the model's extent is
+    /// refused with the rule's own sentence (C3dThermal.SymmetryPlaneRefusal), and the document is left as it was.
+    /// </summary>
+    public string? SetSymmetryPlaneAt(C3dAxis axis, string text)
+    {
+        text = text.Trim();
+        if (text.Length == 0) return "Type a length or an expression.";
+        if (Elaboration is not { Ok: true } e) return "The model does not elaborate, so the plane cannot be checked against its extent.";
+        string name = SymmetryItemName(axis);
+        return EditNames($"Symmetry plane {axis} at {text}", (doc, _) =>
+        {
+            if (doc.SymmetryPlanes.FirstOrDefault(p => p.Axis == axis) is not { } plane) return $"There is no symmetry plane normal to {axis}.";
+            if (WriteField(doc, plane, name, nameof(C3dSymmetryPlane.At), text, "At") is { } why) return why;
+            var res = C3dResolver.Resolve(doc, Cell);
+            if (res.FieldErrors.FirstOrDefault(x => x.Item == name) is { } err) return err.Message;
+            return C3dThermal.SymmetryPlaneRefusal(e, axis, plane.At * C3dLowering.Metres(1, doc.DbuPerMicron), doc.DbuPerMicron, out double _unused);
+        });
+    }
+
+    /// <summary>The name a symmetry plane's fields resolve under (C3dBindings.ItemsOf): <c>symmetry X</c>.</summary>
+    public static string SymmetryItemName(C3dAxis axis) => $"symmetry {axis}";
 
     /// <summary>Declares the symmetry plane on a face, or removes it when that plane is already declared. One undo entry.</summary>
     public string? ToggleSymmetryPlane(uint id, int face)

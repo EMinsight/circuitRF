@@ -248,9 +248,24 @@ public sealed partial class C3dEditorViewModel
         // view's clip plane afterwards leaves the plot where it is.
         if (request is { On: C3dFieldPlotOn.ClipPlane } && (plot!.Name, plot.Axis, plot.Offset) != _sectionSyncedTo)
         {
-            _sectionSyncedTo = (plot.Name, plot.Axis, plot.Offset);
-            SyncSectionTo(request.Plane);
+            // brief-em3d-90 — remember whether the plot turned the section on, so hiding the plot can turn it off again; and
+            // record the sync only once it happened (a document opening with a plot drawn asks before there is a scene to cut)
+            bool wasOpen = Viewer.ClipEnabled;
+            if (SyncSectionTo(request.Plane))
+            {
+                _sectionSyncedTo = (plot.Name, plot.Axis, plot.Offset);
+                if (!wasOpen) _sectionOpenedByPlot = true;
+            }
             request = request with { Plane = ScenePlane(plot) };
+        }
+        // brief-em3d-90 R-em3d90-1 (the owner's "Hide all left a field plot showing") — with no ClipPlane plot drawn, a section a
+        // plot opened is closed again. The field itself was gone (SetPlot(null)), but the model stayed cut open on the plot's
+        // plane, which still reads as a plot. A section the user had open before the plot is left open.
+        if (request is not { On: C3dFieldPlotOn.ClipPlane } && _sectionSyncedTo is not null)
+        {
+            _sectionSyncedTo = null;
+            if (_sectionOpenedByPlot && Viewer.ClipEnabled) Viewer.ClipEnabled = false;
+            _sectionOpenedByPlot = false;
         }
         string key = request is null ? "" : string.Join("|", C3dPersistence.SerializeFieldPlots([plot!]), request.Plane.Offset, request.Plane.Flip,
             string.Join(",", request.Faces), FieldPlotResolver.RunDirectories(request.RunSetup, ResultsRootProvider?.Invoke()),
@@ -266,15 +281,17 @@ public sealed partial class C3dEditorViewModel
     private string? _appliedPlotKey;
 
     private (string, C3dAxis?, long?)? _sectionSyncedTo;
+    private bool _sectionOpenedByPlot;
 
-    private void SyncSectionTo(ClipPlane3D plane)
+    private bool SyncSectionTo(ClipPlane3D plane)
     {
         var scene = Viewer.Scene;
-        if (scene.Objects.Length == 0) return;
+        if (scene.Objects.Length == 0) return false;
         var (lo, hi) = plane.Range(scene.BoundsMin, scene.BoundsMax);
         Viewer.ClipAxis = plane.Axis;
         Viewer.ClipPosition = hi > lo ? Math.Clamp((plane.Offset - lo) / (hi - lo), 0, 1) : 0.5;
         Viewer.ClipEnabled = true;
+        return true;
     }
 
     // ── missing data (R-em3d83-5) ────────────────────────────────────────────────────────────
@@ -390,7 +407,8 @@ public sealed partial class C3dEditorViewModel
         return
         [
             new(name, Enabled: false), Viewer3DMenuItem.Separator,
-            new(shown ? "Hide" : "Show", () => SetPlotShown(name, !shown), Tip: shown ? null : "Draw this plot (the one drawn now is hidden: one at a time)."),
+            new(shown ? "Hide" : "Show", () => SetRowsVisible([item], !shown, $"{(shown ? "Hide" : "Show")} {name}"),
+                Tip: shown ? null : "Draw this plot (the one drawn now is hidden: one at a time)."),
             new("Rename…", () => TextRequested?.Invoke($"Rename {name}", "Name:", name, text => RenameFieldPlot(name, text))),
             new("Duplicate", () => DuplicateFieldPlot(name)),
             Viewer3DMenuItem.Separator,
@@ -405,16 +423,21 @@ public sealed partial class C3dEditorViewModel
     public IReadOnlyList<Viewer3DMenuItem> TreeGroupMenuItems(C3dTreeGroup group)
         => group.Role == C3dTreeGroupRole.FieldPlots ? [new Viewer3DMenuItem("New Field Plot…", NewFieldPlot)] : [];
 
-    /// <summary>Show all / Hide all (round 5) for the plots: Hide all hides every one; Show all draws the selected plot, or the
-    /// first — one at a time.</summary>
-    private void SetPlotsVisibility(bool visible)
+    /// <summary>
+    /// brief-em3d-90 — the plots' side of SetRowsVisible: hiding hides each named plot; showing keeps the one-at-a-time rule —
+    /// the selected plot among them, else the one drawn now, else the first — so Show all draws one plot, not the last ticked.
+    /// One entry (inside the gesture's group).
+    /// </summary>
+    private void SetPlotsVisible(IReadOnlyList<string> names, bool visible, string description)
     {
-        if (Document.FieldPlots.Count == 0) return;
-        string? pick = SelectedFieldPlot?.Name ?? VisibleFieldPlot?.Name ?? Document.FieldPlots[0].Name;
-        ChangePlots(visible ? "Show all" : "Hide all", plots =>
+        var listed = names.Where(n => FieldPlot(n) is not null).ToList();
+        if (listed.Count == 0) return;
+        string pick = SelectedFieldPlot?.Name is { } sel && listed.Contains(sel) ? sel
+                    : VisibleFieldPlot?.Name is { } now && listed.Contains(now) ? now : listed[0];
+        ChangePlots(listed.Count == 1 ? $"{(visible ? "Show" : "Hide")} {listed[0]}" : description, plots =>
         {
             if (visible) ShowOnly(plots, plots.First(p => p.Name == pick));
-            else foreach (var p in plots) p.Hidden = true;
+            else foreach (var p in plots.Where(p => listed.Contains(p.Name))) p.Hidden = true;
         });
     }
 

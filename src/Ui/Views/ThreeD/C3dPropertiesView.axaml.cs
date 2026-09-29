@@ -151,6 +151,17 @@ public partial class C3dPropertiesView : UserControl
         if ((sender as Control)?.DataContext is C3dThermalTextField f) _vm?.CommitThermalField(f);
     }
 
+    // brief-em3d-90 R-em3d90-4 — a thermal boundary's field: Enter or lost focus commits it, one undo entry.
+    private void OnBoundaryKey(object? sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Escape) { _vm?.Reload(); e.Handled = true; return; }
+        if (e.Key != Key.Enter) return;
+        _vm?.CommitBoundary();
+        e.Handled = true;
+    }
+
+    private void OnBoundaryLostFocus(object? sender, RoutedEventArgs e) => _vm?.CommitBoundary();
+
     private static char AxisOf(object? sender) => (sender as Control)?.Tag is string { Length: 1 } a ? a[0] : 'x';
 
     private void OnPadKey(object? sender, KeyEventArgs e)

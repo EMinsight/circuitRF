@@ -42,10 +42,13 @@ namespace CircuitRF.Ui.ThreeD;
 /// <para>brief-em3d-51 — <paramref name="Cell"/> is the cell as a gesture's preview would leave it (a drag writing a
 /// parameter's default); null reads the cell from disk.</para>
 /// <para>brief-em3d-66 — <paramref name="Ghosts"/>: the objects a boolean's preview or an entered boolean draws as ghosts.</para>
+/// <para>brief-em3d-90 — <paramref name="HiddenTints"/>: the active setup's thermal boundaries whose rows are unticked, by row
+/// name (<c>thermal:die/zmin</c>) — data for the build thread, which never reads the editor's own sets.</para>
 public sealed record C3dSceneInputs(string DocumentText, string Path, string? WorkspaceCws, ColorTheme Theme, ColorVariant Variant,
                                     (string Text, string Path, string Exclude, C3dTransform ToTop)? Context = null,
                                     string? SetupJson = null, C3dCell? Cell = null,
-                                    IReadOnlyDictionary<string, Scene3DGhost>? Ghosts = null);
+                                    IReadOnlyDictionary<string, Scene3DGhost>? Ghosts = null,
+                                    IReadOnlySet<string>? HiddenTints = null);
 
 public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEditHost, IDisposable
 {
@@ -187,7 +190,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         // brief-em3d-66 — a boolean previewed or entered draws its own document, with ghosts; brief-em3d-67 — so does a fillet.
         var boolean = FilletScene() ?? BooleanScene();
         return new C3dSceneInputs(boolean?.Text ?? DocumentText(), FilePath, _workspaceCws(), ThemeService.Active, ThemeService.CurrentVariant,
-                                  ContextSnapshot(), SceneSetupJson(), _namePreview?.Cell, boolean?.Ghosts);
+                                  ContextSnapshot(), SceneSetupJson(), _namePreview?.Cell, boolean?.Ghosts, HiddenTintsOfActiveSetup());
     }
 
     /// <summary>
@@ -233,7 +236,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
             if (_origin is not { } o || !NearEnough(o, extent))
                 _origin = FieldPlotResolver.SceneOrigin(extent);
             // brief-em3d-49 — the active setup's box, ports and face boundaries, resolved as a run resolves them.
-            var records = ResolveRecords(doc, e, inputs.SetupJson);
+            var records = ResolveRecords(doc, e, inputs.SetupJson, inputs.HiddenTints);
             _records[generation] = records;
             ComputeFidelity(generation, doc, inputs.Path, inputs.WorkspaceCws);
             var box = records.Box ?? C3dProblemAssembly.ExtentBox(extent);
@@ -497,6 +500,8 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         if (Viewer.SelectMode != Scene3DSelectMode.Object) return false;
         // brief-em3d-49 — a selected port is a document record: deleted as one.
         if (SelectedPorts() is { Count: > 0 } ports) { DeletePorts(ports); return true; }
+        // brief-em3d-90 — so is a selected boundary's tint: the boundary goes, the face stays
+        if (SelectedTints() is { Count: > 0 } tints) { DeleteTints(tints); return true; }
         var objects = Viewer.SelectedObjects();
         // brief-em3d-66 R-em3d66-6 — an entered operand: a Tool is removed from its boolean; the Blank is refused.
         if (objects.Select(OperandIndexOf).Where(i => i >= 0).Distinct().ToList() is { Count: > 0 } operands) return DeleteOperands(operands);
@@ -1052,38 +1057,12 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
             else if (SceneObject(item.Name) is { } s) item.Sync(Viewer.View.IsVisible(s.Id));
     }
 
-    /// <summary>A tree checkbox: a document object's writes <c>Hidden</c> (undoable); an instance's contents
-    /// are hidden in the view only.</summary>
+    /// <summary>A tree checkbox: brief-em3d-90 — the one visibility function (SetRowsVisible), for every kind of row. A group's
+    /// tick is its members'; a feature row's switch is Enabled, not visibility.</summary>
     internal void TreeVisibilityChanged(C3dTreeItem item, bool visible)
     {
-        if (_syncingTree) return;
-        // brief-em3d-83 — a field plot's tick is a record (Hidden), in a setup's view as in the editor.
-        if (item.Kind == FieldPlotKind) { SetPlotShown(item.Name, visible); return; }
-        if (IsViewOnly) { ViewTreeVisibilityChanged(item, visible); return; }
-        if (item.IsAirBox)
-        {
-            AirBoxShown = visible;
-            return;
-        }
-        if (item.IsFeature) return;           // brief-em3d-67 — a feature row's switch is Enabled, not visibility
-        // brief-em3d-75 — a thermal place's tick is the view's (a place has no Hidden in the file).
-        if (item.Kind is HeatSourceKind or ProbeKind or MeshRegionKind or EffectiveBlockKind) { SetPlaceShown(item.Name, visible); return; }
-        if (item.Kind == ThermalBoundaryKindName) return;
-        if (item.IsGroup) { SetGroupVisible(item.GroupPath!, visible); return; }
-        if (item.OperandPath is { } path && item.ObjectIndex >= 0)
-        {
-            ChangeOperand($"{(visible ? "Show" : "Hide")} {item.Name}", item.ObjectIndex, path, o => o.Hidden = !visible);
-            return;
-        }
-        if (item.ObjectIndex >= 0)
-        {
-            ChangeObjects($"{(visible ? "Show" : "Hide")} {item.Name}", [item.ObjectIndex], o => o.Hidden = !visible);
-            return;
-        }
-        var names = item.InstanceIndex >= 0 ? item.Children.Select(c => c.Name) : [item.Name];
-        foreach (string n in names)
-            if (SceneObject(n) is { } s) Viewer.SetVisibleEverywhere(s.Id, visible);
-        foreach (var c in item.Children) c.Sync(visible);
+        if (_syncingTree || item.IsFeature) return;
+        SetRowsVisible([item], visible, $"{(visible ? "Show" : "Hide")} {(item.IsGroup ? C3dGroups.NameOf(item.GroupPath!) : item.Name)}");
     }
 
     /// <summary>
@@ -1134,7 +1113,9 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     /// on — a click on its tick selects the row too, and turned a box the user had just hidden straight back on), an
     /// instance's parts, a document object's — a feature row's too, since it rounds that object — or the named object.</summary>
     private IEnumerable<Scene3DObject> SceneObjectsOfRow(C3dTreeItem row)
-        => row.Kind == FieldPlotKind ? []                                  // brief-em3d-83 — a record, in no scene
+        => row.Kind is FieldPlotKind or SymmetryPlaneKind ? []            // brief-em3d-83/90 — records, in no scene (a plane is overlay)
+            // brief-em3d-90 R-em3d90-3 — a thermal boundary's row selects its tint (none while it is hidden: the row still selects)
+            : row.Kind == ThermalBoundaryKindName ? new[] { SceneObject(Scene3DBuilder.FaceTintPrefix + row.Name) }.OfType<Scene3DObject>()
             : row.IsAirBox ? AirBoxFaceObjects()
             : row.IsGroup ? SceneObjectsOfGroup(row.GroupPath!)
             : row.InstanceIndex >= 0 ? row.Children.Select(c => c.Name).Select(SceneObject).OfType<Scene3DObject>()
@@ -1144,11 +1125,15 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     /// <summary>3D editor round 5 — the tree's row still selects exactly the view's selection: a regenerated scene
     /// re-selecting the same objects under new ids (after any edit) leaves the row alone. Without this a fillet's row gave
     /// way to its object's the moment an Inspector edit of it regenerated the scene.</summary>
+    /// <para>brief-em3d-90 — and a record row the scene holds nothing of (a symmetry plane, a hidden boundary) stays selected
+    /// when the view's selection empties, so its Inspector page stays up to edit it.</para>
     private bool TreeRowStillSelected()
     {
         if (SelectedTreeItem is not { OperandPath: null } row) return false;
         var selected = Viewer.SelectedObjects().Select(o => o.Id).ToHashSet();
-        return selected.Count > 0 && SceneObjectsOfRow(row).Select(o => o.Id).ToHashSet().SetEquals(selected);
+        var ofRow = SceneObjectsOfRow(row).Select(o => o.Id).ToHashSet();
+        if (selected.Count == 0) return ofRow.Count == 0 && row.Kind is SymmetryPlaneKind or ThermalBoundaryKindName;
+        return ofRow.SetEquals(selected);
     }
 
     private void OnViewerSelectionChanged()
@@ -1174,6 +1159,9 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     /// <summary>The tree row a scene object is listed under, or null.</summary>
     private C3dTreeItem? RowOf(Scene3DObject o)
         => BoxFaceOf(o) is not null ? AllTreeItems().FirstOrDefault(t => t.IsAirBox)
+           // brief-em3d-90 R-em3d90-3 — a tint is its boundary's row: a thermal one's is named without the scene's prefix
+           : o.Tint ? AllTreeItems().FirstOrDefault(t => t.Kind == ThermalBoundaryKindName && Scene3DBuilder.FaceTintPrefix + t.Name == o.Name)
+                      ?? AllTreeItems().FirstOrDefault(t => t.Kind == EmBoundaryKind && t.Name == o.Name)
            // brief-em3d-66 — an entered operand is its row under its boolean.
            : OperandIndexOf(o) is >= 0 and var oi && TopOf(oi, out string op) is >= 0 and var top
              ? AllTreeItems().FirstOrDefault(t => t.ObjectIndex == top && t.OperandPath == op)
@@ -1318,16 +1306,23 @@ public sealed partial class C3dTreeItem(C3dEditorViewModel owner, string name, s
     public int InstanceIndex { get; } = instanceIndex;
 
     /// <summary>The tick's tooltip: in a setup's view (3D editor round 5) a tick is the view's alone, never saved.</summary>
-    public string VisibleTip => owner.IsViewOnly
+    public string VisibleTip => owner.IsViewOnly || IsViewState
         ? "Visible — in this view only; nothing is saved"
         : "Visible — a drawn object's visibility is saved with the document and undoable";
+
+    /// <summary>brief-em3d-90 — a row whose tick is the view's alone (a thermal place, a thermal boundary, a symmetry plane, an
+    /// instance's part, an EM face boundary's tint): nothing is saved, and nothing is undoable.</summary>
+    private bool IsViewState => ObjectIndex < 0 && !IsAirBox && !IsGroup && Kind != C3dEditorViewModel.FieldPlotKind;
+
+    /// <summary>brief-em3d-90 — the name's tooltip for a record row (a symmetry plane says how it is selected), or null.</summary>
+    public string? RowTip { get; init; }
 
     /// <summary>brief-em3d-46 R-em3d46-4d — a document object's place in construction order (1-based), which decides
     /// which solid wins an overlap; null for an instance and its parts. 3D editor round 3: the row's tooltip, no longer a
     /// "#n" in front of every name — the tree lists in construction order within a group anyway.</summary>
-    public string? OrderTip => ObjectIndex >= 0 && OperandPath is null && FeaturePath is null
+    public string? OrderTip => RowTip ?? (ObjectIndex >= 0 && OperandPath is null && FeaturePath is null
         ? $"Construction order {ObjectIndex + 1}: a later object wins where solids overlap (3D ▸ Modify ▸ Order)"
-        : null;
+        : null);
 
     /// <summary>brief-em3d-66 R-em3d66-3c — an operand's path under its top-level object (<see cref="ObjectIndex"/>):
     /// <c>Blank.</c>, <c>Tools[1].</c>, <c>Tools[0].Blank.</c>; null for a top-level row.</summary>

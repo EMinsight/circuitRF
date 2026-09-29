@@ -9,7 +9,8 @@
 //   * Vertex — every vertex within the snap radius of the ray (measured on screen), by depth.
 //   * Edge   — brief-em3d-67 R-em3d67-3d: every NAMED edge within the snap radius of the ray, once, at its nearest
 //              point, by depth — hidden ones included: reaching what is behind is the point of B.
-// What is hidden, not pickable (the air, the box's faces) or cut away by the clip plane is not a hit.
+// What is hidden, not pickable (the air, the box's faces) or cut away by the clip plane is not a hit. A face boundary's
+// tint IS one, in Object and Face mode (brief-em3d-90), ranked in front of the face it lies on.
 //
 // A BOUNDING-VOLUME HIERARCHY over the objects' boxes, built once per scene (a scene is immutable, so its
 // generation is its identity) and counted, finds the objects a ray can touch; only their triangles are
@@ -47,12 +48,15 @@ public static class RayHits
         tree.Query(o, d, q.Camera, q.Height, near ? q.RadiusPixels : 0, candidates, new Stack<int>());
         var objects = new HashSet<uint>();
 
+        // brief-em3d-90 R-em3d90-3 — a face boundary's tint is what a click on it selects, in Object and Face mode.
+        bool tints = mode is Scene3DSelectMode.Object or Scene3DSelectMode.Face;
         foreach (int k in candidates)
         {
             var b = scene.Batches[k];
             uint id = b.ObjectId;
+            var obj = scene.Objects[id - 1];
             // B steps through what a click could select: the dimmed parent around a pushed-in child is not that.
-            if (!Visible(visible, id) || !scene.Objects[id - 1].Selectable) continue;
+            if (!Visible(visible, id) || !(obj.Selectable || (tints && obj.Tint))) continue;
             switch (mode)
             {
                 case Scene3DSelectMode.Vertex:
@@ -67,7 +71,29 @@ public static class RayHits
             }
         }
         hits.Sort((a, c) => a.Depth != c.Depth ? a.Depth.CompareTo(c.Depth) : a.Item.Object.CompareTo(c.Item.Object));
+        if (tints && scene.HasTints) TintsFirst(scene, hits);
         return mode == Scene3DSelectMode.Vertex ? DedupVertices(hits) : hits;
+    }
+
+    /// <summary>
+    /// brief-em3d-90 R-em3d90-3 — a tint and the face it lies on are ONE place along the ray, and the tint ranks first: decided
+    /// by kind within <see cref="Scene3DPicking.TintTie"/>, never by which of two nearly equal depths floating point put
+    /// ahead. So a click selects the boundary, B steps to the solid under it, and Shift+B steps back.
+    /// </summary>
+    private static void TintsFirst(Scene3DModel scene, List<Scene3DHit> hits)
+    {
+        float tie = Scene3DPicking.TintTie(scene);
+        bool IsTint(Scene3DHit h) => scene.Object(h.Item.Object)?.Tint == true;
+        for (int i = 1; i < hits.Count; i++)
+        {
+            if (!IsTint(hits[i])) continue;
+            int j = i;
+            while (j > 0 && !IsTint(hits[j - 1]) && hits[i].Depth - hits[j - 1].Depth <= tie) j--;
+            if (j == i) continue;
+            var h = hits[i];
+            hits.RemoveAt(i);
+            hits.Insert(j, h);
+        }
     }
 
     /// <summary>The nearest hit, or null — what a click in the pane selects.</summary>
@@ -110,7 +136,9 @@ public static class RayHits
             if (!Scene3DPicking.Intersect(o, d, v0, v1, v2, out float t)) continue;
             var point = o + d * t;
             if (!clip.Keeps(point)) continue;
-            var item = mode == Scene3DSelectMode.Face ? Scene3DItem.OfFace(b.ObjectId, (int)a.Face) : Scene3DItem.OfObject(b.ObjectId);
+            // brief-em3d-90 — a tint is one sheet with no faces of its own: face 0, as hover names it.
+            var item = mode != Scene3DSelectMode.Face ? Scene3DItem.OfObject(b.ObjectId)
+                     : Scene3DItem.OfFace(b.ObjectId, scene.Objects[b.ObjectId - 1].Tint ? 0 : (int)a.Face);
             if (mode == Scene3DSelectMode.Object)
             {
                 if (t < nearest) { nearest = t; nearestHit = new Scene3DHit(item, t, point); }

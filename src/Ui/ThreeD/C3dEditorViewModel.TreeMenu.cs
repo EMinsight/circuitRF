@@ -29,7 +29,7 @@ public sealed partial class C3dEditorViewModel
             items.Add(Viewer3DMenuItem.Separator);
             items.Add(new Viewer3DMenuItem("Delete", Enabled: false, Tip: why));
             items.Add(Viewer3DMenuItem.Separator);
-            items.Add(new Viewer3DMenuItem(AirBoxShown ? "Hide" : "Show", () => AirBoxShown = !AirBoxShown));
+            items.Add(new Viewer3DMenuItem(AirBoxShown ? "Hide" : "Show", () => SetRowsVisible([item], !AirBoxShown, $"{(AirBoxShown ? "Hide" : "Show")} {item.Name}")));
         }
         else if (item.Kind == "Port")
         {
@@ -54,6 +54,8 @@ public sealed partial class C3dEditorViewModel
             items.Add(Viewer3DMenuItem.Separator);
             items.Add(new Viewer3DMenuItem("Delete", b is null ? null : () => StatusMessage = SetFaceBoundary(b.Object, b.Face, null) ?? "",
                                            Enabled: b is not null));
+            items.Add(Viewer3DMenuItem.Separator);
+            items.Add(new Viewer3DMenuItem(item.IsVisible ? "Hide" : "Show", () => SetRowsVisible([item], !item.IsVisible, $"{(item.IsVisible ? "Hide" : "Show")} {item.Name}")));
         }
         else if (item.IsGroup) items.AddRange(GroupTreeItems(item));
         else if (item.OperandPath is { } path && item.ObjectIndex >= 0 && item.ObjectIndex < Document.Objects.Count)
@@ -119,10 +121,9 @@ public sealed partial class C3dEditorViewModel
                 items.Add(new Viewer3DMenuItem("Assign Material…", () => RequestMaterialPicker([index], startNew: false),
                     Tip: "Choose this object's material from its technology's materials — each with its role and source — or make a new one."));
                 bool hidden = Document.Objects[index].Hidden;
-                items.Add(new Viewer3DMenuItem(hidden ? "Show" : "Hide",
-                    () => ChangeObjects($"{(hidden ? "Show" : "Hide")} {Document.Objects[index].Name}", [index], o => o.Hidden = !hidden)));
+                items.Add(new Viewer3DMenuItem(hidden ? "Show" : "Hide", () => SetRowsVisible([item], hidden, $"{(hidden ? "Show" : "Hide")} {item.Name}")));
             }
-            else if (drawn) items.Add(new Viewer3DMenuItem("Hide", () => Viewer.Hide(scene)));
+            else if (drawn) items.Add(new Viewer3DMenuItem("Hide", () => SetRowsVisible([item], false, $"Hide {item.Name}")));
             if (drawn) items.Add(new Viewer3DMenuItem("Isolate", () => Viewer.Isolate(scene)));
         }
         items.Add(new Viewer3DMenuItem("Show All", Viewer.ShowAll));
@@ -155,7 +156,7 @@ public sealed partial class C3dEditorViewModel
                           : "A boolean needs a Tool: this is its last one. Dissolve it instead.");
         }
         yield return new Viewer3DMenuItem(operand.Hidden ? "Show" : "Hide",
-            () => ChangeOperand($"{(operand.Hidden ? "Show" : "Hide")} {item.Name}", top, path, o => o.Hidden = !operand.Hidden));
+            () => SetRowsVisible([item], operand.Hidden, $"{(operand.Hidden ? "Show" : "Hide")} {item.Name}"));
         yield return Viewer3DMenuItem.Separator;
         yield return new Viewer3DMenuItem("Delete", step >= 0 && parent.Tools.Count > 1 ? () => DeleteTool(top, path) : null,
             Enabled: step >= 0 && parent.Tools.Count > 1,

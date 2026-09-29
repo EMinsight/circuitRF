@@ -109,6 +109,14 @@ public sealed class Scene3DObject
     /// </summary>
     public bool PickLast { get; init; }
 
+    /// <summary>
+    /// brief-em3d-90 R-em3d90-3 — a face boundary's tint (an EM face boundary, or a thermal setup's), drawn just off the face it
+    /// conditions. It is NOT <see cref="Pickable"/>: the GPU's ID pass never draws it, so the snap (which reads that pass) still
+    /// lands on the face beneath. Hover, click and B reach it on the CPU instead, and in FRONT of the face it lies on
+    /// (Scene3DPicking.TintHits, RayHits.Collect): the boundary is what a click on it selects, and B steps to the solid.
+    /// </summary>
+    public bool Tint { get; init; }
+
     /// <summary>Whether a hover or a click may land on it: pickable, and not the dimmed parent around a pushed-in child
     /// (which the ID pass still draws, so the snap reaches it).</summary>
     public bool Selectable => Pickable && !Context;
@@ -233,6 +241,14 @@ public sealed class Scene3DModel
 
     /// <summary>The object with ID <paramref name="id"/>, or null (0, or out of range).</summary>
     public Scene3DObject? Object(uint id) => id >= 1 && id <= Objects.Length ? Objects[id - 1] : null;
+
+    /// <summary>brief-em3d-90 — how far the builder lifted each face-boundary tint off its face, metres (0 with none): the
+    /// distance along a ray within which a tint and the face under it are one place (Scene3DPicking.TintTie).</summary>
+    public float TintLift { get; init; }
+
+    /// <summary>brief-em3d-90 — whether any object is a face-boundary tint: hover asks the CPU about tints only then.</summary>
+    public bool HasTints => _hasTints ??= Objects.Any(o => o.Tint);
+    private bool? _hasTints;
 
     /// <summary>A scene-local point in world metres.</summary>
     public (double X, double Y, double Z) ToWorld(Vector3 local) => (Origin.X + local.X, Origin.Y + local.Y, Origin.Z + local.Z);

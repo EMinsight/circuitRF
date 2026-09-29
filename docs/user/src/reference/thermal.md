@@ -31,8 +31,10 @@ install it.
   pair of materials (the generic library's GaN/SiC nucleation layer, 3.3E-08 m²·K/W), or a document's override for one contact.
   A thin bond line — a die attach, a solder layer — is usually best stated this way, as its thickness over its conductivity,
   rather than drawn (see [the mesh](#mesh)).
-- **Boundaries**: fixed temperature, convection, or insulated (every face nothing names).
-- **Symmetry planes**: model half or a quarter; measures read `SymmetryFactor` for the whole device.
+- **Boundaries**: fixed temperature, convection, or insulated (every face nothing names). Set by right-clicking a face;
+  click a boundary's tint (or its row) to edit its kind and values in Properties.
+- **Symmetry planes**: model half or a quarter; measures read `SymmetryFactor` for the whole device. A plane is drawn
+  hatched where it cuts the model, and its position is edited in Properties — it must stay on the model's extent.
 
 Every run reports its **energy balance** — the heat that went in against the heat that left — in its notes.
 

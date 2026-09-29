@@ -11,6 +11,11 @@
 // is B's ray (RayHits), on the key press, never on a hover, over a hierarchy built once per scene; and
 // Vertex mode's hover reads the vertices of the ONE face under the cursor (Scene3DFaces).
 //
+// FACE BOUNDARIES ARE IN THE CYCLE (brief-em3d-90). A boundary's tint — an EM face boundary's, or a thermal setup's — is
+// not in the ID pass (the snap reads that pass, and must land on the face beneath), so hover asks the CPU about the few
+// tints there are (TintUnderCursor), and RayHits lists them in Object and Face mode. At the face a tint lies on, the tint
+// ranks FIRST, by kind: a click selects the boundary, B steps to the solid (or the face) under it, Shift+B steps back.
+//
 // SELECTION SURVIVES A REGENERATION BY NAME. An edit rebuilds the scene and may renumber its objects (a
 // delete shifts every later ID), so the selection is carried across by object name and face index, and
 // what no longer exists drops out of it.
@@ -151,11 +156,13 @@ public sealed class Viewer3DDrawOverlay
     public List<CircuitRF.Engine.Em3d.Point3> ProbeMarks { get; } = [];
     /// <summary>Mesh regions: dashed wireframe boxes.</summary>
     public List<DrawSegment> MeshRegions { get; } = [];
+    /// <summary>brief-em3d-90 — declared thermal symmetry planes: outline and hatch, in the air box's symmetry colour.</summary>
+    public List<DrawSegment> SymmetryPlanes { get; } = [];
 
     public void Clear()
     {
         Rubber.Clear(); Construction.Clear(); Selected.Clear(); Crossing.Clear(); Fixed.Clear(); Pivots.Clear(); Missing.Clear(); Labels.Clear();
-        HeatSources.Clear(); Probes.Clear(); ProbeMarks.Clear(); MeshRegions.Clear();
+        HeatSources.Clear(); Probes.Clear(); ProbeMarks.Clear(); MeshRegions.Clear(); SymmetryPlanes.Clear();
     }
 }
 
@@ -338,7 +345,8 @@ public sealed partial class Viewer3DViewModel
     }
 
     /// <summary>B (<paramref name="direction"/> +1) or Shift+B (−1): the next thing behind, or in front, along
-    /// the line of sight through the cursor (R-em3d43-4). True when the key did something.</summary>
+    /// the line of sight through the cursor (R-em3d43-4). True when the key did something. brief-em3d-90 — a face
+    /// boundary's tint is in the list, just in front of the face it lies on, so B steps from a boundary to its solid.</summary>
     public bool Cycle(int direction)
     {
         if (View.CursorX < 0 || Scene.Objects.Length == 0) return false;
@@ -449,6 +457,12 @@ public sealed partial class Viewer3DViewModel
                                             ? Scene3DItem.OfVertex(id, v) : null,
                 _ => Scene3DItem.OfObject(id),
             };
+        // brief-em3d-90 R-em3d90-3 — a face boundary's tint over the face under the cursor is what a click selects: the
+        // boundary wins over the face it lies on (B then steps to the face or the solid). LastPick stays the ID pass's face,
+        // so a tool drawing on a tinted face still finds the face.
+        if (SelectMode is Scene3DSelectMode.Object or Scene3DSelectMode.Face && (item is null || item.Value.Object == id)
+            && TintUnderCursor(id) is { } tint)
+            item = SelectMode == Scene3DSelectMode.Face ? Scene3DItem.OfFace(tint, 0) : Scene3DItem.OfObject(tint);
         LastPick = (id, f);
         int hoveredFace = SelectMode == Scene3DSelectMode.Face ? f : -1;
         if (item != HoveredItem || View.HoveredFace != hoveredFace)
@@ -463,6 +477,21 @@ public sealed partial class Viewer3DViewModel
         // brief-em3d-46 — an operation's preview and a measurement's rubber band follow the cursor from here.
         MeasureFollow();
         CursorResolved?.Invoke();
+    }
+
+    /// <summary>
+    /// brief-em3d-90 R-em3d90-3 — the visible tint under the cursor that stands at or in front of <paramref name="under"/> (the
+    /// ID pass's object, 0 for none), or null. At the face it lies on, the tint wins by KIND (Scene3DPicking.TintTie), not by
+    /// the lift that keeps it from z-fighting; a solid genuinely in front of a tinted face still wins.
+    /// </summary>
+    private uint? TintUnderCursor(uint under)
+    {
+        if (View.CursorX < 0 || !Scene.HasTints) return null;
+        var hits = Scene3DPicking.TintHits(Scene, View.Camera, View.CursorX, View.CursorY, _viewW, _viewH, View.Visible, View.Clip);
+        if (hits.Count == 0) return null;
+        if (under == 0) return hits[0].Id;
+        var front = Scene3DPicking.RayDistance(Scene, View.Camera, View.CursorX, View.CursorY, _viewW, _viewH, under);
+        return front is not { } d || hits[0].Depth <= d + Scene3DPicking.TintTie(Scene) ? hits[0].Id : null;
     }
 
     /// <summary>brief-em3d-49 — the nearest pick-last object (an air-box face) under the cursor, or null.</summary>
@@ -548,6 +577,7 @@ public sealed partial class Viewer3DViewModel
     public string Name(Scene3DItem item)
     {
         if (Scene.Object(item.Object) is not { } o) return "";
+        if (o.Tint) return Scene3DBuilder.TintLabel(o.Name);          // brief-em3d-90 — a boundary, whatever the mode
         string owner = ObjectName(o);
         if (item.Face >= 0) return $"Face {o.FaceName(item.Face)} · {owner}";
         if (item.IsEdge) return EdgeOf(item) is { } e ? $"Edge {e.Edge.Name} · {owner}" : owner;
@@ -637,6 +667,13 @@ public sealed partial class Viewer3DViewModel
             string title = View.Selection.Length == 1 ? Name(View.Selection[0]) : $"{View.Selection.Length} selected";
             items.Add(new Viewer3DMenuItem(title, Enabled: false));
             items.Add(Viewer3DMenuItem.Separator);
+        }
+        // brief-em3d-90 — a boundary's tint is a record, not an object: its menu is the editor's alone (no Rename, Material,
+        // Isolate), and the face under it is one B away.
+        if (host is not null && objects.Count > 0 && objects.All(o => o.Tint))
+        {
+            items.AddRange(host.DrawMenuItems());
+            return items;
         }
         bool any = objects.Count > 0;
         bool inInstance = host is not null && objects.Any(o => host.InstanceOf(o) is not null);
