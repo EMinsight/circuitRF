@@ -1385,8 +1385,15 @@ the model's outlines and its legend beside it.
 - **`--phase <degrees>`** picks the instant drawn for a quantity read instantaneously (`Re{E}`); it is a
   refusal on any other. The phase is never written to the file.
 - **A hidden plot draws the same.** Hiding only chooses which plot the window draws; `--field` names one.
-- A `--section` that is not the plot's own plane is a refusal naming both. **Surfaces and faces plots are
-  refused for now**: open the `.c3d` and use *Export picture*.
+- A `--section` that is not the plot's own plane is a refusal naming both.
+- **A surfaces or faces plot is drawn as the 3D view shows it, from a direction you give**, because the
+  window's camera is not saved with the plot: `--iso` (the 3D view's *Standard Views ▸ Isometric*),
+  `--view-dir top` (or `bottom`, `front`, `back`, `left`, `right`), or `--view-dir x,y,z` — the direction from
+  the model toward you, so `1,-1,1` is the isometric. Surfaces hidden behind others are left out, the rest of the
+  model is shaded around the field, and the edges are drawn over it. It is written as a `.png` for now. A
+  temperature is **mirrored across the document's symmetry planes**, as in the window; `--no-mirror` draws only
+  the part that was solved. An EM field on surfaces is drawn on the region selected in the window's tree, so
+  name it with `--region` (the refusal lists them). The hottest point is ringed and named in the legend.
 - **A temperature plot draws a thermal section.** The colours span the section's true minimum to its maximum
   at the plot's point, as the 3D view ranges a temperature. **Each bond wire is painted from its own solved
   T(s)**: a wire is a one-dimensional element, so its temperature is not in the 3D field around it. Metals are
@@ -1396,7 +1403,8 @@ the model's outlines and its legend beside it.
   the section, with the legend inset in its corner (no margin unless `--margin` asks for one). Both are for a
   field plot.
 - **`--axes`** adds the 3D view's axis indicator in the bottom-left corner, and **`--scale-bar`** its scale bar
-  in the bottom-right, in the 3D view's display unit. They work on any section; on `--iso` only `--axes` does.
+  in the bottom-right, in the 3D view's display unit. They work on any section; on `--iso`, or a surfaces
+  plot seen from anything but along an axis, only `--axes` does.
 - **PNG and vector differ in one way.** A PNG blends colours across each triangle. SVG has no gradient
   mesh, so in SVG and PDF each triangle takes the colour of its centre. A vector slice of more than
   50,000 triangles merges neighbours that fall in the same step of the colour map, never dropping area.
@@ -1411,6 +1419,11 @@ the model's outlines and its legend beside it.
 <span class="output">Wrote wires.png (1600x811 device-pixels, 299,566 bytes)
   XZ section at y = 75 µm: 9 object(s)
   DC 14 A — along wire 4: T_C at Idc = 14, 4,692 triangles, 85 … 393 °C, 1 wire(s) from their T(s)</span></code></pre>
+
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf render "Eight Fingers/3d/Eight Fingers.c3d" -o surface.png --field Surface --iso
+<span class="output">Wrote surface.png (1600x1200 device-pixels, 217,677 bytes)
+  Temperature on every exposed face, isometric, from +x −y +z, orthographic — setup 'Array', the only point: 2 object(s)
+  Surface: T_C at the only point, 98,000 triangles on every exposed face, isometric, from +x −y +z, 85 … 105.1 °C, mirrored across 1 plane(s)</span></code></pre>
 
 <h3 id="render-example">A worked example, from an empty folder</h3>
 

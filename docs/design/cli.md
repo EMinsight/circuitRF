@@ -1914,6 +1914,8 @@ circuitrf render cavity.c3d -o cut.png --field Field1           # the plot's own
 circuitrf render cavity.c3d -o wave.png --field Field1 --phase 90
 circuitrf render cavity.c3d --list-fields                        # every plot, and whether its data is there
 circuitrf render Output.c3d -o wires.png --field "DC 14 A — along wire 4" --labels --tight --axes --scale-bar
+circuitrf render "Eight Fingers.c3d" -o surface.png --field Surface --iso    # a Surfaces plot, seen from a direction
+circuitrf render cavity.c3d -o walls.png --field Surf --view-dir front --region cavity
 ```
 
 **It owns no resolution, no slicing and no range arithmetic** — §13.1's rule, and the reason the plot
@@ -1928,11 +1930,35 @@ function `em` writes by. `src/Cli/RenderEm3dField.cs` is arguments, refusals and
 scan holds it to that.
 
 - **The view follows the plot.** A ClipPlane plot IS a section at its axis and DBU offset; a `--section`
-  that disagrees, or `--iso`, is a refusal naming both — never a silent re-cut.
+  that disagrees, `--iso` or `--view-dir` is a refusal naming both — never a silent re-cut.
 - **Missing data is a refusal carrying R-em3d83-5's sentence verbatim** — never the nearest frequency, never
   an outline presented as the field. **A stale run still draws**, with a `note:`.
-- **Sections only (owner decision Q1).** Surfaces and Faces plots are refusals naming Export picture. The iso
-  picture those need is a later brief; `Em3dSectionField`'s header records what it takes.
+- **A Surfaces or Faces plot is a picture of surfaces in depth** (`brief-em3d-89`). What it draws is
+  `FieldSurfacePlot`'s (`src/Render`), moved out of the 3D view's view model so the window and `render` build
+  the same triangles, nudges and range: All Faces (`FieldSurfaces.Exterior`) and picked faces for a
+  temperature, the selected region's boundary or the conductors and picked faces (`FieldFacePainter`) for an
+  EM field, with the view's ranges (a temperature's true minimum and maximum, extended to the wires; an EM
+  field's percentile). `Em3dSurfaceField` projects it orthographically and removes hidden surfaces with a
+  **software depth buffer**, supersampled up to 3 × 3 within an 8 M-sample budget: a painter's sort is wrong for
+  interlocking parts, which a bond-wire package always has. The rest of the model is drawn as the 3D view's
+  scene draws it (`Scene3DBuilder`, the editor's origin and face names): shaded `0.3 + 0.7|n·v|`, translucent
+  objects blended back to front. The field is unshaded and read per SAMPLE through the quantity, range and
+  map, the GPU's order. Feature edges (the outline's own rule, `Em3dSectionScene.FeatureEdges`) are drawn where
+  the depth buffer does not hide them; the window draws none, but an unshaded field on a closed package
+  otherwise reads as a flat blob. Owner decisions: **any direction** — `--iso` (the 3D view's Standard Views
+  ▸ Isometric, from +x −y +z, which is *not* `render --iso`'s outline direction), `--view-dir
+  top|bottom|front|back|left|right|isometric`, or `--view-dir x,y,z` toward the viewer at the camera's own
+  yaw/pitch, so `0,0,1` is exactly Top; **PNG only** for now (`render.field.surface-png-only`); and **a
+  temperature is mirrored across the document's symmetry planes by default**, as the view mirrors it
+  (`--no-mirror` draws the modelled half; an EM field is never mirrored, as in the view). With no direction the
+  plot is a refusal (`render.field.direction-required`): the view's camera is not saved. A volume quantity on
+  Surfaces is drawn on the region SELECTED in the view's tree, which a file does not record, so it takes
+  `--region <object>` (`render.field.region-required` lists the candidates). A face the model no longer has is
+  left out, as the view leaves it out, with a `render.field.faces-missing` warning. `--scale-bar` works on a
+  view along an axis and is refused on an oblique one (`render.field.scale-bar-oblique`); `--axes`, `--labels`
+  (each object's material at the centre of its visible piece) and `--tight` carry over. The hot spot is ringed
+  where it can be seen, and named in the legend. `--json`'s `render.em3d` is `view: "projection"` with
+  `toward`, and its field adds `mirrored` and `hotSpot`.
 - **A temperature section is a thermal page** (`brief-em3d-88`). A thermal setup has no EM problem, so the
   section is drawn from the view's own elaboration — `C3dProblemAssembly.ViewProblem`, the one problem the 3D
   editor's scene is built from too — in a box at its extent. The range is `FieldColorScale.MinMax`, the view's
@@ -1965,7 +1991,8 @@ scan holds it to that.
 - A `.cem` holds no plots: `--field` on one is a refusal saying they live in the `.c3d`.
 
 Gate: `tests/Ui.Tests/Render/FieldRenderCliTests.cs` — the verb as a process on the committed cavity,
-against the 3D view's own triangles and range; and `tests/Ui.Tests/Render/TemperatureSectionTests.cs` for a
+against the 3D view's own triangles and range (gate 11 a Surfaces plot from the front); `SurfaceFieldRenderTests.cs`
+for a Surfaces and a Faces temperature (depth, the mirror, the range); and `tests/Ui.Tests/Render/TemperatureSectionTests.cs` for a
 temperature (its process gate solves *Thermal Output Wires*' `RfHarmonics`, so it is `Category=Benchmark`).
 
 ## 14. `netlist` — the extraction, as a document

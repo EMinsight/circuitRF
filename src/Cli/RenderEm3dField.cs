@@ -1,9 +1,11 @@
 using System.Globalization;
+using System.Numerics;
 using CircuitRF.Design.Layout.Em;
 using CircuitRF.Design.Thermal;
 using CircuitRF.Design.ThreeD;
 using CircuitRF.Engine.Em3d;
 using CircuitRF.Render;
+using CircuitRF.Render.Scene3D;
 using CircuitRF.Render.Scene3D.Fields;
 using RfCore.Export;
 
@@ -35,7 +37,8 @@ internal static class RenderEm3dField
     {
         string? alone = req.OutputStated ? "-o" : req.Field is not null ? "--field" : req.Sections.Count > 0 ? "--section"
                       : req.Iso ? "--iso" : req.Phase is not null ? "--phase" : req.NoLegend ? "--no-legend" : req.NoThin ? "--no-thin"
-                      : req.Labels ? "--labels" : req.Tight ? "--tight" : null;
+                      : req.Labels ? "--labels" : req.Tight ? "--tight" : req.ViewDir is not null ? "--view-dir"
+                      : req.Region is not null ? "--region" : req.NoMirror ? "--no-mirror" : null;
         if (alone is not null) return JsonRun.Fail(CliDiagnostics.RenderFieldListAlone(alone));
 
         string full = Path.GetFullPath(path);
@@ -66,7 +69,7 @@ internal static class RenderEm3dField
             }
             list.Add(new RenderFieldPlotJson(
                 plot.Name, setupName, request.Solver, SolutionJson(plot.Solution), plot.Solution?.Describe() ?? "the first saved solution",
-                plot.Quantity, plot.Mode, plot.On.ToString(), Target(plot, doc), plot.Hidden, why is null, why, NotHeadless(plot)?.Render()));
+                plot.Quantity, plot.Mode, plot.On.ToString(), Target(plot, doc), plot.Hidden, why is null, why, Needs(plot)));
         }
         JsonRun.FieldPlots = list;
 
@@ -77,7 +80,7 @@ internal static class RenderEm3dField
             Console.WriteLine($"{p.Name}: {FieldPlotResolver.QuantitySymbol(plot)} · {p.Describe} · {p.Target} · setup '{p.Setup}'" +
                               (p.Hidden ? " · hidden" : ""));
             Console.WriteLine(p.Problem is { } why ? $"  data: missing — {why}" : "  data: ready");
-            if (p.Headless is { } h) Console.WriteLine($"  --field: {h}");
+            if (p.Headless is { } h) Console.WriteLine($"  --field needs {h}");
         }
         return 0;
     }
@@ -96,21 +99,47 @@ internal static class RenderEm3dField
         if (plot is null)
             return JsonRun.Fail(CliDiagnostics.RenderFieldUnknown(req.Field!, path,
                 doc.FieldPlots.Count == 0 ? "(none)" : string.Join(", ", doc.FieldPlots.Select(p => p.Name))));
-        if (NotHeadless(plot) is { } notYet) return JsonRun.Fail(notYet);
-
-        // The view follows the plot: a ClipPlane plot IS a section. Another picture is a refusal, never a re-cut.
-        var own = OwnView(plot, doc);
-        string plane = $"{own.Axis} = {Em3dSectionScene.FormatLength(own.At)}";
         var asked = req.Sections.Select(s => $"--section {s}").ToList();
         if (req.Iso) asked.Add("--iso");
+        if (req.ViewDir is { } vd) asked.Add($"--view-dir {vd}");
         if (asked.Count > 1) return JsonRun.Fail(CliDiagnostics.RenderEm3dMultipleViews(string.Join(" and ", asked)));
-        if (req.Iso) return JsonRun.Fail(CliDiagnostics.RenderFieldViewDisagrees(plot.Name, plane, "--iso"));
-        if (req.Sections.Count == 1)
+
+        // The view follows the plot: a ClipPlane plot IS a section. Another picture is a refusal, never a re-cut.
+        bool surface = plot.On != C3dFieldPlotOn.ClipPlane;
+        Em3dView own;
+        if (!surface)
         {
-            var (parsed, refusal) = RenderEm3d.ParseSection(req.Sections[0]);
-            if (refusal is { } r) return r;
-            if (parsed.Kind != own.Kind || Math.Abs(parsed.At - own.At) > 1e-12 + 1e-9 * Math.Abs(own.At))
-                return JsonRun.Fail(CliDiagnostics.RenderFieldViewDisagrees(plot.Name, plane, $"--section {req.Sections[0]}"));
+            own = OwnView(plot, doc);
+            string plane = $"{own.Axis} = {Em3dSectionScene.FormatLength(own.At)}";
+            if (asked.Count == 1 && req.Sections.Count == 0) return JsonRun.Fail(CliDiagnostics.RenderFieldViewDisagrees(plot.Name, plane, asked[0]));
+            if (req.Sections.Count == 1)
+            {
+                var (parsed, refusal) = RenderEm3d.ParseSection(req.Sections[0]);
+                if (refusal is { } r) return r;
+                if (parsed.Kind != own.Kind || Math.Abs(parsed.At - own.At) > 1e-12 + 1e-9 * Math.Abs(own.At))
+                    return JsonRun.Fail(CliDiagnostics.RenderFieldViewDisagrees(plot.Name, plane, $"--section {req.Sections[0]}"));
+            }
+            if (req.Region is not null)
+                return JsonRun.Fail(CliDiagnostics.RenderFieldOptionNotApplicable("--region", plot.Name,
+                    "a ClipPlane plot cuts the volume on its own plane. --region names the region a Surfaces plot is drawn on."));
+            if (req.NoMirror)
+                return JsonRun.Fail(CliDiagnostics.RenderFieldOptionNotApplicable("--no-mirror", plot.Name,
+                    "a section is drawn as the model was solved. Only a Surfaces or Faces temperature is mirrored across the symmetry planes."));
+        }
+        else
+        {
+            // brief-em3d-89 — a picture of surfaces in depth: a stated direction (the view's camera is not saved), PNG only
+            string on = OnText(plot);
+            if (req.Sections.Count > 0) return JsonRun.Fail(CliDiagnostics.RenderFieldNotASection(plot.Name, on, asked[0]));
+            if (asked.Count == 0) return JsonRun.Fail(CliDiagnostics.RenderFieldDirectionRequired(plot.Name, on));
+            var (look, bad) = Direction(req.ViewDir, req.Iso);
+            if (bad is { } b) return b;
+            if (req.Format != "png") return JsonRun.Fail(CliDiagnostics.RenderFieldSurfacePngOnly(plot.Name, on, req.Format.ToUpperInvariant()));
+            if (req.ScaleBar && !AxisAligned(look)) return JsonRun.Fail(CliDiagnostics.RenderFieldScaleBarOblique(look.Name));
+            if (req.NoMirror && !plot.IsTemperature)
+                return JsonRun.Fail(CliDiagnostics.RenderFieldOptionNotApplicable("--no-mirror", plot.Name,
+                    "an EM field is drawn as it was solved. Only a temperature is mirrored across the symmetry planes, as the 3D view mirrors it."));
+            own = new Em3dView(Em3dViewKind.Projection, 0) { Projection = look };
         }
 
         // Its setup, its run, its solution by value, its quantity — or R-em3d83-5's sentence.
@@ -140,7 +169,7 @@ internal static class RenderEm3dField
         var offered = FieldQuantity.Offered(volume?.Arrays ?? [], boundary?.Arrays ?? []);
         if (FieldPlotResolver.PickQuantity(offered, request, out string? gone) is not { } q)
             return JsonRun.Fail(CliDiagnostics.RenderFieldMissingData(plot.Name, gone!));
-        if (q.OnBoundary || volume is null) return JsonRun.Fail(CliDiagnostics.RenderFieldOnBoundary(plot.Name, q.Label));
+        if (!surface && (q.OnBoundary || volume is null)) return JsonRun.Fail(CliDiagnostics.RenderFieldOnBoundary(plot.Name, q.Label));
         if (req.Phase is not null && !q.Animated) return JsonRun.Fail(CliDiagnostics.RenderFieldPhaseNotAnimated(plot.Name, q.Label));
 
         // A stale run still draws (as in the 3D view), and says so: the one comparison the editor's banner makes.
@@ -156,9 +185,11 @@ internal static class RenderEm3dField
 
         // The cut at the 3D view's own origin, on the plane as the view holds it — the same triangles the window draws.
         var origin = FieldPlotResolver.SceneOrigin(loaded.Elaboration?.DisplayExtent());
+        if (surface)
+            return DrawSurfaces(path, req, doc, plot, own, loaded, problem, setupName, run, found, item, q, volume, boundary, origin, stale, runDir);
         var clip = FieldPlotResolver.ScenePlane(plot, doc.DbuPerMicron, origin);
         FieldSectionCut? cut;
-        try { cut = FieldSection.Cut(q, volume, origin, clip, request.Db, request.Percentile, RunHost.Cancellation); }
+        try { cut = FieldSection.Cut(q, volume!, origin, clip, request.Db, request.Percentile, RunHost.Cancellation); }
         catch (Exception e) when (e is FieldReadException or IOException or UnauthorizedAccessException)
         { return JsonRun.Fail(CliDiagnostics.RenderFieldUnreadable(plot.Name, e.Message)); }
         if (cut is null) return JsonRun.Fail(CliDiagnostics.RenderFieldMissingData(plot.Name, gone ?? $"The run no longer offers {FieldNames.Friendly(q.Array.Name)}."));
@@ -214,6 +245,149 @@ internal static class RenderEm3dField
         return RenderEm3d.Picture(path, req, loaded, own, (Layer, Report, Line));
     }
 
+    // ── brief-em3d-89: a Surfaces or Faces plot ──────────────────────────────
+
+    /// <summary>
+    /// A Surfaces or Faces plot seen along <paramref name="view"/>'s direction. The 3D view's scene is built here as the 3D editor
+    /// builds it (its origin, its colours, its face names); its surfaces are <see cref="FieldSurfacePlot"/>'s — the window's own
+    /// builders — and every pixel is <see cref="Em3dSurfaceField"/>'s. What is here is the argument rule, the refusals and the report.
+    /// </summary>
+    private static int DrawSurfaces(string path, RenderEm3d.Request req, C3dDocument doc, C3dFieldPlot plot, Em3dView view,
+                                    Em3dSetupSource loaded, Em3dProblem problem, string setupName, EmSetup? run, FieldDiscovery found,
+                                    FieldSolutionItem item, FieldQuantity q, FieldStep? volume, FieldStep? boundary,
+                                    (double X, double Y, double Z) origin, bool stale, string? runDir)
+    {
+        var look = view.Projection!.Value;
+        var e = loaded.Elaboration;
+        var (theme, _, _, themeRefusal) = req.themeOf(loaded.Path);
+        if (themeRefusal is { } tr) return tr;
+        var scene = Scene3DBuilder.Build(problem, 0, loaded.Generated!.Origins, e?.Technology, theme, req.Variant, null,
+            new Scene3DBuildOptions(FaceNames: name => e is not null && e.Provenance.TryGetValue(name, out var p) ? p.FaceNames : null,
+                                    DrawAirBox: false, Origin: origin, HideOutermostDielectric: false));
+        Scene3DObject? Named(string name) => scene.Objects.FirstOrDefault(o => o.Name == name);
+        var faces = plot.On == C3dFieldPlotOn.Faces ? FieldPlotResolver.SceneFaces(plot, Named) : [];
+        // the 3D view leaves out a face the model no longer has; a picture says which it left out
+        var gone = plot.On == C3dFieldPlotOn.Faces ? plot.Faces.Where(f => FieldPlotResolver.SceneFace(f, Named) is null).Select(f => f.Face).ToList() : [];
+        if (gone.Count > 0)
+        {
+            var d = CliDiagnostics.RenderFieldFacesMissing(plot.Name, string.Join(", ", gone.Select(f => $"'{f}'")));
+            Console.Error.WriteLine("note: " + d.Render());
+            JsonRun.Note(d);
+        }
+        var ct = RunHost.Cancellation;
+        double phaseDeg = q.Animated ? req.Phase ?? 0 : 0;
+
+        List<FieldSurface> surfaces;
+        List<Vector3> nudges;
+        List<string> objects;
+        HashSet<string> covered;
+        FieldColorScale scale;
+        List<FieldWireSurface> wires = [];
+        List<(int Axis, double AtM)> mirrors = [];
+        List<string> refused = [];
+        string hotSpot = "";
+        Point3? hotAt = null;
+        string target;
+        try
+        {
+            if (q.IsTemperature)
+            {
+                if (volume?.Load(q.Array.Name) is not { } array)
+                    return JsonRun.Fail(CliDiagnostics.RenderFieldMissingData(plot.Name, $"The run no longer offers {FieldNames.Friendly(q.Array.Name)}."));
+                double m = C3dLowering.Metres(1, doc.DbuPerMicron);
+                if (!req.NoMirror) mirrors = [.. doc.SymmetryPlanes.Select(p => ((int)p.Axis, p.At * m))];
+                var b = FieldSurfacePlot.Temperature(q, volume, array, scene, default, found.Groups,
+                    [.. faces.Select(f => new TemperatureFace(f.Object, f.Face))], allFaces: plot.On == C3dFieldPlotOn.Surfaces, onClip: false,
+                    found.Table, item.Solution.Index, item.Run.Solutions, plot.FixRange, ct, mirrors);
+                if (b.Surfaces.Count == 0 && b.Wires.Count == 0)
+                    return JsonRun.Fail(CliDiagnostics.RenderFieldMissingData(plot.Name,
+                        "None of the faces it names is in this run's mesh: the model has changed since the run, or the faces are not solids'."));
+                wires = [.. b.Wires];
+                surfaces = [.. b.Surfaces, .. wires.Select(w => w.Surface)];
+                nudges = [.. b.Nudges, .. wires.Select(_ => Vector3.Zero)];
+                objects = [.. b.Objects, .. wires.Select(w => w.Wire)];
+                covered = [.. b.Covered, .. wires.Select(w => w.Wire)];
+                scale = b.Scale;
+                // the 3D view's hot-spot marker and its label (Viewer3DViewModel.AdoptTemperature)
+                if (FieldHotSpot.Of(q, surfaces, nudges) is { } h)
+                {
+                    hotSpot = $"{h.Value.ToString("0.0", CultureInfo.InvariantCulture)} °C, {objects[h.Surface]}";
+                    var (x, y, z) = scene.ToWorld(h.At);
+                    hotAt = new Point3(x, y, z);
+                }
+                target = plot.On == C3dFieldPlotOn.Surfaces ? "every exposed face" : string.Join(", ", plot.Faces.Select(f => f.Face));
+            }
+            else
+            {
+                Scene3DObject? region = null;
+                if (plot.On == C3dFieldPlotOn.Surfaces && !q.OnBoundary)
+                {
+                    var regions = scene.Objects.Where(o => o.Kind is Scene3DKind.Dielectric or Scene3DKind.Air or Scene3DKind.Body &&
+                                                           found.Groups.Any(g => g.Name == o.Name && g.Dimension == 3))
+                                               .Select(o => o.Name).ToList();
+                    string list = regions.Count == 0 ? "(none)" : string.Join(", ", regions);
+                    if (req.Region is not { } asked) return JsonRun.Fail(CliDiagnostics.RenderFieldRegionRequired(plot.Name, q.Label, list));
+                    if (!regions.Contains(asked)) return JsonRun.Fail(CliDiagnostics.RenderFieldRegionUnknown(asked, list));
+                    region = Named(asked);
+                }
+                else if (req.Region is not null)
+                    return JsonRun.Fail(CliDiagnostics.RenderFieldOptionNotApplicable("--region", plot.Name,
+                        plot.On == C3dFieldPlotOn.Faces ? "a Faces plot paints the faces it names." : $"{q.Label} is drawn on the conductors, not on a region."));
+                var b = FieldSurfacePlot.Em(q, volume, boundary, found.Groups, scene, default, onPlane: false, plot.On == C3dFieldPlotOn.Surfaces,
+                    region, FieldSurfacePlot.FaceTargets(scene, faces), null, string.Equals(item.Run.Solver, "openEMS", StringComparison.OrdinalIgnoreCase), ct);
+                refused = [.. b.Refused];
+                if (b.Surfaces.Count == 0)
+                    return JsonRun.Fail(CliDiagnostics.RenderFieldMissingData(plot.Name, string.Join(" ", refused.Append(b.Hint ?? "")).Trim()));
+                surfaces = [.. b.Surfaces];
+                nudges = [.. b.Nudges];
+                objects = [.. b.Objects];
+                covered = b.Covered;
+                scale = FieldSurfacePlot.EmScale(q, surfaces, plot.Db, plot.Percentile);
+                target = plot.On == C3dFieldPlotOn.Faces ? string.Join(", ", plot.Faces.Select(f => f.Face))
+                       : region is not null ? $"the boundary of '{region.Name}'" : "the conductors";
+            }
+        }
+        catch (Exception x) when (x is FieldReadException or IOException or UnauthorizedAccessException or ArgumentException)
+        { return JsonRun.Fail(CliDiagnostics.RenderFieldUnreadable(plot.Name, x.Message)); }
+
+        // every combination of the planes the view reflects a temperature across; the edges of an All Faces plot follow it
+        var sets = new List<(int, double)[]>();
+        for (int mask = 1; mask < 1 << mirrors.Count; mask++) sets.Add([.. mirrors.Where((_, i) => (mask & (1 << i)) != 0)]);
+        var boundaries = q.IsTemperature && e is not null && run is not null
+            ? Em3dSectionThermal.BoundaryLabels(run, e, found.Table, item.Solution.Index) : [];
+        var legend = req.NoLegend ? [] : FieldPlotResolver.LegendLines(plot.Name, q, scale, item.Label, phaseDeg, loopSeconds: null,
+            fixedAcrossSweep: q.IsTemperature && plot.FixRange && item.Run.Solutions.Count > 1, stepLabel: item.Label, hotSpot: hotSpot);
+        var caption = Em3dSurfaceField.Caption(q.IsTemperature, q.Symbol, target, look, setupName, item.Label, mirrors.Count,
+                                               wires.Select(w => w.Wire).Distinct().Count(), boundaries, refused);
+        var (layer, pageScene) = Em3dSurfaceField.Build(scene, problem, look, surfaces, nudges, objects, covered, q, scale, phaseDeg * Math.PI / 180,
+            legend, caption, plot.On == C3dFieldPlotOn.Surfaces ? sets : null, hotAt);
+
+        RenderFieldJson Report(Em3dFieldLayer l) => new(
+            plot.Name, setupName, FieldPlotResolver.Request(plot, setupName, run, null, run).Solver, SolutionJson(plot.Solution), item.Label,
+            q.Array.Name, q.Mode.ToString(), plot.On.ToString(), l.Triangles, l.TrianglesDrawn,
+            new RenderFieldRangeJson(scale.Lo, scale.Hi, scale.Unit, scale.Db, scale.Percentile), stale, runDir, q.Animated ? phaseDeg : null)
+        {
+            Wires = q.IsTemperature ? [.. wires.Select(w => new RenderFieldWireJson(w.Wire, w.Surface.TriangleCount,
+                                          w.Surface.Values.Where(double.IsFinite).DefaultIfEmpty(double.NaN).Min(),
+                                          w.Surface.Values.Where(double.IsFinite).DefaultIfEmpty(double.NaN).Max(), []))] : null,
+            Boundaries = q.IsTemperature ? boundaries : null,
+            Mirrored = q.IsTemperature ? mirrors.Count : null,
+            HotSpot = hotSpot.Length > 0 ? hotSpot : null,
+        };
+        string Line(Em3dFieldLayer l)
+        {
+            string G(double x) => x.ToString("G4", CultureInfo.InvariantCulture);
+            string unit = scale.Db ? $"dB{(scale.Unit.Length > 0 ? " re 1 " + scale.Unit : "")}" : scale.Unit;
+            return $"{plot.Name}: {q.Symbol} at {item.Label}, {l.Triangles:N0} triangles on {target}, {look.Name}" +
+                   $", {G(scale.Lo)} … {G(scale.Hi)}{(unit.Length > 0 ? " " + unit : "")}" +
+                   (q.Animated ? $", φ = {phaseDeg.ToString("0.##", CultureInfo.InvariantCulture)}°" : "") +
+                   (mirrors.Count > 0 ? $", mirrored across {mirrors.Count} plane(s)" : "") +
+                   (wires.Count > 0 ? $", {wires.Select(w => w.Wire).Distinct().Count()} wire(s) from their T(s)" : "") +
+                   (stale ? " (the model has changed since this run)" : "");
+        }
+        return RenderEm3d.Picture(path, req, loaded, view, (_ => layer, Report, Line), pageScene);
+    }
+
     // ── shared ───────────────────────────────────────────────────────────────
 
     /// <summary>
@@ -254,14 +428,55 @@ internal static class RenderEm3dField
         { return "The fields could not be read: " + e.Message; }
     }
 
-    /// <summary>Why <c>--field</c> will not draw <paramref name="plot"/> yet (owner decision Q1), or null. A clip-plane
-    /// temperature is drawn (brief-em3d-88).</summary>
-    private static CircuitRF.Diagnostics.Diagnostic? NotHeadless(C3dFieldPlot plot)
+    /// <summary>What a Surfaces or Faces plot is drawn on, as its refusals say it.</summary>
+    private static string OnText(C3dFieldPlot plot) => plot.On switch
     {
-        if (plot.On == C3dFieldPlotOn.Surfaces) return CliDiagnostics.RenderFieldNotHeadless(plot.Name, plot.IsTemperature ? "every exposed face" : "surfaces");
-        if (plot.On == C3dFieldPlotOn.Faces) return CliDiagnostics.RenderFieldNotHeadless(plot.Name, $"{plot.Faces.Count} face{(plot.Faces.Count == 1 ? "" : "s")}");
-        return null;
+        C3dFieldPlotOn.Surfaces => plot.IsTemperature ? "every exposed face" : "surfaces",
+        _ => $"{plot.Faces.Count} face{(plot.Faces.Count == 1 ? "" : "s")}",
+    };
+
+    /// <summary>What <c>--list-fields</c> says a plot needs besides <c>--field</c>, or null for a ClipPlane plot (its own section).</summary>
+    private static string? Needs(C3dFieldPlot plot) => plot.On == C3dFieldPlotOn.ClipPlane ? null
+        : "a direction (--iso or --view-dir) and a .png" +
+          (plot.On == C3dFieldPlotOn.Surfaces && !plot.IsTemperature ? ", and --region <object> for a volume quantity" : "");
+
+    /// <summary>
+    /// brief-em3d-89 — the direction a surface plot is seen along: <c>--iso</c> (the 3D view's Standard Views ▸ Isometric), a
+    /// standard view by name, or <c>x,y,z</c> — the direction from the model toward the viewer, at the 3D view's camera angles
+    /// (so <c>0,0,1</c> is exactly Top). The name is what the caption says.
+    /// </summary>
+    internal static (Em3dProjection View, int? Refusal) Direction(string? text, bool iso)
+    {
+        if (iso || string.Equals(text, "isometric", StringComparison.OrdinalIgnoreCase))
+            return (Em3dProjection.Standard(Em3dStandardView.Isometric) with { Name = "isometric, from +x −y +z" }, null);
+        string t = text!.Trim().ToLowerInvariant();
+        (Em3dStandardView, string)? named = t switch
+        {
+            "top" => (Em3dStandardView.Top, "from the top (+z)"),
+            "bottom" => (Em3dStandardView.Bottom, "from the bottom (−z)"),
+            "front" => (Em3dStandardView.Front, "from the front (−y)"),
+            "back" => (Em3dStandardView.Back, "from the back (+y)"),
+            "left" => (Em3dStandardView.Left, "from the left (−x)"),
+            "right" => (Em3dStandardView.Right, "from the right (+x)"),
+            _ => null,
+        };
+        if (named is var (sv, name)) return (Em3dProjection.Standard(sv) with { Name = name }, null);
+        var parts = t.Split(',', StringSplitOptions.TrimEntries);
+        var v = new double[3];
+        if (parts.Length != 3 || !parts.Select((x, i) => double.TryParse(x, NumberStyles.Float, CultureInfo.InvariantCulture, out v[i]) && double.IsFinite(v[i])).All(ok => ok))
+            return (default, JsonRun.Fail(CliDiagnostics.RenderFieldViewDirMalformed(text)));
+        double len = Math.Sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+        if (!(len > 0)) return (default, JsonRun.Fail(CliDiagnostics.RenderFieldViewDirMalformed(text)));
+        double x = v[0] / len, y = v[1] / len, z = v[2] / len;
+        // straight up or down, the yaw Top and Bottom are at: the picture's up is +y, as Standard Views ▸ Top shows it
+        double yaw = Math.Abs(z) > 1 - 1e-12 ? -Math.PI / 2 : Math.Atan2(y, x);
+        string G(double d) => d.ToString("G4", CultureInfo.InvariantCulture).Replace('-', '−');
+        return (Em3dProjection.FromYawPitch(yaw, Math.Asin(Math.Clamp(z, -1, 1)), $"from ({G(v[0])}, {G(v[1])}, {G(v[2])})"), null);
     }
+
+    /// <summary>A view along an axis: the picture has one scale, so a scale bar measures it.</summary>
+    private static bool AxisAligned(Em3dProjection p)
+        => new[] { p.Toward.X, p.Toward.Y, p.Toward.Z }.Count(c => Math.Abs(c) > 1e-9) == 1;
 
     /// <summary>A ClipPlane plot's own section: its axis at its offset, world metres.</summary>
     private static Em3dView OwnView(C3dFieldPlot plot, C3dDocument doc)

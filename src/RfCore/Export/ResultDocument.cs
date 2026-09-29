@@ -1859,7 +1859,13 @@ namespace RfCore.Export
         IReadOnlyList<string> Objects,
         IReadOnlyList<int> Ports,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        RenderFieldJson? Field = null);
+        RenderFieldJson? Field = null)
+    {
+        /// <summary>brief-em3d-89 — a projection's direction: the unit vector from the model toward the viewer; absent for a
+        /// section or the isometric outline.</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public IReadOnlyList<double>? Toward { get; init; }
+    }
 
     /// <summary>
     /// brief-em3d-84 R-em3d84-4 — the field plot a section was drawn with: which plot, which run it read (the walk a caller
@@ -1898,6 +1904,15 @@ namespace RfCore.Export
         /// <summary>brief-em3d-88 — a temperature's thermal boundaries, each as the page labels it; absent for an EM field.</summary>
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public IReadOnlyList<string>? Boundaries { get; init; }
+
+        /// <summary>brief-em3d-89 — a Surfaces or Faces plot's reflections: how many symmetry planes the modelled part was
+        /// mirrored across (0 when it was drawn alone); absent for a section.</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public int? Mirrored { get; init; }
+
+        /// <summary>brief-em3d-89 — a temperature surface plot's hottest point, as the legend says it; absent otherwise.</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? HotSpot { get; init; }
     }
 
     /// <summary>

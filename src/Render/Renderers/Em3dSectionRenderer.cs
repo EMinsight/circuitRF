@@ -61,7 +61,7 @@ public sealed record Em3dPageLayout(
                                     (float)(Area.MidY - (q.V - CentreV) * Scale));
 }
 
-public static class Em3dSectionRenderer
+public static partial class Em3dSectionRenderer
 {
     /// <summary>The page layout for <paramref name="scene"/> on a <paramref name="width"/> ×
     /// <paramref name="height"/> page: a legend column on the right, a three-line caption below, a
@@ -184,6 +184,8 @@ public static class Em3dSectionRenderer
 
     private static void DrawPage(SKCanvas canvas, int width, int height, Em3dScene scene, Em3dRenderStyle style, Em3dFieldLayer? field)
     {
+        // brief-em3d-89 — a Surfaces or Faces plot is a picture of surfaces in depth, not a section: its own page
+        if (field?.Surface is not null) { DrawSurfacePage(canvas, width, height, scene, style, field); return; }
 
         var st   = StackupRenderTheme.FromTheme(style.Theme, style.Variant);
         var port = Sk(style.Theme.Resolve(ColorRole.LayoutPCellPin, style.Variant));

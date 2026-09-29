@@ -167,7 +167,7 @@ public static class Em3dSectionThermal
         var marks = new List<Em3dBoundaryMark>();
         foreach (var b in setup.Thermal?.Boundaries ?? [])
         {
-            string label = $"{(b.Face == C3dThermal.ExposedFaces ? "every exposed face" : b.Face)}: {What(b, e, table, point)}";
+            string label = Label(b, e, table, point);
             var segments = new List<(Uv, Uv)>();
             if (b.Face != C3dThermal.ExposedFaces && e.Ok &&
                 ThermalLowerings.FacePieces(doc, e, e.Solids, b.Face, out _, out _) is { } pieces)
@@ -191,7 +191,19 @@ public static class Em3dSectionThermal
         return lines;
     }
 
+    /// <summary>brief-em3d-89 — every thermal boundary of <paramref name="setup"/> as a section labels it, for a picture with no
+    /// plane to place them on.</summary>
+    public static List<string> BoundaryLabels(EmSetup setup, C3dElaboration e, ThermalResultTable? table, int point)
+        => [.. (setup.Thermal?.Boundaries ?? []).Select(b => Label(b, e, table, point))];
+
+    /// <summary>The boundaries' caption line: each one's label, then what every other face is.</summary>
+    public static string BoundariesLine(IReadOnlyList<string> labels)
+        => "Boundaries: " + string.Join("  ·  ", labels.Append(labels.Count == 0 ? "every face insulated" : "every other face insulated"));
+
     // ── helpers ──────────────────────────────────────────────────────────────────────────────────
+
+    private static string Label(CemThermalBoundary b, C3dElaboration e, ThermalResultTable? table, int point)
+        => $"{(b.Face == C3dThermal.ExposedFaces ? "every exposed face" : b.Face)}: {What(b, e, table, point)}";
 
     /// <summary>What a boundary does, its values at the point: <c>85 °C</c>, <c>convection, h = 10 W/(m²·K) to 25 °C</c>.</summary>
     private static string What(CemThermalBoundary b, C3dElaboration e, ThermalResultTable? table, int point)

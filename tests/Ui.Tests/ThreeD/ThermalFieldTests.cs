@@ -123,10 +123,10 @@ public sealed class ThermalFieldTests : IDisposable
     [Fact]
     public void FaceMatchTolerance_StaysInsideAThinLayer()
     {
-        double tol = CircuitRF.Ui.Viewer3D.Viewer3DViewModel.FaceMatchTolerance(Vector3.Zero, new Vector3(3e-3f, 3e-3f, 25e-6f));
+        double tol = FieldSurfacePlot.FaceMatchTolerance(Vector3.Zero, new Vector3(3e-3f, 3e-3f, 25e-6f));
         Assert.True(tol < 25e-6, $"tolerance {tol} m reaches the opposite face");
         // a chunky solid keeps 1 % of its diagonal
-        Assert.Equal(0.01 * new Vector3(1e-3f).Length(), CircuitRF.Ui.Viewer3D.Viewer3DViewModel.FaceMatchTolerance(Vector3.Zero, new Vector3(1e-3f)), 1e-12);
+        Assert.Equal(0.01 * new Vector3(1e-3f).Length(), FieldSurfacePlot.FaceMatchTolerance(Vector3.Zero, new Vector3(1e-3f)), 1e-12);
     }
 
     /// <summary>Temperature Along whose end lies outside every solid says so (ΔT is not a number), rather than quoting the

@@ -6,7 +6,8 @@ sections only) and brief 88 (a temperature section).
 `Em3dSectionField`), `src/Render/Scene3D/Fields/` (`FieldSurfaces`, `FieldFaces`, `FieldPlotResolver`), `docs/design/cli.md`
 §13.8.1, `docs/user/src/reference/cli.md`, `tests/Ui.Tests/Render/`
 **Depends on:** 84, 88 · **Blocks:** —
-**Status:** written as a stub on 2026-09-29, at the owner's request (brief 88 Q3), not yet scoped in detail.
+**Status:** written as a stub on 2026-09-29, at the owner's request (brief 88 Q3). **Built 2026-09-29** — owner answers:
+any direction; PNG only at first; mirrored halves drawn by default (`--no-mirror`). Findings in `src/Cli/RESOLVED.md`.
 
 ---
 

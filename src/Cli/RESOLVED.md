@@ -2840,3 +2840,35 @@ a file that leaves it out reads false. The page says to write it.
 - Gate: `tests/Ui.Tests/Render/TemperatureSectionTests.cs` — three routine gates (the wire pieces, the page in-process
   with its pixels and SVG text, the Surfaces and iso-bar refusals) and one `Category=Benchmark` process gate that solves
   `RfHarmonics` (~25 s) and checks the range against the field file's own slice and a crossing's pixel against its T(s).
+
+
+## `render --field` draws a Surfaces or Faces plot (brief-em3d-89, 2026-09-29)
+
+- **Owner decisions**: any direction (`--iso`, `--view-dir <standard view>`, `--view-dir x,y,z`); PNG only at first; a
+  temperature's mirrored halves drawn by default, as the 3D view draws them (`--no-mirror` for the modelled half).
+- **What is drawn moved below the firewall, not into `src/Cli`.** `FieldSurfacePlot` (`src/Render/Scene3D/Fields`) is the 3D
+  view's temperature builder (All Faces, picked faces, the mirror, the wires, the range) and its EM builder (the selected
+  region, the conductors, picked faces), lifted out of `Viewer3DViewModel.Temperature.cs`/`.Fields.cs` unchanged, plus
+  `EmScale` — the view's percentile range for an EM field on surfaces — so Gate 7's "no `FieldColorScale.` in `src/Cli`"
+  holds. `TemperatureFace` moved with it. Gate 7 now also fails any `src/Ui` file that calls `FieldSurfaces.Exterior/
+  RegionBoundary/Boundary` or `new FieldFacePainter` itself.
+- **A software depth buffer, not a painter's sort** (`Em3dSurfaceField`): a bond-wire package interlocks. Supersampled up
+  to 3 × 3 within 8 M samples; the field is read per SAMPLE (channels interpolated, then quantity → range → map), the
+  GPU's order. *Eight Fingers* All Faces (98,000 field triangles, mirrored) draws in about 1 s in Debug.
+- **Two artefacts a depth buffer makes that the window does not show**, both fixed: a translucent face lying ON an opaque
+  one (the mould's bottom on the flange) tied depth sample by sample and tinted in stripes — a translucent face within a
+  sample plus the nudge of the opaque one now counts as in front; and a mirrored part drew its cut face's edges as a seam
+  across the symmetry plane — an edge with both ends on an active mirror plane is left out.
+- **Edges are drawn, though the window draws none**: an unshaded field on a closed package is otherwise a flat blob. They
+  are the outline's own feature edges (`Em3dSectionScene.FeatureEdges`), kept where the depth buffer does not hide them.
+- **`--iso` on a surface plot is the 3D view's Standard Views ▸ Isometric, from +x −y +z** — not `render --iso`'s outline
+  direction (+x +y +z). That outline is also mirror-imaged: its `Looking` axes give right × up = −toward, which is why its
+  axis indicator had to be spelled by hand. Left alone (its bytes are compared by tests and figures).
+- **A volume quantity on Surfaces takes `--region`**: the 3D view draws it on the region SELECTED in the tree, which no file
+  records. A Faces plot naming a face the model no longer has draws without it, as the view does, and says so
+  (`render.field.faces-missing`, a warning).
+- `render.field.not-headless` is retired: no plot kind is refused as such any more.
+- **Still failing, not mine:** `CliStructuredOutputTests.DiagnosticIds_AreTheCommittedSet_UniqueAndCaseDistinct` (the
+  `check.c3d.*` ids from `9a058c91`); the new `render.field.*` ids are in its list.
+- Gate: `tests/Ui.Tests/Render/SurfaceFieldRenderTests.cs` (a synthetic thermal block: depth, mirror, range, a Faces plot)
+  and `FieldRenderCliTests` gates 6, 7 and 11 (the refusals, the scans, a Surfaces |E| plot of the committed cavity).

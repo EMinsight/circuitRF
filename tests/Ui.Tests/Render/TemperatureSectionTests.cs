@@ -6,7 +6,7 @@
 //       read back on a wire 50 K or more hotter than the mould around it (in-process page, and the process run)
 //    3  a conductor in a temperature section is not filled with its material colour; an EM section's still is
 //    4  a thermal page draws no port and no PEC/absorbing label, and no air-box caption
-//    5  a Surfaces temperature plot is still refused, with today's sentence
+//    5  a Surfaces temperature plot asks which way to look (brief-em3d-89 draws it: SurfaceFieldRenderTests)
 //
 // Gate 1 solves the Output Wires example's RfHarmonics setup (~25 s in Debug, Gmsh required), so it is tagged Benchmark; the
 // rest draw a synthetic page in-process or ask the committed Eight Fingers plot, and run in the routine gate.
@@ -123,17 +123,17 @@ public sealed class TemperatureSectionTests(ITestOutputHelper output) : IDisposa
         Assert.Matches(@">\s*(1|2|5)0* µm\s*</text>", svg);
     }
 
-    // ── 5. still refused ────────────────────────────────────────────────────────────────────
+    // ── 5. a direction ──────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Gate5_ASurfacesTemperaturePlot_IsStillRefused_AndAnIsometricScaleBarIsRefused()
+    public void Gate5_ASurfacesTemperaturePlot_AsksForADirection_AndAnIsometricScaleBarIsRefused()
     {
         string c3d = Path.Combine(PalaceBackendTests.RepoRoot(), "examples", "Thermal Channel vs Surface", "Eight Fingers", "3d", "Eight Fingers.c3d");
         string png = Path.Combine(_root, "never.png");
         var (exit, stdout, stderr) = Cli("render", c3d, "-o", png, "--field", "Surface", "--json");
         Assert.Equal(1, exit);
-        Assert.Contains("\"render.field.not-headless\"", stdout);
-        Assert.Contains("is drawn on every exposed face, and only a clip-plane plot is drawn headlessly yet", stderr);
+        Assert.Contains("\"render.field.direction-required\"", stdout);
+        Assert.Contains("is drawn on every exposed face, and the 3D view's camera is not saved with it", stderr);
         Assert.False(File.Exists(png));
 
         (exit, stdout, _) = Cli("render", c3d, "-o", png, "--iso", "--scale-bar", "--json");

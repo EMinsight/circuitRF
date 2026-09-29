@@ -263,9 +263,10 @@ setup's refusals and notes, the mesh, the field) are always shown.
   **Without a window**, a `.c3d`'s clip-plane plot is drawn as the section it cuts:
   `circuitrf render cavity.c3d -o cut.png --field Field1` (add `--phase 90` for an instantaneous
   quantity), and `circuitrf render cavity.c3d --list-fields` lists the plots and whether each one's data
-  is there. It reads the same run, solution and range the 3D view does, and refuses a plot whose data is
-  missing with the same sentence. Surfaces, faces and temperature plots are not drawn this way yet: use
-  *Export picture* for those. See [`render`](cli.md#render).
+  is there. A surfaces or faces plot is drawn from a direction you name, since the window's camera is not
+  saved with it: `--iso`, or `--view-dir top` (`front`, `right` … or `x,y,z`), as a `.png`. It reads the
+  same run, solution and range the 3D view does, and refuses a plot whose data is missing with the same
+  sentence. See [`render`](cli.md#render-field).
 - **One face.** In the 3D editor, right-click a face, *Plot Field*, to add that face to the plot being drawn
   when it is a faces plot — the top of one trace, one face of a substrate — or to start a new faces plot with
   it; again to take it off, and several faces accumulate. A conductor has no inside to read, so its face

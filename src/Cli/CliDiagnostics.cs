@@ -2111,11 +2111,59 @@ internal static class CliDiagnostics
         "render: '{path}' has no field plot named '{name}'. Its field plots: {plots}.",
         ("name", name), ("path", path), ("plots", plots));
 
-    /// <summary>Owner decision Q1 — sections ship first: a Surfaces or Faces plot needs a depth-ordered picture.</summary>
-    public static Diagnostic RenderFieldNotHeadless(string name, string on) => Diagnostic.Create(
-        "render.field.not-headless", DiagnosticSeverity.Error,
-        "render: field plot '{name}' is drawn on {on}, and only a clip-plane plot is drawn headlessly yet. Open the .c3d and "
-      + "use the 3D view's Export picture to get this one.", ("name", name), ("on", on));
+    // ── brief-em3d-89: a Surfaces or Faces plot ──────────────────────────────────────────────
+
+    /// <summary>The 3D view's camera is not saved with a plot: a picture of surfaces needs a stated direction.</summary>
+    public static Diagnostic RenderFieldDirectionRequired(string name, string on) => Diagnostic.Create(
+        "render.field.direction-required", DiagnosticSeverity.Error,
+        "render: field plot '{name}' is drawn on {on}, and the 3D view's camera is not saved with it. Say which way to look: --iso, "
+      + "--view-dir top|bottom|front|back|left|right, or --view-dir x,y,z (the direction from the model toward the viewer).",
+        ("name", name), ("on", on));
+
+    /// <summary>A Surfaces or Faces plot lies on no plane, so a section of it is a different picture.</summary>
+    public static Diagnostic RenderFieldNotASection(string name, string on, string asked) => Diagnostic.Create(
+        "render.field.not-a-section", DiagnosticSeverity.Error,
+        "render: field plot '{name}' is drawn on {on}, not on a plane, and {asked} asks for a section. Look at it with --iso or "
+      + "--view-dir, or draw a ClipPlane plot for a section.", ("name", name), ("on", on), ("asked", asked));
+
+    public static Diagnostic RenderFieldViewDirMalformed(string text) => Diagnostic.Create(
+        "render.field.view-dir-malformed", DiagnosticSeverity.Error,
+        "render: --view-dir '{text}' is not a direction. Write top, bottom, front, back, left, right or isometric, or three numbers "
+      + "x,y,z — the direction from the model toward the viewer, for example 1,-1,1.", ("text", text));
+
+    /// <summary>Owner decision Q2 — PNG first: the hidden surfaces are removed by a depth buffer, which is pixels.</summary>
+    public static Diagnostic RenderFieldSurfacePngOnly(string name, string on, string format) => Diagnostic.Create(
+        "render.field.surface-png-only", DiagnosticSeverity.Error,
+        "render: field plot '{name}' is drawn on {on}, and its hidden surfaces are removed by a depth buffer, which is a picture in "
+      + "pixels: write a .png. A {format} page of a surface plot is not drawn yet.", ("name", name), ("on", on), ("format", format));
+
+    /// <summary>A volume quantity on Surfaces is drawn on the region SELECTED in the 3D view's tree — selection is not saved.</summary>
+    public static Diagnostic RenderFieldRegionRequired(string name, string quantity, string regions) => Diagnostic.Create(
+        "render.field.region-required", DiagnosticSeverity.Error,
+        "render: field plot '{name}' draws {quantity} on the boundary of the region selected in the 3D view's tree, and nothing "
+      + "is selected headlessly. Name one with --region: {regions}.", ("name", name), ("quantity", quantity), ("regions", regions));
+
+    public static Diagnostic RenderFieldRegionUnknown(string region, string regions) => Diagnostic.Create(
+        "render.field.region-unknown", DiagnosticSeverity.Error,
+        "render: --region '{region}' is not a dielectric, air or body of this 3D view. Its regions: {regions}.",
+        ("region", region), ("regions", regions));
+
+    /// <summary>An option that describes nothing of this plot's picture, named rather than ignored.</summary>
+    public static Diagnostic RenderFieldOptionNotApplicable(string option, string name, string why) => Diagnostic.Create(
+        "render.field.option-not-applicable", DiagnosticSeverity.Error,
+        "render: {option} has nothing to apply to in field plot '{name}': {why}", ("option", option), ("name", name), ("why", why));
+
+    /// <summary>A face a Faces plot names that the model no longer has: left out, as the 3D view leaves it out, and said.</summary>
+    public static Diagnostic RenderFieldFacesMissing(string name, string faces) => Diagnostic.Create(
+        "render.field.faces-missing", DiagnosticSeverity.Warning,
+        "field plot '{name}' names {faces}, which this 3D view does not have; the picture leaves them out, as the 3D view does.",
+        ("name", name), ("faces", faces));
+
+    /// <summary>An oblique projection shortens each axis differently: no one bar measures it (the isometric outline's rule).</summary>
+    public static Diagnostic RenderFieldScaleBarOblique(string view) => Diagnostic.Create(
+        "render.field.scale-bar-oblique", DiagnosticSeverity.Error,
+        "render: --scale-bar measures a picture with one scale, and a view {view} shortens each axis differently. Look along an "
+      + "axis (--view-dir top, front, right …) for a bar, or use --axes alone.", ("view", view));
 
     /// <summary>A boundary quantity (J_s) lives on the conductors: a plane through the volume holds none of it.</summary>
     public static Diagnostic RenderFieldOnBoundary(string name, string quantity) => Diagnostic.Create(

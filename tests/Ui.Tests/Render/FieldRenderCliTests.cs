@@ -12,6 +12,8 @@
 //    8  --list-fields lists every plot, a missing one with its sentence, and exits 0
 //    9  --phase draws the instant asked for, and the legend says which
 //   10  a thinned vector slice draws fewer pieces covering the same area; --no-thin and PNG draw every triangle
+//   11  brief-em3d-89 — a Surfaces plot of |E| on the cavity's region, seen from the front, draws that region's boundary with
+//       the view's range, and a pixel on the front wall reads the field there
 
 using System.Diagnostics;
 using System.Reflection;
@@ -190,7 +192,16 @@ public sealed class FieldRenderCliTests(ITestOutputHelper output) : IDisposable
         [
             ("render.field.unknown",             ["render", c3d, "-o", png, "--field", "Field9"]),
             ("render.field.view-disagrees",      ["render", c3d, "-o", png, "--field", "Field1", "--section", "z=5mm"]),
-            ("render.field.not-headless",        ["render", c3d, "-o", png, "--field", "Surf"]),
+            // brief-em3d-89 — a Surfaces plot draws, and asks for what the 3D view has and a file does not
+            ("render.field.direction-required",  ["render", c3d, "-o", png, "--field", "Surf"]),
+            ("render.field.not-a-section",       ["render", c3d, "-o", png, "--field", "Surf", "--section", "z=5mm"]),
+            ("render.field.view-disagrees",      ["render", c3d, "-o", png, "--field", "Field1", "--view-dir", "top"]),
+            ("render.field.view-dir-malformed",  ["render", c3d, "-o", png, "--field", "Surf", "--view-dir", "up"]),
+            ("render.field.surface-png-only",    ["render", c3d, "-o", Path.Combine(_root, "never.svg"), "--field", "Surf", "--iso"]),
+            ("render.field.region-required",     ["render", c3d, "-o", png, "--field", "Surf", "--iso"]),
+            ("render.field.region-unknown",      ["render", c3d, "-o", png, "--field", "Surf", "--iso", "--region", "lid"]),
+            ("render.field.scale-bar-oblique",   ["render", c3d, "-o", png, "--field", "Surf", "--iso", "--scale-bar"]),
+            ("render.field.option-not-applicable", ["render", c3d, "-o", png, "--field", "Surf", "--iso", "--region", "cavity", "--no-mirror"]),
             ("render.field.phase-not-animated",  ["render", c3d, "-o", png, "--field", "Field1", "--phase", "90"]),
             ("render.field.not-3d-view",         ["render", clay, "-o", png, "--field", "Field1"]),
             ("render.field.on-cem",              ["render", cem, "-o", png, "--field", "Field1"]),
@@ -203,6 +214,7 @@ public sealed class FieldRenderCliTests(ITestOutputHelper output) : IDisposable
             Assert.Matches($"\"id\":\\s*\"{Regex.Escape(id)}\"", stdout);
             Assert.False(File.Exists(png), id + " wrote a file");
         }
+        Assert.False(File.Exists(Path.Combine(_root, "never.svg")));
         Assert.Contains("Its field plots: Field1, Surf.", Cli("render", c3d, "-o", png, "--field", "Field9").StdErr);
     }
 
@@ -218,6 +230,9 @@ public sealed class FieldRenderCliTests(ITestOutputHelper output) : IDisposable
             foreach (string name in (string[])["SolutionKey", "PickSolution", "PlotProblem", "RunDirectories"])
                 Assert.False(Regex.IsMatch(code, $@"\b(static|public|private|internal)\b[^;={{}}()]*\b{name}\s*\("),
                              $"{Path.GetRelativePath(repo, f)} defines {name}");
+            // brief-em3d-89 — what a Surfaces or Faces plot draws is built by FieldSurfacePlot alone, for the window and `render`
+            foreach (string call in (string[])["FieldSurfaces.Exterior(", "FieldSurfaces.RegionBoundary(", "FieldSurfaces.Boundary(", "new FieldFacePainter("])
+                Assert.False(code.Contains(call, StringComparison.Ordinal), $"{Path.GetRelativePath(repo, f)} builds a field surface itself: {call}");
         }
         foreach (string f in Directory.EnumerateFiles(Path.Combine(repo, "src", "Cli"), "*.cs", SearchOption.AllDirectories))
         {
@@ -225,6 +240,8 @@ public sealed class FieldRenderCliTests(ITestOutputHelper output) : IDisposable
             Assert.DoesNotContain("FieldSlicer", code);
             Assert.DoesNotContain("FieldColorScale.", code);
             Assert.DoesNotContain("FieldMeshTets", code);
+            Assert.DoesNotContain("FieldSurfaces.", code);
+            Assert.DoesNotContain("FieldFacePainter", code);
         }
     }
 
@@ -308,6 +325,45 @@ public sealed class FieldRenderCliTests(ITestOutputHelper output) : IDisposable
             tris += Math.Abs(Em3dSectionField.SignedArea([layer.Vertices[3 * k], layer.Vertices[3 * k + 1], layer.Vertices[3 * k + 2]]));
         output.WriteLine($"area: pieces {pieces:G12} m², triangles {tris:G12} m², {layer.Pieces.Count} pieces");
         Assert.True(Math.Abs(pieces - tris) <= 1e-9 * tris, $"pieces cover {pieces}, the triangles {tris}");
+    }
+
+    // ── 11. a Surfaces plot (brief-em3d-89) ─────────────────────────────────────────────────
+
+    [Fact]
+    public void Gate11_ASurfacesPlot_FromTheFront_DrawsTheRegionsBoundaryWithTheViewsRange_AndAWallPixelReadsTheField()
+    {
+        var surf = MidZ("Surf");
+        surf.On = C3dFieldPlotOn.Surfaces;
+        string c3d = Workspace(Eigenmode(), [surf]);
+        Run(c3d);
+        string png = Path.Combine(_root, "front.png");
+        var root = JsonDocument.Parse(RenderJson(c3d, png, "--field", "Surf", "--view-dir", "front", "--region", "cavity", "--no-legend"))
+                               .RootElement.GetProperty("result").GetProperty("render");
+        var field = root.GetProperty("em3d").GetProperty("field");
+        Assert.Equal("projection", root.GetProperty("em3d").GetProperty("view").GetString());
+
+        // the region's boundary and its range, as FieldSurfacePlot builds them for the 3D view
+        var run = FieldRun.OpenPalace(Cavity, GmshGeoWriter.LengthUnitM)!;
+        var step = FieldStep.Open(run.Solutions[0].VolumePvtu!, run.ToMetres);
+        var q = FieldQuantity.Offered(step.Arrays, []).First(x => x.Array.Name == "E" && x.Mode == FieldMode.Peak);
+        var region = FieldGroups.Read(Cavity).Where(g => g.Name == "cavity" && g.Dimension == 3).Select(g => g.Attribute).ToHashSet();
+        var boundary = FieldSurfaces.RegionBoundary(step.Mesh, step.Load("E")!, region, (A / 2, B / 2, D / 2));
+        var scale = FieldColorScale.Auto(q, [boundary], false, 99);
+        output.WriteLine($"CLI {field.GetProperty("triangles").GetInt32()} triangles, {field.GetProperty("range").GetProperty("lo").GetDouble():G6} … " +
+                         $"{field.GetProperty("range").GetProperty("hi").GetDouble():G6}; the region's boundary {boundary.TriangleCount}, {scale.Lo:G6} … {scale.Hi:G6}");
+        Assert.Equal(boundary.TriangleCount, field.GetProperty("triangles").GetInt32());
+        Assert.Equal(scale.Lo, field.GetProperty("range").GetProperty("lo").GetDouble(), 1e-9 * scale.Hi);
+        Assert.Equal(scale.Hi, field.GetProperty("range").GetProperty("hi").GetDouble(), 1e-9 * scale.Hi);
+
+        // from the front the picture is (x, z), framed on the box: the y = 0 wall's centre reads |E| there (normal to it, at its peak)
+        var frame = new Em3dScene(new Em3dView(Em3dViewKind.Projection, 0), 0, 0, [], [], [], [], new Uv(0, 0), new Uv(A, D), [], []);
+        var page = Em3dSectionRenderer.Layout(W, H, frame, Margin);
+        using var bmp = SKBitmap.Decode(png);
+        var p = page.Map(new Uv(A / 2, D / 2));
+        double got = scale.Lo + Invert(ColorMap3D.Viridis, bmp.GetPixel((int)p.X, (int)p.Y)) * (scale.Hi - scale.Lo);
+        double want = Math.Min(Sample(q, A / 2, 1e-6, D / 2, 0), scale.Hi);
+        output.WriteLine($"front wall's centre: pixel {got:G5}, the field {want:G5}");
+        Assert.True(Math.Abs(got - want) <= 0.03 * scale.Hi, $"read {got}, the field is {want}");
     }
 
     // ── the fixture ─────────────────────────────────────────────────────────────────────────

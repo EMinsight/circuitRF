@@ -55,8 +55,11 @@ public sealed class Em3dFieldLayer
     /// <summary>brief-em3d-88 — a temperature's page: the wires, the thermal boundaries and the caption; null for an EM field.</summary>
     public Em3dThermalPage? Thermal { get; init; }
 
-    /// <summary>The slice's triangles.</summary>
-    public int Triangles => Vertices.Length / 3;
+    /// <summary>brief-em3d-89 — a Surfaces or Faces plot: the surfaces seen along a direction, depth-buffered; null for a section.</summary>
+    public Em3dSurfaceLayer? Surface { get; init; }
+
+    /// <summary>The slice's triangles (a surface plot's field triangles).</summary>
+    public int Triangles => Surface?.Triangles ?? Vertices.Length / 3;
 
     /// <summary>What the picture drew them as: the triangles themselves, or fewer pieces when thinned.</summary>
     public int TrianglesDrawn => Raster ? Triangles : Pieces.Count;
