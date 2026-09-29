@@ -55,6 +55,8 @@ internal static class RenderEm3d
         public bool NoMirror { get; init; }
         /// <summary>Whether -o was typed (--list-fields takes none).</summary>
         public bool OutputStated { get; init; } = true;
+        /// <summary>brief-em3d-92 D5 — <c>name=percent</c> overrides of a .c3d's transparency, applied to the copy this run reads.</summary>
+        public IReadOnlyList<string> Transparency { get; init; } = [];
     }
 
     public static int Draw(string path, Request req)
@@ -67,6 +69,10 @@ internal static class RenderEm3d
                             : req.ViewDir is not null ? "--view-dir" : req.Region is not null ? "--region" : req.NoMirror ? "--no-mirror" : null;
         if (fieldOption is not null && DocumentKinds.Classify(Path.GetFullPath(path)) != DocumentKind.ThreeD)
             return JsonRun.Fail(CliDiagnostics.RenderFieldOnCem(fieldOption, path));
+        // brief-em3d-92 D5 — a .c3d's objects only, and every entry parsed and range-checked before the file is read.
+        if (req.Transparency.Count > 0 && DocumentKinds.Classify(Path.GetFullPath(path)) != DocumentKind.ThreeD)
+            return JsonRun.Fail(CliDiagnostics.RenderTransparencyNotA3dView(path, DocumentKinds.Name(DocumentKinds.Classify(Path.GetFullPath(path)))));
+        if (RenderTransparency.Parse(req.Transparency, out _) is { } badTransparency) return badTransparency;
         if (req.ListFields) return RenderEm3dField.List(path, req);
         if (req.Field is not null) return RenderEm3dField.Draw(path, req);
         if (fieldOption is not null) return JsonRun.Fail(CliDiagnostics.RenderFieldOptionNeedsField(fieldOption));
@@ -88,8 +94,10 @@ internal static class RenderEm3d
         if (req.ScaleBar && req.Iso) return JsonRun.Fail(CliDiagnostics.RenderEm3dScaleBarIso());
 
         Em3dSetupSource loaded;
-        try { loaded = Em3dSetupSource.Load(path); }
+        var overrides = new RenderTransparency(path, req.Transparency);
+        try { loaded = Em3dSetupSource.Load(path, overrides.Apply); }
         catch (Exception ex) { return JsonRun.Fail(CliDiagnostics.RenderDocumentUnreadable(path, ex.Message)); }
+        if (overrides.Refusal is { } unknown) return unknown;
 
         // R-em3d5-2a: a planar setup's picture is its layout, so the refusal names it.
         if (!loaded.Setup.Is3D)
@@ -137,6 +145,8 @@ internal static class RenderEm3d
             theme, req.Variant, req.Margin, req.Transparent)
         {
             Labels = req.Labels, Tight = req.Tight, Axes = req.Axes,
+            // brief-em3d-92 — each object's transparency, as the 3D view paints it (a section's fills; an outline fills nothing)
+            ObjectTransparency = loaded.Elaboration is { } elaborated ? CircuitRF.Render.Scene3D.Scene3DTransparency.MapOf(elaborated.Provenance) : null,
             // brief-em3d-88 — the bar is rounded and labelled in the document's display unit, as the 3D view's is
             ScaleBar = req.ScaleBar ? DisplayUnit(path) : null,
         };

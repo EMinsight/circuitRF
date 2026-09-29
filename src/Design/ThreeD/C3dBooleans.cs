@@ -145,12 +145,14 @@ public static partial class C3dBooleans
         var b = copies[blank];
         string name = b.Name;
         string? group = b.Group;
+        int? transparency = b.Transparency;
         b.Name = "";
-        // The result is in the Blank's group, as it takes the Blank's name; an operand is in none (C3dGroups).
-        foreach (var c in copies) c.Group = null;
+        // The result is in the Blank's group, as it takes the Blank's name; an operand is in none (C3dGroups). brief-em3d-92 —
+        // likewise its transparency: the result carries the Blank's, and an operand has none of its own.
+        foreach (var c in copies) (c.Group, c.Transparency) = (null, null);
         return new C3dBoolean
         {
-            Name = name, Group = group, Op = op, KeepTools = keepTools && op == C3dBooleanOp.Subtract,
+            Name = name, Group = group, Transparency = transparency, Op = op, KeepTools = keepTools && op == C3dBooleanOp.Subtract,
             Blank = b, Tools = [.. copies.Where((_, i) => i != blank)],
         };
     }
@@ -169,7 +171,7 @@ public static partial class C3dBooleans
             list.Add(c);
         }
         foreach (var t in b.Tools) list.Add(Carried(t, b));
-        foreach (var c in list) c.Group = b.Group;          // every operand comes out in the boolean's group
+        foreach (var c in list) (c.Group, c.Transparency) = (b.Group, b.Transparency);   // in the boolean's group, at its transparency
         return list;
     }
 

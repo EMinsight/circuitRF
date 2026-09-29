@@ -4437,3 +4437,41 @@ drawn, and was left for a decision.
 **An EM face boundary's tint and a thermal one are built by the same code** (`FaceTints` → one `Scene3DObject` each), so
 both follow the same rule; their rows differ only in name (`boundary:obj/face` is the EM row's own name, a thermal row is
 `thermal:obj/face` and its tint `boundary:thermal:obj/face`). `Scene3DBuilder.TintLabel` names either for B's readout.
+
+## brief-em3d-92 — per-object transparency: the draw order, the drawing's occluders, and what the iso does not show (2026-09-29)
+
+**The draw order was already back to front, and nothing was added to it.** `Scene3DFramePlan.Plan` collects every
+translucent batch (and an opaque one faded by selection), keys each on its object's CENTROID's view depth
+(`-dot(centroid − eye, forward)`, view depth rather than eye distance so an orthographic eye inside the scene still sorts
+right) and draws them farthest first, with depth test on and depth write off. So a conductor made see-through simply joins
+that list: `Scene3DBuilder` packs its alpha and sets `Translucent`, and the plan moves it from the opaque pass to the sorted
+one. A trace on a substrate sorts correctly from both sides (the trace's centroid is nearer from above, farther from below).
+**Artefacts that remain, since order-independent transparency was out of scope:** the sort is per OBJECT, so two
+translucent objects that interpenetrate, or a large one enclosing a small one (a see-through lid's centroid can be nearer
+than a die inside it from some angles), can draw in the wrong order; and one object's own triangles are not sorted, so a
+see-through solid's far faces blend over or under its near ones in index order. A translucent object writes no depth, so an
+object behind it is never cut away — it only blends in the wrong order in those cases.
+
+**Where the alpha comes from.** `Scene3DBuildOptions.Transparency` answers per elaborated name a `Scene3DTransparency`
+(the object's own percentage, null for its kind's, and the opacity its instances multiply on); `C3dTransparency.Alpha`
+turns that and the kind's alpha into one byte, rounded half away from zero (60 % is 102). It replaces the kind's alpha
+BEFORE the context, ghost and wireframe looks, which keep their own and win. `Scene3DObject.Transparency` keeps the pair,
+so the vector export (which has only the scene, not the elaboration) can paint and occlude from it.
+
+**Instance runs must be split by transparency.** An array element draws its prototype's VERTICES, colour and alpha
+included, and the editor's `InstancingFor` keyed a run on cell, view and rotation only — so two placements of one cell at
+different transparencies would have drawn the second in the first's alpha. The key now carries the instance's
+transparency.
+
+**The drawing's occluders: one decision, one place.** `Em3dDrawingExport.OutlineOptions` is the only reader of
+`Em3dDrawingRequest.TransparentObjectsOcclude`; false (the default) puts every object stating a transparency above 0 (or
+sitting in an instance that does) in `Em3dOutlineOptions.NonOccluding`, which the `Occluder` leaves out of its triangles.
+Its own edges are still drawn and still hidden by opaque things in front. A default-transparency dielectric still
+occludes, as before. An outline view has no fills at all, so "its fill painted over them" applies to sections only; there
+the fill takes the alpha (SVG `fill-opacity`, which Skia spells as the float it holds, `0.40000001`) and the edge stays
+opaque. The PDF stays vector: a translucent fill is an ExtGState alpha, not an image.
+
+**`render --iso` does not change with transparency, and that is not a bug here.** `Em3dSectionScene.Iso` is a wire-frame
+with no fills and no hidden-line removal, so there is nothing an alpha could act on. It is NOT the renderer Export Drawing
+uses (that is `Em3dSectionScene.Outline` + `Em3dDrawingSheet`); the brief assumed it was. A section, a field plot's context
+and a surfaces plot do honour it.

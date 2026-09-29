@@ -281,6 +281,7 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         _loading = true;
         try { Load(); }
         finally { _loading = false; }
+        EndStrayTransparencyPreview();
         OnPropertyChanged(nameof(Materials));
         OnPropertyChanged(nameof(LengthUnit));
     }
@@ -315,6 +316,7 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         ThermalFields.Clear();
         ClearFieldPlot();
         ClearRecords();
+        ClearTransparency();
         var viewer = editor.Viewer;
         var sel = viewer.Selection;
         // brief-em3d-67 R-em3d67-6b — a fillet's or chamfer's row: its own fields, not its object's.
@@ -361,7 +363,13 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         // 3D editor groups — a group selected whole is one thing here, however many objects it is.
         if (viewer.SelectMode == Scene3DSelectMode.Object && editor.SelectedGroupPath() is { } group) { LoadGroup(group); return; }
         // 3D editor round 4 — every element of one wire row selected (the tree selects them all) is that one wire.
-        if (sel.Count > 1 && !OneDocumentObject(sel)) { Heading = $"{sel.Count} selected"; return; }
+        if (sel.Count > 1 && !OneDocumentObject(sel))
+        {
+            Heading = $"{sel.Count} selected";
+            // brief-em3d-92 R-em3d92-2 — the one property a multi-selection edits here: every selected object and instance.
+            if (viewer.SelectMode == Scene3DSelectMode.Object) LoadSelectionTransparency(sel);
+            return;
+        }
         var item = sel[0];
         if (viewer.Scene.Object(item.Object) is not { } o) { Heading = "Nothing selected"; return; }
         Heading = viewer.Name(item);
@@ -403,13 +411,36 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
                 Rows.Add(new C3dPropertyRow("Its name there", p.ObjectName));
             }
             if (o.Material is { } m) Rows.Add(new C3dPropertyRow("Material", m));
-            Rows.Add(new C3dPropertyRow("Editing", "Read-only here: an instance's contents belong to its own cell."));
+            Rows.Add(new C3dPropertyRow("Editing", "Read-only here: an instance's contents belong to its own cell. Its Transparency is " +
+                                                   "the instance's, in this document: it multiplies onto each part's own."));
+            // brief-em3d-92 — the INSTANCE's transparency is this document's, so it is edited here.
+            if (InstanceIndex(inst) is >= 0 and var ii) LoadTransparency([], [ii], editor.Document.Instances[ii].Name);
             return;
         }
 
         int index = editor.EditableIndex(o);
         if (index < 0) return;
         LoadObject(index, inScene: true);
+    }
+
+    /// <summary>brief-em3d-92 — the index of the instance a part's instance path starts with (<c>U1[0,1,0]/U3</c> is U1's), or −1.</summary>
+    private int InstanceIndex(string instancePath)
+        => editor.Document.Instances.FindIndex(i => i.Name == instancePath.Split('/', '[')[0]);
+
+    /// <summary>brief-em3d-92 — a multi-selection's Transparency row: each selected document object, and each instance a selected
+    /// part belongs to.</summary>
+    private void LoadSelectionTransparency(IReadOnlyList<Scene3DItem> sel)
+    {
+        var objects = new List<int>();
+        var instances = new List<int>();
+        foreach (var item in sel)
+        {
+            if (editor.Viewer.Scene.Object(item.Object) is not { } o) continue;
+            if (editor.InstanceOf(o) is { } path) { if (InstanceIndex(path) is >= 0 and var ii) instances.Add(ii); continue; }
+            if (editor.EditableIndex(o) is >= 0 and var i && !C3dEditorViewModel.IsOperandIndex(i)) objects.Add(i);
+        }
+        int n = objects.Distinct().Count() + instances.Distinct().Count();
+        LoadTransparency(objects, instances, n == 1 ? "the selection" : $"{n} items");
     }
 
     private bool OneDocumentObject(IReadOnlyList<Scene3DItem> sel)
@@ -437,6 +468,8 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         else if (why is not null) Rows.Add(new C3dPropertyRow("Not simulated", why));
         ObjectIndex = index;
         IsEditable = true;
+        // brief-em3d-92 — an operand inside an operation has none of its own: the operation's is its result's.
+        if (!operand) LoadTransparency([index], [], obj.Name);
         NameText = editor.ObjectLabel(index);
         Material = C3dValidation.EffectiveMaterial(obj);
         Role = obj.Role?.ToString() ?? RoleFromMaterial;
@@ -486,6 +519,8 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         Role = roles.Count == 1 ? roles[0]?.ToString() ?? RoleFromMaterial : null;
         RolePlaceholder = roles.Count > 1 ? Various : "";
         Rows.Add(new C3dPropertyRow("Kind", "Group"));
+        // brief-em3d-92 R-em3d92-2 — one row for the whole group: every member at every depth, one undo entry.
+        LoadTransparency(members.Where(m => !m.Instance).Select(m => m.Index), members.Where(m => m.Instance).Select(m => m.Index), name);
         int objects = members.Count(m => !m.Instance), instances = members.Count - objects;
         var subgroups = C3dGroups.All(doc).Count(g => g.Parent == path);
         Rows.Add(new C3dPropertyRow("Holds", string.Join(", ", new[] { (objects, "object"), (instances, "instance"), (subgroups, "group") }

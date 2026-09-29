@@ -55,6 +55,12 @@ public static class C3dValidation
                     found.Add(C3dDiagnostics.UnknownMaterial(o.Name, material));
             }
 
+            // brief-em3d-92 — a transparency outside the range, and one stated where nothing can carry it.
+            if (o.Transparency is { } t && !C3dTransparency.InRange(t)) found.Add(C3dDiagnostics.TransparencyRange($"'{o.Name}'", t));
+            if (o is C3dPolyline { Transparency: not null }) found.Add(C3dDiagnostics.TransparencyOnPolyline(o.Name));
+            foreach (var operand in C3dOperands.SelfAndDescendants(o).Skip(1).Where(d => d.Transparency is not null))
+                found.Add(C3dDiagnostics.TransparencyOnOperand(o.Name, operand.Name));
+
             if (unresolved?.Contains(o.Name) == true) { Unread(o.Unread, $"'{o.Name}'", found); continue; }
             Geometry(o, o.Name, found);
             if (C3dOperands.IsKernel(o)) Operation(o, o.Name, isKnownMaterial, documentPath, found);
@@ -67,6 +73,7 @@ public static class C3dValidation
             if (string.IsNullOrWhiteSpace(i.CellRef)) found.Add(C3dDiagnostics.InstanceNoCell(i.Name));
             if (i.Array is { } a && unresolved?.Contains(i.Name) != true && (a.Counts.Count != 3 || a.Counts.Any(n => n < 1)))
                 found.Add(C3dDiagnostics.ArrayCounts(i.Name));
+            if (i.Transparency is { } t && !C3dTransparency.InRange(t)) found.Add(C3dDiagnostics.TransparencyRange($"The instance '{i.Name}'", t));
             Unread(i.Unread, $"The instance '{i.Name}'", found);
         }
 

@@ -64,6 +64,16 @@ public static class Viewer3DVectorExport
         return map;
     }
 
+    /// <summary>brief-em3d-92 — each object's transparency as the view draws it, for the vector export to paint and to leave
+    /// out of the occluders.</summary>
+    internal static IReadOnlyDictionary<string, Scene3DTransparency> Transparencies(Scene3DModel scene)
+    {
+        var map = new Dictionary<string, Scene3DTransparency>(StringComparer.Ordinal);
+        foreach (var o in scene.Objects)
+            if (o.Transparency is { } t) map.TryAdd(o.Name, t);
+        return map;
+    }
+
     /// <summary>The camera as a projection: its direction, and for a perspective camera its eye — so the picture has the
     /// view's own foreshortening, not an orthographic view along the same direction.</summary>
     internal static Em3dProjection CameraProjection(Viewer3DViewModel vm)
@@ -112,7 +122,7 @@ public static class Viewer3DVectorExport
             ScaleBar = vm.ShowScaleLegend && bar > 0 ? (bar, vm.FormatLength(bar)) : null,
         };
         return Em3dDrawingExport.Picture(problem, CameraProjection(vm), Colours(vm.Scene), theme, HiddenNames(vm), maxSide: MaxSide,
-                                         window: window, chrome: chrome);
+                                         window: window, chrome: chrome, transparency: Transparencies(vm.Scene));
     }
 
     public static MenuItem CopyItem(Control pane, Func<Viewer3DViewModel?> vm, Action<string> report)
@@ -242,6 +252,7 @@ public static class Viewer3DVectorExport
 
         var colours = Colours(vm.Scene);
         var theme = ThemeService.Active;
+        request = request with { ObjectTransparency = Transparencies(vm.Scene) };
         try
         {
             var (bytes, notes, layout) = await Task.Run(() =>

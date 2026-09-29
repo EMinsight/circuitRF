@@ -134,6 +134,8 @@ internal static class Render
         public string?      ViewDir;
         public string?      Region;
         public bool         NoMirror;
+        // brief-em3d-92 D5 — name=percent overrides of a .c3d's objects' transparency, for this picture only.
+        public List<string> Transparency = new();
     }
 
     /// <summary>R-rnd2-3's default page. Points for a vector format, device pixels for a raster one —
@@ -197,6 +199,7 @@ internal static class Render
             "                        a Surfaces or Faces plot, as a .png: --iso | --view-dir top|bottom|front|back|left|right\n" +
             "                        | --view-dir x,y,z (toward the viewer) [--region <object>] [--no-mirror]\n" +
             "                        | --list-fields\n" +
+            "                        [--transparency name=percent,...] (an object, instance or group; this picture only)\n" +
             "                        (a hidden plot renders as a shown one: --field names it, and hiding is only\n" +
             "                        which plot the 3D view draws)");
         return 1;
@@ -364,6 +367,8 @@ internal static class Render
                 case "--view-dir" when i + 1 < args.Length: o.ViewDir = args[++i]; continue;
                 case "--region"   when i + 1 < args.Length: o.Region = args[++i];  continue;
                 case "--no-mirror": o.NoMirror = true; continue;
+                // brief-em3d-92 — repeatable and comma-separated, as --layer-colors is.
+                case "--transparency" when i + 1 < args.Length: o.Transparency.AddRange(SplitList(args[++i])); continue;
 
                 default:
                     if (a.StartsWith('-'))
@@ -531,6 +536,8 @@ internal static class Render
         if (kind is DocumentKind.EmSetup or DocumentKind.ThreeD) return RenderEm3d.Draw(o.Path!, Em3dRequest(o));
         if (FieldOptionNamed(o) is { } fieldOption)
             return JsonRun.Fail(CliDiagnostics.RenderFieldNotA3dView(fieldOption, o.Path!, DocumentKinds.Name(kind)));
+        if (o.Transparency.Count > 0)
+            return JsonRun.Fail(CliDiagnostics.RenderTransparencyNotA3dView(o.Path!, DocumentKinds.Name(kind)));
         if (o.Sections.Count > 0 || o.Iso || o.Axes || o.ScaleBar)
             return JsonRun.Fail(CliDiagnostics.RenderEm3dNotA3dSetup(
                 o.Iso ? "--iso" : o.Sections.Count > 0 ? "--section" : o.Axes ? "--axes" : "--scale-bar", o.Path!, DocumentKinds.Name(kind)));
@@ -602,7 +609,7 @@ internal static class Render
         {
             Field = o.Field, ListFields = o.ListFields, Phase = o.Phase, NoLegend = o.NoLegend, NoThin = o.NoThin,
             Labels = o.Labels, Tight = o.Tight, Axes = o.Axes, ScaleBar = o.ScaleBar,
-            ViewDir = o.ViewDir, Region = o.Region, NoMirror = o.NoMirror,
+            ViewDir = o.ViewDir, Region = o.Region, NoMirror = o.NoMirror, Transparency = o.Transparency,
             OutputStated = o.Output is not null,
         };
     }

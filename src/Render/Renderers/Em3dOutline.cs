@@ -159,6 +159,10 @@ public sealed record Em3dOutlineOptions
     /// <summary>Solid and sheet names left out entirely — what the 3D view has hidden.</summary>
     public IReadOnlySet<string>? Omit { get; init; }
 
+    /// <summary>brief-em3d-92 — solid and sheet names whose edges are drawn but which hide nothing: see-through objects
+    /// (Em3dDrawingExport.OutlineOptions decides which). Null: everything drawn occludes.</summary>
+    public IReadOnlySet<string>? NonOccluding { get; init; }
+
     /// <summary>Above this many triangles, hidden edges are not worked out (they are drawn) and the note says so.</summary>
     public int TriangleBudget { get; init; } = DefaultTriangleBudget;
 
@@ -241,7 +245,8 @@ public static partial class Em3dSectionScene
                     $"Hidden edges are drawn: the model has {triangles:N0} triangles, over the {options.TriangleBudget:N0} this works hidden lines out for.");
                 mode = Em3dHiddenEdges.Shown;
             }
-            else occluder = new Occluder(parts, projection, Math.Max(span, 1e-30));
+            else occluder = new Occluder(options.NonOccluding is { } through ? [.. parts.Where(p => !through.Contains(p.Name))] : parts,
+                                         projection, Math.Max(span, 1e-30));
         }
 
         var lines = new List<Em3dSceneLine>();

@@ -292,6 +292,30 @@ walls, a row of pads — is picked, moved and changed as one thing.
   names its group — `"Group": "stage1/match"` — so a group can never be left empty or point at nothing.
   **Flatten** puts a placed cell's contents in that instance's group, and **Group into Cell** gives the new instance
   the group its contents were in. Groups are only organisation: the solver never sees them.
+- A group's **Transparency** is one row too — see [Transparency](#transparency).
+
+### Transparency {#transparency}
+
+How see-through an object is drawn belongs to the **object**, not to its material: a lid can be made see-through to
+show the die under it without changing the lid's alloy, which every other object made of it shares and which belongs
+to the technology.
+
+- **Properties** has a **Transparency** row on every object that is drawn filled (a polyline is a line, and has none),
+  on a boolean, fillet or chamfer (for its result — the objects inside it have none of their own), and on a placed cell.
+  Drag the **slider** and the view shows each position as you drag; the value is kept when you let go, as **one undo
+  step**. Or type a whole number in the box — **0** is opaque, and the most is **95 %**. **Default** clears it.
+- **With no value of its own** an object is drawn as its kind is: a dielectric translucent, a conductor opaque, air
+  faint. The box shows that default greyed — *65 (default)* for a dielectric — so you can see where you start from.
+  Setting a value replaces it, so a **conductor can be made see-through** too, and a dielectric made solid with 0.
+- **A group** selected whole shows one row. When its members agree it shows their value; when they differ it reads
+  **mixed**. Setting it writes that value to **every member at every depth**, nested groups included, as one undo
+  step — until then each member keeps its own. A **selection of several objects** gets the same one row.
+- **A placed cell's** value multiplies onto each of its parts' own: a cell placed at 50 % whose part is drawn at 50 %
+  shows that part at 75 %. Click any part of the instance to edit it.
+- It is saved in the `.c3d` only when set — `"Transparency": 60` — so a document that never sets one is unchanged. It
+  is drawing only: the solver never reads it, and changing it does not make a result stale.
+- A see-through object is still picked by its surfaces, like any other. While a pushed-in cell's surroundings or a
+  boolean's operands are drawn dimmed or ghosted, those looks win.
 
 ## Dimensions as expressions {#expressions}
 
@@ -569,6 +593,10 @@ Right-click the view (on anything, or on nothing) for five ways to take it out o
 A vector picture is drawn as the view is — in **perspective** when the view is, from the camera's own eye, at the
 scale the view has at its orbit centre, and **orthographic** otherwise — and it leaves out what you have hidden. It is framed as the view is, at the view's zoom — zoom in for a close-up. Conductors keep the
 colours the view draws them in; dielectrics are outlined in grey.
+
+An object given a [transparency](#transparency) above 0 **hides nothing** in a vector picture or a drawing: the edges
+behind it are drawn as solid lines, as seeing through it means on paper, while it keeps its own edges. A section fills
+it at its transparency.
 
 Every picture carries what the toolbar's middle group shows: the **axis indicator**, the **drawing grid** and
 the **scale legend** (the scale bar, bottom right; also *3D ▸ View ▸ Scale Legend*) — turn one off and it
@@ -888,7 +916,9 @@ Every step above has a command-line spelling, and none of them needs a solver ex
   technology each instance resolved through, every solid with its material and extent in metres, each
   port's contacts edge by edge, the air box, and an estimate of the problem's size.
 - **`circuitrf render <path.c3d> --section xz@y=0mil -o cut.svg`** — a section through it; `--iso` for an
-  isometric view. The pictures on this page are drawn that way.
+  isometric view. The pictures on this page are drawn that way. A section fills each object at its
+  [transparency](#transparency); `--transparency lid=80` sets one (or a placed cell's, or every member of a group:
+  `--transparency stage1=40`) for that picture alone, without editing the file.
 - **`circuitrf em <path.c3d> --setup "Lid modes"`** — runs one setup, exactly as Run does, and writes the
   same files.
 - **`circuitrf convert part.step -o Cell/3d/Cell.c3d`** — Import STEP into a new 3D view, each part's material by

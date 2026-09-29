@@ -154,6 +154,13 @@ public abstract class C3dObject : IC3dBindable
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool Hidden { get; set; }
 
+    /// <summary>brief-em3d-92 — how see-through the object is drawn, percent: 0 opaque to <see cref="C3dTransparency.Max"/>.
+    /// Omitted: its kind's default (a dielectric translucent, a conductor opaque). Drawing only — no solver reads it. An operation
+    /// carries it for its result, as it carries <see cref="Group"/> and <see cref="Hidden"/>; the object it wraps has none. A
+    /// polyline is a line and has none.</summary>
+    [JsonPropertyOrder(12)]
+    public int? Transparency { get; set; }
+
     /// <summary>Keys this build does not read. Kept, and written back, so a document from a later build
     /// does not lose them by being opened here; <c>check</c> names each one.</summary>
     [JsonExtensionData]
@@ -516,6 +523,10 @@ public sealed class C3dInstance
 
     public C3dPlacement Placement { get; set; } = new();
     public C3dArray?    Array     { get; set; }
+
+    /// <summary>brief-em3d-92 — the instance's transparency, percent, as an object's <see cref="C3dObject.Transparency"/>: it
+    /// MULTIPLIES onto each placed part's own (a 50 % instance of a part at 50 % draws it at 75 %). Omitted: none of its own.</summary>
+    public int? Transparency { get; set; }
 
     /// <summary>
     /// brief-em3d-51 R-em3d51-2e — overrides of the placed cell's PARAMETERS, each an expression evaluated in THIS

@@ -62,7 +62,9 @@ internal static class DocumentSchema
         new("wbond", "The .wBond wirebond format", ".wBond",
             typeof(CircuitRF.WBond.WBondIo.WBondDocument), WBondPreamble),
         new("3d-view", "The .c3d 3D view format", ".c3d",
-            typeof(CircuitRF.Design.ThreeD.C3dDocument), C3dPreamble),
+            typeof(CircuitRF.Design.ThreeD.C3dDocument),
+            // brief-em3d-92 — the cap is C3dTransparency.Max's, never a second literal.
+            C3dPreamble.Replace("{TransparencyMax}", CircuitRF.Design.ThreeD.C3dTransparency.Max.ToString(System.Globalization.CultureInfo.InvariantCulture))),
         new("materials", "The .cmat material library format", ".cmat",
             typeof(CircuitRF.Design.Layout.CmatFile), CmatPreamble),
     ];
@@ -458,6 +460,10 @@ internal static class DocumentSchema
             each Rotate entry in list order ({"Axis": "Z", "Deg": 90}, right-handed), then moved to
             Origin. Omitted, it is the identity. A rotation lives here, never in the coordinates, so
             geometry stays integer. An instance's Placement is the same record.
+          * Transparency is how see-through an object or an instance is DRAWN, a whole
+            percentage from 0 (opaque) to {TransparencyMax}; omitted, its kind's default (a dielectric translucent,
+            a conductor opaque). An instance's multiplies onto each part's own. An operation carries
+            it for its result, never an operand inside it; a polyline has none. No solver reads it.
           * The editor writes a rotated or mirrored placement in CANONICAL form, so the list never
             grows with editing: at most three entries, in the order Z, Y, X (Z applied first), each
             left out when its angle is 0. A composition of quarter turns and mirrors is stored

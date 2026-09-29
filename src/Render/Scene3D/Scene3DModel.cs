@@ -94,6 +94,11 @@ public sealed class Scene3DObject
     /// to show hover or a selected face.</summary>
     public bool Wireframe { get; init; }
 
+    /// <summary>brief-em3d-92 — the transparency the document states for it (its own percentage and the opacity its instances
+    /// multiply on), already packed into <see cref="Rgba"/>'s alpha; null when it states none. Kept so a vector export paints
+    /// the object as the view does and knows which objects are see-through (Em3dDrawingRequest.TransparentObjectsOcclude).</summary>
+    public Scene3DTransparency? Transparency { get; init; }
+
     /// <summary>The name of face <paramref name="face"/>: its stored name, else <c>face&lt;n&gt;</c>.</summary>
     public string FaceName(int face) => face >= 0 && face < FaceNames.Count ? FaceNames[face]
         : face == Scene3DBuilder.FaceUnknown ? "surface" : $"face{face}";

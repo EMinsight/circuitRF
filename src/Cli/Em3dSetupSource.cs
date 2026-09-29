@@ -25,10 +25,13 @@ internal sealed record Em3dSetupSource(
 
     /// <summary>Reads <paramref name="path"/>. Throws what the <c>.cem</c> reader throws on a file
     /// that will not parse; every other failure is <see cref="Refusal"/>.</summary>
-    public static Em3dSetupSource Load(string path)
+    /// <param name="edit">brief-em3d-92 — a change made to a <c>.c3d</c>'s document after it is read and before it is
+    /// elaborated (<c>render --transparency</c>): the document is this call's own copy, read from disk, so nothing else sees it
+    /// and the file is never written.</param>
+    public static Em3dSetupSource Load(string path, Action<C3dDocument>? edit = null)
     {
         string full = System.IO.Path.GetFullPath(path);
-        if (DocumentKinds.Classify(full) == DocumentKind.ThreeD) return ForThreeDView(full, null);
+        if (DocumentKinds.Classify(full) == DocumentKind.ThreeD) return ForThreeDView(full, null, edit);
         var setup = EmSetupPersistence.LoadFromFile(full);
         string? cws = DocumentKinds.AncestorCws(full);
         // brief-em3d-42 R-em3d42-5b — one field, two kinds of geometry: a LayoutRef naming a .c3d elaborates it.
@@ -43,9 +46,10 @@ internal sealed record Em3dSetupSource(
     /// <paramref name="setupName"/> names one), so the picture is the problem a run would receive; otherwise
     /// its elaboration alone, in an air box at its own extent, because there is no setup to pad by.
     /// </summary>
-    public static Em3dSetupSource ForThreeDView(string full, string? setupName)
+    public static Em3dSetupSource ForThreeDView(string full, string? setupName, Action<C3dDocument>? edit = null)
     {
         var doc = C3dPersistence.LoadFromFile(full);
+        edit?.Invoke(doc);
         string? cws = DocumentKinds.AncestorCws(full);
         var embedded = C3dSetups.Read(doc);
         var elaborator = new C3dElaborator();

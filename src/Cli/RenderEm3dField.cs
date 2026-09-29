@@ -145,7 +145,9 @@ internal static class RenderEm3dField
         // Its setup, its run, its solution by value, its quantity — or R-em3d83-5's sentence.
         var (setupName, run, setupProblem) = Setup(plot, doc, full);
         if (setupProblem is { } noSetup) return JsonRun.Fail(CliDiagnostics.RenderFieldMissingData(plot.Name, noSetup));
-        var loaded = Em3dSetupSource.ForThreeDView(full, setupName);
+        var overrides = new RenderTransparency(path, req.Transparency);
+        var loaded = Em3dSetupSource.ForThreeDView(full, setupName, overrides.Apply);
+        if (overrides.Refusal is { } unknown) return unknown;
         if (loaded.Refusal is { } unbuildable) return JsonRun.Fail(CliDiagnostics.RenderEm3dUnbuildable(path, unbuildable));
         var problem = loaded.Generated!.Problem!;
         RunHost.Cancellation.ThrowIfCancellationRequested();
@@ -263,7 +265,8 @@ internal static class RenderEm3dField
         if (themeRefusal is { } tr) return tr;
         var scene = Scene3DBuilder.Build(problem, 0, loaded.Generated!.Origins, e?.Technology, theme, req.Variant, null,
             new Scene3DBuildOptions(FaceNames: name => e is not null && e.Provenance.TryGetValue(name, out var p) ? p.FaceNames : null,
-                                    DrawAirBox: false, Origin: origin, HideOutermostDielectric: false));
+                                    DrawAirBox: false, Origin: origin, HideOutermostDielectric: false,
+                                    Transparency: e is null ? null : Scene3DTransparency.Of(e.Provenance)));
         Scene3DObject? Named(string name) => scene.Objects.FirstOrDefault(o => o.Name == name);
         var faces = plot.On == C3dFieldPlotOn.Faces ? FieldPlotResolver.SceneFaces(plot, Named) : [];
         // the 3D view leaves out a face the model no longer has; a picture says which it left out

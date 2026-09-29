@@ -3,6 +3,7 @@
 // same file from the same problem.
 
 using CircuitRF.Engine.Em3d;
+using CircuitRF.Render.Scene3D;
 using SkiaSharp;
 
 namespace CircuitRF.Render;
@@ -35,6 +36,18 @@ public sealed record Em3dDrawingRequest
 
     /// <summary>Solid and sheet names left out of every view — what the 3D view hides.</summary>
     public IReadOnlySet<string>? Omit { get; init; }
+
+    /// <summary>brief-em3d-92 — each object's transparency by name, as the 3D view has it (Scene3DObject.Transparency): a fill is
+    /// painted at its alpha, and an object stating any does not hide what is behind it unless <see cref="TransparentObjectsOcclude"/>.</summary>
+    public IReadOnlyDictionary<string, Scene3DTransparency>? ObjectTransparency { get; init; }
+
+    /// <summary>
+    /// brief-em3d-92 (owner, 2026-09-29) — false (the default): an object with a transparency above 0 does NOT occlude, so the
+    /// edges behind it are drawn solid, as seeing through it means on paper. True: it hides them as an opaque object does. Read
+    /// in exactly one place, <see cref="Em3dDrawingExport.OutlineOptions"/>, where the occluder set is built — a request property
+    /// rather than a constant so Export Drawing… and the CLI can offer it later without a refactor.
+    /// </summary>
+    public bool TransparentObjectsOcclude { get; init; }
 
     /// <summary>The page, in points, oriented.</summary>
     public (float W, float H) PageSize()
@@ -104,7 +117,7 @@ public static class Em3dDrawingExport
     {
         var shown = Without(problem, request.Omit);
         var panels = new List<Em3dDrawingPanel>();
-        var options = new Em3dOutlineOptions { Hidden = request.Hidden };
+        var options = OutlineOptions(request.Hidden, request.ObjectTransparency, request.TransparentObjectsOcclude);
         foreach (var v in request.Views)
         {
             var p = Em3dProjection.Standard(v);
@@ -118,6 +131,19 @@ public static class Em3dDrawingExport
             panels.Add(new Em3dDrawingPanel(SectionTitle(k, scene), scene));
         }
         return panels;
+    }
+
+    /// <summary>
+    /// brief-em3d-92 — an outline's options, and THE one place the occluder set is decided: with
+    /// <paramref name="transparentObjectsOcclude"/> false, every object that states a transparency above 0 (or sits in an instance
+    /// that does) is left out of it — its edges are still drawn, and still hidden by what is opaque in front of them.
+    /// </summary>
+    public static Em3dOutlineOptions OutlineOptions(Em3dHiddenEdges hidden, IReadOnlyDictionary<string, Scene3DTransparency>? transparency,
+                                                    bool transparentObjectsOcclude)
+    {
+        IReadOnlySet<string>? through = transparentObjectsOcclude || transparency is null ? null
+            : transparency.Where(kv => kv.Value.Percent > 0 || kv.Value.Opacity < 1).Select(kv => kv.Key).ToHashSet(StringComparer.Ordinal);
+        return new Em3dOutlineOptions { Hidden = hidden, NonOccluding = through is { Count: > 0 } ? through : null };
     }
 
     /// <summary>"Section A–A · XZ at y = 1.2 mm" — lettered in order, as a drawing letters its cuts.</summary>
@@ -137,6 +163,7 @@ public static class Em3dDrawingExport
         var style = new Em3dDrawingStyle(colours, theme, ColorVariant.Light)
         {
             Legend = request.Legend, TextAsPaths = request.TextAsPaths, DocumentName = request.DocumentName,
+            ObjectTransparency = request.ObjectTransparency,
             Remark = request.Views.Count == 0 ? null : request.Hidden switch
             {
                 Em3dHiddenEdges.Dashed  => "hidden edges dashed",
@@ -160,10 +187,13 @@ public static class Em3dDrawingExport
     /// indicator and scale bar when given.</summary>
     public static Em3dVectorPicture Picture(Em3dProblem problem, Em3dProjection projection, IReadOnlyDictionary<string, SKColor> colours,
                                             ColorTheme theme, IReadOnlySet<string>? omit, Em3dHiddenEdges hidden = Em3dHiddenEdges.Removed,
-                                            float maxSide = 720f, Em3dPictureWindow? window = null, Em3dPictureChrome? chrome = null)
+                                            float maxSide = 720f, Em3dPictureWindow? window = null, Em3dPictureChrome? chrome = null,
+                                            IReadOnlyDictionary<string, Scene3DTransparency>? transparency = null)
     {
-        var scene = Em3dSectionScene.Outline(Without(problem, omit), projection, new Em3dOutlineOptions { Hidden = hidden }, out string? note);
-        var style = new Em3dDrawingStyle(colours, theme, ColorVariant.Light) { Legend = false, Transparent = true };
+        var request = new Em3dDrawingRequest { Hidden = hidden, ObjectTransparency = transparency };
+        var scene = Em3dSectionScene.Outline(Without(problem, omit), projection,
+                                             OutlineOptions(request.Hidden, request.ObjectTransparency, request.TransparentObjectsOcclude), out string? note);
+        var style = new Em3dDrawingStyle(colours, theme, ColorVariant.Light) { Legend = false, Transparent = true, ObjectTransparency = transparency };
         if (window is not { HalfWidth: > 0, HalfHeight: > 0 } win)
         {
             var (w, h, scale) = Em3dDrawingSheet.PictureSize(scene, maxSide);

@@ -32,6 +32,7 @@ using System.Numerics;
 using CircuitRF.Design.Layout;
 using CircuitRF.Design.Layout.Em3d;
 using CircuitRF.Design.Theming;
+using CircuitRF.Design.ThreeD;
 using CircuitRF.Engine.Em3d;
 using CircuitRF.Render.Scene3D.Edit;
 
@@ -58,6 +59,9 @@ namespace CircuitRF.Render.Scene3D;
 /// translucent and never hovered or selected; a Tool of a subtraction is a ghost in the overlay's red.</param>
 /// <param name="OwnFrame">brief-em3d-67 R-em3d67-2b — an object's map from world metres into its own frame (before its
 /// placement), where the runs one pair of faces bounds are numbered; null (or null for a name) is the identity.</param>
+/// <param name="Transparency">brief-em3d-92 — an object's stated transparency and the opacity its instances multiply onto it
+/// (<see cref="Scene3DTransparency"/>), or null for its kind's look. It replaces the kind's alpha (a conductor's too, which is
+/// otherwise opaque); the context, ghost and wireframe looks keep their own and win while in force.</param>
 /// <param name="HideOutermostDielectric">True (a 3D .cem's viewer) opens with the outermost dielectric hidden: there the
 /// substrate is a slab the size of the air box — solver geometry — and the traces are what a user came to look at.
 /// False shows every dielectric: the 3D editor, where a board placed from a layout is bounded to the board (hiding its
@@ -76,7 +80,45 @@ public sealed record Scene3DBuildOptions(
     Func<string, bool>? Wireframe = null,
     Func<string, Scene3DGhost>? Ghost = null,
     Func<string, Func<Point3, Point3>?>? OwnFrame = null,
-    bool HideOutermostDielectric = true);
+    bool HideOutermostDielectric = true,
+    Func<string, Scene3DTransparency?>? Transparency = null);
+
+/// <summary>brief-em3d-92 — how see-through one object is drawn: its own percentage (null, its kind's default) and the opacity the
+/// instances it sits in multiply onto it (1 for none). C3dTransparency.Alpha turns the two and the kind's alpha into one.</summary>
+public readonly record struct Scene3DTransparency(int? Percent, double Opacity = 1)
+{
+    /// <summary>The alpha an object whose kind draws it at <paramref name="kindAlpha"/> is drawn at.</summary>
+    public byte Alpha(byte kindAlpha) => C3dTransparency.Alpha(Percent, Opacity, kindAlpha);
+
+    /// <summary>The option an elaboration's provenance answers: each object's own percentage and its instances' opacity; null for
+    /// an object that states neither, whose kind's look stands.</summary>
+    public static Func<string, Scene3DTransparency?> Of(IReadOnlyDictionary<string, C3dProvenance> provenance)
+        => name => provenance.TryGetValue(name, out var p) && States(p) ? new Scene3DTransparency(p.Transparency, p.Opacity) : null;
+
+    /// <summary>The same, as a map by elaborated name: what a section or a drawing is painted with.</summary>
+    public static IReadOnlyDictionary<string, Scene3DTransparency> MapOf(IReadOnlyDictionary<string, C3dProvenance> provenance)
+        => provenance.Where(kv => States(kv.Value))
+                     .ToDictionary(kv => kv.Key, kv => new Scene3DTransparency(kv.Value.Transparency, kv.Value.Opacity), StringComparer.Ordinal);
+
+    private static bool States(C3dProvenance p) => p.Transparency is not null || p.Opacity < 1;
+
+    /// <summary>The transparency, percent, a <paramref name="role"/>'s kind is drawn at when an object states none — what the
+    /// Inspector shows greyed as "(default)": a dielectric's <see cref="Scene3DBuilder.DielectricAlpha"/>, air's
+    /// <see cref="Scene3DBuilder.AirAlpha"/>, a conductor opaque.</summary>
+    public static int DefaultPercent(Em3dRole role) => role switch
+    {
+        Em3dRole.Dielectric => (int)Math.Round(100 * (1 - Scene3DBuilder.DielectricAlpha / 255.0), MidpointRounding.AwayFromZero),
+        Em3dRole.Air        => (int)Math.Round(100 * (1 - Scene3DBuilder.AirAlpha / 255.0), MidpointRounding.AwayFromZero),
+        _                   => 0,
+    };
+
+    /// <summary><paramref name="rgba"/> with its alpha replaced, and whether the result is translucent (not fully opaque).</summary>
+    public (uint Rgba, bool Translucent) Apply(uint rgba)
+    {
+        byte a = Alpha((byte)(rgba >> 24));
+        return ((rgba & 0x00FF_FFFFu) | ((uint)a << 24), a < 255);
+    }
+}
 
 /// <summary>brief-em3d-66 — an object's draw state while a boolean is previewed or entered.</summary>
 public enum Scene3DGhost
@@ -277,6 +319,9 @@ public static class Scene3DBuilder
                     break;
                 }
             }
+            // brief-em3d-92 — the object's own transparency replaces its kind's alpha; the looks below keep theirs and win.
+            var see = options.Transparency?.Invoke(s.Name);
+            if (see is { } t) (rgba, translucent) = t.Apply(rgba);
             bool dim = Dim(s.Name);
             if (dim) (rgba, translucent) = (Dimmed(rgba, dark), true);
             if (wire) (rgba, translucent) = (wireFill, true);
@@ -296,7 +341,7 @@ public static class Scene3DBuilder
                 InitiallyVisible = wire || (s.Role != Em3dRole.Air && s.Name != outermost),
                 FaceNames = FacesOf(s.Name),
                 CapCentres = s.Primitive is Em3dCylinder cyl ? [cyl.AxisStart, cyl.AxisEnd] : null,
-                Context = dim, Wireframe = wire,
+                Context = dim, Wireframe = wire, Transparency = see,
             }, mesh, wire && s.Primitive is Em3dCylinder c0 ? CylinderGenerators(c0).Select(q => (q, wireEdge)) : null,
                faces: true, features: Features(s.Name, mesh, sheet: false, (s.Primitive as Em3dShapeSolid)?.Edges), wireEdges: wire ? wireEdge : null);
             if (place is { } p0) solidRuns.Prototype(p0, s.Name);
@@ -317,11 +362,14 @@ public static class Scene3DBuilder
             bool dim = Dim(sh.Name);
             bool wire = Wire(sh.Name);
             uint rgba = Scene3DVertex.Pack(c.Red, c.Green, c.Blue, 255);
+            bool translucent = false;
+            var see = options.Transparency?.Invoke(sh.Name);
+            if (see is { } t) (rgba, translucent) = t.Apply(rgba);
             b.Object(new Scene3DObject
             {
                 Id = 0, Name = sh.Name, Kind = Scene3DKind.Sheet, Material = sh.Material, MaterialValues = m,
-                MaterialSlot = slot, Rgba = wire ? wireFill : dim ? Dimmed(rgba, dark) : rgba, Translucent = dim || wire,
-                FaceNames = names.Count > 0 ? names : SheetFaceNames, Context = dim, Wireframe = wire,
+                MaterialSlot = slot, Rgba = wire ? wireFill : dim ? Dimmed(rgba, dark) : rgba, Translucent = dim || wire || translucent,
+                FaceNames = names.Count > 0 ? names : SheetFaceNames, Context = dim, Wireframe = wire, Transparency = see,
             }, mesh, faces: true, sheet: true, features: Features(sh.Name, mesh, sheet: true, sheetNames: names.Count > 0 ? names : SheetFaceNames),
                wireEdges: wire ? wireEdge : null);
             if (place is { } p0) sheetRuns.Prototype(p0, sh.Name);
@@ -722,7 +770,7 @@ public static class Scene3DBuilder
                 MaterialSlot = o.MaterialSlot, Rgba = o.Rgba, Translucent = o.Translucent,
                 InitiallyVisible = o.InitiallyVisible, PortNumber = o.PortNumber, Boundary = o.Boundary,
                 FaceNames = o.FaceNames, CapCentres = o.CapCentres, Context = o.Context, PickLast = o.PickLast,
-                Wireframe = o.Wireframe, Tint = o.Tint,
+                Wireframe = o.Wireframe, Tint = o.Tint, Transparency = o.Transparency,
             };
             var min = new Vector3(float.MaxValue);
             List<Scene3DVertex>? featureEdges = null;
@@ -919,7 +967,7 @@ public static class Scene3DBuilder
                         Id = id, Name = d.Name, Kind = proto.Kind, Material = proto.Material, MaterialValues = proto.MaterialValues,
                         MaterialSlot = proto.MaterialSlot, Rgba = proto.Rgba, Translucent = proto.Translucent,
                         InitiallyVisible = proto.InitiallyVisible, FaceNames = proto.FaceNames, Context = proto.Context,
-                        Wireframe = proto.Wireframe,
+                        Wireframe = proto.Wireframe, Transparency = proto.Transparency,
                         CapCentres = proto.CapCentres?.Select(c => new Point3(c.X + d.Dx, c.Y + d.Dy, c.Z + d.Dz)).ToArray(),
                         Element = index, Prototype = proto.Id,
                         FirstVertex = proto.FirstVertex, VertexCount = proto.VertexCount,

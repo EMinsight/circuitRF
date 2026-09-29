@@ -202,6 +202,8 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     /// the release will write previews too.</para>
     private string DocumentText()
     {
+        // brief-em3d-92 — a transparency slider's drag draws a copy with the dragged value.
+        if (_transparencyPreview is { } tp) return TransparencyPreviewText(tp);
         if (_facePreview is not { } p || p.Index >= Document.Objects.Count) return C3dPersistence.Serialize(Document);
         var objects = Document.Objects;
         var variables = Document.Variables;
@@ -278,6 +280,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
                                         Ghost: inputs.Ghosts is { Count: > 0 } ghosts ? n => ghosts.TryGetValue(n, out var g) ? g : Scene3DGhost.None : null,
                                         OwnFrame: name => OwnFrameOf(doc, e, name),
                                         HideOutermostDielectric: false,
+                                        Transparency: Scene3DTransparency.Of(e.Provenance),
                                         FaceTints: [.. records.Boundaries.Where(b => b.Refusal is null)
                                                            .Select(b => new Scene3DFaceTint(b.Boundary.Object + "/" + b.Boundary.Face, b.Boundary.Kind, b.Pieces)),
                                                     .. records.ThermalTints]));

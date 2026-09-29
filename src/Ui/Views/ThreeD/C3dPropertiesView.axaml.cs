@@ -25,6 +25,11 @@ public partial class C3dPropertiesView : UserControl
         // marks it handled before a focused control sees it, so this listens on the tunnel with handled events too.
         AddHandler(GotFocusEvent, OnAnyGotFocus, RoutingStrategies.Bubble, handledEventsToo: true);
         AddHandler(KeyDownEvent, OnEscapeTunnel, RoutingStrategies.Tunnel, handledEventsToo: true);
+        // brief-em3d-92 — the slider previews while it moves and writes on release: the pointer let go (its thumb captures it,
+        // so the release may arrive as a lost capture) or an arrow key let go.
+        TransparencySlider.AddHandler(PointerReleasedEvent, (_, _) => _vm?.CommitTransparencySlider(), RoutingStrategies.Bubble, handledEventsToo: true);
+        TransparencySlider.AddHandler(PointerCaptureLostEvent, (_, _) => _vm?.CommitTransparencySlider(), RoutingStrategies.Bubble, handledEventsToo: true);
+        TransparencySlider.AddHandler(KeyUpEvent, (_, _) => _vm?.CommitTransparencySlider(), RoutingStrategies.Bubble, handledEventsToo: true);
     }
 
     private void OnAnyGotFocus(object? sender, FocusChangedEventArgs e)
@@ -61,6 +66,14 @@ public partial class C3dPropertiesView : UserControl
     }
 
     private void OnNameLostFocus(object? sender, RoutedEventArgs e) => _vm?.CommitName();
+
+    // brief-em3d-92 — the transparency box, and the slider's release: a drag is one undo entry, written when it ends.
+    private void OnTransparencyKey(object? sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter) { _vm?.CommitTransparencyText(); e.Handled = true; }
+    }
+
+    private void OnTransparencyLostFocus(object? sender, RoutedEventArgs e) => _vm?.CommitTransparencyText();
 
     // brief-em3d-83 — a field plot's clip-plane offset, and the Other frequency box.
     private void OnPlotOffsetKey(object? sender, KeyEventArgs e)

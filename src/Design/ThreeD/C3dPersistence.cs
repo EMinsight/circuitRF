@@ -113,13 +113,30 @@ public static class C3dPersistence
     /// brief-em3d-83 R-em3d83-2 — the document as a RUN sees it: the file's text without its field plots. What Simulate keeps
     /// beside a run and what the stale banner compares with it, so adding, editing or hiding a plot never makes a result
     /// stale. Every such comparison reads this, never <see cref="Serialize"/>.
+    /// <para>brief-em3d-92 — nor its objects' and instances' Transparency: how see-through a lid is drawn is display, and
+    /// dragging its slider must not make a result stale.</para>
     /// </summary>
     public static string SerializeForRun(C3dDocument doc)
     {
         var plots = doc.FieldPlots;
         doc.FieldPlots = [];
+        var objects = doc.Objects.SelectMany(C3dOperands.SelfAndDescendants).Where(o => o.Transparency is not null)
+                                 .Select(o => (Item: (object)o, Value: o.Transparency))
+                                 .Concat(doc.Instances.Where(i => i.Transparency is not null).Select(i => (Item: (object)i, Value: i.Transparency)))
+                                 .ToList();
+        foreach (var (item, _) in objects) SetTransparency(item, null);
         try { return Serialize(doc); }
-        finally { doc.FieldPlots = plots; }
+        finally
+        {
+            doc.FieldPlots = plots;
+            foreach (var (item, value) in objects) SetTransparency(item, value);
+        }
+
+        static void SetTransparency(object item, int? value)
+        {
+            if (item is C3dObject o) o.Transparency = value;
+            else ((C3dInstance)item).Transparency = value;
+        }
     }
 
     /// <summary>brief-em3d-83 — the field plots as the file spells them (an undo entry's before and after).</summary>

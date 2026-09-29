@@ -2072,6 +2072,28 @@ internal static class CliDiagnostics
         "render: {option} draws a 3D EM setup (a .cem with a Solver3D), and '{path}' is {kind}.",
         ("option", option), ("path", path), ("kind", kind));
 
+    // ── render --transparency (brief-em3d-92 D5) ─────────────────────────────────────────────
+
+    public static Diagnostic RenderTransparencyNotA3dView(string path, string kind) => Diagnostic.Create(
+        "render.transparency.not-3d-view", DiagnosticSeverity.Error,
+        "render: --transparency sets how see-through an object of a 3D view (.c3d) is drawn, and '{path}' is {kind}. Render the "
+      + ".c3d itself.", ("path", path), ("kind", kind));
+
+    public static Diagnostic RenderTransparencyMalformed(string text) => Diagnostic.Create(
+        "render.transparency.malformed", DiagnosticSeverity.Error,
+        "render: --transparency takes name=percent, a whole number (lid=60, or a group's path: pa/match=40); '{text}' is not that.",
+        ("text", text));
+
+    /// <summary>The range refusal, its sentence built from C3dTransparency.Max.</summary>
+    public static Diagnostic RenderTransparencyRange(string name, long percent) => Diagnostic.Create(
+        "render.transparency.range", DiagnosticSeverity.Error, "render: --transparency: {why}",
+        ("why", CircuitRF.Design.ThreeD.C3dTransparency.OutOfRange($"'{name}'", percent)));
+
+    public static Diagnostic RenderTransparencyUnknown(string name, string path, string names) => Diagnostic.Create(
+        "render.transparency.unknown", DiagnosticSeverity.Error,
+        "render: --transparency names '{name}', which is no object, instance or group of '{path}'. It has: {names}.",
+        ("name", name), ("path", path), ("names", names));
+
     /// <summary>brief-em3d-88 — an isometric outline shortens each axis differently, so no one bar measures it.</summary>
     public static Diagnostic RenderEm3dScaleBarIso() => Diagnostic.Create(
         "render.em3d.scale-bar-iso", DiagnosticSeverity.Error,

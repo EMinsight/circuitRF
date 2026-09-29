@@ -917,6 +917,11 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "render.tech.unresolved",
         "render.theme.unreadable",
         "render.theme.unresolved",
+        // brief-em3d-92 — `render --transparency`, a .c3d's objects for one picture.
+        "render.transparency.malformed",
+        "render.transparency.not-3d-view",
+        "render.transparency.range",
+        "render.transparency.unknown",
         "render.viewport.center-malformed",
         "render.viewport.coordinate-malformed",
         "render.viewport.empty",

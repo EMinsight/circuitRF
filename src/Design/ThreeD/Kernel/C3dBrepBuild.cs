@@ -238,7 +238,7 @@ public static class C3dBrepBuild
                                    h.Vertices.Count));
 
     /// <summary><paramref name="r"/> as a polyhedron object carrying <paramref name="source"/>'s name, material, role,
-    /// group, placement, visibility and unread keys — everything but its geometry.</summary>
+    /// group, placement, visibility, transparency and unread keys — everything but its geometry.</summary>
     public static C3dPolyhedron ToPolyhedron(C3dBrep r, C3dObject source)
     {
         var template = C3dPersistence.DeserializeObject(C3dPersistence.SerializeObject(source));
@@ -250,6 +250,7 @@ public static class C3dBrepBuild
             Placement = template.Placement,
             Hidden = template.Hidden,
             Group = template.Group,
+            Transparency = template.Transparency,
             Unread = template.Unread,
             Vertices = [.. r.Vertices],
             Faces = [.. r.Faces.Select(f => new C3dFace { Name = f.Name, Outer = [.. f.Outer], Holes = [.. f.Holes.Select(x => x.ToList())] })],

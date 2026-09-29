@@ -235,6 +235,13 @@ public static class C3dHierarchy
         // 3D editor groups — what the instance held lands in the instance's group; the child's own groups were the child's.
         foreach (var o in flat.Objects) o.Group = inst.Group;
         foreach (var i in flat.Instances) i.Group = inst.Group;
+        // brief-em3d-92 — and what the instance's transparency multiplied onto each part is written onto the part itself, so
+        // flattening does not change how anything is drawn (C3dTransparency.Compose; a part at its default takes the instance's).
+        if (inst.Transparency is not null)
+        {
+            foreach (var o in flat.Objects.Where(o => o is not C3dPolyline)) o.Transparency = C3dTransparency.Compose(inst.Transparency, o.Transparency);
+            foreach (var i in flat.Instances) i.Transparency = C3dTransparency.Compose(inst.Transparency, i.Transparency);
+        }
         return flat;
     }
 

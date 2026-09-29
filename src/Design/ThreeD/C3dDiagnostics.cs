@@ -193,6 +193,21 @@ public static class C3dDiagnostics
         "c3d.instance.no-cell", DiagnosticSeverity.Error,
         "The instance '{name}' names no cell.", ("name", name));
 
+    // ── Transparency (brief-em3d-92) ──────────────────────────────────────────────────────────
+
+    /// <summary>A transparency outside 0 to <see cref="C3dTransparency.Max"/>; the sentence is built from the constant.</summary>
+    public static Diagnostic TransparencyRange(string what, int percent) => Diagnostic.Create(
+        "c3d.transparency.range", DiagnosticSeverity.Error, "{why}", ("why", C3dTransparency.OutOfRange(what, percent)));
+
+    public static Diagnostic TransparencyOnPolyline(string name) => Diagnostic.Create(
+        "c3d.transparency.polyline", DiagnosticSeverity.Warning,
+        "The polyline '{name}' states a Transparency. A polyline is a line and is never filled, so nothing reads it.", ("name", name));
+
+    public static Diagnostic TransparencyOnOperand(string name, string operand) => Diagnostic.Create(
+        "c3d.transparency.operand", DiagnosticSeverity.Warning,
+        "An operand of '{name}'{operand} states a Transparency. Inside an operation an operand has none of its own: the " +
+        "operation's is its result's. Put it on '{name}'.", ("name", name), ("operand", operand.Length > 0 ? $" ('{operand}')" : ""));
+
     public static Diagnostic ArrayCounts(string name) => Diagnostic.Create(
         "c3d.instance.array-counts", DiagnosticSeverity.Error,
         "The array on '{name}' must give three counts, [nx, ny, nz], each at least 1.", ("name", name));

@@ -48,6 +48,10 @@ public sealed record Em3dRenderStyle(
     /// <summary>brief-em3d-88 — the 3D view's scale bar in the frame's bottom-right corner, rounded and labelled in this unit
     /// (the document's display unit); null for none. A section only: an isometric outline has no one scale.</summary>
     public (CircuitRF.Design.Layout.LayoutUnit Unit, int DbuPerMicron)? ScaleBar { get; init; }
+
+    /// <summary>brief-em3d-92 — each object's transparency by name: a region's fill is painted at the alpha it gives, as the 3D
+    /// view and the drawing export paint it. Outlines stay opaque; an isometric outline, which fills nothing, is unchanged.</summary>
+    public IReadOnlyDictionary<string, CircuitRF.Render.Scene3D.Scene3DTransparency>? ObjectTransparency { get; init; }
 }
 
 /// <summary>Where everything goes on the page: the frame's device rectangle, the scale from metres
@@ -233,7 +237,8 @@ public static partial class Em3dSectionRenderer
                 if (ring.Count >= 2) path.AddPoly([.. ring.Select(Map)], close: true);
 
             var colour = Fill(r.Object, r.Role, r.Material);
-            fill.Color = colour;
+            fill.Color = r.Role != Em3dRole.Air && style.ObjectTransparency?.TryGetValue(r.Object, out var see) == true
+                ? colour.WithAlpha(see.Alpha(colour.Alpha)) : colour;
             if (field is null || r.Role == Em3dRole.Conductor && !thermal) canvas.DrawPath(path, fill);
             if (r.Role != Em3dRole.Air)
             {

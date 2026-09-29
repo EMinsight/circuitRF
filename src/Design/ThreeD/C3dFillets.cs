@@ -66,7 +66,8 @@ public static class C3dFillets
         t.Name = "";
         t.Hidden = false;
         t.Group = null;
-        return new C3dFillet { Name = name, Hidden = target.Hidden, Group = target.Group, Radius = radius, Edges = [.. edges], Target = t };
+        t.Transparency = null;
+        return new C3dFillet { Name = name, Hidden = target.Hidden, Group = target.Group, Transparency = target.Transparency, Radius = radius, Edges = [.. edges], Target = t };
     }
 
     /// <summary>A Chamfer, as <see cref="MakeFillet"/>: <paramref name="distance2"/> 0 is a symmetric chamfer.</summary>
@@ -77,7 +78,8 @@ public static class C3dFillets
         t.Name = "";
         t.Hidden = false;
         t.Group = null;
-        return new C3dChamfer { Name = name, Hidden = target.Hidden, Group = target.Group, Distance = distance, Distance2 = distance2, Edges = [.. edges], Target = t };
+        t.Transparency = null;
+        return new C3dChamfer { Name = name, Hidden = target.Hidden, Group = target.Group, Transparency = target.Transparency, Distance = distance, Distance2 = distance2, Edges = [.. edges], Target = t };
     }
 
     /// <summary>R-em3d67-6b — Remove: the feature's target back in its place under its name, carried by the feature's
@@ -89,6 +91,7 @@ public static class C3dFillets
         c.Name = feature.Name;
         c.Hidden = feature.Hidden;
         c.Group = feature.Group;
+        c.Transparency = feature.Transparency;
         return c;
     }
 
@@ -195,6 +198,7 @@ public static class C3dFillets
         w.Name = top.Name;
         w.Hidden = top.Hidden;
         w.Group = top.Group;
+        w.Transparency = top.Transparency;
         return w;
     }
 
@@ -211,6 +215,7 @@ public static class C3dFillets
         local.Name = "";
         local.Hidden = false;
         local.Group = null;
+        local.Transparency = null;
         return With(top, Core(top).Path, local);
     }
 

@@ -602,8 +602,10 @@ public sealed partial class C3dEditorViewModel
         {
             var inst = doc.Instances[i];
             var m = inst.Placement.ToTransform();
+            // brief-em3d-92 — and its transparency: an element draws its prototype's vertices, colours and alpha included, so two
+            // placements of one cell at different transparencies are two runs.
             string key = string.Create(CultureInfo.InvariantCulture,
-                $"{inst.CellRef}|{inst.View}|{m.M00:R},{m.M01:R},{m.M02:R},{m.M10:R},{m.M11:R},{m.M12:R},{m.M20:R},{m.M21:R},{m.M22:R}");
+                $"{inst.CellRef}|{inst.View}|{inst.Transparency}|{m.M00:R},{m.M01:R},{m.M02:R},{m.M10:R},{m.M11:R},{m.M12:R},{m.M20:R},{m.M21:R},{m.M22:R}");
             byName.TryAdd(inst.Name, (inst, i, key));
         }
         return name =>

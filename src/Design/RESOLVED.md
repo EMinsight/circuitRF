@@ -15462,3 +15462,26 @@ when no array ends on the port's own conductor, accepts the one array on a condu
 **A thermal run's per-point notes no longer repeat its system's.** Every conductive-balance solution's notes begin with the
 system's (the tie count, the equipotential conductors, the balanced ports); the run's notes carried them once already, and the
 summary repeated them at every sweep point.
+
+## brief-em3d-92 — an object's transparency (2026-09-29)
+
+**One constant.** `C3dTransparency.Max` (95) is the cap; `InRange`, `Range` and `OutOfRange` build every refusal from it, and
+the Inspector's slider, `check` (`c3d.transparency.range`), the editor's `SetTransparency` and `render --transparency` all read
+it. The reference page's preamble substitutes it into its text rather than spelling the number.
+
+**It rides on the provenance.** `C3dProvenance.Transparency` is the top-level object's own value (an operation's for its
+result and its kept Tools; a drawn wire's for each of its solids; null for a layout instance's parts) and
+`C3dProvenance.Opacity` the product of the instances on the way down, kept by the walker in `_transparency` / `_opacity`
+exactly as `_topObject` is. Nothing else in the elaboration reads it.
+
+**It is display, so a run does not see it.** `C3dPersistence.SerializeForRun` strips every object's (operands included) and
+instance's Transparency around the one serialisation, as it strips the field plots, so dragging a lid's slider never makes
+a result stale. **Observed, not changed:** `Hidden` is NOT stripped there, so hiding an object does mark a result stale today.
+
+**Carried where Group and Hidden are carried.** `C3dBooleans.Make` (the result takes the Blank's, every operand is cleared),
+`Dissolve` and the editor's Remove-from-boolean (operands come out at the boolean's), `C3dFillets.MakeFillet/MakeChamfer/
+Unwrap/DisabledCore/WithCore`, and `C3dBrepBuild.ToPolyhedron`. **Flatten composes** the instance's onto each part
+(`C3dTransparency.Compose`); a part at its kind's default has no percentage to multiply, so it takes the instance's value —
+the one place a flatten can change how something looks (a default dielectric, ~65 %, drawn at ~82 % inside a 50 % instance,
+comes up at 50 %).
+`check` also warns on a Transparency stated on a polyline or on an operand inside an operation, where nothing reads it.

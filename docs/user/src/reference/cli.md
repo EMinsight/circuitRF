@@ -1425,6 +1425,22 @@ the model's outlines and its legend beside it.
   Temperature on every exposed face, isometric, from +x −y +z, orthographic — setup 'Array', the only point: 2 object(s)
   Surface: T_C at the only point, 98,000 triangles on every exposed face, isometric, from +x −y +z, 85 … 105.1 °C, mirrored across 1 plane(s)</span></code></pre>
 
+<h4 id="render-transparency">A see-through object for one picture</h4>
+
+A `.c3d`'s objects are drawn at the [transparency](drawing-in-3d.md#transparency) each states: a section fills
+each one at it, and a surfaces or faces plot shades the model around the field with it. An outline (`--iso`)
+fills nothing, so it looks the same whatever an object states. `--transparency` sets one **for this render
+only** — the file on disk is never written:
+
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf render pkg/3d/pkg.c3d -o cut.svg --section xz@y=0mil --transparency lid=80,U1=50</code></pre>
+
+- Each entry is `name=percent`, a whole number from 0 to 95. The name is an object's, a placed cell's (which
+  multiplies onto each of its parts' own), or a group's path (`stage1/match=40`), which sets every member of
+  it at every depth. The flag repeats, and takes a comma-separated list.
+- An unknown name is a refusal that lists the objects, instances and groups the document has. A value out of
+  range, or anything but `name=whole number`, is refused before the file is read.
+- It is a `.c3d`'s: on any other document, `.cem` included, it is a refusal naming the kind.
+
 <h3 id="render-example">A worked example, from an empty folder</h3>
 
 Two commands to set it up, three questions, one picture. The point of the sequence is that the three

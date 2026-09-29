@@ -41,6 +41,10 @@ public sealed record Em3dDrawingStyle(IReadOnlyDictionary<string, SKColor> Objec
 
     /// <summary>Said in the title block after the scale, e.g. "Hidden edges dashed".</summary>
     public string? Remark { get; init; }
+
+    /// <summary>brief-em3d-92 — each object's transparency by name, as the 3D view draws it: a region's fill is painted at the
+    /// alpha it gives (a conductor's too, which is otherwise opaque). Edges stay opaque. Null or absent: the kind's fill.</summary>
+    public IReadOnlyDictionary<string, CircuitRF.Render.Scene3D.Scene3DTransparency>? ObjectTransparency { get; init; }
 }
 
 /// <summary>Where a sheet puts everything, in page units (points for SVG/PDF).</summary>
@@ -333,6 +337,13 @@ public static class Em3dDrawingSheet
             _                  => Em3dSectionRenderer.DielectricFill(st, scene.DielectricMaterials, material),
         };
 
+    /// <summary>brief-em3d-92 — a region's fill: <see cref="Fill"/> at the alpha the object's transparency gives it.</summary>
+    private static SKColor RegionFill(Em3dDrawingStyle style, StackupRenderTheme st, Em3dScene scene, string obj, Em3dRole role, string material)
+    {
+        var colour = Fill(style, st, scene, obj, role, material);
+        return role != Em3dRole.Air && style.ObjectTransparency?.TryGetValue(obj, out var t) == true ? colour.WithAlpha(t.Alpha(colour.Alpha)) : colour;
+    }
+
     /// <param name="cull">Leave out what lies wholly outside <paramref name="rect"/> — a window on a large model (a close-up
     /// of a board) would otherwise carry every line of it into the file, clipped but still there.</param>
     private static void PaintView(SKCanvas canvas, Em3dScene scene, SKRect rect, double scale, Uv centre,
@@ -352,10 +363,10 @@ public static class Em3dDrawingSheet
             if (r.CircleCentre is { } c) { var m = Map(c); path.AddCircle(m.X, m.Y, (float)(r.CircleRadius * scale)); }
             foreach (var ring in r.Rings) if (ring.Count >= 2) path.AddPoly([.. ring.Select(Map)], close: true);
             if (cull && !path.Bounds.IntersectsWithInclusive(rect)) continue;
-            var colour = Fill(style, st, scene, r.Object, r.Role, r.Material);
+            var colour = RegionFill(style, st, scene, r.Object, r.Role, r.Material);
             fill.Color = colour;
             canvas.DrawPath(path, fill);
-            stroke.Color = Em3dSectionRenderer.Darker(colour);
+            stroke.Color = Em3dSectionRenderer.Darker(Fill(style, st, scene, r.Object, r.Role, r.Material));
             stroke.StrokeWidth = 0.75f;
             stroke.PathEffect = null;
             canvas.DrawPath(path, stroke);
