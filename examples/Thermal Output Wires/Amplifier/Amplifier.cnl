@@ -1,0 +1,27 @@
+; The circuit that drives the Output Wires: a generic GaN-like FET (circuitRF's Angelov model), biased in class AB,
+; its drain on this workspace's 3D view through that view's EM result, fed from VDD through a choke on the lead
+; side, into a 5 ohm load. It exists to drive currents through the wires, not to be a good amplifier: nothing is matched.
+f0 = 2e9
+Pin = 20
+VDD = 40
+VGS = -3
+
+P1Tone:SRC in 0 Num=1 Pavl=Pin dBm Z=50 Ohm Freq=f0
+C:CIN in gate C=100 pF
+R:RG gate 0 R=50 Ohm
+L:LG gate gbias L=100 nH
+Vdc:VG gbias 0 Vdc=VGS V
+FET_Angelov:Q1 gate drain 0 Ipk=6 Vpk=-2 P1=1.2 Alpha=1.5 Lambda=0.01
+SnP:XOUT drain lead NumPorts=2 File="../results/Output EM.palace.s2p"
+L:LD lead feed L=100 nH
+IProbe:IDD dd feed
+Vdc:VD dd 0 Vdc=VDD V
+C:COUT lead outb C=100 pF
+IProbe:IOUT outb out
+R:RL out 0 R=5 Ohm
+
+measure Pout_dBm = 10*log10(real(0.5*HB1.V("out",1)*conj(HB1.I("IOUT",1)))*1000)
+measure Id_A = real(HB1.I("IDD",0))
+measure Eff = real(0.5*HB1.V("out",1)*conj(HB1.I("IOUT",1)))/(VDD*real(HB1.I("IDD",0)))*100
+analysis HB1 type=hb Tone=f0 MaxHarm=5
+analysis SW1 type=parametric_sweep Var=Pin Start=10 Stop=28 Npts=10 Inner=HB1

@@ -252,3 +252,67 @@ predicate on `ThermalSmallSignal.Zth` so a harmonic sweep ends the moment it has
 - **A run measured before a fix is not evidence.** The first full *Eight Fingers* run predated the near-duplicate-sample fix
   and reported a single pulse ABOVE the periodic peak (90.81 against 90.71 °C). That is impossible, since the periodic state is
   the single pulse plus what earlier pulses left. The rerun gives 90.62 against 90.71.
+
+## brief-em3d-85 — bond-wire temperatures in seconds (2026-09-29)
+
+**It was the perfect bond, not the φ/T scaling.** Brief 81's model (six wedge-bonded wires, a 10 µm pad on a SiC die, a copper
+lead, a mould) was reproduced at 12.9k temperature unknowns and its first solves dumped: BiCGStab on the TEMPERATURE block alone
+— no φ at all — ran its 2,000 iterations and fell back to LU, 40 s for the first fixed-point sweep and ~58 s a Newton step. The
+mesh block by itself converged in 15. A symmetric well coupling (heat in at the ring, not the centreline) cut the iterations
+to ~1,000; the perfect-bond penalty set to 1e2 instead of 1e6 cut them to ~50 and the whole four-point sweep to 29 s. A patch
+tied to its heel by 10⁶ × k/√area is a stiff rigid-body mode per patch; the aggregation splits a patch's nodes across aggregates,
+so the coarse grid cannot represent it. It takes several patches on one well-conducting stack: one wire alone converged in 18
+iterations, and six on pads over a mould (no die under them) in 25.
+
+**The fix is the penalty's own limit: a tie.** A perfect bond forces T_patch(q) = T_heel at every quadrature point, which with
+P1 or P2 triangles is every patch node equal to the heel. ElectrothermalSystem.TemperatureTie names the groups; ConductiveBalance
+solves Pᵀ·J·P and Pᵀ·r on them (Project, which sums a tied group's rows and columns). Electrically the patch joins the heel's
+equipotential in the same union-find a port contact uses. Measured: 27–34 iterations a step at 12.9k unknowns, the sweep in 19 s;
+W1 moved from 4.9e-8 / 6.1e-8 / 2.5e-7 of the rise to 3.8e-9 / 1.6e-8 / 5.7e-8 (the tie is exactly the closed form's end
+condition); W4, the current share and the runaway bracket did not move. A tied patch on a fixed face fixes its heel, and the
+energy balance then has to count heat out through that heel — the first version summed fixed MESH nodes only and read W1's
+balance as 0.99.
+
+**The gate is a counter, and it was checked to fail.** OutputWiresSolveTests builds the output stage in miniature (six wires,
+order 1, k(T) on): tied, 24–26 iterations a step; the same bonds stated as explicit penalty conductances, 64 and 57 on the first
+two. The bound is 40.
+
+**Equipotential conductors (brief §1b.2), and what they are worth.** A die pad measured 0.07 mΩ and the lead with its finger
+0.17 mΩ against a wire's 47.7 mΩ. ElectrothermalSystem.Build lumps a body below EquipotentialBelow (1 %) of the least-resistive
+wire's span resistance, from ONE φ solve at 20 °C with a unit current at every port contact; the notes name every body with its
+resistance, lumped or not. On the example it took the Newton step from ~1.4 s to ~1 s (Debug) — the T block is most of the cost.
+The public constructor lumps nothing, so the solver gates see the full 3D φ as before.
+
+**Newton near a runaway: three changes, one reverted.**
+- A solve that STALLS (three damped steps ≤ 1/8 that do not halve the residual between them) now ends as not converged; it had
+  crept at 1/16 to 1/256 steps for all thirty, and the continuation's bisection was waiting for the thirtieth.
+- The line search now scales the heat residual by the heat actually balanced (sources, Joule, RF, convection on the free rows),
+  not by refT. refT is the larger of the start residual and the reduced load, and a fixed face's LIFT (K times its temperature in
+  °C) dominates the reduced load — a number that depends on where 0 sits on the Celsius scale. With it the φ residual
+  dominated the merit, and every full step that disturbed φ was rejected. The convergence test still uses refT; no gate moved.
+- Solving φ at the new currents before Newton (a "consistent" warm start) was tried and REVERTED: under the old merit it made
+  every step damped, and the continuation then bracketed a false runaway at 6.6 A with the hottest wire at 127 °C.
+
+**A σ table's top is the edge of the physics.** ThermalProperties holds a table at its last row beyond it, so above gold's
+1,026.85 °C a wire's σ stops falling and its heat stops growing with temperature: past the fold there is a second, hotter branch
+of steady states. Under the old merit a continuation walked onto it and "converged" at 28 A with a wire at 3,570 °C; 5 → 20 A
+converged at 17, 18.75 and 20 A the same way. ElectricalConductivity.StatedUpToC (the table's top) now makes such a state not
+physical, as σ ≤ 0 already was, and both sweeps then report runaway above 16.69 A with the last converged wire at 944–951 °C —
+below the table's top, so the fold is genuine.
+
+**The fold is predicted, then tested.** Near the limit λ is a maximum of a smooth function of the hottest temperature; a parabola
+through the last three converged (θ, λ) predicts it, and a solve half a bracket below (must converge) and one above (must fail)
+closes the bracket or falls back to one bisection. On the example: 7 solves against bisection's 11. W1's linear ρ has no finite
+fold, so the prediction declines there and its 13 solves are unchanged.
+
+**Debug is ~5× Release, per step.** The example's DcSweep: 121 s Debug, 24 s Release, 22 s Debug with src/Thermal alone
+compiled optimised (not done: the owner's decision, since it costs stepping through thermal code).
+
+**The σ(T) Jacobian of a 3D conductor had never been checked.** Every bench gave its pads a constant σ. A central difference of
+the residual against J·v on the output stage, block by block: 5.4e-6 of the difference at worst
+(OutputWiresSolveTests.TheJacobian_WithSigmaOfTInTheConductors_IsTheResidualsDerivative).
+
+**A balanced superposition (§1c).** A port whose contacts lie in two conductor groups is accepted when each group is also another
+port's; each group is referenced at its own contact (the lowest port's), and Assemble refuses a point whose currents into a group
+do not sum to zero within 0.1 % of the largest, naming the ports. A same-group port keeps exactly the old reference, and a lone
+split port the old refusal word for word.

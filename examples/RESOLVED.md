@@ -537,3 +537,37 @@ for a ten-key change. The Materials editor's Save does the same to a user's libr
 Every number in both READMEs and `docs/user/src/reference/thermal.md` is in each example's `expected-numbers.json`;
 `tests/Ui.Tests/Examples/ThermalExamplesTests.cs` holds the text, `check`, the vendor scan, and (Benchmark tier, not yet run)
 re-runs the shipped setups against the recorded values.
+
+## brief-em3d-85 — Thermal Output Wires, the third thermal example (2026-09-29)
+
+Shipped: `Thermal Output Wires` — six 1 mil gold wedge–wedge wires from a drain pad on a SiC die to a copper lead, in a generic
+mould compound over a CuMo flange at 85 °C; setups `EM` (Palace, Draft), `DcSweep`, `RfHarmonics`, `FromHB`, and a second cell
+`Drawn Wires` with the same row drawn as `.c3d` wires. `check` is clean (0 warnings). Times are Release (the owner: users do not
+care about the Debug build's): DcSweep 21 s, RfHarmonics 7 s, FromHB 12 s, EM 1 min 37 s in Palace.
+
+**The die is the layout's own stackup, so `check` is clean.** Brief 81's Pads technology had one Pad Metal conductor and no
+ground reference, and `check` warned three times. The technology is now Pad Metal (10 µm gold) over SiC (100 µm) over a 25 µm
+gold-tin die attach marked ground reference; SiC and the attach exist only under a `Die` layer rectangle (`PresentWithLayer`, and
+the attach draws on that layer), so the lead finger — Pad Metal outside the die — has no substrate under it and sits on the 3D
+view's copper lead. A 5 µm backside was tried first: meshed at one element through its thickness over the whole die it took the
+mesh from 21k to 95k nodes.
+
+**A drawn wire's end is ON its pad; a `.wBond`'s is the foot's axis.** The `.wBond` states z above the ground reference's top,
+at the pad top plus the default hexagon's half-height (π√3·d/12 = 11.518 µm for 1 mil); the drawn wires put their end points
+at the pad's top surface. Both resolve to the same chain: Drawn Wires reproduces Output to every printed digit.
+
+**The port must be on a conductor the wires land on, or bonded to one.** The RF plan assigned a port's harmonics to the array
+ending on the port's positive conductor; port 2 is on the copper lead and the wires land on the gold finger bonded on top of it.
+The plan now accepts an array on a conductor that shares mesh nodes with the port's (src/Design/RESOLVED.md).
+
+**Numbers worth keeping.** The runaway: above 16.69 A for the six (the hottest wire 944 °C at 16.62 A). At 10 A, k(T) off moves
+the hottest wire 2.6 K and σ(T) off 38.7 K. At RF the inductive share puts the most current on the edge wires (270.8 against
+199.5 °C at 8 A peak). An outer EM loop (each wire's R_ac at its solved temperature in the share) would move a wire's RF current
+by at most 0.83 %. Palace Standard against Draft: 10 min 10 s and 7.6 GB, 233.6 against 228.5 pH, 3.9 K on the FromHB edge wire.
+
+**The circuit's DC path through an EM result is not the wires' resistance.** An SnP block holds its lowest frequency (0.1 GHz)
+below its data (`OutOfRangePolicy.WarnClamp`), so at DC the six wires (≈ 8 mΩ) look like ~2 Ω and the drain sits ~6 V below the
+lead. The DC CURRENT, which the thermal run takes, is the circuit's own. A finding for the owner; the README says it.
+
+**Figures.** The four pictures in `docs/user/assets/fixed/output-wires-*.png` were drawn by a one-off patch (its README says
+how); brief-em3d-88 is the brief that makes `render --field` draw them.

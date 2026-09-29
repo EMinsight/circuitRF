@@ -1,6 +1,6 @@
 // ================================================================
-//  ThermalExamplesTests.cs — brief-em3d-81's gates for the two shipped thermal examples, Thermal Die to Heatsink and Thermal
-//  Channel vs Surface (the third, Output Wires, is brief 85's).
+//  ThermalExamplesTests.cs — brief-em3d-81's gates for the shipped thermal examples, Thermal Die to Heatsink and Thermal
+//  Channel vs Surface, and brief-em3d-85's for the third, Thermal Output Wires.
 //
 //  Brief 70's discipline: each example's `expected-numbers.json` is the ONE source of every number its README and the Thermal
 //  user page print — each value's Readme text must appear verbatim in both — and the Benchmark-tier gate re-runs the shipped
@@ -25,7 +25,7 @@ public sealed class ThermalExamplesTests(ITestOutputHelper output) : IDisposable
 
     public void Dispose() { try { Directory.Delete(_tmp, true); } catch { /* best effort */ } }
 
-    private const string Heatsink = "Thermal Die to Heatsink", Channel = "Thermal Channel vs Surface";
+    private const string Heatsink = "Thermal Die to Heatsink", Channel = "Thermal Channel vs Surface", Wires = "Thermal Output Wires";
     private const string Page = "docs/user/src/reference/thermal.md";
 
     // ── gate 1: check is clean ──────────────────────────────────────────────────────────────────────
@@ -34,6 +34,7 @@ public sealed class ThermalExamplesTests(ITestOutputHelper output) : IDisposable
     [Theory]
     [InlineData(Heatsink)]
     [InlineData(Channel)]
+    [InlineData(Wires)]
     public void Gate1_CheckIsClean(string example)
     {
         var psi = new ProcessStartInfo("dotnet") { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
@@ -59,6 +60,8 @@ public sealed class ThermalExamplesTests(ITestOutputHelper output) : IDisposable
     [InlineData(Heatsink, Page)]
     [InlineData(Channel, "README.md")]
     [InlineData(Channel, Page)]
+    [InlineData(Wires, "README.md")]
+    [InlineData(Wires, Page)]
     public void Gate2_TheReadmeAndThePageQuoteEveryNumberInTheFile(string example, string page)
     {
         string path = page == Page ? Path.Combine(PalaceBackendTests.RepoRoot(), Page) : Path.Combine(Root(example), page);
@@ -95,12 +98,26 @@ public sealed class ThermalExamplesTests(ITestOutputHelper output) : IDisposable
         Assert.Equal(t, n.GetProperty("Shipped").GetProperty("Recorded")[2].GetProperty("T_interface").GetDouble(), 4);
     }
 
+    /// <summary>brief-em3d-85 — the external check the Output Wires page states: brief 72's W1 closed form for one isolated wire
+    /// (air, linear ρ, constant k, ends at the solved heels' mean, 98.86 °C) at the hottest wire's 2.3084 A.</summary>
+    [Fact]
+    public void TheIsolatedWiresClosedForm_IsTheRecordedValue()
+    {
+        const double s20 = 4.1e7, a20 = 0.0034, k = 318, d = 25.4e-6, l = 0.99e-3, te = 98.86, i = 2.3084;
+        double a = Math.PI * d * d / 4, rhoE = (1 / s20) * (1 + a20 * (te - 20)), aE = a20 / (1 + a20 * (te - 20));
+        double beta = i * Math.Sqrt(rhoE * aE / k) / a;
+        double centre = te + (1 / aE) * (1 / Math.Cos(beta * l / 2) - 1), iStar = Math.PI / l * a * Math.Sqrt(k / (rhoE * aE));
+        var n = JsonDocument.Parse(File.ReadAllText(Path.Combine(Root(Wires), "expected-numbers.json"))).RootElement;
+        Assert.Equal(n.GetProperty("External")[0].GetProperty("Expected").GetDouble(), centre, 0.05);
+        Assert.Equal(3.15, iStar, 0.005);
+    }
+
     // ── gate 3: no vendor names ─────────────────────────────────────────────────────────────────────
 
     [Fact]
     public void Gate3_NoVendorNameIsInTheExamplesOrThePage()
     {
-        var files = new[] { Heatsink, Channel }.SelectMany(x => Directory.EnumerateFiles(Root(x), "*", SearchOption.AllDirectories))
+        var files = new[] { Heatsink, Channel, Wires }.SelectMany(x => Directory.EnumerateFiles(Root(x), "*", SearchOption.AllDirectories))
             .Append(Path.Combine(PalaceBackendTests.RepoRoot(), Page));
         foreach (string file in files)
         {
@@ -155,6 +172,70 @@ public sealed class ThermalExamplesTests(ITestOutputHelper output) : IDisposable
         Hold("edge finger", r.Data["T_edge"].RealValues[0], eight.GetProperty("Recorded").GetProperty("T_edge").GetDouble(), eight.GetProperty("Tolerance").GetDouble());
 
         Assert.True(moved.Count == 0, "thermal results moved from the recorded ones:\n" + string.Join("\n", moved));
+    }
+
+    /// <summary>
+    /// brief-em3d-85 — Thermal Output Wires' thermal setups re-run in process (about a minute in all): DcSweep's hottest and edge
+    /// wires and its runaway, RfHarmonics' edge and centre wires, and Drawn Wires against the recorded DcSweep.
+    /// </summary>
+    [GmshFact]
+    [Trait("Category", "Benchmark")]
+    public void TheOutputWiresSetups_ReproduceTheirRecordedNumbers()
+    {
+        var n = JsonDocument.Parse(File.ReadAllText(Path.Combine(Root(Wires), "expected-numbers.json"))).RootElement;
+        var moved = new List<string>();
+        void Hold(string what, double got, double want, double tol)
+        {
+            output.WriteLine($"{what}: {got:F4} (recorded {want:F4})");
+            if (!(Math.Abs(got - want) <= tol)) moved.Add($"{what}: {got:F4}, recorded {want:F4} (± {tol})");
+        }
+        static string Max(int wire) => $"thermal.Twire:U1/wire/Out/{wire}:max";
+
+        var dc = n.GetProperty("DcSweep");
+        double tol = dc.GetProperty("Tolerance").GetDouble();
+        var r = Run(Wires, "Output", "DcSweep");
+        int k = 0;
+        foreach (var p in dc.GetProperty("Recorded").EnumerateArray())
+        {
+            if (p.TryGetProperty("Runaway", out _)) { Assert.Equal(1, r.Data!["thermal.Runaway"].RealValues[k]); k++; continue; }
+            Hold($"hottest at {p.GetProperty("Idc")} A", r.Data!["measurements.Thot"].RealValues[k], p.GetProperty("Hottest").GetDouble(), tol);
+            Hold($"edge at {p.GetProperty("Idc")} A", r.Data[Max(1)].RealValues[k], p.GetProperty("Edge").GetDouble(), tol);
+            k++;
+        }
+        Assert.Contains(r.Warnings, w => w.Contains("No steady state above about 16.69 A"));
+
+        var rf = n.GetProperty("RfHarmonics");
+        r = Run(Wires, "Output", "RfHarmonics");
+        k = 0;
+        foreach (var p in rf.GetProperty("Recorded").EnumerateArray())
+        {
+            Hold($"RF edge at {p.GetProperty("I1")} A", r.Data![Max(1)].RealValues[k], p.GetProperty("Edge").GetDouble(), tol);
+            Hold($"RF centre at {p.GetProperty("I1")} A", r.Data[Max(3)].RealValues[k], p.GetProperty("Centre").GetDouble(), tol);
+            k++;
+        }
+
+        var drawn = n.GetProperty("DrawnWires").GetProperty("Recorded");
+        r = Run(Wires, "Drawn Wires", "DcSweep");
+        Hold("drawn wires' hottest at 14 A", r.Data!["measurements.Thot"].RealValues[2], drawn.GetProperty("Hottest").GetDouble(), tol);
+
+        Assert.True(moved.Count == 0, "thermal results moved from the recorded ones:\n" + string.Join("\n", moved));
+    }
+
+    /// <summary>brief-em3d-85 — the EM setup in Palace (Draft, about 1.5 min), then FromHB on its result: the edge wire at 28 dBm
+    /// and the drive at which it passes its limit.</summary>
+    [PalaceFact]
+    [Trait("Category", "Benchmark")]
+    public void TheOutputWiresFromHB_ReproducesItsRecordedNumbers()
+    {
+        var hb = JsonDocument.Parse(File.ReadAllText(Path.Combine(Root(Wires), "expected-numbers.json"))).RootElement.GetProperty("FromHB");
+        Run(Wires, "Output", "EM");
+        var r = Run(Wires, "Output", "FromHB");
+        var rec = hb.GetProperty("Recorded");
+        double tol = hb.GetProperty("Tolerance").GetDouble();
+        double edge = r.Data!["thermal.Twire:U1/wire/Out/1:max"].RealValues[^1], limit = r.Data["circuit.LimitAt:w1"].RealValues.Single();
+        output.WriteLine($"edge at 28 dBm {edge:F4}, w1's limit at {limit:F4} dBm");
+        Assert.Equal(rec.GetProperty("Edge").GetDouble(), edge, tol);
+        Assert.Equal(rec.GetProperty("LimitAtW1").GetDouble(), limit, 0.01);
     }
 
     private EmRunResult Run(string example, string cell, string setup)

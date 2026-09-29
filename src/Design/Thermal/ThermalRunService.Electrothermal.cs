@@ -248,9 +248,12 @@ public static partial class ThermalRunService
         }
 
         // brief-em3d-78 R-em3d78-2/-3: which array carries each port's harmonics, and how its wires share them (once: geometry)
-        var rf = ThermalRfPlan.Build(e, lowering, t, out string? rfWhy, fromCircuit: say is not null, wireGroundZ);
+        var contacts = ConductorContacts(mesh, lowering);
+        var rf = ThermalRfPlan.Build(e, lowering, t, out string? rfWhy, fromCircuit: say is not null, wireGroundZ,
+                                     (a, b) => contacts.Contains((a, b)));
         if (rf is null) { refusal = rfWhy; return null; }
         List<string>? collect = null;
+        var regionNames = lowering.Regions.Select(r => r.Solid).ToList();
 
         ElectrothermalProblem At(IReadOnlyList<(string Var, double Value)> point, double scale)
         {
@@ -313,11 +316,15 @@ public static partial class ThermalRunService
             }
             // the refusal is a value, like Problem's; the continuation that asked for this point is left through the exception
             if (bad is not null) throw new ElectrothermalException(bad);
-            return new ElectrothermalProblem { Thermal = tp!, Wires = wires, Sigma = sigma, Currents = terminals };
+            return new ElectrothermalProblem
+            {
+                Thermal = tp!, Wires = wires, Sigma = sigma, Currents = terminals, RegionNames = regionNames,
+                EquipotentialBelow = t.Balance?.EquipotentialBelow ?? ElectrothermalProblem.DefaultEquipotentialBelow,
+            };
         }
 
         ElectrothermalSystem system;
-        try { system = new ElectrothermalSystem(At(first, 0), options.MaxDegreeOfParallelism); }
+        try { system = ElectrothermalSystem.Build(At(first, 0), options.MaxDegreeOfParallelism); }
         catch (ElectrothermalException x) { refusal = x.Message; return null; }
         if (rf.Any)
         {
@@ -336,9 +343,38 @@ public static partial class ThermalRunService
         return new ElectroRun { System = system, At = At, Options = options, Mesh = mesh, Wires = lowering.Wires, Rf = rf, Say = say };
     }
 
+    /// <summary>brief-em3d-85 — the pairs of conductor solids that touch: two regions whose tetrahedra share a mesh node (a
+    /// resistive interface splits its nodes, so a stated contact resistance is not a touch). Both orders.</summary>
+    private static HashSet<(string, string)> ConductorContacts(ThermalMesh mesh, ThermalLowering lowering)
+    {
+        var pairs = new HashSet<(string, string)>();
+        var first = new int[mesh.NodeCount];
+        Array.Fill(first, -1);
+        int nn = mesh.NodesPerTet;
+        bool Conducts(int r) => r < lowering.Conductors.Count && lowering.Conductors[r];
+        for (int e = 0; e < mesh.TetCount; e++)
+        {
+            int r = mesh.TetRegion[e];
+            if (!Conducts(r)) continue;
+            for (int k = 0; k < nn; k++)
+            {
+                int v = mesh.Tets[nn * e + k];
+                if (first[v] < 0) first[v] = r;
+                else if (first[v] != r)
+                {
+                    string a = lowering.Regions[first[v]].Solid, b = lowering.Regions[r].Solid;
+                    pairs.Add((a, b));
+                    pairs.Add((b, a));
+                }
+            }
+        }
+        return pairs;
+    }
+
     private static ElectricalConductivity Conductivity(TechMaterial m, double at20)
         => m.SigmaVsTemp is { Count: > 0 } || m.Alpha20 is { } a && a != 0
-            ? ElectricalConductivity.Varying(at20, T => { var v = ThermalProperties.SigmaAt(m, T)!.Value; return (v.Value, v.Slope); })
+            ? ElectricalConductivity.Varying(at20, T => { var v = ThermalProperties.SigmaAt(m, T)!.Value; return (v.Value, v.Slope); },
+                                             m.SigmaVsTemp is { Count: > 0 } table ? table.Max(p => p.TempC) : double.PositiveInfinity)
             : ElectricalConductivity.Constant(at20);
 
     /// <summary>R-em3d77-6 — the wire table, the port voltages, the Joule heat per conductor and the runaway flags, added to

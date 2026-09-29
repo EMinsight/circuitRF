@@ -2,6 +2,7 @@
 // is installed (the gate skips, saying so, when none is found).
 
 using System.Diagnostics;
+using System.Globalization;
 using System.Runtime.CompilerServices;
 using CircuitRF.Engine.Em3d;
 
@@ -91,9 +92,10 @@ internal static class TestMeshes
         return dirs.Where(d => d.Length > 0).Select(d => Path.Combine(d, exe)).FirstOrDefault(File.Exists);
     });
 
-    /// <summary>Meshes <paramref name="geo"/> (micrometres) with Gmsh at order 2, one thread, MSH 2.2, and reads it: volume
-    /// physical groups become regions in the order <paramref name="volumes"/> names them, surface groups keep their tags.</summary>
-    public static (ThermalMesh Mesh, MshMesh Raw) Mesh(string geo, IReadOnlyList<string> volumes)
+    /// <summary>Meshes <paramref name="geo"/> (micrometres) with Gmsh at order 2 (or <paramref name="order"/>), one thread, MSH 2.2,
+    /// and reads it: volume physical groups become regions in the order <paramref name="volumes"/> names them, surface groups keep
+    /// their tags.</summary>
+    public static (ThermalMesh Mesh, MshMesh Raw) Mesh(string geo, IReadOnlyList<string> volumes, int order = 2)
     {
         string dir = Path.Combine(Path.GetTempPath(), "crf-thermal-tests-" + Guid.NewGuid().ToString("N")[..10]);
         Directory.CreateDirectory(dir);
@@ -101,19 +103,20 @@ internal static class TestMeshes
         {
             File.WriteAllText(Path.Combine(dir, "m.geo"), geo);
             var psi = new ProcessStartInfo(Gmsh.Value!) { WorkingDirectory = dir, RedirectStandardOutput = true, RedirectStandardError = true };
-            foreach (string a in new[] { "m.geo", "-3", "-order", "2", "-nt", "1", "-format", "msh22", "-o", "m.msh" }) psi.ArgumentList.Add(a);
+            foreach (string a in new[] { "m.geo", "-3", "-order", order.ToString(CultureInfo.InvariantCulture), "-nt", "1", "-format", "msh22", "-o", "m.msh" })
+                psi.ArgumentList.Add(a);
             using var p = Process.Start(psi)!;
             var so = p.StandardOutput.ReadToEndAsync();
             var se = p.StandardError.ReadToEndAsync();
             p.WaitForExit();
             if (p.ExitCode != 0) throw new InvalidOperationException("gmsh failed: " + se.Result + so.Result);
             var raw = MshReader.Read(Path.Combine(dir, "m.msh"));
-            Assert.Equal(2, raw.Order);
+            Assert.Equal(order, raw.Order);
             var tagOf = volumes.Select(v => raw.PhysicalNames.Single(kv => kv.Value == v).Key).ToList();
             var region = raw.TetPhysical.Select(t => tagOf.IndexOf(t)).ToArray();
             Assert.DoesNotContain(-1, region);
             var nodes = raw.Nodes.Select(x => x * 1e-6).ToArray();
-            var mesh = new ThermalMesh(nodes, 2, raw.TetsHigh, region, raw.TrianglesHigh, raw.TrianglePhysical).Compact(out _);
+            var mesh = new ThermalMesh(nodes, order, order == 2 ? raw.TetsHigh : raw.Tets, region, order == 2 ? raw.TrianglesHigh : raw.Triangles, raw.TrianglePhysical).Compact(out _);
             return (mesh, raw);
         }
         finally { try { Directory.Delete(dir, true); } catch (IOException) { } }

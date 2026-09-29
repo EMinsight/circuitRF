@@ -726,8 +726,13 @@ The same model solves for heat. A **thermal setup** (*Simulate ▸ Setup Analyse
 whose *Solver* is set to **Thermal**) is solved by circuitRF's own steady-conduction solver after Gmsh meshes every solid
 — air is not meshed. What it needs is drawn in the
 view, and what it is worth is typed in the setup, so one model carries several thermal setups beside its EM ones.
-What a run models, and two worked examples with their numbers (*Tools ▸ Examples ▸ Thermal: …*), are in
+What a run models, and three worked examples with their numbers (*Tools ▸ Examples ▸ Thermal: …*), are in
 {{anchor: thermal.html|Thermal}}; this section is the gestures.
+
+<figure class="figure fixed"><span class="frame">
+    <img src="../assets/fixed/output-wires-dc-along-wire.png" alt="A gold bond wire in a mould compound, cut along its length: the wire hottest at mid-span, the heat spreading into the mould around it">
+  </span><figcaption>A thermal run of <em>Thermal Output Wires</em>: a bond wire carrying current inside a package's overmold, cut
+  along its length. The wire is coloured from its own solved temperature, the mould compound around it from the 3D field.</figcaption></figure>
 
 **The places.** These are drawn in the view but are not objects: they are never solved as metal, never snapped to, and an
 EM setup ignores them. Each has a group in the object tree (*Heat sources*, *Probes*, *Mesh regions*) whose rows select,

@@ -4,12 +4,24 @@
 // START. A warm start takes the previous sweep point's state. A cold one puts every temperature at the fixed faces' mean (or
 // the convection ambients'), φ at 0, and makes ONE fixed-point sweep — φ at that σ, then T at that heat — so Newton begins
 // with a current flowing: from φ = 0 the Joule term's derivative is zero and Newton's first step would be that sweep anyway.
+// A warm start does NOT solve φ at the new currents first (brief-em3d-85 tried it): the merit's heat term is scaled by a load
+// that a fixed face's lift dominates, so from a consistent φ every full step that disturbed φ was rejected and the line search
+// crept — near a runaway, into stalls the continuation then bracketed as a runaway at a wire temperature of 127 °C.
+//
+// TIES (brief-em3d-85). The temperatures a perfect bond ties (ElectrothermalSystem.TemperatureTie) are ONE free unknown: the
+// system is assembled on every node as ever, and the solve takes Pᵀ·J·P and Pᵀ·r, P copying a group's unknown to each member.
+// A group holding a fixed node is fixed at that node's temperature.
 //
 // A STEP. J·δ = −r on the free unknowns (fixed temperatures and each conductor's reference potential eliminated), LU on the
 // direct path and BiCGStab with a block AMG on the iterative one. The step is halved (up to ten times) while the scaled
 // residual ‖r_T‖/ref_T + ‖r_φ‖/ref_φ does not fall or the state is not physical — a conductivity at or below zero, which is
 // where a linear ρ(T) goes past its pole: the other branch of a wire past its runaway current solves the equations with a
 // NEGATIVE resistance, and must never be taken for an answer.
+//
+// STALLED (brief-em3d-85). Three damped steps in a row (each ≤ StallStep of Newton's) that between them do not halve the scaled
+// residual end the solve as NOT converged. Far from a warm start, near a runaway, a line search can creep for thirty steps at
+// 1/16 to 1/256 of Newton's step, each lowering the residual by under 1 %; the continuation's bisection (a nearer start) is what
+// such a point needs, and it was waiting for the thirtieth step.
 //
 // CONVERGED (R-em3d77-4c): the largest temperature update below Tolerance × the temperature span, AND each residual down by
 // 1e-8 of its reference (the larger of its starting residual and its reduced load, as brief 74's Newton, so a warm start
@@ -49,6 +61,8 @@ public sealed class ElectrothermalSolution
     public required double[] PortVoltage { get; init; }
     /// <summary>Σ V·I over the ports: the electrical power in, which the Joule heat must equal.</summary>
     public required double ElectricalPowerW { get; init; }
+    /// <summary>brief-em3d-85 — per Newton step, the linear solve's iterations (0 for a direct one) and its relative residual.</summary>
+    public IReadOnlyList<(int Iterations, double Residual, ThermalSolverKind Solver)> LinearSteps { get; init; } = [];
     /// <summary>brief-em3d-78 — the RF heat, W: in all, per wire, and per wire per harmonic.</summary>
     public double RfW { get; init; }
     public double[] RfByWire { get; init; } = [];
@@ -59,6 +73,10 @@ public static class ConductiveBalance
 {
     /// <summary>A temperature past which a state is not a solution but a divergence, °C.</summary>
     public const double Absurd = 1e7;
+
+    /// <summary>brief-em3d-85 — a step this fraction of Newton's or less is DAMPED; three in a row that do not halve the scaled
+    /// residual between them are a stall.</summary>
+    public const double StallStep = 0.125;
 
     /// <summary>Solves <paramref name="problem"/> by Newton's method. <paramref name="system"/> may be reused across sweep points
     /// of one mesh; <paramref name="warm"/> is the previous point's <see cref="ElectrothermalSolution.State"/>.</summary>
@@ -85,6 +103,8 @@ public static class ConductiveBalance
         var (rT, rP) = ctx.Residual(a, x);
         var (refT, refP) = ctx.References(a, x, rT, rP);
         var (floorT, floorP) = ctx.Floors(a, x, refT, refP);
+        // the line search's heat scale: the heat the step is balancing, not refT (which a fixed face's lift dominates)
+        double heatT = ctx.HeatScale(a, rT, refT);
         int its = 0;
         bool converged = false;
         double upd = double.PositiveInfinity, resT = SparseRows.Norm(rT) / refT, resP = SparseRows.Norm(rP) / refP;
@@ -92,6 +112,8 @@ public static class ConductiveBalance
         LinearSolveReport? last = null;
         if (a.Invalid) failure = "the starting state is not physical (a conductivity at or below zero)";
         var delta = new double[ctx.NFree];
+        var steps = new List<(int, double, ThermalSolverKind)>();
+        var damped = new List<double>();      // the merit before each of the current run of damped steps
         var trial = new double[sys.Size];
         // a start that already is the answer (no current and every fixed face at one temperature, say) takes no step: its
         // residual is round-off, and a step "down" from round-off is noise
@@ -100,15 +122,16 @@ public static class ConductiveBalance
         for (its = 1; !atStart && failure is null && its <= options.NewtonMaxIterations; its++)
         {
             options.Cancellation.ThrowIfCancellationRequested();
-            var j = ThermalSolver.Reduce(sys.Matrix(a.Tangent), ctx.Free, ctx.NFree);
+            var j = Project(sys.Matrix(a.Tangent), ctx.Free, ctx.NFree);
             var rhs = new double[ctx.NFree];
             for (int i = 0; i < ctx.NFreeT; i++) rhs[i] = -rT[i];
             for (int i = 0; i < ctx.NFree - ctx.NFreeT; i++) rhs[ctx.NFreeT + i] = -rP[i];
             Array.Clear(delta);
             last = LinearSolver.SolveBlocks(j, rhs, delta, ctx.NFreeT, ctx.Kind, options);
             if (last.FallbackNote is { } fb && !notes.Contains(fb)) notes.Add(fb);
+            steps.Add((last.Iterations, last.RelativeResidual, last.Solver));
             if (delta.Any(d => !double.IsFinite(d))) { failure = "a Newton step was not finite (the Jacobian is singular there)"; break; }
-            double merit = resT + resP, step = 2;
+            double merit = SparseRows.Norm(rT) / heatT + resP, step = 2;
             ElectrothermalAssembled? next = null;
             double[]? nT = null, nP = null;
             bool accepted = false;
@@ -121,8 +144,8 @@ public static class ConductiveBalance
                 next = sys.Assemble(problem, trial, kOfT, sOfT);
                 if (next.Invalid) continue;
                 (nT, nP) = ctx.Residual(next, trial);
-                double m = SparseRows.Norm(nT) / refT + SparseRows.Norm(nP) / refP;
-                if (m < merit || merit <= floorT + floorP) { accepted = true; break; }
+                double m = SparseRows.Norm(nT) / heatT + SparseRows.Norm(nP) / refP;
+                if (m < merit || resT <= floorT && resP <= floorP) { accepted = true; break; }
             }
             if (!accepted || next is null)
             {
@@ -134,6 +157,7 @@ public static class ConductiveBalance
             upd = step * maxD;
             Array.Copy(trial, x, x.Length);
             a = next;
+            if (step <= StallStep) damped.Add(merit); else damped.Clear();
             (rT, rP) = (nT!, nP!);
             resT = SparseRows.Norm(rT) / refT;
             resP = SparseRows.Norm(rP) / refP;
@@ -144,13 +168,32 @@ public static class ConductiveBalance
             // failed, and a continuation then read a bracket closing near zero as a runaway
             if (upd <= options.NewtonTolerance * Math.Max(span, ThermalSolver.SpanFloorK) && resT <= Math.Max(1e-8, floorT) && resP <= Math.Max(1e-8, floorP))
             { converged = true; break; }
+            if (damped.Count >= 3 && SparseRows.Norm(rT) / heatT + resP > 0.5 * damped[^3])
+            {
+                failure = $"Newton stalled: three damped steps in a row (at most {StallStep:G3} of a full step) did not halve the residual";
+                break;
+            }
         }
         if (atStart) its = 0;
         if (its > options.NewtonMaxIterations) { its = options.NewtonMaxIterations; failure ??= $"it did not converge in {options.NewtonMaxIterations} Newton steps"; }
-        notes.Add(converged
+        notes.Add((converged
             ? $"Conductive balance converged in {its} Newton step(s): last temperature update {upd:G3} K, residuals {resT:G3} (heat) and {resP:G3} (current) of their start."
-            : $"Conductive balance did not converge: {failure}; last temperature update {upd:G3} K, residuals {resT:G3} (heat) and {resP:G3} (current).");
-        return ctx.Result(a, x, converged, its, resT, resP, upd, converged ? null : failure, last, notes);
+            : $"Conductive balance did not converge: {failure}; last temperature update {upd:G3} K, residuals {resT:G3} (heat) and {resP:G3} (current).") +
+            StepsSentence(steps));
+        return ctx.Result(a, x, converged, its, resT, resP, upd, converged ? null : failure, last, notes, steps);
+    }
+
+    /// <summary>brief-em3d-85 — what each Newton step's linear solve took, for the run's notes: the numbers that say whether a
+    /// point's time went on the Krylov iterations.</summary>
+    private static string StepsSentence(List<(int Iterations, double Residual, ThermalSolverKind Solver)> steps)
+    {
+        if (steps.Count == 0) return "";
+        var ci = System.Globalization.CultureInfo.InvariantCulture;
+        int direct = steps.Count(s => s.Solver == ThermalSolverKind.Direct);
+        string what = direct == steps.Count
+            ? " Each step's linear solve was direct"
+            : $" BiCGStab iterations per step: {string.Join(", ", steps.Select(s => s.Solver == ThermalSolverKind.Direct ? "direct" : s.Iterations.ToString(ci)))}";
+        return what + string.Create(ci, $" (largest relative residual {steps.Max(s => s.Residual):G2}).");
     }
 
     /// <summary>
@@ -180,6 +223,45 @@ public static class ConductiveBalance
         return ctx.Result(a, x, converged, Math.Min(sweeps, maxSweeps), SparseRows.Norm(rT) / refT, SparseRows.Norm(rP) / refP, change,
                           converged ? null : "the fixed-point iteration did not settle", null,
                           [$"Fixed-point reference: {Math.Min(sweeps, maxSweeps)} sweep(s)."]);
+    }
+
+    /// <summary>Pᵀ·A·P onto <paramref name="n"/> reduced unknowns: <paramref name="map"/> gives each row and column its reduced
+    /// index (−1: eliminated), several rows may share one (a tie), and their entries are summed. With an injective, increasing
+    /// map it is <see cref="ThermalSolver.Reduce"/>.</summary>
+    internal static SparseRows Project(SparseRows a, int[] map, int n)
+    {
+        var start = new int[n + 1];
+        for (int i = 0; i < a.Rows; i++) if (map[i] >= 0) start[map[i] + 1]++;
+        for (int f = 0; f < n; f++) start[f + 1] += start[f];
+        var rows = new int[start[n]];
+        var fill = (int[])start.Clone();
+        for (int i = 0; i < a.Rows; i++) if (map[i] >= 0) rows[fill[map[i]]++] = i;
+        var ptr = new int[n + 1];
+        var idx = new List<int>(a.Nnz);
+        var val = new List<double>(a.Nnz);
+        var mark = new int[n];
+        Array.Fill(mark, -1);
+        var acc = new double[n];
+        var cols = new List<int>();
+        for (int f = 0; f < n; f++)
+        {
+            cols.Clear();
+            for (int r = start[f]; r < start[f + 1]; r++)
+            {
+                int i = rows[r];
+                for (int k = a.Ptr[i]; k < a.Ptr[i + 1]; k++)
+                {
+                    int c = map[a.Idx[k]];
+                    if (c < 0) continue;
+                    if (mark[c] != f) { mark[c] = f; acc[c] = 0; cols.Add(c); }
+                    acc[c] += a.Val[k];
+                }
+            }
+            cols.Sort();
+            foreach (int c in cols) { idx.Add(c); val.Add(acc[c]); }
+            ptr[f + 1] = idx.Count;
+        }
+        return new SparseRows(n, n, ptr, [.. idx], [.. val]);
     }
 
     private static bool Diverged(double[] x, int nT)
@@ -219,11 +301,18 @@ public static class ConductiveBalance
             var tag = new int[s.Size];
             Array.Copy(ftag, tag, ftag.Length);
             foreach (int r in s.Reference) fixedV[s.TUnknowns + r] = 0;
+            // a tie holding a fixed node is fixed, every member at that node's temperature
+            var tie = s.TemperatureTie;
+            for (int i = 0; i < s.TUnknowns; i++)
+                if (tie[i] != i && !double.IsNaN(fixedV[i]) && double.IsNaN(fixedV[tie[i]])) (fixedV[tie[i]], tag[tie[i]]) = (fixedV[i], tag[i]);
+            for (int i = 0; i < s.TUnknowns; i++)
+                if (tie[i] != i && !double.IsNaN(fixedV[tie[i]]) && double.IsNaN(fixedV[i])) (fixedV[i], tag[i]) = (fixedV[tie[i]], tag[tie[i]]);
             var free = new int[s.Size];
             int nf = 0, nfT = 0;
             for (int i = 0; i < s.Size; i++)
             {
-                free[i] = double.IsNaN(fixedV[i]) ? nf++ : -1;
+                // a tie's lowest member comes first, so its free index is known by the time another member is reached
+                free[i] = !double.IsNaN(fixedV[i]) ? -1 : i < s.TUnknowns && tie[i] != i ? free[tie[i]] : nf++;
                 if (i == s.TUnknowns - 1) nfT = nf;
             }
             if (s.TUnknowns == 0) nfT = 0;
@@ -233,9 +322,12 @@ public static class ConductiveBalance
             return new Context { P = p, S = s, O = o, Fixed = fixedV, FixedTag = tag, Free = free, NFree = nf, NFreeT = nfT, Conflicts = conflicts, Kind = kind };
         }
 
+        /// <summary>Fixed values in place, and every tied temperature at its group's.</summary>
         public void Pin(double[] x)
         {
             for (int i = 0; i < x.Length; i++) if (!double.IsNaN(Fixed[i])) x[i] = Fixed[i];
+            var tie = S.TemperatureTie;
+            for (int i = 0; i < S.TUnknowns; i++) if (tie[i] != i) x[i] = x[tie[i]];
         }
 
         public double[] ColdStart()
@@ -261,7 +353,7 @@ public static class ConductiveBalance
                 int f = Free[i];
                 if (f < 0) continue;
                 double r = sx[i] - a.Load[i];
-                if (f < NFreeT) rt[f] = r; else rp[f - NFreeT] = r;
+                if (f < NFreeT) rt[f] += r; else rp[f - NFreeT] += r;
             }
             return (rt, rp);
         }
@@ -270,17 +362,29 @@ public static class ConductiveBalance
         public (double T, double Phi) Floors(ElectrothermalAssembled a, double[] x, double refT, double refP)
         {
             var pat = S.Pattern;
-            double ft = 0, fp = 0;
+            var row = new double[NFree];
             for (int i = 0; i < S.Size; i++)
             {
                 int f = Free[i];
                 if (f < 0) continue;
                 double m = Math.Abs(a.Load[i]);
                 for (int k = pat.Ptr[i]; k < pat.Ptr[i + 1]; k++) m += Math.Abs(a.Secant[k] * x[pat.Idx[k]]);
-                if (f < NFreeT) ft += m * m; else fp += m * m;
+                row[f] += m;
             }
+            double ft = 0, fp = 0;
+            for (int f = 0; f < NFree; f++) if (f < NFreeT) ft += row[f] * row[f]; else fp += row[f] * row[f];
             const double ulps = 1000 * 2.220446049250313e-16;
             return (ulps * Math.Sqrt(ft) / refT, ulps * Math.Sqrt(fp) / refP);
+        }
+
+        /// <summary>brief-em3d-85 — the heat a Newton step is balancing, W: the larger of the T residual now and the heat load on the
+        /// free rows (sources, Joule and RF heat, convection's ambient term); <paramref name="fallback"/> when both are zero.</summary>
+        public double HeatScale(ElectrothermalAssembled a, double[] rT, double fallback)
+        {
+            var row = new double[NFreeT];
+            for (int i = 0; i < S.TUnknowns; i++) if (Free[i] >= 0) row[Free[i]] += a.Load[i];
+            double h = Math.Max(SparseRows.Norm(rT), SparseRows.Norm(row));
+            return h > 0 ? h : fallback;
         }
 
         /// <summary>Each block's reference: the larger of its residual now and its reduced load (never zero).</summary>
@@ -290,14 +394,10 @@ public static class ConductiveBalance
             for (int i = 0; i < S.Size; i++) lift[i] = Free[i] >= 0 ? 0 : x[i];
             var sl = new double[S.Size];
             S.Matrix(a.Secant).Multiply(lift, sl);
+            var row = new double[NFree];
+            for (int i = 0; i < S.Size; i++) if (Free[i] >= 0) row[Free[i]] += a.Load[i] - sl[i];
             double bt = 0, bp = 0;
-            for (int i = 0; i < S.Size; i++)
-            {
-                int f = Free[i];
-                if (f < 0) continue;
-                double b = a.Load[i] - sl[i];
-                if (f < NFreeT) bt += b * b; else bp += b * b;
-            }
+            for (int f = 0; f < NFree; f++) if (f < NFreeT) bt += row[f] * row[f]; else bp += row[f] * row[f];
             double refT = Math.Max(SparseRows.Norm(rT), Math.Sqrt(bt)), refP = Math.Max(SparseRows.Norm(rP), Math.Sqrt(bp));
             return (refT > 0 ? refT : 1, refP > 0 ? refP : 1);
         }
@@ -308,18 +408,19 @@ public static class ConductiveBalance
             if (S.PhiUnknowns > 0)
             {
                 var a = S.Assemble(P, x, O.KOfT, O.SigmaOfT);
-                SolveSubset(a, x, i => i >= S.TUnknowns, symmetric: true);
+                SolveSubset(a, x, NFreeT, NFree, symmetric: true);
             }
             var b = S.Assemble(P, x, O.KOfT, O.SigmaOfT);
-            SolveSubset(b, x, i => i < S.TUnknowns, symmetric: false);
+            SolveSubset(b, x, 0, NFreeT, symmetric: false);
         }
 
-        /// <summary>The secant system's free unknowns that <paramref name="which"/> selects, solved with every other unknown held.</summary>
-        private void SolveSubset(ElectrothermalAssembled a, double[] x, Func<int, bool> which, bool symmetric)
+        /// <summary>The secant system's free unknowns [<paramref name="lo"/>, <paramref name="hi"/>) (the T block, or the φ
+        /// block), solved with every other unknown held.</summary>
+        private void SolveSubset(ElectrothermalAssembled a, double[] x, int lo, int hi, bool symmetric)
         {
             var map = new int[S.Size];
-            int n = 0;
-            for (int i = 0; i < S.Size; i++) map[i] = Free[i] >= 0 && which(i) ? n++ : -1;
+            int n = hi - lo;
+            for (int i = 0; i < S.Size; i++) map[i] = Free[i] >= lo && Free[i] < hi ? Free[i] - lo : -1;
             if (n == 0) return;
             var held = (double[])x.Clone();
             for (int i = 0; i < S.Size; i++) if (map[i] >= 0) held[i] = 0;
@@ -327,23 +428,25 @@ public static class ConductiveBalance
             var kh = new double[S.Size];
             k.Multiply(held, kh);
             var rhs = new double[n];
-            for (int i = 0; i < S.Size; i++) if (map[i] >= 0) rhs[map[i]] = a.Load[i] - kh[i];
+            for (int i = 0; i < S.Size; i++) if (map[i] >= 0) rhs[map[i]] += a.Load[i] - kh[i];
             var sol = new double[n];
             for (int i = 0; i < S.Size; i++) if (map[i] >= 0) sol[map[i]] = x[i];
-            var r = LinearSolver.Solve(ThermalSolver.Reduce(k, map, n), rhs, sol, symmetric, Kind, O);
+            var r = LinearSolver.Solve(Project(k, map, n), rhs, sol, symmetric, Kind, O);
             for (int i = 0; i < S.Size; i++) if (map[i] >= 0) x[i] = sol[map[i]];
             _ = r;
         }
 
         public ElectrothermalSolution Result(ElectrothermalAssembled a, double[] x, bool converged, int its, double resT, double resP, double upd,
-                                             string? failure, LinearSolveReport? last, List<string> notes)
+                                             string? failure, LinearSolveReport? last, List<string> notes,
+                                             IReadOnlyList<(int, double, ThermalSolverKind)>? steps = null)
         {
             int n = S.HostNodes;
             var sx = new double[S.Size];
             S.Matrix(a.Secant).Multiply(x, sx);
             double fixedOut = 0;
             var byTag = new Dictionary<int, double>();
-            for (int i = 0; i < n; i++)
+            // every fixed temperature, a wire's heel included: a perfect bond on a fixed pad fixes the heel it is tied to
+            for (int i = 0; i < S.TUnknowns; i++)
             {
                 if (Free[i] >= 0) continue;
                 double q = a.Load[i] - sx[i];
@@ -381,6 +484,7 @@ public static class ConductiveBalance
                 WireCurrentA = [.. Enumerable.Range(0, P.Wires.Count).Select(w => S.WireCurrent(P, w, x, O.SigmaOfT))],
                 WireResistanceOhm = [.. Enumerable.Range(0, P.Wires.Count).Select(w => S.WireResistance(P, w, x, O.SigmaOfT))],
                 PortVoltage = volts, ElectricalPowerW = pe, RfW = a.RfW, RfByWire = a.RfByWire, RfByHarmonic = a.RfByHarmonic,
+                LinearSteps = steps ?? [],
             };
         }
     }

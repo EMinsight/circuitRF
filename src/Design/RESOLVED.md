@@ -15447,3 +15447,18 @@ is the one staleness function: the editor's banner and per-plot text, `render --
 - **Pre-existing, not fixed:** the elaborator's `ChildLayoutCached` key stamps only the placed `.clay`, so in an open 3D editor
   an edit to one of its SUB-cells does not re-elaborate the instance until the placed `.clay` itself changes. A run is not
   affected (it elaborates fresh), and the banner now calls such a result stale.
+
+## brief-em3d-85 — the circuit link found no 3D EM result; bonded conductors at RF (2026-09-29)
+
+**`ThermalCircuitLink.ResultPaths` predicted the planar spelling.** A 3D run writes its Touchstone at `Em3dRunService.SnpBasePath`,
+`results/<setup>.<solver>.sNp` (`.palace.s2p`); the link predicted `results/<setup>.sNp` with no solver in it, so a circuit using a
+REAL Palace result was refused ("No instance of the circuit uses this 3D view's EM result"). Brief 79's own gate wrote its synthetic
+thru at the predicted path, so it could not see this. Now the 3D rule, both results for a setup solved by both solvers.
+
+**At RF a port on a conductor bonded to the wires' pad is carried by those wires.** `ThermalRfPlan.Build` takes a `bonded`
+predicate (two conductor regions sharing mesh nodes — a stated contact resistance splits the nodes, so it is not a touch) and,
+when no array ends on the port's own conductor, accepts the one array on a conductor bonded to it, saying so in the notes.
+
+**A thermal run's per-point notes no longer repeat its system's.** Every conductive-balance solution's notes begin with the
+system's (the tie count, the equipotential conductors, the balanced ports); the run's notes carried them once already, and the
+summary repeated them at every sweep point.

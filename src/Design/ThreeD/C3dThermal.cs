@@ -688,6 +688,8 @@ public static class C3dThermal
         {
             if (bal.Tolerance is { } btol && !(btol > 0 && double.IsFinite(btol))) found.Add(D.Mesh(name, $"has Balance.Tolerance {Num(btol)}; it must be above 0"));
             if (bal.MaxIterations is { } its && its < 1) found.Add(D.Mesh(name, $"has Balance.MaxIterations {its}; at least 1"));
+            if (bal.EquipotentialBelow is { } eq && !(eq >= 0 && eq < 1))
+                found.Add(D.Mesh(name, $"has Balance.EquipotentialBelow {Num(eq)}; it is a fraction of a wire's resistance, from 0 (every conductor solved in 3D) up to but not 1"));
         }
 
         // brief-em3d-76 R-em3d76-3a — a submodel names a whole-model thermal setup and a mesh region, and states no sweep

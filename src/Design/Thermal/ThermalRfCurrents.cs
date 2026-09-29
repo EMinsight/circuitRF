@@ -115,8 +115,11 @@ public sealed class ThermalRfPlan
     /// </summary>
     /// <remarks><paramref name="fromCircuit"/> — the currents are a harmonic-balance run's (brief-em3d-79), so no Currents entry is
     /// the user's to change: a refusal names what can be changed there, the model's wires and ports.</remarks>
+    /// <param name="bonded">brief-em3d-85 — whether two conductors touch (share mesh nodes): a port on a package lead whose
+    /// wires land on a gold finger bonded to it is carried by those wires. Consulted only when no array lands on the port's
+    /// conductor itself.</param>
     public static ThermalRfPlan? Build(C3dElaboration e, ThermalLowering lowering, CemThermal t, out string? refusal, bool fromCircuit = false,
-                                       double? wireGroundZ = null)
+                                       double? wireGroundZ = null, Func<string, string, bool>? bonded = null)
     {
         refusal = null;
         var plans = lowering.Wires;
@@ -126,6 +129,7 @@ public sealed class ThermalRfPlan
 
         string Listing() => arrays.Count == 0 ? "this model has none" : string.Join(", ", arrays.Select(a => $"'{a.Name}' ({a.PadA} – {a.PadB})"));
         var entries = new List<(CemThermalCurrent, int)>();
+        var bondedNotes = new List<string>();
         foreach (var c in withHarmonics)
         {
             if (c.Array is { } name)
@@ -137,6 +141,13 @@ public sealed class ThermalRfPlan
             }
             var port = lowering.RfPorts.First(p => p.Port == c.Port);
             var on = arrays.Select((a, k) => (a, k)).Where(x => x.a.PadA == port.PositiveSolid || x.a.PadB == port.PositiveSolid).ToList();
+            if (on.Count == 0 && bonded is not null)
+            {
+                on = [.. arrays.Select((a, k) => (a, k)).Where(x => bonded(x.a.PadA, port.PositiveSolid) || bonded(x.a.PadB, port.PositiveSolid))];
+                if (on.Count == 1)
+                    bondedNotes.Add($"Port {c.Port}'s positive conductor '{port.PositiveSolid}' has no wire on it; wire array '{on[0].a.Name}' lands on " +
+                                    $"'{(bonded(on[0].a.PadA, port.PositiveSolid) ? on[0].a.PadA : on[0].a.PadB)}', which is bonded to it, and carries its RF current.");
+            }
             if (on.Count == 0)
             {
                 refusal = $"Port {c.Port} carries harmonic currents{(fromCircuit ? " (from the circuit's harmonic balance)" : "")}, and no wire array " +
@@ -167,6 +178,7 @@ public sealed class ThermalRfPlan
                     if (share[k][j] != 0) labels[j].Add(LabelOf(byN, c, h.N));
         var plan = new ThermalRfPlan(arrays, share, entries, [.. labels.Select(l => l.OrderBy(Order).ToArray())], byN);
         plan.Notes.AddRange(shareNotes);
+        plan.Notes.AddRange(bondedNotes);
         plan.Notes.Add("At RF each array's current divides among its wires by their inductance (wBond's share), the same at every harmonic " +
                        "and independent of σ; the DC current's share is the conduction solve's, which follows σ(T).");
         plan.Notes.Add("RF heat is applied per unit length along each wire's span, uniform around its section: across a wire tens of microns wide " +

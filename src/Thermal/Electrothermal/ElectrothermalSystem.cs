@@ -7,6 +7,27 @@
 // gap. A conductor no port's contact reaches carries no current, and has no φ at all: solving it would be a singular block.
 // Each connected conductor carrying a port's contacts is referenced at the negative contact of its lowest-numbered port.
 //
+// EQUIPOTENTIAL CONDUCTORS (brief-em3d-85 §1b). A die pad or a package lead carries amperes over millimetres through tens of
+// micrometres of gold or copper: a fraction of a milliohm, against a wire's tens. Build measures each current-carrying conductor
+// BODY (tetrahedra of conducting regions joined by shared nodes, the wires excluded) once, at 20 °C, from one potential solve
+// with a unit current at every port contact — its internal drop over the current through it — and a body below
+// ElectrothermalProblem.EquipotentialBelow of the least-resistive wire's span is ONE potential: its nodes are one φ item, its
+// tetrahedra are not assembled electrically, and its Joule heat is zero. The notes name every body, lumped or solved, with its
+// resistance, so a thin long trace that is not negligible is solved in 3D and said to be. The public constructor lumps nothing.
+//
+// A BALANCED SUPERPOSITION (brief-em3d-85 §1c). An output network's ports are each referenced to the flange across an insulating
+// die, so no port ALONE has a path: port 1's current returns through port 2. A port whose contacts lie in two conductor GROUPS
+// (connected conductors and wires) is accepted when every group it touches is touched by another port too, and at every point
+// the currents into each group must sum to zero, to BalanceTolerance of the largest — a circuit's DC pin currents from an EM
+// model balance only to its shunt leakage. Each group is referenced at a contact in it, the lowest-numbered port's (its
+// negative one when it has both there, which is the rule above unchanged).
+//
+// A PERFECT BOND IS A TIE, NOT A PENALTY (brief-em3d-85). A perfect bond makes its heel the pad: in the limit of the contact
+// conductance the patch's nodes and the heel are one temperature, and one potential. Electrically the patch joins the heel's
+// equipotential here (as a port's contact does); thermally TemperatureTie names the groups, and the solve (ConductiveBalance)
+// takes each group as one unknown. A penalty conductance large enough to stand for "perfect" was 10⁶–10⁷ times every other
+// conductance round it, and no Krylov solve converged on it: the coupled model's minutes per point were that, not its size.
+//
 // RESIDUALS (R-em3d77-4a). r = S(x)·x − L(x):
 //   φ rows: S = ∫σ(T)∇Nᵢ·∇Nⱼ (tetrahedra, and σA along the wires) + the contacts' G″; L = the ports' currents;
 //   T rows: S = ThermalAssembly's K(T) + the wires' kA + the contacts' h″ + the well couplings + wire convection;
@@ -49,7 +70,8 @@ public sealed class ElectrothermalAssembled
     public required double[] JouleByWire { get; init; }
     public required double JouleContactsW { get; init; }
     public double JouleW => JouleByRegion.Sum() + JouleByWire.Sum() + JouleContactsW;
-    /// <summary>A conductivity at or below zero, or not finite, somewhere: the state is not physical (a linear ρ past its pole).</summary>
+    /// <summary>A conductivity at or below zero, or not finite, somewhere: the state is not physical (a linear ρ past its pole) —
+    /// or (brief-em3d-85) a conductor above the top of its σ table.</summary>
     public required bool Invalid { get; init; }
     /// <summary>Heat lost by the wires to convection, W.</summary>
     public required double WireConvectionW { get; init; }
@@ -69,7 +91,8 @@ public sealed class ElectrothermalSystem
     public const int RingPoints = 8;
 
     /// <summary>A perfect bond's contact conductance per unit area: this × the pad's k / √(patch area) for heat, and
-    /// <see cref="PerfectBondElectrical"/> × its σ / √(patch area) for current. RESOLVED.md says how they were chosen.</summary>
+    /// <see cref="PerfectBondElectrical"/> × its σ / √(patch area) for current. RESOLVED.md says how they were chosen. Only a
+    /// perfect bond that cannot be TIED uses them: one coupled along a foot because the other kind states a resistance.</summary>
     public const double PerfectBond = 1e6;
 
     public const double PerfectBondElectrical = 1e4;
@@ -99,6 +122,23 @@ public sealed class ElectrothermalSystem
     /// <summary>Per terminal, its positive and negative φ unknowns.</summary>
     public (int Positive, int Negative)[] TerminalPhi { get; }
 
+    /// <summary>brief-em3d-85 — per T unknown, the lowest-numbered unknown of its perfect-bond group (itself when none): the
+    /// unknowns a perfect bond ties are one temperature.</summary>
+    public int[] TemperatureTie { get; }
+
+    /// <summary>brief-em3d-85 §1c — how far the currents into one conductor group may be from summing to zero, relative to the
+    /// largest current.</summary>
+    public const double BalanceTolerance = 1e-3;
+
+    /// <summary>brief-em3d-85 §1c — per terminal, the conductor groups of its positive and negative contacts.</summary>
+    private readonly (int Pos, int Neg)[] _terminalGroup = [];
+    /// <summary>Per terminal, one mesh item of each side's contact.</summary>
+    private readonly (int Pos, int Neg)[] _terminalSides;
+    private readonly int _groups;
+
+    /// <summary>brief-em3d-85 — how many contacts are tied: thermally, and electrically.</summary>
+    public (int Thermal, int Electrical) TiedContacts { get; }
+
     /// <summary>The structure (values zero), structurally symmetric.</summary>
     public SparseRows Pattern { get; }
 
@@ -119,6 +159,12 @@ public sealed class ElectrothermalSystem
     private readonly List<string> _notes = [];
 
     private readonly int[] _conductorTets;
+    /// <summary>The conductor tetrahedra assembled electrically: those of a body not taken as one equipotential.</summary>
+    private readonly int[] _solvedTets;
+    /// <summary>Per mesh node of a conductor, its body (the lowest node of it); −1 elsewhere.</summary>
+    private readonly int[] _bodyOf;
+    /// <summary>Per wire, per contact: tied as a perfect bond thermally, and electrically.</summary>
+    private readonly bool[][] _tiedT, _tiedE;
     private readonly List<PatchSample> _patch = [];
     private readonly List<WellSample> _well = [];
     private readonly List<AirSample> _air = [];
@@ -130,7 +176,47 @@ public sealed class ElectrothermalSystem
                                      double G, int Region);
     private sealed record AirSample(int Wire, int[] WireNodes, double[] WireN, double W);
 
+    /// <summary>The coupled system with every conductor's potential solved in 3D. <see cref="Build"/> is the run's: it takes a
+    /// negligible conductor as one equipotential.</summary>
     public ElectrothermalSystem(ElectrothermalProblem problem, int? maxDegreeOfParallelism = null)
+        : this(problem, maxDegreeOfParallelism, null, null) { }
+
+    /// <summary>brief-em3d-85 — the system a run solves: <see cref="ElectrothermalProblem.EquipotentialBelow"/> decides which
+    /// conductor bodies are one equipotential (a first build measures them), and the notes say which and why.</summary>
+    public static ElectrothermalSystem Build(ElectrothermalProblem problem, int? maxDegreeOfParallelism = null)
+    {
+        ArgumentNullException.ThrowIfNull(problem);
+        var full = new ElectrothermalSystem(problem, maxDegreeOfParallelism, null, null);
+        if (!(problem.EquipotentialBelow > 0) || full.PhiUnknowns == 0 || problem.Currents.Count == 0) return full;
+        var x = new double[full.Size];
+        for (int i = 0; i < full.TUnknowns; i++) x[i] = 20;
+        double wire = Enumerable.Range(0, problem.Wires.Count).Where(w => full.WirePhi[w][0] >= 0)
+                                .Select(w => full.WireResistance(problem, w, x, sigmaOfT: false)).DefaultIfEmpty(double.NaN).Min();
+        if (!(wire > 0)) return full;
+        var bodies = full.BodyResistances(problem, x);
+        if (bodies.Count == 0) return full;
+        var ci = System.Globalization.CultureInfo.InvariantCulture;
+        string Line((string Name, double R) b) => $"'{b.Name}' {(b.R * 1e3).ToString("G3", ci)} mΩ";
+        var lumped = bodies.Where(b => b.Value.R <= problem.EquipotentialBelow * wire).ToList();
+        var solved = bodies.Where(b => b.Value.R > problem.EquipotentialBelow * wire).ToList();
+        string limit = $"{(problem.EquipotentialBelow * 100).ToString("G3", ci)} % of the least-resistive wire's {(wire * 1e3).ToString("G3", ci)} mΩ at 20 °C";
+        string note = (lumped.Count > 0
+                          ? $"One equipotential each, below {limit}, so their potential is not solved and their Joule heat is zero: " +
+                            string.Join(", ", lumped.Select(b => Line(b.Value))) + ". "
+                          : "")
+                      + (solved.Count > 0
+                          ? $"Solved in 3D, at or above {limit}: " + string.Join(", ", solved.Select(b => Line(b.Value))) + ". "
+                          : "")
+                      + "Balance.EquipotentialBelow sets the fraction; 0 solves every conductor in 3D.";
+        if (lumped.Count == 0)
+        {
+            full._notes.Add(note);
+            return full;
+        }
+        return new ElectrothermalSystem(problem, maxDegreeOfParallelism, new HashSet<int>(lumped.Select(b => b.Key)), note);
+    }
+
+    private ElectrothermalSystem(ElectrothermalProblem problem, int? maxDegreeOfParallelism, IReadOnlySet<int>? lumped, string? lumpNote)
     {
         ArgumentNullException.ThrowIfNull(problem);
         var m = _mesh = problem.Thermal.Mesh;
@@ -159,6 +245,9 @@ public sealed class ElectrothermalSystem
         foreach (int e in _conductorTets) for (int k = 0; k < nn; k++) electrical[m.Tets[nn * e + k]] = true;
         for (int i = n; i < nT; i++) electrical[i] = true;
         var same = new UnionFind(items);
+        var body = new UnionFind(n);
+        foreach (int e in _conductorTets)
+            for (int k = 1; k < nn; k++) body.Union(m.Tets[nn * e], m.Tets[nn * e + k]);
         if (m.Interfaces is { } faces)
         {
             int nf = faces.NodesPerSide;
@@ -166,10 +255,18 @@ public sealed class ElectrothermalSystem
                 for (int k = 0; k < nf; k++)
                 {
                     int a = faces.Triangles[2 * nf * t + k], b = faces.Triangles[2 * nf * t + nf + k];
-                    if (electrical[a] && electrical[b]) same.Union(a, b);
+                    if (electrical[a] && electrical[b]) { same.Union(a, b); body.Union(a, b); }
                 }
         }
-        var terminalItems = new (int Pos, int Neg)[problem.Currents.Count];
+        _bodyOf = new int[n];
+        for (int i = 0; i < n; i++) _bodyOf[i] = electrical[i] ? body.Find(i) : -1;
+        // an equipotential body is one φ item; its tetrahedra carry no field, so they are not assembled electrically
+        if (lumped is { Count: > 0 })
+            for (int i = 0; i < n; i++)
+                if (_bodyOf[i] >= 0 && lumped.Contains(_bodyOf[i])) same.Union(_bodyOf[i], i);
+        _solvedTets = lumped is { Count: > 0 } ? [.. _conductorTets.Where(e => !lumped.Contains(_bodyOf[m.Tets[nn * e]]))] : _conductorTets;
+        if (lumpNote is not null) _notes.Add(lumpNote);
+        var terminalItems = _terminalSides = new (int Pos, int Neg)[problem.Currents.Count];
         int SideItem(IReadOnlyList<int> tags, int port, string side)
         {
             int first = -1;
@@ -202,6 +299,30 @@ public sealed class ElectrothermalSystem
         WireHostRegions = new int[wires.Count][];
         for (int w = 0; w < wires.Count; w++) Samples(problem, w);
 
+        // ── perfect bonds: the patch and the heel are one temperature and one potential ──
+        var tie = new UnionFind(nT);
+        _tiedT = new bool[wires.Count][];
+        _tiedE = new bool[wires.Count][];
+        for (int w = 0; w < wires.Count; w++)
+        {
+            _tiedT[w] = [.. wires[w].Contacts.Select(PerfectThermal)];
+            _tiedE[w] = [.. wires[w].Contacts.Select(c => PerfectElectrical(problem, c))];
+        }
+        foreach (var s in _patch)
+        {
+            if (s.WireNodes.Length != 1) continue;
+            int heel = WireOffset[s.Wire] + s.WireNodes[0];
+            if (_tiedT[s.Wire][s.Contact]) foreach (int v in s.Host) tie.Union(heel, v);
+            if (_tiedE[s.Wire][s.Contact] && s.Host.All(v => electrical[v])) foreach (int v in s.Host) same.Union(heel, v);
+        }
+        TemperatureTie = new int[nT];
+        for (int i = 0; i < nT; i++) TemperatureTie[i] = tie.Find(i);
+        TiedContacts = (_tiedT.Sum(t => t.Count(b => b)), _tiedE.Sum(t => t.Count(b => b)));
+        if (TiedContacts.Thermal > 0)
+            _notes.Add($"{TiedContacts.Thermal} perfect bond(s): each contact patch is one temperature with its wire's heel" +
+                       (TiedContacts.Electrical == TiedContacts.Thermal ? ", and one potential."
+                        : TiedContacts.Electrical > 0 ? $"; {TiedContacts.Electrical} of them one potential too." : "."));
+
         // ── which φ items conduct into which: tetrahedra, wire elements, electrical contacts ──
         var path = new UnionFind(items);
         foreach (int e in _conductorTets)
@@ -220,13 +341,27 @@ public sealed class ElectrothermalSystem
         {
             var (p, q) = terminalItems[i];
             int port = problem.Currents[i].Port;
-            if (path.Find(p) != path.Find(q))
+            // §1c: a port across two groups is one half of a balanced pair — each group it touches must be another port's too
+            bool Shared(int item) => Enumerable.Range(0, terminalItems.Length)
+                .Any(j => j != i && (path.Find(terminalItems[j].Pos) == path.Find(item) || path.Find(terminalItems[j].Neg) == path.Find(item)));
+            if (path.Find(p) != path.Find(q) && !(Shared(p) && Shared(q)))
                 throw new ElectrothermalException($"Port {port}'s positive and negative contacts are not joined by any conductor or wire, so its current " +
                                                   "has no path: connect them, or remove the port's current.");
             if (same.Find(p) == same.Find(q))
                 throw new ElectrothermalException($"Port {port}'s positive and negative contacts are one equipotential: its current would flow nowhere.");
             carrying.Add(path.Find(p));
+            carrying.Add(path.Find(q));
         }
+        var groupOf = new Dictionary<int, int>();
+        int Group(int item) => groupOf.TryGetValue(path.Find(item), out int g) ? g : groupOf[path.Find(item)] = groupOf.Count;
+        _terminalGroup = [.. terminalItems.Select(t => (Group(t.Pos), Group(t.Neg)))];
+        _groups = groupOf.Count;
+        var split = Enumerable.Range(0, terminalItems.Length).Where(i => _terminalGroup[i].Pos != _terminalGroup[i].Neg)
+                              .Select(i => problem.Currents[i].Port).ToList();
+        if (split.Count > 0)
+            _notes.Add($"Port(s) {string.Join(", ", split)} run between two conductor groups with no path between them: a balanced " +
+                       "superposition, each group referenced at its own contact, so the currents into every group must sum to zero. Such a " +
+                       "port's voltage is the difference of two separately referenced potentials; the power Σ V·I over the ports is not.");
 
         // ── the φ unknowns, in node order, of the conductors that carry a current ──
         var phiOf = new Dictionary<int, int>();
@@ -254,9 +389,11 @@ public sealed class ElectrothermalSystem
         var refs = new Dictionary<int, (int Port, int Dof)>();
         for (int i = 0; i < terminalItems.Length; i++)
         {
-            int comp = path.Find(terminalItems[i].Pos);
             int port = problem.Currents[i].Port;
-            if (!refs.TryGetValue(comp, out var r) || port < r.Port) refs[comp] = (port, TerminalPhi[i].Negative);
+            var (gp, gn) = _terminalGroup[i];
+            // a port with both contacts in one group references it at its negative; a split port each group at its own contact
+            foreach (var (g, dof) in gp == gn ? [(gp, TerminalPhi[i].Negative)] : new[] { (gn, TerminalPhi[i].Negative), (gp, TerminalPhi[i].Positive) })
+                if (!refs.TryGetValue(g, out var r) || port < r.Port) refs[g] = (port, dof);
         }
         Reference = [.. refs.Values.Select(r => r.Dof).Distinct().Order()];
         if (problem.Currents.Count > 0 && idle > 0)
@@ -265,6 +402,13 @@ public sealed class ElectrothermalSystem
         // ── the pattern ──
         Pattern = BuildPattern(problem, out _thermalSlot);
     }
+
+    /// <summary>A bond with no stated thermal resistance of any kind, on one node: its patch is tied to its heel.</summary>
+    private static bool PerfectThermal(WireContact c) => c.FirstNode == c.LastNode && c.HWm2K is null && !(c.SeriesThermalM2KW > 0);
+
+    /// <summary>The same electrically, on a pad that conducts.</summary>
+    private static bool PerfectElectrical(ElectrothermalProblem problem, WireContact c)
+        => c.FirstNode == c.LastNode && c.GSm2 is null && !(c.SeriesElectricalOhmM2 > 0) && problem.SigmaOf(c.HostRegion) is not null;
 
     // ── geometry of the couplings ────────────────────────────────────────────────────────────────────
 
@@ -445,7 +589,7 @@ public sealed class ElectrothermalSystem
         for (int i = 0; i < tp.Rows; i++)
             for (int k = tp.Ptr[i]; k < tp.Ptr[i + 1]; k++) rows[i].Add(tp.Idx[k]);
         int nn = m.NodesPerTet;
-        foreach (int e in _conductorTets)
+        foreach (int e in _solvedTets)
         {
             var ids = new List<int>(2 * nn);
             for (int k = 0; k < nn; k++)
@@ -551,17 +695,17 @@ public sealed class ElectrothermalSystem
         // ── conductor tetrahedra: σ(T), Joule ──
         var jouleRegion = new double[problem.Thermal.Conductivity.Count];
         int nn = m.NodesPerTet;
-        if (PhiUnknowns > 0 && _conductorTets.Length > 0)
+        if (PhiUnknowns > 0 && _solvedTets.Length > 0)
         {
-            var blocks = new TetBlock?[_conductorTets.Length];
-            var bad = new bool[_conductorTets.Length];
-            Parallel.For(0, _conductorTets.Length, new ParallelOptions { MaxDegreeOfParallelism = _dop }, i =>
+            var blocks = new TetBlock?[_solvedTets.Length];
+            var bad = new bool[_solvedTets.Length];
+            Parallel.For(0, _solvedTets.Length, new ParallelOptions { MaxDegreeOfParallelism = _dop }, i =>
             {
-                blocks[i] = TetElectrical(problem, _conductorTets[i], x, sigmaOfT, out bad[i]);
+                blocks[i] = TetElectrical(problem, _solvedTets[i], x, sigmaOfT, out bad[i]);
             });
             for (int i = 0; i < blocks.Length; i++)
             {
-                int e = _conductorTets[i];
+                int e = _solvedTets[i];
                 var b = blocks[i];
                 if (bad[i]) invalid = true;
                 if (b is null) continue;
@@ -626,6 +770,7 @@ public sealed class ElectrothermalSystem
                     if (kOfT && wire.K.OfT is { } kf) (kk, dk) = kf(tq);
                     var (sg, ds) = wire.Sigma.At(tq, sigmaOfT);
                     if (!(kk > 0) || !double.IsFinite(kk) || !(sg > 0) || !double.IsFinite(sg) || !double.IsFinite(dk) || !double.IsFinite(ds)) invalid = true;
+                    if (wire.Sigma.Beyond(tq, sigmaOfT)) invalid = true;
                     double A = wire.Area;
                     for (int i = 0; i < 3; i++)
                         for (int j = 0; j < 3; j++)
@@ -681,6 +826,11 @@ public sealed class ElectrothermalSystem
         {
             var wire = problem.Wires[s.Wire];
             var ct = wire.Contacts[s.Contact];
+            bool tiedT = _tiedT[s.Wire][s.Contact], tiedE = _tiedE[s.Wire][s.Contact];
+            // the ties are the system's structure, built from the first point's bonds: a later point cannot loosen one
+            if (tiedT && !PerfectThermal(ct) || tiedE && !PerfectElectrical(problem, ct))
+                throw new ElectrothermalException($"Wire '{wire.Name}''s bond was perfect at the first point and states a resistance at this one; " +
+                                                  "a bond resistance cannot sweep from zero. Start the sweep above zero.");
             var (h, g) = ContactConductance(problem, s.Wire, s.Contact);
             int o = WireOffset[s.Wire];
             int nw = s.WireNodes.Length, nh = s.Host.Length;
@@ -689,13 +839,14 @@ public sealed class ElectrothermalSystem
             var a = new double[nw + nh];
             for (int i = 0; i < nw; i++) { ids[i] = o + s.WireNodes[i]; c[i] = s.WireN[i]; a[i] = s.WireN[i]; }
             for (int i = 0; i < nh; i++) { ids[nw + i] = s.Host[i]; c[nw + i] = -s.HostN[i]; a[nw + i] = s.HostN[i]; }
-            for (int i = 0; i < ids.Length; i++)
-                for (int j = 0; j < ids.Length; j++)
-                {
-                    double v = h * s.W * c[i] * c[j];
-                    Add(ids[i], ids[j], v, v);
-                }
-            bool electric = g > 0 && s.Host.All(v => HostPhi[v] >= 0) && s.WireNodes.All(k => WirePhi[s.Wire][k] >= 0);
+            if (!tiedT)
+                for (int i = 0; i < ids.Length; i++)
+                    for (int j = 0; j < ids.Length; j++)
+                    {
+                        double v = h * s.W * c[i] * c[j];
+                        Add(ids[i], ids[j], v, v);
+                    }
+            bool electric = !tiedE && g > 0 && s.Host.All(v => HostPhi[v] >= 0) && s.WireNodes.All(k => WirePhi[s.Wire][k] >= 0);
             if (!electric) continue;
             var pids = new int[ids.Length];
             double dphi = 0;
@@ -769,6 +920,7 @@ public sealed class ElectrothermalSystem
         }
 
         // ── the ports' currents ──
+        Balanced(problem);
         for (int i = 0; i < problem.Currents.Count; i++)
         {
             var (p, q) = TerminalPhi[i];
@@ -785,7 +937,34 @@ public sealed class ElectrothermalSystem
         };
     }
 
-    /// <summary>A contact's h″ and G″ per unit area: as stated (in series with its lumped part), or a perfect bond.</summary>
+    /// <summary>brief-em3d-85 §1c — the currents into each conductor group sum to zero, to <see cref="BalanceTolerance"/> of the
+    /// largest current; otherwise a refusal naming the ports that touch the group.</summary>
+    private void Balanced(ElectrothermalProblem problem)
+    {
+        if (_groups < 2 || problem.Currents.Count != _terminalGroup.Length) return;
+        double largest = problem.Currents.Max(c => Math.Abs(c.CurrentA));
+        if (!(largest > 0)) return;
+        var into = new double[_groups];
+        for (int i = 0; i < _terminalGroup.Length; i++)
+        {
+            into[_terminalGroup[i].Pos] += problem.Currents[i].CurrentA;
+            into[_terminalGroup[i].Neg] -= problem.Currents[i].CurrentA;
+        }
+        for (int g = 0; g < _groups; g++)
+        {
+            if (Math.Abs(into[g]) <= BalanceTolerance * largest) continue;
+            var ports = Enumerable.Range(0, _terminalGroup.Length).Where(i => _terminalGroup[i].Pos == g || _terminalGroup[i].Neg == g)
+                                  .Select(i => problem.Currents[i].Port).Distinct().Order().ToList();
+            var ci = System.Globalization.CultureInfo.InvariantCulture;
+            throw new ElectrothermalException(
+                $"Ports {string.Join(" and ", ports)} share a conductor with no other path, and the currents they put into it do not balance: " +
+                $"{into[g].ToString("G4", ci)} A net, where {(BalanceTolerance * 100).ToString("G3", ci)} % of the largest current " +
+                $"({largest.ToString("G4", ci)} A) is allowed. A ground-referenced port's current returns through another port: state currents that sum to zero.");
+        }
+    }
+
+    /// <summary>A contact's h″ and G″ per unit area: as stated (in series with its lumped part), or a perfect bond. A perfect bond
+    /// the system TIED (<see cref="TemperatureTie"/>) is not assembled from these: its value here is what a penalty would be.</summary>
     public (double H, double G) ContactConductance(ElectrothermalProblem problem, int wire, int contact)
     {
         var ct = problem.Wires[wire].Contacts[contact];
@@ -836,7 +1015,7 @@ public sealed class ElectrothermalSystem
             double tq = 0, fx = 0, fy = 0, fz = 0;
             for (int i = 0; i < nn; i++) { tq += nq[i] * t[i]; fx += gx[i] * f[i]; fy += gy[i] * f[i]; fz += gz[i] * f[i]; }
             var (sg, ds) = c.At(tq, sigmaOfT);
-            if (!(sg > 0) || !double.IsFinite(sg) || !double.IsFinite(ds)) bad = true;
+            if (!(sg > 0) || !double.IsFinite(sg) || !double.IsFinite(ds) || c.Beyond(tq, sigmaOfT)) bad = true;
             double f2 = fx * fx + fy * fy + fz * fz;
             b.Joule += w * sg * f2;
             for (int i = 0; i < nn; i++)
@@ -853,6 +1032,74 @@ public sealed class ElectrothermalSystem
             }
         }
         return b;
+    }
+
+    /// <summary>
+    /// brief-em3d-85 — each current-carrying conductor body's resistance at the state <paramref name="x"/> (20 °C, σ at 20 °C):
+    /// φ solved with one ampere into every port contact, the body's potential spread over the current through it — the larger of
+    /// its port contacts' count (amperes) and the current its wires carry in or out. Keyed by body; its regions named.
+    /// </summary>
+    private Dictionary<int, (string Name, double R)> BodyResistances(ElectrothermalProblem problem, double[] x)
+    {
+        var result = new Dictionary<int, (string, double)>();
+        var a = Assemble(problem, x, kOfT: false, sigmaOfT: false);
+        var map = new int[Size];
+        Array.Fill(map, -1);
+        int nf = 0;
+        var fixedPhi = new HashSet<int>(Reference);
+        for (int d = 0; d < PhiUnknowns; d++) if (!fixedPhi.Contains(d)) map[TUnknowns + d] = nf++;
+        if (nf == 0) return result;
+        var e = Nonlinear.ConductiveBalance.Project(Matrix(a.Secant), map, nf);
+        var load = new double[nf];
+        foreach (var (p, q) in TerminalPhi)
+        {
+            if (map[TUnknowns + p] >= 0) load[map[TUnknowns + p]] += 1;
+            if (map[TUnknowns + q] >= 0) load[map[TUnknowns + q]] -= 1;
+        }
+        var phi = new double[nf];
+        LinearSolver.Solve(e, load, phi, symmetric: true, ThermalSolverKind.Auto, new ThermalSolveOptions());
+        var state = (double[])x.Clone();
+        for (int i = TUnknowns; i < Size; i++) state[i] = map[i] >= 0 ? phi[map[i]] : 0;
+
+        // the current through each body: its port contacts (1 A each), or what its wires carry in or out
+        var through = new Dictionary<int, double>();
+        void Through(int b, double amps) { if (b >= 0) through[b] = through.GetValueOrDefault(b) + amps; }
+        int BodyOfItem(int item) => item < HostNodes ? _bodyOf[item] : -1;
+        foreach (var (p, q) in _terminalSides) { Through(BodyOfItem(p), 1); Through(BodyOfItem(q), 1); }
+        var landed = new HashSet<(int Body, int Wire)>();
+        foreach (var s in _patch)
+        {
+            if (!s.Host.All(v => HostPhi[v] >= 0)) continue;
+            int b = _bodyOf[s.Host[0]];
+            if (b < 0 || !landed.Add((b, s.Wire))) continue;
+            double iw = Math.Abs(WireCurrent(problem, s.Wire, state, sigmaOfT: false));
+            if (through.GetValueOrDefault(b) < iw) through[b] = iw;
+        }
+        var m = _mesh;
+        int nn = m.NodesPerTet;
+        var regions = new Dictionary<int, SortedSet<int>>();
+        foreach (int t in _conductorTets)
+        {
+            int b = _bodyOf[m.Tets[nn * t]];
+            if (b < 0 || HostPhi[m.Tets[nn * t]] < 0) continue;
+            (regions.TryGetValue(b, out var set) ? set : regions[b] = []).Add(m.TetRegion[t]);
+        }
+        foreach (var (b, set) in regions)
+        {
+            double lo = double.PositiveInfinity, hi = double.NegativeInfinity;
+            for (int i = 0; i < HostNodes; i++)
+            {
+                if (_bodyOf[i] != b || HostPhi[i] < 0) continue;
+                double v = state[TUnknowns + HostPhi[i]];
+                lo = Math.Min(lo, v);
+                hi = Math.Max(hi, v);
+            }
+            double amps = through.GetValueOrDefault(b);
+            if (!(amps > 0) || !(hi >= lo)) continue;
+            string name = string.Join(" + ", set.Select(r => r < problem.RegionNames.Count ? problem.RegionNames[r] : $"region {r}"));
+            result[b] = (name, (hi - lo) / amps);
+        }
+        return result;
     }
 
     // ── read-outs ────────────────────────────────────────────────────────────────────────────────────

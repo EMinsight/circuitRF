@@ -295,7 +295,8 @@ public static partial class ThermalRunService
                 summary.Add($"{where}{sol.Unknowns:N0} unknowns, {Describe(sol, et is not null)}; energy balance {sol.BalanceRelative:G3} " +
                             $"({(et is null ? "sources" : et.Rf.Any ? "sources, Joule and RF heat" : "sources and Joule heat")} {sol.SourcePowerW:G6} W, out {sol.FixedHeatOutW:G6} W through fixed faces and " +
                             $"{sol.ConvectionHeatOutW:G6} W by convection).");
-                foreach (string n in sol.Notes) summary.Add(where + n);
+                // a conductive-balance point's notes begin with its system's, which the run's notes already carry once
+                foreach (string n in sol.Notes) if (et is null || !et.System.Notes.Contains(n)) summary.Add(where + n);
                 if (!(sol.BalanceRelative <= ThermalSolver.BalanceTolerance))
                     warnings.Add($"{where}The energy balance does not close: {sol.BalanceRelative:G3} of the heat is unaccounted for " +
                                  $"(tolerance {ThermalSolver.BalanceTolerance:G3}). The solve is not to be trusted at this point.");

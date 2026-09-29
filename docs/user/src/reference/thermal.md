@@ -3,15 +3,21 @@ title: Thermal: temperature on the 3D model
 slug: reference/thermal.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > Thermal
-lede: The same 3D model that is solved for S-parameters is solved for heat — heat sources, probes, boundaries and contacts in the view, their values in a thermal setup. What a thermal run is, what it models and what it does not, taught through the two thermal examples with their measured numbers.
-keywords: thermal, heat, temperature, junction temperature, channel temperature, Rth, thermal resistance, Rth_jc, Rth_ja, junction to case, case temperature, heatsink, heat source, probe, IR, infrared, IR spot, field plate, GaN, SiC, die attach, sinter, solder, thermal interface material, TIM, via field, effective block, contact resistance, interface resistance, symmetry, k(T), conductivity versus temperature, conductive balance, electrothermal, bond wire temperature, Rth matrix, Z_th, thermal impedance, Foster, pulse, duty, radar, Gmsh, mesh, element order
+lede: The same 3D model that is solved for S-parameters is solved for heat — heat sources, probes, boundaries and contacts in the view, their values in a thermal setup. What a thermal run is, what it models and what it does not, taught through the three thermal examples with their measured numbers.
+keywords: thermal, heat, bond wire, overmold, mould compound, runaway, temperature, junction temperature, channel temperature, Rth, thermal resistance, Rth_jc, Rth_ja, junction to case, case temperature, heatsink, heat source, probe, IR, infrared, IR spot, field plate, GaN, SiC, die attach, sinter, solder, thermal interface material, TIM, via field, effective block, contact resistance, interface resistance, symmetry, k(T), conductivity versus temperature, conductive balance, electrothermal, bond wire temperature, Rth matrix, Z_th, thermal impedance, Foster, pulse, duty, radar, Gmsh, mesh, element order
 ---
 
 A **thermal setup** solves the steady temperature of a 3D view: every solid conducts heat, air does not, and heat enters
 where you put a **heat source** and leaves through the faces you hold at a temperature or cool by convection. It is the same
 model an EM setup solves — the geometry, the materials and the ports are shared — so one `.c3d` carries its thermal setups
 beside its EM ones. What each place is and how to draw it is in {{anchor: drawing-in-3d.html#thermal|The 3D Editor ▸
-Temperature}}; this page is what the run does with them, and what two worked examples measured.
+Temperature}}; this page is what the run does with them, and what three worked examples measured.
+
+<figure class="figure fixed"><span class="frame">
+    <img src="../assets/fixed/output-wires-dc-along-wire.png" alt="A gold bond wire in a mould compound, cut along its length: the wire hottest at mid-span, the heat spreading into the mould around it">
+  </span><figcaption>What a thermal run shows: a bond wire carrying current inside a package's overmold, cut along its length
+  (<em>Thermal Output Wires</em>, 14 A DC for six wires). The wire is coloured from its own solved temperature — hottest at
+  mid-span, 85 °C flange below — and the mould compound around it from the 3D field.</figcaption></figure>
 
 **Thermal needs Gmsh**, the mesher Palace uses; circuitRF's own solver does the rest. The first run without Gmsh offers to
 install it.
@@ -115,7 +121,14 @@ follows it unless its switch on the setup's *Balance* section is off, so the two
   the section their EM model uses, coupled to the pads they bond to and to the mould compound they run through. The
   temperature along each wire is drawn on the wire.
 - **Runaway is an answer.** Above a current, no steady state exists between fixed-temperature ends: the run brackets that
-  current and reports it rather than failing.
+  current and reports it rather than failing. A metal hotter than the top of its conductivity table (gold's ends at 1,027 °C,
+  just below melting) is past what its material states, and is not taken as a steady state.
+- **A pad or a lead is one potential** when its resistance at 20 °C is below 1 % of the least-resistive wire's
+  (*Balance ▸ EquipotentialBelow*; 0 solves every conductor's potential in 3D). The run's notes name each conductor, its
+  resistance, and which way it went.
+- **Ports referenced to ground.** Two ports that each run from a conductor to the flange across an insulating die have no path
+  alone — one's current returns through the other. They are solved as a balanced pair: the currents into each conductor group
+  must sum to zero (to 0.1 % of the largest), or the run refuses, naming the ports.
 - **Harmonic currents** heat the wires only, each harmonic at its own skin-effect resistance, each stated **Peak** or **RMS**
   (never inferred); a port's harmonics are shared among the wires of its array by their inductance. A `.wBond`'s wires are
   shared over their design's own ground plane. Wires drawn in the 3D view are shared in free space unless the document states
@@ -124,6 +137,62 @@ follows it unless its switch on the setup's *Balance* section is off, so the two
 - **From a circuit**: a setup can take its currents from a harmonic-balance sweep of a schematic whose S-parameter block is
   this view's EM result — pin p is port p — and solve the wires at every drive level, with the circuit's measures beside the
   temperatures. Nothing goes back into the circuit.
+
+## Worked example: Output Wires {#output-wires}
+
+*Tools ▸ Examples ▸ Thermal: Output Wires.* Six 1 mil gold wires, wedge-bonded from a drain pad on a SiC die to a copper package
+lead, **all of it embedded in a mould compound — the overmold** — over a copper–molybdenum flange held at 85 °C. The die, its
+pad and the lead finger are a layout; the wires are its `.wBond`; the rest is drawn in the 3D view. The mould's glass transition
+(150 °C) is every wire probe's *Limit*. Each setup runs in seconds on an Apple M4 (the Release build): `DcSweep` in 21 s, on
+123,818 tetrahedra.
+
+**DC, up to runaway.** The six wires share a DC current almost equally, and the centre ones run hottest — the mould between their
+neighbours is warmer:
+
+| Idc (six wires) | Hottest wire | An edge wire |
+|---|---|---|
+| 6 A | 119.8 °C | 117.0 °C |
+| 10 A | 197.3 °C | 188.7 °C |
+| 14 A | 393.0 °C | 371.5 °C |
+
+Above 16.69 A there is no steady state, and the run says so rather than failing: the last converged point is 16.62 A, with the
+hottest wire at 944 °C. At 10 A the switches show what drives it: the hottest wire reads 197.3 °C with both on, 194.8 °C with
+k(T) off and 158.7 °C with σ(T) off — nearly all of it is gold's resistance rising with temperature.
+
+<figure class="figure fixed"><span class="frame">
+    <img src="../assets/fixed/output-wires-dc-across.png" alt="The six wires cut across at mid-span at 14 A DC: six hot spots of nearly equal temperature in the mould">
+  </span><figcaption>DC, 14 A, cut across the six wires at mid-span. Each wire's section is coloured from its own solved
+  temperature: at DC they share the current almost equally, and the centre ones run a little hotter.</figcaption></figure>
+
+**RF, at 2 GHz.** At RF the current divides by the wires' inductance, and **the edge wires carry the most**: at 8 A peak the edge
+wires reach 270.8 °C and the centre ones 199.5 °C; at 12 A, 594.4 °C against 366.7 °C.
+
+<figure class="figure fixed"><span class="frame">
+    <img src="../assets/fixed/output-wires-rf-across.png" alt="The six wires cut across at 8 A peak RF: the two edge wires much hotter than the four in the middle">
+  </span><figcaption>RF, 8 A peak at 2 GHz on 4 A DC, the same cut. The two edge wires run hottest: the inductive share gives them
+  the most current.</figcaption></figure>
+
+<figure class="figure fixed"><span class="frame">
+    <img src="../assets/fixed/output-wires-rf-plan.png" alt="The same RF run seen from above, cut through the wires' loops: the heat concentrated along the two outer wires">
+  </span><figcaption>The same RF run from above, cut through the wires' loops 330 µm above the flange: each wire crosses the cut twice,
+  and the heat gathers along the outer two.</figcaption></figure>
+
+**From a power amplifier.** `FromHB` takes its currents from a harmonic-balance drive sweep of `Amplifier.cnl` — a generic
+FET on this view's EM result, into a 5 Ω load — at every drive level. Both ports are referenced to the flange, so they are solved
+as a balanced pair. At 28 dBm drive the circuit gives 49.51 dBm from 4.43 A, and the edge wires reach 205.1 °C (the centre ones
+164.7 °C); the run takes 12 s, and states when each wire passes its limit:
+*"Probe 'w1' reaches its limit of 150 °C at Pin ≈ 13.11 (Pout_dBm ≈ 47.14, Id_A ≈ 3.242, Eff ≈ 40.2)."* Run the `EM` setup first (1 min 37 s and 5.8 GB in Palace at the Draft preset;
+its series inductance for the six wires is 228.5 pH at 2 GHz).
+
+**Checks.** The same row drawn as 3D-view wires (the second cell, *Drawn Wires*) reads 393.0 °C at 14 A and runs away at the same
+current. Brief 72's closed form for one isolated wire in air, its ends at the heels' temperature, reads 642.2 °C at the same
+current and runs away at 3.15 A per wire: the overmold takes most of the rise. Recomputing the RF share with each wire's hot
+resistance moves any wire's current by at most 0.83 %.
+
+**What was traded for speed.** The die pad (0.071 mΩ) and the lead (0.047 mΩ) are solved as one potential each, below 1 % of a
+wire's 47.7 mΩ (*Balance ▸ EquipotentialBelow*; 0 solves them in 3D: 42 s, and 393.3 °C for the hottest wire at 14 A). The EM
+setup's *Standard* preset takes 10 min 10 s and 7.6 GB, reads 233.6 pH, and moves the edge wire at 28 dBm to 201.2 °C and its
+limit to `Pin` ≈ 13.18.
 
 ## The mesh, and what a run costs {#mesh}
 

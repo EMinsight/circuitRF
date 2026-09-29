@@ -160,10 +160,18 @@ public static class ThermalCircuitLink
         => Path.GetFullPath(Path.Combine(Path.GetDirectoryName(Path.GetFullPath(c3dPath))!, schematic));
 
     /// <summary>Every EM setup of <paramref name="doc"/> and the path its S-parameter result lands at, less its <c>.sNp</c>
-    /// extension (<see cref="EmRunService.ResolveSnpBasePath"/>'s rule, with the embedded setup named as its run names it).</summary>
+    /// extension: the 3D run's own rule (<see cref="Em3d.Em3dRunService.SnpBasePath"/> — the solver is in the name,
+    /// <c>results/&lt;setup&gt;.palace.s2p</c>), with the embedded setup named as its run names it; a setup solved by both
+    /// solvers has both results (<see cref="Em3d.Em3dRunService.BothSnpBasePath"/>). brief-em3d-85: this used the planar rule,
+    /// which has no solver in it, so no 3D run's result was ever found.</summary>
     public static List<(string Setup, string BasePath)> ResultPaths(C3dDocument doc, string c3dPath, string resultsRoot)
-        => [.. C3dSetups.Read(doc).Where(s => s.Setup is { IsThermal: false, Is3D: true })
-                                  .Select(s => (s.Name, Path.GetFullPath(EmRunService.ResolveSnpBasePath(resultsRoot, C3dSetups.ForRun(s.Setup!, c3dPath)))))];
+        => [.. C3dSetups.Read(doc).Where(s => s.Setup is { IsThermal: false, Is3D: true }).SelectMany(s =>
+           {
+               var run = C3dSetups.ForRun(s.Setup!, c3dPath);
+               return run.Solver3D == Em3dSolver.Both
+                   ? new[] { Em3dSolver.Palace, Em3dSolver.OpenEms }.Select(v => (s.Name, Path.GetFullPath(Em3d.Em3dRunService.BothSnpBasePath(resultsRoot, run, v))))
+                   : [(s.Name, Path.GetFullPath(Em3d.Em3dRunService.SnpBasePath(resultsRoot, run, run.Solver3D)))];
+           })];
 
     /// <summary>Whether Touchstone <paramref name="snpPath"/> is one of <paramref name="bases"/> with its <c>.sNp</c>.</summary>
     public static bool IsResultOf(string snpPath, IEnumerable<string> bases)

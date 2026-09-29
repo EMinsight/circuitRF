@@ -1,0 +1,399 @@
+{
+  "FormatVersion": 1,
+  "DbuPerMicron": 1000,
+  "DisplayUnit": "Um",
+  "SnapDbu": 0,
+  "Objects": [
+    {
+      "$type": "Box",
+      "Name": "mould",
+      "Material": "Mould compound (generic)",
+      "Role": "Dielectric",
+      "Min": [
+        -300000,
+        -650000,
+        0
+      ],
+      "Size": [
+        2200000,
+        1300000,
+        600000
+      ]
+    },
+    {
+      "$type": "Box",
+      "Name": "flange",
+      "Material": "Copper-molybdenum (70Mo-30Cu)",
+      "Role": "Conductor",
+      "Min": [
+        -300000,
+        -650000,
+        -500000
+      ],
+      "Size": [
+        2200000,
+        1300000,
+        500000
+      ]
+    },
+    {
+      "$type": "Box",
+      "Name": "standoff",
+      "Material": "Alumina 96%",
+      "Role": "Dielectric",
+      "Min": [
+        1050000,
+        -500000,
+        0
+      ],
+      "Size": [
+        750000,
+        1000000,
+        65000
+      ]
+    },
+    {
+      "$type": "Box",
+      "Name": "lead",
+      "Material": "Copper",
+      "Role": "Conductor",
+      "Min": [
+        1050000,
+        -500000,
+        65000
+      ],
+      "Size": [
+        750000,
+        1000000,
+        60000
+      ]
+    }
+  ],
+  "Instances": [
+    {
+      "Name": "U1",
+      "CellRef": "../../Pads",
+      "View": "Layout",
+      "Placement": {
+        "Origin": [
+          0,
+          0,
+          0
+        ]
+      }
+    }
+  ],
+  "Variables": [
+    {
+      "Name": "Tcase",
+      "Expression": "85"
+    },
+    {
+      "Name": "Idc",
+      "Expression": "4"
+    },
+    {
+      "Name": "I1",
+      "Expression": "6"
+    },
+    {
+      "Name": "I2",
+      "Expression": "1"
+    }
+  ],
+  "Probes": [
+    {
+      "Name": "w1",
+      "Wire": "U1/wire/Out/1",
+      "LimitC": 150
+    },
+    {
+      "Name": "w2",
+      "Wire": "U1/wire/Out/2",
+      "LimitC": 150
+    },
+    {
+      "Name": "w3",
+      "Wire": "U1/wire/Out/3",
+      "LimitC": 150
+    },
+    {
+      "Name": "w4",
+      "Wire": "U1/wire/Out/4",
+      "LimitC": 150
+    },
+    {
+      "Name": "w5",
+      "Wire": "U1/wire/Out/5",
+      "LimitC": 150
+    },
+    {
+      "Name": "w6",
+      "Wire": "U1/wire/Out/6",
+      "LimitC": 150
+    }
+  ],
+  "FieldPlots": [
+    {
+      "Name": "DC 14 A — along wire 4",
+      "Setup": "DcSweep",
+      "Solution": {
+        "Point": 3
+      },
+      "Quantity": "T_C",
+      "On": "ClipPlane",
+      "Axis": "Y",
+      "Offset": 75000,
+      "Hidden": false
+    },
+    {
+      "Name": "DC 14 A — across the six wires",
+      "Setup": "DcSweep",
+      "Solution": {
+        "Point": 3
+      },
+      "Quantity": "T_C",
+      "On": "ClipPlane",
+      "Axis": "X",
+      "Offset": 820000,
+      "Hidden": true
+    },
+    {
+      "Name": "RF 8 A peak — across the six wires",
+      "Setup": "RfHarmonics",
+      "Solution": {
+        "Point": 3
+      },
+      "Quantity": "T_C",
+      "On": "ClipPlane",
+      "Axis": "X",
+      "Offset": 820000,
+      "Hidden": true
+    },
+    {
+      "Name": "RF 8 A peak — plan through the loops",
+      "Setup": "RfHarmonics",
+      "Solution": {
+        "Point": 3
+      },
+      "Quantity": "T_C",
+      "On": "ClipPlane",
+      "Axis": "Z",
+      "Offset": 330000,
+      "Hidden": true
+    }
+  ],
+  "Ports": [
+    {
+      "Number": 1,
+      "Name": "P1",
+      "Kind": "Lumped",
+      "Plane": "YZ",
+      "Offset": 600000,
+      "Rect": {
+        "Min": [
+          -450000,
+          25000
+        ],
+        "Size": [
+          900000,
+          100000
+        ]
+      },
+      "Z0": "50"
+    },
+    {
+      "Number": 2,
+      "Name": "P2",
+      "Kind": "Lumped",
+      "Plane": "YZ",
+      "Offset": 1800000,
+      "Rect": {
+        "Min": [
+          -500000,
+          0
+        ],
+        "Size": [
+          1000000,
+          65000
+        ]
+      },
+      "Z0": "50"
+    }
+  ],
+  "Setups": [
+    {
+      "FormatVersion": 1,
+      "Name": "EM",
+      "Frequency": {
+        "StartExpr": "0.1",
+        "StopExpr": "10.1",
+        "StepExpr": "",
+        "NumPoints": 101,
+        "Mode": "PointCount",
+        "Kind": "Linear",
+        "StartUnit": "GHz",
+        "StopUnit": "GHz",
+        "StepUnit": "Hz"
+      },
+      "Port1Z0Real": 50,
+      "Port1Z0Imag": 0,
+      "Port2Z0Real": 50,
+      "Port2Z0Imag": 0,
+      "Solver3D": "Palace",
+      "AirBox": {
+        "XMin": {
+          "PaddingUm": 0,
+          "Boundary": "Pec"
+        },
+        "XMax": {
+          "PaddingUm": 0,
+          "Boundary": "Pec"
+        },
+        "YMin": {
+          "PaddingUm": 0,
+          "Boundary": "Pec"
+        },
+        "YMax": {
+          "PaddingUm": 0,
+          "Boundary": "Pec"
+        },
+        "ZMin": {
+          "PaddingUm": 0,
+          "Boundary": "Pec"
+        },
+        "ZMax": {
+          "PaddingUm": 0,
+          "Boundary": "Pec"
+        }
+      },
+      "Palace": {
+        "Quality": "Draft",
+        "EdgeRefinement": 1,
+        "ElementOrder": 2,
+        "LinearSolver": "Direct"
+      }
+    },
+    {
+      "FormatVersion": 1,
+      "Name": "DcSweep",
+      "Problem3D": "Thermal",
+      "Thermal": {
+        "Boundaries": [
+          {
+            "Face": "flange/zmin",
+            "Kind": "FixedT",
+            "TempC": "Tcase"
+          }
+        ],
+        "Currents": [
+          {
+            "Port": 1,
+            "Dc": "Idc",
+            "EnterFace": "U1/Pad Metal/2/side1",
+            "LeaveFace": "U1/Pad Metal/1/side3"
+          }
+        ],
+        "Sweep": [
+          {
+            "Var": "Idc",
+            "Start": "6",
+            "Stop": "18",
+            "Points": 4
+          }
+        ],
+        "Measures": [
+          "Thot = Tmax(w3)"
+        ],
+        "Mesh": {
+          "Order": 1,
+          "MinThroughThickness": 1
+        }
+      }
+    },
+    {
+      "FormatVersion": 1,
+      "Name": "RfHarmonics",
+      "Problem3D": "Thermal",
+      "Thermal": {
+        "Boundaries": [
+          {
+            "Face": "flange/zmin",
+            "Kind": "FixedT",
+            "TempC": "Tcase"
+          }
+        ],
+        "Currents": [
+          {
+            "Port": 1,
+            "Dc": "Idc",
+            "EnterFace": "U1/Pad Metal/2/side1",
+            "LeaveFace": "U1/Pad Metal/1/side3",
+            "F0": "2 GHz",
+            "Harmonics": [
+              {
+                "N": 1,
+                "Amp": "I1",
+                "As": "Peak"
+              },
+              {
+                "N": 2,
+                "Amp": "I2",
+                "As": "Rms"
+              }
+            ]
+          }
+        ],
+        "Sweep": [
+          {
+            "Var": "I1",
+            "Start": "0",
+            "Stop": "12",
+            "Points": 4
+          }
+        ],
+        "Measures": [
+          "Thot = Tmax(w1)"
+        ],
+        "Mesh": {
+          "Order": 1,
+          "MinThroughThickness": 1
+        }
+      }
+    },
+    {
+      "FormatVersion": 1,
+      "Name": "FromHB",
+      "Problem3D": "Thermal",
+      "Thermal": {
+        "Boundaries": [
+          {
+            "Face": "flange/zmin",
+            "Kind": "FixedT",
+            "TempC": "Tcase"
+          }
+        ],
+        "Currents": [
+          {
+            "FromCircuit": {
+              "Schematic": "../../Amplifier/Amplifier.cnl",
+              "Analysis": "SW1",
+              "Carry": [
+                "Pout_dBm",
+                "Id_A",
+                "Eff"
+              ]
+            }
+          }
+        ],
+        "Measures": [
+          "Thot = Tmax(w1)"
+        ],
+        "Mesh": {
+          "Order": 1,
+          "MinThroughThickness": 1
+        }
+      }
+    }
+  ]
+}

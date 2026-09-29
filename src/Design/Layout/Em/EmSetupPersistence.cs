@@ -784,6 +784,11 @@ public sealed class CemThermalBalance
     /// <summary>The most Newton steps.</summary>
     public int? MaxIterations { get; set; }
 
+    /// <summary>brief-em3d-85 — a conductor (a die pad, a lead) whose resistance at 20 °C is below this fraction of the
+    /// least-resistive wire's is solved as ONE potential, its Joule heat zero; omitted, 0.01. 0 solves every conductor in 3D.
+    /// The run's notes name each conductor, which way it went, and its resistance.</summary>
+    public double? EquipotentialBelow { get; set; }
+
     /// <summary>Keys this build does not read — a misspelt one among them. Kept and written back; <c>check</c> names each.</summary>
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? Unread { get; set; }

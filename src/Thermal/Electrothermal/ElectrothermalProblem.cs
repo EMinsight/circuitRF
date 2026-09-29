@@ -35,11 +35,26 @@ public sealed class ElectricalConductivity
 
     public static ElectricalConductivity Constant(double sigma) => new(sigma, null);
 
-    public static ElectricalConductivity Varying(double at20, Func<double, (double Sigma, double Slope)> ofT)
+    /// <param name="statedUpToC">brief-em3d-85 — the highest temperature the law states (a table's top row); above it, with σ(T)
+    /// on, a state is not physical (<see cref="Beyond"/>).</param>
+    public static ElectricalConductivity Varying(double at20, Func<double, (double Sigma, double Slope)> ofT,
+                                                 double statedUpToC = double.PositiveInfinity)
     {
         ArgumentNullException.ThrowIfNull(ofT);
-        return new(at20, ofT);
+        return new(at20, ofT) { StatedUpToC = statedUpToC };
     }
+
+    /// <summary>brief-em3d-85 — the highest temperature the law states, °C: a table's top row (gold's ends just below its melting
+    /// point); infinite for a formula.</summary>
+    public double StatedUpToC { get; private init; } = double.PositiveInfinity;
+
+    /// <summary>
+    /// brief-em3d-85 — whether <paramref name="tempC"/> lies above what the law states, with σ(T) on. A table is held at its top
+    /// row beyond it, and with σ held a wire's heat stops growing with its temperature: past a runaway that makes a second,
+    /// unphysical branch of steady states hotter than the metal's melting point, which Newton reached from a state near the
+    /// table's end. Such a state is taken as NOT physical, as a conductivity at or below zero is.
+    /// </summary>
+    public bool Beyond(double tempC, bool ofT) => ofT && OfT is not null && tempC > StatedUpToC;
 
     /// <summary>A resistivity linear in temperature: ρ = ρ₀[1 + α(T − T₀)], σ = 1/ρ.</summary>
     public static ElectricalConductivity LinearResistivity(double rho0, double alpha, double t0 = 20)
@@ -167,4 +182,14 @@ public sealed class ElectrothermalProblem
     public IReadOnlyList<CurrentTerminal> Currents { get; init; } = [];
 
     public ElectricalConductivity? SigmaOf(int region) => region < Sigma.Count ? Sigma[region] : null;
+
+    /// <summary>brief-em3d-85 — <see cref="ElectrothermalSystem.Build"/> takes a conductor body whose resistance at 20 °C is below
+    /// this fraction of the least-resistive wire's as ONE equipotential; 0 solves every conductor's potential in 3D.</summary>
+    public double EquipotentialBelow { get; init; } = DefaultEquipotentialBelow;
+
+    /// <summary>The default of <see cref="EquipotentialBelow"/>: 1 %.</summary>
+    public const double DefaultEquipotentialBelow = 0.01;
+
+    /// <summary>Per region, what the notes call it (a solid's name); a region past the end is "region k".</summary>
+    public IReadOnlyList<string> RegionNames { get; init; } = [];
 }

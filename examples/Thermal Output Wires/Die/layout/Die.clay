@@ -1,0 +1,43 @@
+{
+  "FormatVersion": 1,
+  "DbuPerMicron": 1000,
+  "DisplayUnit": "Um",
+  "SnapDbu": 1000,
+  "TechRef": "../../tech/output-wires.ctech",
+  "Shapes": [
+    {
+      "$type": "Rect",
+      "Layer": {
+        "Layer": 2,
+        "Datatype": 0
+      },
+      "X1": 0,
+      "Y1": -500000,
+      "X2": 600000,
+      "Y2": 500000
+    },
+    {
+      "$type": "Rect",
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      },
+      "X1": 420000,
+      "Y1": -450000,
+      "X2": 600000,
+      "Y2": 450000
+    },
+    {
+      "$type": "Rect",
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      },
+      "X1": 1150000,
+      "Y1": -450000,
+      "X2": 1350000,
+      "Y2": 450000
+    }
+  ],
+  "Instances": []
+}

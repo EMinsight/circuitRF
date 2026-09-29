@@ -1,0 +1,255 @@
+{
+  "FormatVersion": 1,
+  "DbuPerMicron": 1000,
+  "DisplayUnit": "Um",
+  "SnapDbu": 0,
+  "Objects": [
+    {
+      "$type": "Box",
+      "Name": "mould",
+      "Material": "Mould compound (generic)",
+      "Role": "Dielectric",
+      "Min": [
+        -300000,
+        -650000,
+        0
+      ],
+      "Size": [
+        2200000,
+        1300000,
+        600000
+      ]
+    },
+    {
+      "$type": "Box",
+      "Name": "flange",
+      "Material": "Copper-molybdenum (70Mo-30Cu)",
+      "Role": "Conductor",
+      "Min": [
+        -300000,
+        -650000,
+        -500000
+      ],
+      "Size": [
+        2200000,
+        1300000,
+        500000
+      ]
+    },
+    {
+      "$type": "Box",
+      "Name": "standoff",
+      "Material": "Alumina 96%",
+      "Role": "Dielectric",
+      "Min": [
+        1050000,
+        -500000,
+        0
+      ],
+      "Size": [
+        750000,
+        1000000,
+        65000
+      ]
+    },
+    {
+      "$type": "Box",
+      "Name": "lead",
+      "Material": "Copper",
+      "Role": "Conductor",
+      "Min": [
+        1050000,
+        -500000,
+        65000
+      ],
+      "Size": [
+        750000,
+        1000000,
+        60000
+      ]
+    },
+    {
+      "$type": "Wire",
+      "Name": "w",
+      "Material": "Gold",
+      "DiameterUm": 25.4,
+      "Section": "Hexagon",
+      "Points": [
+        [
+          480000,
+          -375000,
+          135000
+        ],
+        [
+          560000,
+          -375000,
+          325000
+        ],
+        [
+          820000,
+          -375000,
+          405000
+        ],
+        [
+          1100000,
+          -375000,
+          325000
+        ],
+        [
+          1250000,
+          -375000,
+          135000
+        ]
+      ],
+      "Start": {
+        "Style": "Wedge",
+        "FootLengthUm": 50
+      },
+      "End": {
+        "Style": "Wedge",
+        "FootLengthUm": 50
+      },
+      "Array": {
+        "Count": 6,
+        "Pitch": [
+          0,
+          150000,
+          0
+        ]
+      }
+    }
+  ],
+  "Instances": [
+    {
+      "Name": "U1",
+      "CellRef": "../../Die",
+      "View": "Layout",
+      "Placement": {
+        "Origin": [
+          0,
+          0,
+          0
+        ]
+      }
+    }
+  ],
+  "Variables": [
+    {
+      "Name": "Tcase",
+      "Expression": "85"
+    },
+    {
+      "Name": "Idc",
+      "Expression": "4"
+    }
+  ],
+  "Probes": [
+    {
+      "Name": "w1",
+      "Wire": "w[0]",
+      "LimitC": 150
+    },
+    {
+      "Name": "w2",
+      "Wire": "w[1]",
+      "LimitC": 150
+    },
+    {
+      "Name": "w3",
+      "Wire": "w[2]",
+      "LimitC": 150
+    },
+    {
+      "Name": "w4",
+      "Wire": "w[3]",
+      "LimitC": 150
+    },
+    {
+      "Name": "w5",
+      "Wire": "w[4]",
+      "LimitC": 150
+    },
+    {
+      "Name": "w6",
+      "Wire": "w[5]",
+      "LimitC": 150
+    }
+  ],
+  "Ports": [
+    {
+      "Number": 1,
+      "Name": "P1",
+      "Kind": "Lumped",
+      "Plane": "YZ",
+      "Offset": 600000,
+      "Rect": {
+        "Min": [
+          -450000,
+          25000
+        ],
+        "Size": [
+          900000,
+          100000
+        ]
+      },
+      "Z0": "50"
+    },
+    {
+      "Number": 2,
+      "Name": "P2",
+      "Kind": "Lumped",
+      "Plane": "YZ",
+      "Offset": 1800000,
+      "Rect": {
+        "Min": [
+          -500000,
+          0
+        ],
+        "Size": [
+          1000000,
+          65000
+        ]
+      },
+      "Z0": "50"
+    }
+  ],
+  "Setups": [
+    {
+      "FormatVersion": 1,
+      "Name": "DcSweep",
+      "Problem3D": "Thermal",
+      "Thermal": {
+        "Boundaries": [
+          {
+            "Face": "flange/zmin",
+            "Kind": "FixedT",
+            "TempC": "Tcase"
+          }
+        ],
+        "Currents": [
+          {
+            "Port": 1,
+            "Dc": "Idc",
+            "EnterFace": "U1/Pad Metal/2/side1",
+            "LeaveFace": "U1/Pad Metal/1/side3"
+          }
+        ],
+        "Sweep": [
+          {
+            "Var": "Idc",
+            "Start": "6",
+            "Stop": "18",
+            "Points": 4
+          }
+        ],
+        "Measures": [
+          "Thot = Tmax(w3)"
+        ],
+        "Mesh": {
+          "Order": 1,
+          "MinThroughThickness": 1
+        }
+      }
+    }
+  ]
+}
