@@ -44,6 +44,42 @@ public static class ResultsWriter
     public static string ResultsDirectory(string baseDir) => Path.Combine(baseDir, "results");
 
     /// <summary>
+    /// The key a SAVED schematic's run is filed under: the cell name for a cell-homed schematic
+    /// (<c>&lt;cell&gt;/schematic/&lt;cell&gt;.csch</c>), <c>cell.view</c> when the view's stem differs,
+    /// and the file stem for a loose one. Moved here from <c>RunResultsWriter</c> (which still owns
+    /// the scratch half) so that creating a template's Data Display names it with the same function
+    /// a run files its results under — a second spelling of this rule is a display no run ever finds.
+    /// </summary>
+    public static string SchematicKey(string filePath)
+    {
+        var parentDir = Path.GetDirectoryName(filePath);
+        if (parentDir is not null &&
+            string.Equals(Path.GetFileName(parentDir), "schematic", StringComparison.OrdinalIgnoreCase))
+        {
+            var cellDir = Path.GetDirectoryName(parentDir);
+            if (cellDir is not null)
+            {
+                var cell = Path.GetFileName(cellDir)!;
+                var view = Path.GetFileNameWithoutExtension(filePath);
+                return string.Equals(view, cell, StringComparison.OrdinalIgnoreCase)
+                    ? cell
+                    : $"{cell}.{view}";
+            }
+        }
+
+        return Path.GetFileNameWithoutExtension(filePath);
+    }
+
+    /// <summary>
+    /// The AUTHORED Data Display a finished run opens before it would create one under
+    /// <c>results/</c>: <c>&lt;baseDir&gt;/&lt;key&gt;.cdd</c>, beside the bench's run base directory
+    /// (the workspace root) rather than beside the <c>.csch</c>. See
+    /// <c>RunResultsWriter.AutoDisplayCandidates</c> for the lookup order and why the authored one wins.
+    /// </summary>
+    public static string AuthoredDisplayPath(string baseDir, string key)
+        => Path.GetFullPath(Path.Combine(baseDir, key + ".cdd"));
+
+    /// <summary>
     /// Sanitizes a user- or key-derived results file name COMPONENT (never a path): strips path
     /// separators (on every platform, regardless of what <see cref="Path.GetInvalidFileNameChars"/>
     /// reports locally) and every other character the local filesystem disallows in a plain file name,

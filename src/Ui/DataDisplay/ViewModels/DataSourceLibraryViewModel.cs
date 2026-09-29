@@ -53,6 +53,21 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
     /// <summary>Resolved absolute path for the selected datasource; null when nothing is selected or file missing.</summary>
     public string? SelectedDataSourceAbs { get; private set; }
 
+    /// <summary>
+    /// True when the selected source is a run's results file under <c>results/</c> that does not exist
+    /// YET — a display written before its schematic's first Simulate (a template's, or a shipped
+    /// example's, whose <c>results/</c> is never kept). That is a display waiting for a run, not a
+    /// broken one, and the toolbar says so. A rooted (Touchstone) source that has gone missing is
+    /// still broken: nothing regenerates it.
+    /// </summary>
+    public bool SelectedSourceAwaitsRun =>
+        SelectedDataSourceRef is { } r
+        && r != DataSourceRef.Selected
+        && !Path.IsPathRooted(r)
+        && IsNpyExtension(Path.GetExtension(r))
+        && SelectedDataSourceAbs is { } abs
+        && !File.Exists(abs);
+
     /// <summary>The loaded library entry for the selected datasource, or null when lazy-load hasn't happened yet.</summary>
     public DataSourceEntryViewModel? SelectedEntry { get; private set; }
 

@@ -29,7 +29,15 @@
                 <TextBlock Text="Template:" FontSize="12"/>
                 <ComboBox x:Name="TemplateBox"
                           FontSize="12"
-                          HorizontalAlignment="Stretch"/>
+                          HorizontalAlignment="Stretch"
+                          SelectionChanged="OnTemplateChanged"/>
+                <!-- Enabled only for a template that ships its own Data Display; checked by default
+                     when it is. -->
+                <CheckBox x:Name="IncludeDisplayBox"
+                          Content="Include Data Display"
+                          FontSize="12"
+                          IsEnabled="False"
+                          IsChecked="False"/>
             </StackPanel>
         </StackPanel>
 

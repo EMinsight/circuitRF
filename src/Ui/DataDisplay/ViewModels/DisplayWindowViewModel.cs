@@ -137,11 +137,22 @@ public partial class DisplayWindowViewModel : ViewModelBase
         }
     }
 
+    /// <summary>
+    /// What the toolbar's source combo reads while it has nothing to show because the selected run
+    /// has not happened yet (<see cref="DataSourceLibraryViewModel.SelectedSourceAwaitsRun"/>) —
+    /// "Amp — not yet run" rather than a blank combo over plots of invalid traces.
+    /// </summary>
+    public string? AwaitingRunText =>
+        DataSourceLibrary.SelectedSourceAwaitsRun
+            ? $"{Path.GetFileNameWithoutExtension(DataSourceLibrary.SelectedDataSourceRef)} \u2014 not yet run"
+            : null;
+
     /// <summary>Pass-through: enumerate results + workspace Touchstone without loading any file.</summary>
     public void RefreshAvailableDataSources()
     {
         DataSourceLibrary.RefreshAvailableDataSources();
         OnPropertyChanged(nameof(SelectedDataSourceItem));
+        OnPropertyChanged(nameof(AwaitingRunText));
     }
 
     // ---- Unsaved-changes tracking ----------------------------------------
@@ -332,6 +343,7 @@ public partial class DisplayWindowViewModel : ViewModelBase
         DataSourceLibrary.SelectedDataSourceChanged += (_, _) =>
         {
             OnPropertyChanged(nameof(SelectedDataSourceItem));
+            OnPropertyChanged(nameof(AwaitingRunText));
             RaiseDirtyChanged();
         };
 

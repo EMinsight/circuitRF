@@ -1,5 +1,46 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## A two-port stability template that brings its Data Display (2026-09-28, brief-template-two-port-stability)
+
+- **"Beside the `.csch`" is not where a run looks.** `AutoDisplayCandidates`' authored slot is
+  `<baseDir>/<schematicKey>.cdd`, and `baseDir` is the directory `WriteNetlist` writes `netlist.cnl`
+  to: the WORKSPACE ROOT, not `<cell>/schematic/`. The shipped examples' authored displays already sit
+  there (`System Design/TxSuperhet.cdd`). A copy written beside the `.csch` would never be found. So
+  the display is written at the workspace root, and the convention reaches every New Cell and New
+  Schematic case with no new `.csch` field. That departs from the brief's wording, but not from its
+  rule. The name is the run's KEY, not the schematic's file name: a second view `stab` in cell `Amp`
+  writes `Amp.stab.cdd` and reads `Amp.stab.npy`. `RunBaseDirectory()` is now the one definition
+  `WriteNetlist` and the display write share.
+- **A display opened before its first run lost every trace on that run.** This is a pre-existing bug
+  that a template makes common: the shipped examples' `.cdd` files hit it too, because their
+  `results/` is never kept. Opening binds each network trace to the BROKEN placeholder SNP the missing
+  `.npy` becomes. The post-run re-select restores that entry (`RestoreBrokenEntry` → `RefreshNpy`),
+  and `RefreshNpy` discarded the placeholder. It became `null` for a grouped run whose S cube is
+  `SP1.S`, or a new instance otherwise. The inspector's stale sweep compares SNPs by reference, so it
+  deleted all six plots' traces. `RefreshNpy` now fills the placeholder IN PLACE, as it already did for
+  a live `Snp` and `NetworkView`. It becomes the entry's `Snp`, or its network view. Gate:
+  `TemplateDataDisplayTests.EveryShippedDisplay_FillsFromItsOwnTemplatesRun`, which follows
+  `RefreshOpenDataDisplaysAsync` step for step. Before the fix it read 1,1,2,2,2,1 traces after load
+  and reload, and 0,0,0,0,0,0 after the re-select.
+- **Before a run, the display reads as waiting, not broken.** `SelectedSourceAwaitsRun` is true only
+  for a relative `.npy` under `results/` that does not exist yet. A missing ROOTED source (Touchstone)
+  is still broken, because nothing regenerates it. The toolbar combo's `PlaceholderText` shows
+  "`<key>` — not yet run", so the combo is not blank above plots of invalid traces.
+- **Stability circles are drawn for every swept frequency.** That is the only mode the Data Display
+  has, and a marker on a circle reads its own frequency. No per-frequency selection was invented.
+- **The dialog.** "Include Data Display" is enabled and checked only for a template that ships one.
+  `IncludeDisplayStateFor` and `ResolveIncludeDataDisplay` are static, so the rule is testable with no
+  window. A clash with an existing `.cdd` is a warning naming the file. The display is not
+  overwritten, and the schematic is still created.
+- **An empty SnP `File`** was already a named refusal at Simulate (`SnpModel.LoadSnp`), so the
+  template needs nothing more.
+- **The example two-port is circuitRF's own.** `examples/S-Parameters/FetStability/schematic/fet_bias.s2p`
+  is `circuitrf sparam` on the `FetBias` bench: the FET S-Parameters template with Cgd 0.1 pF,
+  λ 0.05, and V<sub>GS</sub> −1 V, V<sub>DS</sub> 10 V. The template's own defaults (Cgd 0, λ 0, no
+  series resistance) give S12 = 0 and |S11| = |S22| = 1, and μ is degenerate there. With the changes,
+  μ runs 0.02 → 0.18 over 1–10 GHz, all 101 source and load circles cut the chart, and MSG runs
+  23.8 → 13.8 dB. Those numbers were checked against the file.
+
 ## railRF brief 36 — the window half: Turn off the UI thread, one pad read at a time, and the RebuildParts race (2026-09-28)
 
 The engine half (a six-layer board's partition from 224 s to 3 s, and one partition per artwork) is in

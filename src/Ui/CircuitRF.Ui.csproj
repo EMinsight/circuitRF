@@ -237,6 +237,13 @@
     <EmbeddedResource Include="Viewer3D\Shaders\scene.*" LogicalName="CircuitRF.Ui.Viewer3D.Shaders.%(Filename)%(Extension)" />
     <EmbeddedResource Include="resources\schematic-templates\*.csch" />
 
+    <!-- A template's own Data Display (brief-template-two-port-stability R-tst-1): an authored .cdd
+         matched to its template by file stem. The LogicalName prefix is what
+         ShippedSchematicTemplates.Discover looks for — the default name would carry the folder,
+         whose hyphen MSBuild rewrites. -->
+    <EmbeddedResource Include="resources\data-display-templates\*.cdd"
+                      LogicalName="CircuitRF.Ui.DataDisplayTemplates.%(Filename)%(Extension)" />
+
     <!-- Documentation schematics. Real, authored .csch files read through the SAME reader as
          everything else, but NOT offered in the template picker: they exist so a user-doc figure can
          show a two-component circuit a reader is about to build, and a template list padded with

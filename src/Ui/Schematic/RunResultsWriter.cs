@@ -41,23 +41,7 @@ public static class RunResultsWriter
         if (filePath is null)
             return Sanitize(scratchId);
 
-        var parentDir = Path.GetDirectoryName(filePath);
-        if (parentDir is not null &&
-            string.Equals(Path.GetFileName(parentDir), "schematic",
-                StringComparison.OrdinalIgnoreCase))
-        {
-            var cellDir = Path.GetDirectoryName(parentDir);
-            if (cellDir is not null)
-            {
-                var cell = Path.GetFileName(cellDir)!;
-                var view = Path.GetFileNameWithoutExtension(filePath);
-                return string.Equals(view, cell, StringComparison.OrdinalIgnoreCase)
-                    ? cell
-                    : $"{cell}.{view}";
-            }
-        }
-
-        return Path.GetFileNameWithoutExtension(filePath);
+        return ResultsWriter.SchematicKey(filePath);
     }
 
     /// <summary>
@@ -99,7 +83,7 @@ public static class RunResultsWriter
     public static IReadOnlyList<string> AutoDisplayCandidates(
         string baseDir, string resultsDir, string schematicKey)
     {
-        var authored = Path.GetFullPath(Path.Combine(baseDir,    schematicKey + ".cdd"));
+        var authored = ResultsWriter.AuthoredDisplayPath(baseDir, schematicKey);
         var created  = Path.GetFullPath(Path.Combine(resultsDir, schematicKey + ".cdd"));
         return string.Equals(authored, created, StringComparison.Ordinal)
             ? [authored]

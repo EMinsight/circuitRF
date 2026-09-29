@@ -1,5 +1,23 @@
 # src/Design — resolved findings (detail, off the CLAUDE.md growth path)
 
+## `CellCreate.WriteTemplateDataDisplay` — a template's display, repointed (2026-09-28, brief-template-two-port-stability)
+
+- **The schematic-key rule and the authored-display path moved here** (`ResultsWriter.SchematicKey`,
+  `ResultsWriter.AuthoredDisplayPath`). `RunResultsWriter` forwards to both. The creation function
+  names the file with the function the run files results under, so there is no second spelling.
+- **The repoint works on the JSON, not on `DataDisplayConfig`.** That model lives in `src/Render`,
+  which references this project, not the reverse. Only `SelectedDataSource`, the `SourceAliases` key,
+  and every `SourcePath`/`XSourcePath` EQUAL to the template's own source are rewritten. The
+  `run.npy` "selected" sentinel is left as it is. The gate reads the result back through the ordinary
+  reader.
+- **No overwrite, even in a race.** An existing file comes back as `Written = false`, and the window
+  names it in a warning. `FileMode.CreateNew` still refuses a file that appears between the check and
+  the write. The clash is a RESULT, not an exception message, because the firewall's user-text gate
+  forbids a new user-facing sentence here. The two remaining exception texts are invariants of the
+  shipped template's content and are on the allowlist.
+- **`circuitrf new cell` has no template flag**, so this brief adds none. The function is ready for one
+  if it is ever wanted. The templates themselves stay embedded in `src/Ui`.
+
 ## A six-layer board in seconds: the via test asked locally, one partition per artwork (2026-09-28, brief-railrf-36)
 
 The round-9 field board (six layers, Gerber-imported, held outside the repo) read its pads for 607 s

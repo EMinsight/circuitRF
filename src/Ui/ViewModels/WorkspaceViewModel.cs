@@ -4182,6 +4182,20 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     // ── Netlist write (Phase 6e Step 4) ──────────────────────────────────────
 
     /// <summary>
+    /// The directory a schematic run writes its netlist and <c>results/</c> under — the workspace
+    /// root when a workspace is open, else the RecoveryManager scratch-session dir (created lazily).
+    /// One definition, because a template's Data Display is written at the path a run under THIS
+    /// directory will look for it (<see cref="CellCreate.WriteTemplateDataDisplay"/>).
+    /// </summary>
+    private string RunBaseDirectory()
+    {
+        if (CurrentWorkspacePath is not null)
+            return Path.GetDirectoryName(CurrentWorkspacePath)!;
+        Directory.CreateDirectory(_recovery.SessionDir); // session dir is created lazily
+        return _recovery.SessionDir;
+    }
+
+    /// <summary>
     /// Extracts <paramref name="model"/> and writes one netlist.cnl (overwritten each
     /// run) to the workspace root when a workspace is open, or to the RecoveryManager
     /// scratch-session dir when no workspace is open. Atomic write (temp + rename).
@@ -4190,16 +4204,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     private (string Path, IReadOnlyList<string> Conflicts) WriteNetlist(
         SchematicEditModel model, string testBenchName)
     {
-        // Resolve destination: workspace root or scratch-session dir.
-        string destDir;
-        if (CurrentWorkspacePath is not null)
-            destDir = Path.GetDirectoryName(CurrentWorkspacePath)!;
-        else
-        {
-            destDir = _recovery.SessionDir;
-            Directory.CreateDirectory(destDir); // session dir is created lazily
-        }
-
+        var destDir    = RunBaseDirectory();
         var targetPath = Path.Combine(destDir, "netlist.cnl");
         var tmpPath    = targetPath + ".tmp";
 
@@ -14626,7 +14631,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         // R-cc-1: the cell already exists at this point regardless of what happens next — a failure
         // here is reported by CreateAndOpenSchematicFileAsync itself and never rolls the cell back.
-        await CreateAndOpenSchematicFileAsync(newCellDir, name, name, dialog.SelectedTemplate);
+        await CreateAndOpenSchematicFileAsync(newCellDir, name, name, dialog.SelectedTemplate,
+                                              dialog.IncludeDataDisplay);
     }
 
     // ── New Folder (tree context menu + tree-header button) ─────────────────────
@@ -14715,7 +14721,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         var name   = await dialog.ShowDialog<string?>(mainWindow);
         if (name is null) return;
 
-        await CreateCellHoldingViewAsync(name, ViewType.Schematic, dialog.SelectedTemplate);
+        await CreateCellHoldingViewAsync(name, ViewType.Schematic, dialog.SelectedTemplate,
+                                         dialog.IncludeDataDisplay);
     }
 
     /// <summary>
@@ -14728,7 +14735,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// back — R-cc-1's rule, unchanged.
     /// </remarks>
     internal async Task<string?> CreateCellHoldingViewAsync(
-        string name, ViewType view, ShippedSchematicTemplate? template = null)
+        string name, ViewType view, ShippedSchematicTemplate? template = null,
+        bool includeDataDisplay = false)
     {
         if (CurrentWorkspacePath is null) return null;
         var workspaceDir = Path.GetDirectoryName(CurrentWorkspacePath)!;
@@ -14764,7 +14772,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         {
             if (CreateThreeDViewFile(newCellDir, name) is { } created) OpenOrActivateC3dEditor(created, newlyCreated: true);
         }
-        else await CreateAndOpenSchematicFileAsync(newCellDir, name, name, template);
+        else await CreateAndOpenSchematicFileAsync(newCellDir, name, name, template, includeDataDisplay);
         return newCellDir;
     }
 
@@ -14850,7 +14858,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             return;
         }
 
-        await CreateAndOpenSchematicFileAsync(cellDir, cellNode.Name, name, dialog.SelectedTemplate);
+        await CreateAndOpenSchematicFileAsync(cellDir, cellNode.Name, name, dialog.SelectedTemplate,
+                                              dialog.IncludeDataDisplay);
     }
 
     /// <summary>
@@ -14865,7 +14874,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// </summary>
     private async Task<bool> CreateAndOpenSchematicFileAsync(
         string cellDir, string cellName, string fileNameWithoutExt,
-        ShippedSchematicTemplate? template = null)
+        ShippedSchematicTemplate? template = null, bool includeDataDisplay = false)
     {
         var schematicDir = CellFolder.SubFolderPath(cellDir, ViewType.Schematic);
         if (!Directory.Exists(schematicDir))
@@ -14907,6 +14916,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             // around it here — the template choice, the tree refresh, opening the tab — is shell.
             CellCreate.WriteSchematicView(cellDir, cellName, fileNameWithoutExt, model);
 
+            // The template's own Data Display, when asked for — written where this schematic's run
+            // will look for it, so the first Simulate fills and opens it. Its failure is a warning:
+            // the schematic already exists.
+            if (includeDataDisplay && template is not null)
+                WriteTemplateDataDisplay(template, filePath, model);
+
             _factory.ProjectTreeTool?.Refresh();
 
             // Open in a schematic content tab (materialized — has a real file path).
@@ -14926,6 +14941,32 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         {
             Messages.Error($"Failed to create schematic: {ex.Message}");
             return false;
+        }
+    }
+
+    /// <summary>
+    /// Writes <paramref name="template"/>'s Data Display for the schematic just written at
+    /// <paramref name="schematicPath"/>. The path, the repoint and the no-overwrite rule are
+    /// <see cref="CellCreate.WriteTemplateDataDisplay"/>'s; this reports.
+    /// </summary>
+    private void WriteTemplateDataDisplay(
+        ShippedSchematicTemplate template, string schematicPath, SchematicEditModel model)
+    {
+        try
+        {
+            if (ShippedSchematicTemplates.LoadDataDisplayJson(template) is not { } json) return;
+            var (cdd, written) = CellCreate.WriteTemplateDataDisplay(
+                RunBaseDirectory(), schematicPath, model.ResultsFileName, json);
+            if (written)
+                Messages.Success("Created", cdd);
+            else
+                Messages.Warning(
+                    $"A Data Display named '{Path.GetFileName(cdd)}' already exists and was left as it is. "
+                  + "The schematic was created without one of its own.", cdd);
+        }
+        catch (Exception ex)
+        {
+            Messages.Warning($"Data Display not written: {ex.Message} The schematic was created without one.");
         }
     }
 

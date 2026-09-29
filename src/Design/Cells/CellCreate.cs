@@ -1,4 +1,7 @@
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using CircuitRF.Design.Layout;
+using CircuitRF.Design.Results;
 using CircuitRF.Design.Schematic;
 using CircuitRF.Design.Symbol;
 using CircuitRF.Design.ThreeD;
@@ -216,6 +219,87 @@ public static class CellCreate
         string path = ViewPath(cellDir, ViewType.ThreeD, fileNameWithoutExt);
         C3dPersistence.SaveToFile(path, doc);
         return path;
+    }
+
+    /// <summary>
+    /// Writes a schematic template's Data Display for a schematic that has just been written at
+    /// <paramref name="schematicPath"/> (brief-template-two-port-stability R-tst-2/R-tst-4). Returns the
+    /// display's path, and whether it was written — <c>false</c> when a <c>.cdd</c> of that name already
+    /// exists, which is never overwritten; the caller names it to the user.
+    ///
+    /// <para><b>Where, and why there.</b> The file is the AUTHORED display a finished run already opens
+    /// before it would create one (<see cref="ResultsWriter.AuthoredDisplayPath"/>, keyed by
+    /// <see cref="ResultsWriter.SchematicKey"/>) — so "the schematic points at its display" needs no
+    /// field in the <c>.csch</c>. <paramref name="runBaseDir"/> is the directory the run writes its
+    /// netlist and <c>results/</c> under, which is the workspace root, NOT the schematic's own folder: a
+    /// copy beside the <c>.csch</c> is a file no run looks for.</para>
+    ///
+    /// <para><b>Repointed, not copied verbatim.</b> <c>SelectedDataSource</c>, every trace's
+    /// <c>SourcePath</c>/<c>XSourcePath</c> and every <c>SourceAliases</c> key that named the
+    /// template's own results file are rewritten to the file THIS schematic's run writes
+    /// (<see cref="ResultsWriter.ResolveFileName"/>). The "whichever source is selected" sentinel and
+    /// any other reference are left alone. Done on the JSON rather than on the <c>.cdd</c> model because
+    /// that model lives in <c>src/Render</c>, which references this project and not the other way round;
+    /// the gate reads the result back through the ordinary reader.</para>
+    /// </summary>
+    /// <exception cref="InvalidDataException">The template display names no data source, so there is
+    /// nothing to repoint and the copy would bind to whatever run happens to be newest.</exception>
+    public static (string Path, bool Written) WriteTemplateDataDisplay(
+        string runBaseDir, string schematicPath, string? resultsFileNameOverride, string displayJson)
+    {
+        string key    = ResultsWriter.SchematicKey(schematicPath);
+        string target = ResultsWriter.AuthoredDisplayPath(runBaseDir, key);
+        string source = ResultsWriter.ResolveFileName(resultsFileNameOverride, key);
+
+        string text = RepointDataDisplay(displayJson, source);
+
+        if (File.Exists(target)) return (target, false);
+
+        // CreateNew, so a file that appears between the check and the write is still not overwritten.
+        using var stream = new FileStream(target, FileMode.CreateNew, FileAccess.Write);
+        using var writer = new StreamWriter(stream, new System.Text.UTF8Encoding(false));
+        writer.Write(text);
+        return (target, true);
+    }
+
+    /// <summary>The repoint half of <see cref="WriteTemplateDataDisplay"/>, on its own so a test can
+    /// read what it changed without a file system.</summary>
+    public static string RepointDataDisplay(string displayJson, string newSource)
+    {
+        var root = JsonNode.Parse(displayJson) as JsonObject
+            ?? throw new InvalidDataException("A Data Display must be a JSON object.");
+
+        string? old = root["SelectedDataSource"]?.GetValue<string>();
+        if (string.IsNullOrEmpty(old))
+            throw new InvalidDataException("The template's Data Display names no data source to repoint.");
+
+        root["SelectedDataSource"] = newSource;
+
+        if (root["SourceAliases"] is JsonObject aliases && aliases[old] is { } alias)
+        {
+            aliases.Remove(old);
+            aliases[newSource] = alias.DeepClone();
+        }
+
+        RepointTraceSources(root, old, newSource);
+        return root.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
+    }
+
+    private static void RepointTraceSources(JsonNode? node, string old, string newSource)
+    {
+        switch (node)
+        {
+            case JsonObject obj:
+                foreach (var name in new[] { "SourcePath", "XSourcePath" })
+                    if (obj[name] is JsonValue v && v.TryGetValue<string>(out var s)
+                        && string.Equals(s, old, StringComparison.Ordinal))
+                        obj[name] = newSource;
+                foreach (var (_, child) in obj.ToList()) RepointTraceSources(child, old, newSource);
+                break;
+            case JsonArray arr:
+                foreach (var child in arr) RepointTraceSources(child, old, newSource);
+                break;
+        }
     }
 
     /// <summary>

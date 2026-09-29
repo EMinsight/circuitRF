@@ -25,6 +25,12 @@ public static class ShippedSchematicTemplates
 {
     private const string ResourceSuffix = ".csch";
 
+    /// <summary>Logical-name prefix of a template's Data Display (see the .csproj) — an authored
+    /// <c>.cdd</c> in <c>src/Ui/resources/data-display-templates/</c>, matched to its template by file
+    /// stem.</summary>
+    internal const string DisplayPrefix = "CircuitRF.Ui.DataDisplayTemplates.";
+    private const string DisplaySuffix = ".cdd";
+
     /// <summary>Logical-name prefix of the documentation-only schematics (see the .csproj).</summary>
     internal const string DocSchematicPrefix = "CircuitRF.Ui.DocSchematics.";
 
@@ -64,6 +70,21 @@ public static class ShippedSchematicTemplates
     }
 
     /// <summary>
+    /// The template's authored Data Display, raw, or null when it ships none. Returned as text rather
+    /// than as a model: it is handed straight to <c>CellCreate.WriteTemplateDataDisplay</c>, and the
+    /// shipping gate reads it through the ordinary <c>.cdd</c> reader.
+    /// </summary>
+    public static string? LoadDataDisplayJson(ShippedSchematicTemplate entry)
+    {
+        if (entry.DataDisplayResourceName is not { } name) return null;
+        var asm = typeof(ShippedSchematicTemplates).Assembly;
+        using var stream = asm.GetManifestResourceStream(name)
+            ?? throw new InvalidOperationException($"Embedded template display \"{name}\" not found.");
+        using var reader = new StreamReader(stream);
+        return reader.ReadToEnd();
+    }
+
+    /// <summary>
     /// Parses one template into a fresh <see cref="SchematicEditModel"/> through the ordinary
     /// <c>.csch</c> reader. <paramref name="schematicDirectory"/> is the directory the resulting
     /// schematic will be SAVED into — it is what any relative <c>CellRef</c> resolves against, so a
@@ -87,8 +108,17 @@ public static class ShippedSchematicTemplates
     private static IReadOnlyList<ShippedSchematicTemplate> Discover()
     {
         var asm = typeof(ShippedSchematicTemplates).Assembly;
+        var names = asm.GetManifestResourceNames();
+
+        // A template's display is found by STEM, so a display with no template of the same name is
+        // simply never offered — and the gate that enumerates the folder says so.
+        var displays = names
+            .Where(n => n.StartsWith(DisplayPrefix, StringComparison.Ordinal)
+                     && n.EndsWith(DisplaySuffix, StringComparison.Ordinal))
+            .ToDictionary(n => n[DisplayPrefix.Length..^DisplaySuffix.Length], StringComparer.Ordinal);
+
         var list = new List<ShippedSchematicTemplate>();
-        foreach (var name in asm.GetManifestResourceNames())
+        foreach (var name in names)
         {
             if (!name.EndsWith(ResourceSuffix, StringComparison.Ordinal)) continue;
 
@@ -106,7 +136,8 @@ public static class ShippedSchematicTemplates
             int lastDot = withoutExt.LastIndexOf('.');
             string id = lastDot >= 0 ? withoutExt[(lastDot + 1)..] : withoutExt;
 
-            list.Add(new ShippedSchematicTemplate(id, name, DisplayNameFor(id)));
+            list.Add(new ShippedSchematicTemplate(
+                id, name, DisplayNameFor(id), displays.GetValueOrDefault(id)));
         }
         list.Sort((a, b) => string.CompareOrdinal(a.Id, b.Id));
         return list;
@@ -124,6 +155,13 @@ public static class ShippedSchematicTemplates
 /// <summary>
 /// One schematic template shipped inside the assembly. <see cref="Id"/> is the file stem — stable
 /// and filesystem-safe; <see cref="DisplayName"/> is what the New Cell / New Schematic picker shows;
-/// <see cref="ResourceName"/> is the raw embedded-resource manifest name, internal to loading.
+/// <see cref="ResourceName"/> is the raw embedded-resource manifest name, internal to loading;
+/// <see cref="DataDisplayResourceName"/> is that of the template's own Data Display, when it has one.
 /// </summary>
-public sealed record ShippedSchematicTemplate(string Id, string ResourceName, string DisplayName);
+public sealed record ShippedSchematicTemplate(
+    string Id, string ResourceName, string DisplayName, string? DataDisplayResourceName = null)
+{
+    /// <summary>Whether the template ships a Data Display — what enables New Cell's
+    /// "Include Data Display" box.</summary>
+    public bool HasDataDisplay => DataDisplayResourceName is not null;
+}

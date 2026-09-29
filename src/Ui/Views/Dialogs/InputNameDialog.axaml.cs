@@ -32,6 +32,28 @@ public partial class InputNameDialog : Window
     public ShippedSchematicTemplate? SelectedTemplate { get; private set; }
 
     /// <summary>
+    /// Whether the chosen template's Data Display is to be written with the schematic. Never true for
+    /// a template that ships none, whatever the box last said. Read, like
+    /// <see cref="SelectedTemplate"/>, after the dialog returns a name.
+    /// </summary>
+    public bool IncludeDataDisplay { get; private set; }
+
+    /// <summary>
+    /// The "Include Data Display" box's state for a template: enabled and checked when it ships a
+    /// display, disabled and unchecked when it does not (or for "(Empty)"). Static so the rule is
+    /// testable without a window.
+    /// </summary>
+    internal static (bool Enabled, bool Checked) IncludeDisplayStateFor(ShippedSchematicTemplate? template)
+    {
+        bool has = template?.HasDataDisplay == true;
+        return (has, has);
+    }
+
+    /// <summary>What the dialog reports as <see cref="IncludeDataDisplay"/> for a template and a box.</summary>
+    internal static bool ResolveIncludeDataDisplay(ShippedSchematicTemplate? template, bool? boxChecked)
+        => template?.HasDataDisplay == true && boxChecked == true;
+
+    /// <summary>
     /// Offers a template picker above the buttons. Call this ONLY where a new schematic is actually
     /// being created; a picker on New Symbol or Duplicate Cell would offer a choice that does
     /// nothing. Passing an empty list shows nothing, so a build that somehow shipped no templates
@@ -56,6 +78,13 @@ public partial class InputNameDialog : Window
     private sealed record TemplateChoice(string Label, ShippedSchematicTemplate? Template)
     {
         public override string ToString() => Label;
+    }
+
+    private void OnTemplateChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        var (enabled, isChecked) = IncludeDisplayStateFor((TemplateBox.SelectedItem as TemplateChoice)?.Template);
+        IncludeDisplayBox.IsEnabled = enabled;
+        IncludeDisplayBox.IsChecked = isChecked;
     }
 
     private void OnOkClick(object? sender, RoutedEventArgs e) => TryCommit();
@@ -86,7 +115,8 @@ public partial class InputNameDialog : Window
             ValidationMessage.IsVisible = true;
             return;
         }
-        SelectedTemplate = (TemplateBox.SelectedItem as TemplateChoice)?.Template;
+        SelectedTemplate   = (TemplateBox.SelectedItem as TemplateChoice)?.Template;
+        IncludeDataDisplay = ResolveIncludeDataDisplay(SelectedTemplate, IncludeDisplayBox.IsChecked);
         Close(name);
     }
 }

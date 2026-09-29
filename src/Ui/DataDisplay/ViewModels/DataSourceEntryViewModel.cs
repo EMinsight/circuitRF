@@ -338,6 +338,11 @@ public partial class DataSourceEntryViewModel : ViewModelBase
     internal void RefreshNpy(DataSet data, string newPath)
     {
         var boundView = _networkView;                     // may be held by live derived traces
+        // A BROKEN placeholder may be held too. A display opened before its schematic's first run
+        // (a template's, or a shipped example's) binds every network trace to the placeholder the
+        // missing file became; discarding it here left those traces holding an SNP that belongs to
+        // no entry, and the plot's stale-trace sweep deleted every one of them on the first run.
+        var placeholder = _snp is { IsEmpty: true } ? _snp : null;
         _filePath = newPath;
         _data     = SetData(data, "npy reload");
         _networkView = null; _networkViewBuilt = false;   // rebuilt lazily against the new DataSet
@@ -354,9 +359,16 @@ public partial class DataSourceEntryViewModel : ViewModelBase
                 _snp.FilePath = newPath;
                 _snp.RefreshFrom(newSnp);
             }
+            else if (placeholder is not null)
+            {
+                // Was broken: fill the placeholder in place, so the traces bound to it survive.
+                placeholder.FilePath = newPath;
+                placeholder.RefreshFrom(newSnp);
+                _snp = placeholder;
+            }
             else
             {
-                // Was broken or cube-only; safe to replace reference (no traces bound).
+                // Was cube-only; safe to replace reference (no traces bound).
                 _snp = newSnp;
             }
         }
@@ -366,7 +378,7 @@ public partial class DataSourceEntryViewModel : ViewModelBase
             _snp = null;
         }
 
-        RefreshNetworkViewPreservingIdentity(boundView);
+        RefreshNetworkViewPreservingIdentity(boundView ?? placeholder);
         NotifyBrokenStateChanged();
         ClassifyZ0FromData();
     }

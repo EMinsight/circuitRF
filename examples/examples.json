@@ -4,7 +4,7 @@
     {
       "Folder": "S-Parameters",
       "Title": "S-Parameters",
-      "Summary": "A Touchstone black box swept for gain and stability, and a pair of coupled inductors. Stability factors K and mu are written as measurement expressions."
+      "Summary": "A Touchstone black box swept for gain and stability, a pair of coupled inductors, and a FET two-port on the Two-Port Stability template's own Data Display. Stability factors K and mu are written as measurement expressions."
     },
     {
       "Folder": "Harmonic Balance",

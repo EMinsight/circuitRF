@@ -92,6 +92,7 @@
                           ItemsSource="{Binding ViewModel.Window.DataSourceLibrary.AvailableDataSources}"
                           SelectedItem="{Binding ViewModel.Window.SelectedDataSourceItem, Mode=TwoWay}"
                           ToolTip.Tip="{Binding ViewModel.Window.DataSourceLibrary.SelectedDataSourceAbs}"
+                          PlaceholderText="{Binding ViewModel.Window.AwaitingRunText}"
                           Padding="6,3">
                     <ComboBox.ItemTemplate>
                         <DataTemplate x:DataType="vm:DataSourceItem">

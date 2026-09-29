@@ -1,7 +1,7 @@
 # S-Parameters
 
-Two testbenches, both driven by **Terms** — the element that defines an S-parameter port and its
-reference impedance. Run either from the Analyses panel, then open the result in a Data Display.
+Four testbenches, all driven by **Terms** — the element that defines an S-parameter port and its
+reference impedance. Run any of them from the Analyses panel, then open the result in a Data Display.
 
 ## Amplifier
 
@@ -62,3 +62,29 @@ Two things worth noticing:
 - **The 50 in those three lines is the port reference impedance**, the `Z` on Term1 and Term2. It
   scales all three the same way and is gone by the time `k` is formed, so it only matters if you
   want the ohms to be real ohms.
+
+## FetBias and FetStability
+
+**FetStability** is what the **Two-Port Stability** schematic template makes — New Cell ▸ Template ▸
+*Two Port Stability*, with *Include Data Display* ticked — pointed at a two-port file. Simulate it and
+`FetStability.cdd`, beside the workspace's `.cws`, opens filled: the source and load stability
+circles, μ and μ′, |S11| and |S22|, |S21| against |S12| on a second axis, and the maximum available
+gain. None of those traces is an expression; each is a built-in metric of the SP1 result.
+
+The two-port it reads, `FetStability/schematic/fet_bias.s2p`, was made by circuitRF itself from the
+**FetBias** bench beside it — the *FET S-Parameters* template with a 0.1 pF gate-drain capacitance,
+λ = 0.05, and biased at V<sub>GS</sub> = −1 V, V<sub>DS</sub> = 10 V:
+
+```
+circuitrf sparam FetBias/schematic/FetBias.csch -o FetStability/schematic/fet_bias.s2p
+```
+
+**μ stays below 1 across the whole 1–10 GHz sweep** (about 0.02 at 1 GHz, rising to about 0.18 at
+10 GHz), so the device is only potentially stable anywhere in the band, and every stability circle
+cuts the chart. Max Gain is therefore the maximum STABLE gain, |S21|/|S12|: about 24 dB at 1 GHz and
+14 dB at 10 GHz. A bare transistor with feedback capacitance and no loading looks like this; the
+page is where a matching or stabilising network starts.
+
+The stability circles are drawn for **every frequency in the sweep**; a marker placed on one reads
+that circle's frequency.
+

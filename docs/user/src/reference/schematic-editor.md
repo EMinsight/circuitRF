@@ -289,6 +289,35 @@ A part that has no layout view of its own still reaches the board: its **Footpri
 last row of its parameter editor — names an SMT case size, an imported part or a `.clay` you drew,
 and that is what Update Layout places. See [Footprints](footprints.html).
 
+## Starting from a template {#templates}
+
+**New Cell and the Project Tree's New Schematic offer a *Template* under the name field.** *(Empty)*
+is pre-selected; any other choice writes a ready-made test bench — its components, wiring and
+analyses — into the new schematic, which you then edit like any other.
+
+| Template | What it sets up |
+|---|---|
+| FET Curve Tracer | A FET's DC I–V family, swept over V<sub>GS</sub> and V<sub>DS</sub>. |
+| FET Harmonic Balance Sweep | A biased FET driven into compression over input power. |
+| FET Loadpull Pursuit | A loadpull-pursuit search for a FET's optimum load. |
+| FET S-Parameters | A biased FET between two ports, swept 1–10 GHz. |
+| Two Port Stability | An SnP between two 50 Ω ports, swept 0.5–10 GHz, with its own Data Display. |
+
+**Include Data Display** sits under the picker. It is ticked for a template that brings its own
+Data Display, and greyed out for one that does not. Ticked, the display is written beside the
+workspace's `.cws` and named after the new schematic (`Amp.cdd` for a cell called *Amp*), which is
+the display a finished run opens. The first **Simulate** therefore fills it and brings it forward;
+until then its source combo reads *not yet run*. If a Data Display of that name already exists it is
+left alone, Messages says so, and the schematic is still created.
+
+**Two Port Stability** is what to reach for first with an amplifier's or transistor's two-port data.
+Set the SnP's **File** to your `.s2p` (Simulate refuses, naming the parameter, until you do) and the
+SP1 sweep to the file's band, then Simulate. The display holds six plots: the source and load
+stability circles, one Smith chart each and one circle per swept frequency; μ and μ′; |S11| and
+|S22|; |S21| on the left axis with |S12| on the right; and Max Gain. Each is a built-in metric of the
+run, defined in {{anchor: derived-metrics|Derived Metrics}}, so there is no expression to maintain. The
+*S-Parameters* example's **FetStability** cell is this template, already pointed at a file.
+
 ## Simulating: an Analysis {#analyses}
 
 **A simulation in circuitRF is called an *Analysis*, and it is configured before it is run.** An
