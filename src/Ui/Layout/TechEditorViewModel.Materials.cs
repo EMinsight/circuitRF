@@ -80,6 +80,7 @@ public sealed partial class TechEditorViewModel
         }, "this technology")
         {
             UsedBy = UsesOf,
+            OpenLibrary = row => { if (row.LibrarySource is { } lib) OpenLibraryRequested?.Invoke(lib, row.Name); },
         };
         ResolveLibrariesInPlace();
     }
@@ -228,6 +229,20 @@ public sealed partial class TechEditorViewModel
         var before = SnapshotJson();
         Working.Materials.Add(material);
         CommitEdit(before, $"Add material {material.Name}");
+        return null;
+    }
+
+    /// <summary>
+    /// Replaces the technology's own list with <paramref name="materials"/> as ONE undo entry — the 3D view's Materials
+    /// dialog committing what it edited here. Refused when the list would not validate (a duplicate or illegal name).
+    /// </summary>
+    public string? ReplaceOwnMaterials(IReadOnlyList<TechMaterial> materials, string description)
+    {
+        if (MaterialValidation.Validate(materials).FirstOrDefault(p => p.Severity == DiagnosticSeverity.Error) is { } p) return p.Message;
+        var before = SnapshotJson();
+        Working.Materials.Clear();
+        Working.Materials.AddRange(materials);
+        CommitEdit(before, description);
         return null;
     }
 

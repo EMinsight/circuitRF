@@ -522,8 +522,17 @@ hottest point at 11 W — both quoted.
 density) and that run was stopped unfinished when the session's simulation time ran out; the README says to set `P_finger` to 1.
 Its wall time was never recorded separately. Its Rth figures are per watt in the modelled half, as the run's notes say.
 
-**The shipped library's SiC and mould compound state no εr**, and a technology may not redefine a library material, so a
-thermal model that also needs an EM solve must edit the workspace's library copy (brief 85 §1d asks the owner).
+**The shipped library's thermal-era materials now state their electrical values** (2026-09-29). They stated thermal
+properties only, so the Materials editor showed every electrical field of GaN and SiC blank and their role as "states
+nothing" — correct for a thermal run, and a poor record to copy into another project. SiC (εr 9.7), GaN (9.5), CVD
+diamond, the mould compound and the TIM gained εr and tanδ; the gold-tin, sintered-silver, CuW, CuMo and SAC records a σ₂₀;
+each with its source prepended to the record's Source. The shipped library and both examples' copies stay identical. A
+thermal run reads σ only for a bond wire or an electrothermal conductor and never εr, and neither example has either, so
+no recorded number can move (the Benchmark re-run was not repeated). Resolves brief 85 §1d.
+
+**Edit a `.cmat` as TEXT, not through `MaterialLibraryPersistence.SaveToFile`.** The committed files keep each table point
+on one line (`{ "TempC": 20, "Value": … }`); the serializer writes each point over four, so a save rewrites ~750 lines
+for a ten-key change. The Materials editor's Save does the same to a user's library.
 
 Every number in both READMEs and `docs/user/src/reference/thermal.md` is in each example's `expected-numbers.json`;
 `tests/Ui.Tests/Examples/ThermalExamplesTests.cs` holds the text, `check`, the vendor scan, and (Benchmark tier, not yet run)

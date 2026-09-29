@@ -207,7 +207,7 @@ public sealed partial class C3dEditorViewModel
         => [.. C3dGroups.MembersOf(Document, path).Where(m => !m.Instance).Select(m => m.Index)];
 
     /// <summary>The group's objects that take a material: all but its polylines (construction geometry).</summary>
-    private IReadOnlyList<int> GroupSolidIndices(string path) => [.. GroupObjectIndices(path).Where(i => Document.Objects[i] is not C3dPolyline)];
+    internal IReadOnlyList<int> GroupSolidIndices(string path) => [.. GroupObjectIndices(path).Where(i => Document.Objects[i] is not C3dPolyline)];
 
     /// <summary>A material for every member that has one to speak of (not a polyline, not an instance): one undo entry.</summary>
     public void SetGroupMaterial(string path, string material)

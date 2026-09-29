@@ -10,32 +10,92 @@ using CircuitRF.Design.ThreeD;
 
 namespace CircuitRF.Ui.Layout;
 
+/// <summary>One list of materials the table edits — a technology's own, or one library's — and how an edit of it is
+/// committed. The 3D view's Materials dialog hands the table several (the technology's and each library's); a
+/// <c>.cmat</c> document and the technology editor's tab hand it one.</summary>
+public sealed class MaterialListSource(string label, Func<List<TechMaterial>> list, Action<Action, string> commit, string? libraryPath = null)
+{
+    /// <summary>What the Source line says for its rows: "this technology", "generic-materials.cmat".</summary>
+    public string Label { get; } = label;
+
+    /// <summary>The library file it is, or null for a technology's own list.</summary>
+    public string? LibraryPath { get; } = libraryPath;
+
+    /// <summary>The list — read each time, since a snapshot undo replaces it.</summary>
+    public Func<List<TechMaterial>> List { get; } = list;
+
+    /// <summary>Runs a mutation of the list as ONE undo entry of its host, with its description.</summary>
+    public Action<Action, string> Commit { get; } = commit;
+
+    /// <summary>Why it cannot be edited (a shipped library, a read-only file), or null.</summary>
+    public string? ReadOnlyReason { get; init; }
+
+    public override string ToString() => Label;
+}
+
 /// <summary>
-/// brief-em3d-53 R-em3d53-4 — <b>the one Materials table</b>, with two homes: a <c>.cmat</c> document
-/// (<see cref="MaterialsEditorViewModel"/>) and the technology editor's Materials tab. It edits ONE
-/// list of <see cref="TechMaterial"/> it is handed and commits each gesture through the host, which puts
-/// it on that file's own undo stack as one entry.
+/// brief-em3d-53 R-em3d53-4 — <b>the one Materials editor</b>, with three homes: a <c>.cmat</c> document
+/// (<see cref="MaterialsEditorViewModel"/>), the technology editor's Materials tab, and the 3D view's Materials dialog.
+/// It edits the <see cref="TechMaterial"/> lists it is handed (<see cref="Sources"/>) and commits each gesture through
+/// the list's host, which puts it on that file's own undo stack as one entry.
 ///
 /// <para><b>No material rule lives here</b>: problems come from <see cref="MaterialValidation"/>, the Role
-/// column from <see cref="C3dMaterialRole"/>, so the table cannot say one thing while <c>check</c> or
+/// from <see cref="C3dMaterialRole"/>, so the editor cannot say one thing while <c>check</c> or
 /// Simulate says another. Library rows (the technology tab only) are shown read-only, grouped by the file
-/// they came from — an edit to a shared library belongs on that file's stack (M4).</para>
+/// they came from — an edit to a shared library belongs on that file's stack (M4), which <see cref="OpenLibrary"/>
+/// opens.</para>
+///
+/// <para>Materials editor redesign (2026-09-29): a list and one form for the selected material, every property the record
+/// carries on it — εr and its tensor, σ₂₀ and α₂₀, k, density and specific heat, k's tensor, the σ(T) and k(T) tables, the
+/// colour and the source — rather than a wide table whose thermal half sat collapsed below it.</para>
 /// </summary>
 public sealed partial class MaterialsTableViewModel : ObservableObject
 {
-    private readonly Func<List<TechMaterial>> _list;
-    private readonly Action<Action, string> _commit;
-
     /// <param name="list">The editable list — read each time, since a snapshot undo replaces it.</param>
     /// <param name="commit">Runs a mutation of the list as ONE undo entry of the host, with its description.</param>
-    /// <param name="ownSource">What the Source column says for an editable row ("this technology", "this library").</param>
+    /// <param name="ownSource">What the Source line says for an editable row ("this technology", "this library").</param>
     public MaterialsTableViewModel(Func<List<TechMaterial>> list, Action<Action, string> commit, string ownSource)
+        : this([new MaterialListSource(ownSource, list, commit)]) { }
+
+    /// <summary>A table over several lists — the 3D view's Materials dialog: the technology's own and each library's.</summary>
+    public MaterialsTableViewModel(IReadOnlyList<MaterialListSource> sources)
     {
-        _list = list;
-        _commit = commit;
-        OwnSource = ownSource;
+        if (sources.Count == 0) throw new ArgumentException("at least one list", nameof(sources));
+        Sources = sources;
+        OwnSource = sources[0].Label;
+        _targetSource = sources.FirstOrDefault(s => s.ReadOnlyReason is null) ?? sources[0];
         Rebuild();
     }
+
+    /// <summary>The lists this table edits, in the order their rows are listed.</summary>
+    public IReadOnlyList<MaterialListSource> Sources { get; }
+
+    /// <summary>Where Add and Duplicate write — chosen in the dialog when there is more than one list.</summary>
+    [ObservableProperty] private MaterialListSource _targetSource;
+
+    public bool HasSeveralSources => Sources.Count > 1;
+
+    /// <summary>Filters the list by name, role or source; the rows it hides are hidden, not removed.</summary>
+    [ObservableProperty] private string _filterText = "";
+
+    partial void OnFilterTextChanged(string value)
+    {
+        foreach (var r in Rows) r.RefreshShown();
+    }
+
+    /// <summary>Whether Delete is offered. The 3D view's dialog does not: a delete is the file's own editor's, where
+    /// every use is listed.</summary>
+    public bool CanDelete { get; init; } = true;
+
+    /// <summary>Opens a library row's own document on that row (the technology tab). Null: not offered.</summary>
+    public Action<MaterialRowViewModel>? OpenLibrary { get; set; }
+
+    /// <summary>Why a row's name may not be edited here, or null. The 3D view's dialog refuses renaming a material that
+    /// already existed: a rename there would leave every file naming it pointing at nothing.</summary>
+    public Func<MaterialRowViewModel, string?>? RenameRefusal { get; set; }
+
+    /// <summary>Raised after Add or Duplicate: the view puts the caret in the new row's name, selected, to be typed over.</summary>
+    public event Action? NameFocusRequested;
 
     /// <summary>What the Source column says for a row of the list being edited.</summary>
     public string OwnSource { get; }
@@ -44,6 +104,11 @@ public sealed partial class MaterialsTableViewModel : ObservableObject
     /// read-only file (§1h). <see cref="ReadOnlyReason"/> says why, naming the file.</summary>
     [ObservableProperty] private bool _isReadOnly;
     [ObservableProperty] private string? _readOnlyReason;
+
+    partial void OnIsReadOnlyChanged(bool value)
+    {
+        foreach (var r in Rows) r.Rebind(r.Material);
+    }
 
     /// <summary>The last refused gesture's sentence (a name with '@', a delete of a material in use); cleared by
     /// the next committed one.</summary>
@@ -71,9 +136,10 @@ public sealed partial class MaterialsTableViewModel : ObservableObject
     /// <summary>Raised after every committed gesture of this table (and on <see cref="Rebuild"/>).</summary>
     public event Action? Changed;
 
-    /// <summary>The material rules' findings for this list, warnings and errors only — what the header counts.</summary>
+    /// <summary>The material rules' findings for these lists, warnings and errors only — what the header counts.</summary>
     public IReadOnlyList<TechProblem> Problems =>
-        [.. MaterialValidation.Validate(_list()).Where(p => p.Severity != CircuitRF.Diagnostics.DiagnosticSeverity.Info)];
+        [.. Sources.SelectMany(src => MaterialValidation.Validate(src.List()))
+                   .Where(p => p.Severity != CircuitRF.Diagnostics.DiagnosticSeverity.Info)];
 
     public bool HasRows => Rows.Count > 0;
 
@@ -97,15 +163,17 @@ public sealed partial class MaterialsTableViewModel : ObservableObject
         int selectedIndex = selectedRow is null ? -1 : Rows.IndexOf(selectedRow);
         int countBefore = Rows.Count;
 
-        var wanted = new List<(TechMaterial Material, string? Source)>();
-        foreach (var m in _list()) wanted.Add((m, null));
-        foreach (var lm in LibraryRows) wanted.Add((lm.Material, lm.SourcePath));
+        var wanted = new List<(TechMaterial Material, MaterialListSource? Own, string? Library)>();
+        foreach (var src in Sources)
+            foreach (var m in src.List()) wanted.Add((m, src, null));
+        foreach (var lm in LibraryRows) wanted.Add((lm.Material, null, lm.SourcePath));
         for (int i = 0; i < wanted.Count; i++)
         {
-            var (m, source) = wanted[i];
-            if (i >= Rows.Count) Rows.Add(new MaterialRowViewModel(this, m, source));
-            else if (string.Equals(Rows[i].LibrarySource, source, StringComparison.OrdinalIgnoreCase)) Rows[i].Rebind(m);
-            else Rows[i] = new MaterialRowViewModel(this, m, source);
+            var (m, own, library) = wanted[i];
+            if (i >= Rows.Count) Rows.Add(new MaterialRowViewModel(this, m, own, library));
+            else if (ReferenceEquals(Rows[i].Source, own) && string.Equals(Rows[i].LibrarySource, library, StringComparison.OrdinalIgnoreCase))
+                Rows[i].Rebind(m);
+            else Rows[i] = new MaterialRowViewModel(this, m, own, library);
         }
         while (Rows.Count > wanted.Count) Rows.RemoveAt(Rows.Count - 1);
 
@@ -122,11 +190,12 @@ public sealed partial class MaterialsTableViewModel : ObservableObject
 
     // ── the one commit path ───────────────────────────────────────────────────
 
-    internal bool Edit(Action mutate, string description)
+    internal bool Edit(MaterialListSource source, Action mutate, string description)
     {
         if (IsReadOnly) { Refusal = ReadOnlyReason ?? "This file is read-only."; return false; }
+        if (source.ReadOnlyReason is { } why) { Refusal = why; return false; }
         Refusal = null;
-        _commit(mutate, description);
+        source.Commit(mutate, description);
         Rebuild();
         return true;
     }
@@ -134,14 +203,21 @@ public sealed partial class MaterialsTableViewModel : ObservableObject
     // ── actions ───────────────────────────────────────────────────────────────
 
     /// <summary>A new material stating nothing — <c>Material1</c>, <c>Material2</c>… — so its Role reads
-    /// "states nothing" until it is given σ₂₀ or εr.</summary>
+    /// "states nothing" until it is given σ₂₀ or εr. Written to <see cref="TargetSource"/>.</summary>
     [RelayCommand]
     public void Add()
     {
         string name = FreshName("Material");
-        if (Edit(() => _list().Add(new TechMaterial { Name = name }), $"Add material {name}")) Select(name);
+        var target = TargetSource;
+        if (Edit(target, () => target.List().Add(new TechMaterial { Name = name }), $"Add material {name}"))
+        {
+            Select(name, target);
+            NameFocusRequested?.Invoke();
+        }
     }
 
+    /// <summary>A copy of the selected material — own or library, every value and table — under a new name, written to
+    /// <see cref="TargetSource"/> and selected with its name ready to be typed over.</summary>
     [RelayCommand]
     public void Duplicate()
     {
@@ -149,14 +225,19 @@ public sealed partial class MaterialsTableViewModel : ObservableObject
         string name = FreshName(row.Name + " copy");
         var copy = TechPersistenceClone(row.Material);
         copy.Name = name;
-        if (Edit(() => _list().Add(copy), $"Duplicate material {row.Name}")) Select(name);
+        var target = TargetSource;
+        if (Edit(target, () => target.List().Add(copy), $"Duplicate material {row.Name}"))
+        {
+            Select(name, target);
+            NameFocusRequested?.Invoke();
+        }
     }
 
     /// <summary>Deletes the selected own row — refused, listing every use, while anything names it (R-em3d53-4c).</summary>
     [RelayCommand]
     public void Delete()
     {
-        if (SelectedRow is not { IsLibrary: false } row) return;
+        if (!CanDelete || SelectedRow is not { IsLibrary: false, Source: { } source } row) return;
         var uses = UsedBy?.Invoke(row.Name) ?? [];
         if (uses.Count > 0)
         {
@@ -164,17 +245,19 @@ public sealed partial class MaterialsTableViewModel : ObservableObject
             return;
         }
         var m = row.Material;
-        Edit(() => _list().Remove(m), $"Delete material {row.Name}");
+        Edit(source, () => source.List().Remove(m), $"Delete material {row.Name}");
     }
 
-    /// <summary>Renames an own row. '@' and a name already in the list are refused; a rename to or from
-    /// <c>Air</c> warns that the role changes with the name (§1g).</summary>
+    /// <summary>Renames an own row. '@', a name already in these lists, and a rename <see cref="RenameRefusal"/> refuses are
+    /// refused; a rename to or from <c>Air</c> warns that the role changes with the name (§1g).</summary>
     public bool Rename(MaterialRowViewModel row, string newName)
     {
         newName = newName.Trim();
-        if (row.IsLibrary || string.Equals(newName, row.Name, StringComparison.Ordinal)) return false;
+        if (row.IsLibrary || row.Source is not { } source || string.Equals(newName, row.Name, StringComparison.Ordinal)) return false;
+        if (RenameRefusal?.Invoke(row) is { } refused) { Refusal = refused; return false; }
         if (MaterialValidation.NameRefusal(newName) is { } why) { Refusal = why; return false; }
-        if (_list().Any(m => !ReferenceEquals(m, row.Material) && string.Equals(m.Name, newName, StringComparison.OrdinalIgnoreCase)))
+        if (Sources.SelectMany(src => src.List())
+                   .Any(m => !ReferenceEquals(m, row.Material) && string.Equals(m.Name, newName, StringComparison.OrdinalIgnoreCase)))
         {
             Refusal = $"A material named '{newName}' already exists here.";
             return false;
@@ -189,20 +272,25 @@ public sealed partial class MaterialsTableViewModel : ObservableObject
             note = across(old, newName);
             Rebuild();
         }
-        else if (!Edit(() => row.Material.Name = newName, $"Rename material {old} → {newName}")) return false;
+        else if (!Edit(source, () => row.Material.Name = newName, $"Rename material {old} → {newName}")) return false;
         if (airChange)
             note = (note is null ? "" : note + " ") +
                    "A material named Air is air whatever it states, so this rename changed its role.";
         Refusal = note;
-        Select(newName);
+        Select(newName, source);
         return true;
     }
+
+    /// <summary>Selects the row named <paramref name="name"/> in <paramref name="source"/>.</summary>
+    private void Select(string name, MaterialListSource source)
+        => SelectedRow = Rows.FirstOrDefault(r => ReferenceEquals(r.Source, source) && string.Equals(r.Name, name, StringComparison.OrdinalIgnoreCase))
+                      ?? Rows.FirstOrDefault(r => string.Equals(r.Name, name, StringComparison.OrdinalIgnoreCase));
 
     /// <summary><c>Material1</c>, <c>Material2</c>… for Add; <c>Gold copy</c>, <c>Gold copy 2</c>… for Duplicate —
     /// the first not already a name here or in a library shown.</summary>
     private string FreshName(string stem)
     {
-        var names = new HashSet<string>(_list().Select(m => m.Name).Concat(LibraryRows.Select(l => l.Material.Name)),
+        var names = new HashSet<string>(Sources.SelectMany(src => src.List()).Select(m => m.Name).Concat(LibraryRows.Select(l => l.Material.Name)),
                                          StringComparer.OrdinalIgnoreCase);
         bool copy = stem.EndsWith(" copy", StringComparison.Ordinal);
         if (copy && !names.Contains(stem)) return stem;
@@ -253,13 +341,18 @@ public sealed partial class MaterialRowViewModel : ObservableObject
 {
     private readonly MaterialsTableViewModel _table;
 
-    internal MaterialRowViewModel(MaterialsTableViewModel table, TechMaterial material, string? librarySource)
+    internal MaterialRowViewModel(MaterialsTableViewModel table, TechMaterial material, MaterialListSource? source, string? librarySource)
     {
         _table = table;
         Material = material;
+        Source = source;
         LibrarySource = librarySource;
         _nameText = material.Name;
         PickColorCommand = new AsyncRelayCommand<Window?>(PickColorAsync);
+        OpenLibraryCommand = new RelayCommand(() => _table.OpenLibrary?.Invoke(this), () => CanOpenLibrary);
+        SigmaTable = new TemperatureTableViewModel(this, "σ(T)", "S/m", m => m.SigmaVsTemp, (m, t) => m.SigmaVsTemp = t, m => m.Sigma20, "σ₂₀");
+        KTable = new TemperatureTableViewModel(this, "k(T)", "W/(m·K)", m => m.ThermalKVsTemp, (m, t) => m.ThermalKVsTemp = t, m => m.ThermalK, "k");
+        _isShown = Matches(table.FilterText);
     }
 
     /// <summary>The record this row shows — re-pointed by <see cref="Rebind"/> when a snapshot replaces the list.</summary>
@@ -272,19 +365,55 @@ public sealed partial class MaterialRowViewModel : ObservableObject
     {
         Material = material;
         _nameText = material.Name;
+        SigmaTable.Reload();
+        KTable.Reload();
         OnPropertyChanged(string.Empty);
+        RefreshShown();
     }
 
-    /// <summary>The library this row came from, or null for a row of the list being edited.</summary>
+    /// <summary>The list this row belongs to, or null for a library row shown read-only.</summary>
+    public MaterialListSource? Source { get; }
+
+    /// <summary>The library this row came from, or null for a row of a list being edited.</summary>
     public string? LibrarySource { get; }
 
     public bool IsLibrary => LibrarySource is not null;
-    public bool IsEditable => !IsLibrary && !_table.IsReadOnly;
+    public bool IsEditable => !IsLibrary && !_table.IsReadOnly && Source?.ReadOnlyReason is null;
     public string Name => Material.Name;
 
-    /// <summary>The Source column: this file, or the library a row came from.</summary>
-    public string SourceLabel => LibrarySource is { } s ? Path.GetFileName(MaterialLibraries.Display(s)) : _table.OwnSource;
-    public string? SourceTip => LibrarySource is { } s ? MaterialLibraries.Display(s) : null;
+    /// <summary>Whether the name may be typed over: an editable row the host does not refuse renaming.</summary>
+    public bool IsNameEditable => IsEditable && _table.RenameRefusal?.Invoke(this) is null;
+
+    /// <summary>Why the name is fixed here, for its tooltip.</summary>
+    public string NameTip => (IsEditable ? _table.RenameRefusal?.Invoke(this) : null)
+                             ?? "The name a stackup entry, body or 3D object names it by. '@' is reserved.";
+
+    /// <summary>Where the row comes from: this file, the list it belongs to, or the library it came from.</summary>
+    public string SourceLabel => LibrarySource is { } s ? Path.GetFileName(MaterialLibraries.Display(s)) : Source?.Label ?? _table.OwnSource;
+    public string? SourceTip => LibrarySource is { } s ? MaterialLibraries.Display(s) : Source?.LibraryPath;
+
+    /// <summary>Why the form is read-only, or null: a library row, a read-only list, a read-only file.</summary>
+    public string? ReadOnlyNote => IsLibrary
+        ? $"'{Material.Name}' comes from {SourceLabel}, so it is edited in that library, where the change is on its own undo and Save."
+        : Source?.ReadOnlyReason ?? (_table.IsReadOnly ? _table.ReadOnlyReason ?? "This file is read-only." : null);
+
+    public bool HasReadOnlyNote => ReadOnlyNote is not null;
+
+    /// <summary>A library row can be opened in its own document when the host offers it.</summary>
+    public bool CanOpenLibrary => IsLibrary && _table.OpenLibrary is not null;
+    public string OpenLibraryText => $"Edit in {SourceLabel}";
+    public IRelayCommand OpenLibraryCommand { get; }
+
+    /// <summary>The list's filter: a row is shown when its name, role or source contains the text.</summary>
+    [ObservableProperty] private bool _isShown;
+
+    internal void RefreshShown() => IsShown = Matches(_table.FilterText);
+
+    private bool Matches(string? filter)
+        => string.IsNullOrWhiteSpace(filter)
+        || Material.Name.Contains(filter.Trim(), StringComparison.OrdinalIgnoreCase)
+        || Role.Contains(filter.Trim(), StringComparison.OrdinalIgnoreCase)
+        || SourceLabel.Contains(filter.Trim(), StringComparison.OrdinalIgnoreCase);
 
     /// <summary>§1g — a material named Air is air whatever it states; the row is marked.</summary>
     public bool IsAirByName => string.Equals(Material.Name, "Air", StringComparison.OrdinalIgnoreCase);
@@ -300,14 +429,38 @@ public sealed partial class MaterialRowViewModel : ObservableObject
     };
     public string RoleReason => C3dMaterialRole.Reason(ImpliedRole);
 
+    /// <summary>The reason as a sentence under the name: "Conductor — it states σ₂₀ and no εr."</summary>
+    public string RoleSentence => RoleReason.Length == 0 ? "" : char.ToUpperInvariant(RoleReason[0]) + RoleReason[1..] + ".";
+
+    /// <summary>The list's second line: the role, and where it comes from.</summary>
+    public string Subtitle => $"{Role} · {SourceLabel}";
+
+    /// <summary>What a thermal run will read, in one line — or what is missing for it.</summary>
+    public string ThermalSummary
+    {
+        get
+        {
+            if (IsAirByName) return "Air is not meshed by a thermal run, so it needs no thermal values.";
+            if (ThermalProperties.ThermalKAt(Material, 25) is not { } k)
+                return "A thermal run refuses a solid made of this material until k or a k(T) table is stated.";
+            return string.Create(CultureInfo.InvariantCulture, $"A thermal run reads k = {k.Value:G4} W/(m·K) at 25 °C") +
+                   (Material.ThermalKVsTemp is { Count: > 0 } ? ", from the k(T) table." : ".") +
+                   (Material.DensityKgM3 is null || Material.SpecificHeat is null ? " A thermal impedance (Z_th) also needs density and specific heat." : "");
+        }
+    }
+
     /// <summary>Where it is used; the tooltip lists them.</summary>
     public IReadOnlyList<string> Uses => _table.UsedBy?.Invoke(Material.Name) ?? [];
     public string UsedByText => Uses.Count switch { 0 => "", 1 => Uses[0], var n => $"{n} uses" };
     public string? UsedByTip => Uses.Count > 1 ? string.Join("\n", Uses) : null;
+    public bool HasUses => Uses.Count > 0;
 
-    /// <summary>A σ(T) or k(T) table is carried and never edited here (placeholders no solver reads).</summary>
+    /// <summary>The σ(T) and k(T) tables, each edited point by point.</summary>
+    public TemperatureTableViewModel SigmaTable { get; }
+    public TemperatureTableViewModel KTable { get; }
+
+    /// <summary>A σ(T) or k(T) table is stated.</summary>
     public bool HasTemperatureTables => Material.SigmaVsTemp is { Count: > 0 } || Material.ThermalKVsTemp is { Count: > 0 };
-    public string TemperatureTablesNote => HasTemperatureTables ? "has a σ(T) or k(T) table — preserved" : "";
 
     // ── Name ──────────────────────────────────────────────────────────────────
 
@@ -333,13 +486,26 @@ public sealed partial class MaterialRowViewModel : ObservableObject
     public string DensityText      { get => MaterialsTableViewModel.Show(Material.DensityKgM3);  set => Set(value, Material.DensityKgM3,  v => Material.DensityKgM3 = v,  "density"); }
     public string SpecificHeatText { get => MaterialsTableViewModel.Show(Material.SpecificHeat); set => Set(value, Material.SpecificHeat, v => Material.SpecificHeat = v, "specific heat"); }
 
-    /// <summary>A library row is edited in its own library's document, never through a technology (M4).</summary>
-    private bool Refuse()
+    /// <summary>A library row is edited in its own library's document, never through a technology (M4); a read-only
+    /// list is not edited at all.</summary>
+    internal bool Refuse()
     {
-        if (!IsLibrary) return false;
-        _table.Refusal = $"'{Material.Name}' comes from {SourceLabel}: open that library to edit it, so the change is on its own undo and Save.";
+        if (IsLibrary)
+            _table.Refusal = $"'{Material.Name}' comes from {SourceLabel}: open that library to edit it, so the change is on its own undo and Save.";
+        else if (Source?.ReadOnlyReason is { } why) _table.Refusal = why;
+        else return false;
         OnPropertyChanged(string.Empty);
         return true;
+    }
+
+    /// <summary>Commits a mutation of this row's record through its list.</summary>
+    internal bool Edit(Action mutate, string description) => Source is { } source && _table.Edit(source, mutate, description);
+
+    /// <summary>A refused gesture of this row, shown where the table shows its refusals.</summary>
+    internal void Refused(string why)
+    {
+        _table.Refusal = why;
+        OnPropertyChanged(string.Empty);
     }
 
     private void Set(string? text, double? current, Action<double?> write, string field)
@@ -356,7 +522,7 @@ public sealed partial class MaterialRowViewModel : ObservableObject
             return;
         }
         string name = Material.Name;
-        _table.Edit(() => write(v), v is null ? $"Clear {field} of {name}" : $"Set {field} of {name}");
+        Edit(() => write(v), v is null ? $"Clear {field} of {name}" : $"Set {field} of {name}");
     }
 
     // ── the εr tensor (§1e: unchecking removes the key) ─────────────────────────
@@ -369,7 +535,7 @@ public sealed partial class MaterialRowViewModel : ObservableObject
             if (value == IsAnisotropic || Refuse()) return;
             string name = Material.Name;
             double e = Material.Epsr ?? 1;
-            if (!_table.Edit(() => Material.EpsrTensor = value ? [e, e, e] : null,
+            if (!Edit(() => Material.EpsrTensor = value ? [e, e, e] : null,
                              value ? $"Make {name} anisotropic" : $"Make {name} isotropic"))
                 OnPropertyChanged();
         }
@@ -394,7 +560,7 @@ public sealed partial class MaterialRowViewModel : ObservableObject
             return;
         }
         string name = Material.Name;
-        _table.Edit(() => { var copy = (double[])t.Clone(); copy[i] = v!.Value; Material.EpsrTensor = copy; },
+        Edit(() => { var copy = (double[])t.Clone(); copy[i] = v!.Value; Material.EpsrTensor = copy; },
                     $"Set εr {"xyz"[i]}{"xyz"[i]} of {name}");
     }
 
@@ -414,7 +580,7 @@ public sealed partial class MaterialRowViewModel : ObservableObject
                 OnPropertyChanged(string.Empty);
                 return;
             }
-            if (!_table.Edit(() => Material.ThermalKTensor = value ? [k0, k0, k0] : null,
+            if (!Edit(() => Material.ThermalKTensor = value ? [k0, k0, k0] : null,
                              value ? $"Make k of {name} anisotropic" : $"Make k of {name} isotropic"))
                 OnPropertyChanged();
         }
@@ -439,7 +605,7 @@ public sealed partial class MaterialRowViewModel : ObservableObject
             return;
         }
         string name = Material.Name;
-        _table.Edit(() => { var copy = (double[])t.Clone(); copy[i] = v!.Value; Material.ThermalKTensor = copy; },
+        Edit(() => { var copy = (double[])t.Clone(); copy[i] = v!.Value; Material.ThermalKTensor = copy; },
                     $"Set k {"xyz"[i]}{"xyz"[i]} of {name}");
     }
 
@@ -459,9 +625,20 @@ public sealed partial class MaterialRowViewModel : ObservableObject
                 return;
             }
             string name = Material.Name;
-            _table.Edit(() => Material.Color = v, v is null ? $"Clear the colour of {name}" : $"Colour {name}");
+            Edit(() => Material.Color = v, v is null ? $"Clear the colour of {name}" : $"Colour {name}");
         }
     }
+
+    /// <summary>The list's swatch: the stated colour, else a neutral one per role, so an unstated colour still reads.</summary>
+    public Avalonia.Media.Color ListSwatchColor
+        => Material.Color is { } c && Rgba.TryParseHex(c, out var rgba) ? new Avalonia.Media.Color(255, rgba.R, rgba.G, rgba.B)
+         : ImpliedRole switch
+         {
+             C3dImpliedRole.Conductor  => Avalonia.Media.Color.FromRgb(0xC8, 0x9A, 0x4E),
+             C3dImpliedRole.Dielectric => Avalonia.Media.Color.FromRgb(0x6E, 0x9E, 0x96),
+             C3dImpliedRole.Air        => Avalonia.Media.Color.FromRgb(0xA8, 0xC8, 0xE8),
+             _                         => Avalonia.Media.Color.FromRgb(0x90, 0x90, 0x90),
+         };
 
     /// <summary>The Colour column's swatch — transparent while no colour is stated (the 3D view's own palette).</summary>
     public Avalonia.Media.Color SwatchColor
@@ -496,7 +673,7 @@ public sealed partial class MaterialRowViewModel : ObservableObject
             string? v = string.IsNullOrWhiteSpace(value) ? null : value;
             if (v == Material.Source || Refuse()) return;
             string name = Material.Name;
-            _table.Edit(() => Material.Source = v, $"Edit the source of {name}");
+            Edit(() => Material.Source = v, $"Edit the source of {name}");
         }
     }
 }

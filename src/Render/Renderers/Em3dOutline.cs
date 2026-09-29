@@ -1,5 +1,5 @@
-// 3D vector copy and drawing export (2026-09-27) — an orthographic OUTLINE of a 3D problem along any direction: a
-// drawing's Top, Front, Right …, its isometric, or the 3D view's own camera. The isometric outline beside it
+// 3D vector copy and drawing export (2026-09-27) — an OUTLINE of a 3D problem along any direction: a drawing's Top,
+// Front, Right …, its isometric, or the 3D view's own camera — in perspective when that camera is (Em3dProjection.Eye). The isometric outline beside it
 // (Em3dSectionScene.Iso, `render --iso`) is left exactly as it was: its bytes are what the CLI's tests and the
 // documentation's figures compare, and it is a different picture (a fixed +x +y +z viewer, scaled as an isometric
 // DRAWING rather than projected).
@@ -38,12 +38,32 @@ public enum Em3dHiddenEdges
 }
 
 /// <summary>
-/// An orthographic direction to look along: <see cref="Toward"/> is the unit vector from the model toward the viewer,
-/// <see cref="Right"/> and <see cref="Up"/> the picture's axes. A point's picture coordinates are its components along
-/// Right and Up; its depth is its component along Toward (larger is nearer).
+/// A direction to look along: <see cref="Toward"/> is the unit vector from the model toward the viewer,
+/// <see cref="Right"/> and <see cref="Up"/> the picture's axes. Orthographic (no <see cref="Eye"/>), a point's picture
+/// coordinates are its components along Right and Up; its depth is its component along Toward (larger is nearer).
+/// <para>
+/// With an <see cref="Eye"/> it is the 3D view's PERSPECTIVE camera: a point is scaled by <see cref="Focal"/> over its
+/// distance ahead of the eye, about the point straight ahead of it. So a point in the plane <see cref="Focal"/> ahead —
+/// the camera's orbit centre — lands exactly where the orthographic projection puts it, and a window framed on that plane
+/// (the scale bar's) frames both alike. Its depth is affine in the reciprocal of that distance, which is what makes it
+/// linear across a projected triangle, as the hidden-edge test interpolates it.
+/// </para>
 /// </summary>
 public readonly record struct Em3dProjection(Point3 Toward, Point3 Right, Point3 Up, string Name)
 {
+    /// <summary>The perspective camera's eye, metres; null for an orthographic projection.</summary>
+    public Point3? Eye { get; init; }
+
+    /// <summary>With an <see cref="Eye"/>, the distance ahead of it at which the picture's scale is the orthographic one.</summary>
+    public double Focal { get; init; }
+
+    /// <summary>A perspective projection's nearest drawn distance, as a fraction of <see cref="Focal"/>: what lies nearer
+    /// the eye (or behind it) is clipped away.</summary>
+    public const double NearFraction = 1e-3;
+
+    /// <summary>This projection seen from <paramref name="eye"/>, scaled as the orthographic one at <paramref name="focal"/> ahead.</summary>
+    public Em3dProjection WithEye(Point3 eye, double focal) => this with { Eye = eye, Focal = focal };
+
     /// <summary>The 3D view's camera angles (Camera3D: yaw about +z from +x, pitch up from the xy plane) — so a drawing's
     /// Top is exactly what Standard Views ▸ Top shows.</summary>
     public static Em3dProjection FromYawPitch(double yaw, double pitch, string name)
@@ -72,10 +92,45 @@ public readonly record struct Em3dProjection(Point3 Toward, Point3 Right, Point3
     };
 
     /// <summary>A point in the picture's plane, metres.</summary>
-    public Uv Project(Point3 p) => new(Dot(p, Right), Dot(p, Up));
+    public Uv Project(Point3 p)
+    {
+        if (Eye is not { } e) return new(Dot(p, Right), Dot(p, Up));
+        var r = new Point3(p.X - e.X, p.Y - e.Y, p.Z - e.Z);
+        double s = Focal / Math.Max(-Dot(r, Toward), NearFraction * Focal);
+        return new(Dot(e, Right) + s * Dot(r, Right), Dot(e, Up) + s * Dot(r, Up));
+    }
 
-    /// <summary>How near the viewer a point is, metres (larger is nearer).</summary>
-    public double Depth(Point3 p) => Dot(p, Toward);
+    /// <summary>How near the viewer a point is, metres (larger is nearer). In perspective, affine in 1/distance and equal
+    /// to the orthographic depth on the focal plane.</summary>
+    public double Depth(Point3 p)
+    {
+        if (Eye is not { } e) return Dot(p, Toward);
+        double ahead = Math.Max(Ahead(p), NearFraction * Focal);
+        return Dot(e, Toward) - Focal * Focal / ahead;
+    }
+
+    /// <summary>How far ahead of the eye a point is, metres; for an orthographic projection, +∞.</summary>
+    public double Ahead(Point3 p)
+        => Eye is { } e ? -((p.X - e.X) * Toward.X + (p.Y - e.Y) * Toward.Y + (p.Z - e.Z) * Toward.Z) : double.PositiveInfinity;
+
+    /// <summary>The unit vector from <paramref name="p"/> toward the viewer: <see cref="Toward"/>, or toward the eye.</summary>
+    public Point3 TowardFrom(Point3 p)
+        => Eye is { } e ? Normalize(new Point3(e.X - p.X, e.Y - p.Y, e.Z - p.Z)) : Toward;
+
+    /// <summary>
+    /// The part of <paramref name="a"/>–<paramref name="b"/> a perspective camera can draw — what lies at least
+    /// <see cref="NearFraction"/> × <see cref="Focal"/> ahead of the eye — or null when none does. Orthographic: the segment.
+    /// </summary>
+    public (Point3 A, Point3 B)? ClipNear(Point3 a, Point3 b)
+    {
+        if (Eye is null) return (a, b);
+        double near = NearFraction * Focal, da = Ahead(a), db = Ahead(b);
+        if (da >= near && db >= near) return (a, b);
+        if (da < near && db < near) return null;
+        double f = (near - da) / (db - da);
+        var cut = new Point3(a.X + f * (b.X - a.X), a.Y + f * (b.Y - a.Y), a.Z + f * (b.Z - a.Z));
+        return da < near ? (cut, b) : (a, cut);
+    }
 
     internal static double Dot(Point3 a, Point3 b) => a.X * b.X + a.Y * b.Y + a.Z * b.Z;
 
@@ -160,13 +215,17 @@ public static partial class Em3dSectionScene
         for (int k = 0; k < parts.Count; k++)
         {
             int part = k;
-            FeatureEdges(parts[k].Mesh, projection.Toward, (a, b) => edges.Add((part, a, b)));
+            FeatureEdges(parts[k].Mesh, projection.TowardFrom, (a, b) =>
+            {
+                if (projection.ClipNear(a, b) is { } seg) edges.Add((part, seg.A, seg.B));
+            });
         }
 
         double u0 = double.PositiveInfinity, v0 = u0, u1 = double.NegativeInfinity, v1 = u1;
         void Grow(Uv q) { u0 = Math.Min(u0, q.U); v0 = Math.Min(v0, q.V); u1 = Math.Max(u1, q.U); v1 = Math.Max(v1, q.V); }
         foreach (var (_, a, b) in edges) { Grow(projection.Project(a)); Grow(projection.Project(b)); }
-        var frameCorners = BoxEdges(fMin, fMax).SelectMany(e => new[] { e.A, e.B }).Select(projection.Project).ToList();
+        var frameCorners = BoxEdges(fMin, fMax).Select(e => projection.ClipNear(e.A, e.B)).OfType<(Point3 A, Point3 B)>()
+                                                .SelectMany(e => new[] { e.A, e.B }).Select(projection.Project).ToList();
         if (double.IsInfinity(u0)) foreach (var q in frameCorners) Grow(q);
         double span = Math.Max(u1 - u0, v1 - v0);
 
@@ -210,10 +269,12 @@ public static partial class Em3dSectionScene
                 : p.Min.Y == p.Max.Y
                     ? [p.Min, new(p.Max.X, p.Min.Y, p.Min.Z), p.Max, new(p.Min.X, p.Min.Y, p.Max.Z)]
                     : [p.Min, new(p.Max.X, p.Min.Y, p.Min.Z), p.Max, new(p.Min.X, p.Max.Y, p.Min.Z)];
-            return new Em3dScenePort(p.Number, [.. c.Select(projection.Project)]);
-        }).ToList();
+            return c.All(q => projection.Ahead(q) >= Em3dProjection.NearFraction * projection.Focal)
+                ? new Em3dScenePort(p.Number, [.. c.Select(projection.Project)]) : null;
+        }).OfType<Em3dScenePort>().ToList();
 
-        var boxEdges = BoxEdges(fMin, fMax).Select(e => new Em3dBoxEdge(projection.Project(e.A), projection.Project(e.B), true)).ToList();
+        var boxEdges = BoxEdges(fMin, fMax).Select(e => projection.ClipNear(e.A, e.B)).OfType<(Point3 A, Point3 B)>()
+                                           .Select(e => new Em3dBoxEdge(projection.Project(e.A), projection.Project(e.B), true)).ToList();
         string[] names = ["xmin", "xmax", "ymin", "ymax", "zmin", "zmax"];
         Em3dBoundaryKind[] kinds = [box.Faces.XMin, box.Faces.XMax, box.Faces.YMin, box.Faces.YMax, box.Faces.ZMin, box.Faces.ZMax];
         var faces = names.Select((n, f) => new Em3dSceneFace(n, kinds[f], Em3dFaceSide.None, 0)).ToList();
@@ -230,6 +291,10 @@ public static partial class Em3dSectionScene
     /// mesh repeats a vertex per face, and unwelded every triangle edge would read as open.
     /// </summary>
     internal static void FeatureEdges(Em3dTriangleMesh mesh, Point3 toward, Action<Point3, Point3> edge)
+        => FeatureEdges(mesh, _ => toward, edge);
+
+    /// <summary>As above, with the viewer's direction taken at each edge's midpoint — a perspective camera's silhouette.</summary>
+    internal static void FeatureEdges(Em3dTriangleMesh mesh, Func<Point3, Point3> towardFrom, Action<Point3, Point3> edge)
     {
         const double Quantum = 1e-12;   // a picometre: far below any drawn feature, far above a double's rounding here
         var weld = new Dictionary<(long, long, long), int>();
@@ -265,7 +330,13 @@ public static partial class Em3dSectionScene
             {
                 var n0 = normals[list[0]]; var n1 = normals[list[1]];
                 double cos = Dot(n0, n1);
-                draw = cos < CosSharp || Dot(n0, toward) > 0 != Dot(n1, toward) > 0;
+                if (cos < CosSharp) draw = true;
+                else
+                {
+                    var (p, q) = (at[key.Item1], at[key.Item2]);
+                    var toward = towardFrom(new Point3((p.X + q.X) / 2, (p.Y + q.Y) / 2, (p.Z + q.Z) / 2));
+                    draw = Dot(n0, toward) > 0 != Dot(n1, toward) > 0;
+                }
             }
             if (draw) edge(at[key.Item1], at[key.Item2]);
         }
@@ -296,6 +367,10 @@ public static partial class Em3dSectionScene
                 foreach (var tri in m.Triangles)
                 {
                     var a = m.Vertices[tri.A]; var b = m.Vertices[tri.B]; var c = m.Vertices[tri.C];
+                    // A perspective camera's: a triangle reaching the eye's near plane is left out rather than folded
+                    // through infinity. Orthographic, Ahead is +∞ and nothing is.
+                    double near = Em3dProjection.NearFraction * p.Focal;
+                    if (p.Ahead(a) < near || p.Ahead(b) < near || p.Ahead(c) < near) continue;
                     var pa = p.Project(a); var pb = p.Project(b); var pc = p.Project(c);
                     double e1u = pb.U - pa.U, e1v = pb.V - pa.V, e2u = pc.U - pa.U, e2v = pc.V - pa.V;
                     double det = e1u * e2v - e1v * e2u;

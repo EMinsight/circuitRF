@@ -261,20 +261,73 @@ public partial class WorkspaceViewModel
         }
 
         string? current = indices.Count == 1 ? vm.Document.Objects[indices[0]].Material : vm.CurrentMaterial;
-        var picker = new MaterialPickerViewModel(tech, Path.GetFileName(techPath), startNew, current, null);
+        var picker = new MaterialPickerViewModel(MaterialSeeds(tech, techPath), Path.GetFileName(techPath), startNew, current,
+                                                 indices.Count, null);
         bool ok = await new Views.Dialogs.MaterialPickerDialog(picker).ShowDialog<bool>(window);
         if (!ok) return;
 
-        if (picker.IsNew)
-        {
-            if (SaveNewMaterial(techPath, picker.SelectedTarget!, picker.NewMaterial) is { } refused)
+        var changed = picker.ChangedLists;
+        foreach (var (seed, materials) in changed)
+            if (CommitMaterialList(techPath, seed, materials) is { } refused)
             {
                 Messages.Error(refused);
                 return;
             }
-            ActivateIfOpen(C3dEditorDocument.KeyFor(doc.FilePath));
-        }
+        if (changed.Count > 0) ActivateIfOpen(C3dEditorDocument.KeyFor(doc.FilePath));
         vm.ApplyPickedMaterial(indices, picker.ChosenName);
+    }
+
+    /// <summary>
+    /// Materials editor redesign (2026-09-29) — the lists the 3D view's Materials dialog edits: the technology's own
+    /// materials, then each library it names, each as it stands NOW — an open document's unsaved state, else the file.
+    /// A library that cannot be written says why; a library shipped inside circuitRF is shown and never edited.
+    /// </summary>
+    private List<MaterialSourceSeed> MaterialSeeds(Technology tech, string techPath)
+    {
+        var seeds = new List<MaterialSourceSeed>();
+        var own = OpenTechEditor(techPath)?.Working.Materials ?? tech.Materials;
+        seeds.Add(new MaterialSourceSeed($"{Path.GetFileName(techPath)} (the technology's own)", null, own, ReadOnlyPathReason(techPath)));
+        foreach (string lib in tech.ResolvedLibraryPaths)
+        {
+            string label = Path.GetFileName(MaterialLibraries.Display(lib));
+            if (_openDocsByPath.TryGetValue(Path.GetFullPath(lib), out var d) && d is MaterialsDocument open)
+                seeds.Add(new MaterialSourceSeed(label, lib, open.ViewModel.Working,
+                                                 open.ViewModel.Table.IsReadOnly ? open.ViewModel.Table.ReadOnlyReason ?? $"'{label}' is read-only." : null));
+            else if (File.Exists(lib))
+                seeds.Add(new MaterialSourceSeed(label, lib,
+                                                 _techCache.LiveLibrary(lib) is { } live ? [.. live] : MaterialLibraryPersistence.LoadFromFile(lib),
+                                                 ReadOnlyPathReason(lib)));
+            else
+                seeds.Add(new MaterialSourceSeed(label, null,
+                                                 [.. tech.LibraryMaterials.Where(m => string.Equals(m.SourcePath, lib, StringComparison.OrdinalIgnoreCase)).Select(m => m.Material)],
+                                                 $"'{label}' is shipped inside circuitRF and is not edited: Duplicate a material from it to change a copy."));
+        }
+        return seeds;
+    }
+
+    /// <summary>
+    /// Commits one list the Materials dialog changed to the file it came from, as ONE entry on that file's own document —
+    /// opening it if needed. Nothing reaches disk until that document is saved; the message says which one became dirty.
+    /// </summary>
+    private string? CommitMaterialList(string techPath, MaterialSourceSeed seed, List<TechMaterial> materials)
+    {
+        string label = seed.LibraryPath is { } p ? Path.GetFileName(p) : Path.GetFileName(techPath);
+        if (seed.LibraryPath is { } lib)
+        {
+            OpenOrActivateMaterials(lib);
+            if (!_openDocsByPath.TryGetValue(Path.GetFullPath(lib), out var d) || d is not MaterialsDocument library)
+                return $"'{label}' did not open, so its material changes were not made.";
+            if (library.ViewModel.Table.IsReadOnly) return library.ViewModel.Table.ReadOnlyReason ?? $"'{label}' is read-only.";
+            library.ViewModel.CommitEdit(list => { list.Clear(); list.AddRange(materials); }, "Edit materials from the 3D view");
+        }
+        else
+        {
+            OpenOrActivateTech(techPath);
+            if (OpenTechEditor(techPath) is not { } editor) return $"'{label}' did not open, so its material changes were not made.";
+            if (editor.ReplaceOwnMaterials(materials, "Edit materials from the 3D view") is { } why) return why;
+        }
+        Messages.Info($"The materials of {label} were changed, and it is now unsaved — save it to keep them.");
+        return null;
     }
 
     /// <summary>
@@ -320,30 +373,6 @@ public partial class WorkspaceViewModel
         vm.UseTechnology(path);
         vm.StatusMessage = $"This 3D design now uses {loaded.Name} ({Path.GetFileName(path)}).";
         return (loaded, path);
-    }
-
-    /// <summary>
-    /// Commits a new material to the file the picker named, as ONE entry on that file's own document — opening it if
-    /// needed. Nothing reaches disk until that document is saved; the message says which one became dirty.
-    /// </summary>
-    private string? SaveNewMaterial(string techPath, MaterialSaveTarget target, TechMaterial material)
-    {
-        if (target.LibraryPath is { } lib)
-        {
-            OpenOrActivateMaterials(lib);
-            if (!_openDocsByPath.TryGetValue(Path.GetFullPath(lib), out var d) || d is not MaterialsDocument library)
-                return $"'{Path.GetFileName(lib)}' did not open, so the material was not added.";
-            if (library.ViewModel.Table.IsReadOnly) return library.ViewModel.Table.ReadOnlyReason ?? "That library is read-only.";
-            library.ViewModel.CommitEdit(list => list.Add(material), $"Add material {material.Name}");
-            Messages.Info($"'{material.Name}' was added to {Path.GetFileName(lib)}, which is now unsaved — save it to keep the material.");
-            return null;
-        }
-
-        OpenOrActivateTech(techPath);
-        if (OpenTechEditor(techPath) is not { } editor) return $"'{Path.GetFileName(techPath)}' did not open, so the material was not added.";
-        if (editor.AddOwnMaterial(material) is { } why) return why;
-        Messages.Info($"'{material.Name}' was added to {Path.GetFileName(techPath)}, which is now unsaved — save it to keep the material.");
-        return null;
     }
 
     /// <summary>

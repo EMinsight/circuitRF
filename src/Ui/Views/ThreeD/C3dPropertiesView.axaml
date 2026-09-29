@@ -27,8 +27,13 @@
                 <TextBlock Text="Name" FontSize="11" Opacity="0.7"/>
                 <TextBox x:Name="NameBox" Text="{Binding NameText}" KeyDown="OnNameKey" LostFocus="OnNameLostFocus"/>
                 <TextBlock Text="Material" FontSize="11" Opacity="0.7"/>
-                <ComboBox ItemsSource="{Binding Materials}" SelectedItem="{Binding Material}" HorizontalAlignment="Stretch"
-                          PlaceholderText="{Binding MaterialPlaceholder}" IsEnabled="{Binding IsMaterialEditable}"/>
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="4">
+                    <ComboBox Grid.Column="0" ItemsSource="{Binding Materials}" SelectedItem="{Binding Material}" HorizontalAlignment="Stretch"
+                              PlaceholderText="{Binding MaterialPlaceholder}" IsEnabled="{Binding IsMaterialEditable}"/>
+                    <Button Grid.Column="1" Content="Edit…" FontSize="11" Padding="8,3" VerticalAlignment="Stretch"
+                            Command="{Binding EditMaterialsCommand}" IsEnabled="{Binding IsMaterialEditable}"
+                            ToolTip.Tip="Open the Materials editor on this material: every property it states, and the technology's other materials — see, edit, duplicate or make one, then assign it."/>
+                </Grid>
                 <TextBlock Text="Role" FontSize="11" Opacity="0.7"/>
                 <ComboBox ItemsSource="{x:Static t3:C3dPropertiesViewModel.Roles}" SelectedItem="{Binding Role}" HorizontalAlignment="Stretch"
                           PlaceholderText="{Binding RolePlaceholder}" IsEnabled="{Binding IsMaterialEditable}"

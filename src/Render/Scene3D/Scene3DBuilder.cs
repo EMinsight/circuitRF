@@ -234,6 +234,7 @@ public static class Scene3DBuilder
         var materials = problem.Materials.Select((m, i) => (m, i)).ToDictionary(t => t.m.Name, t => t, StringComparer.Ordinal);
 
         var b = new Accumulator(L);
+        var bores = Scene3DBores.Of(problem);
         var solidRuns = new RunTracker(b);
         var sheetRuns = new RunTracker(b);
         bool Dim(string name) => options.Context?.Invoke(name) == true;
@@ -284,7 +285,9 @@ public static class Scene3DBuilder
             else if (ghost == Scene3DGhost.Pickable) (rgba, translucent) = (Ghosted(rgba, false, dark), true);
             else if (ghost == Scene3DGhost.Inert) dim = true;
             var solid = s;
-            var mesh = Tessellate(s.Primitive, () => Em3dTessellation.Of(solid));
+            // A plated via's bore carves the barrel and the pads it passes through — in the drawing only (Scene3DBores).
+            var mesh = bores?.Carved(s) is { } carved ? Tessellate(carved.Key, carved.Make)
+                     : Tessellate(s.Primitive, () => Em3dTessellation.Of(solid));
             var (m, slot) = materials.TryGetValue(s.Material, out var mt) ? (mt.m, mt.i) : ((Em3dMaterial?)null, -1);
             b.Object(new Scene3DObject
             {

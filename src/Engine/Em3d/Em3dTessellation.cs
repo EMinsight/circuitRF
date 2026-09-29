@@ -80,6 +80,22 @@ public static class Em3dTessellation
         return new Em3dTriangleMesh(b.Vertices, b.Triangles);
     }
 
+    /// <summary>
+    /// A cylinder with a coaxial bore of <paramref name="innerRadius"/> — how a plated via is DRAWN. The solver never sees
+    /// it: its bore is a higher-order air cylinder (R-em3d3-5d) that the precedence rule subtracts, which a surface
+    /// renderer cannot do, so the viewer asks for the barrel it would leave. Faces are the cylinder's — bottom 0, top 1,
+    /// outer side 2 — and the bore's wall is −1, so a face picked on the barrel is named as it always was.
+    /// </summary>
+    public static Em3dTriangleMesh OfTube(string name, Em3dCylinder outer, double innerRadius)
+    {
+        ArgumentNullException.ThrowIfNull(outer);
+        if (!(innerRadius > 0 && innerRadius < outer.Radius))
+            throw new ArgumentOutOfRangeException(nameof(innerRadius), innerRadius, "the bore must lie inside the cylinder");
+        var b = new Builder(name);
+        b.Tube(outer, innerRadius);
+        return new Em3dTriangleMesh(b.Vertices, b.Triangles);
+    }
+
     /// <summary>Whether <see cref="Of"/> accepts this primitive — every primitive, since brief 28 gave
     /// the extruded polygon its caps.</summary>
     public static bool CanTessellate(Em3dPrimitive p) => p is not null;
@@ -139,6 +155,32 @@ public static class Em3dTessellation
                 Quad(bottom[k], bottom[(k + 1) % n], top[(k + 1) % n], top[k]);
             Face(0); Cap(bottom, c.AxisStart, reverse: true);
             Face(1); Cap(top, c.AxisEnd, reverse: false);
+            Face(-1);
+        }
+
+        public void Tube(Em3dCylinder c, double inner)
+        {
+            var axis = Sub(c.AxisEnd, c.AxisStart);
+            var (u, w) = Frame(axis);
+            int n = CylinderSegments;
+            int[] ob = new int[n], ot = new int[n], ib = new int[n], it = new int[n];
+            for (int k = 0; k < n; k++)
+            {
+                double t = 2 * Math.PI * k / n, cs = Math.Cos(t), sn = Math.Sin(t);
+                Point3 Off(double r) => new(u.X * r * cs + w.X * r * sn, u.Y * r * cs + w.Y * r * sn, u.Z * r * cs + w.Z * r * sn);
+                ob[k] = V(Add(c.AxisStart, Off(c.Radius)));
+                ot[k] = V(Add(c.AxisEnd, Off(c.Radius)));
+                ib[k] = V(Add(c.AxisStart, Off(inner)));
+                it[k] = V(Add(c.AxisEnd, Off(inner)));
+            }
+            for (int k = 0; k < n; k++)
+            {
+                int j = (k + 1) % n;
+                Face(2);  Quad(ob[k], ob[j], ot[j], ot[k]);   // outer wall, outward
+                Face(-1); Quad(ib[k], it[k], it[j], ib[j]);   // the bore's wall, facing the axis
+                Face(1);  Quad(it[k], ot[k], ot[j], it[j]);   // top annulus, along the axis
+                Face(0);  Quad(ib[k], ib[j], ob[j], ob[k]);   // bottom annulus, against it
+            }
             Face(-1);
         }
 

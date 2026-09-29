@@ -4,16 +4,19 @@ using CircuitRF.Ui.ThreeD;
 
 namespace CircuitRF.Ui.Views.Dialogs;
 
-/// <summary>brief-em3d-53 R-em3d53-5 — the material picker. Closes true on an accepted OK; every rule is the view model's.</summary>
+/// <summary>brief-em3d-53 R-em3d53-5 — the 3D view's Materials dialog. Closes true on an accepted OK; every rule is the
+/// view model's.</summary>
 public partial class MaterialPickerDialog : Window
 {
     public MaterialPickerDialog() => InitializeComponent();
 
-    public MaterialPickerDialog(MaterialPickerViewModel vm) : this() => DataContext = vm;
+    public MaterialPickerDialog(MaterialPickerViewModel vm) : this()
+    {
+        DataContext = vm;
+        Opened += (_, _) => vm.Begin();
+    }
 
     private MaterialPickerViewModel? Vm => DataContext as MaterialPickerViewModel;
-
-    private void OnNew(object? sender, RoutedEventArgs e) { if (Vm is { } vm) vm.IsNew = true; }
 
     private void OnOk(object? sender, RoutedEventArgs e)
     {
@@ -25,9 +28,4 @@ public partial class MaterialPickerDialog : Window
     }
 
     private void OnCancel(object? sender, RoutedEventArgs e) => Close(false);
-
-    private void OnChoiceDoubleTapped(object? sender, Avalonia.Input.TappedEventArgs e)
-    {
-        if (Vm is { IsNew: false, SelectedChoice: not null }) Close(true);
-    }
 }

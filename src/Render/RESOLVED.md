@@ -4361,3 +4361,22 @@ scene calls it a conductor; a sheet goes to `OnSheet`; a name with only a 2-D `C
   `SkiaFonts.PlexRegular`, because `render`'s bytes may not depend on the machine's fonts.
 - **With a field, only conductors are filled** (they carry none); dielectrics are outlined in the label
   ink over the field, air is left to the field, and the Materials legend gives way to the field's.
+
+
+## A plated via drawn as a tube, and Copy as Vector in perspective (2026-09-29)
+
+- **A plated via looked filled.** The solver gets a plated barrel as a copper cylinder plus a coaxial, higher-precedence
+  AIR cylinder (R-em3d3-5d), and the pads the barrel passes through as whole polygons; the precedence rule subtracts the
+  air from both. A surface renderer draws each solid's own surface and hides air, so the view showed a solid rod under an
+  unbroken pad. `Scene3DBores` (view only) carves what the rule would: a conductor cylinder with a coaxial bore of higher
+  precedence is tessellated as a tube (`Em3dTessellation.OfTube`), and an extruded conductor a bore passes RIGHT through,
+  wholly inside it, gains a hole at the tube's own vertices. The problem is untouched, bit for bit. Faces keep their
+  numbers (the bore walls are −1), so a face picked on a pad or barrel is named as before. A bore that stops part-way,
+  clips an edge or overlaps another hole is not carved.
+- **Copy as Vector was orthographic by design** and the view it copied was often in perspective. `Em3dProjection` now
+  takes an eye (`WithEye`): a point is scaled by Focal / its distance ahead of the eye, about the eye's axis, so the focal
+  plane (the orbit centre) projects exactly as orthographically and the scale-bar window frames both alike. Its depth is
+  `eye·T − Focal²/ahead` — affine in 1/distance, which is what keeps the hidden-edge test's barycentric interpolation exact
+  on a projected triangle. Silhouettes are judged from the eye at each edge's midpoint; edges and triangles nearer than
+  `NearFraction` × Focal are clipped/left out rather than folded through infinity. Orthographic behaviour and bytes are
+  unchanged (no eye: every new branch returns the old expression).

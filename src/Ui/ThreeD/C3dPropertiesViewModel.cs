@@ -1061,6 +1061,16 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         if (Error.Length > 0) NameText = editor.ObjectLabel(ObjectIndex);
     }
 
+    /// <summary>Materials editor redesign (2026-09-29) — the Materials dialog on this object's material (or the group's
+    /// solids'), where every property of it and of the technology's other materials is shown and edited.</summary>
+    [CommunityToolkit.Mvvm.Input.RelayCommand]
+    private void EditMaterials()
+    {
+        if (!IsMaterialEditable) return;
+        if (IsGroup) editor.RequestMaterialPicker(editor.GroupSolidIndices(_groupPath), startNew: false);
+        else if (ObjectIndex >= 0) editor.RequestMaterialPicker([ObjectIndex], startNew: false);
+    }
+
     partial void OnMaterialChanged(string? value)
     {
         if (_loading || value is null) return;

@@ -88,6 +88,10 @@ not redefine a library material (it is a refusal to load). Brief 81 had to add �
 Decide: add εr and tanδ to those two shipped records (SiC 9.7; mould compounds are typically 3.5–4.5), or keep the
 workspace-copy route and say so in the example's README.
 
+**Decided 2026-09-29, already done:** every thermal-era record of the shipped library now states what it is — SiC, GaN, CVD
+diamond, the mould compound and the TIM an εr and tanδ, the five metals and alloys a σ₂₀, each with its source — so a model
+built from it takes an EM solve with no workspace copy edited.
+
 ### 1e. Already fixed in brief 81 (context, not work)
 
 - A face that was both a boundary and a probe's or current's contact wrote two Gmsh physical groups of one name, and Gmsh

@@ -62,9 +62,13 @@ for EM into 3D.
   the unit you read and type in — is chosen with the **Unit** box on the toolbar. It starts as the cell
   layout's unit, or the technology's. Changing it moves nothing. The example is drawn in **mil**; its die's
   layout is in **µm**. Both are exact.
-- **Materials** come from the cell's technology (**Assign Material…** and the toolbar's material box list
-  them; a technology's material libraries, `.cmat` files, are where new ones are kept — see
-  [File formats](file-formats.html)). A placed cell brings its **own**
+- **Materials** come from the cell's technology. **Assign Material…**, **New Material…** and the **Edit…** button
+  beside the Inspector's Material box open the **Materials** dialog: every material the technology has — its own and
+  its libraries' (`.cmat` files, see [File formats](file-formats.html)) — with every property of the selected one on
+  one form: dielectric, conductor, thermal, the σ(T) and k(T) tables, colour and source. See, edit, **Duplicate** or
+  make one there, then assign it. Edits go to the file each material belongs to when you press OK, as an unsaved
+  change there — save that file to keep them; Cancel discards them. A material that already exists is renamed and
+  deleted in its own file's editor, which renames it everywhere it is used. A placed cell brings its **own**
   technology's materials with it — see [Hierarchy](#hierarchy).
 - **The editor and the viewer are one pane.** The 3D view a solver result opens in, **Show 3D** on a setup,
   and this editor share the camera, the clip plane, the mesh and field displays, and every key described in
@@ -547,8 +551,8 @@ Right-click the view (on anything, or on nothing) for five ways to take it out o
 - **Export Drawing…** (also *File ▸ Export ▸ Drawing…* while a 3D view is the active document) lays several
   views out on one sheet, as SVG or PDF.
 
-A vector picture is always **orthographic**, even when the view is in perspective, and it leaves out what you
-have hidden. It is framed as the view is, at the view's zoom — zoom in for a close-up. Conductors keep the
+A vector picture is drawn as the view is — in **perspective** when the view is, from the camera's own eye, at the
+scale the view has at its orbit centre, and **orthographic** otherwise — and it leaves out what you have hidden. It is framed as the view is, at the view's zoom — zoom in for a close-up. Conductors keep the
 colours the view draws them in; dielectrics are outlined in grey.
 
 Every picture carries what the toolbar's middle group shows: the **axis indicator**, the **drawing grid** and

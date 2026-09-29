@@ -275,6 +275,9 @@
     },
     {
       "Name": "Silicon carbide (4H, semi-insulating)",
+      "Epsr": 9.7,
+      "TanD": 0.0005,
+      "Mur": 1,
       "ThermalK": 383,
       "ThermalKVsTemp": [
         { "TempC": 20, "Value": 383 },
@@ -289,11 +292,14 @@
       ],
       "DensityKgM3": 3210,
       "SpecificHeat": 690,
-      "Source": "Thermal conductivity k(T) = k300 (T / 300 K)^-1.5 with k300 = 370 W/(m K), tabulated 20 to 500 C: k300 from Levinshtein, Rumyantsev and Shur (eds.), Properties of Advanced Semiconductor Materials: GaN, AlN, InN, BN, SiC, SiGe (Wiley, 2001), 3.7 W/(cm K) for 4H-SiC at 300 K; the exponent is of the size reported for SiC above room temperature (about 1.3 to 1.6). Semi-insulating wafers measure roughly 330 to 490 W/(m K) at room temperature by growth and doping: replace with the supplier's figure. Density 3210 kg/m3 and specific heat 690 J/(kg K): same source. Representative, not a measurement.",
+      "Source": "Relative permittivity 9.7: 4H-SiC's static value is 9.66 perpendicular to the c axis and 10.03 along it (Levinshtein, Rumyantsev and Shur (eds.), Properties of Advanced Semiconductor Materials, Wiley, 2001); 9.7 is the value commonly used for a c-plane substrate. Loss tangent 0.0005: a representative value for a semi-insulating wafer at microwave frequencies, not a measurement - replace with the supplier's figure. Thermal conductivity k(T) = k300 (T / 300 K)^-1.5 with k300 = 370 W/(m K), tabulated 20 to 500 C: k300 from Levinshtein, Rumyantsev and Shur (eds.), Properties of Advanced Semiconductor Materials: GaN, AlN, InN, BN, SiC, SiGe (Wiley, 2001), 3.7 W/(cm K) for 4H-SiC at 300 K; the exponent is of the size reported for SiC above room temperature (about 1.3 to 1.6). Semi-insulating wafers measure roughly 330 to 490 W/(m K) at room temperature by growth and doping: replace with the supplier's figure. Density 3210 kg/m3 and specific heat 690 J/(kg K): same source. Representative, not a measurement.",
       "Color": "#5f7f6a"
     },
     {
       "Name": "Gallium nitride",
+      "Epsr": 9.5,
+      "TanD": 0.001,
+      "Mur": 1,
       "ThermalK": 165.3,
       "ThermalKVsTemp": [
         { "TempC": 20, "Value": 165.3 },
@@ -308,71 +314,85 @@
       ],
       "DensityKgM3": 6150,
       "SpecificHeat": 490,
-      "Source": "Thermal conductivity k(T) = k300 (T / 300 K)^-1.4 with k300 = 160 W/(m K), tabulated 20 to 500 C: representative of an epitaxial layer a few micrometres thick on SiC, between the 130 W/(m K) of Levinshtein, Rumyantsev and Shur (eds.), Properties of Advanced Semiconductor Materials (Wiley, 2001) and the ~230 W/(m K) of low-dislocation bulk crystal (Mion, Muth, Preble and Hanser, Appl. Phys. Lett. 89, 092123, 2006); the exponent is of the size reported for GaN above room temperature. Density 6150 kg/m3 and specific heat 490 J/(kg K): Levinshtein et al. Representative, not a measurement.",
+      "Source": "Relative permittivity 9.5: wurtzite GaN's static value perpendicular to the c axis, 10.4 along it (Barker and Ilegems, Infrared lattice vibrations and free-electron dispersion in GaN, Phys. Rev. B 7, 743, 1973); Levinshtein et al. compile 8.9. Loss tangent 0.001: a representative value for a semi-insulating buffer, not a measurement - an epitaxial stack's loss is set by its buffer's doping. Thermal conductivity k(T) = k300 (T / 300 K)^-1.4 with k300 = 160 W/(m K), tabulated 20 to 500 C: representative of an epitaxial layer a few micrometres thick on SiC, between the 130 W/(m K) of Levinshtein, Rumyantsev and Shur (eds.), Properties of Advanced Semiconductor Materials (Wiley, 2001) and the ~230 W/(m K) of low-dislocation bulk crystal (Mion, Muth, Preble and Hanser, Appl. Phys. Lett. 89, 092123, 2006); the exponent is of the size reported for GaN above room temperature. Density 6150 kg/m3 and specific heat 490 J/(kg K): Levinshtein et al. Representative, not a measurement.",
       "Color": "#6f86b0"
     },
     {
       "Name": "CVD diamond",
+      "Epsr": 5.7,
+      "TanD": 0.0002,
+      "Mur": 1,
       "ThermalK": 1800,
       "DensityKgM3": 3515,
       "SpecificHeat": 510,
-      "Source": "Thermal conductivity 1800 W/(m K): a representative thermal-management grade of polycrystalline CVD diamond, which is sold from roughly 1000 to 2000 W/(m K); a constant is used because diamond is a spreader held near the heat sink's temperature. Density 3515 kg/m3 and specific heat 510 J/(kg K) at 25 C: CRC Handbook of Chemistry and Physics.",
+      "Source": "Relative permittivity 5.7: CRC Handbook of Chemistry and Physics (diamond). Loss tangent 0.0002: a representative value for thermal-management grades, not a measurement; optical grades are far lower. Thermal conductivity 1800 W/(m K): a representative thermal-management grade of polycrystalline CVD diamond, which is sold from roughly 1000 to 2000 W/(m K); a constant is used because diamond is a spreader held near the heat sink's temperature. Density 3515 kg/m3 and specific heat 510 J/(kg K) at 25 C: CRC Handbook of Chemistry and Physics.",
       "Color": "#d6e6ee"
     },
     {
       "Name": "Gold-tin solder (80/20)",
+      "Sigma20": 6100000,
       "ThermalK": 57,
       "DensityKgM3": 14510,
       "SpecificHeat": 150,
-      "Source": "Au80Sn20 eutectic die attach (melts at 280 C): thermal conductivity 57 W/(m K), density 14510 kg/m3 and specific heat 150 J/(kg K), the values commonly published for the eutectic alloy. Representative, not a measurement.",
+      "Source": "Electrical resistivity 16.4e-8 ohm-m (6.1e6 S/m), the value commonly published for the eutectic alloy; no temperature coefficient is stated. Au80Sn20 eutectic die attach (melts at 280 C): thermal conductivity 57 W/(m K), density 14510 kg/m3 and specific heat 150 J/(kg K), the values commonly published for the eutectic alloy. Representative, not a measurement.",
       "Color": "#c9a64a"
     },
     {
       "Name": "Sintered silver",
+      "Sigma20": 30000000,
       "ThermalK": 200,
       "DensityKgM3": 8400,
       "SpecificHeat": 235,
-      "Source": "Pressure-sintered silver die attach at about 20 % porosity: thermal conductivity 200 W/(m K) and density 8400 kg/m3 (80 % of bulk silver's 10490). Published values run from about 100 W/(m K) (pressureless, ~30 % porous) to about 300 (under 10 %), so the porosity decides it: replace with your process's value. Specific heat: bulk silver's, CRC Handbook of Chemistry and Physics.",
+      "Source": "Electrical conductivity 3.0e7 S/m (3.3e-8 ohm-m): representative of pressure-sintered silver at about 20 % porosity, about half of bulk silver's; no temperature coefficient is stated. Pressure-sintered silver die attach at about 20 % porosity: thermal conductivity 200 W/(m K) and density 8400 kg/m3 (80 % of bulk silver's 10490). Published values run from about 100 W/(m K) (pressureless, ~30 % porous) to about 300 (under 10 %), so the porosity decides it: replace with your process's value. Specific heat: bulk silver's, CRC Handbook of Chemistry and Physics.",
       "Color": "#b9bcc4"
     },
     {
       "Name": "Copper-tungsten (85W-15Cu)",
+      "Sigma20": 17400000,
       "ThermalK": 190,
       "DensityKgM3": 16300,
       "SpecificHeat": 172,
-      "Source": "W85Cu15 package flange: thermal conductivity 190 W/(m K) and density 16300 kg/m3, the values commonly published for the composition (other ratios differ); specific heat by the rule of mixtures on mass fraction from tungsten 134 and copper 385 J/(kg K), CRC Handbook of Chemistry and Physics. Representative, not a measurement.",
+      "Source": "Electrical conductivity 1.74e7 S/m, 30 % IACS, representative of the values published for the composition; no temperature coefficient is stated. W85Cu15 package flange: thermal conductivity 190 W/(m K) and density 16300 kg/m3, the values commonly published for the composition (other ratios differ); specific heat by the rule of mixtures on mass fraction from tungsten 134 and copper 385 J/(kg K), CRC Handbook of Chemistry and Physics. Representative, not a measurement.",
       "Color": "#8a735c"
     },
     {
       "Name": "Copper-molybdenum (70Mo-30Cu)",
+      "Sigma20": 23200000,
       "ThermalK": 180,
       "DensityKgM3": 9800,
       "SpecificHeat": 291,
-      "Source": "Mo70Cu30 package flange: thermal conductivity 180 W/(m K) and density 9800 kg/m3, the values commonly published for the composition (other ratios differ); specific heat by the rule of mixtures on mass fraction from molybdenum 251 and copper 385 J/(kg K), CRC Handbook of Chemistry and Physics. Representative, not a measurement.",
+      "Source": "Electrical conductivity 2.32e7 S/m, 40 % IACS, representative of the values published for the composition; no temperature coefficient is stated. Mo70Cu30 package flange: thermal conductivity 180 W/(m K) and density 9800 kg/m3, the values commonly published for the composition (other ratios differ); specific heat by the rule of mixtures on mass fraction from molybdenum 251 and copper 385 J/(kg K), CRC Handbook of Chemistry and Physics. Representative, not a measurement.",
       "Color": "#8c7c6e"
     },
     {
       "Name": "Mould compound (generic)",
+      "Epsr": 3.9,
+      "TanD": 0.008,
+      "Mur": 1,
       "ThermalK": 0.9,
       "DensityKgM3": 1950,
       "SpecificHeat": 900,
-      "Source": "Silica-filled epoxy moulding compound: the midpoints of the typical ranges, thermal conductivity 0.6 to 1.2 W/(m K), density 1.8 to 2.1 g/cm3 and specific heat 0.8 to 1.0 J/(g K) - not any one product. Note: the glass-transition temperature of such compounds is typically 150 to 190 C, above which expansion and moisture behaviour change; set a probe limit at your compound's Tg.",
+      "Source": "Relative permittivity 3.9 and loss tangent 0.008 at 1 GHz: the midpoints of the typical ranges for silica-filled epoxy moulding compound, about 3.5 to 4.3 and 0.005 to 0.012 - not any one product. Silica-filled epoxy moulding compound: the midpoints of the typical ranges, thermal conductivity 0.6 to 1.2 W/(m K), density 1.8 to 2.1 g/cm3 and specific heat 0.8 to 1.0 J/(g K) - not any one product. Note: the glass-transition temperature of such compounds is typically 150 to 190 C, above which expansion and moisture behaviour change; set a probe limit at your compound's Tg.",
       "Color": "#34363a"
     },
     {
       "Name": "Thermal interface material (generic)",
+      "Epsr": 5.5,
+      "TanD": 0.005,
+      "Mur": 1,
       "ThermalK": 3,
       "DensityKgM3": 2500,
       "SpecificHeat": 1000,
-      "Source": "Board-to-heatsink grease or pad: the midpoints of the typical ranges, thermal conductivity 1 to 5 W/(m K), density 2 to 3 g/cm3 and specific heat 0.8 to 1.2 J/(g K) - not any one product. Its bond-line thickness matters as much as its conductivity: a thin layer is often better stated as a thermal interface resistance.",
+      "Source": "Relative permittivity 5.5 and loss tangent 0.005: representative of a ceramic-filled silicone grease or pad, which measure roughly 4 to 7 at 1 MHz - not any one product. A metal-filled grease conducts and is not this material. Board-to-heatsink grease or pad: the midpoints of the typical ranges, thermal conductivity 1 to 5 W/(m K), density 2 to 3 g/cm3 and specific heat 0.8 to 1.2 J/(g K) - not any one product. Its bond-line thickness matters as much as its conductivity: a thin layer is often better stated as a thermal interface resistance.",
       "Color": "#9c9c9c"
     },
     {
       "Name": "Solder (generic lead-free)",
+      "Sigma20": 7700000,
       "ThermalK": 58,
       "DensityKgM3": 7400,
       "SpecificHeat": 230,
-      "Source": "Tin-silver-copper (Sn96.5Ag3.0Cu0.5) board attach, liquidus about 220 C: thermal conductivity 58 W/(m K), density 7400 kg/m3 and specific heat 230 J/(kg K), representative of the values compiled in NIST's Database for Solder Properties with Emphasis on New Lead-free Solders (2002).",
+      "Source": "Electrical resistivity 13e-8 ohm-m (7.7e6 S/m), representative of the values compiled in NIST's Database for Solder Properties with Emphasis on New Lead-free Solders (2002); no temperature coefficient is stated. Tin-silver-copper (Sn96.5Ag3.0Cu0.5) board attach, liquidus about 220 C: thermal conductivity 58 W/(m K), density 7400 kg/m3 and specific heat 230 J/(kg K), representative of the values compiled in NIST's Database for Solder Properties with Emphasis on New Lead-free Solders (2002).",
       "Color": "#a2a6ab"
     }
   ],

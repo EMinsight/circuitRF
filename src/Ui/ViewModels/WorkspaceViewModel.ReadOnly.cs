@@ -113,8 +113,12 @@ public partial class WorkspaceViewModel
     /// earlier.
     /// </summary>
     internal string? ReadOnlyDocumentReason(IDockable? dockable)
+        => DocumentFilePath(dockable) is { Length: > 0 } path ? ReadOnlyPathReason(path) : null;
+
+    /// <summary><see cref="ReadOnlyDocumentReason"/> for a file that is not open — the 3D view's Materials dialog asks it
+    /// of each library a technology names, open or not.</summary>
+    internal string? ReadOnlyPathReason(string path)
     {
-        if (DocumentFilePath(dockable) is not { Length: > 0 } path) return null;
 
         // RC-2: the POLICY reason comes first, and says something different — the file could be
         // written and circuitRF is declining to, so the way forward is the other workspace rather

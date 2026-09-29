@@ -37813,3 +37813,30 @@ Owner's seventh list. Gate `tests/Ui.Tests/ThreeD/EditorRound7Tests.cs`; pixels 
   alike; the mesh is enabled only when a mesh AND fields exist (`Viewer3DViewModel.CanShowMesh`). The sentence is the
   Properties Inspector's, above a selected field plot (`C3dPropertiesViewModel.PlotStale`, refreshed from
   `OnFieldsStaleTextChanged`). The menus' Plot Temperature refusal still reads `FieldsStaleText`.
+
+
+## Materials editor redesign (2026-09-29)
+
+The owner found editing materials poor: the thermal values of a material sat in a collapsed expander under a wide table,
+its σ(T)/k(T) tables were not shown at all, and the 3D view's picker listed names only — a material's properties could not
+be seen where it was assigned.
+
+- **One editor, three homes, master–detail.** `MaterialsTableView` is a filterable list (swatch, name, role · file) and ONE
+  form for the selected material: Dielectric (εr, tanδ, μr, εr tensor), Conductor (σ₂₀, α₂₀, σ(T) table), Thermal (k,
+  density, specific heat, k tensor, k(T) table, and a line saying what a thermal run will read), Display, Source. The
+  `.cmat` document, the technology editor's tab and the 3D dialog all host it; the view-model names are unchanged.
+- **Temperature tables are editable** (`TemperatureTableViewModel`): each gesture commits the whole table sorted by
+  temperature as one undo entry; a repeated temperature or a non-positive value is refused before it is written; an
+  empty table is written as no key. Point rows are reconciled in place, like the material rows, so focus survives a commit.
+- **The table takes several lists** (`MaterialListSource`): the 3D dialog hands it the technology's own list and each
+  library's, as COPIES; OK hands each changed list to its file's document as one undo entry (`CommitMaterialList`,
+  `TechEditorViewModel.ReplaceOwnMaterials`) and Cancel discards. A new or duplicated material goes to
+  `TargetSource` (M9's default: the first writable library). The dialog offers no Delete and refuses renaming a material
+  that existed when it opened (`RenameRefusal`) — both would leave files naming it dangling; its own file's editor does
+  both with every use handled.
+- **A library row in the technology tab** says it is edited in its library and offers *Edit in <file>* (`OpenLibrary`).
+  A shipped (resource) library is shown read-only in the dialog; Duplicate copies from it.
+- **The 3D Inspector's Material box has an Edit… button** opening the dialog on the selection.
+- **Headless photographs** were taken with the real `App` under `Avalonia.Headless` (`UseHeadlessDrawing = false`,
+  `CaptureRenderedFrame`) from a scratch program — light and dark, the dialog, and the tables expanded. The live window
+  itself was not seen.

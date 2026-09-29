@@ -19,8 +19,9 @@ namespace CircuitRF.Ui.Views.Viewer3D;
 /// and sections on a sheet). Shared by the .c3d editor and a setup's read-only 3D view, and by File ▸ Export ▸ Drawing….
 ///
 /// <para><b>What the picture is.</b> Not the GPU's pixels: the problem the pane draws (<see cref="Scene3DModel.Problem"/>)
-/// as an orthographic OUTLINE along the camera's direction (Em3dSectionScene.Outline), hidden edges removed — what a shaded
-/// view shows, in lines. A perspective camera's picture is orthographic. What the view hides is left out.</para>
+/// as an OUTLINE along the camera's direction (Em3dSectionScene.Outline), hidden edges removed — what a shaded view shows,
+/// in lines. A perspective camera's picture is in perspective, from the camera's own eye, at the scale the view has at its
+/// orbit centre; an orthographic camera's is orthographic. What the view hides is left out.</para>
 ///
 /// <para><b>The clipboard is the one every other vector copy here writes</b> (WBondClipboardWriter's recipe): on Windows one
 /// P/Invoke session with CF_ENHMETAFILE first, built from the SVG by WindowsClipboard's proven SVG-to-EMF route; elsewhere one
@@ -63,12 +64,16 @@ public static class Viewer3DVectorExport
         return map;
     }
 
-    /// <summary>The camera's direction, as an orthographic projection.</summary>
+    /// <summary>The camera as a projection: its direction, and for a perspective camera its eye — so the picture has the
+    /// view's own foreshortening, not an orthographic view along the same direction.</summary>
     internal static Em3dProjection CameraProjection(Viewer3DViewModel vm)
     {
         var c = vm.View.Camera;
         var (b, r, u) = (c.Back, c.Right, c.Up);
-        return Em3dProjection.FromVectors(new Point3(b.X, b.Y, b.Z), new Point3(r.X, r.Y, r.Z), new Point3(u.X, u.Y, u.Z), "View");
+        var projection = Em3dProjection.FromVectors(new Point3(b.X, b.Y, b.Z), new Point3(r.X, r.Y, r.Z), new Point3(u.X, u.Y, u.Z), "View");
+        if (c.Projection != Projection3D.Perspective || !(c.Distance > 0)) return projection;
+        var (x, y, z) = vm.Scene.ToWorld(c.Eye);
+        return projection.WithEye(new Point3(x, y, z), c.Distance);
     }
 
     /// <summary>
@@ -163,7 +168,8 @@ public static class Viewer3DVectorExport
             transfer.Add(item);
             await clipboard.SetDataAsync(transfer);
         }
-        report($"Copied the view as vector ({picture.Scene.Lines.Count:N0} lines, orthographic, hidden edges removed)." +
+        report($"Copied the view as vector ({picture.Scene.Lines.Count:N0} lines, " +
+               (vm.View.Camera.Projection == Projection3D.Perspective ? "perspective" : "orthographic") + ", hidden edges removed)." +
                (picture.Note is { } note ? " " + note : ""));
     }
 

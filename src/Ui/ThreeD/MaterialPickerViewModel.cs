@@ -1,79 +1,113 @@
 using CommunityToolkit.Mvvm.ComponentModel;
-using CircuitRF.Design.ThreeD;
 using CircuitRF.Ui.Layout;
 
 namespace CircuitRF.Ui.ThreeD;
 
-/// <summary>One material the picker lists: the name, what it implies, and the file it comes from.</summary>
-public sealed record MaterialChoice(string Name, string Role, string Source);
-
-/// <summary>Where a new material is saved: the technology's own list (<see cref="LibraryPath"/> null) or a library.</summary>
-public sealed record MaterialSaveTarget(string Label, string? LibraryPath)
-{
-    public override string ToString() => Label;
-}
+/// <summary>One list the 3D view's Materials dialog edits: a technology's own materials, or one library's, as its file
+/// holds them now (an open document's unsaved state included), and why it cannot be edited, if it cannot.</summary>
+public sealed record MaterialSourceSeed(string Label, string? LibraryPath, IReadOnlyList<TechMaterial> Materials, string? ReadOnlyReason);
 
 /// <summary>
-/// brief-em3d-53 R-em3d53-5 — the 3D editor's material picker. <b>Assign</b> lists the technology's resolved
-/// materials with their role and source; <b>New</b> hosts the same Materials table on one new row, with a
-/// <i>Save to</i> selector (M9: the technology's first library if it names one, else its own list). It decides
-/// nothing about files: the workspace commits the answer to that file's own document.
+/// brief-em3d-53 R-em3d53-5 — the 3D editor's Materials dialog, behind Assign Material… and New Material….
+///
+/// <para>Materials editor redesign (2026-09-29): it hosts <b>the Materials editor itself</b> — the same list and form a
+/// <c>.cmat</c> document shows — over every material the technology resolves: its own list and each library's. So a
+/// material's properties can be read and changed where it is assigned, a material can be duplicated under a new name,
+/// and a new one is made with every property in view. Until then Assign listed names only, and New showed one blank row
+/// of a table too wide for the dialog, its thermal values collapsed below it.</para>
+///
+/// <para>It edits COPIES. Nothing reaches a file until OK, and then each list that changed is handed to that file's own
+/// document as ONE undo entry (<see cref="ChangedLists"/>), the file becoming an unsaved change, exactly as a new material
+/// always was; Cancel discards every edit. Two gestures are its file's editor's, not this dialog's: deleting a material
+/// (where its uses are listed) and renaming one that already existed (where every file naming it is renamed with it).</para>
 /// </summary>
 public sealed partial class MaterialPickerViewModel : ObservableObject
 {
-    private readonly HashSet<string> _taken;
-    private readonly List<TechMaterial> _newRows;
+    private readonly List<(MaterialSourceSeed Seed, List<TechMaterial> Working, string Before)> _lists = [];
+    private readonly HashSet<TechMaterial> _existing = new(ReferenceEqualityComparer.Instance);
 
-    public MaterialPickerViewModel(Technology tech, string technologyLabel, bool startNew, string? current, string? refusal)
+    /// <param name="seeds">The technology's own list first, then each library it names.</param>
+    /// <param name="technologyLabel">The technology's file name, for the header.</param>
+    /// <param name="startNew">New Material…: <see cref="Begin"/> makes a new material and selects it.</param>
+    /// <param name="current">The material to select: the one object's, or the editor's current one.</param>
+    /// <param name="objectCount">How many objects OK assigns the selected material to; 0 makes it the current material.</param>
+    public MaterialPickerViewModel(IReadOnlyList<MaterialSourceSeed> seeds, string technologyLabel, bool startNew, string? current,
+                                   int objectCount, string? refusal)
     {
-        Choices = [.. tech.ResolvedMaterials.Select(m => new MaterialChoice(m.Name,
-            C3dMaterialRole.Reason(C3dMaterialRole.Implied(m)),
-            tech.LibrarySourceOf(m.Name) is { } lib ? Path.GetFileName(MaterialLibraries.Display(lib)) : technologyLabel))];
-        SelectedChoice = Choices.FirstOrDefault(c => string.Equals(c.Name, current, StringComparison.OrdinalIgnoreCase));
-        _taken = new HashSet<string>(tech.ResolvedMaterials.Select(m => m.Name), StringComparer.OrdinalIgnoreCase);
+        var sources = new List<MaterialListSource>();
+        foreach (var seed in seeds)
+        {
+            var working = MaterialLibraryPersistence.Deserialize(MaterialLibraryPersistence.Serialize(seed.Materials));
+            foreach (var m in working) _existing.Add(m);
+            _lists.Add((seed, working, MaterialLibraryPersistence.Serialize(working)));
+            sources.Add(new MaterialListSource(seed.Label, () => working, (mutate, _) => mutate(), seed.LibraryPath)
+            {
+                ReadOnlyReason = seed.ReadOnlyReason,
+            });
+        }
+        Table = new MaterialsTableViewModel(sources)
+        {
+            CanDelete = false,
+            RenameRefusal = row => _existing.Contains(row.Material)
+                ? $"'{row.Name}' already exists and files name it: rename it in {row.SourceLabel}'s own editor, which renames it everywhere it is used. A new or duplicated material is named here."
+                : null,
+        };
+        // M9: a new material goes to the technology's first library when it names one, else to its own list.
+        if (sources.Skip(1).FirstOrDefault(s => s.ReadOnlyReason is null) is { } library) Table.TargetSource = library;
+        if (current is not null) Table.Select(current);
 
-        int n = 1;
-        while (_taken.Contains($"Material{n}")) n++;
-        _newRows = [new TechMaterial { Name = $"Material{n}" }];
-        NewTable = new MaterialsTableViewModel(() => _newRows, (mutate, _) => mutate(), technologyLabel);
-
-        Targets = [.. tech.ResolvedLibraryPaths.Select(p => new MaterialSaveTarget($"Library {Path.GetFileName(MaterialLibraries.Display(p))}", p)),
-                   new MaterialSaveTarget($"Technology {technologyLabel} (its own list)", null)];
-        SelectedTarget = Targets[0];
-        IsNew = startNew || Choices.Count == 0;
+        TechnologyLabel = technologyLabel;
+        StartNew = startNew;
+        ObjectCount = objectCount;
         Refusal = refusal;
     }
 
-    public IReadOnlyList<MaterialChoice> Choices { get; }
-    [ObservableProperty] private MaterialChoice? _selectedChoice;
+    /// <summary>The Materials editor, over copies of the technology's lists.</summary>
+    public MaterialsTableViewModel Table { get; }
 
-    /// <summary>True: making a new material; false: choosing one.</summary>
-    [ObservableProperty] private bool _isNew;
+    public string TechnologyLabel { get; }
+    public bool StartNew { get; }
+    public int ObjectCount { get; }
 
-    /// <summary>The one new row, in the same table the Materials editor uses.</summary>
-    public MaterialsTableViewModel NewTable { get; }
+    public string Header => $"Materials of {TechnologyLabel}";
 
-    public IReadOnlyList<MaterialSaveTarget> Targets { get; }
-    [ObservableProperty] private MaterialSaveTarget? _selectedTarget;
+    public string Explanation => (ObjectCount switch
+    {
+        0 => "Choose the material new objects are made of, ",
+        1 => "Choose the material for the selected object, ",
+        var n => $"Choose the material for the {n} selected objects, ",
+    }) + "or edit any material — changes go to the file each belongs to when you press OK, as an unsaved change there. Cancel discards them.";
 
-    /// <summary>Why the list is empty (a technology that did not resolve), or what OK refused.</summary>
+    public string OkText => ObjectCount switch
+    {
+        0 => "Use Material",
+        1 => "Assign",
+        var n => $"Assign to {n}",
+    };
+
+    /// <summary>Why OK was refused, or why the lists are empty.</summary>
     [ObservableProperty] private string? _refusal;
 
-    /// <summary>The new row, once accepted.</summary>
-    public TechMaterial NewMaterial => _newRows[0];
+    /// <summary>Called once the dialog is showing: New Material… makes its new material now, so the caret lands in its name.</summary>
+    public void Begin()
+    {
+        if (StartNew) Table.Add();
+    }
 
-    /// <summary>Validates OK: a choice, or a new row with a free, legal name. Null when it may close.</summary>
+    /// <summary>Validates OK: a material chosen, and no list with an error. Null when it may close.</summary>
     public string? Accept()
     {
-        if (!IsNew)
-            return SelectedChoice is null ? "Choose a material, or make a new one." : null;
-        var m = NewMaterial;
-        if (MaterialValidation.NameRefusal(m.Name) is { } why) return why;
-        if (_taken.Contains(m.Name)) return $"'{m.Name}' is already a material of this technology.";
-        if (SelectedTarget is null) return "Choose where the material is saved.";
+        if (Table.SelectedRow is null) return "Choose a material, or ＋ New to make one.";
+        foreach (var (seed, working, _) in _lists)
+            if (MaterialValidation.Validate(working).FirstOrDefault(p => p.Severity == CircuitRF.Diagnostics.DiagnosticSeverity.Error) is { } p)
+                return $"{seed.Label}: {p.Message}";
         return null;
     }
 
     /// <summary>The material the objects take.</summary>
-    public string ChosenName => IsNew ? NewMaterial.Name : SelectedChoice?.Name ?? "";
+    public string ChosenName => Table.SelectedRow?.Name ?? "";
+
+    /// <summary>The lists this dialog changed, each whole, to be committed to its file's document.</summary>
+    public IReadOnlyList<(MaterialSourceSeed Seed, List<TechMaterial> Materials)> ChangedLists
+        => [.. _lists.Where(l => MaterialLibraryPersistence.Serialize(l.Working) != l.Before).Select(l => (l.Seed, l.Working))];
 }
