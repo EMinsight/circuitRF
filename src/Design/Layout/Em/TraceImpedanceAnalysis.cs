@@ -1451,12 +1451,19 @@ public static partial class TraceImpedanceAnalysis
 
         // A piece at a chain's END that is shorter than it is wide is the land the trace runs onto — a
         // component pad the trace overlaps, joined to it as a "width step" — not a line: round 8's
-        // 0201 pads read 57.6 Ω as the last 18.7 mil of a 50 Ω trace. Trimmed, repeatedly, from both
-        // ends; a piece like that INSIDE a chain is a genuine step and stays.
+        // 0201 pads read 57.6 Ω as the last 18.7 mil of a 50 Ω trace. So is one that steps up to half
+        // as wide again as the piece it joins (EndKind's own "pad") and would not be a trace on its
+        // own, shorter than MinAspect of its widths: a square pad is exactly as long as it is wide, and
+        // left on the chain it made the chain's width the PAD's, which dropped the whole trace as
+        // Short (brief-impedance-7). Trimmed, repeatedly, from both ends; a piece like that INSIDE a
+        // chain is a genuine step and stays.
+        static bool Land((Piece Piece, bool) end, (Piece Piece, bool) next) =>
+            end.Piece.Length < end.Piece.Width
+            || (end.Piece.Width > 1.5 * next.Piece.Width && end.Piece.Length < MinAspect * end.Piece.Width);
         foreach (var c in chains)
         {
-            while (c.Pieces.Count > 1 && c.Pieces[0].Piece.Length < c.Pieces[0].Piece.Width) { c.Pieces.RemoveAt(0); c.StartJunction = false; }
-            while (c.Pieces.Count > 1 && c.Pieces[^1].Piece.Length < c.Pieces[^1].Piece.Width) { c.Pieces.RemoveAt(c.Pieces.Count - 1); c.EndJunction = false; }
+            while (c.Pieces.Count > 1 && Land(c.Pieces[0], c.Pieces[1])) { c.Pieces.RemoveAt(0); c.StartJunction = false; }
+            while (c.Pieces.Count > 1 && Land(c.Pieces[^1], c.Pieces[^2])) { c.Pieces.RemoveAt(c.Pieces.Count - 1); c.EndJunction = false; }
         }
 
         // A chain shorter than SelectedMinAspect widths is a pad; one piece shorter than a width is a

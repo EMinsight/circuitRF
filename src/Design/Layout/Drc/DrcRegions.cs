@@ -75,8 +75,7 @@ internal static class DrcRegions
     }
 
     private static Paths64 Disc(long cx, long cy, long r, long tol) =>
-        LayoutClipper.RingsToClipperPaths(
-            [LayoutFlattener.Flatten(new CircleShape { Cx = cx, Cy = cy, R = r }, tol)[0]]);
+        LayoutClipper.ToClipperPaths(new CircleShape { Cx = cx, Cy = cy, R = r }, tol);
 
     /// <summary>
     /// The tolerance a curve is flattened at FOR CHECKING — the shape's own resolved tolerance

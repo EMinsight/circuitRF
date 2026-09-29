@@ -163,4 +163,27 @@ public class LayoutClipperTests
         var result = LayoutClipper.EnsureValidHoles(p);
         Assert.NotEmpty(result);
     }
+
+    /// <summary>brief-impedance-7 §2: orientation is normalised in ToClipperPaths, so the winding a
+    /// shape was stored with cannot change what it covers. Before, a rect with swapped corners summed
+    /// to 0 where it overlapped a normally-wound one under NonZero (the overlap was not copper), and a
+    /// hole wound like its outer ring summed to 2 (the hole was filled).</summary>
+    [Fact]
+    public void ToClipperPaths_StoredWinding_ChangesNothingAUnionCovers()
+    {
+        var a = new RectShape { Layer = Layer1, X1 = 0, Y1 = 0, X2 = 1000, Y2 = 1000 };
+        var reversed = new RectShape { Layer = Layer1, X1 = 1500, Y1 = 0, X2 = 500, Y2 = 1000 };
+        var overlap = new Paths64(LayoutClipper.ToClipperPaths(a, 1));
+        overlap.AddRange(LayoutClipper.ToClipperPaths(reversed, 1));
+        Assert.Equal(1500.0 * 1000, Clipper.Area(Clipper.Union(overlap, LayoutClipper.Rule)));
+
+        var sameWoundHole = new PolygonShape
+        {
+            Layer = Layer1,
+            Xy = [0, 0, 1000, 0, 1000, 1000, 0, 1000],
+            Holes = [[300, 300, 700, 300, 700, 700, 300, 700]],   // counter-clockwise, like the outer
+        };
+        var union = Clipper.Union(LayoutClipper.ToClipperPaths(sameWoundHole, 1), LayoutClipper.Rule);
+        Assert.Equal(1000.0 * 1000 - 400.0 * 400, Clipper.Area(union));
+    }
 }

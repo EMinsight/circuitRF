@@ -144,6 +144,49 @@ public class TraceImpedanceAnalysisTests
         Assert.Equal(1000, trace.WidthMin / LayoutUnits.DefaultDbuPerMicron, 1.0);
     }
 
+    /// <summary>A trace that runs into a square pad as wide as three of it is found, with its own length
+    /// (brief-impedance-7). The pad was joined as a "width step" that the end-trim, looking for a
+    /// piece SHORTER than it is wide, let through — so the chain took the pad's 3 mm as its width, and
+    /// 9 mm of it was under four widths long, and the whole trace was dropped as short.</summary>
+    [Fact]
+    public void ATraceIntoASquarePad_IsFound_WithItsOwnLength()
+    {
+        LayoutShape[] shapes =
+        [
+            Rect(Top, -6000, -475, 0, 475),
+            Rect(Top, 0, -1500, 3000, 1500),
+            Rect(Gnd, -8000, -8000, 8000, 8000),
+        ];
+        var probe = TraceImpedanceProbe.Probe(shapes, Tech(), LayoutUnits.DefaultDbuPerMicron, Um(-3000), 0, Top);
+
+        var trace = Assert.Single(Assert.Single(Analyze(shapes).Layers).Traces);
+
+        Assert.Equal(6000, trace.Length / LayoutUnits.DefaultDbuPerMicron, 950.0);   // ± one station
+        Assert.Equal(950, trace.WidthMax / LayoutUnits.DefaultDbuPerMicron, 1.0);
+        Assert.Equal(probe.Z0Ohms, trace.Z0Mean!.Value, probe.Z0Ohms * 0.01);
+        Assert.Equal(["open end", "pad"], new[] { trace.StartsAt, trace.EndsAt }.Order());
+    }
+
+    /// <summary>The probe reads the same whichever way a pad polygon was wound (brief-impedance-7 §2).
+    /// Wound clockwise, the pad used to cancel the trace's last 200 µm where the two overlap.</summary>
+    [Fact]
+    public void APadPolygonsWinding_ChangesNoProbeAnswer()
+    {
+        long[] ccw = [Um(-200), Um(-1500), Um(2800), Um(-1500), Um(2800), Um(1500), Um(-200), Um(1500)];
+        long[] cw = [Um(-200), Um(-1500), Um(-200), Um(1500), Um(2800), Um(1500), Um(2800), Um(-1500)];
+        LayoutShape[] Board(long[] pad) =>
+            [Rect(Top, -6000, -475, 0, 475), new PolygonShape { Layer = Top, Xy = pad }, Rect(Gnd, -8000, -8000, 8000, 8000)];
+
+        foreach (double x in (double[])[-5000, -3000, -1200, -600, -100, 1000])
+            foreach (double y in (double[])[0, 300])
+            {
+                var a = TraceImpedanceProbe.Probe(Board(ccw), Tech(), LayoutUnits.DefaultDbuPerMicron, Um(x), Um(y), Top);
+                var b = TraceImpedanceProbe.Probe(Board(cw), Tech(), LayoutUnits.DefaultDbuPerMicron, Um(x), Um(y), Top);
+                Assert.Equal(a.Refusal, b.Refusal);
+                Assert.Equal(a.Z0Ohms, b.Z0Ohms);
+            }
+    }
+
     /// <summary>A trace with a 90° bend is one trace: the bend's corner is not cut, and not flagged.</summary>
     [Fact]
     public void ABentTrace_IsOneTrace_AndItsCornerIsNotFlagged()

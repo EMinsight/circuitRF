@@ -126,6 +126,25 @@ public class DrcEngineTests
         Assert.Empty(result.Violations);
     }
 
+    /// <summary>brief-impedance-7 §2: a polygon's stored winding does not change what a width check
+    /// reports. The polygon covers all but a 60-DBU strip of the rect under it; wound clockwise, it
+    /// used to CANCEL the rect where they overlapped, leaving the strip alone to fail a 100-DBU rule.</summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void MinWidth_APolygonsStoredWinding_ChangesNothing(bool clockwise)
+    {
+        long[] ccw = [0, 60, 1000, 60, 1000, 1000, 0, 1000];
+        long[] cw = [0, 60, 0, 1000, 1000, 1000, 1000, 60];
+        var shapes = new List<LayoutShape>
+        {
+            Rect(0, 0, 1000, 1000),
+            new PolygonShape { Layer = M1, Xy = clockwise ? cw : ccw },
+        };
+
+        Assert.Empty(DrcEngine.Run(shapes, Tech(minWidth: 100, minSpacing: 0)).Violations);
+    }
+
     /// <summary>
     /// R8a-shaped regression: an L-shaped conductor is a plain rectilinear corner, not a width
     /// violation. Opening with round joins would report four corner slivers on every shape drawn.

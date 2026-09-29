@@ -15173,3 +15173,38 @@ segment length below. Supersedes brief 37's "NOT fixed — owner's call" entry a
 
 Gates: `PdnViaSpanTests` (six), plus `PdnViaCheckTests`, `PdnReturnNetTests`, `PdnMeshExtractorTests`,
 `PdnFastExtractorTests`, `PdnRefusalCauseTests`, `PowerRailExampleTests` unchanged.
+
+## Impedance review brief 7 — a trace into a pad, and copper that cancels itself (2026-09-28)
+
+**§1 — what dropped the trace: the end-trim, then the Short rule; not the pour test.** On the repro
+(950 µm × 6 mm into a 3 mm square pad, plane under both) the island's area equals its pieces' area, so it
+is no pour. The pad is found as a PIECE of its own (its top and bottom edges, 3 mm apart and 3 mm long)
+and joined to the trace as a width step. The end-trim only removed an end piece SHORTER than it is wide,
+and a square pad is exactly as long as it is wide, so it stayed; the chain's width is its widest piece's,
+3 mm, and 9 mm is under `MinAspect` (4) of that, so the whole chain was marked Short and dropped unless a
+selector chose it. It disappears once the pad is square (or longer than wide) AND wide enough that the
+trace plus pad is under four pad widths; below that it survived but WRONG: a 2 mm square pad made an 8 mm
+trace, 950–2000 µm wide, mean 44.4 Ω against the probe's 49.14 (1.5 mm: 7.5 mm, 46.7 Ω). A 1 mm overlap
+behaves the same (the pad piece starts where the overlap does). Fix: an end piece is also the land when it
+is more than 1.5× as wide as the piece it joins (the step `EndKind` already calls a pad) and shorter than
+`MinAspect` of its own widths — it would not be a trace on its own. The repro now reads one trace, 6 mm,
+950 µm, 49.14 Ω, ending at "pad". A long wide section (≥ four of its widths) at a trace's end is still
+part of the trace. Seen, not changed: a pad 3 mm across but only 1 mm long along the trace makes its
+end read "junction" (the pad's two flanks are found as short pieces meeting the trace).
+
+**§2 — orientation normalised in `ToClipperPaths` only.** Outer ring positive, holes negative
+(`Clipper.IsPositive`, reversed in place); `PathShape` outlines untouched. `RingsToClipperPaths` is
+deliberately NOT normalised: its main caller is glyph contours, which are not one shape's outer-then-holes
+and whose winding IS the hole information — "first positive, rest negative" there would be wrong. Its
+other caller, DRC's via-drill/landing disc, now goes through `ToClipperPaths(CircleShape)` instead (same
+flattening, now oriented). All three gates were written first and failed without the fix (union area,
+probe answers, DRC width on a clockwise polygon). **No existing output changed**: the exporters only use
+`ToClipperPaths` for `PathShape` outlines, and every targeted class — `ConvertCliVerbTests` (24 pairs and
+the byte-identity gates), Gerber/GDSII/DXF/PCB, DRC, booleans, raster fill, planar mesh, railRF — passed
+unchanged (1,727; two railRF UI/timing tests failed under load and pass alone, unrelated to this path).
+
+Gates: `TraceImpedanceAnalysisTests.ATraceIntoASquarePad_IsFound_WithItsOwnLength` (§1),
+`LayoutClipperTests.ToClipperPaths_StoredWinding_ChangesNothingAUnionCovers`,
+`TraceImpedanceAnalysisTests.APadPolygonsWinding_ChangesNoProbeAnswer`,
+`DrcEngineTests.MinWidth_APolygonsStoredWinding_ChangesNothing` (§2 gates 1–3);
+`APadAtATracesEnd_IsNotPartOfTheTrace` still passes.

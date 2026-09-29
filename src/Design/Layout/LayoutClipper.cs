@@ -38,10 +38,20 @@ public static class LayoutClipper
         if (shape is PathShape path)
             return PathOutlinePaths(path, tolDbu, arcTolDbu);
 
+        // ORIENTATION IS NORMALISED HERE, AND ONLY HERE (brief-impedance-7): the outer ring positive,
+        // every hole negative. A shape's rings come out of the flattener in whatever order they were
+        // stored, and a RectShape's winding flips with swapped corners — so under NonZero two
+        // overlapping shapes wound opposite ways summed to 0 (their overlap was not copper) and a hole
+        // wound like its outer summed to 2 (it was filled). Every consumer — DRC, the booleans, the
+        // extractors, the impedance tools — goes through this conversion, so none of them orients.
         var rings = LayoutFlattener.Flatten(shape, tolDbu);
         var paths = new Paths64(rings.Count);
-        foreach (var ring in rings)
-            paths.Add(RingToPath64(ring));
+        for (int i = 0; i < rings.Count; i++)
+        {
+            var ring = RingToPath64(rings[i]);
+            if (Clipper.IsPositive(ring) != (i == 0)) ring.Reverse();
+            paths.Add(ring);
+        }
         return paths;
     }
 
@@ -49,7 +59,10 @@ public static class LayoutClipper
     /// contours, each flattened individually via <see cref="LayoutFlattener.Flatten"/> since they are
     /// not one shape's own rings) into Clipper2 <see cref="Paths64"/> — for callers that need the
     /// DBU-to-Clipper2 conversion without also re-flattening through <see cref="ToClipperPaths"/>'s
-    /// single-shape path.</summary>
+    /// single-shape path. <b>Orientation is kept as given, unlike <see cref="ToClipperPaths"/>:</b>
+    /// these rings are not one shape's outer-then-holes, and a glyph's contour winding IS its hole
+    /// information (the counter of an 'O' is wound against its outline), so there is no rule to
+    /// normalise them to. A single shape's ring belongs in <see cref="ToClipperPaths"/>.</summary>
     public static Paths64 RingsToClipperPaths(IEnumerable<long[]> rings)
     {
         var paths = new Paths64();
