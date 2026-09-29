@@ -1921,7 +1921,8 @@ resolution moved below the firewall to `CircuitRF.Render.Scene3D.Fields.FieldPlo
 R-em3d83-5 sentences, the quantity pick, the legend's lines and the scene origin are that one class's;
 the cut and its range are `FieldSection`'s (the view's own slice goes through it); the colours and the
 thinning are `Em3dSectionField`'s; every pixel is `Em3dSectionRenderer`'s. The stale comparison is
-`C3dRunDocument` in `src/Design`, the editor's banner's. The results root is `ResultsRoot.For`, the
+`C3dRunDocument.Check` in `src/Design`, the editor's banner's — the kept `document.c3d` and, since brief-em3d-87, the
+`inputs.json` hashes of every file the run read, which the run service (not the GUI) writes, so `em` keeps them too. The results root is `ResultsRoot.For`, the
 function `em` writes by. `src/Cli/RenderEm3dField.cs` is arguments, refusals and the report, and a source
 scan holds it to that.
 

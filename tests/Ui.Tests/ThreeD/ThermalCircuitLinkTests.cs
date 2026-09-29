@@ -154,7 +154,7 @@ public sealed class ThermalCircuitLinkTests(ITestOutputHelper output) : IDisposa
     /// The gate-1 circuit swept over three drive levels drives three wires between the thru's pads: the thermal result has three
     /// points on the HB's own axis, the wire table, the carried Pout, the pin currents used, and the wire probe's limit crossed
     /// between the right two points, interpolated linearly and said in a sentence. Changing the S-parameter file marks the
-    /// result stale.
+    /// result stale, naming it (brief-em3d-87: one input of the run's manifest).
     /// </summary>
     [GmshFact]
     public void Gate4_EndToEnd_OnTheHbAxis_WithTheLimitCrossingInterpolated()
@@ -184,9 +184,9 @@ public sealed class ThermalCircuitLinkTests(ITestOutputHelper output) : IDisposa
 
         // R-em3d79-3b — the result goes stale when its S-parameter file changes
         string runDir = ThermalRunService.RunDirectory(Path.Combine(ws, "results"), C3dSetups.ForRun(C3dSetups.Select(doc, "HotHB").Setup!, path));
-        Assert.Null(ThermalCircuitLink.Staleness(runDir));
+        Assert.False(C3dRunDocument.Check(runDir, doc, path)!.Stale);
         File.AppendAllText(snp, "! edited\n");
-        Assert.Contains("S-parameter result", ThermalCircuitLink.Staleness(runDir));
+        Assert.Equal([Path.GetFileName(snp)], C3dRunDocument.Check(runDir, doc, path)!.Changed);
     }
 
     /// <summary>The middle point's HB is allowed one Newton step and does not converge: it is skipped and flagged, and the

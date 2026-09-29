@@ -774,8 +774,9 @@ a thin plane, which makes it run cooler than the vias drawn — measure the diff
 
 **Submodels.** A thermal setup whose Thermal page says *Submodel: cut from* another thermal setup, *to region* a mesh
 region, solves only that region's box, meshed at the region's size, with its cut faces fixed to the other setup's
-solution; every other boundary is as written. The whole-model result is reused when it is newer than the document, and
-solved first when it is not (the notes say which). A mesh region a submodel is cut to no longer refines the whole-model
+solution; every other boundary is as written. The whole-model result is reused only when the document and every file it
+was solved from are as they were — a placed layout, the technology, a material library — and solved first when they are
+not (the notes say which, naming the file that changed). A mesh region a submodel is cut to no longer refines the whole-model
 run — that is what keeps it coarse. The run compares the heat crossing the cut faces with the whole model's over the same
 faces and **warns when they differ by more than 5 %** point by point: the region is too small, the fine detail changes
 the temperature at its edge, enlarge it. A heat source straddling the box is refused; one inside must carry the same power
@@ -1073,7 +1074,11 @@ order a pane presents them, with the rules each one follows.
 - **Simulate** (*Simulate ▸ Run* with the 3D view active, or the toolbar's Run button — the workspace toolbar's). Runs the active setup with the
   same progress, Cancel and messages as a `.cem`, and opens its results in the Data Display. Afterwards the
   run's fields are drawn by the field plots, on the geometry the run solved, and the toolbar's mesh button shows the
-  mesh the run made (it is greyed until there are fields to plot); if the 3D view has changed since, a selected field
-  plot's Properties say so (`Fields are from the run at 14:02; the model has changed since`) and the fields are still
-  shown. An object with **no material** yet — drawn as a wireframe — does not stop the run: the solver
+  mesh the run made (it is greyed until there are fields to plot); if the 3D view, or any file the run was solved from,
+  has changed since, a selected field plot's Properties say so and name it (`Fields are from the run at 14:02;
+  'Board.clay' has changed since`) and the fields are still shown. A run keeps, beside its result, the document it solved
+  and a hash of every file it read: each placed layout and the sub-cells it flattens, a layout's paired `.wBond`, each
+  nested 3D view, the technology and the material libraries it looks through, and — for a thermal run driven from a
+  circuit — the schematic, each sub-cell schematic and the S-parameter files it names. Editing a field plot is display
+  and never makes a result stale. An object with **no material** yet — drawn as a wireframe — does not stop the run: the solver
   ignores it and the run's messages say so. One whose material the technology does not define does stop it.

@@ -158,6 +158,21 @@ public sealed class FieldRenderCliTests(ITestOutputHelper output) : IDisposable
         Assert.Contains("note: field plot 'Field1': the model has changed since the run", stderr);
     }
 
+    /// <summary>brief-em3d-87 — the model unchanged and its technology edited: the note names the technology.</summary>
+    [Fact]
+    public void Gate5b_ARunWhoseTechnologyChanged_NamesIt()
+    {
+        string c3d = Workspace(Eigenmode(), [MidZ("Field1")]);
+        Run(c3d);
+        string tech = Path.Combine(_root, "ws", "tech.ctech");
+        var t = TechPersistence.LoadFromFile(tech);
+        t.Materials![0].Epsr = 1.0006;
+        TechPersistence.SaveToFile(tech, t);
+
+        RenderJson(c3d, "cut.png", "--field", "Field1", out string stderr);
+        Assert.Contains("note: field plot 'Field1': 'tech.ctech' has changed since the run", stderr);
+    }
+
     // ── 6. refusals ─────────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -359,7 +374,9 @@ public sealed class FieldRenderCliTests(ITestOutputHelper output) : IDisposable
     {
         string dir = RunDir(c3d);
         if (!Directory.Exists(dir)) CopyDirectory(Cavity, dir);
-        File.WriteAllText(C3dRunDocument.PathIn(dir), C3dPersistence.SerializeForRun(C3dPersistence.LoadFromFile(c3d)));
+        // brief-em3d-87 — the document and every file its elaboration read, as the run service keeps them
+        var doc = C3dPersistence.LoadFromFile(c3d);
+        C3dRunInputs.Take(doc, c3d, C3dElaborator.ElaborateOnce(doc, c3d, null).FilesRead).KeepIn(dir);
         return dir;
     }
 

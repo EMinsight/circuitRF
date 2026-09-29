@@ -195,6 +195,15 @@ public sealed record C3dElaboration(
     /// name, what the editor's Variables panel and Properties show. Null only when elaboration did not start.</summary>
     public C3dResolution? Resolution { get; init; }
 
+    /// <summary>
+    /// brief-em3d-87 R-em3d87-1 — every file this elaboration was built from, as full paths, each once, sorted: the
+    /// <c>.c3d</c> and its <c>.ccell</c>, each placed <c>.clay</c> with the sub-cells it flattens and its paired <c>.wBond</c>,
+    /// each nested <c>.c3d</c> and its <c>.ccell</c>, every technology and each material library it looks through, each STEP
+    /// file, and the assembly rules a drawn wire reads. Recorded where each is RESOLVED, not where it is read, so a cache hit
+    /// names it as surely as a miss. What a run's input manifest hashes (<see cref="C3dRunInputs"/>).
+    /// </summary>
+    public IReadOnlyList<string> FilesRead { get; init; } = [];
+
     /// <summary>The document's own technology, and where it resolved.</summary>
     public Technology? Technology { get; init; }
     public string? TechnologyPath { get; init; }
@@ -467,7 +476,11 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
 
     /// <summary>A child layout view: its solids through its own technology.</summary>
     private sealed record ChildLayout(Em3dLayoutSolidsResult? Solids, TechResolution Tech, string TechName, string? Refusal,
-                                      int DbuPerMicron = LayoutUnits.DefaultDbuPerMicron);
+                                      int DbuPerMicron = LayoutUnits.DefaultDbuPerMicron)
+    {
+        /// <summary>brief-em3d-87 — the sub-cells its flatten reads and its paired <c>.wBond</c>.</summary>
+        public IReadOnlyList<string> Files { get; init; } = [];
+    }
 
     private Child3D Child3DCached(string path, string? fallbackCws)
     {
@@ -540,15 +553,16 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
             return bad;
         }
         var (tech, _) = TechnologyResolver.ResolveForDocument(view.TechRef, path, fallbackCws, _tech);
+        IReadOnlyList<string> files = [.. LayoutFlatten.FilesRead(view, path), .. WBondCell.FindFor(path) is { } wb ? [wb] : Array.Empty<string>()];
         ChildLayout made;
         if (tech.Tech is not { } t)
             made = new ChildLayout(null, tech, "", "its technology does not resolve" +
-                                   (tech.Diagnostics.Count > 0 ? ": " + string.Join(" ", tech.Diagnostics) : "."));
+                                   (tech.Diagnostics.Count > 0 ? ": " + string.Join(" ", tech.Diagnostics) : ".")) { Files = files };
         else
         {
             var solids = Em3dLayoutSolids.From(new EmLayoutSource(path, view, t, view.DbuPerMicron), t, null,
                                                new Em3dLayoutSolidsOptions(options.FMaxHz, options.TempC, Instance: true));
-            made = new ChildLayout(solids, tech, TechName(tech), solids.Refusal, view.DbuPerMicron);
+            made = new ChildLayout(solids, tech, TechName(tech), solids.Refusal, view.DbuPerMicron) { Files = files };
         }
         _children[key] = made;
         _children["techstamp|" + key] = Stamp(tech.ResolvedPath);
@@ -613,6 +627,20 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
         private int _topDbu;
         private readonly SortedSet<string> _ignored = new(StringComparer.Ordinal);
         private bool _anyLayoutInstance;
+        private readonly SortedSet<string> _files = new(StringComparer.Ordinal);
+
+        /// <summary>brief-em3d-87 — <paramref name="file"/> into <see cref="C3dElaboration.FilesRead"/>, when it is a file.</summary>
+        private void Read(string? file)
+        {
+            if (file is { Length: > 0 } && Path.IsPathRooted(file) && File.Exists(file)) _files.Add(Path.GetFullPath(file));
+        }
+
+        /// <summary>A technology's file and every material library it looks through (a shipped one is no file).</summary>
+        private void ReadTech(TechResolution t)
+        {
+            Read(t.ResolvedPath);
+            foreach (string lib in t.Tech?.ResolvedLibraryPaths ?? []) Read(lib);
+        }
 
         // Materials: every (technology, name) with its values, and each object's key, renamed at the end.
         private readonly List<(string Tech, string Name, Em3dMaterial Values, string Source)> _materials = [];
@@ -626,10 +654,14 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
             var (tech, _) = TechnologyResolver.ResolveForDocument(doc.TechRef, path, workspaceCws, owner._tech);
             foreach (string d in tech.Diagnostics) _notes.Add(d);
             _topDbu = doc.DbuPerMicron;
+            var cell = options.Cell ?? C3dCell.Of(path);
+            Read(path);
+            Read(cell.CcellPath);
+            ReadTech(tech);
 
             // brief-em3d-51 R-em3d51-5a — every expression resolves before any geometry is built; a document whose names or
             // fields do not resolve is refused with the engine's message and builds nothing.
-            var resolution = C3dResolver.Resolve(doc, options.Cell ?? C3dCell.Of(path), null, options.Sets);
+            var resolution = C3dResolver.Resolve(doc, cell, null, options.Sets);
             _refusals.AddRange(resolution.Errors);
             _warnings.AddRange(resolution.Warnings);
             _notes.AddRange(resolution.Notes);
@@ -692,6 +724,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
                 Technology = tech.Tech,
                 TechnologyPath = tech.ResolvedPath,
                 Resolution = resolution,
+                FilesRead = [.. _files],
             };
         }
 
@@ -712,8 +745,15 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
                 if (doc.FaceBoundaries.Count > 0) _ignored.Add("its face boundaries");
             }
 
+            string docDir = Path.GetDirectoryName(path)!;
+            void Steps(C3dObject o)
+            {
+                if (o is C3dStep st && st.File is { Length: > 0 } f) Read(Path.GetFullPath(Path.Combine(docDir, f)));
+                foreach (var (_, operand) in C3dOperands.Of(o)) Steps(operand);
+            }
             foreach (var obj in doc.Objects)
             {
+                Steps(obj);
                 if (obj is C3dPolyline) { _polylines++; continue; }
                 if (obj is C3dWire) continue;                       // after the instances: see Wires
                 _topObject = obj.Name;
@@ -997,6 +1037,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
             var pads = C3dWires.Pads(_solids, _sheets, prefix, wireNames);
             double tol = C3dLowering.Metres(1, _topDbu);
             var workspace = new WireBondWorkspace(path, WorkspaceRootFinder.FindAncestorCws(Path.GetDirectoryName(path)) ?? workspaceCws);
+            if (elements.Count > 0) Read(workspace.WorkspaceRules().ResolvedPath);
             // 3D editor round 4 — a wire array is one wire per element, each resolved and refused on its own (w1[2]).
             foreach (var (drawn, w) in elements)
             {
@@ -1102,6 +1143,8 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
                     return;
                 }
                 var child = owner.Child3DCached(viewPath, workspaceCws);
+                Read(viewPath);
+                ReadTech(child.Tech);
                 _walkInstances.Add(new C3dWalkStep(instPath,
                     $"cell folder {cellDir} (from '{inst.CellRef}'); {noun} {viewPath} ({primary.State}); technology " +
                     $"{child.Tech.ResolvedPath ?? "(none)"} ({child.Tech.Source}, resolved from the 3D view's own path)" +
@@ -1115,6 +1158,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
                 // brief-em3d-51 R-em3d51-2e — the overrides, evaluated in THIS document's scope, then the child resolved under
                 // their values (shared with every other instance whose values are the same).
                 var childCell = C3dCell.OfFolder(cellDir);
+                Read(childCell.CcellPath);
                 var overrideErrors = new List<string>();
                 var overrides = resolution.OverridesFor(inst, instPath, childCell, child.Document.Variables, overrideErrors);
                 if (overrideErrors.Count > 0) { _refusals.AddRange(overrideErrors); return; }
@@ -1138,6 +1182,9 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
 
             _anyLayoutInstance = true;
             var layout = owner.ChildLayoutCached(viewPath, workspaceCws, options);
+            Read(viewPath);
+            ReadTech(layout.Tech);
+            foreach (string f in layout.Files) Read(f);
             _walkInstances.Add(new C3dWalkStep(instPath,
                 $"cell folder {cellDir} (from '{inst.CellRef}'); {noun} {viewPath} ({primary.State}); technology " +
                 $"{layout.Tech.ResolvedPath ?? "(none)"} ({layout.Tech.Source}, resolved from the layout's own path — the " +

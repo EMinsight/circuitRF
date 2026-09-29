@@ -594,6 +594,7 @@ internal static class Explain
         {
             ThreeDWalk(e, walks);
             PortWalk(C3dPersistence.LoadFromFile(full), e, walks);
+            ResultWalk(C3dPersistence.LoadFromFile(full), full, e, walks);
         }
         em3d = ExplainEm3d.Build(src);
         // brief-em3d-64 R-em3d64-6b — only a document that holds a kernel object asks the kernel anything.
@@ -675,6 +676,43 @@ internal static class Explain
                 $"touches — {touches}. " + (r.Refusal ?? C3dPortReports.Describe(r)),
                 "each edge's conductors to within 1 DBU; one opposite pair, one conductor each; the negative end is the " +
                 "ground set's, else the larger surface; Flip swaps; Positive and Negative stated override it"));
+        }
+    }
+
+    /// <summary>
+    /// brief-em3d-87 R-em3d87-3 — the files a run of this view is solved from, and per embedded setup whether its result is
+    /// still the model's: the one check the editor's banner and <c>render --field</c> make (C3dRunDocument.Check).
+    /// </summary>
+    private static void ResultWalk(C3dDocument doc, string full, C3dElaboration e, List<ResolutionStepJson> walks)
+    {
+        walks.Add(new ResolutionStepJson("inputs", full,
+            $"{e.FilesRead.Count} file(s): {string.Join(", ", e.FilesRead.Select(Path.GetFileName))}",
+            "every file the elaboration read — the view and its .ccell, each placed layout with its sub-cells and paired " +
+            ".wBond, each nested 3D view, each technology and the material libraries it looks through; a run keeps their " +
+            "hashes beside its result"));
+        string root = ResultsRoot.For(full, DocumentKinds.AncestorCws(full));
+        foreach (var embedded in C3dSetups.Read(doc))
+        {
+            if (embedded.Setup is not { } setup) continue;
+            var run = C3dSetups.ForRun(setup, full);
+            IEnumerable<string> dirs = run.IsThermal ? [CircuitRF.Design.Thermal.ThermalRunService.RunDirectory(root, run)]
+                : new[] { Em3dSolver.Palace, Em3dSolver.OpenEms }.Where(x => run.Solver3D == x || run.Solver3D == Em3dSolver.Both)
+                                                                 .Select(x => CircuitRF.Design.Em3d.Em3dRunService.RunDirectory(root, run, x));
+            foreach (string dir in dirs)
+            {
+                var check = C3dRunDocument.Check(dir, doc, full);
+                string answer = check switch
+                {
+                    null => "no result that records what it was solved from",
+                    { What: { } what } => $"stale: {what} {check.Has} changed since the run at " +
+                                          check.Written.ToString("yyyy-MM-dd HH:mm", System.Globalization.CultureInfo.InvariantCulture),
+                    _ => "current: solved from the model and its files as they are now (run at " +
+                         check.Written.ToString("yyyy-MM-dd HH:mm", System.Globalization.CultureInfo.InvariantCulture) + ")",
+                };
+                walks.Add(new ResolutionStepJson($"result of setup '{embedded.Name}'", dir, answer,
+                    "the run's kept document and input hashes against the view and its files now; a field plot is display and " +
+                    "never makes a result stale"));
+            }
         }
     }
 

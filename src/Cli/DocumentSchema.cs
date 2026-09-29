@@ -522,7 +522,7 @@ internal static class DocumentSchema
             point, a spot, or a probe's own Stat),
             Mesh, Balance and Submodel ({"From": "<whole-model setup>", "Region": "<mesh region>"}: solve
             only that region's box, finely, its cut faces fixed to the From setup's solution — reused when
-            newer than the document, else solved first — and no Sweep of its own). Every value is an
+            solved from the model and its files as they are now, else solved first — and no Sweep of its own). Every value is an
             expression in the document's variables; temperatures are °C; a measure may read SymmetryFactor
             (2 per symmetry plane). A .cem never holds one. The places it reads are the document's own lists:
             HeatSources (a Sheet on a Plane at an Offset with a Rect or an Outline, lying inside ONE

@@ -4,6 +4,8 @@
 // "Flatten" alone collides with Flatten to Polygon (L1e/L1h, a curve becoming a polygon; an unrelated
 // operation on an unrelated shape kind).
 
+using CircuitRF.Design.Cells;
+
 namespace CircuitRF.Design.Layout;
 
 public static class LayoutFlatten
@@ -323,6 +325,35 @@ public static class LayoutFlatten
             count++;
         }
         return count;
+    }
+
+    /// <summary>
+    /// brief-em3d-87 R-em3d87-1 — the <c>.clay</c> files flattening <paramref name="view"/> (at <paramref name="clayPath"/>) reads:
+    /// every sub-cell's primary layout, at every level, each once, resolved exactly as <see cref="FlattenAllLevels"/> resolves
+    /// it. <paramref name="clayPath"/> itself is not in the list. A cell held only in memory (a headless run's generated cell)
+    /// has no file and is left out.
+    /// </summary>
+    public static IReadOnlyList<string> FilesRead(LayoutView view, string clayPath)
+    {
+        var files = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        void Walk(LayoutView v, string baseDir, int depth)
+        {
+            if (depth >= CellHierarchy.MaxDepth) return;
+            foreach (var inst in v.Instances)
+            {
+                var res = CellLayoutResolver.Resolve(inst.CellRef, baseDir);
+                if (res.State != CellLayoutState.Resolved || res.ResolvedCellDir is not { } dir || !seen.Add(dir)) continue;
+                if (CellFolder.ResolvePrimary(dir, ViewType.Layout).ResolvedName is { } name)
+                {
+                    string file = Path.Combine(CellFolder.SubFolderPath(dir, ViewType.Layout), name);
+                    if (File.Exists(file)) files.Add(Path.GetFullPath(file));
+                }
+                if (res.View is { } sub) Walk(sub, CellHierarchy.LayoutBaseDirOf(dir), depth + 1);
+            }
+        }
+        Walk(view, Path.GetDirectoryName(Path.GetFullPath(clayPath)) ?? "", 0);
+        return files;
     }
 
     /// <summary>

@@ -21,9 +21,6 @@
 
 using System.Globalization;
 using System.Numerics;
-using System.Security.Cryptography;
-using System.Text;
-using System.Text.Json;
 using CircuitRF.Core.Design;
 using CircuitRF.Core.Devices;
 using CircuitRF.Core.Elaboration;
@@ -62,8 +59,10 @@ public sealed class ThermalCircuitDrive
     /// <summary>The HB cubes copied into the thermal result, each on the HB's sweep axes.</summary>
     public required IReadOnlyList<(string Name, DataCube Cube)> Carried { get; init; }
     public required List<string> Notes { get; init; }
-    public required string SchematicHash { get; init; }
-    public required string SnpHash { get; init; }
+    /// <summary>brief-em3d-87 — every file the circuit was read from: the schematic, each sub-cell schematic and <c>.ccell</c> its
+    /// extraction descended into, and each S-parameter file its elaborated netlist names (this view's own EM result among
+    /// them). What the thermal run's input manifest hashes beside the 3D view's own inputs.</summary>
+    public required IReadOnlyList<string> FilesRead { get; init; }
 
     /// <summary>
     /// The harmonics any pin carries at any point, and whether any pin carries DC — what the synthetic setup states.
@@ -143,9 +142,6 @@ public static class ThermalCircuitLink
     /// and taking it as a harmonic would ask the run for a wire array the pin does not have.</summary>
     public const double AbsoluteFloorA = 1e-9;
 
-    /// <summary>The run directory's record of what the result was solved from (R-em3d79-3b).</summary>
-    public const string StampFile = "circuit.json";
-
     public const string F0Name = Prefix + "f0";
     public static string DcName(int pin) => $"{Prefix}{pin}:dc";
     public static string HarmonicName(int pin, int k) => $"{Prefix}{pin}:h{k}";
@@ -181,9 +177,10 @@ public static class ThermalCircuitLink
         return bases.Any(b => string.Equals(b, stem, OperatingSystem.IsLinux() ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase));
     }
 
-    /// <summary>A circuit as the application reads it: a <c>.csch</c> through its extraction, a <c>.cnl</c> as itself; and
-    /// the text its content hash is taken over (the extraction's, for a schematic — "as extracted").</summary>
-    public static (Library Lib, TestBench Tb, string Text)? Read(string path, out string? refusal)
+    /// <summary>A circuit as the application reads it: a <c>.csch</c> through its extraction (once, with
+    /// <see cref="SchematicCircuit.FromSchematic(string)"/>'s round trip), a <c>.cnl</c> as itself; and the files that read
+    /// (brief-em3d-87: the schematic and every sub-cell the extraction descended into).</summary>
+    public static (Library Lib, TestBench Tb, IReadOnlyList<string> Files)? Read(string path, out string? refusal)
     {
         refusal = null;
         try
@@ -191,13 +188,15 @@ public static class ThermalCircuitLink
             string ext = Path.GetExtension(path).ToLowerInvariant();
             if (ext == ".csch")
             {
-                var (lib, tb) = SchematicCircuit.FromSchematic(path);
-                return (lib, tb, SchematicCircuit.CnlTextOf(path));
+                var (text, files) = SchematicCircuit.CnlTextAndFilesOf(path);
+                string name = Path.GetFileNameWithoutExtension(path);
+                var (lib, tb) = SchematicCircuit.RoundTrip(text, name, SchematicCircuit.ReferenceBaseOf(path));
+                return (lib, tb, files);
             }
             if (ext == ".cnl")
             {
                 var (lib, tb) = CnlReader.ReadFile(path);
-                return (lib, tb, File.ReadAllText(path));
+                return (lib, tb, [Path.GetFullPath(path)]);
             }
             refusal = $"The thermal setup's circuit '{path}' is neither a .csch nor a .cnl.";
             return null;
@@ -307,7 +306,7 @@ public static class ThermalCircuitLink
         string path = SchematicPath(c3dPath, fc.Schematic);
         if (!File.Exists(path)) { refusal = $"The thermal setup's circuit '{fc.Schematic}' does not exist (resolved against the 3D view's folder: '{path}')."; return null; }
         if (Read(path, out refusal) is not { } circuit) return null;
-        var (lib, tb, text) = circuit;
+        var (lib, tb, circuitFiles) = circuit;
         foreach (var (name, expr) in sets ?? [])
         {
             HbCircuitRun.ApplySet(tb, name, expr);
@@ -355,13 +354,15 @@ public static class ThermalCircuitLink
 
             var drive = ReadDrive(solved.Data, meas, inst.InstancePath, snp.PortCount, nets, p.MaxHarmonic, fc.Carry, notes, out refusal);
             if (drive is null) return null;
-            string snpHash = Hash(File.ReadAllBytes(snp.FilePath));
+            // brief-em3d-87 — every S-parameter file the circuit reads is an input of the thermal result (this view's EM result is one).
+            var files = circuitFiles.Concat(nl.Components.Select(c => c.Model).OfType<SnpModel>().Select(m => Path.GetFullPath(m.FilePath)))
+                                    .Distinct(StringComparer.Ordinal).ToList();
             return new ThermalCircuitDrive
             {
                 SchematicPath = path, SnpPath = snp.FilePath, Instance = inst.InstancePath, Analysis = top.Name,
                 Axes = drive.Value.Axes, Points = drive.Value.Points, Converged = drive.Value.Converged, F0 = drive.Value.F0,
                 MaxHarmonic = p.MaxHarmonic, Pins = drive.Value.Pins, Carried = drive.Value.Carried, Notes = notes,
-                SchematicHash = Hash(Encoding.UTF8.GetBytes(text)), SnpHash = snpHash,
+                FilesRead = files,
             };
         }
     }
@@ -453,57 +454,5 @@ public static class ThermalCircuitLink
         foreach (var g in ds.Groups)
             if (ds.CubesIn(g).TryGetValue(name, out var c)) return c;
         return null;
-    }
-
-    /// <summary>A SHA-256, hex.</summary>
-    public static string Hash(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes));
-
-    // ── R-em3d79-3b — staleness ────────────────────────────────────────────────────────────────────────
-
-    private sealed record Stamp(string Schematic, string SchematicHash, string Snp, string SnpHash);
-
-    /// <summary>Records in <paramref name="runDir"/> what the result was solved from.</summary>
-    public static void WriteStamp(string runDir, ThermalCircuitDrive d)
-    {
-        Directory.CreateDirectory(runDir);
-        File.WriteAllText(Path.Combine(runDir, StampFile),
-            JsonSerializer.Serialize(new Stamp(d.SchematicPath, d.SchematicHash, d.SnpPath, d.SnpHash), new JsonSerializerOptions { WriteIndented = true }));
-    }
-
-    private static readonly Dictionary<string, (DateTime Time, long Length, string Hash)> Hashes = new(StringComparer.Ordinal);
-
-    /// <summary>
-    /// R-em3d79-3b — why the thermal result in <paramref name="runDir"/> is stale because its circuit moved on (the schematic
-    /// as extracted, or the S-parameter file, no longer hashes as it did), or null. A file's hash is recomputed only when its
-    /// time or size changes, since the editor asks on every edit.
-    /// </summary>
-    public static string? Staleness(string runDir)
-    {
-        string f = Path.Combine(runDir, StampFile);
-        if (!File.Exists(f)) return null;
-        Stamp? s;
-        try { s = JsonSerializer.Deserialize<Stamp>(File.ReadAllText(f)); }
-        catch (Exception x) when (x is IOException or JsonException or UnauthorizedAccessException) { return null; }
-        if (s is null) return null;
-        string? Current(string path, bool schematic)
-        {
-            if (!File.Exists(path)) return null;
-            var info = new FileInfo(path);
-            lock (Hashes)
-                if (Hashes.TryGetValue(path, out var h) && h.Time == info.LastWriteTimeUtc && h.Length == info.Length) return h.Hash;
-            string hash;
-            try
-            {
-                hash = schematic ? (Read(path, out _) is { } c ? Hash(Encoding.UTF8.GetBytes(c.Text)) : "") : Hash(File.ReadAllBytes(path));
-            }
-            catch (Exception x) when (x is IOException or UnauthorizedAccessException) { return null; }
-            lock (Hashes) Hashes[path] = (info.LastWriteTimeUtc, info.Length, hash);
-            return hash;
-        }
-        var moved = new List<string>();
-        if (Current(s.Schematic, true) != s.SchematicHash) moved.Add($"the circuit '{Path.GetFileName(s.Schematic)}'");
-        if (Current(s.Snp, false) != s.SnpHash) moved.Add($"the S-parameter result '{Path.GetFileName(s.Snp)}'");
-        return moved.Count == 0 ? null
-            : $"The thermal result is stale: {string.Join(" and ", moved)} changed since it was solved. Run it again.";
     }
 }

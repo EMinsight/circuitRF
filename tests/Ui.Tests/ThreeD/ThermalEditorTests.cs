@@ -279,7 +279,8 @@ public sealed class ThermalEditorTests : IDisposable
         ThermalFieldFiles.Write(dir, mesh, fields, [1, 1]);
         File.WriteAllText(Path.Combine(dir, CircuitRF.Design.Em3d.GmshGeoWriter.GroupsFile),
             JsonSerializer.Serialize(new { Groups = new[] { new { Name = "block", Attribute = 1, Dimension = 3, Kind = "Conductor" } } }));
-        vm.RunFinished(run, C3dPersistence.Serialize(vm.Document));
+        C3dRunInputs.Take(vm.Document, vm.TopFilePath, []).KeepIn(dir);   // what the run service keeps (brief-em3d-87)
+        vm.RunFinished();
         Until(() => vm.Viewer.FieldsAvailable && vm.Viewer.IsThermalRun && vm.Viewer.FieldSolutions.Count == steps.Length, "the run's fields were never read");
     }
 

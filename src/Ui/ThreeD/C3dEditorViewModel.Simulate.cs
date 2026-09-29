@@ -1030,8 +1030,6 @@ public sealed partial class C3dEditorViewModel
 
     [ObservableProperty] private string? _fieldsStaleText;
 
-    private readonly Dictionary<string, (DateTime Stamp, string Text)> _solvedCache = new(StringComparer.Ordinal);
-
     /// <summary>The shell's results root (the workspace's <c>results</c> folder, or the session's).</summary>
     public Func<string?>? ResultsRootProvider { get; set; }
 
@@ -1049,21 +1047,11 @@ public sealed partial class C3dEditorViewModel
         if (s.Solver3D is Em3dSolver.OpenEms or Em3dSolver.Both) yield return Em3dRunService.RunDirectory(root, s, Em3dSolver.OpenEms);
     }
 
-    /// <summary>A run finished: the document it solved is kept in its directory, and the fields are read again.</summary>
-    public void RunFinished(EmSetup runSetup, string documentText)
+    /// <summary>A run finished: the fields are read again. The run service kept the document it solved and every file it read
+    /// beside its result (brief-em3d-87 — in <c>src/Design</c>, so a <c>circuitrf em</c> run keeps the same record).</summary>
+    public void RunFinished()
     {
         ForgetDiscoveries();                       // brief-em3d-83 — every plot's check reads the runs again
-        if (ResultsRootProvider?.Invoke() is { } root)
-            foreach (var solver in runSetup.IsThermal ? [Em3dSolver.None] : new[] { Em3dSolver.Palace, Em3dSolver.OpenEms })
-                if (runSetup.IsThermal || runSetup.Solver3D == solver || runSetup.Solver3D == Em3dSolver.Both)
-                {
-                    // brief-em3d-75 — a thermal run's directory is its own (ThermalRunService.RunDirectory).
-                    string dir = runSetup.IsThermal ? CircuitRF.Design.Thermal.ThermalRunService.RunDirectory(root, runSetup)
-                                                    : Em3dRunService.RunDirectory(root, runSetup, solver);
-                    if (!Directory.Exists(dir)) continue;
-                    try { File.WriteAllText(Path.Combine(dir, RunDocumentFile), documentText); }
-                    catch (Exception e) when (e is IOException or UnauthorizedAccessException) { StatusMessage = $"The run's document could not be kept: {e.Message}"; }
-                }
         Viewer.SetRunSetup(ActiveRunSetup);
         RefreshFieldsStale();
     }
@@ -1077,31 +1065,20 @@ public sealed partial class C3dEditorViewModel
     /// was active, and a current plot was called stale because T1's run was old.</summary>
     public string? FieldPlotStaleText(C3dFieldPlot p) => StaleText(PlotRequest(p, resolveScene: false).RunSetup);
 
-    /// <summary>Why setup <paramref name="setup"/>'s result is stale — its run solved a different model, or (thermal, from a
-    /// circuit) the circuit moved on — or null.</summary>
+    /// <summary>Why setup <paramref name="setup"/>'s result is stale — its run solved a different model, or a file it was solved
+    /// from (a placed layout, a nested 3D view, the technology, a material library, a circuit-driven thermal run's schematic and
+    /// its sub-cells) has changed since (brief-em3d-87) — or null. Each file is re-hashed only when it changes on disk.</summary>
     private string? StaleText(EmSetup? setup)
     {
-        string? text = null;
         foreach (string dir in RunDirectoriesOf(setup))
         {
-            string f = Path.Combine(dir, RunDocumentFile);
-            if (!File.Exists(f)) continue;
-            // The solved document, read once per file version: this runs on every edit.
-            var stamp = File.GetLastWriteTimeUtc(f);
-            if (!_solvedCache.TryGetValue(f, out var cached) || cached.Stamp != stamp)
-            {
-                try { _solvedCache[f] = cached = (stamp, File.ReadAllText(f)); } catch (Exception) { continue; }
-            }
+            if (C3dRunDocument.Check(dir, Document, TopFilePath) is not { } check) continue;
             // brief-em3d-83 R-em3d83-2 — the plots are display: SerializeForRun leaves them out on both sides.
-            if (C3dRunDocument.IsStale(cached.Text, Document))
-                text = $"Fields are from the run at {File.GetLastWriteTime(f):HH:mm}; the model has changed since. They are drawn on the " +
-                       "geometry that run solved.";
-            break;
+            return check.What is { } what
+                ? $"Fields are from the run at {check.Written:HH:mm}; {what} {check.Has} changed since. They are drawn on the " +
+                  "geometry that run solved."
+                : null;
         }
-        // brief-em3d-79 R-em3d79-3b — a thermal result driven from a circuit is stale when the circuit (as extracted) or the
-        // S-parameter file it used no longer hashes as it did. Each file is re-hashed only when it changes on disk.
-        if (text is null && setup is { IsThermal: true } thermal && ResultsRootProvider?.Invoke() is { } resultsRoot)
-            text = CircuitRF.Design.Thermal.ThermalCircuitLink.Staleness(CircuitRF.Design.Thermal.ThermalRunService.RunDirectory(resultsRoot, thermal));
-        return text;
+        return null;
     }
 }

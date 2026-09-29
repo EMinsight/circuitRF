@@ -111,6 +111,52 @@ public static class SchematicCircuit
     }
 
     /// <summary>
+    /// brief-em3d-87 R-em3d87-2 — <see cref="CnlTextOf(string)"/> and the files its extraction read: the schematic itself, then
+    /// each sub-cell schematic the descent resolved and that cell's <c>.ccell</c>, each once. The same extraction, with
+    /// <see cref="DiskCellResolver"/> watched rather than replaced, so the text is the bytes <see cref="CnlTextOf(string)"/>
+    /// gives. <see cref="SpiceCellImport.FilesRead"/> is the precedent for the shape.
+    /// </summary>
+    public static (string Text, IReadOnlyList<string> FilesRead) CnlTextAndFilesOf(string cschPath)
+    {
+        var (model, _, _) = SchematicPersistence.LoadFromFile(cschPath);
+        string name = Path.GetFileNameWithoutExtension(cschPath);
+        var watch = new WatchedResolver(Path.GetFullPath(cschPath));
+        string text = CnlTextOf(NetExtractor.Extract(model, name, watch), name);
+        return (text, watch.Files);
+    }
+
+    /// <summary>
+    /// brief-em3d-87 — one schematic's OWN contribution to a circuit, as text: its extraction's test bench without the cell
+    /// definitions its sub-cells contribute (each of those is a file of its own). What a run's input manifest hashes a
+    /// <c>.csch</c> by, so moving a label changes nothing and a sub-cell's edit names the sub-cell, not every parent above it.
+    /// </summary>
+    public static string OwnCnlTextOf(string cschPath)
+    {
+        var (model, _, _) = SchematicPersistence.LoadFromFile(cschPath);
+        string name = Path.GetFileNameWithoutExtension(cschPath);
+        return CnlWriter.Write(Extract(model, name).TestBench, null, $"extracted from {name}");
+    }
+
+    /// <summary><see cref="DiskCellResolver"/>, recording each schematic and <c>.ccell</c> it resolves.</summary>
+    private sealed class WatchedResolver(string top) : ICellResolver
+    {
+        private readonly HashSet<string> _seen = new(StringComparer.Ordinal) { top };
+        public List<string> Files { get; } = [top];
+
+        public CellResolution? Resolve(EditableComponent cellInstance, SchematicEditModel containingModel)
+        {
+            if (HierarchyResolver.ResolvePrimaryPath(cellInstance, containingModel) is { } primary)
+            {
+                string full = Path.GetFullPath(primary);
+                if (_seen.Add(full)) Files.Add(full);
+                string ccell = Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(full))!, Cells.CellFolder.CcellFileName);
+                if (File.Exists(ccell) && _seen.Add(ccell)) Files.Add(ccell);
+            }
+            return DiskCellResolver.Instance.Resolve(cellInstance, containingModel);
+        }
+    }
+
+    /// <summary>
     /// What a relative file reference inside a document resolves against: <b>the workspace root</b>,
     /// and the document's own folder only when it belongs to no workspace.
     ///

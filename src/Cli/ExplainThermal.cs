@@ -125,7 +125,7 @@ internal static class ExplainThermal
                     walks.Add(new ResolutionStepJson($"{at}: submodel", null,
                         $"the region '{sm.Region}' cut from the model, its cut faces fixed to setup '{sm.From}''s solution; " +
                         $"{low.Regions.Count} solid(s) inside, {low.SourcesOutside.Count} heat source(s) outside",
-                        "the From result is reused when it is newer than the document, else solved first; the run compares the heat " +
+                        "the From result is reused when its inputs (the document and every file it was solved from) are unchanged, else solved first; the run compares the heat " +
                         "crossing the cut faces with the whole model's"));
             }
         }

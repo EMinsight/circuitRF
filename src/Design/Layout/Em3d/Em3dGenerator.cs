@@ -38,6 +38,10 @@ public sealed record Em3dGenerationResult(Em3dProblem? Problem, string? Refusal,
 {
     public bool Ok => Problem is not null && Refusal is null;
 
+    /// <summary>brief-em3d-87 — for a <c>.c3d</c>'s problem, every file its elaboration read (C3dElaboration.FilesRead): what
+    /// the run's input manifest hashes. Empty for a layout's.</summary>
+    public IReadOnlyList<string> FilesRead { get; init; } = [];
+
     /// <summary>Findings a user should act on that do not stop the problem being built — a foot that
     /// overhangs its pad, a metal the technology and the <c>.wBond</c> define differently.</summary>
     public IReadOnlyList<string> Warnings { get; init; } = [];

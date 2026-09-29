@@ -2162,10 +2162,11 @@ internal static class CliDiagnostics
       + "Run it alone, then render one with --field.", ("option", option));
 
     /// <summary>R-em3d84-2 — a stale run still draws (as in the 3D view), and says so.</summary>
-    public static Diagnostic RenderFieldStale(string name, string when) => Diagnostic.Create(
+    /// <param name="what">brief-em3d-87 — what moved on, with its verb: <c>the model has</c>, <c>'Board.clay' has</c>.</param>
+    public static Diagnostic RenderFieldStale(string name, string what, string when) => Diagnostic.Create(
         "render.field.stale", DiagnosticSeverity.Info,
-        "field plot '{name}': the model has changed since the run at {when}; the field is drawn on the geometry that run solved.",
-        ("name", name), ("when", when));
+        "field plot '{name}': {what} changed since the run at {when}; the field is drawn on the geometry that run solved.",
+        ("name", name), ("what", what), ("when", when));
 
     public static Diagnostic RenderMarginMalformed(string text) => Diagnostic.Create(
         "render.margin.malformed", DiagnosticSeverity.Error,

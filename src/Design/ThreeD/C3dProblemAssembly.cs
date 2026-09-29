@@ -358,6 +358,7 @@ public static class C3dProblemAssembly
             Wires = e.Wires,
             Origins = e.Origins,
             MaterialSources = materialSources,
+            FilesRead = e.FilesRead,
         };
     }
 

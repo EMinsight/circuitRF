@@ -470,8 +470,6 @@ public partial class WorkspaceViewModel
         var (setup, fromCem, refusal) = c3d.RunSetupFor(setupName);
         if (setup is null) { Messages.Warning(refusal ?? "Nothing to simulate."); return; }
         var document = c3d.RunDocument();
-        // brief-em3d-83 R-em3d83-2 — what the stale banner compares with: the document without its field plots.
-        string text = C3dPersistence.SerializeForRun(document);
         string path = c3d.TopFilePath;
         string? cws = CurrentWorkspacePath;
         // The panel whose Simulate/Cancel reflect the run: the setup editor when it shows this setup, else a transient one.
@@ -480,7 +478,7 @@ public partial class WorkspaceViewModel
             ? shown : new CircuitRF.Ui.Layout.Em.EmSetupEditorViewModel(path, setup.Clone(), embedded: true);
         bool ok = await RunEmSetupAsync(panel, setup, (s, control, root) => EmRunService.RunThreeDView(
             s, document, path, cws, root, default, control, CircuitRF.Ui.Layout.Em.EmSolveCorePreference.Preferred, ConfirmEmMemory, fromCem));
-        if (ok) c3d.RunFinished(setup, text);
+        if (ok) c3d.RunFinished();
     }
 
     /// <summary>

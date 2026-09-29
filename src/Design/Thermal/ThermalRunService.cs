@@ -96,6 +96,8 @@ public static partial class ThermalRunService
                                      .Where(d => d.Severity == DiagnosticSeverity.Error).Select(d => d.Render()).ToList();
             if (findings.Count > 0) return Refuse(string.Join(" ", findings));
             if (e.Technology is null) return Refuse("This 3D view's technology did not resolve, so no material states a thermal conductivity.");
+            // brief-em3d-87 R-em3d87-2 — what this result is solved from, hashed now; kept beside it when the run succeeds.
+            var inputs = C3dRunInputs.Take(document, path, e.FilesRead);
 
             // ── 2. Gmsh ──
             var gmsh = SolverDiscovery.Gmsh.Check(SolverDiscovery.CapabilitiesFor(SolverTool.Gmsh));
@@ -115,6 +117,7 @@ public static partial class ThermalRunService
                 control?.BeginStage("running the circuit's harmonic balance");
                 circuit = ThermalCircuitLink.Run(link, document, path, resultsRoot, circuitSets, control, out string? circuitWhy);
                 if (circuit is null) return Refuse(circuitWhy!);
+                inputs = inputs.With(C3dRunInputs.Take(document, path, circuit.FilesRead));
                 if (!circuit.Converged.Any(c => c)) return Refuse($"The circuit's HB '{circuit.Analysis}' converged at no point, so no point has currents to solve.");
                 notes.AddRange(circuit.Notes);
                 notes.Add(CircuitNote(circuit));
@@ -375,12 +378,7 @@ public static partial class ThermalRunService
             var data = Build(axes, probes, reads, measures, balances, t, summary, runaway);
             foreach (var (g, n, c) in small?.Cubes ?? []) data.AddToGroup(g, n, c);
             if (et is not null) AddElectro(data, axes, et, lowering, runaway);
-            if (circuit is not null)
-            {
-                AddCircuit(data, axes, circuit, skipped, crossings!);
-                try { ThermalCircuitLink.WriteStamp(runDir, circuit); }
-                catch (Exception x) when (x is IOException or UnauthorizedAccessException) { errors.Add($"The circuit's stamp could not be written: {x.Message}"); }
-            }
+            if (circuit is not null) AddCircuit(data, axes, circuit, skipped, crossings!);
             if (cutChecks.Count == points.Count && cutChecks.Count > 0)
             {
                 data.AddToGroup(Group, "Submodel:cut_W", Cube(axes, cutChecks.Select(c => c.SubmodelW), "W"));
@@ -400,6 +398,9 @@ public static partial class ThermalRunService
                 return Stop(EmRunStatus.EngineError, EmDiagnostics.SolveFailed($"the temperature fields could not be written: {x.Message}"));
             }
             string? npy = WriteNpy(resultsRoot, setup, data, errors);
+            try { inputs.KeepIn(runDir); }
+            catch (Exception x) when (x is IOException or UnauthorizedAccessException)
+            { warnings.Add($"The run's inputs could not be kept, so its result cannot be called stale: {x.Message}"); }
             var outputs = new List<EmRunOutput>();
             if (npy is not null) outputs.Add(new EmRunOutput("npy", npy));
             outputs.Add(new EmRunOutput("fields", pvd));
@@ -1035,7 +1036,7 @@ public static partial class ThermalRunService
                                  List<(string Var, double[] Values, string Unit)> Axes);
 
     /// <summary>
-    /// R-em3d76-3a/-3c — the From setup's current result, solving it first when it has none as new as the document (and saying
+    /// R-em3d76-3a/-3c — the From setup's current result, solving it first when it has none solved from the inputs as they are now (and saying
     /// which was used). Null with <paramref name="error"/> the reason, or with <paramref name="error"/> null when cancelled.
     /// </summary>
     private static Global? LoadGlobal(CemThermalSubmodel sm, C3dDocument document, string path, string? workspaceCws, string resultsRoot,
@@ -1049,18 +1050,26 @@ public static partial class ThermalRunService
         var runnable = C3dSetups.ForRun(from, path);
         string dir = RunDirectory(resultsRoot, runnable);
         string bin = Path.Combine(dir, TemperaturesFile);
-        var docTime = File.Exists(path) ? File.GetLastWriteTimeUtc(path) : DateTime.MaxValue;
-        var stored = File.Exists(bin) && File.GetLastWriteTimeUtc(bin) >= docTime ? ReadTemperatures(bin) : null;
+        // brief-em3d-87 R-em3d87-4 — reused only when its manifest matches the inputs now: the document AND every file it was
+        // solved from. A result with no manifest (made before brief 87) is never reused; its time proved nothing about a layout.
+        bool had = File.Exists(bin);
+        var check = had && File.Exists(C3dRunDocument.InputsPathIn(dir)) ? C3dRunDocument.Check(dir, document, path) : null;
+        var stored = check is { Stale: false } ? ReadTemperatures(bin) : null;
         if (stored is not null)
             notes.Add($"Submodel: setup '{sm.From}''s result ({File.GetLastWriteTime(bin).ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)}) " +
-                      "is newer than the document, so it was reused.");
+                      "was solved from the model as it is now, so it was reused.");
         else
         {
             control?.BeginStage($"solving '{sm.From}' first");
             var r = Run(runnable, document, path, workspaceCws, resultsRoot, ct, control);
             if (r.Status == EmRunStatus.Cancelled) return null;
             if (r.Status != EmRunStatus.Ok) { error = $"The submodel's From setup '{sm.From}' did not run: {r.Error}"; return null; }
-            notes.Add($"Submodel: setup '{sm.From}' had no result as new as the document, so it was solved first.");
+            notes.Add($"Submodel: setup '{sm.From}' was solved first: " + (check switch
+            {
+                { What: { } what } => $"{what} {check.Has} changed since its result.",
+                _ when had => "its result records no inputs, so nothing says it is the model as it is now.",
+                _ => "it had no result.",
+            }));
             stored = ReadTemperatures(bin);
             if (stored is null) { error = $"Setup '{sm.From}' ran but left no {TemperaturesFile} in {dir}."; return null; }
         }

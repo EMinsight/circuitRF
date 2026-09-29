@@ -147,8 +147,8 @@ public sealed class SimulateEditorGateTests : IDisposable
         string results = Path.Combine(_root, "results");
         vm.ResultsRootProvider = () => results;
         var run = vm.ActiveRunSetup!;
-        Directory.CreateDirectory(Em3dRunService.RunDirectory(results, run, Em3dSolver.Palace));
-        vm.RunFinished(run, C3dPersistence.Serialize(vm.Document));
+        C3dRunInputs.Take(vm.Document, vm.TopFilePath, []).KeepIn(Em3dRunService.RunDirectory(results, run, Em3dSolver.Palace));
+        vm.RunFinished();
         Assert.Null(vm.FieldsStaleText);
 
         vm.ChangeObjects("Rename", [1], o => o.Name = "line");

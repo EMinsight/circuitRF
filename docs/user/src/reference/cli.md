@@ -1380,7 +1380,8 @@ the model's outlines and its legend beside it.
   missing — no run yet, a frequency the run did not save, a quantity it no longer offers — is a
   **refusal** with the sentence the Object Tree shows. It is never drawn at the nearest frequency, and
   an outline is never passed off as the field.
-- **A stale run still draws**, as in the window, with a `note:` saying the model has changed since.
+- **A stale run still draws**, as in the window, with a `note:` naming what has changed since — the model, or a file
+  the run was solved from (`'Board.clay' has changed since the run at …`).
 - **`--phase <degrees>`** picks the instant drawn for a quantity read instantaneously (`Re{E}`); it is a
   refusal on any other. The phase is never written to the file.
 - **A hidden plot draws the same.** Hiding only chooses which plot the window draws; `--field` names one.

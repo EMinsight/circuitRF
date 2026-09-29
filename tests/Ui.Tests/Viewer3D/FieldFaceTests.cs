@@ -283,8 +283,10 @@ public sealed class FieldFaceTests(ITestOutputHelper output) : IDisposable
         var v = vm.Viewer;
         Assert.Contains("no EM fields", vm.PlotFieldRefusal());
         var run = vm.ActiveRunSetup!;
-        CopyDirectory(Cavity, Em3dRunService.RunDirectory(Path.Combine(_root, "results"), run, Em3dSolver.Palace));
-        vm.RunFinished(run, C3dPersistence.Serialize(vm.Document));
+        string dir = Em3dRunService.RunDirectory(Path.Combine(_root, "results"), run, Em3dSolver.Palace);
+        CopyDirectory(Cavity, dir);
+        C3dRunInputs.Take(vm.Document, vm.TopFilePath, []).KeepIn(dir);   // what the run service keeps (brief-em3d-87)
+        vm.RunFinished();
         Until(() => v.FieldsAvailable && v.FieldSolutions.Count > 0, "the run's fields were never read");
         Assert.Null(vm.PlotFieldRefusal());
 

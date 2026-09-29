@@ -248,12 +248,49 @@ public sealed class ThermalInterfacesBlocksTests(ITestOutputHelper output) : IDi
         output.WriteLine($"centre: series {centre:F5}; whole {wholeTc:F5} ({100 * (wholeTc - centre) / rise:+0.000;-0.000} %); " +
                          $"submodel {subTc:F5} ({100 * (subTc - centre) / rise:+0.000;-0.000} %); tight {tightTc:F5}");
         Assert.True(Math.Abs(subTc - centre) <= 1e-3 * rise, $"submodel centre {subTc}");
-        Assert.Contains(fine.Notes!, n => n.Contains("had no result as new as the document, so it was solved first"));
-        Assert.Contains(small.Notes!, n => n.Contains("is newer than the document, so it was reused"));
+        Assert.Contains(fine.Notes!, n => n.Contains("was solved first: it had no result"));
+        Assert.Contains(small.Notes!, n => n.Contains("was solved from the model as it is now, so it was reused"));
         double fineMismatch = fine.Data!["thermal.Submodel:mismatch"].RealValues[0], tightMismatch = small.Data!["thermal.Submodel:mismatch"].RealValues[0];
         output.WriteLine($"pointwise mismatch: fine {100 * fineMismatch:F2} %, tight {100 * tightMismatch:F2} %");
         Assert.DoesNotContain(fine.Warnings, w => w.Contains("Enlarge the region"));
         Assert.Contains(small.Warnings, w => w.Contains("Enlarge the region"));
+    }
+
+    /// <summary>
+    /// brief-em3d-87 R-em3d87-4 — a submodel reuses its From setup's stored solution only while that solution's inputs are
+    /// the model's: after an edit to a file the whole model was solved from (here Cu's k in the technology), the From setup is
+    /// solved first, a note names the file, and the submodel's answer moves with it.
+    /// </summary>
+    [GmshFact]
+    public void R87_ASubmodel_SolvesItsFromSetupAgain_WhenAFileTheWholeModelReadHasChanged()
+    {
+        string ws = Workspace();
+        var whole = Thermal("Whole", new CemThermal { Boundaries = [Fixed("layer2/zmin")], Measures = ["Tc = T(c)"], Mesh = new CemThermalMesh { SizeFromSources = 1 } });
+        var sub = Thermal("Sub", new CemThermal
+        {
+            Submodel = new CemThermalSubmodel { From = "Whole", Region = "fine" }, Measures = ["Tc = T(c)"],
+            Mesh = new CemThermalMesh { SizeFromSources = 1 },
+        });
+        string path = WriteC3d(ws, new C3dDocument
+        {
+            Objects = [Box("layer1", "Si", 1000, 1000, -100, 1000, 1000, 100), Box("layer2", "Cu", 1000, 1000, -1100, 1000, 1000, 1000)],
+            HeatSources = [Sheet("src", 0, 1000, 1000, 100, 50, "0.25")],
+            Probes = [new C3dProbe { Name = "c", Point = new(1000 * Um, 1000 * Um, 0) }],
+            MeshRegions = [new C3dMeshRegion { Name = "fine", Min = new(1000 * Um, 1000 * Um, -400 * Um), Size = new(500 * Um, 500 * Um, 400 * Um), SizeUm = 100 }],
+            Setups = [EmSetupPersistence.ToEmbedded(whole), EmSetupPersistence.ToEmbedded(sub)],
+        });
+        var first = RunFile(ws, path, "Sub");
+        var again = RunFile(ws, path, "Sub");
+        string techPath = Path.Combine(ws, "tech.ctech");
+        var tech = TechPersistence.LoadFromFile(techPath);
+        tech.Materials!.Single(m => m.Name == "Cu").ThermalK = 100;
+        TechPersistence.SaveToFile(techPath, tech);
+        var edited = RunFile(ws, path, "Sub");
+
+        Assert.Contains(first.Notes!, n => n.Contains("was solved first: it had no result"));
+        Assert.Contains(again.Notes!, n => n.Contains("was solved from the model as it is now, so it was reused"));
+        Assert.Contains(edited.Notes!, n => n.Contains("'Whole' was solved first: 'tech.ctech' has changed since its result."));
+        Assert.True(edited.Data!["Tc"].RealValues[0] > again.Data!["Tc"].RealValues[0] + 1e-3, "a poorer spreader under the source runs hotter");
     }
 
     // ── gate 6: symmetry ─────────────────────────────────────────────────────────────────────────────────

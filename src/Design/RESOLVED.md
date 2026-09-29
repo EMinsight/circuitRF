@@ -15414,3 +15414,36 @@ the owner approved, as PNGs: DocGen links to them and never draws them, and `NoD
 folder. That exemption is the owner's decision: the same slices as vector are 2.2 MB and 7.7 MB, one path per triangle, and
 colour-step merging barely helps on a smooth field. They were drawn by `Em3dSectionRenderer` through a scratch build that let
 `render --field` take a temperature plot with a min–max range; the folder's README says how.
+
+## brief-em3d-87 — a 3D result is stale when any file it was solved from has changed (2026-09-29)
+
+**What a run keeps.** Beside `document.c3d`, `inputs.json` (`{ version, files: [{ path, sha256 }] }`, paths relative to the
+`.c3d`'s workspace root when inside it). Both are written by `C3dRunInputs.KeepIn`, called from `EmRunService.RunThreeDView`
+(Palace/openEMS) and `ThermalRunService.Run`, never from a view model — so `circuitrf em`, Simulate, and a `.cem`-names-a-`.c3d`
+Simulate (which kept NO document before) keep the same record. The hashes are taken when the problem is assembled, not when
+the solve ends, so an edit made during a long solve still makes that result stale. `C3dRunDocument.Check(runDir, doc, docPath)`
+is the one staleness function: the editor's banner and per-plot text, `render --field`'s note, `explain x.c3d`'s new
+`inputs` / `result of setup` steps and the submodel reuse all read it, and it names the files (`'Board.clay' has changed`).
+
+- **`C3dElaboration.FilesRead` is recorded where a file is RESOLVED, not where it is read.** The elaborator's child caches,
+  `TechnologyCache` and `CellLayoutResolver`'s cache all skip the read on a hit, so a read-site recorder would have missed
+  every file on the second elaboration. A placed layout's sub-cells come from `LayoutFlatten.FilesRead` (the flatten's own
+  resolver walk) and are kept on the cached `ChildLayout`.
+- **Each file is hashed as what it contributes**: a `.c3d` through `SerializeForRun` (a nested view's plot edit is display), a
+  `.csch` through `SchematicCircuit.OwnCnlTextOf` — its extraction's test bench WITHOUT the library cells its sub-cells
+  contribute — so a moved label changes nothing and a sub-cell edit names the sub-cell, not every parent above it. Anything
+  else by its bytes. Re-hashed only when time or size moved.
+- **The brief's premise about sub-cells was only half right.** `CnlWriter.Write(tb, library)` writes the sub-cells' definitions,
+  so the old top-level "as extracted" hash DID change on a sub-cell edit; what it could not do was say which file, and it
+  missed the `.ccell` and every S-parameter file other than the linked one. `SchematicCircuit.CnlTextAndFilesOf` records the
+  descent by watching `DiskCellResolver` rather than replacing it (its text is `CnlTextOf`'s, pinned by a test), and
+  `ThermalCircuitLink.Read` now extracts once instead of twice. `circuit.json` and `ThermalCircuitLink.Staleness` are retired.
+- **Submodel reuse** needs the From result's manifest to match. A result made before this brief has none and is re-solved
+  (its file time said nothing about a layout), and the note says which of: no result, no record, or what changed.
+- **Planar `.cem` runs checked, not assumed:** `EmSnpProvenance` hashes the EXTRACTED problem (geometry, mesh, ports), so a
+  sub-cell or stackup change that alters the extraction is caught there. The brief's scope note holds.
+- **Not tracked:** a `.cws` `DefaultAssemblyRef` re-pointed to a different `.wasm` (only the one read is hashed); the `.wasm` a
+  placed layout's `.wBond` reads; SPICE/OSDI model files a circuit's devices load (only `SnpModel` files are listed).
+- **Pre-existing, not fixed:** the elaborator's `ChildLayoutCached` key stamps only the placed `.clay`, so in an open 3D editor
+  an edit to one of its SUB-cells does not re-elaborate the instance until the placed `.clay` itself changes. A run is not
+  affected (it elaborates fresh), and the banner now calls such a result stale.

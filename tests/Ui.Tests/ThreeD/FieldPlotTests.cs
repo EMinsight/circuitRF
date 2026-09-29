@@ -291,7 +291,8 @@ public sealed class FieldPlotTests(ITestOutputHelper output) : IDisposable
         var run = vm.ActiveRunSetup!;
         string dir = Em3dRunService.RunDirectory(Path.Combine(_root, "results"), run, Em3dSolver.Palace);
         if (!Directory.Exists(dir)) CopyDirectory(Cavity, dir);
-        vm.RunFinished(run, C3dPersistence.SerializeForRun(vm.Document));
+        C3dRunInputs.Take(vm.Document, vm.TopFilePath, []).KeepIn(dir);   // what the run service keeps (brief-em3d-87)
+        vm.RunFinished();
         Until(() => vm.Viewer.FieldsAvailable && vm.Viewer.FieldSolutions.Count > 0, "the run's fields were never read");
     }
 
@@ -318,7 +319,8 @@ public sealed class FieldPlotTests(ITestOutputHelper output) : IDisposable
                                                    $"file=\"Cycle00000{i + 1}/data.pvtu\" name=\"mesh\"/>\n")) +
                 "</Collection>\n</VTKFile>\n");
         }
-        vm.RunFinished(run, C3dPersistence.SerializeForRun(vm.Document));
+        C3dRunInputs.Take(vm.Document, vm.TopFilePath, []).KeepIn(dir);
+        vm.RunFinished();
         Until(() => vm.Viewer.FieldSolutions.Count == ghz.Length, "the driven run was never read");
         return dir;
     }
