@@ -390,10 +390,10 @@ public sealed partial class C3dEditorViewModel
         // The document before the edit (the edit may already be applied: a gesture) and after it, with the names written.
         var beforeDoc = C3dPersistence.Deserialize(C3dPersistence.Serialize(Document));
         if (edit.AlreadyApplied) C3dEdit.Apply(beforeDoc, edit.Slots, forward: false);
-        if (edit.AlreadyApplied && edit.FaceBoundaries is { } fb0) beforeDoc.FaceBoundaries = C3dPersistence.DeserializeFaceBoundaries(fb0.Before);
+        if (edit.AlreadyApplied && edit.FaceBoundaries is { } fb0) C3dPersistence.ApplyFaceReferences(beforeDoc, fb0.Before);
         var afterDoc = C3dPersistence.Deserialize(C3dPersistence.Serialize(beforeDoc));
         C3dEdit.Apply(afterDoc, slots, forward: true);
-        if (edit.FaceBoundaries is { } fb) afterDoc.FaceBoundaries = C3dPersistence.DeserializeFaceBoundaries(fb.After);
+        if (edit.FaceBoundaries is { } fb) C3dPersistence.ApplyFaceReferences(afterDoc, fb.After);
         string? ccellPath = cell.CcellPath;
         string? ccellBefore = ccellPath is not null && File.Exists(ccellPath) ? File.ReadAllText(ccellPath) : null;
         var ccell = ccellBefore is not null ? CellPersistence.Deserialize(ccellBefore) : null;
@@ -415,7 +415,7 @@ public sealed partial class C3dEditorViewModel
         if (edit.AlreadyApplied)
         {
             C3dEdit.Apply(Document, edit.Slots, forward: false);
-            if (edit.FaceBoundaries is { } fb) Document.FaceBoundaries = C3dPersistence.DeserializeFaceBoundaries(fb.Before);
+            if (edit.FaceBoundaries is { } fb) C3dPersistence.ApplyFaceReferences(Document, fb.Before);
             DocumentChanged();
         }
         OfferReplace(why, fields);

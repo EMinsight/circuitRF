@@ -39,6 +39,9 @@ public partial class C3dEditorView : UserControl
         AddHandler(KeyDownEvent, OnViewKeyTunnel, RoutingStrategies.Tunnel, handledEventsToo: true);
         AddHandler(GotFocusEvent, OnViewGotFocus, RoutingStrategies.Bubble, handledEventsToo: true);
         Pane.FramePresented += () => Overlay.InvalidateVisual();
+        // brief-em3d-86 R-em3d86-3 — a slider drag previews; its release (a track click is one too) keeps the step: one entry.
+        SweepCard.AddHandler(PointerReleasedEvent, (_, _) => _vm?.CommitSweepStep(), RoutingStrategies.Bubble, handledEventsToo: true);
+        SweepCard.AddHandler(PointerCaptureLostEvent, (_, _) => _vm?.CommitSweepStep(), RoutingStrategies.Bubble, handledEventsToo: true);
         ObjectTree.TemplateApplied += OnObjectTreeTemplateApplied;
         ObjectTree.AddHandler(PointerPressedEvent, OnTreePointerPressedTunnel, RoutingStrategies.Tunnel);
         // 3D editor groups — Ctrl/Cmd+G and Ctrl/Cmd+Shift+G on the tree's rows, as on the view (only the pane sees its keys).

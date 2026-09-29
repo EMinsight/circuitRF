@@ -184,18 +184,11 @@ public static partial class ThermalRunService
         var probes = (zSetup.Probes ?? []).Select(name => doc.Probes.First(p => p.Name == name)).ToList();
         int nf = freqs.Count, ns = zSources.Count, np = probes.Count;
         var probeZ = new Complex[np, ns, nf];
-        var bufRe = new double[input.Mesh.NodeCount];
-        var bufIm = new double[input.Mesh.NodeCount];
-        var fieldRe = new ThermalField(input.Mesh, bufRe);
-        var fieldIm = new ThermalField(input.Mesh, bufIm);
+        var read = ProbePhasors(probes, input);
         var zth = zSystem.Zth(rhoC, freqs, input.Options with { InitialGuess = null }, np == 0 ? null : (fi, j, field) =>
         {
-            for (int i = 0; i < field.Length; i++) { bufRe[i] = field[i].Real; bufIm[i] = field[i].Imaginary; }
-            var re = ReadProbes(probes, input.Lowering, fieldRe, doc.DbuPerMicron);
-            var im = ReadProbes(probes, input.Lowering, fieldIm, doc.DbuPerMicron);
-            for (int k = 0; k < np; k++)
-                probeZ[k, j, fi] = new Complex(re.TryGetValue(probes[k].Name, out var a) ? a.Avg : double.NaN,
-                                               im.TryGetValue(probes[k].Name, out var b) ? b.Avg : double.NaN);
+            var v = read(field);
+            for (int k = 0; k < np; k++) probeZ[k, j, fi] = v[k];
         });
 
         // the places Z_th is read at: each source's own (self and mutual), then each probe
@@ -204,7 +197,6 @@ public static partial class ThermalRunService
             place < ns ? zth.Z[fi][place, source] : probeZ[place - ns, source, fi])];
         var freqAxis = new Axis("freq", [.. freqs], "Hz");
         var fits = new FosterNetwork?[places.Count, ns];
-        var mutualMisses = new List<string>();
         for (int o = 0; o < places.Count; o++)
             for (int j = 0; j < ns; j++)
             {
@@ -228,27 +220,13 @@ public static partial class ThermalRunService
                 if (self && fit.FitError > FosterWarnAbove)
                     output.Warnings.Add($"The Foster fit of '{zSources[j].Name}''s own Z_th misses it by {100 * fit.FitError:F2} % somewhere in the band " +
                                         $"(above {100 * FosterWarnAbove:G2} %): raise Zth.PerDecade (now {perDecade}) so the band is sampled more finely.");
-                // A mutual or probe fit is not a network, but a pulse's temperatures are built from it exactly as from a self fit, so
-                // it is checked too — against its own largest |Z| (its DC value), not pointwise: a transfer impedance falls far below
-                // its DC value at high frequency, where a relative miss is large and costs the pulse nothing.
-                if (!self && t.Pulse is not null)
-                {
-                    double big = z.Max(v => v.Magnitude), miss = 0;
-                    for (int fi = 0; fi < nf; fi++) miss = Math.Max(miss, (fit.Z(freqs[fi]) - z[fi]).Magnitude);
-                    if (big > 0 && miss / big > FosterWarnAbove)
-                        mutualMisses.Add($"'{places[o]}' per watt in '{zSources[j].Name}' by {100 * miss / big:F1} % of its DC value");
-                }
             }
-        if (mutualMisses.Count > 0)
-            output.Warnings.Add("Pulse: the Foster fits of " + string.Join("; ", mutualMisses) + $" (above {100 * FosterWarnAbove:G2} %), and the pulse " +
-                                "temperatures there are built from them. A transfer Z_th with a delay is not a sum of positive RC stages; the " +
-                                "Z_th cubes themselves are exact.");
         output.Notes.Add($"Z_th: {nf} frequencies (DC and {G(start)} Hz – {G(stop)} Hz, {perDecade} per decade), {ns} source(s), {np} probe(s); " +
                          $"{(zth.Solver == ThermalSolverKind.Direct ? "complex LU" : $"{(zSystem.Tangent ? "BiCGStab" : "COCG")} + AMG, at most {zth.MaxIterations} iterations")}, " +
                          $"largest relative residual {zth.MaxResidual:G3}." + (zth.FallbackNote is { } zfb ? " " + zfb : ""));
         output.Notes.Add("Foster fits (R ≥ 0, ΣR = Rth): " + string.Join("; ", Enumerable.Range(0, ns).Where(j => fits[j, j] is not null)
             .Select(j => $"'{zSources[j].Name}' {fits[j, j]!.Terms.Count} stage(s), error {100 * fits[j, j]!.FitError:F3} %")) +
-            (places.Count > 1 || ns > 1 ? ". Mutual terms are fitted too and carried as data; they have no simple network form." : "."));
+            (places.Count > 1 || ns > 1 ? ". Mutual terms are fitted too and carried as data; they have no simple network form, and a pulse does not read them." : "."));
 
         // ── R-em3d80-5: each source's self network, as a .cnl ──
         string key0 = ResultKey(input.Setup);
@@ -269,8 +247,39 @@ public static partial class ThermalRunService
         }
 
         // ── R-em3d80-4: the pulse train, per sweep point ──
-        if (t.Pulse is { } ps) Pulse(ps, input, zSources, probes, places, fits, zSystem, zero, nonlinear, output, ct);
+        if (t.Pulse is { } ps)
+        {
+            var sweep = Enumerable.Range(0, nf).Select(fi =>
+            {
+                var m = new Complex[places.Count, ns];
+                for (int o = 0; o < places.Count; o++) for (int j = 0; j < ns; j++) m[o, j] = o < ns ? zth.Z[fi][o, j] : probeZ[o - ns, j, fi];
+                return m;
+            }).ToList();
+            control?.BeginStage("the pulse's harmonics");
+            Pulse(ps, input, zSources, probes, places, fits, zSystem, rhoC, freqs, sweep, stop, zero, nonlinear, output, ct);
+        }
         return output;
+    }
+
+    /// <summary>Each probe's mean phasor over a solved field (every node): what Z_th reads at a probe. Safe to call from several
+    /// threads at once — Z_th solves frequencies concurrently — since each thread reads through fields of its own.</summary>
+    private static Func<Complex[], Complex[]> ProbePhasors(List<C3dProbe> probes, SmallSignalInput input)
+    {
+        var mine = new ThreadLocal<(double[] Re, double[] Im, ThermalField FRe, ThermalField FIm)>(() =>
+        {
+            var re = new double[input.Mesh.NodeCount];
+            var im = new double[input.Mesh.NodeCount];
+            return (re, im, new ThermalField(input.Mesh, re), new ThermalField(input.Mesh, im));
+        });
+        return field =>
+        {
+            var (bre, bim, fre, fim) = mine.Value;
+            for (int i = 0; i < field.Length; i++) { bre[i] = field[i].Real; bim[i] = field[i].Imaginary; }
+            var re = ReadProbes(probes, input.Lowering, fre, input.Document.DbuPerMicron);
+            var im = ReadProbes(probes, input.Lowering, fim, input.Document.DbuPerMicron);
+            return [.. probes.Select(p => new Complex(re.TryGetValue(p.Name, out var a) ? a.Avg : double.NaN,
+                                                      im.TryGetValue(p.Name, out var b) ? b.Avg : double.NaN))];
+        };
     }
 
     /// <summary>The Rth matrix's cube name.</summary>
@@ -335,72 +344,145 @@ public static partial class ThermalRunService
         return new PulseValues(period, duty, powers);
     }
 
+    /// <summary>R-em3d86-1 — the most harmonics of 1/Period one pulse solves for (each is one complex solve per source), however
+    /// wide the Z_th band.</summary>
+    public const int PulseHarmonicCap = 1000;
+
     private static void Pulse(CemThermalPulse ps, SmallSignalInput input, List<SmallSignalSource> sources, List<C3dProbe> probes,
-                              List<string> places, FosterNetwork?[,] fits, ThermalSmallSignal system, ThermalField zero, bool nonlinear,
-                              SmallSignalOutput output, CancellationToken ct)
+                              List<string> places, FosterNetwork?[,] fits, ThermalSmallSignal system, double[] rhoC, List<double> sweepHz,
+                              List<Complex[,]> sweep, double stopHz, ThermalField zero, bool nonlinear, SmallSignalOutput output, CancellationToken ct)
     {
-        int points = input.Problems.Count, ns = sources.Count;
-        var peak = new double[places.Count][];
-        var single = new double[places.Count][];
-        var average = new double[places.Count][];
-        var wave = new double[places.Count][];
-        for (int o = 0; o < places.Count; o++)
+        int points = input.Problems.Count, ns = sources.Count, no = places.Count;
+        var peak = new double[no][];
+        var single = new double[no][];
+        var average = new double[no][];
+        var wave = new double[no][];
+        for (int o = 0; o < no; o++)
         {
             peak[o] = new double[points]; single[o] = new double[points]; average[o] = new double[points];
             wave[o] = new double[points * PulseSamples];
             Array.Fill(peak[o], double.NaN); Array.Fill(single[o], double.NaN); Array.Fill(average[o], double.NaN); Array.Fill(wave[o], double.NaN);
         }
+        // the tail above the last harmonic: a source's own fit, and nothing for a transfer term (another source's heat, a probe)
+        var tails = new FosterNetwork?[no, ns];
+        for (int j = 0; j < ns; j++) tails[j, j] = fits[j, j];
+        // a place whose Z_th is not finite somewhere (a probe that reads nothing) has no pulse
+        var finite = new bool[no];
+        for (int o = 0; o < no; o++)
+            finite[o] = sweep.All(z => Enumerable.Range(0, ns).All(j => double.IsFinite(z[o, j].Real) && double.IsFinite(z[o, j].Imaginary)));
+
+        // every point's pulse, then one harmonic solve per distinct period
+        var values = new PulseValues?[points];
+        for (int pi = 0; pi < points; pi++)
+        {
+            if (input.Skipped[pi] || input.Problems[pi] is null) continue;
+            values[pi] = PulseAt(ps, input.T, input.Document, input.Lowering, zero, input.Resolutions[pi], sources, out string? why);
+            if (values[pi] is null) { output.Refusal = $"Pulse at point {pi + 1}: {why}"; return; }
+        }
+        var responses = new Dictionary<double, PulseResponse>();
+        var read = ProbePhasors(probes, input);
+        foreach (var group in values.Where(v => v is not null).GroupBy(v => v!.Period))
+        {
+            ct.ThrowIfCancellationRequested();
+            double period = group.Key;
+            var r = new PulseResponse(period, sweepHz, sweep, tails);
+            responses[period] = r;
+            var loads = group.Select(v => new PulseLoad(v!.Duty, v.PowersW)).ToList();
+            int inBand = (int)Math.Floor(stopHz * period * (1 + 1e-12));
+            int count = Math.Min(inBand, PulseHarmonicCap);
+            string at = $"period {G(period)} s";
+            if (count < 1)
+            {
+                output.Notes.Add($"Pulse ({at}): 1/Period is above the Z_th band's top ({G(stopHz)} Hz), so no harmonic was solved; each source's " +
+                                 "own place is its Foster fit's response and a transfer term is taken as zero.");
+                continue;
+            }
+            // the harmonics are solved several at once (ThermalSmallSignal.Zth): each frequency's probe values in its own row
+            var probeRows = new System.Collections.Concurrent.ConcurrentDictionary<int, Complex[,]>();
+            var sweepRun = system.Zth(rhoC, [.. Enumerable.Range(1, count).Select(m => m / period)], input.Options with { InitialGuess = null },
+                probes.Count == 0 ? null : (fi, j, field) =>
+                {
+                    var v = read(field);
+                    var row = probeRows.GetOrAdd(fi, _ => new Complex[probes.Count, ns]);
+                    for (int k = 0; k < probes.Count; k++) row[k, j] = v[k];
+                },
+                (fi, zf) =>
+                {
+                    var m = new Complex[no, ns];
+                    for (int o = 0; o < no; o++) for (int j = 0; j < ns; j++) m[o, j] = o < ns ? zf[o, j] : probeRows[fi][o - ns, j];
+                    r.Harmonics.Add(m);
+                    return PulseHarmonics.Converged(r, loads);
+                });
+            var open = PulseHarmonics.Unconverged(r, loads);
+            output.Notes.Add($"Pulse ({at}): the exact Z_th at harmonics 1 – {r.HarmonicCount} of 1/Period " +
+                             (open.Count == 0 ? $"(each place's last {PulseHarmonics.ConsecutiveSmall} below {PulseHarmonics.Tolerance:G2} of its average rise)"
+                                              : $"(all the band holds up to {G(Math.Min(stopHz, count / period))} Hz)") +
+                             $"{(sweepRun.Solver == ThermalSolverKind.Direct ? "" : $", solved several at once, at most {sweepRun.MaxIterations} iterations")}" +
+                             $"{(sweepRun.FallbackNote is { } fb ? "; " + fb : "")}. Above the last one, a source's own place is carried by its Foster fit " +
+                             "and a transfer term (another source's heat, a probe) is taken as zero. The single pulse is the train's first pulse " +
+                             "from rest, up to the second, from the inverse transform of the same solved samples.");
+            if (open.Count > 0)
+                output.Warnings.Add($"Pulse ({at}): the harmonic sum at {string.Join(", ", open.Select(o => $"'{places[o]}'"))} had not converged by " +
+                                    $"harmonic {r.HarmonicCount} " +
+                                    (count < inBand ? $"(the cap of {PulseHarmonicCap} harmonics)" : $"(the Z_th band's top, {G(stopHz)} Hz)") +
+                                    ", so its peak lacks what the higher harmonics carry" +
+                                    (count < inBand ? "." : ": raise Zth.StopHz. A probe on a heat source converges slowly, since only a source's " +
+                                                            "own place has a fit to carry what lies above the band."));
+        }
+
         var summary = new List<string>();
+        int first = Array.IndexOf(input.Skipped, false);
         for (int pi = 0; pi < points; pi++)
         {
             ct.ThrowIfCancellationRequested();
-            if (input.Skipped[pi] || input.Problems[pi] is not { } problem) continue;
-            var res = input.Resolutions[pi];
-            var values = PulseAt(ps, input.T, input.Document, input.Lowering, zero, res, sources, out string? why);
-            if (values is null) { output.Refusal = $"Pulse at point {pi + 1}: {why}"; return; }
-            double tOn = values.Duty * values.Period;
+            if (values[pi] is not { } v || input.Problems[pi] is not { } problem) continue;
+            var r = responses[v.Period];
+            var load = new PulseLoad(v.Duty, v.PowersW);
             // the baseline: the point's boundaries with no power — or, with k(T) on (and no conductive balance), the point's own
-            // AVERAGE-power steady field, which the rise is then measured from. The fit is the tangent there (R-em3d80-4c), and a
-            // tangent's Duty·ΣP·Rth added to the zero-power field is not the average-power temperature once k moves with T: the
+            // AVERAGE-power steady field, which the rise is then measured from. Z_th is the tangent there (R-em3d80-4c), and a
+            // tangent's Duty·ΣP·Z(0) added to the zero-power field is not the average-power temperature once k moves with T: the
             // average read one answer and the steady solve at the same power another. Anchored here, the average IS that solve
-            // and the tangent carries only the ripple about it.
+            // and the harmonic sum carries only the ripple about it.
             bool anchored = nonlinear && !input.Electro;
-            var baseProblem = anchored ? WithPowers(problem, input.Lowering, zero, sources, [.. values.PowersW.Select(pw => values.Duty * pw)])
+            var baseProblem = anchored ? WithPowers(problem, input.Lowering, zero, sources, [.. v.PowersW.Select(pw => v.Duty * pw)])
                                        : WithPowers(problem, input.Lowering, zero, [], []);
             var baseField = new ThermalField(input.Mesh, ThermalSolver.Solve(baseProblem,
                 input.Options with { InitialGuess = anchored && input.Fields[pi].All(double.IsFinite) ? input.Fields[pi] : null }, input.Assembly).Temperature);
             var baseProbes = ReadProbes(probes, input.Lowering, baseField, input.Document.DbuPerMicron);
-            double[] times = [.. Enumerable.Range(0, PulseSamples).Select(k => values.Period * k / (PulseSamples - 1))];
-            for (int o = 0; o < places.Count; o++)
+            double[] times = [.. Enumerable.Range(0, PulseSamples).Select(k => v.Period * k / (PulseSamples - 1))];
+            for (int o = 0; o < no; o++)
             {
+                if (!finite[o] || r.Harmonics.Any(z => Enumerable.Range(0, ns).Any(j => !double.IsFinite(z[o, j].Real) || !double.IsFinite(z[o, j].Imaginary))))
+                    continue;
                 double baseline = o < ns ? Mean(system.Load(o), baseField.Temperature)
                                          : baseProbes.TryGetValue(places[o], out var b) ? b.Avg : double.NaN;
-                var drives = new List<PulseDrive>();
-                for (int j = 0; j < ns; j++) if (fits[o, j] is { } f) drives.Add(new PulseDrive(values.PowersW[j], f));
-                if (drives.Count < ns) continue;
-                if (anchored) baseline -= PulseTrain.Average(drives, values.Period, tOn);
-                peak[o][pi] = baseline + PulseTrain.Peak(drives, values.Period, tOn);
-                single[o][pi] = baseline + PulseTrain.Single(drives, tOn);
-                average[o][pi] = baseline + PulseTrain.Average(drives, values.Period, tOn);
-                var w = PulseTrain.Waveform(drives, values.Period, tOn, times);
+                double avg = PulseHarmonics.Average(r, o, load);
+                if (anchored) baseline -= avg;
+                var (pk, pkAt) = PulseHarmonics.Peak(r, o, load);
+                var (sg, sgAt) = PulseHarmonics.Single(r, o, load);
+                peak[o][pi] = baseline + pk;
+                single[o][pi] = baseline + sg;
+                average[o][pi] = baseline + avg;
+                var w = PulseHarmonics.Waveform(r, o, load, times);
                 for (int k = 0; k < PulseSamples; k++) wave[o][pi * PulseSamples + k] = baseline + w[k];
-                if (pi == Array.IndexOf(input.Skipped, false))
-                    summary.Add($"'{places[o]}' peak {peak[o][pi]:F3} °C, single pulse {single[o][pi]:F3} °C, average {average[o][pi]:F3} °C " +
+                if (pi == first)
+                    summary.Add($"'{places[o]}' peak {peak[o][pi]:F3} °C at {G(pkAt)} s, single pulse {single[o][pi]:F3} °C at {G(sgAt)} s, " +
+                                $"average {average[o][pi]:F3} °C " +
                                 (anchored ? "(about the average-power steady field)" : $"(baseline {baseline:F3} °C)"));
             }
-            if (pi == Array.IndexOf(input.Skipped, false))
-                output.Notes.Add($"Pulse: period {G(values.Period)} s, duty {G(values.Duty)}, {G(values.PowersW.Sum())} W during the pulse: " +
+            if (pi == first)
+                output.Notes.Add($"Pulse: period {G(v.Period)} s, duty {G(v.Duty)}, {G(v.PowersW.Sum())} W during the pulse: " +
                                  string.Join("; ", summary) + (points > 1 ? " — at the first point; every point is in the result." : "."));
         }
-        Axis[] sweep = [.. input.Axes.Select(a => new Axis(a.Var, a.Values, a.Unit))];
-        DataCube Scalars(double[] v) => sweep.Length == 0 ? new DataCube([], v) { Unit = "°C" } : new DataCube(sweep, v) { Unit = "°C" };
+        Axis[] sweepAxes = [.. input.Axes.Select(a => new Axis(a.Var, a.Values, a.Unit))];
+        DataCube Scalars(double[] x) => sweepAxes.Length == 0 ? new DataCube([], x) { Unit = "°C" } : new DataCube(sweepAxes, x) { Unit = "°C" };
         var phase = new Axis("phase", [.. Enumerable.Range(0, PulseSamples).Select(k => (double)k / (PulseSamples - 1))], "");
-        for (int o = 0; o < places.Count; o++)
+        for (int o = 0; o < no; o++)
         {
             output.Cubes.Add((Group, $"Pulse:{places[o]}:peak", Scalars(peak[o])));
             output.Cubes.Add((Group, $"Pulse:{places[o]}:single", Scalars(single[o])));
             output.Cubes.Add((Group, $"Pulse:{places[o]}:avg", Scalars(average[o])));
-            output.Cubes.Add((SmallSignalGroup, $"Pulse:{places[o]}(t)", new DataCube([.. sweep, phase], wave[o]) { Unit = "°C" }));
+            output.Cubes.Add((SmallSignalGroup, $"Pulse:{places[o]}(t)", new DataCube([.. sweepAxes, phase], wave[o]) { Unit = "°C" }));
         }
     }
 

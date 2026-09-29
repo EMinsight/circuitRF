@@ -82,14 +82,11 @@ fingers' mid-length: 58,032 tetrahedra.
 finger (the run's notes say so). With all eight on, the edge finger rises **15.84 K** and the fourth **19.13 K**: the middle
 of the array runs hotter because it has neighbours on both sides.
 
-**A radar pulse**, 1 ms period at 10 % duty through the fitted Z_th (each finger's fit is a Foster network, written as a `.cnl`
-you can simulate): the fourth finger peaks at **90.39 °C**, a single pulse reaches **90.21 °C**, and the average is **85.75 °C**.
-Change the pulse on the setup's page; `PeakPower`, `Period` and `Duty` are expressions.
-
-The run **warns** that the fits between f1 and f4 miss by nearly their whole DC value. Heat takes time to cross the 120 µm
-between them, and a delay cannot be written as a sum of RC stages, so the fit of one finger's heat at the other is poor. The
-Z_th cubes are exact. Each pulse figure above includes the other finger's heat through that fit, which is about 0.1 K of the
-fourth finger's 5.4 K rise: read the last digit with that in mind.
+**A radar pulse**, 1 ms period at 10 % duty: the fourth finger peaks at **90.71 °C**, a single pulse reaches **90.62 °C**, and
+the average is **85.75 °C**. The pulse comes from Z_th solved at the harmonics of 1 kHz (49 of them here), so the heat that crosses
+the 120 µm from the edge finger is counted exactly. It arrives late, and a Foster fit of it could not show that: the peak was
+0.3 K lower when it was built from that fit. Each finger's own Z_th is still fitted as a Foster network, written as a `.cnl`
+you can simulate. Change the pulse on the setup's page; `PeakPower`, `Period` and `Duty` are expressions.
 
 The fingers here run at 1.25 W/mm (0.25 W over 200 µm), a quarter of *One Finger*'s density, which is why the array is cooler.
 Set `P_finger` to 1 for the same 5 W/mm.

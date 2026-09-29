@@ -805,7 +805,10 @@ items are greyed, with the reason, when there is no thermal result or the model 
 range is the **true** minimum and maximum of what is painted — the peak is the answer, so it is never clipped — and the
 legend reads °C; the plot's *Fix range across the sweep* (or *Fix Range Across Sweep* in the menu) makes it the minimum
 and maximum over every sweep point, so stepping the sweep never rescales the colours. The plot's *Solution* is the sweep
-point shown. Hover a painted face for the temperature there (interpolated, not the nearest
+point shown. When the run has more than one point, a **sweep slider** at the view's top left moves the drawn plot to
+another point: one control per swept variable, labelled with its value and unit (`Pdiss = 7 W`). Dragging it shows the
+points as it passes them, and letting go keeps the point shown as the plot's *Solution*, one undo step. ◀ and ▶ move one point
+each. The probe table, the line plots and the hot spot follow it. Hover a painted face for the temperature there (interpolated, not the nearest
 node); a ring marks the **hot spot** with its temperature and its object. A bond wire whose run tabulated its temperature
 is coloured along its length, and hovering it names the wire and the distance along it.
 
@@ -837,10 +840,16 @@ notes say so.
   it is not attached to any device. The file carries a one-port bench, so `circuitrf sparam` on it reads the network's
   Z_th back.
 - **Pulse train**: a period (`1 ms`, `100 us`), a duty, and optionally the total power during the pulse (shared by the
-  sources in proportion to their own; empty, each at its own power). There is no transient solver: the periodic peak, the
-  rise at the end of one pulse and the average come in closed form from the Foster networks, each added to the place's
-  temperature with no power, for every Z_th place at every sweep point — the duty and period are expressions, so they
-  sweep. They are rows of the Probes table; the waveform over one period is in the result.
+  sources in proportion to their own; empty, each at its own power). There is no transient solver. The periodic peak and
+  the average come from Z_th solved **exactly at the harmonics of 1/period**, as many as it takes until each further one
+  adds less than 10⁻⁴ of the average rise, up to the band's top. Above the last harmonic, a source's own place is carried by its
+  Foster network. Heat from another source, or at a probe, gets nothing there: it has to travel, so it is small at high
+  frequency. The Foster fit of such a **transfer** Z_th is not used: heat that has to travel arrives late, its Z_th goes
+  negative at high frequency, and no sum of RC stages can do that. The **single pulse** is the train's first pulse from
+  rest, highest before the second begins, from the same solved values. Each is added to the place's temperature with no
+  power, for every Z_th place at every sweep point. The duty and period are expressions, so they sweep. They are rows of the
+  Probes table, and the waveform over one period is in the result. A probe on a heat source converges slowly this way,
+  since it has no fit of its own; the run warns when a place had not converged by the band's top.
 
 ## Headless {#headless}
 

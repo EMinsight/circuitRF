@@ -312,10 +312,8 @@ public static class ThermalLowerings
             if (Face(b.Face, true) is { } why) { refusal = why; return null; }
         }
         foreach (var p in doc.Probes)
-        {
-            string? spelled = p.Face ?? p.Spot?.Face;
-            if (spelled is not null && Face(spelled, false) is { } why) { refusal = why; return null; }
-        }
+            foreach (string spelled in p.Face ?? (p.Spot is { } spot ? [spot.Face] : []))
+                if (Face(spelled, false) is { } why) { refusal = why; return null; }
         // brief-em3d-77 R-em3d77-1 — each current's contact faces
         var rfPorts = new List<ThermalRfPort>();
         var ports = ThermalCurrents.Contacts(doc, e, t, solids, faces, rfPorts, out string? portWhy);

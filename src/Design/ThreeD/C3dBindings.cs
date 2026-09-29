@@ -138,6 +138,8 @@ public static class C3dBindings
         new(typeof(C3dEffectiveBlock), nameof(C3dEffectiveBlock.Min), 3, C3dFieldKind.Length),
         new(typeof(C3dEffectiveBlock), nameof(C3dEffectiveBlock.Size), 3, C3dFieldKind.Length),
         new(typeof(C3dSymmetryPlane), nameof(C3dSymmetryPlane.At), 1, C3dFieldKind.Length),
+        // brief-em3d-86 R-em3d86-2 — the drawn wires' ground plane
+        new(typeof(C3dWireGroundPlane), nameof(C3dWireGroundPlane.Z), 1, C3dFieldKind.Length),
     ];
 
     public static C3dFieldSpec? SpecOf(Type owner, string property)
@@ -243,6 +245,9 @@ public static class C3dBindings
             case C3dSymmetryPlane plane:
                 yield return ("", plane);
                 break;
+            case C3dWireGroundPlane ground:
+                yield return ("", ground);
+                break;
         }
 
         static IEnumerable<(string, IC3dBindable)> Placement(C3dPlacement p)
@@ -275,6 +280,7 @@ public static class C3dBindings
         foreach (var m in doc.MeshRegions) yield return (m.Name, m);
         foreach (var b in doc.EffectiveBlocks) yield return (b.Name, b);
         foreach (var s in doc.SymmetryPlanes) yield return ($"symmetry {s.Axis}", s);
+        if (doc.WireGroundPlane is { } g) yield return ("wire ground plane", g);
     }
 
     /// <summary>Every bound component in the document.</summary>

@@ -7,7 +7,9 @@
 //              parts separately. K alone (the brief's first thought) is the right preconditioner at low ω and a poor one at
 //              high ω, where ωC dominates and K⁻¹(K + jωC) = I + jωK⁻¹C has eigenvalues growing with ω without bound;
 //              with K + ωC every preconditioned eigenvalue (k + jωc)/(k + ωc) lies between 1/√2 and 1 in modulus, at
-//              every frequency. The hierarchy is rebuilt per frequency for that reason.
+//              every frequency. The hierarchy is rebuilt per frequency for that reason — except (brief-em3d-86) when the
+//              frequency is within ReuseRatio of the one the previous hierarchy was built at: a pulse's harmonics are 1/Period
+//              apart, and K + ω′C for ω′ within 1.3× of ω bounds the preconditioned eigenvalues nearly as well.
 //
 // A solve that does not converge falls back to the complex LU, and says so.
 
@@ -28,9 +30,17 @@ public sealed class ComplexSolve
     private readonly ThermalSolveOptions _options;
     private readonly Complex[] _z;
     private readonly SmoothedAggregationAmg? _amg;
+    private readonly double _amgOmega;
     private CxLu? _lu;
 
-    private ComplexSolve(SparseRows k, SparseRows c, double omega, bool symmetric, ThermalSolverKind kind, ThermalSolveOptions options)
+    /// <summary>brief-em3d-86 — a hierarchy built at ω′ serves a solve at ω when max(ω/ω′, ω′/ω) is at most this.</summary>
+    public const double ReuseRatio = 1.3;
+
+    /// <summary>Whether this solve built its own hierarchy (false: it reused another's, or is direct).</summary>
+    public bool BuiltPreconditioner { get; }
+
+    private ComplexSolve(SparseRows k, SparseRows c, double omega, bool symmetric, ThermalSolverKind kind, ThermalSolveOptions options,
+                         ComplexSolve? previous)
     {
         if (k.Nnz != c.Nnz || k.Rows != c.Rows) throw new ArgumentException("K and C must share one pattern", nameof(c));
         _k = k; _c = c; _omega = omega; _symmetric = symmetric; _options = options;
@@ -39,8 +49,16 @@ public sealed class ComplexSolve
         for (int i = 0; i < _z.Length; i++) _z[i] = new Complex(k.Val[i], omega * c.Val[i]);
         if (k.Rows == 0) return;
         if (kind == ThermalSolverKind.Direct) Factor();
+        else if (previous is { _amg: { } amg, _amgOmega: > 0 and var at } && omega > 0 && Math.Max(omega / at, at / omega) <= ReuseRatio
+                 && ReferenceEquals(previous._k, k))
+        {
+            _amg = amg;
+            _amgOmega = at;
+        }
         else
         {
+            BuiltPreconditioner = true;
+            _amgOmega = omega;
             var ks = symmetric ? k : k.SymmetricPart();
             var p = new double[k.Nnz];
             for (int i = 0; i < p.Length; i++) p[i] = ks.Val[i] + omega * c.Val[i];
@@ -57,13 +75,13 @@ public sealed class ComplexSolve
 
     /// <summary>Prepares K + jωC. <paramref name="symmetric"/> says K is symmetric (constant k; not a Newton tangent).</summary>
     public static ComplexSolve Create(SparseRows k, SparseRows c, double omega, bool symmetric, ThermalSolverKind kind,
-                                      ThermalSolveOptions options)
+                                      ThermalSolveOptions options, ComplexSolve? previous = null)
     {
         ArgumentNullException.ThrowIfNull(k);
         ArgumentNullException.ThrowIfNull(c);
         ArgumentNullException.ThrowIfNull(options);
         if (kind == ThermalSolverKind.Auto) kind = k.Rows < options.DirectBelow ? ThermalSolverKind.Direct : ThermalSolverKind.Iterative;
-        return new ComplexSolve(k, c, omega, symmetric, kind, options);
+        return new ComplexSolve(k, c, omega, symmetric, kind, options, previous);
     }
 
     /// <summary>Solves (K + jωC)·x = b; <paramref name="x"/> is an iterative solve's initial guess. Returns the relative

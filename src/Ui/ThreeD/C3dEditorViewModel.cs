@@ -142,6 +142,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         Viewer.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(Viewer3DViewModel.SelectMode)) RaiseMenuStateChanged(); };
         // brief-em3d-75 — the probe table and the menus follow the thermal result and the sweep step.
         Viewer.ThermalResultsChanged += () => { if (ProbeTableOpen) RefreshProbeTable(); RaiseMenuStateChanged(); };
+        WatchSweep();
         Viewer.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(Viewer3DViewModel.TemperatureStep) && ProbeTableOpen) RefreshProbeTable();

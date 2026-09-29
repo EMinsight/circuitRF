@@ -232,7 +232,7 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
                 break;
             case C3dProbe p:
                 Rows.Add(new C3dPropertyRow("Reads", string.Join(", ", p.Kinds())));
-                if (p.Face is not null) Text("Face", "Face", p.Face, "object/face");
+                if (p.Face is not null) Text("Face", "Face", string.Join(", ", p.Face), "object/face, or several separated by commas (read as one)");
                 if (p.Solid is not null) Text("Solid", "Solid", p.Solid);
                 if (p.Wire is not null) Text("Wire", "Wire", p.Wire, "a wire, or one element: w1[3]");
                 if (p.Spot is not null) Text("On face", "SpotFace", p.Spot.Face, "object/face the spot lies on");

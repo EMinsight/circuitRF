@@ -59,6 +59,8 @@ public sealed class ZthSweep
     /// <summary>The largest relative residual any solve returned.</summary>
     public required double MaxResidual { get; init; }
     public string? FallbackNote { get; init; }
+    /// <summary>brief-em3d-86 — how many AMG hierarchies the sweep built (a close frequency reuses the last one's).</summary>
+    public int PreconditionerBuilds { get; init; }
 }
 
 public sealed class ThermalSmallSignal
@@ -159,57 +161,108 @@ public sealed class ThermalSmallSignal
         };
     }
 
+    /// <summary>brief-em3d-86 — the most frequencies solved at once. Each holds its own preconditioner and vectors.</summary>
+    public const int MaxParallelFrequencies = 6;
+
     /// <summary>
     /// R-em3d80-2 — Z_th at each of <paramref name="frequenciesHz"/> (0 allowed: the Rth case), with <paramref name="rhoC"/>
     /// the volumetric heat capacity of each region, J/(m³·K). <paramref name="each"/>, when given, receives every solved field
-    /// (frequency index, source index, the rise phasor at every node per watt).
+    /// (frequency index, source index, the rise phasor at every node per watt) — CONCURRENTLY for different frequencies, from
+    /// several threads. <paramref name="stopAfter"/>, when given, is asked in frequency order, after each frequency (its index
+    /// and its Z), whether to stop there: the sweep then ends early and holds what was asked about.
+    /// <para>brief-em3d-86 — the frequencies are independent solves, and each is single-threaded, so up to
+    /// <see cref="MaxParallelFrequencies"/> run at once: a plain sweep as contiguous CHUNKS (each warm-starting from its
+    /// previous frequency and reusing a close one's preconditioner, as the serial sweep did), a stopping one in BATCHES of that
+    /// many, asked about in order.</para>
     /// </summary>
     public ZthSweep Zth(IReadOnlyList<double> rhoC, IReadOnlyList<double> frequenciesHz, ThermalSolveOptions options,
-                        Action<int, int, Complex[]>? each = null)
+                        Action<int, int, Complex[]>? each = null, Func<int, Complex[,], bool>? stopAfter = null)
     {
         ArgumentNullException.ThrowIfNull(rhoC);
         ArgumentNullException.ThrowIfNull(frequenciesHz);
         ArgumentNullException.ThrowIfNull(options);
         if (rhoC.Count < _problem.Conductivity.Count) throw new ArgumentException("a region has no heat capacity", nameof(rhoC));
         var c = ThermalSolver.Reduce(_assembly.Matrix(_assembly.Mass(rhoC)), _free, _nFree);
-        int n = Sources.Count;
-        var z = new List<Complex[,]>();
-        var b = new Complex[_nFree];
-        var previous = new Complex[n][];
-        var t = new Complex[_free.Length];
+        int n = Sources.Count, count = frequenciesHz.Count;
+        var results = new Complex[count][,];
+        var gate = new object();
         var kind = options.Solver;
-        int maxIt = 0;
+        int maxIt = 0, builds = 0;
         double maxRes = 0;
         string? fallback = null;
-        for (int fi = 0; fi < frequenciesHz.Count; fi++)
+        int degree = Math.Clamp(options.MaxDegreeOfParallelism ?? Environment.ProcessorCount, 1, MaxParallelFrequencies);
+        var po = new ParallelOptions { MaxDegreeOfParallelism = degree, CancellationToken = options.Cancellation };
+
+        // frequencies [from, to), in order, on this thread: warm starts and a close frequency's preconditioner carried along
+        void Chunk(int from, int to)
         {
-            options.Cancellation.ThrowIfCancellationRequested();
-            double omega = 2 * Math.PI * frequenciesHz[fi];
-            var solve = ComplexSolve.Create(_k, c, omega, !Tangent, kind, options);
-            var zf = new Complex[n, n];
-            for (int j = 0; j < n; j++)
+            var b = new Complex[_nFree];
+            var previous = new Complex[n][];
+            var t = new Complex[_free.Length];
+            var myKind = kind;
+            ComplexSolve? last = null;
+            for (int fi = from; fi < to; fi++)
             {
-                for (int i = 0; i < _free.Length; i++) if (_free[i] >= 0) b[_free[i]] = _loads[j][i];
-                // the previous frequency's answer starts an iterative solve; the direct one ignores it
-                var x = previous[j] is { } p ? (Complex[])p.Clone() : new Complex[_nFree];
-                maxRes = Math.Max(maxRes, solve.Solve(b, x));
-                maxIt = Math.Max(maxIt, solve.LastIterations);
-                previous[j] = x;
-                for (int i = 0; i < _free.Length; i++) t[i] = _free[i] >= 0 ? x[_free[i]] : Complex.Zero;
-                for (int i = 0; i < n; i++)
+                options.Cancellation.ThrowIfCancellationRequested();
+                double omega = 2 * Math.PI * frequenciesHz[fi];
+                var solve = ComplexSolve.Create(_k, c, omega, !Tangent, myKind, options, last);
+                last = solve;
+                var zf = new Complex[n, n];
+                int it = 0;
+                double res = 0;
+                for (int j = 0; j < n; j++)
                 {
-                    Complex s = 0;
-                    var li = _loads[i];
-                    for (int v = 0; v < li.Length; v++) if (li[v] != 0) s += li[v] * t[v];
-                    zf[i, j] = s;
+                    for (int i = 0; i < _free.Length; i++) if (_free[i] >= 0) b[_free[i]] = _loads[j][i];
+                    // the previous frequency's answer starts an iterative solve; the direct one ignores it
+                    var x = previous[j] is { } p ? (Complex[])p.Clone() : new Complex[_nFree];
+                    res = Math.Max(res, solve.Solve(b, x));
+                    it = Math.Max(it, solve.LastIterations);
+                    previous[j] = x;
+                    for (int i = 0; i < _free.Length; i++) t[i] = _free[i] >= 0 ? x[_free[i]] : Complex.Zero;
+                    for (int i = 0; i < n; i++)
+                    {
+                        Complex s = 0;
+                        var li = _loads[i];
+                        for (int v = 0; v < li.Length; v++) if (li[v] != 0) s += li[v] * t[v];
+                        zf[i, j] = s;
+                    }
+                    each?.Invoke(fi, j, t);
                 }
-                each?.Invoke(fi, j, t);
+                myKind = solve.Kind;                             // once fallen back, stay direct
+                results[fi] = zf;
+                lock (gate)
+                {
+                    maxRes = Math.Max(maxRes, res);
+                    maxIt = Math.Max(maxIt, it);
+                    if (solve.BuiltPreconditioner) builds++;
+                    fallback ??= solve.FallbackNote;
+                    if (solve.Kind == ThermalSolverKind.Direct) kind = ThermalSolverKind.Direct;
+                }
             }
-            fallback ??= solve.FallbackNote;
-            kind = solve.Kind;                                   // once fallen back, stay direct
-            z.Add(zf);
         }
-        return new ZthSweep { FrequenciesHz = [.. frequenciesHz], Z = z, Solver = kind, MaxIterations = maxIt, MaxResidual = maxRes, FallbackNote = fallback };
+
+        var z = new List<Complex[,]>();
+        if (stopAfter is null)
+        {
+            int chunks = Math.Min(degree, count);
+            Parallel.For(0, chunks, po, k => Chunk(count * k / chunks, count * (k + 1) / chunks));
+            z.AddRange(results);
+        }
+        else
+            for (int start = 0; start < count; start += degree)
+            {
+                int end = Math.Min(count, start + degree);
+                Parallel.For(start, end, po, fi => Chunk(fi, fi + 1));
+                bool stop = false;
+                for (int fi = start; fi < end && !stop; fi++)
+                {
+                    z.Add(results[fi]);
+                    stop = stopAfter(fi, results[fi]);
+                }
+                if (stop) break;
+            }
+        return new ZthSweep { FrequenciesHz = [.. frequenciesHz.Take(z.Count)], Z = z, Solver = kind, MaxIterations = maxIt, MaxResidual = maxRes, FallbackNote = fallback,
+                              PreconditionerBuilds = builds };
     }
 
     private void Reduce(double[] full, double[] reduced)

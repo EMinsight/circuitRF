@@ -191,7 +191,8 @@ public static partial class ThermalRunService
                     return (pr, r, err);
                 }
                 var first = circuit is not null ? circuit.Point(Array.IndexOf(circuit.Converged, true)) : points[0];
-                et = Electro(lowering, e, t, mesh, ThermalAt, options, notes, first, out string? electroWhy, circuit is null ? null : circuit.Say);
+                et = Electro(lowering, e, t, mesh, ThermalAt, options, notes, first, out string? electroWhy, circuit is null ? null : circuit.Say,
+                             C3dThermal.WireGroundPlaneZ(document, e, out _));
                 if (et is null) return Refuse(electroWhy!);
                 if (et.System.Notes.Count > 0) notes.AddRange(et.System.Notes);
                 if (lowering.Wires.Count > 0)
@@ -633,7 +634,8 @@ public static partial class ThermalRunService
         {
             ProbeRead? r = null;
             if (p.Point is { } pt && field.At(pt.X * m, pt.Y * m, pt.Z * m) is { } v) r = new ProbeRead(v, v, v);
-            else if (p.Face is { } face && lowering.FaceTag(face, false) is { } ft) r = Stats(field.Surface(new HashSet<int> { ft }));
+            else if (p.Face is { Count: > 0 } faces && faces.Select(f => lowering.FaceTag(f, false)).ToList() is var tags && tags.All(t => t is not null))
+                r = Stats(field.Surface(tags.Select(t => t!.Value).ToHashSet()));
             else if (p.Solid is { } solid && lowering.RegionOf(solid) is var ri and >= 0) r = Stats(field.Region(ri));
             else if (p.Spot is { } spot && lowering.FaceTag(spot.Face, false) is { } st)
                 r = Stats(field.Spot(new HashSet<int> { st }, (spot.Center.X * m, spot.Center.Y * m, spot.Center.Z * m), spot.Diameter * m / 2));

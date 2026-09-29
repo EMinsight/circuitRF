@@ -212,3 +212,43 @@ fallback is unchanged.
 
 **A Foster fit refuses a non-finite value.** `Math.Max(x, NaN)` is NaN, so the all-zero branch returned an empty network with
 FitError 0: Rth = 0, reading as exact.
+
+## brief-em3d-86 R-em3d86-1 — the pulse from the exact Z_th at the harmonics of 1/Period (2026-09-29)
+
+Built: `src/Thermal/Frequency/PulseHarmonics.cs` (`PulseResponse`, `PulseHarmonics`, `SineIntegral`), and a `stopAfter`
+predicate on `ThermalSmallSignal.Zth` so a harmonic sweep ends the moment it has converged. Gates:
+`tests/Thermal.Tests/PulseHarmonicsTests.cs`.
+
+- **The self term keeps its Foster fit as the TAIL, not as the answer.** brief 72's Z2 found the plain harmonic sum converging
+  like N^(−½) on a distributed structure (0.06 % needs ~10⁶ harmonics). The fit carries the whole response in closed form,
+  and the harmonics carry only the residual Z − Z_fit, which is small across the band and falls quickly. On Z2c's slab that
+  reaches 1.0e-5 of the analytic peak in 43 harmonics; the fit alone was −0.49 %. Above the last harmonic the self term is
+  the fit's own, and a transfer term is zero.
+- **A transfer term must NOT take its fit as a tail.** In a prototype, a mutual fit used that way put its above-band
+  stages (flat to ten times the band's top) into the peak and was 104 % wrong, where the plain sum with nothing above the
+  band was 2e-6. The one-pass mutual fits are bad exactly where they matter, so the brief's "zero for a transfer term" is
+  load-bearing, not a simplification.
+- **Stop rule:** the ENVELOPE Σⱼ Pⱼ/(πm)·|residual| below 1e-4 of the place's DC term, three harmonics running. The envelope
+  ignores sin(πmD), so a harmonic that happens to fall on a zero of the pulse's spectrum cannot stop the sum.
+- **Transfer case (the 3-diffusion-length column):** the new peak matches 10⁴ solved harmonics to 1.5e-6 after 7 harmonics.
+  The old Foster path's ripple about the average was 96 % wrong. Measured on the RIPPLE: the column's DC rise is 400 K
+  against a 2.6 K ripple, so a comparison of totals called the Foster path 0.65 % off and hid the failure.
+- **The single pulse is an inverse transform, s(t) = (2/π)∫ Re Z sin(ωt)/ω dω**, with Re Z a natural cubic spline in ln f
+  through every solved sample, sampled 40 per decade and integrated exactly as piecewise-linear in ω with Si. Linear
+  interpolation between the 5-per-decade sweep samples was 3.6 % wrong on the transfer case; the spline in ln f is
+  4e-4 of the peak. Slab: 4.4e-6.
+- **A harmonic that is also a sweep frequency apart only by rounding** (1 kHz against 10^(12/4) = 1000.0000000000001 Hz)
+  gave the spline an interval of zero width, and every single-pulse value was NaN. Samples within 1e-9 relative are one.
+- **A probe ON a heat source converges slowly** (it has no fit to carry its high frequencies), and the run warns naming it
+  when the band's top is reached first. The brief's own rule (zero above the band for anything not a source's own place)
+  puts it there; using a probe's fit as a tail when that fit passes its check would fix it, and is the owner's call.
+- **Z_th frequencies are now solved several at once** (`ThermalSmallSignal.Zth`, up to `MaxParallelFrequencies` = 6). Each
+  solve was single-threaded (99 % of one core on a 10-core machine), and the frequencies are independent. A plain sweep runs
+  as contiguous chunks that keep their warm starts; a stopping sweep (the pulse's harmonics) runs in batches, asked about in
+  order. *Eight Fingers* went from 29 min 21 s to **9 min 17 s** (Debug, M4), with the same numbers to the last printed digit
+  on the order-1 check. `each` is now called from several threads, and the run service's probe reads are thread-local.
+- **Reusing a close frequency's AMG hierarchy** (`ComplexSolve.ReuseRatio` 1.3) cut the builds from 52 to 12, but the run
+  only from 89 s to 83 s: at these sizes the iterations cost, not the builds. It stays for a chunk's neighbours.
+- **A run measured before a fix is not evidence.** The first full *Eight Fingers* run predated the near-duplicate-sample fix
+  and reported a single pulse ABOVE the periodic peak (90.81 against 90.71 °C). That is impossible, since the periodic state is
+  the single pulse plus what earlier pulses left. The rerun gives 90.62 against 90.71.

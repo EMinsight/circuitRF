@@ -37893,3 +37893,20 @@ while the result is stale (its distance axis is the segment as drawn now). A new
 namesake's hidden tick. A painted face can be taken off while the result is stale. Fixed Temperature and Convection refuse an
 empty value. A thermal place rename follows check's uniqueness (ignoring case, including ports), and renames a probe inside
 measures by token, only as a probe function's argument (it was a regex over the whole line).
+
+## brief-em3d-86 R-em3d86-3 — the sweep slider, and fold follow in the editor (2026-09-29)
+
+- **The slider is on the viewport, top left**, not inside the legend's rectangle. The legend is drawn in
+  `Viewer3DOverlay`'s DrawingContext, which cannot host a control, and its height varies with its lines. One control per
+  axis of the run's table when its points are the steps (the index is the run's, last axis fastest); otherwise one control
+  over the steps labelled as the viewer labels them.
+- **One gesture, one undo entry:** moving a control PREVIEWS (`Viewer.TemperatureStep`, nothing written), and the card's
+  PointerReleased / PointerCaptureLost (handled events too, so the thumb's own release counts) calls `CommitSweepStep`. That
+  is the Inspector picker's edit (`SetFieldPlot` → `Solution`), and writes nothing when the plot is already there. The slider
+  is `Focusable="False"`: an arrow key would have moved it with no release to commit on. ◀ and ▶ commit per press.
+- With no plot drawn (a setup's own 3D view), the step is shown but there is no document to keep it in; `CommitSweepStep`
+  says so.
+- **Face edits' undo payload is the composite** `C3dPersistence.SerializeFaceReferences` text. The expression-edit path that
+  re-derives a face edit (`C3dEditorViewModel.Expressions`) applies it with `ApplyFaceReferences` in all three places it
+  used to write `FaceBoundaries` alone.
+- Pixels were not seen: Avalonia cannot start from this machine's shell. The gate is the view model.

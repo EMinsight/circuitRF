@@ -675,6 +675,10 @@ public sealed class C3dDocument
     /// <summary>brief-em3d-76 R-em3d76-4a — the mirror planes the modelled part was cut on, at most one per axis.</summary>
     public List<C3dSymmetryPlane> SymmetryPlanes { get; set; } = [];
 
+    /// <summary>brief-em3d-86 R-em3d86-2 — the image plane drawn wires' RF share sees; null, free space.</summary>
+    [JsonConverter(typeof(C3dWireGroundPlaneJsonConverter))]
+    public C3dWireGroundPlane? WireGroundPlane { get; set; }
+
     /// <summary>brief-em3d-83 R-em3d83-1 — the field plots: what the 3D view draws of a run's fields. Display only — no lowering
     /// reads one, and <see cref="C3dPersistence.SerializeForRun"/> leaves them out of every "is this the model that was solved"
     /// comparison.</summary>

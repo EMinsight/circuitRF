@@ -134,7 +134,7 @@ public sealed class ThermalInterfacesBlocksTests(ITestOutputHelper output) : IDi
         doc.Objects = [BoxDbu("flange", "Copper", 500 * Um, 500 * Um, z1, 2000 * Um, 2000 * Um, 500 * Um),
                        BoxDbu("sink", "Copper", 0, 0, z0 - 300 * Um, 3000 * Um, 3000 * Um, 300 * Um)];
         doc.HeatSources = [Sheet("fet", 0, 1250, 1250, 500, 500, "2", offsetDbu: z1 + 500 * Um)];
-        doc.Probes = [new C3dProbe { Name = "flange_T", Face = "flange/zmin", Stat = C3dProbeStat.Avg }];
+        doc.Probes = [new C3dProbe { Name = "flange_T", Face = ["flange/zmin"], Stat = C3dProbeStat.Avg }];
         doc.EffectiveBlocks = [new C3dEffectiveBlock { Name = "vias", Min = new(500 * Um, 500 * Um, z0), Size = new(2000 * Um, 2000 * Um, z1 - z0) }];
         doc.Setups = [EmSetupPersistence.ToEmbedded(setup)];
 

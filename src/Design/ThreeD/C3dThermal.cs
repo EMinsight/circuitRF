@@ -126,6 +126,7 @@ public static class C3dThermal
         foreach (var g in doc.SymmetryPlanes.GroupBy(p => p.Axis).Where(g => g.Count() > 1))
             found.Add(D.Symmetry($"{g.Count()} symmetry planes are normal to {g.Key}; a model is cut at most once per axis"));
         foreach (var sp in doc.SymmetryPlanes) Unread(sp.Unread, $"The symmetry plane normal to {sp.Axis}", found);
+        if (doc.WireGroundPlane is { } wg) Unread(wg.Unread, "The wire ground plane", found);
 
         var pairs = new HashSet<(string, string)>();
         for (int i = 0; i < doc.ContactResistances.Count; i++)
@@ -199,7 +200,8 @@ public static class C3dThermal
 
         foreach (var p in doc.Probes)
         {
-            if (p.Face is { } face && (ReplacedFace(doc, face, replaced) ?? FaceProblem(doc, e, face)) is { } why) found.Add(D.ProbeFace(p.Name, face, why));
+            foreach (string face in p.Face ?? [])
+                if ((ReplacedFace(doc, face, replaced) ?? FaceProblem(doc, e, face)) is { } why) found.Add(D.ProbeFace(p.Name, face, why));
             if (p.Spot is { Face: var sf } && (ReplacedFace(doc, sf, replaced) ?? FaceProblem(doc, e, sf)) is { } why2) found.Add(D.ProbeFace(p.Name, sf, why2));
             // a Solid probe on a replaced solid is not a refusal: the run reads nothing there (a NaN), which is what an example
             // toggling its block on expects. A FACE on one is — the lowering refuses it, and so does the face check above.
@@ -224,6 +226,18 @@ public static class C3dThermal
                                          $"{Num(hi * 1e6)} µm along {sp.Axis}): the plane is the face the modelled half was cut on, so it is one end of the model"));
             }
 
+        // brief-em3d-86 R-em3d86-2 — the drawn wires' ground plane resolves, and lies below every drawn wire (its image would
+        // otherwise sit above the wire it mirrors)
+        if (doc.WireGroundPlane is not null)
+        {
+            if (WireGroundPlaneZ(doc, e, out string? why) is not { } gz) found.Add(D.WireGround(why!));
+            else
+                foreach (var (name, w) in e.DrawnWires.OrderBy(x => x.Key, StringComparer.Ordinal))
+                    if (w.Axis.Count > 0 && w.Axis.Min(p => p.Z) is var low && gz > low + tol)
+                        found.Add(D.WireGround($"The wire ground plane at Z = {Num(gz * 1e6)} µm lies above drawn wire '{name}', whose lowest point " +
+                                               $"is at {Num(low * 1e6)} µm: the image method mirrors each wire in a plane BELOW it"));
+        }
+
         foreach (var c in doc.ContactResistances)
         {
             if (c.Between.Count != 2) continue;
@@ -247,6 +261,37 @@ public static class C3dThermal
         var bounds = e.Solids.Where(s => !CircuitRF.Design.Thermal.ThermalMaterials.NotMeshed(s.Role, s.Material)).Select(s => Em3dProblem.Bounds(s.Primitive)).ToList();
         if (bounds.Count == 0) return null;
         return (bounds.Min(b => b.X0), bounds.Min(b => b.Y0), bounds.Min(b => b.Z0), bounds.Max(b => b.X1), bounds.Max(b => b.Y1), bounds.Max(b => b.Z1));
+    }
+
+    /// <summary>
+    /// brief-em3d-86 R-em3d86-2 — the height of the document's wire ground plane, metres in the view's frame: its Z, or the height
+    /// of its face. Null with no plane; null with <paramref name="refusal"/> when the face is not a horizontal face of a conductor.
+    /// </summary>
+    public static double? WireGroundPlaneZ(C3dDocument doc, C3dElaboration e, out string? refusal)
+    {
+        refusal = null;
+        if (doc.WireGroundPlane is not { } g) return null;
+        double m = 1e-6 / doc.DbuPerMicron;
+        if (g.Face is not { } face) return g.Z * m;
+        var pieces = Thermal.ThermalLowerings.FacePieces(doc, e, e.Solids, face, out int si, out string? why);
+        if (pieces is not { Count: > 0 })
+        {
+            refusal = $"The wire ground plane names the face '{face}': {why ?? "it has no area"}";
+            return null;
+        }
+        if (e.Solids[si].Role != Em3dRole.Conductor)
+        {
+            refusal = $"The wire ground plane names the face '{face}', which is on '{e.Solids[si].Name}', not a conductor: an image plane is metal";
+            return null;
+        }
+        var zs = pieces.SelectMany(pc => pc.Outer).Select(p => p.Z).ToList();
+        if (zs.Max() - zs.Min() > m)
+        {
+            refusal = $"The wire ground plane names the face '{face}', which is not horizontal (it spans {Num(zs.Min() * 1e6)} to " +
+                      $"{Num(zs.Max() * 1e6)} µm in Z): the image method reflects in a horizontal plane";
+            return null;
+        }
+        return zs.Average();
     }
 
     /// <summary>brief-em3d-76 R-em3d76-4a — the symmetry plane face <paramref name="spelled"/> lies in wholly, or null.</summary>
@@ -1082,6 +1127,7 @@ public static class C3dThermal
         public const string MeasureId        = "c3d.thermal.measure";
         public const string BlockShapeId     = "c3d.thermal.effective-block";
         public const string SymmetryId       = "c3d.thermal.symmetry";
+        public const string WireGroundId     = "c3d.thermal.wire-ground-plane";
         public const string SubmodelId       = "c3d.thermal.submodel";
         public const string CurrentId        = "c3d.thermal.current";
         public const string SmallSignalId    = "c3d.thermal.small-signal";
@@ -1159,6 +1205,8 @@ public static class C3dThermal
             => E(BlockShapeId, "Effective block '{name}' {what}.", ("name", name), ("what", what));
         public static Diagnostic Symmetry(string what)
             => E(SymmetryId, "{what}.", ("what", what));
+        public static Diagnostic WireGround(string what)
+            => E(WireGroundId, "{what}.", ("what", what));
         public static Diagnostic Submodel(string setup, string what)
             => E(SubmodelId, "Thermal setup '{setup}' is a submodel that {what}.", ("setup", setup), ("what", what));
         public static Diagnostic Current(string setup, string what)

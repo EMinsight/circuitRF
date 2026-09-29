@@ -360,7 +360,7 @@ public sealed partial class C3dEditorViewModel
                 {
                     case "Stat": p.Stat = stat; break;
                     case "LimitC": p.LimitC = number; break;
-                    case "Face": p.Face = text; break;
+                    case "Face": p.Face = [.. text.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)]; break;
                     case "Solid": p.Solid = text; break;
                     case "Wire": p.Wire = text; break;
                     case "SpotFace": p.Spot!.Face = text; break;
@@ -784,7 +784,7 @@ public sealed partial class C3dEditorViewModel
             ]);
             yield return new Viewer3DMenuItem("Add Probe", Children:
             [
-                new Viewer3DMenuItem("Face", () => AddThermalPlace(new C3dProbe { Name = NextName("probe"), Face = face, Stat = C3dProbeStat.Max }),
+                new Viewer3DMenuItem("Face", () => AddThermalPlace(new C3dProbe { Name = NextName("probe"), Face = [face], Stat = C3dProbeStat.Max }),
                     Tip: "The face's maximum, minimum and average temperature."),
             ]);
             // brief-em3d-76 R-em3d76-4a — the face the modelled half was cut on
@@ -885,7 +885,7 @@ public sealed partial class C3dEditorViewModel
                     at = M(line.From);
                     overlay.ProbeMarks.Add(M(line.To));
                 }
-                else if ((p.Solid ?? p.Wire ?? p.Face?[..Math.Max(0, p.Face.LastIndexOf('/'))]) is { } target && SceneObject(target) is { } so)
+                else if ((p.Solid ?? p.Wire ?? (p.Face is [var f0, ..] ? f0[..Math.Max(0, f0.LastIndexOf('/'))] : null)) is { } target && SceneObject(target) is { } so)
                 {
                     var c = Viewer.Scene.ToWorld(so.Centroid);
                     at = new Point3(c.X, c.Y, c.Z);

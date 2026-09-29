@@ -123,7 +123,7 @@ public sealed class ThermalDocumentTests : IDisposable
         var plain = Microstrip();
         var thermal = Microstrip();
         thermal.HeatSources.Add(new C3dHeatSource { Name = "hot", Power = "1", Sheet = new C3dHeatSheet { Plane = C3dPlane.XY, Offset = 50 * Um, Rect = Rect(400, 400, 100, 100) } });
-        thermal.Probes.Add(new C3dProbe { Name = "pr", Face = "sub/zmax", Stat = C3dProbeStat.Max });
+        thermal.Probes.Add(new C3dProbe { Name = "pr", Face = ["sub/zmax"], Stat = C3dProbeStat.Max });
         thermal.ContactResistances.Add(new C3dContactResistance { Between = ["sub", "trace"], ResistanceM2KW = 1e-6 });
 
         Assert.Equal(Lower(plain, WriteC3d(ws, "A", plain)), Lower(thermal, WriteC3d(ws, "B", thermal)));
@@ -215,7 +215,7 @@ public sealed class ThermalDocumentTests : IDisposable
                                                              doc.HeatSources[0].Sheet!.Rect = Rect(450, 150, 100, 100); break;  // z 150..250
             case (C3dThermal.D.ContactApartId, _):  doc.Objects.Add(Box("lid", "Copper", 3000, 3000, 0, 100, 100, 100));
                                                     doc.ContactResistances.Add(new C3dContactResistance { Between = ["die", "lid"], ResistanceM2KW = 1e-6 }); break;
-            case (C3dThermal.D.ProbeFaceId, _):     doc.Probes[0].Face = "die/top"; break;
+            case (C3dThermal.D.ProbeFaceId, _):     doc.Probes[0].Face = ["die/top"]; break;
             case (C3dThermal.D.ProbeWireId, _):     doc.Probes.Add(new C3dProbe { Name = "wp", Wire = "w9" }); break;
             case (C3dThermal.D.NoSinkId, _):        t.Boundaries = []; break;
             case (C3dThermal.D.BoundaryFaceId, ""): t.Boundaries![0].Face = "flange/bottom"; break;
@@ -466,8 +466,8 @@ public sealed class ThermalDocumentTests : IDisposable
             HeatSources = [new C3dHeatSource { Name = "fingers", Power = "Pdiss", Sheet = new C3dHeatSheet { Plane = C3dPlane.XY, Offset = 300 * Um, Rect = Rect(450, 450, 100, 100) } }],
             Probes =
             [
-                new C3dProbe { Name = "die_top", Face = "die/zmax", Stat = C3dProbeStat.Max },
-                new C3dProbe { Name = "flange_bot", Face = "flange/zmin", Stat = C3dProbeStat.Avg },
+                new C3dProbe { Name = "die_top", Face = ["die/zmax"], Stat = C3dProbeStat.Max },
+                new C3dProbe { Name = "flange_bot", Face = ["flange/zmin"], Stat = C3dProbeStat.Avg },
                 new C3dProbe { Name = "ir", Spot = new C3dProbeSpot { Face = "die/zmax", Center = new(500 * Um, 500 * Um, 300 * Um), Diameter = 50 * Um } },
                 new C3dProbe { Name = "pt", Point = new(500 * Um, 500 * Um, 250 * Um) },
             ],

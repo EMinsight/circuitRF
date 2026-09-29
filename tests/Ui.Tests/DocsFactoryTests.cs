@@ -157,12 +157,18 @@ public class DocsFactoryTests
         Assert.True(failures.Count == 0, string.Join("\n", failures));
     }
 
+    /// <summary>brief-em3d-86 — the one folder of FIXED pictures (assets/fixed/README.md): hand-placed, never generated, and
+    /// allowed to be raster because a smooth field drawn as vector paths is megabytes (a temperature slice's SVG was 7.7 MB
+    /// against 180 KB as PNG). Owner's decision, 2026-09-29. Every generated figure stays vector.</summary>
+    private static readonly string FixedPictures = Path.Combine("assets", "fixed") + Path.DirectorySeparatorChar;
+
     [Fact]
     public void NoDocumentationImageIsABitmap()
     {
         var bitmaps = Directory.EnumerateFiles(DocsRoot(), "*.*", SearchOption.AllDirectories)
             .Where(f => Path.GetExtension(f).ToLowerInvariant() is ".png" or ".jpg" or ".jpeg" or ".gif" or ".bmp")
             .Select(f => Path.GetRelativePath(DocsRoot(), f))
+            .Where(f => !f.StartsWith(FixedPictures, StringComparison.Ordinal))
             .ToList();
 
         Assert.True(bitmaps.Count == 0,

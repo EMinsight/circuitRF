@@ -25,8 +25,10 @@ public sealed class C3dEdit : IUiCommand
     private readonly Action<string>? _setBoundaries;
     private bool _alreadyApplied;
 
-    /// <summary>brief-em3d-47 R-em3d47-3c — the document's <c>FaceBoundaries</c> before and after, as a JSON array, when a
-    /// fold renamed a face something was attached to; null when the entry leaves them alone.</summary>
+    /// <summary>brief-em3d-47 R-em3d47-3c — the document's face references before and after, when a fold renamed a face
+    /// something was attached to; null when the entry leaves them alone. Since brief-em3d-86 the text is
+    /// <c>C3dPersistence.SerializeFaceReferences</c>': the EM <c>FaceBoundaries</c> and the thermal setups, probes and field
+    /// plots, which follow a fold in the same entry.</summary>
     public (string Before, string After)? FaceBoundaries { get; }
 
     public string Description { get; }

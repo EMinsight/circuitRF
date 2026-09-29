@@ -118,8 +118,10 @@ public sealed class C3dProbe : IC3dBindable
     [Description("[x, y, z]")]
     public C3dPoint3? Point { get; set; }
 
-    /// <summary>A face, <c>object/face</c> (§6.4's naming; a face an operation split is every piece).</summary>
-    public string? Face { get; set; }
+    /// <summary>A face, <c>object/face</c> (§6.4's naming; a face an operation split is every piece) — or several, read as one
+    /// place over their union (brief-em3d-86: a face a fold split in two). One face is written as a string, several as a list.</summary>
+    [JsonConverter(typeof(C3dFaceListJsonConverter))]
+    public List<string>? Face { get; set; }
 
     /// <summary>An object: over its volume.</summary>
     public string? Solid { get; set; }
@@ -236,4 +238,67 @@ public sealed class C3dSymmetryPlane : IC3dBindable
 
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? Unread { get; set; }
+}
+
+/// <summary>
+/// brief-em3d-86 R-em3d86-2 — the image plane the document's DRAWN wires see when an array's RF current is shared among them
+/// (wBond's image method, <c>ArrayShare</c>): horizontal in the view's frame, at <see cref="Z"/>, or at the height of a
+/// horizontal conductor face named by <see cref="Face"/>. Spelled <c>{ "Z": … }</c>, or the face's <c>object/face</c> alone. It
+/// is never inferred (em-3d.md §6.4): "the nearest conductor below the pads" would change a share silently when someone drew
+/// a lid. Omitted, drawn wires are shared in free space. A .wBond's wires keep their own design's plane.
+/// </summary>
+public sealed class C3dWireGroundPlane : IC3dBindable
+{
+    [JsonIgnore] public Dictionary<string, C3dExpr?[]>? Exprs { get; set; }
+
+    /// <summary>The plane's height, DBU (or an expression). Read when <see cref="Face"/> is null.</summary>
+    public long Z { get; set; }
+
+    /// <summary>A horizontal conductor face, <c>object/face</c>, whose height is the plane's. Written as the key's whole value.</summary>
+    [JsonIgnore] public string? Face { get; set; }
+
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? Unread { get; set; }
+}
+
+/// <summary><see cref="C3dWireGroundPlane"/> as a face's name (a JSON string) or as <c>{ "Z": … }</c>. Declared on the
+/// document's PROPERTY, so the object form reads and writes through the type's own contract (whose Z takes an expression).</summary>
+internal sealed class C3dWireGroundPlaneJsonConverter : JsonConverter<C3dWireGroundPlane>
+{
+    public override C3dWireGroundPlane? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        => reader.TokenType == JsonTokenType.String
+            ? new C3dWireGroundPlane { Face = reader.GetString() }
+            : JsonSerializer.Deserialize<C3dWireGroundPlane>(ref reader, options);
+
+    public override void Write(Utf8JsonWriter writer, C3dWireGroundPlane value, JsonSerializerOptions options)
+    {
+        if (value.Face is { } face) writer.WriteStringValue(face);
+        else JsonSerializer.Serialize(writer, value, options);
+    }
+}
+
+/// <summary>A list of faces spelled as one string when it holds one, and as a JSON list when it holds several: a file with a
+/// single face reads and writes exactly as it did before a list was possible.</summary>
+internal sealed class C3dFaceListJsonConverter : JsonConverter<List<string>>
+{
+    public override List<string>? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType == JsonTokenType.String) return [reader.GetString()!];
+        if (reader.TokenType != JsonTokenType.StartArray) throw new JsonException(C3dDiagnostics.FaceListShape(reader.TokenType.ToString()).Render());
+        var list = new List<string>();
+        while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
+        {
+            if (reader.TokenType != JsonTokenType.String) throw new JsonException(C3dDiagnostics.FaceListShape("a list holding " + reader.TokenType).Render());
+            list.Add(reader.GetString()!);
+        }
+        return list;
+    }
+
+    public override void Write(Utf8JsonWriter writer, List<string> value, JsonSerializerOptions options)
+    {
+        if (value.Count == 1) { writer.WriteStringValue(value[0]); return; }
+        writer.WriteStartArray();
+        foreach (string f in value) writer.WriteStringValue(f);
+        writer.WriteEndArray();
+    }
 }

@@ -204,7 +204,8 @@ public static partial class ThermalRunService
     private static ElectroRun? Electro(ThermalLowering lowering, C3dElaboration e, CemThermal t, ThermalMesh mesh,
                                        Func<IReadOnlyList<(string Var, double Value)>, (ThermalProblem? Problem, C3dResolution? Res, string? Error)> thermal,
                                        ThermalSolveOptions options, List<string> notes, IReadOnlyList<(string Var, double Value)> first,
-                                       out string? refusal, Func<IReadOnlyList<(string Var, double Value)>, string>? say = null)
+                                       out string? refusal, Func<IReadOnlyList<(string Var, double Value)>, string>? say = null,
+                                       double? wireGroundZ = null)
     {
         refusal = null;
         bool currents = lowering.PortContacts.Count > 0;
@@ -247,7 +248,7 @@ public static partial class ThermalRunService
         }
 
         // brief-em3d-78 R-em3d78-2/-3: which array carries each port's harmonics, and how its wires share them (once: geometry)
-        var rf = ThermalRfPlan.Build(e, lowering, t, out string? rfWhy, fromCircuit: say is not null);
+        var rf = ThermalRfPlan.Build(e, lowering, t, out string? rfWhy, fromCircuit: say is not null, wireGroundZ);
         if (rf is null) { refusal = rfWhy; return null; }
         List<string>? collect = null;
 

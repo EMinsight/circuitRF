@@ -62,7 +62,7 @@ public sealed class ThermalRunTests(ITestOutputHelper output) : IDisposable
     {
         string ws = Workspace();
         var doc = Doc(Setup());
-        doc.Probes.Add(new C3dProbe { Name = "base", Face = "flange/zmin", Stat = C3dProbeStat.Avg });
+        doc.Probes.Add(new C3dProbe { Name = "base", Face = ["flange/zmin"], Stat = C3dProbeStat.Avg });
         string path = WriteC3d(ws, doc);
         var e = C3dElaborator.ElaborateOnce(doc, path, null);
         var low = ThermalLowerings.Build(doc, e, Setup().Thermal!, 1, out string? why);
@@ -173,7 +173,7 @@ public sealed class ThermalRunTests(ITestOutputHelper output) : IDisposable
         HeatSources = [new C3dHeatSource { Name = "fingers", Power = "Pdiss", Sheet = new C3dHeatSheet { Plane = C3dPlane.XY, Offset = 300 * Um, Rect = Rect(450, 450, 100, 100) } }],
         Probes =
         [
-            new C3dProbe { Name = "die_top", Face = "die/zmax", Stat = C3dProbeStat.Max },
+            new C3dProbe { Name = "die_top", Face = ["die/zmax"], Stat = C3dProbeStat.Max },
             new C3dProbe { Name = "ir", Spot = new C3dProbeSpot { Face = "die/zmax", Center = new(500 * Um, 500 * Um, 300 * Um), Diameter = 50 * Um } },
             new C3dProbe { Name = "core", Solid = "die" },
             new C3dProbe { Name = "pt", Point = new(500 * Um, 500 * Um, 250 * Um) },

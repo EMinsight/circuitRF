@@ -185,6 +185,25 @@ public static class C3dPersistence
                                         List<C3dContactResistance> ContactResistances, List<C3dEffectiveBlock>? EffectiveBlocks = null,
                                         List<C3dSymmetryPlane>? SymmetryPlanes = null);
 
+    /// <summary>brief-em3d-86 R-em3d86-4 — every list that names a face by name, as one text: the EM FaceBoundaries, the embedded
+    /// setups (whose thermal boundaries name faces), the probes and the field plots. What a face edit's undo entry holds before
+    /// and after a fold renamed faces (C3dFoldReferences).</summary>
+    public static string SerializeFaceReferences(C3dDocument doc)
+        => JsonSerializer.Serialize(new FaceReferences(doc.FaceBoundaries, doc.Setups, doc.Probes, doc.FieldPlots), ItemOpts);
+
+    /// <summary>Writes <see cref="SerializeFaceReferences"/>' text back into <paramref name="doc"/>.</summary>
+    public static void ApplyFaceReferences(C3dDocument doc, string json)
+    {
+        var r = JsonSerializer.Deserialize<FaceReferences>(json, ItemOpts);
+        doc.FaceBoundaries = r?.FaceBoundaries ?? [];
+        doc.Setups = r?.Setups ?? [];
+        doc.Probes = r?.Probes ?? [];
+        doc.FieldPlots = r?.FieldPlots ?? [];
+    }
+
+    private sealed record FaceReferences(List<C3dFaceBoundary> FaceBoundaries, List<JsonElement> Setups, List<C3dProbe> Probes,
+                                         List<C3dFieldPlot> FieldPlots);
+
     /// <summary>brief-em3d-49 — an embedded setup list, as the file spells it.</summary>
     public static string SerializeSetups(IReadOnlyList<JsonElement> list) => JsonSerializer.Serialize(list, JsonOpts);
 

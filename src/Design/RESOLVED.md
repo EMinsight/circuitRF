@@ -15371,3 +15371,46 @@ one-point sweep's limit sentence no longer runs "…W" into "the only point".
 
 Not done here, and why: result staleness misses sub-cell edits (all 3D runs, not only thermal; brief 87); drawn wires' ground
 plane in the RF share, the sweep slider, face folds for thermal references, and the pulse from exact Z_th (brief 86).
+
+## brief-em3d-86 — thermal review follow-ups: the pulse, drawn wires' ground plane, face folds (2026-09-29)
+
+Owner decisions (§5): solve Z at the harmonics, keep the single pulse, the ground plane is a DOCUMENT key beside
+`SymmetryPlanes`, and a probe on a folded face takes a list-form `Face`.
+
+**R-em3d86-1, the run side.** `ThermalRunService.Pulse` groups the sweep's points by period and solves each group's harmonics
+once, through the same `ThermalSmallSignal` as the Z_th sweep (same operating point, same probes). The mutual-fit warning is
+gone because the pulse no longer reads a mutual fit; the fits stay as data. A place that has not converged by the band's
+top (or `PulseHarmonicCap`, 1000) is named in a warning. The math and its findings are in `src/Thermal/RESOLVED.md`.
+
+**R-em3d86-2, `WireGroundPlane`.** `{ "Z": … }` (DBU or an expression, a bindable field) or `"object/face"` (a horizontal face
+of a conductor), written back in the same spelling by `C3dWireGroundPlaneJsonConverter`. The converter is declared on the
+document's PROPERTY, not the type, so the object form reads through the type's own contract, where bindings make Z take an
+expression. On the type it would recurse. `ArrayShare.FromCentrelines` takes the plane's HEIGHT: it moves the wires down by
+it, so wBond's own z = 0 plane is the stated one and nothing in the inductance fill changed. Three drawn wires over a stated plane give
+the `.wBond`'s share with its plane on, bit for bit, at a height and on a face. `check` refuses a plane above any drawn
+wire's lowest axis point, and a face that is not a conductor's or not horizontal.
+
+**R-em3d86-4, fold follow.** `C3dFoldReferences.Follow` rewrites, beside `FollowFolds`: each embedded setup's thermal
+`Boundaries` (one per piece, same condition, through `JsonNode` since setups are `JsonElement`s), a probe's `Face` (the pieces,
+one place), a probe's `Spot` (the piece holding its centre, found in the object's own frame through the inverse placement),
+a field plot's `Faces` (the pieces, same side). One text, `C3dPersistence.SerializeFaceReferences`, holds these and the EM
+`FaceBoundaries`, and it is what the face edit's undo entry now carries, so one undo restores all of them.
+- **Fold pieces are named `zmax.0`, `zmax.1`** (a dot), not `zmax#1`. `C3dKernelUse.Covers` treats only a boolean's `#`
+  pieces as the same face, so a reference to `zmax` does NOT reach a fold's pieces. That is why nothing followed.
+- **`C3dProbe.Face` is now `List<string>?`**, one face written as a string (`C3dFaceListJsonConverter`), so every existing
+  file reads and writes byte for byte as before. The run reads a list as one surface over the union of the face tags.
+- Not followed: a thermal current's `EnterFace`. It names one contact face, and which piece a port's current enters
+  through is not decidable from the fold. The brief did not list it.
+
+**brief-em3d-86, the example re-measured.** *Eight Fingers* `Array`: fourth finger peak **90.71 °C** (was 90.39 from the Foster
+fits), single pulse **90.62 °C** (was 90.21), average **85.75 °C** (unchanged), from 49 harmonics; the steady figures and the
+Rth matrix are unchanged, and the run no longer warns. The 0.3 K the peak gained is the edge finger's heat arriving late:
+SiC's diffusion length at 1 kHz is ~230 µm and the fingers are 120 µm apart, so the transfer Z_th carries real ripple, which
+the one-stage mutual fit (τ = 1.59 s) had flattened to its average. `expected-numbers.json`, the README and the thermal page
+carry the new numbers. Run time 9 min 17 s (Debug, M4).
+
+**Fixed pictures.** `docs/user/assets/fixed/` holds the two *Eight Fingers* temperature pictures (top view and cross-section)
+the owner approved, as PNGs: DocGen links to them and never draws them, and `NoDocumentationImageIsABitmap` exempts that one
+folder. That exemption is the owner's decision: the same slices as vector are 2.2 MB and 7.7 MB, one path per triangle, and
+colour-step merging barely helps on a smooth field. They were drawn by `Em3dSectionRenderer` through a scratch build that let
+`render --field` take a temperature plot with a min–max range; the folder's README says how.

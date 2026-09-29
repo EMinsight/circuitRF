@@ -226,7 +226,7 @@ public sealed class ThermalSmallSignalTests(ITestOutputHelper output) : IDisposa
             new C3dHeatSource { Name = "west", Power = "Pf", Sheet = new C3dHeatSheet { Plane = C3dPlane.XY, Offset = 300 * Um, Rect = Rect(420, 450, 40, 100) } },
             new C3dHeatSource { Name = "east", Power = "Pf", Sheet = new C3dHeatSheet { Plane = C3dPlane.XY, Offset = 300 * Um, Rect = Rect(540, 450, 40, 100) } },
         ],
-        Probes = [new C3dProbe { Name = "die_top", Face = "die/zmax", Stat = C3dProbeStat.Max }],
+        Probes = [new C3dProbe { Name = "die_top", Face = ["die/zmax"], Stat = C3dProbeStat.Max }],
         Setups = [EmSetupPersistence.ToEmbedded(setup)],
     };
 

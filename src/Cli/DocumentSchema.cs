@@ -527,7 +527,8 @@ internal static class DocumentSchema
             (2 per symmetry plane). A .cem never holds one. The places it reads are the document's own lists:
             HeatSources (a Sheet on a Plane at an Offset with a Rect or an Outline, lying inside ONE
             solid — or a Solid, by name — with a default Power), Probes (exactly one of Point, Face,
-            Solid, Spot, Line, Wire; a Stat of Max, Min or Avg — what T(probe) and the result's T:<probe>
+            Solid, Spot, Line, Wire — Face may be a list of faces read as one place, what a face edit's
+            fold leaves; a Stat of Max, Min or Avg — what T(probe) and the result's T:<probe>
             report; an optional LimitC), MeshRegions (a
             box and a target SizeUm, for every Gmsh-meshed setup), ContactResistances (two
             touching objects and a resistance, m²·K/W, overriding the technology's material pair — 0 is
@@ -535,8 +536,12 @@ internal static class DocumentSchema
             Enabled, false when omitted: enabled, the board dielectric, planes and via barrels of a
             layout instance inside the box become one block of diagonal conductivity — per layer
             k_z = f_Cu·k_Cu + f_d·k_d and k_xy by Rayleigh's formula for parallel cylinders, layers in
-            series for k_z and in parallel for k_xy — an approximation) and SymmetryPlanes
-            ([{"Axis": "X", "At": 0}], at most one per axis, on the model's extent; insulated).
+            series for k_z and in parallel for k_xy — an approximation), SymmetryPlanes
+            ([{"Axis": "X", "At": 0}], at most one per axis, on the model's extent; insulated) and
+            WireGroundPlane ({"Z": 0} — DBU or an expression — or "object/face", a horizontal face of a
+            conductor): the image plane a run's RF current share among DRAWN bond wires reflects in
+            (wBond's image method). It is never inferred: omitted, drawn wires are shared in free space.
+            It must lie below every drawn wire; a .wBond's wires keep their own design's plane.
             None of them reaches an EM solver. `check` reports every thermal finding
             (c3d.thermal.*); `explain view.c3d --analysis [setup]` lists what a thermal setup would
             solve; `em` runs it.

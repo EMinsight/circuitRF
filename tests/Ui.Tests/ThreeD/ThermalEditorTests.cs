@@ -164,6 +164,61 @@ public sealed class ThermalEditorTests : IDisposable
         Assert.Equal(2, v.FieldGeometryBuilds);
     }
 
+    // ── brief-em3d-86 R-em3d86-3: the sweep slider ─────────────────────────────────────────────────
+
+    /// <summary>
+    /// A three-point run swept over Pdiss (W), drawn on every face: the slider shows one axis labelled with the variable, value
+    /// and unit. A drag to the third point previews (nothing written) and its release is ONE undo entry that moves the drawn
+    /// plot's Solution there; the drawn values, the legend, the probe table and the hot spot all read that point. Undo puts the
+    /// plot and every reading back; ▶ is one entry per press. (Read off the view model: pixels were not seen.)
+    /// </summary>
+    [Fact]
+    public void TheSweepSlider_MovesTheDrawnPlot_EverythingReadsThePoint_AndAGestureIsOneUndoEntry()
+    {
+        var vm = Open();
+        var sweep = new RfCore.Data.Axis("Pdiss", [5, 7, 9], "W");
+        var ds = new RfCore.Data.DataSet();
+        ds.AddToGroup(ThermalRunService.Group, "Energy:in", new RfCore.Data.DataCube([sweep], [5.0, 7, 9]) { Unit = "W" });
+        ds.AddToGroup(ThermalRunService.Group, "T:block:max", new RfCore.Data.DataCube([sweep], [50.0, 60, 70]) { Unit = "°C" });
+        Directory.CreateDirectory(Results);
+        RfCore.Export.DataSetExporter.Export(ds, ThermalRunService.NpyPath(Results, vm.ActiveRunSetup!), RfCore.Export.ExportFormat.Npy);
+        WriteRun(vm, (x, _, _) => 30 + x, (x, _, _) => 40 + x, (x, _, _) => 50 + x);    // each step's hottest: 50, 60, 70 °C
+        var v = vm.Viewer;
+        Assert.Null(vm.SetTemperatureAllFaces(true));
+        Until(() => v.FieldScale is not null && vm.SweepControlVisible, "the sweep was never drawn");
+        var axis = Assert.Single(vm.SweepAxes);
+        Assert.Equal(("Pdiss = 5 W", 2), (axis.Label, axis.Max));
+        var plot = vm.VisibleFieldPlot!;
+        var first = plot.Solution;
+        long stamp = vm.UndoRedo.TopUndoStamp;
+
+        // the drag: two positions, previewed, then its release
+        axis.Index = 1;
+        axis.Index = 2;
+        Assert.Equal(stamp, vm.UndoRedo.TopUndoStamp);                           // a preview writes nothing
+        Assert.Null(vm.CommitSweepStep());
+        long committed = vm.UndoRedo.TopUndoStamp;
+        Assert.NotEqual(stamp, committed);
+        Assert.Equal(3, vm.VisibleFieldPlot!.Solution!.Point);                  // the picker's own edit: 1-based
+        Until(() => v.TemperatureStep == 2 && v.FieldScale?.Hi == 70, "the third point was never drawn");
+        Assert.Equal("Pdiss = 9 W", axis.Label);
+        Assert.Contains(v.FieldLegendLines(), l => l.Contains("Pdiss = 9 W"));
+        Assert.StartsWith("70", v.HotSpotLabel);
+        vm.RefreshProbeTable();
+        Assert.Equal("Pdiss = 9 W", vm.ProbeTableHeading);
+        Assert.Equal("70 °C", vm.ProbeTable.Single(r => r.Name == "T:block:max").Value);
+
+        vm.UndoRedo.Undo();                                                      // one entry: back to where the drag began
+        Assert.Equal(stamp, vm.UndoRedo.TopUndoStamp);
+        Assert.True(first is null ? vm.VisibleFieldPlot!.Solution is null : first.SameAs(vm.VisibleFieldPlot!.Solution));
+        Until(() => v.TemperatureStep == 0 && v.FieldScale?.Hi == 50, "undo never drew the first point");
+        Assert.Equal("Pdiss = 5 W", axis.Label);
+
+        axis.NextCommand.Execute(null);                                          // ▶: one press, one entry
+        Assert.NotEqual(stamp, vm.UndoRedo.TopUndoStamp);
+        Assert.Equal(2, vm.VisibleFieldPlot!.Solution!.Point);
+    }
+
     // ── fixtures ─────────────────────────────────────────────────────────────────────────────────
 
     private string Results => Path.Combine(_root, "results");

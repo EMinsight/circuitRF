@@ -290,6 +290,7 @@ figure.figure .frame {
 }
 figure.figure .sym-light, figure.figure .sym-dark { display: flex; max-width: 100%; }
 figure.figure svg { max-width: 100%; height: auto; display: block; margin: 0 auto; }
+figure.figure img { max-width: 100%; height: auto; display: block; margin: 0 auto; }   /* a fixed picture (assets/fixed) */
 figure.figure figcaption { color: var(--muted); font-size: 0.85rem; margin-top: 0.5rem; }
 figure.figure .sym-dark { display: none; }
 @media (prefers-color-scheme: dark) {

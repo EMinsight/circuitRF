@@ -9,7 +9,8 @@
 //
 // THE SHARE (R-em3d78-3, D7) is wBond's, never re-derived: ArrayShare — a .wBond's own reduction, and for drawn wires the same
 // reduction of their resolved AXES (before a foot is added: the centreline wBond reads). A .wBond keeps its ground plane; drawn
-// wires are shared in free space, because a .c3d states no ground reference for the image to reflect in. Per unit current into
+// wires see the document's WireGroundPlane when it states one (brief-em3d-86), and free space when not — never an inferred
+// plane. Per unit current into
 // array k every wire carries a column of X·L_arr — including the circulating current of the design's OTHER arrays, which sums to
 // zero over each. Wires of different sources (two placed layouts, or a layout and the drawn wires) do not couple in the share.
 //
@@ -114,7 +115,8 @@ public sealed class ThermalRfPlan
     /// </summary>
     /// <remarks><paramref name="fromCircuit"/> — the currents are a harmonic-balance run's (brief-em3d-79), so no Currents entry is
     /// the user's to change: a refusal names what can be changed there, the model's wires and ports.</remarks>
-    public static ThermalRfPlan? Build(C3dElaboration e, ThermalLowering lowering, CemThermal t, out string? refusal, bool fromCircuit = false)
+    public static ThermalRfPlan? Build(C3dElaboration e, ThermalLowering lowering, CemThermal t, out string? refusal, bool fromCircuit = false,
+                                       double? wireGroundZ = null)
     {
         refusal = null;
         var plans = lowering.Wires;
@@ -155,7 +157,7 @@ public sealed class ThermalRfPlan
             entries.Add((c, on[0].k));
         }
 
-        var share = Shares(e, plans, arrays, out var shareNotes);
+        var share = Shares(e, plans, arrays, wireGroundZ, out var shareNotes);
         bool byN = withHarmonics.Select(c => (c.F0 ?? "").Trim()).Distinct(StringComparer.Ordinal).Count() == 1;
         var labels = new SortedSet<string>[plans.Count];
         for (int j = 0; j < plans.Count; j++) labels[j] = new SortedSet<string>(StringComparer.Ordinal);
@@ -187,7 +189,8 @@ public sealed class ThermalRfPlan
     }
 
     /// <summary>[array][wire] shares: a .wBond's from its design, drawn wires' from their axes; zero between sources.</summary>
-    private static double[][] Shares(C3dElaboration e, IReadOnlyList<ThermalWirePlan> plans, List<ThermalWireArray> arrays, out List<string> notes)
+    private static double[][] Shares(C3dElaboration e, IReadOnlyList<ThermalWirePlan> plans, List<ThermalWireArray> arrays, double? groundZ,
+                                     out List<string> notes)
     {
         notes = [];
         var share = arrays.Select(_ => new double[plans.Count]).ToArray();
@@ -246,7 +249,7 @@ public sealed class ThermalRfPlan
                     planOf.Add(j);
                 }
             }
-            var (s, index) = ArrayShare.FromCentrelines(wires, groundPlane: false);
+            var (s, index) = ArrayShare.FromCentrelines(wires, groundZ);
             foreach (var (arr, k) in centreline)
             {
                 int a = Array.IndexOf(s.ArrayNames, arr.Name);
@@ -254,7 +257,9 @@ public sealed class ThermalRfPlan
                 for (int i = 0; i < planOf.Count; i++) share[k][planOf[i]] = per[index[i]];
             }
             notes.Add($"{centreline.Sum(x => x.Item1.Wires.Count)} drawn wire(s) in {centreline.Count} array(s): the RF share is wBond's inductance " +
-                      "reduction of their axes, in free space (a 3D view states no ground plane for the image method).");
+                      "reduction of their axes, " + (groundZ is { } gz
+                          ? $"over the document's WireGroundPlane at Z = {(gz * 1e6).ToString("G6", CultureInfo.InvariantCulture)} µm (the image method)."
+                          : "in free space: the document states no WireGroundPlane for the image method to reflect in."));
             if (fallback.Count > 0)
                 notes.Add($"{fallback.Count} .wBond array(s) could not be re-read from their layout, so their share was taken from the wires' " +
                           "resolved centrelines instead.");

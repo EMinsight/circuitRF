@@ -57,14 +57,17 @@ public sealed class ArrayShare
 
     /// <summary>
     /// The share of wires given as resolved centrelines, arrays in order of first appearance and wires in the given order within
-    /// each. <paramref name="groundPlane"/> reflects in z = 0 of the given frame, as a design's ground plane does; without it the
-    /// wires are in free space. Consecutive points that round to one DBU are merged (a filament needs a length).
+    /// each. <paramref name="groundPlaneZ"/>, when given, is the height (metres, in the given frame) of a ground plane the wires
+    /// are reflected in: the wires are moved down by it, so the plane is a design's own at z = 0 and each image sits at
+    /// 2·z_plane − z. Without it the wires are in free space. Consecutive points that round to one DBU are merged (a filament needs
+    /// a length).
     /// </summary>
     /// <returns>The share, and the design-order index of each given wire.</returns>
-    public static (ArrayShare Share, int[] DesignIndex) FromCentrelines(IReadOnlyList<ShareCentreline> wires, bool groundPlane, bool parallel = false)
+    public static (ArrayShare Share, int[] DesignIndex) FromCentrelines(IReadOnlyList<ShareCentreline> wires, double? groundPlaneZ, bool parallel = false)
     {
         ArgumentNullException.ThrowIfNull(wires);
-        var design = new WBondDesign { GroundPlane = new GroundPlane { Enabled = groundPlane }, IncludeCapacitance = false };
+        double dz = groundPlaneZ ?? 0;
+        var design = new WBondDesign { GroundPlane = new GroundPlane { Enabled = groundPlaneZ is not null }, IncludeCapacitance = false };
         var byName = new Dictionary<string, WireArray>(StringComparer.Ordinal);
         foreach (var w in wires)
         {
@@ -77,7 +80,7 @@ public sealed class ArrayShare
             var pts = new List<Point3>();
             foreach (var (x, y, z) in w.PointsM)
             {
-                var p = Point3.FromMetres(x, y, z);
+                var p = Point3.FromMetres(x, y, z - dz);
                 if (pts.Count == 0 || pts[^1] != p) pts.Add(p);
             }
             array.Wires.Add(new Wire { Points = pts, DiameterNm = WBondUnits.FromMetres(w.DiameterM) });

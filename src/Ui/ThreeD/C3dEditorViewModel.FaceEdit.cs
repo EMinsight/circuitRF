@@ -340,7 +340,7 @@ public sealed partial class C3dEditorViewModel : IC3dFaceHost
         }
         // brief-em3d-66 — an entered operand's edit is its boolean's replacement (a fold's names are the operand's, which no
         // record names: a reference to a result's face names the result).
-        var boundaries = operand ? null : BoundariesFollowing(obj.Name, r.Folds);
+        var boundaries = operand ? null : BoundariesFollowing(obj, r.Folds);
         var slots = operand ? ReplacementSlots([(index, obj)]) : [new C3dEditSlot(false, index, before, after)];
         if (slots.Count == 0 || !Push(new C3dEdit(ft.Describe, slots, ApplySlots, faceBoundaries: boundaries, setBoundaries: SetBoundaries)))
         {
@@ -359,14 +359,21 @@ public sealed partial class C3dEditorViewModel : IC3dFaceHost
         StatusMessage = text;
     }
 
-    /// <summary>The FaceBoundaries before and after a fold renamed faces of <paramref name="objectName"/>, or null.</summary>
-    private (string Before, string After)? BoundariesFollowing(string objectName, IReadOnlyDictionary<string, IReadOnlyList<string>> folds)
+    /// <summary>
+    /// Every face reference before and after a fold renamed faces of <paramref name="folded"/> (as the edit left it), or null:
+    /// the EM FaceBoundaries, and (brief-em3d-86 R-em3d86-4) the thermal setups' boundaries, the probes and the field plots —
+    /// C3dFoldReferences, on a scratch document holding only those lists.
+    /// </summary>
+    private (string Before, string After)? BoundariesFollowing(C3dObject folded, IReadOnlyDictionary<string, IReadOnlyList<string>> folds)
     {
-        if (C3dFaceCommands.FollowFolds(Document.FaceBoundaries, objectName, folds) is not { } followed) return null;
-        return (C3dPersistence.SerializeFaceBoundaries(Document.FaceBoundaries), C3dPersistence.SerializeFaceBoundaries(followed));
+        string before = C3dPersistence.SerializeFaceReferences(Document);
+        var scratch = new C3dDocument { DbuPerMicron = Document.DbuPerMicron };
+        C3dPersistence.ApplyFaceReferences(scratch, before);
+        if (!C3dFoldReferences.Follow(scratch, folded, folds)) return null;
+        return (before, C3dPersistence.SerializeFaceReferences(scratch));
     }
 
-    private void SetBoundaries(string json) => Document.FaceBoundaries = C3dPersistence.DeserializeFaceBoundaries(json);
+    private void SetBoundaries(string json) => C3dPersistence.ApplyFaceReferences(Document, json);
 
     /// <summary>After a face edit, the edited face is selected again BY NAME: a primitive that became a polyhedron numbers
     /// its faces differently, and a scene carries a selection by face index.</summary>
@@ -446,7 +453,7 @@ public sealed partial class C3dEditorViewModel : IC3dFaceHost
             after = C3dPersistence.SerializeObject(obj);
         }
         if (!Push(new C3dEdit($"Set a vertex of {ObjectLabel(v.Index)}", operand ? ReplacementSlots([(v.Index, obj)]) : [new C3dEditSlot(false, v.Index, before, after)],
-                              ApplySlots, faceBoundaries: operand ? null : BoundariesFollowing(obj.Name, r.Folds), setBoundaries: SetBoundaries)))
+                              ApplySlots, faceBoundaries: operand ? null : BoundariesFollowing(obj, r.Folds), setBoundaries: SetBoundaries)))
             return StatusMessage;
         FaceEdits++;
         StatusMessage = r.Converted ? $"'{obj.Name}' is now a polyhedron (undo to keep it a {editor.Kind})." : $"Moved a vertex of '{obj.Name}'.";
@@ -470,7 +477,7 @@ public sealed partial class C3dEditorViewModel : IC3dFaceHost
         if (!Push(new C3dEdit($"Convert {ObjectLabel(i)} to a polyhedron",
                               operand ? ReplacementSlots([(i, obj)])
                                       : [new C3dEditSlot(false, i, C3dPersistence.SerializeObject(source), C3dPersistence.SerializeObject(obj))], ApplySlots,
-                              faceBoundaries: operand ? null : BoundariesFollowing(obj.Name, r.Folds), setBoundaries: SetBoundaries)))
+                              faceBoundaries: operand ? null : BoundariesFollowing(obj, r.Folds), setBoundaries: SetBoundaries)))
             return;
         FaceEdits++;
         string kind = C3dObject.KindOf(source).ToLowerInvariant();

@@ -615,6 +615,31 @@
             <Panel Grid.Column="1">
                 <v3:Viewer3DPane x:Name="Pane" DataContext="{Binding ViewModel.Viewer}"/>
                 <v3:Viewer3DOverlay x:Name="Overlay" DataContext="{Binding ViewModel.Viewer}"/>
+                <!-- brief-em3d-86 R-em3d86-3 — the sweep slider, on the viewport with the field's legend: one control per sweep
+                     axis, labelled with its variable, value and unit. A drag previews and its release keeps the step (the drawn
+                     plot's Solution, one undo entry: SweepCard's PointerReleased); ◀ and ▶ keep it per press. -->
+                <Border x:Name="SweepCard" IsVisible="{Binding ViewModel.SweepControlVisible}" HorizontalAlignment="Left" VerticalAlignment="Top"
+                        Margin="12" Padding="8,6" CornerRadius="4" MinWidth="236"
+                        Background="{DynamicResource SystemControlBackgroundAltMediumHighBrush}">
+                    <ItemsControl ItemsSource="{Binding ViewModel.SweepAxes}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="t3:C3dSweepAxis">
+                                <StackPanel Spacing="2" Margin="0,2">
+                                    <TextBlock Text="{Binding Label}" FontSize="12"/>
+                                    <DockPanel>
+                                        <Button DockPanel.Dock="Left" Content="◀" Padding="6,0" FontSize="11" Command="{Binding PreviousCommand}"
+                                                ToolTip.Tip="The previous sweep point"/>
+                                        <Button DockPanel.Dock="Right" Content="▶" Padding="6,0" FontSize="11" Command="{Binding NextCommand}"
+                                                ToolTip.Tip="The next sweep point"/>
+                                        <Slider Minimum="0" Maximum="{Binding Max}" Value="{Binding Index}" TickFrequency="1"
+                                                IsSnapToTickEnabled="True" Focusable="False" Margin="6,0" MinWidth="140"
+                                                ToolTip.Tip="{Binding Name, StringFormat='The sweep of {0}: the drawn plot moves to the point, and keeps it'}"/>
+                                    </DockPanel>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Border>
                 <!-- Designer feedback 02 — the first scene of a large board takes seconds, and the status pane that says so is
                      hidden: say it on the canvas until something is drawn. -->
                 <Border IsHitTestVisible="False" HorizontalAlignment="Center" VerticalAlignment="Center" Padding="14,8" CornerRadius="4"

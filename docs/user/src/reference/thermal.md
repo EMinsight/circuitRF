@@ -79,20 +79,30 @@ So an IR temperature needs its spot size, and the correction to the channel belo
 The workspace's second cell, **Eight Fingers**, is the plan of an eight-finger array (0.25 W a finger): the fourth finger
 reaches 105.1 °C and the edge one 101.6 °C, 3.5 K cooler (58,032 tetrahedra; it solves in less time than *One Finger*), because the middle of an array has neighbours on both sides.
 
+<figure class="figure fixed"><span class="frame">
+    <img src="../assets/fixed/eight-fingers-temperature-top.png" alt="Eight Fingers seen from above, 1 µm below the surface: eight hot stripes, the middle ones hottest">
+  </span><figcaption>Eight Fingers from above, 1 µm under the surface (85 °C base, 88.9 to 104.7 °C shown): the modelled half,
+  cut at the fingers' mid-length along its lower edge. The middle fingers run hottest.</figcaption></figure>
+
+<figure class="figure fixed"><span class="frame">
+    <img src="../assets/fixed/eight-fingers-temperature-section.png" alt="Eight Fingers in cross-section: heat spreading from the fingers through the SiC into the copper-tungsten carrier">
+  </span><figcaption>The same run cut across the fingers at their mid-length (85 to 105.1 °C): 100 µm of SiC over 500 µm of
+  copper-tungsten, the carrier's bottom held at 85 °C. The heat spreads sideways in the SiC before it reaches the carrier.</figcaption></figure>
+
 ## Rth matrix, Z_th and pulses {#rth}
 
 A setup may ask for the **Rth matrix** across its heat sources — R_ij, the rise of source i's place per watt in source j, with
 every boundary made homogeneous so it is a property of the structure — and for the **thermal impedance** Z_th(jω), which is
-fitted as a passive **Foster network** per source and written as a `.cnl` you can simulate. From the fits, a **pulse train**
-(period, duty) gives each source's periodic peak, single-pulse rise and average with no transient solve. Details and the
+fitted as a passive **Foster network** per source and written as a `.cnl` you can simulate. A **pulse train** (period, duty)
+gives each place's periodic peak, single-pulse rise and average with no transient solve, from Z_th solved at the harmonics
+of 1/period. It does not use a fit of the heat that travels from one source to another. Details and the
 gestures: {{anchor: drawing-in-3d.html#thermal-rth|The 3D Editor ▸ Rth, Z_th and pulses}}.
 
 In *Eight Fingers* (a half model, so each figure is per watt in the modelled half of a finger), an edge finger's own
 resistance is 52.91 K/W, the fourth finger's 53.17 K/W, and a neighbour adds 20.52 K/W. With all eight on, the edge finger
-rises 15.84 K and the fourth 19.13 K. A 1 ms, 10 % duty pulse train takes the fourth finger to a peak of 90.39 °C; a single
-pulse reaches 90.21 °C, and the average is 85.75 °C. The run warns that the fits between f1 and f4 are poor (heat takes time
-to cross between fingers, and a delay is not a sum of RC stages); the pulse figures include the other finger's heat through
-them, about 0.1 K here.
+rises 15.84 K and the fourth 19.13 K. A 1 ms, 10 % duty pulse train takes the fourth finger to a peak of 90.71 °C; a single
+pulse reaches 90.62 °C, and the average is 85.75 °C. The heat that crosses from the edge finger arrives late, and it is
+counted exactly because the pulse is solved at the harmonics of 1 kHz rather than read from a fitted network.
 
 ## Conductive balance: current, and bond wires {#electrothermal}
 
@@ -107,7 +117,10 @@ follows it unless its switch on the setup's *Balance* section is off, so the two
 - **Runaway is an answer.** Above a current, no steady state exists between fixed-temperature ends: the run brackets that
   current and reports it rather than failing.
 - **Harmonic currents** heat the wires only, each harmonic at its own skin-effect resistance, each stated **Peak** or **RMS**
-  (never inferred); a port's harmonics are shared among the wires of its array by their inductance.
+  (never inferred); a port's harmonics are shared among the wires of its array by their inductance. A `.wBond`'s wires are
+  shared over their design's own ground plane. Wires drawn in the 3D view are shared in free space unless the document states
+  a `WireGroundPlane`, either a height (`{ "Z": … }`) or a horizontal conductor face (`"carrier/zmax"`). It is never guessed
+  from what lies below the pads, and `check` refuses one that is above a drawn wire.
 - **From a circuit**: a setup can take its currents from a harmonic-balance sweep of a schematic whose S-parameter block is
   this view's EM result — pin p is port p — and solve the wires at every drive level, with the circuit's measures beside the
   temperatures. Nothing goes back into the circuit.

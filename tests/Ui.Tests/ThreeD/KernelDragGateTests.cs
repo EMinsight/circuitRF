@@ -8,7 +8,9 @@ using System.Numerics;
 using System.Text.Json;
 using Avalonia.Input;
 using CircuitRF.Design.Layout;
+using CircuitRF.Design.Layout.Em;
 using CircuitRF.Design.ThreeD;
+using CircuitRF.Design.ThreeD.Kernel;
 using CircuitRF.Design.Workspace;
 using CircuitRF.Engine.Em3d;
 using CircuitRF.Render.Scene3D;
@@ -150,6 +152,71 @@ public sealed class KernelDragGateTests : IDisposable
         Assert.IsType<C3dBox>(vm.Document.Objects[0]);
     }
 
+    /// <summary>
+    /// brief-em3d-86 R-em3d86-4 — a vertex move that folds zmax, which a FixedT boundary, a face probe, a spot probe and a field
+    /// plot all name: every one follows in the same undo entry (the boundary one per piece with the same condition, the probe
+    /// over both pieces as one place, the spot on the piece holding its centre, the plot on both pieces), and one undo restores
+    /// all of them. The thermal findings are clean before and after.
+    /// </summary>
+    [Fact]
+    public void AFold_TheThermalBoundaryProbeAndFieldPlotFollowInOneUndoEntry()
+    {
+        var setup = new EmSetup
+        {
+            Name = "Th", Problem3D = Em3dProblemType.Thermal,
+            Thermal = new CemThermal { Boundaries = [new CemThermalBoundary { Face = "lid/zmax", Kind = ThermalBoundaryKind.FixedT, TempC = "25" }] },
+        };
+        string ws = Workspace();
+        string path = WriteC3d(ws, "cell", new C3dDocument
+        {
+            SnapDbu = Um, Objects = [Box("lid", 0, 0, 0, 60, 40, 20)],
+            HeatSources = [new C3dHeatSource { Name = "h", Solid = "lid", Power = "1" }],
+            Probes = [new C3dProbe { Name = "top", Face = ["lid/zmax"], Stat = C3dProbeStat.Max },
+                      new C3dProbe { Name = "ir", Spot = new C3dProbeSpot { Face = "lid/zmax", Center = new(10 * Um, 5 * Um, 20 * Um), Diameter = 4 * Um } }],
+            FieldPlots = [new C3dFieldPlot { Name = "T", Setup = "Th", Quantity = C3dFieldPlot.TemperatureQuantity, On = C3dFieldPlotOn.Faces,
+                                             Faces = [new C3dFieldPlotFace { Face = "lid/zmax" }] }],
+            Setups = [EmSetupPersistence.ToEmbedded(setup)],
+        });
+        var vm = Open(path);
+        var v = vm.Viewer;
+        List<string> Findings()
+        {
+            var e = C3dElaborator.ElaborateOnce(vm.Document, path, Path.Combine(ws, ".cws"));
+            var th = C3dSetups.Select(vm.Document, "Th").Setup!;
+            return [.. C3dThermal.Places(vm.Document).Concat(C3dThermal.Places(vm.Document, e)).Concat(C3dThermal.Setup("Th", th, vm.Document, e, e.Resolution!))
+                                 .Where(d => d.Severity == CircuitRF.Diagnostics.DiagnosticSeverity.Error).Select(d => d.Render())];
+        }
+        string Faces() => string.Join("; ", C3dSetups.Select(vm.Document, "Th").Setup!.Thermal!.Boundaries!.Select(b => $"{b.Face} {b.Kind} {b.TempC}")) + " | " +
+                          string.Join(", ", vm.Document.Probes[0].Face!) + " | " + vm.Document.Probes[1].Spot!.Face + " | " +
+                          string.Join(", ", vm.Document.FieldPlots[0].Faces.Select(f => f.Face));
+        Assert.Empty(Findings());
+        string before = Faces();
+
+        // the corner over (60, 40) up by 12 µm: zmax bends, and folds
+        v.SelectMode = Scene3DSelectMode.Vertex;
+        v.SetSelection([Scene3DItem.OfVertex(vm.SceneObject("lid")!.Id, v.Scene.ToLocal(60 * UmM, 40 * UmM, 20 * UmM))]);
+        vm.Properties.Reload();
+        vm.Properties.VertexZ = "32";
+        vm.Properties.CommitVertex();
+        Settle(vm);
+        Assert.Equal("", vm.Properties.Error);
+        var folded = Assert.IsType<C3dPolyhedron>(vm.Document.Objects[0]);
+        Assert.Equal(["zmax.0", "zmax.1"], folded.FaceNames().Where(n => n.StartsWith("zmax", StringComparison.Ordinal)));
+        string spot = vm.Document.Probes[1].Spot!.Face;
+        Assert.Equal($"lid/zmax.0 FixedT 25; lid/zmax.1 FixedT 25 | lid/zmax.0, lid/zmax.1 | {spot} | lid/zmax.0, lid/zmax.1", Faces());
+        // the spot's piece holds its centre (10, 5): the piece seen from above, a convex polygon, has it on the inside of every edge
+        var ring = C3dFaceCommands.Polygon(folded, spot["lid/".Length..], out _)!.Value.Rings[0];
+        var turns = ring.Select((a, i) => { var b = ring[(i + 1) % ring.Count]; return Math.Sign((double)(b.X - a.X) * (5 * Um - a.Y) - (double)(b.Y - a.Y) * (10 * Um - a.X)); });
+        Assert.Single(turns.Where(t => t != 0).Distinct());
+        Assert.Empty(Findings());
+
+        vm.UndoRedo.Undo();
+        Settle(vm);
+        Assert.Equal(before, Faces());
+        Assert.IsType<C3dBox>(vm.Document.Objects[0]);
+        Assert.Empty(Findings());
+    }
+
     /// <summary>3D editor bugs round 3 — Move (G) of a face with Shift held goes along ONE world axis: the one whose line
     /// through the base the cursor is nearest. A cursor off diagonally, mostly along +Y, moves the face along Y only;
     /// without Shift the same cursor moves it on more than one axis.</summary>
@@ -227,7 +294,7 @@ public sealed class KernelDragGateTests : IDisposable
         TechPersistence.SaveToFile(Path.Combine(ws, "tech.ctech"), new Technology
         {
             Name = "tech",
-            Materials = [new TechMaterial { Name = "Gold", Sigma20 = 4.1e7 }],
+            Materials = [new TechMaterial { Name = "Gold", Sigma20 = 4.1e7, ThermalK = 318 }],
         });
         WorkspacePersistence.SaveToFile(Path.Combine(ws, ".cws"), new CwsFile { DefaultTechRef = "tech.ctech" });
         return ws;

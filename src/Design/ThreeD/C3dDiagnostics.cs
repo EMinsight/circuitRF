@@ -64,6 +64,12 @@ public static class C3dDiagnostics
         "An expression in a dimension is written {example}; '{key}' is not one of its keys, or its Expr is empty.",
         ("key", key), ("example", Example("…")));
 
+    /// <summary>brief-em3d-86 R-em3d86-4 — a probe's Face that is neither a face nor a list of faces.</summary>
+    public static Diagnostic FaceListShape(string found) => Diagnostic.Create(
+        "c3d.read.face-list", DiagnosticSeverity.Error,
+        "A probe's Face is \"object/face\", or a list of them read as one place; {found} is neither.",
+        ("found", found));
+
     private static string Example(string text) => "{ \"Expr\": \"" + text + "\", \"Unit\": \"Mil\" }";
 
     public static Diagnostic NumberExpected(string found) => Diagnostic.Create(

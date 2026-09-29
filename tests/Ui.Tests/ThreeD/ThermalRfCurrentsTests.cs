@@ -67,6 +67,69 @@ public sealed class ThermalRfCurrentsTests(ITestOutputHelper output) : IDisposab
         for (int k = 0; k < 5; k++) Assert.Equal(x[k] / sum, share[k], 1e-12);
     }
 
+    /// <summary>
+    /// brief-em3d-86 R-em3d86-2 — three drawn wires over the document's WireGroundPlane share their current exactly as the same
+    /// three wires in a .wBond with its ground plane on, bit for bit: at a stated height (the .wBond's frame is the drawn one moved
+    /// down by it) and on a face (pad/zmin, z = 0). The plane changes the share from free space's. check refuses a plane above a
+    /// wire's lowest point, and the key reads back as it was written in both spellings.
+    /// </summary>
+    [Fact]
+    public void WireGroundPlane_DrawnWiresShareAsTheWBondWithItsPlane_BitForBit()
+    {
+        double[] Share(C3dDocument doc)
+        {
+            string ws = Workspace();
+            var (e, lowering) = Lower(ws, doc, Current(port: 1, "pad/zmax", ("1", ThermalAmplitude.Peak)));
+            Assert.Empty(C3dThermal.Places(doc, e));
+            var plan = ThermalRfPlan.Build(e, lowering, Setup(Current(port: 1, "pad/zmax", ("1", ThermalAmplitude.Peak))).Thermal!, out string? why,
+                                           wireGroundZ: C3dThermal.WireGroundPlaneZ(doc, e, out string? planeWhy));
+            Assert.True(plan is not null && planeWhy is null, why ?? planeWhy);
+            var names = lowering.Wires.Select(w => w.Name).ToList();
+            return [.. Enumerable.Range(0, 3).Select(k => plan!.Share[0][names.IndexOf($"w1[{k}]")])];
+        }
+        IReadOnlyList<double> WBond(long dz)
+        {
+            var design = new WBondDesign { GroundPlane = new GroundPlane { Enabled = true } };
+            design.Arrays.Add(new WireArray { Name = "w1", Wires = [.. Enumerable.Range(0, 3).Select(k => new Wire
+            {
+                Points = [.. Axis().Select(q => new CircuitRF.WBond.Point3(q.X, q.Y + k * Pitch, q.Z - dz))], DiameterNm = 25_400,
+            })] });
+            return ArrayShare.For(design).PerUnitCurrent(0);
+        }
+
+        var free = Share(Doc(count: 3));
+        var atHeight = Doc(count: 3);
+        atHeight.WireGroundPlane = new C3dWireGroundPlane { Z = 20 * Um };
+        var onFace = Doc(count: 3);
+        onFace.WireGroundPlane = new C3dWireGroundPlane { Face = "pad/zmin" };
+        var (a, b) = (Share(atHeight), Share(onFace));
+        var (wa, wb) = (WBond(20 * Um), WBond(0));
+        output.WriteLine($"free {string.Join(", ", free.Select(v => v.ToString("R")))}; Z = 20 µm {string.Join(", ", a.Select(v => v.ToString("R")))}; " +
+                         $"pad/zmin {string.Join(", ", b.Select(v => v.ToString("R")))}");
+        for (int k = 0; k < 3; k++)
+        {
+            Assert.Equal(wa[k], a[k]);                                               // bit for bit
+            Assert.Equal(wb[k], b[k]);
+        }
+        Assert.NotEqual(free[0], b[0]);
+
+        // above a wire: refused, naming the wire; the face must be a conductor's
+        var above = Doc(count: 3);
+        above.WireGroundPlane = new C3dWireGroundPlane { Z = 60 * Um };
+        string path = WriteC3d(Workspace(), above);
+        var e = C3dElaborator.ElaborateOnce(above, path, null);
+        Assert.Contains(C3dThermal.Places(above, e), d => d.Id == C3dThermal.D.WireGroundId && d.Render().Contains("lies above drawn wire 'w1[0]'"));
+
+        // the two spellings, as written and read back
+        foreach (var (doc, text) in new[] { (onFace, "\"WireGroundPlane\": \"pad/zmin\""), (atHeight, "\"WireGroundPlane\": {") })
+        {
+            string json = C3dPersistence.Serialize(doc);
+            Assert.Contains(text, json);
+            var back = C3dPersistence.Deserialize(json).WireGroundPlane!;
+            Assert.Equal((doc.WireGroundPlane!.Face, doc.WireGroundPlane.Z), (back.Face, back.Z));
+        }
+    }
+
     // ── gate 4: Peak and RMS ────────────────────────────────────────────────────────────────────────
 
     /// <summary>1 A RMS and 1.4142135623730951 A peak give every wire the same current, bit for bit; a harmonic with no As is a

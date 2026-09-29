@@ -146,7 +146,8 @@ public sealed record ThermalSolveOptions
     /// <summary>Where Newton starts: the previous sweep point's field (warm start). Null: the constant-k solution.</summary>
     public double[]? InitialGuess { get; init; }
 
-    /// <summary>The assembly's parallelism; null for the machine's. The assembled matrix does not depend on it.</summary>
+    /// <summary>The assembly's parallelism, and how many Z_th frequencies are solved at once (brief-em3d-86); null for the
+    /// machine's. The assembled matrix does not depend on it.</summary>
     public int? MaxDegreeOfParallelism { get; init; }
 
     public CancellationToken Cancellation { get; init; }

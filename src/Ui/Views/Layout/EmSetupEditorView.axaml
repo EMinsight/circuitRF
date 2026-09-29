@@ -1036,7 +1036,7 @@
                     <TextBlock Classes="colhdr" FontWeight="SemiBold" Margin="0,6,0,0" Text="Pulse train"/>
                     <StackPanel Orientation="Horizontal" Spacing="8">
                         <CheckBox IsChecked="{Binding ViewModel.ThermalPulseOn}" Content="Compute"
-                                  ToolTip.Tip="The periodic peak, single-pulse and average temperature of every Z_th place, in closed form from the Foster fits (there is no transient solver). Needs Z_th"/>
+                                  ToolTip.Tip="The periodic peak, single-pulse and average temperature of every Z_th place, from Z_th solved at the harmonics of 1/period (there is no transient solver). Needs Z_th, whose top frequency bounds the harmonics"/>
                         <TextBlock Classes="colhdr" VerticalAlignment="Center" Text="period"/>
                         <TextBox Classes="cell" Width="80" Text="{Binding ViewModel.ThermalPulsePeriod}" PlaceholderText="1 ms"
                                  IsEnabled="{Binding ViewModel.ThermalPulseOn}" LostFocus="OnThermalLostFocus" KeyDown="OnThermalKey"
