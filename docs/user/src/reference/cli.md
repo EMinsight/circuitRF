@@ -164,6 +164,7 @@ convergence notes still scroll past on screen. Redirect `2&gt;/dev/null` to sile
 | Option | What it does |
 |---|---|
 | `--kits <dir>` | A folder of installed kits, so an externally-supplied device model (`ExtDevice Provider=…`) resolves headlessly the way opening a workspace resolves it in the GUI. Repeatable. |
+| `--trust-kit <dir>` | Lets this run execute the PCell scripts of the kit whose generator manifest is in `<dir>`, so a layout's generated cells can be rebuilt when its `.generated-cells` folder is missing. A kit you have already allowed in circuitRF on this computer needs no flag. Repeatable. |
 | `--json` | Put **one JSON document** on stdout and nothing else — [see below](#json). stderr is untouched. |
 | `--only a,b` | Narrow that document's result to these cubes. |
 | `--group g,h` | Narrow that document's result to these groups. |

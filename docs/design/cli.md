@@ -148,6 +148,7 @@ verb's own argument loop has to learn about any of them:
 | Flag | What it does |
 |---|---|
 | `--kits <dir>` | makes an externally-supplied device model resolve headlessly, the way opening a workspace does in the GUI. Repeatable. |
+| `--trust-kit <dir>` | lets THIS run execute the PCell scripts of the kit whose generator manifest is in `<dir>`, to rebuild the generated cells a layout places — §23. Repeatable. |
 | `--json` | one JSON document on stdout and nothing else — §3.2 |
 | `--only`, `--group` | narrow that document's `result` by cube and group name — §3.2 |
 | `--at`, `--range`, `--interp`, `--result` | narrow it by AXIS, or ask for the shape alone — §3.2 |
@@ -1248,6 +1249,10 @@ failure mode this whole series is about.
 `run` resolves an externally-supplied device model with it. It is deliberately not a tool argument: a
 kit folder is installed software rather than design data, it lives outside the root by nature, and
 letting a client name one would be the server pointing at an arbitrary directory on its say-so.
+**`--trust-kit` is the operator's for the same reason, and more so** (§23): `serve --trust-kit <dir>`
+holds for the life of the server, and no tool advertises it — a client granting itself permission to
+run a kit's scripts is the one thing that permission exists to prevent. What a client CAN do is let
+the server ask its USER, through MCP elicitation — §23.3.
 
 **Both of `reference`'s arguments are OPTIONAL positionals**, which no other tool has. Its
 no-argument form is the topic LIST, which is a real answer rather than a usage error — so `topic` is
@@ -2869,3 +2874,99 @@ the Linux subsystem", and lists a home installed there by its mirrored record, w
 starting the subsystem. `remove` of such a home renames and deletes it inside the distribution and then
 the mirror; it is `solver.remove.refused` while the distribution cannot start. Headless there is no
 location preference, so the verb always acts as *Automatic*.
+
+## 23. Generated cells — every geometry verb rebuilds them, or refuses
+
+`brief-generated-cells-2-headless-regeneration.md`. A placed PCell — a built-in microstrip element, an
+`smt:` land pattern, a kit's script-drawn cell — is an instance of a cell folder under the workspace's
+`.generated-cells/`, which is a **cache**: nothing commits it, and an unpacked archive, a
+`history clone`, a CI checkout or a workspace nobody has opened since a generator changed does not have
+it. Until this, a headless verb resolved such an instance only if a GUI session had already written the
+folder; otherwise the flatten dropped it with a warning and the verb went on to give a complete,
+plausible answer for a board with parts missing — a rail with no land patterns, an LVS against missing
+devices, a Gerber with no pads.
+
+### 23.1 One rebuild, the application's
+
+Every verb that USES layout geometry — `render`, `check`, `lvs`, `explain --extents`, `rail`,
+`impedance`, `em`, `convert` from a `.clay`, `netlist` on a board — first calls
+`GeneratedCellsRun.Prepare` (`src/Design/Layout/PCells`), which walks what the layout PLACES (and the
+hierarchy under it, never the rest of the workspace) and rebuilds each placed generated cell from the
+placing layout's snapshot through `GeneratedCellsLifecycle.Rebuild` — the step the application's own
+workspace open takes, so an open document and a CLI run can never generate different artwork.
+`src/Cli/GeneratedCells.cs` owns no generation: it is the flag, the choice of target, and the sentences.
+
+| Verb | Where a rebuilt cell goes |
+|---|---|
+| `check`, `explain`, `render`, `lvs` | **in memory, for the run** (`GeneratedCellOverlay`). These promise to write nothing, and they still write nothing. |
+| `rail`, `impedance`, `em`, `convert`, `netlist` | the workspace's `.generated-cells/`, as the application would, so the next run is free — **never on a read-only workspace** (SL2), which falls back to memory. |
+
+**A headless run edits no document.** The application answers a STALE cell (its generator or
+technology changed, so its snapshot now builds under a new name) by repointing the instances and saving
+the layout; a CLI run redirects the stale folder to the rebuilt one for its own duration instead, and
+never prunes. The artwork is the same; the `.clay` another process may have open is untouched.
+
+### 23.2 What cannot be rebuilt is a refusal
+
+A placed generated cell that is **not on disk and cannot be rebuilt** — no snapshot to rebuild from, a
+generator nothing provides, a kit that is not allowed to run or has no interpreter, a generator that
+throws — makes every verb above exit **1** with `cli.generated-cell.unbuildable`, naming the cell, its
+generator, the layout that places it and why. Nothing is run and nothing is written: a number computed
+without a part cannot show a placeholder the way a window can. `check` reports the same thing as the
+ERROR finding `check.generated-cell.unbuildable`, so its exit code carries it; `lvs` counts it as an
+error for that cell and compares the rest.
+
+A cell that IS on disk but whose generator cannot be asked whether it is current is used as it is, with
+a `cli.generated-cell.note` — the application's open does the same.
+
+The sentence is `GeneratedCellsLifecycle.CouldNotRebuild`'s, and the application's Messages line says
+the same one for the same cell (it keeps its placeholder), so a user who has seen one has read the other.
+
+### 23.3 A kit's scripts run only under trust — `--trust-kit`
+
+A kit's generator is a script, and circuitRF runs one only with consent (`PCellTrustStore`). A headless
+run cannot ask, so it honours:
+
+1. **a decision already recorded on this machine** — read from the per-user `preferences.json` by the
+   key the Settings store writes, and never written back; and
+2. **`--trust-kit <dir>`**, which allows the kit whose generator manifest is in `<dir>` for THIS run
+   only, and is taken before dispatch like `--kits`, so every verb has it.
+
+3. **under `serve`, the person's answer to circuitRF's own question** — below.
+
+Anything else is a refusal naming each kit that was not allowed and the exact flag that would allow it
+(`cli.generated-cell.kit-not-allowed`, a note beside the refusal).
+
+**`serve` asks the person, never the agent.** When a client declares the `elicitation` capability at
+`initialize`, and a call needs a MISSING cell from a kit nobody on this machine has decided about, the
+server sends `elicitation/create` and the run waits for the answer. The client shows the question to its
+user; the agent driving the tools never answers it, and no tool argument can. Its one field, `allow`,
+is a required boolean that defaults to false, so a form accepted without being read grants nothing.
+
+- **Allow** holds for the life of the server, and one question covers every later call. **Decline** is
+  remembered too, so a session is not nagged; **a dismissal** is not a decision, and the next call that
+  needs the kit asks again.
+- **Nothing is written.** A grant given to one agent session is not a machine-wide one: it never reaches
+  `preferences.json`, and circuitRF asks again in a later session.
+- **Never asked:** a kit recorded on this machine as NOT allowed (the person already refused it, and a
+  headless question must not be a way round that); a cell that is on disk (it is used as it is, and a
+  question about artwork that is already there would train the reflexive "Allow"); a client that did not
+  declare the capability, which gets the refusal it always got — worded for a client, since it cannot
+  pass a flag.
+- The request is the only one the server ever sends. Its answer arrives on the reader thread and is
+  handed to the waiting run (`JsonRpc.Request`/`Deliver`); a cancelled call or a disconnect releases it. **A flag, not a prompt and not an
+environment variable**: a grant has to be visible in the command that used it, and a variable left
+exported would quietly grant every later run in that shell. The spelling names the directory because
+consent is keyed by the directory — the same key the application records.
+
+### 23.4 The gate
+
+`tests/Ui.Tests/Cli/GeneratedCellsHeadlessTests.cs` runs the CLI as a process on a board whose copper is
+cut under one land-pattern pad, so the part is load-bearing: `rail` gives the same answer with
+`.generated-cells` deleted as with it present and rewrites the folder byte for byte; `render`, `check`
+and `lvs` agree with and without it and leave it deleted; an unbuildable cell is a refusal and a check
+error; a kit's cell is refused without trust, naming the kit and the flag, and with `--trust-kit` the
+folder written is the application's placement's, byte for byte. Through `serve`, a client that can ask
+is asked once and an Allow rebuilds the cell; a Decline is a refusal and is not asked again; a client
+that cannot ask is never sent the question.
+

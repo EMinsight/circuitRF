@@ -1,4 +1,4 @@
-namespace CircuitRF.Ui.Layout.PCells;
+namespace CircuitRF.Design.Layout.PCells;
 
 /// <summary>Shared geometry construction helpers for the built-in microstrip PCell generators —
 /// kept in one place so "how an arm rectangle is built" and "how junction arms are unioned into

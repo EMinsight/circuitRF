@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace CircuitRF.Ui.Layout.PCells.Wire;
+namespace CircuitRF.Design.Layout.PCells.Wire;
 
 /// <summary>
 /// Version of the BYTE FORMAT, deliberately separate from <see cref="PCellContractVersion"/>.

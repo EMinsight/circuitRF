@@ -1,6 +1,6 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:wire="clr-namespace:CircuitRF.Ui.Layout.PCells.Wire"
+        xmlns:wire="clr-namespace:CircuitRF.Design.Layout.PCells.Wire;assembly=CircuitRF.Design"
         x:Class="CircuitRF.Ui.Views.Dialogs.PCellTrustDialog"
         Title="Generated Artwork"
         Width="470"

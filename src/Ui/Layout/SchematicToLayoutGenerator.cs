@@ -4,6 +4,7 @@ using CircuitRF.Core.Devices.Microstrip;
 using CircuitRF.Core.Expressions;
 using CircuitRF.Ui.Commands;
 using CircuitRF.Ui.Commands.Layout;
+using CircuitRF.Design.Layout.PCells;
 using CircuitRF.Ui.Layout.PCells;
 using CircuitRF.Ui.Schematic;
 

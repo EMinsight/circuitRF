@@ -1,4 +1,4 @@
-namespace CircuitRF.Ui.Layout.PCells;
+namespace CircuitRF.Design.Layout.PCells;
 
 /// <summary>
 /// MTaper artwork (brief-mtaper-mklopf.md §1): a trapezoid whose width varies linearly from

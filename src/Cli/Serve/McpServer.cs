@@ -94,6 +94,10 @@ internal sealed class McpServer
             // A client that disconnects mid-run: stop the run rather than leaving the process
             // holding a solve nobody is waiting for.
             foreach (var cts in _inFlight.Values) { try { cts.Cancel(); } catch { /* already done */ } }
+            _rpc.AbandonPending();
+            GeneratedCells.Asker = null;
+            GeneratedCells.Serving = false;
+            GeneratedCells.ForgetSessionAnswers();
             _work.CompleteAdding();
             worker.Join(TimeSpan.FromSeconds(30));
         }
@@ -112,8 +116,10 @@ internal sealed class McpServer
 
         if (method is null)
         {
-            // A response, not a request. This server issues no requests of its own, so there is
-            // nothing it can be an answer to; ignoring it is what the protocol asks for.
+            // A response, not a request. The one request this server sends is the kit-trust question
+            // (AskKitTrust); its answer goes to the run waiting for it, and anything else is ignored,
+            // which is what the protocol asks for.
+            _rpc.Deliver(message);
             return;
         }
 
@@ -180,6 +186,13 @@ internal sealed class McpServer
 
     private JsonObject Initialize(JsonObject? parameters)
     {
+        // Elicitation is how a kit's scripts get permission to run from a SERVER: the question goes to
+        // the client, which shows it to its user, and only the user's answer comes back — the agent
+        // driving the tools never answers it (cli.md §23.3). Installed only when the client says it
+        // can ask; any other client gets the refusal it always got.
+        GeneratedCells.Serving = true;
+        GeneratedCells.Asker = parameters?["capabilities"]?["elicitation"] is JsonObject ? AskKitTrust : null;
+
         string? asked = parameters?["protocolVersion"]?.GetValue<JsonElement>().ValueKind == JsonValueKind.String
             ? parameters["protocolVersion"]!.GetValue<string>()
             : null;
@@ -235,6 +248,60 @@ internal sealed class McpServer
                 "same number as its symbol's pin count. render draws a .csch, .csym, .clay or .cdd " +
                 "— never a .cnl; 'plot' draws a result file. An unknown analysis key or type= token " +
                 "is refused, not ignored.",
+        };
+    }
+
+    // ── the kit-trust question ───────────────────────────────────────────────
+
+    /// <summary>
+    /// Asks the client's USER whether the kit whose generator manifest is in <paramref name="kitDir"/>
+    /// may run its scripts for this session. True only for an explicit yes; false for an explicit no or
+    /// a decline; null for a dismissal, a cancelled call or a client that has gone.
+    ///
+    /// <para><b>The answer must be ticked, not merely submitted.</b> The form's one field defaults to
+    /// false and is required, so a client that accepts forms without showing them — or a user who
+    /// presses the first button — has not granted anything.</para>
+    /// </summary>
+    private bool? AskKitTrust(string kitDir, CancellationToken ct)
+    {
+        var response = _rpc.Request("elicitation/create", new JsonObject
+        {
+            ["message"] =
+                $"A layout this request reads needs artwork drawn by the kit at '{kitDir}', and that " +
+                "artwork is not on disk. Drawing it runs the kit's own Python scripts on this computer. " +
+                "circuitRF has no record of that kit being allowed to run here. Allow it for this session? " +
+                "Nothing is saved: circuitRF asks again in a later session, and its own Settings are unchanged.",
+            ["requestedSchema"] = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["allow"] = new JsonObject
+                    {
+                        ["type"]        = "boolean",
+                        ["title"]       = "Run this kit's scripts",
+                        ["description"] = $"Allow the kit at '{kitDir}' to run its generator scripts for this session.",
+                        ["default"]     = false,
+                    },
+                },
+                ["required"] = new JsonArray("allow"),
+            },
+        }, ct);
+
+        if (response?["result"] is not JsonObject result) return null;
+        string? action = result["action"]?.GetValue<JsonElement>().ValueKind == JsonValueKind.String
+            ? result["action"]!.GetValue<string>()
+            : null;
+
+        bool allowed = action == "accept"
+            && result["content"]?["allow"]?.GetValue<JsonElement>().ValueKind == JsonValueKind.True;
+        Console.Error.WriteLine($"[circuitRF] serve: kit '{kitDir}' {(allowed ? "allowed" : action == "cancel" ? "not answered" : "not allowed")} by the user");
+
+        return action switch
+        {
+            "accept"  => allowed,
+            "decline" => false,
+            _         => null,
         };
     }
 

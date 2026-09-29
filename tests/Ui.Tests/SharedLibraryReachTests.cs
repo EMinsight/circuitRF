@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Linq;
 using CircuitRF.Design.Workspace;
+using CircuitRF.Design.Layout.PCells;
 using CircuitRF.Ui.Layout.PCells;
 using CircuitRF.Ui.Schematic;
 

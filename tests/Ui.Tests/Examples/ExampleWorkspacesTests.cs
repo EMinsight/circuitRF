@@ -34,6 +34,7 @@ using System.Text.Json;
 using CircuitRF.Core.Elaboration;
 using CircuitRF.Design.Schematic;
 using CircuitRF.Design.Workspace;
+using CircuitRF.Design.Layout.PCells;
 using CircuitRF.Ui.Layout.PCells;
 using CircuitRF.Ui.Schematic;
 using CircuitRF.Ui.ViewModels;

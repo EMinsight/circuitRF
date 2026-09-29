@@ -1,6 +1,6 @@
 using System;
 using System.IO;
-using CircuitRF.Ui.Layout.PCells.Wire;
+using CircuitRF.Design.Layout.PCells.Wire;
 using Xunit;
 
 namespace CircuitRF.Ui.Tests.Layout.PCells;

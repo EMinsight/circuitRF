@@ -3,8 +3,9 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using CircuitRF.Ui.Layout;
+using CircuitRF.Design.Layout.PCells;
 using CircuitRF.Ui.Layout.PCells;
-using CircuitRF.Ui.Layout.PCells.Wire;
+using CircuitRF.Design.Layout.PCells.Wire;
 using Xunit;
 
 namespace CircuitRF.Ui.Tests.Layout.PCells;

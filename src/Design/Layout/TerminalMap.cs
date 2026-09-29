@@ -222,8 +222,10 @@ public static class TerminalMap
     /// helps nobody.</para>
     /// </summary>
     public static (CircuitRF.Design.Symbol.Symbol? Symbol, LayoutView? Layout) PrimaryViewsOf(string cellDir)
-        => (ReadPrimary(cellDir, ViewType.Symbol, CircuitRF.Design.Symbol.SymbolPersistence.LoadFromFile),
-            ReadPrimary(cellDir, ViewType.Layout, LayoutPersistence.LoadFromFile));
+        => GeneratedCellOverlay.TryGetView(cellDir, out var held)
+            ? (null, held) // a generated cell has no symbol view of its own, in memory or on disk
+            : (ReadPrimary(cellDir, ViewType.Symbol, CircuitRF.Design.Symbol.SymbolPersistence.LoadFromFile),
+               ReadPrimary(cellDir, ViewType.Layout, LayoutPersistence.LoadFromFile));
 
     private static T? ReadPrimary<T>(string cellDir, ViewType view, System.Func<string, T> load) where T : class
     {
@@ -534,6 +536,8 @@ public static class TerminalMap
     /// derives — and every other reader of this file reports its own defect on its own account.</summary>
     private static CcellFile? ReadCcell(string cellDir)
     {
+        // A read-only headless run's generated cell has its .ccell in memory, never on disk (R-gc2-2).
+        if (GeneratedCellOverlay.TryGetCcell(cellDir, out var held)) return held;
         try
         {
             string path = CcellPathOf(cellDir);

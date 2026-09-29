@@ -1,5 +1,6 @@
 using Avalonia.Input;
 using CircuitRF.Ui.Layout;
+using CircuitRF.Design.Layout.PCells;
 using CircuitRF.Ui.Layout.PCells;
 using CircuitRF.Ui.Schematic;
 using CircuitRF.Ui.ViewModels;

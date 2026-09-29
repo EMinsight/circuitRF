@@ -1,4 +1,6 @@
-namespace CircuitRF.Ui.Layout.PCells;
+using CircuitRF.Design.Layout.Footprints;
+
+namespace CircuitRF.Design.Layout.PCells;
 
 /// <summary>
 /// Answers <see cref="PCellRegistry"/> for every <c>smt:</c> generator id and for nothing else —

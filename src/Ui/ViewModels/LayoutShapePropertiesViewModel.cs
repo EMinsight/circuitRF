@@ -8,6 +8,7 @@ using CircuitRF.Core.Devices.Microstrip;
 using CircuitRF.Ui.Commands;
 using CircuitRF.Ui.Commands.Layout;
 using CircuitRF.Ui.Layout;
+using CircuitRF.Design.Layout.PCells;
 using CircuitRF.Ui.Layout.PCells;
 using CircuitRF.Ui.Renderers;
 using CircuitRF.Ui.Schematic;using CircuitRF.Engine.Mom;   // PlanarPortKind — a port's own type, on the port.

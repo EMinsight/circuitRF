@@ -1,4 +1,4 @@
-namespace CircuitRF.Ui.Layout.PCells;
+namespace CircuitRF.Design.Layout.PCells;
 
 /// <summary>
 /// MLIN artwork (brief-L5a-pcell-contract-and-microstrip.md §3): a straight microstrip line of

@@ -1,5 +1,49 @@
 # src/Design — resolved findings (detail, off the CLAUDE.md growth path)
 
+## Generated cells cross the firewall, and a headless run rebuilds them (2026-09-28, brief-generated-cells-2)
+
+- **What moved** (`src/Ui/Layout/PCells` → `Layout/PCells`, namespaces with it): `GeneratedCellsLifecycle`,
+  `GeneratedCellStore`, `PCellRegistry`, `PCellGeometryCache`/`PCellGeometryHelpers`, the six microstrip
+  generators, `FootprintGeneratorResolver`, and all of `Wire/`. **What stayed**: `PCellHandleSolver` and
+  `PCellDimensionSign` (editing), and the per-USER half of the trust store — `PCellTrustPreferences` and
+  `PCellTrustStores.UserLocal()` in `src/Ui/Layout/PCells/PCellTrustPreferences.cs`, because they write
+  `AppPreferencesIo`. `PCellTrustStore.FromRecordedPreferences()` is the headless reader: the
+  `preferences.json` key (`PCellTrustStore.PreferenceKey`, which `AppPreferences` now names for its
+  attribute), read only. The `kits` folder name is `WorkspaceFolders.Kits`, shared by the archive and the
+  resolver's manifest scan.
+- **`pcell-python` moved with `PCellPythonPackage`, and it was not cosmetic.** The copy beside the
+  executable was a `src/Ui` item, so `src/Cli`'s own build had none and its resolver walked up to the
+  SOURCE tree — which also holds `example/`, `verify.py` and `vendor_conformance.py`. Those went into
+  the package content hash, so a kit's cell got a different NAME headless than in the application, and
+  the first gate-2 run rebuilt, under a new name, artwork the GUI had already written. The item group is
+  in this project's csproj now; a ProjectReference copies it to `src/Ui`, `src/Cli` and the tests alike.
+- **`CellPins.GeneratorSource` is the registry now, in every process.** It was a seam a GUI module
+  initializer (`UiPCellGeneratorInstaller`, deleted) set while the registry was in `src/Ui`.
+- **The headless registration point is the registry's own static constructor**, which registers the
+  built-in land patterns the first time anything touches `PCellRegistry` — in the CLI as in the GUI. A
+  kit's resolver is per workspace in the GUI and per RUN headless (`GeneratedCellsRun`, removed and
+  disposed when the run is).
+- **`GeneratedCellsRun` walks what the layout PLACES, not the workspace.** The application's open
+  rebuilds every snapshot in every `.clay`; a run over one board must not start a kit's interpreter, or
+  be refused, over a cell another layout uses. It rebuilds through `GeneratedCellsLifecycle.Rebuild` —
+  the step `Regenerate` now calls too — so the artwork cannot differ.
+- **Headless never repoints and never prunes.** A stale cell (new name after a generator or technology
+  edit) is REDIRECTED in `GeneratedCellOverlay` for the run instead of the instance being rewritten and
+  the `.clay` saved; the `.clay` may be open in a window with unsaved edits.
+- **The in-memory target goes through the serializer** (`LayoutPersistence.Deserialize(Serialize(view))`)
+  so what a read-only verb resolves is what it would have read from the file. `CellLayoutResolver` and
+  `TerminalMap` (`ReadCcell`, `PrimaryViewsOf`) consult the overlay; nothing that writes does, and the
+  GUI never fills it.
+- **A cell on disk whose generator cannot be asked is used, not refused** — the application's open does
+  the same. Only missing-and-unbuildable is `UnbuildableGeneratedCell`, and its `Sentence` is
+  `GeneratedCellsLifecycle.CouldNotRebuild`, which `Regenerate` now reports for a MISSING cell too.
+- **Firewall allowlist:** the 30 exception texts that crossed with the code are listed under "Moved, not
+  authored (2026-09-28)"; none is new.
+- **For the owner: `src/Design/CLAUDE.md` is now stale** in two places — its table says `Layout/PCells`
+  holds "only `PCellValue`… No generators, no handle solver, no Python", and "What must NOT come in here"
+  lists "all seven PCell generators and `GeneratedCellStore`" as having stayed in `src/Ui`, with "a
+  headless EM run needs no generator and no Python". Not edited here, per the standing rule.
+
 ## `CellCreate.WriteTemplateDataDisplay` — a template's display, repointed (2026-09-28, brief-template-two-port-stability)
 
 - **The schematic-key rule and the authored-display path moved here** (`ResultsWriter.SchematicKey`,

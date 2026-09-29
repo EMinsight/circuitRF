@@ -1,6 +1,7 @@
 using CircuitRF.Design;
 using CircuitRF.Design.Layout.Footprints;
 using CircuitRF.Ui.Layout;
+using CircuitRF.Design.Layout.PCells;
 using CircuitRF.Ui.Layout.PCells;
 using Xunit;
 

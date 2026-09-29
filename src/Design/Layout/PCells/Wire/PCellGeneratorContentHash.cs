@@ -1,7 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 
-namespace CircuitRF.Ui.Layout.PCells.Wire;
+namespace CircuitRF.Design.Layout.PCells.Wire;
 
 /// <summary>
 /// A content hash over everything a kit's generators are built from — its scripts and whatever data

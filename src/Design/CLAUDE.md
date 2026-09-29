@@ -14,7 +14,7 @@ run an EM setup. Detail of that move is in `src/Ui/Layout/Em/RESOLVED.md`.
 | `Layout/Em/` | the `.cem` model + reader, the cross-section and planar extractors, port extraction, `EmRunService`, `EmSetupResolver`, SnP provenance |
 | `Layout/Drc/` | the whole design-rule check — the engine, the region and predicate evaluators, the wire-to-artwork check, and the `.clay`/`.ctech` format's own waiver record and layer-expression parser. It crossed in AUT-4 so `circuitrf check` runs design rules with no display; `DrcRunReport` and `WBondWireClearance` stayed in `src/Ui` |
 | `Layout/Assembly/` | the `.wasm` assembly rule-file model, its reader, its resolver and the built-in rule set the DRC engine falls back to when a design references no `.wasm` (AUT-4) |
-| `Layout/PCells/` | only `PCellValue` and how it serialises. No generators, no handle solver, no Python |
+| `Layout/PCells/` | `PCellValue`, the generators, registry, generated-cell store/lifecycle and the kit-script client (`Wire/`); `GeneratedCellsRun` rebuilds a layout's cells headlessly. The handle solver stayed in `src/Ui` |
 | `Cells/` | the `.ccell` cell-folder format, the atomic write behind every save, `CellCreate` — the writer of an empty `.csch`/`.csym`/`.clay`, which the GUI's New Cell / New Schematic / New Symbol / New Layout call — and `CellViewFileValidator`, which answers whether a file would survive being adopted as a view (AUT-4) |
 | `Workspace/` | the `.cws` reader, R-fgn-3's ancestor-workspace walk, and `WorkspaceCreate` — the four operations File ▸ New Workspace performs after its dialog returns |
 | `Schematic/` | the `.csch` model + persistence, schematic geometry, net extraction, the cell/kit resolvers and the SPICE-import builders — the editors and sessions stayed in `src/Ui` (AUT-2) |
@@ -32,11 +32,9 @@ in the layout reader.
 
 Things that deliberately stayed in `src/Ui` and should not follow: `LayoutEditorViewModel` and its
 sixteen partials, the DRC engine's two UI-side companions — `DrcRunReport`, which posts a run to
-the Messages panel, and `WBondWireClearance`, which reads a per-USER preference — all seven PCell
-generators and `GeneratedCellStore`, `EmSetupEditorViewModel`, `EmBackAnnotation`,
-`TechEditorViewModel`, the technology importers, and `AppPreferences`. Flattening a placed
-generated cell reads the `.clay` the generator already wrote, which is why a headless EM run needs
-no generator and no Python.
+the Messages panel, and `WBondWireClearance`, which reads a per-USER preference — the PCell handle
+solver and the per-user trust preferences, `EmSetupEditorViewModel`, `EmBackAnnotation`,
+`TechEditorViewModel`, the technology importers, and `AppPreferences`.
 
 ## Two rules that are easy to break by accident
 

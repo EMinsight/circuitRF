@@ -367,9 +367,9 @@ public class BundleIntegrityTests
     [Fact]
     public void ThePythonBytecodeCacheIsRedirectedOutOfTheApplicationBundle()
     {
-        string code = Read(Path.Combine("src", "Ui", "Layout", "PCells", "Wire", "PCellWorkerTransport.cs"));
+        string code = Read(Path.Combine("src", "Design", "Layout", "PCells", "Wire", "PCellWorkerTransport.cs"));
 
         Assert.Contains("PYTHONPYCACHEPREFIX", code);
-        Assert.Contains("AppDataRoot.SubDir(\"pcell-cache\")", code);
+        Assert.Contains("UserStateDirectory.SubDir(\"pcell-cache\")", code);
     }
 }

@@ -351,7 +351,7 @@ public partial class SettingsView : Window
 
     private void OnForgetPCellTrustClick(object? sender, RoutedEventArgs e)
     {
-        CircuitRF.Ui.Layout.PCells.Wire.PCellTrustPreferences.Forget();
+        CircuitRF.Ui.Layout.PCells.PCellTrustPreferences.Forget();
         UpdatePCellTrustStatus(0);
     }
 

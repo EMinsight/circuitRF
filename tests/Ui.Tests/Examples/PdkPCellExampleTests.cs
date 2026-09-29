@@ -40,7 +40,7 @@ using CircuitRF.Design.Schematic;
 using CircuitRF.Ui.Layout;
 using CircuitRF.Ui.Schematic;
 using CircuitRF.Ui.Layout.PCells;
-using CircuitRF.Ui.Layout.PCells.Wire;
+using CircuitRF.Design.Layout.PCells.Wire;
 using CircuitRF.Ui.Tests.Layout.PCells;
 using Xunit;
 using Xunit.Abstractions;

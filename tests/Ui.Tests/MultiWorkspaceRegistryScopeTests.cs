@@ -3,8 +3,9 @@ using System.IO;
 using System.Linq;
 using CircuitRF.Core.Devices.External;
 using CircuitRF.Design.Workspace;
+using CircuitRF.Design.Layout.PCells;
 using CircuitRF.Ui.Layout.PCells;
-using CircuitRF.Ui.Layout.PCells.Wire;
+using CircuitRF.Design.Layout.PCells.Wire;
 using CircuitRF.Ui.Schematic;
 using Xunit;
 

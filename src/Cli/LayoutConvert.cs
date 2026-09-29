@@ -236,6 +236,14 @@ public static class LayoutConvert
             var src = LoadSource(o, from, to.Value, ref scratch);
             if (src is null) return 1;
 
+            // R-gc2-2/3: exporting a `.clay` exports the parts it places — rebuilt into the
+            // workspace's folder where missing, or refused. An importer produces no generated cells.
+            int? cellRefusal = null;
+            using var generated = from == Fmt.Clay
+                ? GeneratedCells.Prepare(src.View, Path.GetFullPath(o.Input!), mayWrite: true, out cellRefusal)
+                : null;
+            if (cellRefusal is { } refused) return refused;
+
             // The minted technology, when it is somewhere the caller will still find it. It is not
             // optional context: the cells the import produced reference it by relative path, so a
             // caller that took the cells and not this has a design whose layers resolve to nothing.

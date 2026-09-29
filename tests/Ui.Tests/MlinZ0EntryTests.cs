@@ -2,6 +2,7 @@ using System.Globalization;
 using CircuitRF.Core.Devices;
 using CircuitRF.Core.Devices.Microstrip;
 using CircuitRF.Ui.Layout;
+using CircuitRF.Design.Layout.PCells;
 using CircuitRF.Ui.Layout.PCells;
 using CircuitRF.Ui.Schematic;
 using CircuitRF.Ui.ViewModels;

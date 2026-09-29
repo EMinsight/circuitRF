@@ -1,3 +1,4 @@
+using CircuitRF.Design.Layout.PCells;
 using CircuitRF.Ui.Layout.PCells;
 
 namespace CircuitRF.Ui.Layout;
@@ -149,7 +150,7 @@ public sealed partial class LayoutEditorViewModel
         IReadOnlyList<string>? editDiagnostics;
         try
         {
-            newCellDir = PCells.GeneratedCellStore.GetOrCreate(
+            newCellDir = CircuitRF.Design.Layout.PCells.GeneratedCellStore.GetOrCreate(
                 workspaceRoot, origin.GeneratorId, merged, Technology, ResolvedTechPath, PCellLayerSelection.Default, out editDiagnostics);
         }
         catch (Exception ex)
@@ -161,7 +162,7 @@ public sealed partial class LayoutEditorViewModel
             return false;
         }
 
-        PCells.GeneratedCellStore.RecordSnapshot(
+        CircuitRF.Design.Layout.PCells.GeneratedCellStore.RecordSnapshot(
             Model, newCellDir, origin.GeneratorId, merged, ResolvedTechPath, PCellLayerSelection.Default, workspaceRoot);
         if (editDiagnostics is { Count: > 0 })
             foreach (var d in editDiagnostics) _messageSink?.Warning(d);

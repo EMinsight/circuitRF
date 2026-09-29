@@ -3,6 +3,7 @@ using Avalonia.Input;
 using CircuitRF.Design;
 using CircuitRF.Design.Layout.Footprints;
 using CircuitRF.Ui.Layout;
+using CircuitRF.Design.Layout.PCells;
 using CircuitRF.Ui.Layout.PCells;
 using CircuitRF.Ui.ViewModels;
 using Xunit;

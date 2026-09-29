@@ -1,4 +1,4 @@
-namespace CircuitRF.Ui.Layout.PCells;
+namespace CircuitRF.Design.Layout.PCells;
 
 /// <summary>
 /// MCross artwork (brief-L5a-pcell-contract-and-microstrip.md §3): four arms (<c>W1</c>-<c>W4</c>)

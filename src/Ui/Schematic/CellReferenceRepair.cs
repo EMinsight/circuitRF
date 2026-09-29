@@ -156,7 +156,7 @@ public static class CellReferenceRepair
             {
                 string leaf = Path.GetFileName(sub);
                 if (leaf.StartsWith('.')) continue;
-                if (string.Equals(leaf, Layout.PCells.GeneratedCellStore.ReservedFolderName,
+                if (string.Equals(leaf, CircuitRF.Design.Layout.PCells.GeneratedCellStore.ReservedFolderName,
                                   StringComparison.OrdinalIgnoreCase)) continue;
 
                 if (IsCellFolder(sub))

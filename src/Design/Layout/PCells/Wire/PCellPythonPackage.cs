@@ -1,6 +1,6 @@
 using System.IO;
 
-namespace CircuitRF.Ui.Layout.PCells.Wire;
+namespace CircuitRF.Design.Layout.PCells.Wire;
 
 /// <summary>
 /// Where circuitRF's own Python package (<c>circuitrf_pcell</c> and <c>cni</c>) lives, so a kit's

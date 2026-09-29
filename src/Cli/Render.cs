@@ -603,6 +603,10 @@ internal static class Render
         try { view = LayoutPersistence.LoadFromFile(t.File); }
         catch (Exception ex) { return JsonRun.Fail(CliDiagnostics.RenderDocumentUnreadable(t.File, ex.Message)); }
 
+        // R-gc2-2: the placed PCells, rebuilt IN MEMORY — render writes nothing but its picture.
+        using var cells = GeneratedCells.Prepare(view, t.File, mayWrite: false, out int? cellRefusal);
+        if (cellRefusal is { } refused) return refused;
+
         string full    = Path.GetFullPath(t.File);
         // The directory the `.clay` ITSELF lives in — a cell folder's `layout/` sub-folder — which is
         // what an instance's CellRef was written relative to and what the canvas passes as

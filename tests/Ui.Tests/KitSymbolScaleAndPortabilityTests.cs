@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using CircuitRF.Core.Pdk;
-using CircuitRF.Ui.Layout.PCells.Wire;
+using CircuitRF.Design.Layout.PCells.Wire;
 using CircuitRF.Ui.Schematic;
 using Xunit;
 

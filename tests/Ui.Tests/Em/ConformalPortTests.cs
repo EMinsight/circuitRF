@@ -18,6 +18,7 @@
 using CircuitRF.Engine.Mom;
 using CircuitRF.Ui.Layout;
 using CircuitRF.Ui.Layout.Em;
+using CircuitRF.Design.Layout.PCells;
 using CircuitRF.Ui.Layout.PCells;
 
 namespace CircuitRF.Ui.Tests.Em;

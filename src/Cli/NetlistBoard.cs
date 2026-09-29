@@ -37,6 +37,10 @@ internal static class Board
         try { view = LayoutPersistence.LoadFromFile(clay!); }
         catch (Exception ex) { return JsonRun.Fail(CliDiagnostics.NetlistBoardUnreadable(clay!, ex.Message)); }
 
+        // R-gc2-2/3: every land pattern placed, so the pads the tables list are the board's pads.
+        using var generated = GeneratedCells.Prepare(view, clay!, mayWrite: true, out int? cellRefusal);
+        if (cellRefusal is { } refused) return refused;
+
         // The technology walk `render` and `em` both take — the layout's own reference, then its
         // ancestor workspace. A board with none still projects: what it costs is the via access
         // codes, which only a stackup can state, and an absent field is written as absent.

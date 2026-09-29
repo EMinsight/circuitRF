@@ -1,7 +1,7 @@
 using System.Text.Json;
 using Clipper2Lib;
 
-namespace CircuitRF.Ui.Layout.PCells.Wire;
+namespace CircuitRF.Design.Layout.PCells.Wire;
 
 /// <summary>
 /// Work a generator script asks circuitRF to do for it, mid-generate.

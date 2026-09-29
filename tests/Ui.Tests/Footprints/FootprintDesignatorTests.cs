@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text;
 using CircuitRF.Design.Layout.Footprints;
 using CircuitRF.Design.Layout.Interchange;
+using CircuitRF.Design.Layout.PCells;
 using CircuitRF.Ui.Layout.PCells;
 using CircuitRF.Render;
 using CircuitRF.Ui.Layout;

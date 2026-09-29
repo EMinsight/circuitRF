@@ -101,6 +101,11 @@ args = JsonRun.TakeFlags(args);
 // out of the argument list here so every command gets it without repeating the parsing.
 args = TakeKitFolders(args, out var kitFolders);
 
+// --trust-kit <dir> lets ONE run execute a kit's PCell scripts to rebuild its generated cells
+// (brief-generated-cells-2 R-gc2-2, cli.md §21). Taken here, like --kits, so every geometry verb
+// honours it without learning it — and reset on every Run, so a `serve` call never inherits a grant.
+args = CircuitRF.Cli.GeneratedCells.TakeTrustFlags(args);
+
 if (args.Length == 0)
 {
     PrintHelp();
@@ -1466,6 +1471,15 @@ static int RunEm(string[] args)
     if (emSets.Count > 0 && !setup.IsThermal)
         Console.Error.WriteLine($"[circuitRF] --set {string.Join(", ", emSets.Select(x => x.Name))} is not applied: it sets a global of " +
                                 "the circuit a thermal setup takes its currents from, and this setup is an EM one.");
+
+    // R-gc2-2/3: the setup's layout, with every placed PCell rebuilt into the workspace's own folder
+    // as Simulate's workspace would have it — or a refusal, since an S-parameter file solved without
+    // a part's metal is an answer about a different circuit.
+    int? emCellRefusal = null;
+    using var emGenerated = resolution.Source is { } emSource
+        ? CircuitRF.Cli.GeneratedCells.Prepare(emSource.View, emSource.AbsolutePath, mayWrite: true, out emCellRefusal)
+        : null;
+    if (emCellRefusal is { } emRefused) return emRefused;
 
     EmRunResult result;
     try

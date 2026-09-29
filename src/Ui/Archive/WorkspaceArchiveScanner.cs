@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using CircuitRF.Design.Layout.PCells;
 using CircuitRF.Ui.Layout.PCells;
 using CircuitRF.Ui.Schematic;
 
@@ -17,7 +18,7 @@ namespace CircuitRF.Ui.Archive;
 public static class WorkspaceArchiveScanner
 {
     /// <summary>Folder inside the archive that receives copied kits.</summary>
-    public const string KitsFolder = "kits";
+    public const string KitsFolder = CircuitRF.Design.Workspace.WorkspaceFolders.Kits;
 
     /// <summary>Folder inside the archive that receives copied external files.</summary>
     public const string ExternalFolder = "external";

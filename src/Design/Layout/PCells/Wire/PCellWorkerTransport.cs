@@ -1,6 +1,6 @@
 using System.Diagnostics;
 
-namespace CircuitRF.Ui.Layout.PCells.Wire;
+namespace CircuitRF.Design.Layout.PCells.Wire;
 
 /// <summary>
 /// A duplex byte channel to a PCell generator, plus enough identity to write a comprehensible error
@@ -119,7 +119,7 @@ public sealed class ProcessPCellWorkerTransport : IPCellWorkerTransport
         //
         // PYTHONPYCACHEPREFIX rather than PYTHONDONTWRITEBYTECODE: the cache is a real startup
         // saving on a kit with dozens of modules, so it is REDIRECTED rather than turned off.
-        info.Environment["PYTHONPYCACHEPREFIX"] = AppDataRoot.SubDir("pcell-cache");
+        info.Environment["PYTHONPYCACHEPREFIX"] = CircuitRF.Design.UserStateDirectory.SubDir("pcell-cache");
 
         if (pythonPath is { Count: > 0 })
         {

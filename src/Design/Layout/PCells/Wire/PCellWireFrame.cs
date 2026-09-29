@@ -2,7 +2,7 @@ using System.Buffers.Binary;
 using System.Runtime.InteropServices;
 using System.Text;
 
-namespace CircuitRF.Ui.Layout.PCells.Wire;
+namespace CircuitRF.Design.Layout.PCells.Wire;
 
 /// <summary>Anything wrong with a PCell wire exchange — a malformed frame, a desynchronised stream,
 /// a message this build cannot read. One type, because every one of them means the same thing to a

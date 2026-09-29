@@ -68,7 +68,7 @@ public partial class WBondApp : Application
         // way out. PCellRegistry is the wBond-specific half — reference geometry can hold PCells,
         // whose kit resolvers own an interpreter process each.
         AppDomain.CurrentDomain.ProcessExit += (_, _) => ExternalDeviceRegistry.ResetResolved();
-        AppDomain.CurrentDomain.ProcessExit += (_, _) => Layout.PCells.PCellRegistry.ClearResolvers();
+        AppDomain.CurrentDomain.ProcessExit += (_, _) => CircuitRF.Design.Layout.PCells.PCellRegistry.ClearResolvers();
 
         // An exception that reaches the dispatcher unhandled takes the process down, so it is a
         // crash and gets a report. This app installs no dispatcher backstop of its own; the

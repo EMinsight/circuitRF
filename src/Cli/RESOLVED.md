@@ -2754,3 +2754,31 @@ a file that leaves it out reads false. The page says to write it.
 - **No logic in the verb.** `StepConvertCliTests.Gate8` scans `src/Cli` (comments stripped) for any call into the worker
   and any STEP text; `Gate1` compares the process's file with the in-process call's byte for byte, bar `FILE_NAME`'s
   time-stamp, for a `.c3d`, a `.clay` and a cell folder.
+
+## Every geometry verb rebuilds its generated cells, or refuses — brief-generated-cells-2 (2026-09-28)
+
+- **Where it is called.** `render`, `check` (a `.clay` and a `.cem`), `lvs` (per cell), `explain
+  --extents`, `rail`, `impedance`, `em`, `convert` from a `.clay`, and `netlist` on a board, each right
+  after it has read its layout and before anything flattens it. `src/Cli/GeneratedCells.cs` holds no
+  generation — `GeneratedCellsRun` in `src/Design` does.
+- **`rail` holds the run for the whole verb**, not just the flatten: the pads are resolved later through
+  the same cell resolver, and a redirected stale cell has to resolve there too.
+- **`impedance` and `lvs` prepare from the path** (one extra read of the `.clay`), because the reading
+  they do happens inside `src/Design` calls that take a path.
+- **`--trust-kit` is taken before dispatch, like `--kits`**, and reset on every `CliEntry.Run` — so a
+  `serve` tool call never inherits another call's grant. `serve --trust-kit` is the operator's and holds
+  for the server's life; no tool advertises it, deliberately (cli.md §11.3, §23.3).
+- **An agent cannot grant it; the person can, through elicitation** (owner's decision, 2026-09-28).
+  `serve` installs `GeneratedCells.Asker` only when the client declares `elicitation`, and asks only for
+  a MISSING cell from an UNKNOWN kit — `GeneratedCellsRun.AskForTrust`, then one retry after
+  `StopProviders` + `InvalidateResolved`, which is what the GUI's own grant does. Answers live for the
+  server's life in memory and never reach `preferences.json`. It is the first request this server
+  sends; `JsonRpc` gained a pending table because the request leaves from the worker thread and its
+  answer arrives on the reader.
+- **Test isolation:** the gate sets `CRF_STATE_DIR` for the CLI process, so a decision recorded on the
+  developer's own machine cannot grant a kit the test expects to be refused.
+- **Pre-existing, not this brief:** `CliStructuredOutputTests.DiagnosticIds_AreTheCommittedSet_UniqueAndCaseDistinct`
+  fails on 32 declared ids the committed list never recorded (`check.c3d.*`, `convert.step.*`,
+  `solver.*`, `check.path.foreign`, `check.technology.none-3d`, `em.c3d.setup`, `em.setup.on-cem`). This
+  brief's six ids are recorded.
+

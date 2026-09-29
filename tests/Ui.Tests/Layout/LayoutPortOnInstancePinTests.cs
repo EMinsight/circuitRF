@@ -11,6 +11,7 @@
 // tapered conductor whose bounding box is far wider than the end the port sits on.
 
 using CircuitRF.Ui.Layout;
+using CircuitRF.Design.Layout.PCells;
 using CircuitRF.Ui.Layout.PCells;
 using CircuitRF.Ui.Schematic;
 

@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Text;
 
-namespace CircuitRF.Ui.Layout.PCells;
+namespace CircuitRF.Design.Layout.PCells;
 
 /// <summary>
 /// R-pc-4/5: a PCell is evaluated once per unique (generator, parameter values, technology) —

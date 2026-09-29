@@ -1,4 +1,6 @@
-namespace CircuitRF.Ui.Layout.PCells;
+using CircuitRF.Design.Layout.Footprints;
+
+namespace CircuitRF.Design.Layout.PCells;
 
 /// <summary>
 /// Maps a generator id to its <see cref="PCellGenerator"/>. §0/guardrails of

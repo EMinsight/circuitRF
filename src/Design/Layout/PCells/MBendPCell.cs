@@ -1,6 +1,6 @@
 using CircuitRF.Core.Devices.Microstrip;
 
-namespace CircuitRF.Ui.Layout.PCells;
+namespace CircuitRF.Design.Layout.PCells;
 
 /// <summary>
 /// MBend artwork (brief-L5a-pcell-contract-and-microstrip.md §3): two arms of width <c>W</c>

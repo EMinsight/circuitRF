@@ -526,6 +526,10 @@ internal static class Check
         foreach (var d in tech.Diagnostics) f.Add(CliDiagnostics.CheckResolverNote(path, d));
         if (tech.Source == TechResolutionSource.None) f.Add(CliDiagnostics.CheckNoTechnology(path));
 
+        // R-gc2-2/3: the placed PCells rebuilt IN MEMORY — check writes nothing — so the design rules
+        // see the lands they are about; one that cannot be rebuilt is an ERROR finding, never a skip.
+        using var generated = GeneratedCells.PrepareForCheck(view, path, f.Add);
+
         RunDrc(path, view, full, tech.Tech, f, cache);
     }
 
@@ -777,6 +781,11 @@ internal static class Check
                     : "its layout reference resolves to nothing."));
             return;
         }
+
+        // R-gc2-2/3: the setup's layout, with its placed PCells rebuilt in memory — the geometry the
+        // preflight measures is the geometry a run would solve.
+        using var generated = GeneratedCells.PrepareForCheck(
+            resolution.Source.View, resolution.Source.AbsolutePath, f.Add);
 
         // ── brief-em3d-3 — A 3D SETUP: BUILD THE 3D PROBLEM, AND NOTHING ELSE ────────────────────
         //

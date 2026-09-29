@@ -38,25 +38,16 @@ public static class CellPins
     }
 
     /// <summary>
-    /// How a generated cell's own generator is reached — the seam that lets this file sit below the
-    /// UI firewall while the built-in PCell generators stay in <c>src/Ui</c>
-    /// (brief-render-1-render-layer-below-the-firewall.md, R-rnd1-3).
+    /// How a generated cell's own generator is reached.
     ///
-    /// <para>The SAME shape as <see cref="LayoutTextOutline.TypefaceSource"/>, and for the same
-    /// reason: this type is on the render path and had to come below the wall with the renderer, but
-    /// <c>PCellRegistry</c> pulls the six built-in generators, the out-of-process worker transports
-    /// and a per-USER trust preference behind it — and a per-user preference store is
-    /// <c>src/Ui</c>'s business. <c>UiPCellGeneratorInstaller</c> sets this from a module
-    /// initializer, so every frame the application draws resolves generators exactly as it always
-    /// did.</para>
-    ///
-    /// <para><b>Unset, only the SECOND branch below is lost, and it is worth being precise about
-    /// which.</b> A generated cell is an ordinary cell folder on disk and its pins are persisted, so
-    /// the first branch answers for every cell written since pins were persisted. What a headless
-    /// process cannot do is re-invoke a generator for a cell written BEFORE that — those instances
-    /// render with no pin markers rather than with wrong ones.</para>
+    /// <para>It was a seam set by a GUI module initializer (R-rnd1-3) while <c>PCellRegistry</c> lived
+    /// in <c>src/Ui</c>, which left a headless process unable to re-derive a pre-pin-persistence
+    /// cell's pins. The registry crossed the firewall in brief-generated-cells-2 (R-gc2-1), so it is
+    /// simply the registry now, in every process; the field stays assignable for a test that wants to
+    /// count or replace the calls.</para>
     /// </summary>
-    public static Func<string, PCellGenerator?>? GeneratorSource;
+    public static Func<string, PCellGenerator?>? GeneratorSource =
+        id => PCellRegistry.TryGet(id, out var generator) ? generator : null;
 
     /// <summary>
     /// <paramref name="view"/>'s pins: its own persisted list when it has one, else the generator's

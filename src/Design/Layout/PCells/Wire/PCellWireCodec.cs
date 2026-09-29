@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace CircuitRF.Ui.Layout.PCells.Wire;
+namespace CircuitRF.Design.Layout.PCells.Wire;
 
 /// <summary>
 /// Turns circuitRF's own types into wire messages and back. See

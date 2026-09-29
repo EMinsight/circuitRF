@@ -1226,6 +1226,23 @@ internal static class CliDiagnostics
         "check.layout.unknown-field", DiagnosticSeverity.Warning,
         "{path}: {text}", ("path", path), ("text", text));
 
+    // ── Generated cells (brief-generated-cells-2 R-gc2-3, cli.md §21) ─────────────────────────
+    //
+    // The sentence is GeneratedCellsLifecycle.CouldNotRebuild's, which the application's Messages line
+    // also says — one wording, so a user who has seen one has already read the other.
+
+    public static Diagnostic CheckGeneratedCellUnbuildable(string path, string sentence) => Diagnostic.Create(
+        "check.generated-cell.unbuildable", DiagnosticSeverity.Error,
+        "{path}: {sentence}", ("path", path), ("sentence", sentence));
+
+    public static Diagnostic CheckGeneratedCellKitNotAllowed(string path, string sentence) => Diagnostic.Create(
+        "check.generated-cell.kit-not-allowed", DiagnosticSeverity.Info,
+        "{path}: {sentence}", ("path", path), ("sentence", sentence));
+
+    public static Diagnostic CheckGeneratedCellNote(string path, string note) => Diagnostic.Create(
+        "check.generated-cell.note", DiagnosticSeverity.Info,
+        "{path}: {note}", ("path", path), ("note", note));
+
     public static Diagnostic CheckDrcNote(string path, string text) => Diagnostic.Create(
         "check.drc.note", DiagnosticSeverity.Warning,
         "{path}: {text}", ("path", path), ("text", text));
@@ -3248,4 +3265,18 @@ internal static class CliDiagnostics
     /// <summary>R-em3d25-1d — out of discovery's sight, but files remained; the report lists them by path.</summary>
     public static Diagnostic SolverRemoveIncomplete(string report) => Diagnostic.Create(
         "solver.remove.incomplete", DiagnosticSeverity.Error, "{report}", ("report", report));
+
+    // ── Generated cells, for every geometry verb that USES the artwork (R-gc2-3) ──────────────
+
+    public static Diagnostic GeneratedCellUnbuildable(string sentence, string placedIn) => Diagnostic.Create(
+        "cli.generated-cell.unbuildable", DiagnosticSeverity.Error,
+        "error: {sentence} It is placed in '{placedIn}', and a result computed without it would describe a "
+      + "design with that part missing, so nothing was run.",
+        ("sentence", sentence), ("placedIn", placedIn));
+
+    public static Diagnostic GeneratedCellKitNotAllowed(string sentence) => Diagnostic.Create(
+        "cli.generated-cell.kit-not-allowed", DiagnosticSeverity.Info, "note: {sentence}", ("sentence", sentence));
+
+    public static Diagnostic GeneratedCellNote(string note) => Diagnostic.Create(
+        "cli.generated-cell.note", DiagnosticSeverity.Info, "note: {note}", ("note", note));
 }

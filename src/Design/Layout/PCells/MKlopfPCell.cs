@@ -1,7 +1,7 @@
 using System.Linq;
 using CircuitRF.Core.Devices.Microstrip;
 
-namespace CircuitRF.Ui.Layout.PCells;
+namespace CircuitRF.Design.Layout.PCells;
 
 /// <summary>
 /// MKlopf artwork (brief-mtaper-mklopf.md §2-3): the Klopfenstein-taper outline, straight or offset.

@@ -1,7 +1,7 @@
 using System.Text.Json;
 using CircuitRF.Core.Devices.External;
 
-namespace CircuitRF.Ui.Layout.PCells.Wire;
+namespace CircuitRF.Design.Layout.PCells.Wire;
 
 /// <summary>
 /// One out-of-process generator script, presented to the rest of circuitRF as ordinary

@@ -1,4 +1,5 @@
 using CircuitRF.Ui.Layout;
+using CircuitRF.Design.Layout.PCells;
 using CircuitRF.Ui.Layout.PCells;
 using CircuitRF.Ui.Schematic;
 using Xunit;
@@ -67,7 +68,7 @@ public sealed class SchematicToLayoutOverwriteReportTests : IDisposable
         // for W = 20 mm (the exact mechanism EditInstancePCellParameters uses).
         var origin20 = CellLayoutResolver.Resolve(target.Instances[0].CellRef, layoutDir).View!.PCellOrigin!;
         var params20 = new Dictionary<string, PCellValue>(origin20.Parameters) { ["W"] = 20 * 1e-3 }; // 20 mm in SI metres
-        string cell20 = CircuitRF.Ui.Layout.PCells.GeneratedCellStore.GetOrCreate(
+        string cell20 = CircuitRF.Design.Layout.PCells.GeneratedCellStore.GetOrCreate(
             _root, "MLIN", params20, null, null, CircuitRF.Design.Layout.PCells.PCellLayerSelection.Default);
         target.Instances[0].CellRef = Path.GetRelativePath(layoutDir, cell20);
 

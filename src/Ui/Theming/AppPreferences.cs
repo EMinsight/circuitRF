@@ -130,7 +130,7 @@ public sealed class AppPreferences
     // absolute directory. DELIBERATELY here and not in .cws: a decision recorded inside a shared
     // workspace could be written by whoever sent you the workspace, which would defeat the prompt
     // entirely. See PCellTrustStore for the full reasoning.
-    [JsonPropertyName("pcell_trust")]
+    [JsonPropertyName(CircuitRF.Design.Layout.PCells.Wire.PCellTrustStore.PreferenceKey)]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public Dictionary<string, bool>? PCellTrust { get; set; }
 

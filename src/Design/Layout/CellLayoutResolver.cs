@@ -90,6 +90,16 @@ public static class CellLayoutResolver
         if (Workspace.ExternalCellRef.ResolveCellDir(cellRef, baseDir) is not { } cellAbsDir)
             return CellLayoutResolution.NotFoundResult;
 
+        // A headless run's generated cells (brief-generated-cells-2 R-gc2-2): a stale name redirected
+        // to the one its snapshot builds today, and a read-only run's cells held in memory rather than
+        // written. Empty in the application, so this is one lock and a count there.
+        if (!GeneratedCellOverlay.IsEmpty)
+        {
+            cellAbsDir = GeneratedCellOverlay.Follow(cellAbsDir);
+            if (GeneratedCellOverlay.TryGetView(cellAbsDir, out var held))
+                return new CellLayoutResolution { State = CellLayoutState.Resolved, View = held, ResolvedCellDir = cellAbsDir };
+        }
+
         if (!Directory.Exists(cellAbsDir))
             return CellLayoutResolution.NotFoundResult;
 

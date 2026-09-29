@@ -31,6 +31,7 @@ using CircuitRF.Design.Layout;
 using CircuitRF.Design.Layout.Lvs;
 using CircuitRF.Design.Schematic;
 using CircuitRF.Diagnostics;
+using CircuitRF.Design.Layout.PCells;
 using CircuitRF.Ui.Layout.PCells;
 
 namespace CircuitRF.Ui.Tests.Lvs;

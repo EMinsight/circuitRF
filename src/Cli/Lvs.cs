@@ -271,6 +271,21 @@ internal static class Lvs
                 continue;
             }
 
+            // R-gc2-2/3: the layout's placed PCells rebuilt IN MEMORY (lvs writes only its report), and
+            // a cell whose artwork cannot be rebuilt is an ERROR here rather than a comparison against
+            // a board with devices missing.
+            string clay = Path.Combine(CellFolder.SubFolderPath(cell, ViewType.Layout),
+                                       CellFolder.ResolvePrimary(cell, ViewType.Layout).ResolvedName!);
+            using var generated = GeneratedCells.Prepare(clay, mayWrite: false, out int? cellRefusal);
+            if (cellRefusal is not null)
+            {
+                var first = generated.Unbuildable[0];
+                errors += generated.Unbuildable.Count;
+                rows.Add(Skipped(cell, name, CliDiagnostics.GeneratedCellUnbuildable(first.Sentence, first.ReferencedFrom)));
+                report.AppendLine($"{name}: " + string.Join(" ", generated.Unbuildable.Select(u => u.Sentence)));
+                continue;
+            }
+
             Console.Error.WriteLine($"[circuitRF] comparing '{name}'");
             var result = LvsRun.Run(cell, run, RunHost.Control);
 

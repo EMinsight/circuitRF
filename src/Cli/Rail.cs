@@ -109,7 +109,17 @@ internal static class Rail
             JsonRun.Report(CliDiagnostics.RailCancelled());
             return 130;
         }
+        finally
+        {
+            // Held for the WHOLE run, not just the flatten: the pads are resolved later, through the
+            // same cell resolver, and a redirected stale cell has to resolve there too.
+            _generated?.Dispose();
+            _generated = null;
+        }
     }
+
+    /// <summary>This run's rebuilt generated cells (R-gc2-2) — see <see cref="ResolveBoard"/>.</summary>
+    private static CircuitRF.Design.Layout.PCells.GeneratedCellsRun? _generated;
 
     private static int Usage()
     {
@@ -523,6 +533,16 @@ internal static class Rail
             return (null, JsonRun.Fail(CliDiagnostics.RailNoTechnology(clay)));
 
         Console.Error.WriteLine($"[circuitRF] technology: {found.TechnologyPath} ({found.TechnologySource})");
+
+        // R-gc2-2/3: every land pattern the board places, rebuilt before anything reads the copper —
+        // written to the workspace's folder as the application would, so the next run is free. A land
+        // that cannot be rebuilt is a refusal: a drop computed without a part's pads is a drop for a
+        // different board.
+        if (found.ClayPath is { } clayPath)
+        {
+            _generated = GeneratedCells.Prepare(view, clayPath, mayWrite: true, out int? cellRefusal);
+            if (cellRefusal is { } refused) return (null, refused);
+        }
 
         // The artwork the EXTRACTION reads is the FLATTENED one — a board whose parts are footprint
         // cells keeps every land inside an instance, and reading only the root's own shapes solves a

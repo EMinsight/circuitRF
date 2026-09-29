@@ -41,6 +41,7 @@ using CircuitRF.WBond;
 using CircuitRF.Ui.Layout;
 using CircuitRF.Ui.Markdown;
 using CircuitRF.Ui.Layout.Em;
+using CircuitRF.Design.Layout.PCells;
 using CircuitRF.Ui.Layout.PCells;
 using CircuitRF.Ui.Layout.TechImport;
 using CircuitRF.Ui.Messages;
@@ -670,11 +671,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// The workspace's own PCell generator resolver, or null when no workspace is open. Disposed and
     /// replaced on every workspace-lifetime reset — see <see cref="ResetPCellGenerators"/>.
     /// </summary>
-    private CircuitRF.Ui.Layout.PCells.Wire.PCellWorkerResolver? _pcellResolver;
+    private CircuitRF.Design.Layout.PCells.Wire.PCellWorkerResolver? _pcellResolver;
 
     /// <summary>This installation's record of which kits' scripts may run. Rebuilt with the resolver so
     /// a decision made in one workspace is visible in the next without a restart.</summary>
-    private CircuitRF.Ui.Layout.PCells.Wire.PCellTrustStore? _pcellTrust;
+    private CircuitRF.Design.Layout.PCells.Wire.PCellTrustStore? _pcellTrust;
 
     /// <summary>
     /// Points the PCell registry at <paramref name="workspaceRootDir"/>'s generator scripts, after
@@ -696,7 +697,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // OURS, by instance — never every resolver in the process (MW1 R-mw1-4). A workspace
         // registers exactly one and holds it, so the instance is the scope key and another window's
         // generators are untouched.
-        CircuitRF.Ui.Layout.PCells.PCellRegistry.RemoveResolver(previous);
+        CircuitRF.Design.Layout.PCells.PCellRegistry.RemoveResolver(previous);
         try { previous?.Dispose(); } catch { /* teardown must not fail a workspace switch */ }
 
         _pcellTrust = null;
@@ -708,10 +709,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             // B6: a kit's scripts run only with this installation's explicit permission. The gate is
             // handed to the resolver, not applied here, so the refusal happens at the one point that
             // would otherwise launch an interpreter — including on paths that never went near a prompt.
-            var trust = CircuitRF.Ui.Layout.PCells.Wire.PCellTrustStore.UserLocal();
+            var trust = CircuitRF.Ui.Layout.PCells.PCellTrustStores.UserLocal();
             _pcellTrust = trust;
 
-            var resolver = new CircuitRF.Ui.Layout.PCells.Wire.PCellWorkerResolver(
+            var resolver = new CircuitRF.Design.Layout.PCells.Wire.PCellWorkerResolver(
                 workspaceRootDir!, findInterpreter: null, report: m => Messages.Warning(m),
                 trust: trust.Decide);
 
@@ -722,12 +723,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             resolver.InterpreterChosen += RecordPythonInterpreter;
 
             _pcellResolver = resolver;
-            CircuitRF.Ui.Layout.PCells.PCellRegistry.AddResolver(resolver);
+            CircuitRF.Design.Layout.PCells.PCellRegistry.AddResolver(resolver);
 
             // Asked from the MANIFEST SCAN, which reads JSON and starts nothing — so the question is
             // put up front, in a calm moment, without costing the laziness B3 deliberately built.
             var pending = resolver.Kits
-                .Where(k => trust.Decide(k.Directory) == CircuitRF.Ui.Layout.PCells.Wire.PCellTrustDecision.Unknown)
+                .Where(k => trust.Decide(k.Directory) == CircuitRF.Design.Layout.PCells.Wire.PCellTrustDecision.Unknown)
                 .ToList();
             if (pending.Count > 0) RequestPCellConsent(pending);
 
@@ -757,7 +758,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// is re-checked when the prompt finally runs because the user may have switched away meanwhile —
     /// answering a question about a workspace that is no longer open would record the wrong thing.</para>
     /// </summary>
-    private void RequestPCellConsent(IReadOnlyList<CircuitRF.Ui.Layout.PCells.Wire.PCellKit> pending)
+    private void RequestPCellConsent(IReadOnlyList<CircuitRF.Design.Layout.PCells.Wire.PCellKit> pending)
     {
         string? askedFor = CurrentWorkspacePath;
 
@@ -790,7 +791,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             // The resolver already concluded that these kits could not run; that conclusion is cached,
             // as are any generators resolved through it. Both have to go before the cells can appear.
             resolver.StopProviders();
-            CircuitRF.Ui.Layout.PCells.PCellRegistry.InvalidateResolved();
+            CircuitRF.Design.Layout.PCells.PCellRegistry.InvalidateResolved();
 
             if (CurrentWorkspacePath is { } cws)
             {
@@ -848,11 +849,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         if (_pcellTrust is not { } trust) return;
 
         resolver.Rescan();
-        CircuitRF.Ui.Layout.PCells.PCellRegistry.InvalidateResolved();
+        CircuitRF.Design.Layout.PCells.PCellRegistry.InvalidateResolved();
 
         // A kit added since the workspace opened has never been asked about, and Unknown does not run.
         var pending = resolver.Kits
-            .Where(k => trust.Decide(k.Directory) == CircuitRF.Ui.Layout.PCells.Wire.PCellTrustDecision.Unknown)
+            .Where(k => trust.Decide(k.Directory) == CircuitRF.Design.Layout.PCells.Wire.PCellTrustDecision.Unknown)
             .ToList();
         if (pending.Count > 0) RequestPCellConsent(pending);
 
@@ -936,7 +937,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// edit to a document the user might reasonably discard, and the whole point of recording it is
     /// that the NEXT open is fast.</para>
     /// </summary>
-    private void RecordPythonInterpreter(CircuitRF.Ui.Layout.PCells.Wire.PythonInterpreter chosen)
+    private void RecordPythonInterpreter(CircuitRF.Design.Layout.PCells.Wire.PythonInterpreter chosen)
     {
         if (CurrentWorkspacePath is not { } cwsPath) return;
         try
@@ -6362,7 +6363,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// reading serves the background refresh and the synchronous fallback below.
     /// </summary>
     private static bool CollectPCellGeneratorInfo(
-        CircuitRF.Ui.Layout.PCells.Wire.PCellWorkerResolver resolver,
+        CircuitRF.Design.Layout.PCells.Wire.PCellWorkerResolver resolver,
         out PCellKitReading? reading,
         out string? problem)
     {
@@ -6387,7 +6388,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         var declaredInfo   = new Dictionary<string, IReadOnlyList<PCellParameterInfo>>(StringComparer.OrdinalIgnoreCase);
 
         var builtIn = new HashSet<string>(
-            CircuitRF.Ui.Layout.PCells.PCellRegistry.KnownGeneratorIds, StringComparer.OrdinalIgnoreCase);
+            CircuitRF.Design.Layout.PCells.PCellRegistry.KnownGeneratorIds, StringComparer.OrdinalIgnoreCase);
 
         // A model name a generator does not declare is simply absent — most do not, and the match
         // step that reads this is defined to do nothing without one.
@@ -6429,7 +6430,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     private void ApplyPCellGeneratorInfo(PCellKitReading reading)
     {
         var builtIn = new HashSet<string>(
-            CircuitRF.Ui.Layout.PCells.PCellRegistry.KnownGeneratorIds, StringComparer.OrdinalIgnoreCase);
+            CircuitRF.Design.Layout.PCells.PCellRegistry.KnownGeneratorIds, StringComparer.OrdinalIgnoreCase);
 
         _pcellGeneratorKits.Clear();
         _pcellGeneratorModels.Clear();
@@ -6738,13 +6739,13 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     {
         try
         {
-            var pkg = CircuitRF.Ui.Layout.PCells.Wire.KitPCellLibrary.Find(kitPath, out var alsoFound);
+            var pkg = CircuitRF.Design.Layout.PCells.Wire.KitPCellLibrary.Find(kitPath, out var alsoFound);
             if (pkg is null) return;
 
             // kitPath is passed so the declaration is anchored on the kit rather than written out as
             // an absolute path. This is what makes repairing a moved kit in Manage PDKs repair its
             // layout cells too — the parts and the artwork now follow ONE recorded location.
-            string? dir = CircuitRF.Ui.Layout.PCells.Wire.KitPCellLibrary.EnsureDeclared(
+            string? dir = CircuitRF.Design.Layout.PCells.Wire.KitPCellLibrary.EnsureDeclared(
                 workspaceRootDir, kitName, pkg, out string? problem, out bool created,
                 kitRoot: kitPath);
 

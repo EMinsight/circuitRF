@@ -1,4 +1,4 @@
-namespace CircuitRF.Ui.Layout.PCells.Wire;
+namespace CircuitRF.Design.Layout.PCells.Wire;
 
 /// <summary>Asked for a generator nobody has registered. See <see cref="PCellRegistry"/>.</summary>
 public interface IPCellGeneratorResolver
@@ -242,7 +242,7 @@ public sealed class PCellWorkerResolver : IPCellGeneratorResolver, IDisposable
             // unscanned would mean its generator is never found, the recipient is never asked for
             // permission, and every cell it draws stays a placeholder with nothing said. Still one
             // named folder rather than a general depth increase.
-            if (string.Equals(Path.GetFileName(child), Archive.WorkspaceArchiveScanner.KitsFolder,
+            if (string.Equals(Path.GetFileName(child), CircuitRF.Design.Workspace.WorkspaceFolders.Kits,
                               StringComparison.OrdinalIgnoreCase))
             {
                 IEnumerable<string> kits;

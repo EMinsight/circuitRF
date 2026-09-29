@@ -76,6 +76,11 @@ internal static class Impedance
         if (ResolveLayout(o.Path) is not { } clay)
             return JsonRun.Fail(CliDiagnostics.ImpedanceNotALayout(o.Path, DocumentKinds.Name(DocumentKinds.Classify(o.Path))));
 
+        // R-gc2-2/3: the placed PCells rebuilt BEFORE the read below flattens them — into the
+        // workspace's folder, as the application would — or a refusal naming the ones that cannot be.
+        using var generated = GeneratedCells.Prepare(clay, mayWrite: true, out int? cellRefusal);
+        if (cellRefusal is { } cellRefused) return cellRefused;
+
         // Read ONCE: the saved review and the analysis come from the same read of the file.
         TraceImpedanceAnalysis.LayoutSource source;
         try { source = TraceImpedanceAnalysis.LoadLayout(clay); }

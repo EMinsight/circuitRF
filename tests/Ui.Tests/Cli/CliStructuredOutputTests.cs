@@ -440,6 +440,9 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "check.footprint.pad-count",
         "check.footprint.unresolved",
         // What LayoutPersistence ignored or could not make a shape of (LayoutLoadAudit, 2026-09-24).
+        "check.generated-cell.kit-not-allowed",
+        "check.generated-cell.note",
+        "check.generated-cell.unbuildable",
         "check.layout.degenerate-shape",
         "check.layout.unknown-field",
         "check.name.invalid",
@@ -488,6 +491,9 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "cli.em.setup-unreadable",
         "cli.em.solver-on-planar",
         "cli.em.unknown-solver",
+        "cli.generated-cell.kit-not-allowed",
+        "cli.generated-cell.note",
+        "cli.generated-cell.unbuildable",
         "cli.input.not-found",
         // AUT-11 R-aut11-1. The one id that changed an EXISTING verb: a run of a document that is
         // neither a netlist nor a schematic is refused by KIND, where it used to be handed to

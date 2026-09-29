@@ -1,6 +1,6 @@
 using System.Diagnostics;
 
-namespace CircuitRF.Ui.Layout.PCells.Wire;
+namespace CircuitRF.Design.Layout.PCells.Wire;
 
 /// <summary>An interpreter circuitRF can run generator scripts with.</summary>
 /// <param name="Command">The executable to run.</param>

@@ -129,7 +129,7 @@ public partial class App : Application
         // registry is not sufficient on its own — the WorkspaceViewModel's own resolver is what
         // holds the processes and disposes them; this is the backstop for a path that never gets to
         // a workspace reset.
-        AppDomain.CurrentDomain.ProcessExit += (_, _) => CircuitRF.Ui.Layout.PCells.PCellRegistry.ClearResolvers();
+        AppDomain.CurrentDomain.ProcessExit += (_, _) => CircuitRF.Design.Layout.PCells.PCellRegistry.ClearResolvers();
 
         // brief-em3d-25 — `circuitRF.exe --uninstall` from the Windows Apps list: the uninstall warning and
         // nothing else. No workspace window, no update check, no release notes.

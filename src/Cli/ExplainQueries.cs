@@ -422,6 +422,11 @@ internal static class ExplainQueries
         catch (Exception ex)
         { return (null, JsonRun.Fail(CliDiagnostics.ExplainUnreadable(clay, ex.Message))); }
 
+        // R-gc2-2/3: the box of the board AS PLACED — its generated cells rebuilt in memory, since
+        // explain writes nothing — or a refusal rather than a window that leaves a part outside it.
+        using var generated = GeneratedCells.Prepare(view, clay, mayWrite: false, out int? cellRefusal);
+        if (cellRefusal is { } refused) return (null, refused);
+
         var (res, _) = TechnologyResolver.ResolveForDocument(view.TechRef, clay, null, new TechnologyCache());
         string baseDir = CellHierarchy.BaseDirOfDocument(clay);
 

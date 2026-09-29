@@ -13,7 +13,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace CircuitRF.Ui.Layout.PCells.Wire;
+namespace CircuitRF.Design.Layout.PCells.Wire;
 
 /// <summary>A parametric-cell package found inside a kit, and how to import it.</summary>
 /// <param name="PythonPathRoot">

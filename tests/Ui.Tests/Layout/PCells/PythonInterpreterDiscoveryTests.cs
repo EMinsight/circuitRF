@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using CircuitRF.Ui.Layout.PCells.Wire;
+using CircuitRF.Design.Layout.PCells.Wire;
 using CircuitRF.Ui.Schematic;
 using Xunit;
 
@@ -219,7 +219,7 @@ public sealed class PythonInterpreterDiscoveryTests : IDisposable
         Assert.Contains(reports, r => r.Contains("placeholders", StringComparison.OrdinalIgnoreCase));
 
         // Built-ins are entirely unaffected — the design still draws.
-        Assert.True(CircuitRF.Ui.Layout.PCells.PCellRegistry.TryGet("MLIN", out _));
+        Assert.True(CircuitRF.Design.Layout.PCells.PCellRegistry.TryGet("MLIN", out _));
     }
 
     [Fact]

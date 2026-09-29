@@ -1,6 +1,4 @@
-using CircuitRF.Ui.Theming;
-
-namespace CircuitRF.Ui.Layout.PCells.Wire;
+namespace CircuitRF.Design.Layout.PCells.Wire;
 
 /// <summary>What this installation has decided about one kit's generator scripts.</summary>
 public enum PCellTrustDecision
@@ -47,9 +45,40 @@ public sealed class PCellTrustStore
             if (Normalize(path) is { Length: > 0 } key) _decisions[key] = allowed;
     }
 
-    /// <summary>The store the application uses: this installation's own preferences.</summary>
-    public static PCellTrustStore UserLocal()
-        => new(PCellTrustPreferences.Load(), PCellTrustPreferences.Save);
+    /// <summary>
+    /// The decisions this installation has already RECORDED, read-only — what a headless run honours
+    /// (brief-generated-cells-2 R-gc2-2). Reads <see cref="UserStateDirectory.PreferencesPath"/> by the
+    /// one key the settings store writes, the way <c>RevisionIdentity.FromPreferences</c> reads the
+    /// commit identity: the file is per-user state and crosses no firewall; the dialog that edits it
+    /// does, and stays in <c>src/Ui</c>.
+    ///
+    /// <para><b>Nothing is ever written back.</b> A headless run cannot ask, so it can only honour a
+    /// decision somebody made at the keyboard, or one granted for that run alone. A missing, truncated
+    /// or wrong-shaped file is an absent one — never a throw on the path that resolves a layout.</para>
+    /// </summary>
+    public static PCellTrustStore FromRecordedPreferences()
+    {
+        var seed = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            string path = UserStateDirectory.PreferencesPath;
+            if (File.Exists(path))
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(File.ReadAllText(path));
+                if (doc.RootElement.ValueKind == System.Text.Json.JsonValueKind.Object
+                    && doc.RootElement.TryGetProperty(PreferenceKey, out var table)
+                    && table.ValueKind == System.Text.Json.JsonValueKind.Object)
+                    foreach (var row in table.EnumerateObject())
+                        if (row.Value.ValueKind is System.Text.Json.JsonValueKind.True or System.Text.Json.JsonValueKind.False)
+                            seed[row.Name] = row.Value.GetBoolean();
+            }
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException) { }
+        return new PCellTrustStore(seed, persist: null);
+    }
+
+    /// <summary>The <c>preferences.json</c> key the application records decisions under.</summary>
+    public const string PreferenceKey = "pcell_trust";
 
     public PCellTrustDecision Decide(string manifestDirectory)
         => _decisions.TryGetValue(Normalize(manifestDirectory), out bool allowed)
@@ -85,22 +114,4 @@ public sealed class PCellTrustStore
         }
         catch { return directory.Trim(); }
     }
-}
-
-/// <summary>The preferences half of <see cref="PCellTrustStore"/>, kept separate so the store itself
-/// has no dependency on where decisions are kept and stays trivially testable.</summary>
-public static class PCellTrustPreferences
-{
-    public static IReadOnlyDictionary<string, bool> Load()
-        => AppPreferencesIo.Load().PCellTrust ?? new Dictionary<string, bool>();
-
-    public static void Save(IReadOnlyDictionary<string, bool> decisions)
-        => AppPreferencesIo.Update(p => p.PCellTrust =
-            decisions.Count == 0 ? null : new Dictionary<string, bool>(decisions));
-
-    /// <summary>Drops every recorded decision, so circuitRF asks about each kit again. The one way
-    /// back from a refusal — reachable from Settings.</summary>
-    public static void Forget() => AppPreferencesIo.Update(p => p.PCellTrust = null);
-
-    public static int RememberedCount() => AppPreferencesIo.Load().PCellTrust?.Count ?? 0;
 }

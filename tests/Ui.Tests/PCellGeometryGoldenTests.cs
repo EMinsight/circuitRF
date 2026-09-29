@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using CircuitRF.Ui.Layout;
+using CircuitRF.Design.Layout.PCells;
 using CircuitRF.Ui.Layout.PCells;
 using Xunit;
 

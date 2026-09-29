@@ -67,7 +67,7 @@ public partial class HarmonicaApp : Application
         // before it can say why. Hooked on ProcessExit rather than on a quit path because quit is
         // not the only way out.
         AppDomain.CurrentDomain.ProcessExit += (_, _) => ExternalDeviceRegistry.ResetResolved();
-        AppDomain.CurrentDomain.ProcessExit += (_, _) => Layout.PCells.PCellRegistry.ClearResolvers();
+        AppDomain.CurrentDomain.ProcessExit += (_, _) => CircuitRF.Design.Layout.PCells.PCellRegistry.ClearResolvers();
 
         // A kit's devices are reachable with no workspace at all — the folder-list resolver is the
         // whole mechanism (R-h8-4). Installing it starts nothing.

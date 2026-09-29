@@ -1,9 +1,11 @@
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
-using CircuitRF.Ui.Schematic;
+using CircuitRF.Design.Cells;
+using CircuitRF.Design.Schematic;
+using CircuitRF.Design.Workspace;
 
-namespace CircuitRF.Ui.Layout.PCells;
+namespace CircuitRF.Design.Layout.PCells;
 
 /// <summary>
 /// L5, R-L5-1: placing a PCell creates or reuses a generated CELL FOLDER, content-addressed on
@@ -31,7 +33,7 @@ public static class GeneratedCellStore
     /// UI firewall, because the headless verbs have to hide the same folder the project tree hides and
     /// a second copy of the string would be free to drift (RND-3 R-rnd3-4). This stays as the spelling
     /// every PCell call site already uses.</para></summary>
-    public const string ReservedFolderName = ReservedFolders.GeneratedCells;
+    public const string ReservedFolderName = Workspace.ReservedFolders.GeneratedCells;
 
     /// <summary>
     /// Returns the absolute cell folder for a PCell generated at <paramref name="parameters"/> against
@@ -55,8 +57,9 @@ public static class GeneratedCellStore
         Technology? technology,
         string? techIdentity,
         PCellLayerSelection layerSelection,
-        PCellGeometryCache? cache = null)
-        => GetOrCreate(workspaceRootDir, generatorId, parameters, technology, techIdentity, layerSelection, out _, cache);
+        PCellGeometryCache? cache = null,
+        GeneratedCellTarget target = GeneratedCellTarget.Disk)
+        => GetOrCreate(workspaceRootDir, generatorId, parameters, technology, techIdentity, layerSelection, out _, cache, target);
 
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, int> _cellsWritten =
         new(StringComparer.OrdinalIgnoreCase);
@@ -105,7 +108,8 @@ public static class GeneratedCellStore
         string? techIdentity,
         PCellLayerSelection layerSelection,
         out IReadOnlyList<string>? diagnostics,
-        PCellGeometryCache? cache = null)
+        PCellGeometryCache? cache = null,
+        GeneratedCellTarget target = GeneratedCellTarget.Disk)
     {
         diagnostics = null;
         if (!PCellRegistry.TryGet(generatorId, out var generator))
@@ -117,6 +121,8 @@ public static class GeneratedCellStore
         string clayPath = Path.Combine(CellFolder.SubFolderPath(cellDir, ViewType.Layout), cellName + CellFolder.ViewExtension(ViewType.Layout));
 
         if (File.Exists(clayPath))
+            return cellDir;
+        if (target == GeneratedCellTarget.Memory && GeneratedCellOverlay.TryGetView(cellDir, out _))
             return cellDir;
 
         var result = (cache ?? new PCellGeometryCache())
@@ -139,10 +145,6 @@ public static class GeneratedCellStore
         if (refusal is not null)
             throw new InvalidOperationException(
                 $"The PCell '{generatorId}' cannot be created: {refusal}");
-
-        Directory.CreateDirectory(genRoot);
-        CellFolder.CreateCellFolder(genRoot, cellName);
-        _cellsWritten.AddOrUpdate(NormalizeRoot(workspaceRootDir), 1, (_, n) => n + 1);
 
         var view = new LayoutView
         {
@@ -189,6 +191,22 @@ public static class GeneratedCellStore
             });
         }
 
+        // brief-generated-cells-2 R-gc2-2: a read-only headless run holds the cell rather than writing
+        // it. Through the serializer and back, so what a reader resolves is exactly what it would have
+        // read from the file this path writes — the "same result with or without the folder" claim is
+        // then a property of the bytes, not of two constructions agreeing.
+        if (target == GeneratedCellTarget.Memory)
+        {
+            GeneratedCellOverlay.Put(cellDir,
+                LayoutPersistence.Deserialize(LayoutPersistence.Serialize(view)),
+                new CcellFile { Terminals = TerminalMap.ToBlock(terminals!) });
+            return cellDir;
+        }
+
+        Directory.CreateDirectory(genRoot);
+        CellFolder.CreateCellFolder(genRoot, cellName);
+        _cellsWritten.AddOrUpdate(NormalizeRoot(workspaceRootDir), 1, (_, n) => n + 1);
+
         LayoutPersistence.SaveToFile(clayPath, view);
 
         // R-lvs1-5b: written as DECLARED, from the generator's own pins. A generated cell has no
@@ -212,7 +230,7 @@ public static class GeneratedCellStore
     /// the port order.</para>
     /// </summary>
     private static IReadOnlyList<string> SymbolPinNamesOf(string generatorId)
-        => LayoutToSchematicGenerator.TryGetSymbolKind(generatorId, out var kind)
+        => Lvs.DeviceTypes.TryGetSymbolKind(generatorId, out var kind)
             ? [.. SymbolPortDefs.For(kind).Select(p => p.Name)]
             : [];
 
@@ -489,4 +507,17 @@ public static class GeneratedCellStore
         string safe = sb.ToString().TrimEnd(' ', '.');
         return safe.Length == 0 ? "pcell" : safe;
     }
+}
+
+/// <summary>Where <see cref="GeneratedCellStore.GetOrCreate(string, string, IReadOnlyDictionary{string, PCellValue}, Technology?, string?, PCellLayerSelection, PCellGeometryCache?, GeneratedCellTarget)"/>
+/// puts a cell it has to build.</summary>
+public enum GeneratedCellTarget
+{
+    /// <summary>The workspace's <c>.generated-cells</c> folder — the application, and a headless run
+    /// that is allowed to write.</summary>
+    Disk,
+
+    /// <summary><see cref="GeneratedCellOverlay"/>, for one run — a read-only verb (R-gc2-2). A cell
+    /// already on disk is still used as it is.</summary>
+    Memory,
 }

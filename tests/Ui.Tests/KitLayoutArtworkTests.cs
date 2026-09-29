@@ -1,4 +1,4 @@
-using CircuitRF.Ui.Layout.PCells.Wire;
+using CircuitRF.Design.Layout.PCells.Wire;
 using CircuitRF.Ui.Schematic;
 using Xunit;
 

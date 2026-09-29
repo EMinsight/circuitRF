@@ -22,6 +22,7 @@ using CircuitRF.Design.Layout;
 using CircuitRF.Design.Layout.Interchange;
 using CircuitRF.Design.Symbol;
 using CircuitRF.Ui.Layout;
+using CircuitRF.Design.Layout.PCells;
 using CircuitRF.Ui.Layout.PCells;
 using Symbol = CircuitRF.Design.Symbol.Symbol;
 
