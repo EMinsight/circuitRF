@@ -70,48 +70,60 @@ public static class FieldPicture
                 }
                 finally { handle.Free(); }
             }
-            var ink = dark ? new SKColor(235, 235, 240) : new SKColor(30, 32, 38);
-            var box = dark ? new SKColor(28, 30, 34, 215) : new SKColor(250, 250, 252, 225);
-            using var font = new SKFont(SKTypeface.Default, 12 * scale);
-            using var text = new SKPaint { Color = ink, IsAntialias = true };
-            using var fill = new SKPaint { Color = box, IsAntialias = true };
-            float pad = 8 * scale, line = 16 * scale;
-
-            if (legend.Count > 0 && map is not null)
-            {
-                float barW = 220 * scale, barH = 12 * scale;
-                float w = Math.Max(barW, legend.Max(l => font.MeasureText(l))) + 2 * pad;
-                float h = pad * 2 + barH + line * (legend.Count + 1);
-                float x0 = width - w - pad, y0 = pad;
-                canvas.DrawRoundRect(new SKRect(x0, y0, x0 + w, y0 + h), 4 * scale, 4 * scale, fill);
-                float y = y0 + pad + line * 0.8f;
-                canvas.DrawText(legend[0], x0 + pad, y, font, text);
-                y += line * 0.4f;
-                var stops = map.Stops;
-                using var bar = new SKPaint
-                {
-                    Shader = SKShader.CreateLinearGradient(new SKPoint(x0 + pad, 0), new SKPoint(x0 + pad + barW, 0),
-                        [.. stops.Select(s => new SKColor(s.R, s.G, s.B))], [.. stops.Select(s => s.T)], SKShaderTileMode.Clamp),
-                };
-                canvas.DrawRect(new SKRect(x0 + pad, y, x0 + pad + barW, y + barH), bar);
-                y += barH + line * 0.9f;
-                if (range is not null)
-                {
-                    string lo = FieldColorScale.G(range.Lo), hi = FieldColorScale.G(range.Hi);
-                    canvas.DrawText(lo, x0 + pad, y, font, text);
-                    canvas.DrawText(hi, x0 + pad + barW - font.MeasureText(hi), y, font, text);
-                    y += line;
-                }
-                for (int i = 1; i < legend.Count; i++, y += line) canvas.DrawText(legend[i], x0 + pad, y, font, text);
-            }
-            if (caption is { Length: > 0 })
-            {
-                float w = font.MeasureText(caption) + 2 * pad;
-                float y0 = height - pad - line - pad;
-                canvas.DrawRoundRect(new SKRect(pad, y0, pad + w, y0 + line + pad), 4 * scale, 4 * scale, fill);
-                canvas.DrawText(caption, 2 * pad, y0 + line * 0.85f, font, text);
-            }
+            Paint(canvas, width, height, scale, legend, map, range, caption, dark, SKTypeface.Default);
         }
         return bmp;
+    }
+
+    /// <summary>
+    /// The legend (<paramref name="legend"/>'s first line, a colour bar in <paramref name="map"/>, the range's ends, the rest of
+    /// the lines) in a box at the top right, and <paramref name="caption"/> at the bottom left, onto any canvas: Export
+    /// picture's pixels, or — brief-em3d-84 — `render --field`'s SVG, PDF or PNG page, which passes an embedded typeface so the
+    /// bytes do not depend on the machine's fonts.
+    /// </summary>
+    public static void Paint(SKCanvas canvas, int width, int height, float scale, IReadOnlyList<string> legend, ColorMap3D? map,
+                             FieldColorScale? range, string? caption, bool dark, SKTypeface typeface)
+    {
+        var ink = dark ? new SKColor(235, 235, 240) : new SKColor(30, 32, 38);
+        var box = dark ? new SKColor(28, 30, 34, 215) : new SKColor(250, 250, 252, 225);
+        using var font = new SKFont(typeface, 12 * scale);
+        using var text = new SKPaint { Color = ink, IsAntialias = true };
+        using var fill = new SKPaint { Color = box, IsAntialias = true };
+        float pad = 8 * scale, line = 16 * scale;
+
+        if (legend.Count > 0 && map is not null)
+        {
+            float barW = 220 * scale, barH = 12 * scale;
+            float w = Math.Max(barW, legend.Max(l => font.MeasureText(l))) + 2 * pad;
+            float h = pad * 2 + barH + line * (legend.Count + 1);
+            float x0 = width - w - pad, y0 = pad;
+            canvas.DrawRoundRect(new SKRect(x0, y0, x0 + w, y0 + h), 4 * scale, 4 * scale, fill);
+            float y = y0 + pad + line * 0.8f;
+            canvas.DrawText(legend[0], x0 + pad, y, font, text);
+            y += line * 0.4f;
+            var stops = map.Stops;
+            using var bar = new SKPaint
+            {
+                Shader = SKShader.CreateLinearGradient(new SKPoint(x0 + pad, 0), new SKPoint(x0 + pad + barW, 0),
+                    [.. stops.Select(s => new SKColor(s.R, s.G, s.B))], [.. stops.Select(s => s.T)], SKShaderTileMode.Clamp),
+            };
+            canvas.DrawRect(new SKRect(x0 + pad, y, x0 + pad + barW, y + barH), bar);
+            y += barH + line * 0.9f;
+            if (range is not null)
+            {
+                string lo = FieldColorScale.G(range.Lo), hi = FieldColorScale.G(range.Hi);
+                canvas.DrawText(lo, x0 + pad, y, font, text);
+                canvas.DrawText(hi, x0 + pad + barW - font.MeasureText(hi), y, font, text);
+                y += line;
+            }
+            for (int i = 1; i < legend.Count; i++, y += line) canvas.DrawText(legend[i], x0 + pad, y, font, text);
+        }
+        if (caption is { Length: > 0 })
+        {
+            float w = font.MeasureText(caption) + 2 * pad;
+            float y0 = height - pad - line - pad;
+            canvas.DrawRoundRect(new SKRect(pad, y0, pad + w, y0 + line + pad), 4 * scale, 4 * scale, fill);
+            canvas.DrawText(caption, 2 * pad, y0 + line * 0.85f, font, text);
+        }
     }
 }

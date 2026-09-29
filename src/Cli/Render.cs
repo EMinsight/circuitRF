@@ -117,6 +117,13 @@ internal static class Render
         /// together (R-em3d5-2b) rather than the second silently winning.</summary>
         public List<string> Sections = new();
         public bool         Iso;
+
+        // ── a 3D view's field plot (brief-em3d-84) ───────────────────────────
+        public string?      Field;
+        public bool         ListFields;
+        public double?      Phase;
+        public bool         NoLegend;
+        public bool         NoThin;
     }
 
     /// <summary>R-rnd2-3's default page. Points for a vector format, device pixels for a raster one —
@@ -137,13 +144,14 @@ internal static class Render
         if (Parse(args, o) is { } bad) return bad;
 
         if (o.Path is null)   { JsonRun.Report(CliDiagnostics.RenderPathRequired());   return Usage(); }
-        if (o.Output is null) { JsonRun.Report(CliDiagnostics.RenderOutputRequired()); return Usage(); }
+        // brief-em3d-84 — --list-fields draws nothing, so it is the one form with no -o.
+        if (o.Output is null && !o.ListFields) { JsonRun.Report(CliDiagnostics.RenderOutputRequired()); return Usage(); }
         JsonRun.InputPath = o.Path;
 
         if (!File.Exists(o.Path) && !Directory.Exists(o.Path))
             return JsonRun.Fail(CliDiagnostics.RenderPathNotFound(o.Path));
 
-        if (ResolveFormat(o) is { } formatRefusal) return formatRefusal;
+        if (o.Output is not null && ResolveFormat(o) is { } formatRefusal) return formatRefusal;
 
         // The three viewport modes, refused together. Done before anything is read: a caller that
         // asked two incompatible questions gets the same answer whether or not the file parses.
@@ -173,7 +181,10 @@ internal static class Render
             "                        [--theme name|file.ccolor] [--variant light|dark]\n" +
             "                        [--background opaque|transparent] [--grid] [--no-rulers]\n" +
             "  a .cdd adds:          [--data file]... [--tab name|n] [--plot n] [--all-tabs]\n" +
-            "  a 3D .cem takes:      --section z=<len> | --section xz@y=<len> | --section yz@x=<len> | --iso");
+            "  a 3D .cem takes:      --section z=<len> | --section xz@y=<len> | --section yz@x=<len> | --iso\n" +
+            "  a .c3d also takes:    --field <plot> [--phase <deg>] [--no-legend] [--no-thin] | --list-fields\n" +
+            "                        (a hidden plot renders as a shown one: --field names it, and hiding is only\n" +
+            "                        which plot the 3D view draws)");
         return 1;
     }
 
@@ -317,6 +328,21 @@ internal static class Render
                 // ── a 3D EM setup only (brief-em3d-5) ─────────────────────────
                 case "--section" when i + 1 < args.Length: o.Sections.Add(args[++i]); continue;
                 case "--iso": o.Iso = true; continue;
+
+                // ── a 3D view's field plot (brief-em3d-84) ───────────────────
+                case "--field" when i + 1 < args.Length: o.Field = args[++i]; continue;
+                case "--list-fields": o.ListFields = true; continue;
+                case "--phase" when i + 1 < args.Length:
+                {
+                    string text = args[++i];
+                    if (!double.TryParse(text.TrimEnd('°'), System.Globalization.NumberStyles.Float,
+                                         System.Globalization.CultureInfo.InvariantCulture, out double deg) || !double.IsFinite(deg))
+                        return JsonRun.Fail(CliDiagnostics.RenderFieldPhaseMalformed(text));
+                    o.Phase = deg;
+                    continue;
+                }
+                case "--no-legend": o.NoLegend = true; continue;
+                case "--no-thin":   o.NoThin = true;   continue;
 
                 default:
                     if (a.StartsWith('-'))
@@ -482,6 +508,8 @@ internal static class Render
         var kind = DocumentKinds.Classify(o.Path!);
         // brief-em3d-42 R-em3d42-6 — a .c3d's one headless picture: brief 5's sections, of its elaboration.
         if (kind is DocumentKind.EmSetup or DocumentKind.ThreeD) return RenderEm3d.Draw(o.Path!, Em3dRequest(o));
+        if (FieldOptionNamed(o) is { } fieldOption)
+            return JsonRun.Fail(CliDiagnostics.RenderFieldNotA3dView(fieldOption, o.Path!, DocumentKinds.Name(kind)));
         if (o.Sections.Count > 0 || o.Iso)
             return JsonRun.Fail(CliDiagnostics.RenderEm3dNotA3dSetup(
                 o.Iso ? "--iso" : "--section", o.Path!, DocumentKinds.Name(kind)));
@@ -545,11 +573,20 @@ internal static class Render
             : null);
 
         return new RenderEm3d.Request(
-            o.Output!, o.Format == Format.Pdf ? "pdf" : o.Format == Format.Png ? "png" : "svg",
+            o.Output ?? "", o.Format == Format.Pdf ? "pdf" : o.Format == Format.Png ? "png" : "svg",
             o.Sections, o.Iso, inapplicable, o.Width, o.Height, o.Scale, o.Margin, o.Transparent, o.Variant,
             themeOf: path => { var (theme, name, from, refusal) = ResolveTheme(o, path); return (theme, name, from, refusal); },
-            emit: (w, h, draw) => Emit(o, w, h, draw));
+            emit: (w, h, draw) => Emit(o, w, h, draw))
+        {
+            Field = o.Field, ListFields = o.ListFields, Phase = o.Phase, NoLegend = o.NoLegend, NoThin = o.NoThin,
+            OutputStated = o.Output is not null,
+        };
     }
+
+    /// <summary>brief-em3d-84 — the first field-plot option typed, for the refusal on a document that has no field plots.</summary>
+    private static string? FieldOptionNamed(Options o)
+        => o.Field is not null ? "--field" : o.ListFields ? "--list-fields" : o.Phase is not null ? "--phase"
+         : o.NoLegend ? "--no-legend" : o.NoThin ? "--no-thin" : null;
 
     /// <summary>
     /// The options that mean something for a DRAWING and nothing for a data display, named rather

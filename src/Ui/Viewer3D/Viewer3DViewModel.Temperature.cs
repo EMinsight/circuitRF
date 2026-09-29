@@ -163,13 +163,6 @@ public sealed partial class Viewer3DViewModel
         else ScheduleFieldGeometry();
     }
 
-    /// <summary>The thermal run's table, read when the fields are.</summary>
-    private static ThermalResultTable? ReadThermalTable(EmSetup setup, string root)
-    {
-        string npy = ThermalRunService.NpyPath(root, setup);
-        return File.Exists(npy) ? ThermalResultTable.Read(npy, out _) : null;
-    }
-
     // ── building what is drawn ──────────────────────────────────────────────────────────────
 
     /// <summary>
@@ -193,7 +186,7 @@ public sealed partial class Viewer3DViewModel
         if (onClip && clip.Enabled)
         {
             var e = clip.Equation;
-            surfaces.Add(FieldSlicer.Slice(new FieldMeshTets(vol.Mesh, array, origin), new Vector3D(e.X, e.Y, e.Z), e.W, ct));
+            surfaces.Add(FieldSection.Slice(vol.Mesh, array, origin, clip, ct));
             nudges.Add(-eps * new Vector3(e.X, e.Y, e.Z));
             objects.Add("the clip plane");
         }

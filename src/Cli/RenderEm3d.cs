@@ -31,11 +31,30 @@ internal static class RenderEm3d
         string Output, string Format, IReadOnlyList<string> Sections, bool Iso, string? Inapplicable,
         int Width, int Height, double Scale, double Margin, bool Transparent, ColorVariant Variant,
         Func<string, (ColorTheme Theme, string Name, string From, int? Refusal)> themeOf,
-        Func<int, int, Action<SKCanvas>, byte[]> emit);
+        Func<int, int, Action<SKCanvas>, byte[]> emit)
+    {
+        // brief-em3d-84 — a .c3d's field plot.
+        public string? Field { get; init; }
+        public bool ListFields { get; init; }
+        public double? Phase { get; init; }
+        public bool NoLegend { get; init; }
+        public bool NoThin { get; init; }
+        /// <summary>Whether -o was typed (--list-fields takes none).</summary>
+        public bool OutputStated { get; init; } = true;
+    }
 
     public static int Draw(string path, Request req)
     {
         if (req.Inapplicable is { } option) return JsonRun.Fail(CliDiagnostics.RenderEm3dNotApplicable(option));
+
+        // brief-em3d-84 — a field plot is a .c3d's record: a .cem has none, and every field option says which it is.
+        string? fieldOption = req.Field is not null ? "--field" : req.ListFields ? "--list-fields" : req.Phase is not null ? "--phase"
+                            : req.NoLegend ? "--no-legend" : req.NoThin ? "--no-thin" : null;
+        if (fieldOption is not null && DocumentKinds.Classify(Path.GetFullPath(path)) != DocumentKind.ThreeD)
+            return JsonRun.Fail(CliDiagnostics.RenderFieldOnCem(fieldOption, path));
+        if (req.ListFields) return RenderEm3dField.List(path, req);
+        if (req.Field is not null) return RenderEm3dField.Draw(path, req);
+        if (fieldOption is not null) return JsonRun.Fail(CliDiagnostics.RenderFieldOptionNeedsField(fieldOption));
 
         // R-em3d5-2b: exactly one view, refused together rather than ordered — and decided before the
         // file is read, so two incompatible questions get the same answer whether or not it parses.
@@ -63,9 +82,20 @@ internal static class RenderEm3d
         if (view is null) return JsonRun.Fail(CliDiagnostics.RenderEm3dViewRequired(path));
         if (loaded.Refusal is { } why) return JsonRun.Fail(CliDiagnostics.RenderEm3dUnbuildable(path, why));
 
+        RunHost.Cancellation.ThrowIfCancellationRequested();
+        return Picture(path, req, loaded, view.Value, field: null);
+    }
+
+    /// <summary>
+    /// The picture of <paramref name="loaded"/>'s problem in <paramref name="view"/> — with <paramref name="field"/>'s slice
+    /// under it when one is given (brief-em3d-84) — written to <c>-o</c> and reported. The one write-and-report path for a 3D
+    /// picture, field or not.
+    /// </summary>
+    internal static int Picture(string path, Request req, Em3dSetupSource loaded, Em3dView view,
+                                (Func<Em3dFieldLayer> Layer, Func<Em3dFieldLayer, RenderFieldJson> Report, Func<Em3dFieldLayer, string> Line)? field)
+    {
         var generated = loaded.Generated!;
         var problem = generated.Problem!;
-        RunHost.Cancellation.ThrowIfCancellationRequested();
 
         int structural = problem.Validate().Count;
         if (structural > 0)
@@ -81,15 +111,16 @@ internal static class RenderEm3d
         RunHost.Control?.BeginStage("draw");
         Console.Error.WriteLine("[circuitRF] draw...");
 
-        var scene = Em3dSectionScene.Build(problem, view.Value);
+        var scene = Em3dSectionScene.Build(problem, view);
         var style = new Em3dRenderStyle(
             Em3dSectionRenderer.ObjectColours(problem, generated.Origins, loaded.Resolution.Source?.Technology,
                                               theme, req.Variant),
             theme, req.Variant, req.Margin, req.Transparent);
+        var layer = field?.Layer();
 
         int pxW = (int)Math.Round(req.Width  * req.Scale);
         int pxH = (int)Math.Round(req.Height * req.Scale);
-        byte[] bytes = req.emit(pxW, pxH, canvas => Em3dSectionRenderer.Draw(canvas, pxW, pxH, scene, style));
+        byte[] bytes = req.emit(pxW, pxH, canvas => Em3dSectionRenderer.Draw(canvas, pxW, pxH, scene, style, layer));
 
         // ── write and report ─────────────────────────────────────────────────
         RunHost.Cancellation.ThrowIfCancellationRequested();
@@ -107,9 +138,9 @@ internal static class RenderEm3d
         catch (Exception ex) { return JsonRun.Fail(CliDiagnostics.RenderWriteFailed(req.Output, ex.Message)); }
 
         var page = Em3dSectionRenderer.Layout(pxW, pxH, scene, req.Margin);
-        var (boxLo, boxHi) = Projected(problem.Boundary, view.Value);
+        var (boxLo, boxHi) = Projected(problem.Boundary, view);
         string unitKind = req.Format == "png" ? "device-pixels" : "points";
-        bool isIso = view.Value.Kind == Em3dViewKind.Iso;
+        bool isIso = view.Kind == Em3dViewKind.Iso;
 
         JsonRun.AddOutput(req.Format, req.Output);
         JsonRun.Render = new RenderReportJson(
@@ -121,13 +152,15 @@ internal static class RenderEm3d
             new RenderSizeJson(pxW, pxH, unitKind, req.Scale),
             new RenderThemeJson(themeName, req.Variant == ColorVariant.Dark ? "dark" : "light", themeFrom),
             Layers: null, Detail: null, Counters: null, bytes.Length,
-            Em3d: new RenderEm3dJson(isIso ? "iso" : "section", view.Value.Plane, view.Value.Axis,
+            Em3d: new RenderEm3dJson(isIso ? "iso" : "section", view.Plane, view.Axis,
                                      isIso ? null : scene.At, "m", 1.0,
-                                     [.. scene.Objects], [.. scene.Ports.Select(p => p.Number)]));
+                                     [.. scene.Objects], [.. scene.Ports.Select(p => p.Number)],
+                                     layer is null ? null : field!.Value.Report(layer)));
 
         Console.WriteLine($"Wrote {req.Output} ({pxW}x{pxH} {unitKind}, {bytes.Length:N0} bytes)");
         Console.WriteLine($"  {Em3dSectionRenderer.Title(scene)}: {scene.Objects.Count()} object(s), " +
                           $"{scene.Ports.Count} port(s)");
+        if (layer is not null) Console.WriteLine("  " + field!.Value.Line(layer));
         return 0;
     }
 

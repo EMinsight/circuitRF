@@ -27,6 +27,7 @@ using CircuitRF.Engine.Em3d;
 using CircuitRF.Render;
 using CircuitRF.Render.Scene3D;
 using CircuitRF.Render.Scene3D.Edit;
+using CircuitRF.Render.Scene3D.Fields;
 using CircuitRF.Ui.Commands;
 using CircuitRF.Ui.Viewer3D;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -222,9 +223,10 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
             var e = _elaborator.Elaborate(doc, inputs.Path, inputs.WorkspaceCws, new C3dElaborationOptions { Cell = inputs.Cell });
             _elaborations[generation] = e;
             _frameKeys[generation] = inputs.Path + "|" + inputs.Context?.Exclude;
-            var extent = e.DisplayExtent() ?? (-5e-4, -5e-4, -5e-4, 5e-4, 5e-4, 5e-4);
+            // brief-em3d-84 — the origin rule `render --field` places its slice by (FieldPlotResolver.SceneOrigin).
+            var extent = e.DisplayExtent() ?? FieldPlotResolver.EmptyExtent;
             if (_origin is not { } o || !NearEnough(o, extent))
-                _origin = ((extent.X0 + extent.X1) / 2, (extent.Y0 + extent.Y1) / 2, (extent.Z0 + extent.Z1) / 2);
+                _origin = FieldPlotResolver.SceneOrigin(extent);
             var a = Em3dBoundaryKind.Absorbing;
             var faces = new Em3dFaces(a, a, a, a, a, a);
             // brief-em3d-49 — the active setup's box, ports and face boundaries, resolved as a run resolves them.

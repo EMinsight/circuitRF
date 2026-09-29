@@ -4324,3 +4324,40 @@ scene calls it a conductor; a sheet goes to `OnSheet`; a name with only a 2-D `C
   `FieldQuantity.Offered` lists |H| with no change of its own.
 - `FieldStep.InMemory` (internal) builds a step from a synthetic mesh with its arrays loaded — the gates use it rather than
   reach into `_loaded`.
+
+## brief-em3d-84 — the field plot's resolution below the firewall, and a headless field section (2026-09-28)
+
+- **`FieldPlotResolver` is the 3D view's, the 3D editor's and `render --field`'s one resolution** — moved
+  unchanged from `Viewer3DViewModel.Plot.cs` and `C3dEditorViewModel.FieldPlots.cs` with
+  `FieldPlotRequest`, `FieldDiscovery`, `FieldSolutionItem` and `PaintedFieldFace`. Brief 83's
+  `FieldPlotTests` pass unchanged. It also carries the SCENE ORIGIN rule (the centre of the elaboration's
+  display extent): a ClipPlane plot's plane is a `float` offset from that origin, and a mesh node exactly
+  on the plane counts with the negative side, so a different origin can cut a different set of triangles.
+  The viewer's private `PickSolution` helper is `PlotSolution` now, so a scan can hold that `src/Ui`
+  defines none of the resolution. The colour-map rule is `ColorMap3D.For`; the stale comparison is
+  `C3dRunDocument` in `src/Design`.
+- **Skia blends vertex COLOURS; the GPU blends the FIELD.** On the committed cavity's coarse slice (144
+  triangles over the whole cut) one triangle's corners read 1,115 and 1,972 V/m; a plain `DrawVertices`
+  pixel at x = a/4 inverted through viridis to 1,881 V/m where the field is 1,787 and the slice's own
+  linear value 1,771. A PNG triangle is now subdivided until each piece spans ≤ 1/32 of the range, its
+  corners carrying the components interpolated as the GPU interpolates them: the pixel reads 1,774.5.
+- **Subdividing some triangles and not their neighbours leaves T-junction pinholes** — single background
+  pixels where the two edges' coverage differs. The slice's own triangles are drawn flat underneath first.
+- **The data is not zero on a PEC wall.** Palace's node-averaged output holds 88 V/m on the cavity's x = 0
+  wall (3.4% of the top), so "the pixel is the map's bottom colour" holds to the data, not to zero; gate 2
+  asserts the first pixel inside the wall reads the data there and sits in the bottom 5% of the map.
+- **Thinning buys little on an FEM slice.** A 120,000-cell second-order connector run sliced through its
+  middle gives 3,784 / 8,681 / 11,565 triangles (x / y / z) at ~28 bytes of SVG each (119 / 227 / 330 kB).
+  Merging neighbours of one colour step took 11,565 to 9,147 pieces at 256 steps and to 8,908 at 64 —
+  about a fifth of the bytes either way, because the mesh is graded to the field's gradients. 256 steps
+  kept; `VectorTriangleLimit` is 50,000 (~1.4 MB), where size, not fidelity, is the problem.
+- **Thinning must not enumerate a hash set.** `HashCode` is seeded per process, so a `HashSet<(ulong,
+  ulong)>`'s order — and the loops chained from it, and the SVG's bytes — would move from run to run. The
+  boundary edges are a list in the order the triangles gave them. Vertices are welded by the mesh edge
+  they lie on (`FieldRecipe`), never by position; a cut exactly at a node (t = 0 or 1) keys as that node.
+- **A vector device records `drawVertices` as nothing** (the data display's finding, above) — so SVG and
+  PDF take one colour per triangle, its centroid's (the channels' mean, then the quantity's reading).
+- **`FieldPicture.Paint` takes a typeface.** Export picture keeps `SKTypeface.Default`; the section passes
+  `SkiaFonts.PlexRegular`, because `render`'s bytes may not depend on the machine's fonts.
+- **With a field, only conductors are filled** (they carry none); dielectrics are outlined in the label
+  ink over the field, air is left to the field, and the Materials legend gives way to the field's.

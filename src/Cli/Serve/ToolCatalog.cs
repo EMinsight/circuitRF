@@ -448,15 +448,17 @@ internal static class ToolCatalog
         new("render",
             "Draw a schematic, a symbol, a layout, a data display, or a 3D EM setup's model as a picture: "
           + ".svg, .pdf or .png. The document kind comes from the path. Ask explain --extents and --layers "
-          + "first if you need a window or a layer name.",
+          + "first if you need a window or a layer name. A .c3d's field plot is drawn with field; listFields "
+          + "says which plots it holds and whether their data is there.",
             null, null,
             [
                 new("", [ "render" ],
                     [new("path", true,
-                         "The .csch .csym .clay .cdd or 3D .cem, a cell folder, or a workspace with cell.")],
+                         "The .csch .csym .clay .cdd, 3D .cem or .c3d, a cell folder, or a workspace with cell.")],
                     [
                         new("output", "-o", OptKind.Path,
-                            "Required. Where the picture is written; its extension picks the format: .svg, .pdf or .png."),
+                            "Required, except with listFields. Where the picture is written; its extension picks the format: "
+                          + ".svg, .pdf or .png."),
                         new("format", "--format", OptKind.Str,
                             "Override the format the extension implies: svg, pdf or png."),
                         new("view", "--view", OptKind.Str,
@@ -527,13 +529,31 @@ internal static class ToolCatalog
 
                         // brief-em3d-5: a 3D setup takes exactly one of these two, refused together.
                         new("section", "--section", OptKind.Str,
-                            "3D .cem only: a section through the model — z=<length> (the XY plane at that height), "
+                            "3D .cem or .c3d only: a section through the model — z=<length> (the XY plane at that height), "
                           + "xz@y=<length> or yz@x=<length>. EVERY LENGTH CARRIES AN SI UNIT (z=35um); a bare number "
                           + "is refused. A solid is drawn where its bottom <= plane < its top, so z at the top of "
                           + "the copper shows the layer above it."),
                         new("iso", "--iso", OptKind.Flag,
-                            "3D .cem only: an isometric outline — silhouettes and sharp edges, with no hidden-line "
+                            "3D .cem or .c3d only: an isometric outline — silhouettes and sharp edges, with no hidden-line "
                           + "removal. Refused together with section."),
+
+                        // brief-em3d-84: a .c3d's field plot, drawn from its own run.
+                        new("field", "--field", OptKind.Str,
+                            ".c3d only: draw this field plot (by exact name) over the section it cuts. A clip-plane plot IS "
+                          + "a section, so leave section out; a different one is refused. The plot's run, solution and "
+                          + "quantity must exist: a missing one is refused with the reason, never replaced by the nearest. "
+                          + "Surfaces, faces and temperature plots are not drawn headlessly yet. A hidden plot draws the same."),
+                        new("listFields", "--list-fields", OptKind.Flag,
+                            ".c3d only: list its field plots — setup, solution, quantity, where, and whether the data is "
+                          + "there (the reason when not). Draws nothing and takes no output."),
+                        new("phase", "--phase", OptKind.Number,
+                            "With field: the instant of the cycle to draw, degrees (default 0). Only for a plot reading a "
+                          + "quantity instantaneously; refused otherwise."),
+                        new("noLegend", "--no-legend", OptKind.Flag, "With field: leave the field's legend off."),
+                        new("noThin", "--no-thin", OptKind.Flag,
+                            "With field: draw every slice triangle in an svg or pdf, however many. By default a vector "
+                          + "slice above 50,000 triangles merges neighbours of one colour step, and the result says how many "
+                          + "it drew them as."),
                     ],
                     ""),
             ],

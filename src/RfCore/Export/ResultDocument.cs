@@ -158,7 +158,9 @@ namespace RfCore.Export
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         ImpedanceReportJson? Impedance = null,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        ImpedanceSurveyJson? ImpedanceSurvey = null);
+        ImpedanceSurveyJson? ImpedanceSurvey = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        IReadOnlyList<RenderFieldPlotJson>? FieldPlots = null);
 
     /// <summary>
     /// What an <c>NDF=yes</c> run found (brief-wsprobe-6 R-wsp6-2): the right-half-plane pole count
@@ -1855,7 +1857,77 @@ namespace RfCore.Export
         string Unit,
         double Scale,
         IReadOnlyList<string> Objects,
-        IReadOnlyList<int> Ports);
+        IReadOnlyList<int> Ports,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        RenderFieldJson? Field = null);
+
+    /// <summary>
+    /// brief-em3d-84 R-em3d84-4 — the field plot a section was drawn with: which plot, which run it read (the walk a caller
+    /// cannot otherwise see), which saved solution by value, the quantity, how many slice triangles and how many the picture
+    /// drew them as (fewer when a vector page was thinned), the colour range, and whether the model has moved on since the run.
+    /// </summary>
+    /// <param name="Solution">The solution as the <c>.c3d</c> spells it; absent when the plot names none (the first saved).</param>
+    /// <param name="Label">The solution as the 3D view labels it: <c>Mode 1: 5.73 GHz, Q 1.2e+04</c>.</param>
+    /// <param name="Mode">How the quantity is read: Peak, Instantaneous, Value.</param>
+    /// <param name="Phase">The phase drawn, degrees — present for an instantaneous quantity only.</param>
+    /// <param name="Run">The run directory the fields were read from.</param>
+    public sealed record RenderFieldJson(
+        string Plot,
+        string Setup,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? Solver,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        RenderFieldSolutionJson? Solution,
+        string Label,
+        string Quantity,
+        string Mode,
+        string On,
+        int Triangles,
+        int TrianglesDrawn,
+        RenderFieldRangeJson Range,
+        bool Stale,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? Run,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        double? Phase);
+
+    /// <summary>A field plot's solution as the <c>.c3d</c> spells it: exactly one of GHz, Mode, Terminal or Point.</summary>
+    public sealed record RenderFieldSolutionJson(
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull), JsonPropertyName("ghz")] double? GHz,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? Port,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? Mode,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Terminal,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? Point);
+
+    /// <summary>The colour range drawn: its ends (in dB when <paramref name="Db"/>), the unit, and the percentile the top is at.</summary>
+    public sealed record RenderFieldRangeJson(double Lo, double Hi, string Unit, bool Db, double Percentile);
+
+    /// <summary>
+    /// brief-em3d-84 R-em3d84-2 — one field plot of a <c>.c3d</c> as <c>render --list-fields</c> reports it: what it shows,
+    /// where, from which setup, and whether its data is there — the R-em3d83-5 sentence when it is not — so an agent can find
+    /// out what it can draw without opening the file.
+    /// </summary>
+    /// <param name="Problem">Why the plot has nothing to draw (R-em3d83-5), or absent when its data is there.</param>
+    /// <param name="Headless">Why <c>render --field</c> will not draw it yet (a Surfaces, Faces or temperature plot), or absent.</param>
+    public sealed record RenderFieldPlotJson(
+        string Name,
+        string Setup,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? Solver,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        RenderFieldSolutionJson? Solution,
+        string Describe,
+        string Quantity,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? Mode,
+        string On,
+        string Target,
+        bool Hidden,
+        bool DataPresent,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? Problem,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? Headless);
 
     /// <summary>
     /// What <c>render</c> decided about a <c>.cdd</c> (RND-4), which is a different set of questions

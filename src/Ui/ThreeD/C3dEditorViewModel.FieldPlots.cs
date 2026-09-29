@@ -164,8 +164,8 @@ public sealed partial class C3dEditorViewModel
             On = thermal ? C3dFieldPlotOn.Surfaces : C3dFieldPlotOn.ClipPlane,
         };
         var request = PlotRequest(plot, resolveScene: false);
-        if (Viewer3DViewModel.PickSolution(null, request.Solver, Discovered(request).Items, Viewer.Scene.Problem) is { } first)
-            plot.Solution = Viewer3DViewModel.SolutionKey(first.Solution, Viewer.Scene.Problem);
+        if (FieldPlotResolver.PickSolution(null, request.Solver, Discovered(request).Items, Viewer.Scene.Problem) is { } first)
+            plot.Solution = FieldPlotResolver.SolutionKey(first.Solution, Viewer.Scene.Problem);
         (plot.Axis, plot.Offset) = ClipOfView();
         return plot;
     }
@@ -206,51 +206,21 @@ public sealed partial class C3dEditorViewModel
         else if (p.Setup is null)
         {
             run = ActiveRunSetup;
-            if (run is null) problem = "No setup is active: pick this plot's setup in the Properties Inspector.";
+            if (run is null) problem = FieldPlotResolver.NoActiveSetup;
         }
         else if (ExternalSetup is { } x && p.Setup == ExternalItemName) run = x.Setup;
-        else if (C3dSetups.Read(Document).FirstOrDefault(s => s.Name == p.Setup) is { Setup: { } found }) run = C3dSetups.ForRun(found, TopFilePath);
-        else problem = $"The setup '{p.Setup}' is no longer in this 3D view: pick this plot's setup in the Properties Inspector.";
-        var shape = IsViewOnly ? null : run;
-        string? solver = shape is { Solver3D: Em3dSolver.Both } ? (p.Solver == Em3dSolver.OpenEms ? "openEMS" : "Palace") : null;
-        var request = new FieldPlotRequest
-        {
-            Name = p.Name, SetupName = setupName, RunSetup = run, SetupProblem = problem, Solver = solver,
-            Solution = p.Solution, Quantity = p.Quantity, On = p.On, Db = p.Db, Percentile = p.Percentile, FixRange = p.FixRange,
-            Mode = Enum.TryParse<FieldMode>(p.Mode, ignoreCase: true, out var m) ? m : null,
-        };
+        else (run, problem) = FieldPlotResolver.ResolveSetup(Document, TopFilePath, p.Setup);
+        var request = FieldPlotResolver.Request(p, setupName, run, problem, IsViewOnly ? null : run);
         if (!resolveScene) return request;
-        return request with { Plane = ScenePlane(p), Faces = SceneFaces(p) };
+        return request with { Plane = ScenePlane(p), Faces = FieldPlotResolver.SceneFaces(p, SceneObject) };
     }
 
     /// <summary>A ClipPlane plot's plane in scene-local metres: its axis, its DBU offset less the scene's origin — kept on the
     /// side the view's clip plane keeps.</summary>
     private ClipPlane3D ScenePlane(C3dFieldPlot p)
-    {
-        var scene = Viewer.Scene;
-        int a = (int)(p.Axis ?? C3dAxis.Z);
-        double world = C3dLowering.Metres(p.Offset ?? 0, Document.DbuPerMicron);
-        double origin = a == 0 ? scene.Origin.X : a == 1 ? scene.Origin.Y : scene.Origin.Z;
-        return new ClipPlane3D { Enabled = true, Axis = (ClipAxis3D)a, Offset = (float)(world - origin), Flip = Viewer.ClipFlip };
-    }
+        => FieldPlotResolver.ScenePlane(p, Document.DbuPerMicron, Viewer.Scene.Origin, Viewer.ClipFlip);
 
-    /// <summary>A Faces plot's faces by the scene's indices; a face the scene no longer has is left out (the row says so).</summary>
-    private List<PaintedFieldFace> SceneFaces(C3dFieldPlot p)
-    {
-        var list = new List<PaintedFieldFace>();
-        foreach (var f in p.Faces)
-            if (SceneFace(f) is { } i) list.Add(new PaintedFieldFace(i.Object, i.Face, f.Side switch { C3dFieldSide.Top => 1, C3dFieldSide.Bottom => -1, _ => 0 }));
-        return list;
-    }
-
-    private (string Object, int Face)? SceneFace(C3dFieldPlotFace f)
-    {
-        var (obj, face) = f.Parts;
-        if (SceneObject(obj) is not { } so) return null;
-        for (int i = 0; i < Math.Max(so.FaceNames.Count, 1); i++)
-            if (so.FaceName(i) == face) return (so.Name, i);
-        return null;
-    }
+    private (string Object, int Face)? SceneFace(C3dFieldPlotFace f) => FieldPlotResolver.SceneFace(f, SceneObject);
 
     /// <summary>The face a gesture picked, as a plot spells it: <c>object/face</c>.</summary>
     private static string FaceKey(Scene3DObject o, int face) => $"{o.Name}/{o.FaceName(face)}";
@@ -283,7 +253,7 @@ public sealed partial class C3dEditorViewModel
             request = request with { Plane = ScenePlane(plot) };
         }
         string key = request is null ? "" : string.Join("|", C3dPersistence.SerializeFieldPlots([plot!]), request.Plane.Offset, request.Plane.Flip,
-            string.Join(",", request.Faces), Viewer3DViewModel.RunDirectories(request.RunSetup, ResultsRootProvider?.Invoke()),
+            string.Join(",", request.Faces), FieldPlotResolver.RunDirectories(request.RunSetup, ResultsRootProvider?.Invoke()),
             request.Solver, request.SetupProblem, Viewer.Scene.Origin);
         if (key != _appliedPlotKey)
         {
@@ -318,9 +288,9 @@ public sealed partial class C3dEditorViewModel
         if (IsViewOnly || request.SetupProblem is not null)
             return new FieldDiscovery([], IsViewOnly ? [.. Viewer.FieldSolutions] : [], null, [], null, IsViewOnly && Viewer.FieldsAvailable, null, null);
         var root = ResultsRootProvider?.Invoke();
-        var dirs = Viewer3DViewModel.RunDirectories(request.RunSetup, root);
+        var dirs = FieldPlotResolver.RunDirectories(request.RunSetup, root);
         if (_discoveries.TryGetValue(dirs, out var d)) return d;
-        return _discoveries[dirs] = Viewer3DViewModel.Discover(request.RunSetup, root, Viewer.Scene.Problem);
+        return _discoveries[dirs] = FieldPlotResolver.Discover(request.RunSetup, root, Viewer.Scene.Problem);
     }
 
     /// <summary>A run finished, or the viewer read one: every plot's check reads the runs again.</summary>
@@ -354,7 +324,7 @@ public sealed partial class C3dEditorViewModel
         var request = PlotRequest(p, resolveScene: false);
         if (!p.Hidden && Viewer.Plot is { } drawn && drawn.Name == p.Name && Viewer.FieldPlotProblem is { } now) return now;
         var found = Discovered(request);
-        if (Viewer3DViewModel.PlotProblem(request, found.Items, found.Ran, Viewer.Scene.Problem) is { } why) return why;
+        if (FieldPlotResolver.PlotProblem(request, found.Items, found.Ran, Viewer.Scene.Problem) is { } why) return why;
         if (p.Faces.Count > 0 && p.On == C3dFieldPlotOn.Faces && p.Faces.FirstOrDefault(f => SceneFace(f) is null) is { } gone && Viewer.Scene.Objects.Length > 0)
             return $"The face '{gone.Face}' is no longer in the model.";
         return null;
@@ -373,12 +343,7 @@ public sealed partial class C3dEditorViewModel
     /// <summary>What the row says after the name: <c>|E| · 10 GHz · clip Z</c>.</summary>
     public string DescribePlot(C3dFieldPlot p)
     {
-        string q = p.IsTemperature ? "T" : p.Mode switch
-        {
-            nameof(FieldMode.Instantaneous) => $"Re{{{p.Quantity}}}",
-            nameof(FieldMode.Value) => p.Quantity,
-            _ => $"|{p.Quantity}|",
-        };
+        string q = FieldPlotResolver.QuantitySymbol(p);
         string on = p.On switch
         {
             C3dFieldPlotOn.ClipPlane => $"clip {p.Axis ?? C3dAxis.Z}",

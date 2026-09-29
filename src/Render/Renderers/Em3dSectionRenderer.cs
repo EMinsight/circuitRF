@@ -19,6 +19,7 @@
 // faces are SkiaFonts' embedded ones — so the same scene gives the same bytes (R-em3d5-2e).
 
 using CircuitRF.Engine.Em3d;
+using CircuitRF.Render.Scene3D.Fields;
 using SkiaSharp;
 
 namespace CircuitRF.Render;
@@ -108,8 +109,11 @@ public static class Em3dSectionRenderer
         return map;
     }
 
-    /// <summary>Paints <paramref name="scene"/> onto a <paramref name="width"/> × <paramref name="height"/> page.</summary>
-    public static void Draw(SKCanvas canvas, int width, int height, Em3dScene scene, Em3dRenderStyle style)
+    /// <summary>Paints <paramref name="scene"/> onto a <paramref name="width"/> × <paramref name="height"/> page — with
+    /// <paramref name="field"/> (brief-em3d-84) under it: the field first, then the regions as outlines (a conductor, which
+    /// carries no field, still filled), then the ports and the box, so the geometry reads over the field; and the field's
+    /// legend where the materials' would be, since no dielectric is filled to key.</summary>
+    public static void Draw(SKCanvas canvas, int width, int height, Em3dScene scene, Em3dRenderStyle style, Em3dFieldLayer? field = null)
     {
         ArgumentNullException.ThrowIfNull(canvas);
         ArgumentNullException.ThrowIfNull(scene);
@@ -144,9 +148,11 @@ public static class Em3dSectionRenderer
         canvas.Save();
         canvas.ClipRect(frame);
 
+        if (field is not null) Em3dSectionField.Draw(canvas, field, Map);
+
         foreach (var r in scene.Regions)
         {
-            if (r.Role == Em3dRole.Air && style.Transparent) continue;
+            if (r.Role == Em3dRole.Air && (style.Transparent || field is not null)) continue;
             using var path = new SKPath { FillType = SKPathFillType.EvenOdd };
             if (r.CircleCentre is { } centre)
                 path.AddCircle(Map(centre).X, Map(centre).Y, (float)(r.CircleRadius * scale));
@@ -155,10 +161,10 @@ public static class Em3dSectionRenderer
 
             var colour = Fill(r.Object, r.Role, r.Material);
             fill.Color = colour;
-            canvas.DrawPath(path, fill);
+            if (field is null || r.Role == Em3dRole.Conductor) canvas.DrawPath(path, fill);
             if (r.Role != Em3dRole.Air)
             {
-                stroke.Color = Darker(colour);
+                stroke.Color = field is not null && r.Role != Em3dRole.Conductor ? st.LabelInk : Darker(colour);
                 stroke.StrokeWidth = 1f;
                 canvas.DrawPath(path, stroke);
             }
@@ -238,6 +244,15 @@ public static class Em3dSectionRenderer
         }
 
         // ── the legend ─────────────────────────────────────────────────────────────────────────
+        if (field is not null)
+        {
+            // Export picture's own legend painter, sized to the column (its bar is 220 units wide at scale 1).
+            if (field.Legend.Count > 0)
+                FieldPicture.Paint(canvas, width, height, Math.Min(fs / 12f, (legendW - pad) / 236f), field.Legend, field.Map, field.Scale,
+                                   null, style.Variant == ColorVariant.Dark, SkiaFonts.PlexRegular);
+            DrawCaption(canvas, scene, style, height, captionH, lineH, pad, bold, small, text);
+            return;
+        }
         float lx = width - legendW, ly = pad + band;
         Em3dText.Draw(canvas, style.TextAsPaths, "Materials", lx, ly + fs, SKTextAlign.Left, bold, text);
         ly += lineH * 1.4f;
@@ -286,7 +301,13 @@ public static class Em3dSectionRenderer
             Em3dText.Draw(canvas, style.TextAsPaths, "Port (its sheet, projected)", lx + fs * 1.5f, ly + fs * 0.85f, SKTextAlign.Left, font, text);
         }
 
-        // ── the caption ────────────────────────────────────────────────────────────────────────
+        DrawCaption(canvas, scene, style, height, captionH, lineH, pad, bold, small, text);
+    }
+
+    // ── the caption ────────────────────────────────────────────────────────────────────────────
+    private static void DrawCaption(SKCanvas canvas, Em3dScene scene, Em3dRenderStyle style, int height, float captionH, float lineH,
+                                    float pad, SKFont bold, SKFont small, SKPaint text)
+    {
         float cy0 = height - captionH + lineH;
         Em3dText.Draw(canvas, style.TextAsPaths, Title(scene), pad, cy0, SKTextAlign.Left, bold, text);
         Em3dText.Draw(canvas, style.TextAsPaths, Convention(scene), pad, cy0 + lineH, SKTextAlign.Left, small, text);

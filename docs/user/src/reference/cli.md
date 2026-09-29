@@ -29,6 +29,7 @@ keywords: CLI, command line, command-line, terminal, shell, console, headless, b
   <li><a href="#render-detail">Size, and what <code>--detail</code> costs</a></li>
   <li><a href="#render-layers">Layers and colour</a></li>
   <li><a href="#render-cdd">A data display</a></li>
+  <li><a href="#render-field">A 3D view's field plot</a></li>
   <li><a href="#render-example">A worked example, from an empty folder</a></li>
   </ol>
 </li>
@@ -1352,6 +1353,42 @@ did nothing would give you a full picture you believed was a crop.
 With `--json`, `result.render.dataDisplay` names **every source and the file it actually resolved to**,
 and which of `--data` or the document bound it. That is the part the picture cannot tell you: "the plot
 is empty" and "the plot read the wrong run" look identical.
+
+<h3 id="render-field">A 3D view's field plot</h3>
+
+A 3D setup's model — a `.cem` with a 3D solver, or a `.c3d` — is drawn as a section with
+`--section z=35um` (or `xz@y=…`, `yz@x=…`; every length carries a unit) or as an outline with `--iso`.
+A `.c3d` also keeps its [field plots](em-3d.md) as records, so a plot can be drawn with no window. A
+clip-plane plot **is** a section: it is drawn on its own axis at its own position, with the field under
+the model's outlines and its legend beside it.
+
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf render cavity/3d/cavity.c3d --list-fields
+<span class="output">Field1: |E| · mode 1 · clip z = 12.5 mm · setup 'modes'
+  data: ready</span>
+<span class="prompt">$ </span>circuitrf render cavity/3d/cavity.c3d -o cut.svg --field Field1
+<span class="output">Wrote cut.svg (1600x1200 points, 18,513 bytes)
+  XY section at z = 12.5 mm: 1 object(s), 0 port(s)
+  Field1: |E| at Mode 1: 8.88028 GHz, Q 3.14E+11, 144 triangles, 0 … 2581 V/m</span></code></pre>
+
+- **It reads what the 3D view reads.** The same run (the workspace's `results/`, where `em` writes), the
+  same saved solution **by value**, the same triangles and the same colour range. A plot whose data is
+  missing — no run yet, a frequency the run did not save, a quantity it no longer offers — is a
+  **refusal** with the sentence the Object Tree shows. It is never drawn at the nearest frequency, and
+  an outline is never passed off as the field.
+- **A stale run still draws**, as in the window, with a `note:` saying the model has changed since.
+- **`--phase <degrees>`** picks the instant drawn for a quantity read instantaneously (`Re{E}`); it is a
+  refusal on any other. The phase is never written to the file.
+- **A hidden plot draws the same.** Hiding only chooses which plot the window draws; `--field` names one.
+- A `--section` that is not the plot's own plane is a refusal naming both. **Surfaces, faces and
+  temperature plots are refused for now**: open the `.c3d` and use *Export picture*.
+- **PNG and vector differ in one way.** A PNG blends colours across each triangle. SVG has no gradient
+  mesh, so in SVG and PDF each triangle takes the colour of its centre. A vector slice of more than
+  50,000 triangles merges neighbours that fall in the same step of the colour map, never dropping area.
+  The report says `drawn as …` when that happened, and `--no-thin` draws every triangle. `--no-legend`
+  leaves the legend off.
+- `--json` adds `render.em3d.field`: the plot, its setup, the solution as the file spells it, the run
+  directory it read, the triangle counts, the range and whether the run is stale. `--list-fields --json`
+  returns the plots as `fieldPlots`.
 
 <h3 id="render-example">A worked example, from an empty folder</h3>
 

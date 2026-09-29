@@ -1015,7 +1015,7 @@ public sealed partial class C3dEditorViewModel
     // ── fields: from the run's own directory, and a banner when the model has moved on (R-em3d49-5b) ──
 
     /// <summary>The file a run's directory keeps the document it solved in — what the stale-fields banner compares with.</summary>
-    public const string RunDocumentFile = "document.c3d";
+    public const string RunDocumentFile = C3dRunDocument.FileName;
 
     [ObservableProperty] private string? _fieldsStaleText;
 
@@ -1069,7 +1069,7 @@ public sealed partial class C3dEditorViewModel
                 try { _solvedCache = (stamp, File.ReadAllText(f)); } catch (Exception) { continue; }
             }
             // brief-em3d-83 R-em3d83-2 — the plots are display: SerializeForRun leaves them out on both sides.
-            if (_solvedCache!.Value.Text != C3dPersistence.SerializeForRun(Document))
+            if (C3dRunDocument.IsStale(_solvedCache!.Value.Text, Document))
                 text = $"Fields are from the run at {File.GetLastWriteTime(f):HH:mm}; the model has changed since. They are drawn on the " +
                        "geometry that run solved.";
             break;

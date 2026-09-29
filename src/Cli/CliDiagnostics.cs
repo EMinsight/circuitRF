@@ -2084,6 +2084,89 @@ internal static class CliDiagnostics
         "'{path}': the 3D problem drawn has {count} structural problem(s) a backend would refuse; "
       + "`circuitrf check` lists them.", ("path", path), ("count", count.ToString(System.Globalization.CultureInfo.InvariantCulture)));
 
+    // ── render --field, a 3D view's field plot (brief-em3d-84) ────────────────
+
+    /// <summary>R-em3d84-2 — a field plot is a record of a <c>.c3d</c>; nothing else has one.</summary>
+    public static Diagnostic RenderFieldNotA3dView(string option, string path, string kind) => Diagnostic.Create(
+        "render.field.not-3d-view", DiagnosticSeverity.Error,
+        "render: {option} draws a field plot of a 3D view (.c3d), and '{path}' is {kind}.",
+        ("option", option), ("path", path), ("kind", kind));
+
+    /// <summary>§6 — a <c>.cem</c> has no plots: they live in the <c>.c3d</c> it solves.</summary>
+    public static Diagnostic RenderFieldOnCem(string option, string path) => Diagnostic.Create(
+        "render.field.on-cem", DiagnosticSeverity.Error,
+        "render: {option} draws a field plot, and '{path}' is an EM setup, which holds none: a field plot is a record of the "
+      + "3D view (.c3d) a setup solves. Render that .c3d with --field, or --list-fields to see its plots.",
+        ("option", option), ("path", path));
+
+    /// <summary>An unknown plot name, refused LISTING the plots, as --view lists views.</summary>
+    public static Diagnostic RenderFieldUnknown(string name, string path, string plots) => Diagnostic.Create(
+        "render.field.unknown", DiagnosticSeverity.Error,
+        "render: '{path}' has no field plot named '{name}'. Its field plots: {plots}.",
+        ("name", name), ("path", path), ("plots", plots));
+
+    /// <summary>Owner decision Q1 — sections ship first: a Surfaces or Faces plot needs a depth-ordered picture.</summary>
+    public static Diagnostic RenderFieldNotHeadless(string name, string on) => Diagnostic.Create(
+        "render.field.not-headless", DiagnosticSeverity.Error,
+        "render: field plot '{name}' is drawn on {on}, and only a clip-plane plot is drawn headlessly yet. Open the .c3d and "
+      + "use the 3D view's Export picture to get this one.", ("name", name), ("on", on));
+
+    /// <summary>A temperature's range and its wires are the 3D view's own (brief-em3d-75), not yet a section's.</summary>
+    public static Diagnostic RenderFieldTemperature(string name) => Diagnostic.Create(
+        "render.field.temperature", DiagnosticSeverity.Error,
+        "render: field plot '{name}' shows a temperature, and a temperature is not drawn headlessly yet: its range spans the "
+      + "wires and the sweep, which only the 3D view draws. Open the .c3d and use the 3D view's Export picture to get this one.",
+        ("name", name));
+
+    /// <summary>A boundary quantity (J_s) lives on the conductors: a plane through the volume holds none of it.</summary>
+    public static Diagnostic RenderFieldOnBoundary(string name, string quantity) => Diagnostic.Create(
+        "render.field.boundary-quantity", DiagnosticSeverity.Error,
+        "render: field plot '{name}' cuts {quantity} on a plane, and that quantity lives on the conductors' surfaces, not in the "
+      + "volume a plane cuts. Draw it on surfaces in the 3D view.", ("name", name), ("quantity", quantity));
+
+    /// <summary>R-em3d84-2 — a ClipPlane plot IS a section: another plane is a different picture, never a silent re-cut.</summary>
+    public static Diagnostic RenderFieldViewDisagrees(string name, string plane, string asked) => Diagnostic.Create(
+        "render.field.view-disagrees", DiagnosticSeverity.Error,
+        "render: field plot '{name}' is cut at {plane}, and {asked} asks for a different picture. Leave the view out to draw "
+      + "the plot's own section, or change the plot's plane in the .c3d.",
+        ("name", name), ("plane", plane), ("asked", asked));
+
+    /// <summary>R-em3d83-5's sentence, verbatim: never a fallback to the nearest solution, never an outline drawn instead.</summary>
+    public static Diagnostic RenderFieldMissingData(string name, string why) => Diagnostic.Create(
+        "render.field.missing-data", DiagnosticSeverity.Error,
+        "render: field plot '{name}' has nothing to draw. {why}", ("name", name), ("why", why));
+
+    public static Diagnostic RenderFieldUnreadable(string name, string why) => Diagnostic.Create(
+        "render.field.unreadable", DiagnosticSeverity.Error,
+        "render: the fields field plot '{name}' reads could not be read: {why}", ("name", name), ("why", why));
+
+    /// <summary>Owner decision Q3 — a phase means something only for a quantity read at an instant.</summary>
+    public static Diagnostic RenderFieldPhaseNotAnimated(string name, string quantity) => Diagnostic.Create(
+        "render.field.phase-not-animated", DiagnosticSeverity.Error,
+        "render: --phase picks an instant of the cycle, and field plot '{name}' shows {quantity}, which does not change over "
+      + "one. A plot reading a quantity instantaneously (Re{E}) takes a phase.", ("name", name), ("quantity", quantity));
+
+    public static Diagnostic RenderFieldPhaseMalformed(string text) => Diagnostic.Create(
+        "render.field.phase-malformed", DiagnosticSeverity.Error,
+        "render: --phase expects an angle in degrees, got '{text}'.", ("text", text));
+
+    /// <summary>A field option with no plot named to apply it to.</summary>
+    public static Diagnostic RenderFieldOptionNeedsField(string option) => Diagnostic.Create(
+        "render.field.needs-field", DiagnosticSeverity.Error,
+        "render: {option} describes a field plot's picture, and no --field names one.", ("option", option));
+
+    /// <summary>--list-fields draws nothing, so an option about a picture has nothing to apply to.</summary>
+    public static Diagnostic RenderFieldListAlone(string option) => Diagnostic.Create(
+        "render.field.list-alone", DiagnosticSeverity.Error,
+        "render: --list-fields lists a 3D view's field plots and draws nothing, so {option} has nothing to apply to. "
+      + "Run it alone, then render one with --field.", ("option", option));
+
+    /// <summary>R-em3d84-2 — a stale run still draws (as in the 3D view), and says so.</summary>
+    public static Diagnostic RenderFieldStale(string name, string when) => Diagnostic.Create(
+        "render.field.stale", DiagnosticSeverity.Info,
+        "field plot '{name}': the model has changed since the run at {when}; the field is drawn on the geometry that run solved.",
+        ("name", name), ("when", when));
+
     public static Diagnostic RenderMarginMalformed(string text) => Diagnostic.Create(
         "render.margin.malformed", DiagnosticSeverity.Error,
         "render: --margin expects a fraction of the extent per side, between 0 and 0.45, got '{text}'.",

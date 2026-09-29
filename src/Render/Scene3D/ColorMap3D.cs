@@ -35,6 +35,15 @@ public sealed class ColorMap3D
 
     public static IReadOnlyList<ColorMap3D> All { get; } = [Viridis, CoolWarm, Inferno];
 
+    /// <summary>The map a field quantity is painted with — the 3D view's and `render --field`'s one rule (brief-em3d-84):
+    /// Inferno for a temperature (hot reads as hot, brief-em3d-75), CoolWarm for a signed quantity, Viridis otherwise.</summary>
+    public static ColorMap3D For(Fields.FieldQuantity? q) => q switch
+    {
+        { IsTemperature: true } => Inferno,
+        { Signed: true } => CoolWarm,
+        _ => Viridis,
+    };
+
     /// <summary>The colour at <paramref name="t"/>, clamped to [0, 1].</summary>
     public (byte R, byte G, byte B) Sample(float t)
     {

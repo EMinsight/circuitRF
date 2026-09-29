@@ -109,7 +109,7 @@ public sealed partial class C3dPropertiesViewModel
         PlotSolutions.Clear();
         var found = editor.Discovered(request);
         var mine = found.Items.Where(i => request.Solver is null || string.Equals(i.Run.Solver, request.Solver, StringComparison.OrdinalIgnoreCase)).ToList();
-        foreach (var i in mine) PlotSolutions.Add(new C3dPlotSolutionChoice(i.Label, Viewer3DViewModel.SolutionKey(i.Solution, editor.Viewer.Scene.Problem)));
+        foreach (var i in mine) PlotSolutions.Add(new C3dPlotSolutionChoice(i.Label, FieldPlotResolver.SolutionKey(i.Solution, editor.Viewer.Scene.Problem)));
         C3dPlotSolutionChoice? chosen = p.Solution is null ? PlotSolutions.FirstOrDefault() : PlotSolutions.FirstOrDefault(c => c.Solution!.SameAs(p.Solution));
         if (chosen is null && p.Solution is { } missing)
         {
@@ -121,7 +121,7 @@ public sealed partial class C3dPropertiesViewModel
 
         // The Quantity picker: only what the step offers (the plot's own quantity kept, marked, when it does not).
         PlotQuantities.Clear();
-        var item = Viewer3DViewModel.PickSolution(p.Solution, request.Solver, mine, editor.Viewer.Scene.Problem);
+        var item = FieldPlotResolver.PickSolution(p.Solution, request.Solver, mine, editor.Viewer.Scene.Problem);
         var offered = item is null ? [] : !p.Hidden && editor.Viewer.Plot?.Name == p.Name && editor.Viewer.FieldQuantities.Count > 0
             ? [.. editor.Viewer.FieldQuantities] : editor.OfferedQuantities(item);
         foreach (var q in offered) PlotQuantities.Add(new C3dPlotQuantityChoice(q.Label, q.Array.Name, q.Mode.ToString()));

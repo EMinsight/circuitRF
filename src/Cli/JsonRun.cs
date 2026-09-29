@@ -153,6 +153,9 @@ internal static class JsonRun
     /// <summary>What <c>impedance --survey</c> found — the width classes per layer.</summary>
     public static ImpedanceSurveyJson? ImpedanceSurvey;
 
+    /// <summary>What <c>render --list-fields</c> found (brief-em3d-84): a 3D view's field plots.</summary>
+    public static IReadOnlyList<RenderFieldPlotJson>? FieldPlots;
+
     /// <summary>
     /// Where <see cref="Finish"/> writes, instead of stdout. Set by <c>serve</c> only.
     ///
@@ -197,6 +200,7 @@ internal static class JsonRun
         Lvs                 = null;
         Impedance           = null;
         ImpedanceSurvey     = null;
+        FieldPlots          = null;
         _summaryOnly        = false;
         _diagnosticsSummary = false;
         Malformed           = null;
@@ -419,10 +423,10 @@ internal static class JsonRun
         // into it.
         if (Check is not null || Explain is not null || Document is not null || Reference is not null
          || History is not null || Render is not null || Find is not null || Smith is not null
-         || Lvs is not null || Impedance is not null || ImpedanceSurvey is not null)
+         || Lvs is not null || Impedance is not null || ImpedanceSurvey is not null || FieldPlots is not null)
             return new ResultPayload(null, null, Check, Explain, Document, Reference, History, Render,
                                      Find: Find, Smith: Smith, Lvs: Lvs, Impedance: Impedance,
-                                     ImpedanceSurvey: ImpedanceSurvey);
+                                     ImpedanceSurvey: ImpedanceSurvey, FieldPlots: FieldPlots);
 
         // `rail` is the one verb that carries a report AND a DataSet — the cubes are the field and
         // the report is the domain shape §2.4 asks for — so a refused run still answers with its

@@ -259,6 +259,13 @@ setup's refusals and notes, the mesh, the field) are always shown.
   tooltip, and the Inspector, say which, and name what the run did save. It is never moved to the nearest
   frequency for you. In a setup's own 3D view (*Show 3D View* from a `.cem`) plots last for the session:
   that view has no document to keep them in.
+
+  **Without a window**, a `.c3d`'s clip-plane plot is drawn as the section it cuts:
+  `circuitrf render cavity.c3d -o cut.png --field Field1` (add `--phase 90` for an instantaneous
+  quantity), and `circuitrf render cavity.c3d --list-fields` lists the plots and whether each one's data
+  is there. It reads the same run, solution and range the 3D view does, and refuses a plot whose data is
+  missing with the same sentence. Surfaces, faces and temperature plots are not drawn this way yet: use
+  *Export picture* for those. See [`render`](cli.md#render).
 - **One face.** In the 3D editor, right-click a face, *Plot Field*, to add that face to the plot being drawn
   when it is a faces plot — the top of one trace, one face of a substrate — or to start a new faces plot with
   it; again to take it off, and several faces accumulate. A conductor has no inside to read, so its face
@@ -289,27 +296,38 @@ notes say so.
 <span class="label">Pictures of the 3D view</span>
 <p>The 3D view draws on the graphics card, so its pictures cannot be made by the documentation's
 headless generator. The four below are to be exported from the example with <b>Export picture …</b> at 2×,
-with the legend on.</p>
+with the legend on. <code>circuitrf render --field</code> draws a <code>.c3d</code>'s clip-plane plot
+headlessly, as a section rather than the view's perspective; none of these examples carries such a plot
+yet, and each placeholder says what its headless spelling would need.</p>
 </div>
 
 <!-- FIGURE PLACEHOLDER em3d-view-bond-wire-model — 1600 x 1000 PNG, Export picture at 2x, legend on:
      Bond wire/em/Bond wire 3D.cem after a run, isometric (1), dielectrics and air hidden, mesh ON.
      Caption: "The bond wire after a Standard run: the wire, its feet and the pads, with the mesh Palace
-     refined around them." -->
+     refined around them."
+     Headless: none — a perspective model with its mesh is the 3D view's own picture, not a field plot. -->
 
 <!-- FIGURE PLACEHOLDER em3d-view-bond-wire-current — 1600 x 1000 PNG, Export picture at 2x, legend on:
      the same view, mesh off, a field plot at the saved 20.5 GHz frequency, J_s on surfaces, dB on.
-     Caption: "Surface current J_s on the bond wire and its pads at 20.5 GHz, in dB." -->
+     Caption: "Surface current J_s on the bond wire and its pads at 20.5 GHz, in dB."
+     Headless: not yet — J_s on surfaces is a Surfaces plot, which `render --field` refuses until the iso
+     picture's brief; and a .cem holds no field plots, so the wire would have to be drawn in a .c3d first. -->
 
 <!-- FIGURE PLACEHOLDER em3d-view-via-field — 1600 x 1000 PNG, Export picture at 2x, legend on:
      Via through a plane/em/Via 3D.cem after a run, front view (3), clip plane C on y (normal along y) at
      0, a field plot at 10.05 GHz, |E| on the clip plane, dB on.
-     Caption: "|E| at 10.05 GHz in a vertical cut along both lines and through the via, in dB." -->
+     Caption: "|E| at 10.05 GHz in a vertical cut along both lines and through the via, in dB."
+     Headless, once the via is drawn in a .c3d carrying this plot (a .cem holds none) as a ClipPlane plot on y
+     at 0, 10.05 GHz, |E|, dB on, named ViaCut:
+       circuitrf render "Via through a plane/3d/Via.c3d" -o em3d-view-via-field.png --size 1600x1000 --field ViaCut -->
 
 <!-- FIGURE PLACEHOLDER em3d-view-package-mode — 1600 x 1000 PNG, Export picture at 2x, legend on:
      Package/em/Package lid modes.cem after a run, top view (2), clip plane on z just below the lid,
      a field plot at mode 3, |E| on the clip plane.
-     Caption: "|E| of the lid's first cavity mode in a plane just below the lid." -->
+     Caption: "|E| of the lid's first cavity mode in a plane just below the lid."
+     Headless, once the package's .c3d carries this plot (a .cem holds none) as a ClipPlane plot on z just below
+     the lid, mode 3, |E|, named LidMode:
+       circuitrf render "Package/3d/Package.c3d" -o em3d-view-package-mode.png --size 1600x1000 --field LidMode -->
 
 ### How far the dielectric reaches {#dielectrics}
 

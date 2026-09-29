@@ -1461,11 +1461,8 @@ static int RunEm(string[] args)
         setup.SnpOutputPathOverride = Path.GetFullPath(output);
     }
 
-    // The GUI's results root is <workspace>/results, falling back to the scratch recovery session
-    // when no workspace is open. Headless there is no recovery session, so a loose .cem falls back to
-    // its OWN directory — the same fallback its LayoutRef already uses, rather than a third rule.
-    string resultsBase = cwsPath is { } cws ? Path.GetDirectoryName(cws)! : Path.GetDirectoryName(cemPath)!;
-    string resultsRoot = Path.Combine(resultsBase, "results");
+    // The GUI's results root, as a headless run has it (ResultsRoot — the one rule `render --field` reads by too).
+    string resultsRoot = CircuitRF.Cli.ResultsRoot.For(cemPath, cwsPath);
 
     // brief-em3d-79 — --set reaches a thermal setup's circuit only; an EM run has none to apply it to, so say so
     if (emSets.Count > 0 && !setup.IsThermal)

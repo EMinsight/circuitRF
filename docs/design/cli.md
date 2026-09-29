@@ -62,7 +62,7 @@ Thirteen verbs run no analysis, so none of §3-§6 applies to them and §7's exi
 | `import part` | a component file or folder | `ComponentRead` + `ComponentImport.Import` | a cell folder holding the land patterns and the symbol |
 | `check` | a workspace, a cell folder, or one document | the validators that already exist | **nothing** — §10 |
 | `explain` | the same, plus `--expr` / `--analysis` / `--ref` / `--cells` / `--layers` / `--extents` / `--footprints` | reports what resolution DECIDED | **nothing** — §10 |
-| `render` | the same three view documents, a cell folder, a workspace + `--cell`, a `.cdd`, or a 3D `.cem` | draws it with the renderer the GUI draws with | one `.svg` / `.pdf` / `.png` — §13, §13.7 for a data display, §13.8 for a 3D setup |
+| `render` | the same three view documents, a cell folder, a workspace + `--cell`, a `.cdd`, a 3D `.cem`, or a `.c3d` (and its field plots) | draws it with the renderer the GUI draws with | one `.svg` / `.pdf` / `.png` — §13, §13.7 for a data display, §13.8 for a 3D setup, §13.8.1 for a field plot |
 | `read` | a result file, or one of circuitRF's own documents | loads it back through the readers the GUI reads through | **nothing** — §11.4 |
 | `netlist` | a `.csch`, a cell folder, or a workspace + `--cell` | the extraction the GUI's own Simulate performs | one `.cnl`, or the text on stdout — §14 |
 | `plot` | a result file | builds a one-plot data display and draws it | one `.svg` / `.pdf` / `.png`, and the `.cdd` under `--write-cdd` — §15 |
@@ -1903,6 +1903,49 @@ Conductors take their drawing layer's colour from the technology; `--json` adds 
 plane after snapping, in metres, and every object the picture drew. Gate:
 `tests/Ui.Tests/Em3d/Em3dRenderExplainTests.cs` — the verb as a process against the in-process render,
 section and outline, SVG and PDF.
+
+#### 13.8.1 A field plot, headlessly (`--field`, `--list-fields`)
+
+`brief-em3d-84-field-plots-in-the-cli.md`. A `.c3d` keeps its field plots as records (brief-em3d-83), so
+a plot can be drawn with no GPU:
+
+```
+circuitrf render cavity.c3d -o cut.png --field Field1           # the plot's own section, the field under it
+circuitrf render cavity.c3d -o wave.png --field Field1 --phase 90
+circuitrf render cavity.c3d --list-fields                        # every plot, and whether its data is there
+```
+
+**It owns no resolution, no slicing and no range arithmetic** — §13.1's rule, and the reason the plot
+resolution moved below the firewall to `CircuitRF.Render.Scene3D.Fields.FieldPlotResolver`, which the
+3D view and the 3D editor now call too. The run directories, the discovery, the solution **by value**, the
+R-em3d83-5 sentences, the quantity pick, the legend's lines and the scene origin are that one class's;
+the cut and its range are `FieldSection`'s (the view's own slice goes through it); the colours and the
+thinning are `Em3dSectionField`'s; every pixel is `Em3dSectionRenderer`'s. The stale comparison is
+`C3dRunDocument` in `src/Design`, the editor's banner's. The results root is `ResultsRoot.For`, the
+function `em` writes by. `src/Cli/RenderEm3dField.cs` is arguments, refusals and the report, and a source
+scan holds it to that.
+
+- **The view follows the plot.** A ClipPlane plot IS a section at its axis and DBU offset; a `--section`
+  that disagrees, or `--iso`, is a refusal naming both — never a silent re-cut.
+- **Missing data is a refusal carrying R-em3d83-5's sentence verbatim** — never the nearest frequency, never
+  an outline presented as the field. **A stale run still draws**, with a `note:`.
+- **Sections only (owner decision Q1).** Surfaces and Faces plots, and a temperature plot (its range spans
+  the wires and the sweep, which only the view draws), are refusals naming Export picture. The iso picture
+  those need is a later brief; `Em3dSectionField`'s header records what it takes.
+- **PNG and vector differ in one way.** A PNG is `DrawVertices` with a colour per vertex, subdivided where
+  one triangle spans more than 1/32 of the range, because Skia blends corner COLOURS and the GPU blends the
+  field. A vector page has no mesh gradient: each triangle is one path of its centroid's colour. Above
+  50,000 triangles a vector slice is **thinned** (owner decision Q2): neighbours of one colour step (256) are
+  merged, area kept, and `Triangles`/`TrianglesDrawn` both reported; `--no-thin` draws every one.
+- **`--phase <deg>`** (Q3) is refused on a quantity that is not read instantaneously, and never written to
+  the document. A hidden plot renders as a shown one: hiding chooses the window's plot, `--field` names one.
+- **`--json`** adds `render.em3d.field` — plot, setup, solver, the solution as the file spells it, label,
+  quantity and mode, the triangle counts, the range, `stale`, and the run directory read (`explain`'s rule:
+  the walk is what a caller cannot otherwise see). `--list-fields --json` returns `fieldPlots`.
+- A `.cem` holds no plots: `--field` on one is a refusal saying they live in the `.c3d`.
+
+Gate: `tests/Ui.Tests/Render/FieldRenderCliTests.cs` — the verb as a process on the committed cavity,
+against the 3D view's own triangles and range.
 
 ## 14. `netlist` — the extraction, as a document
 

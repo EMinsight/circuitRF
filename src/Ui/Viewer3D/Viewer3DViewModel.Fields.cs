@@ -25,16 +25,6 @@ using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace CircuitRF.Ui.Viewer3D;
 
-/// <summary>A solution in the picker: a saved frequency (driven), a mode (eigenmode), a terminal (static).</summary>
-public sealed record FieldSolutionItem(FieldSolution Solution, string Label, FieldRun Run)
-{
-    public override string ToString() => Label;
-}
-
-/// <summary>brief-em3d-82 — a face painted with the EM field: the object's name, its face index in the scene, and — on a
-/// sheet, for a volume quantity — the side shown (+1 along the sheet's own normal, −1 against it; 0 otherwise).</summary>
-public readonly record struct PaintedFieldFace(string Object, int Face, int Side = 0);
-
 public sealed partial class Viewer3DViewModel
 {
     /// <summary>The loop period the phase animation starts at, seconds — a display choice, not the frequency.</summary>
@@ -61,12 +51,8 @@ public sealed partial class Viewer3DViewModel
     /// <summary>The colour range of what is drawn (null while nothing is).</summary>
     public FieldColorScale? FieldScale { get; private set; }
 
-    public ColorMap3D FieldMap => SelectedFieldQuantity switch
-    {
-        { IsTemperature: true } => ColorMap3D.Inferno,     // brief-em3d-75 — hot reads as hot
-        { Signed: true } => ColorMap3D.CoolWarm,
-        _ => ColorMap3D.Viridis,
-    };
+    /// <summary>The map the drawn quantity is painted with (ColorMap3D.For — the rule `render --field` paints with too).</summary>
+    public ColorMap3D FieldMap => ColorMap3D.For(SelectedFieldQuantity);
 
     public ObservableCollection<FieldSolutionItem> FieldSolutions { get; } = [];
     public ObservableCollection<FieldQuantity> FieldQuantities { get; } = [];
@@ -158,36 +144,13 @@ public sealed partial class Viewer3DViewModel
     /// <summary>The overlay's legend: shown with the field.</summary>
     public bool FieldLegendVisible => ShowField && FieldScale is not null && SelectedFieldQuantity is not null;
 
-    /// <summary>The legend's lines: the plot's name (brief-em3d-83), the quantity, the range, and what was solved (R-em3d29-3c/3d).</summary>
+    /// <summary>The legend's lines: the plot's name (brief-em3d-83), the quantity, the range, and what was solved (R-em3d29-3c/3d) —
+    /// FieldPlotResolver.LegendLines, the function `render --field`'s legend comes from.</summary>
     public IReadOnlyList<string> FieldLegendLines()
     {
         if (SelectedFieldQuantity is not { } q || FieldScale is not { } s) return [];
-        var lines = PlotLegendLines(q, s);
-        if (_plot is { Name.Length: > 0 } p) lines.Insert(0, p.Name);
-        return lines;
-    }
-
-    private List<string> PlotLegendLines(FieldQuantity q, FieldColorScale s)
-    {
-        // brief-em3d-75 R-em3d75-4b — °C, the true range (the peak is never clipped), and the sweep point.
-        if (q.IsTemperature)
-        {
-            var t = new List<string> { "Temperature (°C)", s.Describe() + (FixRangeAcrossSweep && FieldSolutions.Count > 1 ? ", fixed across the sweep" : "") };
-            if (TemperatureStepLabel.Length > 0) t.Add(TemperatureStepLabel);
-            if (HotSpotLabel.Length > 0) t.Add("Hot spot: " + HotSpotLabel);
-            return t;
-        }
-        string unit = FieldNames.Unit(q.Array.Name);
-        List<string> lines =
-        [
-            $"{q.Symbol}{(unit.Length > 0 ? $" ({(s.Db ? "dB re 1 " + unit : unit)})" : s.Db ? " (dB)" : "")}",
-            s.Describe(),
-        ];
-        if (SelectedFieldSolution is { } sol) lines.Add(sol.Label);
-        if (q.Animated)
-            lines.Add($"φ = {FieldPhaseDegrees.ToString("0", CultureInfo.InvariantCulture)}°, one cycle every " +
-                      $"{FieldLoopSeconds.ToString("0.##", CultureInfo.InvariantCulture)} s on screen");
-        return lines;
+        return FieldPlotResolver.LegendLines(_plot?.Name, q, s, SelectedFieldSolution?.Label, FieldPhaseDegrees, FieldLoopSeconds,
+                                             FixRangeAcrossSweep && FieldSolutions.Count > 1, TemperatureStepLabel, HotSpotLabel);
     }
 
     /// <summary>brief-em3d-75 — the thermal run's fields (and its table) were read again: the probe table and the menus follow.</summary>
@@ -197,7 +160,7 @@ public sealed partial class Viewer3DViewModel
 
     /// <summary>The run directories the fields are read from — the drawn plot's setup (brief-em3d-83), else this view's setup:
     /// Palace's for its current problem type, openEMS's — whichever the setup runs.</summary>
-    private (string? Palace, string? OpenEms) FieldRunDirectories() => RunDirectories(FieldSetup, _resultsRoot());
+    private (string? Palace, string? OpenEms) FieldRunDirectories() => FieldPlotResolver.RunDirectories(FieldSetup, _resultsRoot());
 
     /// <summary>The setup whose run is read: the plot's, or — for a plot naming none, and with no plot — this view's own. A
     /// plot whose setup is gone reads nothing.</summary>
@@ -218,7 +181,7 @@ public sealed partial class Viewer3DViewModel
         long read = ++_fieldReads;
         Task.Run(() =>
         {
-            var found = Discover(setup, root, scene.Problem);
+            var found = FieldPlotResolver.Discover(setup, root, scene.Problem);
             var (runs, table, groups, why) = (found.Runs, found.Table, found.Groups, found.Why);
             _post(() =>
             {
@@ -287,24 +250,6 @@ public sealed partial class Viewer3DViewModel
         try { return run.Solutions.Count > 0 ? File.GetLastWriteTimeUtc(run.Solutions[0].VolumePvtu!) : default; }
         catch (IOException) { return default; }
     }
-
-    internal static string SolutionLabel(FieldSolution s, IReadOnlyList<PalaceMode>? modes, Em3dProblem? problem)
-    {
-        string G(double v) => v.ToString("G6", CultureInfo.InvariantCulture);
-        return s.Kind switch
-        {
-            FieldProblemKind.Driven => $"{G(s.Timestep)} GHz" + (s.Excitation > 0 ? $", port {s.Excitation} driven" : ""),
-            FieldProblemKind.Eigenmode when modes?.FirstOrDefault(m => m.Index == s.Index + 1) is { } m =>
-                $"Mode {s.Index + 1}: {G(m.FrequencyHz / 1e9)} GHz, Q {m.Q.ToString("G3", CultureInfo.InvariantCulture)}",
-            FieldProblemKind.Eigenmode => $"Mode {s.Index + 1}",
-            FieldProblemKind.Electrostatic => $"Terminal {TerminalName(s.Index, problem)} at 1 V, the others at 0 V",
-            FieldProblemKind.Thermal => $"Point {s.Index + 1}",
-            _ => $"Terminal {TerminalName(s.Index, problem)} carrying 1 A",
-        };
-    }
-
-    private static string TerminalName(int index, Em3dProblem? problem)
-        => problem?.Terminals is { } t && index >= 0 && index < t.Count ? $"'{t[index].Name}'" : (index + 1).ToString(CultureInfo.InvariantCulture);
 
     // ── loading a solution ──────────────────────────────────────────────────────────────────
 
@@ -538,7 +483,7 @@ public sealed partial class Viewer3DViewModel
                     if (onPlane && clip.Enabled)
                     {
                         var e = clip.Equation;
-                        surfaces.Add(FieldSlicer.Slice(new FieldMeshTets(vol.Mesh, array, origin), new Vector3D(e.X, e.Y, e.Z), e.W, cts.Token));
+                        surfaces.Add(FieldSection.Slice(vol.Mesh, array, origin, clip, cts.Token));    // brief-em3d-84 — render --field's cut
                         // The slice lies ON the plane; the plane's own discard would eat half of it, so it
                         // moves a hair to the kept side (n·p + d ≤ 0).
                         nudges.Add(-eps * new Vector3(e.X, e.Y, e.Z));

@@ -60,7 +60,7 @@ internal static class ExplainThermal
         //    instance and port ↔ pin ↔ net. `em` resolves it exactly so (ThermalCircuitLink.Describe / Run share the rules). ──
         if ((t.Currents ?? []).FirstOrDefault(c => c.FromCircuit is not null)?.FromCircuit is { } link)
         {
-            string root = Path.Combine(DocumentKinds.AncestorCws(full) is { } cws ? Path.GetDirectoryName(cws)! : Path.GetDirectoryName(full)!, "results");
+            string root = ResultsRoot.For(full, DocumentKinds.AncestorCws(full));
             var s = CircuitRF.Design.Thermal.ThermalCircuitLink.Describe(link, doc, full, root);
             string answer = s.Problem is { } why ? $"does not resolve: {why}"
                 : $"runs '{s.Analysis}' and takes instance '{s.Instance}': " +

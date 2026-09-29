@@ -2782,3 +2782,36 @@ a file that leaves it out reads false. The page says to write it.
   `solver.*`, `check.path.foreign`, `check.technology.none-3d`, `em.c3d.setup`, `em.setup.on-cem`). This
   brief's six ids are recorded.
 
+
+## `render --field` draws a .c3d's field plot, and `--list-fields` lists them — brief-em3d-84 (2026-09-28)
+
+- **There was no one function for the results root.** The brief said to find it; `em` computed
+  `<cws dir or document dir>/results` inline and `explain`'s thermal walk carried its own copy. It is
+  `ResultsRoot.For` now, and all three call it — `render --field` reads exactly where `em` writes.
+- **A headless run never reads stale.** `em` keeps no `document.c3d` in its run directory (only the 3D
+  editor's Simulate writes one), so `C3dRunDocument.Check` returns null for a CLI run: there is nothing to
+  compare and nothing is claimed. A run made in the window, then rendered after an edit, does say so.
+- **A temperature ClipPlane plot is refused too**, beyond the brief's Surfaces/Faces refusal. Its range is
+  the view's own (the true min/max over the slice AND the wires' T(s), unioned across the sweep when the
+  plot fixes it, mirrored across symmetry planes) and needs the scene's wire triangles. Drawing it with
+  `FieldColorScale.Auto` would have been a different range from the window's — the drift the brief exists
+  to prevent. It is `render.field.temperature`, naming Export picture; the iso brief should take it.
+- **A plot that pins no setup** takes the document's only setup (what the view has active on opening);
+  with several it is `FieldPlotResolver.NoActiveSetup`'s sentence. The editor's "external" setup (a `.cem`
+  pointing at the `.c3d`) cannot be resolved from the `.c3d` alone and reads as a missing setup.
+- **The thinning limit has a test hook**, `CRF_FIELD_THIN_LIMIT` (`RenderEm3dField.ThinLimitVariable`):
+  gate 10 needs a thinned picture of a 144-triangle slice, and a public flag for a number the brief says is
+  a measured constant would be a second way to state it.
+- **Diagnostic templates have no brace escaping.** `{{` is not an escape: `Re{{E}}` rendered literally.
+  An unmatched `{E}` is left verbatim, so `Re{E}` is the spelling that reads right.
+- **The documented walkthrough runs everything between `<h3 id="render-example">` and the next `---`.** A
+  new `render` subsection placed after the worked example becomes part of it and its commands are executed;
+  `render-field` sits above it for that reason.
+- Fourteen `render.field.*` ids are recorded in `CliStructuredOutputTests`' committed set.
+- Gate: `tests/Ui.Tests/Render/FieldRenderCliTests.cs` (10 gates, pass). The bond-wire example's slice was
+  NOT measured: it is a `.cem` (a `.cem` holds no plots, so `--field` refuses it), no run of it is on disk,
+  and a solve takes minutes. The thinning limit was measured on a 3D Connector Launch run instead (see
+  `src/Render/RESOLVED.md`).
+- `DocumentedWalkthroughTests.EveryOptionTheVerbsAdvertise_IsWrittenDownInTheChapter` was already failing
+  at HEAD: `render`'s usage advertised `--section` and `--iso` and the user chapter mentioned neither. The
+  new field subsection names both, and it passes.
