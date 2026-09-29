@@ -55,6 +55,7 @@
   <li><a href="#render-detail">Size, and what <code>--detail</code> costs</a></li>
   <li><a href="#render-layers">Layers and colour</a></li>
   <li><a href="#render-cdd">A data display</a></li>
+  <li><a href="#render-field">A 3D view's field plot</a></li>
   <li><a href="#render-example">A worked example, from an empty folder</a></li>
   </ol>
 </li>
@@ -333,6 +334,10 @@ convergence notes still scroll past on screen. Redirect <code>2&amp;gt;/dev/null
 <tr>
 <td><code>--kits &lt;dir&gt;</code></td>
 <td>A folder of installed kits, so an externally-supplied device model (<code>ExtDevice Provider=…</code>) resolves headlessly the way opening a workspace resolves it in the GUI. Repeatable.</td>
+</tr>
+<tr>
+<td><code>--trust-kit &lt;dir&gt;</code></td>
+<td>Lets this run execute the PCell scripts of the kit whose generator manifest is in <code>&lt;dir&gt;</code>, so a layout's generated cells can be rebuilt when its <code>.generated-cells</code> folder is missing. A kit you have already allowed in circuitRF on this computer needs no flag. Repeatable.</td>
 </tr>
 <tr>
 <td><code>--json</code></td>
@@ -661,6 +666,10 @@ actually happened is &quot;nothing it tried reached compression&quot;.</p>
 <a href="em-setup.html">EM Setup panel</a> edits — and runs it: extracts the geometry from the layout the setup
 names, resolves the stackup, meshes, solves the frequency plan, de-embeds, and writes the results.</p>
 <p><strong>It needs no other arguments.</strong> Everything else it needs is already recorded in the files.</p>
+<p>A <code>.c3d</code> runs too — <code>circuitrf em &lt;view.c3d&gt; --setup &lt;name&gt;</code> — and a <strong>thermal</strong> setup embedded in it runs through the
+same verb with circuitRF's own thermal solver (Gmsh meshes it). It writes <code>&lt;cell&gt; &lt;setup&gt;.thermal.npy</code> and the temperature
+field beside it, and prints the probes, the measures and, when the setup asks for one, the Rth matrix. See
+<a href="thermal.html#headless">Thermal ▸ Headless</a>.</p>
 <h3 id="em-inputs">What an EM run takes</h3>
 <p>Four files, and three of them are things you already have if you have drawn a layout:</p>
 <table>
@@ -1081,7 +1090,8 @@ example workspace.</p>
 <h2 id="impedance"><code>impedance</code> — every trace against a target Z0</h2>
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf impedance &lt;layout&gt; [--target 50] [--tol 10] [--warn 20] [--max-freq 6GHz]
 <span class="prompt">  </span>[--layers "Top Copper,Inner 2"] [--max-width &lt;um&gt;] [--width "Top Copper=457"]… [--no-scope]
-<span class="prompt">  </span>[--region x0,y0,x1,y1]… [--net &lt;name&gt;]… [--pick &lt;layer&gt;@&lt;x&gt;,&lt;y&gt;[:connected]]…
+<span class="prompt">  </span>[--region [&lt;layer&gt;@]x0,y0,x1,y1]… [--net &lt;name&gt;]… [--pick &lt;layer&gt;@&lt;x&gt;,&lt;y&gt;[:connected]]…
+<span class="prompt">  </span>[--whole-layer &lt;layer&gt;]…
 <span class="prompt">  </span>[--survey] [--severity warning|fail] [--ignore-accepted] [-o report.pdf]</code></pre>
 <p><code>impedance</code> is the layout editor's <a href="layout-editor.html#impedance-analysis">Impedance Analysis</a>: it finds
 every trace on the chosen copper layers, cuts it along its length with the same quasi-static
@@ -1137,8 +1147,8 @@ the default. A saved layer the technology no longer has is skipped with a line o
 <td>Review only the traces of these widths on that layer; repeat it for another layer. A bare width is µm, as <code>--max-width</code> reads it, or give a unit (<code>18mil</code>, <code>0.457mm</code>). It <strong>replaces</strong> the saved widths for that layer for this run; a layer with no widths is reviewed at every width. A trace's width is the width over most of its length, and a width matches within 1 % (or 1 µm).</td>
 </tr>
 <tr>
-<td><code>--region x0,y0,x1,y1</code></td>
-<td>Review the traces any part of whose centre line lies inside this rectangle, <strong>whole</strong>. <strong>Every coordinate carries its unit</strong> (<code>10mm,5mm,30mm,20mm</code>, <code>400um</code>, <code>50mil</code>) and a bare number is refused, as for <a href="#render"><code>render --window</code></a>: a layout coordinate could be DBU, µm or mm. <a href="#explain"><code>explain --extents</code></a> prints a layout's <code>window</code> in exactly this spelling. Repeatable.</td>
+<td><code>--region [&lt;layer&gt;@]x0,y0,x1,y1</code></td>
+<td>Review the traces any part of whose centre line lies inside this rectangle, <strong>whole</strong> — on that layer only when one is named (<code>Bottom@10mm,5mm,30mm,20mm</code>), on every layer when none is. <strong>Every coordinate carries its unit</strong> (<code>10mm,5mm,30mm,20mm</code>, <code>400um</code>, <code>50mil</code>) and a bare number is refused, as for <a href="#render"><code>render --window</code></a>: a layout coordinate could be DBU, µm or mm. <a href="#explain"><code>explain --extents</code></a> prints a layout's <code>window</code> in exactly this spelling. Repeatable.</td>
 </tr>
 <tr>
 <td><code>--net &lt;name&gt;</code></td>
@@ -1147,6 +1157,10 @@ the default. A saved layer the technology no longer has is skipped with a line o
 <tr>
 <td><code>--pick &lt;layer&gt;@&lt;x&gt;,&lt;y&gt;[:connected]</code></td>
 <td>Review the trace whose copper holds this point on that layer, coordinates with their units; <code>:connected</code> takes every trace joined to it through vias. A pick with no copper under it is reported on stderr and selects nothing. Repeatable.</td>
+</tr>
+<tr>
+<td><code>--whole-layer &lt;layer&gt;</code></td>
+<td>Review every trace on this layer while regions, nets or picks narrow the others. Repeatable.</td>
 </tr>
 <tr>
 <td><code>--no-scope</code></td>
@@ -1174,10 +1188,11 @@ and an acceptance is a decision made reading the finding. A script that must acc
 it to the <code>.clay</code>'s <code>ImpedanceAcceptances</code>; <a href="#reference"><code>reference layout</code></a> documents the key —
 the trace's two end points in whole µm and the finding's kind.</p>
 <p><strong>Regions, nets and picks choose; widths filter.</strong> A trace any <code>--region</code>, <code>--net</code> or <code>--pick</code> chooses
-is reviewed (with none, every trace is), and <code>--width</code> then filters what they chose. Each of the three
-<strong>replaces the saved selectors of its kind</strong> for this run and leaves the other kinds as saved —
-so a lasso drawn in the editor, which has no command-line spelling, still applies unless <code>--region</code>
-replaces it.</p>
+is reviewed (with none, every trace is), and <code>--width</code> then filters what they chose. With any of them
+set, <strong>a layer none of them reaches is not reviewed</strong> — the scope line names it <em>nothing selected</em>
+— unless <code>--whole-layer</code> keeps it. Each of the four <strong>replaces the saved selectors of its kind</strong>
+for this run and leaves the other kinds as saved — so a lasso drawn in the editor, which has no
+command-line spelling, still applies unless <code>--region</code> replaces it.</p>
 <p>stdout starts with the target and, on the next line, the <strong>scope in words</strong> — <em>Top Copper at 457 µm
 (1 trace). 21 traces on Top Copper are outside the scope and were not analysed.</em> — then one line per
 trace — <code>PASS</code>, <code>WARN</code> or <code>FAIL</code> — its findings under it (<code>!</code> a fail, <code>?</code> a warning), and a
@@ -1816,6 +1831,40 @@ did nothing would give you a full picture you believed was a crop.</p>
 <p>With <code>--json</code>, <code>result.render.dataDisplay</code> names <strong>every source and the file it actually resolved to</strong>,
 and which of <code>--data</code> or the document bound it. That is the part the picture cannot tell you: &quot;the plot
 is empty&quot; and &quot;the plot read the wrong run&quot; look identical.</p>
+<h3 id="render-field">A 3D view's field plot</h3>
+<p>A 3D setup's model — a <code>.cem</code> with a 3D solver, or a <code>.c3d</code> — is drawn as a section with
+<code>--section z=35um</code> (or <code>xz@y=…</code>, <code>yz@x=…</code>; every length carries a unit) or as an outline with <code>--iso</code>.
+A <code>.c3d</code> also keeps its <a href="em-3d.md">field plots</a> as records, so a plot can be drawn with no window. A
+clip-plane plot <strong>is</strong> a section: it is drawn on its own axis at its own position, with the field under
+the model's outlines and its legend beside it.</p>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf render cavity/3d/cavity.c3d --list-fields
+<span class="output">Field1: |E| · mode 1 · clip z = 12.5 mm · setup 'modes'
+  data: ready</span>
+<span class="prompt">$ </span>circuitrf render cavity/3d/cavity.c3d -o cut.svg --field Field1
+<span class="output">Wrote cut.svg (1600x1200 points, 18,513 bytes)
+  XY section at z = 12.5 mm: 1 object(s), 0 port(s)
+  Field1: |E| at Mode 1: 8.88028 GHz, Q 3.14E+11, 144 triangles, 0 … 2581 V/m</span></code></pre>
+<ul>
+<li><strong>It reads what the 3D view reads.</strong> The same run (the workspace's <code>results/</code>, where <code>em</code> writes), the
+same saved solution <strong>by value</strong>, the same triangles and the same colour range. A plot whose data is
+missing — no run yet, a frequency the run did not save, a quantity it no longer offers — is a
+<strong>refusal</strong> with the sentence the Object Tree shows. It is never drawn at the nearest frequency, and
+an outline is never passed off as the field.</li>
+<li><strong>A stale run still draws</strong>, as in the window, with a <code>note:</code> saying the model has changed since.</li>
+<li><strong><code>--phase &lt;degrees&gt;</code></strong> picks the instant drawn for a quantity read instantaneously (<code>Re{E}</code>); it is a
+refusal on any other. The phase is never written to the file.</li>
+<li><strong>A hidden plot draws the same.</strong> Hiding only chooses which plot the window draws; <code>--field</code> names one.</li>
+<li>A <code>--section</code> that is not the plot's own plane is a refusal naming both. <strong>Surfaces, faces and
+temperature plots are refused for now</strong>: open the <code>.c3d</code> and use <em>Export picture</em>.</li>
+<li><strong>PNG and vector differ in one way.</strong> A PNG blends colours across each triangle. SVG has no gradient
+mesh, so in SVG and PDF each triangle takes the colour of its centre. A vector slice of more than
+50,000 triangles merges neighbours that fall in the same step of the colour map, never dropping area.
+The report says <code>drawn as …</code> when that happened, and <code>--no-thin</code> draws every triangle. <code>--no-legend</code>
+leaves the legend off.</li>
+<li><code>--json</code> adds <code>render.em3d.field</code>: the plot, its setup, the solution as the file spells it, the run
+directory it read, the triangle counts, the range and whether the run is stale. <code>--list-fields --json</code>
+returns the plots as <code>fieldPlots</code>.</li>
+</ul>
 <h3 id="render-example">A worked example, from an empty folder</h3>
 <p>Two commands to set it up, three questions, one picture. The point of the sequence is that the three
 questions are what make the last command <em>writable</em>: you cannot name a layer or size a window without

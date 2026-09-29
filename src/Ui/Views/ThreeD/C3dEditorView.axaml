@@ -313,11 +313,29 @@
                               ToolTip.Tip="Air-box faces, coloured by boundary kind (grey PEC, blue absorbing, orange PMC, violet symmetry)">
                     <mi:MaterialIcon Kind="TextureBox" Width="16" Height="16"/>
                 </ToggleButton>
-                <Border Width="1" Margin="2,3" Background="{DynamicResource SystemControlForegroundBaseLowBrush}" IsVisible="{Binding ViewModel.IsViewOnly}"/>
-                <!-- Disabled until the mesher has run, with the tooltip saying so (R-em3d28-3b). -->
-                <ToggleButton IsChecked="{Binding ViewModel.Viewer.ShowMesh}" IsEnabled="{Binding ViewModel.Viewer.MeshAvailable}" IsVisible="{Binding ViewModel.IsViewOnly}"
+                <!-- The run's tools, in the toolbar with the rest (owner request, 2026-09-28: they had a row of their own under
+                     it). The mesh: disabled until a run has meshed AND left fields to plot, with the tooltip saying so
+                     (R-em3d28-3b) — in the editor and the viewer alike. -->
+                <Border Width="1" Margin="2,3" Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+                <ToggleButton IsChecked="{Binding ViewModel.Viewer.ShowMesh}" IsEnabled="{Binding ViewModel.Viewer.CanShowMesh}"
                               ToolTip.Tip="{Binding ViewModel.Viewer.MeshTip}" ToolTip.ShowOnDisabled="True">
                     <mi:MaterialIcon Kind="VectorTriangle" Width="16" Height="16"/>
+                </ToggleButton>
+                <!-- brief-em3d-75 R-em3d75-4d / -4e — a thermal run's two readings that add nothing to the document. -->
+                <Button Command="{Binding ViewModel.StartTemperatureAlongCommand}"
+                        IsVisible="{Binding ViewModel.ShowThermalRunTools}"
+                        ToolTip.Tip="Temperature Along… — pick two points: T between them, both ends and ΔT (Rth by hand). Nothing is added to the document.">
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <mi:MaterialIcon Kind="ChartLine" Width="16" Height="16"/>
+                        <TextBlock Text="Along…" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+                <ToggleButton IsChecked="{Binding ViewModel.ProbeTableOpen}" IsVisible="{Binding ViewModel.ShowThermalRunTools}"
+                              ToolTip.Tip="Every probe statistic and every measure at the sweep point shown; a probe past its limit is flagged">
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <mi:MaterialIcon Kind="TableLarge" Width="16" Height="16"/>
+                        <TextBlock Text="Probes" VerticalAlignment="Center"/>
+                    </StackPanel>
                 </ToggleButton>
                 <ToggleButton IsChecked="{Binding ViewModel.Viewer.ShowGrid}" IsEnabled="{Binding ViewModel.Viewer.GridAvailable}" IsVisible="{Binding ViewModel.IsViewOnly}"
                               ToolTip.Tip="{Binding ViewModel.Viewer.GridTip}" ToolTip.ShowOnDisabled="True">
@@ -389,41 +407,9 @@
             </StackPanel>
         </Border>
 
-        <!-- ── brief-em3d-49 R-em3d49-5b: the run's tools, and the banner when the model moved on ──
-             brief-em3d-83 R-em3d83-7 — the Fields strip is retired: a field is a document plot, defined in the Object Tree's
-             Field Plots group and the Properties Inspector (its phase, Play and loop at the inspector's foot). What stays here
-             is what is not a plot: the mesh, a thermal run's Along… and probe table, and the stale banner. -->
-        <Border DockPanel.Dock="Top" Padding="4,2" BorderThickness="0,0,0,1" IsVisible="{Binding ViewModel.Viewer.FieldsAvailable}"
-                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
-            <StackPanel Spacing="2">
-                <WrapPanel Orientation="Horizontal" ItemSpacing="4" LineSpacing="4">
-                    <!-- brief-em3d-75 R-em3d75-4d / -4e — a thermal run's two readings that add nothing to the document. -->
-                    <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding ViewModel.Viewer.IsThermalRun}">
-                        <Button Command="{Binding ViewModel.StartTemperatureAlongCommand}"
-                                ToolTip.Tip="Temperature Along… — pick two points: T between them, both ends and ΔT (Rth by hand). Nothing is added to the document.">
-                            <StackPanel Orientation="Horizontal" Spacing="4">
-                                <mi:MaterialIcon Kind="ChartLine" Width="16" Height="16"/>
-                                <TextBlock Text="Along…" VerticalAlignment="Center"/>
-                            </StackPanel>
-                        </Button>
-                        <ToggleButton IsChecked="{Binding ViewModel.ProbeTableOpen}" ToolTip.Tip="Every probe statistic and every measure at the sweep point shown; a probe past its limit is flagged">
-                            <StackPanel Orientation="Horizontal" Spacing="4">
-                                <mi:MaterialIcon Kind="TableLarge" Width="16" Height="16"/>
-                                <TextBlock Text="Probes" VerticalAlignment="Center"/>
-                            </StackPanel>
-                        </ToggleButton>
-                    </StackPanel>
-                    <ToggleButton IsChecked="{Binding ViewModel.Viewer.ShowMesh}" IsEnabled="{Binding ViewModel.Viewer.MeshAvailable}"
-                                  IsVisible="{Binding ViewModel.IsEditable}"
-                                  ToolTip.Tip="{Binding ViewModel.Viewer.MeshTip}" ToolTip.ShowOnDisabled="True">
-                        <mi:MaterialIcon Kind="VectorTriangle" Width="16" Height="16"/>
-                    </ToggleButton>
-                </WrapPanel>
-                <SelectableTextBlock FontSize="11" TextWrapping="Wrap" Foreground="{DynamicResource CrfWarningBrush}"
-                                     Text="{Binding ViewModel.FieldsStaleText}"
-                                     IsVisible="{Binding ViewModel.FieldsStaleText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
-            </StackPanel>
-        </Border>
+        <!-- brief-em3d-49 R-em3d49-5b's strip under the toolbar is retired (owner request, 2026-09-28): the mesh and a thermal
+             run's Along… and Probes are toolbar buttons, and the stale-fields sentence is the Properties Inspector's, on the
+             selected field plot. -->
 
         <!-- ── brief-em3d-75 R-em3d75-4d / -4e: the line plot and the probe table ──────────── -->
         <Border DockPanel.Dock="Bottom" Padding="6,4" BorderThickness="0,1,0,0" IsVisible="{Binding ViewModel.HasThermalLine}"

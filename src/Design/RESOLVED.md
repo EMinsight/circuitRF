@@ -15238,3 +15238,14 @@ chain's wedge feet and its contact patches are built at it. Under a placement wi
 below the layout and the patches touched nothing, so a DC current through the wires was refused as having "no path". It now
 goes through the instance transform (M22·z + Tz) whenever the placement keeps z up; a tilted placement has no pad "top" and
 keeps the old value. EM never read it, so no EM answer moves. Gate: `ThermalWireTests.APlacedLayoutsWires_HaveTheirPadTopsInTheWorld`.
+
+## The MESFET/HEMT glyph drew an insulated gate with a junction arrow (2026-09-28)
+
+A user report on the project's discussion board, against a placed CurticeCubic, said the transistor symbols were not
+drawn properly. The MOS glyphs were right (a broken enhancement channel, the bulk arrow into the channel for n, out for
+p). The glyph all five FET laws share was not: a gate bar standing OFF the channel — the insulated-gate (MOSFET)
+convention — with the junction arrow on its lead. Its own comment said the MESFET had "an insulated channel", which is
+the mistake: a MESFET's gate is a Schottky junction on the channel, a HEMT's the same junction on its barrier layer.
+`BuildFet` and `BuildJfet` now share `JunctionGateFet` — the gate lead and its arrow land on one unbroken channel bar,
+which is how GaAs FET data sheets draw it. Only the artwork changed: the pins come from `SymbolPortDefs.For(kind)`, so
+every placed FET stays wired. Gate: `tests/Ui.Tests/FetGlyphTests.cs`.

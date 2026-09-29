@@ -820,7 +820,10 @@ with drain bias. One kind with a selector would present the union of all five pa
 silently accept the wrong ones.
 
 All five **share one glyph and one three-pin geometry** — gate left, drain top, source bottom. The
-topology genuinely is the same, and the type label below the symbol names the law. **The source is an
+topology genuinely is the same, and the type label below the symbol names the law. The glyph is the
+JFET's: a MESFET's or HEMT's Schottky gate is a junction made directly on the channel, not an insulated
+gate, so the gate arrow lands on one unbroken (depletion) channel bar — into it for n-channel, out of it
+for p-channel. **The source is an
 ordinary pin:** these are not hard-wired common-source.
 
 #### What all five share {#fet-shared}

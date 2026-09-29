@@ -639,23 +639,21 @@ public static class BuiltInSymbols
         L(   0,   45,   0,  200),                  // cathode lead
     ], SymbolKind.Diode);
 
-    // ── FET — Schottky/insulated gate bar, channel bar, drain and source arms ──
-    // Pins: gate (−200,0) LEFT, drain (0,−200) TOP, source (0,+200) BOTTOM. The arrow on the gate
-    // lead marks the n-channel polarity and points INTO the channel, the usual convention.
+    // ── FET — a Schottky gate made directly onto an UNBROKEN channel bar ──────
+    // Pins: gate (−200,0) LEFT, drain (0,−200) TOP, source (0,+200) BOTTOM.
+    //
+    // A MESFET's gate is a metal–semiconductor (Schottky) junction ON the channel, and a HEMT's is the
+    // same junction on its barrier layer: neither is insulated, so neither stands off the channel the
+    // way a MOSFET's gate bar does. It is drawn as the JFET is — which is how GaAs FET data sheets draw
+    // it — with the arrow at the end of the gate lead, ON the channel bar, pointing INTO the channel for
+    // n-channel and out of it for p-channel; the unbroken bar says depletion. It used to be a MOS-style
+    // gate bar standing off the channel WITH the junction arrow on its lead: an insulated gate carrying
+    // a junction mark, which is no transistor at all (src/Design/RESOLVED.md).
     //
     // Shared by all five built-in FET laws — see the dispatch above for why.
 
-    private static Symbol BuildFet(bool nChannel) => Sym([
-        L(-200,    0, -135,    0),                    // gate lead (up to the arrow base)
-        nChannel ? Poly(true, -135, -32, -135,  32,  -80,   0)   // n-channel: tip on the gate bar
-                 : Poly(true,  -80, -32,  -80,  32, -135,   0),  // p-channel: tip toward the gate
-        L( -80, -110,  -80,  110),                    // gate bar
-        L( -30, -110,  -30,  110),                    // channel bar
-        L( -30,  -80,    0,  -80),                    // drain arm off the channel
-        L(   0,  -80,    0, -200),                    // drain lead
-        L( -30,   80,    0,   80),                    // source arm off the channel
-        L(   0,   80,    0,  200),                    // source lead
-    ], nChannel ? SymbolKind.FetCurtice : SymbolKind.PFetCurtice);
+    private static Symbol BuildFet(bool nChannel) =>
+        JunctionGateFet(nChannel, nChannel ? SymbolKind.FetCurtice : SymbolKind.PFetCurtice);
 
     // ── BJT — base bar, collector and emitter arms, arrow on the emitter ──────
     // Pins: base (-200,0) LEFT, collector (0,-200) TOP, emitter (0,+200) BOTTOM. Same envelope and
@@ -682,16 +680,19 @@ public static class BuiltInSymbols
     // same lead lengths as the FET, MOS and BJT glyphs, so the four transistor families sit at one
     // scale in the palette.
     //
-    // What distinguishes it from the MESFET glyph beside it is what distinguishes the devices: the
-    // MESFET has TWO vertical bars (a gate bar standing off an insulated channel) and this has ONE,
+    // ONE vertical bar, where the MOS glyph has two (a gate bar standing off an insulated channel),
     // because a JFET's gate is a junction made directly onto the channel. The arrowhead sits at the
-    // end of the gate lead, ON the channel bar, which is where the junction is.
+    // end of the gate lead, ON the channel bar, which is where the junction is. The MESFET glyph is
+    // this drawing too: a Schottky gate is also a junction on the channel.
     //
     // The channel bar is UNBROKEN — a depletion device, conducting at zero gate bias, which is the
     // opposite of the MOS glyph's three segments. The arrow IS the channel polarity and there is no
     // other cue: it points INTO the channel for n-channel, out of it for p-channel.
 
-    private static Symbol BuildJfet(bool nChannel) => Sym([
+    private static Symbol BuildJfet(bool nChannel) =>
+        JunctionGateFet(nChannel, nChannel ? SymbolKind.JfetN : SymbolKind.JfetP);
+
+    private static Symbol JunctionGateFet(bool nChannel, SymbolKind kind) => Sym([
         L(-200,    0,  -30,    0),                    // gate lead, right onto the channel
         L( -30, -110,  -30,  110),                    // channel bar, unbroken
         L( -30,  -85,    0,  -85),                    // drain arm
@@ -700,7 +701,7 @@ public static class BuiltInSymbols
         L(   0,   85,    0,  200),                    // source lead
         nChannel ? Poly(true, -90,  -20, -90,  20, -34,   0)    // n-channel: tip on the channel bar
                  : Poly(true, -34,  -20, -34,  20, -90,   0),   // p-channel: tip toward the gate
-    ], nChannel ? SymbolKind.JfetN : SymbolKind.JfetP);
+    ], kind);
 
     // ── IGBT — an insulated gate on one side, a bipolar's arrow on the other ──
     // Pins: collector (0,−200) TOP, gate (−200,0) LEFT, emitter (0,+200) BOTTOM.
@@ -789,7 +790,7 @@ public static class BuiltInSymbols
     // Same envelope and the same lead lengths as the FET and BJT glyphs, so the three transistor
     // families sit at one scale in the palette.
     //
-    // TWO things distinguish this from the MESFET glyph beside it, and both are load-bearing:
+    // TWO things distinguish this from the MESFET and JFET glyph beside it, and both are load-bearing:
     //   * the channel bar is drawn in THREE SEGMENTS rather than one. That is the standard mark for
     //     an ENHANCEMENT device — no channel until the gate makes one — and it is what says this
     //     part is off at zero gate bias, which the MESFET is not.

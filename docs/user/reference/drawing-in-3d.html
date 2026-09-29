@@ -454,7 +454,7 @@ hiding anything.</p>
 Object</em>, and the commands this page describes. <strong>Hide</strong> the lid and the walls to work inside the package;
 <strong>Show All</strong> brings them back. Hiding changes only the picture — the solver still sees everything.</p>
 </li>
-<li><p>The <strong>Objects</strong> tree lists everything by material or by type; a click there selects in the view, and the
+<li><p>The <strong>Objects</strong> tree lists everything by material or by type — and your <a href="#groups">groups</a> first; a click there selects in the view, and the
 <strong>Properties</strong> panel shows the selection's name, material, dimensions and position, every one of them
 editable.</p>
 </li>
@@ -521,6 +521,21 @@ offset there. A faint grid lies on the plane; moving the camera never moves it.<
 <td>Wire</td>
 <td>two pads, then the loop height (see <a href="#wires">Bond wires</a>)</td>
 </tr>
+<tr>
+<td><strong>H</strong></td>
+<td>Heat source</td>
+<td>two corners on the plane, then its name and power (see <a href="#thermal">Temperature</a>)</td>
+</tr>
+<tr>
+<td><strong>T</strong></td>
+<td>Probe</td>
+<td>a click on a face: the temperature there (see <a href="#thermal">Temperature</a>)</td>
+</tr>
+<tr>
+<td><strong>M</strong></td>
+<td>Mesh region</td>
+<td>a box, then the element size inside it (see <a href="#thermal">Temperature</a>)</td>
+</tr>
 </tbody>
 </table>
 <p><strong>Typing instead of clicking.</strong> While a shape is in progress, type a digit and a box opens at the cursor
@@ -540,7 +555,9 @@ first, they would hide the inside while you work on it.</p>
 polygon or a rectangle into a prism: move to set the distance and click, or type it. <strong>K</strong> keeps the
 source.</p>
 <h2 id="editing">Moving and editing</h2>
-<p><strong>Whole objects</strong> (Object mode; right-click, or <em>3D ▸ Modify</em>):</p>
+<p><strong>Whole objects</strong> (Object mode; right-click, or <em>3D ▸ Modify</em>). <em>3D ▸ Modify</em> is greyed out until something is
+selected, and each item in it is enabled only when it can act on the selection — the same rule the right-click menu
+follows, where a greyed-out item's tooltip says why:</p>
 <ul>
 <li><strong>G</strong> moves the selection: click a base point, then a target point, both snapped — two clicks put one
 corner exactly on another. <strong>X</strong>, <strong>Y</strong> or <strong>Z</strong> holds the move to that axis, <strong>Shift+X/Y/Z</strong> to the plane
@@ -572,6 +589,35 @@ reported. A shape keeps its kind as long as its own dimensions can say the resul
 <strong>polyhedron</strong> with the same face names, and the status line says so.</p>
 <p><strong>Measure</strong> (<strong>M</strong>): two snapped clicks give both points, their differences and the distance, in the display
 unit; every number copies, and pastes back into a dimension box exactly.</p>
+<h3 id="groups">Groups</h3>
+<p>A <strong>group</strong> gathers objects and placed cells under one name, so the whole of a part — a stage, a lid and its
+walls, a row of pads — is picked, moved and changed as one thing.</p>
+<ul>
+<li><strong>Group Objects</strong> (<strong>Ctrl+G</strong>, <strong>Cmd+G</strong> on a Mac; the right-click menu, in the view or the tree; <em>3D ▸ Modify</em>)
+makes one group of the selection, named <code>Group1</code>, <code>Group2</code> and so on. Select the members first — two or more
+objects, instances or groups — in the view or with <strong>Shift</strong>/<strong>Ctrl</strong>-click in the tree; with one thing selected
+(a single object, or a group on its own) it is greyed out, and its tooltip says why. Placed cells can be members too, and so can other groups: a group
+inside a group stays a group of its own.</li>
+<li><strong>A click in the view on any member selects the whole group</strong> — the outermost one it is in — and every
+Object-mode command acts on all of it: Move, Rotate, Mirror, Duplicate, Array, Align (which lines the group up by
+its own box and moves it as one), Order, Hide, Isolate, Delete, a material, and a boolean — whose panel lists
+every member, so the Blank is chosen there as usual; the result stays in its Blank's group. To pick one member out
+of a group, click its row in the tree, or press <strong>B</strong> in the view.</li>
+<li><strong>In the object tree</strong> groups are listed first, under <strong>Groups</strong>; open one to see the groups and then the objects
+and instances inside it. A member is listed there and nowhere else. The tick beside a group shows or hides all of it.</li>
+<li><strong>Properties</strong> shows a group as one thing: its <strong>Name</strong> (rename it there), one <strong>Material</strong> and one <strong>Role</strong> for
+every member — the box reads <strong>Various</strong> while they differ, and a choice applies to all of them — and its
+<strong>Corner</strong>: type one and every member moves by the same step. The <strong>Size</strong> is the members' box, for reading; a
+group has no placement or size of its own, and each member keeps its own.</li>
+<li><strong>Ungroup</strong> (<strong>Ctrl+Shift+G</strong>, <strong>Cmd+Shift+G</strong>; <em>Ungroup Group1</em> on the right-click menu) takes apart only the
+outermost group: the groups that were inside it stay groups, to be ungrouped in turn if you want.</li>
+<li><strong>Duplicate</strong> or <strong>Array</strong> a whole group and each copy is a new group (<code>Group2</code>, and each group inside it
+renamed the same way); a member copied on its own stays in its group.</li>
+<li>Grouping, ungrouping and renaming are each <strong>one undo step</strong>, and the groups are saved in the <code>.c3d</code>: each member
+names its group — <code>&quot;Group&quot;: &quot;stage1/match&quot;</code> — so a group can never be left empty or point at nothing.
+<strong>Flatten</strong> puts a placed cell's contents in that instance's group, and <strong>Group into Cell</strong> gives the new instance
+the group its contents were in. Groups are only organisation: the solver never sees them.</li>
+</ul>
 <h2 id="expressions">Dimensions as expressions</h2>
 <p>Wherever a dimension is typed — the box at the cursor, Properties, the Array panel — you may type a name or
 an expression: <code>cav_w</code>, <code>2*wall</code>, <code>cav_l/2 + wall</code>. Names are <strong>VARs</strong> of the 3D view or the cell's
@@ -613,12 +659,20 @@ strip under the box, so a name can be made on the spot.</p>
 floor, the base, the east and west walls and the lid all move; the die and the leads stay where they are.
 Dragging a face whose size is an expression (<strong>N</strong>) writes the <strong>name</strong>, not the field, so every other
 object using that name follows too.</p>
-<div class="callout warn">
-<span class="label">The unit trap</span>
-<p>A number written beside a name that has its own unit is in <b>metres</b>: <code>cav_w + 40</code> is
-<code>cav_w</code> plus forty metres. The box shows the value as you type — over a million and a half mil — and
-<code>check</code> warns about any dimension over 1 m. Write the forty as a name (<code>2*wall</code>), or
-type the expression's unit after it. The example uses names for every constant it adds for this reason.</p>
+<div class="callout">
+<span class="label">Units in an expression</span>
+<p>A number may carry its own unit, written straight after it with no space: <code>cav_w + 40mil</code>,
+<code>10um + 1mil</code>, <code>2*wall + 0.5mm</code>. A number with no unit that is <b>added to</b>, subtracted from
+or compared with a name that has a unit takes the <b>box's</b> unit: <code>cav_w + 40</code> typed in mil is
+<code>cav_w</code> plus forty mil. A number that <b>multiplies</b> or divides stays a plain number:
+<code>2*wall</code> is twice the wall.</p>
+<p>A lone <code>m</code> is <b>milli</b>, not the metre, exactly as in a netlist: <code>2m</code> is 2 mm. Write
+<code>mm</code> to say so, or <code>metre</code> for metres; the box refuses a bare <code>2m</code> and
+<code>check</code> warns about an <code>m</code> inside a length. <code>check</code> also warns about any dimension
+over 1 m, the mark a unit slip leaves.</p>
+<p>A VAR follows the same rule: its unit scales its expression only when the expression names nothing with a unit of
+its own. <code>w2 = 2*w</code> in mil, with <code>w</code> = 10 mil, is 20 mil, and <code>w3 = w + 5</code> in mil is
+15 mil. A VAR written <code>w = 10mil</code> needs no unit of its own.</p>
 </div>
 <h2 id="operations">Booleans, fillets, chamfers and STEP parts</h2>
 <p>Four kinds of object are built by <strong>OpenCASCADE</strong>, the geometry kernel that ships inside circuitRF, rather
@@ -778,7 +832,7 @@ objects too.</p>
 housing's designer and a CAD package all read and write it. circuitRF reads its solids <strong>into a 3D view</strong>
 and writes a 3D view — or a layout — <strong>out as one</strong>. The geometry kernel does both, so without it both
 commands are disabled with the reason.</p>
-<p><strong>Import STEP…</strong> (<em>File ▸ Import ▸ STEP…</em>, or <em>3D ▸ Import STEP…</em>) reads the file, off the editor's thread
+<p><strong>Import STEP…</strong> (<em>File ▸ Import ▸ STEP…</em>) reads the file, off the editor's thread
 and cancellable, and opens a table of its parts:</p>
 <ul>
 <li><strong>Units.</strong> The first line says what the file is in and that it is imported exactly — <em>File is in
@@ -806,7 +860,7 @@ those bytes — which is why the object records the file's <strong>Hash</strong>
 revision from the maker), <strong>Reload from Source</strong> on the object's menu reads it again and re-matches every
 port, boundary and fillet on it <strong>by geometry</strong>, then says what moved; a part the new file no longer has is
 said by name. A part the new file adds is offered in the import table, unchecked.</p>
-<p><strong>Export STEP…</strong> (<em>File ▸ Export ▸ STEP…</em>, or <em>3D ▸ Export STEP…</em>) writes the active 3D view or layout:</p>
+<p><strong>Export STEP…</strong> (<em>File ▸ Export ▸ STEP…</em>) writes the active 3D view or layout:</p>
 <ul>
 <li><strong>Structure</strong>: <strong>Flattened</strong> writes one product per solid; <strong>As assembly</strong> writes each placed cell as a
 sub-assembly, once, however many times it is placed.</li>
@@ -822,6 +876,54 @@ version. A summary line says what will be written before anything is.</li>
 </ul>
 <p>The <strong>3D Connector</strong> example's flange was made this way: drawn in its own cell, exported, and imported into
 the launch — see <a href="#connector">the second example</a>.</p>
+<h2 id="drawings">Pictures and drawings</h2>
+<p>Right-click the view (on anything, or on nothing) for five ways to take it out of circuitRF:</p>
+<ul>
+<li><strong>Copy</strong> puts a picture of the view on the clipboard, drawn by the graphics card at a multiple of the
+window's size. <strong>Export Picture…</strong> saves the same picture as a PNG.</li>
+<li><strong>Copy as Vector</strong> puts the view on the clipboard as <strong>lines</strong>: every silhouette and sharp edge, seen
+along the camera's direction, with the edges behind a surface removed — what the shaded view shows, drawn
+as a line drawing. It pastes into a slide or a document as a picture that stays sharp at any size: on
+Windows as a metafile, on macOS and Linux as PDF and SVG, with a PNG beside them for anything that takes
+neither. <strong>Export as Vector…</strong> saves the same drawing as an SVG or PDF file.</li>
+<li><strong>Export Drawing…</strong> (also <em>File ▸ Export ▸ Drawing…</em> while a 3D view is the active document) lays several
+views out on one sheet, as SVG or PDF.</li>
+</ul>
+<p>A vector picture is always <strong>orthographic</strong>, even when the view is in perspective, and it leaves out what you
+have hidden. It is framed as the view is, at the view's zoom — zoom in for a close-up. Conductors keep the
+colours the view draws them in; dielectrics are outlined in grey.</p>
+<p>Every picture carries what the toolbar's middle group shows: the <strong>axis indicator</strong>, the <strong>drawing grid</strong> and
+the <strong>scale legend</strong> (the scale bar, bottom right; also <em>3D ▸ View ▸ Scale Legend</em>) — turn one off and it
+leaves the pictures too. <em>Copy</em> and <em>Export Picture…</em> also keep a measurement with its numbers and the
+selection's highlight; neither keeps the cursor's hover label, the snap marker or the move handles. A vector
+picture has no drawing grid.</p>
+<h3 id="export-drawing">Export Drawing…</h3>
+<p>The dialog chooses what goes on the sheet:</p>
+<ul>
+<li><strong>Views</strong>: <em>Isometric</em>, <em>Top</em>, <em>Front</em>, <em>Right</em>, <em>Left</em>, <em>Back</em>, <em>Bottom</em> — each an outline looking along
+the direction the matching <em>Standard View</em> looks, so <em>Top</em> on paper is <em>Top</em> on screen. Top comes first, so
+on two columns it sits above Front with Right beside it.</li>
+<li><strong>Sections</strong>: <strong>Add Section</strong> adds a cut through the model — <strong>XY</strong> at a height <em>z</em>, <strong>XZ</strong> at a <em>y</em>,
+<strong>YZ</strong> at an <em>x</em> — starting at the model's centre. Type the position <strong>with its unit</strong> (<code>1.2mm</code>, <code>350um</code>,
+<code>40mil</code>); a bare number is refused, as <code>render --section</code> refuses one, because nanometres, micrometres and
+millimetres are all plausible. A section is drawn filled, each material in its colour, and lettered
+<em>Section A–A</em>, <em>B–B</em> … in order.</li>
+<li><strong>Hidden edges</strong>: <strong>Removed</strong> (the default) draws only what faces you; <strong>Dashed</strong> draws the edges behind a
+surface as thin dashed lines, the drafting convention; <strong>Shown</strong> draws every edge, a wire-frame. Sections
+show the inside of a closed part better than dashed lines do, which is why Removed is the default.</li>
+<li><strong>Material legend</strong>, and <strong>Leave out what the 3D view hides</strong> (on by default).</li>
+<li><strong>Text as outlines</strong> (on by default): every label is drawn as the shapes of its letters, so the file looks
+the same on every machine and in every program. Turned off, the labels are real text you can select and
+edit — but they name the font <em>IBM Plex Sans</em>, and a reader without it installed sees another font in its
+place.</li>
+<li><strong>Page</strong> (A4, Letter, A3, Tabloid, portrait or landscape) and <strong>Format</strong> (PDF or SVG).</li>
+</ul>
+<p><strong>Every view is at one scale</strong>, a round one — <em>5:1</em>, <em>2:1</em>, <em>1:10</em> — chosen as the largest that fits every
+view, and stated in the title block with the document's name. A length measured on one view can be compared
+with another, and with a ruler on the printed page. The dialog remembers its choices (not its sections) for
+next time.</p>
+<p>Working out which edges are hidden takes a moment on a large model; above 400,000 triangles it is skipped,
+the edges are all drawn, and the message that reports the export says so.</p>
 <h2 id="hierarchy">Hierarchy: placing cells</h2>
 <p><strong>Design ▸ Place Cell Instance…</strong> with a 3D view active offers every cell with a <strong>3D view</strong> or a
 <strong>layout</strong>, and a <strong>View</strong> choice between them. The example places the <em>Thru die</em> cell's <strong>layout</strong>: a
@@ -937,6 +1039,116 @@ leaves out.</p>
 <p><strong>Move the mode.</strong> Set <code>cav_w</code> to <code>480</code> in the Variables panel: the walls, floor, base and lid move out and the
 die stays put. The closed form then says 20.87 GHz — a mode below 22 GHz, walking toward the band — and <strong>Run</strong>
 on <em>Lid modes</em> finds where the drawn package puts it.</p>
+<h2 id="thermal">Temperature</h2>
+<p>The same model solves for heat. A <strong>thermal setup</strong> (<em>Simulate ▸ Setup Analyses…</em>, the thermometer button — or any setup
+whose <em>Solver</em> is set to <strong>Thermal</strong>) is solved by circuitRF's own steady-conduction solver after Gmsh meshes every solid
+— air is not meshed. What it needs is drawn in the
+view, and what it is worth is typed in the setup, so one model carries several thermal setups beside its EM ones.
+What a run models, and two worked examples with their numbers (<em>Tools ▸ Examples ▸ Thermal: …</em>), are in
+<a href="thermal.html">Thermal</a>; this section is the gestures.</p>
+<p><strong>The places.</strong> These are drawn in the view but are not objects: they are never solved as metal, never snapped to, and an
+EM setup ignores them. Each has a group in the object tree (<em>Heat sources</em>, <em>Probes</em>, <em>Mesh regions</em>) whose rows select,
+rename, hide and delete, and a switch under <em>3D ▸ View</em>. Selecting a row shows its fields in Properties, dimensions
+included, each a number or an expression.</p>
+<ul>
+<li><strong>Heat source</strong> (<strong>Shift+A H</strong>, or <em>3D ▸ Draw ▸ Heat Source ▸ Rectangle / Polygon</em>): drawn as a port's sheet is — put the
+drawing plane on the face first (<strong>Ctrl/Cmd</strong>-click it) — then named and given a default power in W. Right-click a solid,
+<em>Heat Source from Solid</em>, spreads the heat through its whole volume instead. Drawn hatched in orange.</li>
+<li><strong>Probe</strong> (<strong>Shift+A T</strong>, or <em>3D ▸ Draw ▸ Probe ▸ Point / Spot / Line</em>): a point on a face; a spot (its centre, then its
+diameter — what an IR microscope averages); or a line (two points: temperature along it). Right-click a face (Face mode)
+or a solid or a wire (Object mode), <em>Add Probe</em>, for a probe over the whole face, solid or wire. A probe may state a limit
+in °C; the results flag where it is crossed.</li>
+<li><strong>Mesh region</strong> (<strong>Shift+A M</strong>, or <em>3D ▸ Draw ▸ Mesh Region</em>): a box, drawn as a Box is, with the element size inside it —
+fine mesh where you put it. Drawn dashed.</li>
+</ul>
+<p><strong>Boundaries.</strong> Every face nothing names is insulated. In Face mode, right-click a face, <em>Thermal ▸ Fixed Temperature…</em>,
+<em>Convection…</em>, <em>Insulated</em> or <em>Clear</em>: each writes the <strong>active</strong> thermal setup (greyed, saying why, when the active setup
+is not a thermal one). A conditioned face is tinted — <strong>blue</strong> a fixed temperature, <strong>green</strong> convection — and listed under
+<em>Thermal boundaries</em> in the tree. With two touching objects selected, <em>Thermal ▸ Contact Resistance…</em> overrides the
+technology's interface resistance for that contact, prefilled with the technology's value when it states one.</p>
+<p><strong>Contacts.</strong> Where two solids touch, heat crosses perfectly unless a resistance is stated: the technology's
+<em>ThermalInterfaces</em> give one for a pair of materials (GaN on SiC, a die attach), and a document's contact override
+replaces it for one contact only. The run splits the contact — each side keeps its own nodes — and joins the two through
+the resistance, so a clip plane through a die attach shows the temperature step. The run's notes list every contact in
+force, where its value came from and the area it covers.</p>
+<p><strong>Effective blocks</strong> (<em>3D ▸ Draw ▸ Effective Block</em>): a box drawn over a via field, as a mesh region is. <strong>Enabled</strong>, a
+thermal run replaces the board dielectric, copper planes and via barrels inside it with one block conducting
+(k_xy, k_xy, k_z) — hundreds of thin barrels stop forcing tiny elements. It is an <strong>approximation</strong> and is drawn
+<strong>disabled</strong>: enable it from its row or in Properties, which show the tensor it would carry; disabled, the geometry is
+solved as drawn, so comparing the two is one toggle. A box that cuts into anything else (a flange, a die) is refused,
+naming it. The mixture, per layer of the box (every height a replaced solid starts or stops), from the area fractions of
+copper, dielectric and void measured exactly over the box's footprint:</p>
+<ul>
+<li>through the layer, k_z = f_Cu·k_Cu + f_d·k_d;</li>
+<li>in the plane, the layer's largest phase is the matrix and the rest are inclusions (parallel cylinders) at their
+area-weighted k_i and fraction φ: k_xy = k_m·[(k_i + k_m) + φ(k_i − k_m)] / [(k_i + k_m) − φ(k_i − k_m)];</li>
+<li>the layers stack: k_z in series over their thicknesses, k_xy in parallel.</li>
+</ul>
+<p>Each material's k at 25 °C is used, so the block's tensor is constant. It ignores how heat crowds into each barrel through
+a thin plane, which makes it run cooler than the vias drawn — measure the difference on your own board before trusting it.</p>
+<p><strong>Submodels.</strong> A thermal setup whose Thermal page says <em>Submodel: cut from</em> another thermal setup, <em>to region</em> a mesh
+region, solves only that region's box, meshed at the region's size, with its cut faces fixed to the other setup's
+solution; every other boundary is as written. The whole-model result is reused when it is newer than the document, and
+solved first when it is not (the notes say which). A mesh region a submodel is cut to no longer refines the whole-model
+run — that is what keeps it coarse. The run compares the heat crossing the cut faces with the whole model's over the same
+faces and <strong>warns when they differ by more than 5 %</strong> point by point: the region is too small, the fine detail changes
+the temperature at its edge, enlarge it. A heat source straddling the box is refused; one inside must carry the same power
+as in the whole model.</p>
+<p><strong>Symmetry.</strong> Model half (or a quarter) of a symmetric device: right-click the face you cut it on, <em>Symmetry Plane</em>. The
+face must lie on the model's extent; it stays insulated (a condition on it is refused), and <em>All exposed faces</em> never
+takes it. What is drawn is what is solved: give the sources the power of the modelled part. Measures read
+<code>SymmetryFactor</code> (2 per plane) so a whole-device figure is explicit — <code>Rth_full = (Tmax(ch) - 25) / (Pdiss * SymmetryFactor)</code>; nothing is multiplied silently. A plotted temperature is drawn mirrored across the planes (<em>3D ▸ View ▸
+Temperature ▸ Mirror Symmetric Halves</em> turns it off), and hovering the mirrored half reads the modelled point's value and
+says so.</p>
+<p><strong>The setup's Thermal page</strong>, top to bottom: <strong>Sources</strong> (each heat source's default, and this setup's override),
+<strong>Boundaries</strong> (the list the menu writes, and <em>All exposed faces: convection</em> at an h and an ambient), <strong>Sweep</strong> (up to two
+variables), <strong>Measures</strong> (one per line — <code>Rth = (Tmax(die) - Tavg(flange)) / Pdiss</code> — checked as you type), <strong>Mesh</strong> (order,
+elements across a source and through the thinnest solid, grading, the solver, the convergence check), and <strong>Balance</strong> (k(T)
+on or off), <strong>Submodel</strong> (above), and the three small-signal sections below — <strong>Rth matrix</strong>, <strong>Thermal impedance</strong> and
+<strong>Pulse train</strong>. Under Mesh, the size of the run is estimated before anything is meshed.</p>
+<p><strong>Plot Temperature.</strong> A temperature picture is a <strong>field plot</strong> — a row of the tree's <em>Field Plots</em> group, saved with the
+document, edited in the Properties Inspector (see <a href="em-3d.html#view">the 3D view</a>). After a run of the active
+thermal setup, right-click a face, <em>Plot Temperature</em>, to add that face to the temperature plot being drawn, or start one
+with it (again to take it off; several faces accumulate); <em>3D ▸ View ▸ Temperature ▸ All Faces</em> draws a plot on every
+exposed face, and <em>On Clip Plane</em> one on the clip plane's section — the way to see a channel under a field plate. The
+items are greyed, with the reason, when there is no thermal result or the model has changed since it ran. The colour
+range is the <strong>true</strong> minimum and maximum of what is painted — the peak is the answer, so it is never clipped — and the
+legend reads °C; the plot's <em>Fix range across the sweep</em> (or <em>Fix Range Across Sweep</em> in the menu) makes it the minimum
+and maximum over every sweep point, so stepping the sweep never rescales the colours. The plot's <em>Solution</em> is the sweep
+point shown. Hover a painted face for the temperature there (interpolated, not the nearest
+node); a ring marks the <strong>hot spot</strong> with its temperature and its object. A bond wire whose run tabulated its temperature
+is coloured along its length, and hovering it names the wire and the distance along it.</p>
+<p><strong>Along a line.</strong> <em>Along…</em> on the toolbar (or <em>3D ▸ View ▸ Temperature ▸ Temperature Along…</em>) takes two points and plots
+the temperature between them, with both end temperatures and their difference — Rth by hand, with nothing added to the
+document. A line probe's row in the tree plots its own, <em>Plot T(s)</em>. <strong>Probes</strong> on the toolbar lists every probe
+statistic and every measure at the sweep point shown, a column per point on request, with any probe past its limit in
+orange.</p>
+<h3 id="thermal-rth">Rth matrix, Z_th and pulses</h3>
+<p>They are read off the same mesh after the sweep, at its first point, each
+with <strong>every boundary made homogeneous</strong> (fixed temperatures and ambients 0) — so they are properties of the structure,
+not of the heatsink temperature. With k(T) on they are the small-signal response about that point's temperatures, and the
+notes say so.</p>
+<ul>
+<li><strong>Rth matrix</strong>: R_ij is the rise of heat source i's place per watt in source j (every source, or the ones named). <em>Mean</em>
+(the default) reads each source's average rise, and the matrix is symmetric — the run reports its largest asymmetry as a
+check on the solve; <em>Hottest point</em> reads each source's maximum, which is not symmetric. The run also gives each
+source's rise under the setup's own powers, R·P. <code>circuitrf em</code> prints the matrix, rows and columns named.</li>
+<li><strong>Thermal impedance</strong> Z_th(jω), from DC over a logarithmic band (0.01 Hz to 1 MHz, 10 per decade, unless stated): every
+source's own place per watt in each source, and each named probe (its mean) per watt in each. <strong>Every meshed material
+must state DensityKgM3 and SpecificHeat</strong>; one that does not is refused, named with its objects. Right-click a heat
+source's or a probe's row, <em>Plot |Z_th|</em> or <em>Plot Z_th phase</em>, for the curve against log frequency.</li>
+<li><strong>Foster networks.</strong> Each Z_th is fitted as Σ Rᵢ/(1 + jωτᵢ) with every Rᵢ ≥ 0 (so the network is passive) and ΣRᵢ equal
+to the Rth; the fit's largest error over the band is in the notes, and above 2 % the run warns — raise <em>per decade</em>. Each
+source's own network is written beside the result as <code>&lt;result&gt;.&lt;source&gt;.foster.cnl</code>: Rᵢ ∥ Cᵢ stages between a thermal
+pin and a reference pin, power as current and temperature rise as voltage. Its internal nodes are not temperatures, and
+it is not attached to any device. The file carries a one-port bench, so <code>circuitrf sparam</code> on it reads the network's
+Z_th back.</li>
+<li><strong>Pulse train</strong>: a period (<code>1 ms</code>, <code>100 us</code>), a duty, and optionally the total power during the pulse (shared by the
+sources in proportion to their own; empty, each at its own power). There is no transient solver: the periodic peak, the
+rise at the end of one pulse and the average come in closed form from the Foster networks, each added to the place's
+temperature with no power, for every Z_th place at every sweep point — the duty and period are expressions, so they
+sweep. They are rows of the Probes table; the waveform over one period is in the result.</li>
+</ul>
 <h2 id="headless">Headless</h2>
 <p>Every step above has a command-line spelling, and none of them needs a solver except <code>em</code>:</p>
 <ul>
@@ -976,8 +1188,12 @@ edges and <code>Hash</code> are in <a href="file-formats.html#c3d-operations">Fi
 <td>The next thing behind the selection; back toward you</td>
 </tr>
 <tr>
+<td><strong>Ctrl/Cmd+A</strong></td>
+<td>Select every shown object (<em>3D ▸ Select All Objects</em>); hidden ones are left out</td>
+</tr>
+<tr>
 <td><strong>Shift+A</strong> then a letter</td>
-<td>Box, Sheet, polyGon, polyLine, cYlinder, Port, Wire</td>
+<td>Box, Sheet, polyGon, polyLine, cYlinder, Port, Wire, Heat source, Temperature probe, Mesh region</td>
 </tr>
 <tr>
 <td>digits, <strong>Tab</strong>, <strong>Enter</strong></td>
@@ -994,6 +1210,10 @@ edges and <code>Hash</code> are in <a href="file-formats.html#c3d-operations">Fi
 <tr>
 <td><strong>Ctrl/Cmd+D</strong></td>
 <td>Duplicate and move</td>
+</tr>
+<tr>
+<td><strong>Ctrl/Cmd+G</strong>, <strong>Ctrl/Cmd+Shift+G</strong></td>
+<td>Group the selection; ungroup the outermost selected group</td>
 </tr>
 <tr>
 <td><strong>N</strong>, <strong>Shift+E</strong>, <strong>T</strong></td>
@@ -1135,13 +1355,15 @@ The box shows the value as you type (<code>= 0.254 mm</code>), or <code>unknown:
 shows now), a unit, and whether it becomes a <strong>VAR of this 3D view</strong> or a <strong>cell parameter</strong>; Enter defines
 them and the shape carries on, and the definitions and the new object are one undo step. A width, depth,
 height, radius or extrude distance keeps its expression; a polygon's points and a move's distance are
-evaluated once and stored as numbers, and the box says so. <strong>Beware one trap:</strong> in <code>2*w + 5</code> with <code>w</code> in mil,
-the <code>5</code> is five <strong>metres</strong> — a literal beside a name that has its own unit is in metres — and the preview
-shows <code>5.000508 m</code> before you press Enter; <code>check</code> warns about any dimension over 1 m.
+evaluated once and stored as numbers, and the box says so. A number may carry its own unit (<code>2*w + 0.5mm</code>);
+one without that is added to a name with a unit takes the box's unit, so <code>2*w + 5</code> with <code>w</code> in mil is 25 mil,
+and a multiplier stays a number. A lone <code>m</code> is milli (<code>2mm</code> or <code>2metre</code>, never <code>2m</code>); <code>check</code> warns about any
+dimension over 1 m.
 The <strong>Variables</strong> panel (the <em>x</em> button) lists each VAR with its expression, unit, value and how many fields
-use it, then the cell's parameters: <em>Set</em>, <em>Rename</em> (every use is rewritten; <code>ww</code> is not touched by renaming
-<code>w</code>), <em>Delete</em> (refused while anything uses it — <em>Inline</em> writes the current numbers into those fields
-first), and <em>Promote to Cell Parameter</em>. A VAR with the same name as a cell parameter is <strong>linked</strong> to it:
+use it, then the cell's parameters. Each row's buttons are glyphs, named by their tooltips: <em>Set</em>, <em>Rename</em>
+(every use is rewritten; <code>ww</code> is not touched by renaming <code>w</code>), <em>Inline</em> (writes the current numbers into the
+fields that use it, then deletes it), <em>Promote to Cell Parameter</em>, and <em>Delete</em>, last — greyed while anything
+uses the VAR, its tooltip naming what does. Drag the panel's left edge to widen it. A VAR with the same name as a cell parameter is <strong>linked</strong> to it:
 it takes the parameter's value — an instance's override, else the cell's default — and editing it edits the
 parameter, so the cell has one default for the name. <em>Unlink</em> makes it keep its own value, which then hides
 the parameter from this 3D view (<code>check</code> warns). Placing a cell's 3D view, an instance can override its
@@ -1205,15 +1427,16 @@ the outside of the problem. Palace finds a boundary's surfaces by the face's ext
 neighbour's face lying in the same plane and overlapping it is refused rather than guessed.</li>
 <li><strong>Simulate</strong> (<em>Simulate ▸ Run</em> with the 3D view active, or the toolbar's Run button — the workspace toolbar's). Runs the active setup with the
 same progress, Cancel and messages as a <code>.cem</code>, and opens its results in the Data Display. Afterwards the
-<strong>Field</strong> bar above the view shows the run's fields, drawn on the geometry the run solved; if the 3D view has
-changed since, a line says so (<code>Fields are from the run at 14:02; the model has changed since</code>) and they are
-still shown. An object with <strong>no material</strong> yet — drawn as a wireframe — does not stop the run: the solver
+run's fields are drawn by the field plots, on the geometry the run solved, and the toolbar's mesh button shows the
+mesh the run made (it is greyed until there are fields to plot); if the 3D view has changed since, a selected field
+plot's Properties say so (<code>Fields are from the run at 14:02; the model has changed since</code>) and the fields are still
+shown. An object with <strong>no material</strong> yet — drawn as a wireframe — does not stop the run: the solver
 ignores it and the run's messages say so. One whose material the technology does not define does stop it.</li>
 </ul>
 
 <nav class="page-nav">
   <a class="prev" href="em-3d.html"><span class="dir">Previous</span><span class="name">3D EM</span></a>
-  <a class="next" href="antennas.html"><span class="dir">Next</span><span class="name">Antennas</span></a>
+  <a class="next" href="thermal.html"><span class="dir">Next</span><span class="name">Thermal: temperature on the 3D model</span></a>
 </nav>
 </main>
 

@@ -1079,8 +1079,11 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
 
     partial void OnIsReadOnlyChanged(bool value) => OnPropertyChanged(nameof(IsEditable));
 
-    /// <summary>The solver choices this panel offers: a 3D view is never solved by the planar kernels.</summary>
-    public IReadOnlyList<Em3dSolverChoice> Solver3DChoiceList => IsEmbedded ? [.. Solver3DChoices.Where(c => c.Value != Em3dSolver.None)] : Solver3DChoices;
+    /// <summary>The solver choices this panel offers: a 3D view is never solved by the planar kernels, and may be solved by
+    /// circuitRF's own thermal solver (R-em3d75-3 D1: a .cem may not).</summary>
+    public IReadOnlyList<Em3dSolverChoice> Solver3DChoiceList => IsEmbedded
+        ? [.. Solver3DChoices.Where(c => c.Value != Em3dSolver.None), ThermalSolverChoice]
+        : Solver3DChoices;
 
     /// <summary>brief-em3d-49 — set by the 3D editor for an embedded setup: an edit's before and after (the full <c>.cem</c>
     /// spelling) and its description. The editor pushes the undo entry; this panel's own stack stays empty.</summary>

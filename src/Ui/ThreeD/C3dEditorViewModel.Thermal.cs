@@ -450,8 +450,16 @@ public sealed partial class C3dEditorViewModel
         return null;
     }
 
-    /// <summary>Gate 2 — the stale banner changing changes what Plot Temperature can do: the menus re-ask.</summary>
-    partial void OnFieldsStaleTextChanged(string? value) => RaiseMenuStateChanged();
+    /// <summary>The toolbar's Along… and Probes: shown while a thermal run's temperatures are the fields read.</summary>
+    public bool ShowThermalRunTools => Viewer.IsThermalRun && Viewer.FieldsAvailable;
+
+    /// <summary>Gate 2 — the stale banner changing changes what Plot Temperature can do: the menus re-ask. The sentence is
+    /// shown on the selected field plot in the Properties Inspector, which reads it again.</summary>
+    partial void OnFieldsStaleTextChanged(string? value)
+    {
+        RaiseMenuStateChanged();
+        Properties?.RefreshPlotProblem();
+    }
 
     /// <summary>
     /// 3D ▸ View ▸ Temperature and the visibility switches, by name — what the menu bar calls: <c>AllFaces</c>, <c>OnClip</c>,

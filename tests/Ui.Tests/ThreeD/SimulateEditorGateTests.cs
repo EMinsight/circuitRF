@@ -52,7 +52,7 @@ public sealed class SimulateEditorGateTests : IDisposable
         var panel = Assert.IsType<EmSetupDocument>(vm.SetupEditor).ViewModel;
         Assert.True(panel.IsEmbedded);
         Assert.False(panel.ShowGeometryReference);
-        Assert.DoesNotContain(panel.Solver3DChoiceList, c => c.Value == Em3dSolver.None);
+        Assert.DoesNotContain(panel.Solver3DChoiceList, c => c.Value == Em3dSolver.None && !c.IsThermal);   // no planar kernel
 
         panel.Problem3DChoice = EmSetupEditorViewModel.Problem3DChoices.Single(c => c.Value == Em3dProblemType.Eigenmode);
         Settle(vm);

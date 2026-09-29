@@ -79,7 +79,12 @@ public sealed partial class Viewer3DViewModel
 
     public bool FieldCanAnimate => SelectedFieldQuantity is { Animated: true };
 
-    partial void OnFieldsAvailableChanged(bool value) => OnPropertyChanged(nameof(FieldsTip));
+    partial void OnFieldsAvailableChanged(bool value)
+    {
+        OnPropertyChanged(nameof(FieldsTip));
+        OnPropertyChanged(nameof(CanShowMesh));
+        OnPropertyChanged(nameof(MeshTip));
+    }
 
     partial void OnShowFieldChanged(bool value)
     {

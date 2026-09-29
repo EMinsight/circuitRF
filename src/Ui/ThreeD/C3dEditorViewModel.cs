@@ -145,7 +145,11 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         Viewer.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(Viewer3DViewModel.TemperatureStep) && ProbeTableOpen) RefreshProbeTable();
-            if (e.PropertyName is nameof(Viewer3DViewModel.FieldsAvailable) or nameof(Viewer3DViewModel.IsThermalRun)) RaiseMenuStateChanged();
+            if (e.PropertyName is nameof(Viewer3DViewModel.FieldsAvailable) or nameof(Viewer3DViewModel.IsThermalRun))
+            {
+                OnPropertyChanged(nameof(ShowThermalRunTools));
+                RaiseMenuStateChanged();
+            }
         };
         // brief-em3d-44 R-em3d44-5 — the editor snaps; its switches are the user's, stored per user.
         var (snapOn, kinds) = Snap3DPreference.Preferred;

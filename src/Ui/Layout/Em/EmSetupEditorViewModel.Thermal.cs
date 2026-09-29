@@ -92,11 +92,6 @@ public sealed partial class ThermalSweepRow : ObservableObject
 
 public sealed partial class EmSetupEditorViewModel
 {
-    /// <summary>R-em3d75-3 — the problems this panel offers: an embedded setup may also be Thermal (D1: a .cem may not).</summary>
-    public IReadOnlyList<Em3dProblemChoice> Problem3DChoiceList => IsEmbedded
-        ? [.. Problem3DChoices, new Em3dProblemChoice(Em3dProblemType.Thermal, "Thermal (temperature, circuitRF's own solver)")]
-        : Problem3DChoices;
-
     /// <summary>The 3D view's document changed (a heat source drawn, renamed or deleted): the page reads it again.</summary>
     public void RefreshThermal() { if (IsThermalSetup) SyncThermalFields(); }
 
@@ -357,6 +352,7 @@ public sealed partial class EmSetupEditorViewModel
         OnPropertyChanged(nameof(IsThermalSetup));
         OnPropertyChanged(nameof(IsNotThermalSetup));
         OnPropertyChanged(nameof(Is3DSetup));
+        OnPropertyChanged(nameof(ShowProblem3D));
         RaiseSolverKindVisibility();
     }
 

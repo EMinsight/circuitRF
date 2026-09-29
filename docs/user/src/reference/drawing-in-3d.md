@@ -718,8 +718,9 @@ on *Lid modes* finds where the drawn package puts it.
 
 ## Temperature {#thermal}
 
-The same model solves for heat. A **thermal setup** (*Simulate ▸ Setup Analyses…*, the thermometer button) is solved by
-circuitRF's own steady-conduction solver after Gmsh meshes every solid — air is not meshed. What it needs is drawn in the
+The same model solves for heat. A **thermal setup** (*Simulate ▸ Setup Analyses…*, the thermometer button — or any setup
+whose *Solver* is set to **Thermal**) is solved by circuitRF's own steady-conduction solver after Gmsh meshes every solid
+— air is not meshed. What it needs is drawn in the
 view, and what it is worth is typed in the setup, so one model carries several thermal setups beside its EM ones.
 What a run models, and two worked examples with their numbers (*Tools ▸ Examples ▸ Thermal: …*), are in
 {{anchor: thermal.html|Thermal}}; this section is the gestures.
@@ -804,13 +805,15 @@ point shown. Hover a painted face for the temperature there (interpolated, not t
 node); a ring marks the **hot spot** with its temperature and its object. A bond wire whose run tabulated its temperature
 is coloured along its length, and hovering it names the wire and the distance along it.
 
-**Along a line.** *Along…* on the Field bar (or *3D ▸ View ▸ Temperature ▸ Temperature Along…*) takes two points and plots
+**Along a line.** *Along…* on the toolbar (or *3D ▸ View ▸ Temperature ▸ Temperature Along…*) takes two points and plots
 the temperature between them, with both end temperatures and their difference — Rth by hand, with nothing added to the
-document. A line probe's row in the tree plots its own, *Plot T(s)*. **Probes** on the Field bar lists every probe
+document. A line probe's row in the tree plots its own, *Plot T(s)*. **Probes** on the toolbar lists every probe
 statistic and every measure at the sweep point shown, a column per point on request, with any probe past its limit in
 orange.
 
-**The Rth matrix, Z_th and pulses** {#thermal-rth} are read off the same mesh after the sweep, at its first point, each
+### Rth matrix, Z_th and pulses {#thermal-rth}
+
+They are read off the same mesh after the sweep, at its first point, each
 with **every boundary made homogeneous** (fixed temperatures and ambients 0) — so they are properties of the structure,
 not of the heatsink temperature. With k(T) on they are the small-signal response about that point's temperatures, and the
 notes say so.
@@ -1056,7 +1059,8 @@ order a pane presents them, with the rules each one follows.
   neighbour's face lying in the same plane and overlapping it is refused rather than guessed.
 - **Simulate** (*Simulate ▸ Run* with the 3D view active, or the toolbar's Run button — the workspace toolbar's). Runs the active setup with the
   same progress, Cancel and messages as a `.cem`, and opens its results in the Data Display. Afterwards the
-  **Field** bar above the view shows the run's fields, drawn on the geometry the run solved; if the 3D view has
-  changed since, a line says so (`Fields are from the run at 14:02; the model has changed since`) and they are
-  still shown. An object with **no material** yet — drawn as a wireframe — does not stop the run: the solver
+  run's fields are drawn by the field plots, on the geometry the run solved, and the toolbar's mesh button shows the
+  mesh the run made (it is greyed until there are fields to plot); if the 3D view has changed since, a selected field
+  plot's Properties say so (`Fields are from the run at 14:02; the model has changed since`) and the fields are still
+  shown. An object with **no material** yet — drawn as a wireframe — does not stop the run: the solver
   ignores it and the run's messages say so. One whose material the technology does not define does stop it.

@@ -66,6 +66,9 @@ public sealed partial class C3dPropertiesViewModel
     [ObservableProperty] private bool _plotHidden;
     /// <summary>R-em3d83-5 — why the plot draws nothing, above its fields; null when it draws.</summary>
     [ObservableProperty] private string? _plotProblem;
+    /// <summary>R-em3d49-5b — the fields are from a run of a model since changed (still drawn, on the geometry that run
+    /// solved); null when they are current. The toolbar strip that said so is retired (owner request, 2026-09-28).</summary>
+    [ObservableProperty] private string? _plotStale;
     /// <summary>This plot is the one drawn: the phase controls apply to it.</summary>
     [ObservableProperty] private bool _plotIsDrawn;
 
@@ -80,6 +83,7 @@ public sealed partial class C3dPropertiesViewModel
         IsFieldPlot = false;
         PlotOtherOpen = false;
         PlotProblem = null;
+        PlotStale = null;
     }
 
     private void LoadFieldPlot(string name)
@@ -150,12 +154,17 @@ public sealed partial class C3dPropertiesViewModel
         PlotPercentile = p.Percentile;
         PlotFixRange = p.FixRange;
         PlotProblem = editor.FieldPlotProblem(p);
+        PlotStale = editor.FieldsStaleText;
     }
 
     /// <summary>The drawn plot's verdict changed (the run was read, the step loaded): the sentence above the fields follows.</summary>
     internal void RefreshPlotProblem()
     {
-        if (IsFieldPlot && Editor.FieldPlot(_plotName) is { } p) PlotProblem = Editor.FieldPlotProblem(p);
+        if (IsFieldPlot && Editor.FieldPlot(_plotName) is { } p)
+        {
+            PlotProblem = Editor.FieldPlotProblem(p);
+            PlotStale = Editor.FieldsStaleText;
+        }
     }
 
     private void CommitPlot(string description, Action<C3dFieldPlot> mutate)

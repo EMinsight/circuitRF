@@ -37792,3 +37792,24 @@ large run. Pixels were not seen; the gates read records, tree, banner and built 
   warning-coloured `TextBlock`. It is a `SelectableTextBlock` now (the `SelectableTextBlock.colhdr` style already existed).
 - `EmPanelDeclutterTests.TheAnalysisType_SitsBesideTheSolver…` anchored on `EmSetupEditorViewModel.Solver3DChoices`; the combo
   binds `ViewModel.Solver3DChoiceList` (an embedded setup offers no None). The layout it pins was intact.
+
+## 3D editor bugs round 7 — Thermal as a solver, the setup cards, the toolbar strip (2026-09-28)
+
+Owner's seventh list. Gate `tests/Ui.Tests/ThreeD/EditorRound7Tests.cs`; pixels were not seen.
+
+- **Thermal was offered as a Problem** (beside Driven, Electrostatic…) when it is who solves. It is the last row of an
+  embedded panel's Solver list now, labelled `Thermal` (`EmSetupEditorViewModel.ThermalSolverChoice`,
+  `Em3dSolverChoice.IsThermal`), and the Problem picker is hidden for it (`ShowProblem3D`). **The file is unchanged**:
+  Problem3D Thermal, Solver3D None — so the row cannot be told apart by `Value` (None is also Planar's), hence the flag.
+  Choosing it sets both fields; leaving it goes to Driven with the chosen solver. A thermal setup's `Problem3DChoice`
+  holds Driven, which nothing reads; `OnProblem3DChoiceChanged` returns while the setup is thermal so a sync can never
+  write it back. A `.cem` still offers no Thermal (R-em3d75-3 D1).
+- **A double-click on a setup card's solver-note line still opened nothing** after round 6. Round 6's handler took the
+  card from the pressed element's `DataContext`, and a fidelity line's is its `C3dFidelityRow`. `C3dSetupAnalysesView.CardOf`
+  finds the card through its `ListBoxItem`. Verified with a scratch Avalonia.Headless harness (not in the repo; Ui.Tests
+  has no headless platform): the name, badge and summary lines opened the Setup before and after, the note line only after.
+- **The strip under the 3D toolbar is retired.** It held the mesh toggle (enabled whenever a mesh existed), a thermal
+  run's Along…/Probes, and the stale-fields sentence. The three buttons are toolbar buttons in the editor and the viewer
+  alike; the mesh is enabled only when a mesh AND fields exist (`Viewer3DViewModel.CanShowMesh`). The sentence is the
+  Properties Inspector's, above a selected field plot (`C3dPropertiesViewModel.PlotStale`, refreshed from
+  `OnFieldsStaleTextChanged`). The menus' Plot Temperature refusal still reads `FieldsStaleText`.

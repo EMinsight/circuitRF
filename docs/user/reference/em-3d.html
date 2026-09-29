@@ -271,7 +271,7 @@ model circuitRF built, and after a run it also shows what the solver made. It is
 the drawing tools, the setups, Simulate, the unit and the snap step — and its status lines under the view (the
 setup's refusals and notes, the mesh, the field) are always shown.</p>
 <ul>
-<li><strong>Model.</strong> Every solid, coloured by its layer, with the dielectrics, the air and the air box's faces
+<li><p><strong>Model.</strong> Every solid, coloured by its layer, with the dielectrics, the air and the air box's faces
 each switchable. The faces are coloured by boundary kind: grey metal, blue absorbing, orange PMC,
 violet symmetry. The <strong>object tree</strong> lists every solid, and a click in the view picks one, names it and
 brings its row into sight; a row's tick hides that solid in this view only. The tree is headed <strong>Objects</strong>
@@ -284,14 +284,16 @@ material it is listed under the material that fills it, first under Boxes by typ
 belongs to. It is filled with <strong>Air</strong> unless you choose otherwise: select it and pick its <strong>Material</strong> in the
 Properties panel (<strong>Vacuum</strong> for free space, or any material of the technology). Its tick hides it — faces
 and outline — and it stays hidden until you show it again. The filter at the header's right hides tree rows by type or by
-material, and its icon changes while it hides anything; it never hides an object in the view.</li>
-<li><strong>Camera.</strong> Drag to orbit; right-drag, middle-drag, Alt-drag or Shift-drag to pan; scroll to zoom. <strong>Home</strong>
+material, and its icon changes while it hides anything; it never hides an object in the view.</p>
+</li>
+<li><p><strong>Camera.</strong> Drag to orbit; right-drag, middle-drag, Alt-drag or Shift-drag to pan; scroll to zoom. <strong>Home</strong>
 fits the model. <strong>1</strong> is isometric, <strong>2</strong>–<strong>7</strong> are the six orthographic views, and <strong>P</strong> switches between
 perspective and orthographic. Double-click the axis indicator for the same views: an axis looks straight
 down it — <strong>Z</strong> the top view, <strong>Y</strong> the front, <strong>X</strong> the right — and again turns to the opposite side; anywhere
 else inside its ring is isometric. While you orbit or pan nothing is highlighted and nothing snaps.
-These are the 3D editor's keys too: every 3D pane uses the same ones.</li>
-<li><strong>Selecting.</strong> <strong>O</strong>, <strong>F</strong>, <strong>E</strong> and <strong>V</strong> choose what a click selects: a whole <strong>object</strong>, one <strong>face</strong>, one
+These are the 3D editor's keys too: every 3D pane uses the same ones.</p>
+</li>
+<li><p><strong>Selecting.</strong> <strong>O</strong>, <strong>F</strong>, <strong>E</strong> and <strong>V</strong> choose what a click selects: a whole <strong>object</strong>, one <strong>face</strong>, one
 <strong>edge</strong>, or one <strong>vertex</strong> (the toolbar has a button for each). What is under the cursor is highlighted. A click
 selects it; Shift-click adds to or removes from the selection; <strong>Esc</strong> clears it. A selected face's area
 and normal, an edge's name, kind and length, or a vertex's coordinates, are shown under the view, in the
@@ -299,34 +301,79 @@ layout's unit. <strong>B</strong> steps to the
 next thing <em>behind</em> the selection along the line of sight through the cursor, and <strong>Shift+B</strong> steps back
 toward you — the status line says where you are (<code>Face zmin · &quot;trace&quot; · 2 of 5</code>). A face selected
 behind others is drawn through what is in front of it. Right-click opens the menu for what is selected:
-<em>Hide</em>, <em>Isolate</em>, <em>Show All</em>, and <em>Select Owning Object</em>. Nothing here changes the setup.</li>
-<li><strong>The 3D editor.</strong> A 3D view (<code>.c3d</code>) opens in this same pane with drawing added: boxes, cylinders, sheets,
+<em>Hide</em>, <em>Isolate</em>, <em>Show All</em>, and <em>Select Owning Object</em>. Nothing here changes the setup.</p>
+</li>
+<li><p><strong>The 3D editor.</strong> A 3D view (<code>.c3d</code>) opens in this same pane with drawing added: boxes, cylinders, sheets,
 faces pushed and pulled, placed cells, bond wires, ports, setups and the air box, all with these keys. It is
 circuitRF's own and needs no solver. <a href="drawing-in-3d.html">The 3D Editor</a> is its chapter, and describes every
-control.</li>
-<li><strong>Measure</strong> (<strong>M</strong>, the ruler button, <em>3D ▸ Measure</em>; in the editor and in this view). Click two points,
+control.</p>
+</li>
+<li><p><strong>Measure</strong> (<strong>M</strong>, the ruler button, <em>3D ▸ Measure</em>; in the editor and in this view). Click two points,
 snapped as drawing is; after the first a line follows the cursor. A card in the corner of the view gives
 both points' x, y and z, their differences (the second minus the first) and the distance, in the
 document's unit — changing the unit re-spells them. Every number can be selected and copied; hover one for
 its copy button, or <strong>Copy All</strong> for the whole card as a table that pastes into a spreadsheet. A copied
 value carries its unit (<code>12.5mil</code>) and pastes back into any dimension box as exactly the same length.
 <strong>≈</strong> marks a point that is not exactly on the database-unit grid. A third click starts a new
-measurement; <strong>Esc</strong> ends it. Measuring changes nothing and adds no undo step.</li>
-<li><strong>Clip plane</strong> (<strong>C</strong>). A plane along an axis or the view direction, dragged through the model. It
-shows inside a package, under a lid, or through a via's clearance.</li>
-<li><strong>Mesh.</strong> After a Palace run, the mesh Gmsh made: the boundary triangles, and the tetrahedra the clip
-plane cuts.</li>
-<li><strong>Grid.</strong> For an openEMS setup, the FDTD grid on the clip plane and where it meets the metal.</li>
-<li><strong>Fields.</strong> After a run that saved them: the field at each saved frequency, eigenmode or terminal,
-drawn on the clip plane or on the surfaces. The quantities offered are only those in the solver's
-files: the electric field |E|, the surface current J_s on the conductors, and for a static solve the
-potential. A <strong>dB</strong> scale and a <strong>range</strong> percentile keep one singular edge from washing out the
-picture.</li>
-<li><strong>Animation.</strong> The play button sweeps the phase through one cycle and draws the instantaneous field
-Re{E·e^jφ}. That is the standing wave in a cavity, or the current running along a wire.</li>
-<li><strong>Pictures.</strong> <strong>Export picture …</strong> saves a PNG of the view at a multiple of the window's size, with or
+measurement; <strong>Esc</strong> ends it. Measuring changes nothing and adds no undo step.</p>
+</li>
+<li><p><strong>Clip plane</strong> (<strong>C</strong>). A plane along an axis or the view direction, dragged through the model. It
+shows inside a package, under a lid, or through a via's clearance.</p>
+</li>
+<li><p><strong>Mesh.</strong> After a Palace run, the mesh Gmsh made: the boundary triangles, and the tetrahedra the clip
+plane cuts.</p>
+</li>
+<li><p><strong>Grid.</strong> For an openEMS setup, the FDTD grid on the clip plane and where it meets the metal.</p>
+</li>
+<li><p><strong>Field plots.</strong> After a run that saved them, a field is drawn by a <strong>field plot</strong>: a row of the Object
+Tree's <strong>Field Plots</strong> group, saved with the 3D view like any object, so a plot is still there when the
+file is closed and opened again. Add one with the <strong>+</strong> on the group's header (or right-click the group,
+<em>New Field Plot…</em>); it is drawn at once and its fields open in the Properties Inspector:</p>
+<ul>
+<li><strong>Setup</strong> — the setup whose run it reads. A new plot keeps the setup that was active when it was made,
+so switching setups never changes what an existing plot shows; <em>Active</em> follows whichever is active.</li>
+<li><strong>Solution</strong> — what the run saved: a frequency (driven), a mode (eigenmode), a terminal (static), a
+sweep point (thermal). The plot keeps the <strong>value</strong>, not its place in the list, so a later run that saves
+one more frequency never moves it to another. The list ends with <em>Other frequency… (needs a re-run)</em>,
+which adds a frequency to the setup's <em>Save fields at</em> and moves the plot to it.</li>
+<li><strong>Quantity</strong> — only those in the solver's files are offered: the electric field |E|, the surface
+current J_s on the conductors, and for a static solve the potential.</li>
+<li><strong>On</strong> — a <strong>clip plane</strong> (the plot's own axis and position, so two plots can cut in two places),
+<strong>surfaces</strong> (the solid selected in the tree, or the conductors for J_s), or <strong>faces</strong> (below).</li>
+<li><strong>dB</strong> and a <strong>range</strong> percentile, which keep one singular edge from washing out the picture.</li>
+</ul>
+<p><strong>One plot is drawn at a time</strong>: ticking one in the tree unticks the one drawn before; the others stay,
+ready to tick. Each change is one undo step. Adding, editing or hiding a plot never marks a result stale.
+A plot whose data is missing — no run of its setup yet, a run that did not save its frequency, a
+quantity the run no longer offers — stays in the tree with a warning mark and draws nothing; its
+tooltip, and the Inspector, say which, and name what the run did save. It is never moved to the nearest
+frequency for you. In a setup's own 3D view (<em>Show 3D View</em> from a <code>.cem</code>) plots last for the session:
+that view has no document to keep them in.</p>
+<p><strong>Without a window</strong>, a <code>.c3d</code>'s clip-plane plot is drawn as the section it cuts:
+<code>circuitrf render cavity.c3d -o cut.png --field Field1</code> (add <code>--phase 90</code> for an instantaneous
+quantity), and <code>circuitrf render cavity.c3d --list-fields</code> lists the plots and whether each one's data
+is there. It reads the same run, solution and range the 3D view does, and refuses a plot whose data is
+missing with the same sentence. Surfaces, faces and temperature plots are not drawn this way yet: use
+<em>Export picture</em> for those. See <a href="cli.md#render"><code>render</code></a>.</p>
+</li>
+<li><p><strong>One face.</strong> In the 3D editor, right-click a face, <em>Plot Field</em>, to add that face to the plot being drawn
+when it is a faces plot — the top of one trace, one face of a substrate — or to start a new faces plot with
+it; again to take it off, and several faces accumulate. A conductor has no inside to read, so its face
+shows the field in the material next to it (or J_s, when that is the quantity chosen). A <strong>sheet</strong> asks
+<em>Top side</em> or <em>Bottom side</em>: the field's normal part jumps across a sheet that carries charge, so the two
+sides are two different pictures. The quantity is never changed for you — a face that cannot show the
+chosen one says why under the view. On an openEMS run the face is read half a grid cell off the metal,
+where openEMS records the field.</p>
+</li>
+<li><p><strong>Animation.</strong> With the plot drawn selected, the play button at the foot of the Inspector sweeps the phase
+through one cycle and draws the instantaneous field Re{E·e^jφ}. That is the standing wave in a cavity, or
+the current running along a wire. The phase and its speed belong to the view, not the plot: they are not
+saved.</p>
+</li>
+<li><p><strong>Pictures.</strong> <strong>Export picture …</strong> saves a PNG of the view at a multiple of the window's size, with or
 without the legend and caption. Right-click in the view — on anything or nothing — for <strong>Copy</strong>, which puts
-the view on the clipboard at four times the window's size (the 3D editor's canvas offers it too).</li>
+the view on the clipboard at four times the window's size (the 3D editor's canvas offers it too).</p>
+</li>
 </ul>
 <p><strong>What the mesh tells you about trusting the answer.</strong> Look at where the small elements are. After
 refinement they gather where Palace's own error estimate said the answer needed them: along the edges of
@@ -341,23 +388,34 @@ notes say so.</p>
 <span class="label">Pictures of the 3D view</span>
 <p>The 3D view draws on the graphics card, so its pictures cannot be made by the documentation's
 headless generator. The four below are to be exported from the example with <b>Export picture …</b> at 2×,
-with the legend on.</p>
+with the legend on. <code>circuitrf render --field</code> draws a <code>.c3d</code>'s clip-plane plot
+headlessly, as a section rather than the view's perspective; none of these examples carries such a plot
+yet, and each placeholder says what its headless spelling would need.</p>
 </div>
 <!-- FIGURE PLACEHOLDER em3d-view-bond-wire-model — 1600 x 1000 PNG, Export picture at 2x, legend on:
      Bond wire/em/Bond wire 3D.cem after a run, isometric (1), dielectrics and air hidden, mesh ON.
      Caption: "The bond wire after a Standard run: the wire, its feet and the pads, with the mesh Palace
-     refined around them." -->
+     refined around them."
+     Headless: none — a perspective model with its mesh is the 3D view's own picture, not a field plot. -->
 <!-- FIGURE PLACEHOLDER em3d-view-bond-wire-current — 1600 x 1000 PNG, Export picture at 2x, legend on:
-     the same view, mesh off, Field = the saved 20.5 GHz frequency, J_s on surfaces, dB on.
-     Caption: "Surface current J_s on the bond wire and its pads at 20.5 GHz, in dB." -->
+     the same view, mesh off, a field plot at the saved 20.5 GHz frequency, J_s on surfaces, dB on.
+     Caption: "Surface current J_s on the bond wire and its pads at 20.5 GHz, in dB."
+     Headless: not yet — J_s on surfaces is a Surfaces plot, which `render --field` refuses until the iso
+     picture's brief; and a .cem holds no field plots, so the wire would have to be drawn in a .c3d first. -->
 <!-- FIGURE PLACEHOLDER em3d-view-via-field — 1600 x 1000 PNG, Export picture at 2x, legend on:
      Via through a plane/em/Via 3D.cem after a run, front view (3), clip plane C on y (normal along y) at
-     0, Field = 10.05 GHz, |E| on the clip plane, dB on.
-     Caption: "|E| at 10.05 GHz in a vertical cut along both lines and through the via, in dB." -->
+     0, a field plot at 10.05 GHz, |E| on the clip plane, dB on.
+     Caption: "|E| at 10.05 GHz in a vertical cut along both lines and through the via, in dB."
+     Headless, once the via is drawn in a .c3d carrying this plot (a .cem holds none) as a ClipPlane plot on y
+     at 0, 10.05 GHz, |E|, dB on, named ViaCut:
+       circuitrf render "Via through a plane/3d/Via.c3d" -o em3d-view-via-field.png --size 1600x1000 --field ViaCut -->
 <!-- FIGURE PLACEHOLDER em3d-view-package-mode — 1600 x 1000 PNG, Export picture at 2x, legend on:
      Package/em/Package lid modes.cem after a run, top view (2), clip plane on z just below the lid,
-     Field = mode 3, |E| on the clip plane.
-     Caption: "|E| of the lid's first cavity mode in a plane just below the lid." -->
+     a field plot at mode 3, |E| on the clip plane.
+     Caption: "|E| of the lid's first cavity mode in a plane just below the lid."
+     Headless, once the package's .c3d carries this plot (a .cem holds none) as a ClipPlane plot on z just below
+     the lid, mode 3, |E|, named LidMode:
+       circuitrf render "Package/3d/Package.c3d" -o em3d-view-package-mode.png --size 1600x1000 --field LidMode -->
 <h3 id="dielectrics">How far the dielectric reaches</h3>
 <p>A stackup gives each dielectric a thickness and a material but no outline, so circuitRF decides how far
 it reaches sideways. The answer depends on the solver, and for the 3D solvers it is part of what gets

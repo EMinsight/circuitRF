@@ -105,3 +105,4 @@ libTK*.so.*
 TK*.dll
 TK*.lib
 TK*.pdb
+/.vscode

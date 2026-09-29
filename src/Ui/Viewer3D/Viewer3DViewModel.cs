@@ -676,13 +676,17 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
     [ObservableProperty] private bool _showMesh;
     [ObservableProperty] private bool _showGrid;
 
-    public string MeshTip => MeshAvailable ? "Show the mesh Gmsh made (boundary triangles, and the tetrahedra the clip plane cuts)"
+    /// <summary>The mesh toggle is enabled only beside fields to plot: the mesh a run made, and that run's fields (owner
+    /// request, 2026-09-28).</summary>
+    public bool CanShowMesh => MeshAvailable && FieldsAvailable;
+
+    public string MeshTip => CanShowMesh ? "Show the mesh Gmsh made (boundary triangles, and the tetrahedra the clip plane cuts)"
                            : _lastSetup is { Is3D: false } ? "The planar mesh is shown in the layout view"
-                           : "Simulate to mesh";
+                           : "Simulate first: the mesh is shown with the run's fields";
     public string GridTip => GridAvailable ? "Show the FDTD grid on the clip plane and where it meets the metal"
                                            : "The FDTD grid is shown for an openEMS setup";
 
-    partial void OnMeshAvailableChanged(bool value) => OnPropertyChanged(nameof(MeshTip));
+    partial void OnMeshAvailableChanged(bool value) { OnPropertyChanged(nameof(CanShowMesh)); OnPropertyChanged(nameof(MeshTip)); }
     partial void OnGridAvailableChanged(bool value) => OnPropertyChanged(nameof(GridTip));
 
     partial void OnShowMeshChanged(bool value)

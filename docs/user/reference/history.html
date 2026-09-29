@@ -479,6 +479,14 @@ it unless you say so</strong>, and there is a tickbox for saying so.</p>
 files it includes, a <a href="railrf.html#reuse-library">shared part library</a> and the model files it names — is a
 row of its own, <strong>ticked by default</strong>, because without it the recipient opens a design that is missing a
 piece of itself. The references are repointed at the archived copy.</p>
+<p><strong>Generated PCell artwork</strong> is one row too, also <strong>ticked by default</strong>: the placed cells your layouts
+drew from PCell generators, exactly as they were generated. It is what lets the recipient see those
+parts without having the kit that drew them, and it is what any command-line run of the unpacked
+archive draws from. Only the cells a layout still uses are included — ones left behind by an earlier
+generator or technology are not. If you untick it while a kit those cells came from is not in the
+archive either, the dialog says so: the recipient would see empty placeholders for those parts. A
+Save Workspace As copy leaves the generated cells behind, as it always has; your own circuitRF redraws
+them when the copy opens.</p>
 <h3 id="the-one-sentence-that-matters">The one sentence that matters</h3>
 <p><strong>A file you deleted from the workspace is still in the history.</strong></p>
 <p>A history holds every earlier version of every file it ever kept, and that includes files that are not

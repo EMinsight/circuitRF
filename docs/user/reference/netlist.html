@@ -179,6 +179,10 @@ wherever the variable is referenced.</p>
     <p>The unit is only ever read off the end of something that is <em>not</em> already a valid
     expression, so an expression whose last token happens to spell a unit is left alone —
     <code>x = 2 * f</code> is a multiplication, not two femtoseconds.</p>
+    <p>A unit may also be glued to a number inside the expression — <code>w = 10um + 1mil</code>,
+    <code>Vbias = 10V + 100mV</code> — which needs no lift at all. On a component line a value must
+    still contain no spaces, so write <code>W=10um+1mil</code>. See
+    <a href="units.html#unit-field">Units</a>.</p>
   </div>
 <h3 id="w-components">4 · Components &amp; instances</h3>
 <pre><code class="language-netlist">C:C1  Vin  n1  C=1 mF

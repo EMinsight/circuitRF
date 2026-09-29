@@ -6,6 +6,7 @@
 // read. A blank box is the default, and a section with every box blank is written as no section.
 
 using System.Globalization;
+using CircuitRF.Engine.Em3d;
 using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace CircuitRF.Ui.Layout.Em;
@@ -21,8 +22,9 @@ public sealed record PalaceQualityChoice(PalaceQuality Value, string Label)
     public override string ToString() => Label;
 }
 
-/// <summary>One row of the Solver picker.</summary>
-public sealed record Em3dSolverChoice(Em3dSolver Value, string Label)
+/// <summary>One row of the Solver picker. <paramref name="IsThermal"/>: circuitRF's own thermal solver — a setup whose problem is
+/// Thermal and which names no EM solver (brief 73), so <paramref name="Value"/> is None and is not what tells it apart.</summary>
+public sealed record Em3dSolverChoice(Em3dSolver Value, string Label, bool IsThermal = false)
 {
     public override string ToString() => Label;
 }
@@ -38,6 +40,11 @@ public sealed partial class EmSetupEditorViewModel
         // brief-em3d-10 — both on one generated problem, and the comparison beside them.
         new(Em3dSolver.Both,    "FEM & FDTD - Compare"),
     ];
+
+    /// <summary>The Solver picker's Thermal row, offered by a 3D view's panel: who solves a thermal setup is a solver choice,
+    /// beside Palace and openEMS, not a kind of EM problem (owner request, 2026-09-28). The file is unchanged: Problem3D
+    /// Thermal, Solver3D None.</summary>
+    public static Em3dSolverChoice ThermalSolverChoice { get; } = new(Em3dSolver.None, "Thermal", IsThermal: true);
 
     [ObservableProperty] private Em3dSolverChoice _solver3DChoice = Solver3DChoices[0];
 
@@ -106,7 +113,10 @@ public sealed partial class EmSetupEditorViewModel
     private const string PlanarHiddenNote =
         "The planar-only settings are hidden; they are kept, and come back if you switch to Planar.";
 
-    public string Solver3DDescription => Solver3DChoice.Value switch
+    public string Solver3DDescription => Solver3DChoice.IsThermal
+        ? "Temperature, solved by circuitRF's own thermal solver on a mesh Gmsh makes (Settings ▸ 3D EM): the heat sources, " +
+          "boundaries and probes drawn in this view, their values below."
+        : Solver3DChoice.Value switch
     {
         Em3dSolver.Palace =>
             "Generates a 3D model from the layout, its technology and any bond wires, meshes it with Gmsh and " +
@@ -129,10 +139,24 @@ public sealed partial class EmSetupEditorViewModel
         RaiseSolverKindVisibility();
         RaiseStaticVisibility();
         if (_suppressCommit) return;
-        if (value.Value == Working.Solver3D) return;
+        bool wasThermal = Working.Problem3D == Em3dProblemType.Thermal;
+        if (value.IsThermal == wasThermal && value.Value == Working.Solver3D) return;
         var before = SnapshotJson();
         Working.Solver3D = value.Value;
+        // Thermal is a solver here and a problem in the file: choosing it or leaving it changes both. A thermal setup names
+        // no EM solver (brief 73); leaving it solves the EM problem an EM setup starts with.
+        if (value.IsThermal) { Working.Problem3D = Em3dProblemType.Thermal; Working.Thermal ??= new CircuitRF.Design.Layout.Em.CemThermal(); }
+        else if (wasThermal) Working.Problem3D = Em3dProblemType.Driven;
         CommitEdit(before, "Change EM solver");
+        if (value.IsThermal != wasThermal)
+        {
+            _suppressCommit = true;
+            try { Problem3DChoice = Problem3DChoices.FirstOrDefault(c => c.Value == Working.Problem3D) ?? Problem3DChoices[0]; }
+            finally { _suppressCommit = false; }
+            SyncThermalFields();
+            RaiseThermalVisibility();
+            RaiseStaticVisibility();
+        }
         Refresh();
     }
 
@@ -230,7 +254,8 @@ public sealed partial class EmSetupEditorViewModel
     private void SyncSolver3DFields()
     {
         _suppressCommit = true;
-        Solver3DChoice = Solver3DChoices.FirstOrDefault(c => c.Value == Working.Solver3D)
+        Solver3DChoice = IsThermalSetup ? ThermalSolverChoice
+                       : Solver3DChoices.FirstOrDefault(c => c.Value == Working.Solver3D)
                          ?? new Em3dSolverChoice(Working.Solver3D, Working.Solver3D.ToString());
         var p = Working.Palace;
         PalaceQualityChoice = PalaceQualityChoices.First(c => c.Value == (p?.Quality ?? PalaceQuality.Standard));

@@ -1,3 +1,4 @@
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Data;
 using Avalonia.Input;
@@ -77,12 +78,18 @@ public partial class C3dSetupAnalysesView : UserControl
     {
         if (e.ClickCount != 2 || !e.GetCurrentPoint(Rows).Properties.IsLeftButtonPressed) return;
         // Only a card, and not its active mark (a button of its own): a double-click on the list's empty space edits nothing.
-        if (e.Source is not Control source || source.DataContext is not C3dSetupItem item) return;
+        // The card is found by its list item, not by the pressed element's DataContext: a solver-note line's is its own row,
+        // so a double-click there opened nothing (owner report, 2026-09-28, after round 6).
+        if (e.Source is not Visual source || CardOf(source) is not { } item) return;
         if (source.FindAncestorOfType<Button>(includeSelf: true) is { } button && Rows.IsVisualAncestorOf(button)) return;
         if (Vm is { } vm) vm.SelectedSetupItem = item;
         // After the press has finished routing, so the list item's own selection is not handed a modal window mid-gesture.
         Dispatcher.UIThread.Post(OpenEditor);
     }
+
+    /// <summary>The setup of the card <paramref name="pressed"/> lies in, whatever part of the card it is.</summary>
+    internal static C3dSetupItem? CardOf(Visual pressed) =>
+        pressed.FindAncestorOfType<ListBoxItem>(includeSelf: true)?.DataContext as C3dSetupItem;
 
     private async void OnMenuCopyNotes(object? sender, RoutedEventArgs e)
     {

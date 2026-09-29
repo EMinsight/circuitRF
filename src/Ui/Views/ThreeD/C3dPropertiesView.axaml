@@ -200,6 +200,8 @@
             <StackPanel Spacing="4" IsVisible="{Binding IsFieldPlot}">
                 <SelectableTextBlock Text="{Binding PlotProblem}" Foreground="{DynamicResource CrfWarningBrush}" TextWrapping="Wrap" FontSize="11"
                                      IsVisible="{Binding PlotProblem, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                <SelectableTextBlock Text="{Binding PlotStale}" Foreground="{DynamicResource CrfWarningBrush}" TextWrapping="Wrap" FontSize="11"
+                                     IsVisible="{Binding PlotStale, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                 <TextBlock Text="Name" FontSize="11" Opacity="0.7"/>
                 <TextBox Text="{Binding NameText}" KeyDown="OnNameKey" LostFocus="OnNameLostFocus"/>
                 <TextBlock Text="Setup" FontSize="11" Opacity="0.7"/>

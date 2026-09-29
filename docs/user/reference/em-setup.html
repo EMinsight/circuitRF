@@ -1207,7 +1207,7 @@ Accurate has not been measured.</p>
 <td>Refinement tolerance</td>
 <td><code>AdaptiveTol</code></td>
 <td>0.01</td>
-<td>The error at which Palace stops refining the mesh</td>
+<td>Palace's own <code>Refinement.Tol</code>: the relative error in the field, from Palace's error estimate over the whole model, at which it stops refining the mesh. It is not a ΔS — no S-parameter is compared between passes</td>
 </tr>
 <tr>
 <td>Refinement passes</td>
@@ -1228,7 +1228,7 @@ Accurate has not been measured.</p>
 <td>How Palace solves each linear system. <em>Iterative</em> (GMRES with multigrid) needs the least memory. <em>Direct</em> factors it with SuperLU_DIST: more memory, and far faster for an <strong>eigenmode</strong> solve, whose shifted operator an iterative solver converges on slowly. On the 3D Package example's lid mode (128 k unknowns) Direct took 35 s and 4.0 GB; Iterative had not finished after ten minutes. Not part of any preset</td>
 </tr>
 <tr>
-<td>— (written in the <code>.cem</code>)</td>
+<td>Save fields at (GHz)</td>
 <td><code>SaveFieldsGHz</code></td>
 <td>the sweep's centre</td>
 <td>The frequencies, GHz, whose fields Palace saves for the 3D view; <code>[]</code> saves none. See <a href="#palace-fields">Fields for the 3D view</a> — they are large</td>
@@ -1324,7 +1324,7 @@ not fit in memory is refused, naming the feature behind the smallest cell and th
 relax it.</p>
 <h3 id="openems-run">Running openEMS</h3>
 <p>With openEMS chosen the panel shows the grid settings above and two of its own, each a field of the
-<code>.cem</code>'s <code>OpenEms</code> section; a blank box is the default. <code>SaveFieldsGHz</code> is written in the <code>.cem</code> itself.</p>
+<code>.cem</code>'s <code>OpenEms</code> section; a blank box is the default. <code>SaveFieldsGHz</code> and <code>SaveH</code> are written in the <code>.cem</code> itself.</p>
 <table>
 <thead>
 <tr>
@@ -1348,6 +1348,11 @@ relax it.</p>
 <td><code>SaveFieldsGHz</code></td>
 <td>the sweep's centre</td>
 <td>The frequencies, GHz, whose electric field openEMS records over the air box for the 3D view; <code>[]</code> records none</td>
+</tr>
+<tr>
+<td><code>SaveH</code></td>
+<td>off</td>
+<td>Also record the magnetic field H at those frequencies, so the 3D view offers |H|. It doubles the field files on disk</td>
 </tr>
 </tbody>
 </table>
@@ -1383,7 +1388,9 @@ and, per port, openEMS's log and probe files, so a run can be repeated by hand.<
 because the pulse carries no energy there). openEMS computes it during the run itself, at every grid
 cell's centre, and writes it in each port's folder as <code>efield&lt;k&gt;_f=&lt;Hz&gt;_abs.vtr</code> and <code>…_arg.vtr</code> — the
 magnitude and phase of each component, which is the complex field exactly — plus 21 snapshots at fixed
-phases that the view does not need. The 3D view shows it for each excited port at each frequency.</p>
+phases that the view does not need. The 3D view shows it for each excited port at each frequency.
+With <code>&quot;SaveH&quot;: true</code> it records the magnetic field too, as <code>hfield&lt;k&gt;_…</code> beside each <code>efield&lt;k&gt;_…</code> pair —
+twice the disk per saved frequency, which is why it is asked for rather than always on.</p>
 <h3 id="run-both">Running both, and the difference</h3>
 <p><strong>FEM &amp; FDTD - Compare</strong> (<code>Solver3D: Both</code>, or <code>circuitrf em x.cem --solver both</code>) builds the 3D model
 once and runs Palace and then openEMS on it, one after the other. Each result lands where it would
@@ -1484,8 +1491,12 @@ says where a mode lives.</li>
 <p>The result is <code>results/&lt;name&gt;.palace_eig.npy</code> and no Touchstone file; <code>circuitrf em</code> prints the mode
 table and the panel shows it after a run. Palace's own files stay in the run folder.</p>
 <h3 id="palace-fields">Fields for the 3D view</h3>
-<p>A Palace run also saves the solved <strong>fields</strong>, which the 3D view draws on its clip plane and on surfaces.
-<code>SaveFieldsGHz</code> in the Palace section says which frequencies:</p>
+<p>A Palace run also saves the solved <strong>fields</strong>, which the 3D view's field plots draw on a clip plane, on
+surfaces or on chosen faces. <strong>Save fields at (GHz)</strong> in the setup panel's Palace section — <code>SaveFieldsGHz</code>
+in the <code>.cem</code> — says which frequencies. Its box shows the sweep's centre as its placeholder when it is
+blank, and takes a comma list (<code>2, 6, 10</code>) or <code>none</code>. A field plot's <em>Other frequency…</em> adds one to it. A
+run saves only these frequencies, so a plot can show only these: a 2–18 GHz sweep left blank saves its
+centre, 10 GHz, and nothing else. openEMS has the same box, for its field dumps.</p>
 <pre><code>&quot;Palace&quot;: { &quot;SaveFieldsGHz&quot;: [2.4, 5.8] }
 </code></pre>
 <ul>
