@@ -242,6 +242,12 @@ public static class C3dHierarchy
             foreach (var o in flat.Objects.Where(o => o is not C3dPolyline)) o.Transparency = C3dTransparency.Compose(inst.Transparency, o.Transparency);
             foreach (var i in flat.Instances) i.Transparency = C3dTransparency.Compose(inst.Transparency, i.Transparency);
         }
+        // brief-em3d-93 — an instance that is not modelled flattens to parts that are not, so the solve is unchanged.
+        if (!inst.Model)
+        {
+            foreach (var o in flat.Objects.Where(o => o is not C3dPolyline)) o.Model = false;
+            foreach (var i in flat.Instances) i.Model = false;
+        }
         return flat;
     }
 

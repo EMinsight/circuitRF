@@ -86,14 +86,18 @@ public static partial class ThermalRunService
 
             // ── 1. the document and the setup: refused on check's own findings ──
             control?.BeginStage("resolving the thermal setup");
-            var e = new C3dElaborator().Elaborate(document, path, workspaceCws, new C3dElaborationOptions(null,
+            var drawn = new C3dElaborator().Elaborate(document, path, workspaceCws, new C3dElaborationOptions(null,
                 setup.OperatingTempC ?? EmSetup.DefaultOperatingTempC));
-            notes.AddRange(e.Notes);
-            warnings.AddRange(e.Warnings);
-            if (!e.Ok) return Refuse(string.Join(" ", e.Refusals));
-            var findings = C3dThermal.Places(document).Concat(C3dThermal.Places(document, e))
-                                     .Concat(C3dThermal.Setup(setup.Name, setup, document, e, e.Resolution!))
+            warnings.AddRange(drawn.Warnings);
+            if (!drawn.Ok) { notes.AddRange(drawn.Notes); return Refuse(string.Join(" ", drawn.Refusals)); }
+            // brief-em3d-93 — the places and the setup checked against what is DRAWN, so a reference to what is not modelled is
+            // refused naming it; then the run solves the filtered elaboration, and nothing downstream filters again.
+            var findings = C3dThermal.Places(document).Concat(C3dThermal.Places(document, drawn))
+                                     .Concat(C3dThermal.Setup(setup.Name, setup, document, drawn, drawn.Resolution!))
                                      .Where(d => d.Severity == DiagnosticSeverity.Error).Select(d => d.Render()).ToList();
+            var e = C3dModelled.Filter(document, drawn);
+            notes.AddRange(e.Notes);
+            if (!e.Ok) return Refuse(string.Join(" ", e.Refusals));
             if (findings.Count > 0) return Refuse(string.Join(" ", findings));
             if (e.Technology is null) return Refuse("This 3D view's technology did not resolve, so no material states a thermal conductivity.");
             // brief-em3d-87 R-em3d87-2 — what this result is solved from, hashed now; kept beside it when the run succeeds.
@@ -574,7 +578,7 @@ public static partial class ThermalRunService
         }
         var sheets = new List<SurfaceSource>();
         var volumes = new List<VolumeSource>();
-        foreach (var h in doc.HeatSources)
+        foreach (var h in doc.HeatSources.Where(h => h.Model))
         {
             string text = (t.Sources ?? []).FirstOrDefault(s => s.Name == h.Name)?.Power ?? h.Power ?? "0";
             double p = Value(text, $"Heat source '{h.Name}''s power", out error, ThermalQuantity.Power);
@@ -1090,7 +1094,7 @@ public static partial class ThermalRunService
     /// refusal; null when every one matches.</summary>
     private static string? SourceMismatch(CemThermal sub, CemThermal from, C3dDocument doc, ThermalLowering lowering, C3dResolution res)
     {
-        foreach (var h in doc.HeatSources)
+        foreach (var h in doc.HeatSources.Where(h => h.Model))
         {
             if (lowering.SourcesOutside.Contains(h.Name)) continue;
             string a = (sub.Sources ?? []).FirstOrDefault(s => s.Name == h.Name)?.Power ?? h.Power ?? "0";

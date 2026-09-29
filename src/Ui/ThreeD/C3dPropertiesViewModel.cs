@@ -229,6 +229,7 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
                 Text("Default power", "Power", h.Power, "W unless Density says otherwise; an expression sweeps");
                 Text("Density", "Density", h.Density.ToString(), "Total, PerArea or PerVolume");
                 if (h.Solid is not null) Text("Solid", "Solid", h.Solid);
+                LoadHeatSourceModel(h);                                  // brief-em3d-93 D1
                 break;
             case C3dProbe p:
                 Rows.Add(new C3dPropertyRow("Reads", string.Join(", ", p.Kinds())));
@@ -245,7 +246,8 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
             case C3dEffectiveBlock b:
                 // brief-em3d-76 — what it would replace, with its tensor, from the lowering a run would do
                 Rows.Add(new C3dPropertyRow("Effect", editor.EffectiveBlockSummary(b)));
-                Text("Enabled", "Enabled", b.Enabled ? "true" : "false", "true replaces what is inside with one anisotropic block (an approximation)");
+                // brief-em3d-93 D1 — a block's Enabled means what Model means elsewhere, so the row says Model: one word for it
+                Text("Model", "Enabled", b.Enabled ? "true" : "false", "true replaces what is inside with one anisotropic block (an approximation)");
                 break;
         }
         foreach (var f in editor.DimensionFields(item, name, path => C3dEditorViewModel.PlaceFieldLabel(item, path),
@@ -317,6 +319,7 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         ClearFieldPlot();
         ClearRecords();
         ClearTransparency();
+        ClearModel();
         var viewer = editor.Viewer;
         var sel = viewer.Selection;
         // brief-em3d-67 R-em3d67-6b — a fillet's or chamfer's row: its own fields, not its object's.
@@ -367,7 +370,9 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         {
             Heading = $"{sel.Count} selected";
             // brief-em3d-92 R-em3d92-2 — the one property a multi-selection edits here: every selected object and instance.
+            // brief-em3d-93 — and their Model; several ports selected, theirs.
             if (viewer.SelectMode == Scene3DSelectMode.Object) LoadSelectionTransparency(sel);
+            if (viewer.SelectMode == Scene3DSelectMode.Object && !HasModel) LoadPortModel(editor.SelectedPorts());
             return;
         }
         var item = sel[0];
@@ -414,9 +419,15 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
             Rows.Add(new C3dPropertyRow("Editing", "Read-only here: an instance's contents belong to its own cell. Its Transparency is " +
                                                    "the instance's, in this document: it multiplies onto each part's own."));
             // brief-em3d-92 — the INSTANCE's transparency is this document's, so it is edited here.
-            if (InstanceIndex(inst) is >= 0 and var ii) LoadTransparency([], [ii], editor.Document.Instances[ii].Name);
+            if (InstanceIndex(inst) is >= 0 and var ii)
+            {
+                LoadTransparency([], [ii], editor.Document.Instances[ii].Name);
+                LoadModel([], [ii], editor.Document.Instances[ii].Name);      // brief-em3d-93 — the instance's, in this document
+            }
             return;
         }
+        // brief-em3d-93 — a port's Model: the one field a port has here
+        if (o.Kind == Scene3DKind.Port) { LoadPortModel(editor.SelectedPorts()); return; }
 
         int index = editor.EditableIndex(o);
         if (index < 0) return;
@@ -441,6 +452,7 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         }
         int n = objects.Distinct().Count() + instances.Distinct().Count();
         LoadTransparency(objects, instances, n == 1 ? "the selection" : $"{n} items");
+        LoadModel(objects, instances, n == 1 ? "the selection" : $"{n} items");
     }
 
     private bool OneDocumentObject(IReadOnlyList<Scene3DItem> sel)
@@ -470,6 +482,7 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         IsEditable = true;
         // brief-em3d-92 — an operand inside an operation has none of its own: the operation's is its result's.
         if (!operand) LoadTransparency([index], [], obj.Name);
+        if (!operand) LoadModel([index], [], obj.Name);            // brief-em3d-93 — nor a Model: its result's is the operation's
         NameText = editor.ObjectLabel(index);
         Material = C3dValidation.EffectiveMaterial(obj);
         Role = obj.Role?.ToString() ?? RoleFromMaterial;
@@ -521,6 +534,7 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         Rows.Add(new C3dPropertyRow("Kind", "Group"));
         // brief-em3d-92 R-em3d92-2 — one row for the whole group: every member at every depth, one undo entry.
         LoadTransparency(members.Where(m => !m.Instance).Select(m => m.Index), members.Where(m => m.Instance).Select(m => m.Index), name);
+        LoadModel(members.Where(m => !m.Instance).Select(m => m.Index), members.Where(m => m.Instance).Select(m => m.Index), name);
         int objects = members.Count(m => !m.Instance), instances = members.Count - objects;
         var subgroups = C3dGroups.All(doc).Count(g => g.Parent == path);
         Rows.Add(new C3dPropertyRow("Holds", string.Join(", ", new[] { (objects, "object"), (instances, "instance"), (subgroups, "group") }

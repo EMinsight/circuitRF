@@ -227,7 +227,7 @@ public static class ThermalLowerings
         var sheets = new List<GmshThermalSheet>();
         var solidSources = new Dictionary<string, int>(StringComparer.Ordinal);
         var outside = new List<string>();
-        foreach (var h in doc.HeatSources)
+        foreach (var h in doc.HeatSources.Where(h => h.Model))     // brief-em3d-93 — a source that is off heats nothing
         {
             if (h.Solid is { } sname)
             {

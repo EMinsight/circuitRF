@@ -592,7 +592,7 @@ public sealed partial class C3dEditorViewModel
     public C3dPort? PortOf(Scene3DObject o)
         => o.Kind == Scene3DKind.Port ? Document.Ports.FirstOrDefault(p => C3dPorts.ProblemName(p.Number) == o.Name) : null;
 
-    private IReadOnlyList<C3dPort> SelectedPorts()
+    internal IReadOnlyList<C3dPort> SelectedPorts()
         => [.. Viewer.SelectedObjects().Select(PortOf).OfType<C3dPort>().Distinct()];
 
     public void FlipPorts(IReadOnlyList<C3dPort> ports)
@@ -733,7 +733,7 @@ public sealed partial class C3dEditorViewModel
     /// <summary>The padding a box face has now, in the display unit — the Padding… field's prefill.</summary>
     public string AirBoxPaddingText(string face)
     {
-        if (ShownAirBox is not { } box || Elaboration?.Extent() is not { } x) return "";
+        if (ShownAirBox is not { } box || Elaboration?.ModelledExtent() is not { } x) return "";   // brief-em3d-93 — padded round what is modelled
         double m = face switch
         {
             "xmin" => x.X0 - box.Min.X, "xmax" => box.Max.X - x.X1, "ymin" => x.Y0 - box.Min.Y,
@@ -822,6 +822,7 @@ public sealed partial class C3dEditorViewModel
                 new Viewer3DMenuItem("Wave", () => SetPortKind(ports, Em3dPortKind.Wave),
                                      Tip: "A wave port lies on a face of the active setup's air box."),
             ]);
+            yield return PortModelItem(ports);                  // brief-em3d-93
             if (ports.Count == 1)
             {
                 var p = ports[0];
@@ -955,12 +956,36 @@ public sealed partial class C3dEditorViewModel
             Tree.Remove(g);
         }
         RebuildAirBoxItem();
-        var ports = PortResults.Select(r => new C3dTreeItem(this, C3dPorts.ProblemName(r.Port.Number), "Port",
-            r.Resolved is { } p ? $"{C3dPorts.Label(r.Port)} {(p.Kind == Em3dPortKind.Wave ? "wave" : "lumped")}: {p.NegativeObject} → {p.PositiveObject}"
-                                : $"{C3dPorts.Label(r.Port)}: refused", -1, -1, true) { IsReadOnly = true }).ToList();
+        // brief-em3d-93 — a port that is off is greyed; by type it lists under Not Modeled, as every other kind does
+        foreach (var g in Tree.Where(g => g.Role == C3dTreeGroupRole.NotModelled).ToList())
+        {
+            foreach (var old in g.Items.Where(i => i.Kind == "Port").ToList()) g.Items.Remove(old);
+            if (g.Items.Count == 0) { DetachExpansion([g]); Tree.Remove(g); }
+        }
+        var rows = PortResults.Select(r => (Off: !r.Port.Model, Row: new C3dTreeItem(this, C3dPorts.ProblemName(r.Port.Number), "Port",
+            r.Resolved is { } p ? $"{C3dPorts.Label(r.Port)} {(p.Kind == Em3dPortKind.Wave ? "wave" : "lumped")}: {p.NegativeObject} → {p.PositiveObject}" +
+                                  (r.Port.Model ? "" : C3dModelled.Suffix)
+                                : $"{C3dPorts.Label(r.Port)}: {(r.Port.Model ? "refused" : "not modelled")}", -1, -1, true)
+            { IsReadOnly = true, IsModelled = r.Port.Model })).ToList();
+        bool byType = TreeGrouping == C3dTreeGrouping.Primitive;
+        var ports = rows.Where(t => !(byType && t.Off)).Select(t => t.Row).ToList();
         if (ports.Count > 0) Tree.Add(new C3dTreeGroup("Ports", ports, C3dTreeGroupRole.Ports));
+        if (byType && rows.Where(t => t.Off).Select(t => t.Row).ToList() is { Count: > 0 } offPorts)
+        {
+            if (Tree.FirstOrDefault(g => g.Role == C3dTreeGroupRole.NotModelled) is { } home)
+                foreach (var r in offPorts) home.Items.Add(r);
+            else
+            {
+                // after the type groups (and the Groups section), before Instances
+                int at = Tree.Select((g, i) => (g, i)).LastOrDefault(t => t.g.Role is C3dTreeGroupRole.Groups or C3dTreeGroupRole.Objects
+                                                                                        or C3dTreeGroupRole.Construction or C3dTreeGroupRole.Booleans).i + 1;
+                if (!Tree.Any(g => g.Role is C3dTreeGroupRole.Groups or C3dTreeGroupRole.Objects or C3dTreeGroupRole.Construction or C3dTreeGroupRole.Booleans)) at = 0;
+                Tree.Insert(at, new C3dTreeGroup(NotModeledHeader, offPorts, C3dTreeGroupRole.NotModelled) { HeaderTip = C3dModelled.Tip });
+            }
+        }
         RebuildThermalTree();
-        foreach (var item in Tree.Where(g => g.Role is C3dTreeGroupRole.Objects or C3dTreeGroupRole.Construction or C3dTreeGroupRole.Booleans).SelectMany(g => g.Items))
+        foreach (var item in Tree.Where(g => g.Role is C3dTreeGroupRole.Objects or C3dTreeGroupRole.Construction or C3dTreeGroupRole.Booleans
+                                                  or C3dTreeGroupRole.NotModelled).SelectMany(g => g.Items))
         {
             foreach (var c in item.Children.Where(c => c.Kind == "Boundary").ToList()) item.Children.Remove(c);
             foreach (var b in Document.FaceBoundaries.Where(b => b.Object == item.Name))

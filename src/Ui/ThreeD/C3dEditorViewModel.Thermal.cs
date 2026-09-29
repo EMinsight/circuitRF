@@ -1126,6 +1126,10 @@ public sealed partial class C3dEditorViewModel
         if (item.Kind == HeatSourceKind)
             items.Add(new Viewer3DMenuItem("Default Power…", () => TextRequested?.Invoke($"Heat source {name}", "Default power, W (a number or an expression):",
                 Document.HeatSources.FirstOrDefault(h => h.Name == name)?.Power ?? "", text => SetPlaceText(name, "Power", text))));
+        // brief-em3d-93 D1 — a heat source's Model: kept, drawn and editable, and no power in any run
+        if (item.Kind == HeatSourceKind && Document.HeatSources.FirstOrDefault(h => h.Name == name) is { } source)
+            items.Add(new Viewer3DMenuItem(source.Model ? "✓ Model" : "Model", () => SetHeatSourceModel(name, !source.Model),
+                Tip: "Unticked, the source is kept and puts no power in any thermal run."));
         if (item.Kind == ProbeKind && Document.Probes.FirstOrDefault(p => p.Name == name) is { Line: not null })
             items.Add(new Viewer3DMenuItem("Plot T(s)", () => Report(PlotLineProbe(name)), Enabled: ActiveThermalTable is not null,
                 Tip: ActiveThermalTable is null ? NoActiveThermalTable() : "The line's temperature at the step shown."));

@@ -903,6 +903,8 @@ public sealed partial class C3dEditorViewModel
                 new("Bring to Front", () => Order(OrderMove.ToFront)), new("Bring Forward", () => Order(OrderMove.Forward)),
                 new("Send Backward", () => Order(OrderMove.Backward)), new("Send to Back", () => Order(OrderMove.ToBack)),
             ]);
+        // brief-em3d-93 — every selected member (a group's at every depth), the function the Inspector's row calls
+        if (ModelItem(SelectedMembers(), DescribeUnits(SelectedUnits())) is { } model) yield return model;
     }
 
     private IEnumerable<Viewer3DMenuItem> AlignItems()

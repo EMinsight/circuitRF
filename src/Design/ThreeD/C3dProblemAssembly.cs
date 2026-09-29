@@ -135,6 +135,22 @@ public static class C3dProblemAssembly
               "object with none, so there is nothing to solve. Give one a material.";
     }
 
+    /// <summary>brief-em3d-93 — every object of the view is turned off.</summary>
+    public const string EverythingOff =
+        "Every object of this 3D view is turned off (Model), so there is nothing to solve. Turn one on.";
+
+    /// <summary>brief-em3d-93 — a face boundary on an object that is not modelled, naming both; null when none is.</summary>
+    public static string? NotModelledBoundary(C3dDocument document, C3dElaboration drawn)
+    {
+        foreach (var b in document.FaceBoundaries)
+        {
+            string target = C3dKernelUse.Resolve(document, b.Object, b.Face).Object;
+            if (C3dModelled.IsOff(drawn, target))
+                return C3dModelled.Reference($"The boundary on face '{b.Face}' of '{b.Object}' is on", target, "remove the boundary");
+        }
+        return null;
+    }
+
     /// <summary>
     /// brief-em3d-88 R-em3d88-2 — the problem a 3D VIEW draws: the solids, sheets and materials it elaborated (the 3D editor
     /// adds its pushed-in context and its unassigned objects to them), in <paramref name="box"/>, with <paramref name="ports"/>,
@@ -160,7 +176,7 @@ public static class C3dProblemAssembly
     public static Em3dAirBox? AirBox(EmSetup setup, C3dElaboration e, out string? refusal)
     {
         refusal = null;
-        if (e.Extent() is not { } extent) return null;
+        if (e.ModelledExtent() is not { } extent) return null;     // brief-em3d-93 — the run's box: modelled content only
         double fMin;
         try { fMin = setup.Frequency.Expand().Where(f => f > 0).DefaultIfEmpty(1e9).Min(); }
         catch (Exception) { fMin = 1e9; }
@@ -293,12 +309,14 @@ public static class C3dProblemAssembly
         if (fromCem && document.Setups.Count > 0)
             notes.Add($"The 3D view's own {document.Setups.Count} embedded setup(s) are not consulted: this .cem is the setup.");
 
-        // ── The geometry: the elaboration the editor draws ──────────────────────────────────────
-        var e = (elaborator ?? new C3dElaborator()).Elaborate(document, path, workspaceCws, new C3dElaborationOptions(fMax, tempC));
+        // ── The geometry: the elaboration the editor draws, less what is not modelled (brief-em3d-93) ──
+        var drawn = (elaborator ?? new C3dElaborator()).Elaborate(document, path, workspaceCws, new C3dElaborationOptions(fMax, tempC));
+        var e = C3dModelled.Filter(document, drawn);
         notes.AddRange(e.Notes);
         if (!e.Ok) return No(string.Join(" ", e.Refusals), e.Warnings);
         if (e.Extent() is not { } extent)
-            return No(NothingToSolve(e), e.Warnings);
+            return No(drawn.Extent() is not null ? EverythingOff : NothingToSolve(e), e.Warnings);
+        if (NotModelledBoundary(document, drawn) is { } offBoundary) return No(offBoundary, e.Warnings);
 
         // ── The air box, padded by the generator's own rule ─────────────────────────────────────
         var box = Em3dGenerator.PaddedAirBox(setup, (extent.X0, extent.Y0, extent.X1, extent.Y1, extent.Z0, extent.Z1),
@@ -325,7 +343,11 @@ public static class C3dProblemAssembly
         // ── Ports (R-em3d49-2): the document's, polarity by contact ─────────────────────────────
         // The generator's rule by problem (R-em3d22-1c): an electrostatic solve has none, and a magnetostatic one only
         // the ports its terminals are driven through — so a port no solve reads can never refuse the run.
-        var context = PortContext(setup, document, e, box);
+        // brief-em3d-93 — measured against the DRAWN conductors in the solve's box, so a modelled port on a conductor that is
+        // not modelled is refused naming it (C3dPorts.Resolve) rather than inferring something else; a port that is off is
+        // left out, and the rest are renumbered 1…N (C3dModelled.Renumber) — for a magnetostatic solve too they are not, since
+        // its terminals name ports by their document numbers.
+        var context = PortContext(setup, document, drawn, box);
         var ports = new List<Em3dPort>();
         if (setup.Problem3D == Em3dProblemType.Electrostatic)
         {
@@ -338,12 +360,25 @@ public static class C3dProblemAssembly
                 ? setup.Terminals3D.Select(t => t.Source?.Trim()).OfType<string>()
                        .Select(src => src.StartsWith("port/", StringComparison.Ordinal) ? src : "port/" + src).ToHashSet(StringComparer.Ordinal)
                 : null;
+            var modelled = new List<(C3dPort Port, Em3dPort Resolved)>();
+            var off = new List<C3dPort>();
             foreach (var r in C3dPorts.Resolve(document, context))
             {
                 if (sources is not null && !sources.Contains(C3dPorts.ProblemName(r.Port.Number))) continue;
+                if (!r.Port.Model)
+                {
+                    if (sources is not null)
+                        return No($"{C3dPorts.Label(r.Port)} drives a terminal of this magnetostatic setup and is not modelled (its Model " +
+                                  "is off). Turn it back on, or drive the terminal through another port.", e.Warnings);
+                    off.Add(r.Port);
+                    continue;
+                }
                 if (r.Resolved is null) return No(r.Refusal!, e.Warnings);
-                ports.Add(r.Resolved);
+                modelled.Add((r.Port, r.Resolved));
             }
+            if (setup.Problem3D == Em3dProblemType.Driven && document.Ports.Count > 0 && modelled.Count == 0)
+                return No(C3dModelled.AllPortsOff, e.Warnings);
+            ports.AddRange(sources is null ? C3dModelled.Renumber(modelled, off, notes) : modelled.Select(m => m.Resolved));
             if (sources is not null && document.Ports.Count > ports.Count)
                 notes.Add($"{document.Ports.Count - ports.Count} port(s) drive no terminal and are not in the magnetostatic problem.");
         }
@@ -431,7 +466,12 @@ public static class C3dProblemAssembly
 public sealed record C3dPortReport(string? Setup, C3dPortResult Result)
 {
     /// <summary>What <c>check</c> prints: the polarity and why, or the refusal.</summary>
-    public string Text => (Setup is { } s ? $"setup '{s}': " : "") + (Result.Refusal ?? C3dPortReports.Describe(Result));
+    public string Text => (Setup is { } s ? $"setup '{s}': " : "") +
+                          (!Result.Port.Model ? $"{Result.Label} is not modelled (its Model is off): no run has it, and the result's ports are the others, renumbered."
+                           : Result.Refusal ?? C3dPortReports.Describe(Result));
+
+    /// <summary>A refusal a run would make: a modelled port's. A port that is off is never one.</summary>
+    public bool Refused => Result.Port.Model && Result.Refusal is not null;
 }
 
 /// <summary>
@@ -470,6 +510,7 @@ public static class C3dPortReports
     public static IReadOnlyList<string> FaceBoundaryRefusals(C3dDocument doc, C3dElaboration e)
     {
         if (doc.FaceBoundaries.Count == 0 || !e.Ok) return [];
+        if (C3dProblemAssembly.NotModelledBoundary(doc, e) is { } off) return [off];
         var materials = e.Materials.ToList();
         return C3dProblemAssembly.FaceBoundaries(doc, e, materials, EmSetup.DefaultOperatingTempC, out _) is { } why ? [why] : [];
     }

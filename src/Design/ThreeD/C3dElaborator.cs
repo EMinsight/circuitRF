@@ -133,7 +133,9 @@ public sealed record C3dElaboration(
     IReadOnlyList<string>                         Notes,
     IReadOnlyList<string>                         Refusals)
 {
-    public bool Ok => Refusals.Count == 0;
+    /// <summary>No refusal — or brief-em3d-93, none but those raised by content that is not modelled, which no run refuses for
+    /// (<see cref="NotModelledRefusals"/>; <see cref="Refusals"/> still lists them, for the editor to show).</summary>
+    public bool Ok => Refusals.Count == 0 || Refusals.All(NotModelledRefusals.Contains);
 
     /// <summary>Warnings a layout instance's own build raised (a foot overhanging its pad…), and each object the solver
     /// ignores for having no material (3D editor bugs round 2).</summary>
@@ -193,6 +195,16 @@ public sealed record C3dElaboration(
     public IReadOnlyList<Em3dSolid> UnassignedSolids { get; init; } = [];
     public IReadOnlyList<Em3dSheet> UnassignedSheets { get; init; } = [];
 
+    /// <summary>brief-em3d-93 R-em3d93-2 — every solid, sheet and wire (by elaborated name) that is NOT MODELLED: its object's,
+    /// its wire's or an enclosing instance's <c>Model</c> is false. Each is still in <see cref="Solids"/> and <see cref="Sheets"/>,
+    /// because the editor draws, picks and edits it; a solve sees the elaboration <see cref="C3dModelled.Filter"/> returns.</summary>
+    public IReadOnlySet<string> NotModelled { get; init; } = new HashSet<string>(StringComparer.Ordinal);
+
+    /// <summary>brief-em3d-93 — the subset of <see cref="Refusals"/> raised while elaborating content that is not modelled (a
+    /// lid that does not build, an instance whose cell is missing): the editor shows them, and a solve, which leaves that
+    /// content out, does not refuse for them.</summary>
+    public IReadOnlyList<string> NotModelledRefusals { get; init; } = [];
+
     /// <summary>The walk: instances resolved, units converted, materials merged, objects lowered.</summary>
     public IReadOnlyList<C3dWalkStep> WalkInstances { get; init; } = [];
     public IReadOnlyList<C3dWalkStep> WalkUnits { get; init; } = [];
@@ -229,6 +241,12 @@ public sealed record C3dElaboration(
         foreach (var s in Sheets) Grow(s.WorldBounds());
         return double.IsInfinity(x0) ? null : (x0, y0, z0, x1, y1, z1);
     }
+
+    /// <summary>brief-em3d-93 — the bound of what a solve has: <see cref="Extent"/> less the content that is not modelled. What the
+    /// setup's air box is padded around, in the editor as in the run (<see cref="C3dModelled.Filter"/>).</summary>
+    public (double X0, double Y0, double Z0, double X1, double Y1, double Z1)? ModelledExtent()
+        => NotModelled.Count == 0 ? Extent()
+         : (this with { Solids = [.. Solids.Where(s => !NotModelled.Contains(s.Name))], Sheets = [.. Sheets.Where(s => !NotModelled.Contains(s.Name))] }).Extent();
 
     /// <summary>What the editor frames: <see cref="Extent"/> and the <see cref="UnassignedSolids"/> and
     /// <see cref="UnassignedSheets"/> it draws beside what a solver gets.</summary>
@@ -619,6 +637,33 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
         /// document multiply onto it, for <see cref="C3dProvenance.Transparency"/> and <see cref="C3dProvenance.Opacity"/>.</summary>
         private int? _transparency;
         private double _opacity = 1;
+
+        /// <summary>brief-em3d-93 — true while elaborating content that is not modelled (its object's, its wire's or an enclosing
+        /// instance's Model is false): what is added then goes in <see cref="_notModelled"/>, and the refusals it raises in
+        /// <see cref="_notModelledRefusals"/> too.</summary>
+        private bool _off;
+        private readonly HashSet<string> _notModelled = new(StringComparer.Ordinal);
+        private readonly List<string> _notModelledRefusals = [];
+
+        /// <summary>Runs <paramref name="body"/> with <see cref="_off"/> set when <paramref name="modelled"/> is false (or it was
+        /// already), recording the refusals it raises as not-modelled content's.</summary>
+        private void Modelled(bool modelled, Action body)
+        {
+            bool outer = _off;
+            _off = outer || !modelled;
+            int before = _refusals.Count;
+            try { body(); }
+            finally
+            {
+                if (_off && !outer) _notModelledRefusals.AddRange(_refusals.Skip(before));
+                _off = outer;
+            }
+        }
+
+        private void MarkOff(string name)
+        {
+            if (_off) _notModelled.Add(name);
+        }
         private readonly List<string> _notes = [];
         private readonly List<string> _warnings = [];
         private readonly List<string> _refusals = [];
@@ -734,6 +779,8 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
                 WalkLowering = _walkLowering,
                 UnassignedSolids = _unassignedSolids,
                 UnassignedSheets = _unassignedSheets,
+                NotModelled = _notModelled,
+                NotModelledRefusals = _notModelledRefusals,
                 Technology = tech.Tech,
                 TechnologyPath = tech.ResolvedPath,
                 Resolution = resolution,
@@ -771,13 +818,13 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
                 if (obj is C3dWire) continue;                       // after the instances: see Wires
                 _topObject = obj.Name;
                 _transparency = obj.Transparency;
-                Object(obj, prefix + obj.Name, world, doc, tech, prefix, path, exact);
+                Modelled(obj.Model, () => Object(obj, prefix + obj.Name, world, doc, tech, prefix, path, exact));
                 _topObject = null;
                 _transparency = null;
             }
 
             string baseDir = Path.GetDirectoryName(path)!;
-            foreach (var inst in doc.Instances) Instance(doc, resolution, inst, baseDir, world, prefix, stack, exact);
+            foreach (var inst in doc.Instances) Modelled(inst.Model, () => Instance(doc, resolution, inst, baseDir, world, prefix, stack, exact));
             if (doc.Objects.Any(o => o is C3dWire)) Wires(doc, path, tech, world, prefix);
         }
 
@@ -859,6 +906,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
                 _uses.Add((_solids.Count, false, techName, material.Name));
                 _solids.Add(new Em3dSolid(name, key, role, lowered.Solid!, ++_order));
             }
+            MarkOff(name);
             _provenance[name] = new C3dProvenance(prefix.TrimEnd('/'), path, name[prefix.Length..], lowered.FaceNames)
             {
                 TopObject = _topObject,
@@ -1061,6 +1109,8 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
             if (elements.Count > 0) Read(workspace.WorkspaceRules().ResolvedPath);
             // 3D editor round 4 — a wire array is one wire per element, each resolved and refused on its own (w1[2]).
             foreach (var (drawn, w) in elements)
+                Modelled(drawn.Model, () => Wire(drawn, w));
+            void Wire(C3dWire drawn, C3dWire w)
             {
                 string name = prefix + w.Name;
                 string matName = C3dWires.MaterialOf(w);
@@ -1089,7 +1139,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
                     refusal ??= $"Wire '{name}' could not be built.";
                     _wireRefusals[name] = refusal;
                     _refusals.Add(refusal);
-                    continue;
+                    return;
                 }
                 _warnings.AddRange(r.Warnings);
                 var values = Resolve(material!, out string source);
@@ -1104,6 +1154,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
                     };
                     _origins[solidName] = new Em3dObjectOrigin(Em3dObjectKind.Wire, null, null, null);
                     Net(solidName, name);
+                    MarkOff(solidName);
                 }
                 Solid(name, sweep);
                 foreach (var (ballName, ball) in r.Balls) Solid(ballName, ball);
@@ -1290,6 +1341,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
                 maxOrder = Math.Max(maxOrder, s.Order);
                 _provenance[name] = new C3dProvenance(instPath, viewPath, s.Name, lowered.FaceNames) { Exact = exact, Element = t, Opacity = _opacity };
                 _walkLowering.Add(new C3dWalkStep(name, $"{lowered.Kind} (from the layout)"));
+                MarkOff(name);
             }
             for (int hi = 0; hi < solids.Sheets.Count; hi++)
             {
@@ -1301,6 +1353,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
                             { Frame = g.Frame });
                 maxOrder = Math.Max(maxOrder, sh.Order);
                 _provenance[name] = new C3dProvenance(instPath, viewPath, sh.Name, []) { Exact = exact, Element = t, Opacity = _opacity };
+                MarkOff(name);
                 _walkLowering.Add(new C3dWalkStep(name, $"{(g.Frame is null ? C3dLowering.KindSheet : C3dLowering.KindFramedSheet)} (from the layout)"));
             }
             _order = baseOrder + maxOrder;
@@ -1313,12 +1366,15 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
             // so it moves with the pads. Only a placement that keeps z up has one (a tilted pad has no "top"): that one keeps it.
             double PadTop(double z) => t.M20 == 0 && t.M21 == 0 ? t.M22 * z + t.Tz : z;
             foreach (var w in solids.Wires)
+            {
+                MarkOff(prefix + w.Name);
                 _wires.Add(w with
                 {
                     Name = prefix + w.Name,
                     Start = w.Start with { Pad = prefix + w.Start.Pad, PadTopM = PadTop(w.Start.PadTopM) },
                     End = w.End with { Pad = prefix + w.End.Pad, PadTopM = PadTop(w.End.PadTopM) },
                 });
+            }
         }
 
         private static IReadOnlyList<string> FaceNamesOf(Em3dPrimitive p) => p switch

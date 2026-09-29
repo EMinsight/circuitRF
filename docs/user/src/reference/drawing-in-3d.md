@@ -292,7 +292,8 @@ walls, a row of pads — is picked, moved and changed as one thing.
   names its group — `"Group": "stage1/match"` — so a group can never be left empty or point at nothing.
   **Flatten** puts a placed cell's contents in that instance's group, and **Group into Cell** gives the new instance
   the group its contents were in. Groups are only organisation: the solver never sees them.
-- A group's **Transparency** is one row too — see [Transparency](#transparency).
+- A group's **Transparency** is one row too — see [Transparency](#transparency) — and so is its **Model** — see
+  [Model](#model).
 
 ### Transparency {#transparency}
 
@@ -316,6 +317,39 @@ to the technology.
   is drawing only: the solver never reads it, and changing it does not make a result stale.
 - A see-through object is still picked by its surfaces, like any other. While a pushed-in cell's surroundings or a
   boolean's operands are drawn dimmed or ghosted, those looks win.
+
+### Model: kept in the drawing, left out of the solve {#model}
+
+To try a run without the lid, a second row of bond wires or a fixture, untick its **Model**: it stays on screen, where
+you can still select, move and edit it, and it is left out of **every** simulation run — EM and thermal alike — until
+you tick it again. Hiding an object is not the same thing: a hidden object is still solved.
+
+- **Properties** has a **Model** check box on every object that can be solved: a box, prism, cylinder, sheet, polygon,
+  wire, a boolean, fillet or chamfer (for its result — the objects inside it have none of their own), a placed cell
+  (every part of it), a **port** and a **heat source**. A polyline is construction geometry and is never solved
+  anyway. An effective block's switch is its own **Enabled**, which the Properties row calls **Model** too.
+- **A group** selected whole, or several objects selected, shows one box — ticked, unticked, or half-ticked where the
+  members differ. Clicking it writes **every member at every depth** as **one undo step**.
+- Right-click an object, a group, a port or a heat source (in the view or in the tree) for the same **Model** item,
+  with a ✓ while it is modelled.
+- **The tree greys it.** By material, it stays under its material with its name greyed; by type it is listed under
+  **Not Modeled** (after the type groups, before Instances), its type in the row's detail. A member of a group stays in
+  its group's row, greyed — and a group whose every member is off has a greyed name. A port that is off is greyed in
+  **Ports** (by type, under Not Modeled too). The tree's filter has **Not Modeled** as a type, to show or hide them all.
+- **The view draws it as it is**; its tooltip ends *(not modelled)*.
+- **Anything that refers to it is refused, naming both** — a port that is modelled whose conductor is not, a wire whose
+  pad is not, a heat source or a probe on it, a face boundary on it — so a result can never be solved without
+  something you did not know was missing. Turn the other one off too, or put it back. A field plot on it just shows
+  nothing, and **check** warns.
+- **A port that is off is absent**: no excitation, no port sheet, no lumped element — the gap it spanned is open, not
+  terminated in its Z0. The result's ports are the ones left, **numbered 1…N in their order**: with P2 off, P1, P3 and
+  P4 are the result's ports 1, 2 and 3. The run's notes say so, and so does the `.sNp` file's header, one line per
+  port; the document's own port numbers never change, so ticking P2 again gives the four-port result back. A schematic
+  placing that `.sNp` sees the new pin count, and the run's notes say that too.
+- It is saved in the `.c3d` only when unticked — `"Model": false` — so a document that never unticks one is
+  unchanged. Unlike Transparency it **is** part of the solved model: toggling it makes the last result stale.
+- A not-modelled object is still **exported** — to STEP and by Export Drawing — because those export what is drawn.
+- `circuitrf check` lists what is not modelled and reports the refusals above; `explain` names it in its walk.
 
 ## Dimensions as expressions {#expressions}
 

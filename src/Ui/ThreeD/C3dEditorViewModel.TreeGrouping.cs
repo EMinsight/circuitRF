@@ -32,12 +32,16 @@ public enum C3dTreeGrouping { Material, Primitive }
 
 /// <summary>What a group of the editor's tree holds — what code finds a group by (a header may be any material's name).</summary>
 public enum C3dTreeGroupRole { Objects, Construction, Instances, Ports, AirBox, Booleans, Groups, HeatSources, Probes, MeshRegions, ThermalBoundaries,
-                              EffectiveBlocks, SymmetryPlanes, FieldPlots }
+                              EffectiveBlocks, SymmetryPlanes, FieldPlots, NotModelled }
 
 public sealed partial class C3dEditorViewModel
 {
     /// <summary>The group objects with no material go in, by material.</summary>
     public const string NoMaterialHeader = "No material";
+
+    /// <summary>brief-em3d-93 R-em3d93-3 — by type, the group what is not modelled is listed under (after the type groups, before
+    /// Instances), and the type filter's name for it in either grouping.</summary>
+    public const string NotModeledHeader = "Not Modeled";
 
     /// <summary>The tree's grouping choices, as the header's combo lists them (<see cref="C3dTreeGrouping"/> order).</summary>
     public static IReadOnlyList<string> TreeGroupingChoices { get; } = ["By material", "By type"];
@@ -170,6 +174,8 @@ public sealed partial class C3dEditorViewModel
     /// <summary>The primitive-type group an object belongs to (its header by type, and its type-filter name).</summary>
     private static string TypeHeaderOf(C3dObject o)
     {
+        // brief-em3d-93 — what is not modelled is one "type" to the filter, so it shows or hides as a set
+        if (o is not C3dPolyline && !o.Model) return NotModeledHeader;
         // brief-em3d-67 R-em3d67-6a — a rounded solid is listed as the solid it rounds: its fillets are rows beneath it.
         var solid = C3dFillets.Core(o).Core ?? o;
         foreach (var (type, header) in Groups) if (solid.GetType() == type) return header;
@@ -187,13 +193,18 @@ public sealed partial class C3dEditorViewModel
     /// rounds: its own children (a boolean's operands) first, then its feature rows, innermost first. Round 3: by material
     /// the section's header already names the material, so the row does not repeat it (<paramref name="byMaterial"/>).
     /// </summary>
-    private C3dTreeItem ObjectRow(C3dObject o, int i, bool byMaterial)
+    private C3dTreeItem ObjectRow(C3dObject o, int i, bool byMaterial, bool notModeledGroup = false)
     {
         var (core, corePath) = C3dFillets.Core(o);
         var solid = core ?? o;
-        var item = new C3dTreeItem(this, o.Name, C3dObject.KindOf(solid), byMaterial ? null : C3dValidation.EffectiveMaterial(o), i, -1, !o.Hidden)
+        // brief-em3d-93 — under Not Modeled the row's detail says its type, so nothing the type group said is lost
+        string? detail = notModeledGroup
+            ? TypeHeaderOfSolid(o) + (C3dValidation.EffectiveMaterial(o) is { Length: > 0 } m ? " · " + m : "")
+            : byMaterial ? null : C3dValidation.EffectiveMaterial(o);
+        var item = new C3dTreeItem(this, o.Name, C3dObject.KindOf(solid), detail, i, -1, !o.Hidden)
         {
             Icon = IconOf(solid), IconOpacity = solid is C3dOperation { Enabled: false } ? 0.4 : 1,
+            IsModelled = o.Model || o is C3dPolyline,
         };
         AddOperands(item, solid, i, corePath, o.Name);
         AddFeatures(item, o, i);
@@ -201,7 +212,19 @@ public sealed partial class C3dEditorViewModel
     }
 
     /// <summary>One placed instance's row; its parts are filled in from the elaboration.</summary>
-    private C3dTreeItem InstanceRow(C3dInstance inst, int i) => new(this, inst.Name, "Instance", inst.CellRef, -1, i, true);
+    private C3dTreeItem InstanceRow(C3dInstance inst, int i) => new(this, inst.Name, "Instance", inst.CellRef, -1, i, true) { IsModelled = inst.Model };
+
+    /// <summary>An object's type group header, whatever its Model: what a Not Modeled row's detail names.</summary>
+    private static string TypeHeaderOfSolid(C3dObject o)
+    {
+        var solid = C3dFillets.Core(o).Core ?? o;
+        foreach (var (type, header) in Groups) if (solid.GetType() == type) return header;
+        return C3dObject.KindOf(solid);
+    }
+
+    /// <summary>Whether an instance passes the filter: by type Instances, and Not Modeled for one that is off.</summary>
+    private bool PassesTreeFilter(C3dInstance inst)
+        => !_hiddenTypes.Contains(InstancesHeader) && (inst.Model || !_hiddenTypes.Contains(NotModeledHeader));
 
     /// <summary>The object groups, by the current grouping, filtered; construction order within each group. An object in a
     /// group (C3dGroups) is listed under its group's row instead.</summary>
@@ -213,11 +236,20 @@ public sealed partial class C3dEditorViewModel
 
         if (TreeGrouping == C3dTreeGrouping.Primitive)
         {
+            // brief-em3d-93 R-em3d93-3 — what is not modelled is listed under Not Modeled, after the type groups and before
+            // Instances, with its type in the row's detail; an instance that is off joins it (the ports that are off are added
+            // by RebuildRecordsTree). A GROUP's member is not split out: moving it out of its group's row would break the group's
+            // display, so there the grey is the signal (GroupsSection).
             foreach (var (type, header) in Groups)
             {
-                var items = rows.Where(t => t.o.GetType() == type).Select(Item).ToList();
+                var items = rows.Where(t => t.o.GetType() == type && (t.o.Model || t.o is C3dPolyline)).Select(Item).ToList();
                 if (items.Count > 0) yield return new C3dTreeGroup(header, items, type == typeof(C3dBoolean) ? C3dTreeGroupRole.Booleans : C3dTreeGroupRole.Objects);
             }
+            var off = rows.Where(t => !t.o.Model && t.o is not C3dPolyline).Select(t => ObjectRow(t.o, t.i, byMaterial: false, notModeledGroup: true))
+                          .Concat(Document.Instances.Select((inst, i) => (inst, i)).Where(t => t.inst.Group is null && !t.inst.Model && PassesTreeFilter(t.inst))
+                                                                   .Select(t => InstanceRow(t.inst, t.i)))
+                          .ToList();
+            if (off.Count > 0) yield return new C3dTreeGroup(NotModeledHeader, off, C3dTreeGroupRole.NotModelled) { HeaderTip = C3dModelled.Tip };
             yield break;
         }
 
@@ -282,7 +314,11 @@ public sealed partial class C3dEditorViewModel
     private C3dTreeGroup? InstanceGroup()
     {
         if (_hiddenTypes.Contains(InstancesHeader)) return null;
-        var instances = Document.Instances.Select((inst, i) => (inst, i)).Where(t => t.inst.Group is null).Select(t => InstanceRow(t.inst, t.i)).ToList();
+        // brief-em3d-93 — by type, an instance that is off is listed under Not Modeled instead; by material it stays here, greyed
+        bool byType = TreeGrouping == C3dTreeGrouping.Primitive;
+        var instances = Document.Instances.Select((inst, i) => (inst, i))
+                                          .Where(t => t.inst.Group is null && PassesTreeFilter(t.inst) && !(byType && !t.inst.Model))
+                                          .Select(t => InstanceRow(t.inst, t.i)).ToList();
         return instances.Count > 0 ? new C3dTreeGroup(InstancesHeader, instances, C3dTreeGroupRole.Instances) : null;
     }
 
@@ -297,6 +333,7 @@ public sealed partial class C3dEditorViewModel
         else
         {
             types = [.. Groups.Select(g => g.Header).Where(h => Document.Objects.Any(o => TypeHeaderOf(o) == h))];
+            if (Document.Objects.Any(o => TypeHeaderOf(o) == NotModeledHeader) || Document.Instances.Any(i => !i.Model)) types.Add(NotModeledHeader);
             if (Document.Instances.Count > 0) types.Add(InstancesHeader);
             materials = [.. Document.Objects.Where(o => o is not C3dPolyline).Select(MaterialHeaderOf)
                                             .Distinct(StringComparer.Ordinal)

@@ -60,6 +60,10 @@ public static class C3dValidation
             if (o is C3dPolyline { Transparency: not null }) found.Add(C3dDiagnostics.TransparencyOnPolyline(o.Name));
             foreach (var operand in C3dOperands.SelfAndDescendants(o).Skip(1).Where(d => d.Transparency is not null))
                 found.Add(C3dDiagnostics.TransparencyOnOperand(o.Name, operand.Name));
+            // brief-em3d-93 — Model where nothing reads it: a polyline is never modelled, an operand is its result's
+            if (o is C3dPolyline { Model: false }) found.Add(C3dDiagnostics.ModelOnPolyline(o.Name));
+            foreach (var operand in C3dOperands.SelfAndDescendants(o).Skip(1).Where(d => !d.Model))
+                found.Add(C3dDiagnostics.ModelOnOperand(o.Name, operand.Name));
 
             if (unresolved?.Contains(o.Name) == true) { Unread(o.Unread, $"'{o.Name}'", found); continue; }
             Geometry(o, o.Name, found);

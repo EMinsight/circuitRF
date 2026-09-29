@@ -611,7 +611,8 @@ public sealed partial class EmSetupEditorViewModel
         var t = setup.Thermal ?? new CemThermal();
         try
         {
-            if (ThermalLowerings.Build(doc, e, t, 1, out string? why) is not { } lowering) return "No estimate: " + why;
+            // brief-em3d-93 — estimated over what the run solves: the objects that are modelled
+            if (ThermalLowerings.Build(doc, C3dModelled.Filter(doc, e), t, 1, out string? why) is not { } lowering) return "No estimate: " + why;
             var solver = t.Mesh?.Solver switch { ThermalMeshSolver.Direct => ThermalSolverKind.Direct, ThermalMeshSolver.Iterative => ThermalSolverKind.Iterative, _ => ThermalSolverKind.Auto };
             var est = ThermalSizeEstimate.Of(lowering.Input, new ThermalSolveOptions { Solver = solver });
             return $"Estimate: ≈ {est.Elements:N0} elements, ≈ {est.Unknowns:N0} unknowns, the {est.Solver.ToString().ToLowerInvariant()} solver, " +

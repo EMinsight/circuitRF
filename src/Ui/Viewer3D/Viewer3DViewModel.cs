@@ -481,10 +481,13 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>The tooltip: name, material, and the values at the setup's operating temperature.</summary>
+    /// <summary>brief-em3d-93 — what the owner adds to an object's hover line (the 3D editor's "(not modelled)"), or null.</summary>
+    public Func<Scene3DObject, string?>? DescribeSuffix { get; set; }
+
     internal string Describe(Scene3DObject? o)
     {
         if (o is null) return "";
-        var t = o.Kind switch { Scene3DKind.Port => $"Port {o.PortNumber}  {o.Name}", _ => o.Name };
+        var t = o.Kind switch { Scene3DKind.Port => $"Port {o.PortNumber}  {o.Name}", _ => o.Name } + DescribeSuffix?.Invoke(o);
         if (o.MaterialValues is { } m)
         {
             string at = Scene.Problem is { } p ? $" at {p.OperatingTempC.ToString("G4", CultureInfo.InvariantCulture)} °C" : "";

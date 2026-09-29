@@ -15485,3 +15485,51 @@ Unwrap/DisabledCore/WithCore`, and `C3dBrepBuild.ToPolyhedron`. **Flatten compos
 the one place a flatten can change how something looks (a default dielectric, ~65 %, drawn at ~82 % inside a 50 % instance,
 comes up at 50 %).
 `check` also warns on a Transparency stated on a polyline or on an operand inside an operation, where nothing reads it.
+
+## brief-em3d-93 — "Model": kept in the drawing, left out of the solve (2026-09-29)
+
+**One key, four records.** `Model` (default true, `[DefaultValue(true)]` so `OmitEmpty` writes it only when false) is on
+`C3dObject`, `C3dInstance`, `C3dPort` and `C3dHeatSource` (D1). Mesh regions have none (delete one instead); an effective
+block's `Enabled` already means it. It is carried wherever Group/Transparency are carried — `C3dBooleans.Make` (the result
+takes the Blank's, operands are reset to true), `Dissolve`, `C3dFillets.MakeFillet/MakeChamfer/Unwrap/DisabledCore/WithCore`,
+`C3dBrepBuild.ToPolyhedron` — and **Flatten** turns every part of an instance that is off off too. `check` warns on one stated
+on a polyline or on an operand. `SerializeForRun` does NOT strip it: toggling it makes a result stale (brief 87), unlike
+Transparency.
+
+**The elaboration keeps it; `C3dModelled.Filter` is the one place a solve loses it.** The walker's `Modelled(bool, body)`
+wraps each top-level object, each drawn wire element and each instance; while `_off` is set, every solid/sheet/wire added
+goes into `C3dElaboration.NotModelled`, and every refusal raised goes into `NotModelledRefusals` too. A CHILD 3D view's own
+objects that are off are honoured inside the parent as well — "left out of every run" — which is a reading of the brief, not
+something it states. `Filter` drops those names from solids, sheets, wires, drawn wires, nets, origins, ground band and
+material records, drops the refusals only they raised, adds a refusal for a modelled wire on a pad that is off, and adds the
+"Not modelled, and so left out of this run" note. Its callers: `C3dProblemAssembly.Assemble` (Palace and openEMS alike),
+`ThermalRunService.Run`, and the setup panel's thermal estimate — nothing else filters.
+
+**`C3dElaboration.Ok` now ignores the refusals raised only by not-modelled content.** A lid that does not build, or an
+instance whose cell is missing, is exactly what someone turns off to run without; and `Places`, `Setup`, `C3dPortReports`
+and the editor all gate on `Ok`, so without this every one of them would go silent for a document whose only defect is off.
+`Refusals` still lists them (the editor shows them); `check` reports them as warnings (`c3d.model.refused-off`).
+
+**The air box is sized to what is modelled, in the editor too.** `C3dElaboration.ModelledExtent()` is what `AirBox` pads,
+so the box the editor draws (and a wave port must lie on) is the run's box.
+
+**References are refused where the reference is already validated, never in a second validator.** A modelled port on a
+conductor that is off: `C3dPorts.Resolve` (the context carries the elaboration's `NotModelled`), so the editor's port rows,
+`check` and the run all say it. A heat source (solid or sheet — a sheet whose every holder is off), a probe, a contact
+resistance: `C3dThermal.Places(doc, e)`; a thermal boundary: `C3dThermal.Setup`. Both now take the DRAWN elaboration, check
+references against its `NotModelled`, then run their existing checks on `Filter(doc, e)` — so they give the same answer
+whether a caller hands them the drawn or the filtered elaboration, and a not-modelled solid's material needs no k. The
+thermal run validates against the drawn elaboration and only then filters. An EM face boundary on an object that is off:
+`C3dProblemAssembly.NotModelledBoundary`, called by `Assemble` and `C3dPortReports.FaceBoundaryRefusals`.
+
+**Ports that are off: absent, and the rest renumbered (D2a, D2b as recommended).** `Assemble` resolves ports against the
+DRAWN conductors (so a port on a conductor that is off names it, rather than inferring something else) in the filtered box,
+skips the ones that are off, and `C3dModelled.Renumber` gives the rest 1…N in `Number` order with `Em3dPort.SourceNumber`
+/`SourceLabel` set, plus three notes (what "off" means, the map, the pin-count change). A magnetostatic setup is NOT
+renumbered — its terminals name ports by their document numbers — and a terminal driven through a port that is off is
+refused. A driven setup with every port off is refused (`C3dModelled.AllPortsOff`). **`Em3dPortMap`** writes the record into
+both Touchstone headers (`circuitRF-EM 3D port map:` lines) and both `.npy` diagnostics groups (a `DocumentPort` cube) —
+nothing at all when no port was renumbered, so every earlier result is byte-identical.
+
+**Open, not decided here.** A field plot's `Solution.Port` is the RESULT's number; after a port is turned off it may name a
+different port than it did. `C3dModelled.FieldPlotWarnings` warns only when the number exceeds what the result can have.

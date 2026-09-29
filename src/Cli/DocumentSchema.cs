@@ -464,6 +464,13 @@ internal static class DocumentSchema
             percentage from 0 (opaque) to {TransparencyMax}; omitted, its kind's default (a dielectric translucent,
             a conductor opaque). An instance's multiplies onto each part's own. An operation carries
             it for its result, never an operand inside it; a polyline has none. No solver reads it.
+          * "Model": false (written only then) keeps an object, an instance, a port or a heat source
+            DRAWN and editable and leaves it out of every simulation run. An operation carries it for
+            its result; a polyline is never modelled anyway. A reference to one that is off — a
+            modelled port's conductor, a modelled wire's pad, a heat source's or a probe's object, a
+            boundary's face — is refused, naming both. A port that is off is absent (open, not
+            terminated in its Z0), and the result's ports are the modelled ones renumbered 1…N in Number
+            order, the mapping in the run's notes and the .sNp header.
           * The editor writes a rotated or mirrored placement in CANONICAL form, so the list never
             grows with editing: at most three entries, in the order Z, Y, X (Z applied first), each
             left out when its angle is 0. A composition of quarter turns and mirrors is stored

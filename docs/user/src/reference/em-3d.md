@@ -144,6 +144,15 @@ full description.
   sweep's centre is saved, because fields are large.
   [Fields for the 3D view](em-setup.html#palace-fields).
 
+**Leaving something out.** In a [3D view](drawing-in-3d.html#model), untick an object's, a placed cell's or a
+port's **Model** to solve without it while keeping it drawn. A run leaves it out entirely — the air box too is sized
+without it — and its notes name what was left out. A port that is off is **absent**, not terminated: no excitation,
+no sheet, no lumped element, so the gap it spanned is open. The result's ports are the modelled ones **renumbered
+1…N in their order** (P2 off: P1, P3, P4 become 1, 2, 3), and the `.sNp` header carries one
+`circuitRF-EM 3D port map:` line per port, and the `.npy` a `DocumentPort` array, so the file says which is which. A
+reference to something that is off — a modelled port's conductor, a wire's pad, a face boundary — is refused naming
+both, never dropped; every port off is refused (*there is nothing to excite*).
+
 **Look before you solve.** **Show 3D** on the setup's panel opens the 3D view on the model circuitRF
 built. It works before any solver is installed. `circuitrf explain` on the `.cem` prints the same model as
 text: every solid, its material and its extent, the ports, the air box and its faces, and an estimate of

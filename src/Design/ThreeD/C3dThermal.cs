@@ -175,20 +175,33 @@ public static class C3dThermal
     {
         var found = new List<Diagnostic>();
         if (!e.Ok) return found;
+        // brief-em3d-93 — a reference to what is not modelled is checked against the DRAWN elaboration and refused naming both;
+        // everything else against what a run solves. Either elaboration may be passed: a filtered one has nothing off.
+        var drawn = e;
+        e = C3dModelled.Filter(doc, e);
         double m = 1e-6 / doc.DbuPerMicron;
         double tol = Math.Max(m, 1e-12);
         var replaced = ReplacedBy(doc, e);
 
         foreach (var h in doc.HeatSources)
         {
+            if (!h.Model) continue;                     // a source that is off heats nothing, wherever it lies
             if (h.Solid is { Length: > 0 } sname)
             {
-                if (replaced.TryGetValue(sname, out string? blk))
+                if (C3dModelled.IsOff(drawn, sname))
+                    found.Add(D.NotModelled(C3dModelled.Reference($"Heat source '{h.Name}' is spread through", sname, $"turn '{h.Name}' off too")));
+                else if (replaced.TryGetValue(sname, out string? blk))
                     found.Add(D.SourceShape(h.Name, $"is spread through '{sname}', which effective block '{blk}' replaces; disable the block or move the source"));
                 else if (SolidNamed(e, sname) is null) found.Add(D.SourceSolid(h.Name, sname, SomeSolids(e)));
                 continue;
             }
             if (h.Sheet is not { } sheet || SheetSamples(sheet, m) is not { Count: > 0 } pts) continue;
+            if (Meshed(drawn).Where(s => pts.All(q => Inside(s.Primitive, q, tol))).ToList() is { Count: > 0 } drawnHolders &&
+                drawnHolders.All(s => C3dModelled.IsOff(drawn, s.Name)))
+            {
+                found.Add(D.NotModelled(C3dModelled.Reference($"Heat source '{h.Name}' lies in", drawnHolders[0].Name, $"turn '{h.Name}' off too")));
+                continue;
+            }
             var meshed = Meshed(e).ToList();
             var holders = meshed.Where(s => pts.All(q => Inside(s.Primitive, q, tol))).ToList();
             if (holders.Count > 0) continue;
@@ -200,6 +213,14 @@ public static class C3dThermal
 
         foreach (var p in doc.Probes)
         {
+            // brief-em3d-93 — a probe on what is not modelled reads nothing: refused, naming both
+            string? off = (p.Face ?? []).Append(p.Spot?.Face).OfType<string>().Select(C3dModelled.ObjectOfFace)
+                                        .Append(p.Solid).Append(p.Wire).OfType<string>().FirstOrDefault(o => C3dModelled.IsOff(drawn, o));
+            if (off is not null)
+            {
+                found.Add(D.NotModelled(C3dModelled.Reference($"Probe '{p.Name}' reads", off, "move the probe")));
+                continue;
+            }
             foreach (string face in p.Face ?? [])
                 if ((ReplacedFace(doc, face, replaced) ?? FaceProblem(doc, e, face)) is { } why) found.Add(D.ProbeFace(p.Name, face, why));
             if (p.Spot is { Face: var sf } && (ReplacedFace(doc, sf, replaced) ?? FaceProblem(doc, e, sf)) is { } why2) found.Add(D.ProbeFace(p.Name, sf, why2));
@@ -235,6 +256,11 @@ public static class C3dThermal
         {
             if (c.Between.Count != 2) continue;
             string label = $"between '{c.Between[0]}' and '{c.Between[1]}'";
+            if (c.Between.FirstOrDefault(o => C3dModelled.IsOff(drawn, o)) is { } offContact)
+            {
+                found.Add(D.NotModelled(C3dModelled.Reference($"The contact resistance {label} names", offContact, "remove the contact resistance")));
+                continue;
+            }
             var a = replaced.ContainsKey(c.Between[0]) ? null : SolidNamed(e, c.Between[0]);
             var b = replaced.ContainsKey(c.Between[1]) ? null : SolidNamed(e, c.Between[1]);
             if (a is null || b is null)
@@ -494,6 +520,10 @@ public static class C3dThermal
     {
         var found = new List<Diagnostic>();
         var t = setup.Thermal ?? new CemThermal();
+        // brief-em3d-93 — as in Places: references to what is not modelled against the drawn elaboration, the rest against the
+        // solve's (a not-modelled solid's material needs no k)
+        var drawn = e;
+        if (e is not null) e = C3dModelled.Filter(doc, e);
 
         // a key no section reads — a typo ("PerDecde", "Ambient") — is named, at whatever depth it sits
         string at = $"Thermal setup '{name}'";
@@ -522,7 +552,10 @@ public static class C3dThermal
         foreach (var b in boundaries)
         {
             string where = $"The {b.Kind} boundary on '{b.Face}'";
-            if (b.Face != ExposedFaces && e is { Ok: true } && (ReplacedFace(doc, b.Face, replaced) ?? FaceProblem(doc, e, b.Face)) is { } why)
+            if (b.Face != ExposedFaces && drawn is not null && C3dModelled.IsOff(drawn, C3dModelled.ObjectOfFace(b.Face)))
+                found.Add(D.NotModelled(C3dModelled.Reference($"Thermal setup '{name}' puts a {b.Kind} boundary on '{b.Face}', which names",
+                                                              C3dModelled.ObjectOfFace(b.Face), "remove the boundary")));
+            else if (b.Face != ExposedFaces && e is { Ok: true } && (ReplacedFace(doc, b.Face, replaced) ?? FaceProblem(doc, e, b.Face)) is { } why)
                 found.Add(D.BoundaryFace(name, b.Face, why));
             else if (b.Face != ExposedFaces && e is { Ok: true } && OnSymmetryPlane(doc, e, b.Face) is { } plane)
                 found.Add(D.Symmetry($"Thermal setup '{name}' puts a {b.Kind} boundary on '{b.Face}', which lies on the symmetry plane " +
@@ -546,7 +579,7 @@ public static class C3dThermal
             else if (Unresolvable(s.Power ?? "", ThermalQuantity.Power, resolution) is { } why)
                 found.Add(D.SetupSource(name, $"gives '{s.Name}' the power '{s.Power}', which cannot be read: {why}"));
         }
-        foreach (var h in doc.HeatSources)
+        foreach (var h in doc.HeatSources.Where(h => h.Model))
             if (h.Power is null && !(t.Sources ?? []).Any(s => s.Name == h.Name))
                 found.Add(D.SetupSource(name, $"gives heat source '{h.Name}' no power, and the source states no default Power"));
             else if (h.Power is { } own && !(t.Sources ?? []).Any(s => s.Name == h.Name) && Unparsable(own, ThermalQuantity.Power) is null &&
@@ -741,7 +774,8 @@ public static class C3dThermal
     /// <summary>brief-em3d-80 R-em3d80-1a/-2a/-2b/-4a — what <see cref="Setup"/> checks of a setup's Rth, Zth and Pulse.</summary>
     private static void SmallSignal(string name, CemThermal t, C3dDocument doc, C3dElaboration? e, C3dResolution resolution, List<Diagnostic> found)
     {
-        var sources = doc.HeatSources.Select(h => h.Name).ToList();
+        var sources = doc.HeatSources.Where(h => h.Model).Select(h => h.Name).ToList();
+        var off = doc.HeatSources.Where(h => !h.Model).Select(h => h.Name).ToHashSet(StringComparer.Ordinal);
         string Have() => sources.Count == 0 ? " (it has none)" : $" (it has {string.Join(", ", sources.Select(n => $"'{n}'"))})";
         void Names(List<string>? names, string key)
         {
@@ -751,7 +785,9 @@ public static class C3dThermal
             if (list.Contains(ThermalNamesConverter.All) && list.Count > 1)
                 found.Add(D.SmallSignal(name, $"lists \"*\" and names in {key}.Sources: \"*\" already means every heat source"));
             foreach (string n in list.Where(n => n != ThermalNamesConverter.All && !sources.Contains(n)))
-                found.Add(D.SmallSignal(name, $"lists '{n}' in {key}.Sources, which is no heat source of this 3D view{Have()}"));
+                found.Add(D.SmallSignal(name, off.Contains(n)
+                    ? $"lists '{n}' in {key}.Sources, which is turned off (its Model is off, so it heats nothing). Turn it back on, or take it out of the list"
+                    : $"lists '{n}' in {key}.Sources, which is no heat source of this 3D view{Have()}"));
             foreach (var dup in list.GroupBy(n => n, StringComparer.Ordinal).Where(g => g.Count() > 1))
                 found.Add(D.SmallSignal(name, $"lists '{dup.Key}' {dup.Count()} times in {key}.Sources"));
         }
@@ -1153,6 +1189,10 @@ public static class C3dThermal
         public const string MeshId           = "c3d.thermal.mesh";
         public const string ProbeNameId      = "c3d.thermal.probe-name";
         public const string MaterialInvalidId = "c3d.thermal.material-invalid";
+
+        /// <summary>brief-em3d-93 — a thermal place or boundary on what is not modelled (<see cref="C3dModelled.Reference"/>'s words).</summary>
+        public const string NotModelledId = "c3d.thermal.not-modelled";
+        public static Diagnostic NotModelled(string why) => E(NotModelledId, "{why}", ("why", why));
 
         private static Diagnostic E(string id, string template, params (string, object?)[] args)
             => Diagnostic.Create(id, DiagnosticSeverity.Error, template, args);

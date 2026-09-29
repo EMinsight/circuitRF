@@ -39,6 +39,7 @@ public sealed partial class C3dEditorViewModel
             items.Add(new Viewer3DMenuItem("Duplicate", Enabled: false, Tip: "A port is drawn with the Port tool: each one joins its own pair of conductors."));
             items.Add(Viewer3DMenuItem.Separator);
             items.Add(new Viewer3DMenuItem("Delete", port is null ? null : () => DeletePorts([port]), Enabled: port is not null));
+            if (port is not null) items.Add(PortModelItem([port]));    // brief-em3d-93
         }
         // brief-em3d-75 R-em3d75-1b — a thermal place's row: rename, hide, delete (and a line probe's plot); a thermal
         // boundary's row: delete, from the active thermal setup.
@@ -127,6 +128,7 @@ public sealed partial class C3dEditorViewModel
             }
             else if (drawn) items.Add(new Viewer3DMenuItem("Hide", () => SetRowsVisible([item], false, $"Hide {item.Name}")));
             if (drawn) items.Add(new Viewer3DMenuItem("Isolate", () => Viewer.Isolate(scene)));
+            if (ModelItem(MembersOfRow(item), item.Name) is { } model) items.Add(model);    // brief-em3d-93
         }
         items.Add(new Viewer3DMenuItem("Show All", Viewer.ShowAll));
         items.Add(Viewer3DMenuItem.Separator);

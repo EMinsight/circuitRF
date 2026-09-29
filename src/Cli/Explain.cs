@@ -593,6 +593,7 @@ internal static class Explain
         if (src.Elaboration is { } e)
         {
             ThreeDWalk(e, walks);
+            ModelWalk(C3dPersistence.LoadFromFile(full), e, walks);
             PortWalk(C3dPersistence.LoadFromFile(full), e, walks);
             ResultWalk(C3dPersistence.LoadFromFile(full), full, e, walks);
         }
@@ -714,6 +715,19 @@ internal static class Explain
                     "never makes a result stale"));
             }
         }
+    }
+
+    /// <summary>brief-em3d-93 R-em3d93-5 — what is drawn and left out of every run, as the run's own note says it
+    /// (<see cref="C3dModelled.LeftOut"/>), and the ports and heat sources that are off.</summary>
+    private static void ModelWalk(C3dDocument doc, C3dElaboration e, List<ResolutionStepJson> walks)
+    {
+        const string Rule = "each object's, instance's, port's and heat source's Model switch: drawn and editable, left out of every simulation run";
+        if (C3dModelled.LeftOut(doc, e) is { } left) walks.Add(new ResolutionStepJson("not modelled", null, left, Rule));
+        if (doc.Ports.Where(p => !p.Model).Select(C3dPorts.Label).ToList() is { Count: > 0 } ports)
+            walks.Add(new ResolutionStepJson("ports not modelled", null,
+                $"{string.Join(", ", ports)}: the result's ports are the other {doc.Ports.Count - ports.Count}, renumbered from 1", Rule));
+        if (doc.HeatSources.Where(h => !h.Model).Select(h => h.Name).ToList() is { Count: > 0 } sources)
+            walks.Add(new ResolutionStepJson("heat sources not modelled", null, $"{string.Join(", ", sources)}: no thermal run heats them", Rule));
     }
 
     private static void ThreeDWalk(C3dElaboration e, List<ResolutionStepJson> walks)

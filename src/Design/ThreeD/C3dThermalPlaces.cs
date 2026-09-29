@@ -64,6 +64,11 @@ public sealed class C3dHeatSource
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public C3dHeatDensity Density { get; set; }
 
+    /// <summary>brief-em3d-93 D1 — whether the source heats a run. False keeps it drawn and editable and puts no power in any
+    /// thermal run. Written only when false.</summary>
+    [DefaultValue(true)]
+    public bool Model { get; set; } = true;
+
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? Unread { get; set; }
 }

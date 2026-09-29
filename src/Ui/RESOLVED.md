@@ -38016,3 +38016,24 @@ boundaries, planes) that regenerate nothing. The backdrop is a `Border` under th
 
 **The selected field plots count as ONE leaf, shown when any of them is.** `SetRowsVisible` keeps the one-plot-drawn rule, so
 showing two plots draws one; counted apart they read Mixed after every show, and since Mixed shows, H never reached the hide.
+
+## brief-em3d-93 — the Model switch in the 3D editor (2026-09-29)
+
+**One function per kind of record, called by every gesture.** `SetModel` (objects and instances; a group's every member at
+every depth; one undo entry through `C3dEditSlot`, as `SetTransparency`), `SetPortsModel` and `SetHeatSourceModel`
+(`ChangeRecords`). The Inspector's **Model** check box (`C3dPropertiesViewModel.Model.cs`), the canvas menu's item
+(`OperationMenuItems`, over `SelectedMembers()`; `SimulateMenuItems` for ports) and the tree's (object, instance, group,
+port and heat-source rows) all call them. The box is `IsThreeState="False"` bound to a `bool?`: indeterminate shows mixed
+members, and a click moves it to a value every member takes. An effective block's `Enabled` field is labelled **Model**.
+
+**The tree.** `C3dTreeItem.IsModelled` greys the name (`NameOpacity`, the idiom the detail and a disabled icon already use —
+the theme has no muted-text brush) and replaces its tooltip with `C3dModelled.Tip`. By type, what is off goes in a
+`C3dTreeGroupRole.NotModelled` group after the type groups and before Instances, its type in the row's detail; an instance
+that is off joins it from `ObjectGroups`, and a port that is off is moved there by `RebuildRecordsTree` (which creates or
+empties the group itself, since it runs alone on a records edit). A group's member is NOT split out — moving it out of its
+group's row would break the group — and a group whose every member is off has a greyed header. `TypeHeaderOf` returns
+**Not Modeled** for an object that is off, so the filter shows or hides them as a set; ports are never filtered.
+
+**The hover** gets " (not modelled)" through a new `Viewer3DViewModel.DescribeSuffix` hook, which the editor sets. The view
+draws the object as it is (D4). The Inspector's Padding field and the drawn air box read `ModelledExtent()`, so both match the
+run's box.

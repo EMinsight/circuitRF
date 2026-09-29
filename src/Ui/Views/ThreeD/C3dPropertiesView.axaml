@@ -47,6 +47,11 @@
                 </StackPanel>
             </StackPanel>
 
+            <!-- brief-em3d-93 R-em3d93-4 — in the solve or not: an object, an instance, a group whole, a multi-selection, the
+                 selected ports or a heat source. Indeterminate where the members differ; a click writes every one, one undo entry. -->
+            <CheckBox Content="Model" IsVisible="{Binding HasModel}" IsChecked="{Binding ModelChecked}" IsThreeState="False"
+                      ToolTip.Tip="{Binding ModelTip}"/>
+
             <!-- brief-em3d-92 R-em3d92-3 — how see-through the selection is drawn, independent of its material's colour: an
                  object, an instance, a group whole (every member) or a multi-selection. The slider previews while dragged and
                  writes ONE undo entry on release; the box takes a whole number; Default clears it back to the kind's. -->

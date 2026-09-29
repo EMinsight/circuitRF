@@ -208,6 +208,18 @@ public static class C3dDiagnostics
         "An operand of '{name}'{operand} states a Transparency. Inside an operation an operand has none of its own: the " +
         "operation's is its result's. Put it on '{name}'.", ("name", name), ("operand", operand.Length > 0 ? $" ('{operand}')" : ""));
 
+    // ── Model (brief-em3d-93) ─────────────────────────────────────────────────────────────────
+
+    public static Diagnostic ModelOnPolyline(string name) => Diagnostic.Create(
+        "c3d.model.polyline", DiagnosticSeverity.Warning,
+        "The polyline '{name}' states \"Model\": false. A polyline is construction geometry and is never in a solve, so nothing reads it.",
+        ("name", name));
+
+    public static Diagnostic ModelOnOperand(string name, string operand) => Diagnostic.Create(
+        "c3d.model.operand", DiagnosticSeverity.Warning,
+        "An operand of '{name}'{operand} states \"Model\": false. Inside an operation an operand belongs to its result, so nothing " +
+        "reads it: turn '{name}' off instead.", ("name", name), ("operand", operand.Length > 0 ? $" ('{operand}')" : ""));
+
     public static Diagnostic ArrayCounts(string name) => Diagnostic.Create(
         "c3d.instance.array-counts", DiagnosticSeverity.Error,
         "The array on '{name}' must give three counts, [nx, ny, nz], each at least 1.", ("name", name));

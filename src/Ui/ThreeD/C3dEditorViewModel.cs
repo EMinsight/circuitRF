@@ -162,6 +162,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         Viewer.SnapTogglesChanged += () => Snap3DPreference.Preferred = (Viewer.SnapEnabled, Viewer.SnapKinds);
         Viewer.FrameRequested += OnViewerFrame;
         Viewer.CursorResolved += OnCursorResolvedForOperation;
+        Viewer.DescribeSuffix = NotModelledSuffix;              // brief-em3d-93 — "(not modelled)" on the hover
         // 3D editor round 1 — the air box's tree tick is the toolbar's air-box switch. Round 3: both are AirBoxShown, the
         // user's choice, which the editor re-applies to every scene it adopts.
         ApplySnapGrid();
@@ -1046,7 +1047,8 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
                                                                kv.Value.InstancePath.StartsWith(inst.Name + "/", StringComparison.Ordinal) ||
                                                                kv.Value.InstancePath.StartsWith(inst.Name + "[", StringComparison.Ordinal)))
                 inst.Children.Add(new C3dTreeItem(this, name, "Part", Path.GetFileName(p.DocumentPath), -1, -1,
-                                                  SceneObject(name) is { } s && Viewer.View.IsVisible(s.Id)) { IsReadOnly = true });
+                                                  SceneObject(name) is { } s && Viewer.View.IsVisible(s.Id))
+                                  { IsReadOnly = true, IsModelled = !CircuitRF.Design.ThreeD.C3dModelled.IsOff(e, name) });
         }
     }
 
@@ -1331,7 +1333,7 @@ public sealed partial class C3dTreeItem(C3dEditorViewModel owner, string name, s
     /// <summary>brief-em3d-46 R-em3d46-4d — a document object's place in construction order (1-based), which decides
     /// which solid wins an overlap; null for an instance and its parts. 3D editor round 3: the row's tooltip, no longer a
     /// "#n" in front of every name — the tree lists in construction order within a group anyway.</summary>
-    public string? OrderTip => RowTip ?? (ObjectIndex >= 0 && OperandPath is null && FeaturePath is null
+    public string? OrderTip => !IsModelled ? CircuitRF.Design.ThreeD.C3dModelled.Tip : RowTip ?? (ObjectIndex >= 0 && OperandPath is null && FeaturePath is null
         ? $"Construction order {ObjectIndex + 1}: a later object wins where solids overlap (3D ▸ Modify ▸ Order)"
         : null);
 
@@ -1362,6 +1364,13 @@ public sealed partial class C3dTreeItem(C3dEditorViewModel owner, string name, s
 
     /// <summary>A disabled operation's icon is dimmed (R-em3d66-4a).</summary>
     public double IconOpacity { get; init; } = 1;
+
+    /// <summary>brief-em3d-93 R-em3d93-3 — false for a row that is not modelled (an object, an instance, a part, a port), and for a
+    /// group whose every member is not: its name is greyed and its tooltip says why.</summary>
+    public bool IsModelled { get; init; } = true;
+
+    /// <summary>The name's opacity: greyed, as the row's detail is, when <see cref="IsModelled"/> is false.</summary>
+    public double NameOpacity => IsModelled ? 1 : 0.45;
     public bool IsReadOnly { get; init; }
     public ObservableCollection<C3dTreeItem> Children { get; } = [];
 

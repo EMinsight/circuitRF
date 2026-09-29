@@ -80,7 +80,7 @@ public static partial class ThermalRunService
         // ── the sources, by name ──
         List<SmallSignalSource>? Sources(List<string>? names, string key)
         {
-            var list = names is null || names.Contains(ThermalNamesConverter.All) ? doc.HeatSources.Select(h => h.Name).ToList() : names;
+            var list = names is null || names.Contains(ThermalNamesConverter.All) ? doc.HeatSources.Where(h => h.Model).Select(h => h.Name).ToList() : names;
             var result = new List<SmallSignalSource>();
             foreach (string n in list)
             {

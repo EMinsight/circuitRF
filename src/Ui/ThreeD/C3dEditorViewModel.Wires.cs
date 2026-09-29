@@ -281,7 +281,8 @@ public sealed partial class C3dEditorViewModel : IC3dWireHost
     private void RefreshWireFlags()
     {
         var refusals = Elaboration?.WireRefusals;
-        foreach (var item in Tree.Where(g => g.Role == C3dTreeGroupRole.Objects).SelectMany(g => g.Items).Where(i => i.Kind == C3dObject.KindOf(typeof(C3dWire))))
+        foreach (var item in Tree.Where(g => g.Role is C3dTreeGroupRole.Objects or C3dTreeGroupRole.NotModelled).SelectMany(g => g.Items)
+                                 .Where(i => i.Kind == C3dObject.KindOf(typeof(C3dWire))))
         {
             // 3D editor round 4 — a wire array's row carries the first refusal among its elements (w1[2]).
             var names = item.ObjectIndex >= 0 && item.ObjectIndex < Document.Objects.Count && Document.Objects[item.ObjectIndex] is C3dWire w

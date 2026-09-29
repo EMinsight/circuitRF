@@ -38,6 +38,13 @@ install it.
 
 Every run reports its **energy balance** — the heat that went in against the heat that left — in its notes.
 
+**Leaving something out.** Untick an object's, a placed cell's or a **heat source's** **Model** (in Properties, or on its
+right-click menu — see [Model](drawing-in-3d.html#model)) to run without it while it stays drawn: the object is not meshed,
+and the source puts no power in. The run's notes name what was left out. Anything that still refers to it is refused,
+naming both — a heat source spread through or lying in it, a probe reading it, a contact resistance naming it, a boundary on
+one of its faces — so a temperature is never read off a model you did not mean to solve. An effective block's own
+**Enabled** is its switch, shown in Properties as **Model**.
+
 ## Worked example: Die to Heatsink {#die-to-heatsink}
 
 *Tools ▸ Examples ▸ Thermal: Die to Heatsink.* A GaN-on-SiC die (its transistor one 0.8 × 0.25 mm heat-source sheet) on a

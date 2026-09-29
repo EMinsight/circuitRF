@@ -581,7 +581,8 @@ internal static class Check
         // the same words (3D editor bugs round 2), and is said once.
         var said = new HashSet<string>(resolution.Errors.Concat(resolution.Warnings).Concat(resolution.Notes).Concat(resolution.Infos)
                                                         .Concat(findings.Select(d => d.Render())), StringComparer.Ordinal);
-        foreach (string refusal in e.Refusals.Where(x => !said.Contains(x))) f.Add(CliDiagnostics.CheckThreeDElaboration(path, refusal));
+        foreach (string refusal in e.Refusals.Where(x => !said.Contains(x) && !e.NotModelledRefusals.Contains(x)))
+            f.Add(CliDiagnostics.CheckThreeDElaboration(path, refusal));
         foreach (string warning in e.Warnings.Where(x => !said.Contains(x))) f.Add(CliDiagnostics.CheckEmFinding(path, warning, true));
         foreach (string note in e.Notes.Where(x => !said.Contains(x))) f.Add(CliDiagnostics.CheckThreeDNote(path, note));
         foreach (var setup in C3dSetups.Read(doc))
@@ -589,7 +590,10 @@ internal static class Check
         // brief-em3d-49 R-em3d49-5c — every port's inferred polarity (info) or its refusal (error), and every face
         // boundary that cannot be placed — through the resolution a run makes.
         foreach (var port in C3dPortReports.For(doc, e))
-            f.Add(port.Result.Refusal is null ? CliDiagnostics.CheckThreeDPort(path, port.Text) : CliDiagnostics.CheckThreeDPortRefused(path, port.Text));
+            f.Add(!port.Refused ? CliDiagnostics.CheckThreeDPort(path, port.Text) : CliDiagnostics.CheckThreeDPortRefused(path, port.Text));
+        // brief-em3d-93 R-em3d93-5 — what is not modelled (info), and what refers to it: a wire on its pad, every port off under
+        // a driven setup, a field plot's face (warning), and the refusals it raised itself (warnings: no run refuses for them).
+        foreach (var d in C3dModelled.Findings(doc, e)) f.Add(CliDiagnostics.CheckThreeDFinding(path, d));
         foreach (string why in C3dPortReports.FaceBoundaryRefusals(doc, e))
             f.Add(CliDiagnostics.CheckThreeDFaceBoundary(path, why));
 

@@ -314,6 +314,16 @@ public sealed record Em3dPort(
     /// The mode's impedance (Palace's Z_PV) is measured along it. Null on a lumped port.
     /// </summary>
     public Em3dSegment? VoltagePath { get; init; }
+
+    /// <summary>
+    /// brief-em3d-93 — the number this port has in the document it came from, when the problem renumbered its ports (a port
+    /// turned off leaves the rest numbered 1…N, as a Touchstone file's must be); null when <see cref="Number"/> is the
+    /// document's own. What the result's port map records.
+    /// </summary>
+    public int? SourceNumber { get; init; }
+
+    /// <summary>brief-em3d-93 — the port's label in that document (<c>P3</c>), set with <see cref="SourceNumber"/>.</summary>
+    public string? SourceLabel { get; init; }
 }
 
 /// <summary>

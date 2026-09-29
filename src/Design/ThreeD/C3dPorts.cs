@@ -61,6 +61,9 @@ public sealed class C3dPortContext
     /// <summary>The air box the ports are checked against, or null (no setup: wave ports cannot be placed).</summary>
     public Em3dAirBox? Box { get; }
 
+    /// <summary>brief-em3d-93 — the elaboration's not-modelled content: a modelled port on one of these is refused.</summary>
+    public IReadOnlySet<string> NotModelled { get; }
+
     /// <summary>The document's DBU in metres — the contact tolerance.</summary>
     public double Dbu { get; }
 
@@ -79,6 +82,7 @@ public sealed class C3dPortContext
     public C3dPortContext(C3dElaboration elaboration, int dbuPerMicron, Em3dAirBox? box, IEnumerable<string> ground)
     {
         Box = box;
+        NotModelled = elaboration.NotModelled;
         DbuPerMicron = dbuPerMicron;
         Dbu = C3dLowering.Metres(1, dbuPerMicron);
         Ground = new HashSet<string>(ground, StringComparer.Ordinal);
@@ -218,8 +222,20 @@ public static class C3dPorts
     private static C3dPortResult Refuse(C3dPort p, string why, IReadOnlyList<(string, IReadOnlyList<string>)>? contacts = null)
         => new(p, null, why, contacts ?? [], "");
 
-    /// <summary>One port, resolved against <paramref name="context"/>.</summary>
+    /// <summary>One port, resolved against <paramref name="context"/>. brief-em3d-93 — a MODELLED port whose conductor is not
+    /// modelled is refused, naming both; a port that is itself off is resolved as drawn (its rows and arrow still show where it
+    /// is), and no run takes it.</summary>
     public static C3dPortResult Resolve(C3dPort port, int dbuPerMicron, C3dPortContext context)
+    {
+        var r = ResolveDrawn(port, dbuPerMicron, context);
+        if (!port.Model || r.Resolved is not { } p || context.NotModelled.Count == 0) return r;
+        foreach (var (conductor, positive) in new[] { (p.PositiveObject, true), (p.NegativeObject, false) })
+            if (context.NotModelled.Contains(conductor))
+                return r with { Resolved = null, Refusal = C3dModelled.PortConductorRefusal(port, conductor, positive) };
+        return r;
+    }
+
+    private static C3dPortResult ResolveDrawn(C3dPort port, int dbuPerMicron, C3dPortContext context)
     {
         string label = Label(port);
         if (!TryParseZ0(port.Z0, out var z0))

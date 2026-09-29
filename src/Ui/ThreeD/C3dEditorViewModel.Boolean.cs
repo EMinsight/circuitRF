@@ -400,6 +400,7 @@ public sealed partial class C3dEditorViewModel
         if (!IsIdentity(carry)) world.Placement = world.Placement.Then(carry, out _);
         world.Group = root.Group;                    // out of the boolean, into the boolean's group (C3dGroups)
         world.Transparency = root.Transparency;      // brief-em3d-92 — and at the boolean's transparency, as Dissolve leaves it
+        world.Model = root.Model;                    // brief-em3d-93 — and modelled as the boolean is
         var newRoot = WithoutTool(root, path);
         var before = C3dListsEdit.Of(Document);
         var objects = before.Objects.ToList();

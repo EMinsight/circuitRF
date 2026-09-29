@@ -1209,6 +1209,7 @@ public static class Em3dRunService
         {
             if (v is { } x && double.IsFinite(x)) ds.AddToGroup(OpenEmsGroup, name, DataCube.Scalar(x));
         }
+        Em3dPortMap.AddTo(ds, OpenEmsGroup, ports);
         Scalar("GridCells", grid.Cells);
         Scalar("GridLinesX", grid.X.Lines.Count);
         Scalar("GridLinesY", grid.Y.Lines.Count);
@@ -1249,6 +1250,7 @@ public static class Em3dRunService
         foreach (var p in problem.Ports.OrderBy(p => p.Number))
             lines.Add($"{EmProvenanceStamp.PortPrefixNumbered}{p.Number}: '{Ascii(p.Name)}' from '{Ascii(p.NegativeObject)}' " +
                       $"to '{Ascii(p.PositiveObject)}', lumped, {R(p.Z0.Real)} Ohm");
+        lines.AddRange(Em3dPortMap.Lines(problem.Ports));     // brief-em3d-93 — which document port each is, when one was off
         lines.Add($"circuitRF-EM 3D grid: {grid.X.Lines.Count} x {grid.Y.Lines.Count} x {grid.Z.Lines.Count} = {grid.Cells} cells; " +
                   $"smallest cell {Ascii(FdtdGrid.FormatLength(s0.SmallestCellM))} on {FdtdGrid.AxisName(s0.Axis)}, set by " +
                   Ascii(string.Join("; ", s0.SmallestCellFeatures.Select(f => f.Describe(s0.Axis)))));
@@ -1316,6 +1318,7 @@ public static class Em3dRunService
         var snp = new SNP(s.FrequenciesHz, mats, MatrixType.S, MatrixFormat.RI, z0[0]);
         var ds = DataSetBuilder.FromSnp(snp);
         ds.Add("Z0", DataSetBuilder.BuildZ0Cube(z0));
+        Em3dPortMap.AddTo(ds, PalaceGroup, ports);          // brief-em3d-93
 
         // What the solver itself reported — the part that makes a surprising answer diagnosable.
         void Scalar(string name, double? v)
@@ -1358,6 +1361,7 @@ public static class Em3dRunService
                             $"renormalised here to {R(p.Z0.Real)} Ohm; reference plane {R(p.ReferencePlane.ShiftM * 1e6)} um " +
                             "into the structure from the port face"
                           : $"lumped, {R(p.Z0.Real)} Ohm"));
+        lines.AddRange(Em3dPortMap.Lines(problem.Ports));     // brief-em3d-93 — which document port each is, when one was off
         lines.Add($"circuitRF-EM 3D mesh: {Count(facts.InitialElements)} elements initially, {Count(facts.FinalElements)} " +
                   $"finally, {facts.AdaptiveIterations ?? 0} adaptive pass(es), element order {settings.ElementOrder}");
         lines.Add($"circuitRF-EM 3D operating temperature: {R(problem.OperatingTempC)} C");

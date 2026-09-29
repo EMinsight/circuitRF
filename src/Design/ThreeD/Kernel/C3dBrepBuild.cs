@@ -251,6 +251,7 @@ public static class C3dBrepBuild
             Hidden = template.Hidden,
             Group = template.Group,
             Transparency = template.Transparency,
+            Model = template.Model,
             Unread = template.Unread,
             Vertices = [.. r.Vertices],
             Faces = [.. r.Faces.Select(f => new C3dFace { Name = f.Name, Outer = [.. f.Outer], Holes = [.. f.Holes.Select(x => x.ToList())] })],

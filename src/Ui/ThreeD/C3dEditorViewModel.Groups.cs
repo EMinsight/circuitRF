@@ -294,16 +294,18 @@ public sealed partial class C3dEditorViewModel
             var members = C3dGroups.MembersOf(Document, g.Path);
             int objects = members.Count(m => !m.Instance), instances = members.Count - objects;
             string detail = string.Join(", ", new[] { Count(objects, "object"), Count(instances, "instance") }.Where(s => s.Length > 0));
+            // brief-em3d-93 — a group whose every member is not modelled has a greyed header
+            bool anyModelled = members.Count == 0 || members.Any(m => m.Instance ? Document.Instances[m.Index].Model
+                                                                                 : Document.Objects[m.Index] is C3dPolyline || Document.Objects[m.Index].Model);
             var row = new C3dTreeItem(this, g.Name, GroupKind, detail, -1, -1, GroupVisible(g.Path))
             {
-                GroupPath = g.Path, Icon = Material.Icons.MaterialIconKind.Group,
+                GroupPath = g.Path, Icon = Material.Icons.MaterialIconKind.Group, IsModelled = anyModelled,
             };
             foreach (var sub in all.Where(s => s.Parent == g.Path)) row.Children.Add(Row(sub));
             for (int i = 0; i < Document.Objects.Count; i++)
                 if (Document.Objects[i].Group == g.Path && PassesTreeFilter(Document.Objects[i])) row.Children.Add(ObjectRow(Document.Objects[i], i, byMaterial: false));
-            if (!_hiddenTypes.Contains(InstancesHeader))
-                for (int i = 0; i < Document.Instances.Count; i++)
-                    if (Document.Instances[i].Group == g.Path) row.Children.Add(InstanceRow(Document.Instances[i], i));
+            for (int i = 0; i < Document.Instances.Count; i++)
+                if (Document.Instances[i].Group == g.Path && PassesTreeFilter(Document.Instances[i])) row.Children.Add(InstanceRow(Document.Instances[i], i));
             return row;
         }
         var rows = all.Where(g => g.Parent is null).Select(Row).ToList();
@@ -405,6 +407,7 @@ public sealed partial class C3dEditorViewModel
         bool visible = GroupVisible(path);
         yield return new Viewer3DMenuItem(visible ? "Hide" : "Show", () => SetGroupVisible(path, !visible));
         if (drawn) yield return new Viewer3DMenuItem("Isolate", () => Viewer.Isolate(scene));
+        if (ModelItem(C3dGroups.MembersOf(Document, path), item.Name) is { } model) yield return model;    // brief-em3d-93
     }
 
     /// <summary>Ctrl/Cmd+G groups the selection; Ctrl/Cmd+Shift+G ungroups it.</summary>

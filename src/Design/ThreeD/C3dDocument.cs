@@ -161,6 +161,14 @@ public abstract class C3dObject : IC3dBindable
     [JsonPropertyOrder(12)]
     public int? Transparency { get; set; }
 
+    /// <summary>brief-em3d-93 R-em3d93-1 — whether the object is in the solve. False keeps it drawn, pickable and editable and
+    /// leaves it out of every simulation run (<see cref="C3dModelled"/>). Written only when false. An operation carries it for
+    /// its result (and the Tools it keeps), as it carries <see cref="Hidden"/>; the object it wraps has none of its own. A
+    /// polyline is construction geometry and is never modelled anyway.</summary>
+    [DefaultValue(true)]
+    [JsonPropertyOrder(13)]
+    public bool Model { get; set; } = true;
+
     /// <summary>Keys this build does not read. Kept, and written back, so a document from a later build
     /// does not lose them by being opened here; <c>check</c> names each one.</summary>
     [JsonExtensionData]
@@ -528,6 +536,11 @@ public sealed class C3dInstance
     /// MULTIPLIES onto each placed part's own (a 50 % instance of a part at 50 % draws it at 75 %). Omitted: none of its own.</summary>
     public int? Transparency { get; set; }
 
+    /// <summary>brief-em3d-93 — whether the placed cell is in the solve, as an object's <see cref="C3dObject.Model"/>: false leaves
+    /// every part of it out of every run. Written only when false.</summary>
+    [DefaultValue(true)]
+    public bool Model { get; set; } = true;
+
     /// <summary>
     /// brief-em3d-51 R-em3d51-2e — overrides of the placed cell's PARAMETERS, each an expression evaluated in THIS
     /// document's scope (override → parent scope, expressions.md §9). A name that is only a VAR of the child is refused,
@@ -580,6 +593,13 @@ public sealed class C3dPort
 
     /// <summary>A wave port's voltage path; null is inferred as brief 23 infers it.</summary>
     public C3dVoltagePath? VoltagePath { get; set; }
+
+    /// <summary>brief-em3d-93 R-em3d93-1a — whether the port is in the solve. False: no excitation, no port sheet and no lumped
+    /// element — the gap it spans is left as the geometry makes it (open, not terminated) — and the result's ports are the
+    /// modelled ones, renumbered 1…N in <see cref="Number"/> order. The port keeps its placement, Z0 and path. Written only
+    /// when false.</summary>
+    [DefaultValue(true)]
+    public bool Model { get; set; } = true;
 
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? Unread { get; set; }

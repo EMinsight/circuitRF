@@ -67,7 +67,8 @@ public static class C3dFillets
         t.Hidden = false;
         t.Group = null;
         t.Transparency = null;
-        return new C3dFillet { Name = name, Hidden = target.Hidden, Group = target.Group, Transparency = target.Transparency, Radius = radius, Edges = [.. edges], Target = t };
+        t.Model = true;
+        return new C3dFillet { Name = name, Hidden = target.Hidden, Group = target.Group, Transparency = target.Transparency, Model = target.Model, Radius = radius, Edges = [.. edges], Target = t };
     }
 
     /// <summary>A Chamfer, as <see cref="MakeFillet"/>: <paramref name="distance2"/> 0 is a symmetric chamfer.</summary>
@@ -79,7 +80,8 @@ public static class C3dFillets
         t.Hidden = false;
         t.Group = null;
         t.Transparency = null;
-        return new C3dChamfer { Name = name, Hidden = target.Hidden, Group = target.Group, Transparency = target.Transparency, Distance = distance, Distance2 = distance2, Edges = [.. edges], Target = t };
+        t.Model = true;
+        return new C3dChamfer { Name = name, Hidden = target.Hidden, Group = target.Group, Transparency = target.Transparency, Model = target.Model, Distance = distance, Distance2 = distance2, Edges = [.. edges], Target = t };
     }
 
     /// <summary>R-em3d67-6b — Remove: the feature's target back in its place under its name, carried by the feature's
@@ -92,6 +94,7 @@ public static class C3dFillets
         c.Hidden = feature.Hidden;
         c.Group = feature.Group;
         c.Transparency = feature.Transparency;
+        c.Model = feature.Model;
         return c;
     }
 
@@ -199,6 +202,7 @@ public static class C3dFillets
         w.Hidden = top.Hidden;
         w.Group = top.Group;
         w.Transparency = top.Transparency;
+        w.Model = top.Model;
         return w;
     }
 
@@ -216,6 +220,7 @@ public static class C3dFillets
         local.Hidden = false;
         local.Group = null;
         local.Transparency = null;
+        local.Model = true;
         return With(top, Core(top).Path, local);
     }
 
