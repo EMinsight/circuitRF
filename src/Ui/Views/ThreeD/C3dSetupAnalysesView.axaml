@@ -7,7 +7,7 @@
 
     <!-- A 3D view's embedded EM setups as analysis cards: SetupAnalysesDialog's list, on the 3D view's setups. Toolbar,
          card and empty state are AnalysesListView's, so the two read as one; the card's Enabled box becomes the ACTIVE
-         mark (a 3D view runs one setup, not every enabled one), and double-click opens that one setup in the .cem panel.
+         mark (a 3D view runs one setup, not every enabled one), and double-click anywhere on a card opens that one setup in the .cem panel.
          Every change is an edit of the 3D view: its undo, its dirty mark. 3D editor round 5: one control, hosted by
          Simulate ▸ Setup Analyses… and by the Analyses panel while a .c3d is the active document. -->
     <UserControl.Styles>
@@ -86,7 +86,6 @@
                      ItemsSource="{Binding SetupItems}"
                      SelectedItem="{Binding SelectedSetupItem, Mode=TwoWay}"
                      IsVisible="{Binding HasSetups}"
-                     DoubleTapped="OnRowDoubleTapped"
                      Background="Transparent" BorderThickness="0">
                 <ListBox.ItemTemplate>
                     <DataTemplate x:DataType="t3:C3dSetupItem">
@@ -97,6 +96,7 @@
                                     <MenuItem Header="{Binding RunLabel}" Click="OnMenuRun"/>
                                     <MenuItem Header="Make Active" Click="OnMenuMakeActive"/>
                                     <MenuItem Header="Edit…" Click="OnMenuEdit"/>
+                                    <MenuItem Header="Copy Solver Notes" Click="OnMenuCopyNotes" IsVisible="{Binding HasFidelity}"/>
                                     <MenuItem Header="Rename…" Click="OnMenuRename" IsEnabled="{Binding !IsExternal}"/>
                                     <MenuItem Header="Duplicate" Click="OnMenuDuplicate" IsEnabled="{Binding !IsExternal}"/>
                                     <Separator/>
@@ -133,8 +133,10 @@
                                                     <mi:MaterialIcon Grid.Column="0" Kind="InformationOutline" Width="12" Height="12" Margin="0,1,4,0"
                                                                      VerticalAlignment="Top" Foreground="{DynamicResource SystemBaseMediumColor}"
                                                                      IsVisible="{Binding IsNote}"/>
-                                                    <SelectableTextBlock Grid.Column="1" Text="{Binding Text}" FontSize="10" TextWrapping="Wrap"
-                                                                         Foreground="{DynamicResource SystemBaseMediumHighColor}"/>
+                                                    <!-- Plain text: a selectable block took the card's double-click (owner report,
+                                                         2026-09-28). The words are copied from the card's Copy Solver Notes. -->
+                                                    <TextBlock Grid.Column="1" Text="{Binding Text}" FontSize="10" TextWrapping="Wrap"
+                                                               Foreground="{DynamicResource SystemBaseMediumHighColor}"/>
                                                 </Grid>
                                             </DataTemplate>
                                         </ItemsControl.ItemTemplate>

@@ -650,10 +650,15 @@ public partial class WorkspaceWindow : Window
     /// <para>Only while circuitRF is the frontmost application: in the background the bar is another application's,
     /// and on the way back macOS redraws it itself (<see cref="MenuBarRepairGate"/> records what a swap during a
     /// reactivation costs). The flip comes from the active document changing, not from a reactivation alone.</para>
+    ///
+    /// <para>And only from the key window: with two workspace windows, the other one's 3D menu is not on the bar.</para>
     /// </summary>
     private void RepaintMenuBarForThreeDMenu()
     {
         if (!MacOsAppMenu.ApplicationIsActive()) return;
+        // Only the key window's menu is on the bar, so a flip in any other workspace window has nothing to draw — and a
+        // swap still ends whatever menu the user is pulling down in the window that IS key (MenuBarRepairGate).
+        if (!IsActive) return;
         Diagnostics.MenuBarProbe.Note("3D menu shown or hidden: repainting the menu bar");
         MacOsAppMenu.RedrawMenuBar();
     }

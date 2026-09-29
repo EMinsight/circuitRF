@@ -315,8 +315,10 @@
                      button that STARTED the work is the one that turns into Cancel. Simulate is
                      disabled meanwhile (CanRun is gated on IsBusy), so the two long operations can
                      never overlap and mesh the same problem twice at once. -->
+                <!-- Not on a 3D setup: Gmsh meshes a 3D run inside Simulate, and this button's mesh is the planar or
+                     cross-section kernel's, which no 3D run reads (owner report, 2026-09-28). -->
                 <Button Name="MeshButton" Margin="4,0,0,0"
-                        IsVisible="{Binding !ViewModel.IsMeshing}"
+                        IsVisible="{Binding ViewModel.ShowMeshButton}"
                         Command="{Binding ViewModel.BuildActiveMeshCommand}"
                         ToolTip.Tip="Compute the mesh only — no solve.">
                     <StackPanel Orientation="Horizontal" Spacing="4">
@@ -692,7 +694,7 @@
                                    Text="{Binding ViewModel.PalaceAdaptiveTolText}"
                                    PlaceholderText="{Binding ViewModel.PalaceDefaultAdaptiveTol}"
                                    LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
-                                   ToolTip.Tip="The relative error at which Palace stops refining the mesh."/>
+                                   ToolTip.Tip="Palace's Refinement Tol: the relative error in the FIELD, from Palace's own error estimate over the whole model, at which it stops refining the mesh. It is not a ΔS: no S-parameter is compared between passes. Refinement passes caps how many passes it runs; it stops at whichever it reaches first."/>
                         <TextBlock Grid.Row="5" Grid.Column="0" Classes="colhdr" Text="Refinement passes" VerticalAlignment="Center"/>
                         <TextBox   Grid.Row="5" Grid.Column="1" Classes="num" Tag="Palace.AdaptiveMaxIterations"
                                    Text="{Binding ViewModel.PalaceAdaptiveMaxIterationsText}"
@@ -1726,7 +1728,8 @@
                 </Border>
 
                 <!-- ── Stackup: SHOWN, not edited (R-em-12) ────────────────── -->
-                <Border Classes="group">
+                <!-- Not in a .c3d: its geometry is the 3D model, and there is no technology to list. -->
+                <Border Classes="group" IsVisible="{Binding ViewModel.ShowStackup}">
                   <StackPanel Spacing="2">
                 <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,6">
                     <TextBlock Grid.Column="0" Classes="grouphdr" Margin="0"

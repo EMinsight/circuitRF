@@ -1,8 +1,11 @@
 using Avalonia.Controls;
 using Avalonia.Data;
 using Avalonia.Input;
+using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
+using Avalonia.Threading;
+using Avalonia.VisualTree;
 using CircuitRF.Ui.ThreeD;
 using CircuitRF.Ui.Views.Layout;
 
@@ -18,7 +21,14 @@ public partial class C3dSetupAnalysesView : UserControl
 {
     private C3dEditorViewModel? Vm => DataContext as C3dEditorViewModel;
 
-    public C3dSetupAnalysesView() => InitializeComponent();
+    public C3dSetupAnalysesView()
+    {
+        InitializeComponent();
+        // The double-click is read off the PRESS, handled or not, rather than from DoubleTapped: Avalonia raises that only
+        // when both presses land on the same element, so a card whose parts the first press re-laid (the selection
+        // rebuilding the panel under it) or took (the list item's own selection) opened nothing (owner report, 2026-09-28).
+        Rows.AddHandler(PointerPressedEvent, OnRowPressed, RoutingStrategies.Tunnel, handledEventsToo: true);
+    }
 
     // ── the card's own actions: select the card first, then the view model's edit on the selection ─────────────
 
@@ -63,10 +73,22 @@ public partial class C3dSetupAnalysesView : UserControl
 
     private void OnEditClick(object? sender, RoutedEventArgs e) => OpenEditor();
 
-    private void OnRowDoubleTapped(object? sender, TappedEventArgs e)
+    private void OnRowPressed(object? sender, PointerPressedEventArgs e)
     {
-        // Only a card: a double-click on the list's empty space edits nothing.
-        if ((e.Source as Control)?.DataContext is C3dSetupItem) OpenEditor();
+        if (e.ClickCount != 2 || !e.GetCurrentPoint(Rows).Properties.IsLeftButtonPressed) return;
+        // Only a card, and not its active mark (a button of its own): a double-click on the list's empty space edits nothing.
+        if (e.Source is not Control source || source.DataContext is not C3dSetupItem item) return;
+        if (source.FindAncestorOfType<Button>(includeSelf: true) is { } button && Rows.IsVisualAncestorOf(button)) return;
+        if (Vm is { } vm) vm.SelectedSetupItem = item;
+        // After the press has finished routing, so the list item's own selection is not handed a modal window mid-gesture.
+        Dispatcher.UIThread.Post(OpenEditor);
+    }
+
+    private async void OnMenuCopyNotes(object? sender, RoutedEventArgs e)
+    {
+        if ((sender as Control)?.DataContext is not C3dSetupItem { HasFidelity: true } item) return;
+        if (TopLevel.GetTopLevel(this)?.Clipboard is { } clipboard)
+            await clipboard.SetTextAsync(string.Join(Environment.NewLine, item.Fidelity.Select(r => r.Text)));
     }
 
     private async void OnRenameClick(object? sender, RoutedEventArgs e)

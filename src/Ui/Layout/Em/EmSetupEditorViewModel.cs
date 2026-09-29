@@ -150,6 +150,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         BuildActiveMeshCommand.NotifyCanExecuteChanged();
         CancelMeshCommand.NotifyCanExecuteChanged();
         SimulateCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(ShowMeshButton));
     }
 
     /// <summary>True while either long operation is in flight — the one gate that stops a Mesh and a

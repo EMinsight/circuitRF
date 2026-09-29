@@ -64,6 +64,17 @@ public sealed partial class EmSetupEditorViewModel
     /// solver options, the radiation pattern).</summary>
     public bool ShowCircuitRfSolverControls => !Is3DSetup;
 
+    /// <summary>The Mesh button. It meshes for circuitRF's own kernels (the planar MoM mesh or the cross-section
+    /// grid) and no 3D solver reads either: Gmsh meshes a 3D run as part of Simulate. Shown on a 3D setup it
+    /// answered with a mesh the run never uses, or with "no cross-section" in a .c3d (owner report, 2026-09-28). Off while
+    /// a mesh is in flight, when its Cancel takes the cell.</summary>
+    public bool ShowMeshButton => !Is3DSetup && !IsMeshing;
+
+    /// <summary>The Stackup group. A .c3d setup has no layout and no technology — its geometry is the 3D model — so
+    /// the group could only ever show an empty header there. A .cem 3D setup keeps it: the generator builds its
+    /// model from that stackup.</summary>
+    public bool ShowStackup => !IsEmbedded;
+
     /// <summary>
     /// brief-em3d-31 R-em3d31-4 — the Radiation pattern group: the planar kernel, and every 3D solver, since each
     /// now produces the farfield group (openEMS by its own surface transform, Palace by its far-field integral).
@@ -79,6 +90,7 @@ public sealed partial class EmSetupEditorViewModel
         OnPropertyChanged(nameof(ShowCrossSectionControls));
         OnPropertyChanged(nameof(ShowReturnPlane));
         OnPropertyChanged(nameof(ShowCircuitRfSolverControls));
+        OnPropertyChanged(nameof(ShowMeshButton));
         OnPropertyChanged(nameof(ShowRadiationPattern));
         OnPropertyChanged(nameof(RadiationPatternDisabledReason));
         OnPropertyChanged(nameof(ReferenceInputPowerEnabled));

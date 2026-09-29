@@ -466,7 +466,7 @@ Accurate has not been measured.
 | At metal and ports | `EdgeRefinement` | 0.2 | The element size at conductors and sheets, as a fraction of the smallest size above. Port sheets are always at least four elements across their smaller side |
 | Grading | `Grading` | 1.3 | How fast elements grow away from metal and ports |
 | Element order | `ElementOrder` | 2 | Palace's finite-element order |
-| Refinement tolerance | `AdaptiveTol` | 0.01 | The error at which Palace stops refining the mesh |
+| Refinement tolerance | `AdaptiveTol` | 0.01 | Palace's own `Refinement.Tol`: the relative error in the field, from Palace's error estimate over the whole model, at which it stops refining the mesh. It is not a ΔS — no S-parameter is compared between passes |
 | Refinement passes | `AdaptiveMaxIterations` | 2 | The most refinement passes; 0 solves the starting mesh only. Each pass costs a solve and memory |
 | Sweep tolerance | `SweepAdaptiveTol` | 0.0001 | The tolerance of Palace's adaptive frequency sweep; 0 solves every frequency |
 | Linear solver | `LinearSolver` | `Iterative` | How Palace solves each linear system. *Iterative* (GMRES with multigrid) needs the least memory. *Direct* factors it with SuperLU_DIST: more memory, and far faster for an **eigenmode** solve, whose shifted operator an iterative solver converges on slowly. On the 3D Package example's lid mode (128 k unknowns) Direct took 35 s and 4.0 GB; Iterative had not finished after ten minutes. Not part of any preset |

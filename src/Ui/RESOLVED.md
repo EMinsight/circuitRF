@@ -37712,3 +37712,32 @@ Gate: `WorkspaceArchiveTests.TheNewDocumentKinds_TheirOutsideReferences_AreFound
 - Not seen in a running window — the GUI cannot be launched from this shell; covered by
   `ImpedancePanelTests.ALassoOnBottom_IsABottomRegion_SelectingAndDrawnThereOnly` and
   `ALayerNothingPointsAt_SaysSo_AndWholeLayerKeepsIt`.
+
+## 3D editor bugs round 6 — the setup panel, the setup cards, the menu bar (2026-09-28)
+
+Owner's sixth list. Gate `tests/Ui.Tests/ThreeD/EditorRound6SetupTests.cs`; pixels were not seen.
+
+- **Mesh on a 3D setup meshed nothing the run reads.** `BuildActiveMesh` goes to the planar MoM mesher or the
+  cross-section grid; a 3D run is meshed by Gmsh inside Simulate. In a `.c3d` (no layout) it answered "no cross-section
+  to mesh". `ShowMeshButton => !Is3DSetup && !IsMeshing` — a `.cem` with a 3D solver hides it too, since its MoM mesh is
+  not Palace's or openEMS's either. The button's visibility used to be `!IsMeshing` alone, so the flag carries both.
+- **Stackup in a `.c3d` was always empty** (`Refresh` returns for `IsEmbedded` before `BuildStackupRows`). Hidden there
+  (`ShowStackup => !IsEmbedded`); a `.cem` 3D setup keeps it because the generator builds its model from that stackup.
+- **Double-click on a setup card could open nothing.** Avalonia raises `DoubleTapped` only when both presses have the
+  same source; the fidelity lines were `SelectableTextBlock`s (a double-click there selects a word), and a card can be
+  re-laid between the presses. The card reads `ClickCount == 2` off a TUNNEL `PointerPressed` handled-or-not, skips the
+  active-mark button, and posts `OpenEditor` so the modal does not open mid-gesture. The fidelity lines are plain text;
+  **Copy Solver Notes** on the card's context menu copies them.
+- **"Refinement tolerance" is Palace's own term** (`Model.Refinement.Tol`). Palace stops refining on a
+  Zienkiewicz–Zhu estimate of the field error over the whole model (Palace reference, "Error estimation and adaptive
+  mesh refinement") — it is **not a ΔS**: no S-parameter is compared between passes. Relabelling it ΔS would misstate
+  it, so the label stays and the tooltip and `em-setup.md` now say what it is.
+- **Only 10 GHz of fields** was not a picker fault: `Palace.SaveFieldsGHz` defaults to the sweep's centre (2–18 GHz →
+  10), and the solution combo lists every saved step. Making that list editable, and fields persistent document
+  objects, is brief-em3d-83.
+- **Menu bar would not pull down (UNDIAGNOSED).** The only thing circuitRF does that is known to end a menu-tracking
+  session is `MacOsAppMenu.RedrawMenuBar`'s menu swap. Round 5 fires it on every 3D-menu flip while the application is
+  frontmost — from ANY workspace window's view model. It now also requires the window to be key (`IsActive`): a
+  background window's menu is not on the bar, so it has nothing to repaint. That is a rule, not the fix: whether the
+  owner's case was a flip storm is unknown. The capture that decides it is `CRF_MENU_DIAG=<log>`, whose
+  "3D menu shown or hidden: repainting the menu bar" lines count the swaps.
