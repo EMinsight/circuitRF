@@ -298,7 +298,9 @@ worked amplifier examples — is in <a href="../reference/match.html">The Match 
 Ten minutes, and nothing to draw. It shows what the 3D editor's geometry kernel adds — booleans, fillets and
 imported parts — and what a solver does and does not see of a curved surface.
 
-1. **Tools ▸ Examples ▸ 3D Connector**, and choose a folder for your copy. It opens `README.md`; open the
+1. **Tools ▸ Examples ▸ 3D Connector**, and choose a folder for your copy. The copy opens in the window you
+   chose the menu from when that window has no workspace, no torn-off document window and no unsaved work,
+   and in a new window otherwise, so nothing you are working on is replaced. It opens `README.md`; open the
    **Launch** cell's 3D view from the Project panel.
 2. Look at the **object tree**. `housing` is a **boolean**: a box with the bore subtracted, the bore **kept** as the
    PTFE that fills it, and a flange **imported from a STEP file** united with it. `pin` is a cylinder with a

@@ -37910,3 +37910,34 @@ measures by token, only as a probe function's argument (it was a regex over the 
   re-derives a face edit (`C3dEditorViewModel.Expressions`) applies it with `ApplyFaceReferences` in all three places it
   used to write `FaceBoundaries` alone.
 - Pixels were not seen: Avalonia cannot start from this machine's shell. The gate is the view model.
+
+## brief-examples-open-here-when-empty R-ex1 — Tools ▸ Examples opens in an empty window (2026-09-29)
+
+- **"Empty" means no workspace, no torn-off document window, and no unsaved docked tab**
+  (`WorkspaceViewModel.WindowIsEmptyForExample`). The brief tested only `CurrentWorkspacePath`. The owner added that a
+  document WINDOW keeps an example out. The first build (44059e08) counted every document, docked tabs included. Launched
+  with the New Schematic launch action, the window holds an untouched scratch schematic, so every example went to a second
+  window. The owner found this by hand. A clean docked tab now counts no more than the Welcome tab does.
+  A DIRTY docked tab still counts. `SwitchToWorkspace` discards docked tabs without asking; Open Recent prompts before
+  reaching it, and this path does not. Torn-off documents (the registries hold the ones Close Workspace left behind,
+  `ResetToBlankShell`) always count, clean or not.
+- **Two things in the dock tree are `IDocument` and are not documents.** Dock's `Tool` declares `IDocument`, the known
+  trap already noted at `FocusedDockableChanged`. The empty shell's Welcome tab is a `StubDocument`. The walk over this
+  shell's floats excludes both by type.
+- **An empty window opens the copy through `SwitchToWorkspaceReporting`, not `OpenRecentWorkspace`.** That skips the
+  dirty prompt, the missing-path pruning, the EM-in-flight confirmation and `ConfirmConcurrentOpenAsync`, because nothing
+  is being replaced and the copy is seconds old. Open Recent still gets the path, from `PushRecent` inside the switch.
+- **Seams:** `ExampleParentDirPicker` (the folder picker needs a real window) and `OpenExampleInNewWindowHook`
+  (`App.OpenWorkspaceInNewWindow` is static). The owner window is now resolved only by the default picker. A test can
+  therefore drive the command with no window at all. Tests: `tests/Ui.Tests/Examples/ExampleWorkspacesOpenWhereTests.cs`.
+  It sits in `UserStateDirectoryCollection` because the open writes Open Recent to the preferences file.
+- **Testing trap:** posts to `MessagesTool` from a thread-pool continuation go to `Dispatcher.UIThread.Post` and never run
+  in a test. `SwitchToWorkspaceReporting` REPORTS a failed open rather than throwing, so a test cannot see an error that
+  way. The gate reads state: `CurrentWorkspacePath`, the redirected `RecentWorkspaces`, and the hook's calls.
+- **R-ex1-2 (macOS menu bar): checked, no change.** Each `WorkspaceWindow` declares its own `NativeMenu` in XAML. It
+  fills the Examples rows from its OWN `_vm.OpenExampleCommand` in `OnDataContextChanged`, which rebuilds them if the
+  DataContext is ever replaced. On `Activated` the window puts its own menu at application scope (R-mw1-13). So the key
+  shell's menu runs the key shell's view model. A floated document window carries its shell's `NativeMenu` instance
+  (`AttachSharedNativeMenuIfMacOS`), so choosing Examples from a float asks about the float's owning shell. That shell
+  has a torn-off document, so the copy goes to a new window, as intended. Pixels not seen: Avalonia cannot start from this
+  machine's shell.
