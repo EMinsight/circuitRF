@@ -216,7 +216,7 @@ public sealed partial class EmSetupEditorViewModel
     public IReadOnlyList<string> ThermalSubmodelRegionChoices
         => [.. ThermalContext?.Document().MeshRegions.Select(r => r.Name) ?? []];
 
-    public bool IsThermalSubmodel => ThermalSubmodelFrom.Length > 0;
+    public bool IsThermalSubmodel => ThermalSubmodelFrom is { Length: > 0 };
 
     // brief-em3d-80 — the Rth matrix, Z_th and the pulse train. A name list reads as typed, comma-separated; empty is "*".
     [ObservableProperty] private bool _thermalRthOn;
@@ -365,9 +365,15 @@ public sealed partial class EmSetupEditorViewModel
         if (_syncingThermal || !IsThermalSetup) return;
         ThermalError = null;
         var before = SnapshotJson();
-        var t = Working.Thermal ?? new CemThermal();
+        // a COPY: an input that does not parse returns below, and must leave the live setup exactly as it was — writing into
+        // Working.Thermal first put the edits made so far into the document with no undo entry of their own
+        var t = Working.Thermal?.Clone() ?? new CemThermal();
 
-        t.Sources = [.. ThermalSources.Where(r => r.Override.Trim().Length > 0).Select(r => new CemThermalSource { Name = r.Name, Power = r.Override.Trim() })];
+        // an override naming a source the page does not list (deleted, or renamed outside the editor) is kept as written,
+        // not dropped by an unrelated edit here
+        var listed = ThermalSources.Select(r => r.Name).ToHashSet(StringComparer.Ordinal);
+        t.Sources = [.. ThermalSources.Where(r => r.Override.Trim().Length > 0).Select(r => new CemThermalSource { Name = r.Name, Power = r.Override.Trim() }),
+                     .. (t.Sources ?? []).Where(x => !listed.Contains(x.Name))];
         if (t.Sources.Count == 0) t.Sources = null;
 
         var boundaries = ThermalBoundaries.Where(r => r.Face.Trim().Length > 0).Select(r => new CemThermalBoundary
@@ -476,8 +482,9 @@ public sealed partial class EmSetupEditorViewModel
         if (ThermalError is not null) return;
         t.Mesh = mesh is { Order: null, SizeFromSources: null, MinThroughThickness: null, Grading: null, Solver: null, Check: null } ? null : mesh;
         t.Balance = balance is { KOfT: null, SigmaOfT: null, Tolerance: null, MaxIterations: null } ? null : balance;
-        t.Submodel = ThermalSubmodelFrom.Trim().Length > 0
-            ? new CemThermalSubmodel { From = ThermalSubmodelFrom.Trim(), Region = ThermalSubmodelRegion.Trim() }
+        // a combo whose choice left its list pushes null back: an empty box, not a crash
+        t.Submodel = (ThermalSubmodelFrom ?? "").Trim().Length > 0
+            ? new CemThermalSubmodel { From = ThermalSubmodelFrom!.Trim(), Region = (ThermalSubmodelRegion ?? "").Trim() }
             : null;
         // brief-em3d-80 — the switches make or remove each section; what the page does not show is carried as written
         t.Rth = ThermalRthOn ? new CemThermalRth { Sources = Names(ThermalRthSources), Stat = ThermalRthMax ? ThermalRthStat.Max : null } : null;

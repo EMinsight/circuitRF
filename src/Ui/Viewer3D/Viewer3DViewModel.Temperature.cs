@@ -45,6 +45,24 @@ public sealed partial class Viewer3DViewModel
     {
         /// <summary>brief-em3d-76 — per surface, the reflections that made it (scene-local), empty for a modelled one.</summary>
         public IReadOnlyList<(int Axis, double At)[]> Reflections { get; init; } = [];
+
+        /// <summary>What these parts were built FOR: a step may be revalued onto them only while the targets are still these.</summary>
+        public TemperatureTargets? Targets { get; init; }
+    }
+
+    /// <summary>The choices a temperature's geometry depends on, beyond its painted faces: All Faces, the clip section and its
+    /// plane, the fixed range, and the mirror planes.</summary>
+    private sealed record TemperatureTargets(bool AllFaces, bool OnClip, Vector4 Plane, bool FixRange, (int Axis, double AtM)[] Mirrors)
+    {
+        public bool Same(TemperatureTargets o) => AllFaces == o.AllFaces && OnClip == o.OnClip && (!OnClip || Plane == o.Plane) &&
+                                                  FixRange == o.FixRange && Mirrors.SequenceEqual(o.Mirrors);
+    }
+
+    private TemperatureTargets CurrentTemperatureTargets()
+    {
+        var clip = FieldPlane;
+        return new(TemperatureAllFaces, TemperatureOnClip && clip.Enabled, clip.Equation, FixRangeAcrossSweep,
+                   MirrorSymmetry ? [.. SymmetryPlanes] : []);
     }
 
     /// <summary>brief-em3d-76 R-em3d76-4a — the document's symmetry planes (axis 0 x, 1 y, 2 z; world metres).</summary>
@@ -173,7 +191,7 @@ public sealed partial class Viewer3DViewModel
         FieldQuantity q, FieldStep vol, FieldArray array, Scene3DModel scene, ClipPlane3D clip, IReadOnlyList<FieldGroup> groups,
         IReadOnlyList<TemperatureFace> faces, bool allFaces, bool onClip, ThermalResultTable? table, int step,
         IReadOnlyList<FieldSolution> steps, bool fixRange, long geometryVersion, CancellationToken ct,
-        IReadOnlyList<(int Axis, double AtM)>? mirrors = null)
+        IReadOnlyList<(int Axis, double AtM)>? mirrors = null, TemperatureTargets? targets = null)
     {
         var origin = scene.Origin;
         var surfaces = new List<FieldSurface>();
@@ -208,7 +226,7 @@ public sealed partial class Viewer3DViewModel
             if (region.Count == 0 || scene.Objects.FirstOrDefault(o => o.Name == f.Object) is not { } so) continue;
             var tris = Scene3DFaces.Triangles(scene, so.Id, f.Face);
             if (tris.Count == 0) continue;
-            double tol = 0.01 * (so.Max - so.Min).Length();
+            double tol = FaceMatchTolerance(so.Min, so.Max);
             var whole = FieldSurfaces.RegionBoundary(vol.Mesh, array, region, origin, ct);
             surfaces.Add(FieldFaces.OnFace(whole, tris, tol));
             var (_, normal) = Scene3DFaces.AreaAndNormal(scene, so.Id, f.Face);
@@ -259,7 +277,23 @@ public sealed partial class Viewer3DViewModel
         string? note = surfaces.Count == 0 && wires.Count == 0
             ? "Nothing is painted: right-click a face ▸ Plot Temperature, or View ▸ Temperature ▸ All Faces or On Clip Plane (turn the clip plane on)."
             : null;
-        return (new TemperatureParts(surfaces, nudges, objects, wires, faces, geometryVersion) { Reflections = reflections }, scale, note, covered);
+        return (new TemperatureParts(surfaces, nudges, objects, wires, faces, geometryVersion) { Reflections = reflections, Targets = targets },
+                scale, note, covered);
+    }
+
+    /// <summary>
+    /// How far a mesher triangle's centroid may lie from a picked face's display triangles and still be on it: 1 % of the
+    /// object's diagonal (the two tessellations of a curved face differ by their chords), but never more than a quarter of the
+    /// object's thinnest extent. The region boundary's normals are not oriented, so the normal test cannot tell a face from
+    /// the one opposite it; on a layer thinner than 1 % of its diagonal (a die attach, a metallisation) the diagonal alone
+    /// reached through to the hidden opposite face and painted it too — its colder values set the legend and the hot spot.
+    /// </summary>
+    internal static double FaceMatchTolerance(Vector3 min, Vector3 max)
+    {
+        var d = max - min;
+        double thinnest = Math.Min(d.X, Math.Min(d.Y, d.Z));
+        double tol = 0.01 * d.Length();
+        return thinnest > 0 ? Math.Min(tol, 0.25 * thinnest) : tol;
     }
 
     private static FieldColorScale Range(FieldQuantity q, IReadOnlyList<FieldSurface> surfaces, IReadOnlyList<FieldWireSurface> wires)
@@ -309,7 +343,7 @@ public sealed partial class Viewer3DViewModel
         HotSpot = FieldHotSpot.Of(q, all, nudges);
         HotSpotLabel = HotSpot is { } h
             ? $"{h.Value.ToString("0.0", CultureInfo.InvariantCulture)} °C, " +
-              (h.Surface < parts.Objects.Count ? parts.Objects[h.Surface] : parts.Wires[h.Surface - parts.Objects.Count].Wire)
+              (h.Surface < parts.Objects.Count ? parts.Objects[h.Surface] : WireSpot(parts.Wires[h.Surface - parts.Objects.Count], h.At))
             : "";
         FieldText = note ?? $"Temperature: {all.Sum(x => x.TriangleCount):N0} triangles" +
                     (TemperatureStepLabel.Length > 0 ? $", {TemperatureStepLabel}" : "") + ".";
@@ -322,13 +356,18 @@ public sealed partial class Viewer3DViewModel
 
     /// <summary>
     /// Gate 7 — a sweep step on the same run: the new step's temperature alone, read into the triangles already drawn through
-    /// their recipes. False when there is nothing to revalue (the geometry is then built as usual).
+    /// their recipes. False when there is nothing to revalue (the geometry is then built as usual): no parts, parts built for
+    /// other targets (another plot's faces, All Faces, clip plane or fixed range), or a newer build scheduled and not yet
+    /// adopted — revaluing the old parts then would cancel that build and draw what it was replacing.
     /// </summary>
     private bool TryRevalueTemperature(FieldSolutionItem item)
     {
         if (_temperature is not { } parts || _fieldVolume is not { } vol || !ReferenceEquals(item.Run, _fieldRun) ||
             item.Solution.VolumePvtu is not { } pvtu || SelectedFieldQuantity is not { IsTemperature: true } q ||
             parts.Surfaces.Any(s => s.Recipe is null))
+            return false;
+        if (parts.GeometryVersion != _geometryVersion || parts.Targets is not { } built || !built.Same(CurrentTemperatureTargets()) ||
+            !parts.Faces.SequenceEqual(_temperatureFaces))
             return false;
         var table = _thermalTable;
         int step = item.Solution.Index;
@@ -413,7 +452,13 @@ public sealed partial class Viewer3DViewModel
             return $"{wire.Wire}, s = {FormatLength(ws.S)}: {T(ws.T)}";
         // The face the ID pass named, in any select mode (HoveredFace is Face mode's alone).
         bool painted = (id <= View.FieldCovered.Length && View.FieldCovered[id - 1]) || (LastPick.Object == id && IsTemperatureFace(obj.Name, LastPick.Face));
-        return painted && Sample(point) ? T(ch[0]) : "";
+        if (!painted) return "";
+        if (Sample(point)) return T(ch[0]);
+        // an exterior face has nothing behind it: a hit rounded a hair outside lies in no tetrahedron, so read again a hair
+        // along the ray — into the solid the eye is looking at (the EM face path reads a hair off its face the same way)
+        var (_, ray) = View.Camera.Ray(View.CursorX, View.CursorY, _viewW, _viewH);
+        float hair = (float)(1e-6 * (Scene.BoundsMax - Scene.BoundsMin).Length());
+        return Sample(point + hair * ray) ? T(ch[0]) : "";
     }
 
     /// <summary>The nearest hit of the cursor's ray on a mirrored surface: the surface, the ray and its parameter; null when the
@@ -454,6 +499,9 @@ public sealed partial class Viewer3DViewModel
         float t = Vector3.Dot(e2, qv) * inv;
         return t > 0 ? t : null;
     }
+
+    /// <summary>R-em3d75-5 — a wire's hot spot names the wire AND where along it: <c>w3 at s = 412 µm</c>.</summary>
+    private string WireSpot(FieldWireSurface w, Vector3 at) => WireAt(w, at) is { } ws ? $"{w.Wire} at s = {FormatLength(ws.S)}" : w.Wire;
 
     /// <summary>T and s at <paramref name="p"/> on a coloured wire: the triangle nearest the point, barycentric.</summary>
     private static (double T, double S)? WireAt(FieldWireSurface w, Vector3 p)

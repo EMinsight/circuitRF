@@ -759,6 +759,10 @@ public partial class WorkspaceViewModel
     /// setup; greyed, with the reason, when there is none or it is stale.</summary>
     public bool ThreeDTemperatureMenuEnabled => ActiveC3dEditor()?.PlotTemperatureRefusal() is null && ActiveC3dEditor() is not null;
 
+    /// <summary>The Temperature submenu opens with any 3D editor: Clear, the Probe Table and Mirror work on a stale or absent result,
+    /// and the items that plot say why they cannot (<see cref="ThreeDTemperatureTip"/>).</summary>
+    public bool ThreeDTemperatureSubmenuEnabled => ActiveC3dEditor() is not null;
+
     public string ThreeDTemperatureTip => ActiveC3dEditor() is { } e
         ? e.PlotTemperatureRefusal() ?? "Temperature from the active thermal setup's run."
         : "Requires an active 3D editor.";
@@ -768,7 +772,7 @@ public partial class WorkspaceViewModel
         nameof(ThreeDModifyMenuEnabled), nameof(ThreeDTransformMenuEnabled), nameof(ThreeDAlignMenuEnabled),
         nameof(ThreeDOrderMenuEnabled), nameof(ThreeDFaceMenuEnabled), nameof(ThreeDEdgeMenuEnabled),
         nameof(ThreeDVertexMenuEnabled), nameof(ThreeDBooleanMenuEnabled),
-        nameof(ThreeDTemperatureMenuEnabled), nameof(ThreeDTemperatureTip),
+        nameof(ThreeDTemperatureMenuEnabled), nameof(ThreeDTemperatureSubmenuEnabled), nameof(ThreeDTemperatureTip),
     ];
 
     /// <summary>Re-asks every item that depends on the active editor's selection.</summary>

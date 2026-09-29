@@ -174,6 +174,9 @@ public static class FosterFit
             double best = tol * Math.Max(wn, 1e-300);
             for (int j = 0; j < n; j++) if (!passive[j] && w[j] > best) { best = w[j]; t = j; }
             if (t < 0) break;
+            // no more columns than rows: past that the least-squares solve is underdetermined (and reads past its rows); a fit
+            // that reaches it is exact already and the next column is round-off
+            if (passive.Count(p => p) >= m) break;
             passive[t] = true;
             for (int inner = 0; inner < 3 * n + 10; inner++)
             {

@@ -330,13 +330,31 @@ public static class FieldWires
         ring.TryAdd(Local(Centroid(sweep.Rings[0])), 0);
         ring.TryAdd(Local(Centroid(sweep.Rings[^1])), sweep.Rings.Count - 1);
 
+        // an array element's vertices are the prototype's plus a float offset, and float(a) + float(d) is not float(a + d):
+        // a vertex that misses every key exactly takes the nearest ring point within a thousandth of the wire's width
+        var first = sweep.Rings[0];
+        double width = 0;
+        foreach (var a in first) foreach (var b in first) width = Math.Max(width, Math.Sqrt((a.X - b.X) * (a.X - b.X) + (a.Y - b.Y) * (a.Y - b.Y) + (a.Z - b.Z) * (a.Z - b.Z)));
+        float near2 = (float)(1e-3 * width * 1e-3 * width);
+        bool Nearest(Vector3 p, out int r)
+        {
+            r = -1;
+            float best = near2;
+            foreach (var (k, v) in ring)
+            {
+                float d2 = Vector3.DistanceSquared(k, p);
+                if (d2 <= best) { best = d2; r = v; }
+            }
+            return r >= 0;
+        }
+
         var xyz = new double[3 * indices.Count];
         var values = new double[indices.Count];
         var arc = new double[indices.Count];
         for (int i = 0; i < indices.Count; i++)
         {
             var p = positions[indices[i]];
-            if (!ring.TryGetValue(p, out int r)) return null;
+            if (!ring.TryGetValue(p, out int r) && !Nearest(p, out r)) return null;
             xyz[3 * i] = p.X; xyz[3 * i + 1] = p.Y; xyz[3 * i + 2] = p.Z;
             arc[i] = s[r];
             values[i] = table.At(s[r]);

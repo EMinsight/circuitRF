@@ -100,6 +100,45 @@ public sealed class ThermalFieldTests : IDisposable
         Assert.Equal(indices.Count, painted.Surface.VertexCount);
     }
 
+    /// <summary>An array element's wire: the scene draws the prototype's vertices plus a float offset, which is not the float of
+    /// the element's own ring points. Every vertex still finds its ring (it was left uncoloured, whole, on the first miss).</summary>
+    [Fact]
+    public void Gate5_AnArrayElementsWireIsColouredThroughItsFloatOffset()
+    {
+        const double um = 1e-6;
+        var d = new Vector3(0.0123457f, 0.00731f, 0);                   // an array pitch that does not add exactly in float
+        Point3 Shift(Point3 p) => new(p.X + d.X, p.Y + d.Y, p.Z + d.Z);
+        Point3[] path = [new(0.001, 0.002, 0), new(0.001, 0.002, 100 * um), new(0.001 + 300 * um, 0.002, 100 * um)];
+        var proto = new Em3dSweep(path, Em3dSection.Circle, 25 * um, [Square(path[0], 'z'), Square(path[1], 'x'), Square(path[2], 'x')]);
+        var element = new Em3dSweep([.. path.Select(Shift)], Em3dSection.Circle, 25 * um, [.. proto.Rings.Select(r => (IReadOnlyList<Point3>)[.. r.Select(Shift)])]);
+        var mesh = Em3dTessellation.Of(new Em3dSolid("w1", "Gold", Em3dRole.Conductor, proto, 0));
+        var positions = mesh.Vertices.Select(p => new Vector3((float)p.X, (float)p.Y, (float)p.Z) + d).ToList();
+        var indices = mesh.Triangles.SelectMany(t => new[] { t.A, t.B, t.C }).ToList();
+        var table = new WireTemperature("w1", [0, 400 * um], [30, 280]);
+        Assert.NotNull(FieldWires.Colour("w1", element, positions, indices, (0.0, 0.0, 0.0), table));
+    }
+
+    /// <summary>Plot Temperature on a face of a thin layer (a 25 µm attach under a 3 mm die) keeps its match tolerance inside
+    /// the layer: 1 % of the diagonal (42 µm) reached the hidden opposite face, whose values then set the legend.</summary>
+    [Fact]
+    public void FaceMatchTolerance_StaysInsideAThinLayer()
+    {
+        double tol = CircuitRF.Ui.Viewer3D.Viewer3DViewModel.FaceMatchTolerance(Vector3.Zero, new Vector3(3e-3f, 3e-3f, 25e-6f));
+        Assert.True(tol < 25e-6, $"tolerance {tol} m reaches the opposite face");
+        // a chunky solid keeps 1 % of its diagonal
+        Assert.Equal(0.01 * new Vector3(1e-3f).Length(), CircuitRF.Ui.Viewer3D.Viewer3DViewModel.FaceMatchTolerance(Vector3.Zero, new Vector3(1e-3f)), 1e-12);
+    }
+
+    /// <summary>Temperature Along whose end lies outside every solid says so (ΔT is not a number), rather than quoting the
+    /// difference between two samples that are not the points picked.</summary>
+    [Fact]
+    public void ThermalLine_AnEndOutsideTheMeshGivesNoDeltaT()
+    {
+        var line = new CircuitRF.Ui.ThreeD.C3dThermalLine("t", [0, 1e-3, 2e-3], [double.NaN, 40, 50]);
+        Assert.True(double.IsNaN(line.DeltaC));
+        Assert.Equal(10.0, new CircuitRF.Ui.ThreeD.C3dThermalLine("t", [0, 1e-3], [40, 50]).DeltaC);
+    }
+
     private static IReadOnlyList<Point3> Square(Point3 c, char normal)
     {
         const double h = 10e-6;

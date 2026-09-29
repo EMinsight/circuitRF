@@ -45,10 +45,22 @@ public sealed class ThermalSolution
     public required IReadOnlyList<string> Notes { get; init; }
 }
 
+/// <summary>A body with no fixed-temperature face and no convection touches nothing that sets its temperature: no steady
+/// state. <see cref="Regions"/> are the mesh regions of every such body.</summary>
+public sealed class FloatingRegionsException(int[] regions)
+    : InvalidOperationException($"{regions.Length} region(s) ({string.Join(", ", regions)}) touch no fixed-temperature or convection " +
+                                "face through any solid: their temperature has no steady state")
+{
+    public int[] Regions { get; } = regions;
+}
+
 public static class ThermalSolver
 {
     /// <summary>The energy balance a solve must close to.</summary>
     public const double BalanceTolerance = 1e-6;
+
+    /// <summary>The smallest temperature span Newton's update test is measured against, K.</summary>
+    private const double SpanFloorK = 1e-3;
 
     /// <summary>Solves <paramref name="problem"/>. <paramref name="assembly"/> may be passed to reuse one mesh's pattern and
     /// colouring across sweep points.</summary>
@@ -74,6 +86,8 @@ public static class ThermalSolver
         for (int i = 0; i < n; i++) free[i] = double.IsNaN(fixedT[i]) ? nFree++ : -1;
         if (nFree == n && problem.Convection.Count == 0)
             throw new InvalidOperationException("the fixed-temperature faces select no triangle: no steady state");
+        if (FloatingRegions(problem, fixedT) is { Length: > 0 } floating)
+            throw new FloatingRegionsException(floating);
 
         bool nonlinear = options.KOfT && problem.Conductivity.Any(c => !c.IsConstant);
         var kind = options.Solver == ThermalSolverKind.Auto
@@ -99,8 +113,18 @@ public static class ThermalSolver
             if (options.InitialGuess.Length != n) throw new ArgumentException("initial guess length", nameof(options));
             Array.Copy(options.InitialGuess, T, n);
             for (int i = 0; i < n; i++) if (!double.IsNaN(fixedT[i])) T[i] = fixedT[i];
-            sys = assembly.Assemble(problem, T, kOfT: true, tangent: false);
-            last = new LinearSolveReport(kind, 0, 0, true, null);
+            if (T.All(double.IsFinite))
+            {
+                sys = assembly.Assemble(problem, T, kOfT: true, tangent: false);
+                last = new LinearSolveReport(kind, 0, 0, true, null);
+            }
+            else
+            {
+                // a warm start that is not a field (a previous point that failed) is no start: the constant-k solve is
+                sys = assembly.Assemble(problem, null, kOfT: false, tangent: false);
+                last = SolveReduced(assembly.Matrix(sys.Secant), sys.Load, fixedT, free, nFree, T, symmetric: true, kind, options);
+                if (last.FallbackNote is { } fb) notes.Add(fb);
+            }
         }
 
         if (nonlinear)
@@ -123,6 +147,12 @@ public static class ThermalSolver
                 Array.Clear(delta);
                 last = LinearSolver.Solve(j, rhs, delta, symmetric: false, kind, options);
                 if (last.FallbackNote is { } fb) notes.Add(fb);
+                if (!delta.All(double.IsFinite))
+                {
+                    // a singular tangent: T keeps its last finite iterate, and the point says it did not converge
+                    notes.Add("A Newton step over k(T) was not finite (a singular tangent); the last finite iterate is kept.");
+                    break;
+                }
                 double step = 2;
                 AssembledSystem? next = null;
                 double[]? rNext = null;
@@ -137,6 +167,11 @@ public static class ThermalSolver
                     rNextNorm = SparseRows.Norm(rNext);
                     if (rNextNorm < rNorm || rNorm <= 1e-8 * reference) break;
                 }
+                if (!double.IsFinite(rNextNorm))
+                {
+                    notes.Add("Every trial of a Newton step over k(T) gave a non-finite residual; the last finite iterate is kept.");
+                    break;
+                }
                 double maxDelta = 0;
                 foreach (double d in delta) maxDelta = Math.Max(maxDelta, Math.Abs(d));
                 newtonUpd = step * maxDelta;
@@ -145,8 +180,10 @@ public static class ThermalSolver
                 r = rNext!;
                 rNorm = rNextNorm;
                 newtonRes = rNorm / reference;
+                // the span is floored at 1 mK: at an isothermal point (no power, every boundary at one temperature) the span is
+                // round-off, and so is every update, which a relative test against the span would never accept
                 double span = Span(T);
-                if (newtonUpd <= options.NewtonTolerance * Math.Max(span, 1e-300) && newtonRes <= 1e-8)
+                if (newtonUpd <= options.NewtonTolerance * Math.Max(span, SpanFloorK) && newtonRes <= 1e-8)
                 {
                     converged = true;
                     break;
@@ -197,7 +234,7 @@ public static class ThermalSolver
         var fixedT = new double[n];
         var fixedTag = new int[n];
         Array.Fill(fixedT, double.NaN);
-        int conflicts = 0;
+        var conflicted = new HashSet<int>();
         int nf = m.NodesPerTriangle;
         foreach (var f in problem.Fixed)
             for (int t = 0; t < m.TriangleCount; t++)
@@ -207,7 +244,7 @@ public static class ThermalSolver
                 {
                     int v = m.Triangles[nf * t + k];
                     if (double.IsNaN(fixedT[v])) { fixedT[v] = f.TempC; fixedTag[v] = f.Tag; }
-                    else if (fixedT[v] != f.TempC && fixedTag[v] != f.Tag) conflicts++;
+                    else if (fixedT[v] != f.TempC) conflicted.Add(v);
                 }
             }
         // brief-em3d-76 — fixed FIELDS after the fixed faces: each node at its own position's value
@@ -225,7 +262,44 @@ public static class ThermalSolver
                     fixedTag[v] = f.Tag;
                 }
             }
-        return (fixedT, fixedTag, conflicts);
+        return (fixedT, fixedTag, conflicted.Count);
+    }
+
+    /// <summary>
+    /// The regions of every connected body (tetrahedra joined through shared nodes, and across interface elements) that
+    /// touches no fixed node and no convection face with h &gt; 0. Such a body's temperature is not determined — its block of
+    /// the matrix is singular — so the solve is refused rather than handing the factorisation a zero pivot.
+    /// </summary>
+    internal static int[] FloatingRegions(ThermalProblem problem, double[] fixedT)
+    {
+        var m = problem.Mesh;
+        int n = m.NodeCount, nt = m.NodesPerTet, nf = m.NodesPerTriangle;
+        var parent = new int[n];
+        for (int i = 0; i < n; i++) parent[i] = i;
+        int Find(int i)
+        {
+            while (parent[i] != i) { parent[i] = parent[parent[i]]; i = parent[i]; }
+            return i;
+        }
+        void Union(int a, int b) { a = Find(a); b = Find(b); if (a != b) parent[a] = b; }
+        for (int e = 0; e < m.TetCount; e++)
+            for (int k = 1; k < nt; k++) Union(m.Tets[nt * e], m.Tets[nt * e + k]);
+        if (m.Interfaces is { } faces)
+            for (int f = 0; f < faces.Count; f++)
+                if (faces.H[f] > 0)
+                    for (int k = 0; k < faces.NodesPerSide; k++)
+                        Union(faces.Triangles[2 * faces.NodesPerSide * f + k], faces.Triangles[2 * faces.NodesPerSide * f + faces.NodesPerSide + k]);
+        var anchored = new bool[n];
+        for (int i = 0; i < n; i++) if (!double.IsNaN(fixedT[i])) anchored[Find(i)] = true;
+        var robin = new HashSet<int>();
+        foreach (var c in problem.Convection) if (c.HWm2K > 0) robin.Add(c.Tag);
+        if (robin.Count > 0)
+            for (int t = 0; t < m.TriangleCount; t++)
+                if (robin.Contains(m.TriangleTag[t])) anchored[Find(m.Triangles[nf * t])] = true;
+        var floating = new SortedSet<int>();
+        for (int e = 0; e < m.TetCount; e++)
+            if (!anchored[Find(m.Tets[nt * e])]) floating.Add(m.TetRegion[e]);
+        return [.. floating];
     }
 
     private static double Span(double[] t)

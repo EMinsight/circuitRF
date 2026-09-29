@@ -294,7 +294,16 @@ public static class ThermalLowerings
                 pieces = [.. pieces.Where(pc => Overlaps(pc.Bounds(), c.Min, c.Max, -tol))];
                 if (pieces.Count == 0) { dropped.Add(spelled); return null; }
             }
-            faces.Add(new GmshThermalFace(spelled, si, pieces, exteriorOnly));
+            // an effective block that cuts into this solid takes its footprint out of the solid's faces: that footprint is
+            // the block's surface now, on the same plane, and still part of the face the condition or probe names
+            var also = blocks.Select(bl => solids.IndexOf(bl.Solid))
+                             .Where(bi => bi >= 0 && bi != si
+                                          && Overlaps(Em3dProblem.Bounds(solids[si].Primitive), BoundsMin(solids[bi]), BoundsMax(solids[bi]), tol)
+                                          && pieces.Any(pc => Overlaps(pc.Bounds(), BoundsMin(solids[bi]), BoundsMax(solids[bi]), -tol))).ToList();
+            if (also.Count > 0 && faces.All(x => x.Name != spelled))
+                notes.Add($"The face '{spelled}' takes in the footprint of effective block(s) {string.Join(", ", also.Select(bi => $"'{solids[bi].Name}'"))} " +
+                          "that cut into its solid.");
+            faces.Add(new GmshThermalFace(spelled, si, pieces, exteriorOnly) { AlsoSolids = also });
             return null;
         }
         foreach (var b in t.Boundaries ?? [])
@@ -386,6 +395,9 @@ public static class ThermalLowerings
             Conductors = [.. solids.Select(x => x.Role == Em3dRole.Conductor && !blocks.Any(bl => bl.Solid == x))],
         };
     }
+
+    private static Point3 BoundsMin(Em3dSolid s) { var b = Em3dProblem.Bounds(s.Primitive); return new Point3(b.X0, b.Y0, b.Z0); }
+    private static Point3 BoundsMax(Em3dSolid s) { var b = Em3dProblem.Bounds(s.Primitive); return new Point3(b.X1, b.Y1, b.Z1); }
 
     private static bool Overlaps((double X0, double Y0, double Z0, double X1, double Y1, double Z1) a, Point3 lo, Point3 hi, double tol)
         => a.X0 < hi.X - tol && a.X1 > lo.X + tol && a.Y0 < hi.Y - tol && a.Y1 > lo.Y + tol && a.Z0 < hi.Z - tol && a.Z1 > lo.Z + tol;

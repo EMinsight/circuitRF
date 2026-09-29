@@ -37840,3 +37840,34 @@ be seen where it was assigned.
 - **Headless photographs** were taken with the real `App` under `Avalonia.Headless` (`UseHeadlessDrawing = false`,
   `CaptureRenderedFrame`) from a scratch program — light and dark, the dialog, and the tables expanded. The live window
   itself was not seen.
+
+## Thermal series review (briefs 71–81) — the editor and the temperature view (2026-09-29)
+
+**A sweep step may revalue the drawn temperature only onto parts built for the same targets.** `TryRevalueTemperature`
+checked only that the run was the same and that recipes existed, so ticking a second temperature plot (All Faces) whose
+solution differed from the first's (one painted face) revalued the FIRST plot's surfaces under the second's name. The parts
+now carry the targets they were built for (faces, All Faces, clip section and plane, fixed range, mirror planes) and the
+geometry version; a mismatch, or a newer build scheduled and not yet adopted, falls back to a full build. The second half
+matters on its own: a step change cancelled an in-flight Fix Range build and revalued the old parts with one step's own
+range, so "fixed across the sweep" silently was not.
+
+**A picked face's match tolerance is capped at a quarter of the object's thinnest extent.** The region boundary's normals
+are not oriented, so the normal test cannot tell a face from its opposite; with 1 % of the diagonal as the tolerance, a
+layer thinner than that (a die attach, a metallisation) painted its hidden bottom face too, and its colder values set the
+legend minimum. The EM face path shared the tolerance and takes the same cap.
+
+**The setup page's commit writes into a COPY.** `CommitThermal` wrote rows into the live `Working.Thermal` and then returned
+early on the first number that did not parse, leaving the edits in the document with no undo entry of their own. It also
+now keeps an override whose source the page does not list, instead of dropping it on an unrelated edit.
+
+**Thermal tools answer for the ACTIVE setup.** Plot Temperature's enable check asks whether the active thermal setup's run
+left a field on disk; the probe table, T(s), Z_th and Temperature Along read the viewer's table only when the run the viewer
+has open IS the active setup's (a visible plot pinned to another setup opens that one), and say so otherwise. A temperature
+face joins the drawn plot only when that plot reads the active setup.
+
+**Smaller:** renaming a place updates Rth/Z_th lists and a submodel's region; the hidden-place set learns the new name before
+the tree is rebuilt; an array element's wire matches its rings within a thousandth of the wire's width (float offsets do not
+add exactly); the hover reads a hair along the ray when the hit lies just outside the mesh; a line's ΔT is "—" when an end
+lies outside every solid; the line plot's distance axis uses the document's display unit; a wire's hot spot names its s; the
+Temperature submenu opens with any 3D editor, so Clear, Probe Table and Mirror stay reachable over a stale plot (the plotting
+items refuse with the reason).

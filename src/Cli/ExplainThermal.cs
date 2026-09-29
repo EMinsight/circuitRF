@@ -47,9 +47,19 @@ internal static class ExplainThermal
         string at = $"thermal setup '{name}'";
         var sweep = t.Sweep ?? [];
 
-        // The first sweep point, then --set over it: what "resolved at the first sweep point" means.
-        var first = sweep.Select(s => (s.Var, s.Start)).Concat(sets).ToList();
-        var res = C3dResolver.Resolve(doc, C3dCell.Of(full), null, first);
+        // The first sweep point: what "resolved at the first sweep point" means. Its Start is evaluated as the run evaluates it
+        // (a trailing unit lifted, "100 mW" is 0.1) and bound as that number. --set is NOT applied to the document: `em` hands
+        // it to the linked circuit's globals only, and an explain that applied it here would describe a run `em` never makes.
+        var baseRes = C3dResolver.Resolve(doc, C3dCell.Of(full), null, []);
+        var first = sweep.Select(s => (s.Var, C3dThermal.Evaluate(baseRes, s.Start, out _) is { } v
+            ? v.ToString("R", CultureInfo.InvariantCulture) : s.Start)).ToList();
+        var res = first.Count == 0 ? baseRes : C3dResolver.Resolve(doc, C3dCell.Of(full), null, first);
+        if (sets.Count > 0)
+            walks.Add(new ResolutionStepJson($"thermal setup '{name}': --set", full,
+                (t.Currents ?? []).Any(c => c.FromCircuit is not null)
+                    ? $"{string.Join(", ", sets.Select(x => x.Name))} set globals of the circuit the currents come from, not the 3D view's variables"
+                    : $"{string.Join(", ", sets.Select(x => x.Name))} not applied: this setup takes no currents from a circuit",
+                "as `em` applies it to a thermal setup"));
 
         walks.Add(new ResolutionStepJson(at, full,
             $"{doc.HeatSources.Count} heat source(s), {(t.Boundaries ?? []).Count} boundary(ies), {doc.Probes.Count} probe(s), " +
@@ -123,10 +133,11 @@ internal static class ExplainThermal
         // ── the sweep: base SI, with the variable's unit and scale (CLAUDE.md: a mark read without its scale ran at 2 Hz) ──
         foreach (var s in sweep)
         {
-            string unit = res.Names.TryGetValue(s.Var, out var n) ? n.Unit ?? "(none)" : "(not a variable)";
+            // the unit is the VAR's own, read before the sweep binds it (a bound value carries none)
+            string unit = baseRes.Names.TryGetValue(s.Var, out var n) ? n.Unit ?? "(none)" : "(not a variable)";
             double scale = n?.Unit is { } u ? CircuitRF.Core.Expressions.Units.Scale(u) ?? 1 : 1;
             walks.Add(new ResolutionStepJson($"{at}: sweep {s.Var}", null,
-                $"{Eval(res, s.Start)} to {Eval(res, s.Stop)} in {s.Points} point(s), base SI; unit {unit}, scale {G(scale)}",
+                $"{Eval(baseRes, s.Start)} to {Eval(baseRes, s.Stop)} in {s.Points} point(s), base SI; unit {unit}, scale {G(scale)}",
                 "linear from Start to Stop; two axes make a product"));
         }
 
@@ -153,7 +164,7 @@ internal static class ExplainThermal
         // ── interfaces in force: every touching pair of solids with a material-pair value or a contact override ──
         if (e.Ok)
         {
-            var solids = e.Solids.Where(s => s.Role != Em3dRole.Air).Take(400).ToList();
+            var solids = e.Solids.Where(s => !CircuitRF.Design.Thermal.ThermalMaterials.NotMeshed(s.Role, s.Material)).Take(400).ToList();
             var tech = e.Technology;
             for (int i = 0; i < solids.Count; i++)
                 for (int j = i + 1; j < solids.Count; j++)
@@ -174,14 +185,20 @@ internal static class ExplainThermal
                         "reports the area the mesh actually shares"));
                 }
 
-            // ── each meshed material's k at 25 °C ──
-            foreach (string material in solids.Select(s => s.Material.Split('@')[0]).Distinct(StringComparer.OrdinalIgnoreCase))
+            // ── each meshed material's k at 25 °C, through the run's own lookup (each solid's own technology, and the look-through
+            //    to a library record that states k) ──
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var solid in solids)
             {
-                var tm = tech?.FindMaterial(material);
+                if (!seen.Add(solid.Material)) continue;
+                string material = solid.Material.Split('@')[0];
+                var rec = CircuitRF.Design.Thermal.ThermalMaterials.For(e, solid.Name, solid.Material);
+                var tm = rec?.Material;
                 var k = tm is null ? null : ThermalProperties.ThermalKAt(tm, 25);
                 walks.Add(new ResolutionStepJson($"{at}: material {material}", e.TechnologyPath,
                     k is { } kv ? $"k(25 °C) = {G(kv.Value)} W/(m·K)" + (tm!.ThermalKVsTemp is { Count: > 0 } ? " from its ThermalKVsTemp table" : " (ThermalK, constant)") +
-                                  (tm.ThermalKTensor is { Length: 3 } kt ? $"; the volume solve reads its ThermalKTensor {G(kt[0])} / {G(kt[1])} / {G(kt[2])} along x / y / z" : "")
+                                  (tm.ThermalKTensor is { Length: 3 } kt ? $"; the volume solve reads its ThermalKTensor {G(kt[0])} / {G(kt[1])} / {G(kt[2])} along x / y / z" : "") +
+                                  (rec!.LookThroughNote is { } note ? $" — {note}" : "")
                                 : "states no thermal conductivity (check refuses this)",
                     "the table wins over the constant when both are stated"));
             }

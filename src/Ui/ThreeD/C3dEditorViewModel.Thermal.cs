@@ -41,10 +41,12 @@ public sealed record C3dProbeTableRow(string Name, string Unit, string Value, IR
 /// sweep, or against a carried circuit cube — then <see cref="XLabel"/> names the x axis, and the x values are plotted as they are
 /// (a distance is metres, drawn in µm).</summary>
 public sealed record C3dThermalLine(string Title, double[] DistanceM, double[] ValuesC, string? XLabel = null, string YLabel = "T (°C)",
-                                    bool LogX = false)
+                                    bool LogX = false, double UnitsPerMetre = 1e6, string UnitSuffix = "µm")
 {
-    public double FromC => ValuesC.FirstOrDefault(double.IsFinite, double.NaN);
-    public double ToC => ValuesC.LastOrDefault(double.IsFinite, double.NaN);
+    /// <summary>The temperature AT each end — NaN when that end lies outside every solid (a pick on an exterior face rounded a hair
+    /// out): the readout then says so, rather than quoting ΔT between two samples that are not the points picked.</summary>
+    public double FromC => ValuesC.Length > 0 ? ValuesC[0] : double.NaN;
+    public double ToC => ValuesC.Length > 0 ? ValuesC[^1] : double.NaN;
     public double DeltaC => ToC - FromC;
     public double LengthM => DistanceM.Length > 0 ? DistanceM[^1] : 0;
 }
@@ -170,8 +172,8 @@ public sealed partial class C3dEditorViewModel
         }
     }
 
-    /// <summary>Renames a thermal place, and every setup's reference to it: a source override's name, and a probe's name in
-    /// a measure. Null on success, else why not.</summary>
+    /// <summary>Renames a thermal place, and every setup's reference to it: a source override's name, a probe's name in
+    /// a measure, the Rth and Z_th lists, and a submodel's region. Null on success, else why not.</summary>
     public string? RenameThermalPlace(string old, string name)
     {
         name = name.Trim();
@@ -183,6 +185,9 @@ public sealed partial class C3dEditorViewModel
                                    .Concat(NestedNames());
         if (used.Contains(name, StringComparer.Ordinal)) return $"This 3D view already has something named '{name}'.";
         var word = new Regex($@"(?<![A-Za-z0-9_]){Regex.Escape(old)}(?![A-Za-z0-9_])");
+        // the hidden set learns the new name BEFORE the edit rebuilds the tree (so its tick reads hidden), and keeps the old
+        // one, so an undo of the rename finds the place still hidden
+        if (_hiddenPlaces.Contains(old)) _hiddenPlaces.Add(name);
         ChangeRecords($"Rename {old} to {name}", d =>
         {
             foreach (var h in d.HeatSources.Where(h => h.Name == old)) h.Name = name;
@@ -194,14 +199,23 @@ public sealed partial class C3dEditorViewModel
                 if (EmSetupPersistence.FromEmbedded(d.Setups[i]) is not { Thermal: { } t } s) continue;
                 bool changed = false;
                 foreach (var src in t.Sources ?? []) if (src.Name == old) { src.Name = name; changed = true; }
+                changed |= Rename(t.Rth?.Sources) | Rename(t.Zth?.Sources) | Rename(t.Zth?.Probes);
+                if (t.Submodel is { } sm && sm.Region == old) { sm.Region = name; changed = true; }
                 if (t.Measures is { } ms)
                     for (int k = 0; k < ms.Count; k++)
                         if (word.IsMatch(ms[k])) { ms[k] = word.Replace(ms[k], name); changed = true; }
                 if (changed) d.Setups[i] = EmSetupPersistence.ToEmbedded(s);
             }
         });
-        if (_hiddenPlaces.Remove(old)) _hiddenPlaces.Add(name);
         return null;
+
+        bool Rename(List<string>? names)
+        {
+            if (names is null) return false;
+            bool any = false;
+            for (int k = 0; k < names.Count; k++) if (names[k] == old) { names[k] = name; any = true; }
+            return any;
+        }
     }
 
     /// <summary>Deletes a thermal place: one undo entry. A setup that still names it says so through <c>check</c>.</summary>
@@ -422,8 +436,8 @@ public sealed partial class C3dEditorViewModel
         double? r = null;
         if (text.Length > 0)
         {
-            if (!double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double v) || !(v > 0) || !double.IsFinite(v))
-                return "A contact resistance is a positive number, m²·K/W (1e-5 is a thin solder).";
+            if (!double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double v) || !(v >= 0) || !double.IsFinite(v))
+                return "A contact resistance is zero (perfect contact) or a positive number, m²·K/W (1e-5 is a thin solder).";
             r = v;
         }
         static bool Same(C3dContactResistance c, string a, string b)
@@ -445,13 +459,36 @@ public sealed partial class C3dEditorViewModel
     public string? PlotTemperatureRefusal()
     {
         if (ActiveSetup is not { IsThermal: true }) return "Plot Temperature reads a thermal run: make a thermal setup active.";
-        if (!Viewer.IsThermalRun || !Viewer.FieldsAvailable) return $"There is no thermal result for '{ActiveSetupName}': run it first (Simulate ▸ Run).";
+        // the ACTIVE setup's run, on disk: the viewer may have another setup's run open for the plot it is drawing
+        if (!ActiveThermalResultExists()) return $"There is no thermal result for '{ActiveSetupName}': run it first (Simulate ▸ Run).";
         if (FieldsStaleText is not null) return "The thermal result is stale — the model has changed since it was run. Run it again to plot it.";
         return null;
     }
 
-    /// <summary>The toolbar's Along… and Probes: shown while a thermal run's temperatures are the fields read.</summary>
-    public bool ShowThermalRunTools => Viewer.IsThermalRun && Viewer.FieldsAvailable;
+    /// <summary>The active thermal setup's run left a temperature field.</summary>
+    private bool ActiveThermalResultExists()
+        => ActiveSetup is { IsThermal: true } && ActiveRunDirectories().FirstOrDefault() is { } dir &&
+           File.Exists(Path.Combine(ThermalFieldFiles.Folder(dir), ThermalFieldFiles.Problem + ".pvd"));
+
+    /// <summary>The run the viewer has open is the active thermal setup's: its table and temperatures answer for that setup.
+    /// A visible plot pinned to another setup opens that setup's run instead (brief-em3d-83).</summary>
+    private bool ViewerReadsActiveThermal()
+        => Viewer.IsThermalRun && Viewer.FieldsAvailable && Viewer.FieldRunDirectory is { } open &&
+           ActiveSetup is { IsThermal: true } && ActiveRunDirectories().FirstOrDefault() is { } dir &&
+           string.Equals(Path.GetFullPath(open).TrimEnd(Path.DirectorySeparatorChar), Path.GetFullPath(dir).TrimEnd(Path.DirectorySeparatorChar),
+                         OperatingSystem.IsLinux() ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>The thermal table of the active setup's run, or null when the viewer has no such run open.</summary>
+    private ThermalResultTable? ActiveThermalTable => ViewerReadsActiveThermal() ? Viewer.ThermalTable : null;
+
+    /// <summary>Why there is no <see cref="ActiveThermalTable"/>.</summary>
+    private string NoActiveThermalTable()
+        => ActiveThermalResultExists() && Viewer.FieldsAvailable && !ViewerReadsActiveThermal()
+            ? $"The fields open are another setup's run: show a plot of '{ActiveSetupName}' to read its result."
+            : "No thermal result: run the active thermal setup.";
+
+    /// <summary>The toolbar's Along… and Probes: shown while the active thermal setup's temperatures are the fields read.</summary>
+    public bool ShowThermalRunTools => ViewerReadsActiveThermal();
 
     /// <summary>Gate 2 — the stale banner changing changes what Plot Temperature can do: the menus re-ask. The sentence is
     /// shown on the selected field plot in the Properties Inspector, which reads it again.</summary>
@@ -519,6 +556,7 @@ public sealed partial class C3dEditorViewModel
     public void StartTemperatureAlong()
     {
         if (PlotTemperatureRefusal() is { } why) { StatusMessage = why; return; }
+        if (!ViewerReadsActiveThermal()) { StatusMessage = NoActiveThermalTable(); return; }
         Viewer.EnsureTemperatureLoaded();
         SetTool(new TemperatureAlongTool(this));
     }
@@ -548,6 +586,12 @@ public sealed partial class C3dEditorViewModel
 
     private static string C(double v) => double.IsFinite(v) ? v.ToString("0.00", CultureInfo.InvariantCulture) + " °C" : "—";
 
+    /// <summary>The line plot's distance axis in the document's display unit, as the readout beside it: (units per metre,
+    /// suffix).</summary>
+    private (double PerMetre, string Suffix) LineDistanceUnit()
+        => (1e6 * (double)LayoutUnits.FromDbu(Document.DbuPerMicron, Document.DisplayUnit, Document.DbuPerMicron),
+            LayoutUnits.Suffix(Document.DisplayUnit));
+
     /// <summary>Samples along a Temperature Along line.</summary>
     public const int AlongSamples = 201;
 
@@ -555,10 +599,13 @@ public sealed partial class C3dEditorViewModel
     /// Null on success, else why not.</summary>
     public string? PlotTemperatureAlong(C3dPoint3 a, C3dPoint3 b)
     {
+        if (!ViewerReadsActiveThermal()) return NoActiveThermalTable();
         double M(long v) => C3dLowering.Metres(v, Document.DbuPerMicron);
         var line = Viewer.TemperatureAlong((M(a.X), M(a.Y), M(a.Z)), (M(b.X), M(b.Y), M(b.Z)), AlongSamples, out string? why);
         if (line is null) return why;
-        ThermalLine = new C3dThermalLine($"Temperature along ({Viewer.TemperatureStepLabel})", line.Distance, line.Values);
+        var (per, suffix) = LineDistanceUnit();
+        ThermalLine = new C3dThermalLine($"Temperature along ({Viewer.TemperatureStepLabel})", line.Distance, line.Values,
+                                         UnitsPerMetre: per, UnitSuffix: suffix);
         StatusMessage = ThermalLineText;
         return null;
     }
@@ -566,13 +613,16 @@ public sealed partial class C3dEditorViewModel
     /// <summary>R-em3d75-4d — a line probe's T(s), from the run's table, at the step shown.</summary>
     public string? PlotLineProbe(string probe)
     {
-        if (Viewer.ThermalTable is not { } table || table.Lines.FirstOrDefault(l => l.Probe == probe) is not { } line)
+        if (ActiveThermalTable is not { } table) return NoActiveThermalTable();
+        if (table.Lines.FirstOrDefault(l => l.Probe == probe) is not { } line)
             return $"There is no line result for '{probe}': run the active thermal setup.";
         if (Document.Probes.FirstOrDefault(p => p.Name == probe)?.Line is not { } seg) return $"'{probe}' is not a line probe.";
         var d = seg.To - seg.From;
         double length = C3dLowering.Metres(1, Document.DbuPerMicron) * Math.Sqrt((double)d.X * d.X + (double)d.Y * d.Y + (double)d.Z * d.Z);
         int step = Math.Clamp(Viewer.TemperatureStep, 0, line.PerPoint.Length - 1);
-        ThermalLine = new C3dThermalLine($"{probe} ({table.PointLabel(step)})", [.. line.Fraction.Select(f => f * length)], line.PerPoint[step]);
+        var (per, suffix) = LineDistanceUnit();
+        ThermalLine = new C3dThermalLine($"{probe} ({table.PointLabel(step)})", [.. line.Fraction.Select(f => f * length)], line.PerPoint[step],
+                                         UnitsPerMetre: per, UnitSuffix: suffix);
         return null;
     }
 
@@ -601,7 +651,7 @@ public sealed partial class C3dEditorViewModel
     /// shown, into the line panel. Null on success, else why not.</summary>
     public string? PlotProbeRow(string name)
     {
-        if (Viewer.ThermalTable is not { } t) return "No thermal result: run the active thermal setup.";
+        if (ActiveThermalTable is not { } t) return NoActiveThermalTable();
         if (t.Axes.Count == 0) return "The run has one point: there is nothing to plot it against.";
         if (t.Rows.FirstOrDefault(r => r.Name == name) is not { } row) return $"The result has no row '{name}'.";
         var inner = t.Axes[^1];
@@ -629,7 +679,7 @@ public sealed partial class C3dEditorViewModel
     /// </summary>
     public string? PlotZth(string place, string source, bool phase)
     {
-        if (Viewer.ThermalTable is not { } t) return "No thermal result: run the active thermal setup.";
+        if (ActiveThermalTable is not { } t) return NoActiveThermalTable();
         if (t.Zth.FirstOrDefault(z => z.Place == place && z.Source == source) is not { } zth)
             return $"The result has no Z_th of '{place}' per watt in '{source}': state it in the setup's Zth and run it.";
         var keep = Enumerable.Range(0, zth.FrequencyHz.Length).Where(i => zth.FrequencyHz[i] > 0).ToList();
@@ -653,9 +703,9 @@ public sealed partial class C3dEditorViewModel
     public void RefreshProbeTable()
     {
         ProbeTable.Clear();
-        if (Viewer.ThermalTable is not { } t)
+        if (ActiveThermalTable is not { } t)
         {
-            ProbeTableHeading = "No thermal result: run the active thermal setup.";
+            ProbeTableHeading = NoActiveThermalTable();
             return;
         }
         int step = Math.Clamp(Viewer.TemperatureStep, 0, Math.Max(0, t.Points - 1));
@@ -943,10 +993,10 @@ public sealed partial class C3dEditorViewModel
             items.Add(new Viewer3DMenuItem("Default Power…", () => TextRequested?.Invoke($"Heat source {name}", "Default power, W (a number or an expression):",
                 Document.HeatSources.FirstOrDefault(h => h.Name == name)?.Power ?? "", text => SetPlaceText(name, "Power", text))));
         if (item.Kind == ProbeKind && Document.Probes.FirstOrDefault(p => p.Name == name) is { Line: not null })
-            items.Add(new Viewer3DMenuItem("Plot T(s)", () => Report(PlotLineProbe(name)), Enabled: Viewer.ThermalTable is not null,
-                Tip: Viewer.ThermalTable is null ? "Run the active thermal setup first." : "The line's temperature at the step shown."));
+            items.Add(new Viewer3DMenuItem("Plot T(s)", () => Report(PlotLineProbe(name)), Enabled: ActiveThermalTable is not null,
+                Tip: ActiveThermalTable is null ? NoActiveThermalTable() : "The line's temperature at the step shown."));
         // brief-em3d-80 — a place the run computed Z_th of: its magnitude and phase, per watt in each source (a source's own first)
-        if (item.Kind is HeatSourceKind or ProbeKind && Viewer.ThermalTable?.Zth.Where(z => z.Place == name).OrderBy(z => z.Source == name ? 0 : 1).Take(8).ToList() is { Count: > 0 } zs)
+        if (item.Kind is HeatSourceKind or ProbeKind && ActiveThermalTable?.Zth.Where(z => z.Place == name).OrderBy(z => z.Source == name ? 0 : 1).Take(8).ToList() is { Count: > 0 } zs)
             foreach (var z in zs)
             {
                 string per = z.Source == name ? "" : $" per watt in '{z.Source}'";
@@ -1029,14 +1079,14 @@ public static class ThermalPlots
         {
             ShowWatermark = false,
             CustomTitleOn = true, CustomTitle = line.Title, CustomTitleBold = true,
-            CustomXLabelOn = true, CustomXLabel = "Distance (µm)",
+            CustomXLabelOn = true, CustomXLabel = $"Distance ({line.UnitSuffix})",
             CustomYLabelOn = true, CustomYLabel = "T (°C)",
         };
         // brief-em3d-79: a probe row against the sweep (or a carried cube) names its own axes and plots x as it is
         if (line.XLabel is not null) { plot.CustomXLabel = line.XLabel; plot.CustomYLabel = line.YLabel; }
         // brief-em3d-80: Z_th against a logarithmic frequency
         if (line.LogX) plot.Axes.XScale = CircuitRF.Render.DataDisplay.AxisScale.Log;
-        double xScale = line.XLabel is null ? 1e6 : 1;
+        double xScale = line.XLabel is null ? line.UnitsPerMetre : 1;
         var keep = Enumerable.Range(0, line.DistanceM.Length).Where(i => double.IsFinite(line.ValuesC[i]) && double.IsFinite(line.DistanceM[i]))
                              .OrderBy(i => line.DistanceM[i]).ToList();
         double[] x = [.. keep.Select(i => line.DistanceM[i] * xScale)], y = [.. keep.Select(i => line.ValuesC[i])];

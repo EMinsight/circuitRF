@@ -157,6 +157,38 @@ public sealed class ThermalInterfacesBlocksTests(ITestOutputHelper output) : IDi
         Assert.Contains("cuts through 'flange'", refused.Error);
     }
 
+    /// <summary>
+    /// The thermal series review: a block that cuts into a board solid only in part takes its footprint out of that solid's
+    /// faces, so a condition on the board's bottom face must take in the block's bottom too — or the sink under the via field,
+    /// exactly where the heat leaves, is silently insulated. The lowering names the block beside the face; the .geo's own[]
+    /// reads both volumes.
+    /// </summary>
+    [Fact]
+    public void AFaceTheBlockCutsInto_TakesInTheBlocksFootprint()
+    {
+        string ws = Workspace();
+        WriteBoard(ws);
+        var doc = new C3dDocument { Instances = [new C3dInstance { Name = "U1", CellRef = "../../Board", View = C3dInstanceView.Layout }] };
+        string path = WriteC3d(ws, doc);
+        var e0 = C3dElaborator.ElaborateOnce(doc, path, null);
+        Assert.True(e0.Ok, string.Join(" ", e0.Refusals));
+        long z0 = (long)Math.Round(e0.Solids.Min(s => Em3dProblem.Bounds(s.Primitive).Z0) * 1e9);
+        long z1 = (long)Math.Round(e0.Solids.Max(s => Em3dProblem.Bounds(s.Primitive).Z1) * 1e9);
+        var bottom = e0.Solids.Where(s => s.Role != Em3dRole.Air).MinBy(s => Em3dProblem.Bounds(s.Primitive).Z0)!;
+        string face = bottom.Name + (e0.Provenance[bottom.Name].FaceNames.Contains("zmin") ? "/zmin" : "/bottom");
+        doc.EffectiveBlocks = [new C3dEffectiveBlock { Name = "vias", Enabled = true, Min = new(500 * Um, 500 * Um, z0), Size = new(2000 * Um, 2000 * Um, z1 - z0) }];
+        var t = new CemThermal { Boundaries = [Fixed(face)] };
+        path = WriteC3d(ws, doc);
+        var e = C3dElaborator.ElaborateOnce(doc, path, null);
+        var low = ThermalLowerings.Build(doc, e, t, 1, out string? why);
+        Assert.True(low is not null, why);
+        var f = low!.Input.Faces.Single(x => x.Name == face);
+        int block = low.Input.Solids.ToList().FindIndex(x => x.Name == "vias");
+        Assert.Equal([block], f.AlsoSolids);
+        Assert.Contains($"Volume{{s{f.Solid}[], s{block}[]}}", low.Gmsh.Geo);
+        Assert.Contains(low.Notes, n => n.Contains($"The face '{face}' takes in the footprint of effective block(s) 'vias'"));
+    }
+
     // ── gate 5: a submodel of S5 ─────────────────────────────────────────────────────────────────────────
 
     /// <summary>

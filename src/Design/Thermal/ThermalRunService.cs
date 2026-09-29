@@ -119,6 +119,9 @@ public static partial class ThermalRunService
                 notes.AddRange(circuit.Notes);
                 notes.Add(CircuitNote(circuit));
                 t = circuit.Setup(t);
+                if (t.Currents is null)
+                    warnings.Add($"No pin of '{circuit.Instance}' carries a current at any converged point of the circuit's HB '{circuit.Analysis}': " +
+                                 "the run heats with the setup's own sources only.");
             }
 
             // ── 3. lower and mesh, once ──
@@ -231,7 +234,7 @@ public static partial class ThermalRunService
                 {
                     // R-em3d79-3 — a point the HB did not converge at is skipped, and its neighbours still solve
                     skipped[pi] = true;
-                    ep = et?.Skip();
+                    ep = et?.Skip(pi, axes.Count > 0 ? axes[^1].Values.Length : 0);
                     sol = ep?.Thermal ?? NanSolution(mesh);
                     runaway.Add(false);
                 }
@@ -245,8 +248,20 @@ public static partial class ThermalRunService
                     sol = ep.Thermal;
                     runaway.Add(ep.Runaway);
                 }
-                else sol = ThermalSolver.Solve(problem, options with { InitialGuess = previous }, assembly);
-                if (!skipped[pi]) previous = sol.Temperature;
+                else
+                {
+                    try { sol = ThermalSolver.Solve(problem, options with { InitialGuess = previous }, assembly); }
+                    catch (FloatingRegionsException x)
+                    {
+                        var names = x.Regions.Select(r => r < lowering.Regions.Count ? $"'{lowering.Regions[r].Solid}'" : $"region {r}").Distinct();
+                        return Refuse(At(axes, points[pi]) + $"{string.Join(", ", names)} touch{(x.Regions.Length == 1 ? "es" : "")} no fixed-temperature " +
+                                      "or convection face through any solid, so no steady state exists: fix a face's temperature, give it a convection " +
+                                      "condition, or join it to a solid that has one.");
+                    }
+                    catch (InvalidOperationException x) { return Stop(EmRunStatus.EngineError, EmDiagnostics.SolveFailed(At(axes, points[pi]) + x.Message)); }
+                }
+                // a point that did not converge (or is not finite) is no warm start for the next one
+                if (!skipped[pi] && sol.Converged && sol.Temperature.All(double.IsFinite)) previous = sol.Temperature;
                 fields.Add(sol.Temperature);
                 balances.Add((sol.SourcePowerW, sol.BalanceRelative));
                 var field = new ThermalField(mesh, sol.Temperature);
@@ -277,7 +292,7 @@ public static partial class ThermalRunService
                             $"({(et is null ? "sources" : et.Rf.Any ? "sources, Joule and RF heat" : "sources and Joule heat")} {sol.SourcePowerW:G6} W, out {sol.FixedHeatOutW:G6} W through fixed faces and " +
                             $"{sol.ConvectionHeatOutW:G6} W by convection).");
                 foreach (string n in sol.Notes) summary.Add(where + n);
-                if (sol.BalanceRelative > ThermalSolver.BalanceTolerance)
+                if (!(sol.BalanceRelative <= ThermalSolver.BalanceTolerance))
                     warnings.Add($"{where}The energy balance does not close: {sol.BalanceRelative:G3} of the heat is unaccounted for " +
                                  $"(tolerance {ThermalSolver.BalanceTolerance:G3}). The solve is not to be trusted at this point.");
                 if (!sol.Converged)
@@ -294,18 +309,28 @@ public static partial class ThermalRunService
             foreach (var p in probes)
             {
                 if (p.LimitC is not { } lim) continue;
-                int first = reads.FindIndex(r => r.TryGetValue(p.Name, out var v) && v.Max >= lim);
-                if (first >= 0)
+                // a runaway point has no temperature, but it is past every limit: it counts as the crossing
+                int first = Enumerable.Range(0, reads.Count).FirstOrDefault(i => i < runaway.Count && runaway[i] ||
+                                                                                 reads[i].TryGetValue(p.Name, out var v) && v.Max >= lim, -1);
+                if (first >= 0 && first < runaway.Count && runaway[first])
+                    warnings.Add($"Probe '{p.Name}' passes its limit of {lim:G6} °C by {At(axes, points[first]).TrimEnd(':', ' ')}" +
+                                 $"{(points.Count > 1 ? "" : "the only point")}, where no steady state exists (thermal runaway).");
+                else if (first >= 0)
                     warnings.Add($"Probe '{p.Name}' reaches its limit of {lim:G6} °C first at {At(axes, points[first]).TrimEnd(':', ' ')}" +
                                  $"{(points.Count > 1 ? "" : "the only point")}: {reads[first][p.Name].Max:F3} °C.");
             }
 
             // ── the mesh-convergence check ──
-            if (t.Mesh?.Check == true && points.Count > 0)
+            if (t.Mesh?.Check == true && points.Count > 0 && (et is not null || circuit is not null))
+                // the check re-solves conduction alone: with wires, currents or a circuit's point it would compare a different problem
+                notes.Add("The mesh-convergence check was not run: it re-solves conduction alone, and this setup's wires, currents or circuit " +
+                          "would make the two solves different problems rather than two meshes of one.");
+            else if (t.Mesh?.Check == true && points.Count > 0)
             {
                 ct.ThrowIfCancellationRequested();
                 control?.BeginStage("the mesh-convergence check");
                 notes.AddRange(ConvergenceCheck(document, e, t, gmsh.Installation.Path, runDir, conductivity, points[0], path, reads[0],
+                                                fields[0].Where(double.IsFinite).DefaultIfEmpty(0).Min(),
                                                 options, control, ct, global is null ? null : new ThermalField(global.Mesh, global.Temperatures[0])));
             }
 
@@ -313,7 +338,7 @@ public static partial class ThermalRunService
             List<(string Name, DataCube Cube)>? crossings = null;
             if (circuit is not null)
             {
-                crossings = LimitCrossings(probes, reads, axes, circuit, out var sentences);
+                crossings = LimitCrossings(probes, reads, axes, circuit, i => i < runaway.Count && runaway[i], out var sentences);
                 notes.AddRange(sentences);
                 summary.AddRange(sentences);
             }
@@ -345,10 +370,19 @@ public static partial class ThermalRunService
                 data.AddToGroup(Group, "Submodel:global_W", Cube(axes, cutChecks.Select(c => c.GlobalW), "W"));
                 data.AddToGroup(Group, "Submodel:mismatch", Cube(axes, cutChecks.Select(c => c.Mismatch), "1"));
             }
-            string pvd = ThermalFieldFiles.Write(runDir, mesh, fields, [.. lowering.Regions.Select(r => r.Tag)]);
-            WriteTemperatures(runDir, axes, points, fields);
-            string? npy = WriteNpy(resultsRoot, setup, data, errors);
+            // a cancel after this line would leave a result on disk that the run then reports as cancelled (R-em3d74-5f)
             ct.ThrowIfCancellationRequested();
+            string pvd;
+            try
+            {
+                pvd = ThermalFieldFiles.Write(runDir, mesh, fields, [.. lowering.Regions.Select(r => r.Tag)]);
+                WriteTemperatures(runDir, axes, points, fields);
+            }
+            catch (Exception x) when (x is IOException or UnauthorizedAccessException)
+            {
+                return Stop(EmRunStatus.EngineError, EmDiagnostics.SolveFailed($"the temperature fields could not be written: {x.Message}"));
+            }
+            string? npy = WriteNpy(resultsRoot, setup, data, errors);
             var outputs = new List<EmRunOutput>();
             if (npy is not null) outputs.Add(new EmRunOutput("npy", npy));
             outputs.Add(new EmRunOutput("fields", pvd));
@@ -681,15 +715,20 @@ public static partial class ThermalRunService
                 var first = reads.Select(r => r.GetValueOrDefault(p.Name)?.Line).FirstOrDefault(l => l is not null);
                 if (first is null) continue;
                 var s = new Axis("distance", [.. Enumerable.Range(0, first.Length).Select(k => (double)k / (first.Length - 1))], "", null);
-                var data = reads.SelectMany(r => r.GetValueOrDefault(p.Name)?.Line ?? new double[first.Length]).ToArray();
+                // a point with no line read (a runaway, a skipped circuit point) has no temperature: NaN, never 0 °C
+                var none = Enumerable.Repeat(double.NaN, first.Length).ToArray();
+                var data = reads.SelectMany(r => r.GetValueOrDefault(p.Name)?.Line ?? none).ToArray();
                 ds.AddToGroup(Group, $"T:{p.Name}(s)", new DataCube([.. sweep, s], data) { Unit = "°C" });
                 ds.AddToGroup(Group, $"T:{p.Name}:max", Cube(i => Get(i, p.Name, r => r.Max), "°C"));
-                continue;
             }
-            if (p.Point is not null) { ds.AddToGroup(Group, $"T:{p.Name}", Cube(i => Get(i, p.Name, r => r.Avg), "°C")); continue; }
-            ds.AddToGroup(Group, $"T:{p.Name}:max", Cube(i => Get(i, p.Name, r => r.Max), "°C"));
-            ds.AddToGroup(Group, $"T:{p.Name}:min", Cube(i => Get(i, p.Name, r => r.Min), "°C"));
-            ds.AddToGroup(Group, $"T:{p.Name}:avg", Cube(i => Get(i, p.Name, r => r.Avg), "°C"));
+            else if (p.Point is not null) ds.AddToGroup(Group, $"T:{p.Name}", Cube(i => Get(i, p.Name, r => r.Avg), "°C"));
+            else
+            {
+                ds.AddToGroup(Group, $"T:{p.Name}:max", Cube(i => Get(i, p.Name, r => r.Max), "°C"));
+                ds.AddToGroup(Group, $"T:{p.Name}:min", Cube(i => Get(i, p.Name, r => r.Min), "°C"));
+                ds.AddToGroup(Group, $"T:{p.Name}:avg", Cube(i => Get(i, p.Name, r => r.Avg), "°C"));
+            }
+            // D11 — every kind of probe with a limit is flagged in the result, not only in a warning sentence
             if (p.LimitC is { } lim)
                 ds.AddToGroup(Group, $"Limit:{p.Name}", Cube(i => Get(i, p.Name, r => r.Max) >= lim ? 1 : 0, "1"));
         }
@@ -736,7 +775,7 @@ public static partial class ThermalRunService
     /// moved. A report, not a refinement loop.</summary>
     private static IEnumerable<string> ConvergenceCheck(C3dDocument doc, C3dElaboration e, CemThermal t, string gmsh, string runDir,
                                                         List<ThermalConductivity> k, List<(string Var, double Value)> point, string path,
-                                                        Dictionary<string, ProbeRead> coarse, ThermalSolveOptions options,
+                                                        Dictionary<string, ProbeRead> coarse, double coarseMinC, ThermalSolveOptions options,
                                                         RunControl? control, CancellationToken ct, ThermalField? global = null)
     {
         var fine = ThermalLowerings.Build(doc, e, t, CheckScale, out string? why);
@@ -750,15 +789,19 @@ public static partial class ThermalRunService
         var zero = new ThermalField(mesh, new double[mesh.NodeCount]);
         var problem = Problem(t, doc, fine, k, mesh, zero, res, out string? valueError, global);
         if (problem is null) return [$"The mesh-convergence check could not be set up: {valueError}"];
-        var sol = ThermalSolver.Solve(problem, options with { InitialGuess = null });
+        ThermalSolution sol;
+        try { sol = ThermalSolver.Solve(problem, options with { InitialGuess = null }); }
+        catch (InvalidOperationException x) { return [$"The mesh-convergence check could not be solved: {x.Message}"]; }
         var read = ReadProbes(doc.Probes, fine, new ThermalField(mesh, sol.Temperature), doc.DbuPerMicron);
         var lines = new List<string> { $"Mesh-convergence check: every element size × {CheckScale} ({mesh.TetCount:N0} tetrahedra), the first sweep point." };
         foreach (var (name, c) in coarse)
         {
             if (!read.TryGetValue(name, out var f)) continue;
-            double a = c.Max, b = f.Max;
-            lines.Add($"  probe '{name}' (max): {a:F4} → {b:F4} °C, changed by {b - a:+0.0000;-0.0000} °C " +
-                      $"({(a != 0 ? 100 * (b - a) / Math.Abs(a) : 0):+0.000;-0.000} %).");
+            // the change as a share of the probe's RISE (above the coarse field's coolest point), not of its °C reading: the same
+            // 0.1 K reads 10 % at 1 °C and 0.1 % at 100 °C, which says nothing about the mesh
+            double a = c.Max, b = f.Max, rise = a - coarseMinC;
+            lines.Add($"  probe '{name}' (max): {a:F4} → {b:F4} °C, changed by {b - a:+0.0000;-0.0000} °C" +
+                      (rise > 0 ? $" ({100 * (b - a) / rise:+0.000;-0.000} % of its rise)." : "."));
         }
         return lines;
     }

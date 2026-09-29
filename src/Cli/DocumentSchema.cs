@@ -528,8 +528,8 @@ internal static class DocumentSchema
             solid — or a Solid, by name — with a default Power), Probes (exactly one of Point, Face,
             Solid, Spot, Line, Wire; a Stat of Max, Min or Avg; an optional LimitC), MeshRegions (a
             box and a target SizeUm, for every Gmsh-meshed setup), ContactResistances (two
-            touching objects and a resistance, m²·K/W, overriding the technology's material pair; a run
-            splits the contact and joins its sides through it), EffectiveBlocks (Name, Min, Size and
+            touching objects and a resistance, m²·K/W, overriding the technology's material pair — 0 is
+            perfect contact, one pair per entry; a run splits the contact and joins its sides through it), EffectiveBlocks (Name, Min, Size and
             Enabled, false when omitted: enabled, the board dielectric, planes and via barrels of a
             layout instance inside the box become one block of diagonal conductivity — per layer
             k_z = f_Cu·k_Cu + f_d·k_d and k_xy by Rayleigh's formula for parallel cylinders, layers in

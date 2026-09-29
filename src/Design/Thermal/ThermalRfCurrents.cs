@@ -274,8 +274,10 @@ public sealed class ThermalRfPlan
     public List<WireHarmonic>[] At(Func<string?, string, double> value, double scale, List<string>? notes = null)
     {
         int nw = WireLabels.Length;
-        var perArray = new Dictionary<(int Array, string Label), Drive>();
-        var from = new Dictionary<(int, string), List<(string Subject, double Peak)>>();
+        // one drive per array per FREQUENCY: two entries on one array at one frequency are its two ends, and the larger is used —
+        // whether or not their F0 texts are spelled alike ("Ffund" and "2 GHz" are one frequency, not two to add)
+        var perArray = new Dictionary<(int Array, double FrequencyHz), (string Label, Drive Drive)>();
+        var from = new Dictionary<(int, double), List<(string Subject, double Peak)>>();
         foreach (var (c, k) in Entries)
         {
             double f0 = value(c.F0, $"{Cap(c.Subject)}'s F0");
@@ -283,17 +285,18 @@ public sealed class ThermalRfPlan
             {
                 double amp = value(h.Amp, $"{Cap(c.Subject)}'s harmonic {h.N}");
                 double peak = scale * Math.Abs(h.As == ThermalAmplitude.Rms ? amp * Math.Sqrt(2) : amp);
-                var key = (k, Label(c, h.N));
+                double f = h.N * f0;
+                var key = (k, f);
                 (from.TryGetValue(key, out var l) ? l : from[key] = []).Add((c.Subject, peak));
-                if (!perArray.TryGetValue(key, out var d) || peak > d.PeakA) perArray[key] = new Drive(h.N * f0, peak);
+                if (!perArray.TryGetValue(key, out var d) || peak > d.Drive.PeakA) perArray[key] = (Label(c, h.N), new Drive(f, peak));
             }
         }
         if (notes is not null)
-            foreach (var ((k, label), list) in from.Where(x => x.Value.Count > 1))
+            foreach (var ((k, fHz), list) in from.Where(x => x.Value.Count > 1))
             {
                 double hi = list.Max(x => x.Peak), lo = list.Min(x => x.Peak);
                 notes.Add(string.Create(CultureInfo.InvariantCulture,
-                    $"Array '{Arrays[k].Name}' {label}: {string.Join(", ", list.Select(x => $"{x.Subject} {x.Peak:G4} A"))} (peak); the larger, {hi:G4} A, " +
+                    $"Array '{Arrays[k].Name}' at {fHz:G6} Hz: {string.Join(", ", list.Select(x => $"{x.Subject} {x.Peak:G4} A"))} (peak); the larger, {hi:G4} A, " +
                     $"is used — {hi - lo:G4} A apart."));
             }
         var wires = new List<WireHarmonic>[nw];
@@ -303,7 +306,7 @@ public sealed class ThermalRfPlan
             foreach (string label in WireLabels[j])
             {
                 double peak = 0, f = double.NaN;
-                foreach (var ((k, l), d) in perArray)
+                foreach (var ((k, _), (l, d)) in perArray)
                 {
                     if (l != label || Share[k][j] == 0) continue;
                     peak += Math.Abs(Share[k][j]) * d.PeakA;

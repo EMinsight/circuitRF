@@ -15249,3 +15249,49 @@ the mistake: a MESFET's gate is a Schottky junction on the channel, a HEMT's the
 `BuildFet` and `BuildJfet` now share `JunctionGateFet` — the gate lead and its arrow land on one unbroken channel bar,
 which is how GaAs FET data sheets draw it. Only the artwork changed: the pins come from `SymbolPortDefs.For(kind)`, so
 every placed FET stays wired. Gate: `tests/Ui.Tests/FetGlyphTests.cs`.
+
+## Thermal series review (briefs 71–81) — lowering, run service, check (2026-09-29)
+
+**The plain thermal solve was never inside a catch.** The electrothermal branch caught the solver's `InvalidOperationException`;
+the ordinary `ThermalSolver.Solve` call beside it did not, so a solver refusal (a fixed face that selects no triangle, a
+factorisation that fails) escaped `ThermalRunService.Run` as an exception. It is caught now, and a body that touches nothing
+holding its temperature (`FloatingRegionsException`) is refused with its solids' names. A point that did not converge, or
+is not finite, is no longer the next point's warm start; a NaN energy balance now warns (it compared false against the
+tolerance and said nothing).
+
+**An effective block took its footprint out of the faces of the solid it cuts into.** The block is its own highest-order
+volume, so `Boundary{Volume{board}}` no longer held the block's bottom: a sink on `board/bottom` was insulated exactly under
+the via field, where the heat leaves. A named face now also takes the surfaces of every block that cuts into its solid
+(`GmshThermalFace.AlsoSolids`), and the run says so. Gate: `ThermalInterfacesBlocksTests.AFaceTheBlockCutsInto_…`; a
+scratch Gmsh run of the same board solved and closed its balance through the sink.
+
+**Runaway is past every limit.** A runaway point has no temperature (NaN), and both limit reports skipped it — so a sweep
+that ran away above its last converged point reported "stays below its limit". It now counts as the crossing. A skipped HB
+point that is a row's first now resets the row's runaway state too (the reset lived only in `Solve`).
+
+**Continuation: a retried failure that converges is not the limit.** After a converged λ < 1 the loop retried the lowest
+known failure; when THAT converged it set `lo = hi` and retried the same λ until the solve budget ran out, then reported a
+runaway with an empty bracket. The failure is forgotten and λ = 1 tried again. Running out of solves is no longer a runaway.
+The cold path's runaway sentence stated the target current at both ends of the bracket (the λ-scaled currents were read
+along a zero-length path).
+
+**Both-ends harmonic drive is deduplicated by FREQUENCY, not by F0 text.** "2 GHz" beside "2e9" made two labels and both
+heated every wire. A harmonic with no current asks for no R_ac (its frequency may be unset).
+
+**Circuit pins:** an absolute floor (1 nA) under the relative one, so a pin carrying only solve noise does not demand a wire
+array; non-converged HB points are not read for currents; a circuit that carries nothing is said.
+
+**`check` now refuses what the run refuses.** Places on air or vacuum solids (the lowering's `ThermalMaterials.NotMeshed`);
+units the run cannot read ("30 dBm", "%"; and the base symbol A is read, not refused); Mesh.Order/Grading/SizeFromSources/
+MinThroughThickness and Balance numbers; a material record the run reads that fails the material rules (a table running
+backwards, k = 0 — validated one record at a time, since two technologies' same-name records are not a duplicate); a
+contact pair named twice. A zero contact override is now accepted: brief 76 makes it perfect contact, and it is how one
+contact opts out of a technology pair. A probe whose name no measure can read (`die-top`) is a warning.
+
+**`explain` on a thermal setup** reads the sweep variable's unit before the sweep binds it (a bound value carries none, so
+every axis read "unit (none), scale 1"), evaluates Start as the run does, looks materials up through the run's own
+`ThermalMaterials.For`, and no longer applies `--set` to the document — `em` hands it to the linked circuit only.
+
+**Also:** the mesh-convergence check is skipped (and says so) for wires, currents or a circuit — it re-solves conduction only;
+its change is a share of the probe's rise, not of its °C reading. Point and line probes carry a `Limit:` cube; a missing line
+read is NaN, not 0 °C. A cancel just before the result files are written no longer leaves them behind under a Cancelled status.

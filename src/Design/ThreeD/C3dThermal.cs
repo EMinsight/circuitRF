@@ -122,6 +122,7 @@ public static class C3dThermal
             found.Add(D.Symmetry($"{g.Count()} symmetry planes are normal to {g.Key}; a model is cut at most once per axis"));
         foreach (var sp in doc.SymmetryPlanes) Unread(sp.Unread, $"The symmetry plane normal to {sp.Axis}", found);
 
+        var pairs = new HashSet<(string, string)>();
         for (int i = 0; i < doc.ContactResistances.Count; i++)
         {
             var c = doc.ContactResistances[i];
@@ -130,8 +131,11 @@ public static class C3dThermal
                 found.Add(D.ContactShape(label, "must name exactly two objects in Between"));
             else if (string.Equals(c.Between[0], c.Between[1], StringComparison.Ordinal))
                 found.Add(D.ContactShape(label, "names one object twice; a contact is between two"));
-            if (!(c.ResistanceM2KW > 0) || !double.IsFinite(c.ResistanceM2KW))
-                found.Add(D.ContactShape(label, $"has a resistance of {Num(c.ResistanceM2KW)} m²·K/W; it must be positive"));
+            else if (!pairs.Add(string.CompareOrdinal(c.Between[0], c.Between[1]) < 0 ? (c.Between[0], c.Between[1]) : (c.Between[1], c.Between[0])))
+                found.Add(D.ContactShape(label, "names a pair another entry already names; one contact takes one resistance"));
+            // brief-em3d-76 R-em3d76-1b — zero is perfect contact: an override may say so where the technology states a pair value
+            if (!(c.ResistanceM2KW >= 0) || !double.IsFinite(c.ResistanceM2KW))
+                found.Add(D.ContactShape(label, $"has a resistance of {Num(c.ResistanceM2KW)} m²·K/W; it must be zero (perfect contact) or positive"));
             Unread(c.Unread, $"The contact resistance {label}", found);
         }
         return found;
@@ -147,6 +151,8 @@ public static class C3dThermal
             .Concat(doc.EffectiveBlocks.Select(b => (Kind: "effective block", b.Name))).ToList();
         foreach (var (kind, name) in thermal)
             if (NameValidator.Validate(name) is { } why) found.Add(C3dDiagnostics.InvalidName(kind, name, why));
+            // a probe is named in a measure (Tmax(die_top)): a name the expression engine cannot read is one no measure can use
+            else if (kind == "probe" && C3dResolver.ValidateName(name) is { } asExpr) found.Add(D.ProbeName(name, asExpr));
 
         var others = doc.Objects.Select(o => o.Name).Concat(doc.Instances.Select(i => i.Name)).Concat(doc.Ports.Select(p => p.Name))
                         .Where(n => n.Length > 0).ToList();
@@ -174,10 +180,11 @@ public static class C3dThermal
                 continue;
             }
             if (h.Sheet is not { } sheet || SheetSamples(sheet, m) is not { Count: > 0 } pts) continue;
-            var holders = e.Solids.Where(s => pts.All(q => Inside(s.Primitive, q, tol))).ToList();
+            var meshed = Meshed(e).ToList();
+            var holders = meshed.Where(s => pts.All(q => Inside(s.Primitive, q, tol))).ToList();
             if (holders.Count > 0) continue;
-            var touched = e.Solids.Where(s => pts.Any(q => Inside(s.Primitive, q, tol))).Select(s => s.Name).Distinct().ToList();
-            found.Add(touched.Count >= 1 && pts.All(q => e.Solids.Any(s => Inside(s.Primitive, q, tol)))
+            var touched = meshed.Where(s => pts.Any(q => Inside(s.Primitive, q, tol))).Select(s => s.Name).Distinct().ToList();
+            found.Add(touched.Count >= 1 && pts.All(q => meshed.Any(s => Inside(s.Primitive, q, tol)))
                 ? D.SourceStraddles(h.Name, touched)
                 : D.SourceOutside(h.Name, touched));
         }
@@ -225,7 +232,7 @@ public static class C3dThermal
     /// <summary>The extent of every solid a thermal run meshes, metres; null with none.</summary>
     private static (double X0, double Y0, double Z0, double X1, double Y1, double Z1)? MeshedExtent(C3dElaboration e)
     {
-        var bounds = e.Solids.Where(s => !Thermal.ThermalMaterials.NotMeshed(s.Role, s.Material)).Select(s => Em3dProblem.Bounds(s.Primitive)).ToList();
+        var bounds = e.Solids.Where(s => !CircuitRF.Design.Thermal.ThermalMaterials.NotMeshed(s.Role, s.Material)).Select(s => Em3dProblem.Bounds(s.Primitive)).ToList();
         if (bounds.Count == 0) return null;
         return (bounds.Min(b => b.X0), bounds.Min(b => b.Y0), bounds.Min(b => b.Z0), bounds.Max(b => b.X1), bounds.Max(b => b.Y1), bounds.Max(b => b.Z1));
     }
@@ -234,7 +241,7 @@ public static class C3dThermal
     public static C3dSymmetryPlane? OnSymmetryPlane(C3dDocument doc, C3dElaboration e, string spelled)
     {
         if (doc.SymmetryPlanes.Count == 0) return null;
-        var solids = e.Solids.Where(s => !Thermal.ThermalMaterials.NotMeshed(s.Role, s.Material)).ToList();
+        var solids = e.Solids.Where(s => !CircuitRF.Design.Thermal.ThermalMaterials.NotMeshed(s.Role, s.Material)).ToList();
         if (Thermal.ThermalLowerings.FacePieces(doc, e, solids, spelled, out _, out _) is not { Count: > 0 } pieces) return null;
         double m = 1e-6 / doc.DbuPerMicron;
         foreach (var sp in doc.SymmetryPlanes)
@@ -252,9 +259,13 @@ public static class C3dThermal
     }
 
     /// <summary>The elaborated solid of that name, or null.</summary>
-    private static Em3dSolid? SolidNamed(C3dElaboration e, string name) => e.Solids.FirstOrDefault(s => s.Name == name);
+    /// <summary>Only a solid a thermal run MESHES counts (not air, not vacuum: ThermalMaterials.NotMeshed, the lowering's own
+    /// rule), so a place check passes is a place the run can put something on.</summary>
+    private static Em3dSolid? SolidNamed(C3dElaboration e, string name) => Meshed(e).FirstOrDefault(s => s.Name == name);
 
-    private static IReadOnlyList<string> SomeSolids(C3dElaboration e) => [.. e.Solids.Select(s => s.Name).Take(8)];
+    private static IEnumerable<Em3dSolid> Meshed(C3dElaboration e) => e.Solids.Where(s => !CircuitRF.Design.Thermal.ThermalMaterials.NotMeshed(s.Role, s.Material));
+
+    private static IReadOnlyList<string> SomeSolids(C3dElaboration e) => [.. Meshed(e).Select(s => s.Name).Take(8)];
 
     private static bool WireExists(C3dElaboration e, string name)
         => e.Wires.Any(w => w.Name == name || w.Array == name) || e.DrawnWires.ContainsKey(name) || e.Solids.Any(s => s.Name == name && s.Primitive is Em3dSweep);
@@ -268,6 +279,8 @@ public static class C3dThermal
         var (obj, face) = C3dKernelUse.Resolve(doc, spelled[..slash], spelled[(slash + 1)..]);
         if (string.Equals(obj, C3dValidation.ReservedName, StringComparison.OrdinalIgnoreCase))
             return "a thermal run has no air box: it meshes solids only";
+        if (SolidNamed(e, obj) is null && e.Solids.Any(s => s.Name == obj))
+            return $"'{obj}' is air or vacuum, which a thermal run does not mesh";
         if (SolidNamed(e, obj) is null || !e.Provenance.TryGetValue(obj, out var prov))
             return $"'{obj}' is no solid of this 3D view";
         if (prov.FaceNames.Count == 0) return null;     // a kernel solid whose faces only the kernel knows: brief 74's
@@ -499,7 +512,7 @@ public static class C3dThermal
         foreach (var (key, text) in new[] { ("BondThermalResistance", t.BondThermalResistance), ("BondElectricalResistance", t.BondElectricalResistance) })
             if (text is not null && Unparsable(text) is { } be) found.Add(D.Current(name, $"has {key} '{text}', which does not parse: {be}"));
         if (currents.Count > 0 && e is { Ok: true })
-            foreach (var sol in e.Solids.Where(x => x.Role == Em3dRole.Conductor && !Thermal.ThermalMaterials.NotMeshed(x.Role, x.Material)))
+            foreach (var sol in e.Solids.Where(x => x.Role == Em3dRole.Conductor && !CircuitRF.Design.Thermal.ThermalMaterials.NotMeshed(x.Role, x.Material)))
                 if (Thermal.ThermalMaterials.For(e, sol.Name, sol.Material) is { } rec && ThermalProperties.SigmaAt(rec.Material, 20) is null)
                     found.Add(D.Current(name, $"sends current through the conductors, and '{sol.Name}''s material '{rec.Material.Name}' states no electrical " +
                                               "conductivity (Sigma20 or SigmaVsTemp)"));
@@ -510,16 +523,23 @@ public static class C3dThermal
         if (e is { Ok: true, Technology: not null })
         {
             var missing = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+            var read = new HashSet<TechMaterial>(ReferenceEqualityComparer.Instance);
             foreach (var s in e.Solids)
             {
                 if (Thermal.ThermalMaterials.NotMeshed(s.Role, s.Material)) continue;
                 var (tech, baseName) = Thermal.ThermalMaterials.Source(e, s.Name, s.Material);
                 if (tech?.FindMaterial(baseName) is not { } tm) continue;      // undefined: elaboration's own refusal says
-                if (Thermal.ThermalMaterials.Find(tech, baseName) is null)
-                    (missing.TryGetValue(tm.Name, out var l) ? l : missing[tm.Name] = []).Add(s.Name);
+                if (Thermal.ThermalMaterials.Find(tech, baseName) is { } rec) read.Add(rec.Material);
+                else (missing.TryGetValue(tm.Name, out var l) ? l : missing[tm.Name] = []).Add(s.Name);
             }
             foreach (var (material, objects) in missing)
                 found.Add(D.MaterialK(name, material, objects));
+            // the records the run will READ, held to the materials' own rules (a table running backwards, a k of zero): a
+            // .ctech's check says so too, but a .c3d's check is what stands between the record and the solver
+            // (one at a time: two technologies' same-name records are not a duplicate)
+            foreach (var m in read)
+                foreach (var problem in MaterialValidation.Validate([m]).Where(p => p.Severity == DiagnosticSeverity.Error))
+                    found.Add(D.MaterialInvalid(name, problem.Message));
         }
 
         // The sweep: at most two axes, a variable of the document that no geometry reads.
@@ -538,6 +558,22 @@ public static class C3dThermal
         }
         foreach (var dup in sweep.GroupBy(s => s.Var, StringComparer.Ordinal).Where(g => g.Count() > 1))
             found.Add(D.Sweep(name, $"sweeps '{dup.Key}' on {dup.Count()} axes; a variable is one axis"));
+
+        // the Mesh and Balance numbers: refused here as the mesher and the solver would refuse them, not after meshing
+        if (t.Mesh is { } tm0)
+        {
+            if (tm0.Order is { } order && order is not (1 or 2)) found.Add(D.Mesh(name, $"has Mesh.Order {order}; a thermal mesh is order 1 or 2"));
+            if (tm0.Grading is { } g && !(g > 1 && double.IsFinite(g))) found.Add(D.Mesh(name, $"has Mesh.Grading {Num(g)}; it must be above 1"));
+            if (tm0.SizeFromSources is { } sfs && !(sfs > 0 && double.IsFinite(sfs)))
+                found.Add(D.Mesh(name, $"has Mesh.SizeFromSources {Num(sfs)}; it is a number of elements, above 0"));
+            if (tm0.MinThroughThickness is { } mtt && mtt < 1)
+                found.Add(D.Mesh(name, $"has Mesh.MinThroughThickness {mtt}; it is a number of elements, at least 1"));
+        }
+        if (t.Balance is { } bal)
+        {
+            if (bal.Tolerance is { } btol && !(btol > 0 && double.IsFinite(btol))) found.Add(D.Mesh(name, $"has Balance.Tolerance {Num(btol)}; it must be above 0"));
+            if (bal.MaxIterations is { } its && its < 1) found.Add(D.Mesh(name, $"has Balance.MaxIterations {its}; at least 1"));
+        }
 
         // brief-em3d-76 R-em3d76-3a — a submodel names a whole-model thermal setup and a mesh region, and states no sweep
         if (t.Submodel is { } sm)
@@ -741,15 +777,8 @@ public static class C3dThermal
     public static double? Evaluate(C3dResolution resolution, string text, out string? error)
     {
         var (expr, unit) = SplitUnit(text);
-        double scale = unit switch
-        {
-            null or "W" or "K" or "degC" => 1,
-            "mW" => 1e-3,
-            "uW" => 1e-6,
-            "kW" => 1e3,
-            _ => Units.Scale(unit) ?? double.NaN,
-        };
-        if (double.IsNaN(scale)) { error = $"it ends in '{unit}', which is not a power or temperature unit a thermal setup reads"; return null; }
+        double scale = UnitScale(unit);
+        if (double.IsNaN(scale)) { error = UnitRefusal(unit); return null; }
         Value v;
         try { v = resolution.Evaluate(expr, null); }
         catch (ExpressionException ex) { error = ex.Message; return null; }
@@ -795,10 +824,23 @@ public static class C3dThermal
     public static string? Unparsable(string text)
     {
         if (string.IsNullOrWhiteSpace(text)) return "it is empty";
-        var (expr, _) = SplitUnit(text);
+        var (expr, unit) = SplitUnit(text);
+        // the unit the run would refuse is refused here too, so check and the run agree ("30 dBm", "25 %")
+        if (double.IsNaN(UnitScale(unit))) return UnitRefusal(unit);
         try { Parser.Parse(expr); return null; }
         catch (ExpressionException ex) { return ex.Message; }
     }
+
+    /// <summary>A trailing unit's scale to the base unit (1 for none), or NaN for one a thermal setup does not read. The base
+    /// symbols W and A carry no scale in the unit table (they are identity units there), so they are stated here.</summary>
+    private static double UnitScale(string? unit) => unit switch
+    {
+        null or "W" or "A" => 1,
+        _ => Units.Scale(unit) ?? double.NaN,
+    };
+
+    private static string UnitRefusal(string? unit)
+        => $"it ends in '{unit}', which is not a unit a thermal setup reads (temperatures are bare °C; powers W, mW, uW or kW; currents A, mA or uA)";
 
     private static void Unread(Dictionary<string, System.Text.Json.JsonElement>? keys, string owner, List<Diagnostic> found)
     {
@@ -837,6 +879,9 @@ public static class C3dThermal
         public const string CurrentId        = "c3d.thermal.current";
         public const string SmallSignalId    = "c3d.thermal.small-signal";
         public const string MaterialHeatId   = "c3d.thermal.material-heat";
+        public const string MeshId           = "c3d.thermal.mesh";
+        public const string ProbeNameId      = "c3d.thermal.probe-name";
+        public const string MaterialInvalidId = "c3d.thermal.material-invalid";
 
         private static Diagnostic E(string id, string template, params (string, object?)[] args)
             => Diagnostic.Create(id, DiagnosticSeverity.Error, template, args);
@@ -886,6 +931,13 @@ public static class C3dThermal
                  "(ThermalK or ThermalKVsTemp). A thermal run never assumes one: add it to the material.",
                  ("setup", setup), ("material", material),
                  ("objects", List(objects.Take(4)) + (objects.Count > 4 ? $" and {objects.Count - 4} more" : "")));
+        public static Diagnostic MaterialInvalid(string setup, string what)
+            => E(MaterialInvalidId, "Thermal setup '{setup}' reads a material the solver cannot use: {what}", ("setup", setup), ("what", what));
+        public static Diagnostic ProbeName(string name, string why)
+            => Diagnostic.Create(ProbeNameId, DiagnosticSeverity.Warning,
+                 "Probe '{name}' can be read, but no measure can name it: {why}", ("name", name), ("why", why));
+        public static Diagnostic Mesh(string setup, string what)
+            => E(MeshId, "Thermal setup '{setup}' {what}.", ("setup", setup), ("what", what));
         public static Diagnostic Sweep(string setup, string what)
             => E(SweepId, "Thermal setup '{setup}' {what}.", ("setup", setup), ("what", what));
         public static Diagnostic SweepGeometry(string setup, string variable, string reader)

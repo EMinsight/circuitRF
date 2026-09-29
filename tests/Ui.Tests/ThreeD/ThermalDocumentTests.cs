@@ -196,6 +196,10 @@ public sealed class ThermalDocumentTests : IDisposable
     [InlineData(C3dThermal.D.SweepGeometryId, "")]
     [InlineData(C3dThermal.D.MeasureId, "parse")]
     [InlineData(C3dThermal.D.MeasureId, "probe")]
+    [InlineData(C3dThermal.D.ContactShapeId, "duplicate")]
+    [InlineData(C3dThermal.D.BoundaryFaceId, "air")]
+    [InlineData(C3dThermal.D.SetupSourceId, "unit")]
+    [InlineData(C3dThermal.D.MeshId, "")]
     public void Gate4_EachFinding_FromTheOneValidator(string id, string variant)
     {
         var doc = Clean();
@@ -212,12 +216,18 @@ public sealed class ThermalDocumentTests : IDisposable
             case (C3dThermal.D.ProbeFaceId, _):     doc.Probes[0].Face = "die/top"; break;
             case (C3dThermal.D.ProbeWireId, _):     doc.Probes.Add(new C3dProbe { Name = "wp", Wire = "w9" }); break;
             case (C3dThermal.D.NoSinkId, _):        t.Boundaries = []; break;
-            case (C3dThermal.D.BoundaryFaceId, _):  t.Boundaries![0].Face = "flange/bottom"; break;
-            case (C3dThermal.D.SetupSourceId, _):   t.Sources!.Add(new CemThermalSource { Name = "nosuch", Power = "1" }); break;
+            case (C3dThermal.D.BoundaryFaceId, ""): t.Boundaries![0].Face = "flange/bottom"; break;
+            case (C3dThermal.D.SetupSourceId, ""):  t.Sources!.Add(new CemThermalSource { Name = "nosuch", Power = "1" }); break;
             case (C3dThermal.D.MaterialKId, _):     doc.Objects[1].Material = "Plastic"; break;
             case (C3dThermal.D.SweepGeometryId, _): t.Sweep = [new CemThermalSweep { Var = "wf", Start = "900", Stop = "1100", Points = 3 }]; break;
             case (C3dThermal.D.MeasureId, "parse"): t.Measures = ["Rth = (Tmax(die_top) -"]; break;
             case (C3dThermal.D.MeasureId, "probe"): t.Measures = ["Rth = Tmax(nosuch) / Pdiss"]; break;
+            // the thermal series review: what the run refuses (or picks between), check refuses first
+            case (C3dThermal.D.ContactShapeId, "duplicate"): doc.ContactResistances.Add(new C3dContactResistance { Between = ["flange", "die"], ResistanceM2KW = 2e-6 }); break;
+            case (C3dThermal.D.BoundaryFaceId, "air"):       doc.Objects.Add(Box("cavity", "Air", 3000, 3000, 0, 100, 100, 100));
+                                                             t.Boundaries!.Add(new CemThermalBoundary { Face = "cavity/zmax", Kind = ThermalBoundaryKind.FixedT, TempC = "Ths" }); break;
+            case (C3dThermal.D.SetupSourceId, "unit"):       t.Sources![0].Power = "30 dBm"; break;
+            case (C3dThermal.D.MeshId, _):                   t.Mesh = new CemThermalMesh { Order = 3 }; break;
         }
         doc.Setups = [EmSetupPersistence.ToEmbedded(setup)];
 
@@ -225,6 +235,22 @@ public sealed class ThermalDocumentTests : IDisposable
         var hit = Assert.Single(found, d => d.Id == id);
         Assert.Equal(CircuitRF.Diagnostics.DiagnosticSeverity.Error, hit.Severity);
         Assert.Single(found);   // and nothing else: the clean fixture is clean
+    }
+
+    /// <summary>The thermal series review: a zero override is perfect contact (brief 76), which an override may state where the
+    /// technology gives the pair a value; a probe whose name no measure can read is a warning, and nothing more.</summary>
+    [Fact]
+    public void Gate4_AZeroOverrideIsClean_AndAProbeNoMeasureCanNameIsAWarning()
+    {
+        var doc = Clean();
+        doc.ContactResistances[0].ResistanceM2KW = 0;
+        doc.Probes[0].Name = "die-top";
+        var setup = HotSetup();
+        setup.Thermal!.Measures = [];
+        doc.Setups = [EmSetupPersistence.ToEmbedded(setup)];
+        var found = Findings(doc, WriteC3d(Workspace(), "Cell", doc));
+        var hit = Assert.Single(found);
+        Assert.Equal((C3dThermal.D.ProbeNameId, CircuitRF.Diagnostics.DiagnosticSeverity.Warning), (hit.Id, hit.Severity));
     }
 
     [Fact]

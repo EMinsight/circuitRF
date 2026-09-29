@@ -173,6 +173,10 @@ public sealed partial class Viewer3DViewModel
 
     /// <summary>The directories the last read was asked for: a plot on the same run is applied without reading it again.</summary>
     private (string? Palace, string? OpenEms) _fieldDirs;
+
+    /// <summary>The run directory the open fields were read from (Palace's, or a thermal run's own): which setup's run it is.
+    /// Set when a read is adopted, not when it is asked for, so it never names a run still being read.</summary>
+    public string? FieldRunDirectory => _fieldRunDir;
     private long _fieldReads;
 
     /// <summary>Re-reads which fields the setup's runs saved (a run may have made new ones).</summary>
@@ -395,7 +399,7 @@ public sealed partial class Viewer3DViewModel
                 Scene3DKind.Sheet => FieldFaceRole.Sheet,
                 _ => FieldFaceRole.Solid,
             };
-            double tol = role == FieldFaceRole.Sheet ? 1e-6 * (scene.BoundsMax - scene.BoundsMin).Length() : 0.01 * (so.Max - so.Min).Length();
+            double tol = role == FieldFaceRole.Sheet ? 1e-6 * (scene.BoundsMax - scene.BoundsMin).Length() : FaceMatchTolerance(so.Min, so.Max);
             string label = $"'{so.Name}/{so.FaceName(f.Face)}'" + (f.Side switch { 1 => " (top side)", -1 => " (bottom side)", _ => "" });
             list.Add((f, new FieldFaceTarget(so.Name, label, role, tris, normal, tol, f.Side)));
         }
@@ -438,6 +442,7 @@ public sealed partial class Viewer3DViewModel
             var faces = _temperatureFaces.ToList();
             bool all = TemperatureAllFaces, onClip = TemperatureOnClip, fix = FixRangeAcrossSweep;
             var mirrors = MirrorSymmetry ? SymmetryPlanes : [];
+            var tempTargets = CurrentTemperatureTargets();
             var table = _thermalTable;
             int step = _fieldLoaded?.Index ?? 0;
             var steps = _fieldRun?.Solutions ?? [];
@@ -448,7 +453,7 @@ public sealed partial class Viewer3DViewModel
                 {
                     if (vol?.Load(q.Array.Name) is not { } array) return;
                     var (parts, scale, note, covered) = BuildTemperature(q, vol, array, scene, clip, groups, faces, all, onClip, table, step,
-                                                                         steps, fix, version, cts.Token, mirrors);
+                                                                         steps, fix, version, cts.Token, mirrors, tempTargets);
                     cts.Token.ThrowIfCancellationRequested();
                     _post(() =>
                     {

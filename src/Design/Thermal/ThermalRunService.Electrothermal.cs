@@ -52,16 +52,14 @@ public static partial class ThermalRunService
         public ElectrothermalSolution? RowFirst;
         public IReadOnlyList<(string Var, double Value)>? RowFirstPoint;
         public bool RowRunaway;
+        /// <summary>This row's first point was skipped: its first point that solves is the one the next row starts from.</summary>
+        private bool _rowFirstPending;
         public readonly List<ElectrothermalSolution?> Solutions = [];
 
         /// <summary>Point <paramref name="point"/> (index <paramref name="index"/>; <paramref name="row"/> points per innermost row).</summary>
         public ElectroPoint Solve(IReadOnlyList<(string Var, double Value)> point, int index, int row)
         {
-            if (row > 0 && index % row == 0 && index > 0)
-            {
-                // a new row starts from the last row's first point, not from where the last row ran away
-                (Last, LastPoint, RowRunaway) = (RowFirst, RowFirstPoint, false);
-            }
+            NewRow(index, row);
             var target = At(point, 1);
             RfPeaks.Add([.. target.Wires.Select(w => w.Harmonics.Select(h => h.PeakA).ToArray())]);
             if (RowRunaway) return Record(point, index, null, true, null);
@@ -90,6 +88,9 @@ public static partial class ThermalRunService
                 }).DefaultIfEmpty(0).Max();
                 r = Continuation.Advance(l => At(Along(l), 1), System, Last, Options, Width);
             }
+            if (r.Solution is null && !r.Runaway)
+                return Record(point, index, null, false, $"it did not converge in {r.Solves} solves and no runaway bracket closed — " +
+                              string.Join(" ", r.LastFailed?.Thermal.Notes ?? []));
             if (r.Runaway)
             {
                 RowRunaway = true;
@@ -97,17 +98,27 @@ public static partial class ThermalRunService
             }
             Last = r.Solution;
             LastPoint = point;
-            if (row <= 0 || index % row == 0) (RowFirst, RowFirstPoint) = (Last, point);
+            if (row <= 0 || index % row == 0 || _rowFirstPending) (RowFirst, RowFirstPoint, _rowFirstPending) = (Last, point, false);
             return Record(point, index, r, false, null);
         }
 
         /// <summary>brief-em3d-79 R-em3d79-3 — a point the circuit's HB did not converge at: no solve, NaN everywhere, and the
         /// continuation carries on from the last point that did solve.</summary>
-        public ElectroPoint Skip()
+        public ElectroPoint Skip(int index, int row)
         {
+            // a skipped point can still be a row's first: the row's reset must not wait for a point that solves
+            NewRow(index, row);
+            if (row > 0 && index % row == 0) _rowFirstPending = true;
             RfPeaks.Add([.. Rf.WireLabels.Select(l => Enumerable.Repeat(double.NaN, l.Length).ToArray())]);
             Solutions.Add(null);
             return new ElectroPoint(NanSolution(Mesh), null, false, null);
+        }
+
+        /// <summary>A new row starts from the last row's first point, not from where the last row ran away.</summary>
+        private void NewRow(int index, int row)
+        {
+            if (row > 0 && index % row == 0 && index > 0)
+                (Last, LastPoint, RowRunaway) = (RowFirst, RowFirstPoint, false);
         }
 
         private string? _runaway;
@@ -123,7 +134,8 @@ public static partial class ThermalRunService
                 var from = LastPoint ?? point;
                 double I(double l)
                 {
-                    var p = r.ConvergedAt == 0 && LastPoint is null ? At(point, l) :
+                    // a cold start's λ scales the target's currents; a warm one's runs along the path from the last point
+                    var p = LastPoint is null ? At(point, l) :
                             At([.. point.Select((q, k) => (q.Var, from[k].Value + l * (q.Value - from[k].Value)))], 1);
                     // brief-em3d-78: a run with harmonic currents only reports its largest wire current (peak)
                     return p.Currents.Count > 0 ? p.Currents[0].CurrentA

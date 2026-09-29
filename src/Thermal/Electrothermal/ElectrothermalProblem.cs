@@ -129,6 +129,12 @@ public sealed class ThermalWire
         for (int n = 0; n < Harmonics.Count; n++)
         {
             var h = Harmonics[n];
+            if (h.PeakA == 0)
+            {
+                // no current at this harmonic here (its frequency may be unset): no heat, and no R_ac to ask for
+                if (perHarmonic.Length > n) perHarmonic[n] = 0;
+                continue;
+            }
             var (rac, slope) = r(h.FrequencyHz, sg);
             double half = 0.5 * h.PeakA * h.PeakA;
             q += half * rac;

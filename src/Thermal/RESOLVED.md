@@ -170,3 +170,18 @@ Rather than widen the core's table for one field, `C3dThermal.EvaluateTime` lift
 **PeakPower shares, it does not replace.** The brief's `"PeakPower": "Pdiss"` beside "every source with its own power scaled
 by the same waveform" reads as: the stated total is split among the driven sources in proportion to their own powers.
 Omitted, each source pulses at its own power. Sources a Z_th does not name are not pulsed and not in the baseline.
+
+## Thermal series review (2026-09-29)
+
+**Newton's update test is floored at a 1 mK span.** At an isothermal point (no power, every boundary at one temperature) the
+span is round-off and so is every update, so "update ≤ 1e-6 × span" never held: 30 steps and a "did not converge" warning on
+the exact answer — every 0 W sweep point, and every pulse baseline. Gate: `SolverRobustnessTests.KOfT_AtAnIsothermalPoint_…`.
+
+**A floating body is refused before factorisation** (`FloatingRegionsException`): tetrahedra are unioned through shared nodes
+and resistive interface pairs, and a component with no fixed node and no h > 0 convection face is singular — Cholesky either
+throws or, with a tiny positive pivot, reads the body at 0 °C. Gate: `SolverRobustnessTests.ABodyNothingHolds…`.
+
+**Newton keeps its last finite iterate** when a step is not finite, and a warm start that is not finite falls back to the
+constant-k solve. Fixed-face conflicts count distinct nodes, and two entries on ONE tag at different temperatures now count.
+
+**NNLS stops at as many columns as rows** (a band too narrow for the fit's poles read past its rows).

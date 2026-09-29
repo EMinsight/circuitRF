@@ -109,7 +109,12 @@ public static partial class ThermalRunService
             for (int i = 0; i < n; i++) for (int j = 0; j < n; j++) flat[i * n + j] = rth.R[i, j];
             double[] index = [.. Enumerable.Range(0, n).Select(i => (double)i)];
             output.Cubes.Add((SmallSignalGroup, RthCube, new DataCube([new Axis("rise", index, "", names), new Axis("source", index, "", names)], flat) { Unit = "K/W" }));
-            var p = sources.Select(s => SourcePowerW(t, doc, input.Lowering, zero, res, s.Name)).ToArray();
+            var p = new double[n];
+            for (int j = 0; j < n; j++)
+            {
+                p[j] = SourcePowerW(t, doc, input.Lowering, zero, res, sources[j].Name, out string? powerError);
+                if (powerError is not null) output.Warnings.Add($"Rth: heat source '{sources[j].Name}''s power: {powerError}; its ΔT = R·P is not a number.");
+            }
             var dT = new double[n];
             for (int i = 0; i < n; i++) for (int j = 0; j < n; j++) dT[i] += rth.R[i, j] * p[j];
             output.Cubes.Add((SmallSignalGroup, RthCube + ":dT", new DataCube([new Axis("source", index, "", names)], dT) { Unit = "K" }));
@@ -292,7 +297,12 @@ public static partial class ThermalRunService
         double duty = Eval(p.Duty, "Duty", out why);
         if (why is not null) return null;
         if (!(duty >= 0 && duty <= 1)) { why = $"Pulse.Duty '{p.Duty}' is {G(duty)}; a duty lies between 0 and 1."; return null; }
-        double[] powers = [.. sources.Select(s => SourcePowerW(t, doc, lowering, zero, res, s.Name))];
+        var powers = new double[sources.Count];
+        for (int j = 0; j < powers.Length; j++)
+        {
+            powers[j] = SourcePowerW(t, doc, lowering, zero, res, sources[j].Name, out string? powerError);
+            if (powerError is not null) { why = $"Pulse: heat source '{sources[j].Name}''s power: {powerError}"; return null; }
+        }
         if (p.PeakPower is { } peakText)
         {
             double peak = Eval(peakText, "PeakPower", out why);
@@ -392,11 +402,12 @@ public static partial class ThermalRunService
 
     /// <summary>Heat source <paramref name="name"/>'s power at a point, watts in the modelled part (its density times its
     /// area or volume in the mesh, when stated as a density).</summary>
-    private static double SourcePowerW(CemThermal t, C3dDocument doc, ThermalLowering lowering, ThermalField zero, C3dResolution res, string name)
+    private static double SourcePowerW(CemThermal t, C3dDocument doc, ThermalLowering lowering, ThermalField zero, C3dResolution res, string name,
+                                       out string? error)
     {
         var h = doc.HeatSources.First(x => x.Name == name);
         string text = (t.Sources ?? []).FirstOrDefault(s => s.Name == name)?.Power ?? h.Power ?? "0";
-        double p = C3dThermal.Evaluate(res, text, out _) ?? double.NaN;
+        double p = C3dThermal.Evaluate(res, text, out error) ?? double.NaN;
         if (lowering.SheetSourceTags.TryGetValue(name, out int tag))
             return h.Density == C3dHeatDensity.PerArea ? p * (zero.Surface(new HashSet<int> { tag })?.Measure ?? double.NaN) : p;
         if (lowering.SolidSourceRegions.TryGetValue(name, out int region))

@@ -139,6 +139,10 @@ public static class ThermalCircuitLink
     /// <summary>R-em3d79-2c — a harmonic below this fraction of its pin's largest current at a point is taken as zero.</summary>
     public const double RelativeFloor = 1e-6;
 
+    /// <summary>A current below this, A, is the solve's round-off (an open pin), never a current: it heats nothing measurable,
+    /// and taking it as a harmonic would ask the run for a wire array the pin does not have.</summary>
+    public const double AbsoluteFloorA = 1e-9;
+
     /// <summary>The run directory's record of what the result was solved from (R-em3d79-3b).</summary>
     public const string StampFile = "circuit.json";
 
@@ -399,9 +403,10 @@ public static class ThermalCircuitLink
             for (int i = 0; i < points; i++)
             {
                 peak[i] = new double[K + 1];
+                if (!converged[i]) continue;             // a point the HB did not converge at is skipped; its numbers are not currents
                 double largest = 0;
                 for (int k = 0; k < Math.Min(K1, K + 1); k++) largest = Math.Max(largest, PeakOf(iv[(i * B + b) * K1 + k]));
-                double floor = RelativeFloor * largest;
+                double floor = Math.Max(RelativeFloor * largest, AbsoluteFloorA);
                 double d = iv[(i * B + b) * K1].Real;
                 dc[i] = Math.Abs(d) >= floor && largest > 0 ? d : 0;
                 for (int k = 1; k <= K && k < K1; k++)
@@ -414,7 +419,7 @@ public static class ThermalCircuitLink
             list.Add(new ThermalCircuitPin(pin, nets[pin - 1], dc, peak));
         }
         if (trimmed > 0)
-            notes.Add($"Circuit: {trimmed} harmonic current(s) below {RelativeFloor:G1} of their pin's largest were taken as zero.");
+            notes.Add($"Circuit: {trimmed} harmonic current(s) below {RelativeFloor:G1} of their pin's largest (or below {AbsoluteFloorA:G1} A) were taken as zero.");
 
         // the carried cubes: named ones must be on the sweep's axes; none named, every scalar measure
         bool OnAxes(DataCube c) => c.Axes.Count == axes.Count && c.Axes.Select((a, i) => a.Name == axes[i].Name && a.Length == axes[i].Item2.Length).All(x => x);

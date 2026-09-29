@@ -35,7 +35,7 @@ public static partial class ThermalRunService
     /// </summary>
     private static List<(string Name, DataCube Cube)> LimitCrossings(IReadOnlyList<C3dProbe> probes, List<Dictionary<string, ProbeRead>> reads,
                                                                      List<(string Var, double[] Values, string Unit)> axes,
-                                                                     ThermalCircuitDrive circuit, out List<string> sentences)
+                                                                     ThermalCircuitDrive circuit, Func<int, bool> ranAway, out List<string> sentences)
     {
         sentences = [];
         var cubes = new List<(string, DataCube)>();
@@ -63,6 +63,20 @@ public static partial class ThermalRunService
                 for (int j = 0; j < row && !crossed; j++)
                 {
                     int i = r * row + j;
+                    if (ranAway(i))
+                    {
+                        // no steady state here: every limit is passed at or before this point, and nothing interpolates into it
+                        crossed = true;
+                        string at0 = "the only point";
+                        if (axes.Count > 0)
+                        {
+                            at[r] = axes[^1].Values[i % row];
+                            at0 = $"{axes[^1].Var} = {at[r].ToString("G4", inv)}{Unit(axes[^1].Unit)}";
+                        }
+                        sentences.Add($"Probe '{p.Name}' passes its limit of {lim.ToString("G6", inv)} °C by {at0}{Outer(r)}, where no steady state " +
+                                      "exists (thermal runaway)" + (double.IsFinite(hottest) ? $"; the hottest converged reading was {hottest.ToString("F1", inv)} °C." : "."));
+                        break;
+                    }
                     double v = reads[i].TryGetValue(p.Name, out var rd) ? rd.Max : double.NaN;
                     if (!double.IsFinite(v)) continue;
                     hottest = double.IsNaN(hottest) ? v : Math.Max(hottest, v);

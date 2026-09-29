@@ -6,9 +6,12 @@
 // the two (λ from 0 to 1), and a λ that does not converge is BISECTED toward the last converged one:
 //
 //   t = 1; repeat: solve at t from the last converged state —
-//     converged:  it becomes the last converged; done if t = 1, else try the lowest known failure again from here;
+//     converged:  it becomes the last converged; done if t = 1, else try the lowest known failure again from here (and if
+//                 that was the failure itself, no failure is known any more: try t = 1 again);
 //     not:        it is the lowest known failure; if [last converged, it] is 0.5 % wide, that is the runaway bracket;
 //                 else try the middle.
+//
+// Running out of solves before the bracket closes is NOT a runaway: the result has no solution and Runaway false.
 //
 // A step that throws (a singular system from a conductor with no path, a table that cannot be read) is not a runaway and is
 // not caught here: the caller reports it as the failure it is.
@@ -68,6 +71,9 @@ public static class Continuation
                 lo = t;
                 last = s;
                 if (t >= 1) return new(s, false, 1, 1, s, solves);
+                // the lowest known failure has now converged from nearer: it was a step too long, not the limit, so no
+                // failure is known any more and the target is tried again
+                if (t >= hi) hi = 1;
                 t = hi;
                 continue;
             }
@@ -76,6 +82,7 @@ public static class Continuation
             if (width(lo, hi) <= Bracket) return new(null, true, lo, hi, last, solves) { LastFailed = failed };
             t = (lo + hi) / 2;
         }
-        return new(null, true, lo, hi, last, solves) { LastFailed = failed };
+        // out of solves with the bracket still open: no runaway was found, the point simply did not converge
+        return new(null, false, lo, hi, last, solves) { LastFailed = failed };
     }
 }

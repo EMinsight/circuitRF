@@ -430,7 +430,10 @@ public sealed partial class C3dEditorViewModel
         {
             Face = FaceKey(o, face), Side = side switch { 1 => C3dFieldSide.Top, -1 => C3dFieldSide.Bottom, _ => C3dFieldSide.None },
         };
-        if (VisibleFieldPlot is { On: C3dFieldPlotOn.Faces } target && target.IsTemperature == temperature)
+        // a temperature face joins the drawn plot only when that plot reads the active setup's run: Plot Temperature was
+        // offered for the ACTIVE setup, and a face added to a plot pinned to another setup would paint that setup's result
+        if (VisibleFieldPlot is { On: C3dFieldPlotOn.Faces } target && target.IsTemperature == temperature &&
+            (!temperature || target.Setup is null || target.Setup == ActiveSetupDisplayName))
         {
             string name = target.Name;
             SetFieldPlot(name, $"Plot on {entry.Face}", p =>

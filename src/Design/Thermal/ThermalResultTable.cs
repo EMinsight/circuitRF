@@ -79,8 +79,11 @@ public sealed class ThermalResultTable
                 continue;
             }
             bool[]? crossed = null;
-            if (name.StartsWith("T:", StringComparison.Ordinal) && name.EndsWith(":max", StringComparison.Ordinal)
-                && cubes.TryGetValue("Limit:" + name["T:".Length..^":max".Length], out var limit))
+            // a region/face/line probe's limit flags its :max row; a point probe has one row, T:<name>
+            string? limited = !name.StartsWith("T:", StringComparison.Ordinal) ? null
+                : name.EndsWith(":max", StringComparison.Ordinal) ? name["T:".Length..^":max".Length]
+                : name.IndexOf(':', "T:".Length) < 0 ? name["T:".Length..] : null;
+            if (limited is not null && cubes.TryGetValue("Limit:" + limited, out var limit))
                 crossed = [.. limit.RealValues.Select(x => x >= 0.5)];
             rows.Add(new ThermalResultRow(name, false, cube.Unit, cube.RealValues, crossed));
         }

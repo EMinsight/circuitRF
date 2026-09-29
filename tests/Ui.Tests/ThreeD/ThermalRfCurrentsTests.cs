@@ -121,18 +121,23 @@ public sealed class ThermalRfCurrentsTests(ITestOutputHelper output) : IDisposab
     // ── gate 8: both ends driven ────────────────────────────────────────────────────────────────────
 
     /// <summary>Port 1 on the pad and port 2 on the lead both give the one array its first harmonic, 1 A and 0.8 A peak: the wires
-    /// take the larger, and the notes give both and the difference.</summary>
-    [Fact]
-    public void Gate8_BothEndsDriven_TheLargerIsUsed_AndTheNotesSayBoth()
+    /// take the larger, and the notes give both and the difference — whether or not the two F0s are SPELLED alike (the review
+    /// found "2 GHz" beside "2e9" labelled apart and both heating every wire).</summary>
+    [Theory]
+    [InlineData("2 GHz")]
+    [InlineData("2e9")]
+    public void Gate8_BothEndsDriven_TheLargerIsUsed_AndTheNotesSayBoth(string f0Lead)
     {
         var doc = Doc(count: 2);
-        var (e, lowering, plan) = Plan(doc, Current(1, "pad/zmax", ("1", ThermalAmplitude.Peak)), Current(2, "lead/zmax", ("0.8", ThermalAmplitude.Peak)));
+        var lead = Current(2, "lead/zmax", ("0.8", ThermalAmplitude.Peak));
+        lead.F0 = f0Lead;
+        var (e, lowering, plan) = Plan(doc, Current(1, "pad/zmax", ("1", ThermalAmplitude.Peak)), lead);
         Assert.Equal(2, plan.Entries.Count);
         Assert.All(plan.Entries, x => Assert.Equal(0, x.Array));
         var notes = new List<string>();
         var peaks = plan.At(Value(e), 1, notes);
         output.WriteLine(string.Join("\n", notes.Concat(plan.Notes)));
-        Assert.Equal(1, peaks.Sum(w => w.Single().PeakA), 1e-12);
+        Assert.Equal(1, peaks.Sum(w => w.Sum(h => h.PeakA)), 1e-12);
         Assert.Contains(notes, n => n.Contains("port 1 1 A") && n.Contains("port 2 0.8 A") && n.Contains("0.2 A apart"));
     }
 

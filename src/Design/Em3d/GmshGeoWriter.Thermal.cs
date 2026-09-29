@@ -33,7 +33,12 @@ public sealed record GmshThermalSheet(string Name, Em3dSheet Sheet)
 
 /// <summary>A named face of solid <paramref name="Solid"/> (an index into the solids): its planar pieces, and whether only
 /// its exterior (single-sided) surfaces count — a boundary condition's face does; a probe's does not.</summary>
-public sealed record GmshThermalFace(string Name, int Solid, IReadOnlyList<Em3dFacePolygon> Pieces, bool ExteriorOnly);
+public sealed record GmshThermalFace(string Name, int Solid, IReadOnlyList<Em3dFacePolygon> Pieces, bool ExteriorOnly)
+{
+    /// <summary>brief-em3d-76 — the effective blocks (solid indices) that cut into <see cref="Solid"/> where this face lies: their
+    /// surfaces on the face's own plane are the part of the face the block took, and belong to it.</summary>
+    public IReadOnlyList<int> AlsoSolids { get; init; } = [];
+}
 
 /// <summary>The thermal mesh's sizing (R-em3d74-4a).</summary>
 /// <param name="MaxFraction">The largest element as a fraction of the problem's largest side.</param>
@@ -243,7 +248,7 @@ public static partial class GmshGeoWriter
             L($"f{k}[] = {Query(f.Pieces[0].Bounds(), 0)};");
             foreach (var pc in f.Pieces.Skip(1)) L($"f{k}[] += {Query(pc.Bounds(), 0)};");
             // only the named solid's own surfaces: a coplanar neighbour inside the same box is never taken
-            L($"own[] = Abs(Boundary{{ Volume{{s{f.Solid}[]}}; }});");
+            L($"own[] = Abs(Boundary{{ Volume{{{string.Join(", ", new[] { f.Solid }.Concat(f.AlsoSolids).Select(i => $"s{i}[]"))}}}; }});");
             L($"x[] = f{k}[];");
             L("x[] -= own[];");
             L($"f{k}[] -= x[];");
