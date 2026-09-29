@@ -195,6 +195,8 @@
                         <!-- 3D menu cleanup — no key equivalent: on macOS one is taken by the menu before any control sees it, so
                              Cmd+A would stop selecting a text box's text while a 3D view is active. The pane answers Cmd+A itself. -->
                         <NativeMenuItem Header="Select All Objects" ToolTip="Every shown object; hidden ones are left out. Cmd+A in the view. Requires an active 3D document." Command="{Binding ThreeDSelectAllCommand}"/>
+                        <!-- brief-em3d-91 — no key equivalent, as Select All: a bare H on the menu would be taken from every text box. -->
+                        <NativeMenuItem Header="Hide / Show Selection" ToolTip="Hides the selection when all of it is shown; otherwise shows all of it. H in the view or the object tree. Requires an active 3D document." Command="{Binding ThreeDHideShowSelectionCommand}"/>
                         <NativeMenuItem Header="View" ToolTip="Requires an active 3D document.">
                             <NativeMenuItem.Menu>
                                 <NativeMenu>
@@ -1066,6 +1068,11 @@
                 <MenuItem Header="Select A_ll Objects" Command="{Binding ThreeDSelectAllCommand}" InputGesture="Ctrl+A"
                           ToolTip.Tip="Every shown object; hidden ones are left out. Requires an active 3D document.">
                     <MenuItem.Icon><mi:MaterialIcon Kind="SelectAll" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <!-- brief-em3d-91 — InputGesture is display-only: the pane and the object tree answer H. -->
+                <MenuItem Header="_Hide / Show Selection" Command="{Binding ThreeDHideShowSelectionCommand}" InputGesture="H"
+                          ToolTip.Tip="Hides the selection when all of it is shown; otherwise shows all of it. Requires an active 3D document.">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="EyeOff" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
                 <MenuItem Header="_View" ToolTip.Tip="Requires an active 3D document.">
                     <MenuItem Header="_Fit" Command="{Binding ThreeDFitCommand}" InputGesture="Home"

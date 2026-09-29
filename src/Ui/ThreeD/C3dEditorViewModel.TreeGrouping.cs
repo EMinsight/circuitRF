@@ -124,6 +124,7 @@ public sealed partial class C3dEditorViewModel
             // A setup's view lists the scene's objects: each tick is the view's own visibility, never an edit.
             foreach (var r in rows.Where(r => r.Kind != FieldPlotKind)) { ViewTreeVisibilityChanged(r, visible); r.Sync(visible); }
             SetPlotsVisible(plots, visible, description);
+            RaiseMenuStateChanged();
             return;
         }
         // The view's own states first: a saved edit below rebuilds the tree, and the rebuilt rows read these.
@@ -156,6 +157,7 @@ public sealed partial class C3dEditorViewModel
                 ChangeObjects(rows.Count == 1 ? $"{(visible ? "Show" : "Hide")} {rows[0].Name}" : description, indices, o => o.Hidden = !visible);
         }
         finally { EndGroup(); }
+        RaiseMenuStateChanged();                    // brief-em3d-91 — a tick changes what H would do
     }
 
     internal void TreeFilterChanged(C3dTreeFilterEntry entry)

@@ -152,6 +152,17 @@ it, **Shift**-click adds or removes, **Esc** clears.
 - **Right-click** opens the menu for what is selected: *Hide*, *Isolate*, *Show All*, *Select Owning
   Object*, and the commands this page describes. **Hide** the lid and the walls to work inside the package;
   **Show All** brings them back. Hiding changes only the picture — the solver still sees everything.
+- **H** hides the selection, and shows it again: press it in the view or in the object tree (where a selection of
+  several rows is usually made), or use *3D ▸ Hide / Show Selection*, the same item on either right-click menu, or the
+  eye button on the toolbar just left of the mesh button. When all of the selection is shown, H hides it; when all of it
+  is hidden, H shows it; when **some** of it is hidden, H shows all of it first, and the next H hides all of it. The
+  selection stays selected while hidden, so a second H brings back exactly what the first took away. A group selected
+  whole counts as its members, and records count as well as objects (a probe, a mesh region, a thermal boundary, a
+  symmetry plane, a field plot), each hidden as its own tick hides it. An object's hide is one undo step and is saved;
+  an instance's parts are hidden in the view only. The eye button's **background** shows the state: the accent colour
+  when all of the selection is shown, the same colour dimmed when some of it is hidden, and none when all of it is hidden;
+  with nothing selected the button is greyed. Its tooltip says what a press will do. It is in a setup's 3D view too,
+  where hiding lasts for the session, as that view's ticks do.
 - The **Objects** tree lists everything by material or by type — and your [groups](#groups) first; a click there selects in the view, and the
   **Properties** panel shows the selection's name, material, dimensions and position, every one of them
   editable. The eye buttons in its header **hide or show every row it lists**, records included — heat sources,
@@ -894,6 +905,7 @@ Every step above has a command-line spelling, and none of them needs a solver ex
 | **O**, **E**, **F**, **V** | Select objects, edges (Edge mode, for Fillet… and Chamfer…), faces, vertices |
 | **B**, **Shift+B** | The next thing behind the selection; back toward you |
 | **Ctrl/Cmd+A** | Select every shown object (*3D ▸ Select All Objects*); hidden ones are left out |
+| **H** | Hide the selection; show it if any of it is hidden (*3D ▸ Hide / Show Selection*). In the view or the object tree |
 | **Shift+A** then a letter | Box, Sheet, polyGon, polyLine, cYlinder, Port, Wire, Heat source, Temperature probe, Mesh region |
 | digits, **Tab**, **Enter** | Type a dimension instead of clicking |
 | **Esc** | Back one step: the typed box, the shape, the tool, the selection |

@@ -37982,3 +37982,37 @@ meshed extent is the one the run uses, so it won; a face on an air solid's outer
 
 **A boundary's Kind switch keeps the other kind's values** in the Inspector's memory while that row stays selected (the
 memory survives the reload each write causes, and is dropped when another row is selected). It is never written anywhere.
+
+## brief-em3d-91 — H hides the selection, and a toolbar button shows and sets its visibility (2026-09-29)
+
+Gate `tests/Ui.Tests/ThreeD/HideSelectionTests.cs` (6); pixels were not seen (the button's backdrop is tested as the state it
+binds to).
+
+**One command, `HideOrShowSelection`, in `C3dEditorViewModel.HideSelection.cs`.** The pane's H (a new `IViewer3DEditHost`
+member, reached from `Viewer3DViewModel.HandleKey`), the tree's H (a `KeyDown` tunnel beside `OnTreeGroupKey`, refused when
+the key's source is a `TextBox`), *3D ▸ Hide / Show Selection* (both menu bars), both context menus and the toolbar button all
+call it, and it writes only through brief 90's `SetRowsVisible`. H is still free everywhere else; Shift+A ▸ H (Heat source) is
+the draw popup's own letter and is untouched. The macOS menu item carries no key equivalent, as *Select All Objects* does not:
+a bare H there would be taken from every text box.
+
+**The state is read over LEAVES**: a group's row counts as its members (at any depth) and an instance's row as its parts. A
+group row's own tick reads "any member shown", so reading it directly would call a group with one hidden member AllVisible
+and the press would hide it rather than show it first.
+
+**What changed so the selection survives a hide** (the second H must find something to show):
+- `SetGroupVisible` cleared the view's selection when it hid; it still does, except while H is running
+  (`_keepSelectionOnHide`). The tree tick, the group menu's Hide and Hide all keep the old behaviour.
+- `TreeRowStillSelected` compared only the FIRST selected row with the view's selection. With several rows selected and the
+  first one a record the scene draws nothing of (a probe), every adoption after the hide replaced the tree's rows with the
+  rows of whatever the view still selected — the probe and a hidden boundary (its tint leaves the build) were dropped. It
+  now compares every selected row's objects, as `TreeSelectionChanged` selected them (`SceneObjectsOfSelectedRow`, shared by
+  both). Gate 4 selects the probe FIRST for this reason: with the box first, the old one-row comparison happened to hold.
+- The right-click ▸ Hide path (`Viewer3DViewModel.Hide` → `SetHidden`) is unchanged and still clears the selection.
+
+**The button's state is raised from `RaiseMenuStateChanged`** (the selection, the tree's row, every adopted edit — and so every
+undo that regenerates — and `PlotsChanged`), and `SetRowsVisible` now raises it too, for the view-only visibilities (places,
+boundaries, planes) that regenerate nothing. The backdrop is a `Border` under the icon whose opacity a class sets (`visible`
+1, `mixed` 0.45, otherwise 0) with `SystemAccentColor` as its background, so the dark theme follows.
+
+**The selected field plots count as ONE leaf, shown when any of them is.** `SetRowsVisible` keeps the one-plot-drawn rule, so
+showing two plots draws one; counted apart they read Mixed after every show, and since Mixed shows, H never reached the hide.

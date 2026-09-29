@@ -779,6 +779,7 @@ public partial class WorkspaceViewModel
         foreach (string p in ThreeDSelectionProperties) OnPropertyChanged(p);
         ThreeDModifyCommand.NotifyCanExecuteChanged();
         ThreeDExtrudeCommand.NotifyCanExecuteChanged();
+        ThreeDHideShowSelectionCommand.NotifyCanExecuteChanged();
     }
 
     // brief-em3d-45 — drawing needs the editor, not the read-only viewer.
@@ -824,6 +825,13 @@ public partial class WorkspaceViewModel
     /// (Ctrl/Cmd+A on the pane is the same call).</summary>
     [RelayCommand(CanExecute = nameof(HasActive3DPane))]
     private void ThreeDSelectAll() => Active3DPane()?.SelectAllObjects();
+
+    /// <summary>brief-em3d-91 — 3D ▸ Hide / Show Selection: the editor's H (C3dEditorViewModel.HideOrShowSelection), enabled
+    /// while something is selected.</summary>
+    [RelayCommand(CanExecute = nameof(CanThreeDHideShowSelection))]
+    private void ThreeDHideShowSelection() => ActiveC3dEditor()?.HideOrShowSelection();
+
+    private bool CanThreeDHideShowSelection() => ActiveC3dEditor()?.SelectionVisibility is { } v && v != C3dSelectionVisibility.None;
 
     /// <summary>brief-em3d-46 R-em3d46-6 — 3D ▸ Measure, in the editor and the read-only viewer alike.</summary>
     [RelayCommand(CanExecute = nameof(HasActive3DPane))]

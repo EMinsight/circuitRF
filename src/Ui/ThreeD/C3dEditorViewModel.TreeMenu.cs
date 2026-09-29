@@ -14,7 +14,9 @@ namespace CircuitRF.Ui.ThreeD;
 public sealed partial class C3dEditorViewModel
 {
     /// <summary>The tree's menu for <paramref name="item"/>, which the caller has just made the selection.</summary>
-    public IReadOnlyList<Viewer3DMenuItem> TreeMenuItems(C3dTreeItem item)
+    public IReadOnlyList<Viewer3DMenuItem> TreeMenuItems(C3dTreeItem item) => WithHideShowSelection(TreeMenuItemsOf(item));
+
+    private IReadOnlyList<Viewer3DMenuItem> TreeMenuItemsOf(C3dTreeItem item)
     {
         if (item.Kind == FieldPlotKind) return FieldPlotMenuItems(item);    // brief-em3d-83 — in a setup's view too
         if (IsViewOnly) return ViewTreeMenuItems(item);

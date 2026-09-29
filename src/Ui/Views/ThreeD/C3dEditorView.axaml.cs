@@ -46,6 +46,9 @@ public partial class C3dEditorView : UserControl
         ObjectTree.AddHandler(PointerPressedEvent, OnTreePointerPressedTunnel, RoutingStrategies.Tunnel);
         // 3D editor groups — Ctrl/Cmd+G and Ctrl/Cmd+Shift+G on the tree's rows, as on the view (only the pane sees its keys).
         ObjectTree.AddHandler(KeyDownEvent, OnTreeGroupKey, RoutingStrategies.Tunnel);
+        // brief-em3d-91 — H on the tree's rows, where a multi-selection is usually made; never while a text field (the rename
+        // box) has the key.
+        ObjectTree.AddHandler(KeyDownEvent, OnTreeHideKey, RoutingStrategies.Tunnel);
         Pane.ContextMenuRequested += () =>
         {
             if (_vm is null) return;
@@ -186,6 +189,12 @@ public partial class C3dEditorView : UserControl
         if (_vm is null || e.Key != Key.G || (e.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Meta)) == 0 || e.KeyModifiers.HasFlag(KeyModifiers.Alt)) return;
         if (e.KeyModifiers.HasFlag(KeyModifiers.Shift)) _vm.UngroupSelection(); else _vm.GroupSelection();
         e.Handled = true;
+    }
+
+    private void OnTreeHideKey(object? sender, KeyEventArgs e)
+    {
+        if (_vm is null || !C3dEditorViewModel.IsHideKey(e.Key, e.KeyModifiers, e.Source is TextBox)) return;
+        if (_vm.HideOrShowSelection()) e.Handled = true;
     }
 
     // ── 3D editor round 5: the tree's multiple selection ─────────────────────────────────────

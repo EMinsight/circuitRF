@@ -28,6 +28,17 @@
         <Style Selector="ToggleButton, Button">
             <Setter Property="Padding" Value="6,3"/>
         </Style>
+        <!-- brief-em3d-91 — the Hide / Show Selection button's backdrop: a theme resource, so the dark theme follows. -->
+        <Style Selector="Border.selectionBackdrop">
+            <Setter Property="Background" Value="{DynamicResource SystemAccentColor}"/>
+            <Setter Property="Opacity" Value="0"/>
+        </Style>
+        <Style Selector="Border.selectionBackdrop.visible">
+            <Setter Property="Opacity" Value="1"/>
+        </Style>
+        <Style Selector="Border.selectionBackdrop.mixed">
+            <Setter Property="Opacity" Value="0.45"/>
+        </Style>
         <Style Selector="TextBox.error">
             <Setter Property="BorderBrush" Value="IndianRed"/>
         </Style>
@@ -317,6 +328,17 @@
                      it). The mesh: disabled until a run has meshed AND left fields to plot, with the tooltip saying so
                      (R-em3d28-3b) — in the editor and the viewer alike. -->
                 <Border Width="1" Margin="2,3" Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+                <!-- brief-em3d-91 R-em3d91-3 — Hide / Show Selection (H). A Button, not a ToggleButton: a checked style would
+                     compete with the three-way backdrop. The glyph never changes; the backdrop says the state — the accent when
+                     all of the selection is shown, the accent dimmed when some of it is hidden, nothing when all of it is. -->
+                <Button Command="{Binding ViewModel.ToggleSelectionVisibilityCommand}" Padding="0"
+                        ToolTip.Tip="{Binding ViewModel.SelectionVisibilityTip}" ToolTip.ShowOnDisabled="True">
+                    <Panel>
+                        <Border Classes="selectionBackdrop" CornerRadius="{Binding $parent[Button].CornerRadius}"
+                                Classes.visible="{Binding ViewModel.IsSelectionAllVisible}" Classes.mixed="{Binding ViewModel.IsSelectionMixed}"/>
+                        <mi:MaterialIcon Kind="EyeOff" Width="16" Height="16" Margin="6,3"/>
+                    </Panel>
+                </Button>
                 <ToggleButton IsChecked="{Binding ViewModel.Viewer.ShowMesh}" IsEnabled="{Binding ViewModel.Viewer.CanShowMesh}"
                               ToolTip.Tip="{Binding ViewModel.Viewer.MeshTip}" ToolTip.ShowOnDisabled="True">
                     <mi:MaterialIcon Kind="VectorTriangle" Width="16" Height="16"/>

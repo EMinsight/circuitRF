@@ -1127,10 +1127,16 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     /// way to its object's the moment an Inspector edit of it regenerated the scene.</summary>
     /// <para>brief-em3d-90 — and a record row the scene holds nothing of (a symmetry plane, a hidden boundary) stays selected
     /// when the view's selection empties, so its Inspector page stays up to edit it.</para>
+    /// <para>brief-em3d-91 — several rows still select it when the view holds exactly what they select together (as
+    /// TreeSelectionChanged selected it): a hidden thermal boundary's tint leaves the build, and without this its row — and a
+    /// probe's, which the scene never held — gave way to the rows of what the view still had, so the second H found nothing
+    /// hidden to show.</para>
     private bool TreeRowStillSelected()
     {
         if (SelectedTreeItem is not { OperandPath: null } row) return false;
         var selected = Viewer.SelectedObjects().Select(o => o.Id).ToHashSet();
+        if (_selectedTreeItems.Count > 1)
+            return selected.Count > 0 && _selectedTreeItems.SelectMany(SceneObjectsOfSelectedRow).Select(o => o.Id).ToHashSet().SetEquals(selected);
         var ofRow = SceneObjectsOfRow(row).Select(o => o.Id).ToHashSet();
         if (selected.Count == 0) return ofRow.Count == 0 && row.Kind is SymmetryPlaneKind or ThermalBoundaryKindName;
         return ofRow.SetEquals(selected);
@@ -1217,12 +1223,14 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         {
             SetTreeRows(rows);
             if (Viewer.SelectMode != Scene3DSelectMode.Object) Viewer.SelectMode = Scene3DSelectMode.Object;
-            Viewer.SetSelection(rows.SelectMany(r => r.OperandPath is null && !r.IsFeature ? SceneObjectsOfNode(r) : [])
-                                    .Select(s => Scene3DItem.OfObject(s.Id)));
+            Viewer.SetSelection(rows.SelectMany(SceneObjectsOfSelectedRow).Select(s => Scene3DItem.OfObject(s.Id)));
         }
         finally { _syncingTree = false; }
         Properties.Reload();
     }
+
+    /// <summary>What one of several selected rows selects in the view: its objects; an operand's or a feature's row, nothing.</summary>
+    private IReadOnlyList<Scene3DObject> SceneObjectsOfSelectedRow(C3dTreeItem r) => r.OperandPath is null && !r.IsFeature ? SceneObjectsOfNode(r) : [];
 
     /// <summary>3D editor bugs round 5 — a click in the scene selected this node: the view brings it into sight (the read-only
     /// viewer's reveal, which the editor lacked).</summary>

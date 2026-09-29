@@ -18,7 +18,11 @@ public sealed partial class C3dEditorViewModel
     /// or an adopted edit.</summary>
     public event Action? MenuStateChanged;
 
-    private void RaiseMenuStateChanged() => MenuStateChanged?.Invoke();
+    private void RaiseMenuStateChanged()
+    {
+        RaiseSelectionVisibilityChanged();          // brief-em3d-91 — the toolbar's eye button reads the same moments
+        MenuStateChanged?.Invoke();
+    }
 
     /// <summary>Anything a Modify item could act on: a selection in the view, or a polyline or wire selected in the tree.</summary>
     public bool HasModifySelection

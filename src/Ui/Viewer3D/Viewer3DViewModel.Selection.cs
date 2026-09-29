@@ -126,6 +126,13 @@ public interface IViewer3DEditHost
 
     /// <summary>brief-em3d-67 — a status sentence (the tangent chain's "stopped at a branch").</summary>
     void Say(string text) { }
+
+    /// <summary>brief-em3d-91 — H: hides the selection when all of it is shown, else shows all of it. False when nothing is
+    /// selected.</summary>
+    bool HideOrShowSelection() => false;
+
+    /// <summary>brief-em3d-91 — the context menu's Hide / Show Selection (with H shown), or null for none.</summary>
+    Viewer3DMenuItem? HideShowSelectionItem() => null;
 }
 
 /// <summary>brief-em3d-45 — the drawing's 2D chrome for one frame, in world metres: the overlay projects it.</summary>
@@ -563,6 +570,9 @@ public sealed partial class Viewer3DViewModel
                 return true;
             case Key.Delete or Key.Back:
                 return EditHost?.DeleteSelection() ?? false;
+            // brief-em3d-91 R-em3d91-2 — H hides or shows the selection, in the editor (the read-only viewer has no host).
+            case Key.H when !gestureInProgress:
+                return EditHost?.HideOrShowSelection() ?? false;
         }
         return false;
     }
@@ -673,6 +683,7 @@ public sealed partial class Viewer3DViewModel
         if (host is not null && objects.Count > 0 && objects.All(o => o.Tint))
         {
             items.AddRange(host.DrawMenuItems());
+            if (host.HideShowSelectionItem() is { } tintHideShow) items.Add(tintHideShow);
             return items;
         }
         bool any = objects.Count > 0;
@@ -712,6 +723,8 @@ public sealed partial class Viewer3DViewModel
             items.Add(new Viewer3DMenuItem("Hide", () => Hide(objects)));
             items.Add(new Viewer3DMenuItem("Isolate", () => Isolate(objects)));
         }
+        // brief-em3d-91 — the editor's H, on whatever is selected (a record selected in the tree too).
+        if (host?.HideShowSelectionItem() is { } hideShow) items.Add(hideShow);
         items.Add(new Viewer3DMenuItem("Show All", ShowAll));
         // brief-em3d-46 R-em3d46-6 — in the read-only viewer as in the editor, on anything or nothing.
         items.Add(new Viewer3DMenuItem(MeasureActive ? "End Measure" : "Measure", ToggleMeasure, Gesture: Viewer3DMenuItem.Plain(Key.M)));
