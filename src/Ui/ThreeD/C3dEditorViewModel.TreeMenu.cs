@@ -14,7 +14,24 @@ namespace CircuitRF.Ui.ThreeD;
 public sealed partial class C3dEditorViewModel
 {
     /// <summary>The tree's menu for <paramref name="item"/>, which the caller has just made the selection.</summary>
-    public IReadOnlyList<Viewer3DMenuItem> TreeMenuItems(C3dTreeItem item) => WithHideShowSelection(TreeMenuItemsOf(item));
+    public IReadOnlyList<Viewer3DMenuItem> TreeMenuItems(C3dTreeItem item) => WithClipboard(WithHideShowSelection(TreeMenuItemsOf(item)), [item]);
+
+    /// <summary>brief-em3d-95 — the tree's menu on several selected rows: the canvas's (Copy Objects among it), and Paste.</summary>
+    public IReadOnlyList<Viewer3DMenuItem> TreeSelectionMenuItems() => [.. Viewer.ContextMenuItems(), Viewer3DMenuItem.Separator, PasteItem()];
+
+    /// <summary>brief-em3d-95 — the tree's empty area, and a section's header after its own items: Paste.</summary>
+    public IReadOnlyList<Viewer3DMenuItem> TreeEmptyMenuItems(IReadOnlyList<Viewer3DMenuItem>? before = null)
+        => before is { Count: > 0 } ? [.. before, Viewer3DMenuItem.Separator, PasteItem()] : [PasteItem()];
+
+    /// <summary>brief-em3d-95 — Copy and Paste first under a row's title (every row: a field plot's Copy says why it is disabled).</summary>
+    private IReadOnlyList<Viewer3DMenuItem> WithClipboard(IReadOnlyList<Viewer3DMenuItem> items, IReadOnlyList<C3dTreeItem> rows)
+    {
+        if (IsViewOnly) return items;                      // a setup's view shows the design: nothing to copy from or paste into
+        var list = items.ToList();
+        int at = list.Count >= 2 && !list[0].Enabled && list[1].IsSeparator ? 2 : 0;
+        list.InsertRange(at, [CopyItem(rows), PasteItem(), Viewer3DMenuItem.Separator]);
+        return list;
+    }
 
     private IReadOnlyList<Viewer3DMenuItem> TreeMenuItemsOf(C3dTreeItem item)
     {

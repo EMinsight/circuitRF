@@ -447,38 +447,8 @@ public static class LayoutFragment
                 continue;
             }
 
-            if (sourceCellDir is { Length: > 0 } && destBaseDir is { Length: > 0 })
-            {
-                try
-                {
-                    clone.CellRef = CircuitRF.Core.RefPath.ToStored(
-                        Path.GetRelativePath(Path.GetFullPath(destBaseDir), Path.GetFullPath(sourceCellDir)));
-                    result.Add(clone);
-                    continue;
-                }
-                catch
-                {
-                    // Fall through to the base-independent forms below.
-                }
-            }
-
-            if (workspaceRelativeDir is { Length: > 0 } && destWorkspaceRootDir is { Length: > 0 })
-            {
-                try
-                {
-                    clone.CellRef = CircuitRF.Core.RefPath.Resolve(destWorkspaceRootDir, workspaceRelativeDir);
-                    result.Add(clone);
-                    continue;
-                }
-                catch
-                {
-                    // Fall through to the plain absolute fallback below.
-                }
-            }
-
-            if (sourceCellDir is { Length: > 0 })
-                clone.CellRef = sourceCellDir; // absolute — resolves regardless of the dest base dir
-            // else: keep the original CellRef unchanged — see the doc comment's final fallback note.
+            // brief-em3d-95 — the path half is shared with the 3D paste (CellRefRebase), so the two views rebase alike.
+            clone.CellRef = CellRefRebase.Rebase(clone.CellRef, sourceCellDir, workspaceRelativeDir, destBaseDir, destWorkspaceRootDir);
 
             result.Add(clone);
         }

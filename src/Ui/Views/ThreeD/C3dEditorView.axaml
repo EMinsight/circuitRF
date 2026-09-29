@@ -592,7 +592,8 @@
                 </Grid>
                 <!-- 3D editor round 5 — Shift selects a range, Ctrl/Cmd adds or removes a row, as on the canvas. The
                      selection is mirrored in code (SelectedTreeItems, in the order it was made), never bound. -->
-                <TreeView x:Name="ObjectTree" ItemsSource="{Binding ViewModel.Tree}" SelectionMode="Multiple"
+                <!-- brief-em3d-95 — a Background, so a right-click on the empty area below the rows reaches the tree (Paste). -->
+                <TreeView x:Name="ObjectTree" ItemsSource="{Binding ViewModel.Tree}" SelectionMode="Multiple" Background="Transparent"
                           SelectionChanged="OnTreeSelectionChanged"
                           ContextRequested="OnTreeContextRequested">
                     <TreeView.Styles>

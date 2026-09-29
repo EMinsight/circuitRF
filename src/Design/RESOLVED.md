@@ -15533,3 +15533,51 @@ nothing at all when no port was renumbered, so every earlier result is byte-iden
 
 **Open, not decided here.** A field plot's `Solution.Port` is the RESULT's number; after a port is turned off it may name a
 different port than it did. `C3dModelled.FieldPlotWarnings` warns only when the number exceeds what the result can have.
+
+## brief-em3d-95 — copy and paste of 3D objects between documents and workspaces (2026-09-29)
+
+**`C3dFragment` holds every decision; nothing in `src/Ui` makes one.** `Build` → a marker-guarded payload whose `Content` is
+a `.c3d` (written by `C3dPersistence`, so every key, `Unread` bag, expression and operand travels as a file carries it),
+the materials as a `.cmat` text (`MaterialLibraryPersistence`, resolved through the SOURCE technology's `FindMaterial`, so a
+library material arrives with its values), each placed cell's two base-independent forms, and per-VAR notes (was it a
+parameter, its value in the source). A copied thermal boundary rides in one embedded thermal setup named after its source.
+`Plan` runs the same pipeline on a copy with no choices and collects the conflicts; `Apply` runs it with choices on a copy
+and copies back only when nothing refused. That is what leaves a refused paste byte-identical.
+
+**The rebase's path half is `CellRefRebase`**, lifted out of `LayoutFragment.RebaseInstances` unchanged (the layout paste's
+11 `LayoutInstanceClipboardTests` pass on it). The 3D elaborator already resolves an absolute `CellRef`, or a relative one
+that leaves the workspace, through `ExternalCellRef.ResolveCellDir` with no workspace check. Nothing had to change; gate 6
+elaborates such a paste in workspace B. An empty target path (a never-saved document) takes the second and third forms,
+as the layout's does.
+
+**The pipeline order matters.** Rescale, then names, then variables, then materials, then references. Variables must be
+renamed BEFORE thermal boundaries move: `C3dThermal.ThermalSetups` deserialises a fresh `CemThermal` each call, so a
+rename written into `src.Setups` afterwards never reached the boundaries already added to the target. Ports, places and
+face boundaries are moved by reference, so the order would not have mattered for them.
+
+**The DBU rescale is a walker, not a list.** Every length the format stores is a `long`, a point, or a list of points in a
+`CircuitRF.Design.ThreeD` type. A micrometre field is a double and a count an int. The one `long` that is a count,
+`C3dWireArray.Count`, is excluded by name. A `[JsonIgnore]` (Always) property is skipped, which excludes `Exprs`. A bound
+field's number is rescaled too, and then resolved again at the end anyway.
+
+**References bind by one function (`Bind`).** Copied → the rename. A Tool's name inside a face (`t1:zmax`, also in a
+fillet's `Edges`) is renamed by segment, never by substring (`RenameToolPrefixes`). Else the target's object or instance
+of that name (for a face, the face must be in `FaceNames()`, `#n` pieces allowed, a STEP part's unknown faces accepted),
+and reported. Else unbound: a port's pair is cleared together, and a boundary, heat source or probe is left out and
+reported. `airbox/…` is always bound. A wire has no pad NAMES (its ends are found on whatever pad lies under them), so
+"a wire's pads" in the brief needs no rewrite. The positions travel with it.
+
+**Names share one namespace**: objects and every nested Tool, instances, ports (when named), heat sources, probes, mesh
+regions and effective blocks, plus reserved `airbox`. Group names are their own namespace (`C3dGroups.Names`): a
+colliding segment becomes a new group rather than merging.
+
+**Variables.** Closure is over every expression the fragment carries: bound fields, instance `Params`, a port's `Z0`, a
+heat source's `Power`, and a carried thermal setup's `ExpressionFields`. A name the source resolves to its cell's
+parameter (no VAR, or a linked one) travels as a VAR holding the parameter's `.ccell` default expression and unit. The
+editor resolves a 3D view with no overrides, so an override never reaches a copy. D5a's "identical" means the same token
+stream (kind, text, unit literal) and the same engine unit. Cycles: the target is resolved after the paste, and a
+`The names cycle:` error refuses it.
+
+**Materials are returned, never written.** `C3dPasteResult.MaterialsToCreate`; the workspace commits them through
+`CommitMaterialList`. An unticked one nulls the `Material` of every pasted object and operand, and of a Conductive face
+boundary, that names it.

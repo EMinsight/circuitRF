@@ -133,6 +133,10 @@ public interface IViewer3DEditHost
 
     /// <summary>brief-em3d-91 — the context menu's Hide / Show Selection (with H shown), or null for none.</summary>
     Viewer3DMenuItem? HideShowSelectionItem() => null;
+
+    /// <summary>brief-em3d-95 — Copy Objects: the selection's rows as a 3D copy, to paste into this or another 3D view. The
+    /// canvas's own Copy stays the picture copy.</summary>
+    Viewer3DMenuItem? CopyObjectsItem() => null;
 }
 
 /// <summary>brief-em3d-45 — the drawing's 2D chrome for one frame, in world metres: the overlay projects it.</summary>
@@ -684,6 +688,7 @@ public sealed partial class Viewer3DViewModel
         {
             items.AddRange(host.DrawMenuItems());
             if (host.HideShowSelectionItem() is { } tintHideShow) items.Add(tintHideShow);
+            if (host.CopyObjectsItem() is { } tintCopy) items.Add(tintCopy);
             return items;
         }
         bool any = objects.Count > 0;
@@ -725,6 +730,8 @@ public sealed partial class Viewer3DViewModel
         }
         // brief-em3d-91 — the editor's H, on whatever is selected (a record selected in the tree too).
         if (host?.HideShowSelectionItem() is { } hideShow) items.Add(hideShow);
+        // brief-em3d-95 — the selection's objects as a 3D copy (the pane's Copy is the picture)
+        if (any && host?.CopyObjectsItem() is { } copyObjects) items.Add(copyObjects);
         items.Add(new Viewer3DMenuItem("Show All", ShowAll));
         // brief-em3d-46 R-em3d46-6 — in the read-only viewer as in the editor, on anything or nothing.
         items.Add(new Viewer3DMenuItem(MeasureActive ? "End Measure" : "Measure", ToggleMeasure, Gesture: Viewer3DMenuItem.Plain(Key.M)));

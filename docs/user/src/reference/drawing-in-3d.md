@@ -365,6 +365,51 @@ you tick it again. Hiding an object is not the same thing: a hidden object is st
 - A not-modelled object is still **exported** — to STEP and by Export Drawing — because those export what is drawn.
 - `circuitrf check` lists what is not modelled and reports the refusals above; `explain` names it in its walk.
 
+### Copy and Paste between 3D views {#copy-paste}
+
+Objects copy out of one 3D view and paste into another — in this workspace, another workspace, or another running
+circuitRF — or back into the same one. It is the object tree's gesture:
+
+- **Copy**: right-click a row, a group or several selected rows in the object tree, or press **Ctrl/Cmd+C** there. In
+  the view, right-click ▸ **Copy Objects** copies the selection's rows; the view's own **Copy** stays the picture.
+- **Paste**: right-click any row, or the tree's empty area, or press **Ctrl/Cmd+V** in the tree. It is greyed, with
+  *Nothing copied from a 3D view*, until a 3D copy is on the clipboard.
+- **What copies**: objects whole (material, role, group, placement, visibility, transparency, **Model**, every expression,
+  a boolean's operands and a fillet's edges); a group with all its members; placed cells; ports; EM face boundaries,
+  thermal boundaries (from the active setup) and symmetry planes; heat sources, probes, mesh regions and effective blocks
+  when their rows are selected. **Field plots** and the **air box** do not copy: a plot is a reading of a run, and the
+  air box is the setup's.
+- **Where it lands**: exactly where it was copied from, at the target's resolution — nothing is offset, so a paste into
+  the same view sits on its original. The pasted rows are selected, ready to move (**G**). The whole paste is **one undo
+  step**.
+- **Names**: a name the target already uses takes the first free `_2`, `_3`…, and every reference inside the paste
+  follows — a boolean's tools, a heat source's solid, a probe's face, a port's conductors, a boundary's face, and group
+  paths. A pasted group `pa` next to an existing `pa` becomes a new group `pa_2`, never merged into it. The status line
+  lists every rename.
+- **Variables**: the expressions come through, and so do the variables they name (and the ones those name). A name the
+  target lacks is **created**. A name it has, defined identically, is **reused** silently. A name it has, defined
+  differently, is asked in the **Paste** dialog, both definitions side by side: **Reuse** the one already here (the
+  pasted dimensions then evaluate to this view's value), or **Rename** the pasted one — every pasted expression that named
+  it follows. A reuse that would make two names depend on each other is refused, naming the cycle; rename instead. A
+  cell parameter of the copied view arrives as a plain VAR, and the report says so.
+- **Materials**: looked up in this view's technology as a run looks them up. **Found**: used — this workspace's
+  definition wins, and a difference in value is reported. **Missing**: the Paste dialog lists it with its values,
+  ticked, and says where it would go (the technology's own materials, or its writable library). **Paste** creates the
+  ticked ones with every property they had, leaving that technology or library unsaved; **Paste Without Creating** (or
+  unticking one) pastes the objects with **no material**, where they wait under *No material* until one is given. Undo
+  removes the pasted objects but not a created material, which is an edit of the other document.
+- **Placed cells** keep pointing at the cell they placed, even from another workspace (the reference may then leave this
+  workspace, as a layout paste's may). A cell that no longer exists pastes as a broken reference, and the report names it.
+- **Ports** keep their numbers where free; otherwise they take the next free ones, in order, and the report gives the
+  mapping (*P1→P3*). A port's conductors follow the copied objects; a conductor not copied binds to this view's object of
+  that name (the report says so), else both are cleared and inferred from what the port touches.
+- **Boundaries**: one on a face this view lacks is left out and reported. A thermal boundary goes into the **active
+  thermal setup** — with none active it is left out, and the report names the thermal setups to make active. A face
+  that already carries a boundary asks **Keep this document's** (the default) or **Replace**; so does a symmetry plane on
+  an axis this view already declares elsewhere. A pasted plane that does not lie on the model's extent still pastes, and
+  the report says a run will refuse it until it does.
+- **Cancel** in the Paste dialog pastes nothing and creates nothing.
+
 ## Dimensions as expressions {#expressions}
 
 Wherever a dimension is typed — the box at the cursor, Properties, the Array panel — you may type a name or
@@ -990,6 +1035,7 @@ Every step above has a command-line spelling, and none of them needs a solver ex
 | **G**, **R**, **X/Y/Z** | Move, rotate; hold to an axis |
 | **Ctrl/Cmd+D** | Duplicate and move |
 | **Ctrl/Cmd+G**, **Ctrl/Cmd+Shift+G** | Group the selection; ungroup the outermost selected group |
+| **Ctrl/Cmd+C**, **Ctrl/Cmd+V** in the object tree | Copy the selected rows; paste a 3D copy ([Copy and Paste](#copy-paste)). In the view, Ctrl/Cmd+C copies the picture |
 | **N**, **Shift+E**, **T** | Push/pull a face; extrude a face into a new solid; Touching/Flush while aligning |
 | double-click an edge | Its tangent chain (**Shift** adds it) |
 | **M** | Measure |

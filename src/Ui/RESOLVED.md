@@ -38076,3 +38076,27 @@ is a `ListBox` since the materials-editor redesign, not the DataGrid the brief n
 priority, after the layout pass that realises the rows. If the list still has no height, it waits one `LayoutUpdated` and
 tries again. `MaterialsTableViewModel.Select` clears a filter that hides the row it selects, since a hidden row cannot be
 scrolled to. There is no Avalonia app host in Ui.Tests, so the gate reads the view's source; the scroll was not seen in pixels.
+
+## brief-em3d-95 — Copy / Paste in the 3D object tree (2026-09-29)
+
+**The paste is one `C3dDocumentEdit` (`EditNames`), not `ChangeObjects` + `ChangeRecords`** as the brief sketched. A paste
+changes objects, instances, VARs, ports, face boundaries, thermal places, symmetry planes and the active setup together.
+The whole-document entry a VAR rename already uses is the one shape that holds all of them exactly. It is a rare edit,
+so the copy is the exact choice, as it is for a rename.
+
+**The view model never reads the clipboard.** `ClipboardText` is what the view last read, before the tree's menu is built
+(the handler is `async void` and reads first, so Paste's enabled state is true to the clipboard) and at Ctrl/Cmd+V. A
+copy raises `ClipboardWriteRequested` for the view to write. So the gates drive Copy and Paste with no clipboard at all.
+
+**Where each gesture lives.** Copy and Paste are inserted under a row's title in every row menu (`WithClipboard`). On several
+rows the tree shows the canvas's menu plus Paste. The empty area and a section header show Paste, which needs a
+`Background` on the `TreeView` so a right-click below the rows hits it. The canvas gets **Copy Objects** through a new
+`IViewer3DEditHost.CopyObjectsItem`, and its Copy stays the picture (D3). The tree's keys use their own tunnel handler
+and ignore a `TextBox` source (the rename box).
+
+**Row → selection.** A group row is its members (`C3dGroups.MembersOf`). An operand's or feature's row copies its top-level
+object. A Part row, a field plot and the air box are refused with a reason; a record row maps by kind. The dialog
+(`C3dPasteDialog`) runs `PasteRefusal`, which is `Apply` on a copy, before it closes, so a cycle keeps it open. The
+workspace creates ticked materials in the first writable seed (the technology's own list, then its libraries) BEFORE
+committing the paste. A failed material commit pastes nothing. The object keeps the material's name either way, so it
+does not matter whether the elaboration has picked up the new material yet.

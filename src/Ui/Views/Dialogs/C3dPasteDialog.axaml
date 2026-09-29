@@ -1,0 +1,108 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:t3="using:CircuitRF.Ui.ThreeD"
+        x:Class="CircuitRF.Ui.Views.Dialogs.C3dPasteDialog"
+        x:DataType="t3:C3dPasteDialogViewModel"
+        Title="Paste"
+        Width="560"
+        SizeToContent="Height"
+        MaxHeight="720"
+        CanResize="True"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+    <Grid RowDefinitions="*,Auto,Auto" Margin="20,16,20,16">
+
+        <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto">
+            <StackPanel Spacing="14">
+
+                <!-- Variables: a pasted name this 3D view already has, defined differently -->
+                <StackPanel Spacing="6" IsVisible="{Binding HasVariables}">
+                    <TextBlock Text="Variables" FontWeight="SemiBold" FontSize="13"/>
+                    <TextBlock Text="These names are already defined here. Reuse this document's, or rename the pasted one (every pasted expression that names it follows)."
+                               FontSize="11" Opacity="0.7" TextWrapping="Wrap"/>
+                    <ItemsControl ItemsSource="{Binding Variables}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="t3:C3dPasteVariableRow">
+                                <StackPanel Spacing="3" Margin="0,4,0,4">
+                                    <TextBlock Text="{Binding Here}" FontSize="12" TextWrapping="Wrap"/>
+                                    <TextBlock Text="{Binding Copy}" FontSize="12" Opacity="0.75" TextWrapping="Wrap"/>
+                                    <TextBlock Text="{Binding Note}" FontSize="11" Opacity="0.6" TextWrapping="Wrap" IsVisible="{Binding HasNote}"/>
+                                    <StackPanel Orientation="Horizontal" Spacing="12">
+                                        <RadioButton Content="Reuse the one already here" GroupName="{Binding Name}"
+                                                     IsChecked="{Binding Reuse}" FontSize="12"/>
+                                        <RadioButton Content="Rename the pasted variable:" GroupName="{Binding Name}"
+                                                     IsChecked="{Binding Rename}" FontSize="12"/>
+                                        <TextBox Text="{Binding NewName}" IsEnabled="{Binding Rename}" Width="140" FontSize="12"/>
+                                    </StackPanel>
+                                    <TextBlock Text="{Binding Error}" FontSize="11" Foreground="{DynamicResource CrfWarningBrush}"
+                                               TextWrapping="Wrap" IsVisible="{Binding Error, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+
+                <!-- Boundaries: a pasted boundary or symmetry plane landing where one already is -->
+                <StackPanel Spacing="6" IsVisible="{Binding HasBoundaries}">
+                    <TextBlock Text="Boundaries" FontWeight="SemiBold" FontSize="13"/>
+                    <ItemsControl ItemsSource="{Binding Boundaries}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="t3:C3dPasteBoundaryRow">
+                                <StackPanel Spacing="3" Margin="0,4,0,4">
+                                    <TextBlock Text="{Binding What}" FontSize="12" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                                    <StackPanel Orientation="Horizontal" Spacing="12">
+                                        <RadioButton GroupName="{Binding Key}" IsChecked="{Binding Keep}" FontSize="12">
+                                            <TextBlock TextWrapping="Wrap"><Run Text="Keep this document’s: "/><Run Text="{Binding Here}"/></TextBlock>
+                                        </RadioButton>
+                                        <RadioButton GroupName="{Binding Key}" IsChecked="{Binding Replace}" FontSize="12">
+                                            <TextBlock TextWrapping="Wrap"><Run Text="Replace with the pasted one: "/><Run Text="{Binding Copy}"/></TextBlock>
+                                        </RadioButton>
+                                    </StackPanel>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+
+                <!-- Materials: a material this technology does not have -->
+                <StackPanel Spacing="6" IsVisible="{Binding HasMaterials}">
+                    <TextBlock Text="Materials" FontWeight="SemiBold" FontSize="13"/>
+                    <TextBlock Text="This technology has no material of these names. A ticked one is created with every value it has in the copy; an unticked one leaves what names it with no material."
+                               FontSize="11" Opacity="0.7" TextWrapping="Wrap"/>
+                    <ItemsControl ItemsSource="{Binding Materials}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="t3:C3dPasteMaterialRow">
+                                <CheckBox IsChecked="{Binding Create}" FontSize="12">
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding Name}" FontSize="12"/>
+                                        <TextBlock Text="{Binding Summary}" FontSize="11" Opacity="0.7" TextWrapping="Wrap"/>
+                                    </StackPanel>
+                                </CheckBox>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <TextBlock Text="{Binding MaterialDestination}" FontSize="11" Opacity="0.7" TextWrapping="Wrap"
+                               IsVisible="{Binding CanCreate}"/>
+                    <TextBlock Text="{Binding CannotCreateReason}" FontSize="11" Foreground="{DynamicResource CrfWarningBrush}"
+                               TextWrapping="Wrap" IsVisible="{Binding !CanCreate}"/>
+                </StackPanel>
+            </StackPanel>
+        </ScrollViewer>
+
+        <TextBlock Grid.Row="1" Text="{Binding Refusal}" FontSize="11" Foreground="{DynamicResource CrfWarningBrush}" TextWrapping="Wrap"
+                   Margin="0,10,0,0" IsVisible="{Binding Refusal, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+
+        <Grid Grid.Row="2" ColumnDefinitions="Auto,*,Auto" Margin="0,16,0,0">
+            <Button Grid.Column="0" Content="Choose a Technology…" FontSize="12" IsVisible="{Binding CanChooseTechnology}"
+                    Click="OnChooseTechnologyClick"/>
+            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8">
+                <Button Content="Cancel" FontSize="12" IsCancel="True" Click="OnCancelClick"/>
+                <Button Content="Paste Without Creating" FontSize="12" IsVisible="{Binding ShowPasteWithoutCreating}"
+                        IsEnabled="{Binding IsValid}" Click="OnPasteWithoutCreatingClick"/>
+                <Button Content="Paste" FontSize="12" IsDefault="True" IsVisible="{Binding ShowPaste}"
+                        IsEnabled="{Binding IsValid}" Click="OnPasteClick"/>
+            </StackPanel>
+        </Grid>
+    </Grid>
+</Window>

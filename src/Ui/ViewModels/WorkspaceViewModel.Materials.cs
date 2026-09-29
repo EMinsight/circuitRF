@@ -333,6 +333,72 @@ public partial class WorkspaceViewModel
         vm.ApplyPickedMaterial(indices, picker.ChosenName);
     }
 
+    // ── Paste into a 3D view (brief-em3d-95 R-em3d95-4) ──────────────────────────────────────
+
+    /// <summary>Connects a 3D editor's paste to the Paste dialog, and its report to Messages.</summary>
+    private void HookC3dPaste(C3dEditorDocument doc)
+    {
+        doc.ViewModel.PasteDialogRequested += request => _ = ShowPasteDialogAsync(doc, request);
+        // the first line is the summary, which the status line already says
+        doc.ViewModel.PasteReported += lines => { foreach (string line in lines.Skip(1)) Messages.Info(line); };
+    }
+
+    /// <summary>
+    /// The one Paste dialog, then: the ticked materials created — whole, through the function the Materials dialog commits
+    /// with (the technology's own list, else its first writable library), which leaves that document unsaved — and the paste
+    /// committed as one undo entry of the 3D view. Cancel pastes nothing and creates nothing. With no technology resolved, the
+    /// dialog also offers the Materials command's Choose a Technology…, and is shown again on the one chosen.
+    /// </summary>
+    private async Task ShowPasteDialogAsync(C3dEditorDocument doc, C3dPasteRequest request)
+    {
+        var vm = doc.ViewModel;
+        if (HostWindowOf(doc) is not { } window) return;
+        var plan = request.Plan;
+        Technology? tech = vm.Elaboration?.Technology;
+        string? techPath = vm.Elaboration?.TechnologyPath;
+        while (true)
+        {
+            MaterialSourceSeed? seed = null;
+            string? cannot = null, destination = null;
+            if (plan.Materials.Count > 0)
+            {
+                if (tech is null || techPath is null)
+                    cannot = "This 3D design resolves no technology, so a new material has nowhere to go: choose a technology, or paste without creating.";
+                else if (MaterialSeeds(tech, techPath).FirstOrDefault(s => s.ReadOnlyReason is null) is { } writable)
+                {
+                    seed = writable;
+                    destination = writable.LibraryPath is { } lib ? MaterialLibraries.Display(lib) : techPath;
+                }
+                else
+                    cannot = $"'{Path.GetFileName(techPath)}' cannot take a new material: {ReadOnlyPathReason(techPath) ?? "it and its libraries are read-only"}.";
+            }
+            var dialog = new C3dPasteDialogViewModel(plan, vm.VariableNameTaken, request.Payload.VariableNotes.Select(n => n.Name),
+                                                     destination, cannot, canChooseTechnology: tech is null);
+            var result = await new Views.Dialogs.C3dPasteDialog(dialog, choices => vm.PasteRefusal(request.Payload, choices))
+                                   .ShowDialog<C3dPasteDialogResult?>(window);
+            if (result is null) return;
+            if (result.Answer == C3dPasteDialogAnswer.ChooseTechnology)
+            {
+                if (await ChooseC3dTechnologyAsync(doc, window) is not { } chosen) return;
+                (tech, techPath) = chosen;
+                plan = vm.PlanPaste(request.Payload, tech);
+                continue;
+            }
+            if (result.Choices.CreateMaterials.Count > 0 && seed is not null && techPath is not null)
+            {
+                var add = plan.Materials.Where(m => result.Choices.CreateMaterials.Contains(m.Name)).Select(m => m.Material);
+                if (CommitMaterialList(techPath, seed, [.. seed.Materials, .. add]) is { } refused)
+                {
+                    Messages.Error(refused + " Nothing was pasted.");
+                    return;
+                }
+                ActivateIfOpen(C3dEditorDocument.KeyFor(doc.FilePath));
+            }
+            if (vm.CommitPaste(request.Payload, result.Choices) is { } why) Messages.Error(why);
+            return;
+        }
+    }
+
     /// <summary>
     /// Materials editor redesign (2026-09-29) — the lists the 3D view's Materials dialog edits: the technology's own
     /// materials, then each library it names, each as it stands NOW — an open document's unsaved state, else the file.

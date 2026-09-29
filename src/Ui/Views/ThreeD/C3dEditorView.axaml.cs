@@ -5,6 +5,7 @@ using Avalonia.Interactivity;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using CircuitRF.Render;
+using CircuitRF.Ui.Clipboard;
 using CircuitRF.Ui.ThreeD;
 using CircuitRF.Ui.Viewer3D;
 using CircuitRF.Ui.Views.Viewer3D;
@@ -49,6 +50,8 @@ public partial class C3dEditorView : UserControl
         // brief-em3d-91 — H on the tree's rows, where a multi-selection is usually made; never while a text field (the rename
         // box) has the key.
         ObjectTree.AddHandler(KeyDownEvent, OnTreeHideKey, RoutingStrategies.Tunnel);
+        // brief-em3d-95 — Ctrl/Cmd+C and Ctrl/Cmd+V on the tree's rows copy and paste objects; the pane's keys are unchanged.
+        ObjectTree.AddHandler(KeyDownEvent, OnTreeClipboardKey, RoutingStrategies.Tunnel);
         Pane.ContextMenuRequested += () =>
         {
             if (_vm is null) return;
@@ -85,6 +88,7 @@ public partial class C3dEditorView : UserControl
             _vm.TextRequested -= OnTextRequested;
             _vm.PropertyChanged -= OnVmPropertyChanged;
             _vm.TreeRevealRequested -= OnTreeReveal;
+            _vm.ClipboardWriteRequested -= OnClipboardWriteRequested;
         }
         var doc = DataContext as C3dEditorDocument;
         _vm = doc?.ViewModel;
@@ -95,6 +99,7 @@ public partial class C3dEditorView : UserControl
         _vm.PropertyChanged += OnVmPropertyChanged;
         MirrorTreeSelection();
         _vm.TreeRevealRequested += OnTreeReveal;
+        _vm.ClipboardWriteRequested += OnClipboardWriteRequested;
         SyncPlotTheme();
         if (doc!.ConsumeActivationFocus()) Dispatcher.UIThread.Post(() => Pane.Focus(), DispatcherPriority.Loaded);
     }
@@ -160,29 +165,44 @@ public partial class C3dEditorView : UserControl
     /// <summary>3D editor round 1 — a right-click on a tree node selects it, then opens its menu (the canvas's commands).
     /// Round 5: on one of several selected rows it keeps them all, and the menu is the canvas's for that selection — the
     /// one builder, so a boolean is offered exactly as it is there.</summary>
-    private void OnTreeContextRequested(object? sender, ContextRequestedEventArgs e)
+    private async void OnTreeContextRequested(object? sender, ContextRequestedEventArgs e)
     {
         if (_vm is null) return;
         var context = (e.Source as Control)?.FindAncestorOfType<TreeViewItem>(includeSelf: true)?.DataContext;
+        // brief-em3d-95 — every branch answers now, the tree's empty area too (Paste), so the menu is this handler's
+        e.Handled = true;
+        if (context is C3dTreeItem row && !(_vm.SelectedTreeItems.Count > 1 && _vm.SelectedTreeItems.Contains(row)))
+            _vm.SelectedTreeItem = row;
+        // Paste is enabled from what the clipboard holds: read it before the menu is built
+        _vm.ClipboardText = await C3dClipboard.ReadAsync(TopLevel.GetTopLevel(this)?.Clipboard) ?? _vm.ClipboardText;
+        if (_vm is null) return;
         // brief-em3d-83 R-em3d83-3 — a group's header: the Field Plots group adds a plot.
         if (context is C3dTreeGroup group)
-        {
-            Viewer3DContextMenu.Fill(_treeMenu, _vm.TreeGroupMenuItems(group), []);
-            if (_treeMenu.Items.Count > 0) _treeMenu.Open(ObjectTree);
-            e.Handled = true;
-            return;
-        }
-        if (context is not C3dTreeItem item) return;
-        if (_vm.SelectedTreeItems.Count > 1 && _vm.SelectedTreeItems.Contains(item))
-            Viewer3DContextMenu.Fill(_treeMenu, _vm.Viewer.ContextMenuItems(), []);
+            Viewer3DContextMenu.Fill(_treeMenu, _vm.TreeEmptyMenuItems(_vm.TreeGroupMenuItems(group)), []);
+        else if (context is not C3dTreeItem item)
+            Viewer3DContextMenu.Fill(_treeMenu, _vm.TreeEmptyMenuItems(), []);
+        else if (_vm.SelectedTreeItems.Count > 1 && _vm.SelectedTreeItems.Contains(item))
+            Viewer3DContextMenu.Fill(_treeMenu, _vm.TreeSelectionMenuItems(), []);
         else
-        {
-            _vm.SelectedTreeItem = item;
             Viewer3DContextMenu.Fill(_treeMenu, _vm.TreeMenuItems(item), []);
-        }
         if (_treeMenu.Items.Count > 0) _treeMenu.Open(ObjectTree);
-        e.Handled = true;
     }
+
+    /// <summary>brief-em3d-95 — Ctrl/Cmd+C and Ctrl/Cmd+V with focus in the object tree (the pane's Ctrl/Cmd+C is the picture,
+    /// D3). Never while a text field (the rename box) has the key.</summary>
+    private async void OnTreeClipboardKey(object? sender, KeyEventArgs e)
+    {
+        if (_vm is null || e.Source is TextBox || e.Key is not (Key.C or Key.V)) return;
+        var command = OperatingSystem.IsMacOS() ? KeyModifiers.Meta : KeyModifiers.Control;
+        if ((e.KeyModifiers & ~KeyModifiers.Shift) != command || e.KeyModifiers.HasFlag(KeyModifiers.Shift)) return;
+        e.Handled = true;
+        if (e.Key == Key.C) { _vm.CopySelection(); return; }
+        string? text = await C3dClipboard.ReadAsync(TopLevel.GetTopLevel(this)?.Clipboard) ?? _vm.ClipboardText;
+        _vm?.Paste(text);
+    }
+
+    /// <summary>brief-em3d-95 — a copy made in the view model goes to the system clipboard.</summary>
+    private void OnClipboardWriteRequested(string text) => _ = C3dClipboard.WriteAsync(TopLevel.GetTopLevel(this)?.Clipboard, text);
 
     private void OnTreeGroupKey(object? sender, KeyEventArgs e)
     {

@@ -177,6 +177,7 @@ public partial class WorkspaceViewModel
             };
             WireC3dHierarchy(doc);
             HookC3dMaterials(doc);
+            HookC3dPaste(doc);
             _factory.OpenDocument(doc);
             _openDocsByPath[key] = doc;
             WatchC3d(doc);
