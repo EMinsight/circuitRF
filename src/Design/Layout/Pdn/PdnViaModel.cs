@@ -64,7 +64,17 @@ public sealed record PdnViaBarrel(
     long X, long Y,
     LayerKey FromLayer, LayerKey ToLayer,
     double DrillMetres, double PlatingMetres, PdnPlatingBasis Basis,
-    double SpanMetres, double ResistanceOhms);
+    double SpanMetres, double ResistanceOhms)
+{
+    /// <summary>
+    /// Which hole this barrel is part of, or -1 where nothing said. A barrel that joins conductors
+    /// between its span's two ends is stamped as one SEGMENT per pair of them (brief-railrf-38
+    /// R-rail38-2), and every segment of one hole carries the same number, so the via check reads
+    /// the hole as ONE barrel — carrying its largest segment current — rather than as several smaller
+    /// ones that each pass.
+    /// </summary>
+    public int Hole { get; init; } = -1;
+}
 
 /// <summary>Barrel resistance, and nothing else.</summary>
 public static class PdnViaModel

@@ -99,7 +99,8 @@ internal static class PdnRailConnectivity
         IReadOnlyList<(long X, long Y)> bareCoordinateSeeds, out IReadOnlyList<PdnAnchorAmbiguity> ambiguous)
     {
         var tech = request.Technology;
-        var pieces = DrcConnectivity.Extract(layerRegions, tech);
+        var partition = ConnectivityCache.Get(layerRegions, tech);
+        var pieces = partition.Pieces;
         var returnNet = Regions.ResolveReturnNet(request.ReferenceNet, pieces, tech, request.NetPoints, referenceLayer,
                                                  request.Rail.NetName, anchorSeeds, request.DbuPerMicron);
 
@@ -109,9 +110,53 @@ internal static class PdnRailConnectivity
         var chain = SeriesChainSeeds(request, pieces, referenceLayer, returnNet);
         if (chain.Count > 0) anchorSeeds = [.. anchorSeeds, .. chain];
 
-        return Regions.Walk(pieces, tech, request.NetPoints, request.Rail.NetName, referenceLayer,
-                            returnNet.Net, anchorSeeds, bareCoordinateSeeds, returnNet.GalvanicNet)
-            with { ReturnNet = returnNet };
+        var walked = Regions.Walk(pieces, tech, request.NetPoints, request.Rail.NetName, referenceLayer,
+                                  returnNet.Net, anchorSeeds, bareCoordinateSeeds, returnNet.GalvanicNet);
+        return walked with
+        {
+            ReturnNet = returnNet,
+            Holes = Holes(tech, pieces, partition.Barrels, walked.RailNets, referenceLayer),
+        };
+    }
+
+    /// <summary>
+    /// brief-railrf-38 — every hole the walk's barrel rule touched two or more conductors through,
+    /// read off the partition's own record of what that rule found (<see cref="ConnectivityPartition.Barrels"/>),
+    /// never by testing a barrel again.
+    /// </summary>
+    /// <remarks>
+    /// <b>Not the spanning forest.</b> <see cref="PieceJoin"/> keeps a touch only where it merged two
+    /// sets, so a hole beside another that already joined the same copper records one join or none —
+    /// and a hole the walk did not NEED is exactly the parallel path whose absence from a reading
+    /// makes a plausible, wrong answer. The rail's layers leave out the reference layer: the readings
+    /// set the rail's copper there aside, and <see cref="Refusal"/> already says so where it is the
+    /// only way through.
+    /// </remarks>
+    private static IReadOnlyList<PdnWalkHole> Holes(
+        Technology tech, IReadOnlyList<DrcNetPiece> pieces, IReadOnlyList<BarrelTouch> barrels,
+        IReadOnlySet<int> railNets, LayerKey referenceLayer)
+    {
+        if (barrels.Count == 0) return [];
+
+        var rank = new Dictionary<LayerKey, int>();
+        foreach (var c in Conductors.Of(tech))
+            foreach (var l in c.DrawingLayers) rank.TryAdd(l, rank.Count);
+
+        var holes = new List<PdnWalkHole>(barrels.Count);
+        foreach (var b in barrels)
+        {
+            var via = pieces[b.Via];
+            var touched = b.Touched.Select(i => pieces[i].Layer).ToHashSet();
+            var rail = b.Touched
+                .Select(i => pieces[i])
+                .Where(p => p.Layer != referenceLayer && railNets.Contains(p.Net))
+                .Select(p => p.Layer)
+                .Distinct()
+                .OrderBy(l => rank.GetValueOrDefault(l, int.MaxValue))
+                .ToList();
+            holes.Add(new PdnWalkHole(via.Bounds, via.Paths, touched, rail));
+        }
+        return holes;
     }
 
     /// <summary>

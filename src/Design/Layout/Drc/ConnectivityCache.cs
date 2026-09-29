@@ -26,7 +26,23 @@ namespace CircuitRF.Design.Layout.Drc;
 
 /// <summary>One extraction's whole answer — what every <see cref="DrcConnectivity"/> form reads.</summary>
 internal sealed record ConnectivityPartition(
-    IReadOnlyList<DrcNetPiece> Pieces, IReadOnlyList<PieceJoin> Joins, GroundReach Ground);
+    IReadOnlyList<DrcNetPiece> Pieces, IReadOnlyList<PieceJoin> Joins, GroundReach Ground)
+{
+    /// <summary>
+    /// brief-railrf-38 — every via-layer piece that touched two or more conductor pieces, with ALL of
+    /// them. <see cref="Joins"/> keeps only the touches that merged two sets, so a hole beside
+    /// another that already joined the same copper records one join or none; this keeps what the
+    /// barrel rule actually found, so a reading can take the walk's answer about each hole rather
+    /// than re-derive it. Additive: nothing here changes which pieces are one net.
+    /// </summary>
+    public IReadOnlyList<BarrelTouch> Barrels { get; init; } = [];
+}
+
+/// <summary>One via-layer piece and every conductor piece the walk's barrel rule found touching it
+/// (brief-railrf-38).</summary>
+/// <param name="Via">Index of the via-layer piece in <see cref="ConnectivityPartition.Pieces"/>.</param>
+/// <param name="Touched">Indices of the conductor pieces it touched, at most one per conductor.</param>
+internal readonly record struct BarrelTouch(int Via, IReadOnlyList<int> Touched);
 
 /// <summary>The last few partitions, keyed on the copper and stackup that produced them.</summary>
 internal sealed class ConnectivityCache

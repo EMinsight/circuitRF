@@ -290,6 +290,7 @@ internal static class DrcConnectivity
         bool groundDraws = groundLayer is { DrawingLayers.Count: > 0 };
         var groundPieces = new HashSet<int>();
         int groundVias = 0;
+        var barrels = new List<BarrelTouch>();
 
         // ── Vias join pieces across layers ──────────────────────────────────────────────────────
         // A via's own geometry is the bridge: a piece on the layer below and a piece on the layer
@@ -352,6 +353,9 @@ internal static class DrcConnectivity
                             meets[hit] = meet;
                         }
 
+                    // brief-railrf-38: what the rule found, kept whole — see ConnectivityPartition.Barrels.
+                    if (touched.Count >= 2) barrels.Add(new BarrelTouch(v, touched));
+
                     // R-lvs3-6c, and it must be read BEFORE the bail-out below: the whole point of
                     // an undrawn reference is that the barrel touches exactly ONE drawn conductor —
                     // the other end is the metal nobody drew — so the common shape here is the one
@@ -402,7 +406,8 @@ internal static class DrcConnectivity
         foreach (int piece in groundPieces) groundNets.Add(result[piece].Net);
 
         return new ConnectivityPartition(
-            result, joins, new GroundReach(groundName, groundDraws, groundNets, groundVias));
+            result, joins, new GroundReach(groundName, groundDraws, groundNets, groundVias))
+            { Barrels = barrels };
     }
 
     /// <summary>The first piece on any of <paramref name="layers"/> that touches the piece at

@@ -419,12 +419,26 @@ Three other things come out of the same solve.
 - **Islands.** The run says how many regions the rail is, and how many the reference is. *"The rail is
   three regions"* on a net you believe is one is the answer to a question you had not asked yet.
 - **A drop map** on the board, so the gradient has a place rather than a number.
+- **Vias join every layer they pass through.** A plated barrel connects each layer whose copper touches it
+  on its way through &mdash; not only the two layers its span starts and ends on &mdash; and a layer whose
+  copper is cleared round the hole is passed by, exactly as the board's connectivity reads it. A hole that
+  joins an inner layer is priced in pieces, one per pair of layers it joins, and each piece is a row of the
+  breakdown that names its two layers: *a 0.3 mm plated via from Top Copper to Inner 2 &mdash; 0.682 mm of
+  its 1.602 mm barrel*. Copper on the reference layer in the middle of a hole's span is never joined to the
+  rail. A barrel that touches the reference plane on its way through, with no clearance round the hole,
+  shorts the supply to its return on the board; the run names each such hole and answers for the board as
+  it was meant to be.
+  Where the board's connectivity joins the rail through a hole that neither reading can price &mdash; a
+  plated slot, a hole declared non-plated or with no resolvable span, copper that meets only the barrel's
+  wall &mdash; the run names the hole and its layers, because the path it would have carried is left out
+  and the drop may read high.
 - **The via current check.** Each layer transition is grouped with the barrels that share it, the worst
   barrel's current compared against a stated limit, and a count given that would clear the flag.
   The limit's basis travels with it, because **the plating thickness is worth a factor of two** and the
   drill file does not carry it: state it in the stackup's via entry or in the document's own settings,
   and railRF says which it used. Where nobody stated one it falls back to a drill-size table and says
-  *that*, rather than pricing a barrel nobody measured.
+  *that*, rather than pricing a barrel nobody measured. A hole priced in pieces is still **one** barrel
+  here, between its outermost layers and carrying the current of its most-loaded piece.
 
 ## Q1 &mdash; does this rail meet its target? {#q1}
 
@@ -577,7 +591,8 @@ it, set up for all four questions. Open it and follow along; its own README carr
    names it: **26.2 mm of 0.211 mm copper on the bottom layer is 63 mΩ**, and 46 % of the budget on its
    own, because the supply took the long way round the connector cut-out at the width a low-current net
    gets by default. The ferrite `FB1` is the third row at **20 mΩ and 7 mV**, ranked with the copper
-   rather than reported beside it. Three via transitions, none over its limit. The second load, `U3`, is
+   rather than reported beside it. Seventeen via transitions, none over its limit &mdash; the rail's
+   three, and each capacitor's power via down to its pour on the inner layer. The second load, `U3`, is
    listed as *observed*: it states no current and draws none.
 3. **Widen that run to 0.4 mm** in the layout editor and re-run. **36.5 mV.** The copper term halves and
    the protection FET becomes the thing worth arguing about &mdash; which is a part choice rather than a

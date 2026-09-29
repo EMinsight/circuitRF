@@ -118,6 +118,32 @@ public sealed record PdnRailRegionSet(
     /// plane never sets it.
     /// </summary>
     public string? MixedReturnRefusal { get; init; }
+
+    /// <summary>
+    /// brief-railrf-38 — every hole through which the walk's barrel rule touched two or more
+    /// conductors, with which. The readings take this as the answer to "which conductors does this
+    /// barrel join" (R-rail38-2) rather than re-deriving it, and check themselves against the rail's
+    /// part of it (R-rail38-3).
+    /// </summary>
+    internal IReadOnlyList<PdnWalkHole> Holes { get; init; } = [];
+
+    /// <summary>The partition's net indices that are this rail's copper.</summary>
+    internal IReadOnlySet<int> RailNets { get; init; } = new HashSet<int>();
+}
+
+/// <summary>
+/// One hole as the region walk read it (brief-railrf-38).
+/// </summary>
+/// <param name="Bounds">The via-layer piece's bounds, DBU — its centre is where a note points.</param>
+/// <param name="Paths">Its geometry, so a reading's round barrel can be matched to the piece it is.</param>
+/// <param name="Touched">Every conductor drawing layer the barrel rule found copper touching it on.</param>
+/// <param name="RailLayers">The subset that is this rail's copper, off the reference layer, in
+/// stackup order.</param>
+internal sealed record PdnWalkHole(
+    Bbox Bounds, Paths64 Paths, IReadOnlySet<LayerKey> Touched, IReadOnlyList<LayerKey> RailLayers)
+{
+    public long X => (Bounds.MinX + Bounds.MaxX) / 2;
+    public long Y => (Bounds.MinY + Bounds.MaxY) / 2;
 }
 
 /// <summary>How the reference return's net was decided (R-rail31-1).</summary>
@@ -292,7 +318,7 @@ public static class Regions
             diagnostics.Add(SeparateRegionsNote(power.Count));
 
         return new PdnRailRegionSet(power, reference, report, diagnostics, ownReturn)
-            { MixedReturnRefusal = mixed };
+            { MixedReturnRefusal = mixed, RailNets = railNets };
     }
 
     /// <summary>The walk's note for a rail of more than one galvanic region — one spelling, so an

@@ -242,6 +242,8 @@ public static class PdnViaCheck
 
         if (barrels.Count == 0) return new PdnViaCheckResult([], [], notes);
 
+        barrels = OneBarrelPerHole(barrels);
+
         var transitions = new List<PdnViaTransition>();
         var flags = new List<PdnViaFlag>();
         int noLimit = 0;
@@ -293,6 +295,52 @@ public static class PdnViaCheck
         transitions.Sort(static (p, q) => q.TotalCurrentA.CompareTo(p.TotalCurrentA));
 
         return new PdnViaCheckResult(transitions, flags, notes);
+    }
+
+    /// <summary>
+    /// R-rail38-2 — the segments of one hole, read back as the ONE barrel they are.
+    /// </summary>
+    /// <remarks>
+    /// <b>The largest segment current, over the whole barrel.</b> A hole that joins an inner layer on
+    /// its way through is stamped as a segment per pair of layers, and those segments carry different
+    /// currents: current enters at one layer and leaves at another. What heats the barrel is its
+    /// most-loaded length, so that is the current; and the limit is the hole's, over its whole stamped
+    /// length and between its outermost layers, exactly as the same hole stamped whole reads. Three
+    /// segments read as three barrels would each carry less and pass where the hole does not.
+    /// </remarks>
+    private static List<(PdnViaBarrel Barrel, double Signed)> OneBarrelPerHole(
+        List<(PdnViaBarrel Barrel, double Signed)> barrels)
+    {
+        var folded = new List<(PdnViaBarrel Barrel, double Signed)>(barrels.Count);
+        var at = new Dictionary<int, int>();
+        var segments = new Dictionary<int, List<(PdnViaBarrel Barrel, double Signed)>>();
+
+        foreach (var b in barrels)
+        {
+            if (b.Barrel.Hole < 0) { folded.Add(b); continue; }
+            if (!segments.TryGetValue(b.Barrel.Hole, out var list))
+            {
+                segments[b.Barrel.Hole] = list = [];
+                at[b.Barrel.Hole] = folded.Count;
+                folded.Add(b);
+            }
+            list.Add(b);
+        }
+
+        foreach (var (hole, list) in segments)
+        {
+            if (list.Count < 2) continue;
+            var worst = list.MaxBy(s => Math.Abs(s.Signed));
+            folded[at[hole]] = (worst.Barrel with
+            {
+                FromLayer = list[0].Barrel.FromLayer,
+                ToLayer = list[^1].Barrel.ToLayer,
+                SpanMetres = list.Sum(s => s.Barrel.SpanMetres),
+                ResistanceOhms = list.Sum(s => s.Barrel.ResistanceOhms),
+            }, worst.Signed);
+        }
+
+        return folded;
     }
 
     /// <summary>

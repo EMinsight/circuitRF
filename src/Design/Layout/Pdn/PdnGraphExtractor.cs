@@ -457,7 +457,8 @@ public static class PdnGraphExtractor
             return new PdnExtraction(pourRefusal, null, regions, diagnostics)
                 { Classification = classification };
 
-        var asm = new PdnAssembly(request, nodes, PdnModelKind.Fast, celsius, notes, diagnostics);
+        var asm = new PdnAssembly(request, nodes, PdnModelKind.Fast, celsius, notes, diagnostics)
+            { WalkHoles = regions.Holes };
         build.StageCopper(asm);
         if (asm.Build() is { } refusal)
             return PdnExtraction.Refused(refusal, regions) with { Classification = classification };

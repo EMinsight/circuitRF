@@ -28,6 +28,7 @@ using CircuitRF.Core;
 using CircuitRF.Core.Devices;
 using CircuitRF.Core.Elaboration;
 using CircuitRF.Core.Expressions;
+using CircuitRF.Design.Layout.Extraction;
 using CircuitRF.Design.RailRf;
 
 namespace CircuitRF.Design.Layout.Pdn;
@@ -112,6 +113,21 @@ internal sealed class PdnAssembly
     /// </summary>
     public int UnresolvedViaSpans { get; private set; }
 
+    /// <summary>
+    /// The holes as the region walk read them (brief-railrf-38): which conductors each barrel
+    /// touches. <see cref="StampVias"/> joins only those, and <see cref="DroppedBarrelNote"/> checks
+    /// the rail's part of it against what was stamped. Empty — a caller with no walk — reads every
+    /// hole at its centre alone, as before.
+    /// </summary>
+    public IReadOnlyList<PdnWalkHole> WalkHoles { get; init; } = [];
+
+    /// <summary>R-rail38-3 — rail holes whose barrel meets the reference copper between its span's
+    /// ends: where, and on which conductor.</summary>
+    private readonly List<string> _shorted = [];
+
+    /// <summary>Walk hole index → the conductor layers this reading stamped a barrel on there.</summary>
+    private readonly Dictionary<int, HashSet<LayerKey>> _stampedAt = [];
+
     public PdnAssembly(
         PdnExtractionRequest req, IPdnNodeSource nodes, PdnModelKind model,
         double celsius, List<string> notes, List<string> diagnostics)
@@ -131,6 +147,7 @@ internal sealed class PdnAssembly
     public string? Build()
     {
         StampVias();
+        DroppedBarrelNote();
 
         if (ChooseGround() is { } groundRefusal) return groundRefusal;
         if (StampSeriesElements() is { } seriesRefusal) return seriesRefusal;
@@ -336,17 +353,26 @@ internal sealed class PdnAssembly
     /// <c>DrillViaPairing</c> already applied <c>BoardNetlistFile</c>'s rule when it produced
     /// these <c>ViaShape</c>s, and re-deriving it from hole size would disagree with the import
     /// that made them.</para>
+    ///
+    /// <para><b>A barrel joins EVERY conductor it passes that has the reading's copper at its
+    /// centre, not only its span's two ends</b> (brief-railrf-38 R-rail38-2). It is stamped as one
+    /// segment between each consecutive pair of those, and a conductor with nothing there is passed
+    /// through. See <see cref="Segments"/>.</para>
     /// </summary>
     private void StampVias()
     {
         var tech = _req.Technology;
         var z = ZOf(tech, _req.DbuPerMicron);
+        var conductors = Conductors.Of(tech);
+        var order = conductors.Select(c => c.StackupName).ToList();
 
         var vias = PdnBarrels.Of(_req.Shapes, tech);
         vias.Sort((p, q) => p.X != q.X ? p.X.CompareTo(q.X) : p.Y.CompareTo(q.Y));
 
+        var walked = WalkHoleIndex();
+
         double rho = PdnMeshExtractor.ResistivityAt(CopperSigma(tech), _celsius);
-        int unresolved = 0, nonPlated = 0, stamped = 0;
+        int unresolved = 0, nonPlated = 0, stamped = 0, hole = 0;
         var bases = new HashSet<PdnPlatingBasis>();
 
         foreach (var via in vias)
@@ -368,35 +394,70 @@ internal sealed class PdnAssembly
             var toKeys = ConductorKeys(tech, toName);
             if (fromKeys.Count == 0 || toKeys.Count == 0) { unresolved++; continue; }
 
-            int na = NodeOn(fromKeys, via.X, via.Y);
-            int nb = NodeOn(toKeys, via.X, via.Y);
-            if (na < 0 || nb < 0 || na == nb) continue;
+            int ia = order.IndexOf(fromName), ib = order.IndexOf(toName);
+            if (ia < 0 || ib < 0) { unresolved++; continue; }
+
+            int walk = walked(via.X, via.Y);
+            var hits = Segments(conductors, ia, ib, via.X, via.Y, z, walk >= 0 ? WalkHoles[walk].Touched : null,
+                                out string? shortedOn);
+            if (shortedOn is not null && hits.Any(h => CellOf(h.Node)?.IsReference != true))
+                _shorted.Add($"{_req.LengthFormat.Point(via.X, via.Y)} on {shortedOn}");
+            if (hits.Count < 2) continue;
 
             var (plating, basis) = PdnViaModel.ResolvePlating(
                 entry, _req.DbuPerMicron, _req.Settings.ViaPlatingThicknessMicrometres);
-            bases.Add(basis);
 
+            if (hits.Select(h => h.Node).Distinct().Count() > 1) bases.Add(basis);
             double drill = via.DrillSize / (_req.DbuPerMicron * 1e6);
-            double span = Math.Abs(z(toName).Far - z(fromName).Near);
-            if (!(span > 0)) span = Math.Abs(z(fromName).Far - z(toName).Near);
 
-            double r = PdnViaModel.BarrelResistanceOhms(drill, plating, span, rho);
-            if (!(r > 0)) continue;
+            // Today's barrel, exactly: the two span ends and nothing between them. Its path, its
+            // sentence and its span are what they were before this brief, so a board whose holes all
+            // read this way extracts byte for byte as it did (R-rail38 gate 2).
+            bool whole = hits.Count == 2 && hits[0].Index == ia && hits[1].Index == ib;
+            double fullSpan = Math.Abs(z(toName).Far - z(fromName).Near);
+            if (!(fullSpan > 0)) fullSpan = Math.Abs(z(fromName).Far - z(toName).Near);
 
-            _staged.Add(new PdnStaged(
-                "R", $"via.{via.X}.{via.Y}",
-                [na, nb], new Dictionary<string, Value>(StringComparer.Ordinal) { ["R"] = new Value(r) },
-                new ResistorModel(), PdnOriginKind.Via,
-                $"a {drill * 1e3:0.###} mm plated via over {span * 1e3:0.###} mm, " +
-                PdnViaModel.DescribePlating(plating, basis),
-                CellOf(na), CellOf(nb), null, r,
-                // The barrel travels with the element in STRUCTURE, because brief 6 computes a
-                // current limit from these four terms and the sentence above cannot be read back.
-                // fromKeys/toKeys are layer LISTS; the barrel names the one each end landed on.
-                Barrel: new PdnViaBarrel(
-                    via.X, via.Y, LayerOfNode(fromKeys, via.X, via.Y), LayerOfNode(toKeys, via.X, via.Y),
-                    drill, plating, basis, span, r)));
+            bool any = false;
+            for (int k = 1; k < hits.Count; k++)
+            {
+                var (p, q) = (hits[k - 1], hits[k]);
+                if (p.Node == q.Node) continue;
+
+                double span = whole ? fullSpan : Math.Abs(q.Z - p.Z);
+                double r = PdnViaModel.BarrelResistanceOhms(drill, plating, span, rho);
+                if (!(r > 0)) continue;
+
+                string description = whole
+                    ? $"a {drill * 1e3:0.###} mm plated via over {span * 1e3:0.###} mm, " +
+                      PdnViaModel.DescribePlating(plating, basis)
+                    : $"a {drill * 1e3:0.###} mm plated via from {conductors[p.Index].StackupName} " +
+                      $"to {conductors[q.Index].StackupName} — {span * 1e3:0.###} mm of its " +
+                      $"{fullSpan * 1e3:0.###} mm barrel, " + PdnViaModel.DescribePlating(plating, basis);
+
+                _staged.Add(new PdnStaged(
+                    "R", whole ? $"via.{via.X}.{via.Y}" : $"via.{via.X}.{via.Y}.{k}",
+                    [p.Node, q.Node], new Dictionary<string, Value>(StringComparer.Ordinal) { ["R"] = new Value(r) },
+                    new ResistorModel(), PdnOriginKind.Via, description,
+                    CellOf(p.Node), CellOf(q.Node), null, r,
+                    // The barrel travels with the element in STRUCTURE, because brief 6 computes a
+                    // current limit from these four terms and the sentence above cannot be read back.
+                    // Each end names the drawing layer it landed on, and Hole says which segments are
+                    // one barrel — the via check reads a hole as ONE barrel, never as its segments.
+                    Barrel: new PdnViaBarrel(via.X, via.Y, p.Layer, q.Layer, drill, plating, basis, span, r)
+                        { Hole = hole }));
+                any = true;
+
+                if (walk >= 0)
+                {
+                    if (!_stampedAt.TryGetValue(walk, out var at)) _stampedAt[walk] = at = [];
+                    at.Add(p.Layer);
+                    at.Add(q.Layer);
+                }
+            }
+
+            if (!any) continue;
             stamped++;
+            hole++;
         }
 
         UnresolvedViaSpans = unresolved;
@@ -416,6 +477,108 @@ internal sealed class PdnAssembly
 
         if (nonPlated > 0)
             _diagnostics.Add($"{nonPlated} hole(s) are declared non-plated and are not conductors.");
+    }
+
+    /// <summary>
+    /// R-rail38-3 — <b>say so</b> where the region walk joins the rail's conductors through a hole
+    /// and this reading does not stamp a barrel there.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>Why a note and not a refusal.</b> Where that hole is the only way through, the
+    /// floating backstop below refuses already. Where it is not, the reading solves without it and
+    /// the answer is plausible: the drop to the loads reads HIGH by whatever that path would have
+    /// carried, and nothing on the report would say a path was missing. This turns that into a
+    /// sentence naming the hole and its layers.</para>
+    ///
+    /// <para><b>Per hole, never per connected piece.</b> Asking whether the reading's copper ends up
+    /// joined anyway cannot see a missing PARALLEL path — the pieces are joined, the other way — and
+    /// that is the case this exists for.</para>
+    ///
+    /// <para><b>What can still disagree.</b> The walk joins through any geometry on a via layer, where
+    /// a reading prices round holes only, so a plated slot is joined and never stamped; a hole declared
+    /// non-plated, or with a span the stackup cannot resolve, carries nothing; and the reading
+    /// attaches at the centre, so copper touching only the barrel's wall is not reached.</para>
+    /// </remarks>
+    private void DroppedBarrelNote()
+    {
+        const int named = 4;
+
+        // The reference in the MIDDLE of a rail barrel's span is passed through (Segments), which
+        // keeps the rail off its own return inside the reading — and is exactly the join the walk
+        // made and the reading did not. A barrel touching the plane on its way through shorts the
+        // supply to its return on the board, and a run that solved without saying so would be
+        // answering for a board that is not the one drawn.
+        if (_shorted.Count > 0)
+            _notes.Add(
+                $"{_shorted.Count} of the rail's via barrel(s) touch the reference copper on their way " +
+                "through, with no clearance round the hole: " + string.Join("; ", _shorted.Take(named)) +
+                (_shorted.Count > named ? $"; and {_shorted.Count - named} more" : "") + ". On the board " +
+                "that shorts the rail to its return. The reading does not join them there, so the drop " +
+                "here is for the board as it was meant to be — cut an anti-pad round each of those holes " +
+                "to make the artwork say so.");
+
+        var dropped = new List<string>();
+        for (int i = 0; i < WalkHoles.Count; i++)
+        {
+            var hole = WalkHoles[i];
+            if (hole.RailLayers.Count < 2) continue;
+
+            var stamped = _stampedAt.GetValueOrDefault(i);
+            var missing = hole.RailLayers.Where(l => stamped is null || !stamped.Contains(l)).ToList();
+            if (missing.Count == 0) continue;
+
+            dropped.Add(
+                $"{_req.LengthFormat.Point(hole.X, hole.Y)}, joining " +
+                $"{string.Join(", ", hole.RailLayers.Select(ConductorName))}" +
+                (stamped is null ? " — no barrel stamped" : $" — nothing stamped on {string.Join(", ", missing.Select(ConductorName))}"));
+        }
+
+        if (dropped.Count == 0) return;
+
+        string model = _model == PdnModelKind.Accurate ? "Accurate reading" : "Fast reading";
+        _notes.Add(
+            $"The region walk joins the rail's copper through {dropped.Count} hole(s) that the {model} " +
+            "does not carry: " + string.Join("; ", dropped.Take(named)) +
+            (dropped.Count > named ? $"; and {dropped.Count - named} more" : "") + ". " +
+            "A reading prices a round plated barrel joined at its centre, so a hole that is not round (a " +
+            "slot), is declared non-plated or has no resolvable span, or meets the copper only at its " +
+            "wall carries nothing here. Any current that would take that path is left out, so the drop " +
+            "to the loads may read high.");
+    }
+
+    /// <summary>A drawing layer by its stackup conductor's name, which is what a span is written in.</summary>
+    private string ConductorName(LayerKey layer)
+    {
+        foreach (var c in Conductors.Of(_req.Technology))
+            if (c.DrawingLayers.Contains(layer)) return c.StackupName;
+        return PdnRegionRef.LayerName(_req.Technology, layer);
+    }
+
+    /// <summary>
+    /// A lookup from a hole's centre to the walk hole whose via-layer piece contains it, or -1 — a
+    /// bucket grid, because a board has thousands of holes on each side of the match.
+    /// </summary>
+    private Func<long, long, int> WalkHoleIndex()
+    {
+        if (WalkHoles.Count == 0) return static (_, _) => -1;
+
+        long cell = Math.Max(1, (long)_req.DbuPerMicron * 1000);
+        var buckets = new Dictionary<(long, long), List<int>>();
+        for (int i = 0; i < WalkHoles.Count; i++)
+        {
+            var b = WalkHoles[i].Bounds;
+            for (long bx = Math.DivRem(b.MinX, cell).Quotient - 1; bx <= b.MaxX / cell + 1; bx++)
+                for (long by = Math.DivRem(b.MinY, cell).Quotient - 1; by <= b.MaxY / cell + 1; by++)
+                    (buckets.TryGetValue((bx, by), out var l) ? l : buckets[(bx, by)] = []).Add(i);
+        }
+
+        return (x, y) =>
+        {
+            if (!buckets.TryGetValue((x / cell, y / cell), out var list)) return -1;
+            foreach (int i in list)
+                if (WalkHoles[i].Bounds.Contains(x, y) && Regions.Contains(WalkHoles[i].Paths, x, y)) return i;
+            return -1;
+        };
     }
 
     private static double CopperSigma(Technology tech)
@@ -447,6 +610,62 @@ internal sealed class PdnAssembly
             zz += t;
         }
         return name => bands.TryGetValue(name, out var b) ? b : (0, 0);
+    }
+
+    /// <summary>
+    /// R-rail38-2 — every conductor of a barrel's span, in order from its FROM end to its TO end,
+    /// that has the reading's copper at the hole's centre, with the z each segment boundary sits at.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>Which conductors a barrel touches is the WALK's answer, taken rather than
+    /// re-derived.</b> The region walk (<c>DrcConnectivity</c>) joins every conductor a barrel passes
+    /// whose copper touches it, and a clearance ring is how the artwork says one does not. A reading
+    /// that decided this for itself could disagree from either side: a coarse mesh cell at the
+    /// centre of a ring can hold a sliver of the copper round it, and would join what the walk does
+    /// not. So a conductor is a candidate only where the walk found it touching
+    /// (<paramref name="touched"/>), and then the reading attaches at the hole's centre. Where the
+    /// walk touched copper and the reading has none at the centre — an annular pad drawn with its
+    /// hole cut out — nothing is guessed: <see cref="DroppedBarrelNote"/> names it.</para>
+    ///
+    /// <para><b>Segment boundaries telescope.</b> The span's two ends sit where today's full-span
+    /// barrel measures from (the FROM conductor's near face, the TO conductor's far face); every
+    /// conductor between sits at its own centre. So the segments of a barrel with copper on every
+    /// layer add up to exactly the full span, and a barrel with copper on its two ends only is the
+    /// full span, as it was. Centre-to-centre would have moved every through via on every board by
+    /// half an outer copper thickness at each end.</para>
+    ///
+    /// <para><b>Reference copper in the MIDDLE of a span is passed through.</b> A barrel touching the
+    /// reference plane on its way through is a short the walk already reports as one; stamping it
+    /// here as well would put the rail on its own return inside the reading. The span's two ends keep
+    /// what they did before this brief, whatever side they are on.</para>
+    /// </remarks>
+    private List<(int Index, int Node, LayerKey Layer, double Z)> Segments(
+        IReadOnlyList<Conductor> conductors, int ia, int ib, long x, long y,
+        Func<string, (double Near, double Far)> z, IReadOnlySet<LayerKey>? touched, out string? shortedOn)
+    {
+        shortedOn = null;
+        var hits = new List<(int, int, LayerKey, double)>();
+        int step = ib >= ia ? 1 : -1;
+        for (int k = ia; ; k += step)
+        {
+            // The walk's answer about this conductor, where the walk read this hole: copper it found
+            // NOT touching the barrel — a clearance ring — is never joined, whatever a coarse cell
+            // at the centre happens to hold.
+            IReadOnlyList<LayerKey> keys = touched is null
+                ? conductors[k].DrawingLayers
+                : [.. conductors[k].DrawingLayers.Where(touched.Contains)];
+            int n = keys.Count > 0 ? NodeOn(keys, x, y) : -1;
+            bool end = k == ia || k == ib;
+            if (n >= 0 && !end && CellOf(n)?.IsReference == true) shortedOn = conductors[k].StackupName;
+            if (n >= 0 && (end || CellOf(n)?.IsReference != true))
+            {
+                var band = z(conductors[k].StackupName);
+                double at = k == ia ? band.Near : k == ib ? band.Far : 0.5 * (band.Near + band.Far);
+                hits.Add((k, n, LayerOfNode(keys, x, y), at));
+            }
+            if (k == ib) break;
+        }
+        return hits;
     }
 
     /// <summary>The first cell of any of <paramref name="keys"/> covering the point, or -1.</summary>

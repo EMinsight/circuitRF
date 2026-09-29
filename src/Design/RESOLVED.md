@@ -15115,3 +15115,61 @@ overlap), so imported artwork with mixed winding may lose copper where shapes ov
 Gates: `TraceImpedanceAnalysisTests.EverySelectorKind_RoundTripsInTheClay` (gate 1),
 `ARegion_SelectsOnItsOwnLayer_AndAWholeLayerKeepsTheRest` (gate 2),
 `TraceImpedanceProbeTests.CopperTouchingTheTrace_IsPartOfIt_NotItsGround` (gate 3).
+
+## railRF brief 38 — a via joins every layer it passes, in the readings as in the walk (2026-09-28)
+
+**Measured first (R-rail38-1), then built on the owner's go-ahead**, with the owner choosing the
+segment length below. Supersedes brief 37's "NOT fixed — owner's call" entry above.
+
+- **The brief's premise was half right.** The field rail's two holes were stamped end to end
+  (Top → Bottom); they did not fail for lack of copper at an end. Every layer carries a 0.6 mm
+  non-functional pad there, so the Bottom end was an isolated pad and the barrel dead-ended, while
+  Inner 2 — where the current actually goes — was never joined. The defect is the class "stamped, but
+  also touches rail copper between its ends", not only "an end has no copper".
+- **The rule** (`PdnAssembly.StampVias` / `Segments`): every conductor of the span, from its FROM end
+  to its TO end, that has the reading's copper at the hole's centre; one resistor per consecutive
+  pair; conductors with nothing there are passed through. **Reference-side copper in the MIDDLE of a
+  span is passed through** — the span's two ends keep exactly what they did (the fixtures'
+  rail-to-reference barrels between a span's ends are unchanged).
+- **Segment length telescopes**: the FROM end at its near face, the TO end at its far face (today's
+  full-span formula, including its behaviour for a span declared bottom-up), every conductor between at
+  its centre. The segments of a hole with copper on every layer add up to today's barrel exactly, and
+  a hole with copper on its two ends only is today's barrel byte for byte — path, sentence and span.
+  Centre-to-centre would have moved every through via on every board.
+- **Which conductors a barrel touches is the WALK's answer, taken, not re-derived.** The partition now
+  keeps each via piece's full touch list (`ConnectivityPartition.Barrels`) — the walk already computed
+  it and threw it away; `PieceJoin` keeps only touches that MERGED two sets. The barrel rule itself is
+  unchanged. A conductor is a candidate only where the walk found it touching, then the reading
+  attaches at the centre. Without this a coarse Accurate cell at the centre of a clearance ring can hold
+  a sliver of the copper around it and join what the walk does not.
+- **The spanning forest is the wrong thing to check against.** A first cut of R-rail38-3 read the
+  walk's `PieceJoin`s: a plated slot BESIDE a working via never showed up, because the walk did not need
+  it — and a redundant path the reading leaves out is exactly the plausible-and-wrong case. Checking
+  whether the reading's copper ends up connected anyway has the same blind spot. The check is per hole:
+  the rail layers the walk joined there, against the layers this reading stamped there.
+- **R-rail38-3's note fires for**: a non-round hole (slot) on a via layer, a hole declared non-plated or
+  with no resolvable span, and copper that meets only the barrel's wall. An unresolvable span on its
+  own does NOT reach it — the walk skips an entry with no span as well, so it joins nothing there.
+- **A barrel touching the reference plane mid-span was unreported before and after the rule** (the
+  example's README already says so). It is now a note naming each hole; the reading keeps the rail off
+  its return, so the answer is for the board as intended. No existing refusal covers it:
+  `MixedReturnRefusal` is for a rail land on the reference layer and deliberately ignores a plane.
+- **Via check** (`PdnViaCheck.OneBarrelPerHole`): segments share `PdnViaBarrel.Hole`; the check folds
+  them into ONE barrel between the outermost layers, over the summed span, carrying the largest segment
+  current. Without it a three-segment hole reads as three barrels that each pass.
+- **The mounting loop still reads `ViaShape` only, on purpose.** It feeds the AC mounting inductance,
+  not the DC readings this rule changes, and it reads each via's PAD size for the pad-to-via term,
+  which a drill-layer circle does not carry. Moving it to `PdnBarrels.Of` is its own piece of work.
+- **What moved.** Field rail: refused → 2.902 mV at 50 mA (Accurate); Fast still refuses it as
+  pour-dominated and gives 2.802 mV (−3.4 %) with the 71 mm² Inner 2 piece and a 1.7 mm² Top piece
+  forced to trace. Power Rail example: 14 capacitor power vias (TOP → IN3 pour, nothing on BOT) were
+  never stamped, so both IN3 pours were DC islands; U1.VDD 47.6557 → 47.6556 mV (Fast),
+  49.1645 → 49.1637 mV (Accurate); via transitions 3 → 17. The lumped impedance sweep does not read the
+  via stamping; the plane-pair run does.
+- **Cost:** none measurable — the field board's default Fast run is 3.62–3.63 s before and after, and
+  brief 36's connectivity counters (204 touch tests, 1 clip) are identical.
+- **Found, not changed:** the example's generator draws each rail hole as two coincident `ViaShape`s
+  (one landing on TOP, one on BOT), so the readings price those three holes as 2 parallel barrels each.
+
+Gates: `PdnViaSpanTests` (six), plus `PdnViaCheckTests`, `PdnReturnNetTests`, `PdnMeshExtractorTests`,
+`PdnFastExtractorTests`, `PdnRefusalCauseTests`, `PowerRailExampleTests` unchanged.

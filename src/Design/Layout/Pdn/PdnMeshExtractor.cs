@@ -1916,7 +1916,8 @@ public static class PdnMeshExtractor
                 // ── the netlist ────────────────────────────────────────────────────────────────────────
                 var media = PlaneMedia(request, mesh, referenceLayer, notes);
 
-                var asm = new PdnAssembly(request, mesh, PdnModelKind.Accurate, celsius, notes, diagnostics);
+                var asm = new PdnAssembly(request, mesh, PdnModelKind.Accurate, celsius, notes, diagnostics)
+                    { WalkHoles = regions.Holes };
                 StampMesh(mesh, asm, request.DbuPerMicron, request.FrequencyHz, separation);
 
                 // ── R-rail14-3: the readout §9 says must not be buried ─────────────────────────────────

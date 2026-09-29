@@ -161,7 +161,8 @@ after the parts you already knew about. Widen the BOT run from 0.20 mm to 0.40 m
 editor, re-run, and the drop falls to **39.724 mV** — eight millivolts back from one change to the
 artwork, and the budget has room in it again.
 
-Three via transitions, none over its current limit.
+Seventeen via transitions, none over its current limit: the rail's own three, and one for each
+capacitor's power via down to its `+3V3` pour on IN3, which carries nothing at DC.
 
 ## The ferrite is a row of its own
 
@@ -291,7 +292,7 @@ Run both. On this board they agree closely:
 | | Drop at U1 |
 |---|---|
 | Fast (the default) | 47.656 mV |
-| Accuracy | 49.165 mV |
+| Accuracy | 49.164 mV |
 
 **3.1 % apart, and the Fast answer is the optimistic one** — which is the direction it is always
 wrong in, and the reason the two are worth running once on any board you intend to trust. The
