@@ -55,6 +55,23 @@ public sealed class ThermalRunTests(ITestOutputHelper output) : IDisposable
         Assert.Equal([2, 1, 2], [low.Regions.Count, low.SheetSourceTags.Count, low.Faces.Count]);
     }
 
+    /// <summary>A face that is a boundary AND a probe's (or a current's contact) is two groups — its exterior, and the whole face —
+    /// and Gmsh refuses a second physical group of one name, so the boundary's is written under its own.</summary>
+    [Fact]
+    public void Gate8_AFaceThatIsABoundaryAndAProbe_IsTwoDifferentlyNamedGroups()
+    {
+        string ws = Workspace();
+        var doc = Doc(Setup());
+        doc.Probes.Add(new C3dProbe { Name = "base", Face = "flange/zmin", Stat = C3dProbeStat.Avg });
+        string path = WriteC3d(ws, doc);
+        var e = C3dElaborator.ElaborateOnce(doc, path, null);
+        var low = ThermalLowerings.Build(doc, e, Setup().Thermal!, 1, out string? why);
+        Assert.Null(why);
+        string geo = low!.Gmsh.Geo!;
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(geo, "Physical Surface\\(\"flange/zmin\","));
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(geo, "Physical Surface\\(\"flange/zmin \\(exterior\\)\","));
+    }
+
     /// <summary>Mesh regions in a Palace lowering: one Box field for one region, and none — not a byte changed — without.</summary>
     [Fact]
     public void Gate8_APalaceGeo_GetsOneBoxFieldPerRegion_AndIsItsGoldenWithout()

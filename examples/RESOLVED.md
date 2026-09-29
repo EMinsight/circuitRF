@@ -490,3 +490,41 @@ own output into `expected-numbers.json`.
 
 **The shipped STEP file names the circuitRF version** in its FILE_NAME originating system, so gate 3 masks it
 beside the time stamp — otherwise every release would fail it. The OCCT processor's version is not masked.
+
+## brief-em3d-81 — the thermal examples (2026-09-28)
+
+Two of the brief's three examples shipped: **Thermal Die to Heatsink** and **Thermal Channel vs Surface**. The third, *Thermal
+Output Wires*, was dropped at the owner's request and is `docs/sonnet-briefs/brief-em3d-85-output-wires-fast.md`: the coupled
+conductive-balance solve took minutes per point on models the wires are a small part of (never finished on four attempts,
+iterative and direct), and ground-referenced ports are refused. Two defects it found are fixed (`src/Design/RESOLVED.md`).
+
+**The thermal mesher sizes each solid uniformly from its thinnest dimension**, so a thin, wide layer is the whole cost. The
+first *Die to Heatsink* (2 µm GaN over the die, 20 µm sinter, 50 µm solder, 35 µm copper over 12 mm) had Gmsh at 2.8 GB after
+10 minutes, unfinished. What shipped: the bond lines as `ContactResistances` (t/k), no epitaxy at die scale, 70 µm copper,
+`MinThroughThickness` 1, order 1 with `SizeFromSources` 12 — 53 s. The owner set the budget (about 6 min at most; 20 is too long)
+and the operating point (85 °C heatsink, die surface under 225 °C): 3 → 11 W reads 207.7 °C (order 1) / 210.7 °C (order 2).
+
+**The mesh check does not see the order-1 error.** `Mesh.Check` (sizes × 0.7) moved the die top +0.18 %, while order 2 on the
+same mesh moved it +1.4 % (Rth_jc +2.8 %): the check refines the same elements. Both are in the README so nobody reads one for
+the other. On *One Finger* order 1 reads the IR offset 9 % low, so that cell stays at order 2 (3.5 min).
+
+**Order 2 on the die-to-heatsink mesh left 35 elements with a negative Jacobian** (Gmsh's "worst distortion −0.0116"); the run
+did not report it. Not investigated — it did not move the energy balance (3E-13) — but a user never sees Gmsh's log.
+
+**The brief's `ViasAsBlock` setup cannot exist**: an effective block's `Enabled` is a field of the `.c3d`, not of a setup, so
+one document cannot carry both. The example ships the block disabled and the README gives the toggle and both answers. The
+block read the die 13.7 K cool and was SLOWER (3 min 10 s against 53 s), on only 15 vias.
+
+**"Case temperature" differs by definition**: Rth_jc is 5.82 K/W against the flange bottom's average and 5.41 K/W against its
+hottest point at 11 W — both quoted.
+
+**Eight Fingers runs at 0.25 W a finger** (1.25 W/mm) — its measured run. It was re-pointed to 1 W (5 W/mm, *One Finger*'s
+density) and that run was stopped unfinished when the session's simulation time ran out; the README says to set `P_finger` to 1.
+Its wall time was never recorded separately. Its Rth figures are per watt in the modelled half, as the run's notes say.
+
+**The shipped library's SiC and mould compound state no εr**, and a technology may not redefine a library material, so a
+thermal model that also needs an EM solve must edit the workspace's library copy (brief 85 §1d asks the owner).
+
+Every number in both READMEs and `docs/user/src/reference/thermal.md` is in each example's `expected-numbers.json`;
+`tests/Ui.Tests/Examples/ThermalExamplesTests.cs` holds the text, `check`, the vendor scan, and (Benchmark tier, not yet run)
+re-runs the shipped setups against the recorded values.

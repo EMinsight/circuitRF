@@ -128,7 +128,11 @@ public static partial class GmshGeoWriter
         groups.AddRange(solidGroups);
         var sheetGroups = input.Sheets.Select(s => new Em3dGroup(s.Name, ++attr, 2, Em3dGroupKind.Sheet, 1, AtLeast: true)).ToList();
         groups.AddRange(sheetGroups);
-        var faceGroups = input.Faces.Select(f => new Em3dGroup(f.Name, ++attr, 2, Em3dGroupKind.FaceBoundary, 1, AtLeast: true)).ToList();
+        // A face both a boundary (its exterior only) and a probe or a current's contact (the whole face) is two groups, and Gmsh
+        // refuses a second physical group of one name: the boundary's takes a suffix. Groups are read back by attribute, not name.
+        var faceGroups = input.Faces.Select(f => new Em3dGroup(
+            f.ExteriorOnly && input.Faces.Any(o => o.Name == f.Name && !o.ExteriorOnly) ? f.Name + " (exterior)" : f.Name,
+            ++attr, 2, Em3dGroupKind.FaceBoundary, 1, AtLeast: true)).ToList();
         groups.AddRange(faceGroups);
         Em3dGroup? exposed = input.Exposed ? new Em3dGroup(ExposedGroup, ++attr, 2, Em3dGroupKind.FaceBoundary, 0, AtLeast: true) : null;
         if (exposed is not null) groups.Add(exposed);

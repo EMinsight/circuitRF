@@ -1,0 +1,20 @@
+{
+  "FormatVersion": 1,
+  "Name": "gan-on-sic",
+  "DefaultDisplayUnit": "Nm",
+  "DefaultSnapDbu": 0,
+  "DefaultFlattenTolDbu": 0,
+  "DefaultLabelHeightDbu": 0,
+  "DefaultViaPadDbu": 0,
+  "DefaultViaDrillDbu": 0,
+  "Layers": [],
+  "Stackup": {
+    "Top": "Open",
+    "Bottom": "Ground",
+    "Layers": []
+  },
+  "DrcRules": [],
+  "MaterialLibraries": [
+    "generic-materials.cmat"
+  ]
+}

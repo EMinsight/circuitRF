@@ -1,0 +1,55 @@
+{
+  "About": "Every number README.md and the Thermal page quote, in one place. Each value's Readme text appears verbatim in both pages (tests/Ui.Tests/Examples/ThermalExamplesTests.cs), and the Category=Benchmark test re-runs the shipped setups and holds Recorded to Tolerance. Measured once on an Apple M4 (10 cores, 16 GB), macOS 27.0, the Debug build, Gmsh 4.15.2. One Finger's time was measured while another run shared the machine, so it is an upper bound; Eight Fingers' was not recorded separately.",
+  "OneFinger": {
+    "Setup": "Steady",
+    "Mesh": "order 2 (the default), the near_channel region at 0.5 µm",
+    "Size": "216,837 tetrahedra, 310,404 nodes",
+    "Readme": [ "3 min 28 s", "2.0 GB", "216,837 tetrahedra" ],
+    "Tolerance": 0.05,
+    "Recorded": { "ChannelMax": 202.7153, "IrAvg": 182.527, "dT_ch_ir": 20.188, "Rth_ch": 470.861 },
+    "Values": [
+      { "Name": "channel", "Readme": "202.7 °C" },
+      { "Name": "IR spot, 3 µm", "Readme": "182.5 °C" },
+      { "Name": "offset, 3 µm spot", "Readme": "20.2 K" },
+      { "Name": "Rth_ch", "Readme": "470.9 K/W" }
+    ],
+    "IrSpot": [
+      { "ir_spot_um": 1,  "dT_ch_ir": 18.07985, "Readme": "18.1 K" },
+      { "ir_spot_um": 3,  "dT_ch_ir": 20.188,   "Readme": "20.2 K" },
+      { "ir_spot_um": 10, "dT_ch_ir": 30.12576, "Readme": "30.1 K" }
+    ],
+    "Alternatives": [
+      {
+        "Name": "order 1",
+        "Readme": [ "12 s", "199.5 °C", "18.4 K", "458.2 K/W" ],
+        "Recorded": { "ChannelMax": 199.5444, "dT_ch_ir": 18.43627, "Rth_ch": 458.1775 }
+      }
+    ]
+  },
+  "EightFingers": {
+    "Setup": "Array",
+    "Mesh": "order 2 (the default)",
+    "Size": "58,032 tetrahedra, 88,993 unknowns",
+    "Readme": [ "58,032 tetrahedra" ],
+    "Tolerance": 0.05,
+    "Recorded": {
+      "T_centre": 105.141, "T_edge": 101.643, "dT_centre_edge": 3.49849,
+      "Rth_f1_f1": 52.91, "Rth_f4_f4": 53.1677, "Rth_f1_f2": 20.519,
+      "Rise_f1": 15.8438, "Rise_f4": 19.1302,
+      "Pulse_f1_peak": 90.3948, "Pulse_f4_peak": 90.3932, "Pulse_f4_single": 90.2157, "Pulse_f4_avg": 85.7467
+    },
+    "Values": [
+      { "Name": "centre finger", "Readme": "105.1 °C" },
+      { "Name": "edge finger", "Readme": "101.6 °C" },
+      { "Name": "centre minus edge", "Readme": "3.5 K" },
+      { "Name": "own Rth, edge finger", "Readme": "52.91 K/W" },
+      { "Name": "own Rth, fourth finger", "Readme": "53.17 K/W" },
+      { "Name": "neighbour's Rth", "Readme": "20.52 K/W" },
+      { "Name": "rise, edge finger", "Readme": "15.84 K" },
+      { "Name": "rise, fourth finger", "Readme": "19.13 K" },
+      { "Name": "pulse peak, fourth finger", "Readme": "90.39 °C" },
+      { "Name": "pulse single, fourth finger", "Readme": "90.22 °C" },
+      { "Name": "pulse average, fourth finger", "Readme": "85.75 °C" }
+    ]
+  }
+}

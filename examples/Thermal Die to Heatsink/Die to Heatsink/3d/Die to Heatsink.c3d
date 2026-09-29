@@ -1,0 +1,195 @@
+{
+	"FormatVersion": 1,
+	"DbuPerMicron": 1000,
+	"DisplayUnit": "Um",
+	"SnapDbu": 0,
+	"Objects": [
+		{
+			"$type": "Box",
+			"Name": "tim",
+			"Material": "Thermal interface material (generic)",
+			"Role": "Dielectric",
+			"Min": [-5000000, -4000000, -100000],
+			"Size": [10000000, 8000000, 100000]
+		},
+		{
+			"$type": "Box",
+			"Name": "flange",
+			"Material": "Copper-molybdenum (70Mo-30Cu)",
+			"Role": "Conductor",
+			"Min": [-3000000, -2000000, 648000],
+			"Size": [6000000, 4000000, 1000000]
+		},
+		{
+			"$type": "Box",
+			"Name": "die",
+			"Material": "Silicon carbide (4H, semi-insulating)",
+			"Role": "Dielectric",
+			"Min": [-1250000, -500000, 1648000],
+			"Size": [2500000, 1000000, 100000]
+		}
+	],
+	"Instances": [
+		{
+			"Name": "B1",
+			"CellRef": "../../Board",
+			"View": "Layout"
+		}
+	],
+	"Variables": [
+		{
+			"Name": "Pdiss",
+			"Expression": "11"
+		},
+		{
+			"Name": "Ths",
+			"Expression": "85"
+		}
+	],
+	"HeatSources": [
+		{
+			"Name": "fet",
+			"Sheet": {
+				"Plane": "XY",
+				"Offset": 1748000,
+				"Rect": {
+					"Min": [-400000, -125000],
+					"Size": [800000, 250000]
+				}
+			},
+			"Power": "Pdiss"
+		}
+	],
+	"Probes": [
+		{
+			"Name": "die_top",
+			"Face": "die/zmax",
+			"Stat": "Max"
+		},
+		{
+			"Name": "flange_bot",
+			"Face": "flange/zmin",
+			"Stat": "Avg"
+		},
+		{
+			"Name": "flange_bot_hot",
+			"Face": "flange/zmin",
+			"Stat": "Max"
+		},
+		{
+			"Name": "via_centre",
+			"Solid": "B1/via/8",
+			"Stat": "Max"
+		},
+		{
+			"Name": "board_under",
+			"Face": "tim/zmax",
+			"Stat": "Avg"
+		}
+	],
+	"ContactResistances": [
+		{
+			"Between": [
+				"die",
+				"flange"
+			],
+			"ResistanceM2KW": 1E-07
+		},
+		{
+			"Between": [
+				"flange",
+				"B1/Top Copper/1"
+			],
+			"ResistanceM2KW": 8.620689655172414E-07
+		}
+	],
+	"EffectiveBlocks": [
+		{
+			"Name": "via_field",
+			"Min": [-3000000, -2000000, 0],
+			"Size": [6000000, 4000000, 648000]
+		}
+	],
+	"FieldPlots": [
+		{
+			"Name": "Surface",
+			"Setup": "Steady",
+			"Solution": {
+				"Point": 3
+			},
+			"Quantity": "T_C",
+			"On": "Surfaces"
+		},
+		{
+			"Name": "Section",
+			"Setup": "Steady",
+			"Solution": {
+				"Point": 3
+			},
+			"Quantity": "T_C",
+			"On": "ClipPlane",
+			"Axis": "Y",
+			"Offset": 0,
+			"Hidden": true
+		}
+	],
+	"Setups": [
+		{
+			"FormatVersion": 1,
+			"Name": "Steady",
+			"Frequency": {
+				"StartExpr": "1",
+				"StopExpr": "20",
+				"StepExpr": "",
+				"NumPoints": 101,
+				"Mode": "PointCount",
+				"Kind": "Linear",
+				"StartUnit": "GHz",
+				"StopUnit": "GHz",
+				"StepUnit": "Hz"
+			},
+			"Port1Z0Real": 50,
+			"Port1Z0Imag": 0,
+			"Port2Z0Real": 50,
+			"Port2Z0Imag": 0,
+			"Mesh": {
+				"MinCellsAcrossWidth": 6,
+				"EdgeCells": 3,
+				"EdgeFractionOfWidth": 0.03,
+				"EdgeGrowthRatio": 1.7,
+				"TruncationHeights": 20,
+				"TruncationTailCells": 12
+			},
+			"DispersionCorrection": true,
+			"Problem3D": "Thermal",
+			"Thermal": {
+				"Boundaries": [
+					{
+						"Face": "tim/zmin",
+						"Kind": "FixedT",
+						"TempC": "Ths"
+					}
+				],
+				"Sweep": [
+					{
+						"Var": "Pdiss",
+						"Start": "3",
+						"Stop": "11",
+						"Points": 3
+					}
+				],
+				"Measures": [
+					"Rth_jc = (Tmax(die_top) - Tavg(flange_bot)) / Pdiss",
+					"Rth_jc_hot = (Tmax(die_top) - Tmax(flange_bot_hot)) / Pdiss",
+					"Rth_ja = (Tmax(die_top) - Ths) / Pdiss",
+					"T_interface = Tavg(board_under)"
+				],
+				"Mesh": {
+					"Order": 1,
+					"SizeFromSources": 12,
+					"MinThroughThickness": 1
+				}
+			}
+		}
+	]
+}

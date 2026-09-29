@@ -1,0 +1,54 @@
+{
+  "About": "Every number README.md and the Thermal page quote, in one place. Each value's Readme text appears verbatim in both pages (tests/Ui.Tests/Examples/ThermalExamplesTests.cs), and the Category=Benchmark test re-runs the shipped setup and holds Recorded to Tolerance. Measured once on an Apple M4 (10 cores, 16 GB), macOS 27.0, the Debug build (what circuitRF's own runs use), Gmsh 4.15.2. A time is the whole run's wall clock through `circuitrf em`; memory is the process's peak resident size.",
+  "Shipped": {
+    "Setup": "Steady",
+    "Mesh": "order 1, SizeFromSources 12, MinThroughThickness 1",
+    "Size": "397,997 tetrahedra, 84,309 nodes",
+    "Solver": "PCG + AMG; 3 to 4 Newton steps over k(T) per point",
+    "Readme": [ "53 s", "0.75 GB", "397,997 tetrahedra" ],
+    "Tolerance": 0.05,
+    "Recorded": [
+      { "Pdiss": 3,  "DieTop": 116.1783, "FlangeBottomAvg": 100.9669, "Rth_jc": 5.070455, "Rth_jc_hot": 4.669484, "Rth_ja": 10.39275, "T_interface": 86.25 },
+      { "Pdiss": 7,  "DieTop": 160.3922, "FlangeBottomAvg": 122.3056, "Rth_jc": 5.440941, "Rth_jc_hot": 5.035817, "Rth_ja": 10.77031, "T_interface": 87.91667 },
+      { "Pdiss": 11, "DieTop": 207.7492, "FlangeBottomAvg": 143.7045, "Rth_jc": 5.822248, "Rth_jc_hot": 5.413102, "Rth_ja": 11.15902, "T_interface": 89.58333 }
+    ],
+    "Values": [
+      { "Name": "die top at 11 W", "Readme": "207.7 °C" },
+      { "Name": "die top at 3 W", "Readme": "116.2 °C" },
+      { "Name": "flange bottom average at 11 W", "Readme": "143.7 °C" },
+      { "Name": "Rth_jc at 3 W", "Readme": "5.07 K/W" },
+      { "Name": "Rth_jc at 11 W", "Readme": "5.82 K/W" },
+      { "Name": "Rth_jc_hot at 11 W", "Readme": "5.41 K/W" },
+      { "Name": "Rth_ja at 11 W", "Readme": "11.16 K/W" },
+      { "Name": "T_interface at 11 W", "Readme": "89.58 °C" }
+    ]
+  },
+  "External": [
+    {
+      "Name": "the thermal interface material, one-dimensional",
+      "Formula": "T_interface = Ths + Pdiss * t / (k * A), t = 100 µm, k = 3 W/(m·K), A = 10 mm × 8 mm",
+      "Expected": 89.583333,
+      "Readme": [ "85 + 11 × 100 µm / (3 W/(m·K) × 80 mm²) = 89.58 °C" ]
+    }
+  ],
+  "Alternatives": [
+    {
+      "Name": "order 2",
+      "Mesh": "order 2, the same mesh",
+      "Readme": [ "13 min 42 s", "5.4 GB", "210.7 °C", "5.98 K/W", "11.42 K/W" ],
+      "Recorded": { "Pdiss": 11, "DieTop": 210.6719, "Rth_jc": 5.983818, "Rth_ja": 11.42472 }
+    },
+    {
+      "Name": "every element size × 0.7 (the setup's mesh check)",
+      "Mesh": "862,227 tetrahedra of order 1, the first sweep point",
+      "Readme": [ "1 min 36 s", "+0.21 °C (+0.18 %)" ],
+      "Recorded": { "Pdiss": 3, "DieTop": 116.3884 }
+    },
+    {
+      "Name": "the via field as an effective block",
+      "Mesh": "268,502 tetrahedra of order 1",
+      "Readme": [ "3 min 10 s", "194.0 °C", "9.91 K/W", "13.7 K" ],
+      "Recorded": { "Pdiss": 11, "DieTop": 194.0327, "Rth_jc": 5.768505, "Rth_ja": 9.912063 }
+    }
+  ]
+}

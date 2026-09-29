@@ -15223,3 +15223,18 @@ its default), `FixRange`, `Hidden`. Written only when non-empty; `FormatVersion`
 run's kept `document.c3d` may compare (the GUI's `RunC3dSetupAsync` and `C3dEditorViewModel.RefreshFieldsStale` read it).
 Mesh reuse compares the `.geo` script, which no plot reaches; gate 2 checks that script is byte-identical across plot edits.
 `PalaceConfigWriter.SweepCentreGHz(EmSetup)` exposes the default save frequency for the panel's placeholder.
+
+## brief-em3d-81 — two thermal-lowering defects the examples found (2026-09-28)
+
+**A face that is a boundary AND a probe (or a current's contact) broke the mesher.** `ThermalLowering` keeps such a face as two
+`GmshThermalFace`s — the boundary's exterior pieces only, and the whole face — and `GmshGeoWriter.Thermal` named both physical
+groups after the face, so Gmsh refused the second (`Physical surface N already exists`) and the run failed after a complete
+mesh. The boundary's group is now `<face> (exterior)` when the whole-face group exists; faces are matched back by ATTRIBUTE
+(`ThermalFaceTag`), never by name, so nothing downstream changes. Gate: `ThermalRunTests.Gate8_AFaceThatIsABoundaryAndAProbe…`.
+
+**A placed layout's `.wBond` wires reported their pad tops in the layout's own frame.** `C3dElaborator` re-prefixed a layout
+instance's wire reports (`U1/…`) but left `Em3dWireEnd.PadTopM` untransformed, and only the thermal path reads it — the 1D
+chain's wedge feet and its contact patches are built at it. Under a placement with a z offset the feet sat inside whatever was
+below the layout and the patches touched nothing, so a DC current through the wires was refused as having "no path". It now
+goes through the instance transform (M22·z + Tz) whenever the placement keeps z up; a tilted placement has no pad "top" and
+keeps the old value. EM never read it, so no EM answer moves. Gate: `ThermalWireTests.APlacedLayoutsWires_HaveTheirPadTopsInTheWorld`.

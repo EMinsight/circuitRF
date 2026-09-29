@@ -1,0 +1,166 @@
+{
+  "FormatVersion": 1,
+  "Name": "die-to-heatsink",
+  "DefaultDisplayUnit": "Um",
+  "DefaultSnapDbu": 1000,
+  "DefaultFlattenTolDbu": 1000,
+  "DefaultLabelHeightDbu": 100000,
+  "DefaultViaPadDbu": 600000,
+  "DefaultViaDrillDbu": 300000,
+  "Layers": [
+    {
+      "Key": {
+        "Layer": 1,
+        "Datatype": 0
+      },
+      "Name": "Top Copper",
+      "Color": {
+        "r": 200,
+        "g": 122,
+        "b": 62,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 4,
+      "Visible": true,
+      "Selectable": true,
+      "Purpose": "drawing"
+    },
+    {
+      "Key": {
+        "Layer": 4,
+        "Datatype": 0
+      },
+      "Name": "Bottom Copper",
+      "Color": {
+        "r": 138,
+        "g": 80,
+        "b": 40,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 2,
+      "Visible": true,
+      "Selectable": true,
+      "Purpose": "drawing"
+    },
+    {
+      "Key": {
+        "Layer": 9,
+        "Datatype": 0
+      },
+      "Name": "Drill",
+      "Color": {
+        "r": 32,
+        "g": 32,
+        "b": 32,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 1,
+      "Visible": true,
+      "Selectable": true,
+      "Purpose": "drawing"
+    }
+  ],
+  "Stackup": {
+    "Top": "Open",
+    "Bottom": "Open",
+    "Layers": [
+      {
+        "Kind": "Conductor",
+        "Name": "Top Copper",
+        "ThicknessDbu": 70000,
+        "Material": "Copper",
+        "Epsr": 1,
+        "TanD": 0,
+        "Mur": 1,
+        "SigmaSm": 58000000,
+        "DrawingLayers": [
+          {
+            "Layer": 1,
+            "Datatype": 0
+          }
+        ],
+        "IsGroundReference": false
+      },
+      {
+        "Kind": "Dielectric",
+        "Name": "Laminate",
+        "ThicknessDbu": 508000,
+        "Material": "FR-4",
+        "Epsr": 4.4,
+        "TanD": 0.02,
+        "Mur": 1,
+        "SigmaSm": 0,
+        "DrawingLayers": [],
+        "IsGroundReference": false
+      },
+      {
+        "Kind": "Conductor",
+        "Name": "Bottom Copper",
+        "ThicknessDbu": 70000,
+        "Material": "Copper",
+        "Epsr": 1,
+        "TanD": 0,
+        "Mur": 1,
+        "SigmaSm": 58000000,
+        "DrawingLayers": [
+          {
+            "Layer": 4,
+            "Datatype": 0
+          }
+        ],
+        "IsGroundReference": true
+      },
+      {
+        "Kind": "Via",
+        "Name": "Thermal Via",
+        "ThicknessDbu": 0,
+        "Material": "Copper",
+        "Epsr": 1,
+        "TanD": 0,
+        "Mur": 1,
+        "SigmaSm": 58000000,
+        "DrawingLayers": [
+          {
+            "Layer": 9,
+            "Datatype": 0
+          }
+        ],
+        "IsGroundReference": false,
+        "Fill": "Plated",
+        "WallThicknessDbu": 25000,
+        "SpanFromLayer": "Top Copper",
+        "SpanToLayer": "Bottom Copper"
+      }
+    ]
+  },
+  "DrcRules": [
+    {
+      "Name": "Top Copper Min Width",
+      "Kind": "MinWidth",
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      },
+      "ValueDbu": 100000,
+      "NetScope": "Any",
+      "Severity": "Error"
+    },
+    {
+      "Name": "Bottom Copper Min Width",
+      "Kind": "MinWidth",
+      "Layer": {
+        "Layer": 4,
+        "Datatype": 0
+      },
+      "ValueDbu": 100000,
+      "NetScope": "Any",
+      "Severity": "Error"
+    }
+  ],
+  "MaterialLibraries": [
+    "generic-materials.cmat"
+  ]
+}

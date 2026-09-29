@@ -134,6 +134,52 @@ public sealed class ThermalWireTests(ITestOutputHelper output) : IDisposable
         Assert.Equal(names, table.Wires.Select(w => w.Wire).Order());
     }
 
+    // ── a placed layout's wires ──────────────────────────────────────────────────────────────────────
+
+    /// <summary>brief-em3d-81 — a layout's .wBond wires, the layout placed 100 µm up: each end's pad top is its pad's top in the WORLD,
+    /// where the chain's feet and the contact patches are built. It was the layout's own height, so a placed layout's wires touched
+    /// nothing and a current through them had no path.</summary>
+    [Fact]
+    public void APlacedLayoutsWires_HaveTheirPadTopsInTheWorld()
+    {
+        string ws = Workspace();
+        TechPersistence.SaveToFile(Path.Combine(ws, "tech.ctech"), new Technology
+        {
+            Name = "tech",
+            Materials = [new TechMaterial { Name = "Gold", Sigma20 = 4.1e7, ThermalK = 318 }],
+            Layers = [new LayerDef { Key = new LayerKey(1, 0), Name = "Pad" }],
+            Stackup = new Stackup { Layers = [new StackupLayer { Kind = StackupKind.Conductor, Name = "Pad", ThicknessDbu = 10 * Um, Material = "Gold",
+                                                                 SigmaSm = 4.1e7, DrawingLayers = [new LayerKey(1, 0)] }] },
+        });
+        string dir = Path.Combine(ws, "Pads", "layout");
+        Directory.CreateDirectory(dir);
+        string Rect(long x0, long x1) => $$"""{"$type": "Rect", "Layer": {"Layer": 1, "Datatype": 0}, "X1": {{x0 * Um}}, "Y1": -100000, "X2": {{x1 * Um}}, "Y2": 100000}""";
+        File.WriteAllText(Path.Combine(dir, "Pads.clay"),
+            $$"""{"FormatVersion": 1, "DbuPerMicron": 1000, "DisplayUnit": "Um", "SnapDbu": 1000, "Shapes": [{{Rect(0, 200)}}, {{Rect(700, 900)}}], "Instances": []}""");
+        var design = new CircuitRF.WBond.WBondDesign { GroundPlane = new CircuitRF.WBond.GroundPlane { Enabled = false } };
+        design.Arrays.Add(new CircuitRF.WBond.WireArray { Name = "A", Wires = [new CircuitRF.WBond.Wire
+        {
+            DiameterNm = 25_400, Material = "Gold",
+            Points = [new(100 * Um, 0, 10 * Um), new(300 * Um, 0, 200 * Um), new(600 * Um, 0, 200 * Um), new(800 * Um, 0, 10 * Um)],
+        }] });
+        CircuitRF.WBond.WBondIo.WriteFile(Path.Combine(dir, "Pads.wBond"), design);
+        var doc = new C3dDocument
+        {
+            Instances = [new C3dInstance { Name = "U1", CellRef = "../../Pads", View = C3dInstanceView.Layout,
+                                           Placement = new C3dPlacement { Origin = new C3dPoint3(0, 0, 100 * Um) } }],
+        };
+        string path = WriteC3d(ws, doc);
+        var e = C3dElaborator.ElaborateOnce(doc, path, Path.Combine(ws, ".cws"));
+        Assert.True(e.Ok, string.Join(" ", e.Refusals));
+        var wire = Assert.Single(e.Wires);
+        foreach (var end in new[] { wire.Start, wire.End })
+        {
+            double top = Em3dProblem.Bounds(e.Solids.Single(s => s.Name == end.Pad).Primitive).Z1;
+            Assert.Equal(110e-6, top, 1e-12);
+            Assert.Equal(top, end.PadTopM, 1e-12);
+        }
+    }
+
     // ── fixtures ─────────────────────────────────────────────────────────────────────────────────────
 
     public enum WireSection { Circle, Hexagon }

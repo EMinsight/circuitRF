@@ -1228,12 +1228,15 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
                 foreach (string n in nets) Net(prefix + obj, n);
             _groundBand.AddRange(solids.GroundBandObjects.Select(o => prefix + o));
             foreach (var (obj, origin) in solids.Origins) _origins[prefix + obj] = origin;
+            // A pad top is a height in the layout's own stack; the thermal chain and its contact patches read it as a WORLD height,
+            // so it moves with the pads. Only a placement that keeps z up has one (a tilted pad has no "top"): that one keeps it.
+            double PadTop(double z) => t.M20 == 0 && t.M21 == 0 ? t.M22 * z + t.Tz : z;
             foreach (var w in solids.Wires)
                 _wires.Add(w with
                 {
                     Name = prefix + w.Name,
-                    Start = w.Start with { Pad = prefix + w.Start.Pad },
-                    End = w.End with { Pad = prefix + w.End.Pad },
+                    Start = w.Start with { Pad = prefix + w.Start.Pad, PadTopM = PadTop(w.Start.PadTopM) },
+                    End = w.End with { Pad = prefix + w.End.Pad, PadTopM = PadTop(w.End.PadTopM) },
                 });
         }
 

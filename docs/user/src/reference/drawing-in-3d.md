@@ -721,6 +721,8 @@ on *Lid modes* finds where the drawn package puts it.
 The same model solves for heat. A **thermal setup** (*Simulate ▸ Setup Analyses…*, the thermometer button) is solved by
 circuitRF's own steady-conduction solver after Gmsh meshes every solid — air is not meshed. What it needs is drawn in the
 view, and what it is worth is typed in the setup, so one model carries several thermal setups beside its EM ones.
+What a run models, and two worked examples with their numbers (*Tools ▸ Examples ▸ Thermal: …*), are in
+{{anchor: thermal.html|Thermal}}; this section is the gestures.
 
 **The places.** These are drawn in the view but are not objects: they are never solved as metal, never snapped to, and an
 EM setup ignores them. Each has a group in the object tree (*Heat sources*, *Probes*, *Mesh regions*) whose rows select,

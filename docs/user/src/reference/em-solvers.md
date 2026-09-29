@@ -272,6 +272,10 @@ So the honest summary is:
 When a 3D solver is chosen, the setup panel says which of the two suits the model's geometry. That is
 advice, not a restriction.
 
+**Heat is a fourth solve, and it is none of these.** A thermal setup on the same 3D model is solved by circuitRF's own
+steady-conduction solver — no Palace, no openEMS — but **it needs Gmsh**, the mesher Palace uses, to mesh the solids. See
+[Thermal](thermal.html).
+
 <div class="callout note">
 <span class="label">Agreement is a cross-check, not a reference</span>
 <p><b>FEM &amp; FDTD - Compare</b> runs both solvers on one model and writes their difference. Both read

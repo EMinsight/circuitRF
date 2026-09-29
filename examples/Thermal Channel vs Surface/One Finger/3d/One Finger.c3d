@@ -1,0 +1,187 @@
+{
+	"FormatVersion": 1,
+	"DbuPerMicron": 1000,
+	"DisplayUnit": "Um",
+	"SnapDbu": 0,
+	"Objects": [
+		{
+			"$type": "Box",
+			"Name": "substrate",
+			"Material": "Silicon carbide (4H, semi-insulating)",
+			"Role": "Dielectric",
+			"Min": [0, 0, -100000],
+			"Size": [20000, 50000, 100000]
+		},
+		{
+			"$type": "Box",
+			"Name": "epi",
+			"Material": "Gallium nitride",
+			"Role": "Dielectric",
+			"Min": [0, 0, 0],
+			"Size": [20000, 50000, 1500]
+		},
+		{
+			"$type": "Box",
+			"Name": "channel",
+			"Material": "Gallium nitride",
+			"Role": "Dielectric",
+			"Min": [12000, 0, 1250],
+			"Size": [500, 25000, 250]
+		},
+		{
+			"$type": "Box",
+			"Name": "passivation",
+			"Material": "Silicon nitride",
+			"Min": [0, 0, 1500],
+			"Size": [20000, 50000, 1000]
+		},
+		{
+			"$type": "Box",
+			"Name": "source",
+			"Material": "Gold",
+			"Min": [0, 0, 1500],
+			"Size": [10000, 25000, 2000]
+		},
+		{
+			"$type": "Box",
+			"Name": "drain",
+			"Material": "Gold",
+			"Min": [15500, 0, 1500],
+			"Size": [4500, 25000, 2000]
+		},
+		{
+			"$type": "Box",
+			"Name": "gate",
+			"Material": "Gold",
+			"Min": [11500, 0, 1500],
+			"Size": [500, 25000, 600]
+		},
+		{
+			"$type": "Box",
+			"Name": "field_plate",
+			"Material": "Gold",
+			"Min": [11500, 0, 2100],
+			"Size": [2000, 25000, 200]
+		}
+	],
+	"Variables": [
+		{
+			"Name": "P_finger",
+			"Expression": "0.25"
+		},
+		{
+			"Name": "Tbase",
+			"Expression": "85"
+		},
+		{
+			"Name": "ir_spot",
+			"Expression": "3",
+			"Unit": "Um"
+		}
+	],
+	"HeatSources": [
+		{
+			"Name": "hot_spot",
+			"Solid": "channel",
+			"Power": "P_finger / 2"
+		}
+	],
+	"Probes": [
+		{
+			"Name": "channel_T",
+			"Solid": "channel",
+			"Stat": "Max"
+		},
+		{
+			"Name": "ir",
+			"Spot": {
+				"Face": "passivation/zmax",
+				"Center": [12250, 0, 2500],
+				"Diameter": { "Expr": "ir_spot", "Unit": "Um" }
+			},
+			"Stat": "Avg"
+		},
+		{
+			"Name": "up",
+			"Line": {
+				"From": [12250, 0, 1250],
+				"To": [12250, 0, 2500]
+			}
+		}
+	],
+	"MeshRegions": [
+		{
+			"Name": "near_channel",
+			"Min": [10500, 0, 500],
+			"Size": [4500, 27000, 2000],
+			"SizeUm": 0.5
+		}
+	],
+	"SymmetryPlanes": [
+		{
+			"Axis": "Y",
+			"At": 0
+		}
+	],
+	"FieldPlots": [
+		{
+			"Name": "Section",
+			"Setup": "Steady",
+			"Quantity": "T_C",
+			"On": "ClipPlane",
+			"Axis": "Y",
+			"Offset": 10000
+		},
+		{
+			"Name": "Surface",
+			"Setup": "Steady",
+			"Quantity": "T_C",
+			"On": "Surfaces",
+			"Hidden": true
+		}
+	],
+	"Setups": [
+		{
+			"FormatVersion": 1,
+			"Name": "Steady",
+			"Frequency": {
+				"StartExpr": "1",
+				"StopExpr": "20",
+				"StepExpr": "",
+				"NumPoints": 101,
+				"Mode": "PointCount",
+				"Kind": "Linear",
+				"StartUnit": "GHz",
+				"StopUnit": "GHz",
+				"StepUnit": "Hz"
+			},
+			"Port1Z0Real": 50,
+			"Port1Z0Imag": 0,
+			"Port2Z0Real": 50,
+			"Port2Z0Imag": 0,
+			"Mesh": {
+				"MinCellsAcrossWidth": 6,
+				"EdgeCells": 3,
+				"EdgeFractionOfWidth": 0.03,
+				"EdgeGrowthRatio": 1.7,
+				"TruncationHeights": 20,
+				"TruncationTailCells": 12
+			},
+			"DispersionCorrection": true,
+			"Problem3D": "Thermal",
+			"Thermal": {
+				"Boundaries": [
+					{
+						"Face": "substrate/zmin",
+						"Kind": "FixedT",
+						"TempC": "Tbase"
+					}
+				],
+				"Measures": [
+					"dT_ch_ir = Tmax(channel_T) - Tavg(ir)",
+					"Rth_ch = (Tmax(channel_T) - Tbase) / P_finger"
+				]
+			}
+		}
+	]
+}
