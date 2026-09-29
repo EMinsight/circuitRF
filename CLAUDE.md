@@ -194,6 +194,7 @@ Instead, briefly paraphrase owner/user messages. Pre-existing quotes are ok.
   and all four came back identical with no exclusion at all.
   **`render x.c3d -o out.png --field <plot>` draws a clip-plane field plot; `--list-fields` lists them**
   (brief-em3d-84) — resolution is `FieldPlotResolver` in `src/Render`, shared with the 3D view; `cli.md` §13.8.1.
+  A clip-plane TEMPERATURE plot renders too, wires painted from their T(s); `--labels --tight --axes --scale-bar` (brief-em3d-88).
   **`netlist <path.csch> [-o out.cnl]` writes the extraction Simulate performs, and every run verb
   now takes a `.csch` too** (2026-09-08) — until then nothing headless could simulate a design anyone
   had DRAWN: a run handed the JSON to `CnlReader`, which reported its first key as a missing cell

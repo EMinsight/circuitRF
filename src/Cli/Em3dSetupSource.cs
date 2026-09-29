@@ -57,6 +57,11 @@ internal sealed record Em3dSetupSource(
             if (chosen is null)
                 return new Em3dSetupSource(full, new EmSetup { Name = setupName ?? "" }, NoResolution(full), null, why);
             var setup = C3dSetups.ForRun(chosen, full);
+            // brief-em3d-88 R-em3d88-2 — a thermal setup has no EM problem to assemble: its picture is the view's own
+            // elaboration, which is what the 3D editor draws whatever the active setup's kind (C3dProblemAssembly.ViewProblem).
+            if (setup.IsThermal)
+                return Drawing(full, setup, embedded.Count, elaborator.Elaborate(doc, full, cws,
+                    new C3dElaborationOptions(null, setup.OperatingTempC ?? EmSetup.DefaultOperatingTempC)), thermal: true);
             var generated = C3dProblemAssembly.Assemble(setup, doc, full, cws, elaborator);
             var e = elaborator.Elaborate(doc, full, cws, new C3dElaborationOptions(generated.Problem?.Frequency.StopHz,
                                                                                    setup.OperatingTempC ?? EmSetup.DefaultOperatingTempC));
@@ -64,20 +69,25 @@ internal sealed record Em3dSetupSource(
                 generated.Problem is null ? generated.Refusal ?? "the 3D problem could not be built." : null) { Elaboration = e };
         }
 
-        var elaboration = elaborator.Elaborate(doc, full, cws);
         var drawing = new EmSetup { Name = System.IO.Path.GetFileNameWithoutExtension(full), Solver3D = Em3dSolver.Palace };
+        return Drawing(full, drawing, embedded.Count, elaborator.Elaborate(doc, full, cws), thermal: false);
+    }
+
+    /// <summary>A view drawn from its elaboration alone, in a box at its own extent: a view with no single EM setup to pad
+    /// one, or — <paramref name="thermal"/> — a thermal setup, which solves no air.</summary>
+    private static Em3dSetupSource Drawing(string full, EmSetup setup, int embedded, C3dElaboration elaboration, bool thermal)
+    {
         if (!elaboration.Ok || elaboration.Extent() is not { } x)
-            return new Em3dSetupSource(full, drawing, ResolutionOf(full, elaboration), null,
+            return new Em3dSetupSource(full, setup, ResolutionOf(full, elaboration), null,
                 elaboration.Ok ? C3dProblemAssembly.NothingToSolve(elaboration) : string.Join(" ", elaboration.Refusals)) { Elaboration = elaboration };
-        var box = new Em3dAirBox(new Point3(x.X0, x.Y0, x.Z0), new Point3(x.X1, x.Y1, x.Z1),
-                                 new Em3dFaces(Em3dBoundaryKind.Absorbing, Em3dBoundaryKind.Absorbing, Em3dBoundaryKind.Absorbing,
-                                               Em3dBoundaryKind.Absorbing, Em3dBoundaryKind.Absorbing, Em3dBoundaryKind.Absorbing));
-        var problem = new Em3dProblem(elaboration.Solids, elaboration.Sheets, elaboration.Materials, [], box,
-                                      new Em3dFrequency(1e9, 1e9, 1, Em3dSweepKind.Linear), EmSetup.DefaultOperatingTempC);
-        var notes = elaboration.Notes.Append(embedded.Count == 0
+        var problem = C3dProblemAssembly.ViewProblem(elaboration.Solids, elaboration.Sheets, elaboration.Materials, [],
+                                                     C3dProblemAssembly.ExtentBox(x));
+        var notes = elaboration.Notes.Append(thermal
+            ? $"Drawn from the 3D view's elaboration: '{setup.Name}' is a thermal setup, which solves the solids alone, in no air box."
+            : embedded == 0
             ? "Drawn from the 3D view's elaboration in a box at its own extent: it embeds no setup, so there is no air box to show."
-            : $"Drawn from the 3D view's elaboration in a box at its own extent: it embeds {embedded.Count} setups; name one with --setup to see its air box.").ToList();
-        return new Em3dSetupSource(full, drawing, ResolutionOf(full, elaboration),
+            : $"Drawn from the 3D view's elaboration in a box at its own extent: it embeds {embedded} setups; name one with --setup to see its air box.").ToList();
+        return new Em3dSetupSource(full, setup, ResolutionOf(full, elaboration),
             new Em3dGenerationResult(problem, null, notes)
             {
                 Warnings = elaboration.Warnings, Origins = elaboration.Origins, MaterialSources = elaboration.MaterialSources,

@@ -52,6 +52,9 @@ public sealed class Em3dFieldLayer
     public required ColorMap3D Map { get; init; }
     public required FieldColorScale Scale { get; init; }
 
+    /// <summary>brief-em3d-88 — a temperature's page: the wires, the thermal boundaries and the caption; null for an EM field.</summary>
+    public Em3dThermalPage? Thermal { get; init; }
+
     /// <summary>The slice's triangles.</summary>
     public int Triangles => Vertices.Length / 3;
 
@@ -86,7 +89,8 @@ public static class Em3dSectionField
     /// for a <paramref name="raster"/> page, per triangle (its centroid) otherwise — merged when the slice has more than
     /// <paramref name="thinAbove"/> triangles (null: never).
     /// </summary>
-    public static Em3dFieldLayer Build(FieldSectionCut cut, double phase, bool raster, int? thinAbove, IReadOnlyList<string> legend)
+    public static Em3dFieldLayer Build(FieldSectionCut cut, double phase, bool raster, int? thinAbove, IReadOnlyList<string> legend,
+                                       Em3dThermalPage? thermal = null)
     {
         var s = cut.Slice;
         int n = s.VertexCount, ch = s.Channels;
@@ -154,6 +158,7 @@ public static class Em3dSectionField
         return new Em3dFieldLayer
         {
             Vertices = uv, RasterVertices = [.. rasterUv], VertexColours = [.. vertexColours], Pieces = pieces, Raster = raster, Legend = legend, Map = cut.Map, Scale = cut.Scale,
+            Thermal = thermal,
         };
     }
 
@@ -306,6 +311,46 @@ public static class Em3dSectionField
             s += p.U * q.V - q.U * p.V;
         }
         return s / 2;
+    }
+
+    /// <summary>
+    /// brief-em3d-88 — a temperature page's wires, over the slice, through the layer's own map and range: on a PNG each chord's
+    /// two ends carry their own colour and Skia blends between them along the wire; on a vector page each pair of chords is one
+    /// filled path at its mean temperature (the slice's own rule, R-em3d84-3). The caller clips.
+    /// </summary>
+    internal static void DrawWires(SKCanvas canvas, Em3dFieldLayer layer, Func<Uv, SKPoint> map)
+    {
+        if (layer.Thermal is not { Wires.Count: > 0 } page) return;
+        SKColor Colour(double t) { var (r, g, b) = layer.Map.Sample((float)layer.Scale.Position(t)); return new SKColor(r, g, b); }
+        using var fill = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill };
+        foreach (var w in page.Wires)
+        {
+            int n = w.Left.Count;
+            if (layer.Raster)
+            {
+                var pts = new List<SKPoint>();
+                var cols = new List<SKColor>();
+                for (int k = 0; k + 1 < n; k++)
+                {
+                    SKPoint l0 = map(w.Left[k]), r0 = map(w.Right[k]), l1 = map(w.Left[k + 1]), r1 = map(w.Right[k + 1]);
+                    SKColor c0 = Colour(w.T[k]), c1 = Colour(w.T[k + 1]);
+                    pts.AddRange([l0, r0, r1, l0, r1, l1]);
+                    cols.AddRange([c0, c0, c1, c0, c1, c1]);
+                }
+                if (pts.Count == 0) continue;
+                using var vertices = SKVertices.CreateCopy(SKVertexMode.Triangles, [.. pts], [.. cols]);
+                using var white = new SKPaint { Color = SKColors.White, IsAntialias = false };
+                canvas.DrawVertices(vertices, SKBlendMode.Modulate, white);
+                continue;
+            }
+            for (int k = 0; k + 1 < n; k++)
+            {
+                using var path = new SKPath();
+                path.AddPoly([map(w.Left[k]), map(w.Left[k + 1]), map(w.Right[k + 1]), map(w.Right[k])], close: true);
+                fill.Color = Colour((w.T[k] + w.T[k + 1]) / 2);
+                canvas.DrawPath(path, fill);
+            }
+        }
     }
 
     /// <summary>Draws <paramref name="layer"/> through <paramref name="map"/> (the page's metres → device). The caller clips.</summary>

@@ -117,6 +117,9 @@ internal static class Render
         /// together (R-em3d5-2b) rather than the second silently winning.</summary>
         public List<string> Sections = new();
         public bool         Iso;
+        // brief-em3d-88 — the 3D view's axis indicator and scale bar on the picture.
+        public bool         Axes;
+        public bool         ScaleBar;
 
         // ── a 3D view's field plot (brief-em3d-84) ───────────────────────────
         public string?      Field;
@@ -124,6 +127,9 @@ internal static class Render
         public double?      Phase;
         public bool         NoLegend;
         public bool         NoThin;
+        // brief-em3d-88 Q2 — material labels, and the page cropped to the section.
+        public bool         Labels;
+        public bool         Tight;
     }
 
     /// <summary>R-rnd2-3's default page. Points for a vector format, device pixels for a raster one —
@@ -182,7 +188,9 @@ internal static class Render
             "                        [--background opaque|transparent] [--grid] [--no-rulers]\n" +
             "  a .cdd adds:          [--data file]... [--tab name|n] [--plot n] [--all-tabs]\n" +
             "  a 3D .cem takes:      --section z=<len> | --section xz@y=<len> | --section yz@x=<len> | --iso\n" +
-            "  a .c3d also takes:    --field <plot> [--phase <deg>] [--no-legend] [--no-thin] | --list-fields\n" +
+            "                        [--axes] [--scale-bar]\n" +
+            "  a .c3d also takes:    --field <plot> [--phase <deg>] [--no-legend] [--no-thin] [--labels] [--tight]\n" +
+            "                        | --list-fields\n" +
             "                        (a hidden plot renders as a shown one: --field names it, and hiding is only\n" +
             "                        which plot the 3D view draws)");
         return 1;
@@ -328,6 +336,8 @@ internal static class Render
                 // ── a 3D EM setup only (brief-em3d-5) ─────────────────────────
                 case "--section" when i + 1 < args.Length: o.Sections.Add(args[++i]); continue;
                 case "--iso": o.Iso = true; continue;
+                case "--axes": o.Axes = true; continue;
+                case "--scale-bar": o.ScaleBar = true; continue;
 
                 // ── a 3D view's field plot (brief-em3d-84) ───────────────────
                 case "--field" when i + 1 < args.Length: o.Field = args[++i]; continue;
@@ -343,6 +353,8 @@ internal static class Render
                 }
                 case "--no-legend": o.NoLegend = true; continue;
                 case "--no-thin":   o.NoThin = true;   continue;
+                case "--labels":    o.Labels = true;   continue;
+                case "--tight":     o.Tight = true;    continue;
 
                 default:
                     if (a.StartsWith('-'))
@@ -510,9 +522,9 @@ internal static class Render
         if (kind is DocumentKind.EmSetup or DocumentKind.ThreeD) return RenderEm3d.Draw(o.Path!, Em3dRequest(o));
         if (FieldOptionNamed(o) is { } fieldOption)
             return JsonRun.Fail(CliDiagnostics.RenderFieldNotA3dView(fieldOption, o.Path!, DocumentKinds.Name(kind)));
-        if (o.Sections.Count > 0 || o.Iso)
+        if (o.Sections.Count > 0 || o.Iso || o.Axes || o.ScaleBar)
             return JsonRun.Fail(CliDiagnostics.RenderEm3dNotA3dSetup(
-                o.Iso ? "--iso" : "--section", o.Path!, DocumentKinds.Name(kind)));
+                o.Iso ? "--iso" : o.Sections.Count > 0 ? "--section" : o.Axes ? "--axes" : "--scale-bar", o.Path!, DocumentKinds.Name(kind)));
 
         // A `.cdd` is a different document with a different anatomy — it holds no geometry, it names
         // its data, and it lays out several plots on a page rather than framing one drawing in a
@@ -574,11 +586,13 @@ internal static class Render
 
         return new RenderEm3d.Request(
             o.Output ?? "", o.Format == Format.Pdf ? "pdf" : o.Format == Format.Png ? "png" : "svg",
-            o.Sections, o.Iso, inapplicable, o.Width, o.Height, o.Scale, o.Margin, o.Transparent, o.Variant,
+            // brief-em3d-88 — --tight is the section cropped to its frame: no margin unless --margin asks for one.
+            o.Sections, o.Iso, inapplicable, o.Width, o.Height, o.Scale, o.Tight && o.Margin == DefaultMargin ? 0 : o.Margin, o.Transparent, o.Variant,
             themeOf: path => { var (theme, name, from, refusal) = ResolveTheme(o, path); return (theme, name, from, refusal); },
             emit: (w, h, draw) => Emit(o, w, h, draw))
         {
             Field = o.Field, ListFields = o.ListFields, Phase = o.Phase, NoLegend = o.NoLegend, NoThin = o.NoThin,
+            Labels = o.Labels, Tight = o.Tight, Axes = o.Axes, ScaleBar = o.ScaleBar,
             OutputStated = o.Output is not null,
         };
     }
@@ -586,7 +600,7 @@ internal static class Render
     /// <summary>brief-em3d-84 — the first field-plot option typed, for the refusal on a document that has no field plots.</summary>
     private static string? FieldOptionNamed(Options o)
         => o.Field is not null ? "--field" : o.ListFields ? "--list-fields" : o.Phase is not null ? "--phase"
-         : o.NoLegend ? "--no-legend" : o.NoThin ? "--no-thin" : null;
+         : o.NoLegend ? "--no-legend" : o.NoThin ? "--no-thin" : o.Labels ? "--labels" : o.Tight ? "--tight" : null;
 
     /// <summary>
     /// The options that mean something for a DRAWING and nothing for a data display, named rather

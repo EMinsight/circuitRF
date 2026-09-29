@@ -1889,7 +1889,26 @@ namespace RfCore.Export
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         string? Run,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        double? Phase);
+        double? Phase)
+    {
+        /// <summary>brief-em3d-88 — a temperature's bond wires as drawn from their own T(s); absent for an EM field.</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public IReadOnlyList<RenderFieldWireJson>? Wires { get; init; }
+
+        /// <summary>brief-em3d-88 — a temperature's thermal boundaries, each as the page labels it; absent for an EM field.</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public IReadOnlyList<string>? Boundaries { get; init; }
+    }
+
+    /// <summary>
+    /// brief-em3d-88 — one bond wire in a temperature section: how many pieces of it the picture drew, the temperatures they
+    /// span (°C), and every point its centreline crosses the plane — in the picture's own (u, v), metres, with its arc length
+    /// from the start heel (metres) and the T there, read from the run's T(s).
+    /// </summary>
+    public sealed record RenderFieldWireJson(string Wire, int Pieces, double Lo, double Hi, IReadOnlyList<RenderFieldCrossingJson> Crossings);
+
+    /// <summary>Where a wire's centreline crosses a section's plane: (u, v) and s in metres, T in °C.</summary>
+    public sealed record RenderFieldCrossingJson(double U, double V, double S, double T);
 
     /// <summary>A field plot's solution as the <c>.c3d</c> spells it: exactly one of GHz, Mode, Terminal or Point.</summary>
     public sealed record RenderFieldSolutionJson(

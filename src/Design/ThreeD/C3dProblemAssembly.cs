@@ -136,6 +136,24 @@ public static class C3dProblemAssembly
     }
 
     /// <summary>
+    /// brief-em3d-88 R-em3d88-2 — the problem a 3D VIEW draws: the solids, sheets and materials it elaborated (the 3D editor
+    /// adds its pushed-in context and its unassigned objects to them), in <paramref name="box"/>, with <paramref name="ports"/>,
+    /// at a nominal frequency and temperature no picture reads. The editor builds its scene from this whatever the active
+    /// setup's kind, and <c>render</c> builds the picture of a view with no EM problem from it — a thermal setup's section,
+    /// or a view with no setup at all — so neither borrows another setup's problem.
+    /// </summary>
+    public static Em3dProblem ViewProblem(IReadOnlyList<Em3dSolid> solids, IReadOnlyList<Em3dSheet> sheets, IReadOnlyList<Em3dMaterial> materials,
+                                          IReadOnlyList<Em3dPort> ports, Em3dAirBox box)
+        => new(solids, sheets, materials, ports, box, new Em3dFrequency(1e9, 1e9, 1, Em3dSweepKind.Linear), EmSetup.DefaultOperatingTempC);
+
+    /// <summary>A box at <paramref name="extent"/> with every face absorbing: what a view is drawn in when no setup pads one.</summary>
+    public static Em3dAirBox ExtentBox((double X0, double Y0, double Z0, double X1, double Y1, double Z1) extent)
+    {
+        var a = Em3dBoundaryKind.Absorbing;
+        return new Em3dAirBox(new Point3(extent.X0, extent.Y0, extent.Z0), new Point3(extent.X1, extent.Y1, extent.Z1), new Em3dFaces(a, a, a, a, a, a));
+    }
+
+    /// <summary>
     /// The air box <paramref name="setup"/> puts around <paramref name="e"/> — the one a run of it solves in, which is also
     /// the one the editor draws (R-em3d49-3a) and a wave port must lie on. Null when there is no content.
     /// </summary>

@@ -536,13 +536,20 @@ internal static class ToolCatalog
                         new("iso", "--iso", OptKind.Flag,
                             "3D .cem or .c3d only: an isometric outline — silhouettes and sharp edges, with no hidden-line "
                           + "removal. Refused together with section."),
+                        // brief-em3d-88: the 3D view's own chrome.
+                        new("axes", "--axes", OptKind.Flag,
+                            "3D .cem or .c3d only: the 3D view's axis indicator in the picture's bottom-left corner."),
+                        new("scaleBar", "--scale-bar", OptKind.Flag,
+                            "3D .cem or .c3d section only: the 3D view's scale bar in the bottom-right corner, in the view's "
+                          + "display unit. Refused with iso, which has no one scale."),
 
                         // brief-em3d-84: a .c3d's field plot, drawn from its own run.
                         new("field", "--field", OptKind.Str,
                             ".c3d only: draw this field plot (by exact name) over the section it cuts. A clip-plane plot IS "
                           + "a section, so leave section out; a different one is refused. The plot's run, solution and "
                           + "quantity must exist: a missing one is refused with the reason, never replaced by the nearest. "
-                          + "Surfaces, faces and temperature plots are not drawn headlessly yet. A hidden plot draws the same."),
+                          + "A temperature plot paints each bond wire from its own T(s) and ranges the true minimum to maximum. "
+                          + "Surfaces and faces plots are not drawn headlessly yet. A hidden plot draws the same."),
                         new("listFields", "--list-fields", OptKind.Flag,
                             ".c3d only: list its field plots — setup, solution, quantity, where, and whether the data is "
                           + "there (the reason when not). Draws nothing and takes no output."),
@@ -554,6 +561,10 @@ internal static class ToolCatalog
                             "With field: draw every slice triangle in an svg or pdf, however many. By default a vector "
                           + "slice above 50,000 triangles merges neighbours of one colour step, and the result says how many "
                           + "it drew them as."),
+                        new("labels", "--labels", OptKind.Flag, "With field: write each solid's material inside it, where it fits."),
+                        new("tight", "--tight", OptKind.Flag,
+                            "With field: crop the page to the section (the width kept, the height following it), the legend "
+                          + "inset in its corner, no caption, and no margin unless margin says otherwise."),
                     ],
                     ""),
             ],

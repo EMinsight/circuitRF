@@ -232,13 +232,11 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
             var extent = e.DisplayExtent() ?? FieldPlotResolver.EmptyExtent;
             if (_origin is not { } o || !NearEnough(o, extent))
                 _origin = FieldPlotResolver.SceneOrigin(extent);
-            var a = Em3dBoundaryKind.Absorbing;
-            var faces = new Em3dFaces(a, a, a, a, a, a);
             // brief-em3d-49 — the active setup's box, ports and face boundaries, resolved as a run resolves them.
             var records = ResolveRecords(doc, e, inputs.SetupJson);
             _records[generation] = records;
             ComputeFidelity(generation, doc, inputs.Path, inputs.WorkspaceCws);
-            var box = records.Box ?? new Em3dAirBox(new Point3(extent.X0, extent.Y0, extent.Z0), new Point3(extent.X1, extent.Y1, extent.Z1), faces);
+            var box = records.Box ?? C3dProblemAssembly.ExtentBox(extent);
             IReadOnlyList<Em3dSolid> solids = e.Solids;
             IReadOnlyList<Em3dSheet> sheets = e.Sheets;
             IReadOnlyList<Em3dMaterial> materials = e.Materials;
@@ -261,8 +259,8 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
                 sheets = [.. sheets, .. e.UnassignedSheets];
             }
             var instancing = InstancingFor(doc, e);
-            var problem = new Em3dProblem(solids, sheets, materials, [.. records.Ports.Select(r => r.Resolved).OfType<Em3dPort>()], box,
-                                          new Em3dFrequency(1e9, 1e9, 1, Em3dSweepKind.Linear), EmSetup.DefaultOperatingTempC);
+            // brief-em3d-88 — the one problem a view draws, which `render` builds a thermal section's picture from too.
+            var problem = C3dProblemAssembly.ViewProblem(solids, sheets, materials, [.. records.Ports.Select(r => r.Resolved).OfType<Em3dPort>()], box);
             var notes = new List<string>(e.Refusals);
             notes.AddRange(e.Warnings);
             notes.AddRange(e.Notes);

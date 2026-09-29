@@ -2796,6 +2796,7 @@ a file that leaves it out reads false. The page says to write it.
   plot fixes it, mirrored across symmetry planes) and needs the scene's wire triangles. Drawing it with
   `FieldColorScale.Auto` would have been a different range from the window's — the drift the brief exists
   to prevent. It is `render.field.temperature`, naming Export picture; the iso brief should take it.
+  *Superseded by brief-em3d-88 (below): a clip-plane temperature is drawn, and the id is retired.*
 - **A plot that pins no setup** takes the document's only setup (what the view has active on opening);
   with several it is `FieldPlotResolver.NoActiveSetup`'s sentence. The editor's "external" setup (a `.cem`
   pointing at the `.c3d`) cannot be resolved from the `.c3d` alone and reads as a missing setup.
@@ -2815,3 +2816,27 @@ a file that leaves it out reads false. The page says to write it.
 - `DocumentedWalkthroughTests.EveryOptionTheVerbsAdvertise_IsWrittenDownInTheChapter` was already failing
   at HEAD: `render`'s usage advertised `--section` and `--iso` and the user chapter mentioned neither. The
   new field subsection names both, and it passes.
+
+
+## `render --field` draws a temperature section (brief-em3d-88, 2026-09-29)
+
+- **A thermal setup reaches `Em3dSetupSource.ForThreeDView` as the view's own elaboration** (`Drawing`, in a box at its
+  extent), through `C3dProblemAssembly.ViewProblem` — the problem the 3D editor's scene is built from whatever the active
+  setup's kind. It used to go to `C3dProblemAssembly.Assemble`, which refuses a thermal setup; brief 85's harness borrowed
+  the view's EM setup instead, which only works when there is one.
+- **`render.field.temperature` is retired.** `--list-fields` no longer marks a clip-plane temperature as not headless;
+  Surfaces and Faces keep `render.field.not-headless`, word for word.
+- **`src/Cli` asks, it does not compute**: `ThermalWireChains.At` (Design) and `Em3dSectionThermal` (Render) do the wires,
+  range, hot spot, boundaries and caption; the file stays inside Gate 7's scan (no `FieldColorScale.` in `src/Cli`).
+- **`--tight` defaults the margin to 0** — a crop that kept `render`'s 5 % margin kept a white band round every side.
+  `--margin` still wins when typed.
+- **`--scale-bar` with `--iso` is `render.em3d.scale-bar-iso`**, not a silent omission: the isometric projection
+  shortens x and y by cos 30° and z not at all. A `.cem`'s bar is in µm; a `.c3d`'s in its display unit.
+- **The field report's timings (Debug, M4)**: `em` on *Output Wires* `DcSweep` 102 s, `RfHarmonics` 23 s, *Eight
+  Fingers* `Array` 9 min 14 s; each `render --field` afterwards about 2 s.
+- **Found, not fixed:** `CliStructuredOutputTests.DiagnosticIds_AreTheCommittedSet_UniqueAndCaseDistinct` fails at HEAD —
+  commit `9a058c91` added the `check.c3d.*` ids to `CliDiagnostics` and not to the committed set. The brief's §5 finding
+  also stands: `plot` cannot name `wires.Twire:<wire>(s)` (the trace parser reads `(s)` as a call).
+- Gate: `tests/Ui.Tests/Render/TemperatureSectionTests.cs` — three routine gates (the wire pieces, the page in-process
+  with its pixels and SVG text, the Surfaces and iso-bar refusals) and one `Category=Benchmark` process gate that solves
+  `RfHarmonics` (~25 s) and checks the range against the field file's own slice and a crossing's pixel against its T(s).

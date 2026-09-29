@@ -4380,3 +4380,33 @@ scene calls it a conductor; a sheet goes to `OnSheet`; a name with only a 2-D `C
   on a projected triangle. Silhouettes are judged from the eye at each edge's midpoint; edges and triangles nearer than
   `NearFraction` × Focal are clipped/left out rather than folded through infinity. Orthographic behaviour and bytes are
   unchanged (no eye: every new branch returns the old expression).
+
+
+## A temperature section, headlessly (brief-em3d-88, 2026-09-29)
+
+- **A wire is painted from its chain, and the cut is a chain of CAPSULES.** Each chain segment's cut by the plane is
+  drawn exactly for the cylinder along it: chords perpendicular to the projected axis, half-width √(r² − d²·sin²φ). That
+  alone left half of every crossing blank on *Thermal Output Wires*' x = 820 µm plane: the loop top crosses it FLAT, so the
+  segments there run nearly along the plane's normal, and a finite segment's chords are only those of its OWN axis points —
+  a thin band of the circle. Each node's sphere (a disc of √(r² − d²)) fills that and the notch at every bend. **The discs
+  go UNDER the strips**: a disc is one colour, and over a strip's gradient they read as a staircase along a wire lying in
+  the plane.
+- **`FieldSection.Cut` ranges a temperature by `FieldColorScale.MinMax`** (the view's D9 rule), no longer `Auto`, whose
+  0-to-99th-percentile put 85 °C at a third of the way up the map. The wires then extend it (`Em3dSectionThermal.WithWires`):
+  on *Output Wires* at 8 A RF the slice reaches 237 °C and the edge wires 270.8 °C. This point's range, not the sweep's
+  union (owner decision Q1). **No mirroring**: the 3D view reflects a temperature across the document's symmetry planes;
+  the section draws the modelled part only (*Eight Fingers* is the half at y ≥ 0).
+- **The thermal page** draws no port, no air-box edge or face label and no air-box caption; every metal is outlined in the
+  label ink and none filled. The boundaries are cut by the plane from `ThermalLowerings.FacePieces` (the mesher's and the
+  editor's tint's own placement), drawn in the tints' blue/green and labelled in the band beside the frame side they are
+  nearest; `*exposed*` and a face the plane misses go in the caption. A value is shown at the point: a swept variable by
+  its axis value, anything else through the document's resolution, else as written.
+- **`--labels`** writes a material once per object, on its largest cut, at the grid point furthest from the edges where
+  the label's box fits inside and clears the labels already placed; ink over a background halo, so it reads over any field.
+- **`--tight`** is `Layout(…, tight: true)`: no legend column, no band, no caption; the legend is Export picture's painter
+  translated into the frame's top-right corner. The CLI sets the page height from the frame's aspect.
+- **`--axes` / `--scale-bar` reuse `Em3dDrawingSheet.DrawChrome`**, the vector export's painter, translated into the frame,
+  with a new optional light backing panel: a thermal section's bottom corners are the flange at the map's darkest, where
+  the chrome's dark ink vanished. `ScaleBarLength` moved from `Viewer3DOverlay` (Ui) to `Em3dDrawingSheet`, so the view's
+  bar and `render`'s round the same way; one DIP of the view is the page's text size / 11. A section looks along its
+  normal (XZ looks along +y, so y points into the page).

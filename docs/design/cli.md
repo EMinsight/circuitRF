@@ -1913,6 +1913,7 @@ a plot can be drawn with no GPU:
 circuitrf render cavity.c3d -o cut.png --field Field1           # the plot's own section, the field under it
 circuitrf render cavity.c3d -o wave.png --field Field1 --phase 90
 circuitrf render cavity.c3d --list-fields                        # every plot, and whether its data is there
+circuitrf render Output.c3d -o wires.png --field "DC 14 A — along wire 4" --labels --tight --axes --scale-bar
 ```
 
 **It owns no resolution, no slicing and no range arithmetic** — §13.1's rule, and the reason the plot
@@ -1930,9 +1931,27 @@ scan holds it to that.
   that disagrees, or `--iso`, is a refusal naming both — never a silent re-cut.
 - **Missing data is a refusal carrying R-em3d83-5's sentence verbatim** — never the nearest frequency, never
   an outline presented as the field. **A stale run still draws**, with a `note:`.
-- **Sections only (owner decision Q1).** Surfaces and Faces plots, and a temperature plot (its range spans
-  the wires and the sweep, which only the view draws), are refusals naming Export picture. The iso picture
-  those need is a later brief; `Em3dSectionField`'s header records what it takes.
+- **Sections only (owner decision Q1).** Surfaces and Faces plots are refusals naming Export picture. The iso
+  picture those need is a later brief; `Em3dSectionField`'s header records what it takes.
+- **A temperature section is a thermal page** (`brief-em3d-88`). A thermal setup has no EM problem, so the
+  section is drawn from the view's own elaboration — `C3dProblemAssembly.ViewProblem`, the one problem the 3D
+  editor's scene is built from too — in a box at its extent. The range is `FieldColorScale.MinMax`, the view's
+  rule for a temperature (brief-em3d-75 D9), extended to the wires drawn; this point's, not the sweep's union
+  (owner decision Q1). **Each bond wire is painted from its own T(s)** — a wire is a 1D element and is not in
+  the 3D field — by `ThermalWireChains` (`src/Design`, the run's chain paired with its table) and
+  `Em3dSectionThermal` (`src/Render`, the cut of each chain segment and node by the plane). Metals are
+  outlined, not filled; there are no ports; the thermal boundaries are drawn and labelled on the frame instead
+  of the air box's faces, and the caption names the setup, the point and the plane. `--json`'s field report
+  adds `wires` (per wire: the pieces drawn, their T span, and every centreline crossing with its s and T) and
+  `boundaries`.
+- **`--labels`, `--tight`** (owner decision brief-em3d-88 Q2), field plots only: each solid labelled with its
+  material where the words fit inside its cut; the page cropped to the section — the width kept, the height
+  following the frame, the legend inset in its corner, margin 0 unless `--margin` says otherwise, no caption.
+- **`--axes`, `--scale-bar`** — the 3D view's axis indicator (bottom left of the frame) and scale bar (bottom
+  right), on any 3D section; the axis indicator on `--iso` too. Both are `Em3dDrawingSheet.DrawChrome`, the
+  painter the 3D view's vector export uses, and the bar's length is `Em3dDrawingSheet.ScaleBarLength`, the view's
+  own rounding, in the document's display unit. `--scale-bar` with `--iso` is a refusal: an isometric outline
+  shortens each axis differently, so no one bar measures it.
 - **PNG and vector differ in one way.** A PNG is `DrawVertices` with a colour per vertex, subdivided where
   one triangle spans more than 1/32 of the range, because Skia blends corner COLOURS and the GPU blends the
   field. A vector page has no mesh gradient: each triangle is one path of its centroid's colour. Above
@@ -1946,7 +1965,8 @@ scan holds it to that.
 - A `.cem` holds no plots: `--field` on one is a refusal saying they live in the `.c3d`.
 
 Gate: `tests/Ui.Tests/Render/FieldRenderCliTests.cs` — the verb as a process on the committed cavity,
-against the 3D view's own triangles and range.
+against the 3D view's own triangles and range; and `tests/Ui.Tests/Render/TemperatureSectionTests.cs` for a
+temperature (its process gate solves *Thermal Output Wires*' `RfHarmonics`, so it is `Category=Benchmark`).
 
 ## 14. `netlist` — the extraction, as a document
 

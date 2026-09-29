@@ -2072,6 +2072,12 @@ internal static class CliDiagnostics
         "render: {option} draws a 3D EM setup (a .cem with a Solver3D), and '{path}' is {kind}.",
         ("option", option), ("path", path), ("kind", kind));
 
+    /// <summary>brief-em3d-88 — an isometric outline shortens each axis differently, so no one bar measures it.</summary>
+    public static Diagnostic RenderEm3dScaleBarIso() => Diagnostic.Create(
+        "render.em3d.scale-bar-iso", DiagnosticSeverity.Error,
+        "render: --scale-bar measures a section, and an isometric outline has no one scale: each axis is shortened differently. "
+      + "Draw a section (--section) for a bar, or --axes alone on the outline.");
+
     public static Diagnostic RenderEm3dUnbuildable(string path, string reason) => Diagnostic.Create(
         "render.em3d.unbuildable", DiagnosticSeverity.Error,
         "render: the 3D problem of '{path}' could not be built, so there is nothing to draw: {reason}",
@@ -2110,13 +2116,6 @@ internal static class CliDiagnostics
         "render.field.not-headless", DiagnosticSeverity.Error,
         "render: field plot '{name}' is drawn on {on}, and only a clip-plane plot is drawn headlessly yet. Open the .c3d and "
       + "use the 3D view's Export picture to get this one.", ("name", name), ("on", on));
-
-    /// <summary>A temperature's range and its wires are the 3D view's own (brief-em3d-75), not yet a section's.</summary>
-    public static Diagnostic RenderFieldTemperature(string name) => Diagnostic.Create(
-        "render.field.temperature", DiagnosticSeverity.Error,
-        "render: field plot '{name}' shows a temperature, and a temperature is not drawn headlessly yet: its range spans the "
-      + "wires and the sweep, which only the 3D view draws. Open the .c3d and use the 3D view's Export picture to get this one.",
-        ("name", name));
 
     /// <summary>A boundary quantity (J_s) lives on the conductors: a plane through the volume holds none of it.</summary>
     public static Diagnostic RenderFieldOnBoundary(string name, string quantity) => Diagnostic.Create(

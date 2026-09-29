@@ -90,3 +90,7 @@ you can simulate. Change the pulse on the setup's page; `PeakPower`, `Period` an
 
 The fingers here run at 1.25 W/mm (0.25 W over 200 µm), a quarter of *One Finger*'s density, which is why the array is cooler.
 Set `P_finger` to 1 for the same 5 W/mm.
+
+**See it.** The view opens on the field plot **Surface**, every exposed face. It also carries two clip planes, hidden: **Top — 1 µm
+under the surface** and **Across the fingers — y = 1 µm**. Tick either in the tree, or draw one with no window:
+`circuitrf render "Eight Fingers/3d/Eight Fingers.c3d" -o top.png --field "Top — 1 µm under the surface"`.

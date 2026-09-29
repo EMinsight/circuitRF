@@ -272,19 +272,9 @@ public sealed record FieldLine(double[] Distance, double[] Values)
 /// writes these; this brief draws them).</summary>
 public sealed record WireTemperature(string Wire, double[] S, double[] T)
 {
-    /// <summary>T at arc length <paramref name="s"/>, linear between the table's rows and held at its ends.</summary>
-    public double At(double s)
-    {
-        if (S.Length == 0) return double.NaN;
-        if (s <= S[0]) return T[0];
-        if (s >= S[^1]) return T[^1];
-        int hi = Array.BinarySearch(S, s);
-        if (hi >= 0) return T[hi];
-        hi = ~hi;
-        int lo = hi - 1;
-        double f = (s - S[lo]) / (S[hi] - S[lo]);
-        return T[lo] + f * (T[hi] - T[lo]);
-    }
+    /// <summary>T at arc length <paramref name="s"/>, linear between the table's rows and held at its ends — the one rule a
+    /// section's wire (brief-em3d-88, ThermalWireChains) reads its table by too.</summary>
+    public double At(double s) => CircuitRF.Design.Thermal.ThermalWireChains.Interpolate(S, T, s);
 }
 
 /// <summary>A wire drawn in its temperature: the scene's own triangles with T(s) at each vertex, and each vertex's s.</summary>

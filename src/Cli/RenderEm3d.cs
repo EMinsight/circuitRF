@@ -39,6 +39,14 @@ internal static class RenderEm3d
         public double? Phase { get; init; }
         public bool NoLegend { get; init; }
         public bool NoThin { get; init; }
+        /// <summary>brief-em3d-88 Q2 — each solid labelled with its material.</summary>
+        public bool Labels { get; init; }
+        /// <summary>brief-em3d-88 Q2 — the page is the section alone, its height following the section's aspect.</summary>
+        public bool Tight { get; init; }
+        /// <summary>brief-em3d-88 — the 3D view's axis indicator, bottom left of the frame.</summary>
+        public bool Axes { get; init; }
+        /// <summary>brief-em3d-88 — the 3D view's scale bar, bottom right of the frame (a section only).</summary>
+        public bool ScaleBar { get; init; }
         /// <summary>Whether -o was typed (--list-fields takes none).</summary>
         public bool OutputStated { get; init; } = true;
     }
@@ -49,7 +57,7 @@ internal static class RenderEm3d
 
         // brief-em3d-84 — a field plot is a .c3d's record: a .cem has none, and every field option says which it is.
         string? fieldOption = req.Field is not null ? "--field" : req.ListFields ? "--list-fields" : req.Phase is not null ? "--phase"
-                            : req.NoLegend ? "--no-legend" : req.NoThin ? "--no-thin" : null;
+                            : req.NoLegend ? "--no-legend" : req.NoThin ? "--no-thin" : req.Labels ? "--labels" : req.Tight ? "--tight" : null;
         if (fieldOption is not null && DocumentKinds.Classify(Path.GetFullPath(path)) != DocumentKind.ThreeD)
             return JsonRun.Fail(CliDiagnostics.RenderFieldOnCem(fieldOption, path));
         if (req.ListFields) return RenderEm3dField.List(path, req);
@@ -70,6 +78,7 @@ internal static class RenderEm3d
             view = parsed;
         }
         else if (req.Iso) view = Em3dView.Iso;
+        if (req.ScaleBar && req.Iso) return JsonRun.Fail(CliDiagnostics.RenderEm3dScaleBarIso());
 
         Em3dSetupSource loaded;
         try { loaded = Em3dSetupSource.Load(path); }
@@ -92,7 +101,7 @@ internal static class RenderEm3d
     /// picture, field or not.
     /// </summary>
     internal static int Picture(string path, Request req, Em3dSetupSource loaded, Em3dView view,
-                                (Func<Em3dFieldLayer> Layer, Func<Em3dFieldLayer, RenderFieldJson> Report, Func<Em3dFieldLayer, string> Line)? field)
+                                (Func<Em3dScene, Em3dFieldLayer> Layer, Func<Em3dFieldLayer, RenderFieldJson> Report, Func<Em3dFieldLayer, string> Line)? field)
     {
         var generated = loaded.Generated!;
         var problem = generated.Problem!;
@@ -115,11 +124,22 @@ internal static class RenderEm3d
         var style = new Em3dRenderStyle(
             Em3dSectionRenderer.ObjectColours(problem, generated.Origins, loaded.Resolution.Source?.Technology,
                                               theme, req.Variant),
-            theme, req.Variant, req.Margin, req.Transparent);
-        var layer = field?.Layer();
+            theme, req.Variant, req.Margin, req.Transparent)
+        {
+            Labels = req.Labels, Tight = req.Tight, Axes = req.Axes,
+            // brief-em3d-88 — the bar is rounded and labelled in the document's display unit, as the 3D view's is
+            ScaleBar = req.ScaleBar ? DisplayUnit(path) : null,
+        };
+        var layer = field?.Layer(scene);
 
         int pxW = (int)Math.Round(req.Width  * req.Scale);
         int pxH = (int)Math.Round(req.Height * req.Scale);
+        // brief-em3d-88 Q2 — --tight crops the page to the section: the width stays, the height follows the frame's aspect.
+        if (req.Tight)
+        {
+            double fw = Math.Max(scene.FrameMax.U - scene.FrameMin.U, 1e-30), fh = Math.Max(scene.FrameMax.V - scene.FrameMin.V, 1e-30);
+            pxH = (int)Math.Clamp(Math.Round(pxW * fh / fw), 16, 16 * pxW);
+        }
         byte[] bytes = req.emit(pxW, pxH, canvas => Em3dSectionRenderer.Draw(canvas, pxW, pxH, scene, style, layer));
 
         // ── write and report ─────────────────────────────────────────────────
@@ -137,7 +157,7 @@ internal static class RenderEm3d
         }
         catch (Exception ex) { return JsonRun.Fail(CliDiagnostics.RenderWriteFailed(req.Output, ex.Message)); }
 
-        var page = Em3dSectionRenderer.Layout(pxW, pxH, scene, req.Margin);
+        var page = Em3dSectionRenderer.Layout(pxW, pxH, scene, req.Margin, req.Tight);
         var (boxLo, boxHi) = Projected(problem.Boundary, view);
         string unitKind = req.Format == "png" ? "device-pixels" : "points";
         bool isIso = view.Kind == Em3dViewKind.Iso;
@@ -154,14 +174,27 @@ internal static class RenderEm3d
             Layers: null, Detail: null, Counters: null, bytes.Length,
             Em3d: new RenderEm3dJson(isIso ? "iso" : "section", view.Plane, view.Axis,
                                      isIso ? null : scene.At, "m", 1.0,
-                                     [.. scene.Objects], [.. scene.Ports.Select(p => p.Number)],
+                                     [.. scene.Objects], layer?.Thermal is not null ? [] : [.. scene.Ports.Select(p => p.Number)],
                                      layer is null ? null : field!.Value.Report(layer)));
 
         Console.WriteLine($"Wrote {req.Output} ({pxW}x{pxH} {unitKind}, {bytes.Length:N0} bytes)");
-        Console.WriteLine($"  {Em3dSectionRenderer.Title(scene)}: {scene.Objects.Count()} object(s), " +
-                          $"{scene.Ports.Count} port(s)");
+        Console.WriteLine($"  {Em3dSectionRenderer.Title(scene)}: {scene.Objects.Count()} object(s)" +
+                          (layer?.Thermal is not null ? "" : $", {scene.Ports.Count} port(s)"));
         if (layer is not null) Console.WriteLine("  " + field!.Value.Line(layer));
         return 0;
+    }
+
+    /// <summary>A 3D view's display unit and DBU (what its 3D view labels lengths in); a <c>.cem</c>'s picture is in µm.</summary>
+    private static (LayoutUnit Unit, int DbuPerMicron) DisplayUnit(string path)
+    {
+        try
+        {
+            if (DocumentKinds.Classify(Path.GetFullPath(path)) == DocumentKind.ThreeD &&
+                CircuitRF.Design.ThreeD.C3dPersistence.LoadFromFile(Path.GetFullPath(path)) is { } doc)
+                return (doc.DisplayUnit, doc.DbuPerMicron);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException) { }
+        return (LayoutUnit.Um, 1000);
     }
 
     /// <summary>

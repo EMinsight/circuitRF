@@ -151,6 +151,24 @@
 			"Setup": "Array",
 			"Quantity": "T_C",
 			"On": "Surfaces"
+		},
+		{
+			"Name": "Top — 1 µm under the surface",
+			"Setup": "Array",
+			"Quantity": "T_C",
+			"On": "ClipPlane",
+			"Axis": "Z",
+			"Offset": -1000,
+			"Hidden": true
+		},
+		{
+			"Name": "Across the fingers — y = 1 µm",
+			"Setup": "Array",
+			"Quantity": "T_C",
+			"On": "ClipPlane",
+			"Axis": "Y",
+			"Offset": 1000,
+			"Hidden": true
 		}
 	],
 	"Setups": [

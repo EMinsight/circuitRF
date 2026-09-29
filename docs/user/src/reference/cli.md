@@ -1385,16 +1385,32 @@ the model's outlines and its legend beside it.
 - **`--phase <degrees>`** picks the instant drawn for a quantity read instantaneously (`Re{E}`); it is a
   refusal on any other. The phase is never written to the file.
 - **A hidden plot draws the same.** Hiding only chooses which plot the window draws; `--field` names one.
-- A `--section` that is not the plot's own plane is a refusal naming both. **Surfaces, faces and
-  temperature plots are refused for now**: open the `.c3d` and use *Export picture*.
+- A `--section` that is not the plot's own plane is a refusal naming both. **Surfaces and faces plots are
+  refused for now**: open the `.c3d` and use *Export picture*.
+- **A temperature plot draws a thermal section.** The colours span the section's true minimum to its maximum
+  at the plot's point, as the 3D view ranges a temperature. **Each bond wire is painted from its own solved
+  T(s)**: a wire is a one-dimensional element, so its temperature is not in the 3D field around it. Metals are
+  outlined rather than filled, since they carry a temperature too; there are no ports, and the thermal
+  boundaries (a face held at a temperature, a convection face) are drawn and labelled on the frame.
+- **`--labels`** writes each solid's material inside it, where the words fit. **`--tight`** crops the page to
+  the section, with the legend inset in its corner (no margin unless `--margin` asks for one). Both are for a
+  field plot.
+- **`--axes`** adds the 3D view's axis indicator in the bottom-left corner, and **`--scale-bar`** its scale bar
+  in the bottom-right, in the 3D view's display unit. They work on any section; on `--iso` only `--axes` does.
 - **PNG and vector differ in one way.** A PNG blends colours across each triangle. SVG has no gradient
   mesh, so in SVG and PDF each triangle takes the colour of its centre. A vector slice of more than
   50,000 triangles merges neighbours that fall in the same step of the colour map, never dropping area.
   The report says `drawn as …` when that happened, and `--no-thin` draws every triangle. `--no-legend`
   leaves the legend off.
 - `--json` adds `render.em3d.field`: the plot, its setup, the solution as the file spells it, the run
-  directory it read, the triangle counts, the range and whether the run is stale. `--list-fields --json`
-  returns the plots as `fieldPlots`.
+  directory it read, the triangle counts, the range and whether the run is stale — and for a temperature,
+  each wire drawn with its temperature span and where it crosses the plane. `--list-fields --json` returns
+  the plots as `fieldPlots`.
+
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf render Output/3d/Output.c3d -o wires.png --field "DC 14 A — along wire 4" --labels --tight --axes --scale-bar
+<span class="output">Wrote wires.png (1600x811 device-pixels, 299,566 bytes)
+  XZ section at y = 75 µm: 9 object(s)
+  DC 14 A — along wire 4: T_C at Idc = 14, 4,692 triangles, 85 … 393 °C, 1 wire(s) from their T(s)</span></code></pre>
 
 <h3 id="render-example">A worked example, from an empty folder</h3>
 

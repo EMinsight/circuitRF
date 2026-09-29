@@ -242,6 +242,21 @@ public static class Em3dDrawingSheet
         canvas.Restore();
     }
 
+    /// <summary>
+    /// The scale bar's length, metres: a 1, 2 or 5 × 10ⁿ of the DISPLAY unit near <paramref name="targetMetres"/>. It was
+    /// a round number of metres, which reads as 393.7008 mil in mil (3D editor bugs round 2); rounding in the unit the
+    /// bar is labelled in is what makes the label a round number in every unit. The 3D view's bar and `render --scale-bar`'s
+    /// (brief-em3d-88) are both this one.
+    /// </summary>
+    public static double ScaleBarLength(double targetMetres, CircuitRF.Design.Layout.LayoutUnit unit, int dbuPerMicron)
+    {
+        double unitMetres = dbuPerMicron > 0 ? CircuitRF.Design.Layout.LayoutUnits.ToDbu(1m, unit, dbuPerMicron) * 1e-6 / dbuPerMicron : 0;
+        if (!(unitMetres > 0)) unitMetres = 1e-6;
+        double target = targetMetres / unitMetres, p10 = Math.Pow(10, Math.Floor(Math.Log10(target)));
+        double units = new[] { 1.0, 2.0, 5.0, 10.0 }.Select(m => m * p10).Last(v => v <= target * 1.4);
+        return units * unitMetres;
+    }
+
     /// <summary>The 3D view's axis indicator's colours (Viewer3DOverlay's).</summary>
     private static readonly SKColor[] AxisColours = [new(220, 60, 60), new(60, 170, 70), new(60, 110, 230)];
 
@@ -251,18 +266,22 @@ public static class Em3dDrawingSheet
     /// lettered past its tip) and the scale bar bottom right (a bar with end ticks, its length above it). In DIPs of the
     /// view times <see cref="Em3dPictureChrome.PagePerDip"/>; a length on the bar is <paramref name="scale"/> page units per metre.
     /// </summary>
+    /// <para>brief-em3d-88 — <paramref name="backing"/>: a panel of that colour behind each, for a picture whose corners are
+    /// not white (a field section's are the field's own colours, often its darkest).</para>
     public static void DrawChrome(SKCanvas canvas, float w, float h, double scale, Em3dProjection? projection, Em3dPictureChrome chrome,
-                                  bool textAsPaths)
+                                  bool textAsPaths, SKColor? backing = null)
     {
         float k = (float)chrome.PagePerDip;
         var ink = new SKColor(35, 38, 44);
         using var font = new SKFont(SkiaFonts.PlexRegular, 11 * k);
         using var text = new SKPaint { IsAntialias = true, Color = ink, Style = SKPaintStyle.Fill };
         using var stroke = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeCap = SKStrokeCap.Round };
+        using var panel = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill, Color = backing ?? SKColors.Transparent };
         if (chrome.AxisIndicator && projection is { } p)
         {
             const float arm = 30, inset = 46;
             var o = new SKPoint(inset * k, h - inset * k);
+            if (backing is not null) canvas.DrawCircle(o, (arm + 13) * k, panel);
             stroke.Color = ink;
             stroke.StrokeWidth = 0.6f * k;
             using (var dots = SKPathEffect.CreateDash([0.6f * k, 2f * k], 0))
@@ -293,6 +312,8 @@ public static class Em3dDrawingSheet
             float len = (float)(bar.Metres * scale);
             var right = new SKPoint(w - 20 * k, h - 22 * k);
             var left = new SKPoint(right.X - len, right.Y);
+            if (backing is not null)
+                canvas.DrawRoundRect(new SKRect(left.X - 10 * k, right.Y - 7 * k - font.Size * 1.2f, right.X + 10 * k, right.Y + 10 * k), 4 * k, 4 * k, panel);
             stroke.Color = ink;
             stroke.StrokeWidth = 1.5f * k;
             canvas.DrawLine(left, right, stroke);

@@ -1,5 +1,6 @@
 using System.Globalization;
 using CircuitRF.Design.Layout.Em;
+using CircuitRF.Design.Thermal;
 using CircuitRF.Design.ThreeD;
 using CircuitRF.Engine.Em3d;
 using CircuitRF.Render;
@@ -33,7 +34,8 @@ internal static class RenderEm3dField
     public static int List(string path, RenderEm3d.Request req)
     {
         string? alone = req.OutputStated ? "-o" : req.Field is not null ? "--field" : req.Sections.Count > 0 ? "--section"
-                      : req.Iso ? "--iso" : req.Phase is not null ? "--phase" : req.NoLegend ? "--no-legend" : req.NoThin ? "--no-thin" : null;
+                      : req.Iso ? "--iso" : req.Phase is not null ? "--phase" : req.NoLegend ? "--no-legend" : req.NoThin ? "--no-thin"
+                      : req.Labels ? "--labels" : req.Tight ? "--tight" : null;
         if (alone is not null) return JsonRun.Fail(CliDiagnostics.RenderFieldListAlone(alone));
 
         string full = Path.GetFullPath(path);
@@ -161,16 +163,43 @@ internal static class RenderEm3dField
         { return JsonRun.Fail(CliDiagnostics.RenderFieldUnreadable(plot.Name, e.Message)); }
         if (cut is null) return JsonRun.Fail(CliDiagnostics.RenderFieldMissingData(plot.Name, gone ?? $"The run no longer offers {FieldNames.Friendly(q.Array.Name)}."));
 
+        // brief-em3d-88 — a temperature: the wires from their own T(s), the range extended to them, the thermal boundaries.
+        List<Em3dWirePiece> wires = [];
+        List<Em3dWireCrossing> crossings = [];
+        List<Em3dBoundaryMark> marks = [];
+        string hotSpot = "";
+        if (q.IsTemperature)
+        {
+            int point = item.Solution.Index;
+            var chains = found.Table is { } table && loaded.Elaboration is { } el ? ThermalWireChains.At(el, table, point) : [];
+            (wires, crossings) = Em3dSectionThermal.Wires(chains, cut.Axis, own.At);
+            cut = Em3dSectionThermal.WithWires(cut, wires);
+            if (loaded.Elaboration is { } e2 && run is not null)
+                marks = Em3dSectionThermal.Boundaries(doc, e2, run, cut.Axis, own.At, found.Table, point);
+            hotSpot = Em3dSectionThermal.HotSpot(cut, wires);
+        }
+
         double phaseDeg = q.Animated ? req.Phase ?? 0 : 0;
-        var legend = req.NoLegend ? [] : FieldPlotResolver.LegendLines(plot.Name, q, cut.Scale, item.Label, phaseDeg, loopSeconds: null);
+        var legend = req.NoLegend ? [] : FieldPlotResolver.LegendLines(plot.Name, q, cut.Scale, item.Label, phaseDeg, loopSeconds: null,
+                                                                        stepLabel: item.Label, hotSpot: hotSpot);
         int? thin = req.NoThin ? null : ThinLimit();
 
-        Em3dFieldLayer Layer() => Em3dSectionField.Build(cut, phaseDeg * Math.PI / 180, raster: req.Format == "png", thin, legend);
+        Em3dFieldLayer Layer(Em3dScene scene) => Em3dSectionField.Build(cut, phaseDeg * Math.PI / 180, raster: req.Format == "png", thin, legend,
+            q.IsTemperature ? new Em3dThermalPage(wires, crossings, marks,
+                                                  Em3dSectionThermal.Caption(scene, setupName, item.Label, marks, wires.Select(w => w.Wire).Distinct().Count()))
+                            : null);
         RenderFieldJson Report(Em3dFieldLayer l) => new(
             plot.Name, setupName, request.Solver, SolutionJson(plot.Solution), item.Label, q.Array.Name, q.Mode.ToString(), plot.On.ToString(),
             l.Triangles, l.TrianglesDrawn,
             new RenderFieldRangeJson(cut.Scale.Lo, cut.Scale.Hi, cut.Scale.Unit, cut.Scale.Db, cut.Scale.Percentile),
-            stale, runDir, q.Animated ? phaseDeg : null);
+            stale, runDir, q.Animated ? phaseDeg : null)
+        {
+            Wires = l.Thermal is null ? null : [.. wires.GroupBy(w => w.Wire).Select(g => new RenderFieldWireJson(
+                g.Key, g.Count(), g.SelectMany(w => w.T).Where(double.IsFinite).DefaultIfEmpty(double.NaN).Min(),
+                g.SelectMany(w => w.T).Where(double.IsFinite).DefaultIfEmpty(double.NaN).Max(),
+                [.. crossings.Where(c => c.Wire == g.Key).Select(c => new RenderFieldCrossingJson(c.At.U, c.At.V, c.S, c.T))]))],
+            Boundaries = l.Thermal is null ? null : [.. marks.Select(m => m.Label)],
+        };
         string Line(Em3dFieldLayer l)
         {
             string G(double x) => x.ToString("G4", CultureInfo.InvariantCulture);
@@ -179,6 +208,7 @@ internal static class RenderEm3dField
                    (l.TrianglesDrawn != l.Triangles ? $", drawn as {l.TrianglesDrawn:N0}" : "") +
                    $", {G(cut.Scale.Lo)} … {G(cut.Scale.Hi)}{(unit.Length > 0 ? " " + unit : "")}" +
                    (q.Animated ? $", φ = {phaseDeg.ToString("0.##", CultureInfo.InvariantCulture)}°" : "") +
+                   (l.Thermal is { Wires.Count: > 0 } t ? $", {t.Wires.Select(w => w.Wire).Distinct().Count()} wire(s) from their T(s)" : "") +
                    (stale ? " (the model has changed since this run)" : "");
         }
         return RenderEm3d.Picture(path, req, loaded, own, (Layer, Report, Line));
@@ -224,12 +254,12 @@ internal static class RenderEm3dField
         { return "The fields could not be read: " + e.Message; }
     }
 
-    /// <summary>Why <c>--field</c> will not draw <paramref name="plot"/> yet (owner decision Q1), or null.</summary>
+    /// <summary>Why <c>--field</c> will not draw <paramref name="plot"/> yet (owner decision Q1), or null. A clip-plane
+    /// temperature is drawn (brief-em3d-88).</summary>
     private static CircuitRF.Diagnostics.Diagnostic? NotHeadless(C3dFieldPlot plot)
     {
         if (plot.On == C3dFieldPlotOn.Surfaces) return CliDiagnostics.RenderFieldNotHeadless(plot.Name, plot.IsTemperature ? "every exposed face" : "surfaces");
         if (plot.On == C3dFieldPlotOn.Faces) return CliDiagnostics.RenderFieldNotHeadless(plot.Name, $"{plot.Faces.Count} face{(plot.Faces.Count == 1 ? "" : "s")}");
-        if (plot.IsTemperature) return CliDiagnostics.RenderFieldTemperature(plot.Name);
         return null;
     }
 

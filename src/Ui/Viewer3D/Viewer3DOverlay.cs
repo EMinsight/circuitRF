@@ -628,19 +628,10 @@ public sealed class Viewer3DOverlay : Control
         }
     }
 
-    /// <summary>
-    /// The scale bar's length, metres: a 1, 2 or 5 × 10ⁿ of the DISPLAY unit near <paramref name="targetMetres"/>. It was
-    /// a round number of metres, which reads as 393.7008 mil in mil (3D editor bugs round 2); rounding in the unit the
-    /// bar is labelled in is what makes the label a round number in every unit.
-    /// </summary>
+    /// <summary>The scale bar's length, metres: <see cref="Em3dDrawingSheet.ScaleBarLength"/>, the rule `render --scale-bar` shares
+    /// (brief-em3d-88).</summary>
     internal static double ScaleBarLength(double targetMetres, LayoutUnit unit, int dbuPerMicron)
-    {
-        double unitMetres = dbuPerMicron > 0 ? LayoutUnits.ToDbu(1m, unit, dbuPerMicron) * 1e-6 / dbuPerMicron : 0;
-        if (!(unitMetres > 0)) unitMetres = 1e-6;
-        double target = targetMetres / unitMetres, p10 = Math.Pow(10, Math.Floor(Math.Log10(target)));
-        double units = new[] { 1.0, 2.0, 5.0, 10.0 }.Select(m => m * p10).Last(v => v <= target * 1.4);
-        return units * unitMetres;
-    }
+        => Em3dDrawingSheet.ScaleBarLength(targetMetres, unit, dbuPerMicron);
 
     private static void ScaleBar(DrawingContext ctx, in Camera3D cam, Viewer3DViewModel vm, double w, double h, Pen pen, IBrush ink)
     {
