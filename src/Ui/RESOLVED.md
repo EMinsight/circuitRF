@@ -1,5 +1,67 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## Generated cells 1 — the archive carries the artwork it was drawn with (2026-09-28, brief-generated-cells-1-in-the-archive)
+
+**§1, measured before the default was chosen.** The shipped PDK PCells example's four generators, 468
+UNIQUE parameter sets, all placed in one layout (a scratch harness driving `GeneratedCellStore.GetOrCreate`
+through the kit's real Python worker, then deleted). Generating all 468 took 0.6 s.
+
+| what | on disk | in the zip (deflate) | ratio |
+|---|---|---|---|
+| square spirals (120 cells, 1.5–6 turns) | 349 KB | 140 KB | 2.5× |
+| octagonal spirals (120 cells) — the vertex-heavy case | 390 KB | 173 KB | 2.3× |
+| MIM caps (128 cells) | 319 KB | 138 KB | 2.3× |
+| lines (100 cells) | 139 KB | 91 KB | 1.5× |
+| **all generated cells (468 cells, 936 files)** | **1.20 MB** | **0.54 MB** | 2.2× |
+| the one layout placing them (its snapshots are most of it) | 207 KB | 13 KB | 16× |
+
+For scale: `.npy` results on this machine run from ~10 KB (a small EM sweep) through 0.1–2 MB (HB,
+DC, loadpull pursuit) to 10 MB (a loadpull bench) and 54 MB (an antenna far field) — and results are
+already ticked by default.
+
+- **Half of the brief's expectation held and half did not.** Cost: single-digit MB compressed even for
+  hundreds of variants — confirmed, about 1.2 KB per cell in the zip, so a 2,000-variant MMIC is ~2.5 MB.
+  Compression: NOT 5–10×, only about 2.2×. A zip deflates each entry on its own, a generated cell is
+  two small files (a ~2.5 KB `.clay` and a `.ccell`), and each entry pays its own header and a cold
+  dictionary. The conclusion does not depend on the ratio, so the default is **ticked**.
+- **The generated cells are 6× the layout on disk.** "The same order as the artwork" is true only
+  loosely. The layout holds instances plus snapshots, while each cell holds the polygons.
+
+**The rule, and how it is split.**
+- `WorkspaceArchiveScanner.IsSkipped` (the COPY's predicate) still skips `.generated-cells`, and
+  `IsSkippedFromArchive` no longer does. Both now build on a private `IsSkippedByBoth`. `.generated-cells`
+  is the second entry where the two consumers disagree, and it disagrees in the opposite direction
+  from `.cwsuser`. `WorkspaceCopy` is unchanged (`WorkspaceCopyTests.TheAdvisoryLockTheCachesAndTheOsClutterAreNotCopied`
+  still holds it).
+- **Generic walks still prune the folder** (`PrunedDirectories` in `EnumerateFilesSafe`). The archive
+  builds its row from the live set, never file by file. A kit folder's measurement and copy are
+  unaffected.
+- **The live set is the prune's, not a second one.** `GeneratedCellsLifecycle.LiveCells` shares
+  `WalkSnapshotLayouts` with `RegenerateAll`: the same sniff, the same exclusion of
+  `.generated-cells`' own layouts, and the same "an unreadable `.clay` makes the set incomplete". It
+  returns name → generator id without rebuilding anything. When the set is incomplete, every cell
+  travels, and the row's tooltip and the Messages log say so.
+- **Which cells are a kit's.** The snapshot's generator id is used: `PCellRegistry.IsBuiltIn` is the
+  closed dictionary plus `smt:` land patterns. Which KIT drew a cell is not knowable without running
+  its scripts, so the unticked-row warning fires when kit cells are placed and any referenced kit row
+  is unticked. A kit inside the workspace has no row and always travels.
+- **The writer needed nothing new.** The row is a directory option with explicit `Members`, the same
+  shape as a SPICE closure. It lands at `.generated-cells/<cell>/…`, so every `CellRef` resolves
+  untouched. `BuildIncludedMap` skips it, as it skips results: its paths are already the workspace's own.
+- **A side effect worth knowing about.** `ExternalCellArchive.AddFilesUnder` filters with
+  `IsSkippedFromArchive`, so a referenced workspace's generated cells that the hierarchy walk actually
+  reaches now travel inside that workspace's row. That is the same rule, applied one workspace over.
+
+**Open question for the owner, deliberately not changed.** The workspace `.gitignore` still ignores
+`.generated-cells/`. Committing a rebuildable cache churns the history on every generator edit.
+Brief 2 (headless regeneration) is what makes a clone usable from the command line. Whether history
+should carry the artwork too is a separate decision.
+
+Gates: `WorkspaceArchiveTests.OnlyTheLiveGeneratedCellsTravel_AsOneTickedRow_AndUntickingItLeavesThemOut`,
+`…ALayoutThatWillNotRead_SendsEveryGeneratedCell_AndSaysSo`, `…UntickingKitArtwork_WhileItsKitStaysBehind_Warns`.
+These replace `ThePcellArtworkCacheIsNotArchived_SoTheRecipientRebuildsItUnderTheirOwnPermission`,
+which pinned the old rule.
+
 ## A two-port stability template that brings its Data Display (2026-09-28, brief-template-two-port-stability)
 
 - **"Beside the `.csch`" is not where a run looks.** `AutoDisplayCandidates`' authored slot is

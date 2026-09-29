@@ -296,21 +296,81 @@ public sealed class WorkspaceArchiveTests : IDisposable
         Assert.DoesNotContain("trust", cws, StringComparison.OrdinalIgnoreCase);
     }
 
-    [Fact]
-    public void ThePcellArtworkCacheIsNotArchived_SoTheRecipientRebuildsItUnderTheirOwnPermission()
+    // ── Generated cells (brief generated-cells-1) ─────────────────────────────
+
+    /// <summary>A layout whose snapshot names one generated cell, and that cell on disk.</summary>
+    private void PlaceGeneratedCell(string ws, string cell, string generator)
     {
-        // The owner asked for these to be skipped ("those pCell artwork files that are sometimes
-        // generated"), and the trust model is the reason it is safe: a generated cell is a pure
-        // cache, rebuilt from each layout's own recorded snapshots once the recipient allows the kit
-        // to run. Until they do, those cells draw as placeholders — which is the honest state, not a
-        // silent one (RequestPCellConsent says so).
+        File_($"{ws}/Chip/layout/Chip.clay", """
+            {"FormatVersion":1,"DbuPerMicron":1000,
+             "PCellSnapshots":{"CELL":{"GeneratorId":"GEN","Parameters":{"W":1E-05}}},
+             "Instances":[{"CellRef":"../../.generated-cells/CELL"}]}
+            """.Replace("CELL", cell).Replace("GEN", generator));
+        File_($"{ws}/.generated-cells/{cell}/.ccell", """{"FormatVersion":1}""");
+        File_($"{ws}/.generated-cells/{cell}/layout/{cell}.clay", """{"FormatVersion":1,"Shapes":[]}""");
+    }
+
+    [Fact]
+    public void OnlyTheLiveGeneratedCellsTravel_AsOneTickedRow_AndUntickingItLeavesThemOut()
+    {
+        // BuildWorkspace leaves a DEAD `.generated-cells/MLIN_abc` — no layout names it.
         var ws = BuildWorkspace();
-        File_("ws/.generated-cells/MLIN_9f2c/layout/MLIN_9f2c.clay", "{}");
+        PlaceGeneratedCell("ws", "MLIN_live", "MLIN");
+
+        var plan = WorkspaceArchiveScanner.Scan(ws);
+        var row  = plan.GeneratedCells!;
+        Assert.True(row.Selected);
+        Assert.Equal(row.Members.Sum(m => new FileInfo(m.SourcePath).Length), row.SizeBytes);
+        Assert.All(row.Members, m => Assert.StartsWith("MLIN_live/", m.RelativePath));
+        Assert.DoesNotContain(plan.AlwaysIncluded, p => p.Contains(".generated-cells"));
 
         var zip = Path.Combine(_root, "out.zip");
-        WorkspaceArchiveWriter.Write(WorkspaceArchiveScanner.Scan(ws), zip);
+        WorkspaceArchiveWriter.Write(plan, zip);
+        var names = EntryNames(zip);
+        Assert.Contains("ws/.generated-cells/MLIN_live/layout/MLIN_live.clay", names);
+        Assert.DoesNotContain(names, n => n.Contains("MLIN_abc"));
 
-        Assert.DoesNotContain(EntryNames(zip), n => n.Contains(".generated-cells"));
+        row.Selected = false;
+        var zip2 = Path.Combine(_root, "out2.zip");
+        WorkspaceArchiveWriter.Write(plan, zip2);
+        Assert.DoesNotContain(EntryNames(zip2), n => n.Contains(".generated-cells"));
+
+        // A copy still leaves the folder behind; only the archive's predicate changed.
+        Assert.True(WorkspaceArchiveScanner.IsSkipped(".generated-cells/MLIN_live/.ccell"));
+        Assert.False(WorkspaceArchiveScanner.IsSkippedFromArchive(".generated-cells/MLIN_live/.ccell"));
+    }
+
+    [Fact]
+    public void ALayoutThatWillNotRead_SendsEveryGeneratedCell_AndSaysSo()
+    {
+        var ws = BuildWorkspace();
+        PlaceGeneratedCell("ws", "MLIN_live", "MLIN");
+        File_("ws/Broken/layout/Broken.clay", "not json");
+
+        var plan = WorkspaceArchiveScanner.Scan(ws);
+
+        Assert.True(plan.GeneratedCellsLiveSetIncomplete);
+        Assert.Contains(plan.GeneratedCells!.Members, m => m.RelativePath.StartsWith("MLIN_abc/"));
+        Assert.Contains("could not be read", plan.GeneratedCells.Detail);
+    }
+
+    [Fact]
+    public void UntickingKitArtwork_WhileItsKitStaysBehind_Warns()
+    {
+        var kit = Dir("vendorkit");
+        var ws  = BuildWorkspace("ws", $$"""
+            {"FormatVersion":2,"LibraryRefs":["{{kit.Replace("\\", "/")}}"],"KnownFiles":[]}
+            """);
+        PlaceGeneratedCell("ws", "KIT_SPIRAL_live", "KIT_SPIRAL");
+
+        var plan = WorkspaceArchiveScanner.Scan(ws);
+        Assert.Null(plan.GeneratedCellsWarning);              // the default carries the artwork
+
+        plan.GeneratedCells!.Selected = false;
+        Assert.Contains("placeholders", plan.GeneratedCellsWarning);
+
+        Assert.Single(plan.Kits).Selected = true;             // the recipient can rebuild them
+        Assert.Null(plan.GeneratedCellsWarning);
     }
 
     [Fact]

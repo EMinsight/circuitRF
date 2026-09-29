@@ -112,17 +112,70 @@ public static class GeneratedCellsLifecycle
         Action<string>? report = null,
         IReadOnlySet<string>? skipPaths = null)
     {
+        int repointed = 0, rewritten = 0;
+
+        // What the prune pass is allowed to keep. Complete or nothing: see PruneUnreferenced.
+        var live = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        bool? walked = WalkSnapshotLayouts(workspaceRootDir, skipPaths, (clayPath, view) =>
+        {
+            int moved = Regenerate(workspaceRootDir, view, resolveTech, report);
+
+            // Read AFTER the rebuild, so a cell whose generator/technology changed contributes its
+            // NEW name — the old one is exactly what the prune is there to collect.
+            foreach (var name in view.PCellSnapshots.Keys) live.Add(name);
+
+            if (moved == 0) return;
+
+            repointed += moved;
+            try { LayoutPersistence.SaveToFile(clayPath, view); rewritten++; }
+            catch (Exception ex) { report?.Invoke($"'{clayPath}' could not be updated: {ex.Message}"); }
+        });
+        if (walked is not { } sawEverything) return default;
+
+        int pruned = WipeOnOpenAndClose || !sawEverything
+            ? 0
+            : PruneUnreferenced(workspaceRootDir, live);
+
+        return new RegenerateOutcome(repointed, rewritten, pruned);
+    }
+
+    /// <summary>
+    /// The generated cells the layouts under <paramref name="workspaceRootDir"/> reference, as they
+    /// stand on disk now — cell folder name → the generator that drew it. The SAME walk
+    /// <see cref="RegenerateAll"/>'s prune keeps its live set from, minus the rebuild, so an archive
+    /// that carries "the live cells" carries exactly what the prune would keep.
+    ///
+    /// <para><see cref="LiveGeneratedCells.Complete"/> is false when some <c>.clay</c> could not be
+    /// read. A caller deciding what to LEAVE OUT must then leave nothing out — the prune's own
+    /// refuse-rather-than-guess rule.</para>
+    /// </summary>
+    public static LiveGeneratedCells LiveCells(string workspaceRootDir)
+    {
+        var cells = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        bool? walked = WalkSnapshotLayouts(workspaceRootDir, skipPaths: null, (_, view) =>
+        {
+            foreach (var (name, snap) in view.PCellSnapshots) cells[name] = snap.GeneratorId;
+        });
+        return new LiveGeneratedCells(cells, walked == true);
+    }
+
+    /// <summary>
+    /// Every <c>.clay</c> under <paramref name="workspaceRootDir"/> that carries PCell snapshots,
+    /// loaded and handed to <paramref name="visit"/>. Returns whether every layout was read (false
+    /// when one would not parse or <paramref name="skipPaths"/> held some out), or null when the
+    /// workspace could not be walked at all.
+    /// </summary>
+    private static bool? WalkSnapshotLayouts(
+        string workspaceRootDir, IReadOnlySet<string>? skipPaths, Action<string, LayoutView> visit)
+    {
         string genRootPrefix = Path.GetFullPath(Path.Combine(workspaceRootDir, GeneratedCellStore.ReservedFolderName))
             + Path.DirectorySeparatorChar;
 
         IEnumerable<string> clayFiles;
         try { clayFiles = Directory.EnumerateFiles(workspaceRootDir, "*.clay", SearchOption.AllDirectories); }
-        catch { return default; }
+        catch { return null; }
 
-        int repointed = 0, rewritten = 0;
-
-        // What the prune pass is allowed to keep. Complete or nothing: see PruneUnreferenced.
-        var live = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         bool sawEverything = skipPaths is null || skipPaths.Count == 0;
 
         foreach (var clayPath in clayFiles)
@@ -146,32 +199,18 @@ public static class GeneratedCellsLifecycle
                 //
                 // The sniff answers that in 0.07 s and answers it conservatively: anything but a
                 // definite no still loads the file and asks it properly, and a file that does not
-                // parse throws, which is what keeps `sawEverything` — and therefore the prune below —
-                // honest about a layout nobody could read.
+                // parse throws, which is what keeps `sawEverything` — and therefore the prune — honest
+                // about a layout nobody could read.
                 if (!LayoutPersistence.MightCarryPCellSnapshots(clayPath)) continue;
                 view = LayoutPersistence.LoadFromFile(clayPath);
             }
             catch { sawEverything = false; continue; }
             if (view.PCellSnapshots.Count == 0) continue;
 
-            int moved = Regenerate(workspaceRootDir, view, resolveTech, report);
-
-            // Read AFTER the rebuild, so a cell whose generator/technology changed contributes its
-            // NEW name — the old one is exactly what the prune is there to collect.
-            foreach (var name in view.PCellSnapshots.Keys) live.Add(name);
-
-            if (moved == 0) continue;
-
-            repointed += moved;
-            try { LayoutPersistence.SaveToFile(clayPath, view); rewritten++; }
-            catch (Exception ex) { report?.Invoke($"'{clayPath}' could not be updated: {ex.Message}"); }
+            visit(clayPath, view);
         }
 
-        int pruned = WipeOnOpenAndClose || !sawEverything
-            ? 0
-            : PruneUnreferenced(workspaceRootDir, live);
-
-        return new RegenerateOutcome(repointed, rewritten, pruned);
+        return sawEverything;
     }
 
     /// <summary>
@@ -284,3 +323,9 @@ public static class GeneratedCellsLifecycle
 /// Always 0 when the walk was incomplete or the wipe policy is on — see
 /// <see cref="GeneratedCellsLifecycle.WipeOnOpenAndClose"/>.</param>
 public readonly record struct RegenerateOutcome(int InstancesRepointed, int LayoutsRewritten, int CellsPruned);
+
+/// <summary>The generated cells a workspace's layouts reference — see
+/// <see cref="GeneratedCellsLifecycle.LiveCells"/>.</summary>
+/// <param name="Cells">Cell folder name → the generator id its snapshot records.</param>
+/// <param name="Complete">False when some layout could not be read, so the set may be missing cells.</param>
+public sealed record LiveGeneratedCells(IReadOnlyDictionary<string, string> Cells, bool Complete);

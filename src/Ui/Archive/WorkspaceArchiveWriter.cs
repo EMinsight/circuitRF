@@ -191,6 +191,7 @@ public static class WorkspaceArchiveWriter
         {
             if (!o.Selected) continue;
             if (o.Kind == ArchiveOptionKind.Result) continue;   // results keep their own paths
+            if (o.Kind == ArchiveOptionKind.GeneratedCells) continue;   // …and so do generated cells
 
             // A row with named members maps each MEMBER, not its root folder: the root is a real
             // directory on this machine and the row copies only part of it, so mapping the folder

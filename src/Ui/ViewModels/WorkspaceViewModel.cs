@@ -1898,6 +1898,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             if (result.Repointed.Count > 0)
                 Messages.Info($"Repointed references in {result.Repointed.Count} file(s) to the archived copies.");
 
+            if (plan.GeneratedCellsWarning is { } generatedCells)
+                Messages.Warning(generatedCells);
+            else if (plan.GeneratedCells is { Selected: true } && plan.GeneratedCellsLiveSetIncomplete)
+                Messages.Info("A layout could not be read, so every generated PCell cell was archived "
+                            + "rather than only the ones still in use.");
+
             // Said out loud rather than left for the recipient to discover: these are the references
             // that will arrive broken, and the user is the only one who can still do anything about it.
             foreach (var external in result.StillExternal)

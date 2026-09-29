@@ -66,8 +66,8 @@ Two consequences worth knowing early:
   project database.
 - **Moving a workspace is moving a folder.** To send one to somebody else, use
   **File ▸ Archive Workspace…**, which additionally pulls in the things it references from outside
-  the folder — libraries, technologies, optionally kits and results — and repoints the references at
-  the copies, so the archive opens on a machine that has none of them.
+  the folder — libraries, technologies, the generated PCell artwork, optionally kits and results — and
+  repoints the references at the copies, so the archive opens on a machine that has none of them.
 
 ## Using cells from another workspace {#other-workspaces}
 

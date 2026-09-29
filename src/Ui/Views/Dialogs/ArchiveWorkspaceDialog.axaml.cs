@@ -95,6 +95,11 @@ public partial class ArchiveWorkspaceDialog : Window
                             $"{g} ({plan.Results.Count(r => r.Group == g)})",
                             () => plan.Results.Where(r => r.Group == g).Select(ArchiveTreeNode.Leaf)))));
 
+        // One row, not a branch: the cells are content-hashed folder names nobody would recognise,
+        // so the only choice worth offering is whether the artwork travels at all.
+        if (plan.GeneratedCells is { } generated)
+            roots.Add(ArchiveTreeNode.Leaf(generated));
+
         // Opening on the branches already reflects the defaults, so the user sees what they are
         // agreeing to rather than three closed headings.
         foreach (var root in roots) root.IsExpanded = true;
@@ -141,6 +146,10 @@ public partial class ArchiveWorkspaceDialog : Window
         TotalText.Text =
             $"Approximate uncompressed size: {WorkspaceArchivePlan.FormatSize(_plan.SelectedBytes)}  " +
             $"({WorkspaceArchivePlan.FormatSize(_plan.AlwaysIncludedBytes)} of workspace files, {ticked} item(s) ticked)";
+
+        var warning = _plan.GeneratedCellsWarning;
+        GeneratedCellsWarningText.Text      = warning ?? "";
+        GeneratedCellsWarningText.IsVisible = warning is not null;
     }
 
     /// <summary>

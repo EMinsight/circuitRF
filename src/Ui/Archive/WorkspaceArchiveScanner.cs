@@ -28,16 +28,26 @@ public static class WorkspaceArchiveScanner
     // ── Skip rules ────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Directories never archived: circuitRF's own rebuildable caches, and the clutter a file manager
-    /// leaves behind. <c>.generated-cells</c> is the "pCell artwork files that are sometimes
-    /// generated" — a pure cache that every layout can rebuild from its own recorded snapshots
-    /// (<see cref="GeneratedCellsLifecycle"/>), so shipping it would only make the archive bigger.
+    /// Directories neither an archive nor a copy ever carries: the workspace's history, and the
+    /// clutter a file manager leaves behind.
     /// </summary>
     private static readonly string[] SkippedDirectories =
     [
-        GeneratedCellStore.ReservedFolderName,
         RepositoryFolderName,
         "__MACOSX", ".Spotlight-V100", ".Trashes", ".fseventsd", ".TemporaryItems",
+    ];
+
+    /// <summary>
+    /// Directories no generic walk descends into — <see cref="SkippedDirectories"/> plus
+    /// <c>.generated-cells</c>. A copy leaves the generated cells out (<see cref="IsSkipped"/>), and
+    /// an archive offers them as one row of their own built from the LIVE cells only
+    /// (<see cref="AddGeneratedCells"/>), so neither needs the walk to enumerate a folder that can
+    /// hold thousands of cells just to decide about them one file at a time.
+    /// </summary>
+    private static readonly string[] PrunedDirectories =
+    [
+        GeneratedCellStore.ReservedFolderName,
+        .. SkippedDirectories,
     ];
 
     /// <summary>
@@ -77,8 +87,29 @@ public static class WorkspaceArchiveScanner
         ".tmp", ".temp", ".bak", ".swp", ".crdownload", ".source",
     ];
 
-    /// <summary>True for a path the archive leaves out whatever the user ticks.</summary>
+    /// <summary>
+    /// True for a path a COPY (<c>WorkspaceCopy.Run</c>, Save Workspace As) leaves out: everything
+    /// both consumers leave out, plus <c>.generated-cells</c>.
+    ///
+    /// <para><b>The generated cells are the second entry where the two consumers want different
+    /// answers</b> (brief generated-cells-1). A copy is the same person on the same machine with the
+    /// same kits, and the GUI rebuilds every cell on open — so the cache stays behind as it always
+    /// has. An ARCHIVE goes to somebody who may not have the kit (a vendor PDK is licensed, and its
+    /// row is the sender's choice) and to command-line runs that rebuild nothing, and for them the
+    /// generated cells are the only copy of that artwork — so <see cref="IsSkippedFromArchive"/> does
+    /// not skip them and the scan offers the live ones as a row. Read beside
+    /// <see cref="IsSkippedFromArchive"/>'s note on <c>.cwsuser</c>, which differs the other way.</para>
+    /// </summary>
     public static bool IsSkipped(string relativePath)
+        => IsSkippedByBoth(relativePath) || IsGeneratedCellsPath(relativePath);
+
+    /// <summary>True when any segment of <paramref name="relativePath"/> is the generated-cells folder.</summary>
+    internal static bool IsGeneratedCellsPath(string relativePath)
+        => relativePath.Split('/', '\\').Any(
+               s => string.Equals(s, GeneratedCellStore.ReservedFolderName, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>True for a path neither an archive nor a copy carries, whatever the user ticks.</summary>
+    private static bool IsSkippedByBoth(string relativePath)
     {
         foreach (var segment in relativePath.Split('/', '\\'))
         {
@@ -106,8 +137,9 @@ public static class WorkspaceArchiveScanner
     }
 
     /// <summary>
-    /// True for a path an ARCHIVE leaves out. <see cref="IsSkipped"/> plus the one thing an archive
-    /// excludes and a copy keeps.
+    /// True for a path an ARCHIVE leaves out: what both consumers leave out, plus the one thing an
+    /// archive excludes and a copy keeps — and WITHOUT <c>.generated-cells</c>, which a copy excludes
+    /// and an archive offers (see <see cref="IsSkipped"/>).
     ///
     /// <para><b>The asymmetry is the requirement, and it is deliberate</b> (RC-1 R-rc1-15a,
     /// <c>docs/design/revision-control.md</c> §3.1a/§9A.2). <see cref="IsSkipped"/> is shared with
@@ -128,7 +160,7 @@ public static class WorkspaceArchiveScanner
     /// docking.</para>
     /// </summary>
     public static bool IsSkippedFromArchive(string relativePath)
-        => IsSkipped(relativePath) ||
+        => IsSkippedByBoth(relativePath) ||
            string.Equals(Path.GetFileName(relativePath),
                          CircuitRF.Design.Workspace.WorkspaceUserPersistence.FileName,
                          StringComparison.OrdinalIgnoreCase);
@@ -230,6 +262,7 @@ public static class WorkspaceArchiveScanner
         AddKits(plan);
         AddReferencedWorkspaces(plan);
         AddExternalFiles(plan);
+        AddGeneratedCells(plan);
 
         // RC-8. Whether there is a history to OFFER — asked as a directory test, which costs nothing
         // and is the exactly right question (see HistoryArchive.Available). What including it would
@@ -271,6 +304,82 @@ public static class WorkspaceArchiveScanner
                 SizeBytes   = bytes,
             });
         }
+    }
+
+    /// <summary>Where a generated-cells row lands inside the archive — the same folder it came from,
+    /// so every layout's <c>CellRef</c> resolves on the other side without being touched.</summary>
+    public const string GeneratedCellsFolder = GeneratedCellStore.ReservedFolderName;
+
+    /// <summary>
+    /// ONE row for the placed PCell artwork, ticked by default (brief generated-cells-1).
+    ///
+    /// <para><b>Why it travels.</b> The folder is a cache only where something can rebuild it. The
+    /// recipient's GUI rebuilds a kit cell only if they HAVE the kit — a vendor PDK is licensed and its
+    /// row here is the sender's choice — and no command-line run rebuilds anything, so an unpacked
+    /// archive handed to <c>rail</c>/<c>render</c>/<c>em</c> flattened every placed part to nothing.
+    /// Measured on the shipped PDK example's generators, 468 unique variants were 1.2 MB on disk and
+    /// 0.54 MB in the zip (<c>src/Ui/RESOLVED.md</c>), which is why the default is ticked.</para>
+    ///
+    /// <para><b>Only the LIVE cells</b> — the ones a layout's snapshots name, the same set
+    /// <see cref="GeneratedCellsLifecycle"/>'s prune keeps. A generator or technology edit leaves the
+    /// old folders behind until the next prune, and those must not travel. Where a layout could not
+    /// be read the live set may be short, so every cell goes and the row says so — the prune's own
+    /// refuse-rather-than-guess rule, applied to leaving things out.</para>
+    ///
+    /// <para>A cell regenerated on the other side lands on the same content-hashed folder name, so an
+    /// archived cell and a rebuilt one never disagree.</para>
+    /// </summary>
+    private static void AddGeneratedCells(WorkspaceArchivePlan plan)
+    {
+        var genRoot = Path.Combine(plan.WorkspaceDir, GeneratedCellsFolder);
+        if (!Directory.Exists(genRoot)) return;
+
+        string[] present;
+        try { present = Directory.GetDirectories(genRoot); }
+        catch { return; }
+
+        var live = GeneratedCellsLifecycle.LiveCells(plan.WorkspaceDir);
+        var cells = live.Complete
+            ? present.Where(d => live.Cells.ContainsKey(Path.GetFileName(d))).ToList()
+            : [.. present];
+        if (cells.Count == 0) return;
+
+        var members = new List<ArchiveMember>();
+        foreach (var cellDir in cells.OrderBy(d => d, StringComparer.OrdinalIgnoreCase))
+            foreach (var file in EnumerateFilesSafe(cellDir))
+            {
+                var rel = Rel(genRoot, file);
+                if (IsSkippedFromArchive(rel)) continue;
+                members.Add(new ArchiveMember(file, rel));
+            }
+        if (members.Count == 0) return;
+
+        plan.KitGeneratedCellCount = cells.Count(d =>
+            live.Cells.TryGetValue(Path.GetFileName(d), out var generator) && !PCellRegistry.IsBuiltIn(generator));
+        plan.GeneratedCellsLiveSetIncomplete = !live.Complete;
+
+        int left = present.Length - cells.Count;
+        string detail =
+            "The placed PCell artwork as it was generated — needed by anyone who does not have the kit, "
+          + "and by any command-line run.";
+        if (!live.Complete)
+            detail += " A layout in this workspace could not be read, so which cells are still in use "
+                    + "is not known: every generated cell is included.";
+        else if (left > 0)
+            detail += $" {left} cell(s) no layout uses any more are left out.";
+
+        plan.Options.Add(new ArchiveOption
+        {
+            Kind        = ArchiveOptionKind.GeneratedCells,
+            DisplayName = $"Generated PCell artwork ({cells.Count} cell{(cells.Count == 1 ? "" : "s")})",
+            Detail      = detail,
+            SourcePath  = genRoot,
+            ArchivePath = GeneratedCellsFolder,
+            IsDirectory = true,
+            Members     = members,
+            Selected    = true,
+            SizeBytes   = members.Sum(m => Math.Max(0, SizeOf(m.SourcePath))),
+        });
     }
 
     /// <summary>
@@ -740,7 +849,7 @@ public static class WorkspaceArchiveScanner
             foreach (var s in subs)
             {
                 var name = Path.GetFileName(s);
-                if (SkippedDirectories.Contains(name, StringComparer.OrdinalIgnoreCase)) continue;
+                if (PrunedDirectories.Contains(name, StringComparer.OrdinalIgnoreCase)) continue;
                 stack.Push(s);
             }
         }

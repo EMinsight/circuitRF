@@ -214,6 +214,12 @@ public static class PCellRegistry
     /// one of ours" — see <see cref="AllKnownGeneratorIds"/> for the full list.</summary>
     public static IReadOnlyCollection<string> KnownGeneratorIds => _generators.Keys;
 
+    /// <summary>True for a generator every installation has — the closed dictionary above and the
+    /// built-in land patterns. False means a kit's script drew it, which a recipient without that kit
+    /// cannot redraw.</summary>
+    public static bool IsBuiltIn(string generatorId)
+        => _generators.ContainsKey(generatorId) || FootprintRef.IsBuiltInReference(generatorId);
+
     /// <summary>
     /// Content-addressing version for a generator's OWN geometry algorithm (independent of the
     /// pcell-contract.md "PCellContractVersion" and of the parameters/technology already in the

@@ -30,6 +30,13 @@ public enum ArchiveOptionKind
     /// prevent.
     /// </summary>
     ReferencedWorkspace,
+
+    /// <summary>
+    /// The workspace's own <c>.generated-cells</c> — only the cells some layout still references
+    /// (brief generated-cells-1). Ticked by default: a recipient without the kit, and every
+    /// command-line run, cannot rebuild them, so for them this is the only copy of the artwork.
+    /// </summary>
+    GeneratedCells,
 }
 
 /// <summary>
@@ -128,6 +135,32 @@ public sealed class WorkspaceArchivePlan
     public IEnumerable<ArchiveOption> Results       => Options.Where(o => o.Kind == ArchiveOptionKind.Result);
     public IEnumerable<ArchiveOption> ReferencedWorkspaces =>
         Options.Where(o => o.Kind == ArchiveOptionKind.ReferencedWorkspace);
+
+    /// <summary>The one generated-cells row, or null when the workspace has no live generated cells.</summary>
+    public ArchiveOption? GeneratedCells => Options.FirstOrDefault(o => o.Kind == ArchiveOptionKind.GeneratedCells);
+
+    /// <summary>How many of the offered generated cells a KIT's script drew rather than a built-in
+    /// generator — the ones a recipient without that kit cannot redraw.</summary>
+    public int KitGeneratedCellCount { get; set; }
+
+    /// <summary>True when some layout could not be read, so the generated-cells row carries every
+    /// cell rather than only the live ones.</summary>
+    public bool GeneratedCellsLiveSetIncomplete { get; set; }
+
+    /// <summary>
+    /// The sentence the dialog and the log show when the generated artwork is unticked while kit
+    /// cells are placed and a referenced kit is not travelling either — null otherwise.
+    ///
+    /// <para>Which kit drew which cell is not known here (a kit's generator ids come from running its
+    /// scripts), so "a referenced kit is left out" is the test. A kit that lives inside the workspace
+    /// has no row and always travels.</para>
+    /// </summary>
+    public string? GeneratedCellsWarning =>
+        GeneratedCells is { Selected: false } && KitGeneratedCellCount > 0 && Kits.Any(k => !k.Selected)
+            ? $"The generated PCell artwork is not included, and {KitGeneratedCellCount} placed kit cell(s) "
+            + "need a kit this archive does not include — unless the recipient has that kit, they will see "
+            + "empty placeholders for those parts, and a command-line run will see nothing at all."
+            : null;
 
     /// <summary>Bytes of the always-included material, measured during the scan.</summary>
     public long AlwaysIncludedBytes { get; set; }
