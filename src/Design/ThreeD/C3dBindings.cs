@@ -133,6 +133,11 @@ public static class C3dBindings
         new(typeof(C3dMeshRegion), nameof(C3dMeshRegion.Min), 3, C3dFieldKind.Length),
         new(typeof(C3dMeshRegion), nameof(C3dMeshRegion.Size), 3, C3dFieldKind.Length),
         new(typeof(C3dMeshRegion), nameof(C3dMeshRegion.SizeUm), 1, C3dFieldKind.Microns),
+        // brief-em3d-76 — an effective block's box and a symmetry plane's coordinate, which their own doc comments and the
+        // schema always said may be expressions: without these rows the reader refused { "Expr": … } there.
+        new(typeof(C3dEffectiveBlock), nameof(C3dEffectiveBlock.Min), 3, C3dFieldKind.Length),
+        new(typeof(C3dEffectiveBlock), nameof(C3dEffectiveBlock.Size), 3, C3dFieldKind.Length),
+        new(typeof(C3dSymmetryPlane), nameof(C3dSymmetryPlane.At), 1, C3dFieldKind.Length),
     ];
 
     public static C3dFieldSpec? SpecOf(Type owner, string property)
@@ -231,6 +236,12 @@ public static class C3dBindings
                 break;
             case C3dMeshRegion region:
                 yield return ("", region);
+                break;
+            case C3dEffectiveBlock block:
+                yield return ("", block);
+                break;
+            case C3dSymmetryPlane plane:
+                yield return ("", plane);
                 break;
         }
 

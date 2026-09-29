@@ -518,7 +518,8 @@ internal static class DocumentSchema
             power per heat source, overriding its default), Boundaries (FixedT with TempC, or
             Convection with H and AmbientC, on a face "object/face" or on "*exposed*"; at least one),
             Sweep (up to two axes over document variables no geometry reads), Measures ("Rth =
-            (Tmax(die_top) - Tavg(flange_bot)) / Pdiss", over probes with Tmax, Tmin, Tavg and T),
+            (Tmax(die_top) - Tavg(flange_bot)) / Pdiss", over probes with Tmax, Tmin, Tavg and T — T reads a
+            point, a spot, or a probe's own Stat),
             Mesh, Balance and Submodel ({"From": "<whole-model setup>", "Region": "<mesh region>"}: solve
             only that region's box, finely, its cut faces fixed to the From setup's solution — reused when
             newer than the document, else solved first — and no Sweep of its own). Every value is an
@@ -526,7 +527,8 @@ internal static class DocumentSchema
             (2 per symmetry plane). A .cem never holds one. The places it reads are the document's own lists:
             HeatSources (a Sheet on a Plane at an Offset with a Rect or an Outline, lying inside ONE
             solid — or a Solid, by name — with a default Power), Probes (exactly one of Point, Face,
-            Solid, Spot, Line, Wire; a Stat of Max, Min or Avg; an optional LimitC), MeshRegions (a
+            Solid, Spot, Line, Wire; a Stat of Max, Min or Avg — what T(probe) and the result's T:<probe>
+            report; an optional LimitC), MeshRegions (a
             box and a target SizeUm, for every Gmsh-meshed setup), ContactResistances (two
             touching objects and a resistance, m²·K/W, overriding the technology's material pair — 0 is
             perfect contact, one pair per entry; a run splits the contact and joins its sides through it), EffectiveBlocks (Name, Min, Size and

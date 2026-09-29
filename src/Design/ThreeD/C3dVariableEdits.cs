@@ -51,6 +51,25 @@ public static class C3dExpressionText
         return result;
     }
 
+    /// <summary>
+    /// <paramref name="expression"/> with probe <paramref name="from"/> renamed <paramref name="to"/> where a probe function reads
+    /// it — <c>Tmax(from)</c>, <c>T(from)</c> — and nowhere else: a VAR or a measure that happens to share the name is not a
+    /// probe. By token, never by pattern.
+    /// </summary>
+    public static string RenameProbe(string expression, string from, string to)
+    {
+        Token[] tokens;
+        try { tokens = new Tokenizer(expression).Tokenize(); }
+        catch (ExpressionException) { return expression; }
+        string result = expression;
+        for (int i = tokens.Length - 2; i >= 2; i--)
+            if (tokens[i].Kind == TokenKind.Identifier && tokens[i].Text == from && tokens[i - 1].Kind == TokenKind.LParen &&
+                tokens[i + 1].Kind == TokenKind.RParen && tokens[i - 2].Kind == TokenKind.Identifier &&
+                C3dThermal.ProbeFunctions.Contains(tokens[i - 2].Text, StringComparer.Ordinal))
+                result = result[..tokens[i].Position] + to + result[(tokens[i].Position + from.Length)..];
+        return result;
+    }
+
     /// <summary>Identifier tokens that are references — not a function's name (followed by '('), not a qualified part.</summary>
     private static IEnumerable<Token> RefTokens(string expression)
     {
@@ -223,6 +242,16 @@ public static class C3dVariableEdits
         foreach (var i in doc.Instances)
             foreach (var (p, e) in i.Params ?? [])
                 if (C3dExpressionText.References(e.Expr, name)) uses.Add((i.Name, $"Params.{p}"));
+        // brief-em3d-73 — the thermal content: a heat source's default power, and every expression of every thermal setup
+        foreach (var h in doc.HeatSources)
+            if (h.Power is { Length: > 0 } hp && C3dExpressionText.References(hp, name)) uses.Add((h.Name, "Power"));
+        foreach (var (_, setup, t) in C3dThermal.ThermalSetups(doc))
+        {
+            foreach (var f in C3dThermal.ExpressionFields(t))
+                if (C3dExpressionText.References(f.Text, name)) uses.Add(($"setup {setup.Name}", f.Path));
+            foreach (var w in t.Sweep ?? [])
+                if (w.Var == name) uses.Add(($"setup {setup.Name}", $"Sweep[{w.Var}].Var"));
+        }
         return uses;
     }
 
@@ -245,6 +274,18 @@ public static class C3dVariableEdits
         foreach (var i in doc.Instances)
             if (i.Params is { } ps)
                 foreach (string k in ps.Keys.ToList()) ps[k] = ps[k] with { Expr = C3dExpressionText.Rename(ps[k].Expr, from, to) };
+        // the thermal content, through the same tokenizer: a heat source's power, and each thermal setup rewritten in place
+        foreach (var h in doc.HeatSources)
+            if (h.Power is { Length: > 0 } hp) h.Power = C3dExpressionText.Rename(hp, from, to);
+        foreach (var (index, setup, t) in C3dThermal.ThermalSetups(doc).ToList())
+        {
+            bool changed = false;
+            foreach (var f in C3dThermal.ExpressionFields(t).ToList())
+                if (C3dExpressionText.Rename(f.Text, from, to) is var renamed && renamed != f.Text) { f.Set(renamed); changed = true; }
+            foreach (var w in t.Sweep ?? [])
+                if (w.Var == from) { w.Var = to; changed = true; }
+            if (changed) doc.Setups[index] = Layout.Em.EmSetupPersistence.ToEmbedded(setup);
+        }
         var.Name = to;
         if (cell.Parameter(to) is not null) var.Linked = true;
         return null;
@@ -275,7 +316,10 @@ public static class C3dVariableEdits
     /// </summary>
     public static string? InlineAndDelete(C3dDocument doc, string name)
     {
-        var other = UsesOf(doc, name).Where(u => u.Item.StartsWith("VAR ", StringComparison.Ordinal) || u.Path.StartsWith("Params.", StringComparison.Ordinal)).ToList();
+        // only a dimension FIELD can take the number in place; anything else that reads the VAR (another VAR, an override, a
+        // heat source's power or a thermal setup's expression) keeps it
+        var fields = C3dBindings.Bound(doc).Where(f => C3dExpressionText.References(f.Expr.Expr, name)).Select(f => (f.Item, f.Path)).ToHashSet();
+        var other = UsesOf(doc, name).Where(u => !fields.Contains(u)).ToList();
         if (other.Count > 0) return $"VAR '{name}' is also used by {Describe(other)}, which cannot hold a number in its place.";
         foreach (var f in C3dBindings.Bound(doc).ToList())
             if (C3dExpressionText.References(f.Expr.Expr, name)) C3dBindings.SetExpr(f.Owner, f.Spec, f.Component, null);

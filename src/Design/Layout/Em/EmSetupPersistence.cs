@@ -559,6 +559,10 @@ public sealed class CemThermalSource
 
     /// <summary>The power, an expression (<c>Pdiss</c>, <c>0.5 W</c>), in the source's own Density unit.</summary>
     public string Power { get; set; } = "";
+
+    /// <summary>Keys this build does not read — a misspelt one among them. Kept and written back; <c>check</c> names each.</summary>
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? Unread { get; set; }
 }
 
 /// <summary>A condition on a face. Every face no boundary names is insulated (adiabatic).</summary>
@@ -579,6 +583,10 @@ public sealed class CemThermalBoundary
 
     /// <summary>Convection: the ambient temperature, °C, an expression.</summary>
     public string? AmbientC { get; set; }
+
+    /// <summary>Keys this build does not read — a misspelt one among them. Kept and written back; <c>check</c> names each.</summary>
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? Unread { get; set; }
 }
 
 /// <summary>One sweep axis: a document variable from <c>Start</c> to <c>Stop</c> in <c>Points</c> linear steps. A variable
@@ -596,6 +604,10 @@ public sealed class CemThermalSweep
 
     /// <summary>How many values, at least 1.</summary>
     public int Points { get; set; } = 1;
+
+    /// <summary>Keys this build does not read — a misspelt one among them. Kept and written back; <c>check</c> names each.</summary>
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? Unread { get; set; }
 }
 
 /// <summary>The thermal mesh's controls. Every field may be omitted; brief 74 states the defaults.</summary>
@@ -620,6 +632,10 @@ public sealed class CemThermalMesh
     /// <summary>brief-em3d-74 R-em3d74-5e — mesh a second time with every size × 0.7, solve the first sweep point, and report
     /// how far each probe moved. Off when omitted.</summary>
     public bool? Check { get; set; }
+
+    /// <summary>Keys this build does not read — a misspelt one among them. Kept and written back; <c>check</c> names each.</summary>
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? Unread { get; set; }
 }
 
 /// <summary>brief-em3d-74 — the thermal solve's linear solver.</summary>
@@ -644,6 +660,10 @@ public sealed class CemThermalSubmodel
 
     /// <summary>The mesh region whose box is the submodel.</summary>
     public string Region { get; set; } = "";
+
+    /// <summary>Keys this build does not read — a misspelt one among them. Kept and written back; <c>check</c> names each.</summary>
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? Unread { get; set; }
 }
 
 /// <summary>
@@ -716,6 +736,10 @@ public sealed class CemThermalFromCircuit
     /// <summary>HB cubes (measurements first, then the engine's) copied into the thermal result on the HB's axes; omitted,
     /// every scalar measure of the HB testbench.</summary>
     public List<string>? Carry { get; set; }
+
+    /// <summary>Keys this build does not read — a misspelt one among them. Kept and written back; <c>check</c> names each.</summary>
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? Unread { get; set; }
 }
 
 /// <summary>brief-em3d-78 R-em3d78-1 — how a harmonic's amplitude is stated. Internally every harmonic is a peak phasor.</summary>
@@ -739,6 +763,10 @@ public sealed class CemThermalHarmonic
 
     /// <summary>Peak or Rms — required; null is a missing statement, which <c>check</c> refuses.</summary>
     public ThermalAmplitude? As { get; set; }
+
+    /// <summary>Keys this build does not read — a misspelt one among them. Kept and written back; <c>check</c> names each.</summary>
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? Unread { get; set; }
 }
 
 /// <summary>Conductive balance: the Newton loop over σ(T) and k(T). Each switch defaults on.</summary>
@@ -755,6 +783,10 @@ public sealed class CemThermalBalance
 
     /// <summary>The most Newton steps.</summary>
     public int? MaxIterations { get; set; }
+
+    /// <summary>Keys this build does not read — a misspelt one among them. Kept and written back; <c>check</c> names each.</summary>
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? Unread { get; set; }
 }
 
 /// <summary>brief-em3d-80 R-em3d80-1a — which statistic of a source's own place its rise in the Rth matrix is read as.</summary>
@@ -778,6 +810,10 @@ public sealed class CemThermalRth
 
     /// <summary><c>Avg</c> (omitted) or <c>Max</c>.</summary>
     public ThermalRthStat? Stat { get; set; }
+
+    /// <summary>Keys this build does not read — a misspelt one among them. Kept and written back; <c>check</c> names each.</summary>
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? Unread { get; set; }
 }
 
 /// <summary>
@@ -802,6 +838,10 @@ public sealed class CemThermalZth
 
     /// <summary>Frequencies per decade, logarithmic; omitted, 10. DC is always the first point.</summary>
     public int? PerDecade { get; set; }
+
+    /// <summary>Keys this build does not read — a misspelt one among them. Kept and written back; <c>check</c> names each.</summary>
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? Unread { get; set; }
 }
 
 /// <summary>
@@ -821,6 +861,10 @@ public sealed class CemThermalPulse
 
     /// <summary>The on-fraction of the period, 0 to 1.</summary>
     public string Duty { get; set; } = "";
+
+    /// <summary>Keys this build does not read — a misspelt one among them. Kept and written back; <c>check</c> names each.</summary>
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? Unread { get; set; }
 }
 
 /// <summary>brief-em3d-80 — a list of names that may be written as the one string <c>"*"</c>.</summary>
@@ -909,6 +953,10 @@ public sealed class CemThermal
 
     /// <summary>A deep copy, through the setup's own serializer.</summary>
     public CemThermal Clone() => JsonSerializer.Deserialize<CemThermal>(JsonSerializer.Serialize(this))!;
+
+    /// <summary>Keys this build does not read — a misspelt one among them. Kept and written back; <c>check</c> names each.</summary>
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? Unread { get; set; }
 }
 
 public sealed class CemFile

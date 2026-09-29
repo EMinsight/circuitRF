@@ -7,8 +7,8 @@ junction-to-case and junction-to-heatsink thermal resistances.
 
 The chapter that teaches this is **Thermal** in **Help ▸ circuitRF Documentation**. It quotes the same numbers as this file.
 
-**What to expect when you press Run:** about **53 s** and **0.75 GB** for the three power points on the reference machine
-(an Apple M4, the Debug build), on a mesh of 397,997 tetrahedra. Thermal needs **Gmsh**; the first run without it offers to install it.
+**What to expect when you press Run:** about **1 min 17 s** and **1.1 GB** for the three power points on the reference machine
+(an Apple M4, the Debug build), on a mesh of 543,980 tetrahedra. Thermal needs **Gmsh**; the first run without it offers to install it.
 
 ## What is here
 
@@ -43,18 +43,18 @@ The measures: `Rth_jc = (Tmax(die_top) - Tavg(flange_bot)) / Pdiss`, `Rth_jc_hot
 `Rth_ja = (Tmax(die_top) - Ths) / Pdiss`, and `T_interface = Tavg(board_under)`.
 
 **"Case temperature" here is the flange bottom's AVERAGE.** A lab's definition may differ — a thermocouple under the centre of the
-flange reads close to its hottest point — and the difference is not small: at 11 W, `Rth_jc` is **5.82 K/W** against the average
-and `Rth_jc_hot` is **5.41 K/W** against the hottest point. Say which one a datasheet number means before comparing.
+flange reads close to its hottest point — and the difference is not small: at 11 W, `Rth_jc` is **5.83 K/W** against the average
+and `Rth_jc_hot` is **5.42 K/W** against the hottest point. Say which one a datasheet number means before comparing.
 
 ## Results
 
 | Pdiss | Die top | Rth_jc | Rth_ja |
 |---|---|---|---|
-| 3 W | 116.2 °C | 5.07 K/W | 10.39 K/W |
-| 7 W | 160.4 °C | 5.44 K/W | 10.77 K/W |
-| 11 W | 207.7 °C | 5.82 K/W | 11.16 K/W |
+| 3 W | 116.2 °C | 5.08 K/W | 10.41 K/W |
+| 7 W | 160.5 °C | 5.45 K/W | 10.79 K/W |
+| 11 W | 207.9 °C | 5.83 K/W | 11.18 K/W |
 
-At 11 W the flange bottom averages **143.7 °C** and the board's underside **89.58 °C**.
+At 11 W the flange bottom averages **143.8 °C** and the board's underside **89.58 °C**.
 
 **Rth rises with power.** Silicon carbide's conductivity falls as it heats (374 W/(m·K) at 25 °C, its library table), and the
 run solves that as a Newton loop over k(T) — 3 to 4 steps a point, reported in the run's notes. A constant-k model would give
@@ -73,16 +73,16 @@ instead) — the heat spreading from the die through the flange and funnelling i
 
 | | Order 1 (shipped) | Order 2 |
 |---|---|---|
-| Die top, 11 W | 207.7 °C | 210.7 °C |
-| Rth_jc, 11 W | 5.82 K/W | 5.98 K/W |
-| Rth_ja, 11 W | 11.16 K/W | 11.42 K/W |
-| Run | 53 s, 0.75 GB | 13 min 42 s, 5.4 GB |
+| Die top, 11 W | 207.9 °C | 210.9 °C |
+| Rth_jc, 11 W | 5.83 K/W | 5.99 K/W |
+| Rth_ja, 11 W | 11.18 K/W | 11.45 K/W |
+| Run | 1 min 17 s, 1.1 GB | 17 min 55 s, 8.3 GB |
 
 Order 1 reads the junction about 2.5 % cool. The setup refines the mesh at the source (`SizeFromSources` 12) to recover most of
 what order 1 loses there.
 
 **The mesh check** (*Mesh ▸ Check*, off in the shipped setup) meshes again with every element size × 0.7 and re-solves the first
-point: 862,227 tetrahedra, **1 min 36 s**, and the die top moves by **+0.21 °C (+0.18 %)**. That is small because the check
+point: 1,153,126 tetrahedra, **2 min 57 s**, and the die top moves by **+0.13 °C (+0.41 % of its rise)**. That is small because the check
 refines the SAME order-1 elements; it does not see the order-2 difference above, so do not read it as the error of order 1.
 
 **One element through thin solids** (`MinThroughThickness` 1; the default is 2). Every solid is meshed at an element size from
@@ -96,11 +96,11 @@ k_xy = 81.74 and k_z = 7.241 W/(m·K), and the vias are no longer meshed.
 
 | | Vias as drawn (shipped) | Effective block |
 |---|---|---|
-| Die top, 11 W | 207.7 °C | 194.0 °C |
-| Rth_ja, 11 W | 11.16 K/W | 9.91 K/W |
-| Run | 53 s | 3 min 10 s |
+| Die top, 11 W | 207.9 °C | 194.0 °C |
+| Rth_ja, 11 W | 11.18 K/W | 9.91 K/W |
+| Run | 1 min 17 s | 3 min 10 s |
 
-The block reads the die **13.7 K** cooler: here it is an optimistic approximation, and it did not make this run faster. It pays
+The block reads the die **13.9 K** cooler: here it is an optimistic approximation, and it did not make this run faster. It pays
 where there are hundreds of vias. While the block is on, the `via_centre` probe reads nothing (its via is replaced).
 
 ## Things to try

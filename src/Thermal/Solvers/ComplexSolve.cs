@@ -187,7 +187,7 @@ public sealed class ComplexSolve
                     norm += rr[i] * rr[i] + ri[i] * ri[i];
                 }
                 rel = Math.Sqrt(norm) / bn;
-                if (rel <= _options.RelativeTolerance) break;
+                if (rel <= _options.RelativeTolerance || !double.IsFinite(rel)) break;     // a breakdown (NaN): the caller falls back
                 _amg.Apply(rr, zr);
                 _amg.Apply(ri, zi);
                 var rho1 = BilinearSplit(rr, ri, zr, zi);
@@ -280,7 +280,7 @@ public sealed class ComplexSolve
             omega = tt > 0 ? Inner(t, s) / tt : 0;
             for (int i = 0; i < n; i++) { x[i] += alpha * ph[i] + omega * sh[i]; r[i] = s[i] - omega * t[i]; }
             rel = Norm(r) / bn;
-            if (rel <= _options.RelativeTolerance || omega == Complex.Zero) return k;
+            if (rel <= _options.RelativeTolerance || omega == Complex.Zero || !double.IsFinite(rel)) return k;
         }
         return _options.MaxIterations;
     }

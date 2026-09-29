@@ -185,3 +185,30 @@ throws or, with a tiny positive pivot, reads the body at 0 °C. Gate: `SolverRob
 constant-k solve. Fixed-face conflicts count distinct nodes, and two entries on ONE tag at different temperatures now count.
 
 **NNLS stops at as many columns as rows** (a band too narrow for the fit's poles read past its rows).
+
+## Thermal series review, round 2 (2026-09-29)
+
+**Conductive balance's update test had the same 1e-300 floor the thermal solve's lost in round 1.** A row of a nested sweep
+warm-starts from the last row's first point; when the target is flat (0 A, every face at one temperature), λ = 1 and every
+bisection point failed, and `Width`, measured against the sweep value, closed the bracket near λ ≈ 0.002, which
+`Continuation` then reported as a runaway at 0 A. Both tests (Newton and the Picard reference) now share
+`ThermalSolver.SpanFloorK`. Gate: `ElectrothermalReviewTests.ConductiveBalance_WarmStartedToAnIsothermalAnswer_Converges`,
+which warm-starts from a SOLVED 25 °C row (a hand-made warm vector with φ = 150 V everywhere is not a state the solver is ever
+given, and fails the line search for an unrelated reason). The test fails with the old floor and passes with the new one.
+
+**The well round a wire now follows the host's k(T).** Its conductance was built once at the host's nominal k, so with k(T) on
+the mesh round a wire conducted at k(T) and the well at k₂₅. The conductance is now scaled by k(T̄)/k_nominal, with T̄ the mean
+of the wire's and the ring's temperatures (the two ends of the annulus it spans), and the Jacobian gets the slope, half to
+each. Gate: a mould whose k(T) is twice its nominal everywhere gives the same wire temperature as a constant-2k mould
+(`TheWell_FollowsTheMouldsKOfT`).
+
+**A ring that leaves the solid is said.** A ring wholly outside couples that point as air; a ring the boundary cuts reads its
+inside points. Both are counted per wire and noted (the notes list had always promised it). Gate:
+`AWireAtTheMouldsSurface_SaysItsRingLeavesTheSolid`.
+
+**A Krylov breakdown stops at once.** `rel <= tol` is false for NaN, so a breakdown iterated to MaxIterations (thousands of
+V-cycles) before the direct fallback. Every PCG/BiCGStab/COCG loop now also stops on a non-finite residual; the caller's
+fallback is unchanged.
+
+**A Foster fit refuses a non-finite value.** `Math.Max(x, NaN)` is NaN, so the all-zero branch returned an empty network with
+FitError 0: Rth = 0, reading as exact.

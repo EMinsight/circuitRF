@@ -112,7 +112,9 @@ public sealed class ThermalRfPlan
     /// The plan of <paramref name="t"/>'s harmonic currents over <paramref name="lowering"/>'s wires, or null with the refusal. A
     /// setup with no harmonics gives a plan with no entries (and no share is computed).
     /// </summary>
-    public static ThermalRfPlan? Build(C3dElaboration e, ThermalLowering lowering, CemThermal t, out string? refusal)
+    /// <remarks><paramref name="fromCircuit"/> — the currents are a harmonic-balance run's (brief-em3d-79), so no Currents entry is
+    /// the user's to change: a refusal names what can be changed there, the model's wires and ports.</remarks>
+    public static ThermalRfPlan? Build(C3dElaboration e, ThermalLowering lowering, CemThermal t, out string? refusal, bool fromCircuit = false)
     {
         refusal = null;
         var plans = lowering.Wires;
@@ -135,15 +137,19 @@ public sealed class ThermalRfPlan
             var on = arrays.Select((a, k) => (a, k)).Where(x => x.a.PadA == port.PositiveSolid || x.a.PadB == port.PositiveSolid).ToList();
             if (on.Count == 0)
             {
-                refusal = $"Port {c.Port} carries harmonic currents, and no wire array has an end on its positive conductor '{port.PositiveSolid}': " +
-                          $"at RF a port's current is carried by the wires. Wire arrays: {Listing()}.";
+                refusal = $"Port {c.Port} carries harmonic currents{(fromCircuit ? " (from the circuit's harmonic balance)" : "")}, and no wire array " +
+                          $"has an end on its positive conductor '{port.PositiveSolid}': at RF a port's current is carried by the wires. Wire arrays: {Listing()}." +
+                          (fromCircuit ? " Bond a wire to that conductor, or put the port on a conductor a wire array lands on." : "");
                 return null;
             }
             if (on.Count > 1)
             {
                 refusal = $"Port {c.Port} carries harmonic currents, and {on.Count} wire arrays have an end on its positive conductor " +
                           $"'{port.PositiveSolid}': {string.Join(", ", on.Select(x => $"'{x.a.Name}' ({x.a.PadA} – {x.a.PadB})"))}. Which carries how much " +
-                          "is not decided here: state the current per array instead — a Currents entry with \"Array\": \"<name>\" in place of \"Port\".";
+                          (fromCircuit
+                              ? "is not decided here, and a circuit-driven run's currents are the circuit's, per port: give each array a port on a conductor " +
+                                "only it lands on (its other end), so the circuit states each array's current."
+                              : "is not decided here: state the current per array instead — a Currents entry with \"Array\": \"<name>\" in place of \"Port\".");
                 return null;
             }
             entries.Add((c, on[0].k));
@@ -271,7 +277,7 @@ public sealed class ThermalRfPlan
     /// recorded by the caller), every current is scaled by <paramref name="scale"/>, RMS becomes peak × √2. <paramref name="notes"/>,
     /// when given, receives the both-ends comparison.
     /// </summary>
-    public List<WireHarmonic>[] At(Func<string?, string, double> value, double scale, List<string>? notes = null)
+    public List<WireHarmonic>[] At(Func<string?, string, ThermalQuantity, double> value, double scale, List<string>? notes = null)
     {
         int nw = WireLabels.Length;
         // one drive per array per FREQUENCY: two entries on one array at one frequency are its two ends, and the larger is used —
@@ -280,10 +286,10 @@ public sealed class ThermalRfPlan
         var from = new Dictionary<(int, double), List<(string Subject, double Peak)>>();
         foreach (var (c, k) in Entries)
         {
-            double f0 = value(c.F0, $"{Cap(c.Subject)}'s F0");
+            double f0 = value(c.F0, $"{Cap(c.Subject)}'s F0", ThermalQuantity.Frequency);
             foreach (var h in c.Harmonics!)
             {
-                double amp = value(h.Amp, $"{Cap(c.Subject)}'s harmonic {h.N}");
+                double amp = value(h.Amp, $"{Cap(c.Subject)}'s harmonic {h.N}", ThermalQuantity.Current);
                 double peak = scale * Math.Abs(h.As == ThermalAmplitude.Rms ? amp * Math.Sqrt(2) : amp);
                 double f = h.N * f0;
                 var key = (k, f);
@@ -314,6 +320,20 @@ public sealed class ThermalRfPlan
                 }
                 list.Add(new WireHarmonic(label, f, peak));
             }
+            // Two labels at one frequency (entries whose F0 texts differ — "Ffund" and "2 GHz" — so their labels carry their
+            // subjects) are one harmonic on this wire: their magnitudes add, the header's conservative bound, into the first
+            // label; the others read 0 here. Kept apart, the heat was ½(a² + b²)R′ instead of ½(a + b)²R′.
+            for (int a = 0; a < list.Count; a++)
+                for (int b = a + 1; b < list.Count; b++)
+                {
+                    if (!(list[a].FrequencyHz > 0) || list[b].PeakA == 0 ||
+                        Math.Abs(list[a].FrequencyHz - list[b].FrequencyHz) > 1e-9 * list[a].FrequencyHz) continue;
+                    string said = $"'{list[a].Label}' and '{list[b].Label}' are one frequency: on a wire both reach, their magnitudes add, " +
+                                  $"carried under '{list[a].Label}'.";
+                    if (notes is not null && !notes.Contains(said)) notes.Add(said);
+                    list[a] = list[a] with { PeakA = list[a].PeakA + list[b].PeakA };
+                    list[b] = list[b] with { PeakA = 0 };
+                }
         }
         return wires;
     }
@@ -357,12 +377,12 @@ public sealed class ThermalRfPlan
         double sum = 0;
         if (!string.IsNullOrWhiteSpace(c.Dc))
         {
-            if (C3dThermal.Evaluate(resolution, c.Dc, out _) is not { } dc) return null;
+            if (C3dThermal.Evaluate(resolution, c.Dc, out _, ThermalQuantity.Current) is not { } dc) return null;
             sum += dc * dc;
         }
         foreach (var h in c.Harmonics ?? [])
         {
-            if (h.As is not { } kind || string.IsNullOrWhiteSpace(h.Amp) || C3dThermal.Evaluate(resolution, h.Amp, out _) is not { } amp) return null;
+            if (h.As is not { } kind || string.IsNullOrWhiteSpace(h.Amp) || C3dThermal.Evaluate(resolution, h.Amp, out _, ThermalQuantity.Current) is not { } amp) return null;
             double peak = kind == ThermalAmplitude.Rms ? amp * Math.Sqrt(2) : amp;
             sum += peak * peak / 2;
         }

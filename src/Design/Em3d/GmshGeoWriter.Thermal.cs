@@ -101,6 +101,27 @@ public static partial class GmshGeoWriter
     {
         var (x0, y0, z0, x1, y1, z1) = Em3dProblem.Bounds(s.Primitive);
         double thin = Math.Min(x1 - x0, Math.Min(y1 - y0, z1 - z0));
+        // A solid something cuts a hole in is only as thick as the wall the hole leaves: a plated via's barrel, bored by its
+        // air cylinder, is a tube whose box is the via's whole diameter — sized from the box it got about one element through
+        // its plating. An outranking AIR solid (a bore — never meshed, so nothing else sizes the wall it leaves) lying strictly
+        // inside the solid along an axis, and taking most of it there (not a small hole in a wide board, whose Constant field
+        // would refine the whole board), leaves a wall each side. A meshed solid embedded in another is sized by its own box,
+        // and the mesh conforms to the face they share; applying this to it would refine a whole passivation round a plate.
+        var precedence = Em3dPrecedence.Of([.. input.Solids, .. input.Voids], []);
+        int ps = precedence.Of(s);
+        foreach (var c in input.Voids)
+        {
+            int pc = precedence.Of(c);
+            if (!(pc > ps || pc == ps && c.Order > s.Order)) continue;
+            var cb = Em3dProblem.Bounds(c.Primitive);
+            if (!Overlap((x0, y0, z0, x1, y1, z1), cb)) continue;
+            double[] lo = [x0, y0, z0], hi = [x1, y1, z1], clo = [cb.X0, cb.Y0, cb.Z0], chi = [cb.X1, cb.Y1, cb.Z1];
+            for (int a = 0; a < 3; a++)
+            {
+                if (!(clo[a] > lo[a] && chi[a] < hi[a]) || chi[a] - clo[a] < 0.5 * (hi[a] - lo[a])) continue;
+                thin = Math.Min(thin, Math.Min(clo[a] - lo[a], hi[a] - chi[a]));
+            }
+        }
         double max = ThermalMaxElementM(input);
         return thin > 0 ? Math.Min(max, thin / Math.Max(1, input.Sizing.MinThroughThickness)) : max;
     }
@@ -129,7 +150,11 @@ public static partial class GmshGeoWriter
 
         var groups = new List<Em3dGroup>();
         int attr = 0;
-        var solidGroups = input.Solids.Select(s => new Em3dGroup(s.Name, ++attr, 3, Em3dGroupKind.Volume, 1, AtLeast: false, s.Material)).ToList();
+        // A solid may come out as SEVERAL volumes — a submodel's box across a comb of fingers, a void or a higher-order solid cutting
+        // it through — and each is still that solid's material: its group takes them all. What must not happen is a volume
+        // LOST in the fragment (the lost count below), and a piece touching nothing that sets its temperature is the solver's
+        // own refusal, made per connected body.
+        var solidGroups = input.Solids.Select(s => new Em3dGroup(s.Name, ++attr, 3, Em3dGroupKind.Volume, 1, AtLeast: true, s.Material)).ToList();
         groups.AddRange(solidGroups);
         var sheetGroups = input.Sheets.Select(s => new Em3dGroup(s.Name, ++attr, 2, Em3dGroupKind.Sheet, 1, AtLeast: true)).ToList();
         groups.AddRange(sheetGroups);

@@ -161,6 +161,11 @@ public sealed record FieldColorScale(bool Db, double Lo, double Hi, double Perce
     /// legend as "maximum". With nothing drawn, 0 to 1.
     /// </summary>
     public static FieldColorScale MinMax(FieldQuantity q, IEnumerable<FieldSurface> surfaces)
+        => TryMinMax(q, surfaces) ?? new(false, 0, 1, 100, false, FieldNames.Unit(q.Array.Name));
+
+    /// <summary><see cref="MinMax"/>, or null when no value is finite — a sweep point that ran away, or one skipped, has none, and
+    /// its stand-in 0 to 1 must never join a union across the sweep (it dragged a 30–140 °C legend down to 0 °C).</summary>
+    public static FieldColorScale? TryMinMax(FieldQuantity q, IEnumerable<FieldSurface> surfaces)
     {
         double lo = double.PositiveInfinity, hi = double.NegativeInfinity;
         foreach (var s in surfaces)
@@ -171,7 +176,7 @@ public sealed record FieldColorScale(bool Db, double Lo, double Hi, double Perce
                 if (e < lo) lo = e;
                 if (e > hi) hi = e;
             }
-        if (lo > hi) (lo, hi) = (0, 1);
+        if (lo > hi) return null;
         return new(false, lo, hi, 100, false, FieldNames.Unit(q.Array.Name));
     }
 

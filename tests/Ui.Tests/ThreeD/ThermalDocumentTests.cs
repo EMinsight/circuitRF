@@ -200,6 +200,8 @@ public sealed class ThermalDocumentTests : IDisposable
     [InlineData(C3dThermal.D.BoundaryFaceId, "air")]
     [InlineData(C3dThermal.D.SetupSourceId, "unit")]
     [InlineData(C3dThermal.D.MeshId, "")]
+    [InlineData(C3dThermal.D.BoundaryValueId, "unit kind")]
+    [InlineData(C3dThermal.D.SetupSourceId, "undefined")]
     public void Gate4_EachFinding_FromTheOneValidator(string id, string variant)
     {
         var doc = Clean();
@@ -228,6 +230,10 @@ public sealed class ThermalDocumentTests : IDisposable
                                                              t.Boundaries!.Add(new CemThermalBoundary { Face = "cavity/zmax", Kind = ThermalBoundaryKind.FixedT, TempC = "Ths" }); break;
             case (C3dThermal.D.SetupSourceId, "unit"):       t.Sources![0].Power = "30 dBm"; break;
             case (C3dThermal.D.MeshId, _):                   t.Mesh = new CemThermalMesh { Order = 3 }; break;
+            // review round 2: a unit of the wrong KIND ("m" is milli — 85 m read as 0.085 °C), and a name no variable has (the
+            // run refused it at its first point, after meshing)
+            case (C3dThermal.D.BoundaryValueId, _):          t.Boundaries![0].TempC = "85 m"; break;
+            case (C3dThermal.D.SetupSourceId, "undefined"):  t.Sources![0].Power = "Pdisss"; break;
         }
         doc.Setups = [EmSetupPersistence.ToEmbedded(setup)];
 
@@ -310,6 +316,133 @@ public sealed class ThermalDocumentTests : IDisposable
         var p = new Em3dProblem([], [], [], [], box, new Em3dFrequency(1e9, 2e9, 2, Em3dSweepKind.Linear), 20) { Type = Em3dProblemType.Thermal };
         Assert.Equal(Em3dProblem.ThermalIsNotEm, GmshGeoWriter.Write(p, PalaceSettings.Default).Refusal);
         Assert.Equal(Em3dProblem.ThermalIsNotEm, PalaceConfigWriter.Write(p, [], PalaceSettings.Default).Refusal);
+    }
+
+    // ── review round 2 ───────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>A value's unit is checked against its quantity: a power takes W and its multiples, a current A, a temperature
+    /// none; a bare prefix is refused where it would silently scale. The run reads through the same rule.</summary>
+    [Fact]
+    public void UnitsAreCheckedAgainstTheQuantity()
+    {
+        Assert.Null(C3dThermal.Unparsable("250 mW", ThermalQuantity.Power));
+        Assert.Null(C3dThermal.Unparsable("Pdiss", ThermalQuantity.Power));
+        Assert.Contains("not a power", C3dThermal.Unparsable("2 mA", ThermalQuantity.Power));
+        Assert.Contains("bare number of °C", C3dThermal.Unparsable("85 m", ThermalQuantity.Temperature));
+        Assert.Null(C3dThermal.Unparsable("85 m"));                                   // Any: a sweep's end, whose variable may be anything
+        Assert.Null(C3dThermal.UnparsableTime("1 ms"));
+        Assert.Contains("not a time", C3dThermal.UnparsableTime("1 m"));
+    }
+
+    /// <summary>A key a thermal section does not read, at any depth, is named by check (a warning: kept and written back).</summary>
+    [Fact]
+    public void AMisspeltNestedKey_IsNamed()
+    {
+        var doc = Clean();
+        var node = System.Text.Json.Nodes.JsonNode.Parse(EmSetupPersistence.ToEmbedded(HotSetup()).GetRawText())!;
+        node["Thermal"]!["Boundaries"]![0]!["Ambient"] = "25";
+        node["Thermal"]!["Zth"] = new System.Text.Json.Nodes.JsonObject { ["PerDecde"] = 4 };
+        doc.Setups = [JsonDocument.Parse(node.ToJsonString()).RootElement.Clone()];
+        var unread = Findings(doc, WriteC3d(Workspace(), "Cell", doc)).Where(d => d.Id == "c3d.key.unread").Select(d => d.Render()).ToList();
+        Assert.Equal(2, unread.Count);
+        Assert.Contains(unread, m => m.Contains("'Ambient'") && m.Contains("boundary on 'flange/zmin'"));
+        Assert.Contains(unread, m => m.Contains("'PerDecde'") && m.Contains("Zth"));
+    }
+
+    /// <summary>A probe's Stat is what T(probe) reads, so T is accepted on a face probe that states one and refused on one that
+    /// does not.</summary>
+    [Fact]
+    public void AProbesStat_IsWhatTReads()
+    {
+        var doc = Clean();
+        var res = C3dResolver.Resolve(doc, C3dCell.Of(WriteC3d(Workspace(), "Cell", doc)));
+        Assert.Null(C3dThermal.MeasureProblem("x = T(die_top)", doc, res));
+        doc.Probes[0].Stat = null;
+        Assert.Contains("probe stating a Stat", C3dThermal.MeasureProblem("x = T(die_top)", doc, res));
+    }
+
+    /// <summary>An effective block's box and a symmetry plane's coordinate take expressions, as their doc comments say.</summary>
+    [Fact]
+    public void EffectiveBlocksAndSymmetryPlanes_TakeExpressions()
+    {
+        var doc = Clean();
+        doc.EffectiveBlocks = [new C3dEffectiveBlock { Name = "blk", Min = new(0, 0, 0), Size = new(100 * Um, 100 * Um, 100 * Um) }];
+        doc.SymmetryPlanes = [new C3dSymmetryPlane { Axis = C3dAxis.X, At = 0 }];
+        C3dBindings.SetExpr(doc.EffectiveBlocks[0], C3dBindings.SpecOf(typeof(C3dEffectiveBlock), nameof(C3dEffectiveBlock.Size))!, 0, new C3dExpr("wf", "Um"));
+        C3dBindings.SetExpr(doc.SymmetryPlanes[0], C3dBindings.SpecOf(typeof(C3dSymmetryPlane), nameof(C3dSymmetryPlane.At))!, 0, new C3dExpr("wf", "Um"));
+        string path = WriteC3d(Workspace(), "Cell", doc);
+        var back = C3dPersistence.LoadFromFile(path);
+        Assert.True(C3dResolver.Resolve(back, C3dCell.Of(path)).Ok);
+        Assert.Equal(1000 * Um, back.EffectiveBlocks[0].Size.X);
+        Assert.Equal(1000 * Um, back.SymmetryPlanes[0].At);
+    }
+
+    /// <summary>A VAR rename reaches a heat source's power and a thermal setup's expressions, and its uses list them (so a
+    /// delete is refused while one reads it).</summary>
+    [Fact]
+    public void AVarRename_ReachesTheThermalExpressions()
+    {
+        var doc = Clean(withSetup: true);
+        string path = WriteC3d(Workspace(), "Cell", doc);
+        Assert.Contains(C3dVariableEdits.UsesOf(doc, "Ths"), u => u.Path == "Boundaries[flange/zmin].TempC");
+        Assert.Contains(C3dVariableEdits.UsesOf(doc, "Pdiss"), u => u.Item == "fingers" && u.Path == "Power");
+        Assert.Null(C3dVariableEdits.Rename(doc, C3dCell.Of(path), "Pdiss", "P_die"));
+        Assert.Equal("P_die", doc.HeatSources[0].Power);
+        var t = C3dSetups.Read(doc).Single().Setup!.Thermal!;
+        Assert.Equal(("P_die", "P_die"), (t.Sources![0].Power, t.Sweep![0].Var));
+        Assert.Equal("Rth = (Tmax(die_top) - Tavg(flange_bot)) / P_die", t.Measures![0]);
+    }
+
+    /// <summary>A probe renamed in a measure is renamed only where a probe function reads it — not a VAR or a measure's own
+    /// name spelled the same.</summary>
+    [Fact]
+    public void AProbeRename_TouchesOnlyProbeCalls()
+        => Assert.Equal("Tmax(hot) - p + Tavg(hot)", C3dExpressionText.RenameProbe("Tmax(p) - p + Tavg(p)", "p", "hot"));
+
+    /// <summary>A setup renamed: the field plots pinned to it and the submodels cut from it follow.</summary>
+    [Fact]
+    public void ASetupRename_TakesItsPlotsAndSubmodels()
+    {
+        var doc = Clean(withSetup: true);
+        var sub = HotSetup();
+        sub.Name = "Sub";
+        sub.Thermal!.Sweep = null;
+        sub.Thermal.Submodel = new CemThermalSubmodel { From = "Hot", Region = "fingers_box" };
+        doc.Setups.Add(EmSetupPersistence.ToEmbedded(sub));
+        doc.FieldPlots = [new C3dFieldPlot { Name = "F1", Setup = "Hot" }];
+        C3dThermal.RenameSetupReferences(doc, "Hot", "Whole");
+        Assert.Equal("Whole", doc.FieldPlots[0].Setup);
+        Assert.Equal("Whole", C3dSetups.Read(doc).Single(s => s.Name == "Sub").Setup!.Thermal!.Submodel!.From);
+    }
+
+    /// <summary>A sheet source with a hole collects, from the coplanar surfaces its bounding box meets, only those on the
+    /// sheet: a triangle's centroid in the sheet's own frame decides.</summary>
+    [Fact]
+    public void ASheetWithAHole_HeatsOnlyTheSheet()
+    {
+        var square = new List<Point2> { new(0, 0), new(1e-3, 0), new(1e-3, 1e-3), new(0, 1e-3) };
+        var hole = new List<Point2> { new(4e-4, 4e-4), new(6e-4, 4e-4), new(6e-4, 6e-4), new(4e-4, 6e-4) };
+        var flat = new Em3dSheet("h", "", square, [hole], 2e-4, 0, 0);
+        Assert.True(CircuitRF.Design.Thermal.ThermalRunService.OnSheet(flat, 1e-4, 1e-4, 2e-4));
+        Assert.False(CircuitRF.Design.Thermal.ThermalRunService.OnSheet(flat, 5e-4, 5e-4, 2e-4));          // in the hole
+        Assert.False(CircuitRF.Design.Thermal.ThermalRunService.OnSheet(flat, 1.2e-3, 5e-4, 2e-4));        // in the box, past a notch's edge
+        // in a vertical frame: the outline's (x, y) are along world x and z
+        var upright = flat with { Frame = new Em3dPlaneFrame(new CircuitRF.Engine.Em3d.Point3(0, 0, 0), new CircuitRF.Engine.Em3d.Point3(1, 0, 0), new CircuitRF.Engine.Em3d.Point3(0, 0, 1)) };
+        Assert.True(CircuitRF.Design.Thermal.ThermalRunService.OnSheet(upright, 1e-4, 0, 1e-4));
+        Assert.False(CircuitRF.Design.Thermal.ThermalRunService.OnSheet(upright, 5e-4, 0, 5e-4));
+    }
+
+    /// <summary>A plated via's barrel, bored by its air cylinder, is sized from its wall, not its box.</summary>
+    [Fact]
+    public void ABoredBarrel_IsSizedFromItsWall()
+    {
+        var barrel = new Em3dSolid("via", "Copper", Em3dRole.Conductor, new Em3dBox(new CircuitRF.Engine.Em3d.Point3(0, 0, 0), new CircuitRF.Engine.Em3d.Point3(300e-6, 300e-6, 1e-3)), 1);
+        var bore = new Em3dSolid("bore", "Air", Em3dRole.Air, new Em3dBox(new CircuitRF.Engine.Em3d.Point3(25e-6, 25e-6, 0), new CircuitRF.Engine.Em3d.Point3(275e-6, 275e-6, 1e-3)), 2);
+        var board = new Em3dSolid("board", "Fill", Em3dRole.Dielectric, new Em3dBox(new CircuitRF.Engine.Em3d.Point3(-5e-3, -5e-3, 0), new CircuitRF.Engine.Em3d.Point3(5e-3, 5e-3, 1e-3)), 0);
+        var input = new GmshThermalInput([board, barrel], [], [], false, [], CircuitRF.Design.Thermal.ThermalLowerings.Sizing(null)) { Voids = [bore] };
+        Assert.Equal(25e-6 / CircuitRF.Design.Thermal.ThermalLowerings.DefaultMinThroughThickness, GmshGeoWriter.ThermalSolidSizeM(input, barrel), 1e-12);
+        // the board the barrel stands in is not bored by it: a small hole in a wide solid refines nothing
+        Assert.Equal(1e-3 / CircuitRF.Design.Thermal.ThermalLowerings.DefaultMinThroughThickness, GmshGeoWriter.ThermalSolidSizeM(input, board), 1e-12);
     }
 
     // ── fixtures ─────────────────────────────────────────────────────────────────────────────────────

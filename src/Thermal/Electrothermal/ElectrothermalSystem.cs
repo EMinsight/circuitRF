@@ -124,7 +124,10 @@ public sealed class ElectrothermalSystem
     private readonly List<AirSample> _air = [];
 
     private sealed record PatchSample(int Wire, int Contact, int[] Host, double[] HostN, int[] WireNodes, double[] WireN, double W);
-    private sealed record WellSample(int Wire, int[] WireNodes, double[] WireN, double W, int[] Line, double[] LineN, int[] Ring, double[] RingW, double G);
+    /// <summary>One quadrature point of a span inside a solid: <see cref="G"/> is the well's conductance per unit length at the
+    /// host's NOMINAL k, and <see cref="Region"/> the host, whose k(T) scales it when the switch is on.</summary>
+    private sealed record WellSample(int Wire, int[] WireNodes, double[] WireN, double W, int[] Line, double[] LineN, int[] Ring, double[] RingW,
+                                     double G, int Region);
     private sealed record AirSample(int Wire, int[] WireNodes, double[] WireN, double W);
 
     public ElectrothermalSystem(ElectrothermalProblem problem, int? maxDegreeOfParallelism = null)
@@ -307,7 +310,7 @@ public sealed class ElectrothermalSystem
         }
 
         // the span: a solid round it (the well), or air
-        int inSolid = 0, inAir = 0, pads = 0;
+        int inSolid = 0, inAir = 0, pads = 0, ringLost = 0, ringPartial = 0;
         var hosts = new SortedSet<int>();
         for (int e = 0; e < ne; e++)
         {
@@ -340,16 +343,30 @@ public sealed class ElectrothermalSystem
                         ring[node] = ring.GetValueOrDefault(node) + p.N[i];
                     }
                 }
-                if (inside == 0) { _air.Add(new AirSample(w, nodes, wn, wq)); continue; }
+                // a ring wholly outside the solid (a thin mould, a wire at its surface) leaves nothing to read: that point
+                // couples as if in air; a ring the solid's boundary cuts reads the points inside. Both are said below.
+                if (inside == 0) { ringLost++; _air.Add(new AirSample(w, nodes, wn, wq)); continue; }
+                if (inside < RingPoints) ringPartial++;
                 var ringNodes = ring.Keys.Order().ToArray();
                 var ringW = ringNodes.Select(i => ring[i] / inside).ToArray();
                 var line = Enumerable.Range(0, m.NodesPerTet).Select(i => m.Tets[m.NodesPerTet * host.Element + i]).ToArray();
                 double g = 2 * Math.PI * k / Math.Log(r / wire.Radius);
                 var (r0, r1) = WellRadius[w];
                 WellRadius[w] = (r0 == 0 ? r : Math.Min(r0, r), Math.Max(r1, r));
-                _well.Add(new WellSample(w, nodes, wn, wq, line, host.N, ringNodes, ringW, g));
+                _well.Add(new WellSample(w, nodes, wn, wq, line, host.N, ringNodes, ringW, g, host.Region));
             }
             if (anySolid) inSolid++; else inAir++;
+        }
+        if (ringLost > 0 || ringPartial > 0)
+        {
+            int all = GaussX.Length * (ne - pads);
+            _notes.Add($"Wire '{wire.Name}': " +
+                       (ringLost > 0 ? $"at {ringLost} of its {all} span point(s) inside a solid the ring the well is read on falls wholly outside it, " +
+                                       "so the wire loses no heat to the solid there (as in air)" : "") +
+                       (ringLost > 0 && ringPartial > 0 ? "; " : "") +
+                       (ringPartial > 0 ? $"at {ringPartial} the solid's boundary cuts the ring, which is read on the part inside" : "") +
+                       ". A wire this close to a solid's surface couples less than the well assumes; a finer mesh there (a mesh region) " +
+                       "shrinks the ring.");
         }
         WireHosting[w] = (inSolid, inAir, pads);
         WireHostRegions[w] = [.. hosts];
@@ -704,18 +721,32 @@ public sealed class ElectrothermalSystem
         {
             int o = WireOffset[s.Wire];
             double gw = s.G * s.W;
+            // With k(T) on, the host's k scales the well: read at the mean of the wire's and the ring's temperatures (the two
+            // ends of the annulus the conductance spans), so its slope reaches both, half each. Without it an overmold whose
+            // k falls with T coupled at its nominal k while the mesh round it did not.
+            double dgw = 0, d = 0;
+            var host = problem.Thermal.Conductivity[s.Region];
+            if (kOfT && host.OfT is { } kf)
+            {
+                double tw = 0, tr = 0;
+                for (int i = 0; i < 3; i++) tw += s.WireN[i] * x[o + s.WireNodes[i]];
+                for (int l = 0; l < s.Ring.Length; l++) tr += s.RingW[l] * x[s.Ring[l]];
+                var (kk, dk) = kf(0.5 * (tw + tr));
+                if (!(kk > 0) || !double.IsFinite(kk) || !double.IsFinite(dk)) invalid = true;
+                else { gw *= kk / host.Nominal; dgw = 0.5 * s.G * s.W * dk / host.Nominal; d = tw - tr; }
+            }
             // b: where the heat goes (+ the wire, − the solid at the centreline); d: the difference it is driven by
             for (int i = 0; i < 3; i++)
             {
                 int ri = o + s.WireNodes[i];
-                for (int j = 0; j < 3; j++) { double v = gw * s.WireN[i] * s.WireN[j]; Add(ri, o + s.WireNodes[j], v, v); }
-                for (int l = 0; l < s.Ring.Length; l++) { double v = -gw * s.WireN[i] * s.RingW[l]; Add(ri, s.Ring[l], v, v); }
+                for (int j = 0; j < 3; j++) { double v = gw * s.WireN[i] * s.WireN[j]; Add(ri, o + s.WireNodes[j], v, v + dgw * d * s.WireN[i] * s.WireN[j]); }
+                for (int l = 0; l < s.Ring.Length; l++) { double v = -gw * s.WireN[i] * s.RingW[l]; Add(ri, s.Ring[l], v, v + dgw * d * s.WireN[i] * s.RingW[l]); }
             }
             for (int i = 0; i < s.Line.Length; i++)
             {
                 int ri = s.Line[i];
-                for (int j = 0; j < 3; j++) { double v = -gw * s.LineN[i] * s.WireN[j]; Add(ri, o + s.WireNodes[j], v, v); }
-                for (int l = 0; l < s.Ring.Length; l++) { double v = gw * s.LineN[i] * s.RingW[l]; Add(ri, s.Ring[l], v, v); }
+                for (int j = 0; j < 3; j++) { double v = -gw * s.LineN[i] * s.WireN[j]; Add(ri, o + s.WireNodes[j], v, v - dgw * d * s.LineN[i] * s.WireN[j]); }
+                for (int l = 0; l < s.Ring.Length; l++) { double v = gw * s.LineN[i] * s.RingW[l]; Add(ri, s.Ring[l], v, v - dgw * d * s.LineN[i] * s.RingW[l]); }
             }
         }
 

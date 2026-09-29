@@ -35,22 +35,22 @@ Every run reports its **energy balance** — the heat that went in against the h
 *Tools ▸ Examples ▸ Thermal: Die to Heatsink.* A GaN-on-SiC die (its transistor one 0.8 × 0.25 mm heat-source sheet) on a
 copper–molybdenum flange, the flange on a two-layer board with a 5 × 3 field of plated vias, the board on a 100 µm thermal
 interface material on a heatsink held at 85 °C. The die attach and the flange solder are contact resistances. `Pdiss` sweeps
-from 3 W to 11 W; the run takes about 53 s and 0.75 GB on an Apple M4 (the Debug build), on 397,997 tetrahedra.
+from 3 W to 11 W; the run takes about 1 min 17 s and 1.1 GB on an Apple M4 (the Debug build), on 543,980 tetrahedra.
 
 | Pdiss | Die top | Rth_jc | Rth_ja |
 |---|---|---|---|
-| 3 W | 116.2 °C | 5.07 K/W | — |
-| 11 W | 207.7 °C | 5.82 K/W | 11.16 K/W |
+| 3 W | 116.2 °C | 5.08 K/W | — |
+| 11 W | 207.9 °C | 5.83 K/W | 11.18 K/W |
 
-**What "case" means is a choice.** `Rth_jc` reads the case as the flange bottom's average (143.7 °C at 11 W); against the
-flange bottom's hottest point, where a thermocouple under the die would sit, it is 5.41 K/W. A datasheet's number means one
+**What "case" means is a choice.** `Rth_jc` reads the case as the flange bottom's average (143.8 °C at 11 W); against the
+flange bottom's hottest point, where a thermocouple under the die would sit, it is 5.42 K/W. A datasheet's number means one
 of these, and they differ by about 8 %.
 
 **An external check.** The heat crosses the interface material in one dimension, so its top must average
 85 + 11 × 100 µm / (3 W/(m·K) × 80 mm²) = 89.58 °C at 11 W — and the probe on it reads exactly that.
 
 **The via field as a block.** Enabling the view's effective block over the vias reads the die at 194.0 °C (Rth_ja 9.91 K/W):
-13.7 K cooler than the vias drawn, and in 3 min 10 s rather than 53 s on this board. The block is an approximation that
+13.9 K cooler than the vias drawn, and in 3 min 10 s rather than 1 min 17 s on this board. The block is an approximation that
 runs cool; it pays where there are hundreds of vias.
 
 ## Worked example: Channel vs Surface {#channel-vs-surface}
@@ -90,7 +90,9 @@ gestures: {{anchor: drawing-in-3d.html#thermal-rth|The 3D Editor ▸ Rth, Z_th a
 In *Eight Fingers* (a half model, so each figure is per watt in the modelled half of a finger), an edge finger's own
 resistance is 52.91 K/W, the fourth finger's 53.17 K/W, and a neighbour adds 20.52 K/W. With all eight on, the edge finger
 rises 15.84 K and the fourth 19.13 K. A 1 ms, 10 % duty pulse train takes the fourth finger to a peak of 90.39 °C; a single
-pulse reaches 90.22 °C, and the average is 85.75 °C.
+pulse reaches 90.21 °C, and the average is 85.75 °C. The run warns that the fits between f1 and f4 are poor (heat takes time
+to cross between fingers, and a delay is not a sum of RC stages); the pulse figures include the other finger's heat through
+them, about 0.1 K here.
 
 ## Conductive balance: current, and bond wires {#electrothermal}
 
@@ -122,12 +124,12 @@ in order:
 - draw fine detail only where it is — *Channel vs Surface* draws the epitaxy on a 20 µm cell, *Die to Heatsink* does not draw it;
 - set *MinThroughThickness* to 1 (both examples do);
 - choose **element order** by what you read: order 1 is several times faster, and on *Die to Heatsink* it reads the junction
-  2.5 % cool (207.7 °C against 210.7 °C at order 2, Rth_jc 5.82 against 5.98 K/W and Rth_ja 11.16 against 11.42 K/W; the order-2 run took 13 min 42 s and 5.4 GB); on *Channel vs Surface* order 2 is
+  2.5 % cool (207.9 °C against 210.9 °C at order 2, Rth_jc 5.83 against 5.99 K/W and Rth_ja 11.18 against 11.45 K/W; the order-2 run took 17 min 55 s and 8.3 GB); on *Channel vs Surface* order 2 is
   kept.
 
 `circuitrf explain <view> --analysis <setup>` estimates the tetrahedra, unknowns and memory before anything is meshed, and the
 setup's *Mesh ▸ Check* meshes again with every size × 0.7 and reports how far each probe moved — on *Die to Heatsink*,
-+0.21 °C (+0.18 %), in 1 min 36 s. That check refines the same elements; it does not measure the difference between orders.
++0.13 °C (+0.41 % of its rise), in 2 min 57 s. That check refines the same elements; it does not measure the difference between orders.
 
 ## What is not modelled {#not-modelled}
 

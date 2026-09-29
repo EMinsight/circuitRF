@@ -25,6 +25,11 @@ using CircuitRF.Engine.Em3d;
 
 namespace CircuitRF.Design.ThreeD;
 
+/// <summary>What a thermal setup's value is, so its trailing unit is checked against it: a temperature (bare °C), a power, a
+/// current, a frequency, or a plain number in the unit its key names (h in W/(m²·K), a duty, a resistance per area). <c>Any</c>
+/// takes whatever unit the table knows — a sweep's Start and Stop, whose variable may be anything.</summary>
+public enum ThermalQuantity { Any, Temperature, Power, Current, Frequency, Time, Plain }
+
 /// <summary>The thermal setup's sentences and rules.</summary>
 public static class C3dThermal
 {
@@ -78,7 +83,7 @@ public static class C3dThermal
             }
             else if (string.IsNullOrWhiteSpace(h.Solid)) found.Add(D.SourceShape(h.Name, "names an empty Solid"));
             else if (h.Density == C3dHeatDensity.PerArea) found.Add(D.SourceShape(h.Name, "is a solid with a PerArea density; a solid's power is Total or PerVolume"));
-            if (h.Power is { } p && Unparsable(p) is { } why) found.Add(D.SourceShape(h.Name, $"has a Power '{p}' that does not parse: {why}"));
+            if (h.Power is { } p && Unparsable(p, ThermalQuantity.Power) is { } why) found.Add(D.SourceShape(h.Name, $"has a Power '{p}' that cannot be read: {why}"));
             Unread(h.Unread, $"Heat source '{h.Name}'", found);
         }
 
@@ -171,12 +176,15 @@ public static class C3dThermal
         if (!e.Ok) return found;
         double m = 1e-6 / doc.DbuPerMicron;
         double tol = Math.Max(m, 1e-12);
+        var replaced = ReplacedBy(doc, e);
 
         foreach (var h in doc.HeatSources)
         {
             if (h.Solid is { Length: > 0 } sname)
             {
-                if (SolidNamed(e, sname) is null) found.Add(D.SourceSolid(h.Name, sname, SomeSolids(e)));
+                if (replaced.TryGetValue(sname, out string? blk))
+                    found.Add(D.SourceShape(h.Name, $"is spread through '{sname}', which effective block '{blk}' replaces; disable the block or move the source"));
+                else if (SolidNamed(e, sname) is null) found.Add(D.SourceSolid(h.Name, sname, SomeSolids(e)));
                 continue;
             }
             if (h.Sheet is not { } sheet || SheetSamples(sheet, m) is not { Count: > 0 } pts) continue;
@@ -191,8 +199,12 @@ public static class C3dThermal
 
         foreach (var p in doc.Probes)
         {
-            if (p.Face is { } face && FaceProblem(doc, e, face) is { } why) found.Add(D.ProbeFace(p.Name, face, why));
-            if (p.Spot is { Face: var sf } && FaceProblem(doc, e, sf) is { } why2) found.Add(D.ProbeFace(p.Name, sf, why2));
+            if (p.Face is { } face && (ReplacedFace(doc, face, replaced) ?? FaceProblem(doc, e, face)) is { } why) found.Add(D.ProbeFace(p.Name, face, why));
+            if (p.Spot is { Face: var sf } && (ReplacedFace(doc, sf, replaced) ?? FaceProblem(doc, e, sf)) is { } why2) found.Add(D.ProbeFace(p.Name, sf, why2));
+            // a Solid probe on a replaced solid is not a refusal: the run reads nothing there (a NaN), which is what an example
+            // toggling its block on expects. A FACE on one is — the lowering refuses it, and so does the face check above.
+            if (p.Solid is { } rs && replaced.TryGetValue(rs, out string? rblk))
+                found.Add(D.ProbeReplaced(p.Name, rs, rblk));
             if (p.Solid is { } ps && SolidNamed(e, ps) is null) found.Add(D.ProbeSolid(p.Name, ps, SomeSolids(e)));
             if (p.Wire is { } w && !WireExists(e, w)) found.Add(D.ProbeWire(p.Name, w, e.Wires.Select(x => x.Name).Distinct().Take(8).ToList()));
         }
@@ -216,11 +228,11 @@ public static class C3dThermal
         {
             if (c.Between.Count != 2) continue;
             string label = $"between '{c.Between[0]}' and '{c.Between[1]}'";
-            var a = SolidNamed(e, c.Between[0]);
-            var b = SolidNamed(e, c.Between[1]);
+            var a = replaced.ContainsKey(c.Between[0]) ? null : SolidNamed(e, c.Between[0]);
+            var b = replaced.ContainsKey(c.Between[1]) ? null : SolidNamed(e, c.Between[1]);
             if (a is null || b is null)
             {
-                found.Add(D.ContactApart(label, $"'{(a is null ? c.Between[0] : c.Between[1])}' is no solid of this 3D view"));
+                found.Add(D.ContactApart(label, NotMeshedWhy(e, a is null ? c.Between[0] : c.Between[1], replaced)));
                 continue;
             }
             if (!Touch(Em3dProblem.Bounds(a.Primitive), Em3dProblem.Bounds(b.Primitive), tol))
@@ -263,7 +275,42 @@ public static class C3dThermal
     /// rule), so a place check passes is a place the run can put something on.</summary>
     private static Em3dSolid? SolidNamed(C3dElaboration e, string name) => Meshed(e).FirstOrDefault(s => s.Name == name);
 
-    private static IEnumerable<Em3dSolid> Meshed(C3dElaboration e) => e.Solids.Where(s => !CircuitRF.Design.Thermal.ThermalMaterials.NotMeshed(s.Role, s.Material));
+    /// <summary>The solids a thermal run meshes: not air, and not a bond wire's (a wire is solved as a 1D chain — the lowering's
+    /// own rule, so a place on a wire's solid is refused here as the run refuses it).</summary>
+    private static IEnumerable<Em3dSolid> Meshed(C3dElaboration e)
+    {
+        var wires = new HashSet<string>(e.Wires.SelectMany(Thermal.ThermalWireLowering.SolidsOf).Concat(e.DrawnWires.Keys), StringComparer.Ordinal);
+        return e.Solids.Where(s => !Thermal.ThermalMaterials.NotMeshed(s.Role, s.Material) && !wires.Contains(s.Name));
+    }
+
+    /// <summary>Each solid an ENABLED effective block replaces, and the block — the lowering's own replacement, so a place on
+    /// one is refused here as the run refuses it. Empty with no technology (the run refuses that itself).</summary>
+    private static Dictionary<string, string> ReplacedBy(C3dDocument doc, C3dElaboration e)
+    {
+        var map = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (e.Technology is null) return map;
+        foreach (var b in doc.EffectiveBlocks.Where(b => b.Enabled))
+            if (Thermal.ThermalEffectiveBlocks.Lower(doc, e, b, e.Technology, 0, out _) is { } low)
+                foreach (string r in low.Removed) map.TryAdd(r, b.Name);
+        return map;
+    }
+
+    /// <summary>Why face <paramref name="spelled"/> (<c>object/face</c>) is unusable because an enabled block replaces its solid, or
+    /// null.</summary>
+    private static string? ReplacedFace(C3dDocument doc, string spelled, IReadOnlyDictionary<string, string> replaced)
+    {
+        int slash = spelled.LastIndexOf('/');
+        if (slash <= 0 || replaced.Count == 0) return null;
+        string solid = C3dKernelUse.Resolve(doc, spelled[..slash], spelled[(slash + 1)..]).Item1;
+        return replaced.TryGetValue(solid, out string? blk) ? $"it is on '{solid}', which effective block '{blk}' replaces" : null;
+    }
+
+    /// <summary>Why solid <paramref name="name"/> is not meshed although it exists — a wire, air, a replaced one — or the
+    /// generic sentence.</summary>
+    private static string NotMeshedWhy(C3dElaboration e, string name, IReadOnlyDictionary<string, string> replaced)
+        => replaced.TryGetValue(name, out string? blk) ? $"'{name}' is replaced by effective block '{blk}'"
+         : e.Solids.Any(s => s.Name == name) ? $"'{name}' is not meshed in a thermal run (a bond wire is solved as a 1D chain; air is not meshed)"
+         : $"'{name}' is no solid of this 3D view";
 
     private static IReadOnlyList<string> SomeSolids(C3dElaboration e) => [.. Meshed(e).Select(s => s.Name).Take(8)];
 
@@ -387,25 +434,45 @@ public static class C3dThermal
         var found = new List<Diagnostic>();
         var t = setup.Thermal ?? new CemThermal();
 
+        // a key no section reads — a typo ("PerDecde", "Ambient") — is named, at whatever depth it sits
+        string at = $"Thermal setup '{name}'";
+        Unread(t.Unread, at, found);
+        foreach (var x in t.Sources ?? []) Unread(x.Unread, $"{at}'s source '{x.Name}'", found);
+        foreach (var x in t.Boundaries ?? []) Unread(x.Unread, $"{at}'s boundary on '{x.Face}'", found);
+        foreach (var x in t.Sweep ?? []) Unread(x.Unread, $"{at}'s sweep of '{x.Var}'", found);
+        foreach (var x in t.Currents ?? [])
+        {
+            Unread(x.More, $"{at}'s current of {x.Subject}", found);
+            Unread(x.FromCircuit?.Unread, $"{at}'s FromCircuit", found);
+            foreach (var h in x.Harmonics ?? []) Unread(h.Unread, $"{at}'s harmonic {h.N} of {x.Subject}", found);
+        }
+        Unread(t.Mesh?.Unread, $"{at}'s Mesh", found);
+        Unread(t.Balance?.Unread, $"{at}'s Balance", found);
+        Unread(t.Submodel?.Unread, $"{at}'s Submodel", found);
+        Unread(t.Rth?.Unread, $"{at}'s Rth", found);
+        Unread(t.Zth?.Unread, $"{at}'s Zth", found);
+        Unread(t.Pulse?.Unread, $"{at}'s Pulse", found);
+
         // A sink: a problem with no fixed-temperature or convection face has no steady state (overview §1b).
         // (a submodel's cut faces are its sink, so it may state none of its own)
         var boundaries = t.Boundaries ?? [];
         if (boundaries.Count == 0 && t.Submodel is null) found.Add(D.NoSink(name));
+        var replaced = e is { Ok: true } && boundaries.Count > 0 ? ReplacedBy(doc, e) : [];
         foreach (var b in boundaries)
         {
             string where = $"The {b.Kind} boundary on '{b.Face}'";
-            if (b.Face != ExposedFaces && e is { Ok: true } && FaceProblem(doc, e, b.Face) is { } why)
+            if (b.Face != ExposedFaces && e is { Ok: true } && (ReplacedFace(doc, b.Face, replaced) ?? FaceProblem(doc, e, b.Face)) is { } why)
                 found.Add(D.BoundaryFace(name, b.Face, why));
             else if (b.Face != ExposedFaces && e is { Ok: true } && OnSymmetryPlane(doc, e, b.Face) is { } plane)
                 found.Add(D.Symmetry($"Thermal setup '{name}' puts a {b.Kind} boundary on '{b.Face}', which lies on the symmetry plane " +
                                      $"{plane.Axis}: a mirror plane is insulated by definition. Remove the boundary, or the plane"));
-            if (b.Kind == ThermalBoundaryKind.FixedT) Value(b.TempC, "TempC");
-            else { Value(b.H, "H"); Value(b.AmbientC, "AmbientC"); }
+            if (b.Kind == ThermalBoundaryKind.FixedT) Value(b.TempC, "TempC", ThermalQuantity.Temperature);
+            else { Value(b.H, "H", ThermalQuantity.Plain); Value(b.AmbientC, "AmbientC", ThermalQuantity.Temperature); }
 
-            void Value(string? text, string key)
+            void Value(string? text, string key, ThermalQuantity q)
             {
                 if (string.IsNullOrWhiteSpace(text)) found.Add(D.BoundaryValue(name, $"{where} states no {key}"));
-                else if (Unparsable(text) is { } err) found.Add(D.BoundaryValue(name, $"{where} has {key} '{text}', which does not parse: {err}"));
+                else if (Unresolvable(text, q, resolution) is { } err) found.Add(D.BoundaryValue(name, $"{where} has {key} '{text}', which cannot be read: {err}"));
             }
         }
 
@@ -415,12 +482,15 @@ public static class C3dThermal
             if (!doc.HeatSources.Any(h => h.Name == s.Name))
                 found.Add(D.SetupSource(name, $"overrides the power of '{s.Name}', which is no heat source of this 3D view" +
                                              (doc.HeatSources.Count == 0 ? " (it has none)" : $" (it has {string.Join(", ", doc.HeatSources.Select(h => $"'{h.Name}'"))})")));
-            else if (string.IsNullOrWhiteSpace(s.Power) || Unparsable(s.Power) is not null)
-                found.Add(D.SetupSource(name, $"gives '{s.Name}' the power '{s.Power}', which does not parse: {Unparsable(s.Power ?? "") ?? "it is empty"}"));
+            else if (Unresolvable(s.Power ?? "", ThermalQuantity.Power, resolution) is { } why)
+                found.Add(D.SetupSource(name, $"gives '{s.Name}' the power '{s.Power}', which cannot be read: {why}"));
         }
         foreach (var h in doc.HeatSources)
             if (h.Power is null && !(t.Sources ?? []).Any(s => s.Name == h.Name))
                 found.Add(D.SetupSource(name, $"gives heat source '{h.Name}' no power, and the source states no default Power"));
+            else if (h.Power is { } own && !(t.Sources ?? []).Any(s => s.Name == h.Name) && Unparsable(own, ThermalQuantity.Power) is null &&
+                     Unresolvable(own, ThermalQuantity.Power, resolution) is { } why)
+                found.Add(D.SetupSource(name, $"uses heat source '{h.Name}''s own power '{own}', which cannot be read: {why}"));
 
         // brief-em3d-77 R-em3d77-1 — each current names a port of this view, a Dc that parses, and faces that exist; a wire's
         // convection names its ambient; a bond's resistances parse
@@ -466,7 +536,7 @@ public static class C3dThermal
             {
                 if (!harmonics) found.Add(D.Current(name, $"gives {who} no Dc current"));
             }
-            else if (Unparsable(c.Dc) is { } err) found.Add(D.Current(name, $"gives {who} the Dc '{c.Dc}', which does not parse: {err}"));
+            else if (Unresolvable(c.Dc, ThermalQuantity.Current, resolution) is { } err) found.Add(D.Current(name, $"gives {who} the Dc '{c.Dc}', which cannot be read: {err}"));
             foreach (var (key, face) in new[] { ("EnterFace", c.EnterFace), ("LeaveFace", c.LeaveFace) })
                 if (face is not null && c.Array is null && e is { Ok: true } && FaceProblem(doc, e, face) is { } why)
                     found.Add(D.Current(name, $"names '{face}' as {who}'s {key}, which does not exist: {why}"));
@@ -475,7 +545,7 @@ public static class C3dThermal
             if (!harmonics) continue;
             if (string.IsNullOrWhiteSpace(c.F0))
                 found.Add(D.Current(name, $"gives {who} harmonic currents and no F0: state the fundamental frequency, Hz"));
-            else if (Unparsable(c.F0) is { } fe) found.Add(D.Current(name, $"gives {who} the F0 '{c.F0}', which does not parse: {fe}"));
+            else if (Unresolvable(c.F0, ThermalQuantity.Frequency, resolution) is { } fe) found.Add(D.Current(name, $"gives {who} the F0 '{c.F0}', which cannot be read: {fe}"));
             for (int i = 0; i < c.Harmonics!.Count; i++)
             {
                 var h = c.Harmonics[i];
@@ -484,7 +554,7 @@ public static class C3dThermal
                 if (h.As is null)
                     found.Add(D.Current(name, $"gives {entry} no As: state whether its Amp is Peak or Rms — an amplitude is never assumed to be either"));
                 if (string.IsNullOrWhiteSpace(h.Amp)) found.Add(D.Current(name, $"gives {entry} no Amp"));
-                else if (Unparsable(h.Amp) is { } ae) found.Add(D.Current(name, $"gives {entry} the Amp '{h.Amp}', which does not parse: {ae}"));
+                else if (Unresolvable(h.Amp, ThermalQuantity.Current, resolution) is { } ae) found.Add(D.Current(name, $"gives {entry} the Amp '{h.Amp}', which cannot be read: {ae}"));
             }
             foreach (var dupN in c.Harmonics.GroupBy(h => h.N).Where(g => g.Count() > 1))
                 found.Add(D.Current(name, $"gives {who} harmonic {dupN.Key} {dupN.Count()} times; state each harmonic once"));
@@ -505,12 +575,12 @@ public static class C3dThermal
             found.Add(D.Current(name, $"gives array '{dup.Key}' {dup.Count()} currents; state its harmonics in one entry"));
         if (t.Submodel is not null && currents.Count > 0)
             found.Add(D.Current(name, "is a submodel and gives ports currents; a submodel carries none in this version — run them in the whole-model setup"));
-        if (t.WireConvectionH is { } wh && Unparsable(wh) is { } whe) found.Add(D.Current(name, $"has WireConvectionH '{wh}', which does not parse: {whe}"));
+        if (t.WireConvectionH is { } wh && Unresolvable(wh, ThermalQuantity.Plain, resolution) is { } whe) found.Add(D.Current(name, $"has WireConvectionH '{wh}', which cannot be read: {whe}"));
         if (t.WireConvectionH is not null && string.IsNullOrWhiteSpace(t.WireAmbientC))
             found.Add(D.Current(name, "states WireConvectionH and no WireAmbientC: say what temperature a wire in air loses its heat to"));
-        else if (t.WireAmbientC is { } wa && Unparsable(wa) is { } wae) found.Add(D.Current(name, $"has WireAmbientC '{wa}', which does not parse: {wae}"));
+        else if (t.WireAmbientC is { } wa && Unresolvable(wa, ThermalQuantity.Temperature, resolution) is { } wae) found.Add(D.Current(name, $"has WireAmbientC '{wa}', which cannot be read: {wae}"));
         foreach (var (key, text) in new[] { ("BondThermalResistance", t.BondThermalResistance), ("BondElectricalResistance", t.BondElectricalResistance) })
-            if (text is not null && Unparsable(text) is { } be) found.Add(D.Current(name, $"has {key} '{text}', which does not parse: {be}"));
+            if (text is not null && Unresolvable(text, ThermalQuantity.Plain, resolution) is { } be) found.Add(D.Current(name, $"has {key} '{text}', which cannot be read: {be}"));
         if (currents.Count > 0 && e is { Ok: true })
             foreach (var sol in e.Solids.Where(x => x.Role == Em3dRole.Conductor && !CircuitRF.Design.Thermal.ThermalMaterials.NotMeshed(x.Role, x.Material)))
                 if (Thermal.ThermalMaterials.For(e, sol.Name, sol.Material) is { } rec && ThermalProperties.SigmaAt(rec.Material, 20) is null)
@@ -553,8 +623,8 @@ public static class C3dThermal
                 found.Add(D.SweepGeometry(name, s.Var, reader));
             if (s.Points < 1) found.Add(D.Sweep(name, $"sweeps '{s.Var}' over {s.Points} points; at least 1"));
             foreach (var (key, text) in new[] { ("Start", s.Start), ("Stop", s.Stop) })
-                if (string.IsNullOrWhiteSpace(text) || Unparsable(text) is not null)
-                    found.Add(D.Sweep(name, $"sweeps '{s.Var}' from a {key} '{text}' that does not parse: {Unparsable(text ?? "") ?? "it is empty"}"));
+                if (Unresolvable(text ?? "", ThermalQuantity.Any, resolution) is { } why)
+                    found.Add(D.Sweep(name, $"sweeps '{s.Var}' from a {key} '{text}' that cannot be read: {why}"));
         }
         foreach (var dup in sweep.GroupBy(s => s.Var, StringComparer.Ordinal).Where(g => g.Count() > 1))
             found.Add(D.Sweep(name, $"sweeps '{dup.Key}' on {dup.Count()} axes; a variable is one axis"));
@@ -640,7 +710,7 @@ public static class C3dThermal
             foreach (var (key, text) in new[] { ("StartHz", z.StartHz), ("StopHz", z.StopHz) })
             {
                 if (text is null) continue;
-                double? v = Evaluate(resolution, text, out string? err);
+                double? v = Evaluate(resolution, text, out string? err, ThermalQuantity.Frequency);
                 if (err is not null) { found.Add(D.SmallSignal(name, $"has Zth.{key} '{text}', which does not resolve: {err}")); continue; }
                 if (!(v > 0)) found.Add(D.SmallSignal(name, $"has Zth.{key} '{text}' = {Num(v ?? double.NaN)}; a frequency here is a positive number of Hz (DC is always included)"));
                 if (key == "StartHz") lo = v; else hi = v;
@@ -672,9 +742,111 @@ public static class C3dThermal
             foreach (var (key, text, required) in new[] { ("Period", pulse.Period, true), ("Duty", pulse.Duty, true), ("PeakPower", pulse.PeakPower, false) })
             {
                 if (string.IsNullOrWhiteSpace(text)) { if (required) found.Add(D.SmallSignal(name, $"states a Pulse with no {key}")); continue; }
-                if ((key == "Period" ? UnparsableTime(text) : Unparsable(text)) is { } err)
-                    found.Add(D.SmallSignal(name, $"has Pulse.{key} '{text}', which does not parse: {err}"));
+                var q = key == "Period" ? ThermalQuantity.Time : key == "Duty" ? ThermalQuantity.Plain : ThermalQuantity.Power;
+                string? err = key == "Period" ? UnparsableTime(text) : Unresolvable(text, q, resolution);
+                if (err is null && key == "Period" && Refs(SplitTime(text).Expr).Where(r => !resolution.IsDefined(r)).ToList() is { Count: > 0 } missing)
+                    err = $"it reads {string.Join(", ", missing.Select(m => $"'{m}'"))}, which {(missing.Count == 1 ? "is no variable" : "are no variables")} of this 3D view";
+                if (err is not null) { found.Add(D.SmallSignal(name, $"has Pulse.{key} '{text}', which cannot be read: {err}")); continue; }
+                // the run's own range rules, where the value does not move with the sweep (a swept one is checked per point)
+                if (key == "PeakPower" || Refs(key == "Period" ? SplitTime(text).Expr : SplitUnit(text).Expr).Overlaps((t.Sweep ?? []).Select(x => x.Var))) continue;
+                double? v = key == "Period" ? EvaluateTime(resolution, text, out _) : Evaluate(resolution, text, out _, q);
+                if (key == "Period" && v is { } per && !(per > 0))
+                    found.Add(D.SmallSignal(name, $"has Pulse.Period '{text}' = {Num(per)} s; a period is positive"));
+                if (key == "Duty" && v is { } duty && !(duty >= 0 && duty <= 1))
+                    found.Add(D.SmallSignal(name, $"has Pulse.Duty '{text}' = {Num(duty)}; a duty lies between 0 and 1"));
             }
+        }
+    }
+
+    /// <summary>
+    /// Every expression a thermal setup states, with where it is and how to write it back: powers, boundary values, currents
+    /// (Dc, F0, each harmonic's Amp), the wire and bond values, the sweep's ends, each measure's right-hand side, the Z_th band
+    /// and the pulse. The ONE list the resolver's "used by", the Variables panel's uses and a VAR rename all walk, so a field
+    /// added to the setup and missed here is missed by all three alike rather than by one silently. A sweep's Var is a bare
+    /// name, not an expression, and is not here.
+    /// </summary>
+    public static IEnumerable<(string Path, string Text, Action<string> Set)> ExpressionFields(CemThermal t)
+    {
+        foreach (var x in t.Sources ?? [])
+            if (x.Power is { Length: > 0 }) yield return ($"Sources[{x.Name}].Power", x.Power, v => x.Power = v);
+        foreach (var b in t.Boundaries ?? [])
+        {
+            if (b.TempC is { Length: > 0 } tc) yield return ($"Boundaries[{b.Face}].TempC", tc, v => b.TempC = v);
+            if (b.H is { Length: > 0 } h) yield return ($"Boundaries[{b.Face}].H", h, v => b.H = v);
+            if (b.AmbientC is { Length: > 0 } a) yield return ($"Boundaries[{b.Face}].AmbientC", a, v => b.AmbientC = v);
+        }
+        foreach (var c in t.Currents ?? [])
+        {
+            string who = c.Port is { } port ? $"port {port}" : c.Array ?? "circuit";
+            if (c.Dc is { Length: > 0 } dc) yield return ($"Currents[{who}].Dc", dc, v => c.Dc = v);
+            if (c.F0 is { Length: > 0 } f0) yield return ($"Currents[{who}].F0", f0, v => c.F0 = v);
+            foreach (var h in c.Harmonics ?? [])
+                if (h.Amp is { Length: > 0 } amp) yield return ($"Currents[{who}].Harmonics[{h.N}].Amp", amp, v => h.Amp = v);
+        }
+        if (t.WireConvectionH is { Length: > 0 } wh) yield return ("WireConvectionH", wh, v => t.WireConvectionH = v);
+        if (t.WireAmbientC is { Length: > 0 } wa) yield return ("WireAmbientC", wa, v => t.WireAmbientC = v);
+        if (t.BondThermalResistance is { Length: > 0 } bt) yield return ("BondThermalResistance", bt, v => t.BondThermalResistance = v);
+        if (t.BondElectricalResistance is { Length: > 0 } be) yield return ("BondElectricalResistance", be, v => t.BondElectricalResistance = v);
+        foreach (var w in t.Sweep ?? [])
+        {
+            if (w.Start is { Length: > 0 }) yield return ($"Sweep[{w.Var}].Start", w.Start, v => w.Start = v);
+            if (w.Stop is { Length: > 0 }) yield return ($"Sweep[{w.Var}].Stop", w.Stop, v => w.Stop = v);
+        }
+        if (t.Measures is { } measures)
+            for (int i = 0; i < measures.Count; i++)
+                if (measures[i].IndexOf('=') is > 0 and var eq)
+                {
+                    int k = i;
+                    string lhs = measures[i][..eq];
+                    yield return ($"Measures[{lhs.Trim()}]", measures[i][(eq + 1)..], v => measures[k] = lhs + "=" + v);
+                }
+        if (t.Zth is { } z)
+        {
+            if (z.StartHz is { Length: > 0 } zs) yield return ("Zth.StartHz", zs, v => z.StartHz = v);
+            if (z.StopHz is { Length: > 0 } ze) yield return ("Zth.StopHz", ze, v => z.StopHz = v);
+        }
+        if (t.Pulse is { } pl)
+        {
+            if (pl.PeakPower is { Length: > 0 } pp) yield return ("Pulse.PeakPower", pp, v => pl.PeakPower = v);
+            if (pl.Period is { Length: > 0 }) yield return ("Pulse.Period", pl.Period, v => pl.Period = v);
+            if (pl.Duty is { Length: > 0 }) yield return ("Pulse.Duty", pl.Duty, v => pl.Duty = v);
+        }
+    }
+
+    /// <summary>
+    /// A setup renamed from <paramref name="from"/> to <paramref name="to"/>: every reference to it by name follows — each
+    /// field plot pinned to it (brief-em3d-83) and each submodel cut From it (brief-em3d-76). The setup record itself is the
+    /// caller's. Left alone, a pinned plot resolved to "setup missing" and a submodel refused, both after the rename looked done.
+    /// </summary>
+    public static void RenameSetupReferences(C3dDocument doc, string from, string to)
+    {
+        foreach (var plot in doc.FieldPlots)
+            if (plot.Setup == from) plot.Setup = to;
+        foreach (var (index, setup, t) in ThermalSetups(doc).ToList())
+            if (t.Submodel is { } sm && sm.From == from)
+            {
+                sm.From = to;
+                doc.Setups[index] = EmSetupPersistence.ToEmbedded(setup);
+            }
+    }
+
+    /// <summary>The document's thermal setups, each with its index in <see cref="C3dDocument.Setups"/>: the embedded records whose
+    /// Problem3D is Thermal, read (a record that does not read is passed over — check reports it).</summary>
+    public static IEnumerable<(int Index, EmSetup Setup, CemThermal Thermal)> ThermalSetups(C3dDocument doc)
+    {
+        for (int i = 0; i < doc.Setups.Count; i++)
+        {
+            var element = doc.Setups[i];
+            // told apart cheaply first: the resolver asks on every edit
+            if (element.ValueKind != System.Text.Json.JsonValueKind.Object ||
+                !element.EnumerateObject().Any(p => string.Equals(p.Name, "Problem3D", StringComparison.OrdinalIgnoreCase) &&
+                                                     p.Value.ValueKind == System.Text.Json.JsonValueKind.String &&
+                                                     string.Equals(p.Value.GetString(), "Thermal", StringComparison.OrdinalIgnoreCase)))
+                continue;
+            EmSetup setup;
+            try { setup = EmSetupPersistence.FromEmbedded(element); }
+            catch (Exception) { continue; }      // any reader refusal: C3dSetups.Read reports it
+            if (setup.Thermal is { } t) yield return (i, setup, t);
         }
     }
 
@@ -749,8 +921,8 @@ public static class C3dThermal
                                   (probes.Count == 0 ? " (it has none)" : $" (it has {string.Join(", ", probes.Keys)})");
                         return;
                     }
-                    if (c.Name == "T" && probe.Point is null && probe.Spot is null)
-                    { problem = $"T({pn}) reads one temperature, which only a point or spot probe has; use Tmax, Tmin or Tavg"; return; }
+                    if (c.Name == "T" && probe.Point is null && probe.Spot is null && probe.Stat is null)
+                    { problem = $"T({pn}) reads one temperature, which only a point or spot probe, or a probe stating a Stat, has; use Tmax, Tmin or Tavg"; return; }
                     asProbe.Add(pn);
                     return;
                 case CallExpr c: foreach (var a in c.Args) Walk(a); return;
@@ -774,11 +946,11 @@ public static class C3dThermal
     /// <c>250 mW</c>) — evaluated in <paramref name="resolution"/>'s scope, in the base unit. Returns the value, or null with
     /// <paramref name="error"/> saying what does not resolve.
     /// </summary>
-    public static double? Evaluate(C3dResolution resolution, string text, out string? error)
+    public static double? Evaluate(C3dResolution resolution, string text, out string? error, ThermalQuantity quantity = ThermalQuantity.Any)
     {
         var (expr, unit) = SplitUnit(text);
-        double scale = UnitScale(unit);
-        if (double.IsNaN(scale)) { error = UnitRefusal(unit); return null; }
+        double scale = UnitScale(unit, quantity);
+        if (double.IsNaN(scale)) { error = UnitRefusal(unit, quantity); return null; }
         Value v;
         try { v = resolution.Evaluate(expr, null); }
         catch (ExpressionException ex) { error = ex.Message; return null; }
@@ -808,11 +980,11 @@ public static class C3dThermal
     public static double? EvaluateTime(C3dResolution resolution, string text, out string? error)
     {
         var (expr, scale) = SplitTime(text);
-        return Evaluate(resolution, expr, out error) * scale;
+        return Evaluate(resolution, expr, out error, ThermalQuantity.Time) * scale;
     }
 
     /// <summary>brief-em3d-80 — why <paramref name="text"/> cannot be a time here, or null.</summary>
-    public static string? UnparsableTime(string text) => string.IsNullOrWhiteSpace(text) ? "it is empty" : Unparsable(SplitTime(text).Expr);
+    public static string? UnparsableTime(string text) => string.IsNullOrWhiteSpace(text) ? "it is empty" : Unparsable(SplitTime(text).Expr, ThermalQuantity.Time);
 
     private static (string Expr, string? Unit) SplitUnit(string text)
     {
@@ -821,26 +993,61 @@ public static class C3dThermal
     }
 
     /// <summary>Why <paramref name="text"/> cannot be an expression here (a trailing spaced unit allowed), or null.</summary>
-    public static string? Unparsable(string text)
+    public static string? Unparsable(string text, ThermalQuantity quantity = ThermalQuantity.Any)
     {
         if (string.IsNullOrWhiteSpace(text)) return "it is empty";
         var (expr, unit) = SplitUnit(text);
-        // the unit the run would refuse is refused here too, so check and the run agree ("30 dBm", "25 %")
-        if (double.IsNaN(UnitScale(unit))) return UnitRefusal(unit);
+        // the unit the run would refuse is refused here too, so check and the run agree ("30 dBm", "25 %", "85 m" as a temperature)
+        if (double.IsNaN(UnitScale(unit, quantity))) return UnitRefusal(unit, quantity);
         try { Parser.Parse(expr); return null; }
         catch (ExpressionException ex) { return ex.Message; }
     }
 
-    /// <summary>A trailing unit's scale to the base unit (1 for none), or NaN for one a thermal setup does not read. The base
-    /// symbols W and A carry no scale in the unit table (they are identity units there), so they are stated here.</summary>
-    private static double UnitScale(string? unit) => unit switch
+    /// <summary>
+    /// Why <paramref name="text"/> cannot be <paramref name="quantity"/> in <paramref name="resolution"/>'s scope, or null: it
+    /// does not parse, its unit is not one of that quantity's, or a name it reads is no variable of the view — what the run
+    /// would refuse at its first point, said before any meshing. A value is not EVALUATED here (a swept variable has no one
+    /// value), only its names checked.
+    /// </summary>
+    public static string? Unresolvable(string text, ThermalQuantity quantity, C3dResolution resolution)
     {
-        null or "W" or "A" => 1,
-        _ => Units.Scale(unit) ?? double.NaN,
-    };
+        if (Unparsable(text, quantity) is { } why) return why;
+        var missing = Refs(SplitUnit(text).Expr).Where(r => !resolution.IsDefined(r)).Order(StringComparer.Ordinal).ToList();
+        return missing.Count == 0 ? null
+            : $"it reads {string.Join(", ", missing.Select(m => $"'{m}'"))}, which {(missing.Count == 1 ? "is no variable" : "are no variables")} of this 3D view";
+    }
 
-    private static string UnitRefusal(string? unit)
-        => $"it ends in '{unit}', which is not a unit a thermal setup reads (temperatures are bare °C; powers W, mW, uW or kW; currents A, mA or uA)";
+    /// <summary>
+    /// A trailing unit's scale to the base unit (1 for none), or NaN for one that is not <paramref name="quantity"/>'s. The
+    /// base symbols W and A carry no scale in the unit table (they are identity units there), so they are stated here. A bare
+    /// SI prefix is a unit in that table ("m" is milli), so without the quantity "85 m" read as a temperature of 0.085 °C.
+    /// </summary>
+    private static double UnitScale(string? unit, ThermalQuantity quantity)
+    {
+        if (unit is null) return 1;
+        double scale = unit is "W" or "A" ? 1 : Units.Scale(unit) ?? double.NaN;
+        if (double.IsNaN(scale)) return double.NaN;
+        string b = unit is "W" or "A" ? unit : Units.BaseUnit(unit);
+        return quantity switch
+        {
+            ThermalQuantity.Any       => scale,
+            ThermalQuantity.Power     => b == "W" ? scale : double.NaN,
+            ThermalQuantity.Current   => b == "A" ? scale : double.NaN,
+            ThermalQuantity.Frequency => b == "Hz" ? scale : double.NaN,
+            _                         => double.NaN,           // a temperature, and every plain number, take no unit
+        };
+    }
+
+    private static string UnitRefusal(string? unit, ThermalQuantity quantity) => quantity switch
+    {
+        ThermalQuantity.Temperature => $"it ends in '{unit}', and a temperature here takes no unit: it is a bare number of °C",
+        ThermalQuantity.Power       => $"it ends in '{unit}', which is not a power: W, mW, uW or kW",
+        ThermalQuantity.Current     => $"it ends in '{unit}', which is not a current: A, mA or uA",
+        ThermalQuantity.Frequency   => $"it ends in '{unit}', which is not a frequency: Hz, kHz, MHz or GHz",
+        ThermalQuantity.Plain       => $"it ends in '{unit}', and this value takes no unit: it is a bare number in the unit its key names",
+        ThermalQuantity.Time        => $"it ends in '{unit}', which is not a time: s, ms, us or ns",
+        _ => $"it ends in '{unit}', which is not a unit a thermal setup reads (temperatures are bare °C; powers W, mW, uW or kW; currents A, mA or uA)",
+    };
 
     private static void Unread(Dictionary<string, System.Text.Json.JsonElement>? keys, string owner, List<Diagnostic> found)
     {
@@ -933,6 +1140,10 @@ public static class C3dThermal
                  ("objects", List(objects.Take(4)) + (objects.Count > 4 ? $" and {objects.Count - 4} more" : "")));
         public static Diagnostic MaterialInvalid(string setup, string what)
             => E(MaterialInvalidId, "Thermal setup '{setup}' reads a material the solver cannot use: {what}", ("setup", setup), ("what", what));
+        public static Diagnostic ProbeReplaced(string name, string solid, string block)
+            => Diagnostic.Create(ProbeShapeId, DiagnosticSeverity.Warning,
+                 "Probe '{name}' reads '{solid}', which effective block '{block}' replaces: it reads nothing while the block is enabled.",
+                 ("name", name), ("solid", solid), ("block", block));
         public static Diagnostic ProbeName(string name, string why)
             => Diagnostic.Create(ProbeNameId, DiagnosticSeverity.Warning,
                  "Probe '{name}' can be read, but no measure can name it: {why}", ("name", name), ("why", why));

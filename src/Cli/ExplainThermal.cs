@@ -149,7 +149,7 @@ internal static class ExplainThermal
             string unit = h.Density switch { C3dHeatDensity.PerArea => "W/m²", C3dHeatDensity.PerVolume => "W/m³", _ => "W" };
             string where = h.Solid is { } solid ? $"through the solid '{solid}'" : $"on a {h.Sheet?.Plane} sheet";
             walks.Add(new ResolutionStepJson($"{at}: source {h.Name}", null,
-                text is null ? $"{where}; no power (check refuses this)" : $"{where}; {text} = {Eval(res, text, "")} {unit}",
+                text is null ? $"{where}; no power (check refuses this)" : $"{where}; {text} = {Eval(res, text, ThermalQuantity.Power)} {unit}",
                 over is not null ? "the setup's Sources override" : "the heat source's own default Power"));
         }
 
@@ -157,8 +157,8 @@ internal static class ExplainThermal
         foreach (var b in t.Boundaries ?? [])
             walks.Add(new ResolutionStepJson($"{at}: boundary {b.Face}", null,
                 b.Kind == ThermalBoundaryKind.FixedT
-                    ? $"FixedT at {Eval(res, b.TempC ?? "", "")} °C"
-                    : $"Convection, h = {Eval(res, b.H ?? "", "")} W/(m²·K) to {Eval(res, b.AmbientC ?? "", "")} °C",
+                    ? $"FixedT at {Eval(res, b.TempC ?? "", ThermalQuantity.Temperature)} °C"
+                    : $"Convection, h = {Eval(res, b.H ?? "", ThermalQuantity.Plain)} W/(m²·K) to {Eval(res, b.AmbientC ?? "", ThermalQuantity.Temperature)} °C",
                 b.Face == C3dThermal.ExposedFaces ? "every face touching no other solid and not otherwise conditioned" : "a named face; every other face is insulated"));
 
         // ── interfaces in force: every touching pair of solids with a material-pair value or a contact override ──
@@ -213,9 +213,9 @@ internal static class ExplainThermal
             walks.Add(new ResolutionStepJson($"{at}: measure", null, m, "evaluated after the solve, at every sweep point"));
     }
 
-    private static string Eval(C3dResolution res, string text, string? _ = null)
+    private static string Eval(C3dResolution res, string text, ThermalQuantity quantity = ThermalQuantity.Any)
     {
-        return C3dThermal.Evaluate(res, text, out string? error) is { } v ? G(v) : $"'{text}' (does not resolve: {error})";
+        return C3dThermal.Evaluate(res, text, out string? error, quantity) is { } v ? G(v) : $"'{text}' (does not resolve: {error})";
     }
 
     private static string G(double v) => v.ToString("G6", CultureInfo.InvariantCulture);

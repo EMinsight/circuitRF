@@ -60,7 +60,7 @@ public static class ThermalSolver
     public const double BalanceTolerance = 1e-6;
 
     /// <summary>The smallest temperature span Newton's update test is measured against, K.</summary>
-    private const double SpanFloorK = 1e-3;
+    internal const double SpanFloorK = 1e-3;
 
     /// <summary>Solves <paramref name="problem"/>. <paramref name="assembly"/> may be passed to reuse one mesh's pattern and
     /// colouring across sweep points.</summary>

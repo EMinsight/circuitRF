@@ -123,6 +123,8 @@ public sealed partial class C3dEditorViewModel
         Document.ContactResistances = d.ContactResistances;
         Document.EffectiveBlocks = d.EffectiveBlocks;
         Document.SymmetryPlanes = d.SymmetryPlanes;
+        // a VAR rename rewrites the thermal setups' expressions in this same entry, so undoing it restores them
+        Document.Setups = d.Setups;
         DocumentChanged();
         RebuildThermalTree();
     }

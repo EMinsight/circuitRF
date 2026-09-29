@@ -152,6 +152,9 @@ public sealed partial class C3dEditorViewModel
     /// <summary>Inserts a heat source, probe or mesh region: one undo entry.</summary>
     public void AddThermalPlace(object place)
     {
+        // a new place starts shown: a name handed out again (the lowest free one) must not inherit a deleted place's hidden tick
+        if (place switch { C3dHeatSource h => h.Name, C3dProbe p => p.Name, C3dMeshRegion m => m.Name, C3dEffectiveBlock b => b.Name, _ => null } is { } added)
+            _hiddenPlaces.Remove(added);
         switch (place)
         {
             case C3dHeatSource h:
@@ -181,10 +184,12 @@ public sealed partial class C3dEditorViewModel
         if (name.Length == 0) return "A name cannot be empty.";
         if (!Regex.IsMatch(name, @"^[A-Za-z_][A-Za-z0-9_]*$"))
             return $"'{name}' cannot be a place's name: use letters, digits and _, starting with a letter — a measure names a probe by it.";
-        var used = Document.Objects.Select(o => o.Name).Concat(Document.Instances.Select(i => i.Name)).Concat(ThermalPlaceNames())
-                                   .Concat(NestedNames());
-        if (used.Contains(name, StringComparer.Ordinal)) return $"This 3D view already has something named '{name}'.";
-        var word = new Regex($@"(?<![A-Za-z0-9_]){Regex.Escape(old)}(?![A-Za-z0-9_])");
+        // check's own uniqueness rule: across objects, instances, ports and thermal places, IGNORING CASE — so a probe renamed
+        // 'Die' beside an object 'die' is refused here, not by check after it was written. The place itself may change case.
+        var used = Document.Objects.Select(o => o.Name).Concat(Document.Instances.Select(i => i.Name)).Concat(Document.Ports.Select(p => p.Name))
+                                   .Concat(ThermalPlaceNames()).Concat(NestedNames())
+                                   .Where(n => !string.Equals(n, old, StringComparison.Ordinal));
+        if (used.Contains(name, StringComparer.OrdinalIgnoreCase)) return $"This 3D view already has something named '{name}'.";
         // the hidden set learns the new name BEFORE the edit rebuilds the tree (so its tick reads hidden), and keeps the old
         // one, so an undo of the rename finds the place still hidden
         if (_hiddenPlaces.Contains(old)) _hiddenPlaces.Add(name);
@@ -201,9 +206,13 @@ public sealed partial class C3dEditorViewModel
                 foreach (var src in t.Sources ?? []) if (src.Name == old) { src.Name = name; changed = true; }
                 changed |= Rename(t.Rth?.Sources) | Rename(t.Zth?.Sources) | Rename(t.Zth?.Probes);
                 if (t.Submodel is { } sm && sm.Region == old) { sm.Region = name; changed = true; }
+                // a measure reads a probe inside Tmax(…)/T(…): only there is it renamed, through the tokenizer, on the right-hand
+                // side — never a VAR or a measure's own name that happens to be spelled the same
                 if (t.Measures is { } ms)
                     for (int k = 0; k < ms.Count; k++)
-                        if (word.IsMatch(ms[k])) { ms[k] = word.Replace(ms[k], name); changed = true; }
+                        if (ms[k].IndexOf('=') is > 0 and var eq &&
+                            C3dExpressionText.RenameProbe(ms[k][(eq + 1)..], old, name) is var rhs && rhs != ms[k][(eq + 1)..])
+                        { ms[k] = ms[k][..(eq + 1)] + rhs; changed = true; }
                 if (changed) d.Setups[i] = EmSetupPersistence.ToEmbedded(s);
             }
         });
@@ -308,8 +317,8 @@ public sealed partial class C3dEditorViewModel
         C3dProbeStat? stat = null;
         switch (key)
         {
-            case "Power" when text.Length > 0 && !ParsesExpression(text):
-                return $"'{text}' is neither a number nor an expression the engine can read.";
+            case "Power" when text.Length > 0 && C3dThermal.Unparsable(text, ThermalQuantity.Power) is { } powerWhy:
+                return $"The power '{text}' cannot be read: {powerWhy}.";
             case "Density" when !Enum.TryParse(text, true, out density):
                 return "The density is Total (W), PerArea (W/m²) or PerVolume (W/m³).";
             case "Stat" when text.Length > 0:
@@ -318,6 +327,10 @@ public sealed partial class C3dEditorViewModel
                 break;
             case "Face" or "Solid" or "Wire" or "SpotFace" when text.Length == 0 && !(key == "Solid" && Document.HeatSources.Any(h => h.Name == name)):
                 return $"A {key.Replace("SpotFace", "spot", StringComparison.Ordinal).ToLowerInvariant()} probe names what it reads.";
+            // a heat source's Solid may be emptied only where a sheet is left to carry it: a volumetric source with neither
+            // wrote a record nothing draws and only check refused
+            case "Solid" when text.Length == 0 && Document.HeatSources.FirstOrDefault(h => h.Name == name) is { Sheet: null }:
+                return "A volumetric heat source names the solid it is spread through; delete the source instead.";
         }
         if (ThermalPlace(name) is not { } place) return $"This 3D view has no thermal place named '{name}'.";
         bool applies = (place, key) switch
@@ -358,12 +371,6 @@ public sealed partial class C3dEditorViewModel
         return null;
     }
 
-    private static bool ParsesExpression(string text)
-    {
-        try { Parser.Parse(text); return true; }
-        catch (Exception e) when (e is ExpressionException or FormatException or ArgumentException) { return false; }
-    }
-
     // ── the active thermal setup (R-em3d75-2) ────────────────────────────────────────────────
 
     /// <summary>The active setup, when it is an embedded thermal one: its index in the document and the setup.</summary>
@@ -393,8 +400,18 @@ public sealed partial class C3dEditorViewModel
     /// none — insulated, which every face is unless a boundary names it.</summary>
     public string? SetThermalBoundary(string face, ThermalBoundaryKind? kind, string? tempC = null, string? h = null, string? ambientC = null)
     {
-        foreach (var (v, what) in new[] { (tempC, "The temperature"), (h, "h"), (ambientC, "The ambient temperature") })
-            if (v is { Length: > 0 } && !ParsesExpression(v)) return $"{what} '{v}' is neither a number nor an expression the engine can read.";
+        // the values the kind needs are stated (an empty one wrote a boundary check then refused), and each is read as its own
+        // quantity: a temperature is bare °C, h a bare W/(m²·K) — the run's rule, so "85 m" is refused here, not read as 0.085
+        foreach (var (v, what, q, needed) in new[]
+                 {
+                     (tempC, "The temperature", ThermalQuantity.Temperature, kind == ThermalBoundaryKind.FixedT),
+                     (h, "h", ThermalQuantity.Plain, kind == ThermalBoundaryKind.Convection),
+                     (ambientC, "The ambient temperature", ThermalQuantity.Temperature, kind == ThermalBoundaryKind.Convection),
+                 })
+        {
+            if (string.IsNullOrWhiteSpace(v)) { if (needed) return $"{what} is empty; state a value."; continue; }
+            if (C3dThermal.Unparsable(v, q) is { } why) return $"{what} '{v}' cannot be read: {why}.";
+        }
         string what2 = kind switch { ThermalBoundaryKind.FixedT => $"{tempC} °C", ThermalBoundaryKind.Convection => $"convection {h} W/(m²·K) to {ambientC} °C", _ => "insulated" };
         return EditActiveThermal($"Thermal boundary on {face}: {what2}", t =>
         {
@@ -526,8 +543,9 @@ public sealed partial class C3dEditorViewModel
     /// second time takes it away), or a new one made with it (brief-em3d-83).</summary>
     public string? PlotTemperatureOnFace(uint objectId, int face)
     {
-        if (PlotTemperatureRefusal() is { } why) return why;
         if (Viewer.Scene.Object(objectId) is not { } o || face < 0) return "There is no face under the cursor.";
+        // taking a face OFF is always allowed — a stale result must not pin its paint on — and only adding one is gated
+        if (!Viewer.IsTemperatureFace(o.Name, face) && PlotTemperatureRefusal() is { } why) return why;
         PaintFace(o, face, 0, temperature: true);
         return null;
     }
@@ -617,6 +635,8 @@ public sealed partial class C3dEditorViewModel
         if (table.Lines.FirstOrDefault(l => l.Probe == probe) is not { } line)
             return $"There is no line result for '{probe}': run the active thermal setup.";
         if (Document.Probes.FirstOrDefault(p => p.Name == probe)?.Line is not { } seg) return $"'{probe}' is not a line probe.";
+        // the distance axis is the segment as drawn NOW: after an edit it could stretch the old samples over a moved line
+        if (FieldsStaleText is not null) return "The thermal result is stale — the model has changed since it was run. Run it again to plot T(s).";
         var d = seg.To - seg.From;
         double length = C3dLowering.Metres(1, Document.DbuPerMicron) * Math.Sqrt((double)d.X * d.X + (double)d.Y * d.Y + (double)d.Z * d.Z);
         int step = Math.Clamp(Viewer.TemperatureStep, 0, line.PerPoint.Length - 1);
@@ -739,7 +759,8 @@ public sealed partial class C3dEditorViewModel
             int fi = sel[0].Face;
             bool painted = Viewer.IsTemperatureFace(o.Name, fi);
             yield return new Viewer3DMenuItem((painted ? "✓ " : "") + "Plot Temperature", () => Report(PlotTemperatureOnFace(id, fi)),
-                Enabled: plotWhy is null, Tip: plotWhy ?? (painted ? "Take the temperature off this face." : "Temperature on this face; again to take it off. Several faces accumulate."));
+                Enabled: plotWhy is null || painted,
+                Tip: painted ? "Take the temperature off this face." : plotWhy ?? "Temperature on this face; again to take it off. Several faces accumulate.");
             var now = ThermalBoundaryOn(face);
             string tip = thermalWhy ?? $"Writes setup '{ActiveSetupName}': a face no boundary names is insulated.";
             yield return new Viewer3DMenuItem("Thermal", Enabled: thermalWhy is null, Tip: tip, Children:

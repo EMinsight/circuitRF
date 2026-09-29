@@ -317,7 +317,7 @@ public static partial class ThermalRunService
                                  $"{(points.Count > 1 ? "" : "the only point")}, where no steady state exists (thermal runaway).");
                 else if (first >= 0)
                     warnings.Add($"Probe '{p.Name}' reaches its limit of {lim:G6} °C first at {At(axes, points[first]).TrimEnd(':', ' ')}" +
-                                 $"{(points.Count > 1 ? "" : "the only point")}: {reads[first][p.Name].Max:F3} °C.");
+                                 $"{(axes.Count > 0 ? "" : "the only point")}: {reads[first][p.Name].Max:F3} °C.");
             }
 
             // ── the mesh-convergence check ──
@@ -344,8 +344,24 @@ public static partial class ThermalRunService
             }
 
             // ── brief-em3d-80: the Rth matrix, Z_th, the Foster networks and the pulse train ──
-            var small = SmallSignal(new SmallSignalInput(setup, t, document, e, lowering, mesh, assembly, conductivity, problemsAt, resolutionsAt,
-                                                         fields, skipped, axes, options, kOfT, et is not null, resultsRoot), ct, control);
+            // A point that ran away has no temperatures to linearise about or to pulse from: it is passed over as a skipped one is.
+            // The step's solves are the conduction problem WITHOUT the wires, so a body reached only through bond wires has no
+            // steady state there even though the run's own balance solved: said, never thrown out of the run.
+            bool[] noField = [.. skipped.Select((sk, i) => sk || (i < runaway.Count && runaway[i]))];
+            SmallSignalOutput? small;
+            try
+            {
+                small = SmallSignal(new SmallSignalInput(setup, t, document, e, lowering, mesh, assembly, conductivity, problemsAt, resolutionsAt,
+                                                         fields, noField, axes, options, kOfT, et is not null, resultsRoot), ct, control);
+            }
+            catch (FloatingRegionsException x)
+            {
+                var names = x.Regions.Select(r => r < lowering.Regions.Count ? $"'{lowering.Regions[r].Solid}'" : $"region {r}").Distinct();
+                return Refuse($"Rth / Z_th / Pulse: {string.Join(", ", names)} touch{(x.Regions.Length == 1 ? "es" : "")} no fixed-temperature or " +
+                              "convection face through any solid. The steady run reached it through bond wires, and the Rth, Z_th and pulse " +
+                              "solves are conduction in the meshed solids only: give it a boundary of its own, or join it to a solid that has one.");
+            }
+            catch (InvalidOperationException x) { return Stop(EmRunStatus.EngineError, EmDiagnostics.SolveFailed("Rth / Z_th / Pulse: " + x.Message)); }
             if (small is { Refusal: { } smallWhy }) return Refuse(smallWhy);
             if (small is not null)
             {
@@ -355,7 +371,7 @@ public static partial class ThermalRunService
             }
 
             // ── 5. the result ──
-            var data = Build(axes, probes, reads, measures, balances, t, summary);
+            var data = Build(axes, probes, reads, measures, balances, t, summary, runaway);
             foreach (var (g, n, c) in small?.Cubes ?? []) data.AddToGroup(g, n, c);
             if (et is not null) AddElectro(data, axes, et, lowering, runaway);
             if (circuit is not null)
@@ -398,7 +414,14 @@ public static partial class ThermalRunService
 
     /// <summary>A probe's reading at one point: max, min and average (all one number for a point probe), and a line's
     /// samples.</summary>
-    public sealed record ProbeRead(double Max, double Min, double Avg, double[]? Line = null);
+    public sealed record ProbeRead(double Max, double Min, double Avg, double[]? Line = null)
+    {
+        /// <summary>The probe's own statistic (its <c>Stat</c>; the mean when it states none): what <c>T(probe)</c> reads and
+        /// the plain <c>T:&lt;probe&gt;</c> cube carries.</summary>
+        public C3dProbeStat Stat { get; init; } = C3dProbeStat.Avg;
+
+        public double Stated => Stat switch { C3dProbeStat.Max => Max, C3dProbeStat.Min => Min, _ => Avg };
+    }
 
     private static PalaceStep Mesh(string runDir, ThermalLowering lowering, string gmsh, RunControl? control, CancellationToken ct,
                                    List<string> notes, out ThermalMesh? mesh, out string? error)
@@ -470,8 +493,67 @@ public static partial class ThermalRunService
             }
         var nodes = new double[raw.Nodes.Length];
         for (int i = 0; i < nodes.Length; i++) nodes[i] = raw.Nodes[i] * GmshGeoWriter.LengthUnitM;
-        return new ThermalMesh(nodes, order, order == 2 ? raw.TetsHigh : raw.Tets, region,
-                               order == 2 ? raw.TrianglesHigh : raw.Triangles, raw.TrianglePhysical).Compact(out _);
+        var (tris, tags) = OnSheets(nodes, order == 2 ? raw.TrianglesHigh : raw.Triangles, raw.TrianglePhysical, order == 2 ? 6 : 3, lowering);
+        return new ThermalMesh(nodes, order, order == 2 ? raw.TetsHigh : raw.Tets, region, tris, tags).Compact(out _);
+    }
+
+    /// <summary>
+    /// A sheet's group is recovered in the script by its BOUNDING BOX, so a sheet with a hole or a notch also collects the
+    /// coplanar surfaces inside the box that are not the sheet — the hole's floor, the notch's — and heated them. The
+    /// fragment imprinted the sheet's outline, so every triangle lies wholly on the sheet or wholly off it: its centroid, in
+    /// the sheet's own frame, decides. Triangles of every other group pass unchanged.
+    /// </summary>
+    private static (int[] Triangles, int[] Tags) OnSheets(double[] nodes, int[] triangles, int[] tags, int per, ThermalLowering lowering)
+    {
+        var sheetOf = new Dictionary<int, Em3dSheet>();
+        foreach (var s in lowering.Input.Sheets)
+        {
+            int tag = lowering.SheetSourceTags.TryGetValue(s.Name, out int a) ? a : lowering.PatchTags.TryGetValue(s.Name, out int b) ? b : 0;
+            if (tag > 0) sheetOf[tag] = s.Sheet;
+        }
+        if (sheetOf.Count == 0) return (triangles, tags);
+        var keptTris = new List<int>(triangles.Length);
+        var keptTags = new List<int>(tags.Length);
+        for (int t = 0; t < tags.Length; t++)
+        {
+            if (sheetOf.TryGetValue(tags[t], out var sheet))
+            {
+                double cx = 0, cy = 0, cz = 0;
+                for (int k = 0; k < 3; k++)
+                {
+                    int n = triangles[t * per + k];
+                    cx += nodes[3 * n]; cy += nodes[3 * n + 1]; cz += nodes[3 * n + 2];
+                }
+                if (!OnSheet(sheet, cx / 3, cy / 3, cz / 3)) continue;
+            }
+            for (int k = 0; k < per; k++) keptTris.Add(triangles[t * per + k]);
+            keptTags.Add(tags[t]);
+        }
+        return ([.. keptTris], [.. keptTags]);
+    }
+
+    /// <summary>Whether world point (x, y, z), on the sheet's plane, lies inside its outline and outside every hole.</summary>
+    internal static bool OnSheet(Em3dSheet sheet, double x, double y, double z)
+    {
+        double u = x, v = y;
+        if (sheet.Frame is { } f)
+        {
+            double dx = x - f.Origin.X, dy = y - f.Origin.Y, dz = z - f.Origin.Z;
+            u = dx * f.U.X + dy * f.U.Y + dz * f.U.Z;
+            v = dx * f.V.X + dy * f.V.Y + dz * f.V.Z;
+        }
+        return Inside(sheet.Outline, u, v) && !sheet.Holes.Any(h => Inside(h, u, v));
+    }
+
+    private static bool Inside(IReadOnlyList<Point2> ring, double x, double y)
+    {
+        bool inside = false;
+        for (int i = 0, j = ring.Count - 1; i < ring.Count; j = i++)
+        {
+            var (a, b) = (ring[i], ring[j]);
+            if ((a.Y > y) != (b.Y > y) && x < (b.X - a.X) * (y - a.Y) / (b.Y - a.Y) + a.X) inside = !inside;
+        }
+        return inside;
     }
 
     /// <summary>The problem at one point: every value resolved in <paramref name="res"/>.</summary>
@@ -480,9 +562,9 @@ public static partial class ThermalRunService
                                            ThermalField? global = null)
     {
         error = null;
-        double Value(string text, string what, out string? err)
+        double Value(string text, string what, out string? err, ThermalQuantity q)
         {
-            double v = C3dThermal.Evaluate(res, text, out err) ?? double.NaN;
+            double v = C3dThermal.Evaluate(res, text, out err, q) ?? double.NaN;
             if (err is not null) err = $"{what} '{text}' does not resolve: {err}.";
             else if (!double.IsFinite(v)) err = $"{what} '{text}' is not a finite number.";
             return v;
@@ -492,7 +574,7 @@ public static partial class ThermalRunService
         foreach (var h in doc.HeatSources)
         {
             string text = (t.Sources ?? []).FirstOrDefault(s => s.Name == h.Name)?.Power ?? h.Power ?? "0";
-            double p = Value(text, $"Heat source '{h.Name}''s power", out error);
+            double p = Value(text, $"Heat source '{h.Name}''s power", out error, ThermalQuantity.Power);
             if (error is not null) return null;
             if (lowering.SheetSourceTags.TryGetValue(h.Name, out int tag))
             {
@@ -515,15 +597,15 @@ public static partial class ThermalRunService
             if (tag is not { } tg) continue;
             if (b.Kind == ThermalBoundaryKind.FixedT)
             {
-                double tc = Value(b.TempC ?? "", $"The FixedT boundary on '{b.Face}': TempC", out error);
+                double tc = Value(b.TempC ?? "", $"The FixedT boundary on '{b.Face}': TempC", out error, ThermalQuantity.Temperature);
                 if (error is not null) return null;
                 fixedT.Add(new FixedTemperature(tg, tc));
             }
             else
             {
-                double h = Value(b.H ?? "", $"The Convection boundary on '{b.Face}': H", out error);
+                double h = Value(b.H ?? "", $"The Convection boundary on '{b.Face}': H", out error, ThermalQuantity.Plain);
                 if (error is not null) return null;
-                double amb = Value(b.AmbientC ?? "", $"The Convection boundary on '{b.Face}': AmbientC", out error);
+                double amb = Value(b.AmbientC ?? "", $"The Convection boundary on '{b.Face}': AmbientC", out error, ThermalQuantity.Temperature);
                 if (error is not null) return null;
                 conv.Add(new ConvectionCondition(tg, h, amb));
             }
@@ -567,7 +649,7 @@ public static partial class ThermalRunService
                 if (inside.Count > 0) r = new ProbeRead(inside.Max(), inside.Min(), inside.Average(), samples);
                 else r = new ProbeRead(double.NaN, double.NaN, double.NaN, samples);
             }
-            if (r is not null) read[p.Name] = r;
+            if (r is not null) read[p.Name] = r with { Stat = p.Stat ?? C3dProbeStat.Avg };
         }
         return read;
     }
@@ -618,7 +700,7 @@ public static partial class ThermalRunService
     {
         CallExpr { Args: [RefExpr { Name: var probe }] } c when C3dThermal.ProbeFunctions.Contains(c.Name, StringComparer.Ordinal)
             => new NumberExpr(read.TryGetValue(probe, out var r)
-                ? c.Name switch { "Tmax" => r.Max, "Tmin" => r.Min, _ => r.Avg }
+                ? c.Name switch { "Tmax" => r.Max, "Tmin" => r.Min, "Tavg" => r.Avg, _ => r.Stated }
                 : throw new ProbeUnread(probe)),
         RefExpr { Name: C3dThermal.SymmetryFactorName } when symmetry is { } f => new NumberExpr(f),
         CallExpr c => c with { Args = [.. c.Args.Select(a => Rewrite(a, read, symmetry))] },
@@ -697,7 +779,7 @@ public static partial class ThermalRunService
     /// and the notes. Real, single-kind, °C; over the sweep's axes (a scalar with no sweep).</summary>
     private static DataSet Build(List<(string Var, double[] Values, string Unit)> axes, IReadOnlyList<C3dProbe> probes,
                                  List<Dictionary<string, ProbeRead>> reads, List<Dictionary<string, double>> measures,
-                                 List<(double In, double Balance)> balances, CemThermal t, List<string> notes)
+                                 List<(double In, double Balance)> balances, CemThermal t, List<string> notes, IReadOnlyList<bool>? runaway = null)
     {
         var ds = new DataSet();
         Axis[] sweep = [.. axes.Select(a => new Axis(a.Var, a.Values, a.Unit))];
@@ -727,10 +809,13 @@ public static partial class ThermalRunService
                 ds.AddToGroup(Group, $"T:{p.Name}:max", Cube(i => Get(i, p.Name, r => r.Max), "°C"));
                 ds.AddToGroup(Group, $"T:{p.Name}:min", Cube(i => Get(i, p.Name, r => r.Min), "°C"));
                 ds.AddToGroup(Group, $"T:{p.Name}:avg", Cube(i => Get(i, p.Name, r => r.Avg), "°C"));
+                // the probe's own statistic, when it states one: what it reports over its place (R-em3d73-4b)
+                if (p.Stat is not null) ds.AddToGroup(Group, $"T:{p.Name}", Cube(i => Get(i, p.Name, r => r.Stated), "°C"));
             }
             // D11 — every kind of probe with a limit is flagged in the result, not only in a warning sentence
+            // a runaway point has no temperature and has crossed every limit (the warning and the crossing table say so too)
             if (p.LimitC is { } lim)
-                ds.AddToGroup(Group, $"Limit:{p.Name}", Cube(i => Get(i, p.Name, r => r.Max) >= lim ? 1 : 0, "1"));
+                ds.AddToGroup(Group, $"Limit:{p.Name}", Cube(i => runaway is not null && i < runaway.Count && runaway[i] || Get(i, p.Name, r => r.Max) >= lim ? 1 : 0, "1"));
         }
         ds.AddToGroup(Group, "Energy:balance", Cube(i => balances[i].Balance, "1"));
         ds.AddToGroup(Group, "Energy:in", Cube(i => balances[i].In, "W"));
@@ -998,7 +1083,7 @@ public static partial class ThermalRunService
             if (lowering.SourcesOutside.Contains(h.Name)) continue;
             string a = (sub.Sources ?? []).FirstOrDefault(s => s.Name == h.Name)?.Power ?? h.Power ?? "0";
             string b = (from.Sources ?? []).FirstOrDefault(s => s.Name == h.Name)?.Power ?? h.Power ?? "0";
-            double pa = C3dThermal.Evaluate(res, a, out _) ?? double.NaN, pb = C3dThermal.Evaluate(res, b, out _) ?? double.NaN;
+            double pa = C3dThermal.Evaluate(res, a, out _, ThermalQuantity.Power) ?? double.NaN, pb = C3dThermal.Evaluate(res, b, out _, ThermalQuantity.Power) ?? double.NaN;
             if (!(Math.Abs(pa - pb) <= 1e-9 * Math.Max(Math.Abs(pa), Math.Abs(pb))))
                 return $"Heat source '{h.Name}' carries {G(pa)} in this submodel and {G(pb)} in the whole model it is cut from: the sources " +
                        "inside the region must carry what they carry in the whole model, or its cut faces are fixed to the wrong answer.";

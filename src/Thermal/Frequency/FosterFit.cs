@@ -68,6 +68,9 @@ public static class FosterFit
 
         int dc = -1;
         for (int k = 0; k < frequenciesHz.Count; k++) if (frequenciesHz[k] == 0) { dc = k; break; }
+        // a NaN would make the scale NaN, and the all-zero branch below would call it a perfect empty fit (Rth = 0)
+        if (z.Any(v => !double.IsFinite(v.Real) || !double.IsFinite(v.Imaginary)))
+            throw new ArgumentException("every value must be finite", nameof(z));
         double scale = 0;
         foreach (var v in z) scale = Math.Max(scale, v.Magnitude);
         if (!(scale > 0)) return new FosterNetwork { Terms = [], FitError = 0 };

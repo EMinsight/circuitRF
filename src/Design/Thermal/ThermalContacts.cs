@@ -20,14 +20,24 @@ public static class ThermalContacts
     /// overrides first, then the technology's material pairs for every pair no override names. In region order.
     /// </summary>
     public static IReadOnlyList<ThermalContact> Resolve(IReadOnlyList<(string Solid, string Material)> regions,
-                                                        IReadOnlyList<C3dContactResistance> overrides, Technology? tech)
+                                                        IReadOnlyList<C3dContactResistance> overrides, Technology? tech,
+                                                        List<string>? notes = null)
     {
         var index = new Dictionary<string, int>(StringComparer.Ordinal);
         for (int i = 0; i < regions.Count; i++) index.TryAdd(regions[i].Solid, i);
         var found = new SortedDictionary<(int, int), ThermalContact>();
         foreach (var c in overrides)
         {
-            if (c.Between.Count != 2 || !index.TryGetValue(c.Between[0], out int a) || !index.TryGetValue(c.Between[1], out int b) || a == b) continue;
+            if (c.Between.Count != 2 || !index.TryGetValue(c.Between[0], out int a) || !index.TryGetValue(c.Between[1], out int b) || a == b)
+            {
+                // an override naming a solid this run does not mesh (a bond wire, one a block replaced, one a submodel cut away)
+                // applies nowhere, and says so rather than vanishing
+                if (c.Between.Count == 2)
+                    notes?.Add($"The contact override between '{c.Between[0]}' and '{c.Between[1]}' applies nowhere in this run: " +
+                               $"{string.Join(" and ", c.Between.Where(n => !index.ContainsKey(n)).Select(n => $"'{n}'").DefaultIfEmpty("the pair"))} " +
+                               "is not a meshed solid here.");
+                continue;
+            }
             var key = a < b ? (a, b) : (b, a);
             found[key] = new ThermalContact(key.Item1, key.Item2, regions[key.Item1].Solid, regions[key.Item2].Solid, c.ResistanceM2KW,
                                             "the document's ContactResistances override");

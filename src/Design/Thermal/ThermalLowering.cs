@@ -379,7 +379,7 @@ public static class ThermalLowerings
         int? cutTag = clip is not null ? gmsh.Groups[k].Attribute : null;
 
         // ── brief-em3d-76 R-em3d76-1a: which contacts carry a resistance ──
-        var contacts = ThermalContacts.Resolve([.. solids.Select(s => (s.Name, s.Material))], doc.ContactResistances, e.Technology);
+        var contacts = ThermalContacts.Resolve([.. solids.Select(s => (s.Name, s.Material))], doc.ContactResistances, e.Technology, notes);
         var effective = new Dictionary<int, EffectiveBlockLowering>();
         foreach (var bl in blocks) effective[solids.IndexOf(bl.Solid)] = bl;
         if (doc.SymmetryPlanes.Count > 0)

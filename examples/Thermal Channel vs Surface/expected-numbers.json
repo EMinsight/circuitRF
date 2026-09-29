@@ -36,7 +36,7 @@
       "T_centre": 105.141, "T_edge": 101.643, "dT_centre_edge": 3.49849,
       "Rth_f1_f1": 52.91, "Rth_f4_f4": 53.1677, "Rth_f1_f2": 20.519,
       "Rise_f1": 15.8438, "Rise_f4": 19.1302,
-      "Pulse_f1_peak": 90.3948, "Pulse_f4_peak": 90.3932, "Pulse_f4_single": 90.2157, "Pulse_f4_avg": 85.7467
+      "Pulse_f1_peak": 90.3936, "Pulse_f4_peak": 90.392, "Pulse_f4_single": 90.2145, "Pulse_f4_avg": 85.7455
     },
     "Values": [
       { "Name": "centre finger", "Readme": "105.1 °C" },
@@ -48,7 +48,7 @@
       { "Name": "rise, edge finger", "Readme": "15.84 K" },
       { "Name": "rise, fourth finger", "Readme": "19.13 K" },
       { "Name": "pulse peak, fourth finger", "Readme": "90.39 °C" },
-      { "Name": "pulse single, fourth finger", "Readme": "90.22 °C" },
+      { "Name": "pulse single, fourth finger", "Readme": "90.21 °C" },
       { "Name": "pulse average, fourth finger", "Readme": "85.75 °C" }
     ]
   }

@@ -253,7 +253,7 @@ public sealed class ThermalRfCurrentsTests(ITestOutputHelper output) : IDisposab
         return [.. C3dThermal.Setup("Rf", Setup(current), doc, e, res).Select(d => d.Render()).Where(m => m.Contains("current") || m.Contains("harmonic") || m.Contains("array"))];
     }
 
-    private static Func<string?, string, double> Value(C3dElaboration e) => (text, _) => C3dThermal.Evaluate(e.Resolution!, text!, out _) ?? double.NaN;
+    private static Func<string?, string, ThermalQuantity, double> Value(C3dElaboration e) => (text, _, q) => C3dThermal.Evaluate(e.Resolution!, text!, out _, q) ?? double.NaN;
 
     /// <summary>A dense solve by Gaussian elimination with partial pivoting.</summary>
     private static double[] Solve(double[] a, double[] b)

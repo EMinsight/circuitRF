@@ -37871,3 +37871,25 @@ add exactly); the hover reads a hair along the ray when the hit lies just outsid
 lies outside every solid; the line plot's distance axis uses the document's display unit; a wire's hot spot names its s; the
 Temperature submenu opens with any 3D editor, so Clear, Probe Table and Mirror stay reachable over a stale plot (the plotting
 items refuse with the reason).
+
+## Thermal series review, round 2 — the temperature view and the thermal editor (2026-09-29)
+
+**Fix Range across the sweep ignores a step with no temperature.** `MinMax` answered 0–1 for a step with no finite value (a
+runaway or a skipped circuit point), and the union took it: a 30–140 °C legend read 0–140 °C. `TryMinMax` returns null there, and
+the union skips it.
+
+**The legend's maximum is the run's.** A wire is coloured at its centreline's vertices, and its 1D chain's peak can fall between
+two of them. Each painted wire's own T(s) joins the range. The hot-spot marker still sits on the hottest drawn vertex.
+
+**Hover survives a sweep step taken while the sampler builds.** The sampler was adopted only if the drawn step was the SAME
+object, and a revalue makes a new step on the same mesh. It is now adopted by mesh.
+
+**A pinned plot's stale sentence is its own setup's.** It read the active setup's banner, so a plot of T2's out-of-date run showed
+none while T1 was active. `FieldPlotStaleText(plot)` asks the plot's setup's run directories; the solved-document cache is keyed
+per file.
+
+**Smaller ones.** A volumetric source's Solid cannot be emptied (it left a record nothing draws). A line probe's T(s) is refused
+while the result is stale (its distance axis is the segment as drawn now). A new place starts shown, not with a deleted
+namesake's hidden tick. A painted face can be taken off while the result is stale. Fixed Temperature and Convection refuse an
+empty value. A thermal place rename follows check's uniqueness (ignoring case, including ports), and renames a probe inside
+measures by token, only as a probe function's argument (it was a regex over the whole line).

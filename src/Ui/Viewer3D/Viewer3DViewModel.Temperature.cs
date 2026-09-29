@@ -262,7 +262,7 @@ public sealed partial class Viewer3DViewModel
         }
         var wires = table is null ? [] : Wires(scene, table, step);
 
-        var scale = Range(q, surfaces, wires);
+        var scale = Range(q, surfaces, wires, table, step);
         if (fixRange && steps.Count > 1)
             for (int k = 0; k < steps.Count; k++)
             {
@@ -272,8 +272,9 @@ public sealed partial class Viewer3DViewModel
                 if (other is null) continue;
                 var revalued = surfaces.Select(s => s.Revalue(other) ?? s).ToList();
                 var wk = table is null ? wires : [.. wires.Select(w => Table(table, w.Wire, k) is { } t ? FieldWires.Revalue(w, t) : w)];
-                scale = scale.Union(Range(q, revalued, wk));
+                if (Range(q, revalued, wk, table, k) is { } sk) scale = scale is null ? sk : scale.Union(sk);
             }
+        scale ??= FieldColorScale.MinMax(q, []);
         string? note = surfaces.Count == 0 && wires.Count == 0
             ? "Nothing is painted: right-click a face ▸ Plot Temperature, or View ▸ Temperature ▸ All Faces or On Clip Plane (turn the clip plane on)."
             : null;
@@ -296,8 +297,24 @@ public sealed partial class Viewer3DViewModel
         return thinnest > 0 ? Math.Min(tol, 0.25 * thinnest) : tol;
     }
 
-    private static FieldColorScale Range(FieldQuantity q, IReadOnlyList<FieldSurface> surfaces, IReadOnlyList<FieldWireSurface> wires)
-        => FieldColorScale.MinMax(q, [.. surfaces, .. wires.Select(w => w.Surface)]);
+    /// <summary>The true range of what is painted at sweep step <paramref name="step"/>, or null when none of it is finite. A
+    /// wire is drawn at its centreline's vertices, and its 1D chain's peak can fall between two of them: the run's own T(s)
+    /// for each painted wire joins the range, so the legend's maximum is the run's, never the drawing's.</summary>
+    private static FieldColorScale? Range(FieldQuantity q, IReadOnlyList<FieldSurface> surfaces, IReadOnlyList<FieldWireSurface> wires,
+                                          ThermalResultTable? table, int step)
+    {
+        var scale = FieldColorScale.TryMinMax(q, [.. surfaces, .. wires.Select(w => w.Surface)]);
+        if (table is null) return scale;
+        foreach (var w in wires)
+        {
+            if (Table(table, w.Wire, step) is not { } t) continue;
+            var finite = t.T.Where(double.IsFinite).ToList();
+            if (finite.Count == 0) continue;
+            var ws = new FieldColorScale(false, finite.Min(), finite.Max(), 100, false, FieldNames.Unit(q.Array.Name));
+            scale = scale is null ? ws : scale.Union(ws);
+        }
+        return scale;
+    }
 
     /// <summary>R-em3d75-5 — every wire the table has T(s) for, coloured on the scene's own triangles.</summary>
     private static List<FieldWireSurface> Wires(Scene3DModel scene, ThermalResultTable table, int step)
@@ -385,7 +402,7 @@ public sealed partial class Viewer3DViewModel
                 var array = next.Load(q.Array.Name) ?? throw new FieldReadException($"'{pvtu}' holds no {q.Array.Name}.");
                 var surfaces = parts.Surfaces.Select(s => s.Revalue(array)!).ToList();
                 var wires = table is null ? parts.Wires : [.. parts.Wires.Select(w => Table(table, w.Wire, step) is { } t ? FieldWires.Revalue(w, t) : w)];
-                var scale = fix && fixedScale is not null ? fixedScale : Range(q, surfaces, wires);
+                var scale = fix && fixedScale is not null ? fixedScale : Range(q, surfaces, wires, table, step) ?? FieldColorScale.MinMax(q, []);
                 cts.Token.ThrowIfCancellationRequested();
                 _post(() =>
                 {

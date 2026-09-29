@@ -15295,3 +15295,79 @@ every axis read "unit (none), scale 1"), evaluates Start as the run does, looks 
 **Also:** the mesh-convergence check is skipped (and says so) for wires, currents or a circuit — it re-solves conduction only;
 its change is a share of the probe's rise, not of its °C reading. Point and line probes carry a `Limit:` cube; a missing line
 read is NaN, not 0 °C. A cancel just before the result files are written no longer leaves them behind under a Cancelled status.
+
+## Thermal series review, round 2 — the carried list, check against the run, the run service (2026-09-29)
+
+**Heat-source sheets are filtered by centroid, after meshing.** The script recovers a sheet's group by its bounding box, so a
+sheet with a hole or a notch also collected the coplanar surfaces inside the box that are not the sheet (the hole's floor), and
+heated them with the flux P / (area including them). The fragment imprints the sheet's outline, so every triangle lies wholly
+on or off it: `ThermalRunService.ReadMesh` keeps a sheet or wire-patch group's triangles only where the centroid, in the
+sheet's own frame, is inside the outline and outside every hole. Doing it in Gmsh's `.geo` would need a point-in-polygon test
+written in its scripting language.
+
+**A solid may mesh as several volumes.** A submodel's box across a comb of fingers, or a void cutting a solid through, split one
+solid into pieces, and the group's "exactly 1 volume" was a refusal. The group is now "at least 1". A LOST volume is still
+refused, and a piece touching nothing that sets its temperature is the solver's own refusal, which is per connected body.
+
+**A bored barrel is sized from its wall.** `ThermalSolidSizeM` took the box's thinnest side, which for a plated via is its
+diameter, giving about one element through the plating. An air solid (never meshed, so nothing else sizes what it leaves)
+strictly inside a solid along an axis, AND taking at least half of it there, now bounds the size by the wall each side. The
+cutter is limited to AIR on purpose. Applied to any embedded meshed solid, a plate in a passivation would refine the whole
+passivation (a Constant field covers the solid's whole volume), and the example times would follow. *Die to Heatsink*:
+397,997 → 543,980 tetrahedra, 53 s → 77 s, die top +0.2 °C at 11 W (expected-numbers re-recorded).
+
+**The pulse is anchored at each point's average-power steady solve when k(T) is on.** Brief 80 stated both "the fit is the
+tangent at the average-power operating point" and "each [rise] added to the steady baseline with power zero". Under k(T) these
+disagree: the average read one temperature and the steady solve at the same power another. The baseline is now that point's
+own average-power steady field, and the rise reported is the peak/single minus the tangent's average. Conductive-balance runs
+keep the round-1 note (not re-solved).
+
+**Mutual Foster fits are checked when a pulse reads them**, against their own DC value rather than pointwise (a transfer Z_th
+falls far below DC, where a relative miss costs the pulse nothing). *Eight Fingers* showed why this matters. `Zth:f1:f4`'s real
+part goes NEGATIVE near 10 kHz (the heat's delay between fingers), which no positive Foster network can represent. The one-pass
+fit collapsed to one stage at the grid's longest τ and misses by 99.8 %. The run now warns; brief 86 part 1 replaces the fit
+with the exact harmonic sum.
+
+**Units are checked against the quantity** (`ThermalQuantity`). A bare SI prefix is a unit in the table ("m" is milli), so
+"85 m" as a temperature read 0.085 °C. Temperatures and plain numbers (h, a duty, a resistance per area) take no unit; a power
+takes W and its multiples; a current A; a frequency Hz; a Period a time. `check`, the run, `explain` and the 3D editor's
+Inspector all read through the one rule. A sweep's Start/Stop stay `Any`, because their variable may be anything.
+
+**`check` resolves names, not only syntax.** It parsed a power or a temperature but never asked whether `Pdisss` existed, so the
+run refused after meshing, and a bad Pulse Duty threw away a finished steady sweep, Rth matrix and Z_th. `Unresolvable` checks
+every name against the resolution. Pulse Duty and Period get the run's own range rules where they do not move with the sweep.
+
+**Nested keys are named.** Every thermal setup class carries `[JsonExtensionData] Unread`, and `check` walks them all. A typo was
+dropped silently at every depth below the setup.
+
+**`Probe.Stat` means something.** `T(probe)` reads a probe's own Stat, and the result carries a plain `T:<probe>` cube for any
+probe that states one. `check` accepts `T` on such a probe.
+
+**EffectiveBlocks and SymmetryPlanes take expressions**, as their doc comments always said. They were `IC3dBindable` but had no
+field specs and no `OwnersOf` case, so the reader refused `{ "Expr": … }` there.
+
+**A VAR rename or delete sees the thermal content.** `UsesOf`/`Rename` walked only bound fields, VARs and overrides.
+`C3dThermal.ExpressionFields` is now the ONE list of a setup's expressions, walked by the resolver's "used by", the uses list and
+the rename alike. The 3D editor's undo restores `Setups` on a document edit, so undoing a rename restores the setups it
+rewrote. `InlineAndDelete` refuses while anything but a dimension field reads the VAR.
+
+**check against the lowering.** Places on a bond wire's solid (not meshed: a 1D chain) and on a solid an enabled effective block
+replaces are refused by `check` as the lowering refuses them — except a SOLID probe on a replaced solid, which is a warning:
+the run reads nothing there (NaN), and *Die to Heatsink*'s README relies on exactly that when its block is enabled (making it
+an error refused that example's own documented alternative). A contact override naming a solid the run does not mesh is now a
+note ("applies nowhere"), not a silent `continue`.
+
+**Circuit-driven refusals name a fix that exists in that mode.** "State the current per array" cannot be done when the circuit
+supplies the currents; in that mode the sentence names the model change instead (a port per array, a wire to the conductor).
+
+**Run service.** The Rth/Z_th/pulse step is wrapped: a body reached only through bond wires has no steady state there (those
+solves are conduction without the wires), and `FloatingRegionsException` escaped the run. A runaway point is passed over as a
+skipped one (it has no field to linearise about). A runaway latches the rest of its row only for points at or beyond it, seen
+from the last converged point; a sweep running down in current solves the rest. `Limit:<probe>` reads 1 at a runaway point,
+as the warning and the crossing table already did. Two harmonic labels at one frequency on one wire add in magnitude. A
+one-point sweep's limit sentence no longer runs "…W" into "the only point".
+
+**Setup rename follows by name.** Field plots pinned to a setup and submodels cut From it follow a rename, in the same undo entry.
+
+Not done here, and why: result staleness misses sub-cell edits (all 3D runs, not only thermal; brief 87); drawn wires' ground
+plane in the RF share, the sweep slider, face folds for thermal references, and the pulse from exact Z_th (brief 86).

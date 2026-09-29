@@ -338,8 +338,10 @@ public sealed partial class Viewer3DViewModel
             var bs = bnd is not null ? new FieldSampler(bnd.Mesh) : null;
             _post(() =>
             {
-                if (ReferenceEquals(_fieldVolume, vol)) _volumeSampler = vs;
-                if (ReferenceEquals(_fieldBoundary, bnd)) _boundarySampler = bs;
+                // by MESH, not by step: a sweep step revalued meanwhile (WithArraysOf) is a new step on the same mesh, and the
+                // sampler indexes the mesh — adopting only the identical step left hover dead for the rest of the run
+                if (vol is not null && ReferenceEquals(_fieldVolume?.Mesh, vol.Mesh)) _volumeSampler = vs;
+                if (bnd is not null && ReferenceEquals(_fieldBoundary?.Mesh, bnd.Mesh)) _boundarySampler = bs;
             });
         });
     }

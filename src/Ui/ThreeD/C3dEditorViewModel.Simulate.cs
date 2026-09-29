@@ -355,7 +355,14 @@ public sealed partial class C3dEditorViewModel
         if (index < 0) return;
         bool renamed = edited.Name != name;
         _suppressEditorReload = true;
-        try { ChangeRecords($"{description} ({name})", d => d.Setups[index] = EmSetupPersistence.ToEmbedded(edited)); }
+        try
+        {
+            ChangeRecords($"{description} ({name})", d =>
+            {
+                d.Setups[index] = EmSetupPersistence.ToEmbedded(edited);
+                if (renamed) C3dThermal.RenameSetupReferences(d, name, edited.Name);
+            });
+        }
         finally { _suppressEditorReload = false; }
         if (renamed && ActiveSetupName == name) SetActiveSetup(edited.Name);
         if (name == ActiveSetupName) { Viewer.SetRunSetup(ActiveRunSetup); }
@@ -412,7 +419,11 @@ public sealed partial class C3dEditorViewModel
         if (TryRead(Document.Setups[item.Index]) is not { } s) return "That setup cannot be read, so it cannot be renamed.";
         s.Name = newName;
         bool wasActive = ActiveSetupName == item.Name && !IsExternalActive;
-        ChangeRecords($"Rename setup {item.Name} to {newName}", d => d.Setups[item.Index] = EmSetupPersistence.ToEmbedded(s));
+        ChangeRecords($"Rename setup {item.Name} to {newName}", d =>
+        {
+            d.Setups[item.Index] = EmSetupPersistence.ToEmbedded(s);
+            C3dThermal.RenameSetupReferences(d, item.Name, newName);
+        });
         if (wasActive) SetActiveSetup(newName);
         SelectedSetupItem = SetupItems.FirstOrDefault(i => i.Name == newName && !i.IsExternal);
         return null;
@@ -1019,15 +1030,19 @@ public sealed partial class C3dEditorViewModel
 
     [ObservableProperty] private string? _fieldsStaleText;
 
-    private ((string, DateTime) Stamp, string Text)? _solvedCache;
+    private readonly Dictionary<string, (DateTime Stamp, string Text)> _solvedCache = new(StringComparer.Ordinal);
 
     /// <summary>The shell's results root (the workspace's <c>results</c> folder, or the session's).</summary>
     public Func<string?>? ResultsRootProvider { get; set; }
 
     /// <summary>The run directories the active setup's run writes, first Palace's.</summary>
-    private IEnumerable<string> ActiveRunDirectories()
+    private IEnumerable<string> ActiveRunDirectories() => RunDirectoriesOf(ActiveRunSetup);
+
+    /// <summary>The directories setup <paramref name="s"/>'s runs keep their results in (a thermal setup's own; a Palace and/or an
+    /// openEMS one).</summary>
+    private IEnumerable<string> RunDirectoriesOf(EmSetup? s)
     {
-        if (ActiveRunSetup is not { } s || ResultsRootProvider?.Invoke() is not { } root) yield break;
+        if (s is null || ResultsRootProvider?.Invoke() is not { } root) yield break;
         // brief-em3d-75 — a thermal setup's run keeps its own directory (brief 74), and only that one.
         if (s.IsThermal) { yield return CircuitRF.Design.Thermal.ThermalRunService.RunDirectory(root, s); yield break; }
         if (s.Solver3D is Em3dSolver.Palace or Em3dSolver.Both) yield return Em3dRunService.RunDirectory(root, s, Em3dSolver.Palace);
@@ -1055,29 +1070,38 @@ public sealed partial class C3dEditorViewModel
 
     /// <summary>R-em3d49-5b — the banner: fields from a run whose document differs from the one being edited now. They are
     /// still shown — the solver's own geometry, never re-mapped onto a model it did not see.</summary>
-    public void RefreshFieldsStale()
+    public void RefreshFieldsStale() => FieldsStaleText = StaleText(ActiveRunSetup);
+
+    /// <summary>brief-em3d-83 — the banner for plot <paramref name="p"/>: ITS setup's run, which need not be the active one (a plot
+    /// is pinned to a setup). Read with the active setup's, a plot of T2's out-of-date temperatures showed no warning while T1
+    /// was active, and a current plot was called stale because T1's run was old.</summary>
+    public string? FieldPlotStaleText(C3dFieldPlot p) => StaleText(PlotRequest(p, resolveScene: false).RunSetup);
+
+    /// <summary>Why setup <paramref name="setup"/>'s result is stale — its run solved a different model, or (thermal, from a
+    /// circuit) the circuit moved on — or null.</summary>
+    private string? StaleText(EmSetup? setup)
     {
         string? text = null;
-        foreach (string dir in ActiveRunDirectories())
+        foreach (string dir in RunDirectoriesOf(setup))
         {
             string f = Path.Combine(dir, RunDocumentFile);
             if (!File.Exists(f)) continue;
             // The solved document, read once per file version: this runs on every edit.
-            var stamp = (f, File.GetLastWriteTimeUtc(f));
-            if (_solvedCache?.Stamp != stamp)
+            var stamp = File.GetLastWriteTimeUtc(f);
+            if (!_solvedCache.TryGetValue(f, out var cached) || cached.Stamp != stamp)
             {
-                try { _solvedCache = (stamp, File.ReadAllText(f)); } catch (Exception) { continue; }
+                try { _solvedCache[f] = cached = (stamp, File.ReadAllText(f)); } catch (Exception) { continue; }
             }
             // brief-em3d-83 R-em3d83-2 — the plots are display: SerializeForRun leaves them out on both sides.
-            if (C3dRunDocument.IsStale(_solvedCache!.Value.Text, Document))
+            if (C3dRunDocument.IsStale(cached.Text, Document))
                 text = $"Fields are from the run at {File.GetLastWriteTime(f):HH:mm}; the model has changed since. They are drawn on the " +
                        "geometry that run solved.";
             break;
         }
         // brief-em3d-79 R-em3d79-3b — a thermal result driven from a circuit is stale when the circuit (as extracted) or the
         // S-parameter file it used no longer hashes as it did. Each file is re-hashed only when it changes on disk.
-        if (text is null && ActiveRunSetup is { IsThermal: true } thermal && ResultsRootProvider?.Invoke() is { } resultsRoot)
+        if (text is null && setup is { IsThermal: true } thermal && ResultsRootProvider?.Invoke() is { } resultsRoot)
             text = CircuitRF.Design.Thermal.ThermalCircuitLink.Staleness(CircuitRF.Design.Thermal.ThermalRunService.RunDirectory(resultsRoot, thermal));
-        FieldsStaleText = text;
+        return text;
     }
 }

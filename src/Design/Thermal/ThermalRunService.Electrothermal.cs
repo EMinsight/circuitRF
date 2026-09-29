@@ -52,6 +52,9 @@ public static partial class ThermalRunService
         public ElectrothermalSolution? RowFirst;
         public IReadOnlyList<(string Var, double Value)>? RowFirstPoint;
         public bool RowRunaway;
+        /// <summary>The point this row ran away at: a later point of the row is passed over only if it lies at or beyond it, seen
+        /// from the last converged point — a sweep running DOWN in current (or up in cooling) reaches points that do solve.</summary>
+        private IReadOnlyList<(string Var, double Value)>? _runawayAt;
         /// <summary>This row's first point was skipped: its first point that solves is the one the next row starts from.</summary>
         private bool _rowFirstPending;
         public readonly List<ElectrothermalSolution?> Solutions = [];
@@ -62,7 +65,7 @@ public static partial class ThermalRunService
             NewRow(index, row);
             var target = At(point, 1);
             RfPeaks.Add([.. target.Wires.Select(w => w.Harmonics.Select(h => h.PeakA).ToArray())]);
-            if (RowRunaway) return Record(point, index, null, true, null);
+            if (RowRunaway && Beyond(point)) return Record(point, index, null, true, null);
             ContinuationResult r;
             if (target.Currents.Count == 0 && target.Wires.All(w => w.Harmonics.All(h => h.PeakA == 0)))
             {
@@ -94,6 +97,7 @@ public static partial class ThermalRunService
             if (r.Runaway)
             {
                 RowRunaway = true;
+                _runawayAt = point;
                 return Record(point, index, r, true, null);
             }
             Last = r.Solution;
@@ -114,11 +118,29 @@ public static partial class ThermalRunService
             return new ElectroPoint(NanSolution(Mesh), null, false, null);
         }
 
+        /// <summary>Whether <paramref name="point"/> lies at or past the runaway point along the line from the last converged point
+        /// to it (each coordinate relative to the step, so a current and a temperature weigh alike). With no converged point to
+        /// measure from, every later point of the row is past it.</summary>
+        private bool Beyond(IReadOnlyList<(string Var, double Value)> point)
+        {
+            if (_runawayAt is not { } fail || LastPoint is not { } from) return true;
+            double dot = 0, dd = 0;
+            for (int k = 0; k < point.Count && k < fail.Count && k < from.Count; k++)
+            {
+                double d = fail[k].Value - from[k].Value;
+                if (d == 0) continue;
+                double scale = Math.Abs(d);
+                dot += (point[k].Value - from[k].Value) / scale * (d / scale);
+                dd += 1;
+            }
+            return dd == 0 || dot >= dd;
+        }
+
         /// <summary>A new row starts from the last row's first point, not from where the last row ran away.</summary>
         private void NewRow(int index, int row)
         {
             if (row > 0 && index % row == 0 && index > 0)
-                (Last, LastPoint, RowRunaway) = (RowFirst, RowFirstPoint, false);
+                (Last, LastPoint, RowRunaway, _runawayAt) = (RowFirst, RowFirstPoint, false, null);
         }
 
         private string? _runaway;
@@ -225,7 +247,7 @@ public static partial class ThermalRunService
         }
 
         // brief-em3d-78 R-em3d78-2/-3: which array carries each port's harmonics, and how its wires share them (once: geometry)
-        var rf = ThermalRfPlan.Build(e, lowering, t, out string? rfWhy);
+        var rf = ThermalRfPlan.Build(e, lowering, t, out string? rfWhy, fromCircuit: say is not null);
         if (rf is null) { refusal = rfWhy; return null; }
         List<string>? collect = null;
 
@@ -237,20 +259,21 @@ public static partial class ThermalRunService
             Dictionary<string, double>? drive = null;
             foreach (var q in point)
                 if (ThermalCircuitLink.IsReserved(q.Var)) (drive ??= new(StringComparer.Ordinal))[q.Var] = q.Value;
-            double Opt(string? text, string what)
+            double Opt(string? text, string what, ThermalQuantity q)
             {
                 if (bad is not null || string.IsNullOrWhiteSpace(text)) return double.NaN;
                 if (drive is not null && drive.TryGetValue(text.Trim(), out double bound)) return bound;
-                double v = C3dThermal.Evaluate(res!, text, out string? err) ?? double.NaN;
+                double v = C3dThermal.Evaluate(res!, text, out string? err, q) ?? double.NaN;
                 if (err is not null || !double.IsFinite(v)) bad = $"{what} '{text}' does not resolve{(err is null ? "" : ": " + err)}.";
                 return v;
             }
-            double convH = Opt(t.WireConvectionH, "WireConvectionH"), convT = Opt(t.WireAmbientC, "WireAmbientC");
-            double bondT = Opt(t.BondThermalResistance, "BondThermalResistance"), bondE = Opt(t.BondElectricalResistance, "BondElectricalResistance");
-            double Stated(string? text, string what)
+            double convH = Opt(t.WireConvectionH, "WireConvectionH", ThermalQuantity.Plain), convT = Opt(t.WireAmbientC, "WireAmbientC", ThermalQuantity.Temperature);
+            double bondT = Opt(t.BondThermalResistance, "BondThermalResistance", ThermalQuantity.Plain);
+            double bondE = Opt(t.BondElectricalResistance, "BondElectricalResistance", ThermalQuantity.Plain);
+            double Stated(string? text, string what, ThermalQuantity q)
             {
                 if (string.IsNullOrWhiteSpace(text)) { bad ??= $"{what} is not stated."; return double.NaN; }
-                return Opt(text, what);
+                return Opt(text, what, q);
             }
             var harmonics = rf.At(Stated, scale, collect);
             var wires = new List<ThermalWire>();
@@ -282,7 +305,7 @@ public static partial class ThermalRunService
             foreach (var pc in lowering.PortContacts)
             {
                 var c = (t.Currents ?? []).First(x => x.Port == pc.Port);
-                double amps = string.IsNullOrWhiteSpace(c.Dc) ? 0 : Opt(c.Dc, $"Port {pc.Port}'s Dc");
+                double amps = string.IsNullOrWhiteSpace(c.Dc) ? 0 : Opt(c.Dc, $"Port {pc.Port}'s Dc", ThermalQuantity.Current);
                 var pos = pc.Positive.Select(f => lowering.FaceTag(f, false)).OfType<int>().ToList();
                 var neg = pc.Negative.Select(f => lowering.FaceTag(f, false)).OfType<int>().ToList();
                 terminals.Add(new CurrentTerminal(pc.Port, pos, neg, scale * amps));

@@ -154,7 +154,7 @@ public sealed partial class C3dPropertiesViewModel
         PlotPercentile = p.Percentile;
         PlotFixRange = p.FixRange;
         PlotProblem = editor.FieldPlotProblem(p);
-        PlotStale = editor.FieldsStaleText;
+        PlotStale = editor.FieldPlotStaleText(p);
     }
 
     /// <summary>The drawn plot's verdict changed (the run was read, the step loaded): the sentence above the fields follows.</summary>
@@ -163,7 +163,7 @@ public sealed partial class C3dPropertiesViewModel
         if (IsFieldPlot && Editor.FieldPlot(_plotName) is { } p)
         {
             PlotProblem = Editor.FieldPlotProblem(p);
-            PlotStale = Editor.FieldsStaleText;
+            PlotStale = Editor.FieldPlotStaleText(p);
         }
     }
 

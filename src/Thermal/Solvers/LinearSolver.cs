@@ -154,7 +154,7 @@ public static class LinearSolver
             double alpha = rz / SparseRows.Dot(p, q);
             for (int i = 0; i < n; i++) { x[i] += alpha * p[i]; r[i] -= alpha * q[i]; }
             rel = SparseRows.Norm(r) / bn;
-            if (rel <= o.RelativeTolerance) return k;
+            if (rel <= o.RelativeTolerance || !double.IsFinite(rel)) return k;     // a breakdown (NaN) stops here: the caller falls back
             m(r, z);
             double rz1 = SparseRows.Dot(r, z);
             double beta = rz1 / rz;
@@ -211,7 +211,7 @@ public static class LinearSolver
                 r[i] = s[i] - omega * t[i];
             }
             rel = SparseRows.Norm(r) / bn;
-            if (rel <= o.RelativeTolerance || omega == 0) return k;
+            if (rel <= o.RelativeTolerance || omega == 0 || !double.IsFinite(rel)) return k;
         }
         return o.MaxIterations;
     }

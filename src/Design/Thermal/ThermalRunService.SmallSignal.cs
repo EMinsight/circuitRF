@@ -176,7 +176,8 @@ public static partial class ThermalRunService
                 var avg = WithPowers(problem, input.Lowering, zero, zSources, [.. pulse0.PowersW.Select(pw => pulse0.Duty * pw)]);
                 operating = ThermalSolver.Solve(avg, input.Options with { InitialGuess = input.Fields[op] }, input.Assembly).Temperature;
                 output.Notes.Add($"Pulse: with k(T) on, Z_th and its fits are the tangent about the AVERAGE-power temperatures of {where} " +
-                                 $"(duty {G(pulse0.Duty)} × {G(pulse0.PowersW.Sum())} W).");
+                                 $"(duty {G(pulse0.Duty)} × {G(pulse0.PowersW.Sum())} W); each point's average temperature is its own steady " +
+                                 "solve at its average power, and the peak and single-pulse rise are measured from it.");
             }
         }
         var zSystem = new ThermalSmallSignal(problem, zSources, operating, input.KOfT, input.Assembly);
@@ -203,6 +204,7 @@ public static partial class ThermalRunService
             place < ns ? zth.Z[fi][place, source] : probeZ[place - ns, source, fi])];
         var freqAxis = new Axis("freq", [.. freqs], "Hz");
         var fits = new FosterNetwork?[places.Count, ns];
+        var mutualMisses = new List<string>();
         for (int o = 0; o < places.Count; o++)
             for (int j = 0; j < ns; j++)
             {
@@ -226,7 +228,21 @@ public static partial class ThermalRunService
                 if (self && fit.FitError > FosterWarnAbove)
                     output.Warnings.Add($"The Foster fit of '{zSources[j].Name}''s own Z_th misses it by {100 * fit.FitError:F2} % somewhere in the band " +
                                         $"(above {100 * FosterWarnAbove:G2} %): raise Zth.PerDecade (now {perDecade}) so the band is sampled more finely.");
+                // A mutual or probe fit is not a network, but a pulse's temperatures are built from it exactly as from a self fit, so
+                // it is checked too — against its own largest |Z| (its DC value), not pointwise: a transfer impedance falls far below
+                // its DC value at high frequency, where a relative miss is large and costs the pulse nothing.
+                if (!self && t.Pulse is not null)
+                {
+                    double big = z.Max(v => v.Magnitude), miss = 0;
+                    for (int fi = 0; fi < nf; fi++) miss = Math.Max(miss, (fit.Z(freqs[fi]) - z[fi]).Magnitude);
+                    if (big > 0 && miss / big > FosterWarnAbove)
+                        mutualMisses.Add($"'{places[o]}' per watt in '{zSources[j].Name}' by {100 * miss / big:F1} % of its DC value");
+                }
             }
+        if (mutualMisses.Count > 0)
+            output.Warnings.Add("Pulse: the Foster fits of " + string.Join("; ", mutualMisses) + $" (above {100 * FosterWarnAbove:G2} %), and the pulse " +
+                                "temperatures there are built from them. A transfer Z_th with a delay is not a sum of positive RC stages; the " +
+                                "Z_th cubes themselves are exact.");
         output.Notes.Add($"Z_th: {nf} frequencies (DC and {G(start)} Hz – {G(stop)} Hz, {perDecade} per decade), {ns} source(s), {np} probe(s); " +
                          $"{(zth.Solver == ThermalSolverKind.Direct ? "complex LU" : $"{(zSystem.Tangent ? "BiCGStab" : "COCG")} + AMG, at most {zth.MaxIterations} iterations")}, " +
                          $"largest relative residual {zth.MaxResidual:G3}." + (zth.FallbackNote is { } zfb ? " " + zfb : ""));
@@ -253,7 +269,7 @@ public static partial class ThermalRunService
         }
 
         // ── R-em3d80-4: the pulse train, per sweep point ──
-        if (t.Pulse is { } ps) Pulse(ps, input, zSources, probes, places, fits, zSystem, zero, output, ct);
+        if (t.Pulse is { } ps) Pulse(ps, input, zSources, probes, places, fits, zSystem, zero, nonlinear, output, ct);
         return output;
     }
 
@@ -273,7 +289,7 @@ public static partial class ThermalRunService
     private static double FrequencyOf(string? text, double fallback, C3dResolution res, string key, SmallSignalOutput output)
     {
         if (text is null) return fallback;
-        double v = C3dThermal.Evaluate(res, text, out string? err) ?? double.NaN;
+        double v = C3dThermal.Evaluate(res, text, out string? err, ThermalQuantity.Frequency) ?? double.NaN;
         if (err is not null || !(v > 0)) output.Refusal ??= $"Zth.{key} '{text}' is not a positive frequency{(err is null ? "" : ": " + err)}.";
         return v;
     }
@@ -287,7 +303,8 @@ public static partial class ThermalRunService
         why = null;
         double Eval(string text, string key, out string? e)
         {
-            double v = (key == "Period" ? C3dThermal.EvaluateTime(res, text, out e) : C3dThermal.Evaluate(res, text, out e)) ?? double.NaN;
+            double v = (key == "Period" ? C3dThermal.EvaluateTime(res, text, out e)
+                        : C3dThermal.Evaluate(res, text, out e, key == "Duty" ? ThermalQuantity.Plain : ThermalQuantity.Power)) ?? double.NaN;
             if (e is not null) e = $"Pulse.{key} '{text}' does not resolve: {e}.";
             return v;
         }
@@ -319,7 +336,7 @@ public static partial class ThermalRunService
     }
 
     private static void Pulse(CemThermalPulse ps, SmallSignalInput input, List<SmallSignalSource> sources, List<C3dProbe> probes,
-                              List<string> places, FosterNetwork?[,] fits, ThermalSmallSignal system, ThermalField zero,
+                              List<string> places, FosterNetwork?[,] fits, ThermalSmallSignal system, ThermalField zero, bool nonlinear,
                               SmallSignalOutput output, CancellationToken ct)
     {
         int points = input.Problems.Count, ns = sources.Count;
@@ -342,9 +359,16 @@ public static partial class ThermalRunService
             var values = PulseAt(ps, input.T, input.Document, input.Lowering, zero, res, sources, out string? why);
             if (values is null) { output.Refusal = $"Pulse at point {pi + 1}: {why}"; return; }
             double tOn = values.Duty * values.Period;
-            // the baseline: the point's boundaries with no power
-            var cold = WithPowers(problem, input.Lowering, zero, [], []) ;
-            var baseField = new ThermalField(input.Mesh, ThermalSolver.Solve(cold, input.Options with { InitialGuess = null }, input.Assembly).Temperature);
+            // the baseline: the point's boundaries with no power — or, with k(T) on (and no conductive balance), the point's own
+            // AVERAGE-power steady field, which the rise is then measured from. The fit is the tangent there (R-em3d80-4c), and a
+            // tangent's Duty·ΣP·Rth added to the zero-power field is not the average-power temperature once k moves with T: the
+            // average read one answer and the steady solve at the same power another. Anchored here, the average IS that solve
+            // and the tangent carries only the ripple about it.
+            bool anchored = nonlinear && !input.Electro;
+            var baseProblem = anchored ? WithPowers(problem, input.Lowering, zero, sources, [.. values.PowersW.Select(pw => values.Duty * pw)])
+                                       : WithPowers(problem, input.Lowering, zero, [], []);
+            var baseField = new ThermalField(input.Mesh, ThermalSolver.Solve(baseProblem,
+                input.Options with { InitialGuess = anchored && input.Fields[pi].All(double.IsFinite) ? input.Fields[pi] : null }, input.Assembly).Temperature);
             var baseProbes = ReadProbes(probes, input.Lowering, baseField, input.Document.DbuPerMicron);
             double[] times = [.. Enumerable.Range(0, PulseSamples).Select(k => values.Period * k / (PulseSamples - 1))];
             for (int o = 0; o < places.Count; o++)
@@ -354,6 +378,7 @@ public static partial class ThermalRunService
                 var drives = new List<PulseDrive>();
                 for (int j = 0; j < ns; j++) if (fits[o, j] is { } f) drives.Add(new PulseDrive(values.PowersW[j], f));
                 if (drives.Count < ns) continue;
+                if (anchored) baseline -= PulseTrain.Average(drives, values.Period, tOn);
                 peak[o][pi] = baseline + PulseTrain.Peak(drives, values.Period, tOn);
                 single[o][pi] = baseline + PulseTrain.Single(drives, tOn);
                 average[o][pi] = baseline + PulseTrain.Average(drives, values.Period, tOn);
@@ -361,7 +386,7 @@ public static partial class ThermalRunService
                 for (int k = 0; k < PulseSamples; k++) wave[o][pi * PulseSamples + k] = baseline + w[k];
                 if (pi == Array.IndexOf(input.Skipped, false))
                     summary.Add($"'{places[o]}' peak {peak[o][pi]:F3} °C, single pulse {single[o][pi]:F3} °C, average {average[o][pi]:F3} °C " +
-                                $"(baseline {baseline:F3} °C)");
+                                (anchored ? "(about the average-power steady field)" : $"(baseline {baseline:F3} °C)"));
             }
             if (pi == Array.IndexOf(input.Skipped, false))
                 output.Notes.Add($"Pulse: period {G(values.Period)} s, duty {G(values.Duty)}, {G(values.PowersW.Sum())} W during the pulse: " +
@@ -407,7 +432,7 @@ public static partial class ThermalRunService
     {
         var h = doc.HeatSources.First(x => x.Name == name);
         string text = (t.Sources ?? []).FirstOrDefault(s => s.Name == name)?.Power ?? h.Power ?? "0";
-        double p = C3dThermal.Evaluate(res, text, out error) ?? double.NaN;
+        double p = C3dThermal.Evaluate(res, text, out error, ThermalQuantity.Power) ?? double.NaN;
         if (lowering.SheetSourceTags.TryGetValue(name, out int tag))
             return h.Density == C3dHeatDensity.PerArea ? p * (zero.Surface(new HashSet<int> { tag })?.Measure ?? double.NaN) : p;
         if (lowering.SolidSourceRegions.TryGetValue(name, out int region))

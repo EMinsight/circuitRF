@@ -139,7 +139,10 @@ public static class ConductiveBalance
             resP = SparseRows.Norm(rP) / refP;
             (floorT, floorP) = ctx.Floors(a, x, refT, refP);
             double span = Span(x, sys.TUnknowns);
-            if (upd <= options.NewtonTolerance * Math.Max(span, 1e-300) && resT <= Math.Max(1e-8, floorT) && resP <= Math.Max(1e-8, floorP))
+            // floored as the thermal solve's is: at an isothermal answer (no current, every fixed face at one temperature) the
+            // span and every update are round-off, and "update ≤ tol × span" never held — a warm start to it ran every step,
+            // failed, and a continuation then read a bracket closing near zero as a runaway
+            if (upd <= options.NewtonTolerance * Math.Max(span, ThermalSolver.SpanFloorK) && resT <= Math.Max(1e-8, floorT) && resP <= Math.Max(1e-8, floorP))
             { converged = true; break; }
         }
         if (atStart) its = 0;
@@ -169,7 +172,7 @@ public static class ConductiveBalance
             change = 0;
             for (int i = 0; i < sys.TUnknowns; i++) change = Math.Max(change, Math.Abs(x[i] - before[i]));
             if (Diverged(x, sys.TUnknowns)) break;
-            if (change <= 1e-12 * Math.Max(Span(x, sys.TUnknowns), 1e-300)) { converged = true; break; }
+            if (change <= 1e-12 * Math.Max(Span(x, sys.TUnknowns), ThermalSolver.SpanFloorK)) { converged = true; break; }
         }
         var a = sys.Assemble(problem, x, options.KOfT, options.SigmaOfT);
         var (rT, rP) = ctx.Residual(a, x);
