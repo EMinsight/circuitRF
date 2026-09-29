@@ -184,9 +184,14 @@ public sealed partial class MaterialsTableViewModel : ObservableObject
         Changed?.Invoke();
     }
 
-    /// <summary>Selects the row named <paramref name="name"/> (Open Library's "select the row").</summary>
+    /// <summary>Selects the row named <paramref name="name"/> (Open Library's "select the row", Edit Material…). A filter that
+    /// hides that row is cleared: the view scrolls the selection into view, and a hidden row cannot be seen there.</summary>
     public void Select(string name)
-        => SelectedRow = Rows.FirstOrDefault(r => string.Equals(r.Name, name, StringComparison.OrdinalIgnoreCase));
+    {
+        var row = Rows.FirstOrDefault(r => string.Equals(r.Name, name, StringComparison.OrdinalIgnoreCase));
+        if (row is { IsShown: false }) FilterText = "";
+        SelectedRow = row;
+    }
 
     // ── the one commit path ───────────────────────────────────────────────────
 

@@ -155,6 +155,7 @@ public partial class WorkspaceViewModel
             vm.ActiveSetupChanged += () => RememberActiveSetup(vm);
             vm.RunRequested = (c3d, setupName) => RunC3dSetupAsync(c3d, setupName);
             vm.SetupAnalysesRequested = c3d => _ = ShowC3dSetupAnalysesAsync(c3d, null);
+            vm.EditMaterialRequested = EditMaterial;    // brief-em3d-94
             // brief-em3d-68 R-em3d68-5d — a reload's new parts are offered in the import table, unchecked.
             vm.OfferStepParts = (source, parts) => ShowStepImportAsync(vm, source, null, parts.ToHashSet(StringComparer.Ordinal));
             vm.ExternalChangeWhileDirty += () => _ = AskReloadC3dAsync(doc);

@@ -51,6 +51,9 @@ public sealed class Scene3DObject
     public string? Material { get; init; }
     /// <summary>The material's values at the setup's operating temperature — what the tooltip shows.</summary>
     public Em3dMaterial? MaterialValues { get; init; }
+    /// <summary>brief-em3d-94 — the role the elaborator gave it, which the solve uses (an object's Role override included): a
+    /// solid's own, a sheet's conductor. Null for a port, a face or the box's edges. What the hover's material lines follow.</summary>
+    public Em3dRole? Role { get; init; }
     /// <summary>Index into the problem's materials — the batch's material slot; −1 for none.</summary>
     public int MaterialSlot { get; init; } = -1;
     public required uint Rgba { get; init; }

@@ -83,6 +83,8 @@ public sealed partial class C3dEditorViewModel
             items.Add(new Viewer3DMenuItem("Duplicate", Enabled: false, Tip: why));
             items.Add(Viewer3DMenuItem.Separator);
             items.Add(new Viewer3DMenuItem("Delete", Enabled: false, Tip: why));
+            // brief-em3d-94 — a placed cell's part edits its material where that cell's technology defines it.
+            if (EditMaterialItem(item) is { } edit) { items.Add(Viewer3DMenuItem.Separator); items.Add(edit); }
         }
         else
         {
@@ -123,6 +125,7 @@ public sealed partial class C3dEditorViewModel
                                    Tip: "Make a material in the technology or one of its libraries, and give it to this object.")]));
                 items.Add(new Viewer3DMenuItem("Assign Material…", () => RequestMaterialPicker([index], startNew: false),
                     Tip: "Choose this object's material from its technology's materials — each with its role and source — or make a new one."));
+                if (EditMaterialItem(item) is { } edit) items.Add(edit);    // brief-em3d-94
                 bool hidden = Document.Objects[index].Hidden;
                 items.Add(new Viewer3DMenuItem(hidden ? "Show" : "Hide", () => SetRowsVisible([item], hidden, $"{(hidden ? "Show" : "Hide")} {item.Name}")));
             }

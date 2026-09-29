@@ -6,6 +6,7 @@ using CircuitRF.Design.ThreeD;
 using CircuitRF.Ui.Layout;
 using CircuitRF.Ui.ThreeD;
 using CommunityToolkit.Mvvm.Input;
+using Dock.Model.Core;
 
 namespace CircuitRF.Ui.ViewModels;
 
@@ -20,7 +21,8 @@ public partial class WorkspaceViewModel
         absolutePath = Path.GetFullPath(absolutePath);
         if (ActivateIfOpen(absolutePath))
         {
-            if (select is not null && _openDocsByPath.TryGetValue(absolutePath, out var open) && open is MaterialsDocument m)
+            // brief-em3d-94 — open in this window or another: the row is selected there, whatever it was showing.
+            if (select is not null && OpenDocumentAnywhere(absolutePath) is MaterialsDocument m)
                 m.ViewModel.Table.Select(select);
             return;
         }
@@ -230,6 +232,60 @@ public partial class WorkspaceViewModel
         }
         return listed.Count == 0 ? null
             : $"Not rewritten, because they are not open: {string.Join(", ", listed)} still name '{oldName}', and `check` will report it as unknown there.";
+    }
+
+    // ── Edit Material… from a 3D view (brief-em3d-94 R-em3d94-2) ─────────────────────────────
+
+    /// <summary>
+    /// Opens the file <paramref name="material"/> is defined in, on its row: the technology's own list → the technology editor's
+    /// Materials tab; a library the technology names → that <c>.cmat</c>'s document. A library shipped inside circuitRF is no file
+    /// to open, so it is read on the technology's Materials tab, where its rows stand read-only. An editor already open —
+    /// here, floated, or in another workspace window — is brought forward, never opened twice, and the row is selected even when
+    /// it was showing another.
+    /// </summary>
+    internal void EditMaterial(string material, string? technologyPath)
+    {
+        if (technologyPath is null)
+        {
+            Messages.Warning(C3dEditorViewModel.EditMaterialNoTechnology);
+            return;
+        }
+        string techPath = Path.GetFullPath(technologyPath);
+        // The technology as it stands now: an open editor's unsaved list, else the file.
+        Technology? own = (OpenDocumentAnywhere(techPath) as TechDocument)?.ViewModel.Working;
+        if (own is null) { try { own = TechPersistence.LoadOwnFromFile(techPath); } catch { /* opened below, where it says why */ } }
+        bool inOwnList = own?.Materials.Any(m => string.Equals(m.Name, material, StringComparison.OrdinalIgnoreCase)) == true;
+        string? library = inOwnList ? null : SafeTech(techPath)?.LibrarySourceOf(material);
+        if (library is not null && !library.StartsWith(MaterialLibraries.ShippedPrefix, StringComparison.Ordinal) && File.Exists(library))
+        {
+            OpenOrActivateMaterials(library, material);
+            return;
+        }
+
+        OpenOrActivateTech(techPath);
+        if (OpenDocumentAnywhere(techPath) is not TechDocument doc) return;
+        var editor = doc.ViewModel;
+        editor.SelectedTabIndex = TechEditorViewModel.MaterialsTabIndex;
+        editor.MaterialsTable.Select(material);
+        if (editor.MaterialsTable.SelectedRow is null)
+            Messages.Warning($"'{Path.GetFileName(techPath)}' does not define material '{material}', nor does any library it names.");
+    }
+
+    private Technology? SafeTech(string techPath)
+    {
+        try { return _techCache.Get(techPath); }
+        catch { return null; }
+    }
+
+    /// <summary>The document open at <paramref name="absolutePath"/> in this workspace window or another, or null.</summary>
+    private IDockable? OpenDocumentAnywhere(string absolutePath)
+    {
+        string wanted = Path.GetFullPath(absolutePath);
+        if (FindOpenDocument(wanted) is { } here) return here;
+        foreach (var window in Views.WorkspaceLocator.AllWindows())
+            if (window.DataContext is WorkspaceViewModel other && !ReferenceEquals(other, this) && other.FindOpenDocument(wanted) is { } there)
+                return there;
+        return null;
     }
 
     // ── the 3D editor (R-em3d53-5) ────────────────────────────────────────────────────────────

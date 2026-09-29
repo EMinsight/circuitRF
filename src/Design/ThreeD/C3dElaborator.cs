@@ -158,6 +158,12 @@ public sealed record C3dElaboration(
     public IReadOnlyDictionary<string, (Technology Technology, string Material)> SolidMaterials { get; init; }
         = new Dictionary<string, (Technology, string)>();
 
+    /// <summary>brief-em3d-94 — each solid's and sheet's material by name: the file of the technology it was built from (the
+    /// document's, or a placed cell's own; null when that technology came from no file) and the material's name THERE. Where
+    /// Edit Material… opens it.</summary>
+    public IReadOnlyDictionary<string, (string? TechnologyPath, string Material)> MaterialOrigins { get; init; }
+        = new Dictionary<string, (string?, string)>();
+
     /// <summary>What each object is, by name — a layout instance's origins, prefixed; a drawn object's by its role.</summary>
     public IReadOnlyDictionary<string, Em3dObjectOrigin> Origins { get; init; } = new Dictionary<string, Em3dObjectOrigin>();
 
@@ -707,6 +713,15 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
         /// <summary>brief-em3d-76 — each technology a use names, by that name: what a solid's own material record is read from.</summary>
         private readonly Dictionary<string, Technology> _techObjects = new(StringComparer.Ordinal);
 
+        /// <summary>brief-em3d-94 — the file each of those technologies resolved from, by the same name.</summary>
+        private readonly Dictionary<string, string> _techPaths = new(StringComparer.Ordinal);
+
+        private void Know(TechResolution tech, string techName)
+        {
+            if (tech.Tech is { } techObject) _techObjects.TryAdd(techName, techObject);
+            if (tech.ResolvedPath is { } resolved) _techPaths.TryAdd(techName, resolved);
+        }
+
         public C3dElaboration Go(C3dDocument doc, string path)
         {
             var (tech, _) = TechnologyResolver.ResolveForDocument(doc.TechRef, path, workspaceCws, owner._tech);
@@ -747,9 +762,11 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
             var solids = new List<Em3dSolid>(_solids);
             var sheets = new List<Em3dSheet>(_sheets);
             var records = new Dictionary<string, (Technology Technology, string Material)>(StringComparer.Ordinal);
+            var origins = new Dictionary<string, (string? TechnologyPath, string Material)>(StringComparer.Ordinal);
             foreach (var (index, isSheet, t, n) in _uses)
             {
                 string final = Final(t, n);
+                origins[isSheet ? sheets[index].Name : solids[index].Name] = (_techPaths.GetValueOrDefault(t), n);
                 if (isSheet) sheets[index] = sheets[index] with { Material = final };
                 else
                 {
@@ -767,6 +784,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
                 GroundBandObjects = _groundBand,
                 MaterialSources = sources,
                 SolidMaterials = records,
+                MaterialOrigins = origins,
                 Origins = _origins,
                 Wires = _wires,
                 WireRefusals = _wireRefusals,
@@ -793,7 +811,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
                               List<(string Cell, string Instance, string Path)> stack, bool exact)
         {
             string techName = TechName(tech);
-            if (tech.Tech is { } techObject) _techObjects.TryAdd(techName, techObject);
+            Know(tech, techName);
             string unit = LayoutUnits.AsciiSuffix(doc.DisplayUnit);
             _walkUnits.Add(new C3dWalkStep(prefix.Length == 0 ? Path.GetFileName(path) : prefix.TrimEnd('/'),
                 $"{doc.DbuPerMicron} DBU per µm (1 DBU = {C3dLowering.Metres(1, doc.DbuPerMicron).ToString("R", CultureInfo.InvariantCulture)} m), " +
@@ -856,7 +874,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
                              string path, bool exact)
         {
             string techName = TechName(tech);
-            if (tech.Tech is { } techObject) _techObjects.TryAdd(techName, techObject);
+            Know(tech, techName);
             if (obj.Material is not { Length: > 0 } matName)
             {
                 // 3D editor bugs round 2 — an object with no material yet is IGNORED by the solver, not a refusal: a
@@ -884,7 +902,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
                          TechResolution tech, string prefix, string path, bool exact)
         {
             string techName = TechName(tech);
-            if (tech.Tech is { } techObject) _techObjects.TryAdd(techName, techObject);
+            Know(tech, techName);
             var values = Resolve(material, out string source);
             string key = Register(techName, material.Name, values, TechSource(tech, techName, material.Name) + source);
 
@@ -948,7 +966,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
             }
 
             string techName = TechName(tech);
-            if (tech.Tech is { } techObject) _techObjects.TryAdd(techName, techObject);
+            Know(tech, techName);
             string? matName = C3dValidation.EffectiveMaterial(obj);
             TechMaterial? material = matName is { Length: > 0 } ? tech.Tech?.FindMaterial(matName) : null;
             if (matName is { Length: > 0 } && material is null)
@@ -1100,7 +1118,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
         private void Wires(C3dDocument doc, string path, TechResolution tech, C3dTransform world, string prefix)
         {
             string techName = TechName(tech);
-            if (tech.Tech is { } techObject) _techObjects.TryAdd(techName, techObject);
+            Know(tech, techName);
             var elements = doc.Objects.OfType<C3dWire>().SelectMany(src => C3dWires.Elements(src).Select(e => (Source: src, e.Wire))).ToList();
             var wireNames = new HashSet<string>(elements.Select(e => prefix + e.Wire.Name), StringComparer.Ordinal);
             var pads = C3dWires.Pads(_solids, _sheets, prefix, wireNames);
@@ -1288,7 +1306,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
             foreach (var (ijk, w, integral) in Elements(doc, inst, counts, pitch, world))
             {
                 _instances.Add(new C3dInstanceFrame(prefix + inst.Name + (isArray ? ijk : ""), w, viewPath, Path.GetFileName(cellDir), Layout: true));
-                if (layout.Tech.Tech is { } layoutTech) _techObjects.TryAdd(layout.TechName, layoutTech);
+                Know(layout.Tech, layout.TechName);
                 Layout(layout, solids, layout.TechName, viewPath, prefix + inst.Name + (isArray ? ijk : ""), w,
                        exact && integral && layout.DbuPerMicron == _topDbu);
             }

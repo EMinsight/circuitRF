@@ -70,6 +70,20 @@ for EM into 3D.
   change there — save that file to keep them; Cancel discards them. A material that already exists is renamed and
   deleted in its own file's editor, which renames it everywhere it is used. A placed cell brings its **own**
   technology's materials with it — see [Hierarchy](#hierarchy).
+- **Edit Material…** opens the file a material is defined in, on its row. Right-click a material's heading in the
+  Objects tree (by material; *No material* has none), or an object's row, which says which material:
+  *Edit Material 'FR4'…*. A material in the technology's own list opens the technology on its **Materials** tab; one
+  from a `.cmat` library opens that library. A library shipped inside circuitRF is not a file you can edit, so its
+  material opens on the technology's Materials tab, where it can be read. A placed cell's part edits its own
+  technology's material, and the item names that file: *Edit Material 'Au' (in pa.ctech)…*. An editor that is already
+  open — in another tab, floated, or in another workspace window — is brought forward rather than opened again, and
+  the list scrolls to the row. With no technology, the item is greyed; give the design one with *3D ▸ Materials…*.
+- **Hovering** an object names it and shows the material properties that apply to what it is to the solver: a
+  conductor, a wire, a via or a sheet shows σ at the operating temperature (and μr when it is not 1), never εr or tanδ;
+  a dielectric shows εr (or its three tensor values) and tanδ, and σ only when it is above 0 — a doped substrate's
+  loss; air says *Air*. What the object is follows its **Role** when you gave it one, as the solve does. An object with
+  no material says so, and a material that states nothing says that. With a thermal setup active, every solid also
+  shows k, and ρ and c when the setup computes a Z_th or a pulse.
 - **The editor and the viewer are one pane.** The 3D view a solver result opens in, **Show 3D** on a setup,
   and this editor share the camera, the clip plane, the mesh and field displays, and every key described in
   [3D EM ▸ The 3D view](em-3d.html#view). The editor adds the drawing.

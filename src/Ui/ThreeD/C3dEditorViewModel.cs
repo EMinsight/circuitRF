@@ -163,6 +163,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         Viewer.FrameRequested += OnViewerFrame;
         Viewer.CursorResolved += OnCursorResolvedForOperation;
         Viewer.DescribeSuffix = NotModelledSuffix;              // brief-em3d-93 — "(not modelled)" on the hover
+        Viewer.MaterialHoverContext = HoverContextOf;           // brief-em3d-94 — the lines that apply to what the object is
         // 3D editor round 1 — the air box's tree tick is the toolbar's air-box switch. Round 3: both are AirBoxShown, the
         // user's choice, which the editor re-applies to every scene it adopts.
         ApplySnapGrid();
@@ -1296,6 +1297,10 @@ public sealed class C3dTreeGroup(string header, IEnumerable<C3dTreeItem> items, 
 
     /// <summary>The header's tooltip, or null.</summary>
     public string? HeaderTip { get; init; }
+
+    /// <summary>brief-em3d-94 — the material a By-material header names (never <c>No material</c>), whose menu offers Edit
+    /// Material…; null for every other group.</summary>
+    public string? MaterialName { get; init; }
     public override string ExpansionKey => "group:" + Role + ":" + Header;
 }
 

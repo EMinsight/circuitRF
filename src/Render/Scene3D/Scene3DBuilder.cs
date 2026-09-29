@@ -336,7 +336,7 @@ public static class Scene3DBuilder
             var (m, slot) = materials.TryGetValue(s.Material, out var mt) ? (mt.m, mt.i) : ((Em3dMaterial?)null, -1);
             b.Object(new Scene3DObject
             {
-                Id = 0, Name = s.Name, Kind = kind, Material = s.Material, MaterialValues = m, MaterialSlot = slot,
+                Id = 0, Name = s.Name, Kind = kind, Role = s.Role, Material = s.Material, MaterialValues = m, MaterialSlot = slot,
                 Rgba = rgba, Translucent = translucent,
                 InitiallyVisible = wire || (s.Role != Em3dRole.Air && s.Name != outermost),
                 FaceNames = FacesOf(s.Name),
@@ -367,7 +367,7 @@ public static class Scene3DBuilder
             if (see is { } t) (rgba, translucent) = t.Apply(rgba);
             b.Object(new Scene3DObject
             {
-                Id = 0, Name = sh.Name, Kind = Scene3DKind.Sheet, Material = sh.Material, MaterialValues = m,
+                Id = 0, Name = sh.Name, Kind = Scene3DKind.Sheet, Role = Em3dRole.Conductor, Material = sh.Material, MaterialValues = m,
                 MaterialSlot = slot, Rgba = wire ? wireFill : dim ? Dimmed(rgba, dark) : rgba, Translucent = dim || wire || translucent,
                 FaceNames = names.Count > 0 ? names : SheetFaceNames, Context = dim, Wireframe = wire, Transparency = see,
             }, mesh, faces: true, sheet: true, features: Features(sh.Name, mesh, sheet: true, sheetNames: names.Count > 0 ? names : SheetFaceNames),
@@ -766,7 +766,7 @@ public static class Scene3DBuilder
             uint id = (uint)(_objects.Count + 1);
             var obj = new Scene3DObject
             {
-                Id = id, Name = o.Name, Kind = o.Kind, Material = o.Material, MaterialValues = o.MaterialValues,
+                Id = id, Name = o.Name, Kind = o.Kind, Role = o.Role, Material = o.Material, MaterialValues = o.MaterialValues,
                 MaterialSlot = o.MaterialSlot, Rgba = o.Rgba, Translucent = o.Translucent,
                 InitiallyVisible = o.InitiallyVisible, PortNumber = o.PortNumber, Boundary = o.Boundary,
                 FaceNames = o.FaceNames, CapCentres = o.CapCentres, Context = o.Context, PickLast = o.PickLast,
@@ -964,7 +964,7 @@ public static class Scene3DBuilder
                     uint id = (uint)(_objects.Count + 1);
                     var obj = new Scene3DObject
                     {
-                        Id = id, Name = d.Name, Kind = proto.Kind, Material = proto.Material, MaterialValues = proto.MaterialValues,
+                        Id = id, Name = d.Name, Kind = proto.Kind, Role = proto.Role, Material = proto.Material, MaterialValues = proto.MaterialValues,
                         MaterialSlot = proto.MaterialSlot, Rgba = proto.Rgba, Translucent = proto.Translucent,
                         InitiallyVisible = proto.InitiallyVisible, FaceNames = proto.FaceNames, Context = proto.Context,
                         Wireframe = proto.Wireframe, Transparency = proto.Transparency,

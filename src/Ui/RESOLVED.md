@@ -38037,3 +38037,42 @@ group's row would break the group — and a group whose every member is off has 
 **The hover** gets " (not modelled)" through a new `Viewer3DViewModel.DescribeSuffix` hook, which the editor sets. The view
 draws the object as it is (D4). The Inspector's Padding field and the drawn air box read `ModelledExtent()`, so both match the
 run's box.
+
+## brief-em3d-94 — material hover by role, and Edit Material… from the 3D tree (2026-09-29)
+
+**The hover's material lines are one pure function, `MaterialHover.Lines` (`src/Render/Scene3D`).** It takes the scene
+object's `Kind`, its new `Scene3DObject.Role` (the `Em3dRole` the elaborator gave the solid, a Role override included; a sheet
+is always a conductor, because `Em3dSheet` is by definition one) and its resolved `Em3dMaterial`. The role is carried, not
+re-derived from the material, so the hover agrees with the solve on an ambiguous material. A conductor shows σ (μr only
+≠ 1); a dielectric εr or the tensor, tanδ, and σ only when > 0. The owner's D1 was built as recommended: a lossy
+substrate's σ is shown, and only the `σ 0` line is gone. Air shows `Air`.
+
+**What the scene cannot know comes through one hook, `Viewer3DViewModel.MaterialHoverContext`**, which the 3D editor sets
+(the `DescribeSuffix` pattern of brief 93). It supplies three things. One is the material's own `TechMaterial`, through
+`ThermalMaterials.Source`, so a record stating nothing reads "states nothing" rather than `σ 0`. That happens only under a Role
+override: without one, the elaborator refuses the object and it is not in the scene. Another is the active thermal setup's k,
+through `ThermalMaterials.For`, so the look-through to a library or the shipped generic record is the run's own. ρ and c are
+added only when the setup has a `Zth` or a `Pulse`. The last is why a wireframe (unassigned) object has no values: no material,
+or one its technology does not define. The .cem viewer sets no hook and gets the role rules alone.
+
+**Edit Material… needed the placed cell's technology FILE**, which the elaboration did not record: `SolidMaterials` holds a
+`Technology` object, and only for solids. `C3dElaboration.MaterialOrigins` (name → technology path, material name there)
+covers solids and sheets. It is filled from a `_techPaths` map that the elaborator's new `Know(TechResolution, name)` fills
+beside `_techObjects`, at all six places a technology is registered. The request is `C3dEditorViewModel.EditMaterialRequested`
+(material, technology path), the `SetupAnalysesRequested` pattern. A By-material header carries its material in the new
+`C3dTreeGroup.MaterialName` rather than a new `C3dTreeGroupRole`, because a dozen places match `Role == Objects` for the
+material groups (the air box's placement among them).
+
+**The workspace (`EditMaterial`) decides by where the name is defined.** It checks the technology's own list first, as an open
+editor's unsaved `Working` has it, else the file. If the name is not there, it tries `LibrarySourceOf`. A writable `.cmat`
+opens that library's document. Anything else opens the technology on its Materials tab, where the table lists library rows
+read-only: the technology's own list, a `shipped:` library (no file to open), or a name nothing defines (with a warning).
+`OpenDocumentAnywhere` looks in every workspace window, and `OpenOrActivateMaterials` now uses it too. Before this, a library
+open in another window was brought forward but its row was never selected.
+
+**The scroll lives in the one `MaterialsTableView`** that both the `.cmat` document and the tech editor's tab host. The table
+is a `ListBox` since the materials-editor redesign, not the DataGrid the brief names. On a `SelectedRow` change, and again on
+`AttachedToVisualTree` (a tab not yet shown creates its view after the selection), it posts `ScrollIntoView` at Background
+priority, after the layout pass that realises the rows. If the list still has no height, it waits one `LayoutUpdated` and
+tries again. `MaterialsTableViewModel.Select` clears a filter that hides the row it selects, since a hidden row cannot be
+scrolled to. There is no Avalonia app host in Ui.Tests, so the gate reads the view's source; the scroll was not seen in pixels.

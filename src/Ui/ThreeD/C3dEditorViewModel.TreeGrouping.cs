@@ -261,7 +261,7 @@ public sealed partial class C3dEditorViewModel
         foreach (var g in solids.Where(t => MaterialHeaderOf(t.o) != NoMaterialHeader)
                                 .GroupBy(t => MaterialHeaderOf(t.o), StringComparer.Ordinal)
                                 .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase))
-            yield return new C3dTreeGroup(g.Key, g.Select(Item));
+            yield return new C3dTreeGroup(g.Key, g.Select(Item)) { MaterialName = g.Key };
         var lines = rows.Where(t => t.o is C3dPolyline).Select(Item).ToList();
         if (lines.Count > 0) yield return new C3dTreeGroup("Polylines", lines, C3dTreeGroupRole.Construction);
     }

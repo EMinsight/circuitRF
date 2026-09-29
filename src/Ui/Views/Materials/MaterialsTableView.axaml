@@ -150,7 +150,7 @@
                     <TextBox Text="{Binding FilterText}" PlaceholderText="Filter by name, role or file" FontSize="12" Padding="6,4"/>
                     <TextBlock Text="{Binding ReadOnlyReason}" IsVisible="{Binding IsReadOnly}" Classes="hint"/>
                 </StackPanel>
-                <ListBox Classes="list" ItemsSource="{Binding Rows}" SelectedItem="{Binding SelectedRow, Mode=TwoWay}" SelectionMode="Single">
+                <ListBox x:Name="RowList" Classes="list" ItemsSource="{Binding Rows}" SelectedItem="{Binding SelectedRow, Mode=TwoWay}" SelectionMode="Single">
                     <ListBox.ItemTemplate>
                         <DataTemplate x:DataType="lay:MaterialRowViewModel">
                             <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" Margin="6,4" IsVisible="{Binding IsShown}"

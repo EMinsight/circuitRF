@@ -480,20 +480,21 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
         else { CursorText = ""; _lastCursorWorld = null; }
     }
 
-    /// <summary>The tooltip: name, material, and the values at the setup's operating temperature.</summary>
     /// <summary>brief-em3d-93 — what the owner adds to an object's hover line (the 3D editor's "(not modelled)"), or null.</summary>
     public Func<Scene3DObject, string?>? DescribeSuffix { get; set; }
 
+    /// <summary>brief-em3d-94 — what the owner knows of an object's material that the scene does not (its record, the active
+    /// thermal setup, why it has no values), or null: the 3D editor's.</summary>
+    public Func<Scene3DObject, MaterialHoverContext?>? MaterialHoverContext { get; set; }
+
+    /// <summary>The tooltip: name, then the material lines that apply to what the object is (MaterialHover), σ at the setup's
+    /// operating temperature; a face's boundary kind.</summary>
     internal string Describe(Scene3DObject? o)
     {
         if (o is null) return "";
         var t = o.Kind switch { Scene3DKind.Port => $"Port {o.PortNumber}  {o.Name}", _ => o.Name } + DescribeSuffix?.Invoke(o);
-        if (o.MaterialValues is { } m)
-        {
-            string at = Scene.Problem is { } p ? $" at {p.OperatingTempC.ToString("G4", CultureInfo.InvariantCulture)} °C" : "";
-            t += $"\n{m.Name}: εr {m.Epsr.ToString("G4", CultureInfo.InvariantCulture)}, tanδ {m.TanD.ToString("G3", CultureInfo.InvariantCulture)}, " +
-                 $"σ {m.SigmaSm.ToString("G3", CultureInfo.InvariantCulture)} S/m{at}";
-        }
+        var lines = MaterialHover.Lines(o, Scene.Problem?.OperatingTempC, MaterialHoverContext?.Invoke(o));
+        if (lines.Count > 0) t += "\n" + string.Join("\n", lines);
         else if (o.Boundary is { } b) t += $"\n{b}";
         return t;
     }

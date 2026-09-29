@@ -419,9 +419,11 @@ public sealed partial class C3dEditorViewModel
         ];
     }
 
-    /// <summary>A group header's menu: the Field Plots group adds a plot.</summary>
+    /// <summary>A group header's menu: the Field Plots group adds a plot; a material's header (by material) edits the material
+    /// (brief-em3d-94).</summary>
     public IReadOnlyList<Viewer3DMenuItem> TreeGroupMenuItems(C3dTreeGroup group)
-        => group.Role == C3dTreeGroupRole.FieldPlots ? [new Viewer3DMenuItem("New Field Plot…", NewFieldPlot)] : [];
+        => group.Role == C3dTreeGroupRole.FieldPlots ? [new Viewer3DMenuItem("New Field Plot…", NewFieldPlot)]
+         : !IsViewOnly && EditMaterialItem(group) is { } edit ? [edit] : [];
 
     /// <summary>
     /// brief-em3d-90 — the plots' side of SetRowsVisible: hiding hides each named plot; showing keeps the one-at-a-time rule —
