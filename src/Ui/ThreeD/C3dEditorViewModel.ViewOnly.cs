@@ -51,6 +51,7 @@ public sealed partial class C3dEditorViewModel
         Viewer.SceneAdopted += OnViewSceneAdopted;
         Viewer.SelectionChanged += OnViewerSelectionChanged;
         Viewer.VisibilityChanged += OnViewVisibilityChanged;
+        WatchFieldPlots();
         Properties = new C3dPropertiesViewModel(this);
         ResolveDocument();
         InitFrames();
@@ -64,6 +65,7 @@ public sealed partial class C3dEditorViewModel
     private void OnViewSceneAdopted()
     {
         RebuildTree();
+        ApplyVisiblePlot();                        // brief-em3d-83 — the session's plot, on this scene
         Interlocked.Exchange(ref _adoptedGeneration, Viewer.Scene.Generation);
     }
 

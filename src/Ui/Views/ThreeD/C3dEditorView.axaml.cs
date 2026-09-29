@@ -156,7 +156,17 @@ public partial class C3dEditorView : UserControl
     /// one builder, so a boolean is offered exactly as it is there.</summary>
     private void OnTreeContextRequested(object? sender, ContextRequestedEventArgs e)
     {
-        if (_vm is null || (e.Source as Control)?.FindAncestorOfType<TreeViewItem>(includeSelf: true)?.DataContext is not C3dTreeItem item) return;
+        if (_vm is null) return;
+        var context = (e.Source as Control)?.FindAncestorOfType<TreeViewItem>(includeSelf: true)?.DataContext;
+        // brief-em3d-83 R-em3d83-3 — a group's header: the Field Plots group adds a plot.
+        if (context is C3dTreeGroup group)
+        {
+            Viewer3DContextMenu.Fill(_treeMenu, _vm.TreeGroupMenuItems(group), []);
+            if (_treeMenu.Items.Count > 0) _treeMenu.Open(ObjectTree);
+            e.Handled = true;
+            return;
+        }
+        if (context is not C3dTreeItem item) return;
         if (_vm.SelectedTreeItems.Count > 1 && _vm.SelectedTreeItems.Contains(item))
             Viewer3DContextMenu.Fill(_treeMenu, _vm.Viewer.ContextMenuItems(), []);
         else

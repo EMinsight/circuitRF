@@ -2,7 +2,10 @@
 // beside Plot Temperature and on its pattern — the item is always listed on a face, greyed with its reason when there is no EM
 // field to paint (PlotFieldRefusal, the one predicate), and it toggles. A sheet shown in a volume quantity asks WHICH SIDE:
 // E's normal component jumps across a sheet that carries charge, so its two sides are two pictures, and neither is picked
-// for the user. The painting itself is the viewer's (Viewer3DViewModel.ToggleFieldFace → FieldFacePainter).
+// for the user. The painting itself is the viewer's (FieldFacePainter).
+//
+// brief-em3d-83 — the gesture now edits the DOCUMENT: the face joins the drawn Faces plot, or makes a new one
+// (C3dEditorViewModel.FieldPlots.cs PaintFace). What is painted is saved with the file and undone like any record.
 
 using CircuitRF.Render.Scene3D;
 using CircuitRF.Render.Scene3D.Edit;
@@ -24,12 +27,13 @@ public sealed partial class C3dEditorViewModel
     }
 
     /// <summary>Plot Field on face <paramref name="face"/> of scene object <paramref name="objectId"/> (on side
-    /// <paramref name="side"/> of a sheet: +1 top, −1 bottom, 0 no side): painted, or taken off when it already was.</summary>
+    /// <paramref name="side"/> of a sheet: +1 top, −1 bottom, 0 no side): added to the drawn Faces plot, or taken off it when it
+    /// already was — or a new Faces plot with it (brief-em3d-83). One undo entry.</summary>
     public string? PlotFieldOnFace(uint objectId, int face, int side = 0)
     {
         if (PlotFieldRefusal() is { } why) return why;
         if (Viewer.Scene.Object(objectId) is not { } o || face < 0) return "There is no face under the cursor.";
-        Viewer.ToggleFieldFace(o.Name, face, side);
+        PaintFace(o, face, side, temperature: false);
         return null;
     }
 

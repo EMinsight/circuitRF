@@ -62,6 +62,21 @@ public partial class C3dPropertiesView : UserControl
 
     private void OnNameLostFocus(object? sender, RoutedEventArgs e) => _vm?.CommitName();
 
+    // brief-em3d-83 — a field plot's clip-plane offset, and the Other frequency box.
+    private void OnPlotOffsetKey(object? sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter) { _vm?.CommitPlotOffset(); e.Handled = true; }
+        else if (e.Key == Key.Escape) { _vm?.Reload(); e.Handled = true; }
+    }
+
+    private void OnPlotOffsetLostFocus(object? sender, RoutedEventArgs e) => _vm?.CommitPlotOffset();
+
+    private void OnPlotOtherKey(object? sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter) { _vm?.CommitOtherFrequency(); e.Handled = true; }
+        else if (e.Key == Key.Escape) { _vm?.Reload(); e.Handled = true; }
+    }
+
     // 3D editor round 4 — a bond wire's loop height and span.
     private void OnWireLoopHeightKey(object? sender, KeyEventArgs e)
     {

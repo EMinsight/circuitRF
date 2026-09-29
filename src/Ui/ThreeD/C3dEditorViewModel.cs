@@ -135,6 +135,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         };
         Viewer.SceneAdopted += OnSceneAdopted;
         Viewer.SelectionChanged += OnViewerSelectionChanged;
+        WatchFieldPlots();
         // 3D menu cleanup — the menu bar's Modify items follow the selection and the select mode.
         Viewer.SelectionChanged += RaiseMenuStateChanged;
         Viewer.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(Viewer3DViewModel.SelectMode)) RaiseMenuStateChanged(); };
@@ -323,6 +324,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         RefreshWireFlags();
         RefreshKernelFlags();
         RememberInstanceBounds();
+        ApplyVisiblePlot();                        // brief-em3d-83 — its plane and faces, on this scene
         if (_fitOnAdopt && Viewer.Scene.Objects.Length > 0)
         {
             _fitOnAdopt = false;
@@ -970,7 +972,8 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     private C3dTreeItem? RebuiltRow(C3dTreeItem old)
         => old.FeaturePath is { } feature ? AllTreeItems().FirstOrDefault(t => t.FeaturePath == feature && t.TopName == old.TopName)
          : old.IsGroup ? AllTreeItems().FirstOrDefault(t => t.IsGroup && t.GroupPath == old.GroupPath)
-         : AllTreeItems().FirstOrDefault(t => t.Name == old.Name && !t.IsGroup && t.IsAirBox == old.IsAirBox && t.OperandPath == old.OperandPath);
+         : AllTreeItems().FirstOrDefault(t => t.Name == old.Name && !t.IsGroup && t.IsAirBox == old.IsAirBox && t.OperandPath == old.OperandPath &&
+                                              (t.Kind == FieldPlotKind) == (old.Kind == FieldPlotKind));
 
     // 3D editor round 1 — each node's expansion, by key, across rebuilds: written as the user opens and closes nodes,
     // read when a rebuilt node takes its place. A group starts expanded; everything else closed.
@@ -1049,6 +1052,8 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     internal void TreeVisibilityChanged(C3dTreeItem item, bool visible)
     {
         if (_syncingTree) return;
+        // brief-em3d-83 — a field plot's tick is a record (Hidden), in a setup's view as in the editor.
+        if (item.Kind == FieldPlotKind) { SetPlotShown(item.Name, visible); return; }
         if (IsViewOnly) { ViewTreeVisibilityChanged(item, visible); return; }
         if (item.IsAirBox)
         {
@@ -1124,7 +1129,8 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     /// on — a click on its tick selects the row too, and turned a box the user had just hidden straight back on), an
     /// instance's parts, a document object's — a feature row's too, since it rounds that object — or the named object.</summary>
     private IEnumerable<Scene3DObject> SceneObjectsOfRow(C3dTreeItem row)
-        => row.IsAirBox ? AirBoxFaceObjects()
+        => row.Kind == FieldPlotKind ? []                                  // brief-em3d-83 — a record, in no scene
+            : row.IsAirBox ? AirBoxFaceObjects()
             : row.IsGroup ? SceneObjectsOfGroup(row.GroupPath!)
             : row.InstanceIndex >= 0 ? row.Children.Select(c => c.Name).Select(SceneObject).OfType<Scene3DObject>()
             : row.ObjectIndex >= 0 && row.ObjectIndex < Document.Objects.Count ? SceneObjectsFor(Document.Objects[row.ObjectIndex])
@@ -1276,6 +1282,14 @@ public sealed class C3dTreeGroup(string header, IEnumerable<C3dTreeItem> items, 
     public string Header { get; } = header;
     public C3dTreeGroupRole Role { get; } = role;
     public ObservableCollection<C3dTreeItem> Items { get; } = [.. items];
+
+    /// <summary>brief-em3d-83 — the header's <c>+</c> (the Field Plots group's New Field Plot…), or null for none.</summary>
+    public System.Windows.Input.ICommand? AddCommand { get; init; }
+    public bool CanAdd => AddCommand is not null;
+    public string? AddTip { get; init; }
+
+    /// <summary>The header's tooltip, or null.</summary>
+    public string? HeaderTip { get; init; }
     public override string ExpansionKey => "group:" + Role + ":" + Header;
 }
 

@@ -40,6 +40,7 @@ public sealed partial class EmSetupEditorViewModel
         OpenEmsEndCriterionDbText     = G(o?.EndCriterionDb);
         OpenEmsMaxTimeStepsText       = o?.MaxTimeSteps?.ToString(CultureInfo.InvariantCulture) ?? "";
         OpenEmsThirdsRule             = o?.ThirdsRule ?? CircuitRF.Engine.Em3d.OpenEmsGridSettings.Default.ThirdsRule;
+        OpenEmsSaveFieldsText         = SaveFieldsText(o?.SaveFieldsGHz);         // brief-em3d-83
         OpenEmsFieldError = null;
     }
 
@@ -97,6 +98,9 @@ public sealed partial class EmSetupEditorViewModel
             case "OpenEms.MaxTimeSteps":
                 Whole(OpenEmsMaxTimeStepsText, 1, long.MaxValue, "Enter a whole number of time steps of at least 1, or leave it blank.",
                       v => section.MaxTimeSteps = v);
+                break;
+            case "OpenEms.SaveFieldsGHz":               // brief-em3d-83 R-em3d83-6 — the frequencies the E (and H) dumps are made at
+                if (TryParseSaveFields(OpenEmsSaveFieldsText, out var saves, out error)) section.SaveFieldsGHz = saves;
                 break;
             case "OpenEms.ThirdsRule":
                 section.ThirdsRule = OpenEmsThirdsRule == CircuitRF.Engine.Em3d.OpenEmsGridSettings.Default.ThirdsRule

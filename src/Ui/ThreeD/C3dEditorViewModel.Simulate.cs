@@ -224,6 +224,7 @@ public sealed partial class C3dEditorViewModel
         RebuildSetupItems();
         Viewer.SetRunSetup(ActiveRunSetup);
         RefreshFieldsStale();
+        ApplyVisiblePlot();
     }
 
     /// <summary>R-em3d49-1c — Show 3D from a <c>.cem</c> pointing here: that <c>.cem</c> joins the list, read-only, active.</summary>
@@ -292,6 +293,9 @@ public sealed partial class C3dEditorViewModel
         Viewer.SetRunSetup(ActiveRunSetup);
         Viewer.Regenerate();
         RefreshFieldsStale();
+        // brief-em3d-83 — a plot pinned to a setup is unmoved; its row says which setup when it is not the active one.
+        RebuildFieldPlotTree();
+        ApplyVisiblePlot();
     }
 
     partial void OnSelectedSetupItemChanged(C3dSetupItem? value)
@@ -1033,6 +1037,7 @@ public sealed partial class C3dEditorViewModel
     /// <summary>A run finished: the document it solved is kept in its directory, and the fields are read again.</summary>
     public void RunFinished(EmSetup runSetup, string documentText)
     {
+        ForgetDiscoveries();                       // brief-em3d-83 — every plot's check reads the runs again
         if (ResultsRootProvider?.Invoke() is { } root)
             foreach (var solver in runSetup.IsThermal ? [Em3dSolver.None] : new[] { Em3dSolver.Palace, Em3dSolver.OpenEms })
                 if (runSetup.IsThermal || runSetup.Solver3D == solver || runSetup.Solver3D == Em3dSolver.Both)
@@ -1063,7 +1068,8 @@ public sealed partial class C3dEditorViewModel
             {
                 try { _solvedCache = (stamp, File.ReadAllText(f)); } catch (Exception) { continue; }
             }
-            if (_solvedCache!.Value.Text != C3dPersistence.Serialize(Document))
+            // brief-em3d-83 R-em3d83-2 — the plots are display: SerializeForRun leaves them out on both sides.
+            if (_solvedCache!.Value.Text != C3dPersistence.SerializeForRun(Document))
                 text = $"Fields are from the run at {File.GetLastWriteTime(f):HH:mm}; the model has changed since. They are drawn on the " +
                        "geometry that run solved.";
             break;

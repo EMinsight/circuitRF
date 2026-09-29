@@ -32,7 +32,7 @@ public enum C3dTreeGrouping { Material, Primitive }
 
 /// <summary>What a group of the editor's tree holds — what code finds a group by (a header may be any material's name).</summary>
 public enum C3dTreeGroupRole { Objects, Construction, Instances, Ports, AirBox, Booleans, Groups, HeatSources, Probes, MeshRegions, ThermalBoundaries,
-                              EffectiveBlocks, SymmetryPlanes }
+                              EffectiveBlocks, SymmetryPlanes, FieldPlots }
 
 public sealed partial class C3dEditorViewModel
 {
@@ -98,7 +98,9 @@ public sealed partial class C3dEditorViewModel
     {
         // A group's row stands for its members: each is shown or hidden as its own row would be.
         static IEnumerable<C3dTreeItem> Members(C3dTreeItem r) => r.IsGroup ? r.Children.SelectMany(Members) : [r];
-        var rows = Tree.SelectMany(g => g.Items).SelectMany(Members).ToList();
+        // brief-em3d-83 — the field plots too, one drawn at a time; their rows are records, not the scene's.
+        SetPlotsVisibility(visible);
+        var rows = Tree.Where(g => g.Role != C3dTreeGroupRole.FieldPlots).SelectMany(g => g.Items).SelectMany(Members).ToList();
         if (IsViewOnly)
         {
             // A setup's view lists the scene's objects: each tick is the view's own visibility, never an edit.

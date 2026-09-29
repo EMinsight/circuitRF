@@ -110,6 +110,7 @@ public sealed partial class Viewer3DViewModel
         // brief-em3d-75 — the sweep slider follows the picker, and the picker the slider.
         if (value is not null && FieldSolutions.IndexOf(value) is var at and >= 0 && at != TemperatureStep) TemperatureStep = at;
         OnPropertyChanged(nameof(TemperatureStepLabel));
+        if (_applyingPlot) return;                 // brief-em3d-83 — ApplyPlot loads it once, after every setting
         // Gate 7 — a thermal step on the same run re-reads its temperature alone.
         if (ShowField && value is not null && TryRevalueTemperature(value)) return;
         if (ShowField) EnsureFieldLoaded();
@@ -126,9 +127,9 @@ public sealed partial class Viewer3DViewModel
 
     partial void OnFieldOnClipPlaneChanged(bool value) => ScheduleFieldGeometry();
     partial void OnFieldOnSurfacesChanged(bool value) => ScheduleFieldGeometry();
-    partial void OnFieldDbChanged(bool value) => RescaleField();
+    partial void OnFieldDbChanged(bool value) { if (!_applyingPlot) RescaleField(); }
     // brief-em3d-75 — the temperature's range is its own (D9): dB and the percentile are an EM field's.
-    partial void OnFieldPercentileChanged(double value) => RescaleField();
+    partial void OnFieldPercentileChanged(double value) { if (!_applyingPlot) RescaleField(); }
 
     partial void OnFieldPhaseDegreesChanged(double value)
     {
@@ -157,10 +158,17 @@ public sealed partial class Viewer3DViewModel
     /// <summary>The overlay's legend: shown with the field.</summary>
     public bool FieldLegendVisible => ShowField && FieldScale is not null && SelectedFieldQuantity is not null;
 
-    /// <summary>The legend's lines: the quantity, the range, and what was solved (R-em3d29-3c/3d).</summary>
+    /// <summary>The legend's lines: the plot's name (brief-em3d-83), the quantity, the range, and what was solved (R-em3d29-3c/3d).</summary>
     public IReadOnlyList<string> FieldLegendLines()
     {
         if (SelectedFieldQuantity is not { } q || FieldScale is not { } s) return [];
+        var lines = PlotLegendLines(q, s);
+        if (_plot is { Name.Length: > 0 } p) lines.Insert(0, p.Name);
+        return lines;
+    }
+
+    private List<string> PlotLegendLines(FieldQuantity q, FieldColorScale s)
+    {
         // brief-em3d-75 R-em3d75-4b — °C, the true range (the peak is never clipped), and the sweep point.
         if (q.IsTemperature)
         {
@@ -170,11 +178,11 @@ public sealed partial class Viewer3DViewModel
             return t;
         }
         string unit = FieldNames.Unit(q.Array.Name);
-        var lines = new List<string>
-        {
+        List<string> lines =
+        [
             $"{q.Symbol}{(unit.Length > 0 ? $" ({(s.Db ? "dB re 1 " + unit : unit)})" : s.Db ? " (dB)" : "")}",
             s.Describe(),
-        };
+        ];
         if (SelectedFieldSolution is { } sol) lines.Add(sol.Label);
         if (q.Animated)
             lines.Add($"φ = {FieldPhaseDegrees.ToString("0", CultureInfo.InvariantCulture)}°, one cycle every " +
@@ -187,49 +195,44 @@ public sealed partial class Viewer3DViewModel
 
     // ── discovery ───────────────────────────────────────────────────────────────────────────
 
-    /// <summary>The run directories of this setup's 3D solvers — Palace's for its current problem type,
-    /// openEMS's — whichever the setup runs.</summary>
-    private (string? Palace, string? OpenEms) FieldRunDirectories()
-    {
-        if (_lastSetup is not { } setup || _resultsRoot() is not { } root) return (null, null);
-        // brief-em3d-75 — a thermal setup's fields are its own run's (brief 74's <key>.thermal directory).
-        if (setup.IsThermal) return (ThermalRunService.RunDirectory(root, setup), null);
-        return (setup.Solver3D is Em3dSolver.Palace or Em3dSolver.Both ? Em3dRunService.RunDirectory(root, setup, Em3dSolver.Palace) : null,
-                setup.Solver3D is Em3dSolver.OpenEms or Em3dSolver.Both ? Em3dRunService.RunDirectory(root, setup, Em3dSolver.OpenEms) : null);
-    }
+    /// <summary>The run directories the fields are read from — the drawn plot's setup (brief-em3d-83), else this view's setup:
+    /// Palace's for its current problem type, openEMS's — whichever the setup runs.</summary>
+    private (string? Palace, string? OpenEms) FieldRunDirectories() => RunDirectories(FieldSetup, _resultsRoot());
+
+    /// <summary>The setup whose run is read: the plot's, or — for a plot naming none, and with no plot — this view's own. A
+    /// plot whose setup is gone reads nothing.</summary>
+    private EmSetup? FieldSetup => _plot is { SetupProblem: not null } ? null : _plot?.RunSetup ?? _lastSetup;
+
+    /// <summary>The directories the last read was asked for: a plot on the same run is applied without reading it again.</summary>
+    private (string? Palace, string? OpenEms) _fieldDirs;
+    private long _fieldReads;
 
     /// <summary>Re-reads which fields the setup's runs saved (a run may have made new ones).</summary>
     private void RefreshFields()
     {
-        var (dir, openEmsDir) = FieldRunDirectories();
+        var dirs = _fieldDirs = FieldRunDirectories();
+        string? dir = dirs.Palace;
         var scene = Scene;
-        var thermalSetup = _lastSetup is { IsThermal: true } ts ? ts : null;
+        var setup = FieldSetup;
         string? root = _resultsRoot();
+        long read = ++_fieldReads;
         Task.Run(() =>
         {
-            FieldRun? run = null, openEms = null;
-            string? why = null;
-            var table = thermalSetup is not null && root is not null ? ReadThermalTable(thermalSetup, root) : null;
-            try
-            {
-                run = dir is null ? null : FieldRun.OpenPalace(dir, MeshToMetres);
-                openEms = openEmsDir is null ? null : FieldRun.OpenOpenEms(openEmsDir);
-            }
-            catch (Exception e) when (e is IOException or UnauthorizedAccessException or FormatException) { why = e.Message; }
-            var groups = dir is null ? [] : FieldGroups.Read(dir);
-            var modes = run?.Kind == FieldProblemKind.Eigenmode
-                ? PalaceRun.ReadModes(Path.Combine(dir!, PalaceConfigWriter.OutputDirectory, PalaceRun.EigFile), out _) : null;
-            FieldRun[] runs = [.. new[] { run, openEms }.OfType<FieldRun>()];
+            var found = Discover(setup, root, scene.Problem);
+            var (runs, table, groups, why) = (found.Runs, found.Table, found.Groups, found.Why);
             _post(() =>
             {
-                if (_disposed) return;
-                bool same = runs.Length > 0 && runs.Length == _fieldRuns.Count && dir == _fieldRunDir &&
+                if (_disposed || read != _fieldReads) return;
+                FieldsRan = found.Ran;
+                bool same = runs.Count > 0 && runs.Count == _fieldRuns.Count && dir == _fieldRunDir &&
                             runs.Zip(_fieldRuns).All(p => p.First.Solutions.Select(x => x.VolumePvtu).SequenceEqual(p.Second.Solutions.Select(x => x.VolumePvtu)) &&
                                                           StampOf(p.First) == StampOf(p.Second));
                 if (same)
                 {
                     _thermalTable = table ?? _thermalTable;
-                    if (ShowField) ScheduleFieldGeometry();
+                    if (_plot is not null) ApplyPlot();
+                    else if (ShowField) ScheduleFieldGeometry();
+                    FieldsRead?.Invoke();
                     return;
                 }
                 _fieldRuns = runs;
@@ -243,12 +246,13 @@ public sealed partial class Viewer3DViewModel
                 _fieldVolume = _fieldBoundary = null;
                 _fieldLoaded = null;
                 _volumeSampler = _boundarySampler = null;
-                FieldSolutions.Clear();
-                foreach (var r in runs)
-                    foreach (var x in r.Solutions)
-                        FieldSolutions.Add(new FieldSolutionItem(x, (x.Kind == FieldProblemKind.Thermal
-                            ? table is { } tt && x.Index < tt.Points ? tt.PointLabel(x.Index) : $"Point {x.Index + 1}"
-                            : SolutionLabel(x, modes, scene.Problem)) + (runs.Length > 1 ? $" ({r.Solver})" : ""), r));
+                _applyingPlot = true;
+                try
+                {
+                    FieldSolutions.Clear();
+                    foreach (var x in found.Items) FieldSolutions.Add(x);
+                }
+                finally { _applyingPlot = false; }
                 FieldsAvailable = FieldSolutions.Count > 0;
                 OnPropertyChanged(nameof(IsThermalRun));
                 OnPropertyChanged(nameof(ThermalTable));
@@ -256,6 +260,14 @@ public sealed partial class Viewer3DViewModel
                 OnPropertyChanged(nameof(HasTemperatureSweep));
                 OnPropertyChanged(nameof(TemperatureStepLabel));
                 ThermalResultsChanged?.Invoke();
+                // brief-em3d-83 — a plot picks its own solution, by value; with none, the first is offered.
+                if (_plot is not null)
+                {
+                    ApplyPlot();
+                    if (why is not null && !FieldsAvailable) FieldText = "The fields could not be read: " + why;
+                    FieldsRead?.Invoke();
+                    return;
+                }
                 SelectedFieldSolution = FieldSolutions.FirstOrDefault();
                 if (!FieldsAvailable)
                 {
@@ -264,6 +276,7 @@ public sealed partial class Viewer3DViewModel
                     FieldText = why is null ? "" : "The fields could not be read: " + why;
                 }
                 else if (ShowField) EnsureFieldLoaded();
+                FieldsRead?.Invoke();
             });
         });
     }
@@ -275,7 +288,7 @@ public sealed partial class Viewer3DViewModel
         catch (IOException) { return default; }
     }
 
-    private static string SolutionLabel(FieldSolution s, IReadOnlyList<PalaceMode>? modes, Em3dProblem? problem)
+    internal static string SolutionLabel(FieldSolution s, IReadOnlyList<PalaceMode>? modes, Em3dProblem? problem)
     {
         string G(double v) => v.ToString("G6", CultureInfo.InvariantCulture);
         return s.Kind switch
@@ -299,7 +312,13 @@ public sealed partial class Viewer3DViewModel
     {
         if (SelectedFieldSolution is not { } item) return;
         var run = item.Run;
-        if (_fieldLoaded == item.Solution && _fieldVolume is not null) { ScheduleFieldGeometry(); return; }
+        if (_fieldLoaded == item.Solution && _fieldVolume is not null)
+        {
+            // brief-em3d-83 — the plot's quantity, by name, among what this step offers.
+            if (_plot is { } p0 && !PickPlotQuantity(p0)) return;
+            ScheduleFieldGeometry();
+            return;
+        }
         var sol = item.Solution;
         _fieldLoadCts?.Cancel();
         var cts = _fieldLoadCts = new CancellationTokenSource();
@@ -316,7 +335,8 @@ public sealed partial class Viewer3DViewModel
                 {
                     if (cts.IsCancellationRequested || _disposed) return;
                     // brief-em3d-82 — a solution on another mesh (the other solver's, a re-meshed run): the painted faces go.
-                    if (_fieldVolume is { } was && vol is not null &&
+                    // A plot's faces are the scene's, not the mesh's: they stay (brief-em3d-83).
+                    if (_plot is null && _fieldVolume is { } was && vol is not null &&
                         (was.Mesh.NodeCount != vol.Mesh.NodeCount || was.Mesh.CellCount != vol.Mesh.CellCount)) _fieldFaces.Clear();
                     _fieldVolume = vol;
                     _fieldBoundary = bnd;
@@ -324,15 +344,27 @@ public sealed partial class Viewer3DViewModel
                     _fieldRun = run;
                     _volumeSampler = _boundarySampler = null;
                     var keep = SelectedFieldQuantity;
-                    FieldQuantities.Clear();
-                    foreach (var q in offered) FieldQuantities.Add(q);
+                    _applyingPlot = true;
+                    try
+                    {
+                        FieldQuantities.Clear();
+                        foreach (var q in offered) FieldQuantities.Add(q);
+                    }
+                    finally { _applyingPlot = false; }
+                    BuildSamplers(vol, bnd);
+                    // brief-em3d-83 — a plot names its quantity; one this step does not offer draws nothing, and says so.
+                    if (_plot is { } plot)
+                    {
+                        if (PickPlotQuantity(plot)) ScheduleFieldGeometry();
+                        FieldsRead?.Invoke();
+                        return;
+                    }
                     // Keep the reading across solutions when the new one offers it; |E| otherwise.
                     SelectedFieldQuantity = FieldQuantities.FirstOrDefault(q => q == keep)
                         ?? FieldQuantities.FirstOrDefault(q => q.IsTemperature)
                         ?? FieldQuantities.FirstOrDefault(q => q.Array.Name == "E" && q.Mode == FieldMode.Peak)
                         ?? FieldQuantities.FirstOrDefault();
                     ScheduleFieldGeometry();
-                    BuildSamplers(vol, bnd);
                 });
             }
             catch (OperationCanceledException) { }
@@ -439,11 +471,11 @@ public sealed partial class Viewer3DViewModel
     /// surface choice, selection, or clip plane. A newer request cancels an older one.</summary>
     private void ScheduleFieldGeometry()
     {
-        if (!ShowField || SelectedFieldQuantity is not { } q) return;
+        if (_applyingPlot || !ShowField || SelectedFieldQuantity is not { } q) return;
         var vol = _fieldVolume;
         var bnd = _fieldBoundary;
         var scene = Scene;
-        var clip = View.Clip;
+        var clip = FieldPlane;                     // brief-em3d-83 — a ClipPlane plot's own plane
         bool onPlane = FieldOnClipPlane, onSurfaces = FieldOnSurfaces, db = FieldDb;
         double pct = FieldPercentile;
         var groups = _fieldGroups;
@@ -470,7 +502,10 @@ public sealed partial class Viewer3DViewModel
                     cts.Token.ThrowIfCancellationRequested();
                     _post(() =>
                     {
-                        if (cts.IsCancellationRequested || _disposed || !ReferenceEquals(Scene, scene)) return;
+                        if (cts.IsCancellationRequested || _disposed) return;
+                        // A newer scene arrived while this was built: build again on it (brief-em3d-83 — a plot is not
+                        // re-applied on every scene, so a dropped build would leave it undrawn).
+                        if (!ReferenceEquals(Scene, scene)) { ScheduleFieldGeometry(); return; }
                         FieldGeometryBuilds++;
                         AdoptTemperature(parts, q, scale, covered, note, scene);
                     });
@@ -554,7 +589,8 @@ public sealed partial class Viewer3DViewModel
                 if (refused.Count > 0) text += " " + string.Join(" ", refused);
                 _post(() =>
                 {
-                    if (cts.IsCancellationRequested || _disposed || !ReferenceEquals(Scene, scene)) return;
+                    if (cts.IsCancellationRequested || _disposed) return;
+                    if (!ReferenceEquals(Scene, scene)) { ScheduleFieldGeometry(); return; }
                     FieldGeometryBuilds++;
                     _fieldSurfaces = surfaces;
                     _fieldFacePaints = paints;
@@ -580,7 +616,7 @@ public sealed partial class Viewer3DViewModel
     /// <summary>A new percentile or dB choice: a new range over the SAME triangles — uniforms only.</summary>
     private void RescaleField()
     {
-        if (SelectedFieldQuantity is not { } q || _fieldSurfaces.Count == 0 || q.IsTemperature) return;
+        if (_applyingPlot || SelectedFieldQuantity is not { } q || _fieldSurfaces.Count == 0 || q.IsTemperature) return;
         FieldScale = FieldColorScale.Auto(q, _fieldSurfaces, FieldDb, FieldPercentile);
         WriteFieldUniforms();
         OnPropertyChanged(nameof(FieldLegendVisible));
@@ -664,10 +700,10 @@ public sealed partial class Viewer3DViewModel
             return sampler.Sample(a, x * toUnits, y * toUnits, z * toUnits, into, tol);
         }
         bool found = false;
-        if (!q.OnBoundary && FieldOnClipPlane && View.Clip.Enabled)
+        if (!q.OnBoundary && FieldOnClipPlane && FieldPlane.Enabled)
         {
             var (o, d) = View.Camera.Ray(View.CursorX, View.CursorY, _viewW, _viewH);
-            var e = View.Clip.Equation;
+            var e = FieldPlane.Equation;
             var n = new Vector3(e.X, e.Y, e.Z);
             float den = Vector3.Dot(n, d);
             if (Math.Abs(den) > 1e-12f)

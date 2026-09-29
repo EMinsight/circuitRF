@@ -109,6 +109,25 @@ public static class C3dPersistence
         return JsonSerializer.Serialize(doc, JsonOpts);
     }
 
+    /// <summary>
+    /// brief-em3d-83 R-em3d83-2 — the document as a RUN sees it: the file's text without its field plots. What Simulate keeps
+    /// beside a run and what the stale banner compares with it, so adding, editing or hiding a plot never makes a result
+    /// stale. Every such comparison reads this, never <see cref="Serialize"/>.
+    /// </summary>
+    public static string SerializeForRun(C3dDocument doc)
+    {
+        var plots = doc.FieldPlots;
+        doc.FieldPlots = [];
+        try { return Serialize(doc); }
+        finally { doc.FieldPlots = plots; }
+    }
+
+    /// <summary>brief-em3d-83 — the field plots as the file spells them (an undo entry's before and after).</summary>
+    public static string SerializeFieldPlots(IReadOnlyList<C3dFieldPlot> list) => JsonSerializer.Serialize(list, JsonOpts);
+
+    public static List<C3dFieldPlot> DeserializeFieldPlots(string json)
+        => JsonSerializer.Deserialize<List<C3dFieldPlot>>(json, JsonOpts) ?? [];
+
     public static void SaveToFile(string path, C3dDocument doc)
         => AtomicFile.WriteAllText(path, Serialize(doc));
 

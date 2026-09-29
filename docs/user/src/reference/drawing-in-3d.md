@@ -789,13 +789,16 @@ elements across a source and through the thinnest solid, grading, the solver, th
 on or off), **Submodel** (above), and the three small-signal sections below — **Rth matrix**, **Thermal impedance** and
 **Pulse train**. Under Mesh, the size of the run is estimated before anything is meshed.
 
-**Plot Temperature.** After a run of the active thermal setup, right-click a face, *Plot Temperature*, to paint that face
-(again to take it off; several faces accumulate); *3D ▸ View ▸ Temperature ▸ All Faces* paints every exposed face, and
-*On Clip Plane* the clip plane's section — the way to see a channel under a field plate. The items are greyed, with the
-reason, when there is no thermal result or the model has changed since it ran. The colour range is the **true** minimum
-and maximum of what is painted — the peak is the answer, so it is never clipped — and the legend reads °C; *Fix Range
-Across Sweep* makes it the minimum and maximum over every sweep point, so stepping the sweep never rescales the colours.
-The slider on the Field bar steps the sweep. Hover a painted face for the temperature there (interpolated, not the nearest
+**Plot Temperature.** A temperature picture is a **field plot** — a row of the tree's *Field Plots* group, saved with the
+document, edited in the Properties Inspector (see {{anchor: em-3d.html#view|the 3D view}}). After a run of the active
+thermal setup, right-click a face, *Plot Temperature*, to add that face to the temperature plot being drawn, or start one
+with it (again to take it off; several faces accumulate); *3D ▸ View ▸ Temperature ▸ All Faces* draws a plot on every
+exposed face, and *On Clip Plane* one on the clip plane's section — the way to see a channel under a field plate. The
+items are greyed, with the reason, when there is no thermal result or the model has changed since it ran. The colour
+range is the **true** minimum and maximum of what is painted — the peak is the answer, so it is never clipped — and the
+legend reads °C; the plot's *Fix range across the sweep* (or *Fix Range Across Sweep* in the menu) makes it the minimum
+and maximum over every sweep point, so stepping the sweep never rescales the colours. The plot's *Solution* is the sweep
+point shown. Hover a painted face for the temperature there (interpolated, not the nearest
 node); a ring marks the **hot spot** with its temperature and its object. A bond wire whose run tabulated its temperature
 is coloured along its length, and hovering it names the wire and the distance along it.
 

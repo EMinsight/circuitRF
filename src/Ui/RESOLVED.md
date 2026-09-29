@@ -37741,3 +37741,54 @@ Owner's sixth list. Gate `tests/Ui.Tests/ThreeD/EditorRound6SetupTests.cs`; pixe
   background window's menu is not on the bar, so it has nothing to repaint. That is a rule, not the fix: whether the
   owner's case was a flip storm is unknown. The capture that decides it is `CRF_MENU_DIAG=<log>`, whose
   "3D menu shown or hidden: repainting the menu bar" lines count the swaps.
+
+## brief-em3d-83 — field plots are document objects (2026-09-28)
+
+**What it is.** A field in the 3D view is a `C3dFieldPlot` record (`Document.FieldPlots`), listed in the Object Tree's
+*Field Plots* group (after Probes, in both groupings, with a `+` on the header and a header context menu), edited in the
+Properties Inspector, saved with the `.c3d`. The toolbar Fields strip is gone; what stayed on that row is what is not a
+plot (the mesh toggle, a thermal run's Along… and Probes, the stale banner). Owner answers: default names `Field1`…
+(Q1), **one plot drawn at a time** (Q2 — ticking one unticks the others), a new plot **pins** the setup active when it was
+made (Q3; *Active* remains a choice in the inspector).
+
+**The viewer was kept, not rewritten.** `Viewer3DViewModel` still holds ONE field state; `SetPlot(FieldPlotRequest)`
+(`Viewer3DViewModel.Plot.cs`) sets it from the drawn plot inside an `_applyingPlot` guard, so the property-changed partials
+do not each schedule a rebuild — `ApplyPlot` loads once at the end. With no plot the viewer is exactly brief 29's (the
+active setup's run, nothing drawn), which is why the older field tests needed no change.
+
+**Traps found on the way:**
+- **The solution must be picked by VALUE on every read.** `RefreshFields` used to set `SelectedFieldSolution =
+  FieldSolutions[0]`; a plot now re-picks its own (`PickSolution` → `SolutionKey`) after every read, so a re-run that saves
+  one more step below it (index 1 becomes 6 GHz) leaves it on 10 GHz (gate 5).
+- **A stale read could adopt the wrong run.** Switching plots between setups issues two reads; `_fieldReads` drops a
+  post that is not the newest.
+- **A geometry build dropped on a newer scene was never retried.** The post returned when `Scene` had changed; with a plot
+  no longer re-applied on every adoption (the editor sends a request only when its key — plot, plane, faces, run dirs,
+  origin — changes, so a model edit does not rebuild a field drawn on the solved geometry) that left the plot undrawn. The
+  post now reschedules on the new scene.
+- **brief 82 cleared painted faces when a step's mesh differed.** A plot's faces are the SCENE's (named `object/face`,
+  resolved to indices at apply time), so with a plot they stay.
+- **Plot edits are not model edits.** `ChangePlots` keeps only the plot list before/after (a `C3dRecordsEdit` with its own
+  apply) and runs `PlotsChanged` — tree, drawn plot, inspector, dirty — never `DocumentChanged`, so no scene rebuild.
+- **A ClipPlane plot owns its plane** (`Axis` + DBU `Offset`); the slice uses it (`FieldPlane`), and the view's section is
+  moved to it when the plot or its plane changes, so the cut is visible. Moving the view's clip afterwards leaves the plot.
+- The temperature commands (All Faces, On Clip Plane, Plot Temperature, Fix Range, Clear) now make, show or hide
+  temperature plots; `T_C` plots map `Faces`/`Surfaces`/`ClipPlane` onto brief 75's three targets.
+
+**R-6.** *Save fields at (GHz)* is in the setup panel for Palace and openEMS (`EmSetupEditorViewModel.SaveFields.cs`):
+blank = the sweep's centre (the placeholder shows its value, from `PalaceConfigWriter.SweepCentreGHz`), `none` = `[]`.
+The inspector's *Other frequency… (needs a re-run)* adds to that list in ONE records entry, keeping the centre the setup
+saved by default (`SavedFrequencies`).
+
+**Not done, said here so it is not assumed:** several plots drawn at once (Q2 chose one); a thermal plot's quantity
+list for a hidden plot opens the step's headers once (`OfferedQuantities`, cached) — fine for the fixtures, unmeasured on a
+large run. Pixels were not seen; the gates read records, tree, banner and built geometry
+(`tests/Ui.Tests/ThreeD/FieldPlotTests.cs`, gates 1-7; gate 8 is `FieldFaceTests.Gate6`, now drawing through a plot).
+
+**Three EM panel tests that had gone stale, fixed at the owner's request the same day:**
+- `EmPanelDeclutterTests.AFailedRun_PostsTheErrorLAST…` cut the failure branch at `return;`, but the run method returns a
+  bool now, so the block ran on into the success path (which posts notes). It cuts at `return false;`.
+- `EmSetupLayoutRowTests.EveryWarningColouredString_IsSelectable` was RIGHT: brief 79's circuit-link problem was a plain
+  warning-coloured `TextBlock`. It is a `SelectableTextBlock` now (the `SelectableTextBlock.colhdr` style already existed).
+- `EmPanelDeclutterTests.TheAnalysisType_SitsBesideTheSolver…` anchored on `EmSetupEditorViewModel.Solver3DChoices`; the combo
+  binds `ViewModel.Solver3DChoiceList` (an embedded setup offers no None). The layout it pins was intact.

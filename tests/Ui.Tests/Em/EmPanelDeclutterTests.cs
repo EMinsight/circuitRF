@@ -291,7 +291,8 @@ public class EmPanelDeclutterTests
         Assert.True(solver > 0);
         int grid = xaml.IndexOf("<Grid ColumnDefinitions=\"*,*\"", solver, StringComparison.Ordinal);
         Assert.Contains("ColumnSpacing", xaml[grid..(grid + 120)], StringComparison.Ordinal);
-        int solverCombo = xaml.IndexOf("EmSetupEditorViewModel.Solver3DChoices", grid, StringComparison.Ordinal);
+        // The combo binds the per-setup list (an embedded setup offers no "None"), not the static one it once did.
+        int solverCombo = xaml.IndexOf("ViewModel.Solver3DChoiceList", grid, StringComparison.Ordinal);
         int rightColumn = xaml.IndexOf("Grid.Column=\"1\"", grid, StringComparison.Ordinal);
         int kindCombo   = xaml.IndexOf("EmSetupEditorViewModel.AnalysisKindChoices", StringComparison.Ordinal);
         int gridEnd     = xaml.IndexOf("</Grid>", kindCombo, StringComparison.Ordinal);
@@ -428,7 +429,9 @@ public class EmPanelDeclutterTests
             "if (result.Status is EmRunStatus.NoLayout or EmRunStatus.Refused or EmRunStatus.EngineError)",
             StringComparison.Ordinal);
         Assert.True(start > 0, "the EM failure branch is gone");
-        int end = src.IndexOf("            return;", start, StringComparison.Ordinal);
+        // The branch returns the run's outcome (false) since the run method became a bool; a bare "return;" is a later
+        // method's, and a block cut there ran on into the success path, which posts the notes this pins away.
+        int end = src.IndexOf("            return false;", start, StringComparison.Ordinal);
         Assert.True(end > start);
         string block = src[start..end];
 

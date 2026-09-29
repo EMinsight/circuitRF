@@ -195,6 +195,79 @@
                 </ItemsControl>
             </StackPanel>
 
+            <!-- brief-em3d-83 R-em3d83-4 — a field plot: every field one undo entry. The Solution picker lists what the run
+                 saved, by value; the Quantity picker only what the step offers. The phase controls at the foot are the view's. -->
+            <StackPanel Spacing="4" IsVisible="{Binding IsFieldPlot}">
+                <SelectableTextBlock Text="{Binding PlotProblem}" Foreground="{DynamicResource CrfWarningBrush}" TextWrapping="Wrap" FontSize="11"
+                                     IsVisible="{Binding PlotProblem, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                <TextBlock Text="Name" FontSize="11" Opacity="0.7"/>
+                <TextBox Text="{Binding NameText}" KeyDown="OnNameKey" LostFocus="OnNameLostFocus"/>
+                <TextBlock Text="Setup" FontSize="11" Opacity="0.7"/>
+                <ComboBox ItemsSource="{Binding PlotSetups}" SelectedItem="{Binding PlotSetup}" HorizontalAlignment="Stretch"
+                          ToolTip.Tip="The setup whose run the plot reads. Active follows whichever setup is active when it is drawn."/>
+                <TextBlock Text="Solver" FontSize="11" Opacity="0.7" IsVisible="{Binding PlotHasSolver}"/>
+                <ComboBox ItemsSource="{x:Static t3:C3dPropertiesViewModel.PlotSolvers}" SelectedItem="{Binding PlotSolver}"
+                          HorizontalAlignment="Stretch" IsVisible="{Binding PlotHasSolver}"
+                          ToolTip.Tip="A setup that runs both solvers saves two sets of fields: which one this plot draws."/>
+                <TextBlock Text="Solution" FontSize="11" Opacity="0.7"/>
+                <ComboBox ItemsSource="{Binding PlotSolutions}" SelectedItem="{Binding PlotSolution}" HorizontalAlignment="Stretch"
+                          ToolTip.Tip="What the run saved: a frequency (driven), a mode (eigenmode), a terminal (static), a sweep point (thermal). The plot keeps the VALUE, so a run that saves more never moves it."/>
+                <StackPanel Spacing="2" IsVisible="{Binding PlotOtherOpen}">
+                    <TextBlock Text="Other frequency, GHz — saved by the next run" FontSize="11" Opacity="0.7"/>
+                    <TextBox Text="{Binding PlotOtherText}" PlaceholderText="e.g. 6" KeyDown="OnPlotOtherKey"
+                             ToolTip.Tip="Added to the setup's Save fields at, and this plot moved to it. The plot says it is missing until you Simulate again."/>
+                </StackPanel>
+                <TextBlock Text="Quantity" FontSize="11" Opacity="0.7"/>
+                <ComboBox ItemsSource="{Binding PlotQuantities}" SelectedItem="{Binding PlotQuantity}" HorizontalAlignment="Stretch"
+                          ToolTip.Tip="What is drawn — only what the solver's files hold is offered."/>
+                <TextBlock Text="On" FontSize="11" Opacity="0.7"/>
+                <ComboBox ItemsSource="{Binding PlotTargets}" SelectedItem="{Binding PlotTarget}" HorizontalAlignment="Stretch"
+                          ToolTip.Tip="Where it is drawn: a cut on the plot's own plane; surfaces (the selected solid's faces, or the conductors for J_s; every exposed face for a temperature); or the faces it lists."/>
+                <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="4" IsVisible="{Binding PlotIsClip}">
+                    <TextBlock Text="Across" FontSize="11" Opacity="0.7" VerticalAlignment="Center"/>
+                    <ComboBox Grid.Column="1" ItemsSource="{x:Static t3:C3dPropertiesViewModel.PlotAxes}" SelectedItem="{Binding PlotAxis}"
+                              ToolTip.Tip="The axis the plane is square to: the plot owns its plane, so two plots cut in two places."/>
+                    <TextBox Grid.Column="2" Text="{Binding PlotOffsetText}" Classes="dim" KeyDown="OnPlotOffsetKey" LostFocus="OnPlotOffsetLostFocus"
+                             ToolTip.Tip="Where the plane is along its axis, in the display unit (or with a unit of its own)."/>
+                    <TextBlock Grid.Column="3" Text="{Binding LengthUnit}" FontSize="11" Opacity="0.7" VerticalAlignment="Center"/>
+                </Grid>
+                <StackPanel Spacing="1" IsVisible="{Binding PlotIsFaces}">
+                    <TextBlock Text="Faces" FontSize="11" Opacity="0.7"/>
+                    <SelectableTextBlock Text="{Binding PlotFacesText}" TextWrapping="Wrap" FontSize="11"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding !PlotIsTemperature}">
+                    <CheckBox IsChecked="{Binding PlotDb}" Content="dB" ToolTip.Tip="Decibels (20·log10 of the amplitude), 40 dB below the top of the range"/>
+                    <TextBlock Text="Top of range" FontSize="11" Opacity="0.7" VerticalAlignment="Center"/>
+                    <ComboBox ItemsSource="{x:Static t3:C3dPropertiesViewModel.PlotPercentiles}" SelectedItem="{Binding PlotPercentile}"
+                              ToolTip.Tip="This percentile of the values drawn, so one singular edge does not wash out the picture. Beyond it, the end colour.">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate><TextBlock Text="{Binding StringFormat='{}{0} %'}"/></DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                </StackPanel>
+                <CheckBox IsChecked="{Binding PlotFixRange}" Content="Fix range across the sweep" IsVisible="{Binding PlotIsTemperature}"
+                          ToolTip.Tip="The colour range is the minimum and maximum over EVERY sweep point, so stepping the sweep never rescales. Off: each point its own true minimum and maximum."/>
+                <!-- The view's: the phase animation of the plot being drawn. Not saved. -->
+                <StackPanel Spacing="4" Margin="0,6,0,0" IsVisible="{Binding PlotIsDrawn}">
+                    <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding !PlotIsTemperature}">
+                        <ToggleButton IsChecked="{Binding Viewer.FieldPlaying}" IsEnabled="{Binding Viewer.FieldCanAnimate}"
+                                      ToolTip.Tip="Play the phase: Re{v·e^jφ} through one cycle (choose an animated quantity)" ToolTip.ShowOnDisabled="True">
+                            <TextBlock Text="▶ ❚❚"/>
+                        </ToggleButton>
+                        <Slider Width="120" Minimum="0" Maximum="360" Value="{Binding Viewer.FieldPhaseDegrees}"
+                                IsEnabled="{Binding Viewer.FieldCanAnimate}" VerticalAlignment="Center" ToolTip.Tip="Phase φ, degrees — the view's, not saved"/>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding !PlotIsTemperature}">
+                        <NumericUpDown Value="{Binding Viewer.FieldLoopSeconds}" Minimum="0.2" Maximum="30" Increment="0.5" FormatString="0.#"
+                                       IsEnabled="{Binding Viewer.FieldCanAnimate}" Width="100"
+                                       ToolTip.Tip="Seconds per cycle on screen — a display choice; the frequency is the legend's"/>
+                        <TextBlock Text="s / cycle" VerticalAlignment="Center" Opacity="0.7" FontSize="11"/>
+                    </StackPanel>
+                    <SelectableTextBlock Text="{Binding Viewer.FieldText}" FontSize="11" Opacity="0.8" TextWrapping="Wrap"
+                                         IsVisible="{Binding Viewer.FieldText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                </StackPanel>
+            </StackPanel>
+
             <SelectableTextBlock Text="{Binding Error}" Foreground="IndianRed" TextWrapping="Wrap"
                                  IsVisible="{Binding Error, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
 

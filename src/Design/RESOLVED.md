@@ -15208,3 +15208,18 @@ Gates: `TraceImpedanceAnalysisTests.ATraceIntoASquarePad_IsFound_WithItsOwnLengt
 `TraceImpedanceAnalysisTests.APadPolygonsWinding_ChangesNoProbeAnswer`,
 `DrcEngineTests.MinWidth_APolygonsStoredWinding_ChangesNothing` (§2 gates 1–3);
 `APadAtATracesEnd_IsNotPartOfTheTrace` still passes.
+
+## brief-em3d-83 — `C3dFieldPlot`, a record of the `.c3d` (2026-09-28)
+
+`C3dDocument.FieldPlots` (`ThreeD/C3dFieldPlots.cs`): name, pinned setup (null = the active one), solver for a `Both`
+setup, the solution **by value** (`C3dFieldSolution`: `GHz` [+`Port`], `Mode`, `Terminal` by name, or `Point`, 1-based),
+the array name and read mode as strings (Design cannot see Render's `FieldMode`), one target (`ClipPlane` with its own
+`Axis`/DBU `Offset`, `Surfaces`, or `Faces` — structured `{Face: "object/face", Side}` rather than brief 82's
+`object/face/side` string, because a face may itself be called `top`), dB, percentile (`[DefaultValue(99.0)]`, omitted at
+its default), `FixRange`, `Hidden`. Written only when non-empty; `FormatVersion` unchanged — an older build keeps the key in
+`C3dDocument.Unread` (`[JsonExtensionData]`), read from the code, not from an older binary.
+
+**`C3dPersistence.SerializeForRun`** is the file text without the plots, and it is the ONLY text the stale banner and the
+run's kept `document.c3d` may compare (the GUI's `RunC3dSetupAsync` and `C3dEditorViewModel.RefreshFieldsStale` read it).
+Mesh reuse compares the `.geo` script, which no plot reaches; gate 2 checks that script is byte-identical across plot edits.
+`PalaceConfigWriter.SweepCentreGHz(EmSetup)` exposes the default save frequency for the panel's placeholder.

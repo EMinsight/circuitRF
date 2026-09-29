@@ -663,7 +663,7 @@
                                   ToolTip.Tip="{x:Static em:EmSetupEditorViewModel.PalaceLinearSolverTip}"/>
                     </StackPanel>
                     <Grid IsVisible="{Binding ViewModel.IsPalaceSetup}" Margin="0,6,0,0"
-                          ColumnDefinitions="Auto,90" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
+                          ColumnDefinitions="Auto,90" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
                           ColumnSpacing="8" RowSpacing="2" HorizontalAlignment="Left">
                         <TextBlock Grid.Row="0" Grid.Column="0" Classes="colhdr" Text="Largest element (λ)" VerticalAlignment="Center"/>
                         <TextBox   Grid.Row="0" Grid.Column="1" Classes="num" Tag="Palace.MaxElementWavelengths"
@@ -707,7 +707,14 @@
                                    PlaceholderText="{Binding ViewModel.PalaceDefaultSweepAdaptiveTol}"
                                    LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
                                    ToolTip.Tip="The error tolerance of Palace's adaptive frequency sweep, which solves a few frequencies and interpolates the rest. 0 solves every frequency."/>
-                        <SelectableTextBlock Grid.Row="7" Grid.Column="0" Grid.ColumnSpan="2" FontSize="10" TextWrapping="Wrap"
+                        <!-- brief-em3d-83 R-em3d83-6 — the frequencies a run saves fields at, for the 3D view's field plots. -->
+                        <TextBlock Grid.Row="7" Grid.Column="0" Classes="colhdr" Text="Save fields at (GHz)" VerticalAlignment="Center"/>
+                        <TextBox   Grid.Row="7" Grid.Column="1" Classes="num" Tag="Palace.SaveFieldsGHz"
+                                   Text="{Binding ViewModel.PalaceSaveFieldsText}"
+                                   PlaceholderText="{Binding ViewModel.SaveFieldsPlaceholder}"
+                                   LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                                   ToolTip.Tip="{x:Static em:EmSetupEditorViewModel.SaveFieldsTip}"/>
+                        <SelectableTextBlock Grid.Row="8" Grid.Column="0" Grid.ColumnSpan="2" FontSize="10" TextWrapping="Wrap"
                                    Foreground="{DynamicResource CrfWarningBrush}"
                                    Text="{Binding ViewModel.PalaceFieldError}"
                                    IsVisible="{Binding ViewModel.PalaceFieldError, Converter={x:Static ObjectConverters.IsNotNull}}"/>
@@ -716,7 +723,7 @@
                          fields. The same rules as Palace's: a blank box is the default the generator and the
                          writer read, and every change is one undoable .cem edit. -->
                     <Grid IsVisible="{Binding ViewModel.IsOpenEmsSetup}" Margin="0,6,0,0"
-                          ColumnDefinitions="Auto,90" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
+                          ColumnDefinitions="Auto,90" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
                           ColumnSpacing="8" RowSpacing="2" HorizontalAlignment="Left">
                         <TextBlock Grid.Row="0" Grid.Column="0" Classes="colhdr" Text="Cells per wavelength" VerticalAlignment="Center"/>
                         <TextBox   Grid.Row="0" Grid.Column="1" Classes="num" Tag="OpenEms.CellsPerWavelength"
@@ -757,7 +764,13 @@
                         <CheckBox Grid.Row="6" Grid.Column="0" Grid.ColumnSpan="2" Content="Thirds rule at metal edges"
                                   IsChecked="{Binding ViewModel.OpenEmsThirdsRule}"
                                   ToolTip.Tip="Places a strip's edge lines a third of the local cell inside the metal and two thirds outside, where the edge field lives, rather than one line on the edge."/>
-                        <SelectableTextBlock Grid.Row="7" Grid.Column="0" Grid.ColumnSpan="2" FontSize="10" TextWrapping="Wrap"
+                        <TextBlock Grid.Row="7" Grid.Column="0" Classes="colhdr" Text="Save fields at (GHz)" VerticalAlignment="Center"/>
+                        <TextBox   Grid.Row="7" Grid.Column="1" Classes="num" Tag="OpenEms.SaveFieldsGHz"
+                                   Text="{Binding ViewModel.OpenEmsSaveFieldsText}"
+                                   PlaceholderText="{Binding ViewModel.SaveFieldsPlaceholder}"
+                                   LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                                   ToolTip.Tip="{x:Static em:EmSetupEditorViewModel.SaveFieldsTip}"/>
+                        <SelectableTextBlock Grid.Row="8" Grid.Column="0" Grid.ColumnSpan="2" FontSize="10" TextWrapping="Wrap"
                                    Foreground="{DynamicResource CrfWarningBrush}"
                                    Text="{Binding ViewModel.OpenEmsFieldError}"
                                    IsVisible="{Binding ViewModel.OpenEmsFieldError, Converter={x:Static ObjectConverters.IsNotNull}}"/>
@@ -854,7 +867,7 @@
                                  ToolTip.Tip="HB measures copied into the result on the sweep's axes, comma separated (Pout, PAE) — plot a wire's temperature against them"
                                  LostFocus="OnThermalLostFocus" KeyDown="OnThermalKey"/>
                     </Grid>
-                    <TextBlock Classes="colhdr" TextWrapping="Wrap" Margin="18,0,0,0" Foreground="{DynamicResource CrfWarningBrush}"
+                    <SelectableTextBlock Classes="colhdr" TextWrapping="Wrap" Margin="18,0,0,0" Foreground="{DynamicResource CrfWarningBrush}"
                                Text="{Binding ViewModel.ThermalCircuitProblem}"
                                IsVisible="{Binding ViewModel.ThermalCircuitProblem, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                     <ItemsControl Margin="18,0,0,0" ItemsSource="{Binding ViewModel.ThermalCircuitMapping}" IsVisible="{Binding ViewModel.ThermalFromCircuit}"

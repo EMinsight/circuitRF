@@ -470,7 +470,8 @@ public partial class WorkspaceViewModel
         var (setup, fromCem, refusal) = c3d.RunSetupFor(setupName);
         if (setup is null) { Messages.Warning(refusal ?? "Nothing to simulate."); return; }
         var document = c3d.RunDocument();
-        string text = C3dPersistence.Serialize(document);
+        // brief-em3d-83 R-em3d83-2 — what the stale banner compares with: the document without its field plots.
+        string text = C3dPersistence.SerializeForRun(document);
         string path = c3d.TopFilePath;
         string? cws = CurrentWorkspacePath;
         // The panel whose Simulate/Cancel reflect the run: the setup editor when it shows this setup, else a transient one.

@@ -105,6 +105,9 @@ public sealed partial class C3dWirePointRow : ObservableObject
 
 public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : ObservableObject
 {
+    /// <summary>The editor, for the partial declarations (a primary constructor's parameter is this declaration's alone).</summary>
+    private C3dEditorViewModel Editor => editor;
+
     /// <summary>The Role choices: the material's own, or an override.</summary>
     public const string RoleFromMaterial = "From material";
 
@@ -310,6 +313,7 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         AirBoxFaces.Clear();
         IsThermalPlace = false;
         ThermalFields.Clear();
+        ClearFieldPlot();
         var viewer = editor.Viewer;
         var sel = viewer.Selection;
         // brief-em3d-67 R-em3d67-6b — a fillet's or chamfer's row: its own fields, not its object's.
@@ -333,6 +337,8 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
             if (editor.TreeOnlyObjectIndex() is >= 0 and var only) { LoadObject(only, inScene: false); return; }
             if (editor.SelectedTreeItem is { IsGroup: true, GroupPath: { } undrawn }) { LoadGroup(undrawn); return; }
             if (editor.SelectedTreeItem is { IsAirBox: true }) { LoadAirBox(); return; }
+            // brief-em3d-83 — a field plot's row: a record, in no scene.
+            if (editor.SelectedTreeItem is { Kind: C3dEditorViewModel.FieldPlotKind } plotRow) { LoadFieldPlot(plotRow.Name); return; }
             // brief-em3d-75 — a heat source's, probe's or mesh region's row: the place is in no scene, only the tree.
             if (editor.SelectedTreeItem is { Kind: C3dEditorViewModel.HeatSourceKind or C3dEditorViewModel.ProbeKind or C3dEditorViewModel.MeshRegionKind or C3dEditorViewModel.EffectiveBlockKind } place)
             {
@@ -1030,6 +1036,13 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
     /// <summary>The Name field's Enter or lost focus.</summary>
     public void CommitName()
     {
+        if (IsFieldPlot)
+        {
+            if (NameText.Trim() == _plotName) return;
+            Error = editor.RenameFieldPlot(_plotName, NameText) ?? "";
+            if (Error.Length > 0) NameText = _plotName;
+            return;
+        }
         if (IsThermalPlace)
         {
             if (NameText.Trim() == _placeName) return;

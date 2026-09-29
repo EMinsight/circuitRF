@@ -154,6 +154,7 @@ public sealed partial class Viewer3DViewModel
     /// <summary>Shows the temperature when something is asked for, hides it when nothing is; rebuilds what is drawn.</summary>
     private void ShowTemperature()
     {
+        if (_applyingPlot) return;                 // brief-em3d-83 — a plot sets the targets, then draws once
         bool any = _temperatureFaces.Count > 0 || TemperatureAllFaces || TemperatureOnClip;
         if (!any) { if (ShowsTemperature) ShowField = false; return; }
         if (!IsThermalRun) return;
@@ -391,10 +392,10 @@ public sealed partial class Viewer3DViewModel
             return _volumeSampler.Sample(a, x * toUnits, y * toUnits, z * toUnits, ch);
         }
         static string T(double v) => $"T = {v.ToString("0.00", CultureInfo.InvariantCulture)} °C";
-        if (TemperatureOnClip && View.Clip.Enabled)
+        if (TemperatureOnClip && FieldPlane.Enabled)
         {
             var (o, d) = View.Camera.Ray(View.CursorX, View.CursorY, _viewW, _viewH);
-            var e = View.Clip.Equation;
+            var e = FieldPlane.Equation;
             var n = new Vector3(e.X, e.Y, e.Z);
             float den = Vector3.Dot(n, d);
             if (Math.Abs(den) > 1e-12f)

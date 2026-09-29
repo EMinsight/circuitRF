@@ -236,21 +236,41 @@ setup's refusals and notes, the mesh, the field) are always shown.
 - **Mesh.** After a Palace run, the mesh Gmsh made: the boundary triangles, and the tetrahedra the clip
   plane cuts.
 - **Grid.** For an openEMS setup, the FDTD grid on the clip plane and where it meets the metal.
-- **Fields.** After a run that saved them: the field at each saved frequency, eigenmode or terminal,
-  drawn on the clip plane or on the surfaces. The quantities offered are only those in the solver's
-  files: the electric field |E|, the surface current J_s on the conductors, and for a static solve the
-  potential. A **dB** scale and a **range** percentile keep one singular edge from washing out the
-  picture.
-- **One face.** In the 3D editor, right-click a face, *Plot Field*, to paint the field shown on that face
-  alone — the top of one trace, one face of a substrate — beside the clip plane and the surfaces; again to
-  take it off, and several faces accumulate. A conductor has no inside to read, so its face shows the field
-  in the material next to it (or J_s, when that is the quantity chosen). A **sheet** asks *Top side* or
-  *Bottom side*: the field's normal part jumps across a sheet that carries charge, so the two sides are two
-  different pictures. The quantity is never changed for you — a face that cannot show the chosen one says
-  why under the view. On an openEMS run the face is read half a grid cell off the metal, where openEMS
-  records the field.
-- **Animation.** The play button sweeps the phase through one cycle and draws the instantaneous field
-  Re{E·e^jφ}. That is the standing wave in a cavity, or the current running along a wire.
+- **Field plots.** After a run that saved them, a field is drawn by a **field plot**: a row of the Object
+  Tree's **Field Plots** group, saved with the 3D view like any object, so a plot is still there when the
+  file is closed and opened again. Add one with the **+** on the group's header (or right-click the group,
+  *New Field Plot…*); it is drawn at once and its fields open in the Properties Inspector:
+  - **Setup** — the setup whose run it reads. A new plot keeps the setup that was active when it was made,
+    so switching setups never changes what an existing plot shows; *Active* follows whichever is active.
+  - **Solution** — what the run saved: a frequency (driven), a mode (eigenmode), a terminal (static), a
+    sweep point (thermal). The plot keeps the **value**, not its place in the list, so a later run that saves
+    one more frequency never moves it to another. The list ends with *Other frequency… (needs a re-run)*,
+    which adds a frequency to the setup's *Save fields at* and moves the plot to it.
+  - **Quantity** — only those in the solver's files are offered: the electric field |E|, the surface
+    current J_s on the conductors, and for a static solve the potential.
+  - **On** — a **clip plane** (the plot's own axis and position, so two plots can cut in two places),
+    **surfaces** (the solid selected in the tree, or the conductors for J_s), or **faces** (below).
+  - **dB** and a **range** percentile, which keep one singular edge from washing out the picture.
+
+  **One plot is drawn at a time**: ticking one in the tree unticks the one drawn before; the others stay,
+  ready to tick. Each change is one undo step. Adding, editing or hiding a plot never marks a result stale.
+  A plot whose data is missing — no run of its setup yet, a run that did not save its frequency, a
+  quantity the run no longer offers — stays in the tree with a warning mark and draws nothing; its
+  tooltip, and the Inspector, say which, and name what the run did save. It is never moved to the nearest
+  frequency for you. In a setup's own 3D view (*Show 3D View* from a `.cem`) plots last for the session:
+  that view has no document to keep them in.
+- **One face.** In the 3D editor, right-click a face, *Plot Field*, to add that face to the plot being drawn
+  when it is a faces plot — the top of one trace, one face of a substrate — or to start a new faces plot with
+  it; again to take it off, and several faces accumulate. A conductor has no inside to read, so its face
+  shows the field in the material next to it (or J_s, when that is the quantity chosen). A **sheet** asks
+  *Top side* or *Bottom side*: the field's normal part jumps across a sheet that carries charge, so the two
+  sides are two different pictures. The quantity is never changed for you — a face that cannot show the
+  chosen one says why under the view. On an openEMS run the face is read half a grid cell off the metal,
+  where openEMS records the field.
+- **Animation.** With the plot drawn selected, the play button at the foot of the Inspector sweeps the phase
+  through one cycle and draws the instantaneous field Re{E·e^jφ}. That is the standing wave in a cavity, or
+  the current running along a wire. The phase and its speed belong to the view, not the plot: they are not
+  saved.
 - **Pictures.** **Export picture …** saves a PNG of the view at a multiple of the window's size, with or
   without the legend and caption. Right-click in the view — on anything or nothing — for **Copy**, which puts
   the view on the clipboard at four times the window's size (the 3D editor's canvas offers it too).
@@ -278,17 +298,17 @@ with the legend on.</p>
      refined around them." -->
 
 <!-- FIGURE PLACEHOLDER em3d-view-bond-wire-current — 1600 x 1000 PNG, Export picture at 2x, legend on:
-     the same view, mesh off, Field = the saved 20.5 GHz frequency, J_s on surfaces, dB on.
+     the same view, mesh off, a field plot at the saved 20.5 GHz frequency, J_s on surfaces, dB on.
      Caption: "Surface current J_s on the bond wire and its pads at 20.5 GHz, in dB." -->
 
 <!-- FIGURE PLACEHOLDER em3d-view-via-field — 1600 x 1000 PNG, Export picture at 2x, legend on:
      Via through a plane/em/Via 3D.cem after a run, front view (3), clip plane C on y (normal along y) at
-     0, Field = 10.05 GHz, |E| on the clip plane, dB on.
+     0, a field plot at 10.05 GHz, |E| on the clip plane, dB on.
      Caption: "|E| at 10.05 GHz in a vertical cut along both lines and through the via, in dB." -->
 
 <!-- FIGURE PLACEHOLDER em3d-view-package-mode — 1600 x 1000 PNG, Export picture at 2x, legend on:
      Package/em/Package lid modes.cem after a run, top view (2), clip plane on z just below the lid,
-     Field = mode 3, |E| on the clip plane.
+     a field plot at mode 3, |E| on the clip plane.
      Caption: "|E| of the lid's first cavity mode in a plane just below the lid." -->
 
 ### How far the dielectric reaches {#dielectrics}

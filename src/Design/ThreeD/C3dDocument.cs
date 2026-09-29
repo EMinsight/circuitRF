@@ -675,6 +675,11 @@ public sealed class C3dDocument
     /// <summary>brief-em3d-76 R-em3d76-4a — the mirror planes the modelled part was cut on, at most one per axis.</summary>
     public List<C3dSymmetryPlane> SymmetryPlanes { get; set; } = [];
 
+    /// <summary>brief-em3d-83 R-em3d83-1 — the field plots: what the 3D view draws of a run's fields. Display only — no lowering
+    /// reads one, and <see cref="C3dPersistence.SerializeForRun"/> leaves them out of every "is this the model that was solved"
+    /// comparison.</summary>
+    public List<C3dFieldPlot> FieldPlots { get; set; } = [];
+
     /// <summary>
     /// 3D editor round 3 — the material that fills the air box where no object is: a technology material's name. Absent
     /// means Air (the common case; the technology's Air, else a built-in one with free space's values) — the user makes the

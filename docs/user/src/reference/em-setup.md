@@ -470,7 +470,7 @@ Accurate has not been measured.
 | Refinement passes | `AdaptiveMaxIterations` | 2 | The most refinement passes; 0 solves the starting mesh only. Each pass costs a solve and memory |
 | Sweep tolerance | `SweepAdaptiveTol` | 0.0001 | The tolerance of Palace's adaptive frequency sweep; 0 solves every frequency |
 | Linear solver | `LinearSolver` | `Iterative` | How Palace solves each linear system. *Iterative* (GMRES with multigrid) needs the least memory. *Direct* factors it with SuperLU_DIST: more memory, and far faster for an **eigenmode** solve, whose shifted operator an iterative solver converges on slowly. On the 3D Package example's lid mode (128 k unknowns) Direct took 35 s and 4.0 GB; Iterative had not finished after ten minutes. Not part of any preset |
-| — (written in the `.cem`) | `SaveFieldsGHz` | the sweep's centre | The frequencies, GHz, whose fields Palace saves for the 3D view; `[]` saves none. See [Fields for the 3D view](#palace-fields) — they are large |
+| Save fields at (GHz) | `SaveFieldsGHz` | the sweep's centre | The frequencies, GHz, whose fields Palace saves for the 3D view; `[]` saves none. See [Fields for the 3D view](#palace-fields) — they are large |
 
 The settings above size only the **starting** mesh; Palace's adaptive refinement adds elements where its
 error estimate says the answer needs them. Simulate then runs Gmsh on the model and Palace on the mesh,
@@ -710,8 +710,12 @@ table and the panel shows it after a run. Palace's own files stay in the run fol
 
 ### Fields for the 3D view {#palace-fields}
 
-A Palace run also saves the solved **fields**, which the 3D view draws on its clip plane and on surfaces.
-`SaveFieldsGHz` in the Palace section says which frequencies:
+A Palace run also saves the solved **fields**, which the 3D view's field plots draw on a clip plane, on
+surfaces or on chosen faces. **Save fields at (GHz)** in the setup panel's Palace section — `SaveFieldsGHz`
+in the `.cem` — says which frequencies. Its box shows the sweep's centre as its placeholder when it is
+blank, and takes a comma list (`2, 6, 10`) or `none`. A field plot's *Other frequency…* adds one to it. A
+run saves only these frequencies, so a plot can show only these: a 2–18 GHz sweep left blank saves its
+centre, 10 GHz, and nothing else. openEMS has the same box, for its field dumps.
 
 ```
 "Palace": { "SaveFieldsGHz": [2.4, 5.8] }

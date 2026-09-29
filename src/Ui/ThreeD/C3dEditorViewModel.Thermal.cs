@@ -463,10 +463,13 @@ public sealed partial class C3dEditorViewModel
         {
             case "AllFaces": Report(SetTemperatureAllFaces(!Viewer.TemperatureAllFaces)); break;
             case "OnClip": Report(SetTemperatureOnClip(!Viewer.TemperatureOnClip)); break;
-            case "FixRange": Viewer.FixRangeAcrossSweep = !Viewer.FixRangeAcrossSweep; break;
+            // brief-em3d-83 — the drawn temperature plot's own switch, one undo entry
+            case "FixRange":
+                if (VisibleFieldPlot is { IsTemperature: true } tp) SetFieldPlot(tp.Name, $"Fix the range of {tp.Name}", p => p.FixRange = !p.FixRange);
+                break;
             case "Along": StartTemperatureAlong(); break;
             case "Table": ProbeTableOpen = !ProbeTableOpen; break;
-            case "Clear": Viewer.ClearTemperature(); break;
+            case "Clear": ChangePlots("Hide the temperature", plots => { foreach (var p in plots.Where(p => p.IsTemperature)) p.Hidden = true; }); break;
             case "HeatSources": ShowHeatSources = !ShowHeatSources; break;
             case "Probes": ShowProbes = !ShowProbes; break;
             case "MeshRegions": ShowMeshRegions = !ShowMeshRegions; break;
@@ -474,29 +477,32 @@ public sealed partial class C3dEditorViewModel
         }
     }
 
-    /// <summary>R-em3d75-4a — right-click a face ▸ Plot Temperature: that face painted (a second time takes it away).</summary>
+    /// <summary>R-em3d75-4a — right-click a face ▸ Plot Temperature: that face added to the drawn temperature Faces plot (a
+    /// second time takes it away), or a new one made with it (brief-em3d-83).</summary>
     public string? PlotTemperatureOnFace(uint objectId, int face)
     {
         if (PlotTemperatureRefusal() is { } why) return why;
         if (Viewer.Scene.Object(objectId) is not { } o || face < 0) return "There is no face under the cursor.";
-        Viewer.ToggleTemperatureFace(o.Name, face);
+        PaintFace(o, face, 0, temperature: true);
         return null;
     }
 
-    /// <summary>View ▸ Temperature ▸ All Faces.</summary>
+    /// <summary>View ▸ Temperature ▸ All Faces: a temperature plot on every exposed face drawn (made when there is none), or
+    /// hidden (brief-em3d-83).</summary>
     public string? SetTemperatureAllFaces(bool on)
     {
         if (on && PlotTemperatureRefusal() is { } why) return why;
-        Viewer.TemperatureAllFaces = on;
+        ShowTemperaturePlot(C3dFieldPlotOn.Surfaces, on);
         return null;
     }
 
-    /// <summary>View ▸ Temperature ▸ On Clip Plane: the clip plane's section painted (the clip plane is turned on).</summary>
+    /// <summary>View ▸ Temperature ▸ On Clip Plane: a temperature plot cut where the view's clip plane cuts (the plane is turned on
+    /// first), drawn or hidden (brief-em3d-83).</summary>
     public string? SetTemperatureOnClip(bool on)
     {
         if (on && PlotTemperatureRefusal() is { } why) return why;
         if (on && !Viewer.View.Clip.Enabled) Viewer.ClipEnabled = true;
-        Viewer.TemperatureOnClip = on;
+        ShowTemperaturePlot(C3dFieldPlotOn.ClipPlane, on);
         return null;
     }
 
@@ -896,6 +902,7 @@ public sealed partial class C3dEditorViewModel
             $"{sp.Axis} = {SpellMicrons(sp.At / (double)Document.DbuPerMicron)} {LayoutUnits.Suffix(Document.DisplayUnit)}", -1, -1, true) { IsReadOnly = true }).ToList();
         if (planes.Count > 0)
             Tree.Add(new C3dTreeGroup($"Symmetry planes (1/{1 << planes.Count} of the device is modelled)", planes, C3dTreeGroupRole.SymmetryPlanes));
+        RebuildFieldPlotTree();                    // brief-em3d-83 — after Probes, before the regions
         if (ActiveThermalSetup()?.Setup.Thermal?.Boundaries is { Count: > 0 } bs)
             Tree.Add(new C3dTreeGroup($"Thermal boundaries (blue fixed, green convection) · {ActiveSetupName}", [.. bs.Select(b => new C3dTreeItem(this,
                 ThermalTintPrefix + b.Face, ThermalBoundaryKindName, b.Kind == ThermalBoundaryKind.FixedT ? $"{b.Face}: {b.TempC} °C"

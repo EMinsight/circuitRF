@@ -242,6 +242,8 @@ public sealed partial class EmSetupEditorViewModel
         PalaceAdaptiveTolText           = G(p?.AdaptiveTol);
         PalaceAdaptiveMaxIterationsText = p?.AdaptiveMaxIterations?.ToString(CultureInfo.InvariantCulture) ?? "";
         PalaceSweepAdaptiveTolText      = G(p?.SweepAdaptiveTol);
+        PalaceSaveFieldsText            = SaveFieldsText(p?.SaveFieldsGHz);       // brief-em3d-83
+        OnPropertyChanged(nameof(SaveFieldsPlaceholder));
         PalaceFieldError = null;
         SyncOpenEmsFields();
         SyncStaticFields();
@@ -299,6 +301,9 @@ public sealed partial class EmSetupEditorViewModel
             case "Palace.SweepAdaptiveTol":
                 Real(PalaceSweepAdaptiveTolText, v => v >= 0, "Enter a tolerance of 0 or more, e.g. 0.0001.",
                      v => section.SweepAdaptiveTol = v);
+                break;
+            case "Palace.SaveFieldsGHz":                // brief-em3d-83 R-em3d83-6
+                if (TryParseSaveFields(PalaceSaveFieldsText, out var saves, out error)) section.SaveFieldsGHz = saves;
                 break;
             default:
                 return;

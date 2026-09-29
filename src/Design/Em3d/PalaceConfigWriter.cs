@@ -408,6 +408,20 @@ public static class PalaceConfigWriter
         return [centre / 1e9];
     }
 
+    /// <summary>brief-em3d-83 R-em3d83-6 — the frequency a setup saves fields at when it names none (the sweep's centre, as
+    /// <see cref="SaveFrequenciesGHz"/> reads it), GHz; null when its sweep does not resolve to a positive frequency.</summary>
+    public static double? SweepCentreGHz(EmSetup setup)
+    {
+        double[] freqs;
+        try { freqs = setup.Frequency.Expand(); }
+        catch (Exception) { return null; }
+        var positive = freqs.Where(f => f > 0).ToArray();
+        if (positive.Length == 0) return null;
+        var f = new Em3dFrequency(positive.Min(), positive.Max(), positive.Length,
+                                  setup.Frequency.Kind == CircuitRF.Core.Design.SweepKind.Log ? Em3dSweepKind.Log : Em3dSweepKind.Linear);
+        return SaveFrequenciesGHz(f, PalaceSettings.Resolve(null))[0];
+    }
+
     /// <summary>
     /// A save frequency outside the sweep. Palace would add it to the samples its adaptive sweep is built
     /// over, which moves the sweep's own answer at every other frequency — so a field asked for outside the

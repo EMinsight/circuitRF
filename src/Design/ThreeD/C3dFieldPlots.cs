@@ -1,0 +1,173 @@
+// brief-em3d-83 R-em3d83-1 — a FIELD PLOT is a record of the document: what the 3D view draws of a run's fields, saved with
+// the .c3d, named, hidden and undone like a probe.
+//
+// A PLOT NAMES ITS SOLUTION BY VALUE, NEVER BY POSITION. A frequency in GHz (a driven run), a mode number (eigenmode), a
+// terminal's name (static), a sweep point (thermal). The picker's index would move the plot to another frequency the day a
+// re-run saves one more below it, and nothing would say so. A value that the run no longer holds is reported, never
+// re-pointed to the nearest (R-em3d83-5).
+//
+// A PLOT IS DISPLAY, NOT PHYSICS. No lowering reads one, and every comparison of "is this the model that was solved" —
+// the stale banner, Simulate's saved document — reads C3dPersistence.SerializeForRun, which leaves the plots out
+// (R-em3d83-2). Adding a plot never makes a result stale.
+
+using System.ComponentModel;
+using System.Globalization;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using CircuitRF.Design.Layout.Em;
+
+namespace CircuitRF.Design.ThreeD;
+
+/// <summary>Where a plot is drawn — exactly one target per plot.</summary>
+public enum C3dFieldPlotOn
+{
+    /// <summary>A cut through the volume on an axis-aligned plane, the plot's own <see cref="C3dFieldPlot.Axis"/> and
+    /// <see cref="C3dFieldPlot.Offset"/>.</summary>
+    ClipPlane,
+    /// <summary>The selected region's boundary (a volume quantity), the conductors (a boundary quantity such as J_s), or — for a
+    /// temperature — every exposed face.</summary>
+    Surfaces,
+    /// <summary>The faces named in <see cref="C3dFieldPlot.Faces"/>, one by one (brief 82's Plot Field).</summary>
+    Faces,
+}
+
+/// <summary>Which side of a sheet a face plot shows. A sheet carrying charge has two different normal fields.</summary>
+public enum C3dFieldSide { None, Top, Bottom }
+
+/// <summary>One face a <see cref="C3dFieldPlotOn.Faces"/> plot paints: <c>object/face</c>, and on a sheet the side shown.</summary>
+public sealed class C3dFieldPlotFace
+{
+    /// <summary><c>object/face</c> — §6.4's naming, the scene's face name.</summary>
+    public string Face { get; set; } = "";
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public C3dFieldSide Side { get; set; }
+
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? Unread { get; set; }
+
+    /// <summary>The object's name and the face's (split at the last <c>/</c>).</summary>
+    [JsonIgnore]
+    public (string Object, string Face) Parts
+    {
+        get
+        {
+            int slash = Face.LastIndexOf('/');
+            return slash <= 0 ? (Face, "") : (Face[..slash], Face[(slash + 1)..]);
+        }
+    }
+}
+
+/// <summary>
+/// Which saved solution a plot shows, by value. Exactly one of <see cref="GHz"/>, <see cref="Mode"/>, <see cref="Terminal"/>
+/// or <see cref="Point"/> is set; <see cref="Port"/> names the excited port of a driven run that excited several.
+/// </summary>
+public sealed class C3dFieldSolution
+{
+    /// <summary>A driven run's saved frequency, GHz.</summary>
+    public double? GHz { get; set; }
+
+    /// <summary>The port whose excitation it is, when a driven run excited more than one (1-based).</summary>
+    public int? Port { get; set; }
+
+    /// <summary>An eigenmode run's mode, 1-based.</summary>
+    public int? Mode { get; set; }
+
+    /// <summary>A static run's terminal, by name.</summary>
+    public string? Terminal { get; set; }
+
+    /// <summary>A thermal run's sweep point, 1-based.</summary>
+    public int? Point { get; set; }
+
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? Unread { get; set; }
+
+    /// <summary>Two solutions name the same saved step. A frequency matches to one part in 10⁹ — what G6 printing and a
+    /// round trip through the <c>.pvd</c>'s timestep can move it by.</summary>
+    public bool SameAs(C3dFieldSolution? other)
+        => other is not null && Near(GHz, other.GHz) && Port == other.Port && Mode == other.Mode &&
+           string.Equals(Terminal, other.Terminal, StringComparison.Ordinal) && Point == other.Point;
+
+    private static bool Near(double? a, double? b)
+        => a is null ? b is null : b is not null && Math.Abs(a.Value - b.Value) <= 1e-9 * Math.Max(Math.Abs(a.Value), Math.Abs(b.Value));
+
+    /// <summary>What the plot shows, as a person reads it: <c>10 GHz</c>, <c>10 GHz, port 2</c>, <c>mode 3</c>,
+    /// <c>terminal 'P1'</c>, <c>point 4</c>.</summary>
+    public string Describe()
+    {
+        string G(double v) => v.ToString("G6", CultureInfo.InvariantCulture);
+        if (GHz is { } f) return $"{G(f)} GHz" + (Port is { } p ? $", port {p}" : "");
+        if (Mode is { } m) return $"mode {m}";
+        if (Terminal is { } t) return $"terminal '{t}'";
+        if (Point is { } k) return $"point {k}";
+        return "the first saved solution";
+    }
+
+    public C3dFieldSolution Clone() => new() { GHz = GHz, Port = Port, Mode = Mode, Terminal = Terminal, Point = Point };
+}
+
+/// <summary>R-em3d83-1 — a field plot: a named reading of a setup's run, drawn where it says.</summary>
+public sealed class C3dFieldPlot
+{
+    /// <summary>The name its row shows: unique among the plots, <c>Field1</c>, <c>Field2</c> … by default.</summary>
+    public string Name { get; set; } = "";
+
+    /// <summary>The setup whose run it reads, by name. Null reads the setup active when it is drawn.</summary>
+    public string? Setup { get; set; }
+
+    /// <summary>Which solver's fields, for a setup that runs both; null otherwise.</summary>
+    public Em3dSolver? Solver { get; set; }
+
+    /// <summary>The saved solution shown, by value. Null shows the first the run saved.</summary>
+    public C3dFieldSolution? Solution { get; set; }
+
+    /// <summary>The field array's name, as the solver wrote it: <c>E</c>, <c>B</c>, <c>J_s</c>, <c>V</c>, <c>T_C</c> …</summary>
+    public string Quantity { get; set; } = "E";
+
+    /// <summary>How it is read: <c>Peak</c> (a magnitude), <c>Instantaneous</c> (animated), <c>Value</c> (a real scalar).</summary>
+    public string? Mode { get; set; }
+
+    public C3dFieldPlotOn On { get; set; }
+
+    /// <summary>A <see cref="C3dFieldPlotOn.ClipPlane"/> plot's plane: its axis …</summary>
+    public C3dAxis? Axis { get; set; }
+
+    /// <summary>… and its coordinate along that axis, DBU. The plot owns its plane, so two plots cut in two places.</summary>
+    public long? Offset { get; set; }
+
+    /// <summary>A <see cref="C3dFieldPlotOn.Faces"/> plot's faces, in the order they were added.</summary>
+    public List<C3dFieldPlotFace> Faces { get; set; } = [];
+
+    /// <summary>The colour scale in dB (an EM magnitude).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Db { get; set; }
+
+    /// <summary>The colour scale's top: this percentile of what is drawn (95, 99, 99.9, 100).</summary>
+    [DefaultValue(99.0)]
+    public double Percentile { get; set; } = 99;
+
+    /// <summary>A temperature plot's range is the union of every sweep point's, so a step never rescales it.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool FixRange { get; set; }
+
+    /// <summary>The tree's tick, as <see cref="C3dObject.Hidden"/>. One plot is drawn at a time: showing one hides the others.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Hidden { get; set; }
+
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? Unread { get; set; }
+
+    /// <summary>The temperature array a thermal run writes (ThermalFieldFiles).</summary>
+    public const string TemperatureQuantity = "T_C";
+
+    [JsonIgnore]
+    public bool IsTemperature => Quantity == TemperatureQuantity;
+
+    /// <summary>The name a new plot takes: <c>Field1</c>, <c>Field2</c> …, the first not already a plot's.</summary>
+    public static string NextName(IEnumerable<C3dFieldPlot> plots, string stem = "Field")
+    {
+        var used = plots.Select(p => p.Name).ToHashSet(StringComparer.Ordinal);
+        for (int k = 1; ; k++)
+            if (!used.Contains(stem + k.ToString(CultureInfo.InvariantCulture))) return stem + k.ToString(CultureInfo.InvariantCulture);
+    }
+}
