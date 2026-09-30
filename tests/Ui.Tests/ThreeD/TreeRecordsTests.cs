@@ -83,16 +83,15 @@ public sealed class TreeRecordsTests : IDisposable
 
     /// <summary>
     /// The field itself went (Viewer.Plot was null — FieldPlotTests gate 6 already held that), but the SECTION the ClipPlane plot
-    /// had opened (SyncSectionTo sets ClipEnabled) stayed on: the model was left cut open on the plot's plane, which reads as a
-    /// plot. Candidates (b) — a temperature drawn outside the plot records — and (c) — a setup's view keeping its plots
-    /// elsewhere — were ruled out by reading: every temperature gesture writes a FieldPlots record (brief 83), and a setup's
-    /// view keeps its session plots in its own document's FieldPlots. This failed before the fix (ClipEnabled stayed true).
+    /// had opened stayed on: the model was left cut open on the plot's plane, which reads as a plot. Since the plot and the
+    /// section became independent (2026-09-29) the plot never opens the section, so showing and hiding it leave the section as
+    /// the user left it.
     /// </summary>
     [Fact]
-    public void Gate2_HideAll_ClosesTheSectionAClipPlanePlotOpened()
+    public void Gate2_AClipPlanePlot_NeverOpensTheSection_AndHideAllLeavesItClosed()
     {
         var vm = Open(plotShown: true);
-        Assert.True(vm.Viewer.ClipEnabled);                 // the plot opened it
+        Assert.False(vm.Viewer.ClipEnabled);
         vm.HideAllTreeObjectsCommand.Execute(null);
         Settle(vm);
         Assert.Null(vm.Viewer.Plot);

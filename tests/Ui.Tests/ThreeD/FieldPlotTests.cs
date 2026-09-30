@@ -167,6 +167,101 @@ public sealed class FieldPlotTests(ITestOutputHelper output) : IDisposable
         Assert.Equal(10, vm.FieldPlot("Field1")!.Solution!.GHz);
     }
 
+    // ── the Inspector's pickers and offset slider ────────────────────────────────────────────
+
+    /// <summary>A pick commits and the commit reloads the Inspector from inside the ComboBox's own selection change; refilling
+    /// that ComboBox's rows there left it showing a blank box over the right selection. A reload keeps rows that did not change.</summary>
+    [Fact]
+    public void APick_LeavesEveryPickersRowsInPlace()
+    {
+        var vm = Open(Eigenmode());
+        Run(vm);
+        vm.NewFieldPlot();
+        var pr = vm.Properties;
+        int resets = 0;
+        void Count(object? _, System.Collections.Specialized.NotifyCollectionChangedEventArgs e) => resets++;
+        pr.PlotSetups.CollectionChanged += Count;
+        pr.PlotSolutions.CollectionChanged += Count;
+        pr.PlotQuantities.CollectionChanged += Count;
+        pr.PlotTargets.CollectionChanged += Count;
+
+        int entries = vm.UndoEntries;
+        pr.PlotQuantity = pr.PlotQuantities.First(q => q != pr.PlotQuantity);
+        pr.PlotTarget = pr.PlotTargets[1];
+        pr.PlotSolution = pr.PlotSolutions.First(s => !s.IsOther && s != pr.PlotSolution);
+        Assert.Equal(entries + 3, vm.UndoEntries);
+        Assert.Equal(0, resets);
+    }
+
+    /// <summary>The offset slider draws the plane where it is dragged, writes nothing until released, then writes one entry; the
+    /// toolbar's section is not the plot's and does not move.</summary>
+    [Fact]
+    public void TheOffsetSlider_PreviewsWhileDragged_AndCommitsOneEntryOnRelease()
+    {
+        var vm = Open(Eigenmode());
+        Run(vm);
+        vm.NewFieldPlot();
+        var pr = vm.Properties;
+        Assert.True(pr.PlotIsClip && pr.PlotHasOffsetRange);
+        Drawn(vm, "Field1");
+        long before = vm.FieldPlot("Field1")!.Offset!.Value;
+        int entries = vm.UndoEntries;
+        var section = (vm.Viewer.ClipEnabled, vm.Viewer.ClipAxis, vm.Viewer.ClipPosition);
+
+        // Two ticks with no time between them: the first tick's build is drawn, not cancelled by the second, and the second
+        // plane is built after it — a drag faster than the builds still draws slices as it goes.
+        long builds = vm.Viewer.FieldGeometryBuilds;
+        pr.PlotOffsetSlider = pr.PlotOffsetMin + 0.2 * (pr.PlotOffsetMax - pr.PlotOffsetMin);
+        double dragged = pr.PlotOffsetMin + 0.25 * (pr.PlotOffsetMax - pr.PlotOffsetMin);
+        pr.PlotOffsetSlider = dragged;
+        Until(() => vm.Viewer.FieldGeometryBuilds >= builds + 2, "a drag's slices were not both drawn");
+        Assert.Equal(section, (vm.Viewer.ClipEnabled, vm.Viewer.ClipAxis, vm.Viewer.ClipPosition));   // independent of the plot
+        Assert.Equal(before, vm.FieldPlot("Field1")!.Offset);                     // the document does not
+        Assert.Equal(entries, vm.UndoEntries);
+
+        pr.CommitPlotOffsetSlider();
+        Assert.Equal((long)Math.Round(dragged), vm.FieldPlot("Field1")!.Offset);
+        Assert.Equal(entries + 1, vm.UndoEntries);
+        vm.UndoRedo.Undo();
+        Assert.Equal(before, vm.FieldPlot("Field1")!.Offset);
+        Assert.Equal(before, pr.PlotOffsetSlider);
+    }
+
+    /// <summary>The legend is anchored to the right edge and sized to its widest line, whose range text changes length as the
+    /// slider moves: its width is held (only grows) while one plot's one quantity is drawn, and starts again on another.</summary>
+    [Fact]
+    public void TheLegendsWidth_IsHeldThroughADrag_AndStartsAgainForAnotherQuantity()
+    {
+        var vm = Open(Eigenmode());
+        Run(vm);
+        vm.NewFieldPlot();
+        Drawn(vm, "Field1");
+        Assert.Equal(200, vm.Viewer.HeldLegendWidth(200));
+        Assert.Equal(200, vm.Viewer.HeldLegendWidth(170));                       // a shorter range line: the box stays put
+
+        long builds = vm.Viewer.FieldGeometryBuilds;
+        vm.Properties.PlotQuantity = vm.Properties.PlotQuantities.First(q => q != vm.Properties.PlotQuantity);
+        Until(() => vm.Viewer.FieldGeometryBuilds > builds, "the other quantity was never drawn");
+        Assert.Equal(170, vm.Viewer.HeldLegendWidth(170));
+    }
+
+    /// <summary>A ClipPlane plot's slice is on the plot's own plane: the view's section plane (the toolbar's) does not cut it
+    /// (the shader's field block, <c>fmode.w</c>). A Surfaces plot's paint is on the model's faces and is cut with them.</summary>
+    [Fact]
+    public void AClipPlanePlot_IsNotCutByTheViewsSection_ASurfacesPlotIs()
+    {
+        var vm = Open(Eigenmode());
+        Run(vm);
+        vm.NewFieldPlot();
+        Until(() => vm.Viewer.FieldGeometryBuilds > 0 && vm.Viewer.FieldScale is not null, "the slice was never drawn");
+        Assert.Equal(1f, vm.Viewer.View.Field[7]);
+
+        long builds = vm.Viewer.FieldGeometryBuilds;
+        Assert.Null(vm.SetFieldPlot("Field1", "on surfaces", p => p.On = CircuitRF.Design.ThreeD.C3dFieldPlotOn.Surfaces));
+        Until(() => vm.Viewer.FieldGeometryBuilds > builds, "the surfaces were never drawn");
+        Assert.Equal(0f, vm.Viewer.View.Field[7]);
+    }
+
     // ── 6. the tree ─────────────────────────────────────────────────────────────────────────
 
     [Fact]

@@ -158,6 +158,21 @@ public sealed partial class Viewer3DViewModel
                                              FixRangeAcrossSweep && FieldSolutions.Count > 1, TemperatureStepLabel, HotSpotLabel);
     }
 
+    /// <summary>
+    /// The legend's width, held: it is anchored to the view's right edge and sized to its widest line, and the range line (and
+    /// φ, while animating) changes length as a slider is dragged, so the whole box twitched sideways. It only grows while the
+    /// same plot's same quantity is drawn, and starts again when either changes.
+    /// </summary>
+    internal double HeldLegendWidth(double width)
+    {
+        string key = $"{_plot?.Name}|{SelectedFieldQuantity?.Symbol}|{FieldScale?.Db}";
+        if (key != _legendKey) (_legendKey, _legendWidth) = (key, 0);
+        return _legendWidth = Math.Max(_legendWidth, width);
+    }
+
+    private string? _legendKey;
+    private double _legendWidth;
+
     /// <summary>brief-em3d-75 — the thermal run's fields (and its table) were read again: the probe table and the menus follow.</summary>
     public event Action? ThermalResultsChanged;
 
@@ -405,9 +420,47 @@ public sealed partial class Viewer3DViewModel
 
     /// <summary>Rebuilds the drawn slice and surfaces off the UI thread — on a new solution, quantity,
     /// surface choice, selection, or clip plane. A newer request cancels an older one.</summary>
+    /// <summary>
+    /// A ClipPlane plot's plane is being dragged (the Inspector's offset slider). Each tick would otherwise cancel the build under
+    /// way, and with a build slower than the ticks no slice was drawn until the release: while dragging, the build under way is
+    /// finished and drawn, and the newest plane is built after it. Set false, the newest plane is built at once.
+    /// </summary>
+    public bool FieldPlaneDragging
+    {
+        get => _fieldPlaneDragging;
+        set
+        {
+            if (_fieldPlaneDragging == value) return;
+            _fieldPlaneDragging = value;
+            if (!value && _fieldBuildPending) ScheduleFieldGeometry();
+        }
+    }
+
+    private bool _fieldPlaneDragging;
+
+    /// <summary>The build a drag waits for (null when none is under way); a build whose token is no longer the newest is not.</summary>
+    private CancellationTokenSource? _fieldBuildingCts;
+
+    /// <summary>A plane asked for while a drag waited: built when the build under way is drawn.</summary>
+    private bool _fieldBuildPending;
+
+    /// <summary>A build ended (drawn, refused or failed) on the UI thread: a plane that waited is built now.</summary>
+    private void FieldBuildEnded(CancellationTokenSource cts)
+    {
+        if (!ReferenceEquals(_fieldBuildingCts, cts)) return;
+        _fieldBuildingCts = null;
+        if (_fieldBuildPending) ScheduleFieldGeometry();
+    }
+
     private void ScheduleFieldGeometry()
     {
         if (_applyingPlot || !ShowField || SelectedFieldQuantity is not { } q) return;
+        if (_fieldPlaneDragging && _fieldBuildingCts is { } building && ReferenceEquals(building, _fieldCts) && !building.IsCancellationRequested)
+        {
+            _fieldBuildPending = true;
+            return;
+        }
+        _fieldBuildPending = false;
         var vol = _fieldVolume;
         var bnd = _fieldBoundary;
         var scene = Scene;
@@ -418,6 +471,7 @@ public sealed partial class Viewer3DViewModel
         var selected = Scene.Object(View.Selected);
         _fieldCts?.Cancel();
         var cts = _fieldCts = new CancellationTokenSource();
+        _fieldBuildingCts = cts;
         if (q.IsTemperature)
         {
             // brief-em3d-75 — the temperature's own targets, range and hot spot; the triangles carry recipes for a step.
@@ -433,7 +487,7 @@ public sealed partial class Viewer3DViewModel
             {
                 try
                 {
-                    if (vol?.Load(q.Array.Name) is not { } array) return;
+                    if (vol?.Load(q.Array.Name) is not { } array) { _post(() => FieldBuildEnded(cts)); return; }
                     var (parts, scale, note, covered) = BuildTemperature(q, vol, array, scene, clip, groups, faces, all, onClip, table, step,
                                                                          steps, fix, version, cts.Token, mirrors, tempTargets);
                     cts.Token.ThrowIfCancellationRequested();
@@ -442,15 +496,16 @@ public sealed partial class Viewer3DViewModel
                         if (cts.IsCancellationRequested || _disposed) return;
                         // A newer scene arrived while this was built: build again on it (brief-em3d-83 — a plot is not
                         // re-applied on every scene, so a dropped build would leave it undrawn).
-                        if (!ReferenceEquals(Scene, scene)) { ScheduleFieldGeometry(); return; }
+                        if (!ReferenceEquals(Scene, scene)) { _fieldBuildingCts = null; ScheduleFieldGeometry(); return; }
                         FieldGeometryBuilds++;
                         AdoptTemperature(parts, q, scale, covered, note, scene);
+                        FieldBuildEnded(cts);
                     });
                 }
                 catch (OperationCanceledException) { }
                 catch (Exception e) when (e is FieldReadException or IOException or UnauthorizedAccessException or ArgumentException)
                 {
-                    _post(() => FieldText = "The temperature could not be drawn: " + e.Message);
+                    _post(() => { FieldText = "The temperature could not be drawn: " + e.Message; FieldBuildEnded(cts); });
                 }
             });
             return;
@@ -458,13 +513,15 @@ public sealed partial class Viewer3DViewModel
         // brief-em3d-82 — the painted faces, resolved against the scene here (cheap) and painted off the UI thread.
         var targets = FieldFaceTargets(scene);
         FieldSampler? sampler = _fieldLoaded?.Solver == "openEMS" ? _volumeSampler : null;
+        bool unclipped = _plot is { On: C3dFieldPlotOn.ClipPlane };
         bool sampled = _fieldLoaded?.Solver == "openEMS";
         Task.Run(() =>
         {
             try
             {
                 // brief-em3d-89 — built by FieldSurfacePlot.Em, which `render --field` draws a Surfaces or Faces plot from too
-                var built = FieldSurfacePlot.Em(q, vol, bnd, groups, scene, clip, onPlane, onSurfaces, selected, targets, sampler, sampled, cts.Token);
+                var built = FieldSurfacePlot.Em(q, vol, bnd, groups, scene, clip, onPlane, onSurfaces, selected, targets, sampler, sampled, cts.Token,
+                                                sliceClipped: !unclipped);
                 var surfaces = built.Surfaces;
                 var nudges = built.Nudges;
                 var covered = built.Covered;
@@ -479,7 +536,7 @@ public sealed partial class Viewer3DViewModel
                 _post(() =>
                 {
                     if (cts.IsCancellationRequested || _disposed) return;
-                    if (!ReferenceEquals(Scene, scene)) { ScheduleFieldGeometry(); return; }
+                    if (!ReferenceEquals(Scene, scene)) { _fieldBuildingCts = null; ScheduleFieldGeometry(); return; }
                     FieldGeometryBuilds++;
                     _fieldSurfaces = surfaces;
                     _fieldFacePaints = paints;
@@ -492,12 +549,13 @@ public sealed partial class Viewer3DViewModel
                     WriteFieldUniforms();
                     OnPropertyChanged(nameof(FieldLegendVisible));
                     FrameRequested?.Invoke();
+                    FieldBuildEnded(cts);
                 });
             }
             catch (OperationCanceledException) { }
             catch (Exception e) when (e is FieldReadException or IOException or UnauthorizedAccessException or ArgumentException)
             {
-                _post(() => FieldText = "The field could not be drawn: " + e.Message);
+                _post(() => { FieldText = "The field could not be drawn: " + e.Message; FieldBuildEnded(cts); });
             }
         });
     }
@@ -517,7 +575,7 @@ public sealed partial class Viewer3DViewModel
     {
         if (SelectedFieldQuantity is not { } q || FieldScale is not { } s) return;
         double phase = q.Animated ? FieldPhaseDegrees * Math.PI / 180 : 0;
-        FieldUniforms.Write(View.Field, q, s, FieldMap, phase);
+        FieldUniforms.Write(View.Field, q, s, FieldMap, phase, unclipped: _plot is { On: C3dFieldPlotOn.ClipPlane });
     }
 
     // ── Export picture… (R-em3d29-5) ────────────────────────────────────────────────────────

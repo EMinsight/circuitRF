@@ -530,7 +530,7 @@ public sealed class Viewer3DOverlay : Control
         if (lines.Count == 0 || vm.FieldScale is not { } range) return;
         const double barW = 220, barH = 12, pad = 8, line = 16;
         var texts = lines.Select(l => new FormattedText(l, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, Typeface.Default, 12, ink)).ToList();
-        double bw = Math.Max(barW, texts.Max(t => t.Width)) + 2 * pad;
+        double bw = vm.HeldLegendWidth(Math.Max(barW, texts.Max(t => t.Width))) + 2 * pad;
         double bh = 2 * pad + barH + line * (lines.Count + 1);
         double x0 = w - bw - 12, y0 = 12;
         ctx.FillRectangle(new SolidColorBrush(dark ? Color.FromArgb(215, 28, 30, 34) : Color.FromArgb(225, 250, 250, 252)),

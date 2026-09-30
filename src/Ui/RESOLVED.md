@@ -38209,3 +38209,73 @@ three application entry points (`App`, `HarmonicaApp`, `WBondApp`):
 `C3dEditorView.OnDialogButtonClick` is deleted: two mechanisms on one button would disagree about
 when to restore. Gate: `tests/Ui.Tests/Controls/ToolTipDismissGuardTests.cs` (the click half; the
 restore half needs a pointer and a window, which no test here has). No pixels were seen.
+
+## A field plot's picker went blank after a pick; the clip plane gained a slider (2026-09-29)
+
+Picking a row in a field plot's Setup, Solution, Quantity or On picker left that picker's box blank.
+It happened only to the picker just changed; the others were fine. The pick commits, the commit's
+`PlotsChanged` reloads the Inspector **synchronously, from inside that ComboBox's own
+selection-change**, and `LoadFieldPlot` cleared and refilled every picker's rows. On the re-entrant
+ComboBox, Avalonia 12 ends with `SelectedItem` right and `SelectionBoxItem` null, so the view model
+and the selection were both correct and only the box it draws was empty. It reproduces only through a
+real ComboBox (a headless-Avalonia harness showed it; a view-model test cannot). A plain reload, a
+re-entrant reload of a bare two-way-bound ComboBox, a DataContext swap and a detach/attach all stayed
+correct, so the trigger is specifically **refilling the rows of the control whose change is still
+running**. Fix: `KeepOrReplace` leaves a picker's rows alone when they are unchanged, which is always
+the case for the picker just used. Solution rows compare by label and `SameAs`, because
+`C3dFieldSolution` is a class and a fresh twin would compare unequal. Any other panel that reloads its
+own ComboBox's rows inside a commit has the same fault.
+
+The clip-plane row now has an offset slider across the model's extent on the plot's axis, widened
+to include an offset outside it. It follows the transparency slider's pattern: it previews while
+dragged (`C3dEditorViewModel.PreviewPlotOffset` draws a clone of the plot and moves the section,
+and the document is untouched) and writes one undo entry on release. Gate: `FieldPlotTests`'
+`APick_LeavesEveryPickersRowsInPlace` and `TheOffsetSlider_PreviewsWhileDragged_AndCommitsOneEntryOnRelease`.
+No pixels of the real window were seen.
+
+Two follow-ups, same day:
+
+- **The slice did not follow the drag; only the section did.** The section is a uniform, but the slice
+  is a background build, and `ScheduleFieldGeometry` cancelled the build under way on every request.
+  With a build slower than the slider's ticks, nothing was drawn until the release.
+  `Viewer3DViewModel.FieldPlaneDragging`, set by the offset preview, lets the build under way finish
+  and be drawn, then builds only the newest plane asked for meanwhile. Clearing the flag builds a
+  plane still waiting. Outside a drag, cancel-and-restart is unchanged, because there a stale picture
+  must not be shown.
+- **The toolbar's section plane could hide a ClipPlane plot.** `fs_field` discarded against the view's
+  clip exactly as the model does, so a section placed on the far side of the plot's plane erased a
+  slice that lies on the plot's OWN plane. The field block's spare `fmode.w` now marks a ClipPlane
+  plot (`FieldUniforms.Write(..., unclipped)`), and such a slice is never clipped. Surfaces and Faces
+  paint is still cut with the faces it lies on. The shaders were regenerated with `tools/ShaderGen`;
+  most of the `.metal`/`.hlsl` diff is naga renumbering its locals.
+
+Three more, same day:
+
+- **The slice lagged the drag: every tick visited every cell.** `FieldSlicer` read the positions and
+  values of all 948,792 sub-tetrahedra of a 118,599-cell order-2 mesh to find the few thousand a plane
+  crosses. `FieldSliceIndex` (in `src/Render`) holds each cell's extent along each axis, sorted. It is
+  built once per mesh and axis (~20 ms) and kept beside the mesh in a `ConditionalWeakTable`, so an
+  axis slice visits only the cells whose extent holds the plane. The candidates are a superset that
+  the slicer's own test still decides, visited in cell order, so the triangles are the full pass's
+  triangle for triangle (held by `FieldTests.AnAxisSlice_ThroughTheIndex_IsTheFullPassesSlice`, on
+  every axis, both flips, and a plane through nodes). Warm Release: 25-30 ms a slice became 1-9 ms.
+  Measured on the real document in a Debug build, the slice is drawn 20-80 ms after each tick, and
+  the UI thread spends ~0-1 ms of that.
+- **A face lying in the plot's plane won over the slice.** The field draw already came after the
+  opaque geometry, so an exact tie was the field's. But the slice was nudged a hair to the section's
+  kept side, which only a CLIPPED slice needs, and from the cut-away side that put it behind the face.
+  An unclipped slice is no longer nudged (`FieldSurfacePlot.Em(..., sliceClipped)`), and the field
+  draw takes `Scene3DDepthTie.Field`, a polygon offset above a port's. It wins over metal and ports,
+  and over a translucent face drawn after it. D3D11's per-tie rasterizer array is now sized from the
+  enum, since a fifth tie would have indexed past its 4.
+- **A ClipPlane plot and the toolbar's section are independent (owner decision).** The plot moved the
+  section to its own plane and opened it on every change, including every slider tick, because the
+  slice used to be clipped by the section. Now that it is not, the sync (`SyncSectionTo`, and
+  closing a section the plot had opened) is removed. Dielectrics and air are drawn see-through and
+  metal holds no field, so the slice needs no cut to be seen. `TreeRecordsTests.Gate2` now holds that
+  the plot never opens the section.
+- **The legend twitched sideways during a drag.** It is anchored to the view's right edge and sized
+  to its widest line, and the range line (and φ while animating) changes length on every tick.
+  `Viewer3DViewModel.HeldLegendWidth` lets the width only grow while one plot's one quantity is drawn,
+  and resets it when either changes. Several plots at once (with stacked legends sharing one held
+  width) is `docs/sonnet-briefs/brief-em3d-96-several-field-plots-at-once.md`.

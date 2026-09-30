@@ -209,12 +209,13 @@ public static class FieldSurfacePlot
     /// (a dielectric, the air or a body — a volume quantity) or the conductors (a boundary quantity) for
     /// <paramref name="onSurfaces"/>, and each of <paramref name="targets"/> painted one by one. <paramref name="sampler"/> is
     /// the volume's point sampler when the solver's dump carries no regions (openEMS): <paramref name="sampled"/>, and made
-    /// here when none is given.
+    /// here when none is given. <paramref name="sliceClipped"/> false is a ClipPlane plot's slice, which the view's section plane
+    /// does not cut: it stays exactly on its plane.
     /// </summary>
     public static FieldEmBuild Em(FieldQuantity q, FieldStep? vol, FieldStep? bnd, IReadOnlyList<FieldGroup> groups, Scene3DModel scene,
                                   ClipPlane3D clip, bool onPlane, bool onSurfaces, Scene3DObject? selected,
                                   IReadOnlyList<(PaintedFieldFace Face, FieldFaceTarget Target)> targets, FieldSampler? sampler, bool sampled,
-                                  CancellationToken ct)
+                                  CancellationToken ct, bool sliceClipped = true)
     {
         var origin = scene.Origin;
         var surfaces = new List<FieldSurface>();
@@ -231,8 +232,9 @@ public static class FieldSurfacePlot
                 var e = clip.Equation;
                 surfaces.Add(FieldSection.Slice(vol.Mesh, array, origin, clip, ct));    // brief-em3d-84 — render --field's cut
                 // The slice lies ON the plane; the plane's own discard would eat half of it, so it
-                // moves a hair to the kept side (n·p + d ≤ 0).
-                nudges.Add(-eps * new Vector3(e.X, e.Y, e.Z));
+                // moves a hair to the kept side (n·p + d ≤ 0). Unclipped, it stays on the plane: moved, it fell behind a face
+                // lying in the plane whenever the eye was on the cut-away side.
+                nudges.Add(sliceClipped ? -eps * new Vector3(e.X, e.Y, e.Z) : Vector3.Zero);
                 objects.Add("the clip plane");
             }
             if (onSurfaces && selected is { Kind: Scene3DKind.Dielectric or Scene3DKind.Air or Scene3DKind.Body } s &&

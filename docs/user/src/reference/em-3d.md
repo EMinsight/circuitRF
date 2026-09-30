@@ -258,7 +258,10 @@ setup's refusals and notes, the mesh, the field) are always shown.
   - **Quantity** — only those in the solver's files are offered: the electric field |E|, the surface
     current J_s on the conductors, and for a static solve the potential.
   - **On** — a **clip plane** (the plot's own axis and position, so two plots can cut in two places),
-    **surfaces** (the solid selected in the tree, or the conductors for J_s), or **faces** (below).
+    **surfaces** (the solid selected in the tree, or the conductors for J_s), or **faces** (below). Beside
+    a clip plane's position is a slider across the model: the cut is drawn as you drag it and kept, as one
+    undo step, when you let go. The plane is the plot's own. The toolbar's section plane neither moves
+    with it nor hides it, so cut the geometry wherever helps you see.
   - **dB** and a **range** percentile, which keep one singular edge from washing out the picture.
 
   **One plot is drawn at a time**: ticking one in the tree unticks the one drawn before; the others stay,

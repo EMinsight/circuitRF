@@ -3,6 +3,8 @@
 // "Other frequency… (needs a re-run)", which asks the setup to save one more (R-em3d83-6). The Quantity picker lists only
 // what the step's files hold (FieldQuantity.Offered). When the data is missing the reason is shown above the fields. The
 // phase, Play and the loop period are view state: they sit at the bottom, for the plot being drawn, and are never saved.
+// A picker's rows are replaced only when they differ: a pick commits, the commit reloads this panel from inside the ComboBox's
+// own selection change, and refilling THAT ComboBox's rows there left its selection right but its box blank.
 
 using System.Collections.ObjectModel;
 using System.Globalization;
@@ -57,6 +59,15 @@ public sealed partial class C3dPropertiesViewModel
     [ObservableProperty] private bool _plotIsClip;
     [ObservableProperty] private C3dAxis _plotAxis = C3dAxis.Z;
     [ObservableProperty] private string _plotOffsetText = "";
+    /// <summary>The offset slider, DBU: across the model's extent on the plot's axis. It previews while dragged and commits on
+    /// release, one undo entry per drag.</summary>
+    [ObservableProperty] private double _plotOffsetSlider;
+    [ObservableProperty] private double _plotOffsetMin;
+    [ObservableProperty] private double _plotOffsetMax = 1;
+    [ObservableProperty] private double _plotOffsetStep = 1;
+    [ObservableProperty] private bool _plotHasOffsetRange;
+    /// <summary>A drag's offset not yet written; written on release.</summary>
+    private long? _plotOffsetDragged;
     [ObservableProperty] private bool _plotIsFaces;
     [ObservableProperty] private string _plotFacesText = "";
     [ObservableProperty] private bool _plotIsTemperature;
@@ -98,10 +109,9 @@ public sealed partial class C3dPropertiesViewModel
         PlotHidden = p.Hidden;
         PlotIsDrawn = !p.Hidden;
 
-        PlotSetups.Clear();
-        PlotSetups.Add(ActiveSetupChoice);
-        foreach (string s in editor.PlotSetupNames()) PlotSetups.Add(s);
-        if (p.Setup is { } named && !PlotSetups.Contains(named)) PlotSetups.Add(named);
+        List<string> setups = [ActiveSetupChoice, .. editor.PlotSetupNames()];
+        if (p.Setup is { } named && !setups.Contains(named)) setups.Add(named);
+        KeepOrReplace(PlotSetups, setups);
         PlotSetup = p.Setup ?? ActiveSetupChoice;
 
         var request = editor.PlotRequest(p, resolveScene: false);
@@ -110,43 +120,42 @@ public sealed partial class C3dPropertiesViewModel
 
         // The Solution picker: what the run saved, by value — and the plot's own value when the run lacks it, so the picker
         // never shows another step as if it were chosen.
-        PlotSolutions.Clear();
         var found = editor.Discovered(request);
         var mine = found.Items.Where(i => request.Solver is null || string.Equals(i.Run.Solver, request.Solver, StringComparison.OrdinalIgnoreCase)).ToList();
-        foreach (var i in mine) PlotSolutions.Add(new C3dPlotSolutionChoice(i.Label, FieldPlotResolver.SolutionKey(i.Solution, editor.Viewer.Scene.Problem)));
-        C3dPlotSolutionChoice? chosen = p.Solution is null ? PlotSolutions.FirstOrDefault() : PlotSolutions.FirstOrDefault(c => c.Solution!.SameAs(p.Solution));
+        List<C3dPlotSolutionChoice> solutions = [.. mine.Select(i => new C3dPlotSolutionChoice(i.Label, FieldPlotResolver.SolutionKey(i.Solution, editor.Viewer.Scene.Problem)))];
+        C3dPlotSolutionChoice? chosen = p.Solution is null ? solutions.FirstOrDefault() : solutions.FirstOrDefault(c => c.Solution!.SameAs(p.Solution));
         if (chosen is null && p.Solution is { } missing)
         {
             chosen = new C3dPlotSolutionChoice($"{missing.Describe()} (not saved)", missing);
-            PlotSolutions.Add(chosen);
+            solutions.Add(chosen);
         }
-        if (editor.PlotCanAddFrequency(p)) PlotSolutions.Add(new C3dPlotSolutionChoice(OtherFrequencyLabel, null, IsOther: true));
-        PlotSolution = chosen;
+        if (editor.PlotCanAddFrequency(p)) solutions.Add(new C3dPlotSolutionChoice(OtherFrequencyLabel, null, IsOther: true));
+        KeepOrReplace(PlotSolutions, solutions, SameSolutionChoice);
+        // The row kept, not its fresh twin: the step names no identity of its own, so a fresh instance would read as a change.
+        PlotSolution = chosen is null ? null : PlotSolutions[solutions.IndexOf(chosen)];
 
         // The Quantity picker: only what the step offers (the plot's own quantity kept, marked, when it does not).
-        PlotQuantities.Clear();
         var item = FieldPlotResolver.PickSolution(p.Solution, request.Solver, mine, editor.Viewer.Scene.Problem);
         var offered = item is null ? [] : !p.Hidden && editor.Viewer.Plot?.Name == p.Name && editor.Viewer.FieldQuantities.Count > 0
             ? [.. editor.Viewer.FieldQuantities] : editor.OfferedQuantities(item);
-        foreach (var q in offered) PlotQuantities.Add(new C3dPlotQuantityChoice(q.Label, q.Array.Name, q.Mode.ToString()));
-        var qc = PlotQuantities.FirstOrDefault(c => c.Quantity == p.Quantity && (p.Mode is null || string.Equals(c.Mode, p.Mode, StringComparison.OrdinalIgnoreCase)));
+        List<C3dPlotQuantityChoice> quantities = [.. offered.Select(q => new C3dPlotQuantityChoice(q.Label, q.Array.Name, q.Mode.ToString()))];
+        var qc = quantities.FirstOrDefault(c => c.Quantity == p.Quantity && (p.Mode is null || string.Equals(c.Mode, p.Mode, StringComparison.OrdinalIgnoreCase)));
         if (qc is null)
         {
             qc = new C3dPlotQuantityChoice(FieldNames.Friendly(p.Quantity) + (p.Mode is { } md ? $" ({md})" : "") + (offered.Count > 0 ? " (not offered)" : ""),
                                            p.Quantity, p.Mode);
-            PlotQuantities.Add(qc);
+            quantities.Add(qc);
         }
+        KeepOrReplace(PlotQuantities, quantities);
         PlotQuantity = qc;
 
-        PlotTargets.Clear();
-        PlotTargets.Add(OnClip);
-        PlotTargets.Add(OnSurfaces);
-        PlotTargets.Add(OnFaces);
+        KeepOrReplace(PlotTargets, [OnClip, OnSurfaces, OnFaces]);
         PlotTarget = p.On switch { C3dFieldPlotOn.ClipPlane => OnClip, C3dFieldPlotOn.Surfaces => OnSurfaces, _ => OnFaces };
         PlotIsClip = p.On == C3dFieldPlotOn.ClipPlane;
         PlotIsFaces = p.On == C3dFieldPlotOn.Faces;
         PlotAxis = p.Axis ?? C3dAxis.Z;
-        PlotOffsetText = p.Offset is { } o ? LayoutUnits.Format(o, editor.Document.DisplayUnit, editor.Document.DbuPerMicron) : "";
+        PlotOffsetText = p.Offset is { } o ? FormatOffset(o) : "";
+        LoadPlotOffsetRange(p);
         PlotFacesText = p.Faces.Count == 0
             ? "None yet: right-click a face ▸ " + (p.IsTemperature ? "Plot Temperature" : "Plot Field") + " while this plot is drawn."
             : string.Join("\n", p.Faces.Select(f => f.Face + f.Side switch { C3dFieldSide.Top => " (top side)", C3dFieldSide.Bottom => " (bottom side)", _ => "" }));
@@ -155,6 +164,68 @@ public sealed partial class C3dPropertiesViewModel
         PlotFixRange = p.FixRange;
         PlotProblem = editor.FieldPlotProblem(p);
         PlotStale = editor.FieldPlotStaleText(p);
+    }
+
+    /// <summary>Replaces <paramref name="rows"/> with <paramref name="fresh"/> only when they differ (see the file's head).</summary>
+    private static void KeepOrReplace<T>(ObservableCollection<T> rows, IReadOnlyList<T> fresh, Func<T, T, bool>? same = null)
+    {
+        same ??= EqualityComparer<T>.Default.Equals;
+        if (rows.Count == fresh.Count && rows.Zip(fresh).All(z => same(z.First, z.Second))) return;
+        rows.Clear();
+        foreach (var r in fresh) rows.Add(r);
+    }
+
+    private static bool SameSolutionChoice(C3dPlotSolutionChoice a, C3dPlotSolutionChoice b)
+        => a.Label == b.Label && a.IsOther == b.IsOther && (a.Solution is null ? b.Solution is null : a.Solution.SameAs(b.Solution));
+
+    private string FormatOffset(long dbu) => LayoutUnits.Format(dbu, Editor.Document.DisplayUnit, Editor.Document.DbuPerMicron);
+
+    /// <summary>The slider's range, the model's extent on the plot's axis (widened to hold an offset outside it), and its
+    /// thumb — at the dragged offset when a drag is under way across this reload, so the thumb does not jump back.</summary>
+    private void LoadPlotOffsetRange(C3dFieldPlot p)
+    {
+        _plotOffsetDragged = Editor.PlotOffsetPreview(p.Name);
+        long? at = _plotOffsetDragged ?? p.Offset;
+        if (_plotOffsetDragged is { } d) PlotOffsetText = FormatOffset(d);
+        if (Editor.PlotAxisRange(p.Axis ?? C3dAxis.Z) is not { } range)
+        {
+            PlotHasOffsetRange = false;
+            return;
+        }
+        var (lo, hi) = range;
+        if (at is { } a) (lo, hi) = (Math.Min(lo, a), Math.Max(hi, a));
+        PlotHasOffsetRange = hi > lo;
+        PlotOffsetMin = lo;
+        PlotOffsetMax = Math.Max(hi, lo + 1);
+        PlotOffsetStep = Math.Max(1, (hi - lo) / 100.0);
+        PlotOffsetSlider = at ?? (lo + hi) / 2.0;
+    }
+
+    /// <summary>After a reload: a drag no longer shown here (the selection changed under it) ends, so the view stops drawing an
+    /// offset nothing will write.</summary>
+    private void EndStrayPlotOffsetPreview()
+    {
+        if (_plotOffsetDragged is null || !IsFieldPlot) { _plotOffsetDragged = null; Editor.EndPlotOffsetPreview(); }
+    }
+
+    partial void OnPlotOffsetSliderChanged(double value)
+    {
+        if (_loading || !IsFieldPlot || !PlotIsClip) return;
+        long dbu = (long)Math.Round(value);
+        _plotOffsetDragged = dbu;
+        _loading = true;
+        try { PlotOffsetText = FormatOffset(dbu); }
+        finally { _loading = false; }
+        Editor.PreviewPlotOffset(_plotName, dbu);
+    }
+
+    /// <summary>The slider was released (or its keys let go): the dragged offset, written as one undo entry.</summary>
+    public void CommitPlotOffsetSlider()
+    {
+        if (_plotOffsetDragged is not { } dbu) return;
+        _plotOffsetDragged = null;
+        Editor.EndPlotOffsetPreview(redraw: false);
+        CommitPlot($"Cut {_plotName} at {PlotAxis} = {PlotOffsetText.Trim()}", p => { p.Axis ??= PlotAxis; p.Offset = dbu; });
     }
 
     /// <summary>The drawn plot's verdict changed (the run was read, the step loaded): the sentence above the fields follows.</summary>
@@ -238,6 +309,8 @@ public sealed partial class C3dPropertiesViewModel
             Error = $"Enter a position along {PlotAxis}, e.g. 120 ({LayoutUnits.Suffix(doc.DisplayUnit)}).";
             return;
         }
+        _plotOffsetDragged = null;
+        Editor.EndPlotOffsetPreview();
         CommitPlot($"Cut {_plotName} at {PlotAxis} = {PlotOffsetText.Trim()}", p => { p.Axis ??= PlotAxis; p.Offset = dbu; });
     }
 

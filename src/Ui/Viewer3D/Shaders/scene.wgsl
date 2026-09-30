@@ -29,7 +29,8 @@ struct U {
     // x cos φ, y sin φ, z range lo, w range hi
     fphase: vec4f,
     // x mode (0 |v| of a vector, 1 |Re{v e^jφ}|, 2 a real scalar, 3 Re{v e^jφ} of a scalar, 4 |v| of a
-    // scalar), y dB, z the colour map's stop count
+    // scalar), y dB, z the colour map's stop count, w 1 when the field is a ClipPlane plot's slice: it lies on the
+    // plot's own plane, so the view's section plane does not cut it
     fmode: vec4f,
     // (t, r, g, b) per stop
     stops: array<vec4f, 16>,
@@ -249,7 +250,7 @@ fn colour_map(t: f32) -> vec3f {
 }
 
 @fragment fn fs_field(i: FVO) -> @location(0) vec4f {
-    if (clipped(i.world)) { discard; }
+    if (u.fmode.w < 0.5 && clipped(i.world)) { discard; }
     var v = field_value(i.re, i.im);
     if (u.fmode.y > 0.5) { v = 20.0 * 0.30102999566 * log2(max(abs(v), 1e-30)); }
     let t = clamp((v - u.fphase.z) / max(u.fphase.w - u.fphase.z, 1e-30), 0.0, 1.0);

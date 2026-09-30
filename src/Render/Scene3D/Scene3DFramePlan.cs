@@ -85,6 +85,8 @@ public enum Scene3DDepthTie : sbyte
     Via = 1,
     /// <summary>A port's surface: wins over the metal it lies on.</summary>
     Port = 2,
+    /// <summary>A field plot's slice or painted faces: the datum, so it wins over any geometry lying where it lies.</summary>
+    Field = 3,
 }
 
 /// <summary>
@@ -384,9 +386,10 @@ public sealed class Scene3DFramePlan
                              TieOf(scene, b.ObjectId));
             }
         }
-        // brief-em3d-29 — the field's slice and surfaces, one draw, opaque, before anything translucent.
+        // brief-em3d-29 — the field's slice and surfaces, one draw, opaque, before anything translucent; at a coincident face
+        // the field wins (its own tie), over metal, a port, and a translucent face drawn after it.
         if (view.ShowField && field is { Vertices.Length: > 0 } f)
-            Add(ref Draws, ref DrawCount, Scene3DPipeline.Field, Scene3DBuffer.Field, 0, f.Vertices.Length);
+            Add(ref Draws, ref DrawCount, Scene3DPipeline.Field, Scene3DBuffer.Field, 0, f.Vertices.Length, tie: Scene3DDepthTie.Field);
         foreach (var lb in scene.LineBatches)
             if (view.IsVisible(lb.ObjectId))
                 AddMoved(preview, lb.ObjectId, Scene3DPipeline.Lines, Scene3DBuffer.SceneLines, lb.FirstVertex, lb.VertexCount, identity: true);

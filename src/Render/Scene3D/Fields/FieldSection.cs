@@ -26,7 +26,21 @@ public static class FieldSection
                                      CancellationToken ct = default)
     {
         var e = clip.Equation;
-        return FieldSlicer.Slice(new FieldMeshTets(mesh, array, origin), new Vector3D(e.X, e.Y, e.Z), e.W, ct);
+        var tets = new FieldMeshTets(mesh, array, origin);
+        // An axis plane visits only the cells whose extent holds it (FieldSliceIndex); a view-facing plane, every cell.
+        int[]? only = null;
+        if (clip.Axis != ClipAxis3D.View && mesh.Shape == FieldCellShape.Tetrahedron && mesh.ToMetres > 0)
+        {
+            int axis = (int)clip.Axis;
+            double n = axis == 0 ? e.X : axis == 1 ? e.Y : e.Z;
+            double o = axis == 0 ? origin.X : axis == 1 ? origin.Y : origin.Z;
+            var cells = FieldSliceIndex.For(mesh, axis).CellsAt((-e.W / n + o) / mesh.ToMetres);
+            int sub = tets.Count / Math.Max(mesh.CellCount, 1);
+            only = new int[cells.Length * sub];
+            for (int i = 0; i < cells.Length; i++)
+                for (int k = 0; k < sub; k++) only[i * sub + k] = cells[i] * sub + k;
+        }
+        return FieldSlicer.Slice(tets, new Vector3D(e.X, e.Y, e.Z), e.W, ct, only);
     }
 
     /// <summary>

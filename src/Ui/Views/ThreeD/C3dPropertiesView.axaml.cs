@@ -30,6 +30,10 @@ public partial class C3dPropertiesView : UserControl
         TransparencySlider.AddHandler(PointerReleasedEvent, (_, _) => _vm?.CommitTransparencySlider(), RoutingStrategies.Bubble, handledEventsToo: true);
         TransparencySlider.AddHandler(PointerCaptureLostEvent, (_, _) => _vm?.CommitTransparencySlider(), RoutingStrategies.Bubble, handledEventsToo: true);
         TransparencySlider.AddHandler(KeyUpEvent, (_, _) => _vm?.CommitTransparencySlider(), RoutingStrategies.Bubble, handledEventsToo: true);
+        // The clip plot's offset slider: the same preview-then-commit, one undo entry per drag.
+        PlotOffsetSlider.AddHandler(PointerReleasedEvent, (_, _) => _vm?.CommitPlotOffsetSlider(), RoutingStrategies.Bubble, handledEventsToo: true);
+        PlotOffsetSlider.AddHandler(PointerCaptureLostEvent, (_, _) => _vm?.CommitPlotOffsetSlider(), RoutingStrategies.Bubble, handledEventsToo: true);
+        PlotOffsetSlider.AddHandler(KeyUpEvent, (_, _) => _vm?.CommitPlotOffsetSlider(), RoutingStrategies.Bubble, handledEventsToo: true);
     }
 
     private void OnAnyGotFocus(object? sender, FocusChangedEventArgs e)

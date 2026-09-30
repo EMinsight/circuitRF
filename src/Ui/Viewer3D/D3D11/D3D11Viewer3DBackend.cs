@@ -60,7 +60,7 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
     private ID3D11DepthStencilState _dsWrite = null!, _dsNoWrite = null!, _dsOff = null!;
     /// <summary>3D editor round 3 / bugs round 9 — one rasterizer state per depth tie (Scene3DDepthTie + 1): cull none, and the
     /// tie's polygon offset (Scene3DFramePlan.DepthBias). Index 1, no offset, is the ordinary state.</summary>
-    private readonly ID3D11RasterizerState[] _raster = new ID3D11RasterizerState[4];
+    private readonly ID3D11RasterizerState[] _raster = new ID3D11RasterizerState[(int)Scene3DDepthTie.Field + 2];
 
     private ID3D11RasterizerState Raster(Scene3DDepthTie tie) => _raster[(int)tie + 1];
     private ID3D11Buffer _cb = null!;

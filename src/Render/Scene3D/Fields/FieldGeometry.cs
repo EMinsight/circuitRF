@@ -223,8 +223,10 @@ public static class FieldSlicer
     /// crosses, a triangle (one corner apart) or two (a quadrilateral), each vertex where the plane crosses
     /// an edge, its values interpolated linearly along that edge. A corner ON the plane counts with the
     /// negative side, so a face lying in the plane is produced once, by the tetrahedron on its positive side.
+    /// <paramref name="only"/>, ascending, limits the pass to those tetrahedra — a superset of the ones the plane crosses
+    /// (FieldSliceIndex), so the result is the full pass's, triangle for triangle.
     /// </summary>
-    public static FieldSurface Slice<T>(T tets, Vector3D n, double d, CancellationToken ct = default) where T : ILinearTets
+    public static FieldSurface Slice<T>(T tets, Vector3D n, double d, CancellationToken ct = default, int[]? only = null) where T : ILinearTets
     {
         int ch = tets.Channels;
         var xyzOut = new List<double>();
@@ -238,9 +240,11 @@ public static class FieldSlicer
         var (meshNodes, meshCells) = tets.MeshSize;
         var recipe = meshNodes > 0 ? new FieldRecipe.Builder(meshNodes, meshCells) : null;
         int cell = -1;
-        for (int t = 0; t < tets.Count; t++)
+        int count = only?.Length ?? tets.Count;
+        for (int i = 0; i < count; i++)
         {
-            if ((t & 0xFFFF) == 0) ct.ThrowIfCancellationRequested();
+            int t = only is null ? i : only[i];
+            if ((i & 0xFFFF) == 0) ct.ThrowIfCancellationRequested();
             tets.Get(t, p, v);
             if (recipe is not null && !tets.Nodes(t, nodes, out cell)) recipe = null;
             int np = 0, nn = 0;

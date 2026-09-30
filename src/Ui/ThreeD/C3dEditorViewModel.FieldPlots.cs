@@ -243,30 +243,15 @@ public sealed partial class C3dEditorViewModel
     private void ApplyVisiblePlot()
     {
         var plot = VisibleFieldPlot;
+        if (plot is not null && PlotOffsetPreview(plot.Name) is { } dragged)
+        {
+            plot = C3dPersistence.DeserializeFieldPlots(C3dPersistence.SerializeFieldPlots([plot]))[0];
+            plot.Offset = dragged;
+        }
+        // A ClipPlane plot and the toolbar's section are independent (owner decision, 2026-09-29): the slice is drawn on the
+        // plot's own plane and the section never cuts it (fs_field's unclipped flag), so the plot neither moves nor opens the
+        // section — it used to follow the plot's plane, which made the two one control.
         var request = plot is null ? null : PlotRequest(plot);
-        // The section follows a ClipPlane plot's plane when the plot, or its plane, changes — so the cut is seen; moving the
-        // view's clip plane afterwards leaves the plot where it is.
-        if (request is { On: C3dFieldPlotOn.ClipPlane } && (plot!.Name, plot.Axis, plot.Offset) != _sectionSyncedTo)
-        {
-            // brief-em3d-90 — remember whether the plot turned the section on, so hiding the plot can turn it off again; and
-            // record the sync only once it happened (a document opening with a plot drawn asks before there is a scene to cut)
-            bool wasOpen = Viewer.ClipEnabled;
-            if (SyncSectionTo(request.Plane))
-            {
-                _sectionSyncedTo = (plot.Name, plot.Axis, plot.Offset);
-                if (!wasOpen) _sectionOpenedByPlot = true;
-            }
-            request = request with { Plane = ScenePlane(plot) };
-        }
-        // brief-em3d-90 R-em3d90-1 (the owner's "Hide all left a field plot showing") — with no ClipPlane plot drawn, a section a
-        // plot opened is closed again. The field itself was gone (SetPlot(null)), but the model stayed cut open on the plot's
-        // plane, which still reads as a plot. A section the user had open before the plot is left open.
-        if (request is not { On: C3dFieldPlotOn.ClipPlane } && _sectionSyncedTo is not null)
-        {
-            _sectionSyncedTo = null;
-            if (_sectionOpenedByPlot && Viewer.ClipEnabled) Viewer.ClipEnabled = false;
-            _sectionOpenedByPlot = false;
-        }
         string key = request is null ? "" : string.Join("|", C3dPersistence.SerializeFieldPlots([plot!]), request.Plane.Offset, request.Plane.Flip,
             string.Join(",", request.Faces), FieldPlotResolver.RunDirectories(request.RunSetup, ResultsRootProvider?.Invoke()),
             request.Solver, request.SetupProblem, Viewer.Scene.Origin);
@@ -280,18 +265,41 @@ public sealed partial class C3dEditorViewModel
 
     private string? _appliedPlotKey;
 
-    private (string, C3dAxis?, long?)? _sectionSyncedTo;
-    private bool _sectionOpenedByPlot;
+    // The Inspector's offset slider: a ClipPlane plot's plane drawn (and the section moved) at the dragged offset while the
+    // document keeps its own until the release commits it as one undo entry.
+    private (string Name, long Offset)? _plotOffsetPreview;
 
-    private bool SyncSectionTo(ClipPlane3D plane)
+    /// <summary>The offset a drag is previewing for <paramref name="name"/>, or null.</summary>
+    internal long? PlotOffsetPreview(string name) => _plotOffsetPreview is { } pv && pv.Name == name ? pv.Offset : null;
+
+    /// <summary>Draws plot <paramref name="name"/> cut at <paramref name="offset"/> (DBU), writing nothing.</summary>
+    public void PreviewPlotOffset(string name, long offset)
+    {
+        if (FieldPlot(name) is null) return;
+        _plotOffsetPreview = (name, offset);
+        Viewer.FieldPlaneDragging = true;
+        ApplyVisiblePlot();
+    }
+
+    /// <summary>Ends a drag's preview. <paramref name="redraw"/> false when a commit of the same offset follows, so the plane
+    /// is not drawn back at the document's offset for one request in between.</summary>
+    public void EndPlotOffsetPreview(bool redraw = true)
+    {
+        if (_plotOffsetPreview is null) return;
+        _plotOffsetPreview = null;
+        if (redraw) ApplyVisiblePlot();
+        Viewer.FieldPlaneDragging = false;
+    }
+
+    /// <summary>The model's extent along <paramref name="axis"/> in DBU — the offset slider's range; null with no scene.</summary>
+    public (long Lo, long Hi)? PlotAxisRange(C3dAxis axis)
     {
         var scene = Viewer.Scene;
-        if (scene.Objects.Length == 0) return false;
-        var (lo, hi) = plane.Range(scene.BoundsMin, scene.BoundsMax);
-        Viewer.ClipAxis = plane.Axis;
-        Viewer.ClipPosition = hi > lo ? Math.Clamp((plane.Offset - lo) / (hi - lo), 0, 1) : 0.5;
-        Viewer.ClipEnabled = true;
-        return true;
+        if (scene.Objects.Length == 0) return null;
+        double perDbu = C3dLowering.Metres(1, Document.DbuPerMicron);
+        var (lo, hi) = (scene.ToWorld(scene.BoundsMin), scene.ToWorld(scene.BoundsMax));
+        (double a, double b) = axis switch { C3dAxis.X => (lo.X, hi.X), C3dAxis.Y => (lo.Y, hi.Y), _ => (lo.Z, hi.Z) };
+        return ((long)Math.Round(a / perDbu), (long)Math.Round(b / perDbu));
     }
 
     // ── missing data (R-em3d83-5) ────────────────────────────────────────────────────────────

@@ -277,7 +277,8 @@ public sealed class Scene3DFieldGeometry(FieldVertex[] vertices, long version, l
 
 /// <summary>
 /// The field uniform block (scene.wgsl <c>F</c>): cos φ, sin φ, range lo, range hi; mode, dB, stop count,
-/// pad; sixteen colour-map stops (t, r, g, b). 288 bytes. Written per frame; an animation changes φ only.
+/// unclipped; sixteen colour-map stops (t, r, g, b). 288 bytes. Written per frame; an animation changes φ only.
+/// <c>unclipped</c> is a ClipPlane plot's slice: on the plot's own plane, so the view's section plane never hides it.
 /// </summary>
 public static class FieldUniforms
 {
@@ -285,12 +286,13 @@ public static class FieldUniforms
     public const int Bytes = Floats * 4;
     public const int MaxStops = 16;
 
-    public static void Write(Span<float> u, FieldQuantity q, FieldColorScale scale, ColorMap3D map, double phase)
+    public static void Write(Span<float> u, FieldQuantity q, FieldColorScale scale, ColorMap3D map, double phase, bool unclipped = false)
     {
         u.Clear();
         u[0] = (float)Math.Cos(phase); u[1] = (float)Math.Sin(phase);
         u[2] = (float)scale.Lo; u[3] = (float)scale.Hi;
         u[4] = q.ShaderMode; u[5] = scale.Db ? 1 : 0;
+        u[7] = unclipped ? 1 : 0;
         var stops = map.Stops;
         int n = Math.Min(stops.Count, MaxStops);
         u[6] = n;

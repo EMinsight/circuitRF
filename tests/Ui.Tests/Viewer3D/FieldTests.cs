@@ -412,6 +412,42 @@ public sealed class FieldTests(ITestOutputHelper output)
         Assert.True(cosines.Count > 50);
     }
 
+    /// <summary>An axis plane's slice visits only the cells its extent index names (FieldSliceIndex) — and is the full pass's
+    /// slice triangle for triangle: every axis, both sides kept, off a non-zero origin, and on a plane through mesh nodes.</summary>
+    [Fact]
+    public void AnAxisSlice_ThroughTheIndex_IsTheFullPassesSlice()
+    {
+        var run = FieldRun.OpenPalace(Fixture("cavity"))!;
+        var step = FieldStep.Open(run.Solutions[0].VolumePvtu!, run.ToMetres);
+        var e = step.Load("E")!;
+        var origin = (1e-3, -2e-3, 0.5e-3);
+        int checkedPlanes = 0;
+        for (int axis = 0; axis < 3; axis++)
+        {
+            double o = axis == 0 ? origin.Item1 : axis == 1 ? origin.Item2 : origin.Item3;
+            double node = step.Mesh.Points[3 * step.Mesh.Cells[5 * step.Mesh.NodesPerCell] + axis] * step.Mesh.ToMetres;
+            double lo = double.MaxValue, hi = double.MinValue;
+            for (int i = axis; i < step.Mesh.Points.Length; i += 3) { lo = Math.Min(lo, step.Mesh.Points[i]); hi = Math.Max(hi, step.Mesh.Points[i]); }
+            foreach (double world in (double[])[node, (lo + 0.37 * (hi - lo)) * step.Mesh.ToMetres])
+                foreach (bool flip in (bool[])[false, true])
+                {
+                    var clip = new CircuitRF.Render.Scene3D.ClipPlane3D
+                    {
+                        Enabled = true, Axis = (CircuitRF.Render.Scene3D.ClipAxis3D)axis, Offset = (float)(world - o), Flip = flip,
+                    };
+                    var q = clip.Equation;
+                    var full = FieldSlicer.Slice(new FieldMeshTets(step.Mesh, e, origin), new Vector3D(q.X, q.Y, q.Z), q.W);
+                    var indexed = FieldSection.Slice(step.Mesh, e, origin, clip);
+                    Assert.True(full.TriangleCount > 0);
+                    Assert.Equal(full.Xyz, indexed.Xyz);
+                    Assert.Equal(full.Values, indexed.Values);
+                    Assert.Equal(full.Recipe!.Cell, indexed.Recipe!.Cell);
+                    checkedPlanes++;
+                }
+        }
+        Assert.Equal(12, checkedPlanes);
+    }
+
     /// <summary>The cavity's TE101 E on the plane z = d/2 — an x–y section through its peak.</summary>
     private static (Scene3DFieldGeometry, FieldQuantity, FieldColorScale) CavitySlice(FieldMode mode)
     {

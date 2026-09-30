@@ -284,13 +284,22 @@
                 <TextBlock Text="On" FontSize="11" Opacity="0.7"/>
                 <ComboBox ItemsSource="{Binding PlotTargets}" SelectedItem="{Binding PlotTarget}" HorizontalAlignment="Stretch"
                           ToolTip.Tip="Where it is drawn: a cut on the plot's own plane; surfaces (the selected solid's faces, or the conductors for J_s; every exposed face for a temperature); or the faces it lists."/>
-                <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="4" IsVisible="{Binding PlotIsClip}">
+                <!-- The offset box is narrow so the slider shares its row: the slider sweeps the plane across the model, drawn
+                     live, and writes on release. -->
+                <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,*" ColumnSpacing="4" IsVisible="{Binding PlotIsClip}">
                     <TextBlock Text="Across" FontSize="11" Opacity="0.7" VerticalAlignment="Center"/>
                     <ComboBox Grid.Column="1" ItemsSource="{x:Static t3:C3dPropertiesViewModel.PlotAxes}" SelectedItem="{Binding PlotAxis}"
+                              VerticalAlignment="Center"
                               ToolTip.Tip="The axis the plane is square to: the plot owns its plane, so two plots cut in two places."/>
-                    <TextBox Grid.Column="2" Text="{Binding PlotOffsetText}" Classes="dim" KeyDown="OnPlotOffsetKey" LostFocus="OnPlotOffsetLostFocus"
+                    <TextBox Grid.Column="2" Width="64" Text="{Binding PlotOffsetText}" Classes="dim" VerticalAlignment="Center"
+                             KeyDown="OnPlotOffsetKey" LostFocus="OnPlotOffsetLostFocus"
                              ToolTip.Tip="Where the plane is along its axis, in the display unit (or with a unit of its own)."/>
                     <TextBlock Grid.Column="3" Text="{Binding LengthUnit}" FontSize="11" Opacity="0.7" VerticalAlignment="Center"/>
+                    <Slider x:Name="PlotOffsetSlider" Grid.Column="4" MinWidth="60" VerticalAlignment="Center"
+                            Minimum="{Binding PlotOffsetMin}" Maximum="{Binding PlotOffsetMax}" Value="{Binding PlotOffsetSlider}"
+                            SmallChange="{Binding PlotOffsetStep}" LargeChange="{Binding PlotOffsetStep}"
+                            IsVisible="{Binding PlotHasOffsetRange}"
+                            ToolTip.Tip="Sweep the plane across the model: drawn as you drag, kept when you let go."/>
                 </Grid>
                 <StackPanel Spacing="1" IsVisible="{Binding PlotIsFaces}">
                     <TextBlock Text="Faces" FontSize="11" Opacity="0.7"/>
