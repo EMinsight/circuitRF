@@ -1089,7 +1089,7 @@ slow is a <code>check</code> people stop running. What <code>check</code> does c
 example workspace.</p>
 <h2 id="impedance"><code>impedance</code> — every trace against a target Z0</h2>
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf impedance &lt;layout&gt; [--target 50] [--tol 10] [--warn 20] [--max-freq 6GHz]
-<span class="prompt">  </span>[--layers "Top Copper,Inner 2"] [--max-width &lt;um&gt;] [--width "Top Copper=457"]… [--no-scope]
+<span class="prompt">  </span>[--layers "Top Copper,Inner 2"] [--max-width &lt;um&gt;] [--via-transition 400um] [--width "Top Copper=457"]… [--no-scope]
 <span class="prompt">  </span>[--region [&lt;layer&gt;@]x0,y0,x1,y1]… [--net &lt;name&gt;]… [--pick &lt;layer&gt;@&lt;x&gt;,&lt;y&gt;[:connected]]…
 <span class="prompt">  </span>[--whole-layer &lt;layer&gt;]…
 <span class="prompt">  </span>[--survey] [--severity warning|fail] [--ignore-accepted] [-o report.pdf]</code></pre>
@@ -1141,6 +1141,10 @@ the default. A saved layer the technology no longer has is skipped with a line o
 <tr>
 <td><code>--max-width &lt;um&gt;</code></td>
 <td>The widest copper read as a trace. Default ten times the distance to the nearest other copper layer, between 1 and 8 mm.</td>
+</tr>
+<tr>
+<td><code>--via-transition &lt;len&gt;</code></td>
+<td>Trace within this distance of the land of a via on it is not checked, because a plane is normally cleared round a via; each skipped stretch is listed in its trace's notes. A bare number is µm. Default the saved setting, else 400 µm; <code>0</code> checks every trace up to its via.</td>
 </tr>
 <tr>
 <td><code>--width &lt;layer&gt;=&lt;w&gt;[,&lt;w&gt;…]</code></td>
@@ -1850,20 +1854,62 @@ same saved solution <strong>by value</strong>, the same triangles and the same c
 missing — no run yet, a frequency the run did not save, a quantity it no longer offers — is a
 <strong>refusal</strong> with the sentence the Object Tree shows. It is never drawn at the nearest frequency, and
 an outline is never passed off as the field.</li>
-<li><strong>A stale run still draws</strong>, as in the window, with a <code>note:</code> saying the model has changed since.</li>
+<li><strong>A stale run still draws</strong>, as in the window, with a <code>note:</code> naming what has changed since — the model, or a file
+the run was solved from (<code>'Board.clay' has changed since the run at …</code>).</li>
 <li><strong><code>--phase &lt;degrees&gt;</code></strong> picks the instant drawn for a quantity read instantaneously (<code>Re{E}</code>); it is a
 refusal on any other. The phase is never written to the file.</li>
 <li><strong>A hidden plot draws the same.</strong> Hiding only chooses which plot the window draws; <code>--field</code> names one.</li>
-<li>A <code>--section</code> that is not the plot's own plane is a refusal naming both. <strong>Surfaces, faces and
-temperature plots are refused for now</strong>: open the <code>.c3d</code> and use <em>Export picture</em>.</li>
+<li>A <code>--section</code> that is not the plot's own plane is a refusal naming both.</li>
+<li><strong>A surfaces or faces plot is drawn as the 3D view shows it, from a direction you give</strong>, because the
+window's camera is not saved with the plot: <code>--iso</code> (the 3D view's <em>Standard Views ▸ Isometric</em>),
+<code>--view-dir top</code> (or <code>bottom</code>, <code>front</code>, <code>back</code>, <code>left</code>, <code>right</code>), or <code>--view-dir x,y,z</code> — the direction from
+the model toward you, so <code>1,-1,1</code> is the isometric. Surfaces hidden behind others are left out, the rest of the
+model is shaded around the field, and the edges are drawn over it. It is written as a <code>.png</code> for now. A
+temperature is <strong>mirrored across the document's symmetry planes</strong>, as in the window; <code>--no-mirror</code> draws only
+the part that was solved. An EM field on surfaces is drawn on the region selected in the window's tree, so
+name it with <code>--region</code> (the refusal lists them). The hottest point is ringed and named in the legend.</li>
+<li><strong>A temperature plot draws a thermal section.</strong> The colours span the section's true minimum to its maximum
+at the plot's point, as the 3D view ranges a temperature. <strong>Each bond wire is painted from its own solved
+T(s)</strong>: a wire is a one-dimensional element, so its temperature is not in the 3D field around it. Metals are
+outlined rather than filled, since they carry a temperature too; there are no ports, and the thermal
+boundaries (a face held at a temperature, a convection face) are drawn and labelled on the frame.</li>
+<li><strong><code>--labels</code></strong> writes each solid's material inside it, where the words fit. <strong><code>--tight</code></strong> crops the page to
+the section, with the legend inset in its corner (no margin unless <code>--margin</code> asks for one). Both are for a
+field plot.</li>
+<li><strong><code>--axes</code></strong> adds the 3D view's axis indicator in the bottom-left corner, and <strong><code>--scale-bar</code></strong> its scale bar
+in the bottom-right, in the 3D view's display unit. They work on any section; on <code>--iso</code>, or a surfaces
+plot seen from anything but along an axis, only <code>--axes</code> does.</li>
 <li><strong>PNG and vector differ in one way.</strong> A PNG blends colours across each triangle. SVG has no gradient
 mesh, so in SVG and PDF each triangle takes the colour of its centre. A vector slice of more than
 50,000 triangles merges neighbours that fall in the same step of the colour map, never dropping area.
 The report says <code>drawn as …</code> when that happened, and <code>--no-thin</code> draws every triangle. <code>--no-legend</code>
 leaves the legend off.</li>
 <li><code>--json</code> adds <code>render.em3d.field</code>: the plot, its setup, the solution as the file spells it, the run
-directory it read, the triangle counts, the range and whether the run is stale. <code>--list-fields --json</code>
-returns the plots as <code>fieldPlots</code>.</li>
+directory it read, the triangle counts, the range and whether the run is stale — and for a temperature,
+each wire drawn with its temperature span and where it crosses the plane. <code>--list-fields --json</code> returns
+the plots as <code>fieldPlots</code>.</li>
+</ul>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf render Output/3d/Output.c3d -o wires.png --field "DC 14 A — along wire 4" --labels --tight --axes --scale-bar
+<span class="output">Wrote wires.png (1600x811 device-pixels, 299,566 bytes)
+  XZ section at y = 75 µm: 9 object(s)
+  DC 14 A — along wire 4: T_C at Idc = 14, 4,692 triangles, 85 … 393 °C, 1 wire(s) from their T(s)</span></code></pre>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf render "Eight Fingers/3d/Eight Fingers.c3d" -o surface.png --field Surface --iso
+<span class="output">Wrote surface.png (1600x1200 device-pixels, 217,677 bytes)
+  Temperature on every exposed face, isometric, from +x −y +z, orthographic — setup 'Array', the only point: 2 object(s)
+  Surface: T_C at the only point, 98,000 triangles on every exposed face, isometric, from +x −y +z, 85 … 105.1 °C, mirrored across 1 plane(s)</span></code></pre>
+<h4 id="render-transparency">A see-through object for one picture</h4>
+<p>A <code>.c3d</code>'s objects are drawn at the <a href="drawing-in-3d.md#transparency">transparency</a> each states: a section fills
+each one at it, and a surfaces or faces plot shades the model around the field with it. An outline (<code>--iso</code>)
+fills nothing, so it looks the same whatever an object states. <code>--transparency</code> sets one <strong>for this render
+only</strong> — the file on disk is never written:</p>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf render pkg/3d/pkg.c3d -o cut.svg --section xz@y=0mil --transparency lid=80,U1=50</code></pre>
+<ul>
+<li>Each entry is <code>name=percent</code>, a whole number from 0 to 95. The name is an object's, a placed cell's (which
+multiplies onto each of its parts' own), or a group's path (<code>stage1/match=40</code>), which sets every member of
+it at every depth. The flag repeats, and takes a comma-separated list.</li>
+<li>An unknown name is a refusal that lists the objects, instances and groups the document has. A value out of
+range, or anything but <code>name=whole number</code>, is refused before the file is read.</li>
+<li>It is a <code>.c3d</code>'s: on any other document, <code>.cem</code> included, it is a refusal naming the kind.</li>
 </ul>
 <h3 id="render-example">A worked example, from an empty folder</h3>
 <p>Two commands to set it up, three questions, one picture. The point of the sequence is that the three

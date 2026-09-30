@@ -163,9 +163,9 @@ subsystem. The build is long but runs in the background, with its progress in th
 you build Palace, you accept those terms. circuitRF distributes no copy of Palace, so it passes on none.</p>
 </div>
 <p><strong>On Windows</strong>, Palace runs inside your own Windows Subsystem for Linux distribution, and circuitRF treats
-it like a Palace on this computer. Gmsh and openEMS run natively. What you need first, and what each
-missing piece's message says, is in
-<a href="em-setup.html#palace-windows">EM Setup ▸ Palace on Windows</a>.</p>
+it like a Palace on this computer. Gmsh and openEMS run natively.
+<a href="palace-windows.html">Installing Palace on Windows</a> walks through it step by step, and
+<a href="em-setup.html#palace-windows">EM Setup ▸ Palace on Windows</a> has what each missing piece's message says.</p>
 <p><strong>By hand.</strong> If you prefer to build the solvers yourself, circuitRF finds them on <code>PATH</code>, in a Spack
 install tree, in a conda environment, or where you name them in <strong>Settings ▸ 3D EM</strong>. It runs only the
 versions it has validated. The exact validated versions and the three build problems met on macOS are in
@@ -208,6 +208,14 @@ rule</strong>: the example below uses both Draft and Standard, and says why for 
 sweep's centre is saved, because fields are large.
 <a href="em-setup.html#palace-fields">Fields for the 3D view</a>.</li>
 </ul>
+<p><strong>Leaving something out.</strong> In a <a href="drawing-in-3d.html#model">3D view</a>, untick an object's, a placed cell's or a
+port's <strong>Model</strong> to solve without it while keeping it drawn. A run leaves it out entirely — the air box too is sized
+without it — and its notes name what was left out. A port that is off is <strong>absent</strong>, not terminated: no excitation,
+no sheet, no lumped element, so the gap it spanned is open. The result's ports are the modelled ones <strong>renumbered
+1…N in their order</strong> (P2 off: P1, P3, P4 become 1, 2, 3), and the <code>.sNp</code> header carries one
+<code>circuitRF-EM 3D port map:</code> line per port, and the <code>.npy</code> a <code>DocumentPort</code> array, so the file says which is which. A
+reference to something that is off — a modelled port's conductor, a wire's pad, a face boundary — is refused naming
+both, never dropped; every port off is refused (<em>there is nothing to excite</em>).</p>
 <p><strong>Look before you solve.</strong> <strong>Show 3D</strong> on the setup's panel opens the 3D view on the model circuitRF
 built. It works before any solver is installed. <code>circuitrf explain</code> on the <code>.cem</code> prints the same model as
 text: every solid, its material and its extent, the ports, the air box and its faces, and an estimate of
@@ -352,9 +360,10 @@ that view has no document to keep them in.</p>
 <p><strong>Without a window</strong>, a <code>.c3d</code>'s clip-plane plot is drawn as the section it cuts:
 <code>circuitrf render cavity.c3d -o cut.png --field Field1</code> (add <code>--phase 90</code> for an instantaneous
 quantity), and <code>circuitrf render cavity.c3d --list-fields</code> lists the plots and whether each one's data
-is there. It reads the same run, solution and range the 3D view does, and refuses a plot whose data is
-missing with the same sentence. Surfaces, faces and temperature plots are not drawn this way yet: use
-<em>Export picture</em> for those. See <a href="cli.md#render"><code>render</code></a>.</p>
+is there. A surfaces or faces plot is drawn from a direction you name, since the window's camera is not
+saved with it: <code>--iso</code>, or <code>--view-dir top</code> (<code>front</code>, <code>right</code> … or <code>x,y,z</code>), as a <code>.png</code>. It reads the
+same run, solution and range the 3D view does, and refuses a plot whose data is missing with the same
+sentence. See <a href="cli.md#render-field"><code>render</code></a>.</p>
 </li>
 <li><p><strong>One face.</strong> In the 3D editor, right-click a face, <em>Plot Field</em>, to add that face to the plot being drawn
 when it is a faces plot — the top of one trace, one face of a substrate — or to start a new faces plot with
@@ -745,7 +754,7 @@ cross-check, not a reference.</p>
 
 <nav class="page-nav">
   <a class="prev" href="em-solvers.html"><span class="dir">Previous</span><span class="name">EM Solvers: MoM, FEM and FDTD</span></a>
-  <a class="next" href="drawing-in-3d.html"><span class="dir">Next</span><span class="name">The 3D Editor</span></a>
+  <a class="next" href="palace-windows.html"><span class="dir">Next</span><span class="name">Installing Palace on Windows</span></a>
 </nav>
 </main>
 

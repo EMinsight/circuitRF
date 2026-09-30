@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — Installing Palace on Windows</title>
+<link rel="icon" href="../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: docs/user/src/reference/palace-windows.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../index.html"><img class="logo" src="../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <span class="doc-kind">Reference Guide</span>
+  <div class="doc-search" data-crf-search data-root="../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <p class="breadcrumb"><a href="../index.html">Docs</a> › <a href="index.html">Reference</a> › Installing Palace on Windows</p>
+
+  <h1>Installing Palace on Windows</h1>
+  <p class="lede">A step-by-step walk through getting Palace running on Windows, what each step does to your computer, what you will see, and how to undo all of it.</p>
+
+<p>This page walks you through getting Palace running on Windows, one step at a time. Each step says what
+it changes on your computer and what you should see. Read the overview first. It takes two minutes,
+and after it none of the steps should surprise you.</p>
+<nav class="toc">
+<h2>On this page</h2>
+<ol>
+<li><a href="#overview">Before you start: what you are getting into</a></li>
+<li><a href="#steps">The steps</a></li>
+<li><a href="#normal">Things that look wrong but are normal</a></li>
+<li><a href="#problems">If a step fails</a></li>
+<li><a href="#undo">Undoing all of it</a></li>
+</ol>
+</nav>
+<h2 id="overview">Before you start: what you are getting into</h2>
+<p><strong>Palace is a Linux program.</strong> It does not run natively on Windows. Windows can run Linux programs
+through a built-in Microsoft feature called the <strong>Windows Subsystem for Linux (WSL)</strong>. You install
+three things, each inside the one before it:</p>
+<table>
+<thead>
+<tr>
+<th>Layer</th>
+<th>What it is</th>
+<th>Who makes it</th>
+<th>Where it lives</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>WSL 2</td>
+<td>A Windows feature that runs a small Linux virtual machine</td>
+<td>Microsoft, part of Windows</td>
+<td>Windows itself</td>
+</tr>
+<tr>
+<td>Ubuntu</td>
+<td>A Linux distribution: the Linux &quot;computer&quot; inside WSL</td>
+<td>Canonical, free</td>
+<td>A single virtual disk file in your Windows user folder</td>
+</tr>
+<tr>
+<td>Palace</td>
+<td>The 3D solver, built from its source code</td>
+<td>Palace's open-source project</td>
+<td>A folder in your Linux home, inside Ubuntu</td>
+</tr>
+</tbody>
+</table>
+<p><strong>What it changes on your computer.</strong></p>
+<ul>
+<li><strong>Administrator rights are needed once, to turn WSL on.</strong> After that, nothing needs them. circuitRF
+never asks for administrator rights and never asks for your password.</li>
+<li><strong>Windows restarts once</strong>, after WSL is turned on.</li>
+<li><strong>Nothing is installed in Program Files and nothing changes your Windows setup.</strong> Ubuntu and
+everything in it live in one virtual disk file that belongs to your user account. Palace is installed
+only inside Ubuntu.</li>
+<li><strong>Gmsh and openEMS are not affected.</strong> They run natively on Windows. Only Palace uses the subsystem.</li>
+</ul>
+<p><strong>How long it takes.</strong></p>
+<ul>
+<li><strong>Your part is about half an hour</strong>: turning WSL on, restarting, creating a Linux user, and pasting two
+commands.</li>
+<li><strong>Then the build runs on its own for hours.</strong> Palace is compiled from source, together with about 25
+libraries it depends on. On a fast Mac this took 52 minutes. Inside WSL it has been reported to take
+most of a day. You can keep using circuitRF and your computer while it runs. <strong>Cancel</strong> stops it at any
+point and installs nothing.</li>
+</ul>
+<p><strong>How much disk it uses.</strong> Palace itself took 1.9 GB when measured on a Mac. Ubuntu and the build tools
+add a few GB more. Allow about 10 GB free on your Windows drive.</p>
+<p><strong>Two things you will be asked to type.</strong></p>
+<ul>
+<li><strong>A Linux user name and password</strong>, the first time Ubuntu starts. They are new. They are not your
+Windows ones, and they are used only inside Ubuntu. Write the password down.</li>
+<li><strong>That same Linux password</strong>, when a command starts with <code>sudo</code>. <code>sudo</code> means &quot;run this as the Linux
+administrator&quot;. It changes Ubuntu, not Windows.</li>
+</ul>
+<p><strong>Everything can be undone.</strong> <a href="#undo">Undoing all of it</a> removes Palace, then Ubuntu, then WSL itself.</p>
+<h2 id="steps">The steps</h2>
+<h3 id="step-virtualization">1. Check that virtualization is on</h3>
+<p>WSL 2 needs the processor's virtualization feature. Most computers have it turned on already.</p>
+<p>Open <strong>Task Manager</strong> (Ctrl+Shift+Esc), choose <strong>Performance</strong>, then <strong>CPU</strong>. Under the graph, look for
+<strong>Virtualization: Enabled</strong>.</p>
+<p>If it says <strong>Disabled</strong>, it has to be turned on in the computer's firmware settings (BIOS or UEFI), not
+in Windows. The setting is usually called Intel VT-x, Intel Virtualization Technology, AMD-V or SVM.
+How to reach the firmware settings depends on the computer's maker. Search for your computer model and
+&quot;enable virtualization&quot;.</p>
+<h3 id="step-wsl">2. Turn on WSL</h3>
+<ol>
+<li><p>Right-click the <strong>Start</strong> button and choose <strong>Terminal (Admin)</strong>. On older Windows it is
+<strong>Windows PowerShell (Admin)</strong>. Windows asks whether to allow it to make changes: choose <strong>Yes</strong>.</p>
+</li>
+<li><p>Type this and press Enter:</p>
+<pre><code>wsl --install
+</code></pre>
+</li>
+<li><p>When it finishes, restart Windows.</p>
+</li>
+</ol>
+<p>This turns on the WSL feature and, on current Windows, downloads Ubuntu as well. It prints its
+progress as it downloads. This is the only step that needs administrator rights.</p>
+<h3 id="step-ubuntu">3. Start Ubuntu and create your Linux user</h3>
+<p>After the restart, Ubuntu may open by itself. If it does not, open <strong>Ubuntu</strong> from the Start menu. If
+there is no Ubuntu in the Start menu, open an ordinary Terminal and run <code>wsl --install -d Ubuntu</code>.</p>
+<p>The first start takes a minute or two. Then it asks for a <strong>new UNIX username</strong> and a <strong>password</strong>.
+Choose any short lower-case name. As you type the password, <strong>nothing appears on the screen, not even
+dots</strong>. That is normal: it is being typed. You type it twice.</p>
+<p>When you see a prompt ending in <code>$</code>, Ubuntu is ready. Leave the window open for the next step.</p>
+<h3 id="step-tools">4. Install the build tools inside Ubuntu</h3>
+<p>Palace is built from source, so Ubuntu needs a compiler and a few tools. <strong>This is a Linux command, so
+it goes in the Ubuntu window</strong>, not in Command Prompt or PowerShell. You are in the right place when the
+prompt looks like <code>yourname@COMPUTER:~$</code>. If it looks like <code>C:\Users\…&gt;</code> or <code>PS C:\…&gt;</code>, you are at a
+Windows prompt: type <code>wsl -d Ubuntu</code> and press Enter first, and the prompt changes.</p>
+<p>In the Ubuntu window, paste this line and press Enter (right-click pastes in the terminal):</p>
+<pre><code>sudo apt-get update &amp;&amp; sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl
+</code></pre>
+<p>If you started the install in circuitRF first, its message shows this same line. Use the line circuitRF
+shows if the two ever differ.</p>
+<ul>
+<li>It asks for your <strong>Linux password</strong> from step 3. Again, nothing appears as you type.</li>
+<li>The first half, <code>apt-get update</code>, refreshes Ubuntu's list of available packages. The second half
+installs the tools.</li>
+<li>It lists what it will install and asks <strong>Do you want to continue? [Y/n]</strong>. Type <code>Y</code> and press Enter.</li>
+<li>It prints many lines as it downloads and unpacks. That takes a few minutes.</li>
+</ul>
+<p>It is done when the <code>$</code> prompt comes back. You can close the Ubuntu window.</p>
+<h3 id="step-install">5. Install Palace from circuitRF</h3>
+<ol>
+<li>In circuitRF, open <strong>Settings ▸ 3D EM</strong>.</li>
+<li>On the Palace row, choose <strong>Install Palace…</strong>.</li>
+<li>circuitRF shows what it is about to do: the version, every web address it will download from, the
+folder inside Ubuntu it installs into, and Palace's licence note. <strong>Nothing is downloaded until you
+agree.</strong></li>
+<li>Agree, and the build starts in the background. Its progress is in the <strong>Messages</strong> panel as
+<em>package k of N</em>.</li>
+</ol>
+<p>circuitRF runs the build inside Ubuntu, into <code>~/.circuitrf/solvers/palace/0.18.1/</code> in Ubuntu's own
+filesystem. If a build tool is still missing, nothing is downloaded, and the message names the command
+that installs it.</p>
+<h3 id="step-check">6. Check that it worked</h3>
+<p>When the build finishes, circuitRF checks the installed Palace before it says anything is done. The
+Palace row in <strong>Settings ▸ 3D EM</strong> then reads <em>Installed by circuitRF</em> and names the Ubuntu distribution
+it found it in.</p>
+<p>From here on you use Palace exactly as on any other computer. Simulate starts Ubuntu when it needs it,
+runs Palace there, and brings the results back. You never need to open the Ubuntu window again. To try
+it, open one of the examples in <a href="em-3d.html#example">3D EM ▸ Walking through the example</a>.</p>
+<h2 id="normal">Things that look wrong but are normal</h2>
+<table>
+<thead>
+<tr>
+<th>What you see</th>
+<th>Why</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Nothing appears while typing a password</td>
+<td>Linux hides passwords completely. Type it and press Enter.</td>
+</tr>
+<tr>
+<td>Hundreds of lines scroll past during <code>apt-get</code> or the build</td>
+<td>Each tool reports every file it fetches and compiles. Only the last lines matter if something fails, and circuitRF quotes those for you.</td>
+</tr>
+<tr>
+<td>The build seems stuck on one package for a long time</td>
+<td>Some of Palace's libraries take much longer to compile than others. The Messages panel moves on when that package is done.</td>
+</tr>
+<tr>
+<td>A <code>vmmem</code> or <code>VmmemWSL</code> process uses a lot of memory in Task Manager</td>
+<td>That is the Ubuntu virtual machine, building or running Palace. It goes away a minute or so after the last Linux program ends.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="problems">If a step fails</h2>
+<table>
+<thead>
+<tr>
+<th>What happened</th>
+<th>What fixes it</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>apt-get install</code> fails with <strong>404 Not Found</strong></td>
+<td>Ubuntu's package list is older than the packages on the server. Run <code>sudo apt-get update</code>, then the install line again. The line in step 4 starts with that update for this reason.</td>
+</tr>
+<tr>
+<td><code>sudo</code> fails with <strong>command not found</strong>, or is not recognised as a command</td>
+<td>It was typed at a Windows prompt (<code>C:\…&gt;</code>). Type <code>wsl -d Ubuntu</code> first, or open Ubuntu from the Start menu, and run it there. See <a href="#step-tools">step 4</a>.</td>
+</tr>
+<tr>
+<td><code>wsl</code> is not recognised as a command</td>
+<td>Windows is too old for <code>wsl --install</code>. Run Windows Update, then try step 2 again.</td>
+</tr>
+<tr>
+<td>An error containing <strong>0x80370102</strong>, or a message about enabling virtualization in the BIOS</td>
+<td>Virtualization is off. See <a href="#step-virtualization">step 1</a>.</td>
+</tr>
+<tr>
+<td>circuitRF says the Linux subsystem is not enabled</td>
+<td>Step 2 was not done, or Windows was not restarted after it.</td>
+</tr>
+<tr>
+<td>circuitRF says there is no Linux distribution</td>
+<td>Run <code>wsl --install -d Ubuntu</code> in an ordinary Terminal, then do step 3.</td>
+</tr>
+<tr>
+<td>circuitRF says the distribution is WSL 1</td>
+<td>Run <code>wsl --set-version Ubuntu 2</code> in an ordinary Terminal. Everything in it is kept.</td>
+</tr>
+<tr>
+<td>The build fails</td>
+<td>circuitRF names the step that failed, quotes the tool's last error lines and gives the path of the full log. If it has seen that failure before, it says what fixed it.</td>
+</tr>
+<tr>
+<td>A run warns that it may not fit in memory</td>
+<td>WSL gets only part of your computer's memory by default. The warning names the setting that raises it, and <a href="em-setup.html#palace-windows">EM Setup ▸ Palace on Windows</a> explains it.</td>
+</tr>
+</tbody>
+</table>
+<p>Every message circuitRF gives on the way, and what each missing piece looks like, is in
+<a href="em-setup.html#palace-windows">EM Setup ▸ Palace on Windows</a>.</p>
+<h2 id="undo">Undoing all of it</h2>
+<p>Each of these removes one layer. Stop at whichever you like.</p>
+<ol>
+<li><strong>Palace.</strong> <strong>Uninstall Palace…</strong> in <strong>Settings ▸ 3D EM</strong> removes the folder circuitRF built inside
+Ubuntu. Ubuntu and the build tools stay.</li>
+<li><strong>Ubuntu, and everything in it.</strong> In an ordinary Terminal, run <code>wsl --unregister Ubuntu</code>. This
+deletes the Ubuntu virtual disk, including Palace, the build tools and any files you kept in your
+Linux home. It cannot be undone. Then uninstall <strong>Ubuntu</strong> from <strong>Settings ▸ Apps</strong> in Windows.</li>
+<li><strong>WSL itself.</strong> Uninstall <strong>Windows Subsystem for Linux</strong> from <strong>Settings ▸ Apps</strong>, then restart.</li>
+</ol>
+<p>The virtualization setting from step 1 can stay on. Nothing uses it once WSL is gone.</p>
+
+<nav class="page-nav">
+  <a class="prev" href="em-3d.html"><span class="dir">Previous</span><span class="name">3D EM</span></a>
+  <a class="next" href="drawing-in-3d.html"><span class="dir">Next</span><span class="name">The 3D Editor</span></a>
+</nav>
+</main>
+
+<footer class="doc-footer">
+  <img src="../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../index.html">Documentation home</a>
+</footer>
+
+<script src="../assets/js/search-index.js" defer></script>
+<script src="../assets/js/docs-search.js" defer></script>
+</body>
+</html>

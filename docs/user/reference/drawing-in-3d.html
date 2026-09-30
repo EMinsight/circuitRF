@@ -84,10 +84,28 @@ default), exactly as a layout's are, so nothing drifts when you save and reopen.
 the unit you read and type in — is chosen with the <strong>Unit</strong> box on the toolbar. It starts as the cell
 layout's unit, or the technology's. Changing it moves nothing. The example is drawn in <strong>mil</strong>; its die's
 layout is in <strong>µm</strong>. Both are exact.</li>
-<li><strong>Materials</strong> come from the cell's technology (<strong>Assign Material…</strong> and the toolbar's material box list
-them; a technology's material libraries, <code>.cmat</code> files, are where new ones are kept — see
-<a href="file-formats.html">File formats</a>). A placed cell brings its <strong>own</strong>
+<li><strong>Materials</strong> come from the cell's technology. <strong>Assign Material…</strong>, <strong>New Material…</strong> and the <strong>Edit…</strong> button
+beside the Inspector's Material box open the <strong>Materials</strong> dialog: every material the technology has — its own and
+its libraries' (<code>.cmat</code> files, see <a href="file-formats.html">File formats</a>) — with every property of the selected one on
+one form: dielectric, conductor, thermal, the σ(T) and k(T) tables, colour and source. See, edit, <strong>Duplicate</strong> or
+make one there, then assign it. Edits go to the file each material belongs to when you press OK, as an unsaved
+change there — save that file to keep them; Cancel discards them. A material that already exists is renamed and
+deleted in its own file's editor, which renames it everywhere it is used. A placed cell brings its <strong>own</strong>
 technology's materials with it — see <a href="#hierarchy">Hierarchy</a>.</li>
+<li><strong>Edit Material…</strong> opens the file a material is defined in, on its row. Right-click a material's heading in the
+Objects tree (by material; <em>No material</em> has none), or an object's row, which says which material:
+<em>Edit Material 'FR4'…</em>. A material in the technology's own list opens the technology on its <strong>Materials</strong> tab; one
+from a <code>.cmat</code> library opens that library. A library shipped inside circuitRF is not a file you can edit, so its
+material opens on the technology's Materials tab, where it can be read. A placed cell's part edits its own
+technology's material, and the item names that file: <em>Edit Material 'Au' (in pa.ctech)…</em>. An editor that is already
+open — in another tab, floated, or in another workspace window — is brought forward rather than opened again, and
+the list scrolls to the row. With no technology, the item is greyed; give the design one with <em>3D ▸ Materials…</em>.</li>
+<li><strong>Hovering</strong> an object names it and shows the material properties that apply to what it is to the solver: a
+conductor, a wire, a via or a sheet shows σ at the operating temperature (and μr when it is not 1), never εr or tanδ;
+a dielectric shows εr (or its three tensor values) and tanδ, and σ only when it is above 0 — a doped substrate's
+loss; air says <em>Air</em>. What the object is follows its <strong>Role</strong> when you gave it one, as the solve does. An object with
+no material says so, and a material that states nothing says that. With a thermal setup active, every solid also
+shows k, and ρ and c when the setup computes a Z_th or a pulse.</li>
 <li><strong>The editor and the viewer are one pane.</strong> The 3D view a solver result opens in, <strong>Show 3D</strong> on a setup,
 and this editor share the camera, the clip plane, the mesh and field displays, and every key described in
 <a href="em-3d.html#view">3D EM ▸ The 3D view</a>. The editor adds the drawing.</li>
@@ -448,15 +466,31 @@ an arc's radius and centre; several edges, their count and total length. Edge mo
 <strong>Shift+B</strong> steps back toward you; the status line says where you are (<code>Face zmin · &quot;base&quot; · 2 of 5</code>).
 In the example: select the lid in Object mode, press <strong>B</strong>, and the selection passes through the lid to
 the wire, the die and the floor in turn — the way to reach something inside a closed package without
-hiding anything.</p>
+hiding anything. A face's <strong>boundary</strong> — the blue or green tint of a thermal one, the tint of an EM one — is what a
+click on it selects (its row, and its fields in Properties); <strong>B</strong> from it steps to the solid, or in Face mode the
+face, under it.</p>
 </li>
 <li><p><strong>Right-click</strong> opens the menu for what is selected: <em>Hide</em>, <em>Isolate</em>, <em>Show All</em>, <em>Select Owning
 Object</em>, and the commands this page describes. <strong>Hide</strong> the lid and the walls to work inside the package;
 <strong>Show All</strong> brings them back. Hiding changes only the picture — the solver still sees everything.</p>
 </li>
+<li><p><strong>H</strong> hides the selection, and shows it again: press it in the view or in the object tree (where a selection of
+several rows is usually made), or use <em>3D ▸ Hide / Show Selection</em>, the same item on either right-click menu, or the
+eye button on the toolbar just left of the mesh button. When all of the selection is shown, H hides it; when all of it
+is hidden, H shows it; when <strong>some</strong> of it is hidden, H shows all of it first, and the next H hides all of it. The
+selection stays selected while hidden, so a second H brings back exactly what the first took away. A group selected
+whole counts as its members, and records count as well as objects (a probe, a mesh region, a thermal boundary, a
+symmetry plane, a field plot), each hidden as its own tick hides it. An object's hide is one undo step and is saved;
+an instance's parts are hidden in the view only. The eye button's <strong>background</strong> shows the state: the accent colour
+when all of the selection is shown, the same colour dimmed when some of it is hidden, and none when all of it is hidden;
+with nothing selected the button is greyed. Its tooltip says what a press will do. It is in a setup's 3D view too,
+where hiding lasts for the session, as that view's ticks do.</p>
+</li>
 <li><p>The <strong>Objects</strong> tree lists everything by material or by type — and your <a href="#groups">groups</a> first; a click there selects in the view, and the
 <strong>Properties</strong> panel shows the selection's name, material, dimensions and position, every one of them
-editable.</p>
+editable. The eye buttons in its header <strong>hide or show every row it lists</strong>, records included — heat sources,
+probes, mesh regions, effective blocks, symmetry planes, thermal boundaries and field plots — as one undo step. An
+object's tick is saved with the document; a record's tick (a place, a boundary, a plane) is this view's alone.</p>
 </li>
 </ul>
 <h2 id="snapping">Snapping</h2>
@@ -617,6 +651,106 @@ renamed the same way); a member copied on its own stays in its group.</li>
 names its group — <code>&quot;Group&quot;: &quot;stage1/match&quot;</code> — so a group can never be left empty or point at nothing.
 <strong>Flatten</strong> puts a placed cell's contents in that instance's group, and <strong>Group into Cell</strong> gives the new instance
 the group its contents were in. Groups are only organisation: the solver never sees them.</li>
+<li>A group's <strong>Transparency</strong> is one row too — see <a href="#transparency">Transparency</a> — and so is its <strong>Model</strong> — see
+<a href="#model">Model</a>.</li>
+</ul>
+<h3 id="transparency">Transparency</h3>
+<p>How see-through an object is drawn belongs to the <strong>object</strong>, not to its material: a lid can be made see-through to
+show the die under it without changing the lid's alloy, which every other object made of it shares and which belongs
+to the technology.</p>
+<ul>
+<li><strong>Properties</strong> has a <strong>Transparency</strong> row on every object that is drawn filled (a polyline is a line, and has none),
+on a boolean, fillet or chamfer (for its result — the objects inside it have none of their own), and on a placed cell.
+Drag the <strong>slider</strong> and the view shows each position as you drag; the value is kept when you let go, as <strong>one undo
+step</strong>. Or type a whole number in the box — <strong>0</strong> is opaque, and the most is <strong>95 %</strong>. <strong>Default</strong> clears it.</li>
+<li><strong>With no value of its own</strong> an object is drawn as its kind is: a dielectric translucent, a conductor opaque, air
+faint. The box shows that default greyed — <em>65 (default)</em> for a dielectric — so you can see where you start from.
+Setting a value replaces it, so a <strong>conductor can be made see-through</strong> too, and a dielectric made solid with 0.</li>
+<li><strong>A group</strong> selected whole shows one row. When its members agree it shows their value; when they differ it reads
+<strong>mixed</strong>. Setting it writes that value to <strong>every member at every depth</strong>, nested groups included, as one undo
+step — until then each member keeps its own. A <strong>selection of several objects</strong> gets the same one row.</li>
+<li><strong>A placed cell's</strong> value multiplies onto each of its parts' own: a cell placed at 50 % whose part is drawn at 50 %
+shows that part at 75 %. Click any part of the instance to edit it.</li>
+<li>It is saved in the <code>.c3d</code> only when set — <code>&quot;Transparency&quot;: 60</code> — so a document that never sets one is unchanged. It
+is drawing only: the solver never reads it, and changing it does not make a result stale.</li>
+<li>A see-through object is still picked by its surfaces, like any other. While a pushed-in cell's surroundings or a
+boolean's operands are drawn dimmed or ghosted, those looks win.</li>
+</ul>
+<h3 id="model">Model: kept in the drawing, left out of the solve</h3>
+<p>To try a run without the lid, a second row of bond wires or a fixture, untick its <strong>Model</strong>: it stays on screen, where
+you can still select, move and edit it, and it is left out of <strong>every</strong> simulation run — EM and thermal alike — until
+you tick it again. Hiding an object is not the same thing: a hidden object is still solved.</p>
+<ul>
+<li><strong>Properties</strong> has a <strong>Model</strong> check box on every object that can be solved: a box, prism, cylinder, sheet, polygon,
+wire, a boolean, fillet or chamfer (for its result — the objects inside it have none of their own), a placed cell
+(every part of it), a <strong>port</strong> and a <strong>heat source</strong>. A polyline is construction geometry and is never solved
+anyway. An effective block's switch is its own <strong>Enabled</strong>, which the Properties row calls <strong>Model</strong> too.</li>
+<li><strong>A group</strong> selected whole, or several objects selected, shows one box — ticked, unticked, or half-ticked where the
+members differ. Clicking it writes <strong>every member at every depth</strong> as <strong>one undo step</strong>.</li>
+<li>Right-click an object, a group, a port or a heat source (in the view or in the tree) for the same <strong>Model</strong> item,
+with a ✓ while it is modelled.</li>
+<li><strong>The tree greys it.</strong> By material, it stays under its material with its name greyed; by type it is listed under
+<strong>Not Modeled</strong> (after the type groups, before Instances), its type in the row's detail. A member of a group stays in
+its group's row, greyed — and a group whose every member is off has a greyed name. A port that is off is greyed in
+<strong>Ports</strong> (by type, under Not Modeled too). The tree's filter has <strong>Not Modeled</strong> as a type, to show or hide them all.</li>
+<li><strong>The view draws it as it is</strong>; its tooltip ends <em>(not modelled)</em>.</li>
+<li><strong>Anything that refers to it is refused, naming both</strong> — a port that is modelled whose conductor is not, a wire whose
+pad is not, a heat source or a probe on it, a face boundary on it — so a result can never be solved without
+something you did not know was missing. Turn the other one off too, or put it back. A field plot on it just shows
+nothing, and <strong>check</strong> warns.</li>
+<li><strong>A port that is off is absent</strong>: no excitation, no port sheet, no lumped element — the gap it spanned is open, not
+terminated in its Z0. The result's ports are the ones left, <strong>numbered 1…N in their order</strong>: with P2 off, P1, P3 and
+P4 are the result's ports 1, 2 and 3. The run's notes say so, and so does the <code>.sNp</code> file's header, one line per
+port; the document's own port numbers never change, so ticking P2 again gives the four-port result back. A schematic
+placing that <code>.sNp</code> sees the new pin count, and the run's notes say that too.</li>
+<li>It is saved in the <code>.c3d</code> only when unticked — <code>&quot;Model&quot;: false</code> — so a document that never unticks one is
+unchanged. Unlike Transparency it <strong>is</strong> part of the solved model: toggling it makes the last result stale.</li>
+<li>A not-modelled object is still <strong>exported</strong> — to STEP and by Export Drawing — because those export what is drawn.</li>
+<li><code>circuitrf check</code> lists what is not modelled and reports the refusals above; <code>explain</code> names it in its walk.</li>
+</ul>
+<h3 id="copy-paste">Copy and Paste between 3D views</h3>
+<p>Objects copy out of one 3D view and paste into another — in this workspace, another workspace, or another running
+circuitRF — or back into the same one. It is the object tree's gesture:</p>
+<ul>
+<li><strong>Copy</strong>: right-click a row, a group or several selected rows in the object tree, or press <strong>Ctrl/Cmd+C</strong> there. In
+the view, right-click ▸ <strong>Copy Objects</strong> copies the selection's rows; the view's own <strong>Copy</strong> stays the picture.</li>
+<li><strong>Paste</strong>: right-click any row, or the tree's empty area, or press <strong>Ctrl/Cmd+V</strong> in the tree. It is greyed, with
+<em>Nothing copied from a 3D view</em>, until a 3D copy is on the clipboard.</li>
+<li><strong>What copies</strong>: objects whole (material, role, group, placement, visibility, transparency, <strong>Model</strong>, every expression,
+a boolean's operands and a fillet's edges); a group with all its members; placed cells; ports; EM face boundaries,
+thermal boundaries (from the active setup) and symmetry planes; heat sources, probes, mesh regions and effective blocks
+when their rows are selected. <strong>Field plots</strong> and the <strong>air box</strong> do not copy: a plot is a reading of a run, and the
+air box is the setup's.</li>
+<li><strong>Where it lands</strong>: exactly where it was copied from, at the target's resolution — nothing is offset, so a paste into
+the same view sits on its original. The pasted rows are selected, ready to move (<strong>G</strong>). The whole paste is <strong>one undo
+step</strong>.</li>
+<li><strong>Names</strong>: a name the target already uses takes the first free <code>_2</code>, <code>_3</code>…, and every reference inside the paste
+follows — a boolean's tools, a heat source's solid, a probe's face, a port's conductors, a boundary's face, and group
+paths. A pasted group <code>pa</code> next to an existing <code>pa</code> becomes a new group <code>pa_2</code>, never merged into it. The status line
+lists every rename.</li>
+<li><strong>Variables</strong>: the expressions come through, and so do the variables they name (and the ones those name). A name the
+target lacks is <strong>created</strong>. A name it has, defined identically, is <strong>reused</strong> silently. A name it has, defined
+differently, is asked in the <strong>Paste</strong> dialog, both definitions side by side: <strong>Reuse</strong> the one already here (the
+pasted dimensions then evaluate to this view's value), or <strong>Rename</strong> the pasted one — every pasted expression that named
+it follows. A reuse that would make two names depend on each other is refused, naming the cycle; rename instead. A
+cell parameter of the copied view arrives as a plain VAR, and the report says so.</li>
+<li><strong>Materials</strong>: looked up in this view's technology as a run looks them up. <strong>Found</strong>: used — this workspace's
+definition wins, and a difference in value is reported. <strong>Missing</strong>: the Paste dialog lists it with its values,
+ticked, and says where it would go (the technology's own materials, or its writable library). <strong>Paste</strong> creates the
+ticked ones with every property they had, leaving that technology or library unsaved; <strong>Paste Without Creating</strong> (or
+unticking one) pastes the objects with <strong>no material</strong>, where they wait under <em>No material</em> until one is given. Undo
+removes the pasted objects but not a created material, which is an edit of the other document.</li>
+<li><strong>Placed cells</strong> keep pointing at the cell they placed, even from another workspace (the reference may then leave this
+workspace, as a layout paste's may). A cell that no longer exists pastes as a broken reference, and the report names it.</li>
+<li><strong>Ports</strong> keep their numbers where free; otherwise they take the next free ones, in order, and the report gives the
+mapping (<em>P1→P3</em>). A port's conductors follow the copied objects; a conductor not copied binds to this view's object of
+that name (the report says so), else both are cleared and inferred from what the port touches.</li>
+<li><strong>Boundaries</strong>: one on a face this view lacks is left out and reported. A thermal boundary goes into the <strong>active
+thermal setup</strong> — with none active it is left out, and the report names the thermal setups to make active. A face
+that already carries a boundary asks <strong>Keep this document's</strong> (the default) or <strong>Replace</strong>; so does a symmetry plane on
+an axis this view already declares elsewhere. A pasted plane that does not lie on the model's extent still pastes, and
+the report says a run will refuse it until it does.</li>
+<li><strong>Cancel</strong> in the Paste dialog pastes nothing and creates nothing.</li>
 </ul>
 <h2 id="expressions">Dimensions as expressions</h2>
 <p>Wherever a dimension is typed — the box at the cursor, Properties, the Array panel — you may type a name or
@@ -889,9 +1023,12 @@ neither. <strong>Export as Vector…</strong> saves the same drawing as an SVG o
 <li><strong>Export Drawing…</strong> (also <em>File ▸ Export ▸ Drawing…</em> while a 3D view is the active document) lays several
 views out on one sheet, as SVG or PDF.</li>
 </ul>
-<p>A vector picture is always <strong>orthographic</strong>, even when the view is in perspective, and it leaves out what you
-have hidden. It is framed as the view is, at the view's zoom — zoom in for a close-up. Conductors keep the
+<p>A vector picture is drawn as the view is — in <strong>perspective</strong> when the view is, from the camera's own eye, at the
+scale the view has at its orbit centre, and <strong>orthographic</strong> otherwise — and it leaves out what you have hidden. It is framed as the view is, at the view's zoom — zoom in for a close-up. Conductors keep the
 colours the view draws them in; dielectrics are outlined in grey.</p>
+<p>An object given a <a href="#transparency">transparency</a> above 0 <strong>hides nothing</strong> in a vector picture or a drawing: the edges
+behind it are drawn as solid lines, as seeing through it means on paper, while it keeps its own edges. A section fills
+it at its transparency.</p>
 <p>Every picture carries what the toolbar's middle group shows: the <strong>axis indicator</strong>, the <strong>drawing grid</strong> and
 the <strong>scale legend</strong> (the scale bar, bottom right; also <em>3D ▸ View ▸ Scale Legend</em>) — turn one off and it
 leaves the pictures too. <em>Copy</em> and <em>Export Picture…</em> also keep a measurement with its numbers and the
@@ -998,8 +1135,10 @@ was drawn as</strong>: a wave port is a region of an air-box face (a sheet drawn
 and a lumped port bridges two conductors on opposite edges (a face of a small gap block does exactly that). The
 menu offers only the kind that would resolve, and the other's tip says why. <strong>Which way round a lumped port is comes from what it touches</strong>: each
 edge is tested against every conductor, one opposite pair must touch one conductor each, and the one that
-is ground — or failing that, the larger — is <strong>−</strong>. The port is drawn with its number and an arrow from −
-to +, and while it is drawn the arrow (or the reason there cannot be one) follows the cursor. The example's
+is ground — or failing that, the larger — is <strong>−</strong>. A lumped port is drawn as a two-colour checkerboard
+over exactly its own rectangle — from its − edge to its + edge and across its full width — with its number
+and a flat arrow painted on it, centred, pointing to the + edge; anything in front of the port hides it,
+arrow and all. While it is drawn, the arrow (or the reason there cannot be one) follows the cursor. The example's
 two ports are 5 × 5 mil rectangles on the YZ plane at each lead's outer end, from the floor up to the lead:
 each runs <strong>from <code>floor</code> (−) up to its lead (+)</strong>. <em>Flip</em> on its menu turns it round; a wrong arrow turns
 every transmission term by 180°, so look before a run.</p>
@@ -1044,8 +1183,12 @@ on <em>Lid modes</em> finds where the drawn package puts it.</p>
 whose <em>Solver</em> is set to <strong>Thermal</strong>) is solved by circuitRF's own steady-conduction solver after Gmsh meshes every solid
 — air is not meshed. What it needs is drawn in the
 view, and what it is worth is typed in the setup, so one model carries several thermal setups beside its EM ones.
-What a run models, and two worked examples with their numbers (<em>Tools ▸ Examples ▸ Thermal: …</em>), are in
+What a run models, and three worked examples with their numbers (<em>Tools ▸ Examples ▸ Thermal: …</em>), are in
 <a href="thermal.html">Thermal</a>; this section is the gestures.</p>
+<figure class="figure fixed"><span class="frame">
+    <img src="../assets/fixed/output-wires-dc-along-wire.png" alt="A gold bond wire in a mould compound, cut along its length: the wire hottest at mid-span, the heat spreading into the mould around it">
+  </span><figcaption>A thermal run of <em>Thermal Output Wires</em>: a bond wire carrying current inside a package's overmold, cut
+  along its length. The wire is coloured from its own solved temperature, the mould compound around it from the 3D field.</figcaption></figure>
 <p><strong>The places.</strong> These are drawn in the view but are not objects: they are never solved as metal, never snapped to, and an
 EM setup ignores them. Each has a group in the object tree (<em>Heat sources</em>, <em>Probes</em>, <em>Mesh regions</em>) whose rows select,
 rename, hide and delete, and a switch under <em>3D ▸ View</em>. Selecting a row shows its fields in Properties, dimensions
@@ -1064,7 +1207,9 @@ fine mesh where you put it. Drawn dashed.</li>
 <p><strong>Boundaries.</strong> Every face nothing names is insulated. In Face mode, right-click a face, <em>Thermal ▸ Fixed Temperature…</em>,
 <em>Convection…</em>, <em>Insulated</em> or <em>Clear</em>: each writes the <strong>active</strong> thermal setup (greyed, saying why, when the active setup
 is not a thermal one). A conditioned face is tinted — <strong>blue</strong> a fixed temperature, <strong>green</strong> convection — and listed under
-<em>Thermal boundaries</em> in the tree. With two touching objects selected, <em>Thermal ▸ Contact Resistance…</em> overrides the
+<em>Thermal boundaries</em> in the tree. Untick a boundary's row to stop drawing its tint (in this view only: the boundary still
+applies). Click the tint, or its row, and Properties edits it — <em>Kind</em>, <em>T</em> or <em>h</em> and <em>Ambient</em>, each a number or an
+expression, and <em>Select face</em> for the face under it. With two touching objects selected, <em>Thermal ▸ Contact Resistance…</em> overrides the
 technology's interface resistance for that contact, prefilled with the technology's value when it states one.</p>
 <p><strong>Contacts.</strong> Where two solids touch, heat crosses perfectly unless a resistance is stated: the technology's
 <em>ThermalInterfaces</em> give one for a pair of materials (GaN on SiC, a die attach), and a document's contact override
@@ -1088,14 +1233,17 @@ area-weighted k_i and fraction φ: k_xy = k_m·[(k_i + k_m) + φ(k_i − k_m)] /
 a thin plane, which makes it run cooler than the vias drawn — measure the difference on your own board before trusting it.</p>
 <p><strong>Submodels.</strong> A thermal setup whose Thermal page says <em>Submodel: cut from</em> another thermal setup, <em>to region</em> a mesh
 region, solves only that region's box, meshed at the region's size, with its cut faces fixed to the other setup's
-solution; every other boundary is as written. The whole-model result is reused when it is newer than the document, and
-solved first when it is not (the notes say which). A mesh region a submodel is cut to no longer refines the whole-model
+solution; every other boundary is as written. The whole-model result is reused only when the document and every file it
+was solved from are as they were — a placed layout, the technology, a material library — and solved first when they are
+not (the notes say which, naming the file that changed). A mesh region a submodel is cut to no longer refines the whole-model
 run — that is what keeps it coarse. The run compares the heat crossing the cut faces with the whole model's over the same
 faces and <strong>warns when they differ by more than 5 %</strong> point by point: the region is too small, the fine detail changes
 the temperature at its edge, enlarge it. A heat source straddling the box is refused; one inside must carry the same power
 as in the whole model.</p>
 <p><strong>Symmetry.</strong> Model half (or a quarter) of a symmetric device: right-click the face you cut it on, <em>Symmetry Plane</em>. The
-face must lie on the model's extent; it stays insulated (a condition on it is refused), and <em>All exposed faces</em> never
+plane is drawn hatched across the model where it cuts it, labelled <code>Symmetry X = …</code>, and listed under <em>Symmetry planes</em>,
+whose tick shows or hides it; select its row to move it in Properties (<em>At</em>, a length or an expression). It must lie on the
+model's extent; it stays insulated (a condition on it is refused), and <em>All exposed faces</em> never
 takes it. What is drawn is what is solved: give the sources the power of the modelled part. Measures read
 <code>SymmetryFactor</code> (2 per plane) so a whole-device figure is explicit — <code>Rth_full = (Tmax(ch) - 25) / (Pdiss * SymmetryFactor)</code>; nothing is multiplied silently. A plotted temperature is drawn mirrored across the planes (<em>3D ▸ View ▸
 Temperature ▸ Mirror Symmetric Halves</em> turns it off), and hovering the mirrored half reads the modelled point's value and
@@ -1115,7 +1263,10 @@ items are greyed, with the reason, when there is no thermal result or the model 
 range is the <strong>true</strong> minimum and maximum of what is painted — the peak is the answer, so it is never clipped — and the
 legend reads °C; the plot's <em>Fix range across the sweep</em> (or <em>Fix Range Across Sweep</em> in the menu) makes it the minimum
 and maximum over every sweep point, so stepping the sweep never rescales the colours. The plot's <em>Solution</em> is the sweep
-point shown. Hover a painted face for the temperature there (interpolated, not the nearest
+point shown. When the run has more than one point, a <strong>sweep slider</strong> at the view's top left moves the drawn plot to
+another point: one control per swept variable, labelled with its value and unit (<code>Pdiss = 7 W</code>). Dragging it shows the
+points as it passes them, and letting go keeps the point shown as the plot's <em>Solution</em>, one undo step. ◀ and ▶ move one point
+each. The probe table, the line plots and the hot spot follow it. Hover a painted face for the temperature there (interpolated, not the nearest
 node); a ring marks the <strong>hot spot</strong> with its temperature and its object. A bond wire whose run tabulated its temperature
 is coloured along its length, and hovering it names the wire and the distance along it.</p>
 <p><strong>Along a line.</strong> <em>Along…</em> on the toolbar (or <em>3D ▸ View ▸ Temperature ▸ Temperature Along…</em>) takes two points and plots
@@ -1144,10 +1295,16 @@ pin and a reference pin, power as current and temperature rise as voltage. Its i
 it is not attached to any device. The file carries a one-port bench, so <code>circuitrf sparam</code> on it reads the network's
 Z_th back.</li>
 <li><strong>Pulse train</strong>: a period (<code>1 ms</code>, <code>100 us</code>), a duty, and optionally the total power during the pulse (shared by the
-sources in proportion to their own; empty, each at its own power). There is no transient solver: the periodic peak, the
-rise at the end of one pulse and the average come in closed form from the Foster networks, each added to the place's
-temperature with no power, for every Z_th place at every sweep point — the duty and period are expressions, so they
-sweep. They are rows of the Probes table; the waveform over one period is in the result.</li>
+sources in proportion to their own; empty, each at its own power). There is no transient solver. The periodic peak and
+the average come from Z_th solved <strong>exactly at the harmonics of 1/period</strong>, as many as it takes until each further one
+adds less than 10⁻⁴ of the average rise, up to the band's top. Above the last harmonic, a source's own place is carried by its
+Foster network. Heat from another source, or at a probe, gets nothing there: it has to travel, so it is small at high
+frequency. The Foster fit of such a <strong>transfer</strong> Z_th is not used: heat that has to travel arrives late, its Z_th goes
+negative at high frequency, and no sum of RC stages can do that. The <strong>single pulse</strong> is the train's first pulse from
+rest, highest before the second begins, from the same solved values. Each is added to the place's temperature with no
+power, for every Z_th place at every sweep point. The duty and period are expressions, so they sweep. They are rows of the
+Probes table, and the waveform over one period is in the result. A probe on a heat source converges slowly this way,
+since it has no fit of its own; the run warns when a place had not converged by the band's top.</li>
 </ul>
 <h2 id="headless">Headless</h2>
 <p>Every step above has a command-line spelling, and none of them needs a solver except <code>em</code>:</p>
@@ -1160,7 +1317,9 @@ instance, port and setup, with each port's inferred polarity reported. The examp
 technology each instance resolved through, every solid with its material and extent in metres, each
 port's contacts edge by edge, the air box, and an estimate of the problem's size.</li>
 <li><strong><code>circuitrf render &lt;path.c3d&gt; --section xz@y=0mil -o cut.svg</code></strong> — a section through it; <code>--iso</code> for an
-isometric view. The pictures on this page are drawn that way.</li>
+isometric view. The pictures on this page are drawn that way. A section fills each object at its
+<a href="#transparency">transparency</a>; <code>--transparency lid=80</code> sets one (or a placed cell's, or every member of a group:
+<code>--transparency stage1=40</code>) for that picture alone, without editing the file.</li>
 <li><strong><code>circuitrf em &lt;path.c3d&gt; --setup &quot;Lid modes&quot;</code></strong> — runs one setup, exactly as Run does, and writes the
 same files.</li>
 <li><strong><code>circuitrf convert part.step -o Cell/3d/Cell.c3d</code></strong> — Import STEP into a new 3D view, each part's material by
@@ -1192,6 +1351,10 @@ edges and <code>Hash</code> are in <a href="file-formats.html#c3d-operations">Fi
 <td>Select every shown object (<em>3D ▸ Select All Objects</em>); hidden ones are left out</td>
 </tr>
 <tr>
+<td><strong>H</strong></td>
+<td>Hide the selection; show it if any of it is hidden (<em>3D ▸ Hide / Show Selection</em>). In the view or the object tree</td>
+</tr>
+<tr>
 <td><strong>Shift+A</strong> then a letter</td>
 <td>Box, Sheet, polyGon, polyLine, cYlinder, Port, Wire, Heat source, Temperature probe, Mesh region</td>
 </tr>
@@ -1214,6 +1377,10 @@ edges and <code>Hash</code> are in <a href="file-formats.html#c3d-operations">Fi
 <tr>
 <td><strong>Ctrl/Cmd+G</strong>, <strong>Ctrl/Cmd+Shift+G</strong></td>
 <td>Group the selection; ungroup the outermost selected group</td>
+</tr>
+<tr>
+<td><strong>Ctrl/Cmd+C</strong>, <strong>Ctrl/Cmd+V</strong> in the object tree</td>
+<td>Copy the selected rows; paste a 3D copy (<a href="#copy-paste">Copy and Paste</a>). In the view, Ctrl/Cmd+C copies the picture</td>
 </tr>
 <tr>
 <td><strong>N</strong>, <strong>Shift+E</strong>, <strong>T</strong></td>
@@ -1390,7 +1557,8 @@ two corners on the drawing plane — or made from a face: right-click a flat, re
 is comes from what it touches</strong>: each edge of the rectangle is tested against every conductor, and exactly
 one pair of opposite edges must each touch exactly one conductor. The end that is ground — the setup's
 Ground net, a placed layout's ground plane, or a PEC face of the air box — is <strong>−</strong>; otherwise the larger
-conductor is. The port is drawn with its number and an arrow from − to +, and while it is being drawn the
+conductor is. A lumped port is drawn as a checkerboard over exactly its own rectangle, − edge to + edge and
+its full width, with its number and a flat arrow painted on it pointing to +; while it is being drawn the
 arrow, or the reason it cannot be one, follows the cursor. Right-click a port for <em>Flip</em>, its kind, <em>Z0…</em>
 and <em>Delete</em>. A wrong polarity turns every transmission term by 180°, so check the arrow before a run.
 A <strong>wave</strong> port must lie on a face of the active setup's air box. Every setup uses every port, and a
@@ -1428,14 +1596,17 @@ neighbour's face lying in the same plane and overlapping it is refused rather th
 <li><strong>Simulate</strong> (<em>Simulate ▸ Run</em> with the 3D view active, or the toolbar's Run button — the workspace toolbar's). Runs the active setup with the
 same progress, Cancel and messages as a <code>.cem</code>, and opens its results in the Data Display. Afterwards the
 run's fields are drawn by the field plots, on the geometry the run solved, and the toolbar's mesh button shows the
-mesh the run made (it is greyed until there are fields to plot); if the 3D view has changed since, a selected field
-plot's Properties say so (<code>Fields are from the run at 14:02; the model has changed since</code>) and the fields are still
-shown. An object with <strong>no material</strong> yet — drawn as a wireframe — does not stop the run: the solver
+mesh the run made (it is greyed until there are fields to plot); if the 3D view, or any file the run was solved from,
+has changed since, a selected field plot's Properties say so and name it (<code>Fields are from the run at 14:02; 'Board.clay' has changed since</code>) and the fields are still shown. A run keeps, beside its result, the document it solved
+and a hash of every file it read: each placed layout and the sub-cells it flattens, a layout's paired <code>.wBond</code>, each
+nested 3D view, the technology and the material libraries it looks through, and — for a thermal run driven from a
+circuit — the schematic, each sub-cell schematic and the S-parameter files it names. Editing a field plot is display
+and never makes a result stale. An object with <strong>no material</strong> yet — drawn as a wireframe — does not stop the run: the solver
 ignores it and the run's messages say so. One whose material the technology does not define does stop it.</li>
 </ul>
 
 <nav class="page-nav">
-  <a class="prev" href="em-3d.html"><span class="dir">Previous</span><span class="name">3D EM</span></a>
+  <a class="prev" href="palace-windows.html"><span class="dir">Previous</span><span class="name">Installing Palace on Windows</span></a>
   <a class="next" href="thermal.html"><span class="dir">Next</span><span class="name">Thermal: temperature on the 3D model</span></a>
 </nav>
 </main>

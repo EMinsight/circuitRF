@@ -31,13 +31,18 @@
   <p class="breadcrumb"><a href="../index.html">Docs</a> › <a href="index.html">Reference</a> › Thermal</p>
 
   <h1>Thermal: temperature on the 3D model</h1>
-  <p class="lede">The same 3D model that is solved for S-parameters is solved for heat — heat sources, probes, boundaries and contacts in the view, their values in a thermal setup. What a thermal run is, what it models and what it does not, taught through the two thermal examples with their measured numbers.</p>
+  <p class="lede">The same 3D model that is solved for S-parameters is solved for heat — heat sources, probes, boundaries and contacts in the view, their values in a thermal setup. What a thermal run is, what it models and what it does not, taught through the three thermal examples with their measured numbers.</p>
 
 <p>A <strong>thermal setup</strong> solves the steady temperature of a 3D view: every solid conducts heat, air does not, and heat enters
 where you put a <strong>heat source</strong> and leaves through the faces you hold at a temperature or cool by convection. It is the same
 model an EM setup solves — the geometry, the materials and the ports are shared — so one <code>.c3d</code> carries its thermal setups
 beside its EM ones. What each place is and how to draw it is in <a href="drawing-in-3d.html#thermal">The 3D Editor ▸
-Temperature</a>; this page is what the run does with them, and what two worked examples measured.</p>
+Temperature</a>; this page is what the run does with them, and what three worked examples measured.</p>
+<figure class="figure fixed"><span class="frame">
+    <img src="../assets/fixed/output-wires-dc-along-wire.png" alt="A gold bond wire in a mould compound, cut along its length: the wire hottest at mid-span, the heat spreading into the mould around it">
+  </span><figcaption>What a thermal run shows: a bond wire carrying current inside a package's overmold, cut along its length
+  (<em>Thermal Output Wires</em>, 14 A DC for six wires). The wire is coloured from its own solved temperature — hottest at
+  mid-span, 85 °C flange below — and the mould compound around it from the 3D field.</figcaption></figure>
 <p><strong>Thermal needs Gmsh</strong>, the mesher Palace uses; circuitRF's own solver does the rest. The first run without Gmsh offers to
 install it.</p>
 <h2 id="solves">What a thermal run solves</h2>
@@ -49,15 +54,23 @@ nitride, gold and copper carry tables in circuitRF's generic library; that is wh
 pair of materials (the generic library's GaN/SiC nucleation layer, 3.3E-08 m²·K/W), or a document's override for one contact.
 A thin bond line — a die attach, a solder layer — is usually best stated this way, as its thickness over its conductivity,
 rather than drawn (see <a href="#mesh">the mesh</a>).</li>
-<li><strong>Boundaries</strong>: fixed temperature, convection, or insulated (every face nothing names).</li>
-<li><strong>Symmetry planes</strong>: model half or a quarter; measures read <code>SymmetryFactor</code> for the whole device.</li>
+<li><strong>Boundaries</strong>: fixed temperature, convection, or insulated (every face nothing names). Set by right-clicking a face;
+click a boundary's tint (or its row) to edit its kind and values in Properties.</li>
+<li><strong>Symmetry planes</strong>: model half or a quarter; measures read <code>SymmetryFactor</code> for the whole device. A plane is drawn
+hatched where it cuts the model, and its position is edited in Properties — it must stay on the model's extent.</li>
 </ul>
 <p>Every run reports its <strong>energy balance</strong> — the heat that went in against the heat that left — in its notes.</p>
+<p><strong>Leaving something out.</strong> Untick an object's, a placed cell's or a <strong>heat source's</strong> <strong>Model</strong> (in Properties, or on its
+right-click menu — see <a href="drawing-in-3d.html#model">Model</a>) to run without it while it stays drawn: the object is not meshed,
+and the source puts no power in. The run's notes name what was left out. Anything that still refers to it is refused,
+naming both — a heat source spread through or lying in it, a probe reading it, a contact resistance naming it, a boundary on
+one of its faces — so a temperature is never read off a model you did not mean to solve. An effective block's own
+<strong>Enabled</strong> is its switch, shown in Properties as <strong>Model</strong>.</p>
 <h2 id="die-to-heatsink">Worked example: Die to Heatsink</h2>
 <p><em>Tools ▸ Examples ▸ Thermal: Die to Heatsink.</em> A GaN-on-SiC die (its transistor one 0.8 × 0.25 mm heat-source sheet) on a
 copper–molybdenum flange, the flange on a two-layer board with a 5 × 3 field of plated vias, the board on a 100 µm thermal
 interface material on a heatsink held at 85 °C. The die attach and the flange solder are contact resistances. <code>Pdiss</code> sweeps
-from 3 W to 11 W; the run takes about 53 s and 0.75 GB on an Apple M4 (the Debug build), on 397,997 tetrahedra.</p>
+from 3 W to 11 W; the run takes about 1 min 17 s and 1.1 GB on an Apple M4 (the Debug build), on 543,980 tetrahedra.</p>
 <table>
 <thead>
 <tr>
@@ -71,24 +84,24 @@ from 3 W to 11 W; the run takes about 53 s and 0.75 GB on an Apple M4 (the Debug
 <tr>
 <td>3 W</td>
 <td>116.2 °C</td>
-<td>5.07 K/W</td>
+<td>5.08 K/W</td>
 <td>—</td>
 </tr>
 <tr>
 <td>11 W</td>
-<td>207.7 °C</td>
-<td>5.82 K/W</td>
-<td>11.16 K/W</td>
+<td>207.9 °C</td>
+<td>5.83 K/W</td>
+<td>11.18 K/W</td>
 </tr>
 </tbody>
 </table>
-<p><strong>What &quot;case&quot; means is a choice.</strong> <code>Rth_jc</code> reads the case as the flange bottom's average (143.7 °C at 11 W); against the
-flange bottom's hottest point, where a thermocouple under the die would sit, it is 5.41 K/W. A datasheet's number means one
+<p><strong>What &quot;case&quot; means is a choice.</strong> <code>Rth_jc</code> reads the case as the flange bottom's average (143.8 °C at 11 W); against the
+flange bottom's hottest point, where a thermocouple under the die would sit, it is 5.42 K/W. A datasheet's number means one
 of these, and they differ by about 8 %.</p>
 <p><strong>An external check.</strong> The heat crosses the interface material in one dimension, so its top must average
 85 + 11 × 100 µm / (3 W/(m·K) × 80 mm²) = 89.58 °C at 11 W — and the probe on it reads exactly that.</p>
 <p><strong>The via field as a block.</strong> Enabling the view's effective block over the vias reads the die at 194.0 °C (Rth_ja 9.91 K/W):
-13.7 K cooler than the vias drawn, and in 3 min 10 s rather than 53 s on this board. The block is an approximation that
+13.9 K cooler than the vias drawn, and in 3 min 10 s rather than 1 min 17 s on this board. The block is an approximation that
 runs cool; it pays where there are hundreds of vias.</p>
 <h2 id="channel-vs-surface">Worked example: Channel vs Surface</h2>
 <p><em>Tools ▸ Examples ▸ Thermal: Channel vs Surface.</em> One GaN finger's unit cell — SiC substrate, GaN epitaxy with the library's
@@ -126,16 +139,26 @@ size moves the answer more than anything else:</p>
 18.4 K and <code>Rth_ch</code> at 458.2 K/W: 9 % low on the offset. A sub-micrometre heat source needs the curvature order 2 carries.</p>
 <p>The workspace's second cell, <strong>Eight Fingers</strong>, is the plan of an eight-finger array (0.25 W a finger): the fourth finger
 reaches 105.1 °C and the edge one 101.6 °C, 3.5 K cooler (58,032 tetrahedra; it solves in less time than <em>One Finger</em>), because the middle of an array has neighbours on both sides.</p>
+<figure class="figure fixed"><span class="frame">
+    <img src="../assets/fixed/eight-fingers-temperature-top.png" alt="Eight Fingers seen from above, 1 µm below the surface: eight hot stripes, the middle ones hottest">
+  </span><figcaption>Eight Fingers from above, 1 µm under the surface (85 °C base, 88.9 to 104.7 °C shown): the modelled half,
+  cut at the fingers' mid-length along its lower edge. The middle fingers run hottest.</figcaption></figure>
+<figure class="figure fixed"><span class="frame">
+    <img src="../assets/fixed/eight-fingers-temperature-section.png" alt="Eight Fingers in cross-section: heat spreading from the fingers through the SiC into the copper-tungsten carrier">
+  </span><figcaption>The same run cut across the fingers at their mid-length (85 to 105.1 °C): 100 µm of SiC over 500 µm of
+  copper-tungsten, the carrier's bottom held at 85 °C. The heat spreads sideways in the SiC before it reaches the carrier.</figcaption></figure>
 <h2 id="rth">Rth matrix, Z_th and pulses</h2>
 <p>A setup may ask for the <strong>Rth matrix</strong> across its heat sources — R_ij, the rise of source i's place per watt in source j, with
 every boundary made homogeneous so it is a property of the structure — and for the <strong>thermal impedance</strong> Z_th(jω), which is
-fitted as a passive <strong>Foster network</strong> per source and written as a <code>.cnl</code> you can simulate. From the fits, a <strong>pulse train</strong>
-(period, duty) gives each source's periodic peak, single-pulse rise and average with no transient solve. Details and the
+fitted as a passive <strong>Foster network</strong> per source and written as a <code>.cnl</code> you can simulate. A <strong>pulse train</strong> (period, duty)
+gives each place's periodic peak, single-pulse rise and average with no transient solve, from Z_th solved at the harmonics
+of 1/period. It does not use a fit of the heat that travels from one source to another. Details and the
 gestures: <a href="drawing-in-3d.html#thermal-rth">The 3D Editor ▸ Rth, Z_th and pulses</a>.</p>
 <p>In <em>Eight Fingers</em> (a half model, so each figure is per watt in the modelled half of a finger), an edge finger's own
 resistance is 52.91 K/W, the fourth finger's 53.17 K/W, and a neighbour adds 20.52 K/W. With all eight on, the edge finger
-rises 15.84 K and the fourth 19.13 K. A 1 ms, 10 % duty pulse train takes the fourth finger to a peak of 90.39 °C; a single
-pulse reaches 90.22 °C, and the average is 85.75 °C.</p>
+rises 15.84 K and the fourth 19.13 K. A 1 ms, 10 % duty pulse train takes the fourth finger to a peak of 90.71 °C; a single
+pulse reaches 90.62 °C, and the average is 85.75 °C. The heat that crosses from the edge finger arrives late, and it is
+counted exactly because the pulse is solved at the harmonics of 1 kHz rather than read from a fitted network.</p>
 <h2 id="electrothermal">Conductive balance: current, and bond wires</h2>
 <p>A thermal setup may also state <strong>currents at ports</strong>. The current flows through the model's metal and its bond wires and
 heats them — <strong>electrothermal</strong>, in circuitRF's word, and solved by <strong>conductive balance</strong>: one Newton loop over temperature
@@ -146,13 +169,88 @@ follows it unless its switch on the setup's <em>Balance</em> section is off, so 
 the section their EM model uses, coupled to the pads they bond to and to the mould compound they run through. The
 temperature along each wire is drawn on the wire.</li>
 <li><strong>Runaway is an answer.</strong> Above a current, no steady state exists between fixed-temperature ends: the run brackets that
-current and reports it rather than failing.</li>
+current and reports it rather than failing. A metal hotter than the top of its conductivity table (gold's ends at 1,027 °C,
+just below melting) is past what its material states, and is not taken as a steady state.</li>
+<li><strong>A pad or a lead is one potential</strong> when its resistance at 20 °C is below 1 % of the least-resistive wire's
+(<em>Balance ▸ EquipotentialBelow</em>; 0 solves every conductor's potential in 3D). The run's notes name each conductor, its
+resistance, and which way it went.</li>
+<li><strong>Ports referenced to ground.</strong> Two ports that each run from a conductor to the flange across an insulating die have no path
+alone — one's current returns through the other. They are solved as a balanced pair: the currents into each conductor group
+must sum to zero (to 0.1 % of the largest), or the run refuses, naming the ports.</li>
 <li><strong>Harmonic currents</strong> heat the wires only, each harmonic at its own skin-effect resistance, each stated <strong>Peak</strong> or <strong>RMS</strong>
-(never inferred); a port's harmonics are shared among the wires of its array by their inductance.</li>
+(never inferred); a port's harmonics are shared among the wires of its array by their inductance. A <code>.wBond</code>'s wires are
+shared over their design's own ground plane. Wires drawn in the 3D view are shared in free space unless the document states
+a <code>WireGroundPlane</code>, either a height (<code>{ &quot;Z&quot;: … }</code>) or a horizontal conductor face (<code>&quot;carrier/zmax&quot;</code>). It is never guessed
+from what lies below the pads, and <code>check</code> refuses one that is above a drawn wire.</li>
 <li><strong>From a circuit</strong>: a setup can take its currents from a harmonic-balance sweep of a schematic whose S-parameter block is
 this view's EM result — pin p is port p — and solve the wires at every drive level, with the circuit's measures beside the
 temperatures. Nothing goes back into the circuit.</li>
 </ul>
+<h2 id="output-wires">Worked example: Output Wires</h2>
+<p><em>Tools ▸ Examples ▸ Thermal: Output Wires.</em> Six 1 mil gold wires, wedge-bonded from a drain pad on a SiC die to a copper package
+lead, <strong>all of it embedded in a mould compound — the overmold</strong> — over a copper–molybdenum flange held at 85 °C. The die, its
+pad and the lead finger are a layout; the wires are its <code>.wBond</code>; the rest is drawn in the 3D view. The mould's glass transition
+(150 °C) is every wire probe's <em>Limit</em>. Each setup runs in seconds on an Apple M4 (the Release build): <code>DcSweep</code> in 21 s, on
+123,818 tetrahedra.</p>
+<p><strong>DC, up to runaway.</strong> The six wires share a DC current almost equally, and the centre ones run hottest — the mould between their
+neighbours is warmer:</p>
+<table>
+<thead>
+<tr>
+<th>Idc (six wires)</th>
+<th>Hottest wire</th>
+<th>An edge wire</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>6 A</td>
+<td>119.8 °C</td>
+<td>117.0 °C</td>
+</tr>
+<tr>
+<td>10 A</td>
+<td>197.3 °C</td>
+<td>188.7 °C</td>
+</tr>
+<tr>
+<td>14 A</td>
+<td>393.0 °C</td>
+<td>371.5 °C</td>
+</tr>
+</tbody>
+</table>
+<p>Above 16.69 A there is no steady state, and the run says so rather than failing: the last converged point is 16.62 A, with the
+hottest wire at 944 °C. At 10 A the switches show what drives it: the hottest wire reads 197.3 °C with both on, 194.8 °C with
+k(T) off and 158.7 °C with σ(T) off — nearly all of it is gold's resistance rising with temperature.</p>
+<figure class="figure fixed"><span class="frame">
+    <img src="../assets/fixed/output-wires-dc-across.png" alt="The six wires cut across at mid-span at 14 A DC: six hot spots of nearly equal temperature in the mould">
+  </span><figcaption>DC, 14 A, cut across the six wires at mid-span. Each wire's section is coloured from its own solved
+  temperature: at DC they share the current almost equally, and the centre ones run a little hotter.</figcaption></figure>
+<p><strong>RF, at 2 GHz.</strong> At RF the current divides by the wires' inductance, and <strong>the edge wires carry the most</strong>: at 8 A peak the edge
+wires reach 270.8 °C and the centre ones 199.5 °C; at 12 A, 594.4 °C against 366.7 °C.</p>
+<figure class="figure fixed"><span class="frame">
+    <img src="../assets/fixed/output-wires-rf-across.png" alt="The six wires cut across at 8 A peak RF: the two edge wires much hotter than the four in the middle">
+  </span><figcaption>RF, 8 A peak at 2 GHz on 4 A DC, the same cut. The two edge wires run hottest: the inductive share gives them
+  the most current.</figcaption></figure>
+<figure class="figure fixed"><span class="frame">
+    <img src="../assets/fixed/output-wires-rf-plan.png" alt="The same RF run seen from above, cut through the wires' loops: the heat concentrated along the two outer wires">
+  </span><figcaption>The same RF run from above, cut through the wires' loops 330 µm above the flange: each wire crosses the cut twice,
+  and the heat gathers along the outer two.</figcaption></figure>
+<p><strong>From a power amplifier.</strong> <code>FromHB</code> takes its currents from a harmonic-balance drive sweep of the <code>Amplifier</code> test bench's schematic — a generic
+FET on this view's EM result, into a 5 Ω load — at every drive level. Both ports are referenced to the flange, so they are solved
+as a balanced pair. At 28 dBm drive the circuit gives 49.51 dBm from 4.43 A, and the edge wires reach 205.1 °C (the centre ones
+164.7 °C); the run takes 12 s, and states when each wire passes its limit:
+<em>&quot;Probe 'w1' reaches its limit of 150 °C at Pin ≈ 13.11 (Pout_dBm ≈ 47.14, Id_A ≈ 3.242, Eff ≈ 40.2).&quot;</em> Run the <code>EM</code> setup first (1 min 37 s and 5.8 GB in Palace at the Draft preset;
+its series inductance for the six wires is 228.5 pH at 2 GHz).</p>
+<p><strong>Checks.</strong> The same row drawn as 3D-view wires (the second cell, <em>Drawn Wires</em>) reads 393.0 °C at 14 A and runs away at the same
+current. Brief 72's closed form for one isolated wire in air, its ends at the heels' temperature, reads 642.2 °C at the same
+current and runs away at 3.15 A per wire: the overmold takes most of the rise. Recomputing the RF share with each wire's hot
+resistance moves any wire's current by at most 0.83 %.</p>
+<p><strong>What was traded for speed.</strong> The die pad (0.071 mΩ) and the lead (0.047 mΩ) are solved as one potential each, below 1 % of a
+wire's 47.7 mΩ (<em>Balance ▸ EquipotentialBelow</em>; 0 solves them in 3D: 42 s, and 393.3 °C for the hottest wire at 14 A). The EM
+setup's <em>Standard</em> preset takes 10 min 10 s and 7.6 GB, reads 233.6 pH, and moves the edge wire at 28 dBm to 201.2 °C and its
+limit to <code>Pin</code> ≈ 13.18.</p>
 <h2 id="mesh">The mesh, and what a run costs</h2>
 <p>Each solid is meshed at an element size set by its <strong>thinnest dimension</strong> (at least <em>MinThroughThickness</em> elements through it,
 2 unless stated), across its whole extent; a heat source's surroundings are refined to its own size, and a mesh region is
@@ -164,12 +262,12 @@ in order:</p>
 <li>draw fine detail only where it is — <em>Channel vs Surface</em> draws the epitaxy on a 20 µm cell, <em>Die to Heatsink</em> does not draw it;</li>
 <li>set <em>MinThroughThickness</em> to 1 (both examples do);</li>
 <li>choose <strong>element order</strong> by what you read: order 1 is several times faster, and on <em>Die to Heatsink</em> it reads the junction
-2.5 % cool (207.7 °C against 210.7 °C at order 2, Rth_jc 5.82 against 5.98 K/W and Rth_ja 11.16 against 11.42 K/W; the order-2 run took 13 min 42 s and 5.4 GB); on <em>Channel vs Surface</em> order 2 is
+2.5 % cool (207.9 °C against 210.9 °C at order 2, Rth_jc 5.83 against 5.99 K/W and Rth_ja 11.18 against 11.45 K/W; the order-2 run took 17 min 55 s and 8.3 GB); on <em>Channel vs Surface</em> order 2 is
 kept.</li>
 </ul>
 <p><code>circuitrf explain &lt;view&gt; --analysis &lt;setup&gt;</code> estimates the tetrahedra, unknowns and memory before anything is meshed, and the
 setup's <em>Mesh ▸ Check</em> meshes again with every size × 0.7 and reports how far each probe moved — on <em>Die to Heatsink</em>,
-+0.21 °C (+0.18 %), in 1 min 36 s. That check refines the same elements; it does not measure the difference between orders.</p>
++0.13 °C (+0.41 % of its rise), in 2 min 57 s. That check refines the same elements; it does not measure the difference between orders.</p>
 <h2 id="not-modelled">What is not modelled</h2>
 <ul>
 <li><strong>Radiation.</strong> Heat leaves by conduction to a fixed face and by convection only.</li>

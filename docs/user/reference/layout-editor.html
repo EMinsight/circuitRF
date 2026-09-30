@@ -1510,6 +1510,13 @@ wider than the tolerance. The panel shows both bands it gives you, for example
 <li><strong>Highest frequency</strong> — optional, blank by default. When given (<em>6 GHz</em>; a bare number is GHz),
 a stretch outside the warning band that is <strong>shorter than λ/20</strong> at that frequency is a warning
 rather than a fail — see <a href="#impedance-findings">electrically short</a>.</li>
+<li><strong>Skip near vias</strong> — <em>400 µm</em> by default (about 16 mil). Trace within this distance of the land
+of a via <strong>on that trace</strong> is not checked: a plane is normally cleared round a via, so the last stretch
+of every trace into one has no reference under it by design, and would otherwise flag every layer
+change. Each skipped stretch is listed in its trace's notes, naming the via, so the transition is still
+there to verify with an EM run. A via that only passes beside a trace skips nothing. A bare number is
+µm; <strong>0</strong> checks every trace up to its via. The default suits an antipad of the via land plus
+0.2–0.3 mm; widen it if your antipads are larger.</li>
 <li><strong>Layers</strong> — every copper layer of the stackup, all ticked by default. A layer with no copper
 on it is shown but cannot be ticked.</li>
 <li><strong>Traces</strong> — the trace widths on each ticked layer, to say which traces are under review. See
@@ -1638,6 +1645,10 @@ flagged</strong>, so a hard 90° turn is not a false alarm.</li>
 <li><strong>A trace ends</strong> at a junction, at a via, at a pad or where the copper ends. <strong>A via ends it</strong>: what
 continues on another layer is that layer's trace, and is a row of its own. The table says what each
 end is.</li>
+<li><strong>A pad at a trace's end is not part of the trace.</strong> Copper at the end that is more than a fifth
+wider than the trace, and shorter than four of its own widths, is the land the trace runs onto: it is
+left out of the trace's length, width and Z₀, and the end reads <em>pad</em>. A pad inside a trace —
+a line that runs on past it — is a genuine width step and stays.</li>
 <li><strong>A stretch shorter than four of its widths is read as a pad</strong> — unless a region, a pick or a
 net chooses it, and then two widths is enough. A wide line cut into sections by series parts is often
 only two or three widths long between them; point at it and each section is reviewed. A run with no
