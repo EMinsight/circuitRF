@@ -5,7 +5,7 @@ using CircuitRF.Design.Em3d;
 using CircuitRF.Design.Em3d.Install;
 using CircuitRF.Ui.Messages;
 
-namespace CircuitRF.Ui.Layout.Em;
+namespace CircuitRF.Ui.Views.Dialogs;
 
 /// <summary>
 /// The GUI's removal of circuitRF-installed solvers (brief-em3d-25): a Settings ▸ 3D EM row's

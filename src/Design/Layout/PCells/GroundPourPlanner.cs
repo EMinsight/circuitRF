@@ -7,7 +7,9 @@ namespace CircuitRF.Design.Layout.PCells;
 /// <param name="Shapes">The pour, with a clearance hole around every via that passes through the plane. More than one
 /// shape only when clearances split the rectangle.</param>
 /// <param name="Lines">How many placed microstrip instances return through this plane.</param>
-/// <param name="ViaClearances">How many vias passing through the plane were given a clearance hole.</param>
+/// <param name="ViaClearances">How many vias passing through the plane were given a clearance hole — drawn vias,
+/// with <see cref="GroundPourPlanner.ViaClearanceMicrons"/> round their pad, and placed VIA components, with
+/// their own antipad.</param>
 /// <param name="ViasJoined">How many vias END on the plane inside the pour, and so are joined to it. A layout carries
 /// no nets to tell a ground via from a signal via landing on that layer, so these are counted for the designer to
 /// check rather than guessed at.</param>
@@ -112,6 +114,31 @@ public static class GroundPourPlanner
         long ring = (long)Math.Round(ViaClearanceMicrons * view.DbuPerMicron);
         var discs = new Paths64();
         int joined = 0;
+        // A placed VIA or VIAGND component (ViaPCell) is a via too, and the only one here that states
+        // its own antipad: its clearance is that diameter, in every plane its drill passes and does not
+        // land on — which is the same span its model was resolved against.
+        foreach (var inst in view.Instances)
+        {
+            string cell = Path.GetFileName(inst.CellRef.TrimEnd('/', '\\'));
+            if (!view.PCellSnapshots.TryGetValue(cell, out var snap)) continue;
+            bool grounded = string.Equals(snap.GeneratorId, ViaPCell.GroundGeneratorId, StringComparison.OrdinalIgnoreCase);
+            if (!grounded && !string.Equals(snap.GeneratorId, ViaPCell.GeneratorId, StringComparison.OrdinalIgnoreCase)) continue;
+
+            var r = ViaPCell.Resolve(snap.Parameters, technology, grounded);
+            if (r.Span is not { } span) continue;
+            long radius = (long)Math.Round(r.Antipad / 2 * 1e6 * view.DbuPerMicron);
+            if (inst.X + radius < outer.MinX || inst.X - radius > outer.MaxX ||
+                inst.Y + radius < outer.MinY || inst.Y - radius > outer.MaxY) continue;
+
+            if (ReferenceEquals(span.From, ground) || ReferenceEquals(span.To, ground)) { joined++; continue; }
+            int from = IndexOf(layers, span.From), to = IndexOf(layers, span.To);
+            int top = Math.Min(from, to), bottom = Math.Max(from, to);
+            if (span.ViaEntry is { } entry && ViaSpanResolver.Resolve(entry, technology) is { } drillSpan)
+                (top, bottom) = (IndexOf(layers, drillSpan.Top), IndexOf(layers, drillSpan.Bottom));
+            if (!(top < g && g < bottom) && !(top == g || bottom == g)) continue;   // the drill never reaches it
+            discs.Add(Disc(inst.X, inst.Y, radius));
+        }
+
         foreach (var via in view.Shapes.OfType<ViaShape>())
         {
             if (!drill.Contains(via.Layer)) continue;   // on no via entry: inert everywhere, so here too

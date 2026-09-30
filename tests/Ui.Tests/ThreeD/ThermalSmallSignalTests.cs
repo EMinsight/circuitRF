@@ -122,7 +122,7 @@ public sealed class ThermalSmallSignalTests(ITestOutputHelper output) : IDisposa
 
         var data = DataSetImporter.Import(Path.Combine(ws, "results", "Cell Pulsed.thermal.npy")).DataSet;
         var rth = data[$"{ThermalRunService.SmallSignalGroup}.{ThermalRunService.RthCube}"];
-        Assert.Equal(["west", "east"], rth.Axes[0].Labels);
+        Assert.Equal(["west", "east"], rth.Axes[0].Labels!);
         var r = rth.RealValues;
         Assert.All(r, v => Assert.True(v > 0));
         Assert.True(r[0] > r[1], "a finger heats itself more than its neighbour");
@@ -132,8 +132,8 @@ public sealed class ThermalSmallSignalTests(ITestOutputHelper output) : IDisposa
         var z = data[$"{ThermalRunService.SmallSignalGroup}.Zth:west:west"].ComplexValues;
         Assert.Equal(r[0], z[0].Real, 1e-9 * r[0]);
         Assert.True(z[^1].Magnitude < 0.5 * z[0].Magnitude, "Z_th falls with frequency");
-        Assert.True(data.Cubes.Keys.Concat(data.Groups.SelectMany(g => data.CubesIn(g).Keys.Select(k => g + "." + k)))
-                        .Contains($"{ThermalRunService.SmallSignalGroup}.Zth:die_top:east"));
+        Assert.Contains($"{ThermalRunService.SmallSignalGroup}.Zth:die_top:east",
+                        data.Cubes.Keys.Concat(data.Groups.SelectMany(g => data.CubesIn(g).Keys.Select(k => g + "." + k))));
 
         // the pulse: peak above the average, above the baseline; the duty sweep raises the average
         var peak = data[$"{ThermalRunService.Group}.Pulse:west:peak"].RealValues;

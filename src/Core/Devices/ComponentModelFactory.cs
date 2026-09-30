@@ -82,6 +82,8 @@ public static class ComponentModelFactory
             // sign, and a sign the symbol has to show.
             "JFET_N", "JFET_P",
             "TLIN", "MLIN", "MBEND", "MTEE", "MCROSS", "MTAPER", "MKLOPF", "Chain",
+            // The two vias (brief-via-component.md): a signal via changing layers, and a via to ground.
+            "VIA", "VIAGND",
             "ExtDevice", "wBond", "Match", "Mixer",
             // The ideal system blocks (brief-sys-2, brief-sys-3). One IdealSBlockModel subclass
             // each; "Switch" serves both switch tiles, with the throw count a parameter, and
@@ -175,6 +177,10 @@ public static class ComponentModelFactory
             return CreateMicrostripTaperModel(parameters);
         if (typeName.Equals("MKLOPF", StringComparison.OrdinalIgnoreCase))
             return CreateMicrostripKlopfModel(parameters);
+        if (typeName.Equals("VIA", StringComparison.OrdinalIgnoreCase))
+            return new ViaModel(ReadViaGeometry(parameters, grounded: false));
+        if (typeName.Equals("VIAGND", StringComparison.OrdinalIgnoreCase))
+            return CreateViaGroundModel(parameters);
         if (typeName.Equals("ExtDevice", StringComparison.OrdinalIgnoreCase))
             return CreateExternalDeviceModel(parameters);
         if (typeName.Equals("VerilogA", StringComparison.OrdinalIgnoreCase))
@@ -2061,6 +2067,74 @@ public static class ComponentModelFactory
         string name = MicrostripInstanceName(parameters, "MLIN");
 
         return new MicrostripLineModel(w, l, h, t, er, sigma, tanD, name, roughness);
+    }
+
+    // ── VIA / VIAGND (brief-via-component.md) ──────────────────────────────────────────────────
+    // Every length is SI metres. A schematic instance on a technology has its barrel length, materials
+    // and the planes it passes injected by the extraction seam (ViaSubstrateInjection, src/Design), so
+    // nothing here resolves a stackup; a bare .cnl instance types them, falling back to the same FR-4
+    // numbers MLIN falls back to.
+    public const double DefaultViaDrillMeters = 0.3e-3;
+    public const double DefaultViaPadMeters = 0.6e-3;
+    /// <summary>An unstated antipad is the pad plus this — 0.6 mm to 0.9 mm at the default pad. No
+    /// technology states an antipad, so this is the default whatever the pad is.</summary>
+    public const double DefaultViaAntipadRingMeters = 0.3e-3;
+    public const double DefaultViaPlatingMeters = 25e-6;
+
+    /// <summary>
+    /// The plane lists ride as indexed parameters, <c>Planes=n</c> with <c>Tp1..Tpn</c> and
+    /// <c>Erp1..Erpn</c> (the stub past B's as <c>StubPlanes</c>, <c>Tsp</c>, <c>Ersp</c>, with its
+    /// length <c>Hstub</c>; the stub past A's as <c>StubAPlanes</c>, <c>TspA</c>, <c>ErspA</c>,
+    /// <c>HstubA</c>). A plane whose
+    /// thickness is not stated is taken to sit midway along the barrel and takes <c>H/2</c>, the length of
+    /// barrel such a plane owns (half the dielectric to each end); one whose permittivity is not stated
+    /// takes <c>Er</c>.
+    /// </summary>
+    private static ViaGeometry ReadViaGeometry(IReadOnlyDictionary<string, Value> parameters, bool grounded)
+    {
+        double h = GetReal(parameters, "H", DefaultSubstrateHMeters);
+        double er = GetReal(parameters, "Er", DefaultSubstrateEpsR);
+
+        List<(double, double)> PlaneList(string count, string tKey, string erKey)
+        {
+            int n = (int)Math.Round(GetReal(parameters, count, 0.0));
+            var list = new List<(double, double)>(Math.Max(n, 0));
+            for (int i = 1; i <= n; i++)
+                list.Add((GetReal(parameters, $"{tKey}{i}", h / 2), GetReal(parameters, $"{erKey}{i}", er)));
+            return list;
+        }
+
+        var planes = PlaneList("Planes", "Tp", "Erp");
+        var stubPlanes = grounded ? [] : PlaneList("StubPlanes", "Tsp", "Ersp");
+        var stubAPlanes = grounded ? [] : PlaneList("StubAPlanes", "TspA", "ErspA");
+        double erMax = GetReal(parameters, "ErMax",
+            planes.Concat(stubPlanes).Concat(stubAPlanes).Select(p => p.Item2).Append(er).Max());
+        double pad = GetReal(parameters, "Pad", DefaultViaPadMeters);
+
+        return new ViaGeometry(
+            Drill:    GetReal(parameters, "Drill",   DefaultViaDrillMeters),
+            Pad:      pad,
+            Antipad:  GetReal(parameters, "Antipad", pad + DefaultViaAntipadRingMeters),
+            Plating:  GetReal(parameters, "Plating", DefaultViaPlatingMeters),
+            Length:   h,
+            Sigma:    GetReal(parameters, "Sigma",   DefaultSubstrateSigmaSPerM),
+            Solid:    BooleanParameter.Parse(parameters, "Solid", whenAbsent: false),
+            EpsRMax:  erMax,
+            Planes:   planes,
+            StubLength: grounded ? 0.0 : GetReal(parameters, "Hstub", 0.0),
+            StubPlanes: stubPlanes,
+            CapacitanceOverride: parameters.TryGetValue("C", out var c) && c.Kind == ValueKind.Real ? c.AsReal() : null,
+            IncludeCapacitance: BooleanParameter.Parse(parameters, "IncludeC", whenAbsent: true),
+            StubALength: grounded ? 0.0 : GetReal(parameters, "HstubA", 0.0),
+            StubAPlanes: stubAPlanes);
+    }
+
+    private static ViaGroundModel CreateViaGroundModel(IReadOnlyDictionary<string, Value> parameters)
+    {
+        var g = ReadViaGeometry(parameters, grounded: true);
+        return new ViaGroundModel(g,
+            padThickness: GetReal(parameters, "Tpad", g.Length),
+            padEpsR:      GetReal(parameters, "Erpad", GetReal(parameters, "Er", DefaultSubstrateEpsR)));
     }
 
     private static MicrostripBendModel CreateMicrostripBendModel(IReadOnlyDictionary<string, Value> parameters)

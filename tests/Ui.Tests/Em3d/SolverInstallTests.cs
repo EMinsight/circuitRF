@@ -398,7 +398,7 @@ public sealed class SolverInstallTests : IDisposable
     [Fact]
     public void Gate11_TheSolverVerbAndTheGuiRunnerCallTheInstallFunctions_AndHoldNoInstallLogic()
     {
-        foreach (string file in new[] { "src/Cli/Solver.cs", "src/Ui/Layout/Em/SolverInstallRunner.cs" })
+        foreach (string file in new[] { "src/Cli/Solver.cs", "src/Ui/Views/Dialogs/SolverInstallRunner.cs" })
         {
             string code = StripComments(File.ReadAllText(Path.Combine(RepoRoot(), file)));
             Assert.Contains(".Consent(", code);

@@ -208,7 +208,7 @@ public class GroundPlaneMetalReachesARunTests(Xunit.Abstractions.ITestOutputHelp
     /// in the termination could not reproduce, and that "|S₂₁| went down" would pass straight
     /// through.</para>
     ///
-    /// <para><see cref="PlanarProblem.PerfectGround"/> is the oracle and
+    /// <para><see cref="PlanarProblem.WithPerfectGround"/> is the oracle and
     /// <c>PlanarFillSettings.PerfectConductor</c> is NOT it — that flag makes the STRIP perfect and
     /// nothing else, because the plane is a termination of the Green's function rather than a member
     /// of the fill (CL4 §8). Using it as a ground oracle is the mistake that ate CL4's own first
@@ -246,8 +246,8 @@ public class GroundPlaneMetalReachesARunTests(Xunit.Abstractions.ITestOutputHelp
         var pecStrip = new PlanarSolveSettings(PlanarFillSettings.Default with { PerfectConductor = true });
 
         // A1 all perfect, A2 real strip only, B1 real ground only, B2 both.
-        var a1 = PlanarSolve.Run(problem.PerfectGround, report.Mesh, ports, freqs, pecStrip);
-        var a2 = PlanarSolve.Run(problem.PerfectGround, report.Mesh, ports, freqs);
+        var a1 = PlanarSolve.Run(problem.WithPerfectGround(), report.Mesh, ports, freqs, pecStrip);
+        var a2 = PlanarSolve.Run(problem.WithPerfectGround(), report.Mesh, ports, freqs);
         var b1 = PlanarSolve.Run(problem,               report.Mesh, ports, freqs, pecStrip);
         var b2 = PlanarSolve.Run(problem,               report.Mesh, ports, freqs);
 

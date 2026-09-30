@@ -1832,7 +1832,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         // A READOUT of the technology, so it follows the model for the same reason the Match panel
         // does — including a SignalLayer/GroundReference change on this very instance, which moves
         // which conductors the substrate is measured between.
-        if (IsMicrostripTarget) RefreshMicrostripSubstrate();
+        if (IsMicrostripTarget || IsViaTarget) RefreshMicrostripSubstrate();
     }
 
     // ── Cleanup ───────────────────────────────────────────────────────────────

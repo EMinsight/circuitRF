@@ -124,6 +124,15 @@ the planes crossed, and the validity frequency (`λ_d/20`), so the user sees the
    in any test. Record the measured C error of the Johnson–Graham term here and in the help page.
 6. Out-of-range: a via whose `h` exceeds `λ_d/20` at the top of the sweep posts exactly one warning.
 
+**Measured (2026-09-30).** Gate 5 used the committed F0 reference `testdata/em3d/f0/B-via/palace` (a Top
+microstrip, a solid 300 µm via through a 900 µm antipad in the middle plane, an inverted microstrip under
+it: the via-and-trace shape, one plane, not the Inner 2 stripline), so no EM run was needed. MLIN + VIA +
+MLIN: |S21| within 0.031 dB, ∠S21 within 0.17° at 1.2–6 GHz, with each plane's Johnson–Graham `T` taken
+as the barrel it owns (half the dielectric to each neighbouring conductor). The C error of the term
+itself: 81 fF against 34 fF de-embedded for the whole transition, **+140 %**; Goldfarb–Pucel's 72 pH
+against ~220 pH. They cancel in S21; S11 is −25 dB against −44 dB. Gate 1's premise was wrong: the
+formula tends to `h·[ln(2h/r) − 3/2]`, not Grover's `− 1`. Details in `src/Core/RESOLVED.md`.
+
 ## 7. Decisions for the owner
 
 - **D1** Antipads come from the PCell's own plane patch (consistent with MLIN's plane after this round's fix), not from a

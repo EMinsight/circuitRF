@@ -1,9 +1,10 @@
 // ================================================================
-//  ReadmeSourceLayoutTests.cs — every `src/…` path README.md names actually exists
-//  (brief-automation-5-protocol-adapter.md §7's gate).
+//  ReadmeSourceLayoutTests.cs — every `src/…` path ARCHITECTURE.md names actually exists
+//  (brief-automation-5-protocol-adapter.md §7's gate). The layers, the firewall paragraph and the
+//  source tree moved out of README.md into ARCHITECTURE.md (2026-09-29), and the gate followed them.
 //
-//  README.md describes the source tree in THREE places — the annotated project list under
-//  `## Architecture`, the firewall's own list, and the `## Source layout` tree — and they drift
+//  ARCHITECTURE.md describes the source tree in THREE places — the annotated project list under
+//  `## Layers`, the firewall's own list, and the `## Source layout` tree — and they drift
 //  together. Nothing catches it: a folder that moved leaves three sentences behind, each still
 //  perfectly readable and each now wrong.
 //
@@ -36,7 +37,7 @@ public sealed class ReadmeSourceLayoutTests
                 missing.Add(path);
 
         Assert.True(missing.Count == 0,
-            "README.md's source-layout tree names folders that are not there — and the annotation " +
+            "ARCHITECTURE.md's source-layout tree names folders that are not there — and the annotation " +
             "beside each is therefore stale too:\n  " + string.Join("\n  ", missing));
     }
 
@@ -64,7 +65,7 @@ public sealed class ReadmeSourceLayoutTests
         var undrawn = actual.Where(n => !drawn.Contains(n)).ToArray();
 
         Assert.True(undrawn.Length == 0,
-            "these projects exist under src/ and README.md's source-layout tree does not draw them: " +
+            "these projects exist under src/ and ARCHITECTURE.md's source-layout tree does not draw them: " +
             string.Join(", ", undrawn));
     }
 
@@ -78,7 +79,7 @@ public sealed class ReadmeSourceLayoutTests
     [Fact]
     public void TheFirewallParagraph_NamesEveryProjectTheFirewallGates()
     {
-        string readme = File.ReadAllText(Path.Combine(RepoRoot(), "README.md"));
+        string readme = File.ReadAllText(Path.Combine(RepoRoot(), "ARCHITECTURE.md"));
 
         string gate = File.ReadAllText(Path.Combine(
             RepoRoot(), "tests", "Firewall.Tests", "UiFirewallTests.cs"));
@@ -98,7 +99,7 @@ public sealed class ReadmeSourceLayoutTests
                 : $"`src/{project["CircuitRF.".Length..]}`";
 
             Assert.True(readme.Contains(spelled, StringComparison.Ordinal),
-                $"README.md's firewall paragraph does not name {spelled}, which tests/Firewall.Tests gates.");
+                $"ARCHITECTURE.md's firewall paragraph does not name {spelled}, which tests/Firewall.Tests gates.");
         }
 
         Assert.Contains($"those {Spell(gated.Length)} assemblies", readme, StringComparison.Ordinal);
@@ -106,7 +107,8 @@ public sealed class ReadmeSourceLayoutTests
 
     private static string Spell(int n) => n switch
     {
-        6 => "six", 7 => "seven", 8 => "eight", 9 => "nine", 10 => "ten", _ => n.ToString(),
+        6 => "six", 7 => "seven", 8 => "eight", 9 => "nine", 10 => "ten", 11 => "eleven", 12 => "twelve",
+        _ => n.ToString(),
     };
 
     /// <summary>
@@ -116,10 +118,10 @@ public sealed class ReadmeSourceLayoutTests
     /// </summary>
     private static List<string> SourceLayoutFolders()
     {
-        string readme = File.ReadAllText(Path.Combine(RepoRoot(), "README.md"));
+        string readme = File.ReadAllText(Path.Combine(RepoRoot(), "ARCHITECTURE.md"));
 
         int start = readme.IndexOf("## Source layout", StringComparison.Ordinal);
-        Assert.True(start >= 0, "README.md no longer has a '## Source layout' section.");
+        Assert.True(start >= 0, "ARCHITECTURE.md no longer has a '## Source layout' section.");
 
         int fence = readme.IndexOf("```", start, StringComparison.Ordinal);
         int end   = readme.IndexOf("```", fence + 3, StringComparison.Ordinal);
@@ -146,7 +148,10 @@ public sealed class ReadmeSourceLayoutTests
                 found.Add(path["circuitRF/".Length..]);
         }
 
-        Assert.True(found.Count > 20, $"only {found.Count} src/ folders were read out of the tree.");
+        // A parse check, not a completeness one (that is EveryProjectUnderSrc_IsDrawnInTheSourceLayoutTree):
+        // the tree is a map and was condensed when it moved to ARCHITECTURE.md, but it draws every project.
+        int projects = Directory.GetDirectories(Path.Combine(RepoRoot(), "src")).Length;
+        Assert.True(found.Count >= projects, $"only {found.Count} src/ folders were read out of the tree.");
         return found;
     }
 

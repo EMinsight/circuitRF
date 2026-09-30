@@ -190,8 +190,22 @@ public partial class ParameterEditorViewModel
     private void RefreshMicrostripSubstrate()
     {
         OnPropertyChanged(nameof(IsMicrostripTarget));
+        RefreshViaReadout();
         if (!IsMicrostripTarget)
         {
+            // A via takes the same technology picker, and has its own readout instead of a substrate.
+            if (IsViaTarget)
+            {
+                string? dir = _schematicVm?.EditModel.SchematicDirectory;
+                var viaTech = MicrostripSubstrateInjection.ResolveWorkspaceTechnology(dir);
+                RefreshTechnologyOptions(dir);
+                MicrostripTechnologyText    = viaTech?.Name is { Length: > 0 } vn ? vn : "No technology";
+                MicrostripSubstrateWarning  = "";
+                MicrostripSubstrateResolved = true;
+                NotifyMicrostripSubstrate();
+                RefreshMlinImpedance();
+                return;
+            }
             MicrostripTechnologyText    = "";
             MicrostripSubstrateWarning  = "";
             MicrostripSubstrateResolved = false;

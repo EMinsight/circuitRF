@@ -149,7 +149,7 @@
 //
 // **A PERFECT floor produces no `Ground` at all rather than one whose R is zero**, on the same rule
 // the paragraph above states for `Conductor`: a `+ 0.0` would put a PEC-ground run on the other
-// spelling of γ and move it by an ulp, which is exactly enough to stop `PerfectGround` being an
+// spelling of γ and move it by an ulp, which is exactly enough to stop `WithPerfectGround` being an
 // oracle. And **MIM-4's interior route supplies NO ground term** — `GroundTermSupplied` says so, and
 // `PlanarSolve`'s own calibration note reports the residue rather than leaving it to be assumed.
 //

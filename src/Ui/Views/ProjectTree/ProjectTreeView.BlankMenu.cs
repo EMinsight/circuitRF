@@ -51,6 +51,9 @@ public partial class ProjectTreeView
             "Import a .kicad_pcb board: its stackup, nets, tracks, vias, zone fills and footprints. The file's version is reported, never branched on — every epoch reads."),
         ("Ge_rber…", nameof(WorkspaceViewModel.ImportGerberCommand),
             "Import a Gerber/Excellon file set as one flat cell and a technology of its own. Point at a folder, or at one file and say whether its folder was meant. Vias are rebuilt where the drill data comes too."),
+        // File ▸ Import binds this tip, because it says whether the geometry worker can read a STEP file
+        // on this machine; the menu here is rebuilt on every open, so it reads the same property then.
+        ("_STEP…", nameof(WorkspaceViewModel.ImportStepCommand), "{Binding " + nameof(WorkspaceViewModel.ThreeDImportStepTip) + "}"),
         ("_Component…", nameof(WorkspaceViewModel.ImportComponentCommand),
             "Import a component — its symbol, its land pattern(s) and the pin-to-pad map between them — as one cell. Point at a file or a folder; the folder is scanned for files that can be imported, and the formats read are .kicad_sym, .kicad_mod, .lib and .lbr."),
         ("_PDK…", nameof(WorkspaceViewModel.ImportPdkCommand), null),
@@ -66,6 +69,13 @@ public partial class ProjectTreeView
         ("Wirebond as _Cell…", nameof(WorkspaceViewModel.ImportWirebondAsCellCommand),
             "Create a cell from a .wBond: its wires become the schematic view, its embedded artwork the layout view."),
     ];
+
+    /// <summary>A tip written as File ▸ Import's <c>{Binding Property}</c> is that property's value now;
+    /// any other tip is its own text.</summary>
+    private static string? BoundTip(string tip, WorkspaceViewModel ws)
+        => tip.StartsWith("{Binding ", StringComparison.Ordinal) && tip.EndsWith('}')
+            ? typeof(WorkspaceViewModel).GetProperty(tip["{Binding ".Length..^1].Trim())?.GetValue(ws) as string
+            : tip;
 
     /// <summary>Wires the menu onto the scroller. Called once, from the constructor.</summary>
     private void WireBlankSpaceMenu()
@@ -120,7 +130,7 @@ public partial class ProjectTreeView
                 Command          = (ICommand?)typeof(WorkspaceViewModel).GetProperty(command)?.GetValue(ws),
                 CommandParameter = owner,
             };
-            if (tip is not null) ToolTip.SetTip(sub, tip);
+            if (tip is not null) ToolTip.SetTip(sub, BoundTip(tip, ws));
             import.Items.Add(sub);
         }
 

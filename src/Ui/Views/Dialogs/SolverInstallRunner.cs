@@ -10,7 +10,7 @@ using CircuitRF.Design.Em3d.Install;
 using CircuitRF.Engine;
 using CircuitRF.Ui.Messages;
 
-namespace CircuitRF.Ui.Layout.Em;
+namespace CircuitRF.Ui.Views.Dialogs;
 
 /// <summary>
 /// The GUI's <i>Install …</i> (brief-em3d-24 §0): offered from a 3D run's refusal and from each Settings ▸

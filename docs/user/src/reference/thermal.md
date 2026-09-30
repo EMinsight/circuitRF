@@ -231,7 +231,7 @@ setup's *Mesh ▸ Check* meshes again with every size × 0.7 and reports how far
   wires' resistance, not the transistor.
 - **Time.** There is no transient solver: a pulse's temperatures come from the fitted Z_th in closed form.
 
-## Headless {#headless}
+## From the command line {#headless}
 
 `circuitrf em <view.c3d> --setup <name>` runs a thermal setup exactly as *Run* does, writes `<cell> <setup>.thermal.npy` and the
 temperature field beside it, and prints the probes, the measures and (when asked for) the Rth matrix. `check` validates the

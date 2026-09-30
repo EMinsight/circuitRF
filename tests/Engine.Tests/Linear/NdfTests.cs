@@ -919,6 +919,8 @@ public sealed class NdfTests(ITestOutputHelper output)
         ["MicrostripCrossModel"]  = Activity.Passive,
         ["MicrostripTaperModel"]  = Activity.Passive,
         ["MicrostripKlopfModel"]  = Activity.Passive,
+        ["ViaModel"]              = Activity.Passive,
+        ["ViaGroundModel"]        = Activity.Passive,
         ["ShortModel"]            = Activity.Passive,
         ["IProbeModel"]           = Activity.Passive,
         ["WSProbeModel"]          = Activity.Passive,

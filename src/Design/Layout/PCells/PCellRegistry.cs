@@ -22,6 +22,8 @@ public static class PCellRegistry
             { "MCROSS", MCrossPCell.Generate },
             { "MTAPER", MTaperPCell.Generate },
             { "MKLOPF", MKlopfPCell.Generate },
+            { ViaPCell.GeneratorId,       ViaPCell.Generate       },
+            { ViaPCell.GroundGeneratorId, ViaPCell.GenerateGround },
         };
 
     // ── Resolvers: generators that are not built in ────────────────────────────

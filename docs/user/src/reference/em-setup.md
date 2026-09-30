@@ -761,7 +761,7 @@ There are three ways to start an install, and they all do the same thing:
 
 | Program | macOS (Apple silicon) | Linux | Windows |
 |---|---|---|---|
-| Palace 0.18.1 | yes. It is built from source, which takes about an hour. | yes (arm64 and x64). It is built from source. | yes, inside the Linux subsystem (WSL 2), built from source there (see {{anchor: em-setup.html#palace-windows|Palace on Windows}}). |
+| Palace 0.18.1 | yes. It is built from source, which takes about an hour. | yes (arm64 and x64). It is built from source. | yes, inside the Linux subsystem (WSL 2), built from source there (see [Palace on Windows](em-setup.html#palace-windows)). |
 | Gmsh 4.15.2 | yes, from Gmsh's own archive, in under a minute | x64 only. Gmsh publishes no Linux arm64 build. | yes, from Gmsh's own archive |
 | openEMS 0.37.0-rc3 | yes. It is built by openEMS's own script. | yes. It is built by openEMS's own script. | yes, from openEMS's own archive |
 

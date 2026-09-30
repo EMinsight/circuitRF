@@ -291,7 +291,7 @@ public static class Em3dDrawingSheet
             using (var dots = SKPathEffect.CreateDash([0.6f * k, 2f * k], 0))
             {
                 stroke.PathEffect = dots;
-                canvas.DrawCircle(o, (arm + 8) * k, stroke);
+                canvas.DrawCircleDashSafe(o, (arm + 8) * k, stroke);
                 stroke.PathEffect = null;
             }
             Point3[] axes = [new(1, 0, 0), new(0, 1, 0), new(0, 0, 1)];

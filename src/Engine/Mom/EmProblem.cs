@@ -29,6 +29,18 @@ public readonly record struct EmPoint(double X, double Y)
     public EmPoint LeftNormal  => new(-Y, X);
     /// <summary>The right normal (y, −x) — outward for a CCW-wound polygon.</summary>
     public EmPoint RightNormal => new(Y, -X);
+
+    /// <summary>
+    /// The coordinates, and nothing else. A record prints every public property, and the two normals
+    /// are points too — so the generated <c>ToString</c> printed a normal, which printed ITS normal,
+    /// without end: any assertion message or log line holding a point overflowed the stack and took
+    /// the whole process with it.
+    /// </summary>
+    private bool PrintMembers(System.Text.StringBuilder builder)
+    {
+        builder.Append("X = ").Append(X).Append(", Y = ").Append(Y);
+        return true;
+    }
 }
 
 /// <summary>

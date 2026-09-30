@@ -3460,6 +3460,16 @@ public sealed partial class SchematicViewModel : ObservableObject
         if (MicrostripSubstrateInjection.IsMicrostripKind(kind))
             MicrostripSubstrateInjection.ApplyTechnologyDefaults(comp.Parameters, EditModel.SchematicDirectory, kind);
 
+        // A via's Drill/Pad/Antipad start EMPTY (follow the technology); a value the user types into
+        // one should read in the board's own unit, so the unit is set now and the value left alone.
+        if (ViaSubstrateInjection.IsViaKind(kind))
+        {
+            string unit = MicrostripSubstrateInjection.LengthUnitFor(
+                MicrostripSubstrateInjection.ResolveWorkspaceTechnology(EditModel.SchematicDirectory));
+            foreach (var p in comp.Parameters)
+                if (p.Name is "Drill" or "Pad" or "Antipad" && p.Expression.Length == 0) p.Unit = unit;
+        }
+
         ApplyDefaultFootprint(comp);
 
         // Auto-assign next-free Num for Term/TermG/P1Tone (Num placeholder "1" from DefaultParameters

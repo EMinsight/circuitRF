@@ -140,8 +140,8 @@ public sealed class WorkspaceSessionPersistedOnLeaveTests : IDisposable
         var reload  = MethodBody(revision, "ReloadChangedDocuments");
 
         Assert.Equal(
-            new[] { "cell", "datadisplay", "emsetup", "layout", "markdown", "partlibrary", "schematic", "symbol", "tech" },
-            kinds.Order().ToArray());
+            new[] { "c3d", "cell", "datadisplay", "emsetup", "layout", "markdown", "materials", "partlibrary", "schematic", "symbol", "tech" },
+            kinds.Order(StringComparer.Ordinal).ToArray());
 
         foreach (var kind in kinds)
         {
@@ -169,7 +169,7 @@ public sealed class WorkspaceSessionPersistedOnLeaveTests : IDisposable
         Assert.True(b > a);
 
         return [.. System.Text.RegularExpressions.Regex
-                    .Matches(src[a..b], "\"([a-z]+)\"")
+                    .Matches(src[a..b], "\"([a-z][a-z0-9]*)\"")
                     .Select(m => m.Groups[1].Value)
                     .Distinct()];
     }

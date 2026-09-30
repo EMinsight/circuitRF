@@ -35,7 +35,7 @@ public sealed class ThermalExamplesTests(ITestOutputHelper output) : IDisposable
     [InlineData(Heatsink)]
     [InlineData(Channel)]
     [InlineData(Wires)]
-    public void Gate1_CheckIsClean(string example)
+    public async Task Gate1_CheckIsClean(string example)
     {
         var psi = new ProcessStartInfo("dotnet") { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
         string cliDir = typeof(ThermalExamplesTests).Assembly.GetCustomAttributes(typeof(System.Reflection.AssemblyMetadataAttribute), false)
@@ -45,8 +45,8 @@ public sealed class ThermalExamplesTests(ITestOutputHelper output) : IDisposable
         using var proc = Process.Start(psi)!;
         var outTask = proc.StandardOutput.ReadToEndAsync();
         _ = proc.StandardError.ReadToEndAsync();
-        proc.WaitForExit();
-        using var doc = JsonDocument.Parse(outTask.GetAwaiter().GetResult());
+        await proc.WaitForExitAsync();
+        using var doc = JsonDocument.Parse(await outTask);
         var found = doc.RootElement.GetProperty("diagnostics").EnumerateArray()
             .Where(d => d.GetProperty("severity").GetString() is "error" or "warning")
             .Select(d => d.GetProperty("message").GetString()!).ToList();

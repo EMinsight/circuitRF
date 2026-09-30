@@ -178,7 +178,8 @@ public sealed class ExplainQueryCliVerbTests(ITestOutputHelper output) : IDispos
         var rows = Cells(ExplainJson(ws.CellDir, "--cells"));
         Assert.Single(rows);
         Assert.Equal("Stage1", rows[0].GetProperty("name").GetString());
-        Assert.Equal(3, rows[0].GetProperty("views").GetArrayLength());
+        // One row per view TYPE, present or not — schematic, symbol, layout and, since brief-em3d-41, 3D.
+        Assert.Equal(Enum.GetValues<ViewType>().Length, rows[0].GetProperty("views").GetArrayLength());
     }
 
     // ══ gate 4 — --layers' shape counts agree with a render ═══════════════════════════════════════

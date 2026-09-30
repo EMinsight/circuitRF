@@ -52,6 +52,10 @@ public enum DeviceKind
     /// cross is its terminal COUNT, which the comparison already has.</summary>
     TransmissionLine,
 
+    /// <summary>A plated via placed as a component (<c>VIA</c>, <c>VIAGND</c>) — not an ordinary
+    /// drawn via, which is connectivity and never a device.</summary>
+    Via,
+
     /// <summary>A FET, a HEMT, a bipolar — anything with a control terminal.</summary>
     Transistor,
 
@@ -125,7 +129,7 @@ public static class DeviceTypes
     /// <c>LayoutToSchematicGenerator</c> seeded and now calls.
     /// </summary>
     /// <remarks>
-    /// Six entries, which is every generator that has a schematic counterpart today. R-lvs4-5c
+    /// Eight entries, which is every generator that has a schematic counterpart today. R-lvs4-5c
     /// completes it against <c>PCellRegistry</c> with a test that FAILS THE BUILD on a generator
     /// with no entry, rather than falling back at runtime: a silent fallback here produces two
     /// devices of "unknown" type that then match each other.
@@ -139,6 +143,8 @@ public static class DeviceTypes
             ["MCROSS"] = SymbolKind.MCross,
             ["MTAPER"] = SymbolKind.Mtaper,
             ["MKLOPF"] = SymbolKind.Mklopf,
+            ["VIA"]    = SymbolKind.Via,
+            ["VIAGND"] = SymbolKind.ViaGnd,
         };
 
     /// <summary>The <see cref="SymbolKind"/> <paramref name="generatorId"/> produces, if any.</summary>
@@ -247,6 +253,9 @@ public static class DeviceTypes
             or SymbolKind.MCross or SymbolKind.Mtaper or SymbolKind.Mklopf
             or SymbolKind.Tline
             => DeviceKind.TransmissionLine,
+
+        // Both vias are one kind: which one is told apart by the terminal count, as a tee from a cross.
+        SymbolKind.Via or SymbolKind.ViaGnd => DeviceKind.Via,
 
         SymbolKind.Diode => DeviceKind.Diode,
 

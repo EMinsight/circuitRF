@@ -7,7 +7,7 @@
 //
 //   R-cl7-1  A PERFECT floor is bit-identical to pre-CL7, through `PlanarSolve` rather than through
 //            the kernel — which is what says the move came from the plane and not from something
-//            else in the same commit. `PlanarProblem.PerfectGround` is the spelling, and it is NOT
+//            else in the same commit. `PlanarProblem.WithPerfectGround` is the spelling, and it is NOT
 //            `PlanarFillSettings.PerfectConductor` (that makes the STRIP perfect, CL4 §8).
 //   R-cl7-2  Against kernel A, both surfaces lossy, gating the TERM and never the SHARE.
 //   R-cl7-3  Milestone 0 — where the quasi-static path's γ gets its GROUND term, measured on CL3
@@ -206,10 +206,10 @@ public sealed class GroundReachesAUserTests(ITestOutputHelper output)
             output.WriteLine($"{which}: floor spelled \"{how}\" — {moved}/{total} bits moved so far");
         }
 
-        // PlanarProblem.PerfectGround is the SPELLING the rest of this series measures against, so it
+        // PlanarProblem.WithPerfectGround is the SPELLING the rest of this series measures against, so it
         // is exercised here rather than assumed to be the same thing.
         var viaOracle = PlanarSolve.Run(
-            With(Termination.LossyGround(sigma, t)).PerfectGround, mesh, ports, freqs);
+            With(Termination.LossyGround(sigma, t)).WithPerfectGround(), mesh, ports, freqs);
         for (int k = 0; k < freqs.Length; k++)
         for (int i = 0; i < 2; i++)
         for (int j = 0; j < 2; j++)
@@ -220,7 +220,7 @@ public sealed class GroundReachesAUserTests(ITestOutputHelper output)
             if (BitConverter.DoubleToInt64Bits(viaOracle.Points[k].S[i, j].Imaginary) !=
                 BitConverter.DoubleToInt64Bits(reference.Points[k].S[i, j].Imaginary)) moved++;
         }
-        output.WriteLine($"{which}: PlanarProblem.PerfectGround — {moved}/{total} bits moved in all");
+        output.WriteLine($"{which}: PlanarProblem.WithPerfectGround — {moved}/{total} bits moved in all");
         Assert.Equal(0, moved);
 
         // …and the REAL floor is not that, so the path under test is actually taken. The line's

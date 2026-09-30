@@ -202,7 +202,8 @@ public sealed class FootprintParameterTests : IDisposable
         Assert.Contains("0603", vm.FootprintOptions[vm.FootprintIndex], StringComparison.Ordinal);
         // R-fp2-4b: the row reads its metric twin and its millimetres. A row reading only "0603" is
         // the defect the 2.4x imperial/metric collision is about.
-        Assert.Equal("0603 (metric 1608)   1.60 x 0.80 mm", vm.FootprintOptions[vm.FootprintIndex]);
+        // Round 8 added the series alias a designer may know the body by.
+        Assert.Equal("0603 (metric 1608)   1.60 x 0.80 mm   also 600S", vm.FootprintOptions[vm.FootprintIndex]);
         Assert.Equal(0, vm.FootprintDensityIndex);            // Nominal, pre-selected
         Assert.True(vm.IsFootprintDensityEnabled);
 

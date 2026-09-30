@@ -104,6 +104,9 @@ public static class SymbolArtworkGenerator
         (SymbolKind.MCross,          "mcross",            4),
         (SymbolKind.Mtaper,          "mtaper",            2),
         (SymbolKind.Mklopf,          "mklopf",            2),
+        // The two vias (brief-via-component.md).
+        (SymbolKind.Via,             "via",               2),
+        (SymbolKind.ViaGnd,          "via-gnd",           1),
         (SymbolKind.VerilogA,        "verilog-a",         3),
         (SymbolKind.WBond,           "wbond",             0),
         // The five large-signal FET laws SHARE one glyph and one 3-pin geometry on purpose (the

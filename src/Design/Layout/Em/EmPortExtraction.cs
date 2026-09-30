@@ -394,6 +394,19 @@ public static class EmPortExtraction
                 containing = [own];
             }
 
+            // The same rule on an EDGE. A port exactly on its polygon's boundary — an Edge port at the end of a
+            // trace, which is where the Port tool puts one — is contained by no polygon, so the nearest-boundary
+            // pick took the FIRST level at distance zero and the port's own layer was never read: two ports on
+            // one Metal2 line resolved one to Metal2 and the other, at the far end, to the Metal1 under it.
+            if (poly is not null && containing.Count == 0 && viaLevel is null &&
+                OwnLevel(label, problem, technology) is { } ownAtEdge && ownAtEdge != level &&
+                NearestOn(problem, ownAtEdge, x, y) is { } onOwn &&
+                onOwn.Distance <= BoundaryDistance(poly, x, y) + 1e-12)
+            {
+                poly = onOwn.Poly;
+                level = ownAtEdge;
+            }
+
             if (poly is not null && containing.Count > 1 && viaLevel is null)
             {
                 string portProblem =
@@ -804,6 +817,18 @@ public static class EmPortExtraction
         for (int i = 0; i < problem.Layers.Count; i++)
             if (problem.Layers[i].Name == conductor.Name) return null;
         return conductor;
+    }
+
+    /// <summary>The polygon of level <paramref name="level"/> whose boundary is nearest the point, and how far.</summary>
+    private static (PlanarPolygon Poly, double Distance)? NearestOn(PlanarProblem problem, int level, double x, double y)
+    {
+        (PlanarPolygon Poly, double Distance)? best = null;
+        foreach (var p in problem.Layers[level].Polygons)
+        {
+            double d = BoundaryDistance(p, x, y);
+            if (best is null || d < best.Value.Distance) best = (p, d);
+        }
+        return best;
     }
 
     /// <summary>A polygon of level <paramref name="level"/> that contains the point, or null.</summary>

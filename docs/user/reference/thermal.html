@@ -277,7 +277,7 @@ heat source unless you state it as one.</li>
 wires' resistance, not the transistor.</li>
 <li><strong>Time.</strong> There is no transient solver: a pulse's temperatures come from the fitted Z_th in closed form.</li>
 </ul>
-<h2 id="headless">Headless</h2>
+<h2 id="headless">From the command line</h2>
 <p><code>circuitrf em &lt;view.c3d&gt; --setup &lt;name&gt;</code> runs a thermal setup exactly as <em>Run</em> does, writes <code>&lt;cell&gt; &lt;setup&gt;.thermal.npy</code> and the
 temperature field beside it, and prints the probes, the measures and (when asked for) the Rth matrix. <code>check</code> validates the
 places and the setup, and <code>explain --analysis</code> reports what the run will do — materials and their k, contacts in force,

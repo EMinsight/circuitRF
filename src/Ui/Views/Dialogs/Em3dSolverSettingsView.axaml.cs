@@ -35,12 +35,12 @@ public partial class Em3dSolverSettingsView : UserControl
         Loaded += (_, _) => { RefreshAll(); RefreshLocations(); RefreshKernel(); };
         KernelTitle.Text = GeometryKernel.SettingsTitle;
         // brief-em3d-24 — an install that ends (however it ends) changes what discovery finds.
-        CircuitRF.Ui.Layout.Em.SolverInstallRunner.Finished += OnInstallFinished;
-        CircuitRF.Ui.Layout.Em.SolverRemovalRunner.Finished += OnRemovalFinished;
+        CircuitRF.Ui.Views.Dialogs.SolverInstallRunner.Finished += OnInstallFinished;
+        CircuitRF.Ui.Views.Dialogs.SolverRemovalRunner.Finished += OnRemovalFinished;
         DetachedFromVisualTree += (_, _) =>
         {
-            CircuitRF.Ui.Layout.Em.SolverInstallRunner.Finished -= OnInstallFinished;
-            CircuitRF.Ui.Layout.Em.SolverRemovalRunner.Finished -= OnRemovalFinished;
+            CircuitRF.Ui.Views.Dialogs.SolverInstallRunner.Finished -= OnInstallFinished;
+            CircuitRF.Ui.Views.Dialogs.SolverRemovalRunner.Finished -= OnRemovalFinished;
         };
     }
 
@@ -159,7 +159,7 @@ public partial class Em3dSolverSettingsView : UserControl
                         button.Click += async (_, _) =>
                         {
                             button.IsEnabled = false;
-                            await CircuitRF.Ui.Layout.Em.SolverRemovalRunner.RemoveAsync(
+                            await CircuitRF.Ui.Views.Dialogs.SolverRemovalRunner.RemoveAsync(
                                 u => u.PlanOne(tool, version), TopLevel.GetTopLevel(this) as Window, messages: null,
                                 $"Uninstall {discovery.Name} {version}");
                             button.IsEnabled = true;
@@ -179,7 +179,7 @@ public partial class Em3dSolverSettingsView : UserControl
         RemoveAll.IsEnabled = false;
         try
         {
-            await CircuitRF.Ui.Layout.Em.SolverRemovalRunner.RemoveAsync(
+            await CircuitRF.Ui.Views.Dialogs.SolverRemovalRunner.RemoveAsync(
                 u => u.PlanAll(), TopLevel.GetTopLevel(this) as Window, messages: null, "Remove all 3D solvers");
         }
         finally { RemoveAll.IsEnabled = true; }
@@ -294,7 +294,7 @@ public partial class Em3dSolverSettingsView : UserControl
             Dispatcher.UIThread.Post(() =>
             {
                 ShowStatus(status, text);
-                bool running = CircuitRF.Ui.Layout.Em.SolverInstallRunner.IsRunning(discovery.Tool);
+                bool running = CircuitRF.Ui.Views.Dialogs.SolverInstallRunner.IsRunning(discovery.Tool);
                 install.IsVisible = offer || running;
                 install.IsEnabled = !running;
                 install.Content   = running ? $"Installing {discovery.Name}… (see Messages)" : $"Install {discovery.Name}…";
@@ -378,7 +378,7 @@ public partial class Em3dSolverSettingsView : UserControl
         button.IsEnabled = false;
         try
         {
-            var install = CircuitRF.Ui.Layout.Em.SolverInstallRunner.InstallAsync(tool, TopLevel.GetTopLevel(this) as Window, messages: null);
+            var install = CircuitRF.Ui.Views.Dialogs.SolverInstallRunner.InstallAsync(tool, TopLevel.GetTopLevel(this) as Window, messages: null);
             var (discovery, status, btn, _) = Row(tool);
             Refresh(discovery, status, btn);
             await install;

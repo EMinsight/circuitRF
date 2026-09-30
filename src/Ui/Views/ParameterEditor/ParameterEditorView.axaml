@@ -657,7 +657,7 @@
                      column's — the combo lines up with the SignalLayer / GroundReference combos above
                      it and measures the same, rather than being eyeballed to a fixed 80 px label.
                      Margin 4,2 reproduces the rows' own inset (ItemsControl 4,0 + row Grid 0,2). -->
-                <Grid IsVisible="{Binding IsMicrostripTarget}" Margin="4,2">
+                <Grid IsVisible="{Binding ShowsTechnologyPicker}" Margin="4,2">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition SharedSizeGroup="ParamName"    Width="Auto" MinWidth="40"/>
                         <ColumnDefinition Width="*"                                   MinWidth="50"/>
@@ -667,6 +667,8 @@
                         <ColumnDefinition SharedSizeGroup="ParamRemove"  Width="Auto"/>
                     </Grid.ColumnDefinitions>
                     <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
@@ -742,6 +744,22 @@
                     <TextBlock Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="5"
                                Text="{Binding MlinImpedanceNote}"
                                IsVisible="{Binding HasMlinImpedanceNote}"
+                               FontSize="11" TextWrapping="Wrap" Margin="0,2,0,0"
+                               Foreground="{DynamicResource CrfWarningBrush}"/>
+
+                    <!-- VIA / VIAGND only: what the component is simulated as, computed from the
+                         stackup through the same call a run makes (ParameterEditorViewModel.ViaReadout.cs).
+                         The numbers a designer would otherwise have typed as a hand-built R and L. -->
+                    <TextBlock Grid.Row="4" Grid.Column="0" Text="Model" FontSize="11"
+                               IsVisible="{Binding IsViaTarget}"
+                               Margin="0,4,4,0" VerticalAlignment="Top"/>
+                    <SelectableTextBlock Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="5"
+                               Text="{Binding ViaReadoutText}"
+                               IsVisible="{Binding IsViaTarget}"
+                               FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                    <TextBlock Grid.Row="5" Grid.Column="1" Grid.ColumnSpan="5"
+                               Text="{Binding ViaReadoutNote}"
+                               IsVisible="{Binding HasViaReadoutNote}"
                                FontSize="11" TextWrapping="Wrap" Margin="0,2,0,0"
                                Foreground="{DynamicResource CrfWarningBrush}"/>
                 </Grid>

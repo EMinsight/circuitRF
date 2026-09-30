@@ -55,6 +55,9 @@ public static class InstanceNetContract
         TLineModel or MicrostripLineModel or MicrostripBendModel
             or MicrostripTaperModel or MicrostripKlopfModel                                   => 2,
         MicrostripTeeModel                                                                    => 3,
+        // A signal via is two terminals over the implicit reference, as MLIN is. A via to ground draws
+        // one pin and binds two nets, like Term: the extractor appends "0".
+        ViaModel or ViaGroundModel                                                            => 2,
         MicrostripCrossModel                                                                  => 4,
 
         // The mutual-inductance element names two inductors by parameter, not two nets by position.

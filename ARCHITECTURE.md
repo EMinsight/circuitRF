@@ -106,10 +106,11 @@ hosts that surface and pumps input events. The rendering investment lives in the
 ### The framework firewall
 
 The circuitRF *engines* must be skinnable by any new UI with as little trouble as possible — so
-**`RfCore`, `src/Core`, `src/Engine`, `src/Design`, `src/Render`, `src/Cli`, `src/Diagnostics`,
-`src/Harmonica` and `src/WBond` reference no UI framework at all** (no Avalonia). This is **not** a
-hope; it's an **enforced invariant** — [`tests/Firewall.Tests`](tests/Firewall.Tests) loads each of
-those nine assemblies and fails the build if any references `Avalonia*`.
+**`RfCore`, `src/Core`, `src/Engine`, `src/Design`, `src/Render`, `src/Thermal`, `src/Cli`,
+`src/Cli.Verbs`, `src/Diagnostics`, `src/Harmonica` and `src/WBond` reference no UI framework at all**
+(no Avalonia). This is **not** a hope; it's an **enforced invariant** —
+[`tests/Firewall.Tests`](tests/Firewall.Tests) loads each of those eleven assemblies and fails the
+build if any references `Avalonia*`.
 
 That firewall is why `circuitrf em`, `circuitrf lvs` and `circuitrf render` work from a terminal at
 all: the EM run service, the DRC and LVS engines and the renderers all sit below the line, so the
@@ -147,6 +148,8 @@ circuitRF/
 │  │                              extractors and EmRunService
 │  │                  Schematic/  .csch model, persistence and NetExtractor (EDITOR: src/Ui)
 │  │                  Symbol/  Cells/  Workspace/  RailRf/  Matching/  Revision/  Results/
+│  ├─ Thermal/      The thermal solver (no UI) — steady, transient and small-signal heat flow
+│  │                on the 3D model, electrothermal coupling and the bond wires' own heating
 │  ├─ Render/       The Skia RENDERERS, below the firewall — schematic, symbol, layout and
 │  │                bondwire, their themes, caches and LOD tiers, the .ccolor colour-theme
 │  │                model, and the hit-test / handle / snap / overlay geometry shared with the
@@ -158,7 +161,9 @@ circuitRF/
 │  ├─ Diagnostics/ The coded-diagnostic leaf: an id, typed arguments, an English template
 │  ├─ Harmonica/   harmonicaRF's framework-free half — interactive harmonic loadpull (no UI)
 │  ├─ WBond/       wBond's framework-free half — bondwire geometry + its own 3D MoM (no UI)
-│  └─ Cli/         Headless driver + the engines' test harness (no UI) — docs/design/cli.md
+│  ├─ Cli/         Headless driver + the engines' test harness (no UI) — docs/design/cli.md
+│  └─ Cli.Verbs/   The verbs as a library, compiled from src/Cli in place, so the installed
+│                   circuitRF executable IS the CLI
 ├─ tools/          Programs that are not part of the application (none in circuitRF.slnx):
 │                  DocGen (the user-docs factory), IconGen, the device workers (C), the
 │                  Python PCell host, the release signer, the macOS build VM

@@ -920,10 +920,14 @@ public sealed class MatchRound8Tests(ITestOutputHelper output)
         // 1. Build time — the half that was missing.
         string build = plot[plot.IndexOf("private ContextMenu BuildContextMenu()", StringComparison.Ordinal)..];
         build = build[..build.IndexOf("\n        }", StringComparison.Ordinal)];
-        Assert.Contains("ApplyMenuAvailability();\n\n            return menu;", build, StringComparison.Ordinal);
+        Assert.Contains("RefreshContextMenuState();\n\n            return menu;", build, StringComparison.Ordinal);
+        string refresh = plot[plot.IndexOf("private void RefreshContextMenuState()", StringComparison.Ordinal)..];
+        refresh = refresh[..refresh.IndexOf("\n        }\n", StringComparison.Ordinal)];
+        Assert.Contains("ApplyMenuAvailability();", refresh, StringComparison.Ordinal);
 
-        // 2. Every open.
-        Assert.Contains("menu.Opening +=", build, StringComparison.Ordinal);
+        // 2. Every open — by the right-click that opens the menu by hand, since Avalonia never raises
+        // Opening for a menu opened that way (RefreshContextMenuState's own remark).
+        Assert.Contains("RefreshContextMenuState();\n                    _contextMenu.Open(this);", plot, StringComparison.Ordinal);
 
         // 3. And whenever a host moves either flag after the menu exists.
         Assert.Contains("change.Property == CanDeletePlotProperty", plot, StringComparison.Ordinal);

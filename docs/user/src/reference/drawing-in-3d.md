@@ -38,7 +38,7 @@ parts — through a coaxial connector launching onto a board ([below](#connector
 <li><a href="#wires">Bond wires</a></li>
 <li><a href="#simulate">Simulating</a></li>
 <li><a href="#lid">The lid's resonance</a></li>
-<li><a href="#headless">Headless</a></li>
+<li><a href="#headless">From the command line</a></li>
 <li><a href="#keys">Keys at a glance</a></li>
 <li><a href="#reference">Every control, in detail</a></li>
 </ol>
@@ -999,7 +999,7 @@ notes say so.
   Probes table, and the waveform over one period is in the result. A probe on a heat source converges slowly this way,
   since it has no fit of its own; the run warns when a place had not converged by the band's top.
 
-## Headless {#headless}
+## From the command line {#headless}
 
 Every step above has a command-line spelling, and none of them needs a solver except `em`:
 

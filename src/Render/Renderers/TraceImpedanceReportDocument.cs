@@ -64,6 +64,10 @@ public static class TraceImpedanceReportDocument
             Creator = "circuitRF",
             Title = $"Trace Impedance Analysis — {report.Title}",
             Subject = "Trace impedance review",
+            // The REPORT's time, not the export's: left unset, Skia stamps the wall clock, so exporting
+            // one report twice gave two files, and the export gate failed whenever a second ticked over.
+            Creation = report.CreatedUtc,
+            Modified = report.CreatedUtc,
         };
         using var stream = new SKDynamicMemoryWStream();
         using (var document = SKDocument.CreatePdf(stream, metadata))
@@ -620,7 +624,7 @@ public static class TraceImpedanceReportDocument
                     float half = (float)Math.Max(trace.Stations.FirstOrDefault()?.Width * s ?? 2, 2) / 2 + 2.2f;
                     double len = Math.Max(1e-6, Math.Sqrt(Math.Pow(b.X - a.X, 2) + Math.Pow(b.Y - a.Y, 2)));
                     float nx = (float)(-(b.Y - a.Y) / len * half), ny = (float)((b.X - a.X) / len * half);
-                    if (len < 1) { C.DrawCircle(a, half + 1, span); }
+                    if (len < 1) { C.DrawCircleDashSafe(a, half + 1, span); }
                     else
                     {
                         using var path = new SKPath();

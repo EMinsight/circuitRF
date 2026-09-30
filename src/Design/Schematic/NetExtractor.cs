@@ -2132,6 +2132,32 @@ public static class NetExtractor
             return new Instance(comp.InstanceName, reference, portNets, overrides2);
         }
 
+        // The vias (brief-via-component.md): the layer choices and any dimension left empty are
+        // resolution INPUTS, like a microstrip's SignalLayer — never engine parameters, and an empty
+        // value must not reach the .cnl at all (CnlWriter would write "Key=" and the reader would glue
+        // the next token onto it). What the stackup resolves is appended in their place.
+        if (ViaSubstrateInjection.IsViaKind(comp.Symbol))
+        {
+            overrides2.RemoveAll(o => ViaSubstrateInjection.LayerParams.Contains(o.Name)
+                                      || string.IsNullOrWhiteSpace(o.Expression));
+            for (int i = 0; i < overrides2.Count; i++)
+                if (overrides2[i].Name == "IncludeC")
+                    overrides2[i] = new ParameterAssignment("IncludeC", ViaSubstrateInjection.FlagExpression(overrides2[i].Expression));
+            var via = ViaSubstrateInjection.Build(microstripTech, comp.Symbol, comp.Parameters);
+            overrides2.AddRange(via.Overrides);
+            foreach (var m in via.Messages) warningsOut?.Add($"{comp.InstanceName}: {m}");
+
+            var viaNets = new List<string>();
+            foreach (var def in GetEffectivePortDefs(model, comp, cellRefResolutions))
+            {
+                var (px, py) = model.PortWorldOf(comp, def);
+                viaNets.Add(NetForPort(comp, def.PortIndex, px, py, uf, QK, netNames, detachedKeys));
+            }
+            // A via to ground draws one pin and binds two nets, the far end being the reference.
+            if (comp.Symbol == SymbolKind.ViaGnd) viaNets.Add("0");
+            return new Instance(comp.InstanceName, reference, viaNets, overrides2);
+        }
+
         // R-pc-8: microstrip components get their substrate injected as extra parameter overrides,
         // resolved from the schematic's own workspace technology — the "one parameter list" the
         // user sees (W/L/Angle/...) is untouched; H/T/Er/Sigma/TanD are never declared cell

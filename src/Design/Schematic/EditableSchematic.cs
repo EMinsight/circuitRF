@@ -80,6 +80,10 @@ public static class SymbolPortDefs
             case SymbolKind.Term:    return [("+", 0f, -200f), ("−", 0f, +200f)];
             // TermG: Term's port-1 identity only — port 2 is permanently grounded (not a pin).
             case SymbolKind.TermG:   return [("+", 0f, -200f)];
+            // VIA: vertical, as the barrel is — A on the upper layer at the top, B on the lower one at
+            // the bottom. VIAGND: A only; the ground it lands on is drawn, not a pin.
+            case SymbolKind.Via:     return [("A", 0f, -200f), ("B", 0f, 200f)];
+            case SymbolKind.ViaGnd:  return [("A", 0f, -200f)];
             // Pin: one connection terminal at the lead tip (horizontal, tip on the right).
             case SymbolKind.Pin:     return [("1", 100f, 0f)];
             // IProbe: two terminals at the bottom, 100 apart, both at y=100.

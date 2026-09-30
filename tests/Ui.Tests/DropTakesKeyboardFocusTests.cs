@@ -73,7 +73,7 @@ public class DropTakesKeyboardFocusTests
     }
 
     [Theory]
-    [InlineData("SchematicCanvas.cs",    3)]
+    [InlineData("SchematicCanvas.cs",    4)]   // palette, cell, image file, parts table
     [InlineData("LayoutCanvas.cs",       3)]
     [InlineData("SymbolEditorCanvas.cs", 1)]
     public void EveryDropHandler_TakesKeyboardFocus(string canvas, int expectedHandlers)

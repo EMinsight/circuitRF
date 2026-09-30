@@ -222,7 +222,7 @@ public class EmCoreCountTests
                         StringComparison.Ordinal);
 
         string workspace = File.ReadAllText(RepoFile("src/Ui/ViewModels/WorkspaceViewModel.cs"));
-        Assert.Contains("EmSolveCorePreference.Preferred));", workspace, StringComparison.Ordinal);
+        Assert.Contains("EmSolveCorePreference.Preferred, ConfirmEmMemory", workspace, StringComparison.Ordinal);
     }
 
     // ── helpers ────────────────────────────────────────────────────────────────────────────────

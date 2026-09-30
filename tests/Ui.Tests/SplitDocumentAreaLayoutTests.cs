@@ -420,6 +420,7 @@ public sealed class SplitDocumentAreaLayoutTests
             DocumentOrder           = { "a.csch" },
             ActiveDocument          = "a.csch",
             DocumentRegion          = new CwsDocumentRegion { Documents = { "a.csch" } },
+            LibraryGlyphColumns     = 3,
         };
 
         var merged = DockLayoutDefaults.WithMissingPanelsFilled(source);

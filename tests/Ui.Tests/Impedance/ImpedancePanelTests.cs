@@ -213,9 +213,10 @@ public class ImpedancePanelTests
                 Theme = LayoutRenderTheme.FromTheme(ColorTheme.BuiltIn, ColorVariant.Light),
                 Overlay = overlay,
             });
-        // Skia numbers an SVG's clip-path ids process-wide, so two identical pictures differ there only.
+        // Skia numbers an SVG's clip-path ids process-wide, in HEX, so two identical pictures differ there
+        // only — and an id like cl_2f is one id, which a decimal-only pattern half-masks.
         return System.Text.RegularExpressions.Regex.Replace(
-            Encoding.UTF8.GetString(stream.DetachAsData().ToArray()), @"\bcl_\d+", "cl_");
+            Encoding.UTF8.GetString(stream.DetachAsData().ToArray()), @"\bcl_[0-9a-fA-F]+\b", "cl_");
     }
 
     /// <summary>

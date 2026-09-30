@@ -94,6 +94,8 @@ public static class BuiltInSymbols
     private static readonly Symbol _mcross        = BuildMCross();
     private static readonly Symbol _mtaper        = BuildMtaper();
     private static readonly Symbol _mklopf        = BuildMklopf();
+    private static readonly Symbol _via           = BuildVia();
+    private static readonly Symbol _viaGnd        = BuildViaGnd();
     private static readonly Symbol _termG         = BuildTermG();
     private static readonly Symbol _diode         = BuildDiode();
     private static readonly Symbol _fet           = BuildFet(nChannel: true);
@@ -208,6 +210,8 @@ public static class BuiltInSymbols
             case SymbolKind.MCross:     return _mcross;
             case SymbolKind.Mtaper:     return _mtaper;
             case SymbolKind.Mklopf:     return _mklopf;
+            case SymbolKind.Via:        return _via;
+            case SymbolKind.ViaGnd:     return _viaGnd;
             case SymbolKind.Vdc:        return _vdcSrc;
             case SymbolKind.ToneSource: return _toneSrc;
             case SymbolKind.CurrentToneSource: return _iToneSrc;
@@ -1965,6 +1969,100 @@ public static class BuiltInSymbols
         QC( 90, 20,   0, 15,  -90, 40),
         L(-90,40,  -90,-40),
     ], SymbolKind.Mklopf);
+
+    // ── Vias (brief-via-component.md) — a plated barrel drawn in 3D ──────────────────
+    // A cylinder seen from slightly above, so the reader sees a drilled, plated hole rather than a
+    // box: the top pad is a flat ellipse with the dark drill opening in it, the barrel's two sides run
+    // down from the opening's widest points, a few hairlines on its right-hand side shade the curve,
+    // and the bottom pad is the same ellipse with the half behind the barrel left out. Every ellipse
+    // is SAMPLED into a polyline rather than drawn as an EllipsePrimitive, because the renderer draws
+    // an ellipse axis-aligned whatever the instance's rotation, and a via turned to sit in a
+    // horizontal run would then draw its pads the wrong way round.
+    //
+    // View: ry/rx = 0.325 for every ellipse, one viewpoint for the whole drawing. Barrel radius 40,
+    // pad radius 80, pads at y = ±100. Pins on the grid at (0, ±200), as every vertical two-terminal is.
+
+    private const double ViaBarrelR = 40, ViaPadR = 80, ViaPadY = 100, ViaFlatten = 0.325;
+
+    /// <summary>Points of the ellipse (cx, cy, rx, rx·<see cref="ViaFlatten"/>) from angle
+    /// <paramref name="fromDeg"/> to <paramref name="toDeg"/>, measured from +x toward +y (DOWN, so 0→180
+    /// is the FRONT half). Endpoints included.</summary>
+    private static double[] EllipseArc(double cx, double cy, double rx, double fromDeg, double toDeg, int segments)
+    {
+        var xy = new double[(segments + 1) * 2];
+        for (int i = 0; i <= segments; i++)
+        {
+            double a = (fromDeg + (toDeg - fromDeg) * i / segments) * Math.PI / 180.0;
+            xy[2 * i]     = Math.Round(cx + rx * Math.Cos(a), 3);
+            xy[2 * i + 1] = Math.Round(cy + rx * ViaFlatten * Math.Sin(a), 3);
+        }
+        return xy;
+    }
+
+    private static PolylinePrimitive Thin(PolylinePrimitive p) { p.StrokeTier = SymbolStrokeTier.Thin; return p; }
+
+    /// <summary>The top pad, its drill opening, and the barrel's sides and shading down to
+    /// <paramref name="barrelBottomY"/> — shared by both vias, which differ only in where the barrel
+    /// ends.</summary>
+    private static List<SymbolPrimitive> ViaTopAndBarrel(double barrelBottomY)
+    {
+        double top = -ViaPadY;
+        var prims = new List<SymbolPrimitive>
+        {
+            PLine(EllipseArc(0, top, ViaPadR, 0, 360, 48)),                   // top pad, whole
+            Poly(true, EllipseArc(0, top, ViaBarrelR, 0, 360, 32)),           // the drill opening, dark
+            L(-ViaBarrelR, top, -ViaBarrelR, barrelBottomY),                  // barrel sides
+            L( ViaBarrelR, top,  ViaBarrelR, barrelBottomY),
+        };
+        // Shading: hairlines on the right-hand side of the barrel, closer together toward the edge,
+        // each running between the front edges of the opening and of the barrel's lower end.
+        foreach (double x in new[] { 18.0, 27.0, 33.0 })
+        {
+            double dy = ViaBarrelR * ViaFlatten * Math.Sqrt(1 - x * x / (ViaBarrelR * ViaBarrelR));
+            prims.Add(Thin(PLine(x, Math.Round(top + dy, 3), x, Math.Round(barrelBottomY + dy, 3))));
+        }
+        return prims;
+    }
+
+    private static Symbol BuildVia()
+    {
+        double bottom = ViaPadY;
+        // The back half of the bottom pad (180°..360°) passes behind the barrel where |x| < barrel
+        // radius: between 180° + h and 360° − h, h = acos(barrel/pad) = 60°.
+        double h = Math.Acos(ViaBarrelR / ViaPadR) * 180.0 / Math.PI;
+        var prims = ViaTopAndBarrel(bottom);
+        prims.Add(PLine(EllipseArc(0, bottom, ViaBarrelR, 0, 180, 16)));         // barrel's lower rim, front half
+        prims.Add(PLine(EllipseArc(0, bottom, ViaPadR, 0, 180, 24)));            // bottom pad, front half
+        prims.Add(PLine(EllipseArc(0, bottom, ViaPadR, 180, 180 + h, 8)));       // its back, left of the barrel
+        prims.Add(PLine(EllipseArc(0, bottom, ViaPadR, 360 - h, 360, 8)));       // and right of it
+        prims.Add(L(0, -200, 0, -ViaPadY - ViaBarrelR * ViaFlatten));           // lead A drops into the opening
+        prims.Add(L(0, bottom + ViaPadR * ViaFlatten, 0, 200));                  // lead B leaves the bottom pad
+        return Sym(prims, SymbolKind.Via);
+    }
+
+    // VIAGND: the same barrel landing on a ground plane — a square plane seen at 45°, which the same
+    // viewpoint draws as a flat diamond — with the ground mark under its front corner. The plane's
+    // back edges are left out where the barrel stands in front of them.
+    private static Symbol BuildViaGnd()
+    {
+        const double planeY = 90, halfW = 150;
+        double halfD = halfW * ViaFlatten;                       // 48.75: the diamond's depth
+        var prims = ViaTopAndBarrel(planeY);
+        prims.Add(PLine(EllipseArc(0, planeY, ViaBarrelR, 0, 180, 16)));   // where the barrel meets the plane
+        // Plane: front edges whole; back edges broken where the barrel hides them (|x| < barrel radius).
+        double backAt(double x) => planeY - halfD * (1 - Math.Abs(x) / halfW);
+        prims.Add(PLine(-halfW, planeY, 0, planeY + halfD, halfW, planeY));
+        prims.Add(PLine(-halfW, planeY, -ViaBarrelR, Math.Round(backAt(ViaBarrelR), 3)));
+        prims.Add(PLine( ViaBarrelR, Math.Round(backAt(ViaBarrelR), 3), halfW, planeY));
+        // The ground mark, under the plane's front corner.
+        double g = planeY + halfD;                                // 138.75
+        prims.Add(L(0, g, 0, 165));
+        prims.Add(L(-60, 165, 60, 165));
+        prims.Add(L(-38, 182, 38, 182));
+        prims.Add(L(-16, 199, 16, 199));
+        prims.Add(L(0, -200, 0, -ViaPadY - ViaBarrelR * ViaFlatten));      // lead A drops into the opening
+        return Sym(prims, SymbolKind.ViaGnd);
+    }
 
     // ── Tuner — compact almost-square termination, single left pin ────────────
     // 220 × 200 box (edges ±110 / ±100) — nearly square. Advanced users want a small footprint,

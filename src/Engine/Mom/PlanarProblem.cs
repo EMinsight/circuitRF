@@ -258,7 +258,11 @@ public sealed record PlanarProblem(
     /// <para>It reaches no <c>.cem</c> key, no <c>EmSetupPersistence</c> field and no UI
     /// control — series overview §5.</para>
     /// </summary>
-    public PlanarProblem PerfectGround => this with
+    ///
+    /// <para><b>A method, not a property</b> (2026-09-30): a record prints every public property, and
+    /// this one builds a new problem each time it is read, whose own printout reads it again — so the
+    /// generated <c>ToString</c> recursed until the stack overflowed.</para>
+    public PlanarProblem WithPerfectGround() => this with
     {
         Slab        = Slab with { Floor = Termination.Pec },
         MediumStack = MediumStack is null

@@ -3330,3 +3330,32 @@ class's folder is swapped in between writing a fake worker and asking the resolv
 refusal never comes; alone it passes in 7 ms. They now share `DeviceWorkerToolsDirectoryCollection`
 (`DisableParallelization = true`), the same remedy `ExternalProviderRegistryCollection` applies to the
 registry. Engine.Tests' two such classes were already grouped.
+
+## VIA and VIAGND: a via's L, R and C in closed form (brief-via-component, 2026-09-30)
+
+`ViaModel` (VIA, 2 nets over the implicit reference, as MLIN) and `ViaGroundModel` (VIAGND, one pin, 2 nets
+like `Term`: the extractor appends `0`), both `ModelKind.Linear`, stamped as an exact 2×2 / 1×1 nodal
+admittance each frequency — no internal node, so a T with no capacitance is still finite. Every formula is
+in `Devices/ViaFormulas.cs` with its source.
+
+- **Goldfarb–Pucel does NOT tend to Grover's surface form.** The brief expected `h·[ln(2h/r) − 1]` for
+  `h ≫ r`; the paper's `1.5·(r − √(r²+h²))` tends to `h·[ln(2h/r) − 3/2]`, half a barrel length of µ₀/2π
+  below it. The exact tube form (`GroverTubeInductance`) differs from Goldfarb–Pucel by exactly
+  `½(√(r²+h²) − r)`, which is what `ViaFormulasTests` holds instead. railRF's `PdnInductance` is untouched.
+- **A solid barrel's skin onset uses `t = r/2`.** That is the one choice for which `R_dc·√(1+f/f_δ)` has
+  both the rod's DC value and its surface resistance `h/(σ·2πr·δ)` as limits.
+- **Johnson–Graham per plane.** Their `T` is a barrel length (C ∝ T). Each plane gets the barrel it owns:
+  half the dielectric to the neighbouring conductor on each side. Against the committed Palace solve of
+  `testdata/em3d/f0/B-via` that puts ∠S21 within 0.2° and |S21| within 0.03 dB to 6 GHz; the whole
+  neighbouring dielectric (400 µm) was 4° out. The individual values are NOT right: de-embedding the
+  lines leaves 34 fF of shunt C (both pads) where the term gives 81 fF, and ~220 pH (port sheets
+  included) where Goldfarb–Pucel gives 72 pH. They cancel in S21 and add in S11 (−25 dB vs −44 dB).
+- **One validity warning per instance**, keyed by instance path, the first time a stamp frequency exceeds
+  `c/(20·ℓ·√εr_max)` over the whole drill. The preliminary topology pass stamps at a swept frequency
+  (TLIN's fix), so it cannot burn the latch.
+- **Plane lists ride as indexed parameters** (`Planes`, `Tp1`, `Erp1`…; the stubs' as `Hstub`/`StubPlanes`
+  and `HstubA`/`StubAPlanes`) because a `.cnl` parameter is one value. A plane with no stated thickness
+  takes `H/2`; an absent antipad is the pad + 0.3 mm (no technology states one).
+
+Gates: `tests/Core.Tests/Devices/ViaFormulasTests.cs`, `tests/Engine.Tests/Devices/ViaSParamTests.cs`
+(hand-built RLC T to 1e-9, the Palace comparison, the one warning).

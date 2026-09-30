@@ -164,7 +164,7 @@ public class EmMessageLevelRoutingSourceTests
     private static string RunEmSetupBody()
     {
         string src = ReadRepoFile("src/Ui/ViewModels/WorkspaceViewModel.cs");
-        int start = src.IndexOf("private async Task RunEmSetupAsync", StringComparison.Ordinal);
+        int start = src.IndexOf("private async Task<bool> RunEmSetupAsync(", StringComparison.Ordinal);
         Assert.True(start >= 0, "RunEmSetupAsync not found — was it renamed?");
         int end = src.IndexOf("\n    private ", start + 1, StringComparison.Ordinal);
         if (end < 0) end = src.Length;

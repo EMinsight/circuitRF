@@ -34,6 +34,7 @@ reference/history.html          | Everything circuitRF has kept of a workspace: 
 == Design
 reference/schematic-editor.html    | Drawing a circuit: the palette, placing and wiring, and setting up the analysis that runs it.
 reference/components.html          | Every component in the standard library: symbol, purpose and parameters.
+reference/vias.html                | VIA and VIAGND: a via's L, R and C from the stackup, the formulas, and how they compare with a 3D solve.
 reference/spice-import.html        | Importing a SPICE .model card or .subckt: what is carried, what is not, and why.
 reference/system-components.html   | The ideal blocks a system diagram is drawn out of, and where passive intermod comes from.
 reference/dynamic-symbols.html     | Components whose symbol changes with their parameters.

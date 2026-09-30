@@ -41,7 +41,7 @@ public sealed record SubstrateResolutionFailure(string Reason);
 /// LOGIC only; the caller (a UI-layer piece for the schematic side, or the PCell artwork
 /// generators directly) supplies the already-loaded <see cref="Technology"/>.
 /// </summary>
-public static class SubstrateResolver
+public static partial class SubstrateResolver
 {
     private const long FallbackDbuPerMicron = LayoutUnits.DefaultDbuPerMicron;
 

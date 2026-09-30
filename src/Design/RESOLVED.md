@@ -15734,3 +15734,43 @@ Two traps found on the way, both of which made the setting do nothing where it w
 Gates: `TraceImpedanceAnalysisTests.ATraceIntoAPadALittleWiderThanIt_LeavesThePadOff`,
 `TraceImpedanceAnalysisTests.TheAntipadRoundAVia_IsNotFlagged_WithinTheViaTransition_AndIsNoted`
 (barrel-only via, so it holds the landing-layer trap too), `MapLabelPlacerTests`.
+
+## VIA and VIAGND: resolved from the stackup, drawn, and cut out of the pour (brief-via-component, 2026-09-30)
+
+- **`SubstrateResolver.ResolveViaSpan`** (`Layout/PCells/SubstrateResolver.Via.cs`, the class is now
+  `partial`) is the one stackup walk: barrel length mid-plane to mid-plane (the brief's D2), the via entry
+  whose span covers both conductors with the SHORTEST span first (so a blind Top–Inner 1 drill beats the
+  through hole), stubs past either end, every ground plane passed with the barrel it owns, σ (the via
+  entry's own is 0 on the shipped 4-layer, so From's copper), fill, wall. A via entry naming no span is
+  a through hole, as `GroundPourPlanner` already read it. An unnamed ToLayer is the farthest conductor a
+  drill reaches that is not a ground plane — Inner 2 on the 4-layer board, not the Bottom plane.
+- **`ViaSubstrateInjection`** is MLIN's seam for vias. Every row may be EMPTY (follow the technology);
+  `NetExtractor`'s via branch drops the layer names and every empty row before they can reach the `.cnl`
+  (an empty value is the `Key=` trap in `src/Core/CLAUDE.md`), appends the resolved overrides, and posts
+  the defaults the technology does not state by name. `Evaluate` builds the model through the factory for
+  the parameter editor's readout, so the readout cannot describe a different via from the run.
+- **`ViaPCell`** (ids `VIA`, `VIAGND`): the drill on the entry's layer, a pad on From and To only (D4), both
+  pins at the origin one per layer. The layer names reach it as TEXT parameters —
+  `SchematicToLayoutGenerator` would otherwise push them through the numeric resolver and skip the
+  instance — and `IncludeC`/`C` are kept out (the first is not a number).
+- **Antipads come from the pour (D1 as round 10 settled it).** A plane patch per via would overlap the
+  lines' pour. `GroundPourPlanner` now reads placed VIA/VIAGND instances from their snapshots, resolves
+  them through the same `ViaPCell.Resolve`, and cuts each one's own `Antipad` from every plane its DRILL
+  passes (a stub's end plane included) and does not land on; a VIAGND on its plane is counted as joined.
+- **LVS:** `DeviceKind.Via` (letter `V`), and `VIA`/`VIAGND` in the generator map. The layout reading
+  keeps the barrel inside the device, so a laid-out MLIN–VIA–MLIN is two nets, not one (gate:
+  `ViaComponentTests.MlinViaMlin_LaidOut_ConnectsEachSide_AndThePlaneTakesTheAntipad`).
+- **The VIAGND pad term is taken over the dielectric to a plane that has no clearance.** Johnson–Graham
+  presumes one. It is what the brief asked for and is labelled an upper estimate on the help page
+  (0.88 pF on the shipped 70 mil FR-4); a parallel-plate reading of the same pad is a few femtofarads.
+
+Gates: `tests/Ui.Tests/ViaComponentTests.cs`.
+
+## `CellStat.Calls` counts the caller's own calls (2026-09-30)
+
+The exact-count gates (`SharedLibraryConcurrencyTests`, `BrokenInstanceVisibilityTests`, `TreeMoveRedirectTests`)
+bracket one edit with `ResetCalls()`/`Calls`. The counter was process-wide, and `CellStatGlobalsCollection` only keeps
+those classes off EACH OTHER — any other class resolving a cell reference at the same moment still added to it (41 for
+40). `ResetCalls` now also installs an `AsyncLocal<StrongBox<long>>` for the caller's execution context, which flows
+into any task the edit starts, and `Calls` reads that box when one exists. The global total is still kept and still
+zeroed, so nothing else changes.

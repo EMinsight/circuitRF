@@ -1227,10 +1227,12 @@ public sealed class SchematicCanvas : Control
 
     private void OnPartsTableDrop(object? _, DragEventArgs e)
     {
+        // First, before any early return: the drop finished a gesture on this canvas whatever it
+        // carried (DropTakesKeyboardFocusTests), as every other drop handler here does.
+        TakeKeyboardFocus();
         if (e.Handled) return;
         var path = TryExtractPath(e, IsPartsTableExtension);
         if (path is null || _editContext is null) return;
-        TakeKeyboardFocus();
         e.Handled = true;
 
         string? text;

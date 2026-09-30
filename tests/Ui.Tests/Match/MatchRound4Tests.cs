@@ -613,8 +613,12 @@ public sealed class MatchRound4Tests(ITestOutputHelper output)
         // and dimming the item as well as disabling it, because the theme's :disabled greys the
         // header text and leaves the icon at full colour.
         string plot = Src("src", "Ui", "DataDisplay", "Controls", "PlotControl.cs");
-        var opening = Between(plot, "menu.Opening +=");
-        Assert.Contains("ApplyMenuAvailability()", opening, StringComparison.Ordinal);
+        // "Every open" is the right-click that opens the menu by hand: Avalonia raises Opening only for
+        // a menu it opens as a control's ContextMenu property, so an Opening handler here never ran
+        // (PlotControl.RefreshContextMenuState's own remark). The refresh re-applies the availability.
+        Assert.Contains("RefreshContextMenuState();\n                    _contextMenu.Open(this);", plot, StringComparison.Ordinal);
+        var refresh = Between(plot, "private void RefreshContextMenuState()");
+        Assert.Contains("ApplyMenuAvailability()", refresh, StringComparison.Ordinal);
 
         var apply = Between(plot, "private void ApplyMenuAvailability()");
         Assert.Contains("CanEditPlotProperties", apply, StringComparison.Ordinal);

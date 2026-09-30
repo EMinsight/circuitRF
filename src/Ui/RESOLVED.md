@@ -38348,3 +38348,80 @@ Inspector emptied. `ChangePlots` and `ApplyPlotRecords` now note the selected pl
 plot count before the change. `PlotsChanged` then reselects the plot in that place when the old name is gone
 and the count is unchanged. A deleted plot is not replaced by its neighbour. Gate:
 `FieldPlotTests.ARenamedPlot_StaysSelected_ThroughUndoAndRedo`.
+
+## Whole-suite pass, 2026-09-30: 28 failures and 4 warnings, sorted into real faults and stale gates
+
+A full non-benchmark run after the VIA component (brief-via-component) had 1 Engine and 27 Ui failures and
+a Ui test-host crash; the build had 4 warnings, all in tests. None of the faults below is a via.
+
+**Real faults, fixed in the code**
+- **The palette's glyph columns were saved and then dropped on restore.** `DockLayoutDefaults.WithMissingPanelsFilled`
+  is a hand copy and did not copy `LibraryGlyphColumns` — the omission its own comment warns about. The reflection
+  gate could not see it because its fixture never set the field; it does now.
+- **The Project Tree's Import submenu had no STEP….** File ▸ Import did. `ProjectTreeView.ImportItems` now has it; its
+  tip is File ▸ Import's `{Binding ThreeDImportStepTip}`, read from the workspace when the menu opens (the menu is
+  rebuilt on every open).
+- **A parts-table drop could return before taking the keyboard** (`SchematicCanvas.OnPartsTableDrop`), the rule every
+  other drop handler follows.
+- **The trace-impedance PDF carried the export's wall-clock time**, so two exports of one report differed and the
+  byte-identity gate failed whenever a second ticked over. It now carries the report's `CreatedUtc`.
+- **Two dashed paints reached bare `DrawCircle`** (`Em3dDrawing` axis ring, `TraceImpedanceReportDocument` short
+  span): the SVG device drops the dash and prints "Unsupported path effect in addPaint.". Now `DrawCircleDashSafe`.
+- **Three shipped materials stated no frequency for their permittivity** (SiC, GaN, CVD diamond; the gate asks every
+  εr to). Each now says it holds from DC to well above 100 GHz, which is the physics (the dispersion is infrared).
+  The three example copies of `generic-materials.cmat` carry the same sentence.
+- **ARCHITECTURE.md's firewall paragraph named nine assemblies; the gate holds eleven** (`src/Thermal`,
+  `src/Cli.Verbs`). Both are now in the paragraph and the tree. The source-layout gate followed the section from
+  README.md to ARCHITECTURE.md, and its ">20 folders" parse check became "one per project", since the moved tree is
+  deliberately a condensed map.
+- **A table cell holding `{{anchor: x|y}}` splits at its `|`** (em-setup, settings, vias): those cells use plain
+  Markdown links.
+
+**Stale gates, brought up to the code**
+- Source scans that lost their anchor to a deliberate change: `RunEmSetupAsync` now returns `Task<bool>`; the plot
+  menu's `Opening` hook was removed on purpose (3b142079 — Avalonia never raises it for a hand-opened menu) and the
+  refresh runs at build and just before `Open`; the EM core preference is followed by `ConfirmEmMemory`.
+- Committed lists behind the code: 32 CLI diagnostic ids from the 3D and solver-install work; the `materials` and
+  `c3d` restorable kinds (the kind regex was `[a-z]+`, so **`c3d` had never been checked at all**); the Settings
+  "3D EM" tab; the footprint row's round-8 alias; `explain --cells` reporting the 3D view type (now read off the enum).
+- The impedance-overlay SVG comparison masked clip ids as decimal; Skia writes them in hex.
+- `TechValidation` warns about an inner conductor with no drawing layer (the railRF Gerber work), which the MIM import
+  fixture's `Plate` is. The test now asserts that is the only thing validation says, rather than nothing.
+- **HarmonicaBackdropCacheTests at 2× with a fractional transform is bounded, not bit-exact.** The cached layer is
+  rasterised with the live matrix less an integer device shift: exact in real arithmetic, not in float, and one grid
+  arc came out 1–2 levels apart on 15 of 921,600 pixels. The bound (≤ 2/255, ≤ 0.01 % of pixels) still fails the
+  resampling defect the gate was written for (~5 %, up to 199 levels) by three orders of magnitude. The 1× case
+  stays bit-exact.
+
+**Load-dependent, fixed at the root:** `CellStat.Calls` was process-wide, so an exact-count gate read 41 for a 40-call
+edit when any other class stat'ed a cell at that moment — the collection serialised only its members. `ResetCalls`
+now opens an `AsyncLocal` counter for the caller's execution context (see `src/Design/RESOLVED.md`).
+
+**The test-host crash was a stack overflow in the engine**, not a Ui fault: `EmPoint`'s generated `ToString`
+recursed through its own normals (`src/Engine/RESOLVED.md`). It aborted Ui.Tests part-way in both runs, so every
+result after it was simply missing.
+
+**Behind the crash, 5,224 more tests had never run, and ten of them failed:**
+- **An edge port ignored its own level** (`EmPortExtraction`, in `src/Design`). A port exactly on its polygon's
+  boundary — an Edge port at a trace end, where the Port tool puts one — is contained by no polygon, so the
+  nearest-boundary pick took the first level at distance zero and never read the port's committed `PortLayer`:
+  of two ports on one Metal2 line over Metal1, the far one resolved to Metal1. The own-level rule now applies
+  at an edge too, where the own level's boundary is as near.
+- **Two Avalonia files sat in `src/Ui/Layout/Em`**, which must stay framework-free (R-em-1): the solver
+  install/removal runners. They drive dialogs, so they moved to `src/Ui/Views/Dialogs` beside the dialogs they
+  drive (namespace `CircuitRF.Ui.Views.Dialogs`).
+- **The LVS example's MMIC technology had fallen behind the shipped one** (briefs em3d-53/73 added its material
+  library and thermal tables). The example now carries the shipped file byte for byte, and the
+  `generic-materials.cmat` it names, as the thermal examples do.
+- `EmRunInFlightGuardTests` scanned for the old `RunEmSetupAsync` signature (the same change as above).
+- **The generated docs were behind their sources** — the vias page and figures, the Help anchors
+  `components.html#via`/`#viagnd`, the search index. DocGen was run (at the end of this series, the owner's rule).
+  Two sources were fixed on the way: em-solvers' hand-drawn figure named `var(--font-sans)` in an SVG
+  presentation attribute, where a CSS variable does not resolve (so it fell back to a default face) — it now names
+  `IBM Plex Sans`; and the "is this path data?" heuristic of `TheSearchIndexCarriesProseAndNotFigureGeometry`
+  flagged the smith-chart page's E12 list, "1.0, 1.2, 1.5, …" — it now wants two or more decimals, which path data
+  has and a list of preferred values does not. The 3D and thermal pages' "Headless" sections are titled "From the
+  command line" (ids unchanged), so a search for *headless* reaches the CLI chapter again.
+
+**The four warnings** were test-only. One was a real slip: `(text, _, q) => …(…, out _, q)` — in a lambda with a
+parameter named `_`, `out _` is that PARAMETER, not a discard, so the call wrote into it (CS8600).

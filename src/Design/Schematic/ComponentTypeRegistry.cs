@@ -693,6 +693,16 @@ public static class ComponentTypeRegistry
             Category: ComponentCategory.Microstrip,
             SearchTerms: ["MKLOPF", "klopfenstein", "klopfenstein taper", "taper", "impedance transformer"],
             ExtraCategories: [ComponentCategory.TransmissionLine]),
+        // The two vias (brief-via-component.md). Microstrip, because that is where they are used: a
+        // line changing layers, and the return of a shunt part on a board. Not transmission lines.
+        [SymbolKind.Via]          = new("VIA", "VIA",
+            Category: ComponentCategory.Microstrip,
+            SearchTerms: ["VIA", "via", "plated through hole", "PTH", "through hole", "layer change",
+                          "layer transition", "barrel", "blind via", "stub", "Goldfarb", "Pucel"]),
+        [SymbolKind.ViaGnd]       = new("VIAGND", "VIAG",
+            Category: ComponentCategory.Microstrip,
+            SearchTerms: ["VIAGND", "via", "ground via", "via to ground", "grounding via", "shunt",
+                          "return", "pad capacitance", "plated through hole"]),
     };
 
     /// <summary>Returns the full metadata for a SymbolKind; falls back to a generic entry if unknown.</summary>
@@ -862,6 +872,13 @@ public static class ComponentTypeRegistry
         SymbolKind.Mklopf =>
             "Not interchangeable: terminal 1 is the Z1 end and terminal 2 the Z2 end.",
 
+        SymbolKind.Via =>
+            "Terminal A lands on FromLayer and terminal B on ToLayer. Swapping them swaps which "
+          + "layer each end is on, and which end a stub hangs from when the drill runs past a layer.",
+
+        SymbolKind.ViaGnd =>
+            "One terminal, A, on FromLayer. The far end is ground: the via lands on GroundLayer.",
+
         SymbolKind.Match =>
             "Not interchangeable: terminal 1 is the R1 side and terminal 2 the R2 side. The "
           + "synthesised ladder is stored R1-first, so swapping the two reverses every asymmetric "
@@ -986,6 +1003,8 @@ public static class ComponentTypeRegistry
         SymbolKind.MCross        => "MCROSS",
         SymbolKind.Mtaper        => "MTAPER",
         SymbolKind.Mklopf        => "MKLOPF",
+        SymbolKind.Via           => "VIA",
+        SymbolKind.ViaGnd        => "VIAGND",
         SymbolKind.Diode         => "Diode",
         SymbolKind.VerilogA      => "VerilogA",
         // Lower-case 'w' on purpose: ComponentModelFactory registers the type as "wBond" and its
@@ -1126,6 +1145,7 @@ public static class ComponentTypeRegistry
         => kind is SymbolKind.Mixer or SymbolKind.MixerD ? MixerParameterDescription(parameterName)
          : kind is SymbolKind.Duplexer ? DuplexerParameterDescription(parameterName)
          : SystemBlockParameterDescription(kind, parameterName) is { Length: > 0 } sysDesc ? sysDesc
+         : ViaParameterDescription(kind, parameterName) is { Length: > 0 } viaDesc ? viaDesc
          : kind is not SymbolKind.VerilogA ? "" : parameterName switch
         {
             "File"  => "The model to load: a compiled model (.osdi), or Verilog-A source (.va, .vams) "
@@ -1141,6 +1161,33 @@ public static class ComponentTypeRegistry
                       + "result small.",
             _       => "",
         };
+
+    /// <summary>The vias' parameter meanings (brief-via-component.md). Each says what an EMPTY row does,
+    /// because empty is the default and it is not the same thing as zero.</summary>
+    private static string ViaParameterDescription(SymbolKind kind, string parameterName)
+    {
+        if (kind is not (SymbolKind.Via or SymbolKind.ViaGnd)) return "";
+        return parameterName switch
+        {
+            "FromLayer"   => "The conductor terminal A lands on. Default: the top conductor.",
+            "ToLayer"     => "The conductor terminal B lands on. Default: the farthest conductor a drill reaches "
+                           + "from FromLayer that is not a ground plane. A drill that runs on past it leaves a stub, "
+                           + "which is modelled.",
+            "GroundLayer" => "The ground plane the via lands on. Default: the nearest ground-designated conductor "
+                           + "beneath FromLayer.",
+            "Drill"       => "The finished hole diameter. Empty: the technology's via drill, else 0.3 mm.",
+            "Pad"         => "The pad diameter on each end. Empty: the technology's via pad, else 0.6 mm.",
+            "Antipad"     => "The clearance diameter in every ground plane the barrel passes. Empty: the pad "
+                           + "plus 0.3 mm. No technology states one, so the run names it as a default.",
+            "Plating"     => "The barrel wall thickness. Empty: the via layer's own, else 25 µm. Ignored for a "
+                           + "filled via.",
+            "IncludeC"    => "Whether the pad-to-plane capacitance is modelled. With it off the via is its "
+                           + "barrel's resistance and inductance only.",
+            "C"           => "Replaces the computed capacitance outright. Empty: computed from the pad, the "
+                           + "antipad and the dielectric, which is an estimate (see the component's help).",
+            _             => "",
+        };
+    }
 
     /// <summary>
     /// The mixer's parameter meanings. Kept out of the switch above because it is the one component
@@ -2584,6 +2631,21 @@ public static class ComponentTypeRegistry
                         new("SmoothSteps", "1", "", true, UnitDimension.None),
                         .. SignalGroundLayerParams];
 
+            // VIA / VIAGND (brief-via-component.md). Every row may be left EMPTY, which means "follow
+            // the technology": the layers default from the stackup, Drill and Pad from the technology's
+            // own via defaults, Plating from the via layer's wall. Whatever the technology does not
+            // state takes circuitRF's default and the run's Messages NAME it (ViaSubstrateInjection).
+            // The barrel length, materials and the planes it passes are never parameters: they are
+            // resolved from the stackup and injected at extraction, as a microstrip's substrate is.
+            case SymbolKind.Via:
+                return [new(ViaSubstrateInjection.FromLayerParam, "", "", false, UnitDimension.None),
+                        new(ViaSubstrateInjection.ToLayerParam,   "", "", false, UnitDimension.None),
+                        .. ViaDimensionParams];
+            case SymbolKind.ViaGnd:
+                return [new(ViaSubstrateInjection.FromLayerParam,   "", "", false, UnitDimension.None),
+                        new(ViaSubstrateInjection.GroundLayerParam, "", "", false, UnitDimension.None),
+                        .. ViaDimensionParams];
+
             // Ground/Generic need no default parameters.
             default: return [];
         }
@@ -2697,6 +2759,8 @@ public static class ComponentTypeRegistry
             case "LDTUNER":  kind = SymbolKind.LoadTuner;    return true;
             case "MLIN":
             case "ML":       kind = SymbolKind.Mlin;         return true;
+            case "VIA":      kind = SymbolKind.Via;          return true;
+            case "VIAGND":   kind = SymbolKind.ViaGnd;       return true;
             case "MBEND":
             case "MB":       kind = SymbolKind.MBend;        return true;
             case "MTEE":
@@ -3035,6 +3099,9 @@ public static class ComponentTypeRegistry
         // class of bug this picker exists to remove. All three tiles share one parameter list.
         (SymbolKind.Tuner or SymbolKind.SourceTuner or SymbolKind.LoadTuner, "BiasTee")  => BiasTeeOptions,
         (SymbolKind.Tuner or SymbolKind.SourceTuner or SymbolKind.LoadTuner, "ShowBias") => ShowBiasOptions,
+        // A via's capacitance switch: the same two words, turned into 1/0 at extraction
+        // (ViaSubstrateInjection.FlagExpression), since a bare word in an expression is a name.
+        (SymbolKind.Via or SymbolKind.ViaGnd, "IncludeC")                                => ShowBiasOptions,
         _ => null,
     };
 
@@ -3057,6 +3124,18 @@ public static class ComponentTypeRegistry
     /// (<c>ShowOnSchematic: false</c>), since annotating every instance with its resolved layer names
     /// would be noise, and on a two-layer board it is the default anyway.
     /// </summary>
+    /// <summary>The via components' four dimensions, empty by default (follow the technology), and
+    /// the two capacitance controls. <c>C</c> empty is the computed value; a number replaces it.</summary>
+    private static readonly IReadOnlyList<DefaultParam> ViaDimensionParams =
+    [
+        new("Drill",    "",     "mm", true,  UnitDimension.Length),
+        new("Pad",      "",     "mm", false, UnitDimension.Length),
+        new("Antipad",  "",     "mm", false, UnitDimension.Length),
+        new("Plating",  "",     "µm", false, UnitDimension.Length),
+        new("IncludeC", "true", "",   false, UnitDimension.None),
+        new("C",        "",     "pF", false, UnitDimension.Capacitance),
+    ];
+
     public static readonly IReadOnlyList<DefaultParam> SignalGroundLayerParams =
     [
         new("SignalLayer", "", "", false, UnitDimension.None),
@@ -3070,6 +3149,15 @@ public static class ComponentTypeRegistry
 
     public static LayerChoiceKind? LayerChoiceKindFor(SymbolKind kind, string paramName)
     {
+        // A via's two ends take any conductor; its GroundLayer only a ground-designated one, as a
+        // microstrip's GroundReference does.
+        if (ViaSubstrateInjection.IsViaKind(kind))
+            return paramName switch
+            {
+                ViaSubstrateInjection.FromLayerParam or ViaSubstrateInjection.ToLayerParam => LayerChoiceKind.Signal,
+                ViaSubstrateInjection.GroundLayerParam => LayerChoiceKind.Ground,
+                _ => null,
+            };
         if (!MicrostripSubstrateInjection.IsMicrostripKind(kind)) return null;
         return paramName switch
         {

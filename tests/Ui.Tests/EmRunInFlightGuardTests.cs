@@ -164,7 +164,7 @@ public class EmRunInFlightGuardTests
     public void ARunThatOutlivesItsWorkspaceOpensNoDataDisplayInTheNewOne()
     {
         var body = MethodBody(ReadStripped("src/Ui/ViewModels/WorkspaceViewModel.cs"),
-                              "private async Task RunEmSetupAsync(EmSetupEditorViewModel vm)");
+                              "private async Task<bool> RunEmSetupAsync(EmSetupEditorViewModel vm, EmSetup? runSetup");
 
         Assert.Contains("var owningWorkspace = CurrentWorkspacePath;", body);
 
@@ -182,7 +182,7 @@ public class EmRunInFlightGuardTests
     /// a descriptor left behind by a failed run would warn about a run that ended minutes ago, forever.
     /// </summary>
     [Theory]
-    [InlineData("private async Task RunEmSetupAsync(EmSetupEditorViewModel vm)")]
+    [InlineData("private async Task<bool> RunEmSetupAsync(EmSetupEditorViewModel vm, EmSetup? runSetup")]
     [InlineData("private async Task MeshEmSetupAsync(EmSetupEditorViewModel vm)")]
     public void InFlightWorkIsRecordedAndAlwaysReleased(string signature)
     {

@@ -2671,3 +2671,17 @@ golden-file tests, 417 of 418 passed unmodified; the one failure was a load-depe
 **HB phasors are PEAK.** `HbFft`'s frozen convention (X[k] = raw[k]/(N/2)) gives a cosine of amplitude A the phasor magnitude A;
 `ThermalCircuitLinkTests.Gate1` pins it by inverting a pin's spectrum on a fine grid and reading the waveform's maximum. A
 purely linear circuit (no nonlinear device, N = 0 interface nodes) runs and converges in HB, which is what that gate uses.
+
+## A record that prints itself forever: `EmPoint` and `PlanarProblem` (2026-09-30)
+
+The Ui.Tests host died of a **stack overflow** under a full run (`--blame-crash` gave the frames:
+`EmPoint.PrintMembers → EmPoint.ToString → …`). A C# record's generated `ToString` prints every public
+property, and `EmPoint.LeftNormal`/`RightNormal` are `EmPoint`s — so printing a point printed its normal,
+which printed its normal, without end. Nothing needs to be wrong for it to fire: an assertion message, a
+log line, or xUnit formatting a theory argument is enough, and it takes the whole process down, hiding
+every result after it. `EmPoint` now has its own `PrintMembers` (X and Y only, the same format).
+
+A scan of every record in `src/` for a public instance property of the record's own type found one more:
+`PlanarProblem.PerfectGround`, which builds a new problem each time it is read. It is now the method
+`WithPerfectGround()`, which a record does not print. **A computed property returning the record's own type
+is this trap; make it a method.**

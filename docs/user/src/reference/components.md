@@ -4,7 +4,7 @@ slug: reference/components.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > Components
 lede: Every component in the standard library — its symbol, what it does, and its parameters.
-keywords: resistor, capacitor, inductor, transmission line, microstrip, MLIN, part, symbol, library, bead, ferrite
+keywords: resistor, capacitor, inductor, transmission line, microstrip, MLIN, via, VIA, VIAGND, part, symbol, library, bead, ferrite
 ---
 
 Symbols are rendered from the live drawing engine, with their connection leads and their pins shown
@@ -674,6 +674,29 @@ in-band ripple. Specify the two impedances (or the two widths), the maximum refl
 either a length or a 3 dB corner frequency.
 
 {{table: components/Mklopf}}
+
+### Via (VIA) {#via}
+
+{{symbol: via}}
+
+A plated via changing layers: terminal A lands on `FromLayer`, B on `ToLayer`. Its inductance,
+resistance and capacitance are computed from the technology's stackup — the barrel length, the drill it
+belongs to, the ground planes it passes and any stub where the drill runs on — so none of them is typed.
+Every row may be left empty to follow the technology; the parameter dialog shows the L, R and C that
+result. The formulas, where they hold and how they compare with a 3D solve are in
+[Vias](vias.html).
+
+{{table: components/Via}}
+
+### Via to Ground (VIAGND) {#viagnd}
+
+{{symbol: via-gnd}}
+
+A via from a pad down to a ground plane — the return of a shunt part, with the pad's capacitance across
+it. One pin, on `FromLayer`; the far end is `GroundLayer`. See [Vias](vias.html#shunt) for what it
+replaces.
+
+{{table: components/ViaGnd}}
 
 ### Wirebond (wBond) {#wbond}
 

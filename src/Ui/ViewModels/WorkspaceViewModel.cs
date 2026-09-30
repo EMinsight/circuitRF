@@ -8872,7 +8872,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 && CircuitRF.Design.Em3d.Install.SolverHomes.ToolFromId(installId as string) is { } installTool)
                 Messages.PostAction(MessageLevel.Error, unavailable.Render(),
                                     $"Install {CircuitRF.Design.Em3d.SolverDiscovery.For(installTool).Name}…",
-                                    () => CircuitRF.Ui.Layout.Em.SolverInstallRunner.InstallAsync(installTool, owner: null, Messages));
+                                    () => CircuitRF.Ui.Views.Dialogs.SolverInstallRunner.InstallAsync(installTool, owner: null, Messages));
             else if (result.Diagnostic is { } diagnostic)
                 Messages.PostDiagnostic(diagnostic);
             else

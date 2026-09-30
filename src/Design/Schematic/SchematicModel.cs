@@ -118,6 +118,15 @@ public enum SymbolKind
     /// 2-port, Z1/Z2 (or W1/W2), GammaMax, L (or F3db), Offset, SmoothSteps parameters.</summary>
     Mklopf,
 
+    /// <summary>Signal via changing layers (engine "VIA"), brief-via-component.md. Two terminals, A on
+    /// <c>FromLayer</c> and B on <c>ToLayer</c>, over the implicit reference as MLIN is. Its barrel
+    /// length, materials and the planes it passes are resolved from the stackup at extraction.</summary>
+    Via,
+
+    /// <summary>Via from a pad to a ground plane (engine "VIAGND"), brief-via-component.md. One pin, A on
+    /// <c>FromLayer</c>; the far end is ground. The return of a shunt part, with its pad capacitance.</summary>
+    ViaGnd,
+
     /// <summary>Junction diode (engine "Diode"). Two pins, anode top / cathode bottom. `Rs` is a
     /// model parameter, not a separate placed resistor — when non-zero the elaborator mints the
     /// internal node itself, so the schematic shows one device either way.</summary>

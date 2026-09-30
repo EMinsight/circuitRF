@@ -910,6 +910,19 @@ public static class SchematicToLayoutGenerator
             if (NonPCellParamNames.Contains(p.Name)) continue;
             if (IsInactiveMklopfEntryParam(comp, p.Name)) continue; // R-L5f-3
 
+            // A via's layer choices are conductor NAMES, handed to its generator as text; a dimension
+            // left empty follows the technology, which the generator resolves itself; and the two
+            // capacitance controls are the model's alone (brief-via-component.md R-viac-4).
+            if (ViaSubstrateInjection.IsViaKind(comp.Symbol))
+            {
+                if (ViaSubstrateInjection.LayerParams.Contains(p.Name))
+                {
+                    if (p.Expression.Trim() is { Length: > 0 } layerName) resolved[p.Name] = PCellValue.Text(layerName);
+                    continue;
+                }
+                if (string.IsNullOrWhiteSpace(p.Expression) || p.Name is "IncludeC" or "C") continue;
+            }
+
             // A parameter this generator does not declare is not its parameter. A kit part carries
             // circuitRF's own routing rows and the kit's model-selection rows alongside the dimensions,
             // and every one of them used to be pushed through the numeric resolver — where the first

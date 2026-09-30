@@ -175,6 +175,7 @@ public static class DockLayoutDefaults
             DocumentOrder           = layout.DocumentOrder,
             ActiveDocument          = layout.ActiveDocument,
             DocumentRegion          = layout.DocumentRegion,
+            LibraryGlyphColumns     = layout.LibraryGlyphColumns,
         };
         // NOTE: this is a hand-maintained field-by-field copy — a field added to CwsDockLayout and
         // not added here is silently discarded on every restore, with no error anywhere. That has

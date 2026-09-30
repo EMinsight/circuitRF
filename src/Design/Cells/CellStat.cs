@@ -70,13 +70,31 @@ public static class CellStat
     /// <summary>
     /// Filesystem calls made through this type since the last <see cref="ResetCalls"/>. This is the
     /// counting seam the gate asserts on: calls per referenced component, and calls per edit.
+    ///
+    /// <para><b>Counted in the caller's own execution context once <see cref="ResetCalls"/> has run
+    /// there.</b> The process-wide total counted every stat any thread made, so an exact-count gate
+    /// read 41 for a 40-call edit whenever some unrelated test class resolved a cell at the same moment
+    /// — a statement about the scheduler, not the code. An <see cref="AsyncLocal{T}"/> counter follows
+    /// the edit into any task it starts and sees nothing else.</para>
     /// </summary>
-    public static long Calls => Interlocked.Read(ref _calls);
+    public static long Calls => _scoped.Value is { } box ? Interlocked.Read(ref box.Value) : Interlocked.Read(ref _calls);
 
-    /// <summary>Zeroes <see cref="Calls"/>. The gate brackets one edit with this.</summary>
-    public static void ResetCalls() => Interlocked.Exchange(ref _calls, 0);
+    /// <summary>Zeroes <see cref="Calls"/>, and from here on counts only this execution context's calls.
+    /// The gate brackets one edit with this.</summary>
+    public static void ResetCalls()
+    {
+        _scoped.Value = new System.Runtime.CompilerServices.StrongBox<long>();
+        Interlocked.Exchange(ref _calls, 0);
+    }
 
     private static long _calls;
+    private static readonly AsyncLocal<System.Runtime.CompilerServices.StrongBox<long>?> _scoped = new();
+
+    private static void Count()
+    {
+        Interlocked.Increment(ref _calls);
+        if (_scoped.Value is { } box) Interlocked.Increment(ref box.Value);
+    }
 
     // ── Seams ─────────────────────────────────────────────────────────────────
 
@@ -174,7 +192,7 @@ public static class CellStat
         string key = "D " + path;
         if (Cached<string>(key, cache) is not null) return true;
 
-        Interlocked.Increment(ref _calls);
+        Count();
         bool exists = Directory.Exists(path);
         if (exists) Put(key, key, cache);
         return exists;
@@ -190,7 +208,7 @@ public static class CellStat
         string key = "F " + directory + " " + searchPattern;
         if (Cached<string[]>(key, cache) is { } hit) return hit;
 
-        Interlocked.Increment(ref _calls);
+        Count();
         string[] files = Directory.GetFiles(directory, searchPattern);
         if (files.Length > 0) Put(key, files, cache);
         return files;
@@ -205,7 +223,7 @@ public static class CellStat
         string key = "M " + path;
         if (Cached<StampBox>(key, cache) is { } hit) return hit.Stamp;
 
-        Interlocked.Increment(ref _calls);
+        Count();
         DateTime stamp = File.GetLastWriteTimeUtc(path);
         // The "no such file" sentinel. Caching it would hold a Not-Found placeholder on screen for T
         // after the file appeared, which is the failure R-sl4-8 exists to prevent.
@@ -235,11 +253,11 @@ public static class CellStat
 
         string ccellPath = Path.Combine(cellFolder, CellFolder.CcellFileName);
 
-        Interlocked.Increment(ref _calls);
+        Count();
         if (!File.Exists(ccellPath)) return null;
 
         string? named;
-        Interlocked.Increment(ref _calls);
+        Count();
         try
         {
             var ccell = CellPersistence.LoadFromFile(ccellPath);

@@ -874,8 +874,10 @@ public class DocsFactoryTests
         {
             string text = s[3].GetString()!;
             // Three consecutive SVG coordinate pairs: prose does not contain this and path data is
-            // nothing but this.
-            if (Regex.IsMatch(text, @"(-?\d+\.\d+[ ,]+){6}"))
+            // nothing but this. Two decimals or more, because prose CAN hold a run of one-decimal
+            // numbers — the smith-chart page lists the E12 series, "1.0, 1.2, 1.5, 1.8, 2.2, 2.7, …" —
+            // and a figure's coordinates are written with several.
+            if (Regex.IsMatch(text, @"(-?\d+\.\d{2,}[ ,]+){6}"))
                 offenders.Add($"{pages[s[0].GetInt32()]}#{s[1].GetString()}");
         }
 

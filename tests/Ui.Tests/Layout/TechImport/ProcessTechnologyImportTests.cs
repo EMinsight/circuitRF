@@ -708,7 +708,12 @@ public class ImportReportsWhatTheStackCannotReachTests
 
         Assert.NotNull(Unreached(r));
         Assert.NotNull(Unbound(r));
-        Assert.Empty(TechValidation.Validate(r.Technology));
+
+        // Neither note reaches validation. What validation does say here is a separate, true fact about
+        // this fixture: its inner Plate has no drawing layer (the rows that would bind one are the
+        // orphans), which since the railRF Gerber work is a warning of its own — never an error.
+        var problems = TechValidation.Validate(r.Technology);
+        Assert.All(problems, p => Assert.Contains("\"Plate\" claims no drawing layer", p, StringComparison.Ordinal));
     }
 
     private static string RepoRoot([System.Runtime.CompilerServices.CallerFilePath] string here = "")

@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — Vias</title>
+<link rel="icon" href="../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: docs/user/src/reference/vias.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../index.html"><img class="logo" src="../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <span class="doc-kind">Reference Guide</span>
+  <div class="doc-search" data-crf-search data-root="../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <p class="breadcrumb"><a href="../index.html">Docs</a> › <a href="index.html">Reference</a> › Vias</p>
+
+  <h1>Vias</h1>
+  <p class="lede">VIA and VIAGND put a plated via into a schematic with no EM run — its inductance, resistance and capacitance worked out from the stackup, the formulas they come from, where they hold, and how far they land from a 3D solve.</p>
+
+<nav class="toc">
+<h2>On this page</h2>
+<ol>
+<li><a href="#what">The two components</a></li>
+<li><a href="#stackup">What comes from the stackup</a></li>
+<li><a href="#model">The model</a></li>
+<li><a href="#validity">Where it holds</a></li>
+<li><a href="#measured">Against a 3D solve</a></li>
+<li><a href="#shunt">Replacing a hand-added shunt capacitor</a></li>
+<li><a href="#layout">In the layout</a></li>
+</ol>
+</nav>
+<h2 id="what">The two components</h2>
+<p>A line that changes layers passes through a via, and a shunt part returns to ground through one. Both
+are real inductance, resistance and capacitance, and without a via component the only way to include
+them is a hand-built series R–L with values guessed for the board. <strong>VIA</strong> and <strong>VIAGND</strong> compute those
+values from the technology's stackup instead.</p>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>Pins</th>
+<th>What it is</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="components.html#via">VIA</a></td>
+<td>A on <code>FromLayer</code>, B on <code>ToLayer</code></td>
+<td>a signal via changing layers, referenced to ground as MLIN is</td>
+</tr>
+<tr>
+<td><a href="components.html#viagnd">VIAGND</a></td>
+<td>A on <code>FromLayer</code></td>
+<td>a via from a pad down to a ground plane; its far end is ground</td>
+</tr>
+</tbody>
+</table>
+<p>Both are in the <strong>Microstrip</strong> filter of the Library Palette. The symbol is drawn as the barrel it is:
+the upper pad with the drill opening, the plated barrel, and for VIA the lower pad, for VIAGND the plane
+it lands on.</p>
+<figure class="symbol"><span class="frame">
+<span class="sym-light"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M139.62 50.48L139.45 51.31L138.95 52.13L138.12 52.92L136.99 53.67L135.56 54.36L133.87 54.99L131.94 55.54L129.81 56L127.51 56.37L125.08 56.64L122.56 56.8L120 56.86L117.44 56.8L114.92 56.64L112.49 56.37L110.19 56L108.06 55.54L106.13 54.99L104.44 54.36L103.01 53.67L101.88 52.92L101.05 52.13L100.55 51.31L100.39 50.48L100.55 49.65L101.05 48.83L101.88 48.04L103.01 47.29L104.44 46.6L106.13 45.97L108.06 45.42L110.19 44.96L112.49 44.59L114.92 44.32L117.44 44.16L120 44.11L122.56 44.16L125.08 44.32L127.51 44.59L129.81 44.96L131.94 45.42L133.87 45.97L135.56 46.6L136.99 47.29L138.12 48.04L138.95 48.83L139.45 49.65L139.62 50.48" /><path fill="#2D14C3" d="M129.81 50.48L129.62 51.1L129.06 51.7L128.16 52.25L126.94 52.73L125.45 53.13L123.75 53.43L121.91 53.61L120 53.67L118.09 53.61L116.25 53.43L114.55 53.13L113.07 52.73L111.85 52.25L110.94 51.7L110.38 51.1L110.19 50.48L110.38 49.86L110.94 49.26L111.85 48.71L113.07 48.23L114.55 47.83L116.25 47.54L118.09 47.35L120 47.29L121.91 47.35L123.75 47.54L125.45 47.83L126.94 48.23L128.16 48.71L129.06 49.26L129.62 49.86L129.81 50.48Z" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M110.19 50.48L110.19 99.52" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M129.81 50.48L129.81 99.52" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M124.41 53.33L124.41 102.37" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M126.62 52.83L126.62 101.87" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M128.09 52.28L128.09 101.32" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M129.81 99.52L129.62 100.14L129.06 100.74L128.16 101.29L126.94 101.77L125.45 102.17L123.75 102.46L121.91 102.65L120 102.71L118.09 102.65L116.25 102.46L114.55 102.17L113.07 101.77L111.85 101.29L110.94 100.74L110.38 100.14L110.19 99.52" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M139.62 99.52L139.45 100.35L138.95 101.17L138.12 101.96L136.99 102.71L135.56 103.4L133.87 104.03L131.94 104.58L129.81 105.04L127.51 105.41L125.08 105.68L122.56 105.84L120 105.89L117.44 105.84L114.92 105.68L112.49 105.41L110.19 105.04L108.06 104.58L106.13 104.03L104.44 103.4L103.01 102.71L101.88 101.96L101.05 101.17L100.55 100.35L100.39 99.52" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M100.39 99.52L100.55 98.69L101.05 97.87L101.88 97.08L103.01 96.33L104.44 95.64L106.13 95.01L108.06 94.46L110.19 94" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M129.81 94L131.94 94.46L133.87 95.01L135.56 95.64L136.99 96.33L138.12 97.08L138.95 97.87L139.45 98.69L139.62 99.52" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M120 25.96L120 47.29" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M120 105.89L120 124.04" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="117" y="22.96" width="6" height="6" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="117" y="121.04" width="6" height="6" /><text fill="#6A8EF6" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="107, 116.57, 122.92" y="172.32">
+			VIA
+	</text></svg></span>
+<span class="sym-dark"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M139.62 50.48L139.45 51.31L138.95 52.13L138.12 52.92L136.99 53.67L135.56 54.36L133.87 54.99L131.94 55.54L129.81 56L127.51 56.37L125.08 56.64L122.56 56.8L120 56.86L117.44 56.8L114.92 56.64L112.49 56.37L110.19 56L108.06 55.54L106.13 54.99L104.44 54.36L103.01 53.67L101.88 52.92L101.05 52.13L100.55 51.31L100.39 50.48L100.55 49.65L101.05 48.83L101.88 48.04L103.01 47.29L104.44 46.6L106.13 45.97L108.06 45.42L110.19 44.96L112.49 44.59L114.92 44.32L117.44 44.16L120 44.11L122.56 44.16L125.08 44.32L127.51 44.59L129.81 44.96L131.94 45.42L133.87 45.97L135.56 46.6L136.99 47.29L138.12 48.04L138.95 48.83L139.45 49.65L139.62 50.48" /><path fill="#9684FA" d="M129.81 50.48L129.62 51.1L129.06 51.7L128.16 52.25L126.94 52.73L125.45 53.13L123.75 53.43L121.91 53.61L120 53.67L118.09 53.61L116.25 53.43L114.55 53.13L113.07 52.73L111.85 52.25L110.94 51.7L110.38 51.1L110.19 50.48L110.38 49.86L110.94 49.26L111.85 48.71L113.07 48.23L114.55 47.83L116.25 47.54L118.09 47.35L120 47.29L121.91 47.35L123.75 47.54L125.45 47.83L126.94 48.23L128.16 48.71L129.06 49.26L129.62 49.86L129.81 50.48Z" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M110.19 50.48L110.19 99.52" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M129.81 50.48L129.81 99.52" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M124.41 53.33L124.41 102.37" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M126.62 52.83L126.62 101.87" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M128.09 52.28L128.09 101.32" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M129.81 99.52L129.62 100.14L129.06 100.74L128.16 101.29L126.94 101.77L125.45 102.17L123.75 102.46L121.91 102.65L120 102.71L118.09 102.65L116.25 102.46L114.55 102.17L113.07 101.77L111.85 101.29L110.94 100.74L110.38 100.14L110.19 99.52" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M139.62 99.52L139.45 100.35L138.95 101.17L138.12 101.96L136.99 102.71L135.56 103.4L133.87 104.03L131.94 104.58L129.81 105.04L127.51 105.41L125.08 105.68L122.56 105.84L120 105.89L117.44 105.84L114.92 105.68L112.49 105.41L110.19 105.04L108.06 104.58L106.13 104.03L104.44 103.4L103.01 102.71L101.88 101.96L101.05 101.17L100.55 100.35L100.39 99.52" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M100.39 99.52L100.55 98.69L101.05 97.87L101.88 97.08L103.01 96.33L104.44 95.64L106.13 95.01L108.06 94.46L110.19 94" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M129.81 94L131.94 94.46L133.87 95.01L135.56 95.64L136.99 96.33L138.12 97.08L138.95 97.87L139.45 98.69L139.62 99.52" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M120 25.96L120 47.29" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M120 105.89L120 124.04" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="117" y="22.96" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="117" y="121.04" width="6" height="6" /><text fill="#8CAEFF" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="107, 116.57, 122.92" y="172.32">
+			VIA
+	</text></svg></span>
+</span><figcaption>VIA</figcaption></figure>
+<figure class="symbol"><span class="frame">
+<span class="sym-light"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M140.05 51.07L139.88 51.92L139.37 52.75L138.52 53.56L137.36 54.32L135.91 55.03L134.18 55.67L132.21 56.24L130.03 56.71L127.67 57.09L125.19 57.36L122.62 57.53L120 57.58L117.38 57.53L114.81 57.36L112.33 57.09L109.98 56.71L107.8 56.24L105.82 55.67L104.09 55.03L102.64 54.32L101.48 53.56L100.63 52.75L100.12 51.92L99.95 51.07L100.12 50.22L100.63 49.38L101.48 48.57L102.64 47.81L104.09 47.1L105.82 46.46L107.8 45.9L109.98 45.42L112.33 45.05L114.81 44.77L117.38 44.61L120 44.55L122.62 44.61L125.19 44.77L127.67 45.05L130.03 45.42L132.21 45.9L134.18 46.46L135.91 47.1L137.36 47.81L138.52 48.57L139.37 49.38L139.88 50.22L140.05 51.07" /><path fill="#2D14C3" d="M130.03 51.07L129.83 51.7L129.26 52.31L128.34 52.88L127.09 53.37L125.57 53.78L123.84 54.08L121.96 54.26L120 54.32L118.04 54.26L116.16 54.08L114.43 53.78L112.91 53.37L111.67 52.88L110.74 52.31L110.17 51.7L109.98 51.07L110.17 50.43L110.74 49.82L111.67 49.26L112.91 48.76L114.43 48.36L116.16 48.06L118.04 47.87L120 47.81L121.96 47.87L123.84 48.06L125.57 48.36L127.09 48.76L128.34 49.26L129.26 49.82L129.83 50.43L130.03 51.07Z" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M109.98 51.07L109.98 98.68" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M130.03 51.07L130.03 98.68" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M124.51 53.98L124.51 101.59" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M126.77 53.47L126.77 101.09" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M128.27 52.91L128.27 100.52" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M130.03 98.68L129.83 99.32L129.26 99.93L128.34 100.49L127.09 100.99L125.57 101.39L123.84 101.69L121.96 101.88L120 101.94L118.04 101.88L116.16 101.69L114.43 101.39L112.91 100.99L111.67 100.49L110.74 99.93L110.17 99.32L109.98 98.68" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M82.41 98.68L120 110.9L157.59 98.68" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M82.41 98.68L109.98 89.72" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M130.03 89.72L157.59 98.68" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M120 110.9L120 117.48" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M104.96 117.48L135.04 117.48" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M110.48 121.74L129.52 121.74" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M115.99 126L124.01 126" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M120 26L120 47.81" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="117" y="23" width="6" height="6" /><text fill="#6A8EF6" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="91.1, 100.67, 107.02, 117.1, 127.78, 138.56" y="172.32">
+			VIAGND
+	</text></svg></span>
+<span class="sym-dark"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M140.05 51.07L139.88 51.92L139.37 52.75L138.52 53.56L137.36 54.32L135.91 55.03L134.18 55.67L132.21 56.24L130.03 56.71L127.67 57.09L125.19 57.36L122.62 57.53L120 57.58L117.38 57.53L114.81 57.36L112.33 57.09L109.98 56.71L107.8 56.24L105.82 55.67L104.09 55.03L102.64 54.32L101.48 53.56L100.63 52.75L100.12 51.92L99.95 51.07L100.12 50.22L100.63 49.38L101.48 48.57L102.64 47.81L104.09 47.1L105.82 46.46L107.8 45.9L109.98 45.42L112.33 45.05L114.81 44.77L117.38 44.61L120 44.55L122.62 44.61L125.19 44.77L127.67 45.05L130.03 45.42L132.21 45.9L134.18 46.46L135.91 47.1L137.36 47.81L138.52 48.57L139.37 49.38L139.88 50.22L140.05 51.07" /><path fill="#9684FA" d="M130.03 51.07L129.83 51.7L129.26 52.31L128.34 52.88L127.09 53.37L125.57 53.78L123.84 54.08L121.96 54.26L120 54.32L118.04 54.26L116.16 54.08L114.43 53.78L112.91 53.37L111.67 52.88L110.74 52.31L110.17 51.7L109.98 51.07L110.17 50.43L110.74 49.82L111.67 49.26L112.91 48.76L114.43 48.36L116.16 48.06L118.04 47.87L120 47.81L121.96 47.87L123.84 48.06L125.57 48.36L127.09 48.76L128.34 49.26L129.26 49.82L129.83 50.43L130.03 51.07Z" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M109.98 51.07L109.98 98.68" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M130.03 51.07L130.03 98.68" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M124.51 53.98L124.51 101.59" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M126.77 53.47L126.77 101.09" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M128.27 52.91L128.27 100.52" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M130.03 98.68L129.83 99.32L129.26 99.93L128.34 100.49L127.09 100.99L125.57 101.39L123.84 101.69L121.96 101.88L120 101.94L118.04 101.88L116.16 101.69L114.43 101.39L112.91 100.99L111.67 100.49L110.74 99.93L110.17 99.32L109.98 98.68" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M82.41 98.68L120 110.9L157.59 98.68" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M82.41 98.68L109.98 89.72" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M130.03 89.72L157.59 98.68" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M120 110.9L120 117.48" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M104.96 117.48L135.04 117.48" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M110.48 121.74L129.52 121.74" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M115.99 126L124.01 126" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M120 26L120 47.81" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="117" y="23" width="6" height="6" /><text fill="#8CAEFF" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="91.1, 100.67, 107.02, 117.1, 127.78, 138.56" y="172.32">
+			VIAGND
+	</text></svg></span>
+</span><figcaption>VIAGND</figcaption></figure>
+<h2 id="stackup">What comes from the stackup</h2>
+<p>A via instance on a technology is described by two layer names and four dimensions, and <strong>every one of
+them may be left empty</strong>:</p>
+<ul>
+<li><code>FromLayer</code>, <code>ToLayer</code> (VIAGND: <code>GroundLayer</code>) are picked from the stackup, as a microstrip's
+<code>SignalLayer</code> is. Empty, <code>FromLayer</code> is the top conductor; <code>ToLayer</code> is the farthest conductor a
+drill reaches that is not a ground plane; <code>GroundLayer</code> is the nearest ground plane beneath.</li>
+<li><code>Drill</code> and <code>Pad</code> empty take the technology's own via drill and pad.</li>
+<li><code>Plating</code> empty takes the via layer's wall thickness.</li>
+<li><code>Antipad</code>, the clearance in every plane the barrel passes, is the pad plus 0.3 mm when empty. No
+technology states an antipad, so the run's Messages always name this one as a default. So do any of
+the others the technology does not state.</li>
+</ul>
+<p>Everything else is resolved and never typed: the <strong>barrel length</strong>, measured between the two
+conductors' mid-planes; the <strong>drill</strong> it belongs to (the shortest via layer whose span covers both
+conductors, so a blind via is preferred to a through via); the <strong>stub</strong> where that drill runs past a
+conductor; the copper's conductivity; and <strong>every ground plane the barrel passes</strong>, each with the
+length of barrel it owns (below). The parameter dialog prints what these came to, next to the L, R and
+C they give.</p>
+<p>In a <code>.cnl</code> with no technology, every value is typed:</p>
+<pre><code>VIA:V1    a b  Drill=0.3mm Pad=0.6mm Antipad=0.9mm H=1.2mm Er=4.4 Planes=1 Tp1=0.6mm
+VIAGND:G1 a 0  Drill=0.3mm Pad=0.6mm Antipad=0.9mm H=1.6mm Er=4.4
+</code></pre>
+<p><code>H</code> is the barrel length. <code>Planes=n</code> with <code>Tp1..Tpn</code> and <code>Erp1..Erpn</code> lists the planes passed; a stub
+past B is <code>Hstub</code> with <code>StubPlanes</code>, <code>Tsp</code>, <code>Ersp</code>, and one past A is <code>HstubA</code> with <code>StubAPlanes</code>,
+<code>TspA</code>, <code>ErspA</code>. <code>Solid=1</code> makes a filled barrel. <code>C=</code> replaces the computed capacitance outright, and
+<code>IncludeC=false</code> drops it.</p>
+<h2 id="model">The model</h2>
+<p><strong>VIA</strong> is a symmetric T: half the barrel's <code>R + jωL</code>, the capacitance of every plane it passes to
+ground, then the other half. A stub hangs off the end it continues past, as its own <code>R + jωL</code> into the
+capacitance of the planes it passes. <strong>VIAGND</strong> is the barrel's <code>R + jωL</code> to ground with the pad's
+capacitance across it, and any plane it passes on the way down at the barrel's midpoint.</p>
+<p><strong>Inductance</strong> — M. E. Goldfarb and R. A. Pucel, &quot;Modeling via hole grounds in microstrip&quot;, <em>IEEE
+Microwave and Guided Wave Letters</em> 1(6), pp. 135–137, 1991, with <code>r</code> the drill radius and <code>h</code> the barrel
+length:</p>
+<pre><code>L = (µ₀/2π) · [ h·ln( (h + √(r² + h²)) / r ) + 1.5·( r − √(r² + h²) ) ]
+</code></pre>
+<p>For a long barrel this tends to <code>(µ₀/2π)·h·[ln(2h/r) − 3/2]</code>, which is half a barrel-length of <code>µ₀/2π</code>
+below Grover's surface-current inductance of a straight tube. It is a partial self-inductance, with the
+return current some distance away. A return via close by lowers the loop through a mutual term this form
+does not have, so beside one it reads high. A signal via with stitching vias round it is not modelled.</p>
+<p><strong>Resistance</strong> — the same paper. <code>t</code> is the plating:</p>
+<pre><code>R = R_dc · √(1 + f/f_δ)      R_dc = h / (σ·π·(r² − (r − t)²))      f_δ = 1 / (π·µ₀·σ·t²)
+</code></pre>
+<p>A filled barrel is a rod, <code>R_dc = h/(σπr²)</code>, with <code>t = r/2</code> in <code>f_δ</code>, which gives the rod's own surface
+resistance at high frequency.</p>
+<p><strong>Capacitance</strong> — H. Johnson and M. Graham, <em>High-Speed Digital Design</em> (1993), §7.1, with the pad <code>D₁</code>,
+the antipad <code>D₂</code> and <code>T</code> in inches:</p>
+<pre><code>C ≈ 1.41 · εr · T · D₁ / (D₂ − D₁)   pF
+</code></pre>
+<p>The source offers this as an estimate, and it is one. Its <code>T</code> is a length of barrel: C grows with it,
+and it was written for a whole board of planes. circuitRF applies it <strong>once per plane the barrel
+passes</strong>, with <code>T</code> the barrel that plane owns: half the dielectric to the neighbouring conductor on each
+side. On a board of many planes the terms add back to the board thickness, and a single plane is not
+charged for barrel that runs past other conductors.</p>
+<h2 id="validity">Where it holds</h2>
+<p>A lumped T is a fair model while the whole drill is under a twentieth of a wavelength in the densest
+dielectric it crosses. The parameter dialog shows that frequency. A run that goes past it posts <strong>one
+warning for the instance</strong> and computes anyway. That is an extrapolation, and the warning says so.
+Above it, an EM solve of the via is the reference.</p>
+<h2 id="measured">Against a 3D solve</h2>
+<p>The reference is an independent Palace solve of one transition, committed with circuitRF's test data
+and never regenerated by circuitRF: a 400 µm microstrip on top of a 505 µm, εr 3.66 laminate, a solid
+300 µm via with 600 µm pads through a 900 µm clearance in the middle ground plane, and an inverted
+microstrip underneath (order-2 elements). The same transition as MLIN + VIA + MLIN, every value from the
+stackup:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>1.2 GHz</th>
+<th>3.6 GHz</th>
+<th>6 GHz</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>|S21| error</td>
+<td>−0.020 dB</td>
+<td>−0.031 dB</td>
+<td>−0.031 dB</td>
+</tr>
+<tr>
+<td>∠S21 error</td>
+<td>+0.12°</td>
+<td>+0.17°</td>
+<td>+0.15°</td>
+</tr>
+<tr>
+<td>|S11|, model</td>
+<td>−37 dB</td>
+<td>−28 dB</td>
+<td>−25 dB</td>
+</tr>
+<tr>
+<td>|S11|, Palace</td>
+<td>−44 dB</td>
+<td>−43 dB</td>
+<td>−44 dB</td>
+</tr>
+</tbody>
+</table>
+<p>Through the via, the model agrees to 0.03 dB and 0.2°. <strong>Its match is worse than the real via's.</strong>
+Taking the lines out of the Palace result leaves the transition's own shunt capacitance at <strong>34 fF</strong>
+(0.5–1 GHz), counting both pads. The Johnson–Graham term here is <strong>81 fF</strong>, <strong>2.4 times</strong> that. Its
+series inductance comes out near 220 pH against Goldfarb and Pucel's <strong>72 pH</strong>, though that figure also
+carries the solve's port sheets. The two errors partly cancel in S21 and add in S11. Read a via's
+return loss from this model as an estimate only.</p>
+<p>Taking each plane's whole neighbouring dielectric as <code>T</code> instead (400 µm here) put ∠S21 4° out at 6 GHz.
+That is why each plane gets half of it.</p>
+<h2 id="shunt">Replacing a hand-added shunt capacitor</h2>
+<p>A common approximation on FR-4 is a fixed capacitance, around 1.4 pF, added in parallel with every
+ideal part that goes to ground, to stand for its pad and via. VIAGND computes the via's share from the
+board. On the shipped two-layer FR-4 technology (70 mil), at its own 12 mil drill and 24 mil pad, a
+default VIAGND from Top Copper to the Bottom Copper plane is:</p>
+<ul>
+<li><strong>0.65 nH</strong> in series with <strong>1.4 mΩ</strong> (DC) to ground;</li>
+<li><strong>0.88 pF</strong> from the pad to ground in parallel, with the default 0.3 mm antipad ring;</li>
+<li>valid to <strong>3.9 GHz</strong>, where its 1.8 mm barrel is a twentieth of a wavelength.</li>
+</ul>
+<p>So place the part, then a VIAGND under its grounded pin, and drop the fixed capacitor. The remainder of
+a fitted 1.4 pF belongs to the part's own pads and body, which the via does not model. The pad term is
+the Johnson–Graham estimate above, taken over the dielectric between the pad and the plane. The plane
+the via lands on has no clearance of its own, so on a board like this treat the 0.88 pF as an upper
+estimate.</p>
+<h2 id="layout">In the layout</h2>
+<p><strong>Update Layout from Schematic</strong> draws a VIA as its drill on the stackup's via layer, with a pad on
+<code>FromLayer</code> and one on <code>ToLayer</code>. The layers between get no pads. Its two pins are both at the drill,
+one on each layer, so a line on either layer that ends there connects to it. The layout is compared
+against the schematic as a via device, with its two ends on separate nets.</p>
+<p>The planes the via passes are not part of it. They are the stackup's planes, drawn once for every line
+that returns through them by <strong>Draw Ground Pour</strong> (offered after Update Layout for an inner ground).
+The pour cuts the via's own <code>Antipad</code> out of every plane its drill passes and does not land on, and
+leaves a VIAGND joined to the plane it lands on.</p>
+
+<nav class="page-nav">
+  <a class="prev" href="components.html"><span class="dir">Previous</span><span class="name">Components</span></a>
+  <a class="next" href="spice-import.html"><span class="dir">Next</span><span class="name">Importing a SPICE Model</span></a>
+</nav>
+</main>
+
+<footer class="doc-footer">
+  <img src="../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../index.html">Documentation home</a>
+</footer>
+
+<script src="../assets/js/search-index.js" defer></script>
+<script src="../assets/js/docs-search.js" defer></script>
+</body>
+</html>
