@@ -10,6 +10,7 @@ using CircuitRF.Design.Cells;
 using CircuitRF.Design.Layout;
 using CircuitRF.Design.Layout.Em;
 using CircuitRF.Design.Layout.Em3d;
+using CircuitRF.Design.Theming;
 using CircuitRF.Design.ThreeD;
 using CircuitRF.Design.Workspace;
 using CircuitRF.Engine.Em3d;
@@ -346,6 +347,15 @@ public sealed class HierarchyGateTests : IDisposable
         Assert.Contains(vm.Document.Objects, o => o.Material == "Air");
         Assert.True(vm.Elaboration!.Ok, string.Join(" ", vm.Elaboration.Refusals));
         Assert.Equal(original, Solids(vm.Elaboration));
+
+        // A flattened conductor has no drawing layer: it draws in its material's colour (the swatch the Materials editor
+        // shows), never the stackup edge ink.
+        var copper = vm.Elaboration.Technology!.FindMaterial("Copper")!;
+        var (r, g, b) = copper.Color is { } hex && Rgba.TryParseHex(hex, out var stated) ? (stated.R, stated.G, stated.B)
+                      : C3dMaterialRole.ImpliedColour(C3dMaterialRole.Implied(copper));
+        var drawn = vm.Viewer.Scene.Objects.Where(o => o.Material == "Copper").ToList();
+        Assert.NotEmpty(drawn);
+        Assert.All(drawn, o => Assert.Equal(Scene3DVertex.Pack(r, g, b, 255), o.Rgba));
     }
 
     // ── 7. New 3D View from Layout ───────────────────────────────────────────────────────────

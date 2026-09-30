@@ -4516,3 +4516,16 @@ of the substrate, because its barrel hides that and a board of several thousand 
 slab with several thousand holes. A box-shaped slab is carved as its rectangle extruded, its faces renumbered back to
 the box's (`BoxFace`) so a face picked on it is named as before. View only: the problem is unchanged.
 Gate: `PlatedViaAndPerspectiveTests.ANonPlatedHole_IsDrawnAsAHoleInTheSubstrate_AndABoxSlabKeepsItsFaces`.
+
+## A flattened layout's copper drew in the stackup edge ink (2026-09-30)
+
+Before a flatten, a layout instance's conductors draw in their drawing layer's colour. After it they are document objects
+with no drawing layer, and `Em3dSectionRenderer.ObjectColours` gave anything without a layer or a wire the stackup edge
+ink — a grey that is no material's colour. The owner expected each object to take its material's colour. A conductor with
+no drawing layer now takes its material's stated `Color`, else `C3dMaterialRole.ImpliedColour` — the one table the
+Materials editor's list swatch also reads, so the swatch is the colour on the canvas. A hand-drawn Copper box changes the
+same way. A material the technology does not define still gets the ink.
+**Trap found on the way:** `render` of a `.c3d` handed `ObjectColours` the layout setup's technology, which is null for a
+`.c3d`, so the CLI and the 3D view could colour one document differently; it now passes the elaboration's technology.
+Gates: `HierarchyGateTests.Flatten_APlatedViasAirCoreNeedsNoAirInTheTechnology_AndARefusalReachesTheDialog` (the colour)
+and `TransparencyTests.TheVerb_AsAProcess_MatchesTheRenderer_…` (process vs in-process, byte for byte).

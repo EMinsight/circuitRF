@@ -39,6 +39,19 @@ public static class C3dMaterialRole
         };
     }
 
+    /// <summary>
+    /// The colour a material that states none is shown in, by what it implies: the Materials editor's swatch, and the 3D
+    /// view's colour for a conductor that has no drawing layer (a flattened layout's copper, a drawn box) — one table, so
+    /// the swatch in the list is the colour on the canvas.
+    /// </summary>
+    public static (byte R, byte G, byte B) ImpliedColour(C3dImpliedRole role) => role switch
+    {
+        C3dImpliedRole.Conductor  => (0xC8, 0x9A, 0x4E),
+        C3dImpliedRole.Dielectric => (0x6E, 0x9E, 0x96),
+        C3dImpliedRole.Air        => (0xA8, 0xC8, 0xE8),
+        _                         => (0x90, 0x90, 0x90),
+    };
+
     /// <summary>The Role column's reason, one sentence.</summary>
     public static string Reason(C3dImpliedRole role) => role switch
     {

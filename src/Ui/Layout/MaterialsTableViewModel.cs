@@ -637,13 +637,9 @@ public sealed partial class MaterialRowViewModel : ObservableObject
     /// <summary>The list's swatch: the stated colour, else a neutral one per role, so an unstated colour still reads.</summary>
     public Avalonia.Media.Color ListSwatchColor
         => Material.Color is { } c && Rgba.TryParseHex(c, out var rgba) ? new Avalonia.Media.Color(255, rgba.R, rgba.G, rgba.B)
-         : ImpliedRole switch
-         {
-             C3dImpliedRole.Conductor  => Avalonia.Media.Color.FromRgb(0xC8, 0x9A, 0x4E),
-             C3dImpliedRole.Dielectric => Avalonia.Media.Color.FromRgb(0x6E, 0x9E, 0x96),
-             C3dImpliedRole.Air        => Avalonia.Media.Color.FromRgb(0xA8, 0xC8, 0xE8),
-             _                         => Avalonia.Media.Color.FromRgb(0x90, 0x90, 0x90),
-         };
+         : Implied(C3dMaterialRole.ImpliedColour(ImpliedRole));
+
+    private static Avalonia.Media.Color Implied((byte R, byte G, byte B) c) => Avalonia.Media.Color.FromRgb(c.R, c.G, c.B);
 
     /// <summary>The Colour column's swatch — transparent while no colour is stated (the 3D view's own palette).</summary>
     public Avalonia.Media.Color SwatchColor

@@ -140,7 +140,8 @@ internal static class RenderEm3d
 
         var scene = prebuilt ?? Em3dSectionScene.Build(problem, view);
         var style = new Em3dRenderStyle(
-            Em3dSectionRenderer.ObjectColours(problem, generated.Origins, loaded.Resolution.Source?.Technology,
+            // A .c3d's objects name its own technology's materials (the elaboration's, as the 3D view colours them).
+            Em3dSectionRenderer.ObjectColours(problem, generated.Origins, loaded.Elaboration?.Technology ?? loaded.Resolution.Source?.Technology,
                                               theme, req.Variant),
             theme, req.Variant, req.Margin, req.Transparent)
         {

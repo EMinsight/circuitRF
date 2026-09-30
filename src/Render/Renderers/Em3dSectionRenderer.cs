@@ -103,8 +103,10 @@ public static partial class Em3dSectionRenderer
     /// <summary>
     /// A conductor's colour, by object name: its drawing layer's colour from <paramref name="tech"/>
     /// (or <see cref="FallbackPalette"/>'s for a key the technology does not define, exactly as the
-    /// layout renderer resolves one), the theme's wBond wire colour for a bond wire, and the stackup
-    /// edge ink for anything with neither.
+    /// layout renderer resolves one), the theme's wBond wire colour for a bond wire, and for anything with
+    /// neither, its material's colour when the technology defines the material (a flattened layout's
+    /// copper, a drawn box: <see cref="CircuitRF.Design.ThreeD.C3dMaterialRole.ImpliedColour"/> when it
+    /// states none, the Materials editor's swatch), else the stackup edge ink.
     /// </summary>
     public static IReadOnlyDictionary<string, SKColor> ObjectColours(
         Em3dProblem problem, IReadOnlyDictionary<string, CircuitRF.Design.Layout.Em3d.Em3dObjectOrigin> origins,
@@ -114,19 +116,27 @@ public static partial class Em3dSectionRenderer
         var ink  = Sk(theme.Resolve(ColorRole.StackupBandEdge, variant));
         var map  = new Dictionary<string, SKColor>(StringComparer.Ordinal);
 
-        SKColor For(string name)
+        SKColor For(string name, string material)
         {
-            if (!origins.TryGetValue(name, out var o)) return ink;
-            if (o.DrawingLayer is { } key)
+            origins.TryGetValue(name, out var o);
+            if (o?.DrawingLayer is { } key)
             {
                 var def = tech?.Layers.FirstOrDefault(l => l.Key == key) ?? FallbackPalette.For(key);
                 return new SKColor(def.Color.R, def.Color.G, def.Color.B);
             }
-            return o.Kind == CircuitRF.Design.Layout.Em3d.Em3dObjectKind.Wire ? wire : ink;
+            if (o?.Kind == CircuitRF.Design.Layout.Em3d.Em3dObjectKind.Wire) return wire;
+            if (tech?.FindMaterial(material) is { } m)
+            {
+                var (r, g, b) = m.Color is { } hex && Rgba.TryParseHex(hex, out var stated)
+                    ? (stated.R, stated.G, stated.B)
+                    : CircuitRF.Design.ThreeD.C3dMaterialRole.ImpliedColour(CircuitRF.Design.ThreeD.C3dMaterialRole.Implied(m));
+                return new SKColor(r, g, b);
+            }
+            return ink;
         }
 
-        foreach (var s in problem.Solids.Where(s => s.Role == Em3dRole.Conductor)) map[s.Name] = For(s.Name);
-        foreach (var sh in problem.Sheets) map[sh.Name] = For(sh.Name);
+        foreach (var s in problem.Solids.Where(s => s.Role == Em3dRole.Conductor)) map[s.Name] = For(s.Name, s.Material);
+        foreach (var sh in problem.Sheets) map[sh.Name] = For(sh.Name, sh.Material);
         return map;
     }
 
