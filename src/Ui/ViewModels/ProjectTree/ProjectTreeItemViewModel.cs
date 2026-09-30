@@ -535,6 +535,10 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
     /// <summary>Open this cell's primary 3D view in the 3D editor.</summary>
     public IRelayCommand OpenThreeDCommand { get; }
 
+    /// <summary>Edit Parameters — open this cell's <c>.ccell</c>, which a double-click no longer does
+    /// when the cell has a schematic, layout or 3D view.</summary>
+    public IRelayCommand EditParametersCommand { get; }
+
     /// <summary>New Layout — prompts for a name, creates .clay in this cell's layout/ folder, opens it.</summary>
     public IAsyncRelayCommand NewLayoutCommand { get; }
 
@@ -826,6 +830,10 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
         OpenThreeDCommand = new RelayCommand(
             () => _actions?.OpenCellThreeD(this),
             () => _actions is not null && IsCell && CanOpenThreeD);
+
+        EditParametersCommand = new RelayCommand(
+            () => _actions?.OpenCellParameters(this),
+            () => _actions is not null && IsCell);
 
         RemoveFileCommand = new RelayCommand(
             () => _actions?.RemoveFile(this),

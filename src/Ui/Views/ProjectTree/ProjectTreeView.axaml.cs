@@ -95,6 +95,7 @@ public partial class ProjectTreeView : UserControl
 
         // Right-click on empty space: the workspace's own commands, arranged (ProjectTreeView.BlankMenu.cs).
         WireBlankSpaceMenu();
+        WireNoWorkspaceMenu();
     }
 
     // ── Activation focus (owner, 2026-08-25) ──────────────────────────────────

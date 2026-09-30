@@ -1622,7 +1622,9 @@ read-only name) · **Default value/expression** · **Unit** (the dimension-keyed
 the instance editor) · **Dimension** · **Show-on-schematic default**.
 
 **HIG (per `ui-design.md` interaction spec / the instance editor's conventions):**
-- Opened from the tree (double-click a cell, or **Edit Parameters** context item, §3.4); hosted as a content
+- Opened from the tree (**Edit Parameters** context item, §3.4; a double-click on a cell opens its schematic,
+  else layout, else 3D view — the primary, or the alphabetically first file when none is primary — and reaches this editor only when the cell has none of them —
+  `CellOpenOrder`, 2026-09-30); hosted as a content
   tab or dialog (reuse the instance editor's host pattern).
 - A fixed **header** (cell name/type) · the **scrollable editable parameter list** (Name · Default · Unit ·
   Dimension · Show-default, shared-size aligned columns, matching the instance editor's column grid) · an

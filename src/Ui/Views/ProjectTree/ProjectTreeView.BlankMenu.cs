@@ -90,6 +90,46 @@ public partial class ProjectTreeView
             RoutingStrategies.Tunnel, handledEventsToo: true);
     }
 
+    /// <summary>
+    /// The same empty space with NO workspace open, where the scroller is hidden and the recent list
+    /// shows instead — so this menu sits on the area holding both. A recent entry's own menu wins
+    /// over it; with a workspace open it stands aside for the scroller's, including when that one
+    /// cancelled itself over a row's indent and the request bubbled on up to here.
+    /// </summary>
+    private void WireNoWorkspaceMenu()
+    {
+        var menu = new ContextMenu();
+        menu.Opening += OnNoWorkspaceMenuOpening;
+        TreeArea.ContextMenu = menu;
+    }
+
+    private void OnNoWorkspaceMenuOpening(object? sender, System.ComponentModel.CancelEventArgs e)
+    {
+        if (sender is not ContextMenu menu) return;
+        if (DataContext is not ProjectTreeTool { HasWorkspace: false } tool
+            || tool.Actions is not WorkspaceViewModel ws)
+        {
+            e.Cancel = true;
+            return;
+        }
+
+        // File ▸'s own two commands, handed THIS panel's window as the dialog owner (see the header).
+        var owner = TopLevel.GetTopLevel(this) as Window;
+        menu.ItemsSource = new List<object>
+        {
+            new MenuItem
+            {
+                Header = "Open _Workspace…", Command = ws.OpenWorkspaceCommand, CommandParameter = owner,
+                Icon   = new MaterialIcon { Kind = MaterialIconKind.FolderOpenOutline, Width = 14, Height = 14 },
+            },
+            new MenuItem
+            {
+                Header = "Open Workspace in _New Window…", Command = ws.OpenWorkspaceInNewWindowCommand, CommandParameter = owner,
+                Icon   = new MaterialIcon { Kind = MaterialIconKind.FolderOpenOutline, Width = 14, Height = 14 },
+            },
+        };
+    }
+
     private void OnBlankMenuOpening(object? sender, System.ComponentModel.CancelEventArgs e)
     {
         if (sender is not ContextMenu menu) return;
@@ -155,6 +195,9 @@ public partial class ProjectTreeView
                  "Zip this workspace up so it can be sent to someone on another machine."),
             new Separator(),
             Item(tool.RevealLabel, tool.RevealWorkspaceCommand, MaterialIconKind.FolderSearchOutline),
+            new Separator(),
+            // The header menu's own command, so both ask about unsaved documents the same way.
+            Item("Close Workspace", tool.CloseWorkspaceCommand, MaterialIconKind.FolderRemoveOutline),
         };
     }
 }

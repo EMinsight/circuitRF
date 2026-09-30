@@ -11007,12 +11007,20 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             Messages.Info($"Cell '{Path.GetFileName(cellDir)}' has no primary {what}.");
             return;
         }
-        var path = Path.Combine(CellFolder.SubFolderPath(cellDir, viewType), pr.ResolvedName);
+        OpenCellViewFile(viewType, Path.Combine(CellFolder.SubFolderPath(cellDir, viewType), pr.ResolvedName));
+    }
+
+    private void OpenCellViewFile(ViewType viewType, string path)
+    {
         if (viewType == ViewType.Schematic)    OpenOrActivateSchematic(path);
         else if (viewType == ViewType.Layout)  _ = OpenOrActivateLayoutAsync(path);
         else if (viewType == ViewType.ThreeD)  OpenOrActivateC3dEditor(path);
         else                                    OpenOrActivateSymbol(path);
     }
+
+    /// <inheritdoc/>
+    public void OpenCellParameters(ProjectTreeNodeViewModel cellNode)
+        => OpenOrActivateCellPlaceholder(cellNode.AbsolutePath, cellNode.Name);
 
     /// <summary>
     /// Opens (or activates) a document chosen by its FILE EXTENSION, wherever it lives on disk.
@@ -11119,8 +11127,14 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 // other view-file types → deferred no-op
                 return;
 
+            // A cell opens as its schematic, else its layout, else its 3D view, and as its .ccell only
+            // when it has none of them — the .ccell is rarely what a double-click is after. Edit
+            // Parameters is still the direct route to the .ccell.
             case NodeKind.Cell:
-                OpenOrActivateCellPlaceholder(node.AbsolutePath, node.Name);
+                if (CellOpenOrder.Resolve(node.AbsolutePath) is { } view)
+                    OpenCellViewFile(view.View, view.Path);
+                else
+                    OpenOrActivateCellPlaceholder(node.AbsolutePath, node.Name);
                 return;
 
             case NodeKind.DataDisplayFile:

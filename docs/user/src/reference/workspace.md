@@ -353,7 +353,9 @@ technologies, [EM setups](em-setup.html), and the tool documents
 
 Opening a document is a double-click in the Project panel. A cell can hold three views — schematic,
 symbol and layout — and each opens as its own tab, so the schematic and the layout of the same cell
-are two tabs you can put side by side.
+are two tabs you can put side by side. Double-clicking the cell itself opens its schematic, or its
+layout when it has no schematic, or its 3D view when it has neither; a cell with none of the three
+opens its parameters. **Edit Parameters** on the cell's right-click menu always opens the parameters.
 
 Tabs are rearrangeable, splittable and detachable: drag one along the strip to reorder it, drop it
 against an edge of the document area to split the area in two, or drag it clear of the window to

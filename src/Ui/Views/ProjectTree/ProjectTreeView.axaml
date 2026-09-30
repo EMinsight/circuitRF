@@ -200,7 +200,7 @@
              surface. So the area past a row's text belonged to nothing, and the highlight was cleared
              and restored as the cursor crossed the end of the label. Transparent is a literal brush
              and cannot fail to resolve. -->
-        <Grid Grid.Row="1" Background="Transparent">
+        <Grid x:Name="TreeArea" Grid.Row="1" Background="Transparent">
 
             <!-- No-workspace placeholder with recent workspaces list (Item 1) -->
             <StackPanel IsVisible="{Binding !HasWorkspace}" Margin="8,6" Spacing="4">
@@ -606,7 +606,7 @@
                                         </MenuItem>
                                         <Separator IsVisible="{Binding IsCell}"/>
                                         <MenuItem Header="Edit Parameters"
-                                                  Command="{Binding ActivateCommand}"
+                                                  Command="{Binding EditParametersCommand}"
                                                   IsVisible="{Binding IsCell}">
                                             <MenuItem.Icon><mi:MaterialIcon Kind="Pencil" Width="14" Height="14"/></MenuItem.Icon>
                                         </MenuItem>
