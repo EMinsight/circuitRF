@@ -84,7 +84,24 @@ static void io_use_binary_streams(void) {
 #  include <unistd.h>
 typedef ssize_t crf_ssize_t;
 
-static void *dl_open(const char *path)             { return dlopen(path, RTLD_NOW | RTLD_LOCAL); }
+/* ON LINUX THE MODEL'S MATHS RESOLVES AGAINST THIS PROCESS, and this process does not load libm on
+ * its own. A compiled model calls log/exp/sqrt as UNDEFINED symbols and names no library for them —
+ * it expects the host to have libm in its global scope already, which a simulator linked against it
+ * does. This worker uses no libm function itself, so the linker drops `-lm` as unneeded (as-needed
+ * is the default on most distributions and under zig), and every real model then failed to load
+ * with "undefined symbol: log". Loading libm GLOBAL here does not depend on how the worker was
+ * linked. macOS has it in libSystem and a Windows DLL names its own imports, so neither needs it;
+ * on musl it is part of libc and the dlopen simply fails, harmlessly. */
+static void *dl_open(const char *path) {
+#  ifdef __linux__
+    static bool libm_loaded = false;
+    if (!libm_loaded) {
+        libm_loaded = true;
+        if (!dlopen("libm.so.6", RTLD_NOW | RTLD_GLOBAL)) (void)dlopen("libm.so", RTLD_NOW | RTLD_GLOBAL);
+    }
+#  endif
+    return dlopen(path, RTLD_NOW | RTLD_LOCAL);
+}
 static void *dl_sym(void *h, const char *name)     { return dlsym(h, name); }
 static const char *dl_error(void)                  { const char *e = dlerror(); return e ? e : "unknown error"; }
 static crf_ssize_t io_read(void *p, size_t n)        { return read(STDIN_FILENO, p, n); }
@@ -326,8 +343,12 @@ static int load_library(const char *path) {
     /* 0.4 exports the descriptor size so the array can be walked WITHOUT depending on our own
      * sizeof(OsdiDescriptor) — which is exactly what lets a 0.4 library be driven by a header
      * built for 0.3, since 0.4 only appends. Without it we must use our own size, which is
-     * correct only when the major/minor match what this header was generated for. */
-    size_t *dsz = (size_t *)dl_sym(g_lib.handle, "OSDI_DESCRIPTOR_SIZE");
+     * correct only when the major/minor match what this header was generated for.
+     *
+     * IT IS A uint32_t, FOUR BYTES — the compiler emits it beside the other uint32 exports. Reading
+     * it as a size_t took four bytes of whatever the linker placed next: zero on macOS, so it
+     * worked, and junk on Linux, where the resulting stride walked describe off the array. */
+    uint32_t *dsz = (uint32_t *)dl_sym(g_lib.handle, "OSDI_DESCRIPTOR_SIZE");
     if (dsz) g_lib.descriptor_size = *dsz;
     else     g_lib.descriptor_size = sizeof(OsdiDescriptor);
 

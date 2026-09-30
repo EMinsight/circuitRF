@@ -94,9 +94,11 @@ case "$TARGET_OS" in
     OUT_DIR="build/$ARCH"
     ;;
   linux)
-    # -ldl for dlopen/dlsym (folded into libc on glibc 2.34+, still needed on anything older) and
-    # -lm because a compiled model's own maths resolves through the process that loaded it. Neither
-    # flag exists on macOS, which is why this is set per target rather than once.
+    # -ldl for dlopen/dlsym (folded into libc on glibc 2.34+, still needed on anything older).
+    # -lm DOES NOT put libm in the worker: it calls no libm function, so an as-needed link (zig's,
+    # and most distributions' default) drops it. A model's maths is resolved by osdi_worker.c's
+    # dl_open loading libm GLOBAL at run time, whatever this line does. Neither flag exists on
+    # macOS, which is why this is set per target rather than once.
     LDLIBS="-ldl -lm"
     case "$ARCH" in
       arm64)  ZIG_TARGET="aarch64-linux-gnu"; DOCKER_PLATFORM="linux/arm64" ;;
