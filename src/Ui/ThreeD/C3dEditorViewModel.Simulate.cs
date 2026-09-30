@@ -224,7 +224,7 @@ public sealed partial class C3dEditorViewModel
         RebuildSetupItems();
         Viewer.SetRunSetup(ActiveRunSetup);
         RefreshFieldsStale();
-        ApplyVisiblePlot();
+        ApplyVisiblePlots();
     }
 
     /// <summary>R-em3d49-1c — Show 3D from a <c>.cem</c> pointing here: that <c>.cem</c> joins the list, read-only, active.</summary>
@@ -295,7 +295,7 @@ public sealed partial class C3dEditorViewModel
         RefreshFieldsStale();
         // brief-em3d-83 — a plot pinned to a setup is unmoved; its row says which setup when it is not the active one.
         RebuildFieldPlotTree();
-        ApplyVisiblePlot();
+        ApplyVisiblePlots();
     }
 
     partial void OnSelectedSetupItemChanged(C3dSetupItem? value)

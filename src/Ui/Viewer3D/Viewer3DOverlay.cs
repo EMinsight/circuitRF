@@ -100,18 +100,21 @@ public sealed class Viewer3DOverlay : Control
             Text(ctx, label.Text, new Point(x + 6, y - 18), ink, 11, dark);
         }
 
-        if (!picture && vm.FieldLegendVisible) Legend(ctx, vm, w, ink, dark);
+        if (!picture && vm.FieldLegendVisible) Legends(ctx, vm, w, h, ink, dark);
 
         // brief-em3d-75 R-em3d75-4c — the hot spot: a ring at the maximum of what is drawn, its temperature and its object.
-        if (vm.ShowsTemperature && vm.HotSpot is { } hot && cam.Project(hot.At, (float)w, (float)h) is (var hx0, var hy0, true))
-        {
-            var at = new Point(hx0, hy0);
-            ctx.DrawEllipse(null, new Pen(dark ? Brushes.Black : Brushes.White, 4), at, 7, 7);
-            ctx.DrawEllipse(null, new Pen(HotBrush, 2), at, 7, 7);
-            ctx.DrawLine(new Pen(HotBrush, 1.5), new Point(at.X - 11, at.Y), new Point(at.X - 4, at.Y));
-            ctx.DrawLine(new Pen(HotBrush, 1.5), new Point(at.X + 4, at.Y), new Point(at.X + 11, at.Y));
-            Text(ctx, vm.HotSpotLabel, new Point(at.X + 12, at.Y - 20), ink, 12, dark);
-        }
+        // brief-em3d-96 — one per drawn temperature plot.
+        if (vm.ShowField)
+            foreach (var (hot, label) in vm.HotSpots)
+            {
+                if (cam.Project(hot.At, (float)w, (float)h) is not (var hx0, var hy0, true)) continue;
+                var at = new Point(hx0, hy0);
+                ctx.DrawEllipse(null, new Pen(dark ? Brushes.Black : Brushes.White, 4), at, 7, 7);
+                ctx.DrawEllipse(null, new Pen(HotBrush, 2), at, 7, 7);
+                ctx.DrawLine(new Pen(HotBrush, 1.5), new Point(at.X - 11, at.Y), new Point(at.X - 4, at.Y));
+                ctx.DrawLine(new Pen(HotBrush, 1.5), new Point(at.X + 4, at.Y), new Point(at.X + 11, at.Y));
+                Text(ctx, label, new Point(at.X + 12, at.Y - 20), ink, 12, dark);
+            }
 
         // Vertex mode: a dot for the candidate, a larger one for each selected vertex.
         var accent = new SolidColorBrush(Color.FromRgb(255, 90, 255));
@@ -523,36 +526,52 @@ public sealed class Viewer3DOverlay : Control
     }
 
     /// <summary>brief-em3d-29 R-em3d29-3c — the field's legend, top right: the quantity, a colour bar with the
-    /// range at its ends, the range's percentile, the solution, and the phase when animated.</summary>
-    private static void Legend(DrawingContext ctx, Viewer3DViewModel vm, double w, IBrush ink, bool dark)
+    /// range at its ends, the range's percentile, the solution, and the phase when animated. brief-em3d-96 D3 — one per colour
+    /// range, stacked down the right 8 DIPs apart, all one HELD width (the column's widest, so a drag moves none of them
+    /// sideways); one that would run past the bottom is not drawn, and the last one drawn ends with "+N more".</summary>
+    private static void Legends(DrawingContext ctx, Viewer3DViewModel vm, double w, double h, IBrush ink, bool dark)
     {
-        var lines = vm.FieldLegendLines();
-        if (lines.Count == 0 || vm.FieldScale is not { } range) return;
-        const double barW = 220, barH = 12, pad = 8, line = 16;
-        var texts = lines.Select(l => new FormattedText(l, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, Typeface.Default, 12, ink)).ToList();
-        double bw = vm.HeldLegendWidth(Math.Max(barW, texts.Max(t => t.Width))) + 2 * pad;
-        double bh = 2 * pad + barH + line * (lines.Count + 1);
-        double x0 = w - bw - 12, y0 = 12;
-        ctx.FillRectangle(new SolidColorBrush(dark ? Color.FromArgb(215, 28, 30, 34) : Color.FromArgb(225, 250, 250, 252)),
-                          new Rect(x0, y0, bw, bh), 4);
-        double y = y0 + pad;
-        ctx.DrawText(texts[0], new Point(x0 + pad, y));
-        y += line + 2;
-        var stops = new GradientStops();
-        foreach (var (t, r, g, b) in vm.FieldMap.Stops) stops.Add(new GradientStop(Color.FromRgb(r, g, b), t));
-        var bar = new LinearGradientBrush
+        var groups = vm.FieldLegendGroups;
+        if (groups.Count == 0) return;
+        const double barW = 220, barH = 12, pad = 8, line = 16, gap = 8, top = 12;
+        var texts = groups.Select(g => g.Lines.Select(l => new FormattedText(l, CultureInfo.CurrentCulture, FlowDirection.LeftToRight,
+                                                                              Typeface.Default, 12, ink)).ToList()).ToList();
+        double widest = texts.Max(t => t.Count == 0 ? 0 : t.Max(x => x.Width));
+        double bw = vm.HeldLegendWidth(Math.Max(barW, widest)) + 2 * pad;
+        double Height(int k, bool more) => 2 * pad + barH + line * (texts[k].Count + 1 + (more ? 1 : 0));
+        int shown = FieldPicture.StackCount([.. Enumerable.Range(0, groups.Count).Select(k => (float)Height(k, false))], (float)line,
+                                            (float)gap, (float)top, (float)(h - top));
+        var fill = new SolidColorBrush(dark ? Color.FromArgb(215, 28, 30, 34) : Color.FromArgb(225, 250, 250, 252));
+        double x0 = w - bw - 12, y0 = top;
+        for (int k = 0; k < shown; k++)
         {
-            StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative), EndPoint = new RelativePoint(1, 0, RelativeUnit.Relative),
-            GradientStops = stops,
-        };
-        ctx.FillRectangle(bar, new Rect(x0 + pad, y, barW, barH));
-        y += barH + 2;
-        var lo = new FormattedText(FieldColorScale.G(range.Lo), CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Typeface.Default, 11, ink);
-        var hi = new FormattedText(FieldColorScale.G(range.Hi), CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Typeface.Default, 11, ink);
-        ctx.DrawText(lo, new Point(x0 + pad, y));
-        ctx.DrawText(hi, new Point(x0 + pad + barW - hi.Width, y));
-        y += line;
-        for (int i = 1; i < texts.Count; i++, y += line) ctx.DrawText(texts[i], new Point(x0 + pad, y));
+            var g = groups[k];
+            bool more = k == shown - 1 && shown < groups.Count;
+            double bh = Height(k, more);
+            ctx.FillRectangle(fill, new Rect(x0, y0, bw, bh), 4);
+            double y = y0 + pad;
+            if (texts[k].Count > 0) ctx.DrawText(texts[k][0], new Point(x0 + pad, y));
+            y += line + 2;
+            var stops = new GradientStops();
+            foreach (var (t, r, gr, b) in g.Map.Stops) stops.Add(new GradientStop(Color.FromRgb(r, gr, b), t));
+            var bar = new LinearGradientBrush
+            {
+                StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative), EndPoint = new RelativePoint(1, 0, RelativeUnit.Relative),
+                GradientStops = stops,
+            };
+            ctx.FillRectangle(bar, new Rect(x0 + pad, y, barW, barH));
+            y += barH + 2;
+            var lo = new FormattedText(FieldColorScale.G(g.Scale.Lo), CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Typeface.Default, 11, ink);
+            var hi = new FormattedText(FieldColorScale.G(g.Scale.Hi), CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Typeface.Default, 11, ink);
+            ctx.DrawText(lo, new Point(x0 + pad, y));
+            ctx.DrawText(hi, new Point(x0 + pad + barW - hi.Width, y));
+            y += line;
+            for (int i = 1; i < texts[k].Count; i++, y += line) ctx.DrawText(texts[k][i], new Point(x0 + pad, y));
+            if (more)
+                ctx.DrawText(new FormattedText(FieldPicture.MoreLine(groups.Count - shown), CultureInfo.CurrentCulture, FlowDirection.LeftToRight,
+                                               Typeface.Default, 12, ink), new Point(x0 + pad, y));
+            y0 += bh + gap;
+        }
     }
 
     /// <summary>The axis indicator's centre in a view <paramref name="height"/> DIPs tall.</summary>

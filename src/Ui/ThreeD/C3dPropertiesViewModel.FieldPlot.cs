@@ -136,8 +136,8 @@ public sealed partial class C3dPropertiesViewModel
 
         // The Quantity picker: only what the step offers (the plot's own quantity kept, marked, when it does not).
         var item = FieldPlotResolver.PickSolution(p.Solution, request.Solver, mine, editor.Viewer.Scene.Problem);
-        var offered = item is null ? [] : !p.Hidden && editor.Viewer.Plot?.Name == p.Name && editor.Viewer.FieldQuantities.Count > 0
-            ? [.. editor.Viewer.FieldQuantities] : editor.OfferedQuantities(item);
+        var offered = item is null ? [] : !p.Hidden && editor.Viewer.FieldLayers.FirstOrDefault(l => l.Name == p.Name) is { Quantities.Count: > 0 } layer
+            ? [.. layer.Quantities] : editor.OfferedQuantities(item);
         List<C3dPlotQuantityChoice> quantities = [.. offered.Select(q => new C3dPlotQuantityChoice(q.Label, q.Array.Name, q.Mode.ToString()))];
         var qc = quantities.FirstOrDefault(c => c.Quantity == p.Quantity && (p.Mode is null || string.Equals(c.Mode, p.Mode, StringComparison.OrdinalIgnoreCase)));
         if (qc is null)

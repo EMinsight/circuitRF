@@ -4,11 +4,23 @@
 // Edit this file, then regenerate:  tools/ShaderGen  ->  shadergen src/Ui/Viewer3D/Shaders/scene.wgsl src/Ui/Viewer3D/Shaders
 //
 // The uniform block is Scene3DFramePlan's: vp, eye, clip, the hovered (object, face), flags, the selection
-// mode, the selection (brief-em3d-43 R-em3d43-5: up to 64 (object, face) pairs), then brief 29's field block
-// (FieldUniforms: phase, range, mode, dB, the colour map's stops), then brief 45's drawing grid (PlaneGrid.Fill)
-// — 1,152 bytes.
+// mode, the selection (brief-em3d-43 R-em3d43-5: up to 64 (object, face) pairs), then brief 29's field blocks
+// (FieldUniforms: phase, range, mode, dB, the colour map's stops — brief-em3d-96: four, one per drawn plot), then
+// brief 45's drawing grid (PlaneGrid.Fill) — 2,016 bytes.
 // A vertex is Scene3DVertex: position, object id, RGBA8 colour, face (24 bytes); a FIELD vertex is
 // FieldVertex: position, the value's real part, its imaginary part (36 bytes).
+
+// brief-em3d-96 — one drawn plot's colour block (FieldUniforms, 288 bytes).
+struct FB {
+    // x cos φ, y sin φ, z range lo, w range hi
+    fphase: vec4f,
+    // x mode (0 |v| of a vector, 1 |Re{v e^jφ}|, 2 a real scalar, 3 Re{v e^jφ} of a scalar, 4 |v| of a
+    // scalar), y dB, z the colour map's stop count, w 1 when the field is a ClipPlane plot's slice: it lies on the
+    // plot's own plane, so the view's section plane does not cut it
+    fmode: vec4f,
+    // (t, r, g, b) per stop
+    stops: array<vec4f, 16>,
+};
 
 struct U {
     vp: mat4x4f,
@@ -26,14 +38,8 @@ struct U {
     pad2: u32,
     // (object, face) pairs, two per vec4u: entry k is sel[k / 2].xy or .zw
     sel: array<vec4u, 32>,
-    // x cos φ, y sin φ, z range lo, w range hi
-    fphase: vec4f,
-    // x mode (0 |v| of a vector, 1 |Re{v e^jφ}|, 2 a real scalar, 3 Re{v e^jφ} of a scalar, 4 |v| of a
-    // scalar), y dB, z the colour map's stop count, w 1 when the field is a ClipPlane plot's slice: it lies on the
-    // plot's own plane, so the view's section plane does not cut it
-    fmode: vec4f,
-    // (t, r, g, b) per stop
-    stops: array<vec4f, 16>,
+    // brief-em3d-96 — one block per drawn plot; a field draw's mx.id.y names its own
+    f: array<FB, 4>,
     // brief-em3d-45 — the drawing grid (PlaneGrid.Fill): the plane's u and v axes with each one's fine phase, its
     // normal and offset, the ray's origin (w: 1 perspective, 0 orthographic), (minor, major every, -, on), the line
     // colour, where the world origin's lines are (local u, v) and the coarse phases, the colours of the lines along u
@@ -67,6 +73,7 @@ struct U {
 //
 // 3D editor bugs round 3 — and id.y, a selected object's edge pass (Scene3DFramePlan.EdgePasses): 0 none, else the line
 // drawn again (id.y & 1, id.y >> 1) pixels over, so the outline is two pixels wide where no backend draws a wider line.
+// brief-em3d-96 — in a FIELD draw id.y is instead the drawn plot's colour block (vs_field reads it; vs never sees a field draw).
 struct MX {
     m: mat4x4f,
     id: vec4u,
@@ -212,6 +219,8 @@ struct FVO {
     @location(0) world: vec3f,
     @location(1) re: vec3f,
     @location(2) im: vec3f,
+    // brief-em3d-96 — the drawn plot's colour block, from the draw's transform slot
+    @location(3) @interpolate(flat) layer: u32,
 };
 
 @vertex fn vs_field(v: FVI) -> FVO {
@@ -220,13 +229,14 @@ struct FVO {
     o.world = v.p;
     o.re = v.re;
     o.im = v.im;
+    o.layer = min(mx.id.y, 3u);
     return o;
 }
 
-fn field_value(re: vec3f, im: vec3f) -> f32 {
-    let c = u.fphase.x;
-    let s = u.fphase.y;
-    let mode = u32(u.fmode.x + 0.5);
+fn field_value(re: vec3f, im: vec3f, l: u32) -> f32 {
+    let c = u.f[l].fphase.x;
+    let s = u.f[l].fphase.y;
+    let mode = u32(u.f[l].fmode.x + 0.5);
     if (mode == 0u) { return sqrt(dot(re, re) + dot(im, im)); }
     if (mode == 1u) { return length(re * c - im * s); }
     if (mode == 2u) { return re.x; }
@@ -234,12 +244,12 @@ fn field_value(re: vec3f, im: vec3f) -> f32 {
     return sqrt(re.x * re.x + im.x * im.x);
 }
 
-fn colour_map(t: f32) -> vec3f {
-    let n = u32(u.fmode.z + 0.5);
-    var rgb = u.stops[0].yzw;
+fn colour_map(t: f32, l: u32) -> vec3f {
+    let n = u32(u.f[l].fmode.z + 0.5);
+    var rgb = u.f[l].stops[0].yzw;
     for (var k = 1u; k < n; k = k + 1u) {
-        let a = u.stops[k - 1u];
-        let b = u.stops[k];
+        let a = u.f[l].stops[k - 1u];
+        let b = u.f[l].stops[k];
         if (t <= b.x || k == n - 1u) {
             let w = clamp((t - a.x) / max(b.x - a.x, 1e-6), 0.0, 1.0);
             rgb = mix(a.yzw, b.yzw, w);
@@ -250,11 +260,14 @@ fn colour_map(t: f32) -> vec3f {
 }
 
 @fragment fn fs_field(i: FVO) -> @location(0) vec4f {
-    if (u.fmode.w < 0.5 && clipped(i.world)) { discard; }
-    var v = field_value(i.re, i.im);
-    if (u.fmode.y > 0.5) { v = 20.0 * 0.30102999566 * log2(max(abs(v), 1e-30)); }
-    let t = clamp((v - u.fphase.z) / max(u.fphase.w - u.fphase.z, 1e-30), 0.0, 1.0);
-    return vec4f(colour_map(t), 1.0);
+    let l = i.layer;
+    if (u.f[l].fmode.w < 0.5 && clipped(i.world)) { discard; }
+    var v = field_value(i.re, i.im, l);
+    if (u.f[l].fmode.y > 0.5) { v = 20.0 * 0.30102999566 * log2(max(abs(v), 1e-30)); }
+    let lo = u.f[l].fphase.z;
+    let hi = u.f[l].fphase.w;
+    let t = clamp((v - lo) / max(hi - lo, 1e-30), 0.0, 1.0);
+    return vec4f(colour_map(t, l), 1.0);
 }
 
 // ── brief-em3d-45: the drawing grid ────────────────────────────────────────────────────────────────

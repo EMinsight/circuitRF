@@ -149,9 +149,9 @@ public sealed class Viewer3DViewState
     /// <summary>Objects a field surface is drawn ON (a conductor, a solid's faces): their own triangles
     /// are left out while the field is shown, since the two would lie in one plane and fight.</summary>
     public bool[] FieldCovered = [];
-    /// <summary>The field uniform block (FieldUniforms.Floats): the phase, the range, the mode and the
-    /// colour map — what an animation changes, per frame, instead of any geometry.</summary>
-    public readonly float[] Field = new float[Fields.FieldUniforms.Floats];
+    /// <summary>The field uniform blocks (FieldUniforms.Floats each, brief-em3d-96: one per drawn plot, FieldUniforms.MaxLayers):
+    /// the phase, the range, the mode and the colour map — what an animation changes, per frame, instead of any geometry.</summary>
+    public readonly float[] Field = new float[Fields.FieldUniforms.LayersFloats];
     /// <summary>brief-em3d-45 — the drawing plane's grid, or null (the read-only viewer draws none).</summary>
     public DrawingGridSettings? DrawingGrid;
     public bool ShowAxisIndicator = true;
@@ -198,12 +198,13 @@ public sealed class Scene3DFramePlan
     public const int FieldAt = SelectionAt + 2 * SelectionLimit;
 
     /// <summary>Where brief 45's grid block starts, in floats.</summary>
-    public const int GridAt = FieldAt + Fields.FieldUniforms.Floats;
+    public const int GridAt = FieldAt + Fields.FieldUniforms.LayersFloats;
 
     /// <summary>Floats in the uniform block — the WGSL <c>U</c>: vp (16), eye (4), clip (4), the hovered
     /// (object, face), flags, the mode, the selection's count and three pads (128 bytes), the selection's
-    /// (object, face) pairs (512 bytes), brief 29's field block (<see cref="Fields.FieldUniforms"/>,
-    /// 288 bytes), then brief 45's grid block (<see cref="PlaneGrid.Floats"/>, 224 bytes). 1,152 bytes.</summary>
+    /// (object, face) pairs (512 bytes), brief 29's field blocks (<see cref="Fields.FieldUniforms"/>, 288 bytes each,
+    /// brief-em3d-96: four, 1,152 bytes), then brief 45's grid block (<see cref="PlaneGrid.Floats"/>, 224 bytes). 2,016 bytes —
+    /// under Metal's 4 KB inline-bytes limit (<c>setVertexBytes</c>), which the Metal backend asserts.</summary>
     public const int UniformFloats = GridAt + PlaneGrid.Floats;
     public const int UniformBytes = UniformFloats * 4;
 
@@ -386,10 +387,15 @@ public sealed class Scene3DFramePlan
                              TieOf(scene, b.ObjectId));
             }
         }
-        // brief-em3d-29 — the field's slice and surfaces, one draw, opaque, before anything translucent; at a coincident face
-        // the field wins (its own tie), over metal, a port, and a translucent face drawn after it.
+        // brief-em3d-29 — the field's slice and surfaces, opaque, before anything translucent; at a coincident face the field
+        // wins (its own tie), over metal, a port, and a translucent face drawn after it. brief-em3d-96 — one draw per drawn plot,
+        // in the geometry's draw order (the focused plot last, so it wins where two plots coincide under LessEqual), each under
+        // a transform slot holding the identity and the plot's colour block in id.y.
         if (view.ShowField && field is { Vertices.Length: > 0 } f)
-            Add(ref Draws, ref DrawCount, Scene3DPipeline.Field, Scene3DBuffer.Field, 0, f.Vertices.Length, tie: Scene3DDepthTie.Field);
+            foreach (var r in f.Layers)
+                if (r.Count > 0 && r.First >= 0 && r.First + r.Count <= f.Vertices.Length)
+                    Add(ref Draws, ref DrawCount, Scene3DPipeline.Field, Scene3DBuffer.Field, r.First, r.Count, FieldSlot(r.Layer),
+                        Scene3DDepthTie.Field);
         foreach (var lb in scene.LineBatches)
             if (view.IsVisible(lb.ObjectId))
                 AddMoved(preview, lb.ObjectId, Scene3DPipeline.Lines, Scene3DBuffer.SceneLines, lb.FirstVertex, lb.VertexCount, identity: true);
@@ -719,9 +725,33 @@ public sealed class Scene3DFramePlan
         return start;
     }
 
+    /// <summary>brief-em3d-96 — the slot a field layer's draw takes: the identity, with the layer's colour block in id.y (vs_field
+    /// hands it to fs_field). Made on first asking in a frame, all <see cref="Fields.FieldUniforms.MaxLayers"/> at once.</summary>
+    private int FieldSlot(int layer)
+    {
+        if (_fieldSlots < 0)
+        {
+            _fieldSlots = _nextSlot;
+            EnsureSlots(_fieldSlots + Fields.FieldUniforms.MaxLayers);
+            for (int k = 0; k < Fields.FieldUniforms.MaxLayers; k++)
+            {
+                WriteSlot(_fieldSlots + k, Matrix4x4.Identity, 0);
+                Transforms[TransformFloats * (_fieldSlots + k) + 17] = BitConverter.UInt32BitsToSingle((uint)k);
+            }
+            _nextSlot = _fieldSlots + Fields.FieldUniforms.MaxLayers;
+        }
+        return _fieldSlots + Math.Clamp(layer, 0, Fields.FieldUniforms.MaxLayers - 1);
+    }
+
+    private int _fieldSlots = -1;
+
+    /// <summary>brief-em3d-96 — the colour block draw <paramref name="d"/> reads: its slot's id.y (a field draw's layer).</summary>
+    public uint LayerOf(in Scene3DDraw d) => BitConverter.SingleToUInt32Bits(Transforms[TransformFloats * d.Transform + 17]);
+
     /// <summary>Slot 0 the identity, the element slots (written with the scene), then the preview's copies.</summary>
     private void WriteTransforms(Scene3DPreview? preview)
     {
+        _fieldSlots = -1;
         foreach (int e in _comboUsed) _comboStart[e] = -1;
         _comboUsed.Clear();
         int copies = Math.Min(preview?.Copies.Length ?? 0, MaxPreviewCopies);

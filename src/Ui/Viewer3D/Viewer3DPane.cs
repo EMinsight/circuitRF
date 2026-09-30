@@ -246,9 +246,9 @@ public sealed class Viewer3DPane : Control
                 _plan.PickPixelsPerDip = (float)scale;
                 _plan.TriangleBudget = _vm.TriangleBudget;
                 _plan.Plan(_vm.Scene, view, w, h, backend.FlipY, pick: view.CursorX >= 0,
-                           _vm.MeshOverlay, _vm.SectionOverlay, _vm.GridOverlay, _vm.FieldGeometry);
+                           _vm.MeshOverlay, _vm.SectionOverlay, _vm.GridOverlay, _vm.FieldDrawn);
                 _vm.FramePlanned(_plan);
-                _pField = _vm.FieldGeometry;
+                _pField = _vm.FieldDrawn;
                 view.CursorX = cx; view.CursorY = cy;
                 _planScene = _vm.Scene;
                 (_pMesh, _pSection, _pGrid) = (_vm.MeshOverlay, _vm.SectionOverlay, _vm.GridOverlay);

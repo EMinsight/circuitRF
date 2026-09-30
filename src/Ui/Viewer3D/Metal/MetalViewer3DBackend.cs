@@ -74,8 +74,22 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
 
     public override string Description { get; }
 
+    /// <summary>brief-em3d-96 — the most bytes <c>setVertexBytes</c> / <c>setFragmentBytes</c> may carry: the uniform block goes
+    /// in inline (<see cref="Common"/>), so it must stay under this.</summary>
+    public const int InlineBytesLimit = 4096;
+
+    /// <summary>The uniform block fits the inline limit — checked where a device is made, so a block grown past it fails the
+    /// first 3D view on a Mac, not a frame at random. Also held by Viewer3DFrameGateTests.</summary>
+    internal static void AssertUniformsFitInline()
+    {
+        if (Scene3DFramePlan.UniformBytes > InlineBytesLimit)
+            throw new InvalidOperationException($"The 3D view's uniform block is {Scene3DFramePlan.UniformBytes:N0} bytes; Metal takes at most " +
+                                                $"{InlineBytesLimit:N0} inline (setVertexBytes).");
+    }
+
     public MetalViewer3DBackend()
     {
+        AssertUniformsFitInline();
         _device = MTLCreateSystemDefaultDevice();
         if (_device == 0) throw new Viewer3DPresentFault("This Mac has no Metal device.");
         _queue = Send(_device, S.newCommandQueue);

@@ -137,6 +137,8 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
     {
         CemPath = path;
         Title = title;
+        _layers = [_own];                          // brief-em3d-96 — with no plot, the view's own field layer
+        _focused = _own;
         _prepare = snapshot;
         _resultsRoot = resultsRoot;
         _post = post;
@@ -400,7 +402,7 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
             finally { _selectingFromTree = false; }
         }
         // brief-em3d-29 — a selected solid is where a volume field's surface is drawn.
-        if (ShowField && FieldOnSurfaces && SelectedFieldQuantity is { OnBoundary: false }) ScheduleFieldGeometry();
+        if (ShowField) ScheduleFieldGeometry(l => l.OnSurfaces && l.Quantity is { OnBoundary: false });
         FrameRequested?.Invoke();
     }
 
@@ -668,7 +670,8 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
         View.ShowMeshSection = ShowMesh && ClipEnabled;
         FrameRequested?.Invoke();
         ScheduleClipOverlays();
-        ScheduleFieldGeometry();
+        // brief-em3d-96 — a ClipPlane plot cuts on its own plane: the view's section never rebuilds it.
+        ScheduleFieldGeometry(l => !l.IsClipPlanePlot);
     }
 
     // Overlays (R-em3d28-3).
@@ -907,8 +910,8 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
         _debounce?.Dispose();
         _overlayCts?.Cancel();
         _animation?.Dispose();
-        _fieldCts?.Cancel();
-        _fieldLoadCts?.Cancel();
+        foreach (var layer in _layers) layer.Dispose();
+        _own.Dispose();
         Source.Dispose();
         Session.Dispose();
     }

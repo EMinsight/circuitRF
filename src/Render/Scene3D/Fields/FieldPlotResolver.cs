@@ -60,6 +60,10 @@ public sealed record FieldPlotRequest
     public bool FixRange { get; init; }
 
     public bool IsTemperature => Quantity == C3dFieldPlot.TemperatureQuantity;
+
+    /// <summary>brief-em3d-96 — what the requester says identifies this request (the plot, its plane, its faces, its run): the 3D
+    /// view leaves a drawn plot whose key is unchanged exactly as it is. Empty: always applied.</summary>
+    public string Key { get; init; } = "";
 }
 
 /// <summary>brief-em3d-83 — what a setup's runs saved, read synchronously: the editor's Solution picker and the missing-data

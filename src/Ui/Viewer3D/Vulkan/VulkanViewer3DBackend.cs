@@ -58,7 +58,8 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
     /// <summary>Transform slots per frame slot: a preview's copies at first; brief-em3d-48's array elements (a slot each,
     /// and one for each one's box) grow it — the ring is re-made, once, between frames (EnsureTransformRing).</summary>
     private int _transformSlots = 1 + Scene3DFramePlan.MaxPreviewCopies;
-    private const int UniformStride = 1280;   // ≥ 1,152 (brief 45's grid block, made infinite) and a multiple of every minUniformBufferOffsetAlignment (≤ 256)
+    // ≥ the uniform block (2,016 bytes since brief-em3d-96's four field blocks) and a multiple of every minUniformBufferOffsetAlignment (≤ 256)
+    private const int UniformStride = (Scene3DFramePlan.UniformBytes + 255) / 256 * 256;
     private const VkFormat ColorFormat = VkFormat.R8G8B8A8Unorm;
     private const VkFormat DepthFormat = VkFormat.D32Sfloat;
     private const VkImageUsageFlags TargetUsage =

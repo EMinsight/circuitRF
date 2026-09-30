@@ -337,7 +337,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         RefreshWireFlags();
         RefreshKernelFlags();
         RememberInstanceBounds();
-        ApplyVisiblePlot();                        // brief-em3d-83 — its plane and faces, on this scene
+        ApplyVisiblePlots();                       // brief-em3d-83 — its plane and faces, on this scene
         if (_fitOnAdopt && Viewer.Scene.Objects.Length > 0)
         {
             _fitOnAdopt = false;
@@ -1080,6 +1080,8 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     partial void OnSelectedTreeItemChanged(C3dTreeItem? value)
     {
         RaiseMenuStateChanged();
+        // brief-em3d-96 — a drawn plot selected is the focused one: the Inspector shows it, and it is drawn last.
+        if (value is { Kind: FieldPlotKind }) Viewer.FocusPlot(value.Name);
         if (!_settingTreeRows && !(value is null ? _selectedTreeItems.Count == 0 : _selectedTreeItems is [var only] && only == value))
         {
             _selectedTreeItems = value is null ? [] : [value];

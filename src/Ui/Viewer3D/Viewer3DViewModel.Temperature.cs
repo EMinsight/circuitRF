@@ -15,14 +15,15 @@
 // recipe its cut or gather left (FieldSurface.Revalue). Nothing is sliced or gathered again: FieldGeometryBuilds does not move.
 // The vertex buffer is still one interleaved FieldVertex array, so the re-upload carries the (unchanged) positions too — the
 // GPU path has one field stream on all three backends, and splitting it was not this brief's to do.
+//
+// brief-em3d-96 — all of it per LAYER: the sweep step is one control, and every temperature layer on the focused layer's run
+// follows it (OnSelectedFieldSolutionChanged).
 
 using System.Globalization;
 using System.Numerics;
-using CircuitRF.Design.Em3d;
 using CircuitRF.Design.Thermal;
 using CircuitRF.Engine.Em3d;
 using CircuitRF.Render.Scene3D;
-using CircuitRF.Render.Scene3D.Edit;
 using CircuitRF.Render.Scene3D.Fields;
 using CommunityToolkit.Mvvm.ComponentModel;
 
@@ -30,35 +31,10 @@ namespace CircuitRF.Ui.Viewer3D;
 
 public sealed partial class Viewer3DViewModel
 {
-    private readonly List<TemperatureFace> _temperatureFaces = [];
-    private ThermalResultTable? _thermalTable;
-    private TemperatureParts? _temperature;
-    private long _geometryVersion;
-
-    /// <summary>What the temperature geometry was built from: each mesh surface's object (for the hot spot's name), its nudge,
-    /// the wires, and the steps it may be revalued on.</summary>
-    private sealed record TemperatureParts(IReadOnlyList<FieldSurface> Surfaces, IReadOnlyList<Vector3> Nudges, IReadOnlyList<string> Objects,
-                                           IReadOnlyList<FieldWireSurface> Wires, IReadOnlyList<TemperatureFace> Faces, long GeometryVersion)
+    private TemperatureTargets CurrentTemperatureTargets(FieldLayer layer)
     {
-        /// <summary>brief-em3d-76 — per surface, the reflections that made it (scene-local), empty for a modelled one.</summary>
-        public IReadOnlyList<(int Axis, double At)[]> Reflections { get; init; } = [];
-
-        /// <summary>What these parts were built FOR: a step may be revalued onto them only while the targets are still these.</summary>
-        public TemperatureTargets? Targets { get; init; }
-    }
-
-    /// <summary>The choices a temperature's geometry depends on, beyond its painted faces: All Faces, the clip section and its
-    /// plane, the fixed range, and the mirror planes.</summary>
-    private sealed record TemperatureTargets(bool AllFaces, bool OnClip, Vector4 Plane, bool FixRange, (int Axis, double AtM)[] Mirrors)
-    {
-        public bool Same(TemperatureTargets o) => AllFaces == o.AllFaces && OnClip == o.OnClip && (!OnClip || Plane == o.Plane) &&
-                                                  FixRange == o.FixRange && Mirrors.SequenceEqual(o.Mirrors);
-    }
-
-    private TemperatureTargets CurrentTemperatureTargets()
-    {
-        var clip = FieldPlane;
-        return new(TemperatureAllFaces, TemperatureOnClip && clip.Enabled, clip.Equation, FixRangeAcrossSweep,
+        var clip = PlaneOf(layer);
+        return new(layer.TempAllFaces, layer.TempOnClip && clip.Enabled, clip.Equation, layer.FixRange,
                    MirrorSymmetry ? [.. SymmetryPlanes] : []);
     }
 
@@ -70,7 +46,7 @@ public sealed partial class Viewer3DViewModel
 
     partial void OnMirrorSymmetryChanged(bool value)
     {
-        if (ShowsTemperature && SymmetryPlanes.Count > 0) ScheduleFieldGeometry();
+        if (SymmetryPlanes.Count > 0) ScheduleFieldGeometry(l => l.Quantity is { IsTemperature: true });
     }
 
     /// <summary>The editor's symmetry planes; a change redraws a shown temperature.</summary>
@@ -78,21 +54,17 @@ public sealed partial class Viewer3DViewModel
     {
         if (planes.SequenceEqual(SymmetryPlanes)) return;
         SymmetryPlanes = planes;
-        if (ShowsTemperature) ScheduleFieldGeometry();
+        ScheduleFieldGeometry(l => l.Quantity is { IsTemperature: true });
     }
 
-    /// <summary>Gate 7 — how many times the drawn field's triangles were cut or gathered from the mesh: a temperature's, and
-    /// (brief-em3d-82 gate 6) an EM field's, painted faces included — a phase step moves neither.</summary>
-    public long FieldGeometryBuilds { get; private set; }
-
-    /// <summary>Gate 7 — how many times drawn triangles were given another step's values and nothing else.</summary>
+    /// <summary>Gate 7 — how many times drawn triangles were given another step's values and nothing else, over every layer.</summary>
     public long FieldRevalues { get; private set; }
 
-    /// <summary>The run whose fields are open is a thermal one.</summary>
-    public bool IsThermalRun => _fieldRun?.Kind == FieldProblemKind.Thermal;
+    /// <summary>The run whose fields the focused layer reads is a thermal one.</summary>
+    public bool IsThermalRun => Focused.Run?.Kind == FieldProblemKind.Thermal;
 
-    /// <summary>The thermal run's table (the .npy), or null.</summary>
-    public ThermalResultTable? ThermalTable => _thermalTable;
+    /// <summary>The focused layer's thermal run's table (the .npy), or null.</summary>
+    public ThermalResultTable? ThermalTable => Focused.Read?.Table;
 
     /// <summary>R-em3d75-4a — every exposed and conditioned face painted.</summary>
     [ObservableProperty] private bool _temperatureAllFaces;
@@ -106,25 +78,38 @@ public sealed partial class Viewer3DViewModel
     /// <summary>R-em3d75-4c — the sweep slider: the step shown, 0-based.</summary>
     [ObservableProperty] private int _temperatureStep;
 
-    /// <summary>The hottest point of what is drawn, and what it is on — the hot-spot marker.</summary>
-    public FieldHotSpot? HotSpot { get; private set; }
+    /// <summary>The hottest point of what the focused layer draws, and what it is on — the hot-spot marker.</summary>
+    public FieldHotSpot? HotSpot => Focused.HotSpot;
 
     /// <summary>The marker's label: <c>87.3 °C, die</c>.</summary>
-    public string HotSpotLabel { get; private set; } = "";
+    public string HotSpotLabel => Focused.HotSpotLabel;
 
-    /// <summary>The faces painted one by one, in the order they were asked for.</summary>
-    public IReadOnlyList<TemperatureFace> TemperatureFaces => _temperatureFaces;
+    /// <summary>brief-em3d-96 — every drawn temperature layer's hot spot and label (the overlay rings each).</summary>
+    public IReadOnlyList<(FieldHotSpot Spot, string Label)> HotSpots
+        => [.. DrawnLayers.Where(l => l.Quantity is { IsTemperature: true } && l.HotSpot is not null).Select(l => (l.HotSpot!.Value, l.HotSpotLabel))];
+
+    /// <summary>The focused layer's faces painted one by one, in the order they were asked for.</summary>
+    public IReadOnlyList<TemperatureFace> TemperatureFaces => Focused.TempFaces;
 
     /// <summary>The slider's last position.</summary>
     public int TemperatureStepMax => Math.Max(0, FieldSolutions.Count - 1);
 
     /// <summary>The slider's label: the sweep values of the step shown.</summary>
-    public string TemperatureStepLabel => _thermalTable is { } t && TemperatureStep < t.Points ? t.PointLabel(TemperatureStep)
+    public string TemperatureStepLabel => ThermalTable is { } t && TemperatureStep < t.Points ? t.PointLabel(TemperatureStep)
                                         : FieldSolutions.Count > 1 ? $"point {TemperatureStep + 1} of {FieldSolutions.Count}" : "";
+
+    /// <summary>A layer's step label: the sweep values of the step it shows.</summary>
+    private static string StepLabelOf(FieldLayer layer)
+    {
+        var items = layer.Read?.Items ?? [];
+        int step = layer.Item is { } i ? Math.Max(0, IndexOfItem(items, i)) : 0;
+        return layer.Read?.Table is { } t && step < t.Points ? t.PointLabel(step)
+             : items.Count > 1 ? $"point {step + 1} of {items.Count}" : "";
+    }
 
     public bool HasTemperatureSweep => IsThermalRun && FieldSolutions.Count > 1;
 
-    /// <summary>Temperature is being drawn: a thermal run's field is shown.</summary>
+    /// <summary>Temperature is being drawn: the focused layer shows a thermal run's field.</summary>
     public bool ShowsTemperature => ShowField && SelectedFieldQuantity is { IsTemperature: true };
 
     /// <summary>
@@ -134,29 +119,41 @@ public sealed partial class Viewer3DViewModel
     public void ToggleTemperatureFace(string obj, int face)
     {
         var f = new TemperatureFace(obj, face);
-        if (!_temperatureFaces.Remove(f)) _temperatureFaces.Add(f);
+        if (!Focused.TempFaces.Remove(f)) Focused.TempFaces.Add(f);
         ShowTemperature();
     }
 
-    public bool IsTemperatureFace(string obj, int face) => _temperatureFaces.Contains(new TemperatureFace(obj, face));
+    public bool IsTemperatureFace(string obj, int face) => Focused.TempFaces.Contains(new TemperatureFace(obj, face));
 
     /// <summary>Clears every painted face, All Faces and the clip plane: the temperature goes away.</summary>
     public void ClearTemperature()
     {
-        _temperatureFaces.Clear();
+        Focused.TempFaces.Clear();
         TemperatureAllFaces = false;
         TemperatureOnClip = false;
         ShowField = false;
     }
 
-    partial void OnTemperatureAllFacesChanged(bool value) => ShowTemperature();
+    partial void OnTemperatureAllFacesChanged(bool value)
+    {
+        if (_applyingPlot) return;
+        Focused.TempAllFaces = value;
+        ShowTemperature();
+    }
 
-    partial void OnTemperatureOnClipChanged(bool value) => ShowTemperature();
+    partial void OnTemperatureOnClipChanged(bool value)
+    {
+        if (_applyingPlot) return;
+        Focused.TempOnClip = value;
+        ShowTemperature();
+    }
 
     partial void OnFixRangeAcrossSweepChanged(bool value)
     {
+        if (_applyingPlot) return;
+        Focused.FixRange = value;
         if (!ShowsTemperature) return;
-        ScheduleFieldGeometry();
+        ScheduleFieldGeometry(Focused);
     }
 
     partial void OnTemperatureStepChanged(int value)
@@ -170,12 +167,13 @@ public sealed partial class Viewer3DViewModel
     private void ShowTemperature()
     {
         if (_applyingPlot) return;                 // brief-em3d-83 — a plot sets the targets, then draws once
-        bool any = _temperatureFaces.Count > 0 || TemperatureAllFaces || TemperatureOnClip;
+        var layer = Focused;
+        bool any = layer.TempFaces.Count > 0 || layer.TempAllFaces || layer.TempOnClip;
         if (!any) { if (ShowsTemperature) ShowField = false; return; }
         if (!IsThermalRun) return;
         if (FieldQuantities.FirstOrDefault(q => q.IsTemperature) is { } t && !Equals(SelectedFieldQuantity, t)) SelectedFieldQuantity = t;
         if (!ShowField) ShowField = true;
-        else ScheduleFieldGeometry();
+        else ScheduleFieldGeometry(layer);
     }
 
     // ── building what is drawn ──────────────────────────────────────────────────────────────
@@ -203,31 +201,25 @@ public sealed partial class Viewer3DViewModel
     private static WireTemperature? Table(ThermalResultTable table, string wire, int step) => FieldSurfacePlot.Table(table, wire, step);
 
     /// <summary>Adopts a built temperature on the UI thread: the geometry, the range, the hot spot, the covered objects.</summary>
-    private void AdoptTemperature(TemperatureParts parts, FieldQuantity q, FieldColorScale scale, IReadOnlyCollection<string> covered, string? note,
-                                  Scene3DModel scene)
+    private void AdoptTemperature(FieldLayer layer, TemperatureParts parts, FieldQuantity q, FieldColorScale scale, IReadOnlyCollection<string> covered,
+                                  string? note)
     {
-        _temperature = parts;
+        layer.Temperature = parts;
         var all = parts.Surfaces.Concat(parts.Wires.Select(w => w.Surface)).ToList();
         var nudges = parts.Nudges.Concat(parts.Wires.Select(_ => Vector3.Zero)).ToList();
-        _fieldSurfaces = all;
-        FieldScale = scale;
-        FieldGeometry = new Scene3DFieldGeometry(Scene3DFieldGeometry.Pack(q, all, nudges), ++_fieldVersion, parts.GeometryVersion);
-        var cov = new bool[scene.Objects.Length];
-        var wires = parts.Wires.Select(w => w.Wire).ToHashSet(StringComparer.Ordinal);
-        for (int i = 0; i < cov.Length; i++) cov[i] = covered.Contains(scene.Objects[i].Name) || wires.Contains(scene.Objects[i].Name);
-        View.FieldCovered = cov;
-        HotSpot = FieldHotSpot.Of(q, all, nudges);
-        HotSpotLabel = HotSpot is { } h
+        layer.Surfaces = all;
+        layer.OwnScale = scale;
+        layer.Geometry = new Scene3DFieldGeometry(Scene3DFieldGeometry.Pack(q, all, nudges), ++_fieldVersion, parts.GeometryVersion);
+        layer.Covered = new HashSet<string>(covered, StringComparer.Ordinal);
+        layer.Covered.UnionWith(parts.Wires.Select(w => w.Wire));
+        layer.HotSpot = FieldHotSpot.Of(q, all, nudges);
+        layer.HotSpotLabel = layer.HotSpot is { } h
             ? $"{h.Value.ToString("0.0", CultureInfo.InvariantCulture)} °C, " +
               (h.Surface < parts.Objects.Count ? parts.Objects[h.Surface] : WireSpot(parts.Wires[h.Surface - parts.Objects.Count], h.At))
             : "";
-        FieldText = note ?? $"Temperature: {all.Sum(x => x.TriangleCount):N0} triangles" +
-                    (TemperatureStepLabel.Length > 0 ? $", {TemperatureStepLabel}" : "") + ".";
-        WriteFieldUniforms();
-        OnPropertyChanged(nameof(FieldLegendVisible));
-        OnPropertyChanged(nameof(HotSpot));
-        OnPropertyChanged(nameof(HotSpotLabel));
-        FrameRequested?.Invoke();
+        string step = StepLabelOf(layer);
+        SetText(layer, note ?? $"Temperature: {all.Sum(x => x.TriangleCount):N0} triangles" + (step.Length > 0 ? $", {step}" : "") + ".");
+        LayersChanged();
     }
 
     /// <summary>
@@ -236,23 +228,22 @@ public sealed partial class Viewer3DViewModel
     /// other targets (another plot's faces, All Faces, clip plane or fixed range), or a newer build scheduled and not yet
     /// adopted — revaluing the old parts then would cancel that build and draw what it was replacing.
     /// </summary>
-    private bool TryRevalueTemperature(FieldSolutionItem item)
+    private bool TryRevalueTemperature(FieldLayer layer, FieldSolutionItem item)
     {
-        if (_temperature is not { } parts || _fieldVolume is not { } vol || !ReferenceEquals(item.Run, _fieldRun) ||
-            item.Solution.VolumePvtu is not { } pvtu || SelectedFieldQuantity is not { IsTemperature: true } q ||
+        if (layer.Temperature is not { } parts || layer.Volume is not { } vol || !ReferenceEquals(item.Run, layer.Run) ||
+            item.Solution.VolumePvtu is not { } pvtu || layer.Quantity is not { IsTemperature: true } q ||
             parts.Surfaces.Any(s => s.Recipe is null))
             return false;
-        if (parts.GeometryVersion != _geometryVersion || parts.Targets is not { } built || !built.Same(CurrentTemperatureTargets()) ||
-            !parts.Faces.SequenceEqual(_temperatureFaces))
+        if (parts.GeometryVersion != layer.GeometryVersion || parts.Targets is not { } built || !built.Same(CurrentTemperatureTargets(layer)) ||
+            !parts.Faces.SequenceEqual(layer.TempFaces))
             return false;
-        var table = _thermalTable;
+        var table = layer.Read?.Table;
         int step = item.Solution.Index;
         var sol = item.Solution;
-        bool fix = FixRangeAcrossSweep;
-        var fixedScale = FieldScale;
+        bool fix = layer.FixRange;
+        var fixedScale = layer.OwnScale;
         var scene = Scene;
-        _fieldCts?.Cancel();
-        var cts = _fieldCts = new CancellationTokenSource();
+        var cts = layer.NewBuild();
         Task.Run(() =>
         {
             try
@@ -265,18 +256,18 @@ public sealed partial class Viewer3DViewModel
                 cts.Token.ThrowIfCancellationRequested();
                 _post(() =>
                 {
-                    if (cts.IsCancellationRequested || _disposed || !ReferenceEquals(Scene, scene)) return;
-                    _fieldVolume = next;
-                    _fieldLoaded = sol;
+                    if (cts.IsCancellationRequested || _disposed || layer.Disposed || !ReferenceEquals(Scene, scene)) return;
+                    layer.Volume = next;
+                    layer.Loaded = sol;
                     FieldRevalues++;
-                    var covered = View.FieldCovered.Select((c, i) => (c, i)).Where(x => x.c).Select(x => scene.Objects[x.i].Name).ToHashSet();
-                    AdoptTemperature(parts with { Surfaces = surfaces, Wires = wires }, q, scale, covered, null, scene);
+                    layer.Revalues++;
+                    AdoptTemperature(layer, parts with { Surfaces = surfaces, Wires = wires }, q, scale, layer.Covered.ToList(), null);
                 });
             }
             catch (OperationCanceledException) { }
             catch (Exception e) when (e is FieldReadException or IOException or UnauthorizedAccessException)
             {
-                _post(() => FieldText = "The temperature could not be read: " + e.Message);
+                _post(() => { if (!layer.Disposed) SetText(layer, "The temperature could not be read: " + e.Message); });
             }
         });
         return true;
@@ -287,54 +278,53 @@ public sealed partial class Viewer3DViewModel
     /// <summary>
     /// R-em3d75-4c — T under the cursor: on a painted face or an All Faces solid, the volume's own shape functions at the
     /// point (FieldSampler — interpolated, never the nearest node); on a painted wire, T and s where the cursor's triangle is.
-    /// "" off everything painted.
+    /// "" off everything painted. With how far along the cursor's ray <paramref name="o"/> + t·<paramref name="d"/> it lies.
     /// </summary>
-    private string TemperatureUnderCursor(uint id, Vector3 point, bool hit, FieldQuantity q, FieldRun run)
+    private (string Text, float T) TemperatureUnderCursor(FieldLayer layer, uint id, Vector3 point, bool hit, FieldQuantity q, FieldRun run,
+                                                          Vector3 o, Vector3 d, float hitT)
     {
         var ch = new double[2];
         double toUnits = 1 / run.ToMetres;
         bool Sample(Vector3 local)
         {
-            if (_volumeSampler is null || _fieldVolume?.Load(q.Array.Name) is not { } a) return false;
+            if (layer.VolumeSampler is null || layer.Volume?.Load(q.Array.Name) is not { } a) return false;
             var (x, y, z) = Scene.ToWorld(local);
-            return _volumeSampler.Sample(a, x * toUnits, y * toUnits, z * toUnits, ch);
+            return layer.VolumeSampler.Sample(a, x * toUnits, y * toUnits, z * toUnits, ch);
         }
         static string T(double v) => $"T = {v.ToString("0.00", CultureInfo.InvariantCulture)} °C";
-        if (TemperatureOnClip && FieldPlane.Enabled)
+        var plane = PlaneOf(layer);
+        if (layer.TempOnClip && plane.Enabled)
         {
-            var (o, d) = View.Camera.Ray(View.CursorX, View.CursorY, _viewW, _viewH);
-            var e = FieldPlane.Equation;
+            var e = plane.Equation;
             var n = new Vector3(e.X, e.Y, e.Z);
             float den = Vector3.Dot(n, d);
             if (Math.Abs(den) > 1e-12f)
             {
                 float t = -(Vector3.Dot(n, o) + e.W) / den;
-                float hitT = hit ? Vector3.Dot(point - o, d) : float.MaxValue;
-                if (t > 0 && t <= hitT * 1.0001f && Sample(o + t * d)) return T(ch[0]) + " (clip plane)";
+                if (t > 0 && t <= hitT * 1.0001f && Sample(o + t * d)) return (T(ch[0]) + " (clip plane)", t);
             }
         }
         // brief-em3d-76 R-em3d76-4c — a mirrored half is not in the scene: the cursor's ray against its triangles, and the
         // modelled point's value read at the reflection of the hit
-        if (_temperature is { Reflections.Count: > 0 } parts && MirroredHit(parts) is { } mh &&
+        if (layer.Temperature is { Reflections.Count: > 0 } parts && MirroredHit(parts) is { } mh &&
             (!hit || Vector3.Dot(point - mh.Origin, mh.Dir) > mh.T))
         {
             var p = mh.Origin + mh.T * mh.Dir;
             foreach (var (axis, at) in parts.Reflections[mh.Surface].Reverse())
                 p = axis switch { 0 => p with { X = (float)(2 * at - p.X) }, 1 => p with { Y = (float)(2 * at - p.Y) }, _ => p with { Z = (float)(2 * at - p.Z) } };
-            return Sample(p) ? T(ch[0]) + " (the mirrored half: the modelled point's value)" : "";
+            return Sample(p) ? (T(ch[0]) + " (the mirrored half: the modelled point's value)", mh.T) : ("", 0);
         }
-        if (!hit || Scene.Object(id) is not { } obj) return "";
-        if (_temperature?.Wires.FirstOrDefault(w => w.Wire == obj.Name) is { } wire && WireAt(wire, point) is { } ws)
-            return $"{wire.Wire}, s = {FormatLength(ws.S)}: {T(ws.T)}";
+        if (!hit || Scene.Object(id) is not { } obj) return ("", 0);
+        if (layer.Temperature?.Wires.FirstOrDefault(w => w.Wire == obj.Name) is { } wire && WireAt(wire, point) is { } ws)
+            return ($"{wire.Wire}, s = {FormatLength(ws.S)}: {T(ws.T)}", hitT);
         // The face the ID pass named, in any select mode (HoveredFace is Face mode's alone).
-        bool painted = (id <= View.FieldCovered.Length && View.FieldCovered[id - 1]) || (LastPick.Object == id && IsTemperatureFace(obj.Name, LastPick.Face));
-        if (!painted) return "";
-        if (Sample(point)) return T(ch[0]);
+        bool painted = layer.Covered.Contains(obj.Name) || (LastPick.Object == id && layer.TempFaces.Contains(new TemperatureFace(obj.Name, LastPick.Face)));
+        if (!painted) return ("", 0);
+        if (Sample(point)) return (T(ch[0]), hitT);
         // an exterior face has nothing behind it: a hit rounded a hair outside lies in no tetrahedron, so read again a hair
         // along the ray — into the solid the eye is looking at (the EM face path reads a hair off its face the same way)
-        var (_, ray) = View.Camera.Ray(View.CursorX, View.CursorY, _viewW, _viewH);
         float hair = (float)(1e-6 * (Scene.BoundsMax - Scene.BoundsMin).Length());
-        return Sample(point + hair * ray) ? T(ch[0]) : "";
+        return Sample(point + hair * d) ? (T(ch[0]), hitT) : ("", 0);
     }
 
     /// <summary>The nearest hit of the cursor's ray on a mirrored surface: the surface, the ray and its parameter; null when the
@@ -422,14 +412,15 @@ public sealed partial class Viewer3DViewModel
     public FieldLine? TemperatureAlong((double X, double Y, double Z) from, (double X, double Y, double Z) to, int samples, out string? why)
     {
         why = null;
-        if (!IsThermalRun || _fieldRun is not { } run || _fieldVolume is not { } vol)
+        var layer = Focused;
+        if (!IsThermalRun || layer.Run is not { } run || layer.Volume is not { } vol)
         {
             why = "There is no thermal result to read: run the active thermal setup first.";
             return null;
         }
         if (vol.Load(FieldNames.TemperatureArray) is not { } a) { why = "The thermal result holds no temperature."; return null; }
-        var sampler = _volumeSampler ?? new FieldSampler(vol.Mesh);
-        _volumeSampler ??= sampler;
+        var sampler = layer.VolumeSampler ?? new FieldSampler(vol.Mesh);
+        layer.VolumeSampler ??= sampler;
         var q = new FieldQuantity(a.Info, false, FieldMode.Value);
         return FieldLine.Along(sampler, a, q, run.ToMetres, from, to, samples);
     }
@@ -439,6 +430,10 @@ public sealed partial class Viewer3DViewModel
     {
         if (!IsThermalRun) return;
         if (SelectedFieldSolution is null && FieldSolutions.Count > 0) SelectedFieldSolution = FieldSolutions[0];
-        if (_fieldVolume is null) EnsureFieldLoaded();
+        if (Focused.Volume is null)
+        {
+            Focused.Item ??= SelectedFieldSolution;
+            EnsureFieldLoaded(Focused);
+        }
     }
 }

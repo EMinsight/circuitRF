@@ -138,16 +138,26 @@ public sealed partial class C3dEditorViewModel
 
     /// <summary>
     /// Writes the step shown into the drawn plot's Solution — the Inspector picker's own edit, one undo entry — unless it is
-    /// already there. Null, or why nothing was written (no plot is drawn: a setup's 3D view keeps no document).
+    /// already there. Null, or why nothing was written (no plot is drawn: a setup's 3D view keeps no document). brief-em3d-96 —
+    /// the step is one control: every drawn temperature plot on the same run takes it, in the same entry.
     /// </summary>
     public string? CommitSweepStep()
     {
         int step = Viewer.TemperatureStep;
         if (step < 0 || step >= Viewer.FieldSolutions.Count) return null;
         if (VisibleFieldPlot is not { } plot) return "No field plot is drawn, so the step is shown but not kept.";
-        var key = FieldPlotResolver.SolutionKey(Viewer.FieldSolutions[step].Solution, Viewer.Scene.Problem);
-        if (plot.Solution is { } now && now.SameAs(key)) return null;
-        return SetFieldPlot(plot.Name, $"Plot {plot.Name} at {Viewer.TemperatureStepLabel}", p => p.Solution = key);
+        var item = Viewer.FieldSolutions[step];
+        var key = FieldPlotResolver.SolutionKey(item.Solution, Viewer.Scene.Problem);
+        var names = VisibleFieldPlots.Where(p => ReferenceEquals(p, plot) ||
+                                                 (plot.IsTemperature && p.IsTemperature && ReferenceEquals(Viewer.LayerNamed(p.Name)?.Item?.Run, item.Run)))
+                                     .Where(p => p.Solution is not { } now || !now.SameAs(key)).Select(p => p.Name).ToList();
+        if (names.Count == 0) return null;
+        if (names.Count == 1) return SetFieldPlot(names[0], $"Plot {names[0]} at {Viewer.TemperatureStepLabel}", p => p.Solution = key);
+        ChangePlots($"Plot {string.Join(", ", names)} at {Viewer.TemperatureStepLabel}", plots =>
+        {
+            foreach (var p in plots.Where(p => names.Contains(p.Name))) p.Solution = key;
+        });
+        return null;
     }
 
     /// <summary>Moves to step <paramref name="step"/> and keeps it: a press, one undo entry.</summary>

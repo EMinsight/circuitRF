@@ -4,21 +4,25 @@
 // The same three loops as the rest of the view (em-3d.md §8.4):
 //   * reading a step and building its geometry (slice, surfaces, colour range) is KERNEL work, on the
 //     thread pool, a newer request cancelling an older one — the view keeps drawing the last geometry;
-//   * a colour-scale change or a PHASE STEP is INPUT work: it rewrites View.Field (a uniform block) and
+//   * a colour-scale change or a PHASE STEP is INPUT work: it rewrites View.Field (the uniform blocks) and
 //     asks for a frame. It builds and uploads nothing (gate 5);
 //   * the FRAME loop draws Scene3DFieldGeometry, uploaded only when its version moves.
 //
 // Every value drawn or printed comes from the solver's own files (overview rule): a quantity is offered
 // only when an array the step LISTS provides it (FieldQuantity.Offered), and the tooltip samples the
 // field data, never the colour.
+//
+// brief-em3d-96 — every one of those is now a LAYER's (FieldLayer): up to four plots are drawn at once, each with its own
+// read, its own build and its own range. The properties the Inspector, the menus and the tests read (SelectedFieldSolution,
+// SelectedFieldQuantity, FieldScale, FieldText, FieldGeometry, …) are the FOCUSED layer's — the plot selected in the tree when it
+// is drawn, else the first drawn — mirrored into them, and a change to one of them is a change to that layer.
 
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Globalization;
 using System.Numerics;
 using CircuitRF.Design.Em3d;
-using CircuitRF.Design.Thermal;
-using CircuitRF.Engine.Em3d;
+using CircuitRF.Design.ThreeD;
 using CircuitRF.Render.Scene3D;
 using CircuitRF.Render.Scene3D.Fields;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -30,28 +34,18 @@ public sealed partial class Viewer3DViewModel
     /// <summary>The loop period the phase animation starts at, seconds — a display choice, not the frequency.</summary>
     public const double DefaultLoopSeconds = 2;
 
-    private FieldRun? _fieldRun;
-    private IReadOnlyList<FieldRun> _fieldRuns = [];
-    private string? _fieldRunDir;
-    private IReadOnlyList<FieldGroup> _fieldGroups = [];
-    private FieldStep? _fieldVolume, _fieldBoundary;
-    private FieldSolution? _fieldLoaded;
-    private FieldSampler? _volumeSampler, _boundarySampler;
-    private IReadOnlyList<FieldSurface> _fieldSurfaces = [];
-    private long _fieldVersion;
-    private CancellationTokenSource? _fieldLoadCts, _fieldCts;
     private System.Threading.Timer? _animation;
     private readonly Stopwatch _animationClock = new();
     private double _animationStartDegrees;
     private float _viewW = 800, _viewH = 500;
 
-    /// <summary>The field's triangles, as the frame loop draws them.</summary>
-    public Scene3DFieldGeometry FieldGeometry { get; private set; } = Scene3DFieldGeometry.None;
+    /// <summary>The focused layer's triangles (its part of <see cref="FieldDrawn"/>).</summary>
+    public Scene3DFieldGeometry FieldGeometry => Focused.Geometry;
 
-    /// <summary>The colour range of what is drawn (null while nothing is).</summary>
-    public FieldColorScale? FieldScale { get; private set; }
+    /// <summary>The focused layer's colour range — its group's (null while it draws nothing).</summary>
+    public FieldColorScale? FieldScale => Focused.Scale;
 
-    /// <summary>The map the drawn quantity is painted with (ColorMap3D.For — the rule `render --field` paints with too).</summary>
+    /// <summary>The map the focused quantity is painted with (ColorMap3D.For — the rule `render --field` paints with too).</summary>
     public ColorMap3D FieldMap => ColorMap3D.For(SelectedFieldQuantity);
 
     public ObservableCollection<FieldSolutionItem> FieldSolutions { get; } = [];
@@ -77,7 +71,8 @@ public sealed partial class Viewer3DViewModel
         ? "Show the solved field, read from the solver's own files"
         : "Simulate with Palace to save fields (the setup's SaveFieldsGHz; the sweep's centre by default)";
 
-    public bool FieldCanAnimate => SelectedFieldQuantity is { Animated: true };
+    /// <summary>A drawn quantity is animated: φ, Play and the loop period drive it (brief-em3d-96: one clock for every layer).</summary>
+    public bool FieldCanAnimate => DrawnLayers.Any(l => l.Quantity is { Animated: true }) || SelectedFieldQuantity is { Animated: true };
 
     partial void OnFieldsAvailableChanged(bool value)
     {
@@ -89,7 +84,7 @@ public sealed partial class Viewer3DViewModel
     partial void OnShowFieldChanged(bool value)
     {
         View.ShowField = value;
-        if (value) EnsureFieldLoaded();
+        if (value && !_applyingPlot) EnsureFieldLoaded(Focused);
         if (!value) FieldPlaying = false;
         FrameRequested?.Invoke();
         OnPropertyChanged(nameof(FieldLegendVisible));
@@ -101,10 +96,28 @@ public sealed partial class Viewer3DViewModel
         // brief-em3d-75 — the sweep slider follows the picker, and the picker the slider.
         if (value is not null && FieldSolutions.IndexOf(value) is var at and >= 0 && at != TemperatureStep) TemperatureStep = at;
         OnPropertyChanged(nameof(TemperatureStepLabel));
-        if (_applyingPlot) return;                 // brief-em3d-83 — ApplyPlot loads it once, after every setting
-        // Gate 7 — a thermal step on the same run re-reads its temperature alone.
-        if (ShowField && value is not null && TryRevalueTemperature(value)) return;
-        if (ShowField) EnsureFieldLoaded();
+        if (_applyingPlot) return;                 // brief-em3d-83 — a layer's own solution, mirrored: nothing to do
+        var layer = Focused;
+        layer.Item = value;
+        ShowSolution(layer, value);
+        // brief-em3d-96 — the sweep step is one control: every other temperature layer on this run follows it.
+        if (value is not null && layer.Quantity is { IsTemperature: true } && layer.Read is { } read && IndexOfItem(read.Items, value) is var k and >= 0)
+            foreach (var other in _layers)
+                if (!ReferenceEquals(other, layer) && ReferenceEquals(other.Read, read) && other.Quantity is { IsTemperature: true } &&
+                    !ReferenceEquals(other.Item, read.Items[k]))
+                {
+                    other.Item = read.Items[k];
+                    ShowSolution(other, other.Item);
+                }
+    }
+
+    /// <summary>A layer's new solution drawn: a thermal step on the same run re-reads its temperature alone (gate 7), anything
+    /// else is loaded.</summary>
+    private void ShowSolution(FieldLayer layer, FieldSolutionItem? item)
+    {
+        if (!LayerShown(layer)) return;
+        if (item is not null && TryRevalueTemperature(layer, item)) return;
+        EnsureFieldLoaded(layer);
     }
 
     partial void OnSelectedFieldQuantityChanged(FieldQuantity? value)
@@ -112,15 +125,40 @@ public sealed partial class Viewer3DViewModel
         OnPropertyChanged(nameof(FieldCanAnimate));
         OnPropertyChanged(nameof(FieldMap));
         OnPropertyChanged(nameof(ShowsTemperature));
-        if (value is not { Animated: true }) FieldPlaying = false;
-        ScheduleFieldGeometry();
+        if (_applyingPlot) return;
+        Focused.Quantity = value;
+        if (!FieldCanAnimate) FieldPlaying = false;
+        ScheduleFieldGeometry(Focused);
     }
 
-    partial void OnFieldOnClipPlaneChanged(bool value) => ScheduleFieldGeometry();
-    partial void OnFieldOnSurfacesChanged(bool value) => ScheduleFieldGeometry();
-    partial void OnFieldDbChanged(bool value) { if (!_applyingPlot) RescaleField(); }
+    partial void OnFieldOnClipPlaneChanged(bool value)
+    {
+        if (_applyingPlot) return;
+        Focused.OnClip = value;
+        ScheduleFieldGeometry(Focused);
+    }
+
+    partial void OnFieldOnSurfacesChanged(bool value)
+    {
+        if (_applyingPlot) return;
+        Focused.OnSurfaces = value;
+        ScheduleFieldGeometry(Focused);
+    }
+
+    partial void OnFieldDbChanged(bool value)
+    {
+        if (_applyingPlot) return;
+        Focused.Db = value;
+        RescaleField(Focused);
+    }
+
     // brief-em3d-75 — the temperature's range is its own (D9): dB and the percentile are an EM field's.
-    partial void OnFieldPercentileChanged(double value) { if (!_applyingPlot) RescaleField(); }
+    partial void OnFieldPercentileChanged(double value)
+    {
+        if (_applyingPlot) return;
+        Focused.Percentile = value;
+        RescaleField(Focused);
+    }
 
     partial void OnFieldPhaseDegreesChanged(double value)
     {
@@ -146,26 +184,28 @@ public sealed partial class Viewer3DViewModel
         FieldPhaseDegrees = (_animationStartDegrees + 360 * _animationClock.Elapsed.TotalSeconds / period) % 360;
     }
 
-    /// <summary>The overlay's legend: shown with the field.</summary>
-    public bool FieldLegendVisible => ShowField && FieldScale is not null && SelectedFieldQuantity is not null;
+    /// <summary>The overlay's legends: shown with the field.</summary>
+    public bool FieldLegendVisible => ShowField && FieldLegendGroups.Count > 0;
 
-    /// <summary>The legend's lines: the plot's name (brief-em3d-83), the quantity, the range, and what was solved (R-em3d29-3c/3d) —
-    /// FieldPlotResolver.LegendLines, the function `render --field`'s legend comes from.</summary>
+    /// <summary>The focused plot's legend lines: its group's (FieldLegendGroups) — FieldPlotResolver.LegendLines, the function
+    /// `render --field`'s legend comes from.</summary>
     public IReadOnlyList<string> FieldLegendLines()
     {
-        if (SelectedFieldQuantity is not { } q || FieldScale is not { } s) return [];
-        return FieldPlotResolver.LegendLines(_plot?.Name, q, s, SelectedFieldSolution?.Label, FieldPhaseDegrees, FieldLoopSeconds,
-                                             FixRangeAcrossSweep && FieldSolutions.Count > 1, TemperatureStepLabel, HotSpotLabel);
+        var groups = FieldLegendGroups;
+        string? name = Focused.Name;
+        return groups.FirstOrDefault(g => name is null ? g.Names.Count == 0 : g.Names.Contains(name))?.Lines
+            ?? (groups.Count > 0 ? groups[0].Lines : []);
     }
 
     /// <summary>
-    /// The legend's width, held: it is anchored to the view's right edge and sized to its widest line, and the range line (and
-    /// φ, while animating) changes length as a slider is dragged, so the whole box twitched sideways. It only grows while the
-    /// same plot's same quantity is drawn, and starts again when either changes.
+    /// The legends' width, held: they are anchored to the view's right edge and sized to the widest line in the column, and a
+    /// range line (and φ, while animating) changes length as a slider is dragged, so the boxes twitched sideways. It only grows
+    /// while the same plots' same quantities are drawn, and starts again when any changes. brief-em3d-96 D3 — ONE width for the
+    /// whole column: a drag of any one plot moves none of them sideways.
     /// </summary>
     internal double HeldLegendWidth(double width)
     {
-        string key = $"{_plot?.Name}|{SelectedFieldQuantity?.Symbol}|{FieldScale?.Db}";
+        string key = string.Join(";", FieldLegendGroups.Select(g => $"{string.Join(",", g.Names)}|{g.Quantity.Symbol}|{g.Scale.Db}"));
         if (key != _legendKey) (_legendKey, _legendWidth) = (key, 0);
         return _legendWidth = Math.Max(_legendWidth, width);
     }
@@ -178,94 +218,143 @@ public sealed partial class Viewer3DViewModel
 
     // ── discovery ───────────────────────────────────────────────────────────────────────────
 
-    /// <summary>The run directories the fields are read from — the drawn plot's setup (brief-em3d-83), else this view's setup:
-    /// Palace's for its current problem type, openEMS's — whichever the setup runs.</summary>
-    private (string? Palace, string? OpenEms) FieldRunDirectories() => FieldPlotResolver.RunDirectories(FieldSetup, _resultsRoot());
+    /// <summary>The setup whose run a layer reads: its plot's, or — for a plot naming none, and the view's own layer — this
+    /// view's own. A plot whose setup is gone reads nothing.</summary>
+    private EmSetup? FieldSetupOf(FieldLayer layer)
+        => layer.Request is { SetupProblem: not null } ? null : layer.Request?.RunSetup ?? _lastSetup;
 
-    /// <summary>The setup whose run is read: the plot's, or — for a plot naming none, and with no plot — this view's own. A
-    /// plot whose setup is gone reads nothing.</summary>
-    private EmSetup? FieldSetup => _plot is { SetupProblem: not null } ? null : _plot?.RunSetup ?? _lastSetup;
+    /// <summary>The run directories a layer reads (FieldPlotResolver.RunDirectories): Palace's for its setup's problem type,
+    /// openEMS's — whichever the setup runs.</summary>
+    private (string? Palace, string? OpenEms) DirsOf(FieldLayer layer) => FieldPlotResolver.RunDirectories(FieldSetupOf(layer), _resultsRoot());
 
-    /// <summary>The directories the last read was asked for: a plot on the same run is applied without reading it again.</summary>
-    private (string? Palace, string? OpenEms) _fieldDirs;
+    /// <summary>The runs read, by directory: every layer reading one shares it.</summary>
+    private readonly Dictionary<(string?, string?), FieldRead> _reads = [];
+    /// <summary>A read under way, by directory: its token (a newer one supersedes it).</summary>
+    private readonly Dictionary<(string?, string?), long> _reading = [];
+    private long _readTokens;
 
-    /// <summary>The run directory the open fields were read from (Palace's, or a thermal run's own): which setup's run it is.
-    /// Set when a read is adopted, not when it is asked for, so it never names a run still being read.</summary>
-    public string? FieldRunDirectory => _fieldRunDir;
-    private long _fieldReads;
+    /// <summary>The run directory the focused layer's fields were read from (Palace's, or a thermal run's own): which setup's run
+    /// it is. Set when a read is adopted, not when it is asked for, so it never names a run still being read.</summary>
+    public string? FieldRunDirectory => Focused.Read?.Dir;
 
-    /// <summary>Re-reads which fields the setup's runs saved (a run may have made new ones).</summary>
+    /// <summary>Re-reads which fields every drawn layer's run saved (a run may have made new ones). A run no layer reads is
+    /// forgotten, so it is read afresh when a plot next asks for it.</summary>
     private void RefreshFields()
     {
-        var dirs = _fieldDirs = FieldRunDirectories();
-        string? dir = dirs.Palace;
+        var targets = _layers.Where(l => !l.Disposed).ToList();
+        var dirs = targets.Select(DirsOf).ToHashSet();
+        foreach (var key in _reads.Keys.Where(k => !dirs.Contains(k)).ToList()) _reads.Remove(key);
+        foreach (var group in targets.GroupBy(DirsOf)) StartRead(group.Key, FieldSetupOf(group.First()));
+    }
+
+    /// <summary>Discovers <paramref name="dirs"/> off the UI thread and adopts it for every layer reading it.</summary>
+    private void StartRead((string? Palace, string? OpenEms) dirs, EmSetup? setup)
+    {
         var scene = Scene;
-        var setup = FieldSetup;
         string? root = _resultsRoot();
-        long read = ++_fieldReads;
+        long token = _reading[dirs] = ++_readTokens;
         Task.Run(() =>
         {
             var found = FieldPlotResolver.Discover(setup, root, scene.Problem);
-            var (runs, table, groups, why) = (found.Runs, found.Table, found.Groups, found.Why);
             _post(() =>
             {
-                if (_disposed || read != _fieldReads) return;
-                FieldsRan = found.Ran;
-                bool same = runs.Count > 0 && runs.Count == _fieldRuns.Count && dir == _fieldRunDir &&
-                            runs.Zip(_fieldRuns).All(p => p.First.Solutions.Select(x => x.VolumePvtu).SequenceEqual(p.Second.Solutions.Select(x => x.VolumePvtu)) &&
-                                                          StampOf(p.First) == StampOf(p.Second));
-                if (same)
-                {
-                    _thermalTable = table ?? _thermalTable;
-                    if (_plot is not null) ApplyPlot();
-                    else if (ShowField) ScheduleFieldGeometry();
-                    FieldsRead?.Invoke();
-                    return;
-                }
-                _fieldRuns = runs;
-                _fieldRun = runs.FirstOrDefault();
-                _fieldFaces.Clear();                       // brief-em3d-82 — a new run: the faces were painted on another
-                _fieldFacePaints = [];
-                _thermalTable = table;
-                _temperature = null;
-                _fieldRunDir = dir;
-                _fieldGroups = groups;
-                _fieldVolume = _fieldBoundary = null;
-                _fieldLoaded = null;
-                _volumeSampler = _boundarySampler = null;
-                _applyingPlot = true;
-                try
-                {
-                    FieldSolutions.Clear();
-                    foreach (var x in found.Items) FieldSolutions.Add(x);
-                }
-                finally { _applyingPlot = false; }
-                FieldsAvailable = FieldSolutions.Count > 0;
-                OnPropertyChanged(nameof(IsThermalRun));
-                OnPropertyChanged(nameof(ThermalTable));
-                OnPropertyChanged(nameof(TemperatureStepMax));
-                OnPropertyChanged(nameof(HasTemperatureSweep));
-                OnPropertyChanged(nameof(TemperatureStepLabel));
-                ThermalResultsChanged?.Invoke();
-                // brief-em3d-83 — a plot picks its own solution, by value; with none, the first is offered.
-                if (_plot is not null)
-                {
-                    ApplyPlot();
-                    if (why is not null && !FieldsAvailable) FieldText = "The fields could not be read: " + why;
-                    FieldsRead?.Invoke();
-                    return;
-                }
-                SelectedFieldSolution = FieldSolutions.FirstOrDefault();
-                if (!FieldsAvailable)
-                {
-                    ShowField = false;
-                    ClearFieldGeometry();
-                    FieldText = why is null ? "" : "The fields could not be read: " + why;
-                }
-                else if (ShowField) EnsureFieldLoaded();
-                FieldsRead?.Invoke();
+                if (_disposed || !_reading.TryGetValue(dirs, out long now) || now != token) return;
+                _reading.Remove(dirs);
+                AdoptRead(dirs, found);
             });
         });
+    }
+
+    private void AdoptRead((string? Palace, string? OpenEms) dirs, FieldDiscovery found)
+    {
+        var (runs, table, groups, why) = (found.Runs, found.Table, found.Groups, found.Why);
+        string? dir = dirs.Palace;
+        var old = _reads.GetValueOrDefault(dirs);
+        bool same = old is not null && runs.Count > 0 && runs.Count == old.Runs.Count && dir == old.Dir &&
+                    runs.Zip(old.Runs).All(p => p.First.Solutions.Select(x => x.VolumePvtu).SequenceEqual(p.Second.Solutions.Select(x => x.VolumePvtu)) &&
+                                                  StampOf(p.First) == StampOf(p.Second));
+        FieldRead read;
+        if (same)
+        {
+            read = old!;
+            read.Table = table ?? read.Table;
+            read.Ran = found.Ran;
+            read.Why = why;
+        }
+        else
+        {
+            if (old is not null) ForgetSteps(old.Items);
+            ForgetSteps(found.Items);
+            read = new FieldRead(dirs) { Runs = runs, Items = found.Items, Groups = groups, Table = table, Ran = found.Ran, Why = why, Dir = dir };
+            _reads[dirs] = read;
+        }
+        var readers = _layers.Where(l => !l.Disposed && DirsOf(l) == dirs).ToList();
+        foreach (var layer in readers)
+        {
+            if (!same)
+            {
+                if (layer.Name is null) layer.Faces.Clear();          // brief-em3d-82 — a new run: the faces were painted on another
+                layer.FacePaints = [];
+                layer.Temperature = null;
+                layer.Volume = layer.Boundary = null;
+                layer.Loaded = null;
+                layer.VolumeSampler = layer.BoundarySampler = null;
+                layer.Run = runs.FirstOrDefault();
+            }
+            layer.Read = read;
+            layer.Dirs = dirs;
+        }
+        if (readers.Contains(Focused)) MirrorRead(changed: !same);
+        foreach (var layer in readers)
+        {
+            if (layer.Name is not null)
+            {
+                // brief-em3d-83 — a plot picks its own solution, by value.
+                ApplyPlot(layer);
+                if (why is not null && read.Items.Count == 0) SetText(layer, "The fields could not be read: " + why);
+                continue;
+            }
+            if (same)
+            {
+                if (ShowField) ScheduleFieldGeometry(layer);
+                continue;
+            }
+            // With no plot, the first solution is offered.
+            layer.Item = read.Items.FirstOrDefault();
+            MirrorFocused();
+            if (read.Items.Count == 0)
+            {
+                ShowField = false;
+                ClearFieldGeometry(layer);
+                SetText(layer, why is null ? "" : "The fields could not be read: " + why);
+            }
+            else if (ShowField) EnsureFieldLoaded(layer);
+        }
+        FieldsRead?.Invoke();
+    }
+
+    /// <summary>The focused layer's run into the properties the menus and the sweep slider read.</summary>
+    private void MirrorRead(bool changed)
+    {
+        var read = Focused.Read;
+        var items = read?.Items ?? [];
+        _applyingPlot = true;
+        try
+        {
+            if (!FieldSolutions.SequenceEqual(items))
+            {
+                FieldSolutions.Clear();
+                foreach (var x in items) FieldSolutions.Add(x);
+            }
+        }
+        finally { _applyingPlot = false; }
+        FieldsAvailable = FieldSolutions.Count > 0;
+        OnPropertyChanged(nameof(IsThermalRun));
+        OnPropertyChanged(nameof(ThermalTable));
+        OnPropertyChanged(nameof(TemperatureStepMax));
+        OnPropertyChanged(nameof(HasTemperatureSweep));
+        OnPropertyChanged(nameof(TemperatureStepLabel));
+        if (changed) ThermalResultsChanged?.Invoke();
     }
 
     /// <summary>When the run's collection was written: a re-run with the same steps is still new data.</summary>
@@ -275,77 +364,143 @@ public sealed partial class Viewer3DViewModel
         catch (IOException) { return default; }
     }
 
+    // ── the steps, shared (brief-em3d-96) ───────────────────────────────────────────────────
+
+    /// <summary>The loaded steps by file: two plots of one solution read the volume once.</summary>
+    private readonly Dictionary<string, Lazy<FieldStep>> _steps = new(StringComparer.Ordinal);
+    private long _fieldStepReads;
+
+    /// <summary>Gate 5 — how many step files were opened: two plots of one solution add one.</summary>
+    public long FieldStepReads => Interlocked.Read(ref _fieldStepReads);
+
+    /// <summary>What the loaded steps hold, each counted once however many plots draw it.</summary>
+    public long FieldResidentBytes => _steps.Values.Where(s => s.IsValueCreated).Sum(s => s.Value.ResidentBytes);
+
+    private static string StepKey(string pvtu, double toMetres) => pvtu + "|" + toMetres.ToString("R", CultureInfo.InvariantCulture);
+
+    /// <summary>The step read from <paramref name="pvtu"/>, read once (off the UI thread, by whichever layer asks first).</summary>
+    private Lazy<FieldStep> StepOf(string key, string pvtu, double toMetres)
+    {
+        if (_steps.TryGetValue(key, out var s)) return s;
+        return _steps[key] = new Lazy<FieldStep>(() =>
+        {
+            Interlocked.Increment(ref _fieldStepReads);
+            return FieldStep.Open(pvtu, toMetres);
+        }, LazyThreadSafetyMode.ExecutionAndPublication);
+    }
+
+    /// <summary>Releases every step no layer reads.</summary>
+    private void ReleaseSteps()
+    {
+        var used = _layers.Where(l => !l.Disposed).SelectMany(l => new[] { l.VolumeKey, l.BoundaryKey }).OfType<string>().ToHashSet(StringComparer.Ordinal);
+        foreach (string key in _steps.Keys.Where(k => !used.Contains(k)).ToList()) _steps.Remove(key);
+    }
+
+    /// <summary>A run was replaced: the steps it listed are read again (the same file names may hold new data).</summary>
+    private void ForgetSteps(IEnumerable<FieldSolutionItem> items)
+    {
+        var files = items.SelectMany(i => new[] { i.Solution.VolumePvtu, i.Solution.BoundaryPvtu }).OfType<string>().ToHashSet(StringComparer.Ordinal);
+        foreach (string key in _steps.Keys.Where(k => files.Contains(k[..k.LastIndexOf('|')])).ToList()) _steps.Remove(key);
+    }
+
     // ── loading a solution ──────────────────────────────────────────────────────────────────
 
-    private void EnsureFieldLoaded()
+    private void EnsureFieldLoaded(FieldLayer layer)
     {
-        if (SelectedFieldSolution is not { } item) return;
+        if (layer.Disposed || layer.Item is not { } item) return;
         var run = item.Run;
-        if (_fieldLoaded == item.Solution && _fieldVolume is not null)
+        if (layer.Loaded == item.Solution && layer.Volume is not null)
         {
             // brief-em3d-83 — the plot's quantity, by name, among what this step offers.
-            if (_plot is { } p0 && !PickPlotQuantity(p0)) return;
-            ScheduleFieldGeometry();
+            if (layer.Request is { } p0 && !PickPlotQuantity(layer, p0)) return;
+            ScheduleFieldGeometry(layer);
             return;
         }
         var sol = item.Solution;
-        _fieldLoadCts?.Cancel();
-        var cts = _fieldLoadCts = new CancellationTokenSource();
-        FieldText = "Reading the field…";
+        layer.LoadCts?.Cancel();
+        var cts = layer.LoadCts = new CancellationTokenSource();
+        SetText(layer, "Reading the field…");
+        string? vk = sol.VolumePvtu is { } v0 ? StepKey(v0, run.ToMetres) : null;
+        string? bk = sol.BoundaryPvtu is { } b0 ? StepKey(b0, run.ToMetres) : null;
+        (layer.VolumeKey, layer.BoundaryKey) = (vk, bk);
+        var volStep = vk is null ? null : StepOf(vk, sol.VolumePvtu!, run.ToMetres);
+        var bndStep = bk is null ? null : StepOf(bk, sol.BoundaryPvtu!, run.ToMetres);
+        ReleaseSteps();
         Task.Run(() =>
         {
             try
             {
-                var vol = sol.VolumePvtu is { } v ? FieldStep.Open(v, run.ToMetres) : null;
-                var bnd = sol.BoundaryPvtu is { } b ? FieldStep.Open(b, run.ToMetres) : null;
+                var vol = volStep?.Value;
+                var bnd = bndStep?.Value;
                 cts.Token.ThrowIfCancellationRequested();
                 var offered = FieldQuantity.Offered(vol?.Arrays ?? [], bnd?.Arrays ?? []);
                 _post(() =>
                 {
-                    if (cts.IsCancellationRequested || _disposed) return;
+                    if (cts.IsCancellationRequested || _disposed || layer.Disposed) return;
                     // brief-em3d-82 — a solution on another mesh (the other solver's, a re-meshed run): the painted faces go.
                     // A plot's faces are the scene's, not the mesh's: they stay (brief-em3d-83).
-                    if (_plot is null && _fieldVolume is { } was && vol is not null &&
-                        (was.Mesh.NodeCount != vol.Mesh.NodeCount || was.Mesh.CellCount != vol.Mesh.CellCount)) _fieldFaces.Clear();
-                    _fieldVolume = vol;
-                    _fieldBoundary = bnd;
-                    _fieldLoaded = sol;
-                    _fieldRun = run;
-                    _volumeSampler = _boundarySampler = null;
-                    var keep = SelectedFieldQuantity;
-                    _applyingPlot = true;
-                    try
+                    if (layer.Request is null && layer.Volume is { } was && vol is not null &&
+                        (was.Mesh.NodeCount != vol.Mesh.NodeCount || was.Mesh.CellCount != vol.Mesh.CellCount)) layer.Faces.Clear();
+                    layer.Volume = vol;
+                    layer.Boundary = bnd;
+                    layer.Loaded = sol;
+                    layer.Run = run;
+                    layer.VolumeSampler = layer.BoundarySampler = null;
+                    var keep = layer.Quantity;
+                    layer.Quantities = offered;
+                    if (ReferenceEquals(layer, Focused))
                     {
-                        FieldQuantities.Clear();
-                        foreach (var q in offered) FieldQuantities.Add(q);
+                        _applyingPlot = true;
+                        try
+                        {
+                            FieldQuantities.Clear();
+                            foreach (var q in offered) FieldQuantities.Add(q);
+                        }
+                        finally { _applyingPlot = false; }
                     }
-                    finally { _applyingPlot = false; }
-                    BuildSamplers(vol, bnd);
+                    BuildSamplers(layer, vol, bnd);
                     // brief-em3d-83 — a plot names its quantity; one this step does not offer draws nothing, and says so.
-                    if (_plot is { } plot)
+                    if (layer.Request is { } plot)
                     {
-                        if (PickPlotQuantity(plot)) ScheduleFieldGeometry();
+                        if (PickPlotQuantity(layer, plot)) ScheduleFieldGeometry(layer);
                         FieldsRead?.Invoke();
                         return;
                     }
                     // Keep the reading across solutions when the new one offers it; |E| otherwise.
-                    SelectedFieldQuantity = FieldQuantities.FirstOrDefault(q => q == keep)
-                        ?? FieldQuantities.FirstOrDefault(q => q.IsTemperature)
-                        ?? FieldQuantities.FirstOrDefault(q => q.Array.Name == "E" && q.Mode == FieldMode.Peak)
-                        ?? FieldQuantities.FirstOrDefault();
-                    ScheduleFieldGeometry();
+                    SetQuantity(layer, offered.FirstOrDefault(q => q == keep)
+                        ?? offered.FirstOrDefault(q => q.IsTemperature)
+                        ?? offered.FirstOrDefault(q => q.Array.Name == "E" && q.Mode == FieldMode.Peak)
+                        ?? offered.FirstOrDefault());
+                    ScheduleFieldGeometry(layer);
                 });
             }
             catch (OperationCanceledException) { }
             catch (Exception e) when (e is FieldReadException or IOException or UnauthorizedAccessException)
             {
-                _post(() => FieldText = "The field could not be read: " + e.Message);
+                _post(() =>
+                {
+                    // a step that failed to read is read again next time, not remembered as failed
+                    foreach (string? k in (string?[])[vk, bk])
+                        if (k is not null && _steps.TryGetValue(k, out var s) && (ReferenceEquals(s, volStep) || ReferenceEquals(s, bndStep))) _steps.Remove(k);
+                    if (!layer.Disposed) SetText(layer, "The field could not be read: " + e.Message);
+                });
             }
         });
     }
 
+    /// <summary>A layer's quantity, mirrored when it is the focused one.</summary>
+    private void SetQuantity(FieldLayer layer, FieldQuantity? q)
+    {
+        layer.Quantity = q;
+        if (!ReferenceEquals(layer, Focused)) return;
+        _applyingPlot = true;
+        try { SelectedFieldQuantity = q; }
+        finally { _applyingPlot = false; }
+        if (!FieldCanAnimate) FieldPlaying = false;
+    }
+
     /// <summary>The point samplers the tooltip reads with, indexed off the UI thread.</summary>
-    private void BuildSamplers(FieldStep? vol, FieldStep? bnd)
+    private void BuildSamplers(FieldLayer layer, FieldStep? vol, FieldStep? bnd)
     {
         Task.Run(() =>
         {
@@ -355,19 +510,16 @@ public sealed partial class Viewer3DViewModel
             {
                 // by MESH, not by step: a sweep step revalued meanwhile (WithArraysOf) is a new step on the same mesh, and the
                 // sampler indexes the mesh — adopting only the identical step left hover dead for the rest of the run
-                if (vol is not null && ReferenceEquals(_fieldVolume?.Mesh, vol.Mesh)) _volumeSampler = vs;
-                if (bnd is not null && ReferenceEquals(_fieldBoundary?.Mesh, bnd.Mesh)) _boundarySampler = bs;
+                if (vol is not null && ReferenceEquals(layer.Volume?.Mesh, vol.Mesh)) layer.VolumeSampler = vs;
+                if (bnd is not null && ReferenceEquals(layer.Boundary?.Mesh, bnd.Mesh)) layer.BoundarySampler = bs;
             });
         });
     }
 
     // ── painted faces (brief-em3d-82) ───────────────────────────────────────────────────────
 
-    private readonly List<PaintedFieldFace> _fieldFaces = [];
-    private IReadOnlyList<(PaintedFieldFace Face, FieldFacePaint Paint)> _fieldFacePaints = [];
-
-    /// <summary>The faces painted with the EM field one by one, in the order they were asked for.</summary>
-    public IReadOnlyList<PaintedFieldFace> PaintedFieldFaces => _fieldFaces;
+    /// <summary>The focused layer's faces painted with the EM field one by one, in the order they were asked for.</summary>
+    public IReadOnlyList<PaintedFieldFace> PaintedFieldFaces => Focused.Faces;
 
     /// <summary>
     /// R-em3d82-1 — right-click a face ▸ Plot Field: face <paramref name="face"/> of scene object <paramref name="obj"/> painted
@@ -377,144 +529,143 @@ public sealed partial class Viewer3DViewModel
     /// </summary>
     public void ToggleFieldFace(string obj, int face, int side = 0)
     {
-        int at = _fieldFaces.FindIndex(f => f.Object == obj && f.Face == face);
-        if (at >= 0 && _fieldFaces[at].Side == side) _fieldFaces.RemoveAt(at);
-        else if (at >= 0) _fieldFaces[at] = new PaintedFieldFace(obj, face, side);
-        else _fieldFaces.Add(new PaintedFieldFace(obj, face, side));
-        if (!ShowField && _fieldFaces.Count > 0) ShowField = true;
-        else ScheduleFieldGeometry();
+        var faces = Focused.Faces;
+        int at = faces.FindIndex(f => f.Object == obj && f.Face == face);
+        if (at >= 0 && faces[at].Side == side) faces.RemoveAt(at);
+        else if (at >= 0) faces[at] = new PaintedFieldFace(obj, face, side);
+        else faces.Add(new PaintedFieldFace(obj, face, side));
+        if (!ShowField && faces.Count > 0) ShowField = true;
+        else ScheduleFieldGeometry(Focused);
     }
 
     /// <summary>The side face <paramref name="face"/> of <paramref name="obj"/> is painted on (0 for a face with no side), or
     /// null when it is not painted.</summary>
     public int? FieldFaceSide(string obj, int face)
-        => _fieldFaces.FindIndex(f => f.Object == obj && f.Face == face) is var i and >= 0 ? _fieldFaces[i].Side : null;
+        => Focused.Faces.FindIndex(f => f.Object == obj && f.Face == face) is var i and >= 0 ? Focused.Faces[i].Side : null;
 
     /// <summary>Takes every painted face away (the clip plane and the selected region stay).</summary>
     public void ClearFieldFaces()
     {
-        if (_fieldFaces.Count == 0) return;
-        _fieldFaces.Clear();
-        ScheduleFieldGeometry();
+        if (Focused.Faces.Count == 0) return;
+        Focused.Faces.Clear();
+        ScheduleFieldGeometry(Focused);
     }
-
-    /// <summary>The painted faces as the painter takes them (brief-em3d-89 — FieldSurfacePlot.FaceTargets, shared with
-    /// `render --field`).</summary>
-    private List<(PaintedFieldFace Face, FieldFaceTarget Target)> FieldFaceTargets(Scene3DModel scene)
-        => FieldSurfacePlot.FaceTargets(scene, _fieldFaces);
 
     // ── geometry ────────────────────────────────────────────────────────────────────────────
 
-    private void ClearFieldGeometry()
+    private void ClearFieldGeometry(FieldLayer layer)
     {
-        FieldGeometry = new Scene3DFieldGeometry([], ++_fieldVersion);
-        _fieldSurfaces = [];
-        _temperature = null;
-        HotSpot = null;
-        HotSpotLabel = "";
-        FieldScale = null;
-        View.FieldCovered = [];
-        OnPropertyChanged(nameof(FieldLegendVisible));
-        FrameRequested?.Invoke();
+        layer.Geometry = new Scene3DFieldGeometry([], ++_fieldVersion);
+        layer.Surfaces = [];
+        layer.Temperature = null;
+        layer.HotSpot = null;
+        layer.HotSpotLabel = "";
+        layer.OwnScale = layer.Scale = null;
+        layer.Covered.Clear();
+        LayersChanged();
     }
 
-    /// <summary>Rebuilds the drawn slice and surfaces off the UI thread — on a new solution, quantity,
-    /// surface choice, selection, or clip plane. A newer request cancels an older one.</summary>
     /// <summary>
     /// A ClipPlane plot's plane is being dragged (the Inspector's offset slider). Each tick would otherwise cancel the build under
     /// way, and with a build slower than the ticks no slice was drawn until the release: while dragging, the build under way is
-    /// finished and drawn, and the newest plane is built after it. Set false, the newest plane is built at once.
+    /// finished and drawn, and the newest plane is built after it. Set false, the newest plane is built at once. brief-em3d-96 —
+    /// the focused plot's; <see cref="SetFieldPlaneDragging"/> names the plot.
     /// </summary>
     public bool FieldPlaneDragging
     {
-        get => _fieldPlaneDragging;
-        set
-        {
-            if (_fieldPlaneDragging == value) return;
-            _fieldPlaneDragging = value;
-            if (!value && _fieldBuildPending) ScheduleFieldGeometry();
-        }
+        get => Focused.PlaneDragging;
+        set => SetFieldPlaneDragging(Focused.Name, value);
     }
 
-    private bool _fieldPlaneDragging;
-
-    /// <summary>The build a drag waits for (null when none is under way); a build whose token is no longer the newest is not.</summary>
-    private CancellationTokenSource? _fieldBuildingCts;
-
-    /// <summary>A plane asked for while a drag waited: built when the build under way is drawn.</summary>
-    private bool _fieldBuildPending;
+    /// <summary>brief-em3d-96 — plot <paramref name="name"/>'s plane is being dragged (or no longer): its builds coalesce, no
+    /// other plot's.</summary>
+    public void SetFieldPlaneDragging(string? name, bool dragging)
+    {
+        if (LayerNamed(name) is not { } layer || layer.PlaneDragging == dragging) return;
+        layer.PlaneDragging = dragging;
+        if (!dragging && layer.BuildPending) ScheduleFieldGeometry(layer);
+    }
 
     /// <summary>A build ended (drawn, refused or failed) on the UI thread: a plane that waited is built now.</summary>
-    private void FieldBuildEnded(CancellationTokenSource cts)
+    private void FieldBuildEnded(FieldLayer layer, CancellationTokenSource cts)
     {
-        if (!ReferenceEquals(_fieldBuildingCts, cts)) return;
-        _fieldBuildingCts = null;
-        if (_fieldBuildPending) ScheduleFieldGeometry();
+        if (!ReferenceEquals(layer.BuildingCts, cts)) return;
+        layer.BuildingCts = null;
+        if (layer.BuildPending) ScheduleFieldGeometry(layer);
     }
 
-    private void ScheduleFieldGeometry()
+    /// <summary>Rebuilds every drawn layer that <paramref name="which"/> picks.</summary>
+    private void ScheduleFieldGeometry(Func<FieldLayer, bool> which)
     {
-        if (_applyingPlot || !ShowField || SelectedFieldQuantity is not { } q) return;
-        if (_fieldPlaneDragging && _fieldBuildingCts is { } building && ReferenceEquals(building, _fieldCts) && !building.IsCancellationRequested)
+        foreach (var layer in _layers.ToList())
+            if (which(layer)) ScheduleFieldGeometry(layer);
+    }
+
+    /// <summary>Rebuilds a layer's slice and surfaces off the UI thread — on a new solution, quantity, surface choice, selection,
+    /// or clip plane. A newer request of the same layer cancels an older one; another layer's never does.</summary>
+    private void ScheduleFieldGeometry(FieldLayer layer)
+    {
+        if (_applyingPlot || layer.Disposed || !LayerShown(layer) || layer.Quantity is not { } q) return;
+        if (layer.PlaneDragging && layer.BuildingCts is { } building && ReferenceEquals(building, layer.Cts) && !building.IsCancellationRequested)
         {
-            _fieldBuildPending = true;
+            layer.BuildPending = true;
             return;
         }
-        _fieldBuildPending = false;
-        var vol = _fieldVolume;
-        var bnd = _fieldBoundary;
+        layer.BuildPending = false;
+        var vol = layer.Volume;
+        var bnd = layer.Boundary;
         var scene = Scene;
-        var clip = FieldPlane;                     // brief-em3d-83 — a ClipPlane plot's own plane
-        bool onPlane = FieldOnClipPlane, onSurfaces = FieldOnSurfaces, db = FieldDb;
-        double pct = FieldPercentile;
-        var groups = _fieldGroups;
+        var clip = PlaneOf(layer);                 // brief-em3d-83 — a ClipPlane plot's own plane
+        bool onPlane = layer.OnClip, onSurfaces = layer.OnSurfaces, db = layer.Db;
+        double pct = layer.Percentile;
+        var groups = layer.Read?.Groups ?? [];
         var selected = Scene.Object(View.Selected);
-        _fieldCts?.Cancel();
-        var cts = _fieldCts = new CancellationTokenSource();
-        _fieldBuildingCts = cts;
+        var cts = layer.NewBuild();
+        layer.BuildingCts = cts;
         if (q.IsTemperature)
         {
             // brief-em3d-75 — the temperature's own targets, range and hot spot; the triangles carry recipes for a step.
-            var faces = _temperatureFaces.ToList();
-            bool all = TemperatureAllFaces, onClip = TemperatureOnClip, fix = FixRangeAcrossSweep;
+            var faces = layer.TempFaces.ToList();
+            bool all = layer.TempAllFaces, onClip = layer.TempOnClip, fix = layer.FixRange;
             var mirrors = MirrorSymmetry ? SymmetryPlanes : [];
-            var tempTargets = CurrentTemperatureTargets();
-            var table = _thermalTable;
-            int step = _fieldLoaded?.Index ?? 0;
-            var steps = _fieldRun?.Solutions ?? [];
-            long version = ++_geometryVersion;
+            var tempTargets = CurrentTemperatureTargets(layer);
+            var table = layer.Read?.Table;
+            int step = layer.Loaded?.Index ?? 0;
+            var steps = layer.Run?.Solutions ?? [];
+            long version = ++layer.GeometryVersion;
             Task.Run(() =>
             {
                 try
                 {
-                    if (vol?.Load(q.Array.Name) is not { } array) { _post(() => FieldBuildEnded(cts)); return; }
+                    if (vol?.Load(q.Array.Name) is not { } array) { _post(() => FieldBuildEnded(layer, cts)); return; }
                     var (parts, scale, note, covered) = BuildTemperature(q, vol, array, scene, clip, groups, faces, all, onClip, table, step,
                                                                          steps, fix, version, cts.Token, mirrors, tempTargets);
                     cts.Token.ThrowIfCancellationRequested();
                     _post(() =>
                     {
-                        if (cts.IsCancellationRequested || _disposed) return;
+                        if (cts.IsCancellationRequested || _disposed || layer.Disposed) return;
                         // A newer scene arrived while this was built: build again on it (brief-em3d-83 — a plot is not
                         // re-applied on every scene, so a dropped build would leave it undrawn).
-                        if (!ReferenceEquals(Scene, scene)) { _fieldBuildingCts = null; ScheduleFieldGeometry(); return; }
+                        if (!ReferenceEquals(Scene, scene)) { layer.BuildingCts = null; ScheduleFieldGeometry(layer); return; }
                         FieldGeometryBuilds++;
-                        AdoptTemperature(parts, q, scale, covered, note, scene);
-                        FieldBuildEnded(cts);
+                        layer.Builds++;
+                        AdoptTemperature(layer, parts, q, scale, covered, note);
+                        FieldBuildEnded(layer, cts);
                     });
                 }
                 catch (OperationCanceledException) { }
                 catch (Exception e) when (e is FieldReadException or IOException or UnauthorizedAccessException or ArgumentException)
                 {
-                    _post(() => { FieldText = "The temperature could not be drawn: " + e.Message; FieldBuildEnded(cts); });
+                    _post(() => { if (!layer.Disposed) SetText(layer, "The temperature could not be drawn: " + e.Message); FieldBuildEnded(layer, cts); });
                 }
             });
             return;
         }
         // brief-em3d-82 — the painted faces, resolved against the scene here (cheap) and painted off the UI thread.
-        var targets = FieldFaceTargets(scene);
-        FieldSampler? sampler = _fieldLoaded?.Solver == "openEMS" ? _volumeSampler : null;
-        bool unclipped = _plot is { On: C3dFieldPlotOn.ClipPlane };
-        bool sampled = _fieldLoaded?.Solver == "openEMS";
+        var targets = FieldSurfacePlot.FaceTargets(scene, layer.Faces);
+        FieldSampler? sampler = layer.Loaded?.Solver == "openEMS" ? layer.VolumeSampler : null;
+        bool unclipped = layer.IsClipPlanePlot;
+        bool sampled = layer.Loaded?.Solver == "openEMS";
         Task.Run(() =>
         {
             try
@@ -523,59 +674,43 @@ public sealed partial class Viewer3DViewModel
                 var built = FieldSurfacePlot.Em(q, vol, bnd, groups, scene, clip, onPlane, onSurfaces, selected, targets, sampler, sampled, cts.Token,
                                                 sliceClipped: !unclipped);
                 var surfaces = built.Surfaces;
-                var nudges = built.Nudges;
-                var covered = built.Covered;
-                var paints = built.Paints;
                 var refused = built.Refused;
                 string? hint = built.Hint;
                 cts.Token.ThrowIfCancellationRequested();
                 var scale = FieldSurfacePlot.EmScale(q, surfaces, db, pct);
-                var packed = Scene3DFieldGeometry.Pack(q, surfaces, nudges);
+                var packed = Scene3DFieldGeometry.Pack(q, surfaces, built.Nudges);
                 string text = surfaces.Count == 0 && hint is not null ? hint : $"{q.Label}: {surfaces.Sum(x => x.TriangleCount):N0} triangles.";
                 if (refused.Count > 0) text += " " + string.Join(" ", refused);
                 _post(() =>
                 {
-                    if (cts.IsCancellationRequested || _disposed) return;
-                    if (!ReferenceEquals(Scene, scene)) { _fieldBuildingCts = null; ScheduleFieldGeometry(); return; }
+                    if (cts.IsCancellationRequested || _disposed || layer.Disposed) return;
+                    if (!ReferenceEquals(Scene, scene)) { layer.BuildingCts = null; ScheduleFieldGeometry(layer); return; }
                     FieldGeometryBuilds++;
-                    _fieldSurfaces = surfaces;
-                    _fieldFacePaints = paints;
-                    FieldScale = scale;
-                    FieldGeometry = new Scene3DFieldGeometry(packed, ++_fieldVersion);
-                    var cov = new bool[scene.Objects.Length];
-                    for (int i = 0; i < cov.Length; i++) cov[i] = covered.Contains(scene.Objects[i].Name);
-                    View.FieldCovered = cov;
-                    FieldText = text;
-                    WriteFieldUniforms();
-                    OnPropertyChanged(nameof(FieldLegendVisible));
-                    FrameRequested?.Invoke();
-                    FieldBuildEnded(cts);
+                    layer.Builds++;
+                    layer.Surfaces = surfaces;
+                    layer.FacePaints = built.Paints;
+                    layer.OwnScale = scale;
+                    layer.Geometry = new Scene3DFieldGeometry(packed, ++_fieldVersion);
+                    layer.Covered = new HashSet<string>(built.Covered, StringComparer.Ordinal);
+                    SetText(layer, text);
+                    LayersChanged();
+                    FieldBuildEnded(layer, cts);
                 });
             }
             catch (OperationCanceledException) { }
             catch (Exception e) when (e is FieldReadException or IOException or UnauthorizedAccessException or ArgumentException)
             {
-                _post(() => { FieldText = "The field could not be drawn: " + e.Message; FieldBuildEnded(cts); });
+                _post(() => { if (!layer.Disposed) SetText(layer, "The field could not be drawn: " + e.Message); FieldBuildEnded(layer, cts); });
             }
         });
     }
 
     /// <summary>A new percentile or dB choice: a new range over the SAME triangles — uniforms only.</summary>
-    private void RescaleField()
+    private void RescaleField(FieldLayer layer)
     {
-        if (_applyingPlot || SelectedFieldQuantity is not { } q || _fieldSurfaces.Count == 0 || q.IsTemperature) return;
-        FieldScale = FieldSurfacePlot.EmScale(q, _fieldSurfaces, FieldDb, FieldPercentile);
-        WriteFieldUniforms();
-        OnPropertyChanged(nameof(FieldLegendVisible));
-        FrameRequested?.Invoke();
-    }
-
-    /// <summary>The field uniform block from the quantity, the range, the map and the phase.</summary>
-    private void WriteFieldUniforms()
-    {
-        if (SelectedFieldQuantity is not { } q || FieldScale is not { } s) return;
-        double phase = q.Animated ? FieldPhaseDegrees * Math.PI / 180 : 0;
-        FieldUniforms.Write(View.Field, q, s, FieldMap, phase, unclipped: _plot is { On: C3dFieldPlotOn.ClipPlane });
+        if (layer.Quantity is not { } q || layer.Surfaces.Count == 0 || q.IsTemperature) return;
+        layer.OwnScale = FieldSurfacePlot.EmScale(q, layer.Surfaces, layer.Db, layer.Percentile);
+        LayersChanged();
     }
 
     // ── Export picture… (R-em3d29-5) ────────────────────────────────────────────────────────
@@ -593,8 +728,8 @@ public sealed partial class Viewer3DViewModel
     /// <summary>
     /// The view drawn by the GPU offscreen at <paramref name="scale"/> × the window's DEVICE-pixel size
     /// (1-4), reduced when needed so neither side passes <see cref="FieldPicture.MaxSide"/>, and read back;
-    /// with the legend and the caption to paint over it as the export options say. The current camera; no
-    /// pick pass, so no hover id reaches the picture. UI thread: the read-back holds the render lock.
+    /// with the legends (brief-em3d-96: the same stack as the view's) and the caption to paint over it as the export options say.
+    /// The current camera; no pick pass, so no hover id reaches the picture. UI thread: the read-back holds the render lock.
     /// </summary>
     public FieldPictureShot? CapturePicture(int windowPixelsW, int windowPixelsH, int scale, out string? error)
     {
@@ -609,14 +744,20 @@ public sealed partial class Viewer3DViewModel
             var plan = new Scene3DFramePlan();
             float cx = View.CursorX, cy = View.CursorY;
             View.CursorX = View.CursorY = -1;
-            try { plan.Plan(Scene, View, w, h, backend.FlipY, pick: false, MeshOverlay, SectionOverlay, GridOverlay, FieldGeometry); }
+            try { plan.Plan(Scene, View, w, h, backend.FlipY, pick: false, MeshOverlay, SectionOverlay, GridOverlay, FieldDrawn); }
             finally { View.CursorX = cx; View.CursorY = cy; }
-            var rgba = Session.RenderPixels(plan, Scene, MeshOverlay, SectionOverlay, GridOverlay, FieldGeometry);
+            var rgba = Session.RenderPixels(plan, Scene, MeshOverlay, SectionOverlay, GridOverlay, FieldDrawn);
             if (rgba is null) { error = "the 3D view has closed."; return null; }
-            var legend = ExportLegend && FieldLegendVisible ? FieldLegendLines() : [];
-            var caption = ExportCaption && ShowField && SelectedFieldSolution is { } sol ? sol.Label : null;
-            return new FieldPictureShot(rgba, w, h, k, legend, legend.Count > 0 ? FieldMap : null, FieldScale, caption,
-                                        ThemeServiceDark());
+            var legends = ExportLegend && FieldLegendVisible
+                ? FieldLegendGroups.Select(g => new FieldPictureLegend(g.Lines, g.Map, g.Scale)).ToList()
+                : [];
+            string? caption = null;
+            if (ExportCaption && ShowField)
+            {
+                var labels = DrawnLayers.Select(l => l.Item?.Label).OfType<string>().Distinct().ToList();
+                if (labels.Count > 0) caption = string.Join(", ", labels);
+            }
+            return new FieldPictureShot(rgba, w, h, k, legends, caption, ThemeServiceDark());
         }
         catch (Exception e) when (e is Viewer3DPresentFault or InvalidOperationException or OutOfMemoryException)
         {
@@ -632,12 +773,31 @@ public sealed partial class Viewer3DViewModel
     /// <summary>
     /// The field's value under the cursor, from the FIELD DATA (FieldSampler: the element's own shape
     /// functions), or "" when the cursor is on no drawn field. The clip plane's slice is found by the
-    /// cursor's ray, and counts when it is nearer than whatever the ID pass hit.
+    /// cursor's ray, and counts when it is nearer than whatever the ID pass hit. brief-em3d-96 D4 — with several plots drawn,
+    /// the plot whose surface is FRONTMOST under the cursor, named: <c>Field2 · |E| = 3.1 kV/m</c>.
     /// </summary>
     internal string FieldValueUnderCursor(uint id, Vector3 point, bool hit)
     {
-        if (!ShowField || SelectedFieldQuantity is not { } q || _fieldRun is not { } run || View.CursorX < 0) return "";
-        if (q.IsTemperature) return TemperatureUnderCursor(id, point, hit, q, run);
+        if (!ShowField || View.CursorX < 0) return "";
+        var drawn = DrawnLayers.ToList();
+        string best = "";
+        float bestT = float.MaxValue;
+        foreach (var layer in drawn)
+        {
+            var (text, t) = ValueUnderCursor(layer, id, point, hit);
+            if (text.Length == 0 || t >= bestT) continue;
+            (best, bestT) = (drawn.Count > 1 && layer.Name is { } n ? $"{n} · {text}" : text, t);
+        }
+        return best;
+    }
+
+    /// <summary>One layer's value under the cursor and how far along the cursor's ray it lies, or "".</summary>
+    private (string Text, float T) ValueUnderCursor(FieldLayer layer, uint id, Vector3 point, bool hit)
+    {
+        if (layer.Quantity is not { } q || layer.Run is not { } run) return ("", 0);
+        var (o, d) = View.Camera.Ray(View.CursorX, View.CursorY, _viewW, _viewH);
+        float hitT = hit ? Vector3.Dot(point - o, d) : float.MaxValue;
+        if (q.IsTemperature) return TemperatureUnderCursor(layer, id, point, hit, q, run, o, d, hitT);
         Span<double> ch = stackalloc double[6];
         double toUnits = 1 / run.ToMetres;
         bool Sample(FieldSampler? sampler, FieldStep? step, Vector3 local, double tol, Span<double> into)
@@ -647,43 +807,43 @@ public sealed partial class Viewer3DViewModel
             return sampler.Sample(a, x * toUnits, y * toUnits, z * toUnits, into, tol);
         }
         bool found = false;
-        if (!q.OnBoundary && FieldOnClipPlane && FieldPlane.Enabled)
+        float at = hitT;
+        var plane = PlaneOf(layer);
+        if (!q.OnBoundary && layer.OnClip && plane.Enabled)
         {
-            var (o, d) = View.Camera.Ray(View.CursorX, View.CursorY, _viewW, _viewH);
-            var e = FieldPlane.Equation;
+            var e = plane.Equation;
             var n = new Vector3(e.X, e.Y, e.Z);
             float den = Vector3.Dot(n, d);
             if (Math.Abs(den) > 1e-12f)
             {
                 float t = -(Vector3.Dot(n, o) + e.W) / den;
-                float hitT = hit ? Vector3.Dot(point - o, d) : float.MaxValue;
-                if (t > 0 && t <= hitT * 1.0001f) found = Sample(_volumeSampler, _fieldVolume, o + t * d, 0, ch);
+                if (t > 0 && t <= hitT * 1.0001f && Sample(layer.VolumeSampler, layer.Volume, o + t * d, 0, ch)) (found, at) = (true, t);
             }
         }
-        if (!found && hit && View.IsVisible(id) && id <= View.FieldCovered.Length && View.FieldCovered[id - 1])
+        if (!found && hit && View.IsVisible(id) && id <= Scene.Objects.Length && layer.Covered.Contains(Scene.Objects[id - 1].Name))
         {
             double tol = 1e-3 * (Scene.BoundsMax - Scene.BoundsMin).Length() * toUnits;
-            found = q.OnBoundary ? Sample(_boundarySampler, _fieldBoundary, point, tol, ch)
-                                 : Sample(_volumeSampler, _fieldVolume, point, 0, ch);
+            found = q.OnBoundary ? Sample(layer.BoundarySampler, layer.Boundary, point, tol, ch)
+                                 : Sample(layer.VolumeSampler, layer.Volume, point, 0, ch);
         }
         // brief-em3d-82 — a painted face: read where its paint was read, on the side it shows.
         if (!found && hit && View.IsVisible(id) && LastPick.Object == id && Scene.Object(id) is { } po &&
-            _fieldFacePaints.FirstOrDefault(p => p.Face.Object == po.Name && p.Face.Face == LastPick.Face).Paint is { } paint)
+            layer.FacePaints.FirstOrDefault(p => p.Face.Object == po.Name && p.Face.Face == LastPick.Face).Paint is { } paint)
         {
             double diag = (Scene.BoundsMax - Scene.BoundsMin).Length();
-            if (paint.OnBoundary) found = Sample(_boundarySampler, _fieldBoundary, point, 1e-3 * diag * toUnits, ch);
+            if (paint.OnBoundary) found = Sample(layer.BoundarySampler, layer.Boundary, point, 1e-3 * diag * toUnits, ch);
             else if (paint.Sampled)
-                found = _volumeSampler is { } vs && _fieldVolume?.Load(q.Array.Name) is { } va &&
+                found = layer.VolumeSampler is { } vs && layer.Volume?.Load(q.Array.Name) is { } va &&
                         FieldFaces.SampleOffFace(vs, va, Vector3D.From(point), Vector3D.From(paint.ReadToward), Scene.Origin, ch);
             // Palace: a hair off the face into the tetrahedron on the side shown (a sheet's two sides differ).
-            else found = Sample(_volumeSampler, _fieldVolume, point + (float)(1e-6 * diag) * paint.ReadToward, 0, ch);
+            else found = Sample(layer.VolumeSampler, layer.Volume, point + (float)(1e-6 * diag) * paint.ReadToward, 0, ch);
         }
-        if (!found) return "";
+        if (!found) return ("", 0);
         double phase = q.Animated ? FieldPhaseDegrees * Math.PI / 180 : 0;
         double v = q.Evaluate(ch, phase);
         string unit = FieldNames.Unit(q.Array.Name);
         string text = $"{q.Symbol} = {v.ToString("G4", CultureInfo.InvariantCulture)}{(unit.Length > 0 ? " " + unit : "")}";
         if (q.Animated) text += $" at φ = {FieldPhaseDegrees.ToString("0", CultureInfo.InvariantCulture)}°";
-        return text;
+        return (text, at);
     }
 }

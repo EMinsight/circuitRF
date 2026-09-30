@@ -38279,3 +38279,72 @@ Three more, same day:
   `Viewer3DViewModel.HeldLegendWidth` lets the width only grow while one plot's one quantity is drawn,
   and resets it when either changes. Several plots at once (with stacked legends sharing one held
   width) is `docs/sonnet-briefs/brief-em3d-96-several-field-plots-at-once.md`.
+
+## brief-em3d-96 — several field plots drawn at once (2026-09-30)
+
+Up to four plots are drawn together (D1). The viewer's single-plot state was carved into `FieldLayer`
+(`src/Ui/Viewer3D/FieldLayer.cs`), one per drawn plot. Each layer has its own request, run read, solution,
+quantity, step, triangles, own range, group range, text, problem and build tokens. With no plot, the view
+keeps one layer of its own (name null) for brief 29's toolbar-driven view. The properties the Inspector,
+the menus and the older tests read (`Plot`, `SelectedFieldSolution`, `SelectedFieldQuantity`,
+`FieldScale`, `FieldGeometry`, `FieldText`, `FieldPlotProblem`, …) are the **focused** layer's, mirrored
+under `_applyingPlot`. The focused layer is the plot selected in the tree when it is drawn, else the first
+drawn. A user change to one of those properties is a change to that layer. `FieldLayers` and
+`LayerNamed` give every layer.
+
+- **Only a changed plot is applied.** The editor keys each request (`FieldPlotRequest.Key`, the same
+  string brief 83 keyed the one plot with), and `SetPlots` leaves a layer with an unchanged key
+  exactly as it is. A drag of one plot's offset therefore rebuilds that plot alone. Plane-drag
+  coalescing is per layer (`SetFieldPlaneDragging(name, …)`).
+- **Steps are shared.** `StepOf` caches a `Lazy<FieldStep>` per file, so two plots of one solution
+  read it once (`FieldStepReads`). A step no layer reads is released. A replaced run drops its files'
+  steps, because a re-run writes new data under the same names. Run reads (`FieldRead`) are shared per
+  run directory, so two plots of one run hold the *same* solution items and the range grouping can
+  compare them by reference.
+- **One buffer, one draw per layer.** `FieldDrawn` concatenates the drawn layers in list order. Each
+  `FieldLayerRange` names the colour block its draw uses, and the focused layer is drawn last so it
+  wins a coincident face under LessEqual. A focus change makes a new geometry object with the same
+  version, so nothing re-uploads. With one layer, `FieldDrawn` is that layer's own buffer and version,
+  so a single plot draws and uploads exactly as before. The frame plan gives each field draw a
+  transform slot holding the identity with the layer in `id.y` (`Scene3DFramePlan.FieldSlot`,
+  `LayerOf`). `vs_field` passes it to `fs_field` as a flat varying. No backend learned anything new.
+  The uniform block has four `FB` blocks, 2,016 bytes. `MetalViewer3DBackend.AssertUniformsFitInline`
+  refuses a block over 4 KB. Vulkan's `UniformStride` is now derived from `UniformBytes` (it was a
+  literal 1,280 and would have overlapped).
+- **D2.** Layers of one quantity at one solution in one dB and percentile share
+  `FieldSurfacePlot.EmScale` over the union of their surfaces, cached by the members' versions. A
+  temperature group shares the union of its members' true min/max. `FieldLegendGroups` gives one
+  legend per group, titled with its plot names. The overlay and Export picture draw the same stack at
+  one held width, with "+N more" when the view runs out (`FieldPicture.StackCount`). `render --field`
+  still draws one plot and one legend (the old `FieldPicture.Paint` overload is unchanged).
+- **One clock.** `WriteFieldUniforms` writes every block from one φ in one call. Two animated plots at
+  different frequencies add "φ is each plot's own cycle" to their φ line.
+- **D4 took the brief's recommendation.** The value under the cursor is the frontmost layer's, by ray
+  distance, prefixed with its plot name when more than one plot is drawn.
+- **The sweep step is one control.** Every temperature layer on the focused layer's run follows it,
+  and `CommitSweepStep` writes the step into all of them as one entry.
+- **The view's section no longer rebuilds a ClipPlane plot.** That plot cuts on its own plane.
+  Surfaces/Faces plots and the view's own layer still rebuild on a section change.
+
+Two traps found on the way:
+
+- **The sweep control is rebuilt on `TemperatureStepMax`.** Raising it on every apply made
+  `RebuildSweepAxes` replace the axis objects mid-gesture, and the old axis stopped following the step
+  (`ThermalEditorTests`' slider test caught it). The run's own properties are raised only when the
+  focused layer's run changes (`MirrorRead`), never on an apply.
+- **Every `Push` clears the status line.** A D1 note set inside `SetPlotsVisible` was wiped by Show
+  all's later object edit in the same gesture. The note is held in `_plotsNote` and posted after the
+  gesture's group closes.
+
+Left as they were: the Inspector has no tick of its own, so D1's refusal only ever reaches the status
+line. D5 (true-time animation, φₖ = ωₖ·t) is the owner's to decide and was not built. `FieldPlotTests`'
+`Drawn` helper now reads the named layer, and `Gate6` expects both plots drawn. Gates:
+`SeveralFieldPlotsTests` (1+2+5, 3, 4+6+7, 8, 9). The shader hash is `Viewer3DFrameGateTests.Gate1b`.
+No pixels were seen; D3D11 and Vulkan were not run.
+
+**Follow-up, same day: a renamed field plot fell out of the tree's selection.** `RebuildTree` restores the
+selection by row NAME, so after a rename (and after that rename's undo or redo) no row matched, and the
+Inspector emptied. `ChangePlots` and `ApplyPlotRecords` now note the selected plot's place, name and the
+plot count before the change. `PlotsChanged` then reselects the plot in that place when the old name is gone
+and the count is unchanged. A deleted plot is not replaced by its neighbour. Gate:
+`FieldPlotTests.ARenamedPlot_StaysSelected_ThroughUndoAndRedo`.

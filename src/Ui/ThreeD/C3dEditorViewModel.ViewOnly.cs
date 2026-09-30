@@ -65,7 +65,7 @@ public sealed partial class C3dEditorViewModel
     private void OnViewSceneAdopted()
     {
         RebuildTree();
-        ApplyVisiblePlot();                        // brief-em3d-83 — the session's plot, on this scene
+        ApplyVisiblePlots();                       // brief-em3d-83 — the session's plot, on this scene
         Interlocked.Exchange(ref _adoptedGeneration, Viewer.Scene.Generation);
     }
 

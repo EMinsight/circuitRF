@@ -22,6 +22,7 @@ using CircuitRF.Engine.Em3d;
 using CircuitRF.Ui.Tests.Em3d;
 using CircuitRF.Ui.Tests.Viewer3D;
 using CircuitRF.Ui.ThreeD;
+using static CircuitRF.Ui.ThreeD.C3dEditorViewModel;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -270,8 +271,8 @@ public sealed class FieldPlotTests(ITestOutputHelper output) : IDisposable
         var vm = Open(Eigenmode());
         Run(vm);
         vm.NewFieldPlot();
-        vm.NewFieldPlot();                                                       // one drawn at a time: Field1 is hidden
-        Assert.Equal([true, false], vm.Document.FieldPlots.Select(p => p.Hidden));
+        vm.NewFieldPlot();                                                       // brief-em3d-96: both drawn (up to four at once)
+        Assert.Equal([false, false], vm.Document.FieldPlots.Select(p => p.Hidden));
         foreach (var grouping in new[] { C3dTreeGrouping.Material, C3dTreeGrouping.Primitive })
         {
             vm.TreeGrouping = grouping;
@@ -284,8 +285,25 @@ public sealed class FieldPlotTests(ITestOutputHelper output) : IDisposable
         Assert.All(vm.Document.FieldPlots, p => Assert.True(p.Hidden));
         Assert.Null(vm.Viewer.Plot);
         vm.ShowAllTreeObjectsCommand.Execute(null);
-        Assert.Single(vm.Document.FieldPlots, p => !p.Hidden);
+        Assert.All(vm.Document.FieldPlots, p => Assert.False(p.Hidden));
         Assert.NotNull(vm.Viewer.Plot);
+    }
+
+    /// <summary>The tree keeps its selection by row name: a renamed plot (and its undo and redo) stays selected under its new
+    /// name, with the Inspector on it.</summary>
+    [Fact]
+    public void ARenamedPlot_StaysSelected_ThroughUndoAndRedo()
+    {
+        var vm = Open(Eigenmode());
+        vm.NewFieldPlot();
+        Assert.Equal("Field1", vm.SelectedTreeItem?.Name);
+        Assert.Null(vm.RenameFieldPlot("Field1", "Cut"));
+        Assert.Equal(("Cut", FieldPlotKind), (vm.SelectedTreeItem?.Name, vm.SelectedTreeItem?.Kind));
+        Assert.Equal("Field plot Cut", vm.Properties.Heading);
+        vm.UndoRedo.Undo();
+        Assert.Equal("Field1", vm.SelectedTreeItem?.Name);
+        vm.UndoRedo.Redo();
+        Assert.Equal("Cut", vm.SelectedTreeItem?.Name);
     }
 
     // ── 7. the strip is gone ────────────────────────────────────────────────────────────────
@@ -302,13 +320,15 @@ public sealed class FieldPlotTests(ITestOutputHelper output) : IDisposable
 
     // ── the fixture and the waits ───────────────────────────────────────────────────────────
 
+    /// <summary>Plot <paramref name="name"/> shown, and what its layer draws once nothing more is on its way (brief-em3d-96: the
+    /// plots drawn beside it stay drawn, and the range is its group's).</summary>
     private (int Vertices, double Lo, double Hi) Drawn(C3dEditorViewModel vm, string name)
     {
-        long builds = vm.Viewer.FieldGeometryBuilds;
         vm.SetPlotShown(name, true);
-        Until(() => vm.Viewer.Plot?.Name == name && vm.Viewer.FieldGeometryBuilds > builds && vm.Viewer.FieldScale is not null,
-              $"{name} was never drawn");
-        return Settled(vm);
+        Until(() => vm.Viewer.LayerNamed(name) is { Builds: > 0, Scale: not null, Building: false } l && l.Name == name, $"{name} was never drawn");
+        Settled(vm);
+        var layer = vm.Viewer.LayerNamed(name)!;
+        return (layer.Geometry.Vertices.Length, layer.Scale!.Lo, layer.Scale.Hi);
     }
 
     /// <summary>What is drawn once nothing more is on its way.</summary>

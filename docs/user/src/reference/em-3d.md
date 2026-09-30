@@ -264,8 +264,16 @@ setup's refusals and notes, the mesh, the field) are always shown.
     with it nor hides it, so cut the geometry wherever helps you see.
   - **dB** and a **range** percentile, which keep one singular edge from washing out the picture.
 
-  **One plot is drawn at a time**: ticking one in the tree unticks the one drawn before; the others stay,
-  ready to tick. Each change is one undo step. Adding, editing or hiding a plot never marks a result stale.
+  **Up to four plots are drawn at once**: tick them in the tree, so two slices of one quantity at two
+  positions, or two quantities on crossing planes, are on screen together. Ticking a fifth is refused, and
+  the status line names the four drawn so you can untick one. A new plot made while four are drawn is
+  added hidden; *Show all* ticks the first four in the list and says which stay hidden. Plots of the same
+  quantity at the same solution, in the same dB and range percentile, share **one colour range**, taken
+  over all of their triangles together, so their colours compare. Each such group has **one legend**,
+  titled with every plot in it. The legends stack down the right of the view, all one width, and a legend
+  that would run past the bottom is left off with "+N more" under the last one. Where two plots cover the
+  same place, the one selected in the tree is drawn on top, and the value under the cursor is the front
+  plot's, named. Each change is one undo step. Adding, editing or hiding a plot never marks a result stale.
   A plot whose data is missing — no run of its setup yet, a run that did not save its frequency, a
   quantity the run no longer offers — stays in the tree with a warning mark and draws nothing; its
   tooltip, and the Inspector, say which, and name what the run did save. It is never moved to the nearest
@@ -290,9 +298,12 @@ setup's refusals and notes, the mesh, the field) are always shown.
 - **Animation.** With the plot drawn selected, the play button at the foot of the Inspector sweeps the phase
   through one cycle and draws the instantaneous field Re{E·e^jφ}. That is the standing wave in a cavity, or
   the current running along a wire. The phase and its speed belong to the view, not the plot: they are not
-  saved.
+  saved. There is one phase for every plot drawn, so two animated plots move in step, and moving φ under
+  one plot moves the others. For two quantities at one frequency that shows their true relative phase.
+  Two plots at **different** frequencies each run one cycle of their own per loop, which compares them
+  phase for phase rather than in real time; their legends say so.
 - **Pictures.** **Export picture …** saves a PNG of the view at a multiple of the window's size, with or
-  without the legend and caption. Right-click in the view — on anything or nothing — for **Copy**, which puts
+  without the legends (the same stack as the view's) and caption. Right-click in the view — on anything or nothing — for **Copy**, which puts
   the view on the clipboard at four times the window's size (the 3D editor's canvas offers it too).
 
 **What the mesh tells you about trusting the answer.** Look at where the small elements are. After

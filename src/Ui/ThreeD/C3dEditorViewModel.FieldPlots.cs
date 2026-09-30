@@ -1,9 +1,10 @@
 // brief-em3d-83 — FIELD PLOTS are records of the document: a Field Plots group in the tree (after Probes, in both groupings),
 // each row ticked, renamed, duplicated and deleted like a probe, each edit one undo entry, saved with the .c3d.
 //
-// ONE PLOT IS DRAWN AT A TIME (owner decision Q2): ticking one unticks the others, and the viewer draws the one left ticked
-// (Viewer3DViewModel.SetPlot). The others stay in the document and in the tree. A new plot PINS the setup active when it was
-// made (Q3) — switching setups never changes what an existing plot shows — and is named Field1, Field2 … (Q1).
+// UP TO FOUR PLOTS ARE DRAWN AT ONCE (brief-em3d-96 D1; brief 83's Q2 drew one): each ticked plot is drawn
+// (Viewer3DViewModel.SetPlots), and ticking a fifth is refused with a sentence naming the four drawn — a tick never unticks one
+// of the user's. The others stay in the document and in the tree. A new plot PINS the setup active when it was made (Q3) —
+// switching setups never changes what an existing plot shows — and is named Field1, Field2 … (Q1).
 //
 // A PLOT'S EDIT IS NOT A MODEL EDIT: it rebuilds the tree and redraws the field, never the scene, and the stale banner never
 // moves for it (C3dPersistence.SerializeForRun). A plot whose data is missing stays, draws nothing, and its row says why.
@@ -30,8 +31,22 @@ public sealed partial class C3dEditorViewModel
     /// <summary>The plot named <paramref name="name"/>, or null.</summary>
     public C3dFieldPlot? FieldPlot(string name) => Document.FieldPlots.FirstOrDefault(p => p.Name == name);
 
-    /// <summary>The plot drawn: the one ticked.</summary>
-    public C3dFieldPlot? VisibleFieldPlot => Document.FieldPlots.FirstOrDefault(p => !p.Hidden);
+    /// <summary>brief-em3d-96 D1 — the most plots drawn at once.</summary>
+    public const int MaxDrawnPlots = FieldUniforms.MaxLayers;
+
+    /// <summary>The plots drawn: the ticked ones, in list order (at most <see cref="MaxDrawnPlots"/>).</summary>
+    public IReadOnlyList<C3dFieldPlot> VisibleFieldPlots => [.. Document.FieldPlots.Where(p => !p.Hidden).Take(MaxDrawnPlots)];
+
+    /// <summary>The FOCUSED plot drawn: the selected one when it is drawn, else the first drawn — the one the Inspector's phase,
+    /// the sweep step and the menus' switches act on.</summary>
+    public C3dFieldPlot? VisibleFieldPlot => SelectedFieldPlot is { Hidden: false } sel && VisibleFieldPlots.Contains(sel) ? sel : VisibleFieldPlots.FirstOrDefault();
+
+    /// <summary>brief-em3d-96 D1 — why <paramref name="wanted"/> is not drawn: four already are, and which.</summary>
+    public string FourDrawnRefusal(string wanted)
+        => $"Four plots are drawn: untick one of {string.Join(", ", VisibleFieldPlots.Select(p => p.Name))} to draw {wanted}.";
+
+    /// <summary>Whether another plot may be drawn beside the ones drawn now.</summary>
+    private bool RoomToDraw => Document.FieldPlots.Count(p => !p.Hidden) < MaxDrawnPlots;
 
     /// <summary>The selected row's plot, or null.</summary>
     public C3dFieldPlot? SelectedFieldPlot => SelectedTreeItem is { Kind: FieldPlotKind } r ? FieldPlot(r.Name) : null;
@@ -48,45 +63,63 @@ public sealed partial class C3dEditorViewModel
     public bool ChangePlots(string description, Action<List<C3dFieldPlot>> mutate)
     {
         string before = C3dPersistence.SerializeFieldPlots(Document.FieldPlots);
+        var selected = SelectedPlotSlot();
         mutate(Document.FieldPlots);
         string after = C3dPersistence.SerializeFieldPlots(Document.FieldPlots);
         if (after == before) return false;
         Push(new C3dRecordsEdit(description, before, after, ApplyPlotRecords, alreadyApplied: true));
-        PlotsChanged();
+        PlotsChanged(selected);
         return true;
     }
 
     private void ApplyPlotRecords(string text)
     {
+        var selected = SelectedPlotSlot();
         Document.FieldPlots = C3dPersistence.DeserializeFieldPlots(text);
-        PlotsChanged();
+        PlotsChanged(selected);
     }
 
+    /// <summary>The selected plot's place in the list, its name, and how many plots there are — or null when no plot is selected.</summary>
+    private (int Index, string Name, int Count)? SelectedPlotSlot()
+        => SelectedFieldPlot is { } p ? (Document.FieldPlots.IndexOf(p), p.Name, Document.FieldPlots.Count) : null;
+
     /// <summary>The plots changed: the tree, the drawn plot, the inspector, the dirty mark — never the scene.</summary>
-    private void PlotsChanged()
+    private void PlotsChanged((int Index, string Name, int Count)? selected = null)
     {
         RebuildTree();
-        ApplyVisiblePlot();
+        // The tree keeps its selection by row NAME, so a renamed plot (a rename, or its undo or redo) fell out of it: the same
+        // plot, in the same place in a list of the same length, is selected again under its new name. A deleted one is not.
+        if (selected is { } was && FieldPlot(was.Name) is null && Document.FieldPlots.Count == was.Count && was.Index >= 0 &&
+            was.Index < Document.FieldPlots.Count && SelectedFieldPlot is null)
+            SelectPlotRow(Document.FieldPlots[was.Index].Name);
+        ApplyVisiblePlots();
         Properties.Reload();
         OnPropertyChanged(nameof(IsDirty));
         RaiseMenuStateChanged();
     }
 
-    /// <summary>Shows <paramref name="plot"/> and hides every other (one drawn at a time).</summary>
-    private static void ShowOnly(List<C3dFieldPlot> plots, C3dFieldPlot plot)
+    /// <summary>
+    /// The tick: <paramref name="shown"/> draws the plot beside the ones drawn, or hides it. brief-em3d-96 D1 — with four drawn a
+    /// fifth is REFUSED: nothing changes, and the sentence naming the four is returned and posted where the tree's refusals go.
+    /// </summary>
+    public string? SetPlotShown(string name, bool shown)
     {
-        foreach (var p in plots) p.Hidden = !ReferenceEquals(p, plot);
+        if (FieldPlot(name) is not { } plot) return null;
+        if (shown && plot.Hidden && !RoomToDraw)
+        {
+            string why = FourDrawnRefusal(name);
+            StatusMessage = why;
+            SyncPlotRow(name);
+            return why;
+        }
+        ChangePlots($"{(shown ? "Show" : "Hide")} {name}", plots => plots.First(x => x.Name == name).Hidden = !shown);
+        return null;
     }
 
-    /// <summary>The tick: <paramref name="shown"/> draws the plot (and hides the others), or hides it.</summary>
-    public void SetPlotShown(string name, bool shown)
+    /// <summary>A plot row's tick back to what the document says (a refused tick left it ticked).</summary>
+    private void SyncPlotRow(string name)
     {
-        if (FieldPlot(name) is null) return;
-        ChangePlots($"{(shown ? "Show" : "Hide")} {name}", plots =>
-        {
-            var p = plots.First(x => x.Name == name);
-            if (shown) ShowOnly(plots, p); else p.Hidden = true;
-        });
+        if (FieldPlot(name) is { } p && AllTreeItems().FirstOrDefault(t => t.Kind == FieldPlotKind && t.Name == name) is { } row) row.Sync(!p.Hidden);
     }
 
     /// <summary>Changes one plot's fields: one undo entry. Null, or why not.</summary>
@@ -107,19 +140,21 @@ public sealed partial class C3dEditorViewModel
         return SetFieldPlot(name, $"Rename {name} to {newName}", p => p.Name = newName);
     }
 
-    /// <summary>A copy beside the original, named as a new plot is, and drawn.</summary>
+    /// <summary>A copy beside the original, named as a new plot is, and drawn — or, with four drawn, added hidden (and said).</summary>
     public void DuplicateFieldPlot(string name)
     {
         if (FieldPlot(name) is not { } source) return;
         var copy = C3dPersistence.DeserializeFieldPlots(C3dPersistence.SerializeFieldPlots([source]))[0];
         copy.Name = C3dFieldPlot.NextName(Document.FieldPlots);
-        ChangePlots($"Duplicate {name}", plots =>
-        {
-            plots.Insert(plots.FindIndex(p => p.Name == name) + 1, copy);
-            ShowOnly(plots, copy);
-        });
+        string? full = RoomToDraw ? null : FourDrawnRefusal(copy.Name);
+        copy.Hidden = full is not null;
+        ChangePlots($"Duplicate {name}", plots => plots.Insert(plots.FindIndex(p => p.Name == name) + 1, copy));
+        if (full is not null) StatusMessage = AddedHidden(copy.Name, full);
         SelectPlotRow(copy.Name);
     }
+
+    /// <summary>The sentence for a plot made while four are drawn: it is added hidden, and why.</summary>
+    private static string AddedHidden(string name, string full) => $"{name} was added hidden. {full}";
 
     public void DeleteFieldPlot(string name) => ChangePlots($"Delete {name}", plots => plots.RemoveAll(p => p.Name == name));
 
@@ -132,11 +167,11 @@ public sealed partial class C3dEditorViewModel
     {
         var plot = DefaultPlot(temperature);
         shape?.Invoke(plot);
-        ChangePlots($"New field plot {plot.Name}", plots =>
-        {
-            plots.Add(plot);
-            ShowOnly(plots, plot);
-        });
+        // brief-em3d-96 D1 — drawn beside the others; with four drawn, added HIDDEN — never by unticking one of the user's.
+        string? full = RoomToDraw ? null : FourDrawnRefusal(plot.Name);
+        plot.Hidden = full is not null;
+        ChangePlots($"New field plot {plot.Name}", plots => plots.Add(plot));
+        if (full is not null) StatusMessage = AddedHidden(plot.Name, full);
         if (select)
         {
             SelectPlotRow(plot.Name);
@@ -225,7 +260,7 @@ public sealed partial class C3dEditorViewModel
     /// <summary>The face a gesture picked, as a plot spells it: <c>object/face</c>.</summary>
     private static string FaceKey(Scene3DObject o, int face) => $"{o.Name}/{o.FaceName(face)}";
 
-    /// <summary>The viewer's events a plot's rows follow: the run read again, and the drawn plot's own verdict.</summary>
+    /// <summary>The viewer's events a plot's rows follow: the run read again, and the drawn plots' own verdicts.</summary>
     private void WatchFieldPlots()
     {
         Viewer.FieldsRead += RefreshPlotFlags;
@@ -236,30 +271,38 @@ public sealed partial class C3dEditorViewModel
     }
 
     /// <summary>
-    /// The ticked plot to the viewer (or none). Called when the plots, the scene or the active setup change — and a request the
-    /// viewer already has (the same plot, plane, faces, run and origin) is not sent again, so a model edit's new scene does not
-    /// rebuild the field it draws on the solved geometry.
+    /// brief-em3d-96 — the ticked plots to the viewer (or none), each keyed as brief 83 keyed the one: the same plot, plane,
+    /// faces, run and origin is not applied again, so a model edit's new scene does not rebuild a field drawn on the solved
+    /// geometry, and a change to one plot rebuilds that plot alone. Called when the plots, the scene or the active setup change.
     /// </summary>
-    private void ApplyVisiblePlot()
+    private void ApplyVisiblePlots()
     {
-        var plot = VisibleFieldPlot;
-        if (plot is not null && PlotOffsetPreview(plot.Name) is { } dragged)
+        var requests = new List<FieldPlotRequest>();
+        foreach (var shown in VisibleFieldPlots)
         {
-            plot = C3dPersistence.DeserializeFieldPlots(C3dPersistence.SerializeFieldPlots([plot]))[0];
-            plot.Offset = dragged;
+            var plot = shown;
+            if (PlotOffsetPreview(plot.Name) is { } dragged)
+            {
+                plot = C3dPersistence.DeserializeFieldPlots(C3dPersistence.SerializeFieldPlots([plot]))[0];
+                plot.Offset = dragged;
+            }
+            // A ClipPlane plot and the toolbar's section are independent (owner decision, 2026-09-29): the slice is drawn on the
+            // plot's own plane and the section never cuts it (fs_field's unclipped flag), so the plot neither moves nor opens the
+            // section — it used to follow the plot's plane, which made the two one control.
+            var request = PlotRequest(plot);
+            string key = string.Join("|", C3dPersistence.SerializeFieldPlots([plot]), request.Plane.Offset, request.Plane.Flip,
+                string.Join(",", request.Faces), FieldPlotResolver.RunDirectories(request.RunSetup, ResultsRootProvider?.Invoke()),
+                request.Solver, request.SetupProblem, Viewer.Scene.Origin);
+            requests.Add(request with { Key = key });
         }
-        // A ClipPlane plot and the toolbar's section are independent (owner decision, 2026-09-29): the slice is drawn on the
-        // plot's own plane and the section never cuts it (fs_field's unclipped flag), so the plot neither moves nor opens the
-        // section — it used to follow the plot's plane, which made the two one control.
-        var request = plot is null ? null : PlotRequest(plot);
-        string key = request is null ? "" : string.Join("|", C3dPersistence.SerializeFieldPlots([plot!]), request.Plane.Offset, request.Plane.Flip,
-            string.Join(",", request.Faces), FieldPlotResolver.RunDirectories(request.RunSetup, ResultsRootProvider?.Invoke()),
-            request.Solver, request.SetupProblem, Viewer.Scene.Origin);
-        if (key != _appliedPlotKey)
+        string all = string.Join("\n", requests.Select(r => r.Key));
+        string? focus = VisibleFieldPlot?.Name;
+        if (all != _appliedPlotKey)
         {
-            _appliedPlotKey = key;
-            Viewer.SetPlot(request);
+            _appliedPlotKey = all;
+            Viewer.SetPlots(requests, focus);
         }
+        else Viewer.FocusPlot(focus);
         RefreshPlotFlags();
     }
 
@@ -277,18 +320,18 @@ public sealed partial class C3dEditorViewModel
     {
         if (FieldPlot(name) is null) return;
         _plotOffsetPreview = (name, offset);
-        Viewer.FieldPlaneDragging = true;
-        ApplyVisiblePlot();
+        Viewer.SetFieldPlaneDragging(name, true);
+        ApplyVisiblePlots();
     }
 
     /// <summary>Ends a drag's preview. <paramref name="redraw"/> false when a commit of the same offset follows, so the plane
     /// is not drawn back at the document's offset for one request in between.</summary>
     public void EndPlotOffsetPreview(bool redraw = true)
     {
-        if (_plotOffsetPreview is null) return;
+        if (_plotOffsetPreview is not { } preview) return;
         _plotOffsetPreview = null;
-        if (redraw) ApplyVisiblePlot();
-        Viewer.FieldPlaneDragging = false;
+        if (redraw) ApplyVisiblePlots();
+        Viewer.SetFieldPlaneDragging(preview.Name, false);
     }
 
     /// <summary>The model's extent along <paramref name="axis"/> in DBU — the offset slider's range; null with no scene.</summary>
@@ -341,13 +384,13 @@ public sealed partial class C3dEditorViewModel
     }
 
     /// <summary>
-    /// Why <paramref name="p"/> draws nothing, or null. The drawn plot's is the viewer's (it has read the step, so it knows the
-    /// quantity too); another's is checked against what its run saved.
+    /// Why <paramref name="p"/> draws nothing, or null. A drawn plot's is its layer's in the viewer (it has read the step, so it
+    /// knows the quantity too); another's is checked against what its run saved.
     /// </summary>
     public string? FieldPlotProblem(C3dFieldPlot p)
     {
         var request = PlotRequest(p, resolveScene: false);
-        if (!p.Hidden && Viewer.Plot is { } drawn && drawn.Name == p.Name && Viewer.FieldPlotProblem is { } now) return now;
+        if (!p.Hidden && Viewer.FieldLayers.FirstOrDefault(l => l.Name == p.Name) is { Problem: { } now }) return now;
         var found = Discovered(request);
         if (FieldPlotResolver.PlotProblem(request, found.Items, found.Ran, Viewer.Scene.Problem) is { } why) return why;
         if (p.Faces.Count > 0 && p.On == C3dFieldPlotOn.Faces && p.Faces.FirstOrDefault(f => SceneFace(f) is null) is { } gone && Viewer.Scene.Objects.Length > 0)
@@ -398,7 +441,7 @@ public sealed partial class C3dEditorViewModel
         {
             AddCommand = NewFieldPlotCommand,
             AddTip = "New Field Plot…: a field of the active setup's run, drawn, and defined in the Properties Inspector.",
-            HeaderTip = IsViewOnly ? SessionPlotsTip : "What the 3D view draws of a run's fields, saved with the document. One is drawn at a time.",
+            HeaderTip = IsViewOnly ? SessionPlotsTip : "What the 3D view draws of a run's fields, saved with the document. Up to four are drawn at once.",
         };
         int at = Tree.ToList().FindIndex(g => g.Role is C3dTreeGroupRole.MeshRegions or C3dTreeGroupRole.EffectiveBlocks or
                                                   C3dTreeGroupRole.SymmetryPlanes or C3dTreeGroupRole.ThermalBoundaries);
@@ -416,7 +459,7 @@ public sealed partial class C3dEditorViewModel
         [
             new(name, Enabled: false), Viewer3DMenuItem.Separator,
             new(shown ? "Hide" : "Show", () => SetRowsVisible([item], !shown, $"{(shown ? "Hide" : "Show")} {name}"),
-                Tip: shown ? null : "Draw this plot (the one drawn now is hidden: one at a time)."),
+                Tip: shown ? null : "Draw this plot beside the ones drawn (up to four at once)."),
             new("Rename…", () => TextRequested?.Invoke($"Rename {name}", "Name:", name, text => RenameFieldPlot(name, text))),
             new("Duplicate", () => DuplicateFieldPlot(name)),
             Viewer3DMenuItem.Separator,
@@ -434,21 +477,53 @@ public sealed partial class C3dEditorViewModel
          : !IsViewOnly && EditMaterialItem(group) is { } edit ? [edit] : [];
 
     /// <summary>
-    /// brief-em3d-90 — the plots' side of SetRowsVisible: hiding hides each named plot; showing keeps the one-at-a-time rule —
-    /// the selected plot among them, else the one drawn now, else the first — so Show all draws one plot, not the last ticked.
-    /// One entry (inside the gesture's group).
+    /// brief-em3d-90 — the plots' side of SetRowsVisible: hiding hides each named plot; showing ticks them beside the ones drawn,
+    /// in list order, until four are drawn (brief-em3d-96 D1) — so Show all with more than four draws the first four and says
+    /// which stay hidden, and a single tick with four drawn is refused with the sentence naming them. One entry (inside the
+    /// gesture's group).
     /// </summary>
     private void SetPlotsVisible(IReadOnlyList<string> names, bool visible, string description)
     {
         var listed = names.Where(n => FieldPlot(n) is not null).ToList();
         if (listed.Count == 0) return;
-        string pick = SelectedFieldPlot?.Name is { } sel && listed.Contains(sel) ? sel
-                    : VisibleFieldPlot?.Name is { } now && listed.Contains(now) ? now : listed[0];
+        if (visible && listed.Count == 1)
+        {
+            _plotsNote = SetPlotShown(listed[0], true);
+            return;
+        }
+        var left = new List<string>();
         ChangePlots(listed.Count == 1 ? $"{(visible ? "Show" : "Hide")} {listed[0]}" : description, plots =>
         {
-            if (visible) ShowOnly(plots, plots.First(p => p.Name == pick));
-            else foreach (var p in plots.Where(p => listed.Contains(p.Name))) p.Hidden = true;
+            if (!visible)
+            {
+                foreach (var p in plots.Where(p => listed.Contains(p.Name))) p.Hidden = true;
+                return;
+            }
+            int drawn = plots.Count(p => !p.Hidden);
+            foreach (var p in plots.Where(p => listed.Contains(p.Name) && p.Hidden))
+            {
+                if (drawn < MaxDrawnPlots) { p.Hidden = false; drawn++; }
+                else left.Add(p.Name);
+            }
         });
+        if (left.Count > 0)
+        {
+            _plotsNote = $"Four plots are drawn: {string.Join(", ", VisibleFieldPlots.Select(p => p.Name))}. " +
+                         $"{string.Join(", ", left)} {(left.Count == 1 ? "stays" : "stay")} hidden — untick one to draw another.";
+            foreach (string n in left) SyncPlotRow(n);
+        }
+    }
+
+    /// <summary>What a tick or Show all left undrawn (D1), said once the whole gesture is done — its other edits clear the status
+    /// line as they are pushed.</summary>
+    private string? _plotsNote;
+
+    /// <summary>The gesture's <see cref="_plotsNote"/> onto the status line.</summary>
+    private void PostPlotsNote()
+    {
+        if (_plotsNote is not { } note) return;
+        _plotsNote = null;
+        StatusMessage = note;
     }
 
     // ── gestures that make or extend a plot ──────────────────────────────────────────────────
@@ -464,9 +539,11 @@ public sealed partial class C3dEditorViewModel
             Face = FaceKey(o, face), Side = side switch { 1 => C3dFieldSide.Top, -1 => C3dFieldSide.Bottom, _ => C3dFieldSide.None },
         };
         // a temperature face joins the drawn plot only when that plot reads the active setup's run: Plot Temperature was
-        // offered for the ACTIVE setup, and a face added to a plot pinned to another setup would paint that setup's result
-        if (VisibleFieldPlot is { On: C3dFieldPlotOn.Faces } target && target.IsTemperature == temperature &&
-            (!temperature || target.Setup is null || target.Setup == ActiveSetupDisplayName))
+        // offered for the ACTIVE setup, and a face added to a plot pinned to another setup would paint that setup's result.
+        // brief-em3d-96 — of several drawn, the focused one when it takes the face, else the first that does.
+        bool Takes(C3dFieldPlot t) => t is { On: C3dFieldPlotOn.Faces } && t.IsTemperature == temperature &&
+                                      (!temperature || t.Setup is null || t.Setup == ActiveSetupDisplayName);
+        if ((VisibleFieldPlot is { } focused && Takes(focused) ? focused : VisibleFieldPlots.FirstOrDefault(Takes)) is { } target)
         {
             string name = target.Name;
             SetFieldPlot(name, $"Plot on {entry.Face}", p =>
@@ -496,7 +573,7 @@ public sealed partial class C3dEditorViewModel
             return;
         }
         if (existing is null) AddFieldPlot(true, p => p.On = on, select: false);
-        else SetPlotShown(existing.Name, true);
+        else if (existing.Hidden) SetPlotShown(existing.Name, true);
     }
 
     /// <summary>R-em3d83-6 — "Other frequency… (needs a re-run)": <paramref name="ghz"/> added to the plot's setup's saved
@@ -532,7 +609,7 @@ public sealed partial class C3dEditorViewModel
             var p = d.FieldPlots.First(x => x.Name == name);
             p.Solution = new C3dFieldSolution { GHz = ghz, Port = p.Solution?.Port };
         });
-        if (C3dPersistence.SerializeFieldPlots(Document.FieldPlots) != plotText) ApplyVisiblePlot();
+        if (C3dPersistence.SerializeFieldPlots(Document.FieldPlots) != plotText) ApplyVisiblePlots();
         return null;
     }
 

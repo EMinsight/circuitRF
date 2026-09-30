@@ -225,14 +225,23 @@ public struct FieldVertex
     public float X, Y, Z, R0, R1, R2, I0, I1, I2;
 }
 
+/// <summary>brief-em3d-96 — one drawn plot's part of the field buffer: its vertices, and the uniform block
+/// (<see cref="FieldUniforms"/>, 0 to <see cref="FieldUniforms.MaxLayers"/> − 1) its fragments are coloured with.</summary>
+public readonly record struct FieldLayerRange(int First, int Count, int Layer);
+
 /// <summary>
 /// The field geometry a frame draws: the slice and the surfaces, one vertex buffer, uploaded once per
 /// <see cref="Version"/>. A phase step changes a uniform, never this.
 /// </summary>
-public sealed class Scene3DFieldGeometry(FieldVertex[] vertices, long version, long geometryVersion = -1)
+public sealed class Scene3DFieldGeometry(FieldVertex[] vertices, long version, long geometryVersion = -1,
+                                         IReadOnlyList<FieldLayerRange>? layers = null)
 {
     public FieldVertex[] Vertices { get; } = vertices;
     public long Version { get; } = version;
+
+    /// <summary>brief-em3d-96 — the drawn plots' ranges in DRAW order (one draw each, the focused plot last so it wins where two
+    /// coincide), each naming its colour block. One plot's buffer is one range coloured with block 0.</summary>
+    public IReadOnlyList<FieldLayerRange> Layers { get; } = layers ?? [new FieldLayerRange(0, vertices.Length, 0)];
 
     /// <summary>brief-em3d-75 gate 7 — which cut or gather of the model these triangles are: kept when only the VALUES
     /// moved (a thermal sweep step re-reads a scalar per vertex through the surfaces' recipes), new when the triangles
@@ -276,15 +285,23 @@ public sealed class Scene3DFieldGeometry(FieldVertex[] vertices, long version, l
 }
 
 /// <summary>
-/// The field uniform block (scene.wgsl <c>F</c>): cos φ, sin φ, range lo, range hi; mode, dB, stop count,
+/// The field uniform block (scene.wgsl <c>FB</c>): cos φ, sin φ, range lo, range hi; mode, dB, stop count,
 /// unclipped; sixteen colour-map stops (t, r, g, b). 288 bytes. Written per frame; an animation changes φ only.
 /// <c>unclipped</c> is a ClipPlane plot's slice: on the plot's own plane, so the view's section plane never hides it.
+/// brief-em3d-96 — the uniform block holds <see cref="MaxLayers"/> of them, one per drawn plot; a draw's transform slot names
+/// its block (<c>mx.id.y</c>).
 /// </summary>
 public static class FieldUniforms
 {
     public const int Floats = 8 + 4 * MaxStops;
     public const int Bytes = Floats * 4;
     public const int MaxStops = 16;
+
+    /// <summary>brief-em3d-96 D1 — the most plots drawn at once: one colour block each.</summary>
+    public const int MaxLayers = 4;
+
+    /// <summary>Every layer's block, back to back: what <c>Viewer3DViewState.Field</c> holds.</summary>
+    public const int LayersFloats = Floats * MaxLayers;
 
     public static void Write(Span<float> u, FieldQuantity q, FieldColorScale scale, ColorMap3D map, double phase, bool unclipped = false)
     {
