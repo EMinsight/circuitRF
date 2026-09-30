@@ -1169,7 +1169,8 @@ public static class ComponentTypeRegistry
         if (kind is not (SymbolKind.Via or SymbolKind.ViaGnd)) return "";
         return parameterName switch
         {
-            "FromLayer"   => "The conductor terminal A lands on. Default: the top conductor.",
+            "FromLayer"   => "The conductor terminal A lands on. Default: the top conductor, or the highest one "
+                           + "a drill to the other end starts on when none joins the top conductor to it.",
             "ToLayer"     => "The conductor terminal B lands on. Default: the farthest conductor a drill reaches "
                            + "from FromLayer that is not a ground plane. A drill that runs on past it leaves a stub, "
                            + "which is modelled.",
@@ -1178,7 +1179,7 @@ public static class ComponentTypeRegistry
             "Drill"       => "The finished hole diameter. Empty: the technology's via drill, else 0.3 mm.",
             "Pad"         => "The pad diameter on each end. Empty: the technology's via pad, else 0.6 mm.",
             "Antipad"     => "The clearance diameter in every ground plane the barrel passes. Empty: the pad "
-                           + "plus 0.3 mm. No technology states one, so the run names it as a default.",
+                           + "plus 0.3 mm.",
             "Plating"     => "The barrel wall thickness. Empty: the via layer's own, else 25 µm. Ignored for a "
                            + "filled via.",
             "IncludeC"    => "Whether the pad-to-plane capacitance is modelled. With it off the via is its "

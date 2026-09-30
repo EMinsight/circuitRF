@@ -78,6 +78,8 @@ public partial class ParameterEditorViewModel
                 ? "Passes no ground plane"
                 : "Passes " + string.Join(", ", span.Planes.Select(p => p.Name)));
         }
+        lines.Add(string.Format(ci, "Drill {0:0.###} mm · pad {1:0.###} mm · antipad {2:0.###} mm",
+            e.Geometry.Drill * 1e3, e.Geometry.Pad * 1e3, e.Geometry.Antipad * 1e3));
         lines.Add(string.Format(ci, "L {0:0.###} nH · R {1:0.###} mΩ at DC, {2:0.###} mΩ at {3:0.##} GHz",
             e.Inductance * 1e9, e.DcResistance * 1e3, e.ResistanceAtLimit * 1e3, e.ValidityFrequency / 1e9));
         string c = string.Format(ci, "C {0:0.###} pF{1}", e.Capacitance * 1e12, grounded ? " (pad and planes)" : "");

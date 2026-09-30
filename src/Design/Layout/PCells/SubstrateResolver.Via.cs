@@ -76,7 +76,8 @@ public static partial class SubstrateResolver
     /// (<paramref name="toGround"/>), the nearest ground-designated conductor beneath From (else above);
     /// for a signal via, the farthest conductor the stackup's drills reach from From that is NOT a
     /// ground plane, or the farthest one when every one is. A name that is not a conductor reports and
-    /// falls back to that default, as <see cref="ResolveElectrical"/> does.</para>
+    /// falls back to that default, as <see cref="ResolveElectrical"/> does. A defaulted From that no
+    /// drill joins to To moves to the conductor nearest it that a drill reaching To starts on.</para>
     ///
     /// <para><b>Which drill.</b> The via entry whose span covers both conductors, the shortest such span
     /// first: a blind via beats a through via for the same pair, as a fab would drill it. Whatever the
@@ -120,6 +121,23 @@ public static partial class SubstrateResolver
                 $"a via from '{from.Name}' to itself joins nothing; choose a different {(toGround ? "GroundLayer" : "ToLayer")}"), warn);
 
         int iTo = layers.IndexOf(to);
+
+        // An UNNAMED From that no drill joins to To starts where a drill to To does, nearest the top:
+        // a GaAs die's backside via lands on Metal1, not on the air-bridge metal above it, and the
+        // topmost-conductor default would otherwise open every placed VIAGND with a warning.
+        bool fromDefaulted = !conductors.Any(c => string.Equals(c.Name, fromName, StringComparison.OrdinalIgnoreCase));
+        if (fromDefaulted && !ViaEntries(technology).Any(e => e.Top <= Math.Min(iFrom, iTo) && e.Bottom >= Math.Max(iFrom, iTo)))
+        {
+            var start = ViaEntries(technology)
+                .Where(e => e.Top <= iTo && iTo <= e.Bottom)
+                .Select(e => iTo > iFrom ? e.Top : e.Bottom)
+                .Where(i => i != iTo)
+                .OrderBy(i => Math.Abs(i - iFrom))
+                .Select(i => (int?)i)
+                .FirstOrDefault();
+            if (start is { } s) (from, iFrom) = (layers[s], s);
+        }
+
         int lo = Math.Min(iFrom, iTo), hi = Math.Max(iFrom, iTo);
 
         // The drill: the shortest via entry covering both conductors.

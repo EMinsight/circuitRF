@@ -15766,6 +15766,25 @@ Gates: `TraceImpedanceAnalysisTests.ATraceIntoAPadALittleWiderThanIt_LeavesThePa
 
 Gates: `tests/Ui.Tests/ViaComponentTests.cs`.
 
+## A via placed as it comes warns about nothing (2026-09-30)
+
+A VIA placed on the shipped 2-layer RO4350B technology opened its parameter editor with a warning. The
+owner's rule: circuitRF's own defaults never produce one. Two causes:
+
+- **The antipad was always named as a default "the technology states none".** No technology format has
+  an antipad field, so that sentence was true of every technology and every via — a message that can
+  never be answered by fixing the technology is not a warning. It is no longer posted (editor or run);
+  the readout prints the drill, pad and antipad diameters actually used, and the Antipad row's
+  description states the pad + 0.3 mm rule. Drill, pad and plating are still named when a technology
+  genuinely lacks them.
+- **VIAGND on the shipped MMIC defaulted From to Metal2**, the topmost conductor, while the die's only
+  backside drill starts on Metal1 — so the default pair had no drill and the plating fell back too.
+  `ResolveViaSpan` now moves an UNNAMED From that no drill joins to To onto the nearest conductor a drill
+  reaching To starts on. A named From is never moved.
+
+Gate: `ViaComponentTests.PlacedWithDefaults_OnEveryShippedTechnology_NothingIsWarned` (every shipped
+technology × VIA/VIAGND, injection messages AND the readout note empty).
+
 ## `CellStat.Calls` counts the caller's own calls (2026-09-30)
 
 The exact-count gates (`SharedLibraryConcurrencyTests`, `BrokenInstanceVisibilityTests`, `TreeMoveRedirectTests`)

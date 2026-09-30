@@ -19,7 +19,8 @@ namespace CircuitRF.Design.Schematic;
 /// layers default as <see cref="SubstrateResolver.ResolveViaSpan"/> says, the drill and pad come from the
 /// technology's own via defaults, and the plating from the via layer's wall. What the technology does not
 /// state takes circuitRF's default and is NAMED as a default in the message returned beside the
-/// overrides (the R-L4d-7 precedent) — the antipad always, since no technology states one.</para>
+/// overrides (the R-L4d-7 precedent). The antipad is the exception: no technology CAN state one, so its
+/// pad + 0.3 mm rule is circuitRF's own and is shown in the readout rather than warned about.</para>
 /// </summary>
 public static class ViaSubstrateInjection
 {
@@ -125,10 +126,10 @@ public static class ViaSubstrateInjection
             }
         }
 
-        // No technology states an antipad, so an empty one is always circuitRF's default.
-        if (Empty("Antipad"))
-            defaulted.Add($"Antipad = the pad + {Mm(ComponentModelFactory.DefaultViaAntipadRingMeters)}");
-
+        // An empty Antipad is deliberately NOT named. No technology format has a field for one, so
+        // "the technology states none" would be true of every technology, shipped ones included, and a
+        // via placed as it comes would always open with a warning. The pad + ring rule is circuitRF's
+        // own, stated in the row's description, and the readout prints the diameter it gives.
         if (defaulted.Count > 0)
         {
             bool one = defaulted.Count == 1;

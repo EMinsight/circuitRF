@@ -101,13 +101,34 @@ public sealed class ViaComponentTests(ITestOutputHelper output) : IDisposable
         var names = injection.Overrides.Select(o => o.Name).ToHashSet();
         Assert.Superset(new HashSet<string> { "H", "Sigma", "Planes", "Tp1", "Erp1", "Hstub", "StubPlanes", "Drill", "Pad", "Plating" }, names);
         Assert.DoesNotContain("Antipad", names);                       // the model's own default: pad + 0.3 mm
-        Assert.Contains(injection.Messages, m => m.Contains("Antipad") && m.Contains("default"));
-        Assert.DoesNotContain(injection.Messages, m => m.Contains("Drill"));   // the technology states it
 
         var gnd = Component(SymbolKind.ViaGnd, "VIAG1");
         var gi = ViaSubstrateInjection.Build(tech, SymbolKind.ViaGnd, gnd.Parameters);
         Assert.Contains(gi.Overrides, o => o.Name == "Tpad");
         Assert.DoesNotContain(gi.Overrides, o => o.Name == "Hstub");
+
+        // A technology that states no drill still has that default NAMED.
+        tech.DefaultViaDrillDbu = 0;
+        var bare = ViaSubstrateInjection.Build(tech, SymbolKind.Via, Component(SymbolKind.Via, "VIA2").Parameters);
+        Assert.Contains(bare.Messages, m => m.Contains("Drill") && m.Contains("default", StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>A via placed as it comes, on any technology circuitRF ships, says nothing: every
+    /// dimension the technology can state, it states, and the antipad is circuitRF's own rule rather than
+    /// something the technology failed to give — so the editor shows no warning and the run posts none.</summary>
+    [Fact]
+    public void PlacedWithDefaults_OnEveryShippedTechnology_NothingIsWarned()
+    {
+        foreach (var entry in ShippedTechnologies.All)
+        foreach (var kind in new[] { SymbolKind.Via, SymbolKind.ViaGnd })
+        {
+            var tech = ShippedTechnologies.Load(entry);
+            var comp = Component(kind, "V1");
+            var injection = ViaSubstrateInjection.Build(tech, kind, comp.Parameters);
+            Assert.True(injection.Messages.Count == 0, $"{entry.Id} {kind}: {string.Join(" | ", injection.Messages)}");
+            Assert.NotNull(ViaSubstrateInjection.Evaluate(tech, kind, comp.Parameters, out string? note));
+            Assert.True(note is null, $"{entry.Id} {kind}: {note}");
+        }
     }
 
     /// <summary>
