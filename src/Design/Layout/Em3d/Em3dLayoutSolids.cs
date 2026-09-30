@@ -280,9 +280,16 @@ public static class Em3dLayoutSolids
             var ground = bands.Where(b => b.Layer.Kind == StackupKind.Conductor && b.Layer.IsGroundReference)
                               .OrderBy(b => b.BottomM).FirstOrDefault();
             Ground = ground;
+            // A via's own pad on that plane does not DRAW it: a VIA/VIAGND cell puts a pad (and a pin) on
+            // every layer it joins, and on a microstrip board one of them is the undrawn plane. Counting
+            // those pads as a drawn plane turned the floor off, left every port with nothing to return
+            // through, and refused the whole setup. When pads are all there is, they are the plane's.
+            bool groundPadsOnly = ground is not null
+                && polysByBand.TryGetValue(ground.Index, out var onGround)
+                && onGround.All(p => IsViaPadOn(p.Poly, ground));
             bool pecFloor = ground is not null
-                && !polysByBand.ContainsKey(ground.Index)
-                && polysByBand.Keys.All(i => _bandByIndex[i].BottomM >= ground.TopM - 1e-15)
+                && (!polysByBand.ContainsKey(ground.Index) || groundPadsOnly)
+                && polysByBand.Keys.Where(i => i != ground.Index).All(i => _bandByIndex[i].BottomM >= ground.TopM - 1e-15)
                 && _viaSpans.All(v => v.Bottom.BottomM >= ground.BottomM - 1e-15)
                 && tech.Bodies.All(body => bands.FirstOrDefault(b => b.Layer.Name == body.SitsOn) is not { } on
                                            || on.TopM >= ground.TopM - 1e-15);
@@ -297,6 +304,12 @@ public static class Em3dLayoutSolids
             {
                 _instancePlane = ground;
                 pecFloor = false;
+            }
+            if (groundPadsOnly && (pecFloor || _instancePlane is not null))
+            {
+                Notes.Add($"{polysByBand[ground!.Index].Count} via pad(s) on '{ground.Layer.Name}' are part of that " +
+                          "plane rather than separate metal on it.");
+                polysByBand.Remove(ground.Index);
             }
             PecFloor = pecFloor;
             FloorZ = pecFloor ? ground!.TopM : double.NaN;
@@ -858,6 +871,19 @@ public static class Em3dLayoutSolids
         {
             if (net is not { Length: > 0 }) return;
             (ObjectNetMap.TryGetValue(obj, out var set) ? set : ObjectNetMap[obj] = new(StringComparer.Ordinal)).Add(net);
+        }
+
+        /// <summary>True when every vertex of <paramref name="poly"/> lies within the pad of a via that ends on
+        /// <paramref name="plane"/> — a pad, or pads merged, and nothing else. The 2 % allows for a circle's polygon.</summary>
+        private bool IsViaPadOn(PlanarPolygon poly, PlanarExtractor.StackBand plane)
+        {
+            var pads = _viaSpans
+                .Where(v => v.Shape is ViaShape && (ReferenceEquals(v.Top, plane) || ReferenceEquals(v.Bottom, plane)))
+                .Select(v => (ViaShape)v.Shape)
+                .Select(v => (X: v.X * _perDbu, Y: v.Y * _perDbu, R: v.PadSize * _perDbu / 2 * 1.02))
+                .ToList();
+            return pads.Count > 0 &&
+                   poly.Outer.All(pt => pads.Any(p => (pt.X - p.X) * (pt.X - p.X) + (pt.Y - p.Y) * (pt.Y - p.Y) <= p.R * p.R));
         }
 
         /// <summary>The nets of the pieces a via's footprint centre lands on, at its top and bottom.</summary>

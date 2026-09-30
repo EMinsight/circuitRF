@@ -68,6 +68,10 @@ public sealed record Em3dGenerationResult(Em3dProblem? Problem, string? Refusal,
     /// <summary>Conductor stackup entries that name no material, so their σ is a number of unknown
     /// temperature, used as given.</summary>
     public IReadOnlyList<string> UnknownTemperature { get; init; } = [];
+
+    /// <summary>Why the problem has no ports, when it was generated with <c>portsOptional</c> and the ports refused:
+    /// the refusal a solve would have stopped on. Null otherwise.</summary>
+    public string? PortRefusal { get; init; }
 }
 
 /// <summary>What kind of thing in the design a solid or sheet of the 3D problem is.</summary>
@@ -153,18 +157,22 @@ public static class Em3dGenerator
     /// <see cref="SlabLateralBound"/>'s shape instead of across the air box — for viewing only, never for a solve.</param>
     /// <param name="wires">The bond wires to include. Null — the ordinary case — takes the
     /// <c>.wBond</c> stem-paired with the layout (WB40), if it has one.</param>
+    /// <param name="portsOptional">True for a picture, never for a solve: ports that refuse leave the problem with no
+    /// ports and the refusal in <see cref="Em3dGenerationResult.PortRefusal"/>, so the geometry is still drawn.</param>
     public static Em3dGenerationResult Generate(EmSetup setup, EmLayoutSource source, Technology tech,
-                                                Em3dWireSource? wires = null, bool displaySlabs = false)
+                                                Em3dWireSource? wires = null, bool displaySlabs = false,
+                                                bool portsOptional = false)
     {
         ArgumentNullException.ThrowIfNull(setup);
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(tech);
-        return new Run(setup, source, tech, wires, displaySlabs).Go();
+        return new Run(setup, source, tech, wires, displaySlabs, portsOptional).Go();
     }
 
     // ── One generation ─────────────────────────────────────────────────────────────────────────
 
-    private sealed class Run(EmSetup setup, EmLayoutSource source, Technology tech, Em3dWireSource? wires, bool displaySlabs)
+    private sealed class Run(EmSetup setup, EmLayoutSource source, Technology tech, Em3dWireSource? wires, bool displaySlabs,
+                             bool portsOptional)
     {
         // brief-em3d-42 R-em3d42-2 — the geometry lives in Em3dLayoutSolids now; this class adds the sweep,
         // the ports, the air box, the air above the stack and the terminals around its stages. The notes
@@ -173,6 +181,7 @@ public static class Em3dGenerator
         private Em3dLayoutSolids.Builder _g = null!;
         private List<string> _notes = [];
         private double _tempC;
+        private string? _portRefusal;
 
         public Em3dGenerationResult Go()
         {
@@ -220,9 +229,14 @@ public static class Em3dGenerator
             if (setup.Problem3D != Em3dProblemType.Electrostatic &&
                 (setup.Problem3D != Em3dProblemType.Eigenmode || anyPortLabel) &&
                 BuildPorts(bands, pieces, pecFloor ? ground : null, floorZ, ports, waves) is { } portRefusal)
-                return No(portRefusal);
+            {
+                if (!portsOptional) return No(portRefusal);
+                _portRefusal = portRefusal;
+                ports.Clear();
+                waves.Clear();
+            }
             foreach (int n in setup.Ports3D.Where(q => q.Kind == Em3dPortKind.Wave).Select(q => q.Port).Distinct())
-                if (ports.All(q => q.Number != n))
+                if (_portRefusal is null && ports.All(q => q.Number != n))
                     return No($"The setup makes port {n} a wave port, and this layout has no port {n}.");
 
             // ── Content bounds (the builder's), then the air box (R-em3d3-6) ─────────────────
@@ -296,6 +310,7 @@ public static class Em3dGenerator
                 MaterialSources = _g.MaterialSources,
                 NoAlpha = _g.NoAlphaList,
                 UnknownTemperature = _g.UnknownTemperatureList,
+                PortRefusal = _portRefusal,
             };
         }
 

@@ -38425,3 +38425,20 @@ result after it was simply missing.
 
 **The four warnings** were test-only. One was a real slip: `(text, _, q) => …(…, out _, q)` — in a lambda with a
 parameter named `_`, `out _` is that PARAMETER, not a discard, so the call wrote into it (CS8600).
+
+## A setup's Show 3D View draws its layout even when the ports refuse; every 3D view opens orthographic (2026-09-30)
+
+**Blank on a port refusal.** A planar setup's Show 3D View is for looking, but it went through the same generator
+as a solve, so ANY port refusal — a layout with no port labels yet, or a port with nothing to return through —
+dropped the whole scene: copper, dielectric and vias. The owner saw the vias, then the top copper, as missing
+when nothing at all had been built. `BuildPlanar` now calls `Em3dGenerator.Generate(…, portsOptional:
+true)`: the geometry is drawn with no ports, and the first note is `PortsNotDrawnNote` followed by the refusal a
+solve would have stopped on. A solve never passes the flag, so it still refuses with the same sentence. (The
+refusal the owner actually hit came from a via pad on the ground plane — `src/Design/RESOLVED.md`, same date.)
+
+**Orthographic by default.** The owner asked for a setup's 3D view, and the shipped examples' `.c3d` files, to open
+orthographic. No example stores a camera (the projection is `.cwsuser` window state, never the `.c3d`), so the
+default is what decides it: `OpenC3dEditor` and the `.cem` view both set `IsPerspective = false` BEFORE the stored
+camera is restored, so a projection the user left is still put back. Only a newly created view used to start
+orthographic; `newlyCreated` had nothing left to do and was removed. Gate: `NewThreeDViewOpensTests`,
+`Viewer3DFrameGateTests.APlanarSetupWhosePortsRefuse_IsStillDrawn_AndSaysWhy`.

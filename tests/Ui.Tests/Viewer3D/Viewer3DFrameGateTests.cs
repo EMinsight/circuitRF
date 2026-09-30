@@ -226,6 +226,31 @@ public sealed class Viewer3DFrameGateTests : IDisposable
 
     // ── a planar setup, shown in 3D ─────────────────────────────────────────────────────────
 
+    /// <summary>A planar setup's picture is for a look: a layout with no port labels yet still draws its copper,
+    /// and says first why there are no ports. A solve of the same setup still refuses.</summary>
+    [Fact]
+    public void APlanarSetupWhosePortsRefuse_IsStillDrawn_AndSaysWhy()
+    {
+        var (setup, source) = Em3dGeneratorTests.Microstrip();
+        setup.Solver3D = Em3dSolver.None;
+        source.View.Shapes.RemoveAll(sh => sh is LabelShape { IsPort: true });
+        Assert.False(Em3dGenerator.Generate(setup, source, source.Technology!).Ok);
+
+        using var ready = new ManualResetEventSlim(false);
+        using var vm = new Viewer3DViewModel(Path.Combine(_root, "thru.cem"),
+            () => new Viewer3DInputs(setup.Clone(), source, null, ColorTheme.BuiltIn, ColorVariant.Light),
+            () => new RecordingBackend(), () => _root, a => a());
+        vm.Source.SceneReady += _ => ready.Set();
+        vm.Regenerate();
+        Assert.True(ready.Wait(TimeSpan.FromSeconds(30)));
+        SpinWait.SpinUntil(() => vm.Scene.Generation == 1, TimeSpan.FromSeconds(5));
+
+        Assert.Contains(vm.Scene.Objects, o => o.Kind == Scene3DKind.Conductor);
+        Assert.DoesNotContain(vm.Scene.Objects, o => o.Kind == Scene3DKind.Port);
+        Assert.StartsWith(Viewer3DViewModel.PortsNotDrawnNote + "This layout has no port labels", vm.Scene.Notes[0]);
+        Assert.Equal(Viewer3DViewModel.PlanarPreviewNote, vm.Scene.Notes[^1]);
+    }
+
     /// <summary>Show 3D is offered for a planar setup too: its layout through the stackup, with one
     /// note saying what it is — and no mesh or grid, which only a 3D solver makes.</summary>
     [Fact]

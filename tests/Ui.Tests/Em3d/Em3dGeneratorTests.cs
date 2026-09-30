@@ -254,6 +254,27 @@ public sealed class Em3dGeneratorTests
         Assert.Equal(planarRefusal, result.Refusal);
     }
 
+    // ── A via's pad on the ground plane ────────────────────────────────────────────────────────
+
+    /// <summary>A VIAGND on a microstrip board draws a pad on the plane it lands on. That pad is the plane's, not a
+    /// drawing of it: the plane stays the PEC floor, the ports return through it, and the barrel ends on it.</summary>
+    [Fact]
+    public void AViaPadOnTheUndrawnPlane_KeepsTheFloor_AndTheBarrelIsBuilt()
+    {
+        var (setup, source) = Microstrip();
+        var shapes = source.View.Shapes;
+        shapes.Add(new ViaShape { X = 5_000_000, Y = 0, PadSize = 609_600, DrillSize = 304_800, Layer = new LayerKey(7, 0) });
+        shapes.Add(new CircleShape { Cx = 5_000_000, Cy = 0, R = 304_800, Layer = new LayerKey(1, 0) });
+        shapes.Add(new CircleShape { Cx = 5_000_000, Cy = 0, R = 304_800, Layer = new LayerKey(2, 0) });
+
+        var result = Em3dGenerator.Generate(setup, source, source.Technology!);
+        Assert.True(result.Ok, result.Refusal);
+        Assert.Contains(result.Problem!.Solids, sd => sd.Name == "via/1" && sd.Primitive is Em3dCylinder);
+        Assert.DoesNotContain(result.Problem.Solids, sd => sd.Material.StartsWith("Bottom Copper", StringComparison.Ordinal));
+        Assert.Contains(result.Notes, n => n.Contains("floor is 'Bottom Copper", StringComparison.Ordinal));
+        Assert.Equal(2, result.Problem.Ports.Count);
+    }
+
     // ── 9. The reference page ───────────────────────────────────────────────────────────────────
 
     [Fact]

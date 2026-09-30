@@ -227,6 +227,9 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
         "Planar setup, shown in 3D. The planar solve treats every dielectric as laterally infinite; each is drawn " +
         "here to the board outline, or to the outline of the copper above and below it, for viewing only.";
 
+    /// <summary>What a planar setup's picture says first when its ports could not be built; the refusal follows.</summary>
+    public const string PortsNotDrawnNote = "Shown without ports: ";
+
     private static Scene3DModel BuildPlanar(long gen, Viewer3DInputs inputs, EmLayoutSource source,
                                             Technology tech, CancellationToken ct)
     {
@@ -234,11 +237,14 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
         preview.Solver3D = Em3dSolver.Palace;
         preview.Problem3D = Em3dProblemType.Driven;
         preview.Ports3D = [];
-        var g = Em3dGenerator.Generate(preview, source, tech, displaySlabs: true);
+        // Ports that would refuse a solve do not blank the picture: it exists for a look, and a layout with no port
+        // labels yet, or one whose ports cannot be built in 3D, is exactly when the geometry is worth seeing.
+        var g = Em3dGenerator.Generate(preview, source, tech, displaySlabs: true, portsOptional: true);
         ct.ThrowIfCancellationRequested();
         if (g.Problem is null) return Scene3DModel.Empty(gen, [g.Refusal ?? "the layout could not be built in 3D."]);
+        List<string> notes = g.PortRefusal is { } ports ? [PortsNotDrawnNote + ports, PlanarPreviewNote] : [PlanarPreviewNote];
         return Scene3DBuilder.Build(g.Problem, gen, g.Origins, tech, inputs.Theme, inputs.Variant,
-                                    [PlanarPreviewNote], new Scene3DBuildOptions(HideOutermostDielectric: false));
+                                    notes, new Scene3DBuildOptions(HideOutermostDielectric: false));
     }
 
     /// <summary>

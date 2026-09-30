@@ -14777,7 +14777,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         if (view == ViewType.Layout) CreateAndOpenLayoutFile(newCellDir, name);
         else if (view == ViewType.ThreeD)
         {
-            if (CreateThreeDViewFile(newCellDir, name) is { } created) OpenOrActivateC3dEditor(created, newlyCreated: true);
+            if (CreateThreeDViewFile(newCellDir, name) is { } created) OpenOrActivateC3dEditor(created);
         }
         else await CreateAndOpenSchematicFileAsync(newCellDir, name, name, template, includeDataDisplay);
         return newCellDir;
@@ -15027,7 +15027,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             return;
         }
 
-        if (CreateThreeDViewFile(cellDir, name) is { } created) OpenOrActivateC3dEditor(created, newlyCreated: true);
+        if (CreateThreeDViewFile(cellDir, name) is { } created) OpenOrActivateC3dEditor(created);
     }
 
     /// <summary>

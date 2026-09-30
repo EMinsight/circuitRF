@@ -36,11 +36,10 @@ public partial class WorkspaceViewModel
     /// <summary>Extensions whose change on disk re-elaborates an open 3D editor (a placed cell, a technology).</summary>
     private static readonly string[] C3dInputs = [".c3d", ".clay", ".ctech", ".wbond", ".cmat"];
 
-    /// <summary>Opens (or focuses) the 3D editor on <paramref name="path"/>. A view opened straight after
-    /// it was CREATED (<paramref name="newlyCreated"/>) starts orthographic: a new view is drawn on a
-    /// plane, and perspective foreshortens the grid being drawn on. Every later open keeps the viewer's
-    /// own default, since the editor persists no projection.</summary>
-    public void OpenOrActivateC3dEditor(string path, bool newlyCreated = false)
+    /// <summary>Opens (or focuses) the 3D editor on <paramref name="path"/>. It starts orthographic, as a setup's
+    /// 3D view does: a view is drawn on a plane, and perspective foreshortens the grid being drawn on. A camera
+    /// this workspace stored for it — projection included — is put back over that.</summary>
+    public void OpenOrActivateC3dEditor(string path)
     {
         string full = Path.GetFullPath(path);
         string key = C3dEditorDocument.KeyFor(full);
@@ -63,7 +62,7 @@ public partial class WorkspaceViewModel
             _ = KernelRefusalDialog(Path.GetFileName(full), why);
             return;
         }
-        OpenC3dEditor(full, key, document, newlyCreated, scratch: false);
+        OpenC3dEditor(full, key, document, scratch: false);
     }
 
     /// <summary>The geometry kernel's capability as the refusal on open reads it; a test substitutes an absent one.</summary>
@@ -103,7 +102,7 @@ public partial class WorkspaceViewModel
         var (tech, _) = TechnologyResolver.ResolveForDocument(null, path, CurrentWorkspacePath, _techCache);
         var document = CircuitRF.Design.Cells.CellCreate.NewThreeDView(folder, tech.Tech);
         string full = Path.GetFullPath(path);
-        OpenC3dEditor(full, C3dEditorDocument.KeyFor(full), document, newlyCreated: true, scratch: true);
+        OpenC3dEditor(full, C3dEditorDocument.KeyFor(full), document, scratch: true);
     }
 
     /// <summary>The session's own scratch workspace, made on first use; null (and said) when it cannot be.</summary>
@@ -135,14 +134,14 @@ public partial class WorkspaceViewModel
         }
     }
 
-    private void OpenC3dEditor(string full, string key, C3dDocument document, bool newlyCreated, bool scratch)
+    private void OpenC3dEditor(string full, string key, C3dDocument document, bool scratch)
     {
         try
         {
             var vm = new C3dEditorViewModel(full, document, Viewer3DBackends.Create, () => CurrentWorkspacePath,
                                             a => Dispatcher.UIThread.Post(a), _techCache, scratch);
             var doc = new C3dEditorDocument(vm);
-            if (newlyCreated) vm.Viewer.IsPerspective = false;
+            vm.Viewer.IsPerspective = false;
             // 3D editor round 5 — the camera (projection included) is window state, as a .cem's 3D view's always was: put
             // back as it was left, from the .cwsuser — never the .c3d, which stays the design.
             if (StoredCamera(full) is { } camera) vm.Viewer.RestoreCamera(camera);
@@ -363,7 +362,7 @@ public partial class WorkspaceViewModel
         Messages.Success("Created", path);
         if (made.SetupsCopied.Count > 0) Messages.Info($"Copied {made.SetupsCopied.Count} 3D setup(s) as embedded setups: {string.Join(", ", made.SetupsCopied)}.");
         if (made.PortsLeftOut.Count > 0) Messages.Warning($"Ports left out (each must be one rectangle to become a parent-level port): {string.Join("; ", made.PortsLeftOut)}.");
-        OpenOrActivateC3dEditor(path, newlyCreated: true);
+        OpenOrActivateC3dEditor(path);
     }
 
     /// <summary>Design ▸ New 3D View from Layout — the active layout's cell.</summary>

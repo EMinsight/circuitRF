@@ -55,6 +55,7 @@ public partial class WorkspaceViewModel
         {
             var vm = new Viewer3DViewModel(full, () => Snapshot3DInputs(full), Viewer3DBackends.Create,
                                            () => GetResultsRoot(), a => Dispatcher.UIThread.Post(a));
+            vm.IsPerspective = false;                  // orthographic, as the 3D editor opens; a stored camera wins
             vm.RestoreCamera(StoredCamera(full));
             var doc = new Viewer3DDocument(vm);
             _factory.OpenDocument(doc);

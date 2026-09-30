@@ -15785,6 +15785,20 @@ owner's rule: circuitRF's own defaults never produce one. Two causes:
 Gate: `ViaComponentTests.PlacedWithDefaults_OnEveryShippedTechnology_NothingIsWarned` (every shipped
 technology × VIA/VIAGND, injection messages AND the readout note empty).
 
+## A via's pad on the ground plane no longer switches the 3D floor off (2026-09-30)
+
+A VIAGND (or a VIA to the bottom) on a microstrip board draws a pad and a pin on the ground plane it lands on — the
+layout and LVS need them. `Em3dLayoutSolids` read ANY metal on the lowest ground conductor as a drawn plane, so the
+PEC floor went off, the ports had nothing to return through, and the setup was refused before anything was built.
+Now, when every polygon on that plane lies within the pad of a via ending on it (2 % allowed for a circle's
+polygon), the pads are the plane's: the floor stays, the pads are dropped with a note, and the barrel ends on the
+floor as it always did. A plane with any other metal on it is still a drawn plane, antipads and all. A layout
+placed in a `.c3d` gains its bounded plane the same way, where the pads had suppressed it.
+
+`Em3dGenerator.Generate` also takes `portsOptional` (a picture's option, never a solve's): a port refusal leaves
+the problem with no ports and the refusal in `Em3dGenerationResult.PortRefusal`. Gate:
+`Em3dGeneratorTests.AViaPadOnTheUndrawnPlane_KeepsTheFloor_AndTheBarrelIsBuilt`.
+
 ## `CellStat.Calls` counts the caller's own calls (2026-09-30)
 
 The exact-count gates (`SharedLibraryConcurrencyTests`, `BrokenInstanceVisibilityTests`, `TreeMoveRedirectTests`)
