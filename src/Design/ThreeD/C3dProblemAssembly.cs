@@ -442,6 +442,19 @@ public static class C3dProblemAssembly
         => document.AirBoxMaterial is { Length: > 0 } m ? m : Em3dGenerator.AirMaterial;
 
     /// <summary>
+    /// The material an object named <paramref name="name"/> is made of: the technology's own record, else — for Air and
+    /// Vacuum only — built-in free space, the rule <see cref="AirFill"/> already applies to the air box. A flattened
+    /// plated via's core is Air, and a technology that never defined Air must still hold it. Null: nothing defines it.
+    /// </summary>
+    public static TechMaterial? ObjectMaterial(Technology? tech, string? name)
+        => tech?.FindMaterial(name) ?? (IsFreeSpace(name) ? new TechMaterial { Name = name!, Epsr = 1, TanD = 0, Mur = 1 } : null);
+
+    /// <summary>Whether <paramref name="name"/> is one of the built-in free-space names, Air or Vacuum.</summary>
+    public static bool IsFreeSpace(string? name)
+        => string.Equals(name, Em3dGenerator.AirMaterial, StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(name, VacuumMaterial, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
     /// The air box's fill as a problem material: <paramref name="name"/> (Air when null) from the technology at
     /// <paramref name="tempC"/>; Air and Vacuum fall back to built-in free space when the technology lacks them. A material
     /// that neither the technology nor the built-ins know is a refusal naming it, never a guess.

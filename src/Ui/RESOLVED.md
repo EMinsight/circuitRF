@@ -38442,3 +38442,11 @@ default is what decides it: `OpenC3dEditor` and the `.cem` view both set `IsPers
 camera is restored, so a projection the user left is still put back. Only a newly created view used to start
 orthographic; `newlyCreated` had nothing left to do and was removed. Gate: `NewThreeDViewOpensTests`,
 `Viewer3DFrameGateTests.APlanarSetupWhosePortsRefuse_IsStillDrawn_AndSaysWhy`.
+
+## The via card's Plated tooltip flashed — the fourth report of one defect (2026-09-30)
+
+The Technology Editor's via card (Stackup tab) has its Fill row low in a tall pane, so the Plated checkbox's tip, placed
+at the cursor, was flipped up onto the pointer: the loop "Two tooltips flashed repeatedly" above describes. Every tip in
+the row (Plated, and the Wall label and box) now carries `ToolTip.Placement="Top"` WITH `ToolTip.VerticalOffset="-4"`.
+`TechEditorStackupTabLayoutTests.TheViaFillRowsTips_ArePlacedAbove_AndEveryTopPlacementCarriesItsOffset` holds the row
+and the pairing over the whole view, as `RailWindowChromeTests` holds it over the railRF window.

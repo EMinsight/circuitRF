@@ -282,7 +282,7 @@ public partial class WorkspaceViewModel
     // ── hierarchy (brief-em3d-48) ─────────────────────────────────────────────────────────────
 
     /// <summary>What the 3D editor's hierarchy asks of the shell: open a layout (Push In on a layout child), refresh the
-    /// tree (Group into Cell), a yes/no (Flatten), Save / Discard / Cancel (Pop Out of a dirty child), a name, and whether
+    /// tree (Group into Cell), a yes/no and a refusal (Flatten), Save / Discard / Cancel (Pop Out of a dirty child), a name, and whether
     /// a child is open in its own tab.</summary>
     private void WireC3dHierarchy(C3dEditorDocument doc)
     {
@@ -292,6 +292,10 @@ public partial class WorkspaceViewModel
         vm.OpenElsewhere = path => _openDocsByPath.TryGetValue(C3dEditorDocument.KeyFor(path), out var other) && !ReferenceEquals(other, doc);
         vm.Confirm = async question =>
             HostWindowOf(doc) is { } w && await TextConfirmDialog.AskAsync(w, "3D Editor", "Confirm", question, "Continue");
+        vm.Inform = async refusal =>
+        {
+            if (HostWindowOf(doc) is { } w) await TextConfirmDialog.AskAsync(w, "3D Editor", "Nothing was changed", refusal, null);
+        };
         vm.PopOutQuestion = async question =>
         {
             if (HostWindowOf(doc) is not { } w) return C3dPopOutChoice.Save;

@@ -280,7 +280,7 @@
         "Epsr": 1,
         "TanD": 0,
         "Mur": 1,
-        "SigmaSm": 0,
+        "SigmaSm": 58000000,
         "DrawingLayers": [
           {
             "Layer": 10,

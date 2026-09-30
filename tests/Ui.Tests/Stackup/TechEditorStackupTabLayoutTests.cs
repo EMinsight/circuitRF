@@ -448,6 +448,29 @@ public class TechEditorStackupTabLayoutTests
         return axaml[start..end];
     }
 
+    /// <summary>
+    /// A via card's Fill row sits low in a tall pane, so a tip placed at the cursor flips up onto the pointer and flashes
+    /// (the Plated tip did, 2026-09-30). Every tip in the row is placed above, WITH the offset — Placement alone is pushed
+    /// back down by the offset's 20.0 default — and that pairing is held over the whole view, not only this row.
+    /// </summary>
+    [Fact]
+    public void TheViaFillRowsTips_ArePlacedAbove_AndEveryTopPlacementCarriesItsOffset()
+    {
+        var axaml = Axaml();
+        int row = Require(axaml, "<TextBlock Text=\"Fill:\"");
+        string fillRow = axaml[row..axaml.IndexOf("</StackPanel>", row, StringComparison.Ordinal)];
+        int tips = 0;
+        foreach (string element in fillRow.Split('<').Where(e => e.Contains("ToolTip.Tip=", StringComparison.Ordinal)))
+        {
+            tips++;
+            Assert.Contains("ToolTip.Placement=\"Top\" ToolTip.VerticalOffset=\"-4\"", element, StringComparison.Ordinal);
+        }
+        Assert.Equal(3, tips);                                             // Plated, and the Wall label and box
+
+        foreach (string line in axaml.Split('\n').Where(l => l.Contains("ToolTip.Placement=\"Top\"", StringComparison.Ordinal)))
+            Assert.Contains("ToolTip.VerticalOffset=", line, StringComparison.Ordinal);
+    }
+
     private static int Require(string haystack, string needle)
     {
         int i = haystack.IndexOf(needle, StringComparison.Ordinal);

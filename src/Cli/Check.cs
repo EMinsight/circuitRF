@@ -549,7 +549,7 @@ internal static class Check
         foreach (var d in tech.Diagnostics) f.Add(CliDiagnostics.CheckResolverNote(path, d));
 
         Func<string, bool>? known = null;
-        if (tech.Tech is { } t) known = name => t.FindMaterial(name) is not null;
+        if (tech.Tech is { } t) known = name => C3dProblemAssembly.ObjectMaterial(t, name) is not null;
         else f.Add(CliDiagnostics.CheckThreeDNoTechnology(path));
 
         // brief-em3d-51 R-em3d51-5c — the names and every expression first, through the resolver elaboration uses: an

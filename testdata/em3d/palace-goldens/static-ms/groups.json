@@ -45,7 +45,7 @@
       "Kind": "Conductor",
       "Expected": 1,
       "AtLeast": true,
-      "Material": "Plated Through-Hole",
+      "Material": "Copper",
       "Terminal": "A"
     },
     {
@@ -63,7 +63,7 @@
       "Kind": "Conductor",
       "Expected": 1,
       "AtLeast": true,
-      "Material": "Plated Through-Hole",
+      "Material": "Copper",
       "Terminal": "B"
     },
     {

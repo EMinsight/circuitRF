@@ -73,6 +73,6 @@ public sealed partial class C3dEditorViewModel
             thermal = new MaterialHoverThermal(setup.OperatingTempC ?? CircuitRF.Design.Layout.Em.EmSetup.DefaultOperatingTempC,
                                                setup.Thermal?.Zth is not null || setup.Thermal?.Pulse is not null,
                                                ThermalMaterials.For(e, o.Name, material)?.Material);
-        return new MaterialHoverContext(tech?.FindMaterial(name), thermal);
+        return new MaterialHoverContext(C3dProblemAssembly.ObjectMaterial(tech, name), thermal);
     }
 }

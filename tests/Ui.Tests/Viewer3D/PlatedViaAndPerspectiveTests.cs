@@ -51,6 +51,32 @@ public sealed class PlatedViaAndPerspectiveTests
         Assert.DoesNotContain(tube.Vertices, v => Math.Sqrt(v.X * v.X + v.Y * v.Y) < 0.1 * Mm);
     }
 
+    /// <summary>A non-plated hole is an air cylinder with no barrel: the substrate it passes through is drawn with the hole,
+    /// and a box-shaped slab keeps the box's own face numbers (z max is 5), the hole's wall no face.</summary>
+    [Fact]
+    public void ANonPlatedHole_IsDrawnAsAHoleInTheSubstrate_AndABoxSlabKeepsItsFaces()
+    {
+        var pec = Em3dBoundaryKind.Pec;
+        var slab = new Em3dSolid("sub", "fr4", Em3dRole.Dielectric, new Em3dBox(new(-2 * Mm, -2 * Mm, 0), new(2 * Mm, 2 * Mm, 0.5 * Mm)), 1);
+        var hole = new Em3dSolid("hole/1", "air", Em3dRole.Air, new Em3dCylinder(new(0, 0, 0), new(0, 0, 0.5 * Mm), 0.4 * Mm), 2);
+        var problem = new Em3dProblem([slab, hole], [], [new Em3dMaterial("air", 1, null, 0, 1, 0), new Em3dMaterial("fr4", 4.4, null, 0.02, 1, 0)], [],
+                                      new Em3dAirBox(new(-3 * Mm, -3 * Mm, -1 * Mm), new(3 * Mm, 3 * Mm, 1 * Mm), new Em3dFaces(pec, pec, pec, pec, pec, pec)),
+                                      new Em3dFrequency(1e9, 10e9, 10, Em3dSweepKind.Linear), 20);
+
+        var drawn = Scene3DBores.Of(problem)!.Carved(slab)!.Value.Make();
+        Assert.DoesNotContain(drawn.Triangles.Where(t => t.Face == 5), t => Covers(drawn, t, 0, 0));
+        Assert.Contains(drawn.Triangles.Where(t => t.Face == 5), t => Covers(drawn, t, 1.5 * Mm, 1.5 * Mm));
+        Assert.Contains(drawn.Triangles, t => t.Face == -1);
+        Assert.Equal([-1, 0, 1, 2, 3, 4, 5], drawn.Triangles.Select(t => t.Face).Distinct().Order());
+        Assert.Equal(Em3dTessellation.Of(slab).Triangles.Select(t => t.Face).Distinct().Order(),
+                     drawn.Triangles.Select(t => t.Face).Where(f => f >= 0).Distinct().Order());
+
+        // A plated barrel around the same bore hides the substrate: the slab is left whole, so a board of vias costs nothing.
+        var barrel = new Em3dSolid("via/1", "fr4", Em3dRole.Conductor, new Em3dCylinder(new(0, 0, 0), new(0, 0, 0.5 * Mm), 0.5 * Mm), 3);
+        var plated = problem with { Solids = [slab, hole, barrel] };
+        Assert.Null(Scene3DBores.Of(plated)!.Carved(slab));
+    }
+
     private static bool Covers(Em3dTriangleMesh m, Em3dTriangle t, double x, double y)
     {
         var (a, b, c) = (m.Vertices[t.A], m.Vertices[t.B], m.Vertices[t.C]);

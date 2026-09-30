@@ -212,8 +212,8 @@ is not a layer of the sandwich and has no position in the top-to-bottom order.
 | Field | What it is |
 |---|---|
 | **Spans** | The two conductor entries this via connects, **by name**. The two on the figure differ, and that is the point of a four-layer board: `Plated Through-Hole` runs Top Copper → Bottom Copper, while `Ground Via (L1-L2)` runs Top Copper → Inner 1. |
-| **Fill · Plated** | Whether these holes are metal at all. Unticked means a non-plated hole — a mounting hole, a routed cutout — drawn as it is but **not** extracted as a vertical conductor. |
-| **Fill kind** | Plated or solid. Carried for thermal work; the RF solve does not read it, because a plated wall a few µm thick is already many skin depths. |
+| **Fill · Plated** | Whether these holes are metal at all. Unticked means a non-plated hole — a mounting hole, a routed cutout — drawn as it is but **not** extracted as a vertical conductor. A 3D problem drills it through its span as **air**, removing the substrate and any meshed copper it crosses. |
+| **Fill kind** | Plated or solid. The planar RF solve does not read it, because a plated wall a few µm thick is already many skin depths. A 3D problem does: a plated barrel with a wall is a metal tube with an air core, and a solid one is a metal cylinder. |
 | **Wall** | Plated wall thickness — the metal on the barrel wall, **not** the hole radius. 20–25 µm (about 1 mil) is typical and is what the shipped technologies use. |
 | **Drawing layer** | The one drawing layer via shapes are drawn on. **One**, not a list: a via binds at most one, so this is a plain picker with an explicit `(none)`. |
 

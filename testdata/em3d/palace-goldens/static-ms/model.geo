@@ -50,13 +50,13 @@ s = news; Plane Surface(s) = {cl[]};
 bs[] = {s};
 ex[] = Extrude {0, 0, 35} { Surface{bs[]}; };
 s3[] = {ex[1]};
-// via/1: Conductor, Plated Through-Hole, order 5
+// via/1: Conductor, Copper, order 5
 v = newv; Cylinder(v) = {2800, 750, 35, 0, 0, 543, 150};
 s4[] = {v};
 // via/1/fill: Air, Air, order 6
 v = newv; Cylinder(v) = {2800, 750, 35, 0, 0, 543, 125};
 s5[] = {v};
-// via/2: Conductor, Plated Through-Hole, order 7
+// via/2: Conductor, Copper, order 7
 v = newv; Cylinder(v) = {2800, -750, 35, 0, 0, 543, 150};
 s6[] = {v};
 // via/2/fill: Air, Air, order 8

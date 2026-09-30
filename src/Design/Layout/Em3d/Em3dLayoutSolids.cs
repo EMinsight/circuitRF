@@ -153,6 +153,9 @@ public static class Em3dLayoutSolids
         private readonly List<(TechBody Body, double ZBottom, double ZTop, List<PlanarPolygon> Polys)> _bodies = [];
         private readonly List<(LayoutShape Shape, StackupLayer Entry, PlanarExtractor.StackBand Top,
                                PlanarExtractor.StackBand Bottom)> _viaSpans = [];
+        // Non-plated holes: drilled through their span as air, never metal (GI1's Plated = false).
+        private readonly List<(LayoutShape Shape, StackupLayer Entry, PlanarExtractor.StackBand Top,
+                               PlanarExtractor.StackBand Bottom)> _holeSpans = [];
         private readonly List<string> _unknownTemperature = [];
         private readonly SortedSet<string> _noAlpha = new(StringComparer.Ordinal);
         // An instance's plane: the lowest ground-reference conductor a .cem would have made its floor.
@@ -198,11 +201,16 @@ public static class Em3dLayoutSolids
                         conductorBinding[key] = b;   // a signal binding wins, as PlanarExtractor's does
 
             var viaBinding    = PlanarExtractor.ViaBinding(tech.Stackup, out int nonPlated);
+            // The entries ViaBinding leaves out: a non-plated hole is still a hole, and in 3D a hole is air.
+            var holeBinding   = new Dictionary<LayerKey, StackupLayer>();
+            foreach (var l in tech.Stackup.Layers.Where(l => l.Kind == StackupKind.Via && l.Plated == false))
+                foreach (var key in l.DrawingLayers) holeBinding.TryAdd(key, l);
             var outlineLayers = Em3dGenerator.BoardOutlineLayers(tech);
             var byLayer       = new Dictionary<LayerKey, List<LayoutShape>>();
 
             var conductorShapes = new List<(LayoutShape Shape, int Level)>();
             var viaShapes       = new List<(LayoutShape Shape, StackupLayer Entry)>();
+            var holeShapes      = new List<(LayoutShape Shape, StackupLayer Entry)>();
             var outlineShapes   = new List<LayoutShape>();
             int outlineStrokes  = 0, zeroWidthPaths = 0;
 
@@ -220,16 +228,18 @@ public static class Em3dLayoutSolids
                 if (s is ViaShape vs)
                 {
                     if (viaBinding.TryGetValue(vs.Layer, out var entry)) viaShapes.Add((vs, entry));
+                    else if (holeBinding.TryGetValue(vs.Layer, out var hole)) holeShapes.Add((vs, hole));
                     continue;
                 }
                 if (s is PathShape { Width: <= 0 }) { zeroWidthPaths++; continue; }
                 if (conductorBinding.TryGetValue(s.Layer, out var band)) { conductorShapes.Add((s, band.Index)); continue; }
                 if (viaBinding.TryGetValue(s.Layer, out var regionEntry)) viaShapes.Add((s, regionEntry));
+                else if (holeBinding.TryGetValue(s.Layer, out var regionHole)) holeShapes.Add((s, regionHole));
             }
 
             if (nonPlated > 0)
-                Notes.Add($"{nonPlated} via stackup entr(y/ies) are marked NON-PLATED and are not in the 3D " +
-                          "problem as metal — a non-plated hole is a hole. Their artwork is unchanged.");
+                Notes.Add($"{nonPlated} via stackup entr(y/ies) are marked NON-PLATED: their holes are drilled through " +
+                          "their span as air, never metal. Their artwork is unchanged.");
             if (zeroWidthPaths > 0)
                 Notes.Add($"{zeroWidthPaths} zero-width path(s) are centrelines, not artwork, and are not " +
                           "in the 3D problem.");
@@ -264,6 +274,14 @@ public static class Em3dLayoutSolids
                     bands.FirstOrDefault(b => ReferenceEquals(b.Layer, span.Bottom)) is not { } bottom)
                 { unspanned++; continue; }
                 _viaSpans.Add((shape, entry, top, bottom));
+            }
+            foreach (var (shape, entry) in holeShapes)
+            {
+                if (ViaSpanResolver.Resolve(entry, tech) is not { } span ||
+                    bands.FirstOrDefault(b => ReferenceEquals(b.Layer, span.Top)) is not { } top ||
+                    bands.FirstOrDefault(b => ReferenceEquals(b.Layer, span.Bottom)) is not { } bottom)
+                { unspanned++; continue; }
+                _holeSpans.Add((shape, entry, top, bottom));
             }
             if (unspanned > 0)
                 Notes.Add($"{unspanned} via(s) are on an entry whose span does not resolve to two conductors " +
@@ -649,6 +667,35 @@ public static class Em3dLayoutSolids
                     }
                 }
             }
+
+            // Non-plated holes: air, after every metal so the order rule drills it (an Air solid drawn after the first
+            // metal is in the metal band, Em3dPrecedence). A conductor that is a SHEET is a surface, and is not cut.
+            int holeN = 0;
+            foreach (var (shape, entry, top, bottom) in _holeSpans)
+            {
+                string name = $"hole/{++holeN}";
+                double z0 = bottom.BottomM, z1 = top.TopM;
+                if (shape is ViaShape v)
+                {
+                    double r = (v.DrillSize > 0 ? v.DrillSize : v.PadSize) * _perDbu / 2;
+                    solids.Add(Origin(new Em3dSolid(name, AirMaterialName(), Em3dRole.Air,
+                                                    new Em3dCylinder(new Point3(v.X * _perDbu, v.Y * _perDbu, z0),
+                                                                     new Point3(v.X * _perDbu, v.Y * _perDbu, z1), r), ++order),
+                                      Em3dObjectKind.Air, entry.Name, shape.Layer));
+                }
+                else
+                {
+                    var fp = PlanarExtractor.ToPolygons(shape, tech, _perDbu);
+                    order++;
+                    for (int k = 0; k < fp.Count; k++)
+                        solids.Add(Origin(new Em3dSolid(fp.Count == 1 ? name : $"{name}/{k + 1}", AirMaterialName(), Em3dRole.Air,
+                                                        Extrude(fp[k], z0, z1), order),
+                                          Em3dObjectKind.Air, entry.Name, shape.Layer));
+                }
+            }
+            if (holeN > 0 && sheetCount > 0)
+                Notes.Add($"{holeN} non-plated hole(s) are drilled as air through meshed conductors only: a conductor " +
+                          "piece that is a sheet is a surface and keeps its metal over a hole.");
 
             // Bond wires after vias (R-em3d3-1d's order, as brief 3 left room for): each swept wire,
             // then its balls, which meet it face to face on the ball's top.

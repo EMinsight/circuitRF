@@ -15807,3 +15807,32 @@ those classes off EACH OTHER — any other class resolving a cell reference at t
 40). `ResetCalls` now also installs an `AsyncLocal<StrongBox<long>>` for the caller's execution context, which flows
 into any task the edit starts, and `Calls` reads that box when one exists. The global total is still kept and still
 zeroed, so nothing else changes.
+
+## Flattening a layout with a plated via; PCB via rows are copper; non-plated holes are air (2026-09-30)
+
+The 3D editor's Flatten and Flatten All Levels on a layout instance holding a plated via did nothing visible. The
+refusal was real but went to the status line only; `C3dEditorViewModel.Inform` now hands it to the shell, which shows
+it in a dialog. Of the two materials it named, one was circuitRF's own: a plated barrel's core is the BUILT-IN Air
+(`Em3dLayoutSolids.AirMaterialName`), a 3D object must name a material of its technology, and no shipped technology
+defines Air. `C3dProblemAssembly.ObjectMaterial` now applies the air box's rule (`AirFill`) to objects as well: Air
+and Vacuum fall back to free space when the technology lacks them. The elaborator, `check`, both flatten paths and the
+material hover all go through it.
+
+**The shipped PCB via rows were the other half.** Every shipped PCB technology's via row named no material and stated
+σ 0: a PERFECT barrel to both the planar solver (`PlanarSurfaceImpedance.Barrel` treats σ ≤ 0 as perfect) and a 3D
+run, and a σ-0 "conductor" a 3D object cannot state — so flatten still refused. They now name Copper (the four in
+`resources/technologies`); the example copies, which define no materials, state copper's σ directly, as their copper
+rows do; `StarterTechnologies.Pcb2Layer` too. A via barrel therefore now carries copper's series impedance in planar
+EM and 3D. No shipped example's numbers moved: Patch Antenna and Klopfenstein Taper draw no vias, LVS runs no EM, and
+the power-rail solve takes a barrel's resistivity from the copper LAYERS, never the via row. The MMIC technology's
+vias are unchanged (still σ 0, gold artwork); flattening one will refuse the same way. The Palace writer golden
+`static-ms` changed only in the via's material name.
+
+**Non-plated holes are air in 3D.** `Em3dLayoutSolids` used to leave a `Plated = false` hole out entirely, so the
+substrate stayed solid where it is drilled. It is now an air cylinder (or extruded region) through its span, emitted
+after every metal: an Air solid drawn after the first metal is in `Em3dPrecedence`'s metal band, so it cuts meshed
+copper as well as the substrate. A conductor that is a SHEET is a surface and is not cut; the run's notes say so when
+both are present. Planar EM and the power-rail solve still simply omit the hole.
+
+Gates: `HierarchyGateTests.Flatten_APlatedViasAirCoreNeedsNoAirInTheTechnology_AndARefusalReachesTheDialog`,
+`Em3dGeneratorTests.ANonPlatedHole_IsAirThroughItsSpan_AndAPlatedBarrelIsCopper`.

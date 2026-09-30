@@ -277,6 +277,53 @@ public sealed class HierarchyGateTests : IDisposable
         Assert.True(Directory.Exists(Path.Combine(ws, "Grp")));
     }
 
+    /// <summary>A plated via's core is the built-in Air, which the shipped technology does not define: flatten keeps it as an
+    /// object of Air and the problem is unchanged. A refusal is handed to the shell's dialog, not only the status line.</summary>
+    [Fact]
+    public async Task Flatten_APlatedViasAirCoreNeedsNoAirInTheTechnology_AndARefusalReachesTheDialog()
+    {
+        // A via row that names no material and states σ 0 (every shipped PCB technology's until 2026-09-30) — nothing in the
+        // technology has those values: refused.
+        string ws = Workspace();
+        var tech = TechPersistence.LoadFromFile(Path.Combine(ws, "tech.ctech"));
+        var via = tech.Stackup!.Layers.Single(l => l.Kind == StackupKind.Via);
+        (via.Material, via.SigmaSm) = (null, 0);
+        TechPersistence.SaveToFile(Path.Combine(ws, "tech.ctech"), tech);
+        ViaCell(ws, "Board");
+        var vm = Open(C3dCell(ws, "Pkg", new C3dDocument
+        {
+            Instances = [new C3dInstance { Name = "U1", CellRef = "../../Board", View = C3dInstanceView.Layout }],
+        }));
+        var told = new List<string>();
+        vm.Inform = s => { told.Add(s); return Task.CompletedTask; };
+        await vm.FlattenAsync(0);
+        Assert.Single(vm.Document.Instances);
+        string why = Assert.Single(told);
+        Assert.Contains("'Plated Through-Hole'", why, StringComparison.Ordinal);
+        Assert.DoesNotContain("'Air'", why, StringComparison.Ordinal);
+        await vm.FlattenAllAsync();
+        Assert.Equal(2, told.Count);
+
+        // The shipped technology, whose via row is Copper: nothing is left unmatched, and the core lands as an object of the
+        // built-in Air.
+        ws = Workspace();
+        Assert.Null(TechPersistence.LoadFromFile(Path.Combine(ws, "tech.ctech")).FindMaterial("Air"));
+        ViaCell(ws, "Board");
+        vm = Open(C3dCell(ws, "Pkg", new C3dDocument
+        {
+            Instances = [new C3dInstance { Name = "U1", CellRef = "../../Board", View = C3dInstanceView.Layout }],
+        }));
+        var original = Solids(vm.Elaboration!);
+        told.Clear();
+        await vm.FlattenAsync(0);
+        Settle(vm);
+        Assert.Empty(told);
+        Assert.Empty(vm.Document.Instances);
+        Assert.Contains(vm.Document.Objects, o => o.Material == "Air");
+        Assert.True(vm.Elaboration!.Ok, string.Join(" ", vm.Elaboration.Refusals));
+        Assert.Equal(original, Solids(vm.Elaboration));
+    }
+
     // ── 7. New 3D View from Layout ───────────────────────────────────────────────────────────
 
     [Fact]
@@ -488,6 +535,23 @@ public sealed class HierarchyGateTests : IDisposable
               "Shapes": [
                 { "$type": "Rect", "Layer": { "Layer": 1, "Datatype": 0 }, "X1": 0, "Y1": 0, "X2": 200000, "Y2": 50000 },
                 { "$type": "Rect", "Layer": { "Layer": 1, "Datatype": 0 }, "X1": 0, "Y1": 100000, "X2": 60000, "Y2": 160000 }
+              ],
+              "Instances": []
+            }
+            """);
+        CellCreate.WriteLayoutView(dir, cell, view);
+    }
+
+    /// <summary>A cell whose layout is one plated through-hole (the shipped technology's Drill layer) under a top pad.</summary>
+    private static void ViaCell(string ws, string cell)
+    {
+        string dir = CellFolder.CreateCellFolder(ws, cell);
+        var view = LayoutPersistence.Deserialize("""
+            {
+              "FormatVersion": 1, "DbuPerMicron": 1000, "DisplayUnit": "Um", "SnapDbu": 1000,
+              "Shapes": [
+                { "$type": "Rect", "Layer": { "Layer": 1, "Datatype": 0 }, "X1": -400000, "Y1": -400000, "X2": 400000, "Y2": 400000 },
+                { "$type": "Via", "X": 0, "Y": 0, "PadSize": 609600, "DrillSize": 304800, "Layer": { "Layer": 7, "Datatype": 0 } }
               ],
               "Instances": []
             }

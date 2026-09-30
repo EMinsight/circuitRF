@@ -4505,3 +4505,14 @@ and a surfaces plot do honour it.
 - **Not fixed, and worth knowing:** with the camera inside the scene's sphere, `Camera3D.DepthRange` puts near at
   far × 1e-4 on a standard-Z float buffer, so two faces a few µm apart can fight when zoomed deep into a large scene. The
   tie order does not address that; reversed-Z would.
+
+## A non-plated hole drew no hole in the substrate (2026-09-30)
+
+A layout via row with plating off is an air cylinder through its span in the 3D problem (`Em3dLayoutSolids`), but the
+3D view — Show 3D View and the 3D editor alike, both through `Scene3DBuilder` — carved bores out of METAL only
+(`Scene3DBores`), and a surface renderer draws the substrate's own surface and hides air: the slab looked solid. A
+dielectric is now carved too, by a BARE bore only (no metal cylinder around it). A plated via's bore is not carved out
+of the substrate, because its barrel hides that and a board of several thousand vias would otherwise triangulate one
+slab with several thousand holes. A box-shaped slab is carved as its rectangle extruded, its faces renumbered back to
+the box's (`BoxFace`) so a face picked on it is named as before. View only: the problem is unchanged.
+Gate: `PlatedViaAndPerspectiveTests.ANonPlatedHole_IsDrawnAsAHoleInTheSubstrate_AndABoxSlabKeepsItsFaces`.

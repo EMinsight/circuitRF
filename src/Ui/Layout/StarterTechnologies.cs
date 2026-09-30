@@ -115,6 +115,7 @@ public static class StarterTechnologies
                     new StackupLayer
                     {
                         Kind = StackupKind.Via, Name = "Plated Through-Hole",
+                        SigmaSm = ConductorMaterials.Copper.SigmaSm,   // a copper barrel, as the shipped .ctech's
                         DrawingLayers = [drill],
                         Fill = ViaFillKind.Plated, WallThicknessDbu = Um(ViaDefaults.PlatedWallThicknessUm),
                         SpanFromLayer = "Top Copper (1 oz)", SpanToLayer = "Bottom Copper (1 oz)",

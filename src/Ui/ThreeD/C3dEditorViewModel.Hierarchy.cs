@@ -77,6 +77,10 @@ public sealed partial class C3dEditorViewModel
     /// <summary>A yes/no the shell asks before an edit that states its outcome first (Flatten). Null: yes.</summary>
     public Func<string, Task<bool>>? Confirm { get; set; }
 
+    /// <summary>A refusal the shell shows in a dialog, for a command whose only other answer would be the status line
+    /// (Flatten): a menu command that did nothing must say why where it will be seen. Null: the status line only.</summary>
+    public Func<string, Task>? Inform { get; set; }
+
     /// <summary>Pop Out of a dirty child: the shell asks Save / Discard / Cancel. Null: Save.</summary>
     public Func<string, Task<C3dPopOutChoice>>? PopOutQuestion { get; set; }
 
@@ -216,7 +220,7 @@ public sealed partial class C3dEditorViewModel
     public async Task FlattenAsync(int index)
     {
         var (result, question) = PlanFlatten(index);
-        if (result is null) return;
+        if (result is null) { await InformRefusal(); return; }
         if (question is not null && Confirm is { } ask && !await ask(question)) { StatusMessage = "Flatten cancelled."; return; }
         ApplyFlatten(index, result);
     }
@@ -258,9 +262,15 @@ public sealed partial class C3dEditorViewModel
     public async Task FlattenAllAsync()
     {
         var (flat, question) = PlanFlattenAll();
-        if (flat is null) return;
+        if (flat is null) { await InformRefusal(); return; }
         if (Confirm is { } ask && !await ask(question!)) { StatusMessage = "Flatten cancelled."; return; }
         ApplyFlattenAll(flat);
+    }
+
+    /// <summary>A Plan… that returned nothing left its refusal on the status line; the shell shows it too.</summary>
+    private async Task InformRefusal()
+    {
+        if (Inform is { } tell && StatusMessage is { Length: > 0 } why) await tell(why);
     }
 
     public (C3dDocument? Flat, string? Question) PlanFlattenAll()

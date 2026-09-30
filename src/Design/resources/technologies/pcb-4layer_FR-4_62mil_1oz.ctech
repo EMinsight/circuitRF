@@ -360,10 +360,11 @@
         "Kind": "Via",
         "Name": "Plated Through-Hole",
         "ThicknessDbu": 0,
+        "Material": "Copper",
         "Epsr": 1.0,
         "TanD": 0.0,
         "Mur": 1.0,
-        "SigmaSm": 0.0,
+        "SigmaSm": 58000000,
         "DrawingLayers": [
           {
             "Layer": 9,
@@ -380,10 +381,11 @@
         "Kind": "Via",
         "Name": "Ground Via (L1-L2)",
         "ThicknessDbu": 0,
+        "Material": "Copper",
         "Epsr": 1.0,
         "TanD": 0.0,
         "Mur": 1.0,
-        "SigmaSm": 0.0,
+        "SigmaSm": 58000000,
         "DrawingLayers": [
           {
             "Layer": 10,

@@ -884,7 +884,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
                 Unassigned(obj, name, world, doc.DbuPerMicron, prefix, path, exact);
                 return;
             }
-            if (tech.Tech?.FindMaterial(matName) is not { } material)
+            if (C3dProblemAssembly.ObjectMaterial(tech.Tech, matName) is not { } material)
             {
                 _refusals.Add($"'{name}' is made of '{matName}', which its technology ({techName}) does not define.");
                 Unassigned(obj, name, world, doc.DbuPerMicron, prefix, path, exact);
@@ -968,7 +968,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
             string techName = TechName(tech);
             Know(tech, techName);
             string? matName = C3dValidation.EffectiveMaterial(obj);
-            TechMaterial? material = matName is { Length: > 0 } ? tech.Tech?.FindMaterial(matName) : null;
+            TechMaterial? material = matName is { Length: > 0 } ? C3dProblemAssembly.ObjectMaterial(tech.Tech, matName) : null;
             if (matName is { Length: > 0 } && material is null)
                 _refusals.Add($"'{name}' is made of '{matName}', which its technology ({techName}) does not define.");
 
@@ -1441,10 +1441,11 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
             }
         }
 
-        /// <summary>brief-em3d-53 R-em3d53-6 — the FILE a material came from: the technology's own list, or one of
-        /// its libraries.</summary>
+        /// <summary>brief-em3d-53 R-em3d53-6 — the FILE a material came from: the technology's own list, one of its
+        /// libraries, or built-in free space (Air, Vacuum) when the technology defines neither.</summary>
         private static string TechSource(TechResolution tech, string techName, string material)
-            => tech.Tech?.LibrarySourceOf(material) is { } lib
+            => tech.Tech?.FindMaterial(material) is null ? "built in (free space)"
+             : tech.Tech.LibrarySourceOf(material) is { } lib
                 ? $"technology '{techName}' via library '{MaterialLibraries.Display(lib)}'"
                 : $"technology '{techName}' Materials";
 

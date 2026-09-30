@@ -275,6 +275,35 @@ public sealed class Em3dGeneratorTests
         Assert.Equal(2, result.Problem.Ports.Count);
     }
 
+    /// <summary>A non-plated hole is drilled as air through its span — after every metal, so it cuts the copper it crosses
+    /// as well as the substrate — and is never a conductor. The shipped plated barrel is copper.</summary>
+    [Fact]
+    public void ANonPlatedHole_IsAirThroughItsSpan_AndAPlatedBarrelIsCopper()
+    {
+        var (setup, source) = Microstrip();
+        source.View.Shapes.Add(new ViaShape { X = 5_000_000, Y = 0, PadSize = 609_600, DrillSize = 304_800, Layer = new LayerKey(7, 0) });
+
+        var plated = Em3dGenerator.Generate(setup, source, source.Technology!);
+        Assert.True(plated.Ok, plated.Refusal);
+        Assert.Equal("Copper", plated.Problem!.Solids.Single(sd => sd.Name == "via/1").Material);
+
+        source.Technology!.Stackup.Layers.Single(l => l.Kind == StackupKind.Via).Plated = false;
+        var r = Em3dGenerator.Generate(setup, source, source.Technology!);
+        Assert.True(r.Ok, r.Refusal);
+        var p = r.Problem!;
+        Assert.DoesNotContain(p.Solids, sd => sd.Name.StartsWith("via/", StringComparison.Ordinal));
+        var hole = p.Solids.Single(sd => sd.Name == "hole/1");
+        Assert.Equal(Em3dRole.Air, hole.Role);
+        var c = Assert.IsType<Em3dCylinder>(hole.Primitive);
+        Assert.Equal(152.4e-6, c.Radius, 1e-12);
+        var precedence = Em3dPrecedence.Of(p);
+        Assert.All(p.Solids.Where(sd => sd != hole), sd => Assert.True(precedence.Of(hole) > precedence.Of(sd), sd.Name));
+        Assert.Contains(r.Notes, n => n.Contains("NON-PLATED", StringComparison.Ordinal));
+        // …and the 3D view (and the 3D editor, which draws through the same builder) shows the substrate drilled.
+        var bores = CircuitRF.Render.Scene3D.Scene3DBores.Of(p)!;
+        Assert.All(p.Solids.Where(sd => sd.Role == Em3dRole.Dielectric), sd => Assert.NotNull(bores.Carved(sd)));
+    }
+
     // ── 9. The reference page ───────────────────────────────────────────────────────────────────
 
     [Fact]

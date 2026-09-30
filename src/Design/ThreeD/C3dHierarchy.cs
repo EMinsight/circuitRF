@@ -280,7 +280,7 @@ public static class C3dHierarchy
         // The child's materials resolve in ITS technology; each must mean the same here.
         var (childTech, _) = TechnologyResolver.ResolveForDocument(child.TechRef, file, workspaceCws, cache ?? new TechnologyCache());
         var materials = child.Objects.Select(o => o.Material).OfType<string>().Distinct(StringComparer.Ordinal).ToList();
-        if (MaterialMismatch(materials.Select(m => (m, childTech.Tech?.FindMaterial(m) is { } tm ? C3dElaborator.MaterialValues(tm, tempC) : null)),
+        if (MaterialMismatch(materials.Select(m => (m, C3dProblemAssembly.ObjectMaterial(childTech.Tech, m) is { } tm ? C3dElaborator.MaterialValues(tm, tempC) : null)),
                              tech, tempC, inst.Name) is { } why)
             return C3dFlattenResult.Refuse(why);
 
@@ -350,7 +350,7 @@ public static class C3dHierarchy
         foreach (string n in solids.Select(s => s.Material).Concat(sheets.Select(s => s.Material)).Distinct(StringComparer.Ordinal))
         {
             var values = byName.GetValueOrDefault(n);
-            string? match = tech?.FindMaterial(n) is { } same && (values is null || SameValues(C3dElaborator.MaterialValues(same, EmSetup.DefaultOperatingTempC), values))
+            string? match = C3dProblemAssembly.ObjectMaterial(tech, n) is { } same && (values is null || SameValues(C3dElaborator.MaterialValues(same, EmSetup.DefaultOperatingTempC), values))
                 ? same.Name
                 : values is null ? null
                 : tech?.ResolvedMaterials.FirstOrDefault(m => SameValues(C3dElaborator.MaterialValues(m, EmSetup.DefaultOperatingTempC), values))?.Name;
@@ -404,7 +404,7 @@ public static class C3dHierarchy
         var differ = new List<string>();
         foreach (var (name, v) in values)
         {
-            if (tech?.FindMaterial(name) is not { } here) { missing.Add(name); continue; }
+            if (C3dProblemAssembly.ObjectMaterial(tech, name) is not { } here) { missing.Add(name); continue; }
             if (v is null) continue;
             var mine = C3dElaborator.MaterialValues(here, tempC ?? EmSetup.DefaultOperatingTempC);
             if (!(mine.Epsr == v.Epsr && mine.TanD == v.TanD && mine.Mur == v.Mur && Math.Abs(mine.SigmaSm - v.SigmaSm) <= 1e-9 * Math.Abs(v.SigmaSm)

@@ -8,6 +8,11 @@
 // precedence rule leaves — the barrel as a tube, and a hole the bore's size in each metal polygon it passes right
 // through. Only that case is carved: a vertical air cylinder spanning a conductor's whole height, lying wholly inside it.
 // A bore that stops part-way, clips an edge or overlaps another hole is left to the precedence rule alone, as before.
+//
+// A DIELECTRIC is carved the same way (2026-09-30), by a BARE bore only: a non-plated hole is an air cylinder with no
+// barrel around it, so an uncarved substrate showed no hole at all. A plated via's bore is not carved out of the
+// substrate — its barrel hides that — so a board with thousands of vias does not triangulate a slab with thousands of
+// holes. A box-shaped slab (no board outline) is carved as its rectangle extruded, its faces given back the box's own.
 
 using CircuitRF.Engine.Em3d;
 
@@ -19,7 +24,8 @@ internal sealed class Scene3DBores
     /// <summary>Metres: geometry closer than this is the same place (the generator writes both from one number).</summary>
     private const double Tol = 1e-9;
 
-    private readonly record struct Bore(double X, double Y, double R, double Z0, double Z1, int Priority);
+    /// <param name="Bare">No metal cylinder around it: a hole, not a barrel's bore — the only kind a dielectric is carved by.</param>
+    private readonly record struct Bore(double X, double Y, double R, double Z0, double Z1, int Priority, bool Bare);
 
     private readonly Bore[] _bores;   // by X
     private readonly Em3dPrecedence _precedence;
@@ -36,8 +42,15 @@ internal sealed class Scene3DBores
             if (s.Role != Em3dRole.Air || s.Primitive is not Em3dCylinder c || !Vertical(c)) continue;
             precedence ??= Em3dPrecedence.Of(problem);
             bores.Add(new Bore(c.AxisStart.X, c.AxisStart.Y, c.Radius,
-                               Math.Min(c.AxisStart.Z, c.AxisEnd.Z), Math.Max(c.AxisStart.Z, c.AxisEnd.Z), precedence.Of(s)));
+                               Math.Min(c.AxisStart.Z, c.AxisEnd.Z), Math.Max(c.AxisStart.Z, c.AxisEnd.Z), precedence.Of(s), Bare: true));
         }
+        if (bores.Count > 0)
+            foreach (var s in problem.Solids)
+                if (s.Role == Em3dRole.Conductor && s.Primitive is Em3dCylinder m && Vertical(m))
+                    for (int i = 0; i < bores.Count; i++)
+                        if (bores[i].Bare && Math.Abs(bores[i].X - m.AxisStart.X) <= Tol && Math.Abs(bores[i].Y - m.AxisStart.Y) <= Tol &&
+                            bores[i].R < m.Radius - Tol)
+                            bores[i] = bores[i] with { Bare = false };
         if (bores.Count == 0) return null;
         bores.Sort((a, b) => a.X.CompareTo(b.X));
         return new Scene3DBores([.. bores], precedence!);
@@ -49,7 +62,7 @@ internal sealed class Scene3DBores
     /// </summary>
     public (object Key, Func<Em3dTriangleMesh> Make)? Carved(Em3dSolid s)
     {
-        if (s.Role != Em3dRole.Conductor) return null;
+        if (s.Role is not (Em3dRole.Conductor or Em3dRole.Dielectric)) return null;
         int priority = _precedence.Of(s);
         switch (s.Primitive)
         {
@@ -64,45 +77,63 @@ internal sealed class Scene3DBores
                     }
                 return null;
             }
-            case Em3dExtrudedPolygon e:
+            case Em3dBox box when s.Role == Em3dRole.Dielectric:
             {
-                double minX = double.MaxValue, maxX = double.MinValue;
-                foreach (var p in e.Outline) { minX = Math.Min(minX, p.X); maxX = Math.Max(maxX, p.X); }
-                List<Bore>? taken = null;
-                foreach (var b in Near(minX, maxX))
-                {
-                    if (b.Priority <= priority || !Spans(b, e.ZBottom, e.ZTop)) continue;
-                    var centre = new Point2(b.X, b.Y);
-                    if (!Inside(e.Outline, centre) || Clearance(e.Outline, centre) < b.R - Tol) continue;
-                    if (e.Holes.Any(h => Inside(h, centre) || Clearance(h, centre) < b.R - Tol)) continue;
-                    if (taken?.Any(o => Math.Sqrt((o.X - b.X) * (o.X - b.X) + (o.Y - b.Y) * (o.Y - b.Y)) < o.R + b.R) == true) continue;
-                    (taken ??= []).Add(b);
-                }
-                if (taken is null) return null;
-
-                var holes = new List<IReadOnlyList<Point2>>(e.Holes);
-                holes.AddRange(taken.Select(b => Ring(b)));
-                var drawn = e with { Holes = holes };
-                int ownEdges = e.Outline.Count + e.Holes.Sum(h => h.Count);
-                string solidName = s.Name;
-                var key = new BoredKey(e, string.Join(";", taken.Select(b => FormattableString.Invariant($"{b.X:R},{b.Y:R},{b.R:R}"))));
-                return (key, () =>
-                {
-                    var mesh = Em3dTessellation.Of(new Em3dSolid(solidName, s.Material, s.Role, drawn, s.Order));
-                    // The bores' walls are no face of the primitive's: its own faces keep their numbers (bottom 0, top 1, one per
-                    // edge of its own rings), so a face picked on a pad is named exactly as it was before it was carved.
-                    return new Em3dTriangleMesh(mesh.Vertices,
-                        [.. mesh.Triangles.Select(t => t.Face >= 2 + ownEdges ? t with { Face = -1 } : t)]);
-                });
+                // Counter-clockwise from (min, min): its walls are y min, x max, y max, x min — box faces 2, 1, 3, 0.
+                var rect = new Em3dExtrudedPolygon(
+                    [new Point2(box.Min.X, box.Min.Y), new Point2(box.Max.X, box.Min.Y),
+                     new Point2(box.Max.X, box.Max.Y), new Point2(box.Min.X, box.Max.Y)], [], box.Min.Z, box.Max.Z);
+                return Extruded(s, rect, priority, BoxFace);
             }
+            case Em3dExtrudedPolygon e:
+                return Extruded(s, e, priority, null);
             default:
                 return null;
         }
     }
 
+    /// <summary>A box's face for the face of its rectangle extruded: bottom, top, then the walls in ring order.</summary>
+    private static int BoxFace(int f) => f switch { 0 => 4, 1 => 5, 2 => 2, 3 => 1, 4 => 3, 5 => 0, _ => f };
+
+    /// <summary>An extruded polygon with one hole per bore right through it, or null when none is. <paramref name="face"/>
+    /// renumbers the primitive's own faces (a box's are not an extrusion's).</summary>
+    private (object Key, Func<Em3dTriangleMesh> Make)? Extruded(Em3dSolid s, Em3dExtrudedPolygon e, int priority, Func<int, int>? face)
+    {
+        double minX = double.MaxValue, maxX = double.MinValue;
+        foreach (var p in e.Outline) { minX = Math.Min(minX, p.X); maxX = Math.Max(maxX, p.X); }
+        List<Bore>? taken = null;
+        foreach (var b in Near(minX, maxX))
+        {
+            if (b.Priority <= priority || !Spans(b, e.ZBottom, e.ZTop) || (s.Role == Em3dRole.Dielectric && !b.Bare)) continue;
+            var centre = new Point2(b.X, b.Y);
+            if (!Inside(e.Outline, centre) || Clearance(e.Outline, centre) < b.R - Tol) continue;
+            if (e.Holes.Any(h => Inside(h, centre) || Clearance(h, centre) < b.R - Tol)) continue;
+            if (taken?.Any(o => Math.Sqrt((o.X - b.X) * (o.X - b.X) + (o.Y - b.Y) * (o.Y - b.Y)) < o.R + b.R) == true) continue;
+            (taken ??= []).Add(b);
+        }
+        if (taken is null) return null;
+
+        var holes = new List<IReadOnlyList<Point2>>(e.Holes);
+        holes.AddRange(taken.Select(b => Ring(b)));
+        var drawn = e with { Holes = holes };
+        int ownEdges = e.Outline.Count + e.Holes.Sum(h => h.Count);
+        string solidName = s.Name;
+        var key = new BoredKey(e, face is not null,
+                               string.Join(";", taken.Select(b => FormattableString.Invariant($"{b.X:R},{b.Y:R},{b.R:R}"))));
+        return (key, () =>
+        {
+            var mesh = Em3dTessellation.Of(new Em3dSolid(solidName, s.Material, s.Role, drawn, s.Order));
+            // The bores' walls are no face of the primitive's: its own faces keep their numbers (bottom 0, top 1, one per
+            // edge of its own rings), so a face picked on a pad is named exactly as it was before it was carved.
+            return new Em3dTriangleMesh(mesh.Vertices,
+                [.. mesh.Triangles.Select(t => t.Face >= 2 + ownEdges ? t with { Face = -1 }
+                                             : face is not null && t.Face >= 0 ? t with { Face = face(t.Face) } : t)]);
+        });
+    }
+
     private sealed record TubeKey(Em3dCylinder Cylinder, double Bore);
 
-    private sealed record BoredKey(Em3dExtrudedPolygon Primitive, string Bores);
+    private sealed record BoredKey(Em3dExtrudedPolygon Primitive, bool Box, string Bores);
 
     private static bool Vertical(Em3dCylinder c)
         => Math.Abs(c.AxisStart.X - c.AxisEnd.X) <= Tol && Math.Abs(c.AxisStart.Y - c.AxisEnd.Y) <= Tol && Math.Abs(c.AxisEnd.Z - c.AxisStart.Z) > Tol;

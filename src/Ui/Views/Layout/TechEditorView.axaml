@@ -1158,11 +1158,18 @@
                                                           SelectedItem="{Binding SelectedSpanTo, Mode=TwoWay}"/>
                                             </StackPanel>
 
+                                            <!-- ToolTip.Placement="Top" AND ToolTip.VerticalOffset="-4", TOGETHER, on every tip in
+                                                 this row (2026-09-30: the Plated tip flashed under the pointer). The card sits low
+                                                 in a tall pane, so a tip placed at the cursor is flipped up onto the pointer, the
+                                                 control loses :pointerover, the tip closes and re-opens 100 ms later. Placement
+                                                 alone does not fix it: the offset defaults to 20 and pushes the tip back down over
+                                                 the control. src/Ui/RESOLVED.md "Two tooltips flashed repeatedly". -->
                                             <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding IsVia}">
                                                 <TextBlock Text="Fill:" Width="70" FontSize="11" VerticalAlignment="Center"/>
                                                 <CheckBox Content="{x:Static lay:StackupCardText.Plated}" FontSize="11"
                                                           IsChecked="{Binding IsPlated, Mode=TwoWay}"
-                                                          ToolTip.Tip="{x:Static lay:StackupCardText.PlatedTip}"/>
+                                                          ToolTip.Tip="{x:Static lay:StackupCardText.PlatedTip}"
+                                                          ToolTip.Placement="Top" ToolTip.VerticalOffset="-4"/>
                                                 <ComboBox Classes="cell" MinWidth="90"
                                                           IsVisible="{Binding IsPlated}"
                                                           ItemsSource="{Binding FillChoices}"
@@ -1174,11 +1181,13 @@
                                                      nowhere the user could see it. -->
                                                 <TextBlock Text="Wall:" FontSize="11" VerticalAlignment="Center"
                                                            Margin="8,0,0,0" IsVisible="{Binding IsPlatedVia}"
+                                                           ToolTip.Placement="Top" ToolTip.VerticalOffset="-4"
                                                            ToolTip.Tip="Plated wall thickness — the metal deposited on the barrel wall, NOT the hole radius. 20-25 µm is typical for a plated through-hole board and is what circuitRF's own shipped technologies use. For RF above roughly 1 GHz this barely matters: a wall a few µm thick is already many skin depths, so a solver may treat a plated barrel and a solid one identically. For thermal it matters directly — it multiplies the conductive cross-section, which is exactly what a thermal via array is sized on."/>
                                                 <TextBox Classes="cell compact" Width="60" Tag="WallThickness"
                                                          IsVisible="{Binding IsPlatedVia}"
                                                          Classes.needsvalue="{Binding WallThicknessNeedsValue}"
                                                          Text="{Binding StagedWallThickness}"
+                                                         ToolTip.Placement="Top" ToolTip.VerticalOffset="-4"
                                                          ToolTip.Tip="Plated wall thickness — the metal deposited on the barrel wall, NOT the hole radius. 20-25 µm is typical for a plated through-hole board and is what circuitRF's own shipped technologies use. For RF above roughly 1 GHz this barely matters: a wall a few µm thick is already many skin depths, so a solver may treat a plated barrel and a solid one identically. For thermal it matters directly — it multiplies the conductive cross-section, which is exactly what a thermal via array is sized on."
                                                          LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
                                                 <TextBlock Text="{Binding ThicknessUnitSuffix}" FontSize="10"

@@ -246,10 +246,11 @@
         "Kind": "Via",
         "Name": "Plated Through-Hole",
         "ThicknessDbu": 0,
+        "Material": "Copper",
         "Epsr": 1,
         "TanD": 0,
         "Mur": 1,
-        "SigmaSm": 0,
+        "SigmaSm": 58000000,
         "DrawingLayers": [
           {
             "Layer": 7,

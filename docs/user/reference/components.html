@@ -1323,11 +1323,11 @@ result. The formulas, where they hold and how they compare with a 3D solve are i
 <table class="param-table">
 <thead><tr><th>Name</th><th>Default</th><th>Unit</th><th>On schematic</th><th>Meaning</th></tr></thead>
 <tbody>
-<tr><td>FromLayer</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>The conductor terminal A lands on. Default: the top conductor.</td></tr>
+<tr><td>FromLayer</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>The conductor terminal A lands on. Default: the top conductor, or the highest one a drill to the other end starts on when none joins the top conductor to it.</td></tr>
 <tr><td>ToLayer</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>The conductor terminal B lands on. Default: the farthest conductor a drill reaches from FromLayer that is not a ground plane. A drill that runs on past it leaves a stub, which is modelled.</td></tr>
 <tr><td>Drill</td><td>&mdash;</td><td>mm</td><td>shown</td><td>The finished hole diameter. Empty: the technology&#39;s via drill, else 0.3 mm.</td></tr>
 <tr><td>Pad</td><td>&mdash;</td><td>mm</td><td>&mdash;</td><td>The pad diameter on each end. Empty: the technology&#39;s via pad, else 0.6 mm.</td></tr>
-<tr><td>Antipad</td><td>&mdash;</td><td>mm</td><td>&mdash;</td><td>The clearance diameter in every ground plane the barrel passes. Empty: the pad plus 0.3 mm. No technology states one, so the run names it as a default.</td></tr>
+<tr><td>Antipad</td><td>&mdash;</td><td>mm</td><td>&mdash;</td><td>The clearance diameter in every ground plane the barrel passes. Empty: the pad plus 0.3 mm.</td></tr>
 <tr><td>Plating</td><td>&mdash;</td><td>&#181;m</td><td>&mdash;</td><td>The barrel wall thickness. Empty: the via layer&#39;s own, else 25 &#181;m. Ignored for a filled via.</td></tr>
 <tr><td>IncludeC</td><td><code>true</code></td><td>&mdash;</td><td>&mdash;</td><td>Whether the pad-to-plane capacitance is modelled. With it off the via is its barrel&#39;s resistance and inductance only.</td></tr>
 <tr><td>C</td><td>&mdash;</td><td>pF</td><td>&mdash;</td><td>Replaces the computed capacitance outright. Empty: computed from the pad, the antipad and the dielectric, which is an estimate (see the component&#39;s help).</td></tr>
@@ -1348,11 +1348,11 @@ replaces.</p>
 <table class="param-table">
 <thead><tr><th>Name</th><th>Default</th><th>Unit</th><th>On schematic</th><th>Meaning</th></tr></thead>
 <tbody>
-<tr><td>FromLayer</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>The conductor terminal A lands on. Default: the top conductor.</td></tr>
+<tr><td>FromLayer</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>The conductor terminal A lands on. Default: the top conductor, or the highest one a drill to the other end starts on when none joins the top conductor to it.</td></tr>
 <tr><td>GroundLayer</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>The ground plane the via lands on. Default: the nearest ground-designated conductor beneath FromLayer.</td></tr>
 <tr><td>Drill</td><td>&mdash;</td><td>mm</td><td>shown</td><td>The finished hole diameter. Empty: the technology&#39;s via drill, else 0.3 mm.</td></tr>
 <tr><td>Pad</td><td>&mdash;</td><td>mm</td><td>&mdash;</td><td>The pad diameter on each end. Empty: the technology&#39;s via pad, else 0.6 mm.</td></tr>
-<tr><td>Antipad</td><td>&mdash;</td><td>mm</td><td>&mdash;</td><td>The clearance diameter in every ground plane the barrel passes. Empty: the pad plus 0.3 mm. No technology states one, so the run names it as a default.</td></tr>
+<tr><td>Antipad</td><td>&mdash;</td><td>mm</td><td>&mdash;</td><td>The clearance diameter in every ground plane the barrel passes. Empty: the pad plus 0.3 mm.</td></tr>
 <tr><td>Plating</td><td>&mdash;</td><td>&#181;m</td><td>&mdash;</td><td>The barrel wall thickness. Empty: the via layer&#39;s own, else 25 &#181;m. Ignored for a filled via.</td></tr>
 <tr><td>IncludeC</td><td><code>true</code></td><td>&mdash;</td><td>&mdash;</td><td>Whether the pad-to-plane capacitance is modelled. With it off the via is its barrel&#39;s resistance and inductance only.</td></tr>
 <tr><td>C</td><td>&mdash;</td><td>pF</td><td>&mdash;</td><td>Replaces the computed capacitance outright. Empty: computed from the pad, the antipad and the dielectric, which is an estimate (see the component&#39;s help).</td></tr>

@@ -74,8 +74,8 @@ public static class StackupCardText
     public const string PlatedTip =
         "Whether these holes are metal at all. Unticked means a non-plated hole — a mounting hole, " +
         "a routed cutout, a castellation that was not plated — which is drawn exactly as it is but " +
-        "is NOT extracted as a vertical conductor by an EM run. Plated is the default and is what " +
-        "every technology means when it says nothing.";
+        "is NOT extracted as a vertical conductor by an EM run; a 3D run drills it as a hole of air. " +
+        "Plated is the default and is what every technology means when it says nothing.";
 
     // ── Via: the fill MODEL, whose two values are both conductive (R-stk6-5) ──────────────────────
 
