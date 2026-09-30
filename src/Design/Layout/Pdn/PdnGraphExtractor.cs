@@ -1446,12 +1446,28 @@ internal sealed class GraphBuild(
         // pad over the rail's own trace on the far layer was joined straight to it, and the pad's
         // land was never on the path. Attached to its own land, a 1206 jumper's pad was named as
         // the spreading copper the rail "only" reaches its load through.
-        var terminalNodes = rail.Sources.Select(s => AnchorNodes(s.Anchor).ToHashSet())
+        //
+        // A terminal is a PAD, not a row: two rows on one pad are one terminal. A load drawn at a
+        // series choke's own output pin — the ordinary way to declare a PA's collector current —
+        // is one place where current leaves the rail, and counting it twice took the RF line that
+        // pad sits on for copper the current had to cross (field report, 2026-09-30).
+        var terminalNodes = Distinct(rail.Sources.Select(s => AnchorNodes(s.Anchor).ToHashSet())
             .Concat(loadNodes.Select(n => n.ToHashSet()))
             .Concat(request.SeriesElements
                 .SelectMany(p => new[] { p.A, p.B })
-                .Select(a => AnchorNodes(a).ToHashSet()))
-            .ToList();
+                .Select(a => AnchorNodes(a).ToHashSet())));
+
+        static List<HashSet<int>> Distinct(IEnumerable<HashSet<int>> rows)
+        {
+            var terminals = new List<HashSet<int>>();
+            foreach (var row in rows)
+            {
+                var same = terminals.FindAll(t => t.Overlaps(row));
+                foreach (var t in same) { row.UnionWith(t); terminals.Remove(t); }
+                terminals.Add(row);
+            }
+            return terminals;
+        }
 
         var landing = new HashSet<int>();
         foreach (var (index, members) in _spreadingPieceNodes)
@@ -1464,6 +1480,14 @@ internal sealed class GraphBuild(
             var load = rail.Loads[k];
             if (loadNodes[k].Count == 0) continue;
             if (Reaches(joined, sourceNodes, loadNodes[k])) continue;
+
+            // A load's own pad is an END of its path even when the piece it sits on is not a landing
+            // (it holds another terminal too): current that arrives at the pad through a series part
+            // or a trace crosses none of that piece. Counting the pad alone asks exactly that — and
+            // leaves the refusal to the load whose current does cross it, which is the one to name.
+            // Before this, the first load in declaration order was named, whichever it was.
+            var ownPad = terminalNodes.FirstOrDefault(t => t.Overlaps(loadNodes[k])) ?? [.. loadNodes[k]];
+            if (Reaches(Connect(landing.Contains, ownPad), sourceNodes, loadNodes[k])) continue;
 
             var fmt = request.LengthFormat;
 
@@ -1564,15 +1588,17 @@ internal sealed class GraphBuild(
 
     /// <summary>The rail's connectivity at DC with the spreading pieces <paramref name="joins"/>
     /// accepts counted as copper, and every other spreading piece left out — the union-find root of
-    /// each node.</summary>
-    private int[] Connect(Func<int, bool> joins)
+    /// each node. <paramref name="alsoCounted"/> are single nodes counted whatever piece they are
+    /// on — a load's own pad, without the rest of the piece under it.</summary>
+    private int[] Connect(Func<int, bool> joins, IReadOnlySet<int>? alsoCounted = null)
     {
         var root = new int[nodes.NodeTotal];
         for (int i = 0; i < root.Length; i++) root[i] = i;
 
         int Find(int x) { while (root[x] != x) { root[x] = root[root[x]]; x = root[x]; } return x; }
         void Union(int a, int b) { int ra = Find(a), rb = Find(b); if (ra != rb) root[Math.Max(ra, rb)] = Math.Min(ra, rb); }
-        bool Counted(int n) => !_spreadingPieceOf.TryGetValue(n, out int piece) || joins(piece);
+        bool Counted(int n) => alsoCounted?.Contains(n) == true ||
+                               !_spreadingPieceOf.TryGetValue(n, out int piece) || joins(piece);
 
         for (int i = 0; i < _traceEdgeA.Count; i++)
             if (Counted(_traceEdgeA[i]) && Counted(_traceEdgeB[i]))

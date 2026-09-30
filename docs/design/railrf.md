@@ -336,7 +336,9 @@ Each part on the rail is one of:
   The R-L that does exist belongs to a **series** part: a ferrite bead, 0 Ω link, jumper or RF choke
   the rail runs through. Its model is a DCR plus either an R-L or a series-thru Touchstone file,
   stated on the rail's row or on a part-library row classed `Other` (`RailSeriesModel`; brief 25,
-  brief 35).
+  brief 35). Where neither states a DCR, the part's own file is read at its lowest point at or below
+  1 kHz; a file that starts higher gives none, because Re Z there includes skin effect and core loss,
+  and the DCR is then taken as 0 Ω with a note saying so (2026-09-30).
 
 Plus, per part, the **mounting inductance**: the loop from the pad through its via to the plane pair and
 back. railRF computes this from the actual via positions and the plane separation when it has the artwork,

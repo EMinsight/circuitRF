@@ -15855,3 +15855,40 @@ Gates: `HierarchyGateTests.Flatten_APlatedViasAirCoreNeedsNoAirInTheTechnology_A
 - **Also watch:** the macOS and Linux recipes clone the `v0.37.0-rc3` TAG, so their builds may print the
   tag too — both spellings are now accepted, so either way they pass. The Windows recipe's `measured`
   minutes/disk are still unmeasured, and no 3D run has yet been made with the Windows binary.
+
+## railRF refused a choke-fed rail whose load sits on the choke's own pin (2026-09-30)
+
+- **Symptom:** a PA supply — source, trace, series choke M14, load drawn at M14.2 — was refused by
+  Fast as reaching M14.2 "only through spreading copper", naming the RF output copper M14.2 sits on
+  (6.7 squares). Accuracy on the same board answers 13.93 mV.
+- **Cause:** `PdnGraphExtractor.PourDominatedRefusal` counts terminals per ROW. A spreading piece holding
+  exactly one terminal is that terminal's landing and joins the path (R-rail29-1); the load row and the
+  series element's B row both resolve to M14.2, so the piece counted two terminals, was treated as
+  copper the current crosses, and cut the load off from itself.
+- **Fix:** terminal rows whose node sets overlap are merged before counting. Fast now answers 13.42 mV,
+  3.7 % from Accuracy. A load elsewhere on the same copper is still refused, and is the control case
+  in the gate: `PdnRefusalCauseTests.ALoadOnASeriesPartsOwnPinIsOneTerminal`.
+- **Also:** the `rail` verb printed every refusal twice, once as its own `error:` line and again through
+  `JsonRun.Fail`. It now records the diagnostic with `JsonRun.Note`, so each refusal is printed once.
+- **Which load is named:** with a second load on the same copper (M17.1), the sentence named M14.2, the
+  first load in declaration order, whose current crosses nothing. Before a load is refused, its own
+  pad is now counted as copper on its own, without the rest of the piece under it. A load reached that
+  way ends its path at its pad and is passed, which leaves the refusal to the load whose current does
+  cross the copper. Gate: `PdnRefusalCauseTests.TheRefusalNamesTheLoadWhoseCurrentCrossesTheCopper`.
+
+## A series part's DCR is read off its own Touchstone file below 1 kHz (2026-09-30)
+
+- **Why:** on the choke-fed rail above, M14 named its own `.s2p`, and the breakdown still showed it at
+  0 Ω. The DC run called `RailSeriesModel.Resolve` with no reader, so it never opened the file, and
+  `RailDcRequest` carried no document path to resolve the row's relative reference against.
+- **Rule:** only where neither the row nor an `Other` library row states a DCR, and read from the file's
+  lowest point at or below `RailSeriesModel.DcReadCeilingHz` (1 kHz). Above that, Re Z includes skin
+  effect and core loss. Rejected: a file that starts higher, a shunt-thru reading, Re Z not positive
+  (a vendor's placeholder DC point of S21 = 1 would otherwise silence the "taken as 0 Ω" note), and a
+  capacitive point. The source is `RailSeriesValueSource.File`, and the breakdown, the note, the parts
+  table tooltip and the DCR field placeholder all say "read from X.s2p at N Hz".
+- **Wiring:** `RailDcRequest.DocumentPath` (set by the `rail` verb and the window) roots a relative
+  reference. The DC run reads the file with the reader the parts table uses (series-thru, fixture
+  inferred), so the two cannot disagree. With no document path only an absolute path is opened.
+- **The reported board is unchanged:** M14's file starts at 50 MHz, so the designer still enters its
+  DCR. Gate: `SeriesDcrFromFileTests`.

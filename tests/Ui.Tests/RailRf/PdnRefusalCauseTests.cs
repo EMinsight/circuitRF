@@ -304,6 +304,70 @@ public sealed class PdnRefusalCauseTests
             c => c.Region.Layer == Top && c.Bounds.Contains(Mm(1), Mm(1)) && c.Class == PdnCopperClass.Spreading);
     }
 
+    /// <summary>
+    /// A terminal is a pad, not a row (field report, 2026-09-30). The choke L1 bridges a trace to a
+    /// 3 × 3 mm square of RF copper; a load drawn at L1's own output pin puts two rows — the load
+    /// and the series element's far end — on ONE pad, and the square was refused as copper the
+    /// current had to cross. A load on the far side of the same square still is refused: there the
+    /// current really does cross it.
+    /// </summary>
+    [Theory]
+    [InlineData("L1", "2", false)]
+    [InlineData("U1", "VDD", true)]
+    public void ALoadOnASeriesPartsOwnPinIsOneTerminal(string refdes, string pin, bool refused)
+    {
+        var request = ChokeIntoASquare();
+        request.Rail.Loads[0] = new RailLoad
+        {
+            Anchor = new RailPortAnchor { Refdes = refdes, Pin = pin }, DcCurrentA = 0.03,
+        };
+
+        var result = PdnGraphExtractor.Extract(request);
+
+        Assert.Equal(refused, result.Refusal is not null);
+        if (refused) Assert.Contains("only through spreading copper", result.Refusal, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Both loads at once, the one on L1's own pin declared FIRST: the refusal names U1.VDD, whose
+    /// current crosses the square. It used to name whichever load came first in the list.
+    /// </summary>
+    [Fact]
+    public void TheRefusalNamesTheLoadWhoseCurrentCrossesTheCopper()
+    {
+        var request = ChokeIntoASquare();
+        request.Rail.Loads.Insert(0, new RailLoad
+        {
+            Anchor = new RailPortAnchor { Refdes = "L1", Pin = "2" }, DcCurrentA = 0.03,
+        });
+
+        var refused = PdnGraphExtractor.Extract(request).Refusal;
+
+        Assert.NotNull(refused);
+        Assert.Contains("reaches U1.VDD only through spreading copper", refused, StringComparison.Ordinal);
+        Assert.DoesNotContain("L1.2", refused, StringComparison.Ordinal);
+    }
+
+    private static PdnExtractionRequest ChokeIntoASquare()
+    {
+        var l1 = new PdnSeriesElement(
+            "L1", new RailPortAnchor { Refdes = "L1", Pin = "1" },
+            new RailPortAnchor { Refdes = "L1", Pin = "2" }, 0.005, "test");
+        return Request(
+            [
+                Rect(Top, 0, 0, 20, 0.3),
+                Rect(Top, 21, -1.35, 24, 1.65),   // the RF copper L1 feeds
+                Rect(Bot, -1, -2, 25, 2),
+            ],
+            [
+                Pad("BT1", "1", 0.1, 0.15),
+                Pad("L1", "1", 19.9, 0.15),
+                Pad("L1", "2", 21.1, 0.15),
+                Pad("U1", "VDD", 23.9, 0.15),
+            ],
+            [l1]);
+    }
+
     private sealed class Recorder(List<string> stages) : IProgress<RunProgress>
     {
         public void Report(RunProgress p)

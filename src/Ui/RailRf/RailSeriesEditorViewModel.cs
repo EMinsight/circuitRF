@@ -75,9 +75,14 @@ public sealed partial class RailSeriesEditorViewModel : ObservableObject
     }
 
     /// <summary>What an empty DCR field falls back to.</summary>
-    public string DcrWatermark => Model is { DcResistanceFrom: RailSeriesValueSource.Library, DcResistanceOhms: { } r }
-        ? $"library: {RailValueFormat.FormatWithUnit(r, RailQuantity.Resistance, 3)}"
-        : "unstated — DC total is a lower bound";
+    public string DcrWatermark => Model switch
+    {
+        { DcResistanceFrom: RailSeriesValueSource.Library, DcResistanceOhms: { } r }
+            => $"library: {RailValueFormat.FormatWithUnit(r, RailQuantity.Resistance, 3)}",
+        { DcResistanceFrom: RailSeriesValueSource.File, DcResistanceOhms: { } r, DcResistanceReadAtHz: { } f }
+            => $"file at {f:0.###} Hz: {RailValueFormat.FormatWithUnit(r, RailQuantity.Resistance, 3)}",
+        _ => "unstated — DC total is a lower bound",
+    };
 
     // ── R-L or file ────────────────────────────────────────────────────────────────────────────
 

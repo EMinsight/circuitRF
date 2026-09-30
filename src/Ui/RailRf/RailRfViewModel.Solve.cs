@@ -1192,6 +1192,7 @@ public sealed partial class RailRfViewModel
         Control        = control,
 
         Document       = _document,
+        DocumentPath   = DocumentPath,
         Shapes         = board.Shapes,
         Technology     = board.Technology,
         DbuPerMicron   = board.DbuPerMicron,

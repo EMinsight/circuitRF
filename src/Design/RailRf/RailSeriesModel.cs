@@ -49,6 +49,11 @@ public enum RailSeriesValueSource
     /// <summary>The part library's row for this part number, classed
     /// <see cref="PartLibraryRow.OtherClass"/> — inherited where the rail row states nothing.</summary>
     Library,
+
+    /// <summary>The part's own measured file, at its lowest point at or below
+    /// <see cref="RailSeriesModel.DcReadCeilingHz"/> — read only where neither the row nor the
+    /// library states a DC resistance, because a stated number is a choice and a file is data.</summary>
+    File,
 }
 
 /// <summary>
@@ -76,6 +81,21 @@ public sealed record RailSeriesModel(RailPart Row, RailSourceModel Impedance)
     /// still said — as a note, by <see cref="AssumedDcResistanceLine"/> — so it is visible, not silent.
     /// </remarks>
     public double? DcResistanceOhms { get; init; } = Row.DcResistanceOhms ?? 0.0;
+
+    /// <summary>
+    /// The highest frequency a measured file's point is read as the DC resistance at: <b>1 kHz</b>.
+    /// </summary>
+    /// <remarks>
+    /// Below it the real part of a choke's or a bead's impedance is its winding resistance; above it
+    /// skin effect and core loss are in it too, and a vendor file that starts at 50 MHz would report
+    /// several times the DCR. A file that starts higher gives no DCR and the row still says to enter
+    /// one (2026-09-30).
+    /// </remarks>
+    public const double DcReadCeilingHz = 1e3;
+
+    /// <summary>The frequency <see cref="DcResistanceOhms"/> was read at where it came from the
+    /// part's file (<see cref="RailSeriesValueSource.File"/>), else null.</summary>
+    public double? DcResistanceReadAtHz { get; init; }
 
     /// <summary>Which of the row and the library stated <see cref="DcResistanceOhms"/>.</summary>
     public RailSeriesValueSource DcResistanceFrom { get; init; } =
@@ -112,8 +132,39 @@ public sealed record RailSeriesModel(RailPart Row, RailSourceModel Impedance)
     {
         RailSeriesValueSource.Row     => file ? "row file" : "row",
         RailSeriesValueSource.Library => file ? "library file" : "library",
+        RailSeriesValueSource.File    => "file",
         _                             => "none (0 Ω)",
     };
+
+    /// <summary>Where a DCR read off the part's file came from, in a report's words — "read from
+    /// FB1.s2p at 0 Hz" — or null where the DCR did not come from a file.</summary>
+    public string? DcResistanceFileText =>
+        DcResistanceFrom == RailSeriesValueSource.File && DcResistanceReadAtHz is { } f
+            ? $"read from {System.IO.Path.GetFileName(TouchstonePath ?? "")} at {f:0.###} Hz"
+            : null;
+
+    /// <summary>
+    /// The DC resistance a measured file states, as its lowest point at or below
+    /// <see cref="DcReadCeilingHz"/> — or null where it states none.
+    /// </summary>
+    /// <remarks>
+    /// Null where the file starts above the ceiling; where it was read shunt-thru, which is not a
+    /// reading of a series element's own impedance; where the real part is not positive — a
+    /// vendor's placeholder DC point of S21 = 1 is 0 Ω, and taking it would silence the note that
+    /// the DCR is unstated; and where the point is capacitive, because a part that blocks DC has no
+    /// DC resistance to read.
+    /// </remarks>
+    public static (double Ohms, double AtHz)? DcResistanceOf(RailMeasuredPart file)
+    {
+        ArgumentNullException.ThrowIfNull(file);
+        if (file.Fixture == PassiveExtraction.ShuntThrough) return null;
+        if (file.FrequenciesHz.Length == 0 || !(file.FrequenciesHz[0] <= DcReadCeilingHz)) return null;
+
+        var z = file.Impedance[0];
+        if (!double.IsFinite(z.Real) || !double.IsFinite(z.Imaginary)) return null;
+        if (!(z.Real > 0) || z.Imaginary < -z.Real) return null;
+        return (z.Real, file.FrequenciesHz[0]);
+    }
 
     /// <summary>
     /// What the sweep says where nothing states an impedance at all, or null. The element is
@@ -174,7 +225,8 @@ public sealed record RailSeriesModel(RailPart Row, RailSourceModel Impedance)
 
         string dcr = DcResistanceOhms is { } r
             ? $"DCR {r * 1e3:0.###} mΩ" +
-              (DcResistanceFrom == RailSeriesValueSource.Library ? " (the part library's ESR)" : "")
+              (DcResistanceFrom == RailSeriesValueSource.Library ? " (the part library's ESR)" : "") +
+              (DcResistanceFileText is { } fromFile ? $" ({fromFile})" : "")
             : "DCR 0 mΩ (none entered)";
 
         return $"{Refdes}: IN SERIES with the rail; {z}; {dcr}.";
@@ -221,7 +273,7 @@ public sealed record RailSeriesModel(RailPart Row, RailSourceModel Impedance)
     /// <param name="library">The part library, or null where there is none.</param>
     /// <param name="read">Reads one Touchstone file SERIES-thru, or returns null where it cannot —
     /// <see cref="RailPartResolver.ReadMeasured(string, PassiveExtraction, out string?)"/>. Null
-    /// reads nothing, for a caller (the DC run) that only needs the DCR.</param>
+    /// reads nothing, and then a DCR the file would have stated is not found.</param>
     /// <param name="rowReference">Resolves the row's own <see cref="RailPart.TouchstoneRef"/>, which
     /// is relative to the <c>.crail</c>. Null takes it as written.</param>
     public static RailSeriesModel? Resolve(
@@ -235,7 +287,7 @@ public sealed record RailSeriesModel(RailPart Row, RailSourceModel Impedance)
         var libraryRow = part.PartNumber is { Length: > 0 } pn && library?.Part(pn) is { IsCapacitor: false } row
             ? row : null;
 
-        // ── the DC resistance: the row's, then the library row's ESR ──────────────────────────
+        // ── the DC resistance: the row's, then the library row's ESR, then the file's (below) ──
         var (dcr, dcrFrom) =
             part.DcResistanceOhms is { } own ? (own, RailSeriesValueSource.Row)
             : libraryRow?.EsrOhms is { } esr ? (esr, RailSeriesValueSource.Library)
@@ -271,10 +323,17 @@ public sealed record RailSeriesModel(RailPart Row, RailSourceModel Impedance)
             zFrom = RailSeriesValueSource.Unstated;
         }
 
+        // ── and only where nothing STATES one, what the part's own file reads below 1 kHz ─────
+        double? readAt = null;
+        if (dcrFrom == RailSeriesValueSource.Unstated &&
+            impedance.Measured is { } file && DcResistanceOf(file) is { } fromFile)
+            (dcr, readAt, dcrFrom) = (fromFile.Ohms, fromFile.AtHz, RailSeriesValueSource.File);
+
         return new RailSeriesModel(part, impedance)
         {
             DcResistanceOhms = dcr,
             DcResistanceFrom = dcrFrom,
+            DcResistanceReadAtHz = readAt,
             ImpedanceFrom    = zFrom,
             TouchstonePath   = path,
             LibraryRow       = libraryRow,

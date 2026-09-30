@@ -339,9 +339,13 @@ public sealed class RailPartRowViewModel
     public string EsrTooltip => _series is { } series
         ? series.AssumedDcResistanceLine
           ?? "This element's DC resistance — the resistance the load current runs through, "
-              + (series.DcResistanceFrom == RailSeriesValueSource.Library
-                  ? "from the part library's ESR on its row classed Other."
-                  : "as this rail's own row states it.")
+              + (series.DcResistanceFrom switch
+                 {
+                     RailSeriesValueSource.Library => "from the part library's ESR on its row classed Other.",
+                     RailSeriesValueSource.File    => $"{series.DcResistanceFileText}, since neither "
+                                                      + "this row nor the part library states one.",
+                     _                             => "as this rail's own row states it.",
+                 })
         : Model switch
     {
         null => "No ESR: this part did not resolve, so nothing here is defaulted.",

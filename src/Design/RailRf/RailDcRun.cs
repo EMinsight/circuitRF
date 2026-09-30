@@ -86,6 +86,15 @@ public sealed class RailDcRequest
     /// </summary>
     public PartLibrary? PartLibrary { get; init; }
 
+    /// <summary>
+    /// The <c>.crail</c> this request was read from, or null. A series part's own Touchstone
+    /// reference is relative to it, and the DC run opens that file for one thing: a DC resistance
+    /// the file states below 1 kHz where neither the row nor the library states one
+    /// (<see cref="RailSeriesModel.DcResistanceOf"/>). Null opens only a file named by an absolute
+    /// path, such as a part library's.
+    /// </summary>
+    public string? DocumentPath { get; init; }
+
     /// <summary>Which of §2.9's two readings to take. <see cref="PdnModelKind.Fast"/> is the
     /// default, and every result says which produced it.</summary>
     public PdnModelKind Model { get; init; } = PdnModelKind.Fast;
@@ -759,15 +768,14 @@ public static class RailDcRun
     /// open, and stamping a defaulted milliohm figure would put a number in a ranked breakdown that
     /// nobody chose.</para>
     /// </remarks>
-    private static IReadOnlyList<PdnSeriesElement> SeriesElementsOf(
-        RailSpec rail, PartLibrary? library, IReadOnlyList<PlacedPin> pads)
+    private static IReadOnlyList<PdnSeriesElement> SeriesElementsOf(RailSpec rail, RailDcRequest request)
     {
         var found = new List<PdnSeriesElement>();
         foreach (var element in rail.SeriesElements)
         {
-            if (RailSeriesPartition.TerminalsOf(element, pads) is not { } ends) continue;
+            if (RailSeriesPartition.TerminalsOf(element, request.Pads) is not { } ends) continue;
             var (a, b) = ends;
-            var model = RailSeriesModel.Resolve(element, library)!;
+            var model = SeriesModelOf(element, request);
 
             found.Add(new PdnSeriesElement(
                 element.Refdes, a, b, model.DcResistanceOhms ?? 0.0,
@@ -775,10 +783,31 @@ public static class RailDcRun
                 {
                     RailSeriesValueSource.Row     => "the DC resistance stated on this rail's part row",
                     RailSeriesValueSource.Library => "the ESR on this part's part-library row, classed Other",
+                    RailSeriesValueSource.File    => $"the DC resistance {model.DcResistanceFileText}",
                     _ => "none entered on the part row or in the part library, so taken as 0 Ω",
                 }));
         }
         return found;
+    }
+
+    /// <summary>
+    /// One series element, resolved through <see cref="RailSeriesModel.Resolve"/> with the reader the
+    /// window's parts table uses — series-thru, fixture inferred off the data — so the DCR in the
+    /// breakdown and the one the table prints come from the same file the same way.
+    /// </summary>
+    private static RailSeriesModel SeriesModelOf(RailPart element, RailDcRequest request)
+    {
+        var reader = new RailPartResolver(request.PartLibrary ?? new PartLibrary()) { MeasureFileHealth = false };
+        string? folder = request.DocumentPath is { Length: > 0 } doc ? Path.GetDirectoryName(Path.GetFullPath(doc)) : null;
+
+        return RailSeriesModel.Resolve(
+            element, request.PartLibrary,
+            path => Path.IsPathRooted(path)
+                ? reader.ReadMeasured(path, RfCore.Data.PassiveExtraction.SeriesThrough, out _, inferFixture: true)
+                : null,
+            reference => folder is not null && !Path.IsPathRooted(reference)
+                ? Path.GetFullPath(Path.Combine(folder, reference))
+                : reference)!;
     }
 
     // ── the extraction request, which differs per rail in exactly one field ────────────────────
@@ -818,7 +847,7 @@ public static class RailDcRun
         // element (brief 25). Appended rather than replacing: they answer different questions —
         // what bridges the gaps imported copper leaves at every pad, and what the designer put in
         // the rail on purpose.
-        SeriesElements  = [.. request.SeriesElements, .. SeriesElementsOf(rail, request.PartLibrary, request.Pads)],
+        SeriesElements  = [.. request.SeriesElements, .. SeriesElementsOf(rail, request)],
         ShuntParts      = request.ShuntParts,
         Settings        = request.Document.Settings,
         Mesh            = mesh ?? request.Mesh,
@@ -914,13 +943,14 @@ public static class RailDcRun
 
         foreach (var seriesRow in rail.SeriesElements)
         {
-            var seriesModel = RailSeriesModel.Resolve(seriesRow, request.PartLibrary)!;
+            var seriesModel = SeriesModelOf(seriesRow, request);
             if (seriesModel.AssumedDcResistanceLine is { } assumed) notes.Add(assumed);
             else notes.Add(
                 $"Series element {seriesRow.Refdes} is on the path at " +
                 $"{(seriesModel.DcResistanceOhms ?? 0) * 1e3:0.###} mΩ" +
                 (seriesModel.DcResistanceFrom == RailSeriesValueSource.Library
                     ? " (its part-library row's ESR)" : "") +
+                (seriesModel.DcResistanceFileText is { } fromFile ? $" ({fromFile})" : "") +
                 (rail.SeriesElements.Count == 1
                     ? ", and it carries the whole load current"
                     : ", and it carries the current of every load beyond it") +

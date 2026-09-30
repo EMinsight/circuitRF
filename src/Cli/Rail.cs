@@ -325,6 +325,8 @@ internal static class Rail
             // Brief 35: a series element's DCR falls back to its Other library row's ESR, as the
             // window's does. An unreadable library is reported by the provenance banner below.
             PartLibrary    = RailArtwork.ResolvePartLibrary(doc, input.DocumentPath, out _, out _),
+            // A series part's file is relative to the `.crail`; the run reads its DCR below 1 kHz.
+            DocumentPath   = input.DocumentPath,
         });
 
         foreach (string d in run.Diagnostics)
@@ -341,8 +343,13 @@ internal static class Rail
         var refusedWanted = run.RailRefusals.Where(r => wanted.Contains(r.Rail)).ToList();
         if (refusedWanted.Count > 0)
         {
-            foreach (var (_, sentence) in refusedWanted) Console.Error.WriteLine("error: " + sentence);
-            return JsonRun.Fail(CliDiagnostics.RailRefused(refusedWanted[0].Refusal));
+            // Printed ONCE each: JsonRun.Fail prints as well, and a refusal used to appear twice.
+            foreach (var (_, sentence) in refusedWanted)
+            {
+                Console.Error.WriteLine("error: " + sentence);
+                JsonRun.Note(CliDiagnostics.RailRefused(sentence));
+            }
+            return 1;
         }
 
         if (run.Refusal is { } why)
@@ -351,7 +358,8 @@ internal static class Rail
             // rule, and for its reason: collapsing them into "the rail was not solved" throws away
             // the only part a caller can act on.
             Console.Error.WriteLine("error: " + why);
-            return JsonRun.Fail(CliDiagnostics.RailRefused(why));
+            JsonRun.Note(CliDiagnostics.RailRefused(why));
+            return 1;
         }
 
         RunHost.Cancellation.ThrowIfCancellationRequested();
