@@ -142,9 +142,7 @@ public sealed partial class SolverDiscovery
             why = first.Length == 0 ? "it started but identified itself with nothing" : $"it identified itself as '{first}', which is not {Name}";
             return false;
         }
-        string? release = ValidatedVersions
-            .FirstOrDefault(v => v.Identity == parsed.Version && (v.Companion is null || v.Companion == parsed.Companion))
-            ?.Release;
+        string? release = ValidatedVersions.FirstOrDefault(v => v.Matches(parsed.Version, parsed.Companion))?.Release;
         installation = new SolverInstallation(Tool, linuxPath, parsed.Version, parsed.Companion, parsed.Banner,
                                               howFound, howFoundText, release, session.Distribution);
         return true;

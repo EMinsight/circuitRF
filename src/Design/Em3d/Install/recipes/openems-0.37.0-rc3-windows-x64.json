@@ -1,6 +1,6 @@
 {
   "$schema": "./recipe.schema.json",
-  "comment": "R-em3d24-4b. Upstream's published 64-bit Windows archive for the validated release candidate. Its digest is GitHub's, published with the release asset. Whether the Windows build prints the same openEMS and CSXCAD hashes as F0's macOS build is the owner's Windows run to show (brief-em3d-26); the check after the install refuses it if not.",
+  "comment": "R-em3d24-4b. Upstream's published 64-bit Windows archive for the validated release candidate. Its digest is GitHub's, published with the release asset. It does not print F0's hashes: it prints the tags (openEMS v0.37.0-rc3, CSXCAD v0.7.0-rc3), which pin exactly F0's two commits, so SolverDiscovery's validated entry accepts both spellings (first Windows install, 2026-09-30).",
   "id": "openems-0.37.0-rc3-windows-x64",
   "tool": "openems",
   "version": "0.37.0-rc3",

@@ -15836,3 +15836,22 @@ both are present. Planar EM and the power-rail solve still simply omit the hole.
 
 Gates: `HierarchyGateTests.Flatten_APlatedViasAirCoreNeedsNoAirInTheTechnology_AndARefusalReachesTheDialog`,
 `Em3dGeneratorTests.ANonPlatedHole_IsAirThroughItsSpan_AndAPlatedBarrelIsCopper`.
+
+## openEMS from the Windows archive was refused as unvalidated (2026-09-30)
+
+- **Symptom:** the first Windows `solver install openems` downloaded and unpacked upstream's
+  `openEMS_x64_v0.37.0-rc3_msvc.zip`, then failed at "Checking the installed program": the program
+  "reports version v0.37.0-rc3, CSXCAD v0.7.0-rc3, which circuitRF has not validated" — while naming
+  0.37.0-rc3 as the validated version in the same sentence.
+- **Cause:** openEMS stamps its banner with `git describe`. F0 built from a checkout with no tags
+  reachable, so its binary printed the short hashes (`67d3784`, CSXCAD `dcdb62b`), and those hashes were
+  the only identity `SolverValidatedVersion` knew. Upstream's release build has its tags and prints them.
+  Checked against GitHub: openEMS tag `v0.37.0-rc3` is commit `67d3784…`, CSXCAD tag `v0.7.0-rc3` is
+  `dcdb62b…`, and openEMS-Project's `v0.37.0-rc3` pins both as its submodules — the same source.
+- **Fix:** `SolverValidatedVersion` carries an optional `Tagged` (identity, companion) pair and a
+  `Matches` both discovery paths (native and Linux subsystem) now share. The pair must match as a pair:
+  a tagged openEMS beside a different CSXCAD is still refused. Gate:
+  `SolverDiscoveryTests.Gate4_TheReleaseArchiveTagsIdentifyTheSameValidatedRelease`.
+- **Also watch:** the macOS and Linux recipes clone the `v0.37.0-rc3` TAG, so their builds may print the
+  tag too — both spellings are now accepted, so either way they pass. The Windows recipe's `measured`
+  minutes/disk are still unmeasured, and no 3D run has yet been made with the Windows binary.

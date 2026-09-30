@@ -133,6 +133,18 @@ public sealed class SolverDiscoveryTests : IDisposable
         Assert.Equal(release, d.Find(out _)!.Release);
     }
 
+    /// <summary>Upstream's Windows archive prints its tags, not F0's hashes — the version lines as a
+    /// Windows install reported them. Those tags pin exactly F0's two commits, so it is the same release;
+    /// a tagged openEMS beside some other CSXCAD is still not.</summary>
+    [Theory]
+    [InlineData("v0.7.0-rc3", "0.37.0-rc3")]
+    [InlineData("v0.7.0-rc2", null)]
+    public void Gate4_TheReleaseArchiveTagsIdentifyTheSameValidatedRelease(string csxcad, string? release)
+    {
+        string fake = FakePrinting("tagged", $"openEMS 64bit -- version v0.37.0-rc3\nCSXCAD -- Version: {csxcad}");
+        Assert.Equal(release, Discovery(SolverTool.OpenEms, preferred: fake, env: null).Find(out _)!.Release);
+    }
+
     [Theory]
     [InlineData(SolverTool.Palace,  "git version 2.50.1 (Apple Git-155)")]
     [InlineData(SolverTool.Gmsh,    "Usage: gmsh [options] file")]

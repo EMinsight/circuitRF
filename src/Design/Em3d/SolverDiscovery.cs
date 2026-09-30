@@ -43,8 +43,22 @@ public enum SolverCapability
 /// git hash, because neither prints a release number (F0 Q9, Q11).</param>
 /// <param name="Companion">A second printed value that must match too, or null: Palace's configuration
 /// schema version, openEMS's CSXCAD hash (the library that parses its XML).</param>
-public sealed record SolverValidatedVersion(string Release, string Identity, string? Companion)
+/// <param name="Tagged">The same pair as a build made from a checkout WITH its tags prints it, or null.
+/// openEMS stamps its version with <c>git describe</c>, so one commit prints as a hash from a tagless
+/// clone (F0's) and as the tag from upstream's release build (the Windows archive) — the same source,
+/// both commits pinned by that tag, so both spellings are the one validated release.</param>
+public sealed record SolverValidatedVersion(string Release, string Identity, string? Companion,
+                                            (string Identity, string? Companion)? Tagged = null)
 {
+    /// <summary>Whether a program that printed <paramref name="version"/> and <paramref name="companion"/>
+    /// is this release.</summary>
+    public bool Matches(string version, string? companion)
+        => Same(Identity, Companion, version, companion)
+        || Tagged is { } t && Same(t.Identity, t.Companion, version, companion);
+
+    private static bool Same(string identity, string? expected, string version, string? companion)
+        => identity == version && (expected is null || expected == companion);
+
     public override string ToString()
         => Identity == Release ? Release : $"{Release} ({Identity})";
 }
@@ -210,7 +224,9 @@ public sealed partial class SolverDiscovery
             versionArguments: ["--help"],
             // docs/design/em-3d-f0-findings.md §6 — 0.37.0-rc3 (git 67d3784), CSXCAD dcdb62b. A release
             // candidate: replace this entry when 0.37.0 final ships and testdata/em3d/f0 has been re-run.
-            validated: [new SolverValidatedVersion("0.37.0-rc3", "67d3784", "dcdb62b")],
+            // Upstream's tags openEMS v0.37.0-rc3 and CSXCAD v0.7.0-rc3 are exactly those two commits,
+            // which is what upstream's Windows archive prints instead of the hashes.
+            validated: [new SolverValidatedVersion("0.37.0-rc3", "67d3784", "dcdb62b", ("v0.37.0-rc3", "v0.7.0-rc3"))],
             extraDirectories: [Path.Combine(Home(), "opt", "openEMS", "bin")], spackPackage: "openems"),
     };
 
@@ -484,9 +500,7 @@ public sealed partial class SolverDiscovery
             return false;
         }
 
-        string? release = ValidatedVersions
-            .FirstOrDefault(v => v.Identity == parsed.Version && (v.Companion is null || v.Companion == parsed.Companion))
-            ?.Release;
+        string? release = ValidatedVersions.FirstOrDefault(v => v.Matches(parsed.Version, parsed.Companion))?.Release;
         installation = new SolverInstallation(Tool, absolute, parsed.Version, parsed.Companion, parsed.Banner,
                                               howFound, howFoundText, release);
         return true;
