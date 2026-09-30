@@ -38450,3 +38450,16 @@ at the cursor, was flipped up onto the pointer: the loop "Two tooltips flashed r
 the row (Plated, and the Wall label and box) now carries `ToolTip.Placement="Top"` WITH `ToolTip.VerticalOffset="-4"`.
 `TechEditorStackupTabLayoutTests.TheViaFillRowsTips_ArePlacedAbove_AndEveryTopPlacementCarriesItsOffset` holds the row
 and the pairing over the whole view, as `RailWindowChromeTests` holds it over the railRF window.
+
+### 3D editor: Undo after Flatten crashed with the flattened objects selected (2026-09-30)
+
+Undoing a Flatten while its objects were selected threw `ArgumentOutOfRangeException` from
+`C3dEditorViewModel.SelectedWires`, reached through the macOS menu's `CanExecute` re-query that the undo stack's
+`IsModified` change raises. `Targets()` caches document INDICES keyed on the selection array and `AdoptedGeneration`;
+an undo mutates `Document` in place and neither key moves until the restored scene is adopted, so the cache handed
+back indices into the flattened object list, now shorter. Every document change passes through `DocumentChanged()`,
+which now drops the cache — `DocumentWrites` was not a usable key, since a refused edit's rollback, a gesture
+cancel and push/pop change the document without counting. A fresh computation is safe before adoption because each
+index is looked up by NAME in the current document. Gate:
+`HierarchyGateTests.UndoFlatten_WithTheFlattenedObjectsSelected_AsksTheMenuWithoutIndexingPastTheObjects`
+(fails with the reported exception without the fix).

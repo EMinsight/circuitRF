@@ -277,6 +277,30 @@ public sealed class HierarchyGateTests : IDisposable
         Assert.True(Directory.Exists(Path.Combine(ws, "Grp")));
     }
 
+    /// <summary>Undoing a Flatten with its objects selected: the menu asks what the selection is before the restored scene is
+    /// adopted, and the selection's cached indices named objects the undo had just removed — an out-of-range crash.</summary>
+    [Fact]
+    public void UndoFlatten_WithTheFlattenedObjectsSelected_AsksTheMenuWithoutIndexingPastTheObjects()
+    {
+        string ws = Workspace();
+        LayoutCell(ws, "Die");
+        var vm = Open(C3dCell(ws, "Pkg", new C3dDocument
+        {
+            Instances = [new C3dInstance { Name = "U1", CellRef = "../../Die", View = C3dInstanceView.Layout }],
+        }));
+        var (result, _) = vm.PlanFlatten(0);
+        vm.ApplyFlatten(0, result!);
+        Settle(vm);
+        vm.Viewer.SelectMode = Scene3DSelectMode.Object;
+        vm.Viewer.SetSelection(vm.Viewer.Scene.Objects.Select(o => Scene3DItem.OfObject(o.Id)));
+        Assert.NotEmpty(vm.Targets());
+
+        vm.UndoRedo.Undo();                                      // no Settle: the flattened scene is still the adopted one
+        Assert.Empty(vm.Document.Objects);
+        Assert.False(vm.CanRunModify("ReseatWires"));
+        Assert.All(vm.Targets(), t => Assert.True(t.Instance ? t.Index < vm.Document.Instances.Count : t.Index < vm.Document.Objects.Count));
+    }
+
     /// <summary>A plated via's core is the built-in Air, which the shipped technology does not define: flatten keeps it as an
     /// object of Air and the problem is unchanged. A refusal is handed to the shell's dialog, not only the status line.</summary>
     [Fact]

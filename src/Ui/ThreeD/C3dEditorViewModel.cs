@@ -652,6 +652,9 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     /// bring the tree and the panel up to date.</summary>
     private void DocumentChanged()
     {
+        // Targets() caches document INDICES keyed on the selection and the adopted scene, and neither changes until the
+        // new scene is adopted: an undo that shrinks the object list (a Flatten's) left them pointing past its end.
+        _targetsCache = null;
         // brief-em3d-66 — the panel previews the document as it was when it opened: any other change closes it; an entered
         // boolean follows the document (and is left when it is gone).
         CancelBoolean();
