@@ -3,7 +3,7 @@
 
     python3 "examples/LVS/Attenuator/layout/Attenuator.gen.py" examples/LVS
 
-IT WRITES THE ARTWORK AND NOTHING ELSE, on `Power Rail/Sensor board/layout/Board.gen.py`'s
+IT WRITES THE ARTWORK AND NOTHING ELSE, on `Power Rail/Sensor board/layout/Sensor board.gen.py`'s
 precedent (brief-lvs-5-proving-designs.md R-lvs5-1e).  Hand-drawn artwork in a fixture is artwork
 nobody can regenerate after a format change, and a fixture nobody can regenerate is one that
 quietly stops meaning what it meant.  The schematic, the `.ccell` terminal maps and the part cells

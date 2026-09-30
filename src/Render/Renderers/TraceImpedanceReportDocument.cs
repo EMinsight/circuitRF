@@ -10,7 +10,9 @@
 //     in grey, every trace found drawn over it coloured by its Z0 station by station, green inside
 //     target ± tolerance, blue below, red above, with each trace's id and a numbered marker at every
 //     finding — FILLED for a fail, HOLLOW for a warning, so the kind colours (orange = Z0, purple =
-//     return path) keep their meaning across both tiers. The colour scale, the pass band and the
+//     return path) keep their meaning across both tiers. Ids and markers sit BESIDE the traces with a
+//     leader back (MapLabelPlacer), never on them, and the map frames the traces reviewed rather than
+//     the whole board (round-10 report: the labels hid the copper). The colour scale, the pass band and the
 //     warning band are on the page. A trace outside the review's scope (brief-impedance-2) is plain
 //     copper — no colour, no label, no marker — because it is not in the report at all; the summary
 //     counts it.
@@ -407,6 +409,11 @@ public static class TraceImpedanceReportDocument
                           $"at {TraceImpedanceReport.Hz(f)} (λ from each cut's own effective permittivity) is electrically " +
                           "short, and warns rather than fails."
                         : "") +
+                    (report.ViaTransitionMicrons > 0
+                        ? $" Trace within {report.Len(report.ViaTransitionMicrons * report.DbuPerMicron)} of the land of a via " +
+                          "on it is not checked, because a plane is normally cleared round a via; every such stretch is " +
+                          "named in its trace's notes, for an EM run to verify."
+                        : "") +
                     " The solve is lossless and frequency-independent: a review of the geometry, not a replacement for an EM run.";
                 _y = Paragraph(method, x0, _y + 1, leftW, _small, Muted, 1.35f, Bottom);
             }
@@ -526,7 +533,7 @@ public static class TraceImpedanceReportDocument
         {
             using (var frame = Stroke(Rule, 0.6f)) C.DrawRect(box, frame);
 
-            var ext = report.Extent;
+            var ext = MapFrame(layer);
             double extW = ext.MaxX - (double)ext.MinX, extH = ext.MaxY - (double)ext.MinY;
             if (ext.IsEmpty || extW <= 0 || extH <= 0) return;
             float pad = 8;
@@ -583,7 +590,21 @@ public static class TraceImpedanceReportDocument
                     C.DrawLine(a, b, paint);
                 }
 
-            // Finding markers: the stretch outlined, the number in a disc.
+            // Finding markers: the stretch outlined, the number in a disc BESIDE the trace with a leader to
+            // the finding — never on it, where the disc hid the copper it was about (round-10 report).
+            // Every station stroke is an obstacle; so is the scale bar.
+            var placer = new MapLabelPlacer(new SKRect(box.Left + 2, box.Top + 2, box.Right - 2, box.Bottom - 2));
+            foreach (var t in layer.Traces)
+                foreach (var st in t.Stations)
+                {
+                    double dx = st.Uy, dy = -st.Ux;
+                    placer.AddSegment(P(st.X - 0.5 * st.Length * dx, st.Y - 0.5 * st.Length * dy),
+                                      P(st.X + 0.5 * st.Length * dx, st.Y + 0.5 * st.Length * dy),
+                                      (float)Math.Max(st.Width * s, 1.4) / 2 + 0.6f);
+                }
+            var (barW, nice) = ScaleBar(extW, s);
+            placer.AddRect(new SKRect(box.Left + 6, box.Bottom - 18, box.Left + 16 + barW + _small.MeasureText(report.Len(nice)), box.Bottom - 4));
+            var marks = new List<(MapLabelPlacer.Placement At, int N, TraceIssue Issue, SKColor Color)>();
             foreach (var (n, trace, issue) in Findings(layer))
             {
                 // An out-of-band stretch is already in its colour, so only the number marks it; a
@@ -609,28 +630,51 @@ public static class TraceImpedanceReportDocument
                     }
                 }
                 var m = P(issue.X, issue.Y);
-                if (issue.Accepted is not null) Check(new SKPoint(m.X + 5, m.Y - 5), 4.3f);
-                else Marker(new SKPoint(m.X + 5, m.Y - 5), 4.3f, n, color, issue.Fails, n >= 100 ? 3.4f : 4.6f);
+                var along = issue.X0 == issue.X1 && issue.Y0 == issue.Y1
+                    ? NearestAlong(trace, issue.X, issue.Y)
+                    : new SKPoint(P(issue.X1, issue.Y1).X - P(issue.X0, issue.Y0).X, P(issue.X1, issue.Y1).Y - P(issue.X0, issue.Y0).Y);
+                marks.Add((placer.Place([(m, along)], 8.6f, 8.6f), n, issue, color));
             }
 
-            // Trace ids, at each trace's longest piece, with a white halo.
+            // Trace ids beside their longest piece — or the next longest where that one is crowded.
             using var idFont = Font(SkiaFonts.PlexSemiBold, 5.5f);
+            var ids = new List<(MapLabelPlacer.Placement At, string Id)>();
             foreach (var t in layer.Traces)
             {
-                var p = t.Pieces.OrderByDescending(q => Math.Pow(q.X1 - q.X0, 2) + Math.Pow(q.Y1 - q.Y0, 2)).First();
-                var at = P(0.5 * (p.X0 + p.X1), 0.5 * (p.Y0 + p.Y1));
-                using var halo = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = 2, Color = SKColors.White };
-                using var inkId = Fill(Ink);
-                C.DrawText(t.Id, at.X + 3, at.Y - 2, SKTextAlign.Left, idFont, halo);
-                C.DrawText(t.Id, at.X + 3, at.Y - 2, SKTextAlign.Left, idFont, inkId);
+                var anchors = t.Pieces
+                    .OrderByDescending(q => Math.Pow(q.X1 - q.X0, 2) + Math.Pow(q.Y1 - q.Y0, 2)).Take(4)
+                    .Select(q => (P(0.5 * (q.X0 + q.X1), 0.5 * (q.Y0 + q.Y1)),
+                                  new SKPoint(P(q.X1, q.Y1).X - P(q.X0, q.Y0).X, P(q.X1, q.Y1).Y - P(q.X0, q.Y0).Y)))
+                    .ToList();
+                if (anchors.Count == 0) continue;
+                ids.Add((placer.Place(anchors, idFont.MeasureText(t.Id) + 1.5f, 6.2f), t.Id));
             }
+
+            // Leaders first, so every disc and id sits over them.
+            using (var leader = Stroke(Muted, 0.35f))
+                foreach (var at in marks.Select(k => k.At).Concat(ids.Select(k => k.At)))
+                    if (at.NeedsLeader)
+                    {
+                        C.DrawLine(at.Anchor, MapLabelPlacer.Nearest(at.Box, at.Anchor), leader);
+                        C.DrawCircle(at.Anchor, 0.55f, leader);
+                    }
+            foreach (var (at, n, issue, color) in marks)
+            {
+                var c = new SKPoint(at.Box.MidX, at.Box.MidY);
+                if (issue.Accepted is not null) Check(c, 4.3f);
+                else Marker(c, 4.3f, n, color, issue.Fails, n >= 100 ? 3.4f : 4.6f);
+            }
+            using (var halo = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = 2, Color = SKColors.White })
+            using (var inkId = Fill(Ink))
+                foreach (var (at, id) in ids)
+                {
+                    float x = at.Box.Left + 0.75f, y = at.Box.Bottom - 1.3f;
+                    C.DrawText(id, x, y, SKTextAlign.Left, idFont, halo);
+                    C.DrawText(id, x, y, SKTextAlign.Left, idFont, inkId);
+                }
             C.Restore();
 
             // Scale bar.
-            double target = extW * 0.2;
-            double nice = Math.Pow(10, Math.Floor(Math.Log10(target)));
-            foreach (double m in (ReadOnlySpan<double>)[5, 2, 1]) if (m * nice <= target) { nice *= m; break; }
-            float barW = (float)(nice * s);
             float bx = box.Left + 10, by = box.Bottom - 10;
             using (var bar = Stroke(Ink, 1.2f))
             {
@@ -640,6 +684,53 @@ public static class TraceImpedanceReportDocument
             }
             using var inkS = Fill(Ink);
             C.DrawText(report.Len(nice), bx + barW + 5, by + 2.5f, SKTextAlign.Left, _small, inkS);
+        }
+
+        /// <summary>
+        /// What a layer's map frames: the traces it reviewed, with room round them — not the whole
+        /// board. A review scoped to one corner drew that corner a few points across on a page-wide board,
+        /// every label on top of every other (round-10 report). Never smaller than 15 % of the board's
+        /// larger side, so a single trace keeps the copper round it; the whole board when nothing was
+        /// reviewed.
+        /// </summary>
+        internal Bbox MapFrame(TraceLayerResult layer)
+        {
+            var board = report.Extent;
+            if (board.IsEmpty) return board;
+            var t = Bbox.Empty;
+            foreach (var tr in layer.Traces)
+                foreach (var st in tr.Stations)
+                {
+                    long h = (long)Math.Ceiling(0.5 * Math.Max(st.Width, st.Length));
+                    t = t.Union(new Bbox(st.X - h, st.Y - h, st.X + h, st.Y + h));
+                }
+            if (t.IsEmpty) return board;
+
+            double boardSide = Math.Max(board.MaxX - (double)board.MinX, board.MaxY - (double)board.MinY);
+            double w = t.MaxX - (double)t.MinX, hgt = t.MaxY - (double)t.MinY;
+            double margin = 0.12 * Math.Max(w, hgt);
+            double minSide = 0.15 * boardSide;
+            double padX = Math.Max(margin, 0.5 * (minSide - w)), padY = Math.Max(margin, 0.5 * (minSide - hgt));
+            var framed = new Bbox((long)(t.MinX - padX), (long)(t.MinY - padY), (long)(t.MaxX + padX), (long)(t.MaxY + padY));
+            // Never beyond the artwork: there is nothing out there to show.
+            return new Bbox(Math.Max(framed.MinX, board.MinX), Math.Max(framed.MinY, board.MinY),
+                            Math.Min(framed.MaxX, board.MaxX), Math.Min(framed.MaxY, board.MaxY));
+        }
+
+        /// <summary>The scale bar's length on the page and the round length it stands for.</summary>
+        private static (float Width, double Length) ScaleBar(double extW, double s)
+        {
+            double target = extW * 0.2;
+            double nice = Math.Pow(10, Math.Floor(Math.Log10(target)));
+            foreach (double m in (ReadOnlySpan<double>)[5, 2, 1]) if (m * nice <= target) { nice *= m; break; }
+            return ((float)(nice * s), nice);
+        }
+
+        /// <summary>The trace's direction at the station nearest a point, in page space (Y down).</summary>
+        private static SKPoint NearestAlong(TraceRun trace, long x, long y)
+        {
+            var st = trace.Stations.MinBy(q => Math.Pow(q.X - x, 2) + Math.Pow(q.Y - y, 2));
+            return st is null ? new SKPoint(1, 0) : new SKPoint((float)st.Uy, (float)st.Ux);
         }
 
         /// <summary>A numbered finding marker: FILLED in the kind colour with a white number for a fail,

@@ -252,6 +252,7 @@ public class CircuitRfDockFactory : Factory
         if (preserveDocumentDock && _documentDock is not null)
         {
             documentDock = _documentDock;
+            GatherDockedSidePanesInto(_currentRoot, documentDock);
         }
         else
         {
@@ -543,6 +544,43 @@ public class CircuitRfDockFactory : Factory
 
         _currentRoot = root;
         return root;
+    }
+
+    /// <summary>
+    /// Moves every document in a DOCKED pane other than the primary strip into the primary strip, so a
+    /// rebuild that re-hosts only the primary cannot leave them behind.
+    ///
+    /// <para>Field report, 2026-09-29: the technology opened beside a layout could vanish for good.
+    /// Technology ▾ ▸ Edit… puts the <c>.ctech</c> in a side pane, and Reset Layout (like the launch
+    /// Window Layout preset and Hide/Show Dockers) builds a new tree around the primary strip alone —
+    /// the side pane was simply not in it. The document stayed registered as open, so every later
+    /// Edit… "activated" a tab that was on no screen, and the reset meant to recover from that was the
+    /// cause of it. Gathered into the primary strip here, a rebuild that restores a split
+    /// (<c>RestoreSplitDocumentPanes</c>) moves them back out exactly as it moves a reopened document,
+    /// and one that does not leaves them as ordinary, visible tabs.</para>
+    ///
+    /// <para>Only the docked tree is walked. A torn-off DOCUMENT window is carried over whole by
+    /// <see cref="CarryOverDocumentWindows"/> and must stay where the user put it.</para>
+    /// </summary>
+    internal static void GatherDockedSidePanesInto(IRootDock? oldRoot, IDocumentDock primary)
+    {
+        if (oldRoot is null) return;
+        primary.VisibleDockables ??= new List<IDockable>();
+
+        foreach (var pane in DockLayoutCapture.EnumerateDocumentDocks(oldRoot).ToList())
+        {
+            if (ReferenceEquals(pane, primary) || pane.VisibleDockables is not { Count: > 0 } docs) continue;
+
+            foreach (var doc in docs.ToList())
+            {
+                if (doc is null) continue;
+                docs.Remove(doc);
+                primary.VisibleDockables.Add(doc);
+                doc.Owner = primary;
+            }
+            pane.ActiveDockable = null;
+            primary.ActiveDockable ??= primary.VisibleDockables.FirstOrDefault();
+        }
     }
 
     /// <summary>

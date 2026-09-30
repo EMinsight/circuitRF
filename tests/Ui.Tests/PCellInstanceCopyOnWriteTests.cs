@@ -90,4 +90,30 @@ public sealed class PCellInstanceCopyOnWriteTests : IDisposable
         vm.UndoCommand.Execute(null);
         Assert.Equal(cellRef, vm.Model.Instances[0].CellRef);
     }
+
+    [Fact]
+    public void EditInstancePCellParameters_KeepsTheInstancesLayerChoice()
+    {
+        // Field report, 2026-09-29: widening a microstrip placed on an inner layer brought it back on the
+        // top copper — the parameters rode through the edit, the layer selection did not.
+        var vm = MakeVmAt("Doc");
+        var tech = ShippedTechnologies.Load("pcb-4layer_FR-4_62mil_1oz");
+        vm.Technology = tech;
+        var inner = new PCellLayerSelection("Inner 2", "Inner 1 (Ground Plane)");
+        var innerKey = tech.Layers.First(l => l.Name == "Inner 2").Key;
+
+        var defaults = SchematicToLayoutGenerator.ResolveDefaultParameters(SymbolKind.Mlin, 0);
+        string cellDir = GeneratedCellStore.GetOrCreate(_workspaceDir, "MLIN", defaults, tech, null, inner);
+        GeneratedCellStore.RecordSnapshot(vm.Model, cellDir, "MLIN", defaults, null, inner, _workspaceDir);
+        vm.Model.Instances.Add(new LayoutInstance { CellRef = Path.GetRelativePath(vm.InstanceBaseDir, cellDir), Mag = 1.0 });
+
+        Assert.True(vm.EditInstancePCellParameters(0, new Dictionary<string, PCellValue> { ["W"] = defaults.Real("W") * 2 }));
+
+        var res = CellLayoutResolver.Resolve(vm.Model.Instances[0].CellRef, vm.InstanceBaseDir);
+        Assert.Equal(CellLayoutState.Resolved, res.State);
+        Assert.NotEmpty(res.View!.Shapes);
+        Assert.All(res.View.Shapes, s => Assert.Equal(innerKey, s.Layer));
+        var snap = vm.Model.PCellSnapshots[Path.GetFileName(vm.Model.Instances[0].CellRef)];
+        Assert.Equal("Inner 2", snap.SignalLayerNameOverride);
+    }
 }

@@ -453,9 +453,10 @@ public sealed class LvsPanelTests : IDisposable
 
     private static string Repo(string cell) => Path.Combine(RepoRoot(), "examples", "LVS", cell);
 
-    private static string Clay(string cellDir) => Path.Combine(cellDir, "layout", "Attenuator.clay");
+    // A cell's one view of each kind is named after the cell: the correct board and its broken copy alike.
+    private static string Clay(string cellDir) => Path.Combine(cellDir, "layout", Path.GetFileName(cellDir) + ".clay");
 
-    private static string Csch(string cellDir) => Path.Combine(cellDir, "schematic", "Attenuator.csch");
+    private static string Csch(string cellDir) => Path.Combine(cellDir, "schematic", Path.GetFileName(cellDir) + ".csch");
 
     /// <summary>The whole workspace on a throwaway copy — nothing here ever writes in the repo.</summary>
     private string Copy(string cell)

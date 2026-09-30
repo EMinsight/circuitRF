@@ -62,8 +62,8 @@
       ],
       "variable": "git",
       "remedy": {
-        "ubuntu": "sudo apt-get install build-essential git cmake libhdf5-dev libtinyxml-dev libboost-all-dev libcgal-dev libvtk9-dev",
-        "debian": "sudo apt-get install build-essential git cmake libhdf5-dev libtinyxml-dev libboost-all-dev libcgal-dev libvtk9-dev",
+        "ubuntu": "sudo apt-get update && sudo apt-get install build-essential git cmake libhdf5-dev libtinyxml-dev libboost-all-dev libcgal-dev libvtk9-dev",
+        "debian": "sudo apt-get update && sudo apt-get install build-essential git cmake libhdf5-dev libtinyxml-dev libboost-all-dev libcgal-dev libvtk9-dev",
         "fedora": "sudo dnf install gcc gcc-c++ make cmake git boost-devel tinyxml-devel hdf5-devel CGAL-devel vtk-devel",
         "default": "install openEMS's build dependencies: a C++ compiler, make, git, cmake, and the development packages of HDF5, TinyXML, Boost, CGAL and VTK 9 (openEMS's install/requirements page lists them per distribution)"
       }
@@ -76,8 +76,8 @@
         "/usr/local/bin"
       ],
       "remedy": {
-        "ubuntu": "sudo apt-get install build-essential git cmake libhdf5-dev libtinyxml-dev libboost-all-dev libcgal-dev libvtk9-dev",
-        "debian": "sudo apt-get install build-essential git cmake libhdf5-dev libtinyxml-dev libboost-all-dev libcgal-dev libvtk9-dev",
+        "ubuntu": "sudo apt-get update && sudo apt-get install build-essential git cmake libhdf5-dev libtinyxml-dev libboost-all-dev libcgal-dev libvtk9-dev",
+        "debian": "sudo apt-get update && sudo apt-get install build-essential git cmake libhdf5-dev libtinyxml-dev libboost-all-dev libcgal-dev libvtk9-dev",
         "fedora": "sudo dnf install gcc gcc-c++ make cmake git boost-devel tinyxml-devel hdf5-devel CGAL-devel vtk-devel",
         "default": "install openEMS's build dependencies: a C++ compiler, make, git, cmake, and the development packages of HDF5, TinyXML, Boost, CGAL and VTK 9 (openEMS's install/requirements page lists them per distribution)"
       }
@@ -90,8 +90,8 @@
         "/usr/local/bin"
       ],
       "remedy": {
-        "ubuntu": "sudo apt-get install build-essential git cmake libhdf5-dev libtinyxml-dev libboost-all-dev libcgal-dev libvtk9-dev",
-        "debian": "sudo apt-get install build-essential git cmake libhdf5-dev libtinyxml-dev libboost-all-dev libcgal-dev libvtk9-dev",
+        "ubuntu": "sudo apt-get update && sudo apt-get install build-essential git cmake libhdf5-dev libtinyxml-dev libboost-all-dev libcgal-dev libvtk9-dev",
+        "debian": "sudo apt-get update && sudo apt-get install build-essential git cmake libhdf5-dev libtinyxml-dev libboost-all-dev libcgal-dev libvtk9-dev",
         "fedora": "sudo dnf install gcc gcc-c++ make cmake git boost-devel tinyxml-devel hdf5-devel CGAL-devel vtk-devel",
         "default": "install openEMS's build dependencies: a C++ compiler, make, git, cmake, and the development packages of HDF5, TinyXML, Boost, CGAL and VTK 9 (openEMS's install/requirements page lists them per distribution)"
       }
@@ -104,8 +104,8 @@
         "/usr/local/bin"
       ],
       "remedy": {
-        "ubuntu": "sudo apt-get install build-essential git cmake libhdf5-dev libtinyxml-dev libboost-all-dev libcgal-dev libvtk9-dev",
-        "debian": "sudo apt-get install build-essential git cmake libhdf5-dev libtinyxml-dev libboost-all-dev libcgal-dev libvtk9-dev",
+        "ubuntu": "sudo apt-get update && sudo apt-get install build-essential git cmake libhdf5-dev libtinyxml-dev libboost-all-dev libcgal-dev libvtk9-dev",
+        "debian": "sudo apt-get update && sudo apt-get install build-essential git cmake libhdf5-dev libtinyxml-dev libboost-all-dev libcgal-dev libvtk9-dev",
         "fedora": "sudo dnf install gcc gcc-c++ make cmake git boost-devel tinyxml-devel hdf5-devel CGAL-devel vtk-devel",
         "default": "install openEMS's build dependencies: a C++ compiler, make, git, cmake, and the development packages of HDF5, TinyXML, Boost, CGAL and VTK 9 (openEMS's install/requirements page lists them per distribution)"
       }
@@ -118,8 +118,8 @@
         "/usr/include"
       ],
       "remedy": {
-        "ubuntu": "sudo apt-get install build-essential git cmake libhdf5-dev libtinyxml-dev libboost-all-dev libcgal-dev libvtk9-dev",
-        "debian": "sudo apt-get install build-essential git cmake libhdf5-dev libtinyxml-dev libboost-all-dev libcgal-dev libvtk9-dev",
+        "ubuntu": "sudo apt-get update && sudo apt-get install build-essential git cmake libhdf5-dev libtinyxml-dev libboost-all-dev libcgal-dev libvtk9-dev",
+        "debian": "sudo apt-get update && sudo apt-get install build-essential git cmake libhdf5-dev libtinyxml-dev libboost-all-dev libcgal-dev libvtk9-dev",
         "fedora": "sudo dnf install gcc gcc-c++ make cmake git boost-devel tinyxml-devel hdf5-devel CGAL-devel vtk-devel",
         "default": "install openEMS's build dependencies: a C++ compiler, make, git, cmake, and the development packages of HDF5, TinyXML, Boost, CGAL and VTK 9 (openEMS's install/requirements page lists them per distribution)"
       }
@@ -131,8 +131,8 @@
         "/usr/include"
       ],
       "remedy": {
-        "ubuntu": "sudo apt-get install build-essential git cmake libhdf5-dev libtinyxml-dev libboost-all-dev libcgal-dev libvtk9-dev",
-        "debian": "sudo apt-get install build-essential git cmake libhdf5-dev libtinyxml-dev libboost-all-dev libcgal-dev libvtk9-dev",
+        "ubuntu": "sudo apt-get update && sudo apt-get install build-essential git cmake libhdf5-dev libtinyxml-dev libboost-all-dev libcgal-dev libvtk9-dev",
+        "debian": "sudo apt-get update && sudo apt-get install build-essential git cmake libhdf5-dev libtinyxml-dev libboost-all-dev libcgal-dev libvtk9-dev",
         "fedora": "sudo dnf install gcc gcc-c++ make cmake git boost-devel tinyxml-devel hdf5-devel CGAL-devel vtk-devel",
         "default": "install openEMS's build dependencies: a C++ compiler, make, git, cmake, and the development packages of HDF5, TinyXML, Boost, CGAL and VTK 9 (openEMS's install/requirements page lists them per distribution)"
       }
@@ -144,8 +144,8 @@
         "/usr/include/boost"
       ],
       "remedy": {
-        "ubuntu": "sudo apt-get install build-essential git cmake libhdf5-dev libtinyxml-dev libboost-all-dev libcgal-dev libvtk9-dev",
-        "debian": "sudo apt-get install build-essential git cmake libhdf5-dev libtinyxml-dev libboost-all-dev libcgal-dev libvtk9-dev",
+        "ubuntu": "sudo apt-get update && sudo apt-get install build-essential git cmake libhdf5-dev libtinyxml-dev libboost-all-dev libcgal-dev libvtk9-dev",
+        "debian": "sudo apt-get update && sudo apt-get install build-essential git cmake libhdf5-dev libtinyxml-dev libboost-all-dev libcgal-dev libvtk9-dev",
         "fedora": "sudo dnf install gcc gcc-c++ make cmake git boost-devel tinyxml-devel hdf5-devel CGAL-devel vtk-devel",
         "default": "install openEMS's build dependencies: a C++ compiler, make, git, cmake, and the development packages of HDF5, TinyXML, Boost, CGAL and VTK 9 (openEMS's install/requirements page lists them per distribution)"
       }
@@ -157,8 +157,8 @@
         "/usr/include/CGAL"
       ],
       "remedy": {
-        "ubuntu": "sudo apt-get install build-essential git cmake libhdf5-dev libtinyxml-dev libboost-all-dev libcgal-dev libvtk9-dev",
-        "debian": "sudo apt-get install build-essential git cmake libhdf5-dev libtinyxml-dev libboost-all-dev libcgal-dev libvtk9-dev",
+        "ubuntu": "sudo apt-get update && sudo apt-get install build-essential git cmake libhdf5-dev libtinyxml-dev libboost-all-dev libcgal-dev libvtk9-dev",
+        "debian": "sudo apt-get update && sudo apt-get install build-essential git cmake libhdf5-dev libtinyxml-dev libboost-all-dev libcgal-dev libvtk9-dev",
         "fedora": "sudo dnf install gcc gcc-c++ make cmake git boost-devel tinyxml-devel hdf5-devel CGAL-devel vtk-devel",
         "default": "install openEMS's build dependencies: a C++ compiler, make, git, cmake, and the development packages of HDF5, TinyXML, Boost, CGAL and VTK 9 (openEMS's install/requirements page lists them per distribution)"
       }
@@ -170,8 +170,8 @@
         "/usr/include"
       ],
       "remedy": {
-        "ubuntu": "sudo apt-get install build-essential git cmake libhdf5-dev libtinyxml-dev libboost-all-dev libcgal-dev libvtk9-dev",
-        "debian": "sudo apt-get install build-essential git cmake libhdf5-dev libtinyxml-dev libboost-all-dev libcgal-dev libvtk9-dev",
+        "ubuntu": "sudo apt-get update && sudo apt-get install build-essential git cmake libhdf5-dev libtinyxml-dev libboost-all-dev libcgal-dev libvtk9-dev",
+        "debian": "sudo apt-get update && sudo apt-get install build-essential git cmake libhdf5-dev libtinyxml-dev libboost-all-dev libcgal-dev libvtk9-dev",
         "fedora": "sudo dnf install gcc gcc-c++ make cmake git boost-devel tinyxml-devel hdf5-devel CGAL-devel vtk-devel",
         "default": "install openEMS's build dependencies: a C++ compiler, make, git, cmake, and the development packages of HDF5, TinyXML, Boost, CGAL and VTK 9 (openEMS's install/requirements page lists them per distribution)"
       }

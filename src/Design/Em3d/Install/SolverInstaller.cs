@@ -267,10 +267,17 @@ public sealed class SolverInstaller
         var sb = new StringBuilder();
         sb.AppendLine($"{Discovery(recipe.Tool).Name} {recipe.Version} cannot be installed yet, and nothing was downloaded:");
         foreach (string m in check.Missing) sb.AppendLine($"  • {m}.");
-        sb.AppendLine(check.Commands.Count == 1
-            ? "Run this, then install again (circuitRF does not run it for you):"
-            : "Run these, in order, then install again (circuitRF does not run them for you):");
+        // Inside a WSL distribution the commands are Linux ones: typed at a Windows prompt, `sudo` is not
+        // found, and nothing in the bare command says where else it belongs (designer feedback round 10).
+        string what  = check.Commands.Count == 1 ? "this" : "these, in order";
+        string where = Target.Distribution is { } distribution ? $" inside the Linux distribution '{distribution}'" : "";
+        string it    = check.Commands.Count == 1 ? "it" : "them";
+        sb.AppendLine($"Run {what}{where}, then install again (circuitRF does not run {it} for you):");
         foreach (string c in check.Commands) sb.AppendLine($"    {c}");
+        if (Target.Distribution is { } d)
+            sb.AppendLine($"Open '{d}' from the Start menu, or type 'wsl -d {d}' in a terminal first: at a Command Prompt or " +
+                          "PowerShell prompt the line fails with 'command not found'. The password sudo asks for is your " +
+                          "Linux one, and nothing appears as you type it.");
         return sb.ToString().TrimEnd();
     }
 

@@ -20,7 +20,7 @@ and **5.8 GB**. Thermal needs **Gmsh**, and the EM setup **Palace**; the first r
 | **Die** | layout, µm | The same artwork without the wires, for *Drawn Wires* |
 | **Output** | 3D view, µm | The die placed as `U1` on a copper–molybdenum flange; a copper lead on an alumina standoff under the finger; the mould over all of it; two ports, one probe per wire; the setups `EM`, `DcSweep`, `RfHarmonics` and `FromHB` |
 | **Drawn Wires** | 3D view, µm | The same model with the six wires drawn in the 3D view instead of read from `Pads.wBond`; the setup `DcSweep` |
-| **Amplifier** | netlist | `Amplifier.cnl`: the circuit `FromHB` takes its currents from |
+| **Amplifier** | schematic (test bench) | `Amplifier.csch`: the harmonic-balance drive sweep `FromHB` takes its currents from |
 
 Every material is one of circuitRF's generic materials, from `tech/generic-materials.cmat`. The mould's glass transition is taken
 as 150 °C, and every wire probe's *Limit* is set to it, so a run says when and where a wire first passes it.
@@ -70,7 +70,7 @@ most**. At 8 A peak the edge wires reach **270.8 °C** and the centre ones **199
 
 ## FromHB: the currents of a power amplifier
 
-`Amplifier.cnl` is a generic GaN-like FET (circuitRF's Angelov model) biased in class AB, its drain on this view's EM result, fed
+The **Amplifier** test bench is a generic GaN-like FET (circuitRF's Angelov model) biased in class AB, its drain on this view's EM result (the `SnP` block `XOUT`), fed
 from 40 V through a choke on the lead side, into a 5 Ω load. **It exists to drive currents through the wires, not to be a good
 amplifier:** nothing is matched. Its harmonic-balance sweep takes `Pin` from 10 to 28 dBm, and at every drive level the thermal
 run takes each port's DC and harmonic currents (pin p is port p). Both ports are referenced to the flange, across the die and the

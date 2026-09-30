@@ -376,7 +376,7 @@
         "Currents": [
           {
             "FromCircuit": {
-              "Schematic": "../../Amplifier/Amplifier.cnl",
+              "Schematic": "../../Amplifier/schematic/Amplifier.csch",
               "Analysis": "SW1",
               "Carry": [
                 "Pout_dBm",

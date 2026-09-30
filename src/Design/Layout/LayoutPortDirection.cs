@@ -276,7 +276,23 @@ public static class LayoutPortDirection
     /// an arrow scaled to it. Null when the conductor is an instance (nothing to measure), which is
     /// exactly when <paramref name="Pin"/> or the box is the best available answer.</para>
     /// </param>
-    public readonly record struct ConductorInfo(Bbox Box, PinFacts? Pin, LayoutShape? Shape = null);
+    /// <param name="CopperLayer">The drawing layer of the copper under the point when that copper is
+    /// inside a placed instance — where <paramref name="Shape"/> is null, so the layer would otherwise be
+    /// lost. Read through <see cref="ConductorInfo.Layer"/>.</param>
+    public readonly record struct ConductorInfo(Bbox Box, PinFacts? Pin, LayoutShape? Shape = null,
+                                                LayerKey? CopperLayer = null)
+    {
+        /// <summary>
+        /// The drawing layer of the metal this answer is about — a top-level shape's own, else the
+        /// instance copper's. Null only when neither is known (an instance answered from its box alone).
+        ///
+        /// <para><b>What a port COMMITS to (field report, 2026-09-29).</b> A port placed on a generated
+        /// line — which is an instance — used to commit to no layer at all, so the EM run fell back to the
+        /// label's own drawing layer: whatever layer was current when the Port tool was used, which right
+        /// after placing a via is the drill layer.</para>
+        /// </summary>
+        public LayerKey? Layer => Shape?.Layer ?? CopperLayer;
+    }
 
     /// <summary>
     /// Where a conductor is looked up from a point. A delegate rather than a shape list because the
@@ -1020,7 +1036,7 @@ public static class LayoutPortDirection
         var adopted = DirectionAt(after, port.X + dx, port.Y + dy);
 
         bool dirChanged = adopted != before && port.PortDirection != adopted;
-        var layer = after.Shape?.Layer;
+        var layer = after.Layer;
         bool layerChanged = layer != port.PortLayer;
 
         // ── AND THE TYPE, ON EXACTLY THE RULE ABOVE ─────────────────────────────────────────────

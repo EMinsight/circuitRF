@@ -118,6 +118,13 @@ public sealed class ThermalCircuitLinkTests(ITestOutputHelper output) : IDisposa
         var found = C3dThermal.Setup("HotHB", setup, doc, null, res).Select(d => d.Render()).ToList();
         Assert.Contains(found, m => m.Contains("takes its currents from a circuit and also states a Dc"));
         Assert.Contains(found, m => m.Contains("states a Sweep of its own"));
+
+        // Designer feedback round 10 — check passes the document's path, and a schematic that does not exist is then a
+        // finding rather than a clean check and a refused run. The editor and the run pass none: each reports it itself.
+        Assert.DoesNotContain(found, m => m.Contains("does not resolve"));
+        var checkedAtPath = C3dThermal.Setup("HotHB", setup, doc, null, res, (Path.Combine(dir, "x.c3d"), Path.Combine(dir, "results")))
+                                      .Select(d => d.Render()).ToList();
+        Assert.Contains(checkedAtPath, m => m.Contains("does not resolve") && m.Contains("'x.cnl' does not exist"));
     }
 
     // ── R-em3d79-4 — the Setups page ─────────────────────────────────────────────────────────────────

@@ -1,10 +1,10 @@
 {
   "FormatVersion": 1,
   "Name": "Sensor board",
-  "ArtworkCellRef": "layout/Board.clay",
+  "ArtworkCellRef": "layout/Sensor board.clay",
   "PartLibraryRef": "../parts/decoupling.crlib",
-  "BoardNetlistRef": "layout/Board.ipc",
-  "PlacementRef": "layout/Board.placement.csv",
+  "BoardNetlistRef": "layout/Sensor board.ipc",
+  "PlacementRef": "layout/Sensor board.placement.csv",
   "ReferenceNet": "GND",
   "Settings": {
     "CopperTemperatureCelsius": 20,

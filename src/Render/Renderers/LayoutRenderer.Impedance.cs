@@ -4,7 +4,9 @@
 // (TraceImpedanceReportDocument.Z0Color), and a disc at each finding: filled for a fail, hollow for a
 // warning, purple for a return-path kind, orange for Z0 — the map page's rule, so a reviewer reads the
 // canvas and the page the same way. Every width is in device pixels, constant at any zoom: the line is
-// a pointer to the copper, not a drawing of it, and must not hide the trace it is about.
+// a pointer to the copper, not a drawing of it, and must not hide the trace it is about. For the same
+// reason a finding's disc sits BESIDE the trace, across it from the finding, with a short leader back
+// (round-10 report: discs and labels on the traces hid the copper being reported) — the PDF map's rule.
 //
 // R-em-15's contract, as for every overlay here: never layer geometry, never counted in
 // LayoutFrameCounters, never reachable by an exporter (every export path passes Overlay = null).
@@ -20,6 +22,7 @@ public static partial class LayoutRenderer
     private const float ImpedanceHaloDevicePixels         = 8f;
     private const float ImpedanceMarkerRadiusDevicePixels = 5f;
     private const float ImpedanceSelectedMarkerRadius     = 7f;
+    private const float ImpedanceMarkerGapDevicePixels    = 2f;
 
     internal static void DrawImpedanceOverlay(SKCanvas canvas, ImpedanceOverlay overlay, PathSpace ps, double scaleUm)
     {
@@ -55,7 +58,21 @@ public static partial class LayoutRenderer
         {
             var colour = f.ReturnPath ? TraceImpedanceReportDocument.GroundMark : TraceImpedanceReportDocument.ZMark;
             float r = DevicePixelsToPathSpace(scaleUm, f.Selected ? ImpedanceSelectedMarkerRadius : ImpedanceMarkerRadiusDevicePixels);
-            float cx = ps.X(f.X), cy = ps.Y(f.Y);
+            float ax = ps.X(f.X), ay = ps.Y(f.Y);
+            float cx = ax, cy = ay;
+            double nl = Math.Sqrt(f.NormalX * f.NormalX + f.NormalY * f.NormalY);
+            if (nl > 1e-9)
+            {
+                // Clear of the selected trace's halo, the widest thing drawn along a trace; path space is Y-down.
+                float off = r + DevicePixelsToPathSpace(scaleUm, 0.5 * ImpedanceHaloDevicePixels + ImpedanceMarkerGapDevicePixels);
+                cx = ax + (float)(f.NormalX / nl) * off;
+                cy = ay - (float)(f.NormalY / nl) * off;
+                ring.Color = new SKColor(0x10, 0x14, 0x18, 0xc0);
+                ring.StrokeWidth = DevicePixelsToPathSpace(scaleUm, 1.0);
+                canvas.DrawLine(ax, ay, cx - (cx - ax) * r / off, cy - (cy - ay) * r / off, ring);
+                fill.Color = ring.Color;
+                canvas.DrawCircle(ax, ay, DevicePixelsToPathSpace(scaleUm, 1.5), fill);
+            }
 
             // Filled for a fail; hollow — white inside a ring of the kind colour — for a warning; grey with
             // a white check for an accepted finding, whatever its severity.

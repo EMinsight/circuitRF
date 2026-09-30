@@ -233,6 +233,26 @@ public class TechEditPaneTests
         finally { Directory.Delete(dir, recursive: true); }
     }
 
+    /// <summary>
+    /// Field report, 2026-09-29: the technology beside a layout could vanish, and Reset Layout did not
+    /// bring it back. Reset (and the launch Window Layout preset, and Hide/Show Dockers) re-host only
+    /// the PRIMARY strip, so the side pane Edit… had put it in was left out of the new tree — while the
+    /// document stayed registered as open, so every later Edit… activated a tab on no screen.
+    /// </summary>
+    [Fact]
+    public void AResetLayout_KeepsTheSidePanesTechnology_InTheTree()
+    {
+        var (f, _, _, layout, tech) = Shell();
+        f.SplitDocumentRightOf(tech, layout, 0.2);
+
+        var rebuilt = f.CreateLayoutPreservingContent(DockLayoutDefaults.For(CircuitRF.Ui.Theming.WindowLayout.ProjectTreeAndLibrary));
+        f.InitLayout(rebuilt);
+
+        var docks = DockLayoutCapture.EnumerateDocumentDocks(rebuilt).ToList();
+        Assert.Contains(docks, d => d.VisibleDockables!.Contains(tech));
+        Assert.Contains(docks, d => d.VisibleDockables!.Contains(layout));
+    }
+
     /// <summary>The real shell, with a layout and a technology open as two tabs of the one strip —
     /// which is exactly where Edit… finds them before it splits.</summary>
     private static (CircuitRfDockFactory Factory, IRootDock Root, IDocumentDock Host,

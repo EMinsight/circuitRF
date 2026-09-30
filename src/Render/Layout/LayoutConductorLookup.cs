@@ -227,33 +227,59 @@ public static class LayoutConductorLookup
                 best = shape;
             }
 
+            // ── THE SMALLEST RULE SPANS INSTANCES TOO (field report, 2026-09-29) ─────────────────────
+            //
+            // Top-level shapes used to be asked FIRST and to answer outright, so a generated line (an
+            // instance) lying on a drawn ground plane (a top-level polygon) was never considered: a port
+            // clicked on the line's end seated on the PLANE — snapped to the plane's edge, committed to the
+            // plane's layer and drawn as a bar across the plane's full height — and the EM run then
+            // refused it as off every signal conductor, since a ground reference is not one. An instance
+            // whose own copper contains the point, and is SMALLER than the top-level answer, is what the
+            // user pointed at, by the rule the summary states.
+            int instanceHit = -1;
+            LayoutShape? instanceCopper = null;
+            foreach (int i in LayoutHitTest.HitInstanceStack(view, tech, baseDir, x, y, tolDbu))
+            {
+                if (CellHierarchy.InstanceBbox(view.Instances[i], baseDir).IsEmpty) continue;
+                if (instanceHit < 0) instanceHit = i;
+                if (best is null) break;   // no top-level contender: the first instance answers, as before
+                if (InstanceCopperAt(i, x, y, onLayer) is { } copper)
+                {
+                    var cb = LayoutGeometry.BboxOf(copper);
+                    double area = (double)(cb.MaxX - cb.MinX) * (cb.MaxY - cb.MinY);
+                    if (area < bestArea) { instanceHit = i; instanceCopper = copper; break; }
+                }
+            }
+
             // The SHAPE, not only its box: a top-level conductor can be measured at the end face,
             // and for anything that changes width along its length the box is the wrong number.
-            if (best is not null)
+            if (best is not null && instanceCopper is null)
             {
                 var merged = MergedWithOverlapping(best, bestBox, x, y);
                 return new LayoutPortDirection.ConductorInfo(LayoutGeometry.BboxOf(merged), null, merged);
             }
 
-            foreach (int i in LayoutHitTest.HitInstanceStack(view, tech, baseDir, x, y, tolDbu))
+            if (instanceHit >= 0)
             {
+                int i = instanceHit;
                 var inst = view.Instances[i];
                 var bb = CellHierarchy.InstanceBbox(inst, baseDir);
-                if (bb.IsEmpty) continue;
                 var pin = PinAt(inst, baseDir, tech, x, y, tolDbu);
+                var own = instanceCopper ?? InstanceCopperAt(i, x, y, onLayer);
 
                 // No pin named, and the instance's own copper here OVERLAPS other copper (a footprint
                 // pad over a board's pad): answer with the merged outline, as a top-level shape does,
                 // so a port snapped onto that copper's edge measures the edge. Copper that overlaps
-                // nothing keeps the box answer it always had.
-                if (pin is null && InstanceCopperAt(i, x, y, onLayer) is { } own)
+                // nothing keeps the box answer it always had. A plane the copper merely LIES ON is on
+                // another layer and does not merge — only same-layer copper does.
+                if (pin is null && own is not null)
                 {
                     var ownBox = LayoutGeometry.BboxOf(own);
                     var merged = MergedWithOverlapping(own, ownBox, x, y, ownInstance: i);
                     if (!ReferenceEquals(merged, own))
                         return new LayoutPortDirection.ConductorInfo(LayoutGeometry.BboxOf(merged), null, merged);
                 }
-                return new LayoutPortDirection.ConductorInfo(bb, pin);
+                return new LayoutPortDirection.ConductorInfo(bb, pin, null, own?.Layer);
             }
 
             return null;

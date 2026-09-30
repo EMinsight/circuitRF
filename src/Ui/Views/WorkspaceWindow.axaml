@@ -169,6 +169,7 @@
                         <NativeMenuItemSeparator/>
                         <NativeMenuItem Header="Update Layout from Schematic"   Command="{Binding UpdateLayoutFromSchematicCommand}" Gesture="Meta+U"/>
                         <NativeMenuItem Header="Update Schematic from Layout"   Command="{Binding UpdateSchematicFromLayoutCommand}" Gesture="Meta+Shift+U"/>
+                        <NativeMenuItem Header="Draw Ground Pour"               Command="{Binding DrawGroundPourCommand}" ToolTip="The ground plane the layout's microstrip lines return through, drawn as copper under the lines where they are now, with a clearance round every via that passes through it. Only on a ground layer with nothing drawn on it yet. Requires an active layout document."/>
                         <NativeMenuItemSeparator/>
                         <NativeMenuItem Header="Check Design Rules"             Command="{Binding CheckDesignRulesCommand}" Gesture="Meta+Shift+K"/>
                     </NativeMenu>
@@ -1034,6 +1035,11 @@
                           InputGesture="Ctrl+Shift+U"
                           ToolTip.Tip="Requires an active layout document.">
                     <MenuItem.Icon><mi:MaterialIcon Kind="FilePlus" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="Draw _Ground Pour"
+                          Command="{Binding DrawGroundPourCommand}"
+                          ToolTip.Tip="The ground plane the layout's microstrip lines return through, drawn as copper under the lines where they are now, with a clearance round every via that passes through it. Only on a ground layer with nothing drawn on it yet. Requires an active layout document.">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="Texture" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
                 <Separator/>
                 <MenuItem Header="_Check Design Rules"

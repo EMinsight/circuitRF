@@ -68,6 +68,9 @@ public partial class App : Application
         // for why that locks up the whole machine rather than merely misbehaving.
         Controls.HiddenComboBoxInputGuard.Install();
 
+        // A tooltip never outlives the click that opens a dialog, or its window losing activation.
+        Controls.ToolTipDismissGuard.Install();
+
         // Teach the kit importer to recognise a process's own technology files, so importing a kit
         // that carries them SAYS SO rather than listing them as unrecognised. The readers behind them
         // are UI-project code, which is why this is registered here rather than shipped as a built-in.

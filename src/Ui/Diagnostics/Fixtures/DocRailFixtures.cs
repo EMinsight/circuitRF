@@ -131,7 +131,7 @@ public static class DocRailFixtures
 
         string cell = Path.Combine(root, ExampleFolder, CellFolder);
         string crail = Path.Combine(cell, CellFolder + ".crail");
-        string clay = Path.Combine(cell, "layout", "Board.clay");
+        string clay = Path.Combine(cell, "layout", CellFolder + ".clay");
         string ctech = Path.Combine(root, ExampleFolder, "tech", "pcb-4layer-1p6mm.ctech");
         string crlib = Path.Combine(root, ExampleFolder, "parts", "decoupling.crlib");
 

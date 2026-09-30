@@ -91,6 +91,25 @@ public sealed partial class LayoutEditorViewModel
         return true;
     }
 
+    /// <summary>
+    /// The signal/ground layer choice <paramref name="inst"/>'s generated cell was built with, read
+    /// from the layout's own regeneration record (<see cref="LayoutView.PCellSnapshots"/>, keyed by the
+    /// cell's folder name). <see cref="PCellLayerSelection.Default"/> when the cell has none.
+    ///
+    /// <para><b>Every regeneration of a PLACED instance must carry it.</b> A width-handle drag on a
+    /// microstrip placed on an inner layer regenerated it with the default selection, so the widened
+    /// line came back on the technology's default signal layer (the top copper) — the parameters were
+    /// carried through the edit and the layer choice, which is not a parameter, was not.</para>
+    /// </summary>
+    internal PCellLayerSelection LayerSelectionOf(LayoutInstance inst)
+    {
+        string cell = Path.GetFileName(inst.CellRef.TrimEnd('/', '\\'));
+        return Model.PCellSnapshots.TryGetValue(cell, out var snap)
+               && (snap.SignalLayerNameOverride is not null || snap.GroundLayerNameOverride is not null)
+            ? new PCellLayerSelection(snap.SignalLayerNameOverride, snap.GroundLayerNameOverride)
+            : PCellLayerSelection.Default;
+    }
+
     // ── L5 R-L5-2: editing a PLACED PCell instance's parameters is copy-on-write ────────────────────
     // Distinct from RegeneratePCell above (which mutates THIS document's own top-level PCellOrigin in
     // place — correct only when Model itself IS the generated layout). An instance elsewhere in a
@@ -145,13 +164,14 @@ public sealed partial class LayoutEditorViewModel
 
         var merged = new Dictionary<string, PCellValue>(origin.Parameters);
         foreach (var kv in newParameters) merged[kv.Key] = kv.Value;
+        var layers = LayerSelectionOf(inst);
 
         string newCellDir;
         IReadOnlyList<string>? editDiagnostics;
         try
         {
             newCellDir = CircuitRF.Design.Layout.PCells.GeneratedCellStore.GetOrCreate(
-                workspaceRoot, origin.GeneratorId, merged, Technology, ResolvedTechPath, PCellLayerSelection.Default, out editDiagnostics);
+                workspaceRoot, origin.GeneratorId, merged, Technology, ResolvedTechPath, layers, out editDiagnostics);
         }
         catch (Exception ex)
         {
@@ -163,7 +183,7 @@ public sealed partial class LayoutEditorViewModel
         }
 
         CircuitRF.Design.Layout.PCells.GeneratedCellStore.RecordSnapshot(
-            Model, newCellDir, origin.GeneratorId, merged, ResolvedTechPath, PCellLayerSelection.Default, workspaceRoot);
+            Model, newCellDir, origin.GeneratorId, merged, ResolvedTechPath, layers, workspaceRoot);
         if (editDiagnostics is { Count: > 0 })
             foreach (var d in editDiagnostics) _messageSink?.Warning(d);
 

@@ -602,7 +602,8 @@ internal static class Check
         foreach (var d in C3dThermal.Places(doc, e)) f.Add(CliDiagnostics.CheckThreeDFinding(path, d));
         foreach (var embedded in C3dSetups.Read(doc))
             if (embedded.Setup is { IsThermal: true } thermal)
-                foreach (var d in C3dThermal.Setup(embedded.Name, thermal, doc, e, resolution))
+                foreach (var d in C3dThermal.Setup(embedded.Name, thermal, doc, e, resolution,
+                                                   (Path.GetFullPath(path), ResultsRoot.For(Path.GetFullPath(path), DocumentKinds.AncestorCws(Path.GetFullPath(path))))))
                     f.Add(CliDiagnostics.CheckThreeDFinding(path, d));
 
         // brief-em3d-65 R-em3d65-4d — what each embedded setup's solver will not respect of a kernel solid, at the row's own

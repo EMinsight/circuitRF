@@ -38100,3 +38100,112 @@ object. A Part row, a field plot and the air box are refused with a reason; a re
 workspace creates ticked materials in the first writable seed (the technology's own list, then its libraries) BEFORE
 committing the paste. A failed material commit pastes nothing. The object keeps the material's name either way, so it
 does not matter whether the elaboration has picked up the new material yet.
+
+## Designer feedback round 10 — the technology beside a layout vanished, and Reset Layout did not bring it back (2026-09-29)
+
+**Symptom.** The technology could stop being visible beside a layout, and Window ▸ Reset Layout did not restore it.
+
+**Cause.** Technology ▾ ▸ Edit… opens the `.ctech` in a SIDE document pane split off the layout's strip. Reset Layout,
+choosing a Window Layout preset and Hide/Show Dockers all go through `CircuitRfDockFactory.CreateLayoutPreservingContent`,
+which re-hosts only the PRIMARY document strip in the new tree. The side pane was not carried over, but the technology
+stayed registered as an open document. From then on every Edit… "activated" a tab that was on no screen. The reset that
+should have recovered the panel was what hid it.
+
+**Fix.** `GatherDockedSidePanesInto` moves every document in a docked, non-primary pane into the primary strip before the
+rebuild. A rebuild that restores a saved split (`RestoreSplitDocumentPanes`) moves them back out the same way it moves a
+reopened document. A preset rebuild leaves them as ordinary, visible tabs, and the next Edit… splits the technology
+out again from there. Only the docked tree is walked: a torn-off document window is carried over whole by
+`CarryOverDocumentWindows` and stays where the user put it. Gate:
+`TechEditPaneTests.AResetLayout_KeepsTheSidePanesTechnology_InTheTree`.
+
+**Not the cause.** The workspace from that report binds its imported cell to the `.ctech` the Gerber import wrote beside
+the cell (`TechRef: ../../<cell>.ctech`), not to the workspace default in `tech/`. That binding resolves, and the project
+tree lists a `.ctech` wherever it sits, so the file was never hidden from the tree. The `.cws` carries no saved dock
+layout, so it holds no clue to which panel went missing.
+
+## Designer feedback round 10 — a via-and-trace layout: widening, merging, and ports (2026-09-29)
+
+A Top Copper line going through a via onto an Inner 2 line, over an Inner 1 plane, hit three faults in one sitting.
+
+**Widening a trace on Inner 2 moved it to Top Copper.** A generated line's signal/ground layer choice is not one of
+its parameters. It lives in the layout's regeneration record (`LayoutView.PCellSnapshots`, keyed by the generated
+cell's folder name). Every regeneration of a PLACED instance passed `PCellLayerSelection.Default` instead of that
+record: the width-handle drag, the grip cache, the preview and commit paths, the parameter edit
+(`EditInstancePCellParameters`, which also RECORDED the default so the next edit started from Top Copper), and the
+inspector's substrate lookup. So the new width came back on the technology's default signal layer. The fix is
+`LayoutEditorViewModel.LayerSelectionOf(inst)`, which every one of those paths now calls. **Anything new that
+regenerates a placed instance must use it too, or the fault returns silently.** Gate:
+`PCellInstanceCopyOnWriteTests.EditInstancePCellParameters_KeepsTheInstancesLayerChoice`.
+
+**Merging the via with the trace was refused with no way forward.** That is by design: a generated line is an
+INSTANCE, and a via is not a filled region. Neither needs a merge to connect. Overlapping copper on one layer is
+already one conductor to EM and to connectivity, and a via joins the copper it lands on in every layer it spans. The
+refusals now say this, and name Flatten Hierarchy as the way to weld an instance's artwork into shapes
+(`BooleanOpAvailability`).
+
+**The ports "moved to the drill layer", and EM refused them.** There were two faults.
+- A new port label took the CURRENT layer, which is the drill layer straight after placing a via. It now takes the
+  layer of the metal under it (`LayoutPortDirection.ConductorInfo.Layer`).
+- `LayoutConductorLookup` asked top-level shapes first and let them answer outright. A generated line lying on a
+  hand-drawn ground plane was therefore never considered: the port seated on the PLANE, committed to Inner 1, and was
+  refused as off every signal conductor. The smallest-conductor rule now spans instances too. Instance copper also
+  reports its layer, where it used to commit the port to nothing.
+
+The refusal's garbled sentence is fixed. When the port's committed layer is a conductor this setup does not mesh, the
+refusal now says which conductor, says when it is a ground reference, and says to drag the port onto the trace end.
+**A layout saved before this fix keeps its wrong commitments** until each port is dragged again. Gates:
+`LayoutPortOnInstancePinTests.AnInstanceLyingOnATopLevelPlane_IsTheConductor_AndCarriesItsLayer` and
+`EmPortExtractionTests.APortCommittedToTheGroundPlane_IsToldItIsSeatedThere_AndHowToReseatIt`.
+
+## railRF field report round 10 — a refusal about another rail, a remedy that could not be followed, and a drawing reported as copper (2026-09-29)
+
+**A second rail blocked the run, and nothing said it was a second rail.** The designer had their rail on screen with
+its reference set; the strip said *"Rail 'rail at (69936.122, 33350.862) µm' states no reference layer…"*. That is a
+real, different rail: a rail picked on the board is named by the click's coordinates, and `RailDcRun` solves the whole
+set, so an unreferenced second rail refuses the run (the round-9 copy of that workspace has one rail, at a different
+coordinate, with its reference set, so the extra rail was added after it). Nothing about the reference was lost. The
+sentence (`RailRfViewModel.Solve.UnreferencedRail` branch) now opens "This run is blocked by another rail", says
+where a coordinate name comes from, and the strip offers **Show '<rail>'** as a button (`RailRefusal.Actions`,
+drawn under `RefusalStrip`), which switches the selector to it.
+
+**The spreading-copper refusal named a remedy nobody could perform.** It said to open "the board's Class view",
+right-click the copper and choose "Copper: treat as a trace". The class map is drawn from a SOLVED rail's result,
+and a rail refused on its first run has none, so the map was empty. The extractor now carries the region out as data
+(`PdnExtraction.RefusedRegion` → `RailDcRunResult.RefusedRegions`), and the strip offers **Treat that copper as a
+trace** (the same `ForceCopperClass` the class map's context row calls) and **Show that copper**. The sentence no
+longer names a surface, because the `rail` verb prints it too. It classifies to `ModelKind`, so Accuracy turns red.
+
+**Is the 10-square rule what blocks it, and is that reasonable?** Yes, on the designer's board: the neck measured 6.7
+squares. Measured there: Accuracy 13.933 mV at the load, the fast model with that copper forced to a trace 13.425 mV,
+3.6 % optimistic. That is inside the §7 5 % agreement, so on this board the rule was conservative. One board is not a
+reason to move the threshold; the one-press override is the answer for a designer who knows the path.
+
+**A documentation drawing was reported as copper no conductor claims.** `GerberLayerCascade.IsNonConductorArtwork`'s
+lists missed several of the cascade's own `KindNames`. The missing ones included `Drawing`, the name the import gives a
+`FileFunction` of `Drawing`, so a 601-shape notes-and-dimensions layer was named in the reference area. The two lists now
+cover the rest of that table. `Purpose == "drawing"` could not be used instead, because it is also what an UNIDENTIFIED
+layer gets, and that can be a plane.
+
+Gates: `RailWindowTests` (the Show-rail button; the spreading refusal's two buttons, the override re-solving;
+the refusal classified to ModelKind), `PdnRefusalCauseTests` (region carried as data; "Class view" gone),
+`RailRfFieldReport4Tests.ADocumentationDrawingIsNotUnclaimedCopper`.
+
+## A tooltip left behind a dialog: fixed once for every button (2026-09-29)
+
+The 3D Properties inspector's material **Edit…** button left its tooltip up behind the Materials
+dialog, flashing as the pointer moved. It was the same defect 3D editor round 6 fixed for the Setups
+toolbar button, with a handler on that one button, so every other button that opens a dialog still
+had it. `Controls.ToolTipDismissGuard` replaces that handler with class handlers installed by all
+three application entry points (`App`, `HarmonicaApp`, `WBondApp`):
+
+- a click on any `Button` (and so any toggle, split or dropdown button) closes the tip that would
+  show for it (the button's own, or the nearest ancestor's when it has none) and holds that control's
+  tooltip service off until the pointer has left it with its window active;
+- a window's deactivation does the same to the tip showing in it (a shortcut opening a dialog,
+  another window clicked);
+- a control whose service was already off is left alone, and one leaving the tree is restored, so a
+  tip can never be left permanently disabled.
+
+`C3dEditorView.OnDialogButtonClick` is deleted: two mechanisms on one button would disagree about
+when to restore. Gate: `tests/Ui.Tests/Controls/ToolTipDismissGuardTests.cs` (the click half; the
+restore half needs a pointer and a window, which no test here has). No pixels were seen.

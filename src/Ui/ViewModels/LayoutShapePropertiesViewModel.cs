@@ -1776,7 +1776,8 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
     {
         h = t = er = 0;
         if (_vm?.Technology is not { } tech) return false;
-        var (substrate, _, _) = SubstrateResolver.ResolveElectrical(tech, PCellLayerSelection.Default);
+        var layers = SingleSelectedInstance is { } inst ? _vm.LayerSelectionOf(inst) : PCellLayerSelection.Default;
+        var (substrate, _, _) = SubstrateResolver.ResolveElectrical(tech, layers);
         if (substrate is null) return false;
         h = substrate.HeightMeters; t = substrate.ThicknessMeters; er = substrate.RelativePermittivity;
         return true;

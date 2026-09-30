@@ -317,6 +317,29 @@ public sealed class RailRfFieldReport4Tests : IDisposable
         Assert.Empty(editor.Working.Stackup.Layers.Single(l => l.Name == "GND").DrawingLayers);
     }
 
+    /// <summary>
+    /// A documentation drawing is not copper no conductor claims — declared by its file function, or
+    /// only named by it (field report, 2026-09-29: a set's "Drawing" layer, 601 shapes of notes and
+    /// dimensions, was reported beside a stackup whose copper was all attached).
+    /// </summary>
+    [Theory]
+    [InlineData("Drawing", "Drawing")]
+    [InlineData("Drawing", null)]
+    [InlineData("Array Drawing", null)]
+    public void ADocumentationDrawingIsNotUnclaimedCopper(string name, string? fileFunction)
+    {
+        var drawing = new LayerKey(14, 0);
+        var tech = TechFixture();
+        tech.Layers.Add(new LayerDef
+        {
+            Key = drawing, Name = name, Color = new Rgba(1, 2, 3, 255),
+            Interchange = fileFunction is null ? null : new InterchangeMapping(null, null, null, null, fileFunction),
+        });
+
+        Assert.Empty(PdnUnclaimedCopper.On(tech, [
+            new RectShape { Layer = drawing, X1 = 0, Y1 = 0, X2 = Mm(1), Y2 = Mm(1) }]));
+    }
+
     // ── Opening a .crail shows the window before its board is read (field report, 2026-09-23) ──
 
     /// <summary>A `.crail` on the three-cap board, opened the way the window opens one: the board read

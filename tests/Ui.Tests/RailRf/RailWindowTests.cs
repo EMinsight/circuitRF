@@ -815,6 +815,10 @@ public class RailWindowTests
     [InlineData("The fast model cannot answer above 18.1 MHz on this stackup, and 40 MHz was asked "
               + "for. Run Accuracy — it carries the cavity model and answers here.",
                 RailRefusalControl.ModelKind, "18.1")]
+    // PdnGraphExtractor — a pour-dominated path (R-rail4-5), as RailDcRun prefixes it.
+    [InlineData("Rail '+3V3' was not solved: it reaches U1.4 only through spreading copper, which the "
+              + "fast model does not price.\nMeasured: 6.7 squares.",
+                RailRefusalControl.ModelKind, "6.7")]
     // PdnAssembly — an unresolved via span.
     [InlineData("14 hole(s) could not be resolved to a layer span and carry no barrel resistance.",
                 RailRefusalControl.Stackup, "14")]
@@ -1333,11 +1337,76 @@ public class RailWindowTests
         Assert.False(vm.IsReferenceLayerFlagged);
         Assert.Contains("rail selector", vm.Refusal!.Sentence, StringComparison.Ordinal);
 
+        // It says the rail is ANOTHER one, and offers it as a button (field report, 2026-09-29: a
+        // designer with their own rail on screen read this as a complaint about that one).
+        Assert.Contains("another rail", vm.Refusal.Sentence, StringComparison.Ordinal);
+        var show = Assert.Single(vm.Refusal.Actions);
+        Assert.Equal("Show 'GND'", show.Label);
+
         // Fix it the way the sentence says to: show that rail and confirm its reference.
-        vm.SelectedRailName = "GND";
+        show.Command.Execute(null);
+        Assert.Equal("GND", vm.SelectedRailName);
         vm.ConfirmReferenceCommand.Execute(null);
 
         Assert.True(vm.CanRun);
+        Assert.Null(vm.Refusal);
+    }
+
+    /// <summary>
+    /// <b>A rail refused for spreading copper offers the override as a button, and the button is the
+    /// class map's own override.</b>
+    /// </summary>
+    /// <remarks>
+    /// Field report, 2026-09-29: the sentence said to right-click that copper on the Class map, and
+    /// the Class map is drawn from a SOLVED rail's result — on the run that raised it there was none,
+    /// so the map was empty and the remedy could not be followed. The region comes back as data and
+    /// one press forces it and runs again; the refusal turns the Accuracy button red, the other
+    /// remedy it names.
+    /// </remarks>
+    [Fact]
+    public void ASpreadingCopperRefusalOffersTheOverrideAsAButton()
+    {
+        var region = new PdnClassification(
+            new PdnRegionRef(new LayerKey(1, 0), 1_000, 2_000), PdnCopperClass.Spreading, "6.7 squares", false)
+        {
+            Bounds = new Bbox(1_000, 2_000, 4_000, 3_000),
+        };
+        string why = "Rail '+1V8' was not solved: it reaches U1.VDD only through spreading copper, which "
+                   + "the fast model does not price.";
+
+        int solves = 0;
+        var vm = Window(OneRail());
+        vm.SolveFunc = (request, _) =>
+        {
+            solves++;
+            return request.Document.ClassOverrides.Count > 0
+                ? Solved(request)
+                : new RailDcRunResult(why, [], [], [])
+                  {
+                      RailRefusals   = [("+1V8", why)],
+                      RefusedRegions = [("+1V8", region)],
+                  };
+        };
+        Bbox? shown = null;
+        vm.ShowOnBoardHook = b => shown = b;
+        vm.Board = Board();
+        vm.ConfirmReferenceCommand.Execute(null);
+        vm.RunCommand.Execute(null);
+
+        Assert.NotNull(vm.Refusal);
+        Assert.Equal(RailRefusalControl.ModelKind, vm.Refusal.Control);
+        Assert.True(vm.IsModelKindFlagged);
+
+        var treat = Assert.Single(vm.Refusal.Actions, a => a.Label.Contains("trace", StringComparison.Ordinal));
+        var show  = Assert.Single(vm.Refusal.Actions, a => a.Label.StartsWith("Show", StringComparison.Ordinal));
+
+        show.Command.Execute(null);
+        Assert.Equal(region.Bounds, shown);
+
+        int before = solves;
+        treat.Command.Execute(null);
+        Assert.Equal(PdnCopperClass.Trace, Assert.Contains(region.Region, vm.Document.ClassOverrides));
+        Assert.True(solves > before);
         Assert.Null(vm.Refusal);
     }
 

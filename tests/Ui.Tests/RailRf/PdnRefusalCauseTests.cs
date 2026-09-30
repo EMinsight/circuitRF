@@ -246,6 +246,9 @@ public sealed class PdnRefusalCauseTests
                     refused.Refusal);
         Assert.DoesNotContain(pour.Region.Describe(fmt, tech), refused.Refusal, StringComparison.Ordinal);
         Assert.DoesNotContain(land.Region.Describe(fmt, tech), refused.Refusal, StringComparison.Ordinal);
+
+        // And the region named is carried as DATA, so the window can force it in one press.
+        Assert.Equal(link.Region, refused.RefusedRegion?.Region);
     }
 
     /// <summary>
@@ -262,8 +265,10 @@ public sealed class PdnRefusalCauseTests
         Assert.NotNull(refused);
         string first = refused.Split('\n')[0];
         Assert.Contains("Run Accuracy", first, StringComparison.Ordinal);
-        Assert.Contains("Class view", first, StringComparison.Ordinal);
         Assert.Contains("Copper: treat as a trace", first, StringComparison.Ordinal);
+        // Not a surface: the Class map of a rail refused on its first run is empty, and the rail
+        // verb prints these words too (field report, 2026-09-29).
+        Assert.DoesNotContain("Class view", first, StringComparison.Ordinal);
         Assert.Contains("on Top Copper at", refused, StringComparison.Ordinal);
         Assert.DoesNotContain($"layer {Top.Layer}/{Top.Datatype}", refused, StringComparison.Ordinal);
     }

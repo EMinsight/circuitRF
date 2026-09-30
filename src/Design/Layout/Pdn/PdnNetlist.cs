@@ -465,6 +465,14 @@ public sealed record PdnExtraction(
     /// </summary>
     public IReadOnlyList<PdnAnchorAmbiguity> AnchorAmbiguities { get; init; } = [];
 
+    /// <summary>
+    /// The spreading copper a pour-dominated refusal (R-rail4-5) named — the piece the rail reaches
+    /// its load only through — or null on every other outcome. Carried so the window can force it to
+    /// a trace, or show it, in one click: on a rail that has never solved there is no class map to
+    /// right-click it on.
+    /// </summary>
+    public PdnClassification? RefusedRegion { get; init; }
+
     internal static PdnExtraction Refused(string why, PdnRailRegionSet? regions = null) =>
         new(why, null, regions, []);
 }

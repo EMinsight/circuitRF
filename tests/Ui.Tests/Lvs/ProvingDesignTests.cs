@@ -124,9 +124,9 @@ public sealed class ProvingDesignTests
     public void TheBreakScriptReproducesTheCommittedBrokenArtwork()
     {
         string work = CopyWorkspace();
-        RunPython(Path.Combine(work, Broken, "layout", "Attenuator.break.py"), work);
-        AssertSameBytes(Lvs(Broken, "layout", "Attenuator.clay"),
-                        Path.Combine(work, Broken, "layout", "Attenuator.clay"));
+        RunPython(Path.Combine(work, Broken, "layout", "Attenuator broken.break.py"), work);
+        AssertSameBytes(Lvs(Broken, "layout", "Attenuator broken.clay"),
+                        Path.Combine(work, Broken, "layout", "Attenuator broken.clay"));
     }
 
     [PythonFact]
@@ -164,7 +164,7 @@ public sealed class ProvingDesignTests
     {
         string work = CopyWorkspace();
         string outPath = Path.Combine(work, fault + ".clay");
-        RunPython(Path.Combine(work, Broken, "layout", "Attenuator.break.py"),
+        RunPython(Path.Combine(work, Broken, "layout", "Attenuator broken.break.py"),
                   work, "--only", fault, "-o", outPath);
 
         var good = LayoutPersistence.LoadFromFile(Lvs(Correct, "layout", "Attenuator.clay"));
@@ -206,13 +206,13 @@ public sealed class ProvingDesignTests
         foreach (string fault in new[] { "F1", "F2", "F3", "F4", "F5", "F6" })
         {
             string outPath = Path.Combine(work, fault + ".clay");
-            RunPython(Path.Combine(work, Broken, "layout", "Attenuator.break.py"),
+            RunPython(Path.Combine(work, Broken, "layout", "Attenuator broken.break.py"),
                       work, "--only", fault, "-o", outPath);
             singles.Add(LayoutPersistence.LoadFromFile(outPath));
         }
 
         var good = LayoutPersistence.LoadFromFile(Lvs(Correct, "layout", "Attenuator.clay"));
-        var all  = LayoutPersistence.LoadFromFile(Lvs(Broken, "layout", "Attenuator.clay"));
+        var all  = LayoutPersistence.LoadFromFile(Lvs(Broken, "layout", "Attenuator broken.clay"));
 
         Assert.Equal(good.Shapes.Count + singles.Sum(s => s.Shapes.Count - good.Shapes.Count),
                      all.Shapes.Count);
@@ -520,7 +520,7 @@ public sealed class ProvingDesignTests
     [Fact]
     public void TheBrokenBoardsSchematicIsAByteForByteCopy()
         => AssertSameBytes(Lvs(Correct, "schematic", "Attenuator.csch"),
-                           Lvs(Broken,  "schematic", "Attenuator.csch"));
+                           Lvs(Broken,  "schematic", "Attenuator broken.csch"));
 
     // ══ The MMIC technology is the shipped one, unmodified ══════════════════════════════════════
     //
@@ -555,8 +555,8 @@ public sealed class ProvingDesignTests
     private static LvsNetlist ReadFaultedBoard(string fault)
     {
         string work = CopyWorkspace();
-        string clayPath = Path.Combine(work, Broken, "layout", "Attenuator.clay");
-        RunPython(Path.Combine(work, Broken, "layout", "Attenuator.break.py"),
+        string clayPath = Path.Combine(work, Broken, "layout", "Attenuator broken.clay");
+        RunPython(Path.Combine(work, Broken, "layout", "Attenuator broken.break.py"),
                   work, "--only", fault, "-o", clayPath);
 
         var view = LayoutPersistence.LoadFromFile(clayPath);
@@ -573,8 +573,8 @@ public sealed class ProvingDesignTests
     {
         string work = CopyWorkspace();
         string cell = Path.Combine(work, Broken);
-        RunPython(Path.Combine(cell, "layout", "Attenuator.break.py"),
-                  work, "--only", fault, "-o", Path.Combine(cell, "layout", "Attenuator.clay"));
+        RunPython(Path.Combine(cell, "layout", "Attenuator broken.break.py"),
+                  work, "--only", fault, "-o", Path.Combine(cell, "layout", "Attenuator broken.clay"));
         return LvsRun.Run(cell);
     }
 

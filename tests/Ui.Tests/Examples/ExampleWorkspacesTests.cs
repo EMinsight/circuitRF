@@ -550,6 +550,20 @@ public sealed class ExampleWorkspacesTests(ITestOutputHelper output) : IDisposab
                   + $"absolute path ('{p.Expression}') and means nothing on anyone else's machine.");
 
                 string? resolved = SnpPathPolicy.Resolve(p.Expression, example.Directory, null);
+
+                // A RESULT is the one reference that cannot be there in a fresh copy — results never
+                // ship (see the class header) — so it must name exactly what one of the example's own
+                // 3D views writes when its EM setup runs (Thermal Output Wires' amplifier, on its
+                // output wires' S-parameters).
+                if (resolved is not null && IsUnder(resolved, Path.Combine(example.Directory, "results")))
+                {
+                    Assert.True(IsWrittenByAnEmSetupOf(example.Directory, resolved),
+                        $"{example.Folder}/{Path.GetFileName(csch)}: {comp.InstanceName}.File is "
+                      + $"'{p.Expression}', a run result that none of this example's 3D views writes.");
+                    checkedRefs++;
+                    continue;
+                }
+
                 Assert.True(resolved is not null && File.Exists(resolved),
                     $"{example.Folder}/{Path.GetFileName(csch)}: {comp.InstanceName}.File is "
                   + $"'{p.Expression}', which resolves to '{resolved}' against the workspace root "
@@ -562,6 +576,18 @@ public sealed class ExampleWorkspacesTests(ITestOutputHelper output) : IDisposab
 
         Assert.True(checkedRefs >= 1, "no example named a file at all — this gate checked nothing.");
         output.WriteLine($"{checkedRefs} file reference(s) resolved against their workspace root");
+
+        static bool IsUnder(string path, string dir)
+            => Path.GetFullPath(path).StartsWith(Path.GetFullPath(dir) + Path.DirectorySeparatorChar,
+                                                 StringComparison.OrdinalIgnoreCase);
+
+        // The 3D run's own rule for where its Touchstone lands — the one the thermal link matches by.
+        static bool IsWrittenByAnEmSetupOf(string workspace, string snp)
+            => Directory.EnumerateFiles(workspace, "*.c3d", SearchOption.AllDirectories).Any(c3d =>
+                   CircuitRF.Design.Thermal.ThermalCircuitLink.IsResultOf(snp,
+                       CircuitRF.Design.Thermal.ThermalCircuitLink.ResultPaths(
+                           CircuitRF.Design.ThreeD.C3dPersistence.LoadFromFile(c3d), c3d,
+                           Path.Combine(workspace, "results")).Select(r => r.BasePath)));
     }
 
     // ══ 5. Every document an example ships is REACHABLE ═════════════════════
@@ -584,7 +610,7 @@ public sealed class ExampleWorkspacesTests(ITestOutputHelper output) : IDisposab
     [Fact]
     public void EveryDocumentAnExampleShipsHasARowInTheProjectTree()
     {
-        string[] documentExtensions = [".csch", ".csym", ".clay", ".cem", ".ctech", ".cdd", ".charm"];
+        string[] documentExtensions = [".csch", ".csym", ".clay", ".cem", ".ctech", ".cdd", ".charm", ".c3d"];
         int rows = 0;
 
         foreach (var example in ExampleWorkspaces.All(SourceExamplesRoot()))
@@ -615,6 +641,47 @@ public sealed class ExampleWorkspacesTests(ITestOutputHelper output) : IDisposab
             if (!string.IsNullOrEmpty(n.AbsolutePath)) into.Add(Path.GetFullPath(n.AbsolutePath));
             foreach (var c in n.Children) Collect(c, into);
         }
+    }
+
+    /// <summary>
+    /// <b>Every design document an example ships is a view of a cell</b> — in the view folder of a
+    /// folder that has a <c>.ccell</c>, which is what File ▸ New Cell makes — and no example ships a
+    /// bare <c>.cnl</c>.
+    ///
+    /// <para>An example is read as the way to build a design. Five of them held a <c>.clay</c> or a
+    /// <c>.c3d</c> in a plain folder with no <c>.ccell</c>, which the tree shows as a folder holding
+    /// a file rather than as a cell with views, and one drove its thermal setup from a netlist
+    /// nobody could open as a drawing. A kit's own symbols (<c>.csym</c> beside its generator) are
+    /// the kit's, not a cell's, which is why symbols are not asked about here.</para>
+    /// </summary>
+    [Fact]
+    public void EveryDesignDocumentAnExampleShipsIsAViewOfACell()
+    {
+        var views = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            [".csch"] = "schematic", [".clay"] = "layout", [".c3d"] = "3d", [".cem"] = "em",
+        };
+        int docs = 0;
+
+        foreach (var example in ExampleWorkspaces.All(SourceExamplesRoot()))
+        foreach (string doc in Directory.EnumerateFiles(example.Directory, "*", SearchOption.AllDirectories))
+        {
+            string where = Path.GetRelativePath(example.Directory, doc);
+            if (doc.Contains(GeneratedCellStore.ReservedFolderName, StringComparison.Ordinal)) continue;
+            Assert.False(Path.GetExtension(doc).Equals(".cnl", StringComparison.OrdinalIgnoreCase),
+                $"'{example.Title}' ships the netlist {where}: draw it as a test bench's schematic.");
+            if (!views.TryGetValue(Path.GetExtension(doc), out string? folder)) continue;
+
+            string viewDir = Path.GetDirectoryName(doc)!;
+            string cell = Path.GetDirectoryName(viewDir)!;
+            Assert.True(Path.GetFileName(viewDir).Equals(folder, StringComparison.OrdinalIgnoreCase)
+                        && File.Exists(Path.Combine(cell, CellFolder.CcellFileName)),
+                $"'{example.Title}' ships {where} outside a cell's {folder}/ folder.");
+            docs++;
+        }
+
+        Assert.True(docs >= 40, $"only {docs} design document(s) were checked");
+        output.WriteLine($"{docs} design document(s) are views of cells");
     }
 
     // ══ 5. Both menu surfaces ═══════════════════════════════════════════════

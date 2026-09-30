@@ -61,7 +61,10 @@
                     <Slider x:Name="TransparencySlider" Grid.Column="0" Minimum="0" Maximum="{x:Static t3:C3dPropertiesViewModel.TransparencyMax}"
                             Value="{Binding TransparencySlider}" TickFrequency="1" IsSnapToTickEnabled="True" VerticalAlignment="Center"
                             ToolTip.Tip="How see-through it is drawn, percent. Drag to preview; the value is kept when you let go."/>
-                    <TextBox Grid.Column="1" Width="92" Text="{Binding TransparencyText}" PlaceholderText="{Binding TransparencyPlaceholder}"
+                    <!-- As tall as its text: without the compact class and a centre alignment it stretched to the slider's
+                         row, about three lines high. -->
+                    <TextBox Grid.Column="1" Width="92" Classes="dim" VerticalAlignment="Center"
+                             Text="{Binding TransparencyText}" PlaceholderText="{Binding TransparencyPlaceholder}"
                              KeyDown="OnTransparencyKey" LostFocus="OnTransparencyLostFocus"
                              ToolTip.Tip="A whole number, percent. Empty shows the kind's default greyed, or 'mixed' where the selection differs."/>
                     <TextBlock Grid.Column="2" Text="%" VerticalAlignment="Center"/>

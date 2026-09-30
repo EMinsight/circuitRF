@@ -491,7 +491,7 @@ public sealed class LayoutPadsTests(ITestOutputHelper output) : IDisposable
     public void TheShippedPowerRailExampleAnswersFromItsNetlistExactlyAsBefore()
     {
         string root = PowerRailFootprintCells.ExampleRoot();
-        string clay = Path.Combine(root, "Sensor board", "layout", "Board.clay");
+        string clay = Path.Combine(root, "Sensor board", "layout", "Sensor board.clay");
         string crail = Path.Combine(root, "Sensor board", "Sensor board.crail");
 
         var document = RailDocumentIo.LoadFromFile(crail);

@@ -77,7 +77,25 @@ public sealed record TraceImpedanceOptions
     /// there was a scope (brief-impedance-2).</summary>
     public TraceImpedanceScope? Scope { get; init; }
 
+    /// <summary>
+    /// Trace within this distance of the land of a via ON that trace is not checked; 0 checks it all.
+    /// A plane is normally cleared round a signal via (the antipad), so the last stretch of every
+    /// trace into one has no reference under it by design, and flagging it flagged every layer
+    /// transition on a board (round-10 field report). The stretch is reported as not checked — a
+    /// note on the trace naming the via — never dropped silently: the transition is an EM run's to
+    /// verify, not this review's to pass.
+    /// </summary>
+    public double ViaTransitionMicrons { get; init; } = DefaultViaTransitionMicrons;
+
     public const double DefaultTargetOhms = 50;
+
+    /// <summary>
+    /// 400 µm (≈ 16 mil). An antipad is usually the via land plus 0.2–0.3 mm of clearance all round;
+    /// a cut stands for half a width of trace on either side of it; and the reference takes about a
+    /// dielectric height beyond the plane's edge to settle. On the six-layer board the report came
+    /// from, every broken-return stretch at a via ended within 280 µm of the land.
+    /// </summary>
+    public const double DefaultViaTransitionMicrons = 400;
     public const double DefaultTolerancePercent = 10;
     public const double DefaultWarningPercent = 20;
 }
@@ -303,6 +321,10 @@ public sealed record TraceImpedanceReport
     /// <summary>The frequency the electrically-short rule was judged at, or null when it was off.</summary>
     public double? MaxFrequencyHz { get; init; }
 
+    /// <summary>Trace within this many µm of the land of a via on it was not checked (0: all of it was) —
+    /// <see cref="TraceImpedanceOptions.ViaTransitionMicrons"/>.</summary>
+    public double ViaTransitionMicrons { get; init; }
+
     public int DbuPerMicron { get; init; } = LayoutUnits.DefaultDbuPerMicron;
     public LayoutUnit DisplayUnit { get; init; } = LayoutUnit.Um;
 
@@ -495,6 +517,11 @@ public static partial class TraceImpedanceAnalysis
     /// </summary>
     public const double SelectedMinAspect = 2;
 
+    /// <summary>Copper at a trace's end that widens past this many of the trace's width is a pad: the
+    /// end-trim takes it off the trace and <c>EndKind</c> names the end "pad" — one number, so the two
+    /// never disagree. A trace's own width drifts by far less; a land is rarely under a fifth wider.</summary>
+    internal const double PadWidthStep = 1.2;
+
     /// <summary>Cuts per width along a piece.</summary>
     public const double StationsPerWidth = 1;
 
@@ -602,6 +629,8 @@ public static partial class TraceImpedanceAnalysis
                 $"(± {options.TolerancePercent:0.##} %) and less than 100 %.");
         if (options.MaxFrequencyHz is { } fMax && !(fMax > 0 && double.IsFinite(fMax)))
             return TraceImpedanceReport.Refused("The highest frequency must be a positive number of hertz, or left out.");
+        if (!(options.ViaTransitionMicrons >= 0) || !double.IsFinite(options.ViaTransitionMicrons))
+            return TraceImpedanceReport.Refused("The distance round a via that is not checked must be zero or a positive length.");
 
         var clock = Stopwatch.StartNew();
         var ct = control?.Token ?? CancellationToken.None;
@@ -745,6 +774,7 @@ public static partial class TraceImpedanceAnalysis
             TolerancePercent = options.TolerancePercent,
             WarningPercent = options.WarningPercent,
             MaxFrequencyHz = options.MaxFrequencyHz,
+            ViaTransitionMicrons = options.ViaTransitionMicrons,
             DbuPerMicron = dbuPerMicron,
             DisplayUnit = options.DisplayUnit ?? LayoutUnit.Um,
             Layers = layers,
@@ -1026,11 +1056,14 @@ public static partial class TraceImpedanceAnalysis
         public required Func<LayerKey, string> LayerName { get; init; }
         public required Dictionary<int, (int[] IslandOfRing, double[] IslandArea, int[] HoleCount)> IslandsOf { get; init; }
         public required Dictionary<int, List<(double X, double Y, double R)>> Vias { get; init; }
+        /// <summary>Per band, every via whose BARREL passes it but whose pad is on another layer — see
+        /// <see cref="LayerWork.TransitionVias"/>.</summary>
+        public required Dictionary<int, List<(double X, double Y, double R)>> Barrels { get; init; }
         public required int DbuPerMicron { get; init; }
 
         public LayerWork FindLayer(LayerKey key, string name, CrossSectionExtractor.Band band,
                                    TraceImpedanceOptions options, CancellationToken ct) =>
-            TraceImpedanceAnalysis.FindLayer(key, name, band, Ctx.Copper, IslandsOf, Vias, options, Ctx.Bands, DbuPerMicron, ct);
+            TraceImpedanceAnalysis.FindLayer(key, name, band, Ctx.Copper, IslandsOf, Vias, Barrels, options, Ctx.Bands, DbuPerMicron, ct);
     }
 
     private static (Prepared? Prep, string? Refusal) Prepare(
@@ -1051,6 +1084,7 @@ public static partial class TraceImpedanceAnalysis
         control?.BeginStage("Reading copper");
         var subjects = new Dictionary<int, Paths64>();
         var vias = new Dictionary<int, List<(double X, double Y, double R)>>();
+        var barrels = new Dictionary<int, List<(double X, double Y, double R)>>();
         var extent = Bbox.Empty;
         foreach (var shape in shapes)
         {
@@ -1071,6 +1105,13 @@ public static partial class TraceImpedanceAnalysis
                     vl.Add((v.X, v.Y, r));
                 }
             });
+            if (shape is ViaShape via)
+                foreach (var b in BandsSpanned(via, tech, bands))
+                {
+                    if (via.LandingLayer is { } land && bandOf.TryGetValue(land, out var lb) && lb.Index == b.Index) continue;
+                    if (!barrels.TryGetValue(b.Index, out var bl)) barrels[b.Index] = bl = [];
+                    bl.Add((via.X, via.Y, 0.5 * Math.Max(via.PadSize, via.DrillSize)));
+                }
         }
         ct.ThrowIfCancellationRequested();
 
@@ -1147,7 +1188,7 @@ public static partial class TraceImpedanceAnalysis
         return (new Prepared
         {
             Ctx = ctx, Analysed = analysed, Notes = notes, Extent = extent, LayerName = LayerName,
-            IslandsOf = islandsOf, Vias = vias, DbuPerMicron = dbuPerMicron,
+            IslandsOf = islandsOf, Vias = vias, Barrels = barrels, DbuPerMicron = dbuPerMicron,
         }, null);
     }
 
@@ -1157,6 +1198,7 @@ public static partial class TraceImpedanceAnalysis
         Dictionary<int, TraceCopper> copper,
         Dictionary<int, (int[] IslandOfRing, double[] IslandArea, int[] HoleCount)> islandsOf,
         Dictionary<int, List<(double X, double Y, double R)>> vias,
+        Dictionary<int, List<(double X, double Y, double R)>> barrels,
         TraceImpedanceOptions options, List<CrossSectionExtractor.Band> bands, int dbuPerMicron,
         CancellationToken ct)
     {
@@ -1188,10 +1230,35 @@ public static partial class TraceImpedanceAnalysis
         }
         pieces = [.. pieces.Where(p => !pour[islandOfRing[p.Ring]])];
 
+        // A barrel counts on this layer only where this layer's copper meets it — a trace or pad joined to
+        // the via here — so a via passing through a plane's antipad beside a trace is not on that trace.
+        var transitionVias = new List<(double X, double Y, double R)>(bandVias);
+        foreach (var b in barrels.GetValueOrDefault(band.Index) ?? [])
+            if (cu.Contains(b.X, b.Y)) transitionVias.Add(b);
+
         return new LayerWork(key, name, band, cu, Chain(pieces, cu, islandOfRing), pours, maxW)
         {
-            Vias = bandVias, IslandOfRing = islandOfRing,
+            Vias = bandVias, TransitionVias = transitionVias, IslandOfRing = islandOfRing,
         };
+    }
+
+    /// <summary>
+    /// The conductor bands a via's barrel passes: from its stackup via entry's SpanFromLayer to its
+    /// SpanToLayer, and every band when the technology states no span for it — a drill with no span is a
+    /// through hole, which is what a Gerber drill file is. A via's own copper is only its landing pad
+    /// (<see cref="DrcRegions.Expand"/>), so without this a trace on an inner layer running onto a
+    /// through via never knew the via was there (round-10 report: the imported board's 1,291 vias all
+    /// land on the top layer).
+    /// </summary>
+    private static IEnumerable<CrossSectionExtractor.Band> BandsSpanned(ViaShape via, Technology tech,
+                                                                       List<CrossSectionExtractor.Band> bands)
+    {
+        var entry = tech.Stackup.Layers.FirstOrDefault(l => l.Kind == StackupKind.Via && l.DrawingLayers.Contains(via.Layer));
+        var from = bands.FirstOrDefault(b => entry?.SpanFromLayer is { } n && string.Equals(b.Layer.Name, n, StringComparison.OrdinalIgnoreCase));
+        var to = bands.FirstOrDefault(b => entry?.SpanToLayer is { } n && string.Equals(b.Layer.Name, n, StringComparison.OrdinalIgnoreCase));
+        if (from is null || to is null) return bands;
+        double lo = Math.Min(from.BottomM, to.BottomM), hi = Math.Max(from.TopM, to.TopM), eps = 1e-12;
+        return bands.Where(b => b.BottomM >= lo - eps && b.TopM <= hi + eps);
     }
 
     /// <summary>The stations along every chain of one layer, their cuts, and the unique solves they
@@ -1364,6 +1431,10 @@ public static partial class TraceImpedanceAnalysis
         List<ChainWork> Chains, int Pours, double MaxWidth)
     {
         public List<(double X, double Y, double R)> Vias { get; init; } = [];
+        /// <summary><see cref="Vias"/> and every via whose barrel this layer's copper meets: what a trace
+        /// can run onto. Only the via-transition rule reads it — the pour count and the end names keep
+        /// <see cref="Vias"/>, the pads that are this layer's own copper.</summary>
+        public List<(double X, double Y, double R)> TransitionVias { get; init; } = [];
         public int[] IslandOfRing { get; init; } = [];
     }
 
@@ -1456,10 +1527,13 @@ public static partial class TraceImpedanceAnalysis
         // own, shorter than MinAspect of its widths: a square pad is exactly as long as it is wide, and
         // left on the chain it made the chain's width the PAD's, which dropped the whole trace as
         // Short (brief-impedance-7). Trimmed, repeatedly, from both ends; a piece like that INSIDE a
-        // chain is a genuine step and stays.
+        // chain is a genuine step and stays. The step is PadWidthStep, not the 1.5 it was: a trace into
+        // a pad only a little wider than itself (a fine-pitch land, a 0402 pad on a 0.3 mm line) kept
+        // the pad as its last stretch and read its Z0 there, while the same trace into a wider pad did
+        // not — "through the pad, but not always" (round-10 field report).
         static bool Land((Piece Piece, bool) end, (Piece Piece, bool) next) =>
             end.Piece.Length < end.Piece.Width
-            || (end.Piece.Width > 1.5 * next.Piece.Width && end.Piece.Length < MinAspect * end.Piece.Width);
+            || (end.Piece.Width > PadWidthStep * next.Piece.Width && end.Piece.Length < MinAspect * end.Piece.Width);
         foreach (var c in chains)
         {
             while (c.Pieces.Count > 1 && Land(c.Pieces[0], c.Pieces[1])) { c.Pieces.RemoveAt(0); c.StartJunction = false; }
@@ -1505,7 +1579,7 @@ public static partial class TraceImpedanceAnalysis
                 }
                 return "open end";
             }
-            if (lw.Copper.ChordAt(px, py, -dirY, dirX, 4 * lw.MaxWidth) is { } c && c.T1 - c.T0 > 1.5 * w) return "pad";
+            if (lw.Copper.ChordAt(px, py, -dirY, dirX, 4 * lw.MaxWidth) is { } c && c.T1 - c.T0 > PadWidthStep * w) return "pad";
         }
         return "continues";
     }
@@ -1519,6 +1593,38 @@ public static partial class TraceImpedanceAnalysis
         var (sx, sy) = first.Reversed ? (first.Piece.Bx, first.Piece.By) : (first.Piece.Ax, first.Piece.Ay);
         var (ex, ey) = last.Reversed ? (last.Piece.Ax, last.Piece.Ay) : (last.Piece.Bx, last.Piece.By);
         return ((long)Math.Round(sx), (long)Math.Round(sy), (long)Math.Round(ex), (long)Math.Round(ey));
+    }
+
+    /// <summary>
+    /// Which stations are a via TRANSITION: within <paramref name="reach"/> (DBU) of the land of a via
+    /// this trace runs onto. A via is on the trace when a station comes within the land's radius plus
+    /// that station's width of its centre — the reach <see cref="EndKind"/> names a "via" end by — so
+    /// a ground via stitching beside a trace, which clears no plane, never excuses anything. Each via
+    /// that excused a stretch is named in <paramref name="notes"/>, with how much it excused.
+    /// </summary>
+    private static bool[] ViaTransitions(List<TraceStation> stations, List<(double X, double Y, double R)> vias,
+                                         double reach, TraceImpedanceReport fmt, List<string> notes)
+    {
+        var near = new bool[stations.Count];
+        if (!(reach > 0) || vias.Count == 0 || stations.Count == 0) return near;
+
+        static double Dist(TraceStation s, double x, double y) => Math.Sqrt(Sq(s.X - x) + Sq(s.Y - y));
+        foreach (var (vx, vy, r) in vias)
+        {
+            if (!stations.Any(s => Dist(s, vx, vy) <= r + s.Width)) continue;
+            double excused = 0;
+            for (int i = 0; i < stations.Count; i++)
+            {
+                if (Dist(stations[i], vx, vy) > r + reach) continue;
+                if (!near[i]) excused += stations[i].Length;
+                near[i] = true;
+            }
+            if (excused > 0)
+                notes.Add($"Not checked for {fmt.Len(excused)} into the via at {fmt.Pt((long)Math.Round(vx), (long)Math.Round(vy))} " +
+                          $"(within {fmt.Len(reach)} of its land): a plane is normally cleared round a via, so this " +
+                          "stretch has no reference under it by design. Verify the transition with an EM run.");
+        }
+        return near;
     }
 
     private static TraceRun Assemble(
@@ -1573,8 +1679,14 @@ public static partial class TraceImpedanceAnalysis
         var issues = new List<TraceIssue>();
         var runNotes = new List<string>();
 
-        void Runs(Func<int, bool> flagged, Action<int, int> emit)
+        // The via transitions: stations within ViaTransitionMicrons of the land of a via this trace
+        // runs onto are not checked — no finding starts, runs or steps there, and they are left out of
+        // the trace's numbers — and each via so treated is named in a note.
+        var nearVia = ViaTransitions(stations, lw.TransitionVias, options.ViaTransitionMicrons * dbuPerMicron, fmt, runNotes);
+
+        void Runs(Func<int, bool> flaggedAnywhere, Action<int, int> emit)
         {
+            bool flagged(int k) => !nearVia[k] && flaggedAnywhere(k);
             int i = 0;
             while (i < stations.Count)
             {
@@ -1644,7 +1756,10 @@ public static partial class TraceImpedanceAnalysis
                   Func<TraceCut, List<(CrossSectionExtractor.Band Band, double Cov)>> skippedOf, string where)
         {
             var cuts = chain.Stations.Select(s => s.Cut).ToList();
-            var nearest = cuts.FirstOrDefault(c => c is not null) is { } c0 ? sideOf(c0).FirstOrDefault() : null;
+            // The nearest layer as the first CHECKED cut sees it: at a via transition it is often another
+            // layer's trace running into the same via.
+            var first = cuts.Where((c, i) => c is not null && !nearVia[i]).FirstOrDefault() ?? cuts.FirstOrDefault(c => c is not null);
+            var nearest = first is { } c0 ? sideOf(c0).FirstOrDefault() : null;
             if (nearest is null) return;
 
             // Per station: 2 covered, 1 partly, 0 missing, −1 not cut.
@@ -1652,8 +1767,10 @@ public static partial class TraceImpedanceAnalysis
                 : ReferenceEquals(refOf(c), nearest) ? 2
                 : skippedOf(c).FirstOrDefault().Cov > 0.005 ? 1 : 0;
             var status = Enumerable.Range(0, cuts.Count).Select(Status).ToArray();
-            bool anyCovered = status.Any(s => s == 2);
-            bool anyPartial = status.Any(s => s == 1);
+            // Over the stations checked: copper over a via transition — another layer's trace running into
+            // the same via — is not "present elsewhere along it" for the rest of the trace.
+            bool anyCovered = status.Where((_, i) => !nearVia[i]).Any(s => s == 2);
+            bool anyPartial = status.Where((_, i) => !nearVia[i]).Any(s => s == 1);
 
             if (!anyCovered && !anyPartial)
             {
@@ -1687,7 +1804,7 @@ public static partial class TraceImpedanceAnalysis
             for (int i = 1; i < cuts.Count; i++)
             {
                 if (cuts[i - 1] is not { } a || cuts[i] is not { } b) continue;
-                if (status[i - 1] == 2 || status[i] == 2) continue;
+                if (status[i - 1] == 2 || status[i] == 2 || nearVia[i - 1] || nearVia[i]) continue;
                 string? ra = refOf(a)?.Layer.Name, rb = refOf(b)?.Layer.Name;
                 if (ra == rb || ra is null || rb is null) continue;
                 var s = stations[i];
@@ -1717,7 +1834,10 @@ public static partial class TraceImpedanceAnalysis
         });
 
         // ── the numbers ─────────────────────────────────────────────────────────────────────────
-        var solved = stations.Where(s => s.Z0 is not null).ToList();
+        // Over the stations that were checked; a trace that is all via transition keeps its own.
+        var counted = stations.Where((_, i) => !nearVia[i]).ToList();
+        if (counted.Count == 0) counted = stations;
+        var solved = counted.Where(s => s.Z0 is not null).ToList();
         double solvedLen = solved.Sum(s => s.Length);
         double inTol = solved.Where(s => s.Z0 >= lo && s.Z0 <= hi).Sum(s => s.Length);
         var configurations = solvedLen <= 0 ? [] : solved.GroupBy(s => s.Configuration ?? "")
@@ -1726,7 +1846,7 @@ public static partial class TraceImpedanceAnalysis
             .Where(c => c.Share >= 0.02)     // a station or two at a pad's edge is not a second type
             .ToList();
         string config = configurations.FirstOrDefault().Name ?? "";
-        var references = stations.SelectMany(s => new[] { s.ReferenceBelow, s.ReferenceAbove })
+        var references = counted.SelectMany(s => new[] { s.ReferenceBelow, s.ReferenceAbove })
                                  .Where(r => r is not null).Distinct().Select(r => r!).ToList();
 
         id++;

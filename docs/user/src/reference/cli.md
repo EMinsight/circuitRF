@@ -748,7 +748,7 @@ example workspace.
 ## `impedance` — every trace against a target Z0 {#impedance}
 
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf impedance &lt;layout&gt; [--target 50] [--tol 10] [--warn 20] [--max-freq 6GHz]
-<span class="prompt">  </span>[--layers "Top Copper,Inner 2"] [--max-width &lt;um&gt;] [--width "Top Copper=457"]… [--no-scope]
+<span class="prompt">  </span>[--layers "Top Copper,Inner 2"] [--max-width &lt;um&gt;] [--via-transition 400um] [--width "Top Copper=457"]… [--no-scope]
 <span class="prompt">  </span>[--region [&lt;layer&gt;@]x0,y0,x1,y1]… [--net &lt;name&gt;]… [--pick &lt;layer&gt;@&lt;x&gt;,&lt;y&gt;[:connected]]…
 <span class="prompt">  </span>[--whole-layer &lt;layer&gt;]…
 <span class="prompt">  </span>[--survey] [--severity warning|fail] [--ignore-accepted] [-o report.pdf]</code></pre>
@@ -778,6 +778,7 @@ the default. A saved layer the technology no longer has is skipped with a line o
 | `--severity warning\|fail` | What decides the exit code. Default `fail`; `warning` makes a warning exit 1 too. Warnings are reported either way. |
 | `--layers "A,B"` | The copper layers, by the technology's layer names. Default every copper layer. A name that is not a copper layer is refused with the names that are. |
 | `--max-width <um>` | The widest copper read as a trace. Default ten times the distance to the nearest other copper layer, between 1 and 8 mm. |
+| `--via-transition <len>` | Trace within this distance of the land of a via on it is not checked, because a plane is normally cleared round a via; each skipped stretch is listed in its trace's notes. A bare number is µm. Default the saved setting, else 400 µm; `0` checks every trace up to its via. |
 | `--width <layer>=<w>[,<w>…]` | Review only the traces of these widths on that layer; repeat it for another layer. A bare width is µm, as `--max-width` reads it, or give a unit (`18mil`, `0.457mm`). It **replaces** the saved widths for that layer for this run; a layer with no widths is reviewed at every width. A trace's width is the width over most of its length, and a width matches within 1 % (or 1 µm). |
 | `--region [<layer>@]x0,y0,x1,y1` | Review the traces any part of whose centre line lies inside this rectangle, **whole** &mdash; on that layer only when one is named (`Bottom@10mm,5mm,30mm,20mm`), on every layer when none is. **Every coordinate carries its unit** (`10mm,5mm,30mm,20mm`, `400um`, `50mil`) and a bare number is refused, as for [`render --window`](#render): a layout coordinate could be DBU, µm or mm. [`explain --extents`](#explain) prints a layout's `window` in exactly this spelling. Repeatable. |
 | `--net <name>` | Review the traces on copper carrying this net. Repeatable. |

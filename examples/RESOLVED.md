@@ -9,6 +9,62 @@ Two CLI defects found the same way are recorded where the code lives, not here:
 its own folder.
 
 
+## Every design is a cell, and no example drives a run from a bare netlist (2026-09-29)
+
+The owner found that Thermal Output Wires drove its `FromHB` setup from `Amplifier/Amplifier.cnl` —
+a netlist no user can open as a drawing — and that several examples kept a `.clay` or `.c3d` in a
+plain folder. Both teach the wrong way to build a design, because an example is read as the way to
+build one. Nothing was re-run; every change is a rename, a new file or a repointed reference.
+
+**Ten folders were not cells.** `3D Connector/Board`, `3D Package/Thru die`, `Thermal Channel vs
+Surface/{One Finger, Eight Fingers}`, `Thermal Die to Heatsink/{Board, Die to Heatsink}` and
+`Thermal Output Wires/{Die, Pads, Output, Drawn Wires}` had their views in the right sub-folders
+and no `.ccell`, which is the one file that makes a folder a cell (`ProjectTreeNode`: "a cell folder
+(has a .ccell at its root)"). Each now has the `.ccell` `circuitrf new cell` writes — byte for byte,
+generated rather than typed. **The placed layouts stay cells of their own.** A 3D view CAN place its
+own cell's layout (`C3dHierarchy.NewFromLayout` writes `CellRef ".."`), but every one of these is a
+different physical part placed into an assembly — a board under a flange, a die in a package, a pad
+frame under a mould — which is exactly what cell hierarchy is for.
+
+**The amplifier is a test-bench cell now**, `Amplifier/schematic/Amplifier.csch`, drawn from the
+netlist and proved the same circuit without simulating it: `circuitrf elab` of the old `.cnl` and of
+the new schematic gives **13 of 13 elements identical** — same node numbering, same resolved values,
+the SnP resolving to the same absolute path — and the measures and the sweep are the same lines.
+`ThermalCircuitLink.Describe` resolves the link to `SW1` and `XOUT` with ports 1/2 on `drain`/`lead`.
+**Three traps, each of which would have changed the committed numbers in silence:**
+
+- **The registry's defaults are not the engine's.** A placed Angelov FET carries `Cgs` = 1 pF and
+  `Cgd` = 0.1 pF; the model defaults both to 0, which is what the `.cnl` ran with. A P1Tone placed
+  from the PowerAmplifier's template carries `Z[0]`/`Z[2]` too. So every instance carries ONLY the
+  parameters the netlist stated — the extractor writes what is on the instance and nothing else.
+- **`Temp` written explicitly pins the device** against the thermal run's ambient
+  (`Temperature.ResolveDeviceC`: an explicit value wins). Left out, as the netlist left it out.
+- **Two bases.** The SnP's `File` is workspace-relative in a schematic (`SchematicCircuit
+  .ReferenceBaseOf`) and was `.cnl`-relative before, so `../results/…` became `results/…`; the
+  link's `Schematic` is relative to the `.c3d`'s folder (`ThermalCircuitLink.SchematicPath`).
+
+`circuitrf check` does NOT validate a thermal setup's circuit link — pointing it at a file that does
+not exist still checks clean — so `Describe` is the evidence here, not a clean check.
+
+**Two cells' views were named differently from the cell:** `Power Rail/Sensor board/layout/Board.clay`
+and `LVS/Attenuator broken/*/Attenuator.*`. Both are renamed after their cell, with their generator
+scripts. The board's companions carry the board's name (`P JOB`, `# Board:`), and
+`NetlistBoardVerbTests` holds them to what `circuitrf netlist` projects, so they were re-projected —
+an extraction, not a run; only those two lines changed. The broken attenuator's schematic is still
+byte for byte the correct one's; only its file name moved.
+
+**What was checked and left alone.** `.cdd` files at a workspace root are where the application
+itself saves an authored Data Display (`ResultsWriter.AuthoredDisplayPath`: `<baseDir>/<key>.cdd`),
+and a `.crail` beside its board's cell is where Save As opens (`RailRfViewModel.SuggestedSaveFolder`).
+`3D EM/Package`'s second layout is a named second view the `.ccell` states as `PrimaryLayout`. A
+`.csmith` is a workspace document, not a view.
+
+**A results reference cannot exist in a fresh copy.** `EveryFileAnExampleNamesResolvesAgainstItsWorkspaceRoot`
+now accepts a `results/` reference only when it is exactly what one of the example's own 3D views
+writes (the thermal link's own `ResultPaths`/`IsResultOf`). `EveryDesignDocumentAnExampleShipsIsAViewOfACell`
+holds the rule this entry is about.
+
+
 ## System Design: what a second review found (2026-09-17)
 
 Everything below came out of running the workspace rather than re-reading it: six benches, and then

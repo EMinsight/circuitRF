@@ -168,7 +168,7 @@ Opening, editing and looking at a 3D model needs neither program. Only **Simulat
 | Parallel | Across processes (MPI): one per physical core by default | Across the cores of one machine |
 | What circuitRF runs on it | Driven S-parameters, eigenmode, electrostatic, magnetostatic; lumped and wave ports; radiation pattern | Driven S-parameters with lumped ports; radiation pattern |
 | Install, as measured on one Apple M4 | Built from source: 52 min, 1.9 GB | 8 min, 0.27 GB |
-| On Windows | Inside your Windows Subsystem for Linux | Native |
+| On Windows | Inside your Windows Subsystem for Linux (WSL 2). Palace's GitHub page covers Linux and macOS only; see [Installing Palace on Windows](palace-windows.html) | Native |
 
 **Palace** is a parallel finite-element code for full-wave 3D electromagnetics. It also has a
 time-domain solver, which circuitRF does not use. **openEMS** is an FDTD solver. It is written for use

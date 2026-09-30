@@ -98,9 +98,9 @@ you build Palace, you accept those terms. circuitRF distributes no copy of Palac
 </div>
 
 **On Windows**, Palace runs inside your own Windows Subsystem for Linux distribution, and circuitRF treats
-it like a Palace on this computer. Gmsh and openEMS run natively. What you need first, and what each
-missing piece's message says, is in
-[EM Setup ▸ Palace on Windows](em-setup.html#palace-windows).
+it like a Palace on this computer. Gmsh and openEMS run natively.
+[Installing Palace on Windows](palace-windows.html) walks through it step by step, and
+[EM Setup ▸ Palace on Windows](em-setup.html#palace-windows) has what each missing piece's message says.
 
 **By hand.** If you prefer to build the solvers yourself, circuitRF finds them on `PATH`, in a Spack
 install tree, in a conda environment, or where you name them in **Settings ▸ 3D EM**. It runs only the

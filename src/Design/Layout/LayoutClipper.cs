@@ -125,6 +125,12 @@ public static class LayoutClipper
 
     private static Paths64 PathOutlinePaths(PathShape path, long tolDbu, double arcTolDbu = 0)
     {
+        // A path narrower than one DBU is a LINE and covers no area. Clipper2's offsetter returns its
+        // input UNCHANGED below |delta| 0.5, so without this a closed hairline came back as a filled
+        // polygon: a Gerber board outline drawn with a zero-size aperture (which paints nothing, by the
+        // format's own definition) turned a composited copper layer into one board-sized plane.
+        if (path.Width < 1) return [];
+
         var centerline = LayoutFlattener.FlattenOpenEdgeList(path.Xy, path.Edges, tolDbu);
         if (centerline.Length < 4) return [];   // fewer than 2 points — no outline to build
 

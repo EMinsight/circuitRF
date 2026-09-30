@@ -91,9 +91,9 @@ designator mean anything:
 
 | | |
 |---|---|
-| `layout/Board.clay` | the artwork — copper, barrels, anti-pads, and the seventeen placements |
-| `layout/Board.ipc` | the board netlist: a net name per pad, and the refdes and pin it belongs to |
-| `layout/Board.placement.csv` | the placement: a centroid and a side per refdes |
+| `layout/Sensor board.clay` | the artwork — copper, barrels, anti-pads, and the seventeen placements |
+| `layout/Sensor board.ipc` | the board netlist: a net name per pad, and the refdes and pin it belongs to |
+| `layout/Sensor board.placement.csv` | the placement: a centroid and a side per refdes |
 
 Without the netlist every port would have to be a **coordinate**, and railRF could compute no
 mounting inductance for any part — a part's mounting loop is a property of *where it was placed*,
@@ -101,16 +101,16 @@ and nothing would have said where. With it, the ports read `U1.VDD` rather than 
 parts table fills in its **Position** column, and every mounting inductance below was read off the
 artwork rather than typed.
 
-`layout/Board.gen.py` writes the **artwork**, and only the artwork. It does not compute a land
+`layout/Sensor board.gen.py` writes the **artwork**, and only the artwork. It does not compute a land
 pattern of its own — it *reads* the footprint cells, so its audit runs against the same copper the
 board draws, and it refuses to write anything if a land has no anti-pad under it.
 
 **The other two are projected from the `.clay` by circuitRF itself**, in one command:
 
 ```
-dotnet run --project src/Cli -- netlist "examples/Power Rail/Sensor board/layout/Board.clay" \
-    --ipc       "examples/Power Rail/Sensor board/layout/Board.ipc" \
-    --placement "examples/Power Rail/Sensor board/layout/Board.placement.csv"
+dotnet run --project src/Cli -- netlist "examples/Power Rail/Sensor board/layout/Sensor board.clay" \
+    --ipc       "examples/Power Rail/Sensor board/layout/Sensor board.ipc" \
+    --placement "examples/Power Rail/Sensor board/layout/Sensor board.placement.csv"
 ```
 
 One invocation, one projection, two files that cannot disagree — and the check the generator used

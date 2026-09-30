@@ -67,7 +67,7 @@ public static class SubstrateResolver
     /// The full electrical substrate (R-pc-9's layer selection + the numbers the microstrip
     /// models need). Returns a <see cref="SubstrateResolutionFailure"/> — never throws, never
     /// returns a silently-wrong default — when the technology is missing, has no signal conductor,
-    /// or has no ground reference beneath it (§2 of the brief: "refuse to stamp with a clear
+    /// or has no ground reference on either side of it (§2 of the brief: "refuse to stamp with a clear
     /// message naming the missing technology").
     /// </summary>
     public static (ResolvedSubstrate? Substrate, SubstrateResolutionFailure? Failure, IReadOnlyList<string> Warnings) ResolveElectrical(
@@ -103,25 +103,38 @@ public static class SubstrateResolver
                 warn.Add($"no conductor named '{gName}' in technology '{technology.Name}' — falling back to the default ground reference");
             }
         }
-        ground ??= FindNearestGroundBeneath(technology.Stackup, signalIndex);
+        // Nearest ground beneath first (the conventional microstrip, and every pre-existing answer
+        // unchanged); failing that, the nearest ground-designated conductor ABOVE. A line routed on the
+        // bottom of a board, or on an inner layer under its plane, is the same microstrip mirrored.
+        ground ??= FindNearestGroundBeneath(technology.Stackup, signalIndex)
+                   ?? FindNearestGroundAbove(technology.Stackup, signalIndex);
 
         if (ground is null)
         {
-            var reason = $"technology '{technology.Name}' has no ground-designated conductor beneath '{signal.Name}' " +
+            var reason = $"technology '{technology.Name}' has no ground-designated conductor above or beneath '{signal.Name}' " +
                          "(mark a conductor StackupLayer.IsGroundReference, or supply an explicit override)";
             return (null, new SubstrateResolutionFailure(reason), warn);
         }
 
         int groundIndex = layers.IndexOf(ground);
-        if (groundIndex <= signalIndex)
+        if (groundIndex == signalIndex)
         {
             return (null, new SubstrateResolutionFailure(
-                $"ground reference '{ground.Name}' is not beneath signal layer '{signal.Name}' in technology '{technology.Name}'"), warn);
+                $"ground reference '{ground.Name}' is the signal layer itself in technology '{technology.Name}'"), warn);
         }
 
-        // R-pc-10: stripline check — a ground-designated conductor ABOVE the signal layer too.
-        bool groundAbove = layers.Take(signalIndex).Any(l => l.Kind == StackupKind.Conductor && l.IsGroundReference);
-        if (groundAbove)
+        // A microstrip referenced to a plane ABOVE it is the same line mirrored: the substrate is the
+        // dielectric between the two conductors whichever side the plane is on, and the closed forms
+        // (which see only h, t, er, sigma, tan d) give the identical answer. Nothing about the
+        // below-case changes — its span and its stripline test are exactly what they were.
+        bool groundIsAbove = groundIndex < signalIndex;
+        int spanFrom = Math.Min(signalIndex, groundIndex), spanTo = Math.Max(signalIndex, groundIndex);
+
+        // R-pc-10: stripline check — a ground-designated conductor on the OTHER side of the signal too.
+        bool groundOnOtherSide = groundIsAbove
+            ? layers.Skip(signalIndex + 1).Any(l => l.Kind == StackupKind.Conductor && l.IsGroundReference)
+            : layers.Take(signalIndex).Any(l => l.Kind == StackupKind.Conductor && l.IsGroundReference);
+        if (groundOnOtherSide)
         {
             warn.Add($"'{signal.Name}' has a ground-designated conductor both above and below it — this is a " +
                      "stripline, not a microstrip; the Hammerstad-Jensen microstrip model is the wrong model here.");
@@ -131,7 +144,7 @@ public static class SubstrateResolver
         // the common single-dielectric case, an averaging simplification for a multi-dielectric span).
         long hDbu = 0;
         double weightedEpsr = 0, weightedTanD = 0;
-        for (int i = signalIndex + 1; i < groundIndex; i++)
+        for (int i = spanFrom + 1; i < spanTo; i++)
         {
             var layer = layers[i];
             if (layer.Kind != StackupKind.Dielectric) continue;
@@ -174,7 +187,7 @@ public static class SubstrateResolver
             ThicknessMeters: t,
             ConductivitySPerM: signal.SigmaSm,
             LossTangent: tanD,
-            IsStripline: groundAbove);
+            IsStripline: groundOnOtherSide);
 
         return (substrate, null, warn);
     }
@@ -232,6 +245,20 @@ public static class SubstrateResolver
                 return bottomMost;
         }
 
+        return null;
+    }
+
+    /// <summary>The nearest ground-designated conductor above the signal. Deliberately no legacy
+    /// two-conductor fallback here: that fallback exists for a board whose bottom is ground, and
+    /// guessing a plane ABOVE from an unmarked stackup would be a guess nothing in the file states.</summary>
+    private static StackupLayer? FindNearestGroundAbove(Stackup stackup, int fromIndexExclusive)
+    {
+        var layers = stackup.Layers;
+        for (int i = fromIndexExclusive - 1; i >= 0; i--)
+        {
+            if (layers[i].Kind == StackupKind.Conductor && layers[i].IsGroundReference)
+                return layers[i];
+        }
         return null;
     }
 

@@ -85,6 +85,31 @@ signal layer it draws on and the substrate underneath.
 **The artwork regenerates.** One rectangle on the signal layer, running from the origin along +X,
 centred on `y = 0`, with a connection pin at each end.
 
+**The ground is the stackup's, not artwork.** `GroundReference` names the conductor the line returns
+through, and it may lie **above or below** `SignalLayer`: a line on an inner layer under its plane is the
+same microstrip mirrored, and the substrate is the dielectric between the two conductors either way.
+When the line has a ground-designated conductor on *both* sides it is a stripline, and a warning says
+the microstrip model is the wrong one.
+
+**Drawing the ground plane.** A line's artwork is the line only, so the ground layer starts empty. The
+planar EM engine takes an undrawn reference as an infinite plane and the impedance probe reads it as a
+solid one, so that is often enough. When the plane's own shape matters (at a via transition, or for a
+3D run), use **Design ▸ Draw Ground Pour**. When Update Layout from Schematic places lines over an
+empty **inner** ground layer, its message offers the same command as a button. It does not offer it for
+an outer ground, such as a two-layer board's bottom copper: no via can pass through an outer plane, so
+for simulation an empty one is already right. Draw it anyway before you export for fabrication.
+
+- It draws one pour per ground layer, under every microstrip line (MLIN, MBEND, MTEE, MCROSS, MTAPER,
+  MKLOPF) that returns through it, reaching five substrate heights beyond them. It uses the lines where
+  they are **when you run it**, so arrange them first: Update Layout places new lines on a grid.
+- Every via that passes **through** the plane gets a clearance hole 250 µm beyond its pad. That is a
+  default, because a technology states no antipad; edit the pour to change it.
+- A via that **ends** on the plane is joined to it, and the message counts them. A layout has no nets to
+  tell a ground via from a signal via landing on that layer, so check each one.
+- It draws nothing on a ground layer that already has artwork, because a plane you drew is yours. A via
+  inside a placed cell is not seen.
+- The whole pour is one undo step.
+
 That last sentence is not a description of MLIN in particular — it is the **origin and orientation
 rule** every PCell follows:
 

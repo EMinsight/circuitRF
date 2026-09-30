@@ -1,5 +1,5 @@
 C  Board netlist projected by circuitRF from the artwork's own lands and vias.
-P  JOB Board
+P  JOB Sensor board
 P  UNITS CUST 1
 P  DIM MM
 317+3V3            FB1-1      X0003675Y0010300

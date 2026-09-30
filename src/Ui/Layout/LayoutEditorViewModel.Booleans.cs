@@ -82,11 +82,29 @@ public sealed partial class LayoutEditorViewModel
     private bool SelectionHasSameLayerPair =>
         GeometricSelectedIndices.Select(i => Model.Shapes[i].Layer).GroupBy(k => k).Any(g => g.Count() >= 2);
 
+    /// <summary>
+    /// <para><b>The refusals say what to do instead (field report, 2026-09-29).</b> The ordinary thing
+    /// to try on a via transition is "merge the via and the trace", and both halves of that selection
+    /// refused with a sentence that named no way forward: a generated line (MLIN and its kin) is an
+    /// INSTANCE, and a via is not a filled region. Neither needs merging to connect — overlapping copper
+    /// on one layer is one conductor to the EM extractor and to connectivity, and a via joins the copper
+    /// it lands on in every layer it spans — so that is said, along with the way to weld an instance's
+    /// artwork into a shape when that genuinely is what is wanted.</para>
+    /// </summary>
     public LayoutCommandAvailability BooleanOpAvailability => ShapeOnlyBlockReason("Boolean operations") is { } r
-        ? LayoutCommandAvailability.Disabled(r)
+        ? LayoutCommandAvailability.Disabled(r + " " + AlreadyConnectedNote +
+                                             " To weld an instance's artwork into shapes, Flatten Hierarchy it " +
+                                             "first — it then stops following its parameters.")
         : SelectionHasSameLayerPair
             ? LayoutCommandAvailability.Enabled
-            : LayoutCommandAvailability.Disabled("Select 2 or more shapes on the same layer");
+            : LayoutCommandAvailability.Disabled(ValidSelectedIndices.Any(i => Model.Shapes[i] is ViaShape)
+                ? "Select 2 or more shapes on the same layer. A via is not a filled region and needs no merge: " +
+                  "it joins the copper it lands on in every layer it spans."
+                : "Select 2 or more shapes on the same layer");
+
+    private const string AlreadyConnectedNote =
+        "Copper that overlaps on one layer is already one conductor to EM and connectivity, so nothing " +
+        "needs merging to connect it.";
 
     public LayoutCommandAvailability OffsetAvailability => ShapeOnlyBlockReason("Offset") is { } r
         ? LayoutCommandAvailability.Disabled(r)

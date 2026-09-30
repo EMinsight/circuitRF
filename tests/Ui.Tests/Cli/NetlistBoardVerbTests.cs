@@ -31,7 +31,7 @@ public sealed class NetlistBoardVerbTests(ITestOutputHelper output) : IDisposabl
     public void Dispose() { try { Directory.Delete(_out, true); } catch { /* best effort */ } }
 
     private static string ExampleClay() => Path.Combine(
-        PowerRailFootprintCells.ExampleRoot(), "Sensor board", "layout", "Board.clay");
+        PowerRailFootprintCells.ExampleRoot(), "Sensor board", "layout", "Sensor board.clay");
 
     // ══ 5. The CLI as a process against the in-process call ═══════════════════════════════════
 
@@ -145,7 +145,7 @@ public sealed class NetlistBoardVerbTests(ITestOutputHelper output) : IDisposabl
     /// <summary>
     /// <b>Gate 10, R-ab3-4b.</b> The two files committed beside the Power Rail example are what
     /// this verb projects from its <c>.clay</c> — which is what makes the README's one command the
-    /// truth rather than a description. <c>Board.gen.py</c> writes neither any more;
+    /// truth rather than a description. <c>Sensor board.gen.py</c> writes neither any more;
     /// <c>PowerRailExampleTests</c> holds that, and the example's own answers.
     /// </summary>
     [Fact]
@@ -153,17 +153,17 @@ public sealed class NetlistBoardVerbTests(ITestOutputHelper output) : IDisposabl
     {
         Directory.CreateDirectory(_out);
         string root = PowerRailFootprintCells.ExampleRoot();
-        string ipc = Path.Combine(_out, "Board.ipc");
-        string place = Path.Combine(_out, "Board.placement.csv");
+        string ipc = Path.Combine(_out, "Sensor board.ipc");
+        string place = Path.Combine(_out, "Sensor board.placement.csv");
 
         var run = RunCli("netlist", ExampleClay(), "--ipc", ipc, "--placement", place);
         Assert.Equal(0, run.ExitCode);
 
         Assert.Equal(
-            File.ReadAllText(Path.Combine(root, "Sensor board", "layout", "Board.ipc")),
+            File.ReadAllText(Path.Combine(root, "Sensor board", "layout", "Sensor board.ipc")),
             File.ReadAllText(ipc));
         Assert.Equal(
-            File.ReadAllText(Path.Combine(root, "Sensor board", "layout", "Board.placement.csv")),
+            File.ReadAllText(Path.Combine(root, "Sensor board", "layout", "Sensor board.placement.csv")),
             File.ReadAllText(place));
     }
 

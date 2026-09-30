@@ -515,8 +515,12 @@ public static class C3dThermal
     /// may be null (the document did not elaborate): the checks that need solids are then skipped, since elaboration's own
     /// refusal is already the finding. <paramref name="resolution"/> is the document's resolved scope.
     /// </summary>
+    /// <param name="link">The .c3d's own path and its results folder. Given, a <c>FromCircuit</c> current is also resolved as far
+    /// as it goes with nothing run (<see cref="Thermal.ThermalCircuitLink.Describe"/>, the rules the Setups page, <c>explain</c> and
+    /// the run share) and what does not resolve is a finding. <c>check</c> passes it; the editor and the run do not, because each
+    /// already reports the link's resolution itself and would say it twice.</param>
     public static IReadOnlyList<Diagnostic> Setup(string name, EmSetup setup, C3dDocument doc, C3dElaboration? e,
-                                                  C3dResolution resolution)
+                                                  C3dResolution resolution, (string C3dPath, string ResultsRoot)? link = null)
     {
         var found = new List<Diagnostic>();
         var t = setup.Thermal ?? new CemThermal();
@@ -599,6 +603,9 @@ public static class C3dThermal
             {
                 if (string.IsNullOrWhiteSpace(fc.Schematic))
                     found.Add(D.Current(name, "has a FromCircuit current naming no Schematic: name the .csch or .cnl whose HB drives the ports"));
+                // Designer feedback round 10 — a link to a schematic that does not exist checked clean and failed only at the run.
+                else if (link is { } at2 && Thermal.ThermalCircuitLink.Describe(fc, doc, at2.C3dPath, at2.ResultsRoot).Problem is { } why)
+                    found.Add(D.Current(name, $"takes its currents from a circuit that does not resolve: {why}"));
                 if (c.Port is not null || c.Array is not null || c.Dc is not null || c.F0 is not null || harmonics || c.EnterFace is not null || c.LeaveFace is not null)
                     found.Add(D.Current(name, "has a FromCircuit current that also states a Port, Array, Dc, F0, Harmonics or contact face: the circuit " +
                                               "gives every port its currents — port p is pin p of the instance — so the entry states the circuit only"));

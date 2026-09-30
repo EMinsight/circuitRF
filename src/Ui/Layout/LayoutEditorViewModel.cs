@@ -1000,7 +1000,11 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
 
         var placed = new LabelShape
         {
-            Layer         = CurrentLayerKey,
+            // The METAL's layer, not the current one (field report, 2026-09-29): straight after
+            // placing a via the current layer is the drill layer, so every port then placed read
+            // "Drill" in the inspector and looked to have moved there. A port is a statement about the
+            // conductor under it; the current layer is only the fallback where that is unknown.
+            Layer         = conductor.Layer ?? CurrentLayerKey,
             X             = sx,
             Y             = sy,
             Text          = NextPortName(),
@@ -1020,9 +1024,10 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             // point was arrived at, and a port placed with snapping off is inside the same metal.
             PortDirection = InteriorDirectionAt(conductorAt, sx, sy)
                             ?? LayoutPortDirection.DirectionAt(conductor, sx, sy),
-            // The conductor the user could SEE when they placed it. Null for artwork inside a placed
-            // instance, which owns no top-level layer and is not visibility-filtered anyway.
-            PortLayer     = conductor.Shape?.Layer,
+            // The conductor the user could SEE when they placed it — the instance copper's own layer
+            // when the metal is inside a placed instance (a generated line), which used to commit to
+            // nothing and leave the EM run reading the label's layer instead.
+            PortLayer     = conductor.Layer,
             // RP-2b: PortReference and PortReturn are deliberately NOT seeded. A port placed on
             // ordinary metal returns through the stackup's ground plane, which is what null means and
             // what every port has always done — naming a drawn conductor instead is a deliberate act,

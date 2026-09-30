@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Writes the broken copy of the board, by mutating the correct one.
 
-    python3 "examples/LVS/Attenuator broken/layout/Attenuator.break.py" examples/LVS
-    python3 "examples/LVS/Attenuator broken/layout/Attenuator.break.py" examples/LVS --only F4
+    python3 "examples/LVS/Attenuator broken/layout/Attenuator broken.break.py" examples/LVS
+    python3 "examples/LVS/Attenuator broken/layout/Attenuator broken.break.py" examples/LVS --only F4
 
 Six faults, each ONE named minimal mutation of `Attenuator/layout/Attenuator.clay`
 (brief-lvs-5-proving-designs.md R-lvs5-2).  `--only Fn` writes a layout carrying exactly one of
@@ -10,7 +10,7 @@ them, which is what lets a gate point at a single finding; the no-argument form 
 which is the realistic case and also the one where a comparator reporting at the wrong granularity
 looks fine.
 
-THE SCHEMATIC IS NOT TOUCHED.  `Attenuator broken/schematic/Attenuator.csch` is a byte-for-byte
+THE SCHEMATIC IS NOT TOUCHED.  `Attenuator broken/schematic/Attenuator broken.csch` is a byte-for-byte
 copy of the correct cell's, and the whole point of the fixture is that the two designs differ
 ONLY in artwork.  This script reads the correct `.clay` and writes the broken one; it never writes
 anything else, and it refuses rather than guessing if the shape it is about to mutate is not the
@@ -140,7 +140,7 @@ if "F6" in wanted:
     n["CellRef"] = "../../footprints/R0402-150R"
     applied.append("F6 R3 re-pointed from R0402-294R to R0402-150R")
 
-out = out_path or os.path.join(root, "Attenuator broken", "layout", "Attenuator.clay")
+out = out_path or os.path.join(root, "Attenuator broken", "layout", "Attenuator broken.clay")
 os.makedirs(os.path.dirname(out), exist_ok=True)
 with open(out, "w") as f:
     json.dump(clay, f, indent=2)

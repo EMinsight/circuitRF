@@ -218,6 +218,27 @@ public class EmPortExtractionTests
     }
 
     [Fact]
+    public void APortCommittedToTheGroundPlane_IsToldItIsSeatedThere_AndHowToReseatIt()
+    {
+        // Field report, 2026-09-29: a port seated on the ground plane read only "not on any conductor",
+        // naming neither where it was nor what to do about it.
+        var tech = StarterTechnologies.Pcb2Layer();
+        var onPlane = new LabelShape
+        {
+            Layer = TopCopper, PortLayer = new LayerKey(2, 0), X = Mm(60), Y = Mm(40),
+            Text = "P1", Height = Mm(0.5), IsPort = true,
+        };
+        LayoutShape[] shapes = [Line(), onPlane, Port("P2", 20, 1.45)];
+
+        var r = EmPortExtraction.Extract(shapes, Problem(shapes), Dbu, technology: tech);
+
+        Assert.False(r.Ok);
+        Assert.Contains("of this EM setup's signal layers", r.Refusal!, StringComparison.Ordinal);
+        Assert.Contains("committed to 'Bottom Copper (1 oz)', a ground reference", r.Refusal!, StringComparison.Ordinal);
+        Assert.Contains("Drag it onto the end of the signal trace", r.Refusal!, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ALayoutWithNoPortLabels_IsRefusedWithAPointerAtThePortTool()
     {
         var r = Extract(Line());

@@ -222,6 +222,16 @@ public sealed class TraceImpedanceReview
     /// <summary>The highest frequency the traces carry, Hz, or null for off.</summary>
     public double? MaxFrequencyHz { get; set; }
 
+    /// <summary>Trace within this many µm of the land of a via on it is not checked, 0 for all of it;
+    /// null — the default, and absent from the file — for
+    /// <see cref="TraceImpedanceOptions.DefaultViaTransitionMicrons"/>.</summary>
+    public double? ViaTransitionMicrons { get; set; }
+
+    /// <summary><see cref="ViaTransitionMicrons"/>, or the default where none was saved. A method, not a
+    /// property: the review is serialised whole into the <c>.clay</c>, and a computed property would be
+    /// written into every file that has one.</summary>
+    public double ViaTransitionOrDefault() => ViaTransitionMicrons ?? TraceImpedanceOptions.DefaultViaTransitionMicrons;
+
     /// <summary>The copper layers analysed, BY NAME; null for every copper layer.</summary>
     public List<string>? Layers { get; set; }
 
@@ -231,7 +241,8 @@ public sealed class TraceImpedanceReview
     public TraceImpedanceReview Clone() => new()
     {
         TargetOhms = TargetOhms, TolerancePercent = TolerancePercent, WarningPercent = WarningPercent,
-        MaxFrequencyHz = MaxFrequencyHz, Layers = Layers is null ? null : [.. Layers], Scope = Scope?.Clone(),
+        MaxFrequencyHz = MaxFrequencyHz, ViaTransitionMicrons = ViaTransitionMicrons,
+        Layers = Layers is null ? null : [.. Layers], Scope = Scope?.Clone(),
     };
 
     /// <summary>Whether <paramref name="other"/> says the same thing — so a dialog closed with nothing
@@ -244,6 +255,7 @@ public sealed class TraceImpedanceReview
             (a is null || a.Count == 0) ? (b is null || b.Count == 0) : b is not null && a.SequenceEqual(b);
         return TargetOhms == other.TargetOhms && TolerancePercent == other.TolerancePercent
             && WarningPercent == other.WarningPercent && MaxFrequencyHz == other.MaxFrequencyHz
+            && ViaTransitionOrDefault() == other.ViaTransitionOrDefault()
             && SameList(Layers, other.Layers) && TraceImpedanceScope.Same(Scope, other.Scope);
     }
 }

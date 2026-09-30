@@ -15581,3 +15581,156 @@ stream (kind, text, unit literal) and the same engine unit. Cycles: the target i
 **Materials are returned, never written.** `C3dPasteResult.MaterialsToCreate`; the workspace commits them through
 `CommitMaterialList`. An unticked one nulls the `Material` of every pasted object and operand, and of a Conductive face
 boundary, that names it.
+
+## Designer feedback round 10 — a Gerber top layer imported as one solid plane (2026-09-29)
+
+**Symptom.** A four-layer Gerber set imported with its Top Copper as a single board-sized plane dotted with via
+rings — every trace, pour gap and separate pour region gone — so it looked as if another layer had been imported in
+its place. Importing the top file alone gave the same result.
+
+**Cause.** The file draws the board outline with a zero-size aperture (`%ADD10C,0.000000*%`), which by the format's
+own definition paints nothing. The reader keeps it as a `PathShape` of width 0 — harmless on its own — but this
+layer also paints clear-polarity objects, so it was COMPOSITED, and `LayoutClipper.PathOutlinePaths` handed the
+0-width path to `Clipper.InflatePaths`. **Clipper2's offsetter returns its input unchanged when |delta| < 0.5**, so the
+closed outline came back as a filled square and the union swallowed the whole layer. The layers that paint nothing
+clear kept their primitives and were never affected, which is why only the top layer (the one with pour clearances)
+went wrong.
+
+**Fix.** `PathOutlinePaths` returns no geometry for a path narrower than one DBU: a line covers no area. It is fixed
+at the conversion rather than in the Gerber reader because every consumer of `ToClipperPaths` (DRC, booleans, the
+extractors, impedance) had the same latent fault for any zero-width path — DXF imports produce them routinely. A
+zero-width path stays in the document; it just no longer counts as copper. Gate:
+`GerberReaderTests.ZeroSizeApertureOutline_OnACompositedLayer_PaintsNoCopper`.
+
+**An existing import is not repaired by the fix** — the composited copper was written into the `.clay`. Re-import the
+set.
+
+## Designer feedback round 10 — a BOM pasted from a PDF placed R1 at the default "1R" (2026-09-29)
+
+**Symptom.** Pasting a PDF parts table placed R1 as 1 Ω. The table says 15.
+
+**Cause: no value was read at all, so the part got the default.** Two copy shapes showed it:
+- **Row by row** (`R1 Resistor 15 1206 …`). The table's resistor values have no unit. Outside a
+  delimited Value column, the whitespace path only accepted a value that carried a unit, so `15` was
+  never read. The same table writes `10 K`, with the multiplier as a word of its own, and that failed
+  too.
+- **One cell per line, where the PDF laid a block out as columns.** The copy delivers every
+  reference, then every type, then every value. An EMPTY cell leaves no line at all, so the columns
+  do not line up and cannot be matched back to rows. Read row-wise, each reference arrived alone and
+  was placed at the default value: a wrong part rather than a missing one.
+
+**Fix** (`Schematic/BomTablePaste.cs`):
+- A bare number immediately after the type word reads as ohms. The rule applies to a resistor only
+  (a capacitor has no unit to assume), never to a case code, and never elsewhere in the row, because
+  quantities and part codes are bare numbers too. The result carries a note naming the parts read
+  this way.
+- `10 K` / `1 M` read as a resistor's multiplier.
+- A run of three or more reference-only rows is marked as a column-transposed block and SKIPPED,
+  with the reason and the remedy (paste from a spreadsheet, or copy a row at a time). Such a block
+  is never placed at the default. Three rows, not two, because in a one-cell-per-line copy a case
+  code shaped like a reference (`SOD110`) makes a false pair ahead of a real row.
+- Upper-case letter-as-point (`2P3`, `4U7`, `2N5`) reads, as a spreadsheet BOM often writes it.
+- A TAB table no longer needs its rows to agree on length. A spreadsheet export that trims trailing
+  empty cells gives rows of every length, and the whole paste was refused as "not a table". The
+  length-agreement rule exists to reject comma text copied from a PDF, and a tab never appears
+  inside a PDF's words.
+
+**Still not a value, by design:** a bead whose Value cell holds its part number is placed as an
+inductor at the default, with the existing "no value with a unit" note.
+
+Gates: `tests/Ui.Tests/Schematic/BomTablePasteTests.cs`. The new tests are
+`PdfRows_ABareNumberAfterTheType_IsOhms_AndASpacedMultiplierReads`,
+`PdfCellsCopiedColumnByColumn_AreSkippedWithTheReason_NotPlacedAtTheDefault` and
+`ATabTable_WithRaggedRowsAndATitleBlock_IsStillATable`, plus two upper-case rows in
+`ShorthandValues_…`. Every fixture was hand-authored in the SHAPE of the pasted text.
+
+## Designer feedback round 10 — MLIN referenced to a plane ABOVE it, and the undrawn ground plane (2026-09-29)
+
+**A ground reference above the signal was refused.** `SubstrateResolver.ResolveElectrical` rejected any
+`GroundReference` whose stackup index was not greater than the signal's ("not beneath"), and every microstrip
+consumer then fell back to the model's own defaults — a plausible, wrong Z0 (a line on an inner layer under its
+plane read ~120 Ω). A microstrip under its plane is the same line mirrored: the closed forms see only h, t, εr,
+σ and tan δ, and the substrate is the dielectric between the two conductors whichever side the plane is on. The
+resolver now spans `min..max` of the two indices, and with no override tries the nearest ground beneath first
+(every pre-existing answer unchanged) and then the nearest ground-designated conductor above — with no legacy
+two-conductor fallback upward, since nothing in an unmarked stackup states a plane above. The stripline warning
+now looks on the side OPPOSITE the chosen reference. Gate: `SubstrateResolverTests.GroundAboveTheSignal_*` (the
+mirrored-stackup equality is the oracle). Note for the ordinary 4-layer board: a line on Inner 2 referenced to
+Inner 1 with Bottom also marked ground IS a stripline (and Bottom is usually the much nearer plane), so that case
+resolves AND warns — honouring the explicit choice while saying the model is the wrong one.
+
+**Update Layout from Schematic drew no ground plane: now Draw Ground Pour, on request.** No microstrip generator
+draws its reference, and a per-line plane was rejected: planes of adjacent lines overlap, and a line ending at a
+layer-change via would put copper straight through the via's antipad on the reference layer. The field workspace
+had exactly that, a hand-drawn Inner 1 pour with a clearance hole round the via, which a generated rectangle
+would have filled and shorted. The owner chose an opt-in pour instead. `GroundPourPlanner` (here, so it is
+headless) draws ONE pour per ground conductor under every placed microstrip returning through it, five substrate
+heights beyond them, and subtracts a disc 250 µm beyond the pad of every via whose span passes THROUGH the plane.
+Three traps shaped it:
+
+- **It is computed when asked, not when Update Layout runs.** Update Layout places new lines on a placement grid
+  the designer then rearranges, so a pour drawn at update time covers the grid, not the design. The update posts
+  a message carrying a **Draw Ground Pour** button, and Design ▸ Draw Ground Pour runs the same thing later.
+- **A via ending ON the plane cannot be classified.** A layout carries no nets, so a ground via and a signal via
+  landing on that layer look identical. It is joined, and COUNTED in the message, rather than guessed at.
+- **An existing drawing on the layer is left alone.** Drawing over it would fill the clearances the designer cut.
+  Vias do not count as drawing on the layer.
+- **Only an INNER plane is offered after Update Layout.** Every engine already reads an undrawn ground as solid
+  (MoM's infinite plane, the impedance probe, the 3D model's conducting floor), so an empty OUTER ground, such as
+  a two-layer board's bottom, is right for simulation: no via passes through it. The menu command still draws
+  one, for fabrication.
+
+Gate: `MicrostripGroundReferenceReportTests` (the offer, the pour's extent, a hole only for a via passing
+through, a via ending on the plane counted and joined, and no second pour once one is drawn).
+
+## Designer feedback round 10 — impedance report: labels, pads, via transitions (2026-09-29)
+
+**Labels over the copper (B).** The map page drew each trace id at its longest piece's midpoint and
+each finding disc at the finding, both ON the trace. `MapLabelPlacer` (`src/Render/Renderers`) now
+places them greedily beside the trace — perpendicular first, then diagonals, then along, at growing
+distances — rejecting any spot that touches a trace stroke, a placed label or the frame, and draws a
+leader back when it moved one; when nothing is free it takes the spot that covers least, a trace
+costing 100× a label. The map also frames the traces REVIEWED (never under 15 % of the board's larger
+side) instead of the whole board, which is what made a scoped review a few points across. The canvas
+overlay has no text, but its discs sat on the trace too: `ImpedanceFindingMarker` now carries the cut's
+cross direction and the disc is drawn beside the line with a leader, clear of the selected halo.
+
+**Through the pad, but not always (C).** Two separate thresholds decided what a pad is: the end-trim
+took an end piece off the trace only when it was shorter than it was wide or more than 1.5× the
+trace's width, and `EndKind` named an end "pad" on the same 1.5. A trace into a land 1.2–1.5× its
+width that was longer than wide (fine-pitch IC lands, a small passive on a line nearly as wide) kept
+the land as its last stretch, its width and its low Z0, while the neighbouring trace into a wider land
+did not. One constant now, `PadWidthStep = 1.2`, used by both. On the round-9 board's top layer 80
+more trace ends read "pad" (154 → 234), the fan-out traces lost their 560–660 µm land stretches, and
+two traces that were long enough only WITH their land fell under four widths and are now left out of a
+run with no selector, as any stub that short already was (a region or pick still reviews them).
+
+**Every via transition flagged (E).** New setting, `TraceImpedanceOptions.ViaTransitionMicrons`,
+default **400 µm**: stations within the via land's radius plus this of a via ON the trace (a station
+within land radius + its width of the centre) are not checked — no finding starts, runs or steps there,
+they are left out of the trace's numbers, and each via so treated is named in a note ("Not checked for
+… into the via at …; verify the transition with an EM run"), so nothing is silently dropped. Saved in
+the `.clay`'s review as `ViaTransitionMicrons`, **absent while it is the default** so an untouched file
+does not change; the panel's field is *Skip near vias*, the verb's flag `--via-transition` (0 = off).
+400 µm: an antipad is typically the land plus 0.2–0.3 mm all round, and the reference settles about a
+dielectric height beyond the cut.
+
+Two traps found on the way, both of which made the setting do nothing where it was asked for:
+- **A via is copper only on its LANDING layer.** `DrcRegions.Expand` emits a via's pad on
+  `LandingLayer` and its barrel on the drill layer, which is no conductor band; every one of the
+  imported board's 1,291 vias lands on the top layer. So an inner-layer trace running onto a through
+  via never had a via at its end. `BandsSpanned` now registers the barrel on every band between the
+  via stackup entry's `SpanFromLayer`/`SpanToLayer` (every band when no span is stated — a Gerber drill
+  is a through hole), and only where that band's copper contains the via centre, so a via passing
+  through a plane's antipad BESIDE a trace excuses nothing. Kept as `LayerWork.TransitionVias`, read
+  only by this rule: the pour count (4 vias on an island makes a pour) and the end names still see the
+  landing pads alone, so no island changed classification. On the round-9 board's Inner 2 the broken-
+  return findings went 250 → 106; what remains are traces passing OTHER vias' antipads, which are real.
+- **"Present elsewhere along it" counted the excused stations.** The trace on the other layer running
+  into the same via is often the nearest copper above or below the first few stations, so the first
+  cut named it as the reference and the whole rest of the trace was then reported missing it. Both the
+  nearest-layer choice and the covered/partial tests now read only the stations that are checked.
+
+Gates: `TraceImpedanceAnalysisTests.ATraceIntoAPadALittleWiderThanIt_LeavesThePadOff`,
+`TraceImpedanceAnalysisTests.TheAntipadRoundAVia_IsNotFlagged_WithinTheViaTransition_AndIsNoted`
+(barrel-only via, so it holds the landing-layer trap too), `MapLabelPlacerTests`.

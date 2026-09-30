@@ -124,6 +124,10 @@ public static class GerberLayerCascade
         "FabricationDrawing", "ArrayDrawing", "OtherDrawing", "Drillmap", "Glue", "Carbonmask",
         "Goldmask", "Heatsinkmask", "Peelablemask", "Silvermask", "Tinmask", "Vcut", "Vcutmap",
         "Depthrout", "Viafill", "Pads", "Other",
+        // KindNames' own keys that name no copper. "Drawing" was missing (field report,
+        // 2026-09-29): a set's documentation drawing — 601 shapes of dimensions and notes — was
+        // reported as copper no conductor claims, beside a stackup whose copper was all attached.
+        "Drawing", "Component", "Peelablesoldermask",
     ];
 
     /// <summary><see cref="Patterns"/>' own non-conductor <c>LayerName</c>s, as prefixes.</summary>
@@ -131,6 +135,11 @@ public static class GerberLayerCascade
     [
         "Soldermask", "Paste", "Silk", "Legend", "Assembly", "Fabrication", "Outline", "Mechanical",
         "V-Cut", "Drill Map", "Drill",
+        // The rest of KindNames' non-copper names — the claim above is that this list IS that
+        // table's, and a name the cascade writes but this does not know is a documentation layer
+        // reported as unclaimed copper ("Drawing", field report 2026-09-29).
+        "Drawing", "Array Drawing", "Glue", "Carbon Mask", "Peelable Mask", "Via Fill",
+        "Heatsink Mask", "Depth Rout", "Component",
     ];
 
     // ── The cascade ───────────────────────────────────────────────────────────

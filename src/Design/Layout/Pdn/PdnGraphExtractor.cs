@@ -455,7 +455,7 @@ public static class PdnGraphExtractor
         // ── R-rail4-5: a pour-dominated path is REFUSED, not answered ──────────────────────────
         if (build.PourDominatedRefusal() is { } pourRefusal)
             return new PdnExtraction(pourRefusal, null, regions, diagnostics)
-                { Classification = classification };
+                { Classification = classification, RefusedRegion = build.RefusedRegion };
 
         var asm = new PdnAssembly(request, nodes, PdnModelKind.Fast, celsius, notes, diagnostics)
             { WalkHoles = regions.Holes };
@@ -1395,6 +1395,12 @@ internal sealed class GraphBuild(
 
     // ── R-rail4-5: Fast REFUSES a pour-dominated path rather than answering it ──────────────────
 
+    /// <summary>The spreading copper <see cref="PourDominatedRefusal"/> named, or null — carried out
+    /// as DATA so the window can act on it in one click. Before a rail has ever solved there is no
+    /// class map to right-click, so the sentence's own remedy could not be followed (field report,
+    /// 2026-09-29).</summary>
+    public PdnClassification? RefusedRegion { get; private set; }
+
     /// <summary>
     /// The refusal for a rail whose source cannot reach a load without crossing copper the fast
     /// model classified as spreading — or null.
@@ -1508,14 +1514,21 @@ internal sealed class GraphBuild(
             // buttons above the board are glyphs, the word only on a tooltip — and a designer asked
             // what it was. The remedy now says where the button is and names the context-menu row
             // that performs it (RailLayoutOverlay.BuildContextMenuItems), word for word.
+            //
+            // (2026-09-29) And that button could not help on the run that raised this: the class map
+            // is drawn from a SOLVED rail's result, and a rail refused on its first run has none, so
+            // "right-click that copper" pointed at an empty board. The window now offers the
+            // override as a button under this sentence (RefusedRegion carries the region out as
+            // data), and the sentence names the remedy without naming a surface, because the rail
+            // verb prints the same words.
+            RefusedRegion = onPath;
             var tech = request.Technology;
             var lines = new List<string>
             {
                 $"Rail '{request.Rail.Name}' reaches {load.Anchor.Describe(fmt)} only through " +
-                "spreading copper, which the fast model does not price. Run Accuracy, or — if you " +
-                "know the current follows a path across that copper — open the board's Class view " +
-                "(the last of the four overlay buttons above the board), right-click that copper and " +
-                "choose \"Copper: treat as a trace\".",
+                "spreading copper, which the fast model does not price. Run Accuracy, which meshes " +
+                "it and answers — or, if you know the current follows a path across that copper, " +
+                "mark it \"Copper: treat as a trace\" and run again.",
             };
 
             if (onPath is not null)

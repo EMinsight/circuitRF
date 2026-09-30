@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.Input;
 using CircuitRF.Ui.Layout;
 using CircuitRF.Ui.Messages;
@@ -172,6 +173,18 @@ public partial class WorkspaceViewModel
                 deleted: result.DeletedCount);
 
             addedRegion = result.AddedRegion;
+
+            // Designer feedback round 10: the plane the new lines return through, offered as copper. The pour is
+            // computed when the button is pressed, from where the lines are then — Update Layout has just put them
+            // on a placement grid the designer will rearrange.
+            foreach (string ground in result.UndrawnGrounds)
+                Messages.PostAction(MessageLevel.Info,
+                    $"The lines placed here return through '{ground}', the technology's ground reference, and nothing " +
+                    "is drawn on it. The planar EM engine takes it as an infinite plane and the impedance probe reads " +
+                    "it as solid, so this matters only where the plane's own shape does — at a via transition, or for " +
+                    "a 3D run. Design ▸ Draw Ground Pour draws it, under the lines where they are when you run it, " +
+                    "with a clearance round every via that passes through it.",
+                    "Draw Ground Pour", () => { layoutVm.DrawGroundPour(); return Task.CompletedTask; });
         }
 
         SeedWBondSidecar(doc.ViewModel.EditModel, cellDir ?? layoutDir, schematicName, layoutVm, onlyWBond,
@@ -292,6 +305,11 @@ public partial class WorkspaceViewModel
     /// placeholder is reported instead of being left to speak for itself.
     /// </summary>
     public Func<string, Task<bool>>? AutoGenSymbolPrompt { get; set; }
+
+    /// <summary>Design ▸ Draw Ground Pour: the plane the active layout's microstrip lines return through, drawn as
+    /// copper where the lines are now (designer feedback round 10; <see cref="LayoutEditorViewModel.DrawGroundPour"/>).</summary>
+    [RelayCommand(CanExecute = nameof(IsLayoutDocumentActive))]
+    private void DrawGroundPour() => ActiveLayoutDocument?.ActiveViewModel.DrawGroundPour();
 
     [RelayCommand(CanExecute = nameof(IsLayoutDocumentActive))]
     private async Task UpdateSchematicFromLayout()

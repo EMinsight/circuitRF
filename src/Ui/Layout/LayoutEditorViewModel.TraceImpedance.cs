@@ -365,8 +365,15 @@ public partial class LayoutEditorViewModel
             traces.Add(new ImpedanceTraceMarker(stretches,
                 ReferenceEquals(t, _impedanceSelectedTrace) && _impedanceSelectedIssue is null));
             foreach (var i in t.Issues)
+            {
+                // The cut nearest the finding gives the side to draw its disc on: (Ux, Uy) is across the trace.
+                var at = t.Stations.MinBy(st => (st.X - i.X) * (st.X - i.X) + (st.Y - i.Y) * (st.Y - i.Y));
                 findings.Add(new ImpedanceFindingMarker(i.X, i.Y, i.Kind != TraceIssueKind.OutOfTolerance, i.Fails,
-                    ReferenceEquals(i, _impedanceSelectedIssue)) { Accepted = i.Accepted is not null });
+                    ReferenceEquals(i, _impedanceSelectedIssue))
+                {
+                    Accepted = i.Accepted is not null, NormalX = at?.Ux ?? 0, NormalY = at?.Uy ?? 0,
+                });
+            }
         }
         return new ImpedanceOverlay(r.TargetOhms, r.TolerancePercent, traces, findings);
     }

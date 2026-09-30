@@ -439,6 +439,29 @@ public class GerberReaderTests
     }
 
     [Fact]
+    public void ZeroSizeApertureOutline_OnACompositedLayer_PaintsNoCopper()
+    {
+        // A board outline drawn with a zero-size aperture paints nothing. Composited, it once came back
+        // as a FILLED board-sized square (Clipper2 returns an offset's input unchanged below 0.5 DBU),
+        // which buried every trace and clearance on the layer under one solid plane.
+        var result = Read(MmHeader + "G01*\n%ADD10C,0.000000*%\n%ADD11C,0.200*%\n" +
+            "%LPD*%\nD11*\nX1000000Y5000000D02*\nX9000000Y5000000D01*\n" +
+            "%LPC*%\nG36*\nX4000000Y4000000D02*\nX4000000Y6000000D01*\nX6000000Y6000000D01*\nX6000000Y4000000D01*\nX4000000Y4000000D01*\nG37*\n" +
+            "%LPD*%\nD10*\nX0Y0D02*\nX10000000Y0D01*\nX10000000Y10000000D01*\nX0Y10000000D01*\nX0Y0D01*\nM02*\n");
+
+        Assert.True(result.Composited);
+        long maxX = 0, maxY = 0;
+        foreach (var s in result.Shapes)
+        {
+            var poly = Assert.IsType<PolygonShape>(s.Shape);
+            for (int i = 0; i < poly.Xy.Length; i += 2) { maxX = Math.Max(maxX, poly.Xy[i]); maxY = Math.Max(maxY, poly.Xy[i + 1]); }
+        }
+        Assert.Equal(2, result.Shapes.Count);          // the trace, cut in two by the clear region
+        Assert.True(maxY < 6_000_000, $"copper reaches y = {maxY} DBU; only the 0.2 mm trace at y = 5 mm is painted");
+        Assert.True(maxX < 10_000_000);
+    }
+
+    [Fact]
     public void ClearPolarityThatPaintsNothing_DoesNotCompositeTheLayer()
     {
         // Compositing is always CORRECT and is therefore tempting as a uniform rule; it destroys shape

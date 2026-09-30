@@ -48,8 +48,8 @@
         "/usr/local/bin"
       ],
       "remedy": {
-        "ubuntu": "sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
-        "debian": "sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
+        "ubuntu": "sudo apt-get update && sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
+        "debian": "sudo apt-get update && sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
         "fedora": "sudo dnf install gcc gcc-c++ gcc-gfortran make git python3 patch unzip bzip2 xz file which ca-certificates curl",
         "default": "install Spack's prerequisites: a C, C++ and Fortran compiler, make, git, Python 3, patch, unzip, bzip2, xz, file and curl (Spack's 'Installing prerequisites' page lists them per distribution)"
       },
@@ -63,8 +63,8 @@
         "/usr/local/bin"
       ],
       "remedy": {
-        "ubuntu": "sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
-        "debian": "sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
+        "ubuntu": "sudo apt-get update && sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
+        "debian": "sudo apt-get update && sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
         "fedora": "sudo dnf install gcc gcc-c++ gcc-gfortran make git python3 patch unzip bzip2 xz file which ca-certificates curl",
         "default": "install Spack's prerequisites: a C, C++ and Fortran compiler, make, git, Python 3, patch, unzip, bzip2, xz, file and curl (Spack's 'Installing prerequisites' page lists them per distribution)"
       }
@@ -77,8 +77,8 @@
         "/usr/local/bin"
       ],
       "remedy": {
-        "ubuntu": "sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
-        "debian": "sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
+        "ubuntu": "sudo apt-get update && sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
+        "debian": "sudo apt-get update && sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
         "fedora": "sudo dnf install gcc gcc-c++ gcc-gfortran make git python3 patch unzip bzip2 xz file which ca-certificates curl",
         "default": "install Spack's prerequisites: a C, C++ and Fortran compiler, make, git, Python 3, patch, unzip, bzip2, xz, file and curl (Spack's 'Installing prerequisites' page lists them per distribution)"
       }
@@ -91,8 +91,8 @@
         "/usr/local/bin"
       ],
       "remedy": {
-        "ubuntu": "sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
-        "debian": "sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
+        "ubuntu": "sudo apt-get update && sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
+        "debian": "sudo apt-get update && sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
         "fedora": "sudo dnf install gcc gcc-c++ gcc-gfortran make git python3 patch unzip bzip2 xz file which ca-certificates curl",
         "default": "install Spack's prerequisites: a C, C++ and Fortran compiler, make, git, Python 3, patch, unzip, bzip2, xz, file and curl (Spack's 'Installing prerequisites' page lists them per distribution)"
       }
@@ -105,8 +105,8 @@
         "/usr/local/bin"
       ],
       "remedy": {
-        "ubuntu": "sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
-        "debian": "sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
+        "ubuntu": "sudo apt-get update && sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
+        "debian": "sudo apt-get update && sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
         "fedora": "sudo dnf install gcc gcc-c++ gcc-gfortran make git python3 patch unzip bzip2 xz file which ca-certificates curl",
         "default": "install Spack's prerequisites: a C, C++ and Fortran compiler, make, git, Python 3, patch, unzip, bzip2, xz, file and curl (Spack's 'Installing prerequisites' page lists them per distribution)"
       }
@@ -119,8 +119,8 @@
         "/usr/local/bin"
       ],
       "remedy": {
-        "ubuntu": "sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
-        "debian": "sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
+        "ubuntu": "sudo apt-get update && sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
+        "debian": "sudo apt-get update && sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
         "fedora": "sudo dnf install gcc gcc-c++ gcc-gfortran make git python3 patch unzip bzip2 xz file which ca-certificates curl",
         "default": "install Spack's prerequisites: a C, C++ and Fortran compiler, make, git, Python 3, patch, unzip, bzip2, xz, file and curl (Spack's 'Installing prerequisites' page lists them per distribution)"
       }
@@ -133,8 +133,8 @@
         "/usr/local/bin"
       ],
       "remedy": {
-        "ubuntu": "sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
-        "debian": "sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
+        "ubuntu": "sudo apt-get update && sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
+        "debian": "sudo apt-get update && sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
         "fedora": "sudo dnf install gcc gcc-c++ gcc-gfortran make git python3 patch unzip bzip2 xz file which ca-certificates curl",
         "default": "install Spack's prerequisites: a C, C++ and Fortran compiler, make, git, Python 3, patch, unzip, bzip2, xz, file and curl (Spack's 'Installing prerequisites' page lists them per distribution)"
       }
@@ -147,8 +147,8 @@
         "/usr/local/bin"
       ],
       "remedy": {
-        "ubuntu": "sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
-        "debian": "sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
+        "ubuntu": "sudo apt-get update && sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
+        "debian": "sudo apt-get update && sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
         "fedora": "sudo dnf install gcc gcc-c++ gcc-gfortran make git python3 patch unzip bzip2 xz file which ca-certificates curl",
         "default": "install Spack's prerequisites: a C, C++ and Fortran compiler, make, git, Python 3, patch, unzip, bzip2, xz, file and curl (Spack's 'Installing prerequisites' page lists them per distribution)"
       }
@@ -161,8 +161,8 @@
         "/usr/local/bin"
       ],
       "remedy": {
-        "ubuntu": "sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
-        "debian": "sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
+        "ubuntu": "sudo apt-get update && sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
+        "debian": "sudo apt-get update && sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
         "fedora": "sudo dnf install gcc gcc-c++ gcc-gfortran make git python3 patch unzip bzip2 xz file which ca-certificates curl",
         "default": "install Spack's prerequisites: a C, C++ and Fortran compiler, make, git, Python 3, patch, unzip, bzip2, xz, file and curl (Spack's 'Installing prerequisites' page lists them per distribution)"
       }
@@ -175,8 +175,8 @@
         "/usr/local/bin"
       ],
       "remedy": {
-        "ubuntu": "sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
-        "debian": "sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
+        "ubuntu": "sudo apt-get update && sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
+        "debian": "sudo apt-get update && sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
         "fedora": "sudo dnf install gcc gcc-c++ gcc-gfortran make git python3 patch unzip bzip2 xz file which ca-certificates curl",
         "default": "install Spack's prerequisites: a C, C++ and Fortran compiler, make, git, Python 3, patch, unzip, bzip2, xz, file and curl (Spack's 'Installing prerequisites' page lists them per distribution)"
       }
@@ -189,8 +189,8 @@
         "/usr/local/bin"
       ],
       "remedy": {
-        "ubuntu": "sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
-        "debian": "sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
+        "ubuntu": "sudo apt-get update && sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
+        "debian": "sudo apt-get update && sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
         "fedora": "sudo dnf install gcc gcc-c++ gcc-gfortran make git python3 patch unzip bzip2 xz file which ca-certificates curl",
         "default": "install Spack's prerequisites: a C, C++ and Fortran compiler, make, git, Python 3, patch, unzip, bzip2, xz, file and curl (Spack's 'Installing prerequisites' page lists them per distribution)"
       }
@@ -204,8 +204,8 @@
         "import ssl, sys; sys.exit(0 if ssl.create_default_context().cert_store_stats()['x509_ca'] > 0 else 1)"
       ],
       "remedy": {
-        "ubuntu": "sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
-        "debian": "sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
+        "ubuntu": "sudo apt-get update && sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
+        "debian": "sudo apt-get update && sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
         "fedora": "sudo dnf install gcc gcc-c++ gcc-gfortran make git python3 patch unzip bzip2 xz file which ca-certificates curl",
         "default": "install Spack's prerequisites: a C, C++ and Fortran compiler, make, git, Python 3, patch, unzip, bzip2, xz, file and curl (Spack's 'Installing prerequisites' page lists them per distribution)"
       },

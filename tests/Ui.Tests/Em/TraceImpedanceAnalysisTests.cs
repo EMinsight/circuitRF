@@ -167,6 +167,25 @@ public class TraceImpedanceAnalysisTests
         Assert.Equal(["open end", "pad"], new[] { trace.StartsAt, trace.EndsAt }.Order());
     }
 
+    /// <summary>A trace into a pad only a little wider than itself — 1.37× here, longer than it is wide —
+    /// leaves the pad off the trace, as a wider pad always did (round-10 report: "through the pad, but
+    /// not always"). With the step at 1.5 the pad stayed as the trace's last 2 mm and its width.</summary>
+    [Fact]
+    public void ATraceIntoAPadALittleWiderThanIt_LeavesThePadOff()
+    {
+        LayoutShape[] shapes =
+        [
+            Rect(Top, -6000, -475, 0, 475),
+            Rect(Top, 0, -650, 2000, 650),
+            Rect(Gnd, -8000, -8000, 8000, 8000),
+        ];
+
+        var trace = Assert.Single(Assert.Single(Analyze(shapes).Layers).Traces);
+
+        Assert.Equal(950, trace.WidthMax / LayoutUnits.DefaultDbuPerMicron, 1.0);
+        Assert.Contains("pad", new[] { trace.StartsAt, trace.EndsAt });
+    }
+
     /// <summary>The probe reads the same whichever way a pad polygon was wound (brief-impedance-7 §2).
     /// Wound clockwise, the pad used to cancel the trace's last 200 µm where the two overlap.</summary>
     [Fact]
@@ -615,6 +634,33 @@ public class TraceImpedanceAnalysisTests
         Rect(Top, -6000, 2850, 6000, 3150),
         Rect(Gnd, -8000, -8000, 8000, 8000),
     ];
+
+    /// <summary>The plane cleared 450 µm round the via (its antipad) is not a broken return on the Mid
+    /// trace into it while the via-transition distance covers it — the stretch is named in a note
+    /// instead — and is flagged again at 0 (round-10 report: every layer change was flagged). The via
+    /// has no pad on Mid, as every via of an imported Gerber board lands on the top layer only: its
+    /// barrel is what the trace runs onto.</summary>
+    [Fact]
+    public void TheAntipadRoundAVia_IsNotFlagged_WithinTheViaTransition_AndIsNoted()
+    {
+        List<LayoutShape> board =
+        [
+            Rect(Top, -6000, -150, 0, 150),
+            new ViaShape { Layer = Drill, X = 0, Y = 0, DrillSize = Um(250) },
+            Rect(Mid, -150, -150, 6000, 150),
+            Rect(Gnd, -8000, -8000, 8000, -450), Rect(Gnd, -8000, 450, 8000, 8000),
+            Rect(Gnd, -8000, -450, -450, 450), Rect(Gnd, 450, -450, 8000, 450),
+        ];
+        TraceRun Run(double viaTransitionUm) => Assert.Single(TraceImpedanceAnalysis.Analyze(board, ViaTech(),
+            LayoutUnits.DefaultDbuPerMicron, new TraceImpedanceOptions { Layers = [Mid], ViaTransitionMicrons = viaTransitionUm }).AllTraces);
+
+        var skipped = Run(TraceImpedanceOptions.DefaultViaTransitionMicrons);
+        var checkedAll = Run(0);
+
+        Assert.DoesNotContain(skipped.Issues, i => i.Kind == TraceIssueKind.ReturnBroken);
+        Assert.Contains(skipped.Notes, n => n.StartsWith("Not checked for", StringComparison.Ordinal));
+        Assert.Contains(checkedAll.Issues, i => i.Kind == TraceIssueKind.ReturnBroken);
+    }
 
     /// <summary>A Trace pick selects the one trace under it; a Connected pick at the same point also
     /// selects the trace on Mid the via joins it to — and never the unconnected trace beside it.</summary>

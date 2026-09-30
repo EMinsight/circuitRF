@@ -113,7 +113,7 @@ public sealed class MountUnmountTests(ITestOutputHelper output)
     {
         var vm = Example();
         string clay = Path.Combine(RepoRoot(), "examples", "Power Rail", "Sensor board",
-                                   "layout", "Board.clay");
+                                   "layout", "Sensor board.clay");
         string before = Hash(clay);
 
         vm.RunCommand.Execute(null);

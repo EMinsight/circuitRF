@@ -345,7 +345,7 @@ public sealed partial class LayoutEditorViewModel
         if (!PCellRegistry.TryGet(o.GeneratorId, out var gen)) return [];
 
         PCellResult result;
-        try { result = _pcellHandleCache.GetOrGenerate(o.GeneratorId, gen, o.Parameters, Technology, PCellLayerSelection.Default); }
+        try { result = _pcellHandleCache.GetOrGenerate(o.GeneratorId, gen, o.Parameters, Technology, LayerSelectionOf(inst)); }
         catch (Exception) { return []; }   // a broken generator costs its grips, never the frame
 
         if (result.Handles is not { Count: > 0 }) return [];
@@ -473,7 +473,7 @@ public sealed partial class LayoutEditorViewModel
         var handle = handles[best];
         var localCache = new PCellGeometryCache();
         PCellResult Generate(IReadOnlyDictionary<string, PCellValue> p)
-            => localCache.GetOrGenerate(origin.GeneratorId, gen, p, Technology, PCellLayerSelection.Default);
+            => localCache.GetOrGenerate(origin.GeneratorId, gen, p, Technology, LayerSelectionOf(inst));
 
         // R-pch-2: measure how much this parameter moves its own grip, by asking the generator. Once
         // per gesture — not per pointer move.
@@ -520,7 +520,7 @@ public sealed partial class LayoutEditorViewModel
 
         // R-pch-10: a generator that already knows it is too expensive to redraw per frame says so,
         // and is believed without spending a regeneration to find out. Auto still measures.
-        if (PreviewModeOf(origin, gen) == PCellPreviewMode.Deferred) drag.Deferred = true;
+        if (PreviewModeOf(origin, gen, inst) == PCellPreviewMode.Deferred) drag.Deferred = true;
 
         _pcellHandleDrag = drag;
 
@@ -572,7 +572,7 @@ public sealed partial class LayoutEditorViewModel
         {
             PCellHandlePreviewGenerateCount++;
             return drag.Cache.GetOrGenerate(drag.Origin.GeneratorId, drag.Generator, p,
-                                            Technology, PCellLayerSelection.Default);
+                                            Technology, LayerSelectionOf(drag.Instance));
         }
 
         // Where this tick backs out to if the value it reaches folds the artwork through itself
@@ -853,7 +853,7 @@ public sealed partial class LayoutEditorViewModel
         try
         {
             var regenerated = drag.Cache.GetOrGenerate(
-                drag.Origin.GeneratorId, drag.Generator, merged, Technology, PCellLayerSelection.Default);
+                drag.Origin.GeneratorId, drag.Generator, merged, Technology, LayerSelectionOf(drag.Instance));
             if (FindHandle(regenerated.Handles, drag.Handle, drag.HandleIndex) is { } moved)
             {
                 drag.PreviewHandle = moved;
@@ -912,12 +912,12 @@ public sealed partial class LayoutEditorViewModel
     /// <summary>The generator's declared preview mode for this cell's own parameter set, resolved
     /// through the resolution cache so it costs nothing on a drag that has already drawn grips.
     /// Any failure means Auto — a broken generator must not be read as a preference.</summary>
-    private PCellPreviewMode PreviewModeOf(PCellOrigin origin, PCellGenerator generator)
+    private PCellPreviewMode PreviewModeOf(PCellOrigin origin, PCellGenerator generator, LayoutInstance inst)
     {
         try
         {
             return _pcellHandleCache
-                .GetOrGenerate(origin.GeneratorId, generator, origin.Parameters, Technology, PCellLayerSelection.Default)
+                .GetOrGenerate(origin.GeneratorId, generator, origin.Parameters, Technology, LayerSelectionOf(inst))
                 .Preview;
         }
         catch (Exception) { return PCellPreviewMode.Auto; }

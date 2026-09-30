@@ -163,13 +163,7 @@ public sealed partial class RailRfViewModel
         // asks rather than writing. The override is keyed by PdnRegionRef — a drawing layer and a
         // vertex the geometry itself determines — so it survives a re-import, which is exactly when a
         // classification would otherwise silently change.
-        BoardOverlayLayer.ForceRegion = (region, forced) =>
-        {
-            if (forced is { } cls) Document.ClassOverrides[region] = cls;
-            else Document.ClassOverrides.Remove(region);
-
-            QueueResolve();
-        };
+        BoardOverlayLayer.ForceRegion = ForceCopperClass;
 
         // §2.3 step 2's SECOND route: the rail is picked by clicking its pour. ARMED BY THE
         // BUTTON and never by a bare click — see SyncPourPick's own note for the report that
@@ -180,6 +174,17 @@ public sealed partial class RailRfViewModel
         // half of Escape, wired once because the overlay reports the press and this decides what it
         // meant. See ClearSelectionOnBareBoard.
         BoardOverlayLayer.BackgroundClick = ClearSelectionOnBareBoard;
+    }
+
+    /// <summary>Forces <paramref name="region"/> to <paramref name="forced"/>, or back to the measured
+    /// class where it is null, and re-solves. The class map's context rows and the refusal strip's
+    /// button are this one function, so the two cannot come to mean different things.</summary>
+    internal void ForceCopperClass(PdnRegionRef region, PdnCopperClass? forced)
+    {
+        if (forced is { } cls) Document.ClassOverrides[region] = cls;
+        else Document.ClassOverrides.Remove(region);
+
+        QueueResolve();
     }
 
     /// <summary>

@@ -761,13 +761,14 @@ There are three ways to start an install, and they all do the same thing:
 
 | Program | macOS (Apple silicon) | Linux | Windows |
 |---|---|---|---|
-| Palace 0.18.1 | yes. It is built from source, which takes about an hour. | yes (arm64 and x64). It is built from source. | yes, inside the Linux subsystem (WSL 2), built from source there (see {{anchor: em-setup.html#palace-windows|Palace on Windows}}). *Not yet verified on a Windows machine.* |
+| Palace 0.18.1 | yes. It is built from source, which takes about an hour. | yes (arm64 and x64). It is built from source. | yes, inside the Linux subsystem (WSL 2), built from source there (see {{anchor: em-setup.html#palace-windows|Palace on Windows}}). |
 | Gmsh 4.15.2 | yes, from Gmsh's own archive, in under a minute | x64 only. Gmsh publishes no Linux arm64 build. | yes, from Gmsh's own archive |
 | openEMS 0.37.0-rc3 | yes. It is built by openEMS's own script. | yes. It is built by openEMS's own script. | yes, from openEMS's own archive |
 
 **Some installs need tools you install first.** A source build needs a compiler and some libraries.
 If one is missing, nothing is downloaded. circuitRF names the one command to run for your system, such
-as `xcode-select --install`, `brew install …` or `sudo apt-get install …`, and you run it yourself.
+as `xcode-select --install`, `brew install …` or `sudo apt-get update && sudo apt-get install …`, and you
+run it yourself.
 circuitRF never runs `sudo` and never asks for your password.
 
 **The install runs in the background.** Its progress is in the Messages panel. A Palace build shows
@@ -803,6 +804,9 @@ Settings entry. circuitRF looks in `$CONDA_PREFIX` and in the environments of `~
 
 ### Palace on Windows: the Linux subsystem {#palace-windows}
 
+**Installing it for the first time?** {{anchor: palace-windows.html|Installing Palace on Windows}} walks
+through it step by step, starting with what it changes on your computer. This section is the reference.
+
 Palace does not run natively on Windows. circuitRF runs it inside your own **Windows Subsystem for
 Linux** (WSL 2) distribution instead, and treats it like a Palace on this computer: Simulate, the
 progress, the `.sNp` and the refusals are the same. Gmsh still runs natively on Windows; only Palace runs
@@ -817,7 +821,17 @@ a 3D run tell you which one, with the step that fixes it:
 | Virtualization is turned off | This is a firmware (BIOS/UEFI) setting, not a Windows one. Turn on the processor's virtualization there (Intel VT-x, or AMD-V/SVM). |
 | No Linux distribution is installed | `wsl --install -d Ubuntu`, then start it once so it can create your Linux user. |
 | The distribution is WSL 1 | `wsl --set-version <name> 2`. Everything in it is kept. |
-| The distribution lacks build tools | The one `sudo apt-get install …` line the install names. You run it yourself inside the distribution. |
+| The distribution lacks build tools | The one `sudo apt-get update && sudo apt-get install …` line the install names. You run it yourself inside the distribution. |
+
+**If `apt-get install` fails with "404 Not Found".** The distribution's package list is older than the
+packages on the server, which is usual in a distribution that has not been updated for a while. Run
+`sudo apt-get update` inside the distribution, then the install line again. The line circuitRF names
+starts with that update for this reason.
+
+**Palace's own build instructions do not cover Windows.** Palace's GitHub page describes building on
+Linux and macOS only. On Windows, follow them *inside* the WSL 2 distribution, as a Linux build, or let
+**Install Palace …** do it there. circuitRF does not support a Palace built natively on Windows, or one
+running under WSL 1.
 
 **Finding it.** circuitRF looks in every WSL 2 distribution, in the order `wsl -l` lists them. Inside
 each it looks in circuitRF's own install folder, then Spack's install trees, then conda environments,

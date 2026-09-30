@@ -6,9 +6,9 @@ IPC-D-356 netlist and the placement table beside it, because the three files MUS
 hand-editing three files to stay in step is how that goes wrong silently.  Those two are now
 PROJECTED from this `.clay` by circuitRF itself:
 
-    dotnet run --project src/Cli -- netlist "examples/Power Rail/Sensor board/layout/Board.clay" \
-        --ipc      "examples/Power Rail/Sensor board/layout/Board.ipc" \
-        --placement "examples/Power Rail/Sensor board/layout/Board.placement.csv"
+    dotnet run --project src/Cli -- netlist "examples/Power Rail/Sensor board/layout/Sensor board.clay" \
+        --ipc      "examples/Power Rail/Sensor board/layout/Sensor board.ipc" \
+        --placement "examples/Power Rail/Sensor board/layout/Sensor board.placement.csv"
 
 One invocation, one projection, two files that cannot disagree — and half of the audit this file
 used to perform became STRUCTURALLY IMPOSSIBLE with it: a netlist projected from the lands cannot
@@ -413,7 +413,7 @@ clay = {"FormatVersion": 1, "DbuPerMicron": 1000, "DisplayUnit": "Um", "SnapDbu"
         "AngleMode": "AnyAngle", "TechRef": "../../tech/pcb-4layer-1p6mm.ctech",
         "Shapes": shapes, "Instances": instances}
 
-with open(os.path.join(root, "Sensor board/layout/Board.clay"), "w") as f:
+with open(os.path.join(root, "Sensor board/layout/Sensor board.clay"), "w") as f:
     json.dump(clay, f, indent=2)
     f.write("\n")
 

@@ -251,6 +251,12 @@ public sealed record ImpedanceTraceMarker(IReadOnlyList<ImpedanceStretch> Stretc
 public readonly record struct ImpedanceFindingMarker(long X, long Y, bool ReturnPath, bool Fails, bool Selected)
 {
     public bool Accepted { get; init; }
+
+    /// <summary>The trace's cross direction at the finding, a world-space unit vector — the side the disc
+    /// is drawn on, with a short leader back to (X, Y), so it never covers the copper it is about (round-10
+    /// report). (0, 0) draws the disc on the point, as before.</summary>
+    public double NormalX { get; init; }
+    public double NormalY { get; init; }
 }
 
 /// <summary>

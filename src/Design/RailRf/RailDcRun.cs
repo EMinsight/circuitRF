@@ -177,6 +177,19 @@ public sealed record RailDcRunResult(
     /// </remarks>
     public IReadOnlyList<(string Rail, string Refusal)> RailRefusals { get; init; } = [];
 
+    /// <summary>
+    /// The spreading copper each pour-dominated rail was refused over
+    /// (<see cref="PdnExtraction.RefusedRegion"/>), in solve order. Empty where no rail was refused
+    /// for that reason.
+    /// </summary>
+    public IReadOnlyList<(string Rail, PdnClassification Region)> RefusedRegions { get; init; } = [];
+
+    /// <summary>The copper <paramref name="name"/> was refused over, or null.</summary>
+    public PdnClassification? RefusedRegionFor(string? name) =>
+        name is { Length: > 0 }
+            ? RefusedRegions.FirstOrDefault(r => string.Equals(r.Rail, name, StringComparison.OrdinalIgnoreCase)).Region
+            : null;
+
     /// <summary>Why <paramref name="name"/> was not solved, or null where it was (or was not in the
     /// run at all).</summary>
     public string? RefusalFor(string? name) =>
@@ -231,6 +244,7 @@ public static class RailDcRun
         var diagnostics = new List<string>();
         var refusals = new List<(string Rail, string Refusal)>();
         var ambiguities = new List<PdnAnchorAmbiguity>();
+        var refusedRegions = new List<(string Rail, PdnClassification Region)>();
 
         void Refuse(string railName, string why) =>
             refusals.Add((railName, NotSolved(railName, why)));
@@ -290,6 +304,7 @@ public static class RailDcRun
                 {
                     Refuse(railName, why);
                     ambiguities.AddRange(extraction.AnchorAmbiguities);
+                    if (extraction.RefusedRegion is { } region) refusedRegions.Add((railName, region));
                     continue;
                 }
 
@@ -311,12 +326,14 @@ public static class RailDcRun
             {
                 AnchorAmbiguities = ambiguities,
                 RailRefusals      = refusals,
+                RefusedRegions    = refusedRegions,
             };
 
         return new RailDcRunResult(null, results, order.Order, diagnostics)
         {
             RailRefusals      = refusals,
             AnchorAmbiguities = ambiguities,
+            RefusedRegions    = refusedRegions,
         };
     }
 

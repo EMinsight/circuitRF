@@ -415,9 +415,13 @@ public static class EmPortExtraction
             {
                 string portProblem =
                     $"Port {number} ('{Describe(label)}') at {Coord(label.X, label.Y, dbuPerMicron, displayUnit)} " +
-                    "is not on any conductor the EM setup's signal layer. Move it onto the metal, or " +
-                    "check that the artwork it names is on a layer bound to a signal conductor in the " +
-                    "technology's stackup.";
+                    "is not on any conductor of this EM setup's signal layers. " +
+                    (OwnConductorOffTheLevels(label, problem, technology) is { } seatedOn
+                        ? $"It is committed to '{seatedOn.Name}'" +
+                          (seatedOn.IsGroundReference ? ", a ground reference, which a port returns through rather than drives. " : ", which is not one of them. ") +
+                          "Drag it onto the end of the signal trace it belongs to — that re-seats it on that trace's layer."
+                        : "Move it onto the metal, or check that the artwork it names is on a layer bound to a " +
+                          "signal conductor in the technology's stackup.");
                 firstProblem ??= portProblem;
                 rows.Add(new EmPortRow(number, label, null, portProblem, kind));
                 continue;
@@ -787,6 +791,19 @@ public static class EmPortExtraction
                 if (problem.Layers[i].Name == conductor.Name) return i;
         }
         return null;
+    }
+
+    /// <summary>The stackup conductor a port's committed <see cref="LabelShape.PortLayer"/> names, when that
+    /// conductor is NOT one of this problem's levels — the port seated on a ground plane, or on metal this
+    /// setup does not mesh. Null when it names no conductor, or one that is a level.</summary>
+    private static StackupLayer? OwnConductorOffTheLevels(LabelShape label, PlanarProblem problem, Technology? technology)
+    {
+        if (technology is null || label.PortLayer is not { } k) return null;
+        var conductor = technology.Stackup.Layers.FirstOrDefault(l => l.Kind == StackupKind.Conductor && l.DrawingLayers.Contains(k));
+        if (conductor is null) return null;
+        for (int i = 0; i < problem.Layers.Count; i++)
+            if (problem.Layers[i].Name == conductor.Name) return null;
+        return conductor;
     }
 
     /// <summary>A polygon of level <paramref name="level"/> that contains the point, or null.</summary>

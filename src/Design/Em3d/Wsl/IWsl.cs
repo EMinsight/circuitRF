@@ -60,7 +60,12 @@ public sealed class WslExe : IWsl
     /// Store on Windows 10). The older <c>\\wsl$</c> spelling names the same share.</summary>
     public const string SharePrefix = @"\\wsl.localhost\";
 
-    private static string Exe => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "wsl.exe");
+    // wsl.exe exists only in the 64-bit System32. A 32-bit process (the x86 build) asking for System32 is
+    // redirected to SysWOW64, which has none, so the subsystem read as "not enabled" on a computer where it
+    // is; Sysnative is the alias such a process reaches the real System32 through.
+    private static string Exe => Environment.Is64BitOperatingSystem && !Environment.Is64BitProcess
+        ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Sysnative", "wsl.exe")
+        : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "wsl.exe");
 
     public bool Available => OperatingSystem.IsWindows() && File.Exists(Exe);
 

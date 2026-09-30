@@ -2632,8 +2632,27 @@
                                Text="{Binding StatusLeadText}" IsVisible="{Binding HasStatusLead}"/>
                     <SelectableTextBlock Name="StatusStrip" Classes="note" Text="{Binding StatusTailText}"/>
                 </DockPanel>
-                <SelectableTextBlock Name="RefusalStrip" Classes="warn" Text="{Binding Refusal.Sentence}"
-                                     IsVisible="{Binding HasRefusal}" VerticalAlignment="Center"/>
+                <!-- THE REMEDY AS A BUTTON, under the sentence that names it (field report,
+                     2026-09-29). A refusal that knows exactly what answers it — the other rail to
+                     show, the copper to force to a trace — offers it here rather than describing a
+                     control the reader has to go and find. -->
+                <StackPanel IsVisible="{Binding HasRefusal}" VerticalAlignment="Center" Spacing="4">
+                    <SelectableTextBlock Name="RefusalStrip" Classes="warn" Text="{Binding Refusal.Sentence}"/>
+                    <ItemsControl Name="RefusalActions" ItemsSource="{Binding Refusal.Actions}"
+                                  IsVisible="{Binding Refusal.HasActions, FallbackValue=False}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="Horizontal" Spacing="6"/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="rvm:RailRefusalAction">
+                                <Button Content="{Binding Label}" Command="{Binding Command}"
+                                        ToolTip.Tip="{Binding Tip}" Padding="8,2"/>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
                 <TextBlock Grid.Column="1" Classes="note" Text="both models in hand"
                            IsVisible="{Binding HasBothModels}" VerticalAlignment="Center"
                            ToolTip.Tip="The fast curve stays on the plot beside the accurate one, so the error is measured on this design rather than promised in a document."/>

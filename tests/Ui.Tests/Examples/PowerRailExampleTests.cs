@@ -42,7 +42,7 @@ public sealed class PowerRailExampleTests(ITestOutputHelper output)
 {
     private static string Root() => PowerRailFootprintCells.ExampleRoot();
     private static string Cell() => Path.Combine(Root(), "Sensor board");
-    private static string ClayPath() => Path.Combine(Cell(), "layout", "Board.clay");
+    private static string ClayPath() => Path.Combine(Cell(), "layout", "Sensor board.clay");
     private static string CrailPath() => Path.Combine(Cell(), "Sensor board.crail");
     private static string ReadmePath() => Path.Combine(Root(), "README.md");
 
@@ -226,7 +226,7 @@ public sealed class PowerRailExampleTests(ITestOutputHelper output)
         try
         {
             CopyTree(Root(), tmp);
-            string board = Path.Combine(tmp, "Sensor board", "layout", "Board.clay");
+            string board = Path.Combine(tmp, "Sensor board", "layout", "Sensor board.clay");
             string before = File.ReadAllText(board);
 
             var (code, stdout) = RunGenerator(tmp, fault);
@@ -259,7 +259,7 @@ public sealed class PowerRailExampleTests(ITestOutputHelper output)
             output.WriteLine(stdout.Trim());
 
             foreach (string relative in new[]
-                     { "Sensor board/layout/Board.clay",
+                     { "Sensor board/layout/Sensor board.clay",
                        "footprints/TERM-OUT/layout/TERM-OUT.clay",
                        "footprints/TERM-VDD/layout/TERM-VDD.clay" })
                 Assert.Equal(File.ReadAllText(Path.Combine(Root(), relative)),
@@ -269,9 +269,9 @@ public sealed class PowerRailExampleTests(ITestOutputHelper output)
             // the verb's, and a generator that still wrote them would be the second projection
             // this series exists to prevent.
             string generator = File.ReadAllText(
-                Path.Combine(Root(), "Sensor board", "layout", "Board.gen.py"));
-            Assert.DoesNotContain("Board.ipc\"), \"w\"", generator, StringComparison.Ordinal);
-            Assert.DoesNotContain("Board.placement.csv\"), \"w\"", generator, StringComparison.Ordinal);
+                Path.Combine(Root(), "Sensor board", "layout", "Sensor board.gen.py"));
+            Assert.DoesNotContain("Sensor board.ipc\"), \"w\"", generator, StringComparison.Ordinal);
+            Assert.DoesNotContain("Sensor board.placement.csv\"), \"w\"", generator, StringComparison.Ordinal);
         }
         finally { try { Directory.Delete(tmp, true); } catch { /* best effort */ } }
     }
@@ -479,7 +479,7 @@ public sealed class PowerRailExampleTests(ITestOutputHelper output)
             RedirectStandardError = true,
             WorkingDirectory = root,
         };
-        psi.ArgumentList.Add(Path.Combine(root, "Sensor board", "layout", "Board.gen.py"));
+        psi.ArgumentList.Add(Path.Combine(root, "Sensor board", "layout", "Sensor board.gen.py"));
         psi.ArgumentList.Add(root);
         if (fault is not null) psi.Environment[fault] = "1";
 

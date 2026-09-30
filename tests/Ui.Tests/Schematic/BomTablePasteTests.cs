@@ -169,12 +169,73 @@ public class BomTablePasteTests
             "4\tC124,C200\t100N\tMfrA\n" +
             "1\tRP200\t100R\tMfrB\n" +
             "1\tR1\t0R\tMfrB\n" +
-            "1\tR103\t330K\tMfrB\n";
+            "1\tR103\t330K\tMfrB\n" +
+            "1\tC3\t2P3\tMfrA\n" +               // letter-as-point, upper case (round 10)
+            "1\tL6\t2U2\tMfrA\n";
 
         var r = BomTablePaste.TryParse(table)!;
 
         Assert.Equal("C101:Capacitor:10µF:; C124:Capacitor:100nF:; C200:Capacitor:100nF:; " +
-                     "RP200:Resistor:100Ω:; R1:Resistor:0Ω:; R103:Resistor:330kΩ:", Summary(r));
+                     "RP200:Resistor:100Ω:; R1:Resistor:0Ω:; R103:Resistor:330kΩ:; " +
+                     "C3:Capacitor:2.3pF:; L6:Inductor:2.2µH:", Summary(r));
+    }
+
+    // A spreadsheet export that trims each row's trailing empty cells: the rows are every length,
+    // with two-cell title lines above the header. It is still a tab table.
+    [Fact]
+    public void ATabTable_WithRaggedRowsAndATitleBlock_IsStillATable()
+    {
+        const string table =
+            "Board:\tDEMO-1\nRevision:\tA\n" +
+            "Item\tQuantity\tReference\tValue\tManufacturer\tTolerance\tRating\n" +
+            "1\t1\tC2\t18P\tMfrA\t\t±2%\n" +
+            "2\t2\tC1,C9\t100N\n" +
+            "3\t1\tR4\t4K7\tMfrB\t1%\t50V\n";
+
+        var r = BomTablePaste.TryParse(table)!;
+
+        Assert.Equal("C2:Capacitor:18pF:; C1:Capacitor:100nF:; C9:Capacitor:100nF:; R4:Resistor:4.7kΩ:", Summary(r));
+    }
+
+    // ── Round-10 field report: a PDF table whose resistor values carry no unit ─────────────
+
+    // Copied row by row: "15" is the Value cell of a resistor with its ohm left off, and "10 K"
+    // puts the multiplier in a word of its own. A part code later in the row is also a bare number
+    // and must not be read.
+    [Fact]
+    public void PdfRows_ABareNumberAfterTheType_IsOhms_AndASpacedMultiplierReads()
+    {
+        const string text =
+            "Component ID Description Value Case size Manufacturer Part Code\n" +
+            "C4 Capacitor 10 nF 1206 MfrA PN-104\n" +
+            "R2 Trimmer 10 K MfrB 0000-1-103\n" +
+            "R3 Resistor 1K 1206 MfrC 0000440-1\n" +
+            "R1 Resistor 15 1206 MfrC 0000429-1\n";
+
+        var r = BomTablePaste.TryParse(text)!;
+
+        Assert.Equal("C4:Capacitor:10nF:1206; R2:Resistor:10kΩ:; R3:Resistor:1kΩ:1206; R1:Resistor:15Ω:1206",
+                     Summary(r));
+        Assert.Contains(r.Notes, n => n.StartsWith("R1:") && n.Contains("ohms"));
+    }
+
+    // Copied one cell per line, where the PDF laid one block out as columns: every reference, then
+    // every type, then every value — and an empty cell left no line, so nothing lines up. Those rows
+    // are refused by name rather than placed at the default value (the reported "1R").
+    [Fact]
+    public void PdfCellsCopiedColumnByColumn_AreSkippedWithTheReason_NotPlacedAtTheDefault()
+    {
+        const string text =
+            "Component ID\n\nDescription\n\nValue\n\nCase size\n\n" +
+            "C4\n\nCapacitor\n\n10 nF\n\n1206\n\n" +
+            "R2\nR3\nR1\nJ1\n\nTrimmer\nResistor\nResistor\nConnector\n\n10 K\n1K\n15\n\n1206\n1206\n\n" +
+            "D1\n\nDiode\n\nSOD110\n\nL2\n\n2.55 nH\n";   // a case code shaped like a reference: not a block
+
+        var r = BomTablePaste.TryParse(text)!;
+
+        Assert.Equal("C4:Capacitor:10nF:1206; L2:Inductor:2.55nH:", Summary(r));
+        Assert.Equal(["R2", "R3", "R1", "J1"],
+            r.Skipped.Where(s => s.Reason.Contains("column by column")).Select(s => s.What));
     }
 
     // No Value column: the value is inside the description; a Z prefix names no kind.

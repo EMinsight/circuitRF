@@ -558,12 +558,33 @@ public sealed partial class RailRfViewModel
         // for the user this sentence is usually shown to — a rail added by mistake is one they want
         // GONE, not one they want to give a reference to. A refusal that names one of two exits
         // traps whoever wanted the other.
+        //
+        // AND THE RAIL IT NAMES IS ONE CLICK AWAY (field report, 2026-09-29). The sentence is about a
+        // rail the window is NOT showing, and a designer with their own rail on screen, its reference
+        // correctly set, read it as a complaint about that one and asked what it meant. A rail
+        // picked on the board is named by the coordinates of the click, so nothing said it was a
+        // second rail at all. The sentence now says "another rail", says where a coordinate name
+        // comes from, and the strip offers the rail itself as a button.
         if (UnreferencedRail() is { } unreferenced)
+        {
+            bool picked = _document.Rail(unreferenced) is { NetName: null or "" };
             return new RailRefusal(
-                $"Rail '{unreferenced}' states no reference layer, so there is nothing to return "
-              + "current through. The rail set is solved together, so this one blocks the run as "
-              + "well — pick it in the rail selector above and confirm its reference, or remove "
-              + "it with the button beside the selector.", RailRefusalControl.RailSelector);
+                $"This run is blocked by another rail: '{unreferenced}' states no reference layer, "
+              + "so there is nothing to return current through"
+              + (picked ? " (a rail named by a coordinate is one that was picked on the board)" : "")
+              + ". The rail set is solved together — show that rail and confirm its reference, or "
+              + "remove it with the button beside the rail selector.", RailRefusalControl.RailSelector)
+            {
+                Actions =
+                [
+                    new RailRefusalAction(
+                        $"Show '{unreferenced}'",
+                        new RelayCommand(() => SelectedRailName = unreferenced),
+                        "Switches the rail selector to that rail, where its reference can be "
+                      + "confirmed or the rail removed."),
+                ],
+            };
+        }
 
         // The import's own, control and all: it was classified out of its sentence here and came back
         // as something else — a placement-origin refusal that pointed at no control.
@@ -921,7 +942,12 @@ public sealed partial class RailRfViewModel
             // Nothing was solved, so nothing replaces what is on screen — and the refusal names the
             // control that answers it rather than merely being said. The SELECTED rail's own reason
             // where it has one: the first rail's is not about the rail being looked at.
-            Refusal = RailRefusals.Classify(view.Result.RefusalFor(SelectedRailName) ?? why);
+            string? refusedRail = view.Result.RefusalFor(SelectedRailName) is null
+                ? view.Result.RailRefusals.FirstOrDefault().Rail
+                : SelectedRailName;
+            Refusal = WithRemedies(
+                RailRefusals.Classify(view.Result.RefusalFor(SelectedRailName) ?? why),
+                view.Result, refusedRail);
 
             // R-rail34-2: an anchor over two nets is answered by a choice, offered one click each.
             OfferAnchorLayers(view.Result.AnchorAmbiguities);
@@ -972,8 +998,44 @@ public sealed partial class RailRfViewModel
         if (Refusal is not null) return;
         if (Current?.Result.RefusalFor(SelectedRailName) is not { } why) return;
 
-        Refusal = RailRefusals.Classify(why);
+        Refusal = WithRemedies(RailRefusals.Classify(why), Current.Result, SelectedRailName);
         OfferAnchorLayers(Current.Result.AnchorAmbiguities);
+    }
+
+    /// <summary>
+    /// <paramref name="refusal"/> with the buttons that perform its remedy, where the run said
+    /// exactly what the remedy acts on.
+    /// </summary>
+    /// <remarks>
+    /// <b>The pour-dominated refusal (R-rail4-5) names a piece of copper and two remedies, and the
+    /// one about the copper could not be followed</b> (field report, 2026-09-29): it said to
+    /// right-click the copper on the Class map, and the Class map is drawn from a SOLVED rail's
+    /// result — a rail refused on its first run has none, so the map was empty. The region arrives
+    /// as data (<see cref="RailDcRunResult.RefusedRegionFor"/>), so the override is one press here,
+    /// through the same function the map's own context row calls. Accuracy is the Accuracy button,
+    /// which this refusal's control turns red.
+    /// </remarks>
+    private RailRefusal WithRemedies(RailRefusal refusal, RailDcRunResult result, string? railName)
+    {
+        if (result.RefusedRegionFor(railName) is not { } region) return refusal;
+
+        string where = region.Region.Describe(BoardLengthFormat(), Board?.Technology);
+        return refusal with
+        {
+            Actions =
+            [
+                new RailRefusalAction(
+                    "Treat that copper as a trace",
+                    new RelayCommand(() => ForceCopperClass(region.Region, PdnCopperClass.Trace)),
+                    $"Prices the copper on {where} with the trace formula and runs again. Undo "
+                  + "takes it back, as does \"Copper: use the measured classification\" on the "
+                  + "Class map."),
+                new RailRefusalAction(
+                    "Show that copper",
+                    new RelayCommand(() => ShowOnBoardHook?.Invoke(region.Bounds)),
+                    $"Zooms the board to the copper on {where}."),
+            ],
+        };
     }
 
     private void CancelInFlight()

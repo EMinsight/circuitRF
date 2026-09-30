@@ -14,14 +14,20 @@ picks and opens it there. The user's copy is theirs; nothing writes back into th
    The order of that file is the order of the menu. A folder that is not in the index is offered
    by nothing; an index row whose folder is missing is skipped rather than shown as a menu item
    that fails when pressed.
-3. Write a `README.md` beside the `.cws` saying what the example teaches. **It is what the user
+3. **Put every design in a cell**, the way File ▸ New Cell makes one: a folder with a `.ccell`, and
+   its schematic, symbol, layout and 3D view in `schematic/`, `symbol/`, `layout/` and `3d/`, each
+   named after the cell. A part placed into another view (a board placed into a 3D assembly, a die
+   into a package) is a cell of its own. Analyses live on a **test bench** cell's schematic — never
+   in a bare `.cnl`, which the user cannot open as a drawing. An example is read as the way to
+   build a design, so a document in a plain folder teaches the wrong thing.
+4. Write a `README.md` beside the `.cws` saying what the example teaches. **It is what the user
    sees first**: a workspace whose open restores no documents of its own opens on its README,
    read-only, instead of the Welcome tab. Headings, bold, italics, bullets, fenced code blocks
    and two-column tables all render; anything else degrades to plain text (`src/Ui/Markdown/`).
 
 `tests/Ui.Tests/Examples/ExampleWorkspacesTests.cs` holds the rest shut: the index and the disk
-agree both ways, every schematic still extracts with its device in it, nothing names anybody's home
-directory, and the tree reaches the build output.
+agree both ways, every design document is a view of a cell, every schematic still extracts with
+its device in it, nothing names anybody's home directory, and the tree reaches the build output.
 
 ## What is deliberately not here
 

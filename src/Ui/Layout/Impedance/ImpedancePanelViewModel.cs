@@ -131,6 +131,10 @@ public sealed partial class ImpedancePanelViewModel : ObservableObject
     [ObservableProperty] private string _warningText = "20";
     [ObservableProperty] private string _frequencyText = "";
 
+    /// <summary>How far from the land of a via on a trace the trace is not checked — a length, a bare
+    /// number µm; 0 checks all of it (round-10 report: the antipad flagged every layer change).</summary>
+    [ObservableProperty] private string _viaTransitionText = FormatMicrons(TraceImpedanceOptions.DefaultViaTransitionMicrons);
+
     /// <summary>"Pass 45.0–55.0 Ω · Warning 40.0–60.0 Ω", or the last valid band.</summary>
     [ObservableProperty] private string _bandText = "";
 
@@ -144,6 +148,7 @@ public sealed partial class ImpedancePanelViewModel : ObservableObject
     partial void OnToleranceTextChanged(string value) => SettingEdited();
     partial void OnWarningTextChanged(string value) => SettingEdited();
     partial void OnFrequencyTextChanged(string value) => SettingEdited();
+    partial void OnViaTransitionTextChanged(string value) => SettingEdited();
 
     public ObservableCollection<ImpedanceLayerRow> Layers { get; } = [];
 
@@ -168,6 +173,7 @@ public sealed partial class ImpedancePanelViewModel : ObservableObject
             ToleranceText = saved.TolerancePercent.ToString("0.##", CultureInfo.InvariantCulture);
             WarningText = saved.WarningPercent.ToString("0.##", CultureInfo.InvariantCulture);
             FrequencyText = saved.MaxFrequencyHz is { } hz ? TraceImpedanceReport.Hz(hz) : "";
+            ViaTransitionText = FormatMicrons(saved.ViaTransitionOrDefault());
 
             foreach (var choice in Editor?.TraceImpedanceLayers() ?? [])
             {
@@ -234,6 +240,18 @@ public sealed partial class ImpedancePanelViewModel : ObservableObject
         return true;
     }
 
+    private static string FormatMicrons(double um) => um.ToString("0.###", CultureInfo.InvariantCulture) + " µm";
+
+    /// <summary>The via-transition distance in µm: a length with its unit, a bare number µm, ≥ 0.</summary>
+    internal static bool TryViaTransition(string? text, out double microns)
+    {
+        microns = 0;
+        if (!LayoutUnits.TryParse((text ?? "").Trim(), LayoutUnit.Um, LayoutUnits.DefaultDbuPerMicron, out long dbu) || dbu < 0)
+            return false;
+        microns = (double)dbu / LayoutUnits.DefaultDbuPerMicron;
+        return true;
+    }
+
     /// <summary>The pass band, and whether Run can go.</summary>
     private bool Validate()
     {
@@ -247,6 +265,8 @@ public sealed partial class ImpedancePanelViewModel : ObservableObject
                 $"Enter the warning band as a percentage wider than the tolerance (± {tol:0.##} %) and below 100, e.g. 20.");
         else if (!TryFrequency(FrequencyText, out _))
             problem = "Enter the highest frequency with its unit, e.g. 6 GHz, or leave it blank.";
+        else if (!TryViaTransition(ViaTransitionText, out _))
+            problem = "Enter the distance round a via that is not checked as a length, e.g. 400 µm or 16 mil, or 0 to check every trace up to its via.";
         else
         {
             BandText = string.Create(CultureInfo.InvariantCulture,
@@ -270,6 +290,7 @@ public sealed partial class ImpedancePanelViewModel : ObservableObject
         TryNumber(ToleranceText, out double tolerance);
         TryNumber(WarningText, out double warning);
         TryFrequency(FrequencyText, out double? maxFrequency);
+        TryViaTransition(ViaTransitionText, out double viaTransition);
         var enabled = Layers.Where(l => l.HasCopper).ToList();
         var scope = CurrentScope();
         return new TraceImpedanceReview
@@ -278,6 +299,8 @@ public sealed partial class ImpedancePanelViewModel : ObservableObject
             TolerancePercent = tolerance,
             WarningPercent = warning,
             MaxFrequencyHz = maxFrequency,
+            // The default is not written, so a layout nobody changed it on saves as it always did.
+            ViaTransitionMicrons = viaTransition == TraceImpedanceOptions.DefaultViaTransitionMicrons ? null : viaTransition,
             Layers = enabled.All(l => l.IsChecked) ? null : [.. enabled.Where(l => l.IsChecked).Select(l => l.Name)],
             Scope = scope is { IsEmpty: false } ? scope : null,
         };
@@ -630,6 +653,7 @@ public sealed partial class ImpedancePanelViewModel : ObservableObject
             TolerancePercent = review.TolerancePercent,
             WarningPercent = review.WarningPercent,
             MaxFrequencyHz = review.MaxFrequencyHz,
+            ViaTransitionMicrons = review.ViaTransitionOrDefault(),
             Layers = [.. chosen.Select(l => l.Choice.Key)],
             Scope = review.Scope,
         };

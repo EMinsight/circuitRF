@@ -97,9 +97,10 @@ public static class BomTablePaste
     private static readonly Regex Number = new(@"^[+]?(\d+(\.\d*)?|\.\d+)$", RegexOptions.CultureInvariant);
     private static readonly Regex NumberWithTail =
         new(@"^([+]?(?:\d+(?:\.\d*)?|\.\d+))(\S+)$", RegexOptions.CultureInvariant);
-    // "4k7", "2R2", "4n7": the letter IS the decimal point and the multiplier.
+    // "4k7", "2R2", "4n7": the letter IS the decimal point and the multiplier. A spreadsheet BOM
+    // writes the capacitor and inductor ones upper-case as often as not — "2P3", "4U7", "2N5".
     private static readonly Regex LetterAsPoint =
-        new(@"^(\d+)([pnuµμmkKMGR])(\d+)$", RegexOptions.CultureInvariant);
+        new(@"^(\d+)([pnuµμmkKMGRPNU])(\d+)$", RegexOptions.CultureInvariant);
 
     /// <summary>
     /// Reads <paramref name="text"/> as a parts table, or returns null where it is not one — so a
@@ -126,9 +127,10 @@ public static class BomTablePaste
         var imperialReadings = new SortedSet<string>(StringComparer.Ordinal);
         var unknownCases = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
         var noValue = new List<string>();
+        var bareOhms = new List<string>();
 
         foreach (var rec in records)
-            ReadRecord(rec, columns, parts, skipped, imperialReadings, unknownCases, noValue);
+            ReadRecord(rec, columns, parts, skipped, imperialReadings, unknownCases, noValue, bareOhms);
 
         if (parts.Count == 0 || (!headerFound && parts.Count < 2)) return null;
 
@@ -143,6 +145,9 @@ public static class BomTablePaste
         if (noValue.Count > 0)
             notes.Add($"No value with a unit was found for {string.Join(", ", noValue)}; placed with " +
                       "the default value.");
+        if (bareOhms.Count > 0)
+            notes.Add($"{string.Join(", ", bareOhms)}: a number with no unit, straight after the " +
+                      "part's type where a value sits, was read as ohms.");
 
         return new BomPasteResult(parts, skipped, notes, headerFound);
     }
@@ -155,6 +160,12 @@ public static class BomTablePaste
     {
         /// <summary>Words from lines that continued this row — a wrapped PDF cell.</summary>
         public List<string> Continuation { get; } = [];
+
+        /// <summary>One of a run of reference-only lines: the PDF copy delivered this block of rows
+        /// column by column (every reference, then every type, then every value), and a cell that
+        /// was empty in the table left no line at all — so nothing below can be matched back to this
+        /// row. See <see cref="MarkColumnBlocks"/>.</summary>
+        public bool ColumnBlock { get; set; }
     }
 
     private static List<Record> ReadRecords(string text, out Dictionary<Role, List<int>> columns,
@@ -204,15 +215,46 @@ public static class BomTablePaste
             else if (records.Count > 0)
                 records[^1].Continuation.AddRange(words);
         }
+        MarkColumnBlocks(records);
         return records;
+    }
+
+    /// <summary>
+    /// Marks each run of three or more rows that arrived as a bare reference on its own line, back to
+    /// back. A PDF copy that reads a table one cell per line usually goes row by row, but a block the
+    /// PDF laid out as columns comes back column by column: "R2", "R3", "R1", then "Potentiometer",
+    /// "Resistor", "Resistor", then "10 K", "1K", "15" — with an EMPTY cell leaving no line, so the
+    /// columns do not even line up. Read row-wise, every one of those rows had no value and was
+    /// placed at the default, which is a wrong part rather than a missing one. The last row of the
+    /// run carries the transposed columns as its continuation and is marked too.
+    /// </summary>
+    private static void MarkColumnBlocks(List<Record> records)
+    {
+        int i = 0;
+        while (i < records.Count)
+        {
+            int j = i;
+            while (j + 1 < records.Count && records[j].Cells.Count == 1 && records[j].Continuation.Count == 0 &&
+                   records[j + 1].Cells.Count == 1)
+                j++;
+            // Three or more: in a one-cell-per-line copy every row's own line holds one word, and a
+            // case code shaped like a reference ("SOD110") ahead of a real row makes a false pair.
+            if (j - i >= 2)
+                for (int k = i; k <= j; k++) records[k].ColumnBlock = true;
+            i = j + 1;
+        }
     }
 
     /// <summary>A delimited table is one whose rows mostly agree on three or more cells. Text
     /// copied from a PDF has commas inside reference cells and nowhere else, so its comma
-    /// "columns" disagree row to row and it fails this — which is the point.</summary>
+    /// "columns" disagree row to row and it fails this — which is the point. A TAB is never inside
+    /// a PDF's words, and a spreadsheet exported with its trailing empty cells trimmed gives rows of
+    /// every length, so a tab table needs only most rows to have three cells.</summary>
     private static bool IsDelimited(DelimitedTable table)
     {
         if (table.Rows.Count == 0) return false;
+        if (table.Delimiter == '\t')
+            return table.Rows.Count(r => r.Fields.Count >= 3) >= Math.Max(1, (int)Math.Ceiling(table.Rows.Count * 0.6));
         var modal = table.Rows.GroupBy(r => r.Fields.Count).OrderByDescending(g => g.Count()).First();
         return modal.Key >= 3 && modal.Count() >= Math.Max(1, (int)Math.Ceiling(table.Rows.Count * 0.6));
     }
@@ -265,7 +307,8 @@ public static class BomTablePaste
     private static void ReadRecord(
         Record rec, Dictionary<Role, List<int>> columns,
         List<BomPastePart> parts, List<BomPasteSkip> skipped,
-        SortedSet<string> imperialReadings, SortedSet<string> unknownCases, List<string> noValue)
+        SortedSet<string> imperialReadings, SortedSet<string> unknownCases, List<string> noValue,
+        List<string> bareOhms)
     {
         var cells = rec.Cells;
         var used = new HashSet<int>();
@@ -318,11 +361,21 @@ public static class BomTablePaste
         if (refs.Count == 0) return;
         string refsLabel = string.Join(", ", refs);
 
+        if (rec.ColumnBlock)
+        {
+            skipped.Add(new BomPasteSkip(refsLabel,
+                "only its reference arrived on its line — the copy delivered this block of rows column " +
+                "by column, so its type and value cannot be matched back to it; paste these rows from a " +
+                "spreadsheet, or copy them one row at a time", rec.Line));
+            return;
+        }
+
         // The type.
         SymbolKind? kind = null;
         bool dnp = false;
         string? unknownType = null;
         int typeAt = rec.Delimited ? FirstColumn(columns, Role.Type, cells, _ => true) : -1;
+        int typeWordAt = -1;
         if (typeAt >= 0 && !string.IsNullOrWhiteSpace(cells[typeAt]))
         {
             used.Add(typeAt);
@@ -338,6 +391,7 @@ public static class BomTablePaste
                 if (k2 is null && !d2) continue;
                 (kind, dnp) = (k2, d2);
                 used.Add(i);
+                typeWordAt = i;
                 break;
             }
         }
@@ -421,13 +475,30 @@ public static class BomTablePaste
                     used.Add(i);
                     valueEnd = i;
                 }
-                else if (Number.IsMatch(cells[i]) && i + 1 < cells.Count && ParseUnit(cells[i + 1]) is { } u)
+                else if (Number.IsMatch(cells[i]) && i + 1 < cells.Count &&
+                         (ParseUnit(cells[i + 1]) ??
+                          (parseKind == SymbolKind.Resistor ? ResistorMultiplier(cells[i + 1]) : null)) is { } u)
                 {
+                    // "100 pF", and on a resistor "10 K" — the multiplier a word of its own.
                     (value, unit, valueDim) = (cells[i], u.Unit, u.Dim);
                     used.Add(i);
                     used.Add(i + 1);
                     valueEnd = i + 1;
                 }
+            }
+
+            // "R1 Resistor 15 1206": a bare number straight after the type word is the Value
+            // column's cell with its ohm left off — what the delimited path already reads from a
+            // Value column. Only there (a quantity or a part code elsewhere in the row is also a bare
+            // number), only on a resistor (a capacitor has no unit to assume), never a case code.
+            int at = typeWordAt + 1;
+            if (value is null && parseKind == SymbolKind.Resistor && typeWordAt >= 0 && at < cells.Count &&
+                !used.Contains(at) && Number.IsMatch(cells[at]) && !TryParseCase(cells[at], out _, out _))
+            {
+                (value, unit, valueDim) = (cells[at], "Ω", UnitDimension.Resistance);
+                used.Add(at);
+                valueEnd = at;
+                bareOhms.Add(refsLabel);
             }
 
             // No Value column and no value cell: a description often carries it — "Resistor,
@@ -682,6 +753,15 @@ public static class BomTablePaste
         };
         return prefix is null ? null : (dim, prefix + last);
     }
+
+    /// <summary>A resistor's multiplier written as a word of its own — the "K" of "10 K".</summary>
+    private static (UnitDimension Dim, string Unit)? ResistorMultiplier(string s) => s.Trim() switch
+    {
+        "k" or "K" => (UnitDimension.Resistance, "kΩ"),
+        "M" => (UnitDimension.Resistance, "MΩ"),
+        "G" => (UnitDimension.Resistance, "GΩ"),
+        _ => null,
+    };
 
     /// <summary>A value written with its unit in one cell or word: "100 pF", "100pF", "49.9Ω",
     /// "4k7" (a resistor), "4n7".</summary>

@@ -62,9 +62,15 @@ public static class SchematicToLayoutGenerator
         IReadOnlyList<string> NoLayoutWarnings,
         Bbox AddedRegion = default,
         int DeletedCount = 0,
-        bool OrientationLinksRecorded = false)
+        bool OrientationLinksRecorded = false,
+        IReadOnlyList<string>? UndrawnGroundReferences = null)
     {
         public bool NothingChanged => Command is null && NoLayoutWarnings.Count == 0;
+
+        /// <summary>The ground conductors the lines placed on this run return through that carry no artwork yet —
+        /// each offered a Draw Ground Pour (<see cref="GroundPourPlanner"/>) by the caller. Never a
+        /// <see cref="Lines"/> entry, since the caller posts it with that action.</summary>
+        public IReadOnlyList<string> UndrawnGrounds => UndrawnGroundReferences ?? [];
     }
 
     // Excluded from the parameter dict handed to a PCell generator — layer-selection inputs
@@ -182,6 +188,7 @@ public static class SchematicToLayoutGenerator
         var deleteIndices = new List<int>();
         var lines = new List<ReportLine>();
         var noLayoutWarnings = new List<string>();
+        var addedMicrostripGrounds = new List<StackupLayer>();
         IUiCommand? chain = null;
         int added = 0, updated = 0, unchanged = 0, overwritten = 0;
         int unlinkedDiffering = 0;
@@ -251,6 +258,9 @@ public static class SchematicToLayoutGenerator
 
             if (!hasExisting)
             {
+                if (generatorId is not null && GroundPourPlanner.MicrostripGenerators.Contains(generatorId))
+                    NoteGroundReference(comp, technology, addedMicrostripGrounds);
+
                 // Placed at the origin and moved once the whole set is known — the pitch is a function
                 // of what is being placed, and that is not known until the last one is resolved. The
                 // command holds this instance by reference and has not run yet, so moving it now is
@@ -395,10 +405,46 @@ public static class SchematicToLayoutGenerator
 
         var addedRegion = PlaceNewInstances(newInstances, targetLayoutBaseDir);
         ReportPlacementOntoDrawnArtwork(target, newInstances, targetLayoutBaseDir, lines);
-
         return new GenerationResult(chain, lines, added, updated, unchanged, removed, overwritten,
                                     noLayoutWarnings, addedRegion, deleteIndices.Count,
-                                    linksRecorded);
+                                    linksRecorded, UndrawnGroundReferences(target, addedMicrostripGrounds, technology));
+    }
+
+    /// <summary>Records the stackup conductor a newly placed microstrip returns through, once per
+    /// conductor, in first-appearance order so the report is deterministic.</summary>
+    private static void NoteGroundReference(EditableComponent comp, Technology? technology, List<StackupLayer> grounds)
+    {
+        if (technology is null) return;
+        var selection = new PCellLayerSelection(
+            NonEmptyOrNull(comp.Parameters.FirstOrDefault(p => p.Name == "SignalLayer")?.Expression),
+            NonEmptyOrNull(comp.Parameters.FirstOrDefault(p => p.Name == "GroundReference")?.Expression));
+        var (substrate, _, _) = SubstrateResolver.ResolveElectrical(technology, selection);
+        if (substrate is null) return;
+        var ground = technology.Stackup.Layers.FirstOrDefault(l =>
+            l.Kind == StackupKind.Conductor && l.Name == substrate.GroundConductorName);
+        if (ground is not null && !grounds.Contains(ground)) grounds.Add(ground);
+    }
+
+    /// <summary>
+    /// The INNER ground conductors, of those the newly placed lines return through, that carry no artwork. A
+    /// microstrip's generated artwork is its LINE; the plane is the stackup's and no generator draws it (one plane
+    /// per line would overlap its neighbours and run through the via at a layer change). The caller offers Draw
+    /// Ground Pour for each, once per conductor.
+    ///
+    /// <para><b>Only an inner plane is offered.</b> An undrawn ground is an infinite plane to the planar engine, a
+    /// solid one to the impedance probe and a conducting floor to the 3D model, so for simulation an empty OUTER
+    /// ground (a two-layer board's bottom copper) is already right: no via can pass through it, and every via
+    /// reaching it ends on it. An inner plane is where a via crosses and needs a clearance, which is the case the
+    /// pour exists for. Design ▸ Draw Ground Pour still draws an outer one on request, for fabrication.</para>
+    /// </summary>
+    private static List<string> UndrawnGroundReferences(LayoutView target, List<StackupLayer> grounds, Technology? technology)
+    {
+        var conductors = technology?.Stackup.Layers.Where(l => l.Kind == StackupKind.Conductor).ToList() ?? [];
+        bool Inner(StackupLayer g) => conductors.Count > 2
+                                      && !ReferenceEquals(g, conductors[0]) && !ReferenceEquals(g, conductors[^1]);
+        return grounds.Where(g => Inner(g) && g.DrawingLayers.Count > 0
+                                  && !target.Shapes.Any(s => s is not ViaShape && g.DrawingLayers.Contains(s.Layer)))
+                      .Select(g => g.Name).ToList();
     }
 
     private readonly record struct Resolution(

@@ -186,7 +186,7 @@ wires reach 270.8 °C and the centre ones 199.5 °C; at 12 A, 594.4 °C against 
   </span><figcaption>The same RF run from above, cut through the wires' loops 330 µm above the flange: each wire crosses the cut twice,
   and the heat gathers along the outer two.</figcaption></figure>
 
-**From a power amplifier.** `FromHB` takes its currents from a harmonic-balance drive sweep of `Amplifier.cnl` — a generic
+**From a power amplifier.** `FromHB` takes its currents from a harmonic-balance drive sweep of the `Amplifier` test bench's schematic — a generic
 FET on this view's EM result, into a 5 Ω load — at every drive level. Both ports are referenced to the flange, so they are solved
 as a balanced pair. At 28 dBm drive the circuit gives 49.51 dBm from 4.43 A, and the edge wires reach 205.1 °C (the centre ones
 164.7 °C); the run takes 12 s, and states when each wire passes its limit:

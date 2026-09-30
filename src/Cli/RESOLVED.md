@@ -2872,3 +2872,14 @@ a file that leaves it out reads false. The page says to write it.
   `check.c3d.*` ids from `9a058c91`); the new `render.field.*` ids are in its list.
 - Gate: `tests/Ui.Tests/Render/SurfaceFieldRenderTests.cs` (a synthetic thermal block: depth, mirror, range, a Faces plot)
   and `FieldRenderCliTests` gates 6, 7 and 11 (the refusals, the scans, a Surfaces |E| plot of the committed cavity).
+
+## `check` passed a thermal setup whose circuit does not exist (2026-09-29)
+
+A `.c3d` thermal setup's `FromCircuit` link was checked only for naming SOME schematic; a path to a
+file that did not exist checked clean and failed at the run. `C3dThermal.Setup` now takes the
+document's path and results folder as an optional argument and, given them, reports whatever
+`ThermalCircuitLink.Describe` (the resolver the Setups page, `explain` and the run share) cannot
+resolve. Only `check` passes it: the editor shows the link's resolution on its own row and the run
+refuses through `ThermalCircuitLink.Run`, so both would otherwise say it twice. Describe needs no EM
+result on disk (it matches the SnP path, it does not read the file), so a freshly opened example
+still checks clean. Gate: `ThermalCircuitLinkTests`.

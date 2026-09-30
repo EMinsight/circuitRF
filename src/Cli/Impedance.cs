@@ -49,6 +49,7 @@ internal static class Impedance
         public bool WarningsFail;
         public readonly List<string> Layers = [];
         public double? MaxWidthMicrons;
+        public double? ViaTransitionMicrons;
         public bool NoScope;
         public bool Survey;
         public bool IgnoreAccepted;
@@ -214,6 +215,7 @@ internal static class Impedance
             MaxFrequencyHz = o.MaxFrequencyHz ?? saved?.MaxFrequencyHz,
             Layers = layers,
             MaxWidthMicrons = o.MaxWidthMicrons,
+            ViaTransitionMicrons = o.ViaTransitionMicrons ?? saved?.ViaTransitionOrDefault() ?? TraceImpedanceOptions.DefaultViaTransitionMicrons,
             Scope = scope,
         };
 
@@ -312,7 +314,7 @@ internal static class Impedance
     {
         Console.Error.WriteLine(
             "Usage: circuitrf impedance <layout> [--target 50] [--tol 10] [--warn 20] [--max-freq 6GHz]\n" +
-            "                           [--layers \"Top Copper,Inner 2\"] [--max-width <um>]\n" +
+            "                           [--layers \"Top Copper,Inner 2\"] [--max-width <um>] [--via-transition 400um]\n" +
             "                           [--width \"Top Copper=457\"]... [--no-scope] [--survey]\n" +
             "                           [--region [<layer>@]x0,y0,x1,y1]... [--net <name>]... [--pick <layer>@<x>,<y>[:connected]]...\n" +
             "                           [--whole-layer <layer>]...\n" +
@@ -322,7 +324,8 @@ internal static class Impedance
             "  --region, --net, --pick and --whole-layer select traces and each replaces the saved selectors\n" +
             "  of its kind; with any of the first three set, a layer none of them reaches is not reviewed;\n" +
             "  every coordinate carries a unit (12.5mm, 400um, 50mil). Findings accepted in the editor are\n" +
-            "  reported ACCEPTED and do not count; --ignore-accepted counts them.");
+            "  reported ACCEPTED and do not count; --ignore-accepted counts them. Trace within --via-transition\n" +
+            "  of the land of a via on it is not checked (the plane is cleared there) and each is noted; 0 checks it.");
         return 1;
     }
 
@@ -388,6 +391,12 @@ internal static class Impedance
                                          NumberStyles.Float, CultureInfo.InvariantCulture, out double mw) || !(mw > 0))
                         return JsonRun.Fail(CliDiagnostics.ImpedanceBadNumber("--max-width", args[i], "a positive width in µm"));
                     o.MaxWidthMicrons = mw;
+                    continue;
+                case "--via-transition" when i + 1 < args.Length:
+                    // A length, a bare number µm as --max-width reads it; 0 checks every trace to the via.
+                    if (!LayoutUnits.TryParse(args[++i].Trim(), LayoutUnit.Um, LayoutUnits.DefaultDbuPerMicron, out long vt) || vt < 0)
+                        return JsonRun.Fail(CliDiagnostics.ImpedanceBadNumber("--via-transition", args[i], "a length, e.g. 400um or 16mil, or 0 for off"));
+                    o.ViaTransitionMicrons = (double)vt / LayoutUnits.DefaultDbuPerMicron;
                     continue;
                 case "--width" when i + 1 < args.Length:
                 {

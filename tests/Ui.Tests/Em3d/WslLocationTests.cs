@@ -221,6 +221,11 @@ public sealed class WslLocationTests : IDisposable
         Assert.Equal(InstallStatus.Refused, outcome.Status);
         refusals.Add(outcome.Report);
         Assert.Contains("sudo apt-get install build-essential", refusals[^1]);
+        // Field report: the line was typed at a Windows prompt and failed with 'command not found'. The
+        // refusal names WHERE it runs, and a stale package index (the 404s) is refreshed first.
+        Assert.Contains("inside the Linux distribution 'Ubuntu'", refusals[^1]);
+        Assert.Contains("wsl -d Ubuntu", refusals[^1]);
+        Assert.Contains("sudo apt-get update && ", refusals[^1]);
 
         Assert.Equal(refusals.Count, refusals.Distinct().Count());
         foreach (var fake in new[] { none, noDistro, noVm, bare })

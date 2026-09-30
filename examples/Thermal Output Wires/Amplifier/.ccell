@@ -1,0 +1,8 @@
+{
+  "FormatVersion": 1,
+  "Parameters": [],
+  "PrimarySchematic": "Amplifier.csch",
+  "IsTestBench": true,
+  "Terminals": [],
+  "NumPorts": 0
+}

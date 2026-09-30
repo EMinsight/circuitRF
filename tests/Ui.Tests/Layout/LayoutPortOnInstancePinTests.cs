@@ -299,4 +299,26 @@ public class LayoutPortOnInstancePinTests : IDisposable
 
         Assert.Equal(100_000, h.WidthDbu);
     }
+
+    [Fact]
+    public void AnInstanceLyingOnATopLevelPlane_IsTheConductor_AndCarriesItsLayer()
+    {
+        // Field report, 2026-09-29: a generated line (an instance) drawn over a hand-drawn ground plane
+        // (a top-level polygon). Top-level shapes answered first, so a port clicked on the line seated on
+        // the PLANE, committed to the plane's layer, and the EM run refused it as off every signal
+        // conductor. The smaller copper is what was pointed at, and its layer is what the port commits to.
+        var (top, baseDir) = TopWithTaper();
+        var plane = new LayerKey(2, 0);
+        top.Shapes.Add(new RectShape { Layer = plane, X1 = -10_000_000, Y1 = -20_000_000, X2 = 90_000_000, Y2 = 20_000_000 });
+        var lookup = LayoutConductorLookup.LookupFor(top, tech: null, baseDir);
+
+        var onPin  = lookup(0, 0, null);
+        var inside = lookup(10_000_000, 0, null);
+        var off    = lookup(80_000_000, 15_000_000, null);   // only the plane is here
+
+        Assert.Equal(new LayerKey(1, 0), onPin!.Value.Layer);
+        Assert.NotNull(onPin.Value.Pin);
+        Assert.Equal(new LayerKey(1, 0), inside!.Value.Layer);
+        Assert.Equal(plane, off!.Value.Layer);
+    }
 }

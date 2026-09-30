@@ -268,7 +268,7 @@
                               ToolTip.Tip="Air box: the active setup's, each face tinted by its boundary (PEC grey, PMC orange, symmetry hatched, absorbing clear). In Face mode its faces are picked last; right-click one to set its boundary or padding.">
                     <mi:MaterialIcon Kind="BorderOutside" Width="16" Height="16"/>
                 </ToggleButton>
-                <Button IsVisible="{Binding ViewModel.IsEditable}" Command="{Binding ViewModel.OpenSetupAnalysesCommand}" Click="OnDialogButtonClick" ToolTip.Tip="Setups: the EM setups this 3D view carries, and which one is active (Simulate ▸ Setup Analyses…)">
+                <Button IsVisible="{Binding ViewModel.IsEditable}" Command="{Binding ViewModel.OpenSetupAnalysesCommand}" ToolTip.Tip="Setups: the EM setups this 3D view carries, and which one is active (Simulate ▸ Setup Analyses…)">
                     <mi:MaterialIcon Kind="TuneVariant" Width="16" Height="16"/>
                 </Button>
                 <!-- brief-em3d-51 R-em3d51-4a — the Variables panel. -->

@@ -49,7 +49,26 @@ public sealed record RailRefusal(string Sentence, RailRefusalControl Control)
 {
     /// <summary>The refusal a window with nothing wrong shows: none at all.</summary>
     public static readonly RailRefusal? Nothing = null;
+
+    /// <summary>
+    /// What the strip offers as a button under the sentence — the remedy performed rather than
+    /// described. Empty on most refusals.
+    /// </summary>
+    /// <remarks>
+    /// <b>A remedy the user has to go and find is one they may not find</b> (field report,
+    /// 2026-09-29). Two refusals sent a designer to a control by description — "pick it in the rail
+    /// selector", "open the board's Class view" — and the designer asked what either meant; the second could
+    /// not even be followed, because the class map of a rail that has never solved is empty. Where
+    /// the window knows exactly what the remedy is, it offers it.
+    /// </remarks>
+    public IReadOnlyList<RailRefusalAction> Actions { get; init; } = [];
+
+    /// <summary>True when there is at least one <see cref="Actions"/> button to draw.</summary>
+    public bool HasActions => Actions.Count > 0;
 }
+
+/// <summary>One button under a refusal: its label, what it does, and the tooltip saying so.</summary>
+public sealed record RailRefusalAction(string Label, System.Windows.Input.ICommand Command, string Tip = "");
 
 /// <summary>
 /// Attributing a refusal that came back from an engine to the control that answers it.
@@ -79,6 +98,9 @@ public static class RailRefusals
         // already made a rail can act without starting again.
         ("anchored on the copper of its own reference return", RailRefusalControl.ReferenceLayer),
         ("The fast model cannot answer above",     RailRefusalControl.ModelKind),
+        // Accuracy answers it, and it is the one remedy that needs no judgement about the copper;
+        // the other — forcing the region to a trace — is offered as a button under the sentence.
+        ("only through spreading copper",          RailRefusalControl.ModelKind),
         ("could not be resolved to a layer span",  RailRefusalControl.Stackup),
         ("does not state its coordinate origin",   RailRefusalControl.PlacementOrigin),
         ("does not state its coordinate format",   RailRefusalControl.DrillFormat),

@@ -1,0 +1,848 @@
+{
+  "FormatVersion": 2,
+  "CellName": "Amplifier",
+  "GridSize": 100,
+  "GridSnap": true,
+  "AuthorGridDivisor": 20,
+  "Components": [
+    {
+      "InstanceName": "SRC",
+      "Symbol": "P1Tone",
+      "X": -2600,
+      "Y": -100,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Num",
+          "Expression": "1",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Pavl",
+          "Expression": "Pin",
+          "Unit": "dBm",
+          "ShowOnSchematic": true,
+          "Dimension": "Power"
+        },
+        {
+          "Name": "Z",
+          "Expression": "50",
+          "Unit": "\u03A9",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        },
+        {
+          "Name": "Freq",
+          "Expression": "f0",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "Frequency"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          200,
+          0
+        ],
+        [
+          200,
+          0
+        ],
+        [
+          200,
+          0
+        ],
+        [
+          200,
+          0
+        ],
+        [
+          200,
+          0
+        ],
+        [
+          200,
+          0
+        ]
+      ]
+    },
+    {
+      "InstanceName": "GND1",
+      "Symbol": "Ground",
+      "X": -2600,
+      "Y": 100,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "CIN",
+      "Symbol": "Capacitor",
+      "X": -2200,
+      "Y": -300,
+      "Rotation": "R90",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "C",
+          "Expression": "100",
+          "Unit": "pF",
+          "ShowOnSchematic": true,
+          "Dimension": "Capacitance"
+        }
+      ]
+    },
+    {
+      "InstanceName": "RG",
+      "Symbol": "Resistor",
+      "X": -1600,
+      "Y": -100,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "R",
+          "Expression": "50",
+          "Unit": "\u03A9",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          200,
+          0
+        ],
+        [
+          200,
+          0
+        ],
+        [
+          200,
+          0
+        ]
+      ]
+    },
+    {
+      "InstanceName": "GND2",
+      "Symbol": "Ground",
+      "X": -1600,
+      "Y": 100,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "LG",
+      "Symbol": "Inductor",
+      "X": -1200,
+      "Y": -1000,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "L",
+          "Expression": "100",
+          "Unit": "nH",
+          "ShowOnSchematic": true,
+          "Dimension": "Inductance"
+        }
+      ]
+    },
+    {
+      "InstanceName": "VG",
+      "Symbol": "Vdc",
+      "X": -2000,
+      "Y": -1000,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Vdc",
+          "Expression": "VGS",
+          "Unit": "V",
+          "ShowOnSchematic": true,
+          "Dimension": "Voltage"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          200,
+          0
+        ],
+        [
+          200,
+          0
+        ],
+        [
+          200,
+          0
+        ]
+      ]
+    },
+    {
+      "InstanceName": "GND3",
+      "Symbol": "Ground",
+      "X": -2000,
+      "Y": -800,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "Q1",
+      "Symbol": "FetAngelov",
+      "X": -800,
+      "Y": -300,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Ipk",
+          "Expression": "6",
+          "Unit": "A",
+          "ShowOnSchematic": true,
+          "Dimension": "Current"
+        },
+        {
+          "Name": "Vpk",
+          "Expression": "-2",
+          "Unit": "V",
+          "ShowOnSchematic": true,
+          "Dimension": "Voltage"
+        },
+        {
+          "Name": "P1",
+          "Expression": "1.2",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Alpha",
+          "Expression": "1.5",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Lambda",
+          "Expression": "0.01",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          200,
+          0
+        ],
+        [
+          200,
+          0
+        ],
+        [
+          200,
+          0
+        ],
+        [
+          200,
+          0
+        ],
+        [
+          200,
+          0
+        ],
+        [
+          200,
+          0
+        ],
+        [
+          200,
+          0
+        ]
+      ]
+    },
+    {
+      "InstanceName": "GND4",
+      "Symbol": "Ground",
+      "X": -800,
+      "Y": -100,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "XOUT",
+      "Symbol": "Snp",
+      "X": -400,
+      "Y": -700,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "NumPorts",
+          "Expression": "2",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "File",
+          "Expression": "results/Output EM.palace.s2p",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "RefNode",
+          "Expression": "false",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        }
+      ]
+    },
+    {
+      "InstanceName": "LD",
+      "Symbol": "Inductor",
+      "X": 200,
+      "Y": -1400,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "L",
+          "Expression": "100",
+          "Unit": "nH",
+          "ShowOnSchematic": true,
+          "Dimension": "Inductance"
+        }
+      ]
+    },
+    {
+      "InstanceName": "IDD",
+      "Symbol": "IProbe",
+      "X": 500,
+      "Y": -1700,
+      "Rotation": "R0",
+      "MirrorX": true,
+      "Disable": "None",
+      "Parameters": []
+    },
+    {
+      "InstanceName": "VD",
+      "Symbol": "Vdc",
+      "X": 800,
+      "Y": -1400,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Vdc",
+          "Expression": "VDD",
+          "Unit": "V",
+          "ShowOnSchematic": true,
+          "Dimension": "Voltage"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          200,
+          0
+        ],
+        [
+          200,
+          0
+        ],
+        [
+          200,
+          0
+        ]
+      ]
+    },
+    {
+      "InstanceName": "GND5",
+      "Symbol": "Ground",
+      "X": 800,
+      "Y": -1200,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "COUT",
+      "Symbol": "Capacitor",
+      "X": 800,
+      "Y": -700,
+      "Rotation": "R90",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "C",
+          "Expression": "100",
+          "Unit": "pF",
+          "ShowOnSchematic": true,
+          "Dimension": "Capacitance"
+        }
+      ]
+    },
+    {
+      "InstanceName": "IOUT",
+      "Symbol": "IProbe",
+      "X": 1300,
+      "Y": -800,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": []
+    },
+    {
+      "InstanceName": "RL",
+      "Symbol": "Resistor",
+      "X": 1800,
+      "Y": -500,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "R",
+          "Expression": "5",
+          "Unit": "\u03A9",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          200,
+          0
+        ],
+        [
+          200,
+          0
+        ],
+        [
+          200,
+          0
+        ]
+      ]
+    },
+    {
+      "InstanceName": "GND6",
+      "Symbol": "Ground",
+      "X": 1800,
+      "Y": -300,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "VAR1",
+      "Symbol": "Var",
+      "X": -2800,
+      "Y": 700,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "f0",
+          "Expression": "2",
+          "Unit": "GHz",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Pin",
+          "Expression": "20",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "VDD",
+          "Expression": "40",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "VGS",
+          "Expression": "-3",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        }
+      ]
+    },
+    {
+      "InstanceName": "MeasPA",
+      "Symbol": "Meas",
+      "X": -1600,
+      "Y": 700,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Pout_dBm",
+          "Expression": "10*log10(real(0.5*HB1.V(\u0022out\u0022,1)*conj(HB1.I(\u0022IOUT\u0022,1)))*1000)",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Id_A",
+          "Expression": "real(HB1.I(\u0022IDD\u0022,0))",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Eff",
+          "Expression": "real(0.5*HB1.V(\u0022out\u0022,1)*conj(HB1.I(\u0022IOUT\u0022,1)))/(VDD*real(HB1.I(\u0022IDD\u0022,0)))*100",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        }
+      ]
+    }
+  ],
+  "Wires": [
+    {
+      "Points": [
+        [
+          -2600,
+          -300
+        ],
+        [
+          -2400,
+          -300
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          -2000,
+          -300
+        ],
+        [
+          -1600,
+          -300
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          -1600,
+          -300
+        ],
+        [
+          -1200,
+          -300
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          -1200,
+          -300
+        ],
+        [
+          -1000,
+          -300
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          -1200,
+          -800
+        ],
+        [
+          -1200,
+          -300
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          -2000,
+          -1200
+        ],
+        [
+          -1200,
+          -1200
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          -800,
+          -500
+        ],
+        [
+          -800,
+          -700
+        ],
+        [
+          -600,
+          -700
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          -200,
+          -700
+        ],
+        [
+          200,
+          -700
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          200,
+          -700
+        ],
+        [
+          600,
+          -700
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          200,
+          -1200
+        ],
+        [
+          200,
+          -700
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          400,
+          -1600
+        ],
+        [
+          200,
+          -1600
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          500,
+          -1600
+        ],
+        [
+          800,
+          -1600
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          1000,
+          -700
+        ],
+        [
+          1300,
+          -700
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          1400,
+          -700
+        ],
+        [
+          1800,
+          -700
+        ]
+      ]
+    }
+  ],
+  "NetLabels": [
+    {
+      "X": -2500,
+      "Y": -320,
+      "Name": "in",
+      "OwnerWireIndex": 0,
+      "SegmentIndex": 0,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": -20
+    },
+    {
+      "X": -1800,
+      "Y": -320,
+      "Name": "gate",
+      "OwnerWireIndex": 1,
+      "SegmentIndex": 0,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": -20
+    },
+    {
+      "X": -1600,
+      "Y": -1220,
+      "Name": "gbias",
+      "OwnerWireIndex": 5,
+      "SegmentIndex": 0,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": -20
+    },
+    {
+      "X": -700,
+      "Y": -720,
+      "Name": "drain",
+      "OwnerWireIndex": 6,
+      "SegmentIndex": 1,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": -20
+    },
+    {
+      "X": 0,
+      "Y": -720,
+      "Name": "lead",
+      "OwnerWireIndex": 7,
+      "SegmentIndex": 0,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": -20
+    },
+    {
+      "X": 250,
+      "Y": -1620,
+      "Name": "feed",
+      "OwnerWireIndex": 10,
+      "SegmentIndex": 0,
+      "AlongT": 0.75,
+      "OffsetX": 0,
+      "OffsetY": -20
+    },
+    {
+      "X": 650,
+      "Y": -1620,
+      "Name": "dd",
+      "OwnerWireIndex": 11,
+      "SegmentIndex": 0,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": -20
+    },
+    {
+      "X": 1150,
+      "Y": -720,
+      "Name": "outb",
+      "OwnerWireIndex": 12,
+      "SegmentIndex": 0,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": -20
+    },
+    {
+      "X": 1600,
+      "Y": -720,
+      "Name": "out",
+      "OwnerWireIndex": 13,
+      "SegmentIndex": 0,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": -20
+    }
+  ],
+  "Dots": [],
+  "CanvasObjects": [],
+  "View": {
+    "PanX": 0,
+    "PanY": 0,
+    "Zoom": 1
+  },
+  "Analyses": [
+    {
+      "Type": "hb",
+      "Name": "HB1",
+      "Enabled": true,
+      "ToneExpr": "f0",
+      "ToneUnit": "GHz",
+      "NumFreqsExpr": "1",
+      "MaxMixOrderExpr": "5",
+      "MaxHarmonicExpr": "5",
+      "FFTOverSampleExpr": "1",
+      "TolExpr": "1e-6",
+      "DriveSteppingExpr": "IfNecessary",
+      "GuardHarmonicExpr": "0",
+      "LambdaExpr": "1",
+      "MaxIterExpr": "100"
+    },
+    {
+      "Type": "sweep",
+      "Name": "SW1",
+      "Enabled": true,
+      "PsaVarName": "Pin",
+      "PsaInnerName": "HB1",
+      "PsaMode": "PointCount",
+      "PsaStart": 10,
+      "PsaStop": 28,
+      "PsaStepOrCount": 10,
+      "PsaKind": "Linear"
+    }
+  ]
+}

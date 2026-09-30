@@ -466,26 +466,6 @@ public partial class C3dEditorView : UserControl
     private void OnVariablePromote(object? sender, RoutedEventArgs e) { if (RowOf(sender) is { } r) _vm?.Variables?.Promote(r); }
     private void OnVariableAdd(object? sender, RoutedEventArgs e) => _vm?.Variables?.Add();
 
-    /// <summary>
-    /// 3D editor bugs round 6 — a toolbar button that opens a modal dialog (Setups): its tooltip closed, and held off until
-    /// this window is active again. The click lands while the tip is showing (or its delay is running), and the dialog took
-    /// the pointer with the tip still assigned to the button, so moving over the dialog opened and closed it over and over.
-    /// The same dialog from the menu bar never had a tip to leave behind.
-    /// </summary>
-    private void OnDialogButtonClick(object? sender, RoutedEventArgs e)
-    {
-        if (sender is not Control button) return;
-        ToolTip.SetIsOpen(button, false);
-        ToolTip.SetServiceEnabled(button, false);
-        if (TopLevel.GetTopLevel(this) is not WindowBase window) { ToolTip.SetServiceEnabled(button, true); return; }
-        void Restore(object? s, EventArgs a)
-        {
-            window.Activated -= Restore;
-            ToolTip.SetServiceEnabled(button, true);
-        }
-        window.Activated += Restore;
-    }
-
     // brief-em3d-48 — the breadcrumb and the Pop Out button: the view model asks about a dirty child.
     private void OnPopOutClick(object? sender, RoutedEventArgs e) => _ = _vm?.PopOutAsync();
 

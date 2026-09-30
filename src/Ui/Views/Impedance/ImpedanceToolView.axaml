@@ -92,12 +92,21 @@
                             </StackPanel>
                         </StackPanel>
                     </Grid>
-                    <StackPanel Spacing="2">
-                        <TextBlock Classes="label" Text="Highest frequency (optional)"/>
-                        <TextBox Width="110" FontSize="12" HorizontalAlignment="Left" HorizontalContentAlignment="Right"
-                                 PlaceholderText="off" Text="{Binding Panel.FrequencyText}"
-                                 ToolTip.Tip="e.g. 6 GHz (a bare number is GHz). A stretch outside the warning band shorter than λ/20 there warns rather than fails."/>
-                    </StackPanel>
+                    <Grid ColumnDefinitions="Auto,Auto" ColumnSpacing="12">
+                        <StackPanel Grid.Column="0" Spacing="2">
+                            <TextBlock Classes="label" Text="Highest frequency (optional)"/>
+                            <TextBox Width="110" FontSize="12" HorizontalAlignment="Left" HorizontalContentAlignment="Right"
+                                     PlaceholderText="off" Text="{Binding Panel.FrequencyText}"
+                                     ToolTip.Tip="e.g. 6 GHz (a bare number is GHz). A stretch outside the warning band shorter than λ/20 there warns rather than fails."/>
+                        </StackPanel>
+                        <!-- Round-10 report: the plane's clearance round a via flagged every layer change. -->
+                        <StackPanel Grid.Column="1" Spacing="2">
+                            <TextBlock Classes="label" Text="Skip near vias"/>
+                            <TextBox Width="90" FontSize="12" HorizontalAlignment="Left" HorizontalContentAlignment="Right"
+                                     Text="{Binding Panel.ViaTransitionText}"
+                                     ToolTip.Tip="Trace within this distance of the land of a via on it is not checked, because a plane is normally cleared round a via. Each skipped stretch is listed in the trace's notes so the transition can be verified with an EM run. A bare number is µm; 0 checks every trace up to its via."/>
+                        </StackPanel>
+                    </Grid>
                     <TextBlock FontSize="11" Opacity="0.8" Text="{Binding Panel.BandText}"/>
 
                     <!-- Layers -->

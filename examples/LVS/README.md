@@ -64,11 +64,11 @@ a format change.
 
 ## The six faults
 
-`Attenuator broken/layout/Attenuator.break.py` reads the correct board and mutates it:
+`Attenuator broken/layout/Attenuator broken.break.py` reads the correct board and mutates it:
 
 ```
-python3 "examples/LVS/Attenuator broken/layout/Attenuator.break.py" examples/LVS
-python3 "examples/LVS/Attenuator broken/layout/Attenuator.break.py" examples/LVS --only F4
+python3 "examples/LVS/Attenuator broken/layout/Attenuator broken.break.py" examples/LVS
+python3 "examples/LVS/Attenuator broken/layout/Attenuator broken.break.py" examples/LVS --only F4
 ```
 
 The no-argument form writes all six, which is the realistic case. `--only Fn` writes exactly one,

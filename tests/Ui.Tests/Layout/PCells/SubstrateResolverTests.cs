@@ -189,4 +189,53 @@ public class SubstrateResolverTests
         Assert.Null(substrate);
         Assert.NotNull(failure);
     }
+
+    /// <summary>Top / h / Ground / h / Inner / h / Bottom, all one dielectric and one metal
+    /// thickness, so a line on Top over the plane and a line on Inner under it are mirror images.</summary>
+    private static Technology MirroredFourLayer(bool bottomIsGround)
+    {
+        var tech = new Technology { Name = "Mirror Test" };
+        void C(string name, bool gnd) => tech.Stackup.Layers.Add(new StackupLayer
+            { Kind = StackupKind.Conductor, Name = name, IsGroundReference = gnd, SigmaSm = 5.8e7, ThicknessDbu = 17_500 });
+        void D(string name) => tech.Stackup.Layers.Add(new StackupLayer
+            { Kind = StackupKind.Dielectric, Name = name, ThicknessDbu = 203_200, Epsr = 4.4, TanD = 0.02 });
+        C("Top", false); D("D1"); C("Plane", true); D("D2"); C("Inner", false); D("D3"); C("Bottom", bottomIsGround);
+        return tech;
+    }
+
+    [Fact]
+    public void GroundAboveTheSignal_IsTheSameMicrostripMirrored_NotARefusal()
+    {
+        // A line under its plane (an inner layer, or the bottom of a board) was refused as "not
+        // beneath", and the model fell back to its own 1.6 mm FR-4 defaults — a plausible, wrong Z0.
+        var tech = MirroredFourLayer(bottomIsGround: false);
+        var below = SubstrateResolver.ResolveElectrical(tech, new PCellLayerSelection("Top", "Plane"));
+        var above = SubstrateResolver.ResolveElectrical(tech, new PCellLayerSelection("Inner", "Plane"));
+
+        Assert.Null(below.Failure);
+        Assert.Null(above.Failure);
+        var b = below.Substrate!; var a = above.Substrate!;
+        Assert.Equal("Plane", a.GroundConductorName);
+        Assert.Equal(b.HeightMeters, a.HeightMeters);
+        Assert.Equal(b.RelativePermittivity, a.RelativePermittivity);
+        Assert.Equal(b.LossTangent, a.LossTangent);
+        Assert.Equal(b.ThicknessMeters, a.ThicknessMeters);
+        Assert.False(a.IsStripline);
+        Assert.Empty(above.Warnings);
+
+        // With no override the nearest plane beneath still wins, and failing one the plane above does.
+        var inferred = SubstrateResolver.ResolveElectrical(tech, new PCellLayerSelection("Inner", null));
+        Assert.Equal("Plane", inferred.Substrate!.GroundConductorName);
+    }
+
+    [Fact]
+    public void GroundAboveTheSignal_WithAnotherGroundBeneath_IsReportedAsStripline()
+    {
+        var tech = MirroredFourLayer(bottomIsGround: true);
+        var (substrate, failure, warnings) = SubstrateResolver.ResolveElectrical(tech, new PCellLayerSelection("Inner", "Plane"));
+
+        Assert.Null(failure);
+        Assert.True(substrate!.IsStripline);
+        Assert.Contains(warnings, w => w.Contains("stripline", StringComparison.OrdinalIgnoreCase));
+    }
 }

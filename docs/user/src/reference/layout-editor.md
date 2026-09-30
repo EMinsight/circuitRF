@@ -811,6 +811,13 @@ the layout you are working in, and each layout keeps its own results.
 - **Highest frequency** &mdash; optional, blank by default. When given (*6 GHz*; a bare number is GHz),
   a stretch outside the warning band that is **shorter than λ/20** at that frequency is a warning
   rather than a fail &mdash; see [electrically short](#impedance-findings).
+- **Skip near vias** &mdash; *400 µm* by default (about 16 mil). Trace within this distance of the land
+  of a via **on that trace** is not checked: a plane is normally cleared round a via, so the last stretch
+  of every trace into one has no reference under it by design, and would otherwise flag every layer
+  change. Each skipped stretch is listed in its trace's notes, naming the via, so the transition is still
+  there to verify with an EM run. A via that only passes beside a trace skips nothing. A bare number is
+  µm; **0** checks every trace up to its via. The default suits an antipad of the via land plus
+  0.2&ndash;0.3 mm; widen it if your antipads are larger.
 - **Layers** &mdash; every copper layer of the stackup, all ticked by default. A layer with no copper
   on it is shown but cannot be ticked.
 - **Traces** &mdash; the trace widths on each ticked layer, to say which traces are under review. See
@@ -952,6 +959,10 @@ you drew:
 - **A trace ends** at a junction, at a via, at a pad or where the copper ends. **A via ends it**: what
   continues on another layer is that layer's trace, and is a row of its own. The table says what each
   end is.
+- **A pad at a trace's end is not part of the trace.** Copper at the end that is more than a fifth
+  wider than the trace, and shorter than four of its own widths, is the land the trace runs onto: it is
+  left out of the trace's length, width and Z₀, and the end reads *pad*. A pad inside a trace &mdash;
+  a line that runs on past it &mdash; is a genuine width step and stays.
 - **A stretch shorter than four of its widths is read as a pad** &mdash; unless a region, a pick or a
   net chooses it, and then two widths is enough. A wide line cut into sections by series parts is often
   only two or three widths long between them; point at it and each section is reviewed. A run with no

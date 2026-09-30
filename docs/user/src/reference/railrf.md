@@ -537,7 +537,10 @@ passing report. Four rules make the two safe to have together:
 3. **Fast refuses where it cannot be honest.** Where a source reaches a load *only* through copper
    classified as spreading, the fast model produces no number rather than a smaller one, and the refusal
    names both answers: run Accuracy, or force the region to `trace` if you know the current follows a
-   path across it.
+   path across it. The refusal strip offers the second as a button, **Treat that copper as a trace**,
+   beside **Show that copper**, which zooms the board to it &mdash; a rail refused on its first run has no
+   class map yet to right-click it on. The fast model needs about ten squares before it prices copper as a
+   trace; a shorter, wider neck is what this refusal is usually about.
 4. **The two are compared on your own board.** Running Accuracy keeps the fast curve beside the accurate
    one, so the error is measured on this design rather than promised in a document.
 

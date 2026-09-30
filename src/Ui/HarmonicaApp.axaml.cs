@@ -40,6 +40,9 @@ public partial class HarmonicaApp : Application
 
     public override void OnFrameworkInitializationCompleted()
     {
+        // A tooltip never outlives the click that opens a dialog, or its window losing activation.
+        Controls.ToolTipDismissGuard.Install();
+
         // The built-in .ccolor provider is NOT registered here any more (R-rnd1-5):
         // ThemeResolver reads the shipped Default.ccolor out of CircuitRF.Render's own
         // manifest resources by default, in every process, with or without an app host.
