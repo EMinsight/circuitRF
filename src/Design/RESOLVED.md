@@ -15892,3 +15892,21 @@ Gates: `HierarchyGateTests.Flatten_APlatedViasAirCoreNeedsNoAirInTheTechnology_A
   inferred), so the two cannot disagree. With no document path only an absolute path is opened.
 - **The reported board is unchanged:** M14's file starts at 50 MHz, so the designer still enters its
   DCR. Gate: `SeriesDcrFromFileTests`.
+
+## A 3D port whose return plane stops a hair short of the line (2026-09-30)
+
+- **Report:** a designer's 4-layer via-and-trace was refused, and the reason was not visible. The port
+  was on an Inner 2 line with the `.cem` naming Inner 1 as its return, and the refusal read "no metal on
+  it under the port". The hand-drawn plane's lower-right vertex sat 0.49 mil left of its upper-right one,
+  so the edge leaned and ended 6.2-6.7 µm short of the line's end. `PieceContaining` probes about 4 nm
+  inside the end, so a few µm is "no metal".
+- **Fix (`Em3dGenerator.BuildPorts`):** when the probe misses, `ReturnGap` measures how far in the
+  return metal begins under the whole line width, reading both line edges and the middle and taking the
+  worst. Within `ReturnGapToleranceOfWidth` (a tenth of the line's width), a LUMPED port's sheet moves in
+  to that point, and its reference plane moves with it, stated as a note. Beyond that, the refusal
+  states the gap in µm and in the layout's display unit. A wave port is never moved: it lies on the box
+  face, so its return has to reach the line's end there. No metal anywhere under the line keeps the old
+  refusal.
+- **Separately worth knowing:** one `GroundStackupLayerName` serves every port. For a line on Inner 2,
+  that made a 42-mil sheet up to Inner 1, while the inferred return (setup names none) is Bottom Copper
+  8 mil below, as the air box's PEC floor. Gate: `Em3dGeneratorTests.AReturnPlaneShortOfTheLineEnd_…`.

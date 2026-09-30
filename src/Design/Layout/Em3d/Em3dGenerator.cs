@@ -126,6 +126,15 @@ public static class Em3dGenerator
     public const double DefaultWaveWidthFactor = 10, DefaultWaveHeightFactor = 8;
 
     /// <summary>
+    /// How far short of a lumped port's line end its return plane may stop, as a fraction of the line's
+    /// width, before the port is refused: the sheet moves in to where the plane begins instead. A tenth of
+    /// the width moves the reference plane by less than the line's own end effect, which is of the order of
+    /// the substrate height; the gap it forgives is the kind a hand-placed vertex leaves — a designer's
+    /// 4-layer board put the plane's edge 6.2 µm short of a 200 µm line, invisible at any working zoom.
+    /// </summary>
+    public const double ReturnGapToleranceOfWidth = 0.1;
+
+    /// <summary>
     /// <b>R-em3d3-5f — a conductor is a sheet when its thickness is below this many skin depths at
     /// the top frequency…</b> Three skin depths carries ~95 % of the current, so metal thinner than
     /// that is not "thick" in the sense a volume mesh resolves. <b>Provisional</b>: F0's Q6
@@ -397,9 +406,41 @@ public static class Em3dGenerator
                     retFace  = rp.IsSheet ? rp.SheetZ : above ? rp.ZBottom : rp.ZTop;
                 }
                 else
-                    return $"Port {p.Number} returns through '{retBand.Layer.Name}', but there is no metal on " +
-                           "it under the port, and it is not the air box's floor — so the port's sheet has " +
-                           "nothing to end on. Draw the plane under the port, or name a different return plane.";
+                {
+                    // A plane drawn by hand to the line's end often stops a hair short of it — a vertex a
+                    // few µm off makes its edge lean — and nothing on screen shows the difference. Within
+                    // a tenth of the line's width the sheet moves in to where the plane begins; beyond it
+                    // the refusal says how far short the plane is, which is what the designer has to fix.
+                    bool wave = setup.PortKind3D(p.Number) == Em3dPortKind.Wave;
+                    double inward = p.Side is PlanarPortSide.MinX or PlanarPortSide.MinY ? 1 : -1;
+                    double tolerance = ReturnGapToleranceOfWidth * (hi - lo);
+                    double? gap = retPieces is null ? null : ReturnGap(retPieces, p.Side, edgeAt, lo, hi);
+                    double moved = edgeAt + inward * (gap ?? 0);
+                    if (gap is { } g && g <= tolerance && !wave &&
+                        PieceContaining(retPieces!, p.Side, moved, (lo + hi) / 2) is { } near &&
+                        MetalAt(piece.Poly, p.Side, moved + inward * 1e-3 * (hi - lo), (lo + hi) / 2))
+                    {
+                        negative = near.Name;
+                        retFace  = near.IsSheet ? near.SheetZ : above ? near.ZBottom : near.ZTop;
+                        edgeAt   = moved;
+                        _notes.Add($"Port {p.Number}'s sheet is {Length(g)} inside its line's end, where " +
+                                   $"'{retBand.Layer.Name}' begins: the plane stops that far short of the end, within " +
+                                   $"a tenth of the line's width, {Length(tolerance)}. The port's reference plane " +
+                                   "moves with it; extend the plane to the line's end to put the port there.");
+                    }
+                    else if (gap is { } wide)
+                        return $"Port {p.Number} returns through '{retBand.Layer.Name}', but the metal on it stops " +
+                               $"{Length(wide)} short of the port's end of the line, so the port's sheet has nothing " +
+                               "to end on. " +
+                               (wave ? "A wave port lies on the air box's face, so its return has to reach the line's end there. "
+                                     : $"A gap within a tenth of the line's width, {Length(tolerance)}, is closed by moving the " +
+                                       "sheet in; this one is wider. ") +
+                               "Extend the plane to the line's end, or name a different return plane.";
+                    else
+                        return $"Port {p.Number} returns through '{retBand.Layer.Name}', but there is no metal on " +
+                               "it under the port's line, and it is not the air box's floor — so the port's sheet has " +
+                               "nothing to end on. Draw the plane under the port, or name a different return plane.";
+                }
 
                 double sigFace = piece.IsSheet ? piece.SheetZ : above ? piece.ZTop : piece.ZBottom;
                 double zLo = above ? sigFace : retFace, zHi = above ? retFace : sigFace;
@@ -520,6 +561,55 @@ public static class Em3dGenerator
                     return p;
             }
             return null;
+        }
+
+        /// <summary>
+        /// How far in from the line's end, at <paramref name="at"/>, the return metal begins under the whole
+        /// of the line's width [<paramref name="lo"/>, <paramref name="hi"/>] — the nearest piece's, read along
+        /// both edges and the middle of the line. Null when no piece has metal under the line inside its end.
+        /// </summary>
+        private static double? ReturnGap(List<Piece> pieces, PlanarPortSide side, double at, double lo, double hi)
+        {
+            bool alongX = side is PlanarPortSide.MinX or PlanarPortSide.MaxX;
+            double inward = side is PlanarPortSide.MinX or PlanarPortSide.MinY ? 1 : -1;
+            double inset = 1e-3 * (hi - lo);
+            double? best = null;
+            foreach (var p in pieces)
+            {
+                var (x0, y0, x1, y1) = p.Poly.Bounds();
+                double eps = 1e-6 * Math.Max(x1 - x0, y1 - y0);
+                double worst = 0;
+                foreach (double v in new[] { lo + inset, (lo + hi) / 2, hi - inset })
+                {
+                    // The first boundary crossing inside the end past which the line is over metal.
+                    double? entry = null;
+                    foreach (double s in Crossings(p.Poly, v, alongX).Select(c => (c - at) * inward).Where(s => s >= 0).Order())
+                        if (MetalAt(p.Poly, side, at + inward * (s + eps), v))
+                        {
+                            entry = s;
+                            break;
+                        }
+                    if (entry is null) { worst = double.PositiveInfinity; break; }
+                    worst = Math.Max(worst, entry.Value);
+                }
+                if (!double.IsPositiveInfinity(worst) && (best is null || worst < best)) best = worst;
+            }
+            return best;
+        }
+
+        /// <summary>Whether <paramref name="poly"/> has metal at <paramref name="along"/> on a port's normal
+        /// axis and <paramref name="across"/> on the other.</summary>
+        private static bool MetalAt(PlanarPolygon poly, PlanarPortSide side, double along, double across)
+            => side is PlanarPortSide.MinX or PlanarPortSide.MaxX ? poly.Contains(along, across) : poly.Contains(across, along);
+
+        /// <summary>A length in metres, in µm and in the layout's own display unit when that is another.</summary>
+        private string Length(double m)
+        {
+            string um = $"{Fmt(m * 1e6)} µm";
+            var unit = source.View.DisplayUnit;
+            if (unit == LayoutUnit.Um) return um;
+            long dbu = (long)Math.Round(m * 1e6 * source.DbuPerMicron);
+            return $"{um} ({LayoutUnits.Format(dbu, unit, source.DbuPerMicron)} {LayoutUnits.Suffix(unit)})";
         }
 
         /// <summary>

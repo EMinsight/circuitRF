@@ -304,6 +304,55 @@ public sealed class Em3dGeneratorTests
         Assert.All(p.Solids.Where(sd => sd.Role == Em3dRole.Dielectric), sd => Assert.NotNull(bores.Carved(sd)));
     }
 
+    // ── A return plane that stops short of the line's end ───────────────────────────────────────
+
+    /// <summary>A plane drawn to a line's end by hand can stop a few µm short of it. Within a tenth of
+    /// the line's width (40 µm here) the sheet moves in to where the plane begins and says so; beyond
+    /// it the refusal states the gap, which the old "no metal under the port" never did.</summary>
+    [Theory]
+    [InlineData(30, true)]
+    [InlineData(100, false)]
+    public void AReturnPlaneShortOfTheLineEnd_WithinATenthOfTheWidthMovesTheSheet_BeyondItSaysHowFar(int gapUm, bool ok)
+    {
+        long planeEnd = 10_000_000 - gapUm * 1000L;
+        string clay = $$"""
+            {
+              "FormatVersion": 1, "DbuPerMicron": 1000, "DisplayUnit": "Mm", "SnapDbu": 10000,
+              "Shapes": [
+                { "$type": "Rect", "Layer": { "Layer": 1, "Datatype": 0 },
+                  "X1": 0, "Y1": -200000, "X2": 10000000, "Y2": 200000 },
+                { "$type": "Rect", "Layer": { "Layer": 2, "Datatype": 0 },
+                  "X1": -500000, "Y1": -2000000, "X2": {{planeEnd}}, "Y2": 2000000 },
+                { "$type": "Label", "Layer": { "Layer": 1, "Datatype": 0 },
+                  "X": 0, "Y": 0, "Text": "1", "Height": 400000, "IsPort": true, "PortDirection": "R0" },
+                { "$type": "Label", "Layer": { "Layer": 1, "Datatype": 0 },
+                  "X": 10000000, "Y": 0, "Text": "2", "Height": 400000, "IsPort": true, "PortDirection": "R180" }
+              ],
+              "Instances": []
+            }
+            """;
+        var view = LayoutPersistence.Deserialize(clay);
+        var tech = ShippedTechnologies.Load("pcb-4layer_FR-4_62mil_1oz");
+        var setup = new EmSetup
+        {
+            Name = "thru", LayoutRef = "thru/layout/thru.clay", GroundStackupLayerName = "Inner 1 (Ground Plane)",
+            Frequency = new FrequencySpec("1", "10", 4, SweepKind.Linear, "GHz", "GHz"),
+            Solver3D = Em3dSolver.Palace,
+        };
+        var r = Em3dGenerator.Generate(setup, new EmLayoutSource("/nowhere/thru.clay", view, tech, view.DbuPerMicron), tech);
+
+        if (ok)
+        {
+            Assert.True(r.Ok, r.Refusal);
+            var p2 = r.Problem!.Ports.Single(q => q.Number == 2);
+            Assert.Equal(planeEnd * 1e-9, p2.Min.X, 12);
+            Assert.StartsWith("Inner 1 (Ground Plane)", p2.NegativeObject, StringComparison.Ordinal);
+            Assert.Contains(r.Notes, n => n.Contains("Port 2's sheet is 30 µm (0.03 mm) inside its line's end", StringComparison.Ordinal));
+        }
+        else
+            Assert.Contains("stops 100 µm (0.1 mm) short of the port's end of the line", r.Refusal, StringComparison.Ordinal);
+    }
+
     // ── 9. The reference page ───────────────────────────────────────────────────────────────────
 
     [Fact]
