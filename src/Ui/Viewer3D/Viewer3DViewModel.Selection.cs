@@ -818,6 +818,27 @@ public sealed partial class Viewer3DViewModel
         if (_items.TryGetValue(id, out var it)) it.Sync(visible);
     }
 
+    /// <summary>Several visibilities at once: the kind switches are re-read and a frame requested ONCE. One at a time, each
+    /// re-read scanned the whole scene, so hiding a 1,500-object board was a few million scans.</summary>
+    internal void SetVisibleEverywhere(IEnumerable<(uint Id, bool Visible)> changes)
+    {
+        bool any = false;
+        foreach (var (id, visible) in changes)
+        {
+            if (id < 1 || id > View.Visible.Length) continue;
+            if (View.Visible[id - 1] != visible)
+            {
+                View.Visible[id - 1] = visible;
+                VisibilityChanged?.Invoke(id, visible);
+                any = true;
+            }
+            if (_items.TryGetValue(id, out var it)) it.Sync(visible);
+        }
+        if (!any) return;
+        SyncKindToggles();
+        FrameRequested?.Invoke();
+    }
+
     // ── edges (brief-em3d-67) ───────────────────────────────────────────────────────────────
 
     /// <summary>An edge item's edge and the translation from its table to where its object is (an instance's offset).</summary>

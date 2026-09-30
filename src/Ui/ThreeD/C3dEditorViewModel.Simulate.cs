@@ -535,8 +535,29 @@ public sealed partial class C3dEditorViewModel
         set
         {
             if (value == AirBoxShown) return;
-            ChangeRecords($"{(value ? "Show" : "Hide")} {AirBoxName}", d => d.AirBoxHidden = !value);
+            // Drawing state, as an object's Hidden is: one records entry (it is saved and undone with them), but it writes
+            // only the flag back and rebuilds nothing. Through ChangeRecords the tick re-elaborated the whole document.
+            string before = C3dRecordsEdit.Of(Document);
+            Document.AirBoxHidden = !value;
+            Push(new C3dRecordsEdit($"{(value ? "Show" : "Hide")} {AirBoxName}", before, C3dRecordsEdit.Of(Document),
+                                    ApplyAirBoxHidden, alreadyApplied: true));
+            AirBoxHiddenChanged();
         }
+    }
+
+    /// <summary>The air box's tick, undone or redone: its records entry differs from the document in the flag alone.</summary>
+    private void ApplyAirBoxHidden(string text)
+    {
+        DocumentWrites++;
+        Document.AirBoxHidden = C3dRecordsEdit.AirBoxHiddenOf(text);
+        AirBoxHiddenChanged();
+    }
+
+    private void AirBoxHiddenChanged()
+    {
+        ApplyAirBoxShown();
+        OnPropertyChanged(nameof(IsDirty));
+        RefreshFieldsStale();
     }
 
     private void ApplyAirBoxShown()

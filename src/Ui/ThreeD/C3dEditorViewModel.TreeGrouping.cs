@@ -159,7 +159,7 @@ public sealed partial class C3dEditorViewModel
             var indices = rows.Where(r => r.ObjectIndex >= 0 && r.ObjectIndex < Document.Objects.Count && r.OperandPath is null && !r.IsFeature && !r.IsGroup)
                               .Select(r => r.ObjectIndex).Distinct().ToList();
             if (indices.Count > 0)
-                ChangeObjects(rows.Count == 1 ? $"{(visible ? "Show" : "Hide")} {rows[0].Name}" : description, indices, o => o.Hidden = !visible);
+                ChangeHidden(rows.Count == 1 ? $"{(visible ? "Show" : "Hide")} {rows[0].Name}" : description, indices, _ => !visible);
         }
         finally { EndGroup(); }
         PostPlotsNote();                            // brief-em3d-96 — what D1 left undrawn, after the edits that clear the line

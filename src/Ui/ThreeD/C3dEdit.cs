@@ -160,6 +160,9 @@ public sealed class C3dRecordsEdit(string description, string before, string aft
            "\u0001" + (doc.AirBoxHidden ? "hidden" : "") + "\u0001" + C3dPersistence.SerializeThermalPlaces(doc) +
            "\u0001" + C3dPersistence.SerializeFieldPlots(doc.FieldPlots);
 
+    /// <summary>Whether <paramref name="text"/> (an <see cref="Of"/>) holds the air box hidden.</summary>
+    public static bool AirBoxHiddenOf(string text) => text.Split('\u0001') is { Length: > 4 } parts && parts[4].Length > 0;
+
     /// <summary>Writes the three lists of <paramref name="text"/> into <paramref name="doc"/>.</summary>
     public static void Apply(C3dDocument doc, string text)
     {

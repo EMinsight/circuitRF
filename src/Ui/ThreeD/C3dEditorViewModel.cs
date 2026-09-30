@@ -411,19 +411,36 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         => new((float)(from.X - to.X), (float)(from.Y - to.Y), (float)(from.Z - to.Z));
 
     /// <summary>A document object's <c>Hidden</c> is document state (brief 41 §2a): the pane follows it.</summary>
-    private void ApplyHiddenFlags()
+    private void ApplyHiddenFlags() => ApplyHiddenFlags(Document.Objects);
+
+    /// <summary>The pane follows <paramref name="objects"/>' <c>Hidden</c>, as one batch.</summary>
+    private void ApplyHiddenFlags(IEnumerable<C3dObject> objects)
     {
-        foreach (var o in Document.Objects)
-            foreach (var s in SceneObjectsFor(o, balls: true)) Viewer.SetVisibleEverywhere(s.Id, !o.Hidden);
+        var changes = objects.SelectMany(o => SceneObjectsFor(o, balls: true).Select(s => (s.Id, !o.Hidden))).ToList();
         // brief-em3d-66 — an entered operand's own Hidden.
         if (EnteredTop is >= 0 and var top)
             foreach (var op in _enteredOperands)
                 if (SceneObject(op.SceneName) is { } s && C3dBooleans.At(Document.Objects[top], op.Path) is { } local)
-                    Viewer.SetVisibleEverywhere(s.Id, !local.Hidden);
+                    changes.Add((s.Id, !local.Hidden));
+        Viewer.SetVisibleEverywhere(changes);
     }
 
     /// <summary>The scene object a document object became, by its name, or null (a polyline, a refusal).</summary>
-    public Scene3DObject? SceneObject(string name) => Viewer.Scene.Objects.FirstOrDefault(o => o.Name == name);
+    public Scene3DObject? SceneObject(string name)
+    {
+        // Indexed per adopted scene (each adoption is a new Scene3DModel): a linear scan here made every per-object pass
+        // over a 1,500-object document quadratic. The first object of a name wins, as FirstOrDefault did.
+        var scene = Viewer.Scene;
+        if (_sceneNames is not { } c || !ReferenceEquals(c.Scene, scene))
+        {
+            var byName = new Dictionary<string, Scene3DObject>(scene.Objects.Length, StringComparer.Ordinal);
+            foreach (var o in scene.Objects) byName.TryAdd(o.Name, o);
+            _sceneNames = c = (scene, byName);
+        }
+        return c.ByName.GetValueOrDefault(name);
+    }
+
+    private (Scene3DModel Scene, Dictionary<string, Scene3DObject> ByName)? _sceneNames;
 
     /// <summary>3D editor round 4 — the scene objects a document object became: itself, or every element of a wire array
     /// (<c>w1[k]</c>) — and, with <paramref name="balls"/>, each wire's balls.</summary>
@@ -471,7 +488,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     {
         var indices = objects.Select(EditableIndex).Where(i => i >= 0).Distinct().ToList();
         if (indices.Count == 0) return false;
-        ChangeObjects(description, indices, o => o.Hidden = hidden);
+        ChangeHidden(description, indices, _ => hidden);
         // An instance's contents are not the document's to hide: the view hides them for this session.
         foreach (var o in objects.Where(o => EditableIndex(o) < 0)) Viewer.SetVisibleEverywhere(o.Id, !hidden);
         if (hidden) Viewer.SetSelection([]);
@@ -485,8 +502,8 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
             .Where(i => Document.Objects[i].Hidden != (keepNames is not null && !keepNames.Contains(Document.Objects[i].Name)))
             .ToList();
         if (indices.Count > 0)
-            ChangeObjects(keep is null ? "Show all" : "Isolate", indices,
-                          o => o.Hidden = keepNames is not null && !keepNames.Contains(o.Name));
+            ChangeHidden(keep is null ? "Show all" : "Isolate", indices,
+                         o => keepNames is not null && !keepNames.Contains(o.Name));
         foreach (var s in Viewer.Scene.Objects.Where(s => s.Pickable && DocumentIndex(s) < 0))
             Viewer.SetVisibleEverywhere(s.Id, keepNames is null || keepNames.Contains(s.Name));
         return true;
@@ -574,6 +591,34 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         if (slots.Count > 0) Push(new C3dEdit(description, slots, ApplySlots));
     }
 
+    /// <summary>
+    /// One undoable edit of the objects' <c>Hidden</c> alone: <paramref name="hidden"/> says each one's new value. Hidden is
+    /// drawing state that no elaboration reads — a hidden object is in the scene, and the view's own flag decides whether it
+    /// is drawn — so this entry re-elaborates nothing and regenerates no scene (<see cref="ApplyHiddenSlots"/>). Through
+    /// <see cref="ChangeObjects"/>, a tick on a 1,500-object flattened board waited 0.2-0.7 s for a scene it already had. An
+    /// entered operand goes that way still: its Hidden is written back into its boolean.
+    /// </summary>
+    public void ChangeHidden(string description, IReadOnlyList<int> indices, Func<C3dObject, bool> hidden)
+    {
+        if (indices.Any(IsOperandIndex))
+        {
+            ChangeObjects(description, indices, o => o.Hidden = hidden(o));
+            return;
+        }
+        var slots = new List<C3dEditSlot>();
+        foreach (int i in indices.Distinct().OrderBy(i => i))
+        {
+            var o = Document.Objects[i];
+            bool h = hidden(o);
+            if (o.Hidden == h) continue;
+            string before = C3dPersistence.SerializeObject(o);
+            var copy = C3dPersistence.DeserializeObject(before);
+            copy.Hidden = h;
+            slots.Add(new C3dEditSlot(false, i, before, C3dPersistence.SerializeObject(copy)));
+        }
+        if (slots.Count > 0) Push(new C3dEdit(description, slots, ApplyHiddenSlots));
+    }
+
     /// <summary>A rename: validated here, one entry, and the pane keeps the object selected under its new name.</summary>
     public string? Rename(int index, string name)
     {
@@ -646,6 +691,21 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         DocumentWrites++;
         C3dEdit.Apply(Document, slots, forward);
         DocumentChanged();
+    }
+
+    /// <summary><see cref="ChangeHidden"/>'s entry, forward and back: the document is written as any entry writes it, and then
+    /// only what reads Hidden follows — the pane's flags, the tree's ticks, the Inspector (it holds the replaced objects) and
+    /// the dirty and stale lines. Nothing is elaborated: a later edit elaborates the document as it stands.</summary>
+    private void ApplyHiddenSlots(IReadOnlyList<C3dEditSlot> slots, bool forward)
+    {
+        DocumentWrites++;
+        C3dEdit.Apply(Document, slots, forward);
+        _targetsCache = null;
+        ApplyHiddenFlags(slots.Select(s => Document.Objects[s.Index]));
+        RefreshTreeVisibility();
+        Properties.Reload();
+        OnPropertyChanged(nameof(IsDirty));
+        RefreshFieldsStale();
     }
 
     /// <summary>The document changed: elaborate again (the caches make it the changed objects' work), and

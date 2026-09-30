@@ -76,6 +76,31 @@ public sealed class EditorRound5TreeTests : IDisposable
     }
 
     [Fact]
+    public void AVisibilityTick_RequestsNoScene_AndThePaneFollowsTheDocument()
+    {
+        // Hidden is drawing state: a hidden object is in the scene already, so a tick (and its undo) sets the pane's flags and
+        // re-elaborates nothing. Through the ordinary edit path, a 1,500-object flattened board waited up to 0.7 s per tick.
+        var vm = Open(Doc(), out _);
+        long requested = vm.Viewer.Source.Requested;
+        bool Drawn(string name) => vm.Viewer.View.IsVisible(vm.SceneObject(name)!.Id);
+
+        vm.HideAllTreeObjectsCommand.Execute(null);
+        Assert.All(vm.Document.Objects, o => Assert.False(Drawn(o.Name)));
+        Assert.False(vm.Viewer.ShowBoundaryFaces);
+        Row(vm, "b").IsVisible = true;
+        Assert.True(Drawn("b"));
+        Assert.False(Drawn("a"));
+
+        vm.UndoRedo.Undo();                                                // b's tick
+        Assert.False(Drawn("b"));
+        Assert.False(Row(vm, "b").IsVisible);
+        vm.UndoRedo.Undo();                                                // Hide all, box too
+        Assert.All(vm.Document.Objects, o => Assert.True(Drawn(o.Name)));
+        Assert.True(vm.Viewer.ShowBoundaryFaces);
+        Assert.Equal(requested, vm.Viewer.Source.Requested);
+    }
+
+    [Fact]
     public void SeveralRows_SelectEveryObjectInTheOrderSelected_AndTheMenuIsTheCanvassWithItsBoolean()
     {
         var vm = Open(Doc(), out _);

@@ -235,7 +235,7 @@ public sealed partial class C3dEditorViewModel
     public void SetGroupVisible(string path, bool visible)
     {
         var indices = GroupObjectIndices(path);
-        if (indices.Count > 0) ChangeObjects($"{(visible ? "Show" : "Hide")} {C3dGroups.NameOf(path)}", indices, o => o.Hidden = !visible);
+        if (indices.Count > 0) ChangeHidden($"{(visible ? "Show" : "Hide")} {C3dGroups.NameOf(path)}", indices, _ => !visible);
         foreach (var m in C3dGroups.MembersOf(Document, path).Where(m => m.Instance))
             foreach (var s in SceneObjectsOfMember(m)) Viewer.SetVisibleEverywhere(s.Id, visible);
         if (!visible && !_keepSelectionOnHide) Viewer.SetSelection([]);      // brief-em3d-91 — H keeps it, to show it again

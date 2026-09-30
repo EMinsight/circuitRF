@@ -38463,3 +38463,29 @@ cancel and push/pop change the document without counting. A fresh computation is
 index is looked up by NAME in the current document. Gate:
 `HierarchyGateTests.UndoFlatten_WithTheFlattenedObjectsSelected_AsksTheMenuWithoutIndexingPastTheObjects`
 (fails with the reported exception without the fix).
+
+## 3D editor: a visibility tick re-elaborated the whole document (2026-09-30)
+
+On a flattened board of ~1,500 objects (500 vias, each a copper barrel plus its air bore, plus pads), a tree tick
+took 160-250 ms and Hide all / Show all 550-700 ms before the pane answered (Debug, headless, before any GPU upload).
+The UI thread's own share was small; the time was a full background re-elaboration and scene regeneration. Every
+`Hidden` change went through `ChangeObjects` → `ApplySlots` → `DocumentChanged` → `Viewer.Regenerate()`, although a
+hidden object is already IN the scene and the view's own flag decides whether it is drawn. The air box's tick did
+the same through `ChangeRecords`.
+
+- **`ChangeHidden`** is now the path for every object visibility write (`SetRowsVisible`, `SetGroupVisible`,
+  `SetHidden`, `ShowAll`/Isolate). Its entry is still an ordinary `C3dEdit` (saved, one undo entry), but
+  `ApplyHiddenSlots` only writes the document and then refreshes what reads `Hidden`: the pane's flags, the tree's
+  ticks, the Inspector (the slots REPLACE the object instances), `IsDirty`, the stale line. It also drops
+  `_targetsCache`, as `DocumentChanged` does. An entered boolean's operand still takes `ChangeObjects`.
+- **The air box's tick** pushes a `C3dRecordsEdit` whose apply writes `AirBoxHidden` alone. `C3dRecordsEdit.Apply` would
+  replace the ports, setups and field plots with new instances, which is why `RecordsChanged` has to rebuild after it.
+- **Two quadratic passes** removed along the way. `SceneObject(name)` was a linear scan, called per object by
+  `ApplyHiddenFlags` on every adoption; it is now a name index built once per adopted `Scene3DModel`, and the first
+  object of a name still wins. `Viewer3DViewModel.SetVisible` re-read three kind switches by scanning the whole scene
+  on EVERY call; the batch `SetVisibleEverywhere(IEnumerable<…>)` re-reads them once.
+
+Now: under 1 ms for a tick, ~30 ms for Hide all / Show all (serializing the 1,500 before/after slots). The elaborator's
+per-object cache key still includes `Hidden`, so the first real edit after hiding many objects re-lowers them once.
+Gate: `EditorRound5TreeTests.AVisibilityTick_RequestsNoScene_AndThePaneFollowsTheDocument` (a Hide all, a tick, both
+undone: `Viewer.Source.Requested` does not move and the pane follows the document).
