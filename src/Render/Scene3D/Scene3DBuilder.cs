@@ -202,6 +202,8 @@ public static class Scene3DBuilder
     public const byte PortAlpha = 170;
     /// <summary>A port's arrow is this fraction of the port's longer side.</summary>
     public const float ArrowFraction = 0.8f;
+    /// <summary>3D editor bugs round 9 — the most checkerboard cells along either side of a lumped port.</summary>
+    public const int CheckerCellsMax = 64;
     /// <summary>Segments around a coaxial port's annulus.</summary>
     public const int AnnulusSegments = 32;
 
@@ -377,16 +379,25 @@ public static class Scene3DBuilder
         }
 
         // ── ports: a named sheet and a direction arrow ───────────────────────────────────────
+        // 3D editor bugs round 9 — a rectangular lumped port is a checkerboard over exactly its own rectangle, − edge to +
+        // edge and its full width, outlined, with a flat arrow on it pointing to the + edge: an arrow the size of its longer
+        // side stood far outside a wide, short port and said nothing of where the port starts, ends or how wide it is. A wave port keeps its voltage path's arrow, and a
+        // coaxial one its annulus.
+        uint pinFill = Scene3DVertex.Pack(pin.R, pin.G, pin.B, PortAlpha), pinLine = Scene3DVertex.Pack(pin.R, pin.G, pin.B, 255);
+        var (checkFill, checkArrow) = CheckerColours(pin.R, pin.G, pin.B);
         foreach (var p in problem.Ports)
         {
             var obj = new Scene3DObject
             {
-                Id = 0, Name = p.Name, Kind = Scene3DKind.Port, PortNumber = p.Number,
-                Rgba = Scene3DVertex.Pack(pin.R, pin.G, pin.B, PortAlpha), Translucent = true,
+                Id = 0, Name = p.Name, Kind = Scene3DKind.Port, PortNumber = p.Number, Rgba = pinFill, Translucent = true,
             };
+            if (p.Kind == Em3dPortKind.Lumped && p.Annulus is null && Checkerboard(p, pinFill, checkFill, checkArrow) is { } board)
+            {
+                b.Object(obj, board.Mesh, Outline(p).Select(q => (q, pinLine)), vertexRgba: board.Rgba);
+                continue;
+            }
             var (verts, tris) = PortSheet(p);
-            uint line = Scene3DVertex.Pack(pin.R, pin.G, pin.B, 255);
-            b.Object(obj, new Em3dTriangleMesh(verts, tris), PortArrow(p).Select(q => (q, line)));
+            b.Object(obj, new Em3dTriangleMesh(verts, tris), PortArrow(p).Select(q => (q, pinLine)));
         }
 
         // ── brief-em3d-49: face boundaries, tinted just off their faces (never z-fighting the solid) ─
@@ -632,6 +643,89 @@ public static class Scene3DBuilder
         return (verts, tris);
     }
 
+    /// <summary>3D editor bugs round 9 — the checkerboard's second colour and its arrow's: against a dark pin colour the cells
+    /// alternate with white and the arrow is near-black; against a light one, the reverse. The cells take the port's opacity,
+    /// the arrow none, so it reads over both.</summary>
+    private static (uint Partner, uint Arrow) CheckerColours(byte r, byte g, byte b)
+        => 0.2126 * r + 0.7152 * g + 0.0722 * b > 140
+            ? (Scene3DVertex.Pack(40, 40, 40, PortAlpha), Scene3DVertex.Pack(255, 255, 255, 255))
+            : (Scene3DVertex.Pack(255, 255, 255, PortAlpha), Scene3DVertex.Pack(20, 20, 20, 255));
+
+    /// <summary>
+    /// 3D editor bugs round 9 — a rectangular lumped port's sheet as a checkerboard of <paramref name="a"/> and
+    /// <paramref name="b"/> cells, each cell its own four vertices so its colour is flat. The cells are as near square as the
+    /// rectangle allows, two of them across its shorter side, at most <see cref="CheckerCellsMax"/> along either side. Over
+    /// them, in the same plane, a flat <paramref name="arrow"/>-coloured arrow from the − edge towards the + edge (the port's
+    /// <see cref="Em3dPort.Direction"/>), centred across its width. The arrow's triangles come AFTER the cells in the one
+    /// translucent draw, which writes no depth, so they paint over the cells like a texture and never fight them.
+    /// Null for a rectangle that is not a sheet in one axis plane.
+    /// </summary>
+    internal static (Em3dTriangleMesh Mesh, uint[] Rgba)? Checkerboard(Em3dPort p, uint a, uint b, uint arrow)
+    {
+        var (lo, hi) = (p.Min, p.Max);
+        double[] min = [lo.X, lo.Y, lo.Z], ext = [hi.X - lo.X, hi.Y - lo.Y, hi.Z - lo.Z];
+        int normal = Array.FindIndex(ext, e => e == 0);
+        if (normal < 0) return null;
+        int u = (normal + 1) % 3, v = (normal + 2) % 3;
+        if (!(ext[u] > 0 && ext[v] > 0)) return null;
+        double cell = Math.Min(ext[u], ext[v]) / 2;
+        int nu = Math.Clamp((int)Math.Round(ext[u] / cell), 1, CheckerCellsMax), nv = Math.Clamp((int)Math.Round(ext[v] / cell), 1, CheckerCellsMax);
+        var verts = new List<Point3>(4 * nu * nv + 7);
+        var tris = new List<Em3dTriangle>(2 * nu * nv + 3);
+        var rgba = new List<uint>(4 * nu * nv + 7);
+        Point3 At(double su, double sv)
+        {
+            var c = (double[])min.Clone();
+            c[u] += ext[u] * su; c[v] += ext[v] * sv;
+            return new Point3(c[0], c[1], c[2]);
+        }
+        void Quad(Point3 p0, Point3 p1, Point3 p2, Point3 p3, uint colour)
+        {
+            int k = verts.Count;
+            verts.AddRange([p0, p1, p2, p3]);
+            rgba.AddRange([colour, colour, colour, colour]);
+            tris.Add(new Em3dTriangle(k, k + 1, k + 2, p.Name));
+            tris.Add(new Em3dTriangle(k, k + 2, k + 3, p.Name));
+        }
+        for (int i = 0; i < nu; i++)
+            for (int j = 0; j < nv; j++)
+            {
+                double u0 = (double)i / nu, u1 = (double)(i + 1) / nu, v0 = (double)j / nv, v1 = (double)(j + 1) / nv;
+                Quad(At(u0, v0), At(u1, v0), At(u1, v1), At(u0, v1), ((i + j) & 1) == 0 ? a : b);
+            }
+
+        // The arrow, in the sheet's (along, across) fractions: along runs − to +, so a negative direction flips it.
+        double[] d = [p.Direction.X, p.Direction.Y, p.Direction.Z];
+        int along = Math.Abs(d[u]) >= Math.Abs(d[v]) ? u : v, across = along == u ? v : u;
+        if (d[along] != 0)
+        {
+            double h = ext[along], w = ext[across], s = Math.Min(h, w);
+            double headLen = Math.Min(0.4 * h, 0.6 * s), headHalf = 0.35 * s, shaftHalf = 0.12 * s;
+            double tail = 0.1 * h, tip = 0.9 * h, neck = tip - headLen;
+            bool flip = d[along] < 0;
+            Point3 Arrow(double t, double c)
+            {
+                double fa = (flip ? h - t : t) / h, fc = 0.5 + c / w;
+                return along == u ? At(fa, fc) : At(fc, fa);
+            }
+            Quad(Arrow(tail, -shaftHalf), Arrow(neck, -shaftHalf), Arrow(neck, shaftHalf), Arrow(tail, shaftHalf), arrow);
+            int k = verts.Count;
+            verts.AddRange([Arrow(neck, -headHalf), Arrow(tip, 0), Arrow(neck, headHalf)]);
+            rgba.AddRange([arrow, arrow, arrow]);
+            tris.Add(new Em3dTriangle(k, k + 1, k + 2, p.Name));
+        }
+        return (new Em3dTriangleMesh(verts, tris), [.. rgba]);
+    }
+
+    /// <summary>3D editor bugs round 9 — a rectangular port's four edges, as pairs of points.</summary>
+    private static List<Point3> Outline(Em3dPort p)
+    {
+        var (verts, _) = PortSheet(p);
+        var lines = new List<Point3>(8);
+        for (int k = 0; k < verts.Count; k++) { lines.Add(verts[k]); lines.Add(verts[(k + 1) % verts.Count]); }
+        return lines;
+    }
+
     /// <summary>The arrow's segments, as pairs of points: shaft then two barbs. A wave port's arrow is
     /// its voltage path; a lumped port's runs along its direction through the sheet's centre.</summary>
     private static List<Point3> PortArrow(Em3dPort p)
@@ -760,7 +854,8 @@ public static class Scene3DBuilder
         /// face 0.</summary>
         /// <paramref name="wireEdges"/>: also draw the feature edges, always, in that colour — a wireframe object.
         public void Object(Scene3DObject o, Em3dTriangleMesh? mesh, IEnumerable<(Point3 P, uint Rgba)>? lines = null,
-                           bool faces = false, bool sheet = false, Scene3DFeatureRef features = default, uint? wireEdges = null)
+                           bool faces = false, bool sheet = false, Scene3DFeatureRef features = default, uint? wireEdges = null,
+                           IReadOnlyList<uint>? vertexRgba = null)
         {
             _features.Add(features);
             uint id = (uint)(_objects.Count + 1);
@@ -780,11 +875,12 @@ public static class Scene3DBuilder
             if (mesh is not null && !faces)
             {
                 int first = _verts.Count;
-                foreach (var p in mesh.Vertices)
+                for (int k = 0; k < mesh.Vertices.Count; k++)
                 {
-                    var q = local(p);
+                    var q = local(mesh.Vertices[k]);
                     min = Vector3.Min(min, q); max = Vector3.Max(max, q);
-                    _verts.Add(new Scene3DVertex(q.X, q.Y, q.Z, id, o.Rgba));
+                    // 3D editor bugs round 9 — a vertex's own colour when the caller gives one (a lumped port's checkerboard).
+                    _verts.Add(new Scene3DVertex(q.X, q.Y, q.Z, id, vertexRgba?[k] ?? o.Rgba));
                 }
                 idx = new uint[mesh.Triangles.Count * 3];
                 int w = 0;

@@ -442,12 +442,12 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
                     SendV(enc, S.setDepthStencilState, _dsWrite);
                     ((delegate* unmanaged<nint, nint, nint, nuint, nuint, void>)MsgSend)(enc, S.setVertexBuffer, _vb, 0, 0);
                     int pickTransform = 0;
-                    bool pickBehind = false;
+                    var pickTie = Scene3DDepthTie.None;
                     for (int i = 0; i < plan.PickDrawCount; i++)
                     {
                         // brief-em3d-48 — an array element's pick draw: its translation and id offset.
                         ref var pd = ref plan.PickDraws[i];
-                        if (pd.Behind != pickBehind) SetDepthBias(enc, pickBehind = pd.Behind);
+                        if (pd.Tie != pickTie) SetDepthBias(enc, pickTie = pd.Tie);
                         if (pd.Transform != pickTransform && pd.Transform < plan.TransformCount)
                         {
                             pickTransform = pd.Transform;
@@ -468,11 +468,11 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
                 nint e = Send(cb, S.renderCommandEncoderWithDescriptor, main);
                 Common(e, u, xf);
                 int transform = 0;
-                bool behind = false;
+                var tie = Scene3DDepthTie.None;
                 for (int i = 0; i < plan.DrawCount; i++)
                 {
                     ref var d = ref plan.Draws[i];
-                    if (d.Behind != behind) SetDepthBias(e, behind = d.Behind);
+                    if (d.Tie != tie) SetDepthBias(e, tie = d.Tie);
                     if (d.Transform != transform && d.Transform < plan.TransformCount)
                     {
                         // brief-em3d-46 — a drag's preview (brief 48: an array element): this draw's slot, set only when it changes.
@@ -535,11 +535,13 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
     private static readonly nint Sel_drawPrimitives = Sel("drawPrimitives:vertexStart:vertexCount:");
     private static readonly nint Sel_setDepthBias = Sel("setDepthBias:slopeScale:clamp:");
 
-    /// <summary>3D editor round 3 — a Behind draw's polygon offset (Scene3DFramePlan.BehindDepthBias), or none: encoder state,
-    /// so it is set only when it changes between draws.</summary>
-    private static void SetDepthBias(nint enc, bool behind)
-        => ((delegate* unmanaged<nint, nint, float, float, float, void>)MsgSend)(enc, Sel_setDepthBias,
-            behind ? Scene3DFramePlan.BehindDepthBias : 0, behind ? Scene3DFramePlan.BehindSlopeScale : 0, 0);
+    /// <summary>3D editor round 3 / bugs round 9 — a draw's polygon offset for its tie (Scene3DFramePlan.DepthBias): encoder
+    /// state, so it is set only when it changes between draws.</summary>
+    private static void SetDepthBias(nint enc, Scene3DDepthTie tie)
+    {
+        var (constant, slope) = Scene3DFramePlan.DepthBias(tie);
+        ((delegate* unmanaged<nint, nint, float, float, float, void>)MsgSend)(enc, Sel_setDepthBias, constant, slope, 0);
+    }
     private static readonly nint Sel_setFrontFacing = Sel("setFrontFacingWinding:");
     private static readonly nint Class_RPD = Class("MTLRenderPassDescriptor");
 

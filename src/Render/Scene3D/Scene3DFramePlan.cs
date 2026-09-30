@@ -59,11 +59,32 @@ public struct Scene3DDraw
     /// identity. A backend hands the slot's 80 bytes (the matrix, and brief-em3d-48's id offset) to the vertex stage before the draw (Metal setVertexBytes,
     /// a D3D11 constant buffer, Vulkan push constants), and only when it differs from the draw before.</summary>
     public int Transform;
-    /// <summary>3D editor round 3 — a dielectric's or air's triangles: drawn with the depth bias
-    /// (<see cref="Scene3DFramePlan.BehindDepthBias"/>, <see cref="Scene3DFramePlan.BehindSlopeScale"/>), so where a metal
-    /// face lies ON one of its faces the metal wins the depth test — in the picture and in the ID pass — instead of the two
-    /// fighting per pixel. Metal takes precedence over dielectric everywhere (em-3d.md §6.3a).</summary>
-    public bool Behind;
+    /// <summary>3D editor round 3 / bugs round 9 — who wins where two objects' faces coincide (<see cref="Scene3DDepthTie"/>):
+    /// the draw takes <see cref="Scene3DFramePlan.DepthBias"/>'s polygon offset, so the winner passes the depth test — in
+    /// the picture and in the ID pass — instead of the two fighting per pixel.</summary>
+    public Scene3DDepthTie Tie;
+
+    /// <summary>A dielectric's or air's draw, which gives way to any metal face lying on one of its own.</summary>
+    public readonly bool Behind => Tie == Scene3DDepthTie.Behind;
+}
+
+/// <summary>
+/// 3D editor bugs round 9 — the order in which coincident faces of different objects win the depth test, lowest first:
+/// dielectric (and air), then metal, then via metal, then a port's surface. Metal over dielectric is em-3d.md §6.3a's
+/// precedence (3D editor round 3); a via over the metal it passes through, and a port over the metal it lies on, are the
+/// owner's rule for the view. Each step is one <see cref="Scene3DFramePlan.BehindDepthBias"/> of polygon offset, so two
+/// coplanar faces a step apart never fight, and faces genuinely apart are not reordered at any zoom the depth range allows.
+/// </summary>
+public enum Scene3DDepthTie : sbyte
+{
+    /// <summary>A dielectric or air: gives way to a metal face on its own.</summary>
+    Behind = -1,
+    /// <summary>Metal — a conductor, a wire, a sheet — and everything else.</summary>
+    None = 0,
+    /// <summary>Via metal: wins over the pad and plane it passes through.</summary>
+    Via = 1,
+    /// <summary>A port's surface: wins over the metal it lies on.</summary>
+    Port = 2,
 }
 
 /// <summary>
@@ -205,9 +226,27 @@ public sealed class Scene3DFramePlan
     /// the metal and nothing else changes.</summary>
     public const float BehindNdc = 1e-6f;
 
-    /// <summary>Whether object <paramref name="id"/> gives way to a coincident metal face (<see cref="Scene3DDraw.Behind"/>).</summary>
-    public static bool IsBehind(Scene3DModel scene, uint id)
-        => id >= 1 && id <= scene.Objects.Length && scene.Objects[id - 1].Kind is Scene3DKind.Dielectric or Scene3DKind.Air;
+    /// <summary>3D editor bugs round 9 — where object <paramref name="id"/> stands when one of its faces coincides with another
+    /// object's (<see cref="Scene3DDepthTie"/>).</summary>
+    public static Scene3DDepthTie TieOf(Scene3DModel scene, uint id)
+        => id < 1 || id > scene.Objects.Length ? Scene3DDepthTie.None : scene.Objects[id - 1].Kind switch
+        {
+            Scene3DKind.Dielectric or Scene3DKind.Air => Scene3DDepthTie.Behind,
+            Scene3DKind.Via => Scene3DDepthTie.Via,
+            Scene3DKind.Port => Scene3DDepthTie.Port,
+            _ => Scene3DDepthTie.None,
+        };
+
+    /// <summary>The polygon offset a <paramref name="tie"/> draw takes, in the backends' terms (constant steps, slope factor):
+    /// one <see cref="BehindDepthBias"/> per step, away from the eye for <see cref="Scene3DDepthTie.Behind"/> and towards it
+    /// for each step above <see cref="Scene3DDepthTie.None"/>. Only a draw pushed AWAY takes the slope factor: towards the eye
+    /// it is unbounded where a wall is seen edge-on, and a via barrel's silhouette came through the copper above it as a
+    /// dotted trail. Coincident faces differ by a few float steps of interpolation, which the constant alone covers.</summary>
+    public static (float Constant, float Slope) DepthBias(Scene3DDepthTie tie)
+        => (-(int)tie * BehindDepthBias, tie == Scene3DDepthTie.Behind ? BehindSlopeScale : 0);
+
+    /// <summary>The same offset as the CPU picks apply it: added to an object's NDC depth (<see cref="BehindNdc"/> a step).</summary>
+    public static float TieNdc(Scene3DDepthTie tie) => -(int)tie * BehindNdc;
 
     /// <summary>Flag bits in the uniform block's <c>flags</c>.</summary>
     public const uint FlagClip = 1, FlagCapBackFaces = 2;
@@ -322,7 +361,8 @@ public sealed class Scene3DFramePlan
         {
             var b = batches[k];
             if (!b.Translucent && !Faded(b.ObjectId) && view.IsDrawn(b.ObjectId))
-                AddMoved(preview, b.ObjectId, Scene3DPipeline.Opaque, Scene3DBuffer.Scene, b.FirstIndex, b.IndexCount, identity: true);
+                AddMoved(preview, b.ObjectId, Scene3DPipeline.Opaque, Scene3DBuffer.Scene, b.FirstIndex, b.IndexCount, identity: true,
+                         tie: TieOf(scene, b.ObjectId));
         }
         // brief-em3d-48 R-em3d48-3a — each element: ONE draw of its prototype's opaque triangles under its own transform
         // when the whole element is drawn as it is; object by object when part of it is hidden or moving.
@@ -340,7 +380,8 @@ public sealed class Scene3DFramePlan
             {
                 var b = batches[k];
                 if (!b.Translucent && !Faded(b.ObjectId) && view.IsDrawn(b.ObjectId))
-                    AddMoved(preview, b.ObjectId, Scene3DPipeline.Opaque, Scene3DBuffer.Scene, b.FirstIndex, b.IndexCount, identity: true, e);
+                    AddMoved(preview, b.ObjectId, Scene3DPipeline.Opaque, Scene3DBuffer.Scene, b.FirstIndex, b.IndexCount, identity: true, e,
+                             TieOf(scene, b.ObjectId));
             }
         }
         // brief-em3d-29 — the field's slice and surfaces, one draw, opaque, before anything translucent.
@@ -396,7 +437,7 @@ public sealed class Scene3DFramePlan
         {
             var b = batches[_order[k]];
             AddMoved(preview, b.ObjectId, Scene3DPipeline.Translucent, Scene3DBuffer.Scene, b.FirstIndex, b.IndexCount, identity: true, b.Element,
-                     behind: IsBehind(scene, b.ObjectId));
+                     tie: TieOf(scene, b.ObjectId));
         }
         ClearFaded();
 
@@ -448,7 +489,7 @@ public sealed class Scene3DFramePlan
                 var b = batches[k];
                 if (view.IsVisible(b.ObjectId) && scene.Objects[b.ObjectId - 1].Pickable && preview?.IsMoving(b.ObjectId) != true)
                     Add(ref PickDraws, ref PickDrawCount, Scene3DPipeline.Pick, Scene3DBuffer.Scene, b.FirstIndex, b.IndexCount,
-                        behind: IsBehind(scene, b.ObjectId));
+                        tie: TieOf(scene, b.ObjectId));
             }
             for (int e = 0; e < _elements; e++)
             {
@@ -463,7 +504,7 @@ public sealed class Scene3DFramePlan
                     if (whole && !b.Translucent) continue;
                     if (view.IsVisible(b.ObjectId) && scene.Objects[b.ObjectId - 1].Pickable && preview?.IsMoving(b.ObjectId) != true)
                         Add(ref PickDraws, ref PickDrawCount, Scene3DPipeline.Pick, Scene3DBuffer.Scene, b.FirstIndex, b.IndexCount, ElementSlot(e),
-                            IsBehind(scene, b.ObjectId));
+                            TieOf(scene, b.ObjectId));
                 }
             }
         }
@@ -553,6 +594,9 @@ public sealed class Scene3DFramePlan
             if (preview?.IsMoving(id) == true) return false;
             // Only the opaque objects are in the one draw; a translucent one is drawn (and sorted) on its own either way.
             if (scene.Objects[id - 1].Translucent) continue;
+            // 3D editor bugs round 9 — the one draw carries one polygon offset: an element holding an object that ties
+            // otherwise (a via, an opaque dielectric) is drawn object by object.
+            if (TieOf(scene, id) != Scene3DDepthTie.None) return false;
             if (pickPass ? !view.IsVisible(id) || !scene.Objects[id - 1].Pickable : !view.IsDrawn(id)) return false;
         }
         return true;
@@ -629,30 +673,30 @@ public sealed class Scene3DFramePlan
     }
 
     private static void Add(ref Scene3DDraw[] list, ref int count, Scene3DPipeline p, Scene3DBuffer buf, int first, int n, int transform = 0,
-                            bool behind = false)
+                            Scene3DDepthTie tie = Scene3DDepthTie.None)
     {
         if (count == list.Length) Array.Resize(ref list, list.Length * 2);
-        list[count++] = new Scene3DDraw { Pipeline = p, Buffer = buf, First = first, Count = n, Transform = transform, Behind = behind };
+        list[count++] = new Scene3DDraw { Pipeline = p, Buffer = buf, First = first, Count = n, Transform = transform, Tie = tie };
     }
 
     /// <summary>A draw of object <paramref name="id"/>'s batch: as it is when nothing moves it (under its element's
     /// transform, for an element's object); under each of the preview's copies when it moves — and also as it is when
     /// the preview keeps the original and <paramref name="identity"/> says the original is drawn in this pass.</summary>
     private void AddMoved(Scene3DPreview? preview, uint id, Scene3DPipeline p, Scene3DBuffer buf, int first, int n, bool identity,
-                          int element = -1, bool behind = false)
+                          int element = -1, Scene3DDepthTie tie = Scene3DDepthTie.None)
     {
         int own = element >= 0 ? ElementSlot(element) : 0;
         if (preview is null || !preview.IsMoving(id))
         {
-            Add(ref Draws, ref DrawCount, p, buf, first, n, own, behind);
+            Add(ref Draws, ref DrawCount, p, buf, first, n, own, tie);
             return;
         }
-        if (identity && preview.KeepOriginal) Add(ref Draws, ref DrawCount, p, buf, first, n, own, behind);
+        if (identity && preview.KeepOriginal) Add(ref Draws, ref DrawCount, p, buf, first, n, own, tie);
         int copies = Math.Min(preview.Copies.Length, MaxPreviewCopies);
         int start = element >= 0 ? ComboSlots(preview, element, copies) : _copyBase;
         for (int k = 0; k < copies; k++)
         {
-            Add(ref Draws, ref DrawCount, p, buf, first, n, start + k, behind);
+            Add(ref Draws, ref DrawCount, p, buf, first, n, start + k, tie);
             TransformBytes += TransformBytesPerDraw;
         }
     }

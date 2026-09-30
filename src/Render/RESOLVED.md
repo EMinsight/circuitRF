@@ -4475,3 +4475,33 @@ opaque. The PDF stays vector: a translucent fill is an ExtGState alpha, not an i
 with no fills and no hidden-line removal, so there is nothing an alpha could act on. It is NOT the renderer Export Drawing
 uses (that is `Em3dSectionScene.Outline` + `Em3dDrawingSheet`); the brief assumed it was. A section, a field plot's context
 and a surfaces plot do honour it.
+
+## 3D editor bugs round 9 — coincident faces, and a lumped port drawn as what it is (2026-09-29)
+
+- **The tie order at a coincident face is now four levels** (`Scene3DDepthTie`): dielectric/air < metal < via metal <
+  port surface (owner's rule for the view; the first step is round 3's em-3d.md §6.3a). `Scene3DDraw.Behind` became
+  `Scene3DDraw.Tie`; `Scene3DFramePlan.TieOf` is the one place a kind maps to a tie, and `DepthBias(tie)` the one place a
+  tie maps to a polygon offset. Opaque draws now carry it too (only Translucent and Pick did), and an array element holding
+  a via is drawn object by object, since its one-draw fast path carries one offset.
+- **The via speckle was a via's top ring and bore wall lying exactly on the pad's**: `Scene3DBores` carves the pad with a
+  hole at the tube's own vertices, so the surfaces coincide, but the tube's wall is one quad the via's full height and the
+  pad's is one quad its thickness — different triangles, so interpolated depths differ by a float step either way. The
+  scratch A/B on the Metal device (`RenderPixels`, the owner's own board) reproduced the screenshot exactly with the via
+  tie at 0 and was clean with it at −4.
+- **A bias TOWARDS the eye must not be slope-scaled.** The first cut used −4 constant / −2 slope for a via, and the barrel's
+  silhouette — a wall seen edge-on, where the slope term is unbounded — came through the copper above it as a dotted trail
+  below every hole. Only `Behind` (pushed away) keeps the slope factor; the others are constant-only, which covers the few
+  float steps two triangulations of one plane differ by.
+- **Vulkan's depth bias is dynamic state now** (`VkDynamicState.DepthBias`, `vkCmdSetDepthBias`, on every pipeline so no
+  bind disturbs it): four ties across three triangle pipelines would have been twelve static twins. Clamp 0 needs no
+  device feature. D3D11 keeps one rasterizer state per tie. Only Metal ran; D3D11 and Vulkan compile.
+- **A rectangular lumped port is a checkerboard over its own rectangle** (`Scene3DBuilder.Checkerboard`), outlined, with a
+  flat arrow in its plane pointing to the + edge, centred across its width. The arrow sized from the port's LONGER side
+  stood ~7× the height of a 900 × 100 µm port off into space. The arrow's triangles come after the cells in the port's one
+  translucent draw, which writes no depth, so they paint over the cells like a texture and cannot fight them — and an
+  opaque object in front still hides both. Per-cell colours needed `Builder.Object(vertexRgba:)`; nothing recolours a
+  scene's vertices afterwards, so that is safe. A wave port keeps its voltage-path arrow and a coaxial port its annulus.
+  The SVG/PDF vector export still paints a port in the object's one colour.
+- **Not fixed, and worth knowing:** with the camera inside the scene's sphere, `Camera3D.DepthRange` puts near at
+  far × 1e-4 on a standard-Z float buffer, so two faces a few µm apart can fight when zoomed deep into a large scene. The
+  tie order does not address that; reversed-Z would.

@@ -123,8 +123,9 @@ public sealed class Scene3DIdPatch
         {
             var b = scene.Batches[k];
             if (!IsVisible(visible, b.ObjectId) || !scene.Objects[b.ObjectId - 1].Pickable) continue;
-            // 3D editor round 3 — the depth bias the GPU gives a Behind draw: a metal face on a dielectric's wins.
-            float bias = Scene3DFramePlan.IsBehind(scene, b.ObjectId) ? Scene3DFramePlan.BehindNdc : 0;
+            // 3D editor round 3 / bugs round 9 — the depth bias the GPU gives the draw (Scene3DDraw.Tie): a metal face on a
+            // dielectric's wins, a via on a pad's, a port on either.
+            float bias = Scene3DFramePlan.TieNdc(Scene3DFramePlan.TieOf(scene, b.ObjectId));
             for (int t = b.FirstIndex; t < b.FirstIndex + b.IndexCount; t += 3)
             {
                 TrianglesRasterized++;

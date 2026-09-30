@@ -30,8 +30,9 @@ public static class Scene3DPicking
         foreach (var b in scene.Batches)
         {
             if (!Visible(visible, b.ObjectId) || !scene.Objects[b.ObjectId - 1].Pickable) continue;
-            // 3D editor round 3 — a dielectric gives way to a metal face lying on its own (Scene3DDraw.Behind).
-            float give = Scene3DFramePlan.IsBehind(scene, b.ObjectId) ? 1 + Scene3DFramePlan.BehindNdc : 1;
+            // 3D editor round 3 / bugs round 9 — the tie at a coincident face (Scene3DDraw.Tie): a dielectric gives way to
+            // metal, metal to a via, a via to a port.
+            float give = 1 + Scene3DFramePlan.TieNdc(Scene3DFramePlan.TieOf(scene, b.ObjectId));
             for (int i = b.FirstIndex; i < b.FirstIndex + b.IndexCount; i += 3)
             {
                 var v0 = P(verts[scene.Indices[i]]) + b.Offset; var v1 = P(verts[scene.Indices[i + 1]]) + b.Offset; var v2 = P(verts[scene.Indices[i + 2]]) + b.Offset;
@@ -69,8 +70,8 @@ public static class Scene3DPicking
         foreach (var b in scene.Batches)
         {
             if (!Visible(visible, b.ObjectId) || !scene.Objects[b.ObjectId - 1].Pickable) continue;
-            // 3D editor round 3 — the depth bias the GPU gives a Behind draw (Scene3DDraw.Behind).
-            float bias = Scene3DFramePlan.IsBehind(scene, b.ObjectId) ? Scene3DFramePlan.BehindNdc : 0;
+            // 3D editor round 3 / bugs round 9 — the depth bias the GPU gives the draw (Scene3DDraw.Tie).
+            float bias = Scene3DFramePlan.TieNdc(Scene3DFramePlan.TieOf(scene, b.ObjectId));
             for (int i = b.FirstIndex; i < b.FirstIndex + b.IndexCount; i += 3)
             {
                 // brief-em3d-48 — an element's batch is its prototype's triangles under the element's offset, and the

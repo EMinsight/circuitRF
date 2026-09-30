@@ -5,6 +5,7 @@
 using System.Numerics;
 using CircuitRF.Design.Em3d;
 using CircuitRF.Design.Layout.Em;
+using CircuitRF.Design.Layout.Em3d;
 using CircuitRF.Engine.Em3d;
 using CircuitRF.Render.Scene3D;
 using CircuitRF.Render.Scene3D.Edit;
@@ -121,5 +122,89 @@ public sealed class MetalPrecedenceTests
         Assert.DoesNotContain(plan.Draws.Take(plan.DrawCount), d => d.Pipeline == Scene3DPipeline.Opaque && d.Behind);
         Assert.Contains(plan.PickDraws.Take(plan.PickDrawCount), d => d.Behind);
         Assert.Contains(plan.PickDraws.Take(plan.PickDrawCount), d => !d.Behind);
+    }
+
+    /// <summary>3D editor bugs round 9 — a pad on a substrate, a via through both flush with the pad's top, and a lumped
+    /// port lying ON the pad's top beside the via: three coincident faces at z 0.2 mm.</summary>
+    private static (Scene3DModel Scene, uint Pad, uint Via, uint Port) Stack()
+    {
+        var p = Problem(coverLast: false);
+        var via = new Em3dSolid("via", "Cu", Em3dRole.Conductor, new Em3dCylinder(new(0, 0, 0), new(0, 0, 0.2 * mm), 0.05 * mm), 3);
+        var port = new Em3dPort(1, "port/1", "pad", "pad", new(0.1 * mm, -0.1 * mm, 0.2 * mm), new(0.25 * mm, 0.1 * mm, 0.2 * mm),
+                                new(1, 0, 0), 50, new Em3dReferencePlane(new(0.1 * mm, 0, 0.2 * mm), new(1, 0, 0), 0));
+        p = p with { Solids = [.. p.Solids, via], Ports = [port] };
+        var origins = new Dictionary<string, Em3dObjectOrigin> { ["via"] = new(Em3dObjectKind.Via, null, null, null) };
+        var scene = Scene3DBuilder.Build(p, 1, origins);
+        uint Id(string name) => scene.Objects.Single(o => o.Name == name).Id;
+        return (scene, Id("pad"), Id("via"), Id("port/1"));
+    }
+
+    [Fact]
+    public void TheViewport_GivesAViaFaceOverItsPad_AndAPortOverBoth()
+    {
+        var (scene, pad, via, port) = Stack();
+        var cam = Camera3D.Fit(scene.ContentMin, scene.ContentMax, 1, Projection3D.Orthographic);
+        cam.SetStandardView(StandardView3D.Top);
+        const int w = 201, h = 201;
+        (float X, float Y) At(double x, double y) { var q = cam.Project(scene.ToLocal(x, y, 0.2 * mm), w, h); return (q.X, q.Y); }
+
+        foreach (var (x, y, want) in new[] { (0.0, 0.0, via), (0.2 * mm, 0.0, port), (-0.2 * mm, 0.0, pad) })
+        {
+            var (px, py) = At(x, y);
+            Assert.Equal(want, Scene3DPicking.PairAtPixel(scene, cam, px, py, w, h, default).Id);
+            Assert.Equal(want, Scene3DPicking.Pick(scene, cam, px, py, w, h, default).Id);
+            var patch = new Scene3DIdPatch();
+            patch.Render(scene, cam, px, py, w, h, 1, default);
+            Assert.Equal(want, patch.Ids[0]);
+        }
+
+        // The GPU's half: each draw carries its object's tie, which the backends turn into a polygon offset.
+        var view = new Viewer3DViewState { Camera = cam, CursorX = 100, CursorY = 100 };
+        view.Adopt(scene, null);
+        Array.Fill(view.Visible, true);
+        var plan = new Scene3DFramePlan();
+        plan.Plan(scene, view, w, h, false, true, Scene3DOverlay.None, Scene3DOverlay.None, Scene3DOverlay.None);
+        Scene3DDepthTie TieOf(uint id)
+        {
+            var b = scene.Batches.Single(x => x.ObjectId == id);
+            return plan.Draws.Take(plan.DrawCount).First(d => d.Buffer == Scene3DBuffer.Scene && d.First == b.FirstIndex).Tie;
+        }
+        Assert.Equal(Scene3DDepthTie.None, TieOf(pad));
+        Assert.Equal(Scene3DDepthTie.Via, TieOf(via));
+        Assert.Equal(Scene3DDepthTie.Port, TieOf(port));
+        Assert.True(Scene3DFramePlan.DepthBias(Scene3DDepthTie.Port).Constant < Scene3DFramePlan.DepthBias(Scene3DDepthTie.Via).Constant);
+        Assert.True(Scene3DFramePlan.DepthBias(Scene3DDepthTie.Via).Constant < 0 && Scene3DFramePlan.DepthBias(Scene3DDepthTie.Behind).Constant > 0);
+    }
+
+    [Fact]
+    public void ALumpedPort_IsACheckerboardOverExactlyItsOwnRectangle_WithAnArrowOnItToThePlusEdge()
+    {
+        var (scene, _, _, port) = Stack();
+        var o = scene.Objects[port - 1];
+        var b = scene.Batches.Single(x => x.ObjectId == port);
+        var verts = Enumerable.Range(b.FirstIndex, b.IndexCount).Select(i => scene.Vertices[scene.Indices[i]]).ToList();
+        const float tol = 1e-9f;
+        // 0.15 x 0.2 mm: cells 0.075 mm, two along x and three along y (rounded) in two colours, then the arrow's shaft
+        // (two triangles) and head (one) in a third.
+        Assert.Equal(3 * (2 * 2 * 3 + 3), b.IndexCount);
+        Assert.Equal(3, verts.Select(v => v.Rgba).Distinct().Count());
+        // The arrow is drawn last and points along +x (the port's direction): its tip is its farthest vertex that way.
+        var arrow = verts.Skip(3 * 2 * 2 * 3).ToList();
+        Assert.Single(arrow.Select(v => v.Rgba).Distinct());
+        Assert.Equal(arrow[^2].X, arrow.Max(v => v.X));
+        Assert.True(arrow[^2].X > (scene.ToLocal(0.1 * mm, 0, 0).X + scene.ToLocal(0.25 * mm, 0, 0).X) / 2);
+        // Centred across the sheet's width: the tip on the port's centre line (y 0), the shaft symmetric about it.
+        Assert.Equal(scene.ToLocal(0, 0, 0).Y, arrow[^2].Y, tol);
+        Assert.Equal(scene.ToLocal(0, 0, 0).Y, (arrow.Min(v => v.Y) + arrow.Max(v => v.Y)) / 2, tol);
+        var lo = scene.ToLocal(0.1 * mm, -0.1 * mm, 0.2 * mm);
+        var hi = scene.ToLocal(0.25 * mm, 0.1 * mm, 0.2 * mm);
+        Assert.Equal(lo.X, verts.Min(v => v.X), tol); Assert.Equal(hi.X, verts.Max(v => v.X), tol);
+        Assert.Equal(lo.Y, verts.Min(v => v.Y), tol); Assert.Equal(hi.Y, verts.Max(v => v.Y), tol);
+        Assert.All(verts, v => Assert.Equal(lo.Z, v.Z, tol));
+        // No arrow standing off the sheet: the port's lines are its outline, in its plane.
+        var lines = scene.LineBatches.Where(l => l.ObjectId == port)
+                         .SelectMany(l => scene.LineVertices.Skip(l.FirstVertex).Take(l.VertexCount)).ToList();
+        Assert.Equal(8, lines.Count);
+        Assert.All(lines, v => Assert.Equal(lo.Z, v.Z, tol));
     }
 }

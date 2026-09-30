@@ -807,8 +807,10 @@ was drawn as**: a wave port is a region of an air-box face (a sheet drawn there 
 and a lumped port bridges two conductors on opposite edges (a face of a small gap block does exactly that). The
 menu offers only the kind that would resolve, and the other's tip says why. **Which way round a lumped port is comes from what it touches**: each
 edge is tested against every conductor, one opposite pair must touch one conductor each, and the one that
-is ground — or failing that, the larger — is **−**. The port is drawn with its number and an arrow from −
-to +, and while it is drawn the arrow (or the reason there cannot be one) follows the cursor. The example's
+is ground — or failing that, the larger — is **−**. A lumped port is drawn as a two-colour checkerboard
+over exactly its own rectangle — from its − edge to its + edge and across its full width — with its number
+and a flat arrow painted on it, centred, pointing to the + edge; anything in front of the port hides it,
+arrow and all. While it is drawn, the arrow (or the reason there cannot be one) follows the cursor. The example's
 two ports are 5 × 5 mil rectangles on the YZ plane at each lead's outer end, from the floor up to the lead:
 each runs **from `floor` (−) up to its lead (+)**. *Flip* on its menu turns it round; a wrong arrow turns
 every transmission term by 180°, so look before a run.
@@ -1185,7 +1187,8 @@ order a pane presents them, with the rules each one follows.
   is comes from what it touches**: each edge of the rectangle is tested against every conductor, and exactly
   one pair of opposite edges must each touch exactly one conductor. The end that is ground — the setup's
   Ground net, a placed layout's ground plane, or a PEC face of the air box — is **−**; otherwise the larger
-  conductor is. The port is drawn with its number and an arrow from − to +, and while it is being drawn the
+  conductor is. A lumped port is drawn as a checkerboard over exactly its own rectangle, − edge to + edge and
+  its full width, with its number and a flat arrow painted on it pointing to +; while it is being drawn the
   arrow, or the reason it cannot be one, follows the cursor. Right-click a port for *Flip*, its kind, *Z0…*
   and *Delete*. A wrong polarity turns every transmission term by 180°, so check the arrow before a run.
   A **wave** port must lie on a face of the active setup's air box. Every setup uses every port, and a
