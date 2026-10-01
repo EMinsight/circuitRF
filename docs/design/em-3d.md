@@ -1008,7 +1008,9 @@ runs on real Windows are the owner's, logged in `testdata/em3d/f0/README.md` §I
 - **A run** stages `model.msh` and `config.json` into `~/.circuitrf/runs/<run key>/` through the
   `\\wsl.localhost\` share, runs Palace there under the Spack-linked `mpirun` beside it on the
   SUBSYSTEM's physical cores, and copies back every CSV, every `palace.json` and any requested field
-  directory. Its memory check uses `free -b` inside and names `.wslconfig`'s `memory=`.
+  directory. Its memory check uses `free -b` inside and names `.wslconfig`'s `memory=`, with a value from the
+  HOST's memory (less max(2 GB, ¼)), and only where that value would make the run fit; the file is the
+  Messages row's reveal link (`EmRunResult.MessageFiles`), printed after the sentence by the CLI.
 - **Cancelling** signals the process group a constant `setsid -w` wrapper leads (TERM, then KILL after
   5 s), because killing `wsl.exe` leaves every Linux process it started running.
 - **The install** runs brief 24's Linux recipe inside the distribution through an install TARGET, the

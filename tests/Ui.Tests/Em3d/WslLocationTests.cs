@@ -183,20 +183,41 @@ public sealed class WslLocationTests : IDisposable
 
     // ── 5. memory ───────────────────────────────────────────────────────────────────────────────
 
+    private const long GiB = 1L << 30;
+
+    /// <summary>Designer feedback round 11 — the reporter's own figures: a 3.8 GB subsystem (WSL's default half)
+    /// on an 8 GB laptop, a run needing 4.2 GB. The suggestion is worked out from the host (it was a fixed
+    /// "memory=24GB", three times the memory there was), and the path is the row's LINK, not more text.</summary>
     [Fact]
-    public void Gate5_TheSubsystemsEightGigabytesTriggerTheWarning_WhichNamesDotWslconfig()
+    public void Gate5_TheSubsystemsMemoryTriggersTheWarning_WhichSuggestsWhatThisComputerCanGive_AndLinksDotWslconfig()
     {
         var wsl = Fake("* Ubuntu Running 2\r\n");
-        wsl.MemoryBytes = 8_000_000_000;
-        var scope = WslPalace.MemoryScope(new WslSession(wsl, "Ubuntu"), @"C:\Users\someone");
-        Assert.Equal(8_000_000_000, scope!.Bytes);
+        wsl.MemoryBytes = 3_800_000_000;
+        var scope = WslPalace.MemoryScope(new WslSession(wsl, "Ubuntu"), @"C:\Users\someone", hostBytes: 8 * GiB);
+        Assert.Equal(3_800_000_000, scope!.Bytes);
         Assert.Contains(wsl.Commands, c => c.SequenceEqual(["-d", "Ubuntu", "--exec", "free", "-b"]));
 
-        var verdict = Em3dMemoryVerdict.Evaluate(7_000_000_000, scope.Bytes, [], scope: scope);
+        var verdict = Em3dMemoryVerdict.Evaluate(4_200_000_000, scope.Bytes, [], scope: scope);
         Assert.Equal(Em3dMemoryLevel.Warning, verdict.Level);
-        Assert.Contains("the Linux subsystem's", verdict.Text);
-        Assert.Contains(@"C:\Users\someone\.wslconfig", verdict.Text);
-        Assert.Contains("memory=", verdict.Text);
+        Assert.Contains("the Linux subsystem's 3.8 GB", verdict.Text);
+        Assert.Contains("'memory=6GB' under '[wsl2]' in .wslconfig", verdict.Text);
+        Assert.Equal(@"C:\Users\someone\.wslconfig", verdict.File);
+        Assert.DoesNotContain(@"C:\Users", verdict.Text);
+    }
+
+    /// <summary>The setting is offered only where it can make the run fit; otherwise the sentence says it
+    /// cannot, and names no file to open.</summary>
+    [Theory]
+    [InlineData(4.2,    3.8, 8,  "'memory=6GB'",                 true)]
+    [InlineData(20.0,   3.8, 8,  "would not be enough",          false)]   // past what the host can give
+    [InlineData(6.5,    7.0, 8,  "already has most",             false)]   // memory= already raised
+    [InlineData(20.0,   16,  32, "'memory=24GB'",                true)]
+    public void Gate5b_TheWslconfigRemedyIsOfferedOnlyWhereItCanBeEnough(double estimateGb, double subsystemGb, int hostGib,
+                                                                         string says, bool namesTheFile)
+    {
+        var r = WslPalace.WslConfigRemedy((long)(estimateGb * 1e9), (long)(subsystemGb * 1e9), hostGib * GiB, @"C:\Users\someone");
+        Assert.Contains(says, r.Text);
+        Assert.Equal(namesTheFile, r.File is not null);
     }
 
     // ── 6. cancellation ─────────────────────────────────────────────────────────────────────────

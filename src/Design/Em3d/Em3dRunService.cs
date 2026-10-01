@@ -425,7 +425,7 @@ public static class Em3dRunService
 
         return new EmRunResult(EmRunStatus.Ok, data, null, null, written, null, null, log.Warnings,
                                KernelName: $"{p.KernelName} and {o.KernelName}", Notes: log.Notes, Errors: log.Errors,
-                               Outputs: outputs);
+                               Outputs: outputs, MessageFiles: log.FilesOrNull);
     }
 
     private static string Name(Em3dSolver s) => s == Em3dSolver.Palace ? "Palace" : "openEMS";
@@ -450,7 +450,7 @@ public static class Em3dRunService
     private static EmRunResult Single(Leg leg, RunLog log)
         => leg.Ok
             ? new EmRunResult(EmRunStatus.Ok, leg.Data, null, null, leg.NpyPath, leg.SnpPath, null, log.Warnings,
-                              Notes: log.Notes, Errors: log.Errors, KernelName: leg.KernelName)
+                              Notes: log.Notes, Errors: log.Errors, KernelName: leg.KernelName, MessageFiles: log.FilesOrNull)
             : log.Result(leg.Status, leg.Stop!);
 
     /// <summary>Why a phase did not go on, and which status says so.</summary>
@@ -471,9 +471,16 @@ public static class Em3dRunService
         public List<string> Warnings { get; } = [];
         public List<string> Errors { get; } = [];
 
+        /// <summary>The file a sentence in the three lists names, keyed by the sentence (see
+        /// <see cref="EmRunResult.MessageFiles"/>).</summary>
+        public Dictionary<string, string> Files { get; } = [];
+
+        public IReadOnlyDictionary<string, string>? FilesOrNull => Files.Count > 0 ? Files : null;
+
         public EmRunResult Result(EmRunStatus status, Diagnostic d, IReadOnlyList<EmRunOutput>? outputs = null)
             => new(status, null, null, null, null, null, d.Render(), Warnings,
-                   Notes: Notes, Errors: Errors, Diagnostic: d, Outputs: outputs is { Count: > 0 } ? outputs : null);
+                   Notes: Notes, Errors: Errors, Diagnostic: d, Outputs: outputs is { Count: > 0 } ? outputs : null,
+                   MessageFiles: FilesOrNull);
     }
 
     /// <summary>Several holds released together.</summary>
@@ -1549,13 +1556,19 @@ public static class Em3dRunService
                 if (confirm?.Invoke(verdict.Text) != true)
                     return verdict.Text + " To start it anyway, confirm it when Simulate asks, or pass --force to `circuitrf em`.";
                 _confirmed = true;
-                log.Warnings.Add(verdict.Text + " It was started anyway, as confirmed.");
+                Warn(verdict.Text + " It was started anyway, as confirmed.");
                 _posted = verdict.Level;
                 return null;
             }
-            if (verdict.Level > _posted) log.Warnings.Add(verdict.Text);
+            if (verdict.Level > _posted) Warn(verdict.Text);
             _posted = (Em3dMemoryLevel)Math.Max((int)_posted, (int)verdict.Level);
             return null;
+
+            void Warn(string text)
+            {
+                log.Warnings.Add(text);
+                if (verdict.File is { } file) log.Files[text] = file;
+            }
         }
     }
 

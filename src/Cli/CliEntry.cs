@@ -1505,12 +1505,15 @@ static int RunEm(string[] args)
     // thirty-five lines; a user reading a terminal reads the first few and the last few, and until
     // now the ones saying part of their circuit was not solved were somewhere in the middle at the
     // weight of the core count. Grouping is only half the answer — the order is the other half.
+    // Designer feedback round 11 — a sentence naming a file (the memory warning's .wslconfig) carries its path
+    // beside it in EmRunResult.MessageFiles, which the Messages panel shows as a link; a terminal prints it.
+    string WithFile(string s) => result.MessageFiles?.GetValueOrDefault(s) is { } f ? $"{s} ({f})" : s;
     foreach (var e in result.Errors ?? [])
-    { Console.Error.WriteLine($"error: {e}");   JsonRun.Note(CliDiagnostics.EmRunError(e)); }
+    { Console.Error.WriteLine($"error: {WithFile(e)}");   JsonRun.Note(CliDiagnostics.EmRunError(WithFile(e))); }
     foreach (var w in result.Warnings)
-    { Console.Error.WriteLine($"warning: {w}"); JsonRun.Note(CliDiagnostics.EmRunWarning(w)); }
+    { Console.Error.WriteLine($"warning: {WithFile(w)}"); JsonRun.Note(CliDiagnostics.EmRunWarning(WithFile(w))); }
     foreach (var n in result.Notes ?? [])
-    { Console.Error.WriteLine($"note: {n}");    JsonRun.Note(CliDiagnostics.EmRunNote(n)); }
+    { Console.Error.WriteLine($"note: {WithFile(n)}");    JsonRun.Note(CliDiagnostics.EmRunNote(WithFile(n))); }
 
     // R-emcli-8 — a refusal stays a refusal. Each status carries a written explanation of what is
     // wrong with THIS setup; collapsing them into "EM failed" throws away the only part a user can

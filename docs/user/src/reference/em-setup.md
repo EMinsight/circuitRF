@@ -853,8 +853,11 @@ everything, just as on any other computer. Palace uses the distribution's own co
 
 **Memory.** The subsystem runs in a virtual machine that gets only part of your computer's memory by
 default. circuitRF checks a run against the subsystem's memory, not the computer's. When a run may not
-fit, the warning names the setting that raises it: `memory=` under `[wsl2]` in `.wslconfig` in your
-Windows user folder. Run `wsl --shutdown` after changing it.
+fit, the warning names the setting that raises it, `memory=` under `[wsl2]` in `.wslconfig` in your
+Windows user folder, with a value worked out from your computer's memory (all of it, less what Windows
+keeps for itself). The file's path is a link on the message: click it to show the file in File Explorer.
+Run `wsl --shutdown` after changing it. When even that value would leave the run short, the warning says
+so and names the remedies that shrink the problem instead.
 
 **Choosing where Palace runs.** {{anchor: settings.html#em3d|Settings ▸ 3D EM}} has a **Location** row
 under Palace, on Windows only. **Automatic** (the default) uses a native Palace if there ever is one,

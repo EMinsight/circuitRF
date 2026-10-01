@@ -16149,3 +16149,14 @@ see its air box" from both verbs, and neither took the flag. Both do now, throug
 existing `em.setup.on-cem`, on any other kind `<verb>.setup.not-3d`. The serve catalog carries `setup` on both tools
 (R-aut-13). `explain --analysis <name>` on a `.c3d` is unchanged: the thermal setups' walk.
 Gate: `tests/Ui.Tests/Cli/ExplainSetupCliTests.cs`.
+
+**The Linux subsystem's memory warning suggested three times the memory the computer had.** The first
+Palace-on-Windows report: an 8 GB laptop, a 3.8 GB subsystem (WSL's default half), a 4.2 GB estimate, and a
+warning saying "for example memory=24GB", a fixed string. `WslPalace.SuggestedMemoryGb` now works the value out
+from the HOST (`MachineMemory.PhysicalBytes` is the host's figure on Windows): its memory less max(2 GB, ¼), whole
+GB, in WSL's 2^30 units. `WslConfigRemedy` offers the setting only where that value would make the run fit. Past
+it, the sentence says raising it would not be enough, and names no file, because the reader should go to the remedies
+that shrink the problem. The `.wslconfig` path left the sentence and became the Messages row's reveal link through
+`Em3dMemoryVerdict.File` → `EmRunResult.MessageFiles` (keyed by sentence), and the CLI prints it after the
+sentence. The verdict's head was cut from a paragraph to one clause ("the estimate errs high"). The provenance
+of that claim is in the user guide. Gate: `WslLocationTests.Gate5`/`Gate5b`. The one-button raise is brief em3d-97.

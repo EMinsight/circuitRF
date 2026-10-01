@@ -174,7 +174,11 @@ public enum Em3dMemoryLevel { Fits, Warning, Severe }
 public sealed record Em3dMemoryRemedy(string What, long? EstimateBytes);
 
 /// <summary>R-em3d21-2b — the verdict, and the sentence a warning or a confirmation shows.</summary>
-public sealed record Em3dMemoryVerdict(Em3dMemoryLevel Level, long? EstimateBytes, long PhysicalBytes, string? Text)
+/// <param name="File">A file <see cref="Text"/> names and the reader may want to open — the Linux
+/// subsystem's <c>.wslconfig</c> when the sentence says to edit it. The Messages panel shows it as a
+/// reveal link; a terminal prints it after the sentence.</param>
+public sealed record Em3dMemoryVerdict(Em3dMemoryLevel Level, long? EstimateBytes, long PhysicalBytes, string? Text,
+                                       string? File = null)
 {
     /// <summary>Above this share of physical memory a run is warned about.</summary>
     public const double WarnFraction = 0.75;
@@ -203,18 +207,19 @@ public sealed record Em3dMemoryVerdict(Em3dMemoryLevel Level, long? EstimateByte
 
         var level = share > SevereFraction ? Em3dMemoryLevel.Severe : Em3dMemoryLevel.Warning;
         string pct = (share * 100).ToString("0", CultureInfo.InvariantCulture);
-        string head = (basis is null ? "" : basis + " ") + $"Palace's memory for this run is estimated at about {MachineMemory.Format(e)}, {pct} % of " +
-                      $"{scope?.Owner ?? "this machine's"} {MachineMemory.Format(physical)}. " +
+        // Designer feedback round 11 — the warning had grown to a paragraph; the estimate's provenance
+        // (the highest memory per unknown measured) is in the user guide, and "errs high" is what a reader needs of it.
+        string head = (basis is null ? "" : basis + " ") + $"Palace may need about {MachineMemory.Format(e)}, {pct} % of " +
+                      $"{scope?.Owner ?? "this machine's"} {MachineMemory.Format(physical)}" +
                       (level == Em3dMemoryLevel.Severe
-                          ? "At that size the run will very likely swap or be killed by the operating system. "
-                          : "The estimate errs high by construction (it uses the highest memory per unknown circuitRF has " +
-                            "measured), but a run this size may slow the machine or swap. ");
+                          ? ". At that size the run will very likely swap or be killed by the operating system. "
+                          : "; a run this size may slow the machine or swap (the estimate errs high). ");
         var useful = remedies.Where(r => r.EstimateBytes is { } b && b < e).ToList();
         string tail = useful.Count == 0 ? ""
             : "In order of effect: " + string.Join("; ", useful.Select(r =>
                   $"{r.What} — about {MachineMemory.Format(r.EstimateBytes!.Value)}")) + ".";
-        string raise = scope?.Remedy is { } r ? " " + r : "";
-        return new(level, e, physical, (head + tail).TrimEnd() + raise);
+        var raise = scope?.Remedy?.Invoke(e);
+        return new(level, e, physical, (head + tail).TrimEnd() + (raise?.Text is { } r ? " " + r : ""), raise?.File);
     }
 }
 
@@ -226,5 +231,10 @@ public sealed record Em3dMemoryVerdict(Em3dMemoryLevel Level, long? EstimateByte
 /// </summary>
 /// <param name="Bytes">The memory the run can use.</param>
 /// <param name="Owner">Possessive, as the verdict reads it: "the Linux subsystem's".</param>
-/// <param name="Remedy">The sentence naming the setting that raises it.</param>
-public sealed record Em3dMemoryScope(long Bytes, string Owner, string? Remedy);
+/// <param name="Remedy">Given the estimate, the sentence about the setting that raises
+/// <paramref name="Bytes"/> and the file it lives in — or the sentence saying raising it cannot be enough.
+/// Null: nothing to say.</param>
+public sealed record Em3dMemoryScope(long Bytes, string Owner, Func<long, Em3dScopeRemedy?>? Remedy);
+
+/// <summary>What <see cref="Em3dMemoryScope.Remedy"/> says, and the file it names (null when it names none).</summary>
+public sealed record Em3dScopeRemedy(string Text, string? File);

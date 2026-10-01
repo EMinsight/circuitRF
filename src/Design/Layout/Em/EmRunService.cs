@@ -96,7 +96,14 @@ public sealed record EmRunResult(
     /// whole list. Carried on a non-Ok status too: a result one solver produced is kept and listed
     /// when the other fails or is cancelled (R-em3d10-4).
     /// </summary>
-    IReadOnlyList<EmRunOutput>? Outputs = null);
+    IReadOnlyList<EmRunOutput>? Outputs = null,
+    /// <summary>
+    /// The file a sentence in <see cref="Warnings"/>, <see cref="Notes"/> or <see cref="Errors"/> names,
+    /// keyed by that sentence — designer feedback round 11: a 3D run's memory warning names the Linux
+    /// subsystem's <c>.wslconfig</c>. The Messages panel shows it as a reveal link beside the sentence; the
+    /// CLI prints it after the sentence. Null when no sentence names one.
+    /// </summary>
+    IReadOnlyDictionary<string, string>? MessageFiles = null);
 
 /// <summary>One file a run wrote: what it is (<c>touchstone</c>, <c>npy</c>) and where.</summary>
 public sealed record EmRunOutput(string Kind, string Path);

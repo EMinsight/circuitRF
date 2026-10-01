@@ -59,21 +59,57 @@ public static class WslPalace
 
     /// <summary>
     /// R-em3d26-2c — the subsystem's memory as the run's memory check sees it: <c>free -b</c> inside the
-    /// distribution, and the sentence naming <c>.wslconfig</c>'s <c>memory=</c>, with the file's path under
+    /// distribution, and the remedy naming <c>.wslconfig</c>'s <c>memory=</c>, with the file's path under
     /// the user's profile. Null when the figure cannot be read (the check then has nothing to compare with).
     /// </summary>
-    public static Em3dMemoryScope? MemoryScope(WslSession session, string? userProfile = null)
-        => session.MemoryBytes() is { } bytes and > 0
-            ? new Em3dMemoryScope(bytes, $"the Linux subsystem's (distribution '{session.Distribution}')", WslConfigRemedy(userProfile))
-            : null;
+    /// <param name="hostBytes">This computer's memory — the most the subsystem could be given. Defaults to
+    /// <see cref="MachineMemory.PhysicalBytes"/>, which on Windows is the host's figure.</param>
+    public static Em3dMemoryScope? MemoryScope(WslSession session, string? userProfile = null, long? hostBytes = null)
+    {
+        if (session.MemoryBytes() is not { } bytes || bytes <= 0) return null;
+        long host = hostBytes ?? MachineMemory.PhysicalBytes;
+        return new Em3dMemoryScope(bytes, "the Linux subsystem's", estimate => WslConfigRemedy(estimate, bytes, host, userProfile));
+    }
 
-    /// <summary>The setting that raises the subsystem's memory, and where it lives.</summary>
-    public static string WslConfigRemedy(string? userProfile = null)
+    /// <summary>The <c>.wslconfig</c> under <paramref name="userProfile"/> (default: this user's).</summary>
+    public static string WslConfigPath(string? userProfile = null)
     {
         string profile = userProfile ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        string file = profile.Length == 0 ? @"%UserProfile%\.wslconfig" : profile.TrimEnd('\\', '/') + @"\.wslconfig";
-        return "The Linux subsystem's virtual machine gets only part of this computer's memory by default; " +
-               $"'memory=' under '[wsl2]' in {file} raises it (for example memory=24GB). Run 'wsl --shutdown' after " +
-               "changing it, so the subsystem restarts with the new size.";
+        return profile.Length == 0 ? @"%UserProfile%\.wslconfig" : profile.TrimEnd('\\', '/') + @"\.wslconfig";
+    }
+
+    private const long GiB = 1L << 30;
+
+    /// <summary>
+    /// Designer feedback round 11 — the <c>memory=</c> to suggest on a computer with <paramref name="hostBytes"/>,
+    /// in whole gigabytes: the host's memory less what Windows keeps for itself, the larger of 2 GB and a
+    /// quarter of it, rounded down. 5 GB on an 8 GB laptop, 24 GB on 32 GB. It used to be a fixed
+    /// "memory=24GB", which on the reporter's 8 GB laptop was three times the memory there was.
+    /// WSL reads <c>GB</c> as 2^30 bytes, so the figure is in those units. Null when the host is unknown.
+    /// </summary>
+    public static int? SuggestedMemoryGb(long hostBytes)
+        => hostBytes <= 0 ? null : (int)Math.Max(0, (hostBytes - Math.Max(2 * GiB, hostBytes / 4)) / GiB);
+
+    /// <summary>
+    /// What a memory warning says about the subsystem's size for a run needing <paramref name="estimate"/>
+    /// bytes, when the subsystem has <paramref name="subsystemBytes"/> of <paramref name="hostBytes"/>.
+    /// The setting is offered only where it can make the run FIT — a sentence pointing at a file whose
+    /// largest sensible value still leaves the run short sends the reader to the one remedy that cannot
+    /// work; then the sentence says so instead, and names no file.
+    /// </summary>
+    public static Em3dScopeRemedy WslConfigRemedy(long estimate, long subsystemBytes, long hostBytes, string? userProfile = null)
+    {
+        string file = WslConfigPath(userProfile);
+        if (SuggestedMemoryGb(hostBytes) is not { } gb)
+            return new($"To give the Linux subsystem more memory: set 'memory=' under '[wsl2]' in .wslconfig, then run " +
+                       "'wsl --shutdown'.", file);
+        long suggested = gb * GiB;
+        if (suggested <= subsystemBytes)
+            return new($"The Linux subsystem already has most of this computer's {MachineMemory.Format(hostBytes)}.", null);
+        if (estimate <= suggested)
+            return new($"The Linux subsystem gets only part of this computer's {MachineMemory.Format(hostBytes)}; to give " +
+                       $"it more, set 'memory={gb}GB' under '[wsl2]' in .wslconfig, then run 'wsl --shutdown'.", file);
+        return new($"Giving the Linux subsystem more memory would not be enough: this computer has " +
+                   $"{MachineMemory.Format(hostBytes)} in all.", null);
     }
 }

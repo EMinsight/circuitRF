@@ -8669,6 +8669,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// <summary>brief-em3d-49 — the run with its setup and its geometry supplied: <paramref name="runSetup"/> as the run
     /// names it, and <paramref name="run"/> in place of the layout route (a 3D view's elaboration). True when a result was
     /// written.</summary>
+    /// <summary>Designer feedback round 11 — the file an EM run's sentence names (the Linux subsystem's
+    /// <c>.wslconfig</c> in a memory warning), shown as the row's reveal link.</summary>
+    private static string? EmMessageFile(EmRunResult result, string sentence)
+        => result.MessageFiles?.GetValueOrDefault(sentence);
+
     private async Task<bool> RunEmSetupAsync(EmSetupEditorViewModel vm, EmSetup? runSetup,
                                              Func<EmSetup, RunControl, string, EmRunResult>? run)
     {
@@ -8858,8 +8863,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             stageLive.Complete(MessageLevel.Info, $"EM '{setup.Name}' — stopped");
             sweepLive.Complete(MessageLevel.Info, $"EM '{setup.Name}' — see the error below");
 
-            foreach (var w in result.Warnings)     Messages.Warning(w);
-            foreach (var e in result.Errors ?? []) Messages.Error(e);
+            foreach (var w in result.Warnings)     Messages.Warning(w, EmMessageFile(result, w));
+            foreach (var e in result.Errors ?? []) Messages.Error(e, EmMessageFile(result, e));
 
             // Through the render point, not as a bare sentence: the diagnostic's ID is what a future
             // dedup ("this sweep refused at 400 points") or filter ("every technology-resolution
@@ -8909,9 +8914,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // been removed from the solve were correct, well worded, and in the middle of them. The
         // panel groups by icon and the reader scrolls from the top, so the order is what decides
         // whether they are seen.
-        foreach (var e in result.Errors ?? [])   Messages.Error(e);
-        foreach (var w in result.Warnings)       Messages.Warning(w);
-        foreach (var n in result.Notes ?? [])    Messages.Info(n);
+        foreach (var e in result.Errors ?? [])   Messages.Error(e, EmMessageFile(result, e));
+        foreach (var w in result.Warnings)       Messages.Warning(w, EmMessageFile(result, w));
+        foreach (var n in result.Notes ?? [])    Messages.Info(n, EmMessageFile(result, n));
 
         if (result.Status == EmRunStatus.Cancelled)
         {
