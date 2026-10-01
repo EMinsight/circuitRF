@@ -10,6 +10,7 @@ namespace CircuitRF.Ui.Tests;
 /// Tests for Bug 1 (wire split creates degenerate pieces) and Bug 2
 /// (wire draw produces collinear interior vertices).
 /// </summary>
+[Trait("Suite", "SchematicConnectivity")]
 public class WireSplitTests
 {
     // ── Helpers ───────────────────────────────────────────────────────────────

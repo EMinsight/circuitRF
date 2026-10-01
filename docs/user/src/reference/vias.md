@@ -172,6 +172,6 @@ one on each layer, so a line on either layer that ends there connects to it. The
 against the schematic as a via device, with its two ends on separate nets.
 
 The planes the via passes are not part of it. They are the stackup's planes, drawn once for every line
-that returns through them by **Draw Ground Pour** (offered after Update Layout for an inner ground).
+that returns through them by Update Layout itself, and again by **Draw Ground Pour** after you move things.
 The pour cuts the via's own `Antipad` out of every plane its drill passes and does not land on, and
 leaves a VIAGND joined to the plane it lands on.

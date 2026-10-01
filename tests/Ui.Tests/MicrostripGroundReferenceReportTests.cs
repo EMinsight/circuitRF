@@ -1,33 +1,142 @@
+using CircuitRF.Design.Layout.Lvs;
 using CircuitRF.Design.Layout.PCells;
 using CircuitRF.Ui.Layout;
 using CircuitRF.Ui.Schematic;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace CircuitRF.Ui.Tests;
 
 /// <summary>
-/// Update Layout places a microstrip's LINE; the plane it returns through is the stackup's ground
-/// reference and no generator draws it. An empty ground layer afterwards read as a missing plane, so
-/// the run offers Draw Ground Pour for it — once, and only while nothing is drawn there — and the pour
-/// covers the lines, cutting a clearance only round a via that passes THROUGH the plane.
+/// Update Layout draws the ground the schematic states (designer feedback round 11, reversing round 10's offer-only,
+/// inner-only pour): a via beside every pad whose pin is on a ground symbol, and the pour on every ground conductor the
+/// lines and those vias return through — inner or outer. Both are GENERATED copper, redrawn by every run from where the
+/// parts are then; what the designer moved, deleted or drew is theirs.
 /// </summary>
-public sealed class MicrostripGroundReferenceReportTests : IDisposable
+public sealed class MicrostripGroundReferenceReportTests(ITestOutputHelper output) : IDisposable
 {
-    private readonly string _root = Path.Combine(Path.GetTempPath(), "crf-mlin-ground-note-" + Guid.NewGuid().ToString("N"));
-
-    public MicrostripGroundReferenceReportTests() => Directory.CreateDirectory(_root);
+    private readonly string _root = Path.Combine(Path.GetTempPath(), "crf-mlin-ground-" + Guid.NewGuid().ToString("N"));
 
     public void Dispose()
     {
         try { Directory.Delete(_root, recursive: true); } catch { }
     }
 
-    private static EditableComponent Mlin(string name)
+    private static EditableComponent Place(SchematicEditModel m, SymbolKind kind, string name, double x, double y)
     {
-        var comp = new EditableComponent { InstanceName = name, Symbol = SymbolKind.Mlin };
-        foreach (var dp in ComponentTypeRegistry.DefaultParameters(SymbolKind.Mlin, 0))
-            comp.Parameters.Add(new EditableParameter { Name = dp.Name, Expression = dp.Expression, Unit = dp.Unit, Dimension = dp.Dimension });
-        return comp;
+        var c = new EditableComponent { InstanceName = name, Symbol = kind, X = x, Y = y };
+        foreach (var dp in ComponentTypeRegistry.DefaultParameters(kind, 0))
+            c.Parameters.Add(new EditableParameter { Name = dp.Name, Expression = dp.Expression, Unit = dp.Unit, Dimension = dp.Dimension });
+        m.Components.Add(c);
+        return c;
+    }
+
+    private static void Set(EditableComponent c, string name, string expression)
+    {
+        if (c.Parameters.FirstOrDefault(p => p.Name == name) is { } p) p.Expression = expression;
+        else c.Parameters.Add(new EditableParameter { Name = name, Expression = expression });
+    }
+
+    private (string SchematicDir, string LayoutDir, string CellDir) Cell()
+    {
+        Directory.CreateDirectory(_root);
+        string cellDir = CellFolder.CreateCellFolder(_root, "Pdn");
+        return (CellFolder.SubFolderPath(cellDir, ViewType.Schematic), CellFolder.SubFolderPath(cellDir, ViewType.Layout), cellDir);
+    }
+
+    /// <summary>The designer's PDN2: an MLIN with a shunt inductor to ground at one end and a shunt capacitor to ground
+    /// at the other, 0402 parts — connected pin on pin, which is a connection by the extractor's own rule.</summary>
+    private static SchematicEditModel Pdn(string schematicDir)
+    {
+        var m = new SchematicEditModel { SchematicDirectory = schematicDir };
+        var line = Place(m, SymbolKind.Mlin, "ML1", 0, 0);
+        var ends = m.PortDefsOf(line).Select(d => m.PortWorldOf(line, d)).OrderBy(p => p.X).ToList();
+
+        foreach (var (kind, name, end) in new[] { (SymbolKind.Inductor, "L1", ends[0]), (SymbolKind.Capacitor, "C1", ends[1]) })
+        {
+            var part = Place(m, kind, name, 0, 0);
+            Set(part, "Footprint", "smt:0402");
+            var at0 = m.PortDefsOf(part).Select(d => m.PortWorldOf(part, d)).ToList();
+            if (Math.Abs(at0[0].Y - at0[1].Y) < Math.Abs(at0[0].X - at0[1].X)) part.Rotation = SymbolRotation.R90;   // shunt: vertical
+            var pins = m.PortDefsOf(part).Select(d => m.PortWorldOf(part, d)).OrderBy(p => p.Y).ToList();
+            part.X += end.X - pins[0].X;   // its upper pin on the line's end
+            part.Y += end.Y - pins[0].Y;
+            var lower = m.PortDefsOf(part).Select(d => m.PortWorldOf(part, d)).OrderBy(p => p.Y).Last();
+            Place(m, SymbolKind.Ground, "GND_" + name, lower.X, lower.Y);
+        }
+        return m;
+    }
+
+    [Fact]
+    public void TwoLayerBoard_OneUpdateLayout_GroundsEveryGroundPin_PoursBottom_AndLvsSeesTheGround()
+    {
+        var (schematicDir, layoutDir, cellDir) = Cell();
+        var tech = StarterTechnologies.Pcb2Layer();
+        var bottom = tech.Stackup.Layers.Single(l => l.IsGroundReference);
+        var drill = tech.Stackup.Layers.Single(l => l.Kind == StackupKind.Via).DrawingLayers[0];
+        var model = Pdn(schematicDir);
+        var target = new LayoutView();
+
+        var run = SchematicToLayoutGenerator.Run(model, target, schematicDir, _root, layoutDir, tech, null, null);
+        run.Command!.Execute();
+
+        // A via beside each grounded pad, tied to it, and the Bottom Copper poured under the line and both vias.
+        var vias = target.Shapes.OfType<ViaShape>().Where(GroundArtwork.IsGroundVia).ToList();
+        Assert.Equal(2, vias.Count);
+        Assert.All(vias, v => Assert.Equal(drill, v.Layer));
+        Assert.Equal(["C1:2", "L1:2"], target.GroundViaKeys.Order(StringComparer.Ordinal));
+        var pour = Assert.Single(run.GroundArtwork.Pours);
+        Assert.Equal(bottom.Name, pour.Ground.Name);
+        Assert.Equal((1, 2, 0), (pour.Lines, pour.GroundVias, pour.ViaClearances));
+        var poured = target.Shapes.Where(s => s.Generated == GroundArtwork.PourTag).ToList();
+        Assert.All(poured, s => Assert.Contains(s.Layer, bottom.DrawingLayers));
+        var area = poured.Select(LayoutGeometry.BboxOf).Aggregate((a, b) => a.Union(b));
+        Assert.All(vias, v => Assert.True(area.Contains(v.X, v.Y)));
+        Assert.All(target.Instances, i => Assert.True(area.Contains(CellHierarchy.InstanceBbox(i, layoutDir).MinX,
+                                                                   CellHierarchy.InstanceBbox(i, layoutDir).MinY)));
+
+        // LVS reads both ground terminals on one net, the ground.
+        var lvs = LvsRun.Run(target, Path.Combine(layoutDir, "Pdn.clay"), cellDir, tech, model,
+                             Path.Combine(schematicDir, "Pdn.csch"));
+        foreach (var d in lvs.Diagnostics) output.WriteLine(d.ToString());
+        int GroundNet(string designator) => lvs.Layout.Devices.Single(d => d.Designator == designator)
+                                                .Terminals.Single(t => t.Port == 2).NetIndex;
+        Assert.Equal(GroundNet("L1"), GroundNet("C1"));
+        // The opens left are the line to each part, which Update Layout does not route. Without the vias (the layout
+        // as round 10 left it) the ground pins are an open too — the oracle that the vias are what grounds them.
+        static bool GroundOpen(LvsRunResult r)
+            => r.Diagnostics.Any(d => System.Text.RegularExpressions.Regex.IsMatch(d.ToString(), @"\b(L1|C1)\.2\b"));
+        Assert.False(GroundOpen(lvs));
+        var unGrounded = LayoutPersistence.Deserialize(LayoutPersistence.Serialize(target));
+        Assert.Equal(target.Shapes.Count(s => s.Generated is not null), unGrounded.Shapes.Count(s => s.Generated is not null));
+        Assert.Equal(target.GroundViaKeys.Order(), unGrounded.GroundViaKeys.Order());   // both survive a save
+        unGrounded.Shapes.RemoveAll(s => s.Generated is not null);
+        Assert.True(GroundOpen(LvsRun.Run(unGrounded, Path.Combine(layoutDir, "Pdn.clay"), cellDir, tech, model,
+                                          Path.Combine(schematicDir, "Pdn.csch"))));
+
+        // A second run with nothing moved changes nothing.
+        Assert.Null(SchematicToLayoutGenerator.Run(model, target, schematicDir, _root, layoutDir, tech, null, null).Command);
+
+        // The designer moves C1: its via follows on the next run, and the pour is redrawn over it.
+        var c1 = target.Instances.Single(i => i.SchematicId == "C1");
+        var c1Via = vias.Single(v => GroundArtwork.KeyOfShape(v) == "C1:2");
+        long cx = c1Via.X, cy = c1Via.Y;
+        c1.X += 3_000_000;
+        var follow = SchematicToLayoutGenerator.Run(model, target, schematicDir, _root, layoutDir, tech, null, null);
+        Assert.Equal(1, follow.GroundArtwork.ViasFollowed);
+        follow.Command!.Execute();
+        var moved = target.Shapes.OfType<ViaShape>().Single(v => GroundArtwork.KeyOfShape(v) == "C1:2");
+        Assert.Equal((cx + 3_000_000, cy), (moved.X, moved.Y));
+
+        // A via the designer moves stays put; one they delete is not put back.
+        moved.X += 500_000;
+        var l1Via = target.Shapes.OfType<ViaShape>().Single(v => GroundArtwork.KeyOfShape(v) == "L1:2");
+        target.Shapes.RemoveAll(s => GroundArtwork.KeyOfShape(s) == "L1:2");
+        c1.X += 1_000_000;
+        var kept = SchematicToLayoutGenerator.Run(model, target, schematicDir, _root, layoutDir, tech, null, null);
+        Assert.Equal((0, 0, 1, 1), (kept.GroundArtwork.ViasPlaced, kept.GroundArtwork.ViasFollowed,
+                                    kept.GroundArtwork.ViasLeftMoved, kept.GroundArtwork.ViasLeftDeleted));
+        Assert.NotEqual(0, l1Via.X);
     }
 
     /// <summary>The two-layer starter with an inner ground plane between its coppers, so a through via PASSES the
@@ -55,67 +164,36 @@ public sealed class MicrostripGroundReferenceReportTests : IDisposable
     }
 
     [Fact]
-    public void PlacedLines_OfferTheirUndrawnGroundAsAPour_UnderTheLines_WithAClearanceOnlyWhereAViaPassesThrough()
+    public void InnerGround_IsPoured_ADesignerViaThroughItGetsAClearance_TheGroundViasDoNot_AndDrawnCopperIsLeftAlone()
     {
-        string cellDir = CellFolder.CreateCellFolder(_root, "Line");
-        string schematicDir = CellFolder.SubFolderPath(cellDir, ViewType.Schematic);
-        string layoutDir = CellFolder.SubFolderPath(cellDir, ViewType.Layout);
+        var (schematicDir, layoutDir, _) = Cell();
         var tech = WithInnerGround(out var ground);
-
-        var model = new SchematicEditModel { SchematicDirectory = schematicDir };
-        model.Components.Add(Mlin("ML1"));
-        model.Components.Add(Mlin("ML2"));
+        var model = Pdn(schematicDir);
         var target = new LayoutView();
 
         var first = SchematicToLayoutGenerator.Run(model, target, schematicDir, _root, layoutDir, tech, null, null);
-        Assert.Equal([ground.Name], first.UndrawnGrounds);
-        Assert.DoesNotContain(first.Lines, l => l.Text.Contains("ground reference"));   // posted with its button instead
         first.Command!.Execute();
+        var pour = Assert.Single(first.GroundArtwork.Pours);
+        Assert.Equal(ground.Name, pour.Ground.Name);
+        Assert.Equal(2, first.GroundArtwork.ViasPlaced);
 
-        // A through via inside the lines' region passes the inner plane: it gets a hole. The drill layer is the
-        // starter's own via entry.
+        // A through via the designer draws inside the lines' region passes the inner plane: the redrawn pour gets a
+        // hole for it, and none for the two ground vias, whose drill passes the same plane.
         var drill = tech.Stackup.Layers.Single(l => l.Kind == StackupKind.Via).DrawingLayers[0];
-        var lines = target.Instances.Select(i => CellHierarchy.InstanceBbox(i, layoutDir)).Aggregate((a, b) => a.Union(b));
-        target.Shapes.Add(new ViaShape { Layer = drill, X = lines.MinX, Y = lines.MinY, PadSize = 600_000, DrillSize = 300_000 });
-
-        var pour = Assert.Single(GroundPourPlanner.Plan(target, tech, layoutDir));
-        Assert.Equal(ground.DrawingLayers[0], pour.DrawingLayer);
-        Assert.Equal(2, pour.Lines);
-        Assert.Equal(1, pour.ViaClearances);
-        Assert.Equal(0, pour.ViasJoined);
-        var poly = Assert.IsType<PolygonShape>(Assert.Single(pour.Shapes));
-        Assert.Single(poly.Holes!);
-        long minX = poly.Xy.Where((_, i) => i % 2 == 0).Min(), maxX = poly.Xy.Where((_, i) => i % 2 == 0).Max();
-        Assert.True(minX <= lines.MinX - pour.MarginDbu && maxX >= lines.MaxX + pour.MarginDbu);
-
-        // Once a plane is drawn there, neither the offer nor the planner draws another over it.
-        foreach (var s in pour.Shapes) target.Shapes.Add(s);
-        model.Components.Add(Mlin("ML3"));
-        var second = SchematicToLayoutGenerator.Run(model, target, schematicDir, _root, layoutDir, tech, null, null);
-        Assert.Empty(second.UndrawnGrounds);
-        Assert.Empty(GroundPourPlanner.Plan(target, tech, layoutDir));
-    }
-
-    [Fact]
-    public void OnATwoLayerBoard_TheOuterGroundIsNotOffered_AndDrawnOnRequestAViaEndingOnItIsJoinedAndCounted()
-    {
-        string cellDir = CellFolder.CreateCellFolder(_root, "Line");
-        string schematicDir = CellFolder.SubFolderPath(cellDir, ViewType.Schematic);
-        string layoutDir = CellFolder.SubFolderPath(cellDir, ViewType.Layout);
-        var tech = StarterTechnologies.Pcb2Layer();   // its through via ends on Bottom Copper, the ground
-        var model = new SchematicEditModel { SchematicDirectory = schematicDir };
-        model.Components.Add(Mlin("ML1"));
-        var target = new LayoutView();
-        var run = SchematicToLayoutGenerator.Run(model, target, schematicDir, _root, layoutDir, tech, null, null);
-        Assert.Empty(run.UndrawnGrounds);   // an OUTER ground is not offered: simulation already takes it as solid
-        run.Command!.Execute();
-
-        var drill = tech.Stackup.Layers.Single(l => l.Kind == StackupKind.Via).DrawingLayers[0];
-        var line = CellHierarchy.InstanceBbox(target.Instances[0], layoutDir);
+        var line = CellHierarchy.InstanceBbox(target.Instances.Single(i => i.SchematicId == "ML1"), layoutDir);
         target.Shapes.Add(new ViaShape { Layer = drill, X = line.MinX, Y = line.MinY, PadSize = 600_000, DrillSize = 300_000 });
+        var second = SchematicToLayoutGenerator.Run(model, target, schematicDir, _root, layoutDir, tech, null, null);
+        var redrawn = Assert.Single(second.GroundArtwork.Pours);
+        Assert.Equal((1, 2), (redrawn.ViaClearances, redrawn.GroundVias));
+        second.Command!.Execute();
+        var poly = Assert.IsType<PolygonShape>(Assert.Single(target.Shapes, s => s.Generated == GroundArtwork.PourTag));
+        Assert.Single(poly.Holes!);
 
-        var pour = Assert.Single(GroundPourPlanner.Plan(target, tech, layoutDir));
-        Assert.Equal((0, 1), (pour.ViaClearances, pour.ViasJoined));
-        Assert.Null(Assert.IsType<PolygonShape>(Assert.Single(pour.Shapes)).Holes);
+        // Copper the designer draws on the plane makes it theirs: no pour is drawn over it, and the old one stays.
+        target.Shapes.Add(new RectShape { Layer = ground.DrawingLayers[0], X1 = 0, Y1 = 0, X2 = 1000, Y2 = 1000 });
+        var third = SchematicToLayoutGenerator.Run(model, target, schematicDir, _root, layoutDir, tech, null, null);
+        Assert.Empty(third.GroundArtwork.Pours);
+        Assert.Equal([ground.Name], third.GroundArtwork.PoursLeftAlone.Select(l => l.Name));
+        Assert.Null(third.Command);
     }
 }

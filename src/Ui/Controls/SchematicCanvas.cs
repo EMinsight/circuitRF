@@ -678,6 +678,13 @@ public sealed class SchematicCanvas : Control
             case SchematicHitTest.HitKind.WireSegment:
             case SchematicHitTest.HitKind.WireEndpoint:
             {
+                // Alt (Option on macOS) + double-click selects the wire's run up to the component
+                // pins; the plain double-click below still opens the net-label editor.
+                if ((e.KeyModifiers & KeyModifiers.Alt) != 0)
+                {
+                    if (_editContext.SelectWireRun(hit.Id, wx, wy)) InvalidateVisual();
+                    break;
+                }
                 var wire = _editContext.EditModel.FindWire(hit.Id);
                 double labelWx = wx, labelWy = wy;
                 if (wire is { Points.Count: >= 2 })

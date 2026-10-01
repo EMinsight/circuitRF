@@ -29,9 +29,12 @@ public readonly record struct RailMaskPoint(double FrequencyHz, double LimitOhms
 /// stated numbers and nothing else. It is tested as one — two reads of the same document derive the
 /// same flat Z and the same band top.</para>
 ///
-/// <para>All three fields are base SI: amps, volts, seconds.</para>
+/// <para>All three fields are base SI: amps, volts, seconds. <b>The rise time is optional</b>
+/// (designer feedback round 11): ΔV and ΔI alone state the flat Z, and a designer who knows the
+/// ripple and the load step but not the load's edge rate still has a target. Without one the target
+/// says nothing about the band, and the rail's own band stands.</para>
 /// </summary>
-public sealed record RailTransientSpec(double DeltaIAmps, double DeltaVVolts, double RiseTimeSeconds)
+public sealed record RailTransientSpec(double DeltaIAmps, double DeltaVVolts, double? RiseTimeSeconds)
 {
     /// <summary>
     /// The flat impedance target this transient implies, in OHMS: <c>ΔV / ΔI</c>. The whole of the
@@ -48,7 +51,7 @@ public sealed record RailTransientSpec(double DeltaIAmps, double DeltaVVolts, do
     /// reader who assumes 0.5 (a 20–80 % rise) gets a band top 43 % too high, and nothing in the
     /// answer would look wrong.</para>
     /// </summary>
-    public double BandTopHz => KneeFactor / RiseTimeSeconds;
+    public double? BandTopHz => RiseTimeSeconds is { } tr ? KneeFactor / tr : null;
 
     /// <summary>The 10–90 % rise-time-to-knee-frequency factor. See <see cref="BandTopHz"/>.</summary>
     public const double KneeFactor = 0.35;
@@ -62,10 +65,92 @@ public sealed record RailTransientSpec(double DeltaIAmps, double DeltaVVolts, do
         if (!(DeltaVVolts > 0))
             return $"{where}'s transient target states ΔV = {DeltaVVolts} V. State the voltage the " +
                    "rail is allowed to move by, as a positive number.";
-        if (!(RiseTimeSeconds > 0))
-            return $"{where}'s transient target states a rise time of {RiseTimeSeconds} s. The band " +
-                   "top is derived from it, so it must be positive.";
+        if (RiseTimeSeconds is { } tr && !(tr > 0))
+            return $"{where}'s transient target states a rise time of {tr} s. The band top is " +
+                   "derived from it, so it must be positive — or leave it out, and the rail's own " +
+                   "band stands.";
         return null;
+    }
+
+    /// <summary>
+    /// The usual first step of a PDN budget: the rail may ripple by <paramref name="ripplePercent"/> of
+    /// <paramref name="railVolts"/> while the load steps by <paramref name="deltaIAmps"/>. ΔV is
+    /// computed HERE and stored — the document keeps ΔV and ΔI, never the voltage and percentage they
+    /// came from, so the target is the number the user chose and does not move when a source row is
+    /// edited later. The window and <c>rail --target-transient</c> both call this.
+    /// </summary>
+    public static RailTransientSpec FromRipple(double railVolts, double ripplePercent, double deltaIAmps,
+                                               double? riseTimeSeconds)
+        => new(deltaIAmps, railVolts * ripplePercent / 100.0, riseTimeSeconds);
+
+    /// <summary>
+    /// ΔI where the user states none: the sum over the rail's loads of each one's peak current, or its
+    /// DC current where it states no peak. Null when no load draws anything — an observation port
+    /// steps by nothing, and a target divided by a guessed current is a guessed target.
+    /// </summary>
+    public static double? LoadStepOf(RailSpec rail)
+    {
+        double sum = 0;
+        bool any = false;
+        foreach (var l in rail.Loads)
+            if ((l.PeakCurrentA ?? l.DcCurrentA) is { } a && a > 0) { sum += a; any = true; }
+        return any ? sum : null;
+    }
+
+    /// <summary>The rail voltage a ripple percentage is taken of: the first source row stating an
+    /// open-circuit voltage, or null when none does.</summary>
+    public static double? RailVoltageOf(RailSpec rail)
+        => rail.Sources.Select(s => s.OpenCircuitVoltageV).FirstOrDefault(v => v is > 0);
+
+    /// <summary>
+    /// The derived target with its arithmetic shown, as the window's Target card and the CLI both
+    /// print it: <c>Z 5.143 Ω = 180 mV / 35 mA · band to 35 MHz (0.35 / 10 ns)</c>. The arithmetic is
+    /// on the page because a derived number whose inputs are invisible cannot be checked — and the
+    /// commonest slip (V / I, the load's DC resistance) is 20× too large at a 5 % ripple.
+    /// </summary>
+    public string Describe()
+    {
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        string z = $"Z {Engine.Pdn.PdnMask.Ohms(FlatTargetOhms)} = {Si(DeltaVVolts, "V")} / {Si(DeltaIAmps, "A")}";
+        return RiseTimeSeconds is { } tr
+            ? $"{z} · band to {Engine.Pdn.PdnMask.Hertz(KneeFactor / tr)} ({KneeFactor.ToString(inv)} / {Si(tr, "s")})"
+            : $"{z} · no rise time, so the rail's own band stands";
+    }
+
+    /// <summary>
+    /// A rise time with its unit — <c>10ns</c>, <c>1.5 µs</c>, <c>200ps</c>; a bare number is seconds. Its
+    /// own small table because the expression engine's unit table does not read a time (<c>10ns</c> is
+    /// refused there), and the window and <c>rail --target-transient</c> must read the same spellings.
+    /// </summary>
+    public static bool TryParseSeconds(string? text, out double seconds)
+    {
+        seconds = 0;
+        string t = (text ?? "").Trim();
+        int i = t.Length;
+        while (i > 0 && !char.IsAsciiDigit(t[i - 1]) && t[i - 1] != '.') i--;
+        if (!double.TryParse(t[..i].Trim(), System.Globalization.NumberStyles.Float,
+                             System.Globalization.CultureInfo.InvariantCulture, out double n))
+            return false;
+        double? scale = t[i..].Trim() switch
+        {
+            "" or "s"          => 1,
+            "ms"               => 1e-3,
+            "us" or "µs" or "μs" => 1e-6,
+            "ns"               => 1e-9,
+            "ps"               => 1e-12,
+            _                  => null,
+        };
+        if (scale is not { } k) return false;
+        seconds = n * k;
+        return true;
+    }
+
+    private static string Si(double v, string unit)
+    {
+        double m = Math.Abs(v);
+        var (scale, prefix) = m >= 1 || m == 0 ? (1.0, "") : m >= 1e-3 ? (1e3, "m") : m >= 1e-6 ? (1e6, "µ")
+                            : m >= 1e-9 ? (1e9, "n") : (1e12, "p");
+        return (v * scale).ToString("0.###", System.Globalization.CultureInfo.InvariantCulture) + " " + prefix + unit;
     }
 }
 
@@ -109,7 +194,7 @@ public sealed record RailTarget
     public static RailTarget OfMask(IEnumerable<RailMaskPoint> points) =>
         new() { Kind = RailTargetKind.Mask, Mask = [.. points] };
 
-    public static RailTarget OfTransient(double deltaIAmps, double deltaVVolts, double riseTimeSeconds) =>
+    public static RailTarget OfTransient(double deltaIAmps, double deltaVVolts, double? riseTimeSeconds) =>
         new() { Kind = RailTargetKind.Transient,
                 Transient = new RailTransientSpec(deltaIAmps, deltaVVolts, riseTimeSeconds) };
 

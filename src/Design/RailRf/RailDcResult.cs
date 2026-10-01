@@ -264,6 +264,23 @@ public sealed class RailDcResult
     public IReadOnlyList<string> Notes { get; init; } = [];
 
     /// <summary>
+    /// Why this rail's numbers are the Accurate (mesh) reading although the run asked for Fast — the
+    /// sentence naming the spreading copper Fast would not price — or null on a rail solved by the
+    /// model the run asked for.
+    /// </summary>
+    /// <remarks>
+    /// <b>A refusal whose only remedy is "run Accuracy" was a dead end</b> (field report,
+    /// 2026-10-01): Fast stopped, the user pressed Accuracy, and the mesh answered in half a minute.
+    /// Fast still never PRICES that copper with the trace formula — the number would be optimistic —
+    /// so the run meshes that rail instead and says so here, on the Results header and on the
+    /// <c>rail</c> verb's own line (<see cref="RailDcRequest.EscalateSpreadingCopper"/>).
+    /// </remarks>
+    public string? EscalatedFromFast { get; init; }
+
+    /// <summary>The reading these numbers ARE, whatever the run asked for.</summary>
+    public PdnModelKind SolvedBy => Netlist.Provenance.ModelKind;
+
+    /// <summary>
     /// <b>R-rail5-11, and it is one line.</b> §2.4: review is running this as a room-temperature
     /// selection tool and the design is measured over temperature in the lab regardless — so railRF
     /// computes at one stated temperature, says so, and does not pretend to be a thermal tool.

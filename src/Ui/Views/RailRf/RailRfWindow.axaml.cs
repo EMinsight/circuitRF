@@ -1056,7 +1056,7 @@ public partial class RailRfWindow : Window
     /// Null when it was shown with none.</summary>
     private Window? _placementOwner;
 
-    public static RailRfWindow ShowStandalone(Window? owner)
+    public static RailRfWindow ShowStandalone(Window? owner, RailStartingLayout? start = null)
     {
         var vm = new RailRfViewModel();
         var window = new RailRfWindow { DataContext = vm };
@@ -1068,6 +1068,14 @@ public partial class RailRfWindow : Window
         };
 
         ShowUnowned(window, owner);
+
+        // The workspace's board, when there is one to start on (RailStartingLayout's rule) — opened
+        // through the Open button's own path, after the window is on screen so the read has somewhere
+        // to be waited for. Several and none chosen: the window starts empty and names them.
+        if (start?.Path is { } clay)
+            Avalonia.Threading.Dispatcher.UIThread.Post(() => window.OpenLayout(vm, clay));
+        else if (start?.Note is { } note)
+            vm.ImportSummary = note;
         return window;
     }
 

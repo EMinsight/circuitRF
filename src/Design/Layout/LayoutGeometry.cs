@@ -219,7 +219,14 @@ public static class LayoutGeometry
     /// <summary>Deep-clones a shape (including its edge list, where present) — used for a live
     /// move-drag preview (<c>LayoutOverlay.DragOverrides</c>), which must never mutate the model's
     /// own shape instance mid-drag.</summary>
-    public static LayoutShape Clone(LayoutShape shape) => shape switch
+    public static LayoutShape Clone(LayoutShape shape)
+    {
+        var clone = CloneGeometry(shape);
+        clone.Generated = shape.Generated;
+        return clone;
+    }
+
+    private static LayoutShape CloneGeometry(LayoutShape shape) => shape switch
     {
         RectShape r        => new RectShape { Layer = r.Layer, Net = r.Net, Component = r.Component, Pin = r.Pin, X1 = r.X1, Y1 = r.Y1, X2 = r.X2, Y2 = r.Y2 },
         PolygonShape p     => new PolygonShape { Layer = p.Layer, Net = p.Net, Component = p.Component, Pin = p.Pin, Xy = (long[])p.Xy.Clone(), Holes = CloneHoles(p.Holes) },

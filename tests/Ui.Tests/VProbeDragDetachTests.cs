@@ -18,6 +18,7 @@ namespace CircuitRF.Ui.Tests;
 /// moved a probe to look somewhere else. These tests pin BOTH halves: the probe detaches, and
 /// nothing else does.</para>
 /// </summary>
+[Trait("Suite", "SchematicConnectivity")]
 public class VProbeDragDetachTests
 {
     // ── fixtures ──────────────────────────────────────────────────────────────

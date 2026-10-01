@@ -715,4 +715,29 @@ public sealed class FieldTests(ITestOutputHelper output)
         // of its own display error (gate 3's measurement): zero "to the display tolerance".
         Assert.True(wall < DrawnTolerance * centre, $"{wall / centre:E2}");
     }
+
+    /// <summary>Designer feedback round 11 — a field strength in dB reads in dBµV/m (EMC's convention): the range sits 120 dB
+    /// above dB re 1 V/m, the legend and the range line name it, a value maps to the same place on the bar, and the GPU is
+    /// handed the range less the reference (its own 20·log10 is of V/m).</summary>
+    [Fact]
+    public void ADbFieldStrength_ReadsInDbMicroVoltsPerMetre()
+    {
+        var run = FieldRun.OpenPalace(Fixture("cavity"))!;
+        var step = FieldStep.Open(run.Solutions[0].VolumePvtu!, run.ToMetres);
+        var e = step.Load("E")!;
+        var q = new FieldQuantity(e.Info, false, FieldMode.Peak);
+        var slice = FieldSlicer.Slice(new FieldMeshTets(step.Mesh, e, (0, 0, 0)), new Vector3D(0, 0, 1), -12.5e-3);
+        var linear = FieldColorScale.Auto(q, [slice], false, 99);
+        var db = FieldColorScale.Auto(q, [slice], true, 99);
+        Assert.Equal(20 * Math.Log10(linear.Hi) + 120, db.Hi, 1e-9);
+        Assert.Equal("dBµV/m", db.RangeUnit);
+        Assert.Contains(" dBµV/m, top at", db.Describe());
+        Assert.EndsWith("(dBµV/m)", FieldPlotResolver.LegendLines(null, q, db, null, 0, null)[0]);
+        // The middle of the bar, in V/m: 10^(dBµV/m / 20) µV/m.
+        Assert.Equal(0.5, db.Position(Math.Pow(10, (db.Lo + db.Hi) / 2 / 20) * 1e-6), 1e-9);
+        var u = new float[FieldUniforms.Floats];
+        FieldUniforms.Write(u, q, db, CircuitRF.Render.Scene3D.ColorMap3D.Viridis, 0);
+        Assert.Equal((float)(db.Hi - 120), u[3]);
+        Assert.Equal("dB re 1 T", FieldColorScale.DbUnit("T"));
+    }
 }

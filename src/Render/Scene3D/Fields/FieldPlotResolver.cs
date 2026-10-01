@@ -261,7 +261,7 @@ public static class FieldPlotResolver
             foreach (var x in r.Solutions)
                 items.Add(new FieldSolutionItem(x, (x.Kind == FieldProblemKind.Thermal
                     ? table is { } tt && x.Index < tt.Points ? tt.PointLabel(x.Index) : $"Point {x.Index + 1}"
-                    : SolutionLabel(x, modes, problem)) + (runs.Length > 1 ? $" ({r.Solver})" : ""), r));
+                    : SolutionLabel(x, modes, problem, r.Solver)) + (runs.Length > 1 ? $" ({r.Solver})" : ""), r));
         bool ran = dir is not null && Directory.Exists(dir) || openEmsDir is not null && Directory.Exists(openEmsDir);
         return new FieldDiscovery(runs, items, table, groups, why, ran, dir, openEmsDir);
     }
@@ -273,13 +273,19 @@ public static class FieldPlotResolver
         return File.Exists(npy) ? ThermalResultTable.Read(npy, out _) : null;
     }
 
-    /// <summary>A saved step as the picker and the legend label it.</summary>
-    public static string SolutionLabel(FieldSolution s, IReadOnlyList<PalaceMode>? modes, Em3dProblem? problem)
+    /// <summary>
+    /// A saved step as the picker and the legend label it. Designer feedback round 11 — a Palace driven field states its drive:
+    /// Palace normalises every port excitation to unit incident power (its own documentation, 0.18.1), so the field shown is
+    /// the one 1 W incident on that port makes, and a field strength is read against that.
+    /// </summary>
+    public static string SolutionLabel(FieldSolution s, IReadOnlyList<PalaceMode>? modes, Em3dProblem? problem, string? solver = null)
     {
         string G(double v) => v.ToString("G6", CultureInfo.InvariantCulture);
+        string drive = string.Equals(solver, "Palace", StringComparison.OrdinalIgnoreCase) ? " with 1 W incident" : "";
         return s.Kind switch
         {
-            FieldProblemKind.Driven => $"{G(s.Timestep)} GHz" + (s.Excitation > 0 ? $", port {s.Excitation} driven" : ""),
+            FieldProblemKind.Driven => $"{G(s.Timestep)} GHz" +
+                (s.Excitation > 0 ? $", port {s.Excitation} driven{drive}" : drive.Length > 0 ? ", 1 W incident on the port" : ""),
             FieldProblemKind.Eigenmode when modes?.FirstOrDefault(m => m.Index == s.Index + 1) is { } m =>
                 $"Mode {s.Index + 1}: {G(m.FrequencyHz / 1e9)} GHz, Q {m.Q.ToString("G3", CultureInfo.InvariantCulture)}",
             FieldProblemKind.Eigenmode => $"Mode {s.Index + 1}",
@@ -315,7 +321,7 @@ public static class FieldPlotResolver
             string unit = FieldNames.Unit(q.Array.Name);
             lines =
             [
-                $"{q.Symbol}{(unit.Length > 0 ? $" ({(s.Db ? "dB re 1 " + unit : unit)})" : s.Db ? " (dB)" : "")}",
+                $"{q.Symbol}{(s.Db ? $" ({FieldColorScale.DbUnit(unit)})" : unit.Length > 0 ? $" ({unit})" : "")}",
                 s.Describe(),
             ];
             if (solutionLabel is not null) lines.Add(solutionLabel);

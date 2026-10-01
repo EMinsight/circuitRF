@@ -8740,7 +8740,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 // Adaptive sampling decides how many points it actually solves as it goes, so there
                 // is no honest denominator for it — it is reported indeterminate with a live count
                 // rather than against a budget the run will usually stop well short of.
-                Total    = adaptive ? 0 : pointCount,
+                // Designer feedback round 11 — nor is there for a 3D run: its solver reports stages, never a point
+                // finished (Palace's adaptive sweep solves frequencies of its own choosing), so a denominator sat at
+                // "0 / 5" for the whole run and was still there beside "solved". The stage row carries its progress.
+                Total    = adaptive || setup.Is3D ? 0 : pointCount,
                 Progress = new Progress<RunProgress>(
                     p => ReportEmProgress(sweepLive, stageLive, setup.Name, p, adaptive,
                                           control!.StopRequested)),
@@ -9243,6 +9246,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             ? $"{pointCount.ToString("N0", CultureInfo.CurrentCulture)} frequency point(s)"
             : "a frequency sweep whose point count could not be resolved";
 
+        // Designer feedback round 11 — a 3D setup is neither kernel: the panel's kernel is a planar setup's, and reading
+        // it here told a Palace run it was "the cross-section analysis". Its sweep is the 3D solver's own.
+        if (setup.Is3D && !setup.IsThermal)
+            return $"EM analysis started: '{setup.Name}' over {points}. {ThreeDSweepText(setup)}.";
+
         bool planar = kernel == Engine.Mom.EmAnalysisKind.Planar;
 
         string sampling = !planar
@@ -9279,6 +9287,32 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 : " The resonance search is off: it needs adaptive sampling.");
 
         return plan.ToString();
+    }
+
+    /// <summary>
+    /// Designer feedback round 11 — what a 3D solver does with the sweep. Palace with a sweep tolerance builds the sweep
+    /// ADAPTIVELY: it solves the full problem at as few frequencies as reach the tolerance and evaluates every requested
+    /// point from the model those solves make — which is why its closing line counts "full solves" that are not the
+    /// requested points. The planar setup's own Adaptive sampling box plays no part in it. openEMS is time-domain: one
+    /// run, every point from its transform.
+    /// </summary>
+    internal static string ThreeDSweepText(EmSetup setup)
+    {
+        string palace;
+        var settings = CircuitRF.Design.Layout.Em.PalaceSettings.Resolve(setup.Palace);
+        string quality = (setup.Palace?.Quality ?? CircuitRF.Design.Layout.Em.PalaceQuality.Standard).ToString();
+        palace = settings.SweepAdaptiveTol > 0
+            ? $"Palace builds the sweep adaptively (tolerance {settings.SweepAdaptiveTol.ToString("G3", CultureInfo.InvariantCulture)}, " +
+              $"the {quality} preset's): it solves the full problem at as few frequencies as reach that tolerance and " +
+              "evaluates every requested point from them"
+            : "Palace solves the full problem at every point";
+        const string openEms = "openEMS runs once in the time domain and takes every point from that run";
+        return setup.Solver3D switch
+        {
+            Em3dSolver.OpenEms => openEms,
+            Em3dSolver.Both    => palace + "; " + openEms,
+            _                  => palace,
+        };
     }
 
     /// <summary>The sweep row's own outcome, appended to the end of the row it already owns — so the
@@ -10352,10 +10386,20 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// none: what needs a workspace is the import's default of landing the artwork in one as a cell,
     /// and railRF OFFERS to create a workspace there rather than silently falling back to the
     /// throwaway path.
+    ///
+    /// <para><b>It starts on the workspace's board when there is one to start on</b> (field report,
+    /// 2026-10-01): the active layout tab, else the one open layout, else the workspace's one layout
+    /// (<see cref="CircuitRF.Design.RailRf.RailStartingLayout"/>). An empty window beside a workspace
+    /// holding the board asked the user to go and find what was already in front of them.</para>
     /// </remarks>
     [RelayCommand]
     private void NewRailRf() =>
-        Views.RailRf.RailRfWindow.ShowStandalone(Views.WorkspaceLocator.WindowFor(this));
+        Views.RailRf.RailRfWindow.ShowStandalone(
+            Views.WorkspaceLocator.WindowFor(this),
+            CircuitRF.Design.RailRf.RailStartingLayout.Choose(
+                (ResolveActiveDocumentForCommands() as LayoutDocument)?.FilePath,
+                _openDocsByPath.Values.OfType<LayoutDocument>().Select(d => d.FilePath),
+                CurrentWorkspaceRoot));
 
     /// <summary>
     /// File ▸ Import ▸ Wirebond Wires… — brings a <c>.wBond</c>'s WIRES into the active schematic

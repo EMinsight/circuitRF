@@ -182,7 +182,9 @@ public sealed class PalaceProgressTests(ITestOutputHelper output) : IDisposable
     /// F0 case A's mesh, as F0's own Gmsh log reports it (149,252 tetrahedra), at Standard: past 75 % of
     /// 16 GB, naming the Draft estimate; nothing at 64 GB. The volume estimate made before meshing is
     /// pinned beside it, because it is why this check exists: on a bond wire the refinement IS the mesh,
-    /// and the volumes alone give a few hundred tetrahedra.
+    /// and the volumes alone give a few hundred tetrahedra. Designer feedback round 11 priced the refined
+    /// shells round the metal (3,065 here), which tracks a connector's mesh; a wire's is set by its CURVATURE,
+    /// which no estimate before meshing prices, so this stays the case the check after meshing exists for.
     /// </summary>
     [Fact]
     public void Gate5_CaseA_WarnsOnSixteenGigabytes_NamingTheDraftEstimate_AndNotOnSixtyFour()

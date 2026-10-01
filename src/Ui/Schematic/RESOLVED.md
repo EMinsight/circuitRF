@@ -1245,3 +1245,46 @@ paths agree to 10 decimal places in S₁₁ at three frequencies.
 time-taint refusal, so what it wraps is already the final expression text and a refused pair is never
 rewritten. It touches `Elements`, which is what `SubcircuitCellBuilder` iterates — the interior node
 disappears from the built cell because nothing names it any more.
+
+## A part dragged off a row carried the row, and the part tapping it was left behind (2026-10-01)
+
+**Report (bad_drag.csch):** one wire ran C1's top pin → along a row → down to L1's top pin, and R1's top
+pin tapped that row mid-span. Dragging C1 down left R1 unattached.
+
+**Cause.** `WireGeometry.RubberBandEnd` absorbs the across-component of a moved end by shifting the
+neighbouring corner, which moves the WHOLE end leg. Its own comment promised that "every tap that is not
+on the two legs that changed" survives — and a tap ON one of those legs was exactly what was lost. The
+mid-span-tap stubs (`BuildTapStubs`) only cover a tapping pin that MOVES; here the tapping pin stood still
+and the wire left it.
+
+**Fix.** `FollowEndpoints` takes a `tapped(a, b)` probe — "does anything the drag leaves in place join the
+stretch from a (exclusive) to b (inclusive)?" — answered from a drag-start snapshot
+(`SchematicViewModel._dragStationaryTaps`: stationary pins, unselected wires' vertices, junction dots; a
+point a moving pin started on is not stationary). The leg is shifted only when nothing joins it and the
+shift does not trim the next leg past a tap; otherwise the moved end grows an elbow and the leg stays put.
+Where the along-part of the move would shorten the leg past a tap, the end routes back to its original
+point with two bends instead (or, for a pure along-the-row move, the wire is kept and the pin lands on its
+body). With nothing on the leg the compact rule is unchanged. Live preview and commit read the same
+snapshot, so they agree.
+
+**Gate and suite.** `tests/Ui.Tests/Schematic/DragKeepsAttachmentsTests.cs` (15 cases; 10 fail with the
+probe disabled) uses the NETLIST as the oracle: every two pins on one net before a drag are on one net
+after it. It and the existing drag/connectivity classes carry `[Trait("Suite", "SchematicConnectivity")]`
+— run them all with `dotnet test tests/Ui.Tests --filter Suite=SchematicConnectivity` (118 tests, <1 s).
+New schematic connectivity tests should carry the same trait.
+
+## Alt + double-click selects a wire's run up to the pins (2026-10-01)
+
+Owner request: keep plain double-click on a wire as the net-label editor; with Alt (Option on macOS) held,
+select every wire segment along that run, up to the component pins. `WireRunSelector` cuts every segment
+at its junctions (`JunctionsOnSegment`, so the cut points are the same ones single-click spans use), then
+spreads from the clicked piece through every shared end point, in every direction, and a PIN NEVER
+BLOCKS IT: wires meeting at a pin are one run, and a pin tapping a wire mid-span does not cut it. What
+ends a run is a part, whose two pins are different points. Settled in two owner corrections the same day:
+bad_drag.csch (Alt + double-click beside C1 must reach the wire beside L1, past R1's tap — the first cut
+stopped at every pin) and PowerAmplifier.csch (three wires ending on C3's top pin must all be selected —
+the second cut followed only the same wire through a pin). A crossing with no vertex is not a join, and net labels (a by-NAME connection) are not
+followed. The result is segment selections with spans (`SchematicSelection.SelectSegments`), so Delete and
+the overlay already handle it. Decided, not asked: wire-to-wire T-junctions are followed (the run is the
+wiring between pins, not one polyline). Gate: `tests/Ui.Tests/Schematic/WireRunSelectionTests.cs`
+(`Suite=SchematicConnectivity`). The canvas gesture itself is untested headlessly (no pixels seen).

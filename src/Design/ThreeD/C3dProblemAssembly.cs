@@ -184,6 +184,17 @@ public static class C3dProblemAssembly
                                           fMin, floorZ: null, waves: [], [], out refusal);
     }
 
+    /// <summary>Designer feedback round 11 — why a face the setup leaves unstated stands where it does ("λ/8 at 2 GHz, the
+    /// sweep's lowest frequency"), on the same sweep and extent <see cref="AirBox"/> pads by. Null when there is no content.</summary>
+    public static string? DefaultPaddingBasis(EmSetup setup, C3dElaboration e)
+    {
+        if (e.ModelledExtent() is not { } x) return null;
+        double fMin;
+        try { fMin = setup.Frequency.Expand().Where(f => f > 0).DefaultIfEmpty(1e9).Min(); }
+        catch (Exception) { fMin = 1e9; }
+        return Em3dGenerator.DefaultPadding(setup, fMin, Math.Max(Math.Max(x.X1 - x.X0, x.Y1 - x.Y0), x.Z1 - x.Z0)).Basis;
+    }
+
     /// <summary>
     /// brief-em3d-49 R-em3d49-4d — each face boundary on its own, for drawing: its pieces in the world, or why it cannot
     /// be placed. The same resolution <see cref="FaceBoundaries"/> makes, one boundary at a time, so one refusal does not

@@ -53,6 +53,10 @@ internal static class Rail
         public string? RailName;
         public PdnModelKind Model = PdnModelKind.Fast;
 
+        /// <summary><c>--no-escalate</c>: a rail Fast refuses for spreading copper stays refused instead
+        /// of being meshed in the same run (<see cref="RailDcRequest.EscalateSpreadingCopper"/>).</summary>
+        public bool Escalate = true;
+
         /// <summary>Repeatable. <c>REFDES.PIN=&lt;model&gt;</c> — see <see cref="ApplySource"/>.</summary>
         public readonly List<string> Sources = [];
 
@@ -61,6 +65,10 @@ internal static class Rail
 
         public string? TargetDrop;
         public string? TargetZ;
+
+        /// <summary><c>--target-transient dV=180mV|ripple=5%[,dI=35mA][,tr=10ns]</c> — see
+        /// <see cref="ApplyTransientTarget"/>.</summary>
+        public string? TargetTransient;
 
         /// <summary>Repeatable. <c>&lt;file&gt;</c> or <c>PORT=&lt;file&gt;</c>.</summary>
         public readonly List<string> Masks = [];
@@ -125,10 +133,11 @@ internal static class Rail
     {
         Console.Error.WriteLine(
             "Usage: circuitrf rail <path.crail | path.clay | path.csch | cell-folder>\n" +
-            "                      [--rail NAME] [--fast | --accurate]\n" +
+            "                      [--rail NAME] [--fast | --accurate] [--no-escalate]\n" +
             "                      [--source REFDES.PIN=<v[,r][,l] | file.sNp>]...\n" +
             "                      [--load REFDES.PIN[=<current>]]...\n" +
             "                      [--target-drop <mV>] [--target-z <mOhm>] [--mask [PORT=]<file>]\n" +
+            "                      [--target-transient dV=<v>|ripple=<pct>%[,dI=<a>][,tr=<s>]]\n" +
             "                      [--aggressor NAME=<freq>[xN]]...\n" +
             "                      [--reference <layer>] [--extent as-imported|filled|infinite]\n" +
             "                      [--set var=expr] [--rows N|--all] [-o out.{csv,npy,mat,txt,svg,pdf}]");
@@ -148,6 +157,7 @@ internal static class Rail
                 case "--extent" when i + 1 < args.Length:              o.Extent     = args[++i]; continue;
                 case "--target-drop" when i + 1 < args.Length:         o.TargetDrop = args[++i]; continue;
                 case "--target-z" when i + 1 < args.Length:            o.TargetZ    = args[++i]; continue;
+                case "--target-transient" when i + 1 < args.Length:    o.TargetTransient = args[++i]; continue;
                 case "--mask" when i + 1 < args.Length:      o.Masks.Add(args[++i]);      continue;
                 case "--source" when i + 1 < args.Length:    o.Sources.Add(args[++i]);    continue;
                 case "--load" when i + 1 < args.Length:      o.Loads.Add(args[++i]);      continue;
@@ -155,6 +165,7 @@ internal static class Rail
 
                 case "--fast":     o.Model = PdnModelKind.Fast;     continue;
                 case "--accurate": o.Model = PdnModelKind.Accurate; continue;
+                case "--no-escalate": o.Escalate = false;           continue;
                 case "--all":      o.All = true;                    continue;
 
                 case "--rows" when i + 1 < args.Length:
@@ -235,6 +246,7 @@ internal static class Rail
         // mask they supplied changed no number on the page.
         var frequencyFlags = new List<string>();
         if (o.TargetZ is not null)       frequencyFlags.Add("--target-z");
+        if (o.TargetTransient is not null) frequencyFlags.Add("--target-transient");
         if (o.Masks.Count > 0)           frequencyFlags.Add("--mask");
         if (o.Aggressors.Count > 0)      frequencyFlags.Add("--aggressor");
         if (frequencyFlags.Count > 0)
@@ -319,6 +331,7 @@ internal static class Rail
             DbuPerMicron   = board.View.DbuPerMicron,
             LengthFormat   = board.FormatFor(doc),
             Model          = o.Model,
+            EscalateSpreadingCopper = o.Escalate,
             Pads           = sidedPads,
             NetPoints      = sidedNetPoints,
             ReferenceNet   = doc.ReferenceNet,
@@ -595,7 +608,8 @@ internal static class Rail
 
         if (targets.Count == 0 &&
             (o.Sources.Count > 0 || o.Loads.Count > 0 || o.Reference is not null || o.Extent is not null
-             || o.TargetDrop is not null || o.TargetZ is not null || o.Masks.Count > 0
+             || o.TargetDrop is not null || o.TargetZ is not null || o.TargetTransient is not null
+             || o.Masks.Count > 0
              || o.Aggressors.Count > 0))
             return JsonRun.Fail(CliDiagnostics.RailNoRails(doc.Name));
 
@@ -628,6 +642,13 @@ internal static class Rail
             foreach (var rail in targets) rail.ImpedanceTarget = RailTarget.OfFlatImpedance(ohms * 1e3);
         }
 
+        // Both flags state the one frequency-domain target, so both together is refused rather than one
+        // silently winning. --target-transient itself is applied after --source/--load (below), so the
+        // ΔI and rail voltage it defaults to are the rows this run actually uses.
+        if (o.TargetTransient is not null && o.TargetZ is not null)
+            return JsonRun.Fail(CliDiagnostics.RailTargetTransientMalformed(
+                o.TargetTransient, "--target-z and --target-transient both state the rail's frequency-domain target; give one"));
+
         foreach (string spec in o.Sources)
             // Relative to the `.crail`, not to the artwork — RailSource.TouchstoneRef's own rule, and
             // the portability rule every other circuitRF document reference follows.
@@ -642,6 +663,75 @@ internal static class Rail
         foreach (string spec in o.Aggressors)
             if (ApplyAggressor(spec, targets) is { } r) return r;
 
+        if (o.TargetTransient is { } transient)
+            foreach (var rail in targets)
+                if (ApplyTransientTarget(transient, rail) is { } r) return r;
+
+        return null;
+    }
+
+    /// <summary>
+    /// <c>--target-transient dV=180mV,dI=35mA,tr=10ns</c> or <c>ripple=5%</c> in place of <c>dV</c> — the
+    /// transient target the window's "derive Z from the load" row stores, through the same
+    /// <see cref="RailTransientSpec.FromRipple"/> (designer feedback round 11).
+    /// </summary>
+    /// <remarks>
+    /// <b>ΔI defaults to the rail's loads</b> (peak, else DC) and <b>a ripple is taken of the first
+    /// source's voltage</b> — both as the window opens its form — and a run with neither to default to is
+    /// refused naming the key that supplies it. The derived target is said on stderr and in
+    /// <c>--json</c>, arithmetic included, because a derived number nobody can check is the defect this
+    /// flag exists to fix: V / I, the load's DC resistance, is 20× too large at a 5 % ripple.
+    /// </remarks>
+    private static int? ApplyTransientTarget(string spec, RailSpec rail)
+    {
+        double? dv = null, ripple = null, di = null, tr = null;
+        foreach (string part in spec.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+        {
+            int eq = part.IndexOf('=');
+            if (eq <= 0)
+                return JsonRun.Fail(CliDiagnostics.RailTargetTransientMalformed(spec, $"'{part}' is not key=value"));
+            string key = part[..eq].Trim().ToLowerInvariant(), text = part[(eq + 1)..].Trim();
+            switch (key)
+            {
+                case "dv" when TryValue(text, out double v) && v > 0: dv = v; break;
+                case "di" when TryValue(text, out double a) && a > 0: di = a; break;
+                case "tr" when RailTransientSpec.TryParseSeconds(text, out double s) && s > 0: tr = s; break;
+                case "ripple" when double.TryParse(text.TrimEnd('%').Trim(), NumberStyles.Float,
+                                                   CultureInfo.InvariantCulture, out double p) && p > 0:
+                    ripple = p; break;
+                case "dv" or "di" or "tr" or "ripple":
+                    return JsonRun.Fail(CliDiagnostics.RailTargetTransientMalformed(
+                        spec, $"{key}='{text}' is not a positive number with its unit"));
+                default:
+                    return JsonRun.Fail(CliDiagnostics.RailTargetTransientMalformed(
+                        spec, $"'{key}' is not a key it takes (dV, ripple, dI, tr)"));
+            }
+        }
+
+        if (dv is not null && ripple is not null)
+            return JsonRun.Fail(CliDiagnostics.RailTargetTransientMalformed(spec, "dV and ripple both state ΔV; give one"));
+        if (dv is null && ripple is null)
+            return JsonRun.Fail(CliDiagnostics.RailTargetTransientMalformed(spec, "it states neither dV nor ripple"));
+
+        di ??= RailTransientSpec.LoadStepOf(rail);
+        if (di is not { } amps)
+            return JsonRun.Fail(CliDiagnostics.RailTargetTransientMalformed(
+                spec, $"rail '{rail.Name}' has no load drawing a current to take ΔI from; state dI"));
+
+        RailTransientSpec derived;
+        if (ripple is { } pct)
+        {
+            if (RailTransientSpec.RailVoltageOf(rail) is not { } volts)
+                return JsonRun.Fail(CliDiagnostics.RailTargetTransientMalformed(
+                    spec, $"rail '{rail.Name}' has no source voltage to take the ripple of; state dV"));
+            derived = RailTransientSpec.FromRipple(volts, pct, amps, tr);
+        }
+        else derived = new RailTransientSpec(amps, dv!.Value, tr);
+
+        rail.ImpedanceTarget = RailTarget.OfTransient(derived.DeltaIAmps, derived.DeltaVVolts, derived.RiseTimeSeconds);
+        var note = CliDiagnostics.RailTargetDerived(rail.Name, derived.Describe());
+        Console.Error.WriteLine("note: " + note.Render());
+        JsonRun.Note(note);
         return null;
     }
 
@@ -1033,6 +1123,9 @@ internal static class Rail
         foreach (var result in results)
         {
             Console.WriteLine($"Rail '{result.RailName}'");
+
+            // Above every number, because it says which reading they all are.
+            if (result.EscalatedFromFast is { } escalated) Console.WriteLine($"  model:   {escalated}");
 
             if (result.SourceVoltageV is { } sv) Console.WriteLine($"  source:  {sv:0.####} V");
             if (result.ChainedFrom is { } chain) Console.WriteLine($"  chained: {chain.Describe()}");

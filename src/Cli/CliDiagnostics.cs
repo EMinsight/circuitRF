@@ -1272,6 +1272,11 @@ internal static class CliDiagnostics
         "explain.args.path-required", DiagnosticSeverity.Error,
         "explain: a path is required — a document, a cell folder or a workspace.");
 
+    /// <summary>Designer feedback round 11 — <c>explain/render --setup</c> chooses a .c3d's embedded setup; nothing else embeds one.</summary>
+    public static Diagnostic SetupNotAThreeDView(string verb, string path) => Diagnostic.Create(
+        verb + ".setup.not-3d", DiagnosticSeverity.Error,
+        "--setup chooses one of a 3D view's (.c3d's) embedded setups; '{path}' is not a 3D view.", ("path", path));
+
     public static Diagnostic ExplainUnknownOption(string option) => Diagnostic.Create(
         "explain.args.unknown-option", DiagnosticSeverity.Error,
         "explain: unknown option '{option}'.", ("option", option));
@@ -3020,6 +3025,18 @@ internal static class CliDiagnostics
         "{flags} state the FREQUENCY answer — Z(f) against a target, and what excites it — and this "
       + "verb answers the DC question. They were read and validated and are not in this result. The "
       + "rail's own window is where Z(f) is run today.", ("flags", flags));
+
+    /// <summary>Round 11 — <c>--target-transient</c> that cannot be used, with the reason.</summary>
+    public static Diagnostic RailTargetTransientMalformed(string text, string why) => Diagnostic.Create(
+        "rail.target-transient.malformed", DiagnosticSeverity.Error,
+        "--target-transient '{text}': {why}. It takes dV=<volts> or ripple=<percent>%, and optionally "
+      + "dI=<amps> (else the loads' current) and tr=<seconds> (else the rail's own band) — "
+      + "ripple=5%,dI=35mA,tr=10ns, for instance.", ("text", text), ("why", why));
+
+    /// <summary>Round 11 — the transient target <c>--target-transient</c> derived, arithmetic included.</summary>
+    public static Diagnostic RailTargetDerived(string rail, string description) => Diagnostic.Create(
+        "rail.target.derived", DiagnosticSeverity.Info,
+        "Rail '{rail}' target: {description}.", ("rail", rail), ("description", description));
 
     public static Diagnostic RailValueMalformed(string option, string text, string example)
         => Diagnostic.Create(

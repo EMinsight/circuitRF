@@ -2016,6 +2016,50 @@ public sealed class SchematicEditModel
         List<(EditableNetLabel Label, int Index)> Removed,
         List<NetLabelAnchorSnap> Reanchored);
 
+    /// <summary>
+    /// The points strictly INSIDE one segment of <paramref name="wire"/> where something else joins it —
+    /// another wire's vertex (a T, or a corner meeting it), a component pin, a user junction dot, or the
+    /// foot of a net label anchored to that segment — ordered from the segment's first vertex to its
+    /// second. Empty when nothing joins the segment between its own two vertices.
+    ///
+    /// <para>A wire that runs THROUGH a junction is still one polyline: the schematic never splits it,
+    /// because the T connects by geometry (<see cref="ComputeConnectivityGeometry"/>). These points are
+    /// what lets the editor treat each stretch between two junctions as its own span — select one and
+    /// delete it, and the rest of the wire still reaches every pin it reached (designer feedback round 11).</para>
+    /// </summary>
+    public IReadOnlyList<(double X, double Y)> JunctionsOnSegment(EditableWire wire, int segmentIndex)
+    {
+        var pts = wire.Points;
+        if (segmentIndex < 0 || segmentIndex >= pts.Count - 1) return [];
+        var (ax, ay) = pts[segmentIndex];
+        var (bx, by) = pts[segmentIndex + 1];
+        var found = new Dictionary<(long, long), (double X, double Y)>();
+        void Consider(double x, double y)
+        {
+            if (SchematicGeometry.PointOnSegmentInterior(x, y, ax, ay, bx, by, ConnectTolerance))
+                found.TryAdd(QuantKey(x, y), (x, y));
+        }
+
+        foreach (var w in Wires)
+        {
+            if (ReferenceEquals(w, wire)) continue;
+            foreach (var (x, y) in w.Points) Consider(x, y);
+        }
+        foreach (var comp in Components)
+            foreach (var def in PortDefsOf(comp))
+                if (!comp.IsPortDetached(def.PortIndex))
+                {
+                    var (x, y) = PortWorldOf(comp, def);
+                    Consider(x, y);
+                }
+        foreach (var d in Dots) Consider(d.X, d.Y);
+        foreach (var l in NetLabels)
+            if (l.OwnerWireId == wire.Id && l.SegmentIndex == segmentIndex)
+                Consider(ax + l.AlongT * (bx - ax), ay + l.AlongT * (by - ay));
+
+        return [.. found.Values.OrderBy(p => (p.X - ax) * (p.X - ax) + (p.Y - ay) * (p.Y - ay))];
+    }
+
     /// <summary>First wire whose body passes through (px,py) within <paramref name="tol"/>, else null.</summary>
     public EditableWire? WireUnderPoint(double px, double py, double tol)
     {

@@ -107,12 +107,26 @@ internal static class ExplainEm3d
         var grid = Grid(p, setup);
         var box = p.Boundary;
         var stated = setup.AirBox;
-        Em3dFaceJson Face(string name, Em3dBoundaryKind kind, EmAirBoxFace? face) => new(
-            name, Boundary(kind),
-            face?.PaddingPercent is { } pct ? $"setup (padding {pct.ToString("G6", CultureInfo.InvariantCulture)} % of the content's extent)"
-            : face is not null ? "setup"
-            : name == "zmin" && kind == Em3dBoundaryKind.Pec ? "floor"
-            : "default");
+        // Designer feedback round 11 — every face says how far it stands from the content, and where that distance came from:
+        // a face that stated only its boundary used to read "setup", which hid that its padding was the default's.
+        var (contentLo, contentHi) = ContentBounds(p);
+        var (defaultPadM, defaultBasis) = Em3dGenerator.DefaultPadding(setup, p.Frequency.StartHz,
+            Math.Max(Math.Max(contentHi.X - contentLo.X, contentHi.Y - contentLo.Y), contentHi.Z - contentLo.Z));
+        string Mm(double m) => (m * 1e3).ToString("G4", CultureInfo.InvariantCulture) + " mm";
+        Em3dFaceJson Face(string name, Em3dBoundaryKind kind, EmAirBoxFace? face)
+        {
+            double at = name switch
+            {
+                "xmin" => contentLo.X - box.Min.X, "xmax" => box.Max.X - contentHi.X, "ymin" => contentLo.Y - box.Min.Y,
+                "ymax" => box.Max.Y - contentHi.Y, "zmin" => contentLo.Z - box.Min.Z, _ => box.Max.Z - contentHi.Z,
+            };
+            return new(name, Boundary(kind),
+                face?.PaddingPercent is { } pct ? $"setup: {Mm(at)}, {pct.ToString("G6", CultureInfo.InvariantCulture)} % of the content's extent"
+                : face?.PaddingUm is not null ? $"setup: {Mm(at)}"
+                : name == "zmin" && kind == Em3dBoundaryKind.Pec ? "floor"
+                : Math.Abs(at - defaultPadM) <= 1e-6 * Math.Max(defaultPadM, 1e-3) ? $"default: {Mm(at)}, {defaultBasis}"
+                : Mm(at));
+        }
         var airBox = new Em3dAirBoxJson(V(box.Min), V(box.Max),
         [
             Face("xmin", box.Faces.XMin, stated?.XMin), Face("xmax", box.Faces.XMax, stated?.XMax),
@@ -131,6 +145,22 @@ internal static class ExplainEm3d
     }
 
     /// <summary>brief-em3d-22 R-em3d22-2b — the terminals, the ground and what floats.</summary>
+    /// <summary>The bound of what the air box pads round: every solid but the generator's air above the stack, and every sheet.</summary>
+    private static (Point3 Lo, Point3 Hi) ContentBounds(Em3dProblem p)
+    {
+        // The .cem generator's own air solid is built TO the box, so it is not content; a drawn air object in a .c3d is.
+        var b = p.Solids.Where(s => s.Name != Em3dGenerator.AirSolidName).Select(s => Em3dProblem.Bounds(s.Primitive))
+                 .Concat(p.Sheets.Select(s =>
+                 {
+                     var w = s.Outline.Select(s.World).ToList();
+                     return (X0: w.Min(q => q.X), Y0: w.Min(q => q.Y), Z0: w.Min(q => q.Z),
+                             X1: w.Max(q => q.X), Y1: w.Max(q => q.Y), Z1: w.Max(q => q.Z));
+                 })).ToList();
+        if (b.Count == 0) return (p.Boundary.Min, p.Boundary.Max);
+        return (new Point3(b.Min(q => q.X0), b.Min(q => q.Y0), b.Min(q => q.Z0)),
+                new Point3(b.Max(q => q.X1), b.Max(q => q.Y1), b.Max(q => q.Z1)));
+    }
+
     private static Em3dStaticJson? Static(Em3dProblem p, EmSetup setup)
     {
         if (!p.IsStatic) return null;
@@ -194,9 +224,9 @@ internal static class ExplainEm3d
                 $"about {est.Tetrahedra:N0} elements and {est.Unknowns:N0} unknowns at order {est.Order}" +
                 (est.MemoryBytes is { } b ? $", about {b / 1e9:0.#} GB" +
                     (settings.AdaptiveMaxIterations > 0 ? " with refinement passes allowed" : "") : "") +
-                ", from each meshed region's volume at its largest element. The refinement at " +
-                "conductors and ports and Palace's adaptive passes add to it, and the run reports the real " +
-                "counts. No mesher is run to get it.");
+                ", from each meshed region's volume at its largest element and the refined shell round each " +
+                "conductor, sheet and port. A curved surface's own refinement and Palace's adaptive passes add to " +
+                "it, and the run reports the real counts. No mesher is run to get it.");
         }
         return [palace, OpenEmsSize(grid, p?.Ports.Count ?? 0)];
     }
@@ -403,7 +433,7 @@ internal static class ExplainEm3d
             else
                 Console.WriteLine($"    {s.Tool,-10} {s.Version}" +
                                   (s.Release is not { } rel ? ", NOT validated" : rel == s.Version ? ", validated" : $" = {rel}, validated") +
-                                  $" — {s.Path} ({s.HowFound})");
+                                  $" — {(s.Path is { } path ? SpackInstalls.FoldPadding(path) : null)} ({s.HowFound})");   // --json keeps the full path
             foreach (var c in s.Capabilities)
                 Console.WriteLine($"    {"",-10} {c.Capability}: {(c.Available ? "yes" : "no")}" +
                                   $"{(c.FromCache ? " (cached for this binary)" : "")} — {c.Detail}" +

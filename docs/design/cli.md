@@ -61,7 +61,7 @@ Thirteen verbs run no analysis, so none of §3-§6 applies to them and §7's exi
 | `new cell` | a workspace + a name | `CellCreate.Create` | a cell folder and one empty-but-valid file per `--views` |
 | `import part` | a component file or folder | `ComponentRead` + `ComponentImport.Import` | a cell folder holding the land patterns and the symbol |
 | `check` | a workspace, a cell folder, or one document | the validators that already exist | **nothing** — §10 |
-| `explain` | the same, plus `--expr` / `--analysis` / `--ref` / `--cells` / `--layers` / `--extents` / `--footprints` | reports what resolution DECIDED | **nothing** — §10 |
+| `explain` | the same, plus `--expr` / `--analysis` / `--ref` / `--cells` / `--layers` / `--extents` / `--footprints`, and `--setup` for a `.c3d` | reports what resolution DECIDED | **nothing** — §10 |
 | `render` | the same three view documents, a cell folder, a workspace + `--cell`, a `.cdd`, a 3D `.cem`, or a `.c3d` (and its field plots) | draws it with the renderer the GUI draws with | one `.svg` / `.pdf` / `.png` — §13, §13.7 for a data display, §13.8 for a 3D setup, §13.8.1 for a field plot |
 | `read` | a result file, or one of circuitRF's own documents | loads it back through the readers the GUI reads through | **nothing** — §11.4 |
 | `netlist` | a `.csch`, a cell folder, or a workspace + `--cell` | the extraction the GUI's own Simulate performs | one `.cnl`, or the text on stdout — §14 |
@@ -764,8 +764,18 @@ without paying for a run.
 ```
 circuitrf check   <path> [--recursive] [--severity warning|error]
 circuitrf explain <path> [--expr "<expression>"] [--set var=expr]
-                         [--analysis [<name>]] [--ref <relative-ref>]
+                         [--analysis [<name>]] [--ref <relative-ref>] [--setup <name>]
 ```
+
+**`--setup <name>` chooses which of a `.c3d`'s embedded setups the 3D picture is explained through** (designer
+feedback round 11), spelled as `em` and `render` spell it — a view embedding several cannot choose one itself, and
+said so by naming this flag, which `explain` did not take until then. An unknown name is refused listing the real
+ones; on a `.cem` (its own setup) or any other kind it is a refusal. `render` takes it too, for the same reason.
+`--analysis <name>` on a `.c3d` stays what it was: its THERMAL setups' size walk. The air-box line now gives every
+face's distance from the content and where it came from — `setup: 2 mm`, `setup: 1.2 mm, 10 % of the content's
+extent`, `floor`, or `default: 18.74 mm, λ/8 at 2 GHz, the sweep's lowest frequency` — where a face that stated
+only its boundary used to read `setup` and hide that its padding was the default's.
+Gate: `tests/Ui.Tests/Cli/ExplainSetupCliTests.cs`.
 
 ### 10.1 Neither runs an analysis, and neither writes
 
@@ -1887,6 +1897,7 @@ so no solver, no mesher and no window is involved (`src/Cli/RenderEm3d.cs`, `Em3
 circuitrf render amp.cem -o top.svg  --section z=35um       # the XY plane at that height
 circuitrf render amp.cem -o side.svg --section xz@y=1.2mm   # or yz@x=…, vertical cuts
 circuitrf render amp.cem -o iso.svg  --iso                  # silhouettes and sharp edges
+circuitrf render x.c3d -o iso.svg --iso --setup Palace      # a .c3d through one of its embedded setups
 ```
 
 **Exactly one view, refused together rather than ordered**, and no view at all is a refusal listing
@@ -2384,9 +2395,11 @@ exists, the way to change it is to WRITE it, because the format is the contract.
 | Option | Meaning |
 |---|---|
 | `--rail <name>` | Which rail. **Omitting it runs them all**, in `RailOrder`'s dependency order — `hb`/`lp`'s own shape for a wrapped sweep, and for the same reason: a downstream rail solved alone starts its source from a nominal instead of from the upstream answer. |
-| `--fast` (default) / `--accurate` | §2.9's two readings of the geometry. Fast is the default, as in the window. |
+| `--fast` (default) / `--accurate` | §2.9's two readings of the geometry. Fast is the default, as in the window. A rail Fast refuses because it reaches a load only through spreading copper is **meshed in the same run** and its report opens with a `model:` line saying so — the window does the same and shows a Model card. |
+| `--no-escalate` | Keeps that refusal instead: the rail is not solved, and the sentence names the copper and both remedies. |
 | `--source REFDES.PIN=<model>` | Repeatable. The model is `3.7V,50mOhm,10nH` (any subset, in any order, each field identified by its UNIT or by a `v=`/`r=`/`l=` key) or a Touchstone file. A row for the same anchor is **replaced**, not added beside — two sources on one rail are two branches in the same mesh. |
 | `--load REFDES.PIN[=<current>]` | Repeatable. **No current is accepted** — see §17.3. |
+| `--target-transient dV=<v>\|ripple=<pct>%[,dI=<a>][,tr=<s>]` | §2.2's transient target, which the model always carried and no flag could state (designer feedback round 11). `ripple` is taken of the first source's voltage and `dI` defaults to the loads' peak (else DC) current — the window's "derive Z from the load" defaults — through the same `RailTransientSpec.FromRipple`; `tr` is optional and sets the band top to 0.35/tr. The derived target is said (`rail.target.derived`, stderr and `--json`) WITH its arithmetic, because V/I — the load's DC resistance — is the commonest slip and is 20× too large at a 5 % ripple. Stating it with `--target-z` is a refusal: both are the one frequency-domain target. |
 | `--target-drop`, `--target-z`, `--mask [PORT=]<file>` | §2.2's target forms. A mask is per observation port, so the un-anchored spelling states which ports it means; a mask that lands on no port is a refusal, because a mask nobody applied reads on the report exactly like one that was honoured. |
 | `--aggressor NAME=<freq>[xN]` | Repeatable. `x` and `×` both spell the harmonic count. |
 | `--reference <layer>`, `--extent as-imported\|filled\|infinite` | Brief 1 `R-rail1-6`. |

@@ -12,6 +12,7 @@ namespace CircuitRF.Ui.Tests;
 /// adds jogs (rubber-band) so T-junction, corner, and cross connections all survive the drag, and
 /// one Undo restores everything.
 /// </summary>
+[Trait("Suite", "SchematicConnectivity")]
 public class SegmentDragKeepsConnectionTests
 {
     private static EditableWire MakeWire(params (double X, double Y)[] pts)

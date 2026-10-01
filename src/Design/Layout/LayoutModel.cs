@@ -112,6 +112,16 @@ public abstract class LayoutShape
     /// <summary>The pad/pin name within <see cref="Component"/>, when declared (<c>%TO.P</c>). Same
     /// rules as <see cref="Component"/>: carried, unread, additive, nullable.</summary>
     public string? Pin { get; set; }
+
+    /// <summary>
+    /// Non-null on copper that Update Layout from Schematic drew and owns — the ground pour and the ground
+    /// vias at ground-symbol pins (designer feedback round 11, <c>GroundArtwork</c>). Such a shape is
+    /// REDRAWN by every Update Layout and Draw Ground Pour, so it follows the parts the designer moves;
+    /// a shape without it is the designer's and is never touched. Reshaping a generated shape, pasting or
+    /// duplicating one clears it: what the designer edited is theirs from then on. Additive and nullable,
+    /// so every existing <c>.clay</c> re-serializes byte-for-byte.
+    /// </summary>
+    public string? Generated { get; set; }
 }
 
 /// <summary>Axis-aligned rectangle. Normalized so X1&lt;X2, Y1&lt;Y2.</summary>
@@ -1097,6 +1107,14 @@ public sealed class LayoutView
     /// layout context. Covers every PCell instance this layout references, regardless of whether it
     /// arrived via schematic generation, a palette drop, or a layout-authored copy-on-write edit.</summary>
     public Dictionary<string, PCellSnapshot> PCellSnapshots { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Designer feedback round 11: every ground via Update Layout from Schematic has ever placed in this view, by
+    /// its <c>GroundArtwork</c> key (instance and pin). It is what tells a via the designer DELETED from one never
+    /// placed: a key recorded here whose via is gone is not put back. Changed only inside the run's own undoable
+    /// command, so an Undo of the run also forgets what it placed.
+    /// </summary>
+    public HashSet<string> GroundViaKeys { get; } = new(StringComparer.Ordinal);
 
     /// <summary>
     /// L5b (docs/design/layout-view.md §9A.1): deliberate, persisted exceptions to a design rule at a

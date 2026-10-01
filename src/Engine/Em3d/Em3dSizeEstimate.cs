@@ -13,6 +13,13 @@ public sealed record Em3dRegionEstimate(string Solid, double VolumeM3, double El
 
 /// <summary>A Palace mesh size, ESTIMATED, and the peak memory it implies (orders 1 and 2 each have a
 /// measured per-unknown figure; the record keeps the field nullable for an order that has none).</summary>
+/// <summary>
+/// Designer feedback round 11 — the mesh script's refinement, as the estimate prices it: the element at conductors and
+/// sheets, the element at each port sheet, the growth away from them, and the largest element they grow to. The script's
+/// own figures (GmshGeoWriter), passed in so the two cannot disagree.
+/// </summary>
+public sealed record Em3dRefinementSizing(double ConductorEdgeM, Func<Em3dPort, double> PortEdgeM, double Grading, double MaxM);
+
 public sealed record Em3dPalaceEstimate(
     long Tetrahedra, long Unknowns, int Order, long? MemoryBytes, IReadOnlyList<Em3dRegionEstimate> Regions);
 
@@ -60,8 +67,18 @@ public static class Em3dSizeEstimate
     public const double OpenEmsBytesPerCell = 182e6 / 1_558_730.0;
 
     /// <summary>
+    /// Designer feedback round 11 — how many tetrahedra Gmsh puts in a volume sized uniformly at an edge h, as a share of
+    /// the volume over one REGULAR tetrahedron of edge h: measured on the shipped connector launch with its air box at the
+    /// default padding, with every refined shell priced as below and taken off, 0.60 (88,700 mm³ of air at 1.67 mm, sweep
+    /// from 2 GHz; Gmsh 4.15.2 made 190,367) and 0.55 (553,500 mm³, sweep from 1 GHz; 648,947). The larger is kept, so
+    /// an estimate errs high. Without it, a background-dominated estimate read 1.6× Gmsh's count.
+    /// </summary>
+    public const double GmshVolumeFill = 0.6;
+
+    /// <summary>
     /// The initial Palace mesh, estimated: every MESHED region's volume divided by the volume of one
-    /// regular tetrahedron at that region's initial element edge, summed. Conductors are holes in a
+    /// regular tetrahedron at that region's initial element edge, times <see cref="GmshVolumeFill"/>, summed,
+    /// plus the refined shells round conductors, sheets and ports when <c>refinement</c> is given. Conductors are holes in a
     /// Palace mesh (em-3d.md §6.1), so only dielectric and air solids count. Each solid is counted as
     /// drawn: where a later solid overlaps an earlier one the overlap is counted twice, so the
     /// estimate errs high. Adaptive refinement grows the real count, and the run's first line reports
@@ -76,8 +93,12 @@ public static class Em3dSizeEstimate
     /// leaving it out halved the count. Null leaves it out.</param>
     /// <param name="refinementPasses">The most adaptive refinement passes the run allows; any at all
     /// multiplies the memory by <see cref="PalaceRefinementMemoryFactor"/>.</param>
+    /// <param name="refinement">Designer feedback round 11 — the mesh script's refinement at conductors, sheets and ports
+    /// (<see cref="Em3dRefinementSizing"/>), priced as a shell over each surface. Null leaves it out, as every estimate did
+    /// before: the shipped connector launch then read 2,037 tetrahedra against Gmsh's 93,371.</param>
     public static Em3dPalaceEstimate Palace(Em3dProblem problem, Func<Em3dSolid, double> initialEdgeM, int order,
-                                            double? backgroundEdgeM = null, int refinementPasses = 0)
+                                            double? backgroundEdgeM = null, int refinementPasses = 0,
+                                            Em3dRefinementSizing? refinement = null)
     {
         ArgumentNullException.ThrowIfNull(problem);
         ArgumentNullException.ThrowIfNull(initialEdgeM);
@@ -90,7 +111,7 @@ public static class Em3dSizeEstimate
         {
             double h = initialEdgeM(s);
             double v = Volume(s.Primitive);
-            double n = h > 0 ? v / (h * h * h / (6 * Math.Sqrt(2))) : 0;
+            double n = h > 0 ? GmshVolumeFill * v / RegularTetVolume(h) : 0;
             regions.Add(new Em3dRegionEstimate(s.Name, v, h, n));
             tets += n;
         }
@@ -102,9 +123,33 @@ public static class Em3dSizeEstimate
             var (lo, hi) = (problem.Boundary.Min, problem.Boundary.Max);
             double box = (hi.X - lo.X) * (hi.Y - lo.Y) * (hi.Z - lo.Z);
             double v = Math.Max(0, box - problem.Solids.Sum(s => Volume(s.Primitive)));
-            double n = v / (hb * hb * hb / (6 * Math.Sqrt(2)));
+            double n = GmshVolumeFill * v / RegularTetVolume(hb);
             if (v > 0) regions.Add(new Em3dRegionEstimate("background", v, hb, n));
             tets += n;
+        }
+        if (refinement is { } r && r.Grading > 1 && r.MaxM > 0)
+        {
+            // Each refined surface's shell REPLACES the coarse elements it overlaps: the shells' volume is taken off the count
+            // at the LARGEST element (the smallest deduction, so the estimate errs high), never below zero.
+            double shells = 0, overlap = 0;
+            void Shell(string name, double areaM2, double nearM)
+            {
+                if (!(areaM2 > 0) || !(nearM > 0)) return;
+                double near = Math.Min(nearM, r.MaxM);
+                double n = ShellTetrahedra(areaM2, near, r.Grading, r.MaxM);
+                double depth = near + (r.MaxM - near) / (r.Grading - 1);
+                regions.Add(new Em3dRegionEstimate(name, areaM2 * depth, near, n));
+                shells += n;
+                overlap += GmshVolumeFill * areaM2 * depth / RegularTetVolume(r.MaxM);
+            }
+            foreach (var s in problem.Solids.Where(s => s.Role == Em3dRole.Conductor))
+                Shell($"{s.Name} (surface)", SurfaceArea(s.Primitive), r.ConductorEdgeM);
+            foreach (var sh in problem.Sheets)
+                Shell($"{sh.Name} (sheet, both sides)",
+                      2 * (Math.Abs(Area(sh.Outline)) - sh.Holes.Sum(h => Math.Abs(Area(h)))), r.ConductorEdgeM);
+            foreach (var p in problem.Ports)
+                Shell($"port {p.Name} (both sides)", 2 * PortArea(p), r.PortEdgeM(p));
+            tets = Math.Max(tets - overlap, 0) + shells;
         }
         long unknowns = (long)Math.Round(tets * (order == 1 ? UnknownsPerTetOrder1 : UnknownsPerTetOrder2));
         return new Em3dPalaceEstimate((long)Math.Round(tets), unknowns, order,
@@ -143,6 +188,43 @@ public static class Em3dSizeEstimate
         Em3dTruncatedSphere t => Cap(t),
         _                     => MeshVolume(Em3dTessellation.Of(new Em3dSolid("", "", Em3dRole.Conductor, p, 0))),
     };
+
+    /// <summary>
+    /// The tetrahedra of a refined shell over <paramref name="areaM2"/> of surface, one side, as the mesh script grades it (a
+    /// Gmsh Threshold field): <paramref name="nearM"/> out to that distance, then growing linearly by
+    /// <paramref name="grading"/> − 1 per unit distance until <paramref name="farM"/>. Integrating
+    /// A·dd / (h(d)³/6√2) over the shell gives 6√2·A·[1/n² + (1/n² − 1/H²) / (2(g − 1))]: the term at the surface
+    /// dominates, so the count goes as the area over the square of the edge element. Curvature (a convex surface's shell
+    /// growing outward) is left out.
+    /// </summary>
+    public static double ShellTetrahedra(double areaM2, double nearM, double grading, double farM)
+    {
+        double n2 = 1 / (nearM * nearM), h2 = 1 / (farM * farM);
+        return 6 * Math.Sqrt(2) * areaM2 * (n2 + Math.Max(n2 - h2, 0) / (2 * (grading - 1)));
+    }
+
+    private static double RegularTetVolume(double edgeM) => edgeM * edgeM * edgeM / (6 * Math.Sqrt(2));
+
+    /// <summary>A primitive's surface area, m², from the tessellation a backend is handed.</summary>
+    public static double SurfaceArea(Em3dPrimitive p)
+    {
+        var mesh = Em3dTessellation.Of(new Em3dSolid("", "", Em3dRole.Conductor, p, 0));
+        double area = 0;
+        foreach (var t in mesh.Triangles)
+        {
+            var a = mesh.Vertices[t.A]; var b = mesh.Vertices[t.B]; var c = mesh.Vertices[t.C];
+            double ux = b.X - a.X, uy = b.Y - a.Y, uz = b.Z - a.Z, vx = c.X - a.X, vy = c.Y - a.Y, vz = c.Z - a.Z;
+            double cx = uy * vz - uz * vy, cy = uz * vx - ux * vz, cz = ux * vy - uy * vx;
+            area += 0.5 * Math.Sqrt(cx * cx + cy * cy + cz * cz);
+        }
+        return area;
+    }
+
+    private static double PortArea(Em3dPort p)
+    {
+        var d = new[] { p.Max.X - p.Min.X, p.Max.Y - p.Min.Y, p.Max.Z - p.Min.Z }.Where(v => v > 0).OrderDescending().ToArray();
+        return d.Length >= 2 ? d[0] * d[1] : 0;
+    }
 
     /// <summary>The volume a closed, consistently wound mesh encloses.</summary>
     public static double MeshVolume(Em3dTriangleMesh mesh)

@@ -148,6 +148,12 @@ footprints only in a workspace whose technology is a board.</p>
 finishes the wire in progress and returns you to Select, <kbd>Esc</kbd> cancels it. **Select** is
 <kbd>S</kbd>, and <kbd>Esc</kbd> from any tool comes back to it.
 
+Clicking a wire selects one straight run of it, not the whole wire. Where a pin, another wire, a
+junction dot or a net label joins that run partway along, the click selects only the stretch between
+the junctions on either side of it. <kbd>Delete</kbd> then removes that stretch, and the rest of the
+wire keeps every connection it had. To disconnect one branch of a supply line, click the stretch
+between the two parts and delete it.
+
 Double-click does three different things depending on what is under the cursor, and the distinction
 is worth learning because it is the fastest edit in the application:
 
@@ -156,6 +162,12 @@ is worth learning because it is the fastest edit in the application:
 | A component's **value label** (`C = 1 pF`) | An **inline edit box** over the value itself. Type `1.2 nH`, `50 Ω`, `2 GHz` and press <kbd>Enter</kbd>. |
 | A component's **body** | The full **parameter editor** for that instance — every parameter, not just the displayed ones. |
 | A **wire** | A **net label** on that wire, so you can name the net and refer to it in a measurement. |
+
+Hold <kbd>Alt</kbd> (<kbd>Option</kbd> on macOS) while double-clicking a wire to **select the whole run
+of wiring** instead: every wire joined to the clicked one, in every direction — round corners, through
+junctions, and through pins where several wires meet — until the wiring ends at the components. A part
+ends the run, because the wiring on its other side is a different node; a net label does not carry it to
+another label of the same name. <kbd>Delete</kbd> then removes exactly that run.
 
 Arrow keys nudge the selection by one connection-grid step, or five with <kbd>Shift</kbd> held.
 <kbd>F5</kbd> begins **Move Labels**, for pushing a crowded label block clear of the artwork without

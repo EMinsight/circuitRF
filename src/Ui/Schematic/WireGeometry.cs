@@ -92,11 +92,21 @@ public static class WireGeometry
     /// <para>Both endpoints moving by the same delta is a rigid translation, and is done as one.
     /// Anything this cannot express — a zero-length or non-orthogonal leg — falls back to
     /// <see cref="OrthogonalRoute"/>, i.e. to what shipped before.</para>
+    ///
+    /// <para><b>A leg something stationary is attached to never moves (bad_drag, 2026-10-01).</b>
+    /// Handing the across-delta to the neighbour vertex moves the WHOLE end leg, so a part whose pin
+    /// tapped that leg mid-span was left behind: C1 dragged down carried the row R1 hung from with it.
+    /// <paramref name="tapped"/> answers "does anything that is not moving join the stretch from
+    /// <c>a</c> (exclusive) to <c>b</c> (inclusive)?" — a stationary pin, another wire's vertex, a
+    /// junction dot. When it does, the end leg is kept where it is and the moved end grows an elbow
+    /// (or, where the move also shortens the leg past a tap, a two-bend detour back to the original
+    /// end), so every tap stays on copper. Null keeps the geometry-only rule.</para>
     /// </summary>
     public static IReadOnlyList<(double X, double Y)> FollowEndpoints(
         IReadOnlyList<(double X, double Y)> orig,
         bool startMoved, double nsx, double nsy,
-        bool endMoved,   double nex, double ney)
+        bool endMoved,   double nex, double ney,
+        Func<(double X, double Y), (double X, double Y), bool>? tapped = null)
     {
         const double eps = 1e-6;
         if (orig.Count < 2 || (!startMoved && !endMoved)) return orig;
@@ -108,13 +118,13 @@ public static class WireGeometry
             if (Math.Abs(dsx - dex) < eps && Math.Abs(dsy - dey) < eps)
                 return orig.Select(p => (p.X + dsx, p.Y + dsy)).ToList();
 
-            var once = RubberBandEnd(orig, atStart: true, nsx, nsy);
-            return RubberBandEnd(once, atStart: false, nex, ney);
+            var once = RubberBandEnd(orig, atStart: true, nsx, nsy, tapped);
+            return RubberBandEnd(once, atStart: false, nex, ney, tapped);
         }
 
         return startMoved
-            ? RubberBandEnd(orig, atStart: true,  nsx, nsy)
-            : RubberBandEnd(orig, atStart: false, nex, ney);
+            ? RubberBandEnd(orig, atStart: true,  nsx, nsy, tapped)
+            : RubberBandEnd(orig, atStart: false, nex, ney, tapped);
     }
 
     /// <summary>
@@ -122,8 +132,10 @@ public static class WireGeometry
     /// See <see cref="FollowEndpoints"/> for the rule this implements.
     /// </summary>
     private static IReadOnlyList<(double X, double Y)> RubberBandEnd(
-        IReadOnlyList<(double X, double Y)> pts, bool atStart, double nx, double ny)
+        IReadOnlyList<(double X, double Y)> pts, bool atStart, double nx, double ny,
+        Func<(double X, double Y), (double X, double Y), bool>? tapped)
     {
+        bool Tapped((double X, double Y) a, (double X, double Y) b) => tapped is not null && tapped(a, b);
         const double eps = 1e-6;
         if (pts.Count < 2) return pts;
 
@@ -143,9 +155,12 @@ public static class WireGeometry
         var res = pts.ToList();
         res[iEnd] = (nx, ny);
 
-        // The delta along the moved end's own leg just changes that leg's length.
+        // The delta along the moved end's own leg just changes that leg's length — unless it
+        // SHORTENS the leg past a tap. Then the original wire is kept: the moved pin now sits on its
+        // body (a T), and every tap between the old end and the new one is still on copper.
         double across = legH ? dy : dx;
-        if (Math.Abs(across) < eps) return res;
+        if (Math.Abs(across) < eps)
+            return Within((nx, ny), p0, p1) && Tapped((nx, ny), p0) ? pts : res;
 
         // Across the leg: hand it to the neighbour, but only when the neighbour is an INTERIOR
         // vertex (the far endpoint is held) AND the leg past it is perpendicular, so taking the
@@ -157,9 +172,13 @@ public static class WireGeometry
             bool nextPerp = legH
                 ? Math.Abs(p2.X - p1.X) < eps            // H leg → neighbour leg must be V
                 : Math.Abs(p2.Y - p1.Y) < eps;           // V leg → neighbour leg must be H
-            if (nextPerp)
+            var moved = legH ? (p1.X, p1.Y + dy) : (p1.X + dx, p1.Y);
+            // Shifting the neighbour moves the whole end leg and trims the next one where the shift
+            // runs back along it; either loses whatever is attached there.
+            bool losesTap = Tapped(p0, p1) || (Within(moved, p1, p2) && Tapped(moved, p1));
+            if (nextPerp && !losesTap)
             {
-                res[iNext] = legH ? (p1.X, p1.Y + dy) : (p1.X + dx, p1.Y);
+                res[iNext] = moved;
                 return res;
             }
         }
@@ -167,8 +186,28 @@ public static class WireGeometry
         // Neighbour cannot absorb it: elbow at the moved end, leaving the original leg on its row
         // (or column) — and with it every tap that leg carries.
         var elbow = legH ? (nx, p0.Y) : (p0.X, ny);
+        if (Within(elbow, p0, p1) && Tapped(elbow, p0))
+        {
+            // The along-part of the move would trim the leg past a tap: route back to the original
+            // end instead, so the leg keeps its full length.
+            var corner = legH ? (p0.X, ny) : (nx, p0.Y);
+            if (atStart) { res.Insert(1, corner); res.Insert(2, p0); }
+            else         { res.Insert(res.Count - 1, p0); res.Insert(res.Count - 1, corner); }
+            return res;
+        }
         res.Insert(atStart ? 1 : res.Count - 1, elbow);
         return res;
+    }
+
+    /// <summary>Whether <paramref name="p"/> lies on the closed segment <paramref name="a"/>–<paramref name="b"/>
+    /// of an orthogonal leg, other than at <paramref name="a"/> — i.e. moving <c>a</c> to <c>p</c> shortens it.</summary>
+    private static bool Within((double X, double Y) p, (double X, double Y) a, (double X, double Y) b)
+    {
+        const double eps = 1e-6;
+        if (Math.Abs(p.X - a.X) < eps && Math.Abs(p.Y - a.Y) < eps) return false;
+        return p.X >= Math.Min(a.X, b.X) - eps && p.X <= Math.Max(a.X, b.X) + eps
+            && p.Y >= Math.Min(a.Y, b.Y) - eps && p.Y <= Math.Max(a.Y, b.Y) + eps
+            && (Math.Abs(a.X - b.X) < eps ? Math.Abs(p.X - a.X) < eps : Math.Abs(p.Y - a.Y) < eps);
     }
 
     /// <summary>The pre-existing bare-L fallback, for a wire whose end leg this rule cannot read.</summary>
@@ -177,6 +216,52 @@ public static class WireGeometry
         => atStart
             ? OrthogonalRoute(nx, ny, pts[^1].X, pts[^1].Y)
             : OrthogonalRoute(pts[0].X, pts[0].Y, nx, ny);
+
+    /// <summary>
+    /// The stretch of one segment between the junctions on either side of (<paramref name="px"/>,
+    /// <paramref name="py"/>) — <see cref="SchematicEditModel.JunctionsOnSegment"/>'s points, or the
+    /// segment's own vertex where there is none on that side. Null when nothing joins the segment between
+    /// its vertices: the span IS the segment, and the caller keeps its whole-segment behaviour.
+    /// </summary>
+    public static ((double X, double Y) A, (double X, double Y) B)? SpanAround(
+        SchematicEditModel model, EditableWire wire, int segmentIndex, double px, double py)
+    {
+        var junctions = model.JunctionsOnSegment(wire, segmentIndex);
+        if (junctions.Count == 0) return null;
+        var a = wire.Points[segmentIndex];
+        var b = wire.Points[segmentIndex + 1];
+        double D((double X, double Y) p) => (p.X - a.X) * (p.X - a.X) + (p.Y - a.Y) * (p.Y - a.Y);
+        double dx = b.X - a.X, dy = b.Y - a.Y, lenSq = dx * dx + dy * dy;
+        double t = lenSq < 1e-12 ? 0 : Math.Clamp(((px - a.X) * dx + (py - a.Y) * dy) / lenSq, 0, 1);
+        var click = (X: a.X + t * dx, Y: a.Y + t * dy);
+        double dc = D(click);
+        var from = a;
+        var to   = b;
+        foreach (var j in junctions)
+        {
+            if (D(j) <= dc) from = j;
+            else { to = j; break; }
+        }
+        return (from, to);
+    }
+
+    /// <summary>
+    /// <paramref name="span"/> when it still lies on that segment of <paramref name="wire"/>, else null —
+    /// a span remembered at a click goes stale when the geometry moves under it, and the whole segment is
+    /// then what is selected (and so what would be deleted), never a stretch of nothing.
+    /// </summary>
+    public static ((double X, double Y) A, (double X, double Y) B)? ValidSpan(
+        EditableWire wire, int segmentIndex, ((double X, double Y) A, (double X, double Y) B)? span)
+    {
+        if (span is not { } s || segmentIndex < 0 || segmentIndex >= wire.Points.Count - 1) return null;
+        var (ax, ay) = wire.Points[segmentIndex];
+        var (bx, by) = wire.Points[segmentIndex + 1];
+        const double tol = SchematicEditModel.ConnectTolerance;
+        return SchematicGeometry.PointOnSegment(s.A.X, s.A.Y, ax, ay, bx, by, tol) &&
+               SchematicGeometry.PointOnSegment(s.B.X, s.B.Y, ax, ay, bx, by, tol) &&
+               !SchematicGeometry.CoincidentPoints(s.A.X, s.A.Y, s.B.X, s.B.Y, tol)
+            ? s : null;
+    }
 
     /// <summary>
     /// Returns true if (px,py) lies on any point or segment of the given wire,

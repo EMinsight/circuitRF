@@ -260,20 +260,20 @@ public static class Em3dRunService
         {
             var p = readiness.Single(r => r.Tool == SolverTool.Palace).Installation!;
             var g = readiness.Single(r => r.Tool == SolverTool.Gmsh).Installation!;
-            log.Notes.Add($"Solver: Palace {p.DescribeVersion()} at {p.Where}; mesher: Gmsh {g.DescribeVersion()} at {g.Path}.");
+            log.Notes.Add($"Solver: Palace {p.DescribeVersion()} at {SpackInstalls.FoldPadding(p.Where)}; mesher: Gmsh {g.DescribeVersion()} at {g.Path}.");
             palaceSettings = PalaceSettings.Resolve(setup.Palace);
             if (p.Distribution is not null)
             {
                 if (SolverDiscovery.For(SolverTool.Palace).Subsystem is not { } wsl)
                     palaceStop = new(EmRunStatus.Refused, EmDiagnostics.Forwarded("palace-subsystem",
                         $"Palace was found in the Linux subsystem distribution '{p.Distribution}', which this machine cannot reach."));
-                else if (Wsl.WslPalace.Runner(wsl, p, out string? subsystemRefusal) is { } runner)
+                else if (Wsl.WslPalace.Runner(wsl, p, PalaceConfigWriter.FieldDirectories(palaceSettings), out string? subsystemRefusal) is { } runner)
                 {
                     palaceRunner = runner;
                     palaceMemory = Wsl.WslPalace.MemoryScope(new Wsl.WslSession(wsl, p.Distribution));
                     log.Notes.Add($"Palace runs in the Linux subsystem distribution '{p.Distribution}', staged in its own Linux " +
                                   $"filesystem; the mesh, configuration and results stay in the run directory here. MPI: " +
-                                  $"{runner.MpiLauncher ?? "none"} ({(runner.MpiLauncher is null ? "Palace runs on one process" : "inside the distribution")}).");
+                                  $"{(runner.MpiLauncher is { } mpi ? SpackInstalls.FoldPadding(mpi) : "none")} ({(runner.MpiLauncher is null ? "Palace runs on one process" : "inside the distribution")}).");
                 }
                 else palaceStop = new(EmRunStatus.Refused, EmDiagnostics.Forwarded("palace-subsystem", subsystemRefusal));
             }
@@ -1437,9 +1437,10 @@ public static class Em3dRunService
         // air, else free space.
         string fill = p.Boundary.Material ?? GmshGeoWriter.BackgroundMaterial(p.Solids, p.Materials);
         var background = byName.TryGetValue(fill, out var bg) ? bg : new Em3dMaterial("(free space)", 1, null, 0, 1, 0);
-        return Em3dSizeEstimate.Palace(
-            p, s => GmshGeoWriter.MaxElementSizeM(byName[s.Material], GmshGeoWriter.SizingFrequencyHz(p), settings), settings.ElementOrder,
-            GmshGeoWriter.MaxElementSizeM(background, GmshGeoWriter.SizingFrequencyHz(p), settings), settings.AdaptiveMaxIterations);
+        double SolidSize(Em3dSolid s) => GmshGeoWriter.MaxElementSizeM(byName[s.Material], GmshGeoWriter.SizingFrequencyHz(p), settings);
+        double backgroundSize = GmshGeoWriter.MaxElementSizeM(background, GmshGeoWriter.SizingFrequencyHz(p), settings);
+        return Em3dSizeEstimate.Palace(p, SolidSize, settings.ElementOrder, backgroundSize, settings.AdaptiveMaxIterations,
+                                       GmshGeoWriter.RefinementSizing(p, SolidSize, backgroundSize, settings));
     }
 
     /// <summary>The fit check for a setup as the panel is about to run it: generates the problem and
@@ -1568,7 +1569,9 @@ public static class Em3dRunService
             parts.Add(s.FinalElements is { } b && b != a ? $"{a:N0} → {b:N0} tetrahedra" : $"{a:N0} tetrahedra");
         if (s.Unknowns is { } u) parts.Add($"{u:N0} unknowns");
         if (s.RefinementPasses is { } r) parts.Add($"{r} refinement pass{(r == 1 ? "" : "es")}");
-        if (s.SweepSamples is { } n) parts.Add($"{n} frequency sample{(n == 1 ? "" : "s")}");
+        // Designer feedback round 11 — Palace's adaptive sweep counts the frequencies it SOLVED to build its model, which is
+        // not the requested point count (6 beside a 5-point sweep read as a miscount), so the clause says what they are.
+        if (s.SweepSamples is { } n) parts.Add($"adaptive sweep built from {n} full solve{(n == 1 ? "" : "s")}");
         parts.Add($"preset {quality}");
         // R-em3d29-1d — what the saved fields cost on disk, so a user saving twenty frequencies sees it.
         if (fieldBytes is > 0 and var f) parts.Add($"field files {MachineMemory.Format(f)}");
@@ -1580,7 +1583,7 @@ public static class Em3dRunService
     /// when it wrote none.</summary>
     public static long? FieldFilesBytes(string post)
     {
-        string dir = Path.Combine(post, "paraview");
+        string dir = Path.Combine(post, PalaceConfigWriter.FieldDirectory);
         try
         {
             if (!Directory.Exists(dir)) return null;

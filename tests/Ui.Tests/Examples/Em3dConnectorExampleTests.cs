@@ -84,6 +84,22 @@ public sealed class Em3dConnectorExampleTests(ITestOutputHelper output) : IDispo
         }
     }
 
+    /// <summary>
+    /// Designer feedback round 11 — the estimate made BEFORE meshing tracks the mesh Gmsh then makes. Gmsh 4.15.2 made
+    /// 93,371 tetrahedra from this setup's script here and 93,086 on a Windows run; the volumes alone said 2,037, because
+    /// on a connector the refinement round the metal IS the mesh. Pinned to that count, so no mesher runs here.
+    /// </summary>
+    [KernelFact]
+    public void ThePalaceEstimate_BeforeMeshing_TracksGmshsCount()
+    {
+        var (doc, path, cws) = Launch();
+        var (setup, g) = Assemble(doc, path, cws, "Palace");
+        Assert.True(g.Ok, g.Refusal);
+        var estimate = Em3dRunService.EstimatePalace(g.Problem!, PalaceSettings.Resolve(setup.Palace))!;
+        output.WriteLine($"estimate {estimate.Tetrahedra:N0} tetrahedra against Gmsh's 93,371");
+        Assert.InRange(estimate.Tetrahedra / 93_371.0, 0.8, 1.5);
+    }
+
     // ── 3. the STEP file is circuitRF's own ─────────────────────────────────────────────────────
 
     /// <summary>R-em3d70-1c — Flange re-exported matches the shipped file byte for byte but for FILE_NAME's time stamp,

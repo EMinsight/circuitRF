@@ -819,6 +819,9 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "rail.source.field-unknown",
         "rail.source.field-untagged",
         "rail.source.malformed",
+        // Round 11: --target-transient — a malformed spec, and the derived target said with its arithmetic.
+        "rail.target-transient.malformed",
+        "rail.target.derived",
         "rail.technology.unresolved",
         "rail.technology.warning",
         "rail.value.malformed",

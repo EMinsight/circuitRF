@@ -30,6 +30,7 @@ namespace CircuitRF.Ui.Tests;
 ///   above two ports were left behind, because the re-route asked for the two-port default set.</item>
 /// </list>
 /// </summary>
+[Trait("Suite", "SchematicConnectivity")]
 public class RotateMirrorConnectivityTests
 {
     /// <summary>

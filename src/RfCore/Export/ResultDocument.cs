@@ -1933,7 +1933,7 @@ namespace RfCore.Export
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Terminal,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? Point);
 
-    /// <summary>The colour range drawn: its ends (in dB when <paramref name="Db"/>), the unit, and the percentile the top is at.</summary>
+    /// <summary>The colour range drawn: its ends, the unit they are stated in (dBµV/m, dBµA/m or "dB re 1 …" when <paramref name="Db"/> — designer feedback round 11), and the percentile the top is at.</summary>
     public sealed record RenderFieldRangeJson(double Lo, double Hi, string Unit, bool Db, double Percentile);
 
     /// <summary>

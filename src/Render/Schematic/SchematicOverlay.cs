@@ -24,6 +24,12 @@ public sealed record class SchematicOverlay
     /// </summary>
     public IReadOnlySet<(string WireId, int SegmentIndex)> SelectedWireSegments { get; init; } = EmptySegments;
 
+    /// <summary>For a selected segment that something joins between its vertices, the stretch actually
+    /// selected — between the junctions either side of the click. A selected segment absent here is
+    /// highlighted whole.</summary>
+    public IReadOnlyDictionary<(string WireId, int SegmentIndex), ((double X, double Y) A, (double X, double Y) B)> SelectedWireSpans
+    { get; init; } = new Dictionary<(string WireId, int SegmentIndex), ((double X, double Y) A, (double X, double Y) B)>();
+
     internal static readonly HashSet<(string WireId, int SegmentIndex)> EmptySegments = new();
 
     // ── Rubber-band select ────────────────────────────────────────────────────

@@ -63,14 +63,13 @@ public static class SchematicToLayoutGenerator
         Bbox AddedRegion = default,
         int DeletedCount = 0,
         bool OrientationLinksRecorded = false,
-        IReadOnlyList<string>? UndrawnGroundReferences = null)
+        GroundArtworkPlan? Ground = null)
     {
         public bool NothingChanged => Command is null && NoLayoutWarnings.Count == 0;
 
-        /// <summary>The ground conductors the lines placed on this run return through that carry no artwork yet —
-        /// each offered a Draw Ground Pour (<see cref="GroundPourPlanner"/>) by the caller. Never a
-        /// <see cref="Lines"/> entry, since the caller posts it with that action.</summary>
-        public IReadOnlyList<string> UndrawnGrounds => UndrawnGroundReferences ?? [];
+        /// <summary>The ground vias and pours this run draws, moves or removes (<see cref="GroundArtwork"/>) — already
+        /// inside <see cref="Command"/>; the caller reports it with <see cref="GroundArtworkReport"/>.</summary>
+        public GroundArtworkPlan GroundArtwork => Ground ?? GroundArtworkPlan.None;
     }
 
     // Excluded from the parameter dict handed to a PCell generator — layer-selection inputs
@@ -188,7 +187,7 @@ public static class SchematicToLayoutGenerator
         var deleteIndices = new List<int>();
         var lines = new List<ReportLine>();
         var noLayoutWarnings = new List<string>();
-        var addedMicrostripGrounds = new List<StackupLayer>();
+        var replacedAt = new Dictionary<int, LayoutInstance>();
         IUiCommand? chain = null;
         int added = 0, updated = 0, unchanged = 0, overwritten = 0;
         int unlinkedDiffering = 0;
@@ -258,9 +257,6 @@ public static class SchematicToLayoutGenerator
 
             if (!hasExisting)
             {
-                if (generatorId is not null && GroundPourPlanner.MicrostripGenerators.Contains(generatorId))
-                    NoteGroundReference(comp, technology, addedMicrostripGrounds);
-
                 // Placed at the origin and moved once the whole set is known — the pitch is a function
                 // of what is being placed, and that is not known until the last one is resolved. The
                 // command holds this instance by reference and has not run yet, so moving it now is
@@ -360,6 +356,7 @@ public static class SchematicToLayoutGenerator
                 after.SchematicId = schematicId;
                 after.OrientationLink = rot.Link;
                 if (rot.Changes) TurnInPlace(before, after, rot.Target, targetLayoutBaseDir);
+                replacedAt[existing.Index] = after;
                 chain = Chain(chain, new ReplaceInstanceCommand(target, existing.Index, before, after));
                 updated++;
 
@@ -405,46 +402,122 @@ public static class SchematicToLayoutGenerator
 
         var addedRegion = PlaceNewInstances(newInstances, targetLayoutBaseDir);
         ReportPlacementOntoDrawnArtwork(target, newInstances, targetLayoutBaseDir, lines);
+
+        // Designer feedback round 11: the ground the schematic states, drawn — a via at every ground-symbol pin and
+        // the pour under the lines and those vias — planned against the instances as they WILL be once the chain
+        // runs, and run as part of it, so the whole update stays one undoable action (R-L5-12).
+        var deleted = new HashSet<int>(deleteIndices);
+        var future = target.Instances.Select((inst, i) => replacedAt.GetValueOrDefault(i, inst))
+                                     .Where((_, i) => !deleted.Contains(i))
+                                     .Concat(newInstances.Select(n => n.Instance)).ToList();
+        var ground = GroundArtwork.Plan(target, technology, targetLayoutBaseDir, future,
+                                        GroundedPins(physical, extraction, schematicDir),
+                                        new HashSet<string>(physical.Select(c => c.InstanceName), StringComparer.Ordinal));
+        if (GroundArtworkCommand(target, ground) is { } groundCommand) chain = Chain(chain, groundCommand);
+
         return new GenerationResult(chain, lines, added, updated, unchanged, removed, overwritten,
                                     noLayoutWarnings, addedRegion, deleteIndices.Count,
-                                    linksRecorded, UndrawnGroundReferences(target, addedMicrostripGrounds, technology));
+                                    linksRecorded, ground);
     }
 
-    /// <summary>Records the stackup conductor a newly placed microstrip returns through, once per
-    /// conductor, in first-appearance order so the report is deterministic.</summary>
-    private static void NoteGroundReference(EditableComponent comp, Technology? technology, List<StackupLayer> grounds)
+    /// <summary>Every schematic terminal on the ground net ("0", which a ground symbol names), as the extraction
+    /// bound it. Only a terminal the symbol DRAWS counts: a port block's hidden reference is also bound to "0" and
+    /// has no pad.</summary>
+    internal static List<GroundPin> GroundedPins(IEnumerable<EditableComponent> physical,
+                                                 NetExtractor.ExtractionResult extraction, string? schematicDir)
     {
-        if (technology is null) return;
-        var selection = new PCellLayerSelection(
-            NonEmptyOrNull(comp.Parameters.FirstOrDefault(p => p.Name == "SignalLayer")?.Expression),
-            NonEmptyOrNull(comp.Parameters.FirstOrDefault(p => p.Name == "GroundReference")?.Expression));
-        var (substrate, _, _) = SubstrateResolver.ResolveElectrical(technology, selection);
-        if (substrate is null) return;
-        var ground = technology.Stackup.Layers.FirstOrDefault(l =>
-            l.Kind == StackupKind.Conductor && l.Name == substrate.GroundConductorName);
-        if (ground is not null && !grounds.Contains(ground)) grounds.Add(ground);
+        var byName = new Dictionary<string, Instance>(StringComparer.Ordinal);
+        foreach (var inst in extraction.TestBench.Instances) byName.TryAdd(inst.InstanceName, inst);
+        var pins = new List<GroundPin>();
+        foreach (var comp in physical)
+        {
+            if (string.IsNullOrEmpty(comp.InstanceName) || !byName.TryGetValue(comp.InstanceName, out var inst)) continue;
+            var symbol = comp.ExternalSymbolRef is { } symRef ? CellSymbolResolver.Resolve(symRef, schematicDir) : null;
+            int drawn = comp.ToRenderComponent(null, symbol).Ports.Count;
+            for (int k = 0; k < Math.Min(drawn, inst.NetBindings.Count); k++)
+                if (inst.NetBindings[k] == "0") pins.Add(new GroundPin(comp.InstanceName, k + 1));
+        }
+        return pins;
+    }
+
+    /// <summary>The plan as one undoable command — the shapes out and in, and the ground-via keys the view remembers —
+    /// or null when it changes nothing. Shared with Draw Ground Pour.</summary>
+    internal static IUiCommand? GroundArtworkCommand(LayoutView target, GroundArtworkPlan plan)
+    {
+        if (plan.IsEmpty) return null;
+        IUiCommand? chain = null;
+        var removing = new HashSet<LayoutShape>(plan.Remove, ReferenceEqualityComparer.Instance);
+        var indices = Enumerable.Range(0, target.Shapes.Count).Where(i => removing.Contains(target.Shapes[i])).ToList();
+        if (indices.Count > 0) chain = Chain(chain, new DeleteShapesCommand(target, indices));
+        foreach (var shape in plan.Add) chain = Chain(chain, new AddShapeCommand(target, shape));
+        if (plan.KeysAdded.Count > 0 || plan.KeysRemoved.Count > 0)
+            chain = Chain(chain, new GroundViaKeysCommand(target, plan.KeysAdded, plan.KeysRemoved));
+        return chain;
     }
 
     /// <summary>
-    /// The INNER ground conductors, of those the newly placed lines return through, that carry no artwork. A
-    /// microstrip's generated artwork is its LINE; the plane is the stackup's and no generator draws it (one plane
-    /// per line would overlap its neighbours and run through the via at a layer change). The caller offers Draw
-    /// Ground Pour for each, once per conductor.
-    ///
-    /// <para><b>Only an inner plane is offered.</b> An undrawn ground is an infinite plane to the planar engine, a
-    /// solid one to the impedance probe and a conducting floor to the 3D model, so for simulation an empty OUTER
-    /// ground (a two-layer board's bottom copper) is already right: no via can pass through it, and every via
-    /// reaching it ends on it. An inner plane is where a via crosses and needs a clearance, which is the case the
-    /// pour exists for. Design ▸ Draw Ground Pour still draws an outer one on request, for fabrication.</para>
+    /// What a ground plan did, as the Messages say it — one line per kind of change, and a warning for each via the
+    /// designer took over or a layer left alone. Shared by Update Layout and Draw Ground Pour.
     /// </summary>
-    private static List<string> UndrawnGroundReferences(LayoutView target, List<StackupLayer> grounds, Technology? technology)
+    internal static List<ReportLine> GroundArtworkReport(GroundArtworkPlan plan, LayoutView view, LayoutUnit unit)
     {
-        var conductors = technology?.Stackup.Layers.Where(l => l.Kind == StackupKind.Conductor).ToList() ?? [];
-        bool Inner(StackupLayer g) => conductors.Count > 2
-                                      && !ReferenceEquals(g, conductors[0]) && !ReferenceEquals(g, conductors[^1]);
-        return grounds.Where(g => Inner(g) && g.DrawingLayers.Count > 0
-                                  && !target.Shapes.Any(s => s is not ViaShape && g.DrawingLayers.Contains(s.Layer)))
-                      .Select(g => g.Name).ToList();
+        var lines = new List<ReportLine>();
+        void Info(string t) => lines.Add(new ReportLine("", t, ReportSeverity.Info));
+        void Warn(string t) => lines.Add(new ReportLine("", t, ReportSeverity.Warning));
+
+        if (plan.ViasPlaced > 0)
+            Info($"Placed {plan.ViasPlaced} ground via(s), one beside every pad whose schematic pin is on a ground symbol, " +
+                 "tied to its pad and drilled to the ground plane.");
+        if (plan.ViasFollowed > 0)
+            Info($"Moved {plan.ViasFollowed} ground via(s) to follow their parts.");
+        if (plan.ViasRemoved > 0)
+            Info($"Removed {plan.ViasRemoved} ground via(s) whose pin is no longer on ground in the schematic.");
+        if (plan.ViasLeftMoved > 0)
+            Info($"{plan.ViasLeftMoved} ground via(s) you moved were left where you put them; they no longer follow their parts.");
+        if (plan.ViasLeftDeleted > 0)
+            Info($"{plan.ViasLeftDeleted} ground via(s) you deleted were not put back.");
+
+        string u = LayoutUnits.Suffix(unit);
+        foreach (var p in plan.Pours)
+        {
+            string extent = p.BoundedByOutline
+                ? "filling the board outline"
+                : $"reaching {LayoutUnits.Format(p.MarginDbu, unit, view.DbuPerMicron)} {u} " +
+                  $"({GroundPourPlanner.MarginHeights:0} substrate heights) beyond what it covers";
+            string what = (p.Lines, p.GroundVias) switch
+            {
+                (> 0, > 0) => $"under {p.Lines} microstrip line(s) and {p.GroundVias} ground via(s)",
+                (> 0, _)   => $"under {p.Lines} microstrip line(s)",
+                _          => $"under {p.GroundVias} ground via(s)",
+            };
+            string verb = p.Replaces is { Count: > 0 } ? "Redrew" : "Drew";
+            Info($"{verb} the ground pour on '{p.Ground.Name}' {what}, {extent}" +
+                 (p.ViaClearances > 0 ? $", with a clearance round each of the {p.ViaClearances} via(s) passing through it" : "") +
+                 ". Update Layout and Design ▸ Draw Ground Pour redraw it as the parts move; edit it and it is yours." +
+                 (p.ViasJoined > 0 ? $" {p.ViasJoined} via(s) you drew end on '{p.Ground.Name}' and are joined to it — " +
+                                     "a signal via among them needs a clearance cut by hand." : ""));
+        }
+        foreach (var layer in plan.PoursLeftAlone)
+            Info($"'{layer.Name}' already carries copper you drew, so no pour was drawn over it.");
+        foreach (string note in plan.Notes) Warn(note);
+        return lines;
+    }
+
+    /// <summary>Records and forgets ground-via keys inside the run's undo entry, so an Undo of the run also forgets
+    /// it ever placed them — and the next run places them again rather than reading them as deleted.</summary>
+    private sealed class GroundViaKeysCommand(LayoutView view, IReadOnlyList<string> added, IReadOnlyList<string> removed) : IUiCommand
+    {
+        public string Description => "Ground vias";
+        public void Execute()
+        {
+            foreach (string k in added) view.GroundViaKeys.Add(k);
+            foreach (string k in removed) view.GroundViaKeys.Remove(k);
+        }
+        public void Undo()
+        {
+            foreach (string k in added) view.GroundViaKeys.Remove(k);
+            foreach (string k in removed) view.GroundViaKeys.Add(k);
+        }
     }
 
     private readonly record struct Resolution(

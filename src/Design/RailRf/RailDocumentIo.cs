@@ -468,9 +468,9 @@ public static class RailDocumentIo
         Mask                 = t.Mask is { Count: > 0 }
                                  ? [.. t.Mask.Select(p => new RailMaskPoint(p.FrequencyHz, p.LimitOhms))]
                                  : null,
+        // The rise time is optional (round 11): ΔV and ΔI alone are a target.
         Transient            = t.DeltaIAmps is { } di && t.DeltaVVolts is { } dv
-                                                      && t.RiseTimeSeconds is { } tr
-                                 ? new RailTransientSpec(di, dv, tr)
+                                 ? new RailTransientSpec(di, dv, t.RiseTimeSeconds)
                                  : null,
     };
 

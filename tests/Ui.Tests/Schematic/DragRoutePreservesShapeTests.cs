@@ -14,6 +14,7 @@ namespace CircuitRF.Ui.Tests;
 ///
 /// The geometry here is taken from the reporter's own schematics, rebuilt in code.
 /// </summary>
+[Trait("Suite", "SchematicConnectivity")]
 public class DragRoutePreservesShapeTests
 {
     private static EditableComponent Comp(SymbolKind kind, double x, double y, string name,

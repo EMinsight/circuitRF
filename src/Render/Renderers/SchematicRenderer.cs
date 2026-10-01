@@ -1310,8 +1310,14 @@ public static class SchematicRenderer
                     ? sdp : segWire.Points;
                 if (segSel.SegmentIndex >= segPts.Count - 1) continue;
 
-                var (sax, say) = ToPixel(segPts[segSel.SegmentIndex].X,     segPts[segSel.SegmentIndex].Y,     panX, panY, zoom);
-                var (sbx, sby) = ToPixel(segPts[segSel.SegmentIndex + 1].X, segPts[segSel.SegmentIndex + 1].Y, panX, panY, zoom);
+                // Only the selected stretch, when the click picked one between two junctions — and not
+                // while a drag is moving the wire, which moves (and highlights) the whole segment.
+                var (pa, pb) = overlay.WireDragPoints is null &&
+                               overlay.SelectedWireSpans.TryGetValue(segSel, out var span)
+                    ? (span.A, span.B)
+                    : (segPts[segSel.SegmentIndex], segPts[segSel.SegmentIndex + 1]);
+                var (sax, say) = ToPixel(pa.X, pa.Y, panX, panY, zoom);
+                var (sbx, sby) = ToPixel(pb.X, pb.Y, panX, panY, zoom);
                 canvas.DrawLine(sax, say, sbx, sby, segSelPaint);
             }
         }

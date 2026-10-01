@@ -12,7 +12,10 @@ public static class WslPalace
     /// The runner for <paramref name="palace"/>, which discovery found inside a distribution, or null with
     /// <paramref name="refusal"/> saying why the distribution cannot take the run.
     /// </summary>
-    internal static WslPalaceRunner? Runner(IWsl wsl, SolverInstallation palace, out string? refusal)
+    /// <param name="fieldDirectories">The field directories the run's configuration asks Palace to write
+    /// (<see cref="PalaceConfigWriter.FieldDirectories"/>), copied back with the CSVs.</param>
+    internal static WslPalaceRunner? Runner(IWsl wsl, SolverInstallation palace, IReadOnlyList<string> fieldDirectories,
+                                            out string? refusal)
     {
         refusal = null;
         var session = new WslSession(wsl, palace.Distribution!);
@@ -22,7 +25,7 @@ public static class WslPalace
             return null;
         }
         var (mpirun, how) = FindMpiLauncher(session, home, palace.Path);
-        return new WslPalaceRunner(session, home, mpirun, how);
+        return new WslPalaceRunner(session, home, mpirun, how) { FieldDirectories = fieldDirectories };
     }
 
     /// <summary>

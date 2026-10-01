@@ -224,7 +224,7 @@ internal static class RenderEm3dField
         RenderFieldJson Report(Em3dFieldLayer l) => new(
             plot.Name, setupName, request.Solver, SolutionJson(plot.Solution), item.Label, q.Array.Name, q.Mode.ToString(), plot.On.ToString(),
             l.Triangles, l.TrianglesDrawn,
-            new RenderFieldRangeJson(cut.Scale.Lo, cut.Scale.Hi, cut.Scale.Unit, cut.Scale.Db, cut.Scale.Percentile),
+            new RenderFieldRangeJson(cut.Scale.Lo, cut.Scale.Hi, cut.Scale.RangeUnit, cut.Scale.Db, cut.Scale.Percentile),
             stale, runDir, q.Animated ? phaseDeg : null)
         {
             Wires = l.Thermal is null ? null : [.. wires.GroupBy(w => w.Wire).Select(g => new RenderFieldWireJson(
@@ -236,7 +236,7 @@ internal static class RenderEm3dField
         string Line(Em3dFieldLayer l)
         {
             string G(double x) => x.ToString("G4", CultureInfo.InvariantCulture);
-            string unit = cut.Scale.Db ? $"dB{(cut.Scale.Unit.Length > 0 ? " re 1 " + cut.Scale.Unit : "")}" : cut.Scale.Unit;
+            string unit = cut.Scale.RangeUnit;
             return $"{plot.Name}: {q.Symbol} at {item.Label}, {l.Triangles:N0} triangles" +
                    (l.TrianglesDrawn != l.Triangles ? $", drawn as {l.TrianglesDrawn:N0}" : "") +
                    $", {G(cut.Scale.Lo)} … {G(cut.Scale.Hi)}{(unit.Length > 0 ? " " + unit : "")}" +
@@ -368,7 +368,7 @@ internal static class RenderEm3dField
         RenderFieldJson Report(Em3dFieldLayer l) => new(
             plot.Name, setupName, FieldPlotResolver.Request(plot, setupName, run, null, run).Solver, SolutionJson(plot.Solution), item.Label,
             q.Array.Name, q.Mode.ToString(), plot.On.ToString(), l.Triangles, l.TrianglesDrawn,
-            new RenderFieldRangeJson(scale.Lo, scale.Hi, scale.Unit, scale.Db, scale.Percentile), stale, runDir, q.Animated ? phaseDeg : null)
+            new RenderFieldRangeJson(scale.Lo, scale.Hi, scale.RangeUnit, scale.Db, scale.Percentile), stale, runDir, q.Animated ? phaseDeg : null)
         {
             Wires = q.IsTemperature ? [.. wires.Select(w => new RenderFieldWireJson(w.Wire, w.Surface.TriangleCount,
                                           w.Surface.Values.Where(double.IsFinite).DefaultIfEmpty(double.NaN).Min(),
@@ -380,7 +380,7 @@ internal static class RenderEm3dField
         string Line(Em3dFieldLayer l)
         {
             string G(double x) => x.ToString("G4", CultureInfo.InvariantCulture);
-            string unit = scale.Db ? $"dB{(scale.Unit.Length > 0 ? " re 1 " + scale.Unit : "")}" : scale.Unit;
+            string unit = scale.RangeUnit;
             return $"{plot.Name}: {q.Symbol} at {item.Label}, {l.Triangles:N0} triangles on {target}, {look.Name}" +
                    $", {G(scale.Lo)} … {G(scale.Hi)}{(unit.Length > 0 ? " " + unit : "")}" +
                    (q.Animated ? $", φ = {phaseDeg.ToString("0.##", CultureInfo.InvariantCulture)}°" : "") +

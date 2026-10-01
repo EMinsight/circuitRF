@@ -15910,3 +15910,242 @@ Gates: `HierarchyGateTests.Flatten_APlatedViasAirCoreNeedsNoAirInTheTechnology_A
 - **Separately worth knowing:** one `GroundStackupLayerName` serves every port. For a line on Inner 2,
   that made a 42-mil sheet up to Inner 1, while the inferred return (setup names none) is Bottom Copper
   8 mil below, as the air box's PEC floor. Gate: `Em3dGeneratorTests.AReturnPlaneShortOfTheLineEnd_…`.
+
+## Designer feedback round 11: impedance map left the series-part sections unanalysed (2026-10-01)
+
+**Report.** On an imported four-layer Gerber board, the Trace Impedance map of Top Copper coloured the
+762 µm RF line out to the ends of the long sections and left two stretches nearer the DUT as plain
+copper. Reproduced headlessly: `convert` of the Gerber set, then `impedance --region` over the line.
+
+**Cause: collinear vertices, not pads.** The layer arrives COMPOSITED (it paints clear objects), and
+Clipper keeps collinear vertices through a union by default. Each straight side of the line was split
+wherever a stroke or flash once ended, and the two sides were split at different points: one side was
+686 + 343 µm, the other 343 + 686 µm. `FindPieces` pairs a trace's sides EDGE by edge and needs each
+pair to overlap by half a width (381 µm). No pair did. So the last 686 µm of every section before a
+series part had no piece. The 1.65 mm section between the two series parts on the input side had no
+piece at all, so it was not even a short chain a region could admit. It was drawn as plain copper.
+
+**Fix.** `TraceCopper.DropCollinear` removes, from every ring, a vertex the ring goes straight through
+(within 1 DBU) and repeated vertices. The geometry is unchanged, and the probe uses the same class. On
+the board the line is now analysed right up to every series-part gap. The 1.65 mm section is a trace
+(2.2 widths: a short chain, admitted because the region chooses it). What stays pale is the gaps
+themselves and the tapered launch into the DUT land, whose straight part is shorter than its width.
+That is not a line. The map legend now says what pale copper is ("not a trace: a pad or land, a taper,
+a pour, or a run too short for its width"), because the unsolved swatch beside it is also grey.
+Gate: `TraceImpedanceAnalysisTests.ALineWhoseSidesAreSplitAtDifferentPoints_IsOneTraceOfItsFullLength`.
+It fails with the drop disabled.
+
+## Designer feedback round 11 — railRF: spreading copper escalates, the starting layout, the parallel L–C (2026-10-01)
+
+**Fast's spreading-copper refusal now meshes that rail in the same run.** The refusal's only
+number-giving remedy was "run Accuracy", and pressing it bought the user nothing they had not already
+asked for (the field board answered in ~30 s). `RailDcRequest.EscalateSpreadingCopper` (default true):
+where `PdnGraphExtractor` refuses with a `RefusedRegion`, `RailDcRun` solves that rail through the same
+`SolveConverged` the Accurate reading uses, and the result carries `RailDcResult.EscalatedFromFast` — the
+sentence naming the copper, its layer, its centre and its squares — first among its notes. The 10-square
+rule is untouched and Fast still never prices that copper with the trace formula; only this refusal
+escalates (every other one is about the document, which a finer mesh does not change). If the mesh does
+not answer either, the rail is refused with both sentences and the "treat as a trace" button stays. The
+window shows a **Model** card first in the results column, the Results header reads *Accuracy (Fast refused
+spreading copper)*, and the strip lists the meshed rails; `rail` prints a `model:` line and
+`--no-escalate` restores the refusal. **§2.9's "never entered automatically" is narrowed, not dropped**: the
+window's Fast reading is still Fast for every rail Fast can price, and a rail Fast cannot price had no Fast
+number to displace. Gate: `SpreadingCopperEscalationTests` (`PdnRefusalCauseTests`' choke-into-a-square
+board through the rail set).
+
+*Cheaper, not built:* the region refused on the field board was 4.4 × 0.9 mm with 198 µm at its narrowest
+— about 900 cells at three across, milliseconds — against the whole-rail Accurate mesh's ~465,000
+reference cells. Meshing only the refused rail copper inside Fast (as Fast already meshes the reference
+coarsely) would answer in well under a second, but it needs Fast's own convergence check for that region,
+which is why the whole-rail escalation was built first.
+
+**Tools ▸ railRF starts on the workspace's layout** (`RailStartingLayout`): the active layout tab, else the
+one open layout, else the workspace's one `.clay` (a bounded walk that skips dot-folders, generated cells
+and symlinked directories); several with none chosen starts empty and names them on the import-summary
+row. It opens through the Open button's own `OpenLayout`, posted after the window is shown.
+
+**A parallel L–C peak is the source's L out against a capacitor, not a shunt inductor part.** A PDN2-style
+rail — L1 6 nH and C1 100 nF, each from the rail to ground — swept flat because neither part could be a
+branch: a railRF shunt part is a capacitor (`PdnSweep` stamps R + jωL + 1/jωC and needs all three), L1's
+row stated an inductance and no capacitance, and C1's stated no ESL, no f₀, and had no mounting loop
+because its pads reached no return copper (the generated layout drew none). An inductor from the rail to
+the return would short the supply at DC anyway. Entered as the source's L out (6 nH, 20 mΩ) against C1
+(100 nF, 20 mΩ), the sweep peaks at **1.510 Ω at 6.499 MHz** against the closed form's 1.50 Ω at 6.50 MHz.
+The warning used to count the dropped parts ("2 part(s) … NOT in this answer") under a summary saying both
+resolved; it now names each part and what it lacks, and a part that states only an inductance is told
+where a supply's inductance goes. Gate: `ParallelLcResonanceTests`.
+
+## Designer feedback round 11 — Palace in the Linux subsystem, the run's messages, the estimate before meshing (2026-10-01)
+
+**Fields never came back from the Linux subsystem.** `WslPalaceRunner.CopyOut` copies the CSVs, `palace.json`
+and "whatever lies under a field directory the setup asked for" — and nothing ever set `FieldDirectories`, whose
+comment still said brief 29 would. Palace wrote `postpro/paraview/…` inside the distribution, the staging
+directory was removed, and the Field plot said the run saved no fields. It looked like a full disk or a memory
+limit; it was neither. `PalaceConfigWriter.FieldDirectories(settings)` (`paraview`, unless `SaveFieldsGHz: []`)
+is now handed to `WslPalace.Runner`. Gate: `WslLocationTests.Gate4b_…`, which builds the runner the way the run
+service does and checks the field file arrives (and does not, for a setup saving none).
+
+**A 3D run was announced as "the cross-section analysis".** `EmRunStartText` reads the planar panel's kernel,
+which for a 3D setup is not Planar, so the adaptive-sampling clause fell into the cross-section branch. A 3D
+setup now gets its own sentence (`ThreeDSweepText`): Palace with a sweep tolerance builds the sweep adaptively
+and evaluates the requested points from the solves it chose; openEMS takes every point from one time-domain run.
+The same run's closing line said "6 frequency samples" beside a 5-point sweep: that is Palace's adaptive sweep
+counting the full solves it made (`Adaptive sampling converged with 6 frequency samples`), not a miscount, so it
+now reads "adaptive sweep built from 6 full solves". The sweep row sat at "0 / 5" for the whole run and was still
+there beside "solved": a 3D run reports stages, never a finished point, so its sweep row is indeterminate now.
+
+**The estimate before meshing left out the refinement, and over-counted uniform volumes.** Measured on the
+shipped connector launch against Gmsh 4.15.2's own count from the same script:
+
+| case | volumes only (before) | now | Gmsh |
+|---|---|---|---|
+| Launch, as shipped (2 mm padding) | 2,037 | 104,760 | 93,371 |
+| Launch, default padding, sweep from 2 GHz | ~163,000 | 201,285 | 190,367 |
+| Launch, default padding, sweep from 1 GHz | ~1,017,000 | 713,500 | 648,947 |
+
+Two terms: a refined shell over each conductor, sheet and port, integrated through the script's own Threshold
+grading (`Em3dSizeEstimate.ShellTetrahedra`, sizes from `GmshGeoWriter.RefinementSizing` so they cannot drift
+from the script), and `GmshVolumeFill` = 0.6 — Gmsh fills a uniformly sized volume with 0.55–0.60 of the
+regular-tetrahedron count. Curvature-driven refinement is still not priced: F0's bond wire reads 3,065 against
+149,252, which is what the check after meshing is for. Gate: `Em3dConnectorExampleTests.ThePalaceEstimate_…`.
+
+**What the estimate did NOT get wrong.** A large figure on a small model is the AIR, and it is real: the air box
+pads by λ/8 at the LOWEST frequency (`Em3dGenerator.DefaultPaddingFractionOfLongestWavelength`) and the script
+meshes all of it at a Constant λ/10 of the HIGHEST, so the air's count grows as (f_max/f_min)³. The launch alone
+went from ~100,000 tetrahedra (2 mm padding) to ~650,000 (default padding, sweep from 1 GHz); a sweep from a few
+hundred MHz to 20 GHz reaches tens of millions, which is the size a several-terabyte warning describes. Neither
+rule was changed here: the padding and the air's element size are a physics decision for the owner.
+
+**Spack's path padding in a run's messages.** Palace's own `spack.yaml` sets `padded_length: 256` "to support
+buildcache relocation", and the recipes copy it, so every prefix carries a chain of `__spack_path_placeholder__`
+directories. The run's Solver and MPI lines now fold it to "…" (`SpackInstalls.FoldPadding`, the Settings tab's
+fold, moved here). Display only; no recipe changed.
+
+**Field strength in dB reads dBµV/m.** `FieldColorScale` stores a field strength's (V/m, A/m, V) dB range 120 dB
+above dB re 1 unit, so every place that prints `Lo`/`Hi` (the overlay, the picture, the CLI line and its JSON)
+reads dBµV/m / dBµA/m with no second conversion; the GPU is handed the range less `DbOffset`, so the shader's
+own 20·log10 is unchanged. A Palace driven solution's label states "1 W incident" — Palace normalises every port
+excitation to unit incident power (its own documentation, 0.18.1).
+
+## Designer feedback round 11 — Update Layout draws the ground: ground vias at ground pins, a managed pour (2026-10-01)
+
+**Round 10 left a two-layer board with no ground at all.** Update Layout placed an MLIN and two shunt
+parts; their ground pads sat on Top Copper joined to nothing, and Bottom Copper was empty because the pour
+was offered only for an INNER plane. Every engine that reads an undrawn ground as solid was content; LVS
+(an open on net 0 between the two ground pins), railRF, a 3D run and a Gerber export were not. The owner
+reversed the round-10 decision: ground vias at ground-symbol pins plus a pour on inner AND outer planes,
+by default, and it must work on a two-layer board with no further action.
+
+`GroundArtwork` (`Layout/PCells/GroundArtwork.cs`) plans both; `SchematicToLayoutGenerator` appends the plan
+to the run's command (one undo, R-L5-12) and Design ▸ Draw Ground Pour runs it with no schematic. Decisions
+and traps:
+
+- **A drawn via, not a VIAGND instance.** A VIAGND is a DEVICE to LVS with no schematic counterpart, so each
+  would be an extra device. A `ViaShape` plus a `PathShape` tie from the pad's pin point to it is
+  connectivity. Drill = `SubstrateResolver.ResolveViaSpan(pad conductor, ground)` (the VIAGND's own
+  resolution); size = technology default, else the via model's. It sits on the pin's outward side,
+  `ViaGapMicrons` (150) clear of the land's own copper.
+- **Which terminal is which pad** is `SchematicLayoutOrientation.CellPinFor` — the trailing-number-else-position
+  rule the orientation code already used, extracted so both read one rule. Only terminals the symbol DRAWS
+  count: a port block's hidden reference is also bound to "0".
+- **Plan against the instances as they WILL be.** The run's instance edits are commands not yet executed and
+  `PlaceNewInstances` moves new instances just before return, so the plan takes a "future" instance list
+  (replacements by index, deletions dropped, new ones appended).
+- **Managed copper = `LayoutShape.Generated`** (new, nullable, additive). Pour shapes carry `ground-pour`; a
+  ground via and its tie carry `ground-via <instance>:<pin>`, and the via's tag also records where it was
+  placed (`@x,y`). A via whose position no longer matches its tag was MOVED by the designer and is left;
+  `LayoutView.GroundViaKeys` (persisted, sorted) remembers every key ever placed, so a via the designer
+  DELETED is not put back. The key set changes inside the undo entry — otherwise an Undo of the run would
+  leave keys behind and the next run would read its own vias as deleted.
+- **What makes copper the designer's:** reshape (`LayoutShapeEditing` clears the tag), paste/duplicate
+  (`LayoutFragment` clears it), and anything they draw on a ground layer (that layer is then not poured — the
+  round-10 rule, now ignoring generated shapes). A plain MOVE keeps the tag: that is how a moved via is told
+  from a followed one. A moved POUR is therefore redrawn back; documented, not guarded.
+- **Generated ground vias are joined, never cut.** A through via to an inner ground passes the plane, and the
+  round-10 planner would have cut it an antipad and disconnected it. `GroundPourPlanner` now recognises the
+  tag and counts them separately from the designer's own vias landing on the plane (which still say "check it").
+- **Extent:** the board outline (`Em3dGenerator.BoardOutlineLayers`, 250 µm pullback) when one is drawn; else
+  lines ∪ ground vias ∪ the parts they ground, plus five substrate heights.
+- **No churn.** An identical pour is not replaced, so a second run with nothing moved returns a null command.
+- **A pin no longer on ground** loses its (unmoved) via — left, it would short that pin to the plane. A
+  moved one is left with a warning. An instance that has left the schematic keeps its via, as the instance
+  itself is kept (R-L5-4).
+
+Consequence for an existing test: `LayoutFirstMlin_RoundTrip…Gate3` asserted `NothingChanged` on a layout-first
+MLIN round trip; the run now also pours Bottom Copper, so it asserts no instance change and one pour.
+
+Gate: `tests/Ui.Tests/MicrostripGroundReferenceReportTests.cs` — the designer's PDN2 on the two-layer starter
+(two vias on the via layer, Bottom poured over line, vias and parts, LVS's two ground terminals on one net with
+no ground open — and the same layout with the generated copper stripped DOES report the open; a save keeps tags
+and keys; a second run is a no-op; a moved part's via follows; a moved via stays; a deleted one is not put back)
+and a four-layer inner-ground case (a designer via through the plane gets a hole, the ground vias do not, and
+drawn copper on the plane stops the pour). Not run: a railRF board-level reading of the generated PDN2 —
+`PdnMountingLoop` needs a power via, which a microstrip-fed part has none of.
+
+## Designer feedback round 11 — the transient target, settable from the window and the CLI (2026-10-01)
+
+**The model had a transient target nothing could state.** `RailTransientSpec` (ΔI, ΔV, rise time → flat Z
+= ΔV/ΔI, band top 0.35/t_rise) and its `.crail` fields have existed since railRF's first brief, but the
+window's Target card took a flat Z in milliohms only and `rail` had no flag for it, so the usual first step
+of a PDN budget — ripple % of the rail voltage over the load step — had to be done by hand and typed as a Z.
+A window that opened a `.crail` holding a transient target also showed an EMPTY Z box over a target in
+force (the getter read `FlatMilliohms`); it now shows the derived Z.
+
+- **One derivation, both front ends.** `RailTransientSpec.FromRipple`, `LoadStepOf` (loads' peak, else DC,
+  current), `RailVoltageOf` (first source's open-circuit voltage) and `Describe` (the target with its
+  arithmetic: `Z 5.143 Ω = 180 mV / 35 mA · band to 35 MHz (0.35 / 10 ns)`) live on the model; the window's
+  "derive Z from the load" rows and `rail --target-transient` both call them. The arithmetic is shown
+  because the commonest slip, V/I (the load's DC resistance), is ~20× too large at a 5 % ripple and looks
+  like an ordinary number.
+- **The rise time is now optional** (`double?`). ΔV and ΔI alone state the flat Z; without a rise time the
+  rail's own band stands. A file without `RiseTimeSeconds` used to read as NO transient target at all.
+- **The form is not the target.** Its boxes open on the source/load rows (or on a stored target's own ΔV/ΔI)
+  and Set stores ΔV and ΔI as numbers. A later source or load edit does NOT move a stored target — the
+  document keeps ΔV and ΔI, not the voltage and percentage they came from, and a target that silently
+  followed a row edit would be a target nobody stated. Set again re-derives.
+- **A time is parsed by its own table** (`TryParseSeconds`: s, ms, us/µs, ns, ps). The expression engine's
+  unit table refuses `10ns`, which the first version of the flag reached through `TryValue` and refused.
+
+Gates: `tests/Ui.Tests/RailRf/TransientTargetTests.cs` (derive, store, round trip; a stored target does
+not follow a source edit) and `RailCliVerbTests.TargetTransient_*` (the CLI's sentence equals the model's;
+a spec with neither dV nor ripple is refused).
+
+## Designer feedback round 11 — the air-box default, measured before changing it; `explain --setup` (2026-10-01)
+
+**The proposed default was measured, and it moved the answer, so the default is unchanged.** Today an unstated face
+pads by λ/8 at the sweep's LOWEST frequency while Palace meshes the air at λ/10 of the HIGHEST, so the air grows as
+(f_max/f_min)³. The proposal for a non-radiating setup was max(λ/8 at f_max, 5 substrate heights), capped at today's
+rule. On `examples/3D Connector` Launch (Palace setup, Draft, 2–18 GHz, 5 points, 10 processes; XMin PEC at 0 as
+shipped), with the other five faces either unstated (today's default, 18.74 mm) or stated at the proposal (2.54 mm =
+5 × 0.508 mm, since λ/8 at 18 GHz is 2.08 mm):
+
+| | padding | tets | estimate | Palace | wall | |S11| 2/6/10/14/18 GHz (dB) | |S21| 10 GHz |
+|---|---|---|---|---|---|---|---|
+| today's default | 18.74 mm | 146,606 | 162,741 / 7.3 GB | 4.9 GB | 11 min 30 s | −30.22 / −19.45 / −17.11 / −17.13 / −35.22 | −0.170 dB |
+| proposal | 2.54 mm | 92,853 | 105,070 / 4.7 GB | 3.8 GB | 1 min 3 s | −30.09 / −19.45 / −16.85 / −18.94 / −39.53 | −0.225 dB |
+
+|S11| moves 1.8 dB at 14 GHz and 4.3 dB at 18 GHz (a perturbation near −32 dB and −43 dB in absolute terms), |S21| by
+up to 0.08 dB, ∠S21 by 1.3° at 14 GHz — larger than "does not move", so the rule was NOT changed. Two things this
+pair cannot separate, and a third solve would: the two meshes differ (the air elements are the same size, but the
+mesh near the structure is regraded), so part of the spread is discretisation, not the box; and the shipped 2 mm
+setup's own recorded run (−16.71 / −40.75 dB at 10 / 18 GHz, −0.246 dB) sits with the proposal, not with today's
+default. Deciding which box is RIGHT needs a convergence pair (say 5 mm and 10 mm at the same mesh settings), not a
+second guess. What the measurement does settle: on this structure today's default costs 11× the wall clock and
+1.3× the memory.
+
+**What did change: the default is now visible.** `Em3dGenerator.DefaultPadding` is the one rule (`PaddedAirBox`
+pads by it), returning the distance AND the sentence that produced it. `explain` gives every face its distance from
+the content and its source — `setup: 2 mm`, `default: 18.74 mm, λ/8 at 2 GHz, the sweep's lowest frequency`,
+`floor`, or a bare distance for a box drawn at the content's extent. **A face that stated only its boundary used to
+read `setup`** (the label tested `face is not null`), which hid that its padding was the default's. The 3D
+Inspector's face rows read `(default: …)` with the same sentence (`C3dProblemAssembly.DefaultPaddingBasis`). The
+content bound `explain` measures from excludes only the `.cem` generator's own air solid (built TO the box); a
+drawn air object in a `.c3d` is content — excluding every air-role solid made a cavity read 0 mm.
+
+**`explain --setup` (and `render --setup`).** A `.c3d` embedding several setups printed "name one with --setup to
+see its air box" from both verbs, and neither took the flag. Both do now, through `Em3dSetupSource.ForThreeDView`
+(the path `em --setup` already used). An unknown name is refused listing the real ones — in `render` before the
+"planar setup" refusal, which an unchosen setup's empty `EmSetup` otherwise fell into; `--setup` on a `.cem` is the
+existing `em.setup.on-cem`, on any other kind `<verb>.setup.not-3d`. The serve catalog carries `setup` on both tools
+(R-aut-13). `explain --analysis <name>` on a `.c3d` is unchanged: the thermal setups' walk.
+Gate: `tests/Ui.Tests/Cli/ExplainSetupCliTests.cs`.

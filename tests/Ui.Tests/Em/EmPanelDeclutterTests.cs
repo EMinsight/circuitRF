@@ -584,4 +584,19 @@ public class EmPanelDeclutterTests
         Assert.Contains("every point is solved", cross, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("if the full-wave analysis is chosen", cross, StringComparison.OrdinalIgnoreCase);
     }
+
+    /// <summary>Designer feedback round 11 — a Palace run was told it was "the cross-section analysis": the panel's kernel is a
+    /// planar setup's. A 3D setup says what its own solver does with the sweep, whatever the planar box says.</summary>
+    [Fact]
+    public void RunStartText_ForA3DSetup_SaysWhatItsSolverDoes()
+    {
+        var palace = new EmSetup { Name = "Launch Palace", AdaptiveSampling = true, Solver3D = CircuitRF.Design.Layout.Em.Em3dSolver.Palace,
+                                   Palace = new CemPalace { Quality = PalaceQuality.Draft } };
+        string t = ViewModels.WorkspaceViewModel.EmRunStartText(palace, 5, EmAnalysisKind.CrossSection);
+        Assert.DoesNotContain("cross-section", t, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Palace builds the sweep adaptively (tolerance 0.001, the Draft preset's)", t, StringComparison.Ordinal);
+        palace.Solver3D = CircuitRF.Design.Layout.Em.Em3dSolver.OpenEms;
+        Assert.Contains("openEMS runs once in the time domain",
+                        ViewModels.WorkspaceViewModel.EmRunStartText(palace, 5, EmAnalysisKind.CrossSection), StringComparison.Ordinal);
+    }
 }

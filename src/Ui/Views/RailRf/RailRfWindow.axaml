@@ -1329,6 +1329,43 @@
                                         <ctl:InlineEditText Grid.Column="1" Classes="val"
                                                             Text="{Binding BandStopEntry, Mode=TwoWay}"/>
                                     </Grid>
+
+                                    <!-- Round 11: derive Z from the load — ripple % of the rail voltage over the
+                                         load's current step. The boxes are a form; Set stores ΔV and ΔI as the
+                                         rail's transient target, and the readout shows what is stored. -->
+                                    <TextBlock Classes="detailLabel" Margin="0,4,0,0" Text="Derive Z from the load"
+                                               ToolTip.Tip="Z = ripple × V / ΔI — the rail may move by the ripple while the load steps by ΔI. A rise time also sets the band top (0.35 / rise time). Set stores ΔV and ΔI; editing a source or load row later does not change a stored target."/>
+                                    <Grid ColumnDefinitions="Auto,*">
+                                        <TextBlock Classes="detailLabel rowlbl" Text="Rail V"/>
+                                        <ctl:InlineEditText Grid.Column="1" Classes="val"
+                                                            Text="{Binding RippleVoltsEntry, Mode=TwoWay}"
+                                                            ToolTip.Tip="The rail voltage the ripple is a percentage of. Opens on the source row's."/>
+                                    </Grid>
+                                    <Grid ColumnDefinitions="Auto,*">
+                                        <TextBlock Classes="detailLabel rowlbl" Text="Ripple"/>
+                                        <ctl:InlineEditText Grid.Column="1" Classes="val"
+                                                            Text="{Binding RipplePercentEntry, Mode=TwoWay}"/>
+                                    </Grid>
+                                    <Grid ColumnDefinitions="Auto,*">
+                                        <TextBlock Classes="detailLabel rowlbl" Text="ΔI"/>
+                                        <ctl:InlineEditText Grid.Column="1" Classes="val"
+                                                            Text="{Binding StepCurrentEntry, Mode=TwoWay}"
+                                                            ToolTip.Tip="The load's current step. Opens on the load rows' peak current, or their DC current where no peak is stated."/>
+                                    </Grid>
+                                    <Grid ColumnDefinitions="Auto,*">
+                                        <TextBlock Classes="detailLabel rowlbl" Text="Rise"/>
+                                        <ctl:InlineEditText Grid.Column="1" Classes="val"
+                                                            Text="{Binding RiseTimeEntry, Mode=TwoWay}"
+                                                            ToolTip.Tip="Optional: the load's 10–90 % rise time. It sets the band top to 0.35 / rise time; empty leaves the band above in force."/>
+                                    </Grid>
+                                    <Button Content="Set Z from these" HorizontalAlignment="Right"
+                                            Command="{Binding SetTransientTargetCommand}"/>
+                                    <TextBlock Classes="detailLabel" TextWrapping="Wrap"
+                                               Text="{Binding TransientTargetReadout}"
+                                               IsVisible="{Binding TransientTargetReadout, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                                    <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource CrfWarningBrush}"
+                                               Text="{Binding TransientTargetProblem}"
+                                               IsVisible="{Binding TransientTargetProblem, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                                 </StackPanel>
                             </Border>
 
@@ -2440,6 +2477,16 @@
                                  a wrong one instantly and would never notice it buried in a curve."
                                  One glance at it checks the permittivity, the overlap area and the
                                  dielectric thickness at once. It is also on the status strip. -->
+                            <!-- A Fast run that MESHED this rail because Fast would not price its
+                                 spreading copper says so before any number is read. -->
+                            <Border Classes="card" IsVisible="{Binding ShowEscalationCard}">
+                                <StackPanel Spacing="3">
+                                    <TextBlock Classes="cardhdr" Text="Model"/>
+                                    <SelectableTextBlock Classes="note" TextWrapping="Wrap"
+                                                         Text="{Binding EscalationText}"/>
+                                </StackPanel>
+                            </Border>
+
                             <Border Classes="card" IsVisible="{Binding ShowStackupCard}">
                                 <StackPanel Spacing="3">
                                     <TextBlock Classes="cardhdr" Text="Stackup"/>

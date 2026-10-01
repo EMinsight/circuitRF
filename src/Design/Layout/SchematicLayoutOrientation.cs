@@ -104,12 +104,7 @@ public static class SchematicLayoutOrientation
         var identity = new VisualOrientation(false, 0);
         if (symbolPorts.Count < 2 || cellPins.Count < 2) return identity;
 
-        var byNumber = new Dictionary<int, LayoutPin>();
-        foreach (var pin in cellPins)
-            if (TrailingNumber(pin.Name) is { } n) byNumber.TryAdd(n, pin);
-        LayoutPin? CellPin(int k) =>
-            byNumber.Count == cellPins.Count ? byNumber.GetValueOrDefault(k)
-                                             : k <= cellPins.Count ? cellPins[k - 1] : null;
+        LayoutPin? CellPin(int k) => CellPinFor(k, cellPins);
 
         if (CellPin(1) is not { } c1) return identity;
         var s1 = symbolPorts[0];
@@ -124,6 +119,20 @@ public static class SchematicLayoutOrientation
             return new VisualOrientation(false, LayoutAngle.OfCardinal(LayoutAngle.NearestCardinal(deg)));
         }
         return identity;
+    }
+
+    /// <summary>
+    /// The cell pin that schematic terminal <paramref name="terminal"/> (1-based, the symbol's port order) lands on:
+    /// by the pin names' trailing numbers when every pin has one, else by position. The one rule both the
+    /// orientation above and the ground vias at ground-symbol pins (<c>GroundArtwork</c>) read.
+    /// </summary>
+    public static LayoutPin? CellPinFor(int terminal, IReadOnlyList<LayoutPin> cellPins)
+    {
+        var byNumber = new Dictionary<int, LayoutPin>();
+        foreach (var pin in cellPins)
+            if (TrailingNumber(pin.Name) is { } n) byNumber.TryAdd(n, pin);
+        return byNumber.Count == cellPins.Count ? byNumber.GetValueOrDefault(terminal)
+             : terminal >= 1 && terminal <= cellPins.Count ? cellPins[terminal - 1] : null;
     }
 
     private static int? TrailingNumber(string name)

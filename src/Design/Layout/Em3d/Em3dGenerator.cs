@@ -759,9 +759,7 @@ public static class Em3dGenerator
         // own largest extent: far enough that the box's faces barely touch the field, and a length a
         // package-sized problem can mesh.
         bool radiating = setup.RadiationPattern && setup.Problem3D == Em3dProblemType.Driven;
-        double pad = setup.IsStatic3D
-            ? Math.Max(Math.Max(cx1 - cx0, cy1 - cy0), Math.Max(zHigh - zLow, 1e-6))
-            : (radiating ? PatternPaddingFractionOfLongestWavelength : DefaultPaddingFractionOfLongestWavelength) * C0 / fMin;
+        double pad = DefaultPadding(setup, fMin, Math.Max(Math.Max(cx1 - cx0, cy1 - cy0), zHigh - zLow)).PadM;
         if (radiating)
             notes.Add($"The air box's default padding is a quarter of the longest wavelength ({Fmt(pad * 1e3)} mm) rather than " +
                       "an eighth, because a radiation pattern was asked for: its equivalence surface sits inside the absorber " +
@@ -831,6 +829,24 @@ public static class Em3dGenerator
                                   floorZ is not null ? Em3dBoundaryKind.Pec : Kind(box.ZMin), Kind(box.ZMax));
         return new Em3dAirBox(boxMin, boxMax, faces);
     }
+
+    /// <summary>
+    /// Designer feedback round 11 — the padding a face takes when the setup states none, and the rule that gave it, as the
+    /// panel and <c>explain</c> print it ("λ/8 at 2 GHz, the sweep's lowest frequency"). <see cref="PaddedAirBox"/> pads by
+    /// exactly this, so what is shown cannot differ from what is meshed.
+    /// </summary>
+    /// <param name="largestExtentM">The content's largest extent, metres — a static solve's padding.</param>
+    public static (double PadM, string Basis) DefaultPadding(EmSetup setup, double fMin, double largestExtentM)
+    {
+        if (setup.IsStatic3D)
+            return (Math.Max(largestExtentM, 1e-6), "the structure's largest extent, since a static solve has no wavelength");
+        bool radiating = setup.RadiationPattern && setup.Problem3D == Em3dProblemType.Driven;
+        return radiating
+            ? (PatternPaddingFractionOfLongestWavelength * C0 / fMin, $"λ/4 at {Hz(fMin)}, the sweep's lowest frequency, since a radiation pattern is asked for")
+            : (DefaultPaddingFractionOfLongestWavelength * C0 / fMin, $"λ/8 at {Hz(fMin)}, the sweep's lowest frequency");
+    }
+
+    private static string Hz(double f) => f >= 1e9 ? Fmt(f / 1e9) + " GHz" : f >= 1e6 ? Fmt(f / 1e6) + " MHz" : Fmt(f / 1e3) + " kHz";
 
     private static EmAirBoxFace? FaceOf(EmAirBox b, string face) => face switch
     {

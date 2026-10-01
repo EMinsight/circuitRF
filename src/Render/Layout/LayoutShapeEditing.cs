@@ -13,6 +13,15 @@ namespace CircuitRF.Render;
 
 public static class LayoutShapeEditing
 {
+    /// <summary>The copy every edit here returns. A reshaped shape is the designer's: a generated one (the ground
+    /// pour Update Layout draws, <see cref="LayoutShape.Generated"/>) stops being redrawn once it is edited.</summary>
+    private static LayoutShape Reshaped(LayoutShape shape)
+    {
+        var clone = LayoutGeometry.Clone(shape);
+        clone.Generated = null;
+        return clone;
+    }
+
     // ── Shape-kind-agnostic vertex-list access (Polygon / Curve / Path only) ─────────────────
 
     internal static long[] XyOf(LayoutShape shape) => shape switch
@@ -83,7 +92,7 @@ public static class LayoutShapeEditing
 
     public static LayoutShape SetVertex(LayoutShape shape, int vertexIndex, long x, long y)
     {
-        var clone = LayoutGeometry.Clone(shape);
+        var clone = Reshaped(shape);
         var xy = XyOf(clone);
         xy[2 * vertexIndex] = x;
         xy[2 * vertexIndex + 1] = y;
@@ -96,7 +105,7 @@ public static class LayoutShapeEditing
     /// never touched.</summary>
     public static LayoutShape SetHoleVertex(LayoutShape shape, int holeIndex, int vertexIndex, long x, long y)
     {
-        var clone = LayoutGeometry.Clone(shape);
+        var clone = Reshaped(shape);
         var hole = HolesOf(clone)![holeIndex];
         hole[2 * vertexIndex] = x;
         hole[2 * vertexIndex + 1] = y;
@@ -117,7 +126,7 @@ public static class LayoutShapeEditing
         bool closed = IsClosed(shape);
         int j = closed ? (edgeIndex + 1) % n : edgeIndex + 1;
 
-        var clone = LayoutGeometry.Clone(shape);
+        var clone = Reshaped(shape);
         var cxy = XyOf(clone);
         cxy[2 * edgeIndex] += dx; cxy[2 * edgeIndex + 1] += dy;
         cxy[2 * j] += dx; cxy[2 * j + 1] += dy;
@@ -134,7 +143,7 @@ public static class LayoutShapeEditing
     /// throughout the whole gesture.</summary>
     public static RectShape TranslateRectEdge(RectShape shape, int edgeIndex, long delta)
     {
-        var clone = (RectShape)LayoutGeometry.Clone(shape);
+        var clone = (RectShape)Reshaped(shape);
         switch (edgeIndex)
         {
             case 0: clone.Y1 += delta; break; // bottom
@@ -147,7 +156,7 @@ public static class LayoutShapeEditing
 
     public static RoundedRectShape TranslateRoundedRectEdge(RoundedRectShape shape, int edgeIndex, long delta)
     {
-        var clone = (RoundedRectShape)LayoutGeometry.Clone(shape);
+        var clone = (RoundedRectShape)Reshaped(shape);
         switch (edgeIndex)
         {
             case 0: clone.Y1 += delta; break;
@@ -162,7 +171,7 @@ public static class LayoutShapeEditing
 
     public static LayoutShape SetBulge(LayoutShape shape, int edgeIndex, double bulge)
     {
-        var clone = LayoutGeometry.Clone(shape);
+        var clone = Reshaped(shape);
         var edges = EdgesOf(clone);
         if (edges is null || edgeIndex >= edges.Count) return clone;
         edges[edgeIndex] = new LayoutEdge { Kind = EdgeKind.Arc, Bulge = bulge };
@@ -171,7 +180,7 @@ public static class LayoutShapeEditing
 
     public static LayoutShape SetCubicControl(LayoutShape shape, int edgeIndex, int subIndex, long x, long y)
     {
-        var clone = LayoutGeometry.Clone(shape);
+        var clone = Reshaped(shape);
         var edges = EdgesOf(clone);
         if (edges is null || edgeIndex >= edges.Count) return clone;
         var e = edges[edgeIndex];
@@ -183,14 +192,14 @@ public static class LayoutShapeEditing
 
     public static CircleShape SetRadius(CircleShape shape, long radius)
     {
-        var clone = (CircleShape)LayoutGeometry.Clone(shape);
+        var clone = (CircleShape)Reshaped(shape);
         clone.R = Math.Max(0, radius);
         return clone;
     }
 
     public static RoundedRectShape SetCornerRadius(RoundedRectShape shape, long radius)
     {
-        var clone = (RoundedRectShape)LayoutGeometry.Clone(shape);
+        var clone = (RoundedRectShape)Reshaped(shape);
         long x1 = Math.Min(shape.X1, shape.X2), x2 = Math.Max(shape.X1, shape.X2);
         long y1 = Math.Min(shape.Y1, shape.Y2), y2 = Math.Max(shape.Y1, shape.Y2);
         long maxRadius = Math.Min(x2 - x1, y2 - y1) / 2;
@@ -206,7 +215,7 @@ public static class LayoutShapeEditing
     /// simple and stable throughout the whole drag.</summary>
     public static RectShape ResizeRectCorner(RectShape shape, int cornerIndex, long x, long y)
     {
-        var clone = (RectShape)LayoutGeometry.Clone(shape);
+        var clone = (RectShape)Reshaped(shape);
         switch (cornerIndex)
         {
             case 0: clone.X1 = x; clone.Y1 = y; break;
@@ -219,7 +228,7 @@ public static class LayoutShapeEditing
 
     public static RoundedRectShape ResizeRoundedRectCorner(RoundedRectShape shape, int cornerIndex, long x, long y)
     {
-        var clone = (RoundedRectShape)LayoutGeometry.Clone(shape);
+        var clone = (RoundedRectShape)Reshaped(shape);
         switch (cornerIndex)
         {
             case 0: clone.X1 = x; clone.Y1 = y; break;
@@ -256,7 +265,7 @@ public static class LayoutShapeEditing
         int minCount = closed ? 3 : 2;
         if (n <= minCount || vertexIndex < 0 || vertexIndex >= n) return null;
 
-        var clone = LayoutGeometry.Clone(shape);
+        var clone = Reshaped(shape);
         var cxy = XyOf(clone);
         var newXy = new long[(n - 1) * 2];
         for (int i = 0, k = 0; i < n; i++)
@@ -371,7 +380,7 @@ public static class LayoutShapeEditing
         bool closed = IsClosed(shape);
         int insertAt = edgeIndex + 1;
 
-        var clone = LayoutGeometry.Clone(shape);
+        var clone = Reshaped(shape);
         var cxy = XyOf(clone);
         var newXy = new long[(n + 1) * 2];
         Array.Copy(cxy, 0, newXy, 0, insertAt * 2);
@@ -408,7 +417,7 @@ public static class LayoutShapeEditing
     {
         LayoutShape working = shape is PolygonShape poly
             ? new CurveShape { Layer = poly.Layer, Net = poly.Net, Xy = (long[])poly.Xy.Clone() }
-            : LayoutGeometry.Clone(shape);
+            : Reshaped(shape);
 
         var xy = XyOf(working);
         int n = xy.Length / 2;

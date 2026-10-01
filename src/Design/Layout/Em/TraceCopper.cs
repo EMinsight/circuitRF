@@ -35,6 +35,7 @@ internal sealed class TraceCopper
 
     public TraceCopper(Paths64 paths, bool indexed = false)
     {
+        paths = DropCollinear(paths);
         Paths = paths;
         int n = paths.Sum(p => p.Count);
         Ax = new double[n]; Ay = new double[n]; Bx = new double[n]; By = new double[n];
@@ -84,6 +85,49 @@ internal sealed class TraceCopper
         _cellEdges = new int[counts[^1]];
         var fill = (int[])counts.Clone();
         for (int e = 0; e < n; e++) { int edge = e; Cells(e, c => _cellEdges[fill[c]++] = edge); }
+    }
+
+    /// <summary>
+    /// Each ring without its collinear vertices. Clipper keeps them through a union by default, and a
+    /// Gerber layer composited from strokes and flashes is full of them: one straight trace edge arrives
+    /// as several edges, split wherever a pad or a stroke once ended. The analysis pairs a trace's two
+    /// sides EDGE by edge and asks each pair to overlap by half a width, so a 762 µm line whose sides
+    /// were split at different points into 343-686 µm fragments formed no pair at all (designer feedback
+    /// round 11). The last 0.7 mm of every trace before a series part went unanalysed, and so did a whole
+    /// 1.6 mm section between two series parts. The geometry is unchanged: a vertex is dropped only where
+    /// the ring goes straight on through it, within one database unit.
+    /// </summary>
+    internal static Paths64 DropCollinear(Paths64 paths)
+    {
+        var result = new Paths64(paths.Count);
+        foreach (var p in paths)
+        {
+            if (p.Count <= 3) { result.Add(p); continue; }
+            var q = new Path64(p.Count);
+            foreach (var v in p) q.Add(v);
+            bool removed = true;
+            while (removed && q.Count > 3)
+            {
+                removed = false;
+                for (int i = 0; i < q.Count && q.Count > 3; i++)
+                {
+                    var a = q[(i + q.Count - 1) % q.Count];
+                    var b = q[i];
+                    var c = q[(i + 1) % q.Count];
+                    double abx = b.X - a.X, aby = b.Y - a.Y, bcx = c.X - b.X, bcy = c.Y - b.Y;
+                    double acx = c.X - a.X, acy = c.Y - a.Y, ac = Math.Sqrt(acx * acx + acy * acy);
+                    bool duplicate = abx == 0 && aby == 0;
+                    bool straight = ac > 0 && abx * bcx + aby * bcy > 0 &&
+                                    Math.Abs(abx * acy - aby * acx) / ac <= 1.0;   // b within 1 DBU of a→c
+                    if (!duplicate && !straight) continue;
+                    q.RemoveAt(i);
+                    i--;
+                    removed = true;
+                }
+            }
+            result.Add(q);
+        }
+        return result;
     }
 
     private int CellX(double x) => Math.Clamp((int)Math.Floor((x - _x0) / _cell), 0, _nx - 1);

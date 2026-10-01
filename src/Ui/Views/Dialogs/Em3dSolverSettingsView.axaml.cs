@@ -365,11 +365,7 @@ public partial class Em3dSolverSettingsView : UserControl
         if (TopLevel.GetTopLevel(this)?.Clipboard is { } clipboard) _ = clipboard.SetTextAsync(text);
     }
 
-    private static readonly System.Text.RegularExpressions.Regex SpackPadding =
-        new(@"(?:__spack_p[^/\\]*[/\\])+", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
-
-    internal static string FoldSpackPadding(string text)
-        => SpackPadding.Replace(text, m => "…" + m.Value[^1]);
+    internal static string FoldSpackPadding(string text) => SpackInstalls.FoldPadding(text);
 
     /// <summary>brief-em3d-24 — the row's Install …: consent, then the install in the background.</summary>
     private async void OnInstall(object? sender, RoutedEventArgs e)

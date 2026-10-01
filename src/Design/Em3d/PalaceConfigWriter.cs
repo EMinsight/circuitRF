@@ -394,6 +394,16 @@ public static class PalaceConfigWriter
     /// <summary>Whether the setup saves fields at all: only <c>SaveFieldsGHz: []</c> says no.</summary>
     public static bool SavesFields(PalaceSettings settings) => settings.SaveFieldsGHz is not { Count: 0 };
 
+    /// <summary>Where under <see cref="OutputDirectory"/> Palace writes the saved fields (its ParaView output).</summary>
+    public const string FieldDirectory = "paraview";
+
+    /// <summary>
+    /// Designer feedback round 11 — the directories under <see cref="OutputDirectory"/> a run of
+    /// <paramref name="settings"/> asks Palace to write fields into: <see cref="FieldDirectory"/> unless
+    /// <c>SaveFieldsGHz: []</c> says save none. A run staged elsewhere (the Linux subsystem) copies exactly these back.
+    /// </summary>
+    public static IReadOnlyList<string> FieldDirectories(PalaceSettings settings) => SavesFields(settings) ? [FieldDirectory] : [];
+
     /// <summary>
     /// brief-em3d-29 R-em3d29-1b — the driven sweep's field-save frequencies, GHz: the setup's list, or the
     /// sweep's centre when it names none (D7) — the arithmetic middle of a linear sweep, the geometric

@@ -688,7 +688,7 @@ public static class PdnSweep
                 notes.Add(HeldSentence(source.Name, sb.LowHz, sb.HighHz));
         }
 
-        int unmodelled = 0;
+        var unmodelled = new List<string>();
 
         // R-rail23-1b: THE MOUNTED SET. An unmounted part is excluded exactly as a deleted row
         // would be — it is not a part with no model, it is a part that is not fitted — and it is
@@ -701,7 +701,7 @@ public static class PdnSweep
                 part.TotalInductanceHenries is not { } l || !(l > 0) ||
                 part.EsrBasis is null)
             {
-                unmodelled++;
+                unmodelled.Add(WhyNotModelled(part));
                 continue;
             }
 
@@ -741,12 +741,15 @@ public static class PdnSweep
                 notes.Add(HeldSentence(part.Name, pb.LowHz, pb.HighHz));
         }
 
-        if (unmodelled > 0)
+        // Each part NAMED, with what it lacks (field report, 2026-10-01): the count alone sent a
+        // designer looking for a fault in two parts that each lacked a different thing, one of them
+        // something a part row cannot carry at all.
+        if (unmodelled.Count > 0)
             warnings.Add(
-                $"{unmodelled} part(s) on this rail are NOT in this answer: they resolved to no " +
-                "capacitance, no inductance, or no ESR basis at all. An unstated value is never a " +
-                "defaulted one, and a part stamped with no loss would make every peak it takes part " +
-                "in unbounded. " + request.Parts.Summary);
+                $"{unmodelled.Count} part(s) on this rail are NOT in this answer: " +
+                string.Join("; ", unmodelled) + ". An unstated value is never a defaulted one, and a " +
+                "part stamped with no loss would make every peak it takes part in unbounded. " +
+                request.Parts.Summary);
 
         if (request.Parts.Unmounted is { Count: > 0 } off)
             notes.Add(
@@ -756,6 +759,23 @@ public static class PdnSweep
                 "is a depopulated board, not a missing model.");
 
         return branches;
+
+        // What one part lacks, in the order the branch needs it: a capacitance, an inductance, a loss.
+        static string WhyNotModelled(RailPartModel part)
+        {
+            if (!part.IsResolved) return $"{part.Name} did not resolve";
+            if (!(part.CapacitanceFarads > 0))
+                return part.InductanceHenries is > 0
+                    ? $"{part.Name} states an inductance and no capacitance — a railRF part is a capacitor " +
+                      "across the rail, and an inductor from the rail to the return would short the supply at " +
+                      "DC; a supply's own inductance is its source row's L out"
+                    : $"{part.Name} has no capacitance";
+            if (part.TotalInductanceHenries is not > 0)
+                return $"{part.Name} has no inductance — its row states no ESL and no self-resonant frequency, " +
+                       "and no mounting loop was typed or computed (a computed loop needs the pads to reach the " +
+                       "reference return)";
+            return $"{part.Name} has no ESR, no dielectric class and no file";
+        }
 
         static string HeldSentence(string name, double lowHz, double highHz) =>
             $"{name}'s own file covers {PdnMask.Hertz(lowHz)} to {PdnMask.Hertz(highHz)}. " +

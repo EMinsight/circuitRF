@@ -484,9 +484,9 @@ made for — each port sheet, each conductor, each face of the air box. **Any mi
 naming the object**; a boundary is never guessed onto a face.
 
 **Will it fit?** Palace's memory is checked against the machine's twice: before Gmsh starts, from the
-model's volumes, and again once Gmsh has reported how many tetrahedra it made, before Palace starts.
-The second check is the one that counts on a bond wire or any small conductor, where the refinement
-around the metal is nearly the whole mesh and the volumes alone say almost nothing. Past **75 %** of
+model's volumes and the refined shell round each conductor and port, and again once Gmsh has reported how many tetrahedra it made, before Palace starts.
+The second check is the one that counts on a bond wire or another small curved conductor, where the
+refinement its curvature asks for is nearly the whole mesh and the first check says almost nothing. Past **75 %** of
 the machine's memory the run carries a warning naming the estimate and what would shrink it — the
 Draft preset, no refinement passes, a smaller air box — each with the estimate it would give. Past
 **150 %** Simulate asks before going on (headless, `circuitrf em` needs `--force`). A warning never stops

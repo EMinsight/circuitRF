@@ -19,6 +19,7 @@ namespace CircuitRF.Ui.Tests;
 ///   Case 2  (pin-on-pin → auto-wire):    FAIL  — no auto-wire; pins separate, unconnected
 ///   Case 3  (wire drag, pin held):       PASS  — StartPinned=true; endpoint stays on pin
 /// </summary>
+[Trait("Suite", "SchematicConnectivity")]
 public class DragInvariantOracleTests
 {
     // Resistor at (cx, cy).  Port 1 → world (cx, cy-200).  Port 2 → world (cx, cy+200).

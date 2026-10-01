@@ -146,6 +146,41 @@ public sealed class WslLocationTests : IDisposable
         Assert.DoesNotContain(wsl.Commands.Concat(wsl.Started), c => c.Any(WslPaths.IsMountedWindowsDrive));
     }
 
+    /// <summary>Designer feedback round 11 — the runner a field-saving setup builds copies the fields back. Nothing set
+    /// the runner's field directories, so every run in the subsystem left its fields behind and the Field plot said
+    /// the run saved none.</summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Gate4b_TheFieldsASetupSavesComeBack_AndNoneWhenItSavesNone(bool savesNone)
+    {
+        string runDir = Path.Combine(_tmp, "run dir");
+        Directory.CreateDirectory(runDir);
+        File.WriteAllText(Path.Combine(runDir, "model.msh"), "$MeshFormat");
+        var wsl = Fake("* Ubuntu Running 2\r\n");
+        wsl.OnStart = (distro, cwd, _) =>
+        {
+            string local = wsl.Local(distro, cwd!);
+            foreach (string file in new[] { "postpro/port-S.csv", "postpro/paraview/driven/driven.pvd" })
+            {
+                string path = Path.Combine(local, file);
+                Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+                File.WriteAllText(path, "x");
+            }
+        };
+        var settings = PalaceSettings.Resolve(new CircuitRF.Design.Layout.Em.CemPalace { SaveFieldsGHz = savesNone ? [] : null });
+        var palace = new SolverInstallation(SolverTool.Palace, "/home/user/palace/bin/palace", "0.18.1", null, "",
+                                            SolverHowFound.Path, "", null, "Ubuntu");
+        using (var runner = WslPalace.Runner(wsl, palace, PalaceConfigWriter.FieldDirectories(settings), out string? refusal))
+        {
+            Assert.True(runner is not null, refusal);
+            Assert.Equal(savesNone ? [] : ["paraview"], runner!.FieldDirectories);
+            Assert.True(runner.Solve(runDir, "{}", palace.Path, 1, null, CancellationToken.None, out _, null, 0).Ok);
+        }
+        Assert.True(File.Exists(Path.Combine(runDir, "postpro", "port-S.csv")));
+        Assert.Equal(!savesNone, File.Exists(Path.Combine(runDir, "postpro", "paraview", "driven", "driven.pvd")));
+    }
+
     // ── 5. memory ───────────────────────────────────────────────────────────────────────────────
 
     [Fact]

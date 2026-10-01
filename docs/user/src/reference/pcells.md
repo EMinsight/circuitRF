@@ -91,17 +91,19 @@ same microstrip mirrored, and the substrate is the dielectric between the two co
 When the line has a ground-designated conductor on *both* sides it is a stripline, and a warning says
 the microstrip model is the wrong one.
 
-**Drawing the ground plane.** A line's artwork is the line only, so the ground layer starts empty. The
-planar EM engine takes an undrawn reference as an infinite plane and the impedance probe reads it as a
-solid one, so that is often enough. When the plane's own shape matters (at a via transition, or for a
-3D run), use **Design ▸ Draw Ground Pour**. When Update Layout from Schematic places lines over an
-empty **inner** ground layer, its message offers the same command as a button. It does not offer it for
-an outer ground, such as a two-layer board's bottom copper: no via can pass through an outer plane, so
-for simulation an empty one is already right. Draw it anyway before you export for fabrication.
+**Drawing the ground plane.** A line's artwork is the line only; the plane is the stackup's. **Update
+Layout from Schematic pours it**, on every ground layer the placed lines return through, inner or outer
+— a two-layer board's Bottom Copper included — and drills a ground via beside every pad whose pin is on
+a ground symbol ([Update Layout from Schematic](layout-editor.html#schematic-flow)). The planar EM
+engine would take an undrawn reference as an infinite plane and the impedance probe as a solid one;
+the pour is what railRF, LVS, the 3D model and a fabrication export read.
 
 - It draws one pour per ground layer, under every microstrip line (MLIN, MBEND, MTEE, MCROSS, MTAPER,
-  MKLOPF) that returns through it, reaching five substrate heights beyond them. It uses the lines where
-  they are **when you run it**, so arrange them first: Update Layout places new lines on a grid.
+  MKLOPF) and ground via that returns through it, reaching five substrate heights beyond them, or
+  filling the board outline when one is drawn.
+- It is redrawn by every Update Layout and by **Design ▸ Draw Ground Pour**, from where the lines are
+  then, so rearranging the board and running either again puts the plane under the new arrangement.
+  Reshape it and it is yours; copper you draw on a ground layer stops that layer being poured.
 - Every via that passes **through** the plane gets a clearance hole 250 µm beyond its pad. That is a
   default, because a technology states no antipad; edit the pour to change it.
 - A via that **ends** on the plane is joined to it, and the message counts them. A layout has no nets to

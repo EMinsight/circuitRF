@@ -302,7 +302,15 @@ public sealed partial class RailRfViewModel
             if (c.Result.Rail(rail) is null)
                 return c.Result.RefusalFor(rail) is not null ? $"{rail} · not solved" : $"{rail} · not yet run";
 
-            var parts = new List<string>(4) { rail, c.Kind == PdnModelKind.Fast ? "Fast" : "Accuracy" };
+            // A rail Fast refused for spreading copper is meshed in the same run (RailDcRun's
+            // EscalateSpreadingCopper): its numbers are the mesh's, and the header names the reading
+            // they ARE, not the one the run asked for.
+            var parts = new List<string>(4)
+            {
+                rail,
+                c.Result.Rail(rail)!.EscalatedFromFast is not null ? "Accuracy (Fast refused spreading copper)"
+                    : c.Kind == PdnModelKind.Fast ? "Fast" : "Accuracy",
+            };
 
             // Suppressed while the docs factory captures, for StatusLine's own reason.
             if (!UiArtworkGenerator.HeadlessCapture) parts.Add(ElapsedText);
@@ -1231,6 +1239,13 @@ public sealed partial class RailRfViewModel
         get
         {
             var parts = new List<string>(6) { ModelKindText };
+
+            // The rails this Fast run meshed because Fast refused their spreading copper — said on
+            // the strip as well as the card, so a Fast run that took half a minute says why.
+            if (Current is { Kind: PdnModelKind.Fast } run &&
+                run.Result.Rails.Where(r => r.EscalatedFromFast is not null).Select(r => $"'{r.RailName}'").ToList()
+                    is { Count: > 0 } meshed)
+                parts.Add($"Accuracy on {string.Join(", ", meshed)}: spreading copper");
 
             // R-doc: the elapsed time measures the machine, not the design. It is the point of the
             // strip on screen — the cost of Accuracy before it is pressed — and it is pure churn in

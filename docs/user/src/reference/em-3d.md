@@ -133,8 +133,12 @@ full description.
 - **The air box** (`AirBox`): how far each face of the solved region lies beyond the geometry, and what
   the face does to the field. It can be *Absorbing* (open space), *Pec* (a metal wall), *Pmc* or
   *Symmetry*. By default the floor sits on the lowest ground plane and the other five faces are
-  absorbing, a fraction of a wavelength out. A closed box of `Pec` faces is a shielded enclosure, and it
-  is how the example models a package lid.
+  absorbing, an eighth of the longest wavelength in the sweep out (a quarter when a radiation pattern is
+  asked for). A closed box of `Pec` faces is a shielded enclosure, and it is how the example models a
+  package lid. The Inspector and `circuitrf explain` both give each face's distance and where it came
+  from — *default: 18.74 mm, λ/8 at 2 GHz, the sweep's lowest frequency* — so a sweep that starts low,
+  and so pads far, is visible before it is meshed. On a guided structure (a launch, a transition) a
+  stated padding of a few substrate heights is usually far cheaper.
 - **Quality** (`Quality` in the `Palace` section): *Draft*, *Standard* (the default) or *Accurate*.
   These set the element order, the refinement passes and the sweep tolerance together, and any one of
   those can be overridden on its own. The measured cost of each preset is in
@@ -156,14 +160,14 @@ both, never dropped; every port off is refused (*there is nothing to excite*).
 **Look before you solve.** **Show 3D** on the setup's panel opens the 3D view on the model circuitRF
 built. It works before any solver is installed. `circuitrf explain` on the `.cem` prints the same model as
 text: every solid, its material and its extent, the ports, the air box and its faces, and an estimate of
-the problem's size. `circuitrf render x.cem --section xz@y=0um -o cut.svg` draws a section through it.
+the problem's size. A `.c3d` that embeds several setups takes `--setup <name>` to say which one. `circuitrf render x.cem --section xz@y=0um -o cut.svg` draws a section through it.
 
 ## Watching it run, and reading the answer {#running}
 
 **Before anything runs**, circuitRF checks whether the run fits in this machine's memory. The first check
-uses the model's volumes. A second check, once Gmsh has reported how many tetrahedra it made, uses the
-real count. On a model with small metal the second is the one that counts, because refinement around the
-metal is nearly the whole mesh. Past 75 % of memory the run carries a warning naming the estimate and
+uses the model's volumes and the refined shell round each conductor and port. A second check, once Gmsh has
+reported how many tetrahedra it made, uses the real count. On a bond wire or another small curved conductor
+the second is the one that counts, because the refinement its curvature asks for is nearly the whole mesh. Past 75 % of memory the run carries a warning naming the estimate and
 what would shrink it. Past 150 %, Simulate asks before going on.
 
 **While it runs**, the progress row names the solver's own stages, read from its own log: *Meshing
@@ -262,7 +266,10 @@ setup's refusals and notes, the mesh, the field) are always shown.
     a clip plane's position is a slider across the model: the cut is drawn as you drag it and kept, as one
     undo step, when you let go. The plane is the plot's own. The toolbar's section plane neither moves
     with it nor hides it, so cut the geometry wherever helps you see.
-  - **dB** and a **range** percentile, which keep one singular edge from washing out the picture.
+  - **dB** and a **range** percentile, which keep one singular edge from washing out the picture. A field
+    strength in dB reads in **dBµV/m** (H and surface current in **dBµA/m**), the EMC convention; any other
+    quantity reads in dB re 1 of its unit. A Palace driven field is the one **1 W incident** on the driven port
+    makes — Palace normalises every port excitation to unit incident power — and the legend says so.
 
   **Up to four plots are drawn at once**: tick them in the tree, so two slices of one quantity at two
   positions, or two quantities on crossing planes, are on screen together. Ticking a fifth is refused, and

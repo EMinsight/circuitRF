@@ -26,6 +26,17 @@ namespace CircuitRF.Design.Em3d;
 /// </summary>
 public static class SpackInstalls
 {
+    private static readonly System.Text.RegularExpressions.Regex Padding =
+        new(@"(?:__spack_p[^/\\]*[/\\])+", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// A path as a person reads it, with Spack's path padding (a chain of <c>__spack_path_placeholder__</c>
+    /// directories, the last one truncated — the <c>padded_length</c> Palace's own recipe sets) folded to one "…".
+    /// The chain carries nothing a reader can use, and printed in full it wrapped one path over several lines of a
+    /// run's messages. DISPLAY ONLY: the folded text is not a path anything can open.
+    /// </summary>
+    public static string FoldPadding(string text) => Padding.Replace(text, m => "…" + m.Value[^1]);
+
     /// <summary>One installed spec.</summary>
     public sealed record Install(string Hash, string Name, string Version, string Prefix, long InstalledAt,
                                  IReadOnlyList<Dependency> Dependencies);

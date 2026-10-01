@@ -369,6 +369,8 @@ internal static class ToolCatalog
                             "Only with cells: include generated cells, which are hidden by default. On its own it is refused."),
                         new("view",    "--view",    OptKind.Str,
                             "Which view of a cell folder: schematic, symbol or layout. Spelled as render spells it."),
+                        new("setup",   "--setup",   OptKind.Str,
+                            "Which of a 3D view's (.c3d's) embedded setups to explain, by name. Needed when it embeds several."),
                     ],
                     ""),
             ]),
@@ -565,6 +567,9 @@ internal static class ToolCatalog
                         new("tight", "--tight", OptKind.Flag,
                             "With field: crop the page to the section (the width kept, the height following it), the legend "
                           + "inset in its corner, no caption, and no margin unless margin says otherwise."),
+                        new("setup", "--setup", OptKind.Str,
+                            ".c3d only: which of its embedded setups the picture is drawn through (its air box and problem), "
+                          + "by name. Needed when it embeds several."),
                     ],
                     ""),
             ],

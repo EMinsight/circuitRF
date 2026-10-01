@@ -522,7 +522,7 @@ public static class TraceImpedanceReportDocument
             int warn = layer.Traces.Count(t => t.Verdict == TraceVerdict.Warning);
             int fail = layer.Traces.Count(t => t.Verdict == TraceVerdict.Fail);
             C.DrawText($"{layer.Traces.Count} traces  ·  {pass} pass  ·  {warn} warning  ·  {fail} fail" +
-                       (layer.PoursSkipped > 0 ? $"  ·  {layer.PoursSkipped} pours not analysed" : "") +
+                       (layer.PoursSkipped > 0 ? $"  ·  {layer.PoursSkipped} pour{(layer.PoursSkipped == 1 ? "" : "s")} not analysed" : "") +
                        (layer.OutOfScope > 0 ? $"  ·  {layer.OutOfScope} outside the scope" : ""),
                        Margin + _h1.MeasureText(layer.Name) + 12, _y, SKTextAlign.Left, _body, muted);
             _y += 8;
@@ -833,6 +833,9 @@ public static class TraceImpedanceReportDocument
                 y = Paragraph(text, r.Left + 16, top - 1.5f, r.Width - 16, _small, Muted, 1.35f) + 6;
             }
             Key(Unsolved, "not solved (no return path, or the cut left the copper)", false);
+            // Pale copper reads as "not evaluated" beside the darker grey above (designer feedback round 11), and
+            // most of it is deliberately not a trace: say what it is.
+            Key(CopperEdge, "pale copper: not a trace (a pad or land, a taper, a pour, or a run too short for its width), so not reviewed", false);
             Key(ZMark, "numbered: Z0 outside the pass band", true);
             Key(GroundMark, "numbered, with the stretch outlined: return path broken or partial, or the reference steps to another layer", true);
             {

@@ -61,7 +61,7 @@ internal static class Explain
 
     public static int Run(string[] args)
     {
-        string? path = null, expr = null, reference = null, analysisName = null;
+        string? path = null, expr = null, reference = null, analysisName = null, setupName = null;
         bool wantAnalyses = false, wantCells = false, wantLayers = false, wantExtents = false, all = false;
         bool wantFootprints = false;
         ViewType? askedView = null;
@@ -106,6 +106,11 @@ internal static class Explain
                 case "--ref" when i + 1 < args.Length:
                     reference = args[++i];
                     continue;
+                // Designer feedback round 11 — which of a .c3d's embedded setups to explain, spelled as `em` and
+                // `render` spell it. A view with several setups names this flag when it cannot choose one itself.
+                case "--setup" when i + 1 < args.Length:
+                    setupName = args[++i];
+                    continue;
                 case "--set" when i + 1 < args.Length:
                 {
                     // The same override the run verbs take, applied the same way (cli.md §5): it
@@ -149,6 +154,9 @@ internal static class Explain
             return JsonRun.Fail(CliDiagnostics.ExplainPathNotFound(path));
 
         var kind  = DocumentKinds.Classify(path);
+        if (setupName is not null && kind != DocumentKind.ThreeD)
+            return JsonRun.Fail(kind == DocumentKind.EmSetup ? CliDiagnostics.EmSetupOnCem(path)
+                                                             : CliDiagnostics.SetupNotAThreeDView("explain", path));
         var walks = new List<ResolutionStepJson>();
         int exit  = 0;
 
@@ -168,7 +176,7 @@ internal static class Explain
         {
             case DocumentKind.Layout:   ExplainLayout(path, walks); break;
             case DocumentKind.EmSetup:  exit |= ExplainEmSetup(path, walks, out em3d); break;
-            case DocumentKind.ThreeD:   exit |= ExplainThreeD(path, walks, out em3d, sets); break;
+            case DocumentKind.ThreeD:   exit |= ExplainThreeD(path, walks, out em3d, sets, setupName); break;
             case DocumentKind.Technology:      exit |= ExplainTechnology(path, walks); break;
             case DocumentKind.MaterialLibrary: ExplainMaterialLibrary(path, walks); break;
             // A circuit reports its workspace walk here; its analyses are --analysis's. (Brief 53 had put the technology case
@@ -292,7 +300,7 @@ internal static class Explain
         Console.Error.WriteLine("Usage: circuitrf explain <path> [--expr \"<expression>\"] [--set var=expr]");
         Console.Error.WriteLine("                            [--analysis [<name>]] [--ref <relative-ref>]");
         Console.Error.WriteLine("                            [--cells [--all]] [--layers] [--extents] [--view <name>]");
-        Console.Error.WriteLine("                            [--footprints]");
+        Console.Error.WriteLine("                            [--footprints] [--setup <name>]");
         return 1;
     }
 
@@ -579,14 +587,14 @@ internal static class Explain
     /// the lowering table's choice per object — then, with exactly one embedded setup, the problem it makes.
     /// </summary>
     private static int ExplainThreeD(string path, List<ResolutionStepJson> walks, out ExplainEm3dJson? em3d,
-                                     IReadOnlyList<(string Name, string Expr)> sets)
+                                     IReadOnlyList<(string Name, string Expr)> sets, string? setupName)
     {
         em3d = null;
         string full = Path.GetFullPath(path);
         Workspace(path, walks);
         NameWalk(full, sets, walks);
         Em3dSetupSource src;
-        try { src = Em3dSetupSource.ForThreeDView(full, null); }
+        try { src = Em3dSetupSource.ForThreeDView(full, setupName); }
         catch (Exception ex) { return JsonRun.Fail(CliDiagnostics.ExplainUnreadable(path, ex.Message)); }
         walks.Add(new ResolutionStepJson("technology", full, src.Elaboration?.TechnologyPath ?? src.Resolution.TechnologyPath,
             "the 3D view's own TechRef, else its ancestor workspace's default — resolved from the view's own path"));

@@ -78,7 +78,7 @@ public sealed class SeveralFieldPlotsTests : IDisposable
         Assert.Equal(union, e1.Scale);
         Assert.Equal(union, e2.Scale);
         Assert.Equal(b.OwnScale, b.Scale);
-        Assert.Equal((float)union.Hi, Block(0, 3));
+        Assert.Equal((float)(union.Hi - union.DbOffset), Block(0, 3));
         Assert.Equal(Block(0, 3), Block(1, 3));
         var legends = v.FieldLegendGroups;
         Assert.Equal(2, legends.Count);

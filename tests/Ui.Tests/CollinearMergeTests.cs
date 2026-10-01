@@ -12,6 +12,7 @@ namespace CircuitRF.Ui.Tests;
 /// no junction dots where collinear wires overlap. Dragging one wire onto a collinear one merges
 /// them (both d1&gt;d2 and d1&lt;d2), undoably.
 /// </summary>
+[Trait("Suite", "SchematicConnectivity")]
 public class CollinearMergeTests
 {
     private static EditableWire MakeWire(params (double X, double Y)[] pts)

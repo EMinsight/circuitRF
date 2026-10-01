@@ -268,6 +268,8 @@ public sealed partial class RailRfViewModel : ObservableObject, IDisposable
         // rail's, and without this the previous rail's stayed on screen under this rail's name.
         SweepSelectedRail();
         OnPropertyChanged(nameof(ResultsRailText));
+        OnPropertyChanged(nameof(EscalationText));
+        OnPropertyChanged(nameof(ShowEscalationCard));
         RemoveRailCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(CanRemoveRail));
     }
@@ -768,8 +770,10 @@ public sealed partial class RailRfViewModel : ObservableObject, IDisposable
     /// </remarks>
     public string ImpedanceTargetEntry
     {
-        get => SelectedRail?.ImpedanceTarget?.FlatMilliohms is { } mo
-            ? $"{RailValueFormat.Significant(mo, 4)} mΩ" : "";
+        // A transient target shows the Z it DERIVES (round 11), so the box never reads empty over a
+        // target that is in force; typing here replaces it with a flat one.
+        get => SelectedRail?.ImpedanceTarget?.FlatTargetOhms is { } ohms
+            ? $"{RailValueFormat.Significant(ohms * 1e3, 4)} mΩ" : "";
         set
         {
             if (SelectedRail is { } rail)
@@ -779,6 +783,7 @@ public sealed partial class RailRfViewModel : ObservableObject, IDisposable
                     rail.ImpedanceTarget = RailTarget.OfFlatImpedance(r * 1e3);
             }
             OnPropertyChanged();
+            RefreshTransientTarget();
             QueueResolve();
         }
     }
@@ -958,6 +963,7 @@ public sealed partial class RailRfViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(BandStartEntry));
         OnPropertyChanged(nameof(BandStopEntry));
         OnPropertyChanged(nameof(ReferenceExtent));
+        RefreshTransientTarget();
     }
 
     // ── The board tab strip and the results tabs ───────────────────────────────────────────────
@@ -995,6 +1001,17 @@ public sealed partial class RailRfViewModel : ObservableObject, IDisposable
     //
     // Each card is `Has… && tab == …`, so a card with nothing to say still does not appear — the
     // tab narrows what is shown and never forces an empty card into view.
+
+    /// <summary>
+    /// Why the selected rail's numbers are the mesh's on a Fast run — Fast would not price the spreading
+    /// copper it reaches its load through, so the run meshed it (<see cref="RailDcResult.EscalatedFromFast"/>).
+    /// Empty on a rail solved by the reading the run asked for.
+    /// </summary>
+    public string EscalationText => SelectedRailResult?.EscalatedFromFast ?? "";
+
+    /// <summary>The card saying so — on BOTH tabs, because it is about which reading every number
+    /// under it is, and placed first so it is read before them.</summary>
+    public bool ShowEscalationCard => EscalationText.Length > 0;
 
     /// <summary>The stackup readout — <b>DC</b>. §4.1's shunt branch is not stamped at ω = 0 and the
     /// number is still the cheapest check in the tool, which is why it is on the DC half at all.</summary>
@@ -1048,6 +1065,8 @@ public sealed partial class RailRfViewModel : ObservableObject, IDisposable
     /// </summary>
     private void AnnounceCardVisibility()
     {
+        OnPropertyChanged(nameof(EscalationText));
+        OnPropertyChanged(nameof(ShowEscalationCard));
         OnPropertyChanged(nameof(ShowStackupCard));
         OnPropertyChanged(nameof(ShowDropCard));
         OnPropertyChanged(nameof(ShowBreakdownCard));

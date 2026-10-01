@@ -307,6 +307,7 @@ public static class LayoutFragment
         foreach (var shape in shapes)
         {
             var clone = LayoutGeometry.Clone(shape);
+            clone.Generated = null;   // a pasted copy of generated copper is the designer's
             if (choices is not null && choices.TryGetValue(shape.Layer, out var choice))
             {
                 switch (choice.Action)
@@ -346,6 +347,7 @@ public static class LayoutFragment
         foreach (var s in shapes)
         {
             var clone = LayoutGeometry.Clone(s);
+            clone.Generated = null;   // a pasted or duplicated copy of generated copper is the designer's
             if (dx != 0 || dy != 0) LayoutGeometry.TranslateBy(clone, dx, dy);
             result.Add(clone);
         }

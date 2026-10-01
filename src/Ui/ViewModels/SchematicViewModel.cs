@@ -231,6 +231,10 @@ public sealed partial class SchematicViewModel : ObservableObject
     private Dictionary<string, (double X, double Y)>?                                                 _dragStartCompPositions;
     private Dictionary<string, WireDragInfo>?                                                         _dragWireInfo;
     private Dictionary<string, IReadOnlyList<(double X, double Y)>>?                                  _dragUnselectedWirePoints;
+    // Everything a drag leaves where it is that a wire can be attached to — stationary pins, the
+    // vertices of unselected wires, junction dots — as it stood at drag start, with the wire a vertex
+    // belongs to. The follow rule keeps any leg one of these joins (bad_drag, 2026-10-01).
+    private List<(double X, double Y, string? WireId)>?                                               _dragStationaryTaps;
     /// <summary>Mid-span tap stubs for the frame in flight — drawn as previews, re-made each tick.</summary>
     private List<IReadOnlyList<(double X, double Y)>>?                                               _dragTapStubs;
     private Dictionary<string, (double X, double Y)>?                                                 _dragStartObjPositions;
@@ -569,6 +573,7 @@ public sealed partial class SchematicViewModel : ObservableObject
             SelectedWireIds         = selWires,
             SelectedCanvasObjIds    = selObjs,
             SelectedWireSegments    = selSegs,
+            SelectedWireSpans       = Selection.GetSelectedSpans(EditModel),
             WirePreview             = _wirePoints.Count > 0 ? _wirePoints.ToList() : null,
             Ghost                   = ActiveTool == Tool.Place && _placeGhostPos is { } gp
                 ? BuildPlacementGhost(gp.X, gp.Y)
@@ -929,10 +934,16 @@ public sealed partial class SchematicViewModel : ObservableObject
         // B1: Per-segment click — selects just that segment (not the whole wire).
         if (hit.Kind == SchematicHitTest.HitKind.WireSegment && !pressOnMultiSelection)
         {
+            // A segment something joins between its vertices (a T, a pin, a dot) selects only the
+            // stretch between the junctions either side of the click, so Delete takes that stretch and
+            // the rest of the wire keeps every connection it had (designer feedback round 11).
+            var span = EditModel.FindWire(hit.Id) is { } spanWire
+                ? WireGeometry.SpanAround(EditModel, spanWire, hit.SubIndex, wx, wy)
+                : null;
             if (shift)
-                Selection.ToggleSegment(hit.Id, hit.SubIndex);
+                Selection.ToggleSegment(hit.Id, hit.SubIndex, span);
             else
-                Selection.SelectOneSegment(hit.Id, hit.SubIndex);
+                Selection.SelectOneSegment(hit.Id, hit.SubIndex, span);
             // SelectOneSegment/ToggleSegment fires Changed → RebuildOverlay.
 
             var wire = EditModel.FindWire(hit.Id);
@@ -1319,6 +1330,8 @@ public sealed partial class SchematicViewModel : ObservableObject
         _dragPortDefs = new Dictionary<string, IReadOnlyList<(float, float, int)>>(EditModel.Components.Count);
         foreach (var comp in EditModel.Components)
             _dragPortDefs[comp.Id] = EditModel.PortDefsOf(comp);
+
+        SnapshotStationaryTaps();
 
         // Layer 3: detect pin-on-pin contacts between selected component ports and unselected
         // component ports (no wire between them). These auto-form a wire if the drag separates them.
@@ -1810,7 +1823,7 @@ public sealed partial class SchematicViewModel : ObservableObject
             if (!_dragUnselectedWirePoints.TryGetValue(wire.Id, out var orig)) continue;
             if (orig.Count < 2) continue;
 
-            var follow = FollowEndpointsFor(orig, portMoves, tol);
+            var follow = FollowEndpointsFor(orig, portMoves, tol, wire.Id);
             if (follow is not null)
             {
                 wire.Points.Clear();
@@ -1888,7 +1901,7 @@ public sealed partial class SchematicViewModel : ObservableObject
                 if (!_dragUnselectedWirePoints.TryGetValue(wire.Id, out var orig)) continue;
                 if (orig.Count < 2) continue;
 
-                var follow = FollowEndpointsFor(orig, portMoves, tol);
+                var follow = FollowEndpointsFor(orig, portMoves, tol, wire.Id);
                 if (follow is not null)
                     followWireSnaps.Add(new WireMoveSnapshot(wire, orig, follow));
 
@@ -2044,7 +2057,7 @@ public sealed partial class SchematicViewModel : ObservableObject
     private IReadOnlyList<(double X, double Y)>? FollowEndpointsFor(
         IReadOnlyList<(double X, double Y)> orig,
         List<(double Ox, double Oy, double Nx, double Ny)> portMoves,
-        double tol)
+        double tol, string? wireId = null)
     {
         if (orig.Count < 2) return null;
 
@@ -2064,7 +2077,55 @@ public sealed partial class SchematicViewModel : ObservableObject
         if (!sMoved && !eMoved) return null;
 
         return SimplifyWirePoints(
-            WireGeometry.FollowEndpoints(orig, sMoved, nsx, nsy, eMoved, nex, ney));
+            WireGeometry.FollowEndpoints(orig, sMoved, nsx, nsy, eMoved, nex, ney,
+                                         (a, b) => StationaryTapBetween(a, b, wireId, portMoves)));
+    }
+
+    /// <summary>
+    /// Whether something the drag leaves in place joins the leg from <paramref name="a"/> (exclusive)
+    /// to <paramref name="b"/> (inclusive): a stationary pin, another unselected wire's vertex, or a
+    /// junction dot, as they stood at drag start. A point a moving pin started on is not stationary —
+    /// whatever sits there moves with the pin.
+    /// </summary>
+    private bool StationaryTapBetween((double X, double Y) a, (double X, double Y) b, string? wireId,
+                                      List<(double Ox, double Oy, double Nx, double Ny)> portMoves)
+    {
+        if (_dragStationaryTaps is null) return false;
+        const double tol = SchematicEditModel.ConnectTolerance;
+        foreach (var (x, y, owner) in _dragStationaryTaps)
+        {
+            if (owner is not null && owner == wireId) continue;
+            if (SchematicGeometry.CoincidentPoints(x, y, a.X, a.Y, tol)) continue;
+            if (!SchematicGeometry.PointOnSegment(x, y, a.X, a.Y, b.X, b.Y, tol)) continue;
+            if (portMoves.Any(m => SchematicGeometry.CoincidentPoints(x, y, m.Ox, m.Oy, tol))) continue;
+            return true;
+        }
+        return false;
+    }
+
+    /// <summary>Fills <see cref="_dragStationaryTaps"/> from the drag-start state (see its field).</summary>
+    private void SnapshotStationaryTaps()
+    {
+        var taps = new List<(double X, double Y, string? WireId)>();
+        foreach (var comp in EditModel.Components)
+        {
+            if (_dragStartCompPositions is not null && _dragStartCompPositions.ContainsKey(comp.Id)) continue;
+            var defs = _dragPortDefs is not null && _dragPortDefs.TryGetValue(comp.Id, out var snapped)
+                ? snapped
+                : EditModel.PortDefsOf(comp);
+            foreach (var def in defs)
+            {
+                if (comp.IsPortDetached(def.PortIndex)) continue;
+                var (x, y) = SchematicGeometry.LocalToWorld(def.LocalX, def.LocalY,
+                                                            comp.X, comp.Y, comp.Rotation, comp.MirrorX);
+                taps.Add((x, y, null));
+            }
+        }
+        if (_dragUnselectedWirePoints is not null)
+            foreach (var (id, pts) in _dragUnselectedWirePoints)
+                foreach (var (x, y) in pts) taps.Add((x, y, id));
+        foreach (var d in EditModel.Dots) taps.Add((d.X, d.Y, null));
+        _dragStationaryTaps = taps;
     }
 
     /// <summary>
@@ -2418,6 +2479,7 @@ public sealed partial class SchematicViewModel : ObservableObject
         _dragStartCompPositions   = null;
         _dragWireInfo             = null;
         _dragUnselectedWirePoints = null;
+        _dragStationaryTaps       = null;
         _dragTapStubs             = null;
         _dragStartObjPositions    = null;
         _dragPinOnPinContacts     = null;
@@ -2515,6 +2577,19 @@ public sealed partial class SchematicViewModel : ObservableObject
     /// Runs the identical commit path a real UI drag uses (snapshot + commit, no axis lock).
     /// For use only by oracle tests; not part of the normal UI interaction flow.
     /// </summary>
+    /// <summary>
+    /// Alt + double-click on a wire: selects the run of wiring through the clicked point, up to the
+    /// component pins (<see cref="WireRunSelector"/>). False when <paramref name="wireId"/> names no wire.
+    /// </summary>
+    public bool SelectWireRun(string wireId, double wx, double wy)
+    {
+        if (EditModel.FindWire(wireId) is not { } wire) return false;
+        var run = WireRunSelector.RunAt(EditModel, wire, wx, wy);
+        if (run.Count == 0) return false;
+        Selection.SelectSegments(run.Select(r => (r.WireId, r.SegmentIndex, r.Span)));
+        return true;
+    }
+
     internal void SimulateDragCommit(double dx, double dy)
     {
         _dragStartWorldX = 0;
@@ -4179,7 +4254,7 @@ public sealed partial class SchematicViewModel : ObservableObject
             var segs = Selection.GetSelectedSegments(EditModel);
             if (segs.Count > 0)
             {
-                Execute(new DeleteSegmentsCommand(EditModel, segs));
+                Execute(new DeleteSegmentsCommand(EditModel, segs, Selection.GetSelectedSpans(EditModel)));
                 Selection.Clear();
             }
             return;

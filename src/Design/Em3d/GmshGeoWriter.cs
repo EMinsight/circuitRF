@@ -669,6 +669,22 @@ public static partial class GmshGeoWriter
     /// section's fraction of the wavelength in that material at the sweep's top frequency (the largest
     /// εr of a tensor). The one formula the script and <c>explain</c>'s size estimate share.
     /// </summary>
+    /// <summary>
+    /// Designer feedback round 11 — the refinement the script writes (the Threshold fields round conductors, sheets and
+    /// ports), as the size estimate prices it: <see cref="PalaceSettings.EdgeRefinement"/> of the smallest meshed element at
+    /// conductors and sheets, at most 1/<see cref="PortCellsAcross"/> of each port's smaller side there, growing by
+    /// <see cref="PalaceSettings.Grading"/> to the largest. The same arithmetic as <see cref="Write"/>'s, from the same
+    /// per-material sizes.
+    /// </summary>
+    public static Em3dRefinementSizing RefinementSizing(Em3dProblem problem, Func<Em3dSolid, double> solidSizeM,
+                                                        double backgroundSizeM, PalaceSettings settings)
+    {
+        var sizes = problem.Solids.Where(s => s.Role != Em3dRole.Conductor).Select(solidSizeM).Append(backgroundSizeM).ToList();
+        double edge = settings.EdgeRefinement * sizes.Min();
+        return new Em3dRefinementSizing(edge, port => Math.Min(edge, SmallerSide(port) / PortCellsAcross), settings.Grading,
+                                        sizes.Max());
+    }
+
     public static double MaxElementSizeM(Em3dMaterial material, double fMaxHz, PalaceSettings settings)
     {
         double er = material.EpsrTensor is { Count: 3 } t ? t.Max() : material.Epsr;

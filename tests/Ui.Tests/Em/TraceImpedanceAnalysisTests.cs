@@ -167,6 +167,30 @@ public class TraceImpedanceAnalysisTests
         Assert.Equal(["open end", "pad"], new[] { trace.StartsAt, trace.EndsAt }.Order());
     }
 
+    /// <summary>
+    /// A straight line whose two sides carry collinear vertices at DIFFERENT points — what a Gerber layer
+    /// composited from strokes and flashes arrives as — is one trace of its full length. Its sides used to
+    /// pair edge by edge, every pair overlapping by less than the half width a piece needs, so the line
+    /// was not found at all (designer feedback round 11: the last 0.7 mm before each series part and a
+    /// 1.6 mm section between two of them, drawn as plain copper on the map).
+    /// </summary>
+    [Fact]
+    public void ALineWhoseSidesAreSplitAtDifferentPoints_IsOneTraceOfItsFullLength()
+    {
+        const double half = 381, step = 343, length = 6000;
+        var xy = new List<long> { Um(0), Um(-half) };
+        for (double x = 0.5 * step; x < length; x += step) xy.AddRange([Um(x), Um(-half)]);   // bottom, offset
+        xy.AddRange([Um(length), Um(-half), Um(length), Um(half)]);
+        for (double x = length - step; x > 0; x -= step) xy.AddRange([Um(x), Um(half)]);     // top
+        xy.AddRange([Um(0), Um(half)]);
+        LayoutShape[] shapes = [new PolygonShape { Layer = Top, Xy = [.. xy] }, Rect(Gnd, -2000, -8000, 8000, 8000)];
+
+        var trace = Assert.Single(Assert.Single(Analyze(shapes).Layers).Traces);
+
+        Assert.Equal(length, trace.Length / LayoutUnits.DefaultDbuPerMicron, 1.0);
+        Assert.Equal(2 * half, trace.WidthMax / LayoutUnits.DefaultDbuPerMicron, 1.0);
+    }
+
     /// <summary>A trace into a pad only a little wider than itself — 1.37× here, longer than it is wide —
     /// leaves the pad off the trace, as a wider pad always did (round-10 report: "through the pad, but
     /// not always"). With the step at 1.5 the pad stayed as the trace's last 2 mm and its width.</summary>

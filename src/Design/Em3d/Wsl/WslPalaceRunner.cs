@@ -67,8 +67,9 @@ internal sealed class WslPalaceRunner(WslSession session, string linuxHome, stri
                                    || fieldDirectories.Any(d => f.StartsWith(d.TrimEnd('/') + "/", StringComparison.Ordinal)))
                        .Order(StringComparer.Ordinal).ToList();
 
-    /// <summary>The field directories under <c>postpro/</c> the setup asked Palace to write. None until
-    /// brief 29 asks Palace for fields; the copy-out already honours the list.</summary>
+    /// <summary>The field directories under <c>postpro/</c> the setup asked Palace to write
+    /// (<see cref="PalaceConfigWriter.FieldDirectories"/>). Empty copies no field back — which is what every run did
+    /// until designer feedback round 11, because nothing set it: the Field plot then said the run saved none.</summary>
     public IReadOnlyList<string> FieldDirectories { get; init; } = [];
 
     /// <summary>The grace period between TERM and KILL (a seam for the gate).</summary>

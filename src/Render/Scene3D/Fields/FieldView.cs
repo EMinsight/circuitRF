@@ -132,6 +132,24 @@ public sealed record FieldColorScale(bool Db, double Lo, double Hi, double Perce
     public const double DefaultDbSpan = 40;
 
     /// <summary>
+    /// Designer feedback round 11 — the dB reference of a quantity in <paramref name="unit"/>, as dB above 1 of that unit:
+    /// 120 for a field strength or a voltage, which then reads in dBµV/m, dBµA/m or dBµV (the EMC convention: 1 µV/m is
+    /// −120 dB re 1 V/m), and 0 for every other unit, which keeps "dB re 1 unit".
+    /// </summary>
+    public static double DbReference(string unit) => unit is "V/m" or "A/m" or "V" ? 120 : 0;
+
+    /// <summary>The dB unit a range in <paramref name="unit"/> reads in: "dBµV/m", "dBµA/m", "dBµV", else "dB re 1 unit".</summary>
+    public static string DbUnit(string unit)
+        => DbReference(unit) > 0 ? "dBµ" + unit : unit.Length > 0 ? "dB re 1 " + unit : "dB";
+
+    /// <summary>What <see cref="Lo"/> and <see cref="Hi"/> sit above 20·log10 of the value in the base unit (0 on a linear
+    /// scale). The GPU is handed the range less this, so its own 20·log10 needs no reference of its own.</summary>
+    public double DbOffset => Db ? DbReference(Unit) : 0;
+
+    /// <summary>The unit <see cref="Lo"/> and <see cref="Hi"/> are stated in.</summary>
+    public string RangeUnit => Db ? DbUnit(Unit) : Unit;
+
+    /// <summary>
     /// The automatic range of <paramref name="q"/> over the values of <paramref name="surfaces"/>: the top at
     /// the <paramref name="percentile"/>-th percentile of the envelope, the bottom at 0 (linear), the top
     /// less <paramref name="dbSpan"/> (dB), or minus the top (a signed quantity, on a symmetric range).
@@ -150,7 +168,7 @@ public sealed record FieldColorScale(bool Db, double Lo, double Hi, double Perce
         string unit = FieldNames.Unit(q.Array.Name);
         if (q.Signed) return new(false, -top, top, percentile, true, unit);
         if (!db) return new(false, 0, top, percentile, false, unit);
-        double hi = 20 * Math.Log10(Math.Max(top, 1e-300));
+        double hi = 20 * Math.Log10(Math.Max(top, 1e-300)) + DbReference(unit);
         return new(true, hi - dbSpan, hi, percentile, false, unit);
     }
 
@@ -199,17 +217,17 @@ public sealed record FieldColorScale(bool Db, double Lo, double Hi, double Perce
     /// <summary>Where <paramref name="value"/> falls in the range, 0..1, clamped (the end colour beyond).</summary>
     public double Position(double value)
     {
-        double v = Db ? 20 * Math.Log10(Math.Max(Math.Abs(value), 1e-300)) : value;
+        double v = Db ? 20 * Math.Log10(Math.Max(Math.Abs(value), 1e-300)) + DbOffset : value;
         return Hi > Lo ? Math.Clamp((v - Lo) / (Hi - Lo), 0, 1) : 0;
     }
 
-    /// <summary>The legend's range line: "0 – 2,430 V/m, 99th percentile" / "27.7 – 67.7 dB (re 1 V/m)".</summary>
+    /// <summary>The legend's range line: "0 to 2430 V/m, top at the 99th percentile" / "147.7 to 187.7 dBµV/m, top at …".</summary>
     public string Describe()
     {
         string pct = Percentile >= 100 ? "maximum" : $"{Percentile.ToString("0.#", CultureInfo.InvariantCulture)}th percentile";
         string u = Unit.Length > 0 ? " " + Unit : "";
         return Db
-            ? $"{G(Lo)} to {G(Hi)} dB{(Unit.Length > 0 ? $" re 1 {Unit}" : "")}, top at the {pct}"
+            ? $"{G(Lo)} to {G(Hi)} {DbUnit(Unit)}, top at the {pct}"
             : $"{G(Lo)} to {G(Hi)}{u}, top at the {pct}";
     }
 
@@ -307,7 +325,7 @@ public static class FieldUniforms
     {
         u.Clear();
         u[0] = (float)Math.Cos(phase); u[1] = (float)Math.Sin(phase);
-        u[2] = (float)scale.Lo; u[3] = (float)scale.Hi;
+        u[2] = (float)(scale.Lo - scale.DbOffset); u[3] = (float)(scale.Hi - scale.DbOffset);
         u[4] = q.ShaderMode; u[5] = scale.Db ? 1 : 0;
         u[7] = unclipped ? 1 : 0;
         var stops = map.Stops;

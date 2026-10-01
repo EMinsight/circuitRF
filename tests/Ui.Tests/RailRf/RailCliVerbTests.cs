@@ -284,6 +284,34 @@ public sealed class RailCliVerbTests(ITestOutputHelper output) : IDisposable
     }
 
     /// <summary>
+    /// Round 11 — <c>--target-transient ripple=5%,tr=10ns</c> derives the target through the model's own
+    /// <see cref="RailTransientSpec.FromRipple"/> (3.7 V source, 0.5 A load) and says it, arithmetic
+    /// included — the same sentence the window's Target card shows.
+    /// </summary>
+    [Fact]
+    public void TargetTransient_DerivesTheModelsZ_AndSaysIt()
+    {
+        var fx = Fixture();
+        var (exit, _, stderr) = RunCli("rail", fx.Crail, "--rail", "VDD", "--target-transient", "ripple=5%,tr=10ns");
+        output.WriteLine(stderr);
+        Assert.Equal(0, exit);
+
+        string expected = RailTransientSpec.FromRipple(3.7, 5, 0.5, 10e-9).Describe();
+        Assert.Contains(expected, stderr, StringComparison.Ordinal);
+        Assert.Contains("Z 370 mΩ = 185 mV / 500 mA · band to 35 MHz", expected, StringComparison.Ordinal);
+    }
+
+    /// <summary>Round 11 — a spec stating neither ΔV nor a ripple is refused, naming the keys it takes.</summary>
+    [Fact]
+    public void TargetTransient_WithoutDvOrRipple_IsRefused()
+    {
+        var fx = Fixture();
+        var (exit, _, stderr) = RunCli("rail", fx.Crail, "--rail", "VDD", "--target-transient", "dI=35mA");
+        Assert.NotEqual(0, exit);
+        Assert.Contains("states neither dV nor ripple", stderr, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// <b>The other non-refusal</b>: no plating thickness is a SETTING, not a missing answer. The run
     /// proceeds and the via check says which basis produced each limit.
     /// </summary>

@@ -206,7 +206,10 @@ public sealed class LayoutToSchematicGeneratorTests : IDisposable
         // identical resolved parameters hash to the identical folder).
         string originalCellRef = inst.CellRef!;
         var fwd = SchematicToLayoutGenerator.Run(schematic, source, schematic.SchematicDirectory!, _root, layoutDir, tech, null, null);
-        Assert.True(fwd.NothingChanged); // nothing to push — the round trip already agrees
+        // Nothing to push to the INSTANCE — the round trip already agrees. Since designer feedback round 11 the run
+        // does draw the ground pour the line returns through (Bottom Copper), which is artwork, not the instance.
+        Assert.Equal((0, 0), (fwd.AddedCount, fwd.UpdatedCount));
+        Assert.Single(fwd.GroundArtwork.Pours);
         Assert.Equal(originalCellRef, inst.CellRef); // same generated cell, geometry identical by construction
 
         // Directly confirm the resolved PCell parameters are bit-for-bit the values we started with.

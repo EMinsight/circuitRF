@@ -17,6 +17,7 @@ namespace CircuitRF.Ui.Tests;
 /// Expected RED before L2b filters are wired, GREEN after.
 /// Existing connectivity / extraction / drag oracles must stay GREEN throughout.
 /// </summary>
+[Trait("Suite", "SchematicConnectivity")]
 public class DisconnectOracleTests
 {
     // Resistor at (cx, cy).

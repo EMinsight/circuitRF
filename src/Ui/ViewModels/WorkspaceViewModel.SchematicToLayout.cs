@@ -174,17 +174,11 @@ public partial class WorkspaceViewModel
 
             addedRegion = result.AddedRegion;
 
-            // Designer feedback round 10: the plane the new lines return through, offered as copper. The pour is
-            // computed when the button is pressed, from where the lines are then — Update Layout has just put them
-            // on a placement grid the designer will rearrange.
-            foreach (string ground in result.UndrawnGrounds)
-                Messages.PostAction(MessageLevel.Info,
-                    $"The lines placed here return through '{ground}', the technology's ground reference, and nothing " +
-                    "is drawn on it. The planar EM engine takes it as an infinite plane and the impedance probe reads " +
-                    "it as solid, so this matters only where the plane's own shape does — at a via transition, or for " +
-                    "a 3D run. Design ▸ Draw Ground Pour draws it, under the lines where they are when you run it, " +
-                    "with a clearance round every via that passes through it.",
-                    "Draw Ground Pour", () => { layoutVm.DrawGroundPour(); return Task.CompletedTask; });
+            // Designer feedback round 11: the ground vias and the pour, drawn by the run itself (inside its command).
+            foreach (var line in SchematicToLayoutGenerator.GroundArtworkReport(result.GroundArtwork, layoutVm.Model,
+                                                                                layoutVm.DisplayUnit))
+                Messages.Post(line.Severity == SchematicToLayoutGenerator.ReportSeverity.Warning
+                                  ? MessageLevel.Warning : MessageLevel.Info, line.Text);
         }
 
         SeedWBondSidecar(doc.ViewModel.EditModel, cellDir ?? layoutDir, schematicName, layoutVm, onlyWBond,

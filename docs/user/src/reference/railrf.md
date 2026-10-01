@@ -103,13 +103,13 @@ list's header, <b>Follow the technology</b>, clears your choices so every layer 
 
 | | |
 |---|---|
-| **The artwork** | Gerbers plus the drill, a `.clay` layout, or a `.kicad_pcb`. Mandatory &mdash; it is the thing being measured. |
+| **The artwork** | Gerbers plus the drill, a `.clay` layout, or a `.kicad_pcb`. Mandatory &mdash; it is the thing being measured. **Tools ▸ railRF** starts on the layout you are looking at: the active layout tab, else the one layout open, else the workspace's one layout. Where there are several and none is in front of you, it starts empty and names them; **Open** picks one. |
 | **The stackup** | A technology whose conductors state a **thickness** and a **conductivity**. Mandatory: copper with neither has no sheet resistance, and a mesh built on it would report a perfect plane. |
 | **The rail and its reference layer** | Which net the rail is, and which layer its current comes back on (**Ref.**). **railRF never infers the reference layer** &mdash; it proposes one, and nothing runs until you confirm it. |
 | **The return net** | Which net on that layer is the return (**Return**). Usually left to the copper, which measures it; named only where the copper cannot say. See [Ref. and Return](#return). |
 | **The sources** | Where the rail is fed, and by what: an open-circuit voltage with a series R and L, or a Touchstone file. |
 | **The loads and their currents** | Where the rail is drawn from, and how much. Nothing in a BOM or a placement file carries a current, so this is typed. |
-| **The parts** | The decoupling, by part number, against a part library (`.crlib`) holding C, the self-resonant frequency, ESR and a bias curve. |
+| **The parts** | The decoupling, by part number, against a part library (`.crlib`) holding C, the self-resonant frequency, ESR and a bias curve. A shunt part is a CAPACITOR across the rail; there is no shunt inductor, because an inductor from the rail to the return shorts the supply at DC. The inductance a supply brings &mdash; what the classic parallel L&ndash;C peak against the decoupling is made of &mdash; is the **source row's L out**. |
 | **The target** | A drop budget in millivolts, a flat Z<sub>target</sub> in milliohms, a per-port mask, or ΔI/ΔV/rise-time to derive one from. |
 | **The band and the aggressors** | The frequency span to sweep, and the things on your board that actually generate energy &mdash; the crystal, the converter, the radio reference. |
 
@@ -451,6 +451,26 @@ names its frequency and its margin in decibels.
 No curve at all? The card under the plot on the **Frequency** tab says why &mdash; most often a source with no
 output resistance; see [What you provide](#provide).
 
+### Deriving the target from the load {#target-from-load}
+
+The usual first step of a PDN budget is the ripple the rail may show while the load steps:
+Z<sub>target</sub> = ripple &times; V / &Delta;I. A 3.6 V rail allowed 5 % (180 mV) while its load steps by
+35 mA has a target of about 5.1 &Omega;. (The rail voltage over the load current, 3.6 V / 35 mA &asymp;
+103 &Omega;, is the load's DC resistance, not a target.)
+
+The **Target** card's **Derive Z from the load** rows do this: **Rail V** opens on the source row's
+voltage, **Ripple** on 5 %, **&Delta;I** on the load rows' peak current (or their DC current where no peak
+is stated), and **Rise** is optional &mdash; a 10&ndash;90 % rise time sets the top of the band judged to
+0.35 / rise time; left empty, the band above stands. **Set Z from these** stores &Delta;V and &Delta;I as the
+rail's target, and the card shows it with its arithmetic, for example
+*Z 5.143 &Omega; = 180 mV / 35 mA &middot; band to 35 MHz (0.35 / 10 ns)*. The **Z** box then reads the
+derived value; typing a Z there replaces the derived target with a flat one.
+
+The stored target is the number you chose. Editing a source or load row afterwards does not move it: the
+document keeps &Delta;V and &Delta;I, not the voltage and percentage they came from. Press **Set** again to
+re-derive. Headless, `rail --target-transient ripple=5%,tr=10ns` does the same &mdash; see
+[Running it headless](#headless).
+
 Three things are on the plot besides the curve and the mask.
 
 - **The anti-resonances**, each attributed: *L(C9) against C(C7&ndash;C8)*. A peak you cannot attribute
@@ -534,13 +554,16 @@ passing report. Four rules make the two safe to have together:
    both; click a region to force it either way. The return is always read as spreading, whatever its
    shape &mdash; current spreads under the rail rather than running along it &mdash; and it is meshed
    finely where the ports' current enters and leaves it, at the size Accuracy meshes a port.
-3. **Fast refuses where it cannot be honest.** Where a source reaches a load *only* through copper
-   classified as spreading, the fast model produces no number rather than a smaller one, and the refusal
-   names both answers: run Accuracy, or force the region to `trace` if you know the current follows a
-   path across it. The refusal strip offers the second as a button, **Treat that copper as a trace**,
-   beside **Show that copper**, which zooms the board to it &mdash; a rail refused on its first run has no
-   class map yet to right-click it on. The fast model needs about ten squares before it prices copper as a
-   trace; a shorter, wider neck is what this refusal is usually about.
+3. **Fast never prices copper it cannot be honest about.** Where a source reaches a load *only* through
+   copper classified as spreading, the trace formula would report too small a drop, so the fast model
+   gives no number for that rail &mdash; and the run **meshes that rail with Accuracy instead**, in the same
+   run. A **Model** card above the results, the Results header (*Accuracy (Fast refused spreading
+   copper)*) and the status strip say so, naming the copper and its measured squares; the other rails of
+   the run stay Fast. If you know the current follows a path across that copper, force the region to
+   `trace` on the class map and the rail is priced by Fast again. The fast model needs about ten squares
+   before it prices copper as a trace; a shorter, wider neck is what this is usually about. The `rail`
+   verb does the same and prints a `model:` line; `--no-escalate` keeps the old refusal, which offers
+   **Treat that copper as a trace** and **Show that copper** as buttons.
 4. **The two are compared on your own board.** Running Accuracy keeps the fast curve beside the accurate
    one, so the error is measured on this design rather than promised in a document.
 

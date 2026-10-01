@@ -57,6 +57,8 @@ internal static class RenderEm3d
         public bool OutputStated { get; init; } = true;
         /// <summary>brief-em3d-92 D5 — <c>name=percent</c> overrides of a .c3d's transparency, applied to the copy this run reads.</summary>
         public IReadOnlyList<string> Transparency { get; init; } = [];
+        /// <summary>Designer feedback round 11 — the .c3d's embedded setup the picture is drawn through (its air box).</summary>
+        public string? Setup { get; init; }
     }
 
     public static int Draw(string path, Request req)
@@ -95,9 +97,18 @@ internal static class RenderEm3d
 
         Em3dSetupSource loaded;
         var overrides = new RenderTransparency(path, req.Transparency);
-        try { loaded = Em3dSetupSource.Load(path, overrides.Apply); }
+        if (req.Setup is not null && DocumentKinds.Classify(path) != DocumentKind.ThreeD)
+            return JsonRun.Fail(CliDiagnostics.EmSetupOnCem(path));
+        try
+        {
+            loaded = req.Setup is { } named ? Em3dSetupSource.ForThreeDView(System.IO.Path.GetFullPath(path), named, overrides.Apply)
+                                            : Em3dSetupSource.Load(path, overrides.Apply);
+        }
         catch (Exception ex) { return JsonRun.Fail(CliDiagnostics.RenderDocumentUnreadable(path, ex.Message)); }
         if (overrides.Refusal is { } unknown) return unknown;
+        // A --setup the view does not have is refused naming the setups it does, not read as a planar setup.
+        if (req.Setup is not null && loaded.Generated is null && loaded.Refusal is { } notChosen)
+            return JsonRun.Fail(CliDiagnostics.EmThreeDSetup(path, notChosen));
 
         // R-em3d5-2a: a planar setup's picture is its layout, so the refusal names it.
         if (!loaded.Setup.Is3D)

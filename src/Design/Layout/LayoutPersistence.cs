@@ -70,6 +70,10 @@ public sealed class ClayFile
     /// <summary>brief-L5-followups-2.md §4.2/R-L5g-6: see <see cref="LayoutView.PCellSnapshots"/>.</summary>
     public Dictionary<string, ClayPCellSnapshot>? PCellSnapshots { get; set; }
 
+    /// <summary>See <see cref="LayoutView.GroundViaKeys"/>. Additive — omitted when empty, sorted so the file
+    /// does not churn.</summary>
+    public List<string>? GroundViaKeys { get; set; }
+
     /// <summary>See <see cref="LayoutView.Pins"/>. Additive — omitted when empty, so every existing
     /// pin-free <c>.clay</c> re-serializes byte-for-byte and needs no <see cref="FormatVersion"/>
     /// bump.</summary>
@@ -425,6 +429,7 @@ public static class LayoutPersistence
                 GroundLayerNameOverride = kv.Value.GroundLayerNameOverride,
             })
             : null,
+        GroundViaKeys = view.GroundViaKeys.Count > 0 ? [.. view.GroundViaKeys.Order(StringComparer.Ordinal)] : null,
         Pins          = view.Pins.Count > 0 ? [.. view.Pins] : null,
         DrcWaivers    = view.DrcWaivers.Count > 0 ? [.. view.DrcWaivers] : null,
         LvsWaivers    = view.LvsWaivers.Count > 0 ? [.. view.LvsWaivers] : null,
@@ -454,6 +459,9 @@ public static class LayoutPersistence
         if (file.SchematicPCellSnapshots is not null)
             foreach (var kv in file.SchematicPCellSnapshots)
                 view.SchematicPCellSnapshots[kv.Key] = new Dictionary<string, PCellValue>(kv.Value);
+
+        if (file.GroundViaKeys is not null)
+            foreach (string key in file.GroundViaKeys) view.GroundViaKeys.Add(key);
 
         if (file.PCellSnapshots is not null)
             foreach (var kv in file.PCellSnapshots)

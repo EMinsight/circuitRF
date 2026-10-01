@@ -2376,6 +2376,7 @@ static int PrintHelp()
     Console.WriteLine("rail options:");
     Console.WriteLine("  --rail NAME             which rail. Omitted runs them ALL, in dependency order.");
     Console.WriteLine("  --fast (default) / --accurate   which of the two readings of the geometry");
+    Console.WriteLine("  --no-escalate           keep Fast's spreading-copper refusal instead of meshing that rail");
     Console.WriteLine("  --source REFDES.PIN=<3.7V,50mOhm,10nH | file.s1p>   repeatable");
     Console.WriteLine("  --load REFDES.PIN[=<120mA>]     repeatable. No current = an OBSERVATION port.");
     Console.WriteLine("  --target-drop 80mV      --target-z 2.5mOhm    --mask [PORT=]<file>");

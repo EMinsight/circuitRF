@@ -38489,3 +38489,27 @@ Now: under 1 ms for a tick, ~30 ms for Hide all / Show all (serializing the 1,50
 per-object cache key still includes `Hidden`, so the first real edit after hiding many objects re-lowers them once.
 Gate: `EditorRound5TreeTests.AVisibilityTick_RequestsNoScene_AndThePaneFollowsTheDocument` (a Hide all, a tick, both
 undone: `Viewer.Source.Requested` does not move and the pane follows the document).
+
+## Designer feedback round 11 — deleting one stretch of a wire that runs through a T (2026-10-01)
+
+**A supply line drawn as one wire through a branch could not be partly deleted.** The wire ran from the
+source up, across and down to one part, with a second part's pin landing on the horizontal run's
+interior. That is a T, connected by geometry (`ComputeConnectivityGeometry`), and the wire stays ONE
+polyline through it. A segment click selected the whole horizontal segment, so Delete took the stretch
+before the T along with the one after it, and the source was cut off from both parts.
+
+**The fix selects a junction-bounded stretch; it does not split wires.** `SchematicEditModel.
+JunctionsOnSegment` lists what joins a segment strictly between its vertices — another wire's vertex, an
+attached pin, a user dot, the foot of a net label anchored to that segment — and
+`WireGeometry.SpanAround` picks the stretch between the junctions either side of the click.
+`SchematicSelection` remembers it per selected segment, the overlay highlights only it, and
+`DeleteSegmentsCommand` cuts only it. Highlight and delete both read `GetSelectedSpans`, which drops a
+span that no longer lies on its segment, so what is shown is what goes. A segment with nothing joining it
+mid-way behaves exactly as before.
+
+Splitting the wire at every T when it is drawn (the other conventional answer) was not done. A T arises
+on many paths (the wire tool, placing a part with a pin on a wire, paste, drags, auto-route). A split
+changes wire identity, which orphans anchored labels. It also changes how a part dragged off a T
+rubber-bands. The stretch selection covers wires already in saved files without rewriting them. Segment
+DRAG still moves the whole segment, and the highlight shows the whole segment while it does. Copy still
+copies the whole segment. Gate: `tests/Ui.Tests/WireSpanAtJunctionTests.cs`.

@@ -613,7 +613,10 @@ a pour, a plane, the fan-out under a BGA — is meshed, and coarsely. The result
 hundred elements that solves in single-digit milliseconds, so it re-solves on every keystroke.
 
 **Accurate.** The full mesh of §4.1 at the meshing density §4.1 requires, the cavity model, the modes and
-the maps. On a button. Never entered automatically, and never left silently.
+the maps. On a button — with one automatic entry (owner decision, 2026-10-01): a rail Fast refuses because
+it reaches a terminal only through spreading copper is solved with Accuracy in the same run, and the result
+says so (`rail --no-escalate` keeps the refusal). No other refusal escalates, and Accuracy is never left
+silently.
 
 Four rules make the two speeds safe to have:
 

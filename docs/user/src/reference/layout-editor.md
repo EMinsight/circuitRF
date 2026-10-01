@@ -258,6 +258,28 @@ layout:
 pretending otherwise would set the wrong expectation.</p>
 </div>
 
+**The ground is drawn too.** A pad whose schematic pin sits on a ground symbol gets a **ground via**
+beside it, on the side away from the part, tied to the pad with a short trace and drilled to the
+ground plane its layer returns through. On a two-layer board that is Bottom Copper. The ground plane
+itself is **poured**: on every ground layer the microstrip lines and those vias return through,
+inner or outer alike, five substrate heights beyond what it covers, or filling the board outline when
+one is drawn. Every via that passes *through* a poured plane gets a clearance; a ground via is joined
+to it. One Update Layout on a two-layer board with an MLIN and two shunt parts leaves the parts'
+ground pads drilled to a poured Bottom Copper, and LVS reads them on the ground net.
+
+The vias and the pour are **generated copper**, and each run redraws them from where the parts are
+then: move a part and run it again, or use **Design ▸ Draw Ground Pour**, and its ground via follows
+and the pour is redrawn. Copper you have taken over is left alone:
+
+- a ground via **you moved** stays where you put it, and no longer follows its part;
+- a ground via **you deleted** is not put back;
+- a pour **you edited** (any reshape) is yours from then on, and so is any copper you **draw** on a
+  ground layer: that layer is not poured over;
+- a pasted or duplicated copy of generated copper is yours.
+
+A ground via whose pin is no longer on ground in the schematic is removed, since it would short the
+pin to the plane. If you had moved it, it is left and a warning says so.
+
 **Re-running updates, it does not duplicate.** Each generated instance remembers the schematic
 component's stable id, so a second run keeps and leaves in place what is already there, adds what is
 new, and *reports* — never auto-deletes — what no longer exists in the schematic. You will hand-place

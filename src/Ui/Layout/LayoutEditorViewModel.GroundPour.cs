@@ -1,27 +1,25 @@
 using System.Collections.Generic;
 using System.Linq;
 using CircuitRF.Design.Layout.PCells;
-using CircuitRF.Ui.Commands;
-using CircuitRF.Ui.Commands.Layout;
 
 namespace CircuitRF.Ui.Layout;
 
 /// <summary>
-/// Draw Ground Pour (designer feedback round 10): the ground plane this layout's microstrip lines return through,
-/// drawn as copper. The geometry is <see cref="GroundPourPlanner"/>'s, computed from where the lines are NOW; this file
-/// is the undo and the Messages. Reached from Design ▸ Draw Ground Pour and from the button on the message Update
-/// Layout from Schematic posts when it places lines over an empty ground layer.
+/// Draw Ground Pour (designer feedback rounds 10 and 11): the generated ground artwork — the pour under the microstrip
+/// lines and Update Layout's ground vias, and those vias themselves — redrawn from where the parts are NOW, as one undo
+/// entry. Update Layout from Schematic does the same as part of its run; this is the command for after the designer
+/// has rearranged the board. It adds or removes no ground via (it has no schematic to ask which pins are on ground):
+/// the ones already placed follow their pads. The geometry is <see cref="GroundArtwork"/>'s; this file is the undo and
+/// the Messages.
 /// </summary>
 public sealed partial class LayoutEditorViewModel
 {
-    /// <summary>The pours <see cref="DrawGroundPour"/> would draw now — empty when there are none to draw.</summary>
-    internal IReadOnlyList<GroundPour> PlanGroundPours() => GroundPourPlanner.Plan(Model, Technology, InstanceBaseDir);
+    /// <summary>What <see cref="DrawGroundPour"/> would do now.</summary>
+    internal GroundArtworkPlan PlanGroundArtwork()
+        => GroundArtwork.Plan(Model, Technology, InstanceBaseDir, Model.Instances, grounded: null, inSchematic: null);
 
-    /// <summary>
-    /// Draws one pour per ground conductor a placed microstrip returns through and that carries no artwork yet, as
-    /// ONE undo entry. Says what it drew, the clearance it cut round each via, and what it could not see; says why
-    /// when there is nothing to draw.
-    /// </summary>
+    /// <summary>Redraws the generated ground artwork as ONE undo entry and says what it did; says why when there is
+    /// nothing to draw.</summary>
     public void DrawGroundPour()
     {
         if (Technology is null)
@@ -29,40 +27,22 @@ public sealed partial class LayoutEditorViewModel
             ReportError("Draw Ground Pour: this layout has no technology, so there is no stackup to name a ground plane.");
             return;
         }
-        var pours = PlanGroundPours();
-        if (pours.Count == 0)
+        var plan = PlanGroundArtwork();
+        if (SchematicToLayoutGenerator.GroundArtworkCommand(Model, plan) is { } command) Execute(command);
+
+        var lines = SchematicToLayoutGenerator.GroundArtworkReport(plan, Model, DisplayUnit);
+        if (lines.Count == 0)
         {
-            _messageSink?.Info("Draw Ground Pour: nothing to draw. It draws the plane placed microstrip lines " +
-                               "(MLIN, MBEND, MTEE, MCROSS, MTAPER, MKLOPF) return through, and only on a ground " +
-                               "layer that has no artwork yet — a plane already drawn is left as it is.");
+            _messageSink?.Info("Draw Ground Pour: nothing to draw or redraw. It pours the plane placed microstrip lines " +
+                               "(MLIN, MBEND, MTEE, MCROSS, MTAPER, MKLOPF) and Update Layout's ground vias return " +
+                               "through, on a ground layer carrying no copper you drew yourself, and redraws a pour it " +
+                               "drew before when the parts have moved.");
             return;
         }
-
-        IUiCommand? chain = null;
-        foreach (var shape in pours.SelectMany(p => p.Shapes))
+        foreach (var line in lines)
         {
-            var add = new AddShapeCommand(Model, shape);
-            chain = chain is null ? add : new CompositeCommand(chain, add);
-        }
-        if (chain is not null) Execute(chain);
-
-        string unit = LayoutUnits.Suffix(DisplayUnit);
-        string clearance = LayoutUnits.Format((long)System.Math.Round(GroundPourPlanner.ViaClearanceMicrons * Model.DbuPerMicron),
-                                              DisplayUnit, Model.DbuPerMicron);
-        foreach (var p in pours)
-        {
-            string margin = LayoutUnits.Format(p.MarginDbu, DisplayUnit, Model.DbuPerMicron);
-            string vias = p.ViaClearances == 0
-                ? "No via passes through it."
-                : $"{p.ViaClearances} via(s) pass through it, each with a clearance of {clearance} {unit} beyond its " +
-                  "pad — a default, since the technology states no antipad; change it by editing the pour.";
-            _messageSink?.Success(
-                $"Draw Ground Pour: drew the plane on '{p.Ground.Name}' under {p.Lines} microstrip line(s), reaching " +
-                $"{margin} {unit} ({GroundPourPlanner.MarginHeights:0} substrate heights) beyond them. {vias} " +
-                (p.ViasJoined == 0 ? "" :
-                    $"{p.ViasJoined} via(s) end on '{p.Ground.Name}' and are now joined to the plane; a signal via " +
-                    "among them needs a clearance cut by hand. ") +
-                "A via inside a placed cell is not seen.");
+            if (line.Severity == SchematicToLayoutGenerator.ReportSeverity.Warning) _messageSink?.Warning("Draw Ground Pour: " + line.Text);
+            else _messageSink?.Success("Draw Ground Pour: " + line.Text);
         }
     }
 }

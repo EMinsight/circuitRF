@@ -939,6 +939,8 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         PadYPercent = Pct(stated?.YMin, stated?.YMax);
         PadZPercent = Pct(stated?.ZMin, stated?.ZMax);
         var f = box.Faces;
+        string defaultBasis = editor.Elaboration is { } elab && C3dProblemAssembly.DefaultPaddingBasis(setup, elab) is { } basis
+            ? $" (default: {basis})" : " (default)";
         foreach (var (face, kind, s) in new[]
                  {
                      ("xmin", f.XMin, stated?.XMin), ("xmax", f.XMax, stated?.XMax), ("ymin", f.YMin, stated?.YMin),
@@ -947,7 +949,7 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         {
             string pad = editor.AirBoxPaddingText(face) + " " + LayoutUnits.Suffix(editor.Document.DisplayUnit)
                        + (s?.PaddingPercent is { } p ? $" ({p.ToString("G6", CultureInfo.InvariantCulture)} %)"
-                          : s?.PaddingUm is not null ? " (stated)" : " (default)");
+                          : s?.PaddingUm is not null ? " (stated)" : defaultBasis);
             AirBoxFaces.Add(new C3dAirBoxFaceRow(face, kind, pad, (fc, k) => Error = editor.SetAirBoxBoundary(fc, k) ?? ""));
         }
         Rows.Add(new C3dPropertyRow("Size", $"{editor.Viewer.FormatLength(box.Max.X - box.Min.X)} × " +

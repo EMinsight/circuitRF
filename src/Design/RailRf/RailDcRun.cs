@@ -99,6 +99,21 @@ public sealed class RailDcRequest
     /// default, and every result says which produced it.</summary>
     public PdnModelKind Model { get; init; } = PdnModelKind.Fast;
 
+    /// <summary>
+    /// Where Fast refuses a rail because it reaches a load only through spreading copper, solve THAT
+    /// rail with the Accurate reading instead and say so (<see cref="RailDcResult.EscalatedFromFast"/>).
+    /// True by default; false restores the bare refusal.
+    /// </summary>
+    /// <remarks>
+    /// <b>The refusal's only number-giving remedy was "run Accuracy"</b>, so leaving the user to press
+    /// it bought nothing (field report, 2026-10-01). The 10-square rule is unchanged and Fast still
+    /// never prices that copper with the trace formula; the other remedy — marking the copper "treat
+    /// as a trace" — stays the user's to choose, and a rail so marked is not refused at all. Only the
+    /// spreading-copper refusal escalates: every other refusal is about the document, which a finer
+    /// mesh would not change.
+    /// </remarks>
+    public bool EscalateSpreadingCopper { get; init; } = true;
+
     /// <summary>How finely, and where — read by the accurate reading only.</summary>
     public PdnMeshSettings Mesh { get; init; } = new();
 
@@ -311,9 +326,28 @@ public static class RailDcRun
 
                 if (extraction.Refusal is { } why)
                 {
+                    if (extraction.RefusedRegion is { } region && request.EscalateSpreadingCopper)
+                    {
+                        // The one refusal a finer reading answers: mesh this rail, and say why.
+                        string escalation = Escalation(request, railName, region);
+                        if (request.Control is { } escalating)
+                            escalating.BeginStage($"Rail '{railName}': meshing the spreading copper Fast would not price");
+                        if (SolveConverged(request, toSolve, railName, chained,
+                                           diagnostics, out var meshed, out var meshedSolution) is { } meshRefusal)
+                        {
+                            Refuse(railName, $"{why} {escalation[..^1]}, and it did not answer either: {meshRefusal}");
+                            ambiguities.AddRange(meshed.AnchorAmbiguities);
+                            refusedRegions.Add((railName, region));
+                            continue;
+                        }
+                        results.Add(Assemble(request, spec, meshed.Netlist!, meshedSolution, chained, edges, solved,
+                                             meshed, escalation));
+                        continue;
+                    }
+
                     Refuse(railName, why);
                     ambiguities.AddRange(extraction.AnchorAmbiguities);
-                    if (extraction.RefusedRegion is { } region) refusedRegions.Add((railName, region));
+                    if (extraction.RefusedRegion is { } refused) refusedRegions.Add((railName, refused));
                     continue;
                 }
 
@@ -344,6 +378,20 @@ public static class RailDcRun
             AnchorAmbiguities = ambiguities,
             RefusedRegions    = refusedRegions,
         };
+    }
+
+    /// <summary>
+    /// The sentence an escalated rail carries: where Fast stopped, and that the numbers are the mesh's.
+    /// Ends in a full stop; the refusal that follows a failed escalation drops it.
+    /// </summary>
+    internal static string Escalation(RailDcRequest request, string railName, PdnClassification region)
+    {
+        var fmt = request.LengthFormat;
+        string measured = region.Squares > 0
+            ? $" ({region.Squares:0.#} squares, below the {request.Graph.TraceSquaresThreshold:0.#} it needs to treat copper as a trace)"
+            : " (too compact to have a length and a width)";
+        return $"Fast could not price the spreading copper on {region.Region.Describe(fmt, request.Technology)}" +
+               $"{measured}, so rail '{railName}' was solved with Accuracy, which meshes it.";
     }
 
     private static string? Solve(
@@ -865,11 +913,12 @@ public static class RailDcRun
     private static RailDcResult Assemble(
         RailDcRequest request, RailSpec rail, PdnNetlist pdn, LinearDcSolution solution,
         RailChainStart? chained, IReadOnlyList<RailOrder.RailEdge> edges, bool upstreamSolved,
-        PdnExtraction extraction)
+        PdnExtraction extraction, string? escalation = null)
     {
         var nl = pdn.Netlist;
         var findings = new List<string>();
         var notes = new List<string>(pdn.Provenance.Notes);
+        if (escalation is not null) notes.Insert(0, escalation);
 
         // R-rail5-2: the FIELD, and it is complete. Every node of the netlist carries a voltage and
         // ground carries exactly zero, so every entry of NodeCells resolves — a node with no voltage
@@ -1019,6 +1068,7 @@ public static class RailDcRun
             WithinDropBudget = withinBudget,
             Findings       = findings,
             Notes          = notes,
+            EscalatedFromFast = escalation,
         };
     }
 

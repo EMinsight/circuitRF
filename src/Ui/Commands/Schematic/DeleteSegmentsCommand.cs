@@ -26,9 +26,13 @@ internal sealed class DeleteSegmentsCommand : IUiCommand
     public string Description => _snaps.Sum(s => s.Replacements.Count == 0 ? 1 : 1) == 1
         ? "Delete Segment" : "Delete Segments";
 
+    /// <param name="spans">For a segment something joins between its vertices, the stretch the user
+    /// selected (<see cref="SchematicSelection.GetSelectedSpans"/>): only that stretch is removed, so the
+    /// pieces either side still end on the junctions they reached. Null or absent: the whole segment.</param>
     public DeleteSegmentsCommand(
         SchematicEditModel model,
-        IReadOnlyList<(string WireId, int SegmentIndex)> segments)
+        IReadOnlyList<(string WireId, int SegmentIndex)> segments,
+        IReadOnlyDictionary<(string WireId, int SegmentIndex), ((double X, double Y) A, (double X, double Y) B)>? spans = null)
     {
         _model = model;
 
@@ -46,7 +50,10 @@ internal sealed class DeleteSegmentsCommand : IUiCommand
                             .ToList();
             if (cuts.Count == 0) continue;
 
-            var pieces = ComputePieces(wire.Points, cuts);
+            var cutSpans = new Dictionary<int, ((double X, double Y) A, (double X, double Y) B)?>();
+            foreach (int i in cuts)
+                cutSpans[i] = spans is not null && spans.TryGetValue((wire.Id, i), out var sp) ? sp : null;
+            var pieces = ComputePieces(wire.Points, cutSpans);
             var replacements = pieces.Select(p =>
             {
                 var nw = new EditableWire();
@@ -84,33 +91,40 @@ internal sealed class DeleteSegmentsCommand : IUiCommand
     // ── Geometry ──────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Splits a point list at the given cut segment indices, discarding any resulting
-    /// piece with fewer than 2 points. A cut at index i produces a piece ending at
-    /// Points[i] (inclusive) and the next piece starting at Points[i+1].
+    /// Splits a point list at the given cut segments, discarding any resulting piece with fewer than 2
+    /// points. A whole-segment cut at index i ends a piece at Points[i] and starts the next at
+    /// Points[i+1]; a SPAN cut (A..B on segment i) ends the piece at whichever of A/B is nearer
+    /// Points[i] and starts the next at the other, so the stretch outside the span stays drawn.
     /// </summary>
     private static List<List<(double X, double Y)>> ComputePieces(
         IReadOnlyList<(double X, double Y)> pts,
-        List<int> sortedCuts)
+        IReadOnlyDictionary<int, ((double X, double Y) A, (double X, double Y) B)?> cuts)
     {
         var pieces = new List<List<(double X, double Y)>>();
-        int start = 0;
-
-        foreach (int cut in sortedCuts)
+        var piece  = new List<(double X, double Y)> { pts[0] };
+        for (int i = 0; i < pts.Count - 1; i++)
         {
-            // Piece from 'start' to 'cut' inclusive
-            var piece = new List<(double X, double Y)>();
-            for (int k = start; k <= cut && k < pts.Count; k++)
-                piece.Add(pts[k]);
-            AddNormalized(pieces, piece);
-            start = cut + 1;
+            if (!cuts.TryGetValue(i, out var span))
+            {
+                piece.Add(pts[i + 1]);
+                continue;
+            }
+            if (span is { } sp)
+            {
+                var a = pts[i];
+                double Da((double X, double Y) p) => (p.X - a.X) * (p.X - a.X) + (p.Y - a.Y) * (p.Y - a.Y);
+                var (near, far) = Da(sp.A) <= Da(sp.B) ? (sp.A, sp.B) : (sp.B, sp.A);
+                piece.Add(near);
+                AddNormalized(pieces, piece);
+                piece = [far, pts[i + 1]];
+            }
+            else
+            {
+                AddNormalized(pieces, piece);
+                piece = [pts[i + 1]];
+            }
         }
-
-        // Trailing piece from 'start' to end
-        var last = new List<(double X, double Y)>();
-        for (int k = start; k < pts.Count; k++)
-            last.Add(pts[k]);
-        AddNormalized(pieces, last);
-
+        AddNormalized(pieces, piece);
         return pieces;
     }
 
