@@ -8674,6 +8674,24 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     private static string? EmMessageFile(EmRunResult result, string sentence)
         => result.MessageFiles?.GetValueOrDefault(sentence);
 
+    /// <summary>
+    /// One of an EM run's sentences, posted with the file it names as the row's link. brief-em3d-97 R-em3d97-3 — when
+    /// that file is the Linux subsystem's <c>.wslconfig</c> (named only where raising it can make the run fit), the
+    /// row keeps the link AND offers <i>Give the subsystem more memory…</i>, which <paramref name="raiseMemory"/> opens.
+    /// </summary>
+    internal static void PostEmSentence(IMessageSink sink, MessageLevel level, EmRunResult result, string sentence,
+                                        Func<Task> raiseMemory)
+    {
+        string? file = EmMessageFile(result, sentence);
+        if (CircuitRF.Design.Em3d.Wsl.WslMemory.IsWslConfig(file))
+            sink.PostAction(level, sentence, CircuitRF.Ui.Layout.Em.WslMemoryDialogModel.RowAction, raiseMemory, file);
+        else
+            sink.Post(level, sentence, file);
+    }
+
+    /// <summary>The memory dialog, opened from a row or the confirmation, reporting to this window's Messages.</summary>
+    private Task RaiseSubsystemMemoryAsync() => Views.Dialogs.WslMemoryDialog.OpenFromRow(Messages);
+
     private async Task<bool> RunEmSetupAsync(EmSetupEditorViewModel vm, EmSetup? runSetup,
                                              Func<EmSetup, RunControl, string, EmRunResult>? run)
     {
@@ -8863,8 +8881,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             stageLive.Complete(MessageLevel.Info, $"EM '{setup.Name}' — stopped");
             sweepLive.Complete(MessageLevel.Info, $"EM '{setup.Name}' — see the error below");
 
-            foreach (var w in result.Warnings)     Messages.Warning(w, EmMessageFile(result, w));
-            foreach (var e in result.Errors ?? []) Messages.Error(e, EmMessageFile(result, e));
+            foreach (var w in result.Warnings)     PostEmSentence(Messages, MessageLevel.Warning, result, w, RaiseSubsystemMemoryAsync);
+            foreach (var e in result.Errors ?? []) PostEmSentence(Messages, MessageLevel.Error, result, e, RaiseSubsystemMemoryAsync);
 
             // Through the render point, not as a bare sentence: the diagnostic's ID is what a future
             // dedup ("this sweep refused at 400 points") or filter ("every technology-resolution
@@ -8914,9 +8932,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // been removed from the solve were correct, well worded, and in the middle of them. The
         // panel groups by icon and the reader scrolls from the top, so the order is what decides
         // whether they are seen.
-        foreach (var e in result.Errors ?? [])   Messages.Error(e, EmMessageFile(result, e));
-        foreach (var w in result.Warnings)       Messages.Warning(w, EmMessageFile(result, w));
-        foreach (var n in result.Notes ?? [])    Messages.Info(n, EmMessageFile(result, n));
+        foreach (var e in result.Errors ?? [])   PostEmSentence(Messages, MessageLevel.Error, result, e, RaiseSubsystemMemoryAsync);
+        foreach (var w in result.Warnings)       PostEmSentence(Messages, MessageLevel.Warning, result, w, RaiseSubsystemMemoryAsync);
+        foreach (var n in result.Notes ?? [])    PostEmSentence(Messages, MessageLevel.Info, result, n, RaiseSubsystemMemoryAsync);
 
         if (result.Status == EmRunStatus.Cancelled)
         {
@@ -9164,16 +9182,34 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// past 150 % of this machine's: before Gmsh starts, and again before Palace once the mesh's size is
     /// known. The dialog runs on the UI thread and the run waits for the answer; nothing has started a
     /// solver while it is open.
+    ///
+    /// <para>brief-em3d-97 R-em3d97-3 — when the verdict names the Linux subsystem's <c>.wslconfig</c>, a third answer,
+    /// <i>Give the subsystem more memory first…</i>: the one point BEFORE a run where raising it can help.</para>
     /// </summary>
-    private bool ConfirmEmMemory(string warning)
+    private bool ConfirmEmMemory(CircuitRF.Design.Em3d.Em3dMemoryVerdict verdict)
         => Dispatcher.UIThread.InvokeAsync(async () =>
         {
             if (ResolveOwner(null) is not { } owner) return false;
+            bool offer = CircuitRF.Design.Em3d.Wsl.WslMemory.IsWslConfig(verdict.File);
             var choice = await new Views.Dialogs.SaveChangesDialog(
-                warning, saveLabel: "Simulate Anyway", dontSaveLabel: null, cancelLabel: "Don't Simulate",
+                verdict.Text ?? "", saveLabel: "Simulate Anyway",
+                dontSaveLabel: offer ? MoreMemoryFirstLabel : null, cancelLabel: "Don't Simulate",
                 title: "This Run May Not Fit in Memory").ShowDialog<SaveChangesResult>(owner);
-            return choice == SaveChangesResult.Save;
+            return AnswerEmMemory(choice, () => Dispatcher.UIThread.Post(() => _ = RaiseSubsystemMemoryAsync()));
         }).GetAwaiter().GetResult();
+
+    internal const string MoreMemoryFirstLabel = "Give the Subsystem More Memory First…";
+
+    /// <summary>
+    /// What the 150 % question's answer means for the run: <b>only Simulate Anyway runs it</b>. <i>More memory
+    /// first</i> opens the dialog and STOPS the run (Simulate again afterwards) — it must not restart the subsystem
+    /// and carry on, because this run's Palace runner was set up against the old VM.
+    /// </summary>
+    internal static bool AnswerEmMemory(SaveChangesResult choice, Action openMemoryDialog)
+    {
+        if (choice == SaveChangesResult.DontSave) openMemoryDialog();
+        return choice == SaveChangesResult.Save;
+    }
 
     internal static void ReportEmProgress(
         IProgressMessage sweepLive, IProgressMessage stageLive,

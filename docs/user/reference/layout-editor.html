@@ -463,6 +463,26 @@ system layer between pins sharing a net. That is the guide that makes manual rou
 <p>Step 3 places parts. It does not route them. Auto-routing is a separate multi-month product and
 pretending otherwise would set the wrong expectation.</p>
 </div>
+<p><strong>The ground is drawn too.</strong> A pad whose schematic pin sits on a ground symbol gets a <strong>ground via</strong>
+beside it, on the side away from the part, tied to the pad with a short trace and drilled to the
+ground plane its layer returns through. On a two-layer board that is Bottom Copper. The ground plane
+itself is <strong>poured</strong>: on every ground layer the microstrip lines and those vias return through,
+inner or outer alike, five substrate heights beyond what it covers, or filling the board outline when
+one is drawn. Every via that passes <em>through</em> a poured plane gets a clearance; a ground via is joined
+to it. One Update Layout on a two-layer board with an MLIN and two shunt parts leaves the parts'
+ground pads drilled to a poured Bottom Copper, and LVS reads them on the ground net.</p>
+<p>The vias and the pour are <strong>generated copper</strong>, and each run redraws them from where the parts are
+then: move a part and run it again, or use <strong>Design ▸ Draw Ground Pour</strong>, and its ground via follows
+and the pour is redrawn. Copper you have taken over is left alone:</p>
+<ul>
+<li>a ground via <strong>you moved</strong> stays where you put it, and no longer follows its part;</li>
+<li>a ground via <strong>you deleted</strong> is not put back;</li>
+<li>a pour <strong>you edited</strong> (any reshape) is yours from then on, and so is any copper you <strong>draw</strong> on a
+ground layer: that layer is not poured over;</li>
+<li>a pasted or duplicated copy of generated copper is yours.</li>
+</ul>
+<p>A ground via whose pin is no longer on ground in the schematic is removed, since it would short the
+pin to the plane. If you had moved it, it is left and a warning says so.</p>
 <p><strong>Re-running updates, it does not duplicate.</strong> Each generated instance remembers the schematic
 component's stable id, so a second run keeps and leaves in place what is already there, adds what is
 new, and <em>reports</em> — never auto-deletes — what no longer exists in the schematic. You will hand-place

@@ -1245,9 +1245,9 @@ script, the mesh, the Palace configuration, both programs' logs). An unchanged m
 made for — each port sheet, each conductor, each face of the air box. <strong>Any mismatch refuses the run,
 naming the object</strong>; a boundary is never guessed onto a face.</p>
 <p><strong>Will it fit?</strong> Palace's memory is checked against the machine's twice: before Gmsh starts, from the
-model's volumes, and again once Gmsh has reported how many tetrahedra it made, before Palace starts.
-The second check is the one that counts on a bond wire or any small conductor, where the refinement
-around the metal is nearly the whole mesh and the volumes alone say almost nothing. Past <strong>75 %</strong> of
+model's volumes and the refined shell round each conductor and port, and again once Gmsh has reported how many tetrahedra it made, before Palace starts.
+The second check is the one that counts on a bond wire or another small curved conductor, where the
+refinement its curvature asks for is nearly the whole mesh and the first check says almost nothing. Past <strong>75 %</strong> of
 the machine's memory the run carries a warning naming the estimate and what would shrink it — the
 Draft preset, no refinement passes, a smaller air box — each with the estimate it would give. Past
 <strong>150 %</strong> Simulate asks before going on (headless, <code>circuitrf em</code> needs <code>--force</code>). A warning never stops
@@ -1659,11 +1659,27 @@ everything, just as on any other computer. Palace uses the distribution's own co
 <strong>Cancel</strong> stops Palace and every process it started inside the distribution, not only the Windows side.</p>
 <p><strong>Memory.</strong> The subsystem runs in a virtual machine that gets only part of your computer's memory by
 default. circuitRF checks a run against the subsystem's memory, not the computer's. When a run may not
-fit, the warning names the setting that raises it: <code>memory=</code> under <code>[wsl2]</code> in <code>.wslconfig</code> in your
-Windows user folder. Run <code>wsl --shutdown</code> after changing it.</p>
+fit, the warning names the setting that raises it, <code>memory=</code> under <code>[wsl2]</code> in <code>.wslconfig</code> in your
+Windows user folder, with a value worked out from your computer's memory (all of it, less what Windows
+keeps for itself). The file's path is a link on the message: click it to show the file in File Explorer.
+The message also has a <strong>Give the subsystem more memory…</strong> button, which does the edit for you. The
+dialog it opens shows the subsystem's memory now, what <code>.wslconfig</code> says, and your computer's memory; the
+proposed value, which you can change (from 2 GB up to all of the computer's memory); the one line of the
+file that changes, before and after; and the distributions running now. <strong>Save and restart the
+subsystem</strong> writes the file and runs <code>wsl --shutdown</code>, which stops everything running in the subsystem
+(other terminals, containers, Docker Desktop's engine), then reports the new figure in Messages.
+<strong>Save only</strong> writes the file and stops nothing: the change applies the next time the subsystem starts.
+circuitRF changes only that one line, keeps the previous file beside it as
+<code>.wslconfig.circuitrf-backup</code>, and never restarts the subsystem while a 3D EM run or an install of its own
+is working there. When a run's estimate is past 150 % of the subsystem's memory, the question before the
+run offers <strong>Give the Subsystem More Memory First…</strong> too: it opens the same dialog and does not start the
+run, so press Simulate again afterwards. When even the largest value would leave the run short, the
+warning says so, offers no button, and names the remedies that shrink the problem instead.</p>
 <p><strong>Choosing where Palace runs.</strong> <a href="settings.html#em3d">Settings ▸ 3D EM</a> has a <strong>Location</strong> row
 under Palace, on Windows only. <strong>Automatic</strong> (the default) uses a native Palace if there ever is one,
-then the subsystem. You can also choose <strong>Native</strong>, or one distribution by name.</p>
+then the subsystem. You can also choose <strong>Native</strong>, or one distribution by name. When Palace runs in the
+subsystem, a line under it reads the subsystem's memory each time the page is shown (&quot;Linux subsystem:
+3.8 GB of 7.6 GB&quot;), and its <strong>Change…</strong> button opens the memory dialog described above.</p>
 <p><strong>Removing it.</strong> <strong>Uninstall Palace …</strong> removes the folder circuitRF installed inside the distribution.
 The distribution itself, and any packages you installed in it on circuitRF's advice, are yours and
 stay. If the distribution cannot start, nothing is removed and the message says why. If the

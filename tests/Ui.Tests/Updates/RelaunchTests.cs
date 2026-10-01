@@ -58,7 +58,7 @@ public sealed class RelaunchTests : IDisposable
         public void Post(MessageLevel level, string text, string? filePath = null)
             => Posted.Add((level, text, null));
 
-        public void PostAction(MessageLevel level, string text, string actionLabel, Func<Task> action)
+        public void PostAction(MessageLevel level, string text, string actionLabel, Func<Task> action, string? filePath = null)
         {
             Posted.Add((level, text, actionLabel));
             LastAction = action;

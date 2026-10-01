@@ -605,6 +605,11 @@ footprints only in a workspace whose technology is a board.</p>
 <p><strong>Wire</strong> is <kbd>W</kbd> (or the toolbar button). Click from one pin to another; <kbd>Enter</kbd>
 finishes the wire in progress and returns you to Select, <kbd>Esc</kbd> cancels it. <strong>Select</strong> is
 <kbd>S</kbd>, and <kbd>Esc</kbd> from any tool comes back to it.</p>
+<p>Clicking a wire selects one straight run of it, not the whole wire. Where a pin, another wire, a
+junction dot or a net label joins that run partway along, the click selects only the stretch between
+the junctions on either side of it. <kbd>Delete</kbd> then removes that stretch, and the rest of the
+wire keeps every connection it had. To disconnect one branch of a supply line, click the stretch
+between the two parts and delete it.</p>
 <p>Double-click does three different things depending on what is under the cursor, and the distinction
 is worth learning because it is the fastest edit in the application:</p>
 <table>
@@ -629,6 +634,11 @@ is worth learning because it is the fastest edit in the application:</p>
 </tr>
 </tbody>
 </table>
+<p>Hold <kbd>Alt</kbd> (<kbd>Option</kbd> on macOS) while double-clicking a wire to <strong>select the whole run
+of wiring</strong> instead: every wire joined to the clicked one, in every direction — round corners, through
+junctions, and through pins where several wires meet — until the wiring ends at the components. A part
+ends the run, because the wiring on its other side is a different node; a net label does not carry it to
+another label of the same name. <kbd>Delete</kbd> then removes exactly that run.</p>
 <p>Arrow keys nudge the selection by one connection-grid step, or five with <kbd>Shift</kbd> held.
 <kbd>F5</kbd> begins <strong>Move Labels</strong>, for pushing a crowded label block clear of the artwork without
 moving the component it belongs to.</p>

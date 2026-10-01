@@ -45,9 +45,9 @@ public partial class MessagesTool : Tool, IMessageSink
     /// the view, on the UI thread, when the link is tapped.
     /// </summary>
     public void PostAction(MessageLevel level, string text, string actionLabel,
-                           System.Func<System.Threading.Tasks.Task> action)
+                           System.Func<System.Threading.Tasks.Task> action, string? filePath = null)
     {
-        var entry = new MessageEntry(level, text, null, System.DateTime.Now, actionLabel, action);
+        var entry = new MessageEntry(level, text, filePath, System.DateTime.Now, actionLabel, action);
         OnUi(() => Insert(entry));
     }
 

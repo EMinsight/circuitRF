@@ -194,7 +194,7 @@ public static class Em3dRunService
     /// <param name="confirmMemory">brief-em3d-21 R-em3d21-2b — see <see cref="EmRunService.Run"/>.</param>
     internal static EmRunResult Run(EmSetup setup, EmLayoutSource source, string resultsRoot,
                                     CancellationToken ct, RunControl? control, int? maxCores,
-                                    Func<string, bool>? confirmMemory = null)
+                                    Func<Em3dMemoryVerdict, bool>? confirmMemory = null)
         => Run(setup, s => Em3dGenerator.Generate(s, source, source.Technology!), resultsRoot, ct, control, maxCores,
                confirmMemory);
 
@@ -206,7 +206,7 @@ public static class Em3dRunService
     /// </summary>
     internal static EmRunResult Run(EmSetup setup, Func<EmSetup, Em3dGenerationResult> build, string resultsRoot,
                                     CancellationToken ct, RunControl? control, int? maxCores,
-                                    Func<string, bool>? confirmMemory = null)
+                                    Func<Em3dMemoryVerdict, bool>? confirmMemory = null)
     {
         var log = new RunLog();
         var memory = new MemoryGate(confirmMemory);
@@ -293,6 +293,8 @@ public static class Em3dRunService
             if (gridSettings.Problems().Concat(runSettings.Problems()).ToList() is { Count: > 0 } bad)
                 openEmsStop = new(EmRunStatus.Refused, EmDiagnostics.Forwarded("openems-settings", string.Join(" ", bad)));
         }
+        // brief-em3d-97 R-em3d97-4 — a run in the subsystem holds it, so the memory dialog will not restart it from under the run.
+        using var inSubsystem = palaceRunner is Wsl.WslPalaceRunner wslRunner ? Wsl.WslInUse.Hold(wslRunner.Distribution, holder) : null;
         // A single solver stops at its first refusal. Both go on while either could still run, so the
         // refusal can say whether the other one would have.
         if ((!both || (palaceStop is not null && openEmsStop is not null)) && (palaceStop ?? openEmsStop) is { } early)
@@ -1542,7 +1544,7 @@ public static class Em3dRunService
     /// R-em3d21-2b — one run's memory decisions: a warning is posted once at its highest level, and a
     /// run past 150 % is confirmed once (the panel's question, the CLI's --force) or refused.
     /// </summary>
-    private sealed class MemoryGate(Func<string, bool>? confirm)
+    private sealed class MemoryGate(Func<Em3dMemoryVerdict, bool>? confirm)
     {
         private Em3dMemoryLevel _posted = Em3dMemoryLevel.Fits;
         private bool _confirmed;
@@ -1553,7 +1555,7 @@ public static class Em3dRunService
             if (verdict.Level == Em3dMemoryLevel.Fits || verdict.Text is null) return null;
             if (verdict.Level == Em3dMemoryLevel.Severe && !_confirmed)
             {
-                if (confirm?.Invoke(verdict.Text) != true)
+                if (confirm?.Invoke(verdict) != true)
                     return verdict.Text + " To start it anyway, confirm it when Simulate asks, or pass --force to `circuitrf em`.";
                 _confirmed = true;
                 Warn(verdict.Text + " It was started anyway, as confirmed.");

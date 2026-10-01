@@ -40,7 +40,7 @@
 
     <!-- ── Palace ─────────────────────────────────────────────────────── -->
     <SelectableTextBlock Text="Palace (FEM)" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,4"/>
-    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto">
+    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto">
       <TextBox Grid.Row="0" Grid.Column="0" Name="PalaceBox" FontSize="12"
                PlaceholderText="Leave blank to search (CIRCUITRF_PALACE, PATH, then Spack)"
                LostFocus="OnPathCommitted">
@@ -76,10 +76,20 @@
           </ToolTip.Tip>
         </ComboBox>
       </StackPanel>
-      <Button Grid.Row="4" Grid.ColumnSpan="2" Name="PalaceInstall" Content="Install Palace…" FontSize="11" Padding="8,3"
+      <!-- brief-em3d-97 R-em3d97-3 — the subsystem's memory, read live each time the tab is shown, and Change…
+           opening the same dialog the memory warning offers. Windows only, and only when Palace's location is a
+           distribution (or Automatic resolves to one). circuitRF stores nothing: the value lives in .wslconfig. -->
+      <StackPanel Grid.Row="4" Grid.ColumnSpan="2" Name="SubsystemMemoryRow" Orientation="Horizontal" Spacing="6"
+                  Margin="0,6,0,0" IsVisible="False">
+        <SelectableTextBlock Name="SubsystemMemoryText" FontSize="11" Opacity="0.75" VerticalAlignment="Center"
+                             Text="Linux subsystem: reading…"/>
+        <Button Name="SubsystemMemoryChange" Content="Change…" FontSize="11" Padding="8,3" Click="OnChangeSubsystemMemory"
+                ToolTip.Tip="Set how much of this computer's memory the Linux subsystem may use (memory= in .wslconfig). Shows the change, and what restarting the subsystem stops, before anything is written."/>
+      </StackPanel>
+      <Button Grid.Row="5" Grid.ColumnSpan="2" Name="PalaceInstall" Content="Install Palace…" FontSize="11" Padding="8,3"
               Margin="0,6,0,0" HorizontalAlignment="Left" IsVisible="False" Tag="Palace" Click="OnInstall"
               ToolTip.Tip="Download Palace from its own upstream and build it for this computer. Shows what it will fetch and where it will go before anything is downloaded."/>
-      <StackPanel Grid.Row="5" Grid.ColumnSpan="2" Name="PalaceRemovals" Spacing="4"/>
+      <StackPanel Grid.Row="6" Grid.ColumnSpan="2" Name="PalaceRemovals" Spacing="4"/>
     </Grid>
 
     <!-- ── MPI launcher: how Palace uses more than one core ─────────────── -->

@@ -35,9 +35,12 @@ public interface IMessageSink
     /// makes sense next to a button would be a sentence those users cannot act on. The one caller —
     /// the update announcement — says "Relaunch circuitRF to start using it" and then offers the
     /// button as a shortcut for exactly that, so nothing is lost when it degrades.</para>
+    ///
+    /// <para><paramref name="filePath"/> is the row's reveal link, as <see cref="Post"/> takes it — kept when the
+    /// action is dropped (brief-em3d-97: a memory warning links <c>.wslconfig</c> AND offers to raise it).</para>
     /// </summary>
-    void PostAction(MessageLevel level, string text, string actionLabel, Func<Task> action)
-        => Post(level, text);
+    void PostAction(MessageLevel level, string text, string actionLabel, Func<Task> action, string? filePath = null)
+        => Post(level, text, filePath);
 
     void Info(string text, string? filePath = null)    => Post(MessageLevel.Info, text, filePath);
     void Success(string text, string? filePath = null) => Post(MessageLevel.Success, text, filePath);

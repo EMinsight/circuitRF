@@ -408,6 +408,8 @@ internal sealed class FakeWsl(string root) : IWsl
     public byte[] Listing { get; set; } = [];
     public int ListingExit { get; set; }
     public long MemoryBytes { get; set; } = 16_000_000_000;
+    /// <summary>brief-em3d-97 — the VM's memory once <c>wsl --shutdown</c> has run (the next start reads .wslconfig).</summary>
+    public long? MemoryAfterShutdown { get; set; }
     public bool GroupAlive { get; set; }
     public Dictionary<string, string> CannotStart { get; } = new(StringComparer.OrdinalIgnoreCase);
     public Dictionary<(string Distro, string Name), string> OnPath { get; } = new();
@@ -433,6 +435,11 @@ internal sealed class FakeWsl(string root) : IWsl
     {
         lock (Commands) Commands.Add(arguments);
         if (arguments.Count > 0 && arguments[0] == "-l") return new(ListingExit, Listing, [], null);
+        if (arguments.Count > 0 && arguments[0] == "--shutdown")
+        {
+            if (MemoryAfterShutdown is { } after) MemoryBytes = after;
+            return Out("");
+        }
         var (distro, cwd, argv) = Parse(arguments);
         if (CannotStart.TryGetValue(distro, out string? why)) return new(1, [], Encoding.Unicode.GetBytes(why), null);
         return Exec(distro, cwd, argv);

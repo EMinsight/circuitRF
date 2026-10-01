@@ -90,6 +90,9 @@ internal static class SolverInstallRunner
             InstallOutcome outcome;
             try
             {
+                // brief-em3d-97 R-em3d97-4 — an install in the subsystem holds it, so the memory dialog will not restart it.
+                using var inSubsystem = plan.Distribution is { } distro
+                    ? CircuitRF.Design.Em3d.Wsl.WslInUse.Hold(distro, $"the install of {name}") : null;
                 outcome = await Task.Run(() => installer.Install(recipe, control));
             }
             finally

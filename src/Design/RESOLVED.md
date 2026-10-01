@@ -16160,3 +16160,24 @@ that shrink the problem. The `.wslconfig` path left the sentence and became the 
 `Em3dMemoryVerdict.File` → `EmRunResult.MessageFiles` (keyed by sentence), and the CLI prints it after the
 sentence. The verdict's head was cut from a paragraph to one clause ("the estimate errs high"). The provenance
 of that claim is in the user guide. Gate: `WslLocationTests.Gate5`/`Gate5b`. The one-button raise is brief em3d-97.
+
+## brief-em3d-97 — `.wslconfig`'s `memory=`, edited one key at a time (2026-10-01)
+
+`Em3d/Wsl/WslConfigFile` reads and edits the user's `.wslconfig`; `WslMemory` writes it and, when asked, runs
+`wsl --shutdown` and reads `free -b` again; `WslInUse` is what refuses that restart. Gates:
+`tests/Ui.Tests/Em3d/WslMemoryRaiseTests.cs`.
+
+- **A BOM'd file came back with TWO BOMs, and only the byte-identity gate saw it.** The skip length was taken from
+  `encoding.GetPreamble().Length`, and the strict UTF-8 encoding is built with `encoderShouldEmitUTF8Identifier:
+  false` — so its preamble is EMPTY, nothing was skipped, the text began with U+FEFF, and the write added the BOM
+  again. Every string comparison passes (U+FEFF is invisible and culture comparisons ignore it); only comparing
+  BYTES finds it. `Detect` now returns the BOM's length itself.
+- **A file that is not UTF-8 is decoded as Latin-1**, which maps every byte to one character and back, so the lines
+  the edit does not touch are written back as the same bytes whatever the ANSI code page was.
+- **Why a second in-use registry beside `SolverInUse`.** That one holds only homes circuitRF INSTALLED. A Palace the
+  user built in the distribution holds nothing there, and `wsl --shutdown` kills its run all the same. `WslInUse`
+  is held by the run (`Em3dRunService`, around a `WslPalaceRunner`) and by an install into a distribution
+  (`SolverInstallRunner`); another process's run is still seen through `SolverInUse`'s lock in the home's mirror.
+- **The memory confirmation now receives the verdict, not its sentence** (`Func<Em3dMemoryVerdict, bool>`), so the
+  panel can see the `.wslconfig` the sentence names and offer to raise it. Every existing caller was `_ => true`, which
+  still compiles.

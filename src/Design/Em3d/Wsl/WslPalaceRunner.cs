@@ -41,6 +41,9 @@ internal sealed class WslPalaceRunner(WslSession session, string linuxHome, stri
     /// <summary>The MPI launcher inside the distribution, and how it was found.</summary>
     public string? MpiLauncher => mpirun;
 
+    /// <summary>The distribution the run is in.</summary>
+    public string Distribution => session.Distribution;
+
     public PhysicalCoreReading Cores => session.Cores();
 
     /// <summary>The run key: a hash of the Windows run directory, so two setups never share a staging directory.</summary>

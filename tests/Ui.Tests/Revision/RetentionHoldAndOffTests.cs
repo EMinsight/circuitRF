@@ -1579,7 +1579,7 @@ public class RetentionHoldAndOffTests
         public void Post(MessageLevel level, string text, string? filePath = null) => Texts.Add(text);
 
         public void PostAction(MessageLevel level, string text, string actionLabel,
-                               Func<System.Threading.Tasks.Task> action)
+                               Func<System.Threading.Tasks.Task> action, string? filePath = null)
         {
             Texts.Add(text);
             ActionLabels.Add(actionLabel);

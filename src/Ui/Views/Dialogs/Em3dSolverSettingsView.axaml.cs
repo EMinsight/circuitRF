@@ -37,8 +37,10 @@ public partial class Em3dSolverSettingsView : UserControl
         // brief-em3d-24 — an install that ends (however it ends) changes what discovery finds.
         CircuitRF.Ui.Views.Dialogs.SolverInstallRunner.Finished += OnInstallFinished;
         CircuitRF.Ui.Views.Dialogs.SolverRemovalRunner.Finished += OnRemovalFinished;
+        WslMemoryDialog.Changed += OnSubsystemMemoryChanged;
         DetachedFromVisualTree += (_, _) =>
         {
+            WslMemoryDialog.Changed -= OnSubsystemMemoryChanged;
             CircuitRF.Ui.Views.Dialogs.SolverInstallRunner.Finished -= OnInstallFinished;
             CircuitRF.Ui.Views.Dialogs.SolverRemovalRunner.Finished -= OnRemovalFinished;
         };
@@ -262,8 +264,49 @@ public partial class Em3dSolverSettingsView : UserControl
                     if (!state.Ready) ToolTip.SetTip(PalaceLocationRow, state.Refusal);
                 }
                 finally { _loading = false; }
+                RefreshSubsystemMemory();
             });
         });
+    }
+
+    // ── brief-em3d-97 R-em3d97-3 — the subsystem's memory ─────────────────────────────────────
+
+    private string? _subsystemDistribution;
+
+    private void OnSubsystemMemoryChanged() => Dispatcher.UIThread.Post(RefreshSubsystemMemory);
+
+    /// <summary>
+    /// "Linux subsystem: 3.8 GB of 7.6 GB", read live (<c>free -b</c> in the distribution) every time it is shown —
+    /// a stored figure would be a second copy of <c>.wslconfig</c>'s. Shown only when Palace's location is a
+    /// distribution, or Automatic finds Palace in one.
+    /// </summary>
+    private void RefreshSubsystemMemory()
+    {
+        if (SolverDiscovery.Palace.Subsystem is not { Available: true } wsl) return;
+        var location = PalaceLocation.Parse(AppPreferencesIo.Load().Em3dPalaceLocation);
+        _ = Task.Run(() =>
+        {
+            string? distro = location.Kind switch
+            {
+                PalaceLocationKind.Subsystem => location.Distribution,
+                PalaceLocationKind.Native    => null,
+                _                            => SolverDiscovery.Palace.Find(out _)?.Distribution,
+            };
+            long? bytes = distro is null ? null : new CircuitRF.Design.Em3d.Wsl.WslSession(wsl, distro).MemoryBytes();
+            string line = CircuitRF.Ui.Layout.Em.WslMemoryDialogModel.SettingsLine(bytes, MachineMemory.PhysicalBytes);
+            Dispatcher.UIThread.Post(() =>
+            {
+                _subsystemDistribution = distro;
+                SubsystemMemoryRow.IsVisible = distro is not null;
+                SubsystemMemoryText.Text = line;
+            });
+        });
+    }
+
+    private async void OnChangeSubsystemMemory(object? sender, RoutedEventArgs e)
+    {
+        var messages = (App.LastActiveWorkspace?.DataContext as ViewModels.WorkspaceViewModel)?.Messages;
+        await WslMemoryDialog.OpenAsync(TopLevel.GetTopLevel(this) as Window, messages, _subsystemDistribution);
     }
 
     private void OnLocationChanged(object? sender, SelectionChangedEventArgs e)
@@ -272,6 +315,7 @@ public partial class Em3dSolverSettingsView : UserControl
         AppPreferencesIo.Update(p => p.Em3dPalaceLocation = location.ToSetting());
         Refresh(SolverDiscovery.Palace, PalaceStatus, PalaceInstall);
         RefreshMpi();
+        RefreshSubsystemMemory();
     }
 
     /// <summary>Runs discovery for one row off the UI thread and writes its answer back —

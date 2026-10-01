@@ -38513,3 +38513,20 @@ changes wire identity, which orphans anchored labels. It also changes how a part
 rubber-bands. The stretch selection covers wires already in saved files without rewriting them. Segment
 DRAG still moves the whole segment, and the highlight shows the whole segment while it does. Copy still
 copies the whole segment. Gate: `tests/Ui.Tests/WireSpanAtJunctionTests.cs`.
+
+## brief-em3d-97 — *Give the subsystem more memory…* (2026-10-01)
+
+The dialog is `Views/Dialogs/WslMemoryDialog.cs` (code-only, like `EmRunInFlightDialog`) over
+`Layout/Em/WslMemoryDialogModel.cs`, which holds everything it shows and does so the gates need no display. It is
+offered from three places: the memory warning's Messages row, the 150 % confirmation's third answer, and Settings ▸
+3D EM's **Change…** under Palace's Location row. Gates: `tests/Ui.Tests/Em3d/WslMemoryRaiseTests.cs`.
+
+- **Adding a parameter to a DEFAULT interface method silently orphans every implementation.** `IMessageSink.PostAction`
+  gained `string? filePath = null`. A class whose `PostAction` still has the old four parameters compiles without a
+  warning — its method is just an unrelated method now — and every call through the interface reaches the DEFAULT,
+  which drops the action and posts plain text. Two test sinks (`RelaunchTests`, `RetentionHoldAndOffTests`) had the
+  old shape and were updated; any new sink must take the fifth parameter.
+- **More memory first STOPS the run** (`WorkspaceViewModel.AnswerEmMemory`). Restarting the subsystem and carrying
+  on would run Palace through a runner set up against the old VM, so the user presses Simulate again.
+- The Settings line reads `free -b` every time the tab is shown, which starts the VM if it was stopped. That is the
+  price of never storing a copy of the figure; the read is off the UI thread.
