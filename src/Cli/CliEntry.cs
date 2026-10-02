@@ -1374,6 +1374,7 @@ static int RunEm(string[] args)
     CircuitRF.Design.ThreeD.C3dDocument? threeD = null;
     string? threeDPath = null;
     bool isC3d = DocumentKinds.Classify(cemPath) == DocumentKind.ThreeD;
+    string? embeddedName = null;      // brief-em3d-98 — the .c3d's own name for the setup run
     EmSetup setup;
     if (isC3d)
     {
@@ -1382,6 +1383,7 @@ static int RunEm(string[] args)
         var (embedded, why) = CircuitRF.Design.ThreeD.C3dSetups.Select(threeD, setupName);
         if (embedded is null) return JsonRun.Fail(CliDiagnostics.EmThreeDSetup(cemPath, why!));
         setup = CircuitRF.Design.ThreeD.C3dSetups.ForRun(embedded, cemPath);
+        embeddedName = embedded.Name;
         threeDPath = cemPath;
     }
     else
@@ -1477,6 +1479,13 @@ static int RunEm(string[] args)
         ? CircuitRF.Cli.GeneratedCells.Prepare(emSource.View, emSource.AbsolutePath, mayWrite: true, out emCellRefusal)
         : null;
     if (emCellRefusal is { } emRefused) return emRefused;
+
+    // brief-em3d-98 R-em3d98-7 — the GUI asks before replacing a complete, current result; a headless run never asks. It says
+    // so in one line and runs, so a build log shows a re-run that changed nothing.
+    if (embeddedName is not null && threeD is not null &&
+        CircuitRF.Design.ThreeD.C3dSolveStatus.AllCurrent(
+            CircuitRF.Design.ThreeD.C3dSolveStatus.OfRun(setup, embeddedName, threeD, threeDPath!, resultsRoot)))
+        Console.Error.WriteLine($"note: the result for '{embeddedName}' was already current; running again");
 
     EmRunResult result;
     try

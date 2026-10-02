@@ -690,6 +690,24 @@ for this — and then the thermal run at every HB point, on the HB's own axes. *
 CIRCUIT**, before it is elaborated, as `hb` sets it; the thermal setup's own values are the document's. An HB that
 cannot run is the refusal, verbatim; exit codes as above. Gate: `tests/Ui.Tests/ThreeD/ThermalCircuitLinkTests.cs`.
 
+### 8.8 How a run ended, and a re-run of a current result (brief-em3d-98)
+
+Every 3D and thermal run leg keeps a **`status.json`** in its run directory (`results/<key>.palace/`, `.openems/`,
+`.thermal/`): `State` (`running`, `complete`, `cancelled`, `notConverged`, `failed`), `Started`/`Finished` (UTC), a one-sentence
+`Detail`, and the `Pid` that wrote `running`. The run services in `src/Design` write it (`C3dRunStatus`), so `em` and the GUI's
+Simulate keep the same record. A leg writes `running` and **removes the previous run's `document.c3d`/`inputs.json`** before the
+solver touches the directory, then writes how it ended on every path; its inputs record is kept only when it completed or did
+not converge — so a cancelled re-run can never leave the old record reading as current, and a Both run whose openEMS leg is
+cancelled still keeps Palace's. `notConverged` is each solver's own signal: openEMS's per-port convergence, Palace's "linear
+solver did not converge", the thermal solver's Newton flag.
+
+**`em` never asks before replacing a current result**, as the GUI does. When every leg the run will run already has a
+complete, current result (`C3dSolveStatus.AllCurrent`), it prints one stderr line and runs:
+
+```
+note: the result for 'EM1' was already current; running again
+```
+
 ## 9. Adding a verb
 
 1. Add the case to the dispatch switch and a line to `PrintHelp`.
@@ -1024,6 +1042,38 @@ a run would stop with when the grid would not fit. The air box's `enlargements` 
 face's PML — the grid grows OUTWARD by that much. An unavailable row says why and is never printed as 0. It starts no process; the gate holds that
 with a counter on `Em3dProcessLauncher`. In `--json` the rows are `explain.em3d`, lengths in base SI
 with `lengthUnit`/`lengthScale`.
+
+**A `.c3d` also reports whether each setup is solved (`brief-em3d-98` R-em3d98-8).** A **Solved** section, one line per
+(setup, solver leg), in the words the editor's setup cards use — the state, whether the run was partial, when it finished,
+how long it took, and what changed since:
+
+```
+Solved
+  'Driven'     FEM (Palace)    Solved 14:32 (18 min)
+  'Both'       FEM (Palace)    Solved 14:32 (18 min)
+  'Both'       FDTD (openEMS)  Cancelled 14:51: no complete result
+  'Lid modes'  FEM (Palace)    Out of date: 'Board.clay' has changed
+  'Heat'       thermal         Not run
+```
+
+and in `--json` as `explain.solved`:
+
+```
+"solved": [ { "setup": "Driven", "solver": "fem", "state": "current", "partial": false, "running": false,
+              "endedAs": "complete", "solved": "2026-10-02T14:32:05+01:00", "tookSeconds": 1080 },
+            { "setup": "Both", "solver": "fdtd", "state": "notRun", "partial": true, "running": false,
+              "endedAs": "cancelled", "solved": "2026-10-02T14:51:40+01:00", "tookSeconds": 95.3 },
+            { "setup": "Lid modes", "solver": "fem", "state": "outOfDate", "partial": false, "running": false,
+              "endedAs": "complete", "solved": "2026-10-01T09:12:00+01:00", "tookSeconds": 420,
+              "staleWhat": "'Board.clay'" } ]
+```
+
+`state` is `notRun`, `current` or `outOfDate`; `partial` (cancelled, not converged, failed or interrupted) is independent
+of it, because a not-converged result can still be the model's. `tookSeconds` is absent for a run kept before brief 98,
+which recorded no duration. **It holds no rule of its own**: every row is `C3dSolveStatus.Of` (src/Design), the function the
+editor's glyphs, the tree and the confirmation before a re-run read, against the results root `em` writes (`ResultsRoot`).
+It replaced the per-setup `result of setup '…'` walk that brief 87 added; the `inputs` walk stays. `check` does not carry
+it (D1): `check` reports soundness, and a result being out of date is not a defect of the design.
 
 **R-aut4-8: `explain` never guesses and never falls back silently.** Where resolution fails, that is
 the answer — a diagnostic naming what was looked for and where it was looked, because a caller uses
@@ -2349,6 +2399,15 @@ them.
 **It never leaves the root.** A directory symbolic link is not followed — that is the one way a
 bounded walk stops being bounded and a confined one stops being confined. On `serve` the root is
 already `PathRoot`'s.
+
+**A 3D view says which of its setups are solved (`brief-em3d-98` R-em3d98-8).** Its view row carries `solved` — per
+(setup, solver leg) the state alone, `{"setup","solver","state","partial"}`, from `C3dSolveStatus.Of` as `explain`'s
+Solved section is; the detail (when, how long, what changed) is `explain`'s. In text, one `solved:` line under the cell:
+
+```
+    Launch                   3d: Launch.c3d
+                             solved: Palace fem current, openEMS fdtd outOfDate (partial)
+```
 
 
 ## 17. `rail` — the whole railRF window, with no display

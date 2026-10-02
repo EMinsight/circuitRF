@@ -292,11 +292,21 @@ namespace RfCore.Export
     /// a state a caller has to be able to see, not an omission.
     /// </param>
     /// <param name="State"><c>CellFolder.ResolvePrimary</c>'s own five-branch answer, verbatim.</param>
+    /// <param name="Solved">brief-em3d-98 R-em3d98-8 — a 3D view's setups, each leg's state alone (the detail is
+    /// <c>explain</c>'s); absent for any other view.</param>
     public sealed record FoundViewJson(
         string  Type,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         string? File,
-        string  State);
+        string  State,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        IReadOnlyList<FoundSolvedJson>? Solved = null);
+
+    /// <summary>brief-em3d-98 — one (setup, solver leg) of a 3D view, as <c>find</c> lists it.</summary>
+    /// <param name="Solver"><c>fem</c> (Palace), <c>fdtd</c> (openEMS) or <c>thermal</c>.</param>
+    /// <param name="State"><c>notRun</c>, <c>current</c> or <c>outOfDate</c>.</param>
+    /// <param name="Partial">The run was cancelled, did not converge, failed or was interrupted.</param>
+    public sealed record FoundSolvedJson(string Setup, string Solver, string State, bool Partial);
 
     /// <param name="Analyses">
     /// The analyses the cell's primary schematic declares, by name. Empty when it declares none;
@@ -1130,7 +1140,41 @@ namespace RfCore.Export
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         IReadOnlyList<ExplainFootprintJson>? Footprints = null,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        ExplainEm3dJson?                    Em3d = null);
+        ExplainEm3dJson?                    Em3d = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        IReadOnlyList<ExplainSolvedJson>?   Solved = null);
+
+    /// <summary>
+    /// brief-em3d-98 R-em3d98-8 — one (setup, solver leg) of a 3D view: whether it has a result of the model as it is now
+    /// (C3dSolveStatus, the one answer the editor's glyphs read too).
+    /// </summary>
+    /// <param name="Solver"><c>fem</c> (Palace), <c>fdtd</c> (openEMS) or <c>thermal</c>.</param>
+    /// <param name="State"><c>notRun</c>, <c>current</c> or <c>outOfDate</c>.</param>
+    /// <param name="Partial">The run was cancelled, did not converge, failed or was interrupted — independent of
+    /// <paramref name="State"/>.</param>
+    /// <param name="Running">A run of this leg is under way in a live process.</param>
+    /// <param name="EndedAs">How the last run ended: <c>complete</c>, <c>cancelled</c>, <c>notConverged</c>, <c>failed</c>,
+    /// <c>interrupted</c>; absent when there is no record.</param>
+    /// <param name="Solved">When it finished, ISO 8601 with offset.</param>
+    /// <param name="TookSeconds">How long it ran; absent for a run kept before brief 98.</param>
+    /// <param name="StaleWhat">What changed since: <c>the model</c>, <c>'Board.clay'</c>…; absent unless out of date.</param>
+    /// <param name="Detail">The run's own sentence (why it did not converge or failed).</param>
+    public sealed record ExplainSolvedJson(
+        string  Setup,
+        string  Solver,
+        string  State,
+        bool    Partial,
+        bool    Running,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? EndedAs,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? Solved,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        double? TookSeconds,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? StaleWhat,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? Detail);
 
     // ── explain on a 3D EM setup (brief-em3d-5 R-em3d5-3) ────────────────────
 

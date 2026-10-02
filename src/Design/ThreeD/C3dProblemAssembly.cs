@@ -27,6 +27,9 @@ namespace CircuitRF.Design.ThreeD;
 /// <summary>One embedded setup, read — or why it could not be.</summary>
 public sealed record C3dEmbeddedSetup(int Index, string Name, EmSetup? Setup, string? Refusal);
 
+/// <summary>brief-em3d-98 — what of a document one setup's run reads (<see cref="C3dSetups.ScopeOf"/>).</summary>
+public sealed record C3dRunScope(IReadOnlySet<string> Setups, bool Thermal, bool Gmsh, IReadOnlySet<int>? Ports);
+
 public static class C3dSetups
 {
     /// <summary>The sentence a planar setup gets, from either container.</summary>
@@ -99,6 +102,38 @@ public static class C3dSetups
         s.Name = $"{Path.GetFileNameWithoutExtension(c3dPath)} {embedded.Name}";
         s.LayoutRef = Path.GetFileName(c3dPath);
         return s;
+    }
+
+    /// <summary>
+    /// brief-em3d-98 — the setups a run of <paramref name="setupName"/> is solved from: itself, and a thermal submodel's
+    /// <c>From</c> setup (whose result fixes its cut faces). Every other setup is not part of its model, so editing, adding
+    /// or removing one never makes this setup's result out of date (<see cref="C3dPersistence.SerializeForRun(C3dDocument, string?)"/>).
+    /// A name no setup has (an external <c>.cem</c>'s run, spelt <c>""</c>) is solved from none of them.
+    /// </summary>
+    public static IReadOnlySet<string> SolvedWith(C3dDocument doc, string setupName)
+    {
+        var names = new HashSet<string>(StringComparer.Ordinal) { setupName };
+        if (Read(doc).FirstOrDefault(s => s.Name == setupName)?.Setup?.Thermal?.Submodel?.From is { Length: > 0 } from) names.Add(from);
+        return names;
+    }
+
+    /// <summary>
+    /// brief-em3d-98 — what of the document a run of <paramref name="setupName"/> reads, beyond the geometry every run reads:
+    /// which setups (<see cref="SolvedWith"/>), whether it is a thermal run, whether it meshes with Gmsh (and so reads the
+    /// mesh regions), and which ports (null: all of them). A thermal run reads only the ports its currents name — all of them
+    /// when a current comes from a circuit, whose pins map onto the ports by number. A setup that is not embedded (an external
+    /// <c>.cem</c>'s, which is never thermal) or cannot be read is taken as an EM run reading every port and the mesh regions.
+    /// </summary>
+    public static C3dRunScope ScopeOf(C3dDocument doc, string setupName)
+    {
+        var names = SolvedWith(doc, setupName);
+        var read = Read(doc);
+        if (read.FirstOrDefault(s => s.Name == setupName)?.Setup is not { } mine) return new C3dRunScope(names, false, true, null);
+        if (!mine.IsThermal) return new C3dRunScope(names, false, mine.Solver3D != Em3dSolver.OpenEms, null);
+        var currents = names.Select(n => read.FirstOrDefault(s => s.Name == n)?.Setup).OfType<EmSetup>()
+                            .SelectMany(s => s.Thermal?.Currents ?? []).ToList();
+        IReadOnlySet<int>? ports = currents.Any(c => c.FromCircuit is not null) ? null : currents.Select(c => c.Port).OfType<int>().ToHashSet();
+        return new C3dRunScope(names, true, true, ports);
     }
 
     /// <summary>True when a <c>.cem</c>'s resolved geometry is a 3D view rather than a layout.</summary>

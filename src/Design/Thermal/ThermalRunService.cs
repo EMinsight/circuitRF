@@ -68,6 +68,47 @@ public static partial class ThermalRunService
                                   CancellationToken ct = default, RunControl? control = null,
                                   IReadOnlyList<(string Name, string Expr)>? circuitSets = null)
     {
+        // brief-em3d-98 R-em3d98-2 — the run directory's status.json: `running` once the run is about to mesh into it (a refusal
+        // before then leaves the previous result and its record untouched), how it ended on every path after that.
+        var record = new LegRecord();
+        EmRunResult result;
+        try { result = RunCore(setup, document, documentPath, workspaceCws, resultsRoot, ct, control, circuitSets, record); }
+        catch (Exception e) when (record.Directory is not null)
+        {
+            C3dRunStatus.Finish(record.Directory, record.Started, e is OperationCanceledException ? C3dRunState.Cancelled : C3dRunState.Failed,
+                                e is OperationCanceledException ? null : e.Message);
+            throw;
+        }
+        if (record.Directory is { } dir)
+        {
+            var state = result.Status switch
+            {
+                EmRunStatus.Ok        => record.NotConverged is null ? C3dRunState.Complete : C3dRunState.NotConverged,
+                EmRunStatus.Cancelled => C3dRunState.Cancelled,
+                _                     => C3dRunState.Failed,
+            };
+            C3dRunStatus.Finish(dir, record.Started, state, state switch
+            {
+                C3dRunState.NotConverged => record.NotConverged,
+                C3dRunState.Failed       => result.Error is { } why ? why.ReplaceLineEndings(" ") : null,
+                _                        => null,
+            });
+        }
+        return result;
+    }
+
+    /// <summary>brief-em3d-98 — where a run's status goes once it has begun using its directory, and whether it converged.</summary>
+    private sealed class LegRecord
+    {
+        public string? Directory;
+        public DateTime Started;
+        public string? NotConverged;
+    }
+
+    private static EmRunResult RunCore(EmSetup setup, C3dDocument document, string documentPath, string? workspaceCws, string resultsRoot,
+                                       CancellationToken ct, RunControl? control, IReadOnlyList<(string Name, string Expr)>? circuitSets,
+                                       LegRecord record)
+    {
         ArgumentNullException.ThrowIfNull(setup);
         ArgumentNullException.ThrowIfNull(document);
         if (control is { Token: var tk } && tk.CanBeCanceled) ct = tk;
@@ -136,6 +177,8 @@ public static partial class ThermalRunService
             if (lowering is null) return Refuse(why!);
             notes.AddRange(lowering.Notes);
             string runDir = RunDirectory(resultsRoot, setup);
+            record.Started = C3dRunStatus.Begin(runDir);
+            record.Directory = runDir;
             var meshed = Mesh(runDir, lowering, gmsh.Installation.Path, control, ct, notes, out var mesh, out string? meshError);
             if (meshed.Cancelled) return Stop(EmRunStatus.Cancelled, EmDiagnostics.Cancelled());
             if (meshed.Refused) return Refuse(meshed.Message!);
@@ -305,7 +348,12 @@ public static partial class ThermalRunService
                     warnings.Add($"{where}The energy balance does not close: {sol.BalanceRelative:G3} of the heat is unaccounted for " +
                                  $"(tolerance {ThermalSolver.BalanceTolerance:G3}). The solve is not to be trusted at this point.");
                 if (!sol.Converged)
+                {
                     warnings.Add($"{where}Newton over k(T) did not converge; the point's temperatures are its last iterate.");
+                    // brief-em3d-98 — the solver's own signal (ThermalSolution.Converged), never a criterion of ours
+                    record.NotConverged ??= $"Newton over k(T) did not converge{(points.Count > 1 ? $" at {where.TrimEnd(':', ' ')}" : "")}: " +
+                                            "the temperatures there are its last iterate.";
+                }
                 foreach (string held in Holds(lowering, records, mesh, sol.Temperature, kOfT)) if (!notes.Contains(held)) notes.Add(held);
             }
             notes.AddRange(summary.Count <= 12 ? summary : [.. summary.Take(6), $"… and {summary.Count - 6} more line(s) in the result's Notes."]);
@@ -1058,7 +1106,7 @@ public static partial class ThermalRunService
         // brief-em3d-87 R-em3d87-4 — reused only when its manifest matches the inputs now: the document AND every file it was
         // solved from. A result with no manifest (made before brief 87) is never reused; its time proved nothing about a layout.
         bool had = File.Exists(bin);
-        var check = had && File.Exists(C3dRunDocument.InputsPathIn(dir)) ? C3dRunDocument.Check(dir, document, path) : null;
+        var check = had && File.Exists(C3dRunDocument.InputsPathIn(dir)) ? C3dRunDocument.Check(dir, document, path, sm.From) : null;
         var stored = check is { Stale: false } ? ReadTemperatures(bin) : null;
         if (stored is not null)
             notes.Add($"Submodel: setup '{sm.From}''s result ({File.GetLastWriteTime(bin).ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)}) " +

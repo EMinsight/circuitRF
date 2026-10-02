@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:CircuitRF.Ui.ViewModels.Dock"
              xmlns:ptvm="using:CircuitRF.Ui.ViewModels.ProjectTree"
+             xmlns:ctl="using:CircuitRF.Ui.Controls"
              xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              x:Class="CircuitRF.Ui.Views.ProjectTree.ProjectTreeView"
              x:DataType="vm:ProjectTreeTool"
@@ -341,7 +342,7 @@
                              the bound collection is empty). -->
                         <TreeDataTemplate x:DataType="ptvm:ProjectTreeNodeViewModel"
                                           ItemsSource="{Binding FilteredChildren}">
-                            <Grid ColumnDefinitions="Auto,Auto,*"
+                            <Grid ColumnDefinitions="Auto,Auto,Auto,*"
                                   Classes="pt-row"
                                   Classes.pt-droptarget="{Binding IsDropTarget}">
                                 <!-- Per-kind icon (NodeKind + IsTestBench → MaterialIconKind) -->
@@ -392,6 +393,13 @@
 
                                 <!-- Name: bold for IsPrimary, italic + warning-color for IsWarning.
                                      Tooltip: WarningReason first (if warning), then RelativePath. -->
+                                <!-- brief-em3d-98 R-em3d98-5 item 3: a .c3d row's "solved" glyphs, after its name. Column 3
+                                     is Auto and the name keeps the star column, so the glyphs sit right after the text; a row
+                                     with none (every other kind) draws nothing there and takes no width. -->
+                                <ctl:SolveBadges Grid.Column="3"
+                                                 Badges="{Binding SolveBadges}"
+                                                 GlyphSize="9"
+                                                 Margin="4,0,0,0"/>
                                 <TextBlock Grid.Column="2"
                                            Text="{Binding Name}"
                                            FontSize="12"

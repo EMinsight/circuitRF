@@ -16244,3 +16244,51 @@ removes each pass's subfolders and keeps its files: `palace.json`, which `ReadFa
 element count from, and the CSVs, which are the convergence history. Turning the option off instead would lose
 both. Runs on the Linux subsystem never copied these folders back (`WslPalaceRunner.CopyOut`), so this is a
 no-op there. Run folders made before this change keep their passes until they are re-run.
+
+## "Solved": which 3D-view setups have a current result (brief-em3d-98, 2026-10-02)
+
+`C3dSolveStatus.Of` (src/Design/ThreeD) is the one answer for the setup cards, the tab and tree glyphs, a floating window's
+title, the question before a re-run, `explain`'s Solved section and `find`. It adds no staleness rule of its own: whether a
+result is the model's is still brief 87's `C3dRunDocument.Check`, and how the run ended is the new per-leg `status.json`
+(`C3dRunStatus`). `RunDirectories` moved here from the 3D editor, so one list says where a setup's results live.
+
+- **`SerializeForRun` kept display state, so visibility made results stale.** The audit (its comment lists every key) found
+  five display properties it was keeping: every object's `Hidden` and `Group`, every instance's `Group`, `AirBoxHidden`,
+  `DisplayUnit` and `SnapDbu`. They are reset now, along with the new `ActiveSetup`. `Group` is organisation only (no solver
+  path reads it); `DisplayUnit` reaches the elaborator only in message text, and an expression stores its own unit.
+- **Old records compare on the new terms.** A record kept before this brief holds `"Hidden": true`. When the plain text
+  comparison fails, `Check` reads the stored document back, puts it through `SerializeForRun` and compares again
+  (`C3dRunDocument.Normalised`, cached per stored text). The common equal case costs nothing extra.
+- **A cancelled re-run left the previous record beside half-overwritten files**, so an unchanged model read as current.
+  A leg now writes `running` and deletes the old `document.c3d`/`inputs.json` before the solver touches the directory
+  (`C3dRunStatus.Begin`), and writes how it ended on every exit path (`Em3dRunService.Recorded`; `ThermalRunService.Run`
+  wraps `RunCore`). A cancelled or failed leg therefore has no record and reads `NotRun` with `Partial`. A hand-built
+  record beside a `cancelled` status reads `Current` with `Partial`, which is what the brief's gate 3 builds.
+- **The inputs record is kept per leg** through a `keepRecord` callback on `Em3dRunService.Run`, called when that leg
+  completed or did not converge, before its status says so. Before, `RunThreeDView` kept records only when the whole run
+  returned `Ok`, so a Both run whose openEMS leg was cancelled kept nothing for Palace either.
+- **The thermal run starts its status at the mesh, not at the call.** A refusal before then (a bad setup, no Gmsh) leaves
+  the previous result and its record alone.
+- **`notConverged` reuses each solver's own signal**, and invents none: openEMS's per-port `Converged`; Palace's stage
+  tracker warnings, which hold only "Linear solver did not converge"; the thermal solver's `ThermalSolution.Converged`
+  (Newton over k(T)). Palace's "adaptive sampling reached maximum" is not one: nothing reports it as a warning today.
+- **A `running` status whose `Pid` is gone is interrupted**, which counts as partial. "Could not tell" reads as alive,
+  `WorkspaceLock`'s rule. A directory with no `status.json` but a kept document is a pre-98 run: complete, no duration
+  (`C3dRunStatusRecord.Legacy`).
+- **Each setup is compared on what its own solver reads** (owner decision, 2026-10-02). Until then a result was compared
+  with the WHOLE document, so adding thermal setup T1 made EM1 out of date, as did a heat source, and an EM port made a
+  thermal result out of date. `C3dRunDocument.Check` now takes the embedded setup's name, and both sides of the comparison
+  go through `SerializeForRun(doc, setup)`, which applies `C3dSetups.ScopeOf`. It keeps only that setup (plus a thermal
+  submodel's `From`, whose result fixes its cut faces, which `ThermalRunService.LoadGlobal` reuses). An EM run drops the
+  thermal-only lists (heat sources, probes, contact resistances, effective blocks, symmetry planes, wire ground plane), and
+  an openEMS-only run drops the mesh regions too. A thermal run drops face boundaries, the air box's material, and every
+  port its currents do not name. A circuit-driven current keeps all ports, because the circuit's pins map onto them by
+  number. Which list each solver reads was taken from the code, not guessed: `ThermalCurrents`/`ThermalCircuitLink` read
+  ports; nothing in an EM path reads the thermal lists. The record still keeps the WHOLE document, so the filter is applied
+  at comparison time on both sides, and old records need no change. The editor's banner passes the setup too, and an
+  external `.cem`'s run passes `""`, so no embedded setup's edit reaches it.
+- **A placed 3D view's own setups no longer reach its parent's hash** (`Contribution` empties them first). One side effect:
+  a record made between brief 87 and this one whose inputs include a placed `.c3d` reads out of date once, because that
+  child's hash changed meaning.
+
+Gates: `tests/Ui.Tests/ThreeD/SolvedStatusTests.cs` (gates 1–10 and the legend's cells).

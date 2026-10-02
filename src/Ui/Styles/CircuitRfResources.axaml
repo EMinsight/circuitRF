@@ -154,12 +154,21 @@
             be the same as the background color of the Data display"). A second literal copy in the
             other file is exactly how the two would stop matching.
         -->
+        <!-- brief-em3d-98 R-em3d98-4 — the "solved" glyphs on a .c3d's tab and tree row (Controls/SolveBadges.cs). The
+             colour says nothing — shape and fill do — so it is a quiet blue, not a green that would read as "OK". The FADED
+             brush is the one most likely to fail: a grey chosen on white disappears on the dark tab and tree, so each
+             variant states its own, and both clear 3:1 against the chrome they sit on (#F2F2F2 / #FFFFFF light; #171717 /
+             #2B2B2B dark). -->
         <ResourceDictionary.ThemeDictionaries>
             <ResourceDictionary x:Key="Light">
                 <SolidColorBrush x:Key="CrfDataDisplayCanvasBrush" Color="#FCFCFC"/>
+                <SolidColorBrush x:Key="SolveBadgeBrush"           Color="#1F5FAD"/>
+                <SolidColorBrush x:Key="SolveBadgeFadedBrush"      Color="#6F8DB3"/>
             </ResourceDictionary>
             <ResourceDictionary x:Key="Dark">
                 <SolidColorBrush x:Key="CrfDataDisplayCanvasBrush" Color="#171717"/>
+                <SolidColorBrush x:Key="SolveBadgeBrush"           Color="#7DB7F5"/>
+                <SolidColorBrush x:Key="SolveBadgeFadedBrush"      Color="#6684A6"/>
             </ResourceDictionary>
         </ResourceDictionary.ThemeDictionaries>
 

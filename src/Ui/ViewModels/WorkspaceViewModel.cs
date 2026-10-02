@@ -574,6 +574,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             Dispatcher.UIThread.Post(TryWireWindowFocusTracking, DispatcherPriority.Background);
         };
 
+        // brief-em3d-98 — the tree's "solved" glyphs follow its rescans; a floating window's title follows its document.
+        HookSolveBadges();
+
         // Autosave: periodic dirty-scratch serialization to the per-session recovery dir.
         _recovery = new RecoveryManager();
         StartAutosaveTimer();

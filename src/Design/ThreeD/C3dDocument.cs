@@ -734,6 +734,14 @@ public sealed class C3dDocument
     /// <c>.cem</c> reader (<see cref="C3dSetups.Read"/>).</summary>
     public List<JsonElement> Setups         { get; set; } = [];
 
+    /// <summary>
+    /// brief-em3d-98 R-em3d98-3 — the setup the editor runs and draws, by name. Written only when it is not the first setup,
+    /// so a document whose first setup is active (every document written before this brief) is unchanged. Display state:
+    /// <see cref="C3dPersistence.SerializeForRun"/> leaves it out, so choosing a setup never makes a result out of date. A
+    /// missing or unknown name falls back to the first setup.
+    /// </summary>
+    public string? ActiveSetup { get; set; }
+
     /// <summary>Keys this build does not read, kept and written back — see <see cref="C3dObject.Unread"/>.</summary>
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? Unread { get; set; }

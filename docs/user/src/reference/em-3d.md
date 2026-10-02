@@ -24,6 +24,7 @@ that one rather than repeating it.
 <li><a href="#getting">Getting the solvers</a></li>
 <li><a href="#setting-up">Setting one up</a></li>
 <li><a href="#running">Watching it run, and reading the answer</a></li>
+<li><a href="#solved">Is this solved?</a></li>
 <li><a href="#view">The 3D view</a></li>
 <li><a href="#example">Walking through the example</a></li>
 </ol>
@@ -194,6 +195,77 @@ the other solver's:
 `results/<setup>.palace/` keeps everything the run made: the Gmsh script, the mesh, the Palace
 configuration, both programs' logs, and the saved fields. The run can be repeated by hand from it. An
 unchanged model reuses its mesh.
+
+## Is this solved? {#solved}
+
+A 3D run takes minutes to hours, so a 3D view (`.c3d`) says, for each of its setups, whether a run's result still
+matches the model. You can tell without opening the fields, and the answer is still there after you close and reopen
+the document or the workspace.
+
+**What "solved" means.** A result exists, and nothing the run read has changed since. That covers the 3D view itself
+(unsaved edits included) and every file the run was solved from: placed layouts and their sub-cells, nested 3D views,
+the technology, and its material libraries. A circuit-driven thermal run also counts the schematic it ran. A run keeps
+a copy of the model it solved beside its result, and the check compares contents, not an edit count.
+
+**What makes a result out of date.** An edit to anything that setup's solver reads: geometry, materials, variables,
+an object's **Model** switch (*Model: kept in the drawing, left out of the solve* in
+[Drawing in 3D](drawing-in-3d.html#model)), and the setup itself. **Each setup is judged on its own**:
+
+- **Another setup never counts.** Adding, editing or removing one setup leaves every other setup's result as it was.
+  The exception is a thermal submodel, whose result is cut from its *From* setup's, so editing that setup counts for it.
+- **An EM result** also counts ports, face boundaries and the air box's material. Heat sources, probes, contact
+  resistances, effective blocks, symmetry planes and the wire ground plane are thermal only and never count. Mesh
+  regions count for Palace but not for openEMS, which builds its own grid.
+- **A thermal result** also counts heat sources, probes and the rest of the thermal places, and only the ports its
+  currents are driven through (every port, when a current comes from a circuit). Adding an EM port, or editing one no
+  thermal current uses, never counts. Nor do face boundaries or the air box's material.
+
+**What never counts, for any setup:** hiding or showing an object, its transparency, the field plots, choosing the
+active setup, the display unit and the snap grid. Those are how the model is drawn, not what is solved. **Undoing back
+to the solved model makes the result current again.**
+
+**The marks.** Each solver has its own shape: a **diamond** for Palace (FEM), a **triangle** for openEMS (FDTD) and a
+**circle** for a thermal result. Each solver shows at most one mark:
+
+- **Filled, solid:** the active setup has a result of this solver, and it matches the model.
+- **Hollow:** the active setup has a result of this solver, and the model has changed since. This wins even when
+  another setup's result is current.
+- **Faded, filled:** the active setup has no result of this solver, but another setup does, and it matches the model.
+- **No mark:** nothing of this solver matches the model. An out-of-date result of a setup you are not using shows no
+  mark. The setup list says it in words.
+- **A star after a mark (`*`):** that result is partial. The run was cancelled, interrupted (circuitRF closed while it
+  ran), or did not converge, such as openEMS stopping at its step limit. A partial result can still be current.
+
+A Both setup counts for Palace and for openEMS. Shape and fill carry the meaning, so the marks read the same without
+colour. Hover over a mark for its words: the setup, when it was solved and how long it took, or what has changed since.
+
+{{ui: em3d-solve-badges}}
+
+**Where it appears.**
+
+- **The setup list** (*Simulate ▸ Setup Analyses…*, and the Analyses panel while a 3D view is active). Each setup's card
+  has a status line: *Solved 14:32 (18 min)*, *Solved 14:32 (18 min), not converged*, *Out of date: 'Board.clay' has
+  changed*, *Cancelled 14:32: no complete result*, *Not run*. A Both setup has a line per solver. This is where to
+  decide whether to run.
+- **The document tab**, after the name. The unsaved-changes dot stays in front of the name.
+- **The workspace tree**, after a `.c3d`'s name. An open document shows what is in the editor, unsaved edits included.
+  A closed one shows what its file says.
+- **A torn-off window's title**, when its active document is a 3D view, as words: `Connector.c3d — solved (FEM,
+  thermal)`. Only filled, solid marks are named, with *partial* where it applies. The main window's title names the
+  workspace and does not change.
+
+The checks run in the background and never delay opening a document or a workspace. A mark appears once its check
+finishes, a moment after the document is on screen. After an edit, the check waits for half a second of quiet. It
+runs again when any run finishes and when a file a 3D view is solved from is saved.
+
+**Before a re-run.** When the setup you run already has a complete, current result, Simulate asks first: *Palace result
+for 'EM1' is current (solved 14:32, took 18 min). Run again?* A Both setup names both results. A partial or out-of-date
+result runs with no question, because there is no complete result to lose.
+
+**From the command line.** `circuitrf explain <view.c3d>` has a **Solved** section: one line per setup and solver with
+its state, whether it is partial, when it was solved, how long it took and what has changed. `--json` carries it too.
+`circuitrf find` lists each 3D view's setups with their state. `circuitrf em` never asks before a re-run; it notes on
+stderr that the result was already current and runs. See [The command line](cli.html).
 
 ## The 3D view {#view}
 

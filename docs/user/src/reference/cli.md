@@ -1600,6 +1600,19 @@ technology  from /home/you/parts    → parts/tech/pcb-2layer.ctech       (the .
 Two different workspaces there, and that is legitimate: a `.cem` in one workspace may point at a
 layout in another, and that layout's layers must be read by *its* technology.
 
+<h3 id="explain-solved">A 3D view: is each setup solved?</h3>
+
+On a `.c3d`, `explain` ends with a **Solved** section: one line per setup and solver, saying whether its last result still
+matches the model, whether the run was partial, when it finished, how long it took, and what has changed since. It is the
+same answer the editor's setup cards and marks give ([3D EM ▸ Is this solved?](em-3d.html#solved)). `--json` carries it as
+`solved`.
+
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf explain Launch.c3d
+<span class="output">…
+Solved
+  'Palace'   FEM (Palace)    Solved 14:32 (18 min)
+  'openEMS'  FDTD (openEMS)  Out of date: the model has changed</span></code></pre>
+
 <h3 id="explain-analysis">`--analysis` — which chain would run</h3>
 
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf explain pa.cnl --analysis
@@ -1982,6 +1995,9 @@ The workspaces under a directory, their cells, each cell's views, and the analys
                              analyses: SP1
     Stage1                   schematic: Stage1.csch, layout: Stage1.clay
                              analyses: HB1, SWEEP1</span></code></pre>
+
+A cell with a 3D view also gets a `solved:` line: each setup's state (`current`, `outOfDate` or `notRun`), and
+`(partial)` where the run was cancelled, interrupted or did not converge. `explain` has the detail.
 
 It reads what the other verbs read, so a cell listed here is the cell `render` would draw and the
 analyses are the ones `hb` would dispatch. It writes nothing, so it runs on a read-only tree and on a

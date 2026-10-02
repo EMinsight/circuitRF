@@ -231,6 +231,13 @@ setup's *Mesh ▸ Check* meshes again with every size × 0.7 and reports how far
   wires' resistance, not the transistor.
 - **Time.** There is no transient solver: a pulse's temperatures come from the fitted Z_th in closed form.
 
+## Is this solved? {#solved}
+
+A thermal result is marked like an EM one: a **circle** on the 3D view's tab and workspace tree row while it matches the
+model, and a status line on the setup's card. A thermal run that did not converge carries a star. Each setup is judged on
+what it reads: an EM port or another setup never makes a thermal result out of date, unless one of its currents is driven
+through that port. The full list is in [3D EM ▸ Is this solved?](em-3d.html#solved).
+
 ## From the command line {#headless}
 
 `circuitrf em <view.c3d> --setup <name>` runs a thermal setup exactly as *Run* does, writes `<cell> <setup>.thermal.npy` and the

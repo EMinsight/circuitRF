@@ -1156,7 +1156,9 @@ and eventually on all three.
 
 ### 8.4 Three loops at three speeds
 
-1. **Frame loop** — GPU, at display refresh: camera, hover, gizmos, selection outline. Near-zero
+1. **Frame loop** — GPU, at display refresh WHILE something changes, and idle otherwise (2026-10-02: with nothing changing it
+   kept Avalonia's render thread blocked in Metal holding the compositor lock — `src/Ui/RESOLVED.md`; a live window resize
+   still stutters, brief-em3d-99): camera, hover, gizmos, selection outline. Near-zero
    managed work per frame, which also keeps the Debug build (the one the owner runs) responsive.
 2. **Input loop** — UI thread: turns pointer and key events into small messages to the frame loop and
    the kernel loop. It computes no geometry.

@@ -110,32 +110,85 @@ public static class C3dPersistence
     }
 
     /// <summary>
-    /// brief-em3d-83 R-em3d83-2 — the document as a RUN sees it: the file's text without its field plots. What Simulate keeps
-    /// beside a run and what the stale banner compares with it, so adding, editing or hiding a plot never makes a result
-    /// stale. Every such comparison reads this, never <see cref="Serialize"/>.
-    /// <para>brief-em3d-92 — nor its objects' and instances' Transparency: how see-through a lid is drawn is display, and
-    /// dragging its slider must not make a result stale.</para>
+    /// brief-em3d-83 R-em3d83-2 — the document as a RUN sees it: the file's text without its DISPLAY state. What Simulate keeps
+    /// beside a run and what every "is this result current" comparison reads (the stale banner, <c>render --field</c>, the
+    /// solved glyphs), never <see cref="Serialize"/>.
+    /// <para>brief-em3d-98 R-em3d98-1 — every property the file writes, classified. A property added to the document must be
+    /// put in one of these two lists; a display one is reset here.</para>
+    /// <list type="bullet">
+    /// <item><b>Display (left out):</b> the document's <c>DisplayUnit</c> (a preference: nothing it says moves geometry, and an
+    /// expression stores its own unit), <c>SnapDbu</c> (the drawing grid; it never re-snaps), <c>FieldPlots</c> (R-em3d83-2),
+    /// <c>AirBoxHidden</c>, <c>ActiveSetup</c> (R-em3d98-3); on every object at every depth (operands, a fillet's target)
+    /// <c>Hidden</c>, <c>Transparency</c> (brief 92) and <c>Group</c> (organisation only); on every instance
+    /// <c>Transparency</c> and <c>Group</c>.</item>
+    /// <item><b>Model (kept):</b> <c>FormatVersion</c>, <c>DbuPerMicron</c>, <c>TechRef</c>, <c>Objects</c> (each one's name,
+    /// material, role, placement, <c>Model</c> and geometry), <c>Instances</c> (cell, view, placement, array, <c>Model</c>,
+    /// parameter overrides), <c>Variables</c>, <c>Ports</c> (all of each, <c>Model</c> included), <c>FaceBoundaries</c>,
+    /// <c>HeatSources</c>, <c>Probes</c>, <c>MeshRegions</c>, <c>ContactResistances</c>, <c>EffectiveBlocks</c>,
+    /// <c>SymmetryPlanes</c>, <c>WireGroundPlane</c>, <c>AirBoxMaterial</c>, <c>Setups</c>, and any key this build does not
+    /// read (<c>Unread</c>: it cannot know, so it keeps them).</item>
+    /// </list>
+    /// An instance's and a port's visibility are the view's alone (never written), so they need no entry.
+    /// <para>brief-em3d-98 — with <paramref name="setup"/>, as THAT setup's run sees it (<see cref="C3dSetups.ScopeOf"/>), so
+    /// nothing another run reads can make its result out of date:</para>
+    /// <list type="bullet">
+    /// <item>every other setup is left out (a thermal submodel keeps its From setup);</item>
+    /// <item>an EM run leaves out what only the thermal solver reads: <c>HeatSources</c>, <c>Probes</c>,
+    /// <c>ContactResistances</c>, <c>EffectiveBlocks</c>, <c>SymmetryPlanes</c>, <c>WireGroundPlane</c> — and an openEMS-only run
+    /// the <c>MeshRegions</c>, which size Gmsh's mesh and which openEMS ignores;</item>
+    /// <item>a thermal run leaves out what only EM reads: <c>FaceBoundaries</c>, <c>AirBoxMaterial</c>, and every port its
+    /// currents do not name (all are kept when a current comes from a circuit).</item>
+    /// </list>
+    /// Null: the whole document, as a run keeps it.
     /// </summary>
+    public static string SerializeForRun(C3dDocument doc, string? setup)
+    {
+        if (setup is null) return SerializeForRun(doc);
+        var scope = C3dSetups.ScopeOf(doc, setup);
+        var read = C3dSetups.Read(doc);
+        var saved = (doc.Setups, doc.HeatSources, doc.Probes, doc.ContactResistances, doc.EffectiveBlocks, doc.SymmetryPlanes,
+                     doc.WireGroundPlane, doc.MeshRegions, doc.FaceBoundaries, doc.AirBoxMaterial, doc.Ports);
+        doc.Setups = [.. doc.Setups.Where((_, i) => read.FirstOrDefault(r => r.Index == i) is { } r && scope.Setups.Contains(r.Name))];
+        if (!scope.Thermal)
+        {
+            (doc.HeatSources, doc.Probes, doc.ContactResistances, doc.EffectiveBlocks, doc.SymmetryPlanes, doc.WireGroundPlane) =
+                ([], [], [], [], [], null);
+            if (!scope.Gmsh) doc.MeshRegions = [];
+        }
+        else
+        {
+            (doc.FaceBoundaries, doc.AirBoxMaterial) = ([], null);
+            if (scope.Ports is { } ports) doc.Ports = [.. doc.Ports.Where(p => ports.Contains(p.Number))];
+        }
+        try { return SerializeForRun(doc); }
+        finally
+        {
+            (doc.Setups, doc.HeatSources, doc.Probes, doc.ContactResistances, doc.EffectiveBlocks, doc.SymmetryPlanes,
+             doc.WireGroundPlane, doc.MeshRegions, doc.FaceBoundaries, doc.AirBoxMaterial, doc.Ports) = saved;
+        }
+    }
+
     public static string SerializeForRun(C3dDocument doc)
     {
-        var plots = doc.FieldPlots;
+        var (plots, unit, snap, airBoxHidden, active) = (doc.FieldPlots, doc.DisplayUnit, doc.SnapDbu, doc.AirBoxHidden, doc.ActiveSetup);
+        var objects = doc.Objects.SelectMany(C3dOperands.SelfAndDescendants)
+                                 .Where(o => o.Hidden || o.Transparency is not null || o.Group is not null)
+                                 .Select(o => (Object: o, o.Hidden, o.Transparency, o.Group)).ToList();
+        var instances = doc.Instances.Where(i => i.Transparency is not null || i.Group is not null)
+                                     .Select(i => (Instance: i, i.Transparency, i.Group)).ToList();
         doc.FieldPlots = [];
-        var objects = doc.Objects.SelectMany(C3dOperands.SelfAndDescendants).Where(o => o.Transparency is not null)
-                                 .Select(o => (Item: (object)o, Value: o.Transparency))
-                                 .Concat(doc.Instances.Where(i => i.Transparency is not null).Select(i => (Item: (object)i, Value: i.Transparency)))
-                                 .ToList();
-        foreach (var (item, _) in objects) SetTransparency(item, null);
+        doc.DisplayUnit = LayoutUnit.Um;
+        doc.SnapDbu = 0;
+        doc.AirBoxHidden = false;
+        doc.ActiveSetup = null;
+        foreach (var x in objects) { x.Object.Hidden = false; x.Object.Transparency = null; x.Object.Group = null; }
+        foreach (var x in instances) { x.Instance.Transparency = null; x.Instance.Group = null; }
         try { return Serialize(doc); }
         finally
         {
-            doc.FieldPlots = plots;
-            foreach (var (item, value) in objects) SetTransparency(item, value);
-        }
-
-        static void SetTransparency(object item, int? value)
-        {
-            if (item is C3dObject o) o.Transparency = value;
-            else ((C3dInstance)item).Transparency = value;
+            (doc.FieldPlots, doc.DisplayUnit, doc.SnapDbu, doc.AirBoxHidden, doc.ActiveSetup) = (plots, unit, snap, airBoxHidden, active);
+            foreach (var x in objects) { x.Object.Hidden = x.Hidden; x.Object.Transparency = x.Transparency; x.Object.Group = x.Group; }
+            foreach (var x in instances) { x.Instance.Transparency = x.Transparency; x.Instance.Group = x.Group; }
         }
     }
 

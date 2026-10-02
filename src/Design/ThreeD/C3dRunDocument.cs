@@ -133,16 +133,47 @@ public static class C3dRunDocument
     public static string InputsPathIn(string runDirectory) => Path.Combine(runDirectory, InputsFileName);
 
     /// <summary>True when <paramref name="solvedText"/> — the run's kept document — is not the document <paramref name="now"/>
-    /// would be run as.</summary>
-    public static bool IsStale(string solvedText, C3dDocument now) => solvedText != C3dPersistence.SerializeForRun(now);
+    /// would be run as. brief-em3d-98 — with <paramref name="setup"/>, compared as that setup's run sees it on BOTH sides:
+    /// the kept document holds every setup, and another setup's edit is no change to this one's model.</summary>
+    public static bool IsStale(string solvedText, C3dDocument now, string? setup = null)
+    {
+        string current = C3dPersistence.SerializeForRun(now, setup);
+        return solvedText != current && Normalised(solvedText, setup) != current;
+    }
+
+    private static readonly Dictionary<(string Text, string? Setup), string> NormalisedTexts = [];
+
+    /// <summary>
+    /// brief-em3d-98 R-em3d98-1 — a kept document as it would be kept today. A record written before a property was classified
+    /// as display still holds it (a run kept before this brief holds every object's <c>Hidden</c>), so it is read back and put
+    /// through <see cref="C3dPersistence.SerializeForRun"/> again — only when the plain comparison has already failed, so the
+    /// common equal case costs nothing. Text that does not read as a document is compared as it is.
+    /// </summary>
+    private static string Normalised(string solvedText, string? setup)
+    {
+        lock (NormalisedTexts)
+            if (NormalisedTexts.TryGetValue((solvedText, setup), out var n)) return n;
+        string normal;
+        try { normal = C3dPersistence.SerializeForRun(C3dPersistence.Deserialize(solvedText), setup); }
+        catch (Exception e) when (e is not OutOfMemoryException) { normal = solvedText; }
+        lock (NormalisedTexts)
+        {
+            if (NormalisedTexts.Count >= 64) NormalisedTexts.Clear();
+            NormalisedTexts[(solvedText, setup)] = normal;
+        }
+        return normal;
+    }
 
     /// <summary>
     /// Whether the run in <paramref name="runDirectory"/> solved a different model from <paramref name="now"/> (at
     /// <paramref name="nowPath"/>), and what moved on: the document itself, and each input file (R-em3d87-3). Null when the run
     /// kept no document (a run made before R-em3d49-5b): there is nothing to compare, so nothing is claimed. A run kept before
     /// its inputs were (brief 87) is compared on its document alone.
+    /// <para>brief-em3d-98 — <paramref name="setup"/> is the embedded setup the run is of (<c>""</c> for an external
+    /// <c>.cem</c>'s): the document is then compared as that setup's run sees it, so another setup's edit is no change. Null
+    /// compares the whole document.</para>
     /// </summary>
-    public static C3dRunStaleness? Check(string runDirectory, C3dDocument now, string nowPath)
+    public static C3dRunStaleness? Check(string runDirectory, C3dDocument now, string nowPath, string? setup = null)
     {
         string f = PathIn(runDirectory);
         if (!File.Exists(f)) return null;
@@ -165,7 +196,7 @@ public static class C3dRunDocument
                 if (HashOf(full) != input.Sha256) changed.Add(Path.GetFileName(full));
             }
         }
-        return new C3dRunStaleness(written, IsStale(solved, now), changed, missing);
+        return new C3dRunStaleness(written, IsStale(solved, now, setup), changed, missing);
     }
 
     // ── the manifest's paths and hashes ──────────────────────────────────────────────────────────
@@ -233,7 +264,8 @@ public static class C3dRunDocument
         string ext = Path.GetExtension(path).ToLowerInvariant();
         try
         {
-            if (ext == ".c3d") return Encoding.UTF8.GetBytes(C3dPersistence.SerializeForRun(C3dPersistence.LoadFromFile(path)));
+            // brief-em3d-98 — a placed 3D view's own setups are no part of the parent's run: an edit to one changes nothing here
+            if (ext == ".c3d") { var child = C3dPersistence.LoadFromFile(path); child.Setups = []; return Encoding.UTF8.GetBytes(C3dPersistence.SerializeForRun(child)); }
             if (ext == ".csch") return Encoding.UTF8.GetBytes(SchematicCircuit.OwnCnlTextOf(path));
         }
         catch (Exception e) when (e is not (IOException or UnauthorizedAccessException or OutOfMemoryException)) { /* its bytes, below */ }

@@ -123,6 +123,17 @@
                                     <TextBlock Text="{Binding Name}" FontSize="12" TextTrimming="CharacterEllipsis"/>
                                     <TextBlock Text="{Binding Summary}" FontSize="10" TextTrimming="CharacterEllipsis"
                                                Foreground="{DynamicResource SystemBaseMediumColor}" ToolTip.Tip="{Binding Summary}"/>
+                                    <!-- brief-em3d-98 R-em3d98-5 item 1 — whether the setup has a result of the model as it is now, in
+                                         words, a line per solver leg: where the user decides whether to run. Plain text, for the
+                                         reason the fidelity rows below give. -->
+                                    <ItemsControl ItemsSource="{Binding SolveLines}" IsVisible="{Binding HasSolveLines}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="x:String">
+                                                <TextBlock Text="{Binding}" FontSize="10" TextTrimming="CharacterEllipsis"
+                                                           Foreground="{DynamicResource SystemBaseMediumHighColor}" ToolTip.Tip="{Binding}"/>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
                                     <!-- brief-em3d-65 — what this setup's solver will not respect of a kernel solid; Simulate is not blocked by it. -->
                                     <ItemsControl ItemsSource="{Binding Fidelity}" IsVisible="{Binding HasFidelity}" Margin="0,2,0,0">
                                         <ItemsControl.ItemTemplate>

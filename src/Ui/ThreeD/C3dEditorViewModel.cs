@@ -967,7 +967,11 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
 
     /// <summary>A placed cell's .c3d or .clay changed: elaborate again. The elaborator's child cache is keyed
     /// by the file's stamp, so only that instance is rebuilt, and nothing is asked.</summary>
-    public void OnChildChanged() => Viewer.Invalidate();
+    public void OnChildChanged()
+    {
+        Viewer.Invalidate();
+        ScheduleSolveStatus();      // brief-em3d-98 R-em3d98-6 — a placed layout, technology or library saved: re-check
+    }
 
     /// <summary>Reads the file again, dropping the history (it described a document that is gone).</summary>
     public string? Reload()

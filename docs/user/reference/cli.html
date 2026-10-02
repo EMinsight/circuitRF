@@ -2033,6 +2033,16 @@ workspace   from Line.clay          → /home/you/parts/.cws              (neare
 technology  from /home/you/parts    → parts/tech/pcb-2layer.ctech       (the .cws DefaultTechRef)</span></code></pre>
 <p>Two different workspaces there, and that is legitimate: a <code>.cem</code> in one workspace may point at a
 layout in another, and that layout's layers must be read by <em>its</em> technology.</p>
+<h3 id="explain-solved">A 3D view: is each setup solved?</h3>
+<p>On a <code>.c3d</code>, <code>explain</code> ends with a <strong>Solved</strong> section: one line per setup and solver, saying whether its last result still
+matches the model, whether the run was partial, when it finished, how long it took, and what has changed since. It is the
+same answer the editor's setup cards and marks give (<a href="em-3d.html#solved">3D EM ▸ Is this solved?</a>). <code>--json</code> carries it as
+<code>solved</code>.</p>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf explain Launch.c3d
+<span class="output">…
+Solved
+  'Palace'   FEM (Palace)    Solved 14:32 (18 min)
+  'openEMS'  FDTD (openEMS)  Out of date: the model has changed</span></code></pre>
 <h3 id="explain-analysis">`--analysis` — which chain would run</h3>
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf explain pa.cnl --analysis
 <span class="output">SWEEP1   parametric_sweep   enabled  runnable  root   → dispatched by hb
@@ -2454,6 +2464,8 @@ cleanly and looks exactly like a measurement that came back empty.</p>
                              analyses: SP1
     Stage1                   schematic: Stage1.csch, layout: Stage1.clay
                              analyses: HB1, SWEEP1</span></code></pre>
+<p>A cell with a 3D view also gets a <code>solved:</code> line: each setup's state (<code>current</code>, <code>outOfDate</code> or <code>notRun</code>), and
+<code>(partial)</code> where the run was cancelled, interrupted or did not converge. <code>explain</code> has the detail.</p>
 <p>It reads what the other verbs read, so a cell listed here is the cell <code>render</code> would draw and the
 analyses are the ones <code>hb</code> would dispatch. It writes nothing, so it runs on a read-only tree and on a
 workspace the application has open.</p>

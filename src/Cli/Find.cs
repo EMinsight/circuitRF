@@ -129,6 +129,8 @@ internal static class Find
                 Console.WriteLine($"    {c.Name,-24} {views}");
                 if (c.Analyses is { Count: > 0 } a)
                     Console.WriteLine($"    {"",-24} analyses: {string.Join(", ", a)}");
+                foreach (var v in c.Views.Where(v => v.Solved is not null))
+                    Console.WriteLine($"    {"",-24} solved: {string.Join(", ", v.Solved!.Select(x => $"{x.Setup} {x.Solver} {x.State}{(x.Partial ? " (partial)" : "")}"))}");
             }
             foreach (var lib in ws.MaterialLibraries ?? [])
                 Console.WriteLine($"    material library {lib.Path}" + (lib.NamedBy.Count == 0
@@ -213,8 +215,12 @@ internal static class Find
                 if (res.State is PrimaryState.NoView) continue;
                 // The sub-folder's name is the token: "schematic", "symbol", "layout", "3d" — the
                 // spelling `new cell --views` takes.
+                // brief-em3d-98 R-em3d98-8 — a 3D view says which of its setups are solved: the state alone, from the one
+                // function the editor's glyphs read (Solved → C3dSolveStatus); the detail is explain's.
+                var solved = type == ViewType.ThreeD && res.ResolvedName is { } c3d
+                    ? Solved.ForFind(Solved.Of(Path.Combine(CellFolder.SubFolderPath(cellDir, type), c3d))) : null;
                 views.Add(new FoundViewJson(
-                    CellFolder.SubFolderName(type), res.ResolvedName, res.State.ToString()));
+                    CellFolder.SubFolderName(type), res.ResolvedName, res.State.ToString(), solved is { Count: > 0 } ? solved : null));
             }
 
             cells.Add(new FoundCellJson(

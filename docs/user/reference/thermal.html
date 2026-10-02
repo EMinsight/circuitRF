@@ -277,6 +277,11 @@ heat source unless you state it as one.</li>
 wires' resistance, not the transistor.</li>
 <li><strong>Time.</strong> There is no transient solver: a pulse's temperatures come from the fitted Z_th in closed form.</li>
 </ul>
+<h2 id="solved">Is this solved?</h2>
+<p>A thermal result is marked like an EM one: a <strong>circle</strong> on the 3D view's tab and workspace tree row while it matches the
+model, and a status line on the setup's card. A thermal run that did not converge carries a star. Each setup is judged on
+what it reads: an EM port or another setup never makes a thermal result out of date, unless one of its currents is driven
+through that port. The full list is in <a href="em-3d.html#solved">3D EM ▸ Is this solved?</a>.</p>
 <h2 id="headless">From the command line</h2>
 <p><code>circuitrf em &lt;view.c3d&gt; --setup &lt;name&gt;</code> runs a thermal setup exactly as <em>Run</em> does, writes <code>&lt;cell&gt; &lt;setup&gt;.thermal.npy</code> and the
 temperature field beside it, and prints the probes, the measures and (when asked for) the Rth matrix. <code>check</code> validates the

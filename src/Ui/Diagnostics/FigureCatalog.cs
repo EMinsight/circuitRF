@@ -607,6 +607,14 @@ public static class FigureCatalog
             "The launch's two setups in the Setups panel. Under openEMS, a warning: it will not represent "
           + "the pin's 100 um fillet, because the grid cell there is wider than the radius."),
 
+        // ── Is this solved? (brief-em3d-98) — the glyphs a .c3d's tab and tree row carry, drawn by the control itself ──
+
+        new("em3d-solve-badges", DocSolvedFixtures.Legend, 580, 176, null,
+            "The solved marks. A diamond is a Palace (FEM) result, a triangle an openEMS (FDTD) result, a circle a thermal "
+          + "result. Filled and solid: the active setup's result matches the model. Hollow: the active setup's result is out "
+          + "of date. Faded: another setup's result matches the model. A star after a mark: that result is partial "
+          + "(cancelled, interrupted or not converged)."),
+
         new("cv-editor", DocCvFixtures.Editor, 620, 500,
             WindowFrame.Titled("C-V Editor - C1"),
             "The C-V Editor: a measured C(V) table, the fit order, and the polynomial it fits."),

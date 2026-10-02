@@ -177,7 +177,7 @@ internal static class RenderEm3dField
         // A stale run still draws (as in the 3D view), and says so: the one comparison the editor's banner makes.
         bool stale = false;
         // brief-em3d-87 — and names what moved on: the document, or any file the run was solved from.
-        if (runDir is not null && C3dRunDocument.Check(runDir, doc, full) is { Stale: true } st)
+        if (runDir is not null && C3dRunDocument.Check(runDir, doc, full, setupName) is { Stale: true } st)
         {
             stale = true;
             var d = CliDiagnostics.RenderFieldStale(plot.Name, $"{st.What} {st.Has}", st.Written.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture));

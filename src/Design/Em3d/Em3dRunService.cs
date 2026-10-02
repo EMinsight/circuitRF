@@ -36,6 +36,7 @@ using CircuitRF.Design.Layout;
 using CircuitRF.Design.Layout.Em;
 using CircuitRF.Design.Layout.Em3d;
 using CircuitRF.Design.Results;
+using CircuitRF.Design.ThreeD;
 using CircuitRF.Diagnostics;
 using CircuitRF.Engine;
 using CircuitRF.Engine.Em3d;
@@ -204,9 +205,13 @@ public static class Em3dRunService
     /// the setup the run uses (and again, with a smaller air box, by the memory check's remedy), so both
     /// geometry routes get every step below — discovery, lowering, memory, execution — from ONE body.
     /// </summary>
+    /// <param name="keepRecord">brief-em3d-98 R-em3d98-2 — called with a leg's solver and run directory when that leg completed
+    /// (or did not converge), before its status says so: a 3D view's run keeps its inputs record there (EmRunService.RunThreeDView).
+    /// Per LEG, so a Both run whose openEMS leg is cancelled still keeps Palace's.</param>
     internal static EmRunResult Run(EmSetup setup, Func<EmSetup, Em3dGenerationResult> build, string resultsRoot,
                                     CancellationToken ct, RunControl? control, int? maxCores,
-                                    Func<Em3dMemoryVerdict, bool>? confirmMemory = null)
+                                    Func<Em3dMemoryVerdict, bool>? confirmMemory = null,
+                                    Action<Em3dSolver, string>? keepRecord = null)
     {
         var log = new RunLog();
         var memory = new MemoryGate(confirmMemory);
@@ -339,12 +344,52 @@ public static class Em3dRunService
 
         // ── execution ─────────────────────────────────────────────────────────────────────────
         if (solver == Em3dSolver.Palace)
-            return Single(ExecutePalace(palacePlan!, problem, setup, resultsRoot, SnpBasePath(resultsRoot, setup, Em3dSolver.Palace),
-                                        ct, control, maxCores, log, memory), log);
+            return Single(Recorded(setup, resultsRoot, Em3dSolver.Palace, keepRecord, () =>
+                ExecutePalace(palacePlan!, problem, setup, resultsRoot, SnpBasePath(resultsRoot, setup, Em3dSolver.Palace),
+                              ct, control, maxCores, log, memory)), log);
         if (solver == Em3dSolver.OpenEms)
-            return Single(ExecuteOpenEms(openEmsPlan!, problem, setup, resultsRoot, SnpBasePath(resultsRoot, setup, Em3dSolver.OpenEms),
-                                         ct, control, maxCores, log), log);
-        return RunBoth(palacePlan!, openEmsPlan!, problem, setup, resultsRoot, ct, control, maxCores, log, memory);
+            return Single(Recorded(setup, resultsRoot, Em3dSolver.OpenEms, keepRecord, () =>
+                ExecuteOpenEms(openEmsPlan!, problem, setup, resultsRoot, SnpBasePath(resultsRoot, setup, Em3dSolver.OpenEms),
+                               ct, control, maxCores, log)), log);
+        return RunBoth(palacePlan!, openEmsPlan!, problem, setup, resultsRoot, ct, control, maxCores, log, memory, keepRecord);
+    }
+
+    /// <summary>
+    /// brief-em3d-98 R-em3d98-2 — one leg, with its <c>status.json</c>: <c>running</c> (and the previous run's record removed)
+    /// before the solver touches the directory, how it ended on every exit path — an exception and a cancellation included —
+    /// and, when it completed or did not converge, its inputs record kept first (<paramref name="keep"/>).
+    /// </summary>
+    internal static Leg Recorded(EmSetup setup, string resultsRoot, Em3dSolver solver, Action<Em3dSolver, string>? keep, Func<Leg> execute)
+    {
+        string dir = RunDirectory(resultsRoot, setup, solver);
+        var started = C3dRunStatus.Begin(dir);
+        Leg leg;
+        try { leg = execute(); }
+        catch (OperationCanceledException) { C3dRunStatus.Finish(dir, started, C3dRunState.Cancelled); throw; }
+        catch (Exception e) { C3dRunStatus.Finish(dir, started, C3dRunState.Failed, FirstSentence(e.Message)); throw; }
+        var state = leg.Status switch
+        {
+            EmRunStatus.Ok        => leg.NotConverged is null ? C3dRunState.Complete : C3dRunState.NotConverged,
+            EmRunStatus.Cancelled => C3dRunState.Cancelled,
+            _                     => C3dRunState.Failed,
+        };
+        if (state is C3dRunState.Complete or C3dRunState.NotConverged) keep?.Invoke(solver, dir);
+        C3dRunStatus.Finish(dir, started, state, state switch
+        {
+            C3dRunState.NotConverged => leg.NotConverged,
+            C3dRunState.Failed       => leg.Stop is { } d ? FirstSentence(d.Render()) : null,
+            _                        => null,
+        });
+        return leg;
+    }
+
+    /// <summary>A tooltip's worth of <paramref name="text"/>: its first sentence, at most 240 characters.</summary>
+    private static string FirstSentence(string text)
+    {
+        text = text.ReplaceLineEndings(" ").Trim();
+        int end = text.IndexOf(". ", StringComparison.Ordinal);
+        if (end > 0) text = text[..(end + 1)];
+        return text.Length <= 240 ? text : text[..239] + "…";
     }
 
     /// <summary>
@@ -354,7 +399,7 @@ public static class Em3dRunService
     /// </summary>
     private static EmRunResult RunBoth(PalacePlan palacePlan, OpenEmsPlan openEmsPlan, Em3dProblem problem, EmSetup setup,
                                        string resultsRoot, CancellationToken ct, RunControl? control, int? maxCores, RunLog log,
-                                       MemoryGate memory)
+                                       MemoryGate memory, Action<Em3dSolver, string>? keepRecord)
     {
         log.Notes.Add("Both solvers run on the one 3D problem generated above, one after the other — Palace, then " +
                       "openEMS — because each already uses every core.");
@@ -370,13 +415,15 @@ public static class Em3dRunService
         }
 
         control?.BeginStage("Palace, the first of two solvers");
-        var p = ExecutePalace(palacePlan, problem, setup, resultsRoot, BothSnpBasePath(resultsRoot, setup, Em3dSolver.Palace),
-                              ct, control, maxCores, log, memory);
+        var p = Recorded(setup, resultsRoot, Em3dSolver.Palace, keepRecord, () =>
+            ExecutePalace(palacePlan, problem, setup, resultsRoot, BothSnpBasePath(resultsRoot, setup, Em3dSolver.Palace),
+                          ct, control, maxCores, log, memory));
         if (p.Status == EmRunStatus.Cancelled) return log.Result(EmRunStatus.Cancelled, EmDiagnostics.Cancelled());
 
         control?.BeginStage("openEMS, the second of two solvers");
-        var o = ExecuteOpenEms(openEmsPlan, problem, setup, resultsRoot, BothSnpBasePath(resultsRoot, setup, Em3dSolver.OpenEms),
-                               ct, control, maxCores, log);
+        var o = Recorded(setup, resultsRoot, Em3dSolver.OpenEms, keepRecord, () =>
+            ExecuteOpenEms(openEmsPlan, problem, setup, resultsRoot, BothSnpBasePath(resultsRoot, setup, Em3dSolver.OpenEms),
+                           ct, control, maxCores, log));
 
         var outputs = new List<EmRunOutput>();
         foreach (var leg in new[] { p, o }.Where(l => l.Ok))
@@ -459,8 +506,11 @@ public static class Em3dRunService
     private sealed record Stop(EmRunStatus Status, Diagnostic Diagnostic);
 
     /// <summary>One solver's execution: its status, and on success its data and files.</summary>
-    private sealed record Leg(Em3dSolver Solver, EmRunStatus Status, Diagnostic? Stop, DataSet? Data,
-                              string? NpyPath, string? SnpPath, string KernelName, Em3dComparisonFacts? Facts = null)
+    /// <param name="NotConverged">brief-em3d-98 — a successful leg's solver said it did not converge (its own signal, never a
+    /// criterion of ours): the sentence its <c>status.json</c> carries. Null when it converged.</param>
+    internal sealed record Leg(Em3dSolver Solver, EmRunStatus Status, Diagnostic? Stop, DataSet? Data,
+                              string? NpyPath, string? SnpPath, string KernelName, Em3dComparisonFacts? Facts = null,
+                              string? NotConverged = null)
     {
         public bool Ok => Status == EmRunStatus.Ok;
         public static Leg Failed(Em3dSolver s, EmRunStatus status, Diagnostic d) => new(s, status, d, null, null, null, "");
@@ -681,8 +731,14 @@ public static class Em3dRunService
 
         // R-em3d21-5a — the one line that says what the run cost, the last thing the run says.
         log.Notes.Add(CompletionSummary(summary, quality, wall.Elapsed, FieldFilesBytes(post)));
-        return new Leg(Me, EmRunStatus.Ok, null, data, npyPath, snpPath, "Palace " + palace.DescribeVersion());
+        return new Leg(Me, EmRunStatus.Ok, null, data, npyPath, snpPath, "Palace " + palace.DescribeVersion(),
+                       NotConverged: PalaceNotConverged(tracker));
     }
+
+    /// <summary>brief-em3d-98 — Palace's own not-converged signal: its log's "Linear solver did not converge", which the stage
+    /// tracker already turns into the run's warning. Null when it said no such thing.</summary>
+    private static string? PalaceNotConverged(PalaceStageTracker tracker)
+        => tracker.Warnings.FirstOrDefault() is { } w ? FirstSentence(w) : null;
 
     /// <summary>
     /// brief-em3d-22 R-em3d22-3c/4c — a static solve's matrices, read by column name, as a DataSet in
@@ -743,7 +799,8 @@ public static class Em3dRunService
 
         string? npyPath = WriteNpy(resultsRoot, NpyKey(setup, Me), data, log);
         log.Notes.Add(CompletionSummary(tracker.Summary, setup.Palace?.Quality ?? PalaceQuality.Standard, wall, FieldFilesBytes(post)));
-        return new Leg(Me, EmRunStatus.Ok, null, data, npyPath, null, "Palace " + palace.DescribeVersion());
+        return new Leg(Me, EmRunStatus.Ok, null, data, npyPath, null, "Palace " + palace.DescribeVersion(),
+                       NotConverged: PalaceNotConverged(tracker));
     }
 
     /// <summary>
@@ -905,7 +962,8 @@ public static class Em3dRunService
 
         string? npyPath = WriteNpy(resultsRoot, NpyKey(setup, Me), data, log);
         log.Notes.Add(CompletionSummary(tracker.Summary, setup.Palace?.Quality ?? PalaceQuality.Standard, wall, FieldFilesBytes(post)));
-        return new Leg(Me, EmRunStatus.Ok, null, data, npyPath, null, "Palace " + palace.DescribeVersion());
+        return new Leg(Me, EmRunStatus.Ok, null, data, npyPath, null, "Palace " + palace.DescribeVersion(),
+                       NotConverged: PalaceNotConverged(tracker));
     }
 
     /// <summary>What the matrix is referred to, in a sentence.</summary>
@@ -1144,7 +1202,14 @@ public static class Em3dRunService
 
         var comparisonFacts = new Em3dComparisonFacts(lowering.DielectricFitHz, lowering.PecSolids, lowering.SubCellWires,
                                                       [.. runs.Where(r => !r.Converged).Select(r => r.Port)]);
-        return new Leg(Me, EmRunStatus.Ok, null, data, npyPath, snpPath, "openEMS " + openEms.DescribeVersion(), comparisonFacts);
+        // brief-em3d-98 — openEMS's own signal: each port's run converged or stopped at the step limit (OpenEmsPortRun.Converged).
+        var open = runs.Where(r => !r.Converged).ToList();
+        string? notConverged = open.Count == 0 ? null
+            : $"openEMS stopped at its step limit {(open.Count == 1 ? $"exciting port {open[0].Port}" : $"exciting ports {string.Join(", ", open.Select(r => r.Port))}")}" +
+              (open.Where(r => !double.IsNaN(r.DecayDb)).Select(r => r.DecayDb).DefaultIfEmpty(double.NaN).Max() is var worst && !double.IsNaN(worst)
+                   ? $" at {Db(worst)} against {Db(runSettings.EndCriterionDb)}" : "") + ": not converged.";
+        return new Leg(Me, EmRunStatus.Ok, null, data, npyPath, snpPath, "openEMS " + openEms.DescribeVersion(), comparisonFacts,
+                       NotConverged: notConverged);
     }
 
     /// <summary>

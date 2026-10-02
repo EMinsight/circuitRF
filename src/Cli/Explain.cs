@@ -168,6 +168,7 @@ internal static class Explain
         ExplainExtentsJson?                 extents  = null;
         IReadOnlyList<ExplainFootprintJson>? footprints = null;
         ExplainEm3dJson?                    em3d     = null;
+        IReadOnlyList<CircuitRF.Design.ThreeD.SetupSolveStatus>? solved = null;
 
         // The document's OWN resolution always runs, whatever was asked: "which workspace, which
         // technology" is context for every other answer, and a report that omitted it would leave a
@@ -176,7 +177,10 @@ internal static class Explain
         {
             case DocumentKind.Layout:   ExplainLayout(path, walks); break;
             case DocumentKind.EmSetup:  exit |= ExplainEmSetup(path, walks, out em3d); break;
-            case DocumentKind.ThreeD:   exit |= ExplainThreeD(path, walks, out em3d, sets, setupName); break;
+            case DocumentKind.ThreeD:
+                exit |= ExplainThreeD(path, walks, out em3d, sets, setupName);
+                solved = Solved.Of(Path.GetFullPath(path));          // brief-em3d-98 R-em3d98-8
+                break;
             case DocumentKind.Technology:      exit |= ExplainTechnology(path, walks); break;
             case DocumentKind.MaterialLibrary: ExplainMaterialLibrary(path, walks); break;
             // A circuit reports its workspace walk here; its analyses are --analysis's. (Brief 53 had put the technology case
@@ -288,10 +292,11 @@ internal static class Explain
 
         JsonRun.Explain = new ExplainReportJson(
             path, DocumentKinds.Name(kind), walks, analyses, value, refRes, cells, layers, extents,
-            footprints, em3d);
+            footprints, em3d, solved is null ? null : Solved.ForExplain(solved));
 
         Print(path, kind, walks, analyses, value, refRes, cells, layers, extents, footprints);
         if (em3d is not null) ExplainEm3d.Print(em3d);
+        if (solved is not null) Solved.Print(solved);
         return exit;
     }
 
@@ -689,8 +694,8 @@ internal static class Explain
     }
 
     /// <summary>
-    /// brief-em3d-87 R-em3d87-3 — the files a run of this view is solved from, and per embedded setup whether its result is
-    /// still the model's: the one check the editor's banner and <c>render --field</c> make (C3dRunDocument.Check).
+    /// brief-em3d-87 R-em3d87-3 — the files a run of this view is solved from. brief-em3d-98 — per setup, whether its result
+    /// is still the model's is the report's Solved section, from the one function the editor's glyphs read.
     /// </summary>
     private static void ResultWalk(C3dDocument doc, string full, C3dElaboration e, List<ResolutionStepJson> walks)
     {
@@ -699,30 +704,7 @@ internal static class Explain
             "every file the elaboration read — the view and its .ccell, each placed layout with its sub-cells and paired " +
             ".wBond, each nested 3D view, each technology and the material libraries it looks through; a run keeps their " +
             "hashes beside its result"));
-        string root = ResultsRoot.For(full, DocumentKinds.AncestorCws(full));
-        foreach (var embedded in C3dSetups.Read(doc))
-        {
-            if (embedded.Setup is not { } setup) continue;
-            var run = C3dSetups.ForRun(setup, full);
-            IEnumerable<string> dirs = run.IsThermal ? [CircuitRF.Design.Thermal.ThermalRunService.RunDirectory(root, run)]
-                : new[] { Em3dSolver.Palace, Em3dSolver.OpenEms }.Where(x => run.Solver3D == x || run.Solver3D == Em3dSolver.Both)
-                                                                 .Select(x => CircuitRF.Design.Em3d.Em3dRunService.RunDirectory(root, run, x));
-            foreach (string dir in dirs)
-            {
-                var check = C3dRunDocument.Check(dir, doc, full);
-                string answer = check switch
-                {
-                    null => "no result that records what it was solved from",
-                    { What: { } what } => $"stale: {what} {check.Has} changed since the run at " +
-                                          check.Written.ToString("yyyy-MM-dd HH:mm", System.Globalization.CultureInfo.InvariantCulture),
-                    _ => "current: solved from the model and its files as they are now (run at " +
-                         check.Written.ToString("yyyy-MM-dd HH:mm", System.Globalization.CultureInfo.InvariantCulture) + ")",
-                };
-                walks.Add(new ResolutionStepJson($"result of setup '{embedded.Name}'", dir, answer,
-                    "the run's kept document and input hashes against the view and its files now; a field plot is display and " +
-                    "never makes a result stale"));
-            }
-        }
+        // brief-em3d-98 — whether each setup's result is still the model's is the Solved section (C3dSolveStatus), not a walk.
     }
 
     /// <summary>brief-em3d-93 R-em3d93-5 — what is drawn and left out of every run, as the run's own note says it

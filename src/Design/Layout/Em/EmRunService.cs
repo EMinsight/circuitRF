@@ -553,26 +553,24 @@ public static class EmRunService
         try
         {
             // brief-em3d-87 R-em3d87-2 — the inputs are hashed when the problem is assembled (an edit during the solve makes its
-            // result stale) and kept beside the result only once the run has succeeded: here, so Simulate and `circuitrf em`
-            // keep the same record through the one door.
+            // result stale) and kept beside the result once it exists: here, so Simulate and `circuitrf em` keep the same record
+            // through the one door. brief-em3d-98 R-em3d98-2 — per LEG, as each completes (or does not converge), so a Both run
+            // whose openEMS leg is cancelled still keeps Palace's record; a leg that did not finish keeps none.
             CircuitRF.Design.ThreeD.C3dRunInputs? inputs = null;
+            var notKept = new List<string>();
             var result = CircuitRF.Design.Em3d.Em3dRunService.Run(setup, s =>
                 {
                     var generated = CircuitRF.Design.ThreeD.C3dProblemAssembly.Assemble(s, document, documentPath, workspaceCws, elaborator, fromCem);
                     if (generated.Ok) inputs = CircuitRF.Design.ThreeD.C3dRunInputs.Take(document, documentPath, generated.FilesRead);
                     return generated;
                 },
-                resultsRoot, ct, control, maxCores, confirmMemory);
-            if (result.Status == EmRunStatus.Ok && inputs is not null)
-                foreach (var solver in new[] { Em3dSolver.Palace, Em3dSolver.OpenEms })
+                resultsRoot, ct, control, maxCores, confirmMemory, (_, dir) =>
                 {
-                    if (setup.Solver3D != solver && setup.Solver3D != Em3dSolver.Both) continue;
-                    string dir = CircuitRF.Design.Em3d.Em3dRunService.RunDirectory(resultsRoot, setup, solver);
-                    if (!Directory.Exists(dir)) continue;
-                    try { inputs.KeepIn(dir); }
-                    catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-                    { result = result with { Warnings = [.. result.Warnings, $"The run's inputs could not be kept, so its result cannot be called stale: {e.Message}"] }; }
-                }
+                    try { inputs?.KeepIn(dir); }
+                    catch (Exception e) when (e is IOException or UnauthorizedAccessException) { notKept.Add(e.Message); }
+                });
+            foreach (string why in notKept)
+                result = result with { Warnings = [.. result.Warnings, $"The run's inputs could not be kept, so its result cannot be called stale: {why}"] };
             return result;
         }
         catch (OperationCanceledException)

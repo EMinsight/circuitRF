@@ -49,6 +49,16 @@ public sealed class C3dEditorDocument : Document, IUndoableDocument, IActivatabl
         Title = _isDirty ? $"• {_baseTitle}" : _baseTitle;
     }
 
+    /// <summary>
+    /// brief-em3d-98 R-em3d98-5 item 2 — the "solved" glyphs after the tab's name, bound by the document tab's header template.
+    /// A property of its own, never text in <see cref="Title"/>: the Window menu, the save-before-close prompts and the shell
+    /// header all read <see cref="Title"/> and trim its <c>•</c>, and a glyph there would leak into every one of them.
+    /// </summary>
+    public SolveBadgeSet SolveBadges => ViewModel.SolveBadges;
+
+    /// <summary>R-em3d98-5 item 4 — the floating window title's suffix (<c>solved (FEM, thermal)</c>), or null.</summary>
+    public string? SolveTitleSuffix => ViewModel.SolveTitleSuffix;
+
     public C3dEditorDocument(C3dEditorViewModel viewModel)
     {
         ViewModel = viewModel;
@@ -58,6 +68,8 @@ public sealed class C3dEditorDocument : Document, IUndoableDocument, IActivatabl
         ViewModel.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName is nameof(C3dEditorViewModel.IsDirty)) IsDirty = ViewModel.IsDirty;
+            else if (e.PropertyName is nameof(C3dEditorViewModel.SolveBadges)) OnPropertyChanged(nameof(SolveBadges));
+            else if (e.PropertyName is nameof(C3dEditorViewModel.SolveTitleSuffix)) OnPropertyChanged(nameof(SolveTitleSuffix));
         };
     }
 }

@@ -152,6 +152,8 @@ public partial class WorkspaceViewModel
             vm.ResultsRootProvider = () => EmResultsRoot();
             vm.RestoreActiveSetup(StoredActiveSetup(full));
             vm.ActiveSetupChanged += () => RememberActiveSetup(vm);
+            vm.SolveStatusesChecked += () => OnC3dSolveStatusesChecked(vm);     // brief-em3d-98 — the tree row and a float's title
+            vm.ActiveSetupChanged += () => OnC3dSolveStatusesChecked(vm);
             vm.RunRequested = (c3d, setupName) => RunC3dSetupAsync(c3d, setupName);
             vm.SetupAnalysesRequested = c3d => _ = ShowC3dSetupAnalysesAsync(c3d, null);
             vm.EditMaterialRequested = EditMaterial;    // brief-em3d-94
@@ -474,6 +476,8 @@ public partial class WorkspaceViewModel
         }
         var (setup, fromCem, refusal) = c3d.RunSetupFor(setupName);
         if (setup is null) { Messages.Warning(refusal ?? "Nothing to simulate."); return; }
+        // brief-em3d-98 R-em3d98-7 — one line before replacing a complete, current result (the setup run, active or not).
+        if (!fromCem && (setupName ?? c3d.ActiveSetupName) is { } embedded && !await ConfirmRerunAsync(c3d, embedded)) return;
         var document = c3d.RunDocument();
         string path = c3d.TopFilePath;
         string? cws = CurrentWorkspacePath;
@@ -483,7 +487,9 @@ public partial class WorkspaceViewModel
             ? shown : new CircuitRF.Ui.Layout.Em.EmSetupEditorViewModel(path, setup.Clone(), embedded: true);
         bool ok = await RunEmSetupAsync(panel, setup, (s, control, root) => EmRunService.RunThreeDView(
             s, document, path, cws, root, default, control, CircuitRF.Ui.Layout.Em.EmSolveCorePreference.Preferred, ConfirmEmMemory, fromCem));
+        // brief-em3d-98 R-em3d98-6 — whichever setup ran, and however it ended (a cancelled run's status changed too).
         if (ok) c3d.RunFinished();
+        else c3d.RefreshSolveStatusNow();
     }
 
     /// <summary>
@@ -513,6 +519,7 @@ public partial class WorkspaceViewModel
             _viewer3DCameras[k] = cam;
         if (_c3dWatchers.Remove(doc, out var w)) w.Dispose();
         _factory.ProjectTreeTool?.SetFileDirty(doc.FilePath, false);
+        if (!doc.IsScratch) InvalidateTreeSolve(doc.FilePath);     // brief-em3d-98 — the row goes back to the file's answer
         NotifyHierarchyCanExecuteChanged();
         doc.ViewModel.Dispose();
         RaiseThreeDMenuChanged();

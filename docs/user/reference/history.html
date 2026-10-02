@@ -447,7 +447,7 @@ done in between is not in this history.&quot;</em></p>
 different situations and only one of them means the work is recoverable.</p>
 <h2 id="results">&quot;My results are gone&quot;</h2>
 <p>They were never kept, and that is deliberate — go back to a restore point and your <code>.npy</code>, <code>.spl</code>,
-<code>.lpcwave</code> and <code>.mat</code> files are still sitting exactly where they were.</p>
+<code>.lpcwave</code> and <code>.mat</code> files, and your 3D run folders, are still sitting exactly where they were.</p>
 <p><strong>A result is a function of the design and the engine</strong>, so the design is the thing worth keeping: run
 the analysis again and you have the results back. It is not about disk space. It is also why going back
 does <em>not</em> delete them: bringing back last Tuesday's design should not destroy the hours of simulation
@@ -619,6 +619,10 @@ tool can tell you whether the result is a valid design.</p>
 <td>no — re-run the analysis</td>
 </tr>
 <tr>
+<td>a 3D solve's run folder (<code>&lt;setup&gt;.palace</code>, <code>.openems</code>, <code>.thermal</code>) — its mesh and field data</td>
+<td>no — simulate again; the S-parameters written beside it <strong>are</strong> kept</td>
+</tr>
+<tr>
 <td>your own panel layout, open tabs and colour theme</td>
 <td>no — they are yours, not the design's</td>
 </tr>
@@ -678,7 +682,8 @@ tool can tell you whether the result is a valid design.</p>
 </table>
 <h3 id="unusually-large-files">Unusually large files</h3>
 <p>The first time something much larger than a design document would go into the history — an imported
-artwork file, a whole fabrication set — circuitRF asks what it is:</p>
+artwork file, a whole fabrication set, or a folder of many smaller files that add up to a lot —
+circuitRF asks what it is:</p>
 <ul>
 <li><strong>Include it</strong> — this is design input. It is kept: one copy now, and one more only when it changes.</li>
 <li><strong>Leave it out this time</strong> — nothing is written, and you will be asked again.</li>

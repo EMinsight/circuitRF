@@ -97,7 +97,8 @@ public class EditableReferenceTabMarkTests
         int end = xaml.IndexOf("</Setter>", start, StringComparison.Ordinal);
         string template = xaml[start..end];
 
-        foreach (System.Text.RegularExpressions.Match m in Regex.Matches(template, @"(\w+)=""\{Binding ([A-Za-z]+)([^}]*)\}"""))
+        // One level of nested braces in the rest, so FallbackValue={x:Null} (brief-em3d-98's SolveBadges) is seen too.
+        foreach (System.Text.RegularExpressions.Match m in Regex.Matches(template, @"(\w+)=""\{Binding ([A-Za-z]+)((?:[^{}]|\{[^{}]*\})*)\}"""))
         {
             string property = m.Groups[1].Value;
             string source   = m.Groups[2].Value;

@@ -822,6 +822,9 @@ the walls and the lid, and nothing outside the metal is meshed. **Boundaries on 
 dielectric's face: *Perfect Conductor*, *Conductive Surface*) put a wall inside the model without drawing
 metal.
 
+**Solved marks.** Each setup's card says whether its last result still matches the model, and the tab and the workspace
+tree mark a 3D view whose results do. See [3D EM ▸ Is this solved?](em-3d.html#solved).
+
 **Run.** *Simulate ▸ Run* (or the workspace toolbar's Run). Palace or openEMS is started with the same
 progress, **Cancel** and messages as any EM run, and the result opens in the Data Display. Afterwards the
 **Field** bar shows the saved fields on the geometry that was solved. On a machine without the solver, Run

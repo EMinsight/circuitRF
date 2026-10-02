@@ -619,6 +619,18 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
         Kind is NodeKind.Library or NodeKind.ReferencedWorkspace
         && Children.Count == 1 && Children[0].Kind == NodeKind.NotReadYet;
 
+    /// <summary>
+    /// brief-em3d-98 R-em3d98-5 item 3 — a <c>.c3d</c> row's "solved" glyphs: pushed by the workspace (the open editor's
+    /// in-memory answer, else the on-disk check run in the background), and put back by <see cref="Dock.ProjectTreeTool"/>
+    /// after a rescan as the dirty mark is. Null for every other row, and until the check answers — no placeholder.
+    /// </summary>
+    private CircuitRF.Ui.ThreeD.SolveBadgeSet? _solveBadges;
+    public CircuitRF.Ui.ThreeD.SolveBadgeSet? SolveBadges
+    {
+        get => _solveBadges;
+        set { if (!Equals(_solveBadges, value)) { _solveBadges = value; OnPropertyChanged(); } }
+    }
+
     // True when the cell has a dirty (unsaved) editing session.
     // Set by WorkspaceViewModel when any session for this cell's .csch changes dirty state.
     private bool _isDirty;

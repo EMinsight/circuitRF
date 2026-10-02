@@ -90,6 +90,25 @@ public sealed partial class C3dSetupItem(string name, int index, string? refusal
 
     public bool HasFidelity => Fidelity.Count > 0;
 
+    /// <summary>brief-em3d-98 R-em3d98-5 — whether this setup has a result of the model as it is now, in words, one line per
+    /// solver leg (a Both setup has two): <c>Solved 14:32 (18 min)</c>, <c>Out of date: 'Board.clay' has changed</c>,
+    /// <c>Not run</c>. From <see cref="C3dSolveStatus"/>, refreshed in the background; empty until the first answer.</summary>
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(HasSolveLines))] private IReadOnlyList<string> _solveLines = [];
+
+    public bool HasSolveLines => SolveLines.Count > 0;
+
+    /// <summary>Sets <see cref="SolveLines"/> from this setup's legs in <paramref name="statuses"/>.</summary>
+    internal void ApplySolveStatuses(IReadOnlyList<SetupSolveStatus> statuses)
+    {
+        var mine = statuses.Where(s => s.Setup == Name).ToList();
+        SolveLines = mine.Count switch
+        {
+            0 => [],
+            1 => [mine[0].Words + (mine[0].Partial && mine[0].Detail is { } d ? $" — {d}" : "")],
+            _ => [.. mine.Select(s => $"{C3dSolveStatus.Name(s.Solver)}: {s.Words}" + (s.Partial && s.Detail is { } d ? $" — {d}" : ""))],
+        };
+    }
+
     public string Label => (IsActive ? "● " : "   ") + Name + (IsExternal ? $"  (external: {Path.GetFileName(ExternalPath)})" : "") +
                            (Refusal is null ? "" : "  — cannot run");
 
@@ -214,14 +233,18 @@ public sealed partial class C3dEditorViewModel
         ? "No setups. Add one to simulate this 3D view."
         : $"{SetupItems.Count} setup{(SetupItems.Count == 1 ? "" : "s")} · active: {ActiveSetupName ?? "none"}";
 
-    /// <summary>Called by the shell with the stored active setup, before the first scene.</summary>
+    /// <summary>Called by the shell with the stored active setup, before the first scene. brief-em3d-98 R-em3d98-3 — the
+    /// document's own <c>ActiveSetup</c> wins; <paramref name="name"/> (the <c>.cwsuser</c>'s, from before the document kept it)
+    /// is used only when the document names none; a missing or unknown name falls back to the first setup.</summary>
     public void RestoreActiveSetup(string? name)
     {
-        ActiveSetupName = name;
+        ActiveSetupName = Document.ActiveSetup ?? name;
         RebuildSetupItems();
         if ((ActiveSetupName is null || !SetupItems.Any(i => i.Name == ActiveSetupName)) && SetupItems.FirstOrDefault(i => i.Refusal is null) is { } first)
             ActiveSetupName = first.Name;
+        KeepActiveSetupInDocument(markDirty: false);
         RebuildSetupItems();
+        ActiveSetupBadgesChanged();
         Viewer.SetRunSetup(ActiveRunSetup);
         RefreshFieldsStale();
         ApplyVisiblePlots();
@@ -244,10 +267,14 @@ public sealed partial class C3dEditorViewModel
         bool keepExternal = SelectedSetupItem?.IsExternal == true;
         SetupItems.Clear();
         foreach (var s in C3dSetups.Read(Document))
-            SetupItems.Add(new C3dSetupItem(s.Name, s.Index, s.Refusal, null, s.Setup)
+        {
+            var item = new C3dSetupItem(s.Name, s.Index, s.Refusal, null, s.Setup)
             {
                 IsActive = !IsExternalActive && s.Name == ActiveSetupName, Fidelity = _fidelityNow.GetValueOrDefault(s.Name) ?? [],
-            });
+            };
+            item.ApplySolveStatuses(SolveStatuses);
+            SetupItems.Add(item);
+        }
         if (ExternalSetup is { } x)
             SetupItems.Add(new C3dSetupItem(ExternalItemName, -1, x.Setup.Is3D ? null : C3dSetups.PlanarRefusal, x.Path, x.Setup) { IsActive = IsExternalActive });
         _syncingSetups = true;
@@ -289,6 +316,8 @@ public sealed partial class C3dEditorViewModel
         _externalActive = external;
         foreach (var i in SetupItems) i.IsActive = i.Name == name && i.IsExternal == external;
         OnPropertyChanged(nameof(SetupsHeading));
+        KeepActiveSetupInDocument();
+        ActiveSetupBadgesChanged();
         ActiveSetupChanged?.Invoke();
         Viewer.SetRunSetup(ActiveRunSetup);
         Viewer.Regenerate();
@@ -1088,14 +1117,10 @@ public sealed partial class C3dEditorViewModel
 
     /// <summary>The directories setup <paramref name="s"/>'s runs keep their results in (a thermal setup's own; a Palace and/or an
     /// openEMS one).</summary>
+    /// brief-em3d-98 — THE list, C3dSolveStatus.RunDirectories, so the editor, the glyphs and the CLI agree on where a setup's
+    /// results live.
     private IEnumerable<string> RunDirectoriesOf(EmSetup? s)
-    {
-        if (s is null || ResultsRootProvider?.Invoke() is not { } root) yield break;
-        // brief-em3d-75 — a thermal setup's run keeps its own directory (brief 74), and only that one.
-        if (s.IsThermal) { yield return CircuitRF.Design.Thermal.ThermalRunService.RunDirectory(root, s); yield break; }
-        if (s.Solver3D is Em3dSolver.Palace or Em3dSolver.Both) yield return Em3dRunService.RunDirectory(root, s, Em3dSolver.Palace);
-        if (s.Solver3D is Em3dSolver.OpenEms or Em3dSolver.Both) yield return Em3dRunService.RunDirectory(root, s, Em3dSolver.OpenEms);
-    }
+        => C3dSolveStatus.RunDirectories(s, ResultsRootProvider?.Invoke()).Select(x => x.Directory);
 
     /// <summary>A run finished: the fields are read again. The run service kept the document it solved and every file it read
     /// beside its result (brief-em3d-87 — in <c>src/Design</c>, so a <c>circuitrf em</c> run keeps the same record).</summary>
@@ -1104,25 +1129,36 @@ public sealed partial class C3dEditorViewModel
         ForgetDiscoveries();                       // brief-em3d-83 — every plot's check reads the runs again
         Viewer.SetRunSetup(ActiveRunSetup);
         RefreshFieldsStale();
+        RefreshSolveStatusNow();                   // brief-em3d-98 — whichever setup ran, active or not
     }
 
     /// <summary>R-em3d49-5b — the banner: fields from a run whose document differs from the one being edited now. They are
     /// still shown — the solver's own geometry, never re-mapped onto a model it did not see.</summary>
-    public void RefreshFieldsStale() => FieldsStaleText = StaleText(ActiveRunSetup);
+    public void RefreshFieldsStale()
+    {
+        FieldsStaleText = StaleText(ActiveRunSetup, IsExternalActive ? "" : ActiveSetupName);
+        ScheduleSolveStatus();                     // brief-em3d-98 — every edit path comes through here
+    }
 
     /// <summary>brief-em3d-83 — the banner for plot <paramref name="p"/>: ITS setup's run, which need not be the active one (a plot
     /// is pinned to a setup). Read with the active setup's, a plot of T2's out-of-date temperatures showed no warning while T1
     /// was active, and a current plot was called stale because T1's run was old.</summary>
-    public string? FieldPlotStaleText(C3dFieldPlot p) => StaleText(PlotRequest(p, resolveScene: false).RunSetup);
+    public string? FieldPlotStaleText(C3dFieldPlot p)
+    {
+        var request = PlotRequest(p, resolveScene: false);
+        return StaleText(request.RunSetup, request.SetupName);
+    }
 
     /// <summary>Why setup <paramref name="setup"/>'s result is stale — its run solved a different model, or a file it was solved
     /// from (a placed layout, a nested 3D view, the technology, a material library, a circuit-driven thermal run's schematic and
     /// its sub-cells) has changed since (brief-em3d-87) — or null. Each file is re-hashed only when it changes on disk.</summary>
-    private string? StaleText(EmSetup? setup)
+    /// <para>brief-em3d-98 — compared as <paramref name="embeddedName"/>'s run sees the document, so another setup's edit
+    /// never makes this one's fields stale.</para>
+    private string? StaleText(EmSetup? setup, string? embeddedName)
     {
         foreach (string dir in RunDirectoriesOf(setup))
         {
-            if (C3dRunDocument.Check(dir, Document, TopFilePath) is not { } check) continue;
+            if (C3dRunDocument.Check(dir, Document, TopFilePath, embeddedName) is not { } check) continue;
             // brief-em3d-83 R-em3d83-2 — the plots are display: SerializeForRun leaves them out on both sides.
             return check.What is { } what
                 ? $"Fields are from the run at {check.Written:HH:mm}; {what} {check.Has} changed since. They are drawn on the " +

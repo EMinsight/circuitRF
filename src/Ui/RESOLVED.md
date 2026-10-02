@@ -38531,6 +38531,71 @@ offered from three places: the memory warning's Messages row, the 150 % confirma
 - The Settings line reads `free -b` every time the tab is shown, which starts the VM if it was stopped. That is the
   price of never storing a copy of the figure; the read is off the UI thread.
 
+## "Solved" glyphs on a .c3d's tab, tree row and setup cards (brief-em3d-98, 2026-10-02)
+
+The UI half of `C3dSolveStatus` (see `src/Design/RESOLVED.md`). `Controls/SolveBadges.cs` draws ◆ FEM, ▲ FDTD and ● thermal
+as vector paths, so font fallback cannot change them. Only the `*` after a partial result is text. `ThreeD/SolveBadgeRules.cs`
+is the pure table: it picks each kind's glyph, writes the tooltip, the floating title suffix and the re-run question.
+
+- **The tab's glyphs bind to `C3dEditorDocument.SolveBadges`, never `Title`.** The Window menu, the save prompts and the
+  shell header all read `Title` and trim its `•`. The template is `CircuitRfStyles.axaml`'s document `HeaderTemplate` (the
+  brief named `CircuitRfResources.axaml`; the template has lived in the styles file since the foreign-document tint). It
+  needed no restyling of Dock's tabs. The binding carries `FallbackValue={x:Null}`, and
+  `EditableReferenceTabMarkTests.EveryDirectBindingInTheTabHeaderCarriesAFallback` could not see it: its regex stopped at
+  the first `}` inside `{x:Null}`. The regex now allows one level of nested braces.
+- **The editor checks in the background.** `C3dEditorViewModel.Solved.cs`: `RefreshFieldsStale`, which every edit path
+  already calls, schedules a check after 500 ms of quiet. Only the document's TEXT is taken on the UI thread; parsing,
+  hashing and file reads are the worker's. `RunFinished` and a failed or cancelled run check at once, whichever setup
+  ran. `OnChildChanged` (a placed file saved) schedules one too. Pushed into a nested view, the check is of the TOP
+  document, because the tab is the top document's.
+- **The active setup is in the `.c3d` now** (`C3dDocument.ActiveSetup`, written only when it is not the first readable
+  setup). Choosing one sets `_preferenceDirty`, as the display unit does, and is not an undo entry. On open, the document's
+  value wins and the `.cwsuser`'s is only a fallback for documents written before this brief. `RestoreActiveSetup` writes
+  the resolved name into the document without marking it dirty.
+- **Tree rows.** `ProjectTreeTool` remembers each row's badges by path and puts them back after a rescan, as it does the
+  dirty mark. It raises the static `RowsRebuilt` after each rebuild; the tool is replaced on a layout rebuild, so the
+  listener compares the sender. `WorkspaceViewModel.Solved.cs` fills rows in: an open document's from its editor, a closed
+  one's from a cache keyed on the file's time and size, else from one below-normal-priority worker thread. A
+  `FileSystemWatcher` on the workspace (model files and any `status.json`) clears the cache after a second's quiet, so a
+  saved layout or a `circuitrf em` run elsewhere shows up. The row template's columns became `Auto,Auto,Auto,*`, so the
+  glyphs sit right after the name.
+- **Dock sets a floating window's OS title once, when the window is presented** (`DockWindow.Present` → `SetTitle`,
+  decompiled from Dock 12.0.0.2). Nothing follows the active document. `RefreshFloatingTitles` sets it on
+  `ActiveDockableChanged` and whenever an editor's answer arrives. It touches only windows whose active document is a
+  `.c3d`, and puts a window's old title back when it stops showing one.
+- **The re-run question** is `SaveChangesDialog` with the second button hidden. `C3dEditorViewModel.SolveStatusOf` checks
+  one setup synchronously, so the question is not skipped while the background check is still running.
+- **Gate 11 could not run inside `Ui.Tests`, which has no headless Avalonia platform.** The `em3d-solve-badges` row was
+  rendered through `UiArtworkGenerator.RenderScene` in a scratch harness on `tools/DocGen`'s `HeadlessHost`, rasterised
+  with Svg.Skia, and looked at in both variants. The faded brush holds on the dark tab and tree: 4.6:1 on `#171717`,
+  3.7:1 on `#2B2B2B`. `DocsFactoryTests.EveryCapturedFigureExistsInBothVariantsAndDrawsSomething` fails until DocGen is
+  run, which is the end-of-series regeneration. The optional tab-in-context figure was not made: it needs the docked
+  shell with a live 3D editor, which the catalog does not build.
+
+### Window resize became chunky with a .c3d open (brief-em3d-98 follow-up, 2026-10-02)
+
+Owner report: once the solved glyphs existed, resizing a `.c3d` window, or a workspace with a `.c3d` tab, stopped being
+smooth; with no `.c3d` open it was still smooth. **Not reproduced headlessly.** A scratch harness drove the real
+`WorkspaceWindow` through `tools/DocGen`'s `HeadlessHost` with the 3D Connector example open and its glyphs showing, over 150
+resize steps. Each step took ~34 ms with or without the `.c3d`. The glyph controls did zero rebuilds, measures and renders
+during the resize, and no status check started (temporary counters, since removed). A headless resize is not the OS's live
+resize, so the new code was made unable to work mid-resize anyway:
+
+- **Nothing from the solved checks runs while a window is resizing or moving** (`Controls/WindowMotion.cs`). A class handler
+  notes every `Window`'s `ClientSize` and `PositionChanged`. The editor's check waits for 600 ms of stillness before taking its
+  UI-thread snapshot and again before applying its answer. The tree's worker waits before each row. The workspace watcher's
+  debounce keeps ticking until the window is still. **Trap, caught by gate 9:** "never moved" must be stored as 0, not
+  `long.MinValue / 2`. `TickCount64 − MinValue/2` overflows to a negative "since", and every check then waits forever.
+- **An answer equal to the last one changes nothing.** Before, every check raised `SolveBadges`, rebuilt the tab's and the
+  tree row's glyph children and re-set a floating title, even when nothing had changed. `SolveBadges.Rebuild` now returns when
+  the picked glyphs are equal, the editor skips equal rows, and `SolveBadges` is one cached instance per answer.
+- **A glyph does no work in layout or render.** It has a fixed desired size; its geometry is built once and its brush
+  resolved once (again on a theme change). The `*` is now a vector asterisk: it was a `FormattedText` built on every measure
+  and every render, which is text shaping in a tab header that is laid out on every frame of a resize.
+
+If it is still chunky on the owner's machine, the next step is a `dotnet-trace` of the live pid while resizing. The
+headless harness cannot see the native resize path.
+
 ## The 3D pane rendered at display rate with nothing changing; a live window resize was chunky (2026-10-02, RESOLVED by brief-em3d-99)
 
 Owner report: resizing a window that shows a `.c3d` is chunky; a splitter drag, which resizes the 3D pane just as much, is

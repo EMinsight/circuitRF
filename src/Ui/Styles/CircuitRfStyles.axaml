@@ -4,7 +4,8 @@
         xmlns:glob="using:System.Globalization"
         xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
         xmlns:dockCtrl="clr-namespace:Dock.Avalonia.Controls;assembly=Dock.Avalonia"
-        xmlns:dockCore="clr-namespace:Dock.Model.Core;assembly=Dock.Model">
+        xmlns:dockCore="clr-namespace:Dock.Model.Core;assembly=Dock.Model"
+        xmlns:ctl="using:CircuitRF.Ui.Controls">
 
     <!--
       THE APPLICATION-SCOPE STYLES, IN ONE PLACE BECAUSE THERE ARE TWO APPLICATIONS.
@@ -88,6 +89,13 @@
                                              Foreground="{DynamicResource CrfWarningBrush}"
                                              ToolTip.Tip="This cell belongs to a referenced workspace that is editable from here. Saving writes into that workspace."
                                              IsVisible="{Binding IsEditableReference, FallbackValue=False}"/>
+                            <!-- brief-em3d-98 R-em3d98-5 item 2: a 3D view's "solved" glyphs after its name, drawn by the
+                                 control (vector paths, never characters). Only C3dEditorDocument declares SolveBadges, so the
+                                 binding carries a fallback for the reason the pencil above records; a null set draws nothing
+                                 and takes no width. Title is never touched: the Window menu and the save prompts read it. -->
+                            <ctl:SolveBadges Badges="{Binding SolveBadges, FallbackValue={x:Null}}"
+                                             GlyphSize="10"
+                                             Margin="0,0,6,0"/>
                         </StackPanel>
                     </Border>
                 </DataTemplate>

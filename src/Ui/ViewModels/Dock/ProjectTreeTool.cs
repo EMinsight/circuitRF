@@ -643,6 +643,45 @@ public partial class ProjectTreeTool : Tool, IActivatableTool
             node.IsDirty = isDirty;
     }
 
+    // ── brief-em3d-98 R-em3d98-5 item 3 — the "solved" glyphs on .c3d rows ─────────────────────
+
+    /// <summary>Raised (with the tool) after every rebuild of the tree's rows, so the workspace can fill in the glyphs of
+    /// rows it has no answer for yet. Static because the tool is replaced on a layout rebuild; a listener compares the sender
+    /// with its own tool.</summary>
+    public static event Action<ProjectTreeTool>? RowsRebuilt;
+
+    private readonly Dictionary<string, CircuitRF.Ui.ThreeD.SolveBadgeSet?> _solveBadges = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Puts <paramref name="badges"/> on the <c>.c3d</c> row at <paramref name="fileAbsPath"/> and remembers it, so a
+    /// rescan (which builds new rows) shows it again at once.</summary>
+    public void SetSolveBadges(string fileAbsPath, CircuitRF.Ui.ThreeD.SolveBadgeSet? badges)
+    {
+        string full = Path.GetFullPath(fileAbsPath);
+        _solveBadges[full] = badges;
+        if (RootItems.Count > 0 && FindNodeByPath(RootItems[0], full) is { } node) node.SolveBadges = badges;
+    }
+
+    /// <summary>Every <c>.c3d</c> file row in the tree, by absolute path.</summary>
+    public IReadOnlyList<string> C3dFilePaths()
+    {
+        var paths = new List<string>();
+        void Walk(ProjectTreeNodeViewModel n)
+        {
+            if (!n.IsDirectory && n.AbsolutePath.EndsWith(CircuitRF.Design.ThreeD.C3dPersistence.Extension, StringComparison.OrdinalIgnoreCase))
+                paths.Add(Path.GetFullPath(n.AbsolutePath));
+            foreach (var c in n.Children) Walk(c);
+        }
+        foreach (var r in RootItems) Walk(r);
+        return [.. paths.Distinct(StringComparer.OrdinalIgnoreCase)];
+    }
+
+    private void RestoreSolveBadges(ProjectTreeNodeViewModel node)
+    {
+        if (!node.IsDirectory && node.AbsolutePath.Length > 0 && _solveBadges.TryGetValue(Path.GetFullPath(node.AbsolutePath), out var b))
+            node.SolveBadges = b;
+        foreach (var child in node.Children) RestoreSolveBadges(child);
+    }
+
     /// <summary>File node kinds that can carry a dirty mark — every kind this application can open in
     /// an editor. A kind absent here is one nothing can make dirty yet.</summary>
     private static bool IsDirtyableFile(NodeKind kind) => kind is
@@ -674,9 +713,11 @@ public partial class ProjectTreeTool : Tool, IActivatableTool
             parent: null, onExpandUnreadReference: _ => WalkReferencedSubtrees());
         RootItems.Add(root);
         RestoreDirtyFlags(root);
+        RestoreSolveBadges(root);
         // Point the tree at the workspace root's children — the header already names the workspace,
         // so the root row itself is omitted from the rendered tree.
         TopLevelItems = root.FilteredChildren;
+        RowsRebuilt?.Invoke(this);
     }
 
     /// <summary>
