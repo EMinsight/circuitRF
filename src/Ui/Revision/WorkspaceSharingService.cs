@@ -54,7 +54,11 @@ public sealed class WorkspaceSharingService
     /// sentence naming what the remote wanted. <b>A hang is the worst failure mode available</b>, and a
     /// window that never comes back from a copy is exactly it.</para>
     /// </summary>
-    public CloneResult? Copy(string source, string destination, CancellationToken ct = default)
+    /// <para><b>Safe to call off the UI thread</b>, and the window does: a clone of a workspace
+    /// carrying solved fields is hundreds of megabytes. <paramref name="progress"/> is called on the
+    /// thread git's output is read on.</para>
+    public CloneResult? Copy(string source, string destination, CancellationToken ct = default,
+                             Action<CloneProgress>? progress = null)
     {
         if (GitDiscovery.Find(out _) is not { } installation)
         {
@@ -66,7 +70,7 @@ public sealed class WorkspaceSharingService
             return null;
         }
 
-        var result = WorkspaceClone.Clone(installation, source, destination, ct);
+        var result = WorkspaceClone.Clone(installation, source, destination, ct, progress);
         Post(result.Diagnostics);
         return result;
     }

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Controls;
 using CommunityToolkit.Mvvm.Input;
@@ -90,13 +91,64 @@ public partial class WorkspaceViewModel
         // presenting a dialog with nothing in it.
         if (!await ReviewWhatIsLeaving(LeavingJourney.Copy, sourceRoot: source)) return;
 
-        var result = Sharing.Copy(source, destination);
+        var result = await CloneWithProgress(source, destination);
         if (result is not { Ok: true, WorkspaceCwsPath: { } cws }) return;
 
         // R-rc9-5c. Nothing is carried across by hand — no management marker, no arming decision, no
         // identity. The copy reaches the ordinary arming path on its own terms in the window that
         // opens it, which is what stops one designer's decision becoming everybody's.
         App.OpenWorkspaceInNewWindow(cws, null);
+    }
+
+    /// <summary>
+    /// Runs the clone off the UI thread, on a live Messages row with a Cancel. <b>A clone is a
+    /// download</b> — a workspace carrying solved fields is hundreds of megabytes — and run on the UI
+    /// thread it froze the window for the whole transfer with nothing saying why.
+    ///
+    /// <para>The bar is git's own progress, weighted so receiving fills most of it (see
+    /// <see cref="CloneProgress.OverallPercent"/>). A Cancel kills git and removes the half-made
+    /// folder, so the same destination can be used again straight away.</para>
+    /// </summary>
+    private async Task<CloneResult?> CloneWithProgress(string source, string destination)
+    {
+        string title = $"Cloning '{source}'";
+        var live = Messages.BeginProgress(title);
+        live.Update(title, "connecting", indeterminate: true);
+
+        using var cts = new CancellationTokenSource();
+        var cancellation = new RunCancellation("the clone", () =>
+        {
+            Messages.Info("Stopping the clone. The partly cloned folder is removed, and nothing is opened.");
+            cts.Cancel();
+        });
+        live.BindCancellation(cancellation);
+
+        try
+        {
+            var result = await Task.Run(() => Sharing.Copy(source, destination, cts.Token, p =>
+            {
+                // "Receiving objects 45% (48/106), 120.00 MiB | 10.00 MiB/s" — git's own words.
+                string counter = string.Join(' ', new[] { p.Phase, p.PhasePercent is { } pct ? $"{pct:0}%" : "", p.Detail }
+                                                      .Where(t => t.Length > 0));
+                if (p.OverallPercent is { } overall) live.Update(title, counter, overall);
+                else                                 live.Update(title, counter, indeterminate: true);
+            }));
+
+            if (result is null)                            live.Complete(MessageLevel.Info, $"{title} - did not start.");
+            else if (result.Ok)                            live.Complete(MessageLevel.Info, $"{title} - done.");
+            else if (cancellation.IsCancellationRequested) live.Complete(MessageLevel.Info, $"{title} - stopped.");
+            else                                           live.Complete(MessageLevel.Info, $"{title} - did not complete.");
+            return result;
+        }
+        catch (Exception ex)
+        {
+            live.Complete(MessageLevel.Error, $"{title}: {ex.Message}");
+            return null;
+        }
+        finally
+        {
+            cancellation.Finish();
+        }
     }
 
     /// <summary>Where the copy dialog's Browse opens: beside the workspace that is already open, which

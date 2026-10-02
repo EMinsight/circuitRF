@@ -16214,3 +16214,33 @@ of that claim is in the user guide. Gate: `WslLocationTests.Gate5`/`Gate5b`. The
 - Not done here: moving the close boundary and its housekeeping off the UI thread. With the run folders
   ignored, the same workspace's `git add` + `git gc` measured 0.01 s + 0.04 s (15 files, a 124 KB
   history), but a large user file can still cost `git add` time there.
+
+## Clone Workspace froze the window for the whole download (2026-10-01)
+
+Cloning a ~275 MB workspace (a solved Palace run) ran `git clone` on the UI thread with nothing on screen.
+It now runs under `Task.Run` on a live Messages row with right-click Cancel
+(`WorkspaceViewModel.CloneWithProgress`), fed by `WorkspaceClone.Clone`'s new `progress` callback.
+- **Git draws progress only to a terminal.** `GitCommand` gives git none, so a clone was silent until it
+  finished. Asking for progress is what adds `--progress`; the CLI passes no callback and its arguments are
+  unchanged. Git redraws a progress line with `\r`, so `GitRunOptions.StdErrSegment` splits at `\r` as well
+  as `\n`. Splitting at `\n` alone would hold all of it back until the end.
+- **The progress lines also end up in `StdErr`**, so a failure strips them (`WithoutProgress`) before
+  `GitFailures.Translate` quotes stderr back.
+- **A Cancel kills git, so git never cleans up.** When git fails by itself it removes its half-made folder.
+  When it is killed it cannot, and the next clone into the same place was refused as "not empty".
+  `RemovePartialCopy` removes only what the clone created: a folder that did not exist goes, and one that
+  existed (checked empty) is emptied. It clears the read-only bit on git's object files first, because on
+  Windows a recursive delete stops at the first read-only file.
+- Bar weights: receiving 0–85, resolving deltas 85–90, updating files 90–100. The remote's counting and
+  compressing show as busy.
+
+## Palace's per-pass field files were most of a run folder (2026-10-01)
+
+Palace saves every adaptive pass by default (`Model.Refinement.SaveAdaptIterations`, which
+`PalaceConfigWriter` never set), writing each to `postpro/iterationX/`. On the 3D Connector example the passes'
+field files were 420 MB of a 695 MB run. Nothing in circuitRF reads them: the 3D view draws the top-level
+`postpro/paraview`. `Em3dRunService` now calls `PalaceRun.PruneIterationFields` once Palace succeeds. That
+removes each pass's subfolders and keeps its files: `palace.json`, which `ReadFacts` takes the starting mesh's
+element count from, and the CSVs, which are the convergence history. Turning the option off instead would lose
+both. Runs on the Linux subsystem never copied these folders back (`WslPalaceRunner.CopyOut`), so this is a
+no-op there. Run folders made before this change keep their passes until they are re-run.

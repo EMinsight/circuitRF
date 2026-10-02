@@ -21,6 +21,18 @@ public sealed record CloneResult(
     public bool IsWorkspace => WorkspaceCwsPath is not null;
 }
 
+/// <summary>How far a clone has got, as git reports it.</summary>
+/// <param name="Phase">Git's own name for what it is doing — "Receiving objects", "Updating files".</param>
+/// <param name="PhasePercent">How far through that phase, 0-100, or null when git gave no figure.</param>
+/// <param name="OverallPercent">
+/// How far through the whole clone, 0-100, or null while nothing countable is happening (the remote
+/// counting and compressing on its side). <b>The phases are weighted, not equal</b>: receiving is the
+/// transfer and nearly all the wait, so it fills most of the bar, and a bar that ran from empty to
+/// full three times would read as a clone that kept starting over.
+/// </param>
+/// <param name="Detail">The rest of git's line — the counts, the size received and the rate.</param>
+public sealed record CloneProgress(string Phase, double? PhasePercent, double? OverallPercent, string Detail);
+
 /// <summary>
 /// RC-9 §1: <b>cloning a repository as a workspace</b> (<c>revision-control.md</c> §9, R-rc9-1 …
 /// R-rc9-5c).
@@ -69,8 +81,14 @@ public static class WorkspaceClone
     /// <para><paramref name="destination"/> must not already exist as a non-empty folder: git refuses
     /// that itself, and circuitRF refuses it first so the sentence is circuitRF's.</para>
     /// </summary>
+    /// <param name="progress">
+    /// Called on a background thread as git reports progress, or null for none. <b>Asking for it is
+    /// what asks git for <c>--progress</c></b>: git draws progress only to a terminal, and the process
+    /// here has none, so without the flag a clone is silent until it ends.
+    /// </param>
     public static CloneResult Clone(
-        GitInstallation installation, string source, string destination, CancellationToken ct = default)
+        GitInstallation installation, string source, string destination, CancellationToken ct = default,
+        Action<CloneProgress>? progress = null)
     {
         List<Diagnostic> notes = [];
 
@@ -102,6 +120,9 @@ public static class WorkspaceClone
             return Failed(dest, notes, SharingMessages.CloneDestinationUnusable(dest, e.Message));
         }
 
+        // Whether the folder was there before, so a stopped clone removes only what IT created.
+        bool destinationExisted = Directory.Exists(dest);
+
         string parent = Path.GetDirectoryName(dest) ?? dest;
         try { Directory.CreateDirectory(parent); }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
@@ -123,15 +144,33 @@ public static class WorkspaceClone
             // No --branch, no --depth, no --single-branch, and NO --refmap or +refs/*:refs/* of any
             // kind. Git's default refspec is what leaves the checkpoint namespace behind (R-rc9-5a),
             // and gate 11 source-scans this file for one that reaches it.
-            ["clone", "--", url, dest],
-            new GitRunOptions(Network: true, SafeDirectories: safe),
+            progress is null ? ["clone", "--", url, dest] : ["clone", "--progress", "--", url, dest],
+            new GitRunOptions(Network: true, SafeDirectories: safe,
+                              StdErrSegment: progress is null ? null : seg =>
+                              {
+                                  if (ParseProgress(seg) is { } p) progress(p);
+                              }),
             ct);
 
-        if (result.Cancelled)
-            return Failed(dest, notes, SharingMessages.CloneCancelled());
+        if (result.Cancelled || result.TimedOut)
+        {
+            // Git is KILLED, not asked, so it gets no chance to remove the half-made folder the way it
+            // does when it fails on its own — and that folder is not empty, so the next attempt at the
+            // same destination would be refused for a reason the designer did not create.
+            if (!RemovePartialCopy(dest, destinationExisted))
+                notes.Add(SharingMessages.ClonePartialCopyLeft(dest));
+            if (result.Cancelled)
+                return Failed(dest, notes, SharingMessages.CloneCancelled());
+        }
 
         if (!result.Ok)
-            return Failed(dest, notes, GitFailures.Translate(result, SharingMessages.CopyingAWorkspace, parent));
+        {
+            // Progress lines are noise in a failure's sentence, and asking for them put them there.
+            var quiet = progress is null ? result : result with { StdErr = WithoutProgress(result.StdErr) };
+            return Failed(dest, notes, GitFailures.Translate(quiet, SharingMessages.CopyingAWorkspace, parent));
+        }
+
+        progress?.Invoke(new CloneProgress("Finishing", null, 100, ""));
 
         string cws = Path.Combine(dest, WorkspacePersistence.FileName);
         bool isWorkspace;
@@ -163,6 +202,89 @@ public static class WorkspaceClone
         notes.Add(SharingMessages.CloneCarriesNoRestorePoints());
 
         return new CloneResult(true, dest, cws, notes);
+    }
+
+    // Git's progress phases, in the order a clone passes through them, and the share of the bar
+    // each one fills. The locale is pinned to C (GitEnvironment), so these names are stable.
+    private static readonly (string Phase, double From, double To)[] Weights =
+    [
+        ("Receiving objects", 0,  85),
+        ("Resolving deltas",  85, 90),
+        ("Updating files",    90, 100),
+    ];
+
+    private static readonly System.Text.RegularExpressions.Regex ProgressLine = new(
+        @"^(?:remote:\s*)?(?<phase>[A-Z][a-z]+(?: [a-z]+)*):\s+(?<pct>\d{1,3})%(?<rest>.*)$",
+        System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// One segment of git's progress output as a <see cref="CloneProgress"/>, or null when it is not a
+    /// progress line. A phase the weights do not name — the remote's own counting and compressing —
+    /// is reported with no overall figure, which a bar draws as busy rather than as a number.
+    /// </summary>
+    public static CloneProgress? ParseProgress(string segment)
+    {
+        var m = ProgressLine.Match((segment ?? "").Trim());
+        if (!m.Success) return null;
+
+        string phase = m.Groups["phase"].Value;
+        double pct   = Math.Clamp(double.Parse(m.Groups["pct"].Value, System.Globalization.CultureInfo.InvariantCulture), 0, 100);
+
+        string detail = m.Groups["rest"].Value.Trim().TrimStart(',').Trim();
+        if (detail.EndsWith(", done.", StringComparison.Ordinal)) detail = detail[..^", done.".Length];
+        else if (detail.EndsWith("done.", StringComparison.Ordinal)) detail = detail[..^"done.".Length];
+        detail = detail.Trim().TrimEnd(',').Trim();
+
+        double? overall = null;
+        foreach (var (name, from, to) in Weights)
+            if (name == phase) overall = from + (to - from) * pct / 100;
+
+        return new CloneProgress(phase, pct, overall, detail);
+    }
+
+    /// <summary>Standard error with git's progress lines taken out, for a failure's sentence.</summary>
+    internal static string WithoutProgress(string stderr)
+        => string.Join('\n', (stderr ?? "").Split('\r', '\n')
+                                            .Where(l => l.Length > 0 && ParseProgress(l) is null));
+
+    /// <summary>
+    /// Removes what a stopped clone left. <b>Only what this clone created</b>: a folder that did not
+    /// exist goes entirely, and a folder that existed (it was checked empty) is emptied and kept.
+    ///
+    /// <para><b>Git marks its object files read-only</b>, and on Windows a recursive delete stops at
+    /// the first one, so the attribute is cleared first.</para>
+    /// </summary>
+    /// <returns>True when nothing is left behind.</returns>
+    private static bool RemovePartialCopy(string dest, bool destinationExisted)
+    {
+        try
+        {
+            if (!Directory.Exists(dest)) return true;
+
+            var all = new EnumerationOptions
+            {
+                RecurseSubdirectories = true,
+                AttributesToSkip      = FileAttributes.ReparsePoint,
+                IgnoreInaccessible    = true,
+            };
+            foreach (var f in new DirectoryInfo(dest).EnumerateFiles("*", all))
+                if (f.Attributes.HasFlag(FileAttributes.ReadOnly)) f.Attributes &= ~FileAttributes.ReadOnly;
+
+            if (!destinationExisted)
+            {
+                Directory.Delete(dest, recursive: true);
+                return true;
+            }
+
+            var dir = new DirectoryInfo(dest);
+            foreach (var d in dir.EnumerateDirectories()) d.Delete(recursive: true);
+            foreach (var f in dir.EnumerateFiles())       f.Delete();
+            return true;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
     }
 
     /// <summary>

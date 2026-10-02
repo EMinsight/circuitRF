@@ -80,6 +80,16 @@ public static class SharingMessages
         "Copying was stopped. Nothing was opened.");
 
     /// <summary>
+    /// A stopped clone's half-made folder could not be removed. Said, because the next attempt at the
+    /// same destination would otherwise be refused as "not empty" with no hint of why.
+    /// </summary>
+    public static Diagnostic ClonePartialCopyLeft(string path) => Diagnostic.Create(
+        "revision.clone.partial-copy-left",
+        DiagnosticSeverity.Warning,
+        "The partly cloned folder '{path}' could not be removed. Delete it before cloning into the same place again.",
+        ("path", path));
+
+    /// <summary>
     /// The copy arrived and is not a circuitRF workspace. <b>Not a failure</b> — git did what was
     /// asked, and the folder is on disk exactly as it came down; there is simply nothing here to open.
     /// </summary>

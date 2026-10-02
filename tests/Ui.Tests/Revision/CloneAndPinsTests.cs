@@ -636,6 +636,66 @@ public class CloneAndPinsTests
         finally { GitCommand.NetworkInactivityTimeout = previous; }
     }
 
+    // ── A clone reports progress, and a stopped one leaves nothing behind ────────────────────────
+
+    /// <summary>Git's own progress lines, as <c>--progress</c> writes them, read into a phase, its
+    /// percent and a weighted overall figure — receiving fills most of the bar, and a phase the
+    /// weights do not name (the remote's counting) has no overall figure, so a bar draws it as busy.</summary>
+    [Fact]
+    public void GitsProgressLinesAreReadIntoAWeightedOverallFigure()
+    {
+        var receiving = WorkspaceClone.ParseProgress("Receiving objects:  50% (53/106), 120.00 MiB | 10.00 MiB/s");
+        Assert.NotNull(receiving);
+        Assert.Equal("Receiving objects", receiving!.Phase);
+        Assert.Equal(50, receiving.PhasePercent);
+        Assert.Equal(42.5, receiving.OverallPercent);
+        Assert.Equal("(53/106), 120.00 MiB | 10.00 MiB/s", receiving.Detail);
+
+        var updating = WorkspaceClone.ParseProgress("Updating files: 100% (106/106), done.");
+        Assert.Equal(100, updating!.OverallPercent);
+        Assert.Equal("(106/106)", updating.Detail);
+
+        var counting = WorkspaceClone.ParseProgress("remote: Counting objects:  40% (2/5)");
+        Assert.Equal("Counting objects", counting!.Phase);
+        Assert.Null(counting.OverallPercent);
+
+        Assert.Null(WorkspaceClone.ParseProgress("Cloning into 'copied-here'..."));
+        Assert.Equal("fatal: repository not found",
+                     WorkspaceClone.WithoutProgress("Receiving objects:  10% (1/10)\rfatal: repository not found\n"));
+    }
+
+    /// <summary>
+    /// A Cancel KILLS git, which therefore never removes its half-made folder the way it does when it
+    /// fails by itself — and that folder is not empty, so the next clone into the same place would be
+    /// refused. Stopped on the first sign of a transfer, over <c>file://</c> so git uses a real
+    /// transport and reports one, with an incompressible payload large enough to still be moving.
+    /// </summary>
+    [GitFact]
+    public void AClonePassesOnGitsProgressAndOneStoppedPartWayLeavesNoFolderBehind()
+    {
+        using var source = new GitWorkspace();
+        using var scratch = new ScratchDir();
+
+        var bytes = new byte[48 * 1024 * 1024];
+        new Random(1).NextBytes(bytes);
+        File.WriteAllBytes(Path.Combine(source.Root, "fields.bin"), bytes);
+        source.Raw("init", "-q", ".");
+        source.Raw("add", "-A");
+        source.Raw("-c", "user.email=t@e.x", "-c", "user.name=T", "commit", "-qm", "first");
+
+        string destination = Path.Combine(scratch.Dir, "copied-here");
+        using var cts = new CancellationTokenSource();
+        var phases = new List<string>();
+
+        var result = WorkspaceClone.Clone(Installation(), new Uri(source.Root).AbsoluteUri, destination, cts.Token,
+            p => { lock (phases) phases.Add(p.Phase); if (p.Phase == "Receiving objects") cts.Cancel(); });
+
+        Assert.Contains("Receiving objects", phases);
+        Assert.False(result.Ok);
+        Assert.Contains(result.Diagnostics, d => d.Id == "revision.clone.cancelled");
+        Assert.False(Directory.Exists(destination), "the stopped clone left its half-made folder behind");
+    }
+
     // ── Gate 13: safe.directory on a copied or share-hosted tree ─────────────────────────────────
 
     /// <summary>

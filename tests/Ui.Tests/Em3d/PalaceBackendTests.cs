@@ -39,6 +39,30 @@ public sealed class PalaceBackendTests(ITestOutputHelper output) : IDisposable
 
     private readonly string _root = Path.Combine(Path.GetTempPath(), "crf-palace-" + Guid.NewGuid().ToString("N")[..12]);
 
+    /// <summary>A run keeps each adaptive pass's palace.json and CSVs (ReadFacts and the convergence
+    /// history) and loses only the pass's field folders; the final pass's fields are untouched.</summary>
+    [Fact]
+    public void PruneIterationFieldsKeepsEachPassesFactsAndTheFinalFields()
+    {
+        string post = Path.Combine(_root, "postpro");
+        foreach (string f in (string[])["iteration1/palace.json", "iteration1/port-S.csv",
+                                         "iteration1/paraview/driven/proc000000.vtu",
+                                         "iteration1/paraview/driven_boundary/proc000000.vtu",
+                                         "palace.json", "paraview/driven/proc000000.vtu"])
+        {
+            string path = Path.Combine(post, f);
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, "x");
+        }
+
+        PalaceRun.PruneIterationFields(post);
+
+        Assert.True(File.Exists(Path.Combine(post, "iteration1", "palace.json")));
+        Assert.True(File.Exists(Path.Combine(post, "iteration1", "port-S.csv")));
+        Assert.False(Directory.Exists(Path.Combine(post, "iteration1", "paraview")));
+        Assert.True(File.Exists(Path.Combine(post, "paraview", "driven", "proc000000.vtu")));
+    }
+
     public void Dispose() { try { Directory.Delete(_root, true); } catch { /* best effort */ } }
 
     // ── 1. Writer goldens ───────────────────────────────────────────────────────────────────────

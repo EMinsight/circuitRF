@@ -594,6 +594,7 @@ public static class Em3dRunService
 
         control?.BeginStage(ReadingLabel);
         string post = Path.Combine(runDir, PalaceConfigWriter.OutputDirectory);
+        PalaceRun.PruneIterationFields(post);
         if (problem.IsStatic)
             return FinishStatic(problem, setup, resultsRoot, post, tracker, processes, log, palace, wall.Elapsed);
         if (problem.Type == Em3dProblemType.Eigenmode)

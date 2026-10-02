@@ -54,6 +54,12 @@ public sealed record GitResult(
 /// for writing an object with a time other than now. <b>Nothing here may carry a credential</b>
 /// (§9.1) — circuitRF holds none and supplies none.</para>
 /// </param>
+/// <param name="StdErrSegment">
+/// Called, on a background thread, with each piece of standard error as it arrives, split at every
+/// <c>\r</c> and <c>\n</c>. <b>Git redraws a progress line with <c>\r</c></b>, so splitting at the
+/// newline alone would hold the whole of a clone's progress back until it finished. Standard error is
+/// still collected whole into <see cref="GitResult.StdErr"/> either way.
+/// </param>
 public sealed record GitRunOptions(
     string?   StandardInput = null,
     bool      ReadOnly      = false,
@@ -61,7 +67,8 @@ public sealed record GitRunOptions(
     string?   IndexFile     = null,
     TimeSpan? Timeout       = null,
     IReadOnlyList<string>? SafeDirectories = null,
-    IReadOnlyDictionary<string, string>? Environment = null);
+    IReadOnlyDictionary<string, string>? Environment = null,
+    Action<string>? StdErrSegment = null);
 
 /// <summary>
 /// <b>The one type that starts a git process.</b> Every git invocation circuitRF makes goes through
@@ -172,7 +179,7 @@ public sealed class GitCommand
         TimeSpan bound = options.Timeout
                       ?? (options.Network ? NetworkInactivityTimeout : LocalTimeout);
 
-        var result = Execute(psi, options.StandardInput, bound, options.Network, ct);
+        var result = Execute(psi, options.StandardInput, bound, options.Network, options.StdErrSegment, ct);
 
         // R-rc3-1b. Git's own lock files serialise what a private index does not — they are
         // atomic-create files, which is the correct primitive and the one a second implementation
@@ -186,7 +193,7 @@ public sealed class GitCommand
         {
             if (!LooksLikeLockCollision(result)) break;
             Thread.Sleep(LockRetryDelayMs * attempt);
-            result = Execute(psi, options.StandardInput, bound, options.Network, ct);
+            result = Execute(psi, options.StandardInput, bound, options.Network, options.StdErrSegment, ct);
         }
 
         return result;
@@ -216,7 +223,8 @@ public sealed class GitCommand
         => [.. GitEnvironment.GlobalArguments(WorkspaceRoot), .. arguments];
 
     private static GitResult Execute(
-        ProcessStartInfo psi, string? stdin, TimeSpan bound, bool inactivity, CancellationToken ct)
+        ProcessStartInfo psi, string? stdin, TimeSpan bound, bool inactivity, Action<string>? onErrSegment,
+        CancellationToken ct)
     {
         Process? p;
         try { p = Process.Start(psi); }
@@ -230,7 +238,7 @@ public sealed class GitCommand
             var lastSeen = new StrongBox<long>(Environment.TickCount64);
 
             Task pumpOut = Pump(p.StandardOutput, outBuf, lastSeen);
-            Task pumpErr = Pump(p.StandardError,  errBuf, lastSeen);
+            Task pumpErr = Pump(p.StandardError,  errBuf, lastSeen, onErrSegment);
 
             if (stdin is not null)
             {
@@ -277,9 +285,11 @@ public sealed class GitCommand
         }
     }
 
-    private static async Task Pump(StreamReader reader, StringBuilder into, StrongBox<long> lastSeen)
+    private static async Task Pump(StreamReader reader, StringBuilder into, StrongBox<long> lastSeen,
+                                   Action<string>? onSegment = null)
     {
-        var buffer = new char[4096];
+        var buffer  = new char[4096];
+        var segment = onSegment is null ? null : new StringBuilder();
         try
         {
             int n;
@@ -287,13 +297,31 @@ public sealed class GitCommand
             {
                 lock (into) into.Append(buffer, 0, n);
                 Volatile.Write(ref lastSeen.Value, Environment.TickCount64);
+
+                if (segment is null) continue;
+                for (int i = 0; i < n; i++)
+                {
+                    char c = buffer[i];
+                    if (c is not ('\r' or '\n')) { segment.Append(c); continue; }
+                    if (segment.Length > 0) Report(onSegment!, segment.ToString());
+                    segment.Clear();
+                }
             }
+            if (segment is { Length: > 0 }) Report(onSegment!, segment.ToString());
         }
         catch (Exception e) when (e is IOException or ObjectDisposedException or OperationCanceledException)
         {
             // The process was killed out from under the read. What was collected before that is still
             // the honest answer, and it is already in `into`.
         }
+    }
+
+    /// <summary>An observer that throws must not take the pump down with it: the pump is what keeps
+    /// the pipe drained, and a stalled pipe is a git that never exits.</summary>
+    private static void Report(Action<string> onSegment, string text)
+    {
+        try { onSegment(text); }
+        catch (Exception) { /* the observer's problem, never the process's */ }
     }
 
     // ── Small primitives every later brief needs, kept here so nobody writes a second one ──────────

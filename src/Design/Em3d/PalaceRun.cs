@@ -765,6 +765,37 @@ public static class PalaceRun
         return (lines[0].Split(',').Select(h => h.Trim()).ToList(), lines.Skip(1).Select(l => l.Split(',')).ToList());
     }
 
+    /// <summary>
+    /// Removes the FIELD files Palace saved for each adaptive pass before the last, keeping each pass's
+    /// <c>palace.json</c> and CSVs.
+    ///
+    /// <para><b>Palace saves every pass by default</b> (<c>Model.Refinement.SaveAdaptIterations</c>, which
+    /// this writer never sets): the pass's postprocessing goes to <c>postpro/iterationX/</c> and the final
+    /// pass stays at the top level. Nothing in circuitRF reads a pass's fields, because the 3D view draws the
+    /// top-level <c>postpro/paraview</c>. They were most of a run folder: on the 3D Connector example, 420 MB of
+    /// 695 MB. What IS read is kept: <see cref="ReadFacts"/> takes the starting mesh's element count from the
+    /// first pass's <c>palace.json</c>, and the per-pass CSVs are the convergence history. Turning the option
+    /// off instead would lose both.</para>
+    ///
+    /// <para>Every subfolder of a pass is field output (a CSV or <c>palace.json</c> is never in one), so a
+    /// pass loses its subfolders and keeps its files. Best effort: a folder that cannot be removed costs
+    /// disk space, never the run.</para>
+    /// </summary>
+    public static void PruneIterationFields(string postDir)
+    {
+        try
+        {
+            if (!Directory.Exists(postDir)) return;
+            foreach (string pass in Directory.EnumerateDirectories(postDir, "iteration*"))
+                foreach (string sub in Directory.EnumerateDirectories(pass))
+                {
+                    try { Directory.Delete(sub, recursive: true); }
+                    catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+                }
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+    }
+
     /// <summary>What <c>postpro/palace.json</c> records about the mesh and the adaptive passes. The
     /// initial mesh is the lowest-numbered iteration archive's, when Palace made any.</summary>
     public static PalaceRunFacts ReadFacts(string postDir)
