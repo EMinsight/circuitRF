@@ -16317,3 +16317,133 @@ default drive IS that constant, so no existing Palace plot's numbers moved: the 
   dBm on purpose, so it could not be reused.
 
 Gates: `tests/Ui.Tests/ThreeD/FieldDriveTests.cs` (gates 1–7, 9) and `FieldRenderCliTests.Gate12` (gate 8).
+
+## Designer feedback round 12 — Update Layout with VIAGND, a long line, and ground vias that were never "deleted" (2026-10-02)
+
+The report: an MLIN with a shunt inductor and capacitor, each grounded through a VIAGND, and after Update
+Layout only the line was on screen; then a "ground via(s) you deleted were not put back" that survived deleting
+the `.clay`. Reproduced headlessly first (same circuit, the shipped two-layer RO4350B technology). Four causes:
+
+- **The parts were placed, a line-length away.** `PlaceNewInstances` used one pitch for every placement, 1.5×
+  the LARGEST cell. With a 400 mm line that is 600 mm, so the 1.5 mm parts went to x = 0.6 m, 1.2 m, … and the
+  line itself, fifth in schematic order, to 2.4 m — 94,488 mil, exactly where the reported screenshot shows it.
+  Framing "what was added" then shows 2.8 m of board with millimetre parts below a pixel. Now each part takes its
+  own width and the gap is half the MEDIAN part, so one long line cannot push the rest out of view. The fixed
+  10 mm grid survives only for a set with nothing measurable in it.
+- **A VIAGND landed in the row, grounding nothing.** A VIAGND added by a run is now placed beside the pad on its
+  own net — exactly where a generated ground via would sit (`GroundArtwork.Beside`, shared by both) — with a tie
+  from the pin. **The VIAGND is the via**: its pin's net is not "0", so no generated ground via is stacked on it,
+  and nothing enters `GroundViaKeys`. The tie and the instance are ordinary, designer-owned artwork (they do not
+  follow the part the way a generated via does) — a VIAGND is a placed part, and every placed part is the
+  designer's once placed. A VIAGND whose net reaches no resolvable pad is placed in the row as before.
+- **The pour now reaches VIAGNDs** (an extra region per VIAGND instance on the plane its span lands on) and counts
+  them with the ground vias, not among "vias you drew … a signal via among them needs a clearance cut".
+- **LVS read a VIAGND's own barrel as interconnect.** It has one drawn pin, so the "own copper joins two terminals"
+  body rule never applied: its drill put A on the plane, and once round 11 made the pour automatic every VIAGND
+  over it shorted the pad it grounds to every other one (the schematic binds A to the pad's net and the far end
+  to "0"). A VIAGND is now always a body (`LayoutReadBodies.IsGroundVia`): A is read at its pin, and the device
+  gains a second terminal bound to the copper under its landing pad — else the undrawn reference, `NetTable.Ground()`.
+- **"Deleted, not put back" counted vias whose PART had gone.** A key now means "the designer deleted it" only
+  while the instance it belongs to was in the layout before the run; a part placed afresh takes a fresh via.
+- **The memory that survived deleting the file was the open tab.** Deleting a `.clay` outside circuitRF leaves
+  its session in the registry; Update Layout wrote a fresh seed file and then opened the EXISTING session — old
+  artwork, old keys — so the next save would also have resurrected the deleted document. A run that finds its
+  layout file gone while a session for it is open now closes a clean session without asking and starts afresh
+  (the designer deleted the file; nothing of theirs is lost), and when the session holds unsaved edits — the only
+  copy of them — offers the tab's own Save / Don't Save / Cancel: Save writes the edits back and the run updates
+  that file, Don't Save closes the tab and starts afresh (owner, 2026-10-02). With no window to ask in, it refuses
+  with the same choice in words. Deletion through the project tree already closed the tab and was never affected.
+
+Checked as asked: the shipped four-layer board (inner ground on L2) with ground symbols and with VIAGNDs — vias
+on the L1-L2 ground-via layer, pour on the inner plane, LVS clean but for the unrouted line-to-part opens that
+Update Layout never draws. No six-layer technology ships; the path is the same inner-ground path.
+
+Gate: `tests/Ui.Tests/MicrostripGroundReferenceReportTests.cs` — `ALongLine_LeavesThePartsInView_AndAViaGndGroundsItsPadOnce`
+(VIAGND on two- and four-layer, ground symbols on four-layer) and `APartPlacedAfresh_TakesAFreshGroundVia`. The
+stale-session close/prompt is in `WorkspaceViewModel.SchematicToLayout.cs` and has no headless test.
+
+## Designer feedback round 12 — railRF keeps a part that lacks an ESL or ESR, and an inductor part (2026-10-02)
+
+**The ESL the designer typed as 0 never reached the file.** `RailValueFormat.IsBareWhereAUnitIsRequired`
+refuses a bare number in a C, f₀ or L cell (a scale guess — 2026-09-23), and `0` is a bare number, so the
+part-library editor kept the row's old value (none) while the cell went on showing `0`. The `.crlib` had
+no `StatedInductanceHenries` at all and C1 was dropped for "no inductance". **A bare zero is now taken** —
+0 is 0 in every unit — in every editor that shares the rule (part library, series row, source row). The
+same silent path dropped the bare `1` typed into the inductor row's C cell; that is still refused, but the
+part-library editor now SAYS so: the cell turns red, its tooltip names what was not taken, and the
+library's status strip carries the sentence (`PartLibraryRowViewModel.UnreadEntry`). The writer was never
+at fault: `PartLibraryIo` ignores only nulls.
+
+**Round 11's drop rule is reversed (owner decision): a part is kept and the gap is warned.** `PdnSweep`
+used to leave a part out unless it had C, a non-zero total inductance and an ESR basis. Now:
+- **no ESL, no f₀, no mounting loop** → stamped as a pure R-C with 0 H, and a warning names it. A STATED
+  ESL of 0 draws no warning — that is how a pure R-C is said on purpose.
+- **no ESR basis** → stamped with 0 Ω and a warning that a lossless branch's peaks are bounded only by
+  the rest of the rail.
+- **L and no C (an inductor part)** → stamped as a series R-L to the return, `R + jωL` (the capacitor
+  model with C → ∞), with a NOTE. It is in the impedance only: the DC run's `ShuntParts` carry no DC
+  path by construction, so the source rows still carry the DC drop and nothing there changed.
+- only a part that did not resolve, or states neither C nor L, is still left out by name.
+
+**The parts table read *unresolved* for a stated 20 mΩ ESR** because `RailPartModel.EsrOhms` quotes the
+ESR at the part's own resonance, and a part with no L (or no C) has none. A STATED ESR is frequency-
+independent, so it is now quoted as is. The C column of an inductor part reads `none (R-L)`, its f₀ and a
+pure R-C's read `—`, and an unstated ESL reads `unstated` rather than `unresolved`.
+
+**Create part library / Save to library on an unsaved `.crail` now saves it first** (the close prompt's
+idiom: `SaveAsync`, then carry on; a cancelled picker stops quietly) instead of refusing with "save this
+document first". **The strip's "1 row still holds railRF's starting value"** sat beside the parts' own
+counts and read as a part row; it now names the row kind and value ("1 load still draws railRF's
+starting 1 mA").
+
+**Why the designer's board still reads ~10 mΩ, not 1.5 Ω.** His `.crail`'s source states R out = 10 mΩ, and
+in railRF the source IS the regulator's output impedance — a shunt from the rail to its return. With both
+parts kept, the board's |Z| is the closed form 10 mΩ ∥ (20 mΩ + jω·6 nH) ∥ (20 mΩ + 1/jω·100 nF) to within
+1e-12 (the 638 fF plane and the copper do not show at this scale), peaking at 9.93 mΩ. In his external
+simulator the generator was only the excitation, so its source resistance was not in the measured
+impedance. The slide's network as two parts behind a source too resistive to matter peaks at **1.510 Ω at
+6.497 MHz**, the closed form Z0²/(R_L + R_C). His simulator's cursor read 1.457 Ω at 6.532 MHz: a grid point
+off the peak, in a tool that gives an inductor a small series resistance by default (1 mΩ more loss alone
+gives 1.474 Ω). The usual way to say "supply inductance" is still the source row's R out and L out.
+
+Gates: `ParallelLcResonanceTests` (the rows as entered against the closed form at every point; the slide
+as two parts; a part with no ESR), `RailRfFieldReport5Tests.ABareZeroIsTaken_AndARefusedEntryIsSaid`,
+and `RailRfReportedDefectsTests` (the strip's wording). The save-first change is window code with no
+headless seam and is not gated.
+
+*Seen, not changed:* the run printed both "No resonance was found between 10 kHz and 200 MHz" and "9
+frequency point(s) were added … at the resonances the search located" on the same board.
+
+## Designer feedback round 12, follow-up — a crossing set aside is not "no sign change", and an inductor part is a DC short (2026-10-02)
+
+**The resonance notes contradicted each other.** On the designer's board one run said both "No resonance
+was found … the reactance does not change sign between any two solved points" and "9 frequency point(s)
+were added … at the resonances the search located". Both were false. `PlanarResonanceSearch` probed ONE
+zero crossing near 6.5 MHz — the parts' 6 nH against 100 nF — spent 9 points bracketing it, and dropped it
+because its Q is far below `MinQ` (1): the source's 10 mΩ across the rail damps that tank to Q ≈ 0.04, so
+|Z| passes through the crossing nearly flat. The engine counts such a crossing in
+`PlanarResonanceOutcome.DiscardedCrossings`; railRF's two sentences in `PdnAdaptiveSweep` never read it.
+They now do: a crossing set aside is said as one (with the Q bar and why a mostly resistive rail crosses
+zero without resonating), the added points are placed "where the search probed a zero crossing … and set
+it aside", and a found-plus-discarded run says both. The engine's search is unchanged.
+
+**An inductor part is now a DC path.** A real inductor from a rail to its return is a short at DC, and the
+DC answer is where a designer catches it (owner, 2026-10-02), so the "impedance only" ruling of the morning
+is reversed. Two facts made it more than a stamp: `PdnAssembly.StampShunts` stamped only capacitors (a null
+C fell into a stale "no capacitance in the library … counted" diagnostic), and `RailBoardInputs.ShuntParts`
+was never populated, so the window's DC run and `circuitrf rail` received no shunt parts at all.
+`RailDcRun.RequestFor` now adds the rail's mounted inductor parts itself — at DC only; the plane run at a
+frequency takes none, because a resistor alone is not the R-L the frequency answer stamps — as
+`PdnShuntPart.DcPathOhms`, stamped as a resistor at the ESR (`PdnOriginKind.ShuntDcPath`). An unstated or
+class-only ESR is 0 Ω, which `ResistorModel` already stamps as its Gmax near-short (the same treatment an
+unstated series DCR gets). The origin carries no `ResistanceOhms`, so the drop breakdown does not rank it —
+it is not on the path from source to load. `Assemble` names each one as a FINDING with the current it draws
+and the worst load's voltage. On the designer's PDN4: 101.8 A through L1's 20 mΩ, the load at 2.045 V
+from 3.3 V. Capacitors still carry no DC path.
+
+**A class-only inductor row** keeps its "0 Ω of loss" warning, but its own sentence now: a dielectric class
+sets a capacitor's loss from DF and C, and gives a part with no C nothing — the general sentence's "no
+dielectric class" was false for that row.
+
+Gates: `InductorPartDcAndResonanceNoteTests` (DC short vs capacitor; crossing set aside in both sentences)
+and `ParallelLcResonanceTests.AnInductorWithOnlyADielectricClass_IsWarnedForWhatTheClassCannotGive`.

@@ -337,6 +337,18 @@ public static class LayoutRead
                     nets.Attach(net, deviceIndex, terminals.Count - 1);
                 }
 
+                // A VIAGND's far end is the plane, not a pin: the copper under its landing pad — a drawn plane or pour —
+                // else the undrawn reference, which is what the schematic's ground is.
+                if (LayoutReadBodies.IsGroundVia(subView) && terminals.Count > 0)
+                {
+                    // ViaPCell draws the pad A sits on first and the landing pad second, when the two layers differ.
+                    var pads2 = subView!.Shapes.OfType<CircleShape>().ToList();
+                    int piece = pads2.Count > 1 ? pieces.IndexAt(x, y, pads2[^1].Layer) : -1;
+                    int ground = piece >= 0 ? nets.Of(pieces.NetOfPiece(piece)) : nets.Ground();
+                    terminals.Add(new LvsTerminal(terminals.Max(t => t.Port) + 1, "", ground));
+                    nets.Attach(ground, deviceIndex, terminals.Count - 1);
+                }
+
                 // R-lvs9-2b. A module placement is ONE device whose terminals are its boundary
                 // pins, and the descent that compares its INSIDE is the caller's — recorded here
                 // because this is the walk that knows which placement is which.
@@ -781,6 +793,9 @@ public static class LayoutRead
             if (_ofPartition.TryGetValue(partitionNet, out int existing)) return existing;
             return _ofPartition[partitionNet] = Add(pieces.NameOfNet(partitionNet));
         }
+
+        /// <summary>The ground net, "0" — the one every grounded partition net already belongs to.</summary>
+        public int Ground() => _ground >= 0 ? _ground : _ground = Add("0");
 
         /// <summary>A net with one pin on it and no name — what a pin that landed on nothing is.</summary>
         public int Open() => Add(null);

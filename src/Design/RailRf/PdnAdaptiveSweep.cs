@@ -152,14 +152,28 @@ public static class PdnAdaptiveSweep
         if (outcome.Ran) notes.Add(Describe(outcome, search, solved.Keys.First(), solved.Keys.Last(), ports));
         else if (outcome.Note is { Length: > 0 } note) notes.Add(note);
 
+        // WHERE the points went is said from what the search KEPT and what it SET ASIDE (field
+        // report, 2026-10-02): a crossing it probed and then discarded costs points too, and a note
+        // that put them all "at the resonances the search located" sat beside "No resonance was
+        // found" on the same run.
         if (outcome.AddedFrequencies.Count > 0)
+        {
+            string onPort = ports > 1 ? $" They were placed on port {search.PortNumber}." : "";
+            string where = (outcome.Resonances.Count, outcome.DiscardedCrossings) switch
+            {
+                (> 0, > 0) => "at the resonances the search located and at the zero crossings it probed and set aside",
+                (> 0, _)   => "at the resonances the search located",
+                (_, > 0)   => "where the search probed a zero crossing of the reactance and set it aside as no resonance",
+                _          => "by the resonance search",
+            };
             notes.Add(
-                $"{outcome.AddedFrequencies.Count} frequency point(s) were added to the grid you asked for, at " +
-                $"the resonances the search located. A log grid steps straight over a narrow plane " +
-                "resonance and the curve it draws looks smooth; these points are the ones that " +
-                (ports > 1
-                    ? $"would otherwise be missing. They were located on port {search.PortNumber}."
-                    : "would otherwise be missing."));
+                $"{outcome.AddedFrequencies.Count} frequency point(s) were added to the grid you asked for, " +
+                where + ". " +
+                (outcome.Resonances.Count > 0
+                    ? "A log grid steps straight over a narrow plane resonance and the curve it draws looks " +
+                      "smooth; these points are the ones that would otherwise be missing."
+                    : "They are solved points of the same curve and change nothing else.") + onPort);
+        }
 
         return new PdnSampledSweep(
             [.. solved.Keys], [.. solved.Values], outcome.AddedFrequencies, outcome.Resonances, notes);
@@ -183,7 +197,19 @@ public static class PdnAdaptiveSweep
             sb.Append("The resonance search was stopped before it finished; what follows is what it had " +
                       "found by then. ");
 
-        if (outcome.Resonances.Count == 0)
+        if (outcome.Resonances.Count == 0 && outcome.DiscardedCrossings > 0)
+        {
+            // The reactance DID change sign — the sentence below would be false here.
+            sb.Append($"No resonance was found{onPort} between {Hz(loHz)} and {Hz(hiHz)}. The reactance " +
+                      $"crosses zero at {outcome.DiscardedCrossings} place(s), and each was probed and set " +
+                      $"aside: its Q is below {search.MinQ:G3}, so |Z| neither peaks nor dips there. That is " +
+                      "what a rail whose impedance is mostly RESISTANCE does — where the rail's inductance " +
+                      "and capacitance cancel, a low resistance across the rail (a source's R out, a " +
+                      "lossy part) damps the swing to almost nothing, and the curve passes through the " +
+                      "crossing nearly flat. A resonance needs the reactance to dominate on both sides " +
+                      "of it.");
+        }
+        else if (outcome.Resonances.Count == 0)
         {
             sb.Append($"No resonance was found{onPort} between {Hz(loHz)} and {Hz(hiHz)}: the reactance " +
                       "does not change sign between any two solved points. A resonance narrow enough to " +
@@ -199,6 +225,9 @@ public static class PdnAdaptiveSweep
                     ? $"{Hz(r.FrequencyHz)}, an anti-resonance — |Z| peaks at {Ohms(r.ResistanceOhm)}, Q {r.Q:G3}"
                     : $"{Hz(r.FrequencyHz)}, a series resonance — |Z| dips to {Ohms(r.ResistanceOhm)}, Q {r.Q:G3}")));
             sb.Append('.');
+            if (outcome.DiscardedCrossings > 0)
+                sb.Append($" {outcome.DiscardedCrossings} further zero crossing(s) of the reactance were " +
+                          $"probed and set aside, each with a Q below {search.MinQ:G3} — no peak or dip there.");
         }
 
         if (outcome.CapBound)

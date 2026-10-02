@@ -71,6 +71,16 @@ public enum PdnOriginKind
     /// the stackup.</para>
     /// </summary>
     PlaneShunt,
+
+    /// <summary>
+    /// A PART across the rail that conducts at DC — an inductor part, an L and an ESR with no C,
+    /// stamped at its ESR (field report, 2026-10-02). A real inductor from a rail to its return is a
+    /// short at DC, and the DC answer is where that has to show: the result names it with the
+    /// current it draws. Distinct from <see cref="Shunt"/>, whose whole definition is that it carries
+    /// no DC path, and kept out of the drop breakdown (it is not ON the path from source to load —
+    /// it is a second load).
+    /// </summary>
+    ShuntDcPath,
 }
 
 /// <summary>

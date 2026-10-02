@@ -118,8 +118,9 @@ public static class SchematicToLayoutGenerator
     /// </summary>
     private const long GridPitchDbu = 10_000_000;
 
-    /// <summary>Clear space between neighbours, as a fraction of the largest cell placed. Half a cell
-    /// reads as "laid out, not touching" at any scale, which is the whole point of measuring.</summary>
+    /// <summary>Clear space between neighbours, as a fraction of the median cell placed. Half a cell
+    /// reads as "laid out, not touching" at any scale, which is the whole point of measuring — and the
+    /// MEDIAN, not the largest, so one long line does not push every part out of view.</summary>
     private const long GridGapNumerator = 1, GridGapDenominator = 2;
 
     /// <summary>
@@ -400,7 +401,26 @@ public static class SchematicToLayoutGenerator
         if (deleteIndices.Count > 0)
             chain = Chain(chain, new DeleteInstancesCommand(target, deleteIndices));
 
-        var addedRegion = PlaceNewInstances(newInstances, targetLayoutBaseDir);
+        // A VIAGND added this run is placed beside the pad it grounds, tied to it, rather than in the row — it is the
+        // via that pad's ground runs through, and a via a row-width away from its part grounds nothing.
+        var beside = ViaGndPartners(newInstances, physical, extraction, target, existingBySchematicId, replacedAt,
+                                    schematicDir, targetLayoutBaseDir, technology);
+        var addedRegion = PlaceNewInstances(newInstances.Where(n => !beside.ContainsKey(n.Instance)).ToList(),
+                                            targetLayoutBaseDir);
+        foreach (var (via, partner) in beside)
+        {
+            var origin = CellHierarchy.InstanceBbox(via, targetLayoutBaseDir);
+            long pad = Math.Max(origin.MaxX - origin.MinX, origin.MaxY - origin.MinY);
+            var (vx, vy, tie) = GroundArtwork.Beside(partner.Instance, partner.Cell, partner.Pin, pad, target.DbuPerMicron);
+            via.X = vx - (origin.MinX + origin.MaxX) / 2;
+            via.Y = vy - (origin.MinY + origin.MaxY) / 2;
+            chain = Chain(chain, new AddShapeCommand(target, tie));
+            addedRegion = addedRegion.Union(CellHierarchy.InstanceBbox(via, targetLayoutBaseDir))
+                                     .Union(CellHierarchy.InstanceBbox(partner.Instance, targetLayoutBaseDir));
+            lines.Add(new ReportLine(via.SchematicId ?? "",
+                $"{via.SchematicId} — placed beside {partner.Instance.SchematicId} pin {partner.Pin.Name} and tied to its pad",
+                ReportSeverity.Info));
+        }
         ReportPlacementOntoDrawnArtwork(target, newInstances, targetLayoutBaseDir, lines);
 
         // Designer feedback round 11: the ground the schematic states, drawn — a via at every ground-symbol pin and
@@ -778,34 +798,102 @@ public static class SchematicToLayoutGenerator
         if (placed.Count == 0) return Bbox.Empty;
 
         // Measured at the origin, which is where they still are: an instance's box includes its own
-        // placement — the rotation Run gave it included — so the offset below is exact. The pitch
-        // takes the larger of the two sides, which a quarter turn does not change.
-        var extents = new List<Bbox>(placed.Count);
-        long largest = 0;
-        foreach (var (_, inst) in placed)
+        // placement — the rotation Run gave it included — so the offset below is exact.
+        var extents = placed.Select(p => CellHierarchy.InstanceBbox(p.Instance, targetLayoutBaseDir)).ToList();
+        var sizes = extents.Where(b => !b.IsEmpty).Select(b => Math.Max(b.MaxX - b.MinX, b.MaxY - b.MinY))
+                           .Where(d => d > 0).Order().ToList();
+
+        if (sizes.Count == 0)
         {
-            var bb = CellHierarchy.InstanceBbox(inst, targetLayoutBaseDir);
-            extents.Add(bb);
-            if (!bb.IsEmpty)
-                largest = Math.Max(largest, Math.Max(bb.MaxX - bb.MinX, bb.MaxY - bb.MinY));
+            // Nothing measurable: the fixed grid, which is still better than stacking everything on the origin.
+            for (int i = 0; i < placed.Count; i++)
+            {
+                placed[i].Instance.X = (i % GridCols) * GridPitchDbu;
+                placed[i].Instance.Y = -(i / GridCols) * GridPitchDbu;
+            }
+            return Bbox.Empty;
         }
 
-        long pitch = largest > 0
-            ? largest + largest * GridGapNumerator / GridGapDenominator
-            : GridPitchDbu;
+        // DESIGNER REPORT (round 12): a 400 mm line and two SMD parts, and only the line on screen. A uniform pitch
+        // of one and a half times the LARGEST cell put the 1.5 mm parts 600 mm and 1.2 m away. So each part takes
+        // its own width, and the clear space between neighbours is half a TYPICAL part (the median), which reads as
+        // "laid out, not touching" for the parts and does not let one long line push everything else out of view.
+        long gap = Math.Max(1, sizes[sizes.Count / 2] * GridGapNumerator / GridGapDenominator);
 
         var region = Bbox.Empty;
-        for (int i = 0; i < placed.Count; i++)
+        long rowCentre = 0;
+        for (int first = 0; first < placed.Count; first += GridCols)
         {
-            var (slot, inst) = placed[i];
-            inst.X = (slot % GridCols) * pitch;
-            inst.Y = (slot / GridCols) * pitch;
+            int last = Math.Min(first + GridCols, placed.Count);
+            long rowHeight = 0;
+            for (int i = first; i < last; i++)
+                if (!extents[i].IsEmpty) rowHeight = Math.Max(rowHeight, extents[i].MaxY - extents[i].MinY);
+            if (first > 0) rowCentre -= rowHeight / 2;
 
-            if (extents[i].IsEmpty) continue;
-            region = region.Union(new Bbox(extents[i].MinX + inst.X, extents[i].MinY + inst.Y,
-                                           extents[i].MaxX + inst.X, extents[i].MaxY + inst.Y));
+            long cursor = 0;
+            for (int i = first; i < last; i++)
+            {
+                var (_, inst) = placed[i];
+                var bb = extents[i];
+                if (bb.IsEmpty)
+                {
+                    inst.X = cursor;
+                    inst.Y = rowCentre;
+                    cursor += gap;
+                    continue;
+                }
+                inst.X = cursor - bb.MinX;
+                inst.Y = rowCentre - (bb.MinY + bb.MaxY) / 2;
+                cursor += bb.MaxX - bb.MinX + gap;
+                region = region.Union(new Bbox(bb.MinX + inst.X, bb.MinY + inst.Y, bb.MaxX + inst.X, bb.MaxY + inst.Y));
+            }
+            rowCentre -= rowHeight / 2 + gap;
         }
         return region;
+    }
+
+    /// <summary>A VIAGND added this run, and the pad it grounds: the first other part's drawn pin on the VIAGND's own
+    /// net whose placement (added this run or already there) and pad resolve. A VIAGND whose net reaches no such pad
+    /// is placed in the row like any other part.</summary>
+    private static Dictionary<LayoutInstance, (LayoutInstance Instance, LayoutView Cell, LayoutPin Pin)> ViaGndPartners(
+        List<(int Slot, LayoutInstance Instance)> added, List<EditableComponent> physical,
+        NetExtractor.ExtractionResult extraction, LayoutView target,
+        Dictionary<string, (int Index, LayoutInstance Instance)> existing, Dictionary<int, LayoutInstance> replacedAt,
+        string schematicDir, string targetLayoutBaseDir, Technology? technology)
+    {
+        var result = new Dictionary<LayoutInstance, (LayoutInstance, LayoutView, LayoutPin)>(ReferenceEqualityComparer.Instance);
+        if (technology is null) return result;
+
+        var nets = new Dictionary<string, Instance>(StringComparer.Ordinal);
+        foreach (var inst in extraction.TestBench.Instances) nets.TryAdd(inst.InstanceName, inst);
+        var placedById = new Dictionary<string, LayoutInstance>(StringComparer.Ordinal);
+        foreach (var (sid, e) in existing) placedById[sid] = replacedAt.GetValueOrDefault(e.Index, e.Instance);
+        foreach (var (_, inst) in added)
+            if (inst.SchematicId is { Length: > 0 } sid) placedById[sid] = inst;
+
+        foreach (var (slot, via) in added)
+        {
+            var comp = physical[slot];
+            if (comp.Symbol != SymbolKind.ViaGnd || !nets.TryGetValue(comp.InstanceName, out var viaNets) ||
+                viaNets.NetBindings.Count == 0 || viaNets.NetBindings[0] is not { } net || net == "0") continue;
+
+            foreach (var other in physical)
+            {
+                if (ReferenceEquals(other, comp) || ViaSubstrateInjection.IsViaKind(other.Symbol)) continue;
+                if (!nets.TryGetValue(other.InstanceName, out var otherNets) ||
+                    !placedById.TryGetValue(other.InstanceName, out var partner)) continue;
+                var symbol = other.ExternalSymbolRef is { } symRef ? CellSymbolResolver.Resolve(symRef, schematicDir) : null;
+                int drawn = Math.Min(other.ToRenderComponent(null, symbol).Ports.Count, otherNets.NetBindings.Count);
+                int k = Enumerable.Range(0, drawn).FirstOrDefault(i => otherNets.NetBindings[i] == net, -1);
+                if (k < 0) continue;
+                if (CellLayoutResolver.Resolve(partner.CellRef, targetLayoutBaseDir) is not
+                        { State: CellLayoutState.Resolved, View: { } cell }) continue;
+                if (SchematicLayoutOrientation.CellPinFor(k + 1, CellPins.Resolve(cell, technology)) is not { } pin) continue;
+                result[via] = (partner, cell, pin);
+                break;
+            }
+        }
+        return result;
     }
 
     // ── Shared PCell-eligibility helpers (also used by the palette→layout drag path, §3) ──────────

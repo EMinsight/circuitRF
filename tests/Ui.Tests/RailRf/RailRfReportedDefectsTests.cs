@@ -108,7 +108,8 @@ public sealed class RailRfReportedDefectsTests
         Assert.Equal(rail.NominalVoltageV, source.OpenCircuitVoltageV);
 
         Assert.Equal(seededBefore + 2, vm.SeededRowCount);
-        Assert.Contains("still hold railRF's starting values", vm.StatusLine);
+        Assert.Contains("1 load still draws railRF's starting 1 mA", vm.StatusLine);
+        Assert.Contains("1 source still holds railRF's starting voltage", vm.StatusLine);
 
         // Clearing the cell restores the observation port — the gesture §2.2 requires, unchanged.
         var row = vm.Loads.Single(r => ReferenceEquals(r.Load, load));

@@ -78,6 +78,36 @@ public partial class WorkspaceViewModel
     /// When non-null, ONLY this wBond component is written — the instance generator does not run at all.
     /// Null is the ordinary whole-schematic command.
     /// </param>
+    /// <summary>
+    /// The layout file was deleted on disk while its tab held unsaved edits: the same Save / Don't Save / Cancel
+    /// closing the tab offers. Save writes the edits back to the file and the run updates THAT; Don't Save closes the
+    /// tab and the run starts a new layout; Cancel runs nothing.
+    /// </summary>
+    private async Task AskThenRerunLayoutUpdate(SchematicDocument doc, EditableComponent? onlyWBond, string targetPath,
+                                                Layout.LayoutDocument tab, Avalonia.Controls.Window owner)
+    {
+        var dlg = new Views.Dialogs.SaveChangesDialog(
+            $"'{Path.GetFileName(targetPath)}' was deleted on disk, but its open tab has unsaved changes. " +
+            "Save them before updating the layout?",
+            title: "Unsaved Changes");
+        await dlg.ShowDialog(owner);
+
+        switch (dlg.Result)
+        {
+            case Views.Dialogs.SaveChangesResult.Save:
+                await SaveSingleLayoutDocument(tab, owner);
+                if (tab.IsDirty) return;   // the save was cancelled
+                break;
+            case Views.Dialogs.SaveChangesResult.DontSave:
+                _factory.ForceCloseDockable(tab);
+                DiscardLayoutSessionIfUnreferenced(targetPath);
+                break;
+            default:
+                return;
+        }
+        RunLayoutUpdate(doc, onlyWBond);
+    }
+
     private void RunLayoutUpdate(SchematicDocument doc, EditableComponent? onlyWBond)
     {
         if (doc.IsScratch)
@@ -104,6 +134,33 @@ public partial class WorkspaceViewModel
         string? primaryBeforeName = primaryBefore?.ResolvedName;
 
         bool createdNewFile = !File.Exists(targetPath);
+
+        // DESIGNER REPORT (round 12): the layout file deleted outside circuitRF while its tab was still open, and
+        // every later run wrote into the OPEN copy — the old artwork and the ground vias it remembered placing, so
+        // "deleted, not put back" survived the file being gone. The disk is what the designer changed, so the open
+        // copy is the stale one. A clean one is closed without asking — the designer deleted the file, so there is
+        // nothing of theirs to lose (owner, 2026-10-02). One with unsaved edits is the only copy of them, so it is
+        // offered Save / Don't Save / Cancel exactly as closing its tab would be, and the run then carries on.
+        if (createdNewFile && _layoutRegistry.TryGet(Path.GetFullPath(targetPath), out var staleSession) && staleSession is not null)
+        {
+            if (staleSession.IsDirty)
+            {
+                if (_openDocsByPath.GetValueOrDefault(targetPath) is Layout.LayoutDocument dirtyTab
+                    && ResolveOwner(null) is { } owner)
+                {
+                    _ = AskThenRerunLayoutUpdate(doc, onlyWBond, targetPath, dirtyTab, owner);
+                    return;
+                }
+                Messages.Error(
+                    $"Update Layout from Schematic: '{Path.GetFileName(targetPath)}' is open with unsaved changes but " +
+                    "no longer exists on disk. Save it to keep those changes, or close it without saving to start a " +
+                    "new layout — then run Update Layout again.", targetPath);
+                return;
+            }
+            if (_openDocsByPath.TryGetValue(targetPath, out var staleTab)) _factory.ForceCloseDockable(staleTab);
+            DiscardLayoutSessionIfUnreferenced(targetPath);
+        }
+
         if (createdNewFile)
         {
             Directory.CreateDirectory(layoutDir);

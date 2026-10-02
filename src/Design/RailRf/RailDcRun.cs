@@ -839,6 +839,41 @@ public static class RailDcRun
     }
 
     /// <summary>
+    /// The rail's mounted inductor parts — an L and an ESR with no C, the test <c>PdnSweep</c> stamps
+    /// its series R-L by — as DC paths from the rail to its return, each at its ESR.
+    /// </summary>
+    /// <remarks>
+    /// <b>A real inductor from a rail to its return is a short at DC, and the DC answer is where a
+    /// designer has to see it</b> (owner, 2026-10-02). Leaving it out would let a board with an
+    /// inductor in the wrong place report a clean drop. An unstated ESR — or one that is only a
+    /// dielectric class's, which says nothing about a part with no C — is 0 Ω, which the resistor
+    /// stamps as its near-short, and the result says so.
+    /// </remarks>
+    private static IEnumerable<PdnShuntPart> InductorPartsOf(RailSpec rail, RailDcRequest request)
+    {
+        if (request.PartLibrary is not { } library) yield break;
+        var resolver = new RailPartResolver(library) { MeasureFileHealth = false };
+        foreach (var part in rail.ShuntParts)
+        {
+            if (!part.Mounted || part.Refdes is not { Length: > 0 } refdes) continue;
+            var model = resolver.Resolve(part, rail.NominalVoltageV);
+            if (!model.IsInductor) continue;
+            yield return new PdnShuntPart(
+                refdes, new RailPortAnchor { Refdes = refdes }, null, DcResistanceOf(model));
+        }
+    }
+
+    /// <summary>An inductor part's resistance at DC: its stated ESR, or a measured file's at the
+    /// lowest frequency it holds; 0 where neither is there.</summary>
+    private static double DcResistanceOf(RailPartModel model) => model.EsrBasis switch
+    {
+        EsrProvenance.Stated   => model.StatedEsrOhms is { } r && r > 0 ? r : 0.0,
+        EsrProvenance.Measured => model.Measured?.Band is { } band && model.EsrOhmsAt(band.LowHz) is var r && double.IsFinite(r) && r > 0
+                                      ? r : 0.0,
+        _ => 0.0,
+    };
+
+    /// <summary>
     /// One series element, resolved through <see cref="RailSeriesModel.Resolve"/> with the reader the
     /// window's parts table uses — series-thru, fixture inferred off the data — so the DCR in the
     /// breakdown and the one the table prints come from the same file the same way.
@@ -896,7 +931,12 @@ public static class RailDcRun
         // what bridges the gaps imported copper leaves at every pad, and what the designer put in
         // the rail on purpose.
         SeriesElements  = [.. request.SeriesElements, .. SeriesElementsOf(rail, request)],
-        ShuntParts      = request.ShuntParts,
+        // The caller's own, PLUS — at DC only — the rail's inductor parts as the resistors they are
+        // there (field report, 2026-10-02). Above DC a resistor alone would be a different part from
+        // the R-L the frequency answer stamps, so the plane run takes none of them.
+        ShuntParts      = frequencyHz == 0
+            ? [.. request.ShuntParts, .. InductorPartsOf(rail, request)]
+            : request.ShuntParts,
         Settings        = request.Document.Settings,
         Mesh            = mesh ?? request.Mesh,
         Graph           = request.Graph,
@@ -947,6 +987,30 @@ public static class RailDcRun
         }
 
         var sources = SourceShares(rail, pdn, solution, request.LengthFormat);
+
+        // An inductor part across the rail is a SHORT at DC, and this is where it shows (owner,
+        // 2026-10-02): named, with the current it draws and what the rail falls to — a finding, not
+        // a note, because the drop it causes swamps everything else in the answer.
+        foreach (var o in pdn.Origins)
+        {
+            if (o.Kind != PdnOriginKind.ShuntDcPath) continue;
+            var c = nl.Components[o.ComponentIndex];
+            double amps = CurrentThrough(c, solution);
+            double ohms = c.Parameters["R"].AsReal();
+            double vAcross = solution.VoltageAt(c.Nodes[0]) - solution.VoltageAt(c.Nodes[1]);
+            string lowest = ports.Count > 0
+                ? $"{ports.Min(p => p.VoltageV):0.###} V at its worst load"
+                : $"{vAcross:0.###} V across the part";
+            findings.Add(
+                $"{o.Refdes} is an inductor part across the rail — an inductance with no capacitance — " +
+                $"and at DC that is a short to the return: it draws {Amps(amps)} through " +
+                (ohms > 0 ? $"its {ohms * 1e3:0.###} mΩ ESR" : "no stated ESR, stamped as a near-short") +
+                ", and the rail falls to " + lowest +
+                (sourceVoltage is { } vs ? $" from the source's {vs:0.###} V" : "") +
+                ". A part with no capacitance across a rail passes DC. If this one stands for a supply's own " +
+                "output impedance, its R out and L out belong on that source row instead, where they are " +
+                "the supply rather than a short across it.");
+        }
         var breakdown = Breakdown(request, pdn, solution, out var breakdownLocations);
 
         // §2.4's via check. It reads the currents this solve already produced — brief 3 stamped each
@@ -1112,6 +1176,9 @@ public static class RailDcRun
 
         return shares;
     }
+
+    private static string Amps(double a) =>
+        Math.Abs(a) >= 1 ? $"{a:0.###} A" : Math.Abs(a) >= 1e-3 ? $"{a * 1e3:0.###} mA" : $"{a * 1e6:0.###} µA";
 
     private static int IndexOfPath(PdnNetlist pdn, string path)
     {

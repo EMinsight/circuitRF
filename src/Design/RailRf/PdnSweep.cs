@@ -694,18 +694,35 @@ public static class PdnSweep
         // would be — it is not a part with no model, it is a part that is not fitted — and it is
         // NAMED in the notes below rather than silently subtracted, because a curve that has
         // quietly lost a bulk capacitor looks entirely normal.
+        var noEsl = new List<string>();
+        var noEsr = new List<string>();
+        var classOnlyInductors = new List<string>();
+        var inductors = new List<string>();
         foreach (var part in request.Parts.Mounted)
         {
-            if (!part.IsResolved ||
-                !(part.CapacitanceFarads > 0) ||
-                part.TotalInductanceHenries is not { } l || !(l > 0) ||
-                part.EsrBasis is null)
+            // KEPT, AND SAID (field report, 2026-10-02). A part used to be left out of the answer
+            // whenever its row lacked an ESL or an ESR, and a designer who had typed both — one of
+            // them as 0 — saw a curve with no parts in it. Only a part with nothing to stamp is left
+            // out now: one that did not resolve, or one with neither a capacitance nor an inductance.
+            // A missing ESL or ESR is stamped as 0 and NAMED in a warning, because the curve it
+            // produces is a real answer to a smaller model, not a fault.
+            bool hasC = part.CapacitanceFarads > 0;
+            if (!part.IsResolved || (!hasC && part.InductanceHenries is not > 0))
             {
                 unmodelled.Add(WhyNotModelled(part));
                 continue;
             }
 
-            double c = part.CapacitanceFarads;
+            double l = part.TotalInductanceHenries ?? 0.0;
+            if (hasC && part.TotalInductanceHenries is null) noEsl.Add(part.Name);
+            // A class default is DF/(2π·f·C) and so says nothing about a part with no C.
+            if (part.EsrBasis is null) noEsr.Add(part.Name);
+            else if (!hasC && part.EsrBasis == EsrProvenance.ClassDefault) classOnlyInductors.Add(part.Name);
+            if (!hasC) inductors.Add(part.Name);
+
+            // An inductor part — L and an ESR, no C — is the Z = R + jωL + 1/(jωC) branch with C
+            // taken as infinite: a series R-L from the rail to its return.
+            double c = hasC ? part.CapacitanceFarads : double.PositiveInfinity;
             var measuredBand = part.Measured?.Band;
 
             // Q-15's class default falls as 1/f and a measured ESR is Re Z out of the part's own
@@ -723,7 +740,7 @@ public static class PdnSweep
             {
                 double w = 2.0 * Math.PI * f;
                 double r = part.EsrOhmsAt(measuredBand is { } mb ? Math.Clamp(f, mb.LowHz, mb.HighHz) : f);
-                return new Complex(double.IsFinite(r) ? r : 0.0, w * l - 1.0 / (w * c));
+                return new Complex(double.IsFinite(r) ? r : 0.0, w * l - (hasC ? 1.0 / (w * c) : 0.0));
             };
 
             // The bank a part belongs to is its PART NUMBER — identity, never value, type or
@@ -747,9 +764,42 @@ public static class PdnSweep
         if (unmodelled.Count > 0)
             warnings.Add(
                 $"{unmodelled.Count} part(s) on this rail are NOT in this answer: " +
-                string.Join("; ", unmodelled) + ". An unstated value is never a defaulted one, and a " +
-                "part stamped with no loss would make every peak it takes part in unbounded. " +
-                request.Parts.Summary);
+                string.Join("; ", unmodelled) + ". " + request.Parts.Summary);
+
+        if (noEsl.Count > 0)
+            warnings.Add(
+                $"{noEsl.Count} part(s) state no ESL, no self-resonant frequency and no mounting loop, so " +
+                $"each is in this answer as a pure R-C with 0 H of inductance: {string.Join(", ", noEsl)}. " +
+                "Above its real self-resonance such a part reads lower than it is. State the ESL or f₀ — " +
+                "an ESL of 0 is accepted, and is how a pure R-C is said on purpose.");
+
+        if (noEsr.Count > 0)
+            warnings.Add(
+                $"{noEsr.Count} part(s) state no ESR — no value, no dielectric class and no attached file — " +
+                $"so each is in this answer with 0 Ω of loss: {string.Join(", ", noEsr)}. A lossless " +
+                "branch leaves every resonance it takes part in damped only by the rest of the rail, so " +
+                "its minimum reads too deep and the anti-resonance peaks beside it too high — unbounded " +
+                "where nothing else on the rail is lossy. State the ESR.");
+
+        // A dielectric class gives a CAPACITOR its loss (DF/(2π·f·C)); with no C it gives nothing,
+        // so the sentence above — "no dielectric class" — would be false for these rows.
+        if (classOnlyInductors.Count > 0)
+            warnings.Add(
+                $"{classOnlyInductors.Count} inductor part(s) state a dielectric class and no ESR, so each is " +
+                $"in this answer with 0 Ω of loss: {string.Join(", ", classOnlyInductors)}. A dielectric " +
+                "class sets a capacitor's loss from its dissipation factor and its capacitance; a part with " +
+                "no capacitance takes nothing from it. A lossless branch leaves every resonance it takes part " +
+                "in damped only by the rest of the rail, so the peaks beside it read too high. State the ESR.");
+
+        if (inductors.Count > 0)
+            notes.Add(
+                $"{string.Join(", ", inductors)} state(s) an inductance and no capacitance, so each is in " +
+                "this answer as a series R-L from the rail to its return — the capacitor model with C " +
+                "taken as infinite. That branch passes DC, so the DC answer carries it too — as a " +
+                "resistor at its ESR from the rail to its return, which is a short, and the DC result " +
+                "names the current it draws. Where the inductor stands for a supply's own output " +
+                "impedance, its source row's R out and L out say the same thing in the impedance and " +
+                "are the supply rather than a short at DC, so the source row is the place for it.");
 
         if (request.Parts.Unmounted is { Count: > 0 } off)
             notes.Add(
@@ -760,21 +810,12 @@ public static class PdnSweep
 
         return branches;
 
-        // What one part lacks, in the order the branch needs it: a capacitance, an inductance, a loss.
+        // Why a part is left out: it did not resolve, or it has nothing to stamp.
         static string WhyNotModelled(RailPartModel part)
         {
             if (!part.IsResolved) return $"{part.Name} did not resolve";
-            if (!(part.CapacitanceFarads > 0))
-                return part.InductanceHenries is > 0
-                    ? $"{part.Name} states an inductance and no capacitance — a railRF part is a capacitor " +
-                      "across the rail, and an inductor from the rail to the return would short the supply at " +
-                      "DC; a supply's own inductance is its source row's L out"
-                    : $"{part.Name} has no capacitance";
-            if (part.TotalInductanceHenries is not > 0)
-                return $"{part.Name} has no inductance — its row states no ESL and no self-resonant frequency, " +
-                       "and no mounting loop was typed or computed (a computed loop needs the pads to reach the " +
-                       "reference return)";
-            return $"{part.Name} has no ESR, no dielectric class and no file";
+            return $"{part.Name} states neither a capacitance nor an inductance, so there is nothing " +
+                   "to stamp";
         }
 
         static string HeldSentence(string name, double lowHz, double highHz) =>

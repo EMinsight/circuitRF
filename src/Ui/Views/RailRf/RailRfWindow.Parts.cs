@@ -226,7 +226,7 @@ public partial class RailRfWindow
     /// later correction there reaches this row too. Otherwise the row keeps its own, and the Messages
     /// line says why.
     /// </remarks>
-    private void SaveSeriesFileToLibrary(RailSeriesEditorViewModel editor)
+    private async void SaveSeriesFileToLibrary(RailSeriesEditorViewModel editor)
     {
         if (Vm is not { } vm) return;
 
@@ -244,13 +244,7 @@ public partial class RailRfWindow
                 + "one, from the book button under the parts table.", RailRefusalControl.None);
             return;
         }
-        if (vm.DocumentPath is not { Length: > 0 } crail)
-        {
-            vm.Refusal = new RailRefusal(
-                "Save this document first — the row's file is stored relative to the .crail.",
-                RailRefusalControl.None);
-            return;
-        }
+        if (await SavedDocumentPath(vm) is not { } crail) return;
         if (WorkspaceLocator.Any() is not { } workspace)
         {
             vm.Refusal = new RailRefusal(
@@ -449,7 +443,7 @@ public partial class RailRfWindow
     /// </remarks>
     private async void CreatePartLibrary()
     {
-        if (LibraryPreconditions() is not var (vm, crail, workspace)) return;
+        if (await LibraryPreconditions() is not var (vm, crail, workspace)) return;
 
         // A document that already HAS a library opens it: the button is where the parts are, and
         // asking for a name only to refuse it afterwards left a designer asking where the part
@@ -482,18 +476,12 @@ public partial class RailRfWindow
     /// behind the window — with each refusal STATED, because railRF is an unowned window that
     /// outlives the workspace behind it.
     /// </summary>
-    private (RailRfViewModel Vm, string Crail, CircuitRF.Ui.ViewModels.WorkspaceViewModel Workspace)?
+    private async Task<(RailRfViewModel Vm, string Crail, CircuitRF.Ui.ViewModels.WorkspaceViewModel Workspace)?>
         LibraryPreconditions()
     {
         if (Vm is not { } vm) return null;
 
-        if (vm.DocumentPath is not { Length: > 0 } crail)
-        {
-            vm.Refusal = new RailRefusal(
-                "Save this document first — a part library is written beside the .crail and named "
-                + "by it, and this one has no path yet.", RailRefusalControl.None);
-            return null;
-        }
+        if (await SavedDocumentPath(vm) is not { } crail) return null;
 
         if (WorkspaceLocator.Any() is not { } workspace)
         {
@@ -505,6 +493,24 @@ public partial class RailRfWindow
         }
 
         return (vm, crail, workspace);
+    }
+
+    /// <summary>
+    /// The document's path, SAVING it first where it has none — the Save As a first Save already is.
+    /// </summary>
+    /// <remarks>
+    /// A part library is written beside the <c>.crail</c> and its references are stored relative to
+    /// it, so an unsaved document has nowhere to put one. This used to REFUSE with "save this document
+    /// first", which on a window <c>Tools ▸ railRF</c> just opened read as the library being unsavable
+    /// (field report, 2026-10-02). The close prompt's own idiom instead: save, then carry on. A
+    /// cancelled picker stops quietly; a document that refuses to save says why through
+    /// <see cref="SaveAsync"/>'s own refusal.
+    /// </remarks>
+    private async Task<string?> SavedDocumentPath(RailRfViewModel vm)
+    {
+        if (vm.DocumentPath is { Length: > 0 } path) return path;
+        await SaveAsync(saveAs: false);
+        return vm.DocumentPath is { Length: > 0 } saved ? saved : null;
     }
 
     /// <summary>
@@ -521,7 +527,7 @@ public partial class RailRfWindow
     /// </remarks>
     private async void UseExistingPartLibrary()
     {
-        if (LibraryPreconditions() is not var (vm, crail, workspace)) return;
+        if (await LibraryPreconditions() is not var (vm, crail, workspace)) return;
 
         var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {

@@ -151,11 +151,16 @@ public static class RailValueFormat
     /// where the base unit is what anybody means. <b>One rule for every editor in this window</b> —
     /// the part library's cells and a series row's own model (brief 35, R-rail35-1b) — so a field
     /// in one place does not accept what the same field in another refuses.
+    ///
+    /// <para><b>Except zero</b> (field report, 2026-10-02): 0 is 0 in every unit, so its scale is no
+    /// guess — and an ESL typed as 0 to say "a pure R-C" was dropped as if nothing had been typed,
+    /// which left the part with no inductance and out of the answer.</para>
     /// </remarks>
     public static bool IsBareWhereAUnitIsRequired(string? text, RailQuantity quantity) =>
         quantity is RailQuantity.Frequency or RailQuantity.Capacitance or RailQuantity.Inductance
         && text is { Length: > 0 }
-        && !text.Trim().Any(c => char.IsLetter(c) && c is not ('e' or 'E'));   // 1e6 is bare too
+        && !text.Trim().Any(c => char.IsLetter(c) && c is not ('e' or 'E'))   // 1e6 is bare too
+        && !(double.TryParse(text.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out double v) && v == 0.0);
 
     /// <summary>
     /// Parses a typed <c>"value unit"</c> string. <b>Returns false rather than throwing</b> — a

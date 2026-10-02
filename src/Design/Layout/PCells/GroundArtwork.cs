@@ -171,7 +171,9 @@ public static class GroundArtwork
                 continue;
             }
 
-            if (view.GroundViaKeys.Contains(key)) { leftDeleted++; continue; }   // the designer deleted it
+            // The designer deleted it — but only if its part was there to keep it: a part this run places afresh (the
+            // designer deleted the part, or the whole layout) takes a fresh via, and the key it left is stale.
+            if (view.GroundViaKeys.Contains(key) && WasPlaced(inst.SchematicId)) { leftDeleted++; continue; }
             if (built is null) continue;
             add.Add(built.Value.Tie);
             add.Add(built.Value.Via);
@@ -208,6 +210,17 @@ public static class GroundArtwork
             }
         }
 
+        // A VIAGND component is a ground via the schematic placed by name: the pour has to reach the plane it lands on.
+        foreach (var inst in instances)
+        {
+            string cellName = Path.GetFileName(inst.CellRef.TrimEnd('/', '\\'));
+            if (!view.PCellSnapshots.TryGetValue(cellName, out var snap) ||
+                !string.Equals(snap.GeneratorId, ViaPCell.GroundGeneratorId, StringComparison.OrdinalIgnoreCase)) continue;
+            if (ViaPCell.Resolve(snap.Parameters, technology, grounded: true).Span is not { } span) continue;
+            var box = CellHierarchy.InstanceBbox(inst, layoutBaseDir);
+            if (!box.IsEmpty) regions.Add(new GroundPourRegion(span.To, box, span.DielectricThicknessMeters));
+        }
+
         // The pour, over the shapes as they will be.
         var removing = new HashSet<LayoutShape>(remove, ReferenceEqualityComparer.Instance);
         var after = view.Shapes.Where(s => !removing.Contains(s)).Concat(add).ToList();
@@ -230,6 +243,9 @@ public static class GroundArtwork
         return new GroundArtworkPlan(remove, add, keysAdded, keysRemoved, placed, followed, removed, leftDeleted, leftMoved,
                                      pours.Pours.Where(p => !(p.Replaces is { Count: > 0 } o && SameShapes(o, p.Shapes))).ToList(),
                                      pours.LeftAlone, notes);
+
+        bool WasPlaced(string? schematicId)
+            => schematicId is { Length: > 0 } && view.Instances.Any(i => i.SchematicId == schematicId);
 
         void Cover(ViaShape via, LayoutInstance inst, StackupLayer? ground = null, double h = 0)
         {
@@ -273,6 +289,25 @@ public static class GroundArtwork
         long pad = Dbu(span.PadMeters ?? ViaDefaultsSi.Pad);
         long drill = Math.Min(Dbu(span.DrillMeters ?? ViaDefaultsSi.Drill), pad);
 
+        var (vx, vy, tie) = Beside(inst, cell, pin, pad, dbuPerMicron);
+        tie.Generated = ViaTagPrefix + key;
+        var via = new ViaShape
+        {
+            Layer = drillLayer, X = vx, Y = vy, PadSize = pad, DrillSize = drill,
+            Generated = ViaTagPrefix + key + string.Create(CultureInfo.InvariantCulture, $" @{vx},{vy}"),
+        };
+        return new Built(via, tie, span.To, span.DielectricThicknessMeters);
+    }
+
+    /// <summary>
+    /// Where a via of pad <paramref name="padDbu"/> sits beside <paramref name="pin"/>'s pad — on its outward side,
+    /// <see cref="ViaGapMicrons"/> clear of the land — and the copper tying the two, both in the layout's own
+    /// coordinates. Shared by the generated ground via and by a VIAGND component Update Layout places beside the pad
+    /// it grounds, so the two readings of one schematic land the via in the same place.
+    /// </summary>
+    public static (long X, long Y, PathShape Tie) Beside(LayoutInstance inst, LayoutView cell, LayoutPin pin, long padDbu,
+                                                         int dbuPerMicron)
+    {
         // How far the land reaches from the pin along its outward direction: its own copper, else half its width.
         double rad = pin.OutwardDeg * Math.PI / 180;
         double dx = Math.Cos(rad), dy = Math.Sin(rad);
@@ -288,23 +323,14 @@ public static class GroundArtwork
         }
         if (!any) reach = pin.WidthDbu / 2.0;
 
-        double along = reach + ViaGapMicrons * dbuPerMicron + pad / 2.0;
+        double along = reach + ViaGapMicrons * dbuPerMicron + padDbu / 2.0;
         long lx = pin.X + (long)Math.Round(dx * along), ly = pin.Y + (long)Math.Round(dy * along);
         var (vx, vy) = LayoutInstanceTransform.TransformPoint(lx, ly, inst, 0, 0);
         var (px, py) = LayoutInstanceTransform.TransformPoint(pin.X, pin.Y, inst, 0, 0);
 
-        long across = pin.WidthDbu > 0 ? (long)Math.Round(pin.WidthDbu * inst.Mag) : pad;
-        var tie = new PathShape
-        {
-            Layer = pin.Layer, Xy = [px, py, vx, vy], Width = Math.Min(across, pad), End = PathEndStyle.Flush,
-            Generated = ViaTagPrefix + key,
-        };
-        var via = new ViaShape
-        {
-            Layer = drillLayer, X = vx, Y = vy, PadSize = pad, DrillSize = drill,
-            Generated = ViaTagPrefix + key + string.Create(CultureInfo.InvariantCulture, $" @{vx},{vy}"),
-        };
-        return new Built(via, tie, span.To, span.DielectricThicknessMeters);
+        long across = pin.WidthDbu > 0 ? (long)Math.Round(pin.WidthDbu * inst.Mag) : padDbu;
+        var tie = new PathShape { Layer = pin.Layer, Xy = [px, py, vx, vy], Width = Math.Min(across, padDbu), End = PathEndStyle.Flush };
+        return (vx, vy, tie);
     }
 
     private static LayoutView? CellOf(LayoutInstance inst, string layoutBaseDir)

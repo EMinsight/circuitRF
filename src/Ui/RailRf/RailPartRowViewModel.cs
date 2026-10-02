@@ -140,7 +140,13 @@ public sealed class RailPartRowViewModel
         _bom?.Value is { Length: > 0 } v ? v
         : Model?.Capacitance.MarkedFarads is { } marked && double.IsFinite(marked)
             ? Farads(marked)
+        // An inductor part has no capacitance BY DESIGN, and is stamped as an R-L — not a part
+        // railRF failed on (field report, 2026-10-02).
+        : Model is { IsInductor: true } ? InductorText
         : UnresolvedText;
+
+    /// <summary>The capacitance column of an inductor part: none, and stamped as a series R-L.</summary>
+    public const string InductorText = "none (R-L)";
 
     /// <summary>
     /// The derated value, where a bias curve produced one — <b>beside the marked one, never instead
@@ -425,7 +431,10 @@ public sealed class RailPartRowViewModel
     /// </remarks>
     public string SelfResonanceText => _part.IsSeries
         ? NotApplicableText
-        : RailValueFormat.FormatWithUnit(Model?.SelfResonanceHz, RailQuantity.Frequency, UnresolvedText, 3);
+        : RailValueFormat.FormatWithUnit(Model?.SelfResonanceHz, RailQuantity.Frequency,
+            // A pure R-C (an ESL of 0 or none) and an inductor part are stamped and have no resonance.
+            Model is { IsResolved: true } m && (m.IsInductor || (m.CapacitanceFarads > 0 && m.TotalInductanceHenries is null or 0.0))
+                ? NotApplicableText : UnresolvedText, 3);
 
     /// <summary>The stated f₀ beside the mounted one, because the difference is the point.</summary>
     public string SelfResonanceTooltip => _part.IsSeries
@@ -506,7 +515,10 @@ public sealed class RailPartRowViewModel
             if (Model is not { } m) return MountingInductanceText;
 
             double? part = m.InductanceHenries, mount = m.MountingInductanceHenries;
-            if (m.TotalInductanceHenries is not { } total) return UnresolvedText;
+            // A capacitor with no ESL is stamped as a pure R-C and the run's warning names it, so the
+            // cell says the value is UNSTATED rather than that the part failed to resolve.
+            if (m.TotalInductanceHenries is not { } total)
+                return m.IsResolved && m.CapacitanceFarads > 0 ? UnstatedText : UnresolvedText;
 
             string unit = RailValueFormat.AutoUnitFor(total, RailQuantity.Inductance);
             double scale = RailValueFormat.Scale(unit);

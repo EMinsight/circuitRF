@@ -60,7 +60,12 @@ public sealed record PdnSeriesElement(
 /// <param name="Anchor">Its pad on the rail.</param>
 /// <param name="CapacitanceFarads">The capacitance the part library resolved, or null where the
 /// library has no row — counted and reported, never defaulted.</param>
-public sealed record PdnShuntPart(string Refdes, RailPortAnchor Anchor, double? CapacitanceFarads);
+/// <param name="DcPathOhms">Non-null for a part that CONDUCTS at DC — an inductor part (an L and an
+/// ESR, no C), at its ESR; 0 where it states none, which the resistor stamps as its near-short. A
+/// real inductor from the rail to its return is a short at DC, and the DC answer is where a designer
+/// has to see it (field report, 2026-10-02). Null is a capacitor, and carries no DC path.</param>
+public sealed record PdnShuntPart(string Refdes, RailPortAnchor Anchor, double? CapacitanceFarads,
+                                  double? DcPathOhms = null);
 
 /// <summary>Resolving an anchor to the pads it names.</summary>
 public static class PdnAttachments

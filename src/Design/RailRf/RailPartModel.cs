@@ -339,9 +339,19 @@ public sealed class RailPartModel
     /// resonance</b>, because that is where ESR sets the depth of the minimum and the height of the
     /// anti-resonance it takes part in. NaN where there is no resonance to evaluate it at or no
     /// basis to evaluate.
+    ///
+    /// <para>A STATED ESR is one number at every frequency, so it needs no resonance to be quoted at:
+    /// a pure R-C (an ESL of 0) or an inductor part has none, and its stated 20 mΩ read
+    /// <i>unresolved</i> in the parts table (field report, 2026-10-02).</para>
     /// </summary>
     public double EsrOhms =>
-        SelfResonanceHz is { } f0 ? EsrOhmsAt(f0) : double.NaN;
+        SelfResonanceHz is { } f0 ? EsrOhmsAt(f0)
+        : EsrBasis == EsrProvenance.Stated ? StatedEsrOhms ?? double.NaN
+        : double.NaN;
+
+    /// <summary>True where this part states an inductance and no capacitance — stamped as a series R-L
+    /// from the rail to its return (<c>PdnSweep</c>), the capacitor model with C taken as infinite.</summary>
+    public bool IsInductor => IsResolved && !(CapacitanceFarads > 0) && InductanceHenries is > 0;
 
     // ── resonance ─────────────────────────────────────────────────────────────────────────────
 

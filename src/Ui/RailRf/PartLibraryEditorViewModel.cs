@@ -343,14 +343,14 @@ public sealed partial class PartLibraryRowViewModel(PartLibraryEditorViewModel o
     public string VoltageRatingEntry
     {
         get => Text(Model.VoltageRatingV, RailQuantity.Voltage);
-        set => Commit(() => Model.VoltageRatingV = Parse(value, RailQuantity.Voltage, Model.VoltageRatingV),
+        set => Commit(() => Model.VoltageRatingV = Parse(nameof(VoltageRatingEntry), value, RailQuantity.Voltage, Model.VoltageRatingV),
                       "Change a voltage rating", nameof(VoltageRatingEntry));
     }
 
     public string CapacitanceEntry
     {
         get => Text(Model.CapacitanceFarads, RailQuantity.Capacitance);
-        set => Commit(() => Model.CapacitanceFarads = Parse(value, RailQuantity.Capacitance, Model.CapacitanceFarads),
+        set => Commit(() => Model.CapacitanceFarads = Parse(nameof(CapacitanceEntry), value, RailQuantity.Capacitance, Model.CapacitanceFarads),
                       "Change a marked capacitance", nameof(CapacitanceEntry));
     }
 
@@ -358,7 +358,7 @@ public sealed partial class PartLibraryRowViewModel(PartLibraryEditorViewModel o
     {
         get => Text(Model.SelfResonantFrequencyHz, RailQuantity.Frequency);
         set => Commit(() => Model.SelfResonantFrequencyHz =
-                          Parse(value, RailQuantity.Frequency, Model.SelfResonantFrequencyHz),
+                          Parse(nameof(SelfResonantFrequencyEntry), value, RailQuantity.Frequency, Model.SelfResonantFrequencyHz),
                       "Change a self-resonant frequency", nameof(SelfResonantFrequencyEntry));
     }
 
@@ -368,14 +368,14 @@ public sealed partial class PartLibraryRowViewModel(PartLibraryEditorViewModel o
     {
         get => Text(Model.StatedInductanceHenries, RailQuantity.Inductance);
         set => Commit(() => Model.StatedInductanceHenries =
-                          Parse(value, RailQuantity.Inductance, Model.StatedInductanceHenries),
+                          Parse(nameof(StatedInductanceEntry), value, RailQuantity.Inductance, Model.StatedInductanceHenries),
                       "Change a stated inductance", nameof(StatedInductanceEntry));
     }
 
     public string EsrEntry
     {
         get => Text(Model.EsrOhms, RailQuantity.Resistance);
-        set => Commit(() => Model.EsrOhms = Parse(value, RailQuantity.Resistance, Model.EsrOhms),
+        set => Commit(() => Model.EsrOhms = Parse(nameof(EsrEntry), value, RailQuantity.Resistance, Model.EsrOhms),
                       "Change a stated ESR", nameof(EsrEntry));
     }
 
@@ -523,8 +523,15 @@ public sealed partial class PartLibraryRowViewModel(PartLibraryEditorViewModel o
     /// is nullable: a real maintained table is partly populated, and §9's point is that the emptiness
     /// must be visible rather than filled in.
     /// </summary>
-    private static double? Parse(string? text, RailQuantity quantity, double? current)
+    /// <remarks>
+    /// <b>A refused entry is SAID, not just ignored</b> (field report, 2026-10-02): a capacitance typed
+    /// as a bare <c>1</c> kept the row's old value — none — while the cell went on showing <c>1</c>, so
+    /// the part read <i>unresolved</i> with nothing anywhere saying why. The cell now turns red, its
+    /// tooltip says what was not taken, and the library's status strip carries the same sentence.
+    /// </remarks>
+    private double? Parse(string field, string? text, RailQuantity quantity, double? current)
     {
+        _unread.Remove(field);
         if (string.IsNullOrWhiteSpace(text)) return null;
 
         // ── A BARE NUMBER IS REFUSED WHERE ITS SCALE IS A GUESS (field report, 2026-09-23) ─────
@@ -532,10 +539,38 @@ public sealed partial class PartLibraryRowViewModel(PartLibraryEditorViewModel o
         // The designer asked which unit f0 was in. A self-resonance copied from a table in MHz as 28.89
         // was stored as 28.89 Hz; a capacitance in pF as farads. Nothing about either looks wrong
         // in the cell. Volts and ohms keep the bare form, where the base unit is what anybody means.
-        if (RailValueFormat.IsBareWhereAUnitIsRequired(text, quantity)) return current;
+        if (RailValueFormat.IsBareWhereAUnitIsRequired(text, quantity))
+        {
+            _unread[field] = $"'{text.Trim()}' has no unit, so it was not taken — state it (100 nF, 4.7 uF, " +
+                             "28.9 MHz, 0.3 nH), since a bare number's scale is a guess. A bare 0 is taken.";
+            return current;
+        }
 
-        return RailValueFormat.TryParse(text, quantity, out double v) ? v : current;
+        if (RailValueFormat.TryParse(text, quantity, out double v)) return v;
+        _unread[field] = $"'{text.Trim()}' is not a value railRF can read, so it was not taken.";
+        return current;
     }
+
+    private readonly Dictionary<string, string> _unread = new(StringComparer.Ordinal);
+
+    /// <summary>The first entry on this row that was typed and NOT taken, as a sentence, or null.</summary>
+    public string? UnreadEntry => _unread.Count == 0 ? null
+        : $"Part '{Model.PartNumber}': " + _unread.Values.First();
+
+    public bool IsVoltageRatingUnread => _unread.ContainsKey(nameof(VoltageRatingEntry));
+    public bool IsCapacitanceUnread => _unread.ContainsKey(nameof(CapacitanceEntry));
+    public bool IsSelfResonanceUnread => _unread.ContainsKey(nameof(SelfResonantFrequencyEntry));
+    public bool IsStatedInductanceUnread => _unread.ContainsKey(nameof(StatedInductanceEntry));
+    public bool IsEsrUnread => _unread.ContainsKey(nameof(EsrEntry));
+
+    public string? VoltageRatingTip => _unread.GetValueOrDefault(nameof(VoltageRatingEntry));
+    public string CapacitanceTip => _unread.GetValueOrDefault(nameof(CapacitanceEntry))
+        ?? "Marked capacitance, with its unit: 100 nF, 4.7 uF, 12 pF. A bare number is not taken.";
+    public string SelfResonanceTip => _unread.GetValueOrDefault(nameof(SelfResonantFrequencyEntry))
+        ?? "Self-resonant frequency, with its unit: 28.9 MHz, 1.2 GHz, 850 kHz. A bare number is not taken.";
+    public string? StatedInductanceTip => _unread.GetValueOrDefault(nameof(StatedInductanceEntry))
+        ?? DisagreementSentence;
+    public string? EsrTip => _unread.GetValueOrDefault(nameof(EsrEntry));
 
     /// <summary>
     /// Applies one edit and records it.
@@ -597,6 +632,11 @@ public sealed partial class PartLibraryRowViewModel(PartLibraryEditorViewModel o
         if (except != nameof(IsIncomplete)) OnPropertyChanged(nameof(IsIncomplete));
         if (except != nameof(OriginText)) OnPropertyChanged(nameof(OriginText));
         if (except != nameof(PartNumberTip)) OnPropertyChanged(nameof(PartNumberTip));
+        foreach (string unread in (string[])[nameof(UnreadEntry), nameof(IsVoltageRatingUnread),
+                     nameof(IsCapacitanceUnread), nameof(IsSelfResonanceUnread), nameof(IsStatedInductanceUnread),
+                     nameof(IsEsrUnread), nameof(VoltageRatingTip), nameof(CapacitanceTip), nameof(SelfResonanceTip),
+                     nameof(StatedInductanceTip), nameof(EsrTip)])
+            OnPropertyChanged(unread);
     }
 }
 
@@ -823,8 +863,10 @@ public sealed partial class PartLibraryEditorViewModel : ObservableObject
     }
 
     /// <summary><b>R-rail24-3.</b> The FILE's refusal — what makes the library as a whole unusable —
-    /// or null. Shown in the status strip, in the shape every other railRF refusal takes.</summary>
-    public string? Refusal => Working.Refusal();
+    /// or null. Shown in the status strip, in the shape every other railRF refusal takes.
+    /// <para>Also an entry typed into a cell and NOT taken (<see cref="PartLibraryRowViewModel.UnreadEntry"/>):
+    /// the file still saves, holding the value it held, so the strip is where that is said.</para></summary>
+    public string? Refusal => Working.Refusal() ?? Rows.Select(r => r.UnreadEntry).FirstOrDefault(u => u is not null);
 
     public bool IsRefused => Refusal is not null;
 

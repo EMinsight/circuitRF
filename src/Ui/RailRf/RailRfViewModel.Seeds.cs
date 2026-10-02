@@ -111,10 +111,31 @@ public sealed partial class RailRfViewModel
     }
 
     /// <summary>The strip's own phrase, or "" where nothing is seeded.</summary>
-    internal string SeededRowsText => SeededRowCount switch
+    /// <remarks>
+    /// <b>It names the KIND of row and the value</b> (field report, 2026-10-02). "1 row still holds
+    /// railRF's starting value" sat on the strip under the parts table, beside the parts' own counts,
+    /// and read as a part row — when it was the load's 1 mA. Only loads and sources are ever seeded.
+    /// </remarks>
+    internal string SeededRowsText
     {
-        0 => "",
-        1 => "1 row still holds railRF's starting value",
-        var n => $"{n} rows still hold railRF's starting values",
-    };
+        get
+        {
+            int loads = 0, sources = 0;
+            foreach (var rail in _document.Rails)
+            {
+                foreach (var source in rail.Sources) if (_seededRows.Contains(source)) sources++;
+                foreach (var load in rail.Loads)     if (_seededRows.Contains(load))   loads++;
+            }
+            var phrases = new List<string>(2);
+            if (loads > 0)
+                phrases.Add(loads == 1
+                    ? "1 load still draws railRF's starting 1 mA"
+                    : $"{loads} loads still draw railRF's starting 1 mA");
+            if (sources > 0)
+                phrases.Add(sources == 1
+                    ? "1 source still holds railRF's starting voltage"
+                    : $"{sources} sources still hold railRF's starting voltage");
+            return string.Join(" · ", phrases);
+        }
+    }
 }

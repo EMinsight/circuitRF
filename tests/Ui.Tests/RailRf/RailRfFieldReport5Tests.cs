@@ -143,6 +143,31 @@ public sealed class RailRfFieldReport5Tests : IDisposable
         Assert.Equal(28.89e6, row.Model.SelfResonantFrequencyHz!.Value, 1e-3);
     }
 
+    /// <summary>Field report, 2026-10-02: an ESL typed as a bare 0 — a pure R-C, on purpose — was dropped as
+    /// unstated, and a bare 1 typed into C was dropped with nothing said. 0 is 0 in every unit and is taken
+    /// (and written to the file); a bare non-zero is still refused, but the cell and the strip say so.</summary>
+    [Fact]
+    public void ABareZeroIsTaken_AndARefusedEntryIsSaid()
+    {
+        var library = new PartLibrary { Name = "l" };
+        library.Rows.Add(new PartLibraryRow { PartNumber = "CAP-100N" });
+        var vm = new PartLibraryEditorViewModel(Path.Combine(_root, "l.crlib"), library);
+        var row = vm.Rows[0];
+
+        row.StatedInductanceEntry = "0";
+        Assert.Equal(0.0, row.Model.StatedInductanceHenries);
+        Assert.Contains("\"StatedInductanceHenries\": 0", PartLibraryIo.Serialize(library));
+
+        row.CapacitanceEntry = "1";
+        Assert.Null(row.Model.CapacitanceFarads);
+        Assert.True(row.IsCapacitanceUnread);
+        Assert.Contains("'1' has no unit", vm.Refusal);
+
+        row.CapacitanceEntry = "100 nF";
+        Assert.False(row.IsCapacitanceUnread);
+        Assert.Null(vm.Refusal);
+    }
+
     // ── 4. Importing his parts table (.csv, owner 2026-09-23) ─────────────────────────────────
 
     /// <summary>His table's shape: C, the resonance and ESL with units in the header, a second

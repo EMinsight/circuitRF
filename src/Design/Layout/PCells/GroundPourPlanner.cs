@@ -15,8 +15,8 @@ namespace CircuitRF.Design.Layout.PCells;
 /// designer to check rather than guessed at.</param>
 /// <param name="MarginDbu">How far the pour reaches beyond the lines' own artwork (zero when a board outline bounds it).</param>
 /// <param name="Replaces">The generated pour already on this layer, which this one replaces.</param>
-/// <param name="GroundVias">How many of Update Layout's own ground vias (<see cref="GroundArtwork"/>) the pour joins —
-/// known to be ground, so never cut and never counted in <paramref name="ViasJoined"/>.</param>
+/// <param name="GroundVias">How many of Update Layout's own ground vias (<see cref="GroundArtwork"/>), and of the VIAGND
+/// components landing on this plane, the pour joins — known to be ground, so never cut and never counted in <paramref name="ViasJoined"/>.</param>
 /// <param name="BoundedByOutline">The pour fills the board outline rather than a margin round the artwork.</param>
 public sealed record GroundPour(
     StackupLayer Ground, LayerKey DrawingLayer, IReadOnlyList<LayoutShape> Shapes,
@@ -195,6 +195,9 @@ public static class GroundPourPlanner
             if (inst.X + radius < outer.MinX || inst.X - radius > outer.MaxX ||
                 inst.Y + radius < outer.MinY || inst.Y - radius > outer.MaxY) continue;
 
+            // A VIAGND landing here is KNOWN to be ground, as Update Layout's own ground via is: counted with those,
+            // not among the vias a designer has to check for a signal one.
+            if (grounded && ReferenceEquals(span.To, ground)) { groundVias++; continue; }
             if (ReferenceEquals(span.From, ground) || ReferenceEquals(span.To, ground)) { joined++; continue; }
             int from = IndexOf(layers, span.From), to = IndexOf(layers, span.To);
             int top = Math.Min(from, to), bottom = Math.Max(from, to);

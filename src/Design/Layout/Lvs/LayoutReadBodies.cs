@@ -90,7 +90,7 @@ internal sealed class LayoutReadBodies
             if (LvsHierarchy.IsComparableCell(dir)) continue;
 
             if (!byCell.TryGetValue(dir, out bool body))
-                byCell[dir] = body = OwnCopperJoinsTerminals(dir, sub, tech);
+                byCell[dir] = body = IsGroundVia(sub) || OwnCopperJoinsTerminals(dir, sub, tech);
             if (!body) continue;
 
             instances.Add(i);
@@ -99,6 +99,16 @@ internal sealed class LayoutReadBodies
 
         return instances.Count == 0 ? None : new LayoutReadBodies(instances, paths);
     }
+
+    /// <summary>
+    /// A VIAGND: one drawn pin, A, and a second terminal that is the plane it lands on — the device IS the barrel
+    /// between them. Read as interconnect, its own drill put A on the ground net, so every VIAGND over a poured plane
+    /// (designer feedback round 12) shorted the pad it grounds to every other one. As a body its copper leaves the
+    /// partition, A is read at its pin, and the ground terminal is added where the device is assembled
+    /// (<see cref="LayoutRead"/>), as the schematic's own extraction binds it.
+    /// </summary>
+    internal static bool IsGroundVia(LayoutView? cell)
+        => string.Equals(cell?.PCellOrigin?.GeneratorId, PCells.ViaPCell.GroundGeneratorId, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Whether the cell's own copper puts two different terminals on one net — read in the cell's

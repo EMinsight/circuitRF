@@ -788,7 +788,8 @@ internal sealed class PdnAssembly
     /// <summary>
     /// The decoupling. <b>In the netlist, and carrying no DC path</b> — a capacitor bridges
     /// nothing at DC, which is correct and occasionally surprising (R-rail3-4). Leaving it out
-    /// would make brief 14's netlist a different netlist from this one.
+    /// would make brief 14's netlist a different netlist from this one. <b>An inductor part is the
+    /// exception, and is stamped as the resistor it is at DC</b> (<see cref="PdnShuntPart.DcPathOhms"/>).
     /// </summary>
     private string? StampShunts()
     {
@@ -805,7 +806,11 @@ internal sealed class PdnAssembly
                 continue;
             }
 
-            if (part.CapacitanceFarads is not { } c || !(c > 0)) { unmodelled++; continue; }
+            if (part.DcPathOhms is null && (part.CapacitanceFarads is not { } c0 || !(c0 > 0)))
+            {
+                unmodelled++;
+                continue;
+            }
 
             var reference = ReferenceNodesFor(part.Anchor, out _);
             if (reference.Count == 0)
@@ -818,6 +823,23 @@ internal sealed class PdnAssembly
 
             int np = Merge(power), nr = Merge(reference);
 
+            // An inductor part conducts at DC: a resistor at its ESR, from the rail to its return.
+            // At DC its inductance vanishes and nothing else of it is left. ResistanceOhms stays
+            // null on the origin so the drop breakdown does not rank it — it is not on the path
+            // from source to load; RailDcRun names it with the current it draws instead.
+            if (part.DcPathOhms is { } r)
+            {
+                _staged.Add(new PdnStaged(
+                    "R", $"shunt.{part.Refdes}",
+                    [np, nr],
+                    new Dictionary<string, Value>(StringComparer.Ordinal) { ["R"] = new Value(r) },
+                    new ResistorModel(), PdnOriginKind.ShuntDcPath,
+                    $"{part.Refdes}, an inductor part at {r * 1e3:0.###} mΩ — a DC path to the return",
+                    CellOf(np), CellOf(nr), part.Refdes, null));
+                continue;
+            }
+
+            double c = part.CapacitanceFarads!.Value;
             _staged.Add(new PdnStaged(
                 "C", $"shunt.{part.Refdes}",
                 [np, nr],
@@ -829,8 +851,9 @@ internal sealed class PdnAssembly
 
         if (unmodelled > 0)
             _diagnostics.Add(
-                $"{unmodelled} part(s) on this rail have no capacitance in the library and were " +
-                "counted rather than given one. An unstated value is never a defaulted one.");
+                $"{unmodelled} part(s) across this rail state neither a capacitance nor an inductance, " +
+                "so there is nothing to stamp for them at DC and they were counted rather than given a " +
+                "value. An unstated value is never a defaulted one.");
 
         return null;
     }

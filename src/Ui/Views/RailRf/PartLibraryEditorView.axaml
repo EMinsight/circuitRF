@@ -316,27 +316,34 @@
                                                       Text="{Binding DielectricClass, Mode=TwoWay}"
                                                       ToolTip.Tip="The capacitor's dielectric class — its ESR default when no ESR is stated. Other: not a capacitor (a ferrite bead, a resistor), which takes no bias curve and is modelled by the ESR stated on the row. Blank means no class at all, rather than quietly taking X7R's."/>
                                             <TextBox Grid.Column="5" Classes="cell"
-                                                     Text="{Binding VoltageRatingEntry, Mode=TwoWay}"/>
+                                                     Classes.flagged="{Binding IsVoltageRatingUnread}"
+                                                     Text="{Binding VoltageRatingEntry, Mode=TwoWay}"
+                                                     ToolTip.Tip="{Binding VoltageRatingTip}"/>
                                             <!-- C, f0 and L take a UNIT; a bare number is refused
                                                  (field report, 2026-09-23: the unit of f0 was unclear). -->
                                             <TextBox Grid.Column="6" Classes="cell"
+                                                     Classes.flagged="{Binding IsCapacitanceUnread}"
                                                      PlaceholderText="100 nF"
                                                      Text="{Binding CapacitanceEntry, Mode=TwoWay}"
-                                                     ToolTip.Tip="Marked capacitance, with its unit: 100 nF, 4.7 uF, 12 pF. A bare number is not taken."/>
+                                                     ToolTip.Tip="{Binding CapacitanceTip}"/>
                                             <TextBox Grid.Column="7" Classes="cell"
+                                                     Classes.flagged="{Binding IsSelfResonanceUnread}"
                                                      PlaceholderText="28.9 MHz"
                                                      Text="{Binding SelfResonantFrequencyEntry, Mode=TwoWay}"
-                                                     ToolTip.Tip="Self-resonant frequency, with its unit: 28.9 MHz, 1.2 GHz, 850 kHz. A bare number is not taken."/>
+                                                     ToolTip.Tip="{Binding SelfResonanceTip}"/>
                                             <TextBox Grid.Column="8" Classes="cell"
+                                                     Classes.flagged="{Binding IsStatedInductanceUnread}"
                                                      PlaceholderText="0.3 nH"
                                                      Text="{Binding StatedInductanceEntry, Mode=TwoWay}"
-                                                     ToolTip.Tip="{Binding DisagreementSentence}"/>
+                                                     ToolTip.Tip="{Binding StatedInductanceTip}"/>
                                             <!-- R-rail24-2a: derived, and therefore read-only. A stored
                                                  third copy is a field that will be edited on one side. -->
                                             <TextBlock Grid.Column="9" Classes="cell"
                                                        Text="{Binding DerivedInductanceText}"/>
                                             <TextBox Grid.Column="10" Classes="cell"
-                                                     Text="{Binding EsrEntry, Mode=TwoWay}"/>
+                                                     Classes.flagged="{Binding IsEsrUnread}"
+                                                     Text="{Binding EsrEntry, Mode=TwoWay}"
+                                                     ToolTip.Tip="{Binding EsrTip}"/>
                                             <!-- R-rail24-2b — the difference between a number somebody
                                                  measured and a number railRF assumed. -->
                                             <TextBlock Grid.Column="11" Classes="cell"

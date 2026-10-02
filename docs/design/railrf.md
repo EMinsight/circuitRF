@@ -329,7 +329,18 @@ Each part on the rail is one of:
   [Derived Metrics](../user/reference/derived-metrics.html#fixture).
 - **An R-L-C triple**, on a library row: C, a stated ESL and an ESR with **f₀ left blank**. The stated
   ESL is used only where there is no f₀ to derive L from; where both are present it is compared, never
-  used (R-rail2-8).
+  used (R-rail2-8). **A stated ESL of 0 is a pure R-C on purpose.** A row that leaves the ESL (and f₀) or
+  the ESR unstated is still stamped — with 0 H or 0 Ω — and the run WARNS, naming the part: a part with a
+  gap in its row is a smaller model, not a missing one (owner, 2026-10-02; this reverses 2026-10-01's
+  "left out of the answer").
+- **An inductor part**: L and an ESR with **no C**. Stamped as a series R-L from the rail to its return,
+  the R-L-C with C taken as infinite, and noted. **It passes DC, so the DC solve carries it too**, as a
+  resistor at its ESR from the rail to its return (a near-short where no ESR is stated), and the DC result
+  names it as a FINDING with the current it draws and what the rail falls to (owner, 2026-10-02: a real
+  inductor across a rail is a short at DC, and the DC answer is where a designer has to catch it). Where it
+  stands for a supply's own output impedance, the source row's R out and L out are the place for it: the
+  same impedance, and the supply rather than a short at DC. A dielectric class gives an inductor no loss —
+  a class-only inductor row is stamped lossless and warned as such.
 - **Not built: a SPICE/equivalent-circuit subcircuit.** A SPICE file attached as a row's model is recorded
   as its model source but not simulated: the row's own C, f₀ and ESR are what the answer uses
   (`RailPartResolver.FromFile`).
@@ -559,7 +570,8 @@ extractor, one mesh, one solver, which is also what stops a DC answer and an AC 
 **Is there a path at all, and through what?** Click any copper and everything galvanically joined to it —
 across layers, through vias — highlights. On imported artwork **the copper stops at every pad**, so the
 board is not electrically continuous until the user has said what bridges each gap; a capacitor bridges
-nothing at DC, which is correct and occasionally surprising.
+nothing at DC, which is correct and occasionally surprising. An inductor part across the rail DOES — it is
+a short to the return, and the DC answer reports it as one (§2.2).
 
 **What is the drop, and where does it come from?** Here is the correction that rev 3 exists for. Rev 2
 tabulated the copper as a few milliohms and concluded it was the small term. On the geometry these designs
@@ -736,7 +748,8 @@ mesh knows the actual split and the nearest via of a group routinely carries sev
 
 - **Each capacitor** at the cell under its pads: its own model (library row, Touchstone, or R-L-C
   from a stated ESL; a SPICE subcircuit is not simulated) in series with its **mounting inductance**,
-  connecting the power node to the reference node.
+  connecting the power node to the reference node. An inductor part (L, no C) attaches the same way as
+  an R-L — and at DC as the resistor its ESR is, which makes it a path to the return (§2.2).
 - **The mounting loop** from the actual via geometry: the partial self-inductance of the power via and the
   return via, minus twice their partial mutual inductance, plus the pad-to-via trace. The dominant term is
   the via pair's separation and the plane separation `h` — precisely the quantity that changes when a part
