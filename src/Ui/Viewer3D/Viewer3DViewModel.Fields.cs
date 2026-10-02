@@ -166,15 +166,49 @@ public sealed partial class Viewer3DViewModel
         FrameRequested?.Invoke();
     }
 
-    partial void OnFieldPlayingChanged(bool value)
+    partial void OnFieldPlayingChanged(bool value) => RestartAnimation();
+
+    /// <summary>
+    /// brief-idle-power — the pane showing this view hands over its window's frame clock (TopLevel.RequestAnimationFrame), and
+    /// null when it stops showing it (its tab in the background, the document closed). Paced by that clock, a playing field
+    /// moves only while Avalonia is drawing: not in a background tab, and not in a minimised or covered window, whose render
+    /// timer Avalonia stops. A view no pane ever showed (headless) keeps the 16 ms timer.
+    /// </summary>
+    internal void ShowIn(Action<Action>? frameClock)
+    {
+        _hosted = true;
+        _frameClock = frameClock;
+        RestartAnimation();
+    }
+
+    private bool _hosted;
+    private Action<Action>? _frameClock;
+    private int _animationGen;
+
+    /// <summary>True while something is set to move the field's phase (tests).</summary>
+    internal bool AnimationRunning => _animation is not null || _frameClockArmed;
+    private bool _frameClockArmed;
+
+    private void RestartAnimation()
     {
         _animation?.Dispose();
         _animation = null;
-        if (!value) return;
+        _frameClockArmed = false;
+        int gen = ++_animationGen;
+        if (!FieldPlaying || _disposed) return;
         _animationStartDegrees = FieldPhaseDegrees;
         _animationClock.Restart();
-        // The timer only moves a number; the frame it asks for draws what is already on the GPU.
-        _animation = new System.Threading.Timer(_ => _post(AnimationTick), null, 0, 16);
+        // The clock only moves a number; the frame it asks for draws what is already on the GPU.
+        if (!_hosted) _animation = new System.Threading.Timer(_ => _post(AnimationTick), null, 0, 16);
+        else if (_frameClock is { } clock) { _frameClockArmed = true; clock(() => FrameTick(gen)); }
+    }
+
+    private void FrameTick(int gen)
+    {
+        if (gen != _animationGen) return;              // superseded: stopped, or re-hosted
+        _frameClockArmed = false;
+        AnimationTick();
+        if (FieldPlaying && !_disposed && _frameClock is { } clock) { _frameClockArmed = true; clock(() => FrameTick(gen)); }
     }
 
     private void AnimationTick()

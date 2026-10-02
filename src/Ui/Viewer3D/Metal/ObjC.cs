@@ -64,6 +64,7 @@ internal static unsafe class ObjC
         public static readonly nint copyFromTextureToTexture = Sel("copyFromTexture:toTexture:");
         public static readonly nint encodeSignalEvent = Sel("encodeSignalEvent:value:"), encodeWaitForEvent = Sel("encodeWaitForEvent:value:");
         public static readonly nint signaledValue = Sel("signaledValue"), width = Sel("width"), height = Sel("height");
+        public static readonly nint waitUntilSignaledValue = Sel("waitUntilSignaledValue:timeoutMS:");
     }
 }
 

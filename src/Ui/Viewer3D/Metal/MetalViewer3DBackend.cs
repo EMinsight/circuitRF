@@ -380,13 +380,12 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
         var im = _images[image];
         if (_timeline)
         {
-            var sw = System.Diagnostics.Stopwatch.StartNew();
-            while (((delegate* unmanaged<nint, nint, ulong>)MsgSend)(_releasedEvt, S.signaledValue) < im.ReleaseNeeded)
-            {
-                if (sw.ElapsedMilliseconds > timeoutMs) return false;
-                Thread.SpinWait(100);
-            }
-            return true;
+            // brief-idle-power: a blocking wait (MTLSharedEvent, macOS 12+), not a SpinWait loop. The common case returns at
+            // once (the image was released frames ago); the rare one — a compositor holding the image, as a minimised window's
+            // may — used to burn a core for the whole timeout.
+            if (((delegate* unmanaged<nint, nint, ulong>)MsgSend)(_releasedEvt, S.signaledValue) >= im.ReleaseNeeded) return true;
+            return ((delegate* unmanaged<nint, nint, ulong, ulong, byte>)MsgSend)(
+                _releasedEvt, S.waitUntilSignaledValue, im.ReleaseNeeded, (ulong)Math.Max(0, timeoutMs)) != 0;
         }
         return im.Pending is not { IsCompleted: false } t || t.Wait(timeoutMs);
     }

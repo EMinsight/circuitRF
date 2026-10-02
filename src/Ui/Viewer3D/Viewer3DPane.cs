@@ -55,6 +55,8 @@ public sealed class Viewer3DPane : Control
     private CompositionDrawingSurface? _surface;
     private CompositionSurfaceVisual? _visual;
     private readonly Action _tick;
+    private readonly Action<Action> _frameClock;
+    private readonly Action _retryWhenDrawing;
     private bool _tickQueued;
     private int _imgW, _imgH;
     private int _attachGen;
@@ -98,6 +100,9 @@ public sealed class Viewer3DPane : Control
     public Viewer3DPane()
     {
         _tick = OnTick;
+        _frameClock = FrameClock;
+        _retryWhenDrawing = () => { _dirty = true; FrameClock(RequestFrame); };
+        Controls.EffectiveVisibility.Observe(this, _ => UpdateShown());
         AddHandler(PointerTouchPadGestureMagnifyEvent, OnMagnify);
         ClipToBounds = true;
         Focusable = true;
@@ -120,11 +125,34 @@ public sealed class Viewer3DPane : Control
     protected override void OnDataContextChanged(EventArgs e)
     {
         base.OnDataContextChanged(e);
-        if (_vm is not null) _vm.FrameRequested -= RequestFrame;
+        if (_vm is not null) { _vm.FrameRequested -= RequestFrame; _vm.ShowIn(null); }
         _vm = DataContext as Viewer3DViewModel;
-        if (_vm is not null) _vm.FrameRequested += RequestFrame;
+        if (_vm is not null) { _vm.FrameRequested += RequestFrame; _vm.ShowIn(_shown ? _frameClock : null); }
         RequestFrame();
     }
+
+    /// <summary>
+    /// brief-idle-power — true while this pane can be seen: attached, and it and every ancestor visible. Dock keeps a background
+    /// document's view attached and only hides it (EffectiveVisibility), so detaching alone was not enough: a playing field
+    /// behind another tab kept rendering and presenting at display rate (~33 % CPU, measured). Nor is a minimised window's pane
+    /// shown. While hidden, a frame request
+    /// only marks the pane dirty; it is drawn when the pane is seen again.
+    /// </summary>
+    private bool _shown;
+
+    private void UpdateShown()
+    {
+        // Minimised is not shown: Avalonia keeps its frame clock running for a minimised window (measured, ~7 % CPU with a
+        // field playing), though it stops it for a covered one.
+        bool shown = _topLevel is not null && IsEffectivelyVisible && (_topLevel as Window)?.WindowState != WindowState.Minimized;
+        if (shown == _shown) return;
+        _shown = shown;
+        _vm?.ShowIn(shown ? _frameClock : null);
+        if (shown) RequestFrame();
+    }
+
+    /// <summary>brief-idle-power — this window's frame clock, which paces a playing field (Viewer3DViewModel.ShowIn).</summary>
+    private void FrameClock(Action next) => _topLevel?.RequestAnimationFrame(_ => next());
 
     // ── hosting ─────────────────────────────────────────────────────────────────────────────
 
@@ -141,6 +169,7 @@ public sealed class Viewer3DPane : Control
             _topLevel.ScalingChanged += OnScalingChanged;
             _topLevel.PropertyChanged += OnTopLevelPropertyChanged;
         }
+        UpdateShown();
         try
         {
             var visual = ElementComposition.GetElementVisual(this);
@@ -188,6 +217,7 @@ public sealed class Viewer3DPane : Control
             _topLevel.PropertyChanged -= OnTopLevelPropertyChanged;
             _topLevel = null;
         }
+        UpdateShown();                                       // a closed document animates nothing
         _catchUp?.Stop();
         _stop = true;
         _go.Set();
@@ -217,6 +247,7 @@ public sealed class Viewer3DPane : Control
     private void OnTopLevelPropertyChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
     {
         if (e.Property == TopLevel.ClientSizeProperty) _windowResizedAt = Environment.TickCount64;
+        else if (e.Property == Window.WindowStateProperty) UpdateShown();
     }
 
     /// <summary>This pane's window changed size a moment ago: its edge is (probably) being dragged.</summary>
@@ -235,7 +266,7 @@ public sealed class Viewer3DPane : Control
     private void DrawDuringWindowResize()
     {
         _dirty = true;
-        if (_surface is null || _stop || _vm is null || _fault is not null || _vm.Session.Backend is not { } backend) { QueueTick(); return; }
+        if (_surface is null || _stop || _vm is null || _fault is not null || !_shown || _vm.Session.Backend is not { } backend) { QueueTick(); return; }
         if (_busy && !_done && !AwaitFrame()) { CatchUpAfterResize(); return; }    // it outlived the wait and presents itself
         _done = _busy = false;                                                      // a frame drawn at the old size is never shown
         var s = _vm.Session;
@@ -310,7 +341,7 @@ public sealed class Viewer3DPane : Control
     /// <summary>A tick with nothing new to draw: present a finished frame.</summary>
     private void QueueTick()
     {
-        if (_compositor is null || _tickQueued || _fault is not null) return;
+        if (_compositor is null || _tickQueued || _fault is not null || !_shown) return;
         _tickQueued = true;
         _compositor.RequestCompositionUpdate(_tick);
     }
@@ -418,10 +449,11 @@ public sealed class Viewer3DPane : Control
                         // The compositor still holds this image (a minimised or occluded window may not
                         // composite at all). Never draw into an image we do not hold — D3D11's keyed
                         // mutex and Vulkan's release semaphore both forbid it — so this frame is skipped,
-                        // counted, and asked for again; nothing loops here.
+                        // counted, and asked for again on the window's next animation frame (brief-idle-power):
+                        // asked for at once, a compositor that is not compositing made it a loop of timeouts.
                         ReleaseTimeouts++;
                         _busy = false;
-                        FrameFinished(RequestFrame, Avalonia.Threading.DispatcherPriority.Background);
+                        FrameFinished(_retryWhenDrawing, Avalonia.Threading.DispatcherPriority.Background);
                         continue;
                     }
                     if (!s.Frame(image, _plan, value, _planScene, _pMesh, _pSection, _pGrid, _pOrbit, _pField)) return;

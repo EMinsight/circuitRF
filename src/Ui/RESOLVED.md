@@ -38660,3 +38660,81 @@ The owner confirmed the drag smooth by eye, with the 3D image redrawn at each si
   `dotnet-trace` of the live Debug pid, with the brief's per-second script plus a per-sample event timeline of the UI and
   render threads (Resized / Paint / async render versus the render thread's apply, render and drawable wait). Deep layout
   stacks are truncated in these samples, so attribute by the shallow frames.
+
+## Idle: a hidden progress bar kept every window rendering at display rate (2026-10-02, brief-idle-power)
+
+**Measured** on the owner's Mac (Debug build, the solved 3D Connector `.c3d` open, window in front, untouched): ~9.6 % CPU,
+~42 idle wake-ups/s, energy impact ~11, **with no field plot and no legend drawn**. So the legends (the brief's first
+suspect) were not the cause: the overlay redraws only on `FramePresented`, and at rest no frame is presented. The same
+window COVERED by another app read 0.3 % and ~5 wake-ups/s with the cause still running, because Avalonia's native layer
+stops its render timer for an occluded window (`windowDidChangeOcclusionState:` in `libAvaloniaNative.dylib`). **Measure
+idle with the window in front**, or a covered window reads as quiet.
+
+**Cause, from a heap dump** (`dotnet-dump collect`, then `dumpheap -type Avalonia.Animation.AnimationInstance`): two live
+`AnimationInstance<double>` on their 831st iteration (971 a few minutes later), clock `PlayState` Run, target a
+`TranslateTransform`. Their first keyframe values, −34.56 and −43.2, are −0.72 × 48 and −0.9 × 48: the two indicator
+containers of ONE 48-px indeterminate bar. That is `C3dEditorView`'s "Building the 3D view…" bar. It was shown while the
+first scene was built, hidden by its Border's `IsVisible`, and animated invisibly from then on. The trace's UI-thread
+`MediaContextClock.Pulse → AnimationInstance.Step` and the render thread's composing (`BeginRenderingSession`, a gradient
+brush) were both this.
+
+**Why Avalonia does not stop it** (Avalonia.Base 12.1.0, decompiled with `ilspycmd`):
+- `AnimationInstance.Subscribed` wires pause-on-invisible and the detach handler only `if (_targetControl is Visual)`. The
+  Fluent indeterminate animation targets the template's `TranslateTransform`, which is an `Animatable` and not a `Visual`.
+- Even a paused instance keeps `_timerSub`, and `MediaContext.RenderCore` schedules the next render whenever
+  `_clock.HasSubscriptions`. So pausing would not have made the window idle either; the style must stop applying.
+- `Visual.IsEffectivelyVisibleChanged` is `internal`, so nothing outside Avalonia can subscribe to it.
+
+**Fix: `Controls/IndeterminateBarGate`**, a module initializer. While a bar whose own `IsIndeterminate` is true is not
+effectively visible, it holds the property false at `BindingPriority.Animation`, which outranks the XAML's local value and
+any binding, so the `:indeterminate` style and its animation unsubscribe. It releases the hold when the bar can be seen
+again. The bar's own value is never written: `GetBaseValue` still reads what the XAML or view model said, and a value
+changed while hidden is what shows when it is seen again. The trigger is every `Visual.IsVisibleProperty` change (whose
+class notification comes after `Visual.OnPropertyChanged` has updated the subtree's effective visibility) plus each bar's
+own attach. All ~18 indeterminate bars in the application are covered with no XAML change. Gate:
+`tests/Ui.Tests/Controls/IndeterminateBarGateTests.cs`.
+
+**A background document is NOT detached.** `DockDocumentControlCachedContentTemplate` (set in
+`Styles/CircuitRfStyles.axaml`) keeps every open document's view attached in an `ItemsControl` and hides the inactive ones
+with `IsVisible`. Measured: a `.c3d` with its field PLAYING behind a README tab cost ~33 % CPU, the same as in front: the
+pane rendered and presented every frame and its overlay repainted the legends. `Controls/EffectiveVisibility` (the bar
+gate's trigger, factored out) now tells `Viewer3DPane` when it stops or starts being seen; while hidden a frame request
+only marks it dirty, and the latest state is drawn when it is seen again. Gate:
+`tests/Ui.Tests/Controls/IndeterminateBarGateTests.cs` (`EffectiveVisibilityTests`).
+
+**A minimised window keeps Avalonia's frame clock running** (a covered one does not): playing and minimised measured ~7 %
+and ~47 wake-ups/s. The pane counts `WindowState.Minimized` as not shown.
+
+**Fixed on the way, and kept:**
+- **The field animation followed a 16 ms thread timer whether or not anything showed it.** While a pane shows the view, it
+  now runs on that window's `TopLevel.RequestAnimationFrame` (`Viewer3DViewModel.ShowIn`), and on nothing while the pane is
+  hidden, minimised or detached. A view no pane ever showed (headless tests) keeps the timer. Gate:
+  `tests/Ui.Tests/Viewer3D/FieldAnimationClockTests.cs`.
+- **`MetalViewer3DBackend.WaitReusable` spun** (`Thread.SpinWait`) for up to 250 ms while the compositor held an image. It now
+  blocks in `MTLSharedEvent waitUntilSignaledValue:timeoutMS:` (macOS 12+; the bundles require 13). D3D11 (keyed mutex)
+  and Vulkan (task wait) already blocked.
+- **A release timeout re-requested its frame at once,** so a compositor that was not compositing turned one request into a
+  loop of timeouts. The retry now waits for the window's next animation frame.
+- **The legend's gradient and box brushes were new objects on every render.** They are immutable, one per colour map
+  (`Viewer3DOverlay.LegendBar`). This did not cost anything at idle; it is cheaper while orbiting.
+
+**`CRF_DIRTY_RECTS=1`** (`Diagnostics/DirtyRectsOverlay`) turns on Avalonia's `RendererDebugOverlays.DirtyRects` in every
+window, flashing each region the compositor redraws. Unset, it subscribes nothing.
+
+**Left alone, on purpose:** the autosave `DispatcherTimer` ticks every 30 s whether or not anything is dirty (0.03
+wake-ups/s). Every other `DispatcherTimer` in `src/Ui` is a one-shot or stops itself.
+
+**Measured after the fix** (owner's Mac, Debug, each state untouched in front for ~10 s, `top`):
+
+| state | before | after |
+|---|---|---|
+| solved `.c3d`, field plot drawn, not playing | 9.6 %, ~42 wake-ups/s | 0.0 %, ~0.6/s |
+| same, field PLAYING, behind a README tab | ~33 %, ~37/s | 0.0 %, ~2/s |
+| same, field playing, window minimised | ~7 %, ~47/s | 0.0 %, ~1.5/s |
+| field playing, in front (expected busy) | n/a | ~31 %, ~44/s |
+| field paused, in front | n/a | 0.0 %, ~1/s |
+| schematic / layout / Data Display / railRF / harmonicaRF in front | n/a | 0.0 %, 0-1/s |
+
+The owner confirmed by eye that the field resumes animating, up to date, on returning to its tab and on restoring the
+window. Not measured: an empty workspace, an unsolved `.c3d`, the Messages panel with a live progress row, and Release
+(wake-ups do not depend on the build; Debug CPU is the upper bound).

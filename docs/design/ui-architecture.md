@@ -294,3 +294,29 @@ would move none of it.
 - Changing the `DataSet`/`DataCube` contract is "Ask before" (root `CLAUDE.md`) \u2014 splotRF lockstep.
 - Net extraction and the measurement evaluator are **core logic, headless** \u2014 they live below `src/Ui` and
   must stay UI-free (they're testable without a UI, which is also how they're validated).
+
+---
+
+## 8. Idle is quiet (brief-idle-power, 2026-10-02)
+
+**When nothing on screen changes, circuitRF draws nothing, ticks nothing and polls nothing.** On a laptop, battery life
+is set by how often the CPU and GPU are woken, not by how hard they work once awake, so a window that wakes 40 times a
+second at a few percent CPU is the defect. What may tick at idle: nothing. Every change that needs a redraw asks for one;
+nothing redraws "just in case", and no timer ticks to check whether it has work.
+
+- **An animation runs only while it can be seen.** Avalonia renders every frame while any animation is subscribed to its
+  clock, visible or not, paused or not. The Fluent indeterminate `ProgressBar` animates a `TranslateTransform`, which is
+  not a `Visual`, so Avalonia never pauses it when the bar is hidden. `Controls/IndeterminateBarGate` holds every hidden
+  indeterminate bar's `IsIndeterminate` false at animation priority, so no view has to remember to; a new kind of
+  always-on animation needs the same treatment.
+- **The 3D pane renders on demand** (`Viewer3DPane.RequestFrame`, brief-em3d-99): a frame is planned when something drawn
+  changes, on a resize, and while orbiting, never on every tick.
+- **A view that cannot be seen does no work.** Dock keeps a background document's view ATTACHED and only hides it, so
+  "detached" is not the test: `Controls/EffectiveVisibility` is (Avalonia's own event is internal). The 3D pane renders
+  nothing while it is not effectively visible or its window is minimised, and a playing field moves on its window's frame
+  clock (`TopLevel.RequestAnimationFrame`, via `Viewer3DViewModel.ShowIn`) only while the pane is shown. Avalonia itself
+  stops rendering a covered window, but NOT a minimised one.
+- **Nothing busy-waits.** A wait for the GPU or the compositor blocks (`MTLSharedEvent waitUntilSignaledValue`, a keyed
+  mutex, a task), and a skipped frame is retried on the next animation frame, never in a loop.
+- **Check it** with `top -pid <pid> -stats pid,cpu,idlew,power` on a still window (about 0 % CPU, a handful of idle
+  wake-ups a second), and `CRF_DIRTY_RECTS=1`, which flashes every region the compositor redraws.

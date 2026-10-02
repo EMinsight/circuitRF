@@ -31,6 +31,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Documents;
 using Avalonia.Media;
+using Avalonia.Media.Immutable;
 using CircuitRF.Design.Layout;
 using CircuitRF.Render;
 using CircuitRF.Render.Scene3D;
@@ -529,6 +530,24 @@ public sealed class Viewer3DOverlay : Control
     /// range at its ends, the range's percentile, the solution, and the phase when animated. brief-em3d-96 D3 — one per colour
     /// range, stacked down the right 8 DIPs apart, all one HELD width (the column's widest, so a drag moves none of them
     /// sideways); one that would run past the bottom is not drawn, and the last one drawn ends with "+N more".</summary>
+    // brief-idle-power — a legend's brushes are made once, not on every render: the colour maps are three fixed instances, so
+    // one immutable gradient each is exact, and an immutable brush is not a new composition resource per frame.
+    private static readonly IBrush LegendFillDark = new ImmutableSolidColorBrush(Color.FromArgb(215, 28, 30, 34));
+    private static readonly IBrush LegendFillLight = new ImmutableSolidColorBrush(Color.FromArgb(225, 250, 250, 252));
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<ColorMap3D, IBrush> LegendBars = [];
+
+    /// <summary>The legend's colour bar for <paramref name="map"/>: the same instance on every render.</summary>
+    internal static IBrush LegendBar(ColorMap3D map) => LegendBars.GetValue(map, m =>
+    {
+        var stops = new GradientStops();
+        foreach (var (t, r, gr, b) in m.Stops) stops.Add(new GradientStop(Color.FromRgb(r, gr, b), t));
+        return new LinearGradientBrush
+        {
+            StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative), EndPoint = new RelativePoint(1, 0, RelativeUnit.Relative),
+            GradientStops = stops,
+        }.ToImmutable();
+    });
+
     private static void Legends(DrawingContext ctx, Viewer3DViewModel vm, double w, double h, IBrush ink, bool dark)
     {
         var groups = vm.FieldLegendGroups;
@@ -541,7 +560,7 @@ public sealed class Viewer3DOverlay : Control
         double Height(int k, bool more) => 2 * pad + barH + line * (texts[k].Count + 1 + (more ? 1 : 0));
         int shown = FieldPicture.StackCount([.. Enumerable.Range(0, groups.Count).Select(k => (float)Height(k, false))], (float)line,
                                             (float)gap, (float)top, (float)(h - top));
-        var fill = new SolidColorBrush(dark ? Color.FromArgb(215, 28, 30, 34) : Color.FromArgb(225, 250, 250, 252));
+        var fill = dark ? LegendFillDark : LegendFillLight;
         double x0 = w - bw - 12, y0 = top;
         for (int k = 0; k < shown; k++)
         {
@@ -552,14 +571,7 @@ public sealed class Viewer3DOverlay : Control
             double y = y0 + pad;
             if (texts[k].Count > 0) ctx.DrawText(texts[k][0], new Point(x0 + pad, y));
             y += line + 2;
-            var stops = new GradientStops();
-            foreach (var (t, r, gr, b) in g.Map.Stops) stops.Add(new GradientStop(Color.FromRgb(r, gr, b), t));
-            var bar = new LinearGradientBrush
-            {
-                StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative), EndPoint = new RelativePoint(1, 0, RelativeUnit.Relative),
-                GradientStops = stops,
-            };
-            ctx.FillRectangle(bar, new Rect(x0 + pad, y, barW, barH));
+            ctx.FillRectangle(LegendBar(g.Map), new Rect(x0 + pad, y, barW, barH));
             y += barH + 2;
             var lo = new FormattedText(FieldColorScale.G(g.Scale.Lo), CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Typeface.Default, 11, ink);
             var hi = new FormattedText(FieldColorScale.G(g.Scale.Hi), CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Typeface.Default, 11, ink);
