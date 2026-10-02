@@ -4529,3 +4529,28 @@ same way. A material the technology does not define still gets the ink.
 `.c3d`, so the CLI and the 3D view could colour one document differently; it now passes the elaboration's technology.
 Gates: `HierarchyGateTests.Flatten_APlatedViasAirCoreNeedsNoAirInTheTechnology_AndARefusalReachesTheDialog` (the colour)
 and `TransparencyTests.TheVerb_AsAProcess_MatchesTheRenderer_…` (process vs in-process, byte for byte).
+
+## A field plot's drive, applied per plot (brief-em3d-100, 2026-10-02)
+
+**openEMS field strengths were referred to nothing.** `FieldRun.OpenOpenEms` drew the frequency-domain dump raw: a DFT of
+the response to a Gaussian pulse, whose magnitude depends on how much energy the pulse has at that frequency. An openEMS plot
+and a Palace plot of one structure disagreed by an arbitrary, frequency-dependent factor. Each openEMS step now carries
+`FieldPortDrive.DumpScale` = 0.5 / v_inc × √(2·R·PalaceDrive.IncidentPowerW). The ½ is the dump's ×2 against the probes'
+DFT (OpenEmsFarField's header). v_inc = (U + Z₀·I)/2 comes from port k's own probes in `p<k>/`, run through
+`FdtdPortTransform.Dft`, the function S is formed with. The step is loaded through `FieldStep.Open(pvtu, toMetres,
+dumpScale)`, and E and H both take the scale. That expression is the only `0.5 / v` in `src/Render/Scene3D/Fields`, and a
+source scan holds it there. Dividing by v_inc also sets the phase reference to the incident wave, as Palace's is. A run
+missing the driven port's probes or its kept document is drawn as written, with no unit and the line
+`Drive: not referred, this run kept no port record (relative values)` (D3).
+
+- **The scale goes on the plot's own values, never the shared step.** Brief 96 shares one `FieldStep` among every plot of a
+  solution. So `FieldDrive.Read` gives one factor per plot and quantity, k^exponent (`FieldNames.DriveExponent`: ½ for
+  amplitudes, 1 for S/U_e/U_m, 0 for the indicator and a port's mode field E0_k, null and "not referred" for an unknown
+  array). That factor multiplies the surfaces `FieldSurfacePlot.Em` / `FieldSection.Cut` have just built, and the hover's
+  sampled channels. The range group key includes the factor, so two drives never share a range.
+- **A power or energy density's dB is now 10·log₁₀, and a field strength's stays 20·log₁₀**
+  (`FieldColorScale.DbPerDecade`). The brief's one rule, that a k-fold drive moves every scaled array by 10·log₁₀(k) dB,
+  requires it. Before this, S, U_e and U_m read 20·log₁₀ (twice the dB). The shader's dB is still 20·log₁₀:
+  `FieldUniforms.Write` hands it a power's range doubled, so no shader changed.
+- **The picker label names the port, not a power** (`SolutionLabel`). The drive is the plot's, on its own legend line
+  (`LegendLines(..., drive)`), which the view, Export picture and `render --field` all print.

@@ -340,8 +340,13 @@ setup's refusals and notes, the mesh, the field) are always shown.
     with it nor hides it, so cut the geometry wherever helps you see.
   - **dB** and a **range** percentile, which keep one singular edge from washing out the picture. A field
     strength in dB reads in **dBµV/m** (H and surface current in **dBµA/m**), the EMC convention; any other
-    quantity reads in dB re 1 of its unit. A Palace driven field is the one **1 W incident** on the driven port
-    makes — Palace normalises every port excitation to unit incident power — and the legend says so.
+    quantity reads in dB re 1 of its unit. A power or energy density (the Poynting vector, the energy
+    densities) is 10·log₁₀ of the value, and a field strength is 20·log₁₀.
+  - **Drive** — for a driven solution, two more rows set the drive the field is
+    [shown at](#field-drive). *Drive power* is the power, in W, mW or dBm, set per plot and saved with it.
+    *Referred to* chooses **Incident**, the power a source matched to the port's Z₀ makes available, or
+    **Accepted**, the power that enters the port after reflection, with every other port terminated in its
+    own Z₀. Neither row is shown for an eigenmode, static or thermal solution.
 
   **Up to four plots are drawn at once**: tick them in the tree, so two slices of one quantity at two
   positions, or two quantities on crossing planes, are on screen together. Ticking a fifth is refused, and
@@ -358,6 +363,20 @@ setup's refusals and notes, the mesh, the field) are always shown.
   tooltip, and the Inspector, say which, and name what the run did save. It is never moved to the nearest
   frequency for you. In a setup's own 3D view (*Show 3D View* from a `.cem`) plots last for the session:
   that view has no document to keep them in.
+
+  <a id="field-drive"></a>**What drive a field is shown at.** Each driven solution is the field of one port
+  driven, with every other port terminated in its own Z₀. The solve is linear, so the drive only rescales
+  what is shown: field strengths by the square root of the power ratio, power and energy densities by the
+  ratio. Changing it never needs a re-run and never marks a result stale. The default is the power the
+  solver's own field is at, **0.5 W incident**: Palace drives each port at unit power on peak phasors, which
+  is 0.5 W time-averaged. Magnitudes are **peak**; the RMS value is 1/√2 of the peak. Under an automatic
+  range the colours do not change with the drive, but the legend's numbers and the value under the cursor
+  do, and the legend states the drive, the port and its Z₀. *Accepted* needs the run's record of the port's
+  reflection at the plot's frequency; where the run kept none, the plot is refused and the Inspector says
+  why, and *Incident* still works. openEMS fields are shown at the same drive as Palace's, so the two
+  solvers' plots of one structure compare directly. An openEMS run that kept no record of its port draws
+  in relative values, without a unit, and its legend says so. Driving several ports at once is not
+  offered.
 
   **Without a window**, a `.c3d`'s clip-plane plot is drawn as the section it cuts:
   `circuitrf render cavity.c3d -o cut.png --field Field1` (add `--phase 90` for an instantaneous

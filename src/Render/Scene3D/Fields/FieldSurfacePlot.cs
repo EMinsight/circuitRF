@@ -210,12 +210,13 @@ public static class FieldSurfacePlot
     /// <paramref name="onSurfaces"/>, and each of <paramref name="targets"/> painted one by one. <paramref name="sampler"/> is
     /// the volume's point sampler when the solver's dump carries no regions (openEMS): <paramref name="sampled"/>, and made
     /// here when none is given. <paramref name="sliceClipped"/> false is a ClipPlane plot's slice, which the view's section plane
-    /// does not cut: it stays exactly on its plane.
+    /// does not cut: it stays exactly on its plane. brief-em3d-100 — every surface built is multiplied by <paramref name="drive"/>'s
+    /// factor: this plot's drive.
     /// </summary>
     public static FieldEmBuild Em(FieldQuantity q, FieldStep? vol, FieldStep? bnd, IReadOnlyList<FieldGroup> groups, Scene3DModel scene,
                                   ClipPlane3D clip, bool onPlane, bool onSurfaces, Scene3DObject? selected,
                                   IReadOnlyList<(PaintedFieldFace Face, FieldFaceTarget Target)> targets, FieldSampler? sampler, bool sampled,
-                                  CancellationToken ct, bool sliceClipped = true)
+                                  CancellationToken ct, bool sliceClipped = true, FieldDriveReading? drive = null)
     {
         var origin = scene.Origin;
         var surfaces = new List<FieldSurface>();
@@ -279,13 +280,16 @@ public static class FieldSurfacePlot
                 else if (why is not null) refused.Add(why);
             }
         }
+        // brief-em3d-100 — the plot's drive, on its own surfaces (the step two plots share is never scaled)
+        FieldDrive.Apply(surfaces, drive?.Factor ?? 1);
         return new FieldEmBuild(surfaces, nudges, objects, covered, paints, refused, hint);
     }
 
     /// <summary>The range the 3D view draws an EM field's surfaces in: dB or not, its top at <paramref name="percentile"/> of the
     /// values drawn (a temperature's is <see cref="Temperature"/>'s own, the true minimum and maximum).</summary>
-    public static FieldColorScale EmScale(FieldQuantity q, IReadOnlyList<FieldSurface> surfaces, bool db, double percentile)
-        => FieldColorScale.Auto(q, surfaces, db, percentile);
+    public static FieldColorScale EmScale(FieldQuantity q, IReadOnlyList<FieldSurface> surfaces, bool db, double percentile,
+                                          FieldDriveReading? drive = null)
+        => FieldColorScale.Auto(q, surfaces, db, percentile, unit: drive is { Relative: true } ? "" : null);
 
     /// <summary>The painted faces as the painter takes them: each face's triangles and normal off the scene, its role from
     /// the object's kind, and the tolerance a mesh triangle is matched to it with (a sheet's is tight — its mesh faces lie

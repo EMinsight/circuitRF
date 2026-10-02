@@ -88,6 +88,15 @@ public partial class C3dPropertiesView : UserControl
 
     private void OnPlotOffsetLostFocus(object? sender, RoutedEventArgs e) => _vm?.CommitPlotOffset();
 
+    // brief-em3d-100 — a field plot's drive power.
+    private void OnPlotDriveKey(object? sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter) { _vm?.CommitPlotDrive(); e.Handled = true; }
+        else if (e.Key == Key.Escape) { _vm?.Reload(); e.Handled = true; }
+    }
+
+    private void OnPlotDriveLostFocus(object? sender, RoutedEventArgs e) => _vm?.CommitPlotDrive();
+
     private void OnPlotOtherKey(object? sender, KeyEventArgs e)
     {
         if (e.Key == Key.Enter) { _vm?.CommitOtherFrequency(); e.Handled = true; }

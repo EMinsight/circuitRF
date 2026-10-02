@@ -16292,3 +16292,28 @@ result is the model's is still brief 87's `C3dRunDocument.Check`, and how the ru
   child's hash changed meaning.
 
 Gates: `tests/Ui.Tests/ThreeD/SolvedStatusTests.cs` (gates 1–10 and the legend's cells).
+
+## A field plot's drive: Palace's "1 W" is 0.5 W, and openEMS fields were referred to nothing (brief-em3d-100, 2026-10-02)
+
+**§0, settled from evidence: Palace's field is a PEAK phasor at unit power on peak values, which is 0.5 W
+time-averaged.** The pinned Palace (changeset 0dc74cd, the one that wrote every committed fixture) says so itself:
+`docs/src/reference.md:200-202` normalises port fields so that |P^inc| = 1 W, with P^inc = V^inc·[I^inc]* = ∫ n·(E^inc ×
+H^inc*) dS (no ½), and continues "Palace uses peak phasors for this convention, so P^inc is twice the time-averaged power
+for a propagating mode". `docs/src/guide/postprocessing.md:64-65` says port V and I are peak values, and
+`palace/models/lumpedportoperator.cpp:136-141` (`GetExcitationPower`) normalises ∫ (E_inc × H_inc)·n dS to 1. The fixture
+`testdata/em3d/f0/B-via/palace` agrees: V_inc = √50 V, I_inc = 1/√50 A at R = 50 Ω, a product of 1. In circuitRF's
+convention (peak, ½·Re(V·I*)), the incident power is therefore **0.5 W**. That is one constant,
+`PalaceDrive.IncidentPowerW` in `src/Design/Em3d`, and round 11's "with 1 W incident" label was 2× too high. Per D1 the
+default drive IS that constant, so no existing Palace plot's numbers moved: the label was corrected, not the field.
+`PalacePattern`'s accepted power, (|V_inc|² − |V − V_inc|²)/(2·R·|V|²), already used the peak convention.
+
+- **The drive is on the PLOT, not the setup** (`C3dFieldPlot.DrivePowerW`, `DriveReferredTo`). Both are omitted at their
+  defaults, so a pre-brief `.c3d` round-trips byte for byte. `SerializeForRun` already leaves plots out, so a drive edit
+  never stales a result (brief 98's solved mark stays set).
+- **Z₀ for a field's drive is the RUN's**: `FieldDrive.RunPortZ0s` reads the `document.c3d` the run kept (brief 87),
+  maps the RESULT's port number through brief 93's renumbering (modelled ports, 1…N in document order when any is off),
+  and never reads the open document. A Palace run with no kept document falls back to its own `config.json` R.
+- **The drive power field parses W, mW, µW/uW, kW and dBm itself** (`C3dDrivePower`). The thermal power parser refuses
+  dBm on purpose, so it could not be reused.
+
+Gates: `tests/Ui.Tests/ThreeD/FieldDriveTests.cs` (gates 1–7, 9) and `FieldRenderCliTests.Gate12` (gate 8).

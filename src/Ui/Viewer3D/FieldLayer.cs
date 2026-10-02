@@ -64,6 +64,10 @@ public sealed class FieldLayer
     /// <summary>This plot's own triangles (its part of the field buffer).</summary>
     public Scene3DFieldGeometry Geometry { get; internal set; } = Scene3DFieldGeometry.None;
 
+    /// <summary>brief-em3d-100 — the drive its triangles were built at: their factor over the step's values, and the legend's
+    /// line.</summary>
+    public FieldDriveReading Drive { get; internal set; } = FieldDriveReading.None;
+
     /// <summary>The range of this plot's own triangles.</summary>
     public FieldColorScale? OwnScale { get; internal set; }
 

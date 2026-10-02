@@ -222,6 +222,9 @@ public sealed partial class Viewer3DViewModel
         layer.TempAllFaces = p.IsTemperature && p.On == C3dFieldPlotOn.Surfaces;
         layer.TempOnClip = p.IsTemperature && p.On == C3dFieldPlotOn.ClipPlane;
         var item = FieldPlotResolver.PickSolution(p.Solution, p.Solver, read.Items, Scene.Problem);
+        // brief-em3d-100 — a drive that cannot be shown there (Accepted with no reflection recorded) draws nothing, and says why
+        string? driveProblem = item is null ? null : FieldPlotResolver.Drive(p, item.Solution).Problem;
+        if (driveProblem is not null) item = null;
         bool moved = !ReferenceEquals(layer.Item, item);
         layer.Item = item;
         if (ReferenceEquals(layer, _focused))
@@ -230,7 +233,7 @@ public sealed partial class Viewer3DViewModel
             MirrorFocused();
         }
         UpdateShowField();
-        SetProblem(layer, item is null ? FieldPlotResolver.PlotProblem(p, read.Items, read.Ran, Scene.Problem) : null);
+        SetProblem(layer, driveProblem ?? (item is null ? FieldPlotResolver.PlotProblem(p, read.Items, read.Ran, Scene.Problem) : null));
         if (item is null)
         {
             ClearFieldGeometry(layer);
@@ -410,7 +413,8 @@ public sealed partial class Viewer3DViewModel
                 string key = string.Join(",", group.Select(m => m.Geometry.Version)) + $"|{group[0].Db}|{group[0].Percentile}";
                 used.Add(key);
                 if (!_groupScales.TryGetValue(key, out scale))
-                    scale = _groupScales[key] = FieldSurfacePlot.EmScale(q, [.. group.SelectMany(m => m.Surfaces)], group[0].Db, group[0].Percentile);
+                    scale = _groupScales[key] = FieldSurfacePlot.EmScale(q, [.. group.SelectMany(m => m.Surfaces)], group[0].Db, group[0].Percentile,
+                                                                         group[0].Drive);
             }
             foreach (var m in group) m.Scale = scale;
         }
@@ -428,7 +432,9 @@ public sealed partial class Viewer3DViewModel
         {
             if (l.OwnScale is null || l.Quantity is not { } q) continue;
             string solution = l.Loaded is { } s ? $"{s.VolumePvtu}|{s.BoundaryPvtu}" : l.Item?.Label ?? "";
-            string key = q.IsTemperature ? $"T|{solution}" : $"{q.Array.Name}|{q.OnBoundary}|{q.Mode}|{solution}|{l.Db}|{l.Percentile.ToString("R", CultureInfo.InvariantCulture)}";
+            // brief-em3d-100 — and at one drive: two plots of one solution at two drives read different numbers
+            string key = q.IsTemperature ? $"T|{solution}" : $"{q.Array.Name}|{q.OnBoundary}|{q.Mode}|{solution}|{l.Db}|{l.Percentile.ToString("R", CultureInfo.InvariantCulture)}" +
+                                                         $"|{l.Drive.Factor.ToString("R", CultureInfo.InvariantCulture)}";
             int at = keys.IndexOf(key);
             if (at < 0) { keys.Add(key); groups.Add([l]); }
             else groups[at].Add(l);
@@ -459,7 +465,7 @@ public sealed partial class Viewer3DViewModel
                 var lines = FieldPlotResolver.LegendLines(names.Count > 0 ? string.Join(", ", names) : null, q, scale, first.Item?.Label,
                                                           FieldPhaseDegrees, FieldLoopSeconds,
                                                           g.All(m => m.FixRange && (m.Read?.Items.Count ?? 0) > 1), StepLabelOf(first),
-                                                          hottest?.HotSpotLabel ?? "");
+                                                          hottest?.HotSpotLabel ?? "", first.Drive);
                 if (q.Animated && cycles > 1)
                     for (int i = 0; i < lines.Count; i++)
                         if (lines[i].StartsWith("φ = ", StringComparison.Ordinal)) lines[i] += "; φ is each plot's own cycle";

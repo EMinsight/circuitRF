@@ -159,12 +159,12 @@ public sealed class FieldPlotTests(ITestOutputHelper output) : IDisposable
         string dir = DrivenRun(vm, 2, 10);
         vm.NewFieldPlot();
         Assert.Null(vm.SetFieldPlot("Field1", "10 GHz", p => p.Solution = new C3dFieldSolution { GHz = 10 }));
-        Until(() => vm.Viewer.SelectedFieldSolution?.Label == "10 GHz, 1 W incident on the port" && vm.Viewer.FieldGeometry.Vertices.Length > 0, "10 GHz was never drawn");
+        Until(() => vm.Viewer.SelectedFieldSolution?.Label == "10 GHz" && vm.Viewer.FieldGeometry.Vertices.Length > 0, "10 GHz was never drawn");
         Assert.Equal(1, vm.Viewer.FieldSolutions.IndexOf(vm.Viewer.SelectedFieldSolution!));
 
         DrivenRun(vm, 2, 6, 10, into: dir);                                       // index 1 is 6 GHz now
         Until(() => vm.Viewer.FieldSolutions.Count == 3 && vm.Viewer.FieldGeometry.Vertices.Length > 0, "the new run was never read");
-        Assert.Equal("10 GHz, 1 W incident on the port", vm.Viewer.SelectedFieldSolution!.Label);
+        Assert.Equal("10 GHz", vm.Viewer.SelectedFieldSolution!.Label);
         Assert.Equal(10, vm.FieldPlot("Field1")!.Solution!.GHz);
     }
 

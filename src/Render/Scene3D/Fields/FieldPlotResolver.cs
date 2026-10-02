@@ -59,6 +59,10 @@ public sealed record FieldPlotRequest
     public double Percentile { get; init; } = 99;
     public bool FixRange { get; init; }
 
+    /// <summary>brief-em3d-100 — the plot's drive power, W (null: the solver's own), and what it is referred to.</summary>
+    public double? DrivePowerW { get; init; }
+    public C3dDriveReferredTo DriveReferredTo { get; init; }
+
     public bool IsTemperature => Quantity == C3dFieldPlot.TemperatureQuantity;
 
     /// <summary>brief-em3d-96 — what the requester says identifies this request (the plot, its plane, its faces, its run): the 3D
@@ -105,6 +109,7 @@ public static class FieldPlotResolver
         {
             Name = p.Name, SetupName = setupName, RunSetup = run, SetupProblem = setupProblem, Solver = solver,
             Solution = p.Solution, Quantity = p.Quantity, On = p.On, Db = p.Db, Percentile = p.Percentile, FixRange = p.FixRange,
+            DrivePowerW = p.DrivePowerW, DriveReferredTo = p.DriveReferredTo,
             Mode = Enum.TryParse<FieldMode>(p.Mode, ignoreCase: true, out var m) ? m : null,
         };
     }
@@ -274,18 +279,17 @@ public static class FieldPlotResolver
     }
 
     /// <summary>
-    /// A saved step as the picker and the legend label it. Designer feedback round 11 — a Palace driven field states its drive:
-    /// Palace normalises every port excitation to unit incident power (its own documentation, 0.18.1), so the field shown is
-    /// the one 1 W incident on that port makes, and a field strength is read against that.
+    /// A saved step as the picker and the legend label it. brief-em3d-100 R-em3d100-4 — a driven step names the port it drives
+    /// and no power: the drive is the PLOT's (FieldDrive.Read), stated on the legend's own line. (Round 11's "with 1 W incident"
+    /// was Palace's own unit, which is 0.5 W time-averaged in circuitRF's peak convention — PalaceDrive.)
     /// </summary>
     public static string SolutionLabel(FieldSolution s, IReadOnlyList<PalaceMode>? modes, Em3dProblem? problem, string? solver = null)
     {
         string G(double v) => v.ToString("G6", CultureInfo.InvariantCulture);
-        string drive = string.Equals(solver, "Palace", StringComparison.OrdinalIgnoreCase) ? " with 1 W incident" : "";
+        int port = s.Excitation > 0 ? s.Excitation : s.Drive?.Port ?? 0;
         return s.Kind switch
         {
-            FieldProblemKind.Driven => $"{G(s.Timestep)} GHz" +
-                (s.Excitation > 0 ? $", port {s.Excitation} driven{drive}" : drive.Length > 0 ? ", 1 W incident on the port" : ""),
+            FieldProblemKind.Driven => $"{G(s.Timestep)} GHz" + (port > 0 ? $", port {port} driven" : ""),
             FieldProblemKind.Eigenmode when modes?.FirstOrDefault(m => m.Index == s.Index + 1) is { } m =>
                 $"Mode {s.Index + 1}: {G(m.FrequencyHz / 1e9)} GHz, Q {m.Q.ToString("G3", CultureInfo.InvariantCulture)}",
             FieldProblemKind.Eigenmode => $"Mode {s.Index + 1}",
@@ -294,6 +298,10 @@ public static class FieldPlotResolver
             _ => $"Terminal {TerminalName(s.Index, problem)} carrying 1 A",
         };
     }
+
+    /// <summary>brief-em3d-100 — request <paramref name="p"/>'s drive at <paramref name="s"/> for its own quantity
+    /// (FieldDrive.Read).</summary>
+    public static FieldDriveReading Drive(FieldPlotRequest p, FieldSolution s) => FieldDrive.Read(s, p.Quantity, p.DrivePowerW, p.DriveReferredTo);
 
     private static string TerminalName(int index, Em3dProblem? problem)
         => problem?.Terminals is { } t && index >= 0 && index < t.Count ? $"'{t[index].Name}'" : (index + 1).ToString(CultureInfo.InvariantCulture);
@@ -304,10 +312,13 @@ public static class FieldPlotResolver
     /// The legend's lines: the plot's name (brief-em3d-83), the quantity, the range, and what was solved (R-em3d29-3c/3d). An
     /// animated quantity states its phase; <paramref name="loopSeconds"/> adds the window's "one cycle every … on screen", which
     /// a still picture has no use for. A temperature carries its own lines (brief-em3d-75 R-em3d75-4b).
+    /// <para>brief-em3d-100 — <paramref name="drive"/>'s line follows the solution's (the drive a driven field is shown at), and
+    /// a field with no referral reads with no unit.</para>
     /// </summary>
     public static List<string> LegendLines(string? plotName, FieldQuantity q, FieldColorScale s, string? solutionLabel,
                                            double phaseDegrees, double? loopSeconds,
-                                           bool fixedAcrossSweep = false, string stepLabel = "", string hotSpot = "")
+                                           bool fixedAcrossSweep = false, string stepLabel = "", string hotSpot = "",
+                                           FieldDriveReading? drive = null)
     {
         List<string> lines;
         if (q.IsTemperature)
@@ -318,13 +329,14 @@ public static class FieldPlotResolver
         }
         else
         {
-            string unit = FieldNames.Unit(q.Array.Name);
+            string unit = drive is { Relative: true } ? "" : FieldNames.Unit(q.Array.Name);
             lines =
             [
                 $"{q.Symbol}{(s.Db ? $" ({FieldColorScale.DbUnit(unit)})" : unit.Length > 0 ? $" ({unit})" : "")}",
                 s.Describe(),
             ];
             if (solutionLabel is not null) lines.Add(solutionLabel);
+            if (drive?.Line is { } d) lines.Add(d);
             if (q.Animated)
                 lines.Add($"φ = {phaseDegrees.ToString("0", CultureInfo.InvariantCulture)}°" +
                           (loopSeconds is { } l ? $", one cycle every {l.ToString("0.##", CultureInfo.InvariantCulture)} s on screen" : ""));

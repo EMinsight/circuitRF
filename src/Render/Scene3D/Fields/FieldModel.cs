@@ -66,23 +66,33 @@ public sealed class FieldArray
 /// </summary>
 public static class FieldNames
 {
-    private static readonly Dictionary<string, (string Friendly, string Unit)> Known = new(StringComparer.Ordinal)
+    // brief-em3d-100 R-em3d100-3 — the third column is how the array follows a driven field's power P: it scales as P^Drive.
+    // An amplitude ½ (×√k), a quadratic quantity 1 (×k), and 0 for what no drive moves (bookkeeping, a temperature).
+    private static readonly Dictionary<string, (string Friendly, string Unit, double Drive)> Known = new(StringComparer.Ordinal)
     {
-        ["E"]         = ("Electric field E", "V/m"),
-        ["B"]         = ("Magnetic flux density B", "T"),
-        ["H"]         = ("Magnetic field H", "A/m"),
-        ["J_s"]       = ("Surface current J_s", "A/m"),
-        ["Q_s"]       = ("Surface charge Q_s", "C/m²"),
-        ["V"]         = ("Potential V", "V"),
-        ["A"]         = ("Vector potential A", "Wb/m"),
-        ["S"]         = ("Poynting vector S", "W/m²"),
-        ["U_e"]       = ("Electric energy density", "J/m³"),
-        ["U_m"]       = ("Magnetic energy density", "J/m³"),
-        ["Indicator"] = ("Error indicator", ""),
-        ["Rank"]      = ("MPI rank", ""),
+        ["E"]         = ("Electric field E", "V/m", 0.5),
+        ["B"]         = ("Magnetic flux density B", "T", 0.5),
+        ["H"]         = ("Magnetic field H", "A/m", 0.5),
+        ["J_s"]       = ("Surface current J_s", "A/m", 0.5),
+        ["Q_s"]       = ("Surface charge Q_s", "C/m²", 0.5),
+        ["V"]         = ("Potential V", "V", 0.5),
+        ["A"]         = ("Vector potential A", "Wb/m", 0.5),
+        ["S"]         = ("Poynting vector S", "W/m²", 1),
+        ["U_e"]       = ("Electric energy density", "J/m³", 1),
+        ["U_m"]       = ("Magnetic energy density", "J/m³", 1),
+        ["Indicator"] = ("Error indicator", "", 0),
+        ["Rank"]      = ("MPI rank", "", 0),
         // brief-em3d-75 — the thermal run's temperature, °C at every boundary a user or a file touches (overview §1i).
-        [TemperatureArray] = ("Temperature", "°C"),
+        [TemperatureArray] = ("Temperature", "°C", 0),
     };
+
+    /// <summary>
+    /// brief-em3d-100 — the power of the drive ratio array <paramref name="name"/> scales by: ½ for an amplitude, 1 for a power
+    /// or energy density, 0 for what a drive does not move (the error indicator, a port's mode field E0_k — a mode SHAPE, not a
+    /// driven field). Null for an array the table does not know, which is drawn as written and said to be not referred.
+    /// </summary>
+    public static double? DriveExponent(string name)
+        => Known.TryGetValue(name, out var k) ? k.Drive : PortMode.IsMatch(name) ? 0 : null;
 
     /// <summary>brief-em3d-75 — the array a thermal run writes its temperature in (ThermalFieldFiles).</summary>
     public const string TemperatureArray = "T_C";

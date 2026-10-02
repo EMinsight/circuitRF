@@ -128,8 +128,20 @@ public sealed record FieldQuantity(FieldArrayInfo Array, bool OnBoundary, FieldM
 /// <summary>Linear or dB, and the range (R-em3d29-3c).</summary>
 public sealed record FieldColorScale(bool Db, double Lo, double Hi, double Percentile, bool Signed, string Unit)
 {
-    /// <summary>The dB span below the top of the range. dB is 20·log10 of an amplitude.</summary>
+    /// <summary>The dB span below the top of the range. dB is 20·log10 of an amplitude (10·log10 of a power,
+    /// <see cref="DbPerDecade"/>).</summary>
     public const double DefaultDbSpan = 40;
+
+    /// <summary>
+    /// brief-em3d-100 — dB per decade of the value: 20 for an amplitude (a field strength, a current, a potential), 10 for a power
+    /// or energy density (S, U_e, U_m: FieldNames.DriveExponent 1). One rule then holds for every array: a drive k times larger
+    /// moves the range by 10·log10(k) dB. The GPU's own dB is 20·log10, so it is handed the range scaled to match
+    /// (<see cref="FieldUniforms.Write"/>).
+    /// </summary>
+    public double DbPerDecade { get; init; } = 20;
+
+    /// <summary>The dB per decade quantity <paramref name="q"/> reads in.</summary>
+    public static double DbPerDecadeOf(FieldQuantity q) => FieldNames.DriveExponent(q.Array.Name) == 1 ? 10 : 20;
 
     /// <summary>
     /// Designer feedback round 11 — the dB reference of a quantity in <paramref name="unit"/>, as dB above 1 of that unit:
@@ -153,9 +165,11 @@ public sealed record FieldColorScale(bool Db, double Lo, double Hi, double Perce
     /// The automatic range of <paramref name="q"/> over the values of <paramref name="surfaces"/>: the top at
     /// the <paramref name="percentile"/>-th percentile of the envelope, the bottom at 0 (linear), the top
     /// less <paramref name="dbSpan"/> (dB), or minus the top (a signed quantity, on a symmetric range).
+    /// <para>brief-em3d-100 — <paramref name="unit"/> overrides the quantity's own: "" for a field referred to no drive, whose
+    /// numbers are relative.</para>
     /// </summary>
     public static FieldColorScale Auto(FieldQuantity q, IEnumerable<FieldSurface> surfaces, bool db, double percentile,
-                                       double dbSpan = DefaultDbSpan)
+                                       double dbSpan = DefaultDbSpan, string? unit = null)
     {
         var env = new List<double>();
         foreach (var s in surfaces)
@@ -165,11 +179,12 @@ public sealed record FieldColorScale(bool Db, double Lo, double Hi, double Perce
                 if (double.IsFinite(e)) env.Add(e);
             }
         double top = PercentileOf(env, percentile);
-        string unit = FieldNames.Unit(q.Array.Name);
+        unit ??= FieldNames.Unit(q.Array.Name);
         if (q.Signed) return new(false, -top, top, percentile, true, unit);
         if (!db) return new(false, 0, top, percentile, false, unit);
-        double hi = 20 * Math.Log10(Math.Max(top, 1e-300)) + DbReference(unit);
-        return new(true, hi - dbSpan, hi, percentile, false, unit);
+        double per = DbPerDecadeOf(q);
+        double hi = per * Math.Log10(Math.Max(top, 1e-300)) + DbReference(unit);
+        return new(true, hi - dbSpan, hi, percentile, false, unit) { DbPerDecade = per };
     }
 
     /// <summary>
@@ -217,7 +232,7 @@ public sealed record FieldColorScale(bool Db, double Lo, double Hi, double Perce
     /// <summary>Where <paramref name="value"/> falls in the range, 0..1, clamped (the end colour beyond).</summary>
     public double Position(double value)
     {
-        double v = Db ? 20 * Math.Log10(Math.Max(Math.Abs(value), 1e-300)) + DbOffset : value;
+        double v = Db ? DbPerDecade * Math.Log10(Math.Max(Math.Abs(value), 1e-300)) + DbOffset : value;
         return Hi > Lo ? Math.Clamp((v - Lo) / (Hi - Lo), 0, 1) : 0;
     }
 
@@ -325,7 +340,9 @@ public static class FieldUniforms
     {
         u.Clear();
         u[0] = (float)Math.Cos(phase); u[1] = (float)Math.Sin(phase);
-        u[2] = (float)(scale.Lo - scale.DbOffset); u[3] = (float)(scale.Hi - scale.DbOffset);
+        // The shader's dB is 20·log10; a power's range (10·log10) is handed over doubled, so the colour lands where Position puts it.
+        double toShader = scale.Db ? 20 / scale.DbPerDecade : 1;
+        u[2] = (float)((scale.Lo - scale.DbOffset) * toShader); u[3] = (float)((scale.Hi - scale.DbOffset) * toShader);
         u[4] = q.ShaderMode; u[5] = scale.Db ? 1 : 0;
         u[7] = unclipped ? 1 : 0;
         var stops = map.Stops;

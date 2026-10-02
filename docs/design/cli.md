@@ -1994,6 +1994,12 @@ scan holds it to that.
   that disagrees, `--iso` or `--view-dir` is a refusal naming both — never a silent re-cut.
 - **Missing data is a refusal carrying R-em3d83-5's sentence verbatim** — never the nearest frequency, never
   an outline presented as the field. **A stale run still draws**, with a `note:`.
+- **The plot's drive is the record's, with no flag** (`brief-em3d-100`). `DrivePowerW` and `DriveReferredTo`
+  are read through `FieldPlotResolver.Drive` → `FieldDrive.Read`, the reading the 3D view's layer takes; its
+  factor goes into `FieldSection.Cut` / `FieldSurfacePlot.Em` and its line into `LegendLines`, so the legend
+  `render` prints is the window's. Each step is opened at its solution's `DumpScale` (an openEMS dump referred to
+  its port's incident wave), and an *Accepted* drive the run has no reflection for is a refusal carrying the
+  Inspector's sentence.
 - **A Surfaces or Faces plot is a picture of surfaces in depth** (`brief-em3d-89`). What it draws is
   `FieldSurfacePlot`'s (`src/Render`), moved out of the 3D view's view model so the window and `render` build
   the same triangles, nudges and range: All Faces (`FieldSurfaces.Exterior`) and picked faces for a

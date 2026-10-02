@@ -398,6 +398,16 @@ public sealed partial class C3dEditorViewModel
         return null;
     }
 
+    /// <summary>brief-em3d-100 — why <paramref name="p"/> could not be drawn referred to <paramref name="to"/> at the solution it
+    /// shows (Accepted where the run recorded no reflection, or the port accepts nothing), or null. A plot with no solution to show
+    /// has nothing to refuse here: its own problem says so.</summary>
+    internal string? PlotDriveProblem(C3dFieldPlot p, C3dDriveReferredTo to)
+    {
+        var request = PlotRequest(p, resolveScene: false) with { DriveReferredTo = to };
+        var item = FieldPlotResolver.PickSolution(request.Solution, request.Solver, Discovered(request).Items, Viewer.Scene.Problem);
+        return item is null ? null : FieldPlotResolver.Drive(request, item.Solution).Problem;
+    }
+
     /// <summary>Each plot row's warning glyph and tooltip, without rebuilding the tree.</summary>
     private void RefreshPlotFlags()
     {

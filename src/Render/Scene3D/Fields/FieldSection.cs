@@ -47,15 +47,16 @@ public static class FieldSection
     /// A ClipPlane plot's picture data: <paramref name="q"/> read from <paramref name="volume"/>, cut on <paramref name="clip"/>,
     /// ranged as the view ranges a ClipPlane plot (dB and the percentile the plot states; a temperature's true minimum and
     /// maximum), painted with the quantity's map.
-    /// Null when the step holds no such volume array.
+    /// Null when the step holds no such volume array. brief-em3d-100 — the slice carries <paramref name="drive"/>, the plot's.
     /// </summary>
     public static FieldSectionCut? Cut(FieldQuantity q, FieldStep volume, (double X, double Y, double Z) origin, ClipPlane3D clip,
-                                       bool db, double percentile, CancellationToken ct = default)
+                                       bool db, double percentile, CancellationToken ct = default, FieldDriveReading? drive = null)
     {
         if (q.OnBoundary || volume.Load(q.Array.Name) is not { } array) return null;
         var slice = Slice(volume.Mesh, array, origin, clip, ct);
+        FieldDrive.Apply([slice], drive?.Factor ?? 1);      // brief-em3d-100 — the plot's drive, as the view applies it
         // brief-em3d-88 — a temperature is ranged as the 3D view ranges one (brief-em3d-75 D9): its true minimum and maximum.
-        var scale = q.IsTemperature ? FieldColorScale.MinMax(q, [slice]) : FieldColorScale.Auto(q, [slice], db, percentile);
+        var scale = q.IsTemperature ? FieldColorScale.MinMax(q, [slice]) : FieldSurfacePlot.EmScale(q, [slice], db, percentile, drive);
         return new FieldSectionCut(q, slice, scale, ColorMap3D.For(q), origin, (int)clip.Axis);
     }
 }

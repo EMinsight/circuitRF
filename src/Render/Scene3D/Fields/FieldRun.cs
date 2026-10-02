@@ -13,6 +13,7 @@
 // point data, only per-cell "Indicator" and "Rank" — rather than by its number.
 
 using System.Globalization;
+using System.Numerics;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
@@ -33,6 +34,14 @@ public sealed record FieldSolution(FieldProblemKind Kind, int Excitation, double
     public double FrequencyHz => Kind == FieldProblemKind.Driven ? Timestep * 1e9 : double.NaN;
     /// <summary>The 0-based mode or terminal of an eigenmode or static solution, or the sweep point of a thermal one.</summary>
     public int Index => (int)Math.Round(Timestep);
+
+    /// <summary>brief-em3d-100 — a driven solution's drive (FieldDrive): the port, its Z0, its reflection, the scale its arrays
+    /// are loaded with. Null for every other kind.</summary>
+    public FieldPortDrive? Drive { get; init; }
+
+    /// <summary>The complex scale this solution's arrays are loaded with: an openEMS dump's referral to its incident wave
+    /// (R-em3d100-1), 1 otherwise.</summary>
+    public Complex DumpScale => Drive?.DumpScale ?? Complex.One;
 }
 
 /// <summary>A run's fields: every solution, and (Palace) the error indicator.</summary>
@@ -87,7 +96,7 @@ public sealed class FieldRun
             return new FieldRun
             {
                 Directory = paraview, Kind = kind, IndicatorPvtu = indicator,
-                Solutions = [.. solutions.OrderBy(s => s.Timestep).ThenBy(s => s.Excitation)],
+                Solutions = FieldDrive.Palace(runDir, [.. solutions.OrderBy(s => s.Timestep).ThenBy(s => s.Excitation)]),
                 ToMetres = LengthUnit(runDir) ?? defaultToMetres,
             };
         }
@@ -137,7 +146,8 @@ public sealed class FieldRun
         return new FieldRun
         {
             Directory = runDir, Solver = "openEMS", Kind = FieldProblemKind.Driven, ToMetres = 1,
-            Solutions = [.. solutions.OrderBy(s => s.Timestep).ThenBy(s => s.Excitation)],
+            // brief-em3d-100 R-em3d100-1 — each step referred to its port's incident wave, read from the port's own probes
+            Solutions = FieldDrive.OpenEms(runDir, [.. solutions.OrderBy(s => s.Timestep).ThenBy(s => s.Excitation)]),
         };
     }
 
@@ -213,9 +223,16 @@ public sealed class FieldStep
     /// Opens <paramref name="pvtu"/>: every piece, merged. A cell of another type, or of an order other
     /// than 1 or 2, is refused by name.
     /// </summary>
-    public static FieldStep Open(string pvtu, double toMetres)
+    public static FieldStep Open(string pvtu, double toMetres) => Open(pvtu, toMetres, Complex.One);
+
+    /// <summary>
+    /// brief-em3d-100 — <see cref="Open(string, double)"/>, an openEMS dump's arrays multiplied by <paramref name="dumpScale"/>
+    /// as they are rebuilt (the solution's <see cref="FieldSolution.DumpScale"/>: its referral to the port's incident wave). A
+    /// Palace step takes 1. Every caller drawing a solution passes its scale, so no openEMS field is drawn unreferred.
+    /// </summary>
+    public static FieldStep Open(string pvtu, double toMetres, Complex dumpScale)
     {
-        if (pvtu.EndsWith("_abs.vtr", StringComparison.Ordinal)) return OpenOpenEms(pvtu, toMetres);
+        if (pvtu.EndsWith("_abs.vtr", StringComparison.Ordinal)) return OpenOpenEms(pvtu, toMetres, dumpScale);
         var pieces = FieldRun.Pieces(pvtu).Select(VtuReader.ReadPiece).ToList();
         if (pieces.Count == 0) throw new FieldReadException($"'{pvtu}' names no pieces.");
         int nodes = 0, cells = 0, npc = -1, order = 0;
@@ -292,16 +309,16 @@ public sealed class FieldStep
     /// to Float32), on the grid as tetrahedra. Named E, like Palace's, so the same quantities are offered — and H
     /// beside it when the run dumped H too (brief-em3d-82).
     /// </summary>
-    private static FieldStep OpenOpenEms(string absFile, double toMetres)
+    private static FieldStep OpenOpenEms(string absFile, double toMetres, Complex scale)
     {
-        var (mag, e) = OpenEmsArray(absFile, "E");
+        var (mag, e) = OpenEmsArray(absFile, "E", scale);
         // brief-em3d-82 R-em3d82-4 — H, when the setup asked for it (OpenEms.SaveH): its own dump of the same box, mode and
         // file type, so it is on the same grid, node for node — refused by name if it is not.
         FieldArray? h = null;
         string hFile = FieldRun.HFile(absFile);
         if (hFile != absFile && File.Exists(hFile) && File.Exists(FieldRun.ArgFile(hFile)))
         {
-            var (hGrid, ha) = OpenEmsArray(hFile, "H");
+            var (hGrid, ha) = OpenEmsArray(hFile, "H", scale);
             if (!hGrid.X.AsSpan().SequenceEqual(mag.X) || !hGrid.Y.AsSpan().SequenceEqual(mag.Y) || !hGrid.Z.AsSpan().SequenceEqual(mag.Z))
                 throw new FieldReadException($"'{hFile}' is not on the grid of '{absFile}'.");
             h = ha;
@@ -316,8 +333,9 @@ public sealed class FieldStep
     }
 
     /// <summary>One openEMS dump's magnitude and phase files as the complex array <paramref name="name"/>
-    /// (Re = |F|·cos∠F, Im = |F|·sin∠F per component), and the grid it is on.</summary>
-    private static (VtrField Grid, FieldArray Array) OpenEmsArray(string absFile, string name)
+    /// (Re = |F|·cos∠F, Im = |F|·sin∠F per component), times <paramref name="scale"/> (brief-em3d-100: E and H take the same
+    /// one), and the grid it is on.</summary>
+    private static (VtrField Grid, FieldArray Array) OpenEmsArray(string absFile, string name, Complex scale)
     {
         var mag = VtrReader.Read(absFile);
         var arg = VtrReader.Read(FieldRun.ArgFile(absFile));
@@ -327,9 +345,9 @@ public sealed class FieldStep
         var im = new float[mag.Values.Length];
         for (int i = 0; i < re.Length; i++)
         {
-            double a = mag.Values[i], t = arg.Values[i];
-            re[i] = (float)(a * Math.Cos(t));
-            im[i] = (float)(a * Math.Sin(t));
+            var v = Complex.FromPolarCoordinates(mag.Values[i], arg.Values[i]) * scale;
+            re[i] = (float)v.Real;
+            im[i] = (float)v.Imaginary;
         }
         var info = new FieldArrayInfo(name, mag.Components, true, false);
         return (mag, new FieldArray { Info = info, Re = re, Im = im });

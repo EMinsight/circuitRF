@@ -34,6 +34,56 @@ public enum C3dFieldPlotOn
 /// <summary>Which side of a sheet a face plot shows. A sheet carrying charge has two different normal fields.</summary>
 public enum C3dFieldSide { None, Top, Bottom }
 
+/// <summary>brief-em3d-100 — what a plot's drive power is. With every other port terminated in its own Z0.</summary>
+public enum C3dDriveReferredTo
+{
+    /// <summary>The incident power |a|²: what a source of internal resistance R makes available to the port.</summary>
+    Incident,
+    /// <summary>The power that enters the port, |a|²(1 − |S_kk|²).</summary>
+    Accepted,
+}
+
+/// <summary>brief-em3d-100 — a drive power as the Inspector takes and shows it: W, mW, µW or dBm, stored in watts.</summary>
+public static class C3dDrivePower
+{
+    private static readonly (string Unit, double Watts)[] Units = [("mW", 1e-3), ("µW", 1e-6), ("uW", 1e-6), ("kW", 1e3), ("W", 1)];
+
+    /// <summary><paramref name="text"/> in watts: a number, optionally followed (spaced or not) by W, mW, µW (uW), kW or dBm.
+    /// A plain number is watts. False, and the sentence, when it is not a positive power.</summary>
+    public static bool TryParse(string? text, out double watts, out string? error)
+    {
+        watts = double.NaN;
+        string t = (text ?? "").Trim();
+        if (t.Length == 0) { error = "Enter a power, e.g. 10 W, 250 mW or 30 dBm."; return false; }
+        double scale = 1;
+        bool dbm = false;
+        if (t.EndsWith("dBm", StringComparison.OrdinalIgnoreCase)) { dbm = true; t = t[..^3].TrimEnd(); }
+        else
+            foreach (var (unit, w) in Units)
+                if (t.EndsWith(unit, StringComparison.Ordinal)) { scale = w; t = t[..^unit.Length].TrimEnd(); break; }
+        if (!double.TryParse(t, NumberStyles.Float, CultureInfo.InvariantCulture, out double v) || !double.IsFinite(v))
+        {
+            error = $"'{text!.Trim()}' is not a power: enter one such as 10 W, 250 mW or 30 dBm.";
+            return false;
+        }
+        watts = dbm ? 1e-3 * Math.Pow(10, v / 10) : v * scale;
+        if (!(watts > 0) || !double.IsFinite(watts))
+        {
+            error = "A drive power is above zero.";
+            return false;
+        }
+        error = null;
+        return true;
+    }
+
+    /// <summary><paramref name="watts"/> as a person reads it: <c>10 W</c>, <c>0.5 W</c>, <c>250 mW</c>, <c>3 µW</c>.</summary>
+    public static string Format(double watts)
+    {
+        static string G(double v) => v.ToString("G4", CultureInfo.InvariantCulture);
+        return watts >= 0.1 ? $"{G(watts)} W" : watts >= 1e-4 ? $"{G(watts * 1e3)} mW" : $"{G(watts * 1e6)} µW";
+    }
+}
+
 /// <summary>One face a <see cref="C3dFieldPlotOn.Faces"/> plot paints: <c>object/face</c>, and on a sheet the side shown.</summary>
 public sealed class C3dFieldPlotFace
 {
@@ -149,6 +199,16 @@ public sealed class C3dFieldPlot
     /// <summary>A temperature plot's range is the union of every sweep point's, so a step never rescales it.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool FixRange { get; set; }
+
+    /// <summary>brief-em3d-100 R-em3d100-2 — the power a driven field is shown at, W, time-averaged, peak convention. Null is
+    /// the solver's own (PalaceDrive.IncidentPowerW). Display: the solve is linear, so this rescales what is drawn and never
+    /// what was solved.</summary>
+    public double? DrivePowerW { get; set; }
+
+    /// <summary>brief-em3d-100 — what <see cref="DrivePowerW"/> is: the power a matched source makes available (incident), or
+    /// the power that enters the port after reflection.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public C3dDriveReferredTo DriveReferredTo { get; set; }
 
     /// <summary>The tree's tick, as <see cref="C3dObject.Hidden"/>. One plot is drawn at a time: showing one hides the others.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]

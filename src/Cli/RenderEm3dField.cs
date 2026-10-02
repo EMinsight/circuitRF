@@ -163,8 +163,8 @@ internal static class RenderEm3dField
         FieldStep? volume, boundary;
         try
         {
-            volume = item.Solution.VolumePvtu is { } v ? FieldStep.Open(v, item.Run.ToMetres) : null;
-            boundary = item.Solution.BoundaryPvtu is { } b ? FieldStep.Open(b, item.Run.ToMetres) : null;
+            volume = item.Solution.VolumePvtu is { } v ? FieldStep.Open(v, item.Run.ToMetres, item.Solution.DumpScale) : null;
+            boundary = item.Solution.BoundaryPvtu is { } b ? FieldStep.Open(b, item.Run.ToMetres, item.Solution.DumpScale) : null;
         }
         catch (Exception e) when (e is FieldReadException or IOException or UnauthorizedAccessException)
         { return JsonRun.Fail(CliDiagnostics.RenderFieldUnreadable(plot.Name, e.Message)); }
@@ -173,6 +173,9 @@ internal static class RenderEm3dField
             return JsonRun.Fail(CliDiagnostics.RenderFieldMissingData(plot.Name, gone!));
         if (!surface && (q.OnBoundary || volume is null)) return JsonRun.Fail(CliDiagnostics.RenderFieldOnBoundary(plot.Name, q.Label));
         if (req.Phase is not null && !q.Animated) return JsonRun.Fail(CliDiagnostics.RenderFieldPhaseNotAnimated(plot.Name, q.Label));
+        // brief-em3d-100 — the plot's drive, read from its record as the 3D view reads it: no flag, and its refusal in the same words
+        var drive = FieldPlotResolver.Drive(request, item.Solution);
+        if (drive.Problem is { } noDrive) return JsonRun.Fail(CliDiagnostics.RenderFieldMissingData(plot.Name, noDrive));
 
         // A stale run still draws (as in the 3D view), and says so: the one comparison the editor's banner makes.
         bool stale = false;
@@ -188,10 +191,10 @@ internal static class RenderEm3dField
         // The cut at the 3D view's own origin, on the plane as the view holds it — the same triangles the window draws.
         var origin = FieldPlotResolver.SceneOrigin(loaded.Elaboration?.DisplayExtent());
         if (surface)
-            return DrawSurfaces(path, req, doc, plot, own, loaded, problem, setupName, run, found, item, q, volume, boundary, origin, stale, runDir);
+            return DrawSurfaces(path, req, doc, plot, own, loaded, problem, setupName, run, found, item, q, volume, boundary, origin, stale, runDir, drive);
         var clip = FieldPlotResolver.ScenePlane(plot, doc.DbuPerMicron, origin);
         FieldSectionCut? cut;
-        try { cut = FieldSection.Cut(q, volume!, origin, clip, request.Db, request.Percentile, RunHost.Cancellation); }
+        try { cut = FieldSection.Cut(q, volume!, origin, clip, request.Db, request.Percentile, RunHost.Cancellation, drive); }
         catch (Exception e) when (e is FieldReadException or IOException or UnauthorizedAccessException)
         { return JsonRun.Fail(CliDiagnostics.RenderFieldUnreadable(plot.Name, e.Message)); }
         if (cut is null) return JsonRun.Fail(CliDiagnostics.RenderFieldMissingData(plot.Name, gone ?? $"The run no longer offers {FieldNames.Friendly(q.Array.Name)}."));
@@ -214,7 +217,7 @@ internal static class RenderEm3dField
 
         double phaseDeg = q.Animated ? req.Phase ?? 0 : 0;
         var legend = req.NoLegend ? [] : FieldPlotResolver.LegendLines(plot.Name, q, cut.Scale, item.Label, phaseDeg, loopSeconds: null,
-                                                                        stepLabel: item.Label, hotSpot: hotSpot);
+                                                                        stepLabel: item.Label, hotSpot: hotSpot, drive: drive);
         int? thin = req.NoThin ? null : ThinLimit();
 
         Em3dFieldLayer Layer(Em3dScene scene) => Em3dSectionField.Build(cut, phaseDeg * Math.PI / 180, raster: req.Format == "png", thin, legend,
@@ -257,7 +260,7 @@ internal static class RenderEm3dField
     private static int DrawSurfaces(string path, RenderEm3d.Request req, C3dDocument doc, C3dFieldPlot plot, Em3dView view,
                                     Em3dSetupSource loaded, Em3dProblem problem, string setupName, EmSetup? run, FieldDiscovery found,
                                     FieldSolutionItem item, FieldQuantity q, FieldStep? volume, FieldStep? boundary,
-                                    (double X, double Y, double Z) origin, bool stale, string? runDir)
+                                    (double X, double Y, double Z) origin, bool stale, string? runDir, FieldDriveReading drive)
     {
         var look = view.Projection!.Value;
         var e = loaded.Elaboration;
@@ -337,7 +340,8 @@ internal static class RenderEm3dField
                     return JsonRun.Fail(CliDiagnostics.RenderFieldOptionNotApplicable("--region", plot.Name,
                         plot.On == C3dFieldPlotOn.Faces ? "a Faces plot paints the faces it names." : $"{q.Label} is drawn on the conductors, not on a region."));
                 var b = FieldSurfacePlot.Em(q, volume, boundary, found.Groups, scene, default, onPlane: false, plot.On == C3dFieldPlotOn.Surfaces,
-                    region, FieldSurfacePlot.FaceTargets(scene, faces), null, string.Equals(item.Run.Solver, "openEMS", StringComparison.OrdinalIgnoreCase), ct);
+                    region, FieldSurfacePlot.FaceTargets(scene, faces), null, string.Equals(item.Run.Solver, "openEMS", StringComparison.OrdinalIgnoreCase), ct,
+                    drive: drive);
                 refused = [.. b.Refused];
                 if (b.Surfaces.Count == 0)
                     return JsonRun.Fail(CliDiagnostics.RenderFieldMissingData(plot.Name, string.Join(" ", refused.Append(b.Hint ?? "")).Trim()));
@@ -345,7 +349,7 @@ internal static class RenderEm3dField
                 nudges = [.. b.Nudges];
                 objects = [.. b.Objects];
                 covered = b.Covered;
-                scale = FieldSurfacePlot.EmScale(q, surfaces, plot.Db, plot.Percentile);
+                scale = FieldSurfacePlot.EmScale(q, surfaces, plot.Db, plot.Percentile, drive);
                 target = plot.On == C3dFieldPlotOn.Faces ? string.Join(", ", plot.Faces.Select(f => f.Face))
                        : region is not null ? $"the boundary of '{region.Name}'" : "the conductors";
             }
@@ -359,7 +363,7 @@ internal static class RenderEm3dField
         var boundaries = q.IsTemperature && e is not null && run is not null
             ? Em3dSectionThermal.BoundaryLabels(run, e, found.Table, item.Solution.Index) : [];
         var legend = req.NoLegend ? [] : FieldPlotResolver.LegendLines(plot.Name, q, scale, item.Label, phaseDeg, loopSeconds: null,
-            fixedAcrossSweep: q.IsTemperature && plot.FixRange && item.Run.Solutions.Count > 1, stepLabel: item.Label, hotSpot: hotSpot);
+            fixedAcrossSweep: q.IsTemperature && plot.FixRange && item.Run.Solutions.Count > 1, stepLabel: item.Label, hotSpot: hotSpot, drive: drive);
         var caption = Em3dSurfaceField.Caption(q.IsTemperature, q.Symbol, target, look, setupName, item.Label, mirrors.Count,
                                                wires.Select(w => w.Wire).Distinct().Count(), boundaries, refused);
         var (layer, pageScene) = Em3dSurfaceField.Build(scene, problem, look, surfaces, nudges, objects, covered, q, scale, phaseDeg * Math.PI / 180,

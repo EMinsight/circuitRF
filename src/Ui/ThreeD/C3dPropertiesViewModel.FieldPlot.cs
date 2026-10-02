@@ -40,6 +40,20 @@ public sealed partial class C3dPropertiesViewModel
     public static IReadOnlyList<double> PlotPercentiles { get; } = [95, 99, 99.9, 100];
     public static IReadOnlyList<string> PlotSolvers { get; } = ["Palace", "openEMS"];
 
+    /// <summary>brief-em3d-100 — the Referred to picker's rows, in <see cref="C3dDriveReferredTo"/> order.</summary>
+    public static IReadOnlyList<string> PlotDriveReferences { get; } = ["Incident (available)", "Accepted"];
+
+    public const string DrivePowerTip =
+        "The power this plot's field is shown at, in W, mW or dBm, saved with the plot. Incident power is what a source matched " +
+        "to the port's Z₀ makes available to it. The solve is linear, so this only rescales what is drawn: field strengths by the " +
+        "square root of the power ratio, power and energy densities by the ratio. It never needs a re-run and never marks a " +
+        "result stale. Magnitudes are peak; RMS is 1/√2 of them.";
+
+    public const string DriveReferredTip =
+        "Incident: the power a source matched to the port's Z₀ makes available. Accepted: the power that enters the port after " +
+        "reflection, |a|²(1 − |S_kk|²), with every other port terminated in its own Z₀ — it needs the run's port record at this " +
+        "frequency.";
+
     /// <summary>A field plot's row is selected: its fields are shown.</summary>
     [ObservableProperty] private bool _isFieldPlot;
     private string _plotName = "";
@@ -74,6 +88,10 @@ public sealed partial class C3dPropertiesViewModel
     [ObservableProperty] private bool _plotDb;
     [ObservableProperty] private double _plotPercentile = 99;
     [ObservableProperty] private bool _plotFixRange;
+    /// <summary>brief-em3d-100 — the plot shows a driven solution: its drive rows are shown.</summary>
+    [ObservableProperty] private bool _plotIsDriven;
+    [ObservableProperty] private string _plotDriveText = "";
+    [ObservableProperty] private string? _plotDriveReferredTo;
     [ObservableProperty] private bool _plotHidden;
     /// <summary>R-em3d83-5 — why the plot draws nothing, above its fields; null when it draws.</summary>
     [ObservableProperty] private string? _plotProblem;
@@ -162,6 +180,11 @@ public sealed partial class C3dPropertiesViewModel
         PlotDb = p.Db;
         PlotPercentile = p.Percentile;
         PlotFixRange = p.FixRange;
+        // brief-em3d-100 — the drive, for a driven solution only (eigenmode, static and thermal normalise their own way)
+        PlotIsDriven = item?.Solution.Kind == FieldProblemKind.Driven ||
+                       item is null && p.Solution?.GHz is not null;
+        PlotDriveText = C3dDrivePower.Format(p.DrivePowerW ?? CircuitRF.Design.Em3d.PalaceDrive.IncidentPowerW);
+        PlotDriveReferredTo = PlotDriveReferences[(int)p.DriveReferredTo];
         PlotProblem = editor.FieldPlotProblem(p);
         PlotStale = editor.FieldPlotStaleText(p);
     }
@@ -312,6 +335,35 @@ public sealed partial class C3dPropertiesViewModel
         _plotOffsetDragged = null;
         Editor.EndPlotOffsetPreview();
         CommitPlot($"Cut {_plotName} at {PlotAxis} = {PlotOffsetText.Trim()}", p => { p.Axis ??= PlotAxis; p.Offset = dbu; });
+    }
+
+    /// <summary>brief-em3d-100 — the Drive power box's Enter or lost focus: W, mW, µW or dBm, stored in watts, one undo entry
+    /// (none when the power is unchanged).</summary>
+    public void CommitPlotDrive()
+    {
+        if (!IsFieldPlot || Editor.FieldPlot(_plotName) is not { } p) return;
+        if (!C3dDrivePower.TryParse(PlotDriveText, out double watts, out string? why)) { Error = why!; return; }
+        double now = p.DrivePowerW ?? CircuitRF.Design.Em3d.PalaceDrive.IncidentPowerW;
+        if (Math.Abs(watts - now) <= 1e-12 * now) { PlotDriveText = C3dDrivePower.Format(now); return; }
+        CommitPlot($"Drive {_plotName} at {C3dDrivePower.Format(watts)}", x => x.DrivePowerW = watts);
+    }
+
+    /// <summary>brief-em3d-100 — Incident or Accepted. Accepted at a solution whose run recorded no reflection there is refused
+    /// with the sentence, and the plot stays as it was.</summary>
+    partial void OnPlotDriveReferredToChanged(string? value)
+    {
+        if (_loading || !IsFieldPlot || value is null || Editor.FieldPlot(_plotName) is not { } p) return;
+        var to = (C3dDriveReferredTo)Math.Max(0, PlotDriveReferences.ToList().IndexOf(value));
+        if (to == p.DriveReferredTo) return;
+        if (Editor.PlotDriveProblem(p, to) is { } why)
+        {
+            Error = why;
+            _loading = true;
+            try { PlotDriveReferredTo = PlotDriveReferences[(int)p.DriveReferredTo]; }
+            finally { _loading = false; }
+            return;
+        }
+        CommitPlot($"{_plotName}'s drive {(to == C3dDriveReferredTo.Accepted ? "accepted" : "incident")}", x => x.DriveReferredTo = to);
     }
 
     partial void OnPlotDbChanged(bool value) => CommitPlot($"{_plotName} in {(value ? "dB" : "linear units")}", p => p.Db = value);

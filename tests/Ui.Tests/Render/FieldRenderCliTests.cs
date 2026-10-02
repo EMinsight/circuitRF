@@ -14,6 +14,7 @@
 //   10  a thinned vector slice draws fewer pieces covering the same area; --no-thin and PNG draw every triangle
 //   11  brief-em3d-89 — a Surfaces plot of |E| on the cavity's region, seen from the front, draws that region's boundary with
 //       the view's range, and a pixel on the front wall reads the field there
+//   12  brief-em3d-100 — a plot's drive is printed with no flag, as the line the 3D view's legend prints for it
 
 using System.Diagnostics;
 using System.Reflection;
@@ -367,6 +368,28 @@ public sealed class FieldRenderCliTests(ITestOutputHelper output) : IDisposable
     }
 
     // ── the fixture ─────────────────────────────────────────────────────────────────────────
+
+    // ── 12. brief-em3d-100 — the plot's drive ───────────────────────────────────────────────
+
+    /// <summary>brief-em3d-100 gate 8 — a plot at 10 W: `render --field` prints the drive line, with no flag, exactly as the 3D
+    /// view's legend (FieldPlotResolver.LegendLines) prints it for the same plot in-process.</summary>
+    [Fact]
+    public void Gate12_ThePlotsDrive_IsTheLegendLine_TheViewPrints()
+    {
+        var plot = MidZ("Hot", new C3dFieldSolution { GHz = 10 });
+        plot.DrivePowerW = 10;
+        string c3d = Workspace(Driven(), [plot]);
+        DrivenRun(c3d, 10);
+        string svg = Path.Combine(_root, "hot.svg");
+        var r = Cli("render", c3d, "-o", svg, "--field", "Hot");
+        Assert.True(r.Exit == 0, r.StdErr);
+
+        var vm = Open(c3d);
+        Until(() => vm.Viewer.LayerNamed("Hot") is { Builds: > 0, Building: false, Scale: not null }, "the plot was never drawn");
+        string line = Assert.Single(vm.Viewer.FieldLegendLines(), l => l.StartsWith("Drive: ", StringComparison.Ordinal));
+        Assert.Equal("Drive: 10 W incident (available), peak", line);
+        Assert.Contains(line, File.ReadAllText(svg));
+    }
 
     private static C3dFieldPlot MidZ(string name, C3dFieldSolution? solution = null) => new()
     {

@@ -1386,6 +1386,8 @@ the model's outlines and its legend beside it.
 - **`--phase <degrees>`** picks the instant drawn for a quantity read instantaneously (`Re{E}`); it is a
   refusal on any other. The phase is never written to the file.
 - **A hidden plot draws the same.** Hiding only chooses which plot the window draws; `--field` names one.
+- **The plot's drive is applied**, and its legend states it, as in the window. There is no flag for it:
+  set it on the plot. See [what drive a field is shown at](em-3d.md#field-drive).
 - A `--section` that is not the plot's own plane is a refusal naming both.
 - **A surfaces or faces plot is drawn as the 3D view shows it, from a direction you give**, because the
   window's camera is not saved with the plot: `--iso` (the 3D view's *Standard Views ▸ Isometric*),

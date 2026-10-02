@@ -412,14 +412,15 @@ public sealed partial class Viewer3DViewModel
 
     private static string StepKey(string pvtu, double toMetres) => pvtu + "|" + toMetres.ToString("R", CultureInfo.InvariantCulture);
 
-    /// <summary>The step read from <paramref name="pvtu"/>, read once (off the UI thread, by whichever layer asks first).</summary>
-    private Lazy<FieldStep> StepOf(string key, string pvtu, double toMetres)
+    /// <summary>The step read from <paramref name="pvtu"/>, read once (off the UI thread, by whichever layer asks first) — an
+    /// openEMS dump at its solution's referral (brief-em3d-100, <see cref="FieldSolution.DumpScale"/>).</summary>
+    private Lazy<FieldStep> StepOf(string key, string pvtu, double toMetres, System.Numerics.Complex dumpScale)
     {
         if (_steps.TryGetValue(key, out var s)) return s;
         return _steps[key] = new Lazy<FieldStep>(() =>
         {
             Interlocked.Increment(ref _fieldStepReads);
-            return FieldStep.Open(pvtu, toMetres);
+            return FieldStep.Open(pvtu, toMetres, dumpScale);
         }, LazyThreadSafetyMode.ExecutionAndPublication);
     }
 
@@ -457,8 +458,8 @@ public sealed partial class Viewer3DViewModel
         string? vk = sol.VolumePvtu is { } v0 ? StepKey(v0, run.ToMetres) : null;
         string? bk = sol.BoundaryPvtu is { } b0 ? StepKey(b0, run.ToMetres) : null;
         (layer.VolumeKey, layer.BoundaryKey) = (vk, bk);
-        var volStep = vk is null ? null : StepOf(vk, sol.VolumePvtu!, run.ToMetres);
-        var bndStep = bk is null ? null : StepOf(bk, sol.BoundaryPvtu!, run.ToMetres);
+        var volStep = vk is null ? null : StepOf(vk, sol.VolumePvtu!, run.ToMetres, sol.DumpScale);
+        var bndStep = bk is null ? null : StepOf(bk, sol.BoundaryPvtu!, run.ToMetres, sol.DumpScale);
         ReleaseSteps();
         Task.Run(() =>
         {
@@ -595,6 +596,7 @@ public sealed partial class Viewer3DViewModel
         layer.HotSpot = null;
         layer.HotSpotLabel = "";
         layer.OwnScale = layer.Scale = null;
+        layer.Drive = FieldDriveReading.None;
         layer.Covered.Clear();
         LayersChanged();
     }
@@ -697,6 +699,7 @@ public sealed partial class Viewer3DViewModel
         }
         // brief-em3d-82 — the painted faces, resolved against the scene here (cheap) and painted off the UI thread.
         var targets = FieldSurfacePlot.FaceTargets(scene, layer.Faces);
+        var drive = DriveOf(layer, q);                         // brief-em3d-100 — this plot's drive, on its own values
         FieldSampler? sampler = layer.Loaded?.Solver == "openEMS" ? layer.VolumeSampler : null;
         bool unclipped = layer.IsClipPlanePlot;
         bool sampled = layer.Loaded?.Solver == "openEMS";
@@ -706,12 +709,12 @@ public sealed partial class Viewer3DViewModel
             {
                 // brief-em3d-89 — built by FieldSurfacePlot.Em, which `render --field` draws a Surfaces or Faces plot from too
                 var built = FieldSurfacePlot.Em(q, vol, bnd, groups, scene, clip, onPlane, onSurfaces, selected, targets, sampler, sampled, cts.Token,
-                                                sliceClipped: !unclipped);
+                                                sliceClipped: !unclipped, drive: drive);
                 var surfaces = built.Surfaces;
                 var refused = built.Refused;
                 string? hint = built.Hint;
                 cts.Token.ThrowIfCancellationRequested();
-                var scale = FieldSurfacePlot.EmScale(q, surfaces, db, pct);
+                var scale = FieldSurfacePlot.EmScale(q, surfaces, db, pct, drive);
                 var packed = Scene3DFieldGeometry.Pack(q, surfaces, built.Nudges);
                 string text = surfaces.Count == 0 && hint is not null ? hint : $"{q.Label}: {surfaces.Sum(x => x.TriangleCount):N0} triangles.";
                 if (refused.Count > 0) text += " " + string.Join(" ", refused);
@@ -722,6 +725,7 @@ public sealed partial class Viewer3DViewModel
                     FieldGeometryBuilds++;
                     layer.Builds++;
                     layer.Surfaces = surfaces;
+                    layer.Drive = drive;
                     layer.FacePaints = built.Paints;
                     layer.OwnScale = scale;
                     layer.Geometry = new Scene3DFieldGeometry(packed, ++_fieldVersion);
@@ -743,8 +747,20 @@ public sealed partial class Viewer3DViewModel
     private void RescaleField(FieldLayer layer)
     {
         if (layer.Quantity is not { } q || layer.Surfaces.Count == 0 || q.IsTemperature) return;
-        layer.OwnScale = FieldSurfacePlot.EmScale(q, layer.Surfaces, layer.Db, layer.Percentile);
+        layer.OwnScale = FieldSurfacePlot.EmScale(q, layer.Surfaces, layer.Db, layer.Percentile, layer.Drive);
         LayersChanged();
+    }
+
+    /// <summary>
+    /// brief-em3d-100 — <paramref name="layer"/>'s drive for quantity <paramref name="q"/> at the solution it loaded: its plot's
+    /// power and reference, or (the view's own layer) the solver's own power. <see cref="FieldDriveReading.None"/> for anything
+    /// but a driven field.
+    /// </summary>
+    private static FieldDriveReading DriveOf(FieldLayer layer, FieldQuantity q)
+    {
+        if (layer.Loaded is not { } s) return FieldDriveReading.None;
+        var p = layer.Request;
+        return FieldDrive.Read(s, q.Array.Name, p?.DrivePowerW, p?.DriveReferredTo ?? CircuitRF.Design.ThreeD.C3dDriveReferredTo.Incident);
     }
 
     // ── Export picture… (R-em3d29-5) ────────────────────────────────────────────────────────
@@ -873,9 +889,11 @@ public sealed partial class Viewer3DViewModel
             else found = Sample(layer.VolumeSampler, layer.Volume, point + (float)(1e-6 * diag) * paint.ReadToward, 0, ch);
         }
         if (!found) return ("", 0);
+        // brief-em3d-100 — the value at this plot's drive (the step holds the solver's), with no unit when it is referred to none
+        for (int i = 0; i < ch.Length; i++) ch[i] *= layer.Drive.Factor;
         double phase = q.Animated ? FieldPhaseDegrees * Math.PI / 180 : 0;
         double v = q.Evaluate(ch, phase);
-        string unit = FieldNames.Unit(q.Array.Name);
+        string unit = layer.Drive.Relative ? "" : FieldNames.Unit(q.Array.Name);
         string text = $"{q.Symbol} = {v.ToString("G4", CultureInfo.InvariantCulture)}{(unit.Length > 0 ? " " + unit : "")}";
         if (q.Animated) text += $" at φ = {FieldPhaseDegrees.ToString("0", CultureInfo.InvariantCulture)}°";
         return (text, at);
