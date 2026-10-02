@@ -38738,3 +38738,13 @@ wake-ups/s). Every other `DispatcherTimer` in `src/Ui` is a one-shot or stops it
 The owner confirmed by eye that the field resumes animating, up to date, on returning to its tab and on restoring the
 window. Not measured: an empty workspace, an unsolved `.c3d`, the Messages panel with a live progress row, and Release
 (wake-ups do not depend on the build; Debug CPU is the upper bound).
+
+## New Schematic / Symbol / Layout refused a cell that lacked that sub-folder (2026-10-02)
+
+A cell made with only a layout has no `schematic/` (or `symbol/`) sub-folder, and the project tree's New Schematic
+refused it with "Schematic sub-folder not found"; New Symbol and New Layout carried the same guard. The guards were
+dead weight: every `CellCreate.Write*View` already creates its sub-folder (`ViewPath`), and New 3D View — written
+later — never had the guard, which is why it alone worked. All three guards removed from `WorkspaceViewModel`.
+Gate: `tests/Ui.Tests/NewViewMissingSubFolderTests.cs` (each writer into a cell missing its sub-folder, plus a
+comment-stripped scan that the refusal text is gone from the view model — the commands open a modal dialog, so the
+command itself is not driven).

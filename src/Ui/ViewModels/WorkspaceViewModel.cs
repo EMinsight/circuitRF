@@ -14889,13 +14889,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     public async Task NewSymbolAsync(ProjectTreeNodeViewModel cellNode)
     {
         var cellDir   = cellNode.AbsolutePath;
+        // A missing symbol/ sub-folder is not an error — a cell made with only a layout has none,
+        // and CellCreate's write creates it, as it does for every view type.
         var symbolDir = CellFolder.SubFolderPath(cellDir, ViewType.Symbol);
-
-        if (!Directory.Exists(symbolDir))
-        {
-            Messages.Error($"Symbol sub-folder not found in '{cellNode.Name}'.");
-            return;
-        }
 
         var mainWindow = ResolveOwner(null);
         if (mainWindow is null) return;
@@ -14985,12 +14981,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         string cellDir, string cellName, string fileNameWithoutExt,
         ShippedSchematicTemplate? template = null, bool includeDataDisplay = false)
     {
+        // A missing schematic/ sub-folder is created by CellCreate's write, not refused here.
         var schematicDir = CellFolder.SubFolderPath(cellDir, ViewType.Schematic);
-        if (!Directory.Exists(schematicDir))
-        {
-            Messages.Error($"Schematic sub-folder not found in '{cellName}'.");
-            return false;
-        }
 
         var ext      = CellFolder.ViewExtension(ViewType.Schematic);
         var filePath = Path.Combine(schematicDir, fileNameWithoutExt + ext);
@@ -15082,14 +15074,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// <inheritdoc/>
     public async Task NewLayoutAsync(ProjectTreeNodeViewModel cellNode)
     {
+        // A missing layout/ sub-folder is created by CellCreate's write, not refused here.
         var cellDir   = cellNode.AbsolutePath;
-        var layoutDir = CellFolder.SubFolderPath(cellDir, ViewType.Layout);
-
-        if (!Directory.Exists(layoutDir))
-        {
-            Messages.Error($"Layout sub-folder not found in '{cellNode.Name}'.");
-            return;
-        }
 
         var mainWindow = ResolveOwner(null);
         if (mainWindow is null) return;
