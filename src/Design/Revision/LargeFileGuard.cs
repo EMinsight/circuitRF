@@ -58,6 +58,19 @@ public static class LargeFileGuard
     public static long ThresholdBytes { get; set; } = 16L * 1024 * 1024;
 
     /// <summary>
+    /// What counts as an unexpectedly large FOLDER: the new files under it that are each below
+    /// <see cref="ThresholdBytes"/>, added together.
+    ///
+    /// <para><b>A per-file threshold alone is defeated by any tool that splits its output.</b> A Palace
+    /// solve writes its field data as one ParaView piece per process — 150 pieces of 10.7 MB for the 3D
+    /// Connector example, 695 MB together, not one of them over 16 MB — and all of it went into the
+    /// history at the next close. The run folders circuitRF knows about are in the generated
+    /// <c>.gitignore</c> (<see cref="WorkspacePolicyFiles.RunFolderPatterns"/>); this is the net under
+    /// the ones it does not.</para>
+    /// </summary>
+    public static long FolderThresholdBytes { get; set; } = 64L * 1024 * 1024;
+
+    /// <summary>
     /// Every file that would newly enter the history at this boundary and is over the threshold.
     ///
     /// <para><b>"Newly" is measured against the newest restore point's own state</b>, not against
@@ -65,20 +78,68 @@ public static class LargeFileGuard
     /// about it again would be noise on every boundary forever. <b>Files <c>.gitignore</c> already
     /// excludes are never asked about</b>, which is what keeps the first recording of a four-year-old
     /// workspace short enough to read (§8.1a).</para>
+    ///
+    /// <para><b>A folder is returned, with a trailing <c>/</c>, when the new files under it that are each
+    /// below <see cref="ThresholdBytes"/> add up to <see cref="FolderThresholdBytes"/></b> — the
+    /// DEEPEST such folder, so as little as possible is left out, and <b>only a folder holding nothing
+    /// already kept</b>: leaving a folder out leaves out everything in it, and a kept file left out of
+    /// a restore point is a file that restore point no longer has.</para>
     /// </summary>
     /// <param name="previousTreeId">The newest restore point's state, or null when there is none —
     /// which is the first recording, where every large file is new by definition.</param>
     public static IReadOnlyList<LargeFile> Find(GitCommand git, string? previousTreeId)
     {
-        var candidates = LargeFilesOnDisk(git.WorkspaceRoot);
-        if (candidates.Count == 0) return [];
+        var scan       = Scan(git.WorkspaceRoot);
+        var candidates = scan.Large;
+        bool heavy     = scan.Root.Children.Any(c => c.RawBytes() >= FolderThresholdBytes);
+        if (candidates.Count == 0 && !heavy) return [];
 
         var already = previousTreeId is { Length: > 0 } ? PathsIn(git, previousTreeId) : [];
         candidates  = [.. candidates.Where(f => !already.Contains(f.RelativePath))];
-        if (candidates.Count == 0) return [];
+        var small   = heavy ? scan.Root.SmallFiles().Where(f => !already.Contains(f.Path)).Select(f => f.Path).ToList() : [];
+        if (candidates.Count == 0 && small.Count == 0) return [];
 
-        var ignored = Ignored(git, candidates.Select(f => f.RelativePath));
-        return [.. candidates.Where(f => !ignored.Contains(f.RelativePath))];
+        var ignored = Ignored(git, candidates.Select(f => f.RelativePath).Concat(small));
+        List<LargeFile> found = [.. candidates.Where(f => !ignored.Contains(f.RelativePath))];
+
+        if (heavy)
+            foreach (var child in scan.Root.Children)
+                HeavyFolders(child, already, ignored, found);
+
+        found.Sort((a, b) => b.Bytes.CompareTo(a.Bytes));
+        return found;
+    }
+
+    /// <summary>The new, not-ignored bytes under <paramref name="folder"/> that no folder below it already
+    /// accounts for, and whether anything under it is kept; a folder that qualifies is added and
+    /// accounts for its own.</summary>
+    private static (long Bytes, bool Kept) HeavyFolders(
+        Folder folder, HashSet<string> already, HashSet<string> ignored, List<LargeFile> found)
+    {
+        // A nested repository is left out of every recording already (NestedRepositories).
+        if (folder.Nested) return (0, false);
+
+        long bytes = 0;
+        bool kept  = false;
+        foreach (var (path, length) in folder.Files)
+        {
+            if (already.Contains(path)) kept = true;
+            else if (length < ThresholdBytes && !ignored.Contains(path)) bytes += length;
+        }
+        foreach (var child in folder.Children)
+        {
+            var (b, k) = HeavyFolders(child, already, ignored, found);
+            bytes += b;
+            kept  |= k;
+        }
+
+        if (kept || bytes < FolderThresholdBytes) return (bytes, kept);
+
+        // A large file inside it was found on its own; the folder now says it for both.
+        string relative = folder.Path + "/";
+        found.RemoveAll(f => f.RelativePath.StartsWith(relative, StringComparison.Ordinal));
+        found.Add(new LargeFile(relative, bytes, PatternFor(relative)));
+        return (0, false);
     }
 
     /// <summary>
@@ -151,15 +212,33 @@ public static class LargeFileGuard
 
     // ── The scan ──────────────────────────────────────────────────────────────────────────────────
 
-    private static List<LargeFile> LargeFilesOnDisk(string root)
+    /// <summary>One folder of the walk: its own files, workspace-relative. Only those below
+    /// <see cref="ThresholdBytes"/> count towards it; a larger one is still a file it holds.</summary>
+    private sealed class Folder(string path, bool nested)
     {
-        List<LargeFile> found = [];
-        Walk(Path.GetFullPath(root), Path.GetFullPath(root), found, depth: 0);
-        found.Sort((a, b) => b.Bytes.CompareTo(a.Bytes));
-        return found;
+        public string Path { get; } = path;
+        public bool Nested { get; } = nested;
+        public List<(string Path, long Length)> Files { get; } = [];
+        public List<Folder> Children { get; } = [];
+
+        public long RawBytes() => Nested ? 0 : Small.Sum(f => f.Length) + Children.Sum(c => c.RawBytes());
+
+        public IEnumerable<(string Path, long Length)> SmallFiles()
+            => Nested ? [] : Small.Concat(Children.SelectMany(c => c.SmallFiles()));
+
+        private IEnumerable<(string Path, long Length)> Small => Files.Where(f => f.Length < ThresholdBytes);
     }
 
-    private static void Walk(string root, string dir, List<LargeFile> found, int depth)
+    private static (List<LargeFile> Large, Folder Root) Scan(string root)
+    {
+        List<LargeFile> large = [];
+        var top = new Folder("", nested: false);
+        Walk(Path.GetFullPath(root), Path.GetFullPath(root), large, top, depth: 0);
+        large.Sort((a, b) => b.Bytes.CompareTo(a.Bytes));
+        return (large, top);
+    }
+
+    private static void Walk(string root, string dir, List<LargeFile> found, Folder folder, int depth)
     {
         if (depth > 64) return;
 
@@ -170,7 +249,6 @@ public static class LargeFileGuard
                 long length;
                 try { length = new FileInfo(file).Length; }
                 catch (Exception e) when (e is IOException or UnauthorizedAccessException) { continue; }
-                if (length < ThresholdBytes) continue;
 
                 string relative = Path.GetRelativePath(root, file).Replace(Path.DirectorySeparatorChar, '/');
 
@@ -182,7 +260,8 @@ public static class LargeFileGuard
                 if (relative is WorkspacePolicyFiles.GitIgnoreName or WorkspacePolicyFiles.GitAttributesName)
                     continue;
 
-                found.Add(new LargeFile(relative, length, PatternFor(relative)));
+                folder.Files.Add((relative, length));
+                if (length >= ThresholdBytes) found.Add(new LargeFile(relative, length, PatternFor(relative)));
             }
 
             foreach (string child in Directory.GetDirectories(dir))
@@ -191,7 +270,12 @@ public static class LargeFileGuard
                 if (name is ".git") continue;
                 if (string.Equals(name, WorkspacePolicyFiles.GeneratedCellsFolder, StringComparison.OrdinalIgnoreCase))
                     continue;
-                Walk(root, child, found, depth + 1);
+
+                string git  = Path.Combine(child, ".git");
+                var    sub  = new Folder(Path.GetRelativePath(root, child).Replace(Path.DirectorySeparatorChar, '/'),
+                                         folder.Nested || Directory.Exists(git) || File.Exists(git));
+                folder.Children.Add(sub);
+                Walk(root, child, found, sub, depth + 1);
             }
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
@@ -199,8 +283,16 @@ public static class LargeFileGuard
 
     /// <summary>The pattern "never include files like this" would add — the file's KIND where it has
     /// one, because a kind is the category a designer means by "files like this".</summary>
+    /// <remarks>A folder (a trailing <c>/</c>) is a folder pattern: <c>*.ext/</c> where its name has an
+    /// extension, otherwise the folder itself, anchored at the workspace root.</remarks>
     public static string PatternFor(string relativePath)
     {
+        if (relativePath.EndsWith('/'))
+        {
+            string folder = relativePath.TrimEnd('/');
+            string ext    = Path.GetExtension(folder);
+            return ext.Length > 1 ? "*" + ext + "/" : "/" + folder + "/";
+        }
         string extension = Path.GetExtension(relativePath);
         return extension.Length > 1 ? "*" + extension : Path.GetFileName(relativePath);
     }

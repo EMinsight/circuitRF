@@ -42,6 +42,28 @@ public static class WorkspacePolicyFiles
     public static readonly string[] ResultPatterns = ["*.npy", "*.spl", "*.lpcwave", "*.mat"];
 
     /// <summary>
+    /// The 3D solvers' run folders — <c>Em3dRunService.RunDirectory</c>'s <c>&lt;key&gt;.palace</c>,
+    /// its static/eigenmode <c>&lt;key&gt;.palace_es|_ms|_eig</c>, <c>&lt;key&gt;.openems</c>, and
+    /// <c>ThermalRunService.RunDirectory</c>'s <c>&lt;key&gt;.thermal</c>.
+    ///
+    /// <para><b>Excluded as folders, and that is the whole difference from <see cref="ResultPatterns"/>.</b>
+    /// A run folder holds the mesh, the solver's own config and logs, and the field files — a Palace
+    /// solve of the 3D Connector example writes 150 ParaView pieces of 10.7 MB each, 695 MB together,
+    /// every one under <see cref="LargeFileGuard.ThresholdBytes"/>. Kept, they cost ~40 s of
+    /// <c>git add</c> and <c>git gc</c> on the UI thread at the next close and ~500 MB of history per
+    /// re-solve. The trailing slash matches only a DIRECTORY, so the Touchstone and the <c>.cdd</c>
+    /// written BESIDE the folder under the same stem stay kept.</para>
+    /// </summary>
+    public static readonly string[] RunFolderPatterns = ["*.palace/", "*.palace_*/", "*.openems/", "*.thermal/"];
+
+    /// <summary>
+    /// Opens the run-folder section. <b>A marker of its own</b>, because the section arrived after
+    /// <see cref="BlockMarker"/>'s block had already been written into existing workspaces —
+    /// <see cref="Ensure"/> appends it to a file holding the older block, once.
+    /// </summary>
+    public const string RunFoldersMarker = "# circuitRF — 3D solver run folders";
+
+    /// <summary>
     /// The document types marked unmergeable AND pinned byte-for-byte (R-rc3-12, R-rc3-12a, §6.1).
     /// <c>.c3d</c> joined them with brief-em3d-41 for <c>.clay</c>'s reason: a three-way merge of a
     /// polyhedron's faces can leave it open while the JSON stays well-formed. The block is appended
@@ -56,27 +78,37 @@ public static class WorkspacePolicyFiles
     public static IReadOnlyList<string> Ensure(string workspaceDir)
     {
         List<string> written = [];
-        if (Append(Path.Combine(workspaceDir, GitIgnoreName), GitIgnoreBlock())) written.Add(GitIgnoreName);
-        if (Append(Path.Combine(workspaceDir, GitAttributesName), GitAttributesBlock())) written.Add(GitAttributesName);
+        string ignore = Path.Combine(workspaceDir, GitIgnoreName);
+
+        // A file holding the older block gains only the run-folder section; a file holding neither
+        // gains the whole block, which already carries that section.
+        if (HasBlock(ignore)
+                ? Append(ignore, RunFoldersBlock(), RunFoldersMarker)
+                : Append(ignore, GitIgnoreBlock(), BlockMarker))
+            written.Add(GitIgnoreName);
+        if (Append(Path.Combine(workspaceDir, GitAttributesName), GitAttributesBlock(), BlockMarker))
+            written.Add(GitAttributesName);
         return written;
     }
 
     /// <summary>True when circuitRF's block is already in the file at <paramref name="path"/>.</summary>
-    public static bool HasBlock(string path)
+    public static bool HasBlock(string path) => HasMarker(path, BlockMarker);
+
+    private static bool HasMarker(string path, string marker)
     {
         try
         {
             return File.Exists(path)
-                && File.ReadAllText(path).Contains(BlockMarker, StringComparison.Ordinal);
+                && File.ReadAllText(path).Contains(marker, StringComparison.Ordinal);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return false; }
     }
 
-    private static bool Append(string path, string block)
+    private static bool Append(string path, string block, string marker)
     {
         try
         {
-            if (HasBlock(path)) return false;
+            if (HasMarker(path, marker)) return false;
 
             string existing = File.Exists(path) ? File.ReadAllText(path) : "";
             string prefix   = existing.Length == 0 || existing.EndsWith('\n') ? "" : "\n";
@@ -130,6 +162,19 @@ public static class WorkspacePolicyFiles
         GeneratedCellsFolder + "/",
         ".crf-*",
         "*.crf-tmp-*",
+        "",
+    ]) + "\n" + RunFoldersBlock();
+
+    /// <summary>The run-folder section — part of <see cref="GitIgnoreBlock"/>, and appended on its own
+    /// to a file whose block predates it.</summary>
+    public static string RunFoldersBlock() => string.Join("\n",
+    [
+        RunFoldersMarker,
+        "#",
+        "# A 3D solve's working folder: the mesh, the solver's own files and the field data, often",
+        "# hundreds of megabytes. Re-run the setup to rebuild it; the S-parameters written beside it",
+        "# are kept.",
+        .. RunFolderPatterns,
         "",
     ]) + "\n";
 

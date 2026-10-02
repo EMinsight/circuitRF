@@ -443,7 +443,7 @@ different situations and only one of them means the work is recoverable.
 ## "My results are gone" {#results}
 
 They were never kept, and that is deliberate — go back to a restore point and your `.npy`, `.spl`,
-`.lpcwave` and `.mat` files are still sitting exactly where they were.
+`.lpcwave` and `.mat` files, and your 3D run folders, are still sitting exactly where they were.
 
 **A result is a function of the design and the engine**, so the design is the thing worth keeping: run
 the analysis again and you have the results back. It is not about disk space. It is also why going back
@@ -623,6 +623,7 @@ tool can tell you whether the result is a valid design.</p>
 | cells, schematics, symbols, layouts, technologies | **yes** |
 | the workspace file — analyses, references, configuration | **yes** |
 | simulation results (`.npy`, `.spl`, `.lpcwave`, `.mat`) | no — re-run the analysis |
+| a 3D solve's run folder (`<setup>.palace`, `.openems`, `.thermal`) — its mesh and field data | no — simulate again; the S-parameters written beside it **are** kept |
 | your own panel layout, open tabs and colour theme | no — they are yours, not the design's |
 | generated PCell artwork | no — it is rebuilt from the layout |
 | a folder inside the workspace that keeps a history of its own | no — it is left entirely alone |
@@ -641,7 +642,8 @@ tool can tell you whether the result is a valid design.</p>
 ### Unusually large files
 
 The first time something much larger than a design document would go into the history — an imported
-artwork file, a whole fabrication set — circuitRF asks what it is:
+artwork file, a whole fabrication set, or a folder of many smaller files that add up to a lot —
+circuitRF asks what it is:
 
 - **Include it** — this is design input. It is kept: one copy now, and one more only when it changes.
 - **Leave it out this time** — nothing is written, and you will be asked again.

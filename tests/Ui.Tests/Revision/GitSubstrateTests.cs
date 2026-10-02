@@ -8,7 +8,11 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using CircuitRF.Design.Em3d;
+using CircuitRF.Design.Layout.Em;
 using CircuitRF.Design.Revision;
+using CircuitRF.Design.Thermal;
+using CircuitRF.Engine.Em3d;
 using CircuitRF.Design.Workspace;
 using CircuitRF.Diagnostics;
 using CircuitRF.Ui;
@@ -367,6 +371,61 @@ public class GitSubstrateTests
         WorkspacePolicyFiles.Ensure(ws.Root);
         Assert.Equal(after, File.ReadAllText(ws.File_(".gitignore")));
         Assert.Equal(1, Occurrences(after, WorkspacePolicyFiles.BlockMarker));
+    }
+
+    /// <summary>
+    /// A 3D solve's run folder is ignored and what is written BESIDE it under the same stem is not.
+    /// The folders are named by the run services' own <c>RunDirectory</c>, so a renamed token or a new
+    /// static suffix shows up here rather than as hundreds of megabytes in somebody's history.
+    /// </summary>
+    [GitFact]
+    public void EverySolverRunFolderIsIgnoredAndTheResultsBesideItAreNot()
+    {
+        using var ws = new GitWorkspace();
+        Assert.Equal(0, ws.Raw("init", "-q").Code);
+        WorkspacePolicyFiles.Ensure(ws.Root);
+
+        string results = ws.File_("results");
+        EmSetup Setup(Em3dProblemType problem) => new() { Name = "Launch Palace", Problem3D = problem };
+        string[] runs =
+        [
+            .. Enum.GetValues<Em3dProblemType>().Where(p => p != Em3dProblemType.Thermal).Select(p => Em3dRunService.RunDirectory(results, Setup(p), Em3dSolver.Palace)),
+            Em3dRunService.RunDirectory(results, Setup(Em3dProblemType.Driven), Em3dSolver.OpenEms),
+            ThermalRunService.RunDirectory(results, Setup(Em3dProblemType.Driven)),
+        ];
+        Assert.Equal(runs.Length, runs.Distinct().Count());
+
+        string Rel(string full) => Path.GetRelativePath(ws.Root, full).Replace('\\', '/');
+        List<string> inside = [.. runs.Select(r => Rel(Path.Combine(r, "postpro", "x.vtu")))];
+        foreach (string f in inside) ws.Write(f, "x");
+        string[] beside = ["results/Launch Palace.palace.s2p", "results/Launch Palace.palace_em.cdd"];
+        foreach (string f in beside) ws.Write(f, "x");
+
+        string ignored = ws.Raw(["check-ignore", .. inside, .. beside]).Out;
+        foreach (string f in inside) Assert.Contains(f, ignored, StringComparison.Ordinal);
+        foreach (string f in beside) Assert.DoesNotContain(f, ignored, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A workspace whose <c>.gitignore</c> was written before the run-folder section existed gains that
+    /// section — once, after the user's lines and the older block, which are left as they were.
+    /// </summary>
+    [Fact]
+    public void AnOlderIgnoreFileGainsTheRunFolderSectionOnceAndKeepsEverythingElse()
+    {
+        using var ws = new GitWorkspace();
+        string older = "*.mine\n" + WorkspacePolicyFiles.BlockMarker + "\n*.npy\n";
+        File.WriteAllText(ws.File_(".gitignore"), older);
+
+        Assert.Contains(".gitignore", WorkspacePolicyFiles.Ensure(ws.Root));
+        string after = File.ReadAllText(ws.File_(".gitignore"));
+        Assert.StartsWith(older, after);
+        foreach (string pattern in WorkspacePolicyFiles.RunFolderPatterns)
+            Assert.Contains(pattern, after);
+
+        Assert.DoesNotContain(".gitignore", WorkspacePolicyFiles.Ensure(ws.Root));
+        Assert.Equal(after, File.ReadAllText(ws.File_(".gitignore")));
+        Assert.Equal(1, Occurrences(after, WorkspacePolicyFiles.RunFoldersMarker));
     }
 
     // ── Gate 6: the repository configuration is complete ──────────────────────────────────────────

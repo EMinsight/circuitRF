@@ -610,6 +610,40 @@ public class RestorePointsTests
         finally { LargeFileGuard.ThresholdBytes = previous; }
     }
 
+    /// <summary>
+    /// A tool that splits its output defeats a per-file threshold — a Palace solve's 150 field pieces
+    /// are each 10.7 MB. An unattended boundary leaves out the deepest folder whose new small files add
+    /// up past <see cref="LargeFileGuard.FolderThresholdBytes"/>, and never a folder holding a kept
+    /// file, because leaving the folder out would take that file out of the entry.
+    /// </summary>
+    [GitFact]
+    public void AnUnattendedBoundaryLeavesOutAFolderOfManySmallFilesButNeverOneHoldingAKeptFile()
+    {
+        using var ws = Armed();
+        (long file, long folder) previous = (LargeFileGuard.ThresholdBytes, LargeFileGuard.FolderThresholdBytes);
+        (LargeFileGuard.ThresholdBytes, LargeFileGuard.FolderThresholdBytes) = (4096, 16 * 1024);
+        try
+        {
+            ws.Write("mixed/notes.txt", "kept");
+            Assert.True(Take(ws, CheckpointOrigin.WorkspaceClosed, null, attended: false).Recorded);
+
+            for (int i = 0; i < 8; i++) ws.WriteBytes($"solver/run/post/piece{i}.dat", 3000);
+            for (int i = 0; i < 8; i++) ws.WriteBytes($"mixed/piece{i}.dat", 3000);
+            ws.Write("solver/run/log.txt", "small");
+
+            var taken = Take(ws, CheckpointOrigin.WorkspaceClosed, null, attended: false);
+            Assert.True(taken.Recorded);
+            Assert.Equal(["solver/run/post/"], taken.Point!.LeftOut);
+
+            string names = ws.Raw("ls-tree", "-r", "--name-only", taken.Point.TreeId).Out;
+            Assert.DoesNotContain("solver/run/post/", names, StringComparison.Ordinal);
+            Assert.Contains("solver/run/log.txt", names, StringComparison.Ordinal);
+            Assert.Contains("mixed/notes.txt", names, StringComparison.Ordinal);
+            Assert.Contains("mixed/piece0.dat", names, StringComparison.Ordinal);
+        }
+        finally { (LargeFileGuard.ThresholdBytes, LargeFileGuard.FolderThresholdBytes) = previous; }
+    }
+
     // ── Gate 10: the guard's three choices, and there is no fourth ───────────────────────────────
 
     /// <summary>

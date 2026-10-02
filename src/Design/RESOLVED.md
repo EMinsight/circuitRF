@@ -16181,3 +16181,36 @@ of that claim is in the user guide. Gate: `WslLocationTests.Gate5`/`Gate5b`. The
 - **The memory confirmation now receives the verdict, not its sentence** (`Func<Em3dMemoryVerdict, bool>`), so the
   panel can see the `.wslconfig` the sentence names and offer to raise it. Every existing caller was `_ => true`, which
   still compiles.
+
+## Closing a workspace took ~60 s after a Palace solve — the run folder went into the history (2026-10-01)
+
+- **Cause, measured on the 3D Connector example after one Palace solve.** The run folder
+  (`results/<setup>.palace/`) held 695 MB, mostly 150 ParaView `.vtu` pieces of 10.7 MB each (one per MPI rank
+  per excitation). The generated `.gitignore` excluded only `*.npy`/`*.spl`/`*.lpcwave`/`*.mat`, and the large-file
+  guard tests each file against 16 MB, so not one piece was caught. The close boundary's `git add --all` (fresh
+  private index, so every byte compressed) took 13.8 s and the close housekeeping's `git gc` 25.7 s (51 s CPU,
+  delta search across 150 binaries), both on the UI thread; the history was 510 MB after ONE restore point and
+  would have grown by roughly that much per re-solve. `revision-control.md` §8.1 always said "simulation output
+  directories" — they were simply never in the list.
+- **Fix 1: `WorkspacePolicyFiles.RunFolderPatterns`** — `*.palace/`, `*.palace_*/` (static/eigenmode),
+  `*.openems/`, `*.thermal/`. The trailing slash matches only a DIRECTORY, so the `.sNp` and `.cdd` written beside
+  the folder under the same stem stay kept. openEMS and the thermal solver keep run folders of the same kind (mesh,
+  per-port working directories, field dumps), so they are in for the same reason. A gate builds each folder name
+  through `Em3dRunService.RunDirectory`/`ThermalRunService.RunDirectory` and asks `git check-ignore`, so a new
+  solver token or static suffix fails there instead of in somebody's history.
+- **Existing workspaces get it too.** The policy block is append-once behind `BlockMarker`, which would have
+  left every workspace that already has a `.gitignore` unprotected — including the one that reported this. The
+  section carries its own `RunFoldersMarker`, and `Ensure` (called at every boundary of a managed repository by
+  `WorkspaceArming`) appends just that section to a file holding the older block, once.
+- **Fix 2: `LargeFileGuard.FolderThresholdBytes` (64 MB)** — the net under solvers nobody has listed. A folder
+  is reported (path with a trailing `/`, so `:(exclude)dir/` leaves its tree out) when its new, non-ignored files
+  below the per-file threshold add up past it. **The deepest such folder**, so as little as possible is left
+  out, and **never a folder holding a kept file**: excluding the folder would drop that file from the entry,
+  which is a restore point silently missing design content. A large file found on its own inside a folder that
+  then qualifies is folded into the folder's row. Nested repositories add nothing (they are excluded already).
+- **A field plot whose run folder is gone does not crash**: `FieldPlotResolver.PlotProblem` reports "No run of
+  setup X yet — Simulate to draw this plot." in the Inspector, the tree row and the viewer — the same path a
+  freshly cloned or restored workspace already took.
+- Not done here: moving the close boundary and its housekeeping off the UI thread. With the run folders
+  ignored, the same workspace's `git add` + `git gc` measured 0.01 s + 0.04 s (15 files, a 124 KB
+  history), but a large user file can still cost `git add` time there.

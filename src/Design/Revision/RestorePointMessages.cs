@@ -144,7 +144,7 @@ public static class RestorePointMessages
     public static Diagnostic LeftOutUnattended(string names, int count) => Diagnostic.Create(
         "revision.large-file.left-out",
         DiagnosticSeverity.Warning,
-        "{count} unusually large file(s) were left out of this workspace's history because nobody was "
+        "{count} unusually large file(s) or folder(s) were left out of this workspace's history because nobody was "
       + "there to be asked: {names}. They are still on disk and unchanged. circuitRF will ask about "
       + "them the next time you keep a restore point yourself.",
         ("count", (object?)count), ("names", names));
