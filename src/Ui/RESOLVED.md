@@ -38748,3 +38748,31 @@ later — never had the guard, which is why it alone worked. All three guards re
 Gate: `tests/Ui.Tests/NewViewMissingSubFolderTests.cs` (each writer into a cell missing its sub-folder, plus a
 comment-stripped scan that the refusal text is gone from the view model — the commands open a modal dialog, so the
 command itself is not driven).
+
+## Close all / other / left / right tabs stacked one modal Save dialog per dirty tab (GitHub #6, 2026-10-02)
+
+Closing several tabs at once with more than one unsaved document opened every "Save before closing?"
+dialog at the same time. They disabled one another, nothing could be clicked, and on macOS the whole
+window server froze until a forced restart.
+
+- **Cause: `CircuitRfDockFactory.CloseDockable` was `async void`.** Dock 12.0.0.2's `CloseAllDockables`
+  / `CloseOtherDockables` / `CloseLeftDockables` / `CloseRightDockables` (and `CloseWindow`, which a
+  floating window's close box reaches through `HostWindow.OnClosed`) call `CloseDockable` once per tab
+  and never await it. The override returned to that loop at its first `await`, dialog still open.
+- **Fix, following the design of the patch attached to the issue.** The four bulk closes are overridden:
+  they collect the tabs, ask ONCE through `CloseDockablesConfirm`
+  (`WorkspaceViewModel.ConfirmCloseDockables` — one Save All / Don't Save / Cancel naming up to ten
+  documents), then close what the answer allows. Save All stops at the first save that does not
+  complete (a backed-out picker); that tab and every dirty tab after it stay open.
+- **A close requested while a prompt is open is QUEUED, not dropped** (`IsClosePromptOpen`,
+  `_pendingCloses`) — this is where it differs from the attached patch, which ignored it. Dock's
+  `CloseWindow` still loops over `CloseDockable`; ignoring overlapping calls would leave every tab
+  after the first dirty one, clean ones included, inside a window that has already closed. Queued, they
+  prompt one at a time. After any prompt, a tab already removed some other way is not closed again.
+- **A clean tab still closes synchronously.** Its confirm completes inline, so `CloseDockable` has
+  removed it by the time it returns — callers that close and then inspect the layout rely on that.
+- **One table per document kind.** `IsDockableDirtyForClose`, `SaveDockableForClose` and
+  `DiscardDockableForClose` serve both the single-tab and the bulk prompt. A new document kind goes in
+  all three; one missing from any of them either closes silently or never prompts.
+- Gate: `tests/Ui.Tests/BulkTabCloseTests.cs` (with the guard and the `CloseAllDockables` override
+  removed, 4 of its 10 cases fail).

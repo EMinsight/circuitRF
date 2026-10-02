@@ -482,7 +482,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // Wire close-tab prompt: before a dockable is removed, show Save/Don't Save/Cancel
         // for dirty/scratch documents. FactoryBase.DockableClosed fires from base.CloseDockable
         // and cleans up _scratchDocs/_openDocsByPath.
-        _factory.CloseDockableConfirm = ConfirmCloseDockable;
+        _factory.CloseDockableConfirm  = ConfirmCloseDockable;
+        _factory.CloseDockablesConfirm = ConfirmCloseDockables; // Close all / other / left / right: one prompt
         WireDockArrangementPersistence();
         _factory.DockableClosed += (_, args) => { if (args.Dockable is not null) OnDockableClosed(args.Dockable); };
 
@@ -16436,234 +16437,183 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         };
     }
 
-    // ---- Tab-close prompt (CircuitRfDockFactory hook) -----------------------
+    // ---- Tab-close prompt (CircuitRfDockFactory hooks) ----------------------
+    //
+    // Every document kind's close answers live in the three switches below — is it dirty, how is it
+    // saved, what does Don't Save undo — so the single-tab prompt and the bulk one (Close all / other
+    // / left / right tabs) cannot disagree about any of them. A kind added to one switch and not the
+    // others either closes silently or never prompts; keep them side by side.
 
-    // Shown before any dockable is removed. Returns true = proceed, false = cancel.
+    /// <summary>True when closing this dockable would lose unsaved work.</summary>
+    private static bool IsDockableDirtyForClose(IDockable dockable) => dockable switch
+    {
+        SchematicDocument d              => d.IsDirty,
+        SymbolEditorDocument d           => d.IsDirty,
+        LayoutDocument d                 => d.IsDirty,
+        // An EM setup, a technology, a part library and a material library are always materialized.
+        EmSetupDocument d                => d.IsDirty,
+        TechDocument d                   => d.IsDirty,
+        PartLibraryDocument d            => d.IsDirty,
+        MaterialsDocument d              => d.IsDirty,
+        // brief-em3d-43 — a 3D view, like an EM setup, is always materialized.
+        ThreeD.C3dEditorDocument d       => d.IsDirty,
+        // wBond (owner, 2026-08-16: a dirty one closed silently).
+        WBond.WBondDocument wbCloseDoc   => wbCloseDoc.IsDirty,
+        SmithChartDocument smithCloseDoc => smithCloseDoc.IsDirty,
+        // A .cdd's IsDirty is never wired to live edits; ask the window's baseline comparison.
+        DataDisplayDocument d            => d.ViewModel.Window.HasUnsavedChanges(),
+        _                                => false,
+    };
+
+    /// <summary>The name a close prompt shows for this dockable.</summary>
+    private static string CloseLabelOf(IDockable dockable) => dockable switch
+    {
+        ThreeD.C3dEditorDocument d => Path.GetFileName(d.FilePath),
+        WBond.WBondDocument d      => d.Title?.TrimEnd(' ', '•') ?? d.Id,
+        SmithChartDocument d       => d.Title?.TrimStart('•', ' ') ?? d.Id,
+        _                          => dockable.Id,
+    };
+
+    /// <summary>
+    /// Saves one dirty dockable on the way to closing it. True = saved, so the close may go ahead.
+    /// A cancelled save-target dialog leaves the document dirty, and that must count as NOT saved —
+    /// otherwise "Save" would quietly behave as "Don't Save".
+    /// </summary>
+    private async Task<bool> SaveDockableForClose(IDockable dockable, Window window)
+    {
+        switch (dockable)
+        {
+            case SchematicDocument d:
+                return await SaveSingleDocument(d, window);
+            case SymbolEditorDocument d:
+                await SaveSingleSymbolDocument(d, window);
+                return !d.IsDirty;
+            case LayoutDocument d:
+                await SaveSingleLayoutDocument(d, window);
+                return !d.IsDirty;
+            case EmSetupDocument d:
+                d.ViewModel.SaveCommand.Execute(null);
+                return !d.IsDirty;
+            case TechDocument d:
+                // A direct write (no offer-target dialog); it clears the live override itself, via
+                // OnTechSaved -> Invalidate.
+                d.ViewModel.SaveCommand.Execute(null);
+                return !d.IsDirty;
+            case PartLibraryDocument d:
+                d.ViewModel.SaveCommand.Execute(null);
+                return !d.IsDirty;
+            case MaterialsDocument d:
+                d.ViewModel.SaveCommand.Execute(null);
+                return !d.IsDirty;
+            case ThreeD.C3dEditorDocument d:
+                return await SaveC3dAsync(d, window);
+            case WBond.WBondDocument wbCloseDoc:
+                await SaveWBondDoc(wbCloseDoc, window);
+                return !wbCloseDoc.IsDirty;
+            case SmithChartDocument smithCloseDoc:
+                await SaveSmithChartDoc(smithCloseDoc, window);
+                return !smithCloseDoc.IsDirty;
+            case DataDisplayDocument d:
+                return await SaveDataDisplayDoc(d, window);
+            default:
+                return true;
+        }
+    }
+
+    /// <summary>What Don't Save has to undo beyond dropping the tab.</summary>
+    private void DiscardDockableForClose(IDockable dockable)
+    {
+        switch (dockable)
+        {
+            // Open layouts revert to the on-disk technology.
+            case TechDocument d:      _techCache.ClearLive(d.FilePath); break;
+            // brief-em3d-53 — every technology naming this library re-resolves against the file.
+            case MaterialsDocument d: DiscardLiveMaterials(d.FilePath); break;
+        }
+    }
+
+    // Shown before one dockable is removed. Returns true = proceed, false = cancel.
     private async Task<bool> ConfirmCloseDockable(IDockable dockable)
     {
         var window = ResolveOwner(null);
         if (window is null) return true;
+        if (!IsDockableDirtyForClose(dockable)) return true; // clean doc — no prompt needed
 
-        // Schematic document.
-        if (dockable is SchematicDocument doc && doc.IsDirty)
+        var dlg = new Views.Dialogs.SaveChangesDialog(
+            $"Save '{CloseLabelOf(dockable)}' before closing?",
+            title: "Unsaved Changes");
+        await dlg.ShowDialog(window);
+
+        switch (dlg.Result)
         {
-            var dlg = new Views.Dialogs.SaveChangesDialog(
-                $"Save '{doc.Id}' before closing?",
-                title: "Unsaved Changes");
-            await dlg.ShowDialog(window);
-
-            return dlg.Result switch
-            {
-                SaveChangesResult.Cancel   => false,
-                SaveChangesResult.DontSave => true,
-                SaveChangesResult.Save     => await SaveSingleDocument(doc, window),
-                _                          => false,
-            };
+            case SaveChangesResult.DontSave:
+                DiscardDockableForClose(dockable);
+                return true;
+            case SaveChangesResult.Save:
+                return await SaveDockableForClose(dockable, window);
+            default:
+                return false; // Cancel — a technology's live override stays in force, nothing changes
         }
+    }
 
-        // Symbol editor document.
-        if (dockable is SymbolEditorDocument symDoc && symDoc.IsDirty)
+    /// <summary>
+    /// The bulk-close prompt (GitHub #6): ONE dialog for every dirty tab Close all / other / left /
+    /// right would remove, never one per tab — stacked modals on one owner locked the UI. Returns the
+    /// dockables that may close. Cancel closes nothing; Don't Save closes everything. Save All saves
+    /// the dirty tabs one at a time, and a save that does not complete (a backed-out picker, a failed
+    /// write) stops there: that tab and every dirty tab after it stay open, and no further pickers are
+    /// put in front of someone who just backed out of one.
+    /// </summary>
+    private async Task<IReadOnlyCollection<IDockable>> ConfirmCloseDockables(IReadOnlyList<IDockable> targets)
+    {
+        var dirty = targets.Where(IsDockableDirtyForClose).ToList();
+        if (dirty.Count == 0) return targets;
+
+        var window = ResolveOwner(null);
+        if (window is null) return targets; // the single-tab prompt's rule
+
+        if (dirty.Count == 1)
+            return await ConfirmCloseDockable(dirty[0]) ? targets : [];
+
+        var dlg = new Views.Dialogs.SaveChangesDialog(
+            BulkCloseMessage(dirty.Select(CloseLabelOf).ToList()),
+            saveLabel: "Save All",
+            title: "Unsaved Changes");
+        await dlg.ShowDialog(window);
+
+        switch (dlg.Result)
         {
-            var dlg = new Views.Dialogs.SaveChangesDialog(
-                $"Save '{symDoc.Id}' before closing?",
-                title: "Unsaved Changes");
-            await dlg.ShowDialog(window);
+            case SaveChangesResult.DontSave:
+                foreach (var d in dirty) DiscardDockableForClose(d);
+                return targets;
 
-            switch (dlg.Result)
-            {
-                case SaveChangesResult.Cancel:
-                    return false;
-                case SaveChangesResult.DontSave:
-                    return true;
-                case SaveChangesResult.Save:
-                    await SaveSingleSymbolDocument(symDoc, window);
-                    // Cancel in the save-target dialog counts as "save cancelled" → cancel close.
-                    return !symDoc.IsDirty;
-                default:
-                    return false;
-            }
+            case SaveChangesResult.Save:
+                var closable = targets.Where(d => !dirty.Contains(d)).ToList();
+                foreach (var d in dirty)
+                {
+                    bool saved;
+                    try { saved = await SaveDockableForClose(d, window); }
+                    catch (Exception ex)
+                    {
+                        Messages.Error($"Failed to save '{CloseLabelOf(d)}': {ex.Message}");
+                        saved = false;
+                    }
+                    if (!saved) break;
+                    closable.Add(d);
+                }
+                return closable;
+
+            default:
+                return [];
         }
+    }
 
-        // Layout editor document.
-        if (dockable is LayoutDocument layDoc && layDoc.IsDirty)
-        {
-            var dlg = new Views.Dialogs.SaveChangesDialog(
-                $"Save '{layDoc.Id}' before closing?",
-                title: "Unsaved Changes");
-            await dlg.ShowDialog(window);
-
-            switch (dlg.Result)
-            {
-                case SaveChangesResult.Cancel:
-                    return false;
-                case SaveChangesResult.DontSave:
-                    return true;
-                case SaveChangesResult.Save:
-                    await SaveSingleLayoutDocument(layDoc, window);
-                    // Cancel in the save-target dialog counts as "save cancelled" → cancel close.
-                    return !layDoc.IsDirty;
-                default:
-                    return false;
-            }
-        }
-
-        // An EM setup, like a technology, is always materialized — a dirty one must be offered the
-        // same Save / Don't Save / Cancel before its tab closes.
-        if (dockable is EmSetupDocument emCloseDoc && emCloseDoc.IsDirty)
-        {
-            var dlg = new Views.Dialogs.SaveChangesDialog(
-                $"Save '{emCloseDoc.Id}' before closing?",
-                title: "Unsaved Changes");
-            await dlg.ShowDialog(window);
-
-            switch (dlg.Result)
-            {
-                case SaveChangesResult.Cancel:   return false;
-                case SaveChangesResult.DontSave: return true;
-                case SaveChangesResult.Save:
-                    emCloseDoc.ViewModel.SaveCommand.Execute(null);
-                    return !emCloseDoc.IsDirty;
-            }
-        }
-
-        // brief-em3d-43 — a 3D view, like an EM setup, is always materialized.
-        if (dockable is ThreeD.C3dEditorDocument c3dCloseDoc && c3dCloseDoc.IsDirty)
-        {
-            var dlg = new Views.Dialogs.SaveChangesDialog(
-                $"Save '{Path.GetFileName(c3dCloseDoc.FilePath)}' before closing?",
-                title: "Unsaved Changes");
-            await dlg.ShowDialog(window);
-
-            switch (dlg.Result)
-            {
-                case SaveChangesResult.Cancel:   return false;
-                case SaveChangesResult.DontSave: return true;
-                case SaveChangesResult.Save:     return await SaveC3dAsync(c3dCloseDoc, window);
-            }
-        }
-
-        // A part library, like an EM setup, is always materialized — R-rail24-1a routes it through
-        // the same open path precisely so that it gets this without a second implementation.
-        // brief-em3d-53 — a material library, likewise; Don't Save drops its live override so every
-        // technology naming it re-resolves against the file on disk.
-        if (dockable is MaterialsDocument matCloseDoc && matCloseDoc.IsDirty)
-        {
-            var dlg = new Views.Dialogs.SaveChangesDialog(
-                $"Save '{matCloseDoc.Id}' before closing?",
-                title: "Unsaved Changes");
-            await dlg.ShowDialog(window);
-
-            switch (dlg.Result)
-            {
-                case SaveChangesResult.Cancel:   return false;
-                case SaveChangesResult.DontSave: DiscardLiveMaterials(matCloseDoc.FilePath); return true;
-                case SaveChangesResult.Save:
-                    matCloseDoc.ViewModel.SaveCommand.Execute(null);
-                    return !matCloseDoc.IsDirty;
-            }
-        }
-
-        if (dockable is PartLibraryDocument libCloseDoc && libCloseDoc.IsDirty)
-        {
-            var dlg = new Views.Dialogs.SaveChangesDialog(
-                $"Save '{libCloseDoc.Id}' before closing?",
-                title: "Unsaved Changes");
-            await dlg.ShowDialog(window);
-
-            switch (dlg.Result)
-            {
-                case SaveChangesResult.Cancel:   return false;
-                case SaveChangesResult.DontSave: return true;
-                case SaveChangesResult.Save:
-                    libCloseDoc.ViewModel.SaveCommand.Execute(null);
-                    return !libCloseDoc.IsDirty;
-            }
-        }
-
-        // Technology editor document — always materialized, never scratch, so Save is a direct
-        // write (no offer-target dialog like Layout/Symbol).
-        if (dockable is TechDocument techDoc && techDoc.IsDirty)
-        {
-            var dlg = new Views.Dialogs.SaveChangesDialog(
-                $"Save '{techDoc.Id}' before closing?",
-                title: "Unsaved Changes");
-            await dlg.ShowDialog(window);
-
-            switch (dlg.Result)
-            {
-                case SaveChangesResult.Cancel:
-                    return false; // override stays in force — nothing changes
-                case SaveChangesResult.DontSave:
-                    _techCache.ClearLive(techDoc.FilePath); // open layouts revert to the on-disk technology
-                    return true;
-                case SaveChangesResult.Save:
-                    techDoc.ViewModel.SaveCommand.Execute(null); // clears the override itself, via OnTechSaved -> Invalidate
-                    return !techDoc.IsDirty;
-                default:
-                    return false;
-            }
-        }
-
-        // wBond editor document (owner, 2026-08-16: a dirty one closed silently). Same three answers
-        // as every other document type, and the same rule for a cancelled picker: SaveWBondDoc leaves
-        // the document dirty when the user backs out, and that must cancel the close too — otherwise
-        // "Save" would quietly behave as "Don't Save".
-        if (dockable is WBond.WBondDocument wbCloseDoc && wbCloseDoc.IsDirty)
-        {
-            var dlg = new Views.Dialogs.SaveChangesDialog(
-                $"Save '{wbCloseDoc.Title?.TrimEnd(' ', '•')}' before closing?",
-                title: "Unsaved Changes");
-            await dlg.ShowDialog(window);
-
-            switch (dlg.Result)
-            {
-                case SaveChangesResult.Cancel:   return false;
-                case SaveChangesResult.DontSave: return true;
-                case SaveChangesResult.Save:
-                    await SaveWBondDoc(wbCloseDoc, window);
-                    return !wbCloseDoc.IsDirty;
-                default:                         return false;
-            }
-        }
-
-        // Smith Chart document — the same three answers as every other document type, and the same
-        // rule for a cancelled picker: SaveSmithChartDoc leaves the document dirty when the user backs
-        // out, and that must cancel the close too, or "Save" would quietly behave as "Don't Save".
-        if (dockable is SmithChartDocument smithCloseDoc && smithCloseDoc.IsDirty)
-        {
-            var dlg = new Views.Dialogs.SaveChangesDialog(
-                $"Save '{smithCloseDoc.Title?.TrimStart('•', ' ')}' before closing?",
-                title: "Unsaved Changes");
-            await dlg.ShowDialog(window);
-
-            switch (dlg.Result)
-            {
-                case SaveChangesResult.Cancel:   return false;
-                case SaveChangesResult.DontSave: return true;
-                case SaveChangesResult.Save:
-                    await SaveSmithChartDoc(smithCloseDoc, window);
-                    return !smithCloseDoc.IsDirty;
-                default:                         return false;
-            }
-        }
-
-        // Data display document.
-        if (dockable is DataDisplayDocument ddDoc && ddDoc.ViewModel.Window.HasUnsavedChanges())
-        {
-            var dlg = new Views.Dialogs.SaveChangesDialog(
-                $"Save '{ddDoc.Id}' before closing?",
-                title: "Unsaved Changes");
-            await dlg.ShowDialog(window);
-            return dlg.Result switch
-            {
-                SaveChangesResult.Cancel   => false,
-                SaveChangesResult.DontSave => true,
-                SaveChangesResult.Save     => await SaveDataDisplayDoc(ddDoc, window),
-                _                          => false,
-            };
-        }
-
-        return true; // clean doc — no prompt needed
+    /// <summary>The bulk prompt's text: every name, up to a cap, so the dialog stays on screen.</summary>
+    internal static string BulkCloseMessage(IReadOnlyList<string> names, int maxListed = 10)
+    {
+        var listed = names.Take(maxListed).Select(n => "  • " + n);
+        string more = names.Count > maxListed ? $"\n  …and {names.Count - maxListed} more" : "";
+        return $"{names.Count} documents have unsaved changes:\n\n{string.Join("\n", listed)}{more}\n\nSave them before closing?";
     }
 
     // Fires after confirm and before base.CloseDockable removes the dockable from the layout.

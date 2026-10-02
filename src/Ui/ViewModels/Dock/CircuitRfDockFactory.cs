@@ -1096,17 +1096,156 @@ public class CircuitRfDockFactory : Factory
     /// </summary>
     public Func<IDockable, Task<bool>>? CloseDockableConfirm { get; set; }
 
-    public override async void CloseDockable(IDockable dockable)
+    /// <summary>
+    /// Set by WorkspaceViewModel. Called ONCE before a bulk close (Close all / other / left / right
+    /// tabs) with every dockable that close would remove; returns the ones that may actually close.
+    /// Null = each target goes through <see cref="CloseDockable"/>, one prompt at a time.
+    /// </summary>
+    public Func<IReadOnlyList<IDockable>, Task<IReadOnlyCollection<IDockable>>>? CloseDockablesConfirm { get; set; }
+
+    /// <summary>
+    /// True while a close prompt is awaiting an answer. The prompt is a modal dialog and two must never
+    /// be open at once: Dock's bulk closes (and <c>CloseWindow</c>) loop over <see cref="CloseDockable"/>
+    /// without awaiting it, so every dirty tab used to open its own modal on the same owner, the dialogs
+    /// disabled one another and the UI locked — on macOS, the whole window server (GitHub #6).
+    /// A close requested while a prompt is open is QUEUED and run after it, never dropped: Dock's
+    /// <c>CloseWindow</c> loop would otherwise leave every tab after the first dirty one unclosed.
+    /// </summary>
+    public bool IsClosePromptOpen { get; private set; }
+
+    private readonly Queue<Action> _pendingCloses = new();
+
+    public override void CloseDockable(IDockable dockable)
     {
-        if (CloseDockableConfirm is not null)
+        if (CloseDockableConfirm is null)
         {
-            var proceed = await CloseDockableConfirm(dockable);
-            if (!proceed) return; // user cancelled — tab stays open
+            // FactoryBase.DockableClosed fires from base.CloseDockable internally.
+            base.CloseDockable(dockable);
+            return;
+        }
+        if (IsClosePromptOpen)
+        {
+            _pendingCloses.Enqueue(() => { if (IsStillOpen(dockable)) CloseDockable(dockable); });
+            return;
+        }
+        _ = ConfirmAndCloseAsync(dockable);
+    }
+
+    // A clean document's confirm completes synchronously, so this whole method does too and the tab is
+    // gone when CloseDockable returns — callers that close and then inspect the layout rely on that.
+    private async Task ConfirmAndCloseAsync(IDockable dockable)
+    {
+        bool proceed;
+        IsClosePromptOpen = true;
+        try
+        {
+            proceed = await CloseDockableConfirm!(dockable);
+        }
+        catch (Exception ex)
+        {
+            // The caller discards this task, so an exception here would otherwise vanish.
+            System.Diagnostics.Trace.TraceError($"Close prompt failed: {ex}");
+            proceed = false;
+        }
+        finally
+        {
+            IsClosePromptOpen = false;
         }
 
-        // FactoryBase.DockableClosed fires from base.CloseDockable internally.
-        base.CloseDockable(dockable);
+        // The layout may have changed while the prompt was open (the tab was removed some other way) —
+        // closing a dockable that is already gone is not ours to do.
+        if (proceed && IsStillOpen(dockable))
+            base.CloseDockable(dockable);
+
+        RunPendingCloses();
     }
+
+    // ── Bulk closes ────────────────────────────────────────────────────────────
+    // Dock's own versions call CloseDockable once per tab and never await it — the stacked-modal
+    // lockup described on IsClosePromptOpen. Ours collect the tabs first, ask ONCE, then close what
+    // the answer allows. Which tabs each takes mirrors Dock's own (Left/Right also serve the menu's
+    // Above/Below wording in a vertical tab strip).
+
+    public override void CloseAllDockables(IDockable dockable)   => CloseDockables(BulkTargets(dockable, BulkClose.All));
+    public override void CloseOtherDockables(IDockable dockable) => CloseDockables(BulkTargets(dockable, BulkClose.Other));
+    public override void CloseLeftDockables(IDockable dockable)  => CloseDockables(BulkTargets(dockable, BulkClose.Left));
+    public override void CloseRightDockables(IDockable dockable) => CloseDockables(BulkTargets(dockable, BulkClose.Right));
+
+    internal enum BulkClose { All, Other, Left, Right }
+
+    internal static IReadOnlyList<IDockable> BulkTargets(IDockable dockable, BulkClose which)
+    {
+        if (dockable.Owner is not IDock { VisibleDockables: { } tabs }) return [];
+        int at = tabs.IndexOf(dockable);
+        if (at < 0) return [];
+        return tabs
+            .Where((_, i) => which switch
+            {
+                BulkClose.Other => i != at,
+                BulkClose.Left  => i < at,
+                BulkClose.Right => i > at,
+                _               => true,
+            })
+            .Where(d => d.CanClose)
+            .ToList();
+    }
+
+    /// <summary>
+    /// Closes <paramref name="targets"/> after at most ONE prompt (see <see cref="CloseDockablesConfirm"/>).
+    /// Requested while another prompt is open, it waits for that one rather than stacking a second.
+    /// </summary>
+    public void CloseDockables(IReadOnlyList<IDockable> targets)
+    {
+        if (targets.Count == 0) return;
+        if (CloseDockablesConfirm is null)
+        {
+            // CloseDockable queues behind an open prompt itself, so these still ask one at a time.
+            foreach (var d in targets) CloseDockable(d);
+            return;
+        }
+        if (IsClosePromptOpen)
+        {
+            _pendingCloses.Enqueue(() => CloseDockables(targets.Where(IsStillOpen).ToList()));
+            return;
+        }
+        _ = ConfirmAndCloseManyAsync(targets);
+    }
+
+    private async Task ConfirmAndCloseManyAsync(IReadOnlyList<IDockable> targets)
+    {
+        IReadOnlyCollection<IDockable> allowed;
+        IsClosePromptOpen = true;
+        try
+        {
+            allowed = await CloseDockablesConfirm!(targets);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Trace.TraceError($"Close prompt failed: {ex}");
+            allowed = [];
+        }
+        finally
+        {
+            IsClosePromptOpen = false;
+        }
+
+        foreach (var d in targets)
+            if (allowed.Contains(d) && IsStillOpen(d))
+                base.CloseDockable(d);
+
+        RunPendingCloses();
+    }
+
+    // Runs queued close requests until one of them opens a prompt of its own; that prompt's completion
+    // resumes the queue. A request whose tab is already gone does nothing.
+    private void RunPendingCloses()
+    {
+        while (!IsClosePromptOpen && _pendingCloses.TryDequeue(out var next))
+            next();
+    }
+
+    private static bool IsStillOpen(IDockable dockable) =>
+        dockable.Owner is IDock { VisibleDockables: { } tabs } && tabs.Contains(dockable);
 
     /// <summary>
     /// R-dock-14: a floating <b>tool</b> window belongs to the workspace window — it stays above its

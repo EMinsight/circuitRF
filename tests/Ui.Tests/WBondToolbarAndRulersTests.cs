@@ -578,7 +578,8 @@ public class WBondToolbarAndRulersTests
     {
         var source = Read("src/Ui/ViewModels/WorkspaceViewModel.cs");
 
-        Assert.Contains("dockable is WBond.WBondDocument wbCloseDoc && wbCloseDoc.IsDirty",
+        // IsDockableDirtyForClose is the one dirty test both the single-tab and bulk close prompts use.
+        Assert.Contains("WBond.WBondDocument wbCloseDoc   => wbCloseDoc.IsDirty,",
                         source, StringComparison.Ordinal);
 
         // …and a cancelled save picker must cancel the close, or "Save" quietly means "Don't Save".

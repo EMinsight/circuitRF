@@ -128,9 +128,10 @@ public sealed class SmithWindowTests
     {
         string code = StripComments(ReadRepoFile("src/Ui/ViewModels/WorkspaceViewModel.cs"));
 
-        Assert.Contains("dockable is SmithChartDocument smithCloseDoc && smithCloseDoc.IsDirty",
+        // IsDockableDirtyForClose is the one dirty test both the single-tab and bulk close prompts use.
+        Assert.Contains("SmithChartDocument smithCloseDoc => smithCloseDoc.IsDirty,",
                         code, StringComparison.Ordinal);
-        Assert.Contains("await SaveSmithChartDoc(smithCloseDoc, window);\n                    return !smithCloseDoc.IsDirty;",
+        Assert.Contains("await SaveSmithChartDoc(smithCloseDoc, window);\n                return !smithCloseDoc.IsDirty;",
                         code.Replace("\r\n", "\n"), StringComparison.Ordinal);
     }
 
