@@ -38530,3 +38530,68 @@ offered from three places: the memory warning's Messages row, the 150 % confirma
   on would run Palace through a runner set up against the old VM, so the user presses Simulate again.
 - The Settings line reads `free -b` every time the tab is shown, which starts the VM if it was stopped. That is the
   price of never storing a copy of the figure; the read is off the UI thread.
+
+## The 3D pane rendered at display rate with nothing changing; a live window resize was chunky (2026-10-02, RESOLVED by brief-em3d-99)
+
+Owner report: resizing a window that shows a `.c3d` is chunky; a splitter drag, which resizes the 3D pane just as much, is
+smooth. `docs/sonnet-briefs/brief-em3d-99-live-resize-stutter.md` holds the measurements, the method and the attempts; the
+fix is the next section. Yesterday's build (`f58f6553`) is just as chunky, and brief 98's code took under 2 ms of a 43 s recording.
+- **Fixed on the way, and kept:** `Viewer3DPane.OnTick` planned a new frame on EVERY tick it was not busy, and the render
+  thread's `Post(RequestFrame)` after each frame queued the next tick. So the pane rendered and presented at display rate
+  forever, and Avalonia's render thread spent most of every second in `SkiaMetalRenderTarget.BeginRenderingSession` holding
+  the compositor lock. The pane now renders only when asked (`_dirty`), on a size change, or while orbiting; a finished frame
+  queues `QueueTick`, which presents it and plans nothing new. At rest, render ticks fell from 600–1000 ms/s to ~40. The view
+  model already raised `FrameRequested` at every change of what is drawn (63 sites). **If a change ever appears only on the
+  next mouse move, that change is missing its `FrameRequested`:** add it there, and never restore the constant loop.
+- **The resize itself:** during a live resize, macOS's synchronous paint (`IAvnTopLevelEvents.Paint` →
+  `ServerCompositor.RenderReentrancySafe`) waits on the compositor lock while Avalonia's render thread holds it, blocked on a
+  Metal drawable. Without a 3D surface, that render thread barely runs during a resize.
+- **Reverted:** holding frames and letting the compositor stretch the last image (the owner rejected the distortion), and
+  drawing an offscreen read-back as control content during the resize (still chunky; it cost 19% of the UI thread and
+  misplaced the object).
+
+### Live window resize with a 3D view: the surface update was drawn one render late (brief-em3d-99, 2026-10-02)
+
+The owner confirmed the drag smooth by eye, with the 3D image redrawn at each size. Two changes, and only the second fixed it:
+
+- **Avalonia 12.0.3 draws a `CompositionDrawingSurface` update one render after the render that applies it** (decompiled
+  with `ilspycmd`). `ServerCompositor.RenderCore` runs the global passes first (`ApplyPendingBatches`, …,
+  `VisualOwnPropertiesUpdatePass`, which propagates a changed visual's dirty flags to the root), THEN the server jobs, THEN
+  each target's `Update` (dirty rects) and `Render`. A surface update is a server job. Its `Changed` →
+  `ServerCompositionSurfaceVisual.OnSurfaceInvalidated` → `InvalidateContent` ENQUEUES the visual for the own-properties pass
+  that has already run. So the paint that applied the image did not draw it, and the visual sat queued, which also keeps
+  `RenderCore` returning true. During a live resize, the next render was Avalonia's render thread between two synchronous
+  paints: it propagated the flag, found the 3D pane dirty, and blocked in `SkiaMetalRenderTarget.BeginRenderingSession`
+  waiting for a drawable while holding the compositor lock the next paint needed. That happened once per resize step. With
+  no 3D surface nothing is left queued, which is why ordinary windows were smooth. A recording with only the first change
+  below showed the render thread itself running about half of the `UpdateWithTimelineSemaphores` jobs, followed by
+  ~600 ms/s of drawable waits.
+- **`Viewer3D/SurfaceUpdateFlush.cs`** posts one more server job straight after each `Present`, in the same batch. Jobs run
+  in order, so it re-runs `VisualOwnPropertiesUpdatePass` before `Update` collects dirty rects, and the render that applies
+  the image draws it. It reaches two INTERNAL members by reflection, `Compositor.PostServerJob` and
+  `ServerCompositor.VisualOwnPropertiesUpdatePass`, unchanged in 12.1.0. If either is missing, the flush is skipped without
+  an error and the stutter returns. **`SurfaceUpdateFlushTests` holds both**: if an Avalonia upgrade fails it, do not delete
+  the test; find the new names or the upstream fix. This is arguably an Avalonia bug worth reporting: a surface update
+  should be drawn by the render that applies it.
+- **`Viewer3DPane.DrawDuringWindowResize`** (macOS only): when the window's `ClientSize` changed in the last 200 ms, the
+  pane's `Bounds` change, which runs inside `TopLevel.HandleResized`'s synchronous layout pass, plans the frame. It waits up
+  to 100 ms for the render thread to ENCODE it (with timeline semaphores nothing waits for the GPU) and presents it there.
+  The present therefore lands in the commit of the synchronous paint that follows. Presented from `OnTick` instead, it
+  would be a commit of its own that the render thread composes between paints. A handshake (`_awaited` /
+  `FrameFinished`) stops the awaited frame from also posting its own present. A frame that outlives the wait presents
+  itself as before. `OnTick` plans nothing mid-resize; a frame requested then (a field animation) is drawn once the window
+  is still (`CatchUpAfterResize`). A splitter drag changes no `ClientSize` and keeps the asynchronous path. **Alone, this
+  changed nothing measurable.** The trace showed it running, at ~20 ms/s, while the late-draw above was still in effect.
+- **Measured after both changes** (owner's live Debug app, the solved 3D Connector `.c3d`, 5 s of dragging): the UI thread's
+  lock waits under `Paint` were ~50 ms/s, against ~440 ms/s before. Every `UpdateWithTimelineSemaphores` job ran on the UI
+  thread, none on the render thread. The render thread still draws now and then during the drag, but it now WAITS for the
+  lock instead of holding it (~1.0 s of `Monitor.Enter` in 5 s). Its `BeginRenderingSession` time fell from ~62% of each
+  second to ~24%. At rest, render ticks stay at ~40 ms/s.
+- **Removed:** `OnTick`'s poll, which queued a tick every frame while a frame was in flight. Each poll was an async commit
+  and kept the render loop awake; the finished frame queues its own present, so nothing needs polling.
+- **Avalonia 12.1.0 does not change this path.** `MediaContext`, `CompositionDrawingSurface` and
+  `ServerCompositionDrawingSurface` are identical, and `ServerCompositor` differs only in a render-target readiness check.
+- **Headless cannot see any of this**: it has no Metal surface and no native live resize. The method that found it was
+  `dotnet-trace` of the live Debug pid, with the brief's per-second script plus a per-sample event timeline of the UI and
+  render threads (Resized / Paint / async render versus the render thread's apply, render and drawable wait). Deep layout
+  stacks are truncated in these samples, so attribute by the shallow frames.

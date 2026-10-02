@@ -43,6 +43,12 @@ public sealed class Viewer3DPane : Control
     /// trackpad tap routinely reports a pixel of motion.</summary>
     public const double ClickSlopDips = 3;
 
+    /// <summary>brief-em3d-99 — how long after this window last changed size it still counts as being resized.</summary>
+    public const int WindowResizeQuietMs = 200;
+
+    /// <summary>brief-em3d-99 — how long a resize step waits for its frame before leaving it to present itself.</summary>
+    public const int ResizeFrameWaitMs = 100;
+
     private Viewer3DViewModel? _vm;
     private Compositor? _compositor;
     private ICompositionGpuInterop? _interop;
@@ -65,6 +71,15 @@ public sealed class Viewer3DPane : Control
     private int _nextImage, _doneImage;
     private ulong _frame, _doneValue;
     private volatile string? _fault;
+
+    // brief-em3d-99 — a window resize draws in the layout pass that sized the pane (DrawDuringWindowResize).
+    private long _windowResizedAt;
+    private int _awaited;                                     // 1: the UI thread waits for the frame in flight and presents it
+    private readonly ManualResetEventSlim _finished = new(false);
+    private Avalonia.Threading.DispatcherTimer? _catchUp;
+
+    /// <summary>Frames drawn and presented inside a window-resize step (diagnostics).</summary>
+    public int ResizeStepFrames { get; private set; }
 
     /// <summary>Why the pane is not drawing, or null while it is.</summary>
     public string? Fault => _fault;
@@ -121,7 +136,11 @@ public sealed class Viewer3DPane : Control
         // _go, _plan and the images with the first, and no detach would ever join it.
         int gen = ++_attachGen;
         _topLevel = TopLevel.GetTopLevel(this);
-        if (_topLevel is not null) _topLevel.ScalingChanged += OnScalingChanged;
+        if (_topLevel is not null)
+        {
+            _topLevel.ScalingChanged += OnScalingChanged;
+            _topLevel.PropertyChanged += OnTopLevelPropertyChanged;
+        }
         try
         {
             var visual = ElementComposition.GetElementVisual(this);
@@ -163,7 +182,13 @@ public sealed class Viewer3DPane : Control
     {
         base.OnDetachedFromVisualTree(e);
         ++_attachGen;
-        if (_topLevel is not null) { _topLevel.ScalingChanged -= OnScalingChanged; _topLevel = null; }
+        if (_topLevel is not null)
+        {
+            _topLevel.ScalingChanged -= OnScalingChanged;
+            _topLevel.PropertyChanged -= OnTopLevelPropertyChanged;
+            _topLevel = null;
+        }
+        _catchUp?.Stop();
         _stop = true;
         _go.Set();
         if (_thread is null || _thread.Join(2000)) _thread = null;
@@ -184,8 +209,78 @@ public sealed class Viewer3DPane : Control
         {
             if (_visual is not null) _visual.Size = new Vector(Bounds.Width, Bounds.Height);
             _vm?.Resized((float)Bounds.Width, (float)Bounds.Height);
-            RequestFrame();
+            if (WindowResizing && OperatingSystem.IsMacOS()) DrawDuringWindowResize();
+            else RequestFrame();
         }
+    }
+
+    private void OnTopLevelPropertyChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
+    {
+        if (e.Property == TopLevel.ClientSizeProperty) _windowResizedAt = Environment.TickCount64;
+    }
+
+    /// <summary>This pane's window changed size a moment ago: its edge is (probably) being dragged.</summary>
+    private bool WindowResizing => _windowResizedAt != 0 && Environment.TickCount64 - _windowResizedAt < WindowResizeQuietMs;
+
+    /// <summary>
+    /// brief-em3d-99 — one step of a live WINDOW resize (macOS): the frame at the new size is drawn and presented here, in
+    /// the layout pass the window's resize runs (TopLevel.HandleResized), so it goes out in the commit of the synchronous
+    /// paint that follows. Presented on the next tick instead, as everything else is, each step's frame was a commit of its
+    /// own: Avalonia's render thread composed it between two synchronous paints and, during a live resize, blocked in
+    /// Metal's BeginRenderingSession waiting for a drawable WHILE HOLDING the compositor lock the next paint needs. That was
+    /// the stutter (src/Ui/RESOLVED.md, 2026-10-02). The UI thread waits only for the frame to be ENCODED: with timeline
+    /// semaphores the compositor's GPU waits for the GPU, so this costs the frame's CPU side and never a GPU round trip.
+    /// A splitter drag changes no window size and keeps the asynchronous path, which was already smooth.
+    /// </summary>
+    private void DrawDuringWindowResize()
+    {
+        _dirty = true;
+        if (_surface is null || _stop || _vm is null || _fault is not null || _vm.Session.Backend is not { } backend) { QueueTick(); return; }
+        if (_busy && !_done && !AwaitFrame()) { CatchUpAfterResize(); return; }    // it outlived the wait and presents itself
+        _done = _busy = false;                                                      // a frame drawn at the old size is never shown
+        var s = _vm.Session;
+        s.Ui.BeginFrame(false);
+        bool started = PlanFrame(s, backend);
+        s.Ui.EndFrame();
+        if (!started) return;
+        if (!AwaitFrame()) { CatchUpAfterResize(); return; }
+        if (_done) { ResizeStepFrames++; PresentFinished(backend); }
+        else { _dirty = true; CatchUpAfterResize(); }                               // skipped: the compositor held the image
+    }
+
+    /// <summary>
+    /// Waits up to <see cref="ResizeFrameWaitMs"/> for the frame in flight; a frame that finishes while it is awaited does
+    /// not queue its own present. True: it finished (or was skipped, <see cref="_done"/> false). False: it is still
+    /// drawing and will queue its present when it finishes, as usual.
+    /// </summary>
+    private bool AwaitFrame()
+    {
+        _finished.Reset();
+        Interlocked.Exchange(ref _awaited, 1);
+        if (_busy && !_done) _finished.Wait(ResizeFrameWaitMs);
+        if (Interlocked.Exchange(ref _awaited, 0) == 1) return !_busy || _done;     // reclaimed: the render thread never saw it
+        _finished.Wait(ResizeFrameWaitMs);                                          // the render thread took it and sets at once
+        return true;
+    }
+
+    /// <summary>The render thread's end of a frame: wake the awaiting resize step, or post the usual follow-up.</summary>
+    private void FrameFinished(Action post, Avalonia.Threading.DispatcherPriority priority)
+    {
+        if (Interlocked.Exchange(ref _awaited, 0) == 1) _finished.Set();
+        else Avalonia.Threading.Dispatcher.UIThread.Post(post, priority);
+    }
+
+    /// <summary>A frame requested mid-resize (a field animation, a skipped step) is drawn once the window is still.</summary>
+    private void CatchUpAfterResize()
+    {
+        _catchUp ??= new Avalonia.Threading.DispatcherTimer(TimeSpan.FromMilliseconds(WindowResizeQuietMs), Avalonia.Threading.DispatcherPriority.Background,
+            (_, _) =>
+            {
+                if (WindowResizing) return;
+                _catchUp!.Stop();
+                if (_dirty) RequestFrame();
+            });
+        _catchUp.Start();
     }
 
     /// <summary>The window moved to a monitor of another scale: the images are re-sized on the next frame.</summary>
@@ -198,12 +293,29 @@ public sealed class Viewer3DPane : Control
         FaultChanged?.Invoke(why);
     }
 
+    /// <summary>
+    /// Something that is drawn changed: a new frame is planned on the next tick. 2026-10-02 (brief-em3d-99): the pane used to
+    /// plan a new frame on EVERY tick it was not busy, and each finished frame queued the next tick, so it rendered and
+    /// presented at display rate with nothing changing, and Avalonia's render thread spent most of every second blocked in
+    /// Metal's BeginRenderingSession. Every change of what is drawn already requests its frame (the view model raises
+    /// FrameRequested at each), so the pane now renders only when asked, on a size change, and while orbiting. Measured: at
+    /// rest the render thread went from 600-1000 ms/s of ticks to ~40. A live WINDOW resize is DrawDuringWindowResize's.
+    /// </summary>
     public void RequestFrame()
+    {
+        _dirty = true;
+        QueueTick();
+    }
+
+    /// <summary>A tick with nothing new to draw: present a finished frame.</summary>
+    private void QueueTick()
     {
         if (_compositor is null || _tickQueued || _fault is not null) return;
         _tickQueued = true;
         _compositor.RequestCompositionUpdate(_tick);
     }
+
+    private bool _dirty;
 
     /// <summary>The UI thread's whole per-frame cost: present what is finished, plan the next.</summary>
     private void OnTick()
@@ -213,56 +325,73 @@ public sealed class Viewer3DPane : Control
         var s = _vm.Session;
         var backend = s.Backend;
         if (backend is null) return;
-        double scale = TopLevel.GetTopLevel(this)?.RenderScaling ?? 1;
-        int w = Math.Max(1, (int)Math.Ceiling(Bounds.Width * scale)), h = Math.Max(1, (int)Math.Ceiling(Bounds.Height * scale));
         var view = _vm.View;
         s.Ui.BeginFrame(view.Orbiting);
-
-        if (_done)
-        {
-            try { backend.Present(_surface, _doneImage, _doneValue); }
-            catch (Exception ex) { SetFault(ex.Message); }
-            _done = false;
-            _busy = false;
-            _vm.OnPicked(backend.PickedId, backend.PickedFace, backend.PickedPoint, backend.PickedSomething, backend.PickPatch);
-            FramePresented?.Invoke();
-        }
-
+        PresentFinished(backend);
         bool more = view.Orbiting;
-        if (!_busy && _fault is null)
-        {
-            try
-            {
-                if (w != _imgW || h != _imgH)
-                {
-                    lock (s.RenderLock) backend.CreateImages(_interop!, w, h, SwapchainImages);
-                    _imgW = w; _imgH = h;
-                }
-                // The cursor is in device pixels for the ID pass.
-                float cx = view.CursorX, cy = view.CursorY;
-                if (cx >= 0) { view.CursorX = (float)(cx * scale); view.CursorY = (float)(cy * scale); }
-                // brief-em3d-44: the ID pass reads the snap's patch around the cursor, in device pixels.
-                _plan.PickSize = _vm.PickSizeFor(scale, backend.MaxPickSize);
-                _plan.PickPixelsPerDip = (float)scale;
-                _plan.TriangleBudget = _vm.TriangleBudget;
-                _plan.Plan(_vm.Scene, view, w, h, backend.FlipY, pick: view.CursorX >= 0,
-                           _vm.MeshOverlay, _vm.SectionOverlay, _vm.GridOverlay, _vm.FieldDrawn);
-                _vm.FramePlanned(_plan);
-                _pField = _vm.FieldDrawn;
-                view.CursorX = cx; view.CursorY = cy;
-                _planScene = _vm.Scene;
-                (_pMesh, _pSection, _pGrid) = (_vm.MeshOverlay, _vm.SectionOverlay, _vm.GridOverlay);
-                _pOrbit = view.Orbiting;
-                view.Orbiting = false;
-                _nextImage = (int)(_frame % SwapchainImages);
-                _frame++;
-                _busy = true;
-                _go.Set();
-            }
-            catch (Exception ex) { SetFault(ex.Message); }
-        }
+        // brief-em3d-99: mid window-resize a frame is drawn only by the resize step itself; one planned here would present
+        // in a commit of its own, which is the stutter. It is drawn once the window is still.
+        if (WindowResizing && OperatingSystem.IsMacOS()) { if (_dirty || more) { _dirty = true; CatchUpAfterResize(); } more = false; }
+        else PlanFrame(s, backend);
         s.Ui.EndFrame();
-        if (more || _busy) RequestFrame();
+        if (more) RequestFrame();
+        // Nothing polls the frame in flight: it queues its own present, and a request made meanwhile is planned then.
+    }
+
+    /// <summary>Hands a finished frame to the compositor (a server job in the next commit).</summary>
+    private void PresentFinished(Viewer3DBackend backend)
+    {
+        if (!_done) return;
+        try
+        {
+            backend.Present(_surface!, _doneImage, _doneValue);
+            SurfaceUpdateFlush.AfterUpdate(_compositor!);      // drawn by the render that applies it (brief-em3d-99)
+        }
+        catch (Exception ex) { SetFault(ex.Message); }
+        _done = false;
+        _busy = false;
+        _vm!.OnPicked(backend.PickedId, backend.PickedFace, backend.PickedPoint, backend.PickedSomething, backend.PickPatch);
+        FramePresented?.Invoke();
+    }
+
+    /// <summary>Plans the next frame and starts the render thread on it, if one is wanted and none is in flight.</summary>
+    private bool PlanFrame(Viewer3DSession s, Viewer3DBackend backend)
+    {
+        var view = _vm!.View;
+        double scale = TopLevel.GetTopLevel(this)?.RenderScaling ?? 1;
+        int w = Math.Max(1, (int)Math.Ceiling(Bounds.Width * scale)), h = Math.Max(1, (int)Math.Ceiling(Bounds.Height * scale));
+        if (_busy || _fault is not null || !(_dirty || view.Orbiting || w != _imgW || h != _imgH)) return false;
+        _dirty = false;
+        try
+        {
+            if (w != _imgW || h != _imgH)
+            {
+                lock (s.RenderLock) backend.CreateImages(_interop!, w, h, SwapchainImages);
+                _imgW = w; _imgH = h;
+            }
+            // The cursor is in device pixels for the ID pass.
+            float cx = view.CursorX, cy = view.CursorY;
+            if (cx >= 0) { view.CursorX = (float)(cx * scale); view.CursorY = (float)(cy * scale); }
+            // brief-em3d-44: the ID pass reads the snap's patch around the cursor, in device pixels.
+            _plan.PickSize = _vm.PickSizeFor(scale, backend.MaxPickSize);
+            _plan.PickPixelsPerDip = (float)scale;
+            _plan.TriangleBudget = _vm.TriangleBudget;
+            _plan.Plan(_vm.Scene, view, w, h, backend.FlipY, pick: view.CursorX >= 0,
+                       _vm.MeshOverlay, _vm.SectionOverlay, _vm.GridOverlay, _vm.FieldDrawn);
+            _vm.FramePlanned(_plan);
+            _pField = _vm.FieldDrawn;
+            view.CursorX = cx; view.CursorY = cy;
+            _planScene = _vm.Scene;
+            (_pMesh, _pSection, _pGrid) = (_vm.MeshOverlay, _vm.SectionOverlay, _vm.GridOverlay);
+            _pOrbit = view.Orbiting;
+            view.Orbiting = false;
+            _nextImage = (int)(_frame % SwapchainImages);
+            _frame++;
+            _busy = true;
+            _go.Set();
+            return true;
+        }
+        catch (Exception ex) { SetFault(ex.Message); return false; }
     }
 
     private void RenderLoop()
@@ -292,7 +421,7 @@ public sealed class Viewer3DPane : Control
                         // counted, and asked for again; nothing loops here.
                         ReleaseTimeouts++;
                         _busy = false;
-                        Avalonia.Threading.Dispatcher.UIThread.Post(RequestFrame, Avalonia.Threading.DispatcherPriority.Background);
+                        FrameFinished(RequestFrame, Avalonia.Threading.DispatcherPriority.Background);
                         continue;
                     }
                     if (!s.Frame(image, _plan, value, _planScene, _pMesh, _pSection, _pGrid, _pOrbit, _pField)) return;
@@ -307,7 +436,7 @@ public sealed class Viewer3DPane : Control
                 Avalonia.Threading.Dispatcher.UIThread.Post(() => FaultChanged?.Invoke(ex.Message));
                 return;
             }
-            Avalonia.Threading.Dispatcher.UIThread.Post(RequestFrame);
+            FrameFinished(QueueTick, default);   // present it; it plans nothing new by itself
         }
     }
 
