@@ -500,8 +500,12 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
     internal string Describe(Scene3DObject? o)
     {
         if (o is null) return "";
-        var t = o.Kind switch { Scene3DKind.Port => $"Port {o.PortNumber}  {o.Name}", _ => o.Name } + DescribeSuffix?.Invoke(o);
-        var lines = MaterialHover.Lines(o, Scene.Problem?.OperatingTempC, MaterialHoverContext?.Invoke(o));
+        // brief-em3d-101 R-em3d101-3d — an image sheet names its file: "image1 — die.png (not modelled)".
+        var t = o.Kind switch { Scene3DKind.Port => $"Port {o.PortNumber}  {o.Name}", _ => o.Name }
+                + (o.ImageName is { } file ? " — " + file : "") + DescribeSuffix?.Invoke(o);
+        // An image sheet with no material is a reference picture: no material line to give.
+        var lines = o.ImageName is not null && o.MaterialValues is null ? []
+                  : MaterialHover.Lines(o, Scene.Problem?.OperatingTempC, MaterialHoverContext?.Invoke(o));
         if (lines.Count > 0) t += "\n" + string.Join("\n", lines);
         else if (o.Boundary is { } b) t += $"\n{b}";
         return t;
@@ -563,6 +567,22 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
         SetCommandHeld(command);
         Hover(x, y);
         return host.TreeDrop(text);
+    }
+
+    /// <summary>brief-em3d-101 — files dragged over the pane at (<paramref name="x"/>, <paramref name="y"/>).</summary>
+    public bool FileDragOver(float x, float y, IReadOnlyList<string> paths)
+    {
+        if (EditHost is not { } host) return false;
+        Hover(x, y);
+        return host.FileDragOver(paths);
+    }
+
+    /// <summary>brief-em3d-101 — files dropped at (<paramref name="x"/>, <paramref name="y"/>).</summary>
+    public bool FileDrop(float x, float y, IReadOnlyList<string> paths, bool shift)
+    {
+        if (EditHost is not { } host) return false;
+        Hover(x, y);
+        return host.FileDrop(paths, x, y, shift);
     }
 
     /// <summary>The drag left the pane.</summary>

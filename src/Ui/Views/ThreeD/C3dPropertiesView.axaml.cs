@@ -28,6 +28,10 @@ public partial class C3dPropertiesView : UserControl
         // brief-em3d-92 — the slider previews while it moves and writes on release: the pointer let go (its thumb captures it,
         // so the release may arrive as a lost capture) or an arrow key let go.
         TransparencySlider.AddHandler(PointerReleasedEvent, (_, _) => _vm?.CommitTransparencySlider(), RoutingStrategies.Bubble, handledEventsToo: true);
+        // brief-em3d-101 — a face image's own transparency: written on release, one entry per drag.
+        FaceImageTransparencySlider.AddHandler(PointerReleasedEvent, (_, _) => _vm?.CommitFaceImageTransparencySlider(), RoutingStrategies.Bubble, handledEventsToo: true);
+        FaceImageTransparencySlider.AddHandler(PointerCaptureLostEvent, (_, _) => _vm?.CommitFaceImageTransparencySlider(), RoutingStrategies.Bubble, handledEventsToo: true);
+        FaceImageTransparencySlider.AddHandler(KeyUpEvent, (_, _) => _vm?.CommitFaceImageTransparencySlider(), RoutingStrategies.Bubble, handledEventsToo: true);
         TransparencySlider.AddHandler(PointerCaptureLostEvent, (_, _) => _vm?.CommitTransparencySlider(), RoutingStrategies.Bubble, handledEventsToo: true);
         TransparencySlider.AddHandler(KeyUpEvent, (_, _) => _vm?.CommitTransparencySlider(), RoutingStrategies.Bubble, handledEventsToo: true);
         // The clip plot's offset slider: the same preview-then-commit, one undo entry per drag.
@@ -197,4 +201,23 @@ public partial class C3dPropertiesView : UserControl
     }
 
     private void OnPadLostFocus(object? sender, RoutedEventArgs e) => _vm?.CommitAirBoxPercent(AxisOf(sender));
+
+    // brief-em3d-101 — the Image section's width and height commit on Enter and on leaving the box.
+    private void OnImageWidthKey(object? sender, Avalonia.Input.KeyEventArgs e) { if (e.Key == Avalonia.Input.Key.Enter) (DataContext as CircuitRF.Ui.ThreeD.C3dPropertiesViewModel)?.CommitImageWidth(); }
+    private void OnImageWidthLostFocus(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => (DataContext as CircuitRF.Ui.ThreeD.C3dPropertiesViewModel)?.CommitImageWidth();
+    private void OnImageHeightKey(object? sender, Avalonia.Input.KeyEventArgs e) { if (e.Key == Avalonia.Input.Key.Enter) (DataContext as CircuitRF.Ui.ThreeD.C3dPropertiesViewModel)?.CommitImageHeight(); }
+    private void OnImageHeightLostFocus(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => (DataContext as CircuitRF.Ui.ThreeD.C3dPropertiesViewModel)?.CommitImageHeight();
+
+    // brief-em3d-101 R-em3d101-9d — a face image's boxes commit on Enter and on leaving the box.
+    private static bool Enter(Avalonia.Input.KeyEventArgs e) => e.Key == Avalonia.Input.Key.Enter;
+    private void OnFaceImageTransparencyKey(object? sender, Avalonia.Input.KeyEventArgs e) { if (Enter(e)) _vm?.CommitFaceImageTransparencyText(); }
+    private void OnFaceImageTransparencyLostFocus(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => _vm?.CommitFaceImageTransparencyText();
+    private void OnFaceImageRotationKey(object? sender, Avalonia.Input.KeyEventArgs e) { if (Enter(e)) _vm?.CommitFaceImageRotation(); }
+    private void OnFaceImageRotationLostFocus(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => _vm?.CommitFaceImageRotation();
+    private void OnFaceImageWidthKey(object? sender, Avalonia.Input.KeyEventArgs e) { if (Enter(e)) _vm?.CommitFaceImageSize(width: true); }
+    private void OnFaceImageWidthLostFocus(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => _vm?.CommitFaceImageSize(width: true);
+    private void OnFaceImageHeightKey(object? sender, Avalonia.Input.KeyEventArgs e) { if (Enter(e)) _vm?.CommitFaceImageSize(width: false); }
+    private void OnFaceImageHeightLostFocus(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => _vm?.CommitFaceImageSize(width: false);
+    private void OnFaceImageOffsetKey(object? sender, Avalonia.Input.KeyEventArgs e) { if (Enter(e)) _vm?.CommitFaceImageOffset(); }
+    private void OnFaceImageOffsetLostFocus(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => _vm?.CommitFaceImageOffset();
 }

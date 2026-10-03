@@ -43,6 +43,10 @@ public sealed partial class C3dEditorViewModel
     /// Instances), and the type filter's name for it in either grouping.</summary>
     public const string NotModeledHeader = "Not Modeled";
 
+    /// <summary>brief-em3d-101 R-em3d101-3a — by type, the group a MODELLED image sheet is listed under, and the type filter's entry
+    /// that hides every image sheet (modelled or not) in one click: references are what a tree most often wants out of the way.</summary>
+    public const string ImageSheetsHeader = "Image sheets";
+
     /// <summary>The tree's grouping choices, as the header's combo lists them (<see cref="C3dTreeGrouping"/> order).</summary>
     public static IReadOnlyList<string> TreeGroupingChoices { get; } = ["By material", "By type"];
 
@@ -102,7 +106,7 @@ public sealed partial class C3dEditorViewModel
     private List<C3dTreeItem> ListedRows()
     {
         static IEnumerable<C3dTreeItem> Members(C3dTreeItem r)
-            => r.IsGroup ? r.Children.SelectMany(Members) : r.Children.Where(c => c.Kind == EmBoundaryKind).Prepend(r);
+            => r.IsGroup ? r.Children.SelectMany(Members) : r.Children.Where(c => c.Kind is EmBoundaryKind or FaceImageKind).Prepend(r);
         return [.. Tree.SelectMany(g => g.Items).SelectMany(Members)];
     }
 
@@ -138,7 +142,7 @@ public sealed partial class C3dEditorViewModel
             if (r.Kind is HeatSourceKind or ProbeKind or MeshRegionKind or EffectiveBlockKind) SetPlaceShown(r.Name, visible);
             else if (r.Kind == ThermalBoundaryKindName) SetBoundaryShown(r.Name, visible);
             else if (r.Kind == SymmetryPlaneKind) SetSymmetryPlaneShown(r.Name, visible);
-            else if (r.InstanceIndex >= 0 || (r.ObjectIndex < 0 && !r.IsAirBox && !r.IsGroup && r.Kind != FieldPlotKind))
+            else if (r.InstanceIndex >= 0 || (r.ObjectIndex < 0 && !r.IsAirBox && !r.IsGroup && r.Kind != FieldPlotKind && r.Kind != FaceImageKind))
             {
                 // an instance's contents, an instance's part, an EM face boundary's tint: the view hides them for this session
                 var names = r.InstanceIndex >= 0 ? r.Children.Select(c => c.Name) : [r.Name];
@@ -152,6 +156,10 @@ public sealed partial class C3dEditorViewModel
         try
         {
             SetPlotsVisible(plots, visible, description);
+            // brief-em3d-101 R-em3d101-9c — a face image's tick is its saved Hidden, through its own writer, in this one entry
+            if (rows.Where(r => r.Kind == FaceImageKind && r.FaceImageHost >= 0 && r.FaceImageFace is not null)
+                    .Select(r => (r.FaceImageHost, r.FaceImageFace!)).ToList() is { Count: > 0 } faceImages)
+                SetFaceImagesHidden(faceImages, !visible);
             if (rows.Any(r => r.IsAirBox)) AirBoxShown = visible;
             foreach (var g in rows.Where(r => r.IsGroup).Select(r => r.GroupPath!).Distinct().ToList()) SetGroupVisible(g, visible);
             foreach (var r in rows.Where(r => r.OperandPath is not null && r.ObjectIndex >= 0 && !r.IsFeature).ToList())
@@ -178,6 +186,7 @@ public sealed partial class C3dEditorViewModel
     {
         // brief-em3d-93 — what is not modelled is one "type" to the filter, so it shows or hides as a set
         if (o is not C3dPolyline && !o.Model) return NotModeledHeader;
+        if (o is C3dSheet { Image: not null }) return ImageSheetsHeader;
         // brief-em3d-67 R-em3d67-6a — a rounded solid is listed as the solid it rounds: its fillets are rows beneath it.
         var solid = C3dFillets.Core(o).Core ?? o;
         foreach (var (type, header) in Groups) if (solid.GetType() == type) return header;
@@ -188,7 +197,8 @@ public sealed partial class C3dEditorViewModel
     private static string MaterialHeaderOf(C3dObject o) => C3dValidation.EffectiveMaterial(o) is { Length: > 0 } m ? m : NoMaterialHeader;
 
     private bool PassesTreeFilter(C3dObject o)
-        => !_hiddenTypes.Contains(TypeHeaderOf(o)) && (o is C3dPolyline || !_hiddenMaterials.Contains(MaterialHeaderOf(o)));
+        => !_hiddenTypes.Contains(TypeHeaderOf(o)) && (o is C3dPolyline || !_hiddenMaterials.Contains(MaterialHeaderOf(o)))
+           && !(o is C3dSheet { Image: not null } && _hiddenTypes.Contains(ImageSheetsHeader));
 
     /// <summary>
     /// One document object's row. brief-em3d-67 R-em3d67-6a — a solid with fillets and chamfers is ONE node, of the solid it
@@ -203,11 +213,16 @@ public sealed partial class C3dEditorViewModel
         string? detail = notModeledGroup
             ? TypeHeaderOfSolid(o) + (C3dValidation.EffectiveMaterial(o) is { Length: > 0 } m ? " · " + m : "")
             : byMaterial ? null : C3dValidation.EffectiveMaterial(o);
+        // brief-em3d-101 R-em3d101-3a — an image sheet's row: the image glyph, the file's name, and its warning when it is broken.
+        var image = o as C3dSheet is { Image: not null } imageSheet ? imageSheet : null;
+        if (image is not null) detail = notModeledGroup ? "Image sheet · " + C3dImages.FileName(image.Image!) : C3dImages.FileName(image.Image!);
         var item = new C3dTreeItem(this, o.Name, C3dObject.KindOf(solid), detail, i, -1, !o.Hidden)
         {
-            Icon = IconOf(solid), IconOpacity = solid is C3dOperation { Enabled: false } ? 0.4 : 1,
+            Icon = image is not null ? Material.Icons.MaterialIconKind.ImageOutline : IconOf(solid),
+            IconOpacity = solid is C3dOperation { Enabled: false } ? 0.4 : 1,
             IsModelled = o.Model || o is C3dPolyline,
         };
+        if (image is not null && ImageProblemOf(image) is { } broken) item.Refusal = $"Its image cannot be drawn: {broken}. Resolve Path… points it at the file.";
         AddOperands(item, solid, i, corePath, o.Name);
         AddFeatures(item, o, i);
         return item;
@@ -219,6 +234,7 @@ public sealed partial class C3dEditorViewModel
     /// <summary>An object's type group header, whatever its Model: what a Not Modeled row's detail names.</summary>
     private static string TypeHeaderOfSolid(C3dObject o)
     {
+        if (o is C3dSheet { Image: not null }) return "Image sheet";
         var solid = C3dFillets.Core(o).Core ?? o;
         foreach (var (type, header) in Groups) if (solid.GetType() == type) return header;
         return C3dObject.KindOf(solid);
@@ -244,8 +260,11 @@ public sealed partial class C3dEditorViewModel
             // display, so there the grey is the signal (GroupsSection).
             foreach (var (type, header) in Groups)
             {
-                var items = rows.Where(t => t.o.GetType() == type && (t.o.Model || t.o is C3dPolyline)).Select(Item).ToList();
+                var items = rows.Where(t => t.o.GetType() == type && (t.o.Model || t.o is C3dPolyline) && TypeHeaderOf(t.o) == header).Select(Item).ToList();
                 if (items.Count > 0) yield return new C3dTreeGroup(header, items, type == typeof(C3dBoolean) ? C3dTreeGroupRole.Booleans : C3dTreeGroupRole.Objects);
+                // brief-em3d-101 — a modelled image sheet is listed under its own group, after the sheets
+                if (type == typeof(C3dSheet) && rows.Where(t => t.o.Model && TypeHeaderOf(t.o) == ImageSheetsHeader).Select(Item).ToList() is { Count: > 0 } images)
+                    yield return new C3dTreeGroup(ImageSheetsHeader, images);
             }
             var off = rows.Where(t => !t.o.Model && t.o is not C3dPolyline).Select(t => ObjectRow(t.o, t.i, byMaterial: false, notModeledGroup: true))
                           .Concat(Document.Instances.Select((inst, i) => (inst, i)).Where(t => t.inst.Group is null && !t.inst.Model && PassesTreeFilter(t.inst))
@@ -335,6 +354,9 @@ public sealed partial class C3dEditorViewModel
         else
         {
             types = [.. Groups.Select(g => g.Header).Where(h => Document.Objects.Any(o => TypeHeaderOf(o) == h))];
+            // brief-em3d-101 R-em3d101-3a — every image sheet, modelled or not, hidden from the tree in one click
+            if (Document.Objects.Any(o => o is C3dSheet { Image: not null }))
+                types.Insert(types.IndexOf("Sheets") is >= 0 and var at ? at + 1 : types.Count, ImageSheetsHeader);
             if (Document.Objects.Any(o => TypeHeaderOf(o) == NotModeledHeader) || Document.Instances.Any(i => !i.Model)) types.Add(NotModeledHeader);
             if (Document.Instances.Count > 0) types.Add(InstancesHeader);
             materials = [.. Document.Objects.Where(o => o is not C3dPolyline).Select(MaterialHeaderOf)

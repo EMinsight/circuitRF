@@ -594,6 +594,8 @@ internal static class Check
         // brief-em3d-93 R-em3d93-5 — what is not modelled (info), and what refers to it: a wire on its pad, every port off under
         // a driven setup, a field plot's face (warning), and the refusals it raised itself (warnings: no run refuses for them).
         foreach (var d in C3dModelled.Findings(doc, e)) f.Add(CliDiagnostics.CheckThreeDFinding(path, d));
+        // brief-em3d-101 R-em3d101-8g — a face image on a face its object no longer has: a warning, the record kept.
+        foreach (var d in C3dImages.FaceImageFindings(e)) f.Add(CliDiagnostics.CheckThreeDFinding(path, d));
         foreach (string why in C3dPortReports.FaceBoundaryRefusals(doc, e))
             f.Add(CliDiagnostics.CheckThreeDFaceBoundary(path, why));
 

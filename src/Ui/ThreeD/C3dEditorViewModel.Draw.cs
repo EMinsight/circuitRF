@@ -658,6 +658,12 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
 
     public IEnumerable<Viewer3DMenuItem> DrawMenuItems()
     {
+        // brief-em3d-101 R-em3d101-9e — a face image clicked in the view: the record's menu alone
+        if (FaceImageRecordMenuItems() is { Count: > 0 } faceImage)
+        {
+            foreach (var item in faceImage) yield return item;
+            yield break;
+        }
         // brief-em3d-90 — a boundary's tint selected: the boundary's menu alone (the face under it is one B away)
         if (TintMenuItems() is { Count: > 0 } tint)
         {
@@ -668,10 +674,12 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
         var groups = GroupMenuItems().ToList();
         foreach (var item in groups) yield return item;
         if (groups.Count > 0) yield return Viewer3DMenuItem.Separator;
+        foreach (var item in ImageMenuItems()) yield return item;           // brief-em3d-101 — an image sheet's own items
         foreach (var item in OperationMenuItems()) yield return item;
         foreach (var item in BooleanMenuItems()) yield return item;
         foreach (var item in StepMenuItems()) yield return item;
         foreach (var item in FaceMenuItems()) yield return item;
+        foreach (var item in FaceImageMenuItems()) yield return item;     // brief-em3d-101 — Map Image… on a flat face
         foreach (var item in HierarchyMenuItems()) yield return item;
         foreach (var item in SimulateMenuItems()) yield return item;
         foreach (var item in FieldMenuItems()) yield return item;         // brief-em3d-82 — beside Plot Temperature
@@ -811,6 +819,8 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
     private void CommitExtrude(ExtrudeTool ex, C3dObject result)
     {
         result = BindTyped(ex, result);
+        // brief-em3d-101 R-em3d101-5d (D9) — an image sheet extrudes as any sheet; the solid carries no picture.
+        bool fromImage = ex.SourceIndex >= 0 && ex.SourceIndex < Document.Objects.Count && Document.Objects[ex.SourceIndex] is C3dSheet { Image: not null };
         string after = C3dPersistence.SerializeObject(result);
         string kind = C3dObject.KindOf(result).ToLowerInvariant();
         if (ex.Keep)
@@ -822,7 +832,8 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
             Push(new C3dEdit($"Extrude to {kind} {result.Name}", [new C3dEditSlot(false, ex.SourceIndex, before, after)], ApplySlots));
         }
         ToolCommits++;
-        StatusMessage = $"Extruded to {kind} \"{result.Name}\"; the source was " + (ex.Keep ? "kept." : "consumed.");
+        StatusMessage = $"Extruded to {kind} \"{result.Name}\"; the source was " + (ex.Keep ? "kept." : "consumed.")
+                        + (fromImage ? " The solid has no image: a picture belongs to a sheet." : "");
         SetTool(null);
     }
 

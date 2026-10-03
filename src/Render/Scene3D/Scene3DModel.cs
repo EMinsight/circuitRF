@@ -40,6 +40,36 @@ public struct Scene3DVertex(float x, float y, float z, uint id, uint rgba, uint 
     public static uint Pack(byte r, byte g, byte b, byte a) => (uint)(r | (g << 8) | (b << 16) | (a << 24));
 }
 
+/// <summary>
+/// brief-em3d-101 R-em3d101-4a — a vertex of an IMAGE draw, 32 bytes: position (scene-local metres), the texture coordinate
+/// (u right, v DOWN — a texture's rows run top first), the object's ID and face (what hover and selection compare, as on
+/// <see cref="Scene3DVertex"/>), and a colour whose alpha multiplies the texture's (the object's transparency). A stream of its
+/// own: <see cref="Scene3DVertex"/>'s 24-byte stride is what every other draw relies on.
+/// </summary>
+[StructLayout(LayoutKind.Sequential, Pack = 4)]
+public struct Scene3DImageVertex(float x, float y, float z, float u, float v, uint id, uint face, uint rgba)
+{
+    public const int Stride = 32;
+    public float X = x, Y = y, Z = z;
+    public float U = u, V = v;
+    public uint Id = id;
+    public uint Face = face;
+    /// <summary>R in the low byte, A in the high byte, as <see cref="Scene3DVertex.Rgba"/>: white, with the object's alpha.</summary>
+    public uint Rgba = rgba;
+}
+
+/// <summary>
+/// brief-em3d-101 — one object's image triangles: <see cref="VertexCount"/> vertices (a triangle list, not indexed) from
+/// <see cref="FirstVertex"/> in <see cref="Scene3DModel.ImageVertices"/>, drawn with texture <see cref="Image"/>
+/// (<see cref="Scene3DModel.Images"/>). A <see cref="Surface"/> batch IS its object's colour (an image sheet: its ordinary
+/// triangles are drawn only in the ID pass and the selection's passes); otherwise it is drawn over its object's own face (brief 101
+/// Phase B). <see cref="Translucent"/> when the object's alpha or any texel's is below 1.
+/// </summary>
+/// <para><see cref="OnFace"/> — an image mapped onto a face (Phase B): its draw ties <c>FaceImage</c>, over the face it lies on, where
+/// an image sheet's ties <c>Underlay</c>, under everything on its plane.</para>
+public readonly record struct Scene3DImageBatch(uint ObjectId, int Image, int FirstVertex, int VertexCount, bool Translucent, bool Surface,
+                                                bool OnFace = false);
+
 /// <summary>One object: a solid, a sheet, a port, a face of the air box, or the box's edges. IDs start
 /// at 1; 0 is the background in the ID pass.</summary>
 public sealed class Scene3DObject
@@ -124,6 +154,14 @@ public sealed class Scene3DObject
     /// (Scene3DPicking.TintHits, RayHits.Collect): the boundary is what a click on it selects, and B steps to the solid.
     /// </summary>
     public bool Tint { get; init; }
+
+    /// <summary>brief-em3d-101 R-em3d101-4b — an image sheet: drawn with its image, and giving way to EVERY face lying on its
+    /// plane (<c>Scene3DDepthTie.Underlay</c>), so a polygon traced on the image's own plane is drawn over it and is what a
+    /// click finds.</summary>
+    public bool Underlay { get; init; }
+
+    /// <summary>brief-em3d-101 — the image's file name (<c>die.png</c>), for the hover; null for an object with none.</summary>
+    public string? ImageName { get; init; }
 
     /// <summary>Whether a hover or a click may land on it: pickable, and not the dimmed parent around a pushed-in child
     /// (which the ID pass still draws, so the snap reaches it).</summary>
@@ -249,6 +287,26 @@ public sealed class Scene3DModel
 
     /// <summary>The object with ID <paramref name="id"/>, or null (0, or out of range).</summary>
     public Scene3DObject? Object(uint id) => id >= 1 && id <= Objects.Length ? Objects[id - 1] : null;
+
+    /// <summary>brief-em3d-101 R-em3d101-4a — the distinct textures the scene draws (one per path), what
+    /// <see cref="ImageBatches"/> index, and the image vertex stream they draw from.</summary>
+    public Scene3DTexture[] Images { get; init; } = [];
+    public Scene3DImageVertex[] ImageVertices { get; init; } = [];
+    public Scene3DImageBatch[] ImageBatches { get; init; } = [];
+    public long ImageBytes => (long)ImageVertices.Length * Scene3DImageVertex.Stride;
+
+    /// <summary>brief-em3d-101 — each image sheet's picture as it was placed, by object name: what a vector export of this scene
+    /// draws (Em3dSceneImages).</summary>
+    public IReadOnlyDictionary<string, CircuitRF.Design.ThreeD.C3dPlacedImage> PlacedImages { get; init; } =
+        new Dictionary<string, CircuitRF.Design.ThreeD.C3dPlacedImage>();
+
+    /// <summary>brief-em3d-101 Phase B — the face images drawn, placed (what a vector export of this scene draws), and why each one
+    /// that is not drawn is not, by face spelled <c>object/face</c> (a curved face, a face the object no longer has).</summary>
+    public IReadOnlyList<Scene3DPlacedFaceImage> PlacedFaceImages { get; init; } = [];
+    public IReadOnlyDictionary<string, string> FaceImageProblems { get; init; } = new Dictionary<string, string>();
+
+    /// <summary>brief-em3d-101 — whether object <paramref name="id"/>'s colour is an image (an image sheet's surface).</summary>
+    public bool HasImageSurface(uint id) => Object(id)?.Underlay == true;
 
     /// <summary>brief-em3d-90 — how far the builder lifted each face-boundary tint off its face, metres (0 with none): the
     /// distance along a ray within which a tint and the face under it are one place (Scene3DPicking.TintTie).</summary>

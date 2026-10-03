@@ -262,6 +262,7 @@
                                     <NativeMenuItem Header="Sheet" ToolTip="A rectangle, two clicks. Requires an active 3D editor."            Command="{Binding ThreeDDrawCommand}" CommandParameter="Sheet"/>
                                     <NativeMenuItem Header="Polygon" ToolTip="A closed sheet, a click per vertex. Requires an active 3D editor." Command="{Binding ThreeDDrawCommand}" CommandParameter="Polygon"/>
                                     <NativeMenuItem Header="Polyline" ToolTip="Construction geometry, a click per vertex. Requires an active 3D editor." Command="{Binding ThreeDDrawCommand}" CommandParameter="Polyline"/>
+                                    <NativeMenuItem Header="Image…" ToolTip="A reference image as a sheet on the drawing plane, not modelled. Requires an active 3D editor." Command="{Binding ThreeDInsertImageCommand}"/>
                                     <NativeMenuItem Header="Cylinder" ToolTip="Centre, radius, height. Requires an active 3D editor."          Command="{Binding ThreeDDrawCommand}" CommandParameter="Cylinder"/>
                                     <NativeMenuItem Header="Port" ToolTip="A port between two conductors, two clicks; its polarity is inferred from what it touches. Requires an active 3D editor." Command="{Binding ThreeDDrawCommand}" CommandParameter="Port"/>
                                     <NativeMenuItem Header="Wire" ToolTip="A bond wire between two metal objects or sheets (click any face of each), then its loop height. Requires an active 3D editor." Command="{Binding ThreeDDrawCommand}" CommandParameter="Wire"/>
@@ -1165,6 +1166,10 @@
                     <MenuItem Header="Poly_line" Command="{Binding ThreeDDrawCommand}" CommandParameter="Polyline"
                               ToolTip.Tip="Construction geometry, a click per vertex. Requires an active 3D editor.">
                         <MenuItem.Icon><mi:MaterialIcon Kind="VectorPolyline" Width="16" Height="16"/></MenuItem.Icon>
+                    </MenuItem>
+                    <MenuItem Header="_Image…" Command="{Binding ThreeDInsertImageCommand}"
+                              ToolTip.Tip="A reference image as a sheet on the drawing plane, not modelled. Requires an active 3D editor.">
+                        <MenuItem.Icon><mi:MaterialIcon Kind="ImagePlusOutline" Width="16" Height="16"/></MenuItem.Icon>
                     </MenuItem>
                     <MenuItem Header="C_ylinder" Command="{Binding ThreeDDrawCommand}" CommandParameter="Cylinder"
                               ToolTip.Tip="Centre, radius, height. Requires an active 3D editor.">

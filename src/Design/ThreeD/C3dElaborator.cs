@@ -211,6 +211,15 @@ public sealed record C3dElaboration(
     /// content out, does not refuse for them.</summary>
     public IReadOnlyList<string> NotModelledRefusals { get; init; } = [];
 
+    /// <summary>brief-em3d-101 R-em3d101-4a — every image sheet's image, by elaborated name: its file resolved against the
+    /// <c>.c3d</c> that holds the sheet (an instance's content against the CHILD document, R-em3d101-5c) and where its corners
+    /// are. Drawing only — nothing a solve reads; the scene draws the sheet with it.</summary>
+    public IReadOnlyDictionary<string, C3dPlacedImage> Images { get; init; } = new Dictionary<string, C3dPlacedImage>();
+
+    /// <summary>brief-em3d-101 R-em3d101-8 — every face image, on the elaborated object it was found on (an instance's content's
+    /// resolved against the CHILD document): what the scene draws over the face. Drawing only.</summary>
+    public IReadOnlyList<C3dFaceImageUse> FaceImages { get; init; } = [];
+
     /// <summary>The walk: instances resolved, units converted, materials merged, objects lowered.</summary>
     public IReadOnlyList<C3dWalkStep> WalkInstances { get; init; } = [];
     public IReadOnlyList<C3dWalkStep> WalkUnits { get; init; } = [];
@@ -634,6 +643,8 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
         private readonly List<Em3dSheet> _sheets = [];
         private readonly List<Em3dSolid> _unassignedSolids = [];
         private readonly List<Em3dSheet> _unassignedSheets = [];
+        private readonly Dictionary<string, C3dPlacedImage> _images = new(StringComparer.Ordinal);
+        private readonly List<C3dFaceImageUse> _faceImages = [];
         private readonly Dictionary<string, C3dProvenance> _provenance = new(StringComparer.Ordinal);
 
         /// <summary>The top-level object being elaborated, for <see cref="C3dProvenance.TopObject"/>.</summary>
@@ -799,6 +810,8 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
                 UnassignedSheets = _unassignedSheets,
                 NotModelled = _notModelled,
                 NotModelledRefusals = _notModelledRefusals,
+                Images = _images,
+                FaceImages = _faceImages,
                 Technology = tech.Tech,
                 TechnologyPath = tech.ResolvedPath,
                 Resolution = resolution,
@@ -837,6 +850,15 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
                 _topObject = obj.Name;
                 _transparency = obj.Transparency;
                 Modelled(obj.Model, () => Object(obj, prefix + obj.Name, world, doc, tech, prefix, path, exact));
+                // brief-em3d-101 — a top-level image sheet's picture, resolved against THIS document (an operand's is not drawn).
+                if (obj is C3dSheet { Image: { } img } sheet && C3dImages.Resolve(path, img.Path) is { } file
+                    && C3dImages.Placed(sheet, file, world, doc.DbuPerMicron) is { } placed)
+                    _images[prefix + obj.Name] = placed;
+                // brief-em3d-101 Phase B — its face images, carried for its result (an operation's) at the top level.
+                if (obj.FaceImages is { Count: > 0 } faces)
+                    for (int k = 0; k < faces.Count; k++)
+                        _faceImages.Add(new C3dFaceImageUse(prefix + obj.Name, k, faces[k], C3dImages.Resolve(path, faces[k].Image.Path),
+                                                            C3dLowering.Metres(1, doc.DbuPerMicron), _opacity));
                 _topObject = null;
                 _transparency = null;
             }
@@ -879,8 +901,9 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
             {
                 // 3D editor bugs round 2 — an object with no material yet is IGNORED by the solver, not a refusal: a
                 // half-finished design still runs. One naming a material the technology lacks stays a refusal below — a
-                // broken reference, not an unassigned object.
-                _warnings.Add(NoMaterialWarning(name));
+                // broken reference, not an unassigned object. brief-em3d-101 R-em3d101-1d — and only what a solve sees is warned
+                // of: a not-modelled object (an image sheet, as it is placed) is left out of every run whatever its material.
+                if (!_off) _warnings.Add(NoMaterialWarning(name));
                 Unassigned(obj, name, world, doc.DbuPerMicron, prefix, path, exact);
                 return;
             }
@@ -995,7 +1018,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
 
             if (matName is not { Length: > 0 })
             {
-                _warnings.Add(NoMaterialWarning(name));
+                if (!_off) _warnings.Add(NoMaterialWarning(name));
                 _unassignedSolids.Add(new Em3dSolid(name, "", Em3dRole.Dielectric, lowered.Solid!, 0));
                 _provenance[name] = new C3dProvenance(prefix.TrimEnd('/'), path, name[prefix.Length..], lowered.FaceNames)
                 {

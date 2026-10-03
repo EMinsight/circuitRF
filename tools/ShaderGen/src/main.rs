@@ -21,6 +21,8 @@
 //!   - the per-draw transform @group(0) @binding(1) (brief-em3d-46): MSL `[[buffer(2)]]`; HLSL
 //!     `register(b1)`; SPIR-V descriptor set 0, binding 1. A uniform, not an immediate: naga writes an
 //!     immediate to HLSL as `ConstantBuffer<T>`, which Shader Model 5.0 does not compile.
+//!   - an image's texture @group(1) @binding(0) and sampler @group(1) @binding(1) (brief-em3d-101): MSL
+//!     `[[texture(0)]]` / `[[sampler(0)]]`; HLSL `register(t0)` / `register(s0)`; SPIR-V set 1, bindings 0 and 1.
 //!
 //! Deterministic: every option is set explicitly (naga's SPIR-V default flips a DEBUG flag with the
 //! build profile, which would make a debug-built tool emit different words).
@@ -40,6 +42,11 @@ const MSL_UNIFORM_BUFFER: u8 = 1;
 /// HLSL register b1, SPIR-V descriptor set 0 binding 1.
 const TRANSFORM: naga::ResourceBinding = naga::ResourceBinding { group: 0, binding: 1 };
 const MSL_TRANSFORM_BUFFER: u8 = 2;
+/// brief-em3d-101 — an image draw's texture, @group(1) @binding(0), and its sampler, @group(1) @binding(1): MSL texture 0 and
+/// sampler 0; HLSL t0 and s0; SPIR-V descriptor set 1, bindings 0 and 1 (a set of its own, so the Vulkan backend binds one small
+/// set per texture and leaves the uniform set it writes once alone).
+const IMAGE: naga::ResourceBinding = naga::ResourceBinding { group: 1, binding: 0 };
+const IMAGE_SAMPLER: naga::ResourceBinding = naga::ResourceBinding { group: 1, binding: 1 };
 /// MSL 2.3: macOS 11+.
 const MSL_VERSION: (u8, u8) = (2, 3);
 /// SPIR-V 1.0: every Vulkan 1.0 driver.
@@ -109,6 +116,11 @@ fn generate(wgsl_path: &Path, out: &Path) -> Result<(), String> {
         UNIFORM,
         msl::BindTarget { buffer: Some(MSL_UNIFORM_BUFFER), ..Default::default() },
     );
+    resources.resources.insert(IMAGE, msl::BindTarget { texture: Some(0), ..Default::default() });
+    resources.resources.insert(
+        IMAGE_SAMPLER,
+        msl::BindTarget { sampler: Some(msl::BindSamplerTarget::Resource(0)), ..Default::default() },
+    );
     let mut msl_opts = msl::Options {
         lang_version: MSL_VERSION,
         fake_missing_bindings: false,
@@ -128,11 +140,22 @@ fn generate(wgsl_path: &Path, out: &Path) -> Result<(), String> {
     };
     hlsl_opts.binding_map.insert(UNIFORM, hlsl::BindTarget { space: 0, register: 0, ..Default::default() });
     hlsl_opts.binding_map.insert(TRANSFORM, hlsl::BindTarget { space: 0, register: 1, ..Default::default() });
+    hlsl_opts.binding_map.insert(IMAGE, hlsl::BindTarget { space: 0, register: 0, ..Default::default() });
+    hlsl_opts.binding_map.insert(IMAGE_SAMPLER, hlsl::BindTarget { space: 0, register: 0, ..Default::default() });
+    // naga writes every sampler through a D3D12 sampler HEAP (a 2,048-entry array indexed by a per-group StructuredBuffer), which
+    // a D3D11 Shader Model 5.0 compile cannot take — D3D11 has 16 sampler slots. The index buffer is given a register here only so
+    // naga writes it; plain_hlsl_samplers then rewrites the heap away into a plain `SamplerState … : register(sN)`.
+    hlsl_opts.sampler_buffer_binding_map.insert(
+        hlsl::SamplerIndexBufferKey { group: IMAGE_SAMPLER.group },
+        hlsl::BindTarget { space: 0, register: 15, ..Default::default() },
+    );
     let mut hlsl_src = String::new();
     let hlsl_pipe = hlsl::PipelineOptions::default();
     hlsl::Writer::new(&mut hlsl_src, &hlsl_opts, &hlsl_pipe)
         .write(&module, &info, None)
         .map_err(|e| format!("HLSL: {e}"))?;
+
+    let hlsl_src = plain_hlsl_samplers(&hlsl_src)?;
 
     // ---- SPIR-V ----
     let mut spv_opts = spv::Options {
@@ -143,6 +166,8 @@ fn generate(wgsl_path: &Path, out: &Path) -> Result<(), String> {
     };
     spv_opts.binding_map.insert(UNIFORM, spv::BindingInfo { descriptor_set: 0, binding: 0, binding_array_size: None });
     spv_opts.binding_map.insert(TRANSFORM, spv::BindingInfo { descriptor_set: 0, binding: 1, binding_array_size: None });
+    spv_opts.binding_map.insert(IMAGE, spv::BindingInfo { descriptor_set: 1, binding: 0, binding_array_size: None });
+    spv_opts.binding_map.insert(IMAGE_SAMPLER, spv::BindingInfo { descriptor_set: 1, binding: 1, binding_array_size: None });
     let words = spv::write_vec(&module, &info, &spv_opts, None).map_err(|e| format!("SPIR-V: {e}"))?;
     let words = insert_hash_string(&words, &format!("wgsl-sha256:{hash}"))?;
 
@@ -167,6 +192,50 @@ fn generate(wgsl_path: &Path, out: &Path) -> Result<(), String> {
         println!("  wrote {}", p.display());
     }
     Ok(())
+}
+
+/// brief-em3d-101 — naga's sampler heap rewritten into D3D11's model. naga declares
+///   SamplerState nagaSamplerHeap[2048]: register(s0, space0);
+///   SamplerComparisonState nagaComparisonSamplerHeap[2048]: register(s0, space1);
+///   StructuredBuffer<uint> nagaGroup1SamplerIndexArray : register(t15);
+///   static const SamplerState img_s = nagaSamplerHeap[nagaGroup1SamplerIndexArray[1]];
+/// and every use names `img_s`. The three declarations go, and the static becomes `SamplerState img_s : register(s0);` — the
+/// sampler's own binding-map register. Every pattern must match EXACTLY as expected, or generation fails: a naga upgrade that
+/// changes the spelling is a loud error here, never a shader that silently samples nothing.
+fn plain_hlsl_samplers(src: &str) -> Result<String, String> {
+    let mut out = String::with_capacity(src.len());
+    let (mut heaps, mut index, mut samplers) = (0, 0, 0);
+    for line in src.split_inclusive('\n') {
+        let t = line.trim();
+        if t.starts_with("SamplerState nagaSamplerHeap[") || t.starts_with("SamplerComparisonState nagaComparisonSamplerHeap[") {
+            heaps += 1;
+            continue;
+        }
+        if t.starts_with("StructuredBuffer<uint> nagaGroup") && t.contains("SamplerIndexArray") {
+            index += 1;
+            continue;
+        }
+        if let Some(rest) = t.strip_prefix("static const SamplerState ") {
+            let name = rest.split(|c: char| c == ' ' || c == '=').next().unwrap_or("");
+            if name.is_empty() || !rest.contains("= nagaSamplerHeap[") {
+                return Err(format!("HLSL: an unexpected sampler declaration: {t}"));
+            }
+            // The only sampler: the image's, at s0 (IMAGE_SAMPLER's binding-map register).
+            out.push_str(&format!("SamplerState {name} : register(s0);\n"));
+            samplers += 1;
+            continue;
+        }
+        out.push_str(line);
+    }
+    if samplers != 1 || heaps != 2 || index != 1 {
+        return Err(format!(
+            "HLSL: expected naga's two sampler heaps, one index buffer and one sampler; found {heaps}, {index} and {samplers}"
+        ));
+    }
+    if out.contains("nagaSamplerHeap") || out.contains("SamplerIndexArray") {
+        return Err("HLSL: the sampler heap is still referenced after the rewrite".into());
+    }
+    Ok(out)
 }
 
 fn write(p: &Path, b: &[u8]) -> Result<(), String> {

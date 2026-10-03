@@ -471,6 +471,26 @@ internal static class DocumentSchema
             boundary's face — is refused, naming both. A port that is off is absent (open, not
             terminated in its Z0), and the result's ports are the modelled ones renumbered 1…N in Number
             order, the mapping in the run's notes and the .sNp header.
+          * A REFERENCE IMAGE is a Sheet carrying "Image": {"Path": "ref/die.png"} — drawn with that
+            picture instead of its material's colour, whatever its material (or none). Path is a
+            reference, never the bytes: relative to the .c3d when the file lies inside its workspace,
+            absolute otherwise, resolved against the .c3d that holds the sheet (an instance's against
+            the CHILD document). The image fills the sheet's Rect (an edited Outline clips it); on XY
+            its right is +x and its up +y, on XZ right +x and up +z, on YZ right +y and up +z — as
+            the Top, Front and Right views read them, never mirrored. A placed image sheet is written
+            "Model": false and no Material; turning Model on puts the SHEET in the solve as any sheet
+            (the image is never geometry). Transparency is the image's. "Locked": true (written only
+            then, only meaningful with an Image) refuses moves in the editor. An image is drawing
+            only: changing it never makes a result out of date. `check` warns — never errs — on an
+            image file that is missing or does not decode, and on Locked with no Image.
+          * "FaceImages" on any object maps images onto its flat faces, one per face: each
+            {"Face": "zmax", "Image": {"Path": …}} with optional Transparency (its OWN — the
+            object's does not apply; an instance's still multiplies), RotationDeg (counter-clockwise
+            seen from outside), Width and Height (dimensions; both omitted fits the image in the face,
+            aspect kept), Offset ([right, up] from the face's centroid) and Hidden. Seen from outside,
+            up is +z projected into the face (+y on a face facing ±z) and right is up × the outward
+            normal. The image is drawn only where the face is. An operation carries them for its
+            result. A face the object no longer has is kept and named by `check` (a warning).
           * The editor writes a rotated or mirrored placement in CANONICAL form, so the list never
             grows with editing: at most three entries, in the order Z, Y, X (Z applied first), each
             left out when its angle is 0. A composition of quarter turns and mirrors is stored

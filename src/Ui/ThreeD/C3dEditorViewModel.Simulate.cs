@@ -1037,11 +1037,20 @@ public sealed partial class C3dEditorViewModel
         foreach (var item in Tree.Where(g => g.Role is C3dTreeGroupRole.Objects or C3dTreeGroupRole.Construction or C3dTreeGroupRole.Booleans
                                                   or C3dTreeGroupRole.NotModelled).SelectMany(g => g.Items))
         {
-            foreach (var c in item.Children.Where(c => c.Kind == "Boundary").ToList()) item.Children.Remove(c);
+            foreach (var c in item.Children.Where(c => c.Kind is "Boundary" or FaceImageKind).ToList()) item.Children.Remove(c);
             foreach (var b in Document.FaceBoundaries.Where(b => b.Object == item.Name))
                 item.Children.Add(new C3dTreeItem(this, Scene3DBuilder.FaceTintPrefix + b.Object + "/" + b.Face, "Boundary",
                     $"{b.Face}: {(b.Kind == Em3dFaceBoundaryKind.Conductive ? $"Conductive ({b.Material})" : b.Kind.ToString())}", -1, -1, true)
                     { IsReadOnly = true });
+            // brief-em3d-101 R-em3d101-9c — each face image beneath its object: "Image on zmax — die.png", its tick its Hidden.
+            if (item.ObjectIndex >= 0 && item.OperandPath is null && !item.IsFeature && item.ObjectIndex < Document.Objects.Count
+                && Document.Objects[item.ObjectIndex] is { FaceImages: { Count: > 0 } faceImages } host)
+                foreach (var fi in faceImages)
+                    item.Children.Add(new C3dTreeItem(this, FaceImageSceneName(host.Name, fi.Face), FaceImageKind, C3dImages.FileName(fi.Image), -1, -1, !fi.Hidden)
+                    {
+                        DisplayName = $"Image on {fi.Face}", FaceImageHost = item.ObjectIndex, FaceImageFace = fi.Face,
+                        Icon = Material.Icons.MaterialIconKind.ImageOutline, Refusal = FaceImageProblem(host.Name, fi),
+                    });
         }
         RestoreExpansion();
     }

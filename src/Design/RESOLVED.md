@@ -16447,3 +16447,31 @@ dielectric class" was false for that row.
 
 Gates: `InductorPartDcAndResonanceNoteTests` (DC short vs capacitor; crossing set aside in both sentences)
 and `ParallelLcResonanceTests.AnInductorWithOnlyADielectricClass_IsWarnedForWhatTheClassCannotGive`.
+
+## Reference images: the record, the path, the frame (brief-em3d-101, 2026-10-03)
+
+- **An image sheet IS a `C3dSheet`** (`Image`, `Locked`), not a new `$type`: Model, a material, a port from its row, move,
+  rotate, group, copy, array and hide all work because a sheet already does them. It is placed `Model: false`, no material.
+- **A face image lives ON its object** (`C3dObject.FaceImages`), not in a document list as `C3dFaceBoundary` does: rename,
+  delete, duplicate, array, group, copy/paste, instance content and undo carry it with no code of their own, because each
+  already carries the whole object — a document-level list would need every one of those to find and follow it. An operation
+  carries them for its result, as it carries Hidden and Transparency.
+- **Drawing only, and said so in `SerializeForRun`**: a sheet's `Image` and `Locked` and every object's `FaceImages` are reset
+  there, so an image edit never makes a result stale; Model is not reset, so toggling it does.
+- **The no-material warning is only for what a solve sees** (`C3dElaborator.NoMaterialWarning`, `C3dValidation`'s
+  `NoMaterial`): a not-modelled object with no material raises none, in the editor or in `check`. That is wider than image
+  sheets — any not-modelled object — which is what "only what a solve sees" means.
+- **The path rule, written once** (`C3dImages.Store` / `Resolve`): relative to the `.c3d` when the file lies inside the
+  `.c3d`'s workspace (nearest `.cws` above it), absolute otherwise, `/` separators; resolved against the document that HOLDS
+  it (an instance's content against the child — the elaborator records each image with the document path it is walking).
+  Every move of an object between documents rebases it: copy (absolute) / paste (stored for the target) in `C3dFragment`,
+  Save As in the editor, Flatten and Group into Cell in `C3dHierarchy` (`C3dImages.Rebase`). The archive walk
+  (`DocumentFileRefs`) needed no change: it already treats any string that resolves to a file as a reference.
+- **The orientation rule's XZ side.** The brief says "seen from the plane's positive side, never mirrored", but XZ's (u, v) =
+  (x, z) read from +y (C3dPlane's normal) IS mirrored. The rule kept (x right, z up on XZ) is how the FRONT view (from −y)
+  reads it, which is where anyone tracing an XZ drawing looks from; Top (+z) and Right (+x) agree with the stated normals.
+- **A diagnostic's arguments must not be called `path`**: `check` fills `{path}` with the DOCUMENT's path, so an image
+  warning that named its file `{path}` printed the `.c3d`'s path in its place. The image file is `{file}`.
+- **Results' faces**: §8f says a face image is addressable wherever a face boundary is, and boundaries are set on an
+  operation's result faces, so Map Image is offered there too (§9a's "D13 disabled pattern" for results contradicts §8f;
+  §8f's "do not invent a second rule" was followed).

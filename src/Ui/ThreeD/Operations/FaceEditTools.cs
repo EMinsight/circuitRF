@@ -285,14 +285,15 @@ public sealed class FaceMoveTool : C3dFaceEditTool
 
     public override bool Key(Key key, KeyModifiers modifiers) => _mover.Key(key, modifiers);
 
-    private C3dFaceEditResult Edit(C3dTransform t)
+    /// <param name="free">Shift held: an image sheet's corner resizes free of its aspect (brief-em3d-101 R-em3d101-3e).</param>
+    private C3dFaceEditResult Edit(C3dTransform t, bool free = false)
     {
         var (local, _) = ToLocal(new C3dPoint3(R(t.Tx), R(t.Ty), R(t.Tz)));
-        return IsVertex ? Editor.MoveVertex(_vertex, Editor.Vertices[_vertex] + local) : Editor.MoveFace(_face!, local);
+        return IsVertex ? Editor.MoveVertex(_vertex, Editor.Vertices[_vertex] + local, free) : Editor.MoveFace(_face!, local);
     }
 
     public override C3dFaceEditResult? Evaluate(in C3dDrawInput input)
-        => _mover.Current(input, out _) is { } t ? Edit(t.Transform) : null;
+        => _mover.Current(input, out _) is { } t ? Edit(t.Transform, input.Free) : null;
 
     public override long?[] Current(in C3dDrawInput input) => _mover.Current(input);
 
@@ -301,18 +302,18 @@ public sealed class FaceMoveTool : C3dFaceEditTool
         var step = _mover.Click(input);
         Step = _mover.Step;
         if (!step.Finished) return step;
-        return Finish(_mover.Committed!.Value.Transform);
+        return Finish(_mover.Committed!.Value.Transform, input.Free);
     }
 
     public override C3dToolStep Typed(long?[] values, in C3dDrawInput input)
     {
         var step = _mover.Typed(values, input);
-        return step.Finished ? Finish(_mover.Committed!.Value.Transform) : step;
+        return step.Finished ? Finish(_mover.Committed!.Value.Transform, input.Free) : step;
     }
 
-    private C3dToolStep Finish(C3dTransform t)
+    private C3dToolStep Finish(C3dTransform t, bool free)
     {
-        var r = Edit(t);
+        var r = Edit(t, free);
         if (!r.Ok) return C3dToolStep.Refuse(r.Refusal!);
         Committed = r;
         return C3dToolStep.Finish;

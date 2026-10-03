@@ -50,7 +50,9 @@ public static class C3dValidation
                 // brief-em3d-50: a wire's omitted material is wBond's default metal, which the technology must still define.
                 // brief-em3d-64 R-em3d64-3b: an operation's material is its Blank's (or Target's), which is checked there.
                 string? material = o is C3dWire w ? C3dWires.MaterialOf(w) : EffectiveMaterial(o);
-                if (string.IsNullOrWhiteSpace(material)) found.Add(C3dDiagnostics.NoMaterial(o.Name));
+                // brief-em3d-101 R-em3d101-1d — no material is a warning only for what a solve sees: a not-modelled object is left
+                // out of every run whatever it is made of.
+                if (string.IsNullOrWhiteSpace(material)) { if (o.Model) found.Add(C3dDiagnostics.NoMaterial(o.Name)); }
                 else if (isKnownMaterial is not null && !isKnownMaterial(material))
                     found.Add(C3dDiagnostics.UnknownMaterial(o.Name, material));
             }
@@ -64,6 +66,10 @@ public static class C3dValidation
             if (o is C3dPolyline { Model: false }) found.Add(C3dDiagnostics.ModelOnPolyline(o.Name));
             foreach (var operand in C3dOperands.SelfAndDescendants(o).Skip(1).Where(d => !d.Model))
                 found.Add(C3dDiagnostics.ModelOnOperand(o.Name, operand.Name));
+
+            // brief-em3d-101 R-em3d101-6 — an image that cannot be drawn, and Locked where nothing reads it.
+            if (o is C3dSheet sheet) Images(sheet, documentPath, found);
+            if (o.FaceImages is { Count: > 0 }) FaceImages(o, documentPath, found);
 
             if (unresolved?.Contains(o.Name) == true) { Unread(o.Unread, $"'{o.Name}'", found); continue; }
             Geometry(o, o.Name, found);
@@ -83,6 +89,38 @@ public static class C3dValidation
 
         Unread(doc.Unread, "The document", found);
         return found;
+    }
+
+    /// <summary>brief-em3d-101 — a sheet's image findings: its file, resolved against the document that holds it (only when the
+    /// document has a path: an unsaved one has no folder to resolve in), and a <c>Locked</c> with no image.</summary>
+    private static void Images(C3dSheet s, string? documentPath, List<Diagnostic> found)
+    {
+        if (s.Image is null)
+        {
+            if (s.Locked) found.Add(C3dDiagnostics.LockedWithoutImage(s.Name));
+            return;
+        }
+        if (s.Image.Unread is { } unread) Unread(unread, $"The image of '{s.Name}'", found);
+        if (documentPath is null) return;
+        string? file = C3dImages.Resolve(documentPath, s.Image.Path);
+        if (C3dImages.Problem(file) is { } why) found.Add(C3dDiagnostics.ImageUnreadable(s.Name, file ?? s.Image.Path, why));
+    }
+
+    /// <summary>brief-em3d-101 Phase B — an object's face images: one per face, a transparency in range, a file that reads. Whether
+    /// each face is still there is the elaboration's to say (<see cref="C3dImages.FaceImageFindings"/>).</summary>
+    private static void FaceImages(C3dObject o, string? documentPath, List<Diagnostic> found)
+    {
+        foreach (var g in o.FaceImages!.GroupBy(f => f.Face, StringComparer.Ordinal).Where(g => g.Count() > 1))
+            found.Add(C3dDiagnostics.FaceImageTwice(o.Name, g.Key));
+        foreach (var fi in o.FaceImages!)
+        {
+            string label = $"'{o.Name}/{fi.Face}'";
+            if (fi.Transparency is { } t && !C3dTransparency.InRange(t)) found.Add(C3dDiagnostics.TransparencyRange($"The image on {label}", t));
+            Unread(fi.Unread, $"The image on {label}", found);
+            if (documentPath is null) continue;
+            string? file = C3dImages.Resolve(documentPath, fi.Image.Path);
+            if (C3dImages.Problem(file) is { } why) found.Add(C3dDiagnostics.ImageUnreadable($"{o.Name}/{fi.Face}", file ?? fi.Image.Path, why));
+        }
     }
 
     private static void Geometry(C3dObject o, string label, List<Diagnostic> found)

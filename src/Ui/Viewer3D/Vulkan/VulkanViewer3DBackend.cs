@@ -86,6 +86,25 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
     private VkDescriptorSet _set;
     private VkShaderModule _module;
     private VkPipeline _pOpaque, _pTrans, _pLines, _pPick, _pField, _pEdges, _pTop, _pGrid;
+    /// <summary>brief-em3d-101 — the image pipelines, the image vertex stream, the one sampler, and set 1's layout: a sampled image
+    /// (binding 0) and a sampler (binding 1). Each texture owns its own one-set descriptor pool (<see cref="Texture"/>), so a
+    /// re-elaboration can never exhaust a shared pool: the set lives and dies with its texture (src/Ui/Viewer3D/RESOLVED.md).</summary>
+    private VkPipeline _pImage, _pImageTrans;
+    private VkDescriptorSetLayout _imageSetLayout;
+    private VkSampler _sampler;
+    private (VkBuffer Buf, VkDeviceMemory Mem) _imageVb;
+    private readonly Scene3DTextureResidency<Texture?> _textures = new();
+
+    /// <summary>brief-em3d-101 — one uploaded image: its image, memory and view, and the descriptor set (in a pool of its own) that
+    /// binds it at set 1.</summary>
+    private sealed class Texture
+    {
+        public VkImage Image;
+        public VkDeviceMemory Memory;
+        public VkImageView View;
+        public VkDescriptorPool Pool;
+        public VkDescriptorSet Set;
+    }
     private VkCommandPool _cmdPool;
     private (VkBuffer Buf, VkDeviceMemory Mem) _ub;
     /// <summary>brief-em3d-46 — the per-draw transforms (binding 1), <see cref="_transformSlots"/> per frame slot.</summary>
@@ -265,7 +284,16 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
         VkDescriptorSetLayout setLayout;
         Check(api.vkCreateDescriptorSetLayout(&dsl, null, &setLayout), "vkCreateDescriptorSetLayout");
         _setLayout = setLayout;
-        var pli = new VkPipelineLayoutCreateInfo { setLayoutCount = 1, pSetLayouts = &setLayout };
+        // brief-em3d-101 — set 1: an image draw's texture and its sampler (tools/ShaderGen's binding map).
+        var ib = stackalloc VkDescriptorSetLayoutBinding[2];
+        ib[0] = new VkDescriptorSetLayoutBinding { binding = 0, descriptorType = VkDescriptorType.SampledImage, descriptorCount = 1, stageFlags = VkShaderStageFlags.Fragment };
+        ib[1] = new VkDescriptorSetLayoutBinding { binding = 1, descriptorType = VkDescriptorType.Sampler, descriptorCount = 1, stageFlags = VkShaderStageFlags.Fragment };
+        var idsl = new VkDescriptorSetLayoutCreateInfo { bindingCount = 2, pBindings = ib };
+        VkDescriptorSetLayout imageLayout;
+        Check(api.vkCreateDescriptorSetLayout(&idsl, null, &imageLayout), "vkCreateDescriptorSetLayout");
+        _imageSetLayout = imageLayout;
+        var both = stackalloc VkDescriptorSetLayout[2] { setLayout, imageLayout };
+        var pli = new VkPipelineLayoutCreateInfo { setLayoutCount = 2, pSetLayouts = both };
         VkPipelineLayout layout;
         Check(api.vkCreatePipelineLayout(&pli, null, &layout), "vkCreatePipelineLayout");
         _layout = layout;
@@ -280,6 +308,18 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
         _pTop = Pipeline(api, _rpColor, "fs_top"u8, VkPrimitiveTopology.TriangleList, blend: true, depthWrite: false, targets: 1, depthTest: false);
         // brief-em3d-45 — the drawing grid: no vertex input at all, depth test without write, blend.
         _pGrid = Pipeline(api, _rpColor, "fs_grid"u8, VkPrimitiveTopology.TriangleList, blend: true, depthWrite: false, targets: 1, grid: true);
+        // brief-em3d-101 — an image: blended always (an opaque image's alpha is 1); the opaque one writes depth.
+        _pImage = Pipeline(api, _rpColor, "fs_image"u8, VkPrimitiveTopology.TriangleList, blend: true, depthWrite: true, targets: 1, image: true);
+        _pImageTrans = Pipeline(api, _rpColor, "fs_image"u8, VkPrimitiveTopology.TriangleList, blend: true, depthWrite: false, targets: 1, image: true);
+        var sci = new VkSamplerCreateInfo
+        {
+            magFilter = VkFilter.Linear, minFilter = VkFilter.Linear, mipmapMode = VkSamplerMipmapMode.Linear,
+            addressModeU = VkSamplerAddressMode.ClampToEdge, addressModeV = VkSamplerAddressMode.ClampToEdge,
+            addressModeW = VkSamplerAddressMode.ClampToEdge, minLod = 0, maxLod = 1000f,
+        };
+        VkSampler sampler;
+        Check(api.vkCreateSampler(&sci, null, &sampler), "vkCreateSampler");
+        _sampler = sampler;
 
         // two uniform blocks (pick, colour) per frame slot — host-coherent, mapped once
         _ub = NewBuffer(api, Ring * 2 * UniformStride, VkBufferUsageFlags.UniformBuffer, VkMemoryPropertyFlags.HostVisible | VkMemoryPropertyFlags.HostCoherent);
@@ -390,9 +430,10 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
     }
 
     private VkPipeline Pipeline(VkDeviceApi api, VkRenderPass rp, ReadOnlySpan<byte> fragmentEntry, VkPrimitiveTopology topology,
-                                bool blend, bool depthWrite, int targets, bool field = false, bool depthTest = true, bool grid = false)
+                                bool blend, bool depthWrite, int targets, bool field = false, bool depthTest = true, bool grid = false,
+                                bool image = false)
     {
-        fixed (byte* vsName = field ? "vs_field"u8 : grid ? "vs_grid"u8 : "vs"u8)
+        fixed (byte* vsName = field ? "vs_field"u8 : grid ? "vs_grid"u8 : image ? "vs_image"u8 : "vs"u8)
         fixed (byte* fsName = fragmentEntry)
         {
             var stages = stackalloc VkPipelineShaderStageCreateInfo[2];
@@ -400,11 +441,21 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
             stages[1] = new VkPipelineShaderStageCreateInfo { stage = VkShaderStageFlags.Fragment, module = _module, pName = fsName };
             var vbd = new VkVertexInputBindingDescription
             {
-                binding = 0, stride = field ? (uint)FieldVertex.Stride : Scene3DVertex.Stride, inputRate = VkVertexInputRate.Vertex,
+                binding = 0, stride = field ? (uint)FieldVertex.Stride : image ? (uint)Scene3DImageVertex.Stride : Scene3DVertex.Stride,
+                inputRate = VkVertexInputRate.Vertex,
             };
-            var attrs = stackalloc VkVertexInputAttributeDescription[4];
-            uint attrCount = field ? 3u : 4u;
-            if (field)
+            var attrs = stackalloc VkVertexInputAttributeDescription[5];
+            uint attrCount = field ? 3u : image ? 5u : 4u;
+            if (image)
+            {
+                // brief-em3d-101 — Scene3DImageVertex: position, texture coordinate, id, face, colour.
+                attrs[0] = new VkVertexInputAttributeDescription { location = 0, binding = 0, format = VkFormat.R32G32B32Sfloat, offset = 0 };
+                attrs[1] = new VkVertexInputAttributeDescription { location = 1, binding = 0, format = VkFormat.R32G32Sfloat, offset = 12 };
+                attrs[2] = new VkVertexInputAttributeDescription { location = 2, binding = 0, format = VkFormat.R32Uint, offset = 20 };
+                attrs[3] = new VkVertexInputAttributeDescription { location = 3, binding = 0, format = VkFormat.R32Uint, offset = 24 };
+                attrs[4] = new VkVertexInputAttributeDescription { location = 4, binding = 0, format = VkFormat.R8G8B8A8Unorm, offset = 28 };
+            }
+            else if (field)
             {
                 // brief-em3d-29 — FieldVertex: position, the value's real part, its imaginary part.
                 for (uint k = 0; k < 3; k++)
@@ -542,6 +593,122 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
         fixed (Scene3DVertex* p = scene.Vertices) _vb = Upload(api, p, scene.Vertices.Length * Scene3DVertex.Stride, VkBufferUsageFlags.VertexBuffer);
         fixed (uint* p = scene.Indices) _ib = Upload(api, p, scene.Indices.Length * 4, VkBufferUsageFlags.IndexBuffer);
         fixed (Scene3DVertex* p = scene.LineVertices) _lines = Upload(api, p, scene.LineVertices.Length * Scene3DVertex.Stride, VkBufferUsageFlags.VertexBuffer);
+        Free(api, ref _imageVb);
+        fixed (Scene3DImageVertex* p = scene.ImageVertices) _imageVb = Upload(api, p, scene.ImageVertices.Length * Scene3DImageVertex.Stride, VkBufferUsageFlags.VertexBuffer);
+        _textures.Sync(scene, UploadTexture, ReleaseTexture);
+    }
+
+    /// <summary>
+    /// brief-em3d-101 R-em3d101-4d — one image: an RGBA8 UNORM image (never _SRGB) with every CPU-built mip level, staged in ONE
+    /// buffer and copied level by level between two layout transitions (undefined → transfer destination → shader read), then a
+    /// view over all its levels and a descriptor set from a pool of its own. Once per <see cref="Scene3DTexture"/>.
+    /// </summary>
+    private Texture? UploadTexture(Scene3DTexture t)
+    {
+        var api = Api;
+        var levels = t.Levels();
+        long total = levels.Sum(l => (long)l.Rgba.Length);
+        Counters.CountUpload(total);
+        var staging = NewBuffer(api, total, VkBufferUsageFlags.TransferSrc, VkMemoryPropertyFlags.HostVisible | VkMemoryPropertyFlags.HostCoherent);
+        void* p;
+        Check(api.vkMapMemory(staging.Item2, 0, (ulong)total, 0, &p), "vkMapMemory");
+        long at = 0;
+        foreach (var l in levels) { l.Rgba.AsSpan().CopyTo(new Span<byte>((byte*)p + at, l.Rgba.Length)); at += l.Rgba.Length; }
+        api.vkUnmapMemory(staging.Item2);
+
+        var tex = new Texture();
+        uint mips = (uint)levels.Count;
+        var ici = new VkImageCreateInfo
+        {
+            imageType = VkImageType.Image2D, format = VkFormat.R8G8B8A8Unorm,
+            extent = new VkExtent3D { width = (uint)levels[0].Width, height = (uint)levels[0].Height, depth = 1 },
+            mipLevels = mips, arrayLayers = 1, samples = VkSampleCountFlags.Count1, tiling = VkImageTiling.Optimal,
+            usage = VkImageUsageFlags.Sampled | VkImageUsageFlags.TransferDst, sharingMode = VkSharingMode.Exclusive,
+            initialLayout = VkImageLayout.Undefined,
+        };
+        VkImage created;
+        Check(api.vkCreateImage(&ici, null, &created), "vkCreateImage");
+        var img = created;
+        tex.Image = img;
+        VkMemoryRequirements req;
+        api.vkGetImageMemoryRequirements(img, &req);
+        var mai = new VkMemoryAllocateInfo { allocationSize = req.size, memoryTypeIndex = MemoryType(req.memoryTypeBits, VkMemoryPropertyFlags.DeviceLocal) };
+        VkDeviceMemory mem;
+        Check(api.vkAllocateMemory(&mai, null, &mem), "vkAllocateMemory");
+        Check(api.vkBindImageMemory(img, mem, 0), "vkBindImageMemory");
+        tex.Memory = mem;
+        var all = new VkImageSubresourceRange { aspectMask = VkImageAspectFlags.Color, levelCount = mips, layerCount = 1 };
+        OneShot(api, cb =>
+        {
+            var toDst = new VkImageMemoryBarrier
+            {
+                srcAccessMask = 0, dstAccessMask = VkAccessFlags.TransferWrite,
+                oldLayout = VkImageLayout.Undefined, newLayout = VkImageLayout.TransferDstOptimal,
+                srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED, dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED, image = img, subresourceRange = all,
+            };
+            api.vkCmdPipelineBarrier(cb, VkPipelineStageFlags.TopOfPipe, VkPipelineStageFlags.Transfer, 0, 0, null, 0, null, 1, &toDst);
+            var regions = new VkBufferImageCopy[levels.Count];
+            ulong offset = 0;
+            for (int k = 0; k < levels.Count; k++)
+            {
+                regions[k] = new VkBufferImageCopy
+                {
+                    bufferOffset = offset,
+                    imageSubresource = new VkImageSubresourceLayers { aspectMask = VkImageAspectFlags.Color, mipLevel = (uint)k, layerCount = 1 },
+                    imageExtent = new VkExtent3D { width = (uint)levels[k].Width, height = (uint)levels[k].Height, depth = 1 },
+                };
+                offset += (ulong)levels[k].Rgba.Length;
+            }
+            fixed (VkBufferImageCopy* r = regions)
+                api.vkCmdCopyBufferToImage(cb, staging.Item1, img, VkImageLayout.TransferDstOptimal, (uint)regions.Length, r);
+            var toRead = new VkImageMemoryBarrier
+            {
+                srcAccessMask = VkAccessFlags.TransferWrite, dstAccessMask = VkAccessFlags.ShaderRead,
+                oldLayout = VkImageLayout.TransferDstOptimal, newLayout = VkImageLayout.ShaderReadOnlyOptimal,
+                srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED, dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED, image = img, subresourceRange = all,
+            };
+            api.vkCmdPipelineBarrier(cb, VkPipelineStageFlags.Transfer, VkPipelineStageFlags.FragmentShader, 0, 0, null, 0, null, 1, &toRead);
+        });
+        api.vkDestroyBuffer(staging.Item1, null);
+        api.vkFreeMemory(staging.Item2, null);
+
+        var vci = new VkImageViewCreateInfo { image = img, viewType = VkImageViewType.Image2D, format = VkFormat.R8G8B8A8Unorm, subresourceRange = all };
+        VkImageView view;
+        Check(api.vkCreateImageView(&vci, null, &view), "vkCreateImageView");
+        tex.View = view;
+
+        // A pool of exactly one set, owned by this texture and destroyed with it: no shared pool to size, none to exhaust.
+        var sizes = stackalloc VkDescriptorPoolSize[2];
+        sizes[0] = new VkDescriptorPoolSize { type = VkDescriptorType.SampledImage, descriptorCount = 1 };
+        sizes[1] = new VkDescriptorPoolSize { type = VkDescriptorType.Sampler, descriptorCount = 1 };
+        var dpi = new VkDescriptorPoolCreateInfo { maxSets = 1, poolSizeCount = 2, pPoolSizes = sizes };
+        VkDescriptorPool pool;
+        Check(api.vkCreateDescriptorPool(&dpi, null, &pool), "vkCreateDescriptorPool");
+        tex.Pool = pool;
+        var layout = _imageSetLayout;
+        var dai = new VkDescriptorSetAllocateInfo { descriptorPool = pool, descriptorSetCount = 1, pSetLayouts = &layout };
+        VkDescriptorSet set;
+        Check(api.vkAllocateDescriptorSets(&dai, &set), "vkAllocateDescriptorSets");
+        tex.Set = set;
+        var ii = new VkDescriptorImageInfo { imageView = view, imageLayout = VkImageLayout.ShaderReadOnlyOptimal };
+        var si = new VkDescriptorImageInfo { sampler = _sampler };
+        var writes = stackalloc VkWriteDescriptorSet[2];
+        writes[0] = new VkWriteDescriptorSet { dstSet = set, dstBinding = 0, descriptorCount = 1, descriptorType = VkDescriptorType.SampledImage, pImageInfo = &ii };
+        writes[1] = new VkWriteDescriptorSet { dstSet = set, dstBinding = 1, descriptorCount = 1, descriptorType = VkDescriptorType.Sampler, pImageInfo = &si };
+        api.vkUpdateDescriptorSets(2, writes, 0, null);
+        return tex;
+    }
+
+    /// <summary>A texture no scene draws any more. A frame in flight may still sample it, so the GPU is waited for first — once
+    /// per scene change that drops an image, never per frame. Destroying its pool frees its set.</summary>
+    private void ReleaseTexture(Texture? t)
+    {
+        if (t is null || _api is not { } api) return;
+        api.vkDeviceWaitIdle();
+        if (t.Pool.Handle != 0) api.vkDestroyDescriptorPool(t.Pool, null);
+        if (t.View.Handle != 0) api.vkDestroyImageView(t.View, null);
+        if (t.Image.Handle != 0) api.vkDestroyImage(t.Image, null);
+        if (t.Memory.Handle != 0) api.vkFreeMemory(t.Memory, null);
     }
 
     /// <summary>brief-em3d-43 gate 6 — the changed ranges only, staged and copied into the buffers in place.
@@ -936,11 +1103,16 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
                 var buf = d.Buffer switch
                 {
                     Scene3DBuffer.Scene => _vb.Buf, Scene3DBuffer.SceneLines => _lines.Buf, Scene3DBuffer.Field => _field.Buf,
+                    Scene3DBuffer.Image => _imageVb.Buf,
                     Scene3DBuffer.Overlay0 => _overlays[0].Buf, Scene3DBuffer.Overlay1 => _overlays[1].Buf, _ => _overlays[2].Buf,
                 };
                 bool lines = d.Pipeline is Scene3DPipeline.Lines or Scene3DPipeline.Edges, field = d.Pipeline == Scene3DPipeline.Field;
                 bool grid = d.Pipeline == Scene3DPipeline.Grid;
-                if (!grid && (buf.Handle == 0 || (!lines && !field && _ib.Buf.Handle == 0))) continue;
+                // brief-em3d-101 — an image draw: not indexed; its texture's set at set 1.
+                bool isImage = d.Pipeline is Scene3DPipeline.Image or Scene3DPipeline.ImageTranslucent;
+                var bound1 = _textures.Bound;
+                if (isImage && (d.Texture < 0 || d.Texture >= bound1.Length || bound1[d.Texture] is null)) continue;
+                if (!grid && (buf.Handle == 0 || (!lines && !field && !isImage && _ib.Buf.Handle == 0))) continue;
                 if (field && d.First + d.Count > _fieldCount) continue;
                 if (d.Tie != tie) SetTie(api, cb, tie = d.Tie);
                 if (d.Pipeline != state)
@@ -950,8 +1122,14 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
                     {
                         Scene3DPipeline.Translucent => _pTrans, Scene3DPipeline.Lines => _pLines,
                         Scene3DPipeline.Field => _pField, Scene3DPipeline.Edges => _pEdges,
-                        Scene3DPipeline.OnTop => _pTop, Scene3DPipeline.Grid => _pGrid, _ => _pOpaque,
+                        Scene3DPipeline.OnTop => _pTop, Scene3DPipeline.Grid => _pGrid,
+                        Scene3DPipeline.Image => _pImage, Scene3DPipeline.ImageTranslucent => _pImageTrans, _ => _pOpaque,
                     });
+                }
+                if (isImage)
+                {
+                    var texSet = bound1[d.Texture]!.Set;
+                    api.vkCmdBindDescriptorSets(cb, VkPipelineBindPoint.Graphics, _layout, 1, 1, &texSet, 0, null);
                 }
                 if (grid)
                 {
@@ -970,9 +1148,9 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
                 {
                     bound = d.Buffer;
                     api.vkCmdBindVertexBuffers(cb, 0, 1, &buf, &zero);
-                    if (!lines && !field) api.vkCmdBindIndexBuffer(cb, _ib.Buf, 0, VkIndexType.Uint32);
+                    if (!lines && !field && !isImage) api.vkCmdBindIndexBuffer(cb, _ib.Buf, 0, VkIndexType.Uint32);
                 }
-                if (lines || field) api.vkCmdDraw(cb, (uint)d.Count, 1, (uint)d.First, 0);
+                if (lines || field || isImage) api.vkCmdDraw(cb, (uint)d.Count, 1, (uint)d.First, 0);
                 else api.vkCmdDrawIndexed(cb, (uint)d.Count, 1, (uint)d.First, 0, 0);
                 draws++;
             }
@@ -1077,7 +1255,8 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
         }
         api.vkDeviceWaitIdle();
         ReleaseImages();
-        Free(api, _vb); Free(api, _ib); Free(api, _lines); Free(api, _field);
+        Free(api, _vb); Free(api, _ib); Free(api, _lines); Free(api, _field); Free(api, _imageVb);
+        _textures.Clear(ReleaseTexture);
         foreach (var o in _overlays) Free(api, o);
         foreach (var b in _pickBuf) Free(api, b);
         Free(api, _ub);
@@ -1089,6 +1268,8 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
 
         api.vkDestroyPipeline(_pLines, null); api.vkDestroyPipeline(_pPick, null); api.vkDestroyPipeline(_pField, null);
         api.vkDestroyPipeline(_pEdges, null); api.vkDestroyPipeline(_pTop, null); api.vkDestroyPipeline(_pGrid, null);
+        api.vkDestroyPipeline(_pImage, null); api.vkDestroyPipeline(_pImageTrans, null);
+        api.vkDestroySampler(_sampler, null); api.vkDestroyDescriptorSetLayout(_imageSetLayout, null);
         api.vkDestroyPipelineLayout(_layout, null); api.vkDestroyDescriptorPool(_pool, null);
         api.vkDestroyDescriptorSetLayout(_setLayout, null); api.vkDestroyShaderModule(_module, null);
         api.vkDestroyRenderPass(_rpColor, null); api.vkDestroyRenderPass(_rpPick, null);

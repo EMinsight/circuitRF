@@ -49,6 +49,13 @@ public sealed record Em3dDrawingRequest
     /// </summary>
     public bool TransparentObjectsOcclude { get; init; }
 
+    /// <summary>brief-em3d-101 — the image sheets' pictures by elaborated name (C3dElaboration.Images): each outline view draws them
+    /// under its lines; a section draws none.</summary>
+    public IReadOnlyDictionary<string, CircuitRF.Design.ThreeD.C3dPlacedImage>? Images { get; init; }
+
+    /// <summary>brief-em3d-101 Phase B — the face images as the 3D view placed them (Scene3DModel.PlacedFaceImages).</summary>
+    public IReadOnlyList<Scene3DPlacedFaceImage>? FaceImages { get; init; }
+
     /// <summary>The page, in points, oriented.</summary>
     public (float W, float H) PageSize()
     {
@@ -122,6 +129,8 @@ public static class Em3dDrawingExport
         {
             var p = Em3dProjection.Standard(v);
             var scene = Em3dSectionScene.Outline(shown, p, options, out string? note);
+            scene = scene with { Images = [.. Em3dSceneImages.Of(shown, request.Images, p.Project),
+                                           .. Em3dSceneImages.OfFaces(request.FaceImages ?? [], p.Project, request.Omit)] };
             if (note is not null && !notes.Contains(note)) notes.Add(note);
             panels.Add(new Em3dDrawingPanel(p.Name, scene));
         }
@@ -188,11 +197,16 @@ public static class Em3dDrawingExport
     public static Em3dVectorPicture Picture(Em3dProblem problem, Em3dProjection projection, IReadOnlyDictionary<string, SKColor> colours,
                                             ColorTheme theme, IReadOnlySet<string>? omit, Em3dHiddenEdges hidden = Em3dHiddenEdges.Removed,
                                             float maxSide = 720f, Em3dPictureWindow? window = null, Em3dPictureChrome? chrome = null,
-                                            IReadOnlyDictionary<string, Scene3DTransparency>? transparency = null)
+                                            IReadOnlyDictionary<string, Scene3DTransparency>? transparency = null,
+                                            IReadOnlyDictionary<string, CircuitRF.Design.ThreeD.C3dPlacedImage>? images = null,
+                                            IReadOnlyList<Scene3DPlacedFaceImage>? faceImages = null)
     {
         var request = new Em3dDrawingRequest { Hidden = hidden, ObjectTransparency = transparency };
-        var scene = Em3dSectionScene.Outline(Without(problem, omit), projection,
+        var shown = Without(problem, omit);
+        var scene = Em3dSectionScene.Outline(shown, projection,
                                              OutlineOptions(request.Hidden, request.ObjectTransparency, request.TransparentObjectsOcclude), out string? note);
+        scene = scene with { Images = [.. Em3dSceneImages.Of(shown, images, projection.Project),
+                                       .. Em3dSceneImages.OfFaces(faceImages ?? [], projection.Project, omit)] };
         var style = new Em3dDrawingStyle(colours, theme, ColorVariant.Light) { Legend = false, Transparent = true, ObjectTransparency = transparency };
         if (window is not { HalfWidth: > 0, HalfHeight: > 0 } win)
         {

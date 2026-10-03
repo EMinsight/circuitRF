@@ -237,6 +237,9 @@ public static partial class Em3dSectionRenderer
             Em3dSectionField.DrawWires(canvas, field, Map);
         }
 
+        // brief-em3d-101 — an outline's image sheets, in the fill's slot: under every line.
+        if (field is null && scene.Images.Count > 0) Em3dSceneImages.Draw(canvas, scene.Images, Map, style.ObjectTransparency);
+
         foreach (var r in scene.Regions)
         {
             if (r.Role == Em3dRole.Air && (style.Transparent || field is not null)) continue;
@@ -359,6 +362,8 @@ public static partial class Em3dSectionRenderer
         foreach (var (obj, role, material) in scene.Regions.Select(r => (r.Object, r.Role, r.Material))
                      .Concat(scene.Lines.Select(l => (l.Object, l.Role, l.Material))))
         {
+            // brief-em3d-101 — an image sheet with no material keys nothing: its picture is its own legend.
+            if (material.Length == 0) continue;
             var colour = Fill(obj, role, material);
             if (seen.Add((material, colour))) rows.Add((material, colour, role));
         }

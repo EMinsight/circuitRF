@@ -33,6 +33,21 @@ drawn) is MSL `[[buffer(2)]]`, HLSL `cbuffer … : register(b1)`, SPIR-V descrip
 uniform the Vulkan backend re-offsets per draw). It is a uniform, not a WGSL immediate: naga writes an immediate
 to HLSL as `ConstantBuffer<T>`, which Shader Model 5.0 does not compile.
 
+An image draw's texture and sampler (brief-em3d-101: a reference image on a sheet or a face) are `@group(1)`:
+
+| Binding | MSL | HLSL | SPIR-V |
+|---|---|---|---|
+| `@group(1) @binding(0)` `texture_2d<f32>` | `[[texture(0)]]` | `register(t0)` | descriptor set 1, binding 0 (sampled image) |
+| `@group(1) @binding(1)` `sampler` | `[[sampler(0)]]` | `register(s0)` | descriptor set 1, binding 1 (sampler) |
+
+A set of its own, so the Vulkan backend binds one small set per texture and leaves set 0 — the uniforms it writes once —
+alone. **naga writes every HLSL sampler through a D3D12 sampler heap** (`SamplerState nagaSamplerHeap[2048]` indexed by a
+per-group `StructuredBuffer<uint>`), which a D3D11 Shader Model 5.0 compile cannot take: D3D11 has 16 sampler slots.
+`plain_hlsl_samplers` in `main.rs` rewrites the heap away — the two heap declarations and the index buffer removed, the
+`static const SamplerState img_s = nagaSamplerHeap[…]` made `SamplerState img_s : register(s0)` — and fails generation
+unless it finds exactly what it expects, so a naga upgrade that changes the spelling is a loud error, never a shader that
+samples nothing.
+
 - **Deterministic.** Every naga option is set explicitly (its SPIR-V default flips a DEBUG flag with the
   tool's own build profile). The same WGSL gives byte-identical outputs.
 - **Valid.** The SPIR-V is re-read by naga's own SPIR-V front end and re-validated before it is written,

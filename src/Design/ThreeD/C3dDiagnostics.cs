@@ -199,6 +199,33 @@ public static class C3dDiagnostics
     public static Diagnostic TransparencyRange(string what, int percent) => Diagnostic.Create(
         "c3d.transparency.range", DiagnosticSeverity.Error, "{why}", ("why", C3dTransparency.OutOfRange(what, percent)));
 
+    /// <summary>brief-em3d-101 R-em3d101-6 — an image that cannot be drawn. A warning, never an error: an image is drawing only, and a
+    /// design must not fail <c>check</c> because a photo moved. The view draws a placeholder in its place.</summary>
+    public static Diagnostic ImageUnreadable(string name, string path, string reason) => Diagnostic.Create(
+        "c3d.image.unreadable", DiagnosticSeverity.Warning,
+        "'{name}' is drawn with the image '{file}', which cannot be drawn: {reason}. The view draws a placeholder in its place; " +
+        "Resolve Path… points it at the file.",
+        ("name", name), ("file", path), ("reason", reason));
+
+    /// <summary>brief-em3d-101 R-em3d101-8g — a face image on a face its object no longer has (an edit took the face away). A warning:
+    /// the record is kept in the file, never dropped, and Remove takes it away.</summary>
+    public static Diagnostic FaceImageUnresolved(string name, string face) => Diagnostic.Create(
+        "c3d.image.face-missing", DiagnosticSeverity.Warning,
+        "'{name}' has an image mapped onto its face '{face}', which it no longer has; the image is kept and not drawn. Remove it, or " +
+        "map it onto a face it has.",
+        ("name", name), ("face", face));
+
+    /// <summary>brief-em3d-101 R-em3d101-8b (D4) — two images on one face: the first is drawn.</summary>
+    public static Diagnostic FaceImageTwice(string name, string face) => Diagnostic.Create(
+        "c3d.image.face-twice", DiagnosticSeverity.Warning,
+        "'{name}' has more than one image mapped onto its face '{face}'; a face carries one, so only the first is drawn.",
+        ("name", name), ("face", face));
+
+    /// <summary>brief-em3d-101 — <c>Locked</c> on a sheet with no image: only an image sheet is locked (R-em3d101-1g).</summary>
+    public static Diagnostic LockedWithoutImage(string name) => Diagnostic.Create(
+        "c3d.image.locked-without-image", DiagnosticSeverity.Warning,
+        "'{name}' is Locked but carries no image. Only an image sheet is locked, so nothing reads it.", ("name", name));
+
     public static Diagnostic TransparencyOnPolyline(string name) => Diagnostic.Create(
         "c3d.transparency.polyline", DiagnosticSeverity.Warning,
         "The polyline '{name}' states a Transparency. A polyline is a line and is never filled, so nothing reads it.", ("name", name));

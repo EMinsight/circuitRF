@@ -148,6 +148,10 @@
                 <ToggleButton IsVisible="{Binding ViewModel.IsEditable}" IsChecked="{Binding ViewModel.IsPolylineArmed}" ToolTip.Tip="Polyline: construction geometry, a click per vertex  (Shift+A, L)">
                     <mi:MaterialIcon Kind="VectorPolyline" Width="16" Height="16"/>
                 </ToggleButton>
+                <!-- brief-em3d-101 R-em3d101-2a — a reference image as a sheet: a Button (nothing is armed), beside the sheet tools. -->
+                <Button IsVisible="{Binding ViewModel.IsEditable}" Click="OnInsertImage" ToolTip.Tip="Insert Image…: a reference image as a sheet on the drawing plane, not modelled">
+                    <mi:MaterialIcon Kind="ImagePlusOutline" Width="16" Height="16"/>
+                </Button>
                 <ToggleButton IsVisible="{Binding ViewModel.IsEditable}" IsChecked="{Binding ViewModel.IsCylinderArmed}" ToolTip.Tip="Cylinder: centre, radius, height  (Shift+A, Y)">
                     <mi:MaterialIcon Kind="Database" Width="16" Height="16"/>
                 </ToggleButton>
@@ -621,7 +625,7 @@
                                 <mi:MaterialIcon Kind="{Binding IconKind}" Width="14" Height="14" VerticalAlignment="Center"
                                                  IsVisible="{Binding HasIcon}" Opacity="{Binding IconOpacity}"/>
                                 <!-- brief-em3d-93 R-em3d93-3 — a row that is not modelled is greyed, and its tooltip says why. -->
-                                <TextBlock Text="{Binding Name}" VerticalAlignment="Center" ToolTip.Tip="{Binding OrderTip}"
+                                <TextBlock Text="{Binding Label}" VerticalAlignment="Center" ToolTip.Tip="{Binding OrderTip}"
                                            Opacity="{Binding NameOpacity}"/>
                                 <TextBlock Text="{Binding Detail}" Opacity="0.6" FontSize="11" VerticalAlignment="Center"/>
                                 <!-- brief-em3d-50 R-em3d50-4 — a wire whose end is on no pad: flagged, with the refusal's words. -->

@@ -169,7 +169,7 @@ public sealed partial class C3dEditorViewModel
     /// <summary>R-em3d46-2 — Move, optionally locked to an axis (the menu's Move Along X / Y / Z).</summary>
     public void StartMove(C3dMoveLock lockTo = C3dMoveLock.None)
     {
-        if (!HaveTargets(out var targets)) return;
+        if (!HaveMovableTargets(out var targets)) return;
         var tool = new MoveTool(this, targets, PivotOf(targets), lockTo: lockTo);
         // With the cursor over the selection, the snapped point under it is the base, at once (R-em3d46-2a).
         var over = Viewer.LastPick.Object;
@@ -181,7 +181,7 @@ public sealed partial class C3dEditorViewModel
     /// <summary>R-em3d46-3 — Rotate about the drawing plane's normal (X, Y or Z changes it), through the pivot.</summary>
     public void StartRotate()
     {
-        if (!HaveTargets(out var targets)) return;
+        if (!HaveMovableTargets(out var targets)) return;
         BeginOperation(new RotateTool(this, targets, PivotOf(targets), _plane.Normal));
     }
 
@@ -458,7 +458,7 @@ public sealed partial class C3dEditorViewModel
     /// <summary>Rotate 90° about X / Y / Z (and the reverses), through the pivot: one entry, no gesture.</summary>
     public void RotateQuick(C3dAxis axis, double deg)
     {
-        if (!HaveTargets(out var targets)) return;
+        if (!HaveMovableTargets(out var targets)) return;
         var t = C3dOperations.Rotation(axis, deg, PivotOf(targets));
         ApplyTransform(targets, t, t.IsIntegral, translationOnly: false, $"Rotate {(deg > 0 ? "+" : "")}{deg}° about {axis}: {Describe(targets)}");
     }
@@ -466,7 +466,7 @@ public sealed partial class C3dEditorViewModel
     /// <summary>R-em3d46-3c — Mirror across the XY, YZ or XZ plane through the pivot: one entry.</summary>
     public void MirrorAcross(C3dPlane plane)
     {
-        if (!HaveTargets(out var targets)) return;
+        if (!HaveMovableTargets(out var targets)) return;
         var t = C3dOperations.Mirror(plane, PivotOf(targets));
         ApplyTransform(targets, t, t.IsIntegral, translationOnly: false, $"Mirror across {plane}: {Describe(targets)}");
     }
@@ -485,6 +485,8 @@ public sealed partial class C3dEditorViewModel
         var units = TargetUnits(all);
         if (units.Count < 2) { StatusMessage = "Align needs two or more selected: the others line up with the last one selected."; return; }
         var (referenceGroup, reference) = units[^1];
+        // brief-em3d-101 — a locked image is a fine thing to line up WITH (the last selected), never one that moves.
+        if (LockedRefusalOf(units.Take(units.Count - 1).SelectMany(u => u.Targets)) is { } locked) { StatusMessage = locked; return; }
         string referenceName = referenceGroup is { } rg ? C3dGroups.NameOf(rg) : NameOf(reference[0]);
         if (BoundsDbu(reference) is not { } rb) { StatusMessage = $"'{referenceName}' has no elaborated geometry to align to."; return; }
         var slots = new List<C3dEditSlot>();
@@ -802,7 +804,7 @@ public sealed partial class C3dEditorViewModel
 
     public bool GizmoDrag(GizmoHandle handle)
     {
-        if (_tool is not null || !HaveTargets(out var targets)) return false;
+        if (_tool is not null || !HaveMovableTargets(out var targets)) return false;
         var pivot = PivotOf(targets);
         int k = GizmoGeometry.AxisOf(handle);
         var axis = (C3dAxis)k;

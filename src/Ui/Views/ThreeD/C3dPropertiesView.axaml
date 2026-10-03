@@ -23,6 +23,87 @@
         <StackPanel Spacing="6" Margin="8,6">
             <SelectableTextBlock Text="{Binding Heading}" FontWeight="SemiBold" TextWrapping="Wrap"/>
 
+            <!-- brief-em3d-101 R-em3d101-9d — an image mapped onto a face: its own section, every edit one undo entry. Its
+                 Transparency is its OWN, never its object's. -->
+            <StackPanel Spacing="4" IsVisible="{Binding HasFaceImage}">
+                <TextBlock Text="{Binding FaceImageTitle}" FontSize="11" Opacity="0.7"/>
+                <TextBlock Text="{Binding FaceImageProblem}" FontSize="11" Foreground="{DynamicResource CrfWarningBrush}" TextWrapping="Wrap"
+                           IsVisible="{Binding FaceImageProblem, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="4">
+                    <TextBox Grid.Column="0" Text="{Binding FaceImageFile}" IsReadOnly="True"/>
+                    <Button Grid.Column="1" Content="Browse…" FontSize="11" Padding="8,3" Command="{Binding BrowseFaceImageCommand}"/>
+                    <Button Grid.Column="2" Content="Reveal" FontSize="11" Padding="8,3" Command="{Binding RevealFaceImageCommand}"/>
+                </Grid>
+                <TextBlock FontSize="11" Opacity="0.8" Text="{Binding FaceImagePixels, StringFormat='Pixels: {0}'}"/>
+                <TextBlock Text="Transparency" FontSize="11" Opacity="0.7"/>
+                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="4">
+                    <Slider x:Name="FaceImageTransparencySlider" Grid.Column="0" Minimum="0" Maximum="{x:Static t3:C3dPropertiesViewModel.TransparencyMax}"
+                            Value="{Binding FaceImageTransparencySlider}" TickFrequency="1" IsSnapToTickEnabled="True" VerticalAlignment="Center"/>
+                    <TextBox Grid.Column="1" Classes="dim" Width="44" Text="{Binding FaceImageTransparencyText}" PlaceholderText="0"
+                             KeyDown="OnFaceImageTransparencyKey" LostFocus="OnFaceImageTransparencyLostFocus"/>
+                    <Button Grid.Column="2" Content="Default" FontSize="11" Padding="8,3" Command="{Binding FaceImageDefaultTransparencyCommand}"/>
+                </Grid>
+                <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="4">
+                    <TextBlock Grid.Column="0" Text="Rotation °" FontSize="11" Opacity="0.7" VerticalAlignment="Center"/>
+                    <TextBox Grid.Column="1" Classes="dim" Text="{Binding FaceImageRotation}" KeyDown="OnFaceImageRotationKey" LostFocus="OnFaceImageRotationLostFocus"/>
+                    <Button Grid.Column="2" Content="⟲ 90°" FontSize="11" Padding="6,3" Command="{Binding FaceImageRotateLeftCommand}"/>
+                    <Button Grid.Column="3" Content="⟳ 90°" FontSize="11" Padding="6,3" Command="{Binding FaceImageRotateRightCommand}"/>
+                </Grid>
+                <Grid ColumnDefinitions="Auto,*,Auto,*" ColumnSpacing="4">
+                    <TextBlock Grid.Column="0" Text="Width" FontSize="11" Opacity="0.7" VerticalAlignment="Center"/>
+                    <TextBox Grid.Column="1" Classes="dim" Text="{Binding FaceImageWidth}" PlaceholderText="fitted" KeyDown="OnFaceImageWidthKey" LostFocus="OnFaceImageWidthLostFocus"/>
+                    <TextBlock Grid.Column="2" Text="Height" FontSize="11" Opacity="0.7" VerticalAlignment="Center"/>
+                    <TextBox Grid.Column="3" Classes="dim" Text="{Binding FaceImageHeight}" PlaceholderText="fitted" KeyDown="OnFaceImageHeightKey" LostFocus="OnFaceImageHeightLostFocus"/>
+                </Grid>
+                <Grid ColumnDefinitions="Auto,*,Auto,*" ColumnSpacing="4">
+                    <TextBlock Grid.Column="0" Text="Offset right" FontSize="11" Opacity="0.7" VerticalAlignment="Center"/>
+                    <TextBox Grid.Column="1" Classes="dim" Text="{Binding FaceImageOffsetRight}" KeyDown="OnFaceImageOffsetKey" LostFocus="OnFaceImageOffsetLostFocus"/>
+                    <TextBlock Grid.Column="2" Text="up" FontSize="11" Opacity="0.7" VerticalAlignment="Center"/>
+                    <TextBox Grid.Column="3" Classes="dim" Text="{Binding FaceImageOffsetUp}" KeyDown="OnFaceImageOffsetKey" LostFocus="OnFaceImageOffsetLostFocus"/>
+                </Grid>
+                <TextBlock Text="{Binding FaceImageError}" FontSize="11" Foreground="IndianRed" TextWrapping="Wrap"
+                           IsVisible="{Binding FaceImageError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <CheckBox Content="Keep aspect" IsChecked="{Binding FaceImageKeepAspect}"/>
+                    <Button Content="Fit to Face" FontSize="11" Padding="8,3" Command="{Binding FitFaceImageCommand}"
+                            ToolTip.Tip="As large as fits in the face, centred, its aspect kept; no offset."/>
+                </StackPanel>
+                <CheckBox Content="Hidden" IsChecked="{Binding FaceImageHidden}" ToolTip.Tip="Saved with the document; the face is drawn as before."/>
+                <Button Content="Remove Image" FontSize="11" Padding="8,3" Command="{Binding RemoveFaceImageCommand}"
+                        ToolTip.Tip="The image comes off the face; the face is drawn as before."/>
+            </StackPanel>
+
+            <!-- brief-em3d-101 R-em3d101-3b — an image sheet's Image section, above the sheet's own rows. Each edit is one undo entry;
+                 its transparency is the Transparency row below (one knob: the image IS the sheet's surface). -->
+            <StackPanel Spacing="4" IsVisible="{Binding HasImage}">
+                <TextBlock Text="Image" FontSize="11" Opacity="0.7"/>
+                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="4">
+                    <TextBox Grid.Column="0" Text="{Binding ImageFile}" IsReadOnly="True" ToolTip.Tip="The stored path: relative to this .c3d inside its workspace, absolute outside it."/>
+                    <Button Grid.Column="1" Content="Browse…" FontSize="11" Padding="8,3" Command="{Binding BrowseImageCommand}"
+                            ToolTip.Tip="Point this sheet at another image file (one undo entry)."/>
+                    <Button Grid.Column="2" Content="Reveal" FontSize="11" Padding="8,3" Command="{Binding RevealImageCommand}"/>
+                </Grid>
+                <TextBlock FontSize="11" Opacity="0.8" Text="{Binding ImagePixels, StringFormat='Pixels: {0}'}"/>
+                <Grid ColumnDefinitions="Auto,*,Auto,*,Auto" ColumnSpacing="4">
+                    <TextBlock Grid.Column="0" Text="Width" FontSize="11" Opacity="0.7" VerticalAlignment="Center"/>
+                    <TextBox Grid.Column="1" Classes="dim" Text="{Binding ImageWidthText}" KeyDown="OnImageWidthKey" LostFocus="OnImageWidthLostFocus"/>
+                    <TextBlock Grid.Column="2" Text="Height" FontSize="11" Opacity="0.7" VerticalAlignment="Center"/>
+                    <TextBox Grid.Column="3" Classes="dim" Text="{Binding ImageHeightText}" KeyDown="OnImageHeightKey" LostFocus="OnImageHeightLostFocus"/>
+                    <TextBlock Grid.Column="4" Text="{Binding ImageUnit}" FontSize="11" Opacity="0.7" VerticalAlignment="Center"/>
+                </Grid>
+                <TextBlock Text="{Binding ImageSizeError}" FontSize="11" Foreground="IndianRed" TextWrapping="Wrap"
+                           IsVisible="{Binding ImageSizeError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <CheckBox Content="Keep aspect" IsChecked="{Binding ImageKeepAspect}" ToolTip.Tip="A change to one follows with the other."/>
+                    <Button Content="Reset to Image Aspect" FontSize="11" Padding="8,3" Command="{Binding ResetImageAspectCommand}"
+                            ToolTip.Tip="The height follows the width at the image's own pixel aspect."/>
+                </StackPanel>
+                <CheckBox Content="Locked" IsChecked="{Binding ImageLocked}"
+                          ToolTip.Tip="A locked image stays selectable and editable here, but Move, Rotate, the gizmo and vertex moves are refused."/>
+                <Button Content="Remove Image" FontSize="11" Padding="8,3" Command="{Binding RemoveSheetImageCommand}"
+                        ToolTip.Tip="The sheet stays, an ordinary sheet: a traced reference becomes a real one."/>
+            </StackPanel>
+
             <StackPanel Spacing="4" IsVisible="{Binding IsEditable}">
                 <TextBlock Text="Name" FontSize="11" Opacity="0.7"/>
                 <TextBox x:Name="NameBox" Text="{Binding NameText}" KeyDown="OnNameKey" LostFocus="OnNameLostFocus"/>

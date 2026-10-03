@@ -37,7 +37,9 @@ public sealed partial class C3dEditorViewModel
     {
         if (item.Kind == FieldPlotKind) return FieldPlotMenuItems(item);    // brief-em3d-83 — in a setup's view too
         if (IsViewOnly) return ViewTreeMenuItems(item);
-        var items = new List<Viewer3DMenuItem> { new(item.Name, Enabled: false), Viewer3DMenuItem.Separator };
+        var items = new List<Viewer3DMenuItem> { new(item.Label, Enabled: false), Viewer3DMenuItem.Separator };
+        // brief-em3d-101 R-em3d101-9b — a face image's row: the record's own items
+        if (item.Kind == FaceImageKind) { items.AddRange(FaceImageRowItems(item)); return items; }
         var scene = SceneObjectsOfNode(item);
 
         if (item.IsAirBox)
@@ -124,6 +126,12 @@ public sealed partial class C3dEditorViewModel
                 if (Document.Objects[index] is C3dBoolean)
                 {
                     items.AddRange(BooleanTreeItems(item));
+                    items.Add(Viewer3DMenuItem.Separator);
+                }
+                // brief-em3d-101 R-em3d101-3c — an image sheet's own items, the functions the canvas's menu calls.
+                if (ImageSheetAt(index) is not null)
+                {
+                    items.AddRange(ImageItems(index));
                     items.Add(Viewer3DMenuItem.Separator);
                 }
                 // brief-em3d-68 R-em3d68-5a — an imported part's (or a boolean holding one) Reload from Source.

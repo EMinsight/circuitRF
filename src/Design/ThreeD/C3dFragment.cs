@@ -175,6 +175,10 @@ public static class C3dFragment
         var content = new C3dDocument { DbuPerMicron = source.DbuPerMicron, DisplayUnit = source.DisplayUnit };
         foreach (int i in selection.Objects.Distinct().Where(i => i >= 0 && i < source.Objects.Count).Order())
             content.Objects.Add(C3dBooleans.Copy(source.Objects[i]));
+        // brief-em3d-101 R-em3d101-5a — an image's path made absolute on copy, so the paste can write it relative to ITS .c3d.
+        if (context.SourcePath.Length > 0)
+            foreach (var img in C3dImages.AllImages(content.Objects))
+                if (C3dImages.Resolve(context.SourcePath, img.Path) is { } abs) img.Path = abs;
 
         string? sourceDir = context.SourcePath.Length > 0 ? Path.GetDirectoryName(Path.GetFullPath(context.SourcePath)) : null;
         var cellDirs = new List<string?>();
@@ -653,6 +657,12 @@ public static class C3dFragment
             else if (context.WorkspaceRootDir is { } root && !Path.GetFullPath(resolved).StartsWith(Path.GetFullPath(root) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
                 report.Add($"Placed cell '{inst.Name}' refers to a cell outside this workspace ({resolved}).");
         }
+
+        // brief-em3d-101 R-em3d101-5a — an image copied with an absolute path is written as the target stores one (relative to
+        // the target .c3d inside its workspace, absolute outside it); a document never saved keeps it absolute.
+        if (context.TargetPath.Length > 0)
+            foreach (var img in C3dImages.AllImages(src.Objects))
+                if (Path.IsPathRooted(img.Path)) img.Path = C3dImages.Store(context.TargetPath, img.Path);
 
         // 7. the objects and instances themselves, after everything else
         foreach (var o in src.Objects) { target.Objects.Add(o); result.Objects.Add(o.Name); }

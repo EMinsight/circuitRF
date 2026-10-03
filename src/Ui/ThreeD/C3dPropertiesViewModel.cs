@@ -321,6 +321,8 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         ClearRecords();
         ClearTransparency();
         ClearModel();
+        ClearImage();
+        ClearFaceImage();
         var viewer = editor.Viewer;
         var sel = viewer.Selection;
         // brief-em3d-67 R-em3d67-6b — a fillet's or chamfer's row: its own fields, not its object's.
@@ -337,6 +339,13 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
             LoadEdges(sel);
             return;
         }
+        // brief-em3d-101 R-em3d101-9d — a face image picked in the view, or its row: the image's own section
+        if (editor.SelectedFaceImageForInspector() is { } shownImage)
+        {
+            Heading = $"Image on {editor.Document.Objects[shownImage.Index].Name}/{shownImage.Face}";
+            LoadFaceImage(shownImage.Index, shownImage.Face);
+            return;
+        }
         // brief-em3d-90 R-em3d90-4 — a symmetry plane's or a thermal boundary's row, or a boundary's tint picked in the view
         if (LoadRecord()) return;
         if (sel.Count == 0)
@@ -346,6 +355,13 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
             if (editor.TreeOnlyObjectIndex() is >= 0 and var only) { LoadObject(only, inScene: false); return; }
             if (editor.SelectedTreeItem is { IsGroup: true, GroupPath: { } undrawn }) { LoadGroup(undrawn); return; }
             if (editor.SelectedTreeItem is { IsAirBox: true }) { LoadAirBox(); return; }
+            // brief-em3d-101 — a face image's row when it is not drawn (Hidden): its section all the same
+            if (editor.SelectedTreeItem is { Kind: C3dEditorViewModel.FaceImageKind, FaceImageHost: >= 0 and var fh, FaceImageFace: { } ff })
+            {
+                Heading = $"Image on {editor.Document.Objects[fh].Name}/{ff}";
+                LoadFaceImage(fh, ff);
+                return;
+            }
             // brief-em3d-83 — a field plot's row: a record, in no scene.
             if (editor.SelectedTreeItem is { Kind: C3dEditorViewModel.FieldPlotKind } plotRow) { LoadFieldPlot(plotRow.Name); return; }
             // brief-em3d-75 — a heat source's, probe's or mesh region's row: the place is in no scene, only the tree.
@@ -388,6 +404,9 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
             if (Perimeter(o.Id, item.Face) is { } per) Rows.Add(new C3dPropertyRow("Perimeter", viewer.FormatLength(per)));
             Rows.Add(new C3dPropertyRow("Normal", normal is { } n ? $"({Num(n.X)}, {Num(n.Y)}, {Num(n.Z)})" : "varies (a curved face)"));
             Rows.Add(new C3dPropertyRow("Object", viewer.ObjectName(o)));
+            // brief-em3d-101 R-em3d101-9d — the face's image, below its readout
+            int host = editor.Document.Objects.FindIndex(d => d.Name == o.Name);
+            if (editor.InstanceOf(o) is null && editor.FaceImageAt(host, o.FaceName(item.Face)) is not null) LoadFaceImage(host, o.FaceName(item.Face));
             return;
         }
         if (viewer.SelectMode == Scene3DSelectMode.Vertex)
@@ -484,6 +503,7 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         // brief-em3d-92 — an operand inside an operation has none of its own: the operation's is its result's.
         if (!operand) LoadTransparency([index], [], obj.Name);
         if (!operand) LoadModel([index], [], obj.Name);            // brief-em3d-93 — nor a Model: its result's is the operation's
+        if (!operand && obj is C3dSheet { Image: not null } imageSheet) LoadImage(index, imageSheet);   // brief-em3d-101
         NameText = editor.ObjectLabel(index);
         Material = C3dValidation.EffectiveMaterial(obj);
         Role = obj.Role?.ToString() ?? RoleFromMaterial;

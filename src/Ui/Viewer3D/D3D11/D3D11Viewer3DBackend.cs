@@ -51,18 +51,23 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
     private ID3D11DeviceContext? _ctx;
     private byte[]? _adapterLuid;
     private string _description = "Direct3D 11 (no device yet)";
-    private ID3D11InputLayout _layout = null!, _layoutField = null!;
-    private ID3D11VertexShader _vs = null!, _vsField = null!, _vsGrid = null!;
-    private ID3D11PixelShader _psColor = null!, _psLine = null!, _psPick = null!, _psField = null!, _psEdge = null!, _psTop = null!, _psGrid = null!;
+    private ID3D11InputLayout _layout = null!, _layoutField = null!, _layoutImage = null!;
+    private ID3D11VertexShader _vs = null!, _vsField = null!, _vsGrid = null!, _vsImage = null!;
+    private ID3D11PixelShader _psColor = null!, _psLine = null!, _psPick = null!, _psField = null!, _psEdge = null!, _psTop = null!, _psGrid = null!, _psImage = null!;
+    /// <summary>brief-em3d-101 — the image vertex stream, its one sampler (s0), and the textures' views (t0), held by identity
+    /// (Scene3DTextureResidency): a scene rebuilt with the same files uploads no pixels.</summary>
+    private ID3D11Buffer? _imageVb;
+    private ID3D11SamplerState _imageSampler = null!;
+    private readonly Scene3DTextureResidency<ID3D11ShaderResourceView?> _textures = new();
     private ID3D11Buffer? _field;
     private int _fieldCount;
     private ID3D11BlendState _blendOff = null!, _blendOn = null!;
     private ID3D11DepthStencilState _dsWrite = null!, _dsNoWrite = null!, _dsOff = null!;
-    /// <summary>3D editor round 3 / bugs round 9 — one rasterizer state per depth tie (Scene3DDepthTie + 1): cull none, and the
-    /// tie's polygon offset (Scene3DFramePlan.DepthBias). Index 1, no offset, is the ordinary state.</summary>
-    private readonly ID3D11RasterizerState[] _raster = new ID3D11RasterizerState[(int)Scene3DDepthTie.Field + 2];
+    /// <summary>3D editor round 3 / bugs round 9 — one rasterizer state per depth tie (Scene3DDepthTie − TieMin): cull none, and the
+    /// tie's polygon offset (Scene3DFramePlan.DepthBias).</summary>
+    private readonly ID3D11RasterizerState[] _raster = new ID3D11RasterizerState[Scene3DFramePlan.TieMax - Scene3DFramePlan.TieMin + 1];
 
-    private ID3D11RasterizerState Raster(Scene3DDepthTie tie) => _raster[(int)tie + 1];
+    private ID3D11RasterizerState Raster(Scene3DDepthTie tie) => _raster[tie - Scene3DFramePlan.TieMin];
     private ID3D11Buffer _cb = null!;
     /// <summary>brief-em3d-46 — the per-draw transform (register b1), 80 bytes (brief-em3d-48 added the id offset), rewritten only when a draw's slot changes.</summary>
     private ID3D11Buffer _cbTransform = null!;
@@ -158,6 +163,20 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
         // brief-em3d-45 — the drawing grid: SV_VertexID only, so no input layout at all.
         _vsGrid = dev.CreateVertexShader(Compile("vs_grid", "vs_5_0").Span);
         _psGrid = dev.CreatePixelShader(Compile("fs_grid", "ps_5_0").Span);
+        // brief-em3d-101 — an image: Scene3DImageVertex (position, texture coordinate, id, face, colour), LOC0..4.
+        var vsi = Compile("vs_image", "vs_5_0");
+        _vsImage = dev.CreateVertexShader(vsi.Span);
+        _psImage = dev.CreatePixelShader(Compile("fs_image", "ps_5_0").Span);
+        _layoutImage = dev.CreateInputLayout(
+        [
+            new InputElementDescription("LOC", 0, DxFormat.R32G32B32_Float, 0, 0),
+            new InputElementDescription("LOC", 1, DxFormat.R32G32_Float, 12, 0),
+            new InputElementDescription("LOC", 2, DxFormat.R32_UInt, 20, 0),
+            new InputElementDescription("LOC", 3, DxFormat.R32_UInt, 24, 0),
+            new InputElementDescription("LOC", 4, DxFormat.R8G8B8A8_UNorm, 28, 0),
+        ], vsi.Span);
+        _imageSampler = dev.CreateSamplerState(new SamplerDescription(Filter.MinMagMipLinear, TextureAddressMode.Clamp,
+                                                                      TextureAddressMode.Clamp, TextureAddressMode.Clamp));
         _layoutField = dev.CreateInputLayout(
         [
             new InputElementDescription("LOC", 0, DxFormat.R32G32B32_Float, 0, 0),
@@ -193,7 +212,7 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
         // a via over a metal and a port over a via.
         for (int t = 0; t < _raster.Length; t++)
         {
-            var (constant, slope) = Scene3DFramePlan.DepthBias((Scene3DDepthTie)(t - 1));
+            var (constant, slope) = Scene3DFramePlan.DepthBias((Scene3DDepthTie)(t + (int)Scene3DFramePlan.TieMin));
             rs.DepthBias = (int)constant;
             rs.SlopeScaledDepthBias = slope;
             _raster[t] = dev.CreateRasterizerState(rs);
@@ -225,6 +244,34 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
         fixed (Scene3DVertex* p = scene.Vertices) _vb = NewBuffer(p, scene.Vertices.Length * Scene3DVertex.Stride, BindFlags.VertexBuffer, ResourceUsage.Default);
         fixed (uint* p = scene.Indices) _ib = NewBuffer(p, scene.Indices.Length * 4, BindFlags.IndexBuffer, ResourceUsage.Default);
         fixed (Scene3DVertex* p = scene.LineVertices) _lines = NewBuffer(p, scene.LineVertices.Length * Scene3DVertex.Stride, BindFlags.VertexBuffer, ResourceUsage.Default);
+        _imageVb?.Dispose();
+        fixed (Scene3DImageVertex* p = scene.ImageVertices) _imageVb = NewBuffer(p, scene.ImageVertices.Length * Scene3DImageVertex.Stride, BindFlags.VertexBuffer);
+        _textures.Sync(scene, UploadTexture, v => v?.Dispose());
+    }
+
+    /// <summary>brief-em3d-101 R-em3d101-4d — an immutable RGBA8 UNORM texture (never _SRGB) created with every CPU-built mip
+    /// level as its initial data, and the view the pixel shader reads it through. Once per <see cref="Scene3DTexture"/>.</summary>
+    private ID3D11ShaderResourceView? UploadTexture(Scene3DTexture t)
+    {
+        var levels = t.Levels();
+        var pins = new System.Runtime.InteropServices.GCHandle[levels.Count];
+        var data = new SubresourceData[levels.Count];
+        try
+        {
+            for (int k = 0; k < levels.Count; k++)
+            {
+                pins[k] = System.Runtime.InteropServices.GCHandle.Alloc(levels[k].Rgba, System.Runtime.InteropServices.GCHandleType.Pinned);
+                data[k] = new SubresourceData(pins[k].AddrOfPinnedObject(), (uint)(levels[k].Width * 4), (uint)levels[k].Rgba.Length);
+                Counters.CountUpload(levels[k].Rgba.Length);
+            }
+            using var tex = Device.CreateTexture2D(new Texture2DDescription(DxFormat.R8G8B8A8_UNorm, (uint)levels[0].Width, (uint)levels[0].Height,
+                1, (uint)levels.Count, BindFlags.ShaderResource, ResourceUsage.Immutable), data);
+            return Device.CreateShaderResourceView(tex);
+        }
+        finally
+        {
+            foreach (var h in pins) if (h.IsAllocated) h.Free();
+        }
     }
 
     /// <summary>brief-em3d-43 gate 6 — the changed ranges only, through the immediate context, which orders
@@ -447,33 +494,44 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
             if (d.Tie != tie) ctx.RSSetState(Raster(tie = d.Tie));
             var buf = d.Buffer switch
             {
-                Scene3DBuffer.Scene => _vb, Scene3DBuffer.SceneLines => _lines, Scene3DBuffer.Field => _field,
+                Scene3DBuffer.Scene => _vb, Scene3DBuffer.SceneLines => _lines, Scene3DBuffer.Field => _field, Scene3DBuffer.Image => _imageVb,
                 Scene3DBuffer.Overlay0 => _overlays[0], Scene3DBuffer.Overlay1 => _overlays[1], _ => _overlays[2],
             };
             bool lines = d.Pipeline is Scene3DPipeline.Lines or Scene3DPipeline.Edges, field = d.Pipeline == Scene3DPipeline.Field;
             bool grid = d.Pipeline == Scene3DPipeline.Grid;
-            if (!grid && (buf is null || (!lines && !field && _ib is null))) continue;
+            // brief-em3d-101 — an image draw: not indexed, its own vertex stage, its texture at t0.
+            bool image = d.Pipeline is Scene3DPipeline.Image or Scene3DPipeline.ImageTranslucent;
+            if (image && (d.Texture < 0 || d.Texture >= _textures.Bound.Length || _textures.Bound[d.Texture] is null)) continue;
+            if (!grid && (buf is null || (!lines && !field && !image && _ib is null))) continue;
             if (field && d.First + d.Count > _fieldCount) continue;
             if (d.Pipeline != state)
             {
-                // The vertex stage: the scene's vertex (0), the field's (1), or none at all — the grid (2).
-                int wasStage = state == Scene3DPipeline.Field ? 1 : state == Scene3DPipeline.Grid ? 2 : 0;
-                int stage = field ? 1 : grid ? 2 : 0;
+                // The vertex stage: the scene's vertex (0), the field's (1), none at all — the grid (2) — or an image's (3).
+                static int StageOf(Scene3DPipeline p) => p switch
+                {
+                    Scene3DPipeline.Field => 1, Scene3DPipeline.Grid => 2, Scene3DPipeline.Image or Scene3DPipeline.ImageTranslucent => 3, _ => 0,
+                };
+                int wasStage = (int)state < 0 ? -1 : StageOf(state);
+                int stage = StageOf(d.Pipeline);
                 state = d.Pipeline;
                 if (stage != wasStage)
                 {
-                    ctx.IASetInputLayout(stage == 1 ? _layoutField : stage == 2 ? null : _layout);
-                    ctx.VSSetShader(stage == 1 ? _vsField : stage == 2 ? _vsGrid : _vs);
+                    ctx.IASetInputLayout(stage switch { 1 => _layoutField, 2 => null, 3 => _layoutImage, _ => _layout });
+                    ctx.VSSetShader(stage switch { 1 => _vsField, 2 => _vsGrid, 3 => _vsImage, _ => _vs });
                     bound = (Scene3DBuffer)(-1);
                 }
                 ctx.PSSetShader(state switch
                 {
                     Scene3DPipeline.Field => _psField, Scene3DPipeline.Lines => _psLine, Scene3DPipeline.Edges => _psEdge,
-                    Scene3DPipeline.OnTop => _psTop, Scene3DPipeline.Grid => _psGrid, _ => _psColor,
+                    Scene3DPipeline.OnTop => _psTop, Scene3DPipeline.Grid => _psGrid,
+                    Scene3DPipeline.Image or Scene3DPipeline.ImageTranslucent => _psImage, _ => _psColor,
                 });
+                if (image) ctx.PSSetSampler(0, _imageSampler);
                 bool selection = state is Scene3DPipeline.Edges or Scene3DPipeline.OnTop;
-                ctx.OMSetBlendState(state is Scene3DPipeline.Translucent or Scene3DPipeline.Grid || selection ? _blendOn : _blendOff);
-                ctx.OMSetDepthStencilState(selection ? _dsOff : state is Scene3DPipeline.Translucent or Scene3DPipeline.Grid ? _dsNoWrite : _dsWrite);
+                ctx.OMSetBlendState(state is Scene3DPipeline.Translucent or Scene3DPipeline.Grid or Scene3DPipeline.Image
+                                    or Scene3DPipeline.ImageTranslucent || selection ? _blendOn : _blendOff);
+                ctx.OMSetDepthStencilState(selection ? _dsOff
+                    : state is Scene3DPipeline.Translucent or Scene3DPipeline.Grid or Scene3DPipeline.ImageTranslucent ? _dsNoWrite : _dsWrite);
                 ctx.IASetPrimitiveTopology(lines ? PrimitiveTopology.LineList : PrimitiveTopology.TriangleList);
             }
             if (grid)
@@ -490,10 +548,11 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
             if (d.Buffer != bound)
             {
                 bound = d.Buffer;
-                ctx.IASetVertexBuffer(0, buf!, field ? (uint)FieldVertex.Stride : Scene3DVertex.Stride);
-                if (!lines && !field) ctx.IASetIndexBuffer(_ib!, DxFormat.R32_UInt, 0);
+                ctx.IASetVertexBuffer(0, buf!, field ? (uint)FieldVertex.Stride : image ? (uint)Scene3DImageVertex.Stride : Scene3DVertex.Stride);
+                if (!lines && !field && !image) ctx.IASetIndexBuffer(_ib!, DxFormat.R32_UInt, 0);
             }
-            if (lines || field) ctx.Draw((uint)d.Count, (uint)d.First);
+            if (image) ctx.PSSetShaderResource(0, _textures.Bound[d.Texture]!);
+            if (lines || field || image) ctx.Draw((uint)d.Count, (uint)d.First);
             else ctx.DrawIndexed((uint)d.Count, (uint)d.First, 0);
             draws++;
         }
@@ -536,7 +595,8 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
     public override void Dispose()
     {
         ReleaseImages();
-        _vb?.Dispose(); _ib?.Dispose(); _lines?.Dispose(); _field?.Dispose();
+        _vb?.Dispose(); _ib?.Dispose(); _lines?.Dispose(); _field?.Dispose(); _imageVb?.Dispose();
+        _textures.Clear(v => v?.Dispose());
         foreach (var o in _overlays) o?.Dispose();
         if (_device is null) return;
         foreach (var s in _stagingId) s?.Dispose();
@@ -547,6 +607,7 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
         _pickId?.Dispose(); _pickPos?.Dispose(); _pickDepth?.Dispose();
         _cb?.Dispose(); _cbTransform?.Dispose(); _layout?.Dispose(); _vs?.Dispose(); _layoutField?.Dispose(); _vsField?.Dispose();
         _psColor?.Dispose(); _psLine?.Dispose(); _psPick?.Dispose(); _psField?.Dispose(); _psEdge?.Dispose(); _psTop?.Dispose(); _vsGrid?.Dispose(); _psGrid?.Dispose();
+        _layoutImage?.Dispose(); _vsImage?.Dispose(); _psImage?.Dispose(); _imageSampler?.Dispose();
         _blendOff?.Dispose(); _blendOn?.Dispose(); _dsWrite?.Dispose(); _dsNoWrite?.Dispose(); _dsOff?.Dispose(); foreach (var r in _raster) r?.Dispose();
         _ctx?.Dispose(); _device.Dispose();
     }

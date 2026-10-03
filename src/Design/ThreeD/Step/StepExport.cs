@@ -322,13 +322,20 @@ public static class StepExport
         }
         var e = new C3dElaborator(cache, kernel).Elaborate(doc, path, options.WorkspaceCws);
         if (!e.Ok) throw new StepExportException(StepExportDiagnostics.DoesNotElaborate(e.Refusals[0], e.Refusals.Count));
-        int excluded = e.UnassignedSolids.Count + e.UnassignedSheets.Count;
-        if (e.Solids.Count + e.Sheets.Count == 0) throw new StepExportException(StepExportDiagnostics.NothingToExport(excluded));
+        // brief-em3d-101 R-em3d101-1h — a reference image is not geometry: a not-modelled image sheet (with a material or without) is
+        // left out with ONE note, the layout's R-bmp-3. A modelled one is a sheet like any other and is exported as one.
+        bool Reference(string name) => e.Images.ContainsKey(name) && (C3dModelled.IsOff(e, name) || e.UnassignedSheets.Any(u => u.Name == name));
+        int images = e.Images.Keys.Count(Reference);
+        var sheets = images == 0 ? e.Sheets : [.. e.Sheets.Where(sh => !Reference(sh.Name))];
+        var unassignedSheets = e.UnassignedSheets.Where(sh => !Reference(sh.Name)).ToList();
+        int excluded = e.UnassignedSolids.Count + unassignedSheets.Count;
+        if (e.Solids.Count + sheets.Count == 0) throw new StepExportException(StepExportDiagnostics.NothingToExport(excluded));
 
         var notes = new List<string>(e.Notes);
+        if (images > 0) notes.Add($"{images} image sheet{(images == 1 ? "" : "s")} skipped: reference images are not geometry.");
         if (excluded > 0)
         {
-            var names = e.UnassignedSolids.Select(s => s.Name).Concat(e.UnassignedSheets.Select(s => s.Name)).Select(n => $"'{n}'");
+            var names = e.UnassignedSolids.Select(s => s.Name).Concat(unassignedSheets.Select(s => s.Name)).Select(n => $"'{n}'");
             notes.Add($"{excluded} object{(excluded == 1 ? " has" : "s have")} no material, so {(excluded == 1 ? "it is" : "they are")} " +
                       $"not in the model and not in the file: {string.Join(", ", names)}.");
         }
@@ -346,7 +353,7 @@ public static class StepExport
         }
 
         string Group(string name) => e.Provenance.TryGetValue(name, out var p) ? p.InstancePath : "";
-        return Compose(path, isLayout: false, options, Units(doc.DisplayUnit), e.Solids, e.Sheets, Group, e.Technology, box,
+        return Compose(path, isLayout: false, options, Units(doc.DisplayUnit), e.Solids, sheets, Group, e.Technology, box,
                        options.Assembly ? e.Instances : [], excluded, notes, System.IO.Path.GetFileNameWithoutExtension(path));
     }
 

@@ -410,6 +410,70 @@ circuitRF — or back into the same one. It is the object tree's gesture:
   the report says a run will refuse it until it does.
 - **Cancel** in the Paste dialog pastes nothing and creates nothing.
 
+## Reference images {#images}
+
+A photo or a drawing can be put into the 3D view to **trace** — a die photo, a package outline from a datasheet, a
+fixture drawing — or to lay the design over and compare. It goes in two ways: as a **sheet** on the drawing plane, or
+**mapped onto a face** of an object.
+
+### An image sheet {#image-sheet}
+
+- **Placing one**: the **Insert Image…** button on the toolbar (beside the sheet tools), *3D ▸ Draw ▸ Image…*, or drag
+  an image file onto the view. PNG, JPEG, BMP, GIF and WebP are read; any other file dropped on the view is refused and
+  nothing is placed. The image lands on the **current drawing plane**, centred where the view's centre — or the drop
+  point — meets the plane, its long edge about **a quarter of the view's width** there, its pixels' aspect kept. Several
+  files dropped at once are laid side by side. Each placement is **one undo step**, and the new sheet is selected.
+- **It is a sheet.** Everything a sheet does it does: move, rotate, group, copy, array, hide, a material, a port from
+  its row. It is placed **not modelled** and with **no material**, so it is drawn and left out of every run; tick
+  **Model** to put the sheet in the solve (the picture never is — it is only how the sheet is drawn). By type the tree
+  lists it under **Not Modeled**, with an image icon and the file's name; the tree's filter has **Image sheets** to hide
+  every one in a click.
+- **Tracing.** Right-click it ▸ **Drawing Plane from Image** puts the drawing plane on the image's own plane; then pick
+  the Polygon tool and trace. Whatever is drawn on that plane is drawn **over** the image and is what a click picks:
+  an image always gives way to the faces lying on it.
+- **Which way up.** On an XY plane the image's right is +x and its up +y; on XZ right +x, up +z; on YZ right +y, up +z —
+  as the Top, Front and Right views show them, never mirrored. The sheet's own rotation and mirror move it with the sheet.
+- **Properties ▸ Image**: the file (**Browse…** points it at another, **Reveal** shows it), its pixels, **Width** and
+  **Height** with **Keep aspect**, **Reset to Image Aspect**, **Locked** and **Remove Image** (the sheet stays, an
+  ordinary sheet — a traced reference becomes a real one). Its **Transparency** row is the image's; a PNG's own
+  transparency is kept too.
+- **Locked** keeps a tracing underlay where it is: it is still selected and edited in Properties, but Move, Rotate, the
+  quarter turns, Mirror, the gizmo and a vertex move are refused with a sentence on the status line. Lock and unlock it
+  from its menu or from Properties.
+- **Resizing on the canvas**: in Vertex mode, moving a corner resizes the image from the opposite corner, keeping its
+  aspect — hold **Shift** to let the aspect go. It stays a rectangle.
+- **Its menu** also has **Replace Image…**, **Resolve Path…** (when the file cannot be found — the sheet then shows a
+  checker with a red cross, and its row a warning) and **Refresh Image**, which reads the file again after you edit it
+  elsewhere.
+- **Where the file is.** The `.c3d` keeps a **reference**, never the picture: relative to the `.c3d` when the file is
+  inside the workspace, absolute when it is outside. Keep reference images inside the workspace so an archive carries
+  them (one outside is offered as an outside file) and so revision history keeps them; an image outside the workspace is
+  not versioned. Copy and paste into another view, Save As, Flatten and Group into Cell all keep the reference resolving.
+- **Very large images** are drawn at up to 4096 pixels on their long edge; a Messages note says when one was reduced.
+- **Drawing only.** No solver, mesher or STEP export reads a picture. Changing an image never makes a result stale.
+  STEP export leaves out an image sheet that is not modelled, with one note. Extruding an image sheet makes a solid with
+  no image. *Copy Picture*, *Export Picture…*, *Copy as Vector* and *Export Drawing…* draw the images as the view does.
+
+### An image on a face {#face-image}
+
+- **Mapping one**: in Face mode, right-click a **flat** face ▸ **Map Image…**, or hold **Shift** while dropping an image
+  file onto a face. It is fitted — as large as fits in the face, centred, its aspect kept. A face carries one image; mapping
+  onto a face that has one **replaces** it, as one undo step. A curved face (a cylinder's side) and a placed cell's face
+  refuse it, saying why — open the cell to map onto its own faces.
+- **Which way up**: seen from outside the solid, up is +z (on a top or bottom face, +y), so the picture is never mirrored.
+- **It belongs to its object**: rename, duplicate, array, group, copy and paste carry it, and deleting the object takes it
+  with it. It is listed **beneath its object** in the tree — *Image on zmax*, with the file's name — and its tick hides
+  it (saved, one undo step; **H** and Hide all reach it too).
+- **Selecting it**: click it in the view (**B** steps to the face beneath), or its row; selecting the face in Face mode
+  shows it below the face's readout. **Properties** has its file, pixels, its **own Transparency** — a lid at 80 % can
+  carry a marking at 0 % — **Rotation** (with ⟲ 90° and ⟳ 90°), **Width**/**Height** with Keep aspect, **Offset**
+  (right, up), **Fit to Face**, **Hidden** and **Remove Image**.
+- **Removing it**: **Remove Image** on the face's menu, in Properties, or on its own menu (in the view or the tree), or
+  **Delete** with it selected — one undo step each.
+- **It is drawn only where the face is**: an image larger than its face is cropped by it, and a smaller one leaves the
+  face's own colour round it. A face that no longer exists after an edit keeps its image in the file, not drawn; its row
+  warns, `check` names it, and Remove takes it away.
+
 ## Dimensions as expressions {#expressions}
 
 Wherever a dimension is typed — the box at the cursor, Properties, the Array panel — you may type a name or
@@ -1017,6 +1081,9 @@ Every step above has a command-line spelling, and none of them needs a solver ex
   isometric view. The pictures on this page are drawn that way. A section fills each object at its
   [transparency](#transparency); `--transparency lid=80` sets one (or a placed cell's, or every member of a group:
   `--transparency stage1=40`) for that picture alone, without editing the file.
+- **Reference images** are drawn by `--iso`, as Copy as Vector draws them; a section draws none. `check` warns — never
+  errs — on an image whose file is missing or will not read, a face image whose face is gone, and `Locked` on a sheet
+  with no image. See [Reference images](#images).
 - **`circuitrf em <path.c3d> --setup "Lid modes"`** — runs one setup, exactly as Run does, and writes the
   same files.
 - **`circuitrf convert part.step -o Cell/3d/Cell.c3d`** — Import STEP into a new 3D view, each part's material by

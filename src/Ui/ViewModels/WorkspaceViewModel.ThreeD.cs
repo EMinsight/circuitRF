@@ -157,6 +157,10 @@ public partial class WorkspaceViewModel
             vm.RunRequested = (c3d, setupName) => RunC3dSetupAsync(c3d, setupName);
             vm.SetupAnalysesRequested = c3d => _ = ShowC3dSetupAnalysesAsync(c3d, null);
             vm.EditMaterialRequested = EditMaterial;    // brief-em3d-94
+            // brief-em3d-101 — an image's notes and warnings go to Messages; Replace Image… and Resolve Path… open the picker.
+            vm.PostMessage = (text, warning) => { if (warning) Messages.Warning(text, vm.FilePath); else Messages.Info(text, vm.FilePath); };
+            vm.PickImageFile = async title =>
+                (await CircuitRF.Ui.Views.ThreeD.ImageFilePicker.PickAsync(HostWindowOf(doc) ?? ResolveOwner(null), title, multiple: false)).FirstOrDefault();
             // brief-em3d-68 R-em3d68-5d — a reload's new parts are offered in the import table, unchecked.
             vm.OfferStepParts = (source, parts) => ShowStepImportAsync(vm, source, null, parts.ToHashSet(StringComparer.Ordinal));
             vm.ExternalChangeWhileDirty += () => _ = AskReloadC3dAsync(doc);
@@ -725,6 +729,7 @@ public partial class WorkspaceViewModel
         ThreeDShowAllCommand.NotifyCanExecuteChanged();
         ThreeDSnapCommand.NotifyCanExecuteChanged();
         ThreeDDrawCommand.NotifyCanExecuteChanged();
+        ThreeDInsertImageCommand.NotifyCanExecuteChanged();
         ThreeDTemperatureCommand.NotifyCanExecuteChanged();
         ThreeDDrawingPlaneCommand.NotifyCanExecuteChanged();
         ThreeDExtrudeCommand.NotifyCanExecuteChanged();
@@ -804,6 +809,17 @@ public partial class WorkspaceViewModel
     private void ThreeDDraw(string kind)
     {
         if (ActiveC3dEditor() is { } e && Enum.TryParse<CircuitRF.Ui.ThreeD.Tools.C3dToolKind>(kind, out var k)) e.Arm(k);
+    }
+
+    /// <summary>brief-em3d-101 R-em3d101-2b — 3D ▸ Draw ▸ Image…: the same picker and the same placement as the toolbar button.</summary>
+    [RelayCommand(CanExecute = nameof(HasActiveC3dEditor))]
+    private async Task ThreeDInsertImage()
+    {
+        if (ActiveC3dEditor() is not { } e) return;
+        if (e.InsertImageRefusal() is { } why) { Messages.Error(why); return; }
+        var owner = ResolveActiveDocumentForCommands() is C3dEditorDocument d ? HostWindowOf(d) : null;
+        var files = await CircuitRF.Ui.Views.ThreeD.ImageFilePicker.PickAsync(owner ?? ResolveOwner(null), "Insert Image", multiple: true);
+        if (files.Count > 0) e.InsertImages(files);
     }
 
     /// <summary>brief-em3d-75 — 3D ▸ View ▸ Temperature's items and the thermal places' visibility switches, by name

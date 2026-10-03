@@ -121,6 +121,14 @@ public interface IViewer3DEditHost
     /// <summary>3D round 3 — the drag left the pane without a drop: a placement it armed is disarmed.</summary>
     void TreeDragLeave() { }
 
+    /// <summary>brief-em3d-101 R-em3d101-2c — files dragged over the pane: true when a drop would place them (image files only:
+    /// anything else is refused, so a stray file is never half-imported).</summary>
+    bool FileDragOver(IReadOnlyList<string> paths) => false;
+
+    /// <summary>brief-em3d-101 — files dropped at (<paramref name="x"/>, <paramref name="y"/>); <paramref name="shift"/> held (owner
+    /// decision D6: onto a flat face, map the image onto it). True when they were ours.</summary>
+    bool FileDrop(IReadOnlyList<string> paths, float x, float y, bool shift) => false;
+
     /// <summary>brief-em3d-67 R-em3d67-5a — Edge mode's entries for the context menu (Fillet…, Chamfer…).</summary>
     IEnumerable<Viewer3DMenuItem> EdgeMenuItems() => [];
 
@@ -213,8 +221,16 @@ public sealed partial class Viewer3DViewModel
     {
         if (View.CursorX < 0 || View.CursorY < 0) return null;
         // The snap query casts its ray through the cursor itself (Ray adds half a pixel): the same ray here.
+        return RayAt(View.CursorX - 0.5f, View.CursorY - 0.5f);
+    }
+
+    /// <summary>brief-em3d-101 — the ray through pixel (<paramref name="px"/>, <paramref name="py"/>) (Camera3D.Ray's convention),
+    /// world metres, starting where the view does — the cursor's ray, for a point that is not the cursor (a drop, the view's
+    /// centre).</summary>
+    public (CircuitRF.Engine.Em3d.Point3 Origin, CircuitRF.Engine.Em3d.Point3 Direction) RayAt(float px, float py)
+    {
         var cam = View.Camera;
-        var (o, d) = cam.Ray(View.CursorX - 0.5f, View.CursorY - 0.5f, _viewW, _viewH);
+        var (o, d) = cam.Ray(px, py, _viewW, _viewH);
         // 3D editor bugs round 2 — Ray starts at the NEAR CLIP PLANE, which brackets the scene's sphere; a drawing plane
         // nearer the camera than that (the lower half of a new, empty design's orthographic view) was "behind the camera"
         // and refused the click. The ray starts where the view does: at the eye in perspective, and in orthographic —

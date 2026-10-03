@@ -119,7 +119,8 @@ public static class C3dPersistence
     /// <item><b>Display (left out):</b> the document's <c>DisplayUnit</c> (a preference: nothing it says moves geometry, and an
     /// expression stores its own unit), <c>SnapDbu</c> (the drawing grid; it never re-snaps), <c>FieldPlots</c> (R-em3d83-2),
     /// <c>AirBoxHidden</c>, <c>ActiveSetup</c> (R-em3d98-3); on every object at every depth (operands, a fillet's target)
-    /// <c>Hidden</c>, <c>Transparency</c> (brief 92) and <c>Group</c> (organisation only); on every instance
+    /// <c>Hidden</c>, <c>Transparency</c> (brief 92), <c>Group</c> (organisation only) and <c>FaceImages</c>, and on a sheet its
+    /// <c>Image</c> and <c>Locked</c> (brief 101: an image is drawn, never geometry); on every instance
     /// <c>Transparency</c> and <c>Group</c>.</item>
     /// <item><b>Model (kept):</b> <c>FormatVersion</c>, <c>DbuPerMicron</c>, <c>TechRef</c>, <c>Objects</c> (each one's name,
     /// material, role, placement, <c>Model</c> and geometry), <c>Instances</c> (cell, view, placement, array, <c>Model</c>,
@@ -176,6 +177,12 @@ public static class C3dPersistence
                                  .Select(o => (Object: o, o.Hidden, o.Transparency, o.Group)).ToList();
         var instances = doc.Instances.Where(i => i.Transparency is not null || i.Group is not null)
                                      .Select(i => (Instance: i, i.Transparency, i.Group)).ToList();
+        // brief-em3d-101 R-em3d101-1i — an image edit is drawing only: re-pointing, removing or locking one changes no result.
+        var images = doc.Objects.SelectMany(C3dOperands.SelfAndDescendants).OfType<C3dSheet>()
+                                .Where(s => s.Image is not null || s.Locked)
+                                .Select(s => (Sheet: s, s.Image, s.Locked)).ToList();
+        var faceImages = doc.Objects.SelectMany(C3dOperands.SelfAndDescendants).Where(o => o.FaceImages is not null)
+                                    .Select(o => (Object: o, o.FaceImages)).ToList();
         doc.FieldPlots = [];
         doc.DisplayUnit = LayoutUnit.Um;
         doc.SnapDbu = 0;
@@ -183,12 +190,16 @@ public static class C3dPersistence
         doc.ActiveSetup = null;
         foreach (var x in objects) { x.Object.Hidden = false; x.Object.Transparency = null; x.Object.Group = null; }
         foreach (var x in instances) { x.Instance.Transparency = null; x.Instance.Group = null; }
+        foreach (var x in images) { x.Sheet.Image = null; x.Sheet.Locked = false; }
+        foreach (var x in faceImages) x.Object.FaceImages = null;
         try { return Serialize(doc); }
         finally
         {
             (doc.FieldPlots, doc.DisplayUnit, doc.SnapDbu, doc.AirBoxHidden, doc.ActiveSetup) = (plots, unit, snap, airBoxHidden, active);
             foreach (var x in objects) { x.Object.Hidden = x.Hidden; x.Object.Transparency = x.Transparency; x.Object.Group = x.Group; }
             foreach (var x in instances) { x.Instance.Transparency = x.Transparency; x.Instance.Group = x.Group; }
+            foreach (var x in images) { x.Sheet.Image = x.Image; x.Sheet.Locked = x.Locked; }
+            foreach (var x in faceImages) x.Object.FaceImages = x.FaceImages;
         }
     }
 

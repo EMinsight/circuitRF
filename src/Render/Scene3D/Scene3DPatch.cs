@@ -46,6 +46,12 @@ public sealed class Scene3DPatch
             !from.Batches.AsSpan(0, ob).SequenceEqual(to.Batches.AsSpan(0, ob)) || !from.LineBatches.AsSpan().SequenceEqual(to.LineBatches) ||
             !from.EdgeBatches.AsSpan(0, oe).SequenceEqual(to.EdgeBatches.AsSpan(0, oe)))
             return null;
+        // brief-em3d-101 — the image stream is not patched: a scene whose images or image vertices differ at all is uploaded whole
+        // (its TEXTURES are kept by identity either way — Scene3DTextureResidency — so this costs vertices, never pixels).
+        if (!from.ImageBatches.AsSpan().SequenceEqual(to.ImageBatches) || from.Images.Length != to.Images.Length ||
+            !from.Images.Zip(to.Images).All(p => ReferenceEquals(p.First, p.Second)) ||
+            !MemoryMarshal.AsBytes(from.ImageVertices.AsSpan()).SequenceEqual(MemoryMarshal.AsBytes(to.ImageVertices.AsSpan())))
+            return null;
         for (int k = 0; k < oo; k++)
             if (from.Objects[k].FirstVertex != to.Objects[k].FirstVertex || from.Objects[k].VertexCount != to.Objects[k].VertexCount)
                 return null;

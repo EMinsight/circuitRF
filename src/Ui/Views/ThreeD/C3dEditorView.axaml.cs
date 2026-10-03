@@ -137,6 +137,15 @@ public partial class C3dEditorView : UserControl
         Dispatcher.UIThread.Post(() => ObjectTree.TreeContainerFromItem(item)?.BringIntoView(), DispatcherPriority.Loaded);
     }
 
+    /// <summary>brief-em3d-101 R-em3d101-2a — Insert Image…: the picker, then the one placement (C3dEditorViewModel.PlaceImageSheet).</summary>
+    private async void OnInsertImage(object? sender, RoutedEventArgs e)
+    {
+        if (_vm is null) return;
+        if (_vm.InsertImageRefusal() is { } why) { _vm.StatusMessage = why; return; }
+        var files = await ImageFilePicker.PickAsync(TopLevel.GetTopLevel(this), "Insert Image", multiple: true);
+        if (files.Count > 0) _vm.InsertImages(files);
+    }
+
     /// <summary>
     /// brief-em3d-29 R-em3d29-5 — Export picture…: the view drawn offscreen by the GPU at the chosen multiple of the pane's
     /// DEVICE-pixel size, read back, and written as PNG where the user says (3D editor bugs round 5: the read-only viewer's).

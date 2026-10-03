@@ -122,7 +122,8 @@ public static class Viewer3DVectorExport
             ScaleBar = vm.ShowScaleLegend && bar > 0 ? (bar, vm.FormatLength(bar)) : null,
         };
         return Em3dDrawingExport.Picture(problem, CameraProjection(vm), Colours(vm.Scene), theme, HiddenNames(vm), maxSide: MaxSide,
-                                         window: window, chrome: chrome, transparency: Transparencies(vm.Scene));
+                                         window: window, chrome: chrome, transparency: Transparencies(vm.Scene), images: vm.Scene.PlacedImages,
+                                         faceImages: vm.Scene.PlacedFaceImages);
     }
 
     public static MenuItem CopyItem(Control pane, Func<Viewer3DViewModel?> vm, Action<string> report)
@@ -252,7 +253,7 @@ public static class Viewer3DVectorExport
 
         var colours = Colours(vm.Scene);
         var theme = ThemeService.Active;
-        request = request with { ObjectTransparency = Transparencies(vm.Scene) };
+        request = request with { ObjectTransparency = Transparencies(vm.Scene), Images = vm.Scene.PlacedImages, FaceImages = vm.Scene.PlacedFaceImages };
         try
         {
             var (bytes, notes, layout) = await Task.Run(() =>

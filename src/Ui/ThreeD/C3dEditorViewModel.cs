@@ -266,6 +266,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
                 sheets = [.. sheets, .. e.UnassignedSheets];
             }
             var instancing = InstancingFor(doc, e);
+            var faceImageHosts = e.FaceImages.Select(u => u.Object).ToHashSet(StringComparer.Ordinal);
             // brief-em3d-88 — the one problem a view draws, which `render` builds a thermal section's picture from too.
             var problem = C3dProblemAssembly.ViewProblem(solids, sheets, materials, [.. records.Ports.Select(r => r.Resolved).OfType<Em3dPort>()], box);
             var notes = new List<string>(e.Refusals);
@@ -275,7 +276,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
                 new Scene3DBuildOptions(name => e.Provenance.TryGetValue(name, out var p) ? p.FaceNames : null,
                                         _tessellations, DrawAirBox: records.Box is not null, Origin: _origin,
                                         FeatureShare: name => e.Provenance.TryGetValue(name, out var p) ? ShareOf(p) : null,
-                                        Instancing: name => unassigned.Contains(name) ? null : instancing(name),
+                                        Instancing: name => unassigned.Contains(name) || e.Images.ContainsKey(name) || faceImageHosts.Contains(name) ? null : instancing(name),
                                         Wireframe: unassigned.Count > 0 ? unassigned.Contains : null,
                                         Context: inputs.Context is null ? null : IsContext,
                                         EditorBoundaries: true,
@@ -283,6 +284,9 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
                                         OwnFrame: name => OwnFrameOf(doc, e, name),
                                         HideOutermostDielectric: false,
                                         Transparency: Scene3DTransparency.Of(e.Provenance),
+                                        // brief-em3d-101 — an image sheet is drawn with its picture (C3dElaboration.Images).
+                                        Images: e.Images.Count == 0 ? null : name => e.Images.GetValueOrDefault(name),
+                                        FaceImages: e.FaceImages.Count == 0 ? null : e.FaceImages,
                                         FaceTints: [.. records.Boundaries.Where(b => b.Refusal is null)
                                                            .Select(b => new Scene3DFaceTint(b.Boundary.Object + "/" + b.Boundary.Face, b.Boundary.Kind, b.Pieces)),
                                                     .. records.ThermalTints]));
@@ -417,6 +421,10 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     private void ApplyHiddenFlags(IEnumerable<C3dObject> objects)
     {
         var changes = objects.SelectMany(o => SceneObjectsFor(o, balls: true).Select(s => (s.Id, !o.Hidden))).ToList();
+        // brief-em3d-101 Phase B — a hidden object hides its face images; a hidden face image is not drawn at all.
+        foreach (var o in objects.Where(o => o.FaceImages is { Count: > 0 }))
+            foreach (var fi in o.FaceImages!)
+                if (SceneObject(CircuitRF.Design.ThreeD.C3dImages.FacePrefix + o.Name + "/" + fi.Face) is { } s) changes.Add((s.Id, !o.Hidden));
         // brief-em3d-66 — an entered operand's own Hidden.
         if (EnteredTop is >= 0 and var top)
             foreach (var op in _enteredOperands)
@@ -524,6 +532,8 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         if (SelectedPorts() is { Count: > 0 } ports) { DeletePorts(ports); return true; }
         // brief-em3d-90 — so is a selected boundary's tint: the boundary goes, the face stays
         if (SelectedTints() is { Count: > 0 } tints) { DeleteTints(tints); return true; }
+        // brief-em3d-101 R-em3d101-9b — a selected face image is a record: removed as one, its face stays
+        if (SelectedFaceImages() is { Count: > 0 } faceImages) { RemoveFaceImages(faceImages); return true; }
         var objects = Viewer.SelectedObjects();
         // brief-em3d-66 R-em3d66-6 — an entered operand: a Tool is removed from its boolean; the Blank is refused.
         if (objects.Select(OperandIndexOf).Where(i => i >= 0).Distinct().ToList() is { Count: > 0 } operands) return DeleteOperands(operands);
@@ -946,9 +956,19 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         if (CanPopOut) return "Pop out to the top document first: Save As writes the tab's own file.";
         string was = FilePath;
         bool wasScratch = IsScratch;
+        // brief-em3d-101 R-em3d101-1b — an image's path is stored for THIS file's folder: written again for the new one, so it
+        // still resolves (and put back if the save fails).
+        var images = C3dImages.AllImages(Document.Objects).Select(img => (Image: img, Old: img.Path)).ToList();
+        foreach (var (img, old) in images)
+            if (C3dImages.Resolve(was, old) is { } abs) img.Path = C3dImages.Store(path, abs);
         FilePath = Path.GetFullPath(path);
         IsScratch = false;
-        if (Save() is { } why) { FilePath = was; IsScratch = wasScratch; return why; }
+        if (Save() is { } why)
+        {
+            FilePath = was; IsScratch = wasScratch;
+            foreach (var (img, old) in images) img.Path = old;
+            return why;
+        }
         if (wasScratch) OnPropertyChanged(nameof(IsScratch));
         Viewer.Regenerate();         // the document's own path is where its relative references resolve from
         return null;
@@ -1242,7 +1262,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         => BoxFaceOf(o) is not null ? AllTreeItems().FirstOrDefault(t => t.IsAirBox)
            // brief-em3d-90 R-em3d90-3 — a tint is its boundary's row: a thermal one's is named without the scene's prefix
            : o.Tint ? AllTreeItems().FirstOrDefault(t => t.Kind == ThermalBoundaryKindName && Scene3DBuilder.FaceTintPrefix + t.Name == o.Name)
-                      ?? AllTreeItems().FirstOrDefault(t => t.Kind == EmBoundaryKind && t.Name == o.Name)
+                      ?? AllTreeItems().FirstOrDefault(t => t.Kind is EmBoundaryKind or FaceImageKind && t.Name == o.Name)
            // brief-em3d-66 — an entered operand is its row under its boolean.
            : OperandIndexOf(o) is >= 0 and var oi && TopOf(oi, out string op) is >= 0 and var top
              ? AllTreeItems().FirstOrDefault(t => t.ObjectIndex == top && t.OperandPath == op)
@@ -1399,7 +1419,15 @@ public sealed partial class C3dTreeItem(C3dEditorViewModel owner, string name, s
 
     /// <summary>brief-em3d-90 — a row whose tick is the view's alone (a thermal place, a thermal boundary, a symmetry plane, an
     /// instance's part, an EM face boundary's tint): nothing is saved, and nothing is undoable.</summary>
-    private bool IsViewState => ObjectIndex < 0 && !IsAirBox && !IsGroup && Kind != C3dEditorViewModel.FieldPlotKind;
+    private bool IsViewState => ObjectIndex < 0 && !IsAirBox && !IsGroup && Kind != C3dEditorViewModel.FieldPlotKind && Kind != C3dEditorViewModel.FaceImageKind;
+
+    /// <summary>brief-em3d-101 Phase B — a face image's row: the object it is on (document index) and the face; −1 and null otherwise.</summary>
+    public int FaceImageHost { get; init; } = -1;
+    public string? FaceImageFace { get; init; }
+
+    /// <summary>What the row reads as when that is not its <see cref="Name"/> (a face image's row: "Image on zmax").</summary>
+    public string? DisplayName { get; init; }
+    public string Label => DisplayName ?? Name;
 
     /// <summary>brief-em3d-90 — the name's tooltip for a record row (a symmetry plane says how it is selected), or null.</summary>
     public string? RowTip { get; init; }

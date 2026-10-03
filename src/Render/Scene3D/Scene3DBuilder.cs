@@ -67,6 +67,11 @@ namespace CircuitRF.Render.Scene3D;
 /// False shows every dielectric: the 3D editor, where a board placed from a layout is bounded to the board (hiding its
 /// thickest dielectric drew copper floating in air with nothing between the layers), and a PLANAR .cem's preview, whose
 /// slabs are drawn to the board outline or the copper hull (SlabLateralBound) rather than across the air box.</param>
+/// <param name="Images">brief-em3d-101 — a sheet's image (C3dElaboration.Images), or null: the sheet is drawn with it instead of its
+/// colour, never as a wireframe and never as an array element (it is drawn as an ordinary object, which is always correct).</param>
+/// <param name="FaceImages">brief-em3d-101 Phase B — images mapped onto faces (C3dElaboration.FaceImages): each drawn over its face as
+/// a record of its own (a face boundary's tint's kind of object, named C3dImages.FacePrefix + face), from the face's own triangles.
+/// An object carrying one is drawn as an ordinary object, never an array element.</param>
 public sealed record Scene3DBuildOptions(
     Func<string, IReadOnlyList<string>?>? FaceNames = null,
     Scene3DTessellationCache? Cache = null,
@@ -81,7 +86,9 @@ public sealed record Scene3DBuildOptions(
     Func<string, Scene3DGhost>? Ghost = null,
     Func<string, Func<Point3, Point3>?>? OwnFrame = null,
     bool HideOutermostDielectric = true,
-    Func<string, Scene3DTransparency?>? Transparency = null);
+    Func<string, Scene3DTransparency?>? Transparency = null,
+    Func<string, CircuitRF.Design.ThreeD.C3dPlacedImage?>? Images = null,
+    IReadOnlyList<CircuitRF.Design.ThreeD.C3dFaceImageUse>? FaceImages = null);
 
 /// <summary>brief-em3d-92 — how see-through one object is drawn: its own percentage (null, its kind's default) and the opacity the
 /// instances it sits in multiply onto it (1 for none). C3dTransparency.Alpha turns the two and the kind's alpha into one.</summary>
@@ -278,6 +285,10 @@ public static class Scene3DBuilder
         var materials = problem.Materials.Select((m, i) => (m, i)).ToDictionary(t => t.m.Name, t => t, StringComparer.Ordinal);
 
         var b = new Accumulator(L);
+        var imageNotes = new List<string>();
+        // brief-em3d-101 Phase B — the objects face images are on, and each one's triangles once it is tessellated.
+        var faceImageObjects = new HashSet<string>(options.FaceImages?.Select(u => u.Object) ?? [], StringComparer.Ordinal);
+        var faceMeshes = new Dictionary<string, (Em3dTriangleMesh Mesh, IReadOnlyList<string> Faces, bool Sheet, bool Dim)>(StringComparer.Ordinal);
         var bores = Scene3DBores.Of(problem);
         var solidRuns = new RunTracker(b);
         var sheetRuns = new RunTracker(b);
@@ -293,7 +304,7 @@ public static class Scene3DBuilder
         uint wireFill = Scene3DVertex.Pack(wireInk.R, wireInk.G, wireInk.B, 0), wireEdge = Scene3DVertex.Pack(wireInk.R, wireInk.G, wireInk.B, 255);
         foreach (var s in problem.Solids)
         {
-            var place = options.Instancing?.Invoke(s.Name);
+            var place = faceImageObjects.Contains(s.Name) ? null : options.Instancing?.Invoke(s.Name);
             if (place is { } pl && solidRuns.Element(pl, s.Name)) continue;
             bool wire = Wire(s.Name);
             var kind = wire ? Scene3DKind.Body : KindOf(s, origins);
@@ -336,6 +347,7 @@ public static class Scene3DBuilder
             var mesh = bores?.Carved(s) is { } carved ? Tessellate(carved.Key, carved.Make)
                      : Tessellate(s.Primitive, () => Em3dTessellation.Of(solid));
             var (m, slot) = materials.TryGetValue(s.Material, out var mt) ? (mt.m, mt.i) : ((Em3dMaterial?)null, -1);
+            if (faceImageObjects.Contains(s.Name)) faceMeshes[s.Name] = (mesh, FacesOf(s.Name), false, dim);
             b.Object(new Scene3DObject
             {
                 Id = 0, Name = s.Name, Kind = kind, Role = s.Role, Material = s.Material, MaterialValues = m, MaterialSlot = slot,
@@ -353,7 +365,8 @@ public static class Scene3DBuilder
         // ── sheets ───────────────────────────────────────────────────────────────────────────
         foreach (var sh in problem.Sheets)
         {
-            var place = options.Instancing?.Invoke(sh.Name);
+            var image = options.Images?.Invoke(sh.Name);
+            var place = image is null && !faceImageObjects.Contains(sh.Name) ? options.Instancing?.Invoke(sh.Name) : null;
             if (place is { } pl && sheetRuns.Element(pl, sh.Name)) continue;
             var c = conductorColours.TryGetValue(sh.Name, out var sk) ? sk : new SkiaSharp.SKColor(150, 150, 155);
             if (MaterialColour(tech, sh.Material) is { } own) c = new SkiaSharp.SKColor(own.R, own.G, own.B);
@@ -362,18 +375,41 @@ public static class Scene3DBuilder
             var (m, slot) = materials.TryGetValue(sh.Material, out var mt) ? (mt.m, mt.i) : ((Em3dMaterial?)null, -1);
             var names = FacesOf(sh.Name);
             bool dim = Dim(sh.Name);
-            bool wire = Wire(sh.Name);
+            bool wire = Wire(sh.Name) && image is null;
             uint rgba = Scene3DVertex.Pack(c.Red, c.Green, c.Blue, 255);
             bool translucent = false;
             var see = options.Transparency?.Invoke(sh.Name);
             if (see is { } t) (rgba, translucent) = t.Apply(rgba);
+            // brief-em3d-101 R-em3d101-4a — an image sheet is drawn with its image, whatever its material (or none, §1e): the
+            // object's alpha (its transparency; the context's while dimmed) multiplies the texture's, and either below 1 sorts it
+            // with the translucent objects.
+            if (faceImageObjects.Contains(sh.Name)) faceMeshes[sh.Name] = (mesh, names.Count > 0 ? names : SheetFaceNames, true, dim);
+            Scene3DTexture? texture = null;
+            uint imageRgba = 0;
+            if (image is not null)
+            {
+                texture = Scene3DTextures.Get(image.Path);
+                byte a = dim ? ContextAlpha : see is { } ti ? ti.Alpha(255) : (byte)255;
+                imageRgba = Scene3DVertex.Pack(255, 255, 255, a);
+                translucent = a < 255 || !texture.Opaque;
+                rgba = Scene3DVertex.Pack(200, 200, 205, a);
+                if (texture.Downsampled)
+                    imageNotes.Add($"'{Path.GetFileName(image.Path)}' is {texture.SourceWidth:N0} × {texture.SourceHeight:N0} pixels; the 3D " +
+                                   $"view draws it at {texture.Width:N0} × {texture.Height:N0}, the largest every GPU it runs on is sure to take.");
+            }
             b.Object(new Scene3DObject
             {
                 Id = 0, Name = sh.Name, Kind = Scene3DKind.Sheet, Role = Em3dRole.Conductor, Material = sh.Material, MaterialValues = m,
-                MaterialSlot = slot, Rgba = wire ? wireFill : dim ? Dimmed(rgba, dark) : rgba, Translucent = dim || wire || translucent,
+                MaterialSlot = slot, Rgba = wire ? wireFill : dim && image is null ? Dimmed(rgba, dark) : rgba, Translucent = dim || wire || translucent,
                 FaceNames = names.Count > 0 ? names : SheetFaceNames, Context = dim, Wireframe = wire, Transparency = see,
+                Underlay = image is not null, ImageName = image is null ? null : Path.GetFileName(image.Path),
             }, mesh, faces: true, sheet: true, features: Features(sh.Name, mesh, sheet: true, sheetNames: names.Count > 0 ? names : SheetFaceNames),
                wireEdges: wire ? wireEdge : null);
+            if (image is not null)
+            {
+                b.Image((uint)(b.LastIndex + 1), texture!, mesh, image, imageRgba, dim || translucent, surface: true, face: 0);
+                b.PlacedImages[sh.Name] = image;
+            }
             if (place is { } p0) sheetRuns.Prototype(p0, sh.Name);
             else sheetRuns.Break();
         }
@@ -448,6 +484,40 @@ public static class Scene3DBuilder
             }
         }
 
+        // ── brief-em3d-101 Phase B: images on faces — a record each, drawn over its face from the face's own triangles ─────
+        if (options.FaceImages is { Count: > 0 } faceImages)
+            foreach (var use in faceImages)
+            {
+                if (!Scene3DFaceImages.Drawn(faceImages, use) || !faceMeshes.TryGetValue(use.Object, out var host)) continue;
+                if (Scene3DFaceImages.Place(use, host.Mesh, host.Faces, host.Sheet, out string? why) is not { } placed)
+                {
+                    b.FaceImageProblems[use.FaceSpelled] = why!;
+                    continue;
+                }
+                var texture = Scene3DTextures.Get(use.Path ?? "");
+                // its OWN transparency, and the instances' opacity multiplied on — never its object's (R-em3d101-10)
+                byte a = host.Dim ? ContextAlpha : new Scene3DTransparency(use.Record.Transparency, use.Opacity).Alpha(255);
+                bool translucent = a < 255 || !texture.Opaque;
+                var verts = new List<Point3>();
+                var tris = new List<Em3dTriangle>();
+                foreach (var (p0, p1, p2) in placed.Triangles)
+                {
+                    int k0 = verts.Count;
+                    verts.Add(p0); verts.Add(p1); verts.Add(p2);
+                    tris.Add(new Em3dTriangle(k0, k0 + 1, k0 + 2, use.Record.Face));
+                }
+                var sub = new Em3dTriangleMesh(verts, tris);
+                b.Object(new Scene3DObject
+                {
+                    Id = 0, Name = C3dImages.FacePrefix + use.FaceSpelled, Kind = Scene3DKind.Boundary, Tint = true,
+                    Rgba = Scene3DVertex.Pack(200, 200, 205, a), Translucent = translucent, Context = host.Dim,
+                    ImageName = Path.GetFileName(use.Path ?? use.Record.Image.Path), FaceNames = [use.Record.Face],
+                }, sub);
+                b.Image((uint)(b.LastIndex + 1), texture, sub, placed.Placed, Scene3DVertex.Pack(255, 255, 255, a), translucent,
+                        surface: true, face: 0, onFace: true);
+                b.PlacedFaceImages.Add(placed);
+            }
+
         // ── the air box: its six faces (hidden until asked for) and its twelve edges ─────────
         if (options.DrawAirBox)
         {
@@ -480,7 +550,7 @@ public static class Scene3DBuilder
         }
 
         cache?.EndBuild();
-        return b.Finish(generation, origin, problem, notes);
+        return b.Finish(generation, origin, problem, imageNotes.Count == 0 ? notes : [.. notes ?? [], .. imageNotes.Distinct()]);
     }
 
     /// <summary>A sheet is one surface, face 0.</summary>
@@ -839,6 +909,41 @@ public static class Scene3DBuilder
         /// <summary>The object-list index of the object added last.</summary>
         public int LastIndex => _objects.Count - 1;
 
+        private readonly List<Scene3DTexture> _images = [];
+        private readonly Dictionary<Scene3DTexture, int> _imageIndex = new(ReferenceEqualityComparer.Instance);
+        private readonly List<Scene3DImageVertex> _imageVerts = [];
+        private readonly List<Scene3DImageBatch> _imageBatches = [];
+        public readonly Dictionary<string, C3dPlacedImage> PlacedImages = new(StringComparer.Ordinal);
+        public readonly List<Scene3DPlacedFaceImage> PlacedFaceImages = [];
+        public readonly Dictionary<string, string> FaceImageProblems = new(StringComparer.Ordinal);
+
+        /// <summary>brief-em3d-101 — object <paramref name="id"/>'s image: <paramref name="mesh"/>'s triangles (world metres) with
+        /// their texture coordinates in <paramref name="placed"/>'s frame, drawn with <paramref name="texture"/>.</summary>
+        public void Image(uint id, Scene3DTexture texture, Em3dTriangleMesh mesh, C3dPlacedImage placed, uint rgba, bool translucent,
+                          bool surface, int face, bool onFace = false, Func<Em3dTriangle, bool>? only = null, Func<Point3, Point3>? lift = null)
+        {
+            if (!_imageIndex.TryGetValue(texture, out int tex))
+            {
+                tex = _images.Count;
+                _images.Add(texture);
+                _imageIndex[texture] = tex;
+            }
+            int first = _imageVerts.Count;
+            void Corner(Point3 p)
+            {
+                var (u, v) = placed.At(p);
+                var q = local(lift is null ? p : lift(p));
+                _imageVerts.Add(new Scene3DImageVertex(q.X, q.Y, q.Z, (float)u, (float)(1 - v), id, (uint)face, rgba));
+            }
+            foreach (var t in mesh.Triangles)
+            {
+                if (only is not null && !only(t)) continue;
+                Corner(mesh.Vertices[t.A]); Corner(mesh.Vertices[t.B]); Corner(mesh.Vertices[t.C]);
+            }
+            if (_imageVerts.Count > first)
+                _imageBatches.Add(new Scene3DImageBatch(id, tex, first, _imageVerts.Count - first, translucent, surface, onFace));
+        }
+
         public int NewGroup(int protoIndex, int count)
         {
             _groups.Add((protoIndex, count));
@@ -865,7 +970,7 @@ public static class Scene3DBuilder
                 MaterialSlot = o.MaterialSlot, Rgba = o.Rgba, Translucent = o.Translucent,
                 InitiallyVisible = o.InitiallyVisible, PortNumber = o.PortNumber, Boundary = o.Boundary,
                 FaceNames = o.FaceNames, CapCentres = o.CapCentres, Context = o.Context, PickLast = o.PickLast,
-                Wireframe = o.Wireframe, Tint = o.Tint, Transparency = o.Transparency,
+                Wireframe = o.Wireframe, Tint = o.Tint, Transparency = o.Transparency, Underlay = o.Underlay, ImageName = o.ImageName,
             };
             var min = new Vector3(float.MaxValue);
             List<Scene3DVertex>? featureEdges = null;
@@ -1100,6 +1205,8 @@ public static class Scene3DBuilder
                 UnitBox = unitBox,
                 BoundsMin = bmin, BoundsMax = bmax, ContentMin = cmin, ContentMax = cmax,
                 Problem = problem, Notes = notes ?? [], TintLift = TintLift,
+                Images = [.. _images], ImageVertices = [.. _imageVerts], ImageBatches = [.. _imageBatches], PlacedImages = PlacedImages,
+                PlacedFaceImages = [.. PlacedFaceImages], FaceImageProblems = FaceImageProblems,
             };
         }
     }

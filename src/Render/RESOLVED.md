@@ -4554,3 +4554,36 @@ missing the driven port's probes or its kept document is drawn as written, with 
   `FieldUniforms.Write` hands it a power's range doubled, so no shader changed.
 - **The picker label names the port, not a power** (`SolutionLabel`). The drive is the plot's, on its own legend line
   (`LegendLines(..., drive)`), which the view, Export picture and `render --field` all print.
+
+## Reference images in the scene and the pictures (brief-em3d-101, 2026-10-03)
+
+- **`Scene3DDepthTie.Underlay` (−2), below `Behind`**: an image sheet gives way to EVERY face on its plane — a polygon traced
+  on the image is drawn over it and is what the ID pass (and the CPU pick, through `TieNdc`) finds. **`FaceImage` (2), between
+  `Via` and `Port`**: an image on a face wins over the face (any kind of object's) and loses to a port or a field plot there.
+  Port and Field moved up one step each; only the order matters. `DepthBias` now gives the slope factor to every tie BELOW
+  `None` (it was `== Behind`), so the underlay is pushed away like a dielectric.
+- **An image sheet is an ordinary scene object** (`Scene3DObject.Underlay`) whose COLOUR draw is replaced by its image's
+  (`Scene3DImageBatch.Surface`): its own triangles stay in the ID pass, the selection's edges and Face mode's on-top pass.
+  The frame plan swaps the draw in the opaque or the translucent pass by the batch's own translucency (its transparency, or
+  a PNG with any texel below 255).
+- **An image on a face is a RECORD drawn over the face, the way a face boundary's tint is** (`Tint`, named
+  `C3dImages.FacePrefix + object/face`): its triangles are the face's own, re-emitted, so a click selects the record and B
+  steps to the face. Its alpha is its own transparency times its instances' opacity — never its object's (a lid at 80 %
+  carries a marking at 0 %: the image writes depth with its FaceImage bias, so the lid's translucent face drawn later fails
+  the depth test where the image is).
+- **The face frame rule** (`C3dImages.FaceFrame`, `src/Design`, shared by the scene, the vector export and `render`): from the
+  face's triangles — area-weighted centroid, outward normal (the tessellation winds counter-clockwise from outside), up =
+  world +z projected into the face (+y when |n·z| > 0.999), right = up × normal. A face is flat when the sum of its
+  triangles' area vectors is (to 1e-6) its area; otherwise it is "curved" and refused. A fitted image is the largest
+  aspect-kept rectangle centred on the centroid inside the face's bounding rectangle in that frame.
+- **One placement path for face images**: `Scene3DFaceImages.Place` finds the face's triangles by NAME in the object's own
+  tessellation (`C3dImages.IsFace`: `zmax` covers an operation's `zmax#1`, `zmax#2`) and places the picture. The builder calls
+  it; `Scene3DFaceImages.Of` calls it for `render`, tessellating as the view does. An object carrying one is never an array
+  element (`Instancing` → null), which is slower and never wrong.
+- **Vector pictures** (`Em3dSceneImages`): each image is drawn by Skia's `DrawImage` under the affine map of its corners on the
+  page, clipped to its sheet's outline (even-odd) or its face's triangles (winding, each triangle oriented the same way on the
+  page first), BEFORE every line. Sections draw none. A sheet seen edge-on contributes nothing. `render --iso` puts image
+  sheets back into the problem a run leaves them out of and grows the box to frame them (`WithImageSheets`), and the section
+  renderer's legend skips the empty material such a sheet has.
+- **SVG ids are per process**: Skia numbers clip paths and images per process, so a picture made in a test process that drew
+  others first differs from the CLI's in its `cl_N` ids only — the image gates compare with RenderCliVerbTests' `StripSkiaIds`.

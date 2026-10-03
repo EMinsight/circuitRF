@@ -105,6 +105,9 @@ public sealed record Em3dScene(
     IReadOnlyList<Em3dSceneFace> Faces,
     IReadOnlyList<string> DielectricMaterials)
 {
+    /// <summary>brief-em3d-101 — the image sheets an outline draws with their pictures (Em3dSceneImages.Of): none for a section.</summary>
+    public IReadOnlyList<Em3dSceneImage> Images { get; init; } = [];
+
     /// <summary>The names of the objects this picture draws, regions then lines, in draw order.</summary>
     public IEnumerable<string> Objects =>
         Regions.Select(r => r.Object).Concat(Lines.Select(l => l.Object)).Distinct(StringComparer.Ordinal);

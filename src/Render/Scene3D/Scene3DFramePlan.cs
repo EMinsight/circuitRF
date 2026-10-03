@@ -43,10 +43,17 @@ public enum Scene3DPipeline
     /// (vs_grid) covering the viewport, no vertex buffer, depth test without write, blend; fs_grid casts each
     /// fragment's ray at the plane and writes its depth.</summary>
     Grid,
+    /// <summary>brief-em3d-101 R-em3d101-4 — an image's triangles (Scene3DImageVertex, not indexed) sampling texture
+    /// <see cref="Scene3DDraw.Texture"/> (vs_image / fs_image), depth write, blend (an opaque image's alpha is 1, so the blend
+    /// changes nothing; a texel the image leaves fully transparent is discarded and writes no depth).</summary>
+    Image,
+    /// <summary>brief-em3d-101 — the same, sorted with the translucent objects: depth test without write, blend.</summary>
+    ImageTranslucent,
 }
 
-/// <summary>Which buffer a draw reads: the scene's, one of the overlay slots, the field's, or none (the grid).</summary>
-public enum Scene3DBuffer { Scene, SceneLines, Overlay0, Overlay1, Overlay2, Field, None }
+/// <summary>Which buffer a draw reads: the scene's, one of the overlay slots, the field's, none (the grid), or the scene's image
+/// stream (brief-em3d-101).</summary>
+public enum Scene3DBuffer { Scene, SceneLines, Overlay0, Overlay1, Overlay2, Field, None, Image }
 
 /// <summary>One draw: <see cref="Count"/> indices (triangles) or vertices (lines) from <see cref="First"/>.</summary>
 [StructLayout(LayoutKind.Sequential)]
@@ -64,29 +71,39 @@ public struct Scene3DDraw
     /// the picture and in the ID pass — instead of the two fighting per pixel.</summary>
     public Scene3DDepthTie Tie;
 
+    /// <summary>brief-em3d-101 — an image draw's texture: an index into <see cref="Scene3DModel.Images"/> (−1 for any other draw).</summary>
+    public int Texture;
+
     /// <summary>A dielectric's or air's draw, which gives way to any metal face lying on one of its own.</summary>
     public readonly bool Behind => Tie == Scene3DDepthTie.Behind;
 }
 
 /// <summary>
 /// 3D editor bugs round 9 — the order in which coincident faces of different objects win the depth test, lowest first:
-/// dielectric (and air), then metal, then via metal, then a port's surface. Metal over dielectric is em-3d.md §6.3a's
+/// an image sheet (brief-em3d-101), dielectric (and air), then metal, then via metal, then an image mapped onto a face (brief 101
+/// Phase B), then a port's surface, then a field plot. Metal over dielectric is em-3d.md §6.3a's
 /// precedence (3D editor round 3); a via over the metal it passes through, and a port over the metal it lies on, are the
 /// owner's rule for the view. Each step is one <see cref="Scene3DFramePlan.BehindDepthBias"/> of polygon offset, so two
 /// coplanar faces a step apart never fight, and faces genuinely apart are not reordered at any zoom the depth range allows.
 /// </summary>
 public enum Scene3DDepthTie : sbyte
 {
+    /// <summary>brief-em3d-101 R-em3d101-4b — an image sheet: gives way to EVERY face lying on its plane, so what is traced on it
+    /// is drawn over it and is what a click finds — the 3D form of the layout's "bitmaps always render behind" (R-bmp-2).</summary>
+    Underlay = -2,
     /// <summary>A dielectric or air: gives way to a metal face on its own.</summary>
     Behind = -1,
     /// <summary>Metal — a conductor, a wire, a sheet — and everything else.</summary>
     None = 0,
     /// <summary>Via metal: wins over the pad and plane it passes through.</summary>
     Via = 1,
+    /// <summary>brief-em3d-101 R-em3d101-10 — an image mapped onto a face: wins over the face it lies on (any kind of object's),
+    /// and gives way to a port's surface or a field plot on that face.</summary>
+    FaceImage = 2,
     /// <summary>A port's surface: wins over the metal it lies on.</summary>
-    Port = 2,
+    Port = 3,
     /// <summary>A field plot's slice or painted faces: the datum, so it wins over any geometry lying where it lies.</summary>
-    Field = 3,
+    Field = 4,
 }
 
 /// <summary>
@@ -232,7 +249,9 @@ public sealed class Scene3DFramePlan
     /// <summary>3D editor bugs round 9 — where object <paramref name="id"/> stands when one of its faces coincides with another
     /// object's (<see cref="Scene3DDepthTie"/>).</summary>
     public static Scene3DDepthTie TieOf(Scene3DModel scene, uint id)
-        => id < 1 || id > scene.Objects.Length ? Scene3DDepthTie.None : scene.Objects[id - 1].Kind switch
+        => id < 1 || id > scene.Objects.Length ? Scene3DDepthTie.None
+         : scene.Objects[id - 1].Underlay ? Scene3DDepthTie.Underlay
+         : scene.Objects[id - 1].Kind switch
         {
             Scene3DKind.Dielectric or Scene3DKind.Air => Scene3DDepthTie.Behind,
             Scene3DKind.Via => Scene3DDepthTie.Via,
@@ -240,13 +259,16 @@ public sealed class Scene3DFramePlan
             _ => Scene3DDepthTie.None,
         };
 
+    /// <summary>The lowest and highest tie, for a backend that makes one state per tie (D3D11's rasterizer states).</summary>
+    public const Scene3DDepthTie TieMin = Scene3DDepthTie.Underlay, TieMax = Scene3DDepthTie.Field;
+
     /// <summary>The polygon offset a <paramref name="tie"/> draw takes, in the backends' terms (constant steps, slope factor):
-    /// one <see cref="BehindDepthBias"/> per step, away from the eye for <see cref="Scene3DDepthTie.Behind"/> and towards it
+    /// one <see cref="BehindDepthBias"/> per step, away from the eye below <see cref="Scene3DDepthTie.None"/> and towards it
     /// for each step above <see cref="Scene3DDepthTie.None"/>. Only a draw pushed AWAY takes the slope factor: towards the eye
     /// it is unbounded where a wall is seen edge-on, and a via barrel's silhouette came through the copper above it as a
     /// dotted trail. Coincident faces differ by a few float steps of interpolation, which the constant alone covers.</summary>
     public static (float Constant, float Slope) DepthBias(Scene3DDepthTie tie)
-        => (-(int)tie * BehindDepthBias, tie == Scene3DDepthTie.Behind ? BehindSlopeScale : 0);
+        => (-(int)tie * BehindDepthBias, tie < Scene3DDepthTie.None ? BehindSlopeScale : 0);
 
     /// <summary>The same offset as the CPU picks apply it: added to an object's NDC depth (<see cref="BehindNdc"/> a step).</summary>
     public static float TieNdc(Scene3DDepthTie tie) => -(int)tie * BehindNdc;
@@ -364,8 +386,12 @@ public sealed class Scene3DFramePlan
         {
             var b = batches[k];
             if (!b.Translucent && !Faded(b.ObjectId) && view.IsDrawn(b.ObjectId))
-                AddMoved(preview, b.ObjectId, Scene3DPipeline.Opaque, Scene3DBuffer.Scene, b.FirstIndex, b.IndexCount, identity: true,
-                         tie: TieOf(scene, b.ObjectId));
+            {
+                // brief-em3d-101 — an image sheet's colour IS its image: its own triangles stay in the ID and selection passes.
+                if (_surfaceOf[b.ObjectId - 1] >= 0) AddImage(scene, preview, _surfaceOf[b.ObjectId - 1], translucent: false);
+                else AddMoved(preview, b.ObjectId, Scene3DPipeline.Opaque, Scene3DBuffer.Scene, b.FirstIndex, b.IndexCount, identity: true,
+                              tie: TieOf(scene, b.ObjectId));
+            }
         }
         // brief-em3d-48 R-em3d48-3a — each element: ONE draw of its prototype's opaque triangles under its own transform
         // when the whole element is drawn as it is; object by object when part of it is hidden or moving.
@@ -445,8 +471,9 @@ public sealed class Scene3DFramePlan
         for (int k = 0; k < n; k++)
         {
             var b = batches[_order[k]];
-            AddMoved(preview, b.ObjectId, Scene3DPipeline.Translucent, Scene3DBuffer.Scene, b.FirstIndex, b.IndexCount, identity: true, b.Element,
-                     tie: TieOf(scene, b.ObjectId));
+            if (_surfaceOf[b.ObjectId - 1] >= 0) AddImage(scene, preview, _surfaceOf[b.ObjectId - 1], translucent: true);
+            else AddMoved(preview, b.ObjectId, Scene3DPipeline.Translucent, Scene3DBuffer.Scene, b.FirstIndex, b.IndexCount, identity: true, b.Element,
+                          tie: TieOf(scene, b.ObjectId));
         }
         ClearFaded();
 
@@ -639,9 +666,25 @@ public sealed class Scene3DFramePlan
         }
     }
 
+    /// <summary>brief-em3d-101 — object <paramref name="k"/>'s (by ID − 1) image surface batch (an index into
+    /// <see cref="Scene3DModel.ImageBatches"/>), or −1.</summary>
+    private int[] _surfaceOf = [];
+
+    /// <summary>brief-em3d-101 — image batch <paramref name="k"/>, drawn in the opaque or the translucent pass, moved with its object
+    /// by a drag's preview like any object's draw.</summary>
+    private void AddImage(Scene3DModel scene, Scene3DPreview? preview, int k, bool translucent)
+    {
+        var ib = scene.ImageBatches[k];
+        int from = DrawCount;
+        AddMoved(preview, ib.ObjectId, translucent ? Scene3DPipeline.ImageTranslucent : Scene3DPipeline.Image, Scene3DBuffer.Image,
+                 ib.FirstVertex, ib.VertexCount, identity: true,
+                 tie: ib.OnFace ? Scene3DDepthTie.FaceImage : Scene3DDepthTie.Underlay);
+        for (int d = from; d < DrawCount; d++) Draws[d].Texture = ib.Image;
+    }
+
     private void Size(Scene3DModel scene)
     {
-        int need = scene.Batches.Length + scene.LineBatches.Length + 6 + (1 + EdgePasses) * Math.Min(scene.Objects.Length, SelectionLimit);
+        int need = scene.Batches.Length + scene.LineBatches.Length + scene.ImageBatches.Length + 6 + (1 + EdgePasses) * Math.Min(scene.Objects.Length, SelectionLimit);
         if (Draws.Length < need) Draws = new Scene3DDraw[need];
         if (PickDraws.Length < need) PickDraws = new Scene3DDraw[need];
         _keys = new float[scene.Batches.Length];
@@ -655,6 +698,10 @@ public sealed class Scene3DFramePlan
         Array.Fill(_batchOf, -1);
         for (int k = 0; k < scene.EdgeBatches.Length; k++) _edgeOf[scene.EdgeBatches[k].ObjectId - 1] = k;
         for (int k = 0; k < scene.Batches.Length; k++) _batchOf[scene.Batches[k].ObjectId - 1] = k;
+        _surfaceOf = new int[scene.Objects.Length];
+        Array.Fill(_surfaceOf, -1);
+        for (int k = 0; k < scene.ImageBatches.Length; k++)
+            if (scene.ImageBatches[k].Surface) _surfaceOf[scene.ImageBatches[k].ObjectId - 1] = k;
 
         // brief-em3d-48 — the element slots and their boxes' slots are written once per scene; a frame writes only a
         // preview's copies after them.
@@ -685,7 +732,7 @@ public sealed class Scene3DFramePlan
                             Scene3DDepthTie tie = Scene3DDepthTie.None)
     {
         if (count == list.Length) Array.Resize(ref list, list.Length * 2);
-        list[count++] = new Scene3DDraw { Pipeline = p, Buffer = buf, First = first, Count = n, Transform = transform, Tie = tie };
+        list[count++] = new Scene3DDraw { Pipeline = p, Buffer = buf, First = first, Count = n, Transform = transform, Tie = tie, Texture = -1 };
     }
 
     /// <summary>A draw of object <paramref name="id"/>'s batch: as it is when nothing moves it (under its element's

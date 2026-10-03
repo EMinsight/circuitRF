@@ -149,7 +149,19 @@ internal static class RenderEm3d
         RunHost.Control?.BeginStage("draw");
         Console.Error.WriteLine("[circuitRF] draw...");
 
+        // brief-em3d-101 R-em3d101-6 — the isometric outline draws image sheets with their pictures, as the 3D view's vector export
+        // does (Em3dSceneImages, the one path). An image sheet is placed not modelled and often with no material, so a run's problem
+        // leaves it out; the picture puts it back, as the 3D view draws it. A section and a field plot draw none (D8).
+        bool images = view.Kind == Em3dViewKind.Iso && field is null && prebuilt is null
+                      && loaded.Elaboration is { } withImages && (withImages.Images.Count > 0 || withImages.FaceImages.Count > 0);
+        if (images) problem = Em3dSceneImages.WithImageSheets(problem, loaded.Elaboration!);
         var scene = prebuilt ?? Em3dSectionScene.Build(problem, view);
+        if (images)
+            scene = scene with
+            {
+                Images = [.. Em3dSceneImages.Of(problem, loaded.Elaboration!.Images, Em3dSectionScene.Project),
+                          .. Em3dSceneImages.OfFaces(CircuitRF.Render.Scene3D.Scene3DFaceImages.Of(problem, loaded.Elaboration!), Em3dSectionScene.Project)],
+            };
         var style = new Em3dRenderStyle(
             // A .c3d's objects name its own technology's materials (the elaboration's, as the 3D view colours them).
             Em3dSectionRenderer.ObjectColours(problem, generated.Origins, loaded.Elaboration?.Technology ?? loaded.Resolution.Source?.Technology,

@@ -28,10 +28,14 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
     [StructLayout(LayoutKind.Sequential)] private struct ClearColor { public double R, G, B, A; }
     [StructLayout(LayoutKind.Sequential)] private struct MtlOrigin { public nuint X, Y, Z; }
     [StructLayout(LayoutKind.Sequential)] private struct MtlSize { public nuint W, H, D; }
+    [StructLayout(LayoutKind.Sequential)] private struct MtlRegion { public MtlOrigin Origin; public MtlSize Size; }
 
     private const int Ring = 3;
     private const nuint FmtBGRA8 = 80, FmtRG32Uint = 103, FmtRGBA32Float = 125, FmtDepth32F = 252;
-    private const nuint VtxFloat3 = 30, VtxUInt = 36, VtxUChar4Normalized = 9;
+    /// <summary>brief-em3d-101 — an image's texture: RGBA8 UNORM, never _sRGB, so a texel reaches the framebuffer with the value a
+    /// vertex colour of that value would.</summary>
+    private const nuint FmtRGBA8Unorm = 70;
+    private const nuint VtxFloat3 = 30, VtxUInt = 36, VtxUChar4Normalized = 9, VtxFloat2 = 29;
     private const nuint PrimLine = 1, PrimTriangle = 3, IndexUInt32 = 1;
     private const nuint WindingCounterClockwise = 1;
 
@@ -39,6 +43,13 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
 
     private readonly nint _device, _queue;
     private nint _pOpaque, _pTrans, _pLines, _pPick, _pField, _pEdges, _pTop, _pGrid, _dsWrite, _dsNoWrite, _dsAlways, _depth, _pickId, _pickPos, _pickDepth;
+    /// <summary>brief-em3d-101 — the image pipelines (opaque and translucent), the image vertex stream, its one sampler, and the
+    /// textures, held by identity (Scene3DTextureResidency): a scene rebuilt with the same files uploads no pixels.</summary>
+    private nint _pImage, _pImageTrans, _imageVb, _imageSampler;
+    private readonly Scene3DTextureResidency<nint> _textures = new();
+
+    /// <summary>brief-em3d-101 gate 6 — textures this backend has uploaded.</summary>
+    internal long TextureUploads => _textures.Uploads;
     /// <summary>brief-em3d-43 — a partial upload waiting for the next frame's command buffer: staging buffer,
     /// destination, offset, length. Copied by a blit on the queue, so it lands after every frame already
     /// committed has finished reading the old bytes.</summary>
@@ -112,6 +123,7 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
         nint vs = Fn("vs"), fsc = Fn("fs_color"), fsl = Fn("fs_line"), fsp = Fn("fs_pick"), fse = Fn("fs_edge"), fst = Fn("fs_top");
         nint vsf = Fn("vs_field"), fsf = Fn("fs_field");
         nint vsg = Fn("vs_grid"), fsg = Fn("fs_grid");
+        nint vsi = Fn("vs_image"), fsi = Fn("fs_image");
 
         nint vd = Send(Class("MTLVertexDescriptor"), Sel("vertexDescriptor"));
         nint attrs = Send(vd, Sel("attributes"));
@@ -132,6 +144,17 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
             SendV(a, Sel("setFormat:"), VtxFloat3); SendV(a, Sel("setOffset:"), 12 * k); SendV(a, Sel("setBufferIndex:"), (nuint)0);
         }
         SendV(Idx(Send(fvd, Sel("layouts")), 0), Sel("setStride:"), (nuint)FieldVertex.Stride);
+
+        // brief-em3d-101 — the image vertex: position, texture coordinate, object id, face, colour (its alpha the object's).
+        nint ivd = Send(Class("MTLVertexDescriptor"), Sel("vertexDescriptor"));
+        nint iattrs = Send(ivd, Sel("attributes"));
+        void IAttr(nuint i, nuint fmt, nuint off)
+        {
+            nint a = Idx(iattrs, i);
+            SendV(a, Sel("setFormat:"), fmt); SendV(a, Sel("setOffset:"), off); SendV(a, Sel("setBufferIndex:"), (nuint)0);
+        }
+        IAttr(0, VtxFloat3, 0); IAttr(1, VtxFloat2, 12); IAttr(2, VtxUInt, 20); IAttr(3, VtxUInt, 24); IAttr(4, VtxUChar4Normalized, 28);
+        SendV(Idx(Send(ivd, Sel("layouts")), 0), Sel("setStride:"), (nuint)Scene3DImageVertex.Stride);
 
         nint Pipe(nint fs, bool blend, bool pick, nuint topologyClass, nint vfn = 0, nint vdesc = 0)
         {
@@ -175,6 +198,20 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
         _pEdges = Pipe(fse, true, false, TopoLine);
         _pTop = Pipe(fst, true, false, TopoTriangle);
         _pGrid = Pipe(fsg, true, false, TopoTriangle, vsg, -1);
+        _pImage = Pipe(fsi, true, false, TopoTriangle, vsi, ivd);
+        _pImageTrans = _pImage;
+
+        // brief-em3d-101 — one sampler for every image: linear between texels and between mip levels, clamped to the edge (the
+        // shader draws nothing outside [0, 1] itself).
+        nint sd = Send(Send(Class("MTLSamplerDescriptor"), S.alloc), S.init);
+        SendV(sd, Sel("setMinFilter:"), (nuint)1);       // Linear
+        SendV(sd, Sel("setMagFilter:"), (nuint)1);
+        SendV(sd, Sel("setMipFilter:"), (nuint)2);       // Linear
+        SendV(sd, Sel("setSAddressMode:"), (nuint)0);    // ClampToEdge
+        SendV(sd, Sel("setTAddressMode:"), (nuint)0);
+        _imageSampler = Send(_device, Sel("newSamplerStateWithDescriptor:"), sd);
+        Send(sd, S.release);
+        if (_imageSampler == 0) throw new Viewer3DPresentFault("Metal returned no sampler for the 3D view's images.");
 
         nint Depth(bool write, nuint compare = 3)
         {
@@ -196,7 +233,7 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
 
         // The pipelines hold what they need; the library and its functions were ours (new…), the
         // vertex descriptor was not (a class factory's autoreleased object).
-        foreach (nint f in new[] { vs, fsc, fsl, fsp, fse, fst, vsf, fsf }) Send(f, S.release);
+        foreach (nint f in new[] { vs, fsc, fsl, fsp, fse, fst, vsf, fsf, vsi, fsi }) Send(f, S.release);
         Send(lib, S.release);
     }
 
@@ -210,7 +247,38 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
         fixed (Scene3DVertex* p = scene.Vertices) _vb = NewBuffer(p, scene.Vertices.Length * Scene3DVertex.Stride);
         fixed (uint* p = scene.Indices) _ib = NewBuffer(p, scene.Indices.Length * 4);
         fixed (Scene3DVertex* p = scene.LineVertices) _lines = NewBuffer(p, scene.LineVertices.Length * Scene3DVertex.Stride);
+        Release(ref _imageVb);
+        fixed (Scene3DImageVertex* p = scene.ImageVertices) _imageVb = NewBuffer(p, scene.ImageVertices.Length * Scene3DImageVertex.Stride);
+        _textures.Sync(scene, UploadTexture, ReleaseTexture);
     }
+
+    /// <summary>brief-em3d-101 R-em3d101-4d — a texture with every one of its CPU-built mip levels, uploaded once per
+    /// <see cref="Scene3DTexture"/> (Scene3DTextureResidency decides when). Counted with the buffers.</summary>
+    private nint UploadTexture(Scene3DTexture t)
+    {
+        var levels = t.Levels();
+        nint d = ((delegate* unmanaged<nint, nint, nuint, nuint, nuint, byte, nint>)MsgSend)(Class("MTLTextureDescriptor"),
+            Sel("texture2DDescriptorWithPixelFormat:width:height:mipmapped:"), FmtRGBA8Unorm, (nuint)levels[0].Width, (nuint)levels[0].Height, 0);
+        SendV(d, Sel("setMipmapLevelCount:"), (nuint)levels.Count);
+        SendV(d, Sel("setUsage:"), (nuint)1);                        // ShaderRead
+        nint tex = Send(_device, Sel("newTextureWithDescriptor:"), d);
+        if (tex == 0) throw new Viewer3DPresentFault($"Metal returned no texture for a {levels[0].Width} × {levels[0].Height} image.");
+        for (int k = 0; k < levels.Count; k++)
+        {
+            var l = levels[k];
+            var region = new MtlRegion { Size = new MtlSize { W = (nuint)l.Width, H = (nuint)l.Height, D = 1 } };
+            fixed (byte* px = l.Rgba)
+                ((delegate* unmanaged<nint, nint, MtlRegion, nuint, void*, nuint, void>)MsgSend)(tex, Sel_replaceRegion, region, (nuint)k, px, (nuint)(l.Width * 4));
+            Counters.CountUpload(l.Rgba.Length);
+        }
+        return tex;
+    }
+
+    private static void ReleaseTexture(nint tex) { if (tex != 0) Send(tex, S.release); }
+
+    private static readonly nint Sel_replaceRegion = Sel("replaceRegion:mipmapLevel:withBytes:bytesPerRow:");
+    private static readonly nint Sel_setFragmentTexture = Sel("setFragmentTexture:atIndex:");
+    private static readonly nint Sel_setFragmentSampler = Sel("setFragmentSamplerState:atIndex:");
 
     /// <summary>brief-em3d-43 gate 6 — only the changed ranges, staged now and copied on the queue by the next
     /// frame (so never under a frame still reading them). Every staged byte is counted.</summary>
@@ -506,6 +574,20 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
                         draws++;
                         continue;
                     }
+                    if (d.Pipeline is Scene3DPipeline.Image or Scene3DPipeline.ImageTranslucent)
+                    {
+                        // brief-em3d-101 — an image: its texture and the one sampler, then its triangles (not indexed).
+                        var bound = _textures.Bound;
+                        if (_imageVb == 0 || d.Texture < 0 || d.Texture >= bound.Length || bound[d.Texture] == 0) continue;
+                        SendV(e, S.setRenderPipelineState, d.Pipeline == Scene3DPipeline.Image ? _pImage : _pImageTrans);
+                        SendV(e, S.setDepthStencilState, d.Pipeline == Scene3DPipeline.Image ? _dsWrite : _dsNoWrite);
+                        ((delegate* unmanaged<nint, nint, nint, nuint, nuint, void>)MsgSend)(e, S.setVertexBuffer, _imageVb, 0, 0);
+                        ((delegate* unmanaged<nint, nint, nint, nuint, void>)MsgSend)(e, Sel_setFragmentTexture, bound[d.Texture], 0);
+                        ((delegate* unmanaged<nint, nint, nint, nuint, void>)MsgSend)(e, Sel_setFragmentSampler, _imageSampler, 0);
+                        ((delegate* unmanaged<nint, nint, nuint, nuint, nuint, void>)MsgSend)(e, Sel_drawPrimitives, PrimTriangle, (nuint)d.First, (nuint)d.Count);
+                        draws++;
+                        continue;
+                    }
                     if (buf == 0 || (d.Pipeline is Scene3DPipeline.Opaque or Scene3DPipeline.Translucent or Scene3DPipeline.OnTop && _ib == 0)) continue;
                     if (d.Pipeline == Scene3DPipeline.Field && d.First + d.Count > _fieldCount) continue;
                     SendV(e, S.setRenderPipelineState, d.Pipeline switch
@@ -670,14 +752,15 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
             Release(ref _rbCmd[i]);
         }
         ReleaseImages();
-        Release(ref _vb); Release(ref _ib); Release(ref _lines); Release(ref _field);
+        Release(ref _vb); Release(ref _ib); Release(ref _lines); Release(ref _field); Release(ref _imageVb);
+        _textures.Clear(ReleaseTexture);
         for (int i = 0; i < 3; i++) Release(ref _overlays[i]);
         for (int i = 0; i < Ring; i++) Release(ref _rb[i]);
         Release(ref _depth); Release(ref _pickId); Release(ref _pickPos); Release(ref _pickDepth);
         foreach (var p in _patches) Send(p.Staging, S.release);
         _patches.Clear();
         Release(ref _pOpaque); Release(ref _pTrans); Release(ref _pLines); Release(ref _pPick); Release(ref _pField);
-        Release(ref _pEdges); Release(ref _pTop); Release(ref _pGrid);
+        Release(ref _pEdges); Release(ref _pTop); Release(ref _pGrid); Release(ref _pImage); Release(ref _imageSampler);
         Release(ref _dsWrite); Release(ref _dsNoWrite); Release(ref _dsAlways);
         if (_queue != 0) Send(_queue, S.release);
         if (_device != 0) Send(_device, S.release);

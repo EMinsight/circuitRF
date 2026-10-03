@@ -169,6 +169,13 @@ public abstract class C3dObject : IC3dBindable
     [JsonPropertyOrder(13)]
     public bool Model { get; set; } = true;
 
+    /// <summary>brief-em3d-101 R-em3d101-8 — images mapped onto this object's flat faces, at most one per face. Stored ON the object,
+    /// not in a document list: rename, delete, duplicate, array, group, copy/paste, instance content and undo carry them with no
+    /// code of their own, because each already carries the whole object. An operation carries them for its result; the object it
+    /// wraps has none. Drawing only. Written only when non-empty.</summary>
+    [JsonPropertyOrder(14)]
+    public List<C3dFaceImage>? FaceImages { get; set; }
+
     /// <summary>Keys this build does not read. Kept, and written back, so a document from a later build
     /// does not lose them by being opened here; <c>check</c> names each one.</summary>
     [JsonExtensionData]
@@ -271,6 +278,17 @@ public sealed class C3dSheet : C3dObject
 
     /// <summary>The metal's real thickness, micrometres — what the solver's surface impedance uses.</summary>
     public double? ThicknessUm { get; set; }
+
+    /// <summary>brief-em3d-101 R-em3d101-1 — the sheet is drawn with this image instead of its material's colour (the image fills
+    /// its rectangle, <see cref="C3dImages.FillRect"/>). Drawing only: the sheet takes part in a solve as any sheet does when it is
+    /// modelled, and nothing reads the image. Written only when set.</summary>
+    public C3dImage? Image { get; set; }
+
+    /// <summary>brief-em3d-101 R-em3d101-1g — an image sheet that refuses to move: still selected, picked and edited in the
+    /// Inspector, but Move, Rotate, the gizmo, nudges and vertex moves are refused. Meaningful only with an
+    /// <see cref="Image"/> (<c>check</c> warns otherwise). Written only when true.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Locked { get; set; }
 
     public override IReadOnlyList<string> FaceNames() => [];
 }

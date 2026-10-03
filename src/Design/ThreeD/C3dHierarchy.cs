@@ -230,7 +230,7 @@ public static class C3dHierarchy
         var used = new HashSet<string>(doc.Objects.Select(o => o.Name).Concat(doc.Instances.Where(i => i != inst).Select(i => i.Name)),
                                        StringComparer.Ordinal);
         var flat = inst.View == C3dInstanceView.ThreeD
-            ? FlattenThreeD(doc, inst, file, baseDir, used, tech, cache, workspaceCws, tempC)
+            ? FlattenThreeD(doc, docPath, inst, file, baseDir, used, tech, cache, workspaceCws, tempC)
             : FlattenLayout(doc, inst, elaboration, used, tech);
         // 3D editor groups — what the instance held lands in the instance's group; the child's own groups were the child's.
         foreach (var o in flat.Objects) o.Group = inst.Group;
@@ -265,7 +265,7 @@ public static class C3dHierarchy
                     yield return ($"_{i}_{j}_{k}", inst.Placement.Translated(new C3dPoint3(i * pitch.X, j * pitch.Y, k * pitch.Z)));
     }
 
-    private static C3dFlattenResult FlattenThreeD(C3dDocument doc, C3dInstance inst, string file, string baseDir, HashSet<string> used,
+    private static C3dFlattenResult FlattenThreeD(C3dDocument doc, string docPath, C3dInstance inst, string file, string baseDir, HashSet<string> used,
                                                   Technology? tech, TechnologyCache? cache, string? workspaceCws, double tempC)
     {
         C3dDocument child;
@@ -299,6 +299,7 @@ public static class C3dHierarchy
                 // brief-em3d-50 — a wire has no placement: the instance's lands on its points.
                 if (!exact || !C3dWires.BakePlacement(copy)) return C3dFlattenResult.Refuse(OffGrid(inst, o.Name));
                 copy.Name = Unique($"{inst.Name}{suffix}_{o.Name}", used);
+                C3dImages.Rebase([copy], file, docPath);     // brief-em3d-101 — an image resolves against its new document
                 objects.Add(copy);
             }
             foreach (var ci in child.Instances)
@@ -658,6 +659,7 @@ public static class C3dHierarchy
             o.Placement = o.Placement.Translated(minus);
             o.Group = Below(o.Group);
             C3dWires.BakePlacement(o);
+            C3dImages.Rebase([o], docPath, newPath);         // brief-em3d-101 — an image resolves against its new document
             child.Objects.Add(o);
         }
         foreach (int i in instanceIndices.Order())

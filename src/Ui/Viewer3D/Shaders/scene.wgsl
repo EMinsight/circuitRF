@@ -203,6 +203,59 @@ struct PickOut {
     return o;
 }
 
+// ── brief-em3d-101: an image ───────────────────────────────────────────────────────────────────────
+// An image sheet's surface (and, Phase B, an image mapped onto a face): its own triangles, a texture coordinate per vertex, and the
+// texture and sampler of group 1 — MSL [[texture(0)]] / [[sampler(0)]], HLSL t0 / s0, SPIR-V descriptor set 1 bindings 0 and 1
+// (tools/ShaderGen's README). Unshaded: the picture is the datum, as a field's colour is. A texel's alpha is multiplied by the
+// vertex colour's (the object's transparency), and outside [0, 1] there is no image at all — a face image larger than its face is
+// cropped by the face that way, with no texture memory spent on the clip. Picking draws the object's ordinary triangles (fs_pick),
+// so a fully transparent texel still picks.
+
+@group(1) @binding(0) var img: texture_2d<f32>;
+@group(1) @binding(1) var img_s: sampler;
+
+struct IVI {
+    @location(0) p: vec3f,
+    @location(1) uv: vec2f,
+    @location(2) id: u32,
+    @location(3) face: u32,
+    @location(4) col: vec4f,
+};
+
+struct IVO {
+    @builtin(position) pos: vec4f,
+    @location(0) world: vec3f,
+    @location(1) uv: vec2f,
+    @location(2) @interpolate(flat) id: u32,
+    @location(3) @interpolate(flat) face: u32,
+    @location(4) col: vec4f,
+};
+
+@vertex fn vs_image(v: IVI) -> IVO {
+    var o: IVO;
+    let p = (mx.m * vec4f(v.p, 1.0)).xyz;
+    o.pos = u.vp * vec4f(p, 1.0);
+    o.world = p;
+    o.uv = v.uv;
+    o.id = v.id + mx.id.x;
+    o.face = v.face;
+    o.col = v.col;
+    return o;
+}
+
+@fragment fn fs_image(i: IVO) -> @location(0) vec4f {
+    // Sampled first: a sample's derivatives need uniform control flow, so nothing is discarded before it.
+    let t = textureSample(img, img_s, i.uv);
+    if (clipped(i.world)) { discard; }
+    let e = 1e-4;
+    if (i.uv.x < -e || i.uv.x > 1.0 + e || i.uv.y < -e || i.uv.y > 1.0 + e) { discard; }
+    var a = t.a * i.col.a;
+    // An object selected in Object mode is drawn faded, as fs_color draws it.
+    if (u.mode == 0u && is_selected(i.id, 0u)) { a = min(a, 0.5); }
+    if (a <= 0.0) { discard; }
+    return vec4f(highlight(t.rgb, i.id, i.face), a);
+}
+
 // ── brief-em3d-29: the field pass ──────────────────────────────────────────────────────────────────
 // The value is computed HERE from the vertex's real and imaginary parts and the phase uniform, so an
 // animated frame changes one uniform and uploads nothing. Unshaded: the colour is the datum. A value

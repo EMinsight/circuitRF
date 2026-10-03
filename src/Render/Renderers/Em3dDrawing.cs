@@ -356,6 +356,9 @@ public static class Em3dDrawingSheet
         using var stroke = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeCap = SKStrokeCap.Round, StrokeJoin = SKStrokeJoin.Round };
         using var dash = SKPathEffect.CreateDash([3f, 2f], 0);
 
+        // brief-em3d-101 — an outline's image sheets, in the fill's slot: under every line.
+        if (scene.Images.Count > 0) Em3dSceneImages.Draw(canvas, scene.Images, Map, style.ObjectTransparency);
+
         foreach (var r in scene.Regions)
         {
             if (r.Role == Em3dRole.Air) continue;

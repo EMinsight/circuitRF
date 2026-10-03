@@ -167,6 +167,7 @@ public sealed partial class C3dEditorViewModel : IC3dFaceHost
             return;
         }
         if (v.Vertex < 0) { StatusMessage = C3dFaceEditor.CylinderVertexMove; return; }
+        if (v.Obj is C3dSheet { Locked: true } locked) { StatusMessage = LockedRefusal(locked.Name); return; }
         var tool = new FaceMoveTool(this, v.Index, v.Obj, v.Vertex);
         BeginFaceEdit(tool, null, -1);
         _snapExcludedPoints.Add(DrawGeometry.Metres(v.World, Document.DbuPerMicron));

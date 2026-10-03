@@ -630,9 +630,34 @@ public sealed class Viewer3DPane : Control
 
     private static bool Command(DragEventArgs e) => (e.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Meta)) != 0;
 
+    /// <summary>brief-em3d-101 R-em3d101-2c — the files a drop carries (DataFormat.File): one IStorageItem per item on macOS, a
+    /// list on other backends, or a bare path — every one of them.</summary>
+    private static List<string> DragFiles(DragEventArgs e)
+    {
+        var list = new List<string>();
+        foreach (var item in e.DataTransfer.Items)
+        {
+            switch (item.TryGetRaw(DataFormat.File))
+            {
+                case Avalonia.Platform.Storage.IStorageItem single when single.Path?.LocalPath is { Length: > 0 } p: list.Add(p); break;
+                case IEnumerable<Avalonia.Platform.Storage.IStorageItem> many: list.AddRange(many.Select(f => f.Path?.LocalPath).OfType<string>()); break;
+                case string s: list.Add(s); break;
+            }
+        }
+        return list;
+    }
+
     private void OnTreeDragOver(object? sender, DragEventArgs e)
     {
         var p = e.GetPosition(this);
+        if (DragFiles(e) is { Count: > 0 } files)
+        {
+            // A file from the operating system: an image places a sheet; anything else is refused, never half-imported.
+            bool place = _vm?.FileDragOver((float)p.X, (float)p.Y, files) == true;
+            e.DragEffects = place ? DragDropEffects.Copy : DragDropEffects.None;
+            e.Handled = true;
+            return;
+        }
         bool ok = DragText(e) is { } text && _vm?.TreeDragOver((float)p.X, (float)p.Y, text, Command(e)) == true;
         e.DragEffects = ok ? DragDropEffects.Copy : DragDropEffects.None;
         if (ok) e.Handled = true;
@@ -640,6 +665,12 @@ public sealed class Viewer3DPane : Control
 
     private void OnTreeDrop(object? sender, DragEventArgs e)
     {
+        if (DragFiles(e) is { Count: > 0 } files)
+        {
+            var at = e.GetPosition(this);
+            if (_vm?.FileDrop((float)at.X, (float)at.Y, files, (e.KeyModifiers & KeyModifiers.Shift) != 0) == true) { e.Handled = true; Focus(); }
+            return;
+        }
         if (DragText(e) is not { } text) return;
         var p = e.GetPosition(this);
         if (_vm?.TreeDrop((float)p.X, (float)p.Y, text, Command(e)) != true) return;
