@@ -242,6 +242,21 @@ public sealed class FaceImageTests : IDisposable
         var plan = new Scene3DFramePlan();
         plan.Plan(scene, vm.Viewer.View, (int)W, (int)H, false, false, Scene3DOverlay.None, Scene3DOverlay.None, Scene3DOverlay.None);
         Assert.Contains(plan.Draws.Take(plan.DrawCount), d => d.Pipeline == Scene3DPipeline.ImageTranslucent && d.Tie == Scene3DDepthTie.FaceImage);
+
+        // The Inspector's slider is live: a drag redraws the image at each position and writes nothing until it is released.
+        vm.Viewer.SetSelection([Scene3DItem.OfObject(scene.Objects.Single(o => o.Name == C3dEditorViewModel.FaceImageSceneName("b", "zmax")).Id)]);
+        Assert.True(vm.Properties.HasFaceImage);
+        int entries = vm.UndoEntries;
+        vm.Properties.FaceImageTransparencySlider = 60;
+        Settle(vm);                                                  // the preview's scene reloads the panel mid-drag
+        Assert.Equal(60, vm.Properties.FaceImageTransparencySlider);
+        scene = vm.Viewer.Scene;
+        Assert.Equal(102u, scene.ImageVertices[scene.ImageBatches.Single().FirstVertex].Rgba >> 24);
+        Assert.Equal(80, vm.Document.Objects[0].FaceImages![0].Transparency);
+        Assert.Equal(entries, vm.UndoEntries);
+        vm.Properties.CommitFaceImageTransparencySlider();
+        Assert.Equal(60, vm.Document.Objects[0].FaceImages![0].Transparency);
+        Assert.Equal(entries + 1, vm.UndoEntries);
     }
 
     // ── gates 5 and 6: removal, all three ways, through one function; replace ────────────────

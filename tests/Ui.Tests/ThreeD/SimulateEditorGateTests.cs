@@ -189,6 +189,47 @@ public sealed class SimulateEditorGateTests : IDisposable
         Assert.Null(vm.SceneObject("port/1"));
     }
 
+    /// <summary>A port unticked shows nothing of itself — its sheet, its number, and for a refused port its "refused" text and red
+    /// outline — and stays that way across a rebuild; ticked again, all of it is back.</summary>
+    [Fact]
+    public void APortUnticked_DrawsNothingOfItself_ResolvedOrRefused()
+    {
+        C3dRect R(long u, long v, long du, long dv) => new() { Min = new C3dPoint2(u * Um, v * Um), Size = new C3dPoint2(du * Um, dv * Um) };
+        var doc = Microstrip(Setup("S1"));
+        doc.Ports =
+        [
+            new C3dPort { Number = 1, Plane = C3dPlane.YZ, Offset = 0, Rect = R(450, 0, 100, 100) },     // trace to ground
+            new C3dPort { Number = 2, Plane = C3dPlane.YZ, Offset = 0, Rect = R(450, 300, 100, 100) },   // above everything: refused
+        ];
+        var vm = Open(doc);
+        Assert.NotNull(vm.PortResults[0].Resolved);
+        Assert.Null(vm.PortResults[1].Resolved);
+        C3dTreeItem Row(string name) => vm.Tree.SelectMany(g => g.Items).Single(r => r.Kind == "Port" && r.Name == name);
+        Viewer3DDrawOverlay Overlay() { var o = new Viewer3DDrawOverlay(); vm.FillDrawOverlay(o); return o; }
+        var shown = Overlay();
+        Assert.Contains(shown.Labels, l => l.Text == "1");
+        Assert.Contains(shown.Labels, l => l.Text.EndsWith(": refused"));
+        Assert.NotEmpty(shown.Crossing);
+
+        Row("port/1").IsVisible = false;
+        Row("port/2").IsVisible = false;
+        vm.Viewer.Regenerate();
+        Settle(vm);
+        var hidden = Overlay();
+        Assert.Empty(hidden.Labels);
+        Assert.Empty(hidden.Crossing);
+        Assert.False(vm.Viewer.View.IsVisible(vm.SceneObject("port/1")!.Id));
+        Assert.False(Row("port/1").IsVisible);
+        Assert.False(Row("port/2").IsVisible);
+
+        Row("port/1").IsVisible = true;
+        Row("port/2").IsVisible = true;
+        var back = Overlay();
+        Assert.Contains(back.Labels, l => l.Text == "1");
+        Assert.Contains(back.Labels, l => l.Text.EndsWith(": refused"));
+        Assert.True(vm.Viewer.View.IsVisible(vm.SceneObject("port/1")!.Id));
+    }
+
     // ── fixtures ────────────────────────────────────────────────────────────────────────────
 
     private static C3dDrawInput At(long x, long y, long z) => new(new C3dPoint3(x * Um, y * Um, z * Um), true, true, null, null);

@@ -206,6 +206,8 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     {
         // brief-em3d-92 — a transparency slider's drag draws a copy with the dragged value.
         if (_transparencyPreview is { } tp) return TransparencyPreviewText(tp);
+        // … and so does a face image's (brief-em3d-101).
+        if (_faceImageTransparencyPreview is { } fp) return FaceImageTransparencyPreviewText(fp);
         if (_facePreview is not { } p || p.Index >= Document.Objects.Count) return C3dPersistence.Serialize(Document);
         var objects = Document.Objects;
         var variables = Document.Variables;
@@ -336,6 +338,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         ApplySnapExclusion();
         foreach (long old in _elaborations.Keys.Where(k => k <= gen).ToList()) _elaborations.TryRemove(old, out _);
         ApplyHiddenFlags();
+        ApplyHiddenPorts();
         RefreshTreeVisibility();
         RebuildInstanceChildren();
         RefreshWireFlags();
@@ -514,6 +517,12 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
                          o => keepNames is not null && !keepNames.Contains(o.Name));
         foreach (var s in Viewer.Scene.Objects.Where(s => s.Pickable && DocumentIndex(s) < 0))
             Viewer.SetVisibleEverywhere(s.Id, keepNames is null || keepNames.Contains(s.Name));
+        if (keepNames is null && _hiddenPorts.Count > 0)
+        {
+            _hiddenPorts.Clear();       // Show All shows a refused port's outline too, and its row's tick follows
+            foreach (var row in AllTreeItems().Where(t => t.Kind == "Port")) row.Sync(true);
+            Viewer.RequestFrame();
+        }
         return true;
     }
 

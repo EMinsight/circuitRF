@@ -1,5 +1,5 @@
 // brief-em3d-101 R-em3d101-9d — the Inspector's section for an image mapped onto a face: File (Browse…, Reveal), Pixels, its OWN
-// Transparency (slider, box and Default from C3dTransparency.Max — a drag is one entry, written on release), Rotation (degrees, and
+// Transparency (slider, box and Default from C3dTransparency.Max — a drag previews live and is one entry, written on release), Rotation (degrees, and
 // ⟲ 90° / ⟳ 90°), Width and Height with Keep aspect, Offset (right, up), Fit to Face, Hidden and Remove Image. Shown for the image
 // selected in the view or its tree row, and below a face's readout when that face carries one. Every write is the editor's
 // SetFaceImage (one undo entry), and Remove Image is RemoveFaceImages — the one remover.
@@ -32,11 +32,20 @@ public sealed partial class C3dPropertiesViewModel
 
     private (int Index, string Face)? _faceImage;
 
+    /// <summary>A slider drag's value not yet written (the preview shows it); written on release.</summary>
+    private int? _faceImageDragged;
+
+    /// <summary>The drag's value across a reload: each preview's scene reloads this panel mid-drag, and the row must come back
+    /// showing the value being dragged, not the document's (as the object's Transparency row does).</summary>
+    private int? _faceImageDraggedAcrossReload;
+
     private void ClearFaceImage()
     {
         HasFaceImage = false;
         _faceImage = null;
         FaceImageError = null;
+        _faceImageDraggedAcrossReload = _faceImageDragged;
+        _faceImageDragged = null;
     }
 
     /// <summary>The section for the image on face <paramref name="face"/> of the object at <paramref name="index"/>.</summary>
@@ -61,6 +70,31 @@ public sealed partial class C3dPropertiesViewModel
         FaceImageHidden = fi.Hidden;
         FaceImageProblem = editor.FaceImageProblem(doc.Objects[index].Name, fi);
         FaceImageError = null;
+        if (_faceImageDraggedAcrossReload is { } dragged && editor.IsPreviewingFaceImageTransparency(index, face))
+        {
+            _faceImageDragged = dragged;
+            FaceImageTransparencySlider = dragged;
+            FaceImageTransparencyText = dragged.ToString(CultureInfo.InvariantCulture);
+        }
+    }
+
+    /// <summary>After a reload: a drag whose image is no longer shown here ends, so the view stops drawing a value nothing will
+    /// write.</summary>
+    private void EndStrayFaceImagePreview()
+    {
+        _faceImageDraggedAcrossReload = null;
+        if (_faceImageDragged is null) editor.EndFaceImageTransparencyPreview();
+    }
+
+    partial void OnFaceImageTransparencySliderChanged(double value)
+    {
+        if (_loading || _faceImage is not { } f) return;
+        int v = (int)Math.Clamp(Math.Round(value), 0, C3dTransparency.Max);
+        _faceImageDragged = v;
+        _loading = true;
+        try { FaceImageTransparencyText = v == 0 ? "" : v.ToString(CultureInfo.InvariantCulture); }
+        finally { _loading = false; }
+        editor.PreviewFaceImageTransparency(f.Index, f.Face, v == 0 ? null : v);
     }
 
     private void Write(string what, Action<C3dFaceImage> change)
@@ -72,8 +106,8 @@ public sealed partial class C3dPropertiesViewModel
     /// <summary>The slider's release (and a key on it): its value written, one entry per drag.</summary>
     public void CommitFaceImageTransparencySlider()
     {
-        if (_loading || !HasFaceImage) return;
-        int v = (int)Math.Round(FaceImageTransparencySlider);
+        if (_loading || !HasFaceImage || _faceImageDragged is not { } v) return;
+        _faceImageDragged = null;
         Write("Transparency", fi => fi.Transparency = v == 0 ? null : v);
     }
 

@@ -944,11 +944,37 @@ public sealed partial class C3dEditorViewModel
 
     // ── the overlay: numbers, refusals, the port tool's live inference ───────────────────────
 
+    /// <summary>Ports whose row is unticked — the view's alone, as a thermal place's tick is (a port has no Hidden in its file).
+    /// Kept by name rather than read only off the scene, because a REFUSED port has no scene object to hide.</summary>
+    private readonly HashSet<string> _hiddenPorts = new(StringComparer.Ordinal);
+
+    /// <summary>Whether the port named <paramref name="problemName"/> is drawn at all — its sheet, its number, its refusal and its
+    /// red outline: its row is ticked, and its sheet (when it has one) was not hidden in the view (H, Isolate).</summary>
+    public bool IsPortShown(string problemName)
+        => !_hiddenPorts.Contains(problemName) && (SceneObject(problemName) is not { } s || Viewer.View.IsVisible(s.Id));
+
+    /// <summary>A port row's tick: its sheet, and everything the overlay draws for it, shown or hidden for this session.</summary>
+    private void SetPortShown(string problemName, bool shown)
+    {
+        if (shown) _hiddenPorts.Remove(problemName); else _hiddenPorts.Add(problemName);
+        Viewer.RequestFrame();
+    }
+
+    /// <summary>After an adoption: a hidden port's sheet stays hidden — including one that was refused (no sheet) when it was
+    /// unticked and resolves now.</summary>
+    private void ApplyHiddenPorts()
+    {
+        if (_hiddenPorts.Count == 0) return;
+        Viewer.SetVisibleEverywhere(_hiddenPorts.Select(SceneObject).OfType<Scene3DObject>().Select(s => (s.Id, false)).ToList());
+    }
+
     private void FillSimulateOverlay(Viewer3DDrawOverlay overlay)
     {
         int dbu = Document.DbuPerMicron;
         foreach (var r in PortResults)
         {
+            // A port unticked shows nothing of itself: no number, no refusal, no red outline.
+            if (!IsPortShown(C3dPorts.ProblemName(r.Port.Number))) continue;
             if (r.Resolved is { } p)
             {
                 overlay.Labels.Add((Centre(p.Min, p.Max), r.Port.Number.ToString(CultureInfo.InvariantCulture)));
@@ -1035,7 +1061,8 @@ public sealed partial class C3dEditorViewModel
         var rows = PortResults.Select(r => (Off: !r.Port.Model, Row: new C3dTreeItem(this, C3dPorts.ProblemName(r.Port.Number), "Port",
             r.Resolved is { } p ? $"{C3dPorts.Label(r.Port)} {(p.Kind == Em3dPortKind.Wave ? "wave" : "lumped")}: {p.NegativeObject} → {p.PositiveObject}" +
                                   (r.Port.Model ? "" : C3dModelled.Suffix)
-                                : $"{C3dPorts.Label(r.Port)}: {(r.Port.Model ? "refused" : "not modelled")}", -1, -1, true)
+                                : $"{C3dPorts.Label(r.Port)}: {(r.Port.Model ? "refused" : "not modelled")}", -1, -1,
+                                  IsPortShown(C3dPorts.ProblemName(r.Port.Number)))
             { IsReadOnly = true, IsModelled = r.Port.Model })).ToList();
         bool byType = TreeGrouping == C3dTreeGrouping.Primitive;
         var ports = rows.Where(t => !(byType && t.Off)).Select(t => t.Row).ToList();

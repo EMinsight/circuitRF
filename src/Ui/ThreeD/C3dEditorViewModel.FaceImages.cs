@@ -124,11 +124,51 @@ public sealed partial class C3dEditorViewModel
         StatusMessage = $"Removed {what}.";
     }
 
-    /// <summary>One face image's edit (transparency, rotation, size, offset, Fit to Face, file): one undo entry.</summary>
+    /// <summary>One face image's edit (transparency, rotation, size, offset, Fit to Face, file): one undo entry. Ends a
+    /// transparency drag's preview — the write is what the scene shows from now on.</summary>
     public void SetFaceImage(int index, string face, string description, Action<C3dFaceImage> change)
     {
-        if (FaceImageAt(index, face) is null) return;
-        ChangeFaceImages(description, [index], o => { if (o.FaceImages?.FirstOrDefault(f => f.Face == face) is { } fi) change(fi); });
+        bool previewed = _faceImageTransparencyPreview is not null;
+        _faceImageTransparencyPreview = null;
+        if (FaceImageAt(index, face) is null) { if (previewed) Viewer.Regenerate(); return; }
+        if (!ChangeFaceImages(description, [index], o => { if (o.FaceImages?.FirstOrDefault(f => f.Face == face) is { } fi) change(fi); })
+            && previewed)
+            Viewer.Regenerate();   // the drag came back to where it started: show the document again
+    }
+
+    // ── a transparency slider's drag: previewed live, written once on release (as an object's is, brief-em3d-92) ─────────
+
+    /// <summary>The face image a slider drag is showing a transparency on, and the value; null when no drag is in progress.</summary>
+    private (int Index, string Face, int? Value)? _faceImageTransparencyPreview;
+
+    /// <summary>Shows <paramref name="value"/> on the face image without writing the document: the Inspector slider's drag.</summary>
+    public void PreviewFaceImageTransparency(int index, string face, int? value)
+    {
+        if (_faceImageTransparencyPreview == (index, face, value)) return;
+        _faceImageTransparencyPreview = (index, face, value);
+        TransparencyPreviews++;
+        Viewer.Regenerate();
+    }
+
+    /// <summary>Whether a drag is previewing a transparency on exactly this face image.</summary>
+    public bool IsPreviewingFaceImageTransparency(int index, string face)
+        => _faceImageTransparencyPreview is { } p && p.Index == index && p.Face == face;
+
+    /// <summary>Ends a face image's preview without writing anything. Nothing to end, nothing done.</summary>
+    public void EndFaceImageTransparencyPreview()
+    {
+        if (_faceImageTransparencyPreview is null) return;
+        _faceImageTransparencyPreview = null;
+        Viewer.Regenerate();
+    }
+
+    /// <summary>The document's text with a drag's value on its face image — a copy; the document is never written here.</summary>
+    private string FaceImageTransparencyPreviewText((int Index, string Face, int? Value) p)
+    {
+        var copy = C3dPersistence.Deserialize(C3dPersistence.Serialize(Document));
+        if (p.Index < copy.Objects.Count && copy.Objects[p.Index].FaceImages?.FirstOrDefault(f => f.Face == p.Face) is { } fi)
+            fi.Transparency = p.Value;
+        return C3dPersistence.Serialize(copy);
     }
 
     /// <summary>R-em3d101-9c — face images' Hidden, saved, one undo entry: what their rows' ticks, H and Hide all write

@@ -284,6 +284,7 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         try { Load(); }
         finally { _loading = false; }
         EndStrayTransparencyPreview();
+        EndStrayFaceImagePreview();
         EndStrayPlotOffsetPreview();
         OnPropertyChanged(nameof(Materials));
         OnPropertyChanged(nameof(LengthUnit));

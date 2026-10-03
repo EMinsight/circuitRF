@@ -150,6 +150,7 @@ public sealed partial class C3dEditorViewModel
                     if (SceneObject(n) is { } s) Viewer.SetVisibleEverywhere(s.Id, visible);
                 foreach (var c in r.Children) c.Sync(visible);
                 r.Sync(visible);
+                if (r.Kind == "Port") SetPortShown(r.Name, visible);   // a refused port has no sheet: its overlay goes too
             }
         }
         BeginGroup(description);
