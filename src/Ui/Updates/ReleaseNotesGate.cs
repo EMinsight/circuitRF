@@ -135,12 +135,18 @@ public static class ReleaseNotesGate
     /// <para>Rule 2 also covers the one-off case of an existing installation whose state directory has
     /// been wiped: it costs that user one release's notes and cannot produce the failure that matters,
     /// which is a first-run dialog on a machine that has never run circuitRF.</para>
+    ///
+    /// <para><b>Rule 1 is "this version or an OLDER one", not "this exact string".</b> The record is a
+    /// high-water mark: an equality test re-showed a version's notes the first time any OTHER version
+    /// had run on the machine in between — an updater rollback, a hand-installed older build, or a
+    /// development build sharing the same state directory — because the newer version had overwritten
+    /// the record. Versions that do not parse fall back to equality.</para>
     /// </summary>
     public static ReleaseNotesDecision Decide(bool installationExisted, string? shownFor,
                                               string currentVersion, bool showPreference)
     {
         if (string.IsNullOrWhiteSpace(currentVersion)) return ReleaseNotesDecision.None;
-        if (string.Equals(shownFor, currentVersion, StringComparison.Ordinal)) return ReleaseNotesDecision.None;
+        if (AlreadyCovered(shownFor, currentVersion)) return ReleaseNotesDecision.None;
 
         if (!installationExisted) return ReleaseNotesDecision.RecordSilently;
         if (!showPreference)      return ReleaseNotesDecision.RecordSilently;
@@ -156,9 +162,28 @@ public static class ReleaseNotesGate
     /// that is still a showing — retrying it on every launch until the network happens to be up would
     /// put an error dialog in front of an offline user indefinitely. The dialog names the repository
     /// so they can look for themselves whenever they like.</para>
+    ///
+    /// <para><b>It never LOWERS the mark</b>, for the reason <see cref="Decide"/>'s rule 1 gives: an
+    /// older version launched after a newer one must not re-open the newer one's notes later.</para>
     /// </summary>
     public static void MarkShown(string version)
-        => UpdateStateIo.Update(s => s.ReleaseNotesShownFor = version);
+        => UpdateStateIo.Update(s =>
+        {
+            if (!AlreadyCovered(s.ReleaseNotesShownFor, version)) s.ReleaseNotesShownFor = version;
+        });
+
+    /// <summary>
+    /// Whether <paramref name="version"/>'s notes are covered by a record of <paramref name="shownFor"/>
+    /// — the same version, or an older one. Ordinal equality when either does not parse.
+    /// </summary>
+    private static bool AlreadyCovered(string? shownFor, string version)
+    {
+        if (string.Equals(shownFor, version, StringComparison.Ordinal)) return true;
+
+        return SemanticVersion.TryParse(shownFor, out SemanticVersion? shown)
+            && SemanticVersion.TryParse(version, out SemanticVersion? running)
+            && running!.CompareTo(shown) <= 0;
+    }
 
     /// <summary>Test seam: sets what <see cref="CaptureAtStartup"/> would have found.</summary>
     internal static void OverrideCaptureForTests(bool installationExisted)

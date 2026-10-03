@@ -38776,3 +38776,23 @@ window server froze until a forced restart.
   all three; one missing from any of them either closes silently or never prompts.
 - Gate: `tests/Ui.Tests/BulkTabCloseTests.cs` (with the guard and the `CloseAllDockables` override
   removed, 4 of its 10 cases fail).
+
+## Release Notes: an older version re-showed its notes; the last lines of the notes were never drawn (2026-10-02)
+
+- **Re-showing.** `ReleaseNotesGate.Decide` compared `release_notes_shown_for` with the running
+  version by ordinal EQUALITY, and `MarkShown` overwrote it unconditionally. Any launch of a different
+  version in between — an updater rollback, a hand-installed older build, or a development build (the
+  repo's own Debug build reads `VERSION` and shares the same `updates/state.json`) — replaced the
+  record, so the next launch of the packaged version showed its notes again. The record is now a
+  high-water mark: an older-or-equal version shows nothing, and `MarkShown` never lowers it
+  (`AlreadyCovered`; ordinal equality when a version does not parse). Consequence worth knowing: a
+  Debug build at the next version records it, so the packaged upgrade to that version shows nothing.
+- **Missing lines.** Not intermittent — measured headlessly against the real 1.0.0/1.0.1/1.0.2 bodies,
+  38–872 characters were dropped on EVERY showing at every width (1.0.1 at 720 px lost its whole last
+  bullet). `ScrollViewer Padding="12,10"` measured the `SelectableTextBlock` at its full desired height
+  (990) but arranged it 20 px shorter (970), and `TextBlock` rebuilds its `TextLayout` at arrange time
+  with that height as `MaxHeight`, discarding the lines that no longer fit. The text was absent from
+  the layout, not clipped by a viewport, so scrolling could never reach it. Fix: the inset is the text
+  block's `Margin`, which layout applies identically in measure and arrange. **Never put `Padding` on
+  a `ScrollViewer` whose direct child is a text block**; a panel child is unaffected because it
+  arranges its own children at their desired heights.

@@ -39,10 +39,16 @@
             BorderThickness="1"
             CornerRadius="4"
             ClipToBounds="True">
-      <ScrollViewer Name="NotesScroll" Padding="12,10"
+      <!-- The inset is the text block's MARGIN, never the ScrollViewer's Padding. A padded
+           ScrollViewer measures its child at full height but arranges it shorter by the vertical
+           padding, and a TextBlock rebuilds its layout at arrange time with that height as its
+           MaxHeight — so the last line or two (20 px of padding, 18 px lines) were silently
+           discarded from every showing. A margin is applied identically in measure and arrange. -->
+      <ScrollViewer Name="NotesScroll"
                     HorizontalScrollBarVisibility="Disabled"
                     VerticalScrollBarVisibility="Auto">
         <SelectableTextBlock Name="NotesText"
+                             Margin="12,10"
                              TextWrapping="Wrap"
                              FontSize="12"
                              LineHeight="18"

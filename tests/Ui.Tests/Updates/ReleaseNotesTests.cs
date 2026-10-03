@@ -86,6 +86,19 @@ public class ReleaseNotesGateTests
     [Fact]
     public void NoVersion_DoesNothing()
         => Assert.Equal(ReleaseNotesDecision.None, ReleaseNotesGate.Decide(true, null, "", true));
+
+    /// <summary>
+    /// The record is a high-water mark: a version older than the one last shown has nothing new to
+    /// say. With an equality test, launching 1.0.1 after anything newer had run on the machine (an
+    /// updater rollback, a development build sharing the state directory) re-showed 1.0.1's notes.
+    /// </summary>
+    [Fact]
+    public void AnOlderVersionThanTheOneShown_ShowsNothing()
+    {
+        Assert.Equal(ReleaseNotesDecision.None, ReleaseNotesGate.Decide(true, "1.0.2", "1.0.1", true));
+        Assert.Equal(ReleaseNotesDecision.None, ReleaseNotesGate.Decide(true, "1.0.0", "1.0.0-beta.37", true));
+        Assert.Equal(ReleaseNotesDecision.Show, ReleaseNotesGate.Decide(true, "1.0.1", "1.0.2", true));
+    }
 }
 
 /// <summary>
@@ -150,6 +163,18 @@ public sealed class ReleaseNotesPreferenceTests : IDisposable
             string prefs = File.ReadAllText(Path.Combine(_root, "preferences.json"));
             Assert.DoesNotContain("release_notes_shown_for", prefs);
         }
+    }
+
+    /// <summary>An older version's launch must not lower the mark a newer one left.</summary>
+    [Fact]
+    public void MarkShown_NeverLowersTheMark()
+    {
+        ReleaseNotesGate.MarkShown("1.0.2");
+        ReleaseNotesGate.MarkShown("1.0.1");
+        Assert.Equal("1.0.2", UpdateStateIo.Load().ReleaseNotesShownFor);
+
+        ReleaseNotesGate.MarkShown("1.0.3");
+        Assert.Equal("1.0.3", UpdateStateIo.Load().ReleaseNotesShownFor);
     }
 
     /// <summary>
