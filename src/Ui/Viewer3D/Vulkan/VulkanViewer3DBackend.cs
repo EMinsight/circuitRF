@@ -520,9 +520,19 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
         VkMemoryRequirements req;
         api.vkGetBufferMemoryRequirements(b, &req);
         var mai = new VkMemoryAllocateInfo { allocationSize = req.size, memoryTypeIndex = MemoryType(req.memoryTypeBits, props) };
-        VkDeviceMemory m;
-        Check(api.vkAllocateMemory(&mai, null, &m), "vkAllocateMemory");
-        Check(api.vkBindBufferMemory(b, m, 0), "vkBindBufferMemory");
+        VkDeviceMemory m = default;
+        try
+        {
+            // out of memory here (a large photo's staging buffer) must not leave the buffer behind
+            Check(api.vkAllocateMemory(&mai, null, &m), "vkAllocateMemory");
+            Check(api.vkBindBufferMemory(b, m, 0), "vkBindBufferMemory");
+        }
+        catch
+        {
+            if (m.Handle != 0) api.vkFreeMemory(m, null);
+            api.vkDestroyBuffer(b, null);
+            throw;
+        }
         return (b, m);
     }
 
@@ -610,93 +620,103 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
         long total = levels.Sum(l => (long)l.Rgba.Length);
         Counters.CountUpload(total);
         var staging = NewBuffer(api, total, VkBufferUsageFlags.TransferSrc, VkMemoryPropertyFlags.HostVisible | VkMemoryPropertyFlags.HostCoherent);
-        void* p;
-        Check(api.vkMapMemory(staging.Item2, 0, (ulong)total, 0, &p), "vkMapMemory");
-        long at = 0;
-        foreach (var l in levels) { l.Rgba.AsSpan().CopyTo(new Span<byte>((byte*)p + at, l.Rgba.Length)); at += l.Rgba.Length; }
-        api.vkUnmapMemory(staging.Item2);
-
+        // A failure part-way (out of device memory on a large photo, above all) releases what was made before it — the staging
+        // buffer always, the image, its memory, view and pool when the upload does not complete — and is then thrown as before.
         var tex = new Texture();
-        uint mips = (uint)levels.Count;
-        var ici = new VkImageCreateInfo
+        bool done = false;
+        try
         {
-            imageType = VkImageType.Image2D, format = VkFormat.R8G8B8A8Unorm,
-            extent = new VkExtent3D { width = (uint)levels[0].Width, height = (uint)levels[0].Height, depth = 1 },
-            mipLevels = mips, arrayLayers = 1, samples = VkSampleCountFlags.Count1, tiling = VkImageTiling.Optimal,
-            usage = VkImageUsageFlags.Sampled | VkImageUsageFlags.TransferDst, sharingMode = VkSharingMode.Exclusive,
-            initialLayout = VkImageLayout.Undefined,
-        };
-        VkImage created;
-        Check(api.vkCreateImage(&ici, null, &created), "vkCreateImage");
-        var img = created;
-        tex.Image = img;
-        VkMemoryRequirements req;
-        api.vkGetImageMemoryRequirements(img, &req);
-        var mai = new VkMemoryAllocateInfo { allocationSize = req.size, memoryTypeIndex = MemoryType(req.memoryTypeBits, VkMemoryPropertyFlags.DeviceLocal) };
-        VkDeviceMemory mem;
-        Check(api.vkAllocateMemory(&mai, null, &mem), "vkAllocateMemory");
-        Check(api.vkBindImageMemory(img, mem, 0), "vkBindImageMemory");
-        tex.Memory = mem;
-        var all = new VkImageSubresourceRange { aspectMask = VkImageAspectFlags.Color, levelCount = mips, layerCount = 1 };
-        OneShot(api, cb =>
-        {
-            var toDst = new VkImageMemoryBarrier
+            void* p;
+            Check(api.vkMapMemory(staging.Item2, 0, (ulong)total, 0, &p), "vkMapMemory");
+            long at = 0;
+            foreach (var l in levels) { l.Rgba.AsSpan().CopyTo(new Span<byte>((byte*)p + at, l.Rgba.Length)); at += l.Rgba.Length; }
+            api.vkUnmapMemory(staging.Item2);
+
+            uint mips = (uint)levels.Count;
+            var ici = new VkImageCreateInfo
             {
-                srcAccessMask = 0, dstAccessMask = VkAccessFlags.TransferWrite,
-                oldLayout = VkImageLayout.Undefined, newLayout = VkImageLayout.TransferDstOptimal,
-                srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED, dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED, image = img, subresourceRange = all,
+                imageType = VkImageType.Image2D, format = VkFormat.R8G8B8A8Unorm,
+                extent = new VkExtent3D { width = (uint)levels[0].Width, height = (uint)levels[0].Height, depth = 1 },
+                mipLevels = mips, arrayLayers = 1, samples = VkSampleCountFlags.Count1, tiling = VkImageTiling.Optimal,
+                usage = VkImageUsageFlags.Sampled | VkImageUsageFlags.TransferDst, sharingMode = VkSharingMode.Exclusive,
+                initialLayout = VkImageLayout.Undefined,
             };
-            api.vkCmdPipelineBarrier(cb, VkPipelineStageFlags.TopOfPipe, VkPipelineStageFlags.Transfer, 0, 0, null, 0, null, 1, &toDst);
-            var regions = new VkBufferImageCopy[levels.Count];
-            ulong offset = 0;
-            for (int k = 0; k < levels.Count; k++)
+            VkImage created;
+            Check(api.vkCreateImage(&ici, null, &created), "vkCreateImage");
+            var img = created;
+            tex.Image = img;
+            VkMemoryRequirements req;
+            api.vkGetImageMemoryRequirements(img, &req);
+            var mai = new VkMemoryAllocateInfo { allocationSize = req.size, memoryTypeIndex = MemoryType(req.memoryTypeBits, VkMemoryPropertyFlags.DeviceLocal) };
+            VkDeviceMemory mem;
+            Check(api.vkAllocateMemory(&mai, null, &mem), "vkAllocateMemory");
+            tex.Memory = mem;
+            Check(api.vkBindImageMemory(img, mem, 0), "vkBindImageMemory");
+            var all = new VkImageSubresourceRange { aspectMask = VkImageAspectFlags.Color, levelCount = mips, layerCount = 1 };
+            OneShot(api, cb =>
             {
-                regions[k] = new VkBufferImageCopy
+                var toDst = new VkImageMemoryBarrier
                 {
-                    bufferOffset = offset,
-                    imageSubresource = new VkImageSubresourceLayers { aspectMask = VkImageAspectFlags.Color, mipLevel = (uint)k, layerCount = 1 },
-                    imageExtent = new VkExtent3D { width = (uint)levels[k].Width, height = (uint)levels[k].Height, depth = 1 },
+                    srcAccessMask = 0, dstAccessMask = VkAccessFlags.TransferWrite,
+                    oldLayout = VkImageLayout.Undefined, newLayout = VkImageLayout.TransferDstOptimal,
+                    srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED, dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED, image = img, subresourceRange = all,
                 };
-                offset += (ulong)levels[k].Rgba.Length;
-            }
-            fixed (VkBufferImageCopy* r = regions)
-                api.vkCmdCopyBufferToImage(cb, staging.Item1, img, VkImageLayout.TransferDstOptimal, (uint)regions.Length, r);
-            var toRead = new VkImageMemoryBarrier
-            {
-                srcAccessMask = VkAccessFlags.TransferWrite, dstAccessMask = VkAccessFlags.ShaderRead,
-                oldLayout = VkImageLayout.TransferDstOptimal, newLayout = VkImageLayout.ShaderReadOnlyOptimal,
-                srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED, dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED, image = img, subresourceRange = all,
-            };
-            api.vkCmdPipelineBarrier(cb, VkPipelineStageFlags.Transfer, VkPipelineStageFlags.FragmentShader, 0, 0, null, 0, null, 1, &toRead);
-        });
-        api.vkDestroyBuffer(staging.Item1, null);
-        api.vkFreeMemory(staging.Item2, null);
+                api.vkCmdPipelineBarrier(cb, VkPipelineStageFlags.TopOfPipe, VkPipelineStageFlags.Transfer, 0, 0, null, 0, null, 1, &toDst);
+                var regions = new VkBufferImageCopy[levels.Count];
+                ulong offset = 0;
+                for (int k = 0; k < levels.Count; k++)
+                {
+                    regions[k] = new VkBufferImageCopy
+                    {
+                        bufferOffset = offset,
+                        imageSubresource = new VkImageSubresourceLayers { aspectMask = VkImageAspectFlags.Color, mipLevel = (uint)k, layerCount = 1 },
+                        imageExtent = new VkExtent3D { width = (uint)levels[k].Width, height = (uint)levels[k].Height, depth = 1 },
+                    };
+                    offset += (ulong)levels[k].Rgba.Length;
+                }
+                fixed (VkBufferImageCopy* r = regions)
+                    api.vkCmdCopyBufferToImage(cb, staging.Item1, img, VkImageLayout.TransferDstOptimal, (uint)regions.Length, r);
+                var toRead = new VkImageMemoryBarrier
+                {
+                    srcAccessMask = VkAccessFlags.TransferWrite, dstAccessMask = VkAccessFlags.ShaderRead,
+                    oldLayout = VkImageLayout.TransferDstOptimal, newLayout = VkImageLayout.ShaderReadOnlyOptimal,
+                    srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED, dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED, image = img, subresourceRange = all,
+                };
+                api.vkCmdPipelineBarrier(cb, VkPipelineStageFlags.Transfer, VkPipelineStageFlags.FragmentShader, 0, 0, null, 0, null, 1, &toRead);
+            });
+            var vci = new VkImageViewCreateInfo { image = img, viewType = VkImageViewType.Image2D, format = VkFormat.R8G8B8A8Unorm, subresourceRange = all };
+            VkImageView view;
+            Check(api.vkCreateImageView(&vci, null, &view), "vkCreateImageView");
+            tex.View = view;
 
-        var vci = new VkImageViewCreateInfo { image = img, viewType = VkImageViewType.Image2D, format = VkFormat.R8G8B8A8Unorm, subresourceRange = all };
-        VkImageView view;
-        Check(api.vkCreateImageView(&vci, null, &view), "vkCreateImageView");
-        tex.View = view;
-
-        // A pool of exactly one set, owned by this texture and destroyed with it: no shared pool to size, none to exhaust.
-        var sizes = stackalloc VkDescriptorPoolSize[2];
-        sizes[0] = new VkDescriptorPoolSize { type = VkDescriptorType.SampledImage, descriptorCount = 1 };
-        sizes[1] = new VkDescriptorPoolSize { type = VkDescriptorType.Sampler, descriptorCount = 1 };
-        var dpi = new VkDescriptorPoolCreateInfo { maxSets = 1, poolSizeCount = 2, pPoolSizes = sizes };
-        VkDescriptorPool pool;
-        Check(api.vkCreateDescriptorPool(&dpi, null, &pool), "vkCreateDescriptorPool");
-        tex.Pool = pool;
-        var layout = _imageSetLayout;
-        var dai = new VkDescriptorSetAllocateInfo { descriptorPool = pool, descriptorSetCount = 1, pSetLayouts = &layout };
-        VkDescriptorSet set;
-        Check(api.vkAllocateDescriptorSets(&dai, &set), "vkAllocateDescriptorSets");
-        tex.Set = set;
-        var ii = new VkDescriptorImageInfo { imageView = view, imageLayout = VkImageLayout.ShaderReadOnlyOptimal };
-        var si = new VkDescriptorImageInfo { sampler = _sampler };
-        var writes = stackalloc VkWriteDescriptorSet[2];
-        writes[0] = new VkWriteDescriptorSet { dstSet = set, dstBinding = 0, descriptorCount = 1, descriptorType = VkDescriptorType.SampledImage, pImageInfo = &ii };
-        writes[1] = new VkWriteDescriptorSet { dstSet = set, dstBinding = 1, descriptorCount = 1, descriptorType = VkDescriptorType.Sampler, pImageInfo = &si };
-        api.vkUpdateDescriptorSets(2, writes, 0, null);
-        return tex;
+            // A pool of exactly one set, owned by this texture and destroyed with it: no shared pool to size, none to exhaust.
+            var sizes = stackalloc VkDescriptorPoolSize[2];
+            sizes[0] = new VkDescriptorPoolSize { type = VkDescriptorType.SampledImage, descriptorCount = 1 };
+            sizes[1] = new VkDescriptorPoolSize { type = VkDescriptorType.Sampler, descriptorCount = 1 };
+            var dpi = new VkDescriptorPoolCreateInfo { maxSets = 1, poolSizeCount = 2, pPoolSizes = sizes };
+            VkDescriptorPool pool;
+            Check(api.vkCreateDescriptorPool(&dpi, null, &pool), "vkCreateDescriptorPool");
+            tex.Pool = pool;
+            var layout = _imageSetLayout;
+            var dai = new VkDescriptorSetAllocateInfo { descriptorPool = pool, descriptorSetCount = 1, pSetLayouts = &layout };
+            VkDescriptorSet set;
+            Check(api.vkAllocateDescriptorSets(&dai, &set), "vkAllocateDescriptorSets");
+            tex.Set = set;
+            var ii = new VkDescriptorImageInfo { imageView = view, imageLayout = VkImageLayout.ShaderReadOnlyOptimal };
+            var si = new VkDescriptorImageInfo { sampler = _sampler };
+            var writes = stackalloc VkWriteDescriptorSet[2];
+            writes[0] = new VkWriteDescriptorSet { dstSet = set, dstBinding = 0, descriptorCount = 1, descriptorType = VkDescriptorType.SampledImage, pImageInfo = &ii };
+            writes[1] = new VkWriteDescriptorSet { dstSet = set, dstBinding = 1, descriptorCount = 1, descriptorType = VkDescriptorType.Sampler, pImageInfo = &si };
+            api.vkUpdateDescriptorSets(2, writes, 0, null);
+            done = true;
+            return tex;
+        }
+        finally
+        {
+            api.vkDestroyBuffer(staging.Item1, null);
+            api.vkFreeMemory(staging.Item2, null);
+            if (!done) ReleaseTexture(tex);
+        }
     }
 
     /// <summary>A texture no scene draws any more. A frame in flight may still sample it, so the GPU is waited for first — once
@@ -792,14 +812,17 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
         var ai = new VkCommandBufferAllocateInfo { commandPool = _cmdPool, level = VkCommandBufferLevel.Primary, commandBufferCount = 1 };
         VkCommandBuffer cb;
         Check(api.vkAllocateCommandBuffers(&ai, &cb), "vkAllocateCommandBuffers");
-        var bi = new VkCommandBufferBeginInfo { flags = VkCommandBufferUsageFlags.OneTimeSubmit };
-        Check(api.vkBeginCommandBuffer(cb, &bi), "vkBeginCommandBuffer");
-        record(cb);
-        Check(api.vkEndCommandBuffer(cb), "vkEndCommandBuffer");
-        var si = new VkSubmitInfo { commandBufferCount = 1, pCommandBuffers = &cb };
-        Check(api.vkQueueSubmit(_queue, 1, &si, VkFence.Null), "vkQueueSubmit");
-        Check(api.vkQueueWaitIdle(_queue), "vkQueueWaitIdle");
-        api.vkFreeCommandBuffers(_cmdPool, 1, &cb);
+        try
+        {
+            var bi = new VkCommandBufferBeginInfo { flags = VkCommandBufferUsageFlags.OneTimeSubmit };
+            Check(api.vkBeginCommandBuffer(cb, &bi), "vkBeginCommandBuffer");
+            record(cb);
+            Check(api.vkEndCommandBuffer(cb), "vkEndCommandBuffer");
+            var si = new VkSubmitInfo { commandBufferCount = 1, pCommandBuffers = &cb };
+            Check(api.vkQueueSubmit(_queue, 1, &si, VkFence.Null), "vkQueueSubmit");
+            Check(api.vkQueueWaitIdle(_queue), "vkQueueWaitIdle");
+        }
+        finally { api.vkFreeCommandBuffers(_cmdPool, 1, &cb); }
     }
 
     /// <summary>brief-em3d-48 — room for <paramref name="slots"/> transforms per frame slot: when the plan outgrows the

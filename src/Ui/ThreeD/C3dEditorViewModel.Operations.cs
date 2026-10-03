@@ -257,6 +257,7 @@ public sealed partial class C3dEditorViewModel
         {
             var moving = new bool[scene.Objects.Length];
             foreach (var o in targets.SelectMany(movingOf ?? SceneObjectsOf)) moving[o.Id - 1] = true;
+            FaceImagesFollow(scene, moving);
             preview = new Scene3DPreview(moving, new Matrix4x4[transforms.Count], keepOriginal);
             _previewTargets = targets;
         }
@@ -266,6 +267,21 @@ public sealed partial class C3dEditorViewModel
     }
 
     private IReadOnlyList<C3dTarget>? _previewTargets;
+
+    /// <summary>brief-em3d-101 — a face image is a record of its own in the scene (<c>image:object/face</c>), so the objects a
+    /// preview moves did not take it: it stayed where its object was until the drop. Each one on a moving object moves with it
+    /// (its image draw follows its record's id). Matched by scene name, so a placed cell's own face images follow it too.</summary>
+    private static void FaceImagesFollow(Scene3DModel scene, bool[] moving)
+    {
+        if (scene.PlacedFaceImages.Count == 0) return;
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var o in scene.Objects) if (moving[o.Id - 1]) names.Add(o.Name);
+        foreach (var o in scene.Objects)
+        {
+            if (!o.Tint || !o.Name.StartsWith(C3dImages.FacePrefix, StringComparison.Ordinal)) continue;
+            if (names.Contains(C3dModelled.ObjectOfFace(o.Name[C3dImages.FacePrefix.Length..]))) moving[o.Id - 1] = true;
+        }
+    }
 
     /// <summary>A world transform (DBU) as the scene-local row-vector matrix the vertex stage applies: with world =
     /// local + O and t in metres, local' = M·local + (M·O + t − O).</summary>

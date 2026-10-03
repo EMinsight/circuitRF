@@ -522,8 +522,8 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
 
     public void Resized(float width, float height)
     {
-        if (height > 0) _aspect = width / height;
-        if (width > 0 && height > 0) { _viewW = width; _viewH = height; }
+        // a pane collapsing to no width would set an aspect of 0, which a later Fit frames against
+        if (width > 0 && height > 0) { _aspect = width / height; _viewW = width; _viewH = height; }
     }
 
     public void Hover(float x, float y)

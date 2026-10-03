@@ -150,10 +150,30 @@ if [ "$stale" = 1 ]; then
     fi
 fi
 
+# ── Copy to <dest>: only when it differs, and never in place ─────────────────────────────────────────
+#
+# A circuitRF already running from <dest> starts its worker from this folder at any moment. Deleting it
+# and copying it back in place on EVERY build left a window, as long as the copy, in which a worker
+# started from a half-copied folder: dyld aborted it (exit 134) and the app said the kernel was missing.
+# So an unchanged folder is left alone (a byte compare, ~50 ms), and a changed one is copied beside it
+# and renamed into place. A worker already running keeps the libraries it loaded; the only window left
+# is between the two renames, and only on a build that changed the worker.
 if [ -n "$dest" ] && [ -f "$worker" ]; then
     mkdir -p "$dest"
-    rm -rf "$dest/geometry-kernel"
-    cp -Rp "$stage" "$dest/geometry-kernel"
+    target="$dest/geometry-kernel"
+    if ! diff -rq "$stage" "$target" >/dev/null 2>&1; then
+        fresh="$dest/.geometry-kernel.new.$$"
+        old="$dest/.geometry-kernel.old.$$"
+        rm -rf "$fresh" "$old"
+        if cp -Rp "$stage" "$fresh"; then
+            [ -e "$target" ] && mv "$target" "$old"
+            mv "$fresh" "$target"
+            rm -rf "$old"
+        else
+            rm -rf "$fresh"
+            warn "the geometry kernel could not be copied to $target; the one there is left as it was."
+        fi
+    fi
 fi
 
 exit 0

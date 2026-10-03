@@ -64,3 +64,11 @@ Findings from work on the 3D viewer's view model. The field model itself (reader
   colour (Metal's `clampToZero` is the odd one out) and spends no texture memory either. The one sampler is clamp-to-edge.
 - **No nudges exist in the 3D editor**, so Locked has none to refuse; it refuses Move, Rotate, the quarter turns, Mirror,
   Align (as a mover — a locked image may be the reference), the gizmo and a vertex move. Duplicate is allowed (the copy moves).
+
+## brief-em3d-101 follow-up: Vulkan texture upload on failure (2026-10-03)
+
+- **`UploadTexture` released nothing if it failed part-way.** On out of device memory with a large photo, the staging buffer, the
+  image and its memory were left behind. The staging buffer is now freed in a `finally`, and an upload that does not complete
+  releases what it made through `ReleaseTexture`. The image's memory is recorded before it is bound, so a failed bind frees it.
+  `NewBuffer` frees its buffer when the memory allocation fails, and `OneShot` frees its command buffer on any failure. Compiled
+  only: no Vulkan device has run it.

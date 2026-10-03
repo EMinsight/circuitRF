@@ -37,7 +37,7 @@ public sealed partial class Viewer3DViewModel
     private System.Threading.Timer? _animation;
     private readonly Stopwatch _animationClock = new();
     private double _animationStartDegrees;
-    private float _viewW = 800, _viewH = 500;
+    private float _viewW = DefaultViewSize.Width, _viewH = DefaultViewSize.Height;
 
     /// <summary>The focused layer's triangles (its part of <see cref="FieldDrawn"/>).</summary>
     public Scene3DFieldGeometry FieldGeometry => Focused.Geometry;

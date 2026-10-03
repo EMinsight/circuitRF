@@ -207,6 +207,40 @@ public sealed class ReferenceImageTests : IDisposable
         Assert.Contains(said, m => m.Item2 && m.Item1.Contains("4:3"));
     }
 
+    /// <summary>A pane not laid out yet (or squeezed to a sliver) is sized as the default view: the sheet is a quarter of that
+    /// view's visible width, not the snap minimum its collapsed aspect gave.</summary>
+    [Fact]
+    public void Sizing_APaneWithNoWidth_SizesAsTheDefaultView()
+    {
+        var (ws, dir) = Workspace();
+        string png = Quadrants(Path.Combine(ws, "ref", "quad.png"));
+        var vm = Open(Write(dir, [Box("b", "Gold", 0, 0, -10, 100, 100, 10)]));
+        var cam = vm.Viewer.View.Camera;
+        cam.Projection = Projection3D.Orthographic;
+        vm.Viewer.View.Camera = cam;
+        vm.Viewer.Resized(0.5f, H);
+        vm.InsertImages([png]);
+        var r = ((C3dSheet)vm.Document.Objects[^1]).Rect!;
+        var (dw, dh) = Viewer3DViewModel.DefaultViewSize;
+        double visible = 2 * cam.Distance * Math.Tan(cam.FovY / 2) * (dw / dh) / 1e-9;
+        Assert.InRange(r.Size.U / visible, 0.15, 0.40);
+    }
+
+    /// <summary>A file drag that leaves the view without a drop takes its "Drop to place…" sentence with it.</summary>
+    [Fact]
+    public void FileDrag_LeavingWithoutADrop_PutsTheStatusBack()
+    {
+        var (ws, dir) = Workspace();
+        string png = Quadrants(Path.Combine(ws, "ref", "quad.png"));
+        var vm = Open(Write(dir, [Box("b", "Gold", 0, 0, -10, 100, 100, 10)]));
+        vm.StatusMessage = "before";
+        Assert.True(vm.Viewer.FileDragOver(W / 2, H / 2, [png]));
+        Assert.True(vm.Viewer.FileDragOver(W / 2 + 5, H / 2, [png]));
+        Assert.StartsWith("Drop to place", vm.StatusMessage);
+        vm.Viewer.TreeDragLeave();
+        Assert.Equal("before", vm.StatusMessage);
+    }
+
     // ── gate 5: the underlay ─────────────────────────────────────────────────────────────────
 
     /// <summary>A rectangle traced on the image's own plane is drawn over it — the image's draw ties Underlay, the rectangle's
@@ -393,6 +427,28 @@ public sealed class ReferenceImageTests : IDisposable
         Scene3DTextures.Refresh(png);
     }
 
+    /// <summary>A file larger than the cap is decoded for its texture and let go: the shared decode cache never holds it (an
+    /// 8000 × 6000 photo's full decode is ~192 MB), and a JPEG is decoded at the codec's own half scale, never below the cap.</summary>
+    [Fact]
+    public void LargeImage_TextureIsCapped_AndNoFullSizeDecodeIsKept()
+    {
+        foreach (var (name, format) in new[] { ("wide.png", SKEncodedImageFormat.Png), ("wide.jpg", SKEncodedImageFormat.Jpeg) })
+        {
+            string file = Path.Combine(_root, "big", name);
+            Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+            using (var bmp = new SKBitmap(new SKImageInfo(2 * C3dImages.MaxTexturePixels, 64, SKColorType.Rgba8888, SKAlphaType.Premul)))
+            {
+                bmp.Erase(new SKColor(40, 90, 200));
+                using var f = File.Create(file);
+                bmp.Encode(f, format, 90);
+            }
+            var t = Scene3DTextures.Get(file);
+            Assert.Equal((C3dImages.MaxTexturePixels, 32, 2 * C3dImages.MaxTexturePixels, 64), (t.Width, t.Height, t.SourceWidth, t.SourceHeight));
+            Assert.False(CircuitRF.Render.BitmapCache.Holds(file), name);
+            Scene3DTextures.Refresh(file);
+        }
+    }
+
     // ── gate 12: an image edit is never stale ────────────────────────────────────────────────
 
     /// <summary>Re-pointing an image or changing its transparency leaves what a run compares untouched; toggling Model does not.</summary>
@@ -406,6 +462,9 @@ public sealed class ReferenceImageTests : IDisposable
         ((C3dSheet)doc.Objects[0]).Locked = true;
         Assert.Equal(run, C3dPersistence.SerializeForRun(doc));
         Assert.Contains("b.png", C3dPersistence.Serialize(doc));
+        // moved while not modelled: no run has it, so no result is out of date
+        ((C3dSheet)doc.Objects[0]).Rect = new C3dRect { Min = new C3dPoint2(500, 500), Size = new C3dPoint2(100, 80) };
+        Assert.Equal(run, C3dPersistence.SerializeForRun(doc));
         doc.Objects[0].Model = true;
         Assert.NotEqual(run, C3dPersistence.SerializeForRun(doc));
     }

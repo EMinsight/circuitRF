@@ -1859,6 +1859,8 @@ the run was solved from (<code>'Board.clay' has changed since the run at …</co
 <li><strong><code>--phase &lt;degrees&gt;</code></strong> picks the instant drawn for a quantity read instantaneously (<code>Re{E}</code>); it is a
 refusal on any other. The phase is never written to the file.</li>
 <li><strong>A hidden plot draws the same.</strong> Hiding only chooses which plot the window draws; <code>--field</code> names one.</li>
+<li><strong>The plot's drive is applied</strong>, and its legend states it, as in the window. There is no flag for it:
+set it on the plot. See <a href="em-3d.md#field-drive">what drive a field is shown at</a>.</li>
 <li>A <code>--section</code> that is not the plot's own plane is a refusal naming both.</li>
 <li><strong>A surfaces or faces plot is drawn as the 3D view shows it, from a direction you give</strong>, because the
 window's camera is not saved with the plot: <code>--iso</code> (the 3D view's <em>Standard Views ▸ Isometric</em>),
@@ -1911,6 +1913,13 @@ it at every depth. The flag repeats, and takes a comma-separated list.</li>
 range, or anything but <code>name=whole number</code>, is refused before the file is read.</li>
 <li>It is a <code>.c3d</code>'s: on any other document, <code>.cem</code> included, it is a refusal naming the kind.</li>
 </ul>
+<h4 id="render-images">Reference images</h4>
+<p>A <code>.c3d</code>'s <a href="drawing-in-3d.md#images">reference images</a> — image sheets, and images mapped onto faces — are drawn by
+<code>--iso</code> exactly as the 3D view's <em>Copy as Vector</em> draws them, from the same code: under every line, each clipped to its
+sheet or its face, at its transparency. An image sheet is usually not modelled and has no material, so a run leaves it
+out; the picture puts it back and frames it whole. An SVG carries each picture as an <code>&lt;image&gt;</code>; a PDF stays vector apart
+from the pictures. A section (<code>--section</code>) and a field plot's context geometry draw none: a plane cut edge-on has no
+area. A file that cannot be read is drawn as a checker with a red cross, as the view draws it.</p>
 <h3 id="render-example">A worked example, from an empty folder</h3>
 <p>Two commands to set it up, three questions, one picture. The point of the sequence is that the three
 questions are what make the last command <em>writable</em>: you cannot name a layer or size a window without
@@ -1991,6 +2000,13 @@ design would pass here and be refused the moment somebody opened it.</p>
 useless. Two states are warnings on purpose: a cell folder holding several views with none named
 primary, and a layout that resolves no technology. Both are normal.</p>
 </div>
+<p>On a <code>.c3d</code>, a <a href="drawing-in-3d.md#images">reference image</a> is drawing only, so what is wrong with one is a <strong>warning</strong>,
+never an error — a design does not fail <code>check</code> because a photo moved: an image file that is missing or does not decode
+(<code>c3d.image.unreadable</code>, naming the object and the path it resolved to), an image mapped onto a face its object no longer
+has (<code>c3d.image.face-missing</code> — the record is kept, never dropped), two images on one face (<code>c3d.image.face-twice</code>), a
+face image whose Width or Height is not positive (<code>c3d.image.face-size</code>) and <code>&quot;Locked&quot;</code> on a sheet with no image
+(<code>c3d.image.locked-without-image</code>). An object that is not modelled and has no material raises no <em>has no material</em>
+warning: only what a run solves is warned of.</p>
 <p>The kind of document is inferred from the path, exactly as <code>convert</code> infers a format. A GDSII or
 Gerber file is <strong>named as interchange</strong> rather than called unreadable — it is simply not validated,
 because there is nothing to validate it against.</p>

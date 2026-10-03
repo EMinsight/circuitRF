@@ -29,6 +29,9 @@ public sealed partial class C3dEditorViewModel
     /// <summary>A placed image's long edge, as a fraction of the view's visible width at the placement point (R-bmp-4).</summary>
     public const double ImageViewFraction = 0.25;
 
+    /// <summary>The smallest pane side, DIPs, a placement sizes against; below it the pane is taken as not laid out.</summary>
+    public const float MinPlacementPixels = 16;
+
     /// <summary>The status line's sentence for a gesture a Locked image sheet refuses.</summary>
     public static string LockedRefusal(string name) => $"'{name}' is a locked image: unlock it (its menu, or the Inspector) to move it.";
 
@@ -54,16 +57,31 @@ public sealed partial class C3dEditorViewModel
     public bool FileDragOver(IReadOnlyList<string> paths)
     {
         bool ok = paths.Count > 0 && paths.All(C3dImages.IsImageFile) && InsertImageRefusal() is null;
+        if (_fileDragStatus is null || StatusMessage != _fileDragStatus) _statusBeforeFileDrag = StatusMessage;
         StatusMessage = ok ? (paths.Count == 1 ? $"Drop to place '{Path.GetFileName(paths[0])}' on {PlaneText}." : $"Drop to place {paths.Count} images on {PlaneText}.")
                       : InsertImageRefusal() ?? "Only an image file (" + string.Join(", ", C3dImages.Extensions) + ") is placed by a drop.";
+        _fileDragStatus = StatusMessage;
         return ok;
+    }
+
+    /// <summary>The status line a file drag over the view wrote, and what it said before: a drag that leaves without dropping
+    /// puts that back (<see cref="EndFileDrag"/>), so "Drop to place…" does not stay up once nothing is being dragged.</summary>
+    private string? _fileDragStatus, _statusBeforeFileDrag;
+
+    /// <summary>A file drag ended. Left without a drop: the drag's own sentence goes, if nothing has said anything since.</summary>
+    private void EndFileDrag(bool dropped)
+    {
+        if (!dropped && _fileDragStatus is not null && StatusMessage == _fileDragStatus) StatusMessage = _statusBeforeFileDrag ?? "";
+        _fileDragStatus = _statusBeforeFileDrag = null;
     }
 
     /// <summary>brief-em3d-101 — files dropped on the view: image sheets, one undo entry for all of them. Anything else does
     /// nothing. With <paramref name="shift"/> over a flat face (D6), Phase B maps the image onto that face instead.</summary>
     public bool FileDrop(IReadOnlyList<string> paths, float x, float y, bool shift)
     {
-        if (!FileDragOver(paths)) return false;
+        bool ok = FileDragOver(paths);
+        EndFileDrag(dropped: true);
+        if (!ok) return false;
         if (shift && MapDroppedImageOntoFace(paths[0], x, y) is { } mapped) return mapped;
         DropImages(paths, x, y);
         return true;
@@ -83,13 +101,18 @@ public sealed partial class C3dEditorViewModel
 
         // ── where: the plane point under the ray, and the view's width there ─────────────────────
         var (vw, vh) = Viewer.ViewSize;
+        // A pane not laid out yet, or squeezed to a sliver, has no width to take a quarter of (its aspect collapses the visible
+        // width to nothing and the sheet came out at the snap minimum): it is sized as the default view would size it, and
+        // centred on the view's target, since no ray through it means anything.
+        bool usable = vw >= MinPlacementPixels && vh >= MinPlacementPixels;
+        if (!usable) (vw, vh) = Viewer3DViewModel.DefaultViewSize;
         float px = pixel?.X ?? vw / 2, py = pixel?.Y ?? vh / 2;
         int dbu = Document.DbuPerMicron;
         double per = C3dLowering.Metres(1, dbu);
         var cam = Viewer.View.Camera;
         var (origin, dir) = Viewer.RayAt(px, py);
         Point3 at;
-        if (_plane.Hit(origin, dir, dbu) is { } hit) at = hit;
+        if (usable && _plane.Hit(origin, dir, dbu) is { } hit) at = hit;
         else
         {
             var (tx, ty, tz) = Viewer.Scene.ToWorld(cam.Target);
@@ -108,7 +131,7 @@ public sealed partial class C3dEditorViewModel
         var sizes = new List<(string File, long U, long V)>();
         foreach (string f in files)
         {
-            if (BitmapCache.TryGetPixelSize(f) is { Width: > 0, Height: > 0 } px2)
+            if (C3dImages.PixelSize(f) is { Width: > 0, Height: > 0 } px2)
                 sizes.Add(px2.Width >= px2.Height
                     ? (f, longEdge, Math.Max(1, (long)Math.Round((double)longEdge * px2.Height / px2.Width)))
                     : (f, Math.Max(1, (long)Math.Round((double)longEdge * px2.Width / px2.Height)), longEdge));
@@ -298,13 +321,13 @@ public sealed partial class C3dEditorViewModel
 
     /// <summary>The image's own pixel aspect (width ÷ height), or null when its file cannot be read.</summary>
     public double? ImageAspectOf(C3dSheet s)
-        => ImagePathOf(s) is { } file && BitmapCache.TryGetPixelSize(file) is { Width: > 0, Height: > 0 } px ? (double)px.Width / px.Height : null;
+        => ImagePathOf(s) is { } file && C3dImages.PixelSize(file) is { Width: > 0, Height: > 0 } px ? (double)px.Width / px.Height : null;
 
     /// <summary>Reset to Image Aspect: the height follows the width at the image's own pixel aspect.</summary>
     public void ResetImageAspect(int index)
     {
         if (ImageSheetAt(index) is not { Rect: { } r } s) return;
-        if (ImagePathOf(s) is not { } file || BitmapCache.TryGetPixelSize(file) is not { Width: > 0, Height: > 0 } px)
+        if (ImagePathOf(s) is not { } file || C3dImages.PixelSize(file) is not { Width: > 0, Height: > 0 } px)
         {
             StatusMessage = $"'{s.Name}''s image cannot be read, so it has no aspect to go back to.";
             return;

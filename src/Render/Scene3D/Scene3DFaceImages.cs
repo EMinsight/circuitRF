@@ -43,17 +43,24 @@ public static class Scene3DFaceImages
     /// <summary>
     /// The face images of <paramref name="e"/> on the objects <paramref name="problem"/> holds, placed — what a picture made outside
     /// the 3D view (`render --iso`) draws. Each object is tessellated here as the view tessellates it; a face that cannot carry its
-    /// image is left out (the view's tree and `check` say why).
+    /// image is left out (the view's tree and `check` say why). A drilled or plated hole through the face is carved out of it
+    /// as the view carves it (<see cref="Scene3DBores"/>), so the picture is clipped around the hole there too.
     /// </summary>
     public static IReadOnlyList<Scene3DPlacedFaceImage> Of(Em3dProblem problem, C3dElaboration e)
     {
         var list = new List<Scene3DPlacedFaceImage>();
+        Scene3DBores? bores = null;
+        bool boresRead = false;
         foreach (var use in e.FaceImages)
         {
             if (!Drawn(e.FaceImages, use) || !e.Provenance.TryGetValue(use.Object, out var p)) continue;
             Em3dTriangleMesh? mesh = null;
             bool sheet = false;
-            if (problem.Solids.FirstOrDefault(s => s.Name == use.Object) is { } solid) mesh = Em3dTessellation.Of(solid);
+            if (problem.Solids.FirstOrDefault(s => s.Name == use.Object) is { } solid)
+            {
+                if (!boresRead) (bores, boresRead) = (Scene3DBores.Of(problem), true);
+                mesh = bores?.Carved(solid) is { } carved ? carved.Make() : Em3dTessellation.Of(solid);
+            }
             else if (problem.Sheets.FirstOrDefault(s => s.Name == use.Object) is { } sh) { mesh = Em3dTessellation.OfSheet(sh); sheet = true; }
             if (mesh is null) continue;
             var names = p.FaceNames.Count > 0 ? p.FaceNames : sheet ? Scene3DBuilder.SheetFaceNames : [];

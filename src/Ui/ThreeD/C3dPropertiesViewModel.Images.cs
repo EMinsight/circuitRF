@@ -41,7 +41,7 @@ public sealed partial class C3dPropertiesViewModel
         HasImage = true;
         ImageFile = s.Image!.Path;
         string? file = editor.ImagePathOf(s);
-        ImagePixels = file is not null && BitmapCache.TryGetPixelSize(file) is { } px ? $"{px.Width} × {px.Height}"
+        ImagePixels = file is not null && C3dImages.PixelSize(file) is { } px ? $"{px.Width} × {px.Height}"
                     : editor.ImageProblemOf(s) is { } why ? char.ToUpperInvariant(why[0]) + why[1..] : "File not found";
         var doc = editor.Document;
         ImageUnit = CircuitRF.Design.Layout.LayoutUnits.Suffix(doc.DisplayUnit);

@@ -361,7 +361,8 @@ you tick it again. Hiding an object is not the same thing: a hidden object is st
   port; the document's own port numbers never change, so ticking P2 again gives the four-port result back. A schematic
   placing that `.sNp` sees the new pin count, and the run's notes say that too.
 - It is saved in the `.c3d` only when unticked — `"Model": false` — so a document that never unticks one is
-  unchanged. Unlike Transparency it **is** part of the solved model: toggling it makes the last result stale.
+  unchanged. Unlike Transparency it **is** part of the solved model: toggling it makes the last result stale. Editing
+  or moving an object while it is not modelled does not, since no run has it.
 - A not-modelled object is still **exported** — to STEP and by Export Drawing — because those export what is drawn.
 - `circuitrf check` lists what is not modelled and reports the refusals above; `explain` names it in its walk.
 

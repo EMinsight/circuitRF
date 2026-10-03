@@ -59,3 +59,16 @@ PACKAGE ONLY` would re-root the worker's `CMAKE_PREFIX_PATH` and lose OCCT. `bui
 
 The closure staging already worked cross: it reads `NEEDED` with `readelf`, which reads a foreign ELF
 (`ldd` would not).
+
+## A build no longer replaces the kernel under a running app (2026-10-03)
+
+- **`ensure-built.sh` deleted `<dest>/geometry-kernel/` and copied it back on EVERY build**, `rm -rf` then `cp -Rp`. A circuitRF
+  launched from that output folder while a build ran (here, a DocGen run building `src/Ui` underneath an app the owner had just
+  started) started its worker from a half-copied folder. dyld aborted it with exit 134 and nothing on stderr, and the app said the
+  kernel was missing and to reinstall. The same failure was in `start.log` four days earlier. `-p` kept the files' old mtimes, so
+  the folder looked untouched afterwards and the worker ran fine when tried by hand.
+- Now an unchanged folder is left alone (`diff -rq`, ~50 ms), and a changed one is copied beside it (`.geometry-kernel.new.<pid>`)
+  and renamed into place. A worker already running keeps the libraries it loaded. The window left is between two renames, and
+  only on a build that changed the worker.
+- **`ensure-built.cmd` still deletes and copies in place.** On Windows a running worker holds its DLLs open, so the delete fails
+  part-way rather than racing a launch. That needs its own fix, and a Windows machine to try it on.

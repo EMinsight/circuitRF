@@ -4605,3 +4605,15 @@ missing the driven port's probes or its kept document is drawn as written, with 
   `check`, which read the header afresh, said it was fine. The retry is keyed on the file's write time (null when absent), so a
   path that stays broken costs one `File.Exists` per scene build and never decodes again.
 - **A face image's downsample note** is made by the one `Scene3DTextures.DownsampleNote`; only the sheet branch made one before.
+
+### brief-em3d-101 follow-ups (2026-10-03)
+
+- **A 3D texture's file is no longer decoded through `BitmapCache`**, which keeps every decode for the session: an 8000 × 6000
+  photo's full decode (~192 MB) stayed in memory after its texture was capped at 4096 px. `Scene3DTextures.Decode` decodes,
+  reduces and lets go. A file over the cap is decoded at the codec's own reduced scale where that scale is still at least the cap
+  (a JPEG's 1/2, 1/4, 1/8), so the full-size decode is often never made. The vector pictures (`Em3dSceneImages.Pixels`) decode the
+  same way, and the editor's pixel-size reads go through the header-only `C3dImages.PixelSize`. `BitmapCache.Holds` is the gate's
+  check.
+- **`render --iso` clipped a face image across a drilled hole** that the 3D view clipped around. `Scene3DFaceImages.Of`
+  tessellated the solid's own primitive, while the view's builder draws the surface `Scene3DBores` carves. It now carves the same
+  way, and the face numbering is unchanged (`Carved` keeps the primitive's).

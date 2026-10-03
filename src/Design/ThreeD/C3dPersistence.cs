@@ -122,6 +122,9 @@ public static class C3dPersistence
     /// <c>Hidden</c>, <c>Transparency</c> (brief 92), <c>Group</c> (organisation only) and <c>FaceImages</c>, and on a sheet its
     /// <c>Image</c> and <c>Locked</c> (brief 101: an image is drawn, never geometry); on every instance
     /// <c>Transparency</c> and <c>Group</c>.</item>
+    /// <item><b>Not modelled (left out whole):</b> a top-level object (not a polyline) or an instance whose <c>Model</c> is off —
+    /// no run has it (<see cref="C3dModelled.Filter"/>), so moving or editing it changes no result. Its switch still does: turning
+    /// it back on puts it back in this text.</item>
     /// <item><b>Model (kept):</b> <c>FormatVersion</c>, <c>DbuPerMicron</c>, <c>TechRef</c>, <c>Objects</c> (each one's name,
     /// material, role, placement, <c>Model</c> and geometry), <c>Instances</c> (cell, view, placement, array, <c>Model</c>,
     /// parameter overrides), <c>Variables</c>, <c>Ports</c> (all of each, <c>Model</c> included), <c>FaceBoundaries</c>,
@@ -192,9 +195,16 @@ public static class C3dPersistence
         foreach (var x in instances) { x.Instance.Transparency = null; x.Instance.Group = null; }
         foreach (var x in images) { x.Sheet.Image = null; x.Sheet.Locked = false; }
         foreach (var x in faceImages) x.Object.FaceImages = null;
+        // Not modelled: left out of every run (C3dModelled.Filter), so nothing it says can make a result out of date — a reference
+        // image sheet moved, above all. A port is kept whatever its Model: a run's kept document is read back for its port Z0s by
+        // their document numbers (FieldDrive.RunPortZ0s).
+        var (allObjects, allInstances) = (doc.Objects, doc.Instances);
+        if (allObjects.Any(o => o is not C3dPolyline && !o.Model)) doc.Objects = [.. allObjects.Where(o => o is C3dPolyline || o.Model)];
+        if (allInstances.Any(i => !i.Model)) doc.Instances = [.. allInstances.Where(i => i.Model)];
         try { return Serialize(doc); }
         finally
         {
+            (doc.Objects, doc.Instances) = (allObjects, allInstances);
             (doc.FieldPlots, doc.DisplayUnit, doc.SnapDbu, doc.AirBoxHidden, doc.ActiveSetup) = (plots, unit, snap, airBoxHidden, active);
             foreach (var x in objects) { x.Object.Hidden = x.Hidden; x.Object.Transparency = x.Transparency; x.Object.Group = x.Group; }
             foreach (var x in instances) { x.Instance.Transparency = x.Transparency; x.Instance.Group = x.Group; }

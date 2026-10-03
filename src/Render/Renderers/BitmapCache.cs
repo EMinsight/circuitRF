@@ -27,6 +27,9 @@ public static class BitmapCache
         });
     }
 
+    /// <summary>Whether a decode of <paramref name="path"/> (or its failure) is held — what a gate asks of a path that must not be.</summary>
+    internal static bool Holds(string path) => _cache.ContainsKey(path);
+
     public static void Invalidate(string? path)
     {
         if (!string.IsNullOrEmpty(path))

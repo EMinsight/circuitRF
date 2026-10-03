@@ -16484,3 +16484,12 @@ and `ParallelLcResonanceTests.AnInductorWithOnlyADielectricClass_IsWarnedForWhat
 - **`check` warns on a face image whose Width or Height is not positive** (`c3d.image.face-size`): zero draws nothing and a
   negative size mirrors the picture, neither of which the editor writes. A face image's own `Image` record's unknown keys are
   named too; before, only a sheet's were.
+
+### brief-em3d-101 follow-ups (2026-10-03)
+
+- **A not-modelled top-level object or instance is left out of `SerializeForRun` whole**, so moving or editing it (a reference
+  image sheet, above all) no longer marks a result out of date. No run has it (`C3dModelled.Filter`), and any modelled reference to
+  it is a refusal, so the result cannot depend on it. Its Model switch still changes the text: the object comes back. **Ports are
+  kept whatever their Model**: `FieldDrive.RunPortZ0s` reads the kept document's ports back by their document numbers to undo
+  the renumbering. A run kept before this goes through `C3dRunDocument.Normalised` and so compares as current. This was older
+  than brief 101 and only noticed there.

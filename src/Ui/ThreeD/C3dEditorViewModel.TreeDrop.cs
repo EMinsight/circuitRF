@@ -58,7 +58,11 @@ public sealed partial class C3dEditorViewModel
     }
 
     /// <inheritdoc/>
-    public void TreeDragLeave() => EndTreeDrag();
+    public void TreeDragLeave()
+    {
+        EndTreeDrag();
+        EndFileDrag(dropped: false);
+    }
 
     private void EndTreeDrag()
     {

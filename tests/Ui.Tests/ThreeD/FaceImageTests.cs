@@ -509,6 +509,62 @@ public sealed class FaceImageTests : IDisposable
         Assert.Equal(ReferenceImageTests.StripSkiaIds(inProcess), ReferenceImageTests.StripSkiaIds(fromCli));
     }
 
+    /// <summary>A face image moves with its object while the object is dragged (it is a record of its own in the scene, so the
+    /// drag's moving set did not take it and it stood where the object was until the drop). Another object's does not.</summary>
+    [Fact]
+    public void Drag_TheFaceImageFollowsItsObject()
+    {
+        var (ws, dir) = Workspace();
+        string png = ReferenceImageTests.Quadrants(Path.Combine(ws, "ref", "q.png"));
+        string c3d = Path.Combine(dir, "cell.c3d");
+        var moved = Box("b", "Gold", 0, 0, 0, 100, 80, 20);
+        var still = Box("c", "Gold", 300, 0, 0, 100, 80, 20);
+        moved.FaceImages = [new C3dFaceImage { Face = "zmax", Image = new C3dImage { Path = C3dImages.Store(c3d, png) } }];
+        still.FaceImages = [new C3dFaceImage { Face = "zmax", Image = new C3dImage { Path = C3dImages.Store(c3d, png) } }];
+        var vm = Open(Write(dir, [moved, still]));
+        vm.Viewer.FitCommand.Execute(null);
+        vm.Viewer.View.Selected = vm.SceneObject("b")!.Id;
+        vm.Viewer.Hover(W / 2, H / 2);
+        Assert.True(vm.GizmoDrag(GizmoHandle.AxisX));
+        vm.Viewer.Hover(W / 2 + 60, H / 2);
+        vm.Viewer.OnPicked(0, 0, Vector3.Zero, false);
+        var preview = Assert.IsType<Scene3DPreview>(vm.Viewer.View.Preview);
+        Assert.True(preview.IsMoving(vm.SceneObject(C3dEditorViewModel.FaceImageSceneName("b", "zmax"))!.Id));
+        Assert.False(preview.IsMoving(vm.SceneObject(C3dEditorViewModel.FaceImageSceneName("c", "zmax"))!.Id));
+        vm.GizmoCancel();
+    }
+
+    /// <summary>A hole drilled through a face carves its image in a picture made outside the view (`render --iso`) as the view
+    /// carves it: the image is clipped around the hole, not drawn across it.</summary>
+    [Fact]
+    public void Bore_ThePictureClipsAFaceImageAroundTheHole_AsTheViewDoes()
+    {
+        var (ws, dir) = Workspace();
+        string png = ReferenceImageTests.Quadrants(Path.Combine(ws, "ref", "q.png"));
+        string c3d = Path.Combine(dir, "cell.c3d");
+        var slab = Box("sub", "Gold", 0, 0, 0, 100, 100, 20);
+        slab.Role = Em3dRole.Dielectric;
+        slab.FaceImages = [new C3dFaceImage { Face = "zmax", Image = new C3dImage { Path = C3dImages.Store(c3d, png) } }];
+        var hole = new C3dCylinder { Name = "hole", Material = "Gold", Role = Em3dRole.Air, Base = new C3dPoint3(50 * Um, 50 * Um, 0), Length = 20 * Um, Radius = 10 * Um };
+        string path = Write(dir, [slab, hole]);
+        var e = new C3dElaborator().Elaborate(C3dPersistence.LoadFromFile(path), path, Path.Combine(ws, ".cws"));
+        var problem = C3dProblemAssembly.ViewProblem(e.Solids, e.Sheets, e.Materials, [], C3dProblemAssembly.ExtentBox(e.Extent()!.Value));
+        var placed = Assert.Single(Scene3DFaceImages.Of(problem, e));
+        bool Covers(double x, double y) => placed.Triangles.Any(t => Inside(t, x, y));
+        Assert.False(Covers(50e-6, 50e-6), "drawn across the hole");
+        Assert.True(Covers(10e-6, 10e-6));
+
+        var vm = Open(path);                                              // and the view clips it the same way
+        Assert.False(Assert.Single(vm.Viewer.Scene.PlacedFaceImages).Triangles.Any(t => Inside(t, 50e-6, 50e-6)));
+    }
+
+    private static bool Inside((Point3 A, Point3 B, Point3 C) t, double x, double y)
+    {
+        static double Side(Point3 p, Point3 q, double x, double y) => (q.X - p.X) * (y - p.Y) - (q.Y - p.Y) * (x - p.X);
+        double d1 = Side(t.A, t.B, x, y), d2 = Side(t.B, t.C, x, y), d3 = Side(t.C, t.A, x, y);
+        return (d1 >= 0 && d2 >= 0 && d3 >= 0) || (d1 <= 0 && d2 <= 0 && d3 <= 0);
+    }
+
     // ── helpers ──────────────────────────────────────────────────────────────────────────────
 
     private static double Dot(Point3 a, Point3 b) => a.X * b.X + a.Y * b.Y + a.Z * b.Z;

@@ -1,10 +1,12 @@
 // brief-em3d-101 R-em3d101-4 — what the 3D view draws an image WITH: a decoded texture and its CPU-built mip levels, keyed by the
 // file's absolute path, and the rule for when a backend uploads one.
 //
-// DECODED ONCE, HERE, FOR ALL THREE BACKENDS. The pixels come from BitmapCache (the one decode cache every editor shares — "share
-// the cache, not the model"), are capped at C3dImages.MaxTexturePixels on the long edge, and are reduced to every mip level by
-// SkiaSharp in this file, so Metal, D3D11 and Vulkan upload the same levels and none of them generates its own: the three
-// pictures stay alike. Levels are RGBA8 UNORM rows, top first, alpha NOT premultiplied — exactly a vertex colour's encoding, so a
+// DECODED ONCE, HERE, FOR ALL THREE BACKENDS. The file is decoded here and NOT through BitmapCache: that cache keeps every decode
+// for the session, and a photo's full-size decode (an 8000 × 6000 one is ~192 MB) would be held long after its texture was capped.
+// A large file is decoded at the codec's own reduced scale where it has one (a JPEG's 1/2, 1/4, 1/8), never below the cap, and the
+// decode is let go once the levels are made. The levels are capped at C3dImages.MaxTexturePixels on the long edge and reduced to
+// every mip level by SkiaSharp in this file, so Metal, D3D11 and Vulkan upload the same levels and none of them generates its own:
+// the three pictures stay alike. Levels are RGBA8 UNORM rows, top first, alpha NOT premultiplied — exactly a vertex colour's encoding, so a
 // pixel reaches the framebuffer with the value a vertex of that colour would (the sRGB trap brief 69 found once: never an _SRGB
 // format on the GPU side).
 //
@@ -114,8 +116,8 @@ public static class Scene3DTextures
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return null; }
     }
 
-    /// <summary>Forgets <paramref name="path"/> here and in <see cref="BitmapCache"/>: the next <see cref="Get"/> reads the file
-    /// again and is a NEW texture, which a backend uploads (Refresh Image, Resolve Path…).</summary>
+    /// <summary>Forgets <paramref name="path"/> here and in <see cref="BitmapCache"/> (which another editor may hold it in): the next
+    /// <see cref="Get"/> reads the file again and is a NEW texture, which a backend uploads (Refresh Image, Resolve Path…).</summary>
     public static void Refresh(string? path)
     {
         if (string.IsNullOrEmpty(path)) return;
@@ -127,14 +129,46 @@ public static class Scene3DTextures
     {
         Interlocked.Increment(ref _decodes);
         var stamp = Stamp(path);
-        var bmp = BitmapCache.Load(path);
+        var (bmp, sw, sh) = Decode(path);
         // Every broken image is the one placeholder object, so they share one upload.
-        if (bmp is null || bmp.Width <= 0 || bmp.Height <= 0) { _brokenStamp[path] = stamp; return Placeholder; }
+        if (bmp is null) { _brokenStamp[path] = stamp; return Placeholder; }
         _brokenStamp.TryRemove(path, out _);
-        int sw = bmp.Width, sh = bmp.Height;
-        var levels = Reduce(path, bmp, out bool opaque);
+        IReadOnlyList<Scene3DTextureLevel> levels;
+        bool opaque;
+        using (bmp) levels = Reduce(path, bmp, out opaque);
         int w = levels[0].Width, h = levels[0].Height;
-        return new Scene3DTexture(path, w, h, sw, sh, opaque, false, levels, () => Reduce(path, BitmapCache.Load(path), out _));
+        return new Scene3DTexture(path, w, h, sw, sh, opaque, false, levels, () =>
+        {
+            var (again, _, _) = Decode(path);
+            using (again) return Reduce(path, again, out _);
+        });
+    }
+
+    /// <summary>
+    /// The file's pixels, owned by the caller and never cached, with the file's own size; null when it does not decode. A file
+    /// larger than <see cref="C3dImages.MaxTexturePixels"/> is decoded at the codec's smallest scale that is still no smaller than
+    /// the cap (a JPEG decodes at 1/2, 1/4 or 1/8 for almost nothing), so a large photo never costs its full-size decode.
+    /// </summary>
+    internal static (SKBitmap? Bitmap, int Width, int Height) Decode(string path)
+    {
+        try
+        {
+            using var codec = SKCodec.Create(path);
+            if (codec is not { Info: { Width: > 0, Height: > 0 } info }) return (null, 0, 0);
+            int sw = info.Width, sh = info.Height;
+            // as SKBitmap.Decode(path) decodes (premultiplied, which Reduce filters in), in the byte order the levels are read out in
+            var want = info.WithColorType(SKColorType.Rgba8888)
+                           .WithAlphaType(info.AlphaType == SKAlphaType.Opaque ? SKAlphaType.Opaque : SKAlphaType.Premul);
+            float scale = (float)C3dImages.MaxTexturePixels / Math.Max(sw, sh);
+            if (scale < 1 && codec.GetScaledDimensions(scale) is { Width: > 0, Height: > 0 } scaled
+                && Math.Max(scaled.Width, scaled.Height) >= Math.Min(Math.Max(sw, sh), C3dImages.MaxTexturePixels))
+                want = info.WithSize(scaled.Width, scaled.Height);
+            var bmp = SKBitmap.Decode(codec, want);
+            if (bmp is { Width: > 0, Height: > 0 }) return (bmp, sw, sh);
+            bmp?.Dispose();
+            return (null, 0, 0);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException) { return (null, 0, 0); }
     }
 
     /// <summary>The image's mip chain: level 0 at most <see cref="C3dImages.MaxTexturePixels"/> on its long edge, each next level

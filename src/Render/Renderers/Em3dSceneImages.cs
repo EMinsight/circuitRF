@@ -144,10 +144,11 @@ public static class Em3dSceneImages
         }
     }
 
-    /// <summary>The file's pixels (a copy the caller disposes), or the placeholder's level 0 when it cannot be read.</summary>
+    /// <summary>The file's pixels (the caller disposes them), or the placeholder's level 0 when it cannot be read. Decoded as the 3D
+    /// view decodes them (<see cref="Scene3DTextures"/>) and not kept: a photo's full-size decode is not held for the session.</summary>
     private static SKBitmap? Pixels(string path)
     {
-        if (BitmapCache.Load(path) is { } bmp) return bmp.Copy();
+        if (Scene3DTextures.Decode(path).Bitmap is { } bmp) return bmp;
         var level = Scene3DTextures.Placeholder.Levels()[0];
         var info = new SKImageInfo(level.Width, level.Height, SKColorType.Rgba8888, SKAlphaType.Unpremul);
         var b = new SKBitmap(info);

@@ -256,8 +256,11 @@ public sealed partial class Viewer3DViewModel
         return id == 0 ? (0, null) : (id, Scene.ToWorld(point));
     }
 
-    /// <summary>The pane's size, DIPs, as the last resize said.</summary>
+    /// <summary>The pane's size, DIPs, as the last resize said (<see cref="DefaultViewSize"/> before any).</summary>
     public (float Width, float Height) ViewSize => (_viewW, _viewH);
+
+    /// <summary>The size a pane is taken to have before it is laid out.</summary>
+    public static readonly (float Width, float Height) DefaultViewSize = (800, 500);
 
     /// <summary>Vertex mode's candidate under the cursor (scene-local), for the overlay's dot.</summary>
     public Vector3? HoveredVertex => HoveredItem is { Face: < 0, Object: > 0 } h && SelectMode == Scene3DSelectMode.Vertex ? h.Point : null;

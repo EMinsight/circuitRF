@@ -31,3 +31,18 @@
   is the default, fitted to the face (the offset stays; Fit to Face clears it). An empty box was an error before.
 - **The face image's Transparency box stretched to the slider's row height** — the same trap the object's Transparency row
   already notes: a TextBox in a Grid row with a Slider needs `VerticalAlignment="Center"`.
+
+## brief-em3d-101 follow-ups (2026-10-03)
+
+- **A face image now follows its object's drag** (`C3dEditorViewModel.FaceImagesFollow`). A face image is a scene record of its
+  own (`image:object/face`), so the preview's moving set — built from the dragged objects' own scene objects — left it where the
+  object was until the drop. It is matched by scene name, the object half split at the last `/` (`C3dModelled.ObjectOfFace`), so
+  a placed cell's own face images follow the instance too; the image draw follows because `AddImage` keys its preview on the
+  record's id. **Face-boundary tints still do not follow**: a tint is named after its boundary, not its object, and one boundary
+  can span faces of several objects, so there is no name to match without carrying the owners on the tint.
+- **An image placed while the pane has no usable size** (under `MinPlacementPixels` on a side: not laid out yet, or squeezed to a
+  sliver) is sized and centred as the default 800 × 500 view would place it. A sliver's aspect collapsed the visible width and
+  the sheet came out at the snap minimum. `Viewer3DViewModel.Resized` also no longer takes an aspect of 0 from a pane with no
+  width, which a later Fit would have framed against.
+- **"Drop to place…" is taken back when a file drag leaves without dropping** (`EndFileDrag`), restoring what the status line
+  said before the drag, unless something else has written to it since.
