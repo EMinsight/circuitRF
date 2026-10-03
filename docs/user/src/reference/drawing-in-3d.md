@@ -466,8 +466,9 @@ fixture drawing — or to lay the design over and compare. It goes in two ways: 
   it (saved, one undo step; **H** and Hide all reach it too).
 - **Selecting it**: click it in the view (**B** steps to the face beneath), or its row; selecting the face in Face mode
   shows it below the face's readout. **Properties** has its file, pixels, its **own Transparency** — a lid at 80 % can
-  carry a marking at 0 % — **Rotation** (with ⟲ 90° and ⟳ 90°), **Width**/**Height** with Keep aspect, **Offset**
-  (right, up), **Fit to Face**, **Hidden** and **Remove Image**.
+  carry a marking at 0 % — **Rotation** (with ⟲ 90° and ⟳ 90°), **Width**/**Height** with Keep aspect (clear one and it
+  follows the other; clear both and the image is fitted again), **Offset** (right, up), **Fit to Face**, **Hidden** and
+  **Remove Image**.
 - **Removing it**: **Remove Image** on the face's menu, in Properties, or on its own menu (in the view or the tree), or
   **Delete** with it selected — one undo step each.
 - **It is drawn only where the face is**: an image larger than its face is cropped by it, and a smaller one leaves the

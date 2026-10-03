@@ -489,7 +489,14 @@ public static partial class Em3dSectionScene
     // ── the isometric outline ─────────────────────────────────────────────────────────────────
 
     /// <summary>The isometric projection: the viewer is at +x, +y, +z, looking at the origin.</summary>
+    /// <para>brief-em3d-101 — it is a MIRROR image of that view (right × up points away from the viewer: +x runs to the right,
+    /// where a viewer at +x +y +z sees it run left), which an outline of lines cannot show and a picture can. The axis indicator
+    /// (Em3dSectionRenderer.Looking) uses the same axes; see <see cref="ProjectIsMirrored"/>.</para>
     public static Uv Project(Point3 q) => new((q.X - q.Y) * Cos30, q.Z - (q.X + q.Y) * Sin30);
+
+    /// <summary>Whether <see cref="Project"/> is a mirror image of the view it names — what decides which way a face toward the
+    /// viewer winds in the picture (Em3dSceneImages.OfFaces).</summary>
+    public const bool ProjectIsMirrored = true;
 
     private static Em3dScene Iso(Em3dProblem problem, Point3 fMin, Point3 fMax, double tol, List<string> dielectrics)
     {

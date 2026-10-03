@@ -131,7 +131,11 @@ public sealed partial class C3dEditorViewModel
         int next = Document.Objects.Count;
         foreach (var (file, su, sv) in sizes)
         {
-            string name = C3dOperations.NextFreeName(C3dImages.NameStem + "1", used);
+            // image1, image2, … — the smallest free number (NextName's rule), each added to used so a batch never collides.
+            int n = 1;
+            while (used.Contains(C3dImages.NameStem + n)) n++;
+            string name = C3dImages.NameStem + n;
+            used.Add(name);
             var sheet = new C3dSheet
             {
                 Name = name, Plane = _plane.Plane, Offset = _plane.OffsetDbu, Model = false,
@@ -215,7 +219,7 @@ public sealed partial class C3dEditorViewModel
     public void SetImageLocked(int index, bool locked)
     {
         if (ImageSheetAt(index) is not { } s) return;
-        ChangeObject(index, $"{(locked ? "Lock" : "Unlock")} {s.Name}", o => ((C3dSheet)o).Locked = locked);
+        if (!ChangeObject(index, $"{(locked ? "Lock" : "Unlock")} {s.Name}", o => ((C3dSheet)o).Locked = locked)) return;
         StatusMessage = locked ? $"'{s.Name}' is locked: selected and edited, never moved." : $"'{s.Name}' is unlocked.";
     }
 
@@ -269,19 +273,32 @@ public sealed partial class C3dEditorViewModel
 
     /// <summary>
     /// Width and height of an image sheet's rectangle, DBU (the Inspector's rows): with <paramref name="keepAspect"/>, the one
-    /// that did NOT change follows the other at the rectangle's present aspect. One undo entry; the rectangle stays where its
-    /// minimum corner is.
+    /// that did NOT change follows the other at the IMAGE's pixel aspect (R-em3d101-3b) — the rectangle's present aspect only
+    /// when the file cannot be read. One undo entry; the rectangle stays where its minimum corner is.
     /// </summary>
     public void SetImageSize(int index, long? width, long? height, bool keepAspect)
     {
         if (ImageSheetAt(index) is not { Rect: { } r } s || width is null && height is null) return;
-        double aspect = r.Size.V != 0 ? (double)r.Size.U / r.Size.V : 1;
+        double aspect = ImageAspectOf(s) ?? (r.Size.V != 0 ? Math.Abs((double)r.Size.U / r.Size.V) : 1);
         long w = width ?? r.Size.U, h = height ?? r.Size.V;
         if (keepAspect && width is not null && height is null) h = Math.Max(1, (long)Math.Round(w / aspect));
         else if (keepAspect && height is not null && width is null) w = Math.Max(1, (long)Math.Round(h * aspect));
         if (w <= 0 || h <= 0) { StatusMessage = "A sheet's width and height are above zero."; return; }
-        ChangeObject(index, $"Resize {s.Name}", o => ((C3dSheet)o).Rect = new C3dRect { Min = r.Min, Size = new C3dPoint2(w, h) });
+        ChangeObject(index, $"Resize {s.Name}", o => WriteImageRect(o, new C3dRect { Min = r.Min, Size = new C3dPoint2(w, h) }));
     }
+
+    /// <summary>An image sheet's rectangle written as numbers: an expression either size was bound to is unbound with it, as the
+    /// sheet's own Size rows do for a number (SetFieldText) — else the next resolve would put the bound value back.</summary>
+    private static void WriteImageRect(C3dObject o, C3dRect rect)
+    {
+        foreach (string path in (string[])["Rect.Size[0]", "Rect.Size[1]"])
+            if (C3dBindings.Find(o, path) is { } f) C3dBindings.SetExpr(f.Owner, f.Spec, f.Component, null);
+        ((C3dSheet)o).Rect = rect;
+    }
+
+    /// <summary>The image's own pixel aspect (width ÷ height), or null when its file cannot be read.</summary>
+    public double? ImageAspectOf(C3dSheet s)
+        => ImagePathOf(s) is { } file && BitmapCache.TryGetPixelSize(file) is { Width: > 0, Height: > 0 } px ? (double)px.Width / px.Height : null;
 
     /// <summary>Reset to Image Aspect: the height follows the width at the image's own pixel aspect.</summary>
     public void ResetImageAspect(int index)
@@ -293,7 +310,7 @@ public sealed partial class C3dEditorViewModel
             return;
         }
         long h = Math.Max(1, (long)Math.Round((double)r.Size.U * px.Height / px.Width));
-        ChangeObject(index, $"Reset {s.Name} to its image's aspect", o => ((C3dSheet)o).Rect = new C3dRect { Min = r.Min, Size = new C3dPoint2(r.Size.U, h) });
+        ChangeObject(index, $"Reset {s.Name} to its image's aspect", o => WriteImageRect(o, new C3dRect { Min = r.Min, Size = new C3dPoint2(r.Size.U, h) }));
     }
 
     // ── menus ─────────────────────────────────────────────────────────────────────────────────

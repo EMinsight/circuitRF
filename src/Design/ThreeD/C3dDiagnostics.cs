@@ -221,6 +221,13 @@ public static class C3dDiagnostics
         "'{name}' has more than one image mapped onto its face '{face}'; a face carries one, so only the first is drawn.",
         ("name", name), ("face", face));
 
+    /// <summary>brief-em3d-101 — a face image whose stated Width or Height is not positive: drawn with no area (zero) or mirrored
+    /// (negative), neither of which the editor writes. A warning, as every image finding is: an image is drawing only.</summary>
+    public static Diagnostic FaceImageSize(string name, string face) => Diagnostic.Create(
+        "c3d.image.face-size", DiagnosticSeverity.Warning,
+        "The image on '{name}/{face}' states a Width or Height that is not positive. Omit both to fit it to the face.",
+        ("name", name), ("face", face));
+
     /// <summary>brief-em3d-101 — <c>Locked</c> on a sheet with no image: only an image sheet is locked (R-em3d101-1g).</summary>
     public static Diagnostic LockedWithoutImage(string name) => Diagnostic.Create(
         "c3d.image.locked-without-image", DiagnosticSeverity.Warning,

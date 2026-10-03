@@ -393,9 +393,7 @@ public static class Scene3DBuilder
                 imageRgba = Scene3DVertex.Pack(255, 255, 255, a);
                 translucent = a < 255 || !texture.Opaque;
                 rgba = Scene3DVertex.Pack(200, 200, 205, a);
-                if (texture.Downsampled)
-                    imageNotes.Add($"'{Path.GetFileName(image.Path)}' is {texture.SourceWidth:N0} × {texture.SourceHeight:N0} pixels; the 3D " +
-                                   $"view draws it at {texture.Width:N0} × {texture.Height:N0}, the largest every GPU it runs on is sure to take.");
+                if (Scene3DTextures.DownsampleNote(texture) is { } note) imageNotes.Add(note);
             }
             b.Object(new Scene3DObject
             {
@@ -495,6 +493,7 @@ public static class Scene3DBuilder
                     continue;
                 }
                 var texture = Scene3DTextures.Get(use.Path ?? "");
+                if (Scene3DTextures.DownsampleNote(texture) is { } note) imageNotes.Add(note);
                 // its OWN transparency, and the instances' opacity multiplied on — never its object's (R-em3d101-10)
                 byte a = host.Dim ? ContextAlpha : new Scene3DTransparency(use.Record.Transparency, use.Opacity).Alpha(255);
                 bool translucent = a < 255 || !texture.Opaque;

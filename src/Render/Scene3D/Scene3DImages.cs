@@ -83,11 +83,35 @@ public static class Scene3DTextures
     /// one object, so every broken image shares one upload.</summary>
     public static Scene3DTexture Placeholder { get; } = MakePlaceholder();
 
-    /// <summary>The texture for the image at <paramref name="path"/> (absolute), or <see cref="Placeholder"/> when it cannot be read.</summary>
+    /// <summary>The texture for the image at <paramref name="path"/> (absolute), or <see cref="Placeholder"/> when it cannot be read.
+    /// A path that was broken is read again once its file has changed — appeared, been replaced — so a file copied in after the
+    /// fact draws without a Refresh Image, as the Inspector's Pixels row and <c>check</c> (which read the file afresh) already say.</summary>
     public static Scene3DTexture Get(string path)
     {
         if (string.IsNullOrEmpty(path)) return Placeholder;
-        return _byPath.GetOrAdd(path, p => new Lazy<Scene3DTexture>(() => Make(p), LazyThreadSafetyMode.ExecutionAndPublication)).Value;
+        var t = _byPath.GetOrAdd(path, p => new Lazy<Scene3DTexture>(() => Make(p), LazyThreadSafetyMode.ExecutionAndPublication)).Value;
+        if (ReferenceEquals(t, Placeholder) && _brokenStamp.TryGetValue(path, out var was) && was != Stamp(path))
+        {
+            Refresh(path);
+            t = _byPath.GetOrAdd(path, p => new Lazy<Scene3DTexture>(() => Make(p), LazyThreadSafetyMode.ExecutionAndPublication)).Value;
+        }
+        return t;
+    }
+
+    /// <summary>The Messages note for a texture the cap reduced (<see cref="C3dImages.MaxTexturePixels"/>), or null.</summary>
+    public static string? DownsampleNote(Scene3DTexture t)
+        => t.Downsampled
+            ? $"'{System.IO.Path.GetFileName(t.Path)}' is {t.SourceWidth:N0} × {t.SourceHeight:N0} pixels; the 3D view draws it at " +
+              $"{t.Width:N0} × {t.Height:N0}, the largest every GPU it runs on is sure to take."
+            : null;
+
+    /// <summary>A broken path's file as it was when it would not read: its write time, or null when it was not there.</summary>
+    private static readonly ConcurrentDictionary<string, DateTime?> _brokenStamp = new(StringComparer.Ordinal);
+
+    private static DateTime? Stamp(string path)
+    {
+        try { return File.Exists(path) ? File.GetLastWriteTimeUtc(path) : null; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return null; }
     }
 
     /// <summary>Forgets <paramref name="path"/> here and in <see cref="BitmapCache"/>: the next <see cref="Get"/> reads the file
@@ -102,9 +126,11 @@ public static class Scene3DTextures
     private static Scene3DTexture Make(string path)
     {
         Interlocked.Increment(ref _decodes);
+        var stamp = Stamp(path);
         var bmp = BitmapCache.Load(path);
         // Every broken image is the one placeholder object, so they share one upload.
-        if (bmp is null || bmp.Width <= 0 || bmp.Height <= 0) return Placeholder;
+        if (bmp is null || bmp.Width <= 0 || bmp.Height <= 0) { _brokenStamp[path] = stamp; return Placeholder; }
+        _brokenStamp.TryRemove(path, out _);
         int sw = bmp.Width, sh = bmp.Height;
         var levels = Reduce(path, bmp, out bool opaque);
         int w = levels[0].Width, h = levels[0].Height;

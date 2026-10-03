@@ -4587,3 +4587,21 @@ missing the driven port's probes or its kept document is drawn as written, with 
   renderer's legend skips the empty material such a sheet has.
 - **SVG ids are per process**: Skia numbers clip paths and images per process, so a picture made in a test process that drew
   others first differs from the CLI's in its `cl_N` ids only — the image gates compare with RenderCliVerbTests' `StripSkiaIds`.
+
+### Review of brief-em3d-101 (2026-10-03)
+
+- **A face image turned away from the viewer is not drawn in a vector picture** (`Em3dSceneImages.OfFaces`). The vector
+  pictures have no depth test for images, so a box's `zmin` image was painted across its footprint in the Top view and in
+  `render --iso`, mirrored. The cull reads the face's projected triangles' signed area (the tessellation winds them
+  counter-clockwise from outside), which is right in perspective as well as orthographic. An image behind ANOTHER solid is
+  still drawn; only the face's own solid hides it.
+- **`Em3dSectionScene.Project` (the `render --iso` outline) is a mirror image of the view it names**: +x runs right, where a
+  viewer at +x +y +z sees it run left (right × up points away from the viewer, and `Em3dSectionRenderer.Looking` uses the same
+  axes). Lines cannot show it; a picture can, so every image in `render --iso` reads mirrored. Left as it is, because changing
+  it flips every existing iso picture: `ProjectIsMirrored` says so, and `OfFaces(mirrored:)` culls by it. Changing the
+  projection is the owner's call.
+- **A broken image path is read again once its file changes** (`Scene3DTextures.Get`). `BitmapCache` keeps a failed decode as
+  null, so a file copied in after the scene first asked for it stayed the checker until Refresh Image — while the Inspector and
+  `check`, which read the header afresh, said it was fine. The retry is keyed on the file's write time (null when absent), so a
+  path that stays broken costs one `File.Exists` per scene build and never decodes again.
+- **A face image's downsample note** is made by the one `Scene3DTextures.DownsampleNote`; only the sheet branch made one before.

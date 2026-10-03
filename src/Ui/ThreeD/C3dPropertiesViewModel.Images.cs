@@ -68,6 +68,14 @@ public sealed partial class C3dPropertiesViewModel
         if (!HasImage || _imageIndex < 0) return;
         var doc = editor.Document;
         var d = C3dDimension.Parse(text, doc.DisplayUnit, doc.DbuPerMicron);
+        // An expression binds that one size through the sheet's own Size row writer (brief 51). With Keep aspect the other size
+        // would have to follow a formula, which a number cannot, so it is refused with the way through.
+        if (d.Kind == C3dDimensionKind.Expression)
+        {
+            if (ImageKeepAspect) { ImageSizeError = "An expression is bound with Keep aspect off: the other size cannot follow a formula."; return; }
+            ImageSizeError = editor.SetFieldText(_imageIndex, width ? "Rect.Size[0]" : "Rect.Size[1]", text);
+            return;
+        }
         if (d.Kind != C3dDimensionKind.Value || d.Dbu <= 0) { ImageSizeError = d.Why ?? "A width and a height are above zero."; return; }
         ImageSizeError = null;
         editor.SetImageSize(_imageIndex, width ? d.Dbu : null, width ? null : d.Dbu, ImageKeepAspect);

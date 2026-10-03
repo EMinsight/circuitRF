@@ -199,13 +199,14 @@ public sealed class C3dFaceEditor
     /// <paramref name="to"/> (own frame).</summary>
     /// <para>brief-em3d-101 R-em3d101-3e — on an image sheet's <c>Rect</c>, a corner moved RESIZES the rectangle with the opposite
     /// corner fixed, keeping its aspect unless <paramref name="freeAspect"/> (Shift), and it stays a <c>Rect</c>: an outline would
-    /// turn the resize into a clip of the picture.</para>
-    public C3dFaceEditResult MoveVertex(int vertex, C3dPoint3 to, bool freeAspect = false)
+    /// turn the resize into a clip of the picture. The aspect kept is <paramref name="aspect"/> — the image's pixels, width ÷
+    /// height, which the caller reads — or the rectangle's own when that is null (a file that does not read).</para>
+    public C3dFaceEditResult MoveVertex(int vertex, C3dPoint3 to, bool freeAspect = false, double? aspect = null)
     {
         switch (Source)
         {
             case C3dCylinder: return C3dFaceEditResult.Refuse(CylinderVertexMove);
-            case C3dSheet { Image: not null, Rect: { } rect } img when vertex is >= 0 and < 4: return ImageCorner(img, rect, vertex, to, freeAspect);
+            case C3dSheet { Image: not null, Rect: { } rect } img when vertex is >= 0 and < 4: return ImageCorner(img, rect, vertex, to, freeAspect, aspect);
             case C3dSheet s: return SheetVertex(s, vertex, to);
             case C3dPolyline: return C3dFaceEditResult.Refuse("A polyline is construction geometry: edit it by drawing it again.");
             case C3dWire w:
@@ -230,9 +231,9 @@ public sealed class C3dFaceEditor
     }
 
     /// <summary>brief-em3d-101 — corner <paramref name="vertex"/> (0 min, 1 +u, 2 max, 3 +v) of an image sheet's rectangle moved to
-    /// <paramref name="to"/>: the opposite corner stays, the size follows the corner — at the rectangle's aspect unless
-    /// <paramref name="freeAspect"/> — and the result is still a rectangle.</summary>
-    private C3dFaceEditResult ImageCorner(C3dSheet s, C3dRect r, int vertex, C3dPoint3 to, bool freeAspect)
+    /// <paramref name="to"/>: the opposite corner stays, the size follows the corner — at <paramref name="imageAspect"/> (the
+    /// rectangle's own when null) unless <paramref name="freeAspect"/> — and the result is still a rectangle.</summary>
+    private C3dFaceEditResult ImageCorner(C3dSheet s, C3dRect r, int vertex, C3dPoint3 to, bool freeAspect, double? imageAspect)
     {
         var (u, v, w) = C3dBrepBuild.ToPlane(s.Plane, to);
         if (w != s.Offset) return C3dFaceEditResult.Refuse("A sheet's corner moves in its plane only.");
@@ -242,7 +243,7 @@ public sealed class C3dFaceEditor
         long du = u - fu, dv = v - fv;
         if (!freeAspect && r.Size.U != 0 && r.Size.V != 0)
         {
-            double aspect = Math.Abs((double)r.Size.U / r.Size.V);
+            double aspect = imageAspect is > 0 and < double.PositiveInfinity ? imageAspect.Value : Math.Abs((double)r.Size.U / r.Size.V);
             // The dimension the drag moved further, relative to the aspect, leads; the other follows.
             if (Math.Abs(du) >= Math.Abs(dv) * aspect) dv = Math.Sign(dv == 0 ? (vertex is 2 or 3 ? 1 : -1) : dv) * (long)Math.Round(Math.Abs(du) / aspect);
             else du = Math.Sign(du == 0 ? (vertex is 1 or 2 ? 1 : -1) : du) * (long)Math.Round(Math.Abs(dv) * aspect);

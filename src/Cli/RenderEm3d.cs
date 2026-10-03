@@ -160,7 +160,8 @@ internal static class RenderEm3d
             scene = scene with
             {
                 Images = [.. Em3dSceneImages.Of(problem, loaded.Elaboration!.Images, Em3dSectionScene.Project),
-                          .. Em3dSceneImages.OfFaces(CircuitRF.Render.Scene3D.Scene3DFaceImages.Of(problem, loaded.Elaboration!), Em3dSectionScene.Project)],
+                          .. Em3dSceneImages.OfFaces(CircuitRF.Render.Scene3D.Scene3DFaceImages.Of(problem, loaded.Elaboration!), Em3dSectionScene.Project,
+                                                    mirrored: Em3dSectionScene.ProjectIsMirrored)],
             };
         var style = new Em3dRenderStyle(
             // A .c3d's objects name its own technology's materials (the elaboration's, as the 3D view colours them).

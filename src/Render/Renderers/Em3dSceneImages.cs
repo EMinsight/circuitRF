@@ -70,10 +70,13 @@ public static class Em3dSceneImages
     }
 
     /// <summary>brief-em3d-101 Phase B — the face images <paramref name="placed"/> projected by <paramref name="project"/>: none on an
-    /// object <paramref name="omit"/> names (hidden in the view), none seen edge-on. Each is clipped to its face's triangles and drawn
-    /// at its OWN transparency, never its object's.</summary>
+    /// object <paramref name="omit"/> names (hidden in the view), none seen edge-on, and none on a face turned AWAY from the viewer —
+    /// a face image is seen from outside its solid only (the 3D view's depth test hides the rest), and one drawn through the solid
+    /// would read mirrored. Each is clipped to its face's triangles and drawn at its OWN transparency, never its object's.</summary>
+    /// <param name="mirrored">The projection is a mirror image (right × up points AWAY from the viewer), as the isometric outline's
+    /// <see cref="Em3dSectionScene.Project"/> is: a face toward the viewer then winds clockwise in the picture.</param>
     public static IReadOnlyList<Em3dSceneImage> OfFaces(IReadOnlyList<Scene3DPlacedFaceImage> placed, Func<Point3, Uv> project,
-                                                        IReadOnlySet<string>? omit = null)
+                                                        IReadOnlySet<string>? omit = null, bool mirrored = false)
     {
         var list = new List<Em3dSceneImage>();
         foreach (var f in placed)
@@ -84,6 +87,15 @@ public static class Em3dSceneImages
             double area = Math.Abs((r.U - o.U) * (u.V - o.V) - (r.V - o.V) * (u.U - o.U));
             double size = Math.Max(Dist(o, r), Dist(o, u));
             if (!(area > 1e-6 * size * size)) continue;
+            // The face's triangles wind counter-clockwise seen from outside (C3dImages.FaceFrame), so their signed area in the
+            // picture is positive when the face looks toward the viewer — in perspective as well as orthographic.
+            double facing = 0;
+            foreach (var (ta, tb, tc) in f.Triangles)
+            {
+                Uv a = project(ta), b = project(tb), c = project(tc);
+                facing += (b.U - a.U) * (c.V - a.V) - (b.V - a.V) * (c.U - a.U);
+            }
+            if (!((mirrored ? -facing : facing) > 0)) continue;
             byte alpha = new Scene3DTransparency(f.Use.Record.Transparency, f.Use.Opacity).Alpha(255);
             list.Add(new Em3dSceneImage(f.Object, img.Path, o, r, u,
                 [.. f.Triangles.Select(t => (IReadOnlyList<Uv>)[project(t.A), project(t.B), project(t.C)])], Faces: true, Alpha: alpha));

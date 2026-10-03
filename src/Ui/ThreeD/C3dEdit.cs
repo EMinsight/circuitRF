@@ -19,7 +19,20 @@ namespace CircuitRF.Ui.ThreeD;
 /// as the file spells it before and after; null before is an insertion, null after a removal.</summary>
 public sealed record C3dEditSlot(bool Instance, int Index, string? Before, string? After);
 
-public sealed class C3dEdit : IUiCommand
+/// <summary>
+/// brief-em3d-101 R-em3d101-1b — an undo entry holding objects as the file spells them. An image's path is spelled for the
+/// <c>.c3d</c>'s folder, so Save As into another folder rewrites the paths the history holds as well as the document's
+/// (<see cref="C3dEditorViewModel.SaveAs"/>): otherwise undoing past the save would put back a path spelled for the old folder.
+/// Rewritten in place, so the stack's saved marker (a reference) still means the same entry.
+/// </summary>
+public interface IC3dObjectTextEntry
+{
+    /// <summary>Each object's text through <paramref name="objectText"/>, and each whole document's through
+    /// <paramref name="documentText"/>.</summary>
+    void RewriteObjects(Func<string, string> objectText, Func<string, string> documentText);
+}
+
+public sealed class C3dEdit : IUiCommand, IC3dObjectTextEntry
 {
     private readonly Action<IReadOnlyList<C3dEditSlot>, bool> _apply;
     private readonly Action<string>? _setBoundaries;
@@ -32,7 +45,14 @@ public sealed class C3dEdit : IUiCommand
     public (string Before, string After)? FaceBoundaries { get; }
 
     public string Description { get; }
-    public IReadOnlyList<C3dEditSlot> Slots { get; }
+    public IReadOnlyList<C3dEditSlot> Slots { get; private set; }
+
+    public void RewriteObjects(Func<string, string> objectText, Func<string, string> documentText)
+        => Slots = [.. Slots.Select(s => s.Instance ? s : s with
+           {
+               Before = s.Before is null ? null : objectText(s.Before),
+               After = s.After is null ? null : objectText(s.After),
+           })];
 
     /// <summary>brief-em3d-51 — the document already holds the after state (a gesture's release), until the first Execute.</summary>
     public bool AlreadyApplied => _alreadyApplied;
@@ -108,11 +128,17 @@ public sealed class C3dEdit : IUiCommand
 /// </summary>
 public sealed class C3dListsEdit(string description, (IReadOnlyList<string> Objects, IReadOnlyList<string> Instances) before,
                                  (IReadOnlyList<string> Objects, IReadOnlyList<string> Instances) after,
-                                 Action<IReadOnlyList<string>, IReadOnlyList<string>> apply) : IUiCommand
+                                 Action<IReadOnlyList<string>, IReadOnlyList<string>> apply) : IUiCommand, IC3dObjectTextEntry
 {
     public string Description { get; } = description;
-    public (IReadOnlyList<string> Objects, IReadOnlyList<string> Instances) Before { get; } = before;
-    public (IReadOnlyList<string> Objects, IReadOnlyList<string> Instances) After { get; } = after;
+    public (IReadOnlyList<string> Objects, IReadOnlyList<string> Instances) Before { get; private set; } = before;
+    public (IReadOnlyList<string> Objects, IReadOnlyList<string> Instances) After { get; private set; } = after;
+
+    public void RewriteObjects(Func<string, string> objectText, Func<string, string> documentText)
+    {
+        Before = ([.. Before.Objects.Select(objectText)], Before.Instances);
+        After = ([.. After.Objects.Select(objectText)], After.Instances);
+    }
 
     public void Execute() => apply(After.Objects, After.Instances);
     public void Undo() => apply(Before.Objects, Before.Instances);
@@ -186,13 +212,17 @@ public sealed class C3dRecordsEdit(string description, string before, string aft
 /// it is rare, so the copy is the exact choice rather than the cheap one.
 /// </summary>
 public sealed class C3dDocumentEdit(string description, string before, string after, string? ccellPath, string? ccellBefore,
-                                    string? ccellAfter, Action<string, string?, string?> apply, bool alreadyApplied = false) : IUiCommand
+                                    string? ccellAfter, Action<string, string?, string?> apply, bool alreadyApplied = false)
+    : IUiCommand, IC3dObjectTextEntry
 {
     private bool _alreadyApplied = alreadyApplied;
 
     public string Description { get; } = description;
-    public string Before { get; } = before;
-    public string After { get; } = after;
+    public string Before { get; private set; } = before;
+    public string After { get; private set; } = after;
+
+    public void RewriteObjects(Func<string, string> objectText, Func<string, string> documentText)
+        => (Before, After) = (documentText(Before), documentText(After));
     public string? CcellPath { get; } = ccellPath;
 
     public void Execute()
@@ -206,12 +236,17 @@ public sealed class C3dDocumentEdit(string description, string before, string af
 
 /// <summary>brief-em3d-51 R-em3d51-3c — entries that happened as one user action (a Define strip's definitions and the
 /// object the step then drew), undone and redone together. Each was applied as it was pushed.</summary>
-public sealed class C3dGroupEdit(string description, IReadOnlyList<IUiCommand> parts) : IUiCommand
+public sealed class C3dGroupEdit(string description, IReadOnlyList<IUiCommand> parts) : IUiCommand, IC3dObjectTextEntry
 {
     private bool _applied = true;
 
     public string Description { get; } = description;
     public IReadOnlyList<IUiCommand> Parts { get; } = parts;
+
+    public void RewriteObjects(Func<string, string> objectText, Func<string, string> documentText)
+    {
+        foreach (var p in Parts.OfType<IC3dObjectTextEntry>()) p.RewriteObjects(objectText, documentText);
+    }
 
     public void Execute()
     {

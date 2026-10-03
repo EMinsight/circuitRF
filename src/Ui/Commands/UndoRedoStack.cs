@@ -139,6 +139,10 @@ public sealed partial class UndoRedoStack : ObservableObject
         finally { Refresh(); }
     }
 
+    /// <summary>Every entry, undo side then redo side — for an editor that rewrites what its own entries hold in place (the 3D
+    /// editor's Save As, brief-em3d-101). Nothing is added or removed, so the saved marker and the stamps are unchanged.</summary>
+    public IEnumerable<IUiCommand> Entries => [.. _undoStack, .. _redoStack];
+
     /// <summary>Clear both stacks — called when a workspace is opened or new'd.</summary>
     public void Reset()
     {

@@ -116,7 +116,9 @@ public static class C3dValidation
         {
             string label = $"'{o.Name}/{fi.Face}'";
             if (fi.Transparency is { } t && !C3dTransparency.InRange(t)) found.Add(C3dDiagnostics.TransparencyRange($"The image on {label}", t));
+            if (fi.Width is <= 0 || fi.Height is <= 0) found.Add(C3dDiagnostics.FaceImageSize(o.Name, fi.Face));
             Unread(fi.Unread, $"The image on {label}", found);
+            Unread(fi.Image.Unread, $"The image on {label}", found);
             if (documentPath is null) continue;
             string? file = C3dImages.Resolve(documentPath, fi.Image.Path);
             if (C3dImages.Problem(file) is { } why) found.Add(C3dDiagnostics.ImageUnreadable($"{o.Name}/{fi.Face}", file ?? fi.Image.Path, why));

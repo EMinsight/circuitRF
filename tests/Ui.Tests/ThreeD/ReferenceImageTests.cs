@@ -158,6 +158,7 @@ public sealed class ReferenceImageTests : IDisposable
         var names = vm.PlaceImageSheet([png], null);
         Settle(vm);
         string name = Assert.Single(names);
+        Assert.Equal("image1", name);                        // R-em3d101-2e: image1, image2, …
         var sheet = Assert.IsType<C3dSheet>(vm.Document.Objects.Single(o => o.Name == name));
         Assert.False(sheet.Model);
         Assert.Null(sheet.Material);
@@ -356,6 +357,42 @@ public sealed class ReferenceImageTests : IDisposable
         Assert.Equal(Path.GetFullPath(png), C3dImages.Resolve(target, pasted.Image.Path));
     }
 
+    /// <summary>Save As into another folder spells the image's path for the new file — and the undo history's copies of it too, so
+    /// undoing past the save never puts back a path written for the old folder.</summary>
+    [Fact]
+    public void Gate11_SaveAs_UndoPastTheSave_KeepsAResolvingPath()
+    {
+        var (ws, dir) = Workspace();
+        string png = Quadrants(Path.Combine(ws, "ref", "quad.png"));
+        var vm = Open(Write(dir, [Sheet("image1", C3dPlane.XY, 0, 0, 100, 80, C3dImages.Store(Path.Combine(dir, "cell.c3d"), png))]));
+        vm.SetImageLocked(0, true);
+        string target = Path.Combine(ws, "other", "deeper", "3d", "t.c3d");
+        Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+        Assert.Null(vm.SaveAs(target));
+        string Resolved() => C3dImages.Resolve(vm.FilePath, ((C3dSheet)vm.Document.Objects[0]).Image!.Path)!;
+        Assert.Equal(Path.GetFullPath(png), Resolved());
+        vm.UndoRedo.Undo();                                   // the lock's entry, written before the save
+        Assert.False(((C3dSheet)vm.Document.Objects[0]).Locked);
+        Assert.Equal(Path.GetFullPath(png), Resolved());
+        vm.UndoRedo.Redo();
+        Assert.Equal(Path.GetFullPath(png), Resolved());
+    }
+
+    /// <summary>A file that was missing when first drawn is drawn once it is there (copied in, restored), with no Refresh Image —
+    /// as the Inspector and <c>check</c>, which read the file afresh, already say.</summary>
+    [Fact]
+    public void BrokenImage_IsReadAgainOnceItsFileAppears()
+    {
+        string png = Path.Combine(_root, "late", "late.png");
+        Assert.Same(Scene3DTextures.Placeholder, Scene3DTextures.Get(png));
+        Assert.Same(Scene3DTextures.Placeholder, Scene3DTextures.Get(png));      // still missing: still the checker
+        Quadrants(png);
+        var t = Scene3DTextures.Get(png);
+        Assert.NotSame(Scene3DTextures.Placeholder, t);
+        Assert.Same(t, Scene3DTextures.Get(png));                                // and kept, so nothing uploads again
+        Scene3DTextures.Refresh(png);
+    }
+
     // ── gate 12: an image edit is never stale ────────────────────────────────────────────────
 
     /// <summary>Re-pointing an image or changing its transparency leaves what a run compares untouched; toggling Model does not.</summary>
@@ -398,9 +435,21 @@ public sealed class ReferenceImageTests : IDisposable
         vm.Viewer.SetSelection([Scene3DItem.OfVertex(id, vm.Viewer.Scene.ToLocal(0, 0, 0))]);
         vm.StatusMessage = "";
         vm.StartVertexMove(); Assert.Equal(refusal, vm.StatusMessage);
+        Assert.Equal(refusal, vm.SetVertexCoordinates(new C3dPoint3(-50 * Um, 0, 0)));
+        // a sheet's face is the whole sheet: Face mode's Move Along Normal, Move and Align to Face would move it too
+        vm.Viewer.SelectMode = Scene3DSelectMode.Face;
+        vm.Viewer.SetSelection([Scene3DItem.OfFace(id, 0)]);
+        foreach (Action start in new Action[] { vm.StartPushPull, vm.StartFaceMove, vm.StartAlignToFace })
+        {
+            vm.StatusMessage = "";
+            start();
+            Assert.Null(vm.Tool);
+            Assert.Equal(refusal, vm.StatusMessage);
+        }
         Assert.Equal(before, C3dPersistence.Serialize(vm.Document));
+        // Keep aspect follows the IMAGE's pixels (64 × 48), not the rectangle's present 100 × 80 (R-em3d101-3b)
         vm.SetImageSize(0, 200 * Um, null, keepAspect: true);
-        Assert.Equal(new C3dPoint2(200 * Um, 160 * Um), ((C3dSheet)vm.Document.Objects[0]).Rect!.Size);
+        Assert.Equal(new C3dPoint2(200 * Um, 150 * Um), ((C3dSheet)vm.Document.Objects[0]).Rect!.Size);
     }
 
     // ── gate 14: the CLI ─────────────────────────────────────────────────────────────────────

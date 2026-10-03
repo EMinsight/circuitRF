@@ -25,9 +25,12 @@ namespace CircuitRF.Ui.ThreeD;
 /// them a save has since removed. The bytes are the entry's own, so undo and redo never depend on what is on disk.
 /// </summary>
 public sealed class C3dFilesEdit(IUiCommand inner, IReadOnlyList<(string Path, byte[] Bytes)> after,
-                                 IReadOnlyList<(string Path, byte[] Bytes)> before) : IUiCommand
+                                 IReadOnlyList<(string Path, byte[] Bytes)> before) : IUiCommand, IC3dObjectTextEntry
 {
     public string Description => inner.Description;
+
+    public void RewriteObjects(Func<string, string> objectText, Func<string, string> documentText)
+        => (inner as IC3dObjectTextEntry)?.RewriteObjects(objectText, documentText);
 
     public void Execute()
     {

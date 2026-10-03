@@ -363,6 +363,14 @@ public sealed class FaceImageTests : IDisposable
         Assert.True(vm.Document.Objects[0].FaceImages![0].Hidden);
         Settle(vm);
         Assert.Empty(vm.Viewer.Scene.ImageBatches);
+        // hidden, it is in no scene: Delete with its ROW selected still removes it, as one entry (R-em3d101-9b)
+        vm.SelectedTreeItem = Row();
+        undo = vm.UndoEntries;
+        Assert.True(vm.DeleteSelection());
+        Assert.Equal(undo + 1, vm.UndoEntries);
+        Assert.Null(vm.Document.Objects[0].FaceImages);
+        vm.UndoRedo.Undo();
+        Settle(vm);
         Row().IsVisible = true;
         Settle(vm);
 
@@ -380,6 +388,46 @@ public sealed class FaceImageTests : IDisposable
         Assert.Equal(undo + 1, vm.UndoEntries);
         Assert.True(vm.Document.Objects[0].FaceImages![0].Hidden);
         Assert.True(vm.Document.Objects[0].Hidden);
+    }
+
+    /// <summary>Hidden ticked in the Inspector keeps the image selected — its row and its section stay up, so it can be shown again
+    /// there — and the size boxes emptied go back to the default, fitted to the face.</summary>
+    [Fact]
+    public void Inspector_HiddenKeepsTheSection_EmptySizesFit()
+    {
+        var (ws, dir) = Workspace();
+        string png = ReferenceImageTests.Quadrants(Path.Combine(ws, "ref", "q.png"));
+        string c3d = Path.Combine(dir, "cell.c3d");
+        var box = Box("b", "Gold", 0, 0, 0, 100, 80, 20);
+        box.FaceImages = [new C3dFaceImage { Face = "zmax", Image = new C3dImage { Path = C3dImages.Store(c3d, png) }, Width = 40 * Um, Height = 30 * Um }];
+        var vm = Open(Write(dir, [box]));
+        uint rec = vm.Viewer.Scene.Objects.Single(o => o.Name == C3dEditorViewModel.FaceImageSceneName("b", "zmax")).Id;
+        vm.Viewer.SetSelection([Scene3DItem.OfObject(rec)]);
+        Assert.True(vm.Properties.HasFaceImage);
+
+        vm.Properties.FaceImageHidden = true;
+        Settle(vm);
+        Assert.True(vm.Document.Objects[0].FaceImages![0].Hidden);
+        // the row selected is the tree's row as it is NOW: the adopted scene rebuilds the record rows, and a selected row that is
+        // no longer in the tree is one the tree view drops (an empty selection, the Inspector gone)
+        C3dTreeItem Row() => vm.Tree.SelectMany(g => g.Items).SelectMany(i => i.Children.Prepend(i)).Single(r => r.Kind == C3dEditorViewModel.FaceImageKind);
+        Assert.Same(Row(), vm.SelectedTreeItem);
+        Assert.Equal([Row()], vm.SelectedTreeItems);
+        Assert.True(vm.Properties.HasFaceImage);
+        vm.Properties.FaceImageHidden = false;
+        Settle(vm);
+        Assert.False(vm.Document.Objects[0].FaceImages![0].Hidden);
+
+        vm.Viewer.SetSelection([Scene3DItem.OfObject(vm.Viewer.Scene.Objects.Single(o => o.Name == C3dEditorViewModel.FaceImageSceneName("b", "zmax")).Id)]);
+        int undo = vm.UndoEntries;
+        vm.Properties.FaceImageWidth = "";
+        vm.Properties.CommitFaceImageSize(width: true);              // one emptied: that size follows the other
+        Assert.Equal((null, 30 * Um), (vm.Document.Objects[0].FaceImages![0].Width, vm.Document.Objects[0].FaceImages![0].Height));
+        vm.Properties.FaceImageHeight = "";
+        vm.Properties.CommitFaceImageSize(width: false);             // both emptied: the default, fitted
+        Assert.True(vm.Document.Objects[0].FaceImages![0].Fitted);
+        Assert.Equal(undo + 2, vm.UndoEntries);
+        Assert.Null(vm.Properties.FaceImageError);
     }
 
     // ── gate 9: carried for free ─────────────────────────────────────────────────────────────
@@ -426,12 +474,16 @@ public sealed class FaceImageTests : IDisposable
             new C3dFaceImage { Face = "zmax", Image = new C3dImage { Path = C3dImages.Store(c3d, png) } },
             new C3dFaceImage { Face = "nowhere", Image = new C3dImage { Path = C3dImages.Store(c3d, png) } },
             new C3dFaceImage { Face = "xmax", Image = new C3dImage { Path = "../../ref/lost.png" } },
+            // turned away from the iso's viewer (+x +y +z): seen only through the box, so not drawn
+            new C3dFaceImage { Face = "zmin", Image = new C3dImage { Path = C3dImages.Store(c3d, png) } },
+            new C3dFaceImage { Face = "ymin", Image = new C3dImage { Path = C3dImages.Store(c3d, png) }, Width = 0 },
         ];
         string path = Write(dir, [box]);
         var (code, so, se) = Cli("check", path);
         Assert.True(code == 0, so + se);
         Assert.Contains("no longer has", so + se);
         Assert.Contains("lost.png", so + se);
+        Assert.Contains("not positive", so + se);
 
         string svg = Path.Combine(_root, "iso.svg");
         var (exit, stdout, stderr) = Cli("render", path, "-o", svg, "--iso", "--size", "400x300");
@@ -449,7 +501,8 @@ public sealed class FaceImageTests : IDisposable
         scene = scene with
         {
             Images = [.. CircuitRF.Render.Em3dSceneImages.Of(problem, e.Images, CircuitRF.Render.Em3dSectionScene.Project),
-                      .. CircuitRF.Render.Em3dSceneImages.OfFaces(Scene3DFaceImages.Of(problem, e), CircuitRF.Render.Em3dSectionScene.Project)],
+                      .. CircuitRF.Render.Em3dSceneImages.OfFaces(Scene3DFaceImages.Of(problem, e), CircuitRF.Render.Em3dSectionScene.Project,
+                                                                 mirrored: CircuitRF.Render.Em3dSectionScene.ProjectIsMirrored)],
         };
         Assert.Equal(2, scene.Images.Count);                 // zmax, and xmax's placeholder; "nowhere" is not drawn
         string inProcess = System.Text.Encoding.UTF8.GetString(CircuitRF.Cli.VectorPage.Svg(400, 300, c => CircuitRF.Render.Em3dSectionRenderer.Draw(c, 400, 300, scene, style)));

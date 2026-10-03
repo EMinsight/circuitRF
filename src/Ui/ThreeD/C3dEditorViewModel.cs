@@ -534,6 +534,12 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         if (SelectedTints() is { Count: > 0 } tints) { DeleteTints(tints); return true; }
         // brief-em3d-101 R-em3d101-9b — a selected face image is a record: removed as one, its face stays
         if (SelectedFaceImages() is { Count: > 0 } faceImages) { RemoveFaceImages(faceImages); return true; }
+        // … and so are their tree rows when the images are hidden: a hidden one is not in the scene, so only its row is selected.
+        if (SelectedTreeItems.Count > 0 && SelectedTreeItems.All(r => r.Kind == FaceImageKind && r.FaceImageHost >= 0 && r.FaceImageFace is not null))
+        {
+            RemoveFaceImages([.. SelectedTreeItems.Select(r => (r.FaceImageHost, r.FaceImageFace!)).Distinct()]);
+            return true;
+        }
         var objects = Viewer.SelectedObjects();
         // brief-em3d-66 R-em3d66-6 — an entered operand: a Tool is removed from its boolean; the Blank is refused.
         if (objects.Select(OperandIndexOf).Where(i => i >= 0).Distinct().ToList() is { Count: > 0 } operands) return DeleteOperands(operands);
@@ -969,9 +975,35 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
             foreach (var (img, old) in images) img.Path = old;
             return why;
         }
+        RebaseHistoryImages(was, FilePath);
         if (wasScratch) OnPropertyChanged(nameof(IsScratch));
         Viewer.Regenerate();         // the document's own path is where its relative references resolve from
         return null;
+    }
+
+    /// <summary>brief-em3d-101 — the image paths the undo history holds, spelled again for the document's new file (as Save As
+    /// spelled the document's own), so undoing or redoing past the save never puts back a path written for the old folder. Text
+    /// that carries no image is left byte for byte as it was.</summary>
+    private void RebaseHistoryImages(string from, string to)
+    {
+        if (string.Equals(Path.GetDirectoryName(Path.GetFullPath(from)), Path.GetDirectoryName(to), StringComparison.Ordinal)) return;
+        string ObjectText(string text)
+        {
+            if (!text.Contains("\"Path\"", StringComparison.Ordinal)) return text;
+            var o = C3dPersistence.DeserializeObject(text);
+            if (!C3dImages.AllImages([o]).Any()) return text;
+            C3dImages.Rebase([o], from, to);
+            return C3dPersistence.SerializeObject(o);
+        }
+        string DocumentText(string text)
+        {
+            if (!text.Contains("\"Path\"", StringComparison.Ordinal)) return text;
+            var d = C3dPersistence.Deserialize(text);
+            if (!C3dImages.AllImages(d.Objects).Any()) return text;
+            C3dImages.Rebase(d.Objects, from, to);
+            return C3dPersistence.Serialize(d);
+        }
+        foreach (var entry in UndoRedo.Entries.OfType<IC3dObjectTextEntry>()) entry.RewriteObjects(ObjectText, DocumentText);
     }
 
     /// <summary>The file changed on disk. Our own save is ignored; a clean document reloads without asking; a
@@ -1233,7 +1265,9 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         if (_selectedTreeItems.Count > 1)
             return selected.Count > 0 && _selectedTreeItems.SelectMany(SceneObjectsOfSelectedRow).Select(o => o.Id).ToHashSet().SetEquals(selected);
         var ofRow = SceneObjectsOfRow(row).Select(o => o.Id).ToHashSet();
-        if (selected.Count == 0) return ofRow.Count == 0 && row.Kind is SymmetryPlaneKind or ThermalBoundaryKindName;
+        // A row with nothing of its own in the scene stays selected when the scene selects nothing — a symmetry plane, a thermal
+        // boundary, and a face image that is hidden (brief-em3d-101: hiding one from the Inspector kept its section up).
+        if (selected.Count == 0) return ofRow.Count == 0 && row.Kind is SymmetryPlaneKind or ThermalBoundaryKindName or FaceImageKind;
         return ofRow.SetEquals(selected);
     }
 

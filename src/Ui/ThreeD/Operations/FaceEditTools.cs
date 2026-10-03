@@ -253,6 +253,7 @@ public sealed class FaceMoveTool : C3dFaceEditTool
     private readonly MoveTool _mover;
     private readonly string? _face;
     private readonly int _vertex = -1;
+    private readonly double? _aspect;
 
     /// <summary>A face move. <paramref name="baseAt"/>, when given, is the base point at once (the cursor was on the face).</summary>
     public FaceMoveTool(IC3dFaceHost host, int index, C3dObject source, string face, C3dPoint3 pivot, (C3dPoint3 P, bool Exact)? baseAt)
@@ -264,10 +265,12 @@ public sealed class FaceMoveTool : C3dFaceEditTool
         Step = _mover.Step;
     }
 
-    /// <summary>A vertex move: <paramref name="vertex"/> (an index into the editor's vertices) is the base point.</summary>
-    public FaceMoveTool(IC3dFaceHost host, int index, C3dObject source, int vertex) : base(host, index, source)
+    /// <summary>A vertex move: <paramref name="vertex"/> (an index into the editor's vertices) is the base point.
+    /// <paramref name="aspect"/> is an image sheet's pixel aspect, which a corner resize keeps (brief-em3d-101 R-em3d101-3e).</summary>
+    public FaceMoveTool(IC3dFaceHost host, int index, C3dObject source, int vertex, double? aspect = null) : base(host, index, source)
     {
         _vertex = vertex;
+        _aspect = aspect;
         var at = WorldOf(Editor.Vertices[vertex]);
         _mover = new MoveTool(host, [], at);
         _mover.SetBase(at, Placement.IsIntegral);
@@ -289,7 +292,7 @@ public sealed class FaceMoveTool : C3dFaceEditTool
     private C3dFaceEditResult Edit(C3dTransform t, bool free = false)
     {
         var (local, _) = ToLocal(new C3dPoint3(R(t.Tx), R(t.Ty), R(t.Tz)));
-        return IsVertex ? Editor.MoveVertex(_vertex, Editor.Vertices[_vertex] + local, free) : Editor.MoveFace(_face!, local);
+        return IsVertex ? Editor.MoveVertex(_vertex, Editor.Vertices[_vertex] + local, free, _aspect) : Editor.MoveFace(_face!, local);
     }
 
     public override C3dFaceEditResult? Evaluate(in C3dDrawInput input)

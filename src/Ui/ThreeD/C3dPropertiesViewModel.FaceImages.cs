@@ -114,12 +114,26 @@ public sealed partial class C3dPropertiesViewModel
         return Math.Abs(d) < 1e-9 ? 0 : d;
     }
 
-    /// <summary>Width or height committed: explicit from now on; with Keep aspect the other follows at the image's own aspect.</summary>
+    /// <summary>Width or height committed: explicit from now on; with Keep aspect the other follows at the image's own aspect. A box
+    /// left EMPTY is that size unstated — it follows the other at the image's aspect — and both empty is the default, fitted to
+    /// the face (its offset kept; Fit to Face clears that too).</summary>
     public void CommitFaceImageSize(bool width)
     {
         if (_faceImage is not { } f || editor.FaceImageAt(f.Index, f.Face) is not { } fi) return;
         var doc = editor.Document;
-        var d = C3dDimension.Parse(width ? FaceImageWidth : FaceImageHeight, doc.DisplayUnit, doc.DbuPerMicron);
+        string text = width ? FaceImageWidth : FaceImageHeight;
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            FaceImageError = null;
+            if ((width ? fi.Width : fi.Height) is null) return;
+            Write(string.IsNullOrWhiteSpace(width ? FaceImageHeight : FaceImageWidth) ? "Fit" : "Resize", x =>
+            {
+                if (width) x.Width = null; else x.Height = null;
+                if (string.IsNullOrWhiteSpace(width ? FaceImageHeight : FaceImageWidth)) (x.Width, x.Height) = (null, null);
+            });
+            return;
+        }
+        var d = C3dDimension.Parse(text, doc.DisplayUnit, doc.DbuPerMicron);
         if (d.Kind != C3dDimensionKind.Value || d.Dbu <= 0) { FaceImageError = d.Why ?? "A width and a height are above zero."; return; }
         double aspect = C3dImages.PixelSize(C3dImages.Resolve(editor.FilePath, fi.Image.Path)) is { } px ? (double)px.Width / px.Height
                       : fi.Width is { } w0 && fi.Height is { } h0 && h0 > 0 ? (double)w0 / h0 : 4.0 / 3.0;

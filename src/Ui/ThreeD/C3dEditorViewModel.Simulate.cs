@@ -1000,6 +1000,26 @@ public sealed partial class C3dEditorViewModel
 
     private void RebuildRecordsTree()
     {
+        // brief-em3d-101 — the record rows are thrown away and made again, and the tree view drops a removed row from its
+        // selection (raising an empty one): the rows selected before are found again by name afterwards, as RebuildTree does.
+        // Without this an Inspector edit of a selected face image (Hidden above all) lost its row once the scene was adopted.
+        var keep = _selectedTreeItems.ToList();
+        bool outer = _syncingTree;
+        _syncingTree = true;
+        try { RebuildRecordRows(); }
+        finally { _syncingTree = outer; }
+        if (outer || keep.Count == 0) return;
+        var all = AllTreeItems().ToHashSet();
+        List<C3dTreeItem> rows = [.. keep.Select(r => all.Contains(r) ? r : RebuiltRow(r)).OfType<C3dTreeItem>().Distinct()];
+        if (rows.SequenceEqual(_selectedTreeItems)) return;
+        _syncingTree = true;
+        try { SetTreeRows(rows); }
+        finally { _syncingTree = false; }
+        Properties.Reload();
+    }
+
+    private void RebuildRecordRows()
+    {
         foreach (var g in Tree.Where(g => g.Role == C3dTreeGroupRole.Ports).ToList())
         {
             DetachExpansion([g]);

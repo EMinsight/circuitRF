@@ -138,7 +138,7 @@ public sealed partial class C3dEditorViewModel : IC3dFaceHost
     /// <summary>R-em3d47-3a — Move Along Normal (N): push/pull the selected face.</summary>
     public void StartPushPull()
     {
-        if (!HaveFace(out var f)) return;
+        if (!HaveFace(out var f) || LockedFace(f.Obj)) return;
         if (C3dFaceFrame.Of(f.Obj, f.Face, CursorWorldDbu()) is not { } frame) { StatusMessage = $"Face {f.Face} has no normal to move along."; return; }
         BeginFaceEdit(new PushPullTool(this, f.Index, f.Obj, f.Face, frame), f.Scene, f.SceneFace);
     }
@@ -146,7 +146,7 @@ public sealed partial class C3dEditorViewModel : IC3dFaceHost
     /// <summary>R-em3d47-3b — Move (G) in Face mode: the face's vertices follow base → target.</summary>
     public void StartFaceMove()
     {
-        if (!HaveFace(out var f)) return;
+        if (!HaveFace(out var f) || LockedFace(f.Obj)) return;
         if (f.Obj is C3dCylinder) { StatusMessage = C3dFaceEditor.CylinderFreeMove; return; }
         var frame = C3dFaceFrame.Of(f.Obj, f.Face, null);
         var pivot = frame is { } fr ? new C3dPoint3(R(fr.Through.X), R(fr.Through.Y), R(fr.Through.Z)) : default;
@@ -168,7 +168,7 @@ public sealed partial class C3dEditorViewModel : IC3dFaceHost
         }
         if (v.Vertex < 0) { StatusMessage = C3dFaceEditor.CylinderVertexMove; return; }
         if (v.Obj is C3dSheet { Locked: true } locked) { StatusMessage = LockedRefusal(locked.Name); return; }
-        var tool = new FaceMoveTool(this, v.Index, v.Obj, v.Vertex);
+        var tool = new FaceMoveTool(this, v.Index, v.Obj, v.Vertex, v.Obj is C3dSheet { Image: not null } img ? ImageAspectOf(img) : null);
         BeginFaceEdit(tool, null, -1);
         _snapExcludedPoints.Add(DrawGeometry.Metres(v.World, Document.DbuPerMicron));
         ApplySnapExclusion();
@@ -187,10 +187,19 @@ public sealed partial class C3dEditorViewModel : IC3dFaceHost
     /// <summary>R-em3d47-4 — Align to Face…: the selected face's object, onto a face picked next.</summary>
     public void StartAlignToFace()
     {
-        if (!HaveFace(out var f)) return;
+        if (!HaveFace(out var f) || LockedFace(f.Obj)) return;
         if (C3dFaceCommands.PlaneOf(f.Obj, f.Face, out var why) is not { } plane) { StatusMessage = why ?? "That face is not flat."; return; }
         var target = new C3dTarget(false, f.Index);
         BeginOperation(new AlignToFaceTool(this, target, PivotOf([target]), plane, f.Face));
+    }
+
+    /// <summary>brief-em3d-101 R-em3d101-1g — a locked image sheet's face is the whole sheet: Push/Pull, a face Move and Align to
+    /// Face would move it, so each is refused with the status sentence, as Object mode's Move is.</summary>
+    private bool LockedFace(C3dObject o)
+    {
+        if (o is not C3dSheet { Locked: true } locked) return false;
+        StatusMessage = LockedRefusal(locked.Name);
+        return true;
     }
 
     private (double X, double Y, double Z)? CursorWorldDbu()
@@ -437,11 +446,12 @@ public sealed partial class C3dEditorViewModel : IC3dFaceHost
     {
         if (VertexSelection() is not { } v) return "Select one vertex of this document's own objects.";
         if (v.Vertex < 0) return C3dFaceEditor.CylinderVertexMove;
+        if (v.Obj is C3dSheet { Locked: true } locked) return LockedRefusal(locked.Name);
         var t = v.Obj.Placement.ToTransform();
         var (x, y, z) = t.Inverse().Apply(world);
         var local = new C3dPoint3(R(x), R(y), R(z));
         var editor = new C3dFaceEditor(v.Obj);
-        var r = editor.MoveVertex(v.Vertex, local);
+        var r = editor.MoveVertex(v.Vertex, local, aspect: v.Obj is C3dSheet { Image: not null } img ? ImageAspectOf(img) : null);
         if (r is not { Object: { } obj }) return r.Refusal;
         string before = C3dPersistence.SerializeObject(v.Obj), after = C3dPersistence.SerializeObject(obj);
         if (before == after) return null;

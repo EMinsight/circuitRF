@@ -1558,9 +1558,10 @@ primary, and a layout that resolves no technology. Both are normal.</p>
 On a `.c3d`, a [reference image](drawing-in-3d.md#images) is drawing only, so what is wrong with one is a **warning**,
 never an error — a design does not fail `check` because a photo moved: an image file that is missing or does not decode
 (`c3d.image.unreadable`, naming the object and the path it resolved to), an image mapped onto a face its object no longer
-has (`c3d.image.face-missing` — the record is kept, never dropped), two images on one face (`c3d.image.face-twice`) and
-`"Locked"` on a sheet with no image (`c3d.image.locked-without-image`). An object that is not modelled and has no material
-raises no *has no material* warning: only what a run solves is warned of.
+has (`c3d.image.face-missing` — the record is kept, never dropped), two images on one face (`c3d.image.face-twice`), a
+face image whose Width or Height is not positive (`c3d.image.face-size`) and `"Locked"` on a sheet with no image
+(`c3d.image.locked-without-image`). An object that is not modelled and has no material raises no *has no material*
+warning: only what a run solves is warned of.
 
 The kind of document is inferred from the path, exactly as `convert` infers a format. A GDSII or
 Gerber file is **named as interchange** rather than called unreadable — it is simply not validated,

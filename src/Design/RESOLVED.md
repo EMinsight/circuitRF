@@ -16475,3 +16475,12 @@ and `ParallelLcResonanceTests.AnInductorWithOnlyADielectricClass_IsWarnedForWhat
 - **Results' faces**: §8f says a face image is addressable wherever a face boundary is, and boundaries are set on an
   operation's result faces, so Map Image is offered there too (§9a's "D13 disabled pattern" for results contradicts §8f;
   §8f's "do not invent a second rule" was followed).
+
+### Review of brief-em3d-101 (2026-10-03)
+
+- **An image sheet's corner resize keeps the IMAGE's pixel aspect** (`C3dFaceEditor.MoveVertex(…, aspect)`, which the editor
+  reads from the file), not the rectangle's present one, as the brief's R-em3d101-3e and the Inspector's Keep aspect say; the
+  rectangle's own is the fallback when the file does not read. Kept a parameter: `src/Design` reads no pixels on a drag.
+- **`check` warns on a face image whose Width or Height is not positive** (`c3d.image.face-size`): zero draws nothing and a
+  negative size mirrors the picture, neither of which the editor writes. A face image's own `Image` record's unknown keys are
+  named too; before, only a sheet's were.
