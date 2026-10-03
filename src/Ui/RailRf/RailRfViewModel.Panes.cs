@@ -78,6 +78,24 @@ public sealed partial class RailRfViewModel
     private void ToggleResultText() => ShowResultText = !ShowResultText;
 
     /// <summary>
+    /// The dotted parts-alone curve on the |Z| plot — the rail with every source removed (field
+    /// report, 2026-10-03). Document state for <see cref="ShowResultText"/>'s reason, and outside
+    /// the "at least one panel" rule for the same one: it hides a curve, never a panel.
+    /// </summary>
+    public bool ShowPartsAlone
+    {
+        get => _document.Panels.ShowPartsAlone;
+        set
+        {
+            SetPanel(v => _document.Panels.ShowPartsAlone = v, ShowPartsAlone, value);
+            RebuildImpedancePlot();
+        }
+    }
+
+    [RelayCommand]
+    private void TogglePartsAlone() => ShowPartsAlone = !ShowPartsAlone;
+
+    /// <summary>
     /// Whether the centre column is drawn at all — the board and the parts table SHARE it.
     /// </summary>
     /// <remarks>
@@ -146,7 +164,8 @@ public sealed partial class RailRfViewModel
         // The invariant, defended at the WRITE as well as at the button — a caller that is not the
         // button (a test, a menu item) must not be able to empty the window either. It counts the
         // FOUR PANELS only: the result text is inside one of them and hiding it empties nothing.
-        if (!value && name != nameof(ShowResultText) && ShownPanelCount <= 1) return;
+        if (!value && name is not (nameof(ShowResultText) or nameof(ShowPartsAlone)) &&
+            ShownPanelCount <= 1) return;
 
         write(value);
         OnPropertyChanged(name);
@@ -174,6 +193,7 @@ public sealed partial class RailRfViewModel
         OnPropertyChanged(nameof(ShowParts));
         OnPropertyChanged(nameof(ShowResults));
         OnPropertyChanged(nameof(ShowResultText));
+        OnPropertyChanged(nameof(ShowPartsAlone));
         OnPropertyChanged(nameof(ShowBoardColumn));
         OnPropertyChanged(nameof(PartsFillsBoardColumn));
         RefreshPanelCommands();

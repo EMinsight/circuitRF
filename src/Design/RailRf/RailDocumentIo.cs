@@ -148,6 +148,7 @@ public static class RailDocumentIo
             ShowParts         = d.Panels.ShowParts,
             ShowResults       = d.Panels.ShowResults,
             ShowResultText    = d.Panels.ShowResultText,
+            ShowPartsAlone    = d.Panels.ShowPartsAlone,
         },
         // R-rail20-1b: the WINDOW's own hidden layers, never the technology's. Written only when
         // something is hidden, for Panels' reason — and sorted, so a document saved twice with no
@@ -341,6 +342,7 @@ public static class RailDocumentIo
                 ShowParts         = f.Panels?.ShowParts         ?? true,
                 ShowResults       = f.Panels?.ShowResults       ?? true,
                 ShowResultText    = f.Panels?.ShowResultText    ?? true,
+                ShowPartsAlone    = f.Panels?.ShowPartsAlone    ?? true,
             },
         };
 
@@ -559,6 +561,7 @@ public static class RailDocumentIo
         public bool? ShowParts         { get; set; }
         public bool? ShowResults       { get; set; }
         public bool? ShowResultText    { get; set; }
+        public bool? ShowPartsAlone    { get; set; }
     }
 
     /// <summary>

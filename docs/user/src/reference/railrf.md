@@ -109,7 +109,7 @@ list's header, <b>Follow the technology</b>, clears your choices so every layer 
 | **The return net** | Which net on that layer is the return (**Return**). Usually left to the copper, which measures it; named only where the copper cannot say. See [Ref. and Return](#return). |
 | **The sources** | Where the rail is fed, and by what: an open-circuit voltage with a series R and L, or a Touchstone file. |
 | **The loads and their currents** | Where the rail is drawn from, and how much. Nothing in a BOM or a placement file carries a current, so this is typed. |
-| **The parts** | The decoupling, by part number, against a part library (`.crlib`) holding C, the self-resonant frequency, ESR and a bias curve. A shunt part is a CAPACITOR across the rail; there is no shunt inductor, because an inductor from the rail to the return shorts the supply at DC. The inductance a supply brings &mdash; what the classic parallel L&ndash;C peak against the decoupling is made of &mdash; is the **source row's L out**. |
+| **The parts** | The decoupling, by part number, against a part library (`.crlib`) holding C, the self-resonant frequency, ESR and a bias curve. A shunt part is normally a CAPACITOR across the rail. A part with an inductance and no capacitance is accepted as a series R&ndash;L from the rail to the return; at DC its impedance is its ESR, so across the supply's voltage it is a short, and the DC answer names the current it draws. The inductance a supply brings &mdash; what the classic parallel L&ndash;C peak against the decoupling is made of &mdash; belongs on the **source row's L out**, where it is in series with the supply and draws nothing at DC. |
 | **The target** | A drop budget in millivolts, a flat Z<sub>target</sub> in milliohms, a per-port mask, or ΔI/ΔV/rise-time to derive one from. |
 | **The band and the aggressors** | The frequency span to sweep, and the things on your board that actually generate energy &mdash; the crystal, the converter, the radio reference. |
 
@@ -450,6 +450,26 @@ names its frequency and its margin in decibels.
 
 No curve at all? The card under the plot on the **Frequency** tab says why &mdash; most often a source with no
 output resistance; see [What you provide](#provide).
+
+### Which |Z| this is, and comparing it with a circuit simulator {#which-z}
+
+The curve is the impedance **the load sees**, looking back into the rail. A source's ideal voltage is a
+short at AC, so the supply's **R out** and **L out** sit across the rail in parallel with every part. That is
+the impedance the ripple budget uses: &Delta;V = &Delta;I &middot; Z, and &Delta;I is the load's current.
+
+The **dotted** curve is the **parts alone**: the same rail with every source removed. A circuit simulator
+reports this one when it divides the rail voltage by its generator's current. With a stiff supply the two
+can be orders of magnitude apart. 10 m&Omega; of R out across 6 nH + 20 m&Omega; &parallel; 100 nF + 20 m&Omega;
+peaks at 9.93 m&Omega; at the load, but at 1.51 &Omega; for the parts alone. Both are right: they are two
+different measurements of one circuit. When the supply moves the highest peak by more than 1 dB, a note
+under the plot gives both numbers.
+
+To read railRF's curve in a circuit simulator, set the generator's AC amplitude to 0 and keep its series
+resistance. Drive the load node with a 1 A AC current source and plot the rail voltage. A DC value on a
+current source is not an AC excitation, so the AC sweep ignores it.
+
+The **Parts alone** button in the Results strip (the unplugged-plug glyph) shows or hides the dotted
+curve. The document remembers the choice.
 
 ### Deriving the target from the load {#target-from-load}
 

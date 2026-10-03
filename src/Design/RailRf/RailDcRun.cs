@@ -1001,15 +1001,20 @@ public static class RailDcRun
             string lowest = ports.Count > 0
                 ? $"{ports.Min(p => p.VoltageV):0.###} V at its worst load"
                 : $"{vAcross:0.###} V across the part";
+            // ITS DC IMPEDANCE FIRST (field report, 2026-10-03): "a short" read as a claim that the
+            // part is 0 Ω, which a designer rightly answered with Z = R + jωL → R as ω → 0. It IS
+            // R — the ESR — and what makes R a short is the supply voltage across it, which a
+            // simulator driven by an AC-only generator never applies.
             findings.Add(
-                $"{o.Refdes} is an inductor part across the rail — an inductance with no capacitance — " +
-                $"and at DC that is a short to the return: it draws {Amps(amps)} through " +
-                (ohms > 0 ? $"its {ohms * 1e3:0.###} mΩ ESR" : "no stated ESR, stamped as a near-short") +
-                ", and the rail falls to " + lowest +
-                (sourceVoltage is { } vs ? $" from the source's {vs:0.###} V" : "") +
-                ". A part with no capacitance across a rail passes DC. If this one stands for a supply's own " +
-                "output impedance, its R out and L out belong on that source row instead, where they are " +
-                "the supply rather than a short across it.");
+                $"{o.Refdes} is an inductor part across the rail — an inductance with no capacitance — so " +
+                "at DC its impedance is " +
+                (ohms > 0 ? $"its ESR, {ohms * 1e3:0.###} mΩ" : "only what stamps a part with no stated ESR, a near-short") +
+                (sourceVoltage is { } vs ? $", with the source's {vs:0.###} V across it" : "") +
+                $". That is a short to the return: it draws {Amps(amps)}, and the rail falls to " + lowest +
+                ". A circuit simulator whose generator has only an AC value never shows this current, " +
+                "because nothing in it holds the rail at a DC voltage. If this part stands for a supply's " +
+                "own output impedance, its R out and L out belong on that source row instead, where they " +
+                "are in series with the supply and carry only the load's current.");
         }
         var breakdown = Breakdown(request, pdn, solution, out var breakdownLocations);
 

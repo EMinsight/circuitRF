@@ -58,8 +58,7 @@ namespace CircuitRF.Render.DataDisplay
                     StrokeCap   = SKStrokeCap.Round,
                     StrokeJoin  = SKStrokeJoin.Round
                 };
-                if (props.LineType == LineType.Dashed)
-                    paint.PathEffect = SKPathEffect.CreateDash(new[] { strokeW * 3f, strokeW * 2f }, 0);
+                paint.PathEffect = LinePathEffect(props.LineType, strokeW);
                 foreach (var curve in trace.FamilyCurves)
                 {
                     using var p = new SKPath();
@@ -109,9 +108,7 @@ namespace CircuitRF.Render.DataDisplay
                     StrokeJoin  = SKStrokeJoin.Round
                 };
 
-                if (props.LineType == LineType.Dashed)
-                    paint.PathEffect = SKPathEffect.CreateDash(
-                        new[] { strokeW * 3f, strokeW * 2f }, 0);
+                paint.PathEffect = LinePathEffect(props.LineType, strokeW);
 
                 canvas.DrawPath(path, paint);
             }
@@ -201,10 +198,19 @@ namespace CircuitRF.Render.DataDisplay
                 Style       = SKPaintStyle.Stroke,
                 IsAntialias = true,
                 StrokeCap   = SKStrokeCap.Round,
-                PathEffect  = props.LineType == LineType.Dashed
-                    ? SKPathEffect.CreateDash(new[] { strokeW * 3f, strokeW * 2f }, 0)
-                    : null
+                PathEffect  = LinePathEffect(props.LineType, strokeW)
             };
+
+        /// <summary>
+        /// The stroke pattern for a line type, or null for a solid line. A DOT is a near-zero dash
+        /// under the paint's round cap — the cap is what draws it — spaced at 2.5 stroke widths.
+        /// </summary>
+        private static SKPathEffect? LinePathEffect(LineType type, float strokeW) => type switch
+        {
+            LineType.Dashed => SKPathEffect.CreateDash(new[] { strokeW * 3f, strokeW * 2f }, 0),
+            LineType.Dotted => SKPathEffect.CreateDash(new[] { strokeW * 0.01f, strokeW * 2.5f }, 0),
+            _               => null,
+        };
 
         private static SKPaint BuildHeadPaint(TraceProperties props)
             => new SKPaint

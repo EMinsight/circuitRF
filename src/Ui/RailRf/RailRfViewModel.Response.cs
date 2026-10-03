@@ -840,6 +840,28 @@ public sealed partial class RailRfViewModel
             }
         }
 
+        // ── THE PARTS ALONE, DOTTED (field report, 2026-10-03) ─────────────────────────────────
+        //
+        // The rail with every source removed — what a circuit simulator reads as the rail voltage
+        // over its generator's current. Off the PRIMARY reading only: P1 is lumped either way, so a
+        // Fast and an Accurate parts-alone curve are one curve drawn twice. Dotted because dashed
+        // already means Fast and solid Accurate.
+        bool drewAlone = false;
+        if (ShowPartsAlone && primary.Data is { } aloneData)
+            foreach (var port in primary.Ports)
+            {
+                if (port.PartsAloneOhms is null ||
+                    PartsAloneTrace(aloneData, port, primary.ModelKind, colour++) is not { } alone)
+                    continue;
+
+                string key = string.Create(CultureInfo.InvariantCulture, $"parts|{port.Index}");
+                if (previous.TryGetValue(key, out var was)) Carry(was, alone);
+
+                _curves[key] = alone;
+                curves.Add(alone);
+                drewAlone = true;
+            }
+
         foreach (var port in primary.Ports)
             if (port.Mask is { } mask && MaskTrace(mask, port.Name) is { } masked)
                 plot.Traces.Add(masked);
@@ -852,8 +874,16 @@ public sealed partial class RailRfViewModel
         // already on screen — the status strip states the model kind on every frame, and "both
         // models in hand" sits beside it — so the title was a third copy of one of them growing a
         // clause at a time, on the narrowest panel in the window.
+        //
+        // It does say WHICH |Z| (field report, 2026-10-03): a designer compared this curve against a
+        // simulator's generator-side ratio and read two right answers as one disagreement. The
+        // supply is in it because the load sees it in parallel; the dotted curve is without it. So
+        // the title names BOTH whenever the dotted curve is drawn — "supply included" over a plot
+        // holding a supply-removed curve was read, rightly, as a claim about both (owner, 2026-10-03).
         plot.CustomTitleOn = true;
-        plot.CustomTitle   = "|Z| over frequency";
+        plot.CustomTitle   = drewAlone
+            ? "|Z| seen by the load · dotted: supply removed"
+            : "|Z| seen by the load (supply included)";
 
         // ── ONE Y LABEL, not one per trace (owner, 2026-09-19) ────────────────────────────────
         //
@@ -975,6 +1005,28 @@ public sealed partial class RailRfViewModel
         // source on every edit, and this is what it resolves against — see RailPlotDataSources.
         trace.SourcePath = RailPlotDataSources.PathFor(kind);
 
+        trace.SetDisplayTransform(ImpedanceTransform);
+        TraceResolve.SetCubeDataFrom(trace, data, PlotType.Rect, FreqUnit.MHz);
+        return trace.Points.Count > 0 ? trace : null;
+    }
+
+    /// <summary>
+    /// One port's parts-alone |Z| — the sweep's <see cref="PdnSweep.PartsAloneCube"/>, which is the
+    /// rail with every source removed — dotted, in the plot's own unit.
+    /// </summary>
+    private Trace? PartsAloneTrace(DataSet data, PdnPortImpedance port, PdnModelKind kind, int colour)
+    {
+        int number = port.Index + 1;
+        string spec = string.Create(CultureInfo.InvariantCulture,
+                                    $"{PdnSweep.PartsAloneCube}[:, {number}, {number}]");
+
+        if (!CubeTraceSpecParser.TryParse(spec, data, out string cubeName, out var slice,
+                                          out var transform, out _))
+            return null;
+
+        var trace = CubeTrace(cubeName, slice, transform, spec, Style(colour, LineType.Dotted, width: 1.25));
+        trace.QuantityName = $"|Z| parts alone, supply removed ({port.Name})";
+        trace.SourcePath   = RailPlotDataSources.PathFor(kind);
         trace.SetDisplayTransform(ImpedanceTransform);
         TraceResolve.SetCubeDataFrom(trace, data, PlotType.Rect, FreqUnit.MHz);
         return trace.Points.Count > 0 ? trace : null;

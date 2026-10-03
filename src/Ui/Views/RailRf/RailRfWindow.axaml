@@ -2419,6 +2419,19 @@
                                     ToolTip.Tip="Readouts — show or hide the text under the plot. Off, the plot takes the height they were using; every number is still there when they come back.">
                                 <mi:MaterialIcon Kind="CardTextOutline" Width="14" Height="14"/>
                             </Button>
+                            <!-- ── PARTS ALONE (field report, 2026-10-03) ─────────────────────
+                                 The dotted curve: the rail with every source removed, which is
+                                 what a circuit simulator reads as the rail voltage over its
+                                 generator's current. Lit while it is drawn; a plug pulled out
+                                 because the supply is what it leaves out. On the frequency tab
+                                 only, where the plot is. -->
+                            <Button Classes="tabbtn" Name="PartsAloneButton"
+                                    IsVisible="{Binding ShowImpedancePlot}"
+                                    Classes.ToolActive="{Binding ShowPartsAlone}"
+                                    Command="{Binding TogglePartsAloneCommand}"
+                                    ToolTip.Tip="Parts alone — show or hide the dotted curve: this rail's |Z| with the supply removed. It is what a circuit simulator reports when it divides the rail voltage by its generator's current. The solid or dashed curve is what the load sees, with the supply's R out and L out across the rail in parallel with the parts.">
+                                <mi:MaterialIcon Kind="PowerPlugOffOutline" Width="14" Height="14"/>
+                            </Button>
                         </StackPanel>
                     </Grid>
 

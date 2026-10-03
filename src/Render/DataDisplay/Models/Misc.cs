@@ -53,7 +53,9 @@ namespace CircuitRF.Render.DataDisplay
         Bowtie, Hourglass
     }
 
-    public enum LineType   { Solid,  Dashed  }
+    /// <summary>How a trace's line is stroked. <b>Append only</b>: a <c>.cdd</c> stores the member,
+    /// and a reading written by an older build must mean what it meant.</summary>
+    public enum LineType   { Solid,  Dashed,  Dotted }
 
     // ============================================================
     //  PrecisionFormat

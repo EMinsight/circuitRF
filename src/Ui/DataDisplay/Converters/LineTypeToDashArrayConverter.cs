@@ -15,9 +15,12 @@ public sealed class LineTypeToDashArrayConverter : IValueConverter
     public static readonly LineTypeToDashArrayConverter Instance = new();
 
     public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
-        => value is LineType lt && lt == LineType.Dashed
-            ? new AvaloniaList<double> { 4.0, 2.0 }
-            : new AvaloniaList<double>();
+        => value switch
+        {
+            LineType.Dashed => new AvaloniaList<double> { 4.0, 2.0 },
+            LineType.Dotted => new AvaloniaList<double> { 1.0, 2.0 },
+            _               => new AvaloniaList<double>(),
+        };
 
     public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
         => null;

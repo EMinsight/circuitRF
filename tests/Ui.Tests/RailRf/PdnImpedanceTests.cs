@@ -570,7 +570,19 @@ public class PdnImpedanceTests(ITestOutputHelper output)
         // It used to spell out the model kinds and what the vertical lines were. Both are said
         // elsewhere on screen — the model kind is on the status strip on every frame — so the
         // claim they carried is asserted where it now lives rather than dropped.
-        Assert.Equal("|Z| over frequency", vm.ImpedancePlot.CustomTitle);
+        // The title names both curves while the dotted one is drawn, and only the load's once it is not.
+        Assert.Equal("|Z| seen by the load · dotted: supply removed", vm.ImpedancePlot.CustomTitle);
+
+        // The parts alone — the rail with its source removed — dotted, once per port off the primary
+        // reading, and gone when its toggle is off (field report, 2026-10-03).
+        var alone = vm.ImpedancePlot.Traces.Where(t => t.CubeName == PdnSweep.PartsAloneCube).ToArray();
+        Assert.NotEmpty(alone);
+        Assert.All(alone, a => { Assert.NotEmpty(a.Points); Assert.Equal(LineType.Dotted, a.Properties.LineType); });
+        vm.TogglePartsAloneCommand.Execute(null);
+        Assert.DoesNotContain(vm.ImpedancePlot.Traces, t => t.CubeName == PdnSweep.PartsAloneCube);
+        Assert.Equal("|Z| seen by the load (supply included)", vm.ImpedancePlot.CustomTitle);
+        Assert.Contains("\"ShowPartsAlone\": false", RailDocumentIo.Serialize(vm.Document));
+        vm.TogglePartsAloneCommand.Execute(null);
         Assert.Contains("Accuracy", vm.StatusLine, StringComparison.Ordinal);
 
         // And the margin is sized for ONE label column, not one per trace. With thirteen traces of
@@ -625,7 +637,9 @@ public class PdnImpedanceTests(ITestOutputHelper output)
 
         // Every trace that is not a |Z| curve says so of itself — one flag, so the menu, the
         // double-click and the readout cannot come to disagree about what this plot holds.
-        Assert.All(traces, t => Assert.Equal(t.CubeName != "Z", t.IsAnnotation));
+        // The dotted parts-alone curve (field report, 2026-10-03) is a curve too: a marker reading its
+        // peak is exactly how a designer compares it with a simulator.
+        Assert.All(traces, t => Assert.Equal(!IsCurve(t), t.IsAnnotation));
 
         var curve = traces.First(t => t.CubeName == "Z");
         var marker = new Marker(curve, curve.Points[curve.Points.Count / 2].X, isMulti: true,
@@ -644,6 +658,8 @@ public class PdnImpedanceTests(ITestOutputHelper output)
         // says nothing about which of this window's two impedances it is.
         Assert.Equal(curves, lines.Count(l => l.Text.StartsWith($"|Z| {PdnImpedanceNames.Rail} (",
                                                                 StringComparison.Ordinal)));
+        Assert.Equal(traces.Count(t => t.CubeName == PdnSweep.PartsAloneCube),
+                     lines.Count(l => l.Text.StartsWith("|Z| parts alone", StringComparison.Ordinal)));
 
         // The exclusion is load-bearing, not decorative: read directly, an annotation trace is
         // exactly the NaN row that was on screen.
@@ -955,7 +971,7 @@ public class PdnImpedanceTests(ITestOutputHelper output)
         _output.WriteLine(string.Join(" · ", vm.ImpedancePlot.Traces.Select(
             t => (t.IsAnnotation ? "-" : "+") + t.CubeName)));
 
-        Assert.All(offered, t => Assert.Equal("Z", t.CubeName));
+        Assert.All(offered, t => Assert.True(IsCurve(t), t.CubeName));
         Assert.True(vm.ImpedancePlot.Traces.Count - offered.Count >= 5,
                     "not enough annotation traces to be exercising the defect.");
 
@@ -967,6 +983,9 @@ public class PdnImpedanceTests(ITestOutputHelper output)
         Assert.Contains("IsAnnotation", Body(code, "private bool TryAddMarkerNearPoint(Point canvasPt)"),
                         StringComparison.Ordinal);
     }
+
+    /// <summary>A |Z| curve: the load's, or the parts alone (field report, 2026-10-03).</summary>
+    private static bool IsCurve(Trace t) => t.CubeName is "Z" or PdnSweep.PartsAloneCube;
 
     /// <summary>The body of one method, by brace matching from its signature.</summary>
     private static string Body(string code, string signature)
@@ -1050,8 +1069,8 @@ public class PdnImpedanceTests(ITestOutputHelper output)
         var inspector = vm.ImpedanceContainer.Inspector;
 
         // ── The cards are the CURVES, and none of them can be removed ──────────────────────────
-        Assert.Equal(vm.ImpedancePlot.Traces.Count(t => t.CubeName == "Z"), inspector.Traces.Count);
-        Assert.All(inspector.Traces, c => Assert.Equal("Z", c.Trace.CubeName));
+        Assert.Equal(vm.ImpedancePlot.Traces.Count(IsCurve), inspector.Traces.Count);
+        Assert.All(inspector.Traces, c => Assert.True(IsCurve(c.Trace), c.Trace.CubeName));
         Assert.All(inspector.Traces, c => Assert.False(c.CanRemove));
         Assert.False(inspector.CanEditTraceSet);
         Assert.False(inspector.CanAddTrace);

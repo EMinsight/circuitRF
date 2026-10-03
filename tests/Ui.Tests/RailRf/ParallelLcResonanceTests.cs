@@ -122,6 +122,64 @@ public sealed class ParallelLcResonanceTests(ITestOutputHelper output)
         Assert.DoesNotContain(result.Warnings, w => w.Contains("ESL"));
     }
 
+    /// <summary>The designer's board as entered — 10 mΩ of source across 6 nH + 20 mΩ ∥ 100 nF + 20 mΩ
+    /// (field report, 2026-10-03). The load sees 9.93 mΩ; the parts alone, which is what a simulator reads
+    /// as V(rail)/I(generator), peak at the closed form's 1.510 Ω. Both curves are in the answer, the
+    /// parts-alone one as its own cube, and one note says which is which and how to read railRF's in a
+    /// simulator.</summary>
+    [Fact]
+    public void ASupplyAcrossTheRail_IsReconciledWithThePartsAlone()
+    {
+        var library = new PartLibrary();
+        library.Rows.Add(new PartLibraryRow { PartNumber = "C1", CapacitanceFarads = 100e-9, EsrOhms = 20e-3, StatedInductanceHenries = 0 });
+        library.Rows.Add(new PartLibraryRow { PartNumber = "L1", StatedInductanceHenries = 6e-9, EsrOhms = 20e-3 });
+        var rail = Rail(new RailPart { Refdes = "C1", PartNumber = "C1" }, new RailPart { Refdes = "L1", PartNumber = "L1" });
+
+        var result = Sweep(rail, library, new RailSourceModel(0, "VRM", RailSourceBasis.Rl, 10e-3, null, 3.3));
+
+        var port = result.Ports[0];
+        var alone = Assert.IsType<double[]>(port.PartsAloneOhms);
+        Assert.True(result.Data!.Contains(PdnSweep.PartsAloneCube));
+        double worst = 0;
+        for (int k = 0; k < result.FrequenciesHz.Length; k++)
+        {
+            double want = Parallel(result.FrequenciesHz[k],
+                w => new Complex(20e-3, w * 6e-9), w => new Complex(20e-3, -1 / (w * 100e-9)));
+            worst = Math.Max(worst, Math.Abs(alone[k] / want - 1));
+        }
+        Assert.True(worst < 1e-9, $"worst relative error {worst:E2}");
+
+        string note = Assert.Single(result.Notes, n => n.Contains("looking back into the rail"));
+        output.WriteLine(note);
+        Assert.Contains("R out 10 mΩ", note);
+        Assert.Contains("The parts alone peak at 1.51 Ω", note);
+        Assert.Contains("the load reads 9.93", note);
+        Assert.Contains("1 A AC current source", note);
+    }
+
+    /// <summary>The slide's own set-up: the supply's 6 nH + 20 mΩ on the source row and C1 alone. The parts
+    /// make no peak; the load's 1.5 Ω peak is the supply against them, and the note says so. A source too
+    /// resistive to move the peak draws no note at all.</summary>
+    [Fact]
+    public void ThePeakMadeByTheSupply_IsSaidToBe_AndASupplyThatChangesNothingIsNotMentioned()
+    {
+        var library = new PartLibrary();
+        library.Rows.Add(new PartLibraryRow { PartNumber = "C1", CapacitanceFarads = 100e-9, EsrOhms = 20e-3, StatedInductanceHenries = 0 });
+        library.Rows.Add(new PartLibraryRow { PartNumber = "L1", StatedInductanceHenries = 6e-9, EsrOhms = 20e-3 });
+
+        var slide = Sweep(Rail(new RailPart { Refdes = "C1", PartNumber = "C1" }), library,
+                          new RailSourceModel(0, "VRM", RailSourceBasis.Rl, 20e-3, 6e-9, 3.3));
+        string note = Assert.Single(slide.Notes, n => n.Contains("looking back into the rail"));
+        output.WriteLine(note);
+        Assert.Contains("The parts alone make no anti-resonance", note);
+        Assert.Contains("L out 6 nH", note);
+
+        var stiffless = Sweep(Rail(new RailPart { Refdes = "C1", PartNumber = "C1" }, new RailPart { Refdes = "L1", PartNumber = "L1" }),
+                              library, new RailSourceModel(0, "VRM", RailSourceBasis.Rl, 1e6, null, 3.3));
+        Assert.NotNull(stiffless.Ports[0].PartsAloneOhms);
+        Assert.DoesNotContain(stiffless.Notes, n => n.Contains("looking back into the rail"));
+    }
+
     /// <summary>A part with no ESR is kept with 0 Ω of loss, and the warning says what that does to a peak.</summary>
     [Fact]
     public void APartWithNoEsr_IsKeptAndWarned()

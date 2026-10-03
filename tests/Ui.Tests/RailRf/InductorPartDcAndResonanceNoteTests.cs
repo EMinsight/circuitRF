@@ -71,6 +71,8 @@ public sealed class InductorPartDcAndResonanceNoteTests
         var shorted = Solve("IND");
         string finding = Assert.Single(shorted.Findings, f => f.Contains("X1 is an inductor part"));
         Assert.Contains("short to the return", finding);
+        // Its DC impedance is said first, as its ESR — not as 0 Ω (field report, 2026-10-03).
+        Assert.Contains("at DC its impedance is its ESR", finding);
         Assert.Contains("R out and L out belong on that source row", finding);
         // 3.3 V across 10 mΩ of source, 20 mΩ of ESR and a few mΩ of copper: just under 110 A.
         double port = Assert.Single(shorted.Ports).VoltageV;

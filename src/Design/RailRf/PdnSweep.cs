@@ -204,6 +204,14 @@ public sealed record PdnPortImpedance(
     /// </remarks>
     public string NameIn(RailLengthFormat? format) =>
         format is { } f ? Anchor.Describe(f) : Name;
+
+    /// <summary>
+    /// |Z| at this port with every source removed — the parts alone, on <see cref="MagnitudeOhms"/>'s
+    /// own axis — or null where there was no source to remove or no part left (field report,
+    /// 2026-10-03). It is what a circuit simulator reports as the rail voltage over the generator's
+    /// current; <see cref="MagnitudeOhms"/> is what the load sees, with the supply in parallel.
+    /// </summary>
+    public double[]? PartsAloneOhms { get; init; }
 }
 
 /// <summary>
@@ -453,7 +461,39 @@ public static class PdnSweep
             for (int k = 0; k < ports; k++) magnitudes[k][fi] = zMatrices[fi][k, k].Magnitude;
         }
 
-        var data = Pack(request, freqs, zMatrices, sMatrices);
+        // ── THE PARTS ALONE: the same rail with every source taken off (field report, 2026-10-03) ──
+        //
+        // The curve above is what a LOAD sees: the source's ideal voltage is an AC short, so its R out
+        // and L out sit across the rail in parallel with every part. A circuit simulator that divides
+        // the rail voltage by its GENERATOR's current measures something else — the parts alone, with
+        // the generator's own resistance behind it — and on a board whose supply is stiff the two
+        // differ by orders of magnitude (1.51 Ω against 9.93 mΩ on the reported board, both exact).
+        // Neither is wrong; a reader comparing them needs both on screen and the sentence that says
+        // which is which. Solved on the SAME axis, so the two curves are compared point for point,
+        // and only where there is a source to remove and a part left behind.
+        var partBranches = branches.Where(b => b.Group is not null).ToList();
+        Mat<Complex>[]? aloneZ = null;
+        double[][]? alone = null;
+        if (partBranches.Count > 0 && partBranches.Count < branches.Count)
+        {
+            var zs = new Mat<Complex>[freqs.Length];
+            var mags = new double[ports][];
+            for (int k = 0; k < ports; k++) mags[k] = new double[freqs.Length];
+
+            // A port the parts cannot reach without the source is OPEN with it removed, and an
+            // infinite curve is no curve: the comparison is then not drawn at all.
+            bool finite = true;
+            for (int fi = 0; fi < freqs.Length && finite; fi++)
+            {
+                zs[fi] = RFNetwork.SToZ(SolveOne(request, partition, partBranches, freqs[fi], ports), portZ0);
+                for (int k = 0; k < ports && finite; k++)
+                    finite = double.IsFinite(mags[k][fi] = zs[fi][k, k].Magnitude);
+            }
+
+            if (finite) { aloneZ = zs; alone = mags; }
+        }
+
+        var data = Pack(request, freqs, zMatrices, sMatrices, aloneZ);
 
         bool indicative = request.Parts.AnyIndicative;
         if (indicative && request.Parts.IndicativeLine is { } line) notes.Add(line);
@@ -483,7 +523,22 @@ public static class PdnSweep
             portRows.Add(new PdnPortImpedance(
                 k, rail.Loads[k].Anchor.Describe(request.LengthFormat), rail.Loads[k].Anchor,
                 curve, mask, report, peaks,
-                PdnCoincidence.Find(peaks, aggressors, request.CoincidenceFraction)));
+                PdnCoincidence.Find(peaks, aggressors, request.CoincidenceFraction))
+            {
+                PartsAloneOhms = alone?[k],
+            });
+        }
+
+        // ONE sentence where every port reads one curve, one per port where they differ — the rule
+        // the "every port reads the same curve" note below already keeps.
+        if (alone is not null)
+        {
+            bool perPort = partition.HasSeriesElement &&
+                Enumerable.Range(0, rail.Loads.Count).Select(partition.LoadSection).Distinct().Count() > 1;
+            for (int k = 0; k < (perPort ? rail.Loads.Count : Math.Min(1, rail.Loads.Count)); k++)
+                if (SupplyLine(request.Sources, perPort ? portRows[k].Name : null, freqs,
+                               magnitudes[k], alone[k], request.ProminenceDb) is { } supplyLine)
+                    notes.Add(supplyLine);
         }
 
         // ── R-rail25-4b: THIS SENTENCE IS CONDITIONAL FROM NOW ON ─────────────────────────────
@@ -795,9 +850,9 @@ public static class PdnSweep
             notes.Add(
                 $"{string.Join(", ", inductors)} state(s) an inductance and no capacitance, so each is in " +
                 "this answer as a series R-L from the rail to its return — the capacitor model with C " +
-                "taken as infinite. That branch passes DC, so the DC answer carries it too — as a " +
-                "resistor at its ESR from the rail to its return, which is a short, and the DC result " +
-                "names the current it draws. Where the inductor stands for a supply's own output " +
+                "taken as infinite. At DC its impedance is its ESR, so the DC answer carries it too — as " +
+                "a resistor at that ESR from the rail to its return, which across the supply's voltage is " +
+                "a short, and the DC result names the current it draws. Where the inductor stands for a supply's own output " +
                 "impedance, its source row's R out and L out say the same thing in the impedance and " +
                 "are the supply rather than a short at DC, so the source row is the place for it.");
 
@@ -1008,7 +1063,8 @@ public static class PdnSweep
     /// arithmetic here for the Z cube, rather than by a second convention.
     /// </remarks>
     private static DataSet Pack(
-        PdnSweepRequest request, double[] freqs, Mat<Complex>[] z, Mat<Complex>[] s)
+        PdnSweepRequest request, double[] freqs, Mat<Complex>[] z, Mat<Complex>[] s,
+        Mat<Complex>[]? partsAlone)
     {
         int ports = request.Rail.Loads.Count;
 
@@ -1022,24 +1078,98 @@ public static class PdnSweep
         var labels = new string[ports];
         for (int p = 0; p < ports; p++) labels[p] = request.Rail.Loads[p].Anchor.Describe(request.LengthFormat);
 
-        var flat = new Complex[freqs.Length * ports * ports];
-        for (int fi = 0; fi < freqs.Length; fi++)
-            for (int i = 0; i < ports; i++)
-                for (int j = 0; j < ports; j++)
-                    flat[(fi * ports + i) * ports + j] = z[fi][i, j];
+        DataCube ZCube(Mat<Complex>[] m)
+        {
+            var flat = new Complex[freqs.Length * ports * ports];
+            for (int fi = 0; fi < freqs.Length; fi++)
+                for (int i = 0; i < ports; i++)
+                    for (int j = 0; j < ports; j++)
+                        flat[(fi * ports + i) * ports + j] = m[fi][i, j];
 
-        data.Add("Z", new DataCube(
-            [new Axis("freq", freqs, "Hz"),
-             new Axis("i", portValues, "port", labels),
-             new Axis("j", (double[])portValues.Clone(), "port", (string[])labels.Clone())],
-            flat)
-        { Unit = "Ohm" });
+            return new DataCube(
+                [new Axis("freq", freqs, "Hz"),
+                 new Axis("i", (double[])portValues.Clone(), "port", (string[])labels.Clone()),
+                 new Axis("j", (double[])portValues.Clone(), "port", (string[])labels.Clone())],
+                flat)
+            { Unit = "Ohm" };
+        }
+
+        data.Add("Z", ZCube(z));
+
+        // The rail with every source removed — what a simulator reads as V(rail)/I(generator). Its
+        // own cube, on the same axes, so it overlays in a Data Display like any other curve.
+        if (partsAlone is not null) data.Add(PartsAloneCube, ZCube(partsAlone));
 
         // R-rail11-4: the indicative marking has to cross the DataSet boundary or it reaches none of
         // §9's five places. This is the boundary.
         request.Parts.Annotate(data);
 
         return data;
+    }
+
+    /// <summary>The cube holding the rail's Z with every source removed — the parts alone.</summary>
+    public const string PartsAloneCube = "Zparts";
+
+    /// <summary>
+    /// The sentence that reconciles the two curves, or null where the supply moves the highest peak
+    /// by less than 1 dB — a reconciliation of two numbers that agree is noise.
+    /// </summary>
+    /// <remarks>
+    /// It states which |Z| the curve is, what the parts alone do at the peak that matters, and the
+    /// circuit-simulator set-up that reads railRF's number — because the field report that asked for
+    /// it compared a generator-side ratio against a load-side one and found them "far apart".
+    /// </remarks>
+    internal static string? SupplyLine(
+        IReadOnlyList<RailSourceModel> sources, string? portName, double[] freqs,
+        double[] load, double[] alone, double prominenceDb)
+    {
+        static int? Highest(double[] curve, double prominence)
+        {
+            int? best = null;
+            foreach (int i in PdnAntiResonance.FindPeaks(curve, prominence))
+                if (best is not { } b || curve[i] > curve[b]) best = i;
+            return best;
+        }
+
+        static double Db(double a, double b) => Math.Abs(20.0 * Math.Log10(a / b));
+
+        string middle;
+        if (Highest(alone, prominenceDb) is { } a)
+        {
+            if (!(load[a] > 0) || Db(alone[a], load[a]) < 1.0) return null;
+            middle =
+                $"The parts alone peak at {PdnMask.Ohms(alone[a])} at {PdnMask.Hertz(freqs[a])}; with the " +
+                $"supply across them the load reads {PdnMask.Ohms(load[a])} there.";
+        }
+        else if (Highest(load, prominenceDb) is { } l)
+        {
+            if (!(alone[l] > 0) || Db(alone[l], load[l]) < 1.0) return null;
+            middle =
+                $"The parts alone make no anti-resonance in this band. The load's peak of " +
+                $"{PdnMask.Ohms(load[l])} at {PdnMask.Hertz(freqs[l])} is the supply's own impedance " +
+                $"against the parts; the parts alone read {PdnMask.Ohms(alone[l])} there.";
+        }
+        else return null;
+
+        static string Of(RailSourceModel x) =>
+            x.Basis == RailSourceBasis.Measured
+                ? "its measured output impedance"
+                : $"R out {PdnMask.Ohms(x.SeriesResistanceOhms ?? 0)}" +
+                  (x.SeriesInductanceHenries is > 0 and var h ? $" and L out {h * 1e9:0.###} nH" : "");
+
+        string supply = sources.Count == 1
+            ? $"the supply's {Of(sources[0])} " +
+              (sources[0].Basis == RailSourceBasis.Rl && sources[0].SeriesInductanceHenries is > 0 ? "sit" : "sits")
+            : $"the {sources.Count} supplies ({string.Join("; ", sources.Select(x => $"{x.Name}: {Of(x)}"))}) sit";
+
+        return
+            $"|Z| is what the load{(portName is null ? "" : $" at {portName}")} sees looking back into " +
+            $"the rail, so it includes the supply: a source's ideal voltage is a short at AC, and {supply} " +
+            "across the rail in parallel with the parts. " + middle + " A circuit simulator reports " +
+            "the parts-alone figure when it divides the rail voltage by its generator's current. To " +
+            "read railRF's |Z| in one, set the generator's AC amplitude to 0 and keep its series " +
+            "resistance, drive the load node with a 1 A AC current source, and read the rail voltage. " +
+            "The dotted curve on the plot is the parts alone.";
     }
 
     // ── the target ────────────────────────────────────────────────────────────────────────────

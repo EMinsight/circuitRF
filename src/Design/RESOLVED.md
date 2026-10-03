@@ -16493,3 +16493,23 @@ and `ParallelLcResonanceTests.AnInductorWithOnlyADielectricClass_IsWarnedForWhat
   kept whatever their Model**: `FieldDrive.RunPortZ0s` reads the kept document's ports back by their document numbers to undo
   the renumbering. A run kept before this goes through `C3dRunDocument.Normalised` and so compares as current. This was older
   than brief 101 and only noticed there.
+
+### railRF: the load's |Z| against a simulator's generator-side ratio (field report, 2026-10-03)
+
+- **No arithmetic was wrong; two measurements were compared as one.** A designer put 10 mΩ of source R out across
+  6 nH + 20 mΩ ∥ 100 nF + 20 mΩ. railRF read 9.93 mΩ and the external simulator 1.51 Ω, and both are exact. railRF's |Z| is
+  what the LOAD sees: the source's ideal voltage is an AC short, so R out is across the rail. The simulator plotted
+  V(rail)/I(generator), which is the parts alone with R out behind the node. One identity ties them:
+  Z_load = R out × V(rail)/V(generator), and the designer's own plot already showed that ratio. A DC-only current source in an
+  AC sweep injects nothing, which is why adding a "load" there changed nothing.
+- **`PdnSweep` now also solves the rail with every source removed** (`PartsAloneOhms` on each port, cube
+  `PdnSweep.PartsAloneCube` = `Zparts`), on the same axis. It is skipped when there is no source or no part, or when any
+  port's parts-alone |Z| is non-finite (an open port). `SupplyLine` adds one note when the supply moves the highest peak by
+  ≥ 1 dB. It covers both directions: parts that peak and a supply that flattens them, and a supply whose L out makes the peak
+  the parts alone do not have.
+- **The window draws it DOTTED** (`LineType.Dotted`, appended to the enum so stored `.cdd` values keep their meaning). Dashed
+  already means Fast and solid Accurate, so a third style was needed. It is drawn off the primary reading only, because P1 is
+  lumped and the two kinds' parts-alone curves are one curve. `RailPanels.ShowPartsAlone` is document state like
+  `ShowResultText`, written only when off. The plot title now says which |Z| it is, and names the dotted curve too whenever it is drawn.
+- **"A short at DC" read as a claim of 0 Ω.** The DC finding now leads with the part's DC impedance, its ESR. It then says
+  what makes that a short: the supply voltage across it, which an AC-only simulator generator never applies.

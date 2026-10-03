@@ -82,9 +82,18 @@ public sealed class RailPanels
     /// </remarks>
     public bool ShowResultText { get; set; } = true;
 
+    /// <summary>
+    /// The |Z| plot's dotted parts-alone curve — the rail with every source removed (field report,
+    /// 2026-10-03). On by default, because it is the curve a circuit simulator's generator-side
+    /// ratio reads and the comparison is what it is for; off for a reader who only wants the load's
+    /// answer. Like <see cref="ShowResultText"/> it is not a panel and takes no part in
+    /// <see cref="AnyShown"/>.
+    /// </summary>
+    public bool ShowPartsAlone { get; set; } = true;
+
     /// <summary>The state a document that says nothing opens in — what the file OMITS.</summary>
     public bool AllShown =>
-        ShowSpecification && ShowBoard && ShowParts && ShowResults && ShowResultText;
+        ShowSpecification && ShowBoard && ShowParts && ShowResults && ShowResultText && ShowPartsAlone;
 
     /// <summary>
     /// Whether anything at all is showing. <b>At least one panel always is</b> (owner,
