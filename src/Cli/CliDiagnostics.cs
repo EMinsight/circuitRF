@@ -1291,8 +1291,8 @@ internal static class CliDiagnostics
     /// (R-rnd3-2).</summary>
     public static Diagnostic ExplainOneQuestion() => new(
         "explain.args.one-question", DiagnosticSeverity.Error,
-        "explain: --expr, --analysis, --ref, --cells, --layers and --extents ask different " +
-        "questions — pass one.");
+        "explain: --expr, --analysis, --ref, --cells, --layers, --extents, --footprints and --object ask " +
+        "different questions — pass one.");
 
     /// <summary><c>--all</c> is <c>--cells</c>' own modifier and means nothing beside anything else.
     /// Named rather than ignored, on §3.3's terms.</summary>
@@ -1326,6 +1326,12 @@ internal static class CliDiagnostics
     /// that one is "a technology holds no analyses", this one is "a Touchstone file has no extents".
     /// One sentence covering both would have to say neither.</para>
     /// </summary>
+    /// <summary>brief-em3d-105 — <c>--object</c> naming nothing the 3D view elaborates to.</summary>
+    public static Diagnostic ExplainObjectNotFound(string name, string path) => Diagnostic.Create(
+        "explain.object.not-found", DiagnosticSeverity.Error,
+        "'{name}' is no object of '{path}' that has an appearance. Name a top-level object, or an object inside an instance by " +
+        "its path (U1/trace); air has no appearance.", ("name", name), ("path", path));
+
     public static Diagnostic ExplainOptionNotApplicable(string option, string kind, string appliesTo) =>
         Diagnostic.Create(
             "explain.option.wrong-kind", DiagnosticSeverity.Error,

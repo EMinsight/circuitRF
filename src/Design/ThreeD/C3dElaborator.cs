@@ -99,6 +99,14 @@ public sealed record C3dProvenance(string InstancePath, string DocumentPath, str
     /// <summary>brief-em3d-92 — the opacity the instances it sits in multiply onto it: the product of each one's
     /// (<see cref="C3dTransparency.Opacity"/>), 1 for the document's own objects.</summary>
     public double Opacity { get; init; } = 1;
+
+    /// <summary>brief-em3d-105 — the appearance the top-level object this was elaborated from states (an operation's, for its
+    /// result and its kept Tools; a wire's for each of its solids); null for none, and for a layout's part.</summary>
+    public TechAppearance? Appearance { get; init; }
+
+    /// <summary>brief-em3d-105 — the appearances the instances it sits in state, <b>innermost first</b> (the resolver's order);
+    /// empty for the document's own objects.</summary>
+    public IReadOnlyList<Appearance.AppearanceInstanceStatement> InstanceAppearances { get; init; } = [];
 }
 
 /// <summary>brief-em3d-66 — a preview's answer: the tree it was asked for, the shape as elaboration would lower it, the build
@@ -655,6 +663,11 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
         private int? _transparency;
         private double _opacity = 1;
 
+        /// <summary>brief-em3d-105 — the top-level object's appearance, and the instances' on the way down to its document,
+        /// innermost first, for <see cref="C3dProvenance.Appearance"/> and <see cref="C3dProvenance.InstanceAppearances"/>.</summary>
+        private TechAppearance? _appearance;
+        private IReadOnlyList<Appearance.AppearanceInstanceStatement> _instanceAppearances = [];
+
         /// <summary>brief-em3d-93 — true while elaborating content that is not modelled (its object's, its wire's or an enclosing
         /// instance's Model is false): what is added then goes in <see cref="_notModelled"/>, and the refusals it raises in
         /// <see cref="_notModelledRefusals"/> too.</summary>
@@ -849,6 +862,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
                 if (obj is C3dWire) continue;                       // after the instances: see Wires
                 _topObject = obj.Name;
                 _transparency = obj.Transparency;
+                _appearance = obj.Appearance;
                 Modelled(obj.Model, () => Object(obj, prefix + obj.Name, world, doc, tech, prefix, path, exact));
                 // brief-em3d-101 — a top-level image sheet's picture, resolved against THIS document (an operand's is not drawn).
                 if (obj is C3dSheet { Image: { } img } sheet && C3dImages.Resolve(path, img.Path) is { } file
@@ -861,6 +875,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
                                                             C3dLowering.Metres(1, doc.DbuPerMicron), _opacity));
                 _topObject = null;
                 _transparency = null;
+                _appearance = null;
             }
 
             string baseDir = Path.GetDirectoryName(path)!;
@@ -953,6 +968,8 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
                 TopObject = _topObject,
                 Transparency = _transparency,
                 Opacity = _opacity,
+                Appearance = _appearance,
+                InstanceAppearances = _instanceAppearances,
                 Exact = exact && obj.Placement.ToTransform().IsIntegral,
                 Element = prefix.Length > 0 ? world : null,
             };
@@ -1025,6 +1042,8 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
                     TopObject = _topObject,
                     Transparency = _transparency,
                     Opacity = _opacity,
+                    Appearance = _appearance,
+                    InstanceAppearances = _instanceAppearances,
                     Exact = exact && obj.Placement.ToTransform().IsIntegral,
                     Element = prefix.Length > 0 ? world : null,
                 };
@@ -1131,6 +1150,8 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
                 TopObject = _topObject,
                 Transparency = _transparency,
                 Opacity = _opacity,
+                Appearance = _appearance,
+                InstanceAppearances = _instanceAppearances,
                 Exact = exact && obj.Placement.ToTransform().IsIntegral,
                 Element = prefix.Length > 0 ? world : null,
             };
@@ -1192,6 +1213,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
                     _provenance[solidName] = new C3dProvenance(prefix.TrimEnd('/'), path, drawn.Name, [])
                     {
                         Exact = false, Element = prefix.Length > 0 ? world : null, Transparency = drawn.Transparency, Opacity = _opacity,
+                        Appearance = drawn.Appearance, InstanceAppearances = _instanceAppearances,
                     };
                     _origins[solidName] = new Em3dObjectOrigin(Em3dObjectKind.Wire, null, null, null);
                     Net(solidName, name);
@@ -1290,16 +1312,20 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
                 double outer = _opacity;
                 // brief-em3d-92 — the instance's transparency multiplies onto everything it places, at every depth.
                 if (inst.Transparency is { } it) _opacity *= C3dTransparency.Opacity(Math.Clamp(it, 0, C3dTransparency.Max));
+                var outerLooks = _instanceAppearances;
                 try
                 {
                     foreach (var (ijk, w, integral) in Elements(doc, inst, counts, pitch, world))
                     {
-                        _instances.Add(new C3dInstanceFrame(prefix + inst.Name + (isArray ? ijk : ""), w, viewPath, Path.GetFileName(cellDir), Layout: false));
-                        Document(resolvedDoc, childRes, viewPath, child.Tech, w, prefix + inst.Name + (isArray ? ijk : "") + "/", next,
+                        string elementPath = prefix + inst.Name + (isArray ? ijk : "");
+                        // brief-em3d-105 — the instance's appearance goes in front of the outer ones: the innermost wins.
+                        if (inst.Appearance is { } look) _instanceAppearances = [new Appearance.AppearanceInstanceStatement(prefix + inst.Name, look), .. outerLooks];
+                        _instances.Add(new C3dInstanceFrame(elementPath, w, viewPath, Path.GetFileName(cellDir), Layout: false));
+                        Document(resolvedDoc, childRes, viewPath, child.Tech, w, elementPath + "/", next,
                                  exact && integral && resolvedDoc.DbuPerMicron == _topDbu);
                     }
                 }
-                finally { _opacity = outer; }
+                finally { (_opacity, _instanceAppearances) = (outer, outerLooks); }
                 return;
             }
 
@@ -1326,14 +1352,17 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
             if (LayoutHasPortShapes(viewPath)) _ignored.Add("a layout's port shapes");
             double outerOpacity = _opacity;
             if (inst.Transparency is { } lt) _opacity *= C3dTransparency.Opacity(Math.Clamp(lt, 0, C3dTransparency.Max));
+            var outerAppearances = _instanceAppearances;
             foreach (var (ijk, w, integral) in Elements(doc, inst, counts, pitch, world))
             {
-                _instances.Add(new C3dInstanceFrame(prefix + inst.Name + (isArray ? ijk : ""), w, viewPath, Path.GetFileName(cellDir), Layout: true));
+                string elementPath = prefix + inst.Name + (isArray ? ijk : "");
+                if (inst.Appearance is { } look) _instanceAppearances = [new Appearance.AppearanceInstanceStatement(prefix + inst.Name, look), .. outerAppearances];
+                _instances.Add(new C3dInstanceFrame(elementPath, w, viewPath, Path.GetFileName(cellDir), Layout: true));
                 Know(layout.Tech, layout.TechName);
-                Layout(layout, solids, layout.TechName, viewPath, prefix + inst.Name + (isArray ? ijk : ""), w,
+                Layout(layout, solids, layout.TechName, viewPath, elementPath, w,
                        exact && integral && layout.DbuPerMicron == _topDbu);
             }
-            _opacity = outerOpacity;
+            (_opacity, _instanceAppearances) = (outerOpacity, outerAppearances);
         }
 
         /// <summary>Each array element's transform: the placement's rotation and mirror, and its origin moved
@@ -1380,7 +1409,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
                 _uses.Add((_solids.Count, false, techName, s.Material));
                 _solids.Add(new Em3dSolid(name, materialKey[s.Material], s.Role, lowered.Solid!, baseOrder + s.Order));
                 maxOrder = Math.Max(maxOrder, s.Order);
-                _provenance[name] = new C3dProvenance(instPath, viewPath, s.Name, lowered.FaceNames) { Exact = exact, Element = t, Opacity = _opacity };
+                _provenance[name] = new C3dProvenance(instPath, viewPath, s.Name, lowered.FaceNames) { Exact = exact, Element = t, Opacity = _opacity, InstanceAppearances = _instanceAppearances };
                 _walkLowering.Add(new C3dWalkStep(name, $"{lowered.Kind} (from the layout)"));
                 MarkOff(name);
             }
@@ -1393,7 +1422,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
                 _sheets.Add(new Em3dSheet(name, materialKey[sh.Material], g.Outline, g.Holes, g.Z, sh.ThicknessM, baseOrder + sh.Order)
                             { Frame = g.Frame });
                 maxOrder = Math.Max(maxOrder, sh.Order);
-                _provenance[name] = new C3dProvenance(instPath, viewPath, sh.Name, []) { Exact = exact, Element = t, Opacity = _opacity };
+                _provenance[name] = new C3dProvenance(instPath, viewPath, sh.Name, []) { Exact = exact, Element = t, Opacity = _opacity, InstanceAppearances = _instanceAppearances };
                 MarkOff(name);
                 _walkLowering.Add(new C3dWalkStep(name, $"{(g.Frame is null ? C3dLowering.KindSheet : C3dLowering.KindFramedSheet)} (from the layout)"));
             }

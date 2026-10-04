@@ -269,7 +269,8 @@ internal static class RenderEm3dField
         var scene = Scene3DBuilder.Build(problem, 0, loaded.Generated!.Origins, e?.Technology, theme, req.Variant, null,
             new Scene3DBuildOptions(FaceNames: name => e is not null && e.Provenance.TryGetValue(name, out var p) ? p.FaceNames : null,
                                     DrawAirBox: false, Origin: origin, HideOutermostDielectric: false,
-                                    Transparency: e is null ? null : Scene3DTransparency.Of(e.Provenance)));
+                                    Transparency: e is null ? null : Scene3DTransparency.Of(e.Provenance),
+                                    Appearance: e is null ? null : CircuitRF.Design.ThreeD.Appearance.AppearanceOverride.Of(e.Provenance)));
         Scene3DObject? Named(string name) => scene.Objects.FirstOrDefault(o => o.Name == name);
         var faces = plot.On == C3dFieldPlotOn.Faces ? FieldPlotResolver.SceneFaces(plot, Named) : [];
         // the 3D view leaves out a face the model no longer has; a picture says which it left out

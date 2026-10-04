@@ -13,7 +13,9 @@ namespace CircuitRF.Design.Layout;
 /// </summary>
 public static class MaterialValidation
 {
-    public static IReadOnlyList<TechProblem> Validate(IReadOnlyList<TechMaterial> materials)
+    /// <param name="scope">brief-em3d-105 — every material an appearance's <c>Like</c> may name: a technology's resolved
+    /// materials (its own and its libraries'). Null is <paramref name="materials"/> itself — a <c>.cmat</c> on its own.</param>
+    public static IReadOnlyList<TechProblem> Validate(IReadOnlyList<TechMaterial> materials, IReadOnlyList<TechMaterial>? scope = null)
     {
         var problems = new List<TechProblem>();
 
@@ -76,6 +78,7 @@ public static class MaterialValidation
                 problems.Add(Problem(TechValidation.Ids.MaterialInvalid, DiagnosticSeverity.Error,
                     $"Material \"{m.Name}\" states a thermal conductivity (ThermalK) of {k}; it must be a positive number of W/(m·K)."));
         }
+        Appearances(materials, scope ?? materials, problems);
         return problems;
     }
 
@@ -90,8 +93,98 @@ public static class MaterialValidation
     }
 
     /// <summary>Whether <paramref name="s"/> is a display colour a material may state: <c>#rrggbb</c>.</summary>
-    public static bool IsColour(string s)
-        => s.Length == 7 && s[0] == '#' && s.AsSpan(1).IndexOfAnyExcept("0123456789abcdefABCDEF") < 0;
+    public static bool IsColour(string s) => ParseColour(s) is not null;
+
+    /// <summary>
+    /// <b>The one reader of a material's <c>#rrggbb</c></b> — its display <c>Color</c> and an appearance's two colours alike
+    /// (brief-em3d-105 R-em3d105-1b). The 3D scene's colour lookup, the appearance resolver and this validator all call it,
+    /// so a colour the view would draw is exactly a colour <c>check</c> accepts. Null for anything else.
+    /// </summary>
+    public static (byte R, byte G, byte B)? ParseColour(string? s)
+    {
+        if (s is not { Length: 7 } || s[0] != '#' || s.AsSpan(1).IndexOfAnyExcept("0123456789abcdefABCDEF") >= 0) return null;
+        uint v = uint.Parse(s.AsSpan(1), NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture);
+        return ((byte)(v >> 16), (byte)(v >> 8), (byte)v);
+    }
+
+    // ── Appearance (brief-em3d-105 R-em3d105-1b) ─────────────────────────────────────────────────
+
+    /// <summary>The ranges, one table: key, low, high, and whether the low end is excluded.</summary>
+    private static readonly (string Key, Func<TechAppearance, double?> Get, double Lo, double Hi, bool LoOpen)[] Ranges =
+    [
+        (nameof(TechAppearance.Metallic), a => a.Metallic, 0, 1, false),
+        (nameof(TechAppearance.Roughness), a => a.Roughness, 0, 1, false),
+        (nameof(TechAppearance.Transmission), a => a.Transmission, 0, 1, false),
+        (nameof(TechAppearance.Ior), a => a.Ior, 1, 3, false),
+        (nameof(TechAppearance.Clearcoat), a => a.Clearcoat, 0, 1, false),
+        (nameof(TechAppearance.ClearcoatRoughness), a => a.ClearcoatRoughness, 0, 1, false),
+        (nameof(TechAppearance.AttenuationDistance), a => a.AttenuationDistance, 0, double.PositiveInfinity, true),
+    ];
+
+    /// <summary>
+    /// What is wrong with one appearance on its own: each value out of its range, each colour that is not <c>#rrggbb</c> — one
+    /// phrase per fault (<c>Roughness 1.5 is outside 0 to 1</c>), for the caller to put after the owner's name. A material's
+    /// and a <c>.c3d</c> object's appearance are held to these same phrases.
+    /// </summary>
+    public static IReadOnlyList<string> AppearanceFaults(TechAppearance? a)
+    {
+        var faults = new List<string>();
+        if (a is null) return faults;
+        foreach (var (key, colour) in new[] { (nameof(TechAppearance.BaseColor), a.BaseColor), (nameof(TechAppearance.AttenuationColor), a.AttenuationColor) })
+            if (colour is not null && ParseColour(colour) is null) faults.Add($"{key} \"{colour}\" is not #rrggbb");
+        foreach (var (key, get, lo, hi, loOpen) in Ranges)
+        {
+            if (get(a) is not { } v) continue;
+            bool ok = double.IsFinite(v) && (loOpen ? v > lo : v >= lo) && v <= hi;
+            if (ok) continue;
+            faults.Add(double.IsPositiveInfinity(hi)
+                ? string.Create(CultureInfo.InvariantCulture, $"{key} {v} is not a positive number of metres")
+                : string.Create(CultureInfo.InvariantCulture, $"{key} {v} is outside {lo} to {hi}"));
+        }
+        return faults;
+    }
+
+    /// <summary>The material <paramref name="name"/> in <paramref name="scope"/>, compared as a technology compares names.</summary>
+    private static TechMaterial? Find(IReadOnlyList<TechMaterial> scope, string name)
+        => scope.FirstOrDefault(m => string.Equals(m.Name, name, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>Each material's appearance: its own faults (errors), a <c>Like</c> naming nothing in <paramref name="scope"/>
+    /// (a warning — the appearance falls through), and each <c>Like</c> cycle once (an error naming the chain).</summary>
+    private static void Appearances(IReadOnlyList<TechMaterial> materials, IReadOnlyList<TechMaterial> scope, List<TechProblem> problems)
+    {
+        var cycles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var m in materials)
+        {
+            if (m.Appearance is not { } a) continue;
+            foreach (string fault in AppearanceFaults(a))
+                problems.Add(Problem(TechValidation.Ids.AppearanceInvalid, DiagnosticSeverity.Error,
+                    $"Material \"{m.Name}\" states an appearance whose {fault}."));
+            if (a.Like is not { } like) continue;
+            if (Find(scope, like) is null)
+            {
+                problems.Add(Problem(TechValidation.Ids.AppearanceLikeUnknown, DiagnosticSeverity.Warning,
+                    $"Material \"{m.Name}\" looks Like \"{like}\", which no material here defines, so it takes nothing from it: " +
+                    "its appearance falls through to its own fields and its role's default."));
+                continue;
+            }
+            // A cycle through m: follow the Likes from m until a name repeats or the chain ends.
+            var chain = new List<string> { m.Name };
+            for (var at = Find(scope, like); at is not null; at = at.Appearance?.Like is { } next ? Find(scope, next) : null)
+            {
+                int seen = chain.FindIndex(n => string.Equals(n, at.Name, StringComparison.OrdinalIgnoreCase));
+                chain.Add(at.Name);
+                if (seen < 0) continue;
+                var loop = chain.Skip(seen).ToList();
+                // One finding per cycle, whichever of its materials is met first.
+                string key = string.Join("|", loop.Skip(1).Select(n => n.ToLowerInvariant()).Order(StringComparer.Ordinal));
+                if (cycles.Add(key))
+                    problems.Add(Problem(TechValidation.Ids.AppearanceLikeCycle, DiagnosticSeverity.Error,
+                        $"Appearances name each other in a cycle: {string.Join(" → ", loop.Select(n => $"\"{n}\""))}. " +
+                        "Remove one of the Likes."));
+                break;
+            }
+        }
+    }
 
     private static TechProblem Problem(string id, DiagnosticSeverity severity, string message)
         => new(TechProblemArea.Materials, message, Id: id, Severity: severity);

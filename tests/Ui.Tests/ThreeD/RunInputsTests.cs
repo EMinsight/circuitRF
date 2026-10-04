@@ -4,6 +4,8 @@
 //    Gate 2  an edit to a material library the technology looks through names the library.
 //    Gate 3  a circuit's sub-cell edit names the SUB-CELL (not the schematic above it), and the extraction that lists the
 //            files is the one a run consumes, byte for byte.
+//    brief-em3d-105 gate 6  a material's Color or Appearance edit leaves a (version 2) run current; a version-1 manifest is
+//            compared by raw bytes, as it was written, so the same edit still names the library there.
 //
 // The submodel's re-solve is in ThermalInterfacesBlocksTests (it needs Gmsh); `render --field`'s note in FieldRenderCliTests.
 
@@ -45,6 +47,39 @@ public sealed class RunInputsTests : IDisposable
         var (ws, c3d, doc, run) = DieToHeatsink();
         Edit(Path.Combine(ws, "tech", "generic-materials.cmat"), "\"ThermalK\": 318.202,", "\"ThermalK\": 300,");   // gold's k
         Assert.Equal(["generic-materials.cmat"], C3dRunDocument.Check(run, doc, c3d)!.Changed);
+    }
+
+    [Fact]
+    public void Brief105_AMaterialsLookIsNoChange_UnderAVersion2Manifest_AndStillIsUnderAVersion1One()
+    {
+        var (ws, c3d, doc, run) = DieToHeatsink();
+        string cmat = Path.Combine(ws, "tech", "generic-materials.cmat");
+        string manifest = File.ReadAllText(C3dRunDocument.InputsPathIn(run));
+        Assert.Contains("\"version\": 2", manifest);
+        Assert.Contains("\"form\": \"physics\"", manifest);
+
+        // Gold's display colour and appearance: no physics moved.
+        Edit(cmat, "\"ThermalK\": 318.202,", "\"Color\": \"#AABBCC\", \"Appearance\": { \"Roughness\": 0.9, \"Like\": \"Silver\" }, \"ThermalK\": 318.202,");
+        Assert.False(C3dRunDocument.Check(run, doc, c3d)!.Stale);
+        // ...and a physical value still does (Gate 2's own assertion, on the same run).
+        Edit(cmat, "\"ThermalK\": 318.202,", "\"ThermalK\": 300,");
+        Assert.Equal(["generic-materials.cmat"], C3dRunDocument.Check(run, doc, c3d)!.Changed);
+
+        // The same display edit against a version-1 manifest, which hashed the library's raw bytes.
+        var (ws1, c3d1, doc1, run1) = DieToHeatsink();
+        string cmat1 = Path.Combine(ws1, "tech", "generic-materials.cmat");
+        var node = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(C3dRunDocument.InputsPathIn(run1)))!;
+        node["version"] = 1;
+        foreach (var f in node["files"]!.AsArray())
+        {
+            f!.AsObject().Remove("form");
+            string full = Path.GetFullPath(Path.Combine(ws1, f["path"]!.GetValue<string>()));
+            f["sha256"] = C3dRunDocument.HashOf(full);                     // what version 1 recorded: the content (raw-byte) hash
+        }
+        File.WriteAllText(C3dRunDocument.InputsPathIn(run1), node.ToJsonString());
+        Assert.False(C3dRunDocument.Check(run1, doc1, c3d1)!.Stale);
+        Edit(cmat1, "\"ThermalK\": 318.202,", "\"Color\": \"#AABBCC\", \"ThermalK\": 318.202,");
+        Assert.Equal(["generic-materials.cmat"], C3dRunDocument.Check(run1, doc1, c3d1)!.Changed);
     }
 
     [Fact]
@@ -90,6 +125,7 @@ public sealed class RunInputsTests : IDisposable
     {
         string src = Path.Combine(PalaceBackendTests.RepoRoot(), "examples", example);
         string dst = Path.Combine(_root, example);
+        if (Directory.Exists(dst)) dst += "-" + Guid.NewGuid().ToString("N")[..6];
         foreach (string f in Directory.EnumerateFiles(src, "*", SearchOption.AllDirectories))
         {
             string to = Path.Combine(dst, Path.GetRelativePath(src, f));

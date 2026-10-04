@@ -303,7 +303,8 @@ public static class MaterialLibraries
     /// Whether two records are the same material to a solver — the comparison the 3D elaborator makes
     /// between technologies (overview §1j): εr, the εr tensor, tanδ, μr and σ, each as the solver
     /// receives it (an unstated εr is 1, tanδ 0, μr 1, σ 0), plus α₂₀, which decides σ at every other
-    /// temperature. Display fields — <see cref="TechMaterial.Source"/>, <see cref="TechMaterial.Color"/> — take no part.
+    /// temperature. Display fields — <see cref="TechMaterial.Source"/>, <see cref="TechMaterial.Color"/> and
+    /// <see cref="TechMaterial.Appearance"/> (brief-em3d-105) — take no part.
     ///
     /// <para>brief-em3d-73 — the thermal values (k, the two tables, the k tensor, density, specific heat) take part <b>only when both
     /// records state them</b>: a technology's own copy of a metal written before the library gained its thermal values

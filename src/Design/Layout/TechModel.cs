@@ -905,6 +905,11 @@ public sealed class TechMaterial
     /// and its own palette otherwise; no solver reads it.</summary>
     public string? Color { get; set; }
 
+    /// <summary>brief-em3d-105 — how the material looks in the realistic 3D view (<see cref="TechAppearance"/>); null states
+    /// nothing, and its role's default applies. Display only, as <see cref="Color"/> is: no solver reads it, and the
+    /// solver-equality comparison and a run's input hash both ignore it.</summary>
+    public TechAppearance? Appearance { get; set; }
+
     /// <summary>Keys this build does not read. Kept, and written back, so a record from a later build
     /// survives being saved here — in a <c>.cmat</c> and in a <c>.ctech</c> alike, since it is one
     /// type (brief-em3d-53 §1a).</summary>

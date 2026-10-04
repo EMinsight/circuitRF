@@ -162,6 +162,13 @@ public abstract class C3dObject : IC3dBindable
     [JsonPropertyOrder(12)]
     public int? Transparency { get; set; }
 
+    /// <summary>brief-em3d-105 R-em3d105-2 — how the object looks in the realistic view, FIELD BY FIELD over its material's
+    /// appearance: <c>{ "Like": "Gold" }</c> makes a copper trace look gold-plated, <c>{ "Roughness": 0.1 }</c> polishes it. Omitted:
+    /// its material's. Drawing only — no solver reads it, and a run's document never holds it. An operation carries it for its
+    /// result, as it carries <see cref="Transparency"/>; the object it wraps has none. A polyline has none.</summary>
+    [JsonPropertyOrder(12)]
+    public TechAppearance? Appearance { get; set; }
+
     /// <summary>brief-em3d-93 R-em3d93-1 — whether the object is in the solve. False keeps it drawn, pickable and editable and
     /// leaves it out of every simulation run (<see cref="C3dModelled"/>). Written only when false. An operation carries it for
     /// its result (and the Tools it keeps), as it carries <see cref="Hidden"/>; the object it wraps has none of its own. A
@@ -566,6 +573,11 @@ public sealed class C3dInstance
     /// <summary>brief-em3d-92 — the instance's transparency, percent, as an object's <see cref="C3dObject.Transparency"/>: it
     /// MULTIPLIES onto each placed part's own (a 50 % instance of a part at 50 % draws it at 75 %). Omitted: none of its own.</summary>
     public int? Transparency { get; set; }
+
+    /// <summary>brief-em3d-105 R-em3d105-2d — the instance's appearance, applied field by field to every part inside it. Unlike
+    /// <see cref="Transparency"/> it does not multiply: <b>a part's own stated field wins</b>, as the more specific statement, and
+    /// of nested instances the innermost does. Omitted: none of its own.</summary>
+    public TechAppearance? Appearance { get; set; }
 
     /// <summary>brief-em3d-93 — whether the placed cell is in the solve, as an object's <see cref="C3dObject.Model"/>: false leaves
     /// every part of it out of every run. Written only when false.</summary>

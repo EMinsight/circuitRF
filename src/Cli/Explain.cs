@@ -61,7 +61,7 @@ internal static class Explain
 
     public static int Run(string[] args)
     {
-        string? path = null, expr = null, reference = null, analysisName = null, setupName = null;
+        string? path = null, expr = null, reference = null, analysisName = null, setupName = null, objectName = null;
         bool wantAnalyses = false, wantCells = false, wantLayers = false, wantExtents = false, all = false;
         bool wantFootprints = false;
         ViewType? askedView = null;
@@ -111,6 +111,10 @@ internal static class Explain
                 case "--setup" when i + 1 < args.Length:
                     setupName = args[++i];
                     continue;
+                // brief-em3d-105 R-em3d105-7c — one object of a .c3d: how it looks, and which statement decided each field.
+                case "--object" when i + 1 < args.Length:
+                    objectName = args[++i];
+                    continue;
                 case "--set" when i + 1 < args.Length:
                 {
                     // The same override the run verbs take, applied the same way (cli.md §5): it
@@ -146,7 +150,7 @@ internal static class Explain
 
         int asked = (expr is null ? 0 : 1) + (reference is null ? 0 : 1) + (wantAnalyses ? 1 : 0)
                   + (wantCells ? 1 : 0) + (wantLayers ? 1 : 0) + (wantExtents ? 1 : 0)
-                  + (wantFootprints ? 1 : 0);
+                  + (wantFootprints ? 1 : 0) + (objectName is null ? 0 : 1);
         if (asked > 1) { JsonRun.Report(CliDiagnostics.ExplainOneQuestion()); return Usage(); }
         if (all && !wantCells) { JsonRun.Report(CliDiagnostics.ExplainAllNeedsCells()); return Usage(); }
 
@@ -178,7 +182,7 @@ internal static class Explain
             case DocumentKind.Layout:   ExplainLayout(path, walks); break;
             case DocumentKind.EmSetup:  exit |= ExplainEmSetup(path, walks, out em3d); break;
             case DocumentKind.ThreeD:
-                exit |= ExplainThreeD(path, walks, out em3d, sets, setupName);
+                exit |= ExplainThreeD(path, walks, out em3d, sets, setupName, objectName);
                 solved = Solved.Of(Path.GetFullPath(path));          // brief-em3d-98 R-em3d98-8
                 break;
             case DocumentKind.Technology:      exit |= ExplainTechnology(path, walks); break;
@@ -210,6 +214,9 @@ internal static class Explain
             default:
                 return JsonRun.Fail(CliDiagnostics.ExplainUnknownKind(path));
         }
+
+        if (objectName is not null && kind != DocumentKind.ThreeD)
+            exit |= JsonRun.Fail(CliDiagnostics.ExplainOptionNotApplicable("--object", DocumentKinds.Name(kind), "one object of a 3D view"));
 
         if (reference is not null)
         {
@@ -305,7 +312,7 @@ internal static class Explain
         Console.Error.WriteLine("Usage: circuitrf explain <path> [--expr \"<expression>\"] [--set var=expr]");
         Console.Error.WriteLine("                            [--analysis [<name>]] [--ref <relative-ref>]");
         Console.Error.WriteLine("                            [--cells [--all]] [--layers] [--extents] [--view <name>]");
-        Console.Error.WriteLine("                            [--footprints] [--setup <name>]");
+        Console.Error.WriteLine("                            [--footprints] [--setup <name>] [--object <name>]");
         return 1;
     }
 
@@ -592,7 +599,7 @@ internal static class Explain
     /// the lowering table's choice per object — then, with exactly one embedded setup, the problem it makes.
     /// </summary>
     private static int ExplainThreeD(string path, List<ResolutionStepJson> walks, out ExplainEm3dJson? em3d,
-                                     IReadOnlyList<(string Name, string Expr)> sets, string? setupName)
+                                     IReadOnlyList<(string Name, string Expr)> sets, string? setupName, string? objectName = null)
     {
         em3d = null;
         string full = Path.GetFullPath(path);
@@ -609,6 +616,11 @@ internal static class Explain
             ModelWalk(C3dPersistence.LoadFromFile(full), e, walks);
             PortWalk(C3dPersistence.LoadFromFile(full), e, walks);
             ResultWalk(C3dPersistence.LoadFromFile(full), full, e, walks);
+        }
+        if (objectName is not null)
+        {
+            if (src.Elaboration is not { } elaborated) return JsonRun.Fail(CliDiagnostics.ExplainObjectNotFound(objectName, path));
+            if (!AppearanceWalk(elaborated, objectName, walks)) return JsonRun.Fail(CliDiagnostics.ExplainObjectNotFound(objectName, path));
         }
         em3d = ExplainEm3d.Build(src);
         // brief-em3d-64 R-em3d64-6b — only a document that holds a kernel object asks the kernel anything.
@@ -718,6 +730,43 @@ internal static class Explain
                 $"{string.Join(", ", ports)}: the result's ports are the other {doc.Ports.Count - ports.Count}, renumbered from 1", Rule));
         if (doc.HeatSources.Where(h => !h.Model).Select(h => h.Name).ToList() is { Count: > 0 } sources)
             walks.Add(new ResolutionStepJson("heat sources not modelled", null, $"{string.Join(", ", sources)}: no thermal run heats them", Rule));
+    }
+
+    /// <summary>
+    /// brief-em3d-105 R-em3d105-7c — <c>explain x.c3d --object name</c>: the object's resolved appearance, one step per field,
+    /// with the statement that decided it — through <see cref="CircuitRF.Render.Scene3D.Scene3DBuilder.AppearanceOf"/>, so the
+    /// answer is the 3D view's own. <paramref name="name"/> is an elaborated name (<c>U1/trace</c>) or a top-level object's,
+    /// which answers for every solid it elaborated to. False when it names nothing.
+    /// </summary>
+    private static bool AppearanceWalk(C3dElaboration e, string name, List<ResolutionStepJson> walks)
+    {
+        var problem = C3dProblemAssembly.ViewProblem([.. e.Solids, .. e.UnassignedSolids], [.. e.Sheets, .. e.UnassignedSheets], e.Materials, [],
+                                                     C3dProblemAssembly.ExtentBox((0, 0, 0, 1, 1, 1)));
+        var names = problem.Solids.Select(s => s.Name).Concat(problem.Sheets.Select(s => s.Name))
+                           .Where(n => n == name || e.Provenance.TryGetValue(n, out var p) && p.TopObject == name).ToList();
+        var looks = CircuitRF.Design.ThreeD.Appearance.AppearanceOverride.Of(e.Provenance);
+        const string Rule = "object, instances innermost first, material (each with its Like), the material's Color, the role's " +
+                            "default — drawing only, nothing read from εr or σ";
+        bool any = false;
+        foreach (string n in names)
+        {
+            if (CircuitRF.Render.Scene3D.Scene3DBuilder.AppearanceOf(problem, n, e.Origins, e.Technology, looks(n)) is not { } a) continue;
+            any = true;
+            var v = a.Values;
+            foreach (var (field, value) in new (string, string)[]
+                     {
+                         ("BaseColor", Linear(v.BaseColor)), ("Metallic", Num(v.Metallic)), ("Roughness", Num(v.Roughness)),
+                         ("Transmission", Num(v.Transmission)), ("Ior", Num(v.Ior)), ("Clearcoat", Num(v.Clearcoat)),
+                         ("ClearcoatRoughness", Num(v.ClearcoatRoughness)), ("AttenuationColor", Linear(v.AttenuationColor)),
+                         ("AttenuationDistance", double.IsPositiveInfinity(v.AttenuationDistance) ? "none (no tint)" : Num(v.AttenuationDistance) + " m"),
+                     })
+                walks.Add(new ResolutionStepJson($"appearance {n} {field}", a.Provenance.GetValueOrDefault(field),
+                                                 $"{value} — from {a.Provenance.GetValueOrDefault(field)}", Rule));
+        }
+        return any;
+
+        static string Num(double d) => d.ToString("G4", System.Globalization.CultureInfo.InvariantCulture);
+        static string Linear(CircuitRF.Design.ThreeD.Appearance.AppearanceColour c) => $"({Num(c.R)}, {Num(c.G)}, {Num(c.B)}) linear";
     }
 
     private static void ThreeDWalk(C3dElaboration e, List<ResolutionStepJson> walks)

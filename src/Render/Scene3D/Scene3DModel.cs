@@ -147,6 +147,10 @@ public sealed class Scene3DObject
     /// the object as the view does and knows which objects are see-through (Em3dDrawingRequest.TransparentObjectsOcclude).</summary>
     public Scene3DTransparency? Transparency { get; init; }
 
+    /// <summary>brief-em3d-105 R-em3d105-4 — its row of <see cref="Scene3DModel.Appearances"/>, which its shade vertices carry too;
+    /// -1 for what has no appearance (air, a port, a boundary).</summary>
+    public int AppearanceSlot { get; set; } = -1;
+
     /// <summary>The name of face <paramref name="face"/>: its stored name, else <c>face&lt;n&gt;</c>.</summary>
     public string FaceName(int face) => face >= 0 && face < FaceNames.Count ? FaceNames[face]
         : face == Scene3DBuilder.FaceUnknown ? "surface" : $"face{face}";
@@ -301,6 +305,15 @@ public sealed class Scene3DModel
     public Em3dProblem? Problem { get; init; }
     /// <summary>The problem's notes and warnings, or the refusal when there is no problem.</summary>
     public IReadOnlyList<string> Notes { get; init; } = [];
+
+    /// <summary>brief-em3d-105 R-em3d105-4 — the scene's appearance table: one row per distinct resolved appearance (equal ones
+    /// share a row), at most <see cref="Scene3DBuilder.AppearanceSlots"/>. A shade vertex's <see cref="Scene3DShadeVertex.Slot"/>
+    /// indexes it.</summary>
+    public CircuitRF.Design.ThreeD.Appearance.AppearanceValues[] Appearances { get; init; } = [];
+
+    /// <summary>How many objects draw with their role's default because the table was full (overview D16) — for the status
+    /// line.</summary>
+    public int AppearanceFallbacks { get; init; }
 
     public int TriangleCount => Indices.Length / 3;
     public long VertexBytes => (long)Vertices.Length * Scene3DVertex.Stride;

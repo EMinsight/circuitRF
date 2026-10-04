@@ -13,10 +13,18 @@
 // Each file is hashed as what it CONTRIBUTES, so a display edit is never a model edit: a .c3d through SerializeForRun (its field
 // plots out), a .csch through its own extraction (a moved label is no change, and a sub-cell's edit names the sub-cell, not
 // every parent above it), anything else by its bytes. A file is re-hashed only when its time or size moved.
+//
+// brief-em3d-105 R-em3d105-5 — a .cmat or a .ctech too, from manifest version 2: hashed in its CANONICAL PHYSICS FORM (read
+// through its own persistence, every material's Source, Color and Appearance cleared, written again), so editing how a
+// material looks never makes a result stale. Before it, a .cmat was hashed by its raw bytes, and even a display Color edit
+// marked every run that read the file out of date. Each input says which form its hash is in; a version-1 manifest is compared
+// exactly as it was written (raw bytes for these two), so an old run is never newly called current by a rule it was not
+// written under. A file that no longer parses is compared by its raw bytes — stale if it changed, which is the safe answer.
 
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using CircuitRF.Design.Layout;
 using CircuitRF.Design.Schematic;
 using CircuitRF.Design.Workspace;
 
@@ -24,7 +32,14 @@ namespace CircuitRF.Design.ThreeD;
 
 /// <summary>brief-em3d-87 — one input of a run: its stored path and its hash.</summary>
 /// <param name="Path">Relative to the workspace root, <c>/</c>-separated, when the file is inside it; else absolute.</param>
-public sealed record C3dRunInput(string Path, string Sha256);
+/// <param name="Form">brief-em3d-105 — what the hash is of: <see cref="Content"/> (the file's contribution as brief 87 defines
+/// it; a version-1 manifest holds no form, which is this) or <see cref="Physics"/> (a <c>.cmat</c>'s or a <c>.ctech</c>'s
+/// canonical physics form).</param>
+public sealed record C3dRunInput(string Path, string Sha256, string? Form = null)
+{
+    public const string Content = "content";
+    public const string Physics = "physics";
+}
 
 /// <summary>
 /// brief-em3d-87 R-em3d87-3 — what changed since a run: the document itself (as a run sees it) and/or named input files.
@@ -91,9 +106,12 @@ public sealed class C3dRunInputs
         {
             if (!File.Exists(f)) continue;
             string full = Path.GetFullPath(f);
-            if (C3dRunDocument.HashOf(full) is not { } hash) continue;
+            string form = C3dRunDocument.FormFor(full);
+            if (C3dRunDocument.HashOf(full, form) is not { } hash) continue;
+            // A library that does not read as one is hashed by its bytes, and says so.
+            if (form == C3dRunInput.Physics && !C3dRunDocument.HasPhysicsForm(full)) form = C3dRunInput.Content;
             string stored = C3dRunDocument.Store(full, root);
-            files[stored] = new C3dRunInput(stored, hash);
+            files[stored] = new C3dRunInput(stored, hash, form);
         }
         return new C3dRunInputs(C3dPersistence.SerializeForRun(document), [.. files.Values]);
     }
@@ -120,7 +138,8 @@ public static class C3dRunDocument
     /// <summary>brief-em3d-87 — the file a run's directory keeps its other inputs' hashes in.</summary>
     public const string InputsFileName = "inputs.json";
 
-    internal const int ManifestVersion = 1;
+    /// <summary>brief-em3d-105 — 2: each input states its hash's <see cref="C3dRunInput.Form"/>.</summary>
+    internal const int ManifestVersion = 2;
 
     internal sealed record Manifest(int Version, List<C3dRunInput> Files);
 
@@ -193,7 +212,9 @@ public static class C3dRunDocument
                 // The document itself is compared as it is being edited (unsaved edits included), below.
                 if (string.Equals(full, top, StringComparison.OrdinalIgnoreCase)) continue;
                 if (!File.Exists(full)) { missing.Add(Path.GetFileName(full)); continue; }
-                if (HashOf(full) != input.Sha256) changed.Add(Path.GetFileName(full));
+                // brief-em3d-105 R-em3d105-5b — a version-1 manifest is compared as it was written: by content.
+                string form = manifest.Version >= 2 ? input.Form ?? C3dRunInput.Content : C3dRunInput.Content;
+                if (HashOf(full, form) != input.Sha256) changed.Add(Path.GetFileName(full));
             }
         }
         return new C3dRunStaleness(written, IsStale(solved, now, setup), changed, missing);
@@ -227,7 +248,7 @@ public static class C3dRunDocument
     }
 
     private static readonly Dictionary<string, (DateTime Time, long Length, string Value)> Texts = new(StringComparer.Ordinal);
-    private static readonly Dictionary<string, (DateTime Time, long Length, string Hash)> Hashes = new(StringComparer.Ordinal);
+    private static readonly Dictionary<(string Path, string Form), (DateTime Time, long Length, string Hash)> Hashes = [];
 
     /// <summary>A run file's text, read once per version: the editor asks on every edit.</summary>
     private static string ReadCached(string path)
@@ -244,18 +265,64 @@ public static class C3dRunDocument
     /// <paramref name="path"/>'s hash as a run input — what it contributes (see the file's note) — recomputed only when its time
     /// or size moved. Null when it cannot be read.
     /// </summary>
-    public static string? HashOf(string path)
+    public static string? HashOf(string path) => HashOf(path, C3dRunInput.Content);
+
+    /// <summary>brief-em3d-105 — <paramref name="path"/>'s hash in <paramref name="form"/>: <see cref="C3dRunInput.Physics"/> is a
+    /// material library's or a technology's canonical physics form, and its raw bytes when it does not read as one.</summary>
+    public static string? HashOf(string path, string form)
     {
         FileInfo info;
         try { info = new FileInfo(path); if (!info.Exists) return null; }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException) { return null; }
         lock (Hashes)
-            if (Hashes.TryGetValue(path, out var h) && h.Time == info.LastWriteTimeUtc && h.Length == info.Length) return h.Hash;
+            if (Hashes.TryGetValue((path, form), out var h) && h.Time == info.LastWriteTimeUtc && h.Length == info.Length) return h.Hash;
         string hash;
-        try { hash = Sha(Contribution(path)); }
+        try { hash = Sha(form == C3dRunInput.Physics ? PhysicsForm(path) ?? File.ReadAllBytes(path) : Contribution(path)); }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return null; }
-        lock (Hashes) Hashes[path] = (info.LastWriteTimeUtc, info.Length, hash);
+        lock (Hashes) Hashes[(path, form)] = (info.LastWriteTimeUtc, info.Length, hash);
         return hash;
+    }
+
+    /// <summary>The form a new run hashes <paramref name="path"/> in: a material library or a technology by its physics.</summary>
+    internal static string FormFor(string path)
+        => Path.GetExtension(path).ToLowerInvariant() is MaterialLibraryPersistence.Extension or ".ctech"
+            ? C3dRunInput.Physics : C3dRunInput.Content;
+
+    /// <summary>Whether <paramref name="path"/> reads as its kind, so it has a physics form.</summary>
+    internal static bool HasPhysicsForm(string path)
+    {
+        try { return PhysicsForm(path) is not null; }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return false; }
+    }
+
+    /// <summary>
+    /// R-em3d105-5a — a <c>.cmat</c> or <c>.ctech</c> read through its own persistence with every material's DISPLAY fields
+    /// cleared (<c>Source</c>, <c>Color</c>, <c>Appearance</c> — the three the solver-equality comparison ignores) and written
+    /// again; null for any other file, and for one that does not read as its kind.
+    /// </summary>
+    internal static byte[]? PhysicsForm(string path)
+    {
+        string ext = Path.GetExtension(path).ToLowerInvariant();
+        if (ext is not (MaterialLibraryPersistence.Extension or ".ctech")) return null;
+        string text = GzipTextFile.ReadAllTextAutoGzip(path);
+        try
+        {
+            if (ext == MaterialLibraryPersistence.Extension)
+            {
+                var file = MaterialLibraryPersistence.DeserializeFile(text);
+                ClearDisplay(file.Materials);
+                return Encoding.UTF8.GetBytes(MaterialLibraryPersistence.Serialize(file.Materials, file.ThermalInterfaces));
+            }
+            var tech = TechPersistence.DeserializeUnresolved(text);
+            ClearDisplay(tech.Materials);
+            return Encoding.UTF8.GetBytes(TechPersistence.Serialize(tech));
+        }
+        catch (Exception e) when (e is not (IOException or UnauthorizedAccessException or OutOfMemoryException)) { return null; }
+
+        static void ClearDisplay(IEnumerable<TechMaterial> materials)
+        {
+            foreach (var m in materials) (m.Source, m.Color, m.Appearance) = (null, null, null);
+        }
     }
 
     /// <summary>What <paramref name="path"/> contributes to a run, as bytes; its raw bytes when it cannot be read as its kind.</summary>

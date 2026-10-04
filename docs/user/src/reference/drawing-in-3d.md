@@ -333,6 +333,45 @@ to the technology.
 - A see-through object is still picked by its surfaces, like any other. While a pushed-in cell's surroundings or a
   boolean's operands are drawn dimmed or ghosted, those looks win.
 
+### Appearance {#appearance}
+
+An **appearance** says how an object looks in the realistic view: how metallic, how rough, how see-through. It belongs
+first to the **material** — forty copper objects should not need forty edits — and an **object** or a placed cell may
+override it, because plating is usually not modelled: a copper trace that should look gold-plated is the common case.
+
+The keys are glTF 2.0's metallic-roughness set, and every one is optional:
+
+| Key | Range | Meaning |
+|---|---|---|
+| `BaseColor` | `#rrggbb` | a metal's reflectance, a dielectric's body colour |
+| `Metallic` | 0–1 | 1 for a metal, 0 for a dielectric |
+| `Roughness` | 0–1 | 0 a mirror, 1 matte |
+| `Transmission` | 0–1 | see-through: glass, quartz, a thin laminate |
+| `Ior` | 1.0–3.0 | the **optical** index of refraction |
+| `Clearcoat`, `ClearcoatRoughness` | 0–1 | a glossy layer over the body, such as solder mask |
+| `AttenuationColor` | `#rrggbb` | the tint light picks up passing through |
+| `AttenuationDistance` | metres, above 0 | how far it travels before taking that tint |
+| `Like` | a material's name | that material's look first, with these fields over it |
+
+- **On a material** (a `.cmat` or a technology's own list) it is one more key on the record:
+  `"Appearance": { "BaseColor": "#FAD1C2", "Metallic": 1, "Roughness": 0.35 }`. The shipped generic library states true
+  reflectances for its metals and visual values for its dielectrics. A metal's display **Color** is unchanged, so the
+  ordinary view's copper still looks like the diagrammatic copper you know.
+- **On an object or a placed cell** in the `.c3d` it overrides the material's **field by field**. The plated trace is
+  `"Appearance": { "Like": "Gold" }` on a copper object; `{ "Roughness": 0.1 }` is polished copper. A placed cell's
+  appearance applies to every part inside it, and a part's own field wins; of nested cells, the innermost wins. A
+  boolean, fillet or chamfer carries it for its result.
+- **What is not stated** comes from the next statement down: the object, each placed cell around it, the material (and
+  its `Like`), then for `BaseColor` the material's display **Color**, then the role's default — a conductor metallic
+  and fairly rough, a via and a bond wire a little smoother, a dielectric not metallic.
+- **Nothing physical is read from it, or into it.** The optical index is not worked out from εr (alumina's εr would give
+  3.1; its optical index is about 1.76). No solver reads an appearance, two materials that differ only in appearance
+  (or colour) are the same material, and **editing an appearance never makes a result stale** — in the `.c3d`, or in a
+  material library or technology a run read.
+- `check` refuses a value out of its range and a `Like` cycle, and warns about a `Like` naming no material, whose look
+  then falls through. `circuitrf explain view.c3d --object U1/trace` prints the look one object resolves to, and which
+  statement decided each field.
+
 ### Model: kept in the drawing, left out of the solve {#model}
 
 To try a run without the lid, a second row of bond wires or a fixture, untick its **Model**: it stays on screen, where

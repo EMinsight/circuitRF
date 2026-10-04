@@ -62,6 +62,11 @@ public static class C3dValidation
             if (o is C3dPolyline { Transparency: not null }) found.Add(C3dDiagnostics.TransparencyOnPolyline(o.Name));
             foreach (var operand in C3dOperands.SelfAndDescendants(o).Skip(1).Where(d => d.Transparency is not null))
                 found.Add(C3dDiagnostics.TransparencyOnOperand(o.Name, operand.Name));
+            // brief-em3d-105 — an appearance's own faults (MaterialValidation's rule), and one stated where nothing can carry it.
+            Appearance(o.Appearance, $"'{o.Name}'", $"'{o.Name}'", isKnownMaterial, found);
+            if (o is C3dPolyline { Appearance: not null }) found.Add(C3dDiagnostics.AppearanceOnPolyline(o.Name));
+            foreach (var operand in C3dOperands.SelfAndDescendants(o).Skip(1).Where(d => d.Appearance is not null))
+                found.Add(C3dDiagnostics.AppearanceOnOperand(o.Name, operand.Name));
             // brief-em3d-93 — Model where nothing reads it: a polyline is never modelled, an operand is its result's
             if (o is C3dPolyline { Model: false }) found.Add(C3dDiagnostics.ModelOnPolyline(o.Name));
             foreach (var operand in C3dOperands.SelfAndDescendants(o).Skip(1).Where(d => !d.Model))
@@ -84,11 +89,22 @@ public static class C3dValidation
             if (i.Array is { } a && unresolved?.Contains(i.Name) != true && (a.Counts.Count != 3 || a.Counts.Any(n => n < 1)))
                 found.Add(C3dDiagnostics.ArrayCounts(i.Name));
             if (i.Transparency is { } t && !C3dTransparency.InRange(t)) found.Add(C3dDiagnostics.TransparencyRange($"The instance '{i.Name}'", t));
+            Appearance(i.Appearance, $"The instance '{i.Name}'", $"the instance '{i.Name}'", isKnownMaterial, found);
             Unread(i.Unread, $"The instance '{i.Name}'", found);
         }
 
         Unread(doc.Unread, "The document", found);
         return found;
+    }
+
+    /// <summary>brief-em3d-105 — an object's or an instance's appearance: each fault MaterialValidation finds in a material's (one
+    /// rule, two places), a Like the technology does not define (only when one resolved), and its unread keys.</summary>
+    private static void Appearance(Layout.TechAppearance? a, string what, string of, Func<string, bool>? isKnownMaterial, List<Diagnostic> found)
+    {
+        if (a is null) return;
+        foreach (string fault in Layout.MaterialValidation.AppearanceFaults(a)) found.Add(C3dDiagnostics.AppearanceInvalid(what, fault));
+        if (a.Like is { } like && isKnownMaterial is not null && !isKnownMaterial(like)) found.Add(C3dDiagnostics.AppearanceLikeUnknown(what, like));
+        Unread(a.Unread, $"The appearance of {of}", found);
     }
 
     /// <summary>brief-em3d-101 — a sheet's image findings: its file, resolved against the document that holds it (only when the

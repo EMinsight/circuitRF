@@ -360,7 +360,7 @@ internal static class DocumentSchema
         A record here is EXACTLY a record of a .ctech's own Materials list — one type, one reader — so
         one cut from either file and pasted into the other reads identically.
 
-        Six things that are not obvious from the field list:
+        Seven things that are not obvious from the field list:
 
           * ONLY A TECHNOLOGY NAMES A LIBRARY. A .ctech lists it in MaterialLibraries, as a path
             relative to the .ctech's own directory; a workspace, a .cem and a .c3d never do. They
@@ -392,6 +392,24 @@ internal static class DocumentSchema
             materials wherever they touch: { "MaterialA": "Gallium nitride", "MaterialB": ...,
             "ResistanceM2KW": 3.3e-8, "Source": ... }. The pair is unordered; the duplicate rule is
             the materials' own (`material.interface-conflict`).
+          * Appearance is how the material LOOKS in the 3D view's realistic mode — glTF 2.0's
+            metallic-roughness parameters, every one optional:
+              BaseColor            #rrggbb (sRGB)  a metal's reflectance, a dielectric's body colour
+              Metallic             0–1             1 for a metal, 0 for a dielectric
+              Roughness            0–1             0 a mirror, 1 matte
+              Transmission         0–1             see-through (glass, quartz, thin laminate)
+              Ior                  1.0–3.0         the OPTICAL index — never derived from Epsr
+              Clearcoat            0–1             a glossy layer over the body (solder mask)
+              ClearcoatRoughness   0–1
+              AttenuationColor     #rrggbb         the tint light picks up passing through
+              AttenuationDistance  metres, > 0     how far it travels before taking that tint
+              Like                 a material      that material's look first, these fields over it
+            NOTHING PHYSICAL IS READ FROM IT and nothing physical is derived into it: no solver sees
+            it, two records differing only in Appearance (or Color, or Source) are one material, and
+            editing it never marks a result out of date. Unstated, a field takes the material's Like,
+            then BaseColor its Color, then the role's default (a conductor metallic and fairly
+            rough, a dielectric not). Out-of-range values and a Like cycle are errors in `check`; a
+            Like naming no material is a warning, and falls through.
 
         circuitRF ships generic-materials.cmat — metals (with σ(T) and k(T) tables to below their
         melting points), ceramics, semiconductors, laminates, die attaches and package alloys, each
@@ -464,6 +482,12 @@ internal static class DocumentSchema
             percentage from 0 (opaque) to {TransparencyMax}; omitted, its kind's default (a dielectric translucent,
             a conductor opaque). An instance's multiplies onto each part's own. An operation carries
             it for its result, never an operand inside it; a polyline has none. No solver reads it.
+          * Appearance on an object or an instance overrides its material's appearance (the .cmat
+            format's Appearance keys) FIELD BY FIELD: {"Like": "Gold"} draws a copper trace gold-
+            plated, {"Roughness": 0.1} polishes it, and every field it does not state is the
+            material's. An instance's applies to every part inside it, and a part's own stated field
+            wins; of nested instances the innermost does. An operation carries it for its result; a
+            polyline has none. Drawing only: no solver reads it and a run never sees it.
           * "Model": false (written only then) keeps an object, an instance, a port or a heat source
             DRAWN and editable and leaves it out of every simulation run. An operation carries it for
             its result; a polyline is never modelled anyway. A reference to one that is off — a

@@ -242,6 +242,14 @@ public static class C3dHierarchy
             foreach (var o in flat.Objects.Where(o => o is not C3dPolyline)) o.Transparency = C3dTransparency.Compose(inst.Transparency, o.Transparency);
             foreach (var i in flat.Instances) i.Transparency = C3dTransparency.Compose(inst.Transparency, i.Transparency);
         }
+        // brief-em3d-105 — and its appearance UNDER each part's: a part's own stated field wins, and a nested instance's over this
+        // one's, which is the resolver's order. (One case differs: a part and the instance both stating a Like keep the part's only,
+        // where the resolver would fall through the part's Like to the instance's for a field the first does not state.)
+        if (inst.Appearance is not null)
+        {
+            foreach (var o in flat.Objects.Where(o => o is not C3dPolyline)) o.Appearance = TechAppearance.Over(o.Appearance, inst.Appearance);
+            foreach (var i in flat.Instances) i.Appearance = TechAppearance.Over(i.Appearance, inst.Appearance);
+        }
         // brief-em3d-93 — an instance that is not modelled flattens to parts that are not, so the solve is unchanged.
         if (!inst.Model)
         {

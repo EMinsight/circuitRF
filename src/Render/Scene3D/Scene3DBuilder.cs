@@ -33,6 +33,7 @@ using CircuitRF.Design.Layout;
 using CircuitRF.Design.Layout.Em3d;
 using CircuitRF.Design.Theming;
 using CircuitRF.Design.ThreeD;
+using CircuitRF.Design.ThreeD.Appearance;
 using CircuitRF.Engine.Em3d;
 using CircuitRF.Render.Scene3D.Edit;
 
@@ -69,6 +70,8 @@ namespace CircuitRF.Render.Scene3D;
 /// slabs are drawn to the board outline or the copper hull (SlabLateralBound) rather than across the air box.</param>
 /// <param name="Images">brief-em3d-101 — a sheet's image (C3dElaboration.Images), or null: the sheet is drawn with it instead of its
 /// colour, never as a wireframe and never as an array element (it is drawn as an ordinary object, which is always correct).</param>
+/// <param name="Appearance">brief-em3d-105 — what the document says of an object's look over its material's (AppearanceOverride.Of
+/// an elaboration's provenance), or null.</param>
 /// <param name="FaceImages">brief-em3d-101 Phase B — images mapped onto faces (C3dElaboration.FaceImages): each drawn over its face as
 /// a record of its own (a face boundary's tint's kind of object, named C3dImages.FacePrefix + face), from the face's own triangles.
 /// An object carrying one is drawn as an ordinary object, never an array element.</param>
@@ -88,7 +91,8 @@ public sealed record Scene3DBuildOptions(
     bool HideOutermostDielectric = true,
     Func<string, Scene3DTransparency?>? Transparency = null,
     Func<string, CircuitRF.Design.ThreeD.C3dPlacedImage?>? Images = null,
-    IReadOnlyList<CircuitRF.Design.ThreeD.C3dFaceImageUse>? FaceImages = null)
+    IReadOnlyList<CircuitRF.Design.ThreeD.C3dFaceImageUse>? FaceImages = null,
+    Func<string, AppearanceOverride?>? Appearance = null)
 {
     /// <summary>brief-em3d-104 gate 11 — false keeps every vertex whole (no crease duplicates): the "before" the default view's
     /// pixels are compared against, built in the same test rather than read from a stored picture.</summary>
@@ -218,16 +222,71 @@ public static class Scene3DBuilder
     public const int CheckerCellsMax = 64;
     /// <summary>Segments around a coaxial port's annulus.</summary>
     public const int AnnulusSegments = 32;
+    /// <summary>brief-em3d-105 R-em3d105-4 — the most distinct appearances one scene holds (overview D16: one uniform table, which
+    /// Vulkan's guaranteed 16 KB of uniform range fits).</summary>
+    public const int AppearanceSlots = 256;
+
+    /// <summary>brief-em3d-105 R-em3d105-3b — the appearance role a scene kind is resolved for; null for air, a port and a
+    /// boundary, which have none.</summary>
+    public static AppearanceRole? AppearanceRoleOf(Scene3DKind kind) => kind switch
+    {
+        Scene3DKind.Conductor  => AppearanceRole.Conductor,
+        Scene3DKind.Dielectric => AppearanceRole.Dielectric,
+        Scene3DKind.Via        => AppearanceRole.Via,
+        Scene3DKind.Wire       => AppearanceRole.Wire,
+        Scene3DKind.Body       => AppearanceRole.Body,
+        Scene3DKind.Sheet      => AppearanceRole.Sheet,
+        _                      => null,
+    };
+
+    /// <summary>
+    /// brief-em3d-105 R-em3d105-7c — one object's resolved appearance, with each field's provenance, exactly as
+    /// <see cref="Build"/> resolves it (its kind, its palette colour, its material): what <c>explain --object</c> prints. Null for
+    /// a name the problem has no solid or sheet of, and for air.
+    /// </summary>
+    public static ResolvedAppearance? AppearanceOf(Em3dProblem problem, string name, IReadOnlyDictionary<string, Em3dObjectOrigin>? origins,
+                                                   Technology? tech, AppearanceOverride? appearance, ColorTheme? theme = null,
+                                                   ColorVariant variant = ColorVariant.Light)
+    {
+        origins ??= new Dictionary<string, Em3dObjectOrigin>();
+        theme ??= ColorTheme.BuiltIn;
+        var conductorColours = Em3dSectionRenderer.ObjectColours(problem, origins, tech, theme, variant);
+        bool dark = variant == ColorVariant.Dark;
+        if (problem.Solids.FirstOrDefault(s => s.Name == name) is { } solid)
+        {
+            var kind = KindOf(solid, origins);
+            var palette = solid.Role == Em3dRole.Dielectric ? DielectricPalette(problem, solid.Material, dark, null) : ConductorPalette(conductorColours, name);
+            return AppearanceRequestFor(kind, solid.Role, solid.Material, palette, tech, appearance) is { } r ? AppearanceResolver.Resolve(r) : null;
+        }
+        if (problem.Sheets.FirstOrDefault(s => s.Name == name) is { } sheet)
+            return AppearanceResolver.Resolve(AppearanceRequestFor(Scene3DKind.Sheet, Em3dRole.Conductor, sheet.Material,
+                                                                   ConductorPalette(conductorColours, name), tech, appearance)!.Value);
+        return null;
+    }
+
+    private static AppearanceRequest? AppearanceRequestFor(Scene3DKind kind, Em3dRole role, string material, (byte R, byte G, byte B) palette,
+                                                          Technology? tech, AppearanceOverride? appearance)
+        => AppearanceRoleOf(kind) is { } r && role != Em3dRole.Air ? new AppearanceRequest(tech, material, r, role, palette, appearance) : null;
+
+    /// <summary>A conductor's or a sheet's colour from the scene's palette — before its material's own Color.</summary>
+    private static (byte R, byte G, byte B) ConductorPalette(IReadOnlyDictionary<string, SkiaSharp.SKColor> colours, string name)
+        => colours.TryGetValue(name, out var c) ? (c.Red, c.Green, c.Blue) : ((byte)150, (byte)150, (byte)155);
+
+    /// <summary>A dielectric's colour from the scene's palette — before its material's own Color: the palette's entry for the
+    /// material's place among the drawn dielectrics.</summary>
+    private static (byte R, byte G, byte B) DielectricPalette(Em3dProblem problem, string material, bool dark, Func<string, bool>? wire)
+    {
+        var dielectrics = problem.Solids.Where(s => s.Role == Em3dRole.Dielectric && wire?.Invoke(s.Name) != true)
+                                 .Select(s => s.Material).Distinct(StringComparer.Ordinal).ToList();
+        var pal = dark ? DielectricDark : DielectricLight;
+        return pal[Math.Max(0, dielectrics.IndexOf(material)) % pal.Length];
+    }
 
     /// <summary>brief-em3d-53 M6 — a material's own display colour (<c>#rrggbb</c>), when its technology states one;
     /// null keeps the scene's palette. A qualified or stackup-derived name finds nothing, which is the palette.</summary>
+    /// brief-em3d-105 R-em3d105-1b — read by MaterialValidation.ParseColour, the one #rrggbb reader.
     private static (byte R, byte G, byte B)? MaterialColour(Technology? tech, string material)
-    {
-        if (tech?.FindMaterial(material)?.Color is not { Length: 7 } hex || hex[0] != '#') return null;
-        return uint.TryParse(hex.AsSpan(1), System.Globalization.NumberStyles.HexNumber, null, out uint v)
-            ? ((byte)(v >> 16), (byte)(v >> 8), (byte)v)
-            : null;
-    }
+        => MaterialValidation.ParseColour(tech?.FindMaterial(material)?.Color);
 
     private static long _tessellations;
 
@@ -288,6 +347,11 @@ public static class Scene3DBuilder
         var dielectrics = problem.Solids.Where(s => s.Role == Em3dRole.Dielectric && options.Wireframe?.Invoke(s.Name) != true)
                                  .Select(s => s.Material).Distinct(StringComparer.Ordinal).ToList();
         var materials = problem.Materials.Select((m, i) => (m, i)).ToDictionary(t => t.m.Name, t => t, StringComparer.Ordinal);
+        (byte R, byte G, byte B) DielectricPaletteOf(string material)
+        {
+            var pal = dark ? DielectricDark : DielectricLight;
+            return pal[Math.Max(0, dielectrics.IndexOf(material)) % pal.Length];
+        }
 
         var b = new Accumulator(L) { SplitShading = options.SplitShadingCreases };
         var imageNotes = new List<string>();
@@ -298,6 +362,12 @@ public static class Scene3DBuilder
         var solidRuns = new RunTracker(b);
         var sheetRuns = new RunTracker(b);
         bool Dim(string name) => options.Context?.Invoke(name) == true;
+        // brief-em3d-105 — an object's resolved look and its role's default (what it falls back to when the table is full).
+        (AppearanceValues Own, AppearanceValues Default)? Look(string name, Scene3DKind kind, Em3dRole role, string material, (byte R, byte G, byte B) palette)
+        {
+            if (AppearanceRequestFor(kind, role, material, palette, tech, options.Appearance?.Invoke(name)) is not { } request) return null;
+            return (AppearanceResolver.Resolve(request).Values, AppearanceResolver.RoleDefaultOf(request.Role, role, palette));
+        }
 
         // ── solids ───────────────────────────────────────────────────────────────────────────
         bool Wire(string name) => options.Wireframe?.Invoke(name) == true;
@@ -323,8 +393,7 @@ public static class Scene3DBuilder
                     break;
                 case Em3dRole.Dielectric:
                 {
-                    var pal = dark ? DielectricDark : DielectricLight;
-                    var c = MaterialColour(tech, s.Material) ?? pal[Math.Max(0, dielectrics.IndexOf(s.Material)) % pal.Length];
+                    var c = MaterialColour(tech, s.Material) ?? DielectricPaletteOf(s.Material);
                     rgba = Scene3DVertex.Pack(c.R, c.G, c.B, DielectricAlpha);
                     translucent = true;
                     break;
@@ -354,6 +423,9 @@ public static class Scene3DBuilder
                      : Tessellate(s.Primitive, () => Em3dTessellation.Of(solid));
             var (m, slot) = materials.TryGetValue(s.Material, out var mt) ? (mt.m, mt.i) : ((Em3dMaterial?)null, -1);
             if (faceImageObjects.Contains(s.Name)) faceMeshes[s.Name] = (mesh, FacesOf(s.Name), false, dim);
+            // brief-em3d-105 R-em3d105-4 — its look, from the one resolver, with the palette colour it would otherwise be drawn in.
+            var look = Look(s.Name, kind, s.Role, s.Material,
+                            s.Role == Em3dRole.Dielectric ? DielectricPaletteOf(s.Material) : ConductorPalette(conductorColours, s.Name));
             b.Object(new Scene3DObject
             {
                 Id = 0, Name = s.Name, Kind = kind, Role = s.Role, Material = s.Material, MaterialValues = m, MaterialSlot = slot,
@@ -364,7 +436,8 @@ public static class Scene3DBuilder
                            : s.Primitive is Em3dSphere ball && NamedSurface(ball, FacesOf(s.Name)) ? [ball.Center] : null,
                 Context = dim, Wireframe = wire, Transparency = see,
             }, mesh, wire && s.Primitive is Em3dCylinder c0 ? CylinderGenerators(c0).Select(q => (q, wireEdge)) : null,
-               faces: true, features: Features(s.Name, mesh, sheet: false, (s.Primitive as Em3dShapeSolid)?.Edges), wireEdges: wire ? wireEdge : null);
+               faces: true, features: Features(s.Name, mesh, sheet: false, (s.Primitive as Em3dShapeSolid)?.Edges), wireEdges: wire ? wireEdge : null,
+               look: look);
             if (place is { } p0) solidRuns.Prototype(p0, s.Name);
             else solidRuns.Break();
         }
@@ -409,7 +482,7 @@ public static class Scene3DBuilder
                 FaceNames = names.Count > 0 ? names : SheetFaceNames, Context = dim, Wireframe = wire, Transparency = see,
                 Underlay = image is not null, ImageInFront = image?.InFront == true, ImageName = image is null ? null : Path.GetFileName(image.Path),
             }, mesh, faces: true, sheet: true, features: Features(sh.Name, mesh, sheet: true, sheetNames: names.Count > 0 ? names : SheetFaceNames),
-               wireEdges: wire ? wireEdge : null);
+               wireEdges: wire ? wireEdge : null, look: Look(sh.Name, Scene3DKind.Sheet, Em3dRole.Conductor, sh.Material, ConductorPalette(conductorColours, sh.Name)));
             if (image is not null)
             {
                 b.Image((uint)(b.LastIndex + 1), texture!, mesh, image, imageRgba, dim || translucent, surface: true, face: 0);
@@ -916,6 +989,8 @@ public static class Scene3DBuilder
         private readonly List<Scene3DVertex> _verts = [];
         /// <summary>brief-em3d-104 — parallel to <see cref="_verts"/>, always.</summary>
         private readonly List<Scene3DShadeVertex> _shade = [];
+        /// <summary>brief-em3d-105 — parallel to <see cref="_objects"/> (the ones that own geometry): each one's look, or null.</summary>
+        private readonly List<(AppearanceValues Own, AppearanceValues Default)?> _looks = [];
         public bool SplitShading { get; init; } = true;
         private readonly List<uint[]> _objIndices = [];
         private readonly List<Scene3DVertex> _lines = [];
@@ -979,9 +1054,10 @@ public static class Scene3DBuilder
         /// <paramref name="wireEdges"/>: also draw the feature edges, always, in that colour — a wireframe object.
         public void Object(Scene3DObject o, Em3dTriangleMesh? mesh, IEnumerable<(Point3 P, uint Rgba)>? lines = null,
                            bool faces = false, bool sheet = false, Scene3DFeatureRef features = default, uint? wireEdges = null,
-                           IReadOnlyList<uint>? vertexRgba = null)
+                           IReadOnlyList<uint>? vertexRgba = null, (AppearanceValues Own, AppearanceValues Default)? look = null)
         {
             _features.Add(features);
+            _looks.Add(look);
             uint id = (uint)(_objects.Count + 1);
             var obj = new Scene3DObject
             {
@@ -1111,8 +1187,49 @@ public static class Scene3DBuilder
             return r.Indices;
         }
 
+        /// <summary>
+        /// brief-em3d-105 R-em3d105-4 — the appearance table, and each object's row in it written onto the object and its shade
+        /// vertices. Equal appearances share a row. Past <see cref="AppearanceSlots"/> distinct ones, the role defaults go in first
+        /// and every object's own after them while there is room; an object whose own did not fit draws with its role's default,
+        /// and is counted.
+        /// </summary>
+        private (AppearanceValues[] Table, int Fallbacks) Appearances()
+        {
+            var table = new List<AppearanceValues>();
+            var row = new Dictionary<AppearanceValues, int>();
+            bool Intern(AppearanceValues v)
+            {
+                if (row.ContainsKey(v)) return true;
+                if (table.Count >= AppearanceSlots) return false;
+                row[v] = table.Count;
+                table.Add(v);
+                return true;
+            }
+            var owned = _looks.Where(l => l is not null).Select(l => l!.Value).ToList();
+            if (owned.Select(l => l.Own).Distinct().Count() > AppearanceSlots)
+                foreach (var l in owned) Intern(l.Default);
+            int fallbacks = 0;
+            for (int k = 0; k < _looks.Count; k++)
+            {
+                if (_looks[k] is not { } l) continue;
+                int slot;
+                if (Intern(l.Own)) slot = row[l.Own];
+                else { fallbacks++; slot = row.TryGetValue(l.Default, out int d) ? d : 0; }
+                var o = _objects[k];
+                o.AppearanceSlot = slot;
+                for (int v = o.FirstVertex; v < o.FirstVertex + o.VertexCount; v++)
+                {
+                    var sv = _shade[v];
+                    sv.Slot = (uint)slot;
+                    _shade[v] = sv;
+                }
+            }
+            return ([.. table], fallbacks);
+        }
+
         public Scene3DModel Finish(long generation, (double, double, double) origin, Em3dProblem problem, IReadOnlyList<string>? notes)
         {
+            var (appearances, fallbacks) = Appearances();
             var indices = new uint[_objIndices.Sum(i => i.Length)];
             var batches = new List<Scene3DBatch>();
             int at = 0;
@@ -1207,7 +1324,7 @@ public static class Scene3DBuilder
                         Id = id, Name = d.Name, Kind = proto.Kind, Role = proto.Role, Material = proto.Material, MaterialValues = proto.MaterialValues,
                         MaterialSlot = proto.MaterialSlot, Rgba = proto.Rgba, Translucent = proto.Translucent,
                         InitiallyVisible = proto.InitiallyVisible, FaceNames = proto.FaceNames, Context = proto.Context,
-                        Wireframe = proto.Wireframe, Transparency = proto.Transparency,
+                        Wireframe = proto.Wireframe, Transparency = proto.Transparency, AppearanceSlot = proto.AppearanceSlot,
                         CapCentres = proto.CapCentres?.Select(c => new Point3(c.X + d.Dx, c.Y + d.Dy, c.Z + d.Dz)).ToArray(),
                         Element = index, Prototype = proto.Id,
                         FirstVertex = proto.FirstVertex, VertexCount = proto.VertexCount,
@@ -1246,6 +1363,7 @@ public static class Scene3DBuilder
                 Problem = problem, Notes = notes ?? [], TintLift = TintLift,
                 Images = [.. _images], ImageVertices = [.. _imageVerts], ImageBatches = [.. _imageBatches], PlacedImages = PlacedImages,
                 PlacedFaceImages = [.. PlacedFaceImages], FaceImageProblems = FaceImageProblems,
+                Appearances = appearances, AppearanceFallbacks = fallbacks,
             };
         }
     }

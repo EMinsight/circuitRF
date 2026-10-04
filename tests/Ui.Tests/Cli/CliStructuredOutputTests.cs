@@ -583,6 +583,7 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "explain.expr.failed",
         "explain.file.unreadable",
         "explain.layers.count-truncated",
+        "explain.object.not-found",
         "explain.option.not-applicable",
         "explain.option.wrong-kind",
         "explain.path.not-found",

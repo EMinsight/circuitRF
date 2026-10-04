@@ -401,6 +401,12 @@ public static class TechValidation
         /// <summary>brief-em3d-73 R-em3d73-2b — a σ(T) or k(T) table disagreeing with its own constant at 20 °C (warning).
         /// It retires <c>tech.material.not-read-yet</c>, which reported every stated table at info.</summary>
         public const string MaterialTableDisagrees  = "tech.material.table-disagrees";
+        /// <summary>brief-em3d-105 R-em3d105-1b — an appearance value out of its range, or a colour that is not #rrggbb.</summary>
+        public const string AppearanceInvalid       = "tech.material.appearance-invalid";
+        /// <summary>brief-em3d-105 — an appearance's Like naming no material in scope (warning: it falls through).</summary>
+        public const string AppearanceLikeUnknown   = "tech.material.appearance-like-unknown";
+        /// <summary>brief-em3d-105 — materials whose appearances' Likes name each other in a cycle.</summary>
+        public const string AppearanceLikeCycle     = "tech.material.appearance-like-cycle";
         /// <summary>brief-em3d-73 R-em3d73-3 — a thermal interface with a missing name or a non-positive resistance.</summary>
         public const string InterfaceInvalid        = "tech.interface.invalid";
         /// <summary>brief-em3d-73 R-em3d73-3 — one pair stated twice in one file.</summary>
@@ -423,7 +429,7 @@ public static class TechValidation
     private static void ValidateMaterials(Technology tech, List<TechProblem> problems)
     {
         // ── the materials' own shape (brief-em3d-53 R-em3d53-4: one function for .ctech and .cmat) ──
-        problems.AddRange(MaterialValidation.Validate(tech.Materials));
+        problems.AddRange(MaterialValidation.Validate(tech.Materials, tech.ResolvedMaterials));
         problems.AddRange(MaterialValidation.ValidateInterfaces(tech.ThermalInterfaces));
         // brief-em3d-73 — a pair naming a material this technology cannot resolve applies nowhere: said, not refused,
         // because a library may be shared by technologies that each define one half.

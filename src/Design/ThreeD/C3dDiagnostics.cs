@@ -242,6 +242,28 @@ public static class C3dDiagnostics
         "An operand of '{name}'{operand} states a Transparency. Inside an operation an operand has none of its own: the " +
         "operation's is its result's. Put it on '{name}'.", ("name", name), ("operand", operand.Length > 0 ? $" ('{operand}')" : ""));
 
+    // ── Appearance (brief-em3d-105) ───────────────────────────────────────────────────────────
+
+    /// <summary>R-em3d105-1b — an appearance value out of its range, or a colour that is not #rrggbb: the phrase is
+    /// MaterialValidation.AppearanceFaults', the one rule a material's appearance is held to as well.</summary>
+    public static Diagnostic AppearanceInvalid(string what, string fault) => Diagnostic.Create(
+        "c3d.appearance.invalid", DiagnosticSeverity.Error, "{what} states an appearance whose {fault}.", ("what", what), ("fault", fault));
+
+    /// <summary>A Like naming no material of the document's technology: a warning, and the look falls through.</summary>
+    public static Diagnostic AppearanceLikeUnknown(string what, string like) => Diagnostic.Create(
+        "c3d.appearance.like-unknown", DiagnosticSeverity.Warning,
+        "{what} looks Like '{like}', which the document's technology does not define, so it takes nothing from it: its look falls " +
+        "through to its material's.", ("what", what), ("like", like));
+
+    public static Diagnostic AppearanceOnPolyline(string name) => Diagnostic.Create(
+        "c3d.appearance.polyline", DiagnosticSeverity.Warning,
+        "The polyline '{name}' states an Appearance. A polyline is a line and is never filled, so nothing reads it.", ("name", name));
+
+    public static Diagnostic AppearanceOnOperand(string name, string operand) => Diagnostic.Create(
+        "c3d.appearance.operand", DiagnosticSeverity.Warning,
+        "An operand of '{name}'{operand} states an Appearance. Inside an operation an operand has none of its own: the " +
+        "operation's is its result's. Put it on '{name}'.", ("name", name), ("operand", operand.Length > 0 ? $" ('{operand}')" : ""));
+
     // ── Model (brief-em3d-93) ─────────────────────────────────────────────────────────────────
 
     public static Diagnostic ModelOnPolyline(string name) => Diagnostic.Create(

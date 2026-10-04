@@ -16532,3 +16532,38 @@ and `ParallelLcResonanceTests.AnInductorWithOnlyADielectricClass_IsWarnedForWhat
 - **Flatten keeps a sphere a sphere.** A layout's ball bond still flattens to facets (it is truncated).
 - **An old worker's `this worker cannot build a "sphere"`** becomes "This geometry worker predates spheres; rebuild it" in
   `GeometryKernel.Refused` (`OlderWorker`). It lives there rather than in the editor, so `check` and the CLI say it too.
+
+## Appearance: on a material, on an object, never in a solve (brief-em3d-105, 2026-10-04)
+
+- **Brief 87's manifest hashed a `.cmat` by its raw bytes**, so editing a material's display `Color` (or any appearance)
+  in a library made every 3D run that read the library stale. `C3dRunDocument` now hashes a `.cmat` or a `.ctech` in a
+  **canonical physics form**: read through its own persistence, every material's `Source`, `Color` and `Appearance`
+  cleared, and serialised again. The three cleared fields are exactly the three `MaterialLibraries.SameValues` ignores.
+  Other inputs keep brief 87's hash. Layer colours in a `.ctech` still count as a change; only materials were in scope.
+- **`ManifestVersion` 1 → 2, and each `C3dRunInput` names its hash's `Form`** (`content` or `physics`). A version-1
+  manifest is compared by content (raw bytes for these two files), so an old run is never called current under a rule it
+  was not written under. A library that no longer parses hashes by its raw bytes, which never equals a physics hash, so it
+  reads as changed. A library that does not parse at Take is recorded as `content`.
+- **The resolver's order, per field (highest first):** the object's statement, then what its `Like` names; each enclosing
+  instance, innermost first, each followed by its `Like`; the material's own fields, then its `Like`; for `BaseColor` only,
+  the material's display `Color`; then the role default (`BaseColor`: the scene's palette colour, passed in by the caller).
+  A `Like` contributes the named material's statements, its fields, its own `Like` and its `Color`, and never its role
+  default. A value `check` would refuse is skipped, not clamped, so the view never draws what `check` rejects. A `Like`
+  cycle stops at the first repeat.
+- **Instance appearances reach the scene through `C3dProvenance.InstanceAppearances`**, innermost first. They are labelled
+  by instance path without the array index, so the elements of an array share one resolver cache entry. The editor's
+  instancing key (`InstancingFor`) includes the instance's appearance, because an element draws its prototype's shade
+  vertices, slot included.
+- **Flattening an instance writes its appearance under each part's** (`TechAppearance.Over`). One case is not exact:
+  when the part and the instance both state a `Like`, only the part's is kept. The resolver would have fallen through
+  the part's `Like` to the instance's for a field the first does not state.
+- **The slot table holds at most 256 rows.** Past 256 distinct appearances, each object's role default is interned first
+  and objects' own looks go in after them while there is room. An object whose own look does not fit takes its role
+  default's row and is counted in `Scene3DModel.AppearanceFallbacks`. Interning role defaults first is what lets "takes
+  its role default's slot" hold, since the default's colour is the object's palette colour and is not known in advance.
+- **`MaterialValidation.ParseColour` is the one `#rrggbb` reader** the scene's colour lookup, the resolver and `check`
+  share. `Em3dSectionRenderer.ObjectColours` still reads a material `Color` through the theming `Rgba.TryParseHex`; the
+  two accept the same `#rrggbb` text.
+- The examples' copies of `generic-materials.cmat` were left as they were (no test holds them equal to the resource).
+  *Add Generic Materials* on one of those workspaces will now refuse, because the file beside it differs from the
+  shipped one. That is the existing rule for a user-edited copy.

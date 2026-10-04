@@ -286,6 +286,8 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
                                         OwnFrame: name => OwnFrameOf(doc, e, name),
                                         HideOutermostDielectric: false,
                                         Transparency: Scene3DTransparency.Of(e.Provenance),
+                                        // brief-em3d-105 — each object's look over its material's (the realistic view's slots).
+                                        Appearance: CircuitRF.Design.ThreeD.Appearance.AppearanceOverride.Of(e.Provenance),
                                         // brief-em3d-101 — an image sheet is drawn with its picture (C3dElaboration.Images).
                                         Images: e.Images.Count == 0 ? null : name => e.Images.GetValueOrDefault(name),
                                         FaceImages: e.FaceImages.Count == 0 ? null : e.FaceImages,
