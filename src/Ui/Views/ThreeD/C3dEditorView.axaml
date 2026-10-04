@@ -80,8 +80,9 @@
         <Border DockPanel.Dock="Top" Padding="4,2" BorderThickness="0,0,0,1"
                 BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
             <WrapPanel x:Name="Toolbar" Orientation="Horizontal" ItemSpacing="4" LineSpacing="4">
+                <!-- 3D icons round — the Box tool took CubeOutline, so Object mode is that cube with its corners marked. -->
                 <ToggleButton IsChecked="{Binding ViewModel.Viewer.IsObjectMode}" ToolTip.Tip="Object mode: select whole solids, sheets and instances  (O)">
-                    <mi:MaterialIcon Kind="CubeOutline" Width="16" Height="16"/>
+                    <v3:Viewer3DPathGlyph Data="{x:Static v3:Viewer3DPathGlyph.ObjectMode}"/>
                 </ToggleButton>
                 <ToggleButton IsChecked="{Binding ViewModel.Viewer.IsFaceMode}" ToolTip.Tip="Face mode: select one face of a solid or sheet  (F)">
                     <mi:MaterialIcon Kind="VectorSquare" Width="16" Height="16"/>
@@ -109,7 +110,8 @@
                 <Border Width="1" Margin="2,3" Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
 
                 <Button Command="{Binding ViewModel.Viewer.StandardViewCommand}" CommandParameter="{x:Static s3:StandardView3D.Iso}" ToolTip.Tip="Isometric view  (1)">
-                    <mi:MaterialIcon Kind="CubeOutline" Width="16" Height="16"/>
+                    <!-- The cube with the three faces an isometric view shows, filled. -->
+                    <v3:Viewer3DPathGlyph Data="{x:Static v3:Viewer3DPathGlyph.Isometric}"/>
                 </Button>
                 <Button Command="{Binding ViewModel.Viewer.StandardViewCommand}" CommandParameter="{x:Static s3:StandardView3D.Top}" ToolTip.Tip="Top view, orthographic  (2)">
                     <v3:Viewer3DViewGlyph Face="Top"/>
@@ -137,7 +139,8 @@
                      the selection mode; Esc disarms. Icon kinds verified in Material.Icons 3.0.2: there is no Cylinder
                      kind, and Database (a stack of discs) read badly, so the cylinder is drawn (Viewer3DPathGlyph). -->
                 <ToggleButton IsVisible="{Binding ViewModel.IsEditable}" IsChecked="{Binding ViewModel.IsBoxArmed}" ToolTip.Tip="Box: corner, opposite corner, height  (Shift+A, B)">
-                    <mi:MaterialIcon Kind="CubeUnfolded" Width="16" Height="16"/>
+                    <!-- 3D icons round — an outlined box, as the cylinder and sphere beside it are outlined solids. -->
+                    <mi:MaterialIcon Kind="CubeOutline" Width="16" Height="16"/>
                 </ToggleButton>
                 <!-- 3D editor keys round — the two solids side by side: Cylinder right after Box (owner's order). -->
                 <ToggleButton IsVisible="{Binding ViewModel.IsEditable}" IsChecked="{Binding ViewModel.IsCylinderArmed}" ToolTip.Tip="Cylinder: centre, radius, height  (Shift+A, Y)">

@@ -77,6 +77,45 @@ public sealed class EditorToolbarKeysTests
         Assert.True(b.Left >= 3.9f && b.Top >= 1.7f && b.Right <= 20.1f && b.Bottom <= 22.3f, b.ToString());
     }
 
+    /// <summary>3D icons round: Box is the outlined cube (as the cylinder and sphere are outlined solids); Object mode, which used
+    /// that cube, is the drawn cube with its corners marked; the Isometric view is the drawn cube with its three visible faces
+    /// filled. Each in the toolbar and, where one exists, the 3D menu; both drawn paths parse inside the 24-unit box.</summary>
+    [Fact]
+    public void Box_IsTheOutlinedCube_ObjectModeAndIsometric_AreTheDrawnCubes()
+    {
+        string xaml = Read("C3dEditorView.axaml");
+        string Button(string marker)
+        {
+            int at = xaml.IndexOf(marker, StringComparison.Ordinal);
+            Assert.True(at > 0, marker);
+            int end = xaml.IndexOf("Button>", at, StringComparison.Ordinal);
+            return xaml[at..end];
+        }
+        Assert.Contains("Kind=\"CubeOutline\"", Button("IsBoxArmed"), StringComparison.Ordinal);
+        Assert.Contains("Viewer3DPathGlyph.ObjectMode", Button("IsObjectMode"), StringComparison.Ordinal);
+        Assert.Contains("Viewer3DPathGlyph.Isometric", Button("StandardView3D.Iso}"), StringComparison.Ordinal);
+        Assert.Equal("CubeOutline", C3dEditorViewModel.DrawTools.Single(t => t.Kind == C3dToolKind.Box).Icon);
+
+        string window = File.ReadAllText(ReadPath(Path.Combine("..", "WorkspaceWindow.axaml")));
+        Assert.DoesNotContain("CubeUnfolded", xaml + window, StringComparison.Ordinal);
+        string Item(string header)
+        {
+            int at = window.IndexOf(header, StringComparison.Ordinal);
+            Assert.True(at > 0, header);
+            return window[at..window.IndexOf("</MenuItem>", at, StringComparison.Ordinal)];
+        }
+        Assert.Contains("Viewer3DPathGlyph.ObjectMode", Item("Header=\"_Object\""), StringComparison.Ordinal);
+        Assert.Contains("Kind=\"CubeOutline\"", Item("Header=\"_Box\""), StringComparison.Ordinal);
+
+        foreach (string data in new[] { CircuitRF.Ui.Viewer3D.Viewer3DPathGlyph.ObjectMode, CircuitRF.Ui.Viewer3D.Viewer3DPathGlyph.Isometric })
+        {
+            using var path = SkiaSharp.SKPath.ParseSvgPathData(data);
+            Assert.NotNull(path);
+            var b = path.Bounds;
+            Assert.True(b.Left >= 2 && b.Top >= 1 && b.Right <= 22 && b.Bottom <= 23, b.ToString());
+        }
+    }
+
     private static string Read(string file) => File.ReadAllText(ReadPath(file));
 
     private static string ReadPath(string file)

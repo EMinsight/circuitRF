@@ -40,7 +40,7 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
     /// <summary>R-em3d45-3 — the Shift+A popup: one letter arms each tool (the owner confirms them at the owner check).</summary>
     public static IReadOnlyList<(C3dToolKind Kind, char Letter, string Icon)> DrawTools { get; } =
     [
-        (C3dToolKind.Box, 'B', "CubeUnfolded"),
+        (C3dToolKind.Box, 'B', "CubeOutline"),
         // A Material kind, or a Viewer3DPathGlyph constant's name: the icon set has no cylinder worth using.
         (C3dToolKind.Cylinder, 'Y', nameof(Viewer3DPathGlyph.Cylinder)),
         // brief-em3d-102 — Sph_ere (owner decision D1: S, P and H are taken); the icon set has no sphere either (D5).

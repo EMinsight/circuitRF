@@ -1058,7 +1058,7 @@
                 <MenuItem Header="Select _Mode" ToolTip.Tip="Requires an active 3D document.">
                     <MenuItem Header="_Object" Command="{Binding ThreeDSelectModeCommand}" CommandParameter="Object"
                               InputGesture="O" ToolTip.Tip="Select whole solids, sheets and instances. Requires an active 3D document.">
-                        <MenuItem.Icon><mi:MaterialIcon Kind="CubeOutline" Width="16" Height="16"/></MenuItem.Icon>
+                        <MenuItem.Icon><v3:Viewer3DPathGlyph Data="{x:Static v3:Viewer3DPathGlyph.ObjectMode}"/></MenuItem.Icon>
                     </MenuItem>
                     <MenuItem Header="_Face" Command="{Binding ThreeDSelectModeCommand}" CommandParameter="Face"
                               InputGesture="F" ToolTip.Tip="Select one face. Requires an active 3D document.">
@@ -1155,7 +1155,7 @@
                 <MenuItem Header="_Draw" ToolTip.Tip="Requires an active 3D editor. Shift+A opens it at the cursor.">
                     <MenuItem Header="_Box" Command="{Binding ThreeDDrawCommand}" CommandParameter="Box"
                               ToolTip.Tip="Corner, opposite corner, height. Requires an active 3D editor.">
-                        <MenuItem.Icon><mi:MaterialIcon Kind="CubeUnfolded" Width="16" Height="16"/></MenuItem.Icon>
+                        <MenuItem.Icon><mi:MaterialIcon Kind="CubeOutline" Width="16" Height="16"/></MenuItem.Icon>
                     </MenuItem>
                     <MenuItem Header="_Sheet" Command="{Binding ThreeDDrawCommand}" CommandParameter="Sheet"
                               ToolTip.Tip="A rectangle, two clicks. Requires an active 3D editor.">

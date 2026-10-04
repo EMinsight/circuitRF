@@ -777,6 +777,25 @@ public sealed class Viewer3DPathGlyph : Control
         "M5,12 A7,7 0 1 0 19,12 A7,7 0 1 0 5,12 Z " +
         "M19,12 A7,3.6 0 0 1 5,12 A7,1.6 0 0 0 19,12 Z";
 
+    /// <summary>Object mode: the Box tool's <c>CubeOutline</c> with a 3.2-unit square on each of its seven corners — the cube read
+    /// as something whose vertices can be picked, subtle enough to stay the same object (owner, 2026-10-03). Skia's union of the
+    /// two, rounded to 0.01; the squares cover the outline's rounded corners, so it is all straight lines.</summary>
+    public const string ObjectMode =
+        "M13.6 1.5L10.4 1.5L10.4 2.76L4.01 6.35L2.4 6.35L2.4 9.55L3 9.55L3 14.45L2.4 14.45L2.4 17.65L4.01 17.65L10.4 21.24" +
+        "L10.4 22.5L13.6 22.5L13.6 21.24L19.99 17.65L21.6 17.65L21.6 14.45L21 14.45L21 9.55L21.6 9.55L21.6 6.35L19.99 6.35" +
+        "L13.6 2.76L13.6 1.5Z" +
+        "M11.02 4.7L12.98 4.7L17.96 7.5L13.33 10.1L10.67 10.1L6.04 7.5L11.02 4.7Z" +
+        "M10.4 12.24L5.6 9.55L5 9.55L5 14.45L5.6 14.45L5.6 16.25L11 19.29L11 13.3L10.4 13.3L10.4 12.24Z" +
+        "M13 13.3L13 19.29L18.4 16.25L18.4 14.45L19 14.45L19 9.55L18.4 9.55L13.6 12.24L13.6 13.3L13 13.3Z";
+
+    /// <summary>The isometric view: the same cube with the three faces an isometric view shows FILLED, parted by 1.4-unit gaps
+    /// along its inner edges so they read as three faces and not a hexagon (owner, 2026-10-03). The outline is
+    /// <c>CubeOutline</c>'s, sharp-cornered.</summary>
+    public const string Isometric =
+        "M20.33 7.09L12 2L3.67 7.09L12 12.18L20.33 7.09Z" +
+        "M21 8.32L12.7 13.39L12.7 21.57L21 16.5L21 8.32Z" +
+        "M11.3 21.57L11.3 13.39L3 8.32L3 16.5L11.3 21.57Z";
+
     /// <summary>The constant a tool table names (<c>nameof(Cylinder)</c> …), or null for a Material icon's kind.</summary>
     public static string? Named(string name) => name switch
     {
