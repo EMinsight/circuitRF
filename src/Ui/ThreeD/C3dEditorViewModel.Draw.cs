@@ -196,7 +196,7 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
     /// </summary>
     private void ApplyThemeVariant()
     {
-        Viewer.View.Background = ThemeService.CurrentVariant == ColorVariant.Dark ? (0.12f, 0.13f, 0.15f) : (0.93f, 0.94f, 0.96f);
+        Viewer.View.Background = Viewer3DViewState.ThemeBackground(ThemeService.CurrentVariant == ColorVariant.Dark);
         ApplyDrawingGrid();
         Viewer.RequestFrame();
     }

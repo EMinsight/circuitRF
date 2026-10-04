@@ -849,12 +849,7 @@ public sealed partial class Viewer3DViewModel
 
     /// <summary>The largest of 4, 2, 1 at most <paramref name="asked"/> that keeps a <paramref name="w"/> × <paramref name="h"/> picture's
     /// drawn size within <see cref="FieldPicture.MaxSide"/>.</summary>
-    internal static int SupersampleFor(int w, int h, int asked)
-    {
-        int ss = asked >= 4 ? 4 : asked >= 2 ? 2 : 1;
-        while (ss > 1 && (long)Math.Max(w, h) * ss > FieldPicture.MaxSide) ss /= 2;
-        return ss;
-    }
+    internal static int SupersampleFor(int w, int h, int asked) => PictureResample.FactorFor(w, h, asked);
 
     private static bool ThemeServiceDark() => CircuitRF.Render.ThemeService.CurrentVariant == CircuitRF.Render.ColorVariant.Dark;
 

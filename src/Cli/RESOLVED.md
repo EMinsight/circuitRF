@@ -2883,3 +2883,40 @@ resolve. Only `check` passes it: the editor shows the link's resolution on its o
 refuses through `ThermalCircuitLink.Run`, so both would otherwise say it twice. Describe needs no EM
 result on disk (it matches the SnP path, it does not read the file), so a freshly opened example
 still checks clean. Gate: `ThermalCircuitLinkTests`.
+
+## `render --look realistic` (brief-em3d-110, 2026-10-04)
+
+`src/Cli/RenderEm3dRealistic.cs` handles the arguments, the Look's overrides, the camera, the refusals and the
+report. `ExplainLook.cs` is `explain --look`. The design is in `docs/design/cli.md` §13.8.2.
+
+- **`--look-set` is a JSON round trip through the file's own reader.** The Look is serialised
+  (`C3dPersistence.SerializeLook`), one key is replaced by the value parsed as JSON (a bare word is a string), and
+  the result is read back (`DeserializeLook`). It is then held to `C3dValidation.LookFaults`, which is new and
+  wraps the same private rules `check` runs. An error that this override brought is the refusal, so
+  `Exposure=20` is refused with "The Look's Exposure is 20; it is -10 to 10." A new Look key needs no flag. The
+  values are not split on commas, because a gradient background is `#rrggbb,#rrggbb`.
+- **The scene is the setup's problem**: the same `Scene3DBuilder` call `render --field`'s surface plots make, now
+  one helper (`RenderEm3dRealistic.Scene`), with the air box kept for `ShowAirBox`. The plain field picture calls
+  the same helper with `airBox: false`, and its recorded hash is unchanged. A `.c3d` with one EM setup is therefore
+  drawn as that run's problem: an object whose `Model` is off is not in it, though the 3D editor draws it.
+- **Deviations to tell the owner about:**
+  - A ClipPlane field plot with `--look realistic` is refused (`render.look.clip-plane-plot`). In the 3D view its
+    slice lies inside the solids unless the user also cuts the view, so the picture would hide the field. A
+    Surfaces or Faces plot is drawn.
+  - Reference images shown by `ShowImages` are not drawn headlessly, and a `note:` counts them. The scene is built
+    without them.
+  - `--section`, `--tight`, `--labels`, `--axes` and `--scale-bar` are refused with `--look realistic`.
+  - With no `--iso`, no `--view-dir` and no `Look.Camera`, the run is refused rather than given a default view.
+  - `explain --look` reads the appearance table with the built-in light theme, since a role default's colour
+    follows the theme.
+- **The test class belongs to `SkiaFontsTypefaceCollection`.** Its gate 7 compares rendered TEXT (the legend, the
+  indicator) against a process, which is that collection's membership rule. `RunHost` and `JsonRun` are statics,
+  and placing it in `LvsCliConsoleCollection` let `Em3dRenderExplainTests` (in-process, same statics) run beside it:
+  a cancellation installed by one class cancelled the other's render (exit 130). Gates that read stdout run the CLI
+  as a process rather than swapping `Console`. The cancellation gate triggers on the `occlusion` stage, which only a
+  realistic picture reports.
+- **"Plain unchanged" is two hashes recorded before any change** (macOS, Plex text): the `--iso` outline and a Faces
+  plot drawn by `Em3dSurfaceField` (the refactored rasteriser's check). On another platform the test is skipped with
+  that reason.
+- Gates: `tests/Ui.Tests/Render/RealisticRenderCliTests.cs` and `tests/Ui.Tests/Viewer3D/RealisticPictureTests.cs`.
+  Fourteen new `render.look*` ids are in `CliStructuredOutputTests`' committed set.

@@ -4837,3 +4837,51 @@ missing the driven port's probes or its kept document is drawn as written, with 
   FieldLit, the normals at the shade stream's slot) are unverified at runtime, as briefs 62, 101, 106 and 107 recorded. `render --field
   --look realistic` does not exist yet (brief 110), so its half of gate 5 waits for that brief; the label it must carry is already the
   one function it will call.
+
+## The realistic view on the CPU: `RealisticPicture` and the shared rasteriser (brief-em3d-110, 2026-10-04)
+
+`render x.c3d --look realistic` draws through `Scene3D/Look/RealisticPicture.cs`.
+
+- **It executes a `Scene3DFramePlan`, not a scene.** The GPU backends read the same plan. The CPU does what
+  `MetalViewer3DBackend.RenderInto` does with it:
+  - the shadow pass (`ShadowDraws` at `ShadowSize`, with the shadow bias);
+  - the occlusion: the `Pbr` draws' and the ground's ray distance, then the horizon pass and its blur;
+  - the colour draws in order.
+
+  Every decision (visibility, pipelines, translucent sort, shadow window, occlusion reach, ground, backdrop ray) is
+  the plan's, read back from its uniform block at the offsets the plan writes. `Pbr.cs` shades each fragment
+  (`Pbr.Shade`, `FieldSheen`, `LitField`). The WGSL's own arithmetic is transcribed line for line: `shadow_vis`,
+  `fs_ao`/`fs_ao_blur`, `ground_hit`, `fs_backdrop`, `field_colour`, `fs_color`.
+- **`Pbr.Radiance`/`Shade` take `occlusion` and `shadow`** (default 1, which changes nothing). `fs_pbr` had always
+  multiplied them in; the C# reference had not.
+- **The targets are quantised as the GPU's are.** The colour target rounds to 1/255 on every write, and blends read
+  the 8-bit value back. The occlusion's raw and blurred targets are R8. Depth is float32, with the polygon offset
+  emulated per triangle: the constant times 2^(exponent(max z) − 23), plus the slope times the steepest depth change
+  per pixel, then clamped. Without that offset a field lying on a face would fight it.
+- **A run of opaque draws (`Pbr`, `Opaque`, `Field`) is resolved by depth first and shaded once per pixel.** This is
+  exact: those pipelines neither read nor blend the target, and a fragment the shader discards (the section plane,
+  `fs_color`'s alpha-0 wireframe face) is decided before the depth write, as the GPU decides it. Blended draws run
+  fragment by fragment in order.
+- **Front faces** are counter-clockwise in NDC (y up), which is negative area in sample space. **The near plane** is
+  clipped in clip space (z ≥ 0). A clipped piece keeps its corners as weights over the original triangle, so
+  attributes interpolate through it; attributes are perspective-corrected with 1/w.
+- **`SoftwareRaster` (`Scene3D/SoftwareRaster.cs`) is the one rasteriser.** It was factored out of
+  `Em3dSurfaceField` (brief 89), which keeps its inclusive edge rule byte for byte. The recorded hash of a Faces plot
+  picture made before the brief still matches. `RealisticPicture` uses its `TopLeft` rule: with brief 89's inclusive
+  rule a translucent surface would be blended twice along its own triangles' seams. Rows are bounded so a band of
+  rows can rasterise on its own thread. Each pixel belongs to one band, which visits the draws in the plan's order,
+  so the bytes do not depend on the thread count (`CRF_RASTER_THREADS`). Counters are summed per band with integer
+  adds.
+- **The tolerance, and why the edge band is excluded.** `RealisticPictureTests` compares the Metal picture with
+  this one on the same plan. A pixel is excluded when any of its 8 neighbours shows a different surface
+  (`RealisticFrame.Surface`: an object id, `FieldSurface`, or 0). At a silhouette the two rasterisers' coverage
+  rules differ by a sample, and one side is background. **Measured on the first run:** 100.00 % of the other
+  ~168,000 pixels were within 4/255, and every field pixel within 1/255 (worst 1), for Exact orthographic and Lit
+  perspective alike. The worst excluded pixels differ by 84–118, all on silhouettes. The gate allows 99 %.
+- **Supersampling and the picture size** go through `PictureResample.FactorFor`, now shared with Export Picture
+  (the view model's `SupersampleFor` calls it).
+- **Cost:** Debug build, 1600×1200 at 2× (3200×2400 drawn), 4096² shadow map: ~7–8 s wall clock and ~60 s of CPU
+  on the shipped Package and Launch examples. No timing test holds this; counters do.
+- **One place for the picture camera:** `Camera3D.SetPictureCamera`, which Go to Picture View and `render` both
+  call. **One place for the Theme background:** `Viewer3DViewState.ThemeBackground`. `FieldPictureShot.Typeface`
+  lets `render` set the legend in the embedded face.

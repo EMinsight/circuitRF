@@ -133,6 +133,29 @@ public struct Camera3D
         return Target + Right * (dx * k) - Up * (dy * k);
     }
 
+    /// <summary>
+    /// brief-em3d-108 R-em3d108-3d / brief-em3d-110 D1 — a Look's picture camera (<see cref="CircuitRF.Design.ThreeD.C3dLookCamera"/>: DBU,
+    /// the direction toward the viewer, degrees) as this camera: the target through <paramref name="toLocal"/> (world metres to the scene's
+    /// frame), the yaw and pitch of the direction, the distance, the field of view and the projection. The scene's sphere (near and far) is
+    /// kept. False, and nothing changed, for one a picture cannot be taken from. Go to Picture View and <c>render --look realistic</c> both
+    /// come here, so the two frame a picture the same way.
+    /// </summary>
+    public bool SetPictureCamera(CircuitRF.Design.ThreeD.C3dLookCamera camera, int dbuPerMicron, Func<double, double, double, Vector3> toLocal)
+    {
+        if (camera.Faults().Count > 0) return false;
+        double perMetre = 1e6 * dbuPerMicron;
+        var d = camera.Direction!;
+        double len = Math.Sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+        var t = camera.Target!;
+        Target = toLocal(t[0] / perMetre, t[1] / perMetre, t[2] / perMetre);
+        Yaw = (float)Math.Atan2(d[1], d[0]);
+        Pitch = (float)Math.Asin(Math.Clamp(d[2] / len, -1, 1));
+        Distance = (float)(camera.Distance!.Value / perMetre);
+        if (camera.FovY is { } fov) FovY = (float)(fov * Math.PI / 180);
+        Projection = camera.IsOrthographic ? Projection3D.Orthographic : Projection3D.Perspective;
+        return true;
+    }
+
     /// <summary>Frames <paramref name="min"/>..<paramref name="max"/> from the current direction.</summary>
     public void FitBounds(Vector3 min, Vector3 max, float aspect)
     {

@@ -1,6 +1,6 @@
 // brief-em3d-107 R-em3d107-5a/b — a realistic picture is drawn at k × the size asked for and brought down here, on the CPU, with a
 // separable filter; and a transparent one is read back PREMULTIPLIED (the GPU's blend makes it so) and straightened here before the
-// PNG is encoded. Below the firewall, so brief 110's headless `render --look realistic` uses the same two steps.
+// PNG is encoded. Below the firewall, so brief 110's headless `render --look realistic` uses the same two steps (and the same factor rule).
 
 namespace CircuitRF.Render.Scene3D.Look;
 
@@ -9,6 +9,15 @@ public static class PictureResample
     /// <summary>The supersampling factors a picture offers (1, 2, 4); 2 is the default (owner decision D3).</summary>
     public static readonly int[] Factors = [1, 2, 4];
     public const int DefaultFactor = 2;
+
+    /// <summary>The largest of 4, 2, 1 at most <paramref name="asked"/> that keeps a <paramref name="w"/> × <paramref name="h"/> picture's
+    /// drawn size within <see cref="Fields.FieldPicture.MaxSide"/> — Export Picture's rule, and brief-em3d-110's `render --supersample`.</summary>
+    public static int FactorFor(int w, int h, int asked)
+    {
+        int ss = asked >= 4 ? 4 : asked >= 2 ? 2 : 1;
+        while (ss > 1 && (long)Math.Max(w, h) * ss > Fields.FieldPicture.MaxSide) ss /= 2;
+        return ss;
+    }
 
     /// <summary>
     /// <paramref name="rgba"/> (<paramref name="width"/> × <paramref name="height"/>, RGBA8 rows top first, premultiplied or opaque)

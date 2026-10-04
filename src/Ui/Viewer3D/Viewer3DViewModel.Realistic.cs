@@ -129,16 +129,8 @@ public sealed partial class Viewer3DViewModel
     /// cannot be taken from.</summary>
     public bool GoToPictureCamera(C3dLookCamera camera, int dbuPerMicron)
     {
-        if (camera.Faults().Count > 0) return false;
-        double perMetre = 1e6 * dbuPerMicron;
-        var d = camera.Direction!;
-        double len = Math.Sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
-        var t = camera.Target!;
-        View.Camera.Target = Scene.ToLocal(t[0] / perMetre, t[1] / perMetre, t[2] / perMetre);
-        View.Camera.Yaw = (float)Math.Atan2(d[1], d[0]);
-        View.Camera.Pitch = (float)Math.Asin(Math.Clamp(d[2] / len, -1, 1));
-        View.Camera.Distance = (float)(camera.Distance!.Value / perMetre);
-        if (camera.FovY is { } fov) View.Camera.FovY = (float)(fov * Math.PI / 180);
+        // brief-em3d-110 — Camera3D.SetPictureCamera, which `render --look realistic` frames its picture with too
+        if (!View.Camera.SetPictureCamera(camera, dbuPerMicron, Scene.ToLocal)) return false;
         IsPerspective = !camera.IsOrthographic;
         View.Camera.Projection = camera.IsOrthographic ? CircuitRF.Render.Scene3D.Projection3D.Orthographic : CircuitRF.Render.Scene3D.Projection3D.Perspective;
         FrameRequested?.Invoke();

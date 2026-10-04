@@ -21,6 +21,8 @@
 // SUPERSAMPLED (up to 3 × 3 per pixel, within a sample budget) and averaged down, which is the anti-aliasing.
 //
 // Deterministic: no clock, no hash-ordered iteration, no threads — the same plot gives the same bytes.
+//
+// brief-em3d-110 — the triangle scan is SoftwareRaster's, shared with RealisticPicture (the realistic view on the CPU): one rasteriser.
 
 using System.Numerics;
 using CircuitRF.Engine.Em3d;
@@ -428,45 +430,22 @@ public static class Em3dSurfaceField
         return new Em3dSurfaceRaster(bmp, rect, hot, visible);
     }
 
-    /// <summary>Visits every sample whose centre triangle <paramref name="t"/> covers (its edges included), with its depth there.</summary>
+    /// <summary>Visits every sample whose centre triangle <paramref name="t"/> covers (its edges included), with its depth there:
+    /// brief-em3d-110's shared rasteriser (<see cref="SoftwareRaster"/>), under brief 89's inclusive rule.</summary>
     private static void Scan(double[] T, int t, int sw, int sh, Action<int, double> visit)
     {
-        int o = 9 * t;
-        double x0 = T[o], y0 = T[o + 1], z0 = T[o + 2], x1 = T[o + 3], y1 = T[o + 4], z1 = T[o + 5], x2 = T[o + 6], y2 = T[o + 7], z2 = T[o + 8];
-        double area = (x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0);
-        if (!(Math.Abs(area) > 1e-12)) return;                              // edge-on: its neighbours, facing the viewer, draw
-        int i0 = Math.Max(0, (int)Math.Floor(Math.Min(x0, Math.Min(x1, x2)) - 0.5));
-        int i1 = Math.Min(sw - 1, (int)Math.Ceiling(Math.Max(x0, Math.Max(x1, x2)) - 0.5));
-        int j0 = Math.Max(0, (int)Math.Floor(Math.Min(y0, Math.Min(y1, y2)) - 0.5));
-        int j1 = Math.Min(sh - 1, (int)Math.Ceiling(Math.Max(y0, Math.Max(y1, y2)) - 0.5));
-        const double Inside = -1e-9;
-        for (int j = j0; j <= j1; j++)
-        {
-            double cy = j + 0.5;
-            for (int i = i0; i <= i1; i++)
-            {
-                double cx = i + 0.5;
-                double w0 = ((x1 - cx) * (y2 - cy) - (x2 - cx) * (y1 - cy)) / area;
-                if (w0 < Inside) continue;
-                double w1 = ((x2 - cx) * (y0 - cy) - (x0 - cx) * (y2 - cy)) / area;
-                if (w1 < Inside) continue;
-                double w2 = 1 - w0 - w1;
-                if (w2 < Inside) continue;
-                visit(j * sw + i, w0 * z0 + w1 * z1 + w2 * z2);
-            }
-        }
+        var v = new Visitor(visit);
+        SoftwareRaster.Triangle(T.AsSpan(9 * t, 9), sw, sh, 0, sh, RasterFill.Inclusive, ref v);
+    }
+
+    private readonly struct Visitor(Action<int, double> visit) : IRasterVisitor
+    {
+        public void Visit(int index, int i, int j, double w0, double w1, double w2, double z) => visit(index, z);
     }
 
     /// <summary>A sample's barycentric weights in triangle <paramref name="t"/>.</summary>
     private static (double W0, double W1, double W2) Bary(double[] T, int t, double cx, double cy)
-    {
-        int o = 9 * t;
-        double x0 = T[o], y0 = T[o + 1], x1 = T[o + 3], y1 = T[o + 4], x2 = T[o + 6], y2 = T[o + 7];
-        double area = (x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0);
-        double w0 = ((x1 - cx) * (y2 - cy) - (x2 - cx) * (y1 - cy)) / area;
-        double w1 = ((x2 - cx) * (y0 - cy) - (x0 - cx) * (y2 - cy)) / area;
-        return (w0, w1, 1 - w0 - w1);
-    }
+        => SoftwareRaster.Barycentric(T.AsSpan(9 * t, 9), cx, cy);
 
     private static uint Pack(float r, float g, float b, float a)
         => (uint)Math.Clamp((int)MathF.Round(r), 0, 255) | ((uint)Math.Clamp((int)MathF.Round(g), 0, 255) << 8) |

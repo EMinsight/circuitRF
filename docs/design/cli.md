@@ -2062,6 +2062,68 @@ against the 3D view's own triangles and range (gate 11 a Surfaces plot from the 
 for a Surfaces and a Faces temperature (depth, the mirror, the range); and `tests/Ui.Tests/Render/TemperatureSectionTests.cs` for a
 temperature (its process gate solves *Thermal Output Wires*' `RfHarmonics`, so it is `Category=Benchmark`).
 
+#### 13.8.2 The realistic picture (`--look realistic`)
+
+`brief-em3d-110-headless-realistic-render.md`. What the 3D view's Export Picture makes in the realistic view, with no
+window and no GPU:
+
+```
+circuitrf render pkg.c3d -o shot.png --look realistic --iso                     # the .c3d's own Look
+circuitrf render pkg.c3d -o shot.png --look realistic                           # from the Look's Camera
+circuitrf render pkg.c3d -o hot.png  --look realistic --look-set Exposure=1 --look-set Environment=Dark
+circuitrf render pkg.c3d -o t.png    --look realistic --field Temps --look-set FieldStyle=Glow --supersample 4
+```
+
+- **The format is the contract.** The picture is drawn with the `.c3d`'s own `Look`. `--look-set Key=value` overrides
+  one key (repeatable, and NOT split on commas: a gradient `Background` is `#rrggbb,#rrggbb`) on the copy the run
+  reads. The value is read as the file's JSON reads it — a number, `true`/`false`, an object such as a `Camera`,
+  `null` for the default, anything else a string — by the file's own reader. It is then held to the file's own Look
+  validation (`C3dValidation.LookFaults`, `check`'s rules). **There is no flag per Look key**, so a new key needs no
+  new flag. An unknown key, an unreadable value and a value the validation refuses are three refusals
+  (`render.look-set.*`). `--look-set` and `--supersample` without `--look realistic` are refused, not ignored.
+- **The camera.** `--iso` or `--view-dir` (brief 89's spellings: the 3D view's standard views, or `x,y,z` toward the
+  viewer) is orthographic and fitted as the view's Fit frames. With neither, the Look's `Camera` (overview D17, written
+  by *Use This View for Pictures*) is the camera, perspective included, through `Camera3D.SetPictureCamera`, the
+  function Go to Picture View calls. With no camera at all, the run is refused (`render.look.direction-required`).
+- **`--supersample 1|2|4`** (default 2) and `--background transparent` are Export Picture's: drawn at that factor
+  each way within `FieldPicture.MaxSide` (`PictureResample.FactorFor`, the one rule), brought down by
+  `PictureResample.Downsample`, and straightened before the PNG is encoded. `--size`/`--scale` are the picture's
+  device pixels; `--scale` also sizes the legend's text and the occlusion's reach in pixels, as Export Picture's
+  window multiple does. `--variant` picks the Theme background (`Viewer3DViewState.ThemeBackground`).
+- **`--field <plot>` composes** for a Surfaces or Faces plot, in the Look's field style (Exact, Lit, Glow, and the
+  opacity). The legend, the solution as the caption, and the `Lit Fields`/`Blended Fields` indicator are painted as
+  Export Picture paints them, in the embedded typeface. A ClipPlane plot is a section and is refused
+  (`render.look.clip-plane-plot`).
+- **Refusals:** a `.cem` or any other non-`.c3d` (no appearances), an SVG or PDF ("a realistic picture is pixels;
+  use .png"), `--section`, `--tight`, `--labels`, `--axes` and `--scale-bar`. A Look whose `.hdr` cannot be read
+  lights the picture with Studio and says so in a `note:`, as the view's status line does. Reference images shown by
+  `ShowImages` are not drawn headlessly yet, and a `note:` says how many were left out.
+- **`--json`** adds `render.em3d.look`. It gives the environment and any fallback, the exposure, the field style, the
+  supersample factor, where the camera came from and its projection, and each override. It also counts the work —
+  samples shaded, shadow texels written, occlusion pixels — with no time in it.
+- **`explain x.c3d --look`** walks the Look: every key with its value and whether the file stated it, the environment
+  (a preset, or the `.hdr`'s resolved path and whether it reads), and the appearance table, each slot's values with
+  the statement that decided each field and the objects that use it.
+
+**Nothing here is a second renderer.** `src/Cli/RenderEm3dRealistic.cs` is arguments, the Look's overrides, the
+camera, refusals and the report. The frame is planned by `Scene3DFramePlan`, the object the GPU backends read, and
+executed by `RealisticPicture` (`src/Render/Scene3D/Look/`) pass for pass as `MetalViewer3DBackend` executes it.
+The passes are the shadow map, the occlusion prepass with its horizon pass and blur (quantised to R8 as the GPU's
+targets are), then the colour draws in order (rounded to 8 bits per write). Each fragment is shaded by `Pbr.cs`, the
+reference the WGSL is scanned against. The triangles are rasterised by `SoftwareRaster`, the rasteriser brief 89's
+`Em3dSurfaceField` draws with, factored out so there is one. Bands of rows run in parallel, and each pixel is
+computed by one band in the plan's order, so the bytes do not depend on the thread count
+(`CRF_RASTER_THREADS` caps it).
+
+**The GPU/CPU agreement rule.** The two paths can only drift if the WGSL and `Pbr.cs` disagree. 106 §3g scans their
+constants. `RealisticPictureTests` compares the PICTURES on macOS: the Metal backend offscreen and `RealisticPicture`,
+the same plan, for spheres of each metal, dielectrics, a clear coat, glass, a box on a plate and a field plane,
+Exact orthographic and Lit perspective. Away from a one-pixel band at each surface discontinuity (the two
+rasterisers' coverage differs at an edge), at least 99 % of pixels must be within 4/255, and every field pixel within
+1/255. Off macOS the gate is skipped with that reason. Gates: `tests/Ui.Tests/Render/RealisticRenderCliTests.cs`
+(plain unchanged by recorded hash, the Look from the file, refusals, determinism, cancellation, as a process,
+`explain --look`, the Look's camera) and `tests/Ui.Tests/Viewer3D/RealisticPictureTests.cs`.
+
 ## 14. `netlist` — the extraction, as a document
 
 `brief-automation-11-missing-verbs.md` R-aut11-1.

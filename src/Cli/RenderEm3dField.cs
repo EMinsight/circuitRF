@@ -103,6 +103,15 @@ internal static class RenderEm3dField
         if (req.Iso) asked.Add("--iso");
         if (req.ViewDir is { } vd) asked.Add($"--view-dir {vd}");
         if (asked.Count > 1) return JsonRun.Fail(CliDiagnostics.RenderEm3dMultipleViews(string.Join(" and ", asked)));
+        // brief-em3d-110 R-em3d110-1e — a realistic picture draws a Surfaces or Faces plot on the model, in the Look's field style
+        RenderEm3dRealistic.LookRead? realistic = null;
+        Em3dProjection? realisticDirection = null;
+        if (req.Realistic)
+        {
+            if (plot.On == C3dFieldPlotOn.ClipPlane) return JsonRun.Fail(CliDiagnostics.RenderLookClipPlanePlot(plot.Name));
+            if (RenderEm3dRealistic.ReadLook(path, req, out realistic) is { } badLook) return badLook;
+            if (RenderEm3dRealistic.Direction(path, req, realistic!, out realisticDirection) is { } noCamera) return noCamera;
+        }
 
         // The view follows the plot: a ClipPlane plot IS a section. Another picture is a refusal, never a re-cut.
         bool surface = plot.On != C3dFieldPlotOn.ClipPlane;
@@ -131,8 +140,10 @@ internal static class RenderEm3dField
             // brief-em3d-89 — a picture of surfaces in depth: a stated direction (the view's camera is not saved), PNG only
             string on = OnText(plot);
             if (req.Sections.Count > 0) return JsonRun.Fail(CliDiagnostics.RenderFieldNotASection(plot.Name, on, asked[0]));
-            if (asked.Count == 0) return JsonRun.Fail(CliDiagnostics.RenderFieldDirectionRequired(plot.Name, on));
-            var (look, bad) = Direction(req.ViewDir, req.Iso);
+            if (asked.Count == 0 && realistic is null) return JsonRun.Fail(CliDiagnostics.RenderFieldDirectionRequired(plot.Name, on));
+            // a realistic picture taken from the Look's Camera has no stated direction: the caption names that camera instead
+            var (look, bad) = asked.Count == 0 ? (Em3dProjection.Standard(Em3dStandardView.Isometric) with { Name = "from the Look's Camera" }, null)
+                                               : Direction(req.ViewDir, req.Iso);
             if (bad is { } b) return b;
             if (req.Format != "png") return JsonRun.Fail(CliDiagnostics.RenderFieldSurfacePngOnly(plot.Name, on, req.Format.ToUpperInvariant()));
             if (req.ScaleBar && !AxisAligned(look)) return JsonRun.Fail(CliDiagnostics.RenderFieldScaleBarOblique(look.Name));
@@ -191,7 +202,8 @@ internal static class RenderEm3dField
         // The cut at the 3D view's own origin, on the plane as the view holds it — the same triangles the window draws.
         var origin = FieldPlotResolver.SceneOrigin(loaded.Elaboration?.DisplayExtent());
         if (surface)
-            return DrawSurfaces(path, req, doc, plot, own, loaded, problem, setupName, run, found, item, q, volume, boundary, origin, stale, runDir, drive);
+            return DrawSurfaces(path, req, doc, plot, own, loaded, problem, setupName, run, found, item, q, volume, boundary, origin, stale, runDir, drive,
+                                realistic, realisticDirection);
         var clip = FieldPlotResolver.ScenePlane(plot, doc.DbuPerMicron, origin);
         FieldSectionCut? cut;
         try { cut = FieldSection.Cut(q, volume!, origin, clip, request.Db, request.Percentile, RunHost.Cancellation, drive); }
@@ -260,17 +272,15 @@ internal static class RenderEm3dField
     private static int DrawSurfaces(string path, RenderEm3d.Request req, C3dDocument doc, C3dFieldPlot plot, Em3dView view,
                                     Em3dSetupSource loaded, Em3dProblem problem, string setupName, EmSetup? run, FieldDiscovery found,
                                     FieldSolutionItem item, FieldQuantity q, FieldStep? volume, FieldStep? boundary,
-                                    (double X, double Y, double Z) origin, bool stale, string? runDir, FieldDriveReading drive)
+                                    (double X, double Y, double Z) origin, bool stale, string? runDir, FieldDriveReading drive,
+                                    RenderEm3dRealistic.LookRead? realistic = null, Em3dProjection? realisticDirection = null)
     {
         var look = view.Projection!.Value;
         var e = loaded.Elaboration;
         var (theme, _, _, themeRefusal) = req.themeOf(loaded.Path);
         if (themeRefusal is { } tr) return tr;
-        var scene = Scene3DBuilder.Build(problem, 0, loaded.Generated!.Origins, e?.Technology, theme, req.Variant, null,
-            new Scene3DBuildOptions(FaceNames: name => e is not null && e.Provenance.TryGetValue(name, out var p) ? p.FaceNames : null,
-                                    DrawAirBox: false, Origin: origin, HideOutermostDielectric: false,
-                                    Transparency: e is null ? null : Scene3DTransparency.Of(e.Provenance),
-                                    Appearance: e is null ? null : CircuitRF.Design.ThreeD.Appearance.AppearanceOverride.Of(e.Provenance)));
+        // brief-em3d-110 — one builder call for both pictures (the realistic one keeps its air box, for the Look's ShowAirBox)
+        var scene = RenderEm3dRealistic.Scene(loaded, theme, req.Variant, airBox: realistic is not null);
         Scene3DObject? Named(string name) => scene.Objects.FirstOrDefault(o => o.Name == name);
         var faces = plot.On == C3dFieldPlotOn.Faces ? FieldPlotResolver.SceneFaces(plot, Named) : [];
         // the 3D view leaves out a face the model no longer has; a picture says which it left out
@@ -365,6 +375,27 @@ internal static class RenderEm3dField
             ? Em3dSectionThermal.BoundaryLabels(run, e, found.Table, item.Solution.Index) : [];
         var legend = req.NoLegend ? [] : FieldPlotResolver.LegendLines(plot.Name, q, scale, item.Label, phaseDeg, loopSeconds: null,
             fixedAcrossSweep: q.IsTemperature && plot.FixRange && item.Run.Solutions.Count > 1, stepLabel: item.Label, hotSpot: hotSpot, drive: drive);
+        if (realistic is not null)
+        {
+            // the 3D view's own field layer: its triangles packed as the view packs them, its range and map, the objects it stands in for
+            int triangles = surfaces.Sum(x => x.TriangleCount);
+            var report = new RenderFieldJson(
+                plot.Name, setupName, FieldPlotResolver.Request(plot, setupName, run, null, run).Solver, SolutionJson(plot.Solution), item.Label,
+                q.Array.Name, q.Mode.ToString(), plot.On.ToString(), triangles, triangles,
+                new RenderFieldRangeJson(scale.Lo, scale.Hi, scale.RangeUnit, scale.Db, scale.Percentile), stale, runDir, q.Animated ? phaseDeg : null)
+            {
+                Mirrored = q.IsTemperature ? mirrors.Count : null, HotSpot = hotSpot.Length > 0 ? hotSpot : null,
+            };
+            string G(double x) => x.ToString("G4", CultureInfo.InvariantCulture);
+            string line = $"{plot.Name}: {q.Symbol} at {item.Label}, {triangles:N0} triangles on {target}, {G(scale.Lo)} … {G(scale.Hi)}" +
+                          $"{(scale.RangeUnit.Length > 0 ? " " + scale.RangeUnit : "")}" +
+                          (q.Animated ? $", φ = {phaseDeg.ToString("0.##", CultureInfo.InvariantCulture)}°" : "") +
+                          (stale ? " (the model has changed since this run)" : "");
+            var part = new RenderEm3dRealistic.FieldPart(
+                new Scene3DFieldGeometry(Scene3DFieldGeometry.Pack(q, surfaces, nudges), 1), covered, q, scale, phaseDeg * Math.PI / 180, legend,
+                item.Label, report, line);
+            return RenderEm3dRealistic.Picture(path, req, realistic, loaded, scene, realisticDirection, part);
+        }
         var caption = Em3dSurfaceField.Caption(q.IsTemperature, q.Symbol, target, look, setupName, item.Label, mirrors.Count,
                                                wires.Select(w => w.Wire).Distinct().Count(), boundaries, refused);
         var (layer, pageScene) = Em3dSurfaceField.Build(scene, problem, look, surfaces, nudges, objects, covered, q, scale, phaseDeg * Math.PI / 180,

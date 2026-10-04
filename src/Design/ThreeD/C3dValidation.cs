@@ -98,6 +98,15 @@ public static class C3dValidation
         return found;
     }
 
+    /// <summary>brief-em3d-110 — the Look block's findings alone (<see cref="Look"/>'s rules): what <c>render --look-set</c> holds an
+    /// overridden Look to, so a value the file could not hold is refused in the file's own words.</summary>
+    public static IReadOnlyList<Diagnostic> LookFaults(C3dLook? look, string? documentPath)
+    {
+        var found = new List<Diagnostic>();
+        Look(look, documentPath, found);
+        return found;
+    }
+
     /// <summary>brief-em3d-106 R-em3d106-5 — the Look block: Exposure and Intensity in range, a Background spelling the view reads,
     /// an Environment that is a studio or a <c>.hdr</c>, and (with a document path) a <c>.hdr</c> that reads — a WARNING only, since
     /// the view then lights the scene with Studio and says so (R-em3d106-4d).</summary>

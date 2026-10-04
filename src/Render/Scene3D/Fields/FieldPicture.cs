@@ -31,8 +31,12 @@ public sealed record FieldPictureShot(byte[] Rgba, int Width, int Height, float 
     /// painted under the legend stack whatever the legend and caption options say; null for none.</summary>
     public string? Indicator { get; init; }
 
+    /// <summary>brief-em3d-110 — the typeface the legends, the caption and the indicator are set in; null for the system's default (the
+    /// window's pictures). `render` passes the embedded face, so its bytes do not depend on the machine's fonts.</summary>
+    public SKTypeface? Typeface { get; init; }
+
     /// <summary>The pixels with the layer, the legends, the caption and the indicator painted on (the caller disposes it).</summary>
-    public SKBitmap Compose() => FieldPicture.Compose(Rgba, Width, Height, Scale, Legends, Caption, Dark, Layer, Indicator);
+    public SKBitmap Compose() => FieldPicture.Compose(Rgba, Width, Height, Scale, Legends, Caption, Dark, Layer, Indicator, Typeface);
 
     public byte[] Png()
     {
@@ -93,7 +97,7 @@ public static class FieldPicture
     /// <summary>As <see cref="Png"/>, unencoded: the composed pixels, RGBA8 premultiplied (opaque). <paramref name="layer"/>,
     /// when given, is painted first, under the legends and the caption.</summary>
     public static SKBitmap Compose(byte[] rgba, int width, int height, float scale, IReadOnlyList<FieldPictureLegend> legends,
-                                   string? caption, bool dark, FieldPictureLayer? layer = null, string? indicator = null)
+                                   string? caption, bool dark, FieldPictureLayer? layer = null, string? indicator = null, SKTypeface? typeface = null)
     {
         var bmp = new SKBitmap(new SKImageInfo(width, height, SKColorType.Rgba8888, SKAlphaType.Premul));
         System.Runtime.InteropServices.Marshal.Copy(rgba, 0, bmp.GetPixels(), Math.Min(rgba.Length, width * height * 4));
@@ -111,7 +115,7 @@ public static class FieldPicture
                 }
                 finally { handle.Free(); }
             }
-            Paint(canvas, width, height, scale, legends, caption, dark, SKTypeface.Default, indicator);
+            Paint(canvas, width, height, scale, legends, caption, dark, typeface ?? SKTypeface.Default, indicator);
         }
         return bmp;
     }

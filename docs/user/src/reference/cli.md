@@ -1444,6 +1444,33 @@ only** — the file on disk is never written:
   range, or anything but `name=whole number`, is refused before the file is read.
 - It is a `.c3d`'s: on any other document, `.cem` included, it is a refusal naming the kind.
 
+<h4 id="render-realistic">A realistic picture</h4>
+
+`--look realistic` draws a `.c3d` as its [realistic view](drawing-in-3d.md#realistic) looks, as a `.png`, with no window. It is
+what Export Picture makes in the realistic view:
+
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf render pkg/3d/pkg.c3d -o shot.png --look realistic --iso
+<span class="prompt">$ </span>circuitrf render pkg/3d/pkg.c3d -o shot.png --look realistic --look-set Exposure=1 --look-set Environment=Dark</code></pre>
+
+- **The Look is the file's.** The environment, exposure, background, shadows, ground and every Show option are read
+  from the `.c3d`'s Look. `--look-set Key=value` changes one key for this picture only, spelled as the file spells it
+  (`FieldStyle=Lit`, `Background=#ffffff`, `Shadows=false`, `Exposure=null` for the default). The value is checked as
+  the file's is, so `Exposure=20` is refused. The file is never written.
+- **The camera.** `--iso` or `--view-dir top|bottom|front|back|left|right|x,y,z` takes the picture orthographically,
+  framed on the model. With neither, the camera *Use This View for Pictures* saved in the Look is used, perspective
+  included. With no camera at all, the render is refused.
+- **Quality and background.** `--supersample 1|2|4` (default 2) draws the picture at that many times its size each way
+  and brings it down. `--background transparent` leaves out the background and keeps the soft ground shadow's alpha.
+  `--size` and `--scale` set the pixels.
+- **A field plot.** `--field <plot>` draws a Surfaces or Faces plot on the model in the Look's field style. The picture
+  carries the legend and the *Lit Fields* or *Blended Fields* label, as Export Picture's does. A ClipPlane plot is a
+  section, so draw it without `--look realistic`.
+- **What it refuses.** A `.cem`, an `.svg` or `.pdf` output, and `--section`, `--tight`, `--labels`, `--axes` and
+  `--scale-bar`.
+- The picture is drawn on the processor, by the same shading the realistic view uses, and the same command always
+  writes the same bytes. `circuitrf explain pkg.c3d --look` lists the Look as `render` reads it, the environment it
+  will light with, and every appearance with where each value came from.
+
 <h4 id="render-images">Reference images</h4>
 
 A `.c3d`'s [reference images](drawing-in-3d.md#images) — image sheets, and images mapped onto faces — are drawn by

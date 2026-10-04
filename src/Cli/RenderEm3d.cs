@@ -59,11 +59,19 @@ internal static class RenderEm3d
         public IReadOnlyList<string> Transparency { get; init; } = [];
         /// <summary>Designer feedback round 11 — the .c3d's embedded setup the picture is drawn through (its air box).</summary>
         public string? Setup { get; init; }
+        /// <summary>brief-em3d-110 — <c>--look realistic</c>: the realistic view's picture (<see cref="RenderEm3dRealistic"/>).</summary>
+        public bool Realistic { get; init; }
+        /// <summary>brief-em3d-110 — <c>Key=value</c> overrides of the .c3d's Look, applied to the copy this run reads.</summary>
+        public IReadOnlyList<string> LookSet { get; init; } = [];
+        /// <summary>brief-em3d-110 — how many times the picture is drawn each way before it is brought down (1, 2 or 4).</summary>
+        public int Supersample { get; init; } = CircuitRF.Render.Scene3D.Look.PictureResample.DefaultFactor;
     }
 
     public static int Draw(string path, Request req)
     {
         if (req.Inapplicable is { } option) return JsonRun.Fail(CliDiagnostics.RenderEm3dNotApplicable(option));
+        // brief-em3d-110 — a realistic picture's refusals come first: on a .cem every other answer would be about the wrong picture
+        if (req.Realistic && RenderEm3dRealistic.Refusal(path, req) is { } notRealistic) return notRealistic;
 
         // brief-em3d-84 — a field plot is a .c3d's record: a .cem has none, and every field option says which it is.
         string? fieldOption = req.Field is not null ? "--field" : req.ListFields ? "--list-fields" : req.Phase is not null ? "--phase"
@@ -77,6 +85,8 @@ internal static class RenderEm3d
         if (RenderTransparency.Parse(req.Transparency, out _) is { } badTransparency) return badTransparency;
         if (req.ListFields) return RenderEm3dField.List(path, req);
         if (req.Field is not null) return RenderEm3dField.Draw(path, req);
+        // a realistic picture takes --view-dir without a field: it is a camera's direction
+        if (req.Realistic && fieldOption is null or "--view-dir") return RenderEm3dRealistic.Draw(path, req);
         if (fieldOption is not null) return JsonRun.Fail(CliDiagnostics.RenderFieldOptionNeedsField(fieldOption));
 
         // R-em3d5-2b: exactly one view, refused together rather than ordered — and decided before the
@@ -95,7 +105,26 @@ internal static class RenderEm3d
         else if (req.Iso) view = Em3dView.Iso;
         if (req.ScaleBar && req.Iso) return JsonRun.Fail(CliDiagnostics.RenderEm3dScaleBarIso());
 
-        Em3dSetupSource loaded;
+        if (Load(path, req, out var loaded) is { } notLoaded) return notLoaded;
+
+        // R-em3d5-2a: a planar setup's picture is its layout, so the refusal names it.
+        if (!loaded.Setup.Is3D)
+            return JsonRun.Fail(CliDiagnostics.RenderEm3dPlanar(
+                path, loaded.Resolution.LayoutPath ?? loaded.Setup.LayoutRef));
+        if (view is null) return JsonRun.Fail(CliDiagnostics.RenderEm3dViewRequired(path));
+        if (loaded.Refusal is { } why) return JsonRun.Fail(CliDiagnostics.RenderEm3dUnbuildable(path, why));
+
+        RunHost.Cancellation.ThrowIfCancellationRequested();
+        return Picture(path, req, loaded, view.Value, field: null);
+    }
+
+    /// <summary>
+    /// The setup the picture is drawn through — the one <c>--setup</c> names, else the document's own — read with <c>--transparency</c>
+    /// applied to the copy the run reads; or the refusal. brief-em3d-110: the realistic picture reads its document here too.
+    /// </summary>
+    internal static int? Load(string path, Request req, out Em3dSetupSource loaded)
+    {
+        loaded = null!;
         var overrides = new RenderTransparency(path, req.Transparency);
         if (req.Setup is not null && DocumentKinds.Classify(path) != DocumentKind.ThreeD)
             return JsonRun.Fail(CliDiagnostics.EmSetupOnCem(path));
@@ -109,16 +138,7 @@ internal static class RenderEm3d
         // A --setup the view does not have is refused naming the setups it does, not read as a planar setup.
         if (req.Setup is not null && loaded.Generated is null && loaded.Refusal is { } notChosen)
             return JsonRun.Fail(CliDiagnostics.EmThreeDSetup(path, notChosen));
-
-        // R-em3d5-2a: a planar setup's picture is its layout, so the refusal names it.
-        if (!loaded.Setup.Is3D)
-            return JsonRun.Fail(CliDiagnostics.RenderEm3dPlanar(
-                path, loaded.Resolution.LayoutPath ?? loaded.Setup.LayoutRef));
-        if (view is null) return JsonRun.Fail(CliDiagnostics.RenderEm3dViewRequired(path));
-        if (loaded.Refusal is { } why) return JsonRun.Fail(CliDiagnostics.RenderEm3dUnbuildable(path, why));
-
-        RunHost.Cancellation.ThrowIfCancellationRequested();
-        return Picture(path, req, loaded, view.Value, field: null);
+        return null;
     }
 
     /// <summary>

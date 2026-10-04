@@ -63,7 +63,7 @@ internal static class Explain
     {
         string? path = null, expr = null, reference = null, analysisName = null, setupName = null, objectName = null;
         bool wantAnalyses = false, wantCells = false, wantLayers = false, wantExtents = false, all = false;
-        bool wantFootprints = false;
+        bool wantFootprints = false, wantLook = false;
         ViewType? askedView = null;
         var sets = new List<(string Name, string Expr)>();
 
@@ -115,6 +115,8 @@ internal static class Explain
                 case "--object" when i + 1 < args.Length:
                     objectName = args[++i];
                     continue;
+                // brief-em3d-110 R-em3d110-1g — a .c3d's Look as `render --look realistic` resolves it, and its appearance table.
+                case "--look": wantLook = true; continue;
                 case "--set" when i + 1 < args.Length:
                 {
                     // The same override the run verbs take, applied the same way (cli.md §5): it
@@ -150,7 +152,7 @@ internal static class Explain
 
         int asked = (expr is null ? 0 : 1) + (reference is null ? 0 : 1) + (wantAnalyses ? 1 : 0)
                   + (wantCells ? 1 : 0) + (wantLayers ? 1 : 0) + (wantExtents ? 1 : 0)
-                  + (wantFootprints ? 1 : 0) + (objectName is null ? 0 : 1);
+                  + (wantFootprints ? 1 : 0) + (objectName is null ? 0 : 1) + (wantLook ? 1 : 0);
         if (asked > 1) { JsonRun.Report(CliDiagnostics.ExplainOneQuestion()); return Usage(); }
         if (all && !wantCells) { JsonRun.Report(CliDiagnostics.ExplainAllNeedsCells()); return Usage(); }
 
@@ -217,6 +219,9 @@ internal static class Explain
 
         if (objectName is not null && kind != DocumentKind.ThreeD)
             exit |= JsonRun.Fail(CliDiagnostics.ExplainOptionNotApplicable("--object", DocumentKinds.Name(kind), "one object of a 3D view"));
+        if (wantLook)
+            exit |= kind == DocumentKind.ThreeD ? ExplainLook.Walk(path, setupName, walks)
+                  : JsonRun.Fail(CliDiagnostics.ExplainOptionNotApplicable("--look", DocumentKinds.Name(kind), "a 3D view's Look and appearances"));
 
         if (reference is not null)
         {
@@ -312,7 +317,7 @@ internal static class Explain
         Console.Error.WriteLine("Usage: circuitrf explain <path> [--expr \"<expression>\"] [--set var=expr]");
         Console.Error.WriteLine("                            [--analysis [<name>]] [--ref <relative-ref>]");
         Console.Error.WriteLine("                            [--cells [--all]] [--layers] [--extents] [--view <name>]");
-        Console.Error.WriteLine("                            [--footprints] [--setup <name>] [--object <name>]");
+        Console.Error.WriteLine("                            [--footprints] [--setup <name>] [--object <name>] [--look]");
         return 1;
     }
 

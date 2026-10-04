@@ -225,16 +225,20 @@ public static class Pbr
     /// the (already flipped, two-sided) unit normal, <paramref name="v"/> the unit vector to the eye, both in the world;
     /// <paramref name="coverage"/> a stated transparency's opacity (1 otherwise). An opaque material returns coverage 1.
     /// </summary>
-    public static Vector4 Shade(in PbrMaterial m, Vector3 n, Vector3 v, IPbrEnvironment env, in PbrLighting light, float coverage = 1)
+    public static Vector4 Shade(in PbrMaterial m, Vector3 n, Vector3 v, IPbrEnvironment env, in PbrLighting light, float coverage = 1,
+                                float occlusion = 1, float shadow = 1)
     {
-        var lin = Radiance(m, n, v, env, light, out float alpha);
+        var lin = Radiance(m, n, v, env, light, out float alpha, occlusion, shadow);
         alpha *= coverage;
         var display = ToneCurve.Display(lin, light.Exposure) * coverage;
         return new(display, alpha);
     }
 
-    /// <summary>The fragment's linear (premultiplied) radiance and its coverage, before exposure and the curve.</summary>
-    public static Vector3 Radiance(in PbrMaterial m, Vector3 n, Vector3 v, IPbrEnvironment env, in PbrLighting light, out float alpha)
+    /// <summary>The fragment's linear (premultiplied) radiance and its coverage, before exposure and the curve. brief-em3d-110 —
+    /// <paramref name="occlusion"/> darkens the environment's light and <paramref name="shadow"/> the key light's, as fs_pbr's occ and
+    /// shadow_vis do (brief 107); both 1, the default, change nothing.</summary>
+    public static Vector3 Radiance(in PbrMaterial m, Vector3 n, Vector3 v, IPbrEnvironment env, in PbrLighting light, out float alpha,
+                                   float occlusion = 1, float shadow = 1)
     {
         float nv = MathF.Max(Vector3.Dot(n, v), MinNdotV);
         float rough = Math.Clamp(m.Roughness, 0, 1), metal = Math.Clamp(m.Metallic, 0, 1);
@@ -249,7 +253,7 @@ public static class Pbr
         var spec = reflected * specAlbedo;
         var diffuse = (Vector3.One - specAlbedo) * (1 - metal) * (1 - t) * m.Base * irradiance / MathF.PI;
 
-        // the key light, direct (shadowed in brief 107)
+        // the key light, direct, and its shadow (brief 107)
         var l = light.KeyDirectionWorld;
         float nl = Vector3.Dot(n, l);
         var direct = Vector3.Zero;
@@ -262,10 +266,10 @@ public static class Pbr
             var fr = F(f0, vh);
             var lobe = fr * (D(nh, ad) * V(nv, nl, ad));
             var body = (Vector3.One - fr) * (1 - metal) * (1 - t) * m.Base / MathF.PI;
-            direct = (lobe + body) * light.KeyRadiance * light.Intensity * nl;
+            direct = (lobe + body) * light.KeyRadiance * light.Intensity * nl * shadow;
         }
 
-        var surface = spec + diffuse + direct;
+        var surface = (spec + diffuse) * occlusion + direct;
 
         // the clear coat: a dielectric lobe (F0 0.04) over the body, its energy taken from it
         float cc = Math.Clamp(m.Clearcoat, 0, 1);
@@ -274,14 +278,14 @@ public static class Pbr
             float ccr = Math.Clamp(m.ClearcoatRoughness, 0, 1);
             var lc = env.Brdf(nv, ccr);
             float coatAlbedo = DielectricF0 * lc.X + lc.Y;
-            var coat = env.Radiance(light.ToEnvironment(r), ccr) * light.Intensity * coatAlbedo;
+            var coat = env.Radiance(light.ToEnvironment(r), ccr) * light.Intensity * coatAlbedo * occlusion;
             if (nl > 0 && light.KeyRadiance != Vector3.Zero)
             {
                 var h = Vector3.Normalize(l + v);
                 float nh = MathF.Max(Vector3.Dot(n, h), 0), vh = MathF.Max(Vector3.Dot(v, h), 0);
                 float ac = MathF.Max(ccr, MinRoughness);
                 ac *= ac;
-                coat += light.KeyRadiance * light.Intensity * (F(DielectricF0, vh) * D(nh, ac) * V(nv, nl, ac) * nl);
+                coat += light.KeyRadiance * light.Intensity * (F(DielectricF0, vh) * D(nh, ac) * V(nv, nl, ac) * nl * shadow);
             }
             surface = surface * (1 - cc * coatAlbedo) + coat * cc;
         }
@@ -297,7 +301,7 @@ public static class Pbr
             float tau = (m.Attenuation.X + m.Attenuation.Y + m.Attenuation.Z) / 3;
             float through = t * (1 - fs);
             alpha = 1 - through * tau;
-            surface += through * (1 - tau) * m.Attenuation * irradiance / MathF.PI;
+            surface += through * (1 - tau) * m.Attenuation * irradiance / MathF.PI * occlusion;
         }
         return surface;
     }

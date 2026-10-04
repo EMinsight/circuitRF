@@ -1909,7 +1909,33 @@ namespace RfCore.Export
         /// section or the isometric outline.</summary>
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public IReadOnlyList<double>? Toward { get; init; }
+
+        /// <summary>brief-em3d-110 — a realistic picture's Look as it was drawn, and the CPU rasteriser's work; absent for a plain one.</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public RenderLookJson? Look { get; init; }
     }
+
+    /// <summary>
+    /// brief-em3d-110 — <c>render --look realistic</c>: the Look the picture was drawn with (the file's, with each <c>--look-set</c>
+    /// override named), the camera it was taken from, and the work counted — samples shaded, shadow-map texels written, pixels the
+    /// occlusion was computed for — rather than timed.
+    /// </summary>
+    /// <param name="Environment">The environment as the 3D view's status line names it: a studio, or the <c>.hdr</c>'s file name.</param>
+    /// <param name="Fallback">Why the Look's <c>.hdr</c> was not used (the picture was lit with Studio), or absent.</param>
+    /// <param name="Camera"><c>Look.Camera</c>, <c>--iso</c> or <c>--view-dir</c>: where the camera came from.</param>
+    public sealed record RenderLookJson(
+        string Environment,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? Fallback,
+        double Exposure,
+        string FieldStyle,
+        int Supersample,
+        string Camera,
+        string Projection,
+        IReadOnlyList<string> Overrides,
+        long SamplesShaded,
+        long ShadowTexelsWritten,
+        long OcclusionPixels);
 
     /// <summary>
     /// brief-em3d-84 R-em3d84-4 — the field plot a section was drawn with: which plot, which run it read (the walk a caller

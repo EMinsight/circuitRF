@@ -1291,7 +1291,7 @@ internal static class CliDiagnostics
     /// (R-rnd3-2).</summary>
     public static Diagnostic ExplainOneQuestion() => new(
         "explain.args.one-question", DiagnosticSeverity.Error,
-        "explain: --expr, --analysis, --ref, --cells, --layers, --extents, --footprints and --object ask " +
+        "explain: --expr, --analysis, --ref, --cells, --layers, --extents, --footprints, --object and --look ask " +
         "different questions — pass one.");
 
     /// <summary><c>--all</c> is <c>--cells</c>' own modifier and means nothing beside anything else.
@@ -2104,6 +2104,77 @@ internal static class CliDiagnostics
         "render.transparency.unknown", DiagnosticSeverity.Error,
         "render: --transparency names '{name}', which is no object, instance or group of '{path}'. It has: {names}.",
         ("name", name), ("path", path), ("names", names));
+
+    // ── brief-em3d-110: render --look realistic ──────────────────────────────────────────────────
+
+    public static Diagnostic RenderLookUnknown(string text) => Diagnostic.Create(
+        "render.look.unknown", DiagnosticSeverity.Error,
+        "render: --look is plain (the default: the outline and section pictures) or realistic (the 3D view's realistic view); '{text}' is neither.",
+        ("text", text));
+
+    /// <summary>--look-set or --supersample typed without --look realistic: refused rather than ignored.</summary>
+    public static Diagnostic RenderLookOptionNeedsRealistic(string option) => Diagnostic.Create(
+        "render.look.needs-realistic", DiagnosticSeverity.Error,
+        "render: {option} changes the realistic picture, and this render is not one: add --look realistic.", ("option", option));
+
+    /// <summary>--look realistic on anything but a .c3d: only a 3D view has appearances and a Look.</summary>
+    public static Diagnostic RenderLookNotA3dView(string path, string kind) => Diagnostic.Create(
+        "render.look.not-a-3d-view", DiagnosticSeverity.Error,
+        "render: --look realistic draws a 3D view's materials as they look, and '{path}' is a {kind}, which has no appearances and no Look. "
+      + "Render the .c3d it draws.", ("path", path), ("kind", kind));
+
+    public static Diagnostic RenderLookNotPng(string format) => Diagnostic.Create(
+        "render.look.not-png", DiagnosticSeverity.Error,
+        "render: a realistic picture is pixels; use .png. A {format} page is drawn by --look plain.", ("format", format));
+
+    public static Diagnostic RenderLookOptionNotApplicable(string option, string why) => Diagnostic.Create(
+        "render.look.not-applicable", DiagnosticSeverity.Error,
+        "render: {option} is not drawn on a realistic picture: {why}", ("option", option), ("why", why));
+
+    public static Diagnostic RenderLookDirectionRequired(string path) => Diagnostic.Create(
+        "render.look.direction-required", DiagnosticSeverity.Error,
+        "render: a realistic picture of '{path}' needs a camera: --iso, or --view-dir top|bottom|front|back|left|right|x,y,z (orthographic), "
+      + "or a Look.Camera in the file (the 3D view's \"Use This View for Pictures\" writes one).", ("path", path));
+
+    public static Diagnostic RenderLookSetMalformed(string text) => Diagnostic.Create(
+        "render.look-set.malformed", DiagnosticSeverity.Error,
+        "render: --look-set takes Key=value, a key of the .c3d's Look as the file spells it (Exposure=1.5, FieldStyle=Lit, "
+      + "Background=#ffffff); '{text}' is not one.", ("text", text));
+
+    public static Diagnostic RenderLookSetUnknownKey(string key, string keys) => Diagnostic.Create(
+        "render.look-set.unknown-key", DiagnosticSeverity.Error,
+        "render: --look-set names '{key}', which is no key of a Look. It has: {keys}.", ("key", key), ("keys", keys));
+
+    /// <summary>The value read as the file reads it and refused as the file's reader refuses it.</summary>
+    public static Diagnostic RenderLookSetUnreadable(string entry, string why) => Diagnostic.Create(
+        "render.look-set.unreadable", DiagnosticSeverity.Error,
+        "render: --look-set {entry} is not a value the Look's reader takes: {why}", ("entry", entry), ("why", why));
+
+    /// <summary>The value read, and refused by the same validation `check` runs on the file (C3dValidation's Look rules).</summary>
+    public static Diagnostic RenderLookSetInvalid(string entry, string why) => Diagnostic.Create(
+        "render.look-set.invalid", DiagnosticSeverity.Error,
+        "render: --look-set {entry} is refused: {why}", ("entry", entry), ("why", why));
+
+    public static Diagnostic RenderLookSupersampleMalformed(string text) => Diagnostic.Create(
+        "render.look.supersample-malformed", DiagnosticSeverity.Error,
+        "render: --supersample is 1, 2 or 4 (the picture is drawn that many times its size each way and brought down); '{text}' is none of them.",
+        ("text", text));
+
+    /// <summary>A ClipPlane plot is a section; the realistic picture is a view of the whole model.</summary>
+    public static Diagnostic RenderLookClipPlanePlot(string name) => Diagnostic.Create(
+        "render.look.clip-plane-plot", DiagnosticSeverity.Error,
+        "render: field plot '{name}' is a ClipPlane plot, which is a section: draw it with --look plain. --look realistic draws a Surfaces or "
+      + "Faces plot on the model.", ("name", name));
+
+    /// <summary>A NOTE: the Look's .hdr could not be read, so the picture is lit with Studio — as the 3D view lights it, and says so.</summary>
+    public static Diagnostic RenderLookEnvironmentFallback(string why) => Diagnostic.Create(
+        "render.look.environment-fallback", DiagnosticSeverity.Warning, "render: {why}.", ("why", why));
+
+    /// <summary>A NOTE: a Look shows the reference images, which a headless realistic picture does not draw.</summary>
+    public static Diagnostic RenderLookImagesNotDrawn(int count) => Diagnostic.Create(
+        "render.look.images-not-drawn", DiagnosticSeverity.Warning,
+        "render: the Look shows reference images (ShowImages), and a realistic picture drawn headlessly does not draw them yet: "
+      + "{count} image draw(s) left out.", ("count", count));
 
     /// <summary>brief-em3d-88 — an isometric outline shortens each axis differently, so no one bar measures it.</summary>
     public static Diagnostic RenderEm3dScaleBarIso() => Diagnostic.Create(

@@ -202,7 +202,11 @@ public sealed class Viewer3DViewState
     public bool ShowAxisIndicator = true;
     /// <summary>A camera gesture moved the camera since the last frame.</summary>
     public bool Orbiting;
-    public (float R, float G, float B) Background = (0.12f, 0.13f, 0.15f);
+    public (float R, float G, float B) Background = ThemeBackground(dark: true);
+
+    /// <summary>The 3D editor's background in a theme's variant — the realistic view's "Theme" background too. brief-em3d-110: one
+    /// place, which `render --look realistic` reads for its <c>--variant</c>.</summary>
+    public static (float R, float G, float B) ThemeBackground(bool dark) => dark ? (0.12f, 0.13f, 0.15f) : (0.93f, 0.94f, 0.96f);
     /// <summary>brief-em3d-46 — a drag's preview, or null.</summary>
     public Scene3DPreview? Preview;
     /// <summary>brief-em3d-106 R-em3d106-1a — the realistic view: view state, never saved, off on every open (overview D5). It takes

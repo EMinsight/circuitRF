@@ -138,6 +138,10 @@ internal static class Render
         public List<string> Transparency = new();
         // Designer feedback round 11 — which of a .c3d's embedded setups the picture is drawn through.
         public string?      Setup;
+        // brief-em3d-110 — the realistic picture: its Look's keys overridden for this run, and its supersampling.
+        public bool         Realistic;
+        public List<string> LookSet = new();
+        public int?         Supersample;
     }
 
     /// <summary>R-rnd2-3's default page. Points for a vector format, device pixels for a raster one —
@@ -166,6 +170,10 @@ internal static class Render
             return JsonRun.Fail(CliDiagnostics.RenderPathNotFound(o.Path));
 
         if (o.Output is not null && ResolveFormat(o) is { } formatRefusal) return formatRefusal;
+
+        // brief-em3d-110 — a realistic picture's own options, refused rather than ignored on any other picture
+        if (!o.Realistic && (o.LookSet.Count > 0 || o.Supersample is not null))
+            return JsonRun.Fail(CliDiagnostics.RenderLookOptionNeedsRealistic(o.LookSet.Count > 0 ? "--look-set" : "--supersample"));
 
         // The three viewport modes, refused together. Done before anything is read: a caller that
         // asked two incompatible questions gets the same answer whether or not the file parses.
@@ -203,6 +211,9 @@ internal static class Render
             "                        | --list-fields\n" +
             "                        [--transparency name=percent,...] (an object, instance or group; this picture only)\n" +
             "                        [--setup <name>] (which embedded setup's air box and problem to draw)\n" +
+            "                        [--look plain|realistic] (realistic: the 3D view's realistic picture, a .png, from\n" +
+            "                        --iso, --view-dir or the Look's Camera) [--look-set Key=value]... (a Look key, this\n" +
+            "                        picture only) [--supersample 1|2|4] [--background transparent]\n" +
             "                        (a hidden plot renders as a shown one: --field names it, and hiding is only\n" +
             "                        which plot the 3D view draws)");
         return 1;
@@ -374,6 +385,22 @@ internal static class Render
                 case "--transparency" when i + 1 < args.Length: o.Transparency.AddRange(SplitList(args[++i])); continue;
                 // Designer feedback round 11 — spelled as `em` and `explain` spell it.
                 case "--setup" when i + 1 < args.Length: o.Setup = args[++i]; continue;
+                // brief-em3d-110 — the realistic view's picture. --look-set is repeatable and NOT split on commas: a gradient
+                // Background is "#rrggbb,#rrggbb".
+                case "--look" when i + 1 < args.Length:
+                    switch (args[++i].ToLowerInvariant())
+                    {
+                        case "plain":     o.Realistic = false; break;
+                        case "realistic": o.Realistic = true;  break;
+                        default: return JsonRun.Fail(CliDiagnostics.RenderLookUnknown(args[i]));
+                    }
+                    continue;
+                case "--look-set" when i + 1 < args.Length: o.LookSet.Add(args[++i]); continue;
+                case "--supersample" when i + 1 < args.Length:
+                    if (!int.TryParse(args[++i], NumberStyles.Integer, CultureInfo.InvariantCulture, out int ss) || !CircuitRF.Render.Scene3D.Look.PictureResample.Factors.Contains(ss))
+                        return JsonRun.Fail(CliDiagnostics.RenderLookSupersampleMalformed(args[i]));
+                    o.Supersample = ss;
+                    continue;
 
                 default:
                     if (a.StartsWith('-'))
@@ -539,6 +566,7 @@ internal static class Render
         var kind = DocumentKinds.Classify(o.Path!);
         // brief-em3d-42 R-em3d42-6 — a .c3d's one headless picture: brief 5's sections, of its elaboration.
         if (kind is DocumentKind.EmSetup or DocumentKind.ThreeD) return RenderEm3d.Draw(o.Path!, Em3dRequest(o));
+        if (o.Realistic) return JsonRun.Fail(CliDiagnostics.RenderLookNotA3dView(o.Path!, DocumentKinds.Name(kind)));
         if (FieldOptionNamed(o) is { } fieldOption)
             return JsonRun.Fail(CliDiagnostics.RenderFieldNotA3dView(fieldOption, o.Path!, DocumentKinds.Name(kind)));
         if (o.Transparency.Count > 0)
@@ -618,6 +646,7 @@ internal static class Render
             Labels = o.Labels, Tight = o.Tight, Axes = o.Axes, ScaleBar = o.ScaleBar,
             ViewDir = o.ViewDir, Region = o.Region, NoMirror = o.NoMirror, Transparency = o.Transparency,
             Setup = o.Setup, OutputStated = o.Output is not null,
+            Realistic = o.Realistic, LookSet = o.LookSet, Supersample = o.Supersample ?? CircuitRF.Render.Scene3D.Look.PictureResample.DefaultFactor,
         };
     }
 
