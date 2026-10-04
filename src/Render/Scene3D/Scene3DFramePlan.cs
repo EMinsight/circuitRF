@@ -14,6 +14,7 @@
 using System.Numerics;
 using System.Runtime.InteropServices;
 using CircuitRF.Render.Scene3D.Edit;
+using CircuitRF.Render.Scene3D.Look;
 
 namespace CircuitRF.Render.Scene3D;
 
@@ -49,6 +50,15 @@ public enum Scene3DPipeline
     Image,
     /// <summary>brief-em3d-101 — the same, sorted with the translucent objects: depth test without write, blend.</summary>
     ImageTranslucent,
+    /// <summary>brief-em3d-106 R-em3d106-2a — the realistic view's triangles (vs_pbr / fs_pbr), reading the shade stream as a second
+    /// vertex buffer and the appearance table and environment: depth write, no blend.</summary>
+    Pbr,
+    /// <summary>The same, sorted with the translucent objects: depth test without write, blend PREMULTIPLIED (RGB one,
+    /// 1 − src-alpha; alpha one, 1 − src-alpha), so a reflection on glass adds on top of what shows through.</summary>
+    PbrTranslucent,
+    /// <summary>R-em3d106-3f — the realistic view's backdrop, a gradient or the environment: six vertices made by vs_grid covering the
+    /// viewport, fs_backdrop, no depth test or write, no blend; drawn first.</summary>
+    Backdrop,
 }
 
 /// <summary>Which buffer a draw reads: the scene's, one of the overlay slots, the field's, none (the grid), or the scene's image
@@ -73,6 +83,10 @@ public struct Scene3DDraw
 
     /// <summary>brief-em3d-101 — an image draw's texture: an index into <see cref="Scene3DModel.Images"/> (−1 for any other draw).</summary>
     public int Texture;
+
+    /// <summary>brief-em3d-106 — the object a draw is of (0 for one that is of no single object: an element's whole draw, an
+    /// overlay, the grid, a field). Read by no backend; the gates and <see cref="Scene3DFramePlan.ChromeOf"/> use it.</summary>
+    public uint Object;
 
     /// <summary>A dielectric's or air's draw, which gives way to any metal face lying on one of its own.</summary>
     public readonly bool Behind => Tie == Scene3DDepthTie.Behind;
@@ -178,6 +192,16 @@ public sealed class Viewer3DViewState
     public (float R, float G, float B) Background = (0.12f, 0.13f, 0.15f);
     /// <summary>brief-em3d-46 — a drag's preview, or null.</summary>
     public Scene3DPreview? Preview;
+    /// <summary>brief-em3d-106 R-em3d106-1a — the realistic view: view state, never saved, off on every open (overview D5). It takes
+    /// effect once <see cref="Environment"/> is ready; until then the frame is the default view's.</summary>
+    public bool Realistic;
+    /// <summary>The document's Look, parsed (R-em3d106-5).</summary>
+    public RealisticLook Look = RealisticLook.Default;
+    /// <summary>The prefiltered environment the realistic view lights with, or null while it is being made.</summary>
+    public PrefilteredEnvironment? Environment;
+
+    /// <summary>Whether this frame draws realistically: asked for, and the environment is ready.</summary>
+    public bool DrawsRealistic => Realistic && Environment is not null;
 
     /// <summary>Resets visibility to the scene's defaults when the object list changed shape; keeps the
     /// user's toggles across a regeneration that kept the same objects.</summary>
@@ -218,12 +242,21 @@ public sealed class Scene3DFramePlan
     /// <summary>Where brief 45's grid block starts, in floats.</summary>
     public const int GridAt = FieldAt + Fields.FieldUniforms.LayersFloats;
 
+    /// <summary>brief-em3d-106 R-em3d106-3 — where the realistic view's look block starts, in floats (<see cref="LookFloats"/>).</summary>
+    public const int LookAt = GridAt + PlaneGrid.Floats;
+
+    /// <summary>The look block, 288 bytes: exposure (2^EV), intensity, the environment's rotation (cos, sin); the background's mode and
+    /// the environment's last level; the key light's world direction; its radiance; the background's two colours; the backdrop's
+    /// ray (direction, and its change per clip x and y); the nine irradiance coefficients. Zero while the view is not realistic.</summary>
+    public const int LookFloats = 72;
+
     /// <summary>Floats in the uniform block — the WGSL <c>U</c>: vp (16), eye (4), clip (4), the hovered
     /// (object, face), flags, the mode, the selection's count and three pads (128 bytes), the selection's
     /// (object, face) pairs (512 bytes), brief 29's field blocks (<see cref="Fields.FieldUniforms"/>, 288 bytes each,
-    /// brief-em3d-96: four, 1,152 bytes), then brief 45's grid block (<see cref="PlaneGrid.Floats"/>, 224 bytes). 2,016 bytes —
-    /// under Metal's 4 KB inline-bytes limit (<c>setVertexBytes</c>), which the Metal backend asserts.</summary>
-    public const int UniformFloats = GridAt + PlaneGrid.Floats;
+    /// brief-em3d-96: four, 1,152 bytes), brief 45's grid block (<see cref="PlaneGrid.Floats"/>, 224 bytes), then brief 106's look
+    /// block (288 bytes). 2,304 bytes — under Metal's 4 KB inline-bytes limit (<c>setVertexBytes</c>), which the Metal backend
+    /// asserts.</summary>
+    public const int UniformFloats = LookAt + LookFloats;
     public const int UniformBytes = UniformFloats * 4;
 
     /// <summary>3D editor bugs round 3 — how many times a selected object's edges are drawn: at (0, 0), (1, 0), (0, 1)
@@ -378,25 +411,83 @@ public sealed class Scene3DFramePlan
     /// <summary>
     /// Plans a <paramref name="width"/> × <paramref name="height"/> frame of <paramref name="scene"/>.
     /// <paramref name="flipY"/> for an API whose framebuffer y runs down. <paramref name="pick"/> asks
-    /// for an ID pass at the cursor. Allocates only when the scene changed.
+    /// for an ID pass at the cursor. Allocates only when the scene changed. brief-em3d-106 — <paramref name="export"/>: a picture
+    /// (Export Picture, Copy), which in the realistic view draws no hover and no selection (R-em3d106-2c).
     /// </summary>
     public void Plan(Scene3DModel scene, Viewer3DViewState view, int width, int height, bool flipY, bool pick,
-                     Scene3DOverlay mesh, Scene3DOverlay section, Scene3DOverlay grid, Fields.Scene3DFieldGeometry? field = null)
+                     Scene3DOverlay mesh, Scene3DOverlay section, Scene3DOverlay grid, Fields.Scene3DFieldGeometry? field = null,
+                     bool export = false)
     {
         if (!ReferenceEquals(_sized, scene)) Size(scene);
         Width = width; Height = height;
         Clear = view.Background;
         SceneGeneration = scene.Generation;
+        bool real = Realistic = view.DrawsRealistic;
+        bool quiet = real && export;
         uint flags = view.Clip.Enabled ? FlagClip | FlagCapBackFaces : 0;
         var cam = DepthCamera(scene, view);
-        Fill(Uniforms, view, cam, width, height, flipY, -1, -1, flags);
+        Fill(Uniforms, view, cam, width, height, flipY, -1, -1, flags, quiet: quiet);
+        if (real) FillLook(Uniforms.AsSpan(LookAt, LookFloats), view, cam, width, height, flipY);
+        else Uniforms.AsSpan(LookAt, LookFloats).Clear();
 
         DrawCount = 0;
         TransformBytes = 0;
         var preview = view.Preview;
         WriteTransforms(preview);
         ChooseDetail(scene, view);
-        MarkFaded(view);
+        if (!quiet) MarkFaded(view);
+        else _fadedCount = 0;
+        if (real) ColourRealistic(scene, view, preview, mesh, section, grid, field, cam, width, height, flipY);
+        else ColourDefault(scene, view, preview, mesh, section, grid, field, cam, width, height, flipY);
+
+        if (!quiet) Selection(scene, view, preview);
+
+        var batches = scene.Batches;
+        int owned = scene.OwnedBatches;
+        Pick = pick && view.CursorX >= 0 && view.CursorY >= 0 && view.CursorX < width && view.CursorY < height;
+        PickDrawCount = 0;
+        if (Pick)
+        {
+            PickX = (int)view.CursorX; PickY = (int)view.CursorY;
+            PickCamera = cam;
+            PickCursorX = view.CursorX; PickCursorY = view.CursorY;
+            Fill(PickUniforms, view, cam, width, height, flipY, PickX, PickY, view.Clip.Enabled ? FlagClip : 0, PickSize);
+            for (int k = 0; k < owned; k++)
+            {
+                var b = batches[k];
+                if (view.IsVisible(b.ObjectId) && scene.Objects[b.ObjectId - 1].Pickable && preview?.IsMoving(b.ObjectId) != true)
+                    Add(ref PickDraws, ref PickDrawCount, Scene3DPipeline.Pick, Scene3DBuffer.Scene, b.FirstIndex, b.IndexCount,
+                        tie: TieOf(scene, b.ObjectId));
+            }
+            for (int e = 0; e < _elements; e++)
+            {
+                if (_boxed[e]) continue;
+                var el = scene.Elements[e];
+                var g = scene.Groups[el.Group];
+                bool whole = Whole(scene, view, preview, el, g, pickPass: true);
+                if (whole) Add(ref PickDraws, ref PickDrawCount, Scene3DPipeline.Pick, Scene3DBuffer.Scene, g.OpaqueFirst, g.OpaqueCount, ElementSlot(e));
+                for (int k = el.FirstBatch; k < el.FirstBatch + el.BatchCount; k++)
+                {
+                    var b = batches[k];
+                    if (whole && !b.Translucent) continue;
+                    if (view.IsVisible(b.ObjectId) && scene.Objects[b.ObjectId - 1].Pickable && preview?.IsMoving(b.ObjectId) != true)
+                        Add(ref PickDraws, ref PickDrawCount, Scene3DPipeline.Pick, Scene3DBuffer.Scene, b.FirstIndex, b.IndexCount, ElementSlot(e),
+                            TieOf(scene, b.ObjectId));
+                }
+            }
+        }
+        TransformCount = _nextSlot;
+    }
+
+    /// <summary>brief-em3d-106 — whether the last frame was planned realistically (the environment ready and asked for).</summary>
+    public bool Realistic { get; private set; }
+
+    /// <summary>The default view's colour pass: everything opaque, the field, the lines and overlays, the grid, then the translucent
+    /// objects back to front. Exactly what it was before brief 106.</summary>
+    private void ColourDefault(Scene3DModel scene, Viewer3DViewState view, Scene3DPreview? preview, Scene3DOverlay mesh,
+                               Scene3DOverlay section, Scene3DOverlay grid, Fields.Scene3DFieldGeometry? field, in Camera3D cam,
+                               int width, int height, bool flipY)
+    {
         var batches = scene.Batches;
         int owned = scene.OwnedBatches;
         for (int k = 0; k < owned; k++)
@@ -493,7 +584,229 @@ public sealed class Scene3DFramePlan
                           tie: TieOf(scene, b.ObjectId));
         }
         ClearFaded();
+    }
 
+    // ── brief-em3d-106 R-em3d106-2: the realistic colour pass ───────────────────────────────────────────────────────────
+
+    /// <summary>What an object is to the realistic view (by ID − 1): a material drawn PBR (<see cref="Material"/>), something with no
+    /// appearance drawn as the default view draws it (<see cref="Unlooked"/>: a wireframe object with no material), or a chrome row
+    /// (≥ 0, a <see cref="Scene3DChrome"/>).</summary>
+    private sbyte[] _chromeOf = [];
+    private const sbyte Material = -1, Unlooked = -2;
+    /// <summary>Per object (by ID − 1): a material object the realistic view draws translucent — its appearance transmits, or the
+    /// document states a transparency (overview D12; a kind's default does not count).</summary>
+    private bool[] _realTranslucent = [];
+
+    /// <summary>The chrome row object <paramref name="o"/> belongs to, or null for a material (or an object with no look). One place:
+    /// the plan and the gates ask here.</summary>
+    public static Scene3DChrome? ChromeOfObject(Scene3DModel scene, Scene3DObject o)
+    {
+        if (o.Underlay || HasImageSurface(scene, o.Id)) return Scene3DChrome.Images;
+        if (o.Kind == Scene3DKind.Air) return Scene3DChrome.AirBox;
+        if (o.Kind == Scene3DKind.Port) return Scene3DChrome.Ports;
+        if (o.Kind == Scene3DKind.Boundary)
+            return o.Boundary is not null || o.Name == Scene3DBuilder.AirBoxEdgesName ? Scene3DChrome.AirBox : Scene3DChrome.Boundaries;
+        return null;
+    }
+
+    private static bool HasImageSurface(Scene3DModel scene, uint id)
+    {
+        foreach (var ib in scene.ImageBatches) if (ib.ObjectId == id && ib.Surface) return true;
+        return false;
+    }
+
+    /// <summary>The chrome row draw <paramref name="d"/> belongs to — null for a material's, a field's or an element's box. A scene line
+    /// batch of an object in no other row is an <see cref="Scene3DChrome.Edges"/> draw.</summary>
+    public static Scene3DChrome? ChromeOf(Scene3DModel scene, in Scene3DDraw d)
+    {
+        if (d.Pipeline == Scene3DPipeline.Grid) return Scene3DChrome.Grid;
+        if (d.Buffer is Scene3DBuffer.Overlay0 or Scene3DBuffer.Overlay1 or Scene3DBuffer.Overlay2) return Scene3DChrome.Overlays;
+        if (d.Pipeline is Scene3DPipeline.Edges or Scene3DPipeline.OnTop || scene.Object(d.Object) is not { } o) return null;
+        return ChromeOfObject(scene, o) ?? (d.Buffer == Scene3DBuffer.SceneLines ? Scene3DChrome.Edges : null);
+    }
+
+    private void SizeRealistic(Scene3DModel scene)
+    {
+        int n = scene.Objects.Length;
+        _chromeOf = new sbyte[n];
+        _realTranslucent = new bool[n];
+        for (int k = 0; k < n; k++)
+        {
+            var o = scene.Objects[k];
+            var row = ChromeOfObject(scene, o);
+            // A wireframe object has no material: it is drawn as the default view draws it (its edges are the Edges row's).
+            _chromeOf[k] = row is { } r ? (sbyte)r
+                         : !o.Wireframe && o.AppearanceSlot >= 0 && o.AppearanceSlot < scene.Appearances.Length ? Material : Unlooked;
+            if (_chromeOf[k] != Material) continue;
+            bool stated = (o.Transparency is not null || o.Context) && (o.Rgba >> 24) < 255;
+            _realTranslucent[k] = stated || scene.Appearances[o.AppearanceSlot].Transmission > 0;
+        }
+    }
+
+    private bool Shows(Viewer3DViewState view, uint id)
+        => _chromeOf[id - 1] is var c && (c < 0 || view.Look.Shows((Scene3DChrome)c));
+
+    /// <summary>R-em3d106-2a/b — the realistic view's colour pass: the backdrop; every material object's triangles through Pbr (opaque)
+    /// or PbrTranslucent (sorted with the translucent ones); each chrome row only when its Look key shows it, then drawn EXACTLY as the
+    /// default view draws it (its own pipeline and colours); the field unchanged (rule 2).</summary>
+    private void ColourRealistic(Scene3DModel scene, Viewer3DViewState view, Scene3DPreview? preview, Scene3DOverlay mesh,
+                                 Scene3DOverlay section, Scene3DOverlay grid, Fields.Scene3DFieldGeometry? field, in Camera3D cam,
+                                 int width, int height, bool flipY)
+    {
+        var look = view.Look;
+        if (look.Background is Design.ThreeD.C3dBackgroundKind.Gradient or Design.ThreeD.C3dBackgroundKind.Environment)
+            Add(ref Draws, ref DrawCount, Scene3DPipeline.Backdrop, Scene3DBuffer.None, 0, 6);
+        else if (look.Background == Design.ThreeD.C3dBackgroundKind.Solid) Clear = (look.Top.X, look.Top.Y, look.Top.Z);
+
+        var batches = scene.Batches;
+        int owned = scene.OwnedBatches;
+        for (int k = 0; k < owned; k++) OpaqueRealistic(scene, view, preview, batches[k], -1);
+        for (int e = 0; e < _elements; e++)
+        {
+            if (_boxed[e]) continue;
+            var el = scene.Elements[e];
+            var g = scene.Groups[el.Group];
+            if (Whole(scene, view, preview, el, g, pickPass: false) && !AnyFaded(el) && WholeIsPbr(scene, el))
+            {
+                Add(ref Draws, ref DrawCount, Scene3DPipeline.Pbr, Scene3DBuffer.Scene, g.OpaqueFirst, g.OpaqueCount, ElementSlot(e));
+                continue;
+            }
+            for (int k = el.FirstBatch; k < el.FirstBatch + el.BatchCount; k++) OpaqueRealistic(scene, view, preview, batches[k], e);
+        }
+        // the field: unchanged (overview rule 2 — its colour is a datum; brief 109 adds the opt-in styles)
+        if (view.ShowField && field is { Vertices.Length: > 0 } f)
+            foreach (var r in f.Layers)
+                if (r.Count > 0 && r.First >= 0 && r.First + r.Count <= f.Vertices.Length)
+                    Add(ref Draws, ref DrawCount, Scene3DPipeline.Field, Scene3DBuffer.Field, r.First, r.Count, FieldSlot(r.Layer),
+                        Scene3DDepthTie.Field);
+        bool edges = look.Shows(Scene3DChrome.Edges);
+        foreach (var lb in scene.LineBatches)
+            if (view.IsVisible(lb.ObjectId) && (_chromeOf[lb.ObjectId - 1] >= 0 ? Shows(view, lb.ObjectId) : edges))
+                AddMoved(preview, lb.ObjectId, Scene3DPipeline.Lines, Scene3DBuffer.SceneLines, lb.FirstVertex, lb.VertexCount, identity: true);
+        // an element over the triangle budget stands in for geometry, not chrome: its box is drawn as the default view draws it
+        if (LodBoxedElements > 0)
+            for (int e = 0; e < _elements; e++)
+                if (_boxed[e])
+                    Add(ref Draws, ref DrawCount, Scene3DPipeline.Lines, Scene3DBuffer.SceneLines, scene.UnitBox.FirstVertex, scene.UnitBox.VertexCount, BoxSlot(e));
+        if (look.Shows(Scene3DChrome.Overlays))
+        {
+            if (view.ShowMesh && mesh.Lines.Length > 0)
+                Add(ref Draws, ref DrawCount, Scene3DPipeline.Lines, Scene3DBuffer.Overlay0, 0, mesh.Lines.Length);
+            if (view.ShowMeshSection && view.Clip.Enabled && section.Lines.Length > 0)
+                Add(ref Draws, ref DrawCount, Scene3DPipeline.Lines, Scene3DBuffer.Overlay1, 0, section.Lines.Length);
+            if (view.ShowGrid && grid.Lines.Length > 0)
+                Add(ref Draws, ref DrawCount, Scene3DPipeline.Lines, Scene3DBuffer.Overlay2, 0, grid.Lines.Length);
+        }
+        GridSpacing = default;
+        if (look.Shows(Scene3DChrome.Grid) && view.DrawingGrid is { Visible: true } dg)
+        {
+            GridSpacing = PlaneGrid.Fill(Uniforms.AsSpan(GridAt), scene, cam, dg, width, height, flipY);
+            if (GridSpacing.MinorDbu > 0)
+            {
+                Add(ref Draws, ref DrawCount, Scene3DPipeline.Grid, Scene3DBuffer.None, 0, 6);
+                GridFrames++;
+            }
+        }
+        else Uniforms.AsSpan(GridAt, PlaneGrid.Floats).Clear();
+
+        // Translucent, back to front: a material that transmits or states a transparency, a shown chrome object or one with no look
+        // that is translucent in the default view, and an object selected in Object mode (faded).
+        var eye = view.Camera.Eye;
+        var forward = view.Camera.Forward;
+        int n = 0;
+        for (int i = 0; i < batches.Length; i++)
+        {
+            var b = batches[i];
+            uint id = b.ObjectId;
+            if (!view.IsDrawn(id) || !Shows(view, id)) continue;
+            if (b.Element >= 0 && _boxed[b.Element]) continue;
+            bool translucent = _chromeOf[id - 1] == Material ? _realTranslucent[id - 1] : b.Translucent;
+            if (!(translucent || Faded(id))) continue;
+            _order[n] = i;
+            _keys[n] = -Vector3.Dot(scene.Objects[id - 1].Centroid - eye, forward);
+            n++;
+        }
+        Array.Sort(_keys, _order, 0, n);
+        for (int k = 0; k < n; k++)
+        {
+            var b = batches[_order[k]];
+            if (_chromeOf[b.ObjectId - 1] == Material)
+                AddMoved(preview, b.ObjectId, Scene3DPipeline.PbrTranslucent, Scene3DBuffer.Scene, b.FirstIndex, b.IndexCount, identity: true,
+                         b.Element, TieOf(scene, b.ObjectId));
+            else if (_surfaceOf[b.ObjectId - 1] >= 0) AddImage(scene, preview, _surfaceOf[b.ObjectId - 1], translucent: true);
+            else AddMoved(preview, b.ObjectId, Scene3DPipeline.Translucent, Scene3DBuffer.Scene, b.FirstIndex, b.IndexCount, identity: true,
+                          b.Element, TieOf(scene, b.ObjectId));
+        }
+        ClearFaded();
+    }
+
+    /// <summary>One batch's opaque draw in the realistic view: a material through Pbr; a shown chrome object or one with no look as the
+    /// default view draws it.</summary>
+    private void OpaqueRealistic(Scene3DModel scene, Viewer3DViewState view, Scene3DPreview? preview, in Scene3DBatch b, int element)
+    {
+        uint id = b.ObjectId;
+        if (Faded(id) || !view.IsDrawn(id) || !Shows(view, id)) return;
+        if (_chromeOf[id - 1] == Material)
+        {
+            if (!_realTranslucent[id - 1])
+                AddMoved(preview, id, Scene3DPipeline.Pbr, Scene3DBuffer.Scene, b.FirstIndex, b.IndexCount, identity: true, element, TieOf(scene, id));
+            return;
+        }
+        if (b.Translucent) return;
+        if (element < 0 && _surfaceOf[id - 1] >= 0) AddImage(scene, preview, _surfaceOf[id - 1], translucent: false);
+        else AddMoved(preview, id, Scene3DPipeline.Opaque, Scene3DBuffer.Scene, b.FirstIndex, b.IndexCount, identity: true, element, TieOf(scene, id));
+    }
+
+    /// <summary>Whether an element's one opaque draw (its group's default-opaque objects) is all material the realistic view draws
+    /// opaque — else it is drawn object by object.</summary>
+    private bool WholeIsPbr(Scene3DModel scene, in Scene3DElement el)
+    {
+        for (uint id = el.FirstId; id < el.FirstId + (uint)el.Count; id++)
+        {
+            if (scene.Objects[id - 1].Translucent) continue;
+            if (_chromeOf[id - 1] != Material || _realTranslucent[id - 1]) return false;
+        }
+        return true;
+    }
+
+    /// <summary>R-em3d106-3 — the look block (<see cref="LookFloats"/>): what fs_pbr and fs_backdrop read.</summary>
+    private static void FillLook(Span<float> u, Viewer3DViewState view, in Camera3D cam, int width, int height, bool flipY)
+    {
+        var look = view.Look;
+        var env = view.Environment!;
+        var light = look.Lighting(env);
+        u.Clear();
+        u[0] = look.Exposure; u[1] = look.Intensity; u[2] = light.Cos; u[3] = light.Sin;
+        u[4] = look.Background switch
+        {
+            Design.ThreeD.C3dBackgroundKind.Gradient => 1,
+            Design.ThreeD.C3dBackgroundKind.Environment => 2,
+            _ => 0,
+        };
+        u[5] = Pbr.EnvironmentLevels - 1;
+        Put(u, 8, light.KeyDirectionWorld);
+        Put(u, 12, env.KeyRadiance);
+        Put(u, 16, look.Top); u[19] = 1;
+        Put(u, 20, look.Bottom); u[23] = 1;
+        // the backdrop's ray per clip position, as PlaneGrid.WriteRay writes the grid's: direction = bd + x·bdx + y·bdy
+        float aspect = MathF.Max(1, width) / MathF.Max(1, height);
+        float fov = cam.FovY > 0 && cam.FovY < MathF.PI ? cam.FovY : Camera3D.DefaultFovY;
+        Put(u, 24, cam.Forward);
+        if (cam.Projection != Projection3D.Orthographic)
+        {
+            float ty = MathF.Tan(fov * 0.5f);
+            Put(u, 28, cam.Right * (ty * aspect));
+            Put(u, 32, cam.Up * (ty * (flipY ? -1 : 1)));
+        }
+        for (int k = 0; k < 9; k++) Put(u, 36 + 4 * k, env.Sh[k]);
+
+        static void Put(Span<float> u, int at, Vector3 v) { u[at] = v.X; u[at + 1] = v.Y; u[at + 2] = v.Z; }
+    }
+
+    /// <summary>brief-em3d-43 — the selection: its edges and the selected face on top.</summary>
+    private void Selection(Scene3DModel scene, Viewer3DViewState view, Scene3DPreview? preview)
+    {
+        var batches = scene.Batches;
         // brief-em3d-43 — the selection, last: the edges of each selected object (Object mode) or of each
         // object with a selected face (Face mode), then those objects' triangles again for the selected
         // face drawn on top. The shaders pick out what is selected; the plan only chooses which batches.
@@ -528,40 +841,6 @@ public sealed class Scene3DFramePlan
             for (int k = 0; k < _edgeSlotsUsed; k++) _edgeSlotsOf[_edgeSlotKeys[k]] = -1;
             _edgeSlotsUsed = 0;
         }
-
-        Pick = pick && view.CursorX >= 0 && view.CursorY >= 0 && view.CursorX < width && view.CursorY < height;
-        PickDrawCount = 0;
-        if (Pick)
-        {
-            PickX = (int)view.CursorX; PickY = (int)view.CursorY;
-            PickCamera = cam;
-            PickCursorX = view.CursorX; PickCursorY = view.CursorY;
-            Fill(PickUniforms, view, cam, width, height, flipY, PickX, PickY, view.Clip.Enabled ? FlagClip : 0, PickSize);
-            for (int k = 0; k < owned; k++)
-            {
-                var b = batches[k];
-                if (view.IsVisible(b.ObjectId) && scene.Objects[b.ObjectId - 1].Pickable && preview?.IsMoving(b.ObjectId) != true)
-                    Add(ref PickDraws, ref PickDrawCount, Scene3DPipeline.Pick, Scene3DBuffer.Scene, b.FirstIndex, b.IndexCount,
-                        tie: TieOf(scene, b.ObjectId));
-            }
-            for (int e = 0; e < _elements; e++)
-            {
-                if (_boxed[e]) continue;
-                var el = scene.Elements[e];
-                var g = scene.Groups[el.Group];
-                bool whole = Whole(scene, view, preview, el, g, pickPass: true);
-                if (whole) Add(ref PickDraws, ref PickDrawCount, Scene3DPipeline.Pick, Scene3DBuffer.Scene, g.OpaqueFirst, g.OpaqueCount, ElementSlot(e));
-                for (int k = el.FirstBatch; k < el.FirstBatch + el.BatchCount; k++)
-                {
-                    var b = batches[k];
-                    if (whole && !b.Translucent) continue;
-                    if (view.IsVisible(b.ObjectId) && scene.Objects[b.ObjectId - 1].Pickable && preview?.IsMoving(b.ObjectId) != true)
-                        Add(ref PickDraws, ref PickDrawCount, Scene3DPipeline.Pick, Scene3DBuffer.Scene, b.FirstIndex, b.IndexCount, ElementSlot(e),
-                            TieOf(scene, b.ObjectId));
-                }
-            }
-        }
-        TransformCount = _nextSlot;
     }
 
     /// <summary>3D editor bugs round 3 — marks the objects selected in Object mode (the first <see cref="SelectionLimit"/>, the
@@ -719,6 +998,7 @@ public sealed class Scene3DFramePlan
         Array.Fill(_surfaceOf, -1);
         for (int k = 0; k < scene.ImageBatches.Length; k++)
             if (scene.ImageBatches[k].Surface) _surfaceOf[scene.ImageBatches[k].ObjectId - 1] = k;
+        SizeRealistic(scene);
 
         // brief-em3d-48 — the element slots and their boxes' slots are written once per scene; a frame writes only a
         // preview's copies after them.
@@ -746,10 +1026,10 @@ public sealed class Scene3DFramePlan
     }
 
     private static void Add(ref Scene3DDraw[] list, ref int count, Scene3DPipeline p, Scene3DBuffer buf, int first, int n, int transform = 0,
-                            Scene3DDepthTie tie = Scene3DDepthTie.None)
+                            Scene3DDepthTie tie = Scene3DDepthTie.None, uint obj = 0)
     {
         if (count == list.Length) Array.Resize(ref list, list.Length * 2);
-        list[count++] = new Scene3DDraw { Pipeline = p, Buffer = buf, First = first, Count = n, Transform = transform, Tie = tie, Texture = -1 };
+        list[count++] = new Scene3DDraw { Pipeline = p, Buffer = buf, First = first, Count = n, Transform = transform, Tie = tie, Texture = -1, Object = obj };
     }
 
     /// <summary>A draw of object <paramref name="id"/>'s batch: as it is when nothing moves it (under its element's
@@ -761,15 +1041,15 @@ public sealed class Scene3DFramePlan
         int own = element >= 0 ? ElementSlot(element) : 0;
         if (preview is null || !preview.IsMoving(id))
         {
-            Add(ref Draws, ref DrawCount, p, buf, first, n, own, tie);
+            Add(ref Draws, ref DrawCount, p, buf, first, n, own, tie, id);
             return;
         }
-        if (identity && preview.KeepOriginal) Add(ref Draws, ref DrawCount, p, buf, first, n, own, tie);
+        if (identity && preview.KeepOriginal) Add(ref Draws, ref DrawCount, p, buf, first, n, own, tie, id);
         int copies = Math.Min(preview.Copies.Length, MaxPreviewCopies);
         int start = element >= 0 ? ComboSlots(preview, element, copies) : _copyBase;
         for (int k = 0; k < copies; k++)
         {
-            Add(ref Draws, ref DrawCount, p, buf, first, n, start + k, tie);
+            Add(ref Draws, ref DrawCount, p, buf, first, n, start + k, tie, id);
             TransformBytes += TransformBytesPerDraw;
         }
     }
@@ -902,7 +1182,8 @@ public sealed class Scene3DFramePlan
         return cam;
     }
 
-    private static void Fill(float[] u, Viewer3DViewState view, in Camera3D cam, int w, int h, bool flipY, float px, float py, uint flags, int pickSize = 1)
+    private static void Fill(float[] u, Viewer3DViewState view, in Camera3D cam, int w, int h, bool flipY, float px, float py, uint flags, int pickSize = 1,
+                             bool quiet = false)
     {
         cam.WriteViewProjection(u.AsSpan(0, 16), w, h, flipY, px, py, pickSize);
         var eye = cam.Eye;
@@ -916,12 +1197,13 @@ public sealed class Scene3DFramePlan
         var c = view.Clip.Equation;
         u[20] = c.X; u[21] = c.Y; u[22] = c.Z; u[23] = c.W;
         var bits = MemoryMarshal.Cast<float, uint>(u.AsSpan());
-        bits[24] = view.Hovered;
-        bits[25] = view.HoveredFace < 0 ? Scene3DVertex.NoFace : (uint)view.HoveredFace;
+        // brief-em3d-106 R-em3d106-2c — a realistic PICTURE (quiet) draws no hover and no selection.
+        bits[24] = quiet ? 0 : view.Hovered;
+        bits[25] = quiet || view.HoveredFace < 0 ? Scene3DVertex.NoFace : (uint)view.HoveredFace;
         bits[26] = flags;
         // brief-em3d-67 — the shaders know three modes; Edge mode draws as Vertex mode does (its highlight is the overlay's).
         bits[27] = (uint)(view.Mode == Scene3DSelectMode.Edge ? Scene3DSelectMode.Vertex : view.Mode);
-        int nsel = Math.Min(view.Selection.Length, SelectionLimit);
+        int nsel = quiet ? 0 : Math.Min(view.Selection.Length, SelectionLimit);
         bits[28] = (uint)nsel;
         // 3D editor bugs round 3 — clip units per pixel (x, y), for the vertex shader's pixel offset of a thickened edge.
         u[29] = w > 0 ? 2f / w : 0;

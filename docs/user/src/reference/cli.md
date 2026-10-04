@@ -1561,7 +1561,10 @@ never an error — a design does not fail `check` because a photo moved: an imag
 has (`c3d.image.face-missing` — the record is kept, never dropped), two images on one face (`c3d.image.face-twice`), a
 face image whose Width or Height is not positive (`c3d.image.face-size`) and `"Locked"` on a sheet with no image
 (`c3d.image.locked-without-image`). An object that is not modelled and has no material raises no *has no material*
-warning: only what a run solves is warned of.
+warning: only what a run solves is warned of. The [realistic view's `Look`](drawing-in-3d.md#realistic) is display too: an
+`Exposure` or `Intensity` out of range (`c3d.look.range`), a `Background` (`c3d.look.background`) or an `Environment`
+(`c3d.look.environment`) spelled in no form the view reads is an error, and a `.hdr` that is missing or does not read is a
+warning (`c3d.look.hdr-unreadable`): the view lights the scene with Studio instead.
 
 The kind of document is inferred from the path, exactly as `convert` infers a format. A GDSII or
 Gerber file is **named as interchange** rather than called unreadable — it is simply not validated,

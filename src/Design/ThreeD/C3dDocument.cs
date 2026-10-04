@@ -773,6 +773,14 @@ public sealed class C3dDocument
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool AirBoxHidden { get; set; }
 
+    /// <summary>
+    /// brief-em3d-106 R-em3d106-5 — the realistic view's look: environment, rotation, intensity, exposure, background, and which
+    /// CAD chrome it shows again. Display state exactly as <see cref="AirBoxHidden"/> is (saved, undoable, and cleared by
+    /// <see cref="C3dPersistence.SerializeForRun"/>). Null, or any key omitted, is the default. Whether the realistic view is ON is
+    /// not here: that is view state, off on every open (overview D5).
+    /// </summary>
+    public C3dLook? Look { get; set; }
+
     /// <summary>Brief 42's embedded EM setups (the <c>.cem</c> schema minus <c>LayoutRef</c>), each read by the
     /// <c>.cem</c> reader (<see cref="C3dSetups.Read"/>).</summary>
     public List<JsonElement> Setups         { get; set; } = [];

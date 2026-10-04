@@ -60,6 +60,7 @@ public sealed class SolvedStatusTests : IDisposable
     [InlineData("instance Group", false)]
     [InlineData("field plots", false)]
     [InlineData("air box hidden", false)]
+    [InlineData("look", false)]
     [InlineData("active setup", false)]
     [InlineData("display unit", false)]
     [InlineData("snap grid", false)]
@@ -81,6 +82,7 @@ public sealed class SolvedStatusTests : IDisposable
             case "instance Group":        doc.Instances[0].Group = "pa"; break;
             case "field plots":           doc.FieldPlots.Add(new C3dFieldPlot { Name = "F1" }); break;
             case "air box hidden":        doc.AirBoxHidden = true; break;
+            case "look":                  doc.Look = new C3dLook { Environment = "Dark", Exposure = 1 }; break;
             case "active setup":          doc.ActiveSetup = "EM2"; break;
             case "display unit":          doc.DisplayUnit = LayoutUnit.Mm; break;
             case "snap grid":             doc.SnapDbu = 5000; break;

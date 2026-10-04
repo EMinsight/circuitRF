@@ -93,8 +93,33 @@ public static class C3dValidation
             Unread(i.Unread, $"The instance '{i.Name}'", found);
         }
 
+        Look(doc.Look, documentPath, found);
         Unread(doc.Unread, "The document", found);
         return found;
+    }
+
+    /// <summary>brief-em3d-106 R-em3d106-5 — the Look block: Exposure and Intensity in range, a Background spelling the view reads,
+    /// an Environment that is a studio or a <c>.hdr</c>, and (with a document path) a <c>.hdr</c> that reads — a WARNING only, since
+    /// the view then lights the scene with Studio and says so (R-em3d106-4d).</summary>
+    private static void Look(C3dLook? look, string? documentPath, List<Diagnostic> found)
+    {
+        if (look is null) return;
+        if (look.Exposure is { } ev && !(double.IsFinite(ev) && ev >= C3dLook.ExposureMin && ev <= C3dLook.ExposureMax))
+            found.Add(C3dDiagnostics.LookRange(nameof(C3dLook.Exposure), ev, C3dLook.ExposureMin, C3dLook.ExposureMax));
+        if (look.Intensity is { } k && !(double.IsFinite(k) && k >= C3dLook.IntensityMin && k <= C3dLook.IntensityMax))
+            found.Add(C3dDiagnostics.LookRange(nameof(C3dLook.Intensity), k, C3dLook.IntensityMin, C3dLook.IntensityMax));
+        if (look.Rotation is { } r && !double.IsFinite(r))
+            found.Add(C3dDiagnostics.LookRange(nameof(C3dLook.Rotation), r, double.NegativeInfinity, double.PositiveInfinity));
+        if (!look.TryBackground(out _, out _, out _)) found.Add(C3dDiagnostics.LookBackground(look.Background ?? ""));
+        var (_, path) = look.EnvironmentOf(out bool known);
+        if (!known) found.Add(C3dDiagnostics.LookEnvironment(look.Environment ?? ""));
+        else if (path is not null && documentPath is not null)
+        {
+            string file = C3dLook.ResolvePath(path, documentPath);
+            if (!File.Exists(file)) found.Add(C3dDiagnostics.LookHdrUnreadable(path, "the file does not exist"));
+            else if (!RadianceHdr.Probe(file, out string? why)) found.Add(C3dDiagnostics.LookHdrUnreadable(path, why ?? "it does not read"));
+        }
+        Unread(look.Unread, "The Look", found);
     }
 
     /// <summary>brief-em3d-105 — an object's or an instance's appearance: each fault MaterialValidation finds in a material's (one

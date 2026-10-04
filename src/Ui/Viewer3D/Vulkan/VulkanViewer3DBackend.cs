@@ -40,6 +40,7 @@ using Avalonia.Platform;
 using Avalonia.Rendering.Composition;
 using CircuitRF.Render.Scene3D;
 using CircuitRF.Render.Scene3D.Fields;
+using CircuitRF.Render.Scene3D.Look;
 using Vortice.Vulkan;
 using static Vortice.Vulkan.Vulkan;
 
@@ -128,6 +129,18 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
     /// <summary>brief-em3d-104 — the shade stream (Scene3DShadeVertex), held only while the realistic view is on. Vertex binding 1
     /// of the realistic pipelines (brief 106; scene.wgsl's header has the mapping).</summary>
     private (VkBuffer Buf, VkDeviceMemory Mem) _shade;
+    /// <summary>brief-em3d-106 — the realistic pipelines (opaque, premultiplied translucent, the backdrop); set 2's layout (the
+    /// environment's map, its sampler, the split-sum table); the environment's two RGBA16F textures and their set, held only while the
+    /// realistic view is on; and the appearance table at set 0 binding 2 — a 12 KB host-visible buffer made with the device, so the
+    /// descriptor set 0 always holds is always valid.</summary>
+    private VkPipeline _pPbr, _pPbrTrans, _pBackdrop;
+    private VkDescriptorSetLayout _envSetLayout;
+    private Texture? _envMap, _envBrdf;
+    private VkDescriptorPool _envPool;
+    private VkDescriptorSet _envSet;
+    private (VkBuffer Buf, VkDeviceMemory Mem) _apb;
+    private byte* _apMapped;
+    private bool _appearancesWritten;
     private int _fieldCount;
     private readonly (VkBuffer Buf, VkDeviceMemory Mem)[] _overlays = new (VkBuffer, VkDeviceMemory)[3];
 
@@ -280,7 +293,7 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
         _rpColor = RenderPass(api, pick: false);
         _rpPick = RenderPass(api, pick: true);
 
-        var bindings = stackalloc VkDescriptorSetLayoutBinding[2];
+        var bindings = stackalloc VkDescriptorSetLayoutBinding[3];
         bindings[0] = new VkDescriptorSetLayoutBinding
         {
             binding = 0, descriptorType = VkDescriptorType.UniformBufferDynamic, descriptorCount = 1,
@@ -292,7 +305,12 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
             binding = 1, descriptorType = VkDescriptorType.UniformBufferDynamic, descriptorCount = 1,
             stageFlags = VkShaderStageFlags.Vertex,
         };
-        var dsl = new VkDescriptorSetLayoutCreateInfo { bindingCount = 2, pBindings = bindings };
+        // brief-em3d-106 — the appearance table: a plain (not dynamic) uniform the realistic fragment reads.
+        bindings[2] = new VkDescriptorSetLayoutBinding
+        {
+            binding = 2, descriptorType = VkDescriptorType.UniformBuffer, descriptorCount = 1, stageFlags = VkShaderStageFlags.Fragment,
+        };
+        var dsl = new VkDescriptorSetLayoutCreateInfo { bindingCount = 3, pBindings = bindings };
         VkDescriptorSetLayout setLayout;
         Check(api.vkCreateDescriptorSetLayout(&dsl, null, &setLayout), "vkCreateDescriptorSetLayout");
         _setLayout = setLayout;
@@ -304,8 +322,17 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
         VkDescriptorSetLayout imageLayout;
         Check(api.vkCreateDescriptorSetLayout(&idsl, null, &imageLayout), "vkCreateDescriptorSetLayout");
         _imageSetLayout = imageLayout;
-        var both = stackalloc VkDescriptorSetLayout[2] { setLayout, imageLayout };
-        var pli = new VkPipelineLayoutCreateInfo { setLayoutCount = 2, pSetLayouts = both };
+        // brief-em3d-106 — set 2: the environment's map, its sampler and the split-sum table (tools/ShaderGen's binding map).
+        var eb = stackalloc VkDescriptorSetLayoutBinding[3];
+        eb[0] = new VkDescriptorSetLayoutBinding { binding = 0, descriptorType = VkDescriptorType.SampledImage, descriptorCount = 1, stageFlags = VkShaderStageFlags.Fragment };
+        eb[1] = new VkDescriptorSetLayoutBinding { binding = 1, descriptorType = VkDescriptorType.Sampler, descriptorCount = 1, stageFlags = VkShaderStageFlags.Fragment };
+        eb[2] = new VkDescriptorSetLayoutBinding { binding = 2, descriptorType = VkDescriptorType.SampledImage, descriptorCount = 1, stageFlags = VkShaderStageFlags.Fragment };
+        var edsl = new VkDescriptorSetLayoutCreateInfo { bindingCount = 3, pBindings = eb };
+        VkDescriptorSetLayout envLayout;
+        Check(api.vkCreateDescriptorSetLayout(&edsl, null, &envLayout), "vkCreateDescriptorSetLayout");
+        _envSetLayout = envLayout;
+        var both = stackalloc VkDescriptorSetLayout[3] { setLayout, imageLayout, envLayout };
+        var pli = new VkPipelineLayoutCreateInfo { setLayoutCount = 3, pSetLayouts = both };
         VkPipelineLayout layout;
         Check(api.vkCreatePipelineLayout(&pli, null, &layout), "vkCreatePipelineLayout");
         _layout = layout;
@@ -323,6 +350,13 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
         // brief-em3d-101 — an image: blended always (an opaque image's alpha is 1); the opaque one writes depth.
         _pImage = Pipeline(api, _rpColor, "fs_image"u8, VkPrimitiveTopology.TriangleList, blend: true, depthWrite: true, targets: 1, image: true);
         _pImageTrans = Pipeline(api, _rpColor, "fs_image"u8, VkPrimitiveTopology.TriangleList, blend: true, depthWrite: false, targets: 1, image: true);
+        // brief-em3d-106 — the realistic view: the scene's vertex (binding 0) and the shade stream (binding 1); the translucent one
+        // blends premultiplied; the backdrop is vs_grid's six vertices with no depth at all.
+        _pPbr = Pipeline(api, _rpColor, "fs_pbr"u8, VkPrimitiveTopology.TriangleList, blend: false, depthWrite: true, targets: 1, pbr: true);
+        _pPbrTrans = Pipeline(api, _rpColor, "fs_pbr"u8, VkPrimitiveTopology.TriangleList, blend: true, depthWrite: false, targets: 1, pbr: true,
+                              premultiplied: true);
+        _pBackdrop = Pipeline(api, _rpColor, "fs_backdrop"u8, VkPrimitiveTopology.TriangleList, blend: false, depthWrite: false, targets: 1,
+                              depthTest: false, grid: true);
         var sci = new VkSamplerCreateInfo
         {
             magFilter = VkFilter.Linear, minFilter = VkFilter.Linear, mipmapMode = VkSamplerMipmapMode.Linear,
@@ -342,8 +376,10 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
         void* tm;
         Check(api.vkMapMemory(_tb.Mem, 0, VK_WHOLE_SIZE, 0, &tm), "vkMapMemory");
         _tMapped = (byte*)tm;
-        var ps = new VkDescriptorPoolSize { type = VkDescriptorType.UniformBufferDynamic, descriptorCount = 2 };
-        var dpi = new VkDescriptorPoolCreateInfo { maxSets = 1, poolSizeCount = 1, pPoolSizes = &ps };
+        var ps = stackalloc VkDescriptorPoolSize[2];
+        ps[0] = new VkDescriptorPoolSize { type = VkDescriptorType.UniformBufferDynamic, descriptorCount = 2 };
+        ps[1] = new VkDescriptorPoolSize { type = VkDescriptorType.UniformBuffer, descriptorCount = 1 };
+        var dpi = new VkDescriptorPoolCreateInfo { maxSets = 1, poolSizeCount = 2, pPoolSizes = ps };
         VkDescriptorPool dp;
         Check(api.vkCreateDescriptorPool(&dpi, null, &dp), "vkCreateDescriptorPool");
         _pool = dp;
@@ -353,10 +389,17 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
         _set = set;
         var dbi = new VkDescriptorBufferInfo { buffer = _ub.Buf, offset = 0, range = Scene3DFramePlan.UniformBytes };
         var tbi = new VkDescriptorBufferInfo { buffer = _tb.Buf, offset = 0, range = Scene3DFramePlan.TransformBytesPerDraw };
-        var writes = stackalloc VkWriteDescriptorSet[2];
+        _apb = NewBuffer(api, Pbr.TableBytes, VkBufferUsageFlags.UniformBuffer, VkMemoryPropertyFlags.HostVisible | VkMemoryPropertyFlags.HostCoherent);
+        void* am;
+        Check(api.vkMapMemory(_apb.Mem, 0, VK_WHOLE_SIZE, 0, &am), "vkMapMemory");
+        _apMapped = (byte*)am;
+        new Span<byte>(_apMapped, Pbr.TableBytes).Clear();
+        var abi = new VkDescriptorBufferInfo { buffer = _apb.Buf, offset = 0, range = Pbr.TableBytes };
+        var writes = stackalloc VkWriteDescriptorSet[3];
         writes[0] = new VkWriteDescriptorSet { dstSet = set, dstBinding = 0, descriptorCount = 1, descriptorType = VkDescriptorType.UniformBufferDynamic, pBufferInfo = &dbi };
         writes[1] = new VkWriteDescriptorSet { dstSet = set, dstBinding = 1, descriptorCount = 1, descriptorType = VkDescriptorType.UniformBufferDynamic, pBufferInfo = &tbi };
-        api.vkUpdateDescriptorSets(2, writes, 0, null);
+        writes[2] = new VkWriteDescriptorSet { dstSet = set, dstBinding = 2, descriptorCount = 1, descriptorType = VkDescriptorType.UniformBuffer, pBufferInfo = &abi };
+        api.vkUpdateDescriptorSets(3, writes, 0, null);
 
         var cai = new VkCommandBufferAllocateInfo { commandPool = _cmdPool, level = VkCommandBufferLevel.Primary, commandBufferCount = Ring };
         fixed (VkCommandBuffer* c = _cmd) Check(api.vkAllocateCommandBuffers(&cai, c), "vkAllocateCommandBuffers");
@@ -444,9 +487,9 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
 
     private VkPipeline Pipeline(VkDeviceApi api, VkRenderPass rp, ReadOnlySpan<byte> fragmentEntry, VkPrimitiveTopology topology,
                                 bool blend, bool depthWrite, int targets, bool field = false, bool depthTest = true, bool grid = false,
-                                bool image = false)
+                                bool image = false, bool pbr = false, bool premultiplied = false)
     {
-        fixed (byte* vsName = field ? "vs_field"u8 : grid ? "vs_grid"u8 : image ? "vs_image"u8 : "vs"u8)
+        fixed (byte* vsName = field ? "vs_field"u8 : grid ? "vs_grid"u8 : image ? "vs_image"u8 : pbr ? "vs_pbr"u8 : "vs"u8)
         fixed (byte* fsName = fragmentEntry)
         {
             var stages = stackalloc VkPipelineShaderStageCreateInfo[2];
@@ -457,8 +500,12 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
                 binding = 0, stride = field ? (uint)FieldVertex.Stride : image ? (uint)Scene3DImageVertex.Stride : Scene3DVertex.Stride,
                 inputRate = VkVertexInputRate.Vertex,
             };
-            var attrs = stackalloc VkVertexInputAttributeDescription[5];
-            uint attrCount = field ? 3u : image ? 5u : 4u;
+            var attrs = stackalloc VkVertexInputAttributeDescription[6];
+            uint attrCount = field ? 3u : image ? 5u : pbr ? 6u : 4u;
+            // brief-em3d-106 — the shade stream: vertex binding 1 (scene.wgsl's header), 16 bytes a vertex.
+            var bindings = stackalloc VkVertexInputBindingDescription[2];
+            bindings[0] = vbd;
+            bindings[1] = new VkVertexInputBindingDescription { binding = 1, stride = (uint)Scene3DShadeVertex.Stride, inputRate = VkVertexInputRate.Vertex };
             if (image)
             {
                 // brief-em3d-101 — Scene3DImageVertex: position, texture coordinate, id, face, colour.
@@ -480,12 +527,17 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
                 attrs[1] = new VkVertexInputAttributeDescription { location = 1, binding = 0, format = VkFormat.R32Uint, offset = 12 };
                 attrs[2] = new VkVertexInputAttributeDescription { location = 2, binding = 0, format = VkFormat.R8G8B8A8Unorm, offset = 16 };
                 attrs[3] = new VkVertexInputAttributeDescription { location = 3, binding = 0, format = VkFormat.R32Uint, offset = 20 };
+                if (pbr)
+                {
+                    attrs[4] = new VkVertexInputAttributeDescription { location = 4, binding = 1, format = VkFormat.R32G32B32Sfloat, offset = 0 };
+                    attrs[5] = new VkVertexInputAttributeDescription { location = 5, binding = 1, format = VkFormat.R32Uint, offset = 12 };
+                }
             }
             var vin = grid
                 ? new VkPipelineVertexInputStateCreateInfo()
                 : new VkPipelineVertexInputStateCreateInfo
                 {
-                    vertexBindingDescriptionCount = 1, pVertexBindingDescriptions = &vbd,
+                    vertexBindingDescriptionCount = pbr ? 2u : 1u, pVertexBindingDescriptions = bindings,
                     vertexAttributeDescriptionCount = attrCount, pVertexAttributeDescriptions = attrs,
                 };
             var ia = new VkPipelineInputAssemblyStateCreateInfo { topology = topology };
@@ -505,7 +557,9 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
                 cba[i] = new VkPipelineColorBlendAttachmentState
                 {
                     blendEnable = blend,
-                    srcColorBlendFactor = VkBlendFactor.SrcAlpha, dstColorBlendFactor = VkBlendFactor.OneMinusSrcAlpha, colorBlendOp = VkBlendOp.Add,
+                    // brief-em3d-106 — PbrTranslucent's colour is premultiplied: ONE on RGB
+                    srcColorBlendFactor = premultiplied ? VkBlendFactor.One : VkBlendFactor.SrcAlpha, dstColorBlendFactor = VkBlendFactor.OneMinusSrcAlpha,
+                    colorBlendOp = VkBlendOp.Add,
                     // the shared image's alpha stays 1 (R-em3d28-1d)
                     srcAlphaBlendFactor = VkBlendFactor.One, dstAlphaBlendFactor = VkBlendFactor.OneMinusSrcAlpha, alphaBlendOp = VkBlendOp.Add,
                     colorWriteMask = VkColorComponentFlags.All,
@@ -628,9 +682,48 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
     /// </summary>
     private Texture? UploadTexture(Scene3DTexture t)
     {
-        var api = Api;
         var levels = t.Levels();
-        long total = levels.Sum(l => (long)l.Rgba.Length);
+        var tex = NewSampledImage(VkFormat.R8G8B8A8Unorm, [.. levels.Select(l => (l.Width, l.Height, l.Rgba))]);
+        if (tex is null) return null;
+        var api = Api;
+        bool done = false;
+        try
+        {
+            // A pool of exactly one set, owned by this texture and destroyed with it: no shared pool to size, none to exhaust.
+            var sizes = stackalloc VkDescriptorPoolSize[2];
+            sizes[0] = new VkDescriptorPoolSize { type = VkDescriptorType.SampledImage, descriptorCount = 1 };
+            sizes[1] = new VkDescriptorPoolSize { type = VkDescriptorType.Sampler, descriptorCount = 1 };
+            var dpi = new VkDescriptorPoolCreateInfo { maxSets = 1, poolSizeCount = 2, pPoolSizes = sizes };
+            VkDescriptorPool pool;
+            Check(api.vkCreateDescriptorPool(&dpi, null, &pool), "vkCreateDescriptorPool");
+            tex.Pool = pool;
+            var layout = _imageSetLayout;
+            var dai = new VkDescriptorSetAllocateInfo { descriptorPool = pool, descriptorSetCount = 1, pSetLayouts = &layout };
+            VkDescriptorSet set;
+            Check(api.vkAllocateDescriptorSets(&dai, &set), "vkAllocateDescriptorSets");
+            tex.Set = set;
+            var ii = new VkDescriptorImageInfo { imageView = tex.View, imageLayout = VkImageLayout.ShaderReadOnlyOptimal };
+            var si = new VkDescriptorImageInfo { sampler = _sampler };
+            var writes = stackalloc VkWriteDescriptorSet[2];
+            writes[0] = new VkWriteDescriptorSet { dstSet = set, dstBinding = 0, descriptorCount = 1, descriptorType = VkDescriptorType.SampledImage, pImageInfo = &ii };
+            writes[1] = new VkWriteDescriptorSet { dstSet = set, dstBinding = 1, descriptorCount = 1, descriptorType = VkDescriptorType.Sampler, pImageInfo = &si };
+            api.vkUpdateDescriptorSets(2, writes, 0, null);
+            done = true;
+            return tex;
+        }
+        finally { if (!done) ReleaseTexture(tex); }
+    }
+
+    /// <summary>
+    /// brief-em3d-106 R-em3d106-4c — brief 101's upload with the format an argument (RGBA8 for an image, R16G16B16A16_SFLOAT for the
+    /// environment, which every Vulkan device samples with linear filtering — a required format — so no RGBE fallback): an image with
+    /// every level given, staged in ONE buffer and copied level by level between two layout transitions (undefined → transfer
+    /// destination → shader read), and a view over all its levels. No descriptor set: the caller makes the one it binds.
+    /// </summary>
+    private Texture? NewSampledImage(VkFormat format, IReadOnlyList<(int Width, int Height, byte[] Bytes)> levels)
+    {
+        var api = Api;
+        long total = levels.Sum(l => (long)l.Bytes.Length);
         Counters.CountUpload(total);
         var staging = NewBuffer(api, total, VkBufferUsageFlags.TransferSrc, VkMemoryPropertyFlags.HostVisible | VkMemoryPropertyFlags.HostCoherent);
         // A failure part-way (out of device memory on a large photo, above all) releases what was made before it — the staging
@@ -642,13 +735,13 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
             void* p;
             Check(api.vkMapMemory(staging.Item2, 0, (ulong)total, 0, &p), "vkMapMemory");
             long at = 0;
-            foreach (var l in levels) { l.Rgba.AsSpan().CopyTo(new Span<byte>((byte*)p + at, l.Rgba.Length)); at += l.Rgba.Length; }
+            foreach (var l in levels) { l.Bytes.AsSpan().CopyTo(new Span<byte>((byte*)p + at, l.Bytes.Length)); at += l.Bytes.Length; }
             api.vkUnmapMemory(staging.Item2);
 
             uint mips = (uint)levels.Count;
             var ici = new VkImageCreateInfo
             {
-                imageType = VkImageType.Image2D, format = VkFormat.R8G8B8A8Unorm,
+                imageType = VkImageType.Image2D, format = format,
                 extent = new VkExtent3D { width = (uint)levels[0].Width, height = (uint)levels[0].Height, depth = 1 },
                 mipLevels = mips, arrayLayers = 1, samples = VkSampleCountFlags.Count1, tiling = VkImageTiling.Optimal,
                 usage = VkImageUsageFlags.Sampled | VkImageUsageFlags.TransferDst, sharingMode = VkSharingMode.Exclusive,
@@ -685,7 +778,7 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
                         imageSubresource = new VkImageSubresourceLayers { aspectMask = VkImageAspectFlags.Color, mipLevel = (uint)k, layerCount = 1 },
                         imageExtent = new VkExtent3D { width = (uint)levels[k].Width, height = (uint)levels[k].Height, depth = 1 },
                     };
-                    offset += (ulong)levels[k].Rgba.Length;
+                    offset += (ulong)levels[k].Bytes.Length;
                 }
                 fixed (VkBufferImageCopy* r = regions)
                     api.vkCmdCopyBufferToImage(cb, staging.Item1, img, VkImageLayout.TransferDstOptimal, (uint)regions.Length, r);
@@ -697,30 +790,11 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
                 };
                 api.vkCmdPipelineBarrier(cb, VkPipelineStageFlags.Transfer, VkPipelineStageFlags.FragmentShader, 0, 0, null, 0, null, 1, &toRead);
             });
-            var vci = new VkImageViewCreateInfo { image = img, viewType = VkImageViewType.Image2D, format = VkFormat.R8G8B8A8Unorm, subresourceRange = all };
+            var vci = new VkImageViewCreateInfo { image = img, viewType = VkImageViewType.Image2D, format = format, subresourceRange = all };
             VkImageView view;
             Check(api.vkCreateImageView(&vci, null, &view), "vkCreateImageView");
             tex.View = view;
 
-            // A pool of exactly one set, owned by this texture and destroyed with it: no shared pool to size, none to exhaust.
-            var sizes = stackalloc VkDescriptorPoolSize[2];
-            sizes[0] = new VkDescriptorPoolSize { type = VkDescriptorType.SampledImage, descriptorCount = 1 };
-            sizes[1] = new VkDescriptorPoolSize { type = VkDescriptorType.Sampler, descriptorCount = 1 };
-            var dpi = new VkDescriptorPoolCreateInfo { maxSets = 1, poolSizeCount = 2, pPoolSizes = sizes };
-            VkDescriptorPool pool;
-            Check(api.vkCreateDescriptorPool(&dpi, null, &pool), "vkCreateDescriptorPool");
-            tex.Pool = pool;
-            var layout = _imageSetLayout;
-            var dai = new VkDescriptorSetAllocateInfo { descriptorPool = pool, descriptorSetCount = 1, pSetLayouts = &layout };
-            VkDescriptorSet set;
-            Check(api.vkAllocateDescriptorSets(&dai, &set), "vkAllocateDescriptorSets");
-            tex.Set = set;
-            var ii = new VkDescriptorImageInfo { imageView = view, imageLayout = VkImageLayout.ShaderReadOnlyOptimal };
-            var si = new VkDescriptorImageInfo { sampler = _sampler };
-            var writes = stackalloc VkWriteDescriptorSet[2];
-            writes[0] = new VkWriteDescriptorSet { dstSet = set, dstBinding = 0, descriptorCount = 1, descriptorType = VkDescriptorType.SampledImage, pImageInfo = &ii };
-            writes[1] = new VkWriteDescriptorSet { dstSet = set, dstBinding = 1, descriptorCount = 1, descriptorType = VkDescriptorType.Sampler, pImageInfo = &si };
-            api.vkUpdateDescriptorSets(2, writes, 0, null);
             done = true;
             return tex;
         }
@@ -742,6 +816,66 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
         if (t.View.Handle != 0) api.vkDestroyImageView(t.View, null);
         if (t.Image.Handle != 0) api.vkDestroyImage(t.Image, null);
         if (t.Memory.Handle != 0) api.vkFreeMemory(t.Memory, null);
+    }
+
+    // ── the realistic view's lighting (brief-em3d-106) ─────────────────────────────────────────────────────────────────
+
+    /// <summary>The table into the mapped buffer set 0 binding 2 names. A frame in flight may still read it, so the GPU is waited for
+    /// first — once per scene whose looks changed, never per frame.</summary>
+    public override void UploadAppearances(float[] table)
+    {
+        var api = Api;
+        api.vkDeviceWaitIdle();
+        fixed (float* p = table) Buffer.MemoryCopy(p, _apMapped, Pbr.TableBytes, Math.Min(Pbr.TableBytes, table.Length * 4));
+        Counters.CountUpload(table.Length * 4L);
+        _appearancesWritten = true;
+    }
+
+    public override void UploadEnvironment(Render.Scene3D.Look.PrefilteredEnvironment environment)
+    {
+        var api = Api;
+        ReleaseEnvironmentTextures();
+        _envMap = NewSampledImage(VkFormat.R16G16B16A16Sfloat, [.. environment.Levels.Select(l => (l.Width, l.Height, l.Bytes.ToArray()))]);
+        _envBrdf = NewSampledImage(VkFormat.R16G16B16A16Sfloat,
+            [(Pbr.BrdfSize, Pbr.BrdfSize, MemoryMarshal.AsBytes(environment.BrdfTable.AsSpan()).ToArray())]);
+        if (_envMap is null || _envBrdf is null) return;
+        var sizes = stackalloc VkDescriptorPoolSize[2];
+        sizes[0] = new VkDescriptorPoolSize { type = VkDescriptorType.SampledImage, descriptorCount = 2 };
+        sizes[1] = new VkDescriptorPoolSize { type = VkDescriptorType.Sampler, descriptorCount = 1 };
+        var dpi = new VkDescriptorPoolCreateInfo { maxSets = 1, poolSizeCount = 2, pPoolSizes = sizes };
+        VkDescriptorPool pool;
+        Check(api.vkCreateDescriptorPool(&dpi, null, &pool), "vkCreateDescriptorPool");
+        _envPool = pool;
+        var layout = _envSetLayout;
+        var dai = new VkDescriptorSetAllocateInfo { descriptorPool = pool, descriptorSetCount = 1, pSetLayouts = &layout };
+        VkDescriptorSet set;
+        Check(api.vkAllocateDescriptorSets(&dai, &set), "vkAllocateDescriptorSets");
+        _envSet = set;
+        var mi = new VkDescriptorImageInfo { imageView = _envMap.View, imageLayout = VkImageLayout.ShaderReadOnlyOptimal };
+        var si = new VkDescriptorImageInfo { sampler = _sampler };
+        var bi = new VkDescriptorImageInfo { imageView = _envBrdf.View, imageLayout = VkImageLayout.ShaderReadOnlyOptimal };
+        var writes = stackalloc VkWriteDescriptorSet[3];
+        writes[0] = new VkWriteDescriptorSet { dstSet = set, dstBinding = 0, descriptorCount = 1, descriptorType = VkDescriptorType.SampledImage, pImageInfo = &mi };
+        writes[1] = new VkWriteDescriptorSet { dstSet = set, dstBinding = 1, descriptorCount = 1, descriptorType = VkDescriptorType.Sampler, pImageInfo = &si };
+        writes[2] = new VkWriteDescriptorSet { dstSet = set, dstBinding = 2, descriptorCount = 1, descriptorType = VkDescriptorType.SampledImage, pImageInfo = &bi };
+        api.vkUpdateDescriptorSets(3, writes, 0, null);
+    }
+
+    /// <summary>The environment's textures and set. The appearance buffer stays (12 KB, made with the device): set 0 names it.</summary>
+    public override void ReleaseEnvironment()
+    {
+        ReleaseEnvironmentTextures();
+        _appearancesWritten = false;
+    }
+
+    private void ReleaseEnvironmentTextures()
+    {
+        if (_api is not { } api) return;
+        api.vkDeviceWaitIdle();
+        if (_envPool.Handle != 0) api.vkDestroyDescriptorPool(_envPool, null);
+        (_envPool, _envSet) = (default, default);
+        ReleaseTexture(_envMap); ReleaseTexture(_envBrdf);
+        (_envMap, _envBrdf) = (null, null);
     }
 
     /// <summary>brief-em3d-104 R-em3d104-3a — the whole shade stream, device-local, as the vertices are.</summary>
@@ -1161,6 +1295,7 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
             var tie = Scene3DDepthTie.None;
             SetTie(api, cb, tie);
             Scene3DBuffer bound = (Scene3DBuffer)(-1);
+            bool envBound = false, shadeBound = false;
             for (int i = 0; i < plan.DrawCount; i++)
             {
                 ref var d = ref plan.Draws[i];
@@ -1171,7 +1306,11 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
                     Scene3DBuffer.Overlay0 => _overlays[0].Buf, Scene3DBuffer.Overlay1 => _overlays[1].Buf, _ => _overlays[2].Buf,
                 };
                 bool lines = d.Pipeline is Scene3DPipeline.Lines or Scene3DPipeline.Edges, field = d.Pipeline == Scene3DPipeline.Field;
-                bool grid = d.Pipeline == Scene3DPipeline.Grid;
+                // brief-em3d-106 — the backdrop draws like the grid; a realistic draw needs the environment's set and the table.
+                bool grid = d.Pipeline is Scene3DPipeline.Grid or Scene3DPipeline.Backdrop;
+                bool pbr = d.Pipeline is Scene3DPipeline.Pbr or Scene3DPipeline.PbrTranslucent;
+                if ((pbr || d.Pipeline == Scene3DPipeline.Backdrop) && (_envSet.Handle == 0 || !_appearancesWritten)) continue;
+                if (pbr && _shade.Buf.Handle == 0) continue;
                 // brief-em3d-101 — an image draw: not indexed; its texture's set at set 1.
                 bool isImage = d.Pipeline is Scene3DPipeline.Image or Scene3DPipeline.ImageTranslucent;
                 var bound1 = _textures.Bound;
@@ -1187,8 +1326,17 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
                         Scene3DPipeline.Translucent => _pTrans, Scene3DPipeline.Lines => _pLines,
                         Scene3DPipeline.Field => _pField, Scene3DPipeline.Edges => _pEdges,
                         Scene3DPipeline.OnTop => _pTop, Scene3DPipeline.Grid => _pGrid,
-                        Scene3DPipeline.Image => _pImage, Scene3DPipeline.ImageTranslucent => _pImageTrans, _ => _pOpaque,
+                        Scene3DPipeline.Image => _pImage, Scene3DPipeline.ImageTranslucent => _pImageTrans,
+                        Scene3DPipeline.Pbr => _pPbr, Scene3DPipeline.PbrTranslucent => _pPbrTrans, Scene3DPipeline.Backdrop => _pBackdrop,
+                        _ => _pOpaque,
                     });
+                    if ((pbr || state == Scene3DPipeline.Backdrop) && !envBound)
+                    {
+                        // brief-em3d-106 — set 2, once a frame: binding set 0 again (a transform) leaves it, the layouts being one.
+                        var es = _envSet;
+                        api.vkCmdBindDescriptorSets(cb, VkPipelineBindPoint.Graphics, _layout, 2, 1, &es, 0, null);
+                        envBound = true;
+                    }
                 }
                 if (isImage)
                 {
@@ -1213,6 +1361,13 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
                     bound = d.Buffer;
                     api.vkCmdBindVertexBuffers(cb, 0, 1, &buf, &zero);
                     if (!lines && !field && !isImage) api.vkCmdBindIndexBuffer(cb, _ib.Buf, 0, VkIndexType.Uint32);
+                }
+                if (pbr && !shadeBound)
+                {
+                    // brief-em3d-106 — the shade stream at vertex binding 1; no other pipeline reads binding 1, so it stays bound.
+                    var sb = _shade.Buf;
+                    api.vkCmdBindVertexBuffers(cb, 1, 1, &sb, &zero);
+                    shadeBound = true;
                 }
                 if (lines || field || isImage) api.vkCmdDraw(cb, (uint)d.Count, 1, (uint)d.First, 0);
                 else api.vkCmdDrawIndexed(cb, (uint)d.Count, 1, (uint)d.First, 0, 0);
@@ -1320,6 +1475,9 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
         api.vkDeviceWaitIdle();
         ReleaseImages();
         Free(api, _vb); Free(api, _ib); Free(api, _lines); Free(api, _field); Free(api, _imageVb); Free(api, _shade);
+        ReleaseEnvironmentTextures();
+        api.vkUnmapMemory(_apb.Mem);
+        Free(api, _apb);
         _textures.Clear(ReleaseTexture);
         foreach (var o in _overlays) Free(api, o);
         foreach (var b in _pickBuf) Free(api, b);
@@ -1333,6 +1491,8 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
         api.vkDestroyPipeline(_pLines, null); api.vkDestroyPipeline(_pPick, null); api.vkDestroyPipeline(_pField, null);
         api.vkDestroyPipeline(_pEdges, null); api.vkDestroyPipeline(_pTop, null); api.vkDestroyPipeline(_pGrid, null);
         api.vkDestroyPipeline(_pImage, null); api.vkDestroyPipeline(_pImageTrans, null);
+        api.vkDestroyPipeline(_pPbr, null); api.vkDestroyPipeline(_pPbrTrans, null); api.vkDestroyPipeline(_pBackdrop, null);
+        api.vkDestroyDescriptorSetLayout(_envSetLayout, null);
         api.vkDestroySampler(_sampler, null); api.vkDestroyDescriptorSetLayout(_imageSetLayout, null);
         api.vkDestroyPipelineLayout(_layout, null); api.vkDestroyDescriptorPool(_pool, null);
         api.vkDestroyDescriptorSetLayout(_setLayout, null); api.vkDestroyShaderModule(_module, null);

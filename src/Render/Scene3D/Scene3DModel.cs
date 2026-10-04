@@ -50,6 +50,10 @@ public struct Scene3DVertex(float x, float y, float z, uint id, uint rgba, uint 
 public struct Scene3DShadeVertex(float nx, float ny, float nz, uint slot = 0)
 {
     public const int Stride = 16;
+    /// <summary>brief-em3d-106 — <see cref="Slot"/>'s low 8 bits are the appearance row; this bit says the vertex colour's alpha is a
+    /// STATED coverage (a Transparency, a dimmed context part) that the realistic view multiplies on (overview D12), not a kind's
+    /// default, which the appearance's Transmission replaces.</summary>
+    public const uint StatedAlpha = 0x100, SlotMask = 0xFF;
     public float Nx = nx, Ny = ny, Nz = nz;
     public uint Slot = slot;
 }

@@ -223,12 +223,16 @@ public sealed class ShadingNormalsTests : IDisposable
         session.ShadeStream = true;
         Frame(2); Frame(3);
         Assert.Equal(1, fake.ShadeUploads);
-        Assert.Equal(16L * scene.Vertices.Length, fake.Counters.UploadBytesTotal - off);
+        // brief-em3d-106 — with the stream comes the scene's appearance table (one upload, Pbr.TableBytes); the stream itself is still
+        // 16 bytes a vertex.
+        Assert.Equal(1, fake.AppearanceUploads);
+        long table = CircuitRF.Render.Scene3D.Look.Pbr.TableBytes;
+        Assert.Equal(16L * scene.Vertices.Length + table, fake.Counters.UploadBytesTotal - off);
 
         session.ShadeStream = false;
         Frame(4);
         Assert.Equal(1, fake.ShadeReleases);
-        Assert.Equal(off + 16L * scene.Vertices.Length, fake.Counters.UploadBytesTotal);
+        Assert.Equal(off + 16L * scene.Vertices.Length + table, fake.Counters.UploadBytesTotal);
     }
 
     // ── 10. patch ──────────────────────────────────────────────────────────────────────────────

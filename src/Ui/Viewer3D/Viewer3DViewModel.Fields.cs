@@ -794,7 +794,8 @@ public sealed partial class Viewer3DViewModel
             var plan = new Scene3DFramePlan();
             float cx = View.CursorX, cy = View.CursorY;
             View.CursorX = View.CursorY = -1;
-            try { plan.Plan(Scene, View, w, h, backend.FlipY, pick: false, MeshOverlay, SectionOverlay, GridOverlay, FieldDrawn); }
+            // brief-em3d-106 R-em3d106-2c — export: in the realistic view a picture carries no hover and no selection.
+            try { plan.Plan(Scene, View, w, h, backend.FlipY, pick: false, MeshOverlay, SectionOverlay, GridOverlay, FieldDrawn, export: true); }
             finally { View.CursorX = cx; View.CursorY = cy; }
             var rgba = Session.RenderPixels(plan, Scene, MeshOverlay, SectionOverlay, GridOverlay, FieldDrawn);
             if (rgba is null) { error = "the 3D view has closed."; return null; }

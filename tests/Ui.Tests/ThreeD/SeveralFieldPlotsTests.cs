@@ -152,7 +152,7 @@ public sealed class SeveralFieldPlotsTests : IDisposable
     [Fact]
     public void Gate8_TheUniformBlock_FitsMetalsInlineLimit()
     {
-        Assert.Equal(2016, Scene3DFramePlan.UniformBytes);
+        Assert.Equal(2304, Scene3DFramePlan.UniformBytes);   // brief-em3d-106 added the look block (288 bytes)
         Assert.True(Scene3DFramePlan.UniformBytes <= CircuitRF.Ui.Viewer3D.Metal.MetalViewer3DBackend.InlineBytesLimit);
         CircuitRF.Ui.Viewer3D.Metal.MetalViewer3DBackend.AssertUniformsFitInline();
     }

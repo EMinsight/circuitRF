@@ -19,6 +19,7 @@ using Avalonia.Rendering.Composition;
 using CircuitRF.Render.Scene3D;
 using CircuitRF.Render.Scene3D.Edit;
 using CircuitRF.Render.Scene3D.Fields;
+using CircuitRF.Render.Scene3D.Look;
 using static CircuitRF.Ui.Viewer3D.Metal.ObjC;
 
 namespace CircuitRF.Ui.Viewer3D.Metal;
@@ -35,6 +36,9 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
     /// <summary>brief-em3d-101 — an image's texture: RGBA8 UNORM, never _sRGB, so a texel reaches the framebuffer with the value a
     /// vertex colour of that value would.</summary>
     private const nuint FmtRGBA8Unorm = 70;
+    /// <summary>brief-em3d-106 R-em3d106-4c — the environment's two textures: half-float RGBA, which every Mac Metal device samples
+    /// with linear filtering, so no RGBE fallback was needed.</summary>
+    private const nuint FmtRGBA16Float = 115;
     private const nuint VtxFloat3 = 30, VtxUInt = 36, VtxUChar4Normalized = 9, VtxFloat2 = 29;
     private const nuint PrimLine = 1, PrimTriangle = 3, IndexUInt32 = 1;
     private const nuint WindingCounterClockwise = 1;
@@ -61,6 +65,10 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
     /// <summary>brief-em3d-104 — the shade stream (Scene3DShadeVertex), held only while the realistic view is on; 0 otherwise.
     /// Bound at vertex buffer index 3 by the realistic pipelines (brief 106; scene.wgsl's header has the mapping).</summary>
     private nint _shade;
+    /// <summary>brief-em3d-106 — the realistic pipelines (opaque, translucent premultiplied, the backdrop), the appearance table
+    /// (fragment buffer 4) and the environment's two textures (fragment textures 1 and 2, sampled through the image sampler at index
+    /// 1); every one but the pipelines held only while the realistic view is on.</summary>
+    private nint _pPbr, _pPbrTrans, _pBackdrop, _appearances, _envMap, _envBrdf;
     private readonly nint[] _overlays = new nint[3];
     private readonly nint[] _rb = new nint[Ring], _rbCmd = new nint[Ring];
     private readonly long[] _rbFrame = new long[Ring];
@@ -127,6 +135,7 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
         nint vsf = Fn("vs_field"), fsf = Fn("fs_field");
         nint vsg = Fn("vs_grid"), fsg = Fn("fs_grid");
         nint vsi = Fn("vs_image"), fsi = Fn("fs_image");
+        nint vsp = Fn("vs_pbr"), fsp2 = Fn("fs_pbr"), fsb = Fn("fs_backdrop");
 
         nint vd = Send(Class("MTLVertexDescriptor"), Sel("vertexDescriptor"));
         nint attrs = Send(vd, Sel("attributes"));
@@ -159,7 +168,21 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
         IAttr(0, VtxFloat3, 0); IAttr(1, VtxFloat2, 12); IAttr(2, VtxUInt, 20); IAttr(3, VtxUInt, 24); IAttr(4, VtxUChar4Normalized, 28);
         SendV(Idx(Send(ivd, Sel("layouts")), 0), Sel("setStride:"), (nuint)Scene3DImageVertex.Stride);
 
-        nint Pipe(nint fs, bool blend, bool pick, nuint topologyClass, nint vfn = 0, nint vdesc = 0)
+        // brief-em3d-106 — the realistic triangles: the scene's vertex at buffer 0 (attributes 0–3, as vd) and the shade stream at
+        // buffer 3 (attribute 4 the normal, 5 the slot) — scene.wgsl's header and tools/ShaderGen's README state the index.
+        nint pvd = Send(Class("MTLVertexDescriptor"), Sel("vertexDescriptor"));
+        nint pattrs = Send(pvd, Sel("attributes"));
+        void PAttr(nuint i, nuint fmt, nuint off, nuint buffer)
+        {
+            nint a = Idx(pattrs, i);
+            SendV(a, Sel("setFormat:"), fmt); SendV(a, Sel("setOffset:"), off); SendV(a, Sel("setBufferIndex:"), buffer);
+        }
+        PAttr(0, VtxFloat3, 0, 0); PAttr(1, VtxUInt, 12, 0); PAttr(2, VtxUChar4Normalized, 16, 0); PAttr(3, VtxUInt, 20, 0);
+        PAttr(4, VtxFloat3, 0, ShadeBufferIndex); PAttr(5, VtxUInt, 12, ShadeBufferIndex);
+        SendV(Idx(Send(pvd, Sel("layouts")), 0), Sel("setStride:"), (nuint)Scene3DVertex.Stride);
+        SendV(Idx(Send(pvd, Sel("layouts")), ShadeBufferIndex), Sel("setStride:"), (nuint)Scene3DShadeVertex.Stride);
+
+        nint Pipe(nint fs, bool blend, bool pick, nuint topologyClass, nint vfn = 0, nint vdesc = 0, bool premultiplied = false)
         {
             nint d = Send(Send(Class("MTLRenderPipelineDescriptor"), S.alloc), S.init);
             SendV(d, Sel("setVertexFunction:"), vfn != 0 ? vfn : vs);
@@ -181,7 +204,8 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
                 if (blend)
                 {
                     SendB(ca, Sel("setBlendingEnabled:"), true);
-                    SendV(ca, Sel("setSourceRGBBlendFactor:"), (nuint)4);         // SourceAlpha
+                    // brief-em3d-106 — PbrTranslucent's colour is premultiplied: One, so a reflection on glass adds on top
+                    SendV(ca, Sel("setSourceRGBBlendFactor:"), premultiplied ? 1 : (nuint)4);   // One : SourceAlpha
                     SendV(ca, Sel("setDestinationRGBBlendFactor:"), (nuint)5);    // OneMinusSourceAlpha
                     SendV(ca, Sel("setSourceAlphaBlendFactor:"), (nuint)1);       // One: the image's alpha stays 1
                     SendV(ca, Sel("setDestinationAlphaBlendFactor:"), (nuint)5);
@@ -203,6 +227,9 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
         _pGrid = Pipe(fsg, true, false, TopoTriangle, vsg, -1);
         _pImage = Pipe(fsi, true, false, TopoTriangle, vsi, ivd);
         _pImageTrans = _pImage;
+        _pPbr = Pipe(fsp2, false, false, TopoTriangle, vsp, pvd);
+        _pPbrTrans = Pipe(fsp2, true, false, TopoTriangle, vsp, pvd, premultiplied: true);
+        _pBackdrop = Pipe(fsb, false, false, TopoTriangle, vsg, -1);
 
         // brief-em3d-101 — one sampler for every image: linear between texels and between mip levels, clamped to the edge (the
         // shader draws nothing outside [0, 1] itself).
@@ -236,7 +263,7 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
 
         // The pipelines hold what they need; the library and its functions were ours (new…), the
         // vertex descriptor was not (a class factory's autoreleased object).
-        foreach (nint f in new[] { vs, fsc, fsl, fsp, fse, fst, vsf, fsf, vsi, fsi }) Send(f, S.release);
+        foreach (nint f in new[] { vs, fsc, fsl, fsp, fse, fst, vsf, fsf, vsi, fsi, vsp, fsp2, fsb }) Send(f, S.release);
         Send(lib, S.release);
     }
 
@@ -258,10 +285,15 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
     /// <summary>brief-em3d-101 R-em3d101-4d — a texture with every one of its CPU-built mip levels, uploaded once per
     /// <see cref="Scene3DTexture"/> (Scene3DTextureResidency decides when). Counted with the buffers.</summary>
     private nint UploadTexture(Scene3DTexture t)
+        => NewSampledTexture(FmtRGBA8Unorm, 4, [.. t.Levels().Select(l => (l.Width, l.Height, l.Rgba))]);
+
+    /// <summary>brief-em3d-106 R-em3d106-4c — a sampled 2D texture of <paramref name="format"/> (<paramref name="texelBytes"/> a texel)
+    /// with every level given: the upload path brief 101 made, with the format an argument (RGBA8 for an image, RGBA16F for the
+    /// environment). Counted with the buffers.</summary>
+    private nint NewSampledTexture(nuint format, int texelBytes, IReadOnlyList<(int Width, int Height, byte[] Bytes)> levels)
     {
-        var levels = t.Levels();
         nint d = ((delegate* unmanaged<nint, nint, nuint, nuint, nuint, byte, nint>)MsgSend)(Class("MTLTextureDescriptor"),
-            Sel("texture2DDescriptorWithPixelFormat:width:height:mipmapped:"), FmtRGBA8Unorm, (nuint)levels[0].Width, (nuint)levels[0].Height, 0);
+            Sel("texture2DDescriptorWithPixelFormat:width:height:mipmapped:"), format, (nuint)levels[0].Width, (nuint)levels[0].Height, 0);
         SendV(d, Sel("setMipmapLevelCount:"), (nuint)levels.Count);
         SendV(d, Sel("setUsage:"), (nuint)1);                        // ShaderRead
         nint tex = Send(_device, Sel("newTextureWithDescriptor:"), d);
@@ -270,11 +302,53 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
         {
             var l = levels[k];
             var region = new MtlRegion { Size = new MtlSize { W = (nuint)l.Width, H = (nuint)l.Height, D = 1 } };
-            fixed (byte* px = l.Rgba)
-                ((delegate* unmanaged<nint, nint, MtlRegion, nuint, void*, nuint, void>)MsgSend)(tex, Sel_replaceRegion, region, (nuint)k, px, (nuint)(l.Width * 4));
-            Counters.CountUpload(l.Rgba.Length);
+            fixed (byte* px = l.Bytes)
+                ((delegate* unmanaged<nint, nint, MtlRegion, nuint, void*, nuint, void>)MsgSend)(tex, Sel_replaceRegion, region, (nuint)k, px, (nuint)(l.Width * texelBytes));
+            Counters.CountUpload(l.Bytes.Length);
         }
         return tex;
+    }
+
+    // ── the realistic view's lighting (brief-em3d-106) ─────────────────────────────────────────────────────────────────
+
+    /// <summary>The shade stream's vertex buffer index: 0 the geometry, 1 the uniforms, 2 the per-draw transform (one argument table).</summary>
+    private const nuint ShadeBufferIndex = 3;
+    /// <summary>The appearance table's fragment buffer index (tools/ShaderGen: [[buffer(4)]]).</summary>
+    private const nuint AppearanceBufferIndex = 4;
+
+    public override void UploadAppearances(float[] table)
+    {
+        Release(ref _appearances);
+        fixed (float* p = table) _appearances = NewBuffer(p, table.Length * 4);
+    }
+
+    public override void UploadEnvironment(PrefilteredEnvironment environment)
+    {
+        Release(ref _envMap); Release(ref _envBrdf);
+        _envMap = NewSampledTexture(FmtRGBA16Float, 8, [.. environment.Levels.Select(l => (l.Width, l.Height, l.Bytes.ToArray()))]);
+        _envBrdf = NewSampledTexture(FmtRGBA16Float, 8,
+            [(Pbr.BrdfSize, Pbr.BrdfSize,
+              System.Runtime.InteropServices.MemoryMarshal.AsBytes(environment.BrdfTable.AsSpan()).ToArray())]);
+    }
+
+    /// <summary>A command buffer already encoded retains what it reads, so releasing here is safe mid-flight.</summary>
+    public override void ReleaseEnvironment()
+    {
+        Release(ref _envMap); Release(ref _envBrdf); Release(ref _appearances);
+    }
+
+    private static readonly nint Sel_setFragmentBuffer = Sel("setFragmentBuffer:offset:atIndex:");
+
+    /// <summary>The environment, its sampler and the appearance table for the fragment stage: false when the view has not got them
+    /// yet (the draw is skipped, never drawn unlit).</summary>
+    private bool BindLook(nint e)
+    {
+        if (_envMap == 0 || _envBrdf == 0 || _appearances == 0) return false;
+        ((delegate* unmanaged<nint, nint, nint, nuint, void>)MsgSend)(e, Sel_setFragmentTexture, _envMap, 1);
+        ((delegate* unmanaged<nint, nint, nint, nuint, void>)MsgSend)(e, Sel_setFragmentTexture, _envBrdf, 2);
+        ((delegate* unmanaged<nint, nint, nint, nuint, void>)MsgSend)(e, Sel_setFragmentSampler, _imageSampler, 1);
+        ((delegate* unmanaged<nint, nint, nint, nuint, nuint, void>)MsgSend)(e, Sel_setFragmentBuffer, _appearances, 0, AppearanceBufferIndex);
+        return true;
     }
 
     private static void ReleaseTexture(nint tex) { if (tex != 0) Send(tex, S.release); }
@@ -605,6 +679,28 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
                         draws++;
                         continue;
                     }
+                    if (d.Pipeline == Scene3DPipeline.Backdrop)
+                    {
+                        // brief-em3d-106 — the backdrop: vs_grid's six vertices, no buffer, no depth.
+                        if (!BindLook(e)) continue;
+                        SendV(e, S.setRenderPipelineState, _pBackdrop);
+                        SendV(e, S.setDepthStencilState, _dsAlways);
+                        ((delegate* unmanaged<nint, nint, nuint, nuint, nuint, void>)MsgSend)(e, Sel_drawPrimitives, PrimTriangle, 0, 6);
+                        draws++;
+                        continue;
+                    }
+                    if (d.Pipeline is Scene3DPipeline.Pbr or Scene3DPipeline.PbrTranslucent)
+                    {
+                        // brief-em3d-106 — the scene's triangles with the shade stream beside them, lit.
+                        if (_vb == 0 || _ib == 0 || _shade == 0 || !BindLook(e)) continue;
+                        SendV(e, S.setRenderPipelineState, d.Pipeline == Scene3DPipeline.Pbr ? _pPbr : _pPbrTrans);
+                        SendV(e, S.setDepthStencilState, d.Pipeline == Scene3DPipeline.Pbr ? _dsWrite : _dsNoWrite);
+                        ((delegate* unmanaged<nint, nint, nint, nuint, nuint, void>)MsgSend)(e, S.setVertexBuffer, _vb, 0, 0);
+                        ((delegate* unmanaged<nint, nint, nint, nuint, nuint, void>)MsgSend)(e, S.setVertexBuffer, _shade, 0, ShadeBufferIndex);
+                        DrawIndexed(e, d);
+                        draws++;
+                        continue;
+                    }
                     if (d.Pipeline is Scene3DPipeline.Image or Scene3DPipeline.ImageTranslucent)
                     {
                         // brief-em3d-101 — an image: its texture and the one sampler, then its triangles (not indexed).
@@ -784,6 +880,7 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
         }
         ReleaseImages();
         Release(ref _vb); Release(ref _ib); Release(ref _lines); Release(ref _field); Release(ref _imageVb); Release(ref _shade);
+        ReleaseEnvironment();
         _textures.Clear(ReleaseTexture);
         for (int i = 0; i < 3; i++) Release(ref _overlays[i]);
         for (int i = 0; i < Ring; i++) Release(ref _rb[i]);
@@ -792,6 +889,7 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
         _patches.Clear();
         Release(ref _pOpaque); Release(ref _pTrans); Release(ref _pLines); Release(ref _pPick); Release(ref _pField);
         Release(ref _pEdges); Release(ref _pTop); Release(ref _pGrid); Release(ref _pImage); Release(ref _imageSampler);
+        Release(ref _pPbr); Release(ref _pPbrTrans); Release(ref _pBackdrop);
         Release(ref _dsWrite); Release(ref _dsNoWrite); Release(ref _dsAlways);
         if (_queue != 0) Send(_queue, S.release);
         if (_device != 0) Send(_device, S.release);

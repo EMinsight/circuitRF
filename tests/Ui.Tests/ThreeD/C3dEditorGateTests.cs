@@ -63,6 +63,16 @@ internal sealed class PatchRecordingBackend : Viewer3DBackend
 
     public override void ReleaseShade() => ShadeReleases++;
 
+    /// <summary>brief-em3d-106 — the realistic view's uploads, counted.</summary>
+    public int EnvironmentUploads, AppearanceUploads, EnvironmentReleases;
+    public override void UploadAppearances(float[] table) { AppearanceUploads++; Counters.CountUpload(table.Length * 4L); }
+    public override void UploadEnvironment(CircuitRF.Render.Scene3D.Look.PrefilteredEnvironment environment)
+    {
+        EnvironmentUploads++;
+        Counters.CountUpload(environment.Bytes);
+    }
+    public override void ReleaseEnvironment() => EnvironmentReleases++;
+
     public override void UploadOverlay(Scene3DBuffer slot, Scene3DVertex[] lines) => Counters.CountUpload((long)lines.Length * Scene3DVertex.Stride);
     public override void UploadField(CircuitRF.Render.Scene3D.Fields.FieldVertex[] vertices) { }
     public override byte[] RenderPixels(Scene3DFramePlan plan) => new byte[plan.Width * plan.Height * 4];

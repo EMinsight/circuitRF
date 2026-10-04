@@ -19,6 +19,7 @@ using System.Numerics;
 using Avalonia.Rendering.Composition;
 using CircuitRF.Render.Scene3D;
 using CircuitRF.Render.Scene3D.Fields;
+using Look = CircuitRF.Render.Scene3D.Look;
 
 namespace CircuitRF.Ui.Viewer3D;
 
@@ -61,6 +62,19 @@ public abstract class Viewer3DBackend : IDisposable
 
     /// <summary>Releases the shade buffer: the realistic view was turned off.</summary>
     public abstract void ReleaseShade();
+
+    // ── the realistic view's lighting (brief-em3d-106 R-em3d106-1e): held only while it is on ──────────────────────────────
+
+    /// <summary>Replaces the appearance table (binding 2: <see cref="Look.Pbr.TableBytes"/>, 256 rows of three vec4f). Counts the
+    /// bytes. Called when the realistic view turns on and when a scene's appearances change, never per frame.</summary>
+    public abstract void UploadAppearances(float[] table);
+
+    /// <summary>Replaces the environment's two textures (group 2: the prefiltered octahedral map with its five levels as mips, and
+    /// the split-sum table), both RGBA16F. Counts the bytes. Once per turn-on and per environment change — a rotation is a uniform.</summary>
+    public abstract void UploadEnvironment(Look.PrefilteredEnvironment environment);
+
+    /// <summary>Releases the environment's textures and the appearance table: the realistic view was turned off.</summary>
+    public abstract void ReleaseEnvironment();
 
     /// <summary>Replaces one overlay slot's line buffer (<see cref="Scene3DBuffer.Overlay0"/>…2).</summary>
     public abstract void UploadOverlay(Scene3DBuffer slot, Scene3DVertex[] lines);

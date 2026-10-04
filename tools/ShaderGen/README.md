@@ -60,6 +60,18 @@ per-group `StructuredBuffer<uint>`), which a D3D11 Shader Model 5.0 compile cann
 unless it finds exactly what it expects, so a naga upgrade that changes the spelling is a loud error, never a shader that
 samples nothing.
 
+The realistic view (brief-em3d-106) adds an appearance table and an environment:
+
+| Binding | MSL | HLSL | SPIR-V |
+|---|---|---|---|
+| `@group(0) @binding(2)` the appearance table (`array<AP, 256>`, 12,288 B) | `[[buffer(4)]]` (3 is the shade stream's vertex buffer) | `register(b2)` | set 0, binding 2 (a plain uniform) |
+| `@group(2) @binding(0)` the prefiltered environment (octahedral, five roughness levels as five mips, RGBA16F) | `[[texture(1)]]` | `register(t1)` | set 2, binding 0 |
+| `@group(2) @binding(1)` its sampler | `[[sampler(1)]]` | `register(s1)` | set 2, binding 1 |
+| `@group(2) @binding(2)` the split-sum table (RGBA16F) | `[[texture(2)]]` | `register(t2)` | set 2, binding 2 |
+
+`plain_hlsl_samplers` now rewrites EVERY sampler naga puts in its heap, each to the register `HLSL_SAMPLERS` names
+(`img_s` s0, `env_s` s1), and fails unless it finds an index buffer and a sampler for each.
+
 - **Deterministic.** Every naga option is set explicitly (its SPIR-V default flips a DEBUG flag with the
   tool's own build profile). The same WGSL gives byte-identical outputs.
 - **Valid.** The SPIR-V is re-read by naga's own SPIR-V front end and re-validated before it is written,

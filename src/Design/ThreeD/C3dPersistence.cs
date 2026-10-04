@@ -118,7 +118,7 @@ public static class C3dPersistence
     /// <list type="bullet">
     /// <item><b>Display (left out):</b> the document's <c>DisplayUnit</c> (a preference: nothing it says moves geometry, and an
     /// expression stores its own unit), <c>SnapDbu</c> (the drawing grid; it never re-snaps), <c>FieldPlots</c> (R-em3d83-2),
-    /// <c>AirBoxHidden</c>, <c>ActiveSetup</c> (R-em3d98-3); on every object at every depth (operands, a fillet's target)
+    /// <c>AirBoxHidden</c>, <c>ActiveSetup</c> (R-em3d98-3), <c>Look</c> (brief 106: the realistic view's); on every object at every depth (operands, a fillet's target)
     /// <c>Hidden</c>, <c>Transparency</c> (brief 92), <c>Appearance</c> (brief 105), <c>Group</c> (organisation only) and
     /// <c>FaceImages</c>, and on a sheet its <c>Image</c> and <c>Locked</c> (brief 101: an image is drawn, never geometry); on every
     /// instance <c>Transparency</c>, <c>Appearance</c> and <c>Group</c>.</item>
@@ -174,7 +174,7 @@ public static class C3dPersistence
 
     public static string SerializeForRun(C3dDocument doc)
     {
-        var (plots, unit, snap, airBoxHidden, active) = (doc.FieldPlots, doc.DisplayUnit, doc.SnapDbu, doc.AirBoxHidden, doc.ActiveSetup);
+        var (plots, unit, snap, airBoxHidden, active, look) = (doc.FieldPlots, doc.DisplayUnit, doc.SnapDbu, doc.AirBoxHidden, doc.ActiveSetup, doc.Look);
         var objects = doc.Objects.SelectMany(C3dOperands.SelfAndDescendants)
                                  .Where(o => o.Hidden || o.Transparency is not null || o.Appearance is not null || o.Group is not null)
                                  .Select(o => (Object: o, o.Hidden, o.Transparency, o.Appearance, o.Group)).ToList();
@@ -191,6 +191,7 @@ public static class C3dPersistence
         doc.SnapDbu = 0;
         doc.AirBoxHidden = false;
         doc.ActiveSetup = null;
+        doc.Look = null;
         foreach (var x in objects) { x.Object.Hidden = false; x.Object.Transparency = null; x.Object.Appearance = null; x.Object.Group = null; }
         foreach (var x in instances) { x.Instance.Transparency = null; x.Instance.Appearance = null; x.Instance.Group = null; }
         foreach (var x in images) { x.Sheet.Image = null; x.Sheet.Locked = false; }
@@ -205,7 +206,7 @@ public static class C3dPersistence
         finally
         {
             (doc.Objects, doc.Instances) = (allObjects, allInstances);
-            (doc.FieldPlots, doc.DisplayUnit, doc.SnapDbu, doc.AirBoxHidden, doc.ActiveSetup) = (plots, unit, snap, airBoxHidden, active);
+            (doc.FieldPlots, doc.DisplayUnit, doc.SnapDbu, doc.AirBoxHidden, doc.ActiveSetup, doc.Look) = (plots, unit, snap, airBoxHidden, active, look);
             foreach (var x in objects) { x.Object.Hidden = x.Hidden; x.Object.Transparency = x.Transparency; x.Object.Appearance = x.Appearance; x.Object.Group = x.Group; }
             foreach (var x in instances) { x.Instance.Transparency = x.Transparency; x.Instance.Appearance = x.Appearance; x.Instance.Group = x.Group; }
             foreach (var x in images) { x.Sheet.Image = x.Image; x.Sheet.Locked = x.Locked; }
@@ -215,6 +216,12 @@ public static class C3dPersistence
 
     /// <summary>brief-em3d-83 — the field plots as the file spells them (an undo entry's before and after).</summary>
     public static string SerializeFieldPlots(IReadOnlyList<C3dFieldPlot> list) => JsonSerializer.Serialize(list, JsonOpts);
+
+    /// <summary>brief-em3d-106 — the Look block as the file spells it, or "" for none (an undo entry's before and after).</summary>
+    public static string SerializeLook(C3dLook? look) => look is null ? "" : JsonSerializer.Serialize(look, JsonOpts);
+
+    public static C3dLook? DeserializeLook(string json)
+        => string.IsNullOrEmpty(json) ? null : JsonSerializer.Deserialize<C3dLook>(json, JsonOpts);
 
     public static List<C3dFieldPlot> DeserializeFieldPlots(string json)
         => JsonSerializer.Deserialize<List<C3dFieldPlot>>(json, JsonOpts) ?? [];

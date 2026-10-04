@@ -952,6 +952,7 @@ public static class C3dFragment
         to.FieldPlots = from.FieldPlots;
         to.AirBoxMaterial = from.AirBoxMaterial;
         to.AirBoxHidden = from.AirBoxHidden;
+        to.Look = from.Look;
         to.Setups = from.Setups;
         to.Unread = from.Unread;
     }

@@ -87,3 +87,41 @@ Findings from work on the 3D viewer's view model. The field model itself (reader
   edit is comment-only: the regenerated shaders differ only in their hash line.
 - **Gate 11 ran on Metal**: the CaseA scene drawn with and without the duplicates reads back identical bytes. D3D11 and Vulkan's
   upload/patch/release are compiled only.
+
+## The realistic view: bindings, formats, what ran (brief-em3d-106, 2026-10-04)
+
+- **Binding slots, per backend** (also in `scene.wgsl`'s realistic section and `tools/ShaderGen/README.md`):
+
+  | What | WGSL | Metal | D3D11 | Vulkan |
+  |---|---|---|---|---|
+  | scene vertex | `@location(0..3)` | vertex buffer 0 | input slot 0 | vertex binding 0 |
+  | shade stream (brief 104) | `@location(4)` normal, `@location(5)` slot | vertex buffer **3** | input slot **1** | vertex binding **1** |
+  | uniforms `U` (now 2,304 B) | group 0 binding 0 | `[[buffer(1)]]`, inline bytes | `b0` | set 0 binding 0, dynamic |
+  | per-draw transform | group 0 binding 1 | `[[buffer(2)]]` | `b1` | set 0 binding 1, dynamic |
+  | appearance table (12,288 B) | group 0 binding 2 | fragment `[[buffer(4)]]`, an `MTLBuffer` (over the 4 KB inline limit) | `b2` | set 0 binding **2**, a plain uniform |
+  | environment map / sampler / split-sum table | group 2 bindings 0/1/2 | `[[texture(1)]]`, `[[sampler(1)]]`, `[[texture(2)]]` | `t1`, `s1`, `t2` | set **2**, bindings 0/1/2 |
+
+  The environment's sampler is the image sampler brief 101 made (linear, linear between mips, clamp), bound a second time
+  at index 1. Vulkan's pipeline layout grew to three set layouts; binding set 0 again for a transform leaves set 2 bound,
+  so the realistic draws bind set 2 once a frame. Vulkan keeps the 12 KB appearance buffer for the device's life (set 0
+  names it, so its descriptor is always valid); Metal and D3D11 release theirs with the environment.
+- **Texture format: RGBA16F on all three** (`MTLPixelFormatRGBA16Float` 115, `R16G16B16A16_FLOAT`, `R16G16B16A16_SFLOAT`),
+  so the RGBE-in-RGBA8 fallback the brief allowed was not needed: every Metal device, D3D11 at feature level 10+ and every
+  Vulkan device (a required format) samples it with linear filtering. The upload path took a format argument: Metal's
+  `NewSampledTexture`, D3D11's `NewSampledTexture`, Vulkan's `NewSampledImage` (brief 101's images now go through it with
+  RGBA8).
+- **PbrTranslucent blends PREMULTIPLIED** (RGB one, 1 − src-alpha; alpha one, 1 − src-alpha): a reflection on glass then
+  adds on top of what shows through instead of being capped at the coverage. The swap image's alpha still ends at 1.
+- **The session decides the uploads** (`Viewer3DSession`): with `ShadeStream` on, the appearance table when its ROWS change
+  (a rebuilt scene with the same looks uploads nothing) and the environment when it is a different object; with it off,
+  `ReleaseEnvironment` and `ReleaseShade`. A rotation, exposure or intensity is the uniform look block and uploads nothing
+  (gate 7 counts it).
+- **Which backends ran**: **Metal** — the gate's offscreen frames (a mirror sphere against the CPU reference, within 3/255;
+  the theme background; alpha 255 everywhere; a rough dielectric with no peak) and three studio pictures looked at by eye.
+  **D3D11 and Vulkan were compiled only; their runtime is unverified on this machine**, as briefs 62 and 101 recorded.
+  The HLSL is naga's (validated) and was not put through `d3dcompiler_47` here.
+- **The mirror gate had to look at a smooth patch of the studio.** Behind the default camera, the unrotated Studio puts the
+  fill softbox's soft edge exactly where a mirror sphere's centre reflects: 1° of normal moves the colour ~15/255, and the
+  GPU's interpolated normal is a fraction of a degree off the exact one, so the first run read 238 against 226. A uniform
+  environment matched to 0.1/255. The gate now turns the studio 90° and asserts the environment varies under 2/255 within
+  ~1° of the reflected direction before comparing.

@@ -106,6 +106,12 @@
                 <ToggleButton IsChecked="{Binding ViewModel.Viewer.IsOrthographic}" ToolTip.Tip="Orthographic view  (P toggles)">
                     <mi:MaterialIcon Kind="PerspectiveLess" Width="16" Height="16"/>
                 </ToggleButton>
+                <!-- brief-em3d-106 R-em3d106-1b — the realistic view, after the projection pair, in every host (read-only included).
+                     View state: never saved, off on every open, no key equivalent (overview D5, D6). Glyph: a camera aperture (D1). -->
+                <ToggleButton IsChecked="{Binding ViewModel.Viewer.IsRealistic}"
+                              ToolTip.Tip="Realistic view: materials, lighting and shadows, for pictures. Changes nothing in the model.">
+                    <mi:MaterialIcon Kind="CameraIris" Width="16" Height="16"/>
+                </ToggleButton>
 
                 <Border Width="1" Margin="2,3" Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
 
@@ -525,6 +531,9 @@
                 <SelectableTextBlock FontSize="11" Text="{Binding ViewModel.Viewer.MeshText}" IsVisible="{Binding ViewModel.Viewer.MeshText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                 <SelectableTextBlock FontSize="11" Text="{Binding ViewModel.Viewer.FieldText}" IsVisible="{Binding ViewModel.Viewer.FieldText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                 <SelectableTextBlock FontSize="11" Text="{Binding ViewModel.Viewer.PictureText}" IsVisible="{Binding ViewModel.Viewer.PictureText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                <!-- brief-em3d-106 R-em3d106-1d — the realistic view's environment and exposure, and what fell back. -->
+                <SelectableTextBlock FontSize="11" Text="{Binding ViewModel.Viewer.RealisticText}" TextWrapping="Wrap"
+                                     IsVisible="{Binding ViewModel.Viewer.RealisticText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                 <SelectableTextBlock FontSize="11" Text="{Binding ViewModel.ToolPrompt}" TextWrapping="Wrap"
                                      IsVisible="{Binding ViewModel.ToolPrompt, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                 <DockPanel IsVisible="{Binding ViewModel.StatusMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">

@@ -624,13 +624,16 @@ public static class Scene3DBuilder
                    faces: editor);
             }
             uint edge = Scene3DVertex.Pack(ink.R, ink.G, ink.B, 255);
-            b.Object(new Scene3DObject { Id = 0, Name = "airbox", Kind = Scene3DKind.Boundary, Rgba = edge },
+            b.Object(new Scene3DObject { Id = 0, Name = AirBoxEdgesName, Kind = Scene3DKind.Boundary, Rgba = edge },
                      null, BoxEdges(box).Select(q => (q, edge)));
         }
 
         cache?.EndBuild();
         return b.Finish(generation, origin, problem, imageNotes.Count == 0 ? notes : [.. notes ?? [], .. imageNotes.Distinct()]);
     }
+
+    /// <summary>The object holding the air box's twelve edges.</summary>
+    public const string AirBoxEdgesName = "airbox";
 
     /// <summary>A sheet is one surface, face 0.</summary>
     public static readonly IReadOnlyList<string> SheetFaceNames = ["surface"];
@@ -1217,10 +1220,13 @@ public static class Scene3DBuilder
                 else { fallbacks++; slot = row.TryGetValue(l.Default, out int d) ? d : 0; }
                 var o = _objects[k];
                 o.AppearanceSlot = slot;
+                // brief-em3d-106 R-em3d106-2e (overview D12) — whether the vertex colour's alpha is a STATED coverage (a document's
+                // Transparency, or a dimmed context part): the realistic shader multiplies it on; a kind default it does not.
+                uint stated = o.Transparency is not null || o.Context ? Scene3DShadeVertex.StatedAlpha : 0;
                 for (int v = o.FirstVertex; v < o.FirstVertex + o.VertexCount; v++)
                 {
                     var sv = _shade[v];
-                    sv.Slot = (uint)slot;
+                    sv.Slot = (uint)slot | stated;
                     _shade[v] = sv;
                 }
             }

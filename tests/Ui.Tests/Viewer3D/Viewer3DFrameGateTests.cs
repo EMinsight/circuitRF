@@ -43,6 +43,16 @@ internal sealed class RecordingBackend : Viewer3DBackend
     public override void UploadShade(Scene3DModel scene) => Counters.CountUpload(scene.ShadeBytes);
     public override void ReleaseShade() { }
 
+    /// <summary>brief-em3d-106 — the realistic view's uploads, counted.</summary>
+    public int EnvironmentUploads, AppearanceUploads, EnvironmentReleases;
+    public override void UploadAppearances(float[] table) { AppearanceUploads++; Counters.CountUpload(table.Length * 4L); }
+    public override void UploadEnvironment(CircuitRF.Render.Scene3D.Look.PrefilteredEnvironment environment)
+    {
+        EnvironmentUploads++;
+        Counters.CountUpload(environment.Bytes);
+    }
+    public override void ReleaseEnvironment() => EnvironmentReleases++;
+
     public int FieldUploads;
 
     public override void UploadField(CircuitRF.Render.Scene3D.Fields.FieldVertex[] vertices)

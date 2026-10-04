@@ -335,7 +335,7 @@ to the technology.
 
 ### Appearance {#appearance}
 
-An **appearance** says how an object looks in the realistic view: how metallic, how rough, how see-through. It belongs
+An **appearance** says how an object looks in the [realistic view](#realistic): how metallic, how rough, how see-through. It belongs
 first to the **material** — forty copper objects should not need forty edits — and an **object** or a placed cell may
 override it, because plating is usually not modelled: a copper trace that should look gold-plated is the common case.
 
@@ -778,6 +778,60 @@ said by name. A part the new file adds is offered in the import table, unchecked
 
 The **3D Connector** example's flange was made this way: drawn in its own cell, exported, and imported into
 the launch — see [the second example](#connector).
+
+## The realistic view {#realistic}
+
+The **Realistic view** button on the toolbar (the camera aperture, after Perspective and Orthographic) and *3D ▸ View ▸
+Realistic View* redraw the view with physically based materials lit by a studio: metals reflect it, dielectrics take
+their body colour, gloss and translucency from their [appearance](#appearance). It is for pictures. It is a **view**,
+not an edit: it changes nothing in the model or in any result, it is not saved, and every document opens with it off.
+Selecting, hovering, modelling and the clip plane all keep working underneath it.
+
+The first time a studio is used in a session it is prepared in the background, and until then the view is drawn as
+usual; the status line says *Realistic · preparing …* and then names the environment and the exposure.
+
+**What steps aside.** The CAD chrome is hidden: the edge lines, the drawing grid, the mesh, FDTD-grid and section
+overlays, the air box, ports, boundaries and face tints, and reference images. The selected object's outline and the
+face-mode highlights stay, because it is still the editor. A [field plot](#simulate) is drawn exactly as in the
+ordinary view: its colours are data and are never lit. An object's stated [transparency](#transparency) still applies;
+a dielectric's ordinary see-through look does not, because the appearance's `Transmission` decides that here.
+*Copy* and *Export Picture…* draw the realistic view without the hover or the selection.
+
+**The `Look` block.** How the scene is lit is saved in the `.c3d`, so a picture can be made again later. Every key is
+optional; an omitted key takes the default shown:
+
+```json
+"Look": {
+  "Environment": "Studio",
+  "Rotation": 30,
+  "Intensity": 1.0,
+  "Exposure": 0.0,
+  "Background": "Theme",
+  "ShowPorts": false
+}
+```
+
+| Key | Values |
+|---|---|
+| `Environment` | `Studio` (soft), `HighKey` (white, low contrast), `Dark` (a black room with strong rim lights), or a Radiance `.hdr` file's path, relative to the `.c3d` |
+| `Rotation` | degrees about +z, turning the studio around the model |
+| `Intensity` | 0–10, the environment's brightness |
+| `Exposure` | −10 to +10 EV |
+| `Background` | `Theme` (the view's own colour), `#rrggbb`, `"#rrggbb,#rrggbb"` (a vertical gradient, top colour first) or `Environment` (the studio itself) |
+| `ShowEdges`, `ShowGrid`, `ShowOverlays`, `ShowAirBox`, `ShowPorts`, `ShowBoundaries`, `ShowImages` | `true` brings that item back, drawn exactly as the ordinary view draws it |
+
+A `Show…` key only lifts the realistic view's own hiding: an air box you have hidden, an overlay that is off, or a
+hidden object stays hidden. Until the Look has a panel of its own, it is edited by writing the file. A `Look` edit is
+undone like any other, and **no run sees it**: editing it never makes a result stale.
+
+**Your own environment.** Name a Radiance `.hdr` (an equirectangular image, +z up) instead of a studio. An `.exr` is not
+read. A file that is missing or does not read is a warning in `check`; the view then lights the scene with Studio and
+the status line says why.
+
+**How it is drawn.** The colours go through the Khronos PBR Neutral tone curve, which keeps base colours faithful. A
+glossy surface reflects the studio, a rough one spreads it. Translucency is approximated: what shows through is dimmed
+and tinted by the attenuation colour, and the reflection is added on top, but light is not bent: the view is drawn at
+interactive speed, not ray traced.
 
 ## Pictures and drawings {#drawings}
 

@@ -488,6 +488,19 @@ internal static class DocumentSchema
             material's. An instance's applies to every part inside it, and a part's own stated field
             wins; of nested instances the innermost does. An operation carries it for its result; a
             polyline has none. Drawing only: no solver reads it and a run never sees it.
+          * "Look" is how the 3D view's REALISTIC mode lights the scene — never a solver, and a run
+            never sees it. Every key is optional and an omitted one is its default: Environment
+            (Studio, HighKey, Dark, or a Radiance .hdr path relative to this file; an .exr is not
+            read), Rotation (degrees about +z, default 30), Intensity (0 to 10, default 1), Exposure
+            (EV, -10 to +10, default 0), Background (Theme, #rrggbb, "#rrggbb,#rrggbb" a vertical
+            gradient top first, or Environment). The realistic view hides the edges, the drawing grid,
+            the mesh/FDTD/section overlays, the air box, ports, boundaries and face tints, and
+            reference images; ShowEdges, ShowGrid, ShowOverlays, ShowAirBox, ShowPorts, ShowBoundaries
+            and ShowImages (true) each bring one back, drawn exactly as the default view draws it. A
+            Show key never shows what the default view hides (a hidden air box stays hidden).
+            Whether the realistic view is ON is not saved. `check` refuses a value out of range or a
+            spelling it cannot read, and warns on a .hdr that is missing or does not read (the view
+            then lights with Studio).
           * "Model": false (written only then) keeps an object, an instance, a port or a heat source
             DRAWN and editable and leaves it out of every simulation run. An operation carries it for
             its result; a polyline is never modelled anyway. A reference to one that is off — a

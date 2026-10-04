@@ -1,3 +1,4 @@
+using System.Globalization;
 using CircuitRF.Diagnostics;
 
 namespace CircuitRF.Design.ThreeD;
@@ -192,6 +193,33 @@ public static class C3dDiagnostics
     public static Diagnostic InstanceNoCell(string name) => Diagnostic.Create(
         "c3d.instance.no-cell", DiagnosticSeverity.Error,
         "The instance '{name}' names no cell.", ("name", name));
+
+    // ── The Look (brief-em3d-106) ────────────────────────────────────────────────────────────
+
+    /// <summary>R-em3d106-5 — an Exposure or Intensity outside its range (a Rotation that is not a number).</summary>
+    public static Diagnostic LookRange(string key, double value, double lo, double hi) => Diagnostic.Create(
+        "c3d.look.range", DiagnosticSeverity.Error,
+        double.IsInfinity(lo) ? "The Look's {key} is {value}, which is not a number of degrees."
+                              : "The Look's {key} is {value}; it is {lo} to {hi}.",
+        ("key", key), ("value", value.ToString("G6", CultureInfo.InvariantCulture)),
+        ("lo", lo.ToString("G6", CultureInfo.InvariantCulture)), ("hi", hi.ToString("G6", CultureInfo.InvariantCulture)));
+
+    public static Diagnostic LookBackground(string spelled) => Diagnostic.Create(
+        "c3d.look.background", DiagnosticSeverity.Error,
+        "The Look's Background \"{spelled}\" is none of Theme, #rrggbb, \"#rrggbb,#rrggbb\" (a vertical gradient, top first) or " +
+        "Environment.", ("spelled", spelled));
+
+    public static Diagnostic LookEnvironment(string spelled) => Diagnostic.Create(
+        "c3d.look.environment", DiagnosticSeverity.Error,
+        "The Look's Environment \"{spelled}\" is neither a studio (Studio, HighKey, Dark) nor a Radiance .hdr file; an .exr is not " +
+        "read.", ("spelled", spelled));
+
+    /// <summary>R-em3d106-4d — a user environment that cannot be read. A warning: the view lights the scene with Studio instead
+    /// and says so on its status line.</summary>
+    public static Diagnostic LookHdrUnreadable(string path, string reason) => Diagnostic.Create(
+        "c3d.look.hdr-unreadable", DiagnosticSeverity.Warning,
+        "The Look's environment '{path}' cannot be read: {reason}. The realistic view lights the scene with Studio instead.",
+        ("path", path), ("reason", reason));
 
     // ── Transparency (brief-em3d-92) ──────────────────────────────────────────────────────────
 

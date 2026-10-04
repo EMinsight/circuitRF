@@ -4695,3 +4695,40 @@ missing the driven port's probes or its kept document is drawn as written, with 
 
   The planar `.cem` examples make no 3D problem and were not counted. The added vertices cost the default view 24 bytes each
   (it draws them, identical); the shade stream is 16 bytes a vertex and only exists while the realistic view is on.
+
+## The realistic view: the reference, the prefilter, the plan (brief-em3d-106, 2026-10-04)
+
+- **`Look/Pbr.cs` and `Look/ToneCurve.cs` are THE reference**: GGX with α = roughness², height-correlated Smith visibility,
+  Schlick Fresnel (F0 from the IOR, 0.04 at 1.5), split-sum IBL, SH9 irradiance, a clear-coat lobe taking its energy from
+  the body, the key light direct (roughness floored at 0.045 for it only), the Khronos PBR Neutral curve, the sRGB encode.
+  `fs_pbr` is that file in WGSL; `RealisticViewTests.Gate5` holds every shared constant equal. The diffuse term is weighted by
+  1 − (F0·A + B), so a white rough dielectric in a white furnace reflects 1.000 (gate 3).
+- **Base colours stay LINEAR in the table.** The brief says the shader decodes sRGB; `AppearanceColour` is already decoded
+  once by the resolver (brief 105), so the table holds linear values and the shader does no decode — the result is the same.
+- **The prefilter** (`Look/EnvironmentPrefilter.cs`): every environment is first drawn into a **512 × 256** lat–long image
+  (a studio 2 × 2 samples a texel; an `.hdr` box-averaged down, or bilinear up). From it: the **SH9** coefficients, each basis
+  function integrated in CLOSED FORM over each texel's θ-band × φ-span (exact for constant texels, so a uniform environment's
+  l ≥ 1 bands vanish to rounding); **level 0**, a 256² octahedral map (+z at the centre), 2 × 2 samples a texel; levels
+  **1–4** (128², 64², 32², 16², roughness 0.25/0.5/0.75/1) by GGX importance sampling with N = V = R and the **fixed
+  Hammersley sequence, 128 points** (bit-reversed radical inverse), each sample reading a 2 × 2 box pyramid of level 0 at
+  lod = ½·log₂(Ω_sample/Ω_texel) + 1 (filtered importance sampling). The split-sum table is **32 × 32, 512 Hammersley samples
+  an entry**, at texel centres, shared by every environment. Rows run in parallel, each written by itself, so the bytes are
+  the same twice and on another thread (gate 4). The five levels are the five MIPS of one texture, so an explicit-lod sample
+  at roughness·4 interpolates between roughness levels.
+- **Rotation is the shader's**: a lookup turns by −rotation about +z (`env_dir`), so a rotation drag recomputes nothing.
+- **The key light**: a studio's key softbox direction with a direct irradiance (`StudioPreset.KeyDirect`); an `.hdr` has none
+  (its light is all in the map) and takes the SH l = 1 band's dominant direction for brief 107 to shadow from.
+- **Transmission** is the brief's coverage 1 − T·(1 − F) times the attenuation colour's mean, with the absorbed share glowing
+  in the attenuation colour lit by the environment — for a white attenuation this IS the brief's formula; a tinted one dims
+  and tints what shows through, which single-source alpha blending cannot do per channel.
+- **The plan** (`Scene3DFramePlan`): `Plan` was split into `ColourDefault` (the old body, byte-for-byte), `ColourRealistic`,
+  `Selection` and the pick pass. Each object is classified once per scene (`ChromeOfObject`): a chrome row, a MATERIAL (an
+  appearance slot and not a wireframe — a wireframe object has no material and draws as the default view draws it), or
+  neither. `Scene3DDraw.Object` was added so the gates (and `ChromeOf`) can attribute a draw; no backend reads it. A
+  realistic `export` plan writes hover 0 and no selection into the uniforms and draws no outline.
+- **`Scene3DShadeVertex.Slot` now carries a bit**: `StatedAlpha` (0x100) marks a vertex whose colour alpha is a STATED
+  transparency (or a dimmed context part), which the realistic shader multiplies on (overview D12); a kind's default alpha
+  is ignored there, since the appearance's Transmission decides. Only the realistic pipelines read the stream.
+- **Visual check**: three pictures (Studio on the theme, High key on the environment, Dark on a gradient) of gold, copper,
+  red plastic, a clear-coated laminate and tinted glass read as intended. A glass box shows a bright line along an edge seen
+  through it at a grazing angle — what a per-object-sorted raster glass does, left as it is.

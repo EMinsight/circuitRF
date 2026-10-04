@@ -179,12 +179,13 @@ public sealed class C3dRecordsEdit(string description, string before, string aft
 
     /// <summary>The records as one text: ports, face boundaries, setups — and (3D editor round 3) the air box's material,
     /// (round 5) whether it is hidden, and (brief-em3d-75) the thermal places: heat sources, probes, mesh regions and contact
-    /// overrides, which are records beside the ports, never objects — and (brief-em3d-83) the field plots.</summary>
+    /// overrides, which are records beside the ports, never objects — and (brief-em3d-83) the field plots, and (brief-em3d-106) the
+    /// realistic view's Look.</summary>
     public static string Of(C3dDocument doc)
         => C3dPersistence.SerializePorts(doc.Ports) + "\u0001" + C3dPersistence.SerializeFaceBoundaries(doc.FaceBoundaries) +
            "\u0001" + C3dPersistence.SerializeSetups(doc.Setups) + "\u0001" + (doc.AirBoxMaterial ?? "") +
            "\u0001" + (doc.AirBoxHidden ? "hidden" : "") + "\u0001" + C3dPersistence.SerializeThermalPlaces(doc) +
-           "\u0001" + C3dPersistence.SerializeFieldPlots(doc.FieldPlots);
+           "\u0001" + C3dPersistence.SerializeFieldPlots(doc.FieldPlots) + "\u0001" + C3dPersistence.SerializeLook(doc.Look);
 
     /// <summary>Whether <paramref name="text"/> (an <see cref="Of"/>) holds the air box hidden.</summary>
     public static bool AirBoxHiddenOf(string text) => text.Split('\u0001') is { Length: > 4 } parts && parts[4].Length > 0;
@@ -201,6 +202,8 @@ public sealed class C3dRecordsEdit(string description, string before, string aft
         if (parts.Length > 5) C3dPersistence.ApplyThermalPlaces(doc, parts[5]);
         // brief-em3d-83 — the field plots are records too: every plot edit is one entry.
         if (parts.Length > 6) doc.FieldPlots = C3dPersistence.DeserializeFieldPlots(parts[6]);
+        // brief-em3d-106 — the Look is a record too: an edit of it (brief 108's panel) is one entry.
+        if (parts.Length > 7) doc.Look = C3dPersistence.DeserializeLook(parts[7]);
     }
 }
 

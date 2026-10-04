@@ -300,6 +300,7 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
         RemapSelection(previous, scene);
         RefreshSolverOverlays();
         OnPropertyChanged(nameof(Status));
+        RealisticSceneAdopted();
         SceneAdopted?.Invoke();
         FrameRequested?.Invoke();
     }

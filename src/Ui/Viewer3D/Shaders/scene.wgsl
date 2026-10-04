@@ -6,7 +6,7 @@
 // The uniform block is Scene3DFramePlan's: vp, eye, clip, the hovered (object, face), flags, the selection
 // mode, the selection (brief-em3d-43 R-em3d43-5: up to 64 (object, face) pairs), then brief 29's field blocks
 // (FieldUniforms: phase, range, mode, dB, the colour map's stops — brief-em3d-96: four, one per drawn plot), then
-// brief 45's drawing grid (PlaneGrid.Fill) — 2,016 bytes.
+// brief 45's drawing grid (PlaneGrid.Fill), then brief 106's look block (Scene3DFramePlan.FillLook) — 2,304 bytes.
 // A vertex is Scene3DVertex: position, object id, RGBA8 colour, face (24 bytes); a FIELD vertex is
 // FieldVertex: position, the value's real part, its imaginary part (36 bytes).
 
@@ -59,6 +59,23 @@ struct U {
     gd: vec4f,
     gdx: vec4f,
     gdy: vec4f,
+    // brief-em3d-106 — the realistic view's look (zero while the view is not realistic): x 2^EV, y the environment's intensity,
+    // z cos and w sin of its rotation about +z
+    lk: vec4f,
+    // x the backdrop (0 none: the clear colour, 1 a vertical gradient, 2 the environment), y the environment's last level
+    lk1: vec4f,
+    // the key light's world direction, and its radiance
+    key: vec4f,
+    keyc: vec4f,
+    // the gradient's top and bottom colours (display values)
+    bg0: vec4f,
+    bg1: vec4f,
+    // the backdrop's ray per clip position: direction = bd + x bdx + y bdy
+    bd: vec4f,
+    bdx: vec4f,
+    bdy: vec4f,
+    // the nine irradiance coefficients (Pbr.Irradiance), in the environment's frame
+    sh: array<vec4f, 9>,
 };
 @group(0) @binding(0) var<uniform> u: U;
 
@@ -80,6 +97,11 @@ struct U {
 // @location(4) normal and @location(5) slot after the four Scene3DVertex attributes. WGSL names no vertex buffer, so the slot is
 // each backend's pipeline layout: Metal vertex buffer index 3 (0 is the geometry, 1 the uniforms, 2 this transform — one
 // argument table), D3D11 input slot 1 (semantics LOC4, LOC5), Vulkan vertex binding 1. No existing pipeline's layout changes.
+//
+// brief-em3d-106 R-em3d106-3b — the realistic view's APPEARANCE TABLE is a third uniform binding, @group(0) @binding(2) (array<AP, 256>,
+// 12,288 bytes, below Vulkan's guaranteed 16 KB): Metal fragment buffer 4 (3 is the shade stream), D3D11 b2, Vulkan set 0 binding 2.
+// Its ENVIRONMENT is @group(2): bindings 0 (the prefiltered map), 1 (its sampler), 2 (the split-sum table) — Metal textures 1, 2 and
+// sampler 1, D3D11 t1, t2 and s1, Vulkan set 2. Declared with the realistic entry points at the end of this file.
 struct MX {
     m: mat4x4f,
     id: vec4u,
@@ -420,4 +442,266 @@ fn grid_on(p: vec2f, pf: vec2f, s: f32, ph: vec2f) -> f32 {
     let c = u.vp * vec4f(w, 1.0);
     o.depth = clamp(c.z / c.w, 0.0, 1.0);
     return o;
+}
+
+// ── brief-em3d-106: the realistic view ─────────────────────────────────────────────────────────────
+// Physically based shading, lit by an environment, for pictures (src/Render/Scene3D/Look/Pbr.cs is THE REFERENCE: every function and
+// constant below is written once there and once here, and RealisticViewTests' scan holds the constants equal). In LINEAR light: the
+// appearance table holds linear base colours (the resolver decodes sRGB once); exposure, the PBR Neutral tone curve and the sRGB encode
+// are the last steps of fs_pbr — forward, because the target is UNORM, not sRGB, and so a field fragment never meets the curve
+// (overview rule 2). Hover and selection are applied after the encode, so their colours are today's.
+//
+// Bindings (tools/ShaderGen states them): the appearance table @group(0) @binding(2) — MSL [[buffer(4)]] (index 3 is the shade
+// stream's vertex buffer), HLSL register(b2), SPIR-V set 0 binding 2; the environment's prefiltered octahedral map (five roughness
+// levels as its five mips) @group(2) @binding(0), its sampler @binding(1), the split-sum table @binding(2) — MSL [[texture(1)]],
+// [[sampler(1)]], [[texture(2)]]; HLSL t1, s1, t2; SPIR-V set 2, bindings 0, 1, 2.
+
+// One appearance (overview D16: 256 a scene, three vec4f each, 12,288 bytes — Vulkan guarantees 16 KB of uniform range): base colour
+// + metallic; roughness, transmission, IOR, clear coat; clear-coat roughness + attenuation colour.
+struct AP {
+    a: vec4f,
+    b: vec4f,
+    c: vec4f,
+};
+struct APT {
+    e: array<AP, 256>,
+};
+@group(0) @binding(2) var<uniform> ap: APT;
+
+@group(2) @binding(0) var env: texture_2d<f32>;
+@group(2) @binding(1) var env_s: sampler;
+@group(2) @binding(2) var brdf: texture_2d<f32>;
+
+const PI: f32 = 3.14159265;
+const DIELECTRIC_F0: f32 = 0.04;
+const MIN_ROUGHNESS: f32 = 0.045;
+const MIN_NDOTV: f32 = 1e-4;
+// the shade vertex's slot: the appearance row in the low 8 bits, and a bit saying the colour's alpha is a STATED coverage (D12)
+const SLOT_MASK: u32 = 0xFFu;
+const STATED_ALPHA: u32 = 0x100u;
+// the PBR Neutral tone curve (ToneCurve.cs)
+const TONE_START: f32 = 0.76;
+const TONE_DESAT: f32 = 0.15;
+const TONE_TOE_BREAK: f32 = 0.08;
+const TONE_TOE_SLOPE: f32 = 6.25;
+const TONE_TOE_OFFSET: f32 = 0.04;
+// sRGB (IEC 61966-2-1)
+const SRGB_BREAK: f32 = 0.0031308;
+const SRGB_SLOPE: f32 = 12.92;
+const SRGB_SCALE: f32 = 1.055;
+const SRGB_OFFSET: f32 = 0.055;
+const SRGB_GAMMA: f32 = 2.4;
+
+struct PVI {
+    @location(0) p: vec3f,
+    @location(1) id: u32,
+    @location(2) col: vec4f,
+    @location(3) face: u32,
+    @location(4) n: vec3f,
+    @location(5) slot: u32,
+};
+
+struct PVO {
+    @builtin(position) pos: vec4f,
+    @location(0) world: vec3f,
+    @location(1) @interpolate(flat) id: u32,
+    @location(2) col: vec4f,
+    @location(3) @interpolate(flat) face: u32,
+    @location(4) n: vec3f,
+    @location(5) @interpolate(flat) slot: u32,
+};
+
+// vs's work, plus the shading normal rotated by the per-draw transform (rigid: brief 104 §1f) and the slot passed flat.
+@vertex fn vs_pbr(v: PVI) -> PVO {
+    var o: PVO;
+    let p = (mx.m * vec4f(v.p, 1.0)).xyz;
+    o.pos = u.vp * vec4f(p, 1.0);
+    o.world = p;
+    o.id = v.id + mx.id.x;
+    o.col = v.col;
+    o.face = v.face;
+    o.n = (mx.m * vec4f(v.n, 0.0)).xyz;
+    o.slot = v.slot;
+    return o;
+}
+
+// A world direction in the environment's frame: the environment is turned by +rotation about +z, so a lookup turns by -rotation.
+fn env_dir(w: vec3f) -> vec3f {
+    return vec3f(u.lk.z * w.x + u.lk.w * w.y, -u.lk.w * w.x + u.lk.z * w.y, w.z);
+}
+
+// The octahedral map, +z at the centre (Pbr.OctEncode).
+fn oct_uv(d: vec3f) -> vec2f {
+    let s = abs(d.x) + abs(d.y) + abs(d.z);
+    var p = d.xy / s;
+    if (d.z < 0.0) {
+        p = (vec2f(1.0, 1.0) - abs(p.yx)) * select(vec2f(-1.0, -1.0), vec2f(1.0, 1.0), p >= vec2f(0.0, 0.0));
+    }
+    return p * 0.5 + vec2f(0.5, 0.5);
+}
+
+fn env_radiance(w: vec3f, rough: f32) -> vec3f {
+    return textureSampleLevel(env, env_s, oct_uv(env_dir(w)), rough * u.lk1.y).rgb;
+}
+
+fn irradiance(n: vec3f) -> vec3f {
+    let e = env_dir(n);
+    return u.sh[0].rgb + u.sh[1].rgb * e.y + u.sh[2].rgb * e.z + u.sh[3].rgb * e.x + u.sh[4].rgb * (e.x * e.y)
+         + u.sh[5].rgb * (e.y * e.z) + u.sh[6].rgb * (3.0 * e.z * e.z - 1.0) + u.sh[7].rgb * (e.x * e.z)
+         + u.sh[8].rgb * (e.x * e.x - e.y * e.y);
+}
+
+fn brdf_lut(nv: f32, rough: f32) -> vec2f {
+    return textureSampleLevel(brdf, env_s, vec2f(clamp(nv, 0.0, 1.0), clamp(rough, 0.0, 1.0)), 0.0).xy;
+}
+
+// Trowbridge-Reitz (GGX), alpha = roughness squared.
+fn ggx_d(nh: f32, a: f32) -> f32 {
+    let a2 = a * a;
+    let f = nh * nh * (a2 - 1.0) + 1.0;
+    return a2 / (PI * f * f);
+}
+
+// Height-correlated Smith visibility, G / (4 N.L N.V).
+fn smith_v(nv: f32, nl: f32, a: f32) -> f32 {
+    let a2 = a * a;
+    let gv = nl * sqrt(nv * nv * (1.0 - a2) + a2);
+    let gl = nv * sqrt(nl * nl * (1.0 - a2) + a2);
+    return 0.5 / max(gv + gl, 1e-7);
+}
+
+fn schlick3(f0: vec3f, vh: f32) -> vec3f {
+    let k = pow(1.0 - clamp(vh, 0.0, 1.0), 5.0);
+    return f0 + (vec3f(1.0, 1.0, 1.0) - f0) * k;
+}
+
+fn schlick1(f0: f32, vh: f32) -> f32 {
+    return f0 + (1.0 - f0) * pow(1.0 - clamp(vh, 0.0, 1.0), 5.0);
+}
+
+fn pbr_neutral(c0: vec3f) -> vec3f {
+    var c = c0;
+    let x = min(c.r, min(c.g, c.b));
+    let offset = select(TONE_TOE_OFFSET, x - TONE_TOE_SLOPE * x * x, x < TONE_TOE_BREAK);
+    c = c - vec3f(offset, offset, offset);
+    let peak = max(c.r, max(c.g, c.b));
+    if (peak < TONE_START) { return c; }
+    let d = 1.0 - TONE_START;
+    let np = 1.0 - d * d / (peak + d - TONE_START);
+    c = c * (np / peak);
+    let g = 1.0 - 1.0 / (TONE_DESAT * (peak - np) + 1.0);
+    return mix(c, vec3f(np, np, np), g);
+}
+
+fn srgb1(x: f32) -> f32 {
+    let c = clamp(x, 0.0, 1.0);
+    return select(SRGB_SCALE * pow(c, 1.0 / SRGB_GAMMA) - SRGB_OFFSET, c * SRGB_SLOPE, c <= SRGB_BREAK);
+}
+
+// Exposure, the curve, the encode (ToneCurve.Display).
+fn display(lin: vec3f) -> vec3f {
+    let t = pbr_neutral(max(lin * u.lk.x, vec3f(0.0, 0.0, 0.0)));
+    return vec3f(srgb1(t.r), srgb1(t.g), srgb1(t.b));
+}
+
+// highlight() on a PREMULTIPLIED colour of coverage a: the tints scaled by a, so an opaque fragment's is exactly highlight()'s.
+fn highlight_pm(rgb: vec3f, a: f32, id: u32, face: u32) -> vec3f {
+    var c = rgb;
+    if (id == 0u) { return c; }
+    if (u.mode == 0u) {
+        if (id == u.hover) { c = mix(c, vec3f(0.2, 0.9, 1.0) * a, 0.45); }
+    } else if (u.mode == 1u) {
+        if (id == u.hover && face == u.hover_face) { c = mix(c, vec3f(1.0, 1.0, 1.0) * a, 0.35); }
+        if (is_selected(id, face)) { c = mix(c, vec3f(1.0, 0.35, 1.0) * a, 0.6); }
+    }
+    return c;
+}
+
+// One fragment (Pbr.Radiance, then Pbr.Shade): PREMULTIPLIED display colour and coverage. The opaque pipeline's coverage is 1.
+@fragment fn fs_pbr(i: PVO, @builtin(front_facing) front: bool) -> @location(0) vec4f {
+    if (clipped(i.world)) { discard; }
+    let m = ap.e[i.slot & SLOT_MASK];
+    let v = normalize(u.eye.xyz - i.world);
+    var n = normalize(i.n);
+    if (!front) {
+        // A cut solid's cap (flag 2: the clip is on) is shaded facing the viewer; a sheet's back face (two-sided) flips its normal.
+        if ((u.flags & 2u) != 0u) { n = v; } else { n = -n; }
+    }
+    let nv = max(dot(n, v), MIN_NDOTV);
+    let base = m.a.rgb;
+    let metal = clamp(m.a.w, 0.0, 1.0);
+    let rough = clamp(m.b.x, 0.0, 1.0);
+    let t = clamp(m.b.y, 0.0, 1.0);
+    let fr0 = (m.b.z - 1.0) / (m.b.z + 1.0);
+    let f0 = mix(vec3f(fr0 * fr0, fr0 * fr0, fr0 * fr0), base, metal);
+    let lut = brdf_lut(nv, rough);
+    let spec_albedo = f0 * lut.x + vec3f(lut.y, lut.y, lut.y);
+    let r = 2.0 * dot(n, v) * n - v;
+    let reflected = env_radiance(r, rough) * u.lk.y;
+    let irr = irradiance(n) * u.lk.y;
+    var surface = reflected * spec_albedo
+                + (vec3f(1.0, 1.0, 1.0) - spec_albedo) * (1.0 - metal) * (1.0 - t) * base * irr / PI;
+
+    // the key light, direct (shadowed in brief 107)
+    let l = u.key.xyz;
+    let nl = dot(n, l);
+    let keyon = nl > 0.0 && dot(u.keyc.xyz, u.keyc.xyz) > 0.0;
+    var nh = 0.0;
+    var vh = 0.0;
+    if (keyon) {
+        let h = normalize(l + v);
+        nh = max(dot(n, h), 0.0);
+        vh = max(dot(v, h), 0.0);
+        var ad = max(rough, MIN_ROUGHNESS);
+        ad = ad * ad;
+        let fr = schlick3(f0, vh);
+        let lobe = fr * (ggx_d(nh, ad) * smith_v(nv, nl, ad));
+        let body = (vec3f(1.0, 1.0, 1.0) - fr) * (1.0 - metal) * (1.0 - t) * base / PI;
+        surface = surface + (lobe + body) * u.keyc.xyz * u.lk.y * nl;
+    }
+
+    // the clear coat: a dielectric lobe over the body, its energy taken from it
+    let cc = clamp(m.b.w, 0.0, 1.0);
+    if (cc > 0.0) {
+        let ccr = clamp(m.c.x, 0.0, 1.0);
+        let lc = brdf_lut(nv, ccr);
+        let coat_albedo = DIELECTRIC_F0 * lc.x + lc.y;
+        var coat = env_radiance(r, ccr) * u.lk.y * coat_albedo;
+        if (keyon) {
+            var ac = max(ccr, MIN_ROUGHNESS);
+            ac = ac * ac;
+            coat = coat + u.keyc.xyz * u.lk.y * (schlick1(DIELECTRIC_F0, vh) * ggx_d(nh, ac) * smith_v(nv, nl, ac) * nl);
+        }
+        surface = surface * (1.0 - cc * coat_albedo) + coat * cc;
+    }
+
+    // transmission, a raster approximation: coverage 1 - T (1 - F) mean(attenuation); the absorbed share glows in the attenuation
+    // colour; the reflection is on top. Real refraction and the distance term are glTF export's.
+    var alpha = 1.0;
+    if (t > 0.0) {
+        let att = m.c.yzw;
+        let fs = (spec_albedo.r + spec_albedo.g + spec_albedo.b) / 3.0;
+        let tau = (att.r + att.g + att.b) / 3.0;
+        let through = t * (1.0 - fs);
+        alpha = 1.0 - through * tau;
+        surface = surface + through * (1.0 - tau) * att * irr / PI;
+    }
+
+    // a STATED transparency multiplies the coverage (D12); an object selected in Object mode is drawn faded, as fs_color draws it
+    var cov = select(1.0, i.col.a, (i.slot & STATED_ALPHA) != 0u);
+    if (u.mode == 0u && is_selected(i.id, 0u)) { cov = min(cov, 0.5); }
+    let a = alpha * cov;
+    return vec4f(highlight_pm(display(surface) * cov, a, i.id, i.face), a);
+}
+
+// The backdrop, drawn first with vs_grid's full-screen triangles: a vertical gradient (top of the view to bottom), or the
+// environment seen along each pixel's ray, exposed and tone-mapped as a surface would be.
+@fragment fn fs_backdrop(i: GVO) -> @location(0) vec4f {
+    if (u.lk1.x < 1.5) {
+        let t = clamp(i.ndc.y * 0.5 + 0.5, 0.0, 1.0);
+        return vec4f(mix(u.bg1.rgb, u.bg0.rgb, t), 1.0);
+    }
+    let d = u.bd.xyz + u.bdx.xyz * i.ndc.x + u.bdy.xyz * i.ndc.y;
+    let c = textureSampleLevel(env, env_s, oct_uv(env_dir(d)), 0.0).rgb * u.lk.y;
+    return vec4f(display(c), 1.0);
 }

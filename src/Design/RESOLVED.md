@@ -16567,3 +16567,18 @@ and `ParallelLcResonanceTests.AnInductorWithOnlyADielectricClass_IsWarnedForWhat
 - The examples' copies of `generic-materials.cmat` were left as they were (no test holds them equal to the resource).
   *Add Generic Materials* on one of those workspaces will now refuse, because the file beside it differs from the
   shipped one. That is the existing rule for a user-edited copy.
+
+## The Look block and the .hdr reader (brief-em3d-106, 2026-10-04)
+
+- **`C3dLook`** is display state exactly as `AirBoxHidden` is: written only when stated (every key nullable, so a document
+  that never had one is unchanged byte for byte), cleared by `SerializeForRun` (classified in its doc comment; the run's
+  manifest, the stale banner and the solved glyphs never see it), carried by `C3dFragment`, and part of `C3dRecordsEdit`'s
+  text as its eighth field, so brief 108's panel undoes a Look edit like any record. Unknown keys (107–109's) are kept and
+  written back, and `check` names them, as it names every unread key.
+- **`RadianceHdr` lives HERE, not in `src/Render` as the brief placed it**: `check` must say whether a `.hdr` reads, and
+  Design cannot reference Render. One reader serves both, so a file `check` accepts is a file the view lights with. It takes
+  the uncompressed and the new run-length forms with the standard `-Y h +X w` layout and refuses (with the reason) the old
+  run-length form, other orientations and other FORMATs.
+- **`check`'s findings**: `c3d.look.range` (Exposure −10…10, Intensity 0…10, a Rotation that is not a number),
+  `c3d.look.background`, `c3d.look.environment` (an unknown word or an `.exr`) are errors; `c3d.look.hdr-unreadable` (a
+  missing or unreadable `.hdr`) is a WARNING, because the view falls back to Studio and says so.

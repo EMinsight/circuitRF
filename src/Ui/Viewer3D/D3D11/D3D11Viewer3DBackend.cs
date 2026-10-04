@@ -29,6 +29,7 @@ using Avalonia.Platform;
 using Avalonia.Rendering.Composition;
 using CircuitRF.Render.Scene3D;
 using CircuitRF.Render.Scene3D.Fields;
+using CircuitRF.Render.Scene3D.Look;
 using Vortice.D3DCompiler;
 using Vortice.Direct3D;
 using Vortice.Direct3D11;
@@ -86,6 +87,15 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
     /// <summary>brief-em3d-104 — the shade stream (Scene3DShadeVertex), held only while the realistic view is on. Input slot 1 of
     /// the realistic pipelines' layout (brief 106; scene.wgsl's header has the mapping).</summary>
     private ID3D11Buffer? _shade;
+    /// <summary>brief-em3d-106 — the realistic pipelines' shaders and layout (the scene's vertex at slot 0, the shade stream at slot 1),
+    /// the premultiplied blend PbrTranslucent takes, the appearance table (b2), and the environment's two RGBA16F textures (t1, t2,
+    /// sampled through the image sampler at s1). The table and the textures are held only while the realistic view is on.</summary>
+    private ID3D11VertexShader _vsPbr = null!;
+    private ID3D11PixelShader _psPbr = null!, _psBackdrop = null!;
+    private ID3D11InputLayout _layoutPbr = null!;
+    private ID3D11BlendState _blendPremultiplied = null!;
+    private ID3D11Buffer? _cbAppearances;
+    private ID3D11ShaderResourceView? _envMap, _envBrdf;
     private readonly ID3D11Buffer?[] _overlays = new ID3D11Buffer?[3];
     private readonly ID3D11RenderTargetView[] _pickTargets = new ID3D11RenderTargetView[2];
 
@@ -180,6 +190,21 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
         ], vsi.Span);
         _imageSampler = dev.CreateSamplerState(new SamplerDescription(Filter.MinMagMipLinear, TextureAddressMode.Clamp,
                                                                       TextureAddressMode.Clamp, TextureAddressMode.Clamp));
+        // brief-em3d-106 — the realistic view: LOC0..3 from the scene's vertex (slot 0), LOC4 the normal and LOC5 the slot from the
+        // shade stream (slot 1); the backdrop is vs_grid's (no layout) with its own pixel shader.
+        var vsp = Compile("vs_pbr", "vs_5_0");
+        _vsPbr = dev.CreateVertexShader(vsp.Span);
+        _psPbr = dev.CreatePixelShader(Compile("fs_pbr", "ps_5_0").Span);
+        _psBackdrop = dev.CreatePixelShader(Compile("fs_backdrop", "ps_5_0").Span);
+        _layoutPbr = dev.CreateInputLayout(
+        [
+            new InputElementDescription("LOC", 0, DxFormat.R32G32B32_Float, 0, 0),
+            new InputElementDescription("LOC", 1, DxFormat.R32_UInt, 12, 0),
+            new InputElementDescription("LOC", 2, DxFormat.R8G8B8A8_UNorm, 16, 0),
+            new InputElementDescription("LOC", 3, DxFormat.R32_UInt, 20, 0),
+            new InputElementDescription("LOC", 4, DxFormat.R32G32B32_Float, 0, ShadeSlot),
+            new InputElementDescription("LOC", 5, DxFormat.R32_UInt, 12, ShadeSlot),
+        ], vsp.Span);
         _layoutField = dev.CreateInputLayout(
         [
             new InputElementDescription("LOC", 0, DxFormat.R32G32B32_Float, 0, 0),
@@ -203,6 +228,9 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
         rt.SourceBlendAlpha = Blend.One; rt.DestinationBlendAlpha = Blend.InverseSourceAlpha; rt.BlendOperationAlpha = BlendOperation.Add;
         rt.RenderTargetWriteMask = ColorWriteEnable.All;
         _blendOn = dev.CreateBlendState(on);
+        // PbrTranslucent's colour is premultiplied: ONE on RGB, so a reflection on glass adds on top of what shows through.
+        on.RenderTarget[0].SourceBlend = Blend.One;
+        _blendPremultiplied = dev.CreateBlendState(on);
         _dsWrite = dev.CreateDepthStencilState(new DepthStencilDescription(true, DepthWriteMask.All, ComparisonFunction.LessEqual));
         _dsNoWrite = dev.CreateDepthStencilState(new DepthStencilDescription(true, DepthWriteMask.Zero, ComparisonFunction.LessEqual));
         // brief-em3d-43 — the selection's edges and its face on top: no depth test at all.
@@ -256,19 +284,23 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
     /// <summary>brief-em3d-101 R-em3d101-4d — an immutable RGBA8 UNORM texture (never _SRGB) created with every CPU-built mip
     /// level as its initial data, and the view the pixel shader reads it through. Once per <see cref="Scene3DTexture"/>.</summary>
     private ID3D11ShaderResourceView? UploadTexture(Scene3DTexture t)
+        => NewSampledTexture(DxFormat.R8G8B8A8_UNorm, 4, [.. t.Levels().Select(l => (l.Width, l.Height, l.Rgba))]);
+
+    /// <summary>brief-em3d-106 R-em3d106-4c — brief 101's upload with the format an argument: RGBA8 for an image, R16G16B16A16_FLOAT for
+    /// the environment (sampleable with linear filtering at feature level 10 and up, so no RGBE fallback).</summary>
+    private ID3D11ShaderResourceView? NewSampledTexture(DxFormat format, int texelBytes, IReadOnlyList<(int Width, int Height, byte[] Bytes)> levels)
     {
-        var levels = t.Levels();
         var pins = new System.Runtime.InteropServices.GCHandle[levels.Count];
         var data = new SubresourceData[levels.Count];
         try
         {
             for (int k = 0; k < levels.Count; k++)
             {
-                pins[k] = System.Runtime.InteropServices.GCHandle.Alloc(levels[k].Rgba, System.Runtime.InteropServices.GCHandleType.Pinned);
-                data[k] = new SubresourceData(pins[k].AddrOfPinnedObject(), (uint)(levels[k].Width * 4), (uint)levels[k].Rgba.Length);
-                Counters.CountUpload(levels[k].Rgba.Length);
+                pins[k] = System.Runtime.InteropServices.GCHandle.Alloc(levels[k].Bytes, System.Runtime.InteropServices.GCHandleType.Pinned);
+                data[k] = new SubresourceData(pins[k].AddrOfPinnedObject(), (uint)(levels[k].Width * texelBytes), (uint)levels[k].Bytes.Length);
+                Counters.CountUpload(levels[k].Bytes.Length);
             }
-            using var tex = Device.CreateTexture2D(new Texture2DDescription(DxFormat.R8G8B8A8_UNorm, (uint)levels[0].Width, (uint)levels[0].Height,
+            using var tex = Device.CreateTexture2D(new Texture2DDescription(format, (uint)levels[0].Width, (uint)levels[0].Height,
                 1, (uint)levels.Count, BindFlags.ShaderResource, ResourceUsage.Immutable), data);
             return Device.CreateShaderResourceView(tex);
         }
@@ -276,6 +308,33 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
         {
             foreach (var h in pins) if (h.IsAllocated) h.Free();
         }
+    }
+
+    // ── the realistic view's lighting (brief-em3d-106) ─────────────────────────────────────────────────────────────────
+
+    /// <summary>The shade stream's input slot (scene.wgsl's header).</summary>
+    private const uint ShadeSlot = 1;
+
+    public override void UploadAppearances(float[] table)
+    {
+        _cbAppearances ??= Device.CreateBuffer(new BufferDescription((uint)(table.Length * 4), BindFlags.ConstantBuffer, ResourceUsage.Default));
+        Ctx.UpdateSubresource(table.AsSpan(), _cbAppearances);
+        Counters.CountUpload(table.Length * 4L);
+    }
+
+    public override void UploadEnvironment(PrefilteredEnvironment environment)
+    {
+        _envMap?.Dispose(); _envBrdf?.Dispose();
+        _envMap = NewSampledTexture(DxFormat.R16G16B16A16_Float, 8, [.. environment.Levels.Select(l => (l.Width, l.Height, l.Bytes.ToArray()))]);
+        _envBrdf = NewSampledTexture(DxFormat.R16G16B16A16_Float, 8,
+            [(Pbr.BrdfSize, Pbr.BrdfSize,
+              System.Runtime.InteropServices.MemoryMarshal.AsBytes(environment.BrdfTable.AsSpan()).ToArray())]);
+    }
+
+    public override void ReleaseEnvironment()
+    {
+        _envMap?.Dispose(); _envBrdf?.Dispose(); _cbAppearances?.Dispose();
+        (_envMap, _envBrdf, _cbAppearances) = (null, null, null);
     }
 
     /// <summary>brief-em3d-43 gate 6 — the changed ranges only, through the immediate context, which orders
@@ -523,7 +582,11 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
                 Scene3DBuffer.Overlay0 => _overlays[0], Scene3DBuffer.Overlay1 => _overlays[1], _ => _overlays[2],
             };
             bool lines = d.Pipeline is Scene3DPipeline.Lines or Scene3DPipeline.Edges, field = d.Pipeline == Scene3DPipeline.Field;
-            bool grid = d.Pipeline == Scene3DPipeline.Grid;
+            // brief-em3d-106 — the backdrop draws like the grid (six vertices, no buffer); a realistic draw needs the look bound.
+            bool grid = d.Pipeline is Scene3DPipeline.Grid or Scene3DPipeline.Backdrop;
+            bool pbr = d.Pipeline is Scene3DPipeline.Pbr or Scene3DPipeline.PbrTranslucent;
+            if ((pbr || d.Pipeline == Scene3DPipeline.Backdrop) && (_envMap is null || _envBrdf is null || _cbAppearances is null)) continue;
+            if (pbr && _shade is null) continue;
             // brief-em3d-101 — an image draw: not indexed, its own vertex stage, its texture at t0.
             bool image = d.Pipeline is Scene3DPipeline.Image or Scene3DPipeline.ImageTranslucent;
             if (image && (d.Texture < 0 || d.Texture >= _textures.Bound.Length || _textures.Bound[d.Texture] is null)) continue;
@@ -534,29 +597,43 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
                 // The vertex stage: the scene's vertex (0), the field's (1), none at all — the grid (2) — or an image's (3).
                 static int StageOf(Scene3DPipeline p) => p switch
                 {
-                    Scene3DPipeline.Field => 1, Scene3DPipeline.Grid => 2, Scene3DPipeline.Image or Scene3DPipeline.ImageTranslucent => 3, _ => 0,
+                    Scene3DPipeline.Field => 1, Scene3DPipeline.Grid or Scene3DPipeline.Backdrop => 2,
+                    Scene3DPipeline.Image or Scene3DPipeline.ImageTranslucent => 3,
+                    Scene3DPipeline.Pbr or Scene3DPipeline.PbrTranslucent => 4, _ => 0,
                 };
                 int wasStage = (int)state < 0 ? -1 : StageOf(state);
                 int stage = StageOf(d.Pipeline);
                 state = d.Pipeline;
                 if (stage != wasStage)
                 {
-                    ctx.IASetInputLayout(stage switch { 1 => _layoutField, 2 => null, 3 => _layoutImage, _ => _layout });
-                    ctx.VSSetShader(stage switch { 1 => _vsField, 2 => _vsGrid, 3 => _vsImage, _ => _vs });
+                    ctx.IASetInputLayout(stage switch { 1 => _layoutField, 2 => null, 3 => _layoutImage, 4 => _layoutPbr, _ => _layout });
+                    ctx.VSSetShader(stage switch { 1 => _vsField, 2 => _vsGrid, 3 => _vsImage, 4 => _vsPbr, _ => _vs });
                     bound = (Scene3DBuffer)(-1);
+                    if (stage == 4) ctx.IASetVertexBuffer(ShadeSlot, _shade!, (uint)Scene3DShadeVertex.Stride);
+                }
+                if (pbr || state == Scene3DPipeline.Backdrop)
+                {
+                    // brief-em3d-106 — the look: the appearance table at b2, the environment at t1 and t2, its sampler at s1.
+                    ctx.PSSetConstantBuffer(2, _cbAppearances!);
+                    ctx.PSSetShaderResource(1, _envMap!);
+                    ctx.PSSetShaderResource(2, _envBrdf!);
+                    ctx.PSSetSampler(1, _imageSampler);
                 }
                 ctx.PSSetShader(state switch
                 {
                     Scene3DPipeline.Field => _psField, Scene3DPipeline.Lines => _psLine, Scene3DPipeline.Edges => _psEdge,
                     Scene3DPipeline.OnTop => _psTop, Scene3DPipeline.Grid => _psGrid,
-                    Scene3DPipeline.Image or Scene3DPipeline.ImageTranslucent => _psImage, _ => _psColor,
+                    Scene3DPipeline.Image or Scene3DPipeline.ImageTranslucent => _psImage,
+                    Scene3DPipeline.Pbr or Scene3DPipeline.PbrTranslucent => _psPbr, Scene3DPipeline.Backdrop => _psBackdrop, _ => _psColor,
                 });
                 if (image) ctx.PSSetSampler(0, _imageSampler);
                 bool selection = state is Scene3DPipeline.Edges or Scene3DPipeline.OnTop;
-                ctx.OMSetBlendState(state is Scene3DPipeline.Translucent or Scene3DPipeline.Grid or Scene3DPipeline.Image
+                ctx.OMSetBlendState(state == Scene3DPipeline.PbrTranslucent ? _blendPremultiplied
+                                    : state is Scene3DPipeline.Translucent or Scene3DPipeline.Grid or Scene3DPipeline.Image
                                     or Scene3DPipeline.ImageTranslucent || selection ? _blendOn : _blendOff);
-                ctx.OMSetDepthStencilState(selection ? _dsOff
-                    : state is Scene3DPipeline.Translucent or Scene3DPipeline.Grid or Scene3DPipeline.ImageTranslucent ? _dsNoWrite : _dsWrite);
+                ctx.OMSetDepthStencilState(selection || state == Scene3DPipeline.Backdrop ? _dsOff
+                    : state is Scene3DPipeline.Translucent or Scene3DPipeline.Grid or Scene3DPipeline.ImageTranslucent
+                      or Scene3DPipeline.PbrTranslucent ? _dsNoWrite : _dsWrite);
                 ctx.IASetPrimitiveTopology(lines ? PrimitiveTopology.LineList : PrimitiveTopology.TriangleList);
             }
             if (grid)
@@ -621,6 +698,7 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
     {
         ReleaseImages();
         _vb?.Dispose(); _ib?.Dispose(); _lines?.Dispose(); _field?.Dispose(); _imageVb?.Dispose(); _shade?.Dispose();
+        ReleaseEnvironment();
         _textures.Clear(v => v?.Dispose());
         foreach (var o in _overlays) o?.Dispose();
         if (_device is null) return;
@@ -633,6 +711,7 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
         _cb?.Dispose(); _cbTransform?.Dispose(); _layout?.Dispose(); _vs?.Dispose(); _layoutField?.Dispose(); _vsField?.Dispose();
         _psColor?.Dispose(); _psLine?.Dispose(); _psPick?.Dispose(); _psField?.Dispose(); _psEdge?.Dispose(); _psTop?.Dispose(); _vsGrid?.Dispose(); _psGrid?.Dispose();
         _layoutImage?.Dispose(); _vsImage?.Dispose(); _psImage?.Dispose(); _imageSampler?.Dispose();
+        _layoutPbr?.Dispose(); _vsPbr?.Dispose(); _psPbr?.Dispose(); _psBackdrop?.Dispose(); _blendPremultiplied?.Dispose();
         _blendOff?.Dispose(); _blendOn?.Dispose(); _dsWrite?.Dispose(); _dsNoWrite?.Dispose(); _dsOff?.Dispose(); foreach (var r in _raster) r?.Dispose();
         _ctx?.Dispose(); _device.Dispose();
     }

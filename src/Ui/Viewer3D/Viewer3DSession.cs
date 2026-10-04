@@ -9,6 +9,7 @@
 
 using CircuitRF.Render.Scene3D;
 using CircuitRF.Render.Scene3D.Fields;
+using CircuitRF.Render.Scene3D.Look;
 
 namespace CircuitRF.Ui.Viewer3D;
 
@@ -19,6 +20,8 @@ public sealed class Viewer3DSession(Func<Viewer3DBackend> create) : IDisposable
     private long _fieldVersion = -1;
     private Scene3DModel? _uploadedScene;
     private Scene3DModel? _shadeScene;
+    private PrefilteredEnvironment? _environment;
+    private CircuitRF.Design.ThreeD.Appearance.AppearanceValues[]? _appearances;
     private bool _disposed;
 
     /// <summary>Serialises the render thread against a backend teardown.</summary>
@@ -39,6 +42,18 @@ public sealed class Viewer3DSession(Func<Viewer3DBackend> create) : IDisposable
     /// generations and patches keep it in step; turned off, the next frame releases it.
     /// </summary>
     public bool ShadeStream { get; set; }
+
+    /// <summary>
+    /// brief-em3d-106 R-em3d106-1e — the environment the realistic view lights with (the view model sets it with
+    /// <see cref="ShadeStream"/>). While the shade stream is on, the next frame uploads it once, and the scene's appearance table
+    /// whenever its rows change; with the shade stream off, the next frame releases both. A rotation, an exposure or an intensity
+    /// is a uniform and uploads nothing.
+    /// </summary>
+    public PrefilteredEnvironment? Environment { get; set; }
+
+    /// <summary>How many times the environment, and the appearance table, have been uploaded (gate 7).</summary>
+    public int EnvironmentUploads { get; private set; }
+    public int AppearanceUploads { get; private set; }
 
     /// <summary>Counters on the UI lane: the pane's per-frame share on the UI thread.</summary>
     public FrameCounters Ui { get; } = new("ui");
@@ -100,12 +115,34 @@ public sealed class Viewer3DSession(Func<Viewer3DBackend> create) : IDisposable
         if (!ShadeStream)
         {
             if (_shadeScene is not null) { b.ReleaseShade(); _shadeScene = null; }
+            if (_environment is not null || _appearances is not null)
+            {
+                b.ReleaseEnvironment();
+                (_environment, _appearances) = (null, null);
+            }
         }
-        else if (!ReferenceEquals(_shadeScene, scene))
+        else
         {
-            if (patch is { ShadeWhole: false } && _shadeScene is not null && ReferenceEquals(_shadeScene, previous)) b.PatchShade(scene, patch);
-            else b.UploadShade(scene);
-            _shadeScene = scene;
+            if (!ReferenceEquals(_shadeScene, scene))
+            {
+                if (patch is { ShadeWhole: false } && _shadeScene is not null && ReferenceEquals(_shadeScene, previous)) b.PatchShade(scene, patch);
+                else b.UploadShade(scene);
+                _shadeScene = scene;
+            }
+            // brief-em3d-106 — the appearance table when its ROWS changed (a rebuilt scene with the same looks uploads nothing), and the
+            // environment when it is a different one.
+            if (_appearances is null || !_appearances.AsSpan().SequenceEqual(scene.Appearances))
+            {
+                b.UploadAppearances(Pbr.Table(scene.Appearances));
+                _appearances = scene.Appearances;
+                AppearanceUploads++;
+            }
+            if (Environment is { } env && !ReferenceEquals(env, _environment))
+            {
+                b.UploadEnvironment(env);
+                _environment = env;
+                EnvironmentUploads++;
+            }
         }
         Sync(b, Scene3DBuffer.Overlay0, 0, mesh);
         Sync(b, Scene3DBuffer.Overlay1, 1, section);

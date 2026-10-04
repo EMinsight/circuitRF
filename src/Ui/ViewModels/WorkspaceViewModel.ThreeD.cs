@@ -723,6 +723,8 @@ public partial class WorkspaceViewModel
         ThreeDFitCommand.NotifyCanExecuteChanged();
         ThreeDStandardViewCommand.NotifyCanExecuteChanged();
         ThreeDPerspectiveCommand.NotifyCanExecuteChanged();
+        ToggleThreeDRealisticCommand.NotifyCanExecuteChanged();
+        FollowRealisticPane();
         ThreeDClipPlaneCommand.NotifyCanExecuteChanged();
         ThreeDAxisIndicatorCommand.NotifyCanExecuteChanged();
         ThreeDScaleLegendCommand.NotifyCanExecuteChanged();
@@ -883,6 +885,34 @@ public partial class WorkspaceViewModel
 
     [RelayCommand(CanExecute = nameof(HasActive3DPane))]
     private void ThreeDClipPlane() { if (Active3DPane() is { } p) p.ClipEnabled = !p.ClipEnabled; }
+
+    /// <summary>brief-em3d-106 R-em3d106-1c — 3D ▸ View ▸ Realistic View: the toolbar's toggle.</summary>
+    [RelayCommand(CanExecute = nameof(HasActive3DPane))]
+    private void ToggleThreeDRealistic() { if (Active3DPane() is { } p) p.IsRealistic = !p.IsRealistic; }
+
+    /// <summary>Whether the active 3D view is realistic — both menus' check mark. Followed through the pane's own property, so the
+    /// toolbar's toggle moves the mark too.</summary>
+    public bool ThreeDRealistic => Active3DPane()?.IsRealistic == true;
+
+    private Viewer3DViewModel? _realisticPane;
+
+    /// <summary>Follows the active pane's realistic flag (re-pointed whenever the active document changes).</summary>
+    private void FollowRealisticPane()
+    {
+        var pane = Active3DPane();
+        if (!ReferenceEquals(pane, _realisticPane))
+        {
+            if (_realisticPane is not null) _realisticPane.PropertyChanged -= OnRealisticPaneChanged;
+            _realisticPane = pane;
+            if (pane is not null) pane.PropertyChanged += OnRealisticPaneChanged;
+        }
+        OnPropertyChanged(nameof(ThreeDRealistic));
+    }
+
+    private void OnRealisticPaneChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(Viewer3DViewModel.IsRealistic)) OnPropertyChanged(nameof(ThreeDRealistic));
+    }
 
     [RelayCommand(CanExecute = nameof(HasActive3DPane))]
     private void ThreeDAxisIndicator() { if (Active3DPane() is { } p) p.ShowAxisIndicator = !p.ShowAxisIndicator; }

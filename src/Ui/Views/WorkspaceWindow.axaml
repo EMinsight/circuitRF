@@ -217,6 +217,10 @@
                                         </NativeMenuItem.Menu>
                                     </NativeMenuItem>
                                     <NativeMenuItem Header="Perspective" ToolTip="Requires an active 3D document."    Command="{Binding ThreeDPerspectiveCommand}"/>
+                                    <!-- brief-em3d-106 R-em3d106-1c — a check item, no key equivalent (overview D6). -->
+                                    <NativeMenuItem Header="Realistic View" ToggleType="CheckBox" IsChecked="{Binding ThreeDRealistic, Mode=OneWay}"
+                                                    ToolTip="Materials, lighting and shadows, for pictures. Changes nothing in the model. Requires an active 3D document."
+                                                    Command="{Binding ToggleThreeDRealisticCommand}"/>
                                     <NativeMenuItem Header="Clip Plane" ToolTip="Requires an active 3D document."     Command="{Binding ThreeDClipPlaneCommand}"/>
                                     <NativeMenuItem Header="Axis Indicator" ToolTip="Requires an active 3D document." Command="{Binding ThreeDAxisIndicatorCommand}"/>
                                     <NativeMenuItem Header="Scale Legend" ToolTip="Requires an active 3D document." Command="{Binding ThreeDScaleLegendCommand}"/>
@@ -1099,6 +1103,10 @@
                     </MenuItem>
                     <MenuItem Header="_Perspective" Command="{Binding ThreeDPerspectiveCommand}" InputGesture="P"
                               ToolTip.Tip="Toggle perspective and orthographic. Requires an active 3D document."/>
+                    <!-- brief-em3d-106 R-em3d106-1c — mirrors the macOS menu's View ▸ Realistic View: a check item, no key equivalent. -->
+                    <MenuItem Header="_Realistic View" Command="{Binding ToggleThreeDRealisticCommand}" ToggleType="CheckBox"
+                              IsChecked="{Binding ThreeDRealistic, Mode=OneWay}"
+                              ToolTip.Tip="Materials, lighting and shadows, for pictures. Changes nothing in the model. Requires an active 3D document."/>
                     <MenuItem Header="_Clip Plane" Command="{Binding ThreeDClipPlaneCommand}" InputGesture="C"
                               ToolTip.Tip="Toggle the clip plane. Requires an active 3D document."/>
                     <MenuItem Header="_Axis Indicator" Command="{Binding ThreeDAxisIndicatorCommand}" InputGesture="A"

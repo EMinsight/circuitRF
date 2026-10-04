@@ -136,6 +136,8 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         {
             EditHost = this,
             KeepEmptyView = () => Document.Objects.Count == 0 && Document.Instances.Count == 0,
+            // brief-em3d-106 — the realistic view reads the document's Look; a .hdr is relative to this file.
+            LookSource = () => (Document.Look, FilePath),
         };
         Viewer.SceneAdopted += OnSceneAdopted;
         Viewer.SelectionChanged += OnViewerSelectionChanged;
@@ -748,6 +750,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         RefreshEntered();
         ResolveDocument();
         Viewer.Regenerate();
+        Viewer.LookChanged();          // brief-em3d-106 — an undo, a reload or another frame's document may carry another Look
         RebuildTree();
         Properties.Reload();
         OnPropertyChanged(nameof(IsDirty));
