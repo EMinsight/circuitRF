@@ -66,7 +66,7 @@ public struct Scene3DImageVertex(float x, float y, float z, float u, float v, ui
 /// Phase B). <see cref="Translucent"/> when the object's alpha or any texel's is below 1.
 /// </summary>
 /// <para><see cref="OnFace"/> — an image mapped onto a face (Phase B): its draw ties <c>FaceImage</c>, over the face it lies on, where
-/// an image sheet's ties <c>Underlay</c>, under everything on its plane.</para>
+/// an image sheet's ties <c>Underlay</c>, under everything on its plane (or <c>FaceImage</c> when it is in front).</para>
 public readonly record struct Scene3DImageBatch(uint ObjectId, int Image, int FirstVertex, int VertexCount, bool Translucent, bool Surface,
                                                 bool OnFace = false);
 
@@ -159,6 +159,10 @@ public sealed class Scene3DObject
     /// plane (<c>Scene3DDepthTie.Underlay</c>), so a polygon traced on the image's own plane is drawn over it and is what a
     /// click finds.</summary>
     public bool Underlay { get; init; }
+
+    /// <summary>An image sheet whose image is drawn OVER the faces on its plane (C3dImage.InFront): it ties
+    /// <c>Scene3DDepthTie.FaceImage</c> instead of <c>Underlay</c> — a picture placed on a solid's face.</summary>
+    public bool ImageInFront { get; init; }
 
     /// <summary>brief-em3d-101 — the image's file name (<c>die.png</c>), for the hover; null for an object with none.</summary>
     public string? ImageName { get; init; }

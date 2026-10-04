@@ -89,7 +89,8 @@ public struct Scene3DDraw
 public enum Scene3DDepthTie : sbyte
 {
     /// <summary>brief-em3d-101 R-em3d101-4b — an image sheet: gives way to EVERY face lying on its plane, so what is traced on it
-    /// is drawn over it and is what a click finds — the 3D form of the layout's "bitmaps always render behind" (R-bmp-2).</summary>
+    /// is drawn over it and is what a click finds — the 3D form of the layout's "bitmaps always render behind" (R-bmp-2). One
+    /// whose image is <c>InFront</c> (a picture placed on a solid's face) ties <see cref="FaceImage"/> instead.</summary>
     Underlay = -2,
     /// <summary>A dielectric or air: gives way to a metal face on its own.</summary>
     Behind = -1,
@@ -98,7 +99,7 @@ public enum Scene3DDepthTie : sbyte
     /// <summary>Via metal: wins over the pad and plane it passes through.</summary>
     Via = 1,
     /// <summary>brief-em3d-101 R-em3d101-10 — an image mapped onto a face: wins over the face it lies on (any kind of object's),
-    /// and gives way to a port's surface or a field plot on that face.</summary>
+    /// and gives way to a port's surface or a field plot on that face. Also an image sheet whose image is <c>InFront</c>.</summary>
     FaceImage = 2,
     /// <summary>A port's surface: wins over the metal it lies on.</summary>
     Port = 3,
@@ -250,7 +251,7 @@ public sealed class Scene3DFramePlan
     /// object's (<see cref="Scene3DDepthTie"/>).</summary>
     public static Scene3DDepthTie TieOf(Scene3DModel scene, uint id)
         => id < 1 || id > scene.Objects.Length ? Scene3DDepthTie.None
-         : scene.Objects[id - 1].Underlay ? Scene3DDepthTie.Underlay
+         : scene.Objects[id - 1].Underlay ? scene.Objects[id - 1].ImageInFront ? Scene3DDepthTie.FaceImage : Scene3DDepthTie.Underlay
          : scene.Objects[id - 1].Kind switch
         {
             Scene3DKind.Dielectric or Scene3DKind.Air => Scene3DDepthTie.Behind,
@@ -262,13 +263,29 @@ public sealed class Scene3DFramePlan
     /// <summary>The lowest and highest tie, for a backend that makes one state per tie (D3D11's rasterizer states).</summary>
     public const Scene3DDepthTie TieMin = Scene3DDepthTie.Underlay, TieMax = Scene3DDepthTie.Field;
 
-    /// <summary>The polygon offset a <paramref name="tie"/> draw takes, in the backends' terms (constant steps, slope factor):
-    /// one <see cref="BehindDepthBias"/> per step, away from the eye below <see cref="Scene3DDepthTie.None"/> and towards it
-    /// for each step above <see cref="Scene3DDepthTie.None"/>. Only a draw pushed AWAY takes the slope factor: towards the eye
-    /// it is unbounded where a wall is seen edge-on, and a via barrel's silhouette came through the copper above it as a
-    /// dotted trail. Coincident faces differ by a few float steps of interpolation, which the constant alone covers.</summary>
-    public static (float Constant, float Slope) DepthBias(Scene3DDepthTie tie)
-        => (-(int)tie * BehindDepthBias, tie < Scene3DDepthTie.None ? BehindSlopeScale : 0);
+    /// <summary>The polygon offset a <paramref name="tie"/> draw takes, in the backends' terms (constant steps, slope factor,
+    /// clamp — the bias's largest magnitude in depth units, 0 for none): one <see cref="BehindDepthBias"/> per step, away from
+    /// the eye below <see cref="Scene3DDepthTie.None"/> and towards it for each step above <see cref="Scene3DDepthTie.None"/>.
+    /// A draw pushed AWAY takes the slope factor unclamped. Towards the eye it is unbounded where a wall is seen edge-on, and a
+    /// via barrel's silhouette came through the copper above it as a dotted trail, so a via takes none. What lies ON a face —
+    /// an image (<see cref="Scene3DDepthTie.FaceImage"/>), a port's surface, a field plot — takes one, CLAMPED
+    /// (<see cref="DecalSlopeScale"/>, <see cref="DecalBiasClamp"/>): each is a different triangulation of the face's plane, and
+    /// seen obliquely the two interpolate depths further apart than the constant covers.</summary>
+    public static (float Constant, float Slope, float Clamp) DepthBias(Scene3DDepthTie tie)
+        => tie < Scene3DDepthTie.None ? (-(int)tie * BehindDepthBias, BehindSlopeScale, 0)
+         : tie >= Scene3DDepthTie.FaceImage ? (-(int)tie * BehindDepthBias, -DecalSlopeScale, -DecalBiasClamp)
+         : (-(int)tie * BehindDepthBias, 0, 0);
+
+    /// <summary>What lies on a face (<see cref="Scene3DDepthTie.FaceImage"/> and above): its slope factor towards the eye, and the clamp on
+    /// its whole bias, in depth units. Measured on an image sheet lying on a box's face, Metal, 2,250 views (five zooms, both
+    /// projections, ±77° about the face's normal): with no slope term the box won 17 % of the image's pixels (half the views
+    /// fought, most at 45° and beyond); this slope with no clamp, none — but seen from BEHIND the box, the sheet then came through
+    /// along the box's silhouette in 1–2 px lines (450 k px over the views). This clamp left 2 px fighting, on a face three
+    /// pixels across, and a few silhouette pixels a view, about what the constant alone leaves. 1e-4 left 99 px fighting;
+    /// 3e-4 none, at 35 % more silhouette pixels. A lumped port lying on a box's face, the same sweep: 14 % of its pixels lost
+    /// in 63 % of the views with the constant alone, none with this; silhouette pixels from behind 382 → 1,728 over the views.
+    /// A field plot on a face is the same arrangement and takes the same, unmeasured (it needs a solved field).</summary>
+    public const float DecalSlopeScale = 2, DecalBiasClamp = 2e-4f;
 
     /// <summary>The same offset as the CPU picks apply it: added to an object's NDC depth (<see cref="BehindNdc"/> a step).</summary>
     public static float TieNdc(Scene3DDepthTie tie) => -(int)tie * BehindNdc;
@@ -678,7 +695,7 @@ public sealed class Scene3DFramePlan
         int from = DrawCount;
         AddMoved(preview, ib.ObjectId, translucent ? Scene3DPipeline.ImageTranslucent : Scene3DPipeline.Image, Scene3DBuffer.Image,
                  ib.FirstVertex, ib.VertexCount, identity: true,
-                 tie: ib.OnFace ? Scene3DDepthTie.FaceImage : Scene3DDepthTie.Underlay);
+                 tie: ib.OnFace ? Scene3DDepthTie.FaceImage : TieOf(scene, ib.ObjectId));
         for (int d = from; d < DrawCount; d++) Draws[d].Texture = ib.Image;
     }
 

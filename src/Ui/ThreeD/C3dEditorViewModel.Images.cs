@@ -246,6 +246,15 @@ public sealed partial class C3dEditorViewModel
         StatusMessage = locked ? $"'{s.Name}' is locked: selected and edited, never moved." : $"'{s.Name}' is unlocked.";
     }
 
+    /// <summary>Draws an image sheet's image over the faces on its plane, or under them (C3dImage.InFront): one undo entry.</summary>
+    public void SetImageInFront(int index, bool inFront)
+    {
+        if (ImageSheetAt(index) is not { } s) return;
+        if (!ChangeObject(index, $"{(inFront ? "Bring" : "Send")} image of {s.Name} {(inFront ? "in front of" : "behind")} faces",
+                          o => ((C3dSheet)o).Image!.InFront = inFront)) return;
+        StatusMessage = inFront ? $"'{s.Name}' is drawn over any face on its plane." : $"'{s.Name}' is drawn under any face on its plane.";
+    }
+
     /// <summary>Points an image sheet at <paramref name="absolute"/> (Replace Image…, Resolve Path…, the Inspector's Browse…): one
     /// undo entry, and the new file is read afresh.</summary>
     public void SetImagePath(int index, string absolute, string verb = "Replace image of")
@@ -357,6 +366,10 @@ public sealed partial class C3dEditorViewModel
         yield return new Viewer3DMenuItem("Drawing Plane from Image", () => { if (PlaneFromImage(index) is { } why) StatusMessage = why; });
         yield return new Viewer3DMenuItem(s.Locked ? "Unlock" : "Lock", () => SetImageLocked(index, !s.Locked),
             Tip: "A locked image stays selectable and editable in the Inspector, but Move, Rotate, the gizmo and vertex moves are refused.");
+        bool front = s.Image!.InFront;
+        yield return new Viewer3DMenuItem(front ? "Image Behind Faces" : "Image in Front of Faces", () => SetImageInFront(index, !front),
+            Tip: front ? "Draw the image under any face lying on its plane, as a tracing underlay."
+                       : "Draw the image over any face lying on its plane — a picture placed on a solid's face.");
         yield return new Viewer3DMenuItem("Replace Image…", () => _ = PickInto(index, "Replace Image", "Replace image of"));
         if (ImageProblemOf(s) is { } problem)
             yield return new Viewer3DMenuItem("Resolve Path…", () => _ = PickInto(index, "Resolve Image Path", "Resolve image path of"),

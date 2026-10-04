@@ -480,7 +480,9 @@ internal static class DocumentSchema
             the Top, Front and Right views read them, never mirrored. A placed image sheet is written
             "Model": false and no Material; turning Model on puts the SHEET in the solve as any sheet
             (the image is never geometry). Transparency is the image's. "Locked": true (written only
-            then, only meaningful with an Image) refuses moves in the editor. An image is drawing
+            then, only meaningful with an Image) refuses moves in the editor. The image is drawn
+            UNDER any face lying on the sheet's plane (a tracing underlay); "Image": {"Path": …,
+            "InFront": true} draws it OVER them instead — a picture placed on a solid's face. An image is drawing
             only: changing it never makes a result out of date. `check` warns — never errs — on an
             image file that is missing or does not decode, and on Locked with no Image.
           * "FaceImages" on any object maps images onto its flat faces, one per face: each

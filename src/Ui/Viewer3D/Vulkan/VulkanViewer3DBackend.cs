@@ -76,6 +76,9 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
     private uint _queueFamily;
     private byte[] _deviceUuid = [];
     private bool _canExport;
+    /// <summary>Whether the device enabled <c>depthBiasClamp</c>: what lies on a face has its bias clamped (Scene3DFramePlan.DepthBias), and
+    /// without the feature a clamp must be 0 — such a draw then takes no slope factor, the constant alone as before.</summary>
+    private bool _biasClamp;
     private VkPhysicalDeviceMemoryProperties _mem;
     private string _description = "Vulkan (no device yet)";
 
@@ -209,6 +212,11 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
         bool Has(string e) { foreach (var x in ext) if (Marshal.PtrToStringUTF8((nint)x.extensionName) == e) return true; return false; }
         _canExport = Has("VK_KHR_external_memory_fd") && Has("VK_KHR_external_semaphore_fd");
 
+        VkPhysicalDeviceFeatures supported;
+        vi.vkGetPhysicalDeviceFeatures(_physical, &supported);
+        _biasClamp = supported.depthBiasClamp;
+        var features = new VkPhysicalDeviceFeatures { depthBiasClamp = _biasClamp };
+
         float prio = 1f;
         var qci = new VkDeviceQueueCreateInfo { queueFamilyIndex = _queueFamily, queueCount = 1, pQueuePriorities = &prio };
         fixed (byte* e1 = "VK_KHR_external_memory_fd"u8)
@@ -219,6 +227,7 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
             {
                 queueCreateInfoCount = 1, pQueueCreateInfos = &qci,
                 enabledExtensionCount = _canExport ? 2u : 0u, ppEnabledExtensionNames = names,
+                pEnabledFeatures = &features,
             };
             VkDevice device;
             Check(vi.vkCreateDevice(_physical, &dci, null, &device), "vkCreateDevice");
@@ -422,11 +431,12 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
     }
 
     /// <summary>3D editor round 3 / bugs round 9 — the polygon offset of a draw's depth tie (Scene3DFramePlan.DepthBias), set only
-    /// when it changes between draws. Clamp 0 needs no device feature.</summary>
-    private static void SetTie(VkDeviceApi api, VkCommandBuffer cb, Scene3DDepthTie tie)
+    /// when it changes between draws. A clamp other than 0 needs the device's <c>depthBiasClamp</c> (<see cref="_biasClamp"/>).</summary>
+    private void SetTie(VkDeviceApi api, VkCommandBuffer cb, Scene3DDepthTie tie)
     {
-        var (constant, slope) = Scene3DFramePlan.DepthBias(tie);
-        api.vkCmdSetDepthBias(cb, constant, 0, slope);
+        var (constant, slope, clamp) = Scene3DFramePlan.DepthBias(tie);
+        if (clamp != 0 && !_biasClamp) (slope, clamp) = (0, 0);
+        api.vkCmdSetDepthBias(cb, constant, clamp, slope);
     }
 
     private VkPipeline Pipeline(VkDeviceApi api, VkRenderPass rp, ReadOnlySpan<byte> fragmentEntry, VkPrimitiveTopology topology,

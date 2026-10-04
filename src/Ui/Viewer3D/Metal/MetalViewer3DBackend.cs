@@ -634,8 +634,8 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
     /// state, so it is set only when it changes between draws.</summary>
     private static void SetDepthBias(nint enc, Scene3DDepthTie tie)
     {
-        var (constant, slope) = Scene3DFramePlan.DepthBias(tie);
-        ((delegate* unmanaged<nint, nint, float, float, float, void>)MsgSend)(enc, Sel_setDepthBias, constant, slope, 0);
+        var (constant, slope, clamp) = Scene3DFramePlan.DepthBias(tie);
+        ((delegate* unmanaged<nint, nint, float, float, float, void>)MsgSend)(enc, Sel_setDepthBias, constant, slope, clamp);
     }
     private static readonly nint Sel_setFrontFacing = Sel("setFrontFacingWinding:");
     private static readonly nint Class_RPD = Class("MTLRenderPassDescriptor");

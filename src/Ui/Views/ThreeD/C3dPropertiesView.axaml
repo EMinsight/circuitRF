@@ -102,6 +102,8 @@
                 </StackPanel>
                 <CheckBox Content="Locked" IsChecked="{Binding ImageLocked}"
                           ToolTip.Tip="A locked image stays selectable and editable here, but Move, Rotate, the gizmo and vertex moves are refused."/>
+                <CheckBox Content="In front of faces" IsChecked="{Binding ImageInFront}"
+                          ToolTip.Tip="Draw the image over any face lying on its plane — a picture placed on a solid's face. Off, it is an underlay: what is traced on its plane is drawn over it."/>
                 <Button Content="Remove Image" FontSize="11" Padding="8,3" Command="{Binding RemoveSheetImageCommand}"
                         ToolTip.Tip="The sheet stays, an ordinary sheet: a traced reference becomes a real one."/>
             </StackPanel>

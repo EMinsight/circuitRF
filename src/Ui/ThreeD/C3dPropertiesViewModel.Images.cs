@@ -1,5 +1,5 @@
 // brief-em3d-101 R-em3d101-3b — the Inspector's Image section, on an image sheet, above the sheet's own rows: the file (Browse…,
-// Reveal), its pixels, the rectangle's width and height with Keep aspect, Reset to Image Aspect, Locked and Remove Image. Every
+// Reveal), its pixels, the rectangle's width and height with Keep aspect, Reset to Image Aspect, Locked, In front of faces and Remove Image. Every
 // write is the editor's one function for it (C3dEditorViewModel.Images.cs) — one undo entry each. Transparency is brief 92's row,
 // already there: an image sheet's transparency IS its image's (owner decision D2).
 
@@ -20,6 +20,7 @@ public sealed partial class C3dPropertiesViewModel
     [ObservableProperty] private string _imageHeightText = "";
     [ObservableProperty] private bool _imageKeepAspect = true;
     [ObservableProperty] private bool _imageLocked;
+    [ObservableProperty] private bool _imageInFront;
     [ObservableProperty] private string? _imageSizeError;
 
     /// <summary>The unit the width and height are typed in (the document's display unit).</summary>
@@ -48,6 +49,7 @@ public sealed partial class C3dPropertiesViewModel
         ImageWidthText = s.Rect is { } r ? C3dDimension.Spell(r.Size.U, doc.DisplayUnit, doc.DbuPerMicron) : "";
         ImageHeightText = s.Rect is { } r2 ? C3dDimension.Spell(r2.Size.V, doc.DisplayUnit, doc.DbuPerMicron) : "";
         ImageLocked = s.Locked;
+        ImageInFront = s.Image.InFront;
         ImageSizeError = s.Rect is null ? "Its outline was edited: its width and height are its vertices' (below)." : null;
     }
 
@@ -55,6 +57,12 @@ public sealed partial class C3dPropertiesViewModel
     {
         if (_loading || !HasImage || _imageIndex < 0) return;
         editor.SetImageLocked(_imageIndex, value);
+    }
+
+    partial void OnImageInFrontChanged(bool value)
+    {
+        if (_loading || !HasImage || _imageIndex < 0) return;
+        editor.SetImageInFront(_imageIndex, value);
     }
 
     /// <summary>Commits the width box (Enter or leaving it): the height follows with Keep aspect.</summary>

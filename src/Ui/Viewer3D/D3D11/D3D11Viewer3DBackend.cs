@@ -212,9 +212,10 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
         // a via over a metal and a port over a via.
         for (int t = 0; t < _raster.Length; t++)
         {
-            var (constant, slope) = Scene3DFramePlan.DepthBias((Scene3DDepthTie)(t + (int)Scene3DFramePlan.TieMin));
+            var (constant, slope, clamp) = Scene3DFramePlan.DepthBias((Scene3DDepthTie)(t + (int)Scene3DFramePlan.TieMin));
             rs.DepthBias = (int)constant;
             rs.SlopeScaledDepthBias = slope;
+            rs.DepthBiasClamp = clamp;
             _raster[t] = dev.CreateRasterizerState(rs);
         }
         _cb = dev.CreateBuffer(new BufferDescription(Scene3DFramePlan.UniformBytes, BindFlags.ConstantBuffer, ResourceUsage.Default));

@@ -431,11 +431,15 @@ fixture drawing — or to lay the design over and compare. It goes in two ways: 
   every one in a click.
 - **Tracing.** Right-click it ▸ **Drawing Plane from Image** puts the drawing plane on the image's own plane; then pick
   the Polygon tool and trace. Whatever is drawn on that plane is drawn **over** the image and is what a click picks:
-  an image always gives way to the faces lying on it.
+  an image gives way to the faces lying on it.
+- **In front of faces.** To show a picture *on* a solid — a sheet lying exactly on one of its faces — tick **In front
+  of faces** in Properties, or pick **Image in Front of Faces** from its menu. The image is then drawn over every face
+  on its plane and is what a click there picks. Untick it (**Image Behind Faces**) to make it a tracing underlay again.
+  To put a picture on one face of an object without a separate sheet, use a face image (below).
 - **Which way up.** On an XY plane the image's right is +x and its up +y; on XZ right +x, up +z; on YZ right +y, up +z —
   as the Top, Front and Right views show them, never mirrored. The sheet's own rotation and mirror move it with the sheet.
 - **Properties ▸ Image**: the file (**Browse…** points it at another, **Reveal** shows it), its pixels, **Width** and
-  **Height** with **Keep aspect**, **Reset to Image Aspect**, **Locked** and **Remove Image** (the sheet stays, an
+  **Height** with **Keep aspect**, **Reset to Image Aspect**, **Locked**, **In front of faces** and **Remove Image** (the sheet stays, an
   ordinary sheet — a traced reference becomes a real one). Its **Transparency** row is the image's; a PNG's own
   transparency is kept too.
 - **Locked** keeps a tracing underlay where it is: it is still selected and edited in Properties, but Move, Rotate, the

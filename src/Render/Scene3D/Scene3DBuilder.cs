@@ -400,7 +400,7 @@ public static class Scene3DBuilder
                 Id = 0, Name = sh.Name, Kind = Scene3DKind.Sheet, Role = Em3dRole.Conductor, Material = sh.Material, MaterialValues = m,
                 MaterialSlot = slot, Rgba = wire ? wireFill : dim && image is null ? Dimmed(rgba, dark) : rgba, Translucent = dim || wire || translucent,
                 FaceNames = names.Count > 0 ? names : SheetFaceNames, Context = dim, Wireframe = wire, Transparency = see,
-                Underlay = image is not null, ImageName = image is null ? null : Path.GetFileName(image.Path),
+                Underlay = image is not null, ImageInFront = image?.InFront == true, ImageName = image is null ? null : Path.GetFileName(image.Path),
             }, mesh, faces: true, sheet: true, features: Features(sh.Name, mesh, sheet: true, sheetNames: names.Count > 0 ? names : SheetFaceNames),
                wireEdges: wire ? wireEdge : null);
             if (image is not null)
@@ -969,7 +969,7 @@ public static class Scene3DBuilder
                 MaterialSlot = o.MaterialSlot, Rgba = o.Rgba, Translucent = o.Translucent,
                 InitiallyVisible = o.InitiallyVisible, PortNumber = o.PortNumber, Boundary = o.Boundary,
                 FaceNames = o.FaceNames, CapCentres = o.CapCentres, Context = o.Context, PickLast = o.PickLast,
-                Wireframe = o.Wireframe, Tint = o.Tint, Transparency = o.Transparency, Underlay = o.Underlay, ImageName = o.ImageName,
+                Wireframe = o.Wireframe, Tint = o.Tint, Transparency = o.Transparency, Underlay = o.Underlay, ImageInFront = o.ImageInFront, ImageName = o.ImageName,
             };
             var min = new Vector3(float.MaxValue);
             List<Scene3DVertex>? featureEdges = null;

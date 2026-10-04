@@ -26,6 +26,12 @@ public sealed class C3dImage
     /// <summary>The image file: relative to the <c>.c3d</c> inside its workspace, absolute outside it (<see cref="C3dImages.Store"/>).</summary>
     public string Path { get; set; } = "";
 
+    /// <summary>A SHEET's image drawn over every face lying on its plane — a picture placed on a solid's face — instead of under
+    /// them, the underlay a tracing wants (Scene3DDepthTie.Underlay). It then ties as a face image does. Drawing only; a face
+    /// image is always over its face and does not read it. Written only when true.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
+    public bool InFront { get; set; }
+
     [System.Text.Json.Serialization.JsonExtensionData]
     public Dictionary<string, System.Text.Json.JsonElement>? Unread { get; set; }
 }
@@ -89,7 +95,8 @@ public sealed record C3dFaceImageUse(string Object, int Index, C3dFaceImage Reco
 /// and <see cref="Up"/> its top-left, world metres — the corners of the rectangle the image fills, of which a sheet's outline
 /// may be only part (an edited sheet clips its image, R-em3d101-1a).
 /// </summary>
-public sealed record C3dPlacedImage(string Path, Point3 Origin, Point3 Right, Point3 Up)
+/// <para><see cref="InFront"/> — a sheet's image drawn over the faces on its plane (<see cref="C3dImage.InFront"/>).</para>
+public sealed record C3dPlacedImage(string Path, Point3 Origin, Point3 Right, Point3 Up, bool InFront = false)
 {
     /// <summary>The image coordinates of world point <paramref name="p"/> (on the image's plane): u from 0 at the left to 1 at
     /// the right, v from 0 at the BOTTOM to 1 at the top. A texture's v runs down, so it samples at 1 − v.</summary>
@@ -203,7 +210,7 @@ public static class C3dImages
         var w = C3dLowering.Snapped(C3dLowering.InMetres(s.Placement.ToTransform(), dbuPerMicron).Then(world));
         double h = M(s.Offset);
         Point3 At(long u, long v) => C3dLowering.Apply(w, C3dLowering.OnPlane(s.Plane, M(u), M(v), h));
-        return new C3dPlacedImage(absolutePath, At(f.U0, f.V0), At(f.U1, f.V0), At(f.U0, f.V1));
+        return new C3dPlacedImage(absolutePath, At(f.U0, f.V0), At(f.U1, f.V0), At(f.U0, f.V1), s.Image?.InFront == true);
     }
 
     // ── Phase B: images on faces ──────────────────────────────────────────────────────────────

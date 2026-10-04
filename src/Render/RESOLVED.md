@@ -4617,3 +4617,25 @@ missing the driven port's probes or its kept document is drawn as written, with 
 - **`render --iso` clipped a face image across a drilled hole** that the 3D view clipped around. `Scene3DFaceImages.Of`
   tessellated the solid's own primitive, while the view's builder draws the surface `Scene3DBores` carves. It now carves the same
   way, and the face numbering is unchanged (`Carved` keeps the primitive's).
+
+### An image sheet on a solid's face was invisible (2026-10-03)
+
+- **A sheet's image lying exactly on another object's face never showed**: an image sheet ties `Underlay` (R-em3d101-4b), below
+  every face on its plane, so a picture placed on a housing's face lost the depth tie to that face everywhere. That is right for
+  tracing and wrong for a label, so it is now per sheet: `C3dImage.InFront` (written only when true; Properties ▸ In front of
+  faces, or the sheet's menu) makes `TieOf` give the sheet `FaceImage` instead, and the image's draw takes its object's tie rather
+  than a hard-coded `Underlay`. The vector pictures needed nothing: `Em3dSceneImages` already draws every image after the fills.
+- **An In-front image still flickered at some angles and zooms.** It and its face are two triangulations of one plane, and seen
+  obliquely their interpolated depths drift further apart than `FaceImage`'s constant offset (8 steps) covers: on an image
+  sheet turned onto a box's face, 2,250 Metal views (±77°, five zooms, both projections) lost 17 % of the image's pixels to
+  the face, half the views fighting. `FaceImage` now takes a slope factor towards the eye (`DecalSlopeScale`), CLAMPED
+  (`DecalBiasClamp`, 2e-4): unclamped it fixed every view but let the sheet through the box along its silhouette when seen
+  from behind, the via-trail artefact that kept the slope off every tie above `None`. Clamped: 2 px in one view, on a face
+  three pixels across. The clamp reaches every backend — Metal's `setDepthBias:…:clamp:`, D3D11's `DepthBiasClamp`, and
+  Vulkan's `vkCmdSetDepthBias` clamp, which needs the device's `depthBiasClamp` feature; the backend now enables it when the
+  device has it and otherwise drops the slope (the previous behaviour). A face image on a face benefits identically.
+- **Ports and field plots take the same clamped slope.** A port's surface ties `Port` and a field plot `Field`, both above `None`
+  with the constant alone, and both lie on faces as an image does. A lumped port on a box's face, the same sweep: 14 % of its
+  pixels went to the face in 63 % of the views; with the clamped slope none, and silhouette pixels from behind 382 → 1,728 over
+  all the views. A field plot needs a solved field, so its share is unmeasured — the same arrangement, given the same bias. A
+  via still takes no slope: its barrel's walls are what made the unclamped one draw a trail, and a via is not drawn on a face.

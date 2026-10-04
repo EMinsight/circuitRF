@@ -283,6 +283,97 @@ public sealed class ReferenceImageTests : IDisposable
         Assert.Equal(traceId, m.PickedId);
     }
 
+    /// <summary>An image sheet lying exactly on a solid's face is under that face by default; In front of faces (one undo entry,
+    /// written as the image's InFront) puts its draw at the face image's tie, so the picture shows and a click there finds it.</summary>
+    [Fact]
+    public void Underlay_InFront_DrawsTheImageOverACoplanarSolidFace()
+    {
+        var (ws, dir) = Workspace();
+        string png = Quadrants(Path.Combine(ws, "ref", "quad.png"));
+        var vm = Open(Write(dir, [Box("b", "Gold", 0, 0, -10, 100, 100, 10),
+                                  Sheet("image1", C3dPlane.XY, 0, 10, 80, 80, C3dImages.Store(Path.Combine(dir, "cell.c3d"), png))]));
+        vm.ShowDrawingGrid = false;
+        (Scene3DDepthTie Tie, uint Picked) Look()
+        {
+            var scene = vm.Viewer.Scene;
+            var view = vm.Viewer.View;
+            view.Camera = Camera3D.Fit(scene.ContentMin, scene.ContentMax, W / H, Projection3D.Orthographic);
+            view.Camera.SetStandardView(StandardView3D.Top);
+            view.Camera.Target = scene.ToLocal(50e-6, 50e-6, 0);
+            var plan = new Scene3DFramePlan();
+            plan.Plan(scene, view, (int)W, (int)H, false, false, Scene3DOverlay.None, Scene3DOverlay.None, Scene3DOverlay.None);
+            var image = plan.Draws.Take(plan.DrawCount).Single(d => d.Pipeline is Scene3DPipeline.Image or Scene3DPipeline.ImageTranslucent);
+            return (image.Tie, Scene3DPicking.PairAtPixel(scene, view.Camera, W / 2, H / 2, W, H, view.Visible).Id);
+        }
+        uint Id(string name) => vm.Viewer.Scene.Objects.Single(o => o.Name == name).Id;
+
+        Assert.Equal((Scene3DDepthTie.Underlay, Id("b")), Look());
+        vm.SetImageInFront(1, true);
+        Settle(vm);
+        Assert.Equal((Scene3DDepthTie.FaceImage, Id("image1")), Look());
+        Assert.Contains("\"InFront\": true", C3dPersistence.SerializeObject(vm.Document.Objects[1]));
+        vm.UndoRedo.Undo();
+        Settle(vm);
+        Assert.Equal((Scene3DDepthTie.Underlay, Id("b")), Look());
+    }
+
+    /// <summary>An In-front image sheet on a box's face, seen at 55° and 44° off the face's normal (Metal): the box's face wins none
+    /// of the image's pixels. With only the constant offset it won 95 % of them here — the two triangulations of one plane
+    /// interpolate depths apart by more than the constant once the face is oblique (Scene3DFramePlan.DecalSlopeScale).</summary>
+    [Fact]
+    public void Underlay_InFront_ObliqueView_TheCoplanarFaceDoesNotFightTheImage()
+    {
+        foreach (var tie in new[] { Scene3DDepthTie.FaceImage, Scene3DDepthTie.Port, Scene3DDepthTie.Field })
+            Assert.True(Scene3DFramePlan.DepthBias(tie) is { Slope: < 0, Clamp: < 0 }, $"{tie}");
+        Assert.True(Scene3DFramePlan.DepthBias(Scene3DDepthTie.Via) is { Slope: 0, Clamp: 0 });
+        if (!OperatingSystem.IsMacOS()) return;
+        var (ws, dir) = Workspace();
+        // As one is placed by hand on a face: drawn on XY, turned onto the box's −y face.
+        var sheet = Sheet("image1", C3dPlane.XY, 9060, -5060, 4000, 2911, Quadrants(Path.Combine(ws, "ref", "quad.png")));
+        sheet.Image!.InFront = true;
+        sheet.Placement = new C3dPlacement { Origin = new C3dPoint3(-14060 * Um, -1500 * Um, 4285500), Rotate = [new C3dRotation { Axis = C3dAxis.X, Deg = 90 }] };
+        var box = new C3dBox { Name = "b", Material = "Gold", Min = new C3dPoint3(-5000 * Um, -1500 * Um, -774500), Size = new C3dPoint3(4000 * Um, 3000 * Um, 3000 * Um) };
+        var vm = Open(Write(dir, [box, sheet]));
+        vm.ShowDrawingGrid = false;
+        var scene = vm.Viewer.Scene;
+        var view = vm.Viewer.View;
+        Assert.Equal(-1.5e-3, scene.PlacedImages["image1"].Origin.Y, 12);
+        var cam = Camera3D.Fit(scene.ContentMin, scene.ContentMax, W / H, Projection3D.Perspective);
+        cam.SetStandardView(StandardView3D.Front);
+        cam.Target = scene.ToLocal(-3e-3, -1.5e-3, 0.68e-3);
+        cam.Distance *= 0.4f;
+        cam.Yaw -= 55 * MathF.PI / 180; cam.Pitch -= 44 * MathF.PI / 180;
+        view.Camera = cam;
+        uint b = scene.Objects.Single(o => o.Name == "b").Id, im = scene.Objects.Single(o => o.Name == "image1").Id;
+        int w = (int)W, h = (int)H;
+        using var m = new CircuitRF.Ui.Viewer3D.Metal.MetalViewer3DBackend();
+        m.CreateOffscreenImages(w, h, 1);
+        var session = new Viewer3DSession(() => m);
+        session.EnsureBackend();
+        ulong frame = 0;
+        byte[] Draw(bool showBox)
+        {
+            view.Visible[b - 1] = showBox; view.Visible[im - 1] = true;
+            var plan = new Scene3DFramePlan();
+            plan.Plan(scene, view, w, h, m.FlipY, pick: false, Scene3DOverlay.None, Scene3DOverlay.None, Scene3DOverlay.None);
+            session.Frame(0, plan, ++frame, scene, Scene3DOverlay.None, Scene3DOverlay.None, Scene3DOverlay.None, false);
+            return m.ReadImage(0);
+        }
+        var only = Draw(false);
+        var full = Draw(true);
+        // The image's pixels: pure red, green or blue in the image-only frame (the background is near-white, the box blue-grey).
+        int image = 0, lost = 0;
+        for (int i = 0; i < only.Length; i += 4)
+        {
+            int hi = Math.Max(only[i], Math.Max(only[i + 1], only[i + 2])), lo = Math.Min(only[i], Math.Min(only[i + 1], only[i + 2]));
+            if (hi < 200 || lo > 60) continue;
+            image++;
+            if (Math.Abs(full[i] - only[i]) + Math.Abs(full[i + 1] - only[i + 1]) + Math.Abs(full[i + 2] - only[i + 2]) > 30) lost++;
+        }
+        Assert.True(image > 20000, $"{image} image pixels: the view does not see the face");
+        Assert.True(lost <= image / 200, $"the box's face won {lost} of the image's {image} pixels");
+    }
+
     // ── gate 6: the upload counter ───────────────────────────────────────────────────────────
 
     /// <summary>A texture is uploaded per FILE: moving, hiding, making transparent and Model-toggling an image sheet uploads none,
